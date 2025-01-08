@@ -4456,9 +4456,7 @@ fn no_mask_flash_attention_cpu[
     ](idx: IndexList[_rank]) -> SIMD[type, simd_width]:
         return SIMD[type, simd_width](0)
 
-    nn_flash_attention[
-        input_1_fn, input_2_fn, mask_fn, transpose_k=True, layout_bshd=True
-    ](
+    nn_flash_attention[input_1_fn, input_2_fn, mask_fn](
         q,
         input_1_shape,
         input_2_shape,
@@ -4577,9 +4575,7 @@ fn with_mask_flash_attention_cpu[
 ) raises:
     constrained[is_cpu[target]()]()
 
-    nn_flash_attention[
-        input_1_fn, input_2_fn, input_3_fn, transpose_k=True, layout_bshd=True
-    ](
+    nn_flash_attention[input_1_fn, input_2_fn, input_3_fn](
         q,
         input_1_shape,
         input_2_shape,

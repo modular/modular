@@ -5674,13 +5674,7 @@ struct NoMaskFlashAttentionCPU:
         ](idx: IndexList[_rank]) -> SIMD[type, width]:
             return SIMD[type, width](0)
 
-        nn_flash_attention[
-            k_input_fn,
-            v_input_fn,
-            mask_input_fn,
-            transpose_k=True,
-            layout_bshd=True,
-        ](
+        nn_flash_attention[k_input_fn, v_input_fn, mask_input_fn](
             managed_tensor_slice_to_ndbuffer_with_spec[
                 compiler.specsof[q.type, q.rank]("q")
             ](q),
@@ -5824,13 +5818,7 @@ struct WithMaskFlashAttentionCPU:
                 rebind[IndexList[mask.rank]](coords)
             )
 
-        nn_flash_attention[
-            k_input_fn,
-            v_input_fn,
-            mask_input_fn,
-            transpose_k=True,
-            layout_bshd=True,
-        ](
+        nn_flash_attention[k_input_fn, v_input_fn, mask_input_fn](
             managed_tensor_slice_to_ndbuffer_with_spec[
                 compiler.specsof[q.type, q.rank]("q")
             ](q),
