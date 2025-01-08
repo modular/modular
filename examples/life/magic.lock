@@ -155,7 +155,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libssh2-1.11.1-hf672d98_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libstdcxx-14.2.0-hc0a3c3a_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libstdcxx-ng-14.2.0-h4852527_1.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-64/libsystemd0-256.9-h0b6a36f_2.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/libsystemd0-257.2-h3dc2cb9_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libthrift-0.21.0-h0e7cc3e_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libtiff-4.7.0-hd9ff511_3.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libutf8proc-2.9.0-hb9d3cd8_1.conda
@@ -431,7 +431,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libssh2-1.11.1-ha41c0db_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libstdcxx-14.2.0-h3f4de04_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libstdcxx-ng-14.2.0-hf1166c9_1.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libsystemd0-256.9-ha536d29_2.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libsystemd0-257.2-h27834fc_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libthrift-0.21.0-h154c74f_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libtiff-4.7.0-h88f7998_3.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libutf8proc-2.9.0-h86ecc28_1.conda
@@ -6982,13 +6982,30 @@ packages:
   timestamp: 1729089498541
 - kind: conda
   name: libsystemd0
-  version: '256.9'
-  build: h0b6a36f_2
-  build_number: 2
+  version: '257.2'
+  build: h27834fc_0
+  subdir: linux-aarch64
+  url: https://conda.anaconda.org/conda-forge/linux-aarch64/libsystemd0-257.2-h27834fc_0.conda
+  sha256: 7b95a42f507479c4e76855dbffe65a3b51fa5f1465649be00a1940dec6cdb9a8
+  md5: 18fbe3093009820c6fb7d6f1c710fd66
+  depends:
+  - libcap >=2.71,<2.72.0a0
+  - libgcc >=13
+  - libgcrypt-lib >=1.11.0,<2.0a0
+  - liblzma >=5.6.3,<6.0a0
+  - lz4-c >=1.10.0,<1.11.0a0
+  - zstd >=1.5.6,<1.6.0a0
+  license: LGPL-2.1-or-later
+  size: 512091
+  timestamp: 1736377189744
+- kind: conda
+  name: libsystemd0
+  version: '257.2'
+  build: h3dc2cb9_0
   subdir: linux-64
-  url: https://conda.anaconda.org/conda-forge/linux-64/libsystemd0-256.9-h0b6a36f_2.conda
-  sha256: 28e1a3c4bd242e7eb3bd0bcd35e558680d186e7a1d61482d371dde2a0f1bfb42
-  md5: 135bbeb376345b6847c065115be4221a
+  url: https://conda.anaconda.org/conda-forge/linux-64/libsystemd0-257.2-h3dc2cb9_0.conda
+  sha256: 03f532cae9ca0417b29ead19490a9fa0fa5e6ad73f1bfc7ea0d4d3bd4c41156e
+  md5: 40c12fdd396297db83f789722027f5ed
   depends:
   - __glibc >=2.17,<3.0.a0
   - libcap >=2.71,<2.72.0a0
@@ -6998,27 +7015,8 @@ packages:
   - lz4-c >=1.10.0,<1.11.0a0
   - zstd >=1.5.6,<1.6.0a0
   license: LGPL-2.1-or-later
-  size: 410566
-  timestamp: 1733679350245
-- kind: conda
-  name: libsystemd0
-  version: '256.9'
-  build: ha536d29_2
-  build_number: 2
-  subdir: linux-aarch64
-  url: https://conda.anaconda.org/conda-forge/linux-aarch64/libsystemd0-256.9-ha536d29_2.conda
-  sha256: 2cf3b22760674612fa13ad9748164dffc993d58dd3fc05c343b646ce31375af7
-  md5: 5ef220ea7aa46bd59f83ac7afe14910b
-  depends:
-  - libcap >=2.71,<2.72.0a0
-  - libgcc >=13
-  - libgcrypt-lib >=1.11.0,<2.0a0
-  - liblzma >=5.6.3,<6.0a0
-  - lz4-c >=1.10.0,<1.11.0a0
-  - zstd >=1.5.6,<1.6.0a0
-  license: LGPL-2.1-or-later
-  size: 432708
-  timestamp: 1733679350109
+  size: 487652
+  timestamp: 1736377129372
 - kind: conda
   name: libthrift
   version: 0.21.0
