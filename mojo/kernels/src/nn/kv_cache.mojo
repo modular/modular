@@ -524,11 +524,10 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
         target
     ]() else context.get_device_context()
     with Trace[TraceLevel.OP, target=target](
-        "fused_qk_rope_h"
+        "mo.fused_qk_rope.padded.continuous_batching.nhead_"
         + str(kv_collection.kv_params.num_heads)
-        + "_d"
-        + str(kv_collection.kv_params.head_size)
-        + "_bshd_continuous_batch",
+        + ".hdim_"
+        + str(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         fused_qk_rope[kv_collection.CacheType, target=target](
@@ -542,8 +541,10 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
         )
 
 
-@register_internal("fused_qk_rope_h8_d128_bshd_continuous_batch")
-fn fused_qk_rope_h8_d128_bshd_continuous_batch[
+@register_internal(
+    "mo.fused_qk_rope.padded.continuous_batching.nhead_8.hdim_128"
+)
+fn fused_qk_rope_padded_continuous_batching_nhead_8_hdim_128[
     type: DType, //,
     *,
     target: StringLiteral,
@@ -570,8 +571,10 @@ fn fused_qk_rope_h8_d128_bshd_continuous_batch[
     )
 
 
-@register_internal("fused_qk_rope_h32_d128_bshd_continuous_batch")
-fn fused_qk_rope_h32_d128_bshd_continuous_batch[
+@register_internal(
+    "mo.fused_qk_rope.padded.continuous_batching.nhead_32.hdim_128"
+)
+fn fused_qk_rope_padded_continuous_batching_nhead_32_hdim_128[
     type: DType, //,
     *,
     target: StringLiteral,
@@ -598,8 +601,10 @@ fn fused_qk_rope_h32_d128_bshd_continuous_batch[
     )
 
 
-@register_internal("fused_qk_rope_h1_d16_bshd_continuous_batch")
-fn fused_qk_rope_h1_d16_bshd_continuous_batch[
+@register_internal(
+    "mo.fused_qk_rope.padded.continuous_batching.nhead_1.hdim_16"
+)
+fn fused_qk_rope_padded_continuous_batching_nhead_1_hdim_16[
     type: DType, //,
     *,
     target: StringLiteral,
@@ -626,8 +631,10 @@ fn fused_qk_rope_h1_d16_bshd_continuous_batch[
     )
 
 
-@register_internal("fused_qk_rope_h8_d32_bshd_continuous_batch")
-fn fused_qk_rope_h8_d32_bshd_continuous_batch[
+@register_internal(
+    "mo.fused_qk_rope.padded.continuous_batching.nhead_8.hdim_32"
+)
+fn fused_qk_rope_padded_continuous_batching_nhead_8_hdim_32[
     type: DType, //,
     *,
     target: StringLiteral,
@@ -654,8 +661,10 @@ fn fused_qk_rope_h8_d32_bshd_continuous_batch[
     )
 
 
-@register_internal("fused_qk_rope_h8_d64_bshd_continuous_batch")
-fn fused_qk_rope_h8_d64_bshd_continuous_batch[
+@register_internal(
+    "mo.fused_qk_rope.padded.continuous_batching.nhead_8.hdim_64"
+)
+fn fused_qk_rope_padded_continuous_batching_nhead_8_hdim_64[
     type: DType, //,
     *,
     target: StringLiteral,

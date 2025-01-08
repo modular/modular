@@ -1252,11 +1252,10 @@ fn generic_fused_qk_rope_bshd_continous_batch_ragged[
     ]() else context.get_device_context()
 
     with Trace[TraceLevel.OP, target=target](
-        "fused_qk_rope_h"
+        "mo.fused_qk_rope.ragged.continuous_batching.nhead_"
         + str(kv_collection.kv_params.num_heads)
-        + "_d"
-        + str(kv_collection.kv_params.head_size)
-        + "_bshd_continuous_batch_ragged",
+        + ".hdim_"
+        + str(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         fused_qk_rope_ragged[kv_collection.CacheType, target=target](
@@ -1271,8 +1270,8 @@ fn generic_fused_qk_rope_bshd_continous_batch_ragged[
         )
 
 
-@register_internal("fused_qk_rope_h2_d2_bshd_continuous_batch_ragged")
-fn fused_qk_rope_h2_d2_bshd_continuous_batch_ragged[
+@register_internal("mo.fused_qk_rope.ragged.continuous_batching.nhead_2.hdim_2")
+fn fused_qk_rope_ragged_continuous_batching_nhead_2_hdim_2[
     type: DType, //,
     *,
     target: StringLiteral,
@@ -1311,8 +1310,10 @@ fn fused_qk_rope_h2_d2_bshd_continuous_batch_ragged[
     )
 
 
-@register_internal("fused_qk_rope_h2_d128_bshd_continuous_batch_ragged")
-fn fused_qk_rope_h2_d128_bshd_continuous_batch_ragged[
+@register_internal(
+    "mo.fused_qk_rope.ragged.continuous_batching.nhead_2.hdim_128"
+)
+fn fused_qk_rope_ragged_continuous_batching_nhead_2_hdim_128[
     type: DType, //,
     *,
     target: StringLiteral,
@@ -1351,8 +1352,10 @@ fn fused_qk_rope_h2_d128_bshd_continuous_batch_ragged[
     )
 
 
-@register_internal("fused_qk_rope_h4_d128_bshd_continuous_batch_ragged")
-fn fused_qk_rope_h4_d128_bshd_continuous_batch_ragged[
+@register_internal(
+    "mo.fused_qk_rope.ragged.continuous_batching.nhead_4.hdim_128"
+)
+fn fused_qk_rope_ragged_continuous_batching_nhead_4_hdim_128[
     type: DType, //,
     *,
     target: StringLiteral,
@@ -1391,8 +1394,10 @@ fn fused_qk_rope_h4_d128_bshd_continuous_batch_ragged[
     )
 
 
-@register_internal("fused_qk_rope_h8_d80_bshd_continuous_batch_ragged")
-fn fused_qk_rope_h8_d80_bshd_continuous_batch_ragged[
+@register_internal(
+    "mo.fused_qk_rope.ragged.continuous_batching.nhead_8.hdim_80"
+)
+fn fused_qk_rope_ragged_continuous_batching_nhead_8_hdim_80[
     type: DType, //,
     *,
     target: StringLiteral,
@@ -1431,8 +1436,10 @@ fn fused_qk_rope_h8_d80_bshd_continuous_batch_ragged[
     )
 
 
-@register_internal("fused_qk_rope_h8_d128_bshd_continuous_batch_ragged")
-fn fused_qk_rope_h8_d128_bshd_continuous_batch_ragged[
+@register_internal(
+    "mo.fused_qk_rope.ragged.continuous_batching.nhead_8.hdim_128"
+)
+fn fused_qk_rope_ragged_continuous_batching_nhead_8_hdim_128[
     type: DType, //,
     *,
     target: StringLiteral,
@@ -1471,8 +1478,10 @@ fn fused_qk_rope_h8_d128_bshd_continuous_batch_ragged[
     )
 
 
-@register_internal("fused_qk_rope_h8_d512_bshd_continuous_batch_ragged")
-fn fused_qk_rope_h8_d512_bshd_continuous_batch_ragged[
+@register_internal(
+    "mo.fused_qk_rope.ragged.continuous_batching.nhead_8.hdim_512"
+)
+fn fused_qk_rope_ragged_continuous_batching_nhead_8_hdim_512[
     type: DType, //,
     *,
     target: StringLiteral,
@@ -1511,8 +1520,10 @@ fn fused_qk_rope_h8_d512_bshd_continuous_batch_ragged[
     )
 
 
-@register_internal("fused_qk_rope_h32_d128_bshd_continuous_batch_ragged")
-fn fused_qk_rope_h32_d128_bshd_continuous_batch_ragged[
+@register_internal(
+    "mo.fused_qk_rope.ragged.continuous_batching.nhead_32.hdim_128"
+)
+fn fused_qk_rope_ragged_continuous_batching_nhead_32_hdim_128[
     type: DType, //,
     *,
     target: StringLiteral,
@@ -1551,8 +1562,10 @@ fn fused_qk_rope_h32_d128_bshd_continuous_batch_ragged[
     )
 
 
-@register_internal("fused_qk_rope_h1_d16_bshd_continuous_batch_ragged")
-fn fused_qk_rope_h1_d16_bshd_continuous_batch_ragged[
+@register_internal(
+    "mo.fused_qk_rope.ragged.continuous_batching.nhead_1.hdim_16"
+)
+fn fused_qk_rope_ragged_continuous_batching_nhead_1_hdim_16[
     type: DType, //,
     *,
     target: StringLiteral,
@@ -1591,8 +1604,10 @@ fn fused_qk_rope_h1_d16_bshd_continuous_batch_ragged[
     )
 
 
-@register_internal("fused_qk_rope_h3_d64_bshd_continuous_batch_ragged")
-fn fused_qk_rope_h3_d64_bshd_continuous_batch_ragged[
+@register_internal(
+    "mo.fused_qk_rope.ragged.continuous_batching.nhead_3.hdim_64"
+)
+fn fused_qk_rope_ragged_continuous_batching_nhead_3_hdim_64[
     type: DType, //,
     *,
     target: StringLiteral,
@@ -1631,8 +1646,10 @@ fn fused_qk_rope_h3_d64_bshd_continuous_batch_ragged[
     )
 
 
-@register_internal("fused_qk_rope_h8_d32_bshd_continuous_batch_ragged")
-fn fused_qk_rope_h8_d32_bshd_continuous_batch_ragged[
+@register_internal(
+    "mo.fused_qk_rope.ragged.continuous_batching.nhead_8.hdim_32"
+)
+fn fused_qk_rope_ragged_continuous_batching_nhead_8_hdim_32[
     type: DType, //,
     *,
     target: StringLiteral,
@@ -1671,8 +1688,10 @@ fn fused_qk_rope_h8_d32_bshd_continuous_batch_ragged[
     )
 
 
-@register_internal("fused_qk_rope_h8_d64_bshd_continuous_batch_ragged")
-fn fused_qk_rope_h8_d64_bshd_continuous_batch_ragged[
+@register_internal(
+    "mo.fused_qk_rope.ragged.continuous_batching.nhead_8.hdim_64"
+)
+fn fused_qk_rope_ragged_continuous_batching_nhead_8_hdim_64[
     type: DType, //,
     *,
     target: StringLiteral,
@@ -1754,9 +1773,9 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
         target
     ]() else context.get_device_context()
 
-    alias name = "fused_qk_rope_h" + str(
+    alias name = "mo.fused_qk_rope.ragged.paged.nhead_" + str(
         kv_collection.kv_params.num_heads
-    ) + "_d" + str(kv_collection.kv_params.head_size) + "_bshd_paged_ragged"
+    ) + ".hdim_" + str(kv_collection.kv_params.head_size)
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
@@ -1773,8 +1792,8 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
         )
 
 
-@register_internal("fused_qk_rope_h1_d16_bshd_paged_ragged")
-fn fused_qk_rope_h1_d16_bshd_paged_ragged[
+@register_internal("mo.fused_qk_rope.ragged.paged.nhead_1.hdim_16")
+fn fused_qk_rope_ragged_paged_nhead_1_hdim_16[
     type: DType, //,
     *,
     target: StringLiteral,
@@ -1803,8 +1822,8 @@ fn fused_qk_rope_h1_d16_bshd_paged_ragged[
     )
 
 
-@register_internal("fused_qk_rope_h6_d48_bshd_paged_ragged")
-fn fused_qk_rope_h6_d48_bshd_paged_ragged[
+@register_internal("mo.fused_qk_rope.ragged.paged.nhead_6.hdim_48")
+fn fused_qk_rope_ragged_paged_nhead_6_hdim_48[
     type: DType, //,
     *,
     target: StringLiteral,
@@ -1833,8 +1852,8 @@ fn fused_qk_rope_h6_d48_bshd_paged_ragged[
     )
 
 
-@register_internal("fused_qk_rope_h8_d128_bshd_paged_ragged")
-fn fused_qk_rope_h8_d128_bshd_paged_ragged[
+@register_internal("mo.fused_qk_rope.ragged.paged.nhead_8.hdim_128")
+fn fused_qk_rope_ragged_paged_nhead_8_hdim_128[
     type: DType, //,
     *,
     target: StringLiteral,
@@ -1863,8 +1882,8 @@ fn fused_qk_rope_h8_d128_bshd_paged_ragged[
     )
 
 
-@register_internal("fused_qk_rope_h8_d16_bshd_paged_ragged")
-fn fused_qk_rope_h8_d16_bshd_paged_ragged[
+@register_internal("mo.fused_qk_rope.ragged.paged.nhead_8.hdim_16")
+fn fused_qk_rope_ragged_paged_nhead_8_hdim_16[
     type: DType, //,
     *,
     target: StringLiteral,
@@ -1893,8 +1912,8 @@ fn fused_qk_rope_h8_d16_bshd_paged_ragged[
     )
 
 
-@register_internal("fused_qk_rope_h8_d512_bshd_paged_ragged")
-fn fused_qk_rope_h8_d512_bshd_paged_ragged[
+@register_internal("mo.fused_qk_rope.ragged.paged.nhead_8.hdim_512")
+fn fused_qk_rope_ragged_paged_nhead_8_hdim_512[
     type: DType, //,
     *,
     target: StringLiteral,
@@ -1923,8 +1942,8 @@ fn fused_qk_rope_h8_d512_bshd_paged_ragged[
     )
 
 
-@register_internal("fused_qk_rope_h8_d32_bshd_paged_ragged")
-fn fused_qk_rope_h8_d32_bshd_paged_ragged[
+@register_internal("mo.fused_qk_rope.ragged.paged.nhead_8.hdim_32")
+fn fused_qk_rope_ragged_paged_nhead_8_hdim_32[
     type: DType, //,
     *,
     target: StringLiteral,
@@ -1953,8 +1972,8 @@ fn fused_qk_rope_h8_d32_bshd_paged_ragged[
     )
 
 
-@register_internal("fused_qk_rope_h8_d64_bshd_paged_ragged")
-fn fused_qk_rope_h8_d64_bshd_paged_ragged[
+@register_internal("mo.fused_qk_rope.ragged.paged.nhead_8.hdim_64")
+fn fused_qk_rope_ragged_paged_nhead_8_hdim_64[
     type: DType, //,
     *,
     target: StringLiteral,
@@ -1983,8 +2002,8 @@ fn fused_qk_rope_h8_d64_bshd_paged_ragged[
     )
 
 
-@register_internal("fused_qk_rope_h32_d128_bshd_paged_ragged")
-fn fused_qk_rope_h32_d128_bshd_paged_ragged[
+@register_internal("mo.fused_qk_rope.ragged.paged.nhead_32.hdim_128")
+fn fused_qk_rope_ragged_paged_nhead_32_hdim_128[
     type: DType, //,
     *,
     target: StringLiteral,
