@@ -91,14 +91,16 @@ from nn.gather_scatter import (
     scatter_nd_shape,
 )
 from nn.index_tensor import index_tensor
-from nn.kv_cache import (
-    print_kv_cache_cont_batch_generic_gpu,
-    print_kv_cache_cont_batch_generic_cpu,
-    rms_norm_key_cache_h8_d128_cont_batch,
+from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     PagedKVCacheCollection,
     KVCacheStaticParams,
     KVCollectionT,
+)
+from nn.kv_cache import (
+    print_kv_cache_cont_batch_generic_gpu,
+    print_kv_cache_cont_batch_generic_cpu,
+    rms_norm_key_cache_h8_d128_cont_batch,
     generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch,
     generic_flash_attention_kv_cache_causal_mask_continuous_batch,
     generic_flash_attention_kv_cache_continuous_batch,
