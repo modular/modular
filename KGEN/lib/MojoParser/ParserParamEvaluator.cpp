@@ -113,7 +113,8 @@ ParserParamEvaluator::evaluateFunctionCallImpl(SymbolRefAttr symbol,
     return failure();
   }
   Region &body = **bodyOr;
-  LITSignatureType sig = cast<LIT::FuncOp>(body.getParentOp()).getSignature();
+  LITSignatureGeneratorType sig =
+      cast<LIT::FuncOp>(body.getParentOp()).getSignatureGenerator();
 
   TypedAttr value;
   if (sig.hasMemoryOnlyResult()) {

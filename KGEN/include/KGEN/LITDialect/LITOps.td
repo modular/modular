@@ -58,7 +58,7 @@ def LIT_FuncOp : LITOp<"func", [
   let arguments = (ins
     OptionalAttr<SymbolNameAttr>:$sym_name,
     OptionalAttr<KGEN_ParamDeclAttr>:$paramDecl,
-    TypeAttrOf<LIT_SignatureType>:$signature,
+    TypeAttrOf<LIT_SignatureGeneratorType>:$signatureGenerator,
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$params,
     KGEN_DecoratorsAttr:$decorators,
@@ -132,11 +132,6 @@ def LIT_FuncOp : LITOp<"func", [
 
     /// Return true if this was defined as a 'def', not a 'fn'.
     bool isDef() { return getIsDef(); }
-
-    /// Temporary forward-compatibility helper (only used by FuncInterface).
-    SignatureGeneratorType getSignatureGenerator() {
-      return getSignature().asSignatureGenerator();
-    }
   }];
 
   let builders = [
@@ -148,7 +143,7 @@ def LIT_FuncOp : LITOp<"func", [
                    CArg<"FnEffects", "{}">:$fnEffects,
                    CArg<"InlineLevel", "InlineLevel::Automatic">:$inlineLevel)>,
     OpBuilder<(ins "StringAttr":$name, "StringAttr":$sourceName,
-                   "SignatureType":$signature,
+                   "SignatureGeneratorType":$signatureGenerator,
                    CArg<"SpecialFunctionKind", "{}">:$specialFnID)>,
   ];
 

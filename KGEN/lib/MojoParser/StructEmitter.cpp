@@ -107,8 +107,8 @@ LIT::FuncOp StructEmitter::createFunction(
   if (shared.lookupSymbolIn(&parent, mangledName))
     return nullptr;
 
-  auto funcOp = builder.create<LIT::FuncOp>(
-      mangledName, sourceName, sigGen.asOldSignature(), specialFnID);
+  auto funcOp =
+      builder.create<LIT::FuncOp>(mangledName, sourceName, sigGen, specialFnID);
   funcOp.setIsSynthetic(true);
 
   if (funcOp.getSpecialFunctionInfo().isImplicitlyStatic())
@@ -504,7 +504,7 @@ std::optional<ValueInfo> ValueInfo::createValueInfo(ASTDecl &structDecl) {
     auto func = dyn_cast<LIT::FuncOp>(declaration);
     if (!func)
       continue;
-    auto signature = func.getSignature();
+    auto signature = func.getSignatureGenerator();
     ArrayRef<Type> inputTypes = signature.getArguments();
     ArrayRef<ArgConvention> convs = signature.getArgConventions();
     // Ignore the result slot and error result.
@@ -516,8 +516,8 @@ std::optional<ValueInfo> ValueInfo::createValueInfo(ASTDecl &structDecl) {
     if (inputTypes.size() != numFields)
       continue;
     // Skip any kind of var-args.
-    FnMetadataAttr metadata = signature.getMetadata();
-    if (metadata.hasVarArgs() || metadata.hasPackVarArgs())
+    FnMetadataAttr fnMetadata = signature.getBody().getMetadata();
+    if (fnMetadata.hasVarArgs() || fnMetadata.hasPackVarArgs())
       continue;
 
     bool isMatch = true;
@@ -639,8 +639,9 @@ LIT::FuncOp StructEmitter::findInitInStruct(StructDeclOp structOp,
       continue;
 
     bool isMatch = true;
-    for (auto [existing, proposed] : llvm::zip(
-             candidate.getSignature().getArguments().slice(1), operands)) {
+    for (auto [existing, proposed] :
+         llvm::zip(candidate.getSignatureGenerator().getArguments().slice(1),
+                   operands)) {
       if (existing != proposed) {
         isMatch = false;
         break;

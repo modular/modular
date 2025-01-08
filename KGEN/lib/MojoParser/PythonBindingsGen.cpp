@@ -311,7 +311,7 @@ void BindingGenerator::genModuleBinding(
 
     // TODO(MOCO-1298, MOCO-1299): Reject any functions with non-default
     // effects.
-    LITSignatureType sig = func.getSignature();
+    LITSignatureGeneratorType sig = func.getSignatureGenerator();
     if (sig.getFnEffects() != FnEffects()) {
       rejectedDecls.emplace_back(name,
                                  "TODO: Python binding generation is not "
@@ -320,7 +320,7 @@ void BindingGenerator::genModuleBinding(
     }
 
     // Reject parametric functions. Supporting these is far more complicated!
-    if (sig.getNumParams()) {
+    if (sig.getInputParamTypes().size()) {
       rejectedDecls.emplace_back(name, "Python binding generation is not "
                                        "supported for parameter functions");
       continue;
@@ -335,7 +335,7 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
                                                     LIT::FuncOp func) {
   // First, generate type bindings for each of the function argument and result
   // types.
-  LITSignatureType sig = func.getSignature();
+  LITSignatureGeneratorType sig = func.getSignatureGenerator();
   for (auto [type, conv] :
        llvm::zip(func.getArgumentTypes(), sig.getArgConventions())) {
     ASTType rvType = getFunctionArgumentRValueType(type, conv);
@@ -515,7 +515,7 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
 
   // TODO: get this and below in sync with createFunction, this only supports
   // memory only results so far.
-  assert(wrapperFunc.getSignature().hasMemoryOnlyResult());
+  assert(wrapperFunc.getSignatureGenerator().hasMemoryOnlyResult());
 
   //
   // Emit a return None

@@ -720,7 +720,8 @@ void DeclResolver::registerAndCheckExport(StringRef aliasName, SMLoc loc) {
 
 void DeclResolver::exportMain(ASTDecl &funcDecl) {
   LIT::FuncOp userMainFn = cast<LIT::FuncOp>(funcDecl);
-  LITSignatureType userMainSignature = userMainFn.getSignature();
+  LITSignatureGeneratorType userMainSignature =
+      userMainFn.getSignatureGenerator();
   ASTDecl *containingDecl = funcDecl.getParentDecl();
   SMLoc loc = funcDecl.getLoc();
 
@@ -736,7 +737,7 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   MainKind mainKind = kNonRaisingNoneMain;
 
   // Validate that main has the expected signature.
-  if (!userMainSignature.getParamTypes().empty() ||
+  if (!userMainSignature.getInputParamTypes().empty() ||
       !userMainSignature.getResultParamTypes().empty()) {
     shared.emitError(loc, "expected 'main' function to have no parameters");
     return;
@@ -847,14 +848,28 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   if (!mainWrapperDecl)
     return;
   FuncOp mainWrapperFn = cast<FuncOp>(*mainWrapperDecl);
+  LITSignatureGeneratorType mainWrapperSigGen =
+      mainWrapperFn.getSignatureGenerator();
 
   // Generate a reference to the main wrapper function, which expects the user
   // main to be provided via an parameter.
+  LITNewSignatureType mainWrapperSig = mainWrapperSigGen.getBody();
+  FnMetadataAttr mainWrapperFnMeta = mainWrapperSig.getMetadata();
+  auto strippedMainWrapperFnMeta = FnMetadataAttr::get(
+      mainWrapperFnMeta.getArgListAttrs(), PogListAttr::get(getContext()),
+      mainWrapperFnMeta.getNumImplicitOriginDecls(),
+      mainWrapperFnMeta.getCaptureOrigins(),
+      mainWrapperFnMeta.getIsNestedOriginExclusivityCheckingDisabled());
+  auto strippedMainWrapperSig = NewSignatureType::get(
+      getContext(), mainWrapperSig.getValues(),
+      mainWrapperSig.getArgConventions(), mainWrapperSig.getFnEffects(),
+      strippedMainWrapperFnMeta);
   SymbolConstantAttr wrapperFnRef = SymbolConstantAttr::get(
       getFullyResolvedSymbolRef(mainWrapperFn),
-      mainWrapperFn.getSignature().dropParamValues().asSignatureGenerator(),
+      GeneratorType::get(/*inputParamTypes=*/{}, strippedMainWrapperSig,
+                         /*metadata=*/PogListAttr::get(getContext())),
       {SymbolConstantAttr::get(getFullyResolvedSymbolRef(userMainFn),
-                               userMainSignature.asSignatureGenerator())});
+                               userMainSignature)});
 
   auto shimBodyBuilder = ImplicitLocOpBuilder::atBlockBegin(
       shimMainFn->getLoc(), shimMainFn.getBody());

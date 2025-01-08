@@ -811,7 +811,7 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
   ASTDecl *moduleDecl = nestedFnDecl.getNearestDeclOfType<FileModuleOp>();
 
   auto [capturedRefs, wrapperSig] = DeclResolver::createSelfContainedSignature(
-      nestedFn.getSignature().asSignatureGenerator());
+      nestedFn.getSignatureGenerator());
   if (!wrapperSig)
     return {};
   StructDeclOp closureWrapper =
@@ -999,8 +999,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // with indices.
   signature = signature.replaceImplicitOriginsWithIndexes(
       tcSignature.implicitOriginDecls);
-  attrs.set(funcOp.getSignatureAttrName(),
-            TypeAttr::get(signature.asOldSignature()));
+  attrs.set(funcOp.getSignatureGeneratorAttrName(), TypeAttr::get(signature));
 
   // Set the symbol to the mangled name and check for redefinition.
   attrs.set(funcOp.getSymNameAttrName(),
@@ -1027,7 +1026,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     // types may result in `!kgen.none` in the mlir signature result.
     auto resTy = ASTType(signature.getUserResultType());
     auto existingResTy =
-        ASTType(existingFunc.getSignature().getUserResultType());
+        ASTType(existingFunc.getSignatureGenerator().getUserResultType());
     if (!resTy.isEqualCanon(existingResTy))
       errorMessage = " cannot overload on return type only";
     else
@@ -1101,7 +1100,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     signature = signature.getWithBody(signature.getBody().getWithMetadata(
         signature.getFnMetadata().addCaptureOrigins(
             OriginSetAttr::get(getContext(), origins))));
-    funcOp.setSignature(signature.asOldSignature());
+    funcOp.setSignatureGenerator(signature);
 
     funcOp.setParamDeclAttr(
         ParamDeclAttr::get(funcOp.getSymNameAttr(), signature));
@@ -1124,7 +1123,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Emit closure structures necessary for instantiating an escaping closure
   signature = signature.getWithBody(signature.getBody().getWithFnEffects(
       signature.getFnEffects().setEscaping()));
-  funcOp.setSignature(signature.asOldSignature());
+  funcOp.setSignatureGenerator(signature);
   MLValue instance = emitClosureInstance(captures, paramCaptures, decl, shared);
   if (!instance)
     return failure();
@@ -1185,7 +1184,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
   Block &body = *funcOp.getBody();
   ExprEmitter emitter(decl, OpBuilder::atBlockEnd(&body));
 
-  LITSignatureType funcSignature = funcOp.getSignature();
+  LITSignatureGeneratorType funcSignature = funcOp.getSignatureGenerator();
 
   // Set up the body of the fn/def, creating declarations for the value
   // parameters and adding them to the symbol table.
@@ -2544,7 +2543,7 @@ static void replaceTraitMethodSelfTypes(LIT::FuncOp func,
   AttrReplacer replacer(parentSelfType, traitSelfType);
 
   // Update functionType, signature, and block argument types.
-  func.setSignature(replacer.replace(func.getSignature()));
+  func.setSignatureGenerator(replacer.replace(func.getSignatureGenerator()));
   func.setFunctionType(replacer.replace(func.getFunctionType()));
   for (auto arg : func.getBody()->getArguments())
     arg.setType(replacer.replace(arg.getType()));
