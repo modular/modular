@@ -130,7 +130,7 @@ from nn.kv_cache_ragged import (
     generic_flash_attention_kv_cache_null_mask_cont_batch_ragged,
     matmul_kv_cache_h8_d128_cont_batch_ragged,
 )
-from nn.mha import flash_attention, fused_attention
+from nn.mha import flash_attention
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.normalization import layer_norm, rms_norm
 from nn.pad import pad_constant, pad_reflect, pad_repeat, pad_shape
@@ -5630,139 +5630,6 @@ struct MaskedFlashAttentionGPU:
             mask_buffer,
             scale,
             context=ctx,
-        )
-
-
-@compiler.register("no_mask_fused_attention_cpu")
-struct NoMaskFusedAttentionCPU:
-    @staticmethod
-    fn execute[
-        rank: Int
-    ](
-        output: ManagedTensorSlice[rank=rank],
-        q: ManagedTensorSlice[rank=rank],
-        k: ManagedTensorSlice[rank=rank],
-        v: ManagedTensorSlice[rank=rank],
-        scale: Scalar[type = DType.float32],
-    ) raises:
-        # TODO:
-        # - no attention mask
-        # - no causaul mask
-
-        # Dimension names:
-        #     - (B)atch
-        #     - Attention (H)ead
-        #     - (S)equence
-        #     - Embedding (D)imension
-        #
-        # layouts:
-        # q -- BHSD
-        # k -- BHDS (we assume transpose = true for now)
-        # v -- BHSD
-        # output: BHSD
-
-        alias mask_shape = DimList()
-        alias mask_type = DType.float32
-        var mask = NDBuffer[mask_type, rank, mask_shape]()
-        var scale_f32 = scale.cast[DType.float32]()
-        var causal_mask: Float32 = 0
-
-        fused_attention[
-            transpose_k=False,
-            add_attn_mask=False,
-            add_causal_mask=False,
-        ](
-            managed_tensor_slice_to_ndbuffer_with_spec[
-                compiler.specsof[output.type, output.rank]("output")
-            ](output),
-            managed_tensor_slice_to_ndbuffer_with_spec[
-                compiler.specsof[q.type, q.rank]("q")
-            ](q),
-            managed_tensor_slice_to_ndbuffer_with_spec[
-                compiler.specsof[k.type, q.rank]("k")
-            ](k),
-            managed_tensor_slice_to_ndbuffer_with_spec[
-                compiler.specsof[v.type, q.rank]("v")
-            ](v),
-            mask,
-            scale_f32,
-            causal_mask,
-        )
-
-
-@compiler.register("with_mask_fused_attention_cpu")
-struct WithMAskFusedAttentionCPU:
-    @staticmethod
-    fn execute[
-        rank: Int
-    ](
-        output: ManagedTensorSlice[rank=rank],
-        q: ManagedTensorSlice[rank=rank],
-        k: ManagedTensorSlice[rank=rank],
-        v: ManagedTensorSlice[rank=rank],
-        mask: ManagedTensorSlice[rank=rank],
-        scale: Scalar[type = DType.float32],
-    ) raises:
-        alias q_shape = compiler.specsof[q.type, q.rank]("q").shape
-        alias k_shape = compiler.specsof[k.type, q.rank]("k").shape
-        alias v_shape = compiler.specsof[v.type, q.rank]("v").shape
-        alias mask_shape = compiler.specsof[mask.type, mask.rank]("mask").shape
-        alias output_shape = compiler.specsof[output.type, output.rank](
-            "output"
-        ).shape
-
-        # TODO:
-        # - no attention mask
-        # - no causaul mask
-
-        # Dimension names:
-        #     - (B)atch
-        #     - Attention (H)ead
-        #     - (S)equence
-        #     - Embedding (D)imension
-        #
-        # layouts:
-        # q -- BHSD
-        # k -- BHDS (we assume transpose = true for now)
-        # v -- BHSD
-        # output: BHSD
-        # TODO: Unimplemented and not used
-        var scale_f32 = scale.cast[DType.float32]()
-        var causal_mask: Float32 = 0
-
-        fused_attention[
-            rank,
-            q_shape,
-            k_shape,
-            v_shape,
-            mask_shape,
-            output_shape,
-            q.type,
-            k.type,
-            v.type,
-            mask.type,
-            output.type,
-            transpose_k=False,
-            add_attn_mask=True,
-            add_causal_mask=False,
-        ](
-            managed_tensor_slice_to_ndbuffer_with_spec[
-                compiler.specsof[output.type, output.rank]("output")
-            ](output),
-            managed_tensor_slice_to_ndbuffer_with_spec[
-                compiler.specsof[q.type, q.rank]("q")
-            ](q),
-            managed_tensor_slice_to_ndbuffer_with_spec[
-                compiler.specsof[k.type, k.rank]("k")
-            ](k),
-            managed_tensor_slice_to_ndbuffer_with_spec[
-                compiler.specsof[v.type, v.rank]("v")
-            ](v),
-            managed_tensor_slice_to_ndbuffer_with_spec[
-                compiler.specsof[mask.type, mask.rank]("mask")
-            ](mask),
-            scale_f32,
-            causal_mask,
         )
 
 
