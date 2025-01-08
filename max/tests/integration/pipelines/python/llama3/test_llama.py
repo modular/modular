@@ -9,11 +9,23 @@ golden values.
 
 import pytest
 from evaluate_llama import SupportedTestModels
+from max.pipelines import PipelineConfig
 from test_common.evaluate import PROMPTS, compare_values, run_model
 from test_common.numpy_encoder import NumpyDecoder
 from test_common.path import find_runtime_path
 
 pytest_plugins = "test_common.registry"
+
+
+@pytest.mark.skip("loads llama model, which will download taking a while.")
+def test_llama_eos_token_id(pipeline_registry):
+    """This test is primarily written to be run in a bespoke fashion, as it is downloads llama-3.1, which can tax CI unnecessarily."""
+    config = PipelineConfig(huggingface_repo_id="modularai/llama-3.1")
+    _, pipeline = pipeline_registry.retrieve(config)
+
+    # The llama3_1 huggingface config has three eos tokens I want to make sure these are grabbed appropriately.
+    assert pipeline._eos_token_id == set([128001, 128008, 128009])
+    assert len(pipeline._eos_token_id) == 3
 
 
 @pytest.mark.parametrize(
