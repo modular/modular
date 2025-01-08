@@ -79,7 +79,7 @@ fn warpgroup_reg_alloc[count: Int]():
     @parameter
     if Info.from_name[_get_sm_name()]() >= H100:
         inlined_assembly[
-            "llvm.nvvm.setmaxnreg.inc.sync.aligned.u32",
+            "setmaxnreg.inc.sync.aligned.u32",
             NoneType,
             constraints="r",
         ](Int32(count))
@@ -107,7 +107,7 @@ fn warpgroup_reg_dealloc[count: Int]():
     @parameter
     if Info.from_name[_get_sm_name()]() >= H100:
         inlined_assembly[
-            "llvm.nvvm.setmaxnreg.dec.sync.aligned.u32",
+            "setmaxnreg.dec.sync.aligned.u32",
             NoneType,
             constraints="r",
         ](Int32(count))
