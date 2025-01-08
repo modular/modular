@@ -25,6 +25,7 @@ from nn.concat import _concat_cpu, test_concat_fusion
 from random import randn, seed
 from sys import llvm_intrinsic, external_call
 from sys.info import bitwidthof, simdwidthof, sizeof
+from gpu.host.info import is_gpu, is_valid_target, is_cpu
 
 import compiler_internal as compiler
 
@@ -36,6 +37,9 @@ from algorithm import mean
 from algorithm import min as reduce_min
 from algorithm import product, sum
 from algorithm.reduction import _reduce_generator, _reduce_generator_cpu
+
+from nn.topk import top_k_fused_sampling as _topk_fused_sampling
+from nn.topk_gpu import topk_fused_sampling_gpu as _topk_fused_sampling_gpu
 
 # ===-----------------------------------------------------------------------===#
 # General imports
@@ -203,6 +207,7 @@ from utils.index import Index
 from utils.numerics import isinf, isnan
 from utils.static_tuple import _set_array_elem
 from utils.loop import unroll
+from linalg.dual_gemm import swishGLU
 
 # ===-----------------------------------------------------------------------===#
 # Nop functions to expose different types to the compiler.
@@ -10718,4 +10723,97 @@ struct Struct_flash_attention_kv_cache_h8_d128_alibi_mask_cont_batch_ragged:
                 compiler.specsof[output.type, output.rank]("output")
             ](output),
             context,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Misc Operations
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("topk_fused_sampling")
+struct Struct_topk_fused_sampling:
+    @staticmethod
+    @always_inline
+    fn execute[
+        type: DType,
+        rank: Int,
+        out_idx_type: DType,
+        target: StringLiteral = "cpu",
+    ](
+        out_idxs: ManagedTensorSlice[out_idx_type, rank],
+        K: Scalar,
+        input: ManagedTensorSlice[type, rank],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        constrained[is_valid_target[target](), "not a valid target"]()
+
+        var input_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input.type, input.rank]("input")
+        ](input)
+        var out_idxs_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[out_idxs.type, out_idxs.rank]("out_idxs")
+        ](out_idxs)
+        with Trace[TraceLevel.OP, target=target]("topk_fused_sampling"):
+
+            @parameter
+            if is_cpu[target]():
+                _topk_fused_sampling(int(K), input_buf, out_idxs_buf)
+            else:
+                var cuda_ctx = ctx.get_device_context()
+                _topk_fused_sampling_gpu(
+                    cuda_ctx,
+                    int(K),
+                    input_buf,
+                    out_idxs_buf,
+                )
+
+
+@compiler.register("swishGLU")
+struct Struct_swishGLU:
+    @staticmethod
+    @always_inline
+    fn execute[
+        target: StringLiteral = "cpu",
+    ](
+        c: ManagedTensorSlice[rank=2],
+        a: ManagedTensorSlice[rank=2],
+        b0: ManagedTensorSlice[rank=2],
+        b1: ManagedTensorSlice[b0.type, 2],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        swishGLU[target=target](
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[a.type, a.rank]("a")
+            ](a),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[b0.type, b0.rank]("b0")
+            ](b0),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[b1.type, b1.rank]("b1")
+            ](b1),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[c.type, c.rank]("c")
+            ](c),
+            ctx,
+        )
+
+
+@compiler.register("mo.distributed.allreduce.sum")
+struct DistributedAllReduceSum:
+    @staticmethod
+    @always_inline
+    fn execute[
+        type: DType,
+        rank: Int,
+        target: StringLiteral = "cpu",
+    ](
+        outputs: StaticTuple[ManagedTensorSlice[type, rank], *_],
+        inputs: StaticTuple[ManagedTensorSlice[type, rank], *_],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        # Stub for now
+        outputs[0][0] = inputs[0][0]
+        print(
+            "Hello! You should not run this kernel: `DistributedAllReduceSum`"
         )
