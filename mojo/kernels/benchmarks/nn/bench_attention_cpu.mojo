@@ -13,7 +13,6 @@ from benchmark import *
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from nn.flash_attention import flash_attention
-from nn.mha import fused_attention
 
 from utils import IndexList
 from utils.index import Index
@@ -131,36 +130,8 @@ def bench_attention[
 
     var input_id = "transpose_k=" + str(transpose_k) + "," + str(spec)
 
-    m.bench_function[flash_bench_fn](BenchId(">flash", input_id))
+    m.bench_function[flash_bench_fn](BenchId("flash", input_id))
 
-    @always_inline
-    @parameter
-    fn fused_bench_fn(mut b: Bencher):
-        @always_inline
-        @parameter
-        fn iter_fn():
-            try:
-                fused_attention[
-                    3,
-                    DimList.create_unknown[3](),
-                    DimList.create_unknown[3](),
-                    DimList.create_unknown[3](),
-                    DimList.create_unknown[3](),
-                    DimList.create_unknown[3](),
-                    type,
-                    type,
-                    type,
-                    type,
-                    type,
-                    add_attn_mask=True,
-                    transpose_k=transpose_k,
-                ](output, q, k, v, mask, scale, Float32())
-            except e:
-                abort(e)
-
-        b.iter[iter_fn]()
-
-    m.bench_function[fused_bench_fn](BenchId(" fused", input_id))
     _ = q
     _ = k
     _ = v
