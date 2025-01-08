@@ -2247,14 +2247,11 @@ struct LayoutTensor[
         # ((M), (N)) can all be printed in 2D. Shapes like ((2, 2), 2) will be
         # printed elementwise.
         @parameter
-        if is_2d_print(layout) or is_2d_print(coalesce(layout)):
-            var m_dim = self.runtime_layout.shape[0].value[0]
-            var n_dim = self.runtime_layout.shape[1].value[0]
-            for m in range(m_dim):
-                for n in range(n_dim):
-                    writer.write(self[m, n], " ")
-                if m < m_dim - 1:
-                    writer.write("\n")
+        if is_2d_print(layout):
+            _pretty_print_2d_tensor(self, writer)
+            return
+        elif is_2d_print(coalesce(layout)):
+            _pretty_print_2d_tensor(self.coalesce(), writer)
             return
 
         for i in range(self.runtime_layout.size()):
@@ -2269,6 +2266,19 @@ struct LayoutTensor[
             writer.write(vec)
             if i != layout.size() - 1:
                 writer.write(" ")
+
+
+@always_inline
+fn _pretty_print_2d_tensor[W: Writer](tensor: LayoutTensor, mut writer: W):
+    constrained[tensor.layout.rank() == 2]()
+
+    var m_dim = tensor.runtime_layout.shape[0].value[0]
+    var n_dim = tensor.runtime_layout.shape[1].value[0]
+    for m in range(m_dim):
+        for n in range(n_dim):
+            writer.write(tensor[m, n], " ")
+        if m < m_dim - 1:
+            writer.write("\n")
 
 
 fn stack_allocation_like[
