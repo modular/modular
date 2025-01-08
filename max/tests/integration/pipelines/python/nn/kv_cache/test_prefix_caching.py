@@ -19,15 +19,14 @@ from max.pipelines.kv_cache import (
 FAKE_TOKEN = 999
 
 
-def get_blocks_from_kv_tuple(kv_tuple) -> list[int]:
-    return kv_tuple[2].to(CPU()).to_numpy()[0].tolist()
+def get_blocks_from_kv_tuple(kv_tuple) -> list[list[int]]:
+    return kv_tuple[2].to(CPU()).to_numpy().tolist()
 
 
 def get_uncommitted_and_committed_block_counts(
     kv_tuple,
-) -> tuple[list[int], list[int]]:
-    lengths = kv_tuple[3].to(CPU()).to_numpy()[0]
-    return lengths[0], lengths[1]
+) -> list[list[int]]:
+    return kv_tuple[3].to(CPU()).to_numpy().tolist()
 
 
 def create_paged_manager(num_blocks: int) -> KVCacheManager:
@@ -83,24 +82,26 @@ async def test_prefix_caching() -> None:
     # Seq 1: Prefill 10 - 14
     seq_ids_and_prompts = {seq_id_1: np.array(initial_prompt_1)}
     kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
-    assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == (
+    assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[0] == [
         len(initial_prompt_1),
         0,
-    )
+    ]
     seq_ids_and_new_tokens = {seq_id_1: np.array([FAKE_TOKEN])}
     kv_manager.step(seq_ids_and_new_tokens)
 
     # Check that we got new blocks
-    assert get_blocks_from_kv_tuple(kv_tuple_list[0]) == [0, 1, 2, 3, 4]
+    assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0] == [0, 1, 2, 3, 4]
 
     # Seq 1: Token gen 15 - 18
     for i, tok in enumerate([15, 16, 17, 18]):
         seq_ids_and_prompts = {seq_id_1: np.array([tok])}
         kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
-        assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == (
+        assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[
+            0
+        ] == [
             1,
             5 + i,
-        )
+        ]
         seq_ids_and_new_tokens = {seq_id_1: np.array([FAKE_TOKEN])}
         kv_manager.step(seq_ids_and_new_tokens)
 
@@ -112,26 +113,28 @@ async def test_prefix_caching() -> None:
     # Seq 2: Prefill 10 - 13
     seq_ids_and_prompts = {seq_id_2: np.array(initial_prompt_2)}
     kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
-    assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == (
+    assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[0] == [
         1,
         len(initial_prompt_2) - 1,
-    )
+    ]
     seq_ids_and_new_tokens = {seq_id_2: np.array([FAKE_TOKEN])}
     kv_manager.step(seq_ids_and_new_tokens)
 
     # Check that we got cached blocks, except for last token in prompt
-    assert get_blocks_from_kv_tuple(kv_tuple_list[0])[:3] == [0, 1, 2]
-    assert get_blocks_from_kv_tuple(kv_tuple_list[0])[3] != [3]
+    assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0][:3] == [0, 1, 2]
+    assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0][3] != [3]
 
     # Seq 2: Token gen 14 - 17
     for i, tok in enumerate([14, 15, 99, 100]):
         seq_ids_and_prompts = {seq_id_2: np.array([tok])}
         kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
-        assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == (
+        assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[
+            0
+        ] == [
             1,
             len(initial_prompt_2) + i,
-        )
-        assert get_blocks_from_kv_tuple(kv_tuple_list[0])[:4] == [0, 1, 2, 3]
+        ]
+        assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0][:4] == [0, 1, 2, 3]
         seq_ids_and_new_tokens = {seq_id_2: np.array([FAKE_TOKEN])}
         kv_manager.step(seq_ids_and_new_tokens)
 
@@ -227,3 +230,36 @@ async def test_prefix_caching_with_random_prompt() -> None:
 
     # Check that all blocks are either in the trie or available.
     assert available_blocks + len(blocks_in_trie) == total_num_blocks
+
+
+@pytest.mark.asyncio
+async def test_prefix_caching_with_num_steps_gt_1() -> None:
+    kv_manager = create_paged_manager(num_blocks=128)
+
+    # Reserve a slot in the KV cache manager.
+    seq_id_1 = 1
+    initial_prompt_1 = [10, 11, 12, 13, 14]
+    kv_manager.external_claim([seq_id_1])
+
+    # Seq 1: Prefill 10 - 14 and generate 15 - 17 in one pass
+    seq_ids_and_prompts = {seq_id_1: np.array(initial_prompt_1)}
+    kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts, num_steps=3)
+    seq_ids_and_new_tokens = {seq_id_1: np.array([15, 16, 17])}
+    assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
+        [5, 0],
+        [1, 5],
+        [1, 6],
+    ]
+
+    kv_manager.step(seq_ids_and_new_tokens)
+
+    # Seq 1: Token gen 18 - 19 in one pass
+    seq_ids_and_prompts = {seq_id_1: np.array([17])}
+    kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts, num_steps=2)
+    assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
+        [1, 7],
+        [1, 8],
+    ]
+
+    seq_ids_and_new_tokens = {seq_id_1: np.array([18, 19])}
+    kv_manager.step(seq_ids_and_new_tokens)
