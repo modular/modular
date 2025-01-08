@@ -43,7 +43,6 @@ lit_tests(
         "//GenericML:MGPRT",
         "//GenericML:modular-framework-common",
         "//KGEN:CompilerRT",
-        "//ModelServing:ServeRTCAPI",
         "//ModularFramework/tools/mof",
         "//PyTorch:modular-framework-torch-ext",
         "//PyTorch/test/utils:pytorch-generated-tests",
