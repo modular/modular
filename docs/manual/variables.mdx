@@ -184,10 +184,11 @@ floating-point type, it converts the value instead of giving a compiler error:
 
 ```mojo
 var number: Float64 = Int(1)
+print(number)
 ```
 
 ```output
-1
+1.0
 ```
 
 As shown above, value assignment can be converted into a constructor call if the
