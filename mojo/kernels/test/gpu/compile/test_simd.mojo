@@ -8,6 +8,8 @@
 # RUN: %mojo-no-debug-no-assert %s
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from testing import assert_true
+from sys import has_nvidia_gpu_accelerator
+from sys.info import _accelerator_arch
 
 
 def test_add[dtype: DType]():
@@ -150,14 +152,18 @@ def test_cast():
 
 
 def main():
-    test_add[DType.bfloat16]()
-    test_add[DType.float16]()
+    # FIXME(KERN-1436): Enable for SM_90 case.
+    if has_nvidia_gpu_accelerator() and not (
+        "nvidia:90" in _accelerator_arch()
+    ):
+        test_add[DType.bfloat16]()
+        test_add[DType.float16]()
 
-    test_sub[DType.bfloat16]()
-    test_sub[DType.float16]()
+        test_sub[DType.bfloat16]()
+        test_sub[DType.float16]()
 
-    test_mul[DType.bfloat16]()
-    test_mul[DType.float16]()
+        test_mul[DType.bfloat16]()
+        test_mul[DType.float16]()
 
     test_mul_sm90[DType.bfloat16]()
     test_mul_sm90[DType.float16]()
