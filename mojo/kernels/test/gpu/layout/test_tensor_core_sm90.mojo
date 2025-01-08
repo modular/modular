@@ -9,6 +9,8 @@
 from builtin.io import _printf
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
+from gpu.host.memory_v1 import _make_ctx_current
+from gpu.host.nvidia_cuda import CUDA
 from gpu.id import ThreadIdx
 from gpu.mma import mma
 from layout import Layout, LayoutTensor
@@ -177,5 +179,7 @@ def test_load_and_mma_e5m2_e5m2_f32_16x8x32(ctx: DeviceContext):
 
 def main():
     with DeviceContext() as ctx:
+        var prev_ctx = _make_ctx_current(CUDA(ctx))
         test_load_and_mma_e4m3_e4m3_f32_16x8x32(ctx)
         test_load_and_mma_e5m2_e5m2_f32_16x8x32(ctx)
+        _ = _make_ctx_current(prev_ctx)

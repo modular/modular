@@ -10,6 +10,8 @@ from builtin.io import _printf
 from gpu import barrier
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
+from gpu.host.memory_v1 import _make_ctx_current
+from gpu.host.nvidia_cuda import CUDA
 from gpu.id import ThreadIdx
 from gpu.intrinsics import threadfence
 from gpu.memory import AddressSpace
@@ -622,7 +624,9 @@ def wgmma_u8_s8_s32_64x8x32(ctx: DeviceContext):
 
 def main():
     with DeviceContext() as ctx:
+        var prev_ctx = _make_ctx_current(CUDA(ctx))
         wgmma_s8_s8_s32_64x8x32(ctx)
         wgmma_u8_u8_s32_64x8x32(ctx)
         wgmma_s8_u8_s32_64x8x32(ctx)
         wgmma_u8_s8_s32_64x8x32(ctx)
+        _ = _make_ctx_current(prev_ctx)

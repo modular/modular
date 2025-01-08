@@ -9,6 +9,8 @@
 from builtin.io import _printf
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
+from gpu.host.memory_v1 import _make_ctx_current
+from gpu.host.nvidia_cuda import CUDA
 from gpu.id import ThreadIdx
 from gpu.mma import mma
 
@@ -73,71 +75,73 @@ def test_mma_sync_16x8x32_E5M2(ctx: DeviceContext):
 
 def main():
     with DeviceContext() as ctx:
+        var prev_ctx = _make_ctx_current(CUDA(ctx))
         # CHECK-LABEL: test_mma_sync_16x8x32_E4M3
-        # CHECK-DAG: thread 0 : 16 16 16 16
-        # CHECK-DAG: thread 1 : 16 16 16 16
-        # CHECK-DAG: thread 2 : 16 16 16 16
-        # CHECK-DAG: thread 3 : 16 16 16 16
-        # CHECK-DAG: thread 4 : 16 16 16 16
-        # CHECK-DAG: thread 5 : 16 16 16 16
-        # CHECK-DAG: thread 6 : 16 16 16 16
-        # CHECK-DAG: thread 7 : 16 16 16 16
-        # CHECK-DAG: thread 8 : 16 16 16 16
-        # CHECK-DAG: thread 9 : 16 16 16 16
-        # CHECK-DAG: thread 10 : 16 16 16 16
-        # CHECK-DAG: thread 11 : 16 16 16 16
-        # CHECK-DAG: thread 12 : 16 16 16 16
-        # CHECK-DAG: thread 13 : 16 16 16 16
-        # CHECK-DAG: thread 14 : 16 16 16 16
-        # CHECK-DAG: thread 15 : 16 16 16 16
-        # CHECK-DAG: thread 16 : 16 16 16 16
-        # CHECK-DAG: thread 17 : 16 16 16 16
-        # CHECK-DAG: thread 18 : 16 16 16 16
-        # CHECK-DAG: thread 19 : 16 16 16 16
-        # CHECK-DAG: thread 20 : 16 16 16 16
-        # CHECK-DAG: thread 21 : 16 16 16 16
-        # CHECK-DAG: thread 22 : 16 16 16 16
-        # CHECK-DAG: thread 23 : 16 16 16 16
-        # CHECK-DAG: thread 24 : 16 16 16 16
-        # CHECK-DAG: thread 25 : 16 16 16 16
-        # CHECK-DAG: thread 26 : 16 16 16 16
-        # CHECK-DAG: thread 27 : 16 16 16 16
-        # CHECK-DAG: thread 28 : 16 16 16 16
-        # CHECK-DAG: thread 29 : 16 16 16 16
-        # CHECK-DAG: thread 30 : 16 16 16 16
-        # CHECK-DAG: thread 31 : 16 16 16 16
+        # CHECK-DAG: thread 0 : 64 64 64 64
+        # CHECK-DAG: thread 1 : 64 64 64 64
+        # CHECK-DAG: thread 2 : 64 64 64 64
+        # CHECK-DAG: thread 3 : 64 64 64 64
+        # CHECK-DAG: thread 4 : 64 64 64 64
+        # CHECK-DAG: thread 5 : 64 64 64 64
+        # CHECK-DAG: thread 6 : 64 64 64 64
+        # CHECK-DAG: thread 7 : 64 64 64 64
+        # CHECK-DAG: thread 8 : 64 64 64 64
+        # CHECK-DAG: thread 9 : 64 64 64 64
+        # CHECK-DAG: thread 10 : 64 64 64 64
+        # CHECK-DAG: thread 11 : 64 64 64 64
+        # CHECK-DAG: thread 12 : 64 64 64 64
+        # CHECK-DAG: thread 13 : 64 64 64 64
+        # CHECK-DAG: thread 14 : 64 64 64 64
+        # CHECK-DAG: thread 15 : 64 64 64 64
+        # CHECK-DAG: thread 16 : 64 64 64 64
+        # CHECK-DAG: thread 17 : 64 64 64 64
+        # CHECK-DAG: thread 18 : 64 64 64 64
+        # CHECK-DAG: thread 19 : 64 64 64 64
+        # CHECK-DAG: thread 20 : 64 64 64 64
+        # CHECK-DAG: thread 21 : 64 64 64 64
+        # CHECK-DAG: thread 22 : 64 64 64 64
+        # CHECK-DAG: thread 23 : 64 64 64 64
+        # CHECK-DAG: thread 24 : 64 64 64 64
+        # CHECK-DAG: thread 25 : 64 64 64 64
+        # CHECK-DAG: thread 26 : 64 64 64 64
+        # CHECK-DAG: thread 27 : 64 64 64 64
+        # CHECK-DAG: thread 28 : 64 64 64 64
+        # CHECK-DAG: thread 29 : 64 64 64 64
+        # CHECK-DAG: thread 30 : 64 64 64 64
+        # CHECK-DAG: thread 31 : 64 64 64 64
         test_mma_sync_16x8x32_E4M3(ctx)
         # CHECK-LABEL: test_mma_sync_16x8x32_E5M2
-        # CHECK-DAG: thread 0 : 48 48 48 48
-        # CHECK-DAG: thread 1 : 48 48 48 48
-        # CHECK-DAG: thread 2 : 48 48 48 48
-        # CHECK-DAG: thread 3 : 48 48 48 48
-        # CHECK-DAG: thread 4 : 48 48 48 48
-        # CHECK-DAG: thread 5 : 48 48 48 48
-        # CHECK-DAG: thread 6 : 48 48 48 48
-        # CHECK-DAG: thread 7 : 48 48 48 48
-        # CHECK-DAG: thread 8 : 48 48 48 48
-        # CHECK-DAG: thread 9 : 48 48 48 48
-        # CHECK-DAG: thread 10 : 48 48 48 48
-        # CHECK-DAG: thread 11 : 48 48 48 48
-        # CHECK-DAG: thread 12 : 48 48 48 48
-        # CHECK-DAG: thread 13 : 48 48 48 48
-        # CHECK-DAG: thread 14 : 48 48 48 48
-        # CHECK-DAG: thread 15 : 48 48 48 48
-        # CHECK-DAG: thread 16 : 48 48 48 48
-        # CHECK-DAG: thread 17 : 48 48 48 48
-        # CHECK-DAG: thread 18 : 48 48 48 48
-        # CHECK-DAG: thread 19 : 48 48 48 48
-        # CHECK-DAG: thread 20 : 48 48 48 48
-        # CHECK-DAG: thread 21 : 48 48 48 48
-        # CHECK-DAG: thread 22 : 48 48 48 48
-        # CHECK-DAG: thread 23 : 48 48 48 48
-        # CHECK-DAG: thread 24 : 48 48 48 48
-        # CHECK-DAG: thread 25 : 48 48 48 48
-        # CHECK-DAG: thread 26 : 48 48 48 48
-        # CHECK-DAG: thread 27 : 48 48 48 48
-        # CHECK-DAG: thread 28 : 48 48 48 48
-        # CHECK-DAG: thread 29 : 48 48 48 48
-        # CHECK-DAG: thread 30 : 48 48 48 48
-        # CHECK-DAG: thread 31 : 48 48 48 48
+        # CHECK-DAG: thread 0 : 192 192 192 192
+        # CHECK-DAG: thread 1 : 192 192 192 192
+        # CHECK-DAG: thread 2 : 192 192 192 192
+        # CHECK-DAG: thread 3 : 192 192 192 192
+        # CHECK-DAG: thread 4 : 192 192 192 192
+        # CHECK-DAG: thread 5 : 192 192 192 192
+        # CHECK-DAG: thread 6 : 192 192 192 192
+        # CHECK-DAG: thread 7 : 192 192 192 192
+        # CHECK-DAG: thread 8 : 192 192 192 192
+        # CHECK-DAG: thread 9 : 192 192 192 192
+        # CHECK-DAG: thread 10 : 192 192 192 192
+        # CHECK-DAG: thread 11 : 192 192 192 192
+        # CHECK-DAG: thread 12 : 192 192 192 192
+        # CHECK-DAG: thread 13 : 192 192 192 192
+        # CHECK-DAG: thread 14 : 192 192 192 192
+        # CHECK-DAG: thread 15 : 192 192 192 192
+        # CHECK-DAG: thread 16 : 192 192 192 192
+        # CHECK-DAG: thread 17 : 192 192 192 192
+        # CHECK-DAG: thread 18 : 192 192 192 192
+        # CHECK-DAG: thread 19 : 192 192 192 192
+        # CHECK-DAG: thread 20 : 192 192 192 192
+        # CHECK-DAG: thread 21 : 192 192 192 192
+        # CHECK-DAG: thread 22 : 192 192 192 192
+        # CHECK-DAG: thread 23 : 192 192 192 192
+        # CHECK-DAG: thread 24 : 192 192 192 192
+        # CHECK-DAG: thread 25 : 192 192 192 192
+        # CHECK-DAG: thread 26 : 192 192 192 192
+        # CHECK-DAG: thread 27 : 192 192 192 192
+        # CHECK-DAG: thread 28 : 192 192 192 192
+        # CHECK-DAG: thread 29 : 192 192 192 192
+        # CHECK-DAG: thread 30 : 192 192 192 192
+        # CHECK-DAG: thread 31 : 192 192 192 192
         test_mma_sync_16x8x32_E5M2(ctx)
+        _ = _make_ctx_current(prev_ctx)
