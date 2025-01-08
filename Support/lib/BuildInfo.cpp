@@ -20,8 +20,6 @@ void BuildInfo::print(llvm::raw_ostream &os) const {
   os << "\naysncrt-max-profiling-level: "
      << llvm::format("0%04o", asyncrtMaxProfilingLevel);
   os << "\npreferred-mem-alignment: " << preferredMemoryAlignment;
-  os << "\nllvm-targets: ";
-  llvm::interleaveComma(llvmTargets, os);
   os << "\n";
 }
 
@@ -32,7 +30,6 @@ void BuildInfo::print(llvm::json::OStream &json) const {
   json.attribute("build-type", buildType);
   json.attribute("asyncrt-max-profiling-level", asyncrtMaxProfilingLevel);
   json.attribute("preferred-mem-alignment", preferredMemoryAlignment);
-  json.attribute("llvm-targets", llvm::json::Array(llvmTargets));
   json.objectEnd();
 }
 
@@ -52,9 +49,6 @@ void BuildInfo::print(BuildProperty property, llvm::raw_ostream &os) const {
     break;
   case BuildProperty::PreferredMemoryAlignment:
     os << preferredMemoryAlignment;
-    break;
-  case BuildProperty::LLVMTargets:
-    llvm::interleaveComma(llvmTargets, os);
     break;
   }
   os << "\n";

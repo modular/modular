@@ -36,8 +36,6 @@ struct BuildInfoCLIOptions {
                     clEnumValN(BuildProperty::AsyncRTMaxProfilingLevel,
                                "asyncrt-max-profiling-level",
                                "Maximum profiling level built into AsyncRT"),
-                    clEnumValN(BuildProperty::LLVMTargets, "llvm-targets",
-                               "The LLVM targets Modular is built with"),
                     clEnumValN(BuildProperty::PreferredMemoryAlignment,
                                "preferred-memory-alignment",
                                "Memory alignment Modular is built to prefer")),

@@ -29,7 +29,6 @@ enum class BuildProperty {
   BuildType,
   AsyncRTMaxProfilingLevel,
   PreferredMemoryAlignment,
-  LLVMTargets,
 };
 
 struct BuildInfo {
@@ -38,7 +37,6 @@ struct BuildInfo {
   std::string buildType;
   int asyncrtMaxProfilingLevel;
   size_t preferredMemoryAlignment;
-  SmallVector<StringRef> llvmTargets;
 
   void print(llvm::raw_ostream &os) const;
   void print(llvm::json::OStream &json) const;
