@@ -90,12 +90,10 @@ class PerformanceFakingPipelineTokenizer(
         return encoded
 
     async def decode(
-        self,
-        context: PerformanceFakingContext,
-        logits: np.ndarray,
+        self, context: PerformanceFakingContext, encoded: np.ndarray, **kwargs
     ) -> str:
         # Not actually an np.ndarray!
-        return logits  # type: ignore
+        return encoded  # type: ignore
 
     def __del__(self) -> None:
         self.logger.info(
