@@ -796,7 +796,7 @@ fn flash_attention[
 
             # Attention impl only supports even sequence length. Need to pad the
             # input outside the model.
-            if seq_len == num_keys and seq_len % 2 == 0:
+            if seq_len > 1 and num_keys % 2 == 0:
                 # Choose matmul parameters based on dtype.
                 alias smem_use = config.shared_mem_elements[
                     is_shared_kv
@@ -838,6 +838,7 @@ fn flash_attention[
                     scale,
                     batch_size,
                     seq_len,
+                    num_keys,
                     mask_functor,
                     score_mod_functor,
                     grid_dim=(
@@ -1238,6 +1239,8 @@ fn mha[
             scale,
             key_length,
             max_seq_len,
+            key_length,
+            max_seq_len,
             mask,
             score_mod,
             batch_idx,
@@ -1256,6 +1259,8 @@ fn mha[
             mask_ptr.offset(mask_batch_offset),
             output_ptr.offset(q_batch_offset),
             scale,
+            key_length,
+            max_seq_len,
             key_length,
             max_seq_len,
             mask,
@@ -1293,6 +1298,7 @@ fn mha[
     scale: Float32,
     batch_size: Int,
     seq_len: Int,
+    num_keys: Int,
     mask: mask_t,
     score_mod: score_mod_t,
 ):
@@ -1300,7 +1306,7 @@ fn mha[
     alias num_heads = config.num_heads
     var batch_idx = BlockIdx.z
     var q_batch_offset = depth * num_heads * seq_len * batch_idx
-    var mask_batch_offset = batch_idx * seq_len * seq_len * (
+    var mask_batch_offset = batch_idx * seq_len * num_keys * (
         config.num_heads if mask_rank == 4 else 1
     )
 
@@ -1324,6 +1330,8 @@ fn mha[
             scale,
             seq_len,
             seq_len,
+            num_keys,
+            num_keys,
             mask,
             score_mod,
             batch_idx,
@@ -1344,6 +1352,8 @@ fn mha[
             scale,
             seq_len,
             seq_len,
+            num_keys,
+            num_keys,
             mask,
             score_mod,
             batch_idx,
@@ -1374,6 +1384,8 @@ fn mha_single_batch[
     scale: Float32,
     seq_len: Int,  # valid sequence length i.e. w/o padding.
     max_seq_len: Int,  # sequence length after padding.
+    num_keys: Int,
+    mask_tensor_col: Int,  # second dimension of mask tensor
     mask: mask_t,
     score_mod: score_mod_t,
     batch_idx: Int,
@@ -1542,8 +1554,8 @@ fn mha_single_batch[
 
     # Mask global memory iterator.
     var mask_block_row: UInt32 = q_tile_idx * BM
-    var mask_offset = mask_block_row * max_seq_len + (
-        head_idx * max_seq_len * max_seq_len if mask_rank == 4 else 0
+    var mask_offset = mask_block_row * mask_tensor_col + (
+        head_idx * max_seq_len * mask_tensor_col if mask_rank == 4 else 0
     )
     var mask_tile_ptr = mask_ptr + int(mask_offset)
     var mask_warp_row = warp_y * WM
@@ -1586,11 +1598,12 @@ fn mha_single_batch[
     #       loop_over_kvcache[tile_size, True]
     #   ```
     # Only the last iteration is doing boundary check.
+    @__copy_capture(seq_len, max_seq_len, num_keys)
     @always_inline
     @parameter
     fn loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
-    ](kv_tile_start_row: Int, seq_len: Int):
+    ](kv_tile_start_row: Int, end: Int):
         if (
             mask.status(
                 Index[element_bitwidth=32, unsigned=True](
@@ -1606,7 +1619,7 @@ fn mha_single_batch[
             IntTuple(Int(BN), Int(depth)),
             IntTuple(Int(kv_num_heads * depth), 1),
         )
-        var kv_tile_num_rows = min(int(tile_size), seq_len - kv_tile_start_row)
+        var kv_tile_num_rows = min(int(tile_size), end - kv_tile_start_row)
 
         # kv cache gmem has to clip num rows as runtime layout
         var kv_runtime_layout = RuntimeLayout(
@@ -1739,13 +1752,13 @@ fn mha_single_batch[
                         # may not fit in BM x BN.
                         if (
                             mask_frag_row + i * MMA_M // 2 < seq_len
-                            and mask_frag_col < seq_len
+                            and mask_frag_col < num_keys
                         ):
                             var mask_vec = (
                                 mask_tile_ptr
                                 + int(
                                     (mask_frag_row + i * MMA_M // 2)
-                                    * max_seq_len
+                                    * mask_tensor_col
                                     + mask_frag_col
                                 )
                             ).load[
@@ -1843,7 +1856,7 @@ fn mha_single_batch[
                                     ](int(score_row), int(score_col)),
                                     IndexList[
                                         2, element_bitwidth=32, unsigned=True
-                                    ](seq_len, seq_len),
+                                    ](seq_len, mask_tensor_col),
                                     p_reg_vec2[mma_id, i],
                                 )
 
@@ -1895,7 +1908,7 @@ fn mha_single_batch[
             @parameter
             if not not_last_iter:
                 var num_rows_bound = min(
-                    int(BK), seq_len - (kv_tile_start_row + v_id * BK)
+                    int(BK), end - (kv_tile_start_row + v_id * BK)
                 )
                 v_tensor = _mask_tensor_row(v_gmem_iter[], num_rows_bound)
             else:
@@ -1968,7 +1981,7 @@ fn mha_single_batch[
                 v_smem_iter,
             )
 
-    tile_and_unswitch[loop_over_kvcache, VariadicList[Int](BN)](0, seq_len)
+    tile_and_unswitch[loop_over_kvcache, VariadicList[Int](BN)](0, num_keys)
 
     # Apply softmax denumerator.
     @parameter
@@ -2075,6 +2088,8 @@ fn mha_single_batch_pipelined[
     scale: Float32,
     seq_len: Int,  # valid sequence length i.e. w/o padding.
     max_seq_len: Int,  # sequence length after padding.
+    num_keys: Int,
+    mask_tensor_col: Int,  # second dimension of mask tensor
     mask: mask_t,
     score_mod: score_mod_t,
     batch_idx: Int,
@@ -2234,8 +2249,8 @@ fn mha_single_batch_pipelined[
 
     # Mask global memory iterator.
     var mask_block_row: UInt32 = q_tile_idx * BM
-    var mask_offset = mask_block_row * max_seq_len + (
-        head_idx * max_seq_len * max_seq_len if mask_rank == 4 else 0
+    var mask_offset = mask_block_row * mask_tensor_col + (
+        head_idx * max_seq_len * mask_tensor_col if mask_rank == 4 else 0
     )
     var mask_tile_ptr = mask_ptr + int(mask_offset)
     var mask_warp_row = warp_y * WM
@@ -2259,7 +2274,7 @@ fn mha_single_batch_pipelined[
     @parameter
     fn loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
-    ](kv_tile_start_row: Int, seq_len: Int):
+    ](kv_tile_start_row: Int, end: Int):
         if (
             mask.status(
                 Index[element_bitwidth=32, unsigned=True](
@@ -2275,7 +2290,7 @@ fn mha_single_batch_pipelined[
             IntTuple(Int(BN), Int(depth)),
             IntTuple(Int(kv_num_heads * depth), 1),
         )
-        var kv_tile_num_rows = min(int(tile_size), seq_len - kv_tile_start_row)
+        var kv_tile_num_rows = min(int(tile_size), end - kv_tile_start_row)
 
         # kv cache gmem has to clip num rows as runtime layout
         var kv_runtime_layout = RuntimeLayout(
@@ -2407,13 +2422,13 @@ fn mha_single_batch_pipelined[
                         # may not fit in BM x BN.
                         if (
                             mask_frag_row + i * MMA_M // 2 < seq_len
-                            and mask_frag_col < seq_len
+                            and mask_frag_col < num_keys
                         ):
                             var mask_vec = (
                                 mask_tile_ptr
                                 + int(
                                     (mask_frag_row + i * MMA_M // 2)
-                                    * max_seq_len
+                                    * mask_tensor_col
                                     + mask_frag_col
                                 )
                             ).load[
@@ -2511,7 +2526,7 @@ fn mha_single_batch_pipelined[
                                     ](int(score_row), int(score_col)),
                                     IndexList[
                                         2, element_bitwidth=32, unsigned=True
-                                    ](seq_len, seq_len),
+                                    ](seq_len, mask_tensor_col),
                                     p_reg_vec2[mma_id, i],
                                 )
 
@@ -2612,7 +2627,7 @@ fn mha_single_batch_pipelined[
                 num_b_rows=num_b_rows,
             )
 
-    tile_and_unswitch[loop_over_kvcache, VariadicList[Int](BN)](0, seq_len)
+    tile_and_unswitch[loop_over_kvcache, VariadicList[Int](BN)](0, num_keys)
 
     # Apply softmax denumerator.
     @parameter

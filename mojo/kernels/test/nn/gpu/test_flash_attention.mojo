@@ -504,9 +504,98 @@ fn test_decoding[
     ](1, 208, ctx, use_index_input=use_index_input)
 
 
+fn test_cross_attention[batch_size: Int](ctx: DeviceContext) raises:
+    test[
+        4,
+        DType.bfloat16,
+        DType.bfloat16,
+        depth=128,
+        num_heads=1,
+        against_gpu_naive=True,
+    ](128, 64, ctx, use_index_input=True)
+
+    test[
+        4,
+        DType.bfloat16,
+        DType.float32,
+        128,
+        3,
+        against_gpu_naive=True,
+    ](256, 128, ctx)
+
+    test[
+        3,
+        DType.bfloat16,
+        DType.float32,
+        128,
+        24,
+        group=3,
+        against_gpu_naive=True,
+    ](1024, 100, ctx)
+
+    test[
+        4,
+        DType.float32,
+        DType.float32,
+        128,
+        24,
+        group=3,
+        against_gpu_naive=True,
+    ](214, 300, ctx)
+
+    test[
+        3,
+        DType.bfloat16,
+        DType.float32,
+        128,
+        24,
+        group=1,
+        against_gpu_naive=True,
+    ](512, 1024, ctx)
+
+    test[
+        3,
+        DType.float32,
+        DType.float32,
+        128,
+        32,
+        group=3,
+        against_gpu_naive=True,
+    ](12, 8, ctx)
+
+    test[
+        4,
+        DType.bfloat16,
+        DType.float32,
+        128,
+        3,
+        against_gpu_naive=True,
+    ](14, 18, ctx)
+
+    # odd seq_len
+    test[
+        4,
+        DType.bfloat16,
+        DType.float32,
+        128,
+        3,
+        against_gpu_naive=True,
+    ](15, 18, ctx)
+
+    test[
+        3,
+        DType.bfloat16,
+        DType.float32,
+        128,
+        3,
+        against_gpu_naive=True,
+    ](119, 200, ctx)
+
+
 def main():
     with DeviceContext() as ctx:
         test_context_encoding[1](ctx)
+        test_cross_attention[1](ctx)
 
         @parameter
         for batch_size in range(1, 5, 3):
