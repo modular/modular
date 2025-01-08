@@ -6370,8 +6370,10 @@ fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[
     )
 
 
-@compiler.register("fused_qkv_matmul_kv_cache_h8_d80_cont_batch_ragged")
-struct Struct_fused_qkv_matmul_kv_cache_h8_d80_cont_batch_ragged:
+@compiler.register(
+    "mo.fused_qkv_matmul.ragged.continuous_batching.nhead_8.hdim_80"
+)
+struct Struct_fused_qkv_matmul_ragged_continuous_batching_nhead_8_hdim_80:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -6400,8 +6402,10 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d80_cont_batch_ragged:
         )
 
 
-@compiler.register("fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged")
-struct Struct_fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged:
+@compiler.register(
+    "mo.fused_qkv_matmul.ragged.continuous_batching.nhead_8.hdim_128"
+)
+struct Struct_fused_qkv_matmul_ragged_continuous_batching_nhead_8_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -6430,8 +6434,10 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged:
         )
 
 
-@compiler.register("fused_qkv_matmul_kv_cache_h8_d512_cont_batch_ragged")
-struct Struct_fused_qkv_matmul_kv_cache_h8_d512_cont_batch_ragged:
+@compiler.register(
+    "mo.fused_qkv_matmul.ragged.continuous_batching.nhead_8.hdim_512"
+)
+struct Struct_fused_qkv_matmul_ragged_continuous_batching_nhead_8_hdim_512:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -6460,8 +6466,10 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d512_cont_batch_ragged:
         )
 
 
-@compiler.register("fused_qkv_matmul_kv_cache_h32_d128_cont_batch_ragged")
-struct Struct_fused_qkv_matmul_kv_cache_h32_d128_cont_batch_ragged:
+@compiler.register(
+    "mo.fused_qkv_matmul.ragged.continuous_batching.nhead_32.hdim_128"
+)
+struct Struct_fused_qkv_matmul_ragged_continuous_batching_nhead_32_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -6490,8 +6498,10 @@ struct Struct_fused_qkv_matmul_kv_cache_h32_d128_cont_batch_ragged:
         )
 
 
-@compiler.register("fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged")
-struct Struct_fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged:
+@compiler.register(
+    "mo.fused_qkv_matmul.ragged.continuous_batching.nhead_8.hdim_64"
+)
+struct Struct_fused_qkv_matmul_ragged_continuous_batching_nhead_8_hdim_64:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -6520,8 +6530,10 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged:
         )
 
 
-@compiler.register("fused_qkv_matmul_kv_cache_h8_d16_cont_batch_ragged")
-struct Struct_fused_qkv_matmul_kv_cache_h8_d16_cont_batch_ragged:
+@compiler.register(
+    "mo.fused_qkv_matmul.ragged.continuous_batching.nhead_8.hdim_16"
+)
+struct Struct_fused_qkv_matmul_ragged_continuous_batching_nhead_8_hdim_16:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -6601,8 +6613,10 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
 
 # NOTE: this seems wrong as it has a continuous batching cache but the
 # name does not reflect this. Still -- it mirrors the old api.
-@compiler.register("fused_qkv_matmul_kv_cache_h8_d64_bshd")
-struct Struct_fused_qkv_matmul_kv_cache_h8_d64_bshd:
+@compiler.register(
+    "mo.fused_qkv_matmul.padded.continuous_batching.nhead_8.hdim_64"
+)
+struct Struct_fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_64:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -6624,8 +6638,10 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d64_bshd:
         ](output, hidden_state, weight, kv_collection, layer_idx, ctx)
 
 
-@compiler.register("fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch")
-struct Struct_fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch:
+@compiler.register(
+    "mo.fused_qkv_matmul.padded.continuous_batching.nhead_8.hdim_128"
+)
+struct Struct_fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -6647,8 +6663,10 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch:
         ](output, hidden_state, weight, kv_collection, layer_idx, ctx)
 
 
-@compiler.register("fused_qkv_matmul_kv_cache_h1_d16_bshd_continuous_batch")
-struct Struct_fused_qkv_matmul_kv_cache_h1_d16_bshd_continuous_batch:
+@compiler.register(
+    "mo.fused_qkv_matmul.padded.continuous_batching.nhead_1.hdim_16"
+)
+struct Struct_fused_qkv_matmul_padded_continuous_batching_nhead_1_hdim_16:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -6670,8 +6688,10 @@ struct Struct_fused_qkv_matmul_kv_cache_h1_d16_bshd_continuous_batch:
         ](output, hidden_state, weight, kv_collection, layer_idx, ctx)
 
 
-@compiler.register("fused_qkv_matmul_kv_cache_h8_d32_bshd_continuous_batch")
-struct Struct_fused_qkv_matmul_kv_cache_h8_d32_bshd_continuous_batch:
+@compiler.register(
+    "mo.fused_qkv_matmul.padded.continuous_batching.nhead_8.hdim_32"
+)
+struct Struct_fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_32:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -6693,31 +6713,8 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d32_bshd_continuous_batch:
         ](output, hidden_state, weight, kv_collection, layer_idx, ctx)
 
 
-@compiler.register("fused_qkv_matmul_kv_cache_h8_d64_bshd_continuous_batch")
-struct Struct_fused_qkv_matmul_kv_cache_h8_d64_bshd_continuous_batch:
-    @uses_opaque
-    @always_inline
-    @staticmethod
-    fn execute[
-        type: DType, target: StringLiteral
-    ](
-        output: ManagedTensorSlice[type, 3],
-        hidden_state: ManagedTensorSlice[type, 3],
-        weight: ManagedTensorSlice[type, 2],
-        kv_collection: ContinuousBatchingKVCacheCollection[
-            type,
-            kv_params_h8_d64_bshd,
-        ],
-        layer_idx: Scalar[DType.uint32],
-        ctx: MojoCallContextPtr,
-    ) raises:
-        generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
-            target
-        ](output, hidden_state, weight, kv_collection, layer_idx, ctx)
-
-
-@compiler.register("fused_qkv_matmul_kv_cache_h8_d512_bshd_continuous_batch")
-struct Struct_fused_qkv_matmul_kv_cache_h8_d512_bshd_continuous_batch:
+@compiler.register("mo.fused_qkv_matmul.padded.continuous_batching.h8.d512")
+struct Struct_fused_qkv_matmul_padded_continuous_batching_h8_d512:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -6739,8 +6736,10 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d512_bshd_continuous_batch:
         ](output, hidden_state, weight, kv_collection, layer_idx, ctx)
 
 
-@compiler.register("fused_qkv_matmul_kv_cache_h32_d128_bshd_continuous_batch")
-struct Struct_fused_qkv_matmul_kv_cache_h32_d128_bshd_continuous_batch:
+@compiler.register(
+    "mo.fused_qkv_matmul.padded.continuous_batching.nhead_32.hdim_128"
+)
+struct Struct_fused_qkv_matmul_padded_continuous_batching_nhead_32_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8911,8 +8910,8 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
     )
 
 
-@compiler.register("fused_qkv_matmul_kv_cache_h1_d16_paged_ragged")
-struct Struct_fused_qkv_matmul_kv_cache_h1_d16_paged_ragged:
+@compiler.register("mo.fused_qkv_matmul.ragged.paged.nhead_1.hdim_16")
+struct Struct_fused_qkv_matmul_padded_ragged_nhead_1_hdim_16:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8944,8 +8943,8 @@ struct Struct_fused_qkv_matmul_kv_cache_h1_d16_paged_ragged:
         )
 
 
-@compiler.register("fused_qkv_matmul_kv_cache_h6_d48_paged_ragged")
-struct Struct_fused_qkv_matmul_kv_cache_h6_d48_paged_ragged:
+@compiler.register("mo.fused_qkv_matmul.ragged.paged.nhead_6.hdim_48")
+struct Struct_fused_qkv_matmul_ragged_paged_nhead_6_hdim_48:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8977,8 +8976,8 @@ struct Struct_fused_qkv_matmul_kv_cache_h6_d48_paged_ragged:
         )
 
 
-@compiler.register("fused_qkv_matmul_kv_cache_h8_d128_paged_ragged")
-struct Struct_fused_qkv_matmul_kv_cache_h8_d128_paged_ragged:
+@compiler.register("mo.fused_qkv_matmul.ragged.paged.nhead_8.hdim_128")
+struct Struct_fused_qkv_matmul_ragged_paged_nhead_8_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9010,8 +9009,8 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d128_paged_ragged:
         )
 
 
-@compiler.register("fused_qkv_matmul_kv_cache_h8_d16_paged_ragged")
-struct Struct_fused_qkv_matmul_kv_cache_h8_d16_paged_ragged:
+@compiler.register("mo.fused_qkv_matmul.padded.ragged.nhead_8.hdim_16")
+struct Struct_fused_qkv_matmul_padded_ragged_nhead_8_hdim_16:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9043,8 +9042,8 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d16_paged_ragged:
         )
 
 
-@compiler.register("fused_qkv_matmul_kv_cache_h8_d512_paged_ragged")
-struct Struct_fused_qkv_matmul_kv_cache_h8_d512_paged_ragged:
+@compiler.register("mo.fused_qkv_matmul.ragged.paged.nhead_8.hdim_512")
+struct Struct_fused_qkv_matmul_ragged_paged_nhead_8_hdim_512:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9076,8 +9075,8 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d512_paged_ragged:
         )
 
 
-@compiler.register("fused_qkv_matmul_kv_cache_h8_d32_paged_ragged")
-struct Struct_fused_qkv_matmul_kv_cache_h8_d32_paged_ragged:
+@compiler.register("mo.fused_qkv_matmul.ragged.paged.nhead_8.hdim_32")
+struct Struct_fused_qkv_matmul_ragged_paged_nhead_8_hdim_32:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9109,8 +9108,8 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d32_paged_ragged:
         )
 
 
-@compiler.register("fused_qkv_matmul_kv_cache_h8_d64_paged_ragged")
-struct Struct_fused_qkv_matmul_kv_cache_h8_d64_paged_ragged:
+@compiler.register("mo.fused_qkv_matmul.ragged.paged.nhead_8.hdim_64")
+struct Struct_fused_qkv_matmul_ragged_paged_nhead_8_hdim_64:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9142,8 +9141,8 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d64_paged_ragged:
         )
 
 
-@compiler.register("fused_qkv_matmul_kv_cache_h32_d128_paged_ragged")
-struct Struct_fused_qkv_matmul_kv_cache_h32_d128_paged_ragged:
+@compiler.register("mo.fused_qkv_matmul.ragged.paged.nhead_32.hdim_128")
+struct Struct_fused_qkv_matmul_ragged_paged_nhead_32_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod

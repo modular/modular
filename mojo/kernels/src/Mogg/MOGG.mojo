@@ -131,14 +131,14 @@ from nn.kv_cache import (
     fused_qk_rope_h8_d64_bshd_continuous_batch,
     fused_qk_rope_h8_d128_bshd_continuous_batch,
     fused_qk_rope_h32_d128_bshd_continuous_batch,
-    fused_qkv_matmul_kv_cache_h1_d16_bshd_continuous_batch,
-    fused_qkv_matmul_kv_cache_h8_d32_bshd_continuous_batch,
-    fused_qkv_matmul_kv_cache_h8_d64_bshd_continuous_batch,
-    fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch,
-    fused_qkv_matmul_kv_cache_h8_d512_bshd_continuous_batch,
-    fused_qkv_matmul_kv_cache_h2_d128_bshd_continuous_batch,
-    fused_qkv_matmul_kv_cache_h16_d128_bshd_continuous_batch,
-    fused_qkv_matmul_kv_cache_h32_d128_bshd_continuous_batch,
+    fused_qkv_matmul_padded_continuous_batching_nhead_1_hdim_16,
+    fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_32,
+    fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_64,
+    fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_128,
+    fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_512,
+    fused_qkv_matmul_padded_continuous_batching_nhead_2_hdim_128,
+    fused_qkv_matmul_padded_continuous_batching_nhead_32_hdim_128,
+    fused_qkv_matmul_padded_continuous_batching_nhead_16_hdim_128,
 )
 from nn.kv_cache_ragged import (
     flash_attention_kv_cache_h1_d16_causal_mask_cont_batch_ragged,
@@ -180,23 +180,24 @@ from nn.kv_cache_ragged import (
     fused_qk_rope_h8_d128_bshd_paged_ragged,
     fused_qk_rope_h8_d512_bshd_paged_ragged,
     fused_qk_rope_h32_d128_bshd_paged_ragged,
-    fused_qkv_matmul_kv_cache_h1_d16_cont_batch_ragged,
-    fused_qkv_matmul_kv_cache_h2_d2_cont_batch_ragged,
-    fused_qkv_matmul_kv_cache_h3_d64_cont_batch_ragged,
-    fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged,
-    fused_qkv_matmul_kv_cache_h2_d128_cont_batch_ragged,
-    fused_qkv_matmul_kv_cache_h4_d128_cont_batch_ragged,
-    fused_qkv_matmul_kv_cache_h8_d80_cont_batch_ragged,
-    fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged,
-    fused_qkv_matmul_kv_cache_h8_d512_cont_batch_ragged,
-    fused_qkv_matmul_kv_cache_h32_d128_cont_batch_ragged,
-    fused_qkv_matmul_kv_cache_h1_d16_paged_ragged,
-    fused_qkv_matmul_kv_cache_h6_d48_paged_ragged,
-    fused_qkv_matmul_kv_cache_h8_d32_paged_ragged,
-    fused_qkv_matmul_kv_cache_h8_d64_paged_ragged,
-    fused_qkv_matmul_kv_cache_h8_d128_paged_ragged,
-    fused_qkv_matmul_kv_cache_h8_d512_paged_ragged,
-    fused_qkv_matmul_kv_cache_h32_d128_paged_ragged,
+    fused_qkv_matmul_ragged_continuous_batching_nhead_1_hdim_16,
+    fused_qkv_matmul_ragged_continuous_batching_nhead_2_hdim_2,
+    fused_qkv_matmul_ragged_continuous_batching_nhead_2_hdim_128,
+    fused_qkv_matmul_ragged_continuous_batching_nhead_4_hdim_128,
+    fused_qkv_matmul_ragged_continuous_batching_nhead_3_hdim_64,
+    fused_qkv_matmul_ragged_continuous_batching_nhead_8_hdim_64,
+    fused_qkv_matmul_ragged_continuous_batching_nhead_8_hdim_80,
+    fused_qkv_matmul_ragged_continuous_batching_nhead_8_hdim_128,
+    fused_qkv_matmul_ragged_continuous_batching_nhead_8_hdim_512,
+    fused_qkv_matmul_ragged_continuous_batching_nhead_32_hdim_128,
+    fused_qkv_matmul_ragged_paged_nhead_1_hdim_16,
+    fused_qkv_matmul_ragged_paged_nhead_6_hdim_48,
+    fused_qkv_matmul_ragged_paged_nhead_8_hdim_32,
+    fused_qkv_matmul_ragged_paged_nhead_8_hdim_64,
+    fused_qkv_matmul_ragged_paged_nhead_8_hdim_128,
+    fused_qkv_matmul_ragged_paged_nhead_8_hdim_512,
+    fused_qkv_matmul_ragged_paged_nhead_32_hdim_128,
+    matmul_kv_cache_h8_d128_cont_batch_ragged,
     matmul_kv_cache_h8_d128_cont_batch_ragged,
 )
 from nn.mha import flash_attention
@@ -324,21 +325,21 @@ fn MOGGExport():
     alias _print_kv_cache_cont_batch_h8_d128 = print_kv_cache_cont_batch_h8_d128
     alias _print_kv_cache_cont_batch_h16_d128 = print_kv_cache_cont_batch_h16_d128
     alias _print_kv_cache_cont_batch_h32_d128 = print_kv_cache_cont_batch_h32_d128
-    alias _fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch = fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch
-    alias _fused_qkv_matmul_kv_cache_h8_d32_bshd_continuous_batch = fused_qkv_matmul_kv_cache_h8_d32_bshd_continuous_batch
-    alias _fused_qkv_matmul_kv_cache_h8_d64_bshd_continuous_batch = fused_qkv_matmul_kv_cache_h8_d64_bshd_continuous_batch
-    alias _fused_qkv_matmul_kv_cache_h8_d512_bshd_continuous_batch = fused_qkv_matmul_kv_cache_h8_d512_bshd_continuous_batch
-    alias _fused_qkv_matmul_kv_cache_h1_d16_bshd_continuous_batch = fused_qkv_matmul_kv_cache_h1_d16_bshd_continuous_batch
-    alias _fused_qkv_matmul_kv_cache_h2_d128_bshd_continuous_batch = fused_qkv_matmul_kv_cache_h2_d128_bshd_continuous_batch
-    alias _fused_qkv_matmul_kv_cache_h16_d128_bshd_continuous_batch = fused_qkv_matmul_kv_cache_h16_d128_bshd_continuous_batch
-    alias _fused_qkv_matmul_kv_cache_h32_d128_bshd_continuous_batch = fused_qkv_matmul_kv_cache_h32_d128_bshd_continuous_batch
-    alias _fused_qkv_matmul_kv_cache_h1_d16_paged_ragged = fused_qkv_matmul_kv_cache_h1_d16_paged_ragged
-    alias _fused_qkv_matmul_kv_cache_h6_d48_paged_ragged = fused_qkv_matmul_kv_cache_h6_d48_paged_ragged
-    alias _fused_qkv_matmul_kv_cache_h8_d32_paged_ragged = fused_qkv_matmul_kv_cache_h8_d32_paged_ragged
-    alias _fused_qkv_matmul_kv_cache_h8_d64_paged_ragged = fused_qkv_matmul_kv_cache_h8_d64_paged_ragged
-    alias _fused_qkv_matmul_kv_cache_h8_d128_paged_ragged = fused_qkv_matmul_kv_cache_h8_d128_paged_ragged
-    alias _fused_qkv_matmul_kv_cache_h8_d512_paged_ragged = fused_qkv_matmul_kv_cache_h8_d512_paged_ragged
-    alias _fused_qkv_matmul_kv_cache_h32_d128_paged_ragged = fused_qkv_matmul_kv_cache_h32_d128_paged_ragged
+    alias _fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_128 = fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_128
+    alias _fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_32 = fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_32
+    alias _fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_64 = fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_64
+    alias _fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_512 = fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_512
+    alias _fused_qkv_matmul_padded_continuous_batching_nhead_1_hdim_16 = fused_qkv_matmul_padded_continuous_batching_nhead_1_hdim_16
+    alias _fused_qkv_matmul_padded_continuous_batching_nhead_2_hdim_128 = fused_qkv_matmul_padded_continuous_batching_nhead_2_hdim_128
+    alias _fused_qkv_matmul_padded_continuous_batching_nhead_16_hdim_128 = fused_qkv_matmul_padded_continuous_batching_nhead_16_hdim_128
+    alias _fused_qkv_matmul_padded_continuous_batching_nhead_32_hdim_128 = fused_qkv_matmul_padded_continuous_batching_nhead_32_hdim_128
+    alias _fused_qkv_matmul_ragged_paged_nhead_1_hdim_16 = fused_qkv_matmul_ragged_paged_nhead_1_hdim_16
+    alias _fused_qkv_matmul_ragged_paged_nhead_6_hdim_48 = fused_qkv_matmul_ragged_paged_nhead_6_hdim_48
+    alias _fused_qkv_matmul_ragged_paged_nhead_8_hdim_32 = fused_qkv_matmul_ragged_paged_nhead_8_hdim_32
+    alias _fused_qkv_matmul_ragged_paged_nhead_8_hdim_64 = fused_qkv_matmul_ragged_paged_nhead_8_hdim_64
+    alias _fused_qkv_matmul_ragged_paged_nhead_8_hdim_128 = fused_qkv_matmul_ragged_paged_nhead_8_hdim_128
+    alias _fused_qkv_matmul_ragged_paged_nhead_8_hdim_512 = fused_qkv_matmul_ragged_paged_nhead_8_hdim_512
+    alias _fused_qkv_matmul_ragged_paged_nhead_32_hdim_128 = fused_qkv_matmul_ragged_paged_nhead_32_hdim_128
     alias _fused_qk_rope_h1_d16_bshd_continuous_batch = fused_qk_rope_h1_d16_bshd_continuous_batch
     alias _fused_qk_rope_h8_d128_bshd_continuous_batch = fused_qk_rope_h8_d128_bshd_continuous_batch
     alias _fused_qk_rope_h32_d128_bshd_continuous_batch = fused_qk_rope_h32_d128_bshd_continuous_batch
@@ -388,16 +389,16 @@ fn MOGGExport():
     alias _paged_kv_cache_collection_h8_d128_bshd = paged_kv_cache_collection_h8_d128_bshd
     alias _paged_kv_cache_collection_h8_d512_bshd = paged_kv_cache_collection_h8_d512_bshd
     alias _paged_kv_cache_collection_h32_d128_bshd = paged_kv_cache_collection_h32_d128_bshd
-    alias _fused_qkv_matmul_kv_cache_h2_d128_cont_batch_ragged = fused_qkv_matmul_kv_cache_h2_d128_cont_batch_ragged
-    alias _fused_qkv_matmul_kv_cache_h4_d128_cont_batch_ragged = fused_qkv_matmul_kv_cache_h4_d128_cont_batch_ragged
-    alias _fused_qkv_matmul_kv_cache_h8_d80_cont_batch_ragged = fused_qkv_matmul_kv_cache_h8_d80_cont_batch_ragged
-    alias _fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged = fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged
-    alias _fused_qkv_matmul_kv_cache_h8_d512_cont_batch_ragged = fused_qkv_matmul_kv_cache_h8_d512_cont_batch_ragged
-    alias _fused_qkv_matmul_kv_cache_h32_d128_cont_batch_ragged = fused_qkv_matmul_kv_cache_h32_d128_cont_batch_ragged
-    alias _fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged = fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged
-    alias _fused_qkv_matmul_kv_cache_h1_d16_cont_batch_ragged = fused_qkv_matmul_kv_cache_h1_d16_cont_batch_ragged
-    alias _fused_qkv_matmul_kv_cache_h2_d2_cont_batch_ragged = fused_qkv_matmul_kv_cache_h2_d2_cont_batch_ragged
-    alias _fused_qkv_matmul_kv_cache_h3_d64_cont_batch_ragged = fused_qkv_matmul_kv_cache_h3_d64_cont_batch_ragged
+    alias _fused_qkv_matmul_ragged_continuous_batching_nhead_2_hdim_128 = fused_qkv_matmul_ragged_continuous_batching_nhead_2_hdim_128
+    alias _fused_qkv_matmul_ragged_continuous_batching_nhead_4_hdim_128 = fused_qkv_matmul_ragged_continuous_batching_nhead_4_hdim_128
+    alias _fused_qkv_matmul_ragged_continuous_batching_nhead_8_hdim_80 = fused_qkv_matmul_ragged_continuous_batching_nhead_8_hdim_80
+    alias _fused_qkv_matmul_ragged_continuous_batching_nhead_8_hdim_128 = fused_qkv_matmul_ragged_continuous_batching_nhead_8_hdim_128
+    alias _fused_qkv_matmul_ragged_continuous_batching_nhead_8_hdim_512 = fused_qkv_matmul_ragged_continuous_batching_nhead_8_hdim_512
+    alias _fused_qkv_matmul_ragged_continuous_batching_nhead_32_hdim_128 = fused_qkv_matmul_ragged_continuous_batching_nhead_32_hdim_128
+    alias _fused_qkv_matmul_ragged_continuous_batching_nhead_8_hdim_64 = fused_qkv_matmul_ragged_continuous_batching_nhead_8_hdim_64
+    alias _fused_qkv_matmul_ragged_continuous_batching_nhead_1_hdim_16 = fused_qkv_matmul_ragged_continuous_batching_nhead_1_hdim_16
+    alias _fused_qkv_matmul_ragged_continuous_batching_nhead_2_hdim_2 = fused_qkv_matmul_ragged_continuous_batching_nhead_2_hdim_2
+    alias _fused_qkv_matmul_ragged_continuous_batching_nhead_3_hdim_64 = fused_qkv_matmul_ragged_continuous_batching_nhead_3_hdim_64
     alias _fused_qk_rope_h2_d128_bshd_continuous_batch_ragged = fused_qk_rope_h2_d128_bshd_continuous_batch_ragged
     alias _fused_qk_rope_h4_d128_bshd_continuous_batch_ragged = fused_qk_rope_h4_d128_bshd_continuous_batch_ragged
     alias _fused_qk_rope_h8_d80_bshd_continuous_batch_ragged = fused_qk_rope_h8_d80_bshd_continuous_batch_ragged
