@@ -87,7 +87,8 @@ async def test_prefix_caching() -> None:
         len(initial_prompt_1),
         0,
     )
-    kv_manager.step(seq_ids_and_prompts)
+    seq_ids_and_new_tokens = {seq_id_1: np.array([FAKE_TOKEN])}
+    kv_manager.step(seq_ids_and_new_tokens)
 
     # Check that we got new blocks
     assert get_blocks_from_kv_tuple(kv_tuple_list[0]) == [0, 1, 2, 3, 4]
@@ -100,7 +101,8 @@ async def test_prefix_caching() -> None:
             1,
             5 + i,
         )
-        kv_manager.step(seq_ids_and_prompts)
+        seq_ids_and_new_tokens = {seq_id_1: np.array([FAKE_TOKEN])}
+        kv_manager.step(seq_ids_and_new_tokens)
 
     # Seq 2: Claim
     seq_id_2 = 2
@@ -114,7 +116,8 @@ async def test_prefix_caching() -> None:
         1,
         len(initial_prompt_2) - 1,
     )
-    kv_manager.step(seq_ids_and_prompts)
+    seq_ids_and_new_tokens = {seq_id_2: np.array([FAKE_TOKEN])}
+    kv_manager.step(seq_ids_and_new_tokens)
 
     # Check that we got cached blocks, except for last token in prompt
     assert get_blocks_from_kv_tuple(kv_tuple_list[0])[:3] == [0, 1, 2]
@@ -129,7 +132,8 @@ async def test_prefix_caching() -> None:
             len(initial_prompt_2) + i,
         )
         assert get_blocks_from_kv_tuple(kv_tuple_list[0])[:4] == [0, 1, 2, 3]
-        kv_manager.step(seq_ids_and_prompts)
+        seq_ids_and_new_tokens = {seq_id_2: np.array([FAKE_TOKEN])}
+        kv_manager.step(seq_ids_and_new_tokens)
 
     # Validate final trie
     assert kv_manager.radix_trie.pretty_format() == [  # type: ignore
@@ -167,7 +171,8 @@ async def test_prefix_caching_with_repeating_prompt() -> None:
             available_blocks -= 1
         assert len(kv_manager.available_blocks) == available_blocks  # type: ignore
 
-        kv_manager.step(seq_ids_and_prompts)
+        seq_ids_and_new_tokens = {seq_id: np.array([FAKE_TOKEN])}
+        kv_manager.step(seq_ids_and_new_tokens)
 
         if seq_id != 0:
             # During later fetches, we will just release the block we wrote to
@@ -190,7 +195,8 @@ async def test_prefix_caching_with_no_release() -> None:
             prompt = np.random.randint(0, 8, size=16)
             seq_ids_and_prompts = {seq_id: prompt}
             _ = kv_manager.fetch(seq_ids_and_prompts)
-            kv_manager.step(seq_ids_and_prompts)
+            seq_ids_and_new_tokens = {seq_id: np.array([FAKE_TOKEN])}
+            kv_manager.step(seq_ids_and_new_tokens)
 
             # We intentionally do not release the sequence here!
 
@@ -208,7 +214,8 @@ async def test_prefix_caching_with_random_prompt() -> None:
         seq_ids_and_prompts = {seq_id: prompt}
         # This fetch can trigger evictions from the tree.
         _ = kv_manager.fetch(seq_ids_and_prompts)
-        kv_manager.step(seq_ids_and_prompts)
+        seq_ids_and_new_tokens = {seq_id: np.array([FAKE_TOKEN])}
+        kv_manager.step(seq_ids_and_new_tokens)
         kv_manager.release(seq_id)
 
     # Evict all blocks from the trie.

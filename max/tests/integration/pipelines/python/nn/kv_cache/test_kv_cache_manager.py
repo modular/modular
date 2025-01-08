@@ -50,7 +50,11 @@ async def test_step():
                 [FAKE_TOKEN] * prompt_lens[i]
             )
 
-        kv_manager.step(seq_ids_and_prompts)
+        kv_manager.fetch(seq_ids_and_prompts)
+        seq_ids_and_new_tokens = {
+            seq_id: np.array([FAKE_TOKEN]) for seq_id in seq_ids
+        }
+        kv_manager.step(seq_ids_and_new_tokens)
 
         for i, seq_id in enumerate(seq_ids):
             assert kv_manager.cache_lengths[seq_id] == prompt_lens[i] * (j + 1)

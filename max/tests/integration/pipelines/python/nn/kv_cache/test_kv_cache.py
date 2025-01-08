@@ -66,7 +66,8 @@ async def test_kv_collection_constructor(cache_strategy, fetch_cls) -> None:
     kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
 
     # Set the cache lengths first by "stepping".
-    kv_manager.step(seq_ids_and_prompts)
+    seq_ids_and_new_tokens = {seq_id: np.array([FAKE_TOKEN])}
+    kv_manager.step(seq_ids_and_new_tokens)
 
     # Construct a KV cache collection with the given cache length.
     seq_ids_and_prompts = {seq_id: np.array([FAKE_TOKEN])}

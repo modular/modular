@@ -201,7 +201,6 @@ async def test_kv_cache_radix_trie_insert_at_split_node() -> None:
         node=node,
     )
 
-    print(trie.pretty_format())
     assert trie.pretty_format() == [
         "['i', 'like']",
         "--['to', 'eat']",
