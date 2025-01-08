@@ -39,39 +39,31 @@ struct AttentionSpec(Stringable):
         )
 
 
-def bench_attention[
-    type: DType, transpose_k: Bool
-](mut m: Bench, spec: AttentionSpec):
+def bench_attention[type: DType](mut m: Bench, spec: AttentionSpec):
     var q_shape = Index(spec.batch_size, spec.seq_len, spec.depth_dim)
-    var k_shape = Index(
-        spec.batch_size, spec.kv_seq_len, spec.depth_dim
-    ) if transpose_k else Index(
-        spec.batch_size, spec.depth_dim, spec.kv_seq_len
-    )
-    var v_shape = Index(spec.batch_size, spec.kv_seq_len, spec.depth_dim)
+    var kv_shape = Index(spec.batch_size, spec.kv_seq_len, spec.depth_dim)
     var mask_shape = Index(spec.batch_size, spec.seq_len, spec.kv_seq_len)
-    var output_shape = Index(spec.batch_size, spec.seq_len, spec.depth_dim)
 
     var q_ptr = UnsafePointer[Scalar[type]].alloc(q_shape.flattened_length())
-    var k_ptr = UnsafePointer[Scalar[type]].alloc(k_shape.flattened_length())
-    var v_ptr = UnsafePointer[Scalar[type]].alloc(v_shape.flattened_length())
+    var k_ptr = UnsafePointer[Scalar[type]].alloc(kv_shape.flattened_length())
+    var v_ptr = UnsafePointer[Scalar[type]].alloc(kv_shape.flattened_length())
     var mask_ptr = UnsafePointer[Scalar[type]].alloc(
         mask_shape.flattened_length()
     )
     var output_ptr = UnsafePointer[Scalar[type]].alloc(
-        output_shape.flattened_length()
+        q_shape.flattened_length()
     )
 
     rand(q_ptr, q_shape.flattened_length())
-    rand(k_ptr, k_shape.flattened_length())
-    rand(v_ptr, v_shape.flattened_length())
+    rand(k_ptr, kv_shape.flattened_length())
+    rand(v_ptr, kv_shape.flattened_length())
     rand(mask_ptr, mask_shape.flattened_length())
 
     var q = NDBuffer[type, 3](q_ptr, q_shape)
-    var k = NDBuffer[type, 3](k_ptr, k_shape)
-    var v = NDBuffer[type, 3](v_ptr, v_shape)
+    var k = NDBuffer[type, 3](k_ptr, kv_shape)
+    var v = NDBuffer[type, 3](v_ptr, kv_shape)
     var mask = NDBuffer[type, 3](mask_ptr, mask_shape)
-    var output = NDBuffer[type, 3](output_ptr, output_shape)
+    var output = NDBuffer[type, 3](output_ptr, q_shape)
 
     @parameter
     @always_inline
@@ -103,12 +95,7 @@ def bench_attention[
         @parameter
         fn iter_fn[depth_static_dim: Dim]():
             alias output_static_shape = DimList(Dim(), Dim(), depth_static_dim)
-            flash_attention[
-                input_k_fn,
-                input_v_fn,
-                mask_fn,
-                transpose_k=transpose_k,
-            ](
+            flash_attention[input_k_fn, input_v_fn, mask_fn](
                 q.make_dims_unknown(),
                 k.get_shape(),
                 v.get_shape(),
@@ -128,9 +115,7 @@ def bench_attention[
         # Fallback to dispatch with a dynamic shape.
         b.iter[iter_fn[Dim()]]()
 
-    var input_id = "transpose_k=" + str(transpose_k) + "," + str(spec)
-
-    m.bench_function[flash_bench_fn](BenchId("flash", input_id))
+    m.bench_function[flash_bench_fn](BenchId("flash", str(spec)))
 
     _ = q
     _ = k
@@ -316,6 +301,5 @@ def main():
 
     var m = Bench()
     for i in range(len(specs)):
-        bench_attention[DType.float32, transpose_k=False](m, specs[i])
-        bench_attention[DType.float32, transpose_k=True](m, specs[i])
+        bench_attention[DType.float32](m, specs[i])
     m.dump_report()
