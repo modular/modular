@@ -877,9 +877,9 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
         input_row_offsets: Tensor with shape (batch_size + 1,)
             denoting the start of each sequence along the seq_len dimension.
         weight: Tensor with shape (num_heads * head_size, (num_heads + 2 * num_kv_heads) * head_size).
-        k_cache: The historical ContiguousKVCache for keys, with logical shape:
+        k_cache: The historical KVCacheT for keys, with logical shape:
             (batch_size, max_seq_len, num_kv_heads, head_size).
-        v_cache: The historical ContiguousKVCache for values, with logical shape:
+        v_cache: The historical KVCacheT for values, with logical shape:
             (batch_size, max_seq_len, num_kv_heads, head_size).
         output: The pre-allocated output buffer for Q projections. K and V
             projections are written in-place to k_cache and v_cache.
@@ -1009,7 +1009,7 @@ fn matmul_kv_cache_h8_d128_cont_batch_ragged[
     layer_idx: UInt32,
     ctx: MojoCallContextPtr,
 ) raises:
-    """Performs a matmul, writing the output into a mutable ContiguousKVCache object.
+    """Performs a matmul, writing the output into a mutable ContinuousBatchingKVCacheCollection object.
 
     Args:
         hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
@@ -1064,7 +1064,7 @@ fn _matmul_kv_cache_ragged[
     layer_idx: UInt32,
     context: MojoCallContextPtr,
 ) raises:
-    """Helper for performing matmul with custom ContiguousKVCache types.
+    """Helper for performing matmul with custom ContinuousBatchingKVCacheCollection types.
 
     Args:
         hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
@@ -1110,16 +1110,16 @@ fn _matmul_kv_cache_ragged_impl[
     v_cache: cache_t,
     ctx: Optional[DeviceContext],
 ) raises:
-    """Helper for performing matmul with custom ContiguousKVCache types.
+    """Helper for performing matmul with custom KVCacheT types.
 
     Args:
         hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
         input_row_offsets: Tensor with shape (batch_size + 1,)
             denoting the start of each sequence along the seq_len dimension.
         weight: Tensor with shape (num_heads * head_size, 2 * num_kv_heads * head_size)
-        k_cache: The historical ContiguousKVCache for keys, with logical shape:
+        k_cache: The historical KVCacheT for keys, with logical shape:
             (batch_size, max_seq_len, num_kv_heads, head_size).
-        v_cache: The historical ContiguousKVCache for values, with logical shape:
+        v_cache: The historical KVCacheT for values, with logical shape:
             (batch_size, max_seq_len, num_kv_heads, head_size).
         ctx: Pointer containing the runtime context for the target device.
     """
@@ -2373,7 +2373,7 @@ fn _cross_attention_kv_cache_ragged[
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
 ) raises:
-    """Performs cross attention using k and v caches from ContiguousKVCache custom types.
+    """Performs cross attention using k and v caches from KVCacheT custom types.
 
     Args:
         q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
@@ -2783,7 +2783,7 @@ fn _flash_attention_kv_cache_ragged[
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
 ) raises:
-    """Performs flash attention using k and v caches from ContiguousKVCache custom types.
+    """Performs flash attention using k and v caches from KVCacheT custom types.
 
     Args:
         q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
@@ -2829,7 +2829,7 @@ fn _flash_attention_kv_cache_alibi_mask_ragged[
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
 ) raises:
-    """Performs flash attention using k and v caches from ContiguousKVCache custom types.
+    """Performs flash attention using k and v caches from KVCacheT custom types.
 
     Args:
         q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
@@ -2875,7 +2875,7 @@ fn _flash_attention_kv_cache_ragged_impl[
     output: NDBuffer[type, 3, *_],
     context: Optional[DeviceContext],
 ) raises:
-    """Performs flash attention using k and v caches from ContiguousKVCache custom types.
+    """Performs flash attention using k and v caches from KVCacheT custom types.
 
     Args:
         q: NDBuffer with shape (sum(seq_lens in batch), num_heads, head_size).
@@ -2919,7 +2919,7 @@ fn _flash_attention_kv_cache_alibi_mask_ragged_impl[
     output: NDBuffer[type, 3, *_],
     context: Optional[DeviceContext],
 ) raises:
-    """Performs flash attention using k and v caches from ContiguousKVCache custom types.
+    """Performs flash attention using k and v caches from KVCacheT custom types.
 
     Args:
         q: NDBuffer with shape (sum(seq_lens in batch), num_heads, head_size).

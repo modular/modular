@@ -13,8 +13,6 @@ from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from gpu.host.info import is_gpu, is_cpu
 from kv_cache.types import (
-    ContiguousKVCache,
-    ContiguousKVCacheCollection,
     ContinuousBatchingKVCache,
     ContinuousBatchingKVCacheCollection,
     PagedKVCache,
@@ -929,7 +927,7 @@ fn _flash_attention_kv_cache[
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ) raises:
-    """Performs flash attention using k and v caches from ContiguousKVCache custom types.
+    """Performs flash attention using k and v caches from KVCacheT custom types.
 
     Args:
         q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
@@ -976,7 +974,7 @@ fn _flash_attention_kv_cache_impl[
     output: NDBuffer[type, 4, *_],
     context: Optional[DeviceContext],
 ) raises:
-    """Performs flash attention using k and v caches from ContiguousKVCache custom types.
+    """Performs flash attention using k and v caches from KVCacheT custom custom types.
 
     Args:
         q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
@@ -1322,7 +1320,7 @@ fn _flash_attention_kv_cache_causal_mask[
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ) raises:
-    """Performs flash attention using k and v caches from ContiguousKVCache/ContinuousBatchingKVCache custom types, with the causal mask materialized inside the kernel.
+    """Performs flash attention using k and v caches from KVCacheT custom types, with the causal mask materialized inside the kernel.
 
     Args:
         q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
@@ -1360,7 +1358,7 @@ fn _flash_attention_kv_cache_causal_mask_impl[
     output: NDBuffer[type, 4, *_],
     context: Optional[DeviceContext],
 ) raises:
-    """Performs flash attention using k and v caches from ContiguousKVCache/ContinuousBatchingKVCache custom types, with the causal mask materialized inside the kernel.
+    """Performs flash attention using k and v caches from KVCacheT custom types, with the causal mask materialized inside the kernel.
 
     Args:
         q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
@@ -1497,7 +1495,7 @@ fn _flash_attention_kv_cache_causal_alibi_mask[
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ) raises:
-    """Performs flash attention using k and v caches from ContiguousKVCache/ContinuousBatchingKVCache
+    """Performs flash attention using k and v caches from KVCacheT
     custom types, with the causal mask and alibi mask materialized inside the kernel.
 
     Args:
@@ -1536,7 +1534,7 @@ fn _flash_attention_kv_cache_causal_alibi_mask_impl[
     output: NDBuffer[type, 4, *_],
     context: Optional[DeviceContext],
 ) raises:
-    """Performs flash attention using k and v caches from ContiguousKVCache/ContinuousBatchingKVCache
+    """Performs flash attention using k and v caches from KVCacheT
     custom types, with the causal mask and alibi mask materialized inside the kernel.
 
     Args:

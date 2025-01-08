@@ -12,7 +12,7 @@ from gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from memory import UnsafePointer, memcpy
 from nn.fused_qk_rope import fused_qk_rope
-from nn.kv_cache import (
+from kv_cache.types import (
     ContiguousKVCache,
     ContiguousKVCacheCollection,
     KVCacheStaticParams,
