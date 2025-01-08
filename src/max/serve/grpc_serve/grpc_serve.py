@@ -13,24 +13,22 @@ from dataclasses import dataclass
 from typing import Callable
 
 import grpc
+import max.serve.grpc_serve.grpc_predict_v2_pb2 as pb2
 import psutil
 from cli import TextGenerationMetrics
 from grpc_reflection.v1alpha import reflection
 from max.pipelines import PipelineConfig, PipelineTokenizer, TextTokenizer
 from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
+from max.serve.grpc_serve.grpc_predict_v2_pb2_grpc import (
+    GRPCInferenceServiceServicer,
+    add_GRPCInferenceServiceServicer_to_server,
+)
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorPipelineConfig,
 )
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.telemetry.stopwatch import StopWatch
-
-# mypy: disable-error-code="import-not-found"
-import ModelServing.proto.grpc_predict_v2_pb2 as pb2
-from ModelServing.proto.grpc_predict_v2_pb2_grpc import (
-    GRPCInferenceServiceServicer,
-    add_GRPCInferenceServiceServicer_to_server,
-)
 
 DEFAULT_MAX_TOKENS = 100
 
