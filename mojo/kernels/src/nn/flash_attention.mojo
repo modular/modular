@@ -542,8 +542,6 @@ struct _FlashAttention[
     padded_output_shape: DimList,
     *,
     simd_width: Int = simdwidthof[type](),
-    transpose_k: Bool = False,
-    layout_bshd: Bool = False,
 ]:
     alias _matmul = _Matmul[type, simd_width]
     alias _config = _FlashAttentionConfig[
@@ -640,9 +638,6 @@ struct _FlashAttention[
         max_seq_len: Int,
         scale: Float32,
     ):
-        alias seq_dim_index = 1 if layout_bshd else rank - 2
-        alias head_dim_index = rank - 2 if layout_bshd else 1
-
         var kv_group_count = num_heads // num_kv_heads
 
         # Compute the maximum size in elements for the common packed buffer.
@@ -693,7 +688,7 @@ struct _FlashAttention[
             if max_seq_len != 1:
                 packed_ptr = packed_ptr.alloc(packed_size)
 
-            var q_seq_stride = num_heads * depth_dim if layout_bshd else depth_dim
+            var q_seq_stride = num_heads * depth_dim
 
             var block_range = partition_work(
                 task_id, num_threads, work_count, 1
@@ -723,16 +718,9 @@ struct _FlashAttention[
                 ](x: Int, y: Int) -> IndexList[rank]:
                     @parameter
                     if rank == 4:
-
-                        @parameter
-                        if layout_bshd:
-                            return IndexList[rank](
-                                batch, x, kv_head if is_kv else head, y
-                            )
-                        else:
-                            return IndexList[rank](
-                                batch, kv_head if is_kv else head, x, y
-                            )
+                        return IndexList[rank](
+                            batch, x, kv_head if is_kv else head, y
+                        )
                     else:
                         return IndexList[rank](batch, x, y)
 
@@ -770,19 +758,13 @@ struct _FlashAttention[
                     fn input_k_2d_fn[
                         _simd_width: Int
                     ](_n: Int, _k: Int) -> SIMD[type, _simd_width]:
-                        var x = _k
-                        var y = _n + kv_seq_idx
-
-                        @parameter
-                        if transpose_k:
-                            swap(x, y)
                         return input_k_fn[_simd_width, rank](
-                            get_nd_index[is_kv=True](x, y)
+                            get_nd_index[is_kv=True](_n + kv_seq_idx, _k)
                         )
 
                     Self._matmul._matmul[
                         input_k_2d_fn,
-                        transpose_b=transpose_k,
+                        transpose_b=True,
                         static_k = Self._depth_static_dim,
                     ](
                         count_m,
@@ -879,9 +861,6 @@ fn _flash_attention[
     input_mask_fn: fn[simd_width: Int, mask_rank: Int] (
         IndexList[mask_rank]
     ) capturing -> SIMD[type, simd_width],
-    *,
-    transpose_k: Bool = True,
-    layout_bshd: Bool = True,
 ](
     q: NDBuffer[type, rank, *_],
     k_shape: IndexList[rank],
@@ -890,15 +869,12 @@ fn _flash_attention[
     output: NDBuffer[type, rank, *_],
     scale: Float32,
 ):
-    alias seq_dim_index = 1 if layout_bshd else rank - 2
-    alias head_dim_index = rank - 2 if layout_bshd else 1
-
-    var kv_cache_len = v_shape[seq_dim_index] - output.dim[seq_dim_index]()
-    var num_kv_heads = k_shape[head_dim_index] if rank == 4 else 1
     var num_batches = output.dim[0]()
-    var num_heads = output.dim[head_dim_index]() if rank == 4 else 1
+    var max_seq_len = output.dim[1]()
+    var num_heads = output.dim[rank - 2]() if rank == 4 else 1
     var depth_dim = output.dim[rank - 1]()
-    var max_seq_len = output.dim[seq_dim_index]()
+    var kv_cache_len = v_shape[1] - max_seq_len
+    var num_kv_heads = k_shape[rank - 2] if rank == 4 else 1
 
     @always_inline
     @parameter
@@ -947,8 +923,6 @@ fn _flash_attention[
         q_length_fn,
         kv_cache_length_fn,
         output.shape,
-        transpose_k=transpose_k,
-        layout_bshd=layout_bshd,
     ].run(num_batches, num_heads, depth_dim, num_kv_heads, max_seq_len, scale)
 
 
@@ -1246,8 +1220,6 @@ fn _flash_attention_kv_cache[
         kv_length_fn,
         kv_cache_length_fn,
         output_shape,
-        transpose_k=True,
-        layout_bshd=True,
     ].run(num_batches, num_heads, depth_dim, num_kv_heads, max_seq_len, scale)
 
 
