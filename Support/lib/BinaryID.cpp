@@ -33,7 +33,7 @@ std::string M::getBinaryID() {
   // NOTE: This code can run in a dylib or executable, we need to fetch the
   // address of whichever one it comes from
   Dl_info info;
-  if (dladdr((void *)&getBuildID, &info) == 0)
+  if (dladdr((void *)&getBinaryID, &info) == 0)
     assert(false && "dladdr failed");
   auto *execHeader = (const struct mach_header_64 *)info.dli_fbase;
 
