@@ -4443,7 +4443,7 @@ fn no_mask_flash_attention_cpu[
     q: NDBuffer[type, rank],
     input_1_shape: IndexList[rank],
     input_2_shape: IndexList[rank],
-    scale: Scalar[type],
+    scale: Scalar[DType.float32],
     output: NDBuffer[type, rank, input_4_static_shape],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -4456,13 +4456,15 @@ fn no_mask_flash_attention_cpu[
     ](idx: IndexList[_rank]) -> SIMD[type, simd_width]:
         return SIMD[type, simd_width](0)
 
-    nn_flash_attention[input_1_fn, input_2_fn, mask_fn](
+    nn_flash_attention[
+        input_1_fn, input_2_fn, mask_fn, transpose_k=True, layout_bshd=True
+    ](
         q,
         input_1_shape,
         input_2_shape,
         IndexList[0](),
         output,
-        scale[0].cast[DType.float32](),
+        scale[0],
     )
 
 
@@ -4569,19 +4571,21 @@ fn with_mask_flash_attention_cpu[
     input_1_shape: IndexList[rank],
     input_2_shape: IndexList[rank],
     input_3_shape: IndexList[mask_rank],
-    scale: Scalar[type],
+    scale: Scalar[DType.float32],
     output: NDBuffer[type, rank, input_5_static_shape],
     ctx: MojoCallContextPtr,
 ) raises:
     constrained[is_cpu[target]()]()
 
-    nn_flash_attention[input_1_fn, input_2_fn, input_3_fn](
+    nn_flash_attention[
+        input_1_fn, input_2_fn, input_3_fn, transpose_k=True, layout_bshd=True
+    ](
         q,
         input_1_shape,
         input_2_shape,
         input_3_shape,
         output,
-        scale[0].cast[DType.float32](),
+        scale[0],
     )
 
 
