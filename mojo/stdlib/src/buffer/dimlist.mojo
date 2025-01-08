@@ -303,6 +303,19 @@ struct DimList(
 
     @always_inline("nodebug")
     @implicit
+    fn __init__[Intable: Intable](mut self, value: Intable):
+        """Creates a dimension list from the given list of values.
+
+        Parameters:
+            Intable: A type able to be converted to an `Int`.
+
+        Args:
+            value: The initial dim values list.
+        """
+        self.value = VariadicList[Dim](int(value))
+
+    @always_inline("nodebug")
+    @implicit
     fn __init__[Intable: Intable](mut self, values: (Intable,)):
         """Creates a dimension list from the given list of values.
 
