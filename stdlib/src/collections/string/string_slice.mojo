@@ -240,6 +240,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     Writable,
     CollectionElement,
     CollectionElementNew,
+    EqualityComparable,
     Hashable,
     PathLike,
 ):
@@ -502,6 +503,23 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     # TODO: replace with a safe model that checks the body of the method for
     # accesses to the origin.
     @__unsafe_disable_nested_origin_exclusivity
+    fn __eq__(self, rhs_same: Self) -> Bool:
+        """Verify if a `StringSlice` is equal to another `StringSlice` with the
+        same origin.
+
+        Args:
+            rhs_same: The `StringSlice` to compare against.
+
+        Returns:
+            If the `StringSlice` is equal to the input in length and contents.
+        """
+        return Self.__eq__(self, rhs=rhs_same)
+
+    # This decorator informs the compiler that indirect address spaces are not
+    # dereferenced by the method.
+    # TODO: replace with a safe model that checks the body of the method for
+    # accesses to the origin.
+    @__unsafe_disable_nested_origin_exclusivity
     fn __eq__(self, rhs: StringSlice) -> Bool:
         """Verify if a `StringSlice` is equal to another `StringSlice`.
 
@@ -545,6 +563,19 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             If the `StringSlice` is equal to the input in length and contents.
         """
         return self == rhs.as_string_slice()
+
+    fn __ne__(self, rhs_same: Self) -> Bool:
+        """Verify if a `StringSlice` is not equal to another `StringSlice` with
+        the same origin.
+
+        Args:
+            rhs_same: The `StringSlice` to compare against.
+
+        Returns:
+            If the `StringSlice` is not equal to the input in length and
+            contents.
+        """
+        return Self.__ne__(self, rhs=rhs_same)
 
     @__unsafe_disable_nested_origin_exclusivity
     @always_inline
