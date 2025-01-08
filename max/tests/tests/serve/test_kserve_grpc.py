@@ -6,20 +6,18 @@
 
 # type: ignore
 
+import max.serve.grpc_serve.grpc_predict_v2_pb2 as pb2
 import max.serve.grpc_serve.grpc_serve as max_grpc
 import pytest
+from max.serve.grpc_serve.grpc_predict_v2_pb2_grpc import (
+    GRPCInferenceServiceStub,
+    add_GRPCInferenceServiceServicer_to_server,
+)
 from max.serve.pipelines.performance_fake import get_performance_fake
-
-import ModelServing.proto.grpc_predict_v2_pb2 as pb2
-from ModelServing.proto.grpc_predict_v2_pb2_grpc import GRPCInferenceServiceStub
 
 
 @pytest.fixture(scope="module")
 def grpc_add_to_server():
-    from ModelServing.proto.grpc_predict_v2_pb2_grpc import (
-        add_GRPCInferenceServiceServicer_to_server,
-    )
-
     return add_GRPCInferenceServiceServicer_to_server
 
 
