@@ -6806,8 +6806,10 @@ fn generic_fused_qk_rope_bshd_continuous_batch_kernel_api[
     )
 
 
-@compiler.register("fused_qk_rope_h8_d128_bshd_continuous_batch")
-struct Struct_fused_qk_rope_h8_d128_bshd_continuous_batch:
+@compiler.register(
+    "mo.fused_qk_rope.padded.continuous_batching.nhead_8.hdim_128"
+)
+struct Struct_fused_qk_rope_padded_continuous_batching_nhead_8_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -6836,8 +6838,10 @@ struct Struct_fused_qk_rope_h8_d128_bshd_continuous_batch:
         )
 
 
-@compiler.register("fused_qk_rope_h1_d16_bshd_continuous_batch")
-struct Struct_fused_qk_rope_h1_d16_bshd_continuous_batch:
+@compiler.register(
+    "mo.fused_qk_rope.padded.continuous_batching.nhead_1.hdim_16"
+)
+struct Struct_fused_qk_rope_padded_continuous_batching_nhead_1_hdim_16:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -6866,8 +6870,10 @@ struct Struct_fused_qk_rope_h1_d16_bshd_continuous_batch:
         )
 
 
-@compiler.register("fused_qk_rope_h8_d32_bshd_continuous_batch")
-struct Struct_fused_qk_rope_h8_d32_bshd_continuous_batch:
+@compiler.register(
+    "mo.fused_qk_rope.padded.continuous_batching.nhead_8.hdim_32"
+)
+struct Struct_fused_qk_rope_padded_continuous_batching_nhead_8_hdim_32:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -6896,8 +6902,10 @@ struct Struct_fused_qk_rope_h8_d32_bshd_continuous_batch:
         )
 
 
-@compiler.register("fused_qk_rope_h8_d64_bshd_continuous_batch")
-struct Struct_fused_qk_rope_h8_d64_bshd_continuous_batch:
+@compiler.register(
+    "mo.fused_qk_rope.padded.continuous_batching.nhead_8.hdim_64"
+)
+struct Struct_fused_qk_rope_padded_continuous_batching_nhead_8_hdim_64:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -6966,8 +6974,10 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
     )
 
 
-@compiler.register("fused_qk_rope_h8_d80_bshd_continuous_batch_ragged")
-struct Struct_fused_qk_rope_h8_d80_bshd_continuous_batch_ragged:
+@compiler.register(
+    "mo.fused_qk_rope.ragged.continuous_batching.nhead_8.hdim_80"
+)
+struct Struct_fused_qk_rope_ragged_continuous_batching_nhead_8_hdim_80:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -7000,8 +7010,10 @@ struct Struct_fused_qk_rope_h8_d80_bshd_continuous_batch_ragged:
         )
 
 
-@compiler.register("fused_qk_rope_h8_d128_bshd_continuous_batch_ragged")
-struct Struct_fused_qk_rope_h8_d128_bshd_continuous_batch_ragged:
+@compiler.register(
+    "mo.fused_qk_rope.ragged.continuous_batching.nhead_8.hdim_128"
+)
+struct Struct_fused_qk_rope_ragged_continuous_batching_nhead_8_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -7034,8 +7046,10 @@ struct Struct_fused_qk_rope_h8_d128_bshd_continuous_batch_ragged:
         )
 
 
-@compiler.register("fused_qk_rope_h8_d512_bshd_continuous_batch_ragged")
-struct Struct_fused_qk_rope_h8_d512_bshd_continuous_batch_ragged:
+@compiler.register(
+    "mo.fused_qk_rope.ragged.continuous_batching.nhead_8.hdim_512"
+)
+struct Struct_fused_qk_rope_ragged_continuous_batching_nhead_8_hdim_512:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -7068,8 +7082,10 @@ struct Struct_fused_qk_rope_h8_d512_bshd_continuous_batch_ragged:
         )
 
 
-@compiler.register("fused_qk_rope_h32_d128_bshd_continuous_batch_ragged")
-struct Struct_fused_qk_rope_h32_d128_bshd_continuous_batch_ragged:
+@compiler.register(
+    "mo.fused_qk_rope.ragged.continuous_batching.nhead_32.hdim_128"
+)
+struct Struct_fused_qk_rope_ragged_continuous_batching_nhead_32_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -7102,8 +7118,10 @@ struct Struct_fused_qk_rope_h32_d128_bshd_continuous_batch_ragged:
         )
 
 
-@compiler.register("fused_qk_rope_h1_d16_bshd_continuous_batch_ragged")
-struct Struct_fused_qk_rope_h1_d16_bshd_continuous_batch_ragged:
+@compiler.register(
+    "mo.fused_qk_rope.ragged.continuous_batching.nhead_1.hdim_16"
+)
+struct Struct_fused_qk_rope_ragged_continuous_batching_nhead_1_hdim_16:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -7136,8 +7154,10 @@ struct Struct_fused_qk_rope_h1_d16_bshd_continuous_batch_ragged:
         )
 
 
-@compiler.register("fused_qk_rope_h8_d32_bshd_continuous_batch_ragged")
-struct Struct_fused_qk_rope_h8_d32_bshd_continuous_batch_ragged:
+@compiler.register(
+    "mo.fused_qk_rope.ragged.continuous_batching.nhead_8.hdim_32"
+)
+struct Struct_fused_qk_rope_ragged_continuous_batching_nhead_8_hdim_32:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -7170,8 +7190,10 @@ struct Struct_fused_qk_rope_h8_d32_bshd_continuous_batch_ragged:
         )
 
 
-@compiler.register("fused_qk_rope_h8_d64_bshd_continuous_batch_ragged")
-struct Struct_fused_qk_rope_h8_d64_bshd_continuous_batch_ragged:
+@compiler.register(
+    "mo.fused_qk_rope.ragged.continuous_batching.nhead_8.hdim_64"
+)
+struct Struct_fused_qk_rope_ragged_continuous_batching_nhead_8_hdim_64:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9262,8 +9284,8 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     )
 
 
-@compiler.register("fused_qk_rope_h1_d16_bshd_paged_ragged")
-struct Struct_fused_qk_rope_h1_d16_bshd_paged_ragged:
+@compiler.register("mo.fused_qk_rope.ragged.paged.nhead_1.hdim_16")
+struct Struct_fused_qk_rope_ragged_paged_nhead_1_hdim_16:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9295,8 +9317,8 @@ struct Struct_fused_qk_rope_h1_d16_bshd_paged_ragged:
         )
 
 
-@compiler.register("fused_qk_rope_h6_d48_bshd_paged_ragged")
-struct Struct_fused_qk_rope_h6_d48_bshd_paged_ragged:
+@compiler.register("mo.fused_qk_rope.ragged.paged.nhead_6.hdim_48")
+struct Struct_fused_qk_rope_ragged_paged_nhead_6_hdim_48:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9328,8 +9350,8 @@ struct Struct_fused_qk_rope_h6_d48_bshd_paged_ragged:
         )
 
 
-@compiler.register("fused_qk_rope_h8_d128_bshd_paged_ragged")
-struct Struct_fused_qk_rope_h8_d128_bshd_paged_ragged:
+@compiler.register("mo.fused_qk_rope.ragged.paged.nhead_8.hdim_128")
+struct Struct_fused_qk_rope_ragged_paged_nhead_8_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9361,8 +9383,8 @@ struct Struct_fused_qk_rope_h8_d128_bshd_paged_ragged:
         )
 
 
-@compiler.register("fused_qk_rope_h8_d16_bshd_paged_ragged")
-struct Struct_fused_qk_rope_h8_d16_bshd_paged_ragged:
+@compiler.register("mo.fused_qk_rope.ragged.paged.nhead_8.hdim_16")
+struct Struct_fused_qk_rope_ragged_paged_nhead_8_hdim_16:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9394,8 +9416,8 @@ struct Struct_fused_qk_rope_h8_d16_bshd_paged_ragged:
         )
 
 
-@compiler.register("fused_qk_rope_h8_d512_bshd_paged_ragged")
-struct Struct_fused_qk_rope_h8_d512_bshd_paged_ragged:
+@compiler.register("mo.fused_qk_rope.ragged.paged.nhead_8.hdim_512")
+struct Struct_fused_qk_rope_ragged_paged_nhead_8_hdim_512:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9427,8 +9449,8 @@ struct Struct_fused_qk_rope_h8_d512_bshd_paged_ragged:
         )
 
 
-@compiler.register("fused_qk_rope_h8_d32_bshd_paged_ragged")
-struct Struct_fused_qk_rope_h8_d32_bshd_paged_ragged:
+@compiler.register("mo.fused_qk_rope.ragged.paged.nhead_8.hdim_32")
+struct Struct_fused_qk_rope_ragged_paged_nhead_8_hdim_32:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9460,8 +9482,8 @@ struct Struct_fused_qk_rope_h8_d32_bshd_paged_ragged:
         )
 
 
-@compiler.register("fused_qk_rope_h8_d64_bshd_paged_ragged")
-struct Struct_fused_qk_rope_h8_d64_bshd_paged_ragged:
+@compiler.register("mo.fused_qk_rope.ragged.paged.nhead_8.hdim_64")
+struct Struct_fused_qk_rope_ragged_paged_nhead_8_hdim_64:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9493,8 +9515,8 @@ struct Struct_fused_qk_rope_h8_d64_bshd_paged_ragged:
         )
 
 
-@compiler.register("fused_qk_rope_h32_d128_bshd_paged_ragged")
-struct Struct_fused_qk_rope_h32_d128_bshd_paged_ragged:
+@compiler.register("mo.fused_qk_rope.ragged.paged.nhead_32.hdim_128")
+struct Struct_fused_qk_rope_ragged_paged_nhead_32_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
