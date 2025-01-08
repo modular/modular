@@ -48,7 +48,6 @@ struct Tuple[*element_types: CollectionElement](Sized, CollectionElement):
     """The underlying storage for the tuple."""
 
     @always_inline("nodebug")
-    @implicit
     fn __init__(out self, owned *args: *element_types):
         """Construct the tuple.
 

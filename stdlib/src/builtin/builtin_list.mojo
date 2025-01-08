@@ -39,7 +39,6 @@ struct ListLiteral[*Ts: CollectionElement](Sized, CollectionElement):
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    @implicit
     fn __init__(out self, owned *args: *Ts):
         """Construct the list literal from the given values.
 
