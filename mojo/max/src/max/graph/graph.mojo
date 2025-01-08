@@ -921,7 +921,7 @@ struct Graph(CollectionElement, Stringable, Writable):
         )
         function_type.results = results^
         var signature = _mlir.Type.parse(
-            ctx, "!kgen.old_signature<" + str(function_type.to_mlir()) + ">"
+            ctx, "!kgen.generator<" + str(function_type.to_mlir()) + ">"
         )
         op.set_inherent_attr(
             "functionType", TypeAttr(function_type.to_mlir()).to_mlir()
