@@ -19,7 +19,7 @@ class GraphOp(GraphOp):  # type: ignore[no-redef]
         self, name: str, input_types: list[Type], output_types: list[Type]
     ):
         function_type = FunctionType.get(input_types, output_types)
-        signature = Type.parse(f"!kgen.old_signature<{function_type}>")
+        signature = Type.parse(f"!kgen.generator<{function_type}>")
         params = Attribute.parse("#kgen<param.decls[]>")
         super().__init__(
             name,
