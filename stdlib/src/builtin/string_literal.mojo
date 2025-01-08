@@ -832,33 +832,37 @@ struct StringLiteral(
         """
         return str(self).center(width, fillchar)
 
-    fn startswith(self, prefix: String, start: Int = 0, end: Int = -1) -> Bool:
-        """Checks if the string literal starts with the specified prefix between start
-        and end positions. Returns True if found and False otherwise.
+    fn startswith(
+        self, prefix: StringSlice, start: Int = 0, end: Int = -1
+    ) -> Bool:
+        """Checks if the string literal starts with the specified prefix between
+        start and end positions. Returns True if found and False otherwise.
 
         Args:
-          prefix: The prefix to check.
-          start: The start offset from which to check.
-          end: The end offset from which to check.
+            prefix: The prefix to check.
+            start: The start offset from which to check.
+            end: The end offset from which to check.
 
         Returns:
-          True if the self[start:end] is prefixed by the input prefix.
+            True if the `self[start:end]` is prefixed by the input prefix.
         """
-        return str(self).startswith(prefix, start, end)
+        return self.as_string_slice().startswith(prefix, start, end)
 
-    fn endswith(self, suffix: String, start: Int = 0, end: Int = -1) -> Bool:
-        """Checks if the string literal end with the specified suffix between start
-        and end positions. Returns True if found and False otherwise.
+    fn endswith(
+        self, suffix: StringSlice, start: Int = 0, end: Int = -1
+    ) -> Bool:
+        """Checks if the string literal end with the specified suffix between
+        start and end positions. Returns True if found and False otherwise.
 
         Args:
-          suffix: The suffix to check.
-          start: The start offset from which to check.
-          end: The end offset from which to check.
+            suffix: The suffix to check.
+            start: The start offset from which to check.
+            end: The end offset from which to check.
 
         Returns:
-          True if the self[start:end] is suffixed by the input suffix.
+            True if the `self[start:end]` is suffixed by the input suffix.
         """
-        return str(self).endswith(suffix, start, end)
+        return self.as_string_slice().endswith(suffix, start, end)
 
     fn isdigit(self) -> Bool:
         """Returns True if all characters in the string literal are digits.

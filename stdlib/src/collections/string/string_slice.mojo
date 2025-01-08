@@ -279,11 +279,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         #   StringLiteral is guaranteed to use UTF-8 encoding.
         # FIXME(MSTDL-160):
         #   Ensure StringLiteral _actually_ always uses UTF-8 encoding.
-        # FIXME: this gets practically stuck at compile time
-        # debug_assert(
-        #     _is_valid_utf8(lit.as_bytes()),
-        #     "StringLiteral doesn't have valid UTF-8 encoding",
-        # )
         self = StaticString(unsafe_from_utf8=lit.as_bytes())
 
     @always_inline
@@ -296,7 +291,14 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Safety:
             `unsafe_from_utf8` MUST be valid UTF-8 encoded data.
         """
-
+        # FIXME(#3706): can't run at compile time
+        # TODO(MOCO-1525):
+        #   Support skipping UTF-8 during comptime evaluations, or support
+        #   the necessary SIMD intrinsics to allow this to evaluate at compile
+        #   time.
+        # debug_assert(
+        #     _is_valid_utf8(value.as_bytes()), "value is not valid utf8"
+        # )
         self._slice = unsafe_from_utf8
 
     fn __init__(out self, *, unsafe_from_utf8_strref: StringRef):
@@ -359,15 +361,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Args:
             value: The string value.
         """
-
-        # TODO(MOCO-1525):
-        #   Support skipping UTF-8 during comptime evaluations, or support
-        #   the necessary SIMD intrinsics to allow this to evaluate at compile
-        #   time.
-        # debug_assert(
-        #     _is_valid_utf8(value.as_bytes()), "value is not valid utf8"
-        # )
-
         self = StringSlice[O](unsafe_from_utf8=value.as_bytes())
 
     # ===-------------------------------------------------------------------===#
@@ -877,6 +870,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         if end == -1:
             return self.find(prefix, start) == start
+        # FIXME: use normalize_index
         return StringSlice[origin](
             ptr=self.unsafe_ptr() + start, length=end - start
         ).startswith(prefix)
@@ -899,6 +893,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             return False
         if end == -1:
             return self.rfind(suffix, start) + len(suffix) == len(self)
+        # FIXME: use normalize_index
         return StringSlice[origin](
             ptr=self.unsafe_ptr() + start, length=end - start
         ).endswith(suffix)
@@ -915,6 +910,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             A `StringSlice` borrowed from the current string containing the
             characters of the slice starting at start.
         """
+        # FIXME: use normalize_index
 
         var self_len = self.byte_length()
 

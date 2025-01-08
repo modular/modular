@@ -1888,50 +1888,36 @@ struct String(
         return to_uppercase(self)
 
     fn startswith(
-        ref self, prefix: String, start: Int = 0, end: Int = -1
+        self, prefix: StringSlice, start: Int = 0, end: Int = -1
     ) -> Bool:
         """Checks if the string starts with the specified prefix between start
         and end positions. Returns True if found and False otherwise.
 
         Args:
-          prefix: The prefix to check.
-          start: The start offset from which to check.
-          end: The end offset from which to check.
+            prefix: The prefix to check.
+            start: The start offset from which to check.
+            end: The end offset from which to check.
 
         Returns:
-          True if the self[start:end] is prefixed by the input prefix.
+            True if the `self[start:end]` is prefixed by the input prefix.
         """
-        if end == -1:
-            return StringSlice[__origin_of(self)](
-                ptr=self.unsafe_ptr() + start,
-                length=self.byte_length() - start,
-            ).startswith(prefix.as_string_slice())
+        return self.as_string_slice().startswith(prefix, start, end)
 
-        return StringSlice[__origin_of(self)](
-            ptr=self.unsafe_ptr() + start, length=end - start
-        ).startswith(prefix.as_string_slice())
-
-    fn endswith(self, suffix: String, start: Int = 0, end: Int = -1) -> Bool:
+    fn endswith(
+        self, suffix: StringSlice, start: Int = 0, end: Int = -1
+    ) -> Bool:
         """Checks if the string end with the specified suffix between start
         and end positions. Returns True if found and False otherwise.
 
         Args:
-          suffix: The suffix to check.
-          start: The start offset from which to check.
-          end: The end offset from which to check.
+            suffix: The suffix to check.
+            start: The start offset from which to check.
+            end: The end offset from which to check.
 
         Returns:
-          True if the self[start:end] is suffixed by the input suffix.
+            True if the `self[start:end]` is suffixed by the input suffix.
         """
-        if end == -1:
-            return StringSlice[__origin_of(self)](
-                ptr=self.unsafe_ptr() + start,
-                length=self.byte_length() - start,
-            ).endswith(suffix.as_string_slice())
-
-        return StringSlice[__origin_of(self)](
-            ptr=self.unsafe_ptr() + start, length=end - start
-        ).endswith(suffix.as_string_slice())
+        return self.as_string_slice().endswith(suffix, start, end)
 
     fn removeprefix(self, prefix: String, /) -> String:
         """Returns a new string with the prefix removed if it was present.
