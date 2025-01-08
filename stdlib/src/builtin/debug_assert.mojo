@@ -250,8 +250,6 @@ fn _debug_assert_msg(
         arg_bytes.write(
             "At ",
             loc,
-            ": ",
-            _ThreadContext(),
             " Assert ",
             "Warning: " if defined_mode == "warn" else " Error: ",
         )
@@ -261,8 +259,6 @@ fn _debug_assert_msg(
         buffer.write(
             "At ",
             loc,
-            ": ",
-            _ThreadContext(),
             " Assert ",
             "Warning: " if defined_mode == "warn" else "Error: ",
         )
