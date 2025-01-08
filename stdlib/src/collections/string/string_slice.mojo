@@ -540,30 +540,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             return True
         return memcmp(s_ptr, rhs_ptr, s_len) == 0
 
-    @always_inline
-    fn __eq__(self, rhs: String) -> Bool:
-        """Verify if a `StringSlice` is equal to a string.
-
-        Args:
-            rhs: The `String` to compare against.
-
-        Returns:
-            If the `StringSlice` is equal to the input in length and contents.
-        """
-        return self == rhs.as_string_slice()
-
-    @always_inline
-    fn __eq__(self, rhs: StringLiteral) -> Bool:
-        """Verify if a `StringSlice` is equal to a literal.
-
-        Args:
-            rhs: The `StringLiteral` to compare against.
-
-        Returns:
-            If the `StringSlice` is equal to the input in length and contents.
-        """
-        return self == rhs.as_string_slice()
-
     fn __ne__(self, rhs_same: Self) -> Bool:
         """Verify if a `StringSlice` is not equal to another `StringSlice` with
         the same origin.
@@ -584,32 +560,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         Args:
             rhs: The `StringSlice` to compare against.
-
-        Returns:
-            If the `StringSlice` is not equal to the input in length and
-            contents.
-        """
-        return not self == rhs
-
-    @always_inline
-    fn __ne__(self, rhs: String) -> Bool:
-        """Verify if span is not equal to another `StringSlice`.
-
-        Args:
-            rhs: The `StringSlice` to compare against.
-
-        Returns:
-            If the `StringSlice` is not equal to the input in length and
-            contents.
-        """
-        return not self == rhs
-
-    @always_inline
-    fn __ne__(self, rhs: StringLiteral) -> Bool:
-        """Verify if span is not equal to a `StringLiteral`.
-
-        Args:
-            rhs: The `StringLiteral` to compare against.
 
         Returns:
             If the `StringSlice` is not equal to the input in length and

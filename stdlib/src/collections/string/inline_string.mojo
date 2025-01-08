@@ -103,22 +103,6 @@ struct InlineString(Sized, Stringable, CollectionElement, CollectionElementNew):
     # Operator dunders
     # ===------------------------------------------------------------------=== #
 
-    fn __iadd__(mut self, literal: StringLiteral):
-        """Appends another string to this string.
-
-        Args:
-            literal: The string to append.
-        """
-        self.__iadd__(StringSlice(literal))
-
-    fn __iadd__(mut self, string: String):
-        """Appends another string to this string.
-
-        Args:
-            string: The string to append.
-        """
-        self.__iadd__(string.as_string_slice())
-
     fn __iadd__(mut self, str_slice: StringSlice):
         """Appends another string to this string.
 
@@ -158,7 +142,7 @@ struct InlineString(Sized, Stringable, CollectionElement, CollectionElementNew):
             buffer.append(0)  # Add the NUL byte
             self._storage = Self.Layout(String(buffer^))
 
-    fn __add__(self, other: StringLiteral) -> Self:
+    fn __add__(self, other: StringSlice) -> Self:
         """Construct a string by appending another string at the end of this string.
 
         Args:
@@ -169,22 +153,8 @@ struct InlineString(Sized, Stringable, CollectionElement, CollectionElementNew):
         """
 
         var string = self
-        string += StringSlice(other)
-        return string
-
-    fn __add__(self, other: String) -> Self:
-        """Construct a string by appending another string at the end of this string.
-
-        Args:
-            other: The string to append.
-
-        Returns:
-            A new string containing the concatenation of `self` and `other`.
-        """
-
-        var string = self
-        string += other.as_string_slice()
-        return string
+        string += other
+        return string^
 
     fn __add__(self, other: InlineString) -> Self:
         """Construct a string by appending another string at the end of this string.
@@ -377,22 +347,6 @@ struct _FixedString[CAP: Int](
     # ===------------------------------------------------------------------=== #
     # Operator dunders
     # ===------------------------------------------------------------------=== #
-
-    fn __iadd__(mut self, literal: StringLiteral) raises:
-        """Appends another string to this string.
-
-        Args:
-            literal: The string to append.
-        """
-        self.__iadd__(literal.as_string_slice())
-
-    fn __iadd__(mut self, string: String) raises:
-        """Appends another string to this string.
-
-        Args:
-            string: The string to append.
-        """
-        self.__iadd__(string.as_string_slice())
 
     @always_inline
     fn __iadd__(mut self, str_slice: StringSlice) raises:

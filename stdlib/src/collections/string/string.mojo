@@ -1146,30 +1146,6 @@ struct String(
         return Self(buffer^)
 
     @always_inline
-    fn __add__(self, other: String) -> String:
-        """Creates a string by appending another string at the end.
-
-        Args:
-            other: The string to append.
-
-        Returns:
-            The new constructed string.
-        """
-        return Self._add[True](self.as_bytes(), other.as_bytes())
-
-    @always_inline
-    fn __add__(self, other: StringLiteral) -> String:
-        """Creates a string by appending a string literal at the end.
-
-        Args:
-            other: The string literal to append.
-
-        Returns:
-            The new constructed string.
-        """
-        return Self._add[False](self.as_bytes(), other.as_bytes())
-
-    @always_inline
     fn __add__(self, other: StringSlice) -> String:
         """Creates a string by appending a string slice at the end.
 
@@ -1180,30 +1156,6 @@ struct String(
             The new constructed string.
         """
         return Self._add[False](self.as_bytes(), other.as_bytes())
-
-    @always_inline
-    fn __radd__(self, other: String) -> String:
-        """Creates a string by prepending another string to the start.
-
-        Args:
-            other: The string to prepend.
-
-        Returns:
-            The new constructed string.
-        """
-        return Self._add[True](other.as_bytes(), self.as_bytes())
-
-    @always_inline
-    fn __radd__(self, other: StringLiteral) -> String:
-        """Creates a string by prepending another string literal to the start.
-
-        Args:
-            other: The string to prepend.
-
-        Returns:
-            The new constructed string.
-        """
-        return Self._add[True](other.as_bytes(), self.as_bytes())
 
     @always_inline
     fn __radd__(self, other: StringSlice) -> String:
@@ -1236,24 +1188,6 @@ struct String(
         @parameter
         if not has_null:
             s_ptr[sum_len] = 0
-
-    @always_inline
-    fn __iadd__(mut self, other: String):
-        """Appends another string to this string.
-
-        Args:
-            other: The string to append.
-        """
-        self._iadd[True](other.as_bytes())
-
-    @always_inline
-    fn __iadd__(mut self, other: StringLiteral):
-        """Appends another string literal to this string.
-
-        Args:
-            other: The string to append.
-        """
-        self._iadd[False](other.as_bytes())
 
     @always_inline
     fn __iadd__(mut self, other: StringSlice):
