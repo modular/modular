@@ -8,7 +8,6 @@ import compiler_internal as compiler
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.matmul import matmul as _matmul
-from nn.mha import fused_attention as cpu_fused_attention_impl
 from register import uses_opaque
 from runtime.asyncrt import MojoCallContextPtr
 from tensor_utils import ManagedTensorSlice, foreach
@@ -187,70 +186,6 @@ fn toNDBuffer[
     return rebind[NDBuffer[out_dtype, out_rank]](
         NDBuffer[tensor.type, tensor.rank](tensor._ptr, tensor.shape())
     )
-
-
-# Analogous to no_mask_flash_attention_cpu
-@compiler.register("imposter_no_mask_flash_attention_cpu")
-struct ImposterMHANoMask:
-    @staticmethod
-    fn execute[
-        synchronous: Bool,
-        target: StringLiteral,
-    ](
-        output: ManagedTensorSlice,
-        q: ManagedTensorSlice,
-        k: ManagedTensorSlice,
-        v: ManagedTensorSlice,
-        scale: ManagedTensorSlice,
-    ) raises:
-        alias qkv_rank = q.rank
-        alias qkv_dtype = q.type
-
-        # Convert everything to NDBuffer
-        var q_buffer = toNDBuffer[qkv_dtype, qkv_rank](q)
-        var k_buffer = toNDBuffer[qkv_dtype, qkv_rank](k)
-        var v_buffer = toNDBuffer[qkv_dtype, qkv_rank](v)
-        var output_buffer = toNDBuffer[qkv_dtype, qkv_rank](output)
-        var scale_buffer = toNDBuffer[qkv_dtype, 1](scale)
-
-        alias mask_shape = DimList()
-        var mask = NDBuffer[qkv_dtype, qkv_rank, mask_shape]()
-        var scale_f32 = scale_buffer[0].cast[DType.float32]()
-        var causal_mask: Float32 = 0
-
-        cpu_fused_attention_impl[
-            qkv_rank,
-            q_buffer.shape,
-            k_buffer.shape,
-            v_buffer.shape,
-            mask_shape,
-            DimList.create_unknown[qkv_rank](),
-            qkv_dtype,
-            qkv_dtype,
-            qkv_dtype,
-            qkv_dtype,
-            qkv_dtype,
-            transpose_k=False,
-            add_attn_mask=False,
-            add_causal_mask=False,
-        ](
-            output_buffer,
-            q_buffer,
-            k_buffer,
-            v_buffer,
-            mask,
-            scale_f32,
-            causal_mask,
-        )
-
-    @staticmethod
-    fn shape(
-        q: ManagedTensorSlice,
-        k: ManagedTensorSlice,
-        v: ManagedTensorSlice,
-        scale: ManagedTensorSlice,
-    ) -> IndexList[q.rank]:
-        return q.shape()
 
 
 # c = a @ b, should support CPU and GPU
