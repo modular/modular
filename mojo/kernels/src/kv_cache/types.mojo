@@ -503,7 +503,13 @@ struct PagedKVCache[type_: DType, kv_params_: KVCacheStaticParams](KVCacheT):
         )
 
         debug_assert(bs < len(self.cache_lengths), "batch_idx is oob")
-        debug_assert(lut_block_index < self.page_size, "block_idx is OOB")
+        debug_assert(
+            lut_block_index < self.page_size,
+            "block_idx is OOB. Attempted to access block index ",
+            lut_block_index,
+            " with page size ",
+            self.page_size,
+        )
         block_idx = int(self.lookup_table[bs, lut_block_index])
         return IndexList[6](
             self.layer_idx,
