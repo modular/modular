@@ -8953,6 +8953,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_nhead_1_hdim_16:
         type: DType,
         target: StringLiteral = "cpu",
     ](
+        output: ManagedTensorSlice[type, 2],
         hidden_state: ManagedTensorSlice[type, 2],
         input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         weight: ManagedTensorSlice[type, 2],
@@ -8961,7 +8962,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_nhead_1_hdim_16:
             kv_params_h1_d16_bshd,
         ],
         layer_idx: Scalar[DType.uint32],
-        output: ManagedTensorSlice[type, 2],
         ctx: MojoCallContextPtr,
     ) raises:
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
@@ -8986,6 +8986,7 @@ struct Struct_fused_qkv_matmul_ragged_paged_nhead_6_hdim_48:
         type: DType,
         target: StringLiteral = "cpu",
     ](
+        output: ManagedTensorSlice[type, 2],
         hidden_state: ManagedTensorSlice[type, 2],
         input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         weight: ManagedTensorSlice[type, 2],
@@ -8994,7 +8995,6 @@ struct Struct_fused_qkv_matmul_ragged_paged_nhead_6_hdim_48:
             kv_params_h6_d48_bshd,
         ],
         layer_idx: Scalar[DType.uint32],
-        output: ManagedTensorSlice[type, 2],
         ctx: MojoCallContextPtr,
     ) raises:
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
@@ -9019,6 +9019,7 @@ struct Struct_fused_qkv_matmul_ragged_paged_nhead_8_hdim_128:
         type: DType,
         target: StringLiteral = "cpu",
     ](
+        output: ManagedTensorSlice[type, 2],
         hidden_state: ManagedTensorSlice[type, 2],
         input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         weight: ManagedTensorSlice[type, 2],
@@ -9027,7 +9028,6 @@ struct Struct_fused_qkv_matmul_ragged_paged_nhead_8_hdim_128:
             kv_params_h8_d128_bshd,
         ],
         layer_idx: Scalar[DType.uint32],
-        output: ManagedTensorSlice[type, 2],
         ctx: MojoCallContextPtr,
     ) raises:
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
@@ -9052,6 +9052,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_nhead_8_hdim_16:
         type: DType,
         target: StringLiteral = "cpu",
     ](
+        output: ManagedTensorSlice[type, 2],
         hidden_state: ManagedTensorSlice[type, 2],
         input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         weight: ManagedTensorSlice[type, 2],
@@ -9060,7 +9061,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_nhead_8_hdim_16:
             kv_params_h8_d16_bshd,
         ],
         layer_idx: Scalar[DType.uint32],
-        output: ManagedTensorSlice[type, 2],
         ctx: MojoCallContextPtr,
     ) raises:
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
@@ -9085,6 +9085,7 @@ struct Struct_fused_qkv_matmul_ragged_paged_nhead_8_hdim_512:
         type: DType,
         target: StringLiteral = "cpu",
     ](
+        output: ManagedTensorSlice[type, 2],
         hidden_state: ManagedTensorSlice[type, 2],
         input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         weight: ManagedTensorSlice[type, 2],
@@ -9093,7 +9094,6 @@ struct Struct_fused_qkv_matmul_ragged_paged_nhead_8_hdim_512:
             kv_params_h8_d512_bshd,
         ],
         layer_idx: Scalar[DType.uint32],
-        output: ManagedTensorSlice[type, 2],
         ctx: MojoCallContextPtr,
     ) raises:
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
@@ -9118,6 +9118,7 @@ struct Struct_fused_qkv_matmul_ragged_paged_nhead_8_hdim_32:
         type: DType,
         target: StringLiteral = "cpu",
     ](
+        output: ManagedTensorSlice[type, 2],
         hidden_state: ManagedTensorSlice[type, 2],
         input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         weight: ManagedTensorSlice[type, 2],
@@ -9126,7 +9127,6 @@ struct Struct_fused_qkv_matmul_ragged_paged_nhead_8_hdim_32:
             kv_params_h8_d32_bshd,
         ],
         layer_idx: Scalar[DType.uint32],
-        output: ManagedTensorSlice[type, 2],
         ctx: MojoCallContextPtr,
     ) raises:
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
@@ -9151,6 +9151,7 @@ struct Struct_fused_qkv_matmul_ragged_paged_nhead_8_hdim_64:
         type: DType,
         target: StringLiteral = "cpu",
     ](
+        output: ManagedTensorSlice[type, 2],
         hidden_state: ManagedTensorSlice[type, 2],
         input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         weight: ManagedTensorSlice[type, 2],
@@ -9159,7 +9160,6 @@ struct Struct_fused_qkv_matmul_ragged_paged_nhead_8_hdim_64:
             kv_params_h8_d64_bshd,
         ],
         layer_idx: Scalar[DType.uint32],
-        output: ManagedTensorSlice[type, 2],
         ctx: MojoCallContextPtr,
     ) raises:
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
@@ -9184,6 +9184,7 @@ struct Struct_fused_qkv_matmul_ragged_paged_nhead_32_hdim_128:
         type: DType,
         target: StringLiteral = "cpu",
     ](
+        output: ManagedTensorSlice[type, 2],
         hidden_state: ManagedTensorSlice[type, 2],
         input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         weight: ManagedTensorSlice[type, 2],
@@ -9192,7 +9193,6 @@ struct Struct_fused_qkv_matmul_ragged_paged_nhead_32_hdim_128:
             kv_params_h32_d128_bshd,
         ],
         layer_idx: Scalar[DType.uint32],
-        output: ManagedTensorSlice[type, 2],
         ctx: MojoCallContextPtr,
     ) raises:
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
