@@ -743,6 +743,26 @@ struct Range:
 # ===-----------------------------------------------------------------------===#
 
 
+# useful for testing --> identity op that simply copies input into output
+@compiler.register("copy")
+@compiler.elementwise
+struct Copy:
+    @staticmethod
+    fn execute[
+        type: DType, rank: Int
+    ](
+        output: ManagedTensorSlice[type, rank],
+        input: ManagedTensorSlice[type, rank],
+        ctx: MojoCallContextPtr,
+    ):
+        @parameter
+        @always_inline
+        fn func[width: Int](idx: IndexList[rank]) -> SIMD[type, width]:
+            return input._fused_load[width](idx)
+
+        foreach[func](output, ctx)
+
+
 @compiler.register("mo.add")
 @compiler.elementwise
 struct Add:
