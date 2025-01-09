@@ -584,7 +584,7 @@ static ParseResult parseLITFunctionSignature(
     TypedAttr defaultVal;
     if (failed(parseOptionalDefaultValue(
             p, defaultVal, arg.type,
-            SignatureType::hasAddress(argConventions.back()))))
+            NewSignatureType::hasAddress(argConventions.back()))))
       return failure();
     if (defaultVal) {
       if (passingKindParser.isCurrentKwOnly())

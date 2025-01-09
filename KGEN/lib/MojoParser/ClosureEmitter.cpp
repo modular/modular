@@ -421,7 +421,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     SmallVector<TypedAttr> implicitOrigins;
     auto calleeSig = cast<LITSignatureGeneratorType>(callMemberPtr.getType());
     for (auto [arg, conv] : llvm::zip(arguments, calleeSig.getArgConventions()))
-      if (SignatureType::hasImplicitOrigin(conv))
+      if (NewSignatureType::hasImplicitOrigin(conv))
         implicitOrigins.push_back(cast<RefType>(arg.getType()).getOrigin());
 
     auto callResult = builder.create<CallIndirectOp>(
@@ -1043,7 +1043,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
     SmallVector<TypedAttr> implicitOrigins;
     auto finalSig = cast<LITSignatureGeneratorType>(typedSymbol.getType());
     for (auto [arg, conv] : llvm::zip(args, finalSig.getArgConventions()))
-      if (SignatureType::hasImplicitOrigin(conv))
+      if (NewSignatureType::hasImplicitOrigin(conv))
         implicitOrigins.push_back(cast<RefType>(arg.getType()).getOrigin());
 
     Value result =

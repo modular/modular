@@ -438,7 +438,7 @@ NewSignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
       type = variadic.getElementType();
     // Verify argument conventions.  Before lit lowering, they need to be
     // !lit.ref type, after lowering, they should have !kgen.pointer type.
-    if (SignatureType::hasAddress(conv)) {
+    if (NewSignatureType::hasAddress(conv)) {
       if (::isa<PointerType>(type))
         continue;
       // TODO: During LowerLIT, we strip off the metadata, but later we lower
@@ -467,6 +467,49 @@ NewSignatureType NewSignatureType::fromOldSignature(SignatureType sig) {
   assert(sig.isConcrete());
   return NewSignatureType::get(sig.getValues(), sig.getArgConventions(),
                                sig.getFnEffects(), sig.getMetadata());
+}
+
+bool NewSignatureType::hasAddress(ArgConvention conv) {
+  switch (conv) {
+  case ArgConvention::OwnedReg:
+  case ArgConvention::ReadReg:
+    return false;
+  case ArgConvention::Ref:
+  case ArgConvention::MutRef:
+    // The conventions above differ from hasImplicitOrigin.
+  case ArgConvention::OwnedMem:
+  case ArgConvention::ReadMem:
+  case ArgConvention::Mut:
+  case ArgConvention::ByRefResult:
+  case ArgConvention::ByRefError:
+    return true;
+  }
+  llvm_unreachable("invalid argument convention");
+}
+
+/// Determine whether an argument with the given input convention expects to
+/// have an implicit origin.
+bool NewSignatureType::hasImplicitOrigin(ArgConvention conv) {
+  switch (conv) {
+  case ArgConvention::Ref:
+  case ArgConvention::MutRef:
+  // The conventions above differ from hasAddress.
+  case ArgConvention::OwnedReg:
+  case ArgConvention::ReadReg:
+    return false;
+  case ArgConvention::OwnedMem:
+  case ArgConvention::ReadMem:
+  case ArgConvention::Mut:
+  case ArgConvention::ByRefResult:
+  case ArgConvention::ByRefError:
+    return true;
+  }
+  llvm_unreachable("invalid argument convention");
+}
+
+bool NewSignatureType::isResultSlot(ArgConvention conv) {
+  return conv == ArgConvention::ByRefResult ||
+         conv == ArgConvention::ByRefError;
 }
 
 //===----------------------------------------------------------------------===//
@@ -504,49 +547,6 @@ SignatureType SignatureType::getWithMetadata(FnMetadataAttrInterface metadata) {
   return SignatureType::get(getValues(), getInputParamTypes(),
                             getResultParamTypes(), getArgConventions(),
                             getFnEffects(), metadata);
-}
-
-bool SignatureType::hasAddress(ArgConvention conv) {
-  switch (conv) {
-  case ArgConvention::OwnedReg:
-  case ArgConvention::ReadReg:
-    return false;
-  case ArgConvention::Ref:
-  case ArgConvention::MutRef:
-    // The conventions above differ from hasImplicitOrigin.
-  case ArgConvention::OwnedMem:
-  case ArgConvention::ReadMem:
-  case ArgConvention::Mut:
-  case ArgConvention::ByRefResult:
-  case ArgConvention::ByRefError:
-    return true;
-  }
-  llvm_unreachable("invalid argument convention");
-}
-
-/// Determine whether an argument with the given input convention expects to
-/// have an implicit origin.
-bool SignatureType::hasImplicitOrigin(ArgConvention conv) {
-  switch (conv) {
-  case ArgConvention::Ref:
-  case ArgConvention::MutRef:
-  // The conventions above differ from hasAddress.
-  case ArgConvention::OwnedReg:
-  case ArgConvention::ReadReg:
-    return false;
-  case ArgConvention::OwnedMem:
-  case ArgConvention::ReadMem:
-  case ArgConvention::Mut:
-  case ArgConvention::ByRefResult:
-  case ArgConvention::ByRefError:
-    return true;
-  }
-  llvm_unreachable("invalid argument convention");
-}
-
-bool SignatureType::isResultSlot(ArgConvention conv) {
-  return conv == ArgConvention::ByRefResult ||
-         conv == ArgConvention::ByRefError;
 }
 
 size_t SignatureType::getNumAsyncReturnSlots() {
@@ -939,7 +939,7 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
       type = variadic.getElementType();
     // Verify argument conventions.  Before lit lowering, they need to be
     // !lit.ref type, after lowering, they should have !kgen.pointer type.
-    if (hasAddress(conv)) {
+    if (NewSignatureType::hasAddress(conv)) {
       if (::isa<PointerType>(type))
         continue;
       // TODO: During LowerLIT, we strip off the metadata, but later we lower

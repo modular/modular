@@ -876,7 +876,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
          llvm::enumerate(sig.getArguments(), sig.getArgConventions())) {
       ASTType type = typeX;
       ArgConvention convention = conventionX;
-      if (SignatureType::isResultSlot(convention))
+      if (NewSignatureType::isResultSlot(convention))
         continue; // Don't print result in argument list.
 
       if (idx)
@@ -922,7 +922,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
         if (!name.empty())
           os << name.getValue() << ": ";
 
-        if (SignatureType::hasAddress(convention))
+        if (NewSignatureType::hasAddress(convention))
           type = type.getReferenceElementType();
         type.print(os, diagShared, demangleParams);
       }

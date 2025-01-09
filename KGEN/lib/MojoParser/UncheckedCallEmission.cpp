@@ -334,7 +334,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
       Type varElType = varType.getElementType();
 
       // If the element has a memory-only type, drop it into memory.
-      if (SignatureType::hasAddress(convention)) {
+      if (NewSignatureType::hasAddress(convention)) {
         for (TypedAttr &arg : args)
           arg = StoreToMemAttr::get(arg, varElType);
       }
@@ -378,7 +378,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     // exception was carved out for trivial register-passable values, which
     // don't require origin tracking.
     // TODO(MOCO-726): Make variadics always pass through memory.
-    if (SignatureType::hasAddress(convention) ||
+    if (NewSignatureType::hasAddress(convention) ||
         ASTType(argVal.getType()).isTrivial(callExpr->getLoc(), emitter.shared))
       continue;
     emitter.shared.emitError(
@@ -485,7 +485,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     // If this is the return slot for a call, we need a temporary to emit into,
     // but don't know the type until the arguments (and their origins) are all
     // emitted. Just skip over it for now.
-    if (SignatureType::isResultSlot(convention)) {
+    if (NewSignatureType::isResultSlot(convention)) {
       assert(calleeSig.hasMemoryOnlyResult() ||
              (calleeSig.isThrows() &&
               pogAttr.getPassingKind() == PassingKind::Implicit));
@@ -697,7 +697,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   SmallVector<Type> argTypes;
   for (auto [value, convention] :
        llvm::zip(argValues, calleeSig.getArgConventions())) {
-    if (SignatureType::isResultSlot(convention))
+    if (NewSignatureType::isResultSlot(convention))
       continue;
 
     argTypes.push_back(value.getType());
@@ -963,7 +963,7 @@ FailureOr<CValue> CallEmitter::inlineFunctionCallIntoPValueIfPossible(
     auto pValue = argValue.ir.getIfPValue();
     if (!pValue || !ParameterAttr::isSimpleConstant(pValue.get()))
       return failure();
-    arguments.push_back(SignatureType::hasAddress(conv)
+    arguments.push_back(NewSignatureType::hasAddress(conv)
                             ? StoreToMemAttr::get(pValue, type)
                             : pValue);
   }
@@ -1103,7 +1103,7 @@ TypedAttr CallEmitter::emitCallInParamContext(
 
     // Put memory-only arguments into memory ("PRValue" to "PLValue"
     // conversion).
-    if (SignatureType::hasAddress(convention)) {
+    if (NewSignatureType::hasAddress(convention)) {
       auto immortal = OriginUnionAttr::get(arg.getContext());
       arg = StoreToMemAttr::get(arg, RefType::get(arg.getType(), immortal));
     }
@@ -1381,7 +1381,7 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
     if (isNestedOriginExclusivityCheckingDisabled) {
       // DO check the origin of any in-memory arguments, we only ignore nested
       // origins.
-      if (SignatureType::hasAddress(convention))
+      if (NewSignatureType::hasAddress(convention))
         checkOriginAccess(argVal, convention, argIdx,
                           cast<RefType>(argVal.getType()).getOrigin());
       return;
@@ -1502,7 +1502,7 @@ void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
   // If the origin in question is because of the top-level ref binding, then
   // we have a common problem where something is passed both mutable and
   // borrowed.
-  if (SignatureType::hasAddress(convention) &&
+  if (NewSignatureType::hasAddress(convention) &&
       OriginMutCastAttr::strip(cast<RefType>(val.getType()).getOrigin()) ==
           origin) {
     diag << origin << " value is passed through aliasing '"
@@ -1512,7 +1512,7 @@ void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
   }
 
   ASTType argType = val.getType();
-  if (SignatureType::hasAddress(convention))
+  if (NewSignatureType::hasAddress(convention))
     argType = argType.getReferenceElementType();
 
   // Otherwise, it is a more complicated buried origin in a type like a
@@ -1646,7 +1646,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     if (calleeSig.isPackVarArg(argIdx) && convention != ArgConvention::OwnedMem)
       convention = ArgConvention::ReadMem;
 
-    if (SignatureType::isResultSlot(convention)) {
+    if (NewSignatureType::isResultSlot(convention)) {
       // Async function signatures have results slots even though they are not
       // actually provided.
       // TODO: Why are these in the signature, why do they take implicit
@@ -1685,7 +1685,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     // memory).
     if (ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx)) {
       ASTType argRVType = arg.getType();
-      if (SignatureType::hasAddress(convention))
+      if (NewSignatureType::hasAddress(convention))
         argRVType = argRVType.getReferenceElementType();
 
       // Include the union origin that covers all the values.
@@ -1693,7 +1693,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     }
 
     // See if we have an implicit origin bound for this argument.
-    if (SignatureType::hasImplicitOrigin(convention)) {
+    if (NewSignatureType::hasImplicitOrigin(convention)) {
       implicitOrigins.push_back(cast<RefType>(arg.getType()).getOrigin());
     } else if (calleeSig.isPosVarArg(argIdx)) {
       // If this is a variadic, it will have a wrapper around the ref.

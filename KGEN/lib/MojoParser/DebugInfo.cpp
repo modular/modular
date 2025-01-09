@@ -81,13 +81,13 @@ SourceNameAttr SourceNames::getSourceName(mlir::SymbolOpInterface op) {
       paramTypes.push_back(getSourceName(type));
     for (auto [i, t, conv] :
          llvm::enumerate(sig.getArguments(), sig.getArgConventions())) {
-      if (SignatureType::isResultSlot(conv))
+      if (NewSignatureType::isResultSlot(conv))
         continue;
       Type type = t;
       // Unwrap variadics pointers if necessary.
       if (sig.isPosVarArg(i))
         type = cast<VariadicType>(type).getElementType();
-      if (SignatureType::hasAddress(conv))
+      if (NewSignatureType::hasAddress(conv))
         type = cast<RefType>(type).getElementType();
       argTypes.push_back(getSourceName(type));
     }

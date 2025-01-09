@@ -318,6 +318,17 @@ def KGEN_NewSignatureType : KGENType<"NewSignature", "signature", [
     /// Temporary back-compat.
     SignatureType asOldSignature();
     static NewSignatureType fromOldSignature(SignatureType sig);
+
+    /// Determine whether an argument with the given input convention expects to
+    /// have a pointer or reference type.
+    static bool hasAddress(ArgConvention conv);
+
+    /// Determine whether an argument with the given input convention expects to
+    /// have an implicit origin.
+    static bool hasImplicitOrigin(ArgConvention conv);
+
+    /// Return true if this is an automatically generated result slot.
+    static bool isResultSlot(ArgConvention conv);
   }];
 
   let genVerifyDecl = 1;
@@ -414,17 +425,6 @@ def KGEN_SignatureType : KGENType<"Signature", "old_signature", [
     SignatureType getWithValuesReplaced(FunctionType fnType);
     /// Return this signature with a new metadata attribute.
     SignatureType getWithMetadata(FnMetadataAttrInterface metadata);
-
-    /// Determine whether an argument with the given input convention expects to
-    /// have a pointer or reference type.
-    static bool hasAddress(ArgConvention conv);
-
-    /// Determine whether an argument with the given input convention expects to
-    /// have an implicit origin.
-    static bool hasImplicitOrigin(ArgConvention conv);
-
-    /// Return true if this is an automatically generated result slot.
-    static bool isResultSlot(ArgConvention conv);
 
     /// Return the number of input parameters.
     size_t getNumInputParams() { return getInputParamTypes().size(); }

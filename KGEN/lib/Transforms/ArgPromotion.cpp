@@ -48,7 +48,7 @@ struct Node : public SCCNode<Node, FuncOp, CallOp> {
     for (ArgConvention conv :
          func.getSignatureGenerator().getBody().getArgConventions()) {
       // We can't change the ABI of exported functions.
-      argStates.push_back(!exported && SignatureType::hasAddress(conv)
+      argStates.push_back(!exported && NewSignatureType::hasAddress(conv)
                               ? State::NoCapture
                               : State::Capture);
     }
@@ -233,7 +233,7 @@ static std::pair<bool, bool> getInOutFlags(ArgConvention conv) {
 /// corresponding argument convention. To be pendantic, we preserve the
 /// ownedness of the convention.
 static ArgConvention getByValueConvention(ArgConvention conv) {
-  assert(SignatureType::hasAddress(conv));
+  assert(NewSignatureType::hasAddress(conv));
   return conv == ArgConvention::OwnedMem ? ArgConvention::OwnedReg
                                          : ArgConvention::ReadReg;
 }
