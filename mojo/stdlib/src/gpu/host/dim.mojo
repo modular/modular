@@ -18,26 +18,32 @@ struct Dim(Stringable, Writable):
         self._value = value
 
     @implicit
-    fn __init__(out self, x: Int):
-        self._value = IndexList[3](x, 1, 1)
+    fn __init__[I: Indexer](out self, x: I):
+        self._value = IndexList[3](index(x), 1, 1)
 
-    fn __init__(out self, x: Int, y: Int):
-        self._value = IndexList[3](x, y, 1)
+    fn __init__[I0: Indexer, I1: Indexer](out self, x: I0, y: I1):
+        self._value = IndexList[3](index(x), index(y), 1)
 
-    fn __init__(out self, x: Int, y: Int, z: Int):
-        self._value = IndexList[3](x, y, z)
-
-    @implicit
-    fn __init__(out self, dims: (Int,)):
-        self._value = IndexList[3](dims[0], 1, 1)
+    fn __init__[
+        I0: Indexer, I1: Indexer, I2: Indexer
+    ](out self, x: I0, y: I1, z: I2):
+        self._value = IndexList[3](index(x), index(y), index(z))
 
     @implicit
-    fn __init__(out self, dims: (Int, Int)):
-        self._value = IndexList[3](dims[0], dims[1], 1)
+    fn __init__[I: Indexer](out self, dims: (I,)):
+        self._value = IndexList[3](index(dims[0]), 1, 1)
 
     @implicit
-    fn __init__(out self, dims: (Int, Int, Int)):
-        self._value = IndexList[3](dims[0], dims[1], dims[2])
+    fn __init__[I0: Indexer, I1: Indexer](out self, dims: (I0, I1)):
+        self._value = IndexList[3](index(dims[0]), index(dims[1]), 1)
+
+    @implicit
+    fn __init__[
+        I0: Indexer, I1: Indexer, I2: Indexer
+    ](out self, dims: (I0, I1, I2)):
+        self._value = IndexList[3](
+            index(dims[0]), index(dims[1]), index(dims[2])
+        )
 
     fn __getitem__(self, idx: Int) -> Int:
         return self._value[idx]

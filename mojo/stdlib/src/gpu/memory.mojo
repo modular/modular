@@ -663,7 +663,7 @@ fn load[
 
 @always_inline
 fn load[
-    OffsetType: IntLike,
+    OffsetType: Indexer,
     type: DType, //,
     width: Int = 1,
     *,
