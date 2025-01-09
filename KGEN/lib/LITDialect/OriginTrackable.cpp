@@ -320,7 +320,7 @@ static void getCallOpEffects(
     // If this is a memConsume or memStoreOwned, then the origin of the
     // reference is handled directly, strip it off.  Otherwise handle read,
     // mut, etc operands as just any-old reference use.
-    if (NewSignatureType::hasAddress(conv))
+    if (hasAddress(conv))
       argType = cast<RefType>(argType).getElementType();
 
     // In addition to the direct (field-sensitive) effect of loading/storing

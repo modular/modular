@@ -923,7 +923,7 @@ DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
     ASTType argType = argTypeX;
 
     // We do not mangle results into the signature.
-    if (NewSignatureType::isResultSlot(convention))
+    if (isResultSlot(convention))
       continue;
 
     // Update the mangled name for this argument.
@@ -951,7 +951,7 @@ DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
       numStars = 2;
     }
 
-    if (NewSignatureType::hasAddress(convention))
+    if (hasAddress(convention))
       argType = argType.getReferenceElementType();
 
     mangledName +=

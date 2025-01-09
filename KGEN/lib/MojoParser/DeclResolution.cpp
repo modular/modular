@@ -693,7 +693,7 @@ static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
       type = ParamRefType::get(UnknownAttr::get(metatype));
       conv = ArgConvention::ReadReg;
     }
-    if (NewSignatureType::hasAddress(conv))
+    if (hasAddress(conv))
       type = ASTType(type).getReferenceElementType();
     argTypes.push_back(type);
   }
@@ -1199,7 +1199,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     ArrayRef<ASTDecl *> argDeclList = decl.lookupInCurrentScope(argName);
 
     // Don't bind anonymous result slots, they don't have a decl.
-    if (argDeclList.empty() && NewSignatureType::isResultSlot(convention))
+    if (argDeclList.empty() && isResultSlot(convention))
       continue;
 
     assert(argDeclList.size() == 1 &&

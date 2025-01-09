@@ -561,7 +561,7 @@ bool ExprEmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
            from.getArguments(), to.getArguments(), from.getArgConventions())) {
     Type fromTyCmp = fromTy;
     Type toTyCmp = toTy;
-    if (NewSignatureType::hasImplicitOrigin(conv)) {
+    if (hasImplicitOrigin(conv)) {
       fromTyCmp = ASTType(fromTyCmp).getReferenceElementType();
       toTyCmp = ASTType(toTyCmp).getReferenceElementType();
     }

@@ -1040,7 +1040,7 @@ CreateRegStubOp::getStubSignatureType(NewSignatureType calleeSign) {
   // Check if type is a memory type that can be promoted to value.
   // These types will be wrapped in a memory struct.
   auto canLowerToRegPassable = [](Type ty, ArgConvention conv) {
-    if (!NewSignatureType::hasAddress(conv))
+    if (!hasAddress(conv))
       return false;
 
     PointerType ptrTy = dyn_cast<PointerType>(ty);
@@ -1086,8 +1086,7 @@ Type CreateRegStubOp::getOriginalArgType(unsigned index) {
 
   // Wrapped types are memory types of the form `pointer<struct<(T)
   // memoryOnly>`.
-  if (!NewSignatureType::hasAddress(
-          getType().getBody().getArgConvention(index)))
+  if (!hasAddress(getType().getBody().getArgConvention(index)))
     return rawArgTy;
 
   PointerType ptrTy = dyn_cast<PointerType>(rawArgTy);
