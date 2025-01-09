@@ -84,7 +84,7 @@ from nn.gather_scatter import scatter_nd as _scatter_nd
 from nn.gather_scatter import scatter_nd_generator, scatter_nd_shape
 from nn.index_tensor import index_tensor as _index_tensor
 from nn.kv_cache import (
-    rms_norm_key_cache_h8_d128_cont_batch,
+    rms_norm_kv_cache_ragged_continuous_batching_nhead_8_hdim_128,
     print_kv_cache_cont_batch_h2_d128,
     print_kv_cache_cont_batch_h8_d128,
     print_kv_cache_cont_batch_h16_d128,
@@ -319,7 +319,7 @@ fn MOGGExport():
     alias _swishGLU = swishGLU
 
     # kv-cache
-    alias _rms_norm_key_cache_h8_d128_cont_batch = rms_norm_key_cache_h8_d128_cont_batch
+    alias _rms_norm_kv_cache_ragged_continuous_batching_nhead_8_hdim_128 = rms_norm_kv_cache_ragged_continuous_batching_nhead_8_hdim_128
     alias _print_kv_cache_cont_batch_h2_d128 = print_kv_cache_cont_batch_h2_d128
     alias _print_kv_cache_cont_batch_h8_d128 = print_kv_cache_cont_batch_h8_d128
     alias _print_kv_cache_cont_batch_h16_d128 = print_kv_cache_cont_batch_h16_d128

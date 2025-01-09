@@ -104,7 +104,7 @@ from kv_cache.types import (
 from nn.kv_cache import (
     print_kv_cache_cont_batch_generic_gpu,
     print_kv_cache_cont_batch_generic_cpu,
-    rms_norm_key_cache_h8_d128_cont_batch,
+    rms_norm_kv_cache_ragged_continuous_batching_nhead_8_hdim_128,
     generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch,
     generic_flash_attention_kv_cache_causal_mask_continuous_batch,
     generic_flash_attention_kv_cache_continuous_batch,
@@ -9361,8 +9361,11 @@ struct Struct_mha_padded_continuous_batching_causal_mask_alibi_pos_nhead_1_hdim_
         )
 
 
-@compiler.register("rms_norm_key_cache_h8_d128_cont_batch", num_dps_outputs=0)
-struct Struct_rms_norm_key_cache_h8_d128_cont_batch:
+@compiler.register(
+    "mo.rms_norm_kv_cache.ragged.continuous_batching.nhead_8.hdim_128",
+    num_dps_outputs=0,
+)
+struct Struct_rms_norm_kv_cache_ragged_continuous_batching_nhead_8_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9379,7 +9382,9 @@ struct Struct_rms_norm_key_cache_h8_d128_cont_batch:
         input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         context: MojoCallContextPtr,
     ) raises:
-        rms_norm_key_cache_h8_d128_cont_batch[target=target](
+        rms_norm_kv_cache_ragged_continuous_batching_nhead_8_hdim_128[
+            target=target
+        ](
             kv_collection,
             managed_tensor_slice_to_ndbuffer(gamma),
             epsilon,
