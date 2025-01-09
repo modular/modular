@@ -40,11 +40,11 @@ struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable):
 
     @always_inline("nodebug")
     @implicit
-    fn __init__[type: Intable](mut self, value: type):
+    fn __init__[I: Intable](mut self, value: I):
         """Creates a statically-known dimension.
 
         Parameters:
-            type: The Intable type.
+            I: The Intable type.
 
         Args:
             value: The static dimension value.
@@ -53,16 +53,16 @@ struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable):
 
     @always_inline("nodebug")
     @implicit
-    fn __init__[type: IntLike](mut self, value: type):
+    fn __init__[I: Indexer](mut self, value: I):
         """Creates a statically-known dimension.
 
         Parameters:
-            type: The Intable type.
+            I: A type that can be used as an index.
 
         Args:
             value: The static dimension value.
         """
-        self = Dim(value.__mlir_index__())
+        self = Dim(index(value))
 
     @always_inline("nodebug")
     @implicit
@@ -148,6 +148,15 @@ struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable):
         if self.is_dynamic():
             return False
         return self.get() % alignment == 0
+
+    @always_inline("nodebug")
+    fn __index__(self) -> __mlir_type.index:
+        """Convert to index.
+
+        Returns:
+            The corresponding __mlir_type.index value.
+        """
+        return self.get().value
 
     @always_inline("nodebug")
     fn __mul__(self, rhs: Dim) -> Dim:
@@ -316,11 +325,11 @@ struct DimList(
 
     @always_inline("nodebug")
     @implicit
-    fn __init__[Intable: Intable](mut self, values: (Intable,)):
+    fn __init__[I: Indexer](mut self, values: (I,)):
         """Creates a dimension list from the given list of values.
 
         Parameters:
-            Intable: A type able to be converted to an `Int`.
+            I: A type that can be used as an index.
 
         Args:
             values: The initial dim values list.
@@ -329,11 +338,12 @@ struct DimList(
 
     @always_inline("nodebug")
     @implicit
-    fn __init__[Intable: Intable](mut self, values: (Intable, Intable)):
+    fn __init__[I0: Indexer, I1: Indexer](mut self, values: (I0, I1)):
         """Creates a dimension list from the given list of values.
 
         Parameters:
-            Intable: A type able to be converted to an `Int`.
+            I0: A type that can be used as an Index.
+            I1: A type that can be used as an Index.
 
         Args:
             values: The initial dim values list.
@@ -343,18 +353,77 @@ struct DimList(
     @always_inline("nodebug")
     @implicit
     fn __init__[
-        Intable: Intable
-    ](mut self, values: (Intable, Intable, Intable)):
+        I0: Indexer, I1: Indexer, I2: Indexer
+    ](mut self, values: (I0, I1, I2)):
         """Creates a dimension list from the given list of values.
 
         Parameters:
-            Intable: A type able to be converted to an `Int`.
+            I0: A type that can be used as an Index.
+            I1: A type that can be used as an Index.
+            I2: A type that can be used as an Index.
 
         Args:
             values: The initial dim values list.
         """
         self.value = VariadicList[Dim](
             int(values[0]), int(values[1]), int(values[2])
+        )
+
+    @always_inline("nodebug")
+    fn __init__[I0: Indexer, I1: Indexer](mut self, val0: I0, val1: I1):
+        """Creates a dimension list from the given list of values.
+
+        Parameters:
+            I0: A type that can be used as an Index.
+            I1: A type that can be used as an Index.
+
+        Args:
+            val0: The initial dim value.
+            val1: The initial dim value.
+        """
+        self.value = VariadicList[Dim](int(val0), int(val1))
+
+    @always_inline("nodebug")
+    fn __init__[
+        I0: Indexer, I1: Indexer, I2: Indexer
+    ](mut self, val0: I0, val1: I1, val2: I2):
+        """Creates a dimension list from the given list of values.
+
+        Parameters:
+            I0: A type that can be used as an Index.
+            I1: A type that can be used as an Index.
+            I2: A type that can be used as an Index.
+
+        Args:
+            val0: The initial dim value.
+            val1: The initial dim value.
+            val2: The initial dim value.
+        """
+        self.value = VariadicList[Dim](int(val0), int(val1), int(val2))
+
+    @always_inline("nodebug")
+    fn __init__[
+        I0: Indexer, I1: Indexer, I2: Indexer, I3: Indexer
+    ](mut self, val0: I0, val1: I1, val2: I2, val3: I3):
+        """Creates a statically-known dimension.
+
+        Parameters:
+            I0: A type that can be used as an Index.
+            I1: A type that can be used as an Index.
+            I2: A type that can be used as an Index.
+            I3: A type that can be used as an Index.
+
+        Args:
+            val0: The initial dim value.
+            val1: The initial dim value.
+            val2: The initial dim value.
+            val3: The initial dim value.
+        """
+        self = VariadicList[Dim](
+            int(val0),
+            int(val1),
+            int(val2),
+            int(val3),
         )
 
     @always_inline("nodebug")
