@@ -283,8 +283,8 @@ void KGEN::printKGENType(AsmPrinter &p, Type type) {
     it->second(p, type);
   } else if (auto ref = dyn_cast<StructTypeInterface>(type)) {
     ref.printSymbol(p);
-  } else if (auto new_signature = dyn_cast<NewSignatureType>(type)) {
-    printNewSignature(p, new_signature);
+  } else if (auto signature = dyn_cast<NewSignatureType>(type)) {
+    printNewSignature(p, signature);
   } else if (auto generator = dyn_cast<GeneratorType>(type)) {
     printGenerator(p, generator);
   } else {
@@ -1518,11 +1518,14 @@ void KGEN::printSignatureValues(AsmPrinter &p,
     p.printArrowTypeList(functionType.getResults());
 }
 
-static ParseResult parseFunctionSignatureCommon(
+ParseResult KGEN::parseFunctionSignatureGenerator(
     OpAsmParser &p, SmallVectorImpl<OpAsmParser::Argument> &args,
     ParamDeclArrayAttr &inputParams, ParamDeclArrayAttr &resultParams,
-    FunctionType &functionType, ParamDeclParseHookTy parseDeclElt,
-    SmallVectorImpl<ArgConvention> &argConventions, FnEffects &effects) {
+    FunctionType &functionType, SignatureGeneratorType &signature,
+    ParamDeclParseHookTy parseDeclElt) {
+  llvm::SMLoc loc = p.getCurrentLocation();
+  SmallVector<ArgConvention> argConventions;
+  FnEffects effects;
   if (parseOptionalParameterSpec(p, inputParams, resultParams, parseDeclElt))
     return failure();
 
@@ -1556,21 +1559,6 @@ static ParseResult parseFunctionSignatureCommon(
 
   if (failed(parseSignatureValues(p, parseArg, functionType, effects,
                                   /*optionalResultList=*/true)))
-    return failure();
-  return success();
-}
-
-ParseResult KGEN::parseFunctionSignatureGenerator(
-    OpAsmParser &p, SmallVectorImpl<OpAsmParser::Argument> &args,
-    ParamDeclArrayAttr &inputParams, ParamDeclArrayAttr &resultParams,
-    FunctionType &functionType, SignatureGeneratorType &signature,
-    ParamDeclParseHookTy parseDeclElt) {
-  llvm::SMLoc loc = p.getCurrentLocation();
-  SmallVector<ArgConvention> argConventions;
-  FnEffects effects;
-  if (failed(parseFunctionSignatureCommon(p, args, inputParams, resultParams,
-                                          functionType, parseDeclElt,
-                                          argConventions, effects)))
     return failure();
 
   signature = SignatureGeneratorType::remapToSignatureGenerator(
@@ -1666,11 +1654,11 @@ ParseResult KGEN::parseNewSignature(AsmParser &p, Type &signature) {
   result = p.parseOptionalType(signature);
   if (!result.has_value())
     return p.emitError(p.getCurrentLocation(),
-                       "expected '<' or '(' to begin a new_signature");
+                       "expected '<' or '(' to begin a signature");
   if (failed(*result))
     return failure();
   if (!isa<NewSignatureType>(signature))
-    return p.emitError(p.getCurrentLocation(), "expected a new_signature type");
+    return p.emitError(p.getCurrentLocation(), "expected a signature type");
   return success();
 }
 

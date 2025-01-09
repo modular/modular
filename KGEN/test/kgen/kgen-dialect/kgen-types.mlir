@@ -88,8 +88,8 @@ kgen.func @generator_types() {
 // CHECK-LABEL: kgen.func @new_signature_types
 kgen.func @new_signature_types() {
   // CHECK-NEXT: atype: type = <() -> ()>
-  kgen.param.declare atype: type = <!kgen.generator<() -> ()>>
+  kgen.param.declare atype: type = <!kgen.signature<() -> ()>>
   // CHECK-NEXT: btype: type = <(index, i8) -> none>
-  kgen.param.declare btype: type = <!kgen.generator<(index, i8) -> none>>
+  kgen.param.declare btype: type = <!kgen.signature<(index, i8) -> none>>
   kgen.return
 }

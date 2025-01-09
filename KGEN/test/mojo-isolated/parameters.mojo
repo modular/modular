@@ -721,7 +721,7 @@ fn useParamVariadics():
   # Use of an unbound thing in a DRValue context binds an empty variadic list.
   # FIXME(#29495): Pack references aren't working right.
   # HECK-NEXT: [[TMP:%.*]] = kgen.create_closure[!lit.generator<() -> !kgen.none>: @parameters::@"fnWithVariadics{{.*}}"<:variadic<!Int> []>]()
-  # HECK-NEXT: %fnLet = lit.var.decl "fnLet" : {{.*}}!kgen.signature<!lit.generator<() -> !kgen.none>>
+  # HECK-NEXT: %fnLet = lit.var.decl "fnLet" : {{.*}}!lit.generator<() -> !kgen.none>
   # HECK-NEXT: lit.ref.store [[TMP]], %fnLet
   # var fnLet = fnWithVariadics
 
