@@ -18,7 +18,7 @@ fn test_layer_norm() raises:
     var beta = g.constant(Tensor[DType.float32](TensorShape(4), 0.2))
 
     g.output(
-        layer_norm(
+        layer_norm[DType.float32](
             g[0],
             gamma=gamma,
             beta=beta,
