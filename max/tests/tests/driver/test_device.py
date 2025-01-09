@@ -33,3 +33,10 @@ def test_stats():
     # We should be able to query utilization stats for the device.
     cpu = CPU()
     assert "timestamp" in cpu.stats
+
+
+def test_api():
+    # We should be to check the API used for programming the device.
+    # This is more relevant for accelerators, for the host device, expect "cpu".
+    cpu = CPU()
+    assert "cpu" == cpu.api
