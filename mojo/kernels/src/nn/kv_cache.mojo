@@ -1619,8 +1619,10 @@ fn _flash_attention_kv_cache_causal_alibi_mask_gpu[
     )
 
 
-@register_internal("rms_norm_key_cache_h8_d128_cont_batch")
-def rms_norm_key_cache_h8_d128_cont_batch[
+@register_internal(
+    "mo.rms_norm_kv_cache.ragged.continuous_batching.nhead_8.hdim_128"
+)
+def rms_norm_kv_cache_ragged_continuous_batching_nhead_8_hdim_128[
     type: DType, //, *, target: StringLiteral
 ](
     kv_collection: ContinuousBatchingKVCacheCollection[
@@ -1695,7 +1697,9 @@ def rms_norm_key_cache_h8_d128_cont_batch[
             val=val,
         )
 
-    with Trace[TraceLevel.OP]("rms_norm_key_cache_h8_d128_cont_batch"):
+    with Trace[TraceLevel.OP](
+        "rms_norm_kv_cache_ragged_continuous_batching_nhead_8_hdim_128"
+    ):
         _rms_norm_impl[
             type, rank, key_cache_input_fn, key_cache_output_fn, target=target
         ](shape, gamma, epsilon, context)
