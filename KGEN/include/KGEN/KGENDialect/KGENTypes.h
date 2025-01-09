@@ -25,7 +25,6 @@ class GeneratorMetadataAttrInterface;
 class ParamDeclAttr;
 class ParamDeclArrayAttr;
 class SignatureGeneratorType;
-class SignatureType;
 class StructDefFieldAttr;
 class VariadicType;
 class VariadicAttr;
@@ -74,10 +73,6 @@ public:
       ArrayRef<ArgConvention> argConventions = {}, FnEffects effects = {},
       Attribute fnMetadata = {}, Attribute genMetadata = {},
       function_ref<InFlightDiagnostic()> emitError = {});
-
-  /// Temporary back-compat with existing signature type.
-  static SignatureGeneratorType get(SignatureType sig);
-  SignatureType asOldSignature();
 
   NewSignatureType getBody();
   NewSignatureType getInstantiatedBody();

@@ -236,7 +236,7 @@ def KGEN_ParamIndexRefAttr : KGEN_ExprAttr<"ParamIndexRef", "param.index.ref",
   let description = [{
     The `#kgen.param.index.ref` attribute is a reference to an input or result
     parameter of an enclosing signature. This attribute can only be used inside
-    a `SignatureType`. This attribute contains three fields: the depth of the
+    a `GeneratorType`. This attribute contains three fields: the depth of the
     referenced signature relative to the nearest signature (non-negative
     integer), a flag indicating input or result parameter, and the index of the
     parameter (non-negative integer).
@@ -938,13 +938,13 @@ def KGEN_MLIROpAttr : KGEN_ExprAttr<"MLIROp", "param.mlir_op"> {
   let summary = "an MLIR operation as a parameter expression";
   let description = [{
     The `#kgen.param.mlir_op` attribute represents an MLIR operation as a
-    parameter expression. Its type is signature type.
+    parameter expression. Its type is signature generator type.
 
     Example:
 
     ```
     #kgen.param.mlir_op<"index.add", {}>
-      : !kgen.signature<(index, index) -> index>
+      : !kgen.generator<(index, index) -> index>
     ```
 
     Operation attributes can be specified using a dictionary attribute.
@@ -953,7 +953,7 @@ def KGEN_MLIROpAttr : KGEN_ExprAttr<"MLIROp", "param.mlir_op"> {
 
     ```
     #kgen.param.mlir_op<"index.cmp", {pred = #index<cmp_predicate slt>}>
-      : !kgen.signature<(index, index) -> i1>
+      : !kgen.generator<(index, index) -> i1>
     ```
 
     The operation can be parameterized on any of its attributes that are
@@ -963,7 +963,7 @@ def KGEN_MLIROpAttr : KGEN_ExprAttr<"MLIROp", "param.mlir_op"> {
     Example:
 
     ```
-    #kgen.param.mlir_op<"pop.array.get", {}> : !kgen.signature<
+    #kgen.param.mlir_op<"pop.array.get", {}> : !kgen.generator<
       <*"index">(!pop.array<size, type>) -> !kgen.paramref<type>
     >
     ```

@@ -1375,7 +1375,7 @@ LogicalResult ParamOperatorAttr::verify(
       }
     } else if (auto typeConstAttr = ::dyn_cast<TypeConstantAttr>(operand)) {
       auto mlirType = typeConstAttr.getMlirType();
-      if (!::isa<SignatureType, SignatureGeneratorType>(mlirType))
+      if (!::isa<SignatureGeneratorType>(mlirType))
         return emitError()
                << "'function_get_arg_types' operand typeconstantattr's mlir "
                   "type should be a signature, but got: "
@@ -1384,20 +1384,15 @@ LogicalResult ParamOperatorAttr::verify(
       auto mlirType = paramIndexRef.getType();
       if (::isa<ParamRefType>(mlirType)) {
         // Do nothing, is fine
-      } else if (::isa<SignatureType, SignatureGeneratorType>(mlirType)) {
+      } else if (::isa<SignatureGeneratorType>(mlirType)) {
         // Do nothing, is fine
       } else
         return emitError()
                << "'function_get_arg_types' operand paramindexref's type "
                   "should be a paramref or signature, but got: "
                << mlirType;
-    } else if (auto symConstAttr = ::dyn_cast<SymbolConstantAttr>(operand)) {
-      auto mlirType = symConstAttr.getType();
-      if (!::isa<SignatureType>(mlirType))
-        return emitError()
-               << "'function_get_arg_types' operand symbolconstantattr's mlir "
-                  "type should be a signature, but got: "
-               << mlirType;
+    } else if (::isa<SymbolConstantAttr>(operand)) {
+      // Do nothing, is fine.
     } else {
       return emitError()
              << "'function_get_arg_types' expects one kgen.paramref or "
@@ -2639,9 +2634,7 @@ static TypedAttr simplifyFunctionGetArgTypes(MLIRContext *ctx,
   }
 
   ArrayRef<Type> argTypes;
-  if (auto sig = dyn_cast<SignatureType>(mlirType))
-    argTypes = sig.getArguments();
-  else if (auto sigGen = dyn_cast<SignatureGeneratorType>(mlirType))
+  if (auto sigGen = dyn_cast<SignatureGeneratorType>(mlirType))
     argTypes = sigGen.getBody().getArguments();
   else
     return {};

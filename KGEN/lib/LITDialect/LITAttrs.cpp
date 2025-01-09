@@ -282,14 +282,6 @@ void PogListAttr::printGenerator(AsmPrinter &p, GeneratorType generator) const {
   p << '>';
 }
 
-SignatureType
-PogListAttr::asOldSignature(SignatureGeneratorType generator) const {
-  LITNewSignatureType base(generator.getBody());
-  return SignatureType::get(base.getValues(), generator.getInputParamTypes(),
-                            /*resultParamTypes=*/{}, base.getArgConventions(),
-                            base.getFnEffects(), base.getMetadata());
-}
-
 GeneratorMetadataAttrInterface
 PogListAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
   SmallVector<TypedAttr> newDefaultPosParams;
@@ -506,35 +498,6 @@ FnMetadataAttrInterface
 FnMetadataAttr::prependPosParamsFromOps(ArrayRef<Operation *> ops) const {
   SmallVector<bool> variadicMask = getContextualVariadicMask(ops);
   return prependPosParams(variadicMask.size(), variadicMask);
-}
-
-SignatureGeneratorType
-FnMetadataAttr::asSignatureGenerator(SignatureType sig) const {
-  llvm_unreachable("!lit.signature is deprecated!");
-}
-
-LogicalResult FnMetadataAttr::verifySignature(
-    function_ref<InFlightDiagnostic()> emitError,
-    ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
-    FunctionType values, ArrayRef<ArgConvention> argConventions,
-    FnEffects effects) const {
-  if (!resultParamTypes.empty())
-    return emitError() << "expected no result parameters";
-
-  PogListAttr paramListAttr = getParamListAttrs();
-  if (paramListAttr.size() != inputParamTypes.size()) {
-    return emitError() << "number of parameter names doesn't match number of "
-                          "input parameter types";
-  }
-
-  if (failed(verifyNewSignature(emitError, values, argConventions, effects)))
-    return failure();
-
-  if (failed(verifyDefaultTypes(emitError, getDefaultPosParams(),
-                                getDefaultKwOnlyParams(), paramListAttr,
-                                inputParamTypes, "parameter")))
-    return failure();
-  return success();
 }
 
 LogicalResult FnMetadataAttr::verifyNewSignature(

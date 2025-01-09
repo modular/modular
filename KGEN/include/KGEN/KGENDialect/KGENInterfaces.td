@@ -79,9 +79,9 @@ def DeclInterface : OpInterface<"DeclInterface"> {
 def FuncInterface : OpInterface<"FuncInterface"> {
   let description = [{
     This interface represents an operation that defines a KGEN function. A KGEN
-    function has a `SignatureType`, meaning that it can accept arguments and
-    input parameters and produce results and output parameters. Consequently,
-    operations that implement `FuncInterface` must also implement
+    function has a `SignatureGeneratorType`, meaning that it can accept
+    arguments and input parameters and produce results and output parameters.
+    Consequently, operations that implement `FuncInterface` must also implement
     `DeclInterface`.
 
     This interface also provides methods for accessing the signature metadata.

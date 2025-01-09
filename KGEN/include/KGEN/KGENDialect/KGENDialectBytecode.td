@@ -42,15 +42,6 @@ def NewSignatureType : DialectType<(type
   ConcreteOptionalAttribute<"FnMetadataAttrInterface">:$metadata
 )>;
 
-def SignatureType : DialectType<(type
-  TypeArray:$inputParamTypes,
-  TypeArray:$resultParamTypes,
-  ConcreteType<"FunctionType">:$values,
-  EnumAttrArray<"ArgConvention">:$argConventions,
-  Custom<"FnEffects">:$fnEffects,
-  ConcreteOptionalAttribute<"FnMetadataAttrInterface">:$metadata
-)>;
-
 def PointerType : DialectType<(type
   Type:$elementType,
   TypedAttr:$addressSpace
@@ -100,7 +91,6 @@ def KGENDialectTypes : DialectTypes<"kgen"> {
     IntLiteralType,
     GeneratorType,
     NewSignatureType,
-    SignatureType,
     PointerType,
     VariadicType,
     NoneType,

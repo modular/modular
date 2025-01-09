@@ -555,9 +555,9 @@ LogicalResult LITLowerer::lowerModuleDecl(Block *moduleBody,
 /// Check to see if any of the parameters of the specified signature are
 /// singletons like origin parameters.  If so, bind them to a dummy value and
 /// return the updated signature without them.
-template <typename SigTy>
-static SigTy removeSingletonParams(SingletonTypeHelper &singletonTypeHelper,
-                                   SigTy signature) {
+static SignatureGeneratorType
+removeSingletonParams(SingletonTypeHelper &singletonTypeHelper,
+                      SignatureGeneratorType signature) {
   llvm::SmallVector<TypedAttr> paramsToBind;
   size_t numRemoved = 0;
 
@@ -590,10 +590,7 @@ static SigTy removeSingletonParams(SingletonTypeHelper &singletonTypeHelper,
 
   // Update the signature type if we dropped anything.
   if (numRemoved) {
-    if constexpr (std::is_same_v<SigTy, SignatureType>)
-      signature = signature.getSpecializedSignature(paramsToBind);
-    else
-      signature = signature.getSpecializedGenerator(paramsToBind);
+    signature = signature.getSpecializedGenerator(paramsToBind);
     assert(signature && "didn't replace lifetimes correctly");
   }
   return signature;
@@ -614,21 +611,6 @@ lowerAttributesAndTypes(Operation *op,
     if (StringAttr renamed = renamedSymbols.lookup(flat.getAttr()))
       return SymbolRefAttr::get(renamed);
     return flat;
-  });
-
-  // Remove signature metadata.
-  replacer.addReplacement([&](SignatureType sig) {
-    // Remove uses of any singleton attributes.
-    SmallVector<Type> paramTypes;
-    for (auto ty : sig.getInputParamTypes())
-      paramTypes.push_back(replacer.replace(ty));
-
-    sig = SignatureType::get(
-        cast<FunctionType>(replacer.replace(sig.getValues())), paramTypes,
-        /*no resultParamTypes*/ {}, sig.getArgConventions(),
-        sig.getFnEffects());
-    // Remove the singleton parameter declarations.
-    return removeSingletonParams(singletonTypeHelper, sig);
   });
 
   // Remove signature metadata.

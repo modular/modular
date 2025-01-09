@@ -120,7 +120,7 @@ def FnMetadataAttrInterface : AttrInterface<"FnMetadataAttrInterface"> {
   let description = [{
     This interface describes attributes that are attached to a `!kgen.signature`
     type. Function metadata attributes carry additional information about a
-    callable on top of the information in the base `SignatureType`. This
+    callable on top of the information in the base `NewSignatureType`. This
     interface defines the required methods for this metadata attribute,
     including verification and print hooks.
   }];
@@ -128,24 +128,12 @@ def FnMetadataAttrInterface : AttrInterface<"FnMetadataAttrInterface"> {
 
   let methods = [
     InterfaceMethod<[{
-      Verify the signature type parameters using the current metadata.
-    }], "LogicalResult", "verifySignature", (ins
-      "function_ref<InFlightDiagnostic()>":$emitError,
-      "ArrayRef<Type>":$inputParamTypes, "ArrayRef<Type>":$resultParamTypes,
-      "FunctionType":$values,
-      "ArrayRef<ArgConvention>":$argConventions,
-      "FnEffects":$effects)>,
-    InterfaceMethod<[{
       Verify the new signature type parameters using the current metadata.
     }], "LogicalResult", "verifyNewSignature", (ins
       "function_ref<InFlightDiagnostic()>":$emitError,
       "FunctionType":$values,
       "ArrayRef<ArgConvention>":$argConventions,
       "FnEffects":$effects)>,
-    InterfaceMethod<[{
-      Request the custom metadata attribute print the provided signature.
-    }], "void", "printSignature", (ins "AsmPrinter &":$p,
-                                       "SignatureType":$sig)>,
     InterfaceMethod<[{
       Request the custom metadata attribute print the provided new_signature.
     }], "void", "printNewSignature", (ins "AsmPrinter &":$p,
@@ -168,11 +156,6 @@ def FnMetadataAttrInterface : AttrInterface<"FnMetadataAttrInterface"> {
       given ops. The given operations must implement `DeclInterface`.
     }], "FnMetadataAttrInterface", "prependPosParamsFromOps", (ins
       "ArrayRef<Operation *>":$ops)>,
-    InterfaceMethod<[{
-      Request the custom metadata attribute to convert an old SignatureType into
-      a GeneratorType that wraps a NewSignatureType.
-    }], "SignatureGeneratorType", "asSignatureGenerator", (ins
-      "SignatureType":$signature)>,
   ];
 }
 
@@ -200,11 +183,6 @@ def GeneratorMetadataAttrInterface
       Request the custom metadata attribute print the provided generator.
     }], "void", "printGenerator", (ins "AsmPrinter &":$p,
                                        "GeneratorType":$generator)>,
-    InterfaceMethod<[{
-      Request the custom metadata attribute to convert a Generator that wraps a
-      NewSignatureType into an old SignatureType.
-    }], "SignatureType", "asOldSignature", (ins
-      "SignatureGeneratorType":$generator)>,
     InterfaceMethod<[{
       Get a new metadata attribute for a generator where the parameters
       indicated by set bits in `boundParams` been removed from the generator by
