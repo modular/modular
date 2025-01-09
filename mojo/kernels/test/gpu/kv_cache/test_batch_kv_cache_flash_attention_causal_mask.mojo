@@ -3,7 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
+# FIXME: KERN-1437
+# UNSUPPORTED: H100-GPU
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK-NOT: CUDA ERROR
 
