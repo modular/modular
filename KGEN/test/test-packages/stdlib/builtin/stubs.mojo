@@ -278,11 +278,7 @@ struct Int(Copyable):
         return not (self == 0)
 
     @always_inline("nodebug")
-    fn __index__(self) -> Int:
-        return self
-
-    @always_inline("nodebug")
-    fn __mlir_index__(self) -> __mlir_type.index:
+    fn __index__(self) -> __mlir_type.index:
         return self.value
 
 
@@ -623,7 +619,7 @@ struct AddressSpace:
     alias GENERIC = AddressSpace(0)
 
     @always_inline("nodebug")
-    fn __mlir_index__(self) -> __mlir_type.index:
+    fn __index__(self) -> __mlir_type.index:
         return self._value.value
 
 
