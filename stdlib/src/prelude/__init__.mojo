@@ -57,8 +57,8 @@ from builtin.int import (
     Indexer,
     Int,
     Intable,
+    ImplicitlyIntable,
     IntableRaising,
-    IntLike,
     index,
     int,
 )

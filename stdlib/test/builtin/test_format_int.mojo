@@ -78,8 +78,8 @@ fn test_hex() raises:
 
 
 @value
-struct Ind(Indexer):
-    fn __index__(self) -> Int:
+struct Ind(Intable):
+    fn __int__(self) -> Int:
         return 1
 
 
@@ -128,7 +128,7 @@ def test_oct_bool():
     assert_equal(oct(False), "0o0")
 
 
-def test_indexer():
+def test_intable():
     assert_equal(bin(Ind()), "0b1")
     assert_equal(hex(Ind()), "0x1")
     assert_equal(oct(Ind()), "0o1")
@@ -158,7 +158,7 @@ def main():
     test_bin_scalar()
     test_bin_int()
     test_bin_bool()
-    test_indexer()
+    test_intable()
     test_oct_scalar()
     test_oct_bool()
     test_oct_int()

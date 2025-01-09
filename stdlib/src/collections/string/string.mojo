@@ -362,7 +362,7 @@ fn _trim_and_handle_sign(str_slice: StringSlice, str_len: Int) -> (Int, Bool):
         start += 1
     var p: Bool = buff[start] == ord("+")
     var n: Bool = buff[start] == ord("-")
-    return start + (p or n), n
+    return start + (int(p) or int(n)), n
 
 
 @always_inline
@@ -992,11 +992,11 @@ struct String(
     # Operator dunders
     # ===------------------------------------------------------------------=== #
 
-    fn __getitem__[IndexerType: Indexer](self, idx: IndexerType) -> String:
+    fn __getitem__[I: Indexer](self, idx: I) -> String:
         """Gets the character at the specified position.
 
         Parameters:
-            IndexerType: The inferred type of an indexer argument.
+            I: A type that can be used as an index.
 
         Args:
             idx: The index value.
@@ -1005,7 +1005,7 @@ struct String(
             A new string containing the character at the specified position.
         """
         # TODO(#933): implement this for unicode when we support llvm intrinsic evaluation at compile time
-        var normalized_idx = normalize_index["String"](idx, self)
+        var normalized_idx = normalize_index["String"](index(idx), self)
         var buf = Self._buffer_type(capacity=1)
         buf.append(self._buffer[normalized_idx])
         buf.append(0)

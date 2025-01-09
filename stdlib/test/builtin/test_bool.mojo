@@ -113,8 +113,8 @@ def test_neg():
 
 
 def test_indexer():
-    assert_equal(1, Bool.__index__(True))
-    assert_equal(0, Bool.__index__(False))
+    assert_true(1 == index(Bool(True)))
+    assert_true(0 == index(Bool(False)))
 
 
 def test_comparisons():

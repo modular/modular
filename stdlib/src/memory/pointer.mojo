@@ -208,7 +208,7 @@ struct AddressSpace(EqualityComparable, Stringable, Writable):
         return self._value
 
     @always_inline("nodebug")
-    fn __mlir_index__(self) -> __mlir_type.index:
+    fn __index__(self) -> __mlir_type.index:
         """Convert to index.
 
         Returns:

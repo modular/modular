@@ -200,14 +200,16 @@ struct TypedPythonObject[type_hint: StringLiteral](
     # 'Tuple' Operations
     # ===-------------------------------------------------------------------===#
 
-    fn __getitem__(
-        self: TypedPythonObject["Tuple"],
-        pos: Int,
-    ) raises -> PythonObject:
+    fn __getitem__[
+        I: Indexer
+    ](self: TypedPythonObject["Tuple"], pos: I,) raises -> PythonObject:
         """Get an element from this tuple.
 
         Args:
             pos: The tuple element position to retrieve.
+
+        Parameters:
+            I: A type that can be used as an index.
 
         Returns:
             The value of the tuple element at the specified position.
@@ -216,7 +218,7 @@ struct TypedPythonObject[type_hint: StringLiteral](
 
         var item: PyObjectPtr = cpython.PyTuple_GetItem(
             self.unsafe_as_py_object_ptr(),
-            pos,
+            index(pos),
         )
 
         if item.is_null():
@@ -230,8 +232,8 @@ struct TypedPythonObject[type_hint: StringLiteral](
 @register_passable
 struct PythonObject(
     ImplicitlyBoolable,
+    ImplicitlyIntable,
     Indexer,
-    Intable,
     KeyElement,
     SizedRaising,
     Stringable,
@@ -1456,13 +1458,13 @@ struct PythonObject(
         debug_assert(result != -1, "object is not hashable")
         hasher.update(result)
 
-    fn __index__(self) -> Int:
+    fn __index__(self) -> __mlir_type.index:
         """Returns an index representation of the object.
 
         Returns:
             An index value that represents this object.
         """
-        return self.__int__()
+        return self.__int__().value
 
     fn __int__(self) -> Int:
         """Returns an integral representation of the object.
@@ -1472,6 +1474,14 @@ struct PythonObject(
         """
         cpython = _get_global_python_itf().cpython()
         return cpython.PyLong_AsSsize_t(self.py_object)
+
+    fn __as_int__(self) -> Int:
+        """Implicitly convert to an Int.
+
+        Returns:
+            An integral value that represents this object.
+        """
+        return self.__int__()
 
     fn __float__(self) -> Float64:
         """Returns a float representation of the object.

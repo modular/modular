@@ -153,8 +153,8 @@ def test_int_representation():
 
 
 def test_indexer():
-    assert_equal(5, Int(5).__index__())
-    assert_equal(987, Int(987).__index__())
+    assert_true(5 == index(Int(5)))
+    assert_true(987 == index(Int(987)))
 
 
 def test_bool():

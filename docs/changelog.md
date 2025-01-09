@@ -147,6 +147,23 @@ what we publish.
 - `bit_ceil` has been renamed to `next_power_of_two`, and `bit_floor` to
   `prev_power_of_two`. This is to improve readability and clarity in their use.
 
+- The `Indexer` and `IntLike` traits which were previously both used for
+  indexing have been combined. This enables SIMD scalar integer types and UInt
+  to be used for indexing into all of the collection types, as well as
+  optimizing away normalization checks for UInt indexing.
+
+- The `ImplicitlyIntable` trait has been added, allowing types to be implicitly
+  converted to an `Int` by implementing the `__as_int__` method:
+
+  ```mojo
+  @value
+  struct Foo(ImplicitlyIntable):
+      var i: Int
+
+      fn __as_int__(self) -> Int:
+          return self.i
+  ```
+
 ### Tooling changes
 
 - mblack (aka `mojo format`) no longer formats non-mojo files. This prevents

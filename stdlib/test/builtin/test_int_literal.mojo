@@ -92,8 +92,8 @@ def test_abs():
 
 
 def test_indexer():
-    assert_equal(1, IntLiteral.__index__(1))
-    assert_equal(88, IntLiteral.__index__(88))
+    assert_true(1 == index(1))
+    assert_true(88 == index(88))
 
 
 def test_divmod():

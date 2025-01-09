@@ -22,6 +22,7 @@ from collections import List
 
 from os import abort
 from sys import sizeof
+from sys.intrinsics import _type_is_eq
 
 from memory import Pointer, UnsafePointer, memcpy, Span
 
@@ -850,29 +851,35 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
 
         return res^
 
-    fn __getitem__(ref self, idx: Int) -> ref [self] T:
+    fn __getitem__[I: Indexer](ref self, idx: I) -> ref [self] T:
         """Gets the list element at the given index.
 
         Args:
             idx: The index of the element.
 
+        Parameters:
+            I: A type that can be used as an index.
+
         Returns:
             A reference to the element at the given index.
         """
 
-        var normalized_idx = idx
+        @parameter
+        if _type_is_eq[I, UInt]():
+            return (self.data + idx)[]
+        else:
+            var normalized_idx = int(idx)
+            debug_assert(
+                -self.size <= normalized_idx < self.size,
+                "index: ",
+                normalized_idx,
+                " is out of bounds for `List` of size: ",
+                self.size,
+            )
+            if normalized_idx < 0:
+                normalized_idx += len(self)
 
-        debug_assert(
-            -self.size <= normalized_idx < self.size,
-            "index: ",
-            normalized_idx,
-            " is out of bounds for `List` of size: ",
-            self.size,
-        )
-        if normalized_idx < 0:
-            normalized_idx += len(self)
-
-        return (self.data + normalized_idx)[]
+            return (self.data + normalized_idx)[]
 
     @always_inline
     fn unsafe_get(ref self, idx: Int) -> ref [self] Self.T:

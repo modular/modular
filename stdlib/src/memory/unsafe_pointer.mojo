@@ -218,11 +218,11 @@ struct UnsafePointer[
         )
 
     @always_inline
-    fn offset[T: IntLike, //](self, idx: T) -> Self:
+    fn offset[I: Indexer, //](self, idx: I) -> Self:
         """Returns a new pointer shifted by the specified offset.
 
         Parameters:
-            T: The type of idx; either `Int` or `UInt`.
+            I: A type that can be used as an index.
 
         Args:
             idx: The offset of the new pointer.
@@ -230,16 +230,16 @@ struct UnsafePointer[
         Returns:
             The new constructed UnsafePointer.
         """
-        return __mlir_op.`pop.offset`(self.address, idx.__mlir_index__())
+        return __mlir_op.`pop.offset`(self.address, index(idx))
 
     @always_inline
     fn __getitem__[
-        IntLike: IntLike, //
-    ](self, offset: IntLike) -> ref [origin, address_space] type:
+        I: Indexer, //
+    ](self, offset: I) -> ref [origin, address_space] type:
         """Return a reference to the underlying data, offset by the given index.
 
         Parameters:
-            IntLike: The type of idx; either `Int` or `UInt`.
+            I: A type that can be used as an index.
 
         Args:
             offset: The offset index.
@@ -250,11 +250,11 @@ struct UnsafePointer[
         return (self + offset)[]
 
     @always_inline
-    fn __add__[T: IntLike, //](self, offset: T) -> Self:
+    fn __add__[I: Indexer, //](self, offset: I) -> Self:
         """Return a pointer at an offset from the current one.
 
         Parameters:
-            T: The type of idx; either `Int` or `UInt`.
+            I: A type that can be used as an index.
 
         Args:
             offset: The offset index.
@@ -265,11 +265,11 @@ struct UnsafePointer[
         return self.offset(offset)
 
     @always_inline
-    fn __sub__[T: IntLike, //](self, offset: T) -> Self:
+    fn __sub__[I: Indexer, //](self, offset: I) -> Self:
         """Return a pointer at an offset from the current one.
 
         Parameters:
-            T: The type of idx; either `Int` or `UInt`.
+            I: A type that can be used as an index.
 
         Args:
             offset: The offset index.
@@ -277,14 +277,14 @@ struct UnsafePointer[
         Returns:
             An offset pointer.
         """
-        return self + (-1 * Int(offset.__mlir_index__()))
+        return self + (-1 * index(offset))
 
     @always_inline
-    fn __iadd__[T: IntLike, //](mut self, offset: T):
+    fn __iadd__[I: Indexer, //](mut self, offset: I):
         """Add an offset to this pointer.
 
         Parameters:
-            T: The type of idx; either `Int` or `UInt`.
+            I: A type that can be used as an index.
 
         Args:
             offset: The offset index.
@@ -292,11 +292,11 @@ struct UnsafePointer[
         self = self + offset
 
     @always_inline
-    fn __isub__[T: IntLike, //](mut self, offset: T):
+    fn __isub__[I: Indexer, //](mut self, offset: I):
         """Subtract an offset from this pointer.
 
         Parameters:
-            T: The type of idx; either `Int` or `UInt`.
+            I: A type that can be used as an index.
 
         Args:
             offset: The offset index.
@@ -578,21 +578,21 @@ struct UnsafePointer[
 
     @always_inline("nodebug")
     fn load[
-        T: IntLike,
+        I: Indexer,
         type: DType, //,
         width: Int = 1,
         *,
         alignment: Int = _default_alignment[type, width](),
         volatile: Bool = False,
         invariant: Bool = False,
-    ](self: UnsafePointer[Scalar[type], **_], offset: T) -> SIMD[type, width]:
+    ](self: UnsafePointer[Scalar[type], **_], offset: I) -> SIMD[type, width]:
         """Loads the value the pointer points to with the given offset.
 
         Constraints:
             The width and alignment must be positive integer values.
 
         Parameters:
-            T: The type of offset, either `Int` or `UInt`.
+            I: A type that can be used as an index.
             type: The data type of SIMD vector elements.
             width: The size of the SIMD vector.
             alignment: The minimal alignment of the address.
@@ -614,12 +614,12 @@ struct UnsafePointer[
 
     @always_inline
     fn store[
-        T: IntLike,
+        I: Indexer,
         type: DType, //,
         *,
         alignment: Int = _default_alignment[type](),
         volatile: Bool = False,
-    ](self: UnsafePointer[Scalar[type], **_], offset: T, val: Scalar[type],):
+    ](self: UnsafePointer[Scalar[type], **_], offset: I, val: Scalar[type],):
         """Stores a single element value at the given offset.
 
         Constraints:
@@ -627,7 +627,7 @@ struct UnsafePointer[
             The offset must be integer.
 
         Parameters:
-            T: The type of offset, either `Int` or `UInt`.
+            I: A type that can be used as an index.
             type: The data type of SIMD vector elements.
             alignment: The minimal alignment of the address.
             volatile: Whether the operation is volatile or not.
@@ -641,7 +641,7 @@ struct UnsafePointer[
 
     @always_inline
     fn store[
-        T: IntLike,
+        I: Indexer,
         type: DType,
         width: Int, //,
         *,
@@ -649,7 +649,7 @@ struct UnsafePointer[
         volatile: Bool = False,
     ](
         self: UnsafePointer[Scalar[type], **_],
-        offset: T,
+        offset: I,
         val: SIMD[type, width],
     ):
         """Stores a single element value at the given offset.
@@ -659,7 +659,7 @@ struct UnsafePointer[
             The offset must be integer.
 
         Parameters:
-            T: The type of offset, either `Int` or `UInt`.
+            I: A type that can be used as an index.
             type: The data type of SIMD vector elements.
             width: The size of the SIMD vector.
             alignment: The minimal alignment of the address.

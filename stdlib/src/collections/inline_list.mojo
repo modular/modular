@@ -133,10 +133,13 @@ struct InlineList[ElementType: CollectionElementNew, capacity: Int = 16](Sized):
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __getitem__(
-        ref self, owned idx: Int
-    ) -> ref [self._array] Self.ElementType:
+    fn __getitem__[
+        I: Indexer
+    ](ref self, idx: I) -> ref [self._array] Self.ElementType:
         """Get a `Pointer` to the element at the given index.
+
+        Parameters:
+            I: A type that can be used as an index.
 
         Args:
             idx: The index of the item.
@@ -144,14 +147,15 @@ struct InlineList[ElementType: CollectionElementNew, capacity: Int = 16](Sized):
         Returns:
             A reference to the item at the given index.
         """
+        var index = int(idx)
         debug_assert(
-            -self._size <= idx < self._size, "Index must be within bounds."
+            -self._size <= index < self._size, "Index must be within bounds."
         )
 
-        if idx < 0:
-            idx += len(self)
+        if index < 0:
+            index += len(self)
 
-        return self._array[idx].assume_initialized()
+        return self._array[index].assume_initialized()
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations

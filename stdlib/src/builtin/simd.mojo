@@ -235,7 +235,7 @@ struct SIMD[type: DType, size: Int](
     Hashable,
     _HashableWithHasher,
     Intable,
-    IntLike,
+    Indexer,
     Representable,
     Roundable,
     Sized,
@@ -650,7 +650,7 @@ struct SIMD[type: DType, size: Int](
         """
         return __mlir_op.`pop.simd.extractelement`[
             _type = __mlir_type[`!pop.scalar<`, type.value, `>`]
-        ](self.value, index(idx).value)
+        ](self.value, idx.value)
 
     @always_inline("nodebug")
     fn __setitem__(mut self, idx: Int, val: Scalar[type]):
@@ -661,7 +661,7 @@ struct SIMD[type: DType, size: Int](
             val: The value to set.
         """
         self.value = __mlir_op.`pop.simd.insertelement`(
-            self.value, val.value, index(idx).value
+            self.value, val.value, idx.value
         )
 
     fn __contains__(self, value: Scalar[type]) -> Bool:
@@ -1523,7 +1523,7 @@ struct SIMD[type: DType, size: Int](
             ](rebind[Scalar[type]](self).value)
 
     @always_inline("nodebug")
-    fn __mlir_index__(self) -> __mlir_type.index:
+    fn __index__(self) -> __mlir_type.index:
         """Convert to index.
 
         Returns:

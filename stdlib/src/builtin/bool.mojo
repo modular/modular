@@ -104,8 +104,8 @@ struct Bool(
     ComparableCollectionElement,
     Defaultable,
     ImplicitlyBoolable,
+    ImplicitlyIntable,
     Indexer,
-    Intable,
     Representable,
     Stringable,
     Writable,
@@ -260,6 +260,16 @@ struct Bool(
         return _select_register_value(self, Int(1), Int(0))
 
     @always_inline("nodebug")
+    fn __as_int__(self) -> Int:
+        """Implicitly convert to an integral representation of the value,
+        wherever an `Int` is expected.
+
+        Returns:
+            The integral representation of the value.
+        """
+        return self.__int__()
+
+    @always_inline("nodebug")
     fn __float__(self) -> Float64:
         """Convert this Bool to a float.
 
@@ -269,13 +279,13 @@ struct Bool(
         return _select_register_value(self, Float64(1.0), Float64(0.0))
 
     @always_inline("nodebug")
-    fn __index__(self) -> Int:
-        """Convert this Bool to an integer for indexing purposes.
+    fn __index__(self) -> __mlir_type.index:
+        """Convert to index.
 
         Returns:
             1 if the Bool is True, 0 otherwise.
         """
-        return self.__int__()
+        return int(self).value
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: Bool) -> Bool:

@@ -223,8 +223,11 @@ struct InlineArray[
     # ===------------------------------------------------------------------===#
 
     @always_inline
-    fn __getitem__(ref self, idx: Int) -> ref [self] Self.ElementType:
+    fn __getitem__[I: Indexer](ref self, idx: I) -> ref [self] Self.ElementType:
         """Get a `Pointer` to the element at the given index.
+
+        Parameters:
+            I: A type that can be used as an index.
 
         Args:
             idx: The index of the item.
@@ -232,28 +235,42 @@ struct InlineArray[
         Returns:
             A reference to the item at the given index.
         """
-        var normalized_index = normalize_index["InlineArray"](idx, self)
-        return self.unsafe_get(normalized_index)
+
+        @parameter
+        if _type_is_eq[I, UInt]():
+            return self.unsafe_get(idx)
+        else:
+            var normalized_index = normalize_index["InlineArray"](
+                int(idx), self
+            )
+            return self.unsafe_get(normalized_index)
 
     @always_inline
-    fn __getitem__[idx: Int](ref self) -> ref [self] Self.ElementType:
+    fn __getitem__[
+        I: Indexer, //, idx: I
+    ](ref self) -> ref [self] Self.ElementType:
         """Get a `Pointer` to the element at the given index.
 
         Parameters:
+            I: A type that can be used as an index.
             idx: The index of the item.
 
         Returns:
             A reference to the item at the given index.
         """
-        constrained[-size <= idx < size, "Index must be within bounds."]()
-
-        var normalized_idx = idx
+        constrained[-size <= int(idx) < size, "Index must be within bounds."]()
 
         @parameter
-        if idx < 0:
-            normalized_idx += size
+        if _type_is_eq[I, UInt]():
+            return self.unsafe_get(idx)
+        else:
+            var normalized_idx = int(idx)
 
-        return self.unsafe_get(normalized_idx)
+            @parameter
+            if int(idx) < 0:
+                normalized_idx += size
+
+            return self.unsafe_get(normalized_idx)
 
     # ===------------------------------------------------------------------=== #
     # Trait implementations
@@ -273,7 +290,7 @@ struct InlineArray[
     # ===------------------------------------------------------------------===#
 
     @always_inline
-    fn unsafe_get(ref self, idx: Int) -> ref [self] Self.ElementType:
+    fn unsafe_get[I: Indexer](ref self, idx: I) -> ref [self] Self.ElementType:
         """Get a reference to an element of self without checking index bounds.
 
         Users should opt for `__getitem__` instead of this method as it is
@@ -285,20 +302,23 @@ struct InlineArray[
         Args:
             idx: The index of the element to get.
 
+        Parameters:
+            I: A type that can be used as an index.
+
         Returns:
             A reference to the element at the given index.
         """
-        var idx_as_int = index(idx)
+        var i = index(idx)
         debug_assert(
-            0 <= idx_as_int < size,
+            0 <= int(i) < size,
             " InlineArray.unsafe_get() index out of bounds: ",
-            idx_as_int,
+            int(idx),
             " should be less than: ",
             size,
         )
         var ptr = __mlir_op.`pop.array.gep`(
             UnsafePointer.address_of(self._array).address,
-            idx_as_int.value,
+            i,
         )
         return UnsafePointer(ptr)[]
 

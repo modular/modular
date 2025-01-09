@@ -598,11 +598,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             ptr=self.unsafe_ptr(), length=self.byte_length()
         )
 
-    fn __getitem__[IndexerType: Indexer](self, idx: IndexerType) -> String:
+    fn __getitem__[I: Indexer](self, idx: I) -> String:
         """Gets the character at the specified position.
 
         Parameters:
-            IndexerType: The inferred type of an indexer argument.
+            I: A type that can be used as an index.
 
         Args:
             idx: The index value.

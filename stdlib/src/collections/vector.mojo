@@ -20,6 +20,7 @@ from collections import InlinedFixedVector
 """
 
 from sys import sizeof
+from sys.intrinsics import _type_is_eq
 
 from memory import Pointer, UnsafePointer, memcpy
 
@@ -204,49 +205,60 @@ struct InlinedFixedVector[
         return self.current_size
 
     @always_inline
-    fn __getitem__(self, idx: Int) -> type:
+    fn __getitem__[I: Indexer](self, idx: I) -> type:
         """Gets a vector element at the given index.
 
         Args:
             idx: The index of the element.
 
+        Parameters:
+            I: A type that can be used as an index.
+
         Returns:
             The element at the given index.
         """
-        var normalized_idx = idx
+        var index = int(idx)
         debug_assert(
-            -self.current_size <= normalized_idx < self.current_size,
+            -self.current_size <= index < self.current_size,
             "index must be within bounds",
         )
 
-        if normalized_idx < 0:
-            normalized_idx += len(self)
+        @parameter
+        if not _type_is_eq[I, UInt]():
+            if index < 0:
+                index += len(self)
 
-        if normalized_idx < Self.static_size:
-            return self.static_data[normalized_idx]
+        if index < Self.static_size:
+            return self.static_data[index]
 
-        return self.dynamic_data[normalized_idx - Self.static_size]
+        return self.dynamic_data[index - Self.static_size]
 
     @always_inline
-    fn __setitem__(mut self, idx: Int, value: type):
+    fn __setitem__[I: Indexer](mut self, idx: I, value: type):
         """Sets a vector element at the given index.
+
+        Parameters:
+            I: A type that can be used as an index.
 
         Args:
             idx: The index of the element.
             value: The value to assign.
         """
-        var normalized_idx = idx
+        var index = int(idx)
         debug_assert(
-            -self.current_size <= normalized_idx < self.current_size,
+            -self.current_size <= index < self.current_size,
             "index must be within bounds",
         )
-        if normalized_idx < 0:
-            normalized_idx += len(self)
 
-        if normalized_idx < Self.static_size:
-            self.static_data[normalized_idx] = value
+        @parameter
+        if not _type_is_eq[I, UInt]():
+            if index < 0:
+                index += len(self)
+
+        if index < Self.static_size:
+            self.static_data[index] = value
         else:
-            self.dynamic_data[normalized_idx - Self.static_size] = value
+            self.dynamic_data[index - Self.static_size] = value
 
     fn clear(mut self):
         """Clears the elements in the vector."""

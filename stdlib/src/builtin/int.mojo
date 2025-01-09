@@ -40,24 +40,22 @@ from utils._visualizers import lldb_formatter_wrapping_type
 # ===----------------------------------------------------------------------=== #
 
 
-trait Indexer:
-    """This trait denotes a type that can be used to index a container that
-    handles integral index values.
-
-    This solves the issue of being able to index data structures such as `List`
-    with the various integral types without being too broad and allowing types
-    that are coercible to `Int` (e.g. floating point values that have `__int__`
-    method). In contrast to `Intable`, types conforming to `Indexer` must be
-    convertible to `Int` in a lossless way.
-
-    Note that types conforming to `Indexer` are implicitly convertible to `Int`.
+trait Indexer(
+    Intable,
+):
+    """
+    The `Indexer` trait is used for types that can index into a collection or
+    pointer. The type returned is the underlying __mlir_type.index, enabling
+    types like `UInt` to not have to be converted to an `Int` first. This type
+    is implicitly convertable to an `Int`, so can be used anywhere an `Int` can
+    e.g. for comparisons.
     """
 
-    fn __index__(self) -> Int:
-        """Return the index value.
+    fn __index__(self) -> __mlir_type.index:
+        """Convert to index.
 
         Returns:
-            The index value of the object.
+            The corresponding __mlir_type.index value.
         """
         ...
 
@@ -68,7 +66,7 @@ trait Indexer:
 
 
 @always_inline("nodebug")
-fn index[T: Indexer](idx: T, /) -> Int:
+fn index[T: Indexer](idx: T, /) -> __mlir_type.index:
     """Returns the value of `__index__` for the given value.
 
     Parameters:
@@ -78,7 +76,7 @@ fn index[T: Indexer](idx: T, /) -> Int:
         idx: The value.
 
     Returns:
-        An `Int` representing the index value.
+        An `__mlir_type` representing the index value.
     """
     return idx.__index__()
 
@@ -173,30 +171,38 @@ trait IntableRaising:
         ...
 
 
-# ===----------------------------------------------------------------------=== #
-#  IntLike
-# ===----------------------------------------------------------------------=== #
+trait ImplicitlyIntable(Intable):
+    """The `ImplicitlyIntable` trait describes a type that can be converted to
+    an Int implicitly.
 
+    This trait requires the type to implement the `__as_int__()` method. For
+    example:
 
-trait IntLike(
-    Absable,
-    Ceilable,
-    Floorable,
-    Writable,
-    Powable,
-    Stringable,
-    Truncable,
-):
+    ```mojo
+    @value
+    struct Foo(ImplicitlyIntable):
+        var i: Int
+
+        fn __as_int__(self) -> Int:
+            return self.i
+    ```
+
+    Now you can use `Foo` anywhere that an `Int` is expected, e.g. equality
+    checks:
+
+    ```mojo
+    %# from testing import assert_equal
+    foo = Foo(42)
+    assert_equal(foo, 42)
+    ```
     """
-    The `IntLike` trait is a tag for `Int` or `UInt`. This allows writing
-    functions that works on either.
-    """
 
-    fn __mlir_index__(self) -> __mlir_type.index:
-        """Convert to index.
+    fn __as_int__(self) -> Int:
+        """Implicitly convert to an integral representation of the value,
+        wherever an `Int` is expected.
 
         Returns:
-            The corresponding __mlir_type.index value.
+            The integral representation of the value.
         """
         ...
 
@@ -302,11 +308,9 @@ fn int(value: UInt) -> Int:
 struct Int(
     CeilDivable,
     Indexer,
-    Intable,
     ImplicitlyBoolable,
     KeyElement,
     Roundable,
-    IntLike,
     _HashableWithHasher,
     ExplicitlyCopyable,
 ):
@@ -375,16 +379,16 @@ struct Int(
 
     @always_inline("nodebug")
     @implicit
-    fn __init__[IndexerTy: Indexer](mut self, value: IndexerTy):
-        """Construct Int from the given Indexer value.
+    fn __init__[I: ImplicitlyIntable](out self, value: I):
+        """Construct Int from implicitly convertable type.
 
         Parameters:
-            IndexerTy: A type conforming to Indexer.
+            I: The type that is implicitly convertable to an `Int`.
 
         Args:
             value: The init value.
         """
-        self = value.__index__()
+        self = value.__as_int__()
 
     @always_inline("nodebug")
     @implicit
@@ -989,18 +993,6 @@ struct Int(
         return self.__bool__()
 
     @always_inline("nodebug")
-    fn __index__(self) -> Int:
-        """Return self converted to an integer, if self is suitable for use as
-        an index into a list.
-
-        For Int type this is simply the value.
-
-        Returns:
-            The corresponding Int value.
-        """
-        return self
-
-    @always_inline("nodebug")
     fn __int__(self) -> Int:
         """Gets the integral value (this is an identity function for Int).
 
@@ -1170,7 +1162,7 @@ struct Int(
         writer.write(self)
 
     @always_inline("nodebug")
-    fn __mlir_index__(self) -> __mlir_type.index:
+    fn __index__(self) -> __mlir_type.index:
         """Convert to index.
 
         Returns:

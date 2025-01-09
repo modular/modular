@@ -229,16 +229,19 @@ struct StringRef(
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    fn __getitem__(self, idx: Int) -> StringRef:
+    fn __getitem__[I: Indexer](self, idx: I) -> StringRef:
         """Get the string value at the specified position.
 
         Args:
           idx: The index position.
 
+        Parameters:
+            I: A type that can be used as an index.
+
         Returns:
           The character at the specified position.
         """
-        return StringRef {data: self.data + idx, length: 1}
+        return StringRef {data: self.data + int(idx), length: 1}
 
     @always_inline
     fn __eq__(self, rhs: StringRef) -> Bool:

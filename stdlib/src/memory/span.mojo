@@ -168,11 +168,14 @@ struct Span[
     # ===------------------------------------------------------------------===#
 
     @always_inline
-    fn __getitem__(self, idx: Int) -> ref [origin] T:
+    fn __getitem__[I: Indexer](self, idx: I) -> ref [origin] T:
         """Get a reference to an element in the span.
 
         Args:
             idx: The index of the value to return.
+
+        Parameters:
+            I: A type that can be used as an index.
 
         Returns:
             An element reference.
@@ -181,8 +184,8 @@ struct Span[
         debug_assert(
             -self._len <= int(idx) < self._len, "index must be within bounds"
         )
-
-        var offset = idx
+        # TODO(MSTDL-1086): optimize away SIMD/UInt normalization check
+        var offset = int(idx)
         if offset < 0:
             offset += len(self)
         return self._data[offset]

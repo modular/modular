@@ -193,13 +193,11 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](Sized):
         return val
 
     @always_inline("nodebug")
-    fn __getitem__[
-        IntLike: IntLike, //
-    ](self, idx: IntLike) -> Self.element_type:
+    fn __getitem__[I: Indexer, //](self, idx: I) -> Self.element_type:
         """Returns the value of the tuple at the given dynamic index.
 
         Parameters:
-            IntLike: The type of idx; either `Int` or `UInt`.
+            I: A type that can be used as an index.
 
         Args:
             idx: The index into the tuple.
@@ -207,46 +205,40 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](Sized):
         Returns:
             The value at the specified position.
         """
-        debug_assert(
-            int(idx.__mlir_index__()) < size, "index must be within bounds"
-        )
+        debug_assert(size > index(idx), "index must be within bounds")
         var ptr = __mlir_op.`pop.array.gep`(
-            UnsafePointer.address_of(self.array).address, idx.__mlir_index__()
+            UnsafePointer.address_of(self.array).address, index(idx)
         )
         return UnsafePointer(ptr)[]
 
     @always_inline("nodebug")
-    fn __setitem__[
-        IntLike: IntLike, //
-    ](mut self, idx: IntLike, val: Self.element_type):
+    fn __setitem__[I: Indexer, //](mut self, idx: I, val: Self.element_type):
         """Stores a single value into the tuple at the specified dynamic index.
 
         Parameters:
-            IntLike: The type of idx; either `Int` or `UInt`.
+            I: A type that can be used as an index.
 
         Args:
             idx: The index into the tuple.
             val: The value to store.
         """
-        debug_assert(
-            int(idx.__mlir_index__()) < size, "index must be within bounds"
-        )
+        debug_assert(size > index(idx), "index must be within bounds")
         var tmp = self
         var ptr = __mlir_op.`pop.array.gep`(
-            UnsafePointer.address_of(tmp.array).address, idx.__mlir_index__()
+            UnsafePointer.address_of(tmp.array).address, index(idx)
         )
         UnsafePointer(ptr)[] = val
         self = tmp
 
     @always_inline("nodebug")
-    fn __setitem__[index: Int](mut self, val: Self.element_type):
+    fn __setitem__[idx: Int](mut self, val: Self.element_type):
         """Stores a single value into the tuple at the specified index.
 
         Parameters:
-            index: The index into the tuple.
+            idx: The index into the tuple.
 
         Args:
             val: The value to store.
         """
-        constrained[index < size]()
-        _set_array_elem[index, size, Self.element_type](val, self.array)
+        constrained[idx < size]()
+        _set_array_elem[idx, size, Self.element_type](val, self.array)

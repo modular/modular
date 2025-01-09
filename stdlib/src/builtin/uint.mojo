@@ -27,7 +27,7 @@ from utils._visualizers import lldb_formatter_wrapping_type
 @lldb_formatter_wrapping_type
 @value
 @register_passable("trivial")
-struct UInt(IntLike, _HashableWithHasher):
+struct UInt(Indexer, _HashableWithHasher):
     """This type represents an unsigned integer.
 
     An unsigned integer represents a positive integral number.
@@ -105,7 +105,7 @@ struct UInt(IntLike, _HashableWithHasher):
         self = value.__uint__()
 
     @always_inline("nodebug")
-    fn __mlir_index__(self) -> __mlir_type.index:
+    fn __index__(self) -> __mlir_type.index:
         """Convert to index.
 
         Returns:
@@ -141,6 +141,15 @@ struct UInt(IntLike, _HashableWithHasher):
         """
 
         writer.write(UInt64(self))
+
+    @always_inline("nodebug")
+    fn __int__(self) -> Int:
+        """Gets the integral value, wrapping to a negative number on overflow.
+
+        Returns:
+            The value as an integer.
+        """
+        return self.value
 
     fn __repr__(self) -> String:
         """Convert this UInt to a string.
@@ -727,18 +736,6 @@ struct UInt(IntLike, _HashableWithHasher):
             False Bool value if the value is equal to 0 and True otherwise.
         """
         return self != 0
-
-    @always_inline("nodebug")
-    fn __index__(self) -> UInt:
-        """Return self converted to an unsigned integer, if self is suitable for use as
-        an index into a list.
-
-        For Int type this is simply the value.
-
-        Returns:
-            The corresponding Int value.
-        """
-        return self
 
     @always_inline("nodebug")
     fn __ceil__(self) -> Self:

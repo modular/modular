@@ -212,8 +212,8 @@ def test_int_representation():
 
 
 def test_indexer():
-    assert_equal(UInt(5), UInt(5).__index__())
-    assert_equal(UInt(987), UInt(987).__index__())
+    assert_true(5 == index(UInt(5)))
+    assert_true(987 == index(UInt(987)))
 
 
 def test_comparison():
