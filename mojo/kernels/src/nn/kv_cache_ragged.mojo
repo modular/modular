@@ -1014,8 +1014,8 @@ fn _matmul_common[
 # ===-----------------------------------------------------------------------===#
 
 
-@register_internal("matmul_kv_cache_h8_d128_cont_batch_ragged")
-fn matmul_kv_cache_h8_d128_cont_batch_ragged[
+@register_internal("mo.kv_matmul.ragged.continuous_batching.nhead_8.hdim_128")
+fn kv_matmul_ragged_continuous_batching_nhead_8_hdim_128[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -1053,11 +1053,10 @@ fn matmul_kv_cache_h8_d128_cont_batch_ragged[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "matmul_kv_cache_h"
+        "mo.kv_matmul.ragged.continuous_batching.nhead_"
         + str(kv_collection.kv_params.num_heads)
-        + "_d"
-        + str(kv_collection.kv_params.head_size)
-        + "_bshd_cont_batch_ragged",
+        + ".hdim_"
+        + str(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         return _matmul_kv_cache_ragged[target=target](
