@@ -135,7 +135,7 @@ def FnMetadataAttrInterface : AttrInterface<"FnMetadataAttrInterface"> {
       "ArrayRef<ArgConvention>":$argConventions,
       "FnEffects":$effects)>,
     InterfaceMethod<[{
-      Request the custom metadata attribute print the provided new_signature.
+      Request the custom metadata attribute print the provided signature.
     }], "void", "printNewSignature", (ins "AsmPrinter &":$p,
                                           "NewSignatureType":$sig)>,
     InterfaceMethod<[{

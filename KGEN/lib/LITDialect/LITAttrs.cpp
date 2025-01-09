@@ -543,6 +543,14 @@ bool FnMetadataAttr::isPackVarArg(size_t idx) const {
   return getArgListAttrs().isPack(idx);
 }
 
+void FnMetadataAttr::printNewSignature(AsmPrinter &p,
+                                       NewSignatureType sig) const {
+  p << "!lit.signature<";
+  auto signature = ::cast<LITNewSignatureType>(sig);
+  printLITNewSignature(p, signature);
+  p << '>';
+}
+
 //===----------------------------------------------------------------------===//
 // UnboundMLIROperationAttr
 //===----------------------------------------------------------------------===//

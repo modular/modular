@@ -1007,7 +1007,7 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   OptionalParseResult result = parseOptionalLITSignature(p, signature);
   if (result.has_value())
     return *result;
-  return p.emitError(p.getCurrentLocation(), "expected LIT new_signature");
+  return p.emitError(p.getCurrentLocation(), "expected LIT signature");
 }
 
 //===----------------------------------------------------------------------===//
@@ -1041,8 +1041,8 @@ Type LITDialect::parseType(DialectAsmParser &p) const {
   if (parseResult.has_value())
     return genType;
 
-  // Special alias for `!lit.new_signature` & `!lit.generator` types.
-  if (mnemonic == "new_signature") {
+  // Special alias for `!lit.signature` & `!lit.generator` types.
+  if (mnemonic == "signature") {
     if (p.parseLess() || parseLITSignature(p, genType) || p.parseGreater())
       return {};
     return genType;
@@ -1060,14 +1060,6 @@ Type LITDialect::parseType(DialectAsmParser &p) const {
 void LITDialect::printType(Type type, DialectAsmPrinter &p) const {
   if (succeeded(generatedTypePrinter(type, p)))
     return;
-}
-
-void FnMetadataAttr::printNewSignature(AsmPrinter &p,
-                                       NewSignatureType sig) const {
-  p << "!lit.new_signature<";
-  auto signature = ::cast<LITNewSignatureType>(sig);
-  printLITNewSignature(p, signature);
-  p << '>';
 }
 
 //===----------------------------------------------------------------------===//

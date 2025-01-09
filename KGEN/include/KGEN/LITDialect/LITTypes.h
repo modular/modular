@@ -211,7 +211,7 @@ public:
 
   size_t getNumAsyncReturnSlots() { return getBody().getNumAsyncReturnSlots(); }
 
-  /// Get the new_signature metadata.
+  /// Get the signature metadata.
   FnMetadataAttr getFnMetadata();
 
   /// Get the argument list metadata.
