@@ -139,7 +139,7 @@ from nn.kv_cache_ragged import (
     generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged,
     generic_flash_attention_kv_cache_null_mask_cont_batch_ragged,
     generic_cross_attention_kv_cache_null_mask_cont_batch_ragged,
-    matmul_kv_cache_h8_d128_cont_batch_ragged,
+    kv_matmul_ragged_continuous_batching_nhead_8_hdim_128,
 )
 from nn.mha import flash_attention
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
@@ -9998,9 +9998,10 @@ struct Struct_fused_qkv_matmul_ragged_paged_nhead_32_hdim_128:
 
 
 @compiler.register(
-    "matmul_kv_cache_h8_d128_cont_batch_ragged", num_dps_outputs=0
+    "mo.kv_matmul.ragged.continuous_batching.nhead_8.hdim_128",
+    num_dps_outputs=0,
 )
-struct Struct_matmul_kv_cache_h8_d128_cont_batch_ragged:
+struct Struct_kv_matmul_ragged_continuous_batching_nhead_8_hdim_128:
     @uses_opaque
     @staticmethod
     @always_inline
@@ -10017,7 +10018,7 @@ struct Struct_matmul_kv_cache_h8_d128_cont_batch_ragged:
         layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
-        matmul_kv_cache_h8_d128_cont_batch_ragged[target=target](
+        kv_matmul_ragged_continuous_batching_nhead_8_hdim_128[target=target](
             managed_tensor_slice_to_ndbuffer_with_spec[
                 compiler.specsof[hidden_state.type, hidden_state.rank](
                     "hidden_state"

@@ -197,8 +197,7 @@ from nn.kv_cache_ragged import (
     fused_qkv_matmul_ragged_paged_nhead_8_hdim_128,
     fused_qkv_matmul_ragged_paged_nhead_8_hdim_512,
     fused_qkv_matmul_ragged_paged_nhead_32_hdim_128,
-    matmul_kv_cache_h8_d128_cont_batch_ragged,
-    matmul_kv_cache_h8_d128_cont_batch_ragged,
+    kv_matmul_ragged_continuous_batching_nhead_8_hdim_128,
 )
 from nn.mha import flash_attention
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
@@ -431,7 +430,7 @@ fn MOGGExport():
     alias _mha_ragged_paged_causal_mask_no_pos_nhead_8_hdim_512 = mha_ragged_paged_causal_mask_no_pos_nhead_8_hdim_512
     alias _mha_ragged_paged_causal_mask_no_pos_nhead_32_hdim_128 = mha_ragged_paged_causal_mask_no_pos_nhead_32_hdim_128
     alias _cross_attention_kv_cache_h8_d128_null_mask_cont_batch_ragged = cross_attention_kv_cache_h8_d128_null_mask_cont_batch_ragged
-    alias _matmul_kv_cache_h8_d128_cont_batch_ragged = matmul_kv_cache_h8_d128_cont_batch_ragged
+    alias _kv_matmul_ragged_continuous_batching_nhead_8_hdim_128 = kv_matmul_ragged_continuous_batching_nhead_8_hdim_128
 
 
 # ===----------------------------------------------------------------------===#
