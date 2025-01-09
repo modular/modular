@@ -2614,7 +2614,7 @@ fn mha_single_batch_pipelined[
                 num_pipeline_stages,
                 False,  # transpose_b
                 swizzle_a=False,
-                static_num_iters = BN // BK,
+                static_num_iters = int(BN // BK),
                 prefetch_init=False,
                 k_group_size = config.k_group_size,
             ](

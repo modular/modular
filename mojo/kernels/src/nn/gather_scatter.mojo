@@ -79,9 +79,14 @@ struct Axis(Intable, Indexer):
     fn __int__(self) -> Int:
         return self.axis
 
-    @always_inline
-    fn __index__(self) -> Int:
-        return int(self)
+    @always_inline("nodebug")
+    fn __index__(self) -> __mlir_type.index:
+        """Convert to index.
+
+        Returns:
+            The corresponding __mlir_type.index value.
+        """
+        return self.axis.value
 
 
 @always_inline
