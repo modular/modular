@@ -7864,7 +7864,9 @@ struct Struct_mha_padded_continuous_batching_tensor_mask_no_pos_nhead_8_hdim_512
         )
 
 
-@compiler.register("flash_attention_kv_cache_h2_d128_bshd_continuous_batch")
+@compiler.register(
+    "mo.mha.padded.continuous_batching.tensor_mask.no_pos.nhead_2.hdim_128"
+)
 struct Struct_flash_attention_kv_cache_h2_d128_bshd_continuous_batch:
     @uses_opaque
     @always_inline
@@ -7896,7 +7898,9 @@ struct Struct_flash_attention_kv_cache_h2_d128_bshd_continuous_batch:
         )
 
 
-@compiler.register("flash_attention_kv_cache_h16_d128_bshd_continuous_batch")
+@compiler.register(
+    "mo.mha.padded.continuous_batching.tensor_mask.no_pos.nhead_16.hdim_128"
+)
 struct Struct_flash_attention_kv_cache_h16_d128_bshd_continuous_batch:
     @uses_opaque
     @always_inline
@@ -8077,7 +8081,7 @@ struct Struct_mha_padded_continuous_batching_causal_mask_no_pos_nhead_1_hdim_16:
 
 
 @compiler.register(
-    "flash_attention_kv_cache_h32_d128_causal_mask_continuous_batch"
+    "mo.mha.padded.continuous_batching.causal_mask.no_pos.nhead_32.hdim_128"
 )
 struct Struct_flash_attention_kv_cache_h32_d128_causal_mask_continuous_batch:
     @uses_opaque
