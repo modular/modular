@@ -33,6 +33,22 @@ from .indexing import _dot_prod, _row_major_strides, _slice_to_tuple
 from .tensor_like import TensorLike
 
 
+# ===----------------------------------------------------------------------=== #
+# Load / Store Helper primitives
+# ===----------------------------------------------------------------------=== #
+
+
+@parameter
+@always_inline
+fn gcd_pow2[a: Int, b: Int]() -> Int:
+    # alignments should always be powers of 2
+    constrained[
+        is_power_of_two(a) and is_power_of_two(b),
+        "a and b must be powers of 2",
+    ]()
+    return min(a, b)
+
+
 # TODO(GEX-1523): Consider moving these and other methods implementation into
 # non-class member functions.
 #
@@ -181,6 +197,95 @@ fn simd_load_from_managed_tensor_slice[
             return load_stride1()
         else:
             return load_strided(static_stride.get())
+
+
+# ===----------------------------------------------------------------------=== #
+# Input / output fusion primitives
+# ===----------------------------------------------------------------------=== #
+
+
+# This is a special version of `specsof(self)`
+# Returns the static tensor spec of self, but without I/O lambdas.
+# This function is called only inside the lambda implementations.
+# Using specsof wouldn't work because the lambda would recursively depend on itself:
+# kgen.param.declare_region lambda_fn = {
+#   kgen.param.declare specs = build_tensor_specs(..., lambda_fn, ...) // cycle
+# }
+@__mogg_intrinsic_attr("mogg.get_tensor_specs_without_lambdas")
+@no_inline
+fn _get_tensor_specs_without_lambdas[
+    type: DType, rank: Int
+]() -> StaticTensorSpec[type, rank]:
+    return StaticTensorSpec[type, rank]()
+
+
+# Helper functions used in SliceMOGGDPSFunc to ensure the input lambda isn't DCE
+@no_inline
+fn _extract_input_lambda[
+    type: DType, rank: Int, T: StaticTensorSpec[type, rank].in_lambda_t
+]():
+    pass
+
+
+# Helper functions used in SliceMOGGDPSFunc to ensure the output lambda isn't DCE
+@no_inline
+fn _extract_output_lambda[
+    type: DType, rank: Int, T: StaticTensorSpec[type, rank].out_lambda_t
+]():
+    pass
+
+
+# Helper function used in SliceMOGGDPSFunc to generate the body of the input lambda
+@__mogg_intrinsic_attr("mogg.dps_input_fusion_hook")
+@no_inline
+fn _input_fusion_hook_impl[
+    type: DType, rank: Int
+](tensor: ManagedTensorSlice[type, rank]):
+    @always_inline
+    @parameter
+    fn _input_lambda[_w: Int](i: IndexList[rank]) -> SIMD[type, _w]:
+        alias static_specs = _get_tensor_specs_without_lambdas[type, rank]()
+
+        # We use these methods to help with fusion passes which manipulates
+        # calls. It is helpful to have a registered function.
+        return rebind[SIMD[type, _w]](
+            simd_load_from_managed_tensor_slice[
+                simd_width=_w,
+                alignment = static_specs.alignment,
+                address_space = static_specs.address_space,
+                static_strides = static_specs.strides,
+            ](tensor, i)
+        )
+
+    _extract_input_lambda[type, rank, _input_lambda]()
+
+
+# Helper function used in SliceMOGGDPSFunc to generate the body of the output lambda
+@__mogg_intrinsic_attr("mogg.dps_output_fusion_hook")
+@no_inline
+fn _output_fusion_hook_impl[
+    type: DType, rank: Int
+](tensor: ManagedTensorSlice[type, rank]):
+    @always_inline
+    @parameter
+    fn _output_lambda[_w: Int](i: IndexList[rank], v: SIMD[type, _w]):
+        alias static_specs = _get_tensor_specs_without_lambdas[type, rank]()
+
+        # We use these methods to help with fusion passes which manipulates
+        # calls. It is helpful to have a registered function.
+        simd_store_into_managed_tensor_slice[
+            simd_width=_w,
+            alignment = static_specs.alignment,
+            address_space = static_specs.address_space,
+            static_strides = static_specs.strides,
+        ](tensor, i, rebind[SIMD[type, _w]](v))
+
+    _extract_output_lambda[type, rank, _output_lambda]()
+
+
+# ===----------------------------------------------------------------------=== #
+# ManagedTensorSlice class
+# ===----------------------------------------------------------------------=== #
 
 
 @value
@@ -415,9 +520,6 @@ struct ManagedTensorSlice[
         # Necessary to make it simpler on the call site.
         _rank: Int,
     ](self, index: IndexList[_rank]) -> SIMD[type, width]:
-        # Nop function to preserve symbols from DCE.
-        self._input_fusion_hook()
-
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
 
@@ -506,9 +608,6 @@ struct ManagedTensorSlice[
         # Necessary to make it simpler on the call site.
         _rank: Int,
     ](self, index: IndexList[_rank], val: SIMD[type, width]):
-        # Nop function to preserve symbols from DCE.
-        self._output_fusion_hook()
-
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
 
@@ -529,67 +628,10 @@ struct ManagedTensorSlice[
                 static_strides=strides,
             ](self, ridx, val)
 
-    # Helper functions used in SliceMOGGDPSFunc to ensure the lambda isn't DCE
-    @no_inline
-    fn _extract_lambda[T: StaticTensorSpec[type, rank].in_lambda_t](self):
-        pass
 
-    @no_inline
-    fn _extract_lambda[T: StaticTensorSpec[type, rank].out_lambda_t](self):
-        pass
-
-    # Helper function used in SliceMOGGDPSFunc to generate the body of the input lambda
-    @__mogg_intrinsic_attr("mogg.dps_input_fusion_hook")
-    @no_inline
-    fn _input_fusion_hook(self):
-        @always_inline
-        @parameter
-        fn _input_lambda[_w: Int](i: IndexList[rank]) -> SIMD[type, _w]:
-            alias static_specs = _get_tensor_specs_without_lambdas[type, rank]()
-
-            # We use these methods to help with fusion passes which manipulates
-            # calls. It is helpful to have a registered function.
-            return rebind[SIMD[type, _w]](
-                simd_load_from_managed_tensor_slice[
-                    simd_width=_w,
-                    alignment = static_specs.alignment,
-                    address_space = static_specs.address_space,
-                    static_strides = static_specs.strides,
-                ](self, i)
-            )
-
-        self._extract_lambda[_input_lambda]()
-
-    # Helper function used in SliceMOGGDPSFunc to generate the body of the output lambda
-    @__mogg_intrinsic_attr("mogg.dps_output_fusion_hook")
-    @no_inline
-    fn _output_fusion_hook(self):
-        @always_inline
-        @parameter
-        fn _output_lambda[_w: Int](i: IndexList[rank], v: SIMD[type, _w]):
-            alias static_specs = _get_tensor_specs_without_lambdas[type, rank]()
-
-            # We use these methods to help with fusion passes which manipulates
-            # calls. It is helpful to have a registered function.
-            simd_store_into_managed_tensor_slice[
-                simd_width=_w,
-                alignment = static_specs.alignment,
-                address_space = static_specs.address_space,
-                static_strides = static_specs.strides,
-            ](self, i, rebind[SIMD[type, _w]](v))
-
-        self._extract_lambda[_output_lambda]()
-
-
-@parameter
-@always_inline
-fn gcd_pow2[a: Int, b: Int]() -> Int:
-    # alignments should always be powers of 2
-    constrained[
-        is_power_of_two(a) and is_power_of_two(b),
-        "a and b must be powers of 2",
-    ]()
-    return min(a, b)
+# ===----------------------------------------------------------------------=== #
+# ForEach / view copy primitives
+# ===----------------------------------------------------------------------=== #
 
 
 fn get_kernel_simd_width[type: DType, target: StringLiteral]() -> Int:
@@ -650,21 +692,6 @@ fn foreach[
         use_blocking_impl=synchronous,
         target=target,
     ](tensor.shape(), ctx)
-
-
-# This is a special version of `specsof(self)`
-# Returns the static tensor spec of self, but without I/O lambdas.
-# This function is called only inside the lambda implementations.
-# Using specsof wouldn't work because the lambda would recursively depend on itself:
-# kgen.param.declare_region lambda_fn = {
-#   kgen.param.declare specs = build_tensor_specs(..., lambda_fn, ...) // cycle
-# }
-@__mogg_intrinsic_attr("mogg.get_tensor_specs_without_lambdas")
-@no_inline
-fn _get_tensor_specs_without_lambdas[
-    type: DType, rank: Int
-]() -> StaticTensorSpec[type, rank]:
-    return StaticTensorSpec[type, rank]()
 
 
 # TensorCopy intrinsic used by view kernels.
