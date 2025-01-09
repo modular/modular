@@ -20,6 +20,7 @@ from python import PythonObject
 """
 
 from collections import Dict
+from collections.string import StringSlice
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from sys.ffi import c_ssize_t
 from sys.intrinsics import _type_is_eq
@@ -404,27 +405,26 @@ struct PythonObject(
         Args:
             value: The string value.
         """
-        self = PythonObject(str(value))
+        self = PythonObject(value.as_string_slice())
 
     @implicit
-    fn __init__(out self, strref: StringRef):
-        """Initialize the object from a string reference.
+    fn __init__(out self, value: String):
+        """Initialize the object from a string.
 
         Args:
-            strref: The string reference.
+            value: The string value.
         """
-        cpython = _get_global_python_itf().cpython()
-        self.py_object = cpython.PyUnicode_DecodeUTF8(strref)
+        self = PythonObject(value.as_string_slice())
 
     @implicit
-    fn __init__(out self, string: String):
+    fn __init__(out self, string: StringSlice):
         """Initialize the object from a string.
 
         Args:
             string: The string value.
         """
         cpython = _get_global_python_itf().cpython()
-        self.py_object = cpython.PyUnicode_DecodeUTF8(string.as_string_slice())
+        self.py_object = cpython.PyUnicode_DecodeUTF8(string)
 
     @implicit
     fn __init__[*Ts: CollectionElement](mut self, value: ListLiteral[*Ts]):
@@ -457,7 +457,11 @@ struct PythonObject(
             elif _type_is_eq[T, Bool]():
                 obj = PythonObject(value.get[i, Bool]())
             elif _type_is_eq[T, StringRef]():
-                obj = PythonObject(value.get[i, StringRef]())
+                obj = PythonObject(
+                    StringSlice[MutableAnyOrigin](
+                        unsafe_from_utf8_strref=value.get[i, StringRef]()
+                    )
+                )
             elif _type_is_eq[T, StringLiteral]():
                 obj = PythonObject(value.get[i, StringLiteral]())
             else:
@@ -501,7 +505,11 @@ struct PythonObject(
             elif _type_is_eq[T, Bool]():
                 obj = PythonObject(value.get[i, Bool]())
             elif _type_is_eq[T, StringRef]():
-                obj = PythonObject(value.get[i, StringRef]())
+                obj = PythonObject(
+                    StringSlice[MutableAnyOrigin](
+                        unsafe_from_utf8_strref=value.get[i, StringRef]()
+                    )
+                )
             elif _type_is_eq[T, StringLiteral]():
                 obj = PythonObject(value.get[i, StringLiteral]())
             else:

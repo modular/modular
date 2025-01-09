@@ -387,7 +387,7 @@ alias BAD_SEQUENCES = List[String](
 )
 
 
-fn validate_utf8(slice: String) -> Bool:
+fn validate_utf8(slice: StringSlice) -> Bool:
     return _is_valid_utf8(slice.as_bytes())
 
 

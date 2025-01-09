@@ -273,18 +273,6 @@ fn test_string_conversions() raises -> None:
         except e:
             print("Error occurred")
 
-    fn test_string_ref() -> None:
-        try:
-            var mojo_str: StringLiteral = "mojo"
-            var mojo_strref = StringRef(mojo_str)
-            var py_str = PythonObject(mojo_strref)
-            var py_capitalized = py_str.capitalize()
-            var py = Python()
-            var mojo_capitalized = py.__str__(py_capitalized)
-            assert_equal(mojo_capitalized, "Mojo")
-        except e:
-            print("Error occurred")
-
     fn test_string() -> None:
         try:
             var mo_str = String("mo")
@@ -305,7 +293,6 @@ fn test_string_conversions() raises -> None:
         assert_equal(str(type_obj), "<class 'float'>")
 
     test_string_literal()
-    test_string_ref()
     test_string()
     test_type_object()
 

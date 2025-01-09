@@ -16,6 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from collections import KeyElement
+from collections.string import StringSlice
 from collections.string.string import (
     _calc_initial_buffer_size_int32,
     _calc_initial_buffer_size_int64,
@@ -240,7 +241,7 @@ fn int[T: IntableRaising](value: T) raises -> Int:
     return value.__int__()
 
 
-fn int(value: String, base: Int = 10) raises -> Int:
+fn int(value: StringSlice, base: Int = 10) raises -> Int:
     """Parses and returns the given string as an integer in the given base.
 
     If base is set to 0, the string is parsed as an Integer literal, with the

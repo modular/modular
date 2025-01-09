@@ -312,7 +312,10 @@ fn getsize[PathLike: os.PathLike, //](path: PathLike) raises -> Int:
 # ===----------------------------------------------------------------------=== #
 
 
-fn join(path: String, *paths: String) -> String:
+# TODO(MOCO-1532):
+#   Use StringSlice here once param inference bug for empty variadic
+#   list of parameterized types is fixed.
+fn join(owned path: String, *paths: String) -> String:
     """Join two or more pathname components, inserting '/' as needed.
     If any component is an absolute path, all previous path components
     will be discarded.  An empty last part will result in a path that
@@ -335,7 +338,7 @@ fn join(path: String, *paths: String) -> String:
         else:
             joined_path += sep + cur_path[]
 
-    return joined_path
+    return joined_path^
 
 
 # ===----------------------------------------------------------------------=== #

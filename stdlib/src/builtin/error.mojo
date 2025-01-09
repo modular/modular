@@ -20,6 +20,7 @@ from sys.ffi import c_char
 
 from memory import UnsafePointer, memcpy
 from memory.memory import _free
+from collections.string import StringSlice
 
 from utils import StringRef
 

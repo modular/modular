@@ -54,7 +54,7 @@ fn _to_index[lookup: List[UInt32, **_]](rune: Int) -> Int:
     return cursor if b.load(cursor) == x else -1
 
 
-fn is_uppercase(s: String) -> Bool:
+fn is_uppercase(s: StringSlice) -> Bool:
     """Returns True if all characters in the string are uppercase, and
         there is at least one cased character.
 
@@ -84,7 +84,7 @@ fn is_uppercase(s: String) -> Bool:
     return found
 
 
-fn is_lowercase(s: String) -> Bool:
+fn is_lowercase(s: StringSlice) -> Bool:
     """Returns True if all characters in the string are lowercase, and
         there is at least one cased character.
 
@@ -161,7 +161,7 @@ fn _write_rune(rune: UInt32, p: UnsafePointer[UInt8]) -> Int:
     return num_bytes
 
 
-fn to_lowercase(s: String) -> String:
+fn to_lowercase(s: StringSlice) -> String:
     """Returns a new string with all characters converted to uppercase.
 
     Args:
@@ -206,7 +206,7 @@ fn to_lowercase(s: String) -> String:
     return String(list)
 
 
-fn to_uppercase(s: String) -> String:
+fn to_uppercase(s: StringSlice) -> String:
     """Returns a new string with all characters converted to uppercase.
 
     Args:

@@ -78,17 +78,8 @@ struct FileHandle:
         """Default constructor."""
         self.handle = OpaquePointer()
 
-    fn __init__(out self, path: String, mode: String) raises:
-        """Construct the FileHandle using the file path and mode.
-
-        Args:
-          path: The file path.
-          mode: The mode to open the file in (the mode can be "r" or "w" or "rw").
-        """
-        self = Self(path.as_string_slice(), mode.as_string_slice())
-
     fn __init__(out self, path: StringSlice, mode: StringSlice) raises:
-        """Construct the FileHandle using the file path and string.
+        """Construct the FileHandle using the file path and mode.
 
         Args:
           path: The file path.
@@ -482,7 +473,7 @@ struct FileHandle:
 
 fn open[
     PathLike: os.PathLike
-](path: PathLike, mode: String) raises -> FileHandle:
+](path: PathLike, mode: StringSlice) raises -> FileHandle:
     """Opens the file specified by path using the mode provided, returning a
     FileHandle.
 

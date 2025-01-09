@@ -16,6 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from collections import InlineArray
+from collections.string import StringSlice
 from sys import _libc as libc
 from sys import (
     bitwidthof,
@@ -94,7 +95,7 @@ struct _fdopen[mode: StringLiteral = "a"]:
         """
         return self.read_until_delimiter("\n")
 
-    fn read_until_delimiter(self, delimiter: String) -> String:
+    fn read_until_delimiter(self, delimiter: StringSlice) -> String:
         """Reads an entire line from a stream, up to the `delimiter`.
         Does not include the delimiter in the result.
 

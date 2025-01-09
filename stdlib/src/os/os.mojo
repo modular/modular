@@ -110,7 +110,7 @@ struct _DirHandle:
             raise "the directory '" + path + "' does not exist"
 
         self._handle = external_call["opendir", OpaquePointer](
-            path.unsafe_ptr()
+            path.unsafe_cstr_ptr()
         )
 
         if not self._handle:

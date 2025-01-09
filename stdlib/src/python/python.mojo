@@ -20,6 +20,7 @@ from python import Python
 """
 
 from collections import Dict
+from collections.string import StringSlice
 from os import abort, getenv
 from sys import external_call, sizeof
 from sys.ffi import _Global
@@ -172,7 +173,7 @@ struct Python:
             return PythonObject(result)
 
     @staticmethod
-    fn add_to_path(dir_path: String) raises:
+    fn add_to_path(dir_path: StringSlice) raises:
         """Adds a directory to the Python path.
 
         This might be necessary to import a Python module via `import_module()`.
@@ -194,6 +195,7 @@ struct Python:
         var cpython = _get_global_python_itf().cpython()
         var sys = Python.import_module("sys")
         var directory: PythonObject = dir_path
+
         _ = sys.path.append(directory)
 
     # ===-------------------------------------------------------------------===#

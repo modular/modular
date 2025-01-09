@@ -119,9 +119,9 @@ struct Path(
         Returns:
           A new path with the suffix appended to the current path.
         """
-        return self.__truediv__(suffix.path)
+        return self.__truediv__(StringSlice(suffix.path))
 
-    fn __truediv__(self, suffix: String) -> Self:
+    fn __truediv__(self, suffix: StringSlice) -> Self:
         """Joins two paths using the system-defined path separator.
 
         Args:
@@ -134,7 +134,7 @@ struct Path(
         res /= suffix
         return res
 
-    fn __itruediv__(mut self, suffix: String):
+    fn __itruediv__(mut self, suffix: StringSlice):
         """Joins two paths using the system-defined path separator.
 
         Args:
@@ -143,7 +143,8 @@ struct Path(
         if self.path.endswith(DIR_SEPARATOR):
             self.path += suffix
         else:
-            self.path += DIR_SEPARATOR + suffix
+            self.path += DIR_SEPARATOR
+            self.path += suffix
 
     @no_inline
     fn __str__(self) -> String:
@@ -204,7 +205,7 @@ struct Path(
         """
         return str(self) == str(other)
 
-    fn __eq__(self, other: String) -> Bool:
+    fn __eq__(self, other: StringSlice) -> Bool:
         """Returns True if the two paths are equal.
 
         Args:
@@ -213,7 +214,7 @@ struct Path(
         Returns:
           True if the String and Path are equal, and False otherwise.
         """
-        return self.path == other
+        return self.path.as_string_slice() == other
 
     fn __ne__(self, other: Self) -> Bool:
         """Returns True if the two paths are not equal.
@@ -358,6 +359,9 @@ struct Path(
 
         return ""
 
+    # TODO(MOCO-1532):
+    #   Use StringSlice here once param inference bug for empty variadic
+    #   list of parameterized types is fixed.
     fn joinpath(self, *pathsegments: String) -> Path:
         """Joins the Path using the pathsegments.
 

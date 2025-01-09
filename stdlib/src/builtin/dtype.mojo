@@ -16,6 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from collections import KeyElement
+from collections.string import StringSlice
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from sys import bitwidthof, os_is_windows, sizeof
 
@@ -166,53 +167,53 @@ struct DType(
         self.value = value
 
     @staticmethod
-    fn _from_str(str: String) -> DType:
+    fn _from_str(str: StringSlice) -> DType:
         """Construct a DType from a string.
 
         Args:
             str: The name of the DType.
         """
-        if str.startswith(String("DType.")):
-            return Self._from_str(str.removeprefix("DType."))
-        elif str == String("bool"):
+        if str.startswith("DType."):
+            return Self._from_str(String(str).removeprefix("DType."))
+        elif str == "bool":
             return DType.bool
-        elif str == String("int8"):
+        elif str == "int8":
             return DType.int8
-        elif str == String("uint8"):
+        elif str == "uint8":
             return DType.uint8
-        elif str == String("int16"):
+        elif str == "int16":
             return DType.int16
-        elif str == String("uint16"):
+        elif str == "uint16":
             return DType.uint16
-        elif str == String("int32"):
+        elif str == "int32":
             return DType.int32
-        elif str == String("uint32"):
+        elif str == "uint32":
             return DType.uint32
-        elif str == String("int64"):
+        elif str == "int64":
             return DType.int64
-        elif str == String("uint64"):
+        elif str == "uint64":
             return DType.uint64
-        elif str == String("index"):
+        elif str == "index":
             return DType.index
-        elif str == String("float8e5m2"):
+        elif str == "float8e5m2":
             return DType.float8e5m2
-        elif str == String("float8e5m2fnuz"):
+        elif str == "float8e5m2fnuz":
             return DType.float8e5m2fnuz
-        elif str == String("float8e4m3"):
+        elif str == "float8e4m3":
             return DType.float8e4m3
-        elif str == String("float8e4m3fnuz"):
+        elif str == "float8e4m3fnuz":
             return DType.float8e4m3fnuz
-        elif str == String("bfloat16"):
+        elif str == "bfloat16":
             return DType.bfloat16
-        elif str == String("float16"):
+        elif str == "float16":
             return DType.float16
-        elif str == String("float32"):
+        elif str == "float32":
             return DType.float32
-        elif str == String("float64"):
+        elif str == "float64":
             return DType.float64
-        elif str == String("tensor_float32"):
+        elif str == "tensor_float32":
             return DType.tensor_float32
-        elif str == String("invalid"):
+        elif str == "invalid":
             return DType.invalid
         else:
             return DType.invalid

@@ -694,7 +694,7 @@ struct StringLiteral(
         elems.each[add_elt]()
         return result
 
-    fn split(self, sep: String, maxsplit: Int = -1) raises -> List[String]:
+    fn split(self, sep: StringSlice, maxsplit: Int = -1) raises -> List[String]:
         """Split the string literal by a separator.
 
         Args:
@@ -761,7 +761,7 @@ struct StringLiteral(
         """
         return _to_string_list(self.as_string_slice().splitlines(keepends))
 
-    fn count(self, substr: String) -> Int:
+    fn count(self, substr: StringSlice) -> Int:
         """Return the number of non-overlapping occurrences of substring
         `substr` in the string literal.
 
@@ -908,7 +908,7 @@ struct StringLiteral(
         """
         return String(self.lstrip().rstrip())
 
-    fn strip(self, chars: String) -> String:
+    fn strip(self, chars: StringSlice) -> String:
         """Return a copy of the string literal with leading and trailing characters
         removed.
 
@@ -921,7 +921,7 @@ struct StringLiteral(
 
         return String(self.lstrip(chars).rstrip(chars))
 
-    fn rstrip(self, chars: String) -> String:
+    fn rstrip(self, chars: StringSlice) -> String:
         """Return a copy of the string literal with trailing characters removed.
 
         Args:
@@ -940,9 +940,9 @@ struct StringLiteral(
         Returns:
             A copy of the string with no trailing whitespaces.
         """
-        return String(str(self).rstrip())
+        return String(self.as_string_slice().rstrip())
 
-    fn lstrip(self, chars: String) -> String:
+    fn lstrip(self, chars: StringSlice) -> String:
         """Return a copy of the string with leading characters removed.
 
         Args:
@@ -951,7 +951,7 @@ struct StringLiteral(
         Returns:
             A copy of the string with no leading characters.
         """
-        return String(str(self).lstrip(chars))
+        return String(self.as_string_slice().lstrip(chars))
 
     fn lstrip(self) -> String:
         """Return a copy of the string with leading whitespaces removed. This

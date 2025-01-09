@@ -22,6 +22,7 @@ from tempfile import gettempdir
 import os
 import sys
 from collections import List, Optional
+from collections.string import StringSlice
 from pathlib import Path
 
 from memory import Span
@@ -89,7 +90,7 @@ fn _get_default_tempdir() raises -> String:
     raise Error("No usable temporary directory found")
 
 
-fn _try_to_create_file(dir: String) -> Bool:
+fn _try_to_create_file(dir: StringSlice) -> Bool:
     for _ in range(TMP_MAX):
         var name = _get_random_name()
         # TODO use os.join when it exists

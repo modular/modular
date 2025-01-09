@@ -628,7 +628,7 @@ fn _is_ascii_lowercase(c: UInt8) -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-fn _isspace(c: String) -> Bool:
+fn _isspace(c: StringSlice) -> Bool:
     """Determines whether the given character is a whitespace character.
 
     This only respects the default "C" locale, i.e. returns True only if the
@@ -1513,7 +1513,7 @@ struct String(
         """
         return self.as_string_slice().count(substr)
 
-    fn __contains__(self, substr: String) -> Bool:
+    fn __contains__(self, substr: StringSlice) -> Bool:
         """Returns True if the substring is contained within the current string.
 
         Args:
@@ -1522,9 +1522,9 @@ struct String(
         Returns:
           True if the string contains the substring.
         """
-        return substr.as_string_slice() in self.as_string_slice()
+        return substr in self.as_string_slice()
 
-    fn find(self, substr: String, start: Int = 0) -> Int:
+    fn find(self, substr: StringSlice, start: Int = 0) -> Int:
         """Finds the offset of the first occurrence of `substr` starting at
         `start`. If not found, returns -1.
 
@@ -1536,9 +1536,9 @@ struct String(
           The offset of `substr` relative to the beginning of the string.
         """
 
-        return self.as_string_slice().find(substr.as_string_slice(), start)
+        return self.as_string_slice().find(substr, start)
 
-    fn rfind(self, substr: String, start: Int = 0) -> Int:
+    fn rfind(self, substr: StringSlice, start: Int = 0) -> Int:
         """Finds the offset of the last occurrence of `substr` starting at
         `start`. If not found, returns -1.
 
@@ -1550,9 +1550,7 @@ struct String(
           The offset of `substr` relative to the beginning of the string.
         """
 
-        return self.as_string_slice().rfind(
-            substr.as_string_slice(), start=start
-        )
+        return self.as_string_slice().rfind(substr, start=start)
 
     fn isspace(self) -> Bool:
         """Determines whether every character in the given String is a
@@ -1567,7 +1565,7 @@ struct String(
         """
         return self.as_string_slice().isspace()
 
-    fn split(self, sep: String, maxsplit: Int = -1) raises -> List[String]:
+    fn split(self, sep: StringSlice, maxsplit: Int = -1) raises -> List[String]:
         """Split the string by a separator.
 
         Args:
@@ -1708,7 +1706,7 @@ struct String(
         """
         return _to_string_list(self.as_string_slice().splitlines(keepends))
 
-    fn replace(self, old: String, new: String) -> String:
+    fn replace(self, old: StringSlice, new: StringSlice) -> String:
         """Return a copy of the string with all occurrences of substring `old`
         if replaced by `new`.
 
@@ -1853,7 +1851,7 @@ struct String(
         """
         hasher._update_with_bytes(self.unsafe_ptr(), self.byte_length())
 
-    fn _interleave(self, val: String) -> String:
+    fn _interleave(self, val: StringSlice) -> String:
         var res = Self._buffer_type()
         var val_ptr = val.unsafe_ptr()
         var self_ptr = self.unsafe_ptr()
@@ -1919,7 +1917,7 @@ struct String(
         """
         return self.as_string_slice().endswith(suffix, start, end)
 
-    fn removeprefix(self, prefix: String, /) -> String:
+    fn removeprefix(self, prefix: StringSlice, /) -> String:
         """Returns a new string with the prefix removed if it was present.
 
         For example:
@@ -1942,7 +1940,7 @@ struct String(
             return self[prefix.byte_length() :]
         return self
 
-    fn removesuffix(self, suffix: String, /) -> String:
+    fn removesuffix(self, suffix: StringSlice, /) -> String:
         """Returns a new string with the suffix removed if it was present.
 
         For example:
