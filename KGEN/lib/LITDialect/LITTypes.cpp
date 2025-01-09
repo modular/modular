@@ -913,9 +913,8 @@ REPLResultRefType REPLResultRefType::get(Type elementType) {
 // SignatureType Parsing
 //===----------------------------------------------------------------------===//
 
-static OptionalParseResult
-parseOptionalLITSignature(AsmParser &p, Type &signature,
-                          PogListAttr paramListAttr) {
+static OptionalParseResult parseOptionalLITSignature(AsmParser &p,
+                                                     Type &signature) {
   llvm::SMLoc startLoc = p.getCurrentLocation();
 
   size_t numOriginDecls = 0;
@@ -995,7 +994,7 @@ parseOptionalLITSignature(AsmParser &p, Type &signature,
       PogListAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
                        defaultKwOnlyArgs, argVariadicIndices, argPackIndex,
                        origArgPackConvention),
-      paramListAttr, numOriginDecls, captureOrigins,
+      numOriginDecls, captureOrigins,
       isNestedOriginExclusivityCheckingDisabled);
   signature = NewSignatureType::getChecked(
       [&] { return p.emitError(startLoc); }, functionType, argConventions,
@@ -1005,8 +1004,7 @@ parseOptionalLITSignature(AsmParser &p, Type &signature,
 }
 
 static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
-  OptionalParseResult result =
-      parseOptionalLITSignature(p, signature, PogListAttr::get(p.getContext()));
+  OptionalParseResult result = parseOptionalLITSignature(p, signature);
   if (result.has_value())
     return *result;
   return p.emitError(p.getCurrentLocation(), "expected LIT new_signature");
@@ -1024,8 +1022,7 @@ static ParseResult parseLITGenerator(AsmParser &p, Type &generator) {
     return failure();
 
   // Try to parse an unwrapped LITNewSignatureType fist.
-  OptionalParseResult result =
-      parseOptionalLITSignature(p, body, paramListAttr);
+  OptionalParseResult result = parseOptionalLITSignature(p, body);
   if (result.has_value() && failed(*result))
     return failure();
   // If not a LITNewSignatureType, then parse as any other type.
@@ -1180,10 +1177,9 @@ FunctionType LITNewSignatureType::substituteImplicitOriginsIntoValues(
 
 LITNewSignatureType
 LITNewSignatureType::getWithCaptureOrigins(TypedAttr origins) {
-  return getWithMetadata(
-      FnMetadataAttr::get(getArgListAttrs(), getMetadata().getParamListAttrs(),
-                          getNumImplicitOriginDecls(), origins,
-                          getIsNestedOriginExclusivityCheckingDisabled()));
+  return getWithMetadata(FnMetadataAttr::get(
+      getArgListAttrs(), getNumImplicitOriginDecls(), origins,
+      getIsNestedOriginExclusivityCheckingDisabled()));
 }
 
 bool LITNewSignatureType::isAnyVarArg(size_t index) {
@@ -1466,9 +1462,7 @@ LITSignatureGeneratorType::prependParams(LITSignatureGeneratorType sigGen,
     inputParamTypes.push_back(remapper.replace(type));
 
   LITNewSignatureType sig = sigGen.getBody();
-  FnMetadataAttrInterface fnMetadata =
-      remapper.replace(sig.getMetadata().prependPosParams(parentParams.size(),
-                                                          parentVariadicMask));
+  FnMetadataAttrInterface fnMetadata = remapper.replace(sig.getMetadata());
   GeneratorMetadataAttrInterface genMetadata =
       remapper.replace(sigGen.getMetadata().prependPosParams(
           parentParams.size(), parentVariadicMask));

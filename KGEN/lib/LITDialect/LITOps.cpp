@@ -609,7 +609,7 @@ static ParseResult parseLITFunctionSignature(
       PogListAttr::get(p.getContext(), argNames, argPassingKinds,
                        defaultPosArgs, defaultKwOnlyArgs, argVariadicIndices,
                        argPackIndex, origArgPackConvention),
-      paramListAttr, originDecls.size(), captureOrigins,
+      originDecls.size(), captureOrigins,
       isNestedOriginExclusivityCheckingDisabled);
   signature = SignatureGeneratorType::remapToSignatureGenerator(
       params, functionType, argConventions, effects, metadata, paramListAttr,
@@ -945,7 +945,7 @@ void LIT::FuncOp::build(OpBuilder &b, OperationState &state,
       FnMetadataAttr::get(ctx, paramDecls.size(), funcType.getNumInputs());
   auto sig = SignatureGeneratorType::remapToSignatureGenerator(
       paramDecls, funcType, convs, effects, fnMetadata,
-      fnMetadata.getParamListAttrs());
+      PogListAttr::get(b.getContext()));
   build(b, state, StringAttr(), ParamDeclAttr::get(declName, sig),
         TypeAttr::get(sig), TypeAttr::get(funcType),
         ParamDeclArrayAttr::get(ctx, paramDecls), DecoratorsAttr::get(ctx, {}),

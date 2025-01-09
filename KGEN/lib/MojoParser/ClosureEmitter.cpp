@@ -129,7 +129,6 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
   // Add the rest of the arguments.
   FnMetadataAttr oldFnMetadata = sig.getFnMetadata();
   PogListAttr argListAttr = oldFnMetadata.getArgListAttrs();
-  PogListAttr paramListAttr = sig.getMetadata();
   llvm::append_range(signatureInputs, sig.getArguments());
   llvm::append_range(argConventions, sig.getArgConventions());
   llvm::append_range(argPogs, argListAttr.getPogs());
@@ -138,14 +137,13 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
   // A closure signature is not escaping because its 'escaping' state is
   // captured in the self argument we are inserting in this function.
   auto metadata = FnMetadataAttr::get(
-      argListAttr.cloneWith(argPogs), oldFnMetadata.getParamListAttrs(),
-      oldFnMetadata.getNumImplicitOriginDecls(),
+      argListAttr.cloneWith(argPogs), oldFnMetadata.getNumImplicitOriginDecls(),
       oldFnMetadata.getCaptureOrigins(),
       oldFnMetadata.getIsNestedOriginExclusivityCheckingDisabled());
   return SignatureGeneratorType::get(
       sig.getInputParamTypes(),
       FunctionType::get(ctx, signatureInputs, sig.getResults()), argConventions,
-      sig.getFnEffects().setEscaping(false), metadata, paramListAttr);
+      sig.getFnEffects().setEscaping(false), metadata, sig.getMetadata());
 }
 
 /// ```mojo
@@ -268,7 +266,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   auto dtorSig = SignatureGeneratorType::get(
       /*inputParamTypes=*/{}, b.getFunctionType(opaquePtrType, noneType),
       ArgConvention::ReadReg,
-      /*effects=*/{}, dtorMetadata, dtorMetadata.getParamListAttrs());
+      /*effects=*/{}, dtorMetadata, PogListAttr::get(ctx));
   auto dtor = b.create<StructFieldOp>(declOp.getLoc(), dtorFieldAttr, dtorSig);
 
   // Create Copy Member.
@@ -278,7 +276,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       PogListAttr::get(ctx, {otherName}, {PassingKind::PosOnly}));
   auto cpySignatureType = SignatureGeneratorType::get(
       /*inputParamTypes=*/{}, fnType, {ArgConvention::ReadReg},
-      /*effects=*/{}, metadata, metadata.getParamListAttrs());
+      /*effects=*/{}, metadata, PogListAttr::get(ctx));
   auto copy =
       b.create<StructFieldOp>(declOp.getLoc(), copyFieldAttr, cpySignatureType);
 
@@ -294,7 +292,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       /*inputParamTypes=*/{}, functionType,
       dependentSignatureType.getArgConventions(),
       dependentSignatureType.getFnEffects(), sigMetadata,
-      sigMetadata.getParamListAttrs());
+      PogListAttr::get(ctx));
 
   // Add the call member
   LITSignatureGeneratorType callMemberSignatureType =

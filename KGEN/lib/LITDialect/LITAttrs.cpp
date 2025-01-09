@@ -370,41 +370,36 @@ static void printFnMetadataOrigins(AsmPrinter &p, TypedAttr origins) {
 FnMetadataAttr FnMetadataAttr::get(MLIRContext *context) {
   auto list = PogListAttr::get(context);
   return FnMetadataAttr::get(
-      list, list, /*numImplicitOriginDecls=*/0, /*captureOrigins=*/nullptr,
+      list, /*numImplicitOriginDecls=*/0, /*captureOrigins=*/nullptr,
       /*isNestedOriginExclusivityCheckingDisabled=*/false);
 }
 
-FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, size_t numParams,
-                                   size_t numArgs,
+FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, size_t numArgs,
                                    size_t numImplicitOriginDecls) {
-  SmallVector<PogMetadataAttr> params, args;
+  SmallVector<PogMetadataAttr> args;
   auto normal = PogMetadataAttr::get(StringAttr::get(ctx), PassingKind::PosOnly,
                                      /*isVariadic=*/false);
-  params.resize(numParams, normal);
   args.resize(numArgs, normal);
   return FnMetadataAttr::get(
-      PogListAttr::get(ctx, args), PogListAttr::get(ctx, params),
-      numImplicitOriginDecls, /*captureOrigins=*/nullptr,
+      PogListAttr::get(ctx, args), numImplicitOriginDecls,
+      /*captureOrigins=*/nullptr,
       /*isNestedOriginExclusivityCheckingDisabled=*/false);
 }
 
 FnMetadataAttr FnMetadataAttr::get(PogListAttr argListAttrs,
-                                   PogListAttr paramListAttrs,
                                    size_t numImplicitOriginDecls,
                                    TypedAttr captureOrigins,
                                    bool nestedOriginFlag) {
   MLIRContext *ctx = argListAttrs.getContext();
   if (!captureOrigins)
     captureOrigins = OriginSetAttr::get(ctx, {});
-  assert(paramListAttrs);
-  return get(ctx, argListAttrs, paramListAttrs, numImplicitOriginDecls,
-             captureOrigins, nestedOriginFlag);
+  return get(ctx, argListAttrs, numImplicitOriginDecls, captureOrigins,
+             nestedOriginFlag);
 }
 
 FnMetadataAttr FnMetadataAttr::get(PogListAttr argListAttrs,
                                    size_t numImplicitOriginDecls) {
-  return get(argListAttrs, PogListAttr::get(argListAttrs.getContext()),
-             numImplicitOriginDecls, /*captureOrigins=*/nullptr,
+  return get(argListAttrs, numImplicitOriginDecls, /*captureOrigins=*/nullptr,
              /*isNestedOriginExclusivityCheckingDisabled=*/false);
 }
 
@@ -431,47 +426,7 @@ FnMetadataAttr::getWithBoundPosArgs(size_t numBound) const {
   auto newArgListAttrs = PogListAttr::get(
       getContext(), newPogs, newDefaultPosArgs, getDefaultKwOnlyArgs(), packIdx,
       argListAttrs.getOrigPackConvention());
-  return get(newArgListAttrs, getParamListAttrs(), getNumImplicitOriginDecls(),
-             getCaptureOrigins(),
-             getIsNestedOriginExclusivityCheckingDisabled());
-}
-
-FnMetadataAttrInterface
-FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
-  SmallVector<TypedAttr> newDefaultPosParams;
-  SmallVector<TypedAttr> newDefaultKwOnlyParams;
-  SmallVector<PogMetadataAttr> newPogs;
-
-  PogListAttr paramListAttr = getParamListAttrs();
-  DefaultValueHandler defaultHandler(paramListAttr);
-  size_t numParams = boundParams.size();
-  for (size_t idx = 0; idx < numParams; ++idx) {
-    if (!boundParams[idx]) {
-      newPogs.emplace_back(paramListAttr.getPogs()[idx]);
-      if (TypedAttr defaultOr = defaultHandler.getPosDefault(idx))
-        newDefaultPosParams.emplace_back(defaultOr);
-      else if (TypedAttr defaultOr = defaultHandler.getKwOnlyDefault(idx))
-        newDefaultKwOnlyParams.emplace_back(defaultOr);
-    }
-  }
-
-  auto newParamAttrs = PogListAttr::get(
-      getContext(), newPogs, newDefaultPosParams, newDefaultKwOnlyParams);
-  return get(getArgListAttrs(), newParamAttrs, getNumImplicitOriginDecls(),
-             getCaptureOrigins(),
-             getIsNestedOriginExclusivityCheckingDisabled());
-}
-
-/// Get a new metadata attribute for a signature with the given number of
-/// positional input parameters prepended to the signature. An additional
-/// array of bool corresponding to the variadic mask of the prepended
-/// parameters is also required.
-FnMetadataAttr
-FnMetadataAttr::prependPosParams(size_t numNewParams,
-                                 ArrayRef<bool> variadicMask) const {
-  return get(getArgListAttrs(),
-             getParamListAttrs().prependPosParams(numNewParams, variadicMask),
-             getNumImplicitOriginDecls(), getCaptureOrigins(),
+  return get(newArgListAttrs, getNumImplicitOriginDecls(), getCaptureOrigins(),
              getIsNestedOriginExclusivityCheckingDisabled());
 }
 
@@ -492,12 +447,6 @@ SmallVector<bool> LIT::getContextualVariadicMask(ArrayRef<Operation *> ops) {
       variadicMask.emplace_back(pogAttr.isVariadic());
   }
   return variadicMask;
-}
-
-FnMetadataAttrInterface
-FnMetadataAttr::prependPosParamsFromOps(ArrayRef<Operation *> ops) const {
-  SmallVector<bool> variadicMask = getContextualVariadicMask(ops);
-  return prependPosParams(variadicMask.size(), variadicMask);
 }
 
 LogicalResult FnMetadataAttr::verifyNewSignature(
@@ -557,8 +506,7 @@ FnMetadataAttr FnMetadataAttr::addCaptureOrigins(TypedAttr origins) {
   SmallVector<TypedAttr> originUnion{
       OriginSetUnionAttr::get(getCaptureOrigins(), type),
       OriginSetUnionAttr::get(origins, type)};
-  return get(getArgListAttrs(), getParamListAttrs(),
-             getNumImplicitOriginDecls(),
+  return get(getArgListAttrs(), getNumImplicitOriginDecls(),
              OriginSetAttr::get(getContext(), originUnion),
              getIsNestedOriginExclusivityCheckingDisabled());
 }
@@ -573,10 +521,6 @@ bool FnMetadataAttr::hasVarArgs() const {
 
 bool FnMetadataAttr::hasPackVarArgs() const {
   return getArgListAttrs().getPackIndex() != -1;
-}
-
-bool FnMetadataAttr::hasParamVarArgs() const {
-  return getParamListAttrs().hasVariadic();
 }
 
 bool FnMetadataAttr::hasKwVarArgs() const {

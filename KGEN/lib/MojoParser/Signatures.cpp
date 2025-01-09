@@ -1973,7 +1973,7 @@ TypeCheckedFnSignature::getLITSignatureGeneratorType() const {
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, argPogs, defaultPosArgs, defaultKwOnlyArgs,
                        argPackIndex, argPackOrigConvention),
-      paramList.getParamListAttr(), implicitOriginDecls.size(),
+      implicitOriginDecls.size(),
       getOriginsAccessibleByParams(paramList.getParamListAttr(),
                                    paramList.paramDeclAttrs, paramList.shared,
                                    captureOrigins),
@@ -1990,5 +1990,5 @@ TypeCheckedFnSignature::getLITSignatureGeneratorType() const {
   FunctionType functionType = getFunctionType();
   return SignatureGeneratorType::remapToSignatureGenerator(
       paramList.paramDeclAttrs, functionType, argConventions, argList.effects,
-      metadata, metadata.getParamListAttrs(), silenceErrors);
+      metadata, paramList.getParamListAttr(), silenceErrors);
 }

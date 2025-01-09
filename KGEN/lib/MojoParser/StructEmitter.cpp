@@ -79,7 +79,7 @@ LIT::FuncOp StructEmitter::createFunction(
   size_t numImplicitOriginDecls = implOriginParams.size();
 
   auto metadata = FnMetadataAttr::get(
-      argListAttrs, paramListAttrs, numImplicitOriginDecls,
+      argListAttrs, numImplicitOriginDecls,
       getOriginsAccessibleByParams(paramListAttrs, params, shared,
                                    /*captureOrigins=*/nullptr),
       /*isNestedOriginExclusivityCheckingDisabled=*/false);
@@ -89,8 +89,7 @@ LIT::FuncOp StructEmitter::createFunction(
   LITSignatureGeneratorType sigGen =
       SignatureGeneratorType::remapToSignatureGenerator(
           params, functionType, argConventions, fnEffects, metadata,
-          metadata.getParamListAttrs(),
-          [&] { return mlir::emitError(location); });
+          paramListAttrs, [&] { return mlir::emitError(location); });
   // Strip off the named origin decl references and replace them with indices.
   // We keep the named parameters in the ParamDeclAttr list on the FuncOp and
   // in the BBArgs.

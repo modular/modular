@@ -146,12 +146,12 @@ getReducedFunctionType(LITSignatureGeneratorType sig) {
 
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, names, passingKinds),
-      PogListAttr::get(ctx, sig.getInputParamTypes().size()),
       sig.getNumImplicitOriginDecls(), sig.getCaptureOrigins(),
       sig.getIsNestedOriginExclusivityCheckingDisabled());
   return SignatureGeneratorType::get(
       sig.getInputParamTypes(), sig.getValues(), sig.getArgConventions(),
-      sig.getFnEffects(), metadata, metadata.getParamListAttrs());
+      sig.getFnEffects(), metadata,
+      PogListAttr::get(ctx, sig.getInputParamTypes().size()));
 }
 
 static std::string generateThunkName(Type expected, Type actual) {
@@ -408,7 +408,6 @@ static CValue convertFunctionValue(CValue value, const ExprNode *expr,
   }
   auto reparamMetadata = FnMetadataAttr::get(
       reducedExpected.getArgListAttrs(),
-      PogListAttr::get(ctx, paramTypes.size()),
       reducedExpected.getNumImplicitOriginDecls(),
       reducedExpected.getCaptureOrigins(),
       reducedExpected.getIsNestedOriginExclusivityCheckingDisabled());
@@ -416,7 +415,7 @@ static CValue convertFunctionValue(CValue value, const ExprNode *expr,
       paramTypes,
       cast<FunctionType>(replacer.getReboundType(reducedExpected.getValues())),
       reducedExpected.getArgConventions(), reducedExpected.getFnEffects(),
-      reparamMetadata, reparamMetadata.getParamListAttrs());
+      reparamMetadata, PogListAttr::get(ctx, paramTypes.size()));
 
   // We can attempt to generate the thunk now.
   Attribute key = ArrayAttr::get(

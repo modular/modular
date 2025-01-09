@@ -139,23 +139,11 @@ def FnMetadataAttrInterface : AttrInterface<"FnMetadataAttrInterface"> {
     }], "void", "printNewSignature", (ins "AsmPrinter &":$p,
                                           "NewSignatureType":$sig)>,
     InterfaceMethod<[{
-      Get a new metadata attribute for a signature where the parameters
-      indicated by set bits in `boundParams` been removed from the signature by
-      being explicitly bound to values, such as in call signatures.
-    }], "FnMetadataAttrInterface", "getWithBoundParams", (ins
-      "const llvm::BitVector &":$boundParams)>,
-    InterfaceMethod<[{
       Get a new metadata attribute for a signature where the first `numBound`
       positional arguments have been removed from the signature by being
       explicitly bound to values, such as in closure formation.
     }], "FnMetadataAttrInterface", "getWithBoundPosArgs", (ins
       "size_t":$numBound)>,
-    InterfaceMethod<[{
-      Get a new metadata attribute for a signature with a number of positional
-      input parameters prepended, determined from the number of declared by the
-      given ops. The given operations must implement `DeclInterface`.
-    }], "FnMetadataAttrInterface", "prependPosParamsFromOps", (ins
-      "ArrayRef<Operation *>":$ops)>,
   ];
 }
 

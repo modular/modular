@@ -223,8 +223,8 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
   let summary = "Function metadata.";
   let description = [{
     The `#lit.fn_metadata` attribute contains additional information about a
-    function, such as the argument and parameter list metadata and the number of
-    implicit origin declarations.
+    function, such as the argument list metadata and the number of implicit
+    origin declarations.
 
     Example:
 
@@ -232,15 +232,10 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     // Metadata specifying that: argument #0 is called "someRef" is
     // positional-only and a default value of `13`; argument #1 and #2 are keyword-only
     // and are called "v" and "kwargs", the former has a default value of `17`,
-    // and the latter is variadic (i.e. `**kwargs`). Moveover, parameter #0 is
-    // called "someParam", parameter #1 is called "paramWithDefault", they have
-    // positional-only and positional-or-keyword passing kinds respectively, and
-    // the latter has the default value `3.14`. The list of keyword-only default
-    // parameter values is empty (since there are no keyword-only parameters).
+    // and the latter is variadic (i.e. `**kwargs`).
     // The signature has two implicit origin declarations.
     #lit.fn_metadata<
       <["someRef", "v", "kwargs"], [pos, kw], [13 : index], [17 : i64]>,
-      <["someParam", "paramWithDefault"], [pos, pos_or_kw], [3.14: f32], []>,
       2
     >
     ```
@@ -248,7 +243,6 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
 
   let parameters = (ins
     LIT_PogListAttr:$argListAttrs,
-    LIT_PogListAttr:$paramListAttrs,
     "size_t":$numImplicitOriginDecls,
     "TypedAttr":$captureOrigins,
     // TODO: Generalize this to a set of origin parameters that are guaranteed
@@ -256,22 +250,21 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     OptionalParameter<"bool">:$isNestedOriginExclusivityCheckingDisabled
   );
   let assemblyFormat = [{
-    `<` $argListAttrs `,` $paramListAttrs `,` $numImplicitOriginDecls
+    `<` $argListAttrs `,` $numImplicitOriginDecls
     `` custom<FnMetadataOrigins>($captureOrigins)
     (`,` $isNestedOriginExclusivityCheckingDisabled^)? `>`
   }];
 
   let builders = [
     AttrBuilder<(ins)>,
-    AttrBuilder<(ins "size_t":$numParams, "size_t":$numArgs,
+    AttrBuilder<(ins "size_t":$numArgs,
                      CArg<"size_t", "0">:$numImplicitOriginDecls)>,
     AttrBuilderWithInferredContext<(ins
       "PogListAttr":$argListAttrs,
       CArg<"size_t", "0">:$numImplicitOriginDecls)>,
     AttrBuilderWithInferredContext<(ins
-      "PogListAttr":$argListAttrs, "PogListAttr":$paramListAttrs,
-      "size_t":$numImplicitOriginDecls, "TypedAttr":$captureOrigins,
-      "bool":$nestedOriginFlag)>,
+      "PogListAttr":$argListAttrs, "size_t":$numImplicitOriginDecls,
+      "TypedAttr":$captureOrigins, "bool":$nestedOriginFlag)>,
   ];
 
   let extraClassDeclaration = [{
@@ -282,12 +275,6 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     ArrayRef<TypedAttr> getDefaultKwOnlyArgs() const {
       return getArgListAttrs().getDefaultKwOnly();
     }
-    ArrayRef<TypedAttr> getDefaultPosParams() const {
-      return getParamListAttrs().getDefaultPos();
-    }
-    ArrayRef<TypedAttr> getDefaultKwOnlyParams() const {
-      return getParamListAttrs().getDefaultKwOnly();
-    }
 
     /// Reconstruct the metadata with the union of the current capture origins
     /// with the new capture origins.
@@ -297,8 +284,6 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     bool hasVarArgs() const;
     /// Return true if the signature has a variadic pack argument.
     bool hasPackVarArgs() const;
-    /// Return true if the signature has a variadic parameter.
-    bool hasParamVarArgs() const;
     /// Return true if the signature has a keyword variadic argument.
     bool hasKwVarArgs() const;
     /// Return true if the argument at `idx` is a any variadic or pack argument.
@@ -309,13 +294,6 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     bool isKwVarArg(size_t idx) const;
     /// Return true if the argument at `idx` is a variadic pack argument.
     bool isPackVarArg(size_t idx) const;
-
-    /// Get a new metadata attribute for a signature with the given number of
-    /// positional input parameters prepended to the signature. An additional
-    /// array of bool corresponding to the variadic mask of the prepended
-    /// parameters is also required.
-    FnMetadataAttr prependPosParams(size_t numNewParams,
-                                    ArrayRef<bool> variadicMask) const;
   }];
 }
 
