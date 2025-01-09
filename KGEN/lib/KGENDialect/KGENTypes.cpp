@@ -647,8 +647,6 @@ specializeSignature(ArrayRef<TypedAttr> inputParamValues,
     // Rebind input parameter references in the metadata.
     fnMetadata = ::cast<FnMetadataAttrInterface>(
         evaluator.getReboundAttribute(fnMetadata));
-    // Tell the metadata which input parameters have been bound.
-    fnMetadata = fnMetadata.getWithBoundParams(boundParams);
   }
 
   return {genMetadata,         unboundParamTypes,

@@ -598,10 +598,8 @@ SymbolConstantAttr::verifySymbolUses(Operation *module,
     }
 
     FnMetadataAttrInterface fnMetadata = baseSig.getMetadata();
-    if (fnMetadata) {
-      fnMetadata = remapper.replace(
-          fnMetadata.prependPosParamsFromOps(ArrayRef(symbolOps).drop_back()));
-    }
+    if (fnMetadata)
+      fnMetadata = remapper.replace(fnMetadata);
 
     declSignature = SignatureGeneratorType::getSpecializedGenerator(
         getParamValues(), [&] { return emitError(loc); }, inputParamTypes,

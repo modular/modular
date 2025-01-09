@@ -60,11 +60,11 @@ TEST_F(SignatureGeneratorTypeTest, TestSpecialization) {
     PogListAttr pogs =
         PogListAttr::get(&ctx, SmallVector<PogMetadataAttr>{posOnly});
     FnMetadataAttr fnMetadata = FnMetadataAttr::get(
-        pogs, pogs,
+        pogs,
         /*numImplicitOriginDecls=*/0, /*captureOrigins=*/nullptr,
         /*isNestedOriginExclusivityCheckingDisabled=*/false);
     FnMetadataAttr fnMetadataNoParams = FnMetadataAttr::get(
-        pogs, PogListAttr::get(&ctx),
+        pogs,
         /*numImplicitOriginDecls=*/0, /*captureOrigins=*/nullptr,
         /*isNestedOriginExclusivityCheckingDisabled=*/false);
     SignatureGeneratorType sigGen =

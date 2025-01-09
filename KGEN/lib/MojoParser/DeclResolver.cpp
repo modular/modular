@@ -856,7 +856,7 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   LITNewSignatureType mainWrapperSig = mainWrapperSigGen.getBody();
   FnMetadataAttr mainWrapperFnMeta = mainWrapperSig.getMetadata();
   auto strippedMainWrapperFnMeta = FnMetadataAttr::get(
-      mainWrapperFnMeta.getArgListAttrs(), PogListAttr::get(getContext()),
+      mainWrapperFnMeta.getArgListAttrs(),
       mainWrapperFnMeta.getNumImplicitOriginDecls(),
       mainWrapperFnMeta.getCaptureOrigins(),
       mainWrapperFnMeta.getIsNestedOriginExclusivityCheckingDisabled());
