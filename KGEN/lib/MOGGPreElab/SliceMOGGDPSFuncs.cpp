@@ -52,15 +52,6 @@ private:
       }
       ASSERT_STREAM(canonicalLambda != nullptr,
                     "missing region in the I/O lambda intrinsic");
-
-      for (auto call : hook.getOps<CallOp>()) {
-        ASSERT_STREAM(
-            callUsingLambda == nullptr,
-            "there must be only one CallOp in the I/O lambda intrinsic");
-        callUsingLambda = call;
-      }
-      ASSERT_STREAM(callUsingLambda != nullptr,
-                    "missing CallOp in the I/O lambda intrinsic");
     }
     /// The op we are pulling this info from.
     GeneratorOp templateOp;
@@ -68,9 +59,6 @@ private:
     /// This the the template lambda we will clone as the input or output
     /// lambda.
     ParamDeclareRegionOp canonicalLambda;
-
-    /// This call shows us how the lambda needs to be bound.
-    CallOp callUsingLambda;
   };
 
   MLIRContext *ctx;
