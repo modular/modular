@@ -14,7 +14,7 @@ lit.file_module @module {
 // CHECK-LABEL: lit.func @interpret
 lit.func @interpret() {
   // CHECK-NEXT: <{ 42, 42 }>
-  kgen.param.constant: struct<(index, index)> = <apply(:!lit.signature<("a": index) -> !kgen.struct<(index, index)>> @module::@store_load, 42)>
+  kgen.param.constant: struct<(index, index)> = <apply(:!lit.generator<("a": index) -> !kgen.struct<(index, index)>> @module::@store_load, 42)>
   kgen.return
 }
 
@@ -33,7 +33,7 @@ lit.func @ger_load(%a: !lit.struct<@Int>) -> index {
 // CHECK-LABEL: lit.func @interpret_ger
 lit.func @interpret_ger() {
   // CHECK-NEXT: constant = <42>
-  kgen.param.constant = <apply(:!lit.signature<("a": !lit.struct<@Int>) -> index> @ger_load, { 42 })>
+  kgen.param.constant = <apply(:!lit.generator<("a": !lit.struct<@Int>) -> index> @ger_load, { 42 })>
   kgen.return
 }
 
@@ -46,7 +46,7 @@ lit.func @load_undef_var() -> index {
 // CHECK-LABEL: lit.func @interpret_undef_var
 lit.func @interpret_undef_var() {
   // CHECK-NEXT: constant = <#interp.uninitmem>
-  kgen.param.constant = <apply(:!lit.signature<() -> index> @load_undef_var)>
+  kgen.param.constant = <apply(:!lit.generator<() -> index> @load_undef_var)>
   kgen.return
 }
 
@@ -65,7 +65,7 @@ lit.func @load_undef_ger() -> index {
 // CHECK-LABEL: lit.func @interpret_undef_ger_load
 lit.func @interpret_undef_ger_load() {
   // CHECK-NEXT: constant = <#interp.uninitmem>
-  kgen.param.constant = <apply(:!lit.signature<() -> index> @load_undef_ger)>
+  kgen.param.constant = <apply(:!lit.generator<() -> index> @load_undef_ger)>
   kgen.return
 }
 
@@ -93,9 +93,9 @@ lit.func @initialize_pair(%a: index, %b: index) -> !lit.struct<@Pair> {
 // CHECK-LABEL: lit.func @interpret_ger_store
 lit.func @interpret_ger_store() {
   // CHECK-NEXT: constant: @Int = <{42}>
-  kgen.param.constant: @Int = <apply(:!lit.signature<("a": index) -> !lit.struct<@Int>> @double_ger_store_load, 42)>
+  kgen.param.constant: @Int = <apply(:!lit.generator<("a": index) -> !lit.struct<@Int>> @double_ger_store_load, 42)>
   // CHECK-NEXT: constant: @Pair = <{first: @Int = {11}, second: @Int = {22}}>
-  kgen.param.constant: @Pair = <apply(:!lit.signature<("a": index, "b": index) -> !lit.struct<@Pair>> @initialize_pair, 11, 22)>
+  kgen.param.constant: @Pair = <apply(:!lit.generator<("a": index, "b": index) -> !lit.struct<@Pair>> @initialize_pair, 11, 22)>
   kgen.return
 }
 
@@ -114,6 +114,6 @@ lit.func @partial_ger_store(%i: index) -> !lit.struct<@Pair> {
 // CHECK-LABEL: lit.func @interpret_partial_ger_store
 lit.func @interpret_partial_ger_store() {
   // CHECK-NEXT: @Pair = <{first: @Int = {22}, second: @Int = {22}}>
-  kgen.param.constant: @Pair = <apply(:!lit.signature<("i": index) -> !lit.struct<@Pair>> @partial_ger_store, 22)>
+  kgen.param.constant: @Pair = <apply(:!lit.generator<("i": index) -> !lit.struct<@Pair>> @partial_ger_store, 22)>
   kgen.return
 }

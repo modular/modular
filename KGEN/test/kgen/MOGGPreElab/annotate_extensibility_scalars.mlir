@@ -18,7 +18,7 @@ lit.func @"register(::StringLiteral)"(%name: !lit.struct<@stdlib::@builtin::@str
 // A basic case with an "execute" and function that takes scalar arguments
 // CHECK-LABEL: lit.struct.decl @just_execute_with_scalar
 lit.struct.decl @just_execute_with_scalar(trait<@stdlib::@builtin::@anytype::@AnyType>)
-  decorators <:none apply(:!lit.signature<("name": !lit.struct<@stdlib::@builtin::@string_literal::@StringLiteral>, "num_dps_outputs": !lit.struct<@stdlib::@builtin::@int::@Int> = {1}) -> !kgen.none> @"register(::StringLiteral)", {:string "imposter_add"}, {1})> {
+  decorators <:none apply(:!lit.generator<("name": !lit.struct<@stdlib::@builtin::@string_literal::@StringLiteral>, "num_dps_outputs": !lit.struct<@stdlib::@builtin::@int::@Int> = {1}) -> !kgen.none> @"register(::StringLiteral)", {:string "imposter_add"}, {1})> {
 
   // CHECK: lit.func export @execute
   // CHECK-SAME: mogg.arg_type_names = ["test1::test1", "stdlib::SIMD", "stdlib::SIMD"]

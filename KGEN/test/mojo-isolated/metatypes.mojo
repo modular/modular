@@ -57,7 +57,7 @@ fn metatypes():
     T.bar()
 
     # COM: Test that binding to a generic type works.
-    # CHECK: bound{{.*}}: !lit.signature<() -> !kgen.none> = <{{.*}}@"anytype[AnyTrivialRegType]()"<:type !Thing>>
+    # CHECK: bound{{.*}}: !lit.generator<() -> !kgen.none> = <{{.*}}@"anytype[AnyTrivialRegType]()"<:type !Thing>>
     alias bound = anytype[Thing]
 
     # COM: Test that result types are bound correctly.

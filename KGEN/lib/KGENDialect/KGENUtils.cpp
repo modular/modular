@@ -97,7 +97,7 @@ static ParseResult parseParameterSpec(AsmParser &parser,
 /// parse, which allows the KGEN type parser to check if it is parsing a
 /// signature. The provided parseArg hook is responsible for parsing an
 /// individual argument and adding its type to the provided array.
-static OptionalParseResult parseOptionalSignatureValues(
+OptionalParseResult KGEN::parseOptionalSignatureValues(
     AsmParser &p, function_ref<ParseResult(SmallVectorImpl<Type> &)> parseArg,
     FunctionType &values, FnEffects &effects, bool optionalResultList) {
   SmallVector<Type> argTypes, resTypes;
@@ -1913,19 +1913,21 @@ KGEN::parseKGENSignatureGeneratorOld(AsmParser &p, FunctionType &functionType,
 }
 
 void KGEN::printSignatureValues(AsmPrinter &p, FunctionType functionType,
-                                SignatureType signature) {
+                                SignatureGeneratorType sigGen) {
   // If the signature has metadata, ask its dialect to print the signature.
-  if (FnMetadataAttrInterface metadata = signature.getMetadata()) {
-    metadata.printSignature(p, signature);
+  if (GeneratorMetadataAttrInterface metadata = sigGen.getMetadata()) {
+    metadata.printGenerator(p, sigGen);
     return;
   }
 
+  NewSignatureType signature = sigGen.getBody();
   auto printElt = [&](unsigned i) {
     p << functionType.getInput(i);
     printArgConvention(p, signature.getArgConvention(i));
   };
 
-  printSignatureValues(p, printElt, functionType, signature,
+  printSignatureValues(p, printElt, functionType, signature.getArgConventions(),
+                       signature.getFnEffects(),
                        /*optionalResultList=*/false);
 }
 

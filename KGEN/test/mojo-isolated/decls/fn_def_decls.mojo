@@ -81,14 +81,14 @@ fn variadic_param_after_default[
 # CHECK-LABEL: lit.func @"inferred_params
 # CHECK-SAME: <x, y, +>
 fn inferred_params[x: int, y: int, //]():
-    # CHECK-NEXT: !lit.signature<<"x": index, "y": index, +>() -> !kgen.none> = <@
+    # CHECK-NEXT: !lit.generator<<"x": index, "y": index, +>() -> !kgen.none> = <@
     alias fn_type: fn[x: int, y: int, //] () -> None = inferred_params
 
 
 # CHECK-LABEL: lit.func @"inferred_params_regular
 # CHECK-SAME: <x, +, y>
 fn inferred_params_regular[x: int, //, y: int]():
-    # CHECK-NEXT: !lit.signature<<"x": index, +, "y": index>() -> !kgen.none> = <@
+    # CHECK-NEXT: !lit.generator<<"x": index, +, "y": index>() -> !kgen.none> = <@
     alias fn_type: fn[x: int, //, y: int] () -> None = inferred_params_regular
 
 

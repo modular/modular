@@ -65,7 +65,7 @@ kgen.generator @return_type() -> !lit.type_signature<index, index = *(0,0)> {
   kgen.unreachable
 }
 
-kgen.generator @return_sig() -> !lit.signature<<index, index = *(0,0)>() -> ()> {
+kgen.generator @return_sig() -> !lit.generator<<index, index = *(0,0)>() -> ()> {
   kgen.unreachable
 }
 
@@ -77,34 +77,34 @@ kgen.generator @bind_nested() {
   kgen.param.declare bound1: (!lit.type_signature<index, index = *(0,0)>) -> () = <@subst_type<:type !lit.type_signature<index, index = *(0,0)>>>
   // CHECK: result0: !lit.type_signature<index, index = *(0,0)> = <apply(:() -> !lit.type_signature<index, index = *(0,0)> @return_type)>
   kgen.param.declare result0: !lit.type_signature<index, index = *(0,0)> = <apply(:() -> !lit.type_signature<index, index = *(0,0)> @return_type)>
-  // CHECK: result1: !lit.signature<<index, index = *(0,0)>() -> ()> = <apply(:() -> !kgen.generator<!lit.signature<<index, index = *(0,0)>() -> ()>> @return_sig)>
-  kgen.param.declare result1: !lit.signature<<index, index = *(0,0)>() -> ()> = <apply(:() -> !lit.signature<<index, index = *(0,0)>() -> ()> @return_sig)>
+  // CHECK: result1: !lit.generator<<index, index = *(0,0)>() -> ()> = <apply(:() -> !kgen.generator<!lit.generator<<index, index = *(0,0)>() -> ()>> @return_sig)>
+  kgen.param.declare result1: !lit.generator<<index, index = *(0,0)>() -> ()> = <apply(:() -> !lit.generator<<index, index = *(0,0)>() -> ()> @return_sig)>
   kgen.return
 }
 
 // CHECK-LABEL: @passing_kinds
 kgen.generator @passing_kinds(
-    // CHECK-SAME: !lit.signature<<i8, |, i8, *, i8, ?, i8>() -> ()>
-    %arg0: !lit.signature<<i8, |, i8, *, i8, ?, i8>() -> ()>,
-    // CHECK-SAME: !lit.signature<<i8, i8, *, i8, ?, i8>() -> ()>
-    %arg1: !lit.signature<<i8, i8, *, i8, ?, i8>() -> ()>,
-    // CHECK-SAME: !lit.signature<<i8, |, i8, i8, ?, i8>() -> ()>
-    %arg2: !lit.signature<<i8, |, i8, i8, ?, i8>() -> ()>,
-    // CHECK-SAME: !lit.signature<<i8, i8, i8, ?, i8>() -> ()>
-    %arg3: !lit.signature<<i8, i8, i8, ?, i8>() -> ()>
+    // CHECK-SAME: !lit.generator<<i8, |, i8, *, i8, ?, i8>() -> ()>
+    %arg0: !lit.generator<<i8, |, i8, *, i8, ?, i8>() -> ()>,
+    // CHECK-SAME: !lit.generator<<i8, i8, *, i8, ?, i8>() -> ()>
+    %arg1: !lit.generator<<i8, i8, *, i8, ?, i8>() -> ()>,
+    // CHECK-SAME: !lit.generator<<i8, |, i8, i8, ?, i8>() -> ()>
+    %arg2: !lit.generator<<i8, |, i8, i8, ?, i8>() -> ()>,
+    // CHECK-SAME: !lit.generator<<i8, i8, i8, ?, i8>() -> ()>
+    %arg3: !lit.generator<<i8, i8, i8, ?, i8>() -> ()>
 ) {
   kgen.return
 }
 
 // Test that passing kind printing/parsing works correctly for long signatures.
-!t = !kgen.generator<!lit.signature<(
+!t = !kgen.generator<!lit.generator<(
     "a": index owned, |, *,
     "b": index owned, "c": index owned, "d": index owned, "e": index owned,
     "f": index owned, "g": index owned, "h": index owned, "i": index owned,
     "j": index owned, "k": index owned, "l": index owned, "m": index owned
 ) -> !kgen.none>>
 
-// CHECK-LABEL: lit.func @long_sig(%t: !kgen.generator<!lit.signature<
+// CHECK-LABEL: lit.func @long_sig(%t: !kgen.generator<!lit.generator<
 // CHECK-SAME: "a": index owned, |, *,
 // CHECK-SAME: "b": index owned, "c": index owned, "d": index owned, "e": index owned,
 // CHECK-SAME: "f": index owned, "g": index owned, "h": index owned, "i": index owned,
@@ -158,16 +158,16 @@ kgen.generator @escape_trait_param_names<type: trait<@Trait>>() {
 
 // CHECK-LABEL: kgen.func @generator_types
 kgen.func @generator_types() {
-  // CHECK-NEXT: type = <!lit.generator<<> none>>
-  kgen.param.declare empty: type = <!lit.generator<<> none>>
-  // CHECK-NEXT: type = <!lit.generator<<dtype> index>>
-  kgen.param.declare one_arg: type = <!lit.generator<<dtype> index>>
-  // CHECK-NEXT: type = <!lit.generator<<"dt": dtype = f32> index>>
-  kgen.param.declare one_arg_named: type = <!lit.generator<<"dt": dtype = f32> index>>
-  // CHECK-NEXT: type = <!lit.generator<<"dt": dtype, "width": index> index>>
-  kgen.param.declare more_args: type = <!lit.generator<<"dt": dtype, "width": index> index>>
-  // CHECK-NEXT: type = <!lit.generator<<"dt": dtype, |, "width": index, *, "tag": i1> index>>
-  kgen.param.declare arg_kinds: type = <!lit.generator<<"dt": dtype, |, "width": index, *, "tag": i1> index>>
+  // CHECK-NEXT: type = <!lit.generator<<>none>>
+  kgen.param.declare empty: type = <!lit.generator<<>none>>
+  // CHECK-NEXT: type = <!lit.generator<<dtype>index>>
+  kgen.param.declare one_arg: type = <!lit.generator<<dtype>index>>
+  // CHECK-NEXT: type = <!lit.generator<<"dt": dtype = f32>index>>
+  kgen.param.declare one_arg_named: type = <!lit.generator<<"dt": dtype = f32>index>>
+  // CHECK-NEXT: type = <!lit.generator<<"dt": dtype, "width": index>index>>
+  kgen.param.declare more_args: type = <!lit.generator<<"dt": dtype, "width": index>index>>
+  // CHECK-NEXT: type = <!lit.generator<<"dt": dtype, |, "width": index, *, "tag": i1>index>>
+  kgen.param.declare arg_kinds: type = <!lit.generator<<"dt": dtype, |, "width": index, *, "tag": i1>index>>
   kgen.return
 }
 

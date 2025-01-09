@@ -236,7 +236,7 @@ fn usePacks(x: FloatDyn, y: Int):
 # CHECK-LABEL: test_comptime_call
 fn test_comptime_call[a: Int]():
     # CHECK: lit.alias.decl *"foo`": none =
-    # CHECK-SAME: <apply(:!lit.signature<[2](
+    # CHECK-SAME: <apply(:!lit.generator<[2](
     # CHECK-SAME: "args": !lit.ref<@stdlib::@builtin::@stubs::@VariadicPack<:!Bool {:i1 0}, :origin<0> {}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [#Int1]>, imm {}> read_mem|pack)
     # CHECK-SAME: <store_to_mem(a)>, {:i1 0}))
     alias foo = pack(a)

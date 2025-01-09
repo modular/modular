@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
-# CHECK: lit.struct.decl{{.*}}<{{.*}}: !lit.signature<() capturing -> !Int>
+# CHECK: lit.struct.decl{{.*}}<{{.*}}: !lit.generator<() capturing -> !Int>
 # CHECK:      lit.struct.field param_capture : !lit.struct<#ParameterClosureCaptureList{{.*}}__call__
 # CHECK-NEXT: lit.struct.field field0 : !Int
 

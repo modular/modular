@@ -308,6 +308,9 @@ ParseResult parseOptionalParamSignature(
 
 ParseResult parseSignature(AsmParser &p, TypeAttr &signature);
 ParseResult parseSignature(AsmParser &p, Type &signature);
+OptionalParseResult parseOptionalSignatureValues(
+    AsmParser &p, function_ref<ParseResult(SmallVectorImpl<Type> &)> parseArg,
+    FunctionType &values, FnEffects &effects, bool optionalResultList);
 ParseResult parseSignatureValues(
     AsmParser &p, function_ref<ParseResult(SmallVectorImpl<Type> &)> parseArg,
     FunctionType &values, FnEffects &effects, bool optionalResultList);
@@ -318,7 +321,7 @@ inline void printSignature(AsmPrinter &p, Operation *op,
 }
 void printSignature(AsmPrinter &p, Operation *op, TypeAttr signature);
 void printSignatureValues(AsmPrinter &p, FunctionType functionType,
-                          SignatureType signature);
+                          SignatureGeneratorType sigGen);
 void printSignatureValues(AsmPrinter &p, function_ref<void(unsigned)> printElt,
                           FunctionType functionType, SignatureType signature,
                           bool optionalResultList);

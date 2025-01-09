@@ -27,7 +27,6 @@ class SignatureGeneratorType;
 namespace M::KGEN::LIT {
 class AnyStructType;
 class ASTType;
-class LITSignatureType;
 class OriginSetAttr;
 class PogListAttr;
 class SharedState;

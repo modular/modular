@@ -687,11 +687,11 @@ struct TraitSelfBinder : public IndexParameterReplacer<TraitSelfBinder> {
 /// 'RefinedMovableTrait.__del__' or 'Int.__del__'.  'newSelfType' is the
 /// struct or trait type to bind.  For example, AnyType.__del__'s signature
 /// looks like:
-///    !lit.signature<[1]<trait<@AnyType>>("self":
+///    !lit.generator<<trait<@AnyType>>[1]("self":
 ///        !lit.ref<:trait<@AnyType> *(0,0), mut *[0,0]> owned_in_mem) -> none>
 /// When binding this down to some MTT conforming to Movable, this will give us
 /// something like:
-///    !lit.signature<[1]>("self":
+///    !lit.generator<[1]>("self":
 ///        !lit.ref<:trait<@Movable> MTT>, mut *[0,0]> owned_in_mem) -> none>>
 /// Resolving the *(0,0) into the Movable type, as well as the first param type.
 static LITSignatureGeneratorType
@@ -715,7 +715,7 @@ createRequirementSignature(LIT::FuncOp traitFn, ASTType newSelfType,
   signature = selfBinder.replace(signature);
 
   // At this point, the first parameter is gone:
-  //    !lit.signature<[1]("self":
+  //    !lit.generator<[1]("self":
   //        !lit.ref<:trait<@Movable> MTT>, mut *[0,0]> owned_in_mem) -> none>>
 
   // Next we'll replace trait aliases that appear in the trait methods, such
@@ -757,7 +757,7 @@ createRequirementSignature(LIT::FuncOp traitFn, ASTType newSelfType,
 
   // At this point, signature's `self` argument's type is the struct or
   // trait.  For example when binding Self down to some "MTT: Movable", we have:
-  //    !lit.signature<[1]<trait<@AnyType>>("self":
+  //    !lit.generator<<trait<@AnyType>>[1]("self":
   //        !lit.ref<:trait<@Movable> MTT>, mut *[0,0]> owned_in_mem) -> none>>
   // Now we need to drop the "<trait<@AnyType>" parameter, which we do by
   // specializing it away.  We know all references to it are already gone.
@@ -788,7 +788,7 @@ createRequirementSignature(LIT::FuncOp traitFn, ASTType newSelfType,
 ///
 /// Yields something like:
 ///     #kgen.type<!kgen.paramref<:trait<@Movable> MTT>, {
-///        "__del__" : !lit.signature<[1](
+///        "__del__" : !lit.generator<[1](
 ///                    "self": !lit.ref<:trait<@Movable> MTT, ...)>
 ///          = get_vtable_entry(:trait<@Movable> MTT, "__del__")
 ///     }> : !lit.trait<@AnyType>

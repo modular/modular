@@ -3,12 +3,12 @@
 
 // COM: Test all fields are destroyed in object destructor
 
-lit.struct.decl @S attributes {destructor = #kgen.symbol.constant<@S::@__del__> : !lit.signature<[1](!lit.ref<@S, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
+lit.struct.decl @S attributes {destructor = #kgen.symbol.constant<@S::@__del__> : !lit.generator<[1](!lit.ref<@S, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field a : index
 }
 
 // CHECK-LABEL: lit.struct.decl @HasMemFields
-lit.struct.decl @HasMemFields attributes {destructor = #kgen.symbol.constant<@HasMemFields::@__del__> : !lit.signature<[1](!lit.ref<@HasMemFields, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
+lit.struct.decl @HasMemFields attributes {destructor = #kgen.symbol.constant<@HasMemFields::@__del__> : !lit.generator<[1](!lit.ref<@HasMemFields, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field a : !lit.struct<@S>
   lit.struct.field stole : !lit.struct<@S>
   lit.struct.field uninitialized : !lit.struct<@S>
@@ -42,7 +42,7 @@ lit.func @mark_initialized[mut lt](%arg: !lit.ref<@HasMemFields, mut lt> byref_r
 !Error = !lit.struct<@Error>
 
 // CHECK-LABEL: lit.struct.decl @Error
-lit.struct.decl @Error register_passable attributes {destructor = #kgen.symbol.constant<@Error::@__del__ > : !lit.signature<(!Error) -> !kgen.none>} {
+lit.struct.decl @Error register_passable attributes {destructor = #kgen.symbol.constant<@Error::@__del__ > : !lit.generator<(!Error) -> !kgen.none>} {
   lit.struct.field a : index
 }
 
@@ -56,12 +56,12 @@ lit.func @conditional_consumption_1(%c: i1, %value: !Error) {
   // CHECK-NOT: @Error::@__del__
   hlcf.loop {
     hlcf.if %c {
-      lit.call @consume_err(%value) : !lit.signature<(!Error) -> ()>
+      lit.call @consume_err(%value) : !lit.generator<(!Error) -> ()>
       hlcf.break
     } else {
       hlcf.yield
     }
-    lit.call @consume_err(%value) : !lit.signature<(!Error) -> ()>
+    lit.call @consume_err(%value) : !lit.generator<(!Error) -> ()>
     hlcf.break
   }
   kgen.return
@@ -74,10 +74,10 @@ lit.func @conditional_consumption_2(%c: i1, %value: !Error) {
     hlcf.if %c {
       hlcf.yield
     } else {
-      lit.call @consume_err(%value) : !lit.signature<(!Error) -> ()>
+      lit.call @consume_err(%value) : !lit.generator<(!Error) -> ()>
       hlcf.break
     }
-    lit.call @consume_err(%value) : !lit.signature<(!Error) -> ()>
+    lit.call @consume_err(%value) : !lit.generator<(!Error) -> ()>
     hlcf.break
   }
   kgen.return
@@ -95,12 +95,12 @@ lit.func @conditional_consumption_3(%c: i1, %value: !Error) {
       }
       lit.try.yield
     } except (%e: i1) {
-      lit.call @consume_err(%value) : !lit.signature<(!Error) -> ()>
+      lit.call @consume_err(%value) : !lit.generator<(!Error) -> ()>
       hlcf.break
     } else {
       lit.try.yield
     }
-    lit.call @consume_err(%value) : !lit.signature<(!Error) -> ()>
+    lit.call @consume_err(%value) : !lit.generator<(!Error) -> ()>
     hlcf.break
   }
   kgen.return
@@ -120,10 +120,10 @@ lit.func @conditional_consumption_4(%c: i1, %value: !Error) {
     } except (%e: i1) {
       lit.try.yield
     } else {
-      lit.call @consume_err(%value) : !lit.signature<(!Error) -> ()>
+      lit.call @consume_err(%value) : !lit.generator<(!Error) -> ()>
       hlcf.break
     }
-    lit.call @consume_err(%value) : !lit.signature<(!Error) -> ()>
+    lit.call @consume_err(%value) : !lit.generator<(!Error) -> ()>
     hlcf.break
   }
   kgen.return
@@ -147,7 +147,7 @@ lit.struct.decl @Thing {
 
 lit.func @top(%c: !lit.ref<@Box<:trait<@AnyType> !Thing>, mut #lit.any.origin> read_mem) {
   %0 = lit.ref.struct.ger %c[x] : <@Box<:trait<@AnyType> !Thing>, mut #lit.any.origin> -> !Thing
-  lit.call @Thing::@get(%0) : !lit.signature<("self": !lit.ref<!Thing, mut #lit.any.origin> read_mem) -> ()>
+  lit.call @Thing::@get(%0) : !lit.generator<("self": !lit.ref<!Thing, mut #lit.any.origin> read_mem) -> ()>
   kgen.return
 }
 // -----
@@ -162,19 +162,19 @@ lit.struct.decl @Int register_passable_trivial {
 !Node = !lit.struct<@Node>
 lit.struct.decl @Node attributes {
   destructor =
-    #kgen.symbol.constant<@Node::@__del__> : !lit.signature<[1](!lit.ref<@Node, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
+    #kgen.symbol.constant<@Node::@__del__> : !lit.generator<[1](!lit.ref<@Node, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field a : index
 }
 
 !Container = !lit.struct<@Container>
 lit.struct.decl @Container attributes {
   destructor =
-    #kgen.symbol.constant<@Container::@__del__> : !lit.signature<[1](!lit.ref<@Container, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
+    #kgen.symbol.constant<@Container::@__del__> : !lit.generator<[1](!lit.ref<@Container, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field z : !Node
 }
 
 !Wrapper = !lit.struct<@Wrapper>
-lit.struct.decl @Wrapper attributes {destructor = #kgen.symbol.constant<@Wrapper::@__del__> : !lit.signature<[1](!lit.ref<@Wrapper, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
+lit.struct.decl @Wrapper attributes {destructor = #kgen.symbol.constant<@Wrapper::@__del__> : !lit.generator<[1](!lit.ref<@Wrapper, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field tail : !Int
   lit.struct.field y : !kgen.pointer<!Container>
 }
@@ -189,12 +189,12 @@ lit.struct.decl @Error {
 !PythonObject = !lit.struct<@PythonObject>
 lit.struct.decl @PythonObject attributes {
   destructor =
-    #kgen.symbol.constant<@PythonObject::@__del__> : !lit.signature<[1](!lit.ref<@PythonObject, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
+    #kgen.symbol.constant<@PythonObject::@__del__> : !lit.generator<[1](!lit.ref<@PythonObject, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field a : index
 }
 
 !Context = !lit.struct<@Context>
-lit.struct.decl @Context attributes {destructor = #kgen.symbol.constant<@Context::@__del__> : !lit.signature<[1](!lit.ref<@Context, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
+lit.struct.decl @Context attributes {destructor = #kgen.symbol.constant<@Context::@__del__> : !lit.generator<[1](!lit.ref<@Context, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field __new_repl_var : !kgen.pointer<pointer<!PythonObject>>
   lit.struct.field __new_repl_var2 : !kgen.pointer<pointer<!PythonObject>>
 }
@@ -227,7 +227,7 @@ lit.func @createConditionallyInitializedImmortalReferenceInRepl[mut topArg, mut 
   // CHECK-NEXT:  }
   kgen.param.declare LOCAL_LIFETIME2: origin<1> = <#lit.any.origin>
   %5 = lit.ref.from_pointer.repl %4 : <!PythonObject, mut LOCAL_LIFETIME2> {name = "np"}
-  %6 = lit.call @import_module[mut localError, mut LOCAL_LIFETIME2](%__error__, %5) : !lit.signature<[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<!PythonObject, mut *[0,1]> byref_result) throws -> i1>
+  %6 = lit.call @import_module[mut localError, mut LOCAL_LIFETIME2](%__error__, %5) : !lit.generator<[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<!PythonObject, mut *[0,1]> byref_result) throws -> i1>
   hlcf.if %6 {
     lit.ownership.mark_consumed %5 : <!PythonObject, mut LOCAL_LIFETIME2>
     %7 = kgen.param.constant: i1 = <1>
@@ -255,7 +255,7 @@ lit.func @createConditionallyInitializedImmortalReferenceInRepl[mut topArg, mut 
   // CHECK-NEXT:  }
   kgen.param.declare LOCAL_LIFETIME3: origin<1> = <#lit.any.origin>
   %15 = lit.ref.from_pointer.repl %14 : <!PythonObject, mut LOCAL_LIFETIME3> {name = "np2"}
-  %16 = lit.call @import_module[mut localError, mut LOCAL_LIFETIME3](%__error__, %15) : !lit.signature<[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<!PythonObject, mut *[0,1]> byref_result) throws -> i1>
+  %16 = lit.call @import_module[mut localError, mut LOCAL_LIFETIME3](%__error__, %15) : !lit.generator<[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<!PythonObject, mut *[0,1]> byref_result) throws -> i1>
   hlcf.if %16 {
     lit.ownership.mark_consumed %15 : <!PythonObject, mut LOCAL_LIFETIME3>
     %7 = kgen.param.constant: i1 = <1>

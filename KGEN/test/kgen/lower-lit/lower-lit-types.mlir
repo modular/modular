@@ -150,7 +150,7 @@ lit.func @call_lifetime_lower() {
   // CHECK: %struct = kgen.param.constant: struct<()> = <{ }>
   %cst = kgen.param.constant: origin<1> = <#lit.any.origin>
   // CHECK: kgen.call @lifetime_lower(%struct) : (!kgen.struct<()>) -> ()
-  lit.call @lifetime_lower<:origin<0> #lit.any.origin>(%cst) : !lit.signature<(!lit.origin<1>) -> ()>
+  lit.call @lifetime_lower<:origin<0> #lit.any.origin>(%cst) : !lit.generator<(!lit.origin<1>) -> ()>
   kgen.return
 }
 
@@ -517,6 +517,6 @@ lit.func @x() {
 }
 
 // CHECK: -> !kgen.struct<() memoryOnly>
-lit.func @example<T: trait<@Bar>>() -> !lit.struct<@Thing<:trait<@Foo> [!kgen.paramref<:trait<@Bar> T>, {"f": !lit.signature<() -> ()> = @x}]>> {
+lit.func @example<T: trait<@Bar>>() -> !lit.struct<@Thing<:trait<@Foo> [!kgen.paramref<:trait<@Bar> T>, {"f": !lit.generator<() -> ()> = @x}]>> {
   kgen.unreachable
 }

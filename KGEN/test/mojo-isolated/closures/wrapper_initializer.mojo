@@ -7,12 +7,12 @@
 
 
 # CHECK: lit.struct.decl @"fn
-# CHECK-NEXT: destructor :!lit.signature
-# CHECK-NEXT: move :!lit.signature
-# CHECK-NEXT: copy :!lit.signature
+# CHECK-NEXT: destructor :!lit.generator
+# CHECK-NEXT: move :!lit.generator
+# CHECK-NEXT: copy :!lit.generator
 
 # CHECK-LABEL: lit.func @"__init__{{.*}}(%impl: {{.*}} owned_in_mem, |, ?, %self: !lit.ref<!MemType1, mut *"self`"> byref_result)
-# CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure[!lit.signature<[2](!kgen.pointer<none>, |, "n": !lit.ref<!MemType, {{.*}}> read_mem, ?, "__result__": !lit.ref<!MemType, {{.*}}> byref_result) -> !kgen.none
+# CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure[!lit.generator<[2](!kgen.pointer<none>, |, "n": !lit.ref<!MemType, {{.*}}> read_mem, ?, "__result__": !lit.ref<!MemType, {{.*}}> byref_result) -> !kgen.none
 # CHECK-NEXT: %[[callPtr:.*]] = lit.ref.struct.ger %self[call]
 # CHECK-NEXT: lit.ref.store %[[ptrToCall]], %[[callPtr]]
 

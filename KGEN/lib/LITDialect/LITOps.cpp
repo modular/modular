@@ -296,7 +296,7 @@ static void printCallOp(OpAsmPrinter &p, Operation *op, TypedAttr calleeAttr,
     p << " : ";
     printSignatureValues(
         p, FunctionType::get(op->getContext(), operandTypes, resultTypes),
-        symbolCst.getType().asOldSignature());
+        symbolCst.getType());
   }
 }
 

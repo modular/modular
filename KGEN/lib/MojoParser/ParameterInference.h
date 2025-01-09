@@ -13,7 +13,6 @@
 
 namespace M::KGEN::LIT {
 class ExprNode;
-class LITSignatureType;
 
 //===----------------------------------------------------------------------===//
 // InferenceFailure

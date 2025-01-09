@@ -22,7 +22,7 @@
 
 lit.struct.decl @S attributes {
   destructor =
-    #kgen.symbol.constant<@S::@__del__> : !lit.signature<[1](!lit.ref<@S, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
+    #kgen.symbol.constant<@S::@__del__> : !lit.generator<[1](!lit.ref<@S, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
 
   lit.struct.field a : index
 
@@ -45,7 +45,7 @@ lit.func @test_var() -> index {
   // CHECK: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF_X]] = %x : ![[VAR_X_TYPE]]
   // CHECK-NEXT: lifetime.start %x
   // CHECK-NEXT: lit.call @S::@__init__{{.*}}({{.*}}, %x)
-  lit.call @S::@__init__[mut xlife](%0, %x) : !lit.signature<[1]("num": index, "self": !lit.ref<@S, mut *[0,0]> byref_result) -> !kgen.none> loc(#locX)
+  lit.call @S::@__init__[mut xlife](%0, %x) : !lit.generator<[1]("num": index, "self": !lit.ref<@S, mut *[0,0]> byref_result) -> !kgen.none> loc(#locX)
 
   // Use `x.a`.
   // CHECK: lit.ref.struct.ger {{.*}} loc(#[[LOC_USE:.*]])
@@ -83,7 +83,7 @@ lit.func @test_def_in_loop() {
     // CHECK: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF_X]] = %x : ![[VAR_X_TYPE]]
     // CHECK-NEXT: lifetime.start %x
     // CHECK-NEXT: lit.call @S::@__init__{{.*}}({{.*}}, %x)
-    lit.call @S::@__init__[mut xlife](%0, %x) : !lit.signature<[1]("num": index, "self": !lit.ref<@S, mut *[0,0]> byref_result) -> !kgen.none> loc(#locX)
+    lit.call @S::@__init__[mut xlife](%0, %x) : !lit.generator<[1]("num": index, "self": !lit.ref<@S, mut *[0,0]> byref_result) -> !kgen.none> loc(#locX)
     // CHECK-NEXT: debuginfo.kill #[[DIVAR_X]]
     // CHECK-NEXT: call @S::@__del__
     // CHECK-NEXT: lifetime.end %x
@@ -102,7 +102,7 @@ lit.func @test_def_twice() -> index {
   // CHECK: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF_X]] = %x : ![[VAR_X_TYPE]]
   // CHECK-NEXT: lifetime.start %x
   // CHECK-NEXT: lit.call @S::@__init__
-  lit.call @S::@__init__[mut xlife](%0, %x) : !lit.signature<[1]("num": index, "self": !lit.ref<@S, mut *[0,0]> byref_result) -> !kgen.none> loc(#locX)
+  lit.call @S::@__init__[mut xlife](%0, %x) : !lit.generator<[1]("num": index, "self": !lit.ref<@S, mut *[0,0]> byref_result) -> !kgen.none> loc(#locX)
   // CHECK: debuginfo.kill #[[DIVAR_X]]
   // CHECK-NEXT: call @S::@__del__
   // CHECK-NEXT: lifetime.end %x
@@ -110,7 +110,7 @@ lit.func @test_def_twice() -> index {
   // CHECK-NEXT: debuginfo.value #[[DIVAR_X]]
   // CHECK-NEXT: lifetime.start %x
   // CHECK-NEXT: lit.call @S::@__init__
-  lit.call @S::@__init__[mut xlife](%0, %x) : !lit.signature<[1]("num": index, "self": !lit.ref<@S, mut *[0,0]> byref_result) -> !kgen.none> loc(#locX)
+  lit.call @S::@__init__[mut xlife](%0, %x) : !lit.generator<[1]("num": index, "self": !lit.ref<@S, mut *[0,0]> byref_result) -> !kgen.none> loc(#locX)
   // CHECK-NEXT: debuginfo.kill #[[DIVAR_X]]
   // CHECK-NEXT: call @S::@__del__
   // CHECK-NEXT: lifetime.end %x
@@ -127,7 +127,7 @@ lit.func @test_consumed() -> index {
   // CHECK: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF_X]] = %x
   // CHECK-NEXT: lifetime.start %x
   // CHECK-NEXT: lit.call @S::@__init__
-  lit.call @S::@__init__(%0, %x) : !lit.signature<("num": index, "self": !lit.ref<@S, mut xlife> byref_result) -> !kgen.none> loc(#locX)
+  lit.call @S::@__init__(%0, %x) : !lit.generator<("num": index, "self": !lit.ref<@S, mut xlife> byref_result) -> !kgen.none> loc(#locX)
 
   // Create `y`.
   // CHECK: %[[VAR_Y:.*]] = lit.var.decl "y" var
@@ -139,7 +139,7 @@ lit.func @test_consumed() -> index {
   // CHECK-NEXT: lit.var.lifetime.start %y
   // CHECK-NEXT: lit.call @S::@__moveinit__{{.*}}(%x, %y) {{.*}} loc(#[[LOC_USE]])
   // CHECK-NEXT: lifetime.end %x
-  lit.call @S::@__moveinit__(%x, %y) : !lit.signature<(!lit.ref<@S, mut xlife> owned_in_mem, !lit.ref<@S, mut ylife> byref_result) -> !kgen.none> loc(#locUse)
+  lit.call @S::@__moveinit__(%x, %y) : !lit.generator<(!lit.ref<@S, mut xlife> owned_in_mem, !lit.ref<@S, mut ylife> byref_result) -> !kgen.none> loc(#locUse)
 
   // Last use of `y`.
   // CHECK: [[Y_A:%.*]] = lit.ref.struct.ger {{.*}} loc(#[[LOC_RET:.*]])

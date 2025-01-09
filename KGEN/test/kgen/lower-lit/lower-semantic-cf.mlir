@@ -190,7 +190,7 @@ lit.struct.decl @Error {}
 
 // CHECK-LABEL: lit.func @throwing_calls
 lit.func @throwing_calls(
-    %f: !lit.signature<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> i1>
+    %f: !lit.generator<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> i1>
 ) throws -> i1 {
   %err = lit.var.decl "err" synth : !lit.ref<@Error, mut elt>
   %result = lit.var.decl "result" synth : !lit.ref<none, mut lt>
@@ -204,7 +204,7 @@ lit.func @throwing_calls(
   // CHECK-NEXT:   mark_consumed %err
   // CHECK-NEXT:   yield
   // CHECK-NEXT: }
-  lit.call @throwing_func[mut elt, mut lt](%err, %result) : !lit.signature<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> i1>
+  lit.call @throwing_func[mut elt, mut lt](%err, %result) : !lit.generator<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> i1>
 
   %error = lit.var.decl "error" synth : !lit.ref<@Error, mut tlt>
   // CHECK: lit.try {
@@ -217,7 +217,7 @@ lit.func @throwing_calls(
     // CHECK-NEXT:   mark_consumed %error
     // CHECK-NEXT:   yield
     // CHECK-NEXT: }
-    lit.call_indirect %f[mut tlt, mut lt](%error, %result) :  !lit.signature<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> i1>
+    lit.call_indirect %f[mut tlt, mut lt](%error, %result) :  !lit.generator<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> i1>
     lit.try.yield
   } except {
     lit.try.yield
@@ -573,11 +573,11 @@ lit.func @try_in_loop(%arg0: i1) {
 
 // CHECK-LABEL: lit.func @recurse
 // CHECK-SAME (%x: !pop.scalar<index>) -> !pop.scalar<index> {
-// CHECK-NEXT: %0 = kgen.call @recurse(%x) : !lit.signature<("x": !pop.scalar<index>) -> !pop.scalar<index>>
+// CHECK-NEXT: %0 = kgen.call @recurse(%x) : !lit.generator<("x": !pop.scalar<index>) -> !pop.scalar<index>>
 // CHECK-NEXT: kgen.return %0 : !pop.scalar<index>
 // CHECK-NEXT:}
 lit.func @recurse(%x: !pop.scalar<index>) -> !pop.scalar<index> {
-  %0 = kgen.call @recurse(%x) : !lit.signature<("x": !pop.scalar<index>) -> !pop.scalar<index>>
+  %0 = kgen.call @recurse(%x) : !lit.generator<("x": !pop.scalar<index>) -> !pop.scalar<index>>
   lit.return %0 : !pop.scalar<index>
   lit.end_func
 }
@@ -690,19 +690,19 @@ lit.func @loop_with_cond_raise(%cond: i1) {
 // https://github.com/modularml/mojo/issues/222
 lit.func @self_recursive() -> !kgen.none {
   // expected-warning @+1 {{self recursive call will cause an infinite loop}}
-  %0 = lit.call @self_recursive() : !lit.signature<() -> !kgen.none>
+  %0 = lit.call @self_recursive() : !lit.generator<() -> !kgen.none>
   %none = kgen.param.constant: none = <#kgen.none>
   lit.return %none : !kgen.none
   lit.end_func
 }
 lit.func @self_recursive_arg(%a: index, %cond: i1) -> !kgen.none {
   // expected-warning @+1 {{self recursive call will cause an infinite loop}}
-  %0 = lit.call @self_recursive_arg(%a, %cond) : !lit.signature<("a": index, "cond": i1) -> !kgen.none>
+  %0 = lit.call @self_recursive_arg(%a, %cond) : !lit.generator<("a": index, "cond": i1) -> !kgen.none>
   hlcf.if %cond {
     %4 = kgen.param.constant: index = <1>
     %5 = index.sub %a, %4
     // No warning.
-    %6 = lit.call @self_recursive_arg(%5, %cond) : !lit.signature<("a": index, "cond": i1) -> !kgen.none>
+    %6 = lit.call @self_recursive_arg(%5, %cond) : !lit.generator<("a": index, "cond": i1) -> !kgen.none>
     hlcf.yield
   } else {
     hlcf.yield
@@ -714,10 +714,10 @@ lit.func @self_recursive_arg(%a: index, %cond: i1) -> !kgen.none {
 
 lit.func @self_recursive_param<a: index, cond: i1>() -> !kgen.none attributes {sourceName = "self_recursive_param", specialFnKind = 0 : i8} {
   // expected-warning @+1 {{self recursive call will cause an infinite loop}}
-  %0 = lit.call @self_recursive_param<a, :i1 cond>() : !lit.signature<() -> !kgen.none>
+  %0 = lit.call @self_recursive_param<a, :i1 cond>() : !lit.generator<() -> !kgen.none>
   kgen.param.if <cond> {
     // No warning.
-    %1 = lit.call @self_recursive_param<a, :i1 cond>() : !lit.signature<() -> !kgen.none>
+    %1 = lit.call @self_recursive_param<a, :i1 cond>() : !lit.generator<() -> !kgen.none>
     kgen.param.yield
   } else {
     kgen.param.yield
@@ -732,7 +732,7 @@ lit.func @self_recursive_arg_diff(%a: index) -> !kgen.none {
   %one = kgen.param.constant: index = <1>
   %b = index.sub %a, %one
   // expected-warning @+1 {{self recursive call will cause an infinite loop}}
-  lit.call @self_recursive_arg_diff(%b) : !lit.signature<("a": index) -> !kgen.none>
+  lit.call @self_recursive_arg_diff(%b) : !lit.generator<("a": index) -> !kgen.none>
 
   %none = kgen.param.constant: none = <#kgen.none>
   lit.return %none : !kgen.none

@@ -135,7 +135,7 @@ struct RaisingInit:
 fn finally_may_raise() raises:
     # CHECK: lit.try
     try:
-        # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}() : !lit.signature<() -> !Error> 
+        # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}() : !lit.generator<() -> !Error>
         # CHECK-NEXT: lifetime.start %__try_error__
         # CHECK-NEXT: lit.ref.store [[TMP]], %__try_error__
         # CHECK-NEXT: lit.try.raise

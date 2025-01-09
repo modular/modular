@@ -265,20 +265,20 @@ PogListAttr::verifyGenerator(function_ref<InFlightDiagnostic()> emitError,
 void PogListAttr::printGenerator(AsmPrinter &p, GeneratorType generator) const {
   ArrayRef<Type> paramTypes = generator.getInputParamTypes();
 
-  // Temporary sugar for lit.signature so we don't have to update all the tests
-  // just yet.
-  if (auto sigGen = ::dyn_cast<LITSignatureGeneratorType>(generator)) {
-    sigGen.getBody().getMetadata().printSignature(p, sigGen.asOldSignature());
-    return;
-  }
-
   p << "!lit.generator<";
-  if (paramTypes.empty())
-    p << "<>";
-  else
-    LIT::printOptionalParamSignature(p, paramTypes, *this);
-  p << ' ';
-  printKGENType(p, generator.getBody());
+  if (auto sig = ::dyn_cast<LITNewSignatureType>(generator.getBody())) {
+    // Special case for Signature Generators: Skip the empty angle brackets, and
+    // print the signature without any additional wrapper.
+    if (!paramTypes.empty())
+      LIT::printOptionalParamSignature(p, paramTypes, *this);
+    printLITNewSignature(p, sig);
+  } else {
+    if (paramTypes.empty())
+      p << "<>";
+    else
+      LIT::printOptionalParamSignature(p, paramTypes, *this);
+    printKGENType(p, generator.getBody());
+  }
   p << '>';
 }
 
@@ -510,7 +510,7 @@ FnMetadataAttr::prependPosParamsFromOps(ArrayRef<Operation *> ops) const {
 
 SignatureGeneratorType
 FnMetadataAttr::asSignatureGenerator(SignatureType sig) const {
-  return LITSignatureType(sig).asSignatureGenerator();
+  llvm_unreachable("!lit.signature is deprecated!");
 }
 
 LogicalResult FnMetadataAttr::verifySignature(

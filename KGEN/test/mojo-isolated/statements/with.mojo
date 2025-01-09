@@ -111,7 +111,7 @@ fn testWithNonRaising(a: ExampleCM):
     # CHECK: finally
     # CHECK-NEXT: ownership.use [[REG]]
 
-    # CHECK: call {{.*}}NoExitCMMem::@"__enter__{{.*}}(%{{.*}}, [[MEM:%.*]]) : !lit.signature
+    # CHECK: call {{.*}}NoExitCMMem::@"__enter__{{.*}}(%{{.*}}, [[MEM:%.*]]) : !lit.generator
     with NoExitCMMem():
         pass
     # CHECK: finally

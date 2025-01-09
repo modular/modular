@@ -31,7 +31,7 @@ fn test_kw_params_overload[x: int, y: int]():
     overloaded_param[b=y, a=x]()
 
     # CHECK: call {{.*}}@"overloaded_param{{.*}}"<x, :!MyInt apply(
-    # CHECK-SAME :!lit.signature<("v": index) -> !MyInt> {{.*}}@MyInt::@"__init__{{.*}}", y)>()
+    # CHECK-SAME :!lit.generator<("v": index) -> !MyInt> {{.*}}@MyInt::@"__init__{{.*}}", y)>()
     overloaded_param[b = MyInt(y), a=x]()
 
 
