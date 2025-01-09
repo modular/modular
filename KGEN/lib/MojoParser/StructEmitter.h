@@ -23,26 +23,36 @@ namespace M::KGEN::LIT {
 struct GeneratedStubs {
   LIT::FuncOp dtor;
   LIT::FuncOp copyCtr;
+  LIT::FuncOp explicitCopy;
   LIT::FuncOp moveCtr;
   LIT::FuncOp init;
 };
 
 class ValueInfo {
 public:
-  enum FuncIndex { Destruct = 0, Move = 1, Copy = 2, FieldwiseInit = 3 };
+  enum FuncIndex {
+    Destruct = 0,
+    Move = 1,
+    Copy = 2,
+    ExplicitCopy = 3,
+    FieldwiseInit = 4
+  };
 
   static std::optional<ValueInfo> createValueInfo(ASTDecl &structDecl);
   bool hasDestructor() const { return existingFunctions[FuncIndex::Destruct]; }
   bool hasMove() const { return existingFunctions[FuncIndex::Move]; }
   bool hasCopy() const { return existingFunctions[FuncIndex::Copy]; }
+  bool hasExplicitCopy() const {
+    return existingFunctions[FuncIndex::ExplicitCopy];
+  }
   bool hasFieldwiseInit() const {
     return existingFunctions[FuncIndex::FieldwiseInit];
   }
 
 private:
-  ValueInfo(const std::bitset<4> &existingFunctions)
+  ValueInfo(const std::bitset<5> &existingFunctions)
       : existingFunctions(existingFunctions) {}
-  std::bitset<4> existingFunctions;
+  std::bitset<5> existingFunctions;
 };
 
 class StructEmitter : public SharedStateUser {
@@ -93,6 +103,8 @@ public:
   LIT::FuncOp synthesizeEmptyMoveInit(ASTDecl &structDecl);
   /// Add an empty `__copyinit__` stub for this struct, to be filled in later.
   LIT::FuncOp synthesizeEmptyCopyInit(ASTDecl &structDecl);
+  /// Add `copy()` method for this struct.
+  LIT::FuncOp synthesizeExplicitCopy(ASTDecl &structDecl);
 
   /// Return the initializer method with the specified signature if it exists
   /// and null otherwise. The operands type is not expected to include self.

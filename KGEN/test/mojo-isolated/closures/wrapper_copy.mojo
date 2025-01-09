@@ -15,8 +15,8 @@
 # CHECK-NEXT:   [[M2:%.*]] = lit.ref.struct.ger %other[dtor]
 # CHECK-NEXT:   [[M3:%.*]] = lit.ref.load [[M2]]
 # CHECK-NEXT:   lit.ref.store [[M3]], [[M1]]
-# CHECK-NEXT:   [[M4:%.*]] = lit.ref.struct.ger %self[copy]
-# CHECK-NEXT:   [[M5:%.*]] = lit.ref.struct.ger %other[copy]
+# CHECK-NEXT:   [[M4:%.*]] = lit.ref.struct.ger %self[_copy]
+# CHECK-NEXT:   [[M5:%.*]] = lit.ref.struct.ger %other[_copy]
 # CHECK-NEXT:   [[M6:%.*]] = lit.ref.load [[M5]]
 # CHECK-NEXT:   lit.ref.store [[M6]], [[M4]]
 # CHECK-NEXT:   [[M7:%.*]] = lit.ref.struct.ger %self[call]
@@ -26,7 +26,7 @@
 # CHECK-NEXT:   kgen.param.constant: none
 # CHECK-NEXT:   [[W0:%.*]] = lit.ref.struct.ger %other[field0]
 # CHECK-NEXT:   [[W1:%.*]] = lit.ref.load [[W0]]
-# CHECK-NEXT:   [[W2:%.*]] = lit.ref.struct.ger %self[copy]
+# CHECK-NEXT:   [[W2:%.*]] = lit.ref.struct.ger %self[_copy]
 # CHECK-NEXT:   [[W4:%.*]] = lit.ref.load [[W2]]
 
 # Call the copy constructor member with the uninitialized self and the untyped existing impl.

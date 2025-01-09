@@ -6,6 +6,22 @@
 
 # RUN: %parse-mojo-isolated --mojo-disable-builtins -verify-diagnostics %s
 
+
+trait Copyable:
+    fn __copyinit__(out self, other: Self):
+        ...
+
+
+trait Movable:
+    fn __moveinit__(out self, owned other: Self):
+        ...
+
+
+trait ExplicitlyCopyable:
+    fn copy(self) -> Self:
+        ...
+
+
 # expected-error @below {{only traits may contain an alias without an initializer}}
 alias K: Int
 

@@ -449,6 +449,87 @@ static LIT::FuncOp synthesizeEmptyMoveOrCopyInit(StructEmitter &emitter,
       isMove ? SpecialFunctionKind::kMoveInit : SpecialFunctionKind::kCopyInit);
 }
 
+LIT::FuncOp StructEmitter::synthesizeExplicitCopy(ASTDecl &structDecl) {
+  ASTType selfType = structDecl.getTypeDeclSelf();
+  MLIRContext *ctx = this->shared.getContext();
+
+  ExprEmitter emitter(structDecl, EC_Decorator);
+
+  StructDeclOp structDeclOp = cast<StructDeclOp>(structDecl);
+
+  SmallVector<Type> argTypes;
+  SmallVector<ArgConvention> argConventions;
+  SmallVector<StringAttr> argNames;
+  SmallVector<PassingKind> argPassingKinds;
+
+  // Add the `self` argument
+  //
+  // If the type is register passable trivial, the 'existing' `self` value will
+  // be passed as a register, otherwise a reference.
+
+  if (selfType.isTrivial(structDecl.getLoc(), shared)) {
+    // Self is register trivial
+    argTypes.push_back(selfType);
+    argConventions.push_back(ArgConvention::ReadReg);
+  } else {
+    argTypes.push_back(selfType.getRefForArgument("self", /*isMut=*/false));
+    argConventions.push_back(ArgConvention::ReadMem);
+  }
+  argNames.push_back(StringAttr::get(ctx, "self"));
+  argPassingKinds.push_back(PassingKind::PosOnly);
+
+  // Add result slot / return type
+  //
+  // If the type is register passable (trivial or not), the low-level function
+  // return result type is Self. Otherwise, the low-level return type is None,
+  // and the result is returned through a memory output `__result__` slot arg.
+  Type mlirReturnType;
+
+  if (selfType.isRegisterPassable(structDecl.getLoc(), shared)) {
+    // The return type is register passable, so return it directly via the
+    // low-level MLIR-level return type (not via a result slot argument).
+    mlirReturnType = selfType;
+  } else {
+    argNames.push_back(StringAttr::get(ctx, "__result__"));
+    argPassingKinds.push_back(PassingKind::Implicit);
+    argTypes.push_back(
+        selfType.getRefForArgument("__result__", /*isMut=*/true));
+    argConventions.push_back(ArgConvention::ByRefResult);
+    mlirReturnType = shared.getNoneType();
+  }
+
+  assert(mlirReturnType &&
+         "failed to compute return type for synthesized copy()");
+
+  // Construct an empty FuncOp for copy() method
+  auto argListAttrs = PogListAttr::get(ctx, argNames, argPassingKinds);
+  auto [copyFunc, funcDecl] = this->synthesizeMethodInStruct(
+      "copy", argTypes, argConventions, argListAttrs,
+      /*resultType=*/mlirReturnType, structDecl, structDecl.getLoc());
+
+  // Point a `builder` at the end of the new copy() FuncOp
+  emitter.builder = OpBuilder::atBlockEnd(copyFunc.getBody());
+
+  // Now generate the body of the copy() method
+  SyntheticNode synthNode(structDecl.getLoc());
+
+  Value resultToReturn;
+  if (structDeclOp.isRegisterPassableTrivial()) {
+    resultToReturn = copyFunc.getArgument(0);
+  } else if (structDeclOp.isRegisterPassable()) {
+    MBValue selfArg = MBValue(copyFunc.getArgument(0));
+    resultToReturn = emitter.emitSRValue({selfArg, synthNode}, EC_ReturnValue);
+  } else {
+    MBValue selfArg = MBValue(copyFunc.getArgument(0));
+    ValueDest resultSlotDest(MLValue(copyFunc.getArgument(1)), EC_ReturnValue);
+    emitter.emitCopyOfValue({selfArg, synthNode}, resultSlotDest);
+    // resultToReturn remains null.
+  }
+  emitter.emitNormalReturn(structDeclOp.getLoc(), resultToReturn);
+
+  return copyFunc;
+}
+
 LIT::FuncOp StructEmitter::synthesizeEmptyMoveInit(ASTDecl &structDecl) {
   return synthesizeEmptyMoveOrCopyInit(*this, structDecl, /*isMove=*/true);
 }
@@ -459,7 +540,7 @@ LIT::FuncOp StructEmitter::synthesizeEmptyCopyInit(ASTDecl &structDecl) {
 
 std::optional<ValueInfo> ValueInfo::createValueInfo(ASTDecl &structDecl) {
   auto &shared = structDecl.getShared();
-  std::bitset<4> existingFunctions;
+  std::bitset<5> existingFunctions;
   existingFunctions.reset();
   auto structOp = cast<StructDeclOp>(structDecl);
 
@@ -488,6 +569,10 @@ std::optional<ValueInfo> ValueInfo::createValueInfo(ASTDecl &structDecl) {
   if (failed(setBit("__copyinit__", SpecialFunctionKind::kCopyInit,
                     FuncIndex::Copy)))
     return {};
+  if (failed(setBit("copy", SpecialFunctionKind::kNormal,
+                    FuncIndex::ExplicitCopy))) {
+    return {};
+  }
   if (failed(setBit("__moveinit__", SpecialFunctionKind::kMoveInit,
                     FuncIndex::Move)))
     return {};
@@ -606,25 +691,31 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
   if (!valueInfo->hasDestructor() && forceGenerateDestructor)
     destructorFunc = synthesizeEmptyDtor(structDecl);
 
-  auto addCopyOrMoveBuiltinTrait = [&](bool isCopy) {
+  auto addCopyOrMoveBuiltinTrait = [&](StringRef traitName) {
     ASTDecl *traitDecl = shared.lookupBuiltinTrait(
-        isCopy ? "Copyable" : "Movable", structDecl.getParentDecl(),
-        structDecl.getLoc());
-    if (traitDecl)
-      addTraitParent(declOp, traitDecl);
+        traitName, structDecl.getParentDecl(), structDecl.getLoc());
+    assert(traitDecl && "Unable to resolve builtin trait");
+    addTraitParent(declOp, traitDecl);
   };
 
   LIT::FuncOp copyFunc;
   if (!valueInfo->hasCopy() && !declOp.isRegisterPassableTrivial())
     copyFunc = synthesizeEmptyCopyInit(structDecl);
-  addCopyOrMoveBuiltinTrait(/*isCopy=*/true);
+  addCopyOrMoveBuiltinTrait("Copyable");
 
   LIT::FuncOp moveFunc;
   if (!valueInfo->hasMove() && !declOp.isRegisterPassable())
     moveFunc = synthesizeEmptyMoveInit(structDecl);
-  addCopyOrMoveBuiltinTrait(/*isCopy=*/false);
+  addCopyOrMoveBuiltinTrait("Movable");
 
-  return GeneratedStubs{destructorFunc, copyFunc, moveFunc, init};
+  LIT::FuncOp explicitCopyFunc;
+  if (!valueInfo->hasExplicitCopy()) {
+    explicitCopyFunc = synthesizeExplicitCopy(structDecl);
+    addCopyOrMoveBuiltinTrait("ExplicitlyCopyable");
+  }
+
+  return GeneratedStubs{destructorFunc, copyFunc, explicitCopyFunc, moveFunc,
+                        init};
 }
 
 LIT::FuncOp StructEmitter::findInitInStruct(StructDeclOp structOp,

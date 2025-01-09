@@ -21,7 +21,7 @@
 # CHECK-NEXT: lit.ref.store %[[V6]], %[[V5]]
 
 # CHECK-NEXT: %[[V10:.*]] = kgen.create_closure[{{.*}}]()
-# CHECK-NEXT: %[[V9:.*]] = lit.ref.struct.ger %self[copy]
+# CHECK-NEXT: %[[V9:.*]] = lit.ref.struct.ger %self[_copy]
 # CHECK-NEXT: lit.ref.store %[[V10]], %[[V9]]
 
 # Allocate memory on heap

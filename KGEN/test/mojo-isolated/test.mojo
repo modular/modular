@@ -14,7 +14,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-# CHECK: lit.struct.decl @BoxedInt(!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable)
+# CHECK: lit.struct.decl @BoxedInt(!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable, !ExplicitlyCopyable)
 @value
 struct BoxedInt:
     var value: int

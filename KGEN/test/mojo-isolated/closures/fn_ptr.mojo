@@ -26,7 +26,7 @@ struct Reg:
 # CHECK-NEXT: [[COPY:%.*]] = kgen.create_closure[{{.*}}__closure_wrapper_noop_copy
 # CHECK-NEXT: [[DTOR_FIELD:%.*]] = lit.ref.struct.ger %self[dtor]
 # CHECK-NEXT: store [[DTOR]], [[DTOR_FIELD]]
-# CHECK-NEXT: [[COPY_FIELD:%.*]] = lit.ref.struct.ger %self[copy]
+# CHECK-NEXT: [[COPY_FIELD:%.*]] = lit.ref.struct.ger %self[_copy]
 # CHECK-NEXT: store [[COPY]], [[COPY_FIELD]]
 # CHECK-NEXT: lit.func call_impl[[[LT:.*]]]([[FN_PTR:%.*]][*""]: !kgen.pointer<none>, [[ARG:%.*]][*""]: !lit.ref<!Mem, [[LT]]> read_mem, |) -> !Int
 # CHECK-NEXT:   [[CALLEE:%.*]] = pop.pointer.bitcast [[FN_PTR]]
