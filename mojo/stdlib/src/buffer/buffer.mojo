@@ -571,9 +571,9 @@ struct NDBuffer[
 
         E.g. this allows implicit conversion between
 
-        NDBuffer[type, rank, DimList(1, 2, 3), DimList(6, 6, 1), alignment=16]
+        `NDBuffer[type, rank, DimList(1, 2, 3), DimList(6, 6, 1), alignment=16]`
           to
-        NDBuffer[type, rank, DimList(1, 2, 3), DimList.create_unknown[rank](), alignment=4]
+        `NDBuffer[type, rank, DimList(1, 2, 3), DimList.create_unknown[rank](), alignment=4]`
 
         Args:
             other: The other NDBuffer type.
