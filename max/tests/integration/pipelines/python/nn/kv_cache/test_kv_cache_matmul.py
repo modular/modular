@@ -341,7 +341,7 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
         op
         for op in graph._mlir_op.regions[0].blocks[0].operations
         if op.name == "mo.custom"
-        and "matmul_kv_cache" in StringAttr(op.attributes["symbol"]).value
+        and "kv_matmul" in StringAttr(op.attributes["symbol"]).value
     ][0]
     assert len(matmul_kv_cache_op.results) == 1
     assert "!mo.chain" in str(matmul_kv_cache_op.results[0].type)
