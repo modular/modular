@@ -1495,10 +1495,20 @@ MojoDocument::onSemanticTokensSync(SMRange range) {
 
   // Compute tokens for known symbol references.
   context->symbolIndex.walkSymbolRefs(range, [&](SymbolRef &ref) {
+    lsp::Range range(sourceMgr, ref.range);
+
+    // The LSP protocol doesn't support multi-line semantic tokens.
+    // It's not easy to "fill in" all the lines this symbol occupies because we
+    // don't know how long the lines are. For now, we just ignore these symbols.
+    // This has only come up for specific function edge cases, where the
+    // semantic token was wrong anyways (see MOTO-903).
+    if (range.start.line != range.end.line)
+      return;
+
     const Symbol *symbol = ref.symbols.front();
     tokens.emplace_back(
         getSemanticTokenKind(symbol->declRef, symbol->approximateViewKind),
-        lsp::Range(sourceMgr, ref.range));
+        range);
   });
   llvm::sort(tokens);
 

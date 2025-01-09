@@ -6,6 +6,7 @@
 
 #include "SemanticTokens.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/Support/ErrorHandling.h"
 
 #define DEBUG_TYPE "mojo-lsp-server"
 
@@ -75,6 +76,12 @@ Mojo::LSP::toLspSemanticTokens(ArrayRef<SemanticToken> tokens) {
   std::vector<mlir::lsp::SemanticToken> result;
 
   for (auto [index, tok] : llvm::enumerate(tokens)) {
+    if (tok.range.start.line != tok.range.end.line)
+      llvm::report_fatal_error("expected token to be one line");
+
+    if (tok.range.end.character < tok.range.start.character)
+      llvm::report_fatal_error("expected token to have a positive length");
+
     mlir::lsp::SemanticToken &newTok = result.emplace_back();
 
     // `deltaStart`/`deltaLine` should be computed relative to the last token if
