@@ -320,7 +320,7 @@ fn test[
                     var expect = output[Index(bs, s, int(h), int(d))]
                     if not isclose(actual, expect, atol=1e-5, rtol=rtol):
                         var rerr = abs((actual - expect) / expect)
-                        print(h, s, d, actual, expect, rerr)
+                        print(bs, h, s, d, actual, expect, rerr)
                     assert_almost_equal(actual, expect, atol=1e-5, rtol=rtol)
 
     _ = q_device_ptr

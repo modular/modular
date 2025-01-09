@@ -27,6 +27,16 @@ trait MHAOperand:
     ) -> UnsafePointer[Scalar[Self.type]]:
         ...
 
+    @always_inline
+    fn cache_length(self, batch_idx: Int) -> Int:
+        """Returns the length of the cache for a given batch index."""
+        ...
+
+    @always_inline
+    fn get_max_cache_length(self) -> UInt32:
+        """Returns the maximum cache length in a given batch index."""
+        ...
+
 
 struct KVCacheMHAOperand[cache_t: KVCacheT](MHAOperand):
     """An implementation for `mo.opaque` KVCacheT arguments to MHA kernels.
@@ -55,14 +65,24 @@ struct KVCacheMHAOperand[cache_t: KVCacheT](MHAOperand):
             int(batch_idx), int(start_tok_idx), int(head_idx), int(head_dim_idx)
         )
 
+    @always_inline
+    fn cache_length(self, batch_idx: Int) -> Int:
+        return self.cache.cache_length(batch_idx)
 
-struct NDBufferMHAOperand[type_: DType, rank: Int, shape: DimList](MHAOperand):
+    @always_inline
+    fn get_max_cache_length(self) -> UInt32:
+        return self.cache.get_max_cache_length()
+
+
+struct NDBufferMHAOperand[
+    type_: DType, rank: Int, shape: DimList, stride: DimList
+](MHAOperand):
     """An implementation for NDBuffer arguments to MHA kernels."""
 
     alias type = type_
-    var buffer: NDBuffer[Self.type, rank, shape]
+    var buffer: NDBuffer[Self.type, rank, shape, stride]
 
-    fn __init__(out self, buffer: NDBuffer[Self.type, rank, shape]):
+    fn __init__(out self, buffer: NDBuffer[Self.type, rank, shape, stride]):
         self.buffer = buffer
 
     @always_inline
@@ -84,3 +104,13 @@ struct NDBufferMHAOperand[type_: DType, rank: Int, shape: DimList](MHAOperand):
             )
         )
         return rebind[UnsafePointer[Scalar[Self.type]]](ret_ptr)
+
+    @always_inline
+    fn cache_length(self, batch_idx: Int) -> Int:
+        # NDBuffer path assumes BSHD layout and all cache entries have
+        # the same length.
+        return self.buffer.dim[1]()
+
+    @always_inline
+    fn get_max_cache_length(self) -> UInt32:
+        return self.buffer.dim[1]()
