@@ -91,6 +91,53 @@ struct Atomic[type: DType, *, scope: StringLiteral = ""]:
             rhs.value,
         )
 
+    @staticmethod
+    @always_inline
+    fn _xchg(
+        ptr: UnsafePointer[Scalar[type], **_], value: Scalar[type]
+    ) -> Scalar[type]:
+        """Performs an atomic exchange.
+        The operation is a read-modify-write operation. Memory
+        is affected according to the value of order which is sequentially
+        consistent.
+
+        Args:
+            ptr: The source pointer.
+            value: The to exchange.
+
+        Returns:
+            The value of the value before the operation.
+        """
+        return __mlir_op.`pop.atomic.rmw`[
+            bin_op = __mlir_attr.`#pop<bin_op xchg>`,
+            ordering = __mlir_attr.`#pop<atomic_ordering seq_cst>`,
+            _type = __mlir_type[`!pop.scalar<`, type.value, `>`],
+        ](
+            ptr.bitcast[__mlir_type[`!pop.scalar<`, type.value, `>`]]().address,
+            value.value,
+        )
+
+    @staticmethod
+    @always_inline
+    fn store(ptr: UnsafePointer[Scalar[type], **_], value: Scalar[type]):
+        """Performs atomic store.
+        The operation is a read-modify-write operation. Memory
+        is affected according to the value of order which is sequentially
+        consistent.
+
+        Args:
+            ptr: The source pointer.
+            value: The value to store.
+        """
+        _ = __mlir_op.`pop.atomic.rmw`[
+            bin_op = __mlir_attr.`#pop<bin_op xchg>`,
+            ordering = __mlir_attr.`#pop<atomic_ordering seq_cst>`,
+            _type = __mlir_type[`!pop.scalar<`, type.value, `>`],
+        ](
+            ptr.bitcast[__mlir_type[`!pop.scalar<`, type.value, `>`]]().address,
+            value.value,
+        )
+
     @always_inline
     fn fetch_add(mut self, rhs: Scalar[type]) -> Scalar[type]:
         """Performs atomic in-place add.
