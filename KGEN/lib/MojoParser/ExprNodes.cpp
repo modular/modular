@@ -1988,7 +1988,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
     // We're going to emit the index as a PValue even if in a dynamic context.
     auto paramEmitter = emitter.getParamEmitter(EC_Subscript);
-    CValue index = paramEmitter.emitMLIRIndex(operands[0].expr, EC_Subscript);
+    CValue index = paramEmitter.emitIndex(operands[0].expr, EC_Subscript);
     if (!index)
       return {};
     // Inside a parameter context, emit a parameter operator.

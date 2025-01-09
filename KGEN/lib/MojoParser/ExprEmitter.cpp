@@ -1560,33 +1560,18 @@ RValue ExprEmitter::emitExprI1(const ExprNode *condExpr, ExprContext context) {
 }
 
 CValue ExprEmitter::emitIndex(ASTExprAnd<AnyValue> value, ExprContext context) {
-  ValueDest dest(context);
-  return emitNamedMethodCall("__index__", {value}, dest,
-                             CallSyntax::kMethodCall, value.expr);
-}
-
-CValue ExprEmitter::emitMLIRIndex(ASTExprAnd<AnyValue> value,
-                                  ExprContext context) {
   // If the value is already of index type, just use it.
   if (CValue cvalue = value.ir.getIfCValue())
     if (isa<IndexType>(cvalue.getRValueType().mlirType))
       return cvalue;
 
-  CValue index = emitIndex(value, context);
-  if (!index)
-    return {};
-
-  // If the value is already of index type, just use it.
-  if (isa<IndexType>(index.getRValueType().mlirType))
-    return index;
-
   ValueDest dest(context);
-  return emitNamedMethodCall("__mlir_index__", {{{index, value.expr}}}, dest,
+  return emitNamedMethodCall("__index__", {value}, dest,
                              CallSyntax::kMethodCall, value.expr);
 }
 
-CValue ExprEmitter::emitMLIRIndex(const ExprNode *expr, ExprContext context) {
-  return emitMLIRIndex({emitExprCValue(expr, context), expr}, context);
+CValue ExprEmitter::emitIndex(const ExprNode *expr, ExprContext context) {
+  return emitIndex({emitExprCValue(expr, context), expr}, context);
 }
 
 CValue ExprEmitter::emitBool(ASTExprAnd<PValue> value, ValueDest &dest) {

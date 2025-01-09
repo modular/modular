@@ -9,6 +9,7 @@
 # RUN: %mojo-build %s --mcmodel=medium --large-data-threshold=2 -o %t
 # RUN: llvm-objdump %t -t | FileCheck %s
 
+
 # COM: check that string constant is in .lrodata section
 # (for any data size that's larger than large-data-threshold)
 # CHECK: .lrodata
