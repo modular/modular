@@ -20,7 +20,8 @@ struct Struct:
 
 alias struct_alias = Struct
 
-fn foo():
+# `raises` is load-bearing; see MOTO-903.
+fn foo() raises:
   return
 
 alias int_alias = 10
@@ -82,6 +83,11 @@ struct StructWithTrait(ATrait):
               return token.range ==
                          *doc.findLastPos("struct StructWithTrait") &&
                      token.kind == SemanticTokenKind::kFunction;
+            }));
+
+            EXPECT_TRUE(llvm::all_of(tokens, [&](const SemanticToken &token) {
+              return token.range.start.line == token.range.end.line &&
+                     token.range.start.character <= token.range.end.character;
             }));
           })
       .execute();
