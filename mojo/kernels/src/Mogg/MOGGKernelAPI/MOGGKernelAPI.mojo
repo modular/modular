@@ -2915,13 +2915,6 @@ struct ArgMax:
         axis: ManagedTensorSlice[rank=1],
         ctx: MojoCallContextPtr,
     ) raises:
-        alias output_shape = compiler.specsof[output.type, output.rank](
-            "output"
-        ).shape
-        alias axis_shape = compiler.specsof[axis.type, axis.rank]("axis").shape
-        alias input_shape = compiler.specsof[input.type, input.rank](
-            "input"
-        ).shape
         var axis_val = int(normalize_neg_index(axis[0], rank))
 
         with Trace[TraceLevel.OP, target=target]("argmax"):
@@ -4306,8 +4299,6 @@ struct Matmul:
             spec = compiler.specsof[c.type, c.rank]("c")
         ](c)
 
-        alias out_lambda = compiler.specsof[c.type, c.rank]("c").out_lambda
-
         @parameter
         @always_inline
         fn output_fn[
@@ -4358,8 +4349,6 @@ struct BatchMatmul:
         var c_buffer = managed_tensor_slice_to_ndbuffer_with_spec[
             compiler.specsof[c.type, c.rank]("c")
         ](c)
-
-        alias out_lambda = compiler.specsof[c.type, c.rank]("c").out_lambda
 
         @parameter
         @always_inline
@@ -5731,10 +5720,6 @@ struct WithMaskFlashAttentionSplitKVCPU:
         mask: ManagedTensorSlice[type=type],
         scale: Scalar[type = DType.float32],
     ) raises:
-        alias output_shape = compiler.specsof[output.type, output.rank](
-            "output"
-        ).shape
-
         @parameter
         @always_inline
         fn k_input_fn[
@@ -5817,10 +5802,6 @@ struct WithMaskFlashAttentionCPU:
         mask: ManagedTensorSlice[type=type],
         scale: Scalar[type = DType.float32],
     ) raises:
-        alias output_shape = compiler.specsof[output.type, output.rank](
-            "output"
-        ).shape
-
         @parameter
         @always_inline
         fn k_input_fn[
@@ -6167,9 +6148,6 @@ struct QMatmulGPU_b4_g32:
         b: ManagedTensorSlice[DType.uint8, 2],
         ctx: MojoCallContextPtr,
     ) raises:
-        alias a_shape = compiler.specsof[a.type, a.rank]("a").shape
-        alias b_shape = compiler.specsof[b.type, b.rank]("b").shape
-        alias c_shape = compiler.specsof[c.type, c.rank]("c").shape
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
         with Trace[TraceLevel.OP, target=target]("qmatmul_b4_g32"):
@@ -9237,9 +9215,6 @@ fn generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch_kernel_ap
     output: ManagedTensorSlice[type, 4],
     context: MojoCallContextPtr,
 ) raises:
-    alias q_spec = compiler.specsof[q.type, q.rank]("q")
-    alias output_spec = compiler.specsof[output.type, output.rank]("output")
-
     generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch[target](
         managed_tensor_slice_to_ndbuffer_with_spec[
             compiler.specsof[q.type, q.rank]("q")
@@ -10093,15 +10068,6 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     output: ManagedTensorSlice[type, 3],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
-    alias q_proj_spec = compiler.specsof[q_proj.type, q_proj.rank]("q_proj")
-    alias input_row_offsets_spec = compiler.specsof[
-        input_row_offsets.type, input_row_offsets.rank
-    ]("input_row_offsets")
-    alias freqs_cis_spec = compiler.specsof[freqs_cis.type, freqs_cis.rank](
-        "freqs_cis"
-    )
-    alias output_spec = compiler.specsof[output.type, output.rank]("output")
-
     generic_fused_qk_rope_bshd_paged_ragged[target=target](
         managed_tensor_slice_to_ndbuffer_with_spec[
             compiler.specsof[q_proj.type, q_proj.rank]("q_proj")
@@ -10401,12 +10367,6 @@ fn generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
     output: ManagedTensorSlice[type, 3],
     context: MojoCallContextPtr,
 ) raises:
-    alias q_spec = compiler.specsof[q.type, q.rank]("q")
-    alias input_row_offsets_spec = compiler.specsof[
-        input_row_offsets.type, input_row_offsets.rank
-    ]("input_row_offsets")
-    alias output_spec = compiler.specsof[output.type, output.rank]("output")
-
     generic_flash_attention_kv_cache_causal_mask_paged_ragged[target=target](
         managed_tensor_slice_to_ndbuffer_with_spec[
             compiler.specsof[q.type, q.rank]("q")
