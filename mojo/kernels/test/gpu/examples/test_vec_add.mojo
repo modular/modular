@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# REQUIRES: NVIDIA-GPU
 # RUN: %if !debugging-test %{ %mojo-no-debug-no-assert %s | FileCheck %s %}
 
 # ===----------------------------------------------------------------------=== #
