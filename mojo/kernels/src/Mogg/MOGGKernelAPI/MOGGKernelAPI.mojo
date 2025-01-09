@@ -7656,8 +7656,10 @@ fn generic_flash_attention_kv_cache_continuous_batch_kernel_api[
     )
 
 
-@compiler.register("flash_attention_kv_cache_h8_d128_bshd_continuous_batch")
-struct Struct_flash_attention_kv_cache_h8_d128_bshd_continuous_batch:
+@compiler.register(
+    "mo.mha.padded.continuous_batching.tensor_mask.no_pos.nhead_8.hdim_128"
+)
+struct Struct_mha_padded_continuous_batching_tensor_mask_no_pos_nhead_8_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -7688,8 +7690,10 @@ struct Struct_flash_attention_kv_cache_h8_d128_bshd_continuous_batch:
         )
 
 
-@compiler.register("flash_attention_kv_cache_h1_d16_bshd_continuous_batch")
-struct Struct_flash_attention_kv_cache_h1_d16_bshd_continuous_batch:
+@compiler.register(
+    "mo.mha.padded.continuous_batching.tensor_mask.no_pos.nhead_1.hdim_16"
+)
+struct Struct_mha_padded_continuous_batching_tensor_mask_no_pos_nhead_1_hdim_16:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -7720,8 +7724,10 @@ struct Struct_flash_attention_kv_cache_h1_d16_bshd_continuous_batch:
         )
 
 
-@compiler.register("flash_attention_kv_cache_h8_d32_bshd_continuous_batch")
-struct Struct_flash_attention_kv_cache_h8_d32_bshd_continuous_batch:
+@compiler.register(
+    "mo.mha.padded.continuous_batching.tensor_mask.no_pos.nhead_8.hdim_32"
+)
+struct Struct_mha_padded_continuous_batching_tensor_mask_no_pos_nhead_8_hdim_32:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -7752,8 +7758,10 @@ struct Struct_flash_attention_kv_cache_h8_d32_bshd_continuous_batch:
         )
 
 
-@compiler.register("flash_attention_kv_cache_h8_d64_bshd_continuous_batch")
-struct Struct_flash_attention_kv_cache_h8_d64_bshd_continuous_batch:
+@compiler.register(
+    "mo.mha.padded.continuous_batching.tensor_mask.no_pos.nhead_8.hdim_64"
+)
+struct Struct_mha_padded_continuous_batching_tensor_mask_no_pos_nhead_8_hdim_64:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -7784,8 +7792,10 @@ struct Struct_flash_attention_kv_cache_h8_d64_bshd_continuous_batch:
         )
 
 
-@compiler.register("flash_attention_kv_cache_h32_d128_bshd_continuous_batch")
-struct Struct_flash_attention_kv_cache_h32_d128_bshd_continuous_batch:
+@compiler.register(
+    "mo.mha.padded.continuous_batching.tensor_mask.no_pos.nhead_32.hdim_128"
+)
+struct Struct_mha_padded_continuous_batching_tensor_mask_no_pos_nhead_32_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -7816,8 +7826,10 @@ struct Struct_flash_attention_kv_cache_h32_d128_bshd_continuous_batch:
         )
 
 
-@compiler.register("flash_attention_kv_cache_h8_d512_bshd_continuous_batch")
-struct Struct_flash_attention_kv_cache_h8_d512_bshd_continuous_batch:
+@compiler.register(
+    "mo.mha.padded.continuous_batching.tensor_mask.no_pos.nhead_8.hdim_512"
+)
+struct Struct_mha_padded_continuous_batching_tensor_mask_no_pos_nhead_8_hdim_512:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -7949,9 +7961,9 @@ fn generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
 
 
 @compiler.register(
-    "flash_attention_kv_cache_h8_d128_causal_mask_continuous_batch"
+    "mo.mha.padded.continuous_batching.causal_mask.no_pos.nhead_8.hdim_128"
 )
-struct Struct_flash_attention_kv_cache_h8_d128_causal_mask_continuous_batch:
+struct Struct_mha_padded_continuous_batching_causal_mask_no_pos_nhead_8_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -7977,9 +7989,9 @@ struct Struct_flash_attention_kv_cache_h8_d128_causal_mask_continuous_batch:
 
 
 @compiler.register(
-    "flash_attention_kv_cache_h8_d32_causal_mask_continuous_batch"
+    "mo.mha.padded.continuous_batching.causal_mask.no_pos.nhead_8.hdim_32"
 )
-struct Struct_flash_attention_kv_cache_h8_d32_causal_mask_continuous_batch:
+struct Struct_mha_padded_continuous_batching_causal_mask_no_pos_nhead_8_hdim_32:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8005,9 +8017,9 @@ struct Struct_flash_attention_kv_cache_h8_d32_causal_mask_continuous_batch:
 
 
 @compiler.register(
-    "flash_attention_kv_cache_h8_d64_causal_mask_continuous_batch"
+    "mo.mha.padded.continuous_batching.causal_mask.no_pos.nhead_8.hdim_64"
 )
-struct Struct_flash_attention_kv_cache_h8_d64_causal_mask_continuous_batch:
+struct Struct_mha_padded_continuous_batching_causal_mask_no_pos_nhead_8_hdim_64:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8033,9 +8045,9 @@ struct Struct_flash_attention_kv_cache_h8_d64_causal_mask_continuous_batch:
 
 
 @compiler.register(
-    "flash_attention_kv_cache_h1_d16_causal_mask_continuous_batch"
+    "mo.mha.padded.continuous_batching.causal_mask.no_pos.nhead_1.hdim_16"
 )
-struct Struct_flash_attention_kv_cache_h1_d16_causal_mask_continuous_batch:
+struct Struct_mha_padded_continuous_batching_causal_mask_no_pos_nhead_1_hdim_16:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8211,43 +8223,9 @@ fn generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged_kernel_api[
 
 
 @compiler.register(
-    "flash_attention_kv_cache_h8_d128_null_mask_cont_batch_ragged"
+    "mo.mha.ragged.continuous_batching.causal_mask.no_pos.nhead_1.hdim_16"
 )
-struct Struct_flash_attention_kv_cache_h8_d128_null_mask_cont_batch_ragged:
-    @uses_opaque
-    @always_inline
-    @staticmethod
-    fn execute[
-        type: DType, target: StringLiteral
-    ](
-        output: ManagedTensorSlice[type, 3],
-        q: ManagedTensorSlice[type, 3],
-        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
-        kv_collection: ContinuousBatchingKVCacheCollection[
-            type,
-            kv_params_h8_d128_bshd,
-        ],
-        layer_idx: Scalar[DType.uint32],
-        scale: Scalar[DType.float32],
-        context: MojoCallContextPtr,
-    ) raises:
-        generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged_kernel_api[
-            target
-        ](
-            q,
-            input_row_offsets,
-            kv_collection,
-            layer_idx,
-            scale,
-            output,
-            context,
-        )
-
-
-@compiler.register(
-    "flash_attention_kv_cache_h1_d16_causal_mask_cont_batch_ragged"
-)
-struct Struct_flash_attention_kv_cache_h1_d16_causal_mask_cont_batch_ragged:
+struct Struct_mha_ragged_continuous_batching_causal_mask_no_pos_nhead_1_hdim_16:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8279,9 +8257,9 @@ struct Struct_flash_attention_kv_cache_h1_d16_causal_mask_cont_batch_ragged:
 
 
 @compiler.register(
-    "flash_attention_kv_cache_h2_d2_causal_mask_cont_batch_ragged"
+    "mo.mha.ragged.continuous_batching.causal_mask.no_pos.nhead_2.hdim_2"
 )
-struct Struct_flash_attention_kv_cache_h2_d2_causal_mask_cont_batch_ragged:
+struct Struct_mha_ragged_continuous_batching_causal_mask_no_pos_nhead_2_hdim_2:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8313,9 +8291,9 @@ struct Struct_flash_attention_kv_cache_h2_d2_causal_mask_cont_batch_ragged:
 
 
 @compiler.register(
-    "flash_attention_kv_cache_h2_d128_causal_mask_cont_batch_ragged"
+    "mo.mha.ragged.continuous_batching.causal_mask.no_pos.nhead_2.hdim_128"
 )
-struct Struct_flash_attention_kv_cache_h2_d128_causal_mask_cont_batch_ragged:
+struct Struct_mha_ragged_continuous_batching_causal_mask_no_pos_nhead_2_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8347,9 +8325,9 @@ struct Struct_flash_attention_kv_cache_h2_d128_causal_mask_cont_batch_ragged:
 
 
 @compiler.register(
-    "flash_attention_kv_cache_h3_d64_causal_mask_cont_batch_ragged"
+    "mo.mha.ragged.continuous_batching.causal_mask.no_pos.nhead_3.hdim_64"
 )
-struct Struct_flash_attention_kv_cache_h3_d64_causal_mask_cont_batch_ragged:
+struct Struct_mha_ragged_continuous_batching_causal_mask_no_pos_nhead_3_hdim_64:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8381,9 +8359,9 @@ struct Struct_flash_attention_kv_cache_h3_d64_causal_mask_cont_batch_ragged:
 
 
 @compiler.register(
-    "flash_attention_kv_cache_h4_d128_causal_mask_cont_batch_ragged"
+    "mo.mha.ragged.continuous_batching.causal_mask.no_pos.nhead_4.hdim_128"
 )
-struct Struct_flash_attention_kv_cache_h4_d128_causal_mask_cont_batch_ragged:
+struct Struct_mha_ragged_continuous_batching_causal_mask_no_pos_nhead_4_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8415,9 +8393,9 @@ struct Struct_flash_attention_kv_cache_h4_d128_causal_mask_cont_batch_ragged:
 
 
 @compiler.register(
-    "flash_attention_kv_cache_h8_d64_causal_mask_cont_batch_ragged"
+    "mo.mha.ragged.continuous_batching.causal_mask.no_pos.nhead_8.hdim_64"
 )
-struct Struct_flash_attention_kv_cache_h8_d64_causal_mask_cont_batch_ragged:
+struct Struct_mha_ragged_continuous_batching_causal_mask_no_pos_nhead_8_hdim_64:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8449,9 +8427,9 @@ struct Struct_flash_attention_kv_cache_h8_d64_causal_mask_cont_batch_ragged:
 
 
 @compiler.register(
-    "flash_attention_kv_cache_h8_d80_causal_mask_cont_batch_ragged"
+    "mo.mha.ragged.continuous_batching.causal_mask.no_pos.nhead_8.hdim_80"
 )
-struct Struct_flash_attention_kv_cache_h8_d80_causal_mask_cont_batch_ragged:
+struct Struct_mha_ragged_continuous_batching_causal_mask_no_pos_nhead_8_hdim_80:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8483,9 +8461,9 @@ struct Struct_flash_attention_kv_cache_h8_d80_causal_mask_cont_batch_ragged:
 
 
 @compiler.register(
-    "flash_attention_kv_cache_h8_d128_causal_mask_cont_batch_ragged"
+    "mo.mha.ragged.continuous_batching.causal_mask.no_pos.nhead_8.hdim_128"
 )
-struct Struct_flash_attention_kv_cache_h8_d128_causal_mask_cont_batch_ragged:
+struct Struct_mha_ragged_continuous_batching_causal_mask_no_pos_nhead_8_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8517,9 +8495,9 @@ struct Struct_flash_attention_kv_cache_h8_d128_causal_mask_cont_batch_ragged:
 
 
 @compiler.register(
-    "flash_attention_kv_cache_h8_d512_causal_mask_cont_batch_ragged"
+    "mo.mha.ragged.continuous_batching.causal_mask.no_pos.nhead_8.hdim_512"
 )
-struct Struct_flash_attention_kv_cache_h8_d512_causal_mask_cont_batch_ragged:
+struct Struct_mha_ragged_continuous_batching_causal_mask_no_pos_nhead_8_hdim_512:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8551,9 +8529,9 @@ struct Struct_flash_attention_kv_cache_h8_d512_causal_mask_cont_batch_ragged:
 
 
 @compiler.register(
-    "flash_attention_kv_cache_h32_d128_causal_mask_cont_batch_ragged"
+    "mo.mha.ragged.continuous_batching.causal_mask.no_pos.nhead_32.hdim_128"
 )
-struct Struct_flash_attention_kv_cache_h32_d128_causal_mask_cont_batch_ragged:
+struct Struct_mha_ragged_continuous_batching_causal_mask_no_pos_nhead_32_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9231,9 +9209,9 @@ fn generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch_kernel_ap
 
 
 @compiler.register(
-    "flash_attention_kv_cache_h8_d128_causal_alibi_mask_continuous_batch"
+    "mo.mha.padded.continuous_batching.causal_mask.alibi_pos.nhead_8.hdim_128"
 )
-struct Struct_flash_attention_kv_cache_h8_d128_causal_alibi_mask_continuous_batch:
+struct Struct_mha_padded_continuous_batching_causal_mask_alibi_pos_nhead_8_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9260,9 +9238,9 @@ struct Struct_flash_attention_kv_cache_h8_d128_causal_alibi_mask_continuous_batc
 
 
 @compiler.register(
-    "flash_attention_kv_cache_h32_d128_causal_alibi_mask_continuous_batch"
+    "mo.mha.padded.continuous_batching.causal_mask.alibi_pos.nhead_32.hdim_128"
 )
-struct Struct_flash_attention_kv_cache_h32_d128_causal_alibi_mask_continuous_batch:
+struct Struct_mha_padded_continuous_batching_causal_mask_alibi_pos_nhead_32_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9289,9 +9267,9 @@ struct Struct_flash_attention_kv_cache_h32_d128_causal_alibi_mask_continuous_bat
 
 
 @compiler.register(
-    "flash_attention_kv_cache_h8_d32_causal_alibi_mask_continuous_batch"
+    "mo.mha.padded.continuous_batching.causal_mask.alibi_pos.nhead_8.hdim_32"
 )
-struct Struct_flash_attention_kv_cache_h8_d32_causal_alibi_mask_continuous_batch:
+struct Struct_mha_padded_continuous_batching_causal_mask_alibi_pos_nhead_8_hdim_32:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9318,9 +9296,9 @@ struct Struct_flash_attention_kv_cache_h8_d32_causal_alibi_mask_continuous_batch
 
 
 @compiler.register(
-    "flash_attention_kv_cache_h8_d64_causal_alibi_mask_continuous_batch"
+    "mo.mha.padded.continuous_batching.causal_mask.alibi_pos.nhead_8.hdim_64"
 )
-struct Struct_flash_attention_kv_cache_h8_d64_causal_alibi_mask_continuous_batch:
+struct Struct_mha_padded_continuous_batching_causal_mask_alibi_pos_nhead_8_hdim_64:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9347,9 +9325,9 @@ struct Struct_flash_attention_kv_cache_h8_d64_causal_alibi_mask_continuous_batch
 
 
 @compiler.register(
-    "flash_attention_kv_cache_h1_d16_causal_alibi_mask_continuous_batch"
+    "mo.mha.padded.continuous_batching.causal_mask.alibi_pos.nhead_1.hdim_16"
 )
-struct Struct_flash_attention_kv_cache_h1_d16_causal_alibi_mask_continuous_batch:
+struct Struct_mha_padded_continuous_batching_causal_mask_alibi_pos_nhead_1_hdim_16:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -10386,8 +10364,8 @@ fn generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
     )
 
 
-@compiler.register("flash_attention_kv_cache_h1_d16_causal_mask_paged_ragged")
-struct Struct_flash_attention_kv_cache_h1_d16_causal_mask_paged_ragged:
+@compiler.register("mo.mha.ragged.paged.causal_mask.no_pos.nhead_1.hdim_16")
+struct Struct_mha_ragged_paged_causal_mask_no_pos_nhead_1_hdim_16:
     @uses_opaque
     @staticmethod
     @always_inline
@@ -10416,8 +10394,8 @@ struct Struct_flash_attention_kv_cache_h1_d16_causal_mask_paged_ragged:
         )
 
 
-@compiler.register("flash_attention_kv_cache_h6_d48_causal_mask_paged_ragged")
-struct Struct_flash_attention_kv_cache_h6_d48_causal_mask_paged_ragged:
+@compiler.register("mo.mha.ragged.paged.causal_mask.no_pos.nhead_6.hdim_48")
+struct Struct_mha_ragged_paged_causal_mask_no_pos_nhead_6_hdim_48:
     @uses_opaque
     @staticmethod
     @always_inline
@@ -10446,8 +10424,8 @@ struct Struct_flash_attention_kv_cache_h6_d48_causal_mask_paged_ragged:
         )
 
 
-@compiler.register("flash_attention_kv_cache_h8_d128_causal_mask_paged_ragged")
-struct Struct_flash_attention_kv_cache_h8_d128_causal_mask_paged_ragged:
+@compiler.register("mo.mha.ragged.paged.causal_mask.no_pos.nhead_8.hdim_128")
+struct Struct_mha_ragged_paged_causal_mask_no_pos_nhead_8_hdim_128:
     @uses_opaque
     @staticmethod
     @always_inline
@@ -10476,8 +10454,8 @@ struct Struct_flash_attention_kv_cache_h8_d128_causal_mask_paged_ragged:
         )
 
 
-@compiler.register("flash_attention_kv_cache_h8_d16_causal_mask_paged_ragged")
-struct Struct_flash_attention_kv_cache_h8_d16_causal_mask_paged_ragged:
+@compiler.register("mo.mha.ragged.paged.causal_mask.no_pos.nhead_8.hdim_16")
+struct Struct_mha_ragged_paged_causal_mask_no_pos_nhead_8_hdim_16:
     @uses_opaque
     @staticmethod
     @always_inline
@@ -10506,8 +10484,8 @@ struct Struct_flash_attention_kv_cache_h8_d16_causal_mask_paged_ragged:
         )
 
 
-@compiler.register("flash_attention_kv_cache_h8_d512_causal_mask_paged_ragged")
-struct Struct_flash_attention_kv_cache_h8_d512_causal_mask_paged_ragged:
+@compiler.register("mo.mha.ragged.paged.causal_mask.no_pos.nhead_8.hdim_512")
+struct Struct_mha_ragged_paged_causal_mask_no_pos_nhead_8_hdim_512:
     @uses_opaque
     @staticmethod
     @always_inline
@@ -10536,8 +10514,8 @@ struct Struct_flash_attention_kv_cache_h8_d512_causal_mask_paged_ragged:
         )
 
 
-@compiler.register("flash_attention_kv_cache_h8_d32_causal_mask_paged_ragged")
-struct Struct_flash_attention_kv_cache_h8_d32_causal_mask_paged_ragged:
+@compiler.register("mo.mha.ragged.paged.causal_mask.no_pos.nhead_8.hdim_32")
+struct Struct_mha_ragged_paged_causal_mask_no_pos_nhead_8_hdim_32:
     @uses_opaque
     @staticmethod
     @always_inline
@@ -10566,8 +10544,8 @@ struct Struct_flash_attention_kv_cache_h8_d32_causal_mask_paged_ragged:
         )
 
 
-@compiler.register("flash_attention_kv_cache_h8_d64_causal_mask_paged_ragged")
-struct Struct_flash_attention_kv_cache_h8_d64_causal_mask_paged_ragged:
+@compiler.register("mo.mha.ragged.paged.causal_mask.no_pos.nhead_8.hdim_64")
+struct Struct_mha_ragged_paged_causal_mask_no_pos_nhead_8_hdim_64:
     @uses_opaque
     @staticmethod
     @always_inline
@@ -10596,8 +10574,8 @@ struct Struct_flash_attention_kv_cache_h8_d64_causal_mask_paged_ragged:
         )
 
 
-@compiler.register("flash_attention_kv_cache_h32_d128_causal_mask_paged_ragged")
-struct Struct_flash_attention_kv_cache_h32_d128_causal_mask_paged_ragged:
+@compiler.register("mo.mha.ragged.paged.causal_mask.no_pos.nhead_32.hdim_128")
+struct Struct_mha_ragged_paged_causal_mask_no_pos_nhead_32_hdim_128:
     @uses_opaque
     @staticmethod
     @always_inline
@@ -10627,9 +10605,9 @@ struct Struct_flash_attention_kv_cache_h32_d128_causal_mask_paged_ragged:
 
 
 @compiler.register(
-    "flash_attention_kv_cache_h8_d32_alibi_mask_cont_batch_ragged"
+    "mo.mha.ragged.padded.continuous_batching.causal_mask.alibi_pos.nhead_8.hdim_32"
 )
-struct Struct_flash_attention_kv_cache_h8_d32_alibi_mask_cont_batch_ragged:
+struct Struct_mha_ragged_padded_continuous_batching_causal_mask_alibi_pos_nhead_8_hdim_32:
     @uses_opaque
     @staticmethod
     @always_inline
@@ -10669,9 +10647,9 @@ struct Struct_flash_attention_kv_cache_h8_d32_alibi_mask_cont_batch_ragged:
 
 
 @compiler.register(
-    "flash_attention_kv_cache_h8_d128_alibi_mask_cont_batch_ragged"
+    "mo.mha.ragged.padded.continuous_batching.causal_mask.alibi_pos.nhead_8.hdim_128"
 )
-struct Struct_flash_attention_kv_cache_h8_d128_alibi_mask_cont_batch_ragged:
+struct Struct_mha_ragged_padded_continuous_batching_causal_mask_alibi_pos_nhead_8_hdim_128:
     @uses_opaque
     @staticmethod
     @always_inline
