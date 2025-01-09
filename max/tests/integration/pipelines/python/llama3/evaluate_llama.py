@@ -214,7 +214,7 @@ def main(model, encoding, verbose):
             config = model_encoding.build_config(testdata_directory)
             tokenizer = TextTokenizer(config)
 
-            session = InferenceSession(devices=[config.device])
+            session = InferenceSession(devices=config.devices)
             llama3 = Llama3Model(pipeline_config=config, session=session)
             results = run_model(llama3, tokenizer, PROMPTS)
 
