@@ -679,7 +679,9 @@ fn multistage_mma[
                                 num_threads * simd_size // row_size,
                                 row_size // simd_size,
                             )
-                            alias swizzle_prefetch_b = transpose_b_next or b_type.is_half_float()
+                            alias swizzle_prefetch_b = (
+                                transpose_b_next or b_type.is_half_float()
+                            ) and is_nvidia_gpu()
 
                             if num_b_rows:
                                 # TODO: can we guard at compile time num_b_rows is set here?
