@@ -163,7 +163,7 @@ fn direct_call_init():
   var value: DirectInit
   # This is a call of a static method on an instance, so 'value' is unused.
   # expected-warning @+1 {{'DirectInit' value is unused}}
-  value.__init__() 
+  value.__init__()
 
 struct DummyFunc:
     @implicit
@@ -208,17 +208,17 @@ struct RegPassable:
   fn __matmul__(self, rhs: Self) -> Self: pass
   fn __rmatmul__(lhs, rhs: Self) -> Self: pass
 
-# CHECK-LABEL: lit.struct.decl @StructWithFuncParam<comparator: !lit.signature
+# CHECK-LABEL: lit.struct.decl @StructWithFuncParam<comparator: !lit.generator
 # CHECK-SAME: <"T": type>(!kgen.paramref<*(0,0)>, |)
 struct StructWithFuncParam[comparator: fn[T: AnyTrivialRegType] (T) -> None]:
     # CHECK-LABEL: lit.func @"f
-    # CHECK-SAME: %self: !lit.ref<{{.*}}<:!lit.signature<<"T": type>(!kgen.paramref<*(0,0)>
+    # CHECK-SAME: %self: !lit.ref<{{.*}}<:!lit.generator<<"T": type>(!kgen.paramref<*(0,0)>
     fn f(self):
         pass
 
     # CHECK-LABEL: lit.func @"g
     fn g(self):
-        # CHECK: call {{.*}}[imm *"self`2x"]<:!lit.signature<<"T": type>(!kgen.paramref<*(0,0)>, |)
+        # CHECK: call {{.*}}[imm *"self`2x"]<:!lit.generator<<"T": type>(!kgen.paramref<*(0,0)>, |)
         # CHECK-SAME: !lit.ref<{{.*}}<"T": type>(!kgen.paramref<*(0,0)>, |)
         self.f()
 
@@ -362,7 +362,7 @@ fn precedence_matmul(z: RegPassable) -> RegPassable:
 
   # CHECK-NEXT:  [[THREETMP:%.*]] = lit.var.decl "anonymous*"
   # CHECK-NEXT:  lit.ref.store [[THREERP]], [[THREETMP]]
-  
+
   # CHECK-NEXT:  [[NEGTMP:%.*]] = lit.var.decl "anonymous*"
   # CHECK-NEXT:  lit.ref.store [[NEG]], [[NEGTMP]]
   # CHECK-NEXT:  [[THREETMP_IMM:%.*]] = lit.ref.immut [[THREETMP]]
@@ -611,15 +611,15 @@ fn test_param_if_cond[cond: Bool]() -> Int:
   return i
 
 # CHECK-LABEL: lit.func @"callable_mv[fn(::Int, /) -> ::Int](::Int)"
-# CHECK-SAME: <callable: !lit.signature<(!Int, |) -> !Int>>(%a: !Int) -> !Int
+# CHECK-SAME: <callable: !lit.generator<(!Int, |) -> !Int>>(%a: !Int) -> !Int
 fn callable_mv[callable: fn (Int) -> Int](a: Int) -> Int:
-  # CHECK-NEXT: lit.call[!lit.signature<(!Int, |) -> !Int>: callable](%a)
+  # CHECK-NEXT: lit.call[!lit.generator<(!Int, |) -> !Int>: callable](%a)
   return callable(a)
 
 # CHECK-LABEL: lit.func @"callable_mv_inputs{{.*}})"<
-# CHECK-SAME: callable: !lit.signature<<"x": !Int>(!Int, |) -> !Int>, b: !Int>(%a: !Int) -> !Int
+# CHECK-SAME: callable: !lit.generator<<"x": !Int>(!Int, |) -> !Int>, b: !Int>(%a: !Int) -> !Int
 fn callable_mv_inputs[callable: fn[x: Int](Int) -> Int, b: Int](a: Int) -> Int:
-  # CHECK-NEXT: lit.call[!lit.signature<(!Int, |) -> !Int>: bind_signature({{.*}}callable, b)](%a)
+  # CHECK-NEXT: lit.call[!lit.generator<(!Int, |) -> !Int>: bind_signature({{.*}}callable, b)](%a)
   return callable[b](a)
 
 # CHECK-LABEL: lit.func @"takeIndexParam{{.*}}"<a: !Int>() -> !Int
@@ -637,7 +637,7 @@ fn returnIndex2() -> Int:
   return takeIndexParam[returnIndex()]()
 
 # CHECK-LABEL: lit.func @"callInParam[fn[::Int](::Int, /) -> ::Int]()"
-# CHECK-SAME: <callable: !lit.signature<<"x": !Int>(!Int, |) -> !Int>>() -> !Int
+# CHECK-SAME: <callable: !lit.generator<<"x": !Int>(!Int, |) -> !Int>>() -> !Int
 fn callInParam[callable: fn[x: Int](Int) -> Int]() -> Int:
   # CHECK-NEXT: %0 = lit.call @{{.*}}takeIndexParam{{.*}}()"<:!Int apply({{.*}}bind_signature({{.*}}callable, {1}), {1})>()
   # CHECK-NEXT: return %0
@@ -1138,10 +1138,10 @@ fn function_types[
   # CHECK-SAME: p0: {{.*}}<<"a": !Int>(!lit.struct<#ParamType <:!Int *(0,0)>{{.*}}>, |) -> !kgen.none
   p0: fn[a: Int](ParamType[a]) -> None,
 
-  # CHECK-SAME: p1: {{.*}}<[2]<"a": !Int, "b": {{.*}}@ParamType<:!Int *(0,0)>>(?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
+  # CHECK-SAME: p1: {{.*}}<<"a": !Int, "b": {{.*}}@ParamType<:!Int *(0,0)>>[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
   p1: def[a: Int, b: ParamType[a]]() -> None,
 
-  # CHECK-SAME: p2: {{.*}}"Ts": variadic<!AnyType> var>(!lit.ref<@stdlib::@builtin::@builtin_list::@VariadicPack<:!Bool {:i1 0}, :origin<0> *[0,0], :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> *(0,0)>, imm *[0,1]> read_mem|pack, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async
+  # CHECK-SAME: p2: {{.*}}"Ts": variadic<!AnyType> var>{{.*}}(!lit.ref<@stdlib::@builtin::@builtin_list::@VariadicPack<:!Bool {:i1 0}, :origin<0> *[0,0], :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> *(0,0)>, imm *[0,1]> read_mem|pack, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async
   p2: async fn[*Ts: AnyType](* *Ts) -> None,
 ](
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int, |) -> !Int
@@ -1177,7 +1177,7 @@ fn function_types[
 
 # CHECK-LABEL: lit.struct.decl @Mem
 # CHECK:         lit.alias.decl *"x{{.*}}": type = <i8>
-# CHECK-NEXT:    lit.alias.decl *"B{{.*}}": type = <!lit.signature<("foo": i8) -> !kgen.none>>
+# CHECK-NEXT:    lit.alias.decl *"B{{.*}}": type = <!lit.generator<("foo": i8) -> !kgen.none>>
 struct Mem:
    alias x = __mlir_type.i8
    alias B = fn (foo: Self.x) -> None
@@ -1370,7 +1370,7 @@ struct ThingWithMethodReferenceSelf:
 # CHECK-LABEL: lit.func @"testThingWithMethodReferenceSelf
 fn testThingWithMethodReferenceSelf[a: ThingWithMethodReferenceSelf]():
     # CHECK-NEXT: lit.alias.decl *"sizzle`": none =
-    # CHECK-SAME: <apply(:!lit.signature<("a": !lit.ref<!ThingWithMethodReferenceSelf,
+    # CHECK-SAME: <apply(:!lit.generator<("a": !lit.ref<!ThingWithMethodReferenceSelf,
     # CHECK-SAME:     <:i1 0, :origin<0> #lit.any.origin>,
     # CHECK-SAME:     rebind(:!lit.ref<!ThingWithMethodReferenceSelf, imm {}> store_to_mem(a)))>
     alias sizzle = a.method()

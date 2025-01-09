@@ -162,7 +162,7 @@ lit.struct.decl @Struct {
 // CHECK-LABEL: @callNested
 kgen.generator @callNested() {
   // CHECK-NEXT: kgen.call @Struct::@Nested
-  kgen.call_param[!lit.signature<() -> ()>: @Struct::@Nested]()
+  kgen.call_param[!lit.generator<() -> ()>: @Struct::@Nested]()
   kgen.return
 }
 

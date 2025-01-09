@@ -31,52 +31,6 @@ protected:
 };
 } // namespace
 
-TEST_F(SignatureGeneratorTypeTest, TestConversion) {
-  auto indexType = IndexType::get(&ctx);
-  auto typeType = TypeType::get(&ctx);
-  auto originType = LIT::OriginType::get(&ctx, /*isMutable=*/false);
-  FunctionType funcType = FunctionType::get(&ctx, {indexType}, {indexType});
-  SmallVector<Type> inputParamTypes = {originType, indexType, typeType};
-  SmallVector<ArgConvention> argConvs = {ArgConvention::ReadReg};
-  FnEffects fnEffects = FnEffects().setCapturing();
-
-  // Test bare KGEN Signature
-  {
-    SignatureType sig =
-        SignatureType::get(funcType, inputParamTypes, /*resultParamTypes=*/{},
-                           argConvs, fnEffects);
-    SignatureGeneratorType sigGen = SignatureGeneratorType::get(
-        inputParamTypes, funcType, argConvs, fnEffects);
-
-    EXPECT_EQ(sig.asSignatureGenerator(), sigGen);
-    EXPECT_EQ(sigGen.asOldSignature(), sig);
-  }
-
-  // Test Signature with metadata
-  {
-    auto inferred =
-        PogMetadataAttr::get(StringAttr::get(&ctx), PassingKind::Inferred,
-                             /*isVariadic=*/false);
-    auto posOnly =
-        PogMetadataAttr::get(StringAttr::get(&ctx), PassingKind::PosOnly,
-                             /*isVariadic=*/false);
-    PogListAttr paramPogs = PogListAttr::get(
-        &ctx, SmallVector<PogMetadataAttr>{inferred, posOnly, posOnly});
-    PogListAttr argPogs =
-        PogListAttr::get(&ctx, SmallVector<PogMetadataAttr>{posOnly});
-    FnMetadataAttr fnMetadata = FnMetadataAttr::get(
-        argPogs, paramPogs,
-        /*numImplicitOriginDecls=*/0, /*captureOrigins=*/nullptr,
-        /*isNestedOriginExclusivityCheckingDisabled=*/false);
-    LITSignatureType sig = LITSignatureType::get(
-        funcType, inputParamTypes, argConvs, fnEffects, fnMetadata);
-    SignatureGeneratorType sigGen = SignatureGeneratorType::get(
-        inputParamTypes, funcType, argConvs, fnEffects, fnMetadata, paramPogs);
-    EXPECT_EQ(sig.asSignatureGenerator(), sigGen);
-    EXPECT_EQ(sigGen.asOldSignature(), sig);
-  }
-}
-
 TEST_F(SignatureGeneratorTypeTest, TestSpecialization) {
   auto indexType = IndexType::get(&ctx);
   auto typeType = TypeType::get(&ctx);

@@ -34,7 +34,6 @@ class ExprNode;
 struct Operand;
 class FileModuleOp;
 class FuncOp;
-class LITSignatureType;
 class LookupResult;
 class PackageOp;
 class ParserListener;

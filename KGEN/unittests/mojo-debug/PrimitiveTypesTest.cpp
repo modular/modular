@@ -155,7 +155,7 @@ TEST(PrimitiveTypesTest, testPointerToClosure) {
   SBValue callback =
       ctx.frame.FindVariable("self").GetChildMemberWithName("callback");
   EXPECT_STREQ(callback.GetTypeName(),
-               "!kgen.pointer<!lit.signature<() -> !kgen.none>>");
+               "!kgen.pointer<!lit.generator<() -> !kgen.none>>");
   EXPECT_NE(callback.GetValueAsAddress(), (lldb::addr_t)0);
 }
 

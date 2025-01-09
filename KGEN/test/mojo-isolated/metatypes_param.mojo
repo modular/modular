@@ -62,7 +62,7 @@ fn unbound_alias():
     alias unbound_value = Unbound[`2`].value
     # CHECK: call {{.*}}@Param::@"foo()"<2>
     Unbound[`2`].foo()
-    # CHECK: unbound_function{{.*}}: !lit.signature<<index, |>() -> !kgen.none> = <{{.*}}@Param::@"foo()"<?>>
+    # CHECK: unbound_function{{.*}}: !lit.generator<<index, |>() -> !kgen.none> = <{{.*}}@Param::@"foo()"<?>>
     alias unbound_function = Unbound.foo
 
     # COM: Test fully unbound alias can be fully bound.
@@ -78,7 +78,7 @@ fn partially_bound_alias():
     alias PartiallyBound = TwoParam[`1`]
 
     # COM: Test taking a function from a partially bound type.
-    # CHECK: [[PBOUND_FN:\*"PartiallyBoundFn.*]]: !lit.signature<<index, |>() -> !kgen.none> = <{{.*}}@TwoParam::@"foo()"<1, ?>>
+    # CHECK: [[PBOUND_FN:\*"PartiallyBoundFn.*]]: !lit.generator<<index, |>() -> !kgen.none> = <{{.*}}@TwoParam::@"foo()"<1, ?>>
     alias PartiallyBoundFn = PartiallyBound.foo
     # CHECK: FullyBoundFn{{.*}}: {{.*}} =   <@metatypes_param::@TwoParam::@"foo()"<1, 2>>
     alias FullyBoundFn = PartiallyBoundFn[`2`]
@@ -91,7 +91,7 @@ fn partially_bound_alias():
     alias first = BoundFromPartial.first
     # CHECK: second{{.*}} = <2>
     alias second = BoundFromPartial.second
-    # CHECK: fn_from_bound{{.*}}: !lit.signature<() -> !kgen.none> = <{{.*}}@TwoParam::@"foo()"<1, 2>>
+    # CHECK: fn_from_bound{{.*}}: !lit.generator<() -> !kgen.none> = <{{.*}}@TwoParam::@"foo()"<1, 2>>
     alias fn_from_bound = BoundFromPartial.foo
 
 

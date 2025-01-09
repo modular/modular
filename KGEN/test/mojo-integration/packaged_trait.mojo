@@ -38,11 +38,11 @@ fn bind_trait[T: PackageTrait]():
 fn test():
     # CHECK-NEXT: [!MyType{{[0-9]*}}, {"method" {{.*}}@MyType::@"method
     bind_trait[MyType]()
-    # CHECK-NEXT: [!MyRegType{{[0-9]*}}, {"method" {{.*}}!lit.signature<[1]("self": !lit.ref<!MyRegType, imm *[0,0]> read_mem) -> !kgen.none>{{.*}}@MyRegType::@"method
+    # CHECK-NEXT: [!MyRegType{{[0-9]*}}, {"method" {{.*}}!lit.generator<[1]("self": !lit.ref<!MyRegType, imm *[0,0]> read_mem) -> !kgen.none>{{.*}}@MyRegType::@"method
     bind_trait[MyRegType]()
     # CHECK-NEXT: [!UseTrait{{[0-9]*}}, {"method" {{.*}}@UseTrait::@"method
     trait_method[UseTrait]()
-    # CHECK-NEXT: [!UseTraitReg{{[0-9]*}}, {"method" {{.*}}!lit.signature<[1]("self": !lit.ref<!UseTraitReg, imm *[0,0]> read_mem) -> !kgen.none>{{.*}}@UseTraitReg::@"method
+    # CHECK-NEXT: [!UseTraitReg{{[0-9]*}}, {"method" {{.*}}!lit.generator<[1]("self": !lit.ref<!UseTraitReg, imm *[0,0]> read_mem) -> !kgen.none>{{.*}}@UseTraitReg::@"method
     trait_method[UseTraitReg]()
 
     # COM: Anchor this decl reference to materialize it.

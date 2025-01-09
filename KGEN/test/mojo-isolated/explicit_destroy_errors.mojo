@@ -71,5 +71,5 @@ fn callsWith():
 
 
 # CHECK-LABEL: lit.struct.decl @Coroutine
-# CHECK-NOT: destructor :!lit.signature
+# CHECK-NOT: destructor :!lit.generator
 async fn testAsyncVoid(): pass

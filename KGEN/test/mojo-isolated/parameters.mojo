@@ -105,7 +105,7 @@ struct TestParamStruct[A: Int]:
     # CHECK: lit.alias.decl *"C{{.*}}: !Int = <apply({{.*}}__add__{{.*}},
     alias C = B+A
     # CHECK: lit.alias.decl [[D:.*]]: {{.*}}@TestParamStruct<:!Int {{.*}}1{{.*}}> =
-    # CHECK-SAME: <apply_result_slot(:!lit.signature<{{.*}}TestParamStruct<:!Int {1}>, {{.*}}__init__({{.*}}"<:!Int {{.*}}1
+    # CHECK-SAME: <apply_result_slot(:!lit.generator<{{.*}}TestParamStruct<:!Int {1}>, {{.*}}__init__({{.*}}"<:!Int {{.*}}1
     alias D = TestParamStruct[1]()
     # CHECK: %temp = lit.var.decl {{.*}} : {{.*}}@TestParamStruct<:!Int
     var temp: TestParamStruct[C]
@@ -241,7 +241,7 @@ struct TwoParams[a: Int, b: Int]:
 
 # CHECK-LABEL: lit.func @"signature_capture{{.*}}"<
 # CHECK-SAME: a: !Int,
-# CHECK-SAME: f: !lit.signature<<"b": !Int>() -> {{.*}}TwoParams <:!Int a, :!Int *(0,0)>{{.*}}>
+# CHECK-SAME: f: !lit.generator<<"b": !Int>() -> {{.*}}TwoParams <:!Int a, :!Int *(0,0)>{{.*}}>
 fn signature_capture[a: Int, f: fn[b: Int]() -> TwoParams[a, b]]():
     _ = f[2]()
 
@@ -280,7 +280,7 @@ fn infer_implicit_params():
     # CHECK-SAME: :!Int {1}, :!Int {2}, :!Int {3}, :!Int {4}>
     implicit_params_with_others[42](one, two)
 
-    # CHECK: alias.decl *"partial_bind{{.*}}: !lit.signature<<?, !Int, !Int, !Int, !Int>
+    # CHECK: alias.decl *"partial_bind{{.*}}: !lit.generator<<?, !Int, !Int, !Int, !Int>
     # CHECK-SAME: implicit_params_with_others{{.*}}<:!Int {1}, :!Int ?, :!Int ?, :!Int ?, :!Int ?>
     alias partial_bind = implicit_params_with_others[1]
     # CHECK: lit.call {{.*}}implicit_params_with_others{{.*}}<:!Int {1}, :!Int {1}, :!Int {2}, :!Int {3}, :!Int {4}>
@@ -329,20 +329,20 @@ fn autoparam_of_dependent_params[dp: DependentParams]():
 
 # CHECK-LABEL: lit.func @"function_autoparam
 # CHECK-SAME: :{mut |*(0,0)|, mut |*(0,1)|}:<[""][[G_LT:.*]]: origin.set, [""][[F_LT:.*]]: origin.set, +
-# CHECK-SAME: f: !lit.signature<:[[F_LT]]:() capturing -> !kgen.none>
-# CHECK-SAME: g: !lit.signature<:[[G_LT]]:() capturing -> !kgen.none>
+# CHECK-SAME: f: !lit.generator<:[[F_LT]]:() capturing -> !kgen.none>
+# CHECK-SAME: g: !lit.generator<:[[G_LT]]:() capturing -> !kgen.none>
 fn function_autoparam[f: fn () capturing [_] -> None, g: fn () capturing [_] -> None]():
     @parameter
     fn function():
         pass
 
-    # CHECK: lit.alias.decl *"bind_one{{.*}}": !lit.signature<() capturing -> !kgen.none> =
+    # CHECK: lit.alias.decl *"bind_one{{.*}}": !lit.generator<() capturing -> !kgen.none> =
     # CHECK-SAME: <{{.*}}function_autoparam{{.*}}<:origin.set {}, :origin.set {}, :{{.*}} *"function()", :{{.*}} *"function()">
     alias bind_one = function_autoparam[function, function]
 
 
 # CHECK-LABEL: lit.func @"nonprop_capture_set
-# CHECK-SAME: ()"<f: !lit.signature<:*(0,0):<origin.set, +, "g": !lit.signature<:*(1,0):() capturing -> !kgen.none>>() -> !kgen.none>>()
+# CHECK-SAME: ()"<f: !lit.generator<<origin.set, +, "g": !lit.generator<:*(1,0):() capturing -> !kgen.none>>:*(0,0):() -> !kgen.none>>()
 fn nonprop_capture_set[f: fn[g: fn () capturing [_] -> None] () -> None]():
     pass
 
@@ -493,7 +493,7 @@ fn intbox_memory_result(x: Int) -> IntBox:
 # CHECK-LABEL: lit.func @"interpret_initself_ctor
 # CHECK-SAME: %arg: !lit.struct<#InitSelfParam <:!InitSelfCtor {x: !Int = {42}}>>
 fn interpret_initself_ctor(arg: InitSelfParam[InitSelfCtor(42)]):
-    # CHECK-NEXT: !lit.signature<() -> !lit.struct<#InitSelfParam <:!InitSelfCtor {x: !Int = {3}}>>>
+    # CHECK-NEXT: !lit.generator<() -> !lit.struct<#InitSelfParam <:!InitSelfCtor {x: !Int = {3}}>>>
     alias refined_fn = refine_memory_only_results[1, 2]
 
     # CHECK: [[CST:%.*]] = kgen.param.constant: !InitSelfCtor = <{x: !Int = {42}}>
@@ -546,11 +546,11 @@ fn parameter_call_drop_dangling_implicit_origins[b: IntBox]():
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.func @"takeCallable{{.*}}"<
-# CHECK-SAME: callable: !lit.signature<(index, |) -> index>>(%a: index) -> index
+# CHECK-SAME: callable: !lit.generator<(index, |) -> index>>(%a: index) -> index
 fn takeCallable[
      callable: fn(int) -> int
    ](a: int) -> int:
-  # CHECK-NEXT: %0 = lit.call[!lit.signature<(index, |) -> index>: callable](%a)
+  # CHECK-NEXT: %0 = lit.call[!lit.generator<(index, |) -> index>: callable](%a)
   # CHECK-NEXT: lit.return %0
   return callable(a)
 
@@ -562,11 +562,11 @@ fn posOnlyArg(x: int, /):
 
 # CHECK-LABEL: lit.func @"takeAndReturnIndex
 fn passFunction(a: int) -> int:
-  # CHECK: rebind(:!lit.signature<("x": index, |) -> !kgen.none> {{.*}}posOnlyArg
+  # CHECK: rebind(:!lit.generator<("x": index, |) -> !kgen.none> {{.*}}posOnlyArg
   alias changeKw: fn(x: int) -> None = posOnlyArg
 
-  # CHECK: lit.call @parameters::@"takeCallable{{.*}}<:!lit.signature<(index, |) -> index>
-  # CHECK-SAME: rebind(:!lit.signature<("x": index) -> index> {{.*}}takeAndReturnIndex{{.*}}")>(%a)
+  # CHECK: lit.call @parameters::@"takeCallable{{.*}}<:!lit.generator<(index, |) -> index>
+  # CHECK-SAME: rebind(:!lit.generator<("x": index) -> index> {{.*}}takeAndReturnIndex{{.*}}")>(%a)
   return takeCallable[takeAndReturnIndex](a)
 
 # CHECK-LABEL: lit.func @"callableWithParam{{.*}}"<type: dtype>() -> !kgen.none
@@ -582,7 +582,7 @@ fn takeCallable2[
 # CHECK-LABEL: lit.func @"passFunctionParam2
 fn passFunctionParam2():
   # CHECK: lit.call @parameters::@"takeCallable2{{.*}}"<
-  # CHECK-SAME: :!lit.signature<<"dt": dtype>() -> !kgen.none> rebind(:!lit.signature<<"type": dtype>() -> !kgen.none> @parameters::@"callableWithParam
+  # CHECK-SAME: :!lit.generator<<"dt": dtype>() -> !kgen.none> rebind(:!lit.generator<<"type": dtype>() -> !kgen.none> @parameters::@"callableWithParam
   takeCallable2[callableWithParam]()
 
 
@@ -614,9 +614,9 @@ fn variadic_func_param[*fs: fn() -> None]():
 
 # CHECK-LABEL: lit.func @"bind_overloaded_fn
 fn bind_overloaded_fn[f: fn[f: fn () -> None] () -> None]():
-    # CHECK-NEXT: anystruct<#ParamFuncType <:!lit.signature<() -> !kgen.none> {{.*}}@"overloaded_function()"
+    # CHECK-NEXT: anystruct<#ParamFuncType <:!lit.generator<() -> !kgen.none> {{.*}}@"overloaded_function()"
     alias T = ParamFuncType[overloaded_function]
-    # CHECK-NEXT: anystruct<#ParamFuncType <:!lit.signature<() -> !kgen.none> {{.*}}@"overloaded_function()"
+    # CHECK-NEXT: anystruct<#ParamFuncType <:!lit.generator<() -> !kgen.none> {{.*}}@"overloaded_function()"
     alias U = ParamFuncType[f=overloaded_function]
 
     # CHECK-NEXT: bind_signature(:{{.*}} f, {{.*}}@"overloaded_function()")
@@ -624,7 +624,7 @@ fn bind_overloaded_fn[f: fn[f: fn () -> None] () -> None]():
     # CHECK-NEXT: bind_signature(:{{.*}} f, {{.*}}@"overloaded_function()")
     alias h = f[f=overloaded_function]
 
-    # CHECK-NEXT: bind_twice{{.*}}<:!lit.signature<() -> !kgen.none> {{.*}}@"overloaded_function()", :!lit.signature<(index, |) -> !kgen.none> {{.*}}overloaded_function(__mlir_type.index)")>
+    # CHECK-NEXT: bind_twice{{.*}}<:!lit.generator<() -> !kgen.none> {{.*}}@"overloaded_function()", :!lit.generator<(index, |) -> !kgen.none> {{.*}}overloaded_function(__mlir_type.index)")>
     alias bound = bind_twice[overloaded_function][overloaded_function]
 
     # CHECK-NEXT: variadic_func_param{{.*}}<:variadic<{{.*}}> [{{.*}}@"overloaded_function()", {{.*}}@"overloaded_function()"]>
@@ -714,14 +714,14 @@ fn useParamVariadics():
   fnWithVariadics[1, 2]()
 
   # This keeps the parameters unbound, allowing them to be used with different length..
-  # CHECK-NEXT: lit.alias.decl *"fnAlias{{.*}}": !lit.signature<<"b": variadic<!Int> var>() -> !kgen.none>
+  # CHECK-NEXT: lit.alias.decl *"fnAlias{{.*}}": !lit.generator<<"b": variadic<!Int> var>() -> !kgen.none>
   # CHECK-SAME: = <@parameters::@"fnWithVariadics{{.*}}">
   alias fnAlias = fnWithVariadics
 
   # Use of an unbound thing in a DRValue context binds an empty variadic list.
   # FIXME(#29495): Pack references aren't working right.
-  # HECK-NEXT: [[TMP:%.*]] = kgen.create_closure[!lit.signature<() -> !kgen.none>: @parameters::@"fnWithVariadics{{.*}}"<:variadic<!Int> []>]()
-  # HECK-NEXT: %fnLet = lit.var.decl "fnLet" : {{.*}}!kgen.signature<!lit.signature<() -> !kgen.none>>
+  # HECK-NEXT: [[TMP:%.*]] = kgen.create_closure[!lit.generator<() -> !kgen.none>: @parameters::@"fnWithVariadics{{.*}}"<:variadic<!Int> []>]()
+  # HECK-NEXT: %fnLet = lit.var.decl "fnLet" : {{.*}}!kgen.signature<!lit.generator<() -> !kgen.none>>
   # HECK-NEXT: lit.ref.store [[TMP]], %fnLet
   # var fnLet = fnWithVariadics
 
@@ -812,7 +812,7 @@ fn partial_parameter_overloading[param: DType, other: DType]():
 fn form_reference_to_overloaded():
     # CHECK-NEXT: @"parameter_overloading[[[INT:.*Int]]]()"<:!Int {1}>
     alias refresult = parameter_overloading[1]
-    # CHECK-NEXT: !lit.signature<<"other": !Int>() -> !kgen.none> = <{{.*}}@"partial_parameter_overloading[[[INT]],[[INT]]]()"<:!Int {1}, :!Int ?>
+    # CHECK-NEXT: !lit.generator<<"other": !Int>() -> !kgen.none> = <{{.*}}@"partial_parameter_overloading[[[INT]],[[INT]]]()"<:!Int {1}, :!Int ?>
     alias partial = partial_parameter_overloading[1]
 
 ##===----------------------------------------------------------------------===##
@@ -957,8 +957,8 @@ fn test_infer_with_default_arg():
 
 # CHECK-LABEL: lit.func @"indirect_call_infer_params
 fn indirect_call_infer_params[callee: fn[x: Int](y: Abstraction[x])->None]():
-    # CHECK: call[!lit.signature<("y": {{.*}}#Abstraction <:!Int {2}>
-    # CHECK-SAME: bind_signature(:!lit.signature<<"x": !Int>("y": {{.*}}Abstraction <:!Int *(0,0)>
+    # CHECK: call[!lit.generator<("y": {{.*}}#Abstraction <:!Int {2}>
+    # CHECK-SAME: bind_signature(:!lit.generator<<"x": !Int>("y": {{.*}}Abstraction <:!Int *(0,0)>
     # CHECK-SAME: callee, {2}
     callee(Abstraction[2]())
 
@@ -1023,7 +1023,7 @@ fn signature_inference[dt: DType, rank: Int]():
         pass
 
     # CHECK: call {{.*}}implicit_signature{{.*}}<:!DType dt, :!Int rank,
-    # CHECK-SAME: :!lit.signature<<"width": !Int>(!lit.struct<#Abstraction <:!Int rank>
+    # CHECK-SAME: :!lit.generator<<"width": !Int>(!lit.struct<#Abstraction <:!Int rank>
     # CHECK-SAME: -> !lit.struct<#SIMD <:!DType dt, :!Int *(0,0)>>
     implicit_signature[func]()
 
@@ -1035,7 +1035,7 @@ struct ClosureParam[lt: MutableOrigin, f: fn () capturing [lt] -> None]:
 
 # CHECK-LABEL: lit.func @"infer_implicit_params
 fn infer_implicit_params(owned p: ClosureParam):
-    # CHECK: call {{.*}}ClosureParam::@"__moveinit__{{.*}}<:origin<1> *"lt`", :!lit.signature<:{mut *"lt`"}:() capturing -> !kgen.none> *"f`1">
+    # CHECK: call {{.*}}ClosureParam::@"__moveinit__{{.*}}<:origin<1> *"lt`", :!lit.generator<:{mut *"lt`"}:() capturing -> !kgen.none> *"f`1">
     var tmp = p^
     _ = tmp^
 
@@ -1206,15 +1206,15 @@ fn test_default_params():
 fn test_indirect_default_params[
     callee: fn[a: Int, b: Int = 7, c: StringLiteral = "woof"]()->None]():
 
-    # CHECK: lit.call[!lit.signature<() -> !kgen.none>: bind_signature(:!lit.signature<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
+    # CHECK: lit.call[!lit.generator<() -> !kgen.none>: bind_signature(:!lit.generator<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
     # CHECK-SAME: {1}, {7}, {:string "woof"})]()
     callee[1]()
 
-    # CHECK: lit.call[!lit.signature<() -> !kgen.none>: bind_signature(:!lit.signature<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
+    # CHECK: lit.call[!lit.generator<() -> !kgen.none>: bind_signature(:!lit.generator<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
     # CHECK-SAME: {2}, {8}, {:string "woof"})]()
     callee[2, 8]()
 
-    # CHECK: lit.call[!lit.signature<() -> !kgen.none>: bind_signature(:!lit.signature<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
+    # CHECK: lit.call[!lit.generator<() -> !kgen.none>: bind_signature(:!lit.generator<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
     # CHECK-SAME: {4}, {9}, {:string "meow"})]()
     callee[4, 9, "meow"]()
 
@@ -1352,7 +1352,7 @@ struct StructWithParametricDefaultValue[T: AnyTrivialRegType, N: Int = IntForTyp
 fn test_struct_with_parametric_default_value():
     # CHECK: lit.alias.decl *"a{{.*}}": anystruct<{{.*}}> = <@{{.*}}::@StructWithParametricDefaultValue<
     # CHECK-SAME: :type !Int
-    # CHECK-SAME: :!Int apply(:!lit.signature<() -> !Int> @{{.*}}::@"IntForType[AnyTrivialRegType]()"{{.*}}<:type !Int>)>
+    # CHECK-SAME: :!Int apply(:!lit.generator<() -> !Int> @{{.*}}::@"IntForType[AnyTrivialRegType]()"{{.*}}<:type !Int>)>
     alias a = StructWithParametricDefaultValue[Int]
 
 ##===----------------------------------------------------------------------===##
@@ -1479,14 +1479,14 @@ fn scalar_type[dt: DType]():
 
 # CHECK-LABEL: lit.func @"funct_partial_binding{{.*}}"<x: !Empty, F:
 fn funct_partial_binding[x: Empty, F: fn[t: Empty, s: Empty] () -> None]():
-    # CHECK: !lit.signature<<"u": !Empty, "v": !Empty>() -> !kgen.none> = <rebind(
-    # CHECK-SAME: :!lit.signature<<"t": !Empty, "s": !Empty>() -> !kgen.none>
-    # CHECK-SAME: bind_signature(:!lit.signature<<"t": !Empty, "s": !Empty>() -> !kgen.none> F, ?, ?)
+    # CHECK: !lit.generator<<"u": !Empty, "v": !Empty>() -> !kgen.none> = <rebind(
+    # CHECK-SAME: :!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none>
+    # CHECK-SAME: bind_signature(:!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none> F, ?, ?)
 
     alias G: fn[u: Empty, v: Empty] () -> None = F[s=_, t=_]
-    # CHECK: !lit.signature<<"u": !Empty>() -> !kgen.none> = <rebind(
-    # CHECK-SAME: :!lit.signature<<"s": !Empty>() -> !kgen.none>
-    # CHECK-SAME: bind_signature(:!lit.signature<<"t": !Empty, "s": !Empty>() -> !kgen.none> F, x, ?))>
+    # CHECK: !lit.generator<<"u": !Empty>() -> !kgen.none> = <rebind(
+    # CHECK-SAME: :!lit.generator<<"s": !Empty>() -> !kgen.none>
+    # CHECK-SAME: bind_signature(:!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none> F, x, ?))>
     alias H: fn[u: Empty] () -> None = F[x]
 
 @value
@@ -1578,7 +1578,7 @@ fn take_variadic_pack[*ArgTypes: AnyType](*args: *ArgTypes):  pass
 
 # CHECK-LABEL: call_variadic_pack_with_function
 fn call_variadic_pack_with_function():
-  # CHECK: [[FP:%.*]] = kgen.create_closure[!lit.signature<("x": !Int) -> !kgen.none>: @parameters::@"indirect_function
+  # CHECK: [[FP:%.*]] = kgen.create_closure[!lit.generator<("x": !Int) -> !kgen.none>: @parameters::@"indirect_function
   # CHECK: lit.call {{.*}}take_variadic_pack
   var x = take_variadic_pack(indirect_function)
 

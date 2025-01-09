@@ -600,7 +600,7 @@ static void printCallOp(OpAsmPrinter &p, Operation *op,
   p << ") : ";
   printSignatureValues(
       p, FunctionType::get(op->getContext(), operandTypes, resultTypes),
-      calleeCst.getType().asOldSignature());
+      calleeCst.getType());
 }
 
 void CallOp::concretizeCallee(IRRewriter &b, SymbolConstantAttr callee) {

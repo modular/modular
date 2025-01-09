@@ -62,11 +62,11 @@ kgen.generator @struct_extract(%struct: !lit.struct<@FooStruct<2, :dtype f32, :t
 }
 
 // CHECK-LABEL: lit.func @calls[imm a, mut b]
-lit.func @calls[imm a, mut b](%arg0: !lit.signature<[2]() -> ()>) {
-  // CHECK: lit.call @calls[imm a, mut b]() : !lit.signature<[2]() -> ()>
-  lit.call @calls[imm a, mut b]() : !lit.signature<[2]() -> ()>
-  // CHECK: lit.call_indirect %arg0[imm a, mut b]() : !lit.signature<[2]() -> ()>
-  lit.call_indirect %arg0[imm a, mut b]() : !lit.signature<[2]() -> ()>
+lit.func @calls[imm a, mut b](%arg0: !lit.generator<[2]() -> ()>) {
+  // CHECK: lit.call @calls[imm a, mut b]() : !lit.generator<[2]() -> ()>
+  lit.call @calls[imm a, mut b]() : !lit.generator<[2]() -> ()>
+  // CHECK: lit.call_indirect %arg0[imm a, mut b]() : !lit.generator<[2]() -> ()>
+  lit.call_indirect %arg0[imm a, mut b]() : !lit.generator<[2]() -> ()>
   kgen.return
 }
 
@@ -198,7 +198,7 @@ lit.struct.decl @CrazyParams<*"m`": origin<0>> {
 }
 
 lit.struct.decl @LifetimeRef<b: origin<0>> {
-  lit.struct.field b : !lit.signature<(!lit.ref<@A, imm *(0,1)>) -> ()>
+  lit.struct.field b : !lit.generator<(!lit.ref<@A, imm *(0,1)>) -> ()>
 }
 
 // -----
@@ -387,12 +387,12 @@ lit.func @async_fn_throws(%err: !lit.ref<index, mut #lit.any.origin> byref_error
 
 // CHECK-LABEL: lit.func @call_async_fn
 lit.func @call_async_fn() {
-  // CHECK-NEXT: lit.async.call[!lit.signature<() async -> ()>: @async_fn]()
-  lit.async.call[!lit.signature<() async -> ()>: @async_fn]()
-  // CHECK-NEXT: lit.async.call[!lit.signature<("res": !lit.ref<index, mut #lit.any.origin> byref_result) async -> ()>: @async_fn_byref_result]()
-  lit.async.call[!lit.signature<("res": !lit.ref<index, mut #lit.any.origin> byref_result) async -> ()>: @async_fn_byref_result]()
-  // CHECK-NEXT: lit.async.call[!lit.signature<("err": !lit.ref<index, mut #lit.any.origin> byref_error, "res": !lit.ref<index, mut #lit.any.origin> byref_result) throws|async -> ()>: @async_fn_throws]()
-  lit.async.call[!lit.signature<("err": !lit.ref<index, mut #lit.any.origin> byref_error, "res": !lit.ref<index, mut #lit.any.origin> byref_result) async|throws -> ()>: @async_fn_throws]()
+  // CHECK-NEXT: lit.async.call[!lit.generator<() async -> ()>: @async_fn]()
+  lit.async.call[!lit.generator<() async -> ()>: @async_fn]()
+  // CHECK-NEXT: lit.async.call[!lit.generator<("res": !lit.ref<index, mut #lit.any.origin> byref_result) async -> ()>: @async_fn_byref_result]()
+  lit.async.call[!lit.generator<("res": !lit.ref<index, mut #lit.any.origin> byref_result) async -> ()>: @async_fn_byref_result]()
+  // CHECK-NEXT: lit.async.call[!lit.generator<("err": !lit.ref<index, mut #lit.any.origin> byref_error, "res": !lit.ref<index, mut #lit.any.origin> byref_result) throws|async -> ()>: @async_fn_throws]()
+  lit.async.call[!lit.generator<("err": !lit.ref<index, mut #lit.any.origin> byref_error, "res": !lit.ref<index, mut #lit.any.origin> byref_result) async|throws -> ()>: @async_fn_throws]()
   lit.end_func
 }
 
@@ -421,18 +421,18 @@ lit.func @ref_it() {
 }
 
 // CHECK-LABEL: lit.struct.decl @FuncParamStruct
-// CHECK-SAME: <c: !lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()>>
-lit.struct.decl @FuncParamStruct<c: !lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()>>  {
-  // CHECK: lit.func @foo(%x: !kgen.pointer<@FuncParamStruct<:!lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> c>>)
-  lit.func @foo(%x: !kgen.pointer<@FuncParamStruct<:!lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> c>>) {
+// CHECK-SAME: <c: !lit.generator<<type>(!kgen.paramref<*(0,0)>) -> ()>>
+lit.struct.decl @FuncParamStruct<c: !lit.generator<<type>(!kgen.paramref<*(0,0)>) -> ()>>  {
+  // CHECK: lit.func @foo(%x: !kgen.pointer<@FuncParamStruct<:!lit.generator<<type>(!kgen.paramref<*(0,0)>) -> ()> c>>)
+  lit.func @foo(%x: !kgen.pointer<@FuncParamStruct<:!lit.generator<<type>(!kgen.paramref<*(0,0)>) -> ()> c>>) {
     lit.end_func
   }
   // CHECK-LABEL: lit.func @bar
-  lit.func @bar(%x: !kgen.pointer<@FuncParamStruct<:!lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> c>>) {
-    // CHECK: call @FuncParamStruct::@foo<:!lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> c>(%x)
-    kgen.call @FuncParamStruct::@foo<:!lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> c>(%x)
-    // CHECK-SAME: ("x": !kgen.pointer<@FuncParamStruct<:!lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> c>>) -> ()
-      : !lit.signature<("x": !kgen.pointer<@FuncParamStruct<:!lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> c>>) -> ()>
+  lit.func @bar(%x: !kgen.pointer<@FuncParamStruct<:!lit.generator<<type>(!kgen.paramref<*(0,0)>) -> ()> c>>) {
+    // CHECK: call @FuncParamStruct::@foo<:!lit.generator<<type>(!kgen.paramref<*(0,0)>) -> ()> c>(%x)
+    kgen.call @FuncParamStruct::@foo<:!lit.generator<<type>(!kgen.paramref<*(0,0)>) -> ()> c>(%x)
+    // CHECK-SAME: ("x": !kgen.pointer<@FuncParamStruct<:!lit.generator<<type>(!kgen.paramref<*(0,0)>) -> ()> c>>) -> ()
+      : !lit.generator<("x": !kgen.pointer<@FuncParamStruct<:!lit.generator<<type>(!kgen.paramref<*(0,0)>) -> ()> c>>) -> ()>
     lit.end_func
   }
 }

@@ -57,7 +57,7 @@ fn test_unbound_pack():
     # CHECK: lit.alias.decl *"unbound_variadic`{{.*}}": anystruct<#StructWithVariadic <?, :variadic<index> ?>
     alias unbound_variadic = StructWithVariadic[*_]
 
-    # CHECK: lit.alias.decl *"unpack_variadic`{{.*}}": !lit.signature<<"a": variadic<index> var>() -> !kgen.none> = <{{.*}}variadic_params{{.*}}<:variadic<index> ?>>
+    # CHECK: lit.alias.decl *"unpack_variadic`{{.*}}": !lit.generator<<"a": variadic<index> var>() -> !kgen.none> = <{{.*}}variadic_params{{.*}}<:variadic<index> ?>>
     alias unpack_variadic = variadic_params[*_]
 
     # CHECK: lit.call {{.*}}variadic_params{{.*}}<:variadic<index> []>()

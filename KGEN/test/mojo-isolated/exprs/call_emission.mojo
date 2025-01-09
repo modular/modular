@@ -72,10 +72,10 @@ fn test_kw_param_passing[x: int, y: int, z: int]():
 fn test_kw_param_passing_indirect[x: int, y: int, z: int,
                                   callee: fn[a: int, b: int=`1`, c: int=`2`]()->None]():
 
-    # CHECK: call{{.*}}bind_signature(:!lit.signature<{{.*}}> callee, x, 1, z)]()
+    # CHECK: call{{.*}}bind_signature(:!lit.generator<{{.*}}> callee, x, 1, z)]()
     callee[x, c=z]()
 
-    # CHECK: call{{.*}}bind_signature(:!lit.signature<{{.*}}> callee, x, y, z)]()
+    # CHECK: call{{.*}}bind_signature(:!lit.generator<{{.*}}> callee, x, y, z)]()
     callee[c=z, b=y, a=x]()
 
 
@@ -166,10 +166,10 @@ fn test_kw_only_params[x: int]():
 # CHECK-LABEL: lit.func @"test_kw_only_params_indirect
 fn test_kw_only_params_indirect[x: int, callee: fn[a: int, b: int = `1`, *, c: int, d: int = `2`]()->None]():
 
-    # CHECK: call{{.*}}bind_signature(:!lit.signature<{{.*}}> callee, x, 1, x, 2)]()
+    # CHECK: call{{.*}}bind_signature(:!lit.generator<{{.*}}> callee, x, 1, x, 2)]()
     callee[x, c=x]()
 
-    # CHECK: call{{.*}}bind_signature(:!lit.signature<{{.*}}> callee, x, 1, x, x)]()
+    # CHECK: call{{.*}}bind_signature(:!lit.generator<{{.*}}> callee, x, 1, x, x)]()
     callee[x, d=x, c=x]()
 
 
@@ -218,10 +218,10 @@ fn test_variadic_and_kw_only_params[x: int]():
 fn test_variadic_and_kw_only_params_indirect[x: int,
     callee: fn [a: int, b: int, *args: int, c: int, d: int = `0`]()->None]():
 
-    # CHECK: lit.call{{.*}}bind_signature(:!lit.signature<{{.*}}> callee, x, x, ?, x, 0), [])]()
+    # CHECK: lit.call{{.*}}bind_signature(:!lit.generator<{{.*}}> callee, x, x, ?, x, 0), [])]()
     callee[x, x, c=x]()
 
-    # CHECK: call{{.*}}bind_signature(:!lit.signature<{{.*}}> callee, x, x, [x, x], x, 0)]()
+    # CHECK: call{{.*}}bind_signature(:!lit.generator<{{.*}}> callee, x, x, [x, x], x, 0)]()
     callee[x, x, x, x, c=x]()
 
 
@@ -238,7 +238,7 @@ fn initialize_in_addrspace(
 
     # Get !lit.ref in addr space #1
     # CHECK-NEXT: [[PTRREF:%.*]] = lit.call{{.*}}@UnsafePointer::@"__getitem__{{.*}}(%ptr)
-    
+
     # Use lit.ref.store to move into addrspace 1
     # CHECK-NEXT: lit.ref.store [[REGVAL]], [[PTRREF]] : <!ExampleRegPassable, mut #lit.any.origin, 1>
     ptr[] = ExampleRegPassable()
@@ -308,8 +308,8 @@ fn test_matrix_equal[
 fn partialBind(mut C: Matrix[`1`, `2`]) raises:
     # CHECK-NEXT: %exp = lit.var.decl "exp
     # CHECK-NEXT: lit.call @{{.*}}::@"test_matrix_equal{{.*}}"[mut *"C`{{.*}}", mut *"__error__`{{.*}}", mut *"exp`{{.*}}"]
-    # CHECK-SAME: <:!lit.signature<[1]<?, index, index>(!lit.ref<@{{.*}}::@Matrix<*(0,0), *(0,1)>, mut *[0,0]> mut, |) -> !kgen.none>
-    # CHECK-SAME: rebind(:!lit.signature<[1]<?, index, index>("C": !lit.ref<@{{.*}}::@Matrix<*(0,0), *(0,1)>, mut *[0,0]> mut) -> !kgen.none>
+    # CHECK-SAME: <:!lit.generator<<?, index, index>[1](!lit.ref<@{{.*}}::@Matrix<*(0,0), *(0,1)>, mut *[0,0]> mut, |) -> !kgen.none>
+    # CHECK-SAME: rebind(:!lit.generator<<?, index, index>[1]("C": !lit.ref<@{{.*}}::@Matrix<*(0,0), *(0,1)>, mut *[0,0]> mut) -> !kgen.none>
     # CHECK-SAME: @{{.*}}::@"matmul_unrolled{{.*}}"<0, ?, ?>), 1, 2>(%C, %__error__, %exp)
     var exp = test_matrix_equal[matmul_unrolled[`0`]](C)
 
@@ -425,7 +425,7 @@ fn complex_ref_box_emission[p: Int](a: Int):
 # MOCO-1440 - Weird conditional conformance mismatch
 struct ThingWithParam[X: Int]:
   @implicit
-  fn __init__(out self: ThingWithParam[42], other: Bool): pass 
+  fn __init__(out self: ThingWithParam[42], other: Bool): pass
 
 fn test_cond_conformance(exclude: Bool):
     alias local_alias = 42
@@ -447,10 +447,8 @@ fn takeOwnedValue(owned view: ViewOfHeavy): pass
 
 # CHECK-LABEL: lit.func @"testUnneededCopy
 fn testUnneededCopy(heavy: Heavy):
-  # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl 
+  # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl
   # CHECK-NEXT: lit.call {{.*}}ViewOfHeavy::@"__init__{{.*}}(%heavy, [[TMP]])
   # CHECK-NEXT: lit.call {{.*}}takeOwnedValue
   takeOwnedValue(heavy)
   # CHECK-NEXT: kgen.param.constant: none
-
-

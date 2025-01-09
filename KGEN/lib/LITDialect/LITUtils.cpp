@@ -536,6 +536,55 @@ bool LIT::isEmptyOriginSet(TypedAttr attr) {
   return false;
 }
 
+void LIT::printLITNewSignature(AsmPrinter &p, LITNewSignatureType signature) {
+  FnMetadataAttr metadata = signature.getMetadata();
+  if (unsigned numOriginDecls = metadata.getNumImplicitOriginDecls())
+    p << '[' << numOriginDecls << ']';
+  if (!isEmptyOriginSet(metadata.getCaptureOrigins())) {
+    p << ':';
+    printParamValue(p, metadata.getCaptureOrigins());
+    p << ':';
+  }
+  if (signature.getIsNestedOriginExclusivityCheckingDisabled())
+    p << "no_nested_origin_exclusivity";
+
+  PogListAttr argListAttr = signature.getArgListAttrs();
+  SmallVector<Variadicness> variadicness = getVariadicness(argListAttr);
+  DefaultValueHandler defaultHandler(argListAttr);
+  PassingKindPrinter passingKindPrinter(p, argListAttr, '|');
+  auto printElt = [&](unsigned i) {
+    passingKindPrinter.printOptionalStarSlash(i);
+
+    StringAttr argName = signature.getArgName(i);
+    if (!argName.empty()) {
+      p.printString(argName);
+      p << ": ";
+    }
+
+    p << signature.getArguments()[i];
+    ArgConvention argConv = signature.getArgConvention(i);
+    if (variadicness[i] == Variadicness::kPack) {
+      assert(argConv == ArgConvention::ReadMem ||
+             argConv == ArgConvention::OwnedMem ||
+             argConv == ArgConvention::OwnedReg);
+      argConv = signature.getPackVarArgConvention(i);
+    }
+    printConventionAndVariadicness(p, argConv, variadicness[i]);
+
+    if (TypedAttr defaultOr = defaultHandler.getDefault(i)) {
+      p << " = ";
+      printParamValue(p, defaultOr);
+    }
+
+    // Check if we are at the end; if so, we might still have to print a '/'.
+    passingKindPrinter.printOptionalTrailingSlash(i);
+  };
+
+  printSignatureValues(p, printElt, signature.getValues(),
+                       signature.getArgConventions(), signature.getFnEffects(),
+                       /*optionalResultList=*/false);
+}
+
 //===----------------------------------------------------------------------===//
 // Pog Utils
 //===----------------------------------------------------------------------===//

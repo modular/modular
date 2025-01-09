@@ -83,21 +83,21 @@ fn callOverload(a: Int, pack: __mlir_type.`!kgen.pack<[index]>`):
     # CHECK: lit.call @decls::@"testThing({{.*}}Int,{{.*}}Int)"(%a, %a)
     _ = testThing(a, a)
 
-    # CHECK: kgen.create_closure[!lit.signature<(!Int, |) -> !FloatDyn>:
-    # CHECK-SAME: rebind(:!lit.signature<("a": !Int) -> !FloatDyn> @decls::@"testThing({{.*}}Int)")]()
+    # CHECK: kgen.create_closure[!lit.generator<(!Int, |) -> !FloatDyn>:
+    # CHECK-SAME: rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing({{.*}}Int)")]()
     var float1: IntToFloat32Type = testThing
 
-    # CHECK: kgen.create_closure[!lit.signature<(!Int, |) -> !FloatDyn>:
-    # CHECK-SAME: rebind(:!lit.signature<("a": !Int) -> !FloatDyn> @decls::@"testThing({{.*}}Int)")]()
+    # CHECK: kgen.create_closure[!lit.generator<(!Int, |) -> !FloatDyn>:
+    # CHECK-SAME: rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing({{.*}}Int)")]()
     # CHECK-NEXT: lit.ref.store %3, %float1
     float1 = testThing
 
-    # CHECK: %4 = kgen.create_closure[!lit.signature<(!Int, |) -> !FloatDyn>:
-    # CHECK-SAME: rebind(:!lit.signature<("a": !Int) -> !FloatDyn> @decls::@"testThing({{.*}}Int)")]()
+    # CHECK: %4 = kgen.create_closure[!lit.generator<(!Int, |) -> !FloatDyn>:
+    # CHECK-SAME: rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing({{.*}}Int)")]()
     var float2: IntToFloat32Type = testThing
 
     # CHECK: lit.call @decls::@"takeIntToFloat32Param[fn({{.*}}Int, /) -> {{.*}}FloatDyn]()"<:
-    # CHECK-SAME: !lit.signature<(!Int, |) -> !FloatDyn> rebind(:!lit.signature<("a": !Int) -> !FloatDyn> @decls::@"testThing{{.*}}")>()
+    # CHECK-SAME: !lit.generator<(!Int, |) -> !FloatDyn> rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing{{.*}}")>()
     takeIntToFloat32Param[testThing]()
 
     # Issue #10036.  This should call the exact match, consider the varargs match
@@ -319,7 +319,7 @@ fn orvalueInferType():
     fn func(x: __mlir_type.index) -> __mlir_type.index:
         return x
 
-    # CHECK: call {{.*}}paramRefFunc{{.*}}<:type !lit.signature<("x": index) -> index>>
+    # CHECK: call {{.*}}paramRefFunc{{.*}}<:type !lit.generator<("x": index) -> index>>
     paramRefFunc(func)
 
 
@@ -354,7 +354,7 @@ fn testContextSensitiveKeyword(out x: Int, out: Int):
     # CHECK-NEXT: %x = lit.var.decl "x"
     # CHECK-NEXT: lit.ref.store %out, %x
     # CHECK-NEXT: %0 = lit.load.consume %x
-    # CHECK-NEXT: lit.return %0 
+    # CHECK-NEXT: lit.return %0
 
     # out is an argument specifier, but that's a context sensitive keyword.
     # The identifier can be used like normal as well.
@@ -489,7 +489,7 @@ fn callDefaultArgument(x: Int) -> Int:
 
 
 # CHECK-LABEL: lit.func @"defaultArgumentReferencesParameter
-# CHECK-SAME: (%a: !Int = apply(:!lit.signature<("lhs": !Int, "rhs": !Int)
+# CHECK-SAME: (%a: !Int = apply(:!lit.generator<("lhs": !Int, "rhs": !Int)
 # CHECK-SAME: -> !Int> {{.*}}Int::@"__add__({{.*}}Int,{{.*}}Int)", {{.*}}p, {87}))
 fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
     return a
@@ -620,7 +620,7 @@ fn variadic_mem_only(*values: MemStruct) -> Int:
 # CHECK-LABEL: lit.func @"test_variadic_mem_only{{.*}}"<x: !MemStruct, y: !MemStruct>
 fn test_variadic_mem_only[x: MemStruct, y: MemStruct]():
     # CHECK: lit.alias.decl {{.*}}: !Int = <apply(
-    # CHECK-SAME: :!lit.signature<[1]("values": !kgen.variadic<!lit.ref<!MemStruct, imm {}>, read_mem> var) -> !Int> {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
+    # CHECK-SAME: :!lit.generator<[1]("values": !kgen.variadic<!lit.ref<!MemStruct, imm {}>, read_mem> var) -> !Int> {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
     # CHECK-SAME: [store_to_mem(x), store_to_mem(y)]
     alias b = variadic_mem_only(x, y)
 
@@ -832,25 +832,25 @@ fn callMaybeStatic(a: Int, b: EmptyStruct):
 fn initializersAsFunctions():
     # Register passable trivial.
     # CHECK-NEXT: %fn_ptr1 = lit.var.decl
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.signature<("_a": !Int) -> !MyInt> @decls::@MyInt::@"__init__(::Int)")]()
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<("_a": !Int) -> !MyInt> @decls::@MyInt::@"__init__(::Int)")]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr1
     var fn_ptr1 : fn(Int) -> MyInt = MyInt.__init__
 
     # Register passable non-trivial.
-    
+
     # CHECK-NEXT: %fn_ptr2 = lit.var.decl "fn_ptr2"
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[!lit.signature<() -> !StructExample>: @decls::@StructExample::@"__init__()"]()
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[!lit.generator<() -> !StructExample>: @decls::@StructExample::@"__init__()"]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr2
     var fn_ptr2 : fn() -> StructExample = StructExample.__init__
 
     # CHECK-NEXT: %fn_ptr4 = lit.var.decl "fn_ptr4"
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure{{.*}}@StructExample::@"__copyinit__(decls::StructExample)")]()  
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure{{.*}}@StructExample::@"__copyinit__(decls::StructExample)")]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr4
     var fn_ptr4 : fn(StructExample) -> StructExample = StructExample.__copyinit__
 
     # Memory
     # CHECK-NEXT: %fn_ptr5 = lit.var.decl
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.signature<[1]("a": !Int, ?, "self": !lit.ref<!StructWithInit, mut *[0,0]> byref_result) -> !kgen.none> @decls::@StructWithInit::@"__init__(::Int)")
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<[1]("a": !Int, ?, "self": !lit.ref<!StructWithInit, mut *[0,0]> byref_result) -> !kgen.none> @decls::@StructWithInit::@"__init__(::Int)")
     # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr5
     var fn_ptr5 :  fn(Int) -> StructWithInit = StructWithInit.__init__
 
@@ -893,7 +893,7 @@ struct LegacyInOutInit:
 
 
 # CHECK-LABEL: lit.struct.decl @ValueMem(!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable)
-# CHECK: move :!lit.signature<[2]({{.*}} owned_in_mem, |, ?, {{.*}} byref_result) {{.*}}ValueMem::@"__moveinit__
+# CHECK: move :!lit.generator<[2]({{.*}} owned_in_mem, |, ?, {{.*}} byref_result) {{.*}}ValueMem::@"__moveinit__
 @value
 struct ValueMem:
     var a: Int  # Trivial
@@ -914,7 +914,7 @@ struct ValueMem:
 # CHECK-NEXT: lit.ref.store %5, %3
 
 # CHECK: lit.func @"__copyinit__(
-# CHECK-SAME:  %other: !lit.ref<!ValueMem, imm {{.*}}> read_mem, 
+# CHECK-SAME:  %other: !lit.ref<!ValueMem, imm {{.*}}> read_mem,
 # CHECK-SAME:  %self: !lit.ref<!ValueMem, mut {{.*}}> byref_result)
 # CHECK-SAME: -> !kgen.none always_inline_no_debug attributes
 # CHECK-NEXT: %0 = lit.ref.struct.ger %self[a]
@@ -1070,7 +1070,7 @@ struct VarArgInit:
     fn __init__(out self, *values: ValueMem):
         self.a = 42
 
-    # CHECK: lit.func @"__init__(::Int)"{{.*}}(%a: !Int, 
+    # CHECK: lit.func @"__init__(::Int)"{{.*}}(%a: !Int,
 
 
 # COM: Body resolution of `Node` will recurse on itself. Make sure that the
@@ -1127,7 +1127,7 @@ async fn load(server_ptr: Container[__mlir_type.index]):
 async fn awaitSomething():
     var ptr = Container[__mlir_type.index]()
     # CHECK: [[CORO:%.*]] = lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType [{{.*}}], :origin.set {}>(%{{.*}}) :
-    # CHECK-SAME: !lit.signature<("handle": !co.routine) -> !lit.struct<#Coroutine <:!AnyType 
+    # CHECK-SAME: !lit.generator<("handle": !co.routine) -> !lit.struct<#Coroutine <:!AnyType
     await load(ptr)
 
 
@@ -1143,7 +1143,7 @@ async fn coroutine() -> Int:
 struct StructWithAsync:
     # CHECK-LABEL: lit.func @"do_something{{.*}}({{.*}}) async
     async fn do_something(self: StructWithAsync):
-        # CHECK-NEXT: %[[CORO:.*]] = lit.async.call[!lit.signature<[1](?, "__result__": !lit.ref<!Int, mut *[0,0]> byref_result) async -> !kgen.none>: @decls::@"coroutine()"][imm {}]()
+        # CHECK-NEXT: %[[CORO:.*]] = lit.async.call[!lit.generator<[1](?, "__result__": !lit.ref<!Int, mut *[0,0]> byref_result) async -> !kgen.none>: @decls::@"coroutine()"][imm {}]()
         # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType [!Int, {{.*}}], :origin.set {}>(%[[CORO]])
         _ = coroutine()
 
@@ -1151,7 +1151,7 @@ struct StructWithAsync:
 # CHECK-LABEL: lit.func @"call_struct_async
 # CHECK-SAME: [imm [[LT:.*]], mut {{.*}}]{{.*}}) async -> !kgen.none
 async fn call_struct_async(f: StructWithAsync):
-    # CHECK-NEXT: lit.async.call[!lit.signature<[2]({{.*}}, "__result__":{{.*}}) async -> !kgen.none>: @{{.*}}][imm [[LT]], imm {}](%f)
+    # CHECK-NEXT: lit.async.call[!lit.generator<[2]({{.*}}, "__result__":{{.*}}) async -> !kgen.none>: @{{.*}}][imm [[LT]], imm {}](%f)
     _ = f.do_something()
 
 
@@ -1206,12 +1206,12 @@ fn coroutine_origins():
     # CHECK: var.decl "y" var : {{.*}}mut [[Y_LT:.*]]>
     var y: Awaitable
     # CHECK: [[Y_IMM:%.*]] = lit.ref.immut %y
-    # CHECK: [[CORO:%.*]] = lit.async.call[!lit.signature<[3]("x": !lit.ref<!Awaitable, mut *[0,0]> mut, "y": !lit.ref<!Awaitable, imm *[0,1]> read_mem, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async -> !kgen.none>
+    # CHECK: [[CORO:%.*]] = lit.async.call[!lit.generator<[3]("x": !lit.ref<!Awaitable, mut *[0,0]> mut, "y": !lit.ref<!Awaitable, imm *[0,1]> read_mem, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async -> !kgen.none>
     # CHECK-SAME: [mut [[X_LT]], muttoimm [[Y_LT]], imm {}](%x, [[Y_IMM]])
     # CHECK: lit.call {{.*}}Coroutine::@"__init__{{.*}}<:!AnyType [none, {{.*}}], :origin.set {mut [[X_LT]], mut [[Y_LT]]}>([[CORO]])
     var coro = capture_byref(x, y)
 
-    # CHECK: lit.async.call[!lit.signature<[2]("x": !lit.ref<@decls::@LifetimeAccess<:origin<1> [[Y_LT]]>,
+    # CHECK: lit.async.call[!lit.generator<[2]("x": !lit.ref<@decls::@LifetimeAccess<:origin<1> [[Y_LT]]>,
     # CHECK-SAME: mut *[0,0]{{.*}}) async -> !kgen.none>: {{.*}}lifetime_access{{.*}}<:origin<1> [[Y_LT]]>]
     # CHECK: Coroutine<:!AnyType [none, {{.*}}], :origin.set {{{.*}}, mut [[Y_LT]]}>
     var access = lifetime_access(LifetimeAccess[__origin_of(y)]())
@@ -1258,9 +1258,9 @@ fn topLevelFunction() -> Int:
         # CHECK-NEXT: lit.ref.load %a
         return a
 
-    # CHECK: lit.alias.decl *"b{{.*}}": !lit.signature<:{mut *"a`"}:() capturing -> !Int> = <*"nestedFunction()">
+    # CHECK: lit.alias.decl *"b{{.*}}": !lit.generator<:{mut *"a`"}:() capturing -> !Int> = <*"nestedFunction()">
     alias b = nestedFunction
-    # CHECK: call[!lit.signature<:{mut *"a`"}:() capturing -> !Int>: *"nestedFunction()"]()
+    # CHECK: call[!lit.generator<:{mut *"a`"}:() capturing -> !Int>: *"nestedFunction()"]()
     return nestedFunction()
 
 
@@ -1276,9 +1276,9 @@ struct SomeStruct:
             # CHECK-NEXT: lit.ref.load %a
             return a
 
-        # CHECK: lit.alias.decl *"b{{.*}}": !lit.signature<:{mut [[A_LT:\*"a`.*"]]}:() capturing -> !Int> = <*"nestedFunction()">
+        # CHECK: lit.alias.decl *"b{{.*}}": !lit.generator<:{mut [[A_LT:\*"a`.*"]]}:() capturing -> !Int> = <*"nestedFunction()">
         alias b = nestedFunction
-        # CHECK: call[!lit.signature<:{mut [[A_LT]]}:() capturing -> !Int>: *"nestedFunction()"]()
+        # CHECK: call[!lit.generator<:{mut [[A_LT]]}:() capturing -> !Int>: *"nestedFunction()"]()
         return nestedFunction()
 
 
@@ -1290,7 +1290,7 @@ fn closureParameter[func: fn () capturing -> __mlir_type.index]():
 
 # CHECK-LABEL: lit.func @"closureParameterCaptures
 # CHECK-SAME: :*(0,0):
-# CHECK-SAME: func: !lit.signature<:origins:() capturing -> !kgen.none>
+# CHECK-SAME: func: !lit.generator<:origins:() capturing -> !kgen.none>
 fn closureParameterCaptures[
     origins: OriginSet, //, func: fn () capturing [origins] -> None
 ]():
@@ -1369,26 +1369,26 @@ fn inferCaptureOrigins[
         _ = x
 
     # CHECK: call {{.*}}closureParameterCaptures{{.*}}<:origin.set {},
-    # CHECK-SAME: !lit.signature<() capturing -> !kgen.none>
+    # CHECK-SAME: !lit.generator<() capturing -> !kgen.none>
     closureParameterCaptures[bareFunc]()
     # CHECK: call {{.*}}closureParameterCaptures{{.*}}<:origin.set {mut *"x`"},
-    # CHECK-SAME: !lit.signature<:{mut *"x`"}:() capturing -> !kgen.none>
+    # CHECK-SAME: !lit.generator<:{mut *"x`"}:() capturing -> !kgen.none>
     closureParameterCaptures[captureSomething]()
     # CHECK: call {{.*}}closureParameterInference{{.*}}<*"p`{{.*}}",
-    # CHECK-SAME: rebind(:!lit.signature<:{mut *"x`"}:{{.*}} *"captureSomething
+    # CHECK-SAME: rebind(:!lit.generator<:{mut *"x`"}:{{.*}} *"captureSomething
     closureParameterInference[captureSomething](arg)
 
-    # CHECK: lit.alias.decl *"unboundSet{{.*}} !lit.signature<:*(0,0):
+    # CHECK: lit.alias.decl *"unboundSet{{.*}} !lit.generator<<{{.*}}>:*(0,0):
     alias unboundSet = closureParameterCaptures
-    # CHECK: lit.alias.decl *"boundSet{{.*}} !lit.signature<:{mut *"x`"}
+    # CHECK: lit.alias.decl *"boundSet{{.*}} !lit.generator<:{mut *"x`"}
     alias boundSet = closureParameterCaptures[captureSomething]
 
-    # CHECK: lit.alias.decl *"unboundSingleParam{{.*}} !lit.signature<:{mut *(0,0)}
+    # CHECK: lit.alias.decl *"unboundSingleParam{{.*}} !lit.generator<<{{.*}}>:{mut *(0,0)}
     alias unboundSingleParam = explicitLifetime
-    # CHECK: lit.alias.decl *"boundSingleParam{{.*}} !lit.signature<:{mut lt}
+    # CHECK: lit.alias.decl *"boundSingleParam{{.*}} !lit.generator<:{mut lt}
     alias boundSingleParam = explicitLifetime[param]
 
-    # CHECK: lit.alias.decl *"memberFunction{{.*}} !lit.signature<:*(0,1):
+    # CHECK: lit.alias.decl *"memberFunction{{.*}} !lit.generator<<{{.*}}>:*(0,1):
     alias memberFunction = CapturingStruct.takeClosure
 
     # CHECK: lit.func *"captureWithClosure
@@ -1399,7 +1399,7 @@ fn inferCaptureOrigins[
     ]():
         _ = y
 
-    # CHECK: lit.alias.decl *"boundClosure{{.*}} !lit.signature<:{mut *"x`", mut *"y`{{.*}}"}
+    # CHECK: lit.alias.decl *"boundClosure{{.*}} !lit.generator<:{mut *"x`", mut *"y`{{.*}}"}
     alias boundClosure = captureWithClosure[captureSomething]
 
 
@@ -1423,9 +1423,9 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
     fn nestedFunction[b_param: __mlir_type.index]():
         return
 
-    # CHECK: lit.alias.decl *"thinref{{.*}}": !lit.signature<<"b_param": index>() -> !kgen.none> = <*"nestedFunction[__mlir_type.index]()">
+    # CHECK: lit.alias.decl *"thinref{{.*}}": !lit.generator<<"b_param": index>() -> !kgen.none> = <*"nestedFunction[__mlir_type.index]()">
     alias thinref = nestedFunction
-    # CHECK: call[{{.*}}: bind_signature(:!lit.signature<<"b_param": index>() -> !kgen.none> *"nestedFunction[__mlir_type.index]()", 2)]()
+    # CHECK: call[{{.*}}: bind_signature(:!lit.generator<<"b_param": index>() -> !kgen.none> *"nestedFunction[__mlir_type.index]()", 2)]()
     nestedFunction[Int(2).value]()
 
     var value = 0
@@ -1435,7 +1435,7 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
     fn capturingNestedFunction() -> Int:
         return value
 
-    # CHECK: lit.alias.decl *"fatRef{{.*}}": !lit.signature<() capturing -> !Int> = <*"capturingNestedFunction()">
+    # CHECK: lit.alias.decl *"fatRef{{.*}}": !lit.generator<() capturing -> !Int> = <*"capturingNestedFunction()">
     alias fatRef = capturingNestedFunction
 
 
@@ -1446,9 +1446,9 @@ struct SomeParamStruct[c_param: Int]:
         fn nestedFunction[b_param: Int]():
             return
 
-        # CHECK: lit.alias.decl *"reff{{.*}}": !lit.signature<<"b_param": !Int>() -> !kgen.none> = <*"nestedFunction[{{.*}}Int]()">
+        # CHECK: lit.alias.decl *"reff{{.*}}": !lit.generator<<"b_param": !Int>() -> !kgen.none> = <*"nestedFunction[{{.*}}Int]()">
         alias reff = nestedFunction
-        # CHECK: call[{{.*}}: bind_signature(:!lit.signature<<"b_param": !Int>() -> !kgen.none> *"nestedFunction[{{.*}}Int]()", {{.*}}2{{.*}})]()
+        # CHECK: call[{{.*}}: bind_signature(:!lit.generator<<"b_param": !Int>() -> !kgen.none> *"nestedFunction[{{.*}}Int]()", {{.*}}2{{.*}})]()
         nestedFunction[2]()
 
 
@@ -1491,7 +1491,7 @@ fn register(a: StringLiteral):
 
 
 # CHECK-LABEL: lit.func @"decorated_fn()"
-# CHECK-NEXT: decorators <:!lit.signature<() -> !kgen.none> @{{.*}}::@"elementwise()">
+# CHECK-NEXT: decorators <:!lit.generator<() -> !kgen.none> @{{.*}}::@"elementwise()">
 @elementwise
 fn decorated_fn():
     pass
@@ -1576,7 +1576,7 @@ struct SomeType:
 # COM: An implicit origin is passed into a struct parameter inside a trait
 # COM: binding. Ensure this passes `-verify-parameters`.
 # CHECK-LABEL: lit.func @"implicit_origin_as_param
-# CHECK-SAME: "__del__" : !lit.signature<[1]("self": !lit.ref<{{.*}}Match<:origin<0> *"arg`">, mut *[0,0]>
+# CHECK-SAME: "__del__" : !lit.generator<[1]("self": !lit.ref<{{.*}}Match<:origin<0> *"arg`">, mut *[0,0]>
 fn implicit_origin_as_param(
     arg: SomeType,
 ) -> Bound[Match[__origin_of(arg)]]:
@@ -1665,4 +1665,3 @@ struct MOCO1320[
         self._value = x
     fn __init__(out self, *, ref [origin]to: Int):
         self._value = __get_mvalue_as_litref(to)
-

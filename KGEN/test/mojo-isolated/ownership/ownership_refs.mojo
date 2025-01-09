@@ -462,7 +462,7 @@ fn test_parameter_closure_captures(owned x: MemExample, owned y: MemExample):
     _ = x^
     _ = y^
 
-  # CHECK: lit.call[!lit.signature<:{mut *"x`{{.*}}", mut *"y`{{.*}}"}:
+  # CHECK: lit.call[!lit.generator<:{mut *"x`{{.*}}", mut *"y`{{.*}}"}:
   # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%x)
   # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%y)
   capture()
@@ -478,7 +478,7 @@ fn test_higher_order_capture(owned x: MemExample, owned y: MemExample):
     _ = x^
     _ = y^
 
-  # CHECK: lit.call {{.*}}higher_order_function{{.*}} !lit.signature<:{mut *"x`{{.*}}", mut *"y`{{.*}}"}
+  # CHECK: lit.call {{.*}}higher_order_function{{.*}} !lit.generator<:{mut *"x`{{.*}}", mut *"y`{{.*}}"}
   # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%x)
   # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%y)
   higher_order_function[capture]()

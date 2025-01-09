@@ -7,11 +7,11 @@
 #loc = loc("foo.mlir":43:25)
 #loc1 = loc(fused<#subprogram>[#loc])
 
-lit.struct.decl @S attributes {destructor = #kgen.symbol.constant<@S::@__del__> : !lit.signature<[1](!lit.ref<@S, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
+lit.struct.decl @S attributes {destructor = #kgen.symbol.constant<@S::@__del__> : !lit.generator<[1](!lit.ref<@S, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field a : index
 }
 
-lit.struct.decl @HasMemFields attributes {destructor = #kgen.symbol.constant<@HasMemFields::@__del__> : !lit.signature<[1](!lit.ref<@HasMemFields, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
+lit.struct.decl @HasMemFields attributes {destructor = #kgen.symbol.constant<@HasMemFields::@__del__> : !lit.generator<[1](!lit.ref<@HasMemFields, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field a : !lit.struct<@S>
 
   lit.func @__del__[mut dtorlife](%self: !lit.ref<@HasMemFields, mut dtorlife> loc(#loc) owned_in_mem) -> !kgen.none {

@@ -1029,7 +1029,7 @@ def KGEN_PreservedAttr : KGENAttr<"Preserved", "preserved"> {
     Example:
 
     ```mlir
-    #kgen.preserved<!lit.signature<() -> ()>>
+    #kgen.preserved<!lit.generator<() -> ()>>
     ```
   }];
 

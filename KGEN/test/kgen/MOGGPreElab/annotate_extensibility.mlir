@@ -13,7 +13,7 @@ lit.func @"register(::StringLiteral)"(%name: !lit.struct<@stdlib::@builtin::@str
 // A basic case with an "execute" and "shape" function that take only tensors
 // CHECK-LABEL: lit.struct.decl @test_execute_and_shape
 lit.struct.decl @test_execute_and_shape(trait<@stdlib::@builtin::@anytype::@AnyType>)
-  decorators <:none apply(:!lit.signature<("name": !lit.struct<@stdlib::@builtin::@string_literal::@StringLiteral>, "num_dps_outputs": !lit.struct<@stdlib::@builtin::@int::@Int> = {1}) -> !kgen.none> @"register(::StringLiteral)", {:string "imposter_add"}, {1})> {
+  decorators <:none apply(:!lit.generator<("name": !lit.struct<@stdlib::@builtin::@string_literal::@StringLiteral>, "num_dps_outputs": !lit.struct<@stdlib::@builtin::@int::@Int> = {1}) -> !kgen.none> @"register(::StringLiteral)", {:string "imposter_add"}, {1})> {
 
   // CHECK: lit.func export @execute
   // CHECK: mogg.arg_params = [unit, [#kgen.param.decl.ref<"dtype"> : !lit.struct<@DType>], unit]

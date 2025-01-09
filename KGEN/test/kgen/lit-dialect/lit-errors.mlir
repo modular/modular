@@ -343,32 +343,32 @@ lit.func @f() -> !kgen.none {
 // -----
 
 // expected-error @below {{argument #0 with convention 'read_mem' in signature type should be a `!lit.ref` but got: 'index'}}
-!type = !lit.signature<(index read_mem) -> ()>
+!type = !lit.generator<(index read_mem) -> ()>
 
 // -----
 
 // expected-error @below {{'?' cannot precede '|' in signature}}
-!sig = !lit.signature<<?, |>() -> ()>
+!sig = !lit.generator<<?, |>() -> ()>
 
 // -----
 
 // expected-error @below {{'?' cannot precede '*' in signature}}
-!sig = !lit.signature<<?, *>() -> ()>
+!sig = !lit.generator<<?, *>() -> ()>
 
 // -----
 
 // expected-error @below {{only one '?' allowed in signature}}
-!sig = !lit.signature<<?, ?> -> ()>
+!sig = !lit.generator<<?, ?> -> ()>
 
 // -----
 
 // expected-error @below {{2 origins specified, but signature expected 1}}
-lit.call @calls[imm a, mut b]() : !lit.signature<[1]() -> ()>
+lit.call @calls[imm a, mut b]() : !lit.generator<[1]() -> ()>
 
 // -----
 
 // expected-error @+1 {{custom op 'lit.call' implicit origin reference at depth 0 has an out-of-range index: 1 >= 1}}
-lit.call @calls[mut a]() : !lit.signature<[1](!lit.ref<index, mut *[0,1]>) -> ()>
+lit.call @calls[mut a]() : !lit.generator<[1](!lit.ref<index, mut *[0,1]>) -> ()>
 
 // -----
 
