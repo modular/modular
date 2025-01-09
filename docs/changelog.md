@@ -89,6 +89,8 @@ what we publish.
   `Span[Scalar[..]]`, simplifying the writing of some optimized SIMD-aware
   functionality.
 
+- Added `Char`, for representing and storing single Unicode characters.
+
 - Added `StringSlice.from_utf()` factor method, for validated construction of
   a `StringSlice` from a buffer containing UTF-8 encoded data. This method will
   raise if the buffer contents are not valid UTF-8.
