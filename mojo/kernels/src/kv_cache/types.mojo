@@ -124,7 +124,7 @@ struct ContiguousKVCache[
     alias kv_params = kv_params_
 
     alias _internal_block_shape = DimList(
-        Dim(), Dim(), int(Self.kv_params.num_heads), Self.kv_params.head_size
+        Dim(), Dim(), Self.kv_params.num_heads, Self.kv_params.head_size
     )
     alias single_block_shape = DimList(
         Self._internal_block_shape.get[1](),
@@ -261,7 +261,7 @@ struct ContinuousBatchingKVCache[
     alias kv_params = kv_params_
 
     alias single_block_shape = DimList(
-        Dim(), int(Self.kv_params.num_heads), Self.kv_params.head_size
+        Dim(), Self.kv_params.num_heads, Self.kv_params.head_size
     )
 
     # shape is
