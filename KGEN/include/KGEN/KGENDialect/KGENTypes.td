@@ -314,17 +314,6 @@ def KGEN_NewSignatureType : KGENType<"NewSignature", "signature", [
     /// `byref_result` arguments. If this is an async function, return the
     /// number of result slots it has. Otherwise, return 0.
     size_t getNumAsyncReturnSlots();
-
-    /// Determine whether an argument with the given input convention expects to
-    /// have a pointer or reference type.
-    static bool hasAddress(ArgConvention conv);
-
-    /// Determine whether an argument with the given input convention expects to
-    /// have an implicit origin.
-    static bool hasImplicitOrigin(ArgConvention conv);
-
-    /// Return true if this is an automatically generated result slot.
-    static bool isResultSlot(ArgConvention conv);
   }];
 
   let genVerifyDecl = 1;

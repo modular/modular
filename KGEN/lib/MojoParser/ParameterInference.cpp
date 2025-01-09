@@ -517,7 +517,7 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actual,
       // Finally, perform any implicit conversion of the actual value to
       // whatever the 'value' would provide.
       auto argRVType = initSig.getArguments()[0];
-      if (NewSignatureType::hasAddress(initSig.getArgConvention(0)))
+      if (hasAddress(initSig.getArgConvention(0)))
         argRVType = ASTType(argRVType).getReferenceElementType();
 
       if (actual.getType() != argRVType &&
@@ -1045,7 +1045,7 @@ LogicalResult ParameterInferenceState::infer(
        llvm::enumerate(signature.getArgConventions())) {
 
     // There is no provided operand for a by-ref result.
-    if (NewSignatureType::isResultSlot(expectedConvention))
+    if (isResultSlot(expectedConvention))
       continue;
 
     // Note that 'signature' changes the type as we go, so don't use
@@ -1256,7 +1256,7 @@ ParameterInferenceState::inferCTADParams(LITSignatureGeneratorType signature,
 
   auto selfConvention = signature.getArgConventions()[0];
   ASTType declaredSelfType = signature.getArguments()[0];
-  if (NewSignatureType::hasAddress(selfConvention))
+  if (hasAddress(selfConvention))
     declaredSelfType = declaredSelfType.getReferenceElementType();
 
   // Get the ASTDecl for the declared self type.  This will give us the struct
@@ -1279,7 +1279,7 @@ ParameterInferenceState::inferCTADParams(LITSignatureGeneratorType signature,
 
   // If passing self by reference, wrap the Self type with the RefType
   // paraphernalia like origins.
-  if (NewSignatureType::hasAddress(selfConvention)) {
+  if (hasAddress(selfConvention)) {
     auto selfRefType = cast<RefType>(signature.getArguments()[0]);
     selfType = selfRefType.getWithElement(selfType);
   }

@@ -124,7 +124,7 @@ static LoweredSignature lowerSignature(NewSignatureType sig) {
       }
       // Don't alter the result convention for async functions. The coroutine
       // lowering expects this ABI.
-    } else if (NewSignatureType::isResultSlot(convention) && !sig.isAsync()) {
+    } else if (isResultSlot(convention) && !sig.isAsync()) {
       Type loweredByrefResTy = lowerPointerType(argTy);
       if (!loweredByrefResTy)
         continue;

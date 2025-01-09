@@ -148,6 +148,9 @@ def KGEN_TailKind : I32EnumAttr<"TailKind", "tail kind", [
 
 /// This describes the encoding of input argument calling conventions, stored
 /// in the metadata of a NewSignatureType.
+///
+/// That these enums have helper functions defined in KGENEnums.h for working
+/// with various classes.
 def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
     "Function argument convention", [
   /// This is an immutable borrow of a register-passable value in an SSA

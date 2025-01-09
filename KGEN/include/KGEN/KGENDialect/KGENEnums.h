@@ -19,6 +19,41 @@
 namespace M::KGEN {
 
 //===----------------------------------------------------------------------===//
+// ArgConvention
+//===----------------------------------------------------------------------===//
+
+/// Determine whether an argument with the given input convention expects to
+/// have a pointer or reference type.
+static inline bool hasAddress(ArgConvention conv) {
+  return conv != ArgConvention::OwnedReg && conv != ArgConvention::ReadReg;
+}
+
+/// Determine whether an argument with the given input convention expects to
+/// have an implicit origin.
+static inline bool hasImplicitOrigin(ArgConvention conv) {
+  switch (conv) {
+  case ArgConvention::Ref:
+  case ArgConvention::MutRef:
+  case ArgConvention::OwnedReg:
+  case ArgConvention::ReadReg:
+    return false;
+  case ArgConvention::OwnedMem:
+  case ArgConvention::ReadMem:
+  case ArgConvention::Mut:
+  case ArgConvention::ByRefResult:
+  case ArgConvention::ByRefError:
+    return true;
+  }
+  llvm_unreachable("invalid argument convention");
+}
+
+/// Return true if this is an memory location for a normal or error result.
+static inline bool isResultSlot(ArgConvention conv) {
+  return conv == ArgConvention::ByRefResult ||
+         conv == ArgConvention::ByRefError;
+}
+
+//===----------------------------------------------------------------------===//
 // FnEffects
 //===----------------------------------------------------------------------===//
 

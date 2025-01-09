@@ -485,7 +485,7 @@ LogicalResult FnMetadataAttr::verifyNewSignature(
     }
 
     // Verify argument conventions.
-    if (NewSignatureType::hasAddress(conv)) {
+    if (hasAddress(conv)) {
       if (::isa<RefType>(type))
         continue;
       return emitError()

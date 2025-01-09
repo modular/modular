@@ -180,7 +180,7 @@ generateTypeString(SharedState &shared, Type type, VariadicKind varKind,
   } else if (varKind == VariadicKind::kPack && !isa<PackType>(type)) {
     // VariadicPack needs special printing, because its argument isn't a type.
     os << "*";
-    if (convention && NewSignatureType::hasAddress(*convention))
+    if (convention && hasAddress(*convention))
       astType = astType.getReferenceElementType();
 
     ASTType::printParam(os, astType.getVariadicPackInfo().getVariadic(),
@@ -189,7 +189,7 @@ generateTypeString(SharedState &shared, Type type, VariadicKind varKind,
   }
 
   // Process the convention if present.
-  if (convention && NewSignatureType::hasAddress(*convention)) {
+  if (convention && hasAddress(*convention)) {
     // In some cases variadics are passed directly (which is a hack, but okay).
     // The ABI in these cases is that we pass a variadic of refs. We leave these
     // as is, since eventually (with unpacking) this hack won't be needed.

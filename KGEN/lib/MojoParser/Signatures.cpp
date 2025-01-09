@@ -389,7 +389,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
 
 PassingKind ParsedArgument::getKWArgHandlingAsPassingKind() const {
   // Result slots are not handled through normal call argument resolution.
-  if (NewSignatureType::isResultSlot(kgenConvention))
+  if (isResultSlot(kgenConvention))
     return PassingKind::Implicit;
 
   switch (kwArgHandling) {
@@ -1299,7 +1299,7 @@ static void typeCheckOneArgument(size_t idx, bool isDef, bool isStaticMethod,
   // Values passed by memory need an associated origin parameter, and need to
   // be passed by reference. For now, we don't use reference types in **kwargs.
   Type fullType;
-  if (NewSignatureType::hasImplicitOrigin(arg.kgenConvention) &&
+  if (hasImplicitOrigin(arg.kgenConvention) &&
       arg.vararg != VarArgKind::KWVarArg) {
     bool isMutable = arg.kgenConvention != ArgConvention::ReadMem;
     fullType =
@@ -1492,7 +1492,7 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
 
       // Only look at mut, read, owned arguments.  RegisterPassable args
       // won't have a origin, and `ref` args are not lowered by-reg.
-      if (!NewSignatureType::hasAddress(parsedArg.kgenConvention) ||
+      if (!hasAddress(parsedArg.kgenConvention) ||
           parsedArg.kgenConvention == ArgConvention::Ref ||
           parsedArg.kgenConvention == ArgConvention::MutRef)
         continue;
