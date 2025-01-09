@@ -1090,11 +1090,13 @@ static PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait,
       case SpecialFunctionKind::kDel:
         break;
       default:
-        InflightDiag diag = shared.emitError(loc, "cannot bind MLIR type ")
-                            << mlirType << " to trait " << ASTType(trait);
-        diag.attachNote(decl->getLoc())
-            << "MLIR type cannot satisfy required trait function here";
-        return {};
+        if (name != "copy") {
+          InflightDiag diag = shared.emitError(loc, "cannot bind MLIR type ")
+                              << mlirType << " to trait " << ASTType(trait);
+          diag.attachNote(decl->getLoc())
+              << "MLIR type cannot satisfy required trait function here";
+          return {};
+        }
       }
       // We know the stub will provide exactly one overload for each allowed
       // trait requirement.

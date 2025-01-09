@@ -410,6 +410,11 @@ trait Movable:
         pass
 
 
+trait ExplicitlyCopyable:
+    fn copy(self) -> Self:
+        ...
+
+
 trait AnyType:
     fn __del__(owned self, /):
         ...

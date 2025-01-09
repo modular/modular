@@ -346,6 +346,7 @@ fn testMutatingAdd(owned a: MutatingAdd, b: MutatingAdd):
     # CHECK-NEXT: lit.call {{.*}}__add__{{.*}}(%a, %b)
     a + b
 
+
 # CHECK-LABEL: lit.func @"testContextSensitiveKeyword
 # CHECK-SAME: (%out: !Int) -> !Int
 fn testContextSensitiveKeyword(out x: Int, out: Int):
@@ -359,6 +360,7 @@ fn testContextSensitiveKeyword(out x: Int, out: Int):
     # out is an argument specifier, but that's a context sensitive keyword.
     # The identifier can be used like normal as well.
     x = out
+
 
 ##===----------------------------------------------------------------------===##
 # Conventions
@@ -515,9 +517,11 @@ struct MemoryType:
 
     # Default arguments and variadics.
     @implicit
-    fn __init__(out self, value: SomeResultType, stuff: Int = 4,
-                *other: String):
+    fn __init__(
+        out self, value: SomeResultType, stuff: Int = 4, *other: String
+    ):
         self.value = 4
+
 
 # CHECK-LABEL: lit.func @"defaultArgumentNonRegisterType
 # CHECK-SAME: read_mem = apply_result_slot({{.*}}__init__
@@ -827,6 +831,7 @@ fn callMaybeStatic(a: Int, b: EmptyStruct):
     # CHECK-NEXT: lit.call {{.*}}@"maybe_static{{.*}}([[TMP]], %b)
     StructExample().maybe_static(b)
 
+
 # CHECK-LABEL: lit.func @"initializersAsFunctions
 # See that we can take the address of initializers without a thunk.
 fn initializersAsFunctions():
@@ -834,25 +839,27 @@ fn initializersAsFunctions():
     # CHECK-NEXT: %fn_ptr1 = lit.var.decl
     # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<("_a": !Int) -> !MyInt> @decls::@MyInt::@"__init__(::Int)")]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr1
-    var fn_ptr1 : fn(Int) -> MyInt = MyInt.__init__
+    var fn_ptr1: fn (Int) -> MyInt = MyInt.__init__
 
     # Register passable non-trivial.
 
     # CHECK-NEXT: %fn_ptr2 = lit.var.decl "fn_ptr2"
     # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[!lit.generator<() -> !StructExample>: @decls::@StructExample::@"__init__()"]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr2
-    var fn_ptr2 : fn() -> StructExample = StructExample.__init__
+    var fn_ptr2: fn () -> StructExample = StructExample.__init__
 
     # CHECK-NEXT: %fn_ptr4 = lit.var.decl "fn_ptr4"
     # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure{{.*}}@StructExample::@"__copyinit__(decls::StructExample)")]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr4
-    var fn_ptr4 : fn(StructExample) -> StructExample = StructExample.__copyinit__
+    var fn_ptr4: fn (
+        StructExample
+    ) -> StructExample = StructExample.__copyinit__
 
     # Memory
     # CHECK-NEXT: %fn_ptr5 = lit.var.decl
     # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<[1]("a": !Int, ?, "self": !lit.ref<!StructWithInit, mut *[0,0]> byref_result) -> !kgen.none> @decls::@StructWithInit::@"__init__(::Int)")
     # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr5
-    var fn_ptr5 :  fn(Int) -> StructWithInit = StructWithInit.__init__
+    var fn_ptr5: fn (Int) -> StructWithInit = StructWithInit.__init__
 
 
 # CHECK-LABEL: lit.struct.decl @DelegatingInitMem
@@ -880,6 +887,7 @@ struct ShadowsOuterName:
     fn nameOutsideStruct(self):
         nameOutsideStruct(1, 2)
 
+
 struct LegacyInOutInit:
     # This should be accepted for compatibility, but "out" is the preferred
     # spelling.
@@ -892,7 +900,7 @@ struct LegacyInOutInit:
 ##===----------------------------------------------------------------------===##
 
 
-# CHECK-LABEL: lit.struct.decl @ValueMem(!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable)
+# CHECK-LABEL: lit.struct.decl @ValueMem(!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable, !ExplicitlyCopyable)
 # CHECK: move :!lit.generator<[2]({{.*}} owned_in_mem, |, ?, {{.*}} byref_result) {{.*}}ValueMem::@"__moveinit__
 @value
 struct ValueMem:
@@ -938,7 +946,7 @@ struct ValueMem:
 # CHECK-NEXT: lit.ref.store [[TMP]], %[[PB]]
 
 
-# CHECK-LABEL: lit.struct.decl @ValueMemHasCopy(!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable)
+# CHECK-LABEL: lit.struct.decl @ValueMemHasCopy(!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable, !ExplicitlyCopyable)
 @value
 struct ValueMemHasCopy:
     var a: Int
@@ -949,7 +957,7 @@ struct ValueMemHasCopy:
         self.b = other.b
 
 
-# CHECK-LABEL: lit.struct.decl @ValueMemHasMove(!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable)
+# CHECK-LABEL: lit.struct.decl @ValueMemHasMove(!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable, !ExplicitlyCopyable)
 @value
 struct ValueMemHasMove:
     var a: Int
@@ -961,7 +969,7 @@ struct ValueMemHasMove:
 
 
 # CHECK-LABEL: lit.struct.decl @ValueRegTrivial
-# CHECK-SAME: (!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable) register_passable_trivial
+# CHECK-SAME: (!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable, !ExplicitlyCopyable) register_passable_trivial
 
 # CHECK: lit.func @"__copyinit__{{.*}}_thunk"[{{.*}}](%0[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> read_mem,
 # CHECK-SAME: %1[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> byref_result) -> !kgen.none always_inline_no_debug
@@ -1019,7 +1027,7 @@ struct ValueReg:
 
 
 # COM: Ensure that "self" is a valid field name.
-# CHECK-LABEL: lit.struct.decl @Foo(!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable) attributes
+# CHECK-LABEL: lit.struct.decl @Foo(!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable, !ExplicitlyCopyable) attributes
 @value
 struct Foo:
     var a: Int
@@ -1077,6 +1085,7 @@ struct VarArgInit:
 # COM: trait requirements for Copyable and Movable are generated early.
 struct BoxCopyable[T: Copyable]:
     pass
+
 
 @value
 struct Node:
@@ -1649,19 +1658,21 @@ fn testRegPassableInitSelf():
     # CHECK-NEXT: lit.ref.store [[ONE:%.*]], [[AP]]
     x.a = 1
 
+
 # Can't generate the constructors for a type wrapping !lit.ref
 @value
-struct MOCO1320[
-    mut: Bool, //,
-    origin: Origin[mut]
-]:
-    alias _mlir_type = __mlir_type[`!lit.ref<`, Int,
+struct MOCO1320[mut: Bool, //, origin: Origin[mut]]:
+    alias _mlir_type = __mlir_type[
+        `!lit.ref<`,
+        Int,
         `, `,
         origin._mlir_origin,
         `>`,
     ]
     var _value: Self._mlir_type
+
     fn __init__(out self, *, x: Self._mlir_type):
         self._value = x
+
     fn __init__(out self, *, ref [origin]to: Int):
         self._value = __get_mvalue_as_litref(to)

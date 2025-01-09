@@ -41,7 +41,7 @@ ClosureEmitter::ClosureEmitter(ASTDecl &moduleDecl, SharedState &shared)
       selfName(StringAttr::get(ctx, "self")),
       otherName(StringAttr::get(ctx, "other")),
       dtorFieldAttr(StringAttr::get(ctx, "dtor")),
-      copyFieldAttr(StringAttr::get(ctx, "copy")),
+      copyFieldAttr(StringAttr::get(ctx, "_copy")),
       callFieldAttr(StringAttr::get(ctx, "call")),
       callMethodAttr(StringAttr::get(ctx, "closureCallMethod")),
       opaquePtrType(PointerType::get(KGEN::NoneType::get(ctx))) {}
@@ -199,7 +199,7 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
   Value copyRef = b.create<CreateClosureOp>(
       cast<LIT::FuncOp>(copy.front()).getBoundReference());
   storeField(b, self, dtorRef, b.getStringAttr("dtor"));
-  storeField(b, self, copyRef, b.getStringAttr("copy"));
+  storeField(b, self, copyRef, b.getStringAttr("_copy"));
 
   // Generate the 'call_impl' function that performs the indirect call.
   LITSignatureGeneratorType callImplType = addClosureSelfArgToFunctionSignature(

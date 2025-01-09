@@ -17,7 +17,7 @@ struct MemType:
 # CHECK-LABEL: lit.struct.decl @"fn
 # CHECK:         lit.struct.field field0 : !kgen.pointer<none>
 # CHECK-NEXT:    lit.struct.field dtor : {{.*}}<("self": !kgen.pointer<none>, |) -> !kgen.none>
-# CHECK-NEXT:    lit.struct.field copy : {{.*}}<("other": !kgen.pointer<none>, |) -> !kgen.pointer<none>>
+# CHECK-NEXT:    lit.struct.field _copy : {{.*}}<("other": !kgen.pointer<none>, |) -> !kgen.pointer<none>>
 # CHECK-NEXT:    lit.struct.field call : {{.*}}<[1](!kgen.pointer<none>, |, ?, "__result__": !lit.ref<!MemType, mut *[0,0]> byref_result) -> !kgen.none>
 
 # CHECK-LABEL:   lit.func @"__del__
@@ -40,8 +40,8 @@ struct MemType:
 # CHECK-NEXT:      [[P2:%.*]] = lit.ref.struct.ger %other[dtor]
 # CHECK-NEXT:      [[P3:%.*]] = lit.ref.load [[P2]]
 # CHECK-NEXT:      lit.ref.store [[P3]], [[P1]]
-# CHECK-NEXT:      [[P4:%.*]] = lit.ref.struct.ger %self[copy]
-# CHECK-NEXT:      [[P5:%.*]] = lit.ref.struct.ger %other[copy]
+# CHECK-NEXT:      [[P4:%.*]] = lit.ref.struct.ger %self[_copy]
+# CHECK-NEXT:      [[P5:%.*]] = lit.ref.struct.ger %other[_copy]
 # CHECK-NEXT:      [[P6:%.*]] = lit.ref.load [[P5]]
 # CHECK-NEXT:      lit.ref.store [[P6]], [[P4]]
 # CHECK-NEXT:      [[P7:%.*]] = lit.ref.struct.ger %self[call]
@@ -51,7 +51,7 @@ struct MemType:
 # CHECK-NEXT:      kgen.param.constant: none
 # CHECK-NEXT:      [[EXISTING_IMPL_PTR:%.*]] = lit.ref.struct.ger %other[field0]
 # CHECK-NEXT:      [[EXISTING_IMPL:%.*]] = lit.ref.load [[EXISTING_IMPL_PTR]]
-# CHECK-NEXT:      [[COPY_PTR:%.*]] = lit.ref.struct.ger %self[copy]
+# CHECK-NEXT:      [[COPY_PTR:%.*]] = lit.ref.struct.ger %self[_copy]
 # CHECK-NEXT:      [[COPY:%.*]] = lit.ref.load [[COPY_PTR]]
 # CHECK-NEXT:      [[NEW:%.*]] = lit.call_indirect [[COPY]]([[EXISTING_IMPL]])
 # CHECK-NEXT:      [[SELF_IMPL_REF:%.*]] = lit.ref.struct.ger %self[field0]
@@ -66,8 +66,8 @@ struct MemType:
 # CHECK-NEXT:     [[M2:%.*]] = lit.ref.struct.ger %other[dtor]
 # CHECK-NEXT:     [[M3:%.*]] = lit.load.consume [[M2]]
 # CHECK-NEXT:     lit.ref.store [[M3]], [[M1]]
-# CHECK-NEXT:     [[M4:%.*]] = lit.ref.struct.ger %self[copy]
-# CHECK-NEXT:     [[M5:%.*]] = lit.ref.struct.ger %other[copy]
+# CHECK-NEXT:     [[M4:%.*]] = lit.ref.struct.ger %self[_copy]
+# CHECK-NEXT:     [[M5:%.*]] = lit.ref.struct.ger %other[_copy]
 # CHECK-NEXT:     [[M6:%.*]] = lit.load.consume [[M5]]
 # CHECK-NEXT:     lit.ref.store [[M6]], [[M4]]
 # CHECK-NEXT:     [[M7:%.*]] = lit.ref.struct.ger %self[call]
