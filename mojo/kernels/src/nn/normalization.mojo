@@ -611,6 +611,7 @@ fn layer_norm_cpu[
 
 
 @register_internal("mo.layer_norm")
+@always_inline
 fn layer_norm[
     type: DType,
     rank: Int,
