@@ -17,10 +17,8 @@ import benchmark
 from algorithm.functional import elementwise
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._compile import _get_gpu_target
-from gpu.host.memory_v1 import _make_ctx_current
-from gpu.host.nvidia_cuda import CUDA
 from layout import Layout
-from layout._utils import ManagedLayoutGPUTensor
+from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from layout.layout_tensor import LayoutTensor
 from layout.runtime_layout import RuntimeLayout
@@ -196,36 +194,59 @@ fn test_dual_matmul[
     ) if transpose_b else Layout.row_major(K, N)
     var layout_c = runtime_row_major[N](M)
 
-    var mat_a = ManagedLayoutGPUTensor[src_type](layout_a)
-    randn(mat_a.tensor.ptr, layout_a.size())
-    var mat_b0 = ManagedLayoutGPUTensor[src_type, layout_b]()
-    var mat_b1 = ManagedLayoutGPUTensor[src_type, layout_b]()
+    var mat_a = ManagedLayoutTensor[src_type](layout_a, ctx)
+    randn(mat_a.tensor().ptr, layout_a.size())
+    var mat_b0 = ManagedLayoutTensor[src_type, layout_b](ctx)
+    var mat_b1 = ManagedLayoutTensor[src_type, layout_b](ctx)
 
-    rand(mat_b0.tensor.ptr, layout_b.size(), min=0.0, max=1.0)
-    rand(mat_b1.tensor.ptr, layout_b.size(), min=-1.0, max=0.0)
-    var mat_c = ManagedLayoutGPUTensor[dst_type](layout_c)
+    rand(mat_b0.tensor().ptr, layout_b.size(), min=0.0, max=1.0)
+    rand(mat_b1.tensor().ptr, layout_b.size(), min=-1.0, max=0.0)
+    var mat_c = ManagedLayoutTensor[dst_type](layout_c, ctx)
+
+    var mat_c_device_tensor = mat_c.device_tensor()
+    var mat_a_device_tensor = mat_a.device_tensor()
+    var mat_b0_device_tensor = mat_b0.device_tensor()
+    var mat_b1_device_tensor = mat_b1.device_tensor()
 
     @always_inline
     @parameter
-    fn run_dual_gemm():
+    fn run_dual_gemm() raises:
         if M <= 128:
             multistage_dual_gemm[
                 transpose_b=transpose_b,
                 binary_lambda_fn=binary_sub,
                 config=M128_N28672_K4096_config,
-            ](mat_c.tensor, mat_a.tensor, mat_b0.tensor, mat_b1.tensor, ctx)
+            ](
+                mat_c_device_tensor,
+                mat_a_device_tensor,
+                mat_b0_device_tensor,
+                mat_b1_device_tensor,
+                ctx,
+            )
         elif M <= 256:
             multistage_dual_gemm[
                 transpose_b=transpose_b,
                 binary_lambda_fn=binary_sub,
                 config=M256_N28672_K4096_config,
-            ](mat_c.tensor, mat_a.tensor, mat_b0.tensor, mat_b1.tensor, ctx)
+            ](
+                mat_c_device_tensor,
+                mat_a_device_tensor,
+                mat_b0_device_tensor,
+                mat_b1_device_tensor,
+                ctx,
+            )
         else:
             multistage_dual_gemm[
                 transpose_b=transpose_b,
                 binary_lambda_fn=binary_sub,
                 config=M512_N28672_K4096_config,
-            ](mat_c.tensor, mat_a.tensor, mat_b0.tensor, mat_b1.tensor, ctx)
+            ](
+                mat_c_device_tensor,
+                mat_a_device_tensor,
+                mat_b0_device_tensor,
+                mat_b1_device_tensor,
+                ctx,
+            )
 
     var dual_gemm_time: Float64 = 0.0
     if do_benchmark:
@@ -250,50 +271,54 @@ fn test_dual_matmul[
     alias layout_b01 = Layout.row_major(
         2 * N, K
     ) if transpose_b else Layout.row_major(K, 2 * N)
-    var mat_b01 = ManagedLayoutGPUTensor[src_type, layout_b01]()
+    var mat_b01 = ManagedLayoutTensor[src_type, layout_b01](ctx)
     alias src_simd_width = simdwidthof[src_type]()
 
-    var mat_b01v = mat_b01.tensor.vectorize[1, src_simd_width]()
+    var mat_b01v = mat_b01.tensor().vectorize[1, src_simd_width]()
+    var mat_b0_tensor = mat_b0.tensor()
+    var mat_b1_tensor = mat_b1.tensor()
 
     @parameter
     if transpose_b:
         for n in range(N):
             for k in range(K // src_simd_width):
                 mat_b01v[n, k] = rebind[SIMD[src_type, mat_b01v.element_size]](
-                    mat_b0.tensor.vectorize[1, src_simd_width]()[n, k]
+                    mat_b0_tensor.vectorize[1, src_simd_width]()[n, k]
                 )
                 mat_b01v[N + n, k] = rebind[
                     SIMD[src_type, mat_b01v.element_size]
-                ](mat_b1.tensor.vectorize[1, src_simd_width]()[n, k])
+                ](mat_b1_tensor.vectorize[1, src_simd_width]()[n, k])
     else:
         alias Niter = N // src_simd_width
         for k in range(K):
             for n in range(Niter):
                 mat_b01v[k, n] = rebind[SIMD[src_type, mat_b01v.element_size]](
-                    mat_b0.tensor.vectorize[1, src_simd_width]()[k, n]
+                    mat_b0_tensor.vectorize[1, src_simd_width]()[k, n]
                 )
                 mat_b01v[k, Niter + n] = rebind[
                     SIMD[src_type, mat_b01v.element_size]
-                ](mat_b1.tensor.vectorize[1, src_simd_width]()[k, n])
+                ](mat_b1_tensor.vectorize[1, src_simd_width]()[k, n])
 
     _ = mat_b0^
     _ = mat_b1^
 
     var layout_c01 = runtime_row_major[2 * N](M)
-    var mat_c01 = ManagedLayoutGPUTensor[dst_type](layout_c01)
+    var mat_c01 = ManagedLayoutTensor[dst_type](layout_c01, ctx)
+    var mat_c01_device_tensor = mat_c01.device_tensor()
+    var mat_b01_device_tensor = mat_b01.device_tensor()
 
     @always_inline
     @parameter
-    fn run_naive_dual_gemm():
+    fn run_naive_dual_gemm() raises:
         if M <= 128:
             naive_dual_gemm[
                 transpose_b=transpose_b,
                 binary_lambda_fn=binary_sub,
                 config=M128_N28672_K4096_config,
             ](
-                mat_c01.tensor,
-                mat_a.tensor,
-                mat_b01.tensor,
+                mat_c01_device_tensor,
+                mat_a_device_tensor,
+                mat_b01_device_tensor,
                 ctx,
             )
         elif M <= 256:
@@ -302,9 +327,9 @@ fn test_dual_matmul[
                 binary_lambda_fn=binary_sub,
                 config=M256_N28672_K4096_config,
             ](
-                mat_c01.tensor,
-                mat_a.tensor,
-                mat_b01.tensor,
+                mat_c01_device_tensor,
+                mat_a_device_tensor,
+                mat_b01_device_tensor,
                 ctx,
             )
         else:
@@ -313,9 +338,9 @@ fn test_dual_matmul[
                 binary_lambda_fn=binary_sub,
                 config=M512_N28672_K4096_config,
             ](
-                mat_c01.tensor,
-                mat_a.tensor,
-                mat_b01.tensor,
+                mat_c01_device_tensor,
+                mat_a_device_tensor,
+                mat_b01_device_tensor,
                 ctx,
             )
 
@@ -339,7 +364,8 @@ fn test_dual_matmul[
         )
     else:
         run_naive_dual_gemm()
-    var mat_c_ref = mat_c01.tensor.split[axis=1](count=2, idx=0)
+    var mat_c_ref = mat_c01.tensor().split[axis=1](count=2, idx=0)
+    var mat_c_tensor = mat_c.tensor()
     _ = mat_a^
     _ = mat_b01^
 
@@ -352,7 +378,7 @@ fn test_dual_matmul[
         for n in range(N // dst_simd_width):
             assert_almost_equal(
                 rebind[SIMD[dst_type, dst_simd_width]](
-                    mat_c.tensor.vectorize[1, dst_simd_width]()[m, n]
+                    mat_c_tensor.vectorize[1, dst_simd_width]()[m, n]
                 ),
                 rebind[SIMD[dst_type, dst_simd_width]](
                     mat_c_ref.vectorize[1, dst_simd_width]()[m, n]
@@ -372,7 +398,6 @@ fn main() raises:
         if args[i] == "--benchmark" or args[i] == "--benchmark=yes":
             do_benchmark = True
     with DeviceContext() as ctx:
-        var prev_ctx = _make_ctx_current(CUDA(ctx))
         test_dual_matmul[transpose_b=False](ctx, do_benchmark=do_benchmark)
         test_dual_matmul[transpose_b=True](ctx, do_benchmark=do_benchmark)
         alias Ms = StaticTuple[Int, 3](128, 256, 1024)
@@ -390,5 +415,3 @@ fn main() raises:
             test_dual_matmul[transpose_b=True, N=N, K=K](
                 ctx, M=M, do_benchmark=do_benchmark
             )
-
-        _ = _make_ctx_current(prev_ctx)

@@ -19,8 +19,6 @@ from buffer.dimlist import Dim, DimList
 from builtin.io import _printf
 from gpu import WARP_SIZE, BlockIdx, GridDim, ThreadIdx, barrier, lane_id
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.memory_v1 import _make_ctx_current
-from gpu.host.nvidia_cuda import CUDA
 from gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
@@ -29,7 +27,7 @@ from gpu.memory import (
     external_memory,
 )
 from layout import Layout, LayoutTensor
-from layout._utils import ManagedLayoutGPUTensor
+from layout._utils import ManagedLayoutTensor
 from layout.fillers import arange
 from layout.int_tuple import UNKNOWN_VALUE, to_int
 from layout.layout import size
@@ -667,31 +665,35 @@ fn test_b2b_matmul(ctx: DeviceContext) raises:
     alias dst_type = DType.float32
     alias src_type = DType.bfloat16
 
-    var mat_a = ManagedLayoutGPUTensor[src_type, layout_a]()
-    var mat_b = ManagedLayoutGPUTensor[src_type, layout_b]()
-    var mat_c = ManagedLayoutGPUTensor[src_type, layout_c]()
-    var mat_d = ManagedLayoutGPUTensor[dst_type, layout_d]()
+    var mat_a = ManagedLayoutTensor[src_type, layout_a](ctx)
+    var mat_b = ManagedLayoutTensor[src_type, layout_b](ctx)
+    var mat_c = ManagedLayoutTensor[src_type, layout_c](ctx)
+    var mat_d = ManagedLayoutTensor[dst_type, layout_d](ctx)
     var host_d_ref = tb[dst_type]().row_major[M, N]().alloc()
     var host_ab = tb[dst_type]().row_major[M, L]().alloc()
     var host_ab_downcast = tb[src_type]().row_major[M, L]().alloc()
+
+    var mat_a_tensor = mat_a.tensor()
+    var mat_b_tensor = mat_b.tensor()
+    var mat_c_tensor = mat_c.tensor()
     for m in range(M):
         for k in range(K):
             # mat_a.tensor[m, k] = ((m + 1) / K).cast[src_type]()
             # mat_a.tensor[m, k] = (1 / K).cast[src_type]()
-            mat_a.tensor[m, k] = ((k + m * K) / (M * K)).cast[src_type]()
+            mat_a_tensor[m, k] = ((k + m * K) / (M * K)).cast[src_type]()
     for k in range(K):
         for l in range(L):
             # mat_b.tensor[k, l] = 1
-            mat_b.tensor[k, l] = l + k * L
+            mat_b_tensor[k, l] = l + k * L
     for l in range(L):
         for n in range(N):
-            mat_c.tensor[l, n] = ((n * L + l) * 0.125).cast[src_type]()
+            mat_c_tensor[l, n] = ((n * L + l) * 0.125).cast[src_type]()
             # mat_c.tensor[l, n] = n + l * N
-    matmul_naive(host_ab, mat_a.tensor, mat_b.tensor)
+    matmul_naive(host_ab, mat_a_tensor, mat_b_tensor)
     for m in range(M):
         for l in range(L):
             host_ab_downcast[m, l] = host_ab[m, l].cast[src_type]()
-    matmul_naive(host_d_ref, host_ab_downcast, mat_c.tensor)
+    matmul_naive(host_d_ref, host_ab_downcast, mat_c_tensor)
     # print("Host Matrix:\n", host_d_ref)
 
     alias config = BackToBackMatmulConfig[dst_type, src_type](
@@ -700,22 +702,28 @@ fn test_b2b_matmul(ctx: DeviceContext) raises:
         num_pipeline_stages=2,
     )
     multistage_b2b_gemm[config](
-        mat_d.tensor, mat_a.tensor, mat_b.tensor, mat_c.tensor, ctx
+        mat_d.device_tensor(),
+        mat_a.device_tensor(),
+        mat_b.device_tensor(),
+        mat_c.device_tensor(),
+        ctx,
     )
 
     ctx.synchronize()
     # print("Device Matrix:\n", mat_d.tensor)
-
+    var mat_d_tensor = mat_d.tensor()
     for m in range(M):
         for n in range(N):
             assert_almost_equal(
-                mat_d.tensor[m, n],
+                mat_d_tensor[m, n],
                 host_d_ref[m, n],
             )
+    _ = mat_a^
+    _ = mat_b^
+    _ = mat_c^
+    _ = mat_d^
 
 
 fn main() raises:
     with DeviceContext() as ctx:
-        var prev_ctx = _make_ctx_current(CUDA(ctx))
         test_b2b_matmul(ctx)
-        _ = _make_ctx_current(prev_ctx)

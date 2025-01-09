@@ -14,8 +14,6 @@ from sys import bitwidthof, simdwidthof
 
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.host.memory_v1 import _make_ctx_current
-from gpu.host.nvidia_cuda import CUDA
 from gpu.id import BlockIdx, ThreadIdx
 from gpu.memory import (
     AddressSpace,
@@ -24,12 +22,8 @@ from gpu.memory import (
     async_copy_wait_group,
 )
 from layout import *
-from layout._utils import (
-    ManagedLayoutTensor,
-    gpu_free,
-    gpu_managed_alloc,
-    gpu_managed_alloc_runtime,
-)
+from layout._utils import ManagedLayoutTensor
+
 from layout.fillers import arange
 from layout.layout_tensor import (
     UNKNOWN_VALUE,
@@ -91,15 +85,9 @@ fn test_async_copy[
         layout, bitwidth = bitwidthof[Int]()
     ].row_major(IndexList[2](M, N))
 
-    var input = ManagedLayoutTensor[
-        DType.float32,
-        layout,
-        gpu_managed_alloc,
-        gpu_free,
-        gpu_managed_alloc_runtime,
-    ](runtime_layout)
+    var input = ManagedLayoutTensor[DType.float32, layout](runtime_layout, ctx)
 
-    arange(input.tensor)
+    arange(input.tensor())
 
     alias kernel_type = async_copy_kernel[layout, BM, BN]
 
@@ -107,14 +95,14 @@ fn test_async_copy[
 
     ctx.enqueue_function(
         kernel,
-        input,
+        input.device_tensor(),
         grid_dim=(M // BM, N // BN),
         block_dim=(BM, BN),
     )
 
     ctx.synchronize()
-    print(input.tensor)
 
+    print(input.tensor())
     _ = input^
 
 
@@ -208,19 +196,13 @@ fn test_dynamic_async_copy[
     var input = ManagedLayoutTensor[
         DType.float32,
         unknown_layout,
-        gpu_managed_alloc,
-        gpu_free,
-        gpu_managed_alloc_runtime,
-    ](input_runtime_layout)
-    arange(input.tensor)
+    ](input_runtime_layout, ctx)
+    arange(input.tensor())
 
     var output = ManagedLayoutTensor[
         DType.float32,
         unknown_layout,
-        gpu_managed_alloc,
-        gpu_free,
-        gpu_managed_alloc_runtime,
-    ](output_runtime_layout)
+    ](output_runtime_layout, ctx)
 
     alias kernel_type = async_dynamic_copy_kernel[
         unknown_layout,
@@ -234,14 +216,15 @@ fn test_dynamic_async_copy[
 
     ctx.enqueue_function(
         kernel,
-        input.tensor,
-        output.tensor,
+        input.device_tensor(),
+        output.device_tensor(),
         grid_dim=(ceildiv(M, BM), ceildiv(M, BN)),
         block_dim=(1, 1),
     )
 
     ctx.synchronize()
-    print(output.tensor)
+
+    print(output.tensor())
 
     _ = input^
     _ = output^
@@ -326,19 +309,13 @@ fn test_swizzle_copy[
     var a_tensor = ManagedLayoutTensor[
         DType.float32,
         layout,
-        gpu_managed_alloc,
-        gpu_free,
-        gpu_managed_alloc_runtime,
-    ](a_runtime_layout)
-    arange(a_tensor.tensor)
+    ](a_runtime_layout, ctx)
+    arange(a_tensor.tensor())
 
     var b_tensor = ManagedLayoutTensor[
         DType.float32,
         layout,
-        gpu_managed_alloc,
-        gpu_free,
-        gpu_managed_alloc_runtime,
-    ](b_runtime_layout)
+    ](b_runtime_layout, ctx)
 
     alias copy = swizzle_copy[
         DType.float32,
@@ -351,15 +328,14 @@ fn test_swizzle_copy[
 
     ctx.enqueue_function(
         func,
-        a_tensor.tensor,
-        b_tensor.tensor,
+        a_tensor.device_tensor(),
+        b_tensor.device_tensor(),
         grid_dim=(ceildiv(M, BM), 1, 1),
         block_dim=(num_threads, 1, 1),
     )
 
     ctx.synchronize()
-
-    print(b_tensor.tensor)
+    print(b_tensor.tensor())
 
     _ = a_tensor^
     _ = b_tensor^
@@ -486,12 +462,9 @@ fn test_masked_async_copy[
     var input = ManagedLayoutTensor[
         DType.float32,
         layout,
-        gpu_managed_alloc,
-        gpu_free,
-        gpu_managed_alloc_runtime,
-    ](runtime_layout)
+    ](runtime_layout, ctx)
 
-    arange(input.tensor)
+    arange(input.tensor())
 
     alias kernel_type = masked_async_copy_kernel[
         Layout.row_major(M, N), M - skew_rows
@@ -500,13 +473,14 @@ fn test_masked_async_copy[
 
     ctx.enqueue_function(
         kernel,
-        input,
+        input.device_tensor(),
         grid_dim=(1,),
         block_dim=(8,),
     )
 
     ctx.synchronize()
-    print(input.tensor)
+
+    print(input.tensor())
 
     _ = input^
 
@@ -590,12 +564,9 @@ fn test_masked_copy[
     var input = ManagedLayoutTensor[
         DType.float32,
         layout,
-        gpu_managed_alloc,
-        gpu_free,
-        gpu_managed_alloc_runtime,
-    ](runtime_layout)
+    ](runtime_layout, ctx)
 
-    arange(input.tensor)
+    arange(input.tensor())
 
     alias kernel_type = masked_copy_kernel[
         Layout.row_major(M, N), M - skew_rows
@@ -604,13 +575,14 @@ fn test_masked_copy[
 
     ctx.enqueue_function(
         kernel,
-        input,
+        input.device_tensor(),
         grid_dim=(1,),
         block_dim=(8,),
     )
 
     ctx.synchronize()
-    print(input.tensor)
+
+    print(input.tensor())
 
     _ = input^
 
@@ -687,12 +659,9 @@ fn test_partial_copy_dram_to_sram_async[
     var input = ManagedLayoutTensor[
         DType.float32,
         layout,
-        gpu_managed_alloc,
-        gpu_free,
-        gpu_managed_alloc_runtime,
-    ]()
+    ](ctx)
 
-    arange(input.tensor)
+    arange(input.tensor())
 
     alias kernel_type = partial_copy_dram_to_sram_async_kernel[
         layout,
@@ -703,14 +672,14 @@ fn test_partial_copy_dram_to_sram_async[
 
     ctx.enqueue_function(
         kernel,
-        input,
+        input.device_tensor(),
         grid_dim=(1,),
         block_dim=(num_threads,),
     )
 
     ctx.synchronize()
 
-    print(input.tensor)
+    print(input.tensor())
 
     _ = input^
 
@@ -771,15 +740,12 @@ fn test_copy_sram_to_dram[
     var input = ManagedLayoutTensor[
         type,
         layout,
-        gpu_managed_alloc,
-        gpu_free,
-        gpu_managed_alloc_runtime,
-    ](runtime_layout)
-    _ = input.tensor.fill(-1.0)
+    ](runtime_layout, ctx)
+    _ = input.tensor().fill(-1.0)
 
     alias tile_layout = Layout.row_major(M - skew_M, N)
 
-    var tile_tensor = input.tensor.tile[M - skew_M, N](0, 0)
+    var tile_tensor = input.device_tensor().tile[M - skew_M, N](0, 0)
 
     alias kernel_type = copy_sram_to_dram_kernel[
         type, tile_layout, M, N, binary_op
@@ -794,7 +760,8 @@ fn test_copy_sram_to_dram[
     )
 
     ctx.synchronize()
-    print(tile_tensor)
+
+    print(input.tensor().tile[M - skew_M, N](0, 0))
 
     _ = input^
 
@@ -885,10 +852,7 @@ fn test_copy_local_to_local[
     var output = ManagedLayoutTensor[
         type,
         layout,
-        gpu_managed_alloc,
-        gpu_free,
-        gpu_managed_alloc_runtime,
-    ]()
+    ](ctx)
 
     alias kernel_type = copy_local_to_local_kernel[
         type, layout, WM, WN, MMA_M, MMA_N
@@ -897,13 +861,14 @@ fn test_copy_local_to_local[
 
     ctx.enqueue_function(
         kernel,
-        output.tensor,
+        output.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(8, 1),
     )
 
     ctx.synchronize()
-    print(output.tensor)
+
+    print(output.tensor())
 
     _ = output^
 
@@ -979,10 +944,7 @@ fn test_copy_local_to_sram[
     var output = ManagedLayoutTensor[
         type,
         layout,
-        gpu_managed_alloc,
-        gpu_free,
-        gpu_managed_alloc_runtime,
-    ]()
+    ](ctx)
 
     alias kernel_type = copy_local_to_sram_kernel[
         type, layout, WM, WN, MMA_M, MMA_N
@@ -991,13 +953,14 @@ fn test_copy_local_to_sram[
 
     ctx.enqueue_function(
         kernel,
-        output.tensor,
+        output.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(8, 1),
     )
 
     ctx.synchronize()
-    print(output.tensor)
+
+    print(output.tensor())
 
     _ = output^
 
@@ -1023,8 +986,6 @@ def run_copy_local_to_sram_tests(ctx: DeviceContext):
 
 fn main() raises:
     with DeviceContext() as ctx:
-        var prev_ctx = _make_ctx_current(CUDA(ctx))
-
         run_async_copy_tests(ctx)
         run_dynamic_async_copy_tests(ctx)
         run_swizzle_copy_tests(ctx)
@@ -1034,5 +995,3 @@ fn main() raises:
         run_copy_sram_to_dram_tests(ctx)
         run_copy_local_to_local_tests(ctx)
         run_copy_local_to_sram_tests(ctx)
-
-        _ = _make_ctx_current(prev_ctx)

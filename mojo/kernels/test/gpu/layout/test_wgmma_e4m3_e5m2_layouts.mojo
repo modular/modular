@@ -12,8 +12,6 @@ from builtin.io import _printf
 from gpu import barrier
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
-from gpu.host.memory_v1 import _make_ctx_current
-from gpu.host.nvidia_cuda import CUDA
 from gpu.id import ThreadIdx
 from gpu.intrinsics import threadfence
 from gpu.memory import AddressSpace
@@ -25,7 +23,7 @@ from gpu.mma import (
     wgmma_wait_group_sync,
 )
 from layout import IntTuple, Layout, LayoutTensor
-from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
+from layout._utils import ManagedLayoutTensor
 from layout.fillers import arange
 from layout.int_tuple import to_int
 from layout.layout import print_layout
@@ -255,30 +253,33 @@ def wgmma_e4m3_e4m3_f32_64x8x32(ctx: DeviceContext):
     alias K = 32
 
     var lhs = ManagedLayoutTensor[
-        DType.float8e4m3, Layout.row_major(M, K), gpu_managed_alloc, gpu_free
-    ]()
+        DType.float8e4m3,
+        Layout.row_major(M, K),
+    ](ctx)
 
     @parameter
     for i in range(M):
 
         @parameter
         for j in range(K):
-            lhs.tensor[i, j] = i + j
+            lhs.tensor()[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
-        DType.float8e4m3, Layout.row_major(K, N), gpu_managed_alloc, gpu_free
-    ]()
+        DType.float8e4m3,
+        Layout.row_major(K, N),
+    ](ctx)
 
     @parameter
     for i in range(K):
 
         @parameter
         for j in range(N):
-            rhs.tensor[i, j] = i + j
+            rhs.tensor()[i, j] = i + j
 
     var res = ManagedLayoutTensor[
-        DType.float32, Layout.row_major(M, N), gpu_managed_alloc, gpu_free
-    ]()
+        DType.float32,
+        Layout.row_major(M, N),
+    ](ctx)
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-A.png
     alias a_smem_layout = Layout(
@@ -309,14 +310,18 @@ def wgmma_e4m3_e4m3_f32_64x8x32(ctx: DeviceContext):
 
     ctx.enqueue_function(
         func,
-        lhs.tensor,
-        rhs.tensor,
-        res.tensor,
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
     ctx.synchronize()
-    print(res.tensor)
+
+    print(res.tensor())
+    _ = rhs^
+    _ = lhs^
+    _ = res^
 
 
 # CHECK-LABEL: wgmma_e5m2_e5m2_f32_64x8x32
@@ -391,30 +396,33 @@ def wgmma_e5m2_e5m2_f32_64x8x32(ctx: DeviceContext):
     alias K = 32
 
     var lhs = ManagedLayoutTensor[
-        DType.float8e5m2, Layout.row_major(M, K), gpu_managed_alloc, gpu_free
-    ]()
+        DType.float8e5m2,
+        Layout.row_major(M, K),
+    ](ctx)
 
     @parameter
     for i in range(M):
 
         @parameter
         for j in range(K):
-            lhs.tensor[i, j] = i + j
+            lhs.tensor()[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
-        DType.float8e5m2, Layout.row_major(K, N), gpu_managed_alloc, gpu_free
-    ]()
+        DType.float8e5m2,
+        Layout.row_major(K, N),
+    ](ctx)
 
     @parameter
     for i in range(K):
 
         @parameter
         for j in range(N):
-            rhs.tensor[i, j] = i + j
+            rhs.tensor()[i, j] = i + j
 
     var res = ManagedLayoutTensor[
-        DType.float32, Layout.row_major(M, N), gpu_managed_alloc, gpu_free
-    ]()
+        DType.float32,
+        Layout.row_major(M, N),
+    ](ctx)
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-A.png
     alias a_smem_layout = Layout(
@@ -445,14 +453,18 @@ def wgmma_e5m2_e5m2_f32_64x8x32(ctx: DeviceContext):
 
     ctx.enqueue_function(
         func,
-        lhs.tensor,
-        rhs.tensor,
-        res.tensor,
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
     ctx.synchronize()
-    print(res.tensor)
+
+    print(res.tensor())
+    _ = rhs^
+    _ = lhs^
+    _ = res^
 
 
 # CHECK-LABEL: wgmma_e4m3_e5m2_f32_64x8x32
@@ -527,30 +539,33 @@ def wgmma_e4m3_e5m2_f32_64x8x32(ctx: DeviceContext):
     alias K = 32
 
     var lhs = ManagedLayoutTensor[
-        DType.float8e4m3, Layout.row_major(M, K), gpu_managed_alloc, gpu_free
-    ]()
+        DType.float8e4m3,
+        Layout.row_major(M, K),
+    ](ctx)
 
     @parameter
     for i in range(M):
 
         @parameter
         for j in range(K):
-            lhs.tensor[i, j] = i + j
+            lhs.tensor()[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
-        DType.float8e5m2, Layout.row_major(K, N), gpu_managed_alloc, gpu_free
-    ]()
+        DType.float8e5m2,
+        Layout.row_major(K, N),
+    ](ctx)
 
     @parameter
     for i in range(K):
 
         @parameter
         for j in range(N):
-            rhs.tensor[i, j] = i + j
+            rhs.tensor()[i, j] = i + j
 
     var res = ManagedLayoutTensor[
-        DType.float32, Layout.row_major(M, N), gpu_managed_alloc, gpu_free
-    ]()
+        DType.float32,
+        Layout.row_major(M, N),
+    ](ctx)
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-A.png
     alias a_smem_layout = Layout(
@@ -581,14 +596,18 @@ def wgmma_e4m3_e5m2_f32_64x8x32(ctx: DeviceContext):
 
     ctx.enqueue_function(
         func,
-        lhs.tensor,
-        rhs.tensor,
-        res.tensor,
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
     ctx.synchronize()
-    print(res.tensor)
+
+    print(res.tensor())
+    _ = rhs^
+    _ = lhs^
+    _ = res^
 
 
 # CHECK-LABEL: wgmma_e5m2_e4m3_f32_64x8x32
@@ -663,30 +682,33 @@ def wgmma_e5m2_e4m3_f32_64x8x32(ctx: DeviceContext):
     alias K = 32
 
     var lhs = ManagedLayoutTensor[
-        DType.float8e5m2, Layout.row_major(M, K), gpu_managed_alloc, gpu_free
-    ]()
+        DType.float8e5m2,
+        Layout.row_major(M, K),
+    ](ctx)
 
     @parameter
     for i in range(M):
 
         @parameter
         for j in range(K):
-            lhs.tensor[i, j] = i + j
+            lhs.tensor()[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
-        DType.float8e4m3, Layout.row_major(K, N), gpu_managed_alloc, gpu_free
-    ]()
+        DType.float8e4m3,
+        Layout.row_major(K, N),
+    ](ctx)
 
     @parameter
     for i in range(K):
 
         @parameter
         for j in range(N):
-            rhs.tensor[i, j] = i + j
+            rhs.tensor()[i, j] = i + j
 
     var res = ManagedLayoutTensor[
-        DType.float32, Layout.row_major(M, N), gpu_managed_alloc, gpu_free
-    ]()
+        DType.float32,
+        Layout.row_major(M, N),
+    ](ctx)
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-A.png
     alias a_smem_layout = Layout(
@@ -717,14 +739,18 @@ def wgmma_e5m2_e4m3_f32_64x8x32(ctx: DeviceContext):
 
     ctx.enqueue_function(
         func,
-        lhs.tensor,
-        rhs.tensor,
-        res.tensor,
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
     ctx.synchronize()
-    print(res.tensor)
+
+    print(res.tensor())
+    _ = rhs^
+    _ = lhs^
+    _ = res^
 
 
 # CHECK-LABEL: wgmma_e4m3_e4m3_f16_64x8x32
@@ -799,30 +825,33 @@ def wgmma_e4m3_e4m3_f16_64x8x32(ctx: DeviceContext):
     alias K = 32
 
     var lhs = ManagedLayoutTensor[
-        DType.float8e4m3, Layout.row_major(M, K), gpu_managed_alloc, gpu_free
-    ]()
+        DType.float8e4m3,
+        Layout.row_major(M, K),
+    ](ctx)
 
     @parameter
     for i in range(M):
 
         @parameter
         for j in range(K):
-            lhs.tensor[i, j] = i + j
+            lhs.tensor()[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
-        DType.float8e4m3, Layout.row_major(K, N), gpu_managed_alloc, gpu_free
-    ]()
+        DType.float8e4m3,
+        Layout.row_major(K, N),
+    ](ctx)
 
     @parameter
     for i in range(K):
 
         @parameter
         for j in range(N):
-            rhs.tensor[i, j] = i + j
+            rhs.tensor()[i, j] = i + j
 
     var res = ManagedLayoutTensor[
-        DType.float16, Layout.row_major(M, N), gpu_managed_alloc, gpu_free
-    ]()
+        DType.float16,
+        Layout.row_major(M, N),
+    ](ctx)
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-A.png
     alias a_smem_layout = Layout(
@@ -853,14 +882,18 @@ def wgmma_e4m3_e4m3_f16_64x8x32(ctx: DeviceContext):
 
     ctx.enqueue_function(
         func,
-        lhs.tensor,
-        rhs.tensor,
-        res.tensor,
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
     ctx.synchronize()
-    print(res.tensor)
+
+    print(res.tensor())
+    _ = rhs^
+    _ = lhs^
+    _ = res^
 
 
 # CHECK-LABEL: wgmma_e5m2_e5m2_f16_64x8x32
@@ -935,30 +968,33 @@ def wgmma_e5m2_e5m2_f16_64x8x32(ctx: DeviceContext):
     alias K = 32
 
     var lhs = ManagedLayoutTensor[
-        DType.float8e5m2, Layout.row_major(M, K), gpu_managed_alloc, gpu_free
-    ]()
+        DType.float8e5m2,
+        Layout.row_major(M, K),
+    ](ctx)
 
     @parameter
     for i in range(M):
 
         @parameter
         for j in range(K):
-            lhs.tensor[i, j] = i + j
+            lhs.tensor()[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
-        DType.float8e5m2, Layout.row_major(K, N), gpu_managed_alloc, gpu_free
-    ]()
+        DType.float8e5m2,
+        Layout.row_major(K, N),
+    ](ctx)
 
     @parameter
     for i in range(K):
 
         @parameter
         for j in range(N):
-            rhs.tensor[i, j] = i + j
+            rhs.tensor()[i, j] = i + j
 
     var res = ManagedLayoutTensor[
-        DType.float16, Layout.row_major(M, N), gpu_managed_alloc, gpu_free
-    ]()
+        DType.float16,
+        Layout.row_major(M, N),
+    ](ctx)
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-A.png
     alias a_smem_layout = Layout(
@@ -989,14 +1025,18 @@ def wgmma_e5m2_e5m2_f16_64x8x32(ctx: DeviceContext):
 
     ctx.enqueue_function(
         func,
-        lhs.tensor,
-        rhs.tensor,
-        res.tensor,
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
     ctx.synchronize()
-    print(res.tensor)
+
+    print(res.tensor())
+    _ = rhs^
+    _ = lhs^
+    _ = res^
 
 
 # CHECK-LABEL: wgmma_e4m3_e5m2_f16_64x8x32
@@ -1071,30 +1111,33 @@ def wgmma_e4m3_e5m2_f16_64x8x32(ctx: DeviceContext):
     alias K = 32
 
     var lhs = ManagedLayoutTensor[
-        DType.float8e4m3, Layout.row_major(M, K), gpu_managed_alloc, gpu_free
-    ]()
+        DType.float8e4m3,
+        Layout.row_major(M, K),
+    ](ctx)
 
     @parameter
     for i in range(M):
 
         @parameter
         for j in range(K):
-            lhs.tensor[i, j] = i + j
+            lhs.tensor()[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
-        DType.float8e5m2, Layout.row_major(K, N), gpu_managed_alloc, gpu_free
-    ]()
+        DType.float8e5m2,
+        Layout.row_major(K, N),
+    ](ctx)
 
     @parameter
     for i in range(K):
 
         @parameter
         for j in range(N):
-            rhs.tensor[i, j] = i + j
+            rhs.tensor()[i, j] = i + j
 
     var res = ManagedLayoutTensor[
-        DType.float16, Layout.row_major(M, N), gpu_managed_alloc, gpu_free
-    ]()
+        DType.float16,
+        Layout.row_major(M, N),
+    ](ctx)
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-A.png
     alias a_smem_layout = Layout(
@@ -1125,14 +1168,18 @@ def wgmma_e4m3_e5m2_f16_64x8x32(ctx: DeviceContext):
 
     ctx.enqueue_function(
         func,
-        lhs.tensor,
-        rhs.tensor,
-        res.tensor,
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
     ctx.synchronize()
-    print(res.tensor)
+
+    print(res.tensor())
+    _ = rhs^
+    _ = lhs^
+    _ = res^
 
 
 # CHECK-LABEL: wgmma_e5m2_e4m3_f16_64x8x32
@@ -1207,30 +1254,33 @@ def wgmma_e5m2_e4m3_f16_64x8x32(ctx: DeviceContext):
     alias K = 32
 
     var lhs = ManagedLayoutTensor[
-        DType.float8e5m2, Layout.row_major(M, K), gpu_managed_alloc, gpu_free
-    ]()
+        DType.float8e5m2,
+        Layout.row_major(M, K),
+    ](ctx)
 
     @parameter
     for i in range(M):
 
         @parameter
         for j in range(K):
-            lhs.tensor[i, j] = i + j
+            lhs.tensor()[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
-        DType.float8e4m3, Layout.row_major(K, N), gpu_managed_alloc, gpu_free
-    ]()
+        DType.float8e4m3,
+        Layout.row_major(K, N),
+    ](ctx)
 
     @parameter
     for i in range(K):
 
         @parameter
         for j in range(N):
-            rhs.tensor[i, j] = i + j
+            rhs.tensor()[i, j] = i + j
 
     var res = ManagedLayoutTensor[
-        DType.float16, Layout.row_major(M, N), gpu_managed_alloc, gpu_free
-    ]()
+        DType.float16,
+        Layout.row_major(M, N),
+    ](ctx)
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-A.png
     alias a_smem_layout = Layout(
@@ -1261,19 +1311,22 @@ def wgmma_e5m2_e4m3_f16_64x8x32(ctx: DeviceContext):
 
     ctx.enqueue_function(
         func,
-        lhs.tensor,
-        rhs.tensor,
-        res.tensor,
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
     ctx.synchronize()
-    print(res.tensor)
+
+    print(res.tensor())
+    _ = rhs^
+    _ = lhs^
+    _ = res^
 
 
 def main():
     with DeviceContext() as ctx:
-        var prev_ctx = _make_ctx_current(CUDA(ctx))
         wgmma_e4m3_e4m3_f32_64x8x32(ctx)
         wgmma_e5m2_e5m2_f32_64x8x32(ctx)
         wgmma_e4m3_e5m2_f32_64x8x32(ctx)
@@ -1282,4 +1335,3 @@ def main():
         wgmma_e5m2_e5m2_f16_64x8x32(ctx)
         wgmma_e4m3_e5m2_f16_64x8x32(ctx)
         wgmma_e5m2_e4m3_f16_64x8x32(ctx)
-        _ = _make_ctx_current(prev_ctx)

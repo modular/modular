@@ -13,11 +13,9 @@ from sys import simdwidthof
 from algorithm.functional import elementwise
 from gpu import BlockIdx, ThreadIdx
 from gpu.host import DeviceContext
-from gpu.host.memory_v1 import _make_ctx_current
-from gpu.host.nvidia_cuda import CUDA
 from gpu.host._compile import _get_gpu_target
 from layout import Layout, LayoutTensor, RuntimeLayout
-from layout._utils import ManagedLayoutGPUTensor
+from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 
 from utils.index import IndexList
@@ -62,17 +60,16 @@ fn test_dual_matmul[
 ](ctx: DeviceContext, M: Int = 512) raises:
     alias dst_type = DType.float32
     var layout_c01 = runtime_row_major[2 * N](M)
-    var mat_c01 = ManagedLayoutGPUTensor[dst_type](layout_c01)
+    var mat_c01 = ManagedLayoutTensor[dst_type](layout_c01, ctx)
     test_elementwise_print(
-        mat_c01.tensor,
+        mat_c01.device_tensor(),
         ctx,
     )
     # CHECK: returned from test_elementwise_print
     print("returned from test_elementwise_print")
+    _ = mat_c01^
 
 
 fn main() raises:
     with DeviceContext() as ctx:
-        var prev_ctx = _make_ctx_current(CUDA(ctx))
         test_dual_matmul(ctx)
-        _ = _make_ctx_current(prev_ctx)

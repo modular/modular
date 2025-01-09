@@ -21,10 +21,8 @@ from gpu import (
     lane_id,
 )
 from gpu.host import DeviceContext, Dim
-from gpu.host.memory_v1 import _make_ctx_current
-from gpu.host.nvidia_cuda import CUDA
 from layout import *
-from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
+from layout._utils import ManagedLayoutTensor
 from layout.math import outer_product_acc
 from layout.tensor_core import *
 from testing import *
@@ -96,54 +94,50 @@ fn test_layout_mma[
     alias layout_b = Layout(IntTuple(K, N), IntTuple(N, 1))
     alias layout_c = Layout(IntTuple(M, N), IntTuple(N, 1))
 
-    var mat_a = ManagedLayoutTensor[
-        in_type, layout_a, gpu_managed_alloc, gpu_free
-    ]()
-    var mat_b = ManagedLayoutTensor[
-        in_type, layout_b, gpu_managed_alloc, gpu_free
-    ]()
-    var mat_c = ManagedLayoutTensor[
-        out_type, layout_c, gpu_managed_alloc, gpu_free
-    ]()
-    var mat_a_n = ManagedLayoutTensor[
-        in_type, layout_a, gpu_managed_alloc, gpu_free
-    ]()
-    var mat_b_n = ManagedLayoutTensor[
-        in_type, layout_b, gpu_managed_alloc, gpu_free
-    ]()
-    var mat_c_n = ManagedLayoutTensor[
-        out_type, layout_c, gpu_managed_alloc, gpu_free
-    ]()
+    var mat_a = ManagedLayoutTensor[in_type, layout_a](ctx)
+    var mat_b = ManagedLayoutTensor[in_type, layout_b](ctx)
+    var mat_c = ManagedLayoutTensor[out_type, layout_c](ctx)
+    var mat_a_n = ManagedLayoutTensor[in_type, layout_a](ctx)
+    var mat_b_n = ManagedLayoutTensor[in_type, layout_b](ctx)
+    var mat_c_n = ManagedLayoutTensor[out_type, layout_c](ctx)
 
     var rand_min = -1 * rng_width
     var rand_max = rng_width
+    var mat_a_tensor = mat_a.tensor()
+    var mat_b_tensor = mat_b.tensor()
+    var mat_c_tensor = mat_c.tensor()
+
+    var mat_a_n_tensor = mat_a_n.tensor()
+    var mat_b_n_tensor = mat_b_n.tensor()
+    var mat_c_n_tensor = mat_c_n.tensor()
 
     for i in range(M):
         for j in range(K):
             var val = random_float64(rand_min, rand_max).cast[DType.float32]()
-            mat_a.tensor[i, j] = val.cast[in_type]()
-            mat_a_n.tensor[i, j] = mat_a.tensor[i, j]
+            mat_a_tensor[i, j] = val.cast[in_type]()
+            mat_a_n_tensor[i, j] = mat_a_tensor[i, j]
     for i in range(K):
         for j in range(N):
             var val = random_float64(rand_min, rand_max).cast[DType.float32]()
-            mat_b.tensor[i, j] = val.cast[in_type]()
-            mat_b_n.tensor[i, j] = mat_b.tensor[i, j]
+            mat_b_tensor[i, j] = val.cast[in_type]()
+            mat_b_n_tensor[i, j] = mat_b_tensor[i, j]
     for i in range(M):
         for j in range(N):
             var val = Float32(0)
-            mat_c.tensor[i, j] = val.cast[out_type]()
-            mat_c_n.tensor[i, j] = mat_c.tensor[i, j]
+            mat_c_tensor[i, j] = val.cast[out_type]()
+            mat_c_n_tensor[i, j] = mat_c_tensor[i, j]
 
     alias mma_func = mma_layout_tc[
         out_type, in_type, shape, layout_c, layout_a, layout_b
     ]
 
     var mma_kernel = ctx.compile_function[mma_func]()
+
     ctx.enqueue_function(
         mma_kernel,
-        mat_c.tensor,
-        mat_a.tensor,
-        mat_b.tensor,
+        mat_c.device_tensor(),
+        mat_a.device_tensor(),
+        mat_b.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(32),
     )
@@ -157,9 +151,9 @@ fn test_layout_mma[
     var naive_kernel = ctx.compile_function[naive_func]()
     ctx.enqueue_function(
         naive_kernel,
-        mat_c_n,
-        mat_a_n,
-        mat_b_n,
+        mat_c_n.device_tensor(),
+        mat_a_n.device_tensor(),
+        mat_b_n.device_tensor(),
         grid_dim=(ceildiv(M, warps_per_block), ceildiv(N, warps_per_block)),
         block_dim=(warps_per_block, warps_per_block),
     )
@@ -168,8 +162,8 @@ fn test_layout_mma[
 
     for i in range(M):
         for j in range(N):
-            var out_val = mat_c.tensor[i, j]
-            var out_ref = mat_c_n.tensor[i, j]
+            var out_val = mat_c.tensor()[i, j]
+            var out_ref = mat_c_n.tensor()[i, j]
             if debug:
                 if not isclose(out_val, out_ref, rtol=rtol):
                     print(i, out_val, out_ref)
@@ -189,7 +183,6 @@ def main():
     alias shape_16816 = IndexList[3](16, 8, 16)
 
     with DeviceContext() as ctx:
-        var prev_ctx = _make_ctx_current(CUDA(ctx))
         test_layout_mma[DType.float32, DType.float32, shape_1684, 16, 8, 4](
             ctx, rtol=1e-01
         )
@@ -202,4 +195,3 @@ def main():
         test_layout_mma[DType.float32, DType.float16, shape_1688, 16, 8, 8](
             ctx, rtol=1e-01
         )
-        _ = _make_ctx_current(prev_ctx)

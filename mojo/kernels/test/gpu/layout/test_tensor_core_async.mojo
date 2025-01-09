@@ -9,13 +9,11 @@
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.memory import AddressSpace
-from gpu.host.memory_v1 import _make_ctx_current
-from gpu.host.nvidia_cuda import CUDA
 from gpu.id import ThreadIdx
 from gpu.sync import barrier
 
 
-from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
+from layout._utils import ManagedLayoutTensor
 from layout import Layout, LayoutTensor, IntTuple
 from layout.fillers import arange
 from layout.tensor_core_async import TensorCoreAsync
@@ -62,19 +60,13 @@ def test_tensor_core_async_tf32_tf32_64x8x8(ctx: DeviceContext):
     alias N = 8
     alias K = 8
 
-    lhs = ManagedLayoutTensor[
-        DType.float32, Layout.row_major(M, K), gpu_managed_alloc, gpu_free
-    ]()
-    arange(lhs.tensor)
+    lhs = ManagedLayoutTensor[DType.float32, Layout.row_major(M, K)](ctx)
+    arange(lhs.tensor())
 
-    rhs = ManagedLayoutTensor[
-        DType.float32, Layout.row_major(K, N), gpu_managed_alloc, gpu_free
-    ]()
-    arange(rhs.tensor)
+    rhs = ManagedLayoutTensor[DType.float32, Layout.row_major(K, N)](ctx)
+    arange(rhs.tensor())
 
-    dst = ManagedLayoutTensor[
-        DType.float32, Layout.row_major(M, N), gpu_managed_alloc, gpu_free
-    ]()
+    dst = ManagedLayoutTensor[DType.float32, Layout.row_major(M, N)](ctx)
 
     func = ctx.compile_function[
         tensor_core_async_tf32_tf32_kernel[dst.layout, lhs.layout, rhs.layout],
@@ -83,9 +75,9 @@ def test_tensor_core_async_tf32_tf32_64x8x8(ctx: DeviceContext):
 
     ctx.enqueue_function(
         func,
-        dst.tensor,
-        lhs.tensor,
-        rhs.tensor,
+        dst.device_tensor(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
@@ -155,7 +147,8 @@ def test_tensor_core_async_tf32_tf32_64x8x8(ctx: DeviceContext):
     # CHECK: 110432.0 114364.0 118296.0 122228.0 126160.0 130092.0 134024.0 137956.0
     # CHECK: 112224.0 116220.0 120216.0 124212.0 128208.0 132204.0 136200.0 140196.0
     # CHECK: 114016.0 118076.0 122136.0 126196.0 130256.0 134316.0 138376.0 142436.0
-    print(dst.tensor)
+
+    print(dst.tensor())
 
     _ = lhs^
     _ = rhs^
@@ -201,19 +194,13 @@ def test_tensor_core_async_bf16_bf16_f32_64x8x16(ctx: DeviceContext):
     alias N = 8
     alias K = 16
 
-    lhs = ManagedLayoutTensor[
-        DType.bfloat16, Layout.row_major(M, K), gpu_managed_alloc, gpu_free
-    ]()
-    arange(lhs.tensor)
+    lhs = ManagedLayoutTensor[DType.bfloat16, Layout.row_major(M, K)](ctx)
+    arange(lhs.tensor())
 
-    rhs = ManagedLayoutTensor[
-        DType.bfloat16, Layout.row_major(K, N), gpu_managed_alloc, gpu_free
-    ]()
-    arange(rhs.tensor)
+    rhs = ManagedLayoutTensor[DType.bfloat16, Layout.row_major(K, N)](ctx)
+    arange(rhs.tensor())
 
-    dst = ManagedLayoutTensor[
-        DType.float32, Layout.row_major(M, N), gpu_managed_alloc, gpu_free
-    ]()
+    dst = ManagedLayoutTensor[DType.float32, Layout.row_major(M, N)](ctx)
 
     func = ctx.compile_function[
         tensor_core_async_bf16_bf16_f32_kernel[
@@ -224,9 +211,9 @@ def test_tensor_core_async_bf16_bf16_f32_64x8x16(ctx: DeviceContext):
 
     ctx.enqueue_function(
         func,
-        dst.tensor,
-        lhs.tensor,
-        rhs.tensor,
+        dst.device_tensor(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
@@ -296,7 +283,8 @@ def test_tensor_core_async_bf16_bf16_f32_64x8x16(ctx: DeviceContext):
     # CHECK: 947072.0 962808.0 978544.0 994280.0 1010016.0 1025752.0 1041488.0 1057224.0
     # CHECK: 962432.0 978424.0 994416.0 1010408.0 1026400.0 1042392.0 1058384.0 1074376.0
     # CHECK: 977792.0 994040.0 1010288.0 1026536.0 1042784.0 1059032.0 1075280.0 1091528.0
-    print(dst.tensor)
+
+    print(dst.tensor())
 
     _ = lhs^
     _ = rhs^
@@ -306,7 +294,5 @@ def test_tensor_core_async_bf16_bf16_f32_64x8x16(ctx: DeviceContext):
 
 def main():
     with DeviceContext() as ctx:
-        var prev_ctx = _make_ctx_current(CUDA(ctx))
         test_tensor_core_async_tf32_tf32_64x8x8(ctx)
         test_tensor_core_async_bf16_bf16_f32_64x8x16(ctx)
-        _ = _make_ctx_current(prev_ctx)

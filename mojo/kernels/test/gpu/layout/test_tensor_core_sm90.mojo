@@ -9,12 +9,10 @@
 from builtin.io import _printf
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
-from gpu.host.memory_v1 import _make_ctx_current
-from gpu.host.nvidia_cuda import CUDA
 from gpu.id import ThreadIdx
 from gpu.mma import mma
 from layout import Layout, LayoutTensor
-from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
+from layout._utils import ManagedLayoutTensor
 from layout.tensor_core import TensorCore
 
 from utils.index import IndexList
@@ -78,18 +76,21 @@ def test_load_and_mma_e4m3_e4m3_f32_16x8x32(ctx: DeviceContext):
     alias in_type = DType.float8e4m3
     alias out_type = DType.float32
     var mat_a = ManagedLayoutTensor[
-        in_type, Layout.row_major(M, K), gpu_managed_alloc, gpu_free
-    ]()
-    arange(mat_a.tensor)
+        in_type,
+        Layout.row_major(M, K),
+    ](ctx)
+    arange(mat_a.tensor())
     var mat_b = ManagedLayoutTensor[
-        in_type, Layout.row_major(K, N), gpu_managed_alloc, gpu_free
-    ]()
-    arange(mat_b.tensor)
+        in_type,
+        Layout.row_major(K, N),
+    ](ctx)
+    arange(mat_b.tensor())
 
     var mat_c = ManagedLayoutTensor[
-        out_type, Layout.row_major(M, N), gpu_managed_alloc, gpu_free
-    ]()
-    _ = mat_c.tensor.fill(0)
+        out_type,
+        Layout.row_major(M, N),
+    ](ctx)
+    _ = mat_c.tensor().fill(0)
 
     alias load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn = load_and_mma_16x8x32[
         out_type,
@@ -105,14 +106,14 @@ def test_load_and_mma_e4m3_e4m3_f32_16x8x32(ctx: DeviceContext):
     ]()
     ctx.enqueue_function(
         func,
-        mat_c.tensor,
-        mat_a.tensor,
-        mat_b.tensor,
+        mat_c.device_tensor(),
+        mat_a.device_tensor(),
+        mat_b.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(32),
     )
     ctx.synchronize()
-    print(mat_c.tensor)
+    print(mat_c.tensor())
 
 
 # CHECK-LABEL: test_load_and_mma_e5m2_e5m2_f32_16x8x32
@@ -140,18 +141,21 @@ def test_load_and_mma_e5m2_e5m2_f32_16x8x32(ctx: DeviceContext):
     alias in_type = DType.float8e5m2
     alias out_type = DType.float32
     var mat_a = ManagedLayoutTensor[
-        in_type, Layout.row_major(M, K), gpu_managed_alloc, gpu_free
-    ]()
-    arange(mat_a.tensor)
+        in_type,
+        Layout.row_major(M, K),
+    ](ctx)
+    arange(mat_a.tensor())
     var mat_b = ManagedLayoutTensor[
-        in_type, Layout.row_major(K, N), gpu_managed_alloc, gpu_free
-    ]()
-    arange(mat_b.tensor)
+        in_type,
+        Layout.row_major(K, N),
+    ](ctx)
+    arange(mat_b.tensor())
 
     var mat_c = ManagedLayoutTensor[
-        out_type, Layout.row_major(M, N), gpu_managed_alloc, gpu_free
-    ]()
-    _ = mat_c.tensor.fill(0)
+        out_type,
+        Layout.row_major(M, N),
+    ](ctx)
+    _ = mat_c.tensor().fill(0)
 
     alias load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn = load_and_mma_16x8x32[
         out_type,
@@ -167,19 +171,17 @@ def test_load_and_mma_e5m2_e5m2_f32_16x8x32(ctx: DeviceContext):
     ]()
     ctx.enqueue_function(
         func,
-        mat_c.tensor,
-        mat_a.tensor,
-        mat_b.tensor,
+        mat_c.device_tensor(),
+        mat_a.device_tensor(),
+        mat_b.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(32),
     )
     ctx.synchronize()
-    print(mat_c.tensor)
+    print(mat_c.tensor())
 
 
 def main():
     with DeviceContext() as ctx:
-        var prev_ctx = _make_ctx_current(CUDA(ctx))
         test_load_and_mma_e4m3_e4m3_f32_16x8x32(ctx)
         test_load_and_mma_e5m2_e5m2_f32_16x8x32(ctx)
-        _ = _make_ctx_current(prev_ctx)

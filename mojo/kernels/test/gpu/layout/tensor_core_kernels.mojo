@@ -12,15 +12,9 @@ from gpu import barrier, lane_id
 from gpu.host import DeviceContext
 from gpu.id import ThreadIdx
 from gpu.memory import _GPUAddressSpace as AddressSpace
-from gpu.host.memory_v1 import _make_ctx_current
-from gpu.host.nvidia_cuda import CUDA
 from layout import Layout, LayoutTensor
-from layout._utils import (
-    ManagedLayoutTensor,
-    gpu_free,
-    gpu_managed_alloc,
-    load_to_simd,
-)
+from layout._utils import ManagedLayoutTensor, load_to_simd
+
 from layout.fillers import arange
 from layout.layout_tensor import copy_dram_to_sram
 from layout.tensor_core import TensorCore
@@ -127,23 +121,24 @@ def test_load_and_mma_and_multiply_operands[
     alias N = shape[1]
     alias K = shape[2]
 
-    var lhs = ManagedLayoutTensor[
-        dtype, Layout.row_major(M, K), gpu_managed_alloc, gpu_free
-    ]()
-    arange(lhs.tensor)
+    var lhs = ManagedLayoutTensor[dtype, Layout.row_major(M, K)](ctx)
+    arange(lhs.tensor())
     alias rhs_layout = Layout.row_major(
         N, K
     ) if transpose_b else Layout.row_major(K, N)
-    var rhs = ManagedLayoutTensor[
-        dtype, rhs_layout, gpu_managed_alloc, gpu_free
-    ]()
-    arange(rhs.tensor)
+    var rhs = ManagedLayoutTensor[dtype, rhs_layout](ctx)
+    arange(rhs.tensor())
     alias mma_load_and_print_kernel_fn = mma_load_and_multiply[
         dst_dtype, dtype, lhs.layout, rhs.layout, shape, transpose_b
     ]
+
     var func = ctx.compile_function[mma_load_and_print_kernel_fn]()
     ctx.enqueue_function(
-        func, lhs.tensor, rhs.tensor, grid_dim=(1, 1), block_dim=(32)
+        func,
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        grid_dim=(1, 1),
+        block_dim=(32),
     )
     ctx.synchronize()
 
@@ -155,18 +150,18 @@ def test_write_res_operand[
     alias N = shape[1]
     alias K = shape[2]
 
-    var dst = ManagedLayoutTensor[
-        dst_dtype, Layout.row_major(M, N), gpu_managed_alloc, gpu_free
-    ]()
-    _ = dst.tensor.fill(0)
-
+    var dst = ManagedLayoutTensor[dst_dtype, Layout.row_major(M, N)](ctx)
+    _ = dst.tensor().fill(0)
     alias mma_load_and_print_kernel_fn = mma_write_operand_kernel[
         dst_dtype, dtype, dst.layout, shape
     ]
     var func = ctx.compile_function[mma_load_and_print_kernel_fn]()
-    ctx.enqueue_function(func, dst.tensor, grid_dim=(1, 1), block_dim=(32))
+    ctx.enqueue_function(
+        func, dst.device_tensor(), grid_dim=(1, 1), block_dim=(32)
+    )
     ctx.synchronize()
-    print(dst.tensor)
+
+    print(dst.tensor())
 
 
 # CHECK-LABEL: test_load_and_mma_f32_f32_16x8x8
@@ -502,14 +497,11 @@ def test_load_operands_ldmatrix[
     alias N = shape[1]
     alias K = shape[2]
 
-    var lhs = ManagedLayoutTensor[
-        dtype, Layout.row_major(M, K), gpu_managed_alloc, gpu_free
-    ]()
-    arange(lhs.tensor)
-    var rhs = ManagedLayoutTensor[
-        dtype, Layout.row_major(K, N), gpu_managed_alloc, gpu_free
-    ]()
-    arange(rhs.tensor)
+    var lhs = ManagedLayoutTensor[dtype, Layout.row_major(M, K)](ctx)
+    arange(lhs.tensor())
+    var rhs = ManagedLayoutTensor[dtype, Layout.row_major(K, N)](ctx)
+    arange(rhs.tensor())
+
     alias mma_load_and_print_kernel_fn = mma_load_and_print_operands_kernel_ldmatrix[
         dst_dtype, dtype, lhs.layout, rhs.layout, shape, transpose_b
     ]
@@ -517,7 +509,11 @@ def test_load_operands_ldmatrix[
         mma_load_and_print_kernel_fn, dump_asm=False
     ]()
     ctx.enqueue_function(
-        func, lhs.tensor, rhs.tensor, grid_dim=(1, 1), block_dim=(32)
+        func,
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        grid_dim=(1, 1),
+        block_dim=(32),
     )
     ctx.synchronize()
     _ = func^
@@ -609,7 +605,6 @@ def test_load_f32_f32_16x8x8_ldmatrix(ctx: DeviceContext):
 
 def main():
     with DeviceContext() as ctx:
-        var prev_ctx = _make_ctx_current(CUDA(ctx))
         test_load_and_mma_f32_f32_16x8x8(ctx)
         test_load_and_mma_f32_f32_16x8x8_b_transpose(ctx)
         test_load_and_mma_f32_f32_16x8x4(ctx)
@@ -620,4 +615,3 @@ def main():
         # ldmatrix
         test_load_f32_bf16_16x8x16_ldmatrix(ctx)
         test_load_f32_f32_16x8x8_ldmatrix(ctx)
-        _ = _make_ctx_current(prev_ctx)

@@ -10,14 +10,12 @@
 from builtin.io import _printf
 from gpu import BlockIdx, GridDim, ThreadIdx, barrier
 from gpu.host import DeviceContext
-from gpu.host.memory_v1 import _make_ctx_current
-from gpu.host.nvidia_cuda import CUDA
 from gpu.memory import (
     _GPUAddressSpace,
     async_copy_commit_group,
     async_copy_wait_group,
 )
-from layout._utils import ManagedLayoutGPUTensor
+from layout._utils import ManagedLayoutTensor
 from layout.fillers import arange
 from layout.layout_tensor import Layout, LayoutTensor
 from memory import UnsafePointer
@@ -28,8 +26,8 @@ from testing import assert_true
 def test_copy_dram_to_sram_async(ctx: DeviceContext):
     print("== test_copy_dram_to_sram_async")
     alias tensor_layout = Layout.row_major(4, 16)
-    var tensor = ManagedLayoutGPUTensor[DType.float32, tensor_layout]()
-    arange(tensor.tensor)
+    var tensor = ManagedLayoutTensor[DType.float32, tensor_layout](ctx)
+    arange(tensor.tensor())
 
     var check_state = True
 
@@ -63,7 +61,7 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext):
 
     ctx.enqueue_function(
         copy_to_sram_test_launch,
-        tensor.tensor,
+        tensor.device_tensor(),
         UnsafePointer.address_of(check_state),
         grid_dim=(4),
         block_dim=(1),
@@ -73,6 +71,4 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext):
 
 def main():
     with DeviceContext() as ctx:
-        var prev_ctx = _make_ctx_current(CUDA(ctx))
         test_copy_dram_to_sram_async(ctx)
-        _ = _make_ctx_current(prev_ctx)

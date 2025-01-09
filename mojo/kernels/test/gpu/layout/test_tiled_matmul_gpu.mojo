@@ -10,14 +10,12 @@
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from gpu.host.memory_v1 import _make_ctx_current
-from gpu.host.nvidia_cuda import CUDA
 from gpu.id import BlockDim, BlockIdx, ThreadIdx
 from gpu.memory import AddressSpace
 from gpu.mma import mma
 from gpu.sync import barrier
 from layout import *
-from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
+from layout._utils import ManagedLayoutTensor
 from layout.fillers import arange
 from layout.math import outer_product_acc
 from layout.nd_buffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
@@ -60,19 +58,13 @@ fn test_naive_matmul_kernel(ctx: DeviceContext) raises:
     alias layout_b = Layout(IntTuple(K, N), IntTuple(N, 1))
     alias layout_c = Layout(IntTuple(M, N), IntTuple(N, 1))
 
-    var mat_a = ManagedLayoutTensor[
-        DType.float32, layout_a, gpu_managed_alloc, gpu_free
-    ]()
-    var mat_b = ManagedLayoutTensor[
-        DType.float32, layout_b, gpu_managed_alloc, gpu_free
-    ]()
-    var mat_c = ManagedLayoutTensor[
-        DType.float32, layout_c, gpu_managed_alloc, gpu_free
-    ]()
+    var mat_a = ManagedLayoutTensor[DType.float32, layout_a](ctx)
+    var mat_b = ManagedLayoutTensor[DType.float32, layout_b](ctx)
+    var mat_c = ManagedLayoutTensor[DType.float32, layout_c](ctx)
 
-    arange(mat_a.tensor)
-    arange(mat_b.tensor)
-    _ = mat_c.tensor.fill(0)
+    arange(mat_a.tensor())
+    arange(mat_b.tensor())
+    _ = mat_c.tensor().fill(0)
 
     alias naive_matmul_kernel = naive_matmul[
         layout_c, layout_a, layout_b, BM, BN
@@ -81,15 +73,18 @@ fn test_naive_matmul_kernel(ctx: DeviceContext) raises:
     var kernel = ctx.compile_function[naive_matmul_kernel]()
     ctx.enqueue_function(
         kernel,
-        mat_c.tensor,
-        mat_a.tensor,
-        mat_b.tensor,
+        mat_c.device_tensor(),
+        mat_a.device_tensor(),
+        mat_b.device_tensor(),
         grid_dim=(M // BM, N // BN),
         block_dim=(BM, BN),
     )
 
     ctx.synchronize()
-    print(mat_c.tensor)
+    print(mat_c.tensor())
+    _ = mat_a^
+    _ = mat_b^
+    _ = mat_c^
 
 
 fn sram_blocked_matmul[
@@ -200,19 +195,13 @@ fn test_sram_blocked_matmul(ctx: DeviceContext) raises:
 
     alias thread_layout = Layout(IntTuple(TH_M, TH_N), IntTuple(TH_N, 1))
 
-    var mat_a = ManagedLayoutTensor[
-        DType.float32, layout_a, gpu_managed_alloc, gpu_free
-    ]()
-    var mat_b = ManagedLayoutTensor[
-        DType.float32, layout_b, gpu_managed_alloc, gpu_free
-    ]()
-    var mat_c = ManagedLayoutTensor[
-        DType.float32, layout_c, gpu_managed_alloc, gpu_free
-    ]()
+    var mat_a = ManagedLayoutTensor[DType.float32, layout_a](ctx)
+    var mat_b = ManagedLayoutTensor[DType.float32, layout_b](ctx)
+    var mat_c = ManagedLayoutTensor[DType.float32, layout_c](ctx)
 
-    arange(mat_a.tensor)
-    arange(mat_b.tensor)
-    _ = mat_c.tensor.fill(0)
+    arange(mat_a.tensor())
+    arange(mat_b.tensor())
+    _ = mat_c.tensor().fill(0)
 
     alias sram_blocked_matmul_kernel = sram_blocked_matmul[
         layout_c, layout_a, layout_b, thread_layout, BM, BN, BK
@@ -221,15 +210,15 @@ fn test_sram_blocked_matmul(ctx: DeviceContext) raises:
     var kernel = ctx.compile_function[sram_blocked_matmul_kernel]()
     ctx.enqueue_function(
         kernel,
-        mat_c.tensor,
-        mat_a.tensor,
-        mat_b.tensor,
+        mat_c.device_tensor(),
+        mat_a.device_tensor(),
+        mat_b.device_tensor(),
         grid_dim=(N // BN, M // BM),
         block_dim=(thread_layout.size()),
     )
 
     ctx.synchronize()
-    print(mat_c.tensor)
+    print(mat_c.tensor())
 
     _ = mat_a^
     _ = mat_b^
@@ -291,19 +280,13 @@ fn test_single_warp_tf32_m16n8k8_matmul(ctx: DeviceContext) raises:
     alias layout_b = Layout.col_major(K, N)
     alias layout_c = Layout.row_major(M, N)
 
-    var mat_a = ManagedLayoutTensor[
-        DType.float32, layout_a, gpu_managed_alloc, gpu_free
-    ]()
-    var mat_b = ManagedLayoutTensor[
-        DType.float32, layout_b, gpu_managed_alloc, gpu_free
-    ]()
-    var mat_c = ManagedLayoutTensor[
-        DType.float32, layout_c, gpu_managed_alloc, gpu_free
-    ]()
+    var mat_a = ManagedLayoutTensor[DType.float32, layout_a](ctx)
+    var mat_b = ManagedLayoutTensor[DType.float32, layout_b](ctx)
+    var mat_c = ManagedLayoutTensor[DType.float32, layout_c](ctx)
 
-    arange(mat_a.tensor)
-    arange(mat_b.tensor)
-    _ = mat_c.tensor.fill(0)
+    arange(mat_a.tensor())
+    arange(mat_b.tensor())
+    _ = mat_c.tensor().fill(0)
 
     # MMA layout are copied from CUTLASS:
     # https://sourcegraph.com/github.com/NVIDIA/cutlass@ffa34e70756b0bc744e1dfcc115b5a991a68f132/-/blob/include/cute/atom/mma_traits_sm80.hpp?L167
@@ -331,15 +314,15 @@ fn test_single_warp_tf32_m16n8k8_matmul(ctx: DeviceContext) raises:
     ]()
     ctx.enqueue_function(
         kernel,
-        mat_c.tensor,
-        mat_a.tensor,
-        mat_b.tensor,
+        mat_c.device_tensor(),
+        mat_a.device_tensor(),
+        mat_b.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(32),
     )
 
     ctx.synchronize()
-    print(mat_c.tensor)
+    print(mat_c.tensor())
 
     _ = mat_a^
     _ = mat_b^
@@ -504,8 +487,6 @@ fn test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
 
 fn main() raises:
     with DeviceContext() as ctx:
-        var prev_ctx = _make_ctx_current(CUDA(ctx))
-
         # CHECK: === test_naive_matmul_kernel
         # CHECK: 1120.0   1148.0   1176.0   1204.0   1232.0   1260.0   1288.0   1316.0
         # CHECK: 2912.0   3004.0   3096.0   3188.0   3280.0   3372.0   3464.0   3556.0
@@ -557,5 +538,3 @@ fn main() raises:
         # CHECK: 11872.0   12284.0   12696.0   13108.0   13520.0   13932.0   14344.0   14756.0
         # CHECK: 13664.0   14140.0   14616.0   15092.0   15568.0   16044.0   16520.0   16996.0
         test_sram_blocked_matmul_dynamic_nd_buffer(ctx)
-
-        _ = _make_ctx_current(prev_ctx)

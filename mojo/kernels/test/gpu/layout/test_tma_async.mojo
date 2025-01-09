@@ -9,12 +9,10 @@
 from builtin.io import _printf
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
-from gpu.host.memory_v1 import _make_ctx_current
-from gpu.host.nvidia_cuda import CUDA
 from gpu.id import BlockIdx, ThreadIdx
 from layout import Layout, LayoutTensor
 from layout.tma_async import TMATensorTile, create_tma_tile, TMABarrier
-from layout._utils import ManagedLayoutGPUTensor
+from layout._utils import ManagedLayoutTensor
 from layout.fillers import arange
 from memory.pointer import _GPUAddressSpace
 
@@ -59,9 +57,9 @@ fn test_tma_async_load[
 
 def test_tma_async_copy(ctx: DeviceContext):
     print("== test_tma_async_copy")
-    var tensor = ManagedLayoutGPUTensor[DType.float32, Layout.row_major(8, 8)]()
-    arange(tensor.tensor)
-    var tma_tensor = create_tma_tile[4, 4](ctx, tensor.tensor)
+    var tensor = ManagedLayoutTensor[DType.float32, Layout.row_major(8, 8)](ctx)
+    arange(tensor.tensor())
+    var tma_tensor = create_tma_tile[4, 4](ctx, tensor.device_tensor())
     ctx.synchronize()
 
     var kernel_copy_async = ctx.compile_function[
@@ -141,7 +139,6 @@ def test_tma_async_copy_multiple_threads(ctx: DeviceContext):
 
 def main():
     with DeviceContext() as ctx:
-        var prev_ctx = _make_ctx_current(CUDA(ctx))
         # CHECK-LABLE: test_tma_async_copy
         # CHECK-DAG: (0, 0) : 0 1 2 3; 8 9 10 11; 16 17 18 19; 24 25 26 27
         # CHECK-DAG: (1, 0) : 4 5 6 7; 12 13 14 15; 20 21 22 23; 28 29 30 31
@@ -166,4 +163,3 @@ def main():
         # CHECK-DAG: (1, 0) (2): 5 6 7 8; 13 14 15 16; 21 22 23 24; 29 30 31 32
         # CHECK-DAG: (1, 0) (3): 5 6 7 8; 13 14 15 16; 21 22 23 24; 29 30 31 32
         test_tma_async_copy_multiple_threads(ctx)
-        _ = _make_ctx_current(prev_ctx)

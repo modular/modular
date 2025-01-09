@@ -9,8 +9,6 @@
 from builtin.io import _printf
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
-from gpu.host.memory_v1 import _make_ctx_current
-from gpu.host.nvidia_cuda import CUDA
 from gpu.id import ThreadIdx
 from gpu.mma import mma
 
@@ -75,7 +73,6 @@ def test_mma_sync_16x8x32_E5M2(ctx: DeviceContext):
 
 def main():
     with DeviceContext() as ctx:
-        var prev_ctx = _make_ctx_current(CUDA(ctx))
         # CHECK-LABEL: test_mma_sync_16x8x32_E4M3
         # CHECK-DAG: thread 0 : 64 64 64 64
         # CHECK-DAG: thread 1 : 64 64 64 64
@@ -144,4 +141,3 @@ def main():
         # CHECK-DAG: thread 30 : 192 192 192 192
         # CHECK-DAG: thread 31 : 192 192 192 192
         test_mma_sync_16x8x32_E5M2(ctx)
-        _ = _make_ctx_current(prev_ctx)
