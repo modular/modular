@@ -183,26 +183,11 @@ void StructDecls::buildReplacer(LowerLITReplacer &replacer, MLIRContext *ctx) {
       },
       TypeDomain::AsValue);
 
-  // The param types of a SignatureType are always types, not values.
+  // The param types of a GeneratorType are always types, not values.
   for (TypeDomain domain : {TypeDomain::AsType, TypeDomain::AsValue}) {
     auto replaceAsType = [&replacer](Type type) {
       return replacer.replace(type, TypeDomain::AsType);
     };
-    replacer.addNonRecursiveReplacement(
-        [domain, replaceAsType, &replacer](SignatureType sig) {
-          SmallVector<Type> inputParamTypes(
-              map_range(sig.getInputParamTypes(), replaceAsType));
-          SmallVector<Type> resultParamTypes(
-              map_range(sig.getResultParamTypes(), replaceAsType));
-          Attribute metadata = sig.getMetadata();
-          if (metadata)
-            metadata = replacer.replace(metadata, domain);
-          return SignatureType::get(
-              cast<FunctionType>(replacer.replace(sig.getValues(), domain)),
-              inputParamTypes, resultParamTypes, sig.getArgConventions(),
-              sig.getFnEffects(), metadata);
-        },
-        domain);
     replacer.addNonRecursiveReplacement(
         [domain, replaceAsType, &replacer](GeneratorType gen) {
           SmallVector<Type> inputParamTypes(

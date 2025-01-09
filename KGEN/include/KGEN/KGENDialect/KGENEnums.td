@@ -147,7 +147,7 @@ def KGEN_TailKind : I32EnumAttr<"TailKind", "tail kind", [
 //===----------------------------------------------------------------------===//
 
 /// This describes the encoding of input argument calling conventions, stored
-/// in the metadata of a SignatureType.
+/// in the metadata of a NewSignatureType.
 def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
     "Function argument convention", [
   /// This is an immutable borrow of a register-passable value in an SSA
@@ -219,7 +219,7 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
 }
 
 /// This describes the encoding of the function effects in the metadata of a
-/// SignatureType.
+/// NewSignatureType.
 def KGEN_FnEffectsImpl : I16BitEnumAttr<"FnEffects", "Function effects", [
   /// This function has no effects.
   I16BitEnumAttrCaseNone<"None", "none">,

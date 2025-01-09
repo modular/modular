@@ -458,17 +458,6 @@ NewSignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-SignatureType NewSignatureType::asOldSignature() {
-  return SignatureType::get(getValues(), {}, {}, getArgConventions(),
-                            getFnEffects(), getMetadata());
-}
-
-NewSignatureType NewSignatureType::fromOldSignature(SignatureType sig) {
-  assert(sig.isConcrete());
-  return NewSignatureType::get(sig.getValues(), sig.getArgConventions(),
-                               sig.getFnEffects(), sig.getMetadata());
-}
-
 bool NewSignatureType::hasAddress(ArgConvention conv) {
   switch (conv) {
   case ArgConvention::OwnedReg:
@@ -512,73 +501,6 @@ bool NewSignatureType::isResultSlot(ArgConvention conv) {
          conv == ArgConvention::ByRefError;
 }
 
-//===----------------------------------------------------------------------===//
-// SignatureType
-//===----------------------------------------------------------------------===//
-
-ArrayRef<Type> SignatureType::getArguments() const {
-  return getValues().getInputs();
-}
-ArrayRef<Type> SignatureType::getResults() const {
-  return getValues().getResults();
-}
-
-bool SignatureType::hasMemoryOnlyResult() {
-  ArrayRef<ArgConvention> conventions = getArgConventions();
-  return !conventions.empty() &&
-         conventions.back() == ArgConvention::ByRefResult;
-}
-
-bool SignatureType::isConcrete() {
-  return getInputParamTypes().empty() && getResultParamTypes().empty();
-}
-
-SignatureType SignatureType::getWithFnEffects(FnEffects effects) {
-  return SignatureType::get(getValues(), getInputParamTypes(),
-                            getResultParamTypes(), getArgConventions(), effects,
-                            getMetadata());
-}
-SignatureType SignatureType::getWithValuesReplaced(FunctionType fnType) {
-  return SignatureType::get(fnType, getInputParamTypes(), getResultParamTypes(),
-                            getArgConventions(), getFnEffects(), getMetadata());
-}
-
-SignatureType SignatureType::getWithMetadata(FnMetadataAttrInterface metadata) {
-  return SignatureType::get(getValues(), getInputParamTypes(),
-                            getResultParamTypes(), getArgConventions(),
-                            getFnEffects(), metadata);
-}
-
-size_t SignatureType::getNumAsyncReturnSlots() {
-  return isAsync() * (hasMemoryOnlyResult() + isThrows());
-}
-
-/// Return a signature with the specified parameter bindings substituted
-/// into it as happens in a call.  The types specified in the parameter
-/// bindings affects the type signature of the arguments and results, and
-/// also can remap the signature in the parameter list itself.
-///
-/// If an error occurs making the substitution, report it with emitErrorFn
-/// and return null.
-SignatureType SignatureType::getSpecializedSignature(
-    ArrayRef<TypedAttr> inputParamValues,
-    function_ref<InFlightDiagnostic()> emitErrorFn) {
-  if (inputParamValues.empty())
-    return *this;
-  return getSpecializedSignature(inputParamValues, emitErrorFn,
-                                 getInputParamTypes(), getResultParamTypes(),
-                                 getValues(), getArgConventions(),
-                                 getFnEffects(), getMetadata());
-}
-
-SignatureType
-SignatureType::getSpecializedSignature(ArrayRef<TypedAttr> inputParamValues,
-                                       Location location) {
-  return getSpecializedSignature(inputParamValues, [&]() -> InFlightDiagnostic {
-    return emitError(location);
-  });
-}
-
 /// A temporary shared implementation for specialize signature generators during
 /// the migration process. When the old KGEN::SignatureType goes away, this will
 /// be merged into SignatureGeneratorType.
@@ -619,7 +541,7 @@ specializeSignature(ArrayRef<TypedAttr> inputParamValues,
                     ArrayRef<ArgConvention> argConventions, FnEffects effects,
                     FnMetadataAttrInterface fnMetadata) {
   VerboseCompilerTimeTraceScope traceScope(
-      "SignatureType::getSpecializedSignature");
+      "NewSignatureType::getSpecializedSignature");
 
   // If the signature isn't parameterized, then there
   // are no substitutions to perform.
@@ -735,230 +657,6 @@ specializeSignature(ArrayRef<TypedAttr> inputParamValues,
           fnMetadata};
 }
 
-/// Return a signature with the specified parameter bindings substituted
-/// like what happens in a call. The types specified in the parameter
-/// bindings affect the type signature of the argument and results, and
-/// also can remap the signature in the parameter list itself.
-///
-/// If an error occurs making the substitution, report it with emitErrorFn
-/// and return null. If `emitErrorFn` is not specified, the callee will
-/// assume that the substitution cannot fail. If a location is specified,
-/// a default diagnostic is created with it and used as emitErrorFn.
-SignatureType SignatureType::getSpecializedSignature(
-    ArrayRef<TypedAttr> inputParamValues,
-    function_ref<InFlightDiagnostic()> emitErrorFn,
-    ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
-    FunctionType values, ArrayRef<ArgConvention> argConventions,
-    FnEffects effects, FnMetadataAttrInterface metadata) {
-
-  SpecializeSignatureResult result = specializeSignature(
-      inputParamValues, /*genMetadata=*/{}, emitErrorFn, inputParamTypes,
-      resultParamTypes, values, argConventions, effects, metadata);
-  if (!result.success)
-    return {};
-
-  return SignatureType::get(result.values, result.inputParamTypes,
-                            result.resultParamTypes, result.argConventions,
-                            result.effects, result.fnMetadata);
-}
-
-SignatureType SignatureType::remapToSignature(
-    ArrayRef<ParamDeclAttr> inputParams, ArrayRef<ParamDeclAttr> resultParams,
-    FunctionType functionType, ArrayRef<ArgConvention> argConventions,
-    FnEffects effects, Attribute metadata,
-    function_ref<InFlightDiagnostic()> emitError) {
-  IndexRefRemapper remapper(inputParams, resultParams);
-  SmallVector<Type> inputParamTypes, resultParamTypes;
-  for (ParamDeclAttr param : inputParams)
-    inputParamTypes.push_back(remapper.replace(param.getType()));
-  for (ParamDeclAttr param : resultParams)
-    resultParamTypes.push_back(remapper.replace(param.getType()));
-
-  if (!emitError) {
-    emitError = []() -> InFlightDiagnostic {
-      llvm_unreachable("invalid signature");
-    };
-  }
-
-  return SignatureType::getChecked(
-      emitError, remapper.replace(functionType), inputParamTypes,
-      resultParamTypes, argConventions, effects,
-      metadata ? remapper.replace(metadata) : nullptr);
-}
-
-SignatureGeneratorType SignatureType::asSignatureGenerator() const {
-  return SignatureGeneratorType::get(*this);
-}
-
-OptionalParseResult SignatureType::parseValue(AsmParser &p,
-                                              TypedAttr &value) const {
-  assert(getMetadata() && "Deprecated non-LIT KGEN signature-typed value");
-  // Parse a keyword or string as an MLIR operation attribute.
-  std::string opName;
-  llvm::SMLoc loc = p.getCurrentLocation();
-  if (succeeded(p.parseOptionalString(&opName))) {
-    NamedAttrList attrs;
-    if (failed(p.parseOptionalAttrDict(attrs)))
-      return failure();
-    value = MLIROpAttr::getChecked([&] { return p.emitError(loc); },
-                                   StringAttr::get(p.getContext(), opName),
-                                   attrs.getDictionary(p.getContext()),
-                                   asSignatureGenerator());
-    return mlir::success(!!value);
-  }
-
-  Attribute attr;
-  OptionalParseResult result = p.parseOptionalAttribute(attr, *this);
-  if (!result.has_value())
-    return std::nullopt;
-  if (failed(*result))
-    return failure();
-
-  // Parse a symbol reference as a signature type attribute.
-  if (auto symbol = llvm::dyn_cast<SymbolRefAttr>(attr)) {
-    // Parse any trailing parameter bindings.
-    ParameterExprArrayAttr paramValues;
-    if (parseParameterValues(p, paramValues))
-      return failure();
-    value =
-        SymbolConstantAttr::get(symbol, asSignatureGenerator(), paramValues);
-  } else {
-    value = llvm::cast<TypedAttr>(attr);
-  }
-  return mlir::success();
-}
-
-LogicalResult SignatureType::printValue(AsmPrinter &p, TypedAttr value) const {
-  assert(getMetadata() && "Deprecated non-LIT KGEN signature-typed value");
-  if (auto mlirOp = ::dyn_cast<MLIROpAttr>(value)) {
-    p << mlirOp.getName();
-    if (!mlirOp.getAttrs().empty())
-      p << mlirOp.getAttrs();
-    return success();
-  }
-
-  auto symbolCst = ::dyn_cast<SymbolConstantAttr>(value);
-  if (!symbolCst)
-    return failure();
-  p << symbolCst.getSymbol();
-  printParameterValues(p, symbolCst.getParamValues());
-  return success();
-}
-
-std::optional<int64_t> SignatureType::getTypeSize(TargetInfoAttr target) const {
-  // Non-capturing closures are function pointers. Capturing closures contain
-  // a function pointer and a capture state pointer.
-  return (isCapturing() ? 2 : 1) * target.getDataLayout().getPointerSize();
-}
-
-std::optional<int64_t>
-SignatureType::getTypeAlign(TargetInfoAttr target) const {
-  return target.getDataLayout().getPointerABIAlign();
-}
-
-ErrorOrSuccess SignatureType::writeTo(TypedAttr value, int64_t addr,
-                                      InterpreterState &state) const {
-  // The index is written to the slot.
-  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
-  ErrorOr<void *> mem =
-      state.getWritableMemory(addr, ptrSize, RegionMark::Symbol);
-  if (mem.isError())
-    return mem.takeError();
-
-  // Store the actual symbol in symbolic memory
-  uint64_t index = state.addSymbolToSymbolTable(value);
-
-  // Store the index of the symbol in the pointer slot.
-  llvm::StoreIntToMemory(APInt(ptrSize * 8, index), (uint8_t *)*mem, ptrSize);
-  return success();
-}
-
-ErrorOr<TypedAttr> SignatureType::readFrom(int64_t addr,
-                                           InterpreterState &state) const {
-  // The index is written to the slot.
-  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
-  ErrorOr<const void *> mem = state.getReadableMemory(addr, ptrSize);
-  if (mem)
-    return mem.takeError();
-
-  APInt value(ptrSize * 8, 0);
-  llvm::LoadIntFromMemory(value, (const uint8_t *)*mem, ptrSize);
-  return state.getSymbol(value.getZExtValue());
-}
-
-Type SignatureType::parse(AsmParser &parser) {
-  SignatureType signature;
-  if (parser.parseLess() || parseSignature(parser, signature) ||
-      parser.parseGreater())
-    return {};
-  return signature;
-}
-
-void SignatureType::print(AsmPrinter &printer) const {
-  printer << '<';
-  printSignature(printer, *this);
-  printer << '>';
-}
-
-SignatureType SignatureType::get(MLIRContext *context, TypeRange inputs,
-                                 TypeRange results) {
-  return get(FunctionType::get(context, inputs, results));
-}
-
-LogicalResult
-SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
-                      ArrayRef<Type> inputParamTypes,
-                      ArrayRef<Type> resultParamTypes, FunctionType values,
-                      ArrayRef<ArgConvention> argConventions, FnEffects effects,
-                      FnMetadataAttrInterface metadata) {
-  // Check we have the right number of conventions.
-  if (argConventions.size() != values.getInputs().size())
-    return emitError() << "incorrect # of input conventions specified";
-
-  // If the signature has metadata, defer to it for further verification.
-  // Otherwise, run the standard KGEN signature verification.
-  if (metadata) {
-    return metadata.verifySignature(emitError, inputParamTypes,
-                                    resultParamTypes, values, argConventions,
-                                    effects);
-  }
-
-  // Verify input convention and argument types.
-  for (auto [i, argType, conv] :
-       llvm::enumerate(values.getInputs(), argConventions)) {
-    if (conv == ArgConvention::ByRefResult && i != values.getNumInputs() - 1)
-      return emitError() << "'byref_result' argument must be the last argument";
-    if (conv == ArgConvention::ByRefError && !effects.isThrows()) {
-      return emitError()
-             << "signature with 'byref_error' argument must be 'throws'";
-    }
-
-    Type type = argType;
-    // Verify variadics.
-    if (auto variadic = ::dyn_cast<VariadicType>(type))
-      type = variadic.getElementType();
-    // Verify argument conventions.  Before lit lowering, they need to be
-    // !lit.ref type, after lowering, they should have !kgen.pointer type.
-    if (NewSignatureType::hasAddress(conv)) {
-      if (::isa<PointerType>(type))
-        continue;
-      // TODO: During LowerLIT, we strip off the metadata, but later we lower
-      // references to pointers.  This means that LowerLIT needs a
-      // kgen.signature (without LIT attribute) with references.  Accept
-      // !lit.ref until we can sort this out.
-      if (type.getDialect().getNamespace() == "lit")
-        continue;
-
-      return emitError()
-             << "argument #" << i << " with convention '" << stringifyEnum(conv)
-             << "' in signature type should be a `!kgen.pointer` but got: "
-             << type;
-    }
-  }
-
-  return success();
-}
-
 //===----------------------------------------------------------------------===//
 // SignatureGeneratorType
 //===----------------------------------------------------------------------===//
@@ -1047,27 +745,6 @@ SignatureGeneratorType SignatureGeneratorType::remapToSignatureGenerator(
   return GeneratorType::get(inputParamTypes, newSig,
                             genMetadata ? remapper.replace(genMetadata)
                                         : nullptr);
-}
-
-SignatureGeneratorType SignatureGeneratorType::get(SignatureType sig) {
-  if (FnMetadataAttrInterface metadata = sig.getMetadata())
-    return metadata.asSignatureGenerator(sig);
-
-  return SignatureGeneratorType::get(sig.getInputParamTypes(), sig.getValues(),
-                                     sig.getArgConventions(),
-                                     sig.getFnEffects());
-}
-
-SignatureType SignatureGeneratorType::asOldSignature() {
-  if (GeneratorMetadataAttrInterface metadata = getMetadata())
-    return metadata.asOldSignature(*this);
-
-  NewSignatureType sig = getBody();
-  assert(!sig.getMetadata() &&
-         "inconsistent metadata between generator & wrapped signature");
-  return SignatureType::get(sig.getValues(), getInputParamTypes(),
-                            /*resultParamTypes=*/{}, sig.getArgConventions(),
-                            sig.getFnEffects(), /*metadata=*/{});
 }
 
 NewSignatureType SignatureGeneratorType::getBody() {

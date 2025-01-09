@@ -1065,10 +1065,6 @@ void LITDialect::printType(Type type, DialectAsmPrinter &p) const {
     return;
 }
 
-void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
-  llvm_unreachable("!lit.signature is deprecated");
-}
-
 void FnMetadataAttr::printNewSignature(AsmPrinter &p,
                                        NewSignatureType sig) const {
   p << "!lit.new_signature<";

@@ -105,11 +105,6 @@ def KGEN_FuncOp : KGENOp<"func", [
       return getSignatureGenerator().getBody().getValues();
     }
     Region *getCallableRegion() { return &getBodyRegion(); }
-
-    // Temporary Back-Compat
-    SignatureType getSignature() {
-      return getSignatureGenerator().asOldSignature();
-    }
   }];
 
   let builders = [
@@ -1093,8 +1088,9 @@ def KGEN_CallIndirectOp : KGENOp<"call_indirect", [
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Call a signature typed instance";
   let description = [{
-    The `kgen.call_indirect` operation takes an SSA value of `!kgen.signature`
-    type and invokes it with the provided operands as arguments.
+    The `kgen.call_indirect` operation takes an SSA value of `!kgen.generator`
+    type (that wraps a `!kgen.signature` type) and invokes it with the provided
+    operands as arguments.
 
     Example:
 

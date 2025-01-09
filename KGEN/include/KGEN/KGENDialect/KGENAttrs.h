@@ -33,7 +33,6 @@ class BuildInfoType;
 class FuncOp;
 class GeneratorOp;
 class KGENDType;
-class SignatureType;
 class TargetType;
 class VariadicType;
 class VariadicAttr;

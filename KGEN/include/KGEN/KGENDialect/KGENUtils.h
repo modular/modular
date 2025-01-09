@@ -314,17 +314,9 @@ OptionalParseResult parseOptionalSignatureValues(
 ParseResult parseSignatureValues(
     AsmParser &p, function_ref<ParseResult(SmallVectorImpl<Type> &)> parseArg,
     FunctionType &values, FnEffects &effects, bool optionalResultList);
-void printSignature(AsmPrinter &p, SignatureType signatureType);
-inline void printSignature(AsmPrinter &p, Operation *op,
-                           SignatureType signatureType) {
-  printSignature(p, signatureType);
-}
 void printSignature(AsmPrinter &p, Operation *op, TypeAttr signature);
 void printSignatureValues(AsmPrinter &p, FunctionType functionType,
                           SignatureGeneratorType sigGen);
-void printSignatureValues(AsmPrinter &p, function_ref<void(unsigned)> printElt,
-                          FunctionType functionType, SignatureType signature,
-                          bool optionalResultList);
 void printSignatureValues(AsmPrinter &p, function_ref<void(unsigned)> printElt,
                           FunctionType functionType,
                           ArrayRef<ArgConvention> argConvs, FnEffects fnEffects,
@@ -352,13 +344,6 @@ ParseResult parseKGENSignatureGenerator(AsmParser &p,
 /// the SSA value names are optional in the argument list. If they are present,
 /// they are populated in `args`. The `parseNames` flag control whether the
 /// signature should include the argument names.
-ParseResult parseFunctionSignature(OpAsmParser &p,
-                                   SmallVectorImpl<OpAsmParser::Argument> &args,
-                                   ParamDeclArrayAttr &inputParams,
-                                   ParamDeclArrayAttr &resultParams,
-                                   FunctionType &functionType,
-                                   SignatureType &signature,
-                                   ParamDeclParseHookTy parseDeclElt = {});
 ParseResult parseFunctionSignatureGenerator(
     OpAsmParser &p, SmallVectorImpl<OpAsmParser::Argument> &args,
     ParamDeclArrayAttr &inputParams, ParamDeclArrayAttr &resultParams,
@@ -366,12 +351,6 @@ ParseResult parseFunctionSignatureGenerator(
     ParamDeclParseHookTy parseDeclElt = {});
 /// Print a function signature with optional metadata. If `region` is
 /// non-null, then the SSA value names of the region arguments are printed.
-void printFunctionSignature(OpAsmPrinter &p, Region *region,
-                            ArrayRef<ParamDeclAttr> inputParams,
-                            ArrayRef<ParamDeclAttr> resultParams,
-                            FunctionType functionType, SignatureType signature,
-                            ParamDeclPrintHookTy printInputElt = {},
-                            ParamDeclPrintHookTy printResultElt = {});
 void printFunctionSignatureGenerator(OpAsmPrinter &p, Region *region,
                                      ArrayRef<ParamDeclAttr> inputParams,
                                      ArrayRef<ParamDeclAttr> resultParams,

@@ -521,10 +521,10 @@ static ParseResult parseExternGenerator(OpAsmParser &p, TypeAttr &signature,
 static void printExternGenerator(OpAsmPrinter &p, Operation *op,
                                  TypeAttr signature, TypeAttr functionType,
                                  ParamDeclArrayAttr inputParams) {
-  printFunctionSignature(
+  printFunctionSignatureGenerator(
       p, /*region=*/nullptr, inputParams,
       /*resultParams=*/{}, cast<FunctionType>(functionType.getValue()),
-      cast<SignatureGeneratorType>(signature.getValue()).asOldSignature());
+      cast<SignatureGeneratorType>(signature.getValue()));
 }
 
 //===----------------------------------------------------------------------===//
