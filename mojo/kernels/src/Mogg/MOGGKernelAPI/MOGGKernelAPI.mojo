@@ -175,6 +175,8 @@ from nn.conv_transpose import pack_filter as _pack_conv_transpose_filter
 from tensor_utils_internal import (
     simd_store_into_managed_tensor_slice,
     simd_load_from_managed_tensor_slice,
+    _input_fusion_hook_impl,
+    _output_fusion_hook_impl,
 )
 
 from quantization import (
@@ -688,6 +690,8 @@ fn insert_index[
 fn export():
     alias _simd_load_from_managed_tensor_slice = simd_load_from_managed_tensor_slice
     alias _simd_store_into_managed_tensor_slice = simd_store_into_managed_tensor_slice
+    alias __input_fusion_hook_impl = _input_fusion_hook_impl
+    alias __output_fusion_hook_impl = _output_fusion_hook_impl
 
 
 # ===-----------------------------------------------------------------------===#

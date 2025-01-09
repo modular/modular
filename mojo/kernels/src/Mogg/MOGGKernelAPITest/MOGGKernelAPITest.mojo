@@ -12,8 +12,24 @@ from register import uses_opaque
 from runtime.asyncrt import MojoCallContextPtr
 from tensor_utils import ManagedTensorSlice, foreach
 from tensor_utils_internal import view_copy_impl
+from tensor_utils_internal import (
+    simd_store_into_managed_tensor_slice,
+    simd_load_from_managed_tensor_slice,
+    _input_fusion_hook_impl,
+    _output_fusion_hook_impl,
+)
 
 from utils import IndexList, StaticTuple
+
+
+# TODO(MOCO-1413): remove this need to keep imported exported funcs alive.
+@export
+fn export():
+    alias _simd_load_from_managed_tensor_slice = simd_load_from_managed_tensor_slice
+    alias _simd_store_into_managed_tensor_slice = simd_store_into_managed_tensor_slice
+    alias __input_fusion_hook_impl = _input_fusion_hook_impl
+    alias __output_fusion_hook_impl = _output_fusion_hook_impl
+
 
 # ===-----------------------------------------------------------------------===#
 # Opaque Reg Types
