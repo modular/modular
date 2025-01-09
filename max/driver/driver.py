@@ -77,6 +77,20 @@ class Device:
         return self._device.label
 
     @property
+    def api(self) -> str:
+        """
+        Returns API used to program the device. Example: "cuda" for NVIDIA GPUs
+
+        .. code-block:: python
+
+            from max import driver
+
+            device = driver.CPU()
+            device.api
+        """
+        return self._device.api
+
+    @property
     def id(self) -> int:
         """
         Returns device id.
