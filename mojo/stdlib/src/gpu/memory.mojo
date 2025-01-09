@@ -102,6 +102,25 @@ fn async_copy[
         "the l2 prefetch size must be in bounds",
     ]()
 
+    @parameter
+    if is_amd_gpu():
+        # Use sync load and stores for now
+        # TODO(KERN-1249): add async memcopy to AMD
+        alias n_scalars = size // sizeof[type]()
+        var n_src_scalars = src_size // sizeof[type]()
+
+        @parameter
+        if fill:
+            for i in range(n_src_scalars):
+                dst.store(i, src.load(i))
+            for i in range(n_src_scalars, n_scalars):
+                dst.store(i, fill.value())
+        else:
+
+            @parameter
+            for i in range(n_scalars):
+                dst.store(i, src.load(i))
+        return
     # Cache always: cache data in L1 first, then copy to shared memory.
     # Cache global: bypass L1 cache
     # We always do the latter.
