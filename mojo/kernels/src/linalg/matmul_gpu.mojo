@@ -36,7 +36,6 @@ from gpu.host._compile import _get_gpu_target
 from gpu.host.info import A100, DEFAULT_GPU_ARCH
 from gpu.memory import AddressSpace, CacheOperation, load
 from gpu.mma import ld_matrix, mma
-from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import (

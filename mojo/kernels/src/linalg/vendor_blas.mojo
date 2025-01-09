@@ -47,7 +47,6 @@ from gpu.cublas.result import Result
 from gpu.host import DeviceContext
 from gpu.host.nvidia_cuda import CUDA
 from layout import Layout
-from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from memory import UnsafePointer
 from utils.variant import Variant
 import gpu.rocblas
