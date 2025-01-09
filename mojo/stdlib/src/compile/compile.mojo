@@ -112,7 +112,7 @@ fn _compile_info_non_failable_impl[
         `#kgen.param.expr<compile_assembly,`,
         target,
         `,`,
-        emission_kind.__as_mlir_index(),
+        index(emission_kind),
         `,`,
         compile_options.value,
         `,`,
