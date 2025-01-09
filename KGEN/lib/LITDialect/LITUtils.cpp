@@ -1026,7 +1026,7 @@ LIT::verifyDefaultTypes(function_ref<InFlightDiagnostic()> emitError,
 
     // Memory-only arguments store their default values as pure values.
     if (!convs.empty())
-      if (SignatureType::hasAddress(convs[idx]))
+      if (NewSignatureType::hasAddress(convs[idx]))
         expectedType = ::cast<RefType>(expectedType).getElementType();
 
     if (defaultType != expectedType &&

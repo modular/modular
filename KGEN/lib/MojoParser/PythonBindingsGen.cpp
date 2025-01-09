@@ -639,7 +639,7 @@ BindingGenerator::createFunction(const Twine &name, ASTDecl &parent,
   for (auto [idx, rvType, conv] : llvm::enumerate(argRValueTypes, convs)) {
     Type type = rvType;
     argNames.push_back(b.getStringAttr("arg" + Twine(idx)));
-    if (SignatureType::hasImplicitOrigin(conv)) {
+    if (NewSignatureType::hasImplicitOrigin(conv)) {
       bool isMut = llvm::is_contained(
           {ArgConvention::OwnedMem, ArgConvention::Mut, ArgConvention::MutRef,
            ArgConvention::ByRefResult},

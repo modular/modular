@@ -118,7 +118,7 @@ insertDebugVariableForArg(OpBuilder &builder, LIT::FuncOp func,
   // If this argument has address, its needs an initial deref.
   ArgConvention convention =
       func.getSignatureGenerator().getArgConvention(arg.getArgNumber());
-  if (SignatureType::hasAddress(convention)) {
+  if (NewSignatureType::hasAddress(convention)) {
     if (auto argRefType = dyn_cast<RefType>(arg.getType())) {
       diExpr =
           DebugInfo::DIDerefExprAttr::get(diExpr, argRefType.getElementType());
@@ -2648,10 +2648,10 @@ void DestructorInsertion::scanFunction(LIT::FuncOp func) {
        llvm::zip(func.getArguments(),
                  func.getSignatureGenerator().getArgConventions())) {
     // Ignore undef-on-input values.
-    if (SignatureType::isResultSlot(conv))
+    if (NewSignatureType::isResultSlot(conv))
       continue;
 
-    bool isIndirect = SignatureType::hasAddress(conv);
+    bool isIndirect = NewSignatureType::hasAddress(conv);
     Location loc = argValue.getLoc();
     if (DebugInfo::DISubprogramAttr scope =
             DebugInfo::extractScope(cast<mlir::FunctionOpInterface>(*func)))

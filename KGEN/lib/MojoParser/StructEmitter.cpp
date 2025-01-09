@@ -49,7 +49,7 @@ LIT::FuncOp StructEmitter::createFunction(
   for (auto [argNo, argType, argConv] :
        llvm::enumerate(argTypes, argConventions)) {
     adjustedArgTypes.push_back(argType);
-    if (!SignatureType::hasImplicitOrigin(argConv))
+    if (!NewSignatureType::hasImplicitOrigin(argConv))
       continue;
 
     // Dig out the origin decl.
@@ -508,7 +508,7 @@ std::optional<ValueInfo> ValueInfo::createValueInfo(ASTDecl &structDecl) {
     ArrayRef<Type> inputTypes = signature.getArguments();
     ArrayRef<ArgConvention> convs = signature.getArgConventions();
     // Ignore the result slot and error result.
-    while (!convs.empty() && SignatureType::isResultSlot(convs.back())) {
+    while (!convs.empty() && NewSignatureType::isResultSlot(convs.back())) {
       inputTypes = inputTypes.drop_back();
       convs = convs.drop_back();
     }
@@ -527,7 +527,7 @@ std::optional<ValueInfo> ValueInfo::createValueInfo(ASTDecl &structDecl) {
       Type argType = type;
       // Memberwise initializers must have read/owned conventions. ref etc
       // are lit.ref's mechanically but these are invisible the to the caller.
-      if (SignatureType::hasImplicitOrigin(conv)) {
+      if (NewSignatureType::hasImplicitOrigin(conv)) {
         if (conv != ArgConvention::ReadMem && conv != ArgConvention::OwnedMem) {
           isMatch = false;
           break;

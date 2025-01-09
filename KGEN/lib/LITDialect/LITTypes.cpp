@@ -965,7 +965,7 @@ parseOptionalLITSignature(AsmParser &p, Type &signature,
     TypedAttr defaultVal;
     if (failed(parseOptionalDefaultValue(
             p, defaultVal, type,
-            SignatureType::hasAddress(argConventions.back()))))
+            NewSignatureType::hasAddress(argConventions.back()))))
       return failure();
     if (defaultVal) {
       if (passingKindParser.isCurrentKwOnly())
@@ -1220,7 +1220,7 @@ Type LITNewSignatureType::getIfVariadicPack(size_t index) {
 
   // Look through references to the VariadicPack type.
   auto type = getArguments()[index];
-  if (SignatureType::hasAddress(getArgConvention(index)))
+  if (NewSignatureType::hasAddress(getArgConvention(index)))
     type = ::cast<RefType>(type).getElementType();
   return type;
 }

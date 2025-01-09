@@ -1269,7 +1269,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
       return {};
     }
     // Ignore the byref return and error arguments.
-  } while (SignatureType::isResultSlot(firstFnSig.getArgConvention(argNo)));
+  } while (NewSignatureType::isResultSlot(firstFnSig.getArgConvention(argNo)));
 
   StringAttr setterValueName = firstFnSig.getArgName(argNo);
   if (operands.findKwArg(setterValueName)) {
