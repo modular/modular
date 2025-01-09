@@ -7,111 +7,113 @@
 
 from os import abort
 from sys import bitwidthof
-
-from gpu.host.memory_v1 import _free, _malloc_managed
 from layout import *
 from layout.layout_tensor import _get_index_type
 from memory import UnsafePointer
-
+from collections import Optional
+from gpu.host import DeviceBuffer, DeviceContext
 from .int_tuple import product
-
-alias alloc_fn_type = fn[layout: Layout, dtype: DType] () -> UnsafePointer[
-    Scalar[dtype]
-]
-
-alias alloc_runtime_fn = fn[layout: Layout, dtype: DType] (
-    runtime_layout: RuntimeLayout[layout, **_]
-) -> UnsafePointer[Scalar[dtype]]
-
-alias free_fn_type = fn[dtype: DType] (
-    ptr: UnsafePointer[Scalar[dtype]]
-) -> None
-
-
-fn cpu_alloc[layout: Layout, dtype: DType]() -> UnsafePointer[Scalar[dtype]]:
-    return UnsafePointer[Scalar[dtype]].alloc(layout.size())
-
-
-fn cpu_alloc_runtime[
-    layout: Layout, dtype: DType
-](runtime_layout: RuntimeLayout[layout, **_]) -> UnsafePointer[Scalar[dtype]]:
-    return UnsafePointer[Scalar[dtype]].alloc(runtime_layout.size())
-
-
-@always_inline
-fn cpu_free[dtype: DType](ptr: UnsafePointer[Scalar[dtype]]):
-    ptr.free()
-
-
-fn gpu_managed_alloc[
-    layout: Layout, dtype: DType
-]() -> UnsafePointer[Scalar[dtype]]:
-    try:
-        return _malloc_managed[Scalar[dtype]](layout.size())
-    except e:
-        return abort[UnsafePointer[Scalar[dtype]]]("Can't alloc gpu memory")
-
-
-fn gpu_managed_alloc_runtime[
-    layout: Layout, dtype: DType
-](runtime_layout: RuntimeLayout[layout, **_]) -> UnsafePointer[Scalar[dtype]]:
-    try:
-        return _malloc_managed[Scalar[dtype]](runtime_layout.size())
-    except e:
-        return abort[UnsafePointer[Scalar[dtype]]]("Can't alloc gpu memory")
-
-
-fn gpu_free[dtype: DType](ptr: UnsafePointer[Scalar[dtype]]):
-    try:
-        return _free(ptr)
-    except e:
-        abort("Can't free gpu memory")
 
 
 struct ManagedLayoutTensor[
     dtype: DType,
     layout: Layout,
-    alloc_fn: alloc_fn_type = cpu_alloc,
-    free_fn: free_fn_type = cpu_free,
-    alloc_runtime_fn: alloc_runtime_fn = cpu_alloc_runtime,
     *,
 ]:
     alias layout_bitwidth = bitwidthof[_get_index_type(AddressSpace.GENERIC)]()
-
-    var tensor: LayoutTensor[
-        dtype,
-        layout,
-    ]
+    var device_data: Optional[DeviceBuffer[dtype]]
+    var host_data: UnsafePointer[Scalar[dtype]]
+    var runtime_layout: RuntimeLayout[layout, bitwidth = Self.layout_bitwidth]
+    var ctx: Optional[DeviceContext]
 
     @always_inline
     fn __init__(out self):
-        self.tensor = LayoutTensor[
-            dtype,
-            layout,
-        ](alloc_fn[layout, dtype]())
+        self.ctx = None
+        self.device_data = None
+        self.host_data = __type_of(self.host_data).alloc(layout.size())
+        self.runtime_layout = __type_of(self.runtime_layout)()
 
     @always_inline
-    fn __init__(
-        mut self,
-        runtime_layout: RuntimeLayout[layout, **_],
-    ):
-        self.tensor = LayoutTensor[dtype, layout,](
-            alloc_runtime_fn[layout, dtype](runtime_layout),
-            rebind[RuntimeLayout[layout, bitwidth = Self.layout_bitwidth]](
-                runtime_layout
-            ),
+    fn __init__(mut self, runtime_layout: RuntimeLayout[layout, **_]):
+        self.ctx = None
+        self.device_data = None
+        self.host_data = __type_of(self.host_data).alloc(runtime_layout.size())
+        self.runtime_layout = rebind[__type_of(self.runtime_layout)](
+            runtime_layout
         )
 
     @always_inline
+    fn __init__(out self, ctx: DeviceContext) raises:
+        self.ctx = ctx
+        self.device_data = ctx.create_buffer_sync[dtype](layout.size())
+        self.host_data = __type_of(self.host_data).alloc(layout.size())
+        self.runtime_layout = __type_of(self.runtime_layout)()
+
+    @always_inline
+    fn __init__(
+        mut self, runtime_layout: RuntimeLayout[layout, **_], ctx: DeviceContext
+    ) raises:
+        self.ctx = ctx
+        self.device_data = ctx.create_buffer_sync[dtype](runtime_layout.size())
+        self.host_data = __type_of(self.host_data).alloc(runtime_layout.size())
+        self.runtime_layout = rebind[__type_of(self.runtime_layout)](
+            runtime_layout
+        )
+
+    fn device_tensor[
+        update: Bool = True
+    ](self) raises -> LayoutTensor[dtype, layout]:
+        debug_assert(
+            bool(self.ctx),
+            "device_tensor cannot be constructed for host only tensor.",
+        )
+
+        @parameter
+        if update:
+            self._update_device()
+
+        @parameter
+        if layout.all_dims_known():
+            return LayoutTensor[dtype, layout](
+                self.device_data.value().ptr,
+            )
+        else:
+            return LayoutTensor[dtype, layout](
+                self.device_data.value().ptr,
+                self.runtime_layout,
+            )
+
+    fn tensor[update: Bool = True](self) raises -> LayoutTensor[dtype, layout]:
+        @parameter
+        if update:
+            self._update_host()
+
+        @parameter
+        if layout.all_dims_known():
+            return LayoutTensor[dtype, layout](
+                self.host_data,
+            )
+        else:
+            return LayoutTensor[dtype, layout](
+                self.host_data,
+                self.runtime_layout,
+            )
+
+    fn _update_device(self) raises:
+        if self.ctx:
+            self.ctx.value().copy_to_device_sync(
+                self.device_data.value(), self.host_data
+            )
+
+    fn _update_host(self) raises:
+        if self.ctx:
+            self.ctx.value().copy_from_device_sync(
+                self.host_data, self.device_data.value()
+            )
+
+    @always_inline
     fn __del__(owned self):
-        free_fn[dtype](self.tensor.ptr)
-
-
-alias ManagedLayoutGPUTensor = ManagedLayoutTensor[
-    alloc_fn=gpu_managed_alloc,
-    free_fn=gpu_free,
-    alloc_runtime_fn=gpu_managed_alloc_runtime,
-]
+        self.host_data.free()
 
 
 fn load_to_simd(

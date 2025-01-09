@@ -148,7 +148,7 @@ fn test_element_store():
     print(tensor_8x8)
 
 
-fn test_element_dynamic_layout():
+fn test_element_dynamic_layout() raises:
     print("== test_element_dynamic_layout")
 
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
@@ -202,7 +202,7 @@ fn test_element_dynamic_layout():
     var tensor_Ux8 = ManagedLayoutTensor[DType.float32, layoutUx8](
         runtime_layoutUx8
     )
-    arange(tensor_Ux8.tensor, 0, 0.5)
+    arange(tensor_Ux8.tensor(), 0, 0.5)
     # CHECK: 0.0 0.5 1.0 1.5 2.0 2.5 3.0 3.5
     # CHECK: 4.0 4.5 5.0 5.5 6.0 6.5 7.0 7.5
     # CHECK: 8.0 8.5 9.0 9.5 10.0 10.5 11.0 11.5
@@ -211,9 +211,9 @@ fn test_element_dynamic_layout():
     # CHECK: 20.0 20.5 21.0 21.5 22.0 22.5 23.0 23.5
     # CHECK: 24.0 24.5 25.0 25.5 26.0 26.5 27.0 27.5
     # CHECK: 28.0 28.5 29.0 29.5 30.0 30.5 31.0 31.5
-    print(tensor_Ux8.tensor)
+    print(tensor_Ux8.tensor())
 
-    var tensor_Ux8_vec4_d1 = tensor_Ux8.tensor.vectorize[1, 4]()
+    var tensor_Ux8_vec4_d1 = tensor_Ux8.tensor().vectorize[1, 4]()
 
     # CHECK: ((1, 4):(0, 1))
     # CHECK: [0.0, 0.5, 1.0, 1.5] [2.0, 2.5, 3.0, 3.5]
@@ -235,7 +235,7 @@ fn test_element_dynamic_layout():
     var tensor_8xU = ManagedLayoutTensor[DType.float32, layout8xU](
         runtime_layout8xU
     )
-    arange(tensor_8xU.tensor, 0, 0.5)
+    arange(tensor_8xU.tensor(), 0, 0.5)
     # CHECK: 0.0 0.5
     # CHECK: 1.0 1.5
     # CHECK: 2.0 2.5
@@ -244,9 +244,9 @@ fn test_element_dynamic_layout():
     # CHECK: 5.0 5.5
     # CHECK: 6.0 6.5
     # CHECK: 7.0 7.5
-    print(tensor_8xU.tensor)
+    print(tensor_8xU.tensor())
 
-    var tensor_Ux8_vec4_d0 = tensor_8xU.tensor.vectorize[4, 1]()
+    var tensor_Ux8_vec4_d0 = tensor_8xU.tensor().vectorize[4, 1]()
     # CHECK: ((4, 1):(-1, 0))
     # CHECK: [0.0, 1.0, 2.0, 3.0] [0.5, 1.5, 2.5, 3.5]
     # CHECK: [4.0, 5.0, 6.0, 7.0] [4.5, 5.5, 6.5, 7.5]
@@ -380,7 +380,7 @@ fn test_element_masked_store():
     print(tensor_4x4)
 
 
-fn main():
+fn main() raises:
     test_element_load()
     test_element_store()
     test_element_dynamic_layout()

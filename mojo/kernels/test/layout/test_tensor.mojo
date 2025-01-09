@@ -49,13 +49,13 @@ fn print_mode2_shape2_tensor[
 
 
 # CHECK-LABEL: test_basic_tensor_ops
-fn test_basic_tensor_ops():
+fn test_basic_tensor_ops() raises:
     print("== test_basic_tensor_ops")
 
     var managed_tensor = ManagedLayoutTensor[
         DType.float32, Layout(IntTuple(8, 4))
     ]()
-    var tensor = managed_tensor.tensor
+    var tensor = managed_tensor.tensor()
     arange(tensor)
 
     # CHECK: ----original matrix----
@@ -144,14 +144,14 @@ fn test_basic_tensor_ops():
 #   TH_1    TH_3    TH_1    TH_3
 #   TH_0    TH_2    TH_0    TH_2
 #   TH_1    TH_3    TH_1    TH_3
-fn test_tesnsor_fragments():
+fn test_tesnsor_fragments() raises:
     print("== test_tesnsor_fragments")
 
     var managed_tensor = ManagedLayoutTensor[
         DType.float32, Layout(IntTuple(8, 4))
     ]()
 
-    var tensor = managed_tensor.tensor
+    var tensor = managed_tensor.tensor()
     arange(tensor)
 
     # CHECK: ----fragments-data[ 0 ]----
@@ -183,14 +183,14 @@ fn test_tesnsor_fragments():
 
 
 # CHECK-LABEL: test_tensor_tile_and_distribute
-fn test_tensor_tile_and_distribute():
+fn test_tensor_tile_and_distribute() raises:
     print("== test_tensor_tile_and_distribute")
 
     var managed_tensor = ManagedLayoutTensor[
         DType.float32, Layout(IntTuple(8, 8))
     ]()
 
-    var tensor = managed_tensor.tensor
+    var tensor = managed_tensor.tensor()
     arange(tensor)
 
     # CHECK: ----tile-data[ 0 , 0 ]----
@@ -278,12 +278,12 @@ fn test_tensor_tile_and_distribute():
 
 
 # CHECK-LABEL: test_tensor_tile_and_distribute_custom_layout
-fn test_tensor_tile_and_distribute_custom_layout():
+fn test_tensor_tile_and_distribute_custom_layout() raises:
     print("== test_tensor_tile_and_distribute_custom_layout")
     var managed_tensor = ManagedLayoutTensor[
         DType.float32, Layout(IntTuple(2, 4))
     ]()
-    var tensor = managed_tensor.tensor
+    var tensor = managed_tensor.tensor()
     arange(tensor)
     # CHECK: 0.0   1.0   2.0   3.0
     # CHECK: 4.0   5.0   6.0   7.0
@@ -1838,19 +1838,19 @@ fn test_nested_layout_tensor_iterator():
 
 
 # CHECK-LABEL: test_binary_math_ops
-fn test_binary_math_ops():
+fn test_binary_math_ops() raises:
     print("== test_binary_math_ops")
 
     var managed_tensor_a = ManagedLayoutTensor[
         DType.float32, Layout(IntTuple(8, 4))
     ]()
-    var tensor_a = managed_tensor_a.tensor
+    var tensor_a = managed_tensor_a.tensor()
     arange(tensor_a, start=1)
 
     var managed_tensor_b = ManagedLayoutTensor[
         DType.float32, Layout(IntTuple(8, 4))
     ]()
-    var tensor_b = managed_tensor_b.tensor
+    var tensor_b = managed_tensor_b.tensor()
     arange(tensor_b, start=32, step=-1)
 
     # CHECK: ----add matrix----
@@ -1913,7 +1913,7 @@ fn test_vectorized_tile() raises:
     var managed_tensor_a = ManagedLayoutTensor[
         DType.float32, Layout(IntTuple(8, 4))
     ]()
-    var tensor_a = managed_tensor_a.tensor
+    var tensor_a = managed_tensor_a.tensor()
     var vt = tensor_a.vectorize[1, 2]().tile[4, 2](0, 0)
     assert_equal(to_int(vt.layout.shape[0]), 4)
     assert_equal(to_int(vt.layout.shape[1]), 2)

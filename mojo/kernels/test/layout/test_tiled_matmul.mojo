@@ -98,7 +98,7 @@ struct MMA_Vec(TiledOp):
 
 fn gemm_l2_cache[
     mma: TiledOp, L1: Dim, L2: Dim
-](dst: LayoutTensor, lhs: LayoutTensor, rhs: LayoutTensor):
+](dst: LayoutTensor, lhs: LayoutTensor, rhs: LayoutTensor) raises:
     alias M = dst.shape[0]()
     alias N = dst.shape[1]()
     alias K = lhs.shape[1]()
@@ -138,13 +138,13 @@ fn gemm_l2_cache[
                             )
 
                             # Materialize L2 rhs transposed tile
-                            l2_rhs_cache.tensor.copy_from(
+                            l2_rhs_cache.tensor().copy_from(
                                 rhs_l2_tile.transpose()
                             )
 
                             # Execute mma.op - rhs_l2_tile is already transposed
                             mma.op(
-                                dst_l2_tile, lhs_l2_tile, l2_rhs_cache.tensor
+                                dst_l2_tile, lhs_l2_tile, l2_rhs_cache.tensor()
                             )
     _ = l2_rhs_cache^
 
@@ -221,7 +221,7 @@ fn gemm_l1_cache[
     # _ = len(l1_rhs_cache)
 
 
-fn test_tiled_matmul[use_l1_cache: Bool]():
+fn test_tiled_matmul[use_l1_cache: Bool]() raises:
     if use_l1_cache:
         print("=== test_tiled_matmul_l1_cache")
     else:
@@ -231,29 +231,30 @@ fn test_tiled_matmul[use_l1_cache: Bool]():
     var rhs = ManagedLayoutTensor[DType.float32, Layout(IntTuple(8, 8))]()
     var lhs = ManagedLayoutTensor[DType.float32, Layout(IntTuple(8, 8))]()
 
-    _ = dst.tensor.fill(0)
-    arange(rhs.tensor)
-    arange(lhs.tensor)
+    _ = dst.tensor().fill(0)
+    arange(rhs.tensor())
+    arange(lhs.tensor())
 
     if use_l1_cache:
         gemm_l1_cache[
             MMA_Vec,
             Dim(4, 4, 2),
             Dim(2, 2, 1),
-        ](dst.tensor, lhs.tensor, rhs.tensor)
+        ](dst.tensor(), lhs.tensor(), rhs.tensor())
     else:
         gemm_l2_cache[
             MMA_Vec,
             Dim(4, 4, 2),
             Dim(2, 2, 1),
-        ](dst.tensor, lhs.tensor, rhs.tensor)
-    print(dst.tensor)
+        ](dst.tensor(), lhs.tensor(), rhs.tensor())
+    print(dst.tensor())
 
     _ = rhs^
     _ = lhs^
+    _ = dst^
 
 
-fn main():
+fn main() raises:
     # CHECK: === test_tiled_matmul_l1_cache
     # CHECK: 1120.0   1148.0   1176.0   1204.0   1232.0   1260.0   1288.0   1316.0
     # CHECK: 2912.0   3004.0   3096.0   3188.0   3280.0   3372.0   3464.0   3556.0
