@@ -6801,8 +6801,6 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
     )
 
 
-# NOTE: this seems wrong as it has a continuous batching cache but the
-# name does not reflect this. Still -- it mirrors the old api.
 @compiler.register(
     "mo.fused_qkv_matmul.padded.continuous_batching.nhead_8.hdim_64"
 )
@@ -6819,6 +6817,31 @@ struct Struct_fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_64:
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             kv_params_h8_d64_bshd,
+        ],
+        layer_idx: Scalar[DType.uint32],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
+            target
+        ](output, hidden_state, weight, kv_collection, layer_idx, ctx)
+
+
+@compiler.register(
+    "mo.fused_qkv_matmul.padded.continuous_batching.nhead_8.hdim_512"
+)
+struct Struct_fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_512:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        output: ManagedTensorSlice[type, 3],
+        hidden_state: ManagedTensorSlice[type, 3],
+        weight: ManagedTensorSlice[type, 2],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type,
+            kv_params_h8_d512_bshd,
         ],
         layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
@@ -6903,56 +6926,10 @@ struct Struct_fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_32:
         ](output, hidden_state, weight, kv_collection, layer_idx, ctx)
 
 
-@compiler.register("mo.fused_qkv_matmul.padded.continuous_batching.h8.d512")
-struct Struct_fused_qkv_matmul_padded_continuous_batching_h8_d512:
-    @uses_opaque
-    @always_inline
-    @staticmethod
-    fn execute[
-        type: DType, target: StringLiteral
-    ](
-        output: ManagedTensorSlice[type, 3],
-        hidden_state: ManagedTensorSlice[type, 3],
-        weight: ManagedTensorSlice[type, 2],
-        kv_collection: ContinuousBatchingKVCacheCollection[
-            type,
-            kv_params_h8_d512_bshd,
-        ],
-        layer_idx: Scalar[DType.uint32],
-        ctx: MojoCallContextPtr,
-    ) raises:
-        generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
-            target
-        ](output, hidden_state, weight, kv_collection, layer_idx, ctx)
-
-
 @compiler.register(
-    "mo.fused_qkv_matmul.padded.continuous_batching.nhead_32.hdim_128"
+    "mo.fused_qkv_matmul.padded.continuous_batching.nhead_16.hdim_128"
 )
-struct Struct_fused_qkv_matmul_padded_continuous_batching_nhead_32_hdim_128:
-    @uses_opaque
-    @always_inline
-    @staticmethod
-    fn execute[
-        type: DType, target: StringLiteral
-    ](
-        output: ManagedTensorSlice[type, 3],
-        hidden_state: ManagedTensorSlice[type, 3],
-        weight: ManagedTensorSlice[type, 2],
-        kv_collection: ContinuousBatchingKVCacheCollection[
-            type,
-            kv_params_h2_d128_bshd,
-        ],
-        layer_idx: Scalar[DType.uint32],
-        ctx: MojoCallContextPtr,
-    ) raises:
-        generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
-            target
-        ](output, hidden_state, weight, kv_collection, layer_idx, ctx)
-
-
-@compiler.register("fused_qkv_matmul_kv_cache_h16_d128_bshd_continuous_batch")
-struct Struct_fused_qkv_matmul_kv_cache_h16_d128_bshd_continuous_batch:
+struct Struct_fused_qkv_matmul_padded_continuous_batching_nhead_16_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -6974,7 +6951,34 @@ struct Struct_fused_qkv_matmul_kv_cache_h16_d128_bshd_continuous_batch:
         ](output, hidden_state, weight, kv_collection, layer_idx, ctx)
 
 
-@compiler.register("fused_qkv_matmul_kv_cache_h32_d128_bshd_continuous_batch")
+@compiler.register(
+    "mo.fused_qkv_matmul.padded.continuous_batching.nhead_2.hdim_128"
+)
+struct Struct_fused_qkv_matmul_padded_continuous_batching_nhead_2_hdim_128:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        output: ManagedTensorSlice[type, 3],
+        hidden_state: ManagedTensorSlice[type, 3],
+        weight: ManagedTensorSlice[type, 2],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type,
+            kv_params_h2_d128_bshd,
+        ],
+        layer_idx: Scalar[DType.uint32],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
+            target
+        ](output, hidden_state, weight, kv_collection, layer_idx, ctx)
+
+
+@compiler.register(
+    "mo.fused_qkv_matmul.padded.continuous_batching.nhead_32.hdim_128"
+)
 struct Struct_fused_qkv_matmul_kv_cache_h32_d128_bshd_continuous_batch:
     @uses_opaque
     @always_inline
