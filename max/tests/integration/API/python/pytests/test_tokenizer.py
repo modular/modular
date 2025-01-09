@@ -11,8 +11,12 @@ from max.pipelines import (
     PipelineConfig,
     TextAndVisionContext,
     TextAndVisionTokenizer,
+    TextContext,
+    TextTokenizer,
     TokenGeneratorRequest,
+    TokenGeneratorRequestFunction,
     TokenGeneratorRequestMessage,
+    TokenGeneratorRequestTool,
 )
 
 
@@ -75,3 +79,56 @@ def test_text_and_vision_tokenizer():
                 assert check_str in context.prompt, context.prompt
                 assert context.pixel_values is not None
                 assert len(context.pixel_values) == len(imgs_list)
+
+
+@pytest.mark.skip("CI does not appear to be working well with gated repos")
+def test_text_tokenizer_with_tool_use():
+    """This test uses gated repos on huggingface, as such its not expected to run in CI.
+    It is written to test out chat templating and input features for tool use with Llama 3.2
+    """
+
+    pipeline_config = PipelineConfig(
+        huggingface_repo_id="meta-llama/Llama-3.1-8B-Instruct",
+    )
+
+    tokenizer = TextTokenizer(pipeline_config)
+
+    request = TokenGeneratorRequest(
+        id="request_with_tools",
+        index=0,
+        model_name=pipeline_config.huggingface_repo_id,
+        messages=[
+            TokenGeneratorRequestMessage(
+                role="user",
+                content="What is the weather in Toronto?",
+            )
+        ],
+        tools=[
+            TokenGeneratorRequestTool(
+                type="function",
+                function=TokenGeneratorRequestFunction(
+                    name="get_current_weather",
+                    description="Get the current weather for a given location.",
+                    parameters={
+                        "type": "object",
+                        "properties": {
+                            "location": {
+                                "type": "string",
+                                "description": "The city and state, e.g. Toronto.",
+                            },
+                            "unit": {
+                                "type": "string",
+                                "enum": ["celsius", "fahrenheit"],
+                            },
+                        },
+                        "required": ["location"],
+                    },
+                ),
+            )
+        ],
+    )
+
+    context: TextContext = asyncio.run(tokenizer.new_context(request))
+
+    # This is just asserting that the prompt includes function context
+    assert '"name": "get_current_weather"' in context.prompt

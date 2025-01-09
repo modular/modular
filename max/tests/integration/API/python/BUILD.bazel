@@ -23,6 +23,7 @@ modular_py_test(
     ],
     env = {
         "BAZEL": "true",
+        "HF_ESCAPES_NETWORK": "1",
         "MODULAR_COUNTER_OPS_PATH": "$(location //SDK/integration-test:counter_ops)",
         "CUSTOM_OPS_PATH": "$(location //SDK/integration-test:test_user_op)",
         "MODULAR_PATH": ".",
@@ -38,6 +39,9 @@ modular_py_test(
         "//open-source/mojo/stdlib/stdlib",
     ],
     tags = [
+        "huggingface",
+        "no-remote-exec",
+        "no-sandbox",
         "requires-network",
     ],
     target_compatible_with = select({
