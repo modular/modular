@@ -1106,6 +1106,7 @@ fn max[
     )
 
 
+@always_inline
 fn max[
     type: DType,
     input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> SIMD[
@@ -1230,6 +1231,7 @@ fn min[
     )
 
 
+@always_inline
 fn min[
     type: DType,
     input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> SIMD[
@@ -1354,6 +1356,7 @@ fn sum[
     )
 
 
+@always_inline
 fn sum[
     type: DType,
     input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> SIMD[
@@ -1478,6 +1481,7 @@ fn product[
     )
 
 
+@always_inline
 fn product[
     type: DType,
     input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> SIMD[
@@ -1617,6 +1621,7 @@ fn mean[
         vectorize[normalize_floating, simd_width](len(dst_1d))
 
 
+@always_inline
 fn mean[
     type: DType,
     input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> SIMD[
