@@ -718,11 +718,10 @@ fn generic_flash_attention_kv_cache_continuous_batch[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "flash_attention_kv_cache_h"
+        "mo.mha.padded.continunous_batching.tensor_mask.no_pos.nhead_"
         + str(kv_collection.kv_params.num_heads)
-        + "_d"
-        + str(kv_collection.kv_params.head_size)
-        + "_bshd_continuous_batch",
+        + ".hdim_"
+        + str(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         return _flash_attention_kv_cache[
@@ -739,8 +738,10 @@ fn generic_flash_attention_kv_cache_continuous_batch[
         )
 
 
-@register_internal("flash_attention_kv_cache_h8_d128_bshd_continuous_batch")
-fn flash_attention_kv_cache_h8_d128_bshd_continuous_batch[
+@register_internal(
+    "mo.mha.padded.continuous_batching.tensor_mask.no_pos.nhead_8.hdim_128"
+)
+fn mha_padded_continuous_batching_tensor_mask_no_pos_nhead_8_hdim_128[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -761,8 +762,10 @@ fn flash_attention_kv_cache_h8_d128_bshd_continuous_batch[
     )
 
 
-@register_internal("flash_attention_kv_cache_h2_d128_bshd_continuous_batch")
-fn flash_attention_kv_cache_h2_d128_bshd_continuous_batch[
+@register_internal(
+    "mo.mha.padded.continuous_batching.tensor_mask.no_pos.nhead_2.hdim_128"
+)
+fn mha_padded_continuous_batching_tensor_mask_no_pos_nhead_2_hdim_128[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -783,8 +786,10 @@ fn flash_attention_kv_cache_h2_d128_bshd_continuous_batch[
     )
 
 
-@register_internal("flash_attention_kv_cache_h16_d128_bshd_continuous_batch")
-fn flash_attention_kv_cache_h16_d128_bshd_continuous_batch[
+@register_internal(
+    "mo.mha.padded.continuous_batching.tensor_mask.no_pos.nhead_16.hdim_128"
+)
+fn mha_padded_continuous_batching_tensor_mask_no_pos_nhead_16_hdim_128[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -805,8 +810,10 @@ fn flash_attention_kv_cache_h16_d128_bshd_continuous_batch[
     )
 
 
-@register_internal("flash_attention_kv_cache_h1_d16_bshd_continuous_batch")
-fn flash_attention_kv_cache_h1_d16_bshd_continuous_batch[
+@register_internal(
+    "mo.mha.padded.continuous_batching.tensor_mask.no_pos.nhead_1.hdim_16"
+)
+fn mha_padded_continuous_batching_tensor_mask_no_pos_nhead_1_hdim_16[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -827,8 +834,10 @@ fn flash_attention_kv_cache_h1_d16_bshd_continuous_batch[
     )
 
 
-@register_internal("flash_attention_kv_cache_h8_d32_bshd_continuous_batch")
-fn flash_attention_kv_cache_h8_d32_bshd_continuous_batch[
+@register_internal(
+    "mo.mha.padded.continuous_batching.tensor_mask.no_pos.nhead_8.hdim_32"
+)
+fn mha_padded_continuous_batching_tensor_mask_no_pos_nhead_8_hdim_32[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -849,8 +858,10 @@ fn flash_attention_kv_cache_h8_d32_bshd_continuous_batch[
     )
 
 
-@register_internal("flash_attention_kv_cache_h8_d64_bshd_continuous_batch")
-fn flash_attention_kv_cache_h8_d64_bshd_continuous_batch[
+@register_internal(
+    "mo.mha.padded.continuous_batching.tensor_mask.no_pos.nhead_8.hdim_64"
+)
+fn mha_padded_continuous_batching_tensor_mask_no_pos_nhead_8_hdim_64[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -871,8 +882,10 @@ fn flash_attention_kv_cache_h8_d64_bshd_continuous_batch[
     )
 
 
-@register_internal("flash_attention_kv_cache_h8_d512_bshd_continuous_batch")
-fn flash_attention_kv_cache_h8_d512_bshd_continuous_batch[
+@register_internal(
+    "mo.mha.padded.continuous_batching.tensor_mask.no_pos.nhead_8.hdim_512"
+)
+fn mha_padded_continuous_batching_tensor_mask_no_pos_nhead_8_hdim_512[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -893,8 +906,10 @@ fn flash_attention_kv_cache_h8_d512_bshd_continuous_batch[
     )
 
 
-@register_internal("flash_attention_kv_cache_h32_d128_bshd_continuous_batch")
-fn flash_attention_kv_cache_h32_d128_bshd_continuous_batch[
+@register_internal(
+    "mo.mha.padded.continuous_batching.tensor_mask.no_pos.nhead_32.hdim_128"
+)
+fn mha_padded_continuous_batching_tensor_mask_no_pos_nhead_32_hdim_128[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -1030,11 +1045,10 @@ fn generic_flash_attention_kv_cache_causal_mask_continuous_batch[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "flash_attention_kv_cache_h"
+        "mo.mha.padded.continuous_batching.causal_mask.no_pos.nhead_"
         + str(kv_collection.kv_params.num_heads)
-        + "_d"
-        + str(kv_collection.kv_params.head_size)
-        + "_bshd_causal_batching_continuous_batch",
+        + ".hdim_"
+        + str(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         return _flash_attention_kv_cache_causal_mask[
@@ -1043,9 +1057,9 @@ fn generic_flash_attention_kv_cache_causal_mask_continuous_batch[
 
 
 @register_internal(
-    "flash_attention_kv_cache_h8_d128_causal_mask_continuous_batch"
+    "mo.mha.padded.continuous_batching.causal_mask.no_pos.nhead_8.hdim_128"
 )
-fn flash_attention_kv_cache_h8_d128_causal_mask_continuous_batch[
+fn mha_padded_continuous_batching_causal_mask_no_pos_nhead_8_hdim_128[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -1066,9 +1080,9 @@ fn flash_attention_kv_cache_h8_d128_causal_mask_continuous_batch[
 
 
 @register_internal(
-    "flash_attention_kv_cache_h32_d128_causal_mask_continuous_batch"
+    "mo.mha.padded.continuous_batching.causal_mask.no_pos.nhead_32.hdim_128"
 )
-fn flash_attention_kv_cache_h32_d128_causal_mask_continuous_batch[
+fn mha_padded_continuous_batching_causal_mask_no_pos_nhead_32_hdim_128[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -1089,9 +1103,9 @@ fn flash_attention_kv_cache_h32_d128_causal_mask_continuous_batch[
 
 
 @register_internal(
-    "flash_attention_kv_cache_h8_d32_causal_mask_continuous_batch"
+    "mo.mha.padded.continuous_batching.causal_mask.no_pos.nhead_8.hdim_32"
 )
-fn flash_attention_kv_cache_h8_d32_causal_mask_continuous_batch[
+fn mha_padded_continuous_batching_causal_mask_no_pos_nhead_8_hdim_32[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -1112,9 +1126,9 @@ fn flash_attention_kv_cache_h8_d32_causal_mask_continuous_batch[
 
 
 @register_internal(
-    "flash_attention_kv_cache_h8_d64_causal_mask_continuous_batch"
+    "mo.mha.padded.continuous_batching.causal_mask.no_pos.nhead_8.hdim_64"
 )
-fn flash_attention_kv_cache_h8_d64_causal_mask_continuous_batch[
+fn mha_padded_continuous_batching_causal_mask_no_pos_nhead_8_hdim_64[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -1135,9 +1149,9 @@ fn flash_attention_kv_cache_h8_d64_causal_mask_continuous_batch[
 
 
 @register_internal(
-    "flash_attention_kv_cache_h1_d16_causal_mask_continuous_batch"
+    "mo.mha.padded.continuous_batching.causal_mask.no_pos.nhead_1.hdim_16"
 )
-fn flash_attention_kv_cache_h1_d16_causal_mask_continuous_batch[
+fn mha_padded_continuous_batching_causal_mask_no_pos_nhead_1_hdim_16[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -1182,11 +1196,10 @@ fn generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "flash_attention_kv_cache_h"
+        "mo.mha.padded.continuous_batching.causal_mask.alibi_pos.nhead_"
         + str(kv_collection.kv_params.num_heads)
-        + "_d"
-        + str(kv_collection.kv_params.head_size)
-        + "_bshd_causal_alibi_batching_continuous_batch",
+        + ".hdim_"
+        + str(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         return _flash_attention_kv_cache_causal_alibi_mask[
@@ -1195,9 +1208,9 @@ fn generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch[
 
 
 @register_internal(
-    "flash_attention_kv_cache_h8_d128_causal_alibi_mask_continuous_batch"
+    "mo.mha.padded.continuous_batching.causal_mask.alibi_pos.nhead_8.hdim_128"
 )
-fn flash_attention_kv_cache_h8_d128_causal_alibi_mask_continuous_batch[
+fn mha_padded_continuous_batching_causal_mask_alibi_pos_nhead_8_hdim_128[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -1218,9 +1231,9 @@ fn flash_attention_kv_cache_h8_d128_causal_alibi_mask_continuous_batch[
 
 
 @register_internal(
-    "flash_attention_kv_cache_h32_d128_causal_alibi_mask_continuous_batch"
+    "mo.mha.padded.continuous_batching.causal_mask.alibi_pos.nhead_32.hdim_128"
 )
-fn flash_attention_kv_cache_h32_d128_causal_alibi_mask_continuous_batch[
+fn mha_padded_continuous_batching_causal_mask_alibi_pos_nhead_32_hdim_128[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -1241,9 +1254,9 @@ fn flash_attention_kv_cache_h32_d128_causal_alibi_mask_continuous_batch[
 
 
 @register_internal(
-    "flash_attention_kv_cache_h8_d32_causal_alibi_mask_continuous_batch"
+    "mo.mha.padded.continuous_batching.causal_mask.alibi_pos.nhead_8.hdim_32"
 )
-fn flash_attention_kv_cache_h8_d32_causal_alibi_mask_continuous_batch[
+fn mha_padded_continuous_batching_causal_mask_alibi_pos_nhead_8_hdim_32[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -1264,9 +1277,9 @@ fn flash_attention_kv_cache_h8_d32_causal_alibi_mask_continuous_batch[
 
 
 @register_internal(
-    "flash_attention_kv_cache_h8_d64_causal_alibi_mask_continuous_batch"
+    "mo.mha.padded.continuous_batching.causal_mask.alibi_pos.nhead_8.hdim_64"
 )
-fn flash_attention_kv_cache_h8_d64_causal_alibi_mask_continuous_batch[
+fn mha_padded_continuous_batching_causal_mask_alibi_pos_nhead_8_hdim_64[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -1287,9 +1300,9 @@ fn flash_attention_kv_cache_h8_d64_causal_alibi_mask_continuous_batch[
 
 
 @register_internal(
-    "flash_attention_kv_cache_h1_d16_causal_alibi_mask_continuous_batch"
+    "mo.mha.padded.continuous_batching.causal_mask.alibi_pos.nhead_1.hdim_16"
 )
-fn flash_attention_kv_cache_h1_d16_causal_alibi_mask_continuous_batch[
+fn mha_padded_continuous_batching_causal_mask_alibi_pos_nhead_1_hdim_16[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](

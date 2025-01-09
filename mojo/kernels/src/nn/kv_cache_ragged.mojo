@@ -2060,9 +2060,9 @@ fn generic_flash_attention_kv_cache_causal_mask_paged_ragged[
             "head_size=" + str(kv_collection.kv_params.head_size),
         )
 
-    alias name = "flash_attention_kv_cache_h" + str(
+    alias name = "mo.mha.ragged.paged.causal_mask.no_pos.nhead_" + str(
         kv_collection.kv_params.num_heads
-    ) + "_d" + str(kv_collection.kv_params.head_size) + "_paged_ragged"
+    ) + ".hdim_" + str(kv_collection.kv_params.head_size)
 
     with Trace[TraceLevel.OP, target=target](
         name,
@@ -2082,8 +2082,8 @@ fn generic_flash_attention_kv_cache_causal_mask_paged_ragged[
         )
 
 
-@register_internal("flash_attention_kv_cache_h1_d16_causal_mask_paged_ragged")
-fn flash_attention_kv_cache_h1_d16_causal_mask_paged_ragged[
+@register_internal("mo.mha.ragged.paged.causal_mask.no_pos.nhead_1.hdim_16")
+fn mha_ragged_paged_causal_mask_no_pos_nhead_1_hdim_16[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -2100,8 +2100,8 @@ fn flash_attention_kv_cache_h1_d16_causal_mask_paged_ragged[
     )
 
 
-@register_internal("flash_attention_kv_cache_h6_d48_causal_mask_paged_ragged")
-fn flash_attention_kv_cache_h6_d48_causal_mask_paged_ragged[
+@register_internal("mo.mha.ragged.paged.causal_mask.no_pos.nhead_6.hdim_48")
+fn mha_ragged_paged_causal_mask_no_pos_nhead_6_hdim_48[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -2118,8 +2118,8 @@ fn flash_attention_kv_cache_h6_d48_causal_mask_paged_ragged[
     )
 
 
-@register_internal("flash_attention_kv_cache_h8_d128_causal_mask_paged_ragged")
-fn flash_attention_kv_cache_h8_d128_causal_mask_paged_ragged[
+@register_internal("mo.mha.ragged.paged.causal_mask.no_pos.nhead_8.hdim_128")
+fn mha_ragged_paged_causal_mask_no_pos_nhead_8_hdim_128[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -2136,8 +2136,8 @@ fn flash_attention_kv_cache_h8_d128_causal_mask_paged_ragged[
     )
 
 
-@register_internal("flash_attention_kv_cache_h8_d16_causal_mask_paged_ragged")
-fn flash_attention_kv_cache_h8_d16_causal_mask_paged_ragged[
+@register_internal("mo.mha.ragged.paged.causal_mask.no_pos.nhead_8.hdim_16")
+fn mha_ragged_paged_causal_mask_no_pos_nhead_8_hdim_16[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -2154,8 +2154,8 @@ fn flash_attention_kv_cache_h8_d16_causal_mask_paged_ragged[
     )
 
 
-@register_internal("flash_attention_kv_cache_h8_d512_causal_mask_paged_ragged")
-fn flash_attention_kv_cache_h8_d512_causal_mask_paged_ragged[
+@register_internal("mo.mha.ragged.paged.causal_mask.no_pos.nhead_8.hdim_512")
+fn mha_ragged_paged_causal_mask_no_pos_nhead_8_hdim_512[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -2172,8 +2172,8 @@ fn flash_attention_kv_cache_h8_d512_causal_mask_paged_ragged[
     )
 
 
-@register_internal("flash_attention_kv_cache_h8_d32_causal_mask_paged_ragged")
-fn flash_attention_kv_cache_h8_d32_causal_mask_paged_ragged[
+@register_internal("mo.mha.ragged.paged.causal_mask.no_pos.nhead_8.hdim_32")
+fn mha_ragged_paged_causal_mask_no_pos_nhead_8_hdim_32[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -2190,8 +2190,8 @@ fn flash_attention_kv_cache_h8_d32_causal_mask_paged_ragged[
     )
 
 
-@register_internal("flash_attention_kv_cache_h8_d64_causal_mask_paged_ragged")
-fn flash_attention_kv_cache_h8_d64_causal_mask_paged_ragged[
+@register_internal("mo.mha.ragged.paged.causal_mask.no_pos.nhead_8.hdim_64")
+fn mha_ragged_paged_causal_mask_no_pos_nhead_8_hdim_64[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -2208,8 +2208,8 @@ fn flash_attention_kv_cache_h8_d64_causal_mask_paged_ragged[
     )
 
 
-@register_internal("flash_attention_kv_cache_h32_d128_causal_mask_paged_ragged")
-fn flash_attention_kv_cache_h32_d128_causal_mask_paged_ragged[
+@register_internal("mo.mha.ragged.paged.causal_mask.no_pos.nhead_32.hdim_128")
+fn mha_ragged_paged_causal_mask_no_pos_nhead_32_hdim_128[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -2252,11 +2252,10 @@ fn generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "flash_attention_kv_cache_h"
+        "mo.mha.ragged.continuous_batching.causal_mask.no_pos.nhead_"
         + str(kv_collection.kv_params.num_heads)
-        + "_d"
-        + str(kv_collection.kv_params.head_size)
-        + "_causal_mask_cont_batch_ragged",
+        + ".hdim_"
+        + str(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         return _flash_attention_kv_cache_ragged[
@@ -2299,11 +2298,10 @@ fn generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "flash_attention_kv_cache_h"
+        "mo.mha.ragged.continuous_batching.causal_mask.alibi_pos.nhead_"
         + str(kv_collection.kv_params.num_heads)
-        + "_d"
-        + str(kv_collection.kv_params.head_size)
-        + "alibi_mask_cont_batch_ragged",
+        + ".hdim_"
+        + str(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         return _flash_attention_kv_cache_alibi_mask_ragged[
@@ -2344,11 +2342,10 @@ fn generic_flash_attention_kv_cache_null_mask_cont_batch_ragged[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "flash_attention_kv_cache_h"
+        "mo.mha.ragged.continuous_batching.null_mask.no_pos.nhead_"
         + str(kv_collection.kv_params.num_heads)
-        + "_d"
-        + str(kv_collection.kv_params.head_size)
-        + "_null_mask_cont_batch_ragged",
+        + ".hdim_"
+        + str(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         return _flash_attention_kv_cache_ragged[
@@ -2366,9 +2363,9 @@ fn generic_flash_attention_kv_cache_null_mask_cont_batch_ragged[
 
 
 @register_internal(
-    "flash_attention_kv_cache_h8_d128_null_mask_cont_batch_ragged"
+    "mo.mha.ragged.continuous_batching.null_mask.no_pos.nhead_8.hdim_128"
 )
-fn flash_attention_kv_cache_h8_d128_null_mask_cont_batch_ragged[
+fn mha_ragged_continuous_batching_null_mask_no_pos_nhead_8_hdim_128[
     type: DType, //, target: StringLiteral
 ](
     q: NDBuffer[type, 3, *_],
@@ -2541,9 +2538,9 @@ fn cross_attention_kv_cache_h8_d128_null_mask_cont_batch_ragged[
 
 
 @register_internal(
-    "flash_attention_kv_cache_h1_d16_causal_mask_cont_batch_ragged"
+    "mo.mha.ragged.continuous_batching.causal_mask.no_pos.nhead_1.hdim_16"
 )
-fn flash_attention_kv_cache_h1_d16_causal_mask_cont_batch_ragged[
+fn mha_ragged_continuous_batching_causal_mask_no_pos_nhead_1_hdim_16[
     type: DType, //,
     target: StringLiteral,
 ](
@@ -2563,9 +2560,9 @@ fn flash_attention_kv_cache_h1_d16_causal_mask_cont_batch_ragged[
 
 
 @register_internal(
-    "flash_attention_kv_cache_h3_d64_causal_mask_cont_batch_ragged"
+    "mo.mha.ragged.continuous_batching.causal_mask.no_pos.nhead_3.hdim_64"
 )
-fn flash_attention_kv_cache_h3_d64_causal_mask_cont_batch_ragged[
+fn mha_ragged_continuous_batching_causal_mask_no_pos_nhead_3_hdim_64[
     type: DType, //,
     target: StringLiteral,
 ](
@@ -2585,9 +2582,9 @@ fn flash_attention_kv_cache_h3_d64_causal_mask_cont_batch_ragged[
 
 
 @register_internal(
-    "flash_attention_kv_cache_h2_d2_causal_mask_cont_batch_ragged"
+    "mo.mha.ragged.continuous_batching.causal_mask.no_pos.nhead_2.hdim_2"
 )
-fn flash_attention_kv_cache_h2_d2_causal_mask_cont_batch_ragged[
+fn mha_ragged_continuous_batching_causal_mask_no_pos_nhead_2_hdim_2[
     type: DType, //,
     target: StringLiteral,
 ](
@@ -2607,9 +2604,9 @@ fn flash_attention_kv_cache_h2_d2_causal_mask_cont_batch_ragged[
 
 
 @register_internal(
-    "flash_attention_kv_cache_h8_d64_causal_mask_cont_batch_ragged"
+    "mo.mha.ragged.continuous_batching.causal_mask.no_pos.nhead_8.hdim_64"
 )
-fn flash_attention_kv_cache_h8_d64_causal_mask_cont_batch_ragged[
+fn mha_ragged_continuous_batching_causal_mask_no_pos_nhead_8_hdim_64[
     type: DType, //,
     target: StringLiteral,
 ](
@@ -2629,9 +2626,9 @@ fn flash_attention_kv_cache_h8_d64_causal_mask_cont_batch_ragged[
 
 
 @register_internal(
-    "flash_attention_kv_cache_h2_d128_causal_mask_cont_batch_ragged"
+    "mo.mha.ragged.continuous_batching.causal_mask.no_pos.nhead_2.hdim_128"
 )
-fn flash_attention_kv_cache_h2_d128_causal_mask_cont_batch_ragged[
+fn mha_ragged_continuous_batching_causal_mask_no_pos_nhead_2_hdim_128[
     type: DType, //,
     target: StringLiteral,
 ](
@@ -2651,9 +2648,9 @@ fn flash_attention_kv_cache_h2_d128_causal_mask_cont_batch_ragged[
 
 
 @register_internal(
-    "flash_attention_kv_cache_h4_d128_causal_mask_cont_batch_ragged"
+    "mo.mha.ragged.continuous_batching.causal_mask.no_pos.nhead_4.hdim_128"
 )
-fn flash_attention_kv_cache_h4_d128_causal_mask_cont_batch_ragged[
+fn mha_ragged_continuous_batching_causal_mask_no_pos_nhead_4_hdim_128[
     type: DType, //,
     target: StringLiteral,
 ](
@@ -2673,9 +2670,9 @@ fn flash_attention_kv_cache_h4_d128_causal_mask_cont_batch_ragged[
 
 
 @register_internal(
-    "flash_attention_kv_cache_h8_d80_causal_mask_cont_batch_ragged"
+    "mo.mha.ragged.continuous_batching.causal_mask.no_pos.nhead_8.hdim_80"
 )
-fn flash_attention_kv_cache_h8_d80_causal_mask_cont_batch_ragged[
+fn mha_ragged_continuous_batching_causal_mask_no_pos_nhead_8_hdim_80[
     type: DType, //,
     target: StringLiteral,
 ](
@@ -2695,9 +2692,9 @@ fn flash_attention_kv_cache_h8_d80_causal_mask_cont_batch_ragged[
 
 
 @register_internal(
-    "flash_attention_kv_cache_h8_d128_causal_mask_cont_batch_ragged"
+    "mo.mha.ragged.continuous_batching.causal_mask.no_pos.nhead_8.hdim_128"
 )
-fn flash_attention_kv_cache_h8_d128_causal_mask_cont_batch_ragged[
+fn mha_ragged_continuous_batching_causal_mask_no_pos_nhead_8_hdim_128[
     type: DType, //,
     target: StringLiteral,
 ](
@@ -2717,9 +2714,9 @@ fn flash_attention_kv_cache_h8_d128_causal_mask_cont_batch_ragged[
 
 
 @register_internal(
-    "flash_attention_kv_cache_h8_d512_causal_mask_cont_batch_ragged"
+    "mo.mha.ragged.continuous_batching.causal_mask.no_pos.nhead_8.hdim_512"
 )
-fn flash_attention_kv_cache_h8_d512_causal_mask_cont_batch_ragged[
+fn mha_ragged_continuous_batching_causal_mask_no_pos_nhead_8_hdim_512[
     type: DType, //,
     target: StringLiteral,
 ](
@@ -2739,9 +2736,9 @@ fn flash_attention_kv_cache_h8_d512_causal_mask_cont_batch_ragged[
 
 
 @register_internal(
-    "flash_attention_kv_cache_h32_d128_causal_mask_cont_batch_ragged"
+    "mo.mha.ragged.continuous_batching.causal_mask.no_pos.nhead_32.hdim_128"
 )
-fn flash_attention_kv_cache_h32_d128_causal_mask_cont_batch_ragged[
+fn mha_ragged_continuous_batching_causal_mask_no_pos_nhead_32_hdim_128[
     type: DType, //,
     target: StringLiteral,
 ](
@@ -2761,9 +2758,9 @@ fn flash_attention_kv_cache_h32_d128_causal_mask_cont_batch_ragged[
 
 
 @register_internal(
-    "flash_attention_kv_cache_h8_d32_alibi_mask_cont_batch_ragged"
+    "mo.mha.ragged.continuous_batching.alibi_mask.no_pos.nhead_8.hdim_32"
 )
-fn flash_attention_kv_cache_h8_d32_alibi_mask_cont_batch_ragged[
+fn mha_ragged_continuous_batching_alibi_mask_no_pos_nhead_8_hdim_32[
     type: DType, //,
     target: StringLiteral,
 ](
@@ -2783,9 +2780,9 @@ fn flash_attention_kv_cache_h8_d32_alibi_mask_cont_batch_ragged[
 
 
 @register_internal(
-    "flash_attention_kv_cache_h8_d128_alibi_mask_cont_batch_ragged"
+    "mo.mha.ragged.continuous_batching.alibi_mask.no_pos.nhead_8.hdim_128"
 )
-fn flash_attention_kv_cache_h8_d128_alibi_mask_cont_batch_ragged[
+fn mha_ragged_continuous_batching_alibi_mask_no_pos_nhead_8_hdim_128[
     type: DType, //,
     target: StringLiteral,
 ](
