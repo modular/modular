@@ -19,8 +19,11 @@ from builtin.range import _StridedRangeIterator, _UIntStridedRangeIterator
 
 
 @register_passable("trivial")
-struct __MLIRType[T: AnyTrivialRegType](Movable, Copyable):
+struct __MLIRType[T: AnyTrivialRegType](Movable, Copyable, ExplicitlyCopyable):
     var value: T
+
+    fn copy(self) -> Self:
+        return self
 
 
 # ===-----------------------------------------------------------------------===#

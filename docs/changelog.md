@@ -30,6 +30,10 @@ what we publish.
 - The legacy `borrowed`/`inout` keywords and `-> T as foo` syntax now generate
   a warning.  Please move to `read`/`mut`/`out` argument syntax instead.
 
+- The `@value` decorator now additionally derives an implementation of the
+  `ExplicitlyCopyable` trait. This will ease the transition to explicit
+  copyablility requirements by default in the Mojo collection types.
+
 ### Standard library changes
 
 - `UnsafePointer`'s `bitcast` method has now been split into `bitcast`
