@@ -656,6 +656,15 @@ struct ContiguousKVCacheCollection[
         self.batch_size = other.batch_size
         self.max_seq_len = other.max_seq_len
 
+    @always_inline
+    fn copy(self) -> Self:
+        """Explicitly construct a copy of self.
+
+        Returns:
+            A copy of this value.
+        """
+        return self
+
     fn __moveinit__(out self, owned other: Self):
         self.key_cache = other.key_cache
         self.value_cache = other.value_cache
@@ -795,6 +804,15 @@ struct ContinuousBatchingKVCacheCollection[
         self.max_seq_length = other.max_seq_length
         self.max_cache_length = other.max_cache_length
 
+    @always_inline
+    fn copy(self) -> Self:
+        """Explicitly construct a copy of self.
+
+        Returns:
+            A copy of this value.
+        """
+        return self
+
     @staticmethod
     fn id() -> String:
         return "KVCacheCollection"
@@ -859,6 +877,15 @@ struct PagedKVCacheCollection[
         self.lookup_table = other.lookup_table
         self.max_seq_length = other.max_seq_length
         self.max_cache_length = other.max_cache_length
+
+    @always_inline
+    fn copy(self) -> Self:
+        """Explicitly construct a copy of self.
+
+        Returns:
+            A copy of this value.
+        """
+        return self
 
     fn __moveinit__(out self, owned other: Self):
         self.blocks = other.blocks
