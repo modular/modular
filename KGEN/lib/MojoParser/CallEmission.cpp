@@ -128,6 +128,7 @@ selectBestCandidates(ArrayRef<ASTDecl *> fnDecls,
                      SmallVectorImpl<ASTDecl *> &newFnDecls) {
   assert(newFnDecls.empty());
   bool areTheBestCandidatesStatic = true;
+  bool areTheBestCandidatesImplicit = true;
 
   // Find the first valid candidate.
   evaluations = evaluations.drop_until(isValid);
@@ -143,6 +144,7 @@ selectBestCandidates(ArrayRef<ASTDecl *> fnDecls,
     if (eval.isBetter(*bestFitness)) {
       newFnDecls.clear();
       areTheBestCandidatesStatic = true;
+      areTheBestCandidatesImplicit = true;
     }
 
     // If the current best candidates are not static, we ignore new static
@@ -151,11 +153,27 @@ selectBestCandidates(ArrayRef<ASTDecl *> fnDecls,
     if (!areTheBestCandidatesStatic && isStatic)
       continue;
 
+    // Explicit ctors takes precedence over implicit. This is to enable a trait
+    // for explicit construction, but still allow some types to be implicitly
+    // converted. Otherwise the implicit ctor + explicit trait ctor will be
+    // ambiguous when initializing with an implicitly convertible type e.g.
+    // Bool is Intable and ImplicitlyIntable, so `Int(True)` would be ambiguous.
+    bool isImplicit = cast<LIT::FuncOp>(*candidate).getIsImplicitConversion();
+    if (!areTheBestCandidatesImplicit && isImplicit)
+      continue;
+
     // If the current best candidates are static, and we just found a non-static
     // one, we clear the list.
     if (areTheBestCandidatesStatic && !isStatic) {
       newFnDecls.clear();
       areTheBestCandidatesStatic = false;
+    }
+
+    // If the current best candidates are implicit, and we just found a
+    // non-implicit one, we clear the list.
+    if (areTheBestCandidatesImplicit && !isImplicit) {
+      newFnDecls.clear();
+      areTheBestCandidatesImplicit = false;
     }
 
     newFnDecls.push_back(candidate);
