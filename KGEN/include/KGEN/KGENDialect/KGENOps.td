@@ -2139,4 +2139,53 @@ def KGEN_CaptureListExpandOp : KGENOp<"capture_list.expand"> {
   let assemblyFormat = "$captureList attr-dict";
 }
 
+//===----------------------------------------------------------------------===//
+// CompileOffloadOp
+//===----------------------------------------------------------------------===//
+def KGEN_CompileOffloadOp: KGENOp<"compile_offload">  {
+   let summary = "Compile functions to a different offload target from host.";
+   let description = [{
+     The `kgen.compile_offload` operation indicates compilation to a
+     heterogenous target.
+
+     `target_type` is target the offload function is compiled to.
+
+     `emission_kind` is the output type for compile this offload function,
+     i.e. asm, shared object, etc.
+
+     `emission_option` is for extra compilation options for compiling
+     this offload function.
+
+     `func` is the offload function.
+
+     `kernelID` is an integer number to identify this op from compiled results
+     where multiple functions of the same target are bundled together for
+     compilation.
+
+     Example:
+
+     ```mlir
+     %0 = kgen.compile_offload<nvptx, 0, "", : ()->() @kernel> : !kgen.none
+     ```
+   }];
+
+   let arguments = (ins AttrOfType<KGEN_TargetType>:$target_type,
+                        AttrOfType<Index>:$emission_kind,
+                        AttrOfType<KGEN_StringType>:$emission_option,
+                        AttrOfType<AnyType>:$func,
+                        OptionalAttr<AttrOfType<Index>>:$kernelID);
+
+   let results = (outs AnyType:$result);
+
+   let assemblyFormat = [{
+    `<` custom<CompileOffloadOp>($target_type,
+                                 $emission_kind,
+                                 $emission_option,
+                                 $func) attr-dict `>` `:` type($result)
+   }];
+
+
+
+ }
+
 #endif // KGEN_KGENDIALECT_KGENOPS_TD

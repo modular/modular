@@ -1504,6 +1504,36 @@ VariantGetOp::inferReturnTypes(MLIRContext *, std::optional<Location> loc,
   return success();
 }
 
+//===----------------------------------------------------------------------===//
+// CompileOffloadOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseCompileOffloadOp(OpAsmParser &p, TypedAttr &targetType,
+                                         TypedAttr &emissionKind,
+                                         TypedAttr &emissionOption,
+                                         TypedAttr &func) {
+
+  if (parseParamValue(p, targetType, KGEN::TargetType::get(p.getContext())) ||
+      p.parseComma() || parseIndexParamValue(p, emissionKind) ||
+      p.parseComma() || parseStringParam(p, emissionOption) || p.parseComma() ||
+      parseTypeParamValue(p, func))
+    return failure();
+  return success();
+}
+
+static void printCompileOffloadOp(OpAsmPrinter &p, Operation *op,
+                                  TypedAttr targetType, TypedAttr emissionKind,
+                                  TypedAttr emissionOption, TypedAttr func) {
+
+  printParamValue(p, targetType, KGEN::TargetType::get(op->getContext()));
+  p << ", ";
+  printIndexParamValue(p, emissionKind);
+  p << ", ";
+  printParamValue(p, emissionOption);
+  p << ", ";
+  printTypeParamValue(p, func);
+}
+
 ///===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
