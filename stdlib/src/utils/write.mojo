@@ -13,7 +13,7 @@
 """Establishes the contract between `Writer` and `Writable` types."""
 
 from collections import InlineArray
-from sys.info import is_gpu
+from sys.info import is_gpu, is_nvidia_gpu, is_amd_gpu
 
 from memory import UnsafePointer, memcpy, Span
 
@@ -366,7 +366,7 @@ fn write_buffered[
     """
 
     @parameter
-    if is_gpu():
+    if is_nvidia_gpu():
         # Stack space is very small on GPU due to many threads, so use heap
         # Count the total length of bytes to allocate only once
         var arg_bytes = _ArgBytes()

@@ -965,3 +965,32 @@ fn sendmsg(opcode: Int32, msg: Int32):
     _ = llvm_intrinsic["llvm.amdgcn.s.sendmsg", NoneType, Int32, Int32](
         opcode, msg
     )
+
+
+# ===-----------------------------------------------------------------------===#
+# ballot
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn ballot[dtype: DType](value: Bool) -> Scalar[dtype]:
+    """
+    Returns a bitfield(Int32 or Int64) containing the result
+    of its Bool argument in all active lanes, and zero in all inactive lanes.
+    For example, ballot(True) returns EXEC mask.
+
+    Parameters:
+        dtype: The DType of the return type.
+
+    Args:
+        value: The value to place across the mask.
+
+    Returns:
+        A bitfield(Int32 or Int64) containing the result of its Bool argument in all active lanes.
+    """
+    constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
+    constrained[
+        dtype == DType.int32 or dtype == DType.int64,
+        "This intrinsic is only defined for i32 or i64",
+    ]()
+    return llvm_intrinsic["llvm.amdgcn.ballot", Scalar[dtype]](value)

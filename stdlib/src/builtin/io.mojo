@@ -178,7 +178,6 @@ fn _printf[
             fmt.unsafe_cstr_ptr(), Pointer.address_of(loaded_pack)
         )
     elif is_amd_gpu():
-        # constrained[False, "_printf on AMDGPU is not implemented"]()
         pass
     else:
         with _fdopen(file) as fd:
@@ -269,12 +268,9 @@ fn print[
         file: The output stream.
     """
 
-    # TODO(MSTDL-1027): Print on AMD GPUs is not implemented yet.
-    @parameter
-    if is_amd_gpu():
-        return
-
-    write_buffered[buffer_size=4096](file, values, sep=sep, end=end)
+    write_buffered[buffer_size = 512 if is_amd_gpu() else 4096](
+        file, values, sep=sep, end=end
+    )
 
     @parameter
     if not is_gpu():
