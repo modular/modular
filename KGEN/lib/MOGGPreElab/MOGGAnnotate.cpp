@@ -276,7 +276,7 @@ getUnboundParametersForTensorTuple(LIT::StructType &structType,
         NamedAttribute{builder.getStringAttr(kParameterSize), size});
 
   auto elementTypeAttr =
-      cast<KGEN::TypeConstantAttr>(structType.getParamValues()[0]);
+      cast<KGEN::TypeParamAttr>(structType.getParamValues()[0]);
   auto elementTypeStruct =
       cast<LIT::StructType>(elementTypeAttr.getTypeValue());
   assert(symbolMatches(elementTypeStruct.getSymbol(), kMaxManagedTensorSlice) &&
@@ -293,7 +293,7 @@ static ArrayAttr getTensorParametersForTensorTuple(LIT::StructType &structType,
                                                    OpBuilder &builder) {
   assert(structType.getParamValues().size() >= 1);
   auto elementTypeAttr =
-      cast<KGEN::TypeConstantAttr>(structType.getParamValues()[0]);
+      cast<KGEN::TypeParamAttr>(structType.getParamValues()[0]);
   auto elementTypeStruct =
       cast<LIT::StructType>(elementTypeAttr.getTypeValue());
   assert(symbolMatches(elementTypeStruct.getSymbol(), kMaxManagedTensorSlice) &&
@@ -317,7 +317,7 @@ getUnboundParametersForTensorList(LIT::StructType &structType,
   SmallVector<NamedAttribute> listNamedAttrs;
 
   auto elementTypeAttr =
-      cast<KGEN::TypeConstantAttr>(structType.getParamValues()[0]);
+      cast<KGEN::TypeParamAttr>(structType.getParamValues()[0]);
   auto elementTypeStruct =
       cast<LIT::StructType>(elementTypeAttr.getTypeValue());
   assert(symbolMatches(elementTypeStruct.getSymbol(), kMaxManagedTensorSlice) &&

@@ -13,7 +13,7 @@ using namespace M;
 using namespace KGEN;
 
 void KGEN::prettyPrintParameter(TypedAttr value, raw_ostream &os) {
-  if (auto typeCst = dyn_cast<TypeConstantAttr>(value)) {
+  if (auto typeCst = dyn_cast<TypeParamAttr>(value)) {
     // Pretty print common type values.
     Type typeValue = typeCst.getTypeValue();
     if (auto structInst = dyn_cast<StructInstanceType>(typeValue)) {

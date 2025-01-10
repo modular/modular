@@ -776,7 +776,7 @@ createRequirementSignature(LIT::FuncOp traitFn, ASTType newSelfType,
 /// Emit a metatype conversion to a trait type by materializing the meta type
 /// of the specified CValue into a witness table for the trait.  For example,
 /// if 'value' has struct type, and the trait is Movable, then this forms a
-/// TypeConstantAttr PValue with a vtable containing the __del__ and
+/// TypeParamAttr PValue with a vtable containing the __del__ and
 /// __moveinit__ methods from the struct.
 ///
 /// If the input value has a derived trait type and the required type is a
@@ -1005,8 +1005,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   }
 
   // Create the new type value with the vtable and the trait metatype.
-  return TypeConstantAttr::get(type, trait,
-                               VTableAttr::get(getContext(), vtable));
+  return TypeParamAttr::get(type, trait, VTableAttr::get(getContext(), vtable));
 }
 
 /// Return true if the MLIR type can implicitly conform to the trait.
@@ -1118,8 +1117,8 @@ static PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait,
     }
   }
 
-  return TypeConstantAttr::get(mlirType, trait,
-                               VTableAttr::get(shared.getContext(), vtable));
+  return TypeParamAttr::get(mlirType, trait,
+                            VTableAttr::get(shared.getContext(), vtable));
 }
 
 //===----------------------------------------------------------------------===//
@@ -1286,7 +1285,7 @@ CValue ExprEmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
 
     // This is just the trait itself, not a conformance, so we can use an empty
     // vtable, just upcast from
-    return TypeConstantAttr::get(ASTType(typePValue), anyTrait);
+    return TypeParamAttr::get(ASTType(typePValue), anyTrait);
   }
 
   // Support implicit conversions of function types.

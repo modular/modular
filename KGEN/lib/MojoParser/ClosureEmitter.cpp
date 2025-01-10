@@ -583,7 +583,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
         getContext(), cast<StructType>(structSelfType).getParamValues()));
     clType = BindTypeAttr::get(
         PValue(clType),
-        {TypeConstantAttr::get(bound.getType(), TypeType::get(getContext())),
+        {TypeParamAttr::get(bound.getType(), TypeType::get(getContext())),
          bound});
     auto b = OpBuilder::atBlockBegin(declOp.getBody());
     paramField =
@@ -727,7 +727,7 @@ createTypedSymbol(SymbolConstantAttr symbol,
 
 /// Generate the code to allocate heap memory for the given pointer type.
 static Value allocateHeapMemory(PointerType ptrType, ImplicitLocOpBuilder &b) {
-  TypedAttr elementType = TypeConstantAttr::get(
+  TypedAttr elementType = TypeParamAttr::get(
       ptrType.getElementType(), TypeType::get(ptrType.getContext()));
   TypedAttr target =
       ParamOperatorAttr::get(POC::CurrentTarget, {}, b.getType<TargetType>());

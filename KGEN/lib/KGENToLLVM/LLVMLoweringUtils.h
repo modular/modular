@@ -31,7 +31,7 @@ class NoneType;
 class StringType;
 class StructType;
 class StructInstanceType;
-class TypeConstantAttr;
+class TypeParamAttr;
 class TypeConstantRefAttr;
 class TypeValueType;
 
@@ -350,7 +350,7 @@ private:
   DebugInfo::DIType buildDebugType(TypeValueType type);
 
   /// Build fully resolved debug type from kgen type values.
-  DebugInfo::DIType buildDebugType(TypeConstantAttr attr);
+  DebugInfo::DIType buildDebugType(TypeParamAttr attr);
   DebugInfo::DIType buildDebugType(TypeConstantRefAttr attr);
 };
 

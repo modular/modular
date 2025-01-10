@@ -164,10 +164,10 @@ void StructDecls::buildReplacer(LowerLITReplacer &replacer, MLIRContext *ctx) {
   auto emptyStructType = KGEN::StructType::get(ctx, {});
   auto emptyStruct = StructAttr::get({}, emptyStructType);
 
-  // TypeConstantAttr dispatches replacing to different domains.
+  // TypeParamAttr dispatches replacing to different domains.
   replacer.addInferredDomainNonRecursiveReplacement(
-      [&replacer](TypeConstantAttr typeValue) {
-        return TypeConstantAttr::get(
+      [&replacer](TypeParamAttr typeValue) {
+        return TypeParamAttr::get(
             replacer.replace(typeValue.getTypeValue(), TypeDomain::AsValue),
             replacer.replace(typeValue.getMlirType(), TypeDomain::AsType),
             replacer.replace(typeValue.getType(), TypeDomain::AsType),
@@ -210,9 +210,9 @@ void StructDecls::buildReplacer(LowerLITReplacer &replacer, MLIRContext *ctx) {
         AnyStructType metatype = bind.getType();
         auto ref = LIT::StructType::get(metatype.getSymbol(),
                                         metatype.getParamValues(), typeType);
-        return TypeConstantAttr::get(replacer.replace(ref, TypeDomain::AsValue),
-                                     replacer.replace(ref, TypeDomain::AsType),
-                                     typeType);
+        return TypeParamAttr::get(replacer.replace(ref, TypeDomain::AsValue),
+                                  replacer.replace(ref, TypeDomain::AsType),
+                                  typeType);
       });
 
   // All metatypes lower to `!kgen.type`.
@@ -376,11 +376,11 @@ LogicalResult StructDecls::process(ModuleOp module, SymbolTable &symtab) {
     auto structInstType =
         StructInstanceType::get(structName, paramNames, paramValues, fieldDecls,
                                 !info.isRegisterPassable);
-    TypedAttr typeConstant = TypeConstantAttr::get(
-        structInstType,
-        LIT::StructType::get(SymbolRefAttr::get(structName), paramValues,
-                             typeType),
-        typeType);
+    TypedAttr typeConstant =
+        TypeParamAttr::get(structInstType,
+                           LIT::StructType::get(SymbolRefAttr::get(structName),
+                                                paramValues, typeType),
+                           typeType);
     b.create<KGEN::StructInfoOp>(op.getLoc(), typeConstant);
 
     structDecls.try_emplace(structName, std::move(info));

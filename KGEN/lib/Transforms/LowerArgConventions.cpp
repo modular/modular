@@ -422,9 +422,9 @@ void LowerArgConventionsPass::runOnOperation() {
     return newSig ? newSig : sig;
   });
   auto metatype = TypeType::get(&getContext());
-  replacer.addReplacement([&](TypeConstantAttr type) {
+  replacer.addReplacement([&](TypeParamAttr type) {
     // Canonicalize metatypes.
-    return TypeConstantAttr::get(type.getMlirType(), metatype);
+    return TypeParamAttr::get(type.getMlirType(), metatype);
   });
   func.walk([&](Operation *op) {
     replacer.replaceElementsIn(op, /*replaceAttrs=*/true,

@@ -288,7 +288,7 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
   if (actualAttr.getType() != expectedAttr.getType()) {
     // FIXME: Enforce attribute type convertibility.
     // This breaks, e.g.:
-    // TypeConstantAttr(T, SomeStruct) <-> TypeConstantAttr(Param,
+    // TypeParamAttr(T, SomeStruct) <-> TypeParamAttr(Param,
     // AnyTrivialRegType)
     (void)matchTypes(actualAttr.getType(), expectedAttr.getType());
   }
@@ -298,8 +298,8 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
     return success();
 
   // If we are dealing with two type constants, we match their values.
-  auto actualTypeConst = dyn_cast<TypeConstantAttr>(actualAttr);
-  auto expectedTypeConst = dyn_cast<TypeConstantAttr>(expectedAttr);
+  auto actualTypeConst = dyn_cast<TypeParamAttr>(actualAttr);
+  auto expectedTypeConst = dyn_cast<TypeParamAttr>(expectedAttr);
   if (actualTypeConst && expectedTypeConst)
     return matchTypes(actualTypeConst.getMlirType(),
                       expectedTypeConst.getMlirType());
@@ -1118,7 +1118,7 @@ LogicalResult ParameterInferenceState::infer(
         if (ASTType nmTarget = toPush.getNonmaterializableTarget(shared))
           toPush = nmTarget;
         Type metatype = toPush.getMetaType();
-        TypedAttr actualAttr = TypeConstantAttr::get(
+        TypedAttr actualAttr = TypeParamAttr::get(
             toPush, metatype ? metatype : TypeType::get(shared.getContext()));
         SyntheticNode node(shared.getTopLevelDecl().getLoc());
         if (!ExprEmitter::canImplicitlyConvertToType(

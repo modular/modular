@@ -523,7 +523,7 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
     // variable for the address and ensure it gets preserved. For now, we just
     // malloc the memory.
     SmallVector<TypedAttr> operands{
-        TypeConstantAttr::get(elementType, anyRegTypeType),
+        TypeParamAttr::get(elementType, anyRegTypeType),
         cast<TypedAttr>(targetAttr)};
     // Compute the size of the type.
     Value sizeOf = builder.create<ParamConstantOp>(

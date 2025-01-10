@@ -313,19 +313,19 @@ def KGEN_VTableEntryAttr : KGENAttr<"VTableEntry", "vtable.entry"> {
 }
 
 //===----------------------------------------------------------------------===//
-// TypeConstantAttr
+// TypeParamAttr
 //===----------------------------------------------------------------------===//
 
 def VTableParam
   : DefaultValuedParameter<"VTableAttr", "VTableAttr::get($_ctxt, {})">;
 
-def KGEN_TypeConstantAttr : KGEN_ExprAttr<"TypeConstant", "type"> {
-  let summary = "Constant !kgen.type MLIR type";
+def KGEN_TypeParamAttr : KGEN_ExprAttr<"TypeParam", "type"> {
+  let summary = "Convert an MLIR type to a parameter expression";
   let description = [{
     This represents a parameter whose value is an MLIR type.  It is similar to
     `TypeAttr` in that it is an attribute that refers to a type.  The difference
-    is that it is a `TypedAttr` so it can be a parameter expression, and has
-    'kgen.type' itself.
+    is that it is a `TypedAttr` so it can be a parameter expression, and has a
+    metatype.
 
     The `typeValue` field encodes the value-representation of a type, while the
     `mlirType` field encodes the type-representation of the type.
@@ -379,7 +379,7 @@ def KGEN_TypeConstantAttr : KGEN_ExprAttr<"TypeConstant", "type"> {
   let extraClassDeclaration = [{
     /// A specific builder used to build the attribute from a bytecode context,
     /// providing a slightly different context from the normal builder.
-    static TypeConstantAttr getFromBytecode(
+    static TypeParamAttr getFromBytecode(
         Type typeValue, Type mlirType, Type type, VTableAttr vtable);
 
     /// Whether the type constant has identical value & type representation.

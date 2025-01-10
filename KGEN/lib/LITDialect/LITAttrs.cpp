@@ -709,12 +709,12 @@ static TypedAttr getOrFoldBindType(TypedAttr typeValue,
                                    AnyStructType type) {
   // Assume the inputs are verified. If the type value is a `StructType` then
   // bind it and return a type constant.
-  if (auto typeCst = dyn_cast<TypeConstantAttr>(typeValue)) {
+  if (auto typeCst = dyn_cast<TypeParamAttr>(typeValue)) {
     if (auto decl = dyn_cast<LIT::StructType>(typeCst.getMlirType())) {
       auto bound =
           LIT::StructType::get(decl.getSymbol(), type.getParamValues(), type);
       // StructType has identical type/value representation.
-      return TypeConstantAttr::get(bound, bound, type);
+      return TypeParamAttr::get(bound, bound, type);
     }
   }
   return BindTypeAttr::Base::get(type.getContext(), typeValue, values, type);

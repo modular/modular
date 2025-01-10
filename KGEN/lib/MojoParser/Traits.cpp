@@ -39,7 +39,7 @@ getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
   ArrayRef<Type> paramTypes = signature.getInputParamTypes();
 
   // Add trait's _Self param replacement.
-  params.push_back(TypeConstantAttr::get(structSelfType, trait));
+  params.push_back(TypeParamAttr::get(structSelfType, trait));
   auto bindings = ParamBindings::getForDeclaredType(emitter.getDeclScope(),
                                                     structSelfType, expr);
   // Leave the rest alone.
@@ -51,7 +51,7 @@ getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
   LITSignatureGeneratorType newSignature =
       signature.getSpecializedGenerator(params);
 
-  auto selfStructAsTrait = TypeConstantAttr::get(structSelfType, trait);
+  auto selfStructAsTrait = TypeParamAttr::get(structSelfType, trait);
 
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement([&](KGEN::ParamOperatorAttr paramOp) -> Attribute {

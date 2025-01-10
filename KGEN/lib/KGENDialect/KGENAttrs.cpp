@@ -199,10 +199,10 @@ std::optional<bool> ParamIndexRefAttr::isLessThan(Attribute rhs) const {
 }
 
 //===----------------------------------------------------------------------===//
-// TypeConstantAttr
+// TypeParamAttr
 //===----------------------------------------------------------------------===//
 
-Attribute TypeConstantAttr::parse(AsmParser &p, Type type) {
+Attribute TypeParamAttr::parse(AsmParser &p, Type type) {
   if (p.parseLess())
     return {};
 
@@ -219,15 +219,15 @@ Attribute TypeConstantAttr::parse(AsmParser &p, Type type) {
   return value;
 }
 
-void TypeConstantAttr::print(AsmPrinter &p) const {
+void TypeParamAttr::print(AsmPrinter &p) const {
   p << '<';
   void (*typePrinter)(AsmPrinter &, Type) = &printKGENType; // Select overload.
   printTypeValueBody(p, *this, typePrinter);
   p << '>';
 }
 
-TypedAttr TypeConstantAttr::get(MLIRContext *ctx, Type typeValue, Type mlirType,
-                                Type metaType, VTableAttr vtable) {
+TypedAttr TypeParamAttr::get(MLIRContext *ctx, Type typeValue, Type mlirType,
+                             Type metaType, VTableAttr vtable) {
   // If this is a trivial mlir Type (i.e. has identical type & value
   // representation), and the trivial type is a ParamType, then we're
   // unwrapping a wrapper. Remove this to keep the types canonical.
@@ -240,44 +240,43 @@ TypedAttr TypeConstantAttr::get(MLIRContext *ctx, Type typeValue, Type mlirType,
         return typeValueType.getTypeValue();
   }
 
-  // Unwrap immediately-nested TypeConstantAttr as the typeValue. This is
+  // Unwrap immediately-nested TypeParamAttr as the typeValue. This is
   // casting the metatype of the inner type constant.
   if (auto typeValueType = ::dyn_cast<TypeValueType>(typeValue))
     if (auto innerTypeConstant =
-            ::dyn_cast<TypeConstantAttr>(typeValueType.getTypeValue()))
+            ::dyn_cast<TypeParamAttr>(typeValueType.getTypeValue()))
       typeValue = innerTypeConstant.getTypeValue();
 
   return Base::get(ctx, typeValue, mlirType, metaType, vtable);
 }
 
-TypedAttr TypeConstantAttr::get(Type typeValue, Type mlirType, Type type,
-                                VTableAttr vtable) {
+TypedAttr TypeParamAttr::get(Type typeValue, Type mlirType, Type type,
+                             VTableAttr vtable) {
   return get(mlirType.getContext(), typeValue, mlirType, type, vtable);
 }
 
-TypedAttr TypeConstantAttr::get(Type typeValue, Type mlirType, Type type) {
+TypedAttr TypeParamAttr::get(Type typeValue, Type mlirType, Type type) {
   return get(typeValue, mlirType, type, VTableAttr::get(type.getContext(), {}));
 }
 
-TypedAttr TypeConstantAttr::get(Type mlirType, Type type, VTableAttr vtable) {
+TypedAttr TypeParamAttr::get(Type mlirType, Type type, VTableAttr vtable) {
   return get(mlirType, mlirType, type, vtable);
 }
 
-TypedAttr TypeConstantAttr::get(Type mlirType, Type type) {
+TypedAttr TypeParamAttr::get(Type mlirType, Type type) {
   return get(mlirType, mlirType, type);
 }
 
-TypeConstantAttr TypeConstantAttr::getFromBytecode(Type typeValue,
-                                                   Type mlirType, Type type,
-                                                   VTableAttr vtable) {
+TypeParamAttr TypeParamAttr::getFromBytecode(Type typeValue, Type mlirType,
+                                             Type type, VTableAttr vtable) {
   return Base::get(mlirType.getContext(), typeValue, mlirType, type, vtable);
 }
 
-bool TypeConstantAttr::isConstant() const {
+bool TypeParamAttr::isConstant() const {
   return !isParameterizedType(getMlirType());
 }
 
-bool TypeConstantAttr::hasIdenticalRepresentation() {
+bool TypeParamAttr::hasIdenticalRepresentation() {
   return getMlirType() == getTypeValue() && getVTable().getEntries().empty();
 }
 
@@ -1370,7 +1369,7 @@ LogicalResult ParamOperatorAttr::verify(
                               "type should be a signature, but got: "
                            << paramRef1.getType();
       }
-    } else if (auto typeConstAttr = ::dyn_cast<TypeConstantAttr>(operand)) {
+    } else if (auto typeConstAttr = ::dyn_cast<TypeParamAttr>(operand)) {
       auto mlirType = typeConstAttr.getMlirType();
       if (!::isa<SignatureGeneratorType>(mlirType))
         return emitError()
@@ -2201,7 +2200,7 @@ static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands,
   if (!resultType)
     resultType = b.getIndexType();
 
-  auto typeCst = dyn_cast<TypeConstantAttr>(operands[0]);
+  auto typeCst = dyn_cast<TypeParamAttr>(operands[0]);
   auto target = dyn_cast<TargetParamAttr>(operands[1]);
   if (!typeCst || !target)
     return {};
@@ -2223,7 +2222,7 @@ static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands,
   if (!resultType)
     resultType = b.getIndexType();
 
-  auto typeCst = dyn_cast<TypeConstantAttr>(operands[0]);
+  auto typeCst = dyn_cast<TypeParamAttr>(operands[0]);
   auto target = dyn_cast<TargetParamAttr>(operands[1]);
   if (!typeCst || !target)
     return {};
@@ -2358,9 +2357,9 @@ static TypedAttr simplifyRebind(ArrayRef<TypedAttr> operands, Type resultType) {
     return UnboundAttr::get(resultType);
 
   // Fold rebinds of a StructType. Unify metatypes so information is not lost.
-  if (auto typeCst = dyn_cast<TypeConstantAttr>(input))
-    return TypeConstantAttr::get(typeCst.getTypeValue(), typeCst.getMlirType(),
-                                 resultType);
+  if (auto typeCst = dyn_cast<TypeParamAttr>(input))
+    return TypeParamAttr::get(typeCst.getTypeValue(), typeCst.getMlirType(),
+                              resultType);
   // rebind(rebind(x)) => rebind(x)
   if (auto x = ParamOperatorAttr::stripRebind(input); x != input)
     return ParamOperatorAttr::get(POC::Rebind, x, resultType);
@@ -2488,9 +2487,9 @@ static TypedAttr simplifyCond(ArrayRef<TypedAttr> operands) {
 
 static TypedAttr simplifyGetVTableEntry(ArrayRef<TypedAttr> operands,
                                         Type resultType) {
-  auto typeConstant = dyn_cast<TypeConstantAttr>(operands[0]);
+  auto typeConstant = dyn_cast<TypeParamAttr>(operands[0]);
   // typeConstant may actually be a parameter if this is called before
-  // elaboration.  But after elaboration it should always be a TypeConstantAttr.
+  // elaboration.  But after elaboration it should always be a TypeParamAttr.
   if (!typeConstant)
     return {};
   VTableAttr vtable = typeConstant.getVTable();
@@ -2560,8 +2559,7 @@ static TypedAttr simplifyVariadicPtrMap(TypedAttr variadicOperand,
     Type typeValue =
         PointerType::get(TypeValueType::get(elt), addrSpaceOperand);
     Type mlirType = PointerType::get(ParamType::get(elt), addrSpaceOperand);
-    results.push_back(
-        TypeConstantAttr::get(typeValue, mlirType, resultEltType));
+    results.push_back(TypeParamAttr::get(typeValue, mlirType, resultEltType));
   }
 
   return VariadicAttr::get(results, cast<VariadicType>(resultType));
@@ -2579,11 +2577,11 @@ static TypedAttr simplifyVariadicPtrRemoveMap(TypedAttr variadicOperand,
   SmallVector<TypedAttr> results;
   // Map each type from a PointerType of the element type.
   for (auto elt : variadic.getValues()) {
-    auto eltCst = dyn_cast<TypeConstantAttr>(elt);
+    auto eltCst = dyn_cast<TypeParamAttr>(elt);
     if (!eltCst || !isa<PointerType>(eltCst.getMlirType()))
       return {};
 
-    results.push_back(TypeConstantAttr::get(
+    results.push_back(TypeParamAttr::get(
         cast<PointerType>(eltCst.getTypeValue()).getElementType(),
         cast<PointerType>(eltCst.getMlirType()).getElementType(),
         resultEltType));
@@ -2620,7 +2618,7 @@ static TypedAttr simplifyFunctionGetArgTypes(MLIRContext *ctx,
 
   if (auto paramRef1 = ::dyn_cast<ParamDeclRefAttr>(operand)) {
     return {};
-  } else if (auto typeConstAttr = ::dyn_cast<TypeConstantAttr>(operand)) {
+  } else if (auto typeConstAttr = ::dyn_cast<TypeParamAttr>(operand)) {
     mlirType = typeConstAttr.getMlirType();
   } else if (auto paramIndexRef = ::dyn_cast<ParamIndexRefAttr>(operand)) {
     mlirType = paramIndexRef.getType();
@@ -2640,7 +2638,7 @@ static TypedAttr simplifyFunctionGetArgTypes(MLIRContext *ctx,
   // TODO(MOCO-1106): Add a vtable here, see
   // https://www.notion.so/modularai/1571044d37bb80198d96f6772ebb1515
   for (Type type : argTypes)
-    results.push_back(TypeConstantAttr::get(type, traitType));
+    results.push_back(TypeParamAttr::get(type, traitType));
   return VariadicAttr::get(results, variadicType);
 }
 

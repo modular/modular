@@ -1564,14 +1564,14 @@ ErrorTreeOrSuccess PackGEPOp::interpret(ArrayRef<Attribute> operands,
   // Move the address over the elements before the one we are reading.
   unsigned index = idxAttr.getInt();
   for (unsigned i = 0; i != index; ++i) {
-    auto eltType = cast<TypeConstantAttr>(typeElts[i]).getMlirType();
+    auto eltType = cast<TypeParamAttr>(typeElts[i]).getMlirType();
     auto dl = cast<DataLayoutInterface>(eltType);
     offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
     offset += *dl.getTypeSize(state.getTarget());
   }
 
   // Align the address to the target element.
-  Type targetType = cast<TypeConstantAttr>(typeElts[index]).getMlirType();
+  Type targetType = cast<TypeParamAttr>(typeElts[index]).getMlirType();
   offset = llvm::alignTo(
       offset,
       *cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget()));
@@ -1595,7 +1595,7 @@ ErrorTreeOrSuccess PackLoadOp::interpret(ArrayRef<Attribute> operands,
     SmallVector<TypedAttr> values;
     for (auto [ptr, type] : llvm::zip(pack.getValues(), typeElts)) {
       ErrorOr<Attribute> result = state.readAttributeFromPointer(
-          ptr, cast<TypeConstantAttr>(type).getMlirType());
+          ptr, cast<TypeParamAttr>(type).getMlirType());
       if (result.isError())
         return ErrorTree(getLoc(), result.takeError());
       values.push_back(cast<TypedAttr>(result.takeValue()));

@@ -430,7 +430,7 @@ ParseResult KGEN::parseTypeParamValues(AsmParser &p,
 }
 
 void KGEN::printTypeValueBody(
-    AsmPrinter &p, TypeConstantAttr type,
+    AsmPrinter &p, TypeParamAttr type,
     llvm::function_ref<void(AsmPrinter &, Type)> typePrinter) {
   typePrinter(p, type.getTypeValue());
   if (type.getMlirType() != type.getTypeValue()) {
@@ -461,7 +461,7 @@ OptionalParseResult KGEN::parseTypeValueBody(
 
   if (knownIdenticalRepresentation || failed(p.parseOptionalComma())) {
     // This type-value has identical type/value representation. Stop here.
-    value = TypeConstantAttr::get(typeValue, typeValue, type, vtable);
+    value = TypeParamAttr::get(typeValue, typeValue, type, vtable);
     return mlir::success();
   }
 
@@ -479,7 +479,7 @@ OptionalParseResult KGEN::parseTypeValueBody(
 
     if (failed(p.parseOptionalComma())) {
       // No vtable.
-      value = TypeConstantAttr::get(typeValue, mlirType, type, vtable);
+      value = TypeParamAttr::get(typeValue, mlirType, type, vtable);
       return mlir::success();
     }
 
@@ -494,14 +494,14 @@ OptionalParseResult KGEN::parseTypeValueBody(
       return failure();
   }
 
-  value = TypeConstantAttr::get(typeValue, mlirType, type, vtable);
+  value = TypeParamAttr::get(typeValue, mlirType, type, vtable);
   return mlir::success();
 }
 
 LogicalResult KGEN::printSugaredTypeValue(
     AsmPrinter &p, TypedAttr value,
     llvm::function_ref<void(AsmPrinter &, Type)> typePrinter) {
-  auto type = dyn_cast<TypeConstantAttr>(value);
+  auto type = dyn_cast<TypeParamAttr>(value);
   if (!type)
     return failure();
 
