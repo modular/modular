@@ -423,7 +423,7 @@ public:
   /// Emit a metatype conversion to a trait type by materializing the meta type
   /// of the specified CValue into a witness table for the trait.  For example,
   /// if 'value' has struct type, and the trait is Movable, then this forms a
-  /// TypeConstantAttr PValue with a vtable containing the __del__ and
+  /// TypeParamAttr PValue with a vtable containing the __del__ and
   /// __moveinit__ methods from the struct.
   PValue emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
                                        TraitType trait);

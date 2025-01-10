@@ -74,7 +74,7 @@ static StructType lowerPackTypeToStruct(PackType pack) {
   SmallVector<Type> elementTypes;
   elementTypes.reserve(typeExprs.size());
   for (TypedAttr typeExpr : typeExprs)
-    elementTypes.push_back(cast<TypeConstantAttr>(typeExpr).getMlirType());
+    elementTypes.push_back(cast<TypeParamAttr>(typeExpr).getMlirType());
   return StructType::get(pack.getContext(), elementTypes);
 }
 

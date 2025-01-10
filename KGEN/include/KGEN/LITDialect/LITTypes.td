@@ -290,7 +290,7 @@ def LIT_TraitType: LITType<"Trait", "trait",
     /// Return the metatype for this this trait as a value.
     AnyTraitType getMetaType();
 
-    /// Return a TypeConstantAttr for a reference to this trait as a value, e.g.
+    /// Return a TypeParamAttr for a reference to this trait as a value, e.g.
     /// uttering 'Stringable' in code.
     TypedAttr getPValue();
   }];

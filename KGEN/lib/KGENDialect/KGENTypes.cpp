@@ -94,7 +94,7 @@ void KGENDialect::registerTypes() {
 Type ParamType::get(TypedAttr param) {
   // If the parameter is already resolved to a constant, fold this to the
   // indicated type.
-  if (auto constant = llvm::dyn_cast<TypeConstantAttr>(param))
+  if (auto constant = llvm::dyn_cast<TypeParamAttr>(param))
     return constant.getMlirType();
 
   // Otherwise, form the ParamType like normal.
@@ -112,7 +112,7 @@ ParamType ParamType::getFromBytecode(TypedAttr param) {
 Type TypeValueType::get(TypedAttr typeValue) {
   // If the type-value is already resolved to a type constant, and it is
   // trivially a mlir Type, fold this to the indicated type.
-  if (auto constant = llvm::dyn_cast<TypeConstantAttr>(typeValue))
+  if (auto constant = llvm::dyn_cast<TypeParamAttr>(typeValue))
     if (constant.hasIdenticalRepresentation())
       return constant.getMlirType();
 
@@ -1154,7 +1154,7 @@ bool StructType::isNoneOrEmpty(Type type) {
 static LogicalResult resolveTypes(ArrayRef<TypedAttr> types,
                                   SmallVectorImpl<Type> &resolvedTypes) {
   for (const TypedAttr &type : types) {
-    if (auto constant = llvm::dyn_cast<TypeConstantAttr>(type))
+    if (auto constant = llvm::dyn_cast<TypeParamAttr>(type))
       resolvedTypes.push_back(constant.getMlirType());
     else
       return failure();
@@ -1384,7 +1384,7 @@ ErrorOr<TypedAttr> PackType::readFrom(int64_t addr,
   SmallVector<TypedAttr> values;
   int64_t offset = 0;
   for (TypedAttr elTypeAttr : typeList.getValues()) {
-    Type elType = ::cast<TypeConstantAttr>(elTypeAttr).getMlirType();
+    Type elType = ::cast<TypeParamAttr>(elTypeAttr).getMlirType();
     auto dl = llvm::cast<DataLayoutInterface>(elType);
     offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
     ErrorOr<TypedAttr> value =
@@ -1418,7 +1418,7 @@ static ParseResult parseVariantTypes(AsmParser &p, TypedAttr &variadic) {
     return failure();
   SmallVector<TypedAttr> elements;
   for (Type type : values)
-    elements.push_back(TypeConstantAttr::get(type, metatype));
+    elements.push_back(TypeParamAttr::get(type, metatype));
   variadic = VariadicAttr::get(elements, variadicType);
   return success();
 }
@@ -1468,7 +1468,7 @@ VariantType VariantType::get(MLIRContext *ctx, TypedAttr variadic) {
     SmallVector<TypedAttr> values;
     auto metatype = TypeType::get(ctx);
     for (TypedAttr value : attr.getValues()) {
-      values.push_back(TypeConstantAttr::get(ParamType::get(value), metatype));
+      values.push_back(TypeParamAttr::get(ParamType::get(value), metatype));
     }
     variadic = VariadicAttr::get(values, VariadicType::get(metatype));
   }
@@ -1481,7 +1481,7 @@ VariantType VariantType::get(ArrayRef<Type> types) {
   MLIRContext *ctx = types.front().getContext();
   auto metatype = TypeType::get(ctx);
   for (Type type : types)
-    values.push_back(TypeConstantAttr::get(type, metatype));
+    values.push_back(TypeParamAttr::get(type, metatype));
   return get(ctx, VariadicAttr::get(values, VariadicType::get(metatype)));
 }
 

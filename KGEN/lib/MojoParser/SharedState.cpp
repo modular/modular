@@ -518,7 +518,7 @@ void SharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   // Add an empty struct with the specified name to the resolver.
   auto anyRegTypeType = TypeType::get(getContext());
   auto addMagicMLIRDecl = [&](StringRef name, Type magicType) {
-    TypedAttr value = TypeConstantAttr::get(magicType, anyRegTypeType);
+    TypedAttr value = TypeParamAttr::get(magicType, anyRegTypeType);
     resolver.addFullyResolvedDecl(PValue(value), name, builtinsDecl.getLoc(),
                                   &builtinsDecl);
   };

@@ -185,7 +185,7 @@ ParseResult parseTypeParamValues(AsmParser &p, SmallVector<TypedAttr> &values);
 /// Print the body of a type-value (without any surrounding brackets). Caller
 /// specifies how types are printed.
 void printTypeValueBody(
-    AsmPrinter &p, TypeConstantAttr type,
+    AsmPrinter &p, TypeParamAttr type,
     llvm::function_ref<void(AsmPrinter &, Type)> typePrinter);
 /// Parse the body of a type-value (without any surrounding brackets). Caller
 /// specifies how types are parsed.

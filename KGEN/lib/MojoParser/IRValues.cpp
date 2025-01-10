@@ -183,7 +183,7 @@ static Type extractMetaType(Type type) {
 }
 
 PValue::PValue(Type value)
-    : storage(value ? TypeConstantAttr::get(value, extractMetaType(value))
+    : storage(value ? TypeParamAttr::get(value, extractMetaType(value))
                     : Attribute()) {}
 
 /// If this value /is/ a type return it.

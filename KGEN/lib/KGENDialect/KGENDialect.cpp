@@ -72,7 +72,7 @@ struct KGENDialectOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
   // Aliases
 
   AliasResult getAlias(Attribute attr, raw_ostream &os) const override {
-    if (auto typeCst = dyn_cast<TypeConstantAttr>(attr)) {
+    if (auto typeCst = dyn_cast<TypeParamAttr>(attr)) {
       // Do not alias the type constant if it is a simple mlir Type.
       if (clOptions->printInlineTypeValues ||
           typeCst.hasIdenticalRepresentation())
@@ -106,7 +106,7 @@ using WrappedTypeValueType = WrappedAttrType<TypeValueType>;
 using WrappedVariantType = WrappedAttrType<VariantType>;
 
 using WrappedParamOperatorAttr = WrappedAttrType<ParamOperatorAttr>;
-using WrappedTypeConstantAttr = WrappedAttrType<TypeConstantAttr>;
+using WrappedTypeConstantAttr = WrappedAttrType<TypeParamAttr>;
 using WrappedStructExtractAttr = WrappedAttrType<StructExtractAttr>;
 
 //===----------------------------------------------------------------------===//

@@ -478,10 +478,10 @@ LogicalResult TraitType::printValue(AsmPrinter &p, TypedAttr value) const {
 /// Return the metatype for this this trait as a value.
 AnyTraitType TraitType::getMetaType() { return AnyTraitType::get(*this); }
 
-/// Return a TypeConstantAttr for a reference to this trait as a value, e.g.
+/// Return a TypeParamAttr for a reference to this trait as a value, e.g.
 /// uttering 'Stringable' in code.
 TypedAttr TraitType::getPValue() {
-  return TypeConstantAttr::get(*this, getMetaType());
+  return TypeParamAttr::get(*this, getMetaType());
 }
 
 //===----------------------------------------------------------------------===//

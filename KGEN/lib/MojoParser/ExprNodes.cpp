@@ -1588,7 +1588,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
             cast<AnyStructType>(tupleType.getMetaType()).getSymbol()) {
           // Dig out the types from the tuple.  Tuple literals must always
           // have this particular shape.
-          auto tca = cast<TypeConstantAttr>(value);
+          auto tca = cast<TypeParamAttr>(value);
           auto drt = cast<LIT::StructType>(tca.getMlirType());
           ArrayRef<TypedAttr> paramValues = drt.getParamValues();
           assert(paramValues.size() == 1 &&
