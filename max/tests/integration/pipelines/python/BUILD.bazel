@@ -143,7 +143,6 @@ modular_py_binary(
         "//SDK/public/max-repo/pipelines/python/architectures",
         "//SDK/public/max-repo/pipelines/python/llama3",
         "//SDK/public/max-repo/pipelines/python/mistral",
-        "//SDK/public/max-repo/pipelines/python/replit",
         requirement("click"),
         requirement("einops"),  # Req'd by replit
         requirement("pillow"),
