@@ -172,6 +172,8 @@ modular_py_test(
     requires_gpu = True,
     tags = [
         "A100",
+        # FIXME: KERN-1469
+        "H100-DISABLE",
         "gpu",
         "huggingface",
         "no-remote-exec",
