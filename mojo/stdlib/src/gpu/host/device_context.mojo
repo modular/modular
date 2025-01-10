@@ -223,6 +223,15 @@ struct DeviceBuffer[type: DType](Sized):
         self._device_ptr = existing._device_ptr
         self._handle = existing._handle
 
+    @always_inline
+    fn copy(self) -> Self:
+        """Explicitly construct a copy of self.
+
+        Returns:
+            A copy of this value.
+        """
+        return self
+
     fn __moveinit__(out self, owned existing: Self):
         self._device_ptr = existing._device_ptr
         self._handle = existing._handle
@@ -757,6 +766,15 @@ struct DeviceContext:
         # Increment the reference count before copying the handle.
         existing._retain()
         self._handle = existing._handle
+
+    @always_inline
+    fn copy(self) -> Self:
+        """Explicitly construct a copy of self.
+
+        Returns:
+            A copy of this value.
+        """
+        return self
 
     fn __del__(owned self):
         # Decrement the reference count held by this struct.
