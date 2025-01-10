@@ -18,24 +18,23 @@ from utils.index import Index, IndexList
 @always_inline
 fn matmul[
     type: DType, //, N: Int, K: Int, M: Int, transpose_b: Bool
-](A: NDBuffer[type, 2, _], B: NDBuffer[type, 2, _], C: NDBuffer[type, 2, _]):
+](C: NDBuffer[type, 2, _], A: NDBuffer[type, 2, _], B: NDBuffer[type, 2, _]):
     # TODO: Add constrained[]?
     @parameter
-    for i in range(N):
-
-        @parameter
-        for j in range(K):
-            var sum = Scalar[type](0)
-
-            @parameter
-            for k in range(M):
-
-                @parameter
-                if transpose_b:
+    if transpose_b:
+        for i in range(N):
+            for j in range(K):
+                var sum = Scalar[type](0)
+                for k in range(M):
                     sum += A[i, k] * B[j, k]
-                else:
+                C[i, j] = sum
+    else:
+        for i in range(N):
+            for j in range(K):
+                var sum = Scalar[type](0)
+                for k in range(M):
                     sum += A[i, k] * B[k, j]
-            C[i, j] = sum
+                C[i, j] = sum
 
 
 # TODO: Less magic numbers for dimenions, use variables
@@ -76,8 +75,8 @@ fn winograd_2d_convolution_3x3[
     var g_transformed = NDBuffer[type, 2, DimList((4, 4))].stack_allocation()
 
     # Transform kernel: G @ kernel @ G^T
-    matmul[4, 3, 3, False](G, kernel, scratch)
-    matmul[4, 4, 3, True](scratch, G, g_transformed)
+    matmul[4, 3, 3, False](scratch, G, kernel)
+    matmul[4, 4, 3, True](g_transformed, scratch, G)
 
     # Process each 2x2 output tile
     var H = signal.dim(0)
@@ -104,8 +103,8 @@ fn winograd_2d_convolution_3x3[
                     d[di, dj] = v
 
             # Transform input: B @ d @ B^T
-            matmul[4, 4, 4, False](B, d, scratch)
-            matmul[4, 4, 4, True](scratch, B, d)
+            matmul[4, 4, 4, False](scratch, B, d)
+            matmul[4, 4, 4, True](d, scratch, B)
 
             # Element-wise multiplication
             for ii in range(4):
@@ -113,8 +112,8 @@ fn winograd_2d_convolution_3x3[
                     m[ii, jj] = d[ii, jj] * g_transformed[ii, jj]
 
             # y = A * m * A^T
-            matmul[2, 4, 4, False](A, m, scratch)
-            matmul[2, 2, 4, True](scratch, A, y)
+            matmul[2, 4, 4, False](scratch, A, m)
+            matmul[2, 2, 4, True](y, scratch, A)
 
             # Store results
             @parameter
