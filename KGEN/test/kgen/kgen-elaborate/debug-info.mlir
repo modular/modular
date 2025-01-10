@@ -3,7 +3,7 @@
 // Check that debug info gets resolved during elaboration.
 
 #file = #debuginfo.file<"test.mlir" in "">
-!unresolved = !debuginfo.unresolved<!kgen.paramref<ty>>
+!unresolved = !debuginfo.unresolved<!kgen.param<ty>>
 
 // CHECK-DAG: #takeFnContextualType_name = #debuginfo.source_name<"takeFnContextualType"<"index", "@sillyFn">>
 // CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<sourceName = #takeFnContextualType_name, linkageName = "takeFnContextualType,ty=index,fn=_sillyFn",
@@ -17,11 +17,11 @@
 #locTry = loc("silly.mlir":17:3)
 
 // CHECK-LABEL: kgen.func @"takeFnContextualType,ty=index,fn=_sillyFn"() -> index
-kgen.generator @takeFnContextualType<ty: type, fn: () -> !kgen.paramref<ty>>() -> !kgen.paramref<ty> {
+kgen.generator @takeFnContextualType<ty: type, fn: () -> !kgen.param<ty>>() -> !kgen.param<ty> {
   // CHECK: %[[RES:.*]] = kgen.call @sillyFn() : () -> index loc(#[[CALL_LOC:.*]])
-  %0 = kgen.call_param[() -> !kgen.paramref<ty>: fn]() loc(#loc11)
+  %0 = kgen.call_param[() -> !kgen.param<ty>: fn]() loc(#loc11)
   // CHECK: debuginfo.value #[[VAR]] = %[[RES]] : index loc(#[[CALL_LOC]])
-  debuginfo.value #local_variable = %0 : !kgen.paramref<ty> loc(#loc11)
+  debuginfo.value #local_variable = %0 : !kgen.param<ty> loc(#loc11)
   // CHECK: kgen.param.constant = <17> loc(#[[FW_LOC:.*]])
   %1 = kgen.param.constant = <17> loc(#locFwParam)
   kgen.param.declare a = <1> loc(#loc11)
@@ -38,7 +38,7 @@ kgen.generator @takeFnContextualType<ty: type, fn: () -> !kgen.paramref<ty>>() -
   } loc(#loc11)
 
   // CHECK: kgen.return %[[RES]] : index loc(#[[SP_LOC:.*]])
-  kgen.return %0 : !kgen.paramref<ty> loc(#loc10)
+  kgen.return %0 : !kgen.param<ty> loc(#loc10)
 // CHECK: } loc(#[[SP_LOC:.*]])
 } loc(#loc10)
 

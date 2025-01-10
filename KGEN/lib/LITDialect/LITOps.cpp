@@ -2058,7 +2058,7 @@ static ParseResult parseRefPackCreateType(AsmParser &p, Type &resultType,
   // with the specified origin and addr space.
   ArrayRef<TypedAttr> values = variadic.getValues();
   for (TypedAttr value : values) {
-    Type eltType = type.getElementRefTypeFor(ParamRefType::get(value));
+    Type eltType = type.getElementRefTypeFor(ParamType::get(value));
     elementTypes.push_back(eltType);
   }
   return success();
@@ -2081,7 +2081,7 @@ LogicalResult RefPackCreateOp::verify() {
   }
   for (auto [i, expected, provided] :
        llvm::enumerate(elementTypes, getOperandTypes())) {
-    Type type = packType.getElementRefTypeFor(ParamRefType::get(expected));
+    Type type = packType.getElementRefTypeFor(ParamType::get(expected));
     if (type == provided)
       continue;
     return emitOpError() << "operand #" << i << " should have type " << type
@@ -2167,7 +2167,7 @@ LogicalResult RefPackExtractOp::inferReturnTypes(
   // type list.  Extract the element from the type list.
   auto typeAttr = ParamOperatorAttr::get(POC::VariadicGet,
                                          refPackTy.getVariadic(), indexAttr);
-  Type type = ParamRefType::get(typeAttr);
+  Type type = ParamType::get(typeAttr);
   inferredReturnTypes.push_back(refPackTy.getElementRefTypeFor(type));
   return success();
 }

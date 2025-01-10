@@ -29,9 +29,9 @@ kgen.generator @callee() -> index always_inline {
 kgen.generator @parent<A>() {
   // CHECK: hlcf.loop
   // CHECK: %[[V:.*]] = "some.producer"
-  // CHECK: %[[R0:.*]] = kgen.rebind %[[V]] : !kgen.paramref<T> to index
+  // CHECK: %[[R0:.*]] = kgen.rebind %[[V]] : !kgen.param<T> to index
   // CHECK-NEXT: hlcf.break "[[LABEL:.*]]" %[[R0]]
-  // CHECK: %[[R1:.*]] = kgen.rebind %[[V]] : !kgen.paramref<T> to index
+  // CHECK: %[[R1:.*]] = kgen.rebind %[[V]] : !kgen.param<T> to index
   // CHECK-NEXT: hlcf.break "[[LABEL]]" %[[R1]]
   // CHECK-NOT: kgen.call @callee
   %0 = kgen.call @callee<:type index>() : () -> index
@@ -39,15 +39,15 @@ kgen.generator @parent<A>() {
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<T: type>() -> !kgen.paramref<T> always_inline {
-  %0 = "some.producer"() : () -> !kgen.paramref<T>
+kgen.generator @callee<T: type>() -> !kgen.param<T> always_inline {
+  %0 = "some.producer"() : () -> !kgen.param<T>
   %cond = "some.cond"() : () -> i1
   hlcf.if %cond {
-    kgen.return %0 : !kgen.paramref<T>
+    kgen.return %0 : !kgen.param<T>
   } else {
     hlcf.yield
   }
-  kgen.return %0 : !kgen.paramref<T>
+  kgen.return %0 : !kgen.param<T>
 }
 
 // -----
@@ -1075,14 +1075,14 @@ kgen.generator @top() {
 // CHECK-LABEL: kgen.generator @inline_heuristic
 kgen.generator @inline_heuristic<A>() {
   // CHECK: %[[V:.*]] = "some.producer"
-  // CHECK: %[[R0:.*]] = kgen.rebind %[[V]] : !kgen.paramref<T> to index
+  // CHECK: %[[R0:.*]] = kgen.rebind %[[V]] : !kgen.param<T> to index
   // CHECK-NOT: kgen.call @callee
   %0 = kgen.call @callee<:type index>() : () -> index
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<T: type>() -> !kgen.paramref<T> always_inline {
-  %0 = "some.producer"() : () -> !kgen.paramref<T>
-  kgen.return %0 : !kgen.paramref<T>
+kgen.generator @callee<T: type>() -> !kgen.param<T> always_inline {
+  %0 = "some.producer"() : () -> !kgen.param<T>
+  kgen.return %0 : !kgen.param<T>
 }

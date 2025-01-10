@@ -316,13 +316,13 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
   // ```
   // trait Foo:
   //     alias N: Int
-  //     # lit.func @foo(%self: !kgen.paramref<Self>,
+  //     # lit.func @foo(%self: !kgen.param<Self>,
   //     #               %x: SIMD[float32, #kgen.param.decl.ref<"N">])
   //     fn foo(self, x: SIMD[DType.float32, N]):
   //         ...
   // struct Impl(Foo):
   //     alias N: Int = 4
-  //     # lit.func @foo(%self: !kgen.paramref<Self>, %x: SIMD[float32,  4])
+  //     # lit.func @foo(%self: !kgen.param<Self>, %x: SIMD[float32,  4])
   //     fn foo(self, x: SIMD[DType.float32, 4]):
   //         pass
   // ```

@@ -690,7 +690,7 @@ static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
                           .getReferenceElementType()
                           .getVariadicPackInfo()
                           .getVariadicElementType();
-      type = ParamRefType::get(UnknownAttr::get(metatype));
+      type = ParamType::get(UnknownAttr::get(metatype));
       conv = ArgConvention::ReadReg;
     }
     if (hasAddress(conv))
@@ -1674,7 +1674,7 @@ parseOptionalParentList(ParserBase &p, ASTDecl &declScope, StringRef declName,
       if (isa<LIT::StructType>(type)) {
         p.emitError(loc)
             << "TODO: inheriting from other structs is not implemented";
-      } else if (isa<ParamRefType>(type)) {
+      } else if (isa<ParamType>(type)) {
         p.emitError(loc) << "TODO: inheriting from a parameter expression is "
                             "not implemented";
       } else {

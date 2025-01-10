@@ -80,8 +80,8 @@ kgen.func @generator_types() {
   kgen.param.declare atype: type = <!kgen.generator<<AnyType, index, index>i1>>
   // CHECK-NEXT: type = <<AnyType, index, index>i1>
   kgen.param.declare atype: type = <<AnyType, index, index>i1>
-  // CHECK-NEXT: type = <<AnyType, index>(!kgen.paramref<*(0,0)>, i8) -> !kgen.paramref<*(0,1)>>
-  kgen.param.declare atype: type = <<AnyType, index>(!kgen.paramref<*(0,0)>, i8) -> !kgen.paramref<*(0,1)>>
+  // CHECK-NEXT: type = <<AnyType, index>(!kgen.param<*(0,0)>, i8) -> !kgen.param<*(0,1)>>
+  kgen.param.declare atype: type = <<AnyType, index>(!kgen.param<*(0,0)>, i8) -> !kgen.param<*(0,1)>>
   kgen.return
 }
 

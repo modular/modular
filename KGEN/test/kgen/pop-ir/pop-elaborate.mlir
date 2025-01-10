@@ -26,11 +26,11 @@ kgen.generator @store_load_pointer(%arg0: i32) -> i32 {
   kgen.return %3 : i32
 }
 
-kgen.generator @store_load<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T> {
+kgen.generator @store_load<T: type>(%arg0: !kgen.param<T>) -> !kgen.param<T> {
   %0 = pop.stack_allocation 1 x T
   pop.store %arg0, %0 : !kgen.pointer<T>
   %1 = pop.load %0 : !kgen.pointer<T>
-  kgen.return %1 : !kgen.paramref<T>
+  kgen.return %1 : !kgen.param<T>
 }
 
 kgen.generator @i24_pair_bitcast(%arg0: !pop.array<2, i24>) -> i64 {
@@ -42,12 +42,12 @@ kgen.generator @i24_pair_bitcast(%arg0: !pop.array<2, i24>) -> i64 {
   kgen.return %3 : i64
 }
 
-kgen.generator @bitcast<I: type, O: type>(%arg0: !kgen.paramref<I>) -> !kgen.paramref<O> {
+kgen.generator @bitcast<I: type, O: type>(%arg0: !kgen.param<I>) -> !kgen.param<O> {
   %0 = pop.stack_allocation 1 x I
   pop.store %arg0, %0 : !kgen.pointer<I>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<I> to !kgen.pointer<O>
   %2 = pop.load %1 : !kgen.pointer<O>
-  kgen.return %2 : !kgen.paramref<O>
+  kgen.return %2 : !kgen.param<O>
 }
 
 // COM: Store the variant and sneakily read its discriminator's raw value.

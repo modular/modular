@@ -41,11 +41,11 @@ ASTType::ASTType(TypedAttr typeParamExpr) {
     return;
   }
 
-  // If this is a parameter expression of type value, use ParamRefType to turn
+  // If this is a parameter expression of type value, use ParamType to turn
   // it into a type.
   assert(LIT::isTypeExpr(typeParamExpr) &&
          "parameter expr must be a type expression");
-  mlirType = ParamRefType::get(typeParamExpr);
+  mlirType = ParamType::get(typeParamExpr);
 }
 
 Type ASTType::getMetaType() const {
@@ -53,7 +53,7 @@ Type ASTType::getMetaType() const {
     return {};
   if (auto declRef = dyn_cast<StructType>(mlirType))
     return declRef.getMetaType();
-  if (auto paramRef = dyn_cast<ParamRefType>(mlirType))
+  if (auto paramRef = dyn_cast<ParamType>(mlirType))
     return paramRef.getParam().getType();
   if (auto traitRef = dyn_cast<TraitType>(mlirType))
     return traitRef.getMetaType();
@@ -72,10 +72,10 @@ ASTDecl *ASTType::getDecl(SharedState &shared) const {
     return nullptr;
 
   // If our metatype is itself parametric, for example, we have something like:
-  //     !kgen.paramref<:!lit.anytrait<<@Movable>> elt_trait>
+  //     !kgen.param<:!lit.anytrait<<@Movable>> elt_trait>
   // Then this type conforms to some parametric trait that is bound by at least
   // Movable.  Use Movable as the declaration we're working with.
-  if (auto paramRef = dyn_cast<ParamRefType>(type)) {
+  if (auto paramRef = dyn_cast<ParamType>(type)) {
     // AnyTrait is the only metatype of a metatype.
     type = cast<AnyTraitType>(paramRef.getParam().getType());
   }
@@ -177,8 +177,8 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
 
   if (!decl) {
     // If this is a generic type, use the default specification.
-    if (auto paramRefTy = dyn_cast<ParamRefType>(type.mlirType))
-      if (isa<ParamRefType, AnyTraitType>(paramRefTy.getParam().getType()))
+    if (auto paramRefTy = dyn_cast<ParamType>(type.mlirType))
+      if (isa<ParamType, AnyTraitType>(paramRefTy.getParam().getType()))
         return genericDefault;
 
     // MLIR types are assumed to be register-passable + Trivial.
@@ -954,7 +954,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
       os << "None";
     else
       ASTType(resultType).print(os, diagShared, demangleParams);
-  } else if (auto paramRef = dyn_cast<ParamRefType>(type)) {
+  } else if (auto paramRef = dyn_cast<ParamType>(type)) {
     printParam(os, paramRef.getParam(), diagShared, demangleParams);
   } else if (isa<TypeType>(type)) {
     os << "AnyTrivialRegType";

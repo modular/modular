@@ -1083,7 +1083,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
     }
 
     // Emit helpful error message when user tried to call a module.
-    if (auto refType = dyn_cast<ParamRefType>(type)) {
+    if (auto refType = dyn_cast<ParamType>(type)) {
       if (auto moduleAttr = dyn_cast<LIT::ModuleAttr>(refType.getParam())) {
         auto metaType = cast<AnyStructType>(moduleAttr.getType());
         auto diag = emitError(expr->getLoc());

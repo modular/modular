@@ -4,11 +4,11 @@
 // CHECK-SAME: <size, dtype: dtype, ty: type> {
 // CHECK-NEXT: a : index
 // CHECK-NEXT: b : !pop.scalar<dtype>
-// CHECK-NEXT: c : !kgen.paramref<ty>
+// CHECK-NEXT: c : !kgen.param<ty>
 lit.struct.decl @FooStruct<size, dtype: dtype, ty: type> {
   lit.struct.field a : index
   lit.struct.field b : !pop.scalar<dtype>
-  lit.struct.field c : !kgen.paramref<ty>
+  lit.struct.field c : !kgen.param<ty>
 }
 
 // CHECK-LABEL: lit.struct.decl @EmptyStruct
@@ -407,7 +407,7 @@ lit.func @default_struct(%arg0: !lit.struct<@GiveMeDefault> = {1}) {
 }
 
 
-lit.struct.decl @OuterParams<ty: type, fn: () -> !kgen.paramref<ty>> {
+lit.struct.decl @OuterParams<ty: type, fn: () -> !kgen.param<ty>> {
   lit.func @some_func() {
     kgen.return
   }
@@ -415,24 +415,24 @@ lit.struct.decl @OuterParams<ty: type, fn: () -> !kgen.paramref<ty>> {
 
 // CHECK-LABEL: lit.func @ref_it
 lit.func @ref_it() {
-  // CHECK: F: <type, () -> !kgen.paramref<*(1,0)>>() -> () = <@OuterParams::@some_func>
-  kgen.param.declare F: <type, () -> !kgen.paramref<*(1,0)>>() -> () = <@OuterParams::@some_func>
+  // CHECK: F: <type, () -> !kgen.param<*(1,0)>>() -> () = <@OuterParams::@some_func>
+  kgen.param.declare F: <type, () -> !kgen.param<*(1,0)>>() -> () = <@OuterParams::@some_func>
   kgen.return
 }
 
 // CHECK-LABEL: lit.struct.decl @FuncParamStruct
-// CHECK-SAME: <c: !lit.generator<<type>(!kgen.paramref<*(0,0)>) -> ()>>
-lit.struct.decl @FuncParamStruct<c: !lit.generator<<type>(!kgen.paramref<*(0,0)>) -> ()>>  {
-  // CHECK: lit.func @foo(%x: !kgen.pointer<@FuncParamStruct<:!lit.generator<<type>(!kgen.paramref<*(0,0)>) -> ()> c>>)
-  lit.func @foo(%x: !kgen.pointer<@FuncParamStruct<:!lit.generator<<type>(!kgen.paramref<*(0,0)>) -> ()> c>>) {
+// CHECK-SAME: <c: !lit.generator<<type>(!kgen.param<*(0,0)>) -> ()>>
+lit.struct.decl @FuncParamStruct<c: !lit.generator<<type>(!kgen.param<*(0,0)>) -> ()>>  {
+  // CHECK: lit.func @foo(%x: !kgen.pointer<@FuncParamStruct<:!lit.generator<<type>(!kgen.param<*(0,0)>) -> ()> c>>)
+  lit.func @foo(%x: !kgen.pointer<@FuncParamStruct<:!lit.generator<<type>(!kgen.param<*(0,0)>) -> ()> c>>) {
     lit.end_func
   }
   // CHECK-LABEL: lit.func @bar
-  lit.func @bar(%x: !kgen.pointer<@FuncParamStruct<:!lit.generator<<type>(!kgen.paramref<*(0,0)>) -> ()> c>>) {
-    // CHECK: call @FuncParamStruct::@foo<:!lit.generator<<type>(!kgen.paramref<*(0,0)>) -> ()> c>(%x)
-    kgen.call @FuncParamStruct::@foo<:!lit.generator<<type>(!kgen.paramref<*(0,0)>) -> ()> c>(%x)
-    // CHECK-SAME: ("x": !kgen.pointer<@FuncParamStruct<:!lit.generator<<type>(!kgen.paramref<*(0,0)>) -> ()> c>>) -> ()
-      : !lit.generator<("x": !kgen.pointer<@FuncParamStruct<:!lit.generator<<type>(!kgen.paramref<*(0,0)>) -> ()> c>>) -> ()>
+  lit.func @bar(%x: !kgen.pointer<@FuncParamStruct<:!lit.generator<<type>(!kgen.param<*(0,0)>) -> ()> c>>) {
+    // CHECK: call @FuncParamStruct::@foo<:!lit.generator<<type>(!kgen.param<*(0,0)>) -> ()> c>(%x)
+    kgen.call @FuncParamStruct::@foo<:!lit.generator<<type>(!kgen.param<*(0,0)>) -> ()> c>(%x)
+    // CHECK-SAME: ("x": !kgen.pointer<@FuncParamStruct<:!lit.generator<<type>(!kgen.param<*(0,0)>) -> ()> c>>) -> ()
+      : !lit.generator<("x": !kgen.pointer<@FuncParamStruct<:!lit.generator<<type>(!kgen.param<*(0,0)>) -> ()> c>>) -> ()>
     lit.end_func
   }
 }

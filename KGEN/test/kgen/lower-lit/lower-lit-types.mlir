@@ -26,13 +26,13 @@ kgen.func @two_vectors(
 
 // CHECK-NOT: lit.struct.decl
 lit.struct.decl @Box<T: type> register_passable {
-  lit.struct.field value: !kgen.paramref<T>
+  lit.struct.field value: !kgen.param<T>
 }
 
 // CHECK-NOT: lit.struct.decl
 lit.struct.decl @Pair<T1: type, T2: type> {
-  lit.struct.field first: !kgen.paramref<T1>
-  lit.struct.field second: !kgen.paramref<T2>
+  lit.struct.field first: !kgen.param<T1>
+  lit.struct.field second: !kgen.param<T2>
 }
 
 // CHECK-LABEL: @make_box
@@ -68,7 +68,7 @@ kgen.func @struct_extract(%pair: !i8Pair) -> i8 {
 }
 
 lit.struct.decl @NestedA<T: type> register_passable {
-  lit.struct.field v: !kgen.paramref<T>
+  lit.struct.field v: !kgen.param<T>
 }
 lit.struct.decl @NestedB<t: dtype> register_passable {
   lit.struct.field a: !lit.struct<@NestedA<:type !pop.simd<1, t>>>
@@ -239,11 +239,11 @@ lit.func @takes_pack
 (%args: !lit.ref.pack<:variadic<!kgen.type> types, mut life, 42>) {
 
   // CHECK-NEXT: [[E:%.*]] = kgen.pack.extract %arg0[0] : <variadic_ptr_map(:variadic<type> types, 42)>
-  // CHECK-NEXT: kgen.rebind [[E]] : !kgen.paramref<{{.*}}> to !kgen.pointer
+  // CHECK-NEXT: kgen.rebind [[E]] : !kgen.param<{{.*}}> to !kgen.pointer
   %v1 = lit.ref.pack.extract %args[0]: !lit.ref.pack<:variadic<!kgen.type> types, mut life, 42>
 
   // CHECK-NEXT: [[E:%.*]] = kgen.pack.extract %arg0[1] : <variadic_ptr_map(:variadic<type> types, 42)>
-  // CHECK-NEXT: kgen.rebind [[E]] : !kgen.paramref<{{.*}}> to !kgen.pointer
+  // CHECK-NEXT: kgen.rebind [[E]] : !kgen.param<{{.*}}> to !kgen.pointer
   %v2 = lit.ref.pack.extract %args[1]: !lit.ref.pack<:variadic<!kgen.type> types, mut life, 42>
 
   kgen.return
@@ -311,7 +311,7 @@ lit.struct.decl @SIMD<size> register_passable {
 }
 
 lit.struct.decl @UnaryClosure<input_type: type> register_passable {
-  lit.struct.field value : !kgen.generator<(!kgen.paramref<input_type>) -> ()>
+  lit.struct.field value : !kgen.generator<(!kgen.param<input_type>) -> ()>
 }
 
 //===----------------------------------------------------------------------===//
@@ -517,6 +517,6 @@ lit.func @x() {
 }
 
 // CHECK: -> !kgen.struct<() memoryOnly>
-lit.func @example<T: trait<@Bar>>() -> !lit.struct<@Thing<:trait<@Foo> [!kgen.paramref<:trait<@Bar> T>, {"f": !lit.generator<() -> ()> = @x}]>> {
+lit.func @example<T: trait<@Bar>>() -> !lit.struct<@Thing<:trait<@Foo> [!kgen.param<:trait<@Bar> T>, {"f": !lit.generator<() -> ()> = @x}]>> {
   kgen.unreachable
 }

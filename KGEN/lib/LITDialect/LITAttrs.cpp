@@ -1312,7 +1312,7 @@ static ParseResult parsePackElements(AsmParser &p,
       [&](TypedAttr eltType) {
         return parseParamValue(
             p, values.emplace_back(),
-            packType.getElementRefTypeFor(ParamRefType::get(eltType)));
+            packType.getElementRefTypeFor(ParamType::get(eltType)));
       },
       [&] { return p.parseComma(); });
 }
@@ -1362,7 +1362,7 @@ LogicalResult RefPackAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 
   // Check that the element constants have the right types.
   for (auto [i, value, type] : llvm::enumerate(values, expected)) {
-    auto eltType = packType.getElementRefTypeFor(ParamRefType::get(type));
+    auto eltType = packType.getElementRefTypeFor(ParamType::get(type));
     if (value.getType() != eltType)
       return emitError() << "pack attribute element #" << i << " has type "
                          << value.getType() << " but expected " << type;

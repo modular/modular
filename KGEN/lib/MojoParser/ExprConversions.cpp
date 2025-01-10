@@ -786,7 +786,7 @@ createRequirementSignature(LIT::FuncOp traitFn, ASTType newSelfType,
 ///   fn pass_movable[MTT: Movable](x: MTT): take_any_type(x)
 ///
 /// Yields something like:
-///     #kgen.type<!kgen.paramref<:trait<@Movable> MTT>, {
+///     #kgen.type<!kgen.param<:trait<@Movable> MTT>, {
 ///        "__del__" : !lit.generator<[1](
 ///                    "self": !lit.ref<:trait<@Movable> MTT, ...)>
 ///          = get_vtable_entry(:trait<@Movable> MTT, "__del__")
@@ -836,7 +836,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   // look up members to bind in Movable, so bind the Trait type here.  If this
   // is a struct, or simple trait, keep it.
   Type traitOrStructType = type;
-  if (auto paramRef = dyn_cast<ParamRefType>(type.getMetaType())) {
+  if (auto paramRef = dyn_cast<ParamType>(type.getMetaType())) {
     auto simpleTraitType =
         cast<AnyTraitType>(paramRef.getParam().getType()).getTraitType();
     // Cast from a parametric type of trait metatype value (e.g. "some type that

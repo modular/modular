@@ -11,7 +11,7 @@ kgen.func @legal_func() {
 
 kgen.func @parameterized_signature() {
   // expected-error @below {{parameterized functions cannot be used at runtime}}
-  %0 = kgen.param.constant : <type>(!kgen.paramref<*(0,0)>) -> !kgen.paramref<*(0,0)> = <@"identity">
+  %0 = kgen.param.constant : <type>(!kgen.param<*(0,0)>) -> !kgen.param<*(0,0)> = <@"identity">
   kgen.return
 }
 

@@ -1056,10 +1056,10 @@ def KGEN_RebindOp : KGENOp<"rebind", [Pure]> {
 
     ```mlir
     // Rebind a parameterized type to a concrete type.
-    %0 = kgen.rebind %arg0 : !kgen.paramref<type> to !pop.scalar<f32>
+    %0 = kgen.rebind %arg0 : !kgen.param<type> to !pop.scalar<f32>
 
     // Rebind between parameter domains.
-    %1 = kgen.rebind %arg1 : !kgen.paramref<type> to !pop.simd<size, dtype>
+    %1 = kgen.rebind %arg1 : !kgen.param<type> to !pop.simd<size, dtype>
 
     // Unbind a concrete type to one with a parameter.
     %2 = kgen.rebind %arg2 : !pop.scalar<f32> to !pop.scalar<dtype>
@@ -1735,7 +1735,7 @@ def KGEN_PackExtractOp : KGENOp<"pack.extract",
     ) {
       // Get the first element, of type `i32`.
       %0 = kgen.pack.extract %arg0[0] : <[i32, T]>
-      // Get the second element, of type `!kgen.paramref<T>`.
+      // Get the second element, of type `!kgen.param<T>`.
       %1 = kgen.pack.extract %arg0[1] : <[i32, T]>
 
       // Get the element at an offset `I + 1`.

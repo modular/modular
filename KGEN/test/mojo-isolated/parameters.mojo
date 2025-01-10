@@ -197,7 +197,7 @@ fn makePair(a: SIMD[DType.float32, 42], b: Int) -> Pair[DType.float32]:
 # CHECK-LABEL: lit.struct.decl @TypeParameter
 # CHECK-SAME: <[[TYPE:.*]]: type>
 struct TypeParameter[T: __mlir_type.`!kgen.type`]:
-  # CHECK: @"bar(parameters::TypeParameter{{.*}}(%self: {{.*}} read_mem, %val: !kgen.paramref<[[TYPE]]>)
+  # CHECK: @"bar(parameters::TypeParameter{{.*}}(%self: {{.*}} read_mem, %val: !kgen.param<[[TYPE]]>)
   fn bar(self, val: T):
     pass
 

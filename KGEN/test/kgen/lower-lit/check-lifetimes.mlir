@@ -133,7 +133,7 @@ lit.func @conditional_consumption_4(%c: i1, %value: !Error) {
 
 !Thing = !lit.struct<@Thing>
 lit.struct.decl @Box<T: trait<@AnyType>>  {
-  lit.struct.field x : !kgen.paramref<:trait<@AnyType> T>
+  lit.struct.field x : !kgen.param<:trait<@AnyType> T>
 }
 
 lit.struct.decl @Thing {

@@ -17,7 +17,7 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
 
     // Type folding.
     // CHECK-SAME: use4 = #kgen.param.decl.ref<"mlirType"> : !kgen.type
-    use4 = #kgen.type<!kgen.paramref<:type mlirType>> : !kgen.type
+    use4 = #kgen.type<!kgen.param<:type mlirType>> : !kgen.type
 
 
   } : () -> ()
@@ -544,12 +544,12 @@ kgen.generator @type_params<dt: dtype, typeParam: type>() {
   kgen.param.declare ty2: type = <scalar<dt>>
 
   // This op returns an SSA value whose type is specified by a type parameter.
-  // CHECK: "test.someop"() : () -> !kgen.paramref<ty2>
-  "test.someop"() : () -> !kgen.paramref<ty2>
+  // CHECK: "test.someop"() : () -> !kgen.param<ty2>
+  "test.someop"() : () -> !kgen.param<ty2>
 
   // kgen.paramref auto-folds non-parameterized types on construction.
   // CHECK: "test.someop"() : () -> !pop.scalar<f32>
-  "test.someop"() : () -> !kgen.paramref<!pop.scalar<f32>>
+  "test.someop"() : () -> !kgen.param<!pop.scalar<f32>>
 
   kgen.return
 }
@@ -671,13 +671,13 @@ kgen.generator @testTargetInfo() {
 // CHECK-SAME: %[[ARG1:.*]]: !kgen.pointer<*"index">
 kgen.generator @mlir_builtin_types<*"index": type>(
   %arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<*"index">
-) -> (index, !kgen.paramref<*"index">) {
+) -> (index, !kgen.param<*"index">) {
   // CHECK: %[[V0:.*]] = pop.load %[[ARG0]] : !kgen.pointer<index>
   %0 = pop.load %arg0 : !kgen.pointer<index>
   // CHECK: %[[V1:.*]] = pop.load %[[ARG1]] : !kgen.pointer<*"index">
   %1 = pop.load %arg1 : !kgen.pointer<*"index">
-  // CHECK: return %[[V0]], %[[V1]] : index, !kgen.paramref<*"index">
-  kgen.return %0, %1 : index, !kgen.paramref<*"index">
+  // CHECK: return %[[V0]], %[[V1]] : index, !kgen.param<*"index">
+  kgen.return %0, %1 : index, !kgen.param<*"index">
 }
 
 lit.struct.decl @A {}
@@ -692,9 +692,9 @@ kgen.generator @symbol_exprs() {
   kgen.return
 }
 
-kgen.generator @takeFnContextualType<ty: type, fn: ()->!kgen.paramref<ty>>() -> !kgen.paramref<ty> {
-  %0 = kgen.call_param[()->!kgen.paramref<ty>: fn]()
-  kgen.return %0: !kgen.paramref<ty>
+kgen.generator @takeFnContextualType<ty: type, fn: ()->!kgen.param<ty>>() -> !kgen.param<ty> {
+  %0 = kgen.call_param[()->!kgen.param<ty>: fn]()
+  kgen.return %0: !kgen.param<ty>
 }
 
 kgen.func @sillyFn() -> index {
@@ -711,12 +711,12 @@ kgen.generator @elaborateFnWithContextualType() -> index {
 
 // CHECK-LABEL: @elaborateFnWithContextualType2()
 kgen.generator @elaborateFnWithContextualType2() -> index {
-  kgen.param.declare fn: <type, () -> !kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> = <@takeFnContextualType>
+  kgen.param.declare fn: <type, () -> !kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> = <@takeFnContextualType>
 
   // CHECK: kgen.param.declare boundFn: () -> index =
-  // CHECK-SAME: <bind_signature(:<type, () -> !kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> fn, index, @sillyFn)>
+  // CHECK-SAME: <bind_signature(:<type, () -> !kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> fn, index, @sillyFn)>
   kgen.param.declare boundFn: () -> index =
-    <bind_signature(:<type, () -> !kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> fn,
+    <bind_signature(:<type, () -> !kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> fn,
                     index, @sillyFn)>
   %0 = kgen.call_param[()->index: boundFn]()
 
@@ -725,13 +725,13 @@ kgen.generator @elaborateFnWithContextualType2() -> index {
 
 // CHECK-LABEL: @partialBindSignature
 kgen.generator @partialBindSignature() -> index {
-  kgen.param.declare fn: <type, () -> !kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> = <@takeFnContextualType>
+  kgen.param.declare fn: <type, () -> !kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> = <@takeFnContextualType>
 
   // CHECK: kgen.param.declare partiallyBound: <() -> index>() -> index =
-  // CHECK-SAME: <bind_signature(:<type, () -> !kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> fn, index, ?)>
+  // CHECK-SAME: <bind_signature(:<type, () -> !kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> fn, index, ?)>
   kgen.param.declare
     partiallyBound: <() -> index>() -> index =
-      <bind_signature(:<type, () -> !kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> fn, index, ?)>
+      <bind_signature(:<type, () -> !kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> fn, index, ?)>
   // CHECK: kgen.call_param[() -> index: bind_signature(:<() -> index>() -> index partiallyBound, @sillyFn)]()
   %0 = kgen.call_param[() -> index: bind_signature(:<() -> index>() -> index partiallyBound, @sillyFn)]()
 
@@ -742,7 +742,7 @@ kgen.generator @partialBindSignature() -> index {
 kgen.generator @partialBindSignature2() -> index {
   // CHECK: kgen.param.declare fn: <() -> index>() -> index = <@takeFnContextualType<:type index, :() -> index ?>>
   kgen.param.declare fn: <()->index>() -> index =
-    <bind_signature(:<type, ()->!kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> @takeFnContextualType, index, ?)>
+    <bind_signature(:<type, ()->!kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> @takeFnContextualType, index, ?)>
   // CHECK: kgen.param.declare fullyBound: () -> index = <bind_signature(:<() -> index>() -> index fn, @sillyFn)>
   kgen.param.declare fullyBound: () -> index = <bind_signature(:<()->index>() -> index fn, @sillyFn)>
 
@@ -754,15 +754,15 @@ kgen.generator @partialBindSignature2() -> index {
   kgen.return %0 : index
 }
 
-kgen.generator @returnParam<T: type, I>(%arg : !kgen.paramref<T>) -> !kgen.paramref<T> {
- kgen.return %arg : !kgen.paramref<T>
+kgen.generator @returnParam<T: type, I>(%arg : !kgen.param<T>) -> !kgen.param<T> {
+ kgen.return %arg : !kgen.param<T>
 }
 
 // CHECK-LABEL: @partialBindSignature3
-kgen.generator @partialBindSignature3<T: type>(%arg : !kgen.paramref<T>) {
-  // CHECK-NEXT: kgen.param.declare fn: <type>(!kgen.paramref<*(0,0)>) -> !kgen.paramref<*(0,0)> = <@returnParam<:type ?, 32>>
-  kgen.param.declare fn: <type>(!kgen.paramref<*(0,0)>) -> !kgen.paramref<*(0,0)> =
-    <bind_signature(:<type, index>(!kgen.paramref<*(0,0)>) -> !kgen.paramref<*(0,0)> @returnParam, ?, 32)>
+kgen.generator @partialBindSignature3<T: type>(%arg : !kgen.param<T>) {
+  // CHECK-NEXT: kgen.param.declare fn: <type>(!kgen.param<*(0,0)>) -> !kgen.param<*(0,0)> = <@returnParam<:type ?, 32>>
+  kgen.param.declare fn: <type>(!kgen.param<*(0,0)>) -> !kgen.param<*(0,0)> =
+    <bind_signature(:<type, index>(!kgen.param<*(0,0)>) -> !kgen.param<*(0,0)> @returnParam, ?, 32)>
   kgen.return
 }
 

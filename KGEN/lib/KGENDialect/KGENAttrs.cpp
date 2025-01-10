@@ -229,10 +229,10 @@ void TypeConstantAttr::print(AsmPrinter &p) const {
 TypedAttr TypeConstantAttr::get(MLIRContext *ctx, Type typeValue, Type mlirType,
                                 Type metaType, VTableAttr vtable) {
   // If this is a trivial mlir Type (i.e. has identical type & value
-  // representation), and the trivial type is a ParamRefType, then we're
+  // representation), and the trivial type is a ParamType, then we're
   // unwrapping a wrapper. Remove this to keep the types canonical.
   if (mlirType == typeValue && vtable.getEntries().empty()) {
-    if (auto refType = ::dyn_cast<ParamRefType>(mlirType))
+    if (auto refType = ::dyn_cast<ParamType>(mlirType))
       if (refType.getParam().getType() == metaType)
         return refType.getParam();
     if (auto typeValueType = ::dyn_cast<TypeValueType>(mlirType))
@@ -779,7 +779,7 @@ parsePackElements(AsmParser &p, SmallVector<TypedAttr> &values, PackType type) {
       variadic.getValues(),
       [&](TypedAttr eltType) {
         return parseParamValue(p, values.emplace_back(),
-                               ParamRefType::get(eltType));
+                               ParamType::get(eltType));
       },
       [&] { return p.parseComma(); });
 }
@@ -827,7 +827,7 @@ LogicalResult PackAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   // Verify the constant elements have the right type.
   for (auto [i, value, typeAttr] :
        llvm::zip(llvm::seq<size_t>(0, expected.size()), values, expected))
-    if (value.getType() != ParamRefType::get(typeAttr))
+    if (value.getType() != ParamType::get(typeAttr))
       return emitError() << "pack attribute element #" << i << " has type "
                          << value.getType() << " but expected " << typeAttr;
   return success();
@@ -1059,8 +1059,7 @@ verifyVariadicPtrMap(ArrayRef<TypedAttr> operands, Type type,
     return emitError() << "'variadic_ptr_map' requires 2 operands";
 
   auto srcVariadic = dyn_cast<VariadicType>(operands[0].getType());
-  if (!srcVariadic ||
-      !isa<TypeType, ParamRefType>(srcVariadic.getElementType()) ||
+  if (!srcVariadic || !isa<TypeType, ParamType>(srcVariadic.getElementType()) ||
       type != srcVariadic)
     return emitError() << "'variadic_ptr_map' operand should have "
                           "!kgen.variadic<!kgen.type> type, not "
@@ -1360,7 +1359,7 @@ LogicalResult ParamOperatorAttr::verify(
                             "!kgen.signature operand, but got nothing.";
     auto operand = operands[0];
     if (auto paramRef1 = ::dyn_cast<ParamDeclRefAttr>(operand)) {
-      if (auto paramRefType1 = ::dyn_cast<ParamRefType>(paramRef1.getType())) {
+      if (auto paramRefType1 = ::dyn_cast<ParamType>(paramRef1.getType())) {
         auto param1 = paramRefType1.getParam();
         if (!::isa<ParamDeclRefAttr>(param1))
           return emitError() << "'function_get_arg_types' operand paramref's "
@@ -1380,7 +1379,7 @@ LogicalResult ParamOperatorAttr::verify(
                << mlirType;
     } else if (auto paramIndexRef = ::dyn_cast<ParamIndexRefAttr>(operand)) {
       auto mlirType = paramIndexRef.getType();
-      if (::isa<ParamRefType>(mlirType)) {
+      if (::isa<ParamType>(mlirType)) {
         // Do nothing, is fine
       } else if (::isa<SignatureGeneratorType>(mlirType)) {
         // Do nothing, is fine
@@ -2560,7 +2559,7 @@ static TypedAttr simplifyVariadicPtrMap(TypedAttr variadicOperand,
   for (auto elt : variadic.getValues()) {
     Type typeValue =
         PointerType::get(TypeValueType::get(elt), addrSpaceOperand);
-    Type mlirType = PointerType::get(ParamRefType::get(elt), addrSpaceOperand);
+    Type mlirType = PointerType::get(ParamType::get(elt), addrSpaceOperand);
     results.push_back(
         TypeConstantAttr::get(typeValue, mlirType, resultEltType));
   }

@@ -24,22 +24,22 @@ class KGENType<string name, string typeMnemonic, list<Trait> traits = []>
 }
 
 //===----------------------------------------------------------------------===//
-// ParamRefType
+// ParamType
 //===----------------------------------------------------------------------===//
 
-def KGEN_ParamRefType : KGENType<"ParamRef", "paramref"> {
+def KGEN_ParamType : KGENType<"Param", "param"> {
   let summary = "Type specified by a parameter expression (type domain)";
   let description = [{
     This is a symbolic type represented with a parameter expression that is
     resolved by the KGEN elaborator.  Once this parameter is substituted with a
-    type constant, this ParamRefType is folded away and the MlirType inside
+    type constant, this ParamType is folded away and the MlirType inside
     the type constant is returned.
   }];
 
   let parameters = (ins "TypedAttr":$param);
   let assemblyFormat = "`<` custom<TypeParamValue>($param) `>`";
 
-  // Our builders create ParamRefType but fold to the base type if not
+  // Our builders create ParamType but fold to the base type if not
   // parameterized.
   let skipDefaultBuilders = 1;
   let builders = [
@@ -53,7 +53,7 @@ def KGEN_ParamRefType : KGENType<"ParamRef", "paramref"> {
   let extraClassDeclaration = [{
     /// A specific builder used to build the type from a bytecode context,
     /// providing a slightly different context from the normal builder.
-    static ParamRefType getFromBytecode(TypedAttr param);
+    static ParamType getFromBytecode(TypedAttr param);
   }];
 }
 
@@ -64,7 +64,7 @@ def KGEN_ParamRefType : KGENType<"ParamRef", "paramref"> {
 def KGEN_TypeValueType : KGENType<"TypeValue", "typevalue"> {
   let summary = "Type specified by a parameter expression (value domain)";
   let description = [{
-    This is the value domain counterpart to KGEN ParamRefType. It allows
+    This is the value domain counterpart to KGEN ParamType. It allows
     losslessly using a parameter expression as a MLIR Type: Even when its
     type value parameter is substituted with a type constant, it does not fold
     into the MlirType itself (unless the type constant is a trivial mlir type).

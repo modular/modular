@@ -634,7 +634,7 @@ fn infer_grand_father[T: GrandFather](x: T):
 # CHECK-SAME: <T: !Father>
 fn pass_up_trait[T: Father](x: T):
     # CHECK-NEXT: call {{.*}}infer_grand_father{{.*}}<:!GrandFather
-    # CHECK-SAME: [!kgen.paramref<:!Father T>, {
+    # CHECK-SAME: [!kgen.param<:!Father T>, {
     # CHECK-SAME: "bar" : !lit.generator<[1]("self": !lit.ref<:!Father T, imm {{.*}}> read_mem) -> !kgen.none> = get_vtable_entry({{.*}} T, "bar"),
     # CHECK-SAME: "foo" : !lit.generator<[1]("self": !lit.ref<:!Father T, imm {{.*}}> read_mem) -> !kgen.none> = get_vtable_entry({{.*}} T, "foo")
     # CHECK-SAME: }]>(%x)
@@ -895,7 +895,7 @@ struct Foo[T: EmptyTrait]:
 
 # CHECK-LABEL: lit.func @"test_infer_sub_trait
 fn test_infer_sub_trait[T: OtherEmptyTrait](owned foo: Foo[T], bar: Bar[T]):
-    # CHECK: call {{.*}}@Foo::@"infer_sub_trait{{.*}}<:!EmptyTrait [!kgen.paramref<:!OtherEmptyTrait T>, {{.*}}], :!OtherEmptyTrait T>(%foo, %bar)
+    # CHECK: call {{.*}}@Foo::@"infer_sub_trait{{.*}}<:!EmptyTrait [!kgen.param<:!OtherEmptyTrait T>, {{.*}}], :!OtherEmptyTrait T>(%foo, %bar)
     var copy = foo.infer_sub_trait(bar)
 
 
@@ -953,8 +953,8 @@ struct TestAnyTrait[element_trait: _AnyTypeMetaType]:
         pass
 
     # CHECK: lit.func @"test
-    # CHECK-SAME: <a_type: !kgen.paramref<:!lit.anytrait<!AnyType> element_trait>>
-    # CHECK-SAME: (%self: {{.*}}%a_value: !lit.ref<:!kgen.paramref<:!lit.anytrait<!AnyType> element_trait> a_type, imm {{.*}}> read_mem
+    # CHECK-SAME: <a_type: !kgen.param<:!lit.anytrait<!AnyType> element_trait>>
+    # CHECK-SAME: (%self: {{.*}}%a_value: !lit.ref<:!kgen.param<:!lit.anytrait<!AnyType> element_trait> a_type, imm {{.*}}> read_mem
     fn test[a_type: element_trait](self, a_value: a_type):
         self.take_any_type(a_value)
 
@@ -974,7 +974,7 @@ trait RGTrait:
 # CHECK-LABEL: lit.trait.decl @RGTrivialTrait{{.*}} register_passable_trivial
 @register_passable("trivial")
 trait RGTrivialTrait:
-    # CHECK-NEXT: lit.func @"doSomething{{.*}}"(%self: !kgen.paramref<:!RGTrivialTrait {{.*}}>) -> !kgen.none
+    # CHECK-NEXT: lit.func @"doSomething{{.*}}"(%self: !kgen.param<:!RGTrivialTrait {{.*}}>) -> !kgen.none
     fn doSomething(self):
         ...
 
@@ -1005,9 +1005,9 @@ fn take_anytype_ref[type: AnyType](ref value: type): pass
 # CHECK-LABEL: lit.func @"pass_movable_mt_ref
 fn pass_movable_mt_ref[elt_trait: _MovableMetaType, PassT: elt_trait](mut a: PassT):
     # CHECK-NEXT: lit.call @traits::@"take_anytype_ref
-    # CHECK-SAME: <:!AnyType [!kgen.paramref<:!kgen.paramref<:!lit.anytrait<!Movable> elt_trait> PassT>, {
-    # CHECK-SAME: "__del__" : !lit.generator<[1]("self": !lit.ref<:!Movable rebind(:!kgen.paramref<:!lit.anytrait<!Movable> elt_trait> PassT), mut *[0,0]> owned_in_mem, |) -> !kgen.none>
-    # CHECK-SAME: = get_vtable_entry(:!Movable rebind(:!kgen.paramref<:!lit.anytrait<!Movable> elt_trait> PassT), "__del__")}], :i1 1, :origin<1> *"a`">(%a) : !lit.generator<("value": !lit.ref<:!kgen.paramref<:!lit.anytrait<!Movable> elt_trait> PassT, mut *"a`"> ref)
+    # CHECK-SAME: <:!AnyType [!kgen.param<:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT>, {
+    # CHECK-SAME: "__del__" : !lit.generator<[1]("self": !lit.ref<:!Movable rebind(:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT), mut *[0,0]> owned_in_mem, |) -> !kgen.none>
+    # CHECK-SAME: = get_vtable_entry(:!Movable rebind(:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT), "__del__")}], :i1 1, :origin<1> *"a`">(%a) : !lit.generator<("value": !lit.ref<:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT, mut *"a`"> ref)
     take_anytype_ref(a)
 
 alias _CollectionElementMetaType = __mlir_type[`!lit.anytrait<`, CollectionElement, `>`]

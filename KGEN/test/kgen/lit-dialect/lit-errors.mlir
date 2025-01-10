@@ -52,9 +52,9 @@ lit.struct.decl @Bar<a: type> {
   lit.struct.field x : !pop.array<32, a>
 }
 
-kgen.generator @invalid_field_type<c: type>(%a: !kgen.paramref<c>) {
-  // expected-error @below {{perand #0 has type '!kgen.paramref<c>' but corresponding struct field "x" expected '!pop.array<32, index>'}}
-  %0 = lit.struct.create(x=%a) : (!kgen.paramref<c>) -> !lit.struct<@Bar<:type index>>
+kgen.generator @invalid_field_type<c: type>(%a: !kgen.param<c>) {
+  // expected-error @below {{perand #0 has type '!kgen.param<c>' but corresponding struct field "x" expected '!pop.array<32, index>'}}
+  %0 = lit.struct.create(x=%a) : (!kgen.param<c>) -> !lit.struct<@Bar<:type index>>
   kgen.return
 }
 
@@ -255,7 +255,7 @@ lit.func @struct_attr() {
 
 // expected-note @below {{see struct declaration here}}
 lit.struct.decl @ParamField<ty: type> {
-  lit.struct.field a : !kgen.paramref<ty>
+  lit.struct.field a : !kgen.param<ty>
 }
 
 lit.func @struct_attr() {
@@ -268,7 +268,7 @@ lit.func @struct_attr() {
 // -----
 
 lit.struct.decl @ParamField<ty: type> {
-  lit.struct.field a : !kgen.paramref<ty>
+  lit.struct.field a : !kgen.param<ty>
 }
 
 lit.func @struct_attr() {

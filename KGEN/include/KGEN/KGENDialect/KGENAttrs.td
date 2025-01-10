@@ -964,7 +964,7 @@ def KGEN_MLIROpAttr : KGEN_ExprAttr<"MLIROp", "param.mlir_op"> {
 
     ```
     #kgen.param.mlir_op<"pop.array.get", {}> : !kgen.generator<
-      <*"index">(!pop.array<size, type>) -> !kgen.paramref<type>
+      <*"index">(!pop.array<size, type>) -> !kgen.param<type>
     >
     ```
 
