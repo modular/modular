@@ -103,15 +103,16 @@ fn make_layout(layout_a: Layout, layout_b: Layout) -> Layout:
 
 
 @value
-struct _LayoutIter:
+struct _LayoutIter[origin: ImmutableOrigin]:
     var index: Int
-    var layout: Layout
+    var layout: Pointer[Layout, origin]
 
     fn __next__(mut self) -> Layout:
+        var idx = self.index
         self.index += 1
         return Layout(
-            self.layout.shape[self.index - 1],
-            self.layout.stride[self.index - 1],
+            self.layout[].shape[idx],
+            self.layout[].stride[idx],
         )
 
     @always_inline
@@ -119,7 +120,7 @@ struct _LayoutIter:
         return self.__len__() > 0
 
     fn __len__(self) -> Int:
-        return len(self.layout.shape) - self.index
+        return len(self.layout[].shape) - self.index
 
 
 struct Layout(
@@ -277,8 +278,8 @@ struct Layout(
         return len(self.shape)
 
     @always_inline
-    fn __iter__(self) -> _LayoutIter:
-        return _LayoutIter(0, self)
+    fn __iter__(self) -> _LayoutIter[__origin_of(self)]:
+        return _LayoutIter(0, Pointer.address_of(self))
 
     @always_inline
     fn size(self) -> Int:
@@ -547,14 +548,17 @@ fn hier_unzip[
     var split = Layout()
     for i in range(len(tiler)):
         split.append(hier_unzip[splitter](layout_a[i], tiler[i]))
+
     var res_1 = Layout()
-    for i in range(len(tiler)):
-        res_1.append(split[i][0])
     var res_2 = Layout()
-    for i in range(len(tiler)):
-        res_2.append(split[i][1])
+    for s in split:
+        res_1.append(s[0])
+        res_2.append(s[1])
+
+    # Remainder if tiler is shorter.
     for i in range(len(tiler), len(layout_a)):
         res_2.append(layout_a[i])
+
     var res = Layout()
     res.append(res_1)
     res.append(res_2)
