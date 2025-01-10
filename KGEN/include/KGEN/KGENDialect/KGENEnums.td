@@ -98,6 +98,14 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   I32EnumAttrCase<"StrConcat", 40, "str_concat">,
   /// Get the arguments from a function signature as a kgen.variadic.
   I32EnumAttrCase<"FunctionGetArgTypes", 41, "function_get_arg_types">,
+
+  /// HELLO INTREPID COMPILER DEVELOPER!  Are you thinking about adding another
+  /// POC opcode for something that isn't a trivial expression like add or sub?
+  /// The list above ^^^ is massively out of control, these things are not
+  /// "operators" like ParamOperatorAttr was designed for.  MLIR allows us to
+  /// define new attributes, and it's really good at it!  Let's stop this
+  /// pattern and progressively refactor these away over time so POC can get
+  /// back to being simple arithmetic stuff some day.  Thank you, -ChrisL
 ]>;
 
 //===----------------------------------------------------------------------===//
