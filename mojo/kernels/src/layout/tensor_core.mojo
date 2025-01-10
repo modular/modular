@@ -59,6 +59,10 @@ struct TensorCore[
     alias supported_half = in_type.is_half_float() and (
         shape == shape_16x8x16 if is_nvidia_gpu() else shape == shape_16x16x16
     )
+    alias supported_fp8 = in_type in (
+        DType.float8e4m3,
+        DType.float8e5m2,
+    ) and shape == shape_16x8x32
 
     # Operand register types.
     alias a_reg_type = SIMD[in_type, num_matrix_reg[shape[0], shape[2]]()]
@@ -536,7 +540,9 @@ struct TensorCore[
         ],
         mma_tile_coord_k: UInt = 0,  # the k corrdinate of mma tile
     ):
-        constrained[self.supported_fp32 or self.supported_half]()
+        constrained[
+            self.supported_fp32 or self.supported_half or self.supported_fp8
+        ]()
 
         alias frag_type = fragments.element_type
         alias simd_size = simdwidthof[type0]()
@@ -658,7 +664,9 @@ struct TensorCore[
         mma_tile_coord_k: UInt = 0,  # the k corrdinate of mma tile
         warp_tile_coord_n: UInt = 0,  # n coordiante of warp tile
     ):
-        constrained[self.supported_fp32 or self.supported_half]()
+        constrained[
+            self.supported_fp32 or self.supported_half or self.supported_fp8
+        ]()
 
         alias frag_type = fragments.element_type
         alias simd_size = simdwidthof[in_type]()
@@ -685,7 +693,13 @@ struct TensorCore[
                         SIMD[type0, 2](vec[1], vec[3])
                     )
             else:
-                constrained[self.supported_half]()
+                constrained[
+                    self.supported_half or self.supported_fp8,
+                    (
+                        "Transposed matrix B is only supported for half and fp8"
+                        " data types."
+                    ),
+                ]()
 
                 var swizzle_offset = mma_tile_coord_k * shape[2] // simd_size
 
@@ -719,6 +733,21 @@ struct TensorCore[
                             rebind[Scalar[type0]](frag[0]),
                             rebind[Scalar[type0]](frag[1]),
                         )
+                    )
+            elif in_type.is_float8():
+
+                @parameter
+                for i in range(num_frags):
+                    var mma_tile = warp_tile.tile[shape[2], shape[1]](
+                        mma_tile_coord_k, i
+                    )
+                    var frags = mma_tile.vectorize[4, 1]().distribute[
+                        Layout.col_major(4, 8)
+                    ](lane_id())
+                    fragments[i, 0] = rebind[frag_type](
+                        rebind[SIMD[type0, 4]](frags[0]).join(
+                            rebind[SIMD[type0, 4]](frags[1])
+                        ),
                     )
 
             else:
