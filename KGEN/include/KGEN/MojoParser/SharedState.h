@@ -110,6 +110,8 @@ public:
   MLIRContext *getContext() const { return diags.context; }
   DeclResolver &getDeclResolver() const { return *declResolver; }
 
+  bool shouldImportAllReachableExportedFunctions() const;
+
   /// Returns if we should diagnose missing doc strings.
   bool shouldDiagnoseMissingDocStrings() const;
 
@@ -535,6 +537,9 @@ private:
 
   /// If true, auto-import the builtin package.
   bool useBuiltinModule = true;
+
+  /// If true, all reachable exported functions are included in the module.
+  bool importAllReachableExportedFunctions = false;
 
   std::unique_ptr<Impl> impl;
 };
