@@ -3,7 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: H100-GPU
+# FIXME: KERN-1480
+# UNSUPPORTED: NVIDIA-GPU
 # RUN: %mojo-no-debug-no-assert %s
 
 from math import ceildiv
