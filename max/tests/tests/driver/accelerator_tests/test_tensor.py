@@ -9,10 +9,11 @@ import re
 import numpy as np
 import pytest
 import torch
-from max.driver import CPU, Accelerator, Tensor
+from max.driver import CPU, Accelerator, Tensor, accelerator_api
 from max.dtype import DType
 
 
+@pytest.mark.skipif(accelerator_api() == "hip", reason="KERN-1454")
 def test_from_numpy_cuda():
     # A user should be able to create a GPU tensor from a numpy array.
     arr = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
@@ -108,6 +109,7 @@ DLPACK_DTYPES = {
 }
 
 
+@pytest.mark.skipif(accelerator_api() == "hip", reason="KERN-1454")
 def test_dlpack_gpu():
     # TODO(MSDK-897): improve test coverage with different shapes and strides.
     for dtype, torch_dtype in DLPACK_DTYPES.items():
@@ -124,6 +126,7 @@ def test_dlpack_gpu():
         assert gpu_tensor[0, 0].to(CPU()).item() == 7
 
 
+@pytest.mark.skipif(accelerator_api() == "hip", reason="KERN-1454")
 def test_from_dlpack():
     # TODO(MSDK-897): improve test coverage with different shapes and strides.
     for dtype, torch_dtype in DLPACK_DTYPES.items():
