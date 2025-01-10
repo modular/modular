@@ -624,7 +624,7 @@ fn sizeof[
     Note: `align_of` is in same module.
     """
     alias mlir_type = __mlir_attr[
-        `#kgen.param.expr<rebind, #kgen.type<!kgen.paramref<`,
+        `#kgen.param.expr<rebind, #kgen.type<!kgen.param<`,
         type,
         `>> : `,
         AnyType,
@@ -677,7 +677,7 @@ fn alignof[
         The alignment of the type in bytes.
     """
     alias mlir_type = __mlir_attr[
-        `#kgen.param.expr<rebind, #kgen.type<!kgen.paramref<`,
+        `#kgen.param.expr<rebind, #kgen.type<!kgen.param<`,
         type,
         `>> : `,
         AnyType,
