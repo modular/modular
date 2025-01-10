@@ -10,31 +10,35 @@
 #include "llvm/Support/Format.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include <cassert>
-
 #if defined(__APPLE__)
 #include <dlfcn.h>
 #include <mach-o/loader.h>
 #include <stdint.h>
 #else
 #include <elf.h>
+#include <link.h>
 
-extern char __build_id_start;
-extern char __build_id_end;
+extern const ElfW(Ehdr) __ehdr_start __attribute__((visibility("hidden")));
 #endif // __APPLE__
 
 using namespace M;
+
+// https://github.com/llvm/llvm-project/blob/d1d5fc381f0930cf1190367dd6b2e0736c341071/compiler-rt/lib/sanitizer_common/sanitizer_common.h#L469-L472
+inline size_t RoundUpTo(size_t size, size_t boundary) {
+  return (size + boundary - 1) & ~(boundary - 1);
+}
 
 std::string M::getBinaryID() {
   std::string str;
   llvm::raw_string_ostream os(str);
 
 #if defined(__APPLE__)
-  // NOTE: This code can run in a dylib or executable, we need to fetch the
+  // note: This code can run in a dylib or executable, we need to fetch the
   // address of whichever one it comes from
   Dl_info info;
   if (dladdr((void *)&getBinaryID, &info) == 0)
-    assert(false && "dladdr failed");
+    llvm_unreachable("dladdr failed");
+
   auto *execHeader = (const struct mach_header_64 *)info.dli_fbase;
 
   // Get the header of the current binary or shared library, and find the UUID
@@ -45,19 +49,50 @@ std::string M::getBinaryID() {
       const struct uuid_command *cmd = (const struct uuid_command *)command;
       for (unsigned char i : cmd->uuid)
         os << llvm::format("%02x", i);
-      break;
+      return str;
     } else {
       command += ((const struct load_command *)command)->cmdsize;
     }
   }
 #else
-  Elf64_Nhdr *hdr = (Elf64_Nhdr *)&__build_id_start;
-  assert(hdr->n_type == NT_GNU_BUILD_ID && "invalid section type");
+  // Based off various compiler-rt sources
+  // https://github.com/llvm/llvm-project/blob/d1d5fc381f0930cf1190367dd6b2e0736c341071/compiler-rt/lib/profile/InstrProfilingPlatformLinux.c#L195
+  // https://github.com/llvm/llvm-project/blob/d1d5fc381f0930cf1190367dd6b2e0736c341071/compiler-rt/lib/profile/InstrProfilingPlatformLinux.c#L182
+  const ElfW(Ehdr) *elfHeader = &__ehdr_start;
+  const ElfW(Phdr) *programHeader =
+      (const ElfW(Phdr) *)((uintptr_t)elfHeader + elfHeader->e_phoff);
 
-  const char *s = s = &__build_id_start + sizeof(Elf64_Nhdr) + hdr->n_namesz;
-  for (; s < &__build_id_end; ++s)
-    os << llvm::format("%02hhx", *s);
+  uintptr_t base = 0;
+  for (uint32_t i = 0; i < elfHeader->e_phnum; ++i)
+    if (programHeader[i].p_type == PT_PHDR)
+      base = (uintptr_t)programHeader - programHeader[i].p_vaddr;
+
+  for (ElfW(Half) i = 0; i < elfHeader->e_phnum; ++i) {
+    if (programHeader[i].p_type != PT_NOTE)
+      continue;
+
+    // There can be multiple notes, iterate until we find the build-id
+    const ElfW(Nhdr) *note =
+        (const ElfW(Nhdr) *)(base + programHeader[i].p_vaddr);
+    const ElfW(Nhdr) *notesEnd =
+        (const ElfW(Nhdr) *)((const char *)(note) + programHeader[i].p_memsz);
+
+    while (note < notesEnd) {
+      size_t payload = sizeof(ElfW(Nhdr)) + RoundUpTo(note->n_namesz, 4);
+
+      if (note->n_type == NT_GNU_BUILD_ID) {
+        const char *s = (const char *)(note) + payload;
+        for (ElfW(Word) i = 0; i < note->n_descsz; ++s, ++i)
+          os << llvm::format("%02hhx", *s);
+        return str;
+      }
+
+      size_t noteEndOffset = RoundUpTo(note->n_descsz, 4);
+      note =
+          (const ElfW(Nhdr) *)((const char *)(note) + payload + noteEndOffset);
+    }
+  }
 #endif // __APPLE__
 
-  return str;
+  llvm_unreachable("No build id note found");
 }
