@@ -1,4 +1,34 @@
-load("//bazel:api.bzl", "lit_tests")
+load("//bazel:api.bzl", "lit_tests", "modular_cc_binary", "modular_shared_library")
+
+modular_shared_library(
+    name = "binary_id_shared_library",
+    srcs = ["binary_id_shared_library.cpp"],
+    hdrs = ["binary_id_shared_library.h"],
+    strip_include_prefix = None,
+    deps = [
+        "//Support:BinaryID",
+        "//Support:SymbolExport",
+    ],
+)
+
+modular_cc_binary(
+    name = "binary_id_binary",
+    srcs = ["binary_id_binary.cpp"],
+    deps = [
+        ":binary_id_shared_library",
+        "//Support:BinaryID",
+    ],
+)
+
+sh_test(
+    name = "binary_id_test",
+    srcs = ["binary_id_test.sh"],
+    data = [
+        ":binary_id_binary",
+        ":binary_id_shared_library",
+        "@llvm-project//llvm:llvm-readobj",
+    ],
+)
 
 lit_tests(
     name = "test",
