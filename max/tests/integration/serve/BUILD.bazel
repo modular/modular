@@ -16,7 +16,6 @@ modular_py_test(
         "@test_llama_golden",
     ],
     env = {
-        "BAZEL": "true",
         "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/llama3/testdata",
     },
     requires_gpu = False,
@@ -51,7 +50,6 @@ modular_py_test(
         "@test_llama_golden",
     ],
     env = {
-        "BAZEL": "true",
         "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/llama3/testdata",
         "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/gpu-query)",
     },

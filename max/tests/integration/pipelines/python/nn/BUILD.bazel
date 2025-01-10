@@ -16,7 +16,6 @@ modular_py_test(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
-        "BAZEL": "true",
         "HF_ESCAPES_SANDBOX": "1",
     },
     requires_gpu = False,
@@ -69,9 +68,6 @@ modular_py_test(
         "//Support/tools/system-info",
         "@llvm-project//compiler-rt:orc_rt",
     ],
-    env = {
-        "BAZEL": "true",
-    },
     requires_gpu = False,
     target_compatible_with = select({
         # TODO: Sanitizer libs aren't available when python loads pybind shared libs
@@ -116,9 +112,6 @@ modular_py_test(
         "//Support/tools/system-info",
         "@llvm-project//compiler-rt:orc_rt",
     ],
-    env = {
-        "BAZEL": "true",
-    },
     requires_gpu = True,
     tags = [
         "gpu",
@@ -162,9 +155,6 @@ modular_py_test(
         "//Support/tools/system-info",
         "@llvm-project//compiler-rt:orc_rt",
     ],
-    env = {
-        "BAZEL": "true",
-    },
     requires_gpu = True,
     tags = [
         "multi-gpu",

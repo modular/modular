@@ -351,18 +351,6 @@ def test_aliasing_output(
 # TODO(#36814): Debug segfault after PT 2.2.2 bump.
 # Skip this test if we don't have onnx and torch framework libs available.
 @pytest.mark.skip(reason="#36814")
-@pytest.mark.skipif(
-    (
-        not os.path.exists(
-            modular_lib_path() / f"libmonnx.{DYLIB_FILE_EXTENSION}"
-        )
-        or not os.path.exists(
-            modular_lib_path() / f"libmtorch.{DYLIB_FILE_EXTENSION}"
-        )
-    )
-    and not os.getenv("BAZEL"),
-    reason="One or more missing framework libs",
-)
 def test_execute_multi_framework(
     session: InferenceSession,
     relu_onnx_model_path: Path,

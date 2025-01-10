@@ -22,7 +22,6 @@ modular_py_test(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
-        "BAZEL": "true",
         "HF_ESCAPES_NETWORK": "1",
         "MODULAR_COUNTER_OPS_PATH": "$(location //SDK/integration-test:counter_ops)",
         "CUSTOM_OPS_PATH": "$(location //SDK/integration-test:test_user_op)",
@@ -93,7 +92,6 @@ modular_py_test(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
-        "BAZEL": "true",
         "MODULAR_COUNTER_OPS_PATH": "$(location //SDK/integration-test:counter_ops)",
         "CUSTOM_OPS_PATH": "$(location //SDK/integration-test:test_user_op)",
         "MODULAR_PATH": ".",
@@ -150,7 +148,6 @@ modular_py_test(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
-        "BAZEL": "true",
         "CUSTOM_OPS_PATH": "$(location //SDK/integration-test:test_user_op)",
         "MODULAR_PATH": ".",
         "GRAPH_TESTDATA": "SDK/test/API/graph/python/pytests/testdata",
@@ -192,7 +189,6 @@ modular_py_test(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
-        "BAZEL": "true",
         "CUSTOM_OPS_PATH": "$(location //SDK/integration-test:test_user_op)",
         "MODULAR_PATH": ".",
         "GRAPH_TESTDATA": "SDK/test/API/graph/python/pytests/testdata",

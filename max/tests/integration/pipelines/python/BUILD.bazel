@@ -74,7 +74,6 @@ modular_py_test(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
-        "BAZEL": "true",
         "HF_ESCAPES_SANDBOX": "1",
     },
     requires_gpu = False,
@@ -100,10 +99,6 @@ modular_py_test(
     name = "test_pipelines_cli_lightweight",
     size = "medium",
     srcs = ["test_pipelines_cli_lightweight.py"],
-    env = {
-        "BAZEL": "true",
-    },
-    requires_gpu = False,
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],
         "//:tsan": ["@platforms//:incompatible"],
@@ -162,7 +157,6 @@ modular_py_test(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
-        "BAZEL": "true",
         "HF_ESCAPES_SANDBOX": "1",
     },
     requires_gpu = True,
@@ -274,7 +268,6 @@ modular_py_test(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
-        "BAZEL": "true",
         "HF_ESCAPES_SANDBOX": "1",
     },
     requires_gpu = False,

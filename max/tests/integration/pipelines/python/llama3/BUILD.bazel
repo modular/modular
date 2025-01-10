@@ -88,7 +88,6 @@ modular_py_binary(
             "@test_llama_golden",
         ],
         env = {
-            "BAZEL": "true",
             "HF_ESCAPES_SANDBOX": "1",
             "MODULAR_PATH": ".",
             "PIPELINES_TESTDATA": (
@@ -164,7 +163,6 @@ modular_py_test(
         "@torch_llama_golden",
     ],
     env = {
-        "BAZEL": "true",
         "HF_ESCAPES_SANDBOX": "1",
         "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/gpu-query)",
         "MODULAR_SYSTEM_INFO_PATH": "$(location //Support/tools/system-info)",
