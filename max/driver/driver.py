@@ -161,6 +161,13 @@ def accelerator_count() -> int:
     return _accelerator_count()
 
 
+def accelerator_api() -> str:
+    """Returns the API used to program the accelerator."""
+    if _accelerator_count() > 0:
+        return Accelerator().api
+    return CPU().api
+
+
 @dataclass(frozen=True)
 class DeviceSpec:
     id: int
