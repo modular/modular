@@ -137,6 +137,15 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
         self.name = existing.name
         self.num_bytes = existing.num_bytes
 
+    @always_inline
+    fn copy(self) -> Self:
+        """Explicitly construct a copy of self.
+
+        Returns:
+            A copy of this value.
+        """
+        return self
+
     fn __init__[
         type: DType, rank: Int
     ](mut self, owned tensor: Tensor[type, rank]) raises:
@@ -419,6 +428,15 @@ struct DeviceTensor(DeviceBuffer, StringableRaising, CollectionElement):
         ]()
         self._storage = existing._storage
         self.spec = existing.spec
+
+    @always_inline
+    fn copy(self) -> Self:
+        """Explicitly construct a copy of self.
+
+        Returns:
+            A copy of this value.
+        """
+        return self
 
     fn __moveinit__(out self, owned existing: Self):
         self._storage = existing._storage^

@@ -100,6 +100,15 @@ struct Device(Stringable):
         self._lib = existing._lib
         self._cdev = existing._cdev.copy(existing._lib)
 
+    @always_inline
+    fn copy(self) -> Self:
+        """Explicitly construct a copy of self.
+
+        Returns:
+            A copy of this value.
+        """
+        return self
+
     fn __moveinit__(out self, owned existing: Self):
         """Create a new Device and consume `existing`.
 

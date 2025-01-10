@@ -126,6 +126,15 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         self.name = existing.name
         self._device_memory_impl_ptr = existing._device_memory_impl_ptr
 
+    @always_inline
+    fn copy(self) -> Self:
+        """Explicitly construct a copy of self.
+
+        Returns:
+            A copy of this value.
+        """
+        return self
+
     fn spec(self) -> TensorSpec:
         """Gets the spec of tensor.
 

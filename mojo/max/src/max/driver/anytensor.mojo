@@ -77,6 +77,15 @@ struct AnyTensor:
         self._data = existing._data
         self._device_memory_impl_ptr = existing._device_memory_impl_ptr
 
+    @always_inline
+    fn copy(self) -> Self:
+        """Explicitly construct a copy of self.
+
+        Returns:
+            A copy of this value.
+        """
+        return self
+
     fn __moveinit__(out self, owned existing: Self):
         """Move constructor for AnyTensor.
 
@@ -336,6 +345,15 @@ struct AnyMojoValue:
     fn __copyinit__(out self, existing: Self):
         constrained[False, "AnyMojoValue is not copyable"]()
         self._impl = existing._impl
+
+    @always_inline
+    fn copy(self) -> Self:
+        """Explicitly construct a copy of self.
+
+        Returns:
+            A copy of this value.
+        """
+        return self
 
     fn __moveinit__(out self, owned existing: Self):
         """Move constructor for AnyMojoValue.

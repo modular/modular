@@ -143,6 +143,15 @@ struct ShapeElement(CollectionElement, EqualityComparable):
         self._static = other._static
         self._name = other._name
 
+    @always_inline
+    fn copy(self) -> Self:
+        """Explicitly construct a copy of self.
+
+        Returns:
+            A copy of this value.
+        """
+        return self
+
     fn __eq__(self, other: Self) -> Bool:
         """Determine if this shape element is equal to another.
 

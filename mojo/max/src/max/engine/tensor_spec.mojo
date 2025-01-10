@@ -56,6 +56,15 @@ struct EngineTensorSpec(Stringable, CollectionElement):
             other._session,
         )
 
+    @always_inline
+    fn copy(self) -> Self:
+        """Explicitly construct a copy of self.
+
+        Returns:
+            A copy of this value.
+        """
+        return self
+
     fn __moveinit__(out self, owned existing: Self):
         """Move constructor for Tensor Spec.
 

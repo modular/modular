@@ -105,6 +105,15 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
         self._lib = existing._lib
         self._session = existing._session
 
+    @always_inline
+    fn copy(self) -> Self:
+        """Explicitly construct a copy of self.
+
+        Returns:
+            A copy of this value.
+        """
+        return self
+
     fn borrow[type: DType](self, key: String, value: Tensor[type]) raises:
         """Borrow the given tensor into the map at the key location.
            User needs to make sure tensor is alive for
