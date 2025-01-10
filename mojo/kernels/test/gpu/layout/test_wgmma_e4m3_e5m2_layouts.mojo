@@ -256,25 +256,28 @@ def wgmma_e4m3_e4m3_f32_64x8x32(ctx: DeviceContext):
         DType.float8e4m3,
         Layout.row_major(M, K),
     ](ctx)
+    var lhs_tensor = lhs.tensor()
 
     @parameter
     for i in range(M):
 
         @parameter
         for j in range(K):
-            lhs.tensor()[i, j] = i + j
+            lhs_tensor[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
         DType.float8e4m3,
         Layout.row_major(K, N),
     ](ctx)
 
+    var rhs_tensor = rhs.tensor()
+
     @parameter
     for i in range(K):
 
         @parameter
         for j in range(N):
-            rhs.tensor()[i, j] = i + j
+            rhs_tensor[i, j] = i + j
 
     var res = ManagedLayoutTensor[
         DType.float32,
@@ -400,24 +403,28 @@ def wgmma_e5m2_e5m2_f32_64x8x32(ctx: DeviceContext):
         Layout.row_major(M, K),
     ](ctx)
 
+    var lhs_tensor = lhs.tensor()
+
     @parameter
     for i in range(M):
 
         @parameter
         for j in range(K):
-            lhs.tensor()[i, j] = i + j
+            lhs_tensor[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
         DType.float8e5m2,
         Layout.row_major(K, N),
     ](ctx)
 
+    var rhs_tensor = rhs.tensor()
+
     @parameter
     for i in range(K):
 
         @parameter
         for j in range(N):
-            rhs.tensor()[i, j] = i + j
+            rhs_tensor[i, j] = i + j
 
     var res = ManagedLayoutTensor[
         DType.float32,
@@ -543,24 +550,28 @@ def wgmma_e4m3_e5m2_f32_64x8x32(ctx: DeviceContext):
         Layout.row_major(M, K),
     ](ctx)
 
+    var lhs_tensor = lhs.tensor()
+
     @parameter
     for i in range(M):
 
         @parameter
         for j in range(K):
-            lhs.tensor()[i, j] = i + j
+            lhs_tensor[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
         DType.float8e5m2,
         Layout.row_major(K, N),
     ](ctx)
 
+    var rhs_tensor = rhs.tensor()
+
     @parameter
     for i in range(K):
 
         @parameter
         for j in range(N):
-            rhs.tensor()[i, j] = i + j
+            rhs_tensor[i, j] = i + j
 
     var res = ManagedLayoutTensor[
         DType.float32,
@@ -686,24 +697,28 @@ def wgmma_e5m2_e4m3_f32_64x8x32(ctx: DeviceContext):
         Layout.row_major(M, K),
     ](ctx)
 
+    var lhs_tensor = lhs.tensor()
+
     @parameter
     for i in range(M):
 
         @parameter
         for j in range(K):
-            lhs.tensor()[i, j] = i + j
+            lhs_tensor[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
         DType.float8e4m3,
         Layout.row_major(K, N),
     ](ctx)
 
+    var rhs_tensor = rhs.tensor()
+
     @parameter
     for i in range(K):
 
         @parameter
         for j in range(N):
-            rhs.tensor()[i, j] = i + j
+            rhs_tensor[i, j] = i + j
 
     var res = ManagedLayoutTensor[
         DType.float32,
@@ -829,24 +844,28 @@ def wgmma_e4m3_e4m3_f16_64x8x32(ctx: DeviceContext):
         Layout.row_major(M, K),
     ](ctx)
 
+    var lhs_tensor = lhs.tensor()
+
     @parameter
     for i in range(M):
 
         @parameter
         for j in range(K):
-            lhs.tensor()[i, j] = i + j
+            lhs_tensor[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
         DType.float8e4m3,
         Layout.row_major(K, N),
     ](ctx)
 
+    var rhs_tensor = rhs.tensor()
+
     @parameter
     for i in range(K):
 
         @parameter
         for j in range(N):
-            rhs.tensor()[i, j] = i + j
+            rhs_tensor[i, j] = i + j
 
     var res = ManagedLayoutTensor[
         DType.float16,
@@ -972,24 +991,28 @@ def wgmma_e5m2_e5m2_f16_64x8x32(ctx: DeviceContext):
         Layout.row_major(M, K),
     ](ctx)
 
+    var lhs_tensor = lhs.tensor()
+
     @parameter
     for i in range(M):
 
         @parameter
         for j in range(K):
-            lhs.tensor()[i, j] = i + j
+            lhs_tensor[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
         DType.float8e5m2,
         Layout.row_major(K, N),
     ](ctx)
 
+    var rhs_tensor = rhs.tensor()
+
     @parameter
     for i in range(K):
 
         @parameter
         for j in range(N):
-            rhs.tensor()[i, j] = i + j
+            rhs_tensor[i, j] = i + j
 
     var res = ManagedLayoutTensor[
         DType.float16,
@@ -1115,24 +1138,28 @@ def wgmma_e4m3_e5m2_f16_64x8x32(ctx: DeviceContext):
         Layout.row_major(M, K),
     ](ctx)
 
+    var lhs_tensor = lhs.tensor()
+
     @parameter
     for i in range(M):
 
         @parameter
         for j in range(K):
-            lhs.tensor()[i, j] = i + j
+            lhs_tensor[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
         DType.float8e5m2,
         Layout.row_major(K, N),
     ](ctx)
 
+    var rhs_tensor = rhs.tensor()
+
     @parameter
     for i in range(K):
 
         @parameter
         for j in range(N):
-            rhs.tensor()[i, j] = i + j
+            rhs_tensor[i, j] = i + j
 
     var res = ManagedLayoutTensor[
         DType.float16,
@@ -1258,24 +1285,28 @@ def wgmma_e5m2_e4m3_f16_64x8x32(ctx: DeviceContext):
         Layout.row_major(M, K),
     ](ctx)
 
+    var lhs_tensor = lhs.tensor()
+
     @parameter
     for i in range(M):
 
         @parameter
         for j in range(K):
-            lhs.tensor()[i, j] = i + j
+            lhs_tensor[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
         DType.float8e4m3,
         Layout.row_major(K, N),
     ](ctx)
 
+    var rhs_tensor = rhs.tensor()
+
     @parameter
     for i in range(K):
 
         @parameter
         for j in range(N):
-            rhs.tensor()[i, j] = i + j
+            rhs_tensor[i, j] = i + j
 
     var res = ManagedLayoutTensor[
         DType.float16,

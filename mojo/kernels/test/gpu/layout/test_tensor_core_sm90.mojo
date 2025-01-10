@@ -114,6 +114,9 @@ def test_load_and_mma_e4m3_e4m3_f32_16x8x32(ctx: DeviceContext):
     )
     ctx.synchronize()
     print(mat_c.tensor())
+    _ = mat_a^
+    _ = mat_b^
+    _ = mat_c^
 
 
 # CHECK-LABEL: test_load_and_mma_e5m2_e5m2_f32_16x8x32
@@ -179,6 +182,9 @@ def test_load_and_mma_e5m2_e5m2_f32_16x8x32(ctx: DeviceContext):
     )
     ctx.synchronize()
     print(mat_c.tensor())
+    _ = mat_a^
+    _ = mat_b^
+    _ = mat_c^
 
 
 def main():

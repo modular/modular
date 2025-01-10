@@ -21,7 +21,6 @@ from gpu.mma import (
     wgmma_wait_group_sync,
 )
 from layout import Layout, LayoutTensor
-from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.fillers import arange
 
 from utils.index import Index

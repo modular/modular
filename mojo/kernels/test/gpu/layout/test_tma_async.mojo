@@ -117,9 +117,9 @@ fn test_tma_async_load_multiple_threads[
 
 def test_tma_async_copy_multiple_threads(ctx: DeviceContext):
     print("== test_tma_async_copy_multiple_threads")
-    var tensor = ManagedLayoutGPUTensor[DType.float32, Layout.row_major(8, 8)]()
-    arange(tensor.tensor, 1)
-    var tma_tensor = create_tma_tile[4, 4](ctx, tensor.tensor)
+    var tensor = ManagedLayoutTensor[DType.float32, Layout.row_major(8, 8)](ctx)
+    arange(tensor.tensor(), 1)
+    var tma_tensor = create_tma_tile[4, 4](ctx, tensor.device_tensor())
     ctx.synchronize()
 
     var kernel_copy_async = ctx.compile_function[

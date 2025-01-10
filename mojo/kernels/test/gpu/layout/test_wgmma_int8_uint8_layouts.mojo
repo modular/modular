@@ -430,12 +430,14 @@ def wgmma_s8_u8_s32_64x8x32(ctx: DeviceContext):
     alias b_type = DType.uint8
 
     var lhs = ManagedLayoutTensor[a_type, Layout.row_major(M, K)](ctx)
-    arange(lhs.tensor(), end=9)
-    print(lhs.tensor())
+    var lhs_tensor = lhs.tensor()
+    arange(lhs_tensor, end=9)
+    print(lhs_tensor)
 
     var rhs = ManagedLayoutTensor[b_type, Layout.row_major(K, N)](ctx)
-    arange(rhs.tensor(), end=5)
-    print(rhs.tensor())
+    var rhs_tensor = rhs.tensor()
+    arange(rhs_tensor, end=5)
+    print(rhs_tensor)
 
     var res = ManagedLayoutTensor[DType.int32, Layout.row_major(M, N)](ctx)
 
@@ -556,12 +558,14 @@ def wgmma_u8_s8_s32_64x8x32(ctx: DeviceContext):
     alias b_type = DType.int8
 
     var lhs = ManagedLayoutTensor[a_type, Layout.row_major(M, K)](ctx)
-    arange(lhs.tensor(), end=9)
-    print(lhs.tensor())
+    var lhs_tensor = lhs.tensor()
+    arange(lhs_tensor, end=9)
+    print(lhs_tensor)
 
     var rhs = ManagedLayoutTensor[b_type, Layout.row_major(K, N)](ctx)
-    arange(rhs.tensor(), end=5)
-    print(rhs.tensor())
+    var rhs_tensor = rhs.tensor()
+    arange(rhs_tensor, end=5)
+    print(rhs_tensor)
 
     var res = ManagedLayoutTensor[DType.int32, Layout.row_major(M, N)](ctx)
 
@@ -602,7 +606,7 @@ def wgmma_u8_s8_s32_64x8x32(ctx: DeviceContext):
         block_dim=(128),
     )
     ctx.synchronize()
-    print(res.tensor()())
+    print(res.tensor())
     _ = lhs^
     _ = rhs^
     _ = res^
