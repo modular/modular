@@ -8,18 +8,21 @@ import pipelines
 import pytest
 
 
-def test_foo(capsys):
+def test_pipelines_cli__smollm_float32(capsys):
     with pytest.raises(SystemExit):
         pipelines.main(
             [
                 "generate",
                 "--huggingface-repo-id",
-                "modularai/replit-code-1.5",
+                "HuggingFaceTB/SmolLM-135M",
                 "--prompt",
-                'def hello():\n print("hello world")\n',
+                "Why is the sky blue?",
                 "--trust-remote-code",
                 "--quantization-encoding=float32",
             ]
         )
     captured = capsys.readouterr()
-    assert 'if __name__ == "__main__"' in captured.out
+    assert (
+        "The sky is blue because of the scattering of light by the Earth’s"
+        in captured.out
+    )
