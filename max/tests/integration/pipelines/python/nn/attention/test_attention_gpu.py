@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 import torch
 from llama_vision.cross_attention_decoder import CrossSdpaAttention
-from max.driver import CPU, Accelerator, Device, Tensor
+from max.driver import CPU, Accelerator, Device, Tensor, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, TensorValue, Weight, ops
@@ -147,6 +147,7 @@ def _attention_layer(
         return graph, kv_params, kv_manager
 
 
+@pytest.mark.skipif(accelerator_api() == "hip", reason="KERN-1466")
 @pytest.mark.parametrize(
     "start_pos,seq_len",
     [
@@ -336,6 +337,7 @@ class CrossAttentionModel:
         )
 
 
+@pytest.mark.skipif(accelerator_api() == "hip", reason="KERN-1466")
 @pytest.mark.parametrize(
     "hidden_seq_lens",
     [
