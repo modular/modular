@@ -126,14 +126,18 @@ class SupportedTestModels:
                 raise ValueError(f"version {self.version} not supported.")
 
         config = PipelineConfig(
-            architecture="LlamaForCausalLM",
             quantization_encoding=self.encoding,
             **kwargs,
         )
-        # Temporary hack to load TinyLlama config until we migrate tests to
-        # SmolLM.
+
+        # # Temporary hack to load TinyLlama config until we migrate tests to
+        # # SmolLM.
         if self.model == "tinyllama":
-            config.huggingface_repo_id = str(testdata_directory)
+            config.huggingface_config.intermediate_size = 500
+            config.huggingface_config.hidden_size = 16
+            config.huggingface_config.num_hidden_layers = 1
+            config.huggingface_config.num_key_value_heads = 1
+            config.huggingface_config.num_attention_heads = 1
 
         return config
 

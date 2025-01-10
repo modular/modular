@@ -357,8 +357,7 @@ def test_registry__update_weight_paths():
     config = PIPELINE_REGISTRY.validate_pipeline_config(config)
     assert config.engine == PipelineEngine.HUGGINGFACE
 
-    # This example, should raise as we dont have q4_k listed as supported.
-    # If we don't pass MAX though, we should not fail and fall back to HuggingFace.
+    # This example, should not raise, as we are showing that we have a weight converter for pytorch for Replit.
     config = PipelineConfig(
         huggingface_repo_id="replit/replit-code-v1_5-3b",
         quantization_encoding=SupportedEncoding.bfloat16,
@@ -377,3 +376,18 @@ def test_registry__update_weight_paths():
     assert config.quantization_encoding == SupportedEncoding.float32
     assert config.engine == PipelineEngine.MAX
     assert config.weight_path == [Path("model.safetensors")]
+
+    # This example, should not raise as we are passing a valid weights path in a different repository.
+    config = PipelineConfig(
+        huggingface_repo_id="replit/replit-code-v1_5-3b",
+        quantization_encoding=SupportedEncoding.float32,
+        trust_remote_code=True,
+        weight_path=[
+            Path("modularai/replit-code-1.5/replit-code-v1_5-3b-f32.gguf")
+        ],
+    )
+
+    config = PIPELINE_REGISTRY.validate_pipeline_config(config)
+    assert config.engine == PipelineEngine.MAX
+    assert config.weight_path == [Path("replit-code-v1_5-3b-f32.gguf")]
+    assert config._weights_repo_id == "modularai/replit-code-1.5"

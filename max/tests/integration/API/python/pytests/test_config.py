@@ -12,6 +12,7 @@ import pytest
 from huggingface_hub import snapshot_download
 from max.pipelines.config import (
     PipelineConfig,
+    SupportedEncoding,
     WeightsFormat,
 )
 
@@ -151,6 +152,39 @@ def test_config__with_local_huggingface_repo():
 
     # Load pipeline config with downloaded_path.
     # This should not raise, as the path should be available locally.
-    pipeline_config = PipelineConfig(
+    _ = PipelineConfig(
         huggingface_repo_id=downloaded_path,
     )
+
+
+def test_config_post_init__other_repo_weights():
+    config = PipelineConfig(
+        huggingface_repo_id="replit/replit-code-v1_5-3b",
+        trust_remote_code=True,
+        weight_path=[
+            Path("modularai/replit-code-1.5/replit-code-v1_5-3b-f32.gguf")
+        ],
+    )
+
+    assert config._weights_repo_id == "modularai/replit-code-1.5"
+    assert config.weight_path == [Path("replit-code-v1_5-3b-f32.gguf")]
+
+    # This example, should not set the _weights_repo_id.
+    config = PipelineConfig(
+        huggingface_repo_id="modularai/llama-3.1",
+        weight_path=[
+            Path(
+                "SDK/integration-test/pipelines/python/llama3/testdata/tinyllama_f32.gguf"
+            )
+        ],
+        quantization_encoding=SupportedEncoding.float32,
+    )
+
+    assert config._weights_repo_id is None
+    weights_repo = config.huggingface_weights_repo()
+    assert weights_repo.repo_id == "modularai/llama-3.1"
+    assert config.weight_path == [
+        Path(
+            "SDK/integration-test/pipelines/python/llama3/testdata/tinyllama_f32.gguf"
+        )
+    ]
