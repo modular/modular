@@ -22,7 +22,6 @@ modular_py_test(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
-        "HF_ESCAPES_NETWORK": "1",
         "MODULAR_COUNTER_OPS_PATH": "$(location //SDK/integration-test:counter_ops)",
         "CUSTOM_OPS_PATH": "$(location //SDK/integration-test:test_user_op)",
         "MODULAR_PATH": ".",

@@ -73,9 +73,6 @@ modular_py_test(
         "//KGEN:CompilerRT",
         "@llvm-project//compiler-rt:orc_rt",
     ],
-    env = {
-        "HF_ESCAPES_SANDBOX": "1",
-    },
     requires_gpu = False,
     tags = [
         "huggingface",
@@ -156,9 +153,6 @@ modular_py_test(
         "//KGEN:CompilerRT",
         "@llvm-project//compiler-rt:orc_rt",
     ],
-    env = {
-        "HF_ESCAPES_SANDBOX": "1",
-    },
     requires_gpu = True,
     tags = [
         "gpu",
@@ -267,9 +261,6 @@ modular_py_test(
         "//KGEN:CompilerRT",
         "@llvm-project//compiler-rt:orc_rt",
     ],
-    env = {
-        "HF_ESCAPES_SANDBOX": "1",
-    },
     requires_gpu = False,
     tags = [
         "huggingface",

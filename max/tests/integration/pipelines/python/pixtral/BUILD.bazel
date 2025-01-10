@@ -21,9 +21,6 @@ modular_py_test(
         "//ModularFramework/tools/mof",
         "@llvm-project//compiler-rt:orc_rt",
     ],
-    env = {
-        "HF_ESCAPES_SANDBOX": "1",
-    },
     requires_gpu = False,
     tags = [
         "huggingface",
