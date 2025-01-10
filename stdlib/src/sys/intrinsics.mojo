@@ -22,9 +22,10 @@ from sys import PrefetchLocality
 import math
 
 from memory import AddressSpace, UnsafePointer
+from memory.pointer import _GPUAddressSpace
 
 from ._assembly import inlined_assembly
-from .info import is_nvidia_gpu, sizeof
+from .info import is_nvidia_gpu, is_amd_gpu, sizeof
 
 # ===-----------------------------------------------------------------------===#
 # llvm_intrinsic
@@ -860,3 +861,107 @@ fn assume(val: Bool):
       val: The input value which is assumed to be `True`.
     """
     llvm_intrinsic["llvm.assume", NoneType, has_side_effect=False](val)
+
+
+# ===-----------------------------------------------------------------------===#
+# lane_id
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+fn lane_id() -> UInt:
+    """Returns the lane ID of the current thread.
+
+    Returns:
+        The lane ID of the the current thread.
+    """
+    constrained[is_gpu(), "This function only applies to GPUs."]()
+
+    @parameter
+    if is_nvidia_gpu():
+        return UInt(
+            int(
+                llvm_intrinsic[
+                    "llvm.nvvm.read.ptx.sreg.laneid",
+                    Int32,
+                    has_side_effect=False,
+                ]().cast[DType.uint32]()
+            )
+        )
+
+    else:
+        alias none = Scalar[DType.int32](-1)
+        alias zero = Scalar[DType.int32](0)
+        var t = llvm_intrinsic[
+            "llvm.amdgcn.mbcnt.lo", Int32, has_side_effect=False
+        ](none, zero)
+        return UInt(
+            int(
+                llvm_intrinsic[
+                    "llvm.amdgcn.mbcnt.hi", Int32, has_side_effect=False
+                ](none, t).cast[DType.uint32]()
+            )
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# implicitarg_ptr
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn implicitarg_ptr() -> (
+    UnsafePointer[UInt8, address_space = _GPUAddressSpace.CONSTANT]
+):
+    """
+    Get a pointer to AMD's implicit arguments table.
+
+    Returns:
+        A pointer to LLVM's implicit arguments table.
+    """
+    constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
+    return llvm_intrinsic[
+        "llvm.amdgcn.implicitarg.ptr",
+        UnsafePointer[UInt8, address_space=4],
+    ]()
+
+
+# ===-----------------------------------------------------------------------===#
+# readfirstlane
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn readfirstlane(value: Int32) -> Int32:
+    """
+    Get the lowest acitve lane of the input operand.
+
+    Args:
+        value: The input thread.
+
+    Returns:
+        The value in the lowest active lane of the input operand.
+    """
+    constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
+    return llvm_intrinsic["llvm.amdgcn.readfirstlane.i32", Int32, Int32](value)
+
+
+# ===-----------------------------------------------------------------------===#
+# sendmsg
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn sendmsg(opcode: Int32, msg: Int32):
+    """
+    Send a message to fixed function hardware.
+    Refer to the specific ISA manual for the ops and messages.
+
+    Args:
+        opcode: The operation to perform.
+        msg: The message to send.
+    """
+    constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
+    _ = llvm_intrinsic["llvm.amdgcn.s.sendmsg", NoneType, Int32, Int32](
+        opcode, msg
+    )
