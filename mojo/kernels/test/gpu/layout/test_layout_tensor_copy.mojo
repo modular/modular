@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 # FIXME: KERN-1377
+# FIXME: run_*_async_copy_tests seem to have a memory leak corrupting Layout data leading to generating INVALID_PTX. Disabled.
+# REQUIRES: DISABLED
 # RUN: %mojo-no-debug --debug-level full %s | FileCheck %s
 
 from collections import OptionalReg

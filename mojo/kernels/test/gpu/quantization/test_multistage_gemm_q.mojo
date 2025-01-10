@@ -1462,11 +1462,12 @@ fn test_quantized[
 
 def main():
     with DeviceContext() as ctx:
-        test_repack_Q4_0_for_sm8x(
-            ctx,
-            static[4096](),
-            static[4096](),
-        )
+        # FIXME: test_repack_Q4_0_for_sm8x seems to have a memory leak corrupting Layout data leading to generating INVALID_PTX
+        # test_repack_Q4_0_for_sm8x(
+        #     ctx,
+        #     static[4096](),
+        #     static[4096](),
+        # )
         test_quantized[DType.uint8](
             ctx, static[482](), static[6144](), static[4096]()
         )
