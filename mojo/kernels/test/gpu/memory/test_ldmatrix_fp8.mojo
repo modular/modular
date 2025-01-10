@@ -22,7 +22,6 @@ from testing import assert_almost_equal
 
 fn test_ldmatrix_fp8[
     input_type: DType,
-    transpose: Bool = False,
 ](
     c_ptr: UnsafePointer[Scalar[DType.float32]],
     a_ptr: UnsafePointer[Scalar[input_type]],
@@ -55,11 +54,11 @@ fn test_ldmatrix_fp8[
 
     barrier()
 
-    var a_reg = ld_matrix[a_frag_size, transpose=transpose](
+    var a_reg = ld_matrix[a_frag_size](
         a_shared + int((lane_id() % 16) * 32 + (lane_id() // 16) * 16)
     )
 
-    var b_reg = ld_matrix[b_frag_size, transpose=transpose](
+    var b_reg = ld_matrix[b_frag_size](
         b_shared + int((lane_id() % 8) * 32 + (lane_id() // 8) * 16)
     )
 
@@ -76,7 +75,6 @@ fn test_ldmatrix_fp8[
 
 fn check_ldmatrix_fp8[
     input_type: DType,
-    transpose: Bool = False,
 ](ctx: DeviceContext) raises:
     print("== test ldmatrix transposed fp8")
 
@@ -100,22 +98,11 @@ fn check_ldmatrix_fp8[
             a_host[m * K + k] = m + k
 
     @parameter
-    if transpose:
+    for k in range(K):
 
         @parameter
-        for k in range(K):
-
-            @parameter
-            for n in range(N):
-                b_host[k * N + n] = k + n
-    else:
-
-        @parameter
-        for k in range(K):
-
-            @parameter
-            for n in range(N):
-                b_host[n * K + k] = k + n
+        for n in range(N):
+            b_host[n * K + k] = k + n
 
     for i in range(M * N):
         c_host[i] = 0
@@ -189,7 +176,5 @@ fn check_ldmatrix_fp8[
 
 def main():
     with DeviceContext() as ctx:
-        check_ldmatrix_fp8[DType.float8e4m3, False](ctx)
-        check_ldmatrix_fp8[DType.float8e4m3, True](ctx)
-        check_ldmatrix_fp8[DType.float8e5m2, False](ctx)
-        check_ldmatrix_fp8[DType.float8e5m2, True](ctx)
+        check_ldmatrix_fp8[DType.float8e4m3](ctx)
+        check_ldmatrix_fp8[DType.float8e5m2](ctx)
