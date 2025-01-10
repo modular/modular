@@ -66,6 +66,10 @@ struct ParserConfig {
   /// SourceMgr to get ranges and fixit hints.
   bool useMLIRDiagnostics = false;
 
+  /// If true, all exported functions reachable from the root via imports
+  /// will be parsed and included in the module emitted by the parser.
+  bool importAllReachableExportedFunctions = false;
+
   /// If true, this will diagnose missing pieces of documentation strings.
   bool diagnoseMissingDocStrings = false;
 
