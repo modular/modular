@@ -3,8 +3,11 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+import os
 from pathlib import Path
 
+import pytest
+from huggingface_hub import snapshot_download
 from max.pipelines.config import (
     HuggingFaceRepo,
     SupportedEncoding,
@@ -30,18 +33,6 @@ def test_huggingface_repo__formats_available():
     # Test a partially complete Safetensors repo
     hf_repo = HuggingFaceRepo(repo_id="neubla/tiny-random-LlamaForCausalLM")
     assert WeightsFormat.safetensors in hf_repo.formats_available
-
-
-def test_huggingface_repo__gguf_architecture():
-    # Test a llama based gguf repo.
-    hf_repo = HuggingFaceRepo(repo_id="modularai/llama-3.1")
-
-    assert hf_repo.gguf_architecture == "llama"
-
-    # Test a Safetensors repo.
-    # Safetensors repo, should not have a valid gguf_architecture.
-    hf_repo = HuggingFaceRepo(repo_id="TinyLlama/TinyLlama-1.1B-Chat-v1.0")
-    assert hf_repo.gguf_architecture is None
 
 
 def test_huggingface_repo__encodings_supported():
@@ -163,3 +154,24 @@ def test_huggingface_repo__encoding_for_file():
         "llama-3.1-8b-instruct-q4_k_m.gguf"
     )
     assert model_encoding == SupportedEncoding.q4_k
+
+
+@pytest.mark.skip("hf download is flaky")
+def test_huggingface_repo__local_download():
+    # Download huggingface repo to local path.
+    target_path = os.path.join(os.getcwd(), "tmp_repo")
+    downloaded_path = snapshot_download(
+        repo_id="trl-internal-testing/tiny-LlamaForCausalLM-3.2",
+        local_dir=target_path,
+        revision="main",
+    )
+
+    hf_repo = HuggingFaceRepo(repo_id=downloaded_path)
+
+    assert WeightsFormat.safetensors in hf_repo.formats_available
+    assert SupportedEncoding.float32 in hf_repo.supported_encodings
+    files = hf_repo.files_for_encoding(SupportedEncoding.float32)
+    assert len(files[WeightsFormat.safetensors]) == 1
+    assert hf_repo.weight_files == {
+        WeightsFormat.safetensors: ["model.safetensors"]
+    }

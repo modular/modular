@@ -4,11 +4,16 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import os
 import pickle
 from pathlib import Path
 
 import pytest
-from max.pipelines.config import PipelineConfig, WeightsFormat
+from huggingface_hub import snapshot_download
+from max.pipelines.config import (
+    PipelineConfig,
+    WeightsFormat,
+)
 
 
 def test_config_init__raises_with_no_huggingface_repo_id():
@@ -132,3 +137,20 @@ def test_config_is_picklable(tmp_path):
     assert loaded_config.huggingface_config is not None
     # The configs should now be equivalent.
     assert loaded_config == config
+
+
+@pytest.mark.skip("huggingface download is flaky")
+def test_config__with_local_huggingface_repo():
+    # Download huggingface repo to local path.
+    target_path = os.path.join(os.getcwd(), "tmp_repo")
+    downloaded_path = snapshot_download(
+        repo_id="trl-internal-testing/tiny-LlamaForCausalLM-3.2",
+        local_dir=target_path,
+        revision="main",
+    )
+
+    # Load pipeline config with downloaded_path.
+    # This should not raise, as the path should be available locally.
+    pipeline_config = PipelineConfig(
+        huggingface_repo_id=downloaded_path,
+    )
