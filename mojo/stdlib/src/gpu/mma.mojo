@@ -433,8 +433,7 @@ fn ld_matrix[
     """
 
     constrained[
-        (transpose and (type.is_half_float() or type.is_float8()))
-        or (not transpose),
+        (transpose and type.is_half_float()) or (not transpose),
         "Transposed ld_matrix is only for half precision.",
     ]()
 
