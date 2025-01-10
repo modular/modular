@@ -65,7 +65,7 @@ def tokengen_request_from_grpc_request(
         prompt=prompt_text,
         model_name=model_name,
         max_new_tokens=max_tokens,
-        req_recv_time_ns=sw.start_ns,
+        timestamp_ns=sw.start_ns,
     )
 
 

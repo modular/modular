@@ -107,7 +107,7 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
         )
         record_request_start()
         itl = StopWatch()
-        request_timer = StopWatch(start_ns=request.req_recv_time_ns)
+        request_timer = StopWatch(start_ns=request.timestamp_ns)
         n_tokens = 0
         status_code = 200
         try:
@@ -185,7 +185,7 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
     ) -> CreateChatCompletionResponse:
         record_request_start()
         n_tokens = 0
-        request_timer = StopWatch(start_ns=request.req_recv_time_ns)
+        request_timer = StopWatch(start_ns=request.timestamp_ns)
         status_code = 200
         try:
             completed_outputs = await self.pipeline.all_tokens(request)
@@ -336,7 +336,7 @@ async def openai_create_chat_completion(
             messages=request_messages,
             images=request_images,
             max_new_tokens=completion_request.max_tokens,
-            req_recv_time_ns=request.state.request_timer.start_ns,
+            timestamp_ns=request.state.request_timer.start_ns,
             request_path=request.url.path,
         )
 
@@ -404,7 +404,7 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
         )
         record_request_start()
         itl = StopWatch()
-        request_timer = StopWatch(start_ns=request.req_recv_time_ns)
+        request_timer = StopWatch(start_ns=request.timestamp_ns)
         n_tokens = 0
         status_code = 200
         try:
@@ -482,7 +482,7 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
     ) -> CreateCompletionResponse:
         record_request_start()
         n_tokens = 0
-        request_timer = StopWatch(start_ns=request.req_recv_time_ns)
+        request_timer = StopWatch(start_ns=request.timestamp_ns)
         status_code = 200
         try:
             completed_outputs = await self.pipeline.all_tokens(request)
@@ -595,7 +595,7 @@ async def openai_create_completion(
             model_name=completion_request.model,
             prompt=request_content,
             max_new_tokens=completion_request.max_tokens,
-            req_recv_time_ns=request.state.request_timer.start_ns,
+            timestamp_ns=request.state.request_timer.start_ns,
             request_path=request.url.path,
             logprobs=completion_request.logprobs,
             echo=completion_request.echo,
