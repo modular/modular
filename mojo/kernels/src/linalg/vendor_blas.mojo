@@ -522,14 +522,19 @@ fn _cublasLt_matmul(
         ),
     ]()
 
+    constrained[
+        not (a_type == b_type == DType.float8e5m2),
+        (
+            "E5M2xE5m2 is not supported! Please refer to"
+            " `https://docs.nvidia.com/cuda/cublas/#id105`"
+        ),
+    ]()
+
     if transpose_a or transpose_b:
         raise Error(
             "the cuBLASLT backend currently only is implemented for"
             " transpose_a=False and transpose_a=False"
         )
-
-    if a_type is DType.float8e5m2 and b_type is DType.float8e4m3:
-        raise Error("E5M2xE4M3 is not supported!")
 
     # CublasLt is by default column-major but we like to have the output in row-major
     # to compare with our results. Use `c_row_major` to determine the output layout.

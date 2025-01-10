@@ -211,7 +211,12 @@ struct MatmulConfig[
 # Helper for choosing the base of BK based on type.
 # Actual BK should be multiple of BK_base.
 fn _bk_base[type: DType]() -> Int:
-    return 32 if type.is_half_float() else 16
+    if type in (DType.float8e4m3, DType.float8e5m2):
+        return 64
+    elif type.is_half_float():
+        return 32
+    else:
+        return 16
 
 
 @always_inline
@@ -237,6 +242,12 @@ struct MatmulKernels[
     The configurations are named as: <arch>_<BNxBM>_<stages>.
     BK, mma shape, and warp tile shape are decided internally.
     """
+
+    alias hopper_128x128_4 = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        block_tile_shape=Index(128, 128, _bk_base[a_type]()),
+        warp_tile_shape=Index(64, 64, _bk_base[a_type]()),
+        num_pipeline_stages=4,
+    )
 
     alias ampere_128x128_4 = MatmulConfig[a_type, b_type, c_type, transpose_b](
         block_tile_shape=Index(128, 128, _bk_base[a_type]()),

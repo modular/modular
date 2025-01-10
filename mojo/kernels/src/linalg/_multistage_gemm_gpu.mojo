@@ -367,6 +367,8 @@ fn multistage_mma[
         // b_smem_layout.stride[0].value(),
         b_smem_layout.stride[0].value() // simd_size,
     )
+
+    # TODO (KERN-1337): Enable swizzle for matrix B for FP8 data type and tranpose_b==False
     alias swizzle_b = (
         transpose_b or b_type.is_half_float()
     ) and is_nvidia_gpu()
@@ -762,10 +764,14 @@ fn multistage_gemm_kernel[
 ):
     # Hold on adding fp16 because it counld have differnet precisions than bf16.
     constrained[
-        a_type in (DType.float32, DType.bfloat16) and a_type == b_type,
-        "Pipeline gemm only supports tf32 or BF16 mma",
+        (a_type in (DType.float32, DType.bfloat16) and a_type == b_type)
+        or (
+            a_type in (DType.float8e4m3, DType.float8e5m2)
+            and a_type == b_type
+            and c_type is DType.float32
+        ),
+        "Pipeline gemm only supports tf32, BF16, E4M3, and E5M2 mma",
     ]()
-
     alias simd_size = simdwidthof[c_type]()
 
     var M: UInt = c.dim(0)
