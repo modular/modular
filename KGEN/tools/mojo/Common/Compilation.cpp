@@ -241,6 +241,7 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
     llvm::opt::OptSpecifier docErrorOnInvalidDocId,
     llvm::opt::OptSpecifier maxNotesId, llvm::opt::OptSpecifier definesId,
     llvm::opt::OptSpecifier stripFilePrefixId,
+    llvm::opt::OptSpecifier disableBuiltins,
     function_ref<OwningOpRef<ModuleOp>(ParserConfig &, mlir::TimingScope &)>
         parseFn) {
   // We don't allow users to configure the time profiler.
@@ -259,6 +260,7 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
   if (!args.getLastArgValue(maxNotesId).getAsInteger(10, maxNotes))
     parseConfig.maxNotesPerDiagnostic = maxNotes;
   parseConfig.stripFilePrefix = args.getLastArgValue(stripFilePrefixId);
+  parseConfig.useBuiltinModule = !args.hasArg(disableBuiltins);
 
   mlir::TimingScope mojoScope = timing.nest("Import Mojo");
   OwningOpRef<ModuleOp> module = parseFn(parseConfig, mojoScope);

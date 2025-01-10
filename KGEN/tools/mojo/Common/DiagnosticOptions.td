@@ -43,4 +43,8 @@ defm strip_file_prefix : CommandOptionHidden<["-"], "strip-file-prefix",
   HelpText<
     "Strip this prefix from filenames used for diagnostics & debugging.">>;
 
+def disable_builtins : Flag<["--", "-"],
+  "disable-builtins">, Group<DiagnosticOptionGroup>, Index<5>,
+  HelpText<"Do not use builtins when create package.">;
+
 #endif // KGEN_TOOLS_MOJO_COMMON_DIAGNOSTICOPTIONS_TD

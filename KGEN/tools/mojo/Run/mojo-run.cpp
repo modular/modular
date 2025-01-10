@@ -355,7 +355,7 @@ static int run(const State &subcommandState) {
       state, args, options, &mlirCtx, runtime,
       options::OPT_diagnose_missing_doc_strings,
       options::OPT_validate_doc_strings, options::OPT_max_notes, options::OPT_D,
-      options::OPT_strip_file_prefix,
+      options::OPT_strip_file_prefix, options::OPT_disable_builtins,
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
         return LIT::importMojoFile(runtime, sourceManager, parserConfig, ts);
       });
