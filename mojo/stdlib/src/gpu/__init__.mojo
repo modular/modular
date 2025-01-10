@@ -11,3 +11,4 @@ from .memory import *
 from .semaphore import Semaphore
 from .shuffle import *
 from .sync import *
+from sys.intrinsics import lane_id

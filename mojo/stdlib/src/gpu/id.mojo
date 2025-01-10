@@ -6,7 +6,7 @@
 """This module includes NVIDIA GPUs id operations."""
 
 from os import abort
-from sys import is_nvidia_gpu, llvm_intrinsic
+from sys.intrinsics import is_nvidia_gpu, llvm_intrinsic
 
 from gpu import WARP_SIZE
 from math import fma
@@ -242,45 +242,6 @@ struct _GlobalIdx:
 
 
 alias GlobalIdx = _GlobalIdx()
-
-# ===-----------------------------------------------------------------------===#
-# lane_id
-# ===-----------------------------------------------------------------------===#
-
-
-@always_inline("nodebug")
-fn lane_id() -> UInt:
-    """Returns the lane ID of the current thread.
-
-    Returns:
-        The lane ID of the the current thread.
-    """
-
-    @parameter
-    if is_nvidia_gpu():
-        return UInt(
-            int(
-                llvm_intrinsic[
-                    "llvm.nvvm.read.ptx.sreg.laneid",
-                    Int32,
-                    has_side_effect=False,
-                ]().cast[DType.uint32]()
-            )
-        )
-
-    else:
-        alias none = Scalar[DType.int32](-1)
-        alias zero = Scalar[DType.int32](0)
-        var t = llvm_intrinsic[
-            "llvm.amdgcn.mbcnt.lo", Int32, has_side_effect=False
-        ](none, zero)
-        return UInt(
-            int(
-                llvm_intrinsic[
-                    "llvm.amdgcn.mbcnt.hi", Int32, has_side_effect=False
-                ](none, t).cast[DType.uint32]()
-            )
-        )
 
 
 # ===-----------------------------------------------------------------------===#

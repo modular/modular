@@ -8,7 +8,7 @@ from memory import UnsafePointer, Span
 from os.atomic import Atomic, _compare_exchange_weak_integral_impl
 import os
 from collections import Optional, InlineArray
-from gpu import lane_id
+from sys.intrinsics import lane_id, sendmsg, readfirstlane, implicitarg_ptr
 from time import sleep
 from utils import StaticTuple, Index
 
@@ -58,26 +58,6 @@ fn hsa_signal_add(sig: hsa_signal_t, value: UInt64):
     ]()[]
     _ = Atomic._fetch_add(UnsafePointer.address_of(s[].value), value)
     update_mbox(s)
-
-
-@always_inline
-fn implicitarg_ptr() -> UnsafePointer[UInt8, address_space=4]:
-    return llvm_intrinsic[
-        "llvm.amdgcn.implicitarg.ptr",
-        UnsafePointer[UInt8, address_space=4],
-    ]()
-
-
-@always_inline
-fn readfirstlane(value: Int32) -> Int32:
-    return llvm_intrinsic["llvm.amdgcn.readfirstlane.i32", Int32, Int32](value)
-
-
-@always_inline
-fn sendmsg(opcode: Int32, msg: Int32):
-    _ = llvm_intrinsic["llvm.amdgcn.s.sendmsg", NoneType, Int32, Int32](
-        opcode, msg
-    )
 
 
 @always_inline
