@@ -36,6 +36,9 @@ struct TestCounter(CollectionElement):
         self.copied = other.copied + 1
         self.moved = other.moved
 
+    fn copy(self) -> Self:
+        return self
+
     fn __moveinit__(out self, owned other: Self):
         self.copied = other.copied
         self.moved = other.moved + 1
@@ -67,6 +70,10 @@ struct Poison(CollectionElement):
 
     fn __copyinit__(out self, other: Self):
         _poison_ptr().init_pointee_move(True)
+
+    fn copy(self) -> Self:
+        # Invokes __copyinit__, which sets the poision value.
+        return self
 
     fn __moveinit__(out self, owned other: Self):
         _poison_ptr().init_pointee_move(True)

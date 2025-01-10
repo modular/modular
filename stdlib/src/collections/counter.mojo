@@ -633,6 +633,14 @@ struct CountTuple[V: KeyElement](
         self._value = other._value
         self._count = other._count
 
+    fn copy(self) -> Self:
+        """Explicitly construct a copy of self.
+
+        Returns:
+            A copy of this value.
+        """
+        return self
+
     fn __moveinit__(out self, owned other: Self):
         """Create a new CountTuple by moving another CountTuple.
 

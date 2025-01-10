@@ -144,10 +144,10 @@ trait ExplicitlyCopyable:
     """
 
     fn copy(self) -> Self:
-        """Explicitly construct a deep copy of the provided value.
+        """Explicitly construct a copy of self.
 
         Returns:
-            A copy of the value.
+            A copy of this value.
         """
         ...
 

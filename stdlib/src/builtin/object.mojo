@@ -937,6 +937,15 @@ struct object(
         self._value = existing._value.copy()
 
     @always_inline
+    fn copy(self) -> Self:
+        """Explicitly construct a copy of self.
+
+        Returns:
+            A copy of this value.
+        """
+        return self
+
+    @always_inline
     fn __del__(owned self):
         """Delete the object and release any owned memory."""
         self._value.destroy()

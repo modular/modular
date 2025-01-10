@@ -110,6 +110,15 @@ struct Tuple[*element_types: CollectionElement](Sized, CollectionElement):
         for i in range(Self.__len__()):
             UnsafePointer.address_of(self[i]).init_pointee_copy(existing[i])
 
+    @always_inline
+    fn copy(self) -> Self:
+        """Explicitly construct a copy of self.
+
+        Returns:
+            A copy of this value.
+        """
+        return self
+
     @always_inline("nodebug")
     fn __moveinit__(out self, owned existing: Self):
         """Move construct the tuple.

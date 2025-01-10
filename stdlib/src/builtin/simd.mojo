@@ -299,10 +299,10 @@ struct SIMD[type: DType, size: Int](
 
     @always_inline
     fn copy(self) -> Self:
-        """Explicitly construct a deep copy of the provided value.
+        """Explicitly construct a copy of self.
 
         Returns:
-            A copy of the value.
+            A copy of this value.
         """
         return self
 
