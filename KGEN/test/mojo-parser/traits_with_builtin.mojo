@@ -58,6 +58,39 @@ struct AsyncStructReg(AsyncTrait):
         pass
 
 
+trait Explicit:
+    fn __int__(self) -> Int:
+        ...
+
+
+trait Implicit:
+    fn __as_int__(self) -> Int:
+        ...
+
+
+@value
+struct Foo(Explicit, Implicit):
+    fn __int__(self) -> Int:
+        return 42
+
+    fn __as_int__(self) -> Int:
+        return 42
+
+
+struct Bar:
+    @implicit
+    fn __init__[T: Implicit](out self, value: T):
+        pass
+
+    fn __init__[T: Explicit](out self, value: T):
+        pass
+
+
+# CHECK-LABEL: lit.func @"construct_implicit_type_explicitly
+fn construct_implicit_type_explicitly():
+    _ = Bar(Foo())
+
+
 # CHECK-LABEL: lit.func @"async_trait
 fn async_trait[T: AsyncTrait](value: T):
     # CHECK: lit.async.call[!lit.generator<[2]("self": {{.*}} read_mem, ?, "__result__": !lit.ref<!Int, mut *[0,1]> byref_result) async -> !kgen.none>: get_vtable_entry
