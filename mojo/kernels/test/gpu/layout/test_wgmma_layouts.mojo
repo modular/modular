@@ -215,6 +215,9 @@ def wgmma_tf32_tf32_f32_64x8x8(ctx: DeviceContext):
     ctx.synchronize()
 
     print(res.tensor())
+    _ = lhs^
+    _ = rhs^
+    _ = res^
 
 
 # CHECK-LABEL: wgmma_tf32_tf32_f32_64x8x8_inst_64x8x8
@@ -333,6 +336,9 @@ def wgmma_tf32_tf32_f32_64x8x8_inst_64x8x8(ctx: DeviceContext):
     ctx.synchronize()
 
     print(res.tensor())
+    _ = lhs^
+    _ = rhs^
+    _ = res^
 
 
 fn wgmma_bf16_bf16_f32_kernel[
@@ -485,7 +491,7 @@ def wgmma_bf16_bf16_f32_64x8x16(ctx: DeviceContext):
     var rhs = ManagedLayoutTensor[DType.bfloat16, Layout.row_major(K, N)](ctx)
     arange(rhs.tensor())
 
-    var res = ManagedLayoutTensor[DType.float32, Layout.row_major(M, N)]()
+    var res = ManagedLayoutTensor[DType.float32, Layout.row_major(M, N)](ctx)
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N16-core-matrices-A.png
     alias a_smem_layout = Layout(
@@ -523,6 +529,9 @@ def wgmma_bf16_bf16_f32_64x8x16(ctx: DeviceContext):
     ctx.synchronize()
 
     print(res.tensor())
+    _ = lhs^
+    _ = rhs^
+    _ = res^
 
 
 # CHECK-LABEL: wgmma_bf16_bf16_f32_64x8x16_inst_64x8x32
@@ -648,6 +657,9 @@ def wgmma_bf16_bf16_f32_64x8x16_inst_64x8x32(ctx: DeviceContext):
     ctx.synchronize()
 
     print(res.tensor())
+    _ = lhs^
+    _ = rhs^
+    _ = res^
 
 
 fn wgmma_f16_f16_f32_kernel[
@@ -838,6 +850,9 @@ def wgmma_f16_f16_f32_64x8x16(ctx: DeviceContext):
     ctx.synchronize()
 
     print(res.tensor())
+    _ = lhs^
+    _ = rhs^
+    _ = res^
 
 
 # CHECK-LABEL: wgmma_f16_f16_f32_64x8x16_inst_64x8x32
@@ -955,6 +970,9 @@ def wgmma_f16_f16_f32_64x8x16_inst_64x8x32(ctx: DeviceContext):
     ctx.synchronize()
 
     print(res.tensor())
+    _ = lhs^
+    _ = rhs^
+    _ = res^
 
 
 fn wgmma_f16_f16_f16_kernel[
@@ -1146,6 +1164,9 @@ def wgmma_f16_f16_f16_64x8x16(ctx: DeviceContext):
     ctx.synchronize()
 
     print(res.tensor())
+    _ = lhs^
+    _ = rhs^
+    _ = res^
 
 
 # CHECK-LABEL: wgmma_f16_f16_f16_64x8x16_inst_64x8x32
@@ -1263,6 +1284,9 @@ def wgmma_f16_f16_f16_64x8x16_inst_64x8x32(ctx: DeviceContext):
     ctx.synchronize()
 
     print(res.tensor())
+    _ = lhs^
+    _ = rhs^
+    _ = res^
 
 
 def main():
