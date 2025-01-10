@@ -4,8 +4,23 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# ===-----------------------------------------------------------------------===#
+# General imports
+# ===-----------------------------------------------------------------------===#
+
+from buffer import NDBuffer
+from buffer.dimlist import Dim, DimList
+from builtin.simd import _pow
 from collections import Optional, OptionalReg
 from collections.vector import InlinedFixedVector
+from gpu.host import DeviceContext
+from gpu.host.info import is_gpu, is_cpu, is_valid_target
+from kv_cache.types import (
+    ContinuousBatchingKVCacheCollection,
+    PagedKVCacheCollection,
+    KVCacheStaticParams,
+    KVCollectionT,
+)
 from math import (
     ceil,
     cos,
@@ -21,13 +36,13 @@ from math import (
     sqrt,
     tanh,
 )
-from nn.concat import _concat_cpu, test_concat_fusion
+from memory import AddressSpace, UnsafePointer
 from random import randn, seed
 from sys import llvm_intrinsic, external_call
-from sys.info import bitwidthof, simdwidthof, sizeof
-from gpu.host.info import is_gpu, is_valid_target, is_cpu
+from sys.info import simdwidthof, sizeof
 
 import compiler_internal as compiler
+from compiler_internal import StaticTensorSpec
 
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
@@ -38,22 +53,11 @@ from algorithm import min as reduce_min
 from algorithm import product, sum
 from algorithm.reduction import _reduce_generator, _reduce_generator_cpu
 
-from nn.topk import top_k_fused_sampling as _topk_fused_sampling
-from nn.topk_gpu import topk_fused_sampling_gpu as _topk_fused_sampling_gpu
-
-# ===-----------------------------------------------------------------------===#
-# General imports
-# ===-----------------------------------------------------------------------===#
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
-from builtin.simd import _pow
-from compiler_internal import StaticTensorSpec
-from gpu.host import DeviceContext
-from gpu.host.info import is_gpu, is_cpu
 from linalg.bmm import batched_matmul, batched_matmul_shape
 from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
 )
+from linalg.dual_gemm import swishGLU
 from linalg.matmul import matmul
 from linalg.matrix_band_part import matrix_band_part
 from linalg.matrix_solve import matrix_solve, matrix_solve_shape
@@ -61,13 +65,12 @@ from linalg.packing import _pack_b_ndbuffer_impl, pack_matmul_b_shape_func
 from linalg.utils import (
     elementwise_epilogue_type as matmul_elementwise_epilogue_type,
 )
-from memory import AddressSpace, UnsafePointer
 from nn import arg_nonzero
 from nn.activations import gelu, relu
 from nn.arange import arange, arange_shape
 from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
-from nn.concat import _concat_cpu, concat
+from nn.concat import _concat_cpu, concat, test_concat_fusion
 from nn.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
 from nn.conv import pack_filter as _pack_conv_filter
 from nn.conv import pack_filter_shape as pack_filter_shape_conv
@@ -95,12 +98,6 @@ from nn.gather_scatter import (
     scatter_nd_shape,
 )
 from nn.index_tensor import index_tensor
-from kv_cache.types import (
-    ContinuousBatchingKVCacheCollection,
-    PagedKVCacheCollection,
-    KVCacheStaticParams,
-    KVCollectionT,
-)
 from nn.kv_cache import (
     print_kv_cache_cont_batch_generic_gpu,
     print_kv_cache_cont_batch_generic_cpu,
@@ -135,7 +132,6 @@ from nn.kv_cache_ragged import (
     generic_fused_qkv_matmul_kv_cache_cont_batch_ragged,
     generic_fused_qkv_matmul_kv_cache_paged_ragged,
     generic_flash_attention_kv_cache_causal_mask_paged_ragged,
-    generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged,
     generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged,
     generic_flash_attention_kv_cache_null_mask_cont_batch_ragged,
     generic_cross_attention_kv_cache_null_mask_cont_batch_ragged,
@@ -159,18 +155,8 @@ from nn.softmax import logsoftmax, softmax
 from nn.split import split
 from nn.tile import tile, tile_shape
 from nn.topk import top_k, top_k_shape_impl
-from runtime.asyncrt import MojoCallContextPtr
-from runtime.tracing import Trace, TraceLevel, trace_arg
-from tensor_utils_internal import ManagedTensorSlice, foreach, view_copy_impl
-from memory import AddressSpace, UnsafePointer
-from utils import IndexList, StaticTuple
-from utils.index import Index
-from utils.numerics import isinf, isnan
-from compiler_internal import StaticTensorSpec
-
-from register import register_internal_override, uses_opaque, register_internal
-from nn.conv import pack_filter as _pack_conv_filter
-from nn.conv_transpose import pack_filter as _pack_conv_transpose_filter
+from nn.topk import top_k_fused_sampling as _topk_fused_sampling
+from nn.topk_gpu import topk_fused_sampling_gpu as _topk_fused_sampling_gpu
 
 from tensor_utils_internal import (
     simd_store_into_managed_tensor_slice,
@@ -199,17 +185,16 @@ from quantization.qmatmul_k import (
     matmul_Q6_K,
     matmul_Q6_K_pack_b,
 )
-from register import register_internal_override, uses_opaque
+from register import register_internal_override, uses_opaque, register_internal
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
-from tensor_utils_internal import ManagedTensorSlice, foreach
+from tensor_utils_internal import ManagedTensorSlice, foreach, view_copy_impl
 
 from utils import IndexList, StaticTuple
 from utils.index import Index
 from utils.numerics import isinf, isnan
 from utils.static_tuple import _set_array_elem
 from utils.loop import unroll
-from linalg.dual_gemm import swishGLU
 
 # ===-----------------------------------------------------------------------===#
 # Nop functions to expose different types to the compiler.
