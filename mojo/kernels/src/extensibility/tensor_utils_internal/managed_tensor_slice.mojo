@@ -293,10 +293,10 @@ fn _output_fusion_hook_impl[
 struct ManagedTensorSlice[
     type: DType,
     rank: Int,
-](TensorLike):
+](CollectionElement, TensorLike):
     """ManagedTensorSlice is like TensorSlice but it does not effect the life
     of the underlying allocated pointer. Unlike TensorSlice, when the object
-    lifetime ends it does not effect the lifetime of the underlying pointer.
+    lifetime ends it does not affect the lifetime of the underlying pointer.
     Conversly, if a ManagedTensorSlice is created, it will not extend the life
     of the underlying pointer.
 
@@ -311,7 +311,7 @@ struct ManagedTensorSlice[
     var _runtime_strides: IndexList[rank]
 
     fn __init__(
-        mut self,
+        out self,
         ptr: UnsafePointer[Scalar[type]],
         slices: InlineArray[Slice, rank],
         slicer_spec: RuntimeTensorSpec[type, rank],
@@ -352,7 +352,7 @@ struct ManagedTensorSlice[
         self = Self(ptr.offset(start_offset), slice_spec, strides)
 
     fn __init__(
-        mut self,
+        out self,
         ptr: UnsafePointer[Scalar[type]],
         shape: IndexList[rank],
     ):
@@ -361,7 +361,7 @@ struct ManagedTensorSlice[
         self._runtime_strides = _row_major_strides(self._spec)
 
     fn __init__(
-        mut self,
+        out self,
         ptr: UnsafePointer[Scalar[type]],
         shape: IndexList[rank],
         strides: IndexList[rank],
