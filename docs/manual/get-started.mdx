@@ -32,36 +32,37 @@ GitHub](https://github.com/modularml/mojo/tree/nightly/examples/life).
 
 ## 1. Create a Mojo project with `magic`
 
-We'll start by using the [`magic` CLI](/magic) to create a virtual environment
+We'll start by using the `magic` CLI to create a virtual environment
 and generate our initial project directory.
 
-<GetMagic />
+1. <GetMagic />
 
-In your terminal, go to the directory in which you want to create the project
-and execute:
+2. Navigate to the directory in which you want to create the project
+    and execute:
 
-```bash
-magic init life --format mojoproject
-```
+    ```bash
+    magic init life --format mojoproject
+    ```
 
-This creates a project directory named `life`. Let's go to the directory and
-list its contents:
+    This creates a project directory named `life`.
 
-```bash
-cd life
-```
+3. Let's go into the directory and list its contents:
 
-```bash
-ls -A
-```
+    ```bash
+    cd life
+    ```
 
-```output
-.gitattributes
-.gitignore
-.magic
-magic.lock
-mojoproject.toml
-```
+    ```bash
+    ls -A
+    ```
+
+    ```output
+    .gitattributes
+    .gitignore
+    .magic
+    magic.lock
+    mojoproject.toml
+    ```
 
 You should see that the project directory contains:
 
