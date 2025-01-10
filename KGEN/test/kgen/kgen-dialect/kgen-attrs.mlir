@@ -41,7 +41,7 @@ kgen.generator @return_one() -> index {
              b = #kgen.int_literal<12345678901234567899012345678901234567890> : !kgen.int_literal} : () -> ()
 
 // CHECK-LABEL: @struct_constants
-kgen.generator @struct_constants<T: type, A: !kgen.paramref<T>, value: !pop.scalar<f32>>() {
+kgen.generator @struct_constants<T: type, A: !kgen.param<T>, value: !pop.scalar<f32>>() {
   // CHECK: struct<(index, f32)> = <{ 1, 2.5{{0+}}e+00 }>
   kgen.param.constant: struct<(index, f32)> = <{ 1, 2.5 }>
   // CHECK: struct<(scalar<f32>)> = <{ value }>
@@ -62,11 +62,11 @@ kgen.generator @pack_constants<Ts: variadic<i32>>() {
 
 
 // CHECK-LABEL: @variant_constants
-kgen.generator @variant_constants<T: type, U: type, value: !kgen.paramref<T>>() {
+kgen.generator @variant_constants<T: type, U: type, value: !kgen.param<T>>() {
   // CHECK: variant<f32, f64> = <{:f32 2.5{{0+}}e+00, 0}>
   %0 = kgen.param.constant: variant<f32, f64> = <{:f32 2.5, 0}>
-  // CHECK: variant<T, U> = <{:!kgen.paramref<T> value, 0}>
-  %1 = kgen.param.constant: variant<T, U> = <{:!kgen.paramref<T> value, 0}>
+  // CHECK: variant<T, U> = <{:!kgen.param<T> value, 0}>
+  %1 = kgen.param.constant: variant<T, U> = <{:!kgen.param<T> value, 0}>
   kgen.return
 }
 
@@ -108,14 +108,14 @@ kgen.generator @entry2() -> index {
   d = #kgen<tailkind notail>
 } : () -> ()
 
-kgen.struct.generator @LinkedList<T: type, x: !kgen.paramref<T>> : type {
+kgen.struct.generator @LinkedList<T: type, x: !kgen.param<T>> : type {
   // CHECK: kgen.struct.info :type struct_inst<
   // CHECK-SAME: "LinkedList"
   // CHECK-SAME: [T, x]
-  // CHECK-SAME: <:type T, :!kgen.paramref<T> x>
+  // CHECK-SAME: <:type T, :!kgen.param<T> x>
   // CHECK-SAME: (data: typevalue<T>,
-  // CHECK-SAME:  next: typevalue<inst_struct_ref(#kgen.typeref<@LinkedList<:type T, :!kgen.paramref<T> x>>)>)
-  kgen.struct.info :type struct_inst<"LinkedList"[T, x]<:type T, :!kgen.paramref<T> x>(data: typevalue<T>, next: typevalue<inst_struct_ref(#kgen.typeref<@LinkedList<:type T, :!kgen.paramref<T> x>>)>)>
+  // CHECK-SAME:  next: typevalue<inst_struct_ref(#kgen.typeref<@LinkedList<:type T, :!kgen.param<T> x>>)>)
+  kgen.struct.info :type struct_inst<"LinkedList"[T, x]<:type T, :!kgen.param<T> x>(data: typevalue<T>, next: typevalue<inst_struct_ref(#kgen.typeref<@LinkedList<:type T, :!kgen.param<T> x>>)>)>
 }
 
 // CHECK: a = #kgen.typeref<@LinkedList<:type index, 3>>

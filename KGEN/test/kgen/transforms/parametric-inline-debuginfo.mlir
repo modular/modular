@@ -65,8 +65,8 @@ kgen.generator @callee() -> index always_inline {
 
 // -----
 
-#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<(!debuginfo.unresolved<!kgen.paramref<T>>) -> (): DW_CC_normal>
-#local_variable = #debuginfo.local_variable<scope = #subprogram, name = "foo"> : !debuginfo.unresolved<!kgen.paramref<T>>
+#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<(!debuginfo.unresolved<!kgen.param<T>>) -> (): DW_CC_normal>
+#local_variable = #debuginfo.local_variable<scope = #subprogram, name = "foo"> : !debuginfo.unresolved<!kgen.param<T>>
 
 #fileLoc = loc("foo.mlir":0:0)
 #loc = loc(fused<#subprogram>[#fileLoc])
@@ -74,14 +74,14 @@ kgen.generator @callee() -> index always_inline {
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent<T: type>(%arg0: index) {
   // CHECK: kgen.param.declare T0: type = <index> loc(#[[CALL_LOC:.*]])
-  // CHECK-NEXT: kgen.rebind %arg0 : index to !kgen.paramref<T0> loc(#[[CALL_LOC]])
+  // CHECK-NEXT: kgen.rebind %arg0 : index to !kgen.param<T0> loc(#[[CALL_LOC]])
   // CHECK-NEXT: kgen.return
   kgen.call @nodebug_inline_me<:type index>(%arg0) : (index) -> () loc(#loc)
   kgen.return loc(#loc)
 } loc(#loc)
 
 // CHECK-LABEL: kgen.generator @nodebug_inline_me
-kgen.generator @nodebug_inline_me<T: type>(%arg0: !kgen.paramref<T>) always_inline_no_debug {
+kgen.generator @nodebug_inline_me<T: type>(%arg0: !kgen.param<T>) always_inline_no_debug {
   kgen.return loc(#loc)
 } loc(#loc)
 

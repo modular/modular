@@ -209,17 +209,17 @@ struct RegPassable:
   fn __rmatmul__(lhs, rhs: Self) -> Self: pass
 
 # CHECK-LABEL: lit.struct.decl @StructWithFuncParam<comparator: !lit.generator
-# CHECK-SAME: <"T": type>(!kgen.paramref<*(0,0)>, |)
+# CHECK-SAME: <"T": type>(!kgen.param<*(0,0)>, |)
 struct StructWithFuncParam[comparator: fn[T: AnyTrivialRegType] (T) -> None]:
     # CHECK-LABEL: lit.func @"f
-    # CHECK-SAME: %self: !lit.ref<{{.*}}<:!lit.generator<<"T": type>(!kgen.paramref<*(0,0)>
+    # CHECK-SAME: %self: !lit.ref<{{.*}}<:!lit.generator<<"T": type>(!kgen.param<*(0,0)>
     fn f(self):
         pass
 
     # CHECK-LABEL: lit.func @"g
     fn g(self):
-        # CHECK: call {{.*}}[imm *"self`2x"]<:!lit.generator<<"T": type>(!kgen.paramref<*(0,0)>, |)
-        # CHECK-SAME: !lit.ref<{{.*}}<"T": type>(!kgen.paramref<*(0,0)>, |)
+        # CHECK: call {{.*}}[imm *"self`2x"]<:!lit.generator<<"T": type>(!kgen.param<*(0,0)>, |)
+        # CHECK-SAME: !lit.ref<{{.*}}<"T": type>(!kgen.param<*(0,0)>, |)
         self.f()
 
 # CHECK-LABEL: lit.func @"simpleMath

@@ -3,7 +3,7 @@
 // CHECK: kgen.struct.generator @[[STRUCT_CONTAINER:.+]]<T: type> : type
 // CHECK-NEXT: kgen.struct.info :type [struct_inst<"Container"[T]<:type T>(x: typevalue<T>) memoryOnly>, struct<(T) memoryOnly>]
 lit.struct.decl @Container<T: trait<@Trait>> {
-  lit.struct.field x: !kgen.paramref<:trait<@Trait> T>
+  lit.struct.field x: !kgen.param<:trait<@Trait> T>
 }
 
 // CHECK: kgen.struct.generator @[[STRUCT_ELEMENT:.+]] : type

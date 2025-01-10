@@ -126,7 +126,7 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
 
   // If the expected type is a parameter ref, then we're binding the specified
   // type to an attribute parameter.
-  if (auto expectedParamRef = dyn_cast<ParamRefType>(expectedType)) {
+  if (auto expectedParamRef = dyn_cast<ParamType>(expectedType)) {
     // If this is a non-materializable type (like IntLiteral), infer it like its
     // materializable type (like Int), for example:
     //    fn example[T: AnyTrivialRegType](a: T): ...
@@ -259,7 +259,7 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
   // metatype of the parameter, something like AnyStruct[someType].  This tells
   // us the actual type of the parameter.
   // TODO: Why isn't this a general solution?
-  if (auto actualParamRef = dyn_cast<ParamRefType>(actualType)) {
+  if (auto actualParamRef = dyn_cast<ParamType>(actualType)) {
     if (auto actualMetaType = ASTType(actualType).getMetaType()) {
       if (auto structMeta = dyn_cast<AnyStructType>(actualMetaType))
         return matchTypes(structMeta.getStructType(), expectedType);

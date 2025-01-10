@@ -25,7 +25,7 @@ using namespace KGEN;
 using namespace LIT;
 
 bool LIT::isTypeExpr(TypedAttr attr) {
-  if (auto param = dyn_cast<ParamRefType>(attr.getType()))
+  if (auto param = dyn_cast<ParamType>(attr.getType()))
     return isa<AnyStructType, AnyTraitType>(param.getParam().getType());
   return isa<TypeType, AnyStructType, TraitType, AnyTraitType>(attr.getType());
 }

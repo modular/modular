@@ -511,9 +511,9 @@ def POP_PointerBitcastOp : POPOp<"pointer.bitcast", [Pure,
     ```
   }];
 
-  let arguments = (ins AnyTypeOf<[KGEN_ParamRefType, PointerType,
+  let arguments = (ins AnyTypeOf<[KGEN_ParamType, PointerType,
                                   KGEN_SignatureGeneratorType]>:$input);
-  let results = (outs AnyTypeOf<[KGEN_ParamRefType, PointerType,
+  let results = (outs AnyTypeOf<[KGEN_ParamType, PointerType,
                                  KGEN_SignatureGeneratorType]>:$output);
   let assemblyFormat = [{
     $input attr-dict `:` qualified(type($input)) `to` qualified(type($output))
@@ -1494,7 +1494,7 @@ def POP_GlobalConstantOp : POPOp<"global_constant", [Pure]> {
     %0 = pop.global_constant: <simd<2, ui32>> = <<2, 5>>
     // Parametric global constant.
     %1 = pop.global_constant: <type> =
-        <apply(:(f32) -> !kgen.paramref<type>, 12.0)>
+        <apply(:(f32) -> !kgen.param<type>, 12.0)>
     ```
   }];
 

@@ -88,20 +88,20 @@ void KGENDialect::registerTypes() {
 }
 
 //===----------------------------------------------------------------------===//
-// ParamRefType
+// ParamType
 //===----------------------------------------------------------------------===//
 
-Type ParamRefType::get(TypedAttr param) {
+Type ParamType::get(TypedAttr param) {
   // If the parameter is already resolved to a constant, fold this to the
   // indicated type.
   if (auto constant = llvm::dyn_cast<TypeConstantAttr>(param))
     return constant.getMlirType();
 
-  // Otherwise, form the ParamRefType like normal.
+  // Otherwise, form the ParamType like normal.
   return Base::get(param.getContext(), param);
 }
 
-ParamRefType ParamRefType::getFromBytecode(TypedAttr param) {
+ParamType ParamType::getFromBytecode(TypedAttr param) {
   return Base::get(param.getContext(), param);
 }
 
@@ -542,7 +542,7 @@ specializeSignature(ArrayRef<TypedAttr> inputParamValues,
   for (auto [paramNo, value, type] :
        llvm::enumerate(inputParamValues, inputParamTypes)) {
     // Bound parameters are allowed to refine the type of subsequent parameters,
-    // e.g. in `<ty: type, fn: () -> !kgen.paramref<ty>>`, the expected type of
+    // e.g. in `<ty: type, fn: () -> !kgen.param<ty>>`, the expected type of
     // the second parameter will be refined when the first parameter is bound.
     auto remappedDeclType = remapType(type);
     // If we're attempting to bind to an unknown attribute, we need to update
@@ -1435,7 +1435,7 @@ static void printVariantTypes(AsmPrinter &p, TypedAttr variadic) {
 
   SmallVector<Type> values;
   for (TypedAttr value : attr.getValues())
-    values.push_back(ParamRefType::get(value));
+    values.push_back(ParamType::get(value));
   printParamTypes(p, values);
 }
 
@@ -1468,8 +1468,7 @@ VariantType VariantType::get(MLIRContext *ctx, TypedAttr variadic) {
     SmallVector<TypedAttr> values;
     auto metatype = TypeType::get(ctx);
     for (TypedAttr value : attr.getValues()) {
-      values.push_back(
-          TypeConstantAttr::get(ParamRefType::get(value), metatype));
+      values.push_back(TypeConstantAttr::get(ParamType::get(value), metatype));
     }
     variadic = VariadicAttr::get(values, VariadicType::get(metatype));
   }
@@ -1497,7 +1496,7 @@ VariantType::getTypes() const {
   assert(attr && "expected a concrete variant");
   return llvm::map_range(
       attr.getValues(),
-      +[](TypedAttr attr) -> Type { return ParamRefType::get(attr); });
+      +[](TypedAttr attr) -> Type { return ParamType::get(attr); });
 }
 
 size_t VariantType::getNumTypes() const { return llvm::size(getTypes()); }
@@ -1517,7 +1516,7 @@ VariantType::getContentSize(TargetInfoAttr target) const {
 
   int64_t maxSize = 0;
   for (TypedAttr value : variadic.getValues()) {
-    Type elType = ParamRefType::get(value);
+    Type elType = ParamType::get(value);
     std::optional<int64_t> typeSize =
         DataLayoutInterface::getTypeAllocSize(target, elType);
     if (!typeSize)

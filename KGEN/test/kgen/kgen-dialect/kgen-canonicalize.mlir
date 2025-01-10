@@ -2,16 +2,16 @@
 
 // CHECK-LABEL: @rebind_folds
 kgen.generator @rebind_folds<dtype: dtype, type: type>(
-  %a: i32, %b: !pop.scalar<f32>, %c: !pop.scalar<dtype>, %d: !kgen.paramref<type>
+  %a: i32, %b: !pop.scalar<f32>, %c: !pop.scalar<dtype>, %d: !kgen.param<type>
 ) -> (
-  i32, !pop.scalar<f32>, !pop.scalar<dtype>, !kgen.paramref<type>
+  i32, !pop.scalar<f32>, !pop.scalar<dtype>, !kgen.param<type>
 ) {
   // CHECK-NOT: kgen.rebind
   %0 = kgen.rebind %a : i32 to i32
   %1 = kgen.rebind %b : !pop.scalar<f32> to !pop.scalar<f32>
   %2 = kgen.rebind %c : !pop.scalar<dtype> to !pop.scalar<dtype>
-  %3 = kgen.rebind %d : !kgen.paramref<type> to !kgen.paramref<type>
-  kgen.return %0, %1, %2, %3 : i32, !pop.scalar<f32>, !pop.scalar<dtype>, !kgen.paramref<type>
+  %3 = kgen.rebind %d : !kgen.param<type> to !kgen.param<type>
+  kgen.return %0, %1, %2, %3 : i32, !pop.scalar<f32>, !pop.scalar<dtype>, !kgen.param<type>
 }
 
 // CHECK-LABEL: @rebind_canonicalize

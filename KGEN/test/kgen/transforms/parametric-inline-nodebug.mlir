@@ -116,8 +116,8 @@ kgen.generator @main() {
 
 // -----
 
-#subprogram = #debuginfo.subprogram<sourceName = <"fake_larger_callee">> : !debuginfo.subroutine<(!debuginfo.unresolved<!kgen.paramref<T>>) -> (!debuginfo.unresolved<!kgen.paramref<T>>): DW_CC_normal>
-#local_variable = #debuginfo.local_variable<scope = #subprogram, name = "arg0"> : !debuginfo.unresolved<!kgen.paramref<T>>
+#subprogram = #debuginfo.subprogram<sourceName = <"fake_larger_callee">> : !debuginfo.subroutine<(!debuginfo.unresolved<!kgen.param<T>>) -> (!debuginfo.unresolved<!kgen.param<T>>): DW_CC_normal>
+#local_variable = #debuginfo.local_variable<scope = #subprogram, name = "arg0"> : !debuginfo.unresolved<!kgen.param<T>>
 
 // CHECK-LABEL: kgen.generator @inline_heuristic
 kgen.generator @inline_heuristic<A>(%arg: index) {
@@ -132,25 +132,25 @@ kgen.generator @inline_heuristic<A>(%arg: index) {
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<T: type>(%arg: !kgen.paramref<T>) -> !kgen.paramref<T> always_inline {
-  kgen.return %arg : !kgen.paramref<T>
+kgen.generator @callee<T: type>(%arg: !kgen.param<T>) -> !kgen.param<T> always_inline {
+  kgen.return %arg : !kgen.param<T>
 }
 
 // CHECK-LABEL: kgen.generator @larger_callee
-kgen.generator @larger_callee<T: type>(%arg: !kgen.paramref<T>) -> !kgen.paramref<T> always_inline {
+kgen.generator @larger_callee<T: type>(%arg: !kgen.param<T>) -> !kgen.param<T> always_inline {
   kgen.param.declare value1 = <1>
   kgen.param.declare value2 = <1>
   kgen.param.declare value3 = <1>
   kgen.param.declare value4 = <1>
-  kgen.return %arg : !kgen.paramref<T>
+  kgen.return %arg : !kgen.param<T>
 }
 
 // CHECK-LABEL: kgen.generator @fake_larger_callee
 // This function looks large but is just full of debug ops.
-kgen.generator @fake_larger_callee<T: type>(%arg: !kgen.paramref<T>) -> !kgen.paramref<T> always_inline {
-  debuginfo.value #local_variable = %arg : !kgen.paramref<T>
-  debuginfo.value #local_variable = %arg : !kgen.paramref<T>
-  debuginfo.value #local_variable = %arg : !kgen.paramref<T>
+kgen.generator @fake_larger_callee<T: type>(%arg: !kgen.param<T>) -> !kgen.param<T> always_inline {
+  debuginfo.value #local_variable = %arg : !kgen.param<T>
+  debuginfo.value #local_variable = %arg : !kgen.param<T>
+  debuginfo.value #local_variable = %arg : !kgen.param<T>
   debuginfo.kill #local_variable
-  kgen.return %arg : !kgen.paramref<T>
+  kgen.return %arg : !kgen.param<T>
 }

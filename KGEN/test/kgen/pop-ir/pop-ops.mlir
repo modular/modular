@@ -438,8 +438,8 @@ kgen.generator @pointer_bitcast(%arg0: !kgen.pointer<scalar<f32>>, %arg1: !kgen.
 kgen.generator @pointer_bitcast_funcptr<T:type>(%arg0: !kgen.generator<() -> ()>) {
   // CHECK: pop.pointer.bitcast %arg0 : !kgen.generator<() -> ()> to !kgen.generator<(i32) -> i32>
   %0 = pop.pointer.bitcast %arg0 : !kgen.generator<() -> ()> to !kgen.generator<(i32) -> i32>
-  // CHECK: pop.pointer.bitcast %arg0 : !kgen.generator<() -> ()> to !kgen.paramref<T>
-  %1 = pop.pointer.bitcast %arg0 : !kgen.generator<() -> ()> to !kgen.paramref<T>
+  // CHECK: pop.pointer.bitcast %arg0 : !kgen.generator<() -> ()> to !kgen.param<T>
+  %1 = pop.pointer.bitcast %arg0 : !kgen.generator<() -> ()> to !kgen.param<T>
   kgen.return
 }
 
@@ -609,7 +609,7 @@ kgen.generator @pop_generic_load_store<ty: type, dt: dtype, size>(
     %p1: !kgen.pointer<scalar<dt>>,
     %p2: !kgen.pointer<simd<size, dt>>)
   -> (
-    !kgen.paramref<ty>,
+    !kgen.param<ty>,
     !pop.scalar<dt>,
     !pop.simd<size, dt>
   ) {
@@ -628,7 +628,7 @@ kgen.generator @pop_generic_load_store<ty: type, dt: dtype, size>(
   %2 = pop.load %p2 : !kgen.pointer<simd<size, dt>>
   pop.store %2, %p2 : !kgen.pointer<simd<size, dt>>
 
-  kgen.return %0, %1, %2 : !kgen.paramref<ty>, !pop.scalar<dt>, !pop.simd<size, dt>
+  kgen.return %0, %1, %2 : !kgen.param<ty>, !pop.scalar<dt>, !pop.simd<size, dt>
 }
 
 // CHECK-LABEL: @pop_generic_offset
@@ -674,15 +674,15 @@ kgen.generator @stack_allocation<size, ty: type, address_space_val>() {
 }
 
 // CHECK-LABEL: @external_call
-kgen.generator @external_call<ty: type, dt: dtype>(%a: !kgen.paramref<ty>, %b: !pop.scalar<dt>) {
+kgen.generator @external_call<ty: type, dt: dtype>(%a: !kgen.param<ty>, %b: !pop.scalar<dt>) {
   // CHECK: pop.external_call @foo(%{{.*}}, %{{.*}})
-  %0 = pop.external_call @foo(%a, %b) : (!kgen.paramref<ty>, !pop.scalar<dt>) -> !pop.simd<4, f32>
+  %0 = pop.external_call @foo(%a, %b) : (!kgen.param<ty>, !pop.scalar<dt>) -> !pop.simd<4, f32>
   // CHECK: pop.external_call @bar(%arg0, %arg1)
-  // CHECK-SAME: (!kgen.paramref<ty>) -> ()
+  // CHECK-SAME: (!kgen.param<ty>) -> ()
   // CHECK-SAME: attributes {funcAttrs = ["noinline", ["alignstack", "16"]]}
-  pop.external_call @bar(%a, %b) (!kgen.paramref<ty>) -> ()
+  pop.external_call @bar(%a, %b) (!kgen.param<ty>) -> ()
     attributes {funcAttrs = ["noinline", ["alignstack", "16"]]}
-    : (!kgen.paramref<ty>, !pop.scalar<dt>) -> ()
+    : (!kgen.param<ty>, !pop.scalar<dt>) -> ()
   kgen.return
 }
 
@@ -722,11 +722,11 @@ kgen.generator @pointer_to_index<ty: type>(%a: !kgen.pointer<ty>, %b: !kgen.poin
 
 // CHECK-LABEL: @struct
 kgen.generator @struct<ty: type, dt: dtype>(
-  // CHECK-SAME: %[[A:.*]]: !kgen.paramref
-  %a: !kgen.paramref<ty>,
+  // CHECK-SAME: %[[A:.*]]: !kgen.param
+  %a: !kgen.param<ty>,
   // CHECK-SAME: %[[B:.*]]: !pop.scalar<
   %b: !pop.scalar<dt>
-) -> (!kgen.paramref<ty>, !pop.scalar<dt>, !kgen.pointer<ty>) {
+) -> (!kgen.param<ty>, !pop.scalar<dt>, !kgen.pointer<ty>) {
   // CHECK: %[[S0:.*]] = kgen.struct.create(%[[A]], %[[B]]) : !kgen.struct<(ty, scalar<dt>)>
   %0 = kgen.struct.create(%a, %b) : !kgen.struct<(ty, scalar<dt>)>
   // CHECK: %[[V0:.*]] = kgen.struct.extract %[[S0]][0] : !kgen.struct<(ty, scalar<dt>)>
@@ -743,8 +743,8 @@ kgen.generator @struct<ty: type, dt: dtype>(
   // CHECK: %[[EL_PTR:.*]] = kgen.struct.gep %[[STRUCT_PTR]][1] : <struct<(i32, ty)>>
   %el = kgen.struct.gep %struct[1] : <struct<(i32, ty)>>
 
-  // CHECK: return %[[V0]], %[[V1]], %[[EL_PTR]] : !kgen.paramref<ty>, !pop.scalar<dt>, !kgen.pointer<ty>
-  kgen.return %1, %2, %el : !kgen.paramref<ty>, !pop.scalar<dt>, !kgen.pointer<ty>
+  // CHECK: return %[[V0]], %[[V1]], %[[EL_PTR]] : !kgen.param<ty>, !pop.scalar<dt>, !kgen.pointer<ty>
+  kgen.return %1, %2, %el : !kgen.param<ty>, !pop.scalar<dt>, !kgen.pointer<ty>
 }
 
 // CHECK-LABEL: @empty_struct_syntax
@@ -791,7 +791,7 @@ kgen.func @cast_from_builtin_vector(%arg0: vector<2xf32>) -> !pop.simd<2, f32> {
 }
 
 // CHECK-LABEL: @array_ops
-kgen.generator @array_ops<idx, N, T: type, dtype: dtype>(%arg0: !kgen.paramref<T>)
+kgen.generator @array_ops<idx, N, T: type, dtype: dtype>(%arg0: !kgen.param<T>)
     -> (!pop.array<2, T>, !kgen.pointer<T>) {
   // CHECK: pop.array.create [%arg0, %arg0] : !pop.array<2, T>
   %0 = pop.array.create [%arg0, %arg0] : !pop.array<2, T>
@@ -867,7 +867,7 @@ kgen.generator @pack_ptr<Ts: variadic<!kgen.type>, T: type, I: index>(
 
 
 // CHECK-LABEL: @parametric_pack
-kgen.generator @parametric_pack<N, T: type>(%arg0: !pop.simd<N, bool>, %arg1: !kgen.paramref<T>) {
+kgen.generator @parametric_pack<N, T: type>(%arg0: !pop.simd<N, bool>, %arg1: !kgen.param<T>) {
   // CHECK-NEXT: kgen.pack.create(%arg0, %arg1) : !kgen.pack<[simd<N, bool>, T]>
   %0 = kgen.pack.create(%arg0, %arg1) : !kgen.pack<[!pop.simd<N, bool>, T]>
   kgen.return
@@ -886,7 +886,7 @@ kgen.generator @call_intrinsic<intrin: string>(%arg0: !pop.scalar<f32>) {
 kgen.generator @inline_asm<ty: type, dt: dtype>(
     %arg0: !pop.scalar<si32>,
     %arg1: !pop.scalar<index>,
-    %arg2: !kgen.paramref<ty>,
+    %arg2: !kgen.param<ty>,
     %arg3: !pop.scalar<dt>) {
   // CHECK: pop.inline_asm "bswap $0", "=r,r", (%arg0) : (!pop.scalar<si32>) -> i8
   %0 = pop.inline_asm "bswap $0", "=r,r", (%arg0) : (!pop.scalar<si32>) -> i8
@@ -906,8 +906,8 @@ kgen.generator @inline_asm<ty: type, dt: dtype>(
   // CHECK: !kgen.struct<(ty, scalar<dt>)>
   %4 = pop.inline_asm "foo", "=r,=r,r", (%arg0) : (!pop.scalar<si32>) ->
     !kgen.struct<(ty, scalar<dt>)>
-  // CHECK: pop.inline_asm "bar $0", "=r,r", (%arg2) : (!kgen.paramref<ty>) -> i8
-  %5 = pop.inline_asm "bar $0", "=r,r", (%arg2) : (!kgen.paramref<ty>) -> i8
+  // CHECK: pop.inline_asm "bar $0", "=r,r", (%arg2) : (!kgen.param<ty>) -> i8
+  %5 = pop.inline_asm "bar $0", "=r,r", (%arg2) : (!kgen.param<ty>) -> i8
   // CHECK: pop.inline_asm "bar $0", "=r,r", (%arg3) : (!pop.scalar<dt>) -> i8
   %6 = pop.inline_asm "bar $0", "=r,r", (%arg3) : (!pop.scalar<dt>) -> i8
   // CHECK: [[RET:%.*]]:2 = pop.inline_asm "bar $0", "=r,=r,r", (%arg0) : (!pop.scalar<si32>) -> (i8, i8)
@@ -921,7 +921,7 @@ kgen.generator @variadics<ty: type>(
     %arg1: !pop.scalar<f32>,
     %arg2: !kgen.struct<()>,
     %arg3: !kgen.struct<()>,
-    %arg4: !kgen.paramref<ty>) {
+    %arg4: !kgen.param<ty>) {
   // CHECK: %[[V0:.*]] = pop.variadic.create [%arg0, %arg1] : !kgen.variadic<scalar<f32>>
   %v0 = pop.variadic.create [%arg0, %arg1] : !kgen.variadic<!pop.scalar<f32>>
   // CHECK: pop.variadic.size %[[V0]] : !kgen.variadic<scalar<f32>>

@@ -32,7 +32,7 @@ kgen.generator @simd_constants<N, value: !pop.simd<N, si32>>() {
 }
 
 // CHECK-LABEL: @array_constants
-kgen.generator @array_constants<T: type, A: !kgen.paramref<T>>() {
+kgen.generator @array_constants<T: type, A: !kgen.param<T>>() {
   // CHECK: array<2, index> = <[1, 2]>
   kgen.param.constant: array<2, index> = <[1, 2]>
   // CHECK: array<2, dtype> = <[ui4, si4]>

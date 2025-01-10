@@ -116,10 +116,8 @@ bool BitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
 bool PointerBitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
   if (inputs.size() != 1 || outputs.size() != 1)
     return false;
-  return isa<ParamRefType, PointerType, SignatureGeneratorType>(
-             inputs.front()) &&
-         isa<ParamRefType, PointerType, SignatureGeneratorType>(
-             outputs.front());
+  return isa<ParamType, PointerType, SignatureGeneratorType>(inputs.front()) &&
+         isa<ParamType, PointerType, SignatureGeneratorType>(outputs.front());
 }
 
 //===----------------------------------------------------------------------===//
@@ -536,7 +534,7 @@ static void printGlobalConstantOpValue(OpAsmPrinter &p, Operation *,
 }
 
 LogicalResult GlobalConstantOp::verify() {
-  if (!isa<ParamRefType>(getResult().getType().getElementType()))
+  if (!isa<ParamType>(getResult().getType().getElementType()))
     return success();
   return emitOpError("must have a concrete element type");
 }

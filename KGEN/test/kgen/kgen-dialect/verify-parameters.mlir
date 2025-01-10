@@ -99,7 +99,7 @@ kgen.generator @ref_it() {
 
 // -----
 
-kgen.generator @pass_type<T: type> () -> !kgen.paramref<T> {
+kgen.generator @pass_type<T: type> () -> !kgen.param<T> {
   kgen.unreachable
 }
 
@@ -110,7 +110,7 @@ kgen.generator @use() {
   // CHECK: rebind(:() -> !pop.simd<*(1,0), si8> apply(:() -> !kgen.generator<() -> !pop.simd<*(2,0), si8>> @pass_type<:type () -> !pop.simd<*(1,0), si8>>)
   kgen.param.declare use: <
     index,
-    !kgen.paramref<rebind(:() -> !pop.simd<*(1,0), si8>
+    !kgen.param<rebind(:() -> !pop.simd<*(1,0), si8>
       apply(
         :() -> !kgen.generator<() -> !pop.simd<*(2,0), si8>>
           @pass_type<:type () -> !pop.simd<*(1,0), si8>>))>
@@ -128,8 +128,8 @@ kgen.generator @f<a, b: @T<a>>() -> !kgen.type {
   // CHECK-NEXT: ref: <index, @T<*(0,0)>, <apply(:() -> !kgen.type @f<*(1,0), :@T<*(1,0)> *(1,1)>)>() -> ()>() -> () = <?>
   kgen.param.declare ref: <index, @T<*(0,0)>, <apply(:() -> !kgen.type @f<*(1,0), :@T<*(1,0)> *(1,1)>)>() -> ()>() -> () = <?>
 
-  // CHECK-NEXT: relative: <type, <*(1,0)>(!kgen.pointer<:!kgen.paramref<*(1,0)> *(0,0)>) -> ()>
-  kgen.param.declare relative: <type, <*(1,0)>(!kgen.pointer<:!kgen.paramref<*(1,0)> *(0,0)>) -> ()>() -> () = <?>
+  // CHECK-NEXT: relative: <type, <*(1,0)>(!kgen.pointer<:!kgen.param<*(1,0)> *(0,0)>) -> ()>
+  kgen.param.declare relative: <type, <*(1,0)>(!kgen.pointer<:!kgen.param<*(1,0)> *(0,0)>) -> ()>() -> () = <?>
   kgen.unreachable
 }
 

@@ -177,7 +177,7 @@ void StructDecls::buildReplacer(LowerLITReplacer &replacer, MLIRContext *ctx) {
 
   // ParamRefTypes should be TypeValueType if in the value domain.
   replacer.addNonRecursiveReplacement(
-      [&replacer](ParamRefType paramRef) {
+      [&replacer](ParamType paramRef) {
         return TypeValueType::get(
             replacer.replaceParameter(paramRef.getParam()));
       },

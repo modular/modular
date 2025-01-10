@@ -1355,7 +1355,7 @@ static void typeCheckOneArgument(size_t idx, bool isDef, bool isStaticMethod,
       return;
     }
     fullType =
-        ParamRefType::get(BindTypeAttr::get(PValue(dictType), binding.get()));
+        ParamType::get(BindTypeAttr::get(PValue(dictType), binding.get()));
 
     // OwnedKwargsDict is memory only and since only the callee can access it,
     // we pass it as owned.

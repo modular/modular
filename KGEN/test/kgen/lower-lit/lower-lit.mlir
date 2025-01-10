@@ -73,21 +73,21 @@ lit.func @decorated_fn()
 
 // CHECK-LABEL: @generic_types_retain_convention
 lit.func @generic_types_retain_convention<T: type>[imm a](
-  // CHECK: %arg0: !kgen.paramref<T>,
+  // CHECK: %arg0: !kgen.param<T>,
   // CHECK: %arg1: !kgen.pointer<T> mut,
-  // CHECK: %arg2: !kgen.paramref<T> owned,
+  // CHECK: %arg2: !kgen.param<T> owned,
   // CHECK: %arg3: index,
   // CHECK: %arg4: !kgen.pointer<index> owned
-  %p: !kgen.paramref<T>,
+  %p: !kgen.param<T>,
   %q: !lit.ref<T, imm a> mut,
-  %r: !kgen.paramref<T> owned,
+  %r: !kgen.param<T> owned,
   %s1: index,
   %s2: !kgen.pointer<index> owned
 ){
   kgen.return
 }
 
-lit.func @generic_callee<T: type>(%p: !kgen.paramref<T>){
+lit.func @generic_callee<T: type>(%p: !kgen.param<T>){
   kgen.return
 }
 

@@ -1199,7 +1199,7 @@ static ParseResult parsePackCreateType(AsmParser &p, Type &resultType,
 
   ArrayRef<TypedAttr> values = variadic.getValues();
   for (TypedAttr value : values)
-    elementTypes.push_back(ParamRefType::get(value));
+    elementTypes.push_back(ParamType::get(value));
   return success();
 }
 
@@ -1219,7 +1219,7 @@ LogicalResult PackCreateOp::verify() {
   }
   for (auto [i, expected, provided] :
        llvm::enumerate(elementTypes, getOperandTypes())) {
-    Type type = ParamRefType::get(expected);
+    Type type = ParamType::get(expected);
     if (type == provided)
       continue;
     return emitOpError() << "operand #" << i << " should have type " << type
@@ -1239,7 +1239,7 @@ static Type getPackFieldAtIndex(PackType packType, TypedAttr index) {
   // element from the type list.  This automatically folds if constant.
   auto typeAttr =
       ParamOperatorAttr::get(POC::VariadicGet, packType.getVariadic(), index);
-  return ParamRefType::get(typeAttr);
+  return ParamType::get(typeAttr);
 }
 
 LogicalResult PackExtractOp::inferReturnTypes(

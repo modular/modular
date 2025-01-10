@@ -22,10 +22,10 @@ kgen.generator @declref_metatype(%arg0: !lit.struct<@MyStruct, type>) {
   kgen.return
 }
 
-// CHECK-LABEL: lit.trait.decl @TParam<MT: type, T: !kgen.paramref<MT>>
-lit.trait.decl @TParam<MT: type, T: !kgen.paramref<MT>> {
-  // CHECK-NEXT: lit.func @f(%self: !kgen.paramref<:!kgen.paramref<MT> T>) -> !kgen.none
-  lit.func @f(%self: !kgen.paramref<:!kgen.paramref<MT> T>) -> !kgen.none {
+// CHECK-LABEL: lit.trait.decl @TParam<MT: type, T: !kgen.param<MT>>
+lit.trait.decl @TParam<MT: type, T: !kgen.param<MT>> {
+  // CHECK-NEXT: lit.func @f(%self: !kgen.param<:!kgen.param<MT> T>) -> !kgen.none
+  lit.func @f(%self: !kgen.param<:!kgen.param<MT> T>) -> !kgen.none {
     lit.trait_func
   }
 }
@@ -33,8 +33,8 @@ lit.trait.decl @TParam<MT: type, T: !kgen.paramref<MT>> {
 lit.trait.decl @MyTrait {}
 
 // CHECK-LABEL: @trait_metatype
-// CHECK-SAME: !kgen.paramref<:trait<@MyTrait> T>
-lit.func @trait_metatype<T: trait<@MyTrait>>(%arg0: !kgen.paramref<:trait<@MyTrait> T>) {
+// CHECK-SAME: !kgen.param<:trait<@MyTrait> T>
+lit.func @trait_metatype<T: trait<@MyTrait>>(%arg0: !kgen.param<:trait<@MyTrait> T>) {
   kgen.return
 }
 
@@ -57,7 +57,7 @@ kgen.generator @nested_index<a>(%arg0: !lit.type_signature<index, index = *(0,0)
   kgen.return
 }
 
-kgen.generator @subst_type<T: type>(%arg0: !kgen.paramref<T>) {
+kgen.generator @subst_type<T: type>(%arg0: !kgen.param<T>) {
   kgen.return
 }
 

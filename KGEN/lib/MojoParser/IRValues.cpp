@@ -173,7 +173,7 @@ static Type extractMetaType(Type type) {
   if (auto declRef = dyn_cast<LIT::StructType>(type))
     return declRef.getMetaType();
   // The metatype is the type of the carried type expression.
-  if (auto paramRef = dyn_cast<ParamRefType>(type))
+  if (auto paramRef = dyn_cast<ParamType>(type))
     return paramRef.getParam().getType();
   if (auto traitRef = dyn_cast<TraitType>(type))
     return traitRef.getMetaType();
@@ -189,10 +189,10 @@ PValue::PValue(Type value)
 /// If this value /is/ a type return it.
 ASTType PValue::getIfTypeValue() const {
   TypedAttr attr = get();
-  // If this is a parameter expression of type value, use ParamRefType to turn
+  // If this is a parameter expression of type value, use ParamType to turn
   // it into a type.
   if (LIT::isTypeExpr(attr))
-    return ParamRefType::get(attr);
+    return ParamType::get(attr);
   return {};
 }
 

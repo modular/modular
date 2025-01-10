@@ -231,7 +231,7 @@ bool TypeDeclInfo::isRegisterPassableTrivial(Type type) const {
     return getStructDeclForType(valueType).isRegisterPassableTrivial();
 
   // This is not trivial if it is a reference to a trait value.
-  if (auto paramRef = dyn_cast<ParamRefType>(type)) {
+  if (auto paramRef = dyn_cast<ParamType>(type)) {
     if (isa<TraitType>(paramRef.getParam().getType()))
       return false;
   }
@@ -265,7 +265,7 @@ static SymbolConstantAttr getSpecialMemberForType(
 /// Given the RValue type for a value that needs to be destroyed, return the
 /// destructor the invoke, or null if there is none.
 TypedAttr TypeDeclInfo::getDestructorForType(Type type) const {
-  if (auto generic = dyn_cast<ParamRefType>(type)) {
+  if (auto generic = dyn_cast<ParamType>(type)) {
     if (auto trait = dyn_cast<TraitType>(generic.getParam().getType())) {
       SignatureGeneratorType dtorSig =
           TraitDeclOp(traitMap.at(trait.getSymbol()))
@@ -300,7 +300,7 @@ StringAttr TypeDeclInfo::getLinearTypeErrorMsg(Type type) const {
   if (auto valueType = dyn_cast<LIT::StructType>(type))
     return getStructDeclForType(valueType).getLinearTypeErrorMsgAttr();
 
-  if (auto generic = dyn_cast<ParamRefType>(type)) {
+  if (auto generic = dyn_cast<ParamType>(type)) {
     if (auto trait = dyn_cast<TraitType>(generic.getParam().getType())) {
       return TraitDeclOp(traitMap.at(trait.getSymbol()))
           .getLinearTypeErrorMsgAttr();

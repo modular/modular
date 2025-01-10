@@ -35,7 +35,7 @@ TEST_F(SignatureGeneratorTypeTest, TestSpecialization) {
   auto indexType = IndexType::get(&ctx);
   auto typeType = TypeType::get(&ctx);
   auto indexTypeAttr = TypeConstantAttr::get(indexType, typeType);
-  auto ref0Type = ParamRefType::get(ParamIndexRefAttr::get(0, typeType));
+  auto ref0Type = ParamType::get(ParamIndexRefAttr::get(0, typeType));
   FunctionType funcType = FunctionType::get(&ctx, {ref0Type}, {ref0Type});
   SmallVector<Type> inputParamTypes = {typeType};
 
