@@ -172,6 +172,50 @@ The `pop` dialect solves two problems for KGEN:
 This section captures other specific design points that may be surprising about
 its design and why.
 
+## Naming Convention
+
+### Avoid Identical Names
+
+For concepts that need to be represented in multiple layers due to nuances in
+each layer (e.g. functions), the goal is to avoid giving them identical names to
+avoid the ambiguity in code and documentation (without needing to refer to
+namespaces each time).
+
+When possible, use different names to better reflect the semantic nuances of the
+layers they belong to. If the same name must be used, the adopted convention is
+to use shorter names (more abbreviation) for higher level representations, and
+longer names (less abbreviation) for lower level representations when possible.
+This is analogous to how concepts get more concrete as they are lowered.
+
+For example, a "function type" needs to exist in both LIT & KGEN. Following this
+convention, we assign:
+
+- LIT: "fn" (e.g. `FnType`, `lit.fn`)
+- KGEN: "func" (e.g. `FuncType`, `kgen.func`)
+
+This also avoids running into "FunctionType", which MLIR already took as a
+builtin.
+
+These names also show up in other contexts, e.g. `FnOp` is a function op in LIT,
+while `FuncOp` is a function op in KGEN.
+
+### Abbreviations for Core Concepts
+
+For core concepts of a dialect, which are likely to appear in many places across
+code & IR,adopting abbreviated names is recommended when unambiguous, and when
+it improves code clarity and IR readability.
+The abbreviation should be used consistently everywhere in code & IR to avoid
+any confusion between the abbreviated version and the non-abbreviated version.
+
+For example, a "generator" is a central concept of KGEN, thus the guideline is
+to use the abbreviated "gen" term everywhere in code & IR.
+
+Once an abbreviation is adopted, it must only stand for one singular concept.
+For example, "param" is used in place of "parameter". This means "TypeParam"
+stands for "type parameter", and "ParamType" stands for "parameter type".
+A "*parameterized* type" should therefore *not* be abbreviated to "ParamType"
+(instead, it is named "generator type", or "GenType").
+
 ## Why `DType`?
 
 KGEN uses `DType` to represent fundamental primitive types: integers and floats.
