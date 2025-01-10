@@ -10,7 +10,12 @@ load(
     "modular_shared_library",
     "td_library",
 )
-load("//bazel:config.bzl", "ASYNCRT_PROFILING_LOCAL_DEFINES", "CONFIG_SECTION_LOCAL_DEFINES")
+load(
+    "//bazel:config.bzl",
+    "ALLOW_UNUSED_TAG",
+    "ASYNCRT_PROFILING_LOCAL_DEFINES",
+    "CONFIG_SECTION_LOCAL_DEFINES",
+)
 
 pkg_files(
     name = "docs",
@@ -1213,6 +1218,7 @@ copy_files(
         "lldbDataFormatters.py",
         "mlirDataFormatters.py",
     ],
+    tags = [ALLOW_UNUSED_TAG],
     visibility = ["//visibility:public"],
 )
 
