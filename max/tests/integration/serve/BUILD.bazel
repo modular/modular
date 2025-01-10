@@ -1,13 +1,4 @@
-load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
-
-modular_py_library(
-    name = "params",
-    testonly = True,
-    srcs = ["params.py"],
-    deps = [
-        "//SDK/lib/API/python/max/driver",
-    ],
-)
+load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 modular_py_test(
     name = "tests_cpu",
@@ -15,7 +6,7 @@ modular_py_test(
     srcs = [
         "__init__.py",
         "conftest.py",
-        "test_tiny_llama_serving_cpu.py",
+        "test_tinyllama_serving_cpu.py",
     ],
     data = [
         "//GenericML:MGPRT",
@@ -33,8 +24,8 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        ":params",
         "//SDK/integration-test/pipelines/python/llama3:evaluate_llama",
+        "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/serve",
         "//SDK/lib/API/python/max/serve/schemas",
         "//SDK/public/max-repo/pipelines/python/llama3",
@@ -49,7 +40,7 @@ modular_py_test(
     srcs = [
         "__init__.py",
         "conftest.py",
-        "test_tiny_llama_serving_gpu.py",
+        "test_smollm_serving_gpu.py",
     ],
     data = [
         "//GenericML:MGPRT",
@@ -70,8 +61,8 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        ":params",
         "//SDK/integration-test/pipelines/python/llama3:evaluate_llama",
+        "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/serve",
         "//SDK/public/max-repo/pipelines/python/llama3",
