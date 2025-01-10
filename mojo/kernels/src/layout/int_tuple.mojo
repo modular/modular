@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from utils.variant import Variant
 from builtin.range import _StridedRange
 from collections import InlineArray
 from memory import UnsafePointer
@@ -98,9 +97,6 @@ struct _IntTupleIter[origin: ImmutableOrigin, tuple_origin: ImmutableOrigin]:
         return len(self.src[]) - self.idx
 
 
-alias IntOrTuple = Variant[Int, IntTuple]
-
-
 struct IntTuple[origin: ImmutableOrigin = __origin_of()](
     CollectionElement,
     Sized,
@@ -117,15 +113,13 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
 
     @staticmethod
     @always_inline
-    fn elements_size(elements: VariadicListMem[IntOrTuple]) -> Int:
+    fn elements_size[
+        origin: ImmutableOrigin
+    ](elements: VariadicListMem[IntTuple[origin]]) -> Int:
         var size = 0
         for v in elements:
-            if v[].isa[Int]():
-                # The size of a single element
-                size += 1
-            else:
-                # the size of the sub tuple plus the element
-                size += v[][IntTuple].size() + 1
+            # the size of the sub tuple plus the element
+            size += v[].size() + 1
         return size
 
     @always_inline
@@ -154,7 +148,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
             self.validate_structure()
 
     @always_inline
-    fn __init__(out self, *elements: IntOrTuple):
+    fn __init__(out self, *elements: IntTuple):
         var size = Self.elements_size(elements) + 1
         self._store = IntArray(size)
         self._store[0] = len(elements)
@@ -236,7 +230,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         return result
 
     @always_inline
-    fn append(mut self, *elements: IntOrTuple):
+    fn append(mut self, *elements: IntTuple):
         if not self._store.owning():
             abort("Can't modify a sub-tuple.")
 
@@ -258,12 +252,9 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
                 storage = Self.__insert(new_store, i, storage, self[i])
 
         for i in range(len(elements)):
-            if elements[i].isa[Int]():
-                new_store[old_len + i + 1] = elements[i][Int]
-            else:
-                storage = Self.__insert(
-                    new_store, i + old_len, storage, elements[i]
-                )
+            storage = Self.__insert(
+                new_store, i + old_len, storage, elements[i]
+            )
 
         # Update store data
         self._store = new_store
@@ -312,20 +303,6 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
     @always_inline
     @staticmethod
     fn __insert(
-        mut store: IntArray, idx: Int, storage: Int, element: IntOrTuple
-    ) -> Int:
-        if element.isa[Int]():
-            var value = element[Int]
-            if value < Self.MinimumValue:
-                abort("Only integers greater than MinimumValue are supported")
-            store[idx + 1] = value
-            return storage
-        else:
-            return Self.__insert(store, idx, storage, element[IntTuple])
-
-    @always_inline
-    @staticmethod
-    fn __insert(
         mut store: IntArray, idx: Int, storage: Int, element: IntTuple
     ) -> Int:
         # Negative offset from current position.
@@ -333,10 +310,6 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         var size = element.size()
         store.copy_from(storage, element._store, size)
         return storage + size
-
-    @always_inline
-    fn __insert(mut self, idx: Int, storage: Int, element: IntOrTuple) -> Int:
-        return Self.__insert(self._store, idx, storage, element)
 
     @always_inline
     fn __insert(mut self, idx: Int, storage: Int, element: IntTuple) -> Int:
