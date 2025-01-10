@@ -310,6 +310,15 @@ struct _TaskGroupBox(CollectionElement):
         while True:
             pass
 
+    @always_inline
+    fn copy(self) -> Self:
+        """Explicitly construct a copy of self.
+
+        Returns:
+            A copy of this value.
+        """
+        return abort[Self]("_TaskGroupBox.copy should never get called")
+
 
 struct TaskGroup:
     var counter: Atomic[DType.index]
