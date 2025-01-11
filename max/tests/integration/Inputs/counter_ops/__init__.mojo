@@ -44,7 +44,7 @@ struct Counter(Movable):
 @register_internal("make_counter_from_tensor")
 fn make_counter(init: NDBuffer[DType.int32, 1]) -> Counter:
     print("making. init:", init[0], init[1])
-    return Counter(int(init[0]), int(init[1]))
+    return Counter(Int(init[0]), Int(init[1]))
 
 
 @register_internal("make_counter")
