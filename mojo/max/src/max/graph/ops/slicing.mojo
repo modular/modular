@@ -191,7 +191,7 @@ def _slice_size(s: Slice, length: Optional[Int64]) -> Optional[Int]:
         return x > 0
 
     if length:
-        start, stop, step = s.indices(int(length.value()))
+        start, stop, step = s.indices(Int(length.value()))
         return len(range(start, stop, step))
     else:
         startval = (s.start or 0).value()
@@ -266,7 +266,7 @@ def slice(
         message = str("got {} slices, tensor only has rank {}")
         raise error(g, message.format(len(slices), t.rank()), loc)
 
-    slice_max = int(Int64.MAX)
+    slice_max = Int(Int64.MAX)
     empty_slice = Slice(start=None, end=None, step=1)
 
     dims = List[Dim]()
@@ -288,7 +288,7 @@ def slice(
         dim = t.dims[i]
 
         start, stop, step = slice.indices(
-            int(dim.num_elements() if dim.is_static() else slice_max)
+            Int(dim.num_elements() if dim.is_static() else slice_max)
         )
         if step < 1:
             raise error(g, "negative slices unsupported")
@@ -318,7 +318,7 @@ def slice(
         # TODO(GEX-578): This should be handled by the slice op builder.
         # It should raise if the slice may load the wrong number of elements.
         # Technically this is based on the last loaded index rather than the end.
-        if length and slice.end and slice.end.value() > int(length.value()):
+        if length and slice.end and slice.end.value() > Int(length.value()):
             raise error(
                 input.graph(),
                 "Calculate slice end for dim="

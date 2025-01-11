@@ -116,7 +116,7 @@ def save[PathLike: PathLike](tensor_dict: TensorDict, path: PathLike):
             _write_int(dtype, f)
             var rank: UInt8 = spec.rank()
             _write_int(rank, f)
-            for d in range(int(rank)):
+            for d in range(Int(rank)):
                 var dim: UInt32 = spec.shape[d]
                 _write_int(dim, f)
 
@@ -206,17 +206,17 @@ def load[PathLike: PathLike](path: PathLike) -> TensorDict:
             var dims = List[Int, hint_trivial_type=True]()
             for _ in range(rank):
                 var d = _read_int[DType.uint32](f)
-                dims.append(int(d))
+                dims.append(Int(d))
             var spec = TensorSpec(DType._from_ui8(dtype.value), dims)
             var tensor_offset = _read_int[DType.uint64](f)
             tensor_offsets.append(tensor_offset)
             keys_and_specs.append(_KeysAndSpecs(key, spec))
             bytes_read += (
                 sizeof[UInt32]()  # Length of key
-                + int(key_size)  # String key
+                + Int(key_size)  # String key
                 + sizeof[UInt8]()  # TensorSpec dtype
                 + sizeof[UInt8]()  # TensorSpec rank
-                + sizeof[UInt32]() * int(rank)  # TensorSpec dims
+                + sizeof[UInt32]() * Int(rank)  # TensorSpec dims
                 + sizeof[UInt64]()  # Tensor Offset
             )
 

@@ -21,7 +21,7 @@ struct BoolAttr(DialectAttribute):
     var value: Bool
 
     fn to_mlir(self) -> Attribute:
-        return _c.BuiltinAttributes.mlirBoolAttrGet(self.ctx.c, int(self.value))
+        return _c.BuiltinAttributes.mlirBoolAttrGet(self.ctx.c, Int(self.value))
 
     @staticmethod
     fn from_mlir(attr: Attribute) raises -> Self:

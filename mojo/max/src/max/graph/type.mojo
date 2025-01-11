@@ -465,7 +465,7 @@ struct TensorType(CollectionElement):
             raise "Unranked tensor types are unsupported!"
 
         var rank = _c.tensor_type_get_rank(t)
-        var dims = List[Dim](capacity=int(rank))
+        var dims = List[Dim](capacity=Int(rank))
         for i in range(rank):
             var dim_attr = _c.tensor_type_get_dim(t, i)
             dims.append(Dim.from_mlir(dim_attr))
