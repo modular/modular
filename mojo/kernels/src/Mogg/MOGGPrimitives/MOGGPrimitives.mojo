@@ -395,7 +395,7 @@ fn unpack_buffer_ref[
         "KGEN_CompilerRT_GetDataFromBuffer",
         UnsafePointer[NoneType],
     ](async_ptr, UnsafePointer.address_of(size))
-    var shape = IndexList[1](int(size))
+    var shape = IndexList[1](Int(size))
     return NDBuffer[DType.uint8, 1](data_ptr.bitcast[UInt8](), shape)
 
 
@@ -442,7 +442,7 @@ fn unpack_tensor_spec[
     ](shape_ptr, spec_rank, async_ptr)
     var shape = IndexList[spec_rank]()
     for i in range(spec_rank):
-        shape[i] = int(shape_ptr[i])
+        shape[i] = Int(shape_ptr[i])
     shape_ptr.free()
     return StaticTensorSpec[spec_rank](shape, DType._from_ui8(raw_dtype.value))
 
@@ -458,7 +458,7 @@ fn unpack_context(
         "KGEN_CompilerRT_GetContextAndSizeFromAsync",
         UnsafePointer[NoneType],
     ](UnsafePointer.address_of(num_slots), async_ptr)
-    return StateContext(int(num_slots), ctx_ptr)
+    return StateContext(Int(num_slots), ctx_ptr)
 
 
 @register_internal("builtin.get_buffer_data")
@@ -565,7 +565,7 @@ fn mgp_buffer_alloc[
     call_ctx: MojoCallContextPtr,
 ) raises -> NDBuffer[DType.int8, 1]:
     # Default to alignment of 0 which means kPreferredMemoryAlignment if cRawAlign is kUnknownSize (SizeUtils.h).
-    alias alignment = 0 if bRawAlign == UInt64.MAX else int(bRawAlign)
+    alias alignment = 0 if bRawAlign == UInt64.MAX else Int(bRawAlign)
     return byte_buffer_alloc[cDevice, alignment=alignment](
         byte_size, dev_context, call_ctx
     )
@@ -600,7 +600,7 @@ fn mgp_buffer_constant_external[
         )
 
     var weight_ptr = weights[][bName]
-    if (int(weight_ptr) % dAlign) != 0:
+    if (Int(weight_ptr) % dAlign) != 0:
         raise Error(
             "invalid alignment for address "
             + str(weight_ptr)
@@ -666,9 +666,9 @@ fn mgp_buffer_to_bool[
 fn mgp_buffer_to_index(buffer: NDBuffer[DType.uint8, 1]) raises -> Int:
     var bufSize = buffer.num_elements()
     if bufSize == 4:
-        return int(buffer.data.bitcast[Int32]()[0])
+        return Int(buffer.data.bitcast[Int32]()[0])
     if bufSize == 8:
-        return int(buffer.data.bitcast[Int64]()[0])
+        return Int(buffer.data.bitcast[Int64]()[0])
 
     raise Error(
         "mgp.buffer.to_index must be called on either a 4- or 8-byte buffer"
@@ -807,7 +807,7 @@ fn mgp_buffer_get_cached(
     var buffer_data: UnsafePointer[NoneType] = external_call[
         "MGP_RT_GetCachedBuffer", UnsafePointer[NoneType]
     ](
-        int(buffer_slot),
+        Int(buffer_slot),
         ctx.ctx_ptr,
         UnsafePointer.address_of(buffer_size),
         storage_ref_addr,
@@ -822,7 +822,7 @@ fn mgp_buffer_get_cached(
 @no_inline
 fn mgp_buffer_remove_cached(ctx: StateContext, buffer_slot: UInt64) -> Int:
     external_call["MGP_RT_RemoveCachedBuffer", NoneType](
-        int(buffer_slot), ctx.ctx_ptr
+        Int(buffer_slot), ctx.ctx_ptr
     )
     return 0
 
@@ -896,7 +896,7 @@ fn mgp_tensor_spec_get_dim[
         axis < spec_rank,
         "axis for get_dim must be less than rank of TensorSpec",
     ]()
-    return spec.shape[int(axis)]
+    return spec.shape[Int(axis)]
 
 
 # ===-----------------------------------------------------------------------===#

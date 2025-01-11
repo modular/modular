@@ -364,7 +364,7 @@ fn reduce_shape_no_explicit_inline[
     axis_buf: NDBuffer[axis_type, 1],
 ) -> IndexList[input_rank]:
     # extract hyper parameter
-    var axis = int(axis_buf[0])
+    var axis = Int(axis_buf[0])
     if axis < 0:
         axis += input_rank
 

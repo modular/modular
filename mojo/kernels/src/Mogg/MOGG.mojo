@@ -633,7 +633,7 @@ fn tensor_to_shape[
 
     @parameter
     for i in range(rank):
-        out[i] = int(tensor[i])
+        out[i] = Int(tensor[i])
 
     return out
 
@@ -994,8 +994,8 @@ fn broadcast_shape_impl[
 
     for lhs_idx in range(lhs_rank):
         var rhs_idx = lhs_idx + size_diff
-        var lhs_dim = int(lhs_buf[lhs_idx])
-        var rhs_dim = int(rhs_buf[rhs_idx])
+        var lhs_dim = Int(lhs_buf[lhs_idx])
+        var rhs_dim = Int(rhs_buf[rhs_idx])
         if lhs_dim == rhs_dim:
             out_buf[rhs_idx] = rhs_buf[rhs_idx].cast[out_type]()
 
@@ -1202,7 +1202,7 @@ fn translate_gather_indices[
     # From a `output_indices` computed from a gather operation using
     # `indices_buffer` and `axis`, find the correponding input indices.
 
-    var normalized_axis = int(normalize_neg_index(axis, input_rank))
+    var normalized_axis = Int(normalize_neg_index(axis, input_rank))
     # out_coords consists of 3 chunks:
     #   out_coords[0:axis] = input coords[0:axis]
     #   out_coords[axis:axis+indices_rank] = indices_coords
@@ -1229,7 +1229,7 @@ fn translate_gather_indices[
     @parameter
     for i in range(input_rank):
         if i == normalized_axis:
-            data_indices[i] = int(
+            data_indices[i] = Int(
                 normalize_neg_index(data_index, input_shape[normalized_axis])
             )
         elif i > normalized_axis:
@@ -1264,7 +1264,7 @@ fn broadcast_to_shape[
     var output_shape = IndexList[output_rank]()
 
     for axis in range(output_rank):
-        output_shape[axis] = int(target_shape_buf[axis])
+        output_shape[axis] = Int(target_shape_buf[axis])
 
     # Validate the compatibility between input and output shapes
     # NOTE we don't need to check the padded dims
@@ -1286,12 +1286,12 @@ fn broadcast_to_shape[
 # `mlir.index` typed so we need to return as `mlir.index` and then cast to int.
 @register_internal("simd_target_cpu")
 fn get_target_simd[type: DType]() -> __mlir_type.index:
-    return int(simdwidthof[type]()).value
+    return Int(simdwidthof[type]()).value
 
 
 @register_internal("simd_target_gpu")
 fn get_target_simd_gpu[type: DType]() -> __mlir_type.index:
-    return int(simdwidthof[Scalar[type], target = _get_gpu_target()]()).value
+    return Int(simdwidthof[Scalar[type], target = _get_gpu_target()]()).value
 
 
 @register_internal("simd_target_to_int")
@@ -1341,9 +1341,9 @@ fn argmax_wrapped[
 
         @parameter
         if is_cpu[target]():
-            _argmax(input, int(axis), output)
+            _argmax(input, Int(axis), output)
         else:
-            var axis = int(normalize_neg_index(axis, rank))
+            var axis = Int(normalize_neg_index(axis, rank))
             if axis != rank - 1:
                 raise Error("axis other than -1 not supported on GPU")
 
@@ -1383,9 +1383,9 @@ fn argmin_wrapped[
 
         @parameter
         if is_cpu[target]():
-            _argmin(input, int(axis), output)
+            _argmin(input, Int(axis), output)
         else:
-            var axis = int(normalize_neg_index(axis, rank))
+            var axis = Int(normalize_neg_index(axis, rank))
             if axis != rank - 1:
                 raise Error("axis other than -1 not supported on GPU")
 
@@ -1437,7 +1437,7 @@ fn concat_from_list[
 ) raises:
     _concat_cpu[input_rank, input_type, None, single_thread_blocking_override](
         output,
-        int(normalize_neg_index(axis, input_rank)),
+        Int(normalize_neg_index(axis, input_rank)),
         inputs,
     )
 
@@ -1465,7 +1465,7 @@ fn concat[
     output: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
 ) raises:
-    var normalized_axis = int(normalize_neg_index(axis, rank))
+    var normalized_axis = Int(normalize_neg_index(axis, rank))
 
     @always_inline
     @parameter
@@ -1507,7 +1507,7 @@ fn concat_shape[
     # 2. either optimize away the conversion from variadic list to
     # InlinedFixedVector, or generalize `concat_from_list_shape` with some List
     # Trait so we can pass in variadic list directly.
-    var axis = int(normalize_neg_index(axis0, input_rank))
+    var axis = Int(normalize_neg_index(axis0, input_rank))
     if axis < 0 or input_rank <= axis:
         raise ("[concat] normalized axis must be within range [0, input_rank)")
 
@@ -1707,7 +1707,7 @@ fn cumsum[
     ctx: MojoCallContextPtr,
 ):
     _cumsum[rank, type, exclusive == 1, reverse == 1](
-        output, input, int(normalize_neg_index(axis, rank))
+        output, input, Int(normalize_neg_index(axis, rank))
     )
 
 
@@ -1733,7 +1733,7 @@ fn split[
 ) raises:
     # NOTE: Synchronous, so stack allocated variadic list is safe
     _split[type, rank](
-        input, int(normalize_neg_index(axis, rank)), variadic_outs
+        input, Int(normalize_neg_index(axis, rank)), variadic_outs
     )
 
 
@@ -1829,7 +1829,7 @@ fn mean[
         output_0_fn[element_alignment=1],
         target=target,
         single_thread_blocking_override=single_thread_blocking_override,
-    ](input_shape, int(axis), output_shape, context=ctx)
+    ](input_shape, Int(axis), output_shape, context=ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1957,7 +1957,7 @@ fn reduce_shape[
         The output shape.
     """
 
-    var axis = int(normalize_neg_index(axis0, input_rank))
+    var axis = Int(normalize_neg_index(axis0, input_rank))
 
     if axis < 0 or input_rank <= axis:
         raise Error(
@@ -2019,7 +2019,7 @@ fn reduce_add[
             reduce_impl,
             target=target,
             single_thread_blocking_override=single_thread_blocking_override,
-        ](input_shape, Scalar[type](0), int(axis), context=ctx)
+        ](input_shape, Scalar[type](0), Int(axis), context=ctx)
 
 
 @register_internal("mo.reduce.max")
@@ -2071,7 +2071,7 @@ fn reduce_max[
             reduce_impl,
             target=target,
             single_thread_blocking_override=single_thread_blocking_override,
-        ](input_shape, Scalar[type].MIN, int(axis), context=ctx)
+        ](input_shape, Scalar[type].MIN, Int(axis), context=ctx)
 
 
 @register_internal("mo.reduce.min")
@@ -2123,7 +2123,7 @@ fn reduce_min[
             reduce_impl,
             target=target,
             single_thread_blocking_override=single_thread_blocking_override,
-        ](input_shape, Scalar[type].MAX, int(axis), context=ctx)
+        ](input_shape, Scalar[type].MAX, Int(axis), context=ctx)
 
 
 @register_internal("mo.reduce.mul")
@@ -2175,7 +2175,7 @@ fn reduce_mul[
             reduce_impl,
             target=target,
             single_thread_blocking_override=single_thread_blocking_override,
-        ](input_shape, Scalar[type](1), int(axis), context=ctx)
+        ](input_shape, Scalar[type](1), Int(axis), context=ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -2244,7 +2244,7 @@ fn slice_dim[
     ctx: MojoCallContextPtr,  # remove (#24946)
 ) -> NDBuffer[type, rank]:
     return slice_dim_as_view[type, rank, dim](
-        tensor, int(start), int(end), int(step)
+        tensor, Int(start), Int(end), Int(step)
     )
 
 
@@ -2280,12 +2280,12 @@ fn calculate_squeeze_shape[
     )
     var input_shape_copy = IndexList[MAX_VECTOR_LIMIT]()
     for i in range(num_input_dims):
-        input_shape_copy[i] = int(input_shape[i])
+        input_shape_copy[i] = Int(input_shape[i])
 
     # Mark every squeezed dimension as -1 in our copy of the shape tensor
     for remove_index_index in range(num_remove_indices):
-        var remove_index = int(remove_indices[remove_index_index])
-        var remove_index_normalize = remove_index + num_input_dims * int(
+        var remove_index = Int(remove_indices[remove_index_index])
+        var remove_index_normalize = remove_index + num_input_dims * Int(
             remove_indices[remove_index_index] < 0
         )
         input_shape_copy[remove_index_normalize] = -1
@@ -2345,8 +2345,8 @@ fn calculate_unsqueeze_shape[
         output_shape[output_index] = -1
 
     for padding_index_index in range(num_padding_indices):
-        var padding_index = int(padding_indices[padding_index_index])
-        var padding_index_normalize = padding_index + final_rank * int(
+        var padding_index = Int(padding_indices[padding_index_index])
+        var padding_index_normalize = padding_index + final_rank * Int(
             padding_indices[padding_index_index] < 0
         )
 
@@ -2412,7 +2412,7 @@ fn transpose[
 
     @parameter
     for i in range(rank):
-        var dim = int(perms[i])
+        var dim = Int(perms[i])
         new_shape[i] = input.dim(dim)
         new_stride[i] = input.stride(dim)
 
@@ -2435,7 +2435,7 @@ fn transpose_shape[
         raise Error("[transpose] permutation size must match input rank")
 
     for i in range(rank):
-        var perm = int(perms[i])
+        var perm = Int(perms[i])
         if perm < 0 or rank <= perm:
             raise Error(
                 "[transpose] each permutation must be within range [0, rank)"
@@ -2694,7 +2694,7 @@ fn scatter[
         input,
         indices,
         updates,
-        int(normalize_neg_index(axis, rank)),
+        Int(normalize_neg_index(axis, rank)),
         output,
     )
 
@@ -2724,7 +2724,7 @@ fn scatter_add[
         input,
         indices,
         updates,
-        int(normalize_neg_index(axis, rank)),
+        Int(normalize_neg_index(axis, rank)),
         output,
     )
 
@@ -2754,7 +2754,7 @@ fn scatter_max[
         input,
         indices,
         updates,
-        int(normalize_neg_index(axis, rank)),
+        Int(normalize_neg_index(axis, rank)),
         output,
     )
 
@@ -2784,7 +2784,7 @@ fn scatter_min[
         input,
         indices,
         updates,
-        int(normalize_neg_index(axis, rank)),
+        Int(normalize_neg_index(axis, rank)),
         output,
     )
 
@@ -2814,7 +2814,7 @@ fn scatter_mul[
         input,
         indices,
         updates,
-        int(normalize_neg_index(axis, rank)),
+        Int(normalize_neg_index(axis, rank)),
         output,
     )
 
@@ -3062,7 +3062,7 @@ fn non_maximum_suppression[
     output: NDBuffer[DType.int64, 2],
     ctx: MojoCallContextPtr,
 ):
-    var max_output_boxes_int = int(max_output_boxes_per_class[0])
+    var max_output_boxes_int = Int(max_output_boxes_per_class[0])
     var iou_threshold_float = iou_threshold[0]
     var score_threshold_float = score_threshold[0]
 
@@ -3087,7 +3087,7 @@ fn non_maximum_suppression_shape_func[
     iou_threshold: NDBuffer[DType.float32, 1, DimList(1)],
     score_threshold: NDBuffer[DType.float32, 1, DimList(1)],
 ) -> IndexList[2]:
-    var max_output_boxes_int = int(max_output_boxes_per_class[0])
+    var max_output_boxes_int = Int(max_output_boxes_per_class[0])
     var iou_threshold_float = iou_threshold[0]
     var score_threshold_float = score_threshold[0]
 
@@ -3122,10 +3122,10 @@ fn random_normal[
     output: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
 ):
-    seed(int(op_seed[0]))
+    seed(Int(op_seed[0]))
     var num_elements = 1
     for i in range(len(shape)):
-        num_elements *= int(shape[i])
+        num_elements *= Int(shape[i])
     randn[type](
         output.data,
         num_elements,
@@ -3147,7 +3147,7 @@ fn static_random_normal[
     output: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
 ):
-    seed(int(op_seed[0]))
+    seed(Int(op_seed[0]))
     var num_elements = output.num_elements()
     randn(
         output.data,
@@ -3167,7 +3167,7 @@ fn random_shape[
     var unrolledShape = IndexList[rank]()
 
     for i in range(rank):
-        unrolledShape[i] = int(shape[i])
+        unrolledShape[i] = Int(shape[i])
     return unrolledShape
 
 
@@ -3228,7 +3228,7 @@ fn resize_nearest_shape[
     var shape = IndexList[rank]()
 
     for i in range(rank):
-        shape[i] = int(size[i])
+        shape[i] = Int(size[i])
     return shape
 
 
@@ -3246,7 +3246,7 @@ fn resize_linear_shape[
     var shape = IndexList[rank]()
 
     for i in range(rank):
-        shape[i] = int(size[i])
+        shape[i] = Int(size[i])
     return shape
 
 
@@ -3272,8 +3272,8 @@ fn roi_align[
         output,
         input,
         rois,
-        int(output_height),
-        int(output_width),
+        Int(output_height),
+        Int(output_width),
         spatial_scale,
         sampling_ratio,
     )
@@ -3297,8 +3297,8 @@ fn roi_align_shape[
     # rois shape is [M, 5]
     # output shape is [M, output_height, output_width, C]
     shape[0] = rois.get_shape()[0]
-    shape[1] = int(output_height[0])
-    shape[2] = int(output_width[0])
+    shape[1] = Int(output_height[0])
+    shape[2] = Int(output_width[0])
     shape[3] = input.get_shape()[3]
 
     return shape
@@ -3328,9 +3328,9 @@ fn split_ith_output_shape[
         raise Error(
             "[split] output index must be within range [0, len(split_sizes))"
         )
-    var output_split_size = int(split_sizes_buf[output_idx])
+    var output_split_size = Int(split_sizes_buf[output_idx])
 
-    var split_axis = int(split_axis_buf[0])
+    var split_axis = Int(split_axis_buf[0])
     if split_axis < 0:
         split_axis += rank
     if split_axis < 0 or rank <= split_axis:
@@ -3339,7 +3339,7 @@ fn split_ith_output_shape[
     var split_sizes_sum = 0
 
     for i in range(split_sizes_buf.dim(0)):
-        split_sizes_sum += int(split_sizes_buf[i])
+        split_sizes_sum += Int(split_sizes_buf[i])
     if split_sizes_sum != input_buf.dim(split_axis):
         raise Error(
             "[split] sum of split sizes must match input dimension at split"
@@ -3416,8 +3416,8 @@ fn conv[
 
     @parameter
     for i in range(input_rank - 2):
-        stride_tuple[i] = int(stride_flat[i])
-        dilation_tuple[i] = int(dilation_flat[i])
+        stride_tuple[i] = Int(stride_flat[i])
+        dilation_tuple[i] = Int(dilation_flat[i])
 
     if dilation_tuple != IndexList[input_rank - 2](1):
         raise Error("Non-unit dilation is not supported yet.")
@@ -3481,7 +3481,7 @@ fn conv[
             pad_d_tuple,
             pad_h_tuple,
             pad_w_tuple,
-            int(num_groups[0]),
+            Int(num_groups[0]),
         )
     else:
         constrained[
@@ -3515,7 +3515,7 @@ fn conv[
             IndexList[2](stride_tuple[0], stride_tuple[1]),
             IndexList[2](dilation_tuple[0], dilation_tuple[1]),
             IndexList[2](pad_h_tuple[0], pad_w_tuple[0]),
-            int(num_groups[0]),
+            Int(num_groups[0]),
             cuda_ctx,
         )
 
@@ -3574,8 +3574,8 @@ fn conv_transpose[
 
     @parameter
     for i in range(input_rank - 2):
-        stride_tuple[i] = int(strides[i])
-        dilation_tuple[i] = int(dilation[i])
+        stride_tuple[i] = Int(strides[i])
+        dilation_tuple[i] = Int(dilation[i])
 
     var pad_d = IndexList[2](0)
     var pad_h = IndexList[2](0)
@@ -3699,8 +3699,8 @@ fn bottom_k[
             ]()
             _top_k[rank, type](
                 input,
-                int(k_buf),
-                int(axis),
+                Int(k_buf),
+                Int(axis),
                 False,
                 rebind[NDBuffer[type, rank]](out_vals),
                 rebind[NDBuffer[DType.int64, rank]](out_idxs),
@@ -3708,7 +3708,7 @@ fn bottom_k[
             )
 
         else:
-            var axis = int(normalize_neg_index(axis, rank))
+            var axis = Int(normalize_neg_index(axis, rank))
             if axis != rank - 1:
                 raise Error("axis other than -1 not supported on GPU")
             if not sorted[0]:
@@ -3726,7 +3726,7 @@ fn bottom_k[
                 largest=False,
             ](
                 cuda_ctx,
-                int(k_buf),
+                Int(k_buf),
                 input,
                 out_vals,
                 out_idxs,
@@ -3761,8 +3761,8 @@ fn top_k[
             ]()
             _top_k[rank, type](
                 input,
-                int(k_buf),
-                int(axis),
+                Int(k_buf),
+                Int(axis),
                 True,
                 rebind[NDBuffer[type, rank]](out_vals),
                 rebind[NDBuffer[DType.int64, rank]](out_idxs),
@@ -3770,7 +3770,7 @@ fn top_k[
             )
 
         else:
-            var axis = int(normalize_neg_index(axis, rank))
+            var axis = Int(normalize_neg_index(axis, rank))
             if axis != rank - 1:
                 raise Error("axis other than -1 not supported on GPU")
             if not sorted[0]:
@@ -3782,7 +3782,7 @@ fn top_k[
             var cuda_ctx = ctx.get_device_context()
             _topk_gpu[type, rank, out_idxs_type, sampling=False, largest=True,](
                 cuda_ctx,
-                int(k_buf),
+                Int(k_buf),
                 input,
                 out_vals,
                 out_idxs,
@@ -4242,12 +4242,12 @@ fn topk_fused_sampling[
 
         @parameter
         if is_cpu[target]():
-            _topk_fused_sampling(int(K), input, out_idxs)
+            _topk_fused_sampling(Int(K), input, out_idxs)
         else:
             var cuda_ctx = ctx.get_device_context()
             _topk_fused_sampling_gpu(
                 cuda_ctx,
-                int(K),
+                Int(K),
                 input,
                 out_idxs,
             )
@@ -4278,7 +4278,7 @@ fn reduce_min_and_max[
     """
 
     alias num_reductions = 2
-    var axis = int(normalize_neg_index(axis0, rank))
+    var axis = Int(normalize_neg_index(axis0, rank))
 
     @always_inline
     @parameter
@@ -4352,7 +4352,7 @@ fn reduce_min_and_max_shape_func[
     axis0: Scalar,
 ) -> IndexList[rank]:
     var new_shape = data.get_shape()
-    var axis = int(normalize_neg_index(axis0, rank))
+    var axis = Int(normalize_neg_index(axis0, rank))
     new_shape[axis] = 2
     return new_shape
 

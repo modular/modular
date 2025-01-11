@@ -601,7 +601,7 @@ fn reduce_shape[
         The output shape.
     """
 
-    var axis = int(normalize_neg_index(axis0, input_rank))
+    var axis = Int(normalize_neg_index(axis0, input_rank))
 
     if axis < 0 or input_rank <= axis:
         raise Error(
@@ -637,9 +637,9 @@ fn split_dim_indices[
 
         @parameter
         if i == axis:
-            out[i] = indices[axis] // int(new_shape_dim)
+            out[i] = indices[axis] // Int(new_shape_dim)
         elif i == axis + 1:
-            out[i] = indices[axis] % int(new_shape_dim)
+            out[i] = indices[axis] % Int(new_shape_dim)
         elif i < axis:
             out[i] = indices[i]
         elif i > axis:
@@ -1525,12 +1525,12 @@ struct SqueezeShape:
         )
         var input_shape_copy = IndexList[MAX_VECTOR_LIMIT]()
         for i in range(num_input_dims):
-            input_shape_copy[i] = int(input_shape[i])
+            input_shape_copy[i] = Int(input_shape[i])
 
         # Mark every squeezed dimension as -1 in our copy of the shape tensor
         for remove_index_index in range(num_remove_indices):
-            var remove_index = int(remove_indices[remove_index_index])
-            var remove_index_normalize = remove_index + num_input_dims * int(
+            var remove_index = Int(remove_indices[remove_index_index])
+            var remove_index_normalize = remove_index + num_input_dims * Int(
                 remove_indices[remove_index_index] < 0
             )
             input_shape_copy[remove_index_normalize] = -1
@@ -1590,8 +1590,8 @@ struct UnsqueezeShape:
             output_shape[output_index] = -1
 
         for padding_index_index in range(num_padding_indices):
-            var padding_index = int(padding_indices[padding_index_index])
-            var padding_index_normalize = padding_index + final_rank * int(
+            var padding_index = Int(padding_indices[padding_index_index])
+            var padding_index_normalize = padding_index + final_rank * Int(
                 padding_indices[padding_index_index] < 0
             )
 
@@ -2021,7 +2021,7 @@ struct Scatter:
             input,
             indices,
             updates,
-            int(normalize_neg_index(scalar_axis, output.rank)),
+            Int(normalize_neg_index(scalar_axis, output.rank)),
             output,
         )
 
@@ -2082,7 +2082,7 @@ struct ScatterAdd:
             input,
             indices,
             updates,
-            int(normalize_neg_index(scalar_axis, output.rank)),
+            Int(normalize_neg_index(scalar_axis, output.rank)),
             output,
         )
 
@@ -2143,7 +2143,7 @@ struct ScatterMax:
             input,
             indices,
             updates,
-            int(normalize_neg_index(scalar_axis, output.rank)),
+            Int(normalize_neg_index(scalar_axis, output.rank)),
             output,
         )
 
@@ -2204,7 +2204,7 @@ struct ScatterMin:
             input,
             indices,
             updates,
-            int(normalize_neg_index(scalar_axis, output.rank)),
+            Int(normalize_neg_index(scalar_axis, output.rank)),
             output,
         )
 
@@ -2266,7 +2266,7 @@ struct ScatterMul:
             input,
             indices,
             updates,
-            int(normalize_neg_index(scalar_axis, output.rank)),
+            Int(normalize_neg_index(scalar_axis, output.rank)),
             output,
         )
 
@@ -2331,7 +2331,7 @@ struct BroadcastTo:
         var output_shape = IndexList[output_rank]()
 
         for axis in range(output_rank):
-            output_shape[axis] = int(shape[axis])
+            output_shape[axis] = Int(shape[axis])
 
         # Validate the compatibility between input and output shapes
         # NOTE we don't need to check the padded dims
@@ -2380,8 +2380,8 @@ struct BroadcastShape:
 
         for lhs_idx in range(lhs_rank):
             var rhs_idx = lhs_idx + size_diff
-            var lhs_dim = int(lhs_buf[lhs_idx])
-            var rhs_dim = int(rhs_buf[rhs_idx])
+            var lhs_dim = Int(lhs_buf[lhs_idx])
+            var rhs_dim = Int(rhs_buf[rhs_idx])
             if lhs_dim == rhs_dim:
                 out_buf[rhs_idx] = rhs_buf[rhs_idx].cast[out_buf.type]()
 
@@ -2621,7 +2621,7 @@ struct Transpose:
 
         @parameter
         for i in range(input.rank):
-            var dim = int(permutations[i])
+            var dim = Int(permutations[i])
             new_shape[i] = input.dim_size(dim)
             new_stride[i] = input.stride_length(dim)
 
@@ -2643,7 +2643,7 @@ struct Transpose:
             if perm.is_dynamic():
                 new_strides[i] = Dim()
             else:
-                new_strides[i] = input_strides.at[int(perm)]()
+                new_strides[i] = input_strides.at[Int(perm)]()
 
         return tuple_to_dimlist(new_strides)
 
@@ -2683,7 +2683,7 @@ struct Transpose:
 
         @parameter
         for i in range(input.rank):
-            var perm = int(permutations[i])
+            var perm = Int(permutations[i])
             if perm < 0 or input.rank <= perm:
                 raise Error(
                     "[transpose] each permutation must be within range [0,"
@@ -2868,9 +2868,9 @@ struct SliceDim:
             managed_tensor_slice_to_ndbuffer_with_spec[
                 compiler.specsof[input.type, input.rank]("input")
             ](input),
-            int(starts),
-            int(stops),
-            int(steps),
+            Int(starts),
+            Int(stops),
+            Int(steps),
         )
         var view_tensor = ManagedTensorSlice[type, rank](
             view_buffer.data,
@@ -2904,7 +2904,7 @@ struct ArgMax:
         axis: ManagedTensorSlice[rank=1],
         ctx: MojoCallContextPtr,
     ) raises:
-        var axis_val = int(normalize_neg_index(axis[0], rank))
+        var axis_val = Int(normalize_neg_index(axis[0], rank))
 
         with Trace[TraceLevel.OP, target=target]("argmax"):
 
@@ -2954,7 +2954,7 @@ struct ArgMin:
         axis: ManagedTensorSlice[rank=1],
         ctx: MojoCallContextPtr,
     ) raises:
-        var axis_val = int(normalize_neg_index(axis[0], rank))
+        var axis_val = Int(normalize_neg_index(axis[0], rank))
 
         with Trace[TraceLevel.OP, target=target]("argmin"):
 
@@ -3057,7 +3057,7 @@ struct Mean:
                 rebind[SIMD[output.type, width]](val),
             )
 
-        var axis_val = int(axis)
+        var axis_val = Int(axis)
 
         mean[
             output.type,
@@ -3109,7 +3109,7 @@ struct ReduceAdd:
                 rebind[SIMD[output.type, width]](val),
             )
 
-        var axis_val = int(axis)
+        var axis_val = Int(axis)
 
         sum[
             output.type,
@@ -3161,7 +3161,7 @@ struct ReduceMul:
                 rebind[SIMD[output.type, width]](val),
             )
 
-        var axis_val = int(axis)
+        var axis_val = Int(axis)
 
         product[
             output.type,
@@ -3213,7 +3213,7 @@ struct ReduceMax:
                 rebind[SIMD[output.type, width]](val),
             )
 
-        var axis_val = int(axis)
+        var axis_val = Int(axis)
 
         reduce_max[
             output.type,
@@ -3265,7 +3265,7 @@ struct ReduceMin:
                 rebind[SIMD[output.type, width]](val),
             )
 
-        var axis_val = int(axis)
+        var axis_val = Int(axis)
 
         reduce_min[
             output.type,
@@ -3306,7 +3306,7 @@ struct ReduceMinMax:
         """
 
         alias num_reductions = 2
-        var axis = int(normalize_neg_index(axis0, rank))
+        var axis = Int(normalize_neg_index(axis0, rank))
 
         @parameter
         @always_inline
@@ -3395,7 +3395,7 @@ struct ReduceMinMax:
     @staticmethod
     fn shape(input: ManagedTensorSlice, axis0: Scalar) -> IndexList[input.rank]:
         var new_shape = input.shape()
-        var axis = int(normalize_neg_index(axis0, input.rank))
+        var axis = Int(normalize_neg_index(axis0, input.rank))
         new_shape[axis] = 2
 
         return new_shape
@@ -4097,8 +4097,8 @@ struct BottomK:
             managed_tensor_slice_to_ndbuffer_with_spec[
                 compiler.specsof[input.type, input.rank]("input")
             ](input),
-            int(k),
-            int(axis),
+            Int(k),
+            Int(axis),
             False,
             managed_tensor_slice_to_ndbuffer_with_spec[
                 compiler.specsof[values.type, values.rank]("values")
@@ -4149,8 +4149,8 @@ struct TopK:
             managed_tensor_slice_to_ndbuffer_with_spec[
                 compiler.specsof[input.type, input.rank]("input")
             ](input),
-            int(k),
-            int(axis),
+            Int(k),
+            Int(axis),
             True,
             managed_tensor_slice_to_ndbuffer_with_spec[
                 compiler.specsof[values.type, values.rank]("values")
@@ -4201,7 +4201,7 @@ struct NonMaximumSupression:
         iou_threshold: Scalar[DType.float32],
         score_threshold: Scalar[DType.float32],
     ):
-        var max_output_boxes_int = int(max_output_boxes_per_class)
+        var max_output_boxes_int = Int(max_output_boxes_per_class)
         var iou_threshold_float = iou_threshold
         var score_threshold_float = score_threshold
 
@@ -4230,7 +4230,7 @@ struct NonMaximumSupression:
         iou_threshold: Scalar[DType.float32],
         score_threshold: Scalar[DType.float32],
     ) -> IndexList[2]:
-        var max_output_boxes_int = int(max_output_boxes_per_class)
+        var max_output_boxes_int = Int(max_output_boxes_per_class)
         var iou_threshold_float = iou_threshold
         var score_threshold_float = score_threshold
 
@@ -4512,7 +4512,7 @@ struct ResizeNearest:
     ) -> IndexList[rank]:
         var shape = IndexList[rank]()
         for i in range(rank):
-            shape[i] = int(size[i])
+            shape[i] = Int(size[i])
 
         return shape
 
@@ -4548,7 +4548,7 @@ struct ResizeLinear:
     ) -> IndexList[rank]:
         var shape = IndexList[rank]()
         for i in range(rank):
-            shape[i] = int(size[i])
+            shape[i] = Int(size[i])
 
         return shape
 
@@ -4584,8 +4584,8 @@ struct ROIAlign:
             managed_tensor_slice_to_ndbuffer_with_spec[
                 compiler.specsof[rois.type, rois.rank]("rois")
             ](rois),
-            int(output_height),
-            int(output_width),
+            Int(output_height),
+            Int(output_width),
             spatial_scale,
             sampling_ratio,
         )
@@ -4604,8 +4604,8 @@ struct ROIAlign:
         # rois shape is [M, 5]
         # output shape is [M, output_height, output_width, C]
         shape[0] = rois.dim_size[0]()
-        shape[1] = int(output_height)
-        shape[2] = int(output_width)
+        shape[1] = Int(output_height)
+        shape[2] = Int(output_width)
         shape[3] = input.dim_size[3]()
 
         return shape
@@ -4670,11 +4670,11 @@ struct RandomNormal:
         variance: Scalar,
         seed_value: Scalar,
     ):
-        seed(int(seed_value))
+        seed(Int(seed_value))
         var num_elements = 1
         # TODO: Add __len__ support in ManagedTensorSlice.
         for i in range(shape.dim_size[0]()):
-            num_elements *= int(shape[i])
+            num_elements *= Int(shape[i])
         randn(
             output._ptr,
             num_elements,
@@ -4688,7 +4688,7 @@ struct RandomNormal:
     ](shape: ManagedTensorSlice[rank=1]) -> IndexList[output_rank]:
         var unrolled_shape = IndexList[output_rank]()
         for i in range(output_rank):
-            unrolled_shape[i] = int(shape[i])
+            unrolled_shape[i] = Int(shape[i])
 
         return unrolled_shape
 
@@ -4704,7 +4704,7 @@ struct StaticRandomNormal:
         variance: Scalar,
         seed_value: Scalar,
     ):
-        seed(int(seed_value))
+        seed(Int(seed_value))
         var num_elements = output.size()
         randn(
             output._ptr,
@@ -4816,7 +4816,7 @@ struct CumSum:
         ](input)
 
         cumsum[rank, type, exclusive, reverse](
-            output_buf, input_buf, int(normalize_neg_index(axis, rank))
+            output_buf, input_buf, Int(normalize_neg_index(axis, rank))
         )
 
 
@@ -4832,7 +4832,7 @@ fn concat_shape_impl[
     inputs: StaticTuple[ManagedTensorSlice[type, rank], size],
 ) raises -> IndexList[rank]:
     var axis_val = axis_buf._ptr.load(0)
-    var axis = int(normalize_neg_index(axis_val, rank))
+    var axis = Int(normalize_neg_index(axis_val, rank))
     if axis < 0 or rank <= axis:
         raise ("[concat] normalized axis must be within range [0, rank)")
 
@@ -4954,7 +4954,7 @@ struct Concat:
             epilogue_wrapper,
             target,
         ](
-            int(normalize_neg_index(axis_val, rank)),
+            Int(normalize_neg_index(axis_val, rank)),
             input_shapes,
             output_buf,
             ctx,
@@ -5030,7 +5030,7 @@ fn concat_from_list_shape_impl[
     inputs: InlinedFixedVector[ManagedTensorSlice[type, rank]],
 ) raises -> IndexList[rank]:
     var axis_val = axis_buf._ptr.load(0)
-    var axis = int(normalize_neg_index(axis_val, rank))
+    var axis = Int(normalize_neg_index(axis_val, rank))
     if axis < 0 or rank <= axis:
         raise ("[concat] normalized axis must be within range [0, rank)")
 
@@ -5090,7 +5090,7 @@ struct ConcatFromList:
 
         _concat_cpu[rank, type, None, synchronous](
             output_buf,
-            int(normalize_neg_index(axis[0], rank)),
+            Int(normalize_neg_index(axis[0], rank)),
             input_as_ndbuffer,
         )
 
@@ -5139,7 +5139,7 @@ struct Split:
             output_bufs[i] = managed_tensor_slice_to_ndbuffer(output[i])
 
         split[type, rank](
-            input_buf, int(normalize_neg_index(axis_val, rank)), output_bufs
+            input_buf, Int(normalize_neg_index(axis_val, rank)), output_bufs
         )
 
 
@@ -5171,9 +5171,9 @@ struct SplitOutputShapeHelper:
                 "[split] output index must be within range [0,"
                 " len(split_sizes))"
             )
-        var output_split_size = int(split_sizes_buf[output_idx])
+        var output_split_size = Int(split_sizes_buf[output_idx])
 
-        var split_axis = int(split_axis_buf[0])
+        var split_axis = Int(split_axis_buf[0])
         if split_axis < 0:
             split_axis += rank
         if split_axis < 0 or rank <= split_axis:
@@ -5184,7 +5184,7 @@ struct SplitOutputShapeHelper:
         var split_sizes_sum = 0
 
         for i in range(split_sizes_buf.dim_size[0]()):
-            split_sizes_sum += int(split_sizes_buf[i])
+            split_sizes_sum += Int(split_sizes_buf[i])
         if split_sizes_sum != input_buf.dim_size(split_axis):
             raise Error(
                 "[split] sum of split sizes must match input dimension at split"
@@ -5262,8 +5262,8 @@ struct Conv:
 
         @parameter
         for i in range(input.rank - 2):
-            stride_tuple[i] = int(strides._ptr[i])
-            dilation_tuple[i] = int(dilation._ptr[i])
+            stride_tuple[i] = Int(strides._ptr[i])
+            dilation_tuple[i] = Int(dilation._ptr[i])
 
         if dilation_tuple != IndexList[input.rank - 2](1):
             raise Error("Non-unit dilation is not supported yet.")
@@ -5327,7 +5327,7 @@ struct Conv:
                 pad_d_tuple,
                 pad_h_tuple,
                 pad_w_tuple,
-                int(num_groups),
+                Int(num_groups),
             )
         else:
             constrained[
@@ -5360,7 +5360,7 @@ struct Conv:
                 IndexList[2](stride_tuple[0], stride_tuple[1]),
                 IndexList[2](dilation_tuple[0], dilation_tuple[1]),
                 IndexList[2](pad_h_tuple[0], pad_w_tuple[0]),
-                int(num_groups),
+                Int(num_groups),
                 cuda_ctx,
             )
 
@@ -5455,8 +5455,8 @@ struct ConvTranspose:
 
         @parameter
         for i in range(input.rank - 2):
-            stride_tuple[i] = int(strides._ptr[i])
-            dilation_tuple[i] = int(dilation._ptr[i])
+            stride_tuple[i] = Int(strides._ptr[i])
+            dilation_tuple[i] = Int(dilation._ptr[i])
 
         var pad_d = IndexList[2](0)
         var pad_h = IndexList[2](0)
@@ -10719,12 +10719,12 @@ struct Struct_topk_fused_sampling:
 
             @parameter
             if is_cpu[target]():
-                _topk_fused_sampling(int(K), input_buf, out_idxs_buf)
+                _topk_fused_sampling(Int(K), input_buf, out_idxs_buf)
             else:
                 var cuda_ctx = ctx.get_device_context()
                 _topk_fused_sampling_gpu(
                     cuda_ctx,
-                    int(K),
+                    Int(K),
                     input_buf,
                     out_idxs_buf,
                 )
