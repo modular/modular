@@ -91,13 +91,13 @@ fn sgemm_warp_tiling_kernel[
     var a_sram = NDBuffer[
         a_type,
         1,
-        DimList(int(BK * BM_padded)),
+        DimList(Int(BK * BM_padded)),
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     var b_sram = NDBuffer[
         b_type,
         1,
-        DimList(int(BK * BN)),
+        DimList(Int(BK * BN)),
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -123,41 +123,41 @@ fn sgemm_warp_tiling_kernel[
     var thread_results = NDBuffer[
         c_type,
         4,
-        DimList(int(WMITER), int(WNITER), int(TM), int(TN)),
+        DimList(Int(WMITER), Int(WNITER), Int(TM), Int(TN)),
     ]().stack_allocation()
     thread_results.zero()
 
     # We cache into registers on the warptile level.
     var reg_m = NDBuffer[
-        a_type, 2, DimList(int(WMITER), int(TM))
+        a_type, 2, DimList(Int(WMITER), Int(TM))
     ]().stack_allocation()
     reg_m.zero()
 
     var reg_n = NDBuffer[
-        b_type, 2, DimList(int(WNITER), int(TN))
+        b_type, 2, DimList(Int(WNITER), Int(TN))
     ]().stack_allocation()
     reg_n.zero()
 
     # Outer-most loop over block tiles.
     for _ in range(0, K, BK):
-        for offset in range(0, int(BM - row_stride_a + 1), int(row_stride_a)):
+        for offset in range(0, Int(BM - row_stride_a + 1), Int(row_stride_a)):
             # Load 4 elements at a time and store to shared memory.
             var tmp = ldg[width=4](
-                aa_ptr.offset(int((inner_row_a + offset) * K + inner_col_a * 4))
+                aa_ptr.offset(Int((inner_row_a + offset) * K + inner_col_a * 4))
             )
 
             @parameter
             for i in range(4):
                 a_sram[
-                    int(
+                    Int(
                         (inner_col_a * 4 + i) * BM_padded + inner_row_a + offset
                     )
                 ] = tmp[i]
 
-        for offset in range(0, int(BK - row_stride_b + 1), int(row_stride_b)):
+        for offset in range(0, Int(BK - row_stride_b + 1), Int(row_stride_b)):
             # Load 4 elements at a time and store to shared memory.
             var tmp = ldg[width=4](
-                bb_ptr.offset(int((inner_row_b + offset) * N + inner_co_ib * 4))
+                bb_ptr.offset(Int((inner_row_b + offset) * N + inner_co_ib * 4))
             )
             b_sram.store[alignment=16](
                 Index((inner_row_b + offset) * BN + inner_co_ib * 4),
@@ -172,9 +172,9 @@ fn sgemm_warp_tiling_kernel[
             for w_sub_row_idx in range(WMITER):
 
                 @parameter
-                for i in range(0, int(TM), 4):
+                for i in range(0, Int(TM), 4):
                     var vec = a_sram.load[width=4, alignment=16](
-                        int(
+                        Int(
                             (dot_idx * BM_padded)
                             + warp_row * WM
                             + w_sub_row_idx * w_sub_m
@@ -188,9 +188,9 @@ fn sgemm_warp_tiling_kernel[
             for w_sub_col_idx in range(WNITER):
 
                 @parameter
-                for i in range(0, int(TN), 4):
+                for i in range(0, Int(TN), 4):
                     var vec = b_sram.load[width=4, alignment=16](
-                        int(
+                        Int(
                             (dot_idx * BN)
                             + warp_col * WN
                             + w_sub_col_idx * w_sub_n
@@ -222,8 +222,8 @@ fn sgemm_warp_tiling_kernel[
                                 reg_m[w_sub_row_idx, res_idx_m].cast[c_type]()
                                 * reg_n[w_sub_col_idx, res_idx_n].cast[c_type]()
                             )
-        aa_ptr = aa_ptr.offset(int(BK))  # move BK columns to right
-        bb_ptr = bb_ptr.offset(int(BK * N))  # move BK rows down
+        aa_ptr = aa_ptr.offset(Int(BK))  # move BK columns to right
+        bb_ptr = bb_ptr.offset(Int(BK * N))  # move BK rows down
         barrier()
 
     # Write out the results.
@@ -236,14 +236,14 @@ fn sgemm_warp_tiling_kernel[
             var M_offset_subtile = w_sub_row_idx * w_sub_m
             var N_offset_subtile = w_sub_col_idx * w_sub_n
             var C_interim = cc_ptr.offset(
-                int((M_offset_subtile) * N + N_offset_subtile)
+                Int((M_offset_subtile) * N + N_offset_subtile)
             )
 
             @parameter
             for res_idx_m in range(TM):
 
                 @parameter
-                for res_idx_n in range(0, int(TN), 4):
+                for res_idx_n in range(0, Int(TN), 4):
                     var M_offset_val = thread_row_in_warp * TM + res_idx_m
                     var N_offset_val = thread_col_in_warp * TN + res_idx_n
                     var c_idx = M_offset_val * N + N_offset_val
@@ -258,7 +258,7 @@ fn sgemm_warp_tiling_kernel[
 
                     var vec = alpha * result_vec + beta * C_interim.load[
                         width=4, alignment=16
-                    ](int(c_idx))
+                    ](Int(c_idx))
 
                     @parameter
                     if elementwise_lambda_fn:
@@ -271,7 +271,7 @@ fn sgemm_warp_tiling_kernel[
                             vec,
                         )
                     else:
-                        C_interim.store[alignment=16](int(c_idx), vec)
+                        C_interim.store[alignment=16](Int(c_idx), vec)
 
 
 fn matmul_naive(

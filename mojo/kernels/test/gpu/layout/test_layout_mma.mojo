@@ -63,16 +63,16 @@ fn matmul_naive[
     var x = GlobalIdx.x
     var y = GlobalIdx.y
 
-    if int(x) >= mat_c.shape[0]() or int(y) >= mat_c.shape[1]():
+    if Int(x) >= mat_c.shape[0]() or Int(y) >= mat_c.shape[1]():
         return
 
-    var accum = mat_c[int(x), int(y)]
+    var accum = mat_c[Int(x), Int(y)]
     for i in range(mat_a.shape[1]()):
         accum += (
-            mat_a[int(x), i].cast[out_type]()
-            * mat_b[i, int(y)].cast[out_type]()
+            mat_a[Int(x), i].cast[out_type]()
+            * mat_b[i, Int(y)].cast[out_type]()
         )
-    mat_c[int(x), int(y)] = accum
+    mat_c[Int(x), Int(y)] = accum
 
 
 fn test_layout_mma[

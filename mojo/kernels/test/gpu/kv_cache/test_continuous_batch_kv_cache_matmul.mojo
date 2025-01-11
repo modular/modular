@@ -188,7 +188,7 @@ def execute_fused_qkv_matmul[
     var block_idx_set = Set[Int]()
     var idx = 0
     while len(block_idx_set) < batch_size:
-        var randval = int(random_ui64(0, num_blocks - 1))
+        var randval = Int(random_ui64(0, num_blocks - 1))
         if randval in block_idx_set:
             continue
         block_idx_set.add(randval)
@@ -312,7 +312,7 @@ def execute_fused_matmul_suite(ctx: DeviceContext):
             ce_cache_sizes = List[Int]()
             tg_cache_sizes = List[Int]()
             for _ in range(bs):
-                tg_cache_sizes.append(int(random_ui64(0, 100)))
+                tg_cache_sizes.append(Int(random_ui64(0, 100)))
                 ce_cache_sizes.append(0)
 
             # llama3 context encoding

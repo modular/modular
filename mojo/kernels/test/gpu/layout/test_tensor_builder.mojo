@@ -23,7 +23,7 @@ fn print_tensor_info[gpu: Bool = False](tensor: LayoutTensor):
     if not gpu:
         print("layout: ", tensor.layout)
     print("runtime_layout: ", tensor.runtime_layout)
-    print("address_space: ", int(tensor.address_space))
+    print("address_space: ", Int(tensor.address_space))
     print("values:")
     print(tensor)
     print("---tensor-end---")

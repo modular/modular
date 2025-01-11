@@ -84,7 +84,7 @@ def _initialize_ragged_inputs[
     # Don't worry about padded values, we won't read them.
     for bs in range(batch_size):
         unpadded_seq_len = prompt_lens[bs]
-        ragged_start_idx = int(input_row_offsets_host.tensor[bs])
+        ragged_start_idx = Int(input_row_offsets_host.tensor[bs])
         for s in range(unpadded_seq_len):
             padded_ptr = hidden_state_padded_host.tensor._offset(
                 (bs * max_seq_length_batch + s, 0)
@@ -210,7 +210,7 @@ def execute_matmul_kv_cache_ragged[
     block_idx_set = Set[Int]()
     idx = 0
     while idx < batch_size:
-        randval = int(random_ui64(0, num_blocks - 1))
+        randval = Int(random_ui64(0, num_blocks - 1))
         if randval in block_idx_set:
             continue
 
@@ -616,9 +616,9 @@ def execute_paged_fused_qkv_matmul[
         seq_len = cache_sizes[bs] + prompt_lens[bs]
 
         for block_idx in range(0, ceildiv(seq_len, block_size)):
-            var randval = int(random_ui64(0, num_paged_blocks - 1))
+            var randval = Int(random_ui64(0, num_paged_blocks - 1))
             while randval in paged_lut_set:
-                randval = int(random_ui64(0, num_paged_blocks - 1))
+                randval = Int(random_ui64(0, num_paged_blocks - 1))
 
             paged_lut_set.add(randval)
             paged_lut_host.tensor[bs, block_idx] = randval
@@ -762,7 +762,7 @@ def execute_cont_batch_fused_qkv_matmul[
     var block_idx_set = Set[Int]()
     var idx = 0
     while idx < batch_size:
-        var randval = int(random_ui64(0, num_blocks - 1))
+        var randval = Int(random_ui64(0, num_blocks - 1))
         if randval in block_idx_set:
             continue
 
@@ -859,8 +859,8 @@ def execute_fused_matmul_suite(ctx: DeviceContext):
             for _ in range(bs):
                 tg_seq_lens.append(1)
                 # TODO increase sizes here to ensure we cross page boundary.
-                tg_cache_sizes.append(int(random_ui64(512, 700)))
-                ce_seq_lens.append(int(random_ui64(512, 700)))
+                tg_cache_sizes.append(Int(random_ui64(512, 700)))
+                ce_seq_lens.append(Int(random_ui64(512, 700)))
                 ce_cache_sizes.append(0)
 
             # llama3 context encoding

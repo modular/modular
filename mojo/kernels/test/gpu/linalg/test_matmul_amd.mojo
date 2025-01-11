@@ -100,7 +100,7 @@ fn test[
     k: ValOrDim,
 ) raises:
     constrained[
-        int(n.dim) > 0 and int(k.dim) > 0,
+        Int(n.dim) > 0 and Int(k.dim) > 0,
         "This test currently requires static N and K.",
     ]()
 

@@ -93,10 +93,10 @@ struct BackToBackMatmulConfig[
         ) * sizeof[src_type]()
 
     fn grid_dim(self, M: UInt) -> IndexList[3]:
-        return Index(1, int(ceildiv(M, self.block_tile_shape[0])), 1)
+        return Index(1, Int(ceildiv(M, self.block_tile_shape[0])), 1)
 
     fn block_dim(self) -> IndexList[3]:
-        return Index(int(self.num_threads()), 1, 1)
+        return Index(Int(self.num_threads()), 1, 1)
 
     fn __init__(
         mut self,
@@ -219,9 +219,9 @@ fn b2b_gemm[
     # NOTE: the condition ( not (N // BN & 1)) is for a temporary solution
     # for solving mismatches in some shapes
     var block_idx = block_swizzle(
-        (int(BlockIdx.x), int(BlockIdx.y)),
-        (int(GridDim.x), int(GridDim.y)),
-    ) if swizzle_block else Index(int(BlockIdx.x), int(BlockIdx.y))
+        (Int(BlockIdx.x), Int(BlockIdx.y)),
+        (Int(GridDim.x), Int(GridDim.y)),
+    ) if swizzle_block else Index(Int(BlockIdx.x), Int(BlockIdx.y))
 
     # Coordinates of the current warp.
     warp_y, warp_x = divmod(warp_id, num_warps_n)
@@ -429,7 +429,7 @@ fn b2b_gemm[
     # Map global memory tile down to thread.
     # we should have block_idx[0] == 0
     var d_gmem_tile = D.tile[BM, BN](block_idx[1], 0)
-    var d_gmem_warp_tile = d_gmem_tile.tile[WM, WN](int(warp_y), int(warp_x))
+    var d_gmem_warp_tile = d_gmem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
 
     var ln_id = lane_id()
     # d_reg_tile = ab_reg_tile
@@ -505,8 +505,8 @@ fn b2b_gemm[
                 else:
                     dst_idx = d_gmem_frag.runtime_layout(i)
 
-                var m = int((thread_offset + dst_idx) // N)
-                var n = int((thread_offset + dst_idx) % N)
+                var m = Int((thread_offset + dst_idx) // N)
+                var n = Int((thread_offset + dst_idx) % N)
                 if m < M and n < N:
                     epilogue(
                         (m, n),
@@ -549,8 +549,8 @@ fn b2b_gemm[
                 else:
                     dst_idx = d_gmem_frag.runtime_layout(i)
 
-                var m = int((thread_offset + dst_idx) // N)
-                var n = int((thread_offset + dst_idx) % N)
+                var m = Int((thread_offset + dst_idx) // N)
+                var n = Int((thread_offset + dst_idx) % N)
                 if m < M and n < N:
                     var vec = d_reg_frag.ptr.offset(src_idx).load[
                         width=2, alignment = alignof[SIMD[d_type, 2]]()
@@ -600,7 +600,7 @@ fn multistage_b2b_gemm[
         var smem_use: Int = config.shared_mem_usage(size(A.layout.shape[1]))
         print("smem_use =", smem_use)
         var kernel = ctx.compile_function[b2b_fn](
-            threads_per_block=int(config.num_threads()),
+            threads_per_block=Int(config.num_threads()),
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 smem_use
             ),
@@ -612,7 +612,7 @@ fn multistage_b2b_gemm[
             B,
             C,
             grid_dim=config.grid_dim(
-                int(runtime_tuple.to_int(D.runtime_layout.shape[0]))
+                Int(runtime_tuple.to_int(D.runtime_layout.shape[0]))
             ),
             block_dim=config.block_dim(),
             shared_mem_bytes=smem_use,

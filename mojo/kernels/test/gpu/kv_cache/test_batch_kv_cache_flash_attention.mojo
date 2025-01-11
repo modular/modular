@@ -322,9 +322,9 @@ def execute_flash_attention[
 
             ref_out = ref_output_host.tensor
             test_out = test_output_host.tensor
-            for bs in range(int(batch_size)):
-                for s in range(int(valid_length[bs])):
-                    for h in range(int(num_q_heads)):
+            for bs in range(Int(batch_size)):
+                for s in range(Int(valid_length[bs])):
+                    for h in range(Int(num_q_heads)):
                         for hd in range(kv_params.head_size):
                             assert_almost_equal(
                                 ref_out[bs, s, h, hd],

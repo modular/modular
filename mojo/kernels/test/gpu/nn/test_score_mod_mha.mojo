@@ -73,7 +73,7 @@ def execute_flash_attention[
         + ")",
     )
 
-    var max_cache_valid_length = int(
+    var max_cache_valid_length = Int(
         max(Buffer[DType.uint32](cache_valid_length.data, batch_size))
     )
 
@@ -356,8 +356,8 @@ def execute_flash_attention[
         for s in range(valid_length[bs]):
             for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):
-                    var expect = ref_out[Index(bs, s, int(h), int(hd))]
-                    var actual = test_out[Index(bs, s, int(h), int(hd))]
+                    var expect = ref_out[Index(bs, s, Int(h), Int(hd))]
+                    var actual = test_out[Index(bs, s, Int(h), Int(hd))]
                     assert_almost_equal(
                         expect,
                         actual,

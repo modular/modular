@@ -27,7 +27,7 @@ fn _pretty_print_float(val: Float64) -> String:
     if not needed (e.g. prints 2 instead of 2.0).
     """
     if Float64(floor(val)) == val:
-        return str(int(val))
+        return str(Int(val))
     return str(val)
 
 

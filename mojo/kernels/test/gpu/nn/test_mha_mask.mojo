@@ -67,7 +67,7 @@ def test_causal_mask_asm():
         var mask = CausalMask()
         var vec = mask.mask(
             IndexList[4, element_bitwidth=32, unsigned=True](
-                0, 0, int(q_idx), int(k_idx)
+                0, 0, Int(q_idx), Int(k_idx)
             ),
             SIMD[DType.float32, 4](0),
         )

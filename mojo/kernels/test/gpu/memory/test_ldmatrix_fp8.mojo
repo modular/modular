@@ -55,11 +55,11 @@ fn test_ldmatrix_fp8[
     barrier()
 
     var a_reg = ld_matrix[a_frag_size](
-        a_shared + int((lane_id() % 16) * 32 + (lane_id() // 16) * 16)
+        a_shared + Int((lane_id() % 16) * 32 + (lane_id() // 16) * 16)
     )
 
     var b_reg = ld_matrix[b_frag_size](
-        b_shared + int((lane_id() % 8) * 32 + (lane_id() // 8) * 16)
+        b_shared + Int((lane_id() % 8) * 32 + (lane_id() // 8) * 16)
     )
 
     mma(d, a_reg, b_reg, d)

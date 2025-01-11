@@ -59,7 +59,7 @@ def execute_flash_attention[
         + ")",
     )
 
-    var max_cache_valid_length = int(
+    var max_cache_valid_length = Int(
         max(Buffer[DType.uint32](cache_valid_length.data, batch_size))
     )
 
@@ -213,7 +213,7 @@ def execute_flash_attention[
     var block_idx_set = Set[Int]()
     var idx = 0
     while len(block_idx_set) < batch_size:
-        var randval = int(random_ui64(0, num_blocks - 1))
+        var randval = Int(random_ui64(0, num_blocks - 1))
         if randval in block_idx_set:
             continue
         block_idx_set.add(randval)
@@ -298,9 +298,9 @@ def execute_flash_attention[
 
     ref_out = ref_output_host.tensor
     test_out = test_output_host.tensor
-    for bs in range(int(batch_size)):
-        for s in range(int(valid_length[bs])):
-            for h in range(int(num_q_heads)):
+    for bs in range(Int(batch_size)):
+        for s in range(Int(valid_length[bs])):
+            for h in range(Int(num_q_heads)):
                 for hd in range(kv_params.head_size):
                     assert_almost_equal(
                         ref_out[bs, s, h, hd],

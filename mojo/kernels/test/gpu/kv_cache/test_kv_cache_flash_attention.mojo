@@ -141,8 +141,8 @@ def execute_flash_attention[
             num_layers,
             batch_size,
             max_seq_len,
-            int(kv_params.num_heads),
-            int(kv_params.head_size),
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         ),
     )
     random(k_block_host.tensor)
@@ -153,8 +153,8 @@ def execute_flash_attention[
             num_layers,
             batch_size,
             max_seq_len,
-            int(kv_params.num_heads),
-            int(kv_params.head_size),
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         ),
     )
     random(v_block_host.tensor)
@@ -197,8 +197,8 @@ def execute_flash_attention[
     var kv_4d_shape = Index(
         batch_size,
         cache_size + prompt_len,
-        int(kv_params.num_heads),
-        int(kv_params.head_size),
+        Int(kv_params.num_heads),
+        Int(kv_params.head_size),
     )
     var k_4dbuffer = NDBuffer[type, 4](k_block_device.buffer.ptr, kv_4d_shape)
     var v_4dbuffer = NDBuffer[type, 4](v_block_device.buffer.ptr, kv_4d_shape)

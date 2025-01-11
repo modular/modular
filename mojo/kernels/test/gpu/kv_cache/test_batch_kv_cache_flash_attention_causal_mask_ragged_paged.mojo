@@ -145,7 +145,7 @@ def execute_ragged_flash_attention[
     var block_idx_set = Set[Int]()
     var idx = 0
     while idx < batch_size:
-        var randval = int(random_ui64(0, num_continuous_blocks - 1))
+        var randval = Int(random_ui64(0, num_continuous_blocks - 1))
         if randval in block_idx_set:
             continue
 
@@ -189,12 +189,12 @@ def execute_ragged_flash_attention[
     paged_lut_set = Set[Int]()
     for bs in range(batch_size):
         seq_len = cache_lengths[bs] + valid_lengths[bs]
-        continuous_idx = int(lookup_table_continuous_host.tensor[bs])
+        continuous_idx = Int(lookup_table_continuous_host.tensor[bs])
 
         for block_idx in range(0, ceildiv(seq_len, block_size)):
-            var randval = int(random_ui64(0, num_paged_blocks - 1))
+            var randval = Int(random_ui64(0, num_paged_blocks - 1))
             while randval in paged_lut_set:
-                randval = int(random_ui64(0, num_paged_blocks - 1))
+                randval = Int(random_ui64(0, num_paged_blocks - 1))
 
             paged_lut_set.add(randval)
             paged_lut_host.tensor[bs, block_idx] = randval
@@ -280,7 +280,7 @@ def execute_ragged_flash_attention[
     test_out = test_output_host.tensor
     for bs in range(batch_size):
         prompt_len = valid_lengths[bs]
-        ragged_offset = int(input_row_offsets_host.tensor[bs])
+        ragged_offset = Int(input_row_offsets_host.tensor[bs])
         for s in range(prompt_len):
             for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):
@@ -337,8 +337,8 @@ def execute_flash_attention_suite(ctx: DeviceContext):
             tg_seq_lens = List[Int]()
             for _ in range(bs):
                 tg_seq_lens.append(1)
-                tg_cache_sizes.append(int(random_ui64(512, 1024)))
-                ce_seq_lens.append(int(random_ui64(512, 1024)))
+                tg_cache_sizes.append(Int(random_ui64(512, 1024)))
+                ce_seq_lens.append(Int(random_ui64(512, 1024)))
                 ce_cache_sizes.append(0)
 
             print("CE", bs, type)

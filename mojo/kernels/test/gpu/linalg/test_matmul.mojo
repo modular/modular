@@ -94,7 +94,7 @@ fn test[
     threshold: OptionalReg[Float64] = None,
 ) raises:
     constrained[
-        int(n.dim) > 0 and int(k.dim) > 0,
+        Int(n.dim) > 0 and Int(k.dim) > 0,
         "This test currently requires static N and K.",
     ]()
 
@@ -243,7 +243,7 @@ fn test[
     @parameter
     if lambda_fn:
         elementwise[func, pack_size, target="gpu"](
-            IndexList[2](M, int(N)),
+            IndexList[2](M, Int(N)),
             ctx,
         )
     ctx.synchronize()
