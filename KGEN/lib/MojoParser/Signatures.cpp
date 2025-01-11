@@ -1380,8 +1380,8 @@ static void typeCheckOneArgument(size_t idx, bool isDef, bool isStaticMethod,
   // argument.  If we're generating this argument for a function, put it into
   // its entry block. Otherwise it is a function type: We allocate the argument
   // into a holding block owned by SharedState so it isn't leaked.
-  Block &blockOwningArg = fnDecl ? *cast<LIT::FuncOp>(fnDecl).getBody()
-                                 : shared.getArgumentOwningBlock();
+  Block &blockOwningArg =
+      fnDecl ? *cast<FnOp>(fnDecl).getBody() : shared.getArgumentOwningBlock();
   BlockArgument bbArg =
       blockOwningArg.addArgument(fullType, shared.translateLocation(arg.loc));
 
@@ -1560,10 +1560,10 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
         errArg, 0, errorType, /*isMutable*/ true, tcSignature);
     tcSignature.fullArgTypes.push_back(refType);
 
-    // If this is for a lit.func declaration (as opposed to a function type),
+    // If this is for a lit.fn declaration (as opposed to a function type),
     // add a block argument for this.
     if (fnDecl) {
-      Block &body = *cast<LIT::FuncOp>(fnDecl).getBody();
+      Block &body = *cast<FnOp>(fnDecl).getBody();
       (void)body.addArgument(refType, shared.translateLocation(resultArg.loc));
     }
 
@@ -1594,12 +1594,12 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
         resultArg, 0, resultType, /*isMutable*/ true, tcSignature);
     tcSignature.fullArgTypes.push_back(refType);
 
-    // If this is for a lit.func declaration (as opposed to a function type),
+    // If this is for a lit.fn declaration (as opposed to a function type),
     // add a block argument for this.  We don't register this for name lookup
     // though, we don't want it to conflict with user identifiers, and it is
     // never looked up directly.
     if (fnDecl) {
-      Block &body = *cast<LIT::FuncOp>(fnDecl).getBody();
+      Block &body = *cast<FnOp>(fnDecl).getBody();
       auto bbArg =
           body.addArgument(refType, shared.translateLocation(resultArg.loc));
 
@@ -1707,7 +1707,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
 
   // __new__ and __init__ are implicitly static.
   if (fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod)
-    cast<LIT::FuncOp>(fnDecl).setIsStatic(true);
+    cast<FnOp>(fnDecl).setIsStatic(true);
 
   // Trivial types are copyable with memcpy so they can't define copyinit.
   if (fnInfo.kind == SpecialFunctionKind::kDel &&
@@ -1725,7 +1725,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
   // It isn't clear if this is actually that bad, maybe we should just say that
   // first arguments in methods default to Self it they don't have type.  This
   // could be true for static methods as well.
-  bool isStaticMethod = selfType && cast<LIT::FuncOp>(fnDecl).getIsStatic();
+  bool isStaticMethod = selfType && cast<FnOp>(fnDecl).getIsStatic();
 
   // Resolve all argument types, generating type check error types for any types
   // that could not be correctly resolved.
@@ -1758,7 +1758,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
 /// resets the SpecialFunctionInfo.
 void TypeCheckedFnSignature::verifyFunctionNameBinding(
     ASTDecl &decl, StringAttr name, SpecialFunctionInfo &fnInfo) const {
-  LIT::FuncOp funcOp = cast<LIT::FuncOp>(decl);
+  FnOp funcOp = cast<FnOp>(decl);
 
   ArrayRef<ParsedArgument> parsedArgs = argList.parsedArgs;
   ArrayRef<Type> argTypes = this->argTypes;

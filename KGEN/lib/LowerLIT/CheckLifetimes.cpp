@@ -32,18 +32,17 @@ using llvm::BitVector;
 static constexpr StringRef extraOriginUsesAttrName = ".mojo.extra.origin.uses";
 
 /// Find all the functions and types in the module.
-static std::tuple<std::vector<LIT::FuncOp>,
-                  DenseMap<SymbolRefAttr, LIT::FuncOp>,
+static std::tuple<std::vector<FnOp>, DenseMap<SymbolRefAttr, FnOp>,
                   DenseMap<SymbolRefAttr, LIT::StructDeclOp>,
                   DenseMap<SymbolRefAttr, LIT::TraitDeclOp>>
 collectFunctionsAndTypes(Operation *module) {
-  std::vector<LIT::FuncOp> funcList;
-  DenseMap<SymbolRefAttr, LIT::FuncOp> funcMap;
+  std::vector<FnOp> funcList;
+  DenseMap<SymbolRefAttr, FnOp> funcMap;
   DenseMap<SymbolRefAttr, LIT::StructDeclOp> structMap;
   DenseMap<SymbolRefAttr, LIT::TraitDeclOp> traitMap;
   module->walk([&](Operation *op) {
     // Collect functions and nested functions.
-    if (auto funcOp = dyn_cast<LIT::FuncOp>(op)) {
+    if (auto funcOp = dyn_cast<FnOp>(op)) {
       if (!funcOp.isOptionalSymbol())
         funcMap[getFullyResolvedSymbolRef(funcOp)] = funcOp;
 
@@ -96,8 +95,8 @@ createDebugVariableForVarDecl(VarDeclOp op,
 /// `funcSpAttr` is the DISubprogramAttr of the surrounding function `func`.
 /// Returns the VarInfo of the inserted ValueOp.
 static DebugInfo::DILocalVariableAttr
-insertDebugVariableForArg(OpBuilder &builder, LIT::FuncOp func,
-                          BlockArgument arg, ArrayRef<PogMetadataAttr> pogList,
+insertDebugVariableForArg(OpBuilder &builder, FnOp func, BlockArgument arg,
+                          ArrayRef<PogMetadataAttr> pogList,
                           DebugInfo::DISubprogramAttr funcSpAttr) {
   // Skip synthesized args.
   if (arg.getArgNumber() >= pogList.size())
@@ -154,7 +153,7 @@ insertDebugVariableForArg(OpBuilder &builder, LIT::FuncOp func,
 /// struct.
 struct TypeDeclInfo {
   TypeDeclInfo(DenseMap<SymbolRefAttr, LIT::StructDeclOp> &&structMap,
-               DenseMap<SymbolRefAttr, LIT::FuncOp> &&funcMap,
+               DenseMap<SymbolRefAttr, FnOp> &&funcMap,
                DenseMap<SymbolRefAttr, LIT::TraitDeclOp> &&traitMap)
       : structMap(std::move(structMap)), funcMap(std::move(funcMap)),
         traitMap(std::move(traitMap)) {}
@@ -201,9 +200,9 @@ struct TypeDeclInfo {
   StringAttr getLinearTypeErrorMsg(Type type) const;
 
   /// Return the function for a given symbol name if known.
-  LIT::FuncOp getFuncForSymbol(SymbolRefAttr symbolRef) const {
+  FnOp getFuncForSymbol(SymbolRefAttr symbolRef) const {
     auto it = funcMap.find(symbolRef);
-    return it != funcMap.end() ? it->second : LIT::FuncOp();
+    return it != funcMap.end() ? it->second : FnOp();
   }
 
   /// The next anonymous origin number to use in this function.
@@ -211,7 +210,7 @@ struct TypeDeclInfo {
 
 private:
   DenseMap<SymbolRefAttr, StructDeclOp> structMap;
-  DenseMap<SymbolRefAttr, LIT::FuncOp> funcMap;
+  DenseMap<SymbolRefAttr, FnOp> funcMap;
   DenseMap<SymbolRefAttr, TraitDeclOp> traitMap;
 
   /// This keeps track of the number of fields in the struct specified by the
@@ -561,7 +560,7 @@ struct ValueSet {
   ///
   /// This sentinel is also used by DestructorInsertion as a marker for
   /// "unreachable" code to avoid unnecessary meets.
-  ValueSet(TypeDeclInfo &typeDeclInfo, LIT::FuncOp func,
+  ValueSet(TypeDeclInfo &typeDeclInfo, FnOp func,
            CachedOriginFinder &originFinder);
 
   /// Return the number of values we are tracking.
@@ -627,7 +626,7 @@ struct ValueSet {
 
 private:
   /// This is the function we're analyzing.
-  LIT::FuncOp func;
+  FnOp func;
   /// These are all of the value infos, indexed by ID #.
   SmallVector<ValueInfo> valueInfos;
   /// This is a lookup from SSA values to the thing they are referencing.
@@ -650,7 +649,7 @@ private:
 ///
 /// This sentinel is also used by DestructorInsertion as a marker for
 /// "unreachable" code to avoid unnecessary meets.
-ValueSet::ValueSet(TypeDeclInfo &typeDeclInfo, LIT::FuncOp func,
+ValueSet::ValueSet(TypeDeclInfo &typeDeclInfo, FnOp func,
                    CachedOriginFinder &originFinder)
     : typeDeclInfo(typeDeclInfo), originFinder(originFinder), func(func) {
   addValue(Value(), OriginTrackable(Value()), DebugInfo::DILocalVariableAttr());
@@ -667,7 +666,7 @@ ValueSet::ValueSet(TypeDeclInfo &typeDeclInfo, LIT::FuncOp func,
       [&](Operation *op) -> WalkResult {
         // Skip looking at nested functions, they are handled as separate
         // contexts.
-        if (isa<LIT::FuncOp>(op))
+        if (isa<FnOp>(op))
           return WalkResult::skip();
 
         // All the ops that define trackable values have a single result.
@@ -775,7 +774,7 @@ raw_ostream &ValueSet::printBV(const BitVector &bv, raw_ostream &os) const {
 }
 
 void ValueSet::printFuncName(raw_ostream &os) const {
-  if (auto funcOp = dyn_cast<LIT::FuncOp>(func))
+  if (auto funcOp = dyn_cast<FnOp>(func))
     os << "'" << funcOp.getName() << "'";
   else
     os << "(non func)";
@@ -823,8 +822,7 @@ void ValueSet::dump() const {
 
     // If this is a function argument, be nice and include the name.
     if (auto bbArg = dyn_cast<BlockArgument>(info.value)) {
-      if (auto fn =
-              dyn_cast_or_null<LIT::FuncOp>(bbArg.getOwner()->getParentOp()))
+      if (auto fn = dyn_cast_or_null<FnOp>(bbArg.getOwner()->getParentOp()))
         os << fn.getSignatureGenerator().getArgName(bbArg.getArgNumber())
            << " ";
     }
@@ -1008,7 +1006,7 @@ struct UninitializedValueScan {
   UninitializedValueScan(ValueSet &valueSet) : valueSet(valueSet) {}
   UninitializedValueScan(const UninitializedValueScan &existing) = delete;
 
-  void scanFunction(LIT::FuncOp func);
+  void scanFunction(FnOp func);
   void scanBlock(Block &body);
 
   LLVM_DUMP_METHOD void dump() const;
@@ -1393,7 +1391,7 @@ void UninitializedValueScan::handleAnyOriginUse(
              mlir::DenseI32ArrayAttr::get(op.getContext(), valueIdsToExtend));
 }
 
-void UninitializedValueScan::scanFunction(LIT::FuncOp func) {
+void UninitializedValueScan::scanFunction(FnOp func) {
   // Initialize the BitVector with all the elements that are live-in.  We treat
   // all values live at the start of the function (even before they are actually
   // defined) because we know that all uses must be after them due to SSA
@@ -2124,7 +2122,7 @@ DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
     return DtorEmissionResult::KeepOp;
 
   // See if we can resolve the callee.
-  LIT::FuncOp callee =
+  FnOp callee =
       valueSet.typeDeclInfo.getFuncForSymbol(copyInitCall.getDirectCallee());
   if (!callee ||
       callee.getSpecialFunctionKind() != SpecialFunctionKind::kCopyInit)
@@ -2534,7 +2532,7 @@ struct DestructorInsertion {
     return result;
   }
 
-  void scanFunction(LIT::FuncOp func);
+  void scanFunction(FnOp func);
   void scanBlock(Block &body);
 
   LLVM_DUMP_METHOD void dump() const;
@@ -2624,7 +2622,7 @@ private:
   os.flush();
 }
 
-void DestructorInsertion::scanFunction(LIT::FuncOp func) {
+void DestructorInsertion::scanFunction(FnOp func) {
   functionSignature = func.getSignatureGenerator();
 
   consumedValues.resize(valueSet.getNumTotalBits());
@@ -3606,13 +3604,13 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
       return signalPassFailure();
   }
 
-  LogicalResult processFunction(LIT::FuncOp func, TypeDeclInfo &typeDeclInfo,
+  LogicalResult processFunction(FnOp func, TypeDeclInfo &typeDeclInfo,
                                 CachedOriginFinder &originFinder);
 };
 } // namespace
 
 LogicalResult
-CheckLifetimes::processFunction(LIT::FuncOp func, TypeDeclInfo &typeDeclInfo,
+CheckLifetimes::processFunction(FnOp func, TypeDeclInfo &typeDeclInfo,
                                 CachedOriginFinder &originFinder) {
 
   // Walk #1: Collect all of the values declared in the function that have

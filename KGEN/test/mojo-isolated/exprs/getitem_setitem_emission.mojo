@@ -27,7 +27,7 @@ struct WeirdArray:
         return `2`
 
 
-# CHECK-LABEL: lit.func @"test_getitem
+# CHECK-LABEL: lit.fn @"test_getitem
 fn test_getitem(a: WeirdArray, idx: int, f: float):
     # CHECK: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %idx)
     _ = a[idx]
@@ -57,14 +57,14 @@ fn test_getitem_kw(a: WeirdArray, idx: int, idx2: int, idx3: int):
     _ = a[idx, z=idx3, y=idx2]
 
 
-# CHECK-LABEL: lit.func @"test_setitem
+# CHECK-LABEL: lit.fn @"test_setitem
 fn test_setitem[x: int](a: WeirdArray, idx: int):
     # CHECK: %[[X:.*]] = kgen.param.constant = <x>
     # CHECK: lit.call {{.*}}__setitem__{{.*}}(%a, %idx, %idx, %[[X]])
     a[idx, idx] = x
 
 
-# CHECK-LABEL: lit.func @"test_getitem_slice
+# CHECK-LABEL: lit.fn @"test_getitem_slice
 fn test_getitem_slice(a: WeirdArray, i: int, j: int, k: int):
     # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:type none, :type none, :type none>(%none{{.*}}, %none{{.*}}, %none{{.*}}) :
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
@@ -107,7 +107,7 @@ fn takes_inout_int(mut a: int):
     pass
 
 
-# CHECK-LABEL: lit.func @"test_writeback1
+# CHECK-LABEL: lit.fn @"test_writeback1
 fn test_writeback1[
     x: int, y: int
 ](mut a: IndexArray, mut b: IndexArrayArray):
@@ -121,7 +121,7 @@ fn test_writeback1[
     # CHECK-NEXT: lit.call {{.*}}__setitem__{{.*}}(%a, %[[V3]], %[[V4]])
     takes_inout_int(a[x])
 
-# CHECK-LABEL: lit.func @"test_writeback2
+# CHECK-LABEL: lit.fn @"test_writeback2
 fn test_writeback2[
     x: int, y: int
 ](mut a: IndexArray, mut b: IndexArrayArray):
@@ -156,7 +156,7 @@ struct RegWeirdArray:
         pass
 
 
-# CHECK-LABEL: lit.func @"test_dlvalue_to_pvalue
+# CHECK-LABEL: lit.fn @"test_dlvalue_to_pvalue
 fn test_dlvalue_to_pvalue[arr: RegWeirdArray, y: int]():
     # CHECK-NEXT: lit.alias.decl *"x{{.*}}" = <apply({{.*}}@RegWeirdArray::@"__getitem__{{.*}}"), store_to_mem(arr), y)>
     alias x = arr[y]
@@ -179,7 +179,7 @@ struct ParamIndex:
   fn __getitem__[a: Int, b: Int](self) -> Int: return 42
 
 
-# CHECK-LABEL: lit.func @"test_param_indexing
+# CHECK-LABEL: lit.fn @"test_param_indexing
 fn test_param_indexing(a: XYZ, b: ParamIndex) -> Int:
   # Issue #35662: Support parameter input to getattr
   # CHECK: lit.call {{.*}}__getattr__{{.*}}<:!StringLiteral {:string "x"}>(%a)
@@ -200,7 +200,7 @@ struct VariadicIndexList:
     fn __setitem__(mut self, *indices: Int, val: Int):
         pass
 
-# CHECK-LABEL: lit.func @"testVariadicIndexList
+# CHECK-LABEL: lit.fn @"testVariadicIndexList
 # MOCO-696: Support variadic length keys in __setitem__
 fn testVariadicIndexList(mut foo: VariadicIndexList, i: Int, the_value: Int):
     # Getter is straight-forward.
@@ -223,7 +223,7 @@ struct RefResultInOverloaded:
 
   fn __setitem__(mut self, owned x: String): pass
 
-# CHECK-LABEL: lit.func @"testRefResultInOverloaded
+# CHECK-LABEL: lit.fn @"testRefResultInOverloaded
 fn testRefResultInOverloaded(mut rrio: RefResultInOverloaded, owned str: String) raises:
   # CHECK: lit.call {{.*}}__getitem__
   # CHECK: lit.call {{.*}}unsafe_ptr

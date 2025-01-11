@@ -5,7 +5,7 @@
 // RUN: kgen-opt %s --mogg-annotate | FileCheck %s
 
 // Hard coded registration function, has special `mogg.intrinsic_register`
-lit.func @"register(::StringLiteral)"(%name: !lit.struct<@stdlib::@builtin::@string_literal::@StringLiteral>, %num_dps_outputs: !lit.struct<@stdlib::@builtin::@int::@Int> = {1}) -> !kgen.none attributes {mogg.intrinsic_register, sourceName = "register", specialFnKind = 0 : i8} {
+lit.fn @"register(::StringLiteral)"(%name: !lit.struct<@stdlib::@builtin::@string_literal::@StringLiteral>, %num_dps_outputs: !lit.struct<@stdlib::@builtin::@int::@Int> = {1}) -> !kgen.none attributes {mogg.intrinsic_register, sourceName = "register", specialFnKind = 0 : i8} {
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }
@@ -15,12 +15,12 @@ lit.func @"register(::StringLiteral)"(%name: !lit.struct<@stdlib::@builtin::@str
 lit.struct.decl @test_execute_and_shape(trait<@stdlib::@builtin::@anytype::@AnyType>)
   decorators <:none apply(:!lit.generator<("name": !lit.struct<@stdlib::@builtin::@string_literal::@StringLiteral>, "num_dps_outputs": !lit.struct<@stdlib::@builtin::@int::@Int> = {1}) -> !kgen.none> @"register(::StringLiteral)", {:string "imposter_add"}, {1})> {
 
-  // CHECK: lit.func export @execute
+  // CHECK: lit.fn export @execute
   // CHECK: mogg.arg_params = [unit, [#kgen.param.decl.ref<"dtype"> : !lit.struct<@DType>], unit]
   // CHECK-SAME: mogg.arg_src_names = ["z", "x", "y"]
   // CHECK-SAME: mogg.arg_type_names = ["test1::test1", "test2::test2", "test3::test3"]
   // CHECK-SAME: mogg.execute = "imposter_add"
-  lit.func export @"execute"(%z: !lit.struct<@test1>, %x: !lit.struct<@test2<:@DType *"dtype">>, %y: !lit.struct<@test3>) -> !kgen.none
+  lit.fn export @"execute"(%z: !lit.struct<@test1>, %x: !lit.struct<@test2<:@DType *"dtype">>, %y: !lit.struct<@test3>) -> !kgen.none
     attributes {
         isStatic,
         sourceName = "execute",
@@ -29,12 +29,12 @@ lit.struct.decl @test_execute_and_shape(trait<@stdlib::@builtin::@anytype::@AnyT
     kgen.return %none : !kgen.none
   }
 
-  // CHECK: lit.func export @shape
+  // CHECK: lit.fn export @shape
   // CHECK: mogg.arg_params = [{{\[}}#kgen.param.decl.ref<"dtype"> : !lit.struct<@DType>], unit]
   // CHECK-SAME: mogg.arg_src_names = ["x", "y"]
   // CHECK-SAME: mogg.arg_type_names = ["test2::test2", "test3::test3"]
   // CHECK-SAME: mogg.shape = "imposter_add"
-  lit.func export @"shape"(%x: !lit.struct<@test2<:@DType *"dtype">>, %y: !lit.struct<@test3>) -> !kgen.none
+  lit.fn export @"shape"(%x: !lit.struct<@test2<:@DType *"dtype">>, %y: !lit.struct<@test3>) -> !kgen.none
     attributes {
         isStatic,
         sourceName = "shape", specialFnKind = 0 : i8} {

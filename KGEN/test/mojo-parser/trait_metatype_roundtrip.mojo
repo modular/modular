@@ -36,7 +36,7 @@ fn param_func[T: Trait](value: T) -> Int:
     pass
 
 
-# CHECK-LABEL: lit.func @"top
+# CHECK-LABEL: lit.fn @"top
 fn top[pvalue: SomeStruct[`2`]]():
     # CHECK: alias.decl [[alias_decl:.*]]: @{{.*}} = <pvalue>
     alias alias_decl = pvalue

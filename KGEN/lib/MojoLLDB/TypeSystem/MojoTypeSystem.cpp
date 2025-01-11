@@ -1132,7 +1132,7 @@ MojoTypeSystem::getOrCreateFunctionDecl(StringRef functionName,
 
   StringAttr nameAttr =
       LIT::DeclResolver::getMangledName(name, *parentDecl, signature);
-  auto newFunction = builder.create<LIT::FuncOp>(
+  auto newFunction = builder.create<LIT::FnOp>(
       sharedState.translateLocation(parentDecl->getLoc()), nameAttr, name,
       signature);
   return MojoASTDeclRef(&sharedState.declResolver->addDecl(

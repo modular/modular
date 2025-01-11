@@ -69,7 +69,7 @@ fn receiveTraitWithAliasReturnMethod[X: TraitWithAliasReturnMethod](t: X):
     pass
 
 
-# CHECK-LABEL: lit.func @"testUpcastingExplicitStructWithAliasMethod
+# CHECK-LABEL: lit.fn @"testUpcastingExplicitStructWithAliasMethod
 fn testUpcastingExplicitStructWithAliasMethod():
     # CHECK:       {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasReturnMethod{{.*}}<:!TraitWithAliasReturnMethod #[[ExplicitStructWithAliasMethod_VTable]]>
     receiveTraitWithAliasReturnMethod(ExplicitStructWithAliasMethod())
@@ -83,13 +83,13 @@ struct ImplicitStructWithAliasMethod:
         return SIMD[int]()
 
 
-# CHECK-LABEL: lit.func @"testUpcastingImplicitStructWithAliasMethod
+# CHECK-LABEL: lit.fn @"testUpcastingImplicitStructWithAliasMethod
 fn testUpcastingImplicitStructWithAliasMethod():
     # CHECK: {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasReturnMethod{{.*}}<:!TraitWithAliasReturnMethod #[[ImplicitStructWithAliasMethod_VTable]]>
     receiveTraitWithAliasReturnMethod(ImplicitStructWithAliasMethod())
 
 
-# CHECK-LABEL: lit.func @"callTraitWithAliasReturnMethod
+# CHECK-LABEL: lit.fn @"callTraitWithAliasReturnMethod
 fn callTraitWithAliasReturnMethod[X: TraitWithAliasReturnMethod](t: X):
     # CHECK: {{.*}}lit.call
     # CHECK-SAME: "__result__": !lit.ref<@associated_aliases::@SIMD<:!ATrait get_vtable_entry(:!TraitWithAliasReturnMethod X, "T")>
@@ -104,7 +104,7 @@ struct GenericStructWithAliasMethod[Z: ATrait](TraitWithAliasReturnMethod):
     fn bork(self) -> SIMD[Z]:
         return SIMD[Z]()
 
-# CHECK-LABEL: lit.func @"testUpcastingGenericStructWithAliasMethod
+# CHECK-LABEL: lit.fn @"testUpcastingGenericStructWithAliasMethod
 fn testUpcastingGenericStructWithAliasMethod():
     # CHECK: {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasReturnMethod{{.*}}<:!TraitWithAliasReturnMethod #[[GenericStructWithAliasMethod_VTable]]>
     receiveTraitWithAliasReturnMethod(GenericStructWithAliasMethod[int]())
@@ -126,13 +126,13 @@ fn receiveTraitWithAliasArgMethod[X: TraitWithAliasArgMethod](t: X):
     pass
 
 
-# CHECK-LABEL: lit.func @"testUpcastingStructWithAliasArgMethod
+# CHECK-LABEL: lit.fn @"testUpcastingStructWithAliasArgMethod
 fn testUpcastingStructWithAliasArgMethod():
     # CHECK: {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasArgMethod{{.*}}<:!TraitWithAliasArgMethod #[[StructWithAliasArgMethod_VTable]]
     receiveTraitWithAliasArgMethod(StructWithAliasArgMethod())
 
 
-# CHECK-LABEL: lit.func @"callTraitMethodWithAliasArg
+# CHECK-LABEL: lit.fn @"callTraitMethodWithAliasArg
 fn callTraitMethodWithAliasArg[X: TraitWithAliasArgMethod](t: X, thing: SIMD[X.T]):
     # CHECK:  %0 = lit.call
     # CHECK-SAME: "thing": !lit.ref<@associated_aliases::@SIMD<:!ATrait get_vtable_entry(:!TraitWithAliasArgMethod X, "T")>
@@ -182,7 +182,7 @@ fn testUpcastingGenericStructWithSelfDotAliasReturnMethod():
 # trait TraitWithStaticMethodUsingAlias:
 #     # HECK-NEXT: lit.alias.decl N = <?>
 #     alias N: Int
-#     # HECK-LABEL: lit.func @foo(%x: !pop.simd<N, f32>) { // #kgen.param.decl.ref<"N"> : index
+#     # HECK-LABEL: lit.fn @foo(%x: !pop.simd<N, f32>) { // #kgen.param.decl.ref<"N"> : index
 #     @staticmethod
 #     fn foo(x: StructWithParam[N]):
 #         pass

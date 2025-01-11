@@ -471,7 +471,7 @@ static ASTDecl &lookupSingleDecl(ASTDecl &decl, StringRef name) {
 static void processVariablesForPersistence(MojoParserREPLListener &listener,
                                            ASTDecl &exprFnDecl,
                                            ASTDecl &stateStructDecl) {
-  auto exprFn = cast<LIT::FuncOp>(exprFnDecl);
+  auto exprFn = cast<FnOp>(exprFnDecl);
   auto stateStruct = cast<StructDeclOp>(stateStructDecl);
 
   // Grab all of the variables within the expression body and sort them by name,
@@ -743,8 +743,7 @@ static ASTDecl &buildAndResolveREPLModule(
       // If we hit an overlap and these are function decls, save them for
       // processing for later. We might be able to import if the signatures
       // don't overlap.
-      if (isa<LIT::FuncOp>(*existingDecls.front()) &&
-          isa<LIT::FuncOp>(*decls.front())) {
+      if (isa<FnOp>(*existingDecls.front()) && isa<FnOp>(*decls.front())) {
         fnDecls.push_back({name, decls});
       }
     }

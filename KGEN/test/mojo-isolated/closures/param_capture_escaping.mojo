@@ -9,11 +9,11 @@
 # CHECK:      lit.struct.field param_capture : !lit.struct<#ParameterClosureCaptureList{{.*}}__call__
 # CHECK-NEXT: lit.struct.field field0 : !Int
 
-# CHECK: lit.func @"__call__
+# CHECK: lit.fn @"__call__
 # CHECK: [[GEP:%.*]] = lit.ref.struct.ger {{.*}}[param_capture]
 # CHECK: lit.call {{.*}}expand{{.*}}([[GEP]])
 
-# CHECK: lit.func @"__init__
+# CHECK: lit.fn @"__init__
 # CHECK: [[GEP:%.*]] = lit.ref.struct.ger %self[param_capture]
 # CHECK: [[RES:%.*]] = lit.call {{.*}}@__ParameterClosureCaptureList::@"__init__{{.*}}()
 # CHECK-NEXT: lit.ref.store [[RES]], [[GEP]]

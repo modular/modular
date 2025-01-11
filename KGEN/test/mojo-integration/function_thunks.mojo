@@ -13,7 +13,7 @@
 # RUN: kgen-translate -import-mojo %s --mojo-enable-prebuilt-packages -I %T/function-thunks | FileCheck %s
 # RUN: mojo doc --validate-doc-strings %s -o /dev/null -I %T/function-thunks
 
-# THUNK-COUNT-1: lit.func @"fn
+# THUNK-COUNT-1: lit.fn @"fn
 
 from func_package_foo.module import foo
 from func_package_bar.module import bar
@@ -25,7 +25,7 @@ fn thunk[T: AnyType](x: T):
     pass
 
 
-# CHECK-LABEL: lit.func @"test
+# CHECK-LABEL: lit.fn @"test
 fn test():
     _ = foo()
     _ = bar()
@@ -42,14 +42,14 @@ fn test():
 
 # CHECK-LABEL: lit.package @func_package_foo
 # CHECK-SAME: postParseModule
-# CHECK: lit.func @"foo
+# CHECK: lit.fn @"foo
 # CHECK: kgen.create_closure{{.*}}@"fn(::Int, /) -> None|fn(::Int, /) -> None|{{.*}}[fn(::Int, /) -> None](::Int)"
 
-# CHECK-COUNT-1: lit.func @"fn(::Int, /) -> None|fn(::Int, /) -> None|{{.*}}[fn(::Int, /) -> None](::Int)"
+# CHECK-COUNT-1: lit.fn @"fn(::Int, /) -> None|fn(::Int, /) -> None|{{.*}}[fn(::Int, /) -> None](::Int)"
 
 # CHECK-LABEL: lit.package @func_package_bar
 # CHECK-SAME: postParseModule
-# CHECK: lit.func @"bar
+# CHECK: lit.fn @"bar
 # CHECK: kgen.create_closure{{.*}}@"fn(::Int, /) -> None|fn(::Int, /) -> None|{{.*}}[fn(::Int, /) -> None](::Int)"
 
 # CHECK-NOT: fn(::Int

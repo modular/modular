@@ -26,6 +26,6 @@ struct List[T: A]():
         pass
 
 
-# CHECK-LABEL: lit.func @"test_upcast_trait
+# CHECK-LABEL: lit.fn @"test_upcast_trait
 fn test_upcast_trait[T: E](tuples: List[T]):
     pass

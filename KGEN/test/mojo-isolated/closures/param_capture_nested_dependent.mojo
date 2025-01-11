@@ -13,7 +13,7 @@
 # CHECK-SAME: <p0: !Int, p1: !Int, |>
 
 # Check that the closure impl parameter is bound to the struct parameter:
-# CHECK-LABEL: lit.func @"get_test
+# CHECK-LABEL: lit.fn @"get_test
 # CHECK-NEXT: %anonymous2A = lit.var.decl
 # CHECK-NEXT: lit.call {{.*}}@"`_CI_{{.*}}"::@"__init__{{.*}}<:!Int [[BLoc:.*]], :!Int [[ALoc:.*]], :origin<0> [[SELFO]]>(%self, %anonymous2A)
 # CHECK-SAME: !lit.generator<[2]({{.*}}"self": !lit.ref<@{{.*}}::@"`_CI_{{.*}}"<:!Int [[BLoc]], :!Int [[ALoc]], :origin<0> [[SELFO]]>

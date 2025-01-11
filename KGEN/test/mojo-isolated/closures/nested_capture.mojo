@@ -10,7 +10,7 @@ fn use(x: int):
     pass
 
 
-# CHECK-LABEL: lit.func @"direct
+# CHECK-LABEL: lit.fn @"direct
 fn direct(output: int):
     # CHECK: call {{.*}}_CI_{{.*}}__init__{{.*}}(%output, %anonymous2A)
     fn closure():
@@ -20,7 +20,7 @@ fn direct(output: int):
                 use(output)
 
 
-# CHECK-LABEL: lit.func @"deep_runtime_capture
+# CHECK-LABEL: lit.fn @"deep_runtime_capture
 fn deep_runtime_capture(
     m: int,
 ) -> fn (n: int) escaping -> fn (o: int) escaping -> int:

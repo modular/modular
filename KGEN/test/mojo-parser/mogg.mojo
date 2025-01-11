@@ -21,7 +21,7 @@ struct ParamType[a: Int]:
 # CHECK: [[PARAM:#.*]] = #kgen.type<@mogg::@ParamType<:!Int a>
 
 
-# CHECK: lit.func @"custom_op_args
+# CHECK: lit.fn @"custom_op_args
 # CHECK-NEXT: mogg.arg_conformances = [#kgen<exprs[{{.*}}]>, #kgen<exprs[{{.*}}]>]
 # CHECK-SAME: mogg.result_conformances = #kgen<exprs[{{.*}}]>
 @register_internal("custom.op")
@@ -39,7 +39,7 @@ fn custom_op_generic[T: Movable, *Ts: Copyable](a: T, *b: *Ts) -> MemoryType:
     pass
 
 
-# CHECK: lit.func @"custom_op_param
+# CHECK: lit.fn @"custom_op_param
 # CHECK-NEXT: mogg.arg_conformances = [#kgen<exprs[#kgen.type<@mogg::@ParamType<:!Int a>> : !UnknownDestructibility, [[PARAM]]]>,
 # CHECK-SAME: mogg.result_conformances = #kgen<exprs[#kgen.type<@mogg::@ParamType<:!Int a>> : !UnknownDestructibility, [[PARAM]]]>
 @register_internal("custom.op")

@@ -21,11 +21,11 @@
 namespace M::KGEN::LIT {
 
 struct GeneratedStubs {
-  LIT::FuncOp dtor;
-  LIT::FuncOp copyCtr;
-  LIT::FuncOp explicitCopy;
-  LIT::FuncOp moveCtr;
-  LIT::FuncOp init;
+  FnOp dtor;
+  FnOp copyCtr;
+  FnOp explicitCopy;
+  FnOp moveCtr;
+  FnOp init;
 };
 
 class ValueInfo {
@@ -81,40 +81,40 @@ public:
   /// given function does not have the expected signature.
   LogicalResult populateMoveCopy(ASTDecl &functionDecl, bool isMove);
 
-  /// Create a FuncOp within the scope of the given struct and add function
+  /// Create a FnOp within the scope of the given struct and add function
   /// terminators.
-  LIT::FuncOp addVoidMethod(ASTDecl &structDecl, StringRef prefix,
-                            ArrayRef<Type> argTypes,
-                            ArrayRef<ArgConvention> argConventions,
-                            PogListAttr argListAttrs, SpecialFunctionKind kind,
-                            ArrayRef<ParamDeclAttr> params,
-                            PogListAttr paramListAttrs);
-  LIT::FuncOp addVoidMethod(ASTDecl &structDecl, StringRef prefix,
-                            ArrayRef<Type> argTypes,
-                            ArrayRef<ArgConvention> argConventions,
-                            PogListAttr argListAttrs, SpecialFunctionKind kind);
+  FnOp addVoidMethod(ASTDecl &structDecl, StringRef prefix,
+                     ArrayRef<Type> argTypes,
+                     ArrayRef<ArgConvention> argConventions,
+                     PogListAttr argListAttrs, SpecialFunctionKind kind,
+                     ArrayRef<ParamDeclAttr> params,
+                     PogListAttr paramListAttrs);
+  FnOp addVoidMethod(ASTDecl &structDecl, StringRef prefix,
+                     ArrayRef<Type> argTypes,
+                     ArrayRef<ArgConvention> argConventions,
+                     PogListAttr argListAttrs, SpecialFunctionKind kind);
 
   /// Given a struct that has no explicitly defined `__del__` member, define a
   /// new one with an empty body. This allows the CheckLifetimes pass to insert
   /// field dels as needed, and makes sure that anything that refers to this
   /// struct properly runs its destructor.
-  LIT::FuncOp synthesizeEmptyDtor(ASTDecl &structDecl);
+  FnOp synthesizeEmptyDtor(ASTDecl &structDecl);
   /// Add an empty `__moveinit__` stub for this struct, to be filled in later.
-  LIT::FuncOp synthesizeEmptyMoveInit(ASTDecl &structDecl);
+  FnOp synthesizeEmptyMoveInit(ASTDecl &structDecl);
   /// Add an empty `__copyinit__` stub for this struct, to be filled in later.
-  LIT::FuncOp synthesizeEmptyCopyInit(ASTDecl &structDecl);
+  FnOp synthesizeEmptyCopyInit(ASTDecl &structDecl);
   /// Add `copy()` method for this struct.
-  LIT::FuncOp synthesizeExplicitCopy(ASTDecl &structDecl);
+  FnOp synthesizeExplicitCopy(ASTDecl &structDecl);
 
   /// Return the initializer method with the specified signature if it exists
   /// and null otherwise. The operands type is not expected to include self.
-  LIT::FuncOp findInitInStruct(StructDeclOp structOp, ArrayRef<Type> operands);
+  FnOp findInitInStruct(StructDeclOp structOp, ArrayRef<Type> operands);
 
   /// Emit an emtpy function stub at the specified location. The block arguments
   /// are added to the body of the function but no ops are added to the body.
   /// `suffix` is appended to the mangled function name. This adds the
   /// declaration to `parent`.
-  std::pair<LIT::FuncOp, ASTDecl *> synthesizeFunction(
+  std::pair<FnOp, ASTDecl *> synthesizeFunction(
       ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
       PogListAttr paramListAttrs, ArrayRef<Type> argTypes,
       ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
@@ -127,16 +127,15 @@ public:
   /// a struct, making it easy for external clients to initialize it.
   /// The `injectedFields` argument can be specified when creating an init
   /// method for memory-only types where not all fields are initialized, though
-  /// this requires manual modification of the returned FuncOp to initialize any
+  /// this requires manual modification of the returned FnOp to initialize any
   /// omitted fields.
-  LIT::FuncOp synthesizeMemberwiseInit(ASTDecl &structDecl,
-                                       ArrayRef<Type> argTypes,
-                                       ArrayRef<ArgConvention> argConventions,
-                                       PogListAttr argListAttrs);
+  FnOp synthesizeMemberwiseInit(ASTDecl &structDecl, ArrayRef<Type> argTypes,
+                                ArrayRef<ArgConvention> argConventions,
+                                PogListAttr argListAttrs);
 
-  /// Create a FuncOp within the scope of the given Struct. The body is not
+  /// Create a FnOp within the scope of the given Struct. The body is not
   /// populated. `suffix` is appended to the mangled function name.
-  std::pair<LIT::FuncOp, ASTDecl *> synthesizeMethodInStruct(
+  std::pair<FnOp, ASTDecl *> synthesizeMethodInStruct(
       StringRef name, ArrayRef<ParamDeclAttr> params,
       PogListAttr paramListAttrs, ArrayRef<Type> argTypes,
       ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
@@ -144,7 +143,7 @@ public:
       SpecialFunctionKind specialFnID = SpecialFunctionKind::kNormal,
       FnEffects fnEffects = FnEffects(), StringRef suffix = "",
       bool synthetic = true);
-  std::pair<LIT::FuncOp, ASTDecl *> synthesizeMethodInStruct(
+  std::pair<FnOp, ASTDecl *> synthesizeMethodInStruct(
       StringRef name, ArrayRef<Type> argTypes,
       ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
       Type resultType, ASTDecl &structDecl, SMLoc loc,
@@ -160,13 +159,15 @@ public:
                            ASTDecl *traitDecl);
 
 private:
-  LIT::FuncOp createFunction(
-      ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
-      PogListAttr paramListAttrs, ArrayRef<Type> argTypes,
-      ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
-      Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
-      ImplicitLocOpBuilder &builder, FnEffects fnEffects, StringRef suffix,
-      bool synthetic, InlineLevel inlineLevel);
+  FnOp createFunction(ASTDecl &parent, StringRef name,
+                      ArrayRef<ParamDeclAttr> params,
+                      PogListAttr paramListAttrs, ArrayRef<Type> argTypes,
+                      ArrayRef<ArgConvention> argConventions,
+                      PogListAttr argListAttrs, Type resultType,
+                      SpecialFunctionKind specialFnID, SMLoc loc,
+                      ImplicitLocOpBuilder &builder, FnEffects fnEffects,
+                      StringRef suffix, bool synthetic,
+                      InlineLevel inlineLevel);
 
 protected:
   Type noneType;

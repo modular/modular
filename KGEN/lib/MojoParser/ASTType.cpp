@@ -486,7 +486,7 @@ static bool isKnownNonStaticMethod(SharedState *diagShared,
     return false;
 
   // Return false for static methods.
-  return !cast<LIT::FuncOp>(*decl).getIsStatic();
+  return !cast<FnOp>(*decl).getIsStatic();
 }
 
 /// Pretty print a parameter value.

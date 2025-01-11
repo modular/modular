@@ -11,7 +11,7 @@ fn use[x: int]():
 
 
 fn param[x: int]():
-    # CHECK: lit.func *"param_closure
+    # CHECK: lit.fn *"param_closure
     @parameter
     fn param_closure[y: int]():
 

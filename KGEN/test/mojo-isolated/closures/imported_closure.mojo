@@ -8,7 +8,7 @@
 from test_package.return_closure import pass_int
 
 
-# CHECK-LABEL: lit.func @"call_it
+# CHECK-LABEL: lit.fn @"call_it
 fn call_it() -> Int:
     # CHECK: %0 = kgen.param.constant: !Int = <{50}>
     # CHECK: lit.call {{.*}}pass_int{{.*}}(%0, %anonymous2A)

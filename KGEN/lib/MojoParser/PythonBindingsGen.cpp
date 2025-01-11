@@ -40,17 +40,17 @@ public:
           &userFuncs);
 
 private:
-  ErrorOrSuccess genFunctionBinding(ASTDecl &funcDecl, LIT::FuncOp func);
+  ErrorOrSuccess genFunctionBinding(ASTDecl &funcDecl, FnOp func);
   ErrorOrSuccess genTypeBinding(ASTType type);
 
   OverloadSet lookupPyBindFunction(StringRef name, ASTDecl &scope,
                                    const SyntheticNode &node);
   StringAttr getMLIRString(const Twine &value);
-  std::pair<LIT::FuncOp, ASTDecl *>
-  createFunction(const Twine &name, ASTDecl &parent,
-                 ArrayRef<ASTType> argRValueTypes,
-                 ArrayRef<ArgConvention> convs, ASTType resultRValueType,
-                 FnEffects effects);
+  std::pair<FnOp, ASTDecl *> createFunction(const Twine &name, ASTDecl &parent,
+                                            ArrayRef<ASTType> argRValueTypes,
+                                            ArrayRef<ArgConvention> convs,
+                                            ASTType resultRValueType,
+                                            FnEffects effects);
 
   /// Shorthand to access the MLIR context.
   MLIRContext *ctx;
@@ -73,7 +73,7 @@ private:
 
   /// The `PyInit_impl_*` function where function and type declarations are
   /// added.
-  LIT::FuncOp pyInitFunc;
+  FnOp pyInitFunc;
   /// The ASTDecl of the init function.
   ASTDecl *pyInitDecl;
   /// The mutable Python module reference.
@@ -297,7 +297,7 @@ void BindingGenerator::genModuleBinding(
   SmallVector<std::pair<StringAttr, StringRef>> rejectedDecls;
   for (auto [name, decls] : userFuncs) {
     assert(!decls.empty() && "name mapped to empty decl?");
-    auto func = dyn_cast<LIT::FuncOp>(decls.front());
+    auto func = dyn_cast<FnOp>(decls.front());
     if (!func) {
       rejectedDecls.emplace_back(name, "TODO: Python binding generation is only"
                                        " supported for functions");
@@ -332,7 +332,7 @@ void BindingGenerator::genModuleBinding(
 }
 
 ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
-                                                    LIT::FuncOp func) {
+                                                    FnOp func) {
   // First, generate type bindings for each of the function argument and result
   // types.
   LITSignatureGeneratorType sig = func.getSignatureGenerator();
@@ -618,7 +618,7 @@ StringAttr BindingGenerator::getMLIRString(const Twine &value) {
   return StringAttr::get(value, StringType::get(ctx));
 }
 
-std::pair<LIT::FuncOp, ASTDecl *>
+std::pair<FnOp, ASTDecl *>
 BindingGenerator::createFunction(const Twine &name, ASTDecl &parent,
                                  ArrayRef<ASTType> argRValueTypes,
                                  ArrayRef<ArgConvention> convs,

@@ -529,7 +529,7 @@ def LIT_RefPackType : LITType<"RefPack", "ref.pack",
     // Pack with 'Ts' elements, with a parametric origin and addrspace=42.
     !lit.ref.pack<Ts, life, 42>
 
-    lit.func @pack<Ts: variadic<!kgen.type>>(
+    lit.fn @pack<Ts: variadic<!kgen.type>>(
       %0: !lit.ref.pack<Ts, life, 42>
     )
     ```

@@ -16,7 +16,7 @@
 # CHECK-DAG: #[[OBJECT:.*]] = #kgen.type<!object,
 
 
-# CHECK-LABEL: lit.func @"variadic_kwargs
+# CHECK-LABEL: lit.fn @"variadic_kwargs
 # CHECK-SAME: "[mut [[LT:.*]]](
 # CHECK-SAME: %a: index, %b: index, %args: !kgen.variadic<index> var, *, %c: index, %d: index,
 # CHECK-SAME: %kwargs: !lit.ref<{{.*}}@OwnedKwargsDict<:!CollectionElement #[[INDEX_TYPE]]>, mut [[LT]]> owned_in_mem|var)
@@ -24,13 +24,13 @@ fn variadic_kwargs(a: int, b: int, *args: int, c: int, d: int, **kwargs: int):
     pass
 
 
-# CHECK-LABEL: lit.func @"variadic_kwargs_def_without_type
+# CHECK-LABEL: lit.fn @"variadic_kwargs_def_without_type
 # CHECK-SAME: "[mut [[LT:.*]], {{.*}}](*, %kwargs: !lit.ref<{{.*}}@OwnedKwargsDict<:!CollectionElement #[[OBJECT]]>, mut [[LT]]> owned_in_mem|var,
 def variadic_kwargs_def_without_type(**kwargs):
     pass
 
 
-# CHECK-LABEL: lit.func @"variadic_kwargs_def_with_type
+# CHECK-LABEL: lit.fn @"variadic_kwargs_def_with_type
 def variadic_kwargs_def_with_type(**kwargs: int):
     pass
 
@@ -46,7 +46,7 @@ fn takes_int_variadic_kwargs_multiline(
     pass
 
 
-# CHECK-LABEL: lit.func @"test_variadic_kwargs
+# CHECK-LABEL: lit.fn @"test_variadic_kwargs
 fn test_variadic_kwargs():
     # CHECK: %[[DICT_VAR:.*]] = lit.var.decl
     # CHECK-SAME: @OwnedKwargsDict<:!CollectionElement #[[INDEX_TYPE]]>
@@ -81,7 +81,7 @@ struct MemOnly(SomeTrait):
     pass
 
 
-# CHECK-LABEL: lit.func @"test_variadic_kwargs_param_inference
+# CHECK-LABEL: lit.fn @"test_variadic_kwargs_param_inference
 fn test_variadic_kwargs_param_inference():
     # CHECK: %s = lit.var.decl "s" var : !lit.ref<!MemOnly,
     # CHECK: %[[VALUE:.*]] = kgen.param.materialize: !MemOnly = <{}>
@@ -112,7 +112,7 @@ fn takes_kw(**kwargs: MemOnly) -> int:
     return `0`
 
 
-# CHECK-LABEL: lit.func @"test_takes_kw_in_assignment
+# CHECK-LABEL: lit.fn @"test_takes_kw_in_assignment
 fn test_takes_kw_in_assignment(x: MemOnly):
     # CHECK: %b = lit.var.decl "b" var : !lit.ref<index,
     # CHECK: %[[DICT_VAR:.*]] = lit.var.decl

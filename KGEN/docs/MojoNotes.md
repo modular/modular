@@ -130,7 +130,7 @@ compiles into:
 
 ```mlir
 lit.struct.decl @EmptyStruct {}
-lit.func @static(%x: !lit.struct<@EmptyStruct>) {..}
+lit.fn @static(%x: !lit.struct<@EmptyStruct>) {..}
 ```
 
 Beyond user defined types, the entire MLIR type system is exposed using the

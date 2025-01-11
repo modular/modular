@@ -35,7 +35,7 @@ KGEN::LIT::SharedState *MojoASTDeclRef::getShared() const {
 static LITSignatureGeneratorType getSignatureFromDecl(ASTDecl *decl) {
   if (!decl)
     return nullptr;
-  if (auto func = dyn_cast<LIT::FuncOp>(*decl))
+  if (auto func = dyn_cast<FnOp>(*decl))
     return func.getSignatureGenerator();
   if (auto pValue = decl->getIfIRValue().getIfPValue())
     return dyn_cast_or_null<LITSignatureGeneratorType>(
@@ -84,7 +84,7 @@ static BlockArgument getIfNotOwnedFunctionArgument(MojoASTDeclRef declRef) {
 
   // Check if this is a block argument of a function.
   if (auto bbArg = dyn_cast<BlockArgument>(val)) {
-    if (isa_and_nonnull<LIT::FuncOp>(bbArg.getOwner()->getParentOp()))
+    if (isa_and_nonnull<FnOp>(bbArg.getOwner()->getParentOp()))
       return bbArg;
     // If this is a block without a proper owner, this is generally a
     // block argument for a function signature. These are detached from
@@ -120,7 +120,7 @@ MojoASTTypeRef MojoASTDeclRef::getType() const {
   return TypeSwitch<ASTDecl &, MojoASTTypeRef>(*decl)
       .Case<GlobalVarDeclOp, VarDeclOp>(
           [&](auto op) { return MojoASTTypeRef(op.getType()); })
-      .Case([&](LIT::FuncOp op) { return op.getFullSignature(); })
+      .Case([&](FnOp op) { return op.getFullSignature(); })
       .Case([&](StructDeclOp op) { return decl->computeSelfTypeForStruct(op); })
       .Case([&](TraitDeclOp op) { return decl->computeSelfTypeForTrait(op); })
       .Default({});
@@ -133,7 +133,7 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
     return TypeSwitch<Operation &, std::optional<StringRef>>(*op)
         .Case<GlobalVarDeclOp, StructDeclOp, StructFieldOp, VarDeclOp>(
             [](auto op) { return op.getName(); })
-        .Case([](LIT::FuncOp op) { return op.getSourceName(); })
+        .Case([](FnOp op) { return op.getSourceName(); })
         .Case<FileModuleOp, PackageOp>([](auto op) { return op.getSymName(); })
         .Case([](AliasDeclOp op) {
           return demangleParameterName(op.getParamDecl().getName());
@@ -229,7 +229,7 @@ ResultType MojoASTDeclRef::getDeclImpl() const {
   if (isa<AliasDeclOp>(*decl))
     return createPublicDecl<ResultType, PublicAliasDecl>(*this);
 
-  if (isa<LIT::FuncOp>(*decl))
+  if (isa<FnOp>(*decl))
     return createPublicDecl<ResultType, PublicFunctionDecl>(*this);
 
   // If the decl corresponds to a signature, synthesize a function view for
@@ -252,7 +252,7 @@ ResultType MojoASTDeclRef::getDeclImpl() const {
       if constexpr (isApproximateResult) {
         return PublicDeclKind::DK_PublicArgumentDecl;
       } else {
-        auto parentFn = varDecl->getParentOfType<LIT::FuncOp>();
+        auto parentFn = varDecl->getParentOfType<FnOp>();
         for (auto [idx, pogAttr] : llvm::enumerate(
                  parentFn.getSignatureGenerator().getArgListAttrs().getPogs()))
           if (pogAttr.getName() == varDecl.getNameAttr())

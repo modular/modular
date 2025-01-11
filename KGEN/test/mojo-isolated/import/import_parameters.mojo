@@ -9,14 +9,14 @@
 from test_package.module import ParameterizedType
 
 
-# CHECK-LABEL: lit.func @"reference_params_through_imported_struct
+# CHECK-LABEL: lit.fn @"reference_params_through_imported_struct
 fn reference_params_through_imported_struct():
     # CHECK: kgen.param.constant = <10>
     var cached_type: ParameterizedType[__mlir_attr.`10 : index`]
     var value = cached_type.value
 
 
-# CHECK-LABEL: lit.func @"ref_param_in_arg
+# CHECK-LABEL: lit.fn @"ref_param_in_arg
 # CHECK-SAME: <?, [[X:.*]]>[
 # CHECK-SAME: lit.ref<{{.*}}ParameterizedType<[[X]]>{{.*}}> byref_result
 fn ref_param_in_arg(x: ParameterizedType) -> ParameterizedType[x.value]:

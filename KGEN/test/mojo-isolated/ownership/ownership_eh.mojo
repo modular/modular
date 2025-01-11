@@ -32,11 +32,11 @@ struct RegExample:
 
     fn __copyinit__(
         mut self, existing: Self
-    ):  # CHECK: lit.func @"__copyinit__
+    ):  # CHECK: lit.fn @"__copyinit__
         return
 
     # Test a raising constructor.
-    # CHECK-LABEL: lit.func @"__init__{{.*}}(%a: {{.*}}, %b: {{.*}}, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %self: !lit.ref<!RegExample, {{.*}}> byref_result) throws -> i1
+    # CHECK-LABEL: lit.fn @"__init__{{.*}}(%a: {{.*}}, %b: {{.*}}, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %self: !lit.ref<!RegExample, {{.*}}> byref_result) throws -> i1
     fn __init__(out self, a: MemExample, b: MemExample) raises:
         # CHECK-NOT: __del__
         # CHECK: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
@@ -79,7 +79,7 @@ struct MemExample:
 # Use of uninitialized value after call to def function
 
 
-# CHECK-LABEL: lit.func @"error_handling_int_let
+# CHECK-LABEL: lit.fn @"error_handling_int_let
 # https://github.com/modularml/modular/issues/25419
 def error_handling_int_let():
     # CHECK: lit.var.decl "x"
@@ -92,7 +92,7 @@ fn somethingThatRaises() raises:
     pass
 
 
-# CHECK-LABEL: lit.func @"thing_that_raises
+# CHECK-LABEL: lit.fn @"thing_that_raises
 fn thing_that_raises(c: __mlir_type.i1) raises -> MemExample:
     # CHECK-NEXT: [[RESULT:%.*]] = lit.var.decl "anonymous*" synth : !lit.ref<none,
     # CHECK-NEXT: lifetime.start [[RESULT]]
@@ -131,7 +131,7 @@ struct RaisingInit:
         self.stream = stream
 
 
-# CHECK-LABEL: lit.func @"finally_may_raise
+# CHECK-LABEL: lit.fn @"finally_may_raise
 fn finally_may_raise() raises:
     # CHECK: lit.try
     try:
@@ -178,7 +178,7 @@ struct ThrowingExit:
         return False
 
 
-# CHECK-LABEL: lit.func @"context_mgr_exit_raises
+# CHECK-LABEL: lit.fn @"context_mgr_exit_raises
 fn context_mgr_exit_raises() raises:
     # CHECK:      [[MOVE:%.*]] = lit.load.consume %__with_error__
     # CHECK-NEXT: lifetime.end %__with_error__
@@ -223,7 +223,7 @@ fn may_throw() raises -> RegExample:
     return RegExample()
 
 
-# CHECK-LABEL: lit.func @"propagate_reg_error
+# CHECK-LABEL: lit.fn @"propagate_reg_error
 fn propagate_reg_error() raises:
     # CHECK-NEXT: [[RESULT:%.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!RegExample,
     # CHECK-NEXT: lifetime.start [[RESULT]]
@@ -251,7 +251,7 @@ struct BigRegExample:
     var b: RegExample
 
     # Test a raising constructor.
-    # CHECK-LABEL: lit.func @"__init__{{.*}}MemExample{{.*}}MemExample
+    # CHECK-LABEL: lit.fn @"__init__{{.*}}MemExample{{.*}}MemExample
     fn __init__(out self, a: MemExample, b: MemExample) raises:
         # CHECK-NEXT: [[A:%.*]] = lit.call {{.*}}__init__{{.*}}()
         # CHECK-NEXT: [[A_REF:%.*]] = lit.ref.struct.ger %self[a]
@@ -281,7 +281,7 @@ struct MyStringReturningCtx:
         return ""
 
 
-# CHECK: lit.func @"testErrorReturn
+# CHECK: lit.fn @"testErrorReturn
 fn testErrorReturn() raises:
     var input: String
     # CHECK: try
@@ -304,7 +304,7 @@ struct DestructSome:
     var a: Field
     var b: Field
 
-    # CHECK-LABEL: lit.func @"__init__
+    # CHECK-LABEL: lit.fn @"__init__
     fn __init__(out self, a: Field, b: Field) raises:
         # CHECK:      lifetime.start %anonymous
         # CHECK-NEXT: call {{.*}}somethingThatRaises
@@ -356,7 +356,7 @@ fn use(err: Error):
     pass
 
 
-# CHECK-LABEL: lit.func @"raising_use
+# CHECK-LABEL: lit.fn @"raising_use
 fn raising_use(owned value: MemExample):
     try:
         # CHECK:      [[BORROW:%.*]] = lit.ref.immut %value
@@ -385,11 +385,11 @@ fn raising_use(owned value: MemExample):
 struct ThrowingSelfInit:
     var x: Int
 
-    # CHECK-LABEL: lit.func @"__init__
+    # CHECK-LABEL: lit.fn @"__init__
     fn __init__(out self) raises:
         self.x = 0
 
-    # CHECK-LABEL: lit.func @"__init__
+    # CHECK-LABEL: lit.fn @"__init__
     fn __init__(out self, x: Int) raises:
         # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}__init__{{.*}}(%__error__, %self)
         # CHECK-NEXT: if [[IS_ERR]]
@@ -401,7 +401,7 @@ struct ThrowingSelfInit:
         # CHECK-NEXT:   yield
         self = ThrowingSelfInit()
 
-    # CHECK-LABEL: lit.func @"__init__
+    # CHECK-LABEL: lit.fn @"__init__
     fn __init__(out self, x: Int, y: Int) raises:
         # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}__init__{{.*}}(%__error__, %self)
         # CHECK:      else
@@ -413,7 +413,7 @@ struct ThrowingSelfInit:
         self = ThrowingSelfInit()
 
 
-# CHECK-LABEL: lit.func @"emplace_error
+# CHECK-LABEL: lit.fn @"emplace_error
 fn emplace_error() raises:
     # CHECK: [[TMP:%.*]] = lit.call {{.*}}Error::@"__init__{{.*}}()
     # CHECK-NEXT: lit.ref.store [[TMP]], %__error__
@@ -428,7 +428,7 @@ struct InitFieldsDestroyedInThrowingConstructor:
     fn __init__(out self):
         self.x = MemExample()
 
-    # CHECK-LABEL: lit.func @"__init__(__mlir_type.i1)"
+    # CHECK-LABEL: lit.fn @"__init__(__mlir_type.i1)"
     fn __init__(out self, cond: __mlir_type.`i1`) raises:
         self = InitFieldsDestroyedInThrowingConstructor()
         # CHECK:      hlcf.elif {

@@ -11,7 +11,7 @@ fn has_default_args(a: int, b: int = `1`, c: int = `2`):
     pass
 
 
-# CHECK-LABEL: lit.func @"test_kw_arg_passing
+# CHECK-LABEL: lit.fn @"test_kw_arg_passing
 fn test_kw_arg_passing(x: int, y: int, z: int):
     # CHECK: %[[C2:.*]] = kgen.param.constant = <2>
     # CHECK: call {{.*}}@"has_default_args{{.*}}"(%x, %y, %[[C2]])
@@ -34,7 +34,7 @@ fn test_kw_arg_passing(x: int, y: int, z: int):
     has_default_args(c=z, b=y, a=x)
 
 
-# CHECK-LABEL: lit.func @"test_kw_arg_passing_indirect
+# CHECK-LABEL: lit.fn @"test_kw_arg_passing_indirect
 fn test_kw_arg_passing_indirect[callee: fn(a: int, b: int=`1`, c: int=`2`)->None](x: int, y: int, z: int):
     # CHECK-DAG: %[[C1:.*]] = kgen.param.constant = <1>
     # CHECK-NEXT: lit.call[{{.*}}](%x, %[[C1]], %z)
@@ -47,7 +47,7 @@ fn has_default_params[a: int, b: int = `1`, c: int = `2`]():
     pass
 
 
-# CHECK-LABEL: lit.func @"test_kw_param_passing
+# CHECK-LABEL: lit.fn @"test_kw_param_passing
 fn test_kw_param_passing[x: int, y: int, z: int]():
     # CHECK: lit.call @{{.*}}@"has_default_params{{.*}}"<x, y, 2>
     has_default_params[x, b=y]()
@@ -68,7 +68,7 @@ fn test_kw_param_passing[x: int, y: int, z: int]():
     has_default_params[c=z, b=y, a=x]()
 
 
-# CHECK-LABEL: lit.func @"test_kw_param_passing_indirect
+# CHECK-LABEL: lit.fn @"test_kw_param_passing_indirect
 fn test_kw_param_passing_indirect[x: int, y: int, z: int,
                                   callee: fn[a: int, b: int=`1`, c: int=`2`]()->None]():
 
@@ -85,7 +85,7 @@ struct MyCallable:
         pass
 
 
-# CHECK-LABEL: lit.func @"test_callable_object
+# CHECK-LABEL: lit.fn @"test_callable_object
 fn test_callable_object(x: int, y: int):
     # CHECK: %[[CALLABLE:.*]] = lit.var.decl {{.*}}: !lit.ref<!MyCallable
     var callable = MyCallable()
@@ -104,7 +104,7 @@ fn takes_kw_only_args(a: int, b: int = `1`, *, c: int, d: int = `2`):
     pass
 
 
-# CHECK-LABEL: lit.func @"test_kw_only_args
+# CHECK-LABEL: lit.fn @"test_kw_only_args
 fn test_kw_only_args(x: int):
     # CHECK-DAG: %[[C1:.*]] = kgen.param.constant = <1>
     # CHECK-DAG: %[[C2:.*]] = kgen.param.constant = <2>
@@ -128,7 +128,7 @@ fn test_kw_only_args(x: int):
     takes_kw_only_args(d=x, b=x, c=x, a=x)
 
 
-# CHECK-LABEL: lit.func @"test_kw_only_indirect
+# CHECK-LABEL: lit.fn @"test_kw_only_indirect
 fn test_kw_only_indirect[callee: fn(a: int, b: int = `1`, *, c: int, d: int = `2`)->None](x: int):
 
     # CHECK-DAG: %[[C1:.*]] = kgen.param.constant = <1>
@@ -145,7 +145,7 @@ fn takes_kw_only_params[a: int, b: int = `1`, *, c: int, d: int = `2`]():
     pass
 
 
-# CHECK-LABEL: lit.func @"test_kw_only_params
+# CHECK-LABEL: lit.fn @"test_kw_only_params
 fn test_kw_only_params[x: int]():
     # CHECK: call {{.*}}takes_kw_only_params{{.*}}"<x, 1, x, 2>()
     takes_kw_only_params[x, c=x]()
@@ -163,7 +163,7 @@ fn test_kw_only_params[x: int]():
     takes_kw_only_params[d=x, b=x, c=x, a=x]()
 
 
-# CHECK-LABEL: lit.func @"test_kw_only_params_indirect
+# CHECK-LABEL: lit.fn @"test_kw_only_params_indirect
 fn test_kw_only_params_indirect[x: int, callee: fn[a: int, b: int = `1`, *, c: int, d: int = `2`]()->None]():
 
     # CHECK: call{{.*}}bind_signature(:!lit.generator<{{.*}}> callee, x, 1, x, 2)]()
@@ -179,7 +179,7 @@ fn takes_variadic_and_kw_only_args(
     pass
 
 
-# CHECK-LABEL: lit.func @"test_variadic_and_kw_only_args
+# CHECK-LABEL: lit.fn @"test_variadic_and_kw_only_args
 fn test_variadic_and_kw_only_args(x: int):
     # CHECK-DAG: %[[VAR:.*]] = kgen.param.constant: variadic<index> = <[]>
     # CHECK-DAG: %[[ZERO:.*]] = kgen.param.constant = <0>
@@ -202,7 +202,7 @@ fn takes_variadic_and_kw_only_params[
     pass
 
 
-# CHECK-LABEL: lit.func @"test_variadic_and_kw_only_params
+# CHECK-LABEL: lit.fn @"test_variadic_and_kw_only_params
 fn test_variadic_and_kw_only_params[x: int]():
     # CHECK: call {{.*}}takes_variadic_and_kw_only_param{{.*}}"<x, x, :variadic<index> [], x, 0>()
     takes_variadic_and_kw_only_params[x, x, c=x]()
@@ -214,7 +214,7 @@ fn test_variadic_and_kw_only_params[x: int]():
     takes_variadic_and_kw_only_params[x, x, x, x, c=x]()
 
 
-# CHECK-LABEL: lit.func @"test_variadic_and_kw_only_params_indirect
+# CHECK-LABEL: lit.fn @"test_variadic_and_kw_only_params_indirect
 fn test_variadic_and_kw_only_params_indirect[x: int,
     callee: fn [a: int, b: int, *args: int, c: int, d: int = `0`]()->None]():
 
@@ -230,7 +230,7 @@ fn test_variadic_and_kw_only_params_indirect[x: int,
 # Passing non-default address space through Self in an initializer.
 
 
-# CHECK-LABEL: lit.func @"initialize_in_addrspace
+# CHECK-LABEL: lit.fn @"initialize_in_addrspace
 fn initialize_in_addrspace(
     ptr: UnsafePointer[ExampleRegPassable, AddressSpace(1)]
 ):
@@ -249,14 +249,14 @@ struct SomeRefItemStruct:
         pass
 
 
-# CHECK-LABEL: lit.func @"test_param_refitem
+# CHECK-LABEL: lit.fn @"test_param_refitem
 fn test_param_refitem[a: SomeRefItemStruct]():
     # CHECK-NEXT: !Int = <load_from_mem(:!lit.ref<!Int, imm {}> apply(:{{.*}}SomeRefItemStruct::@"__getitem__
     alias x = a[]
 
 
 # Passing non-default address space through mut arg, must use temporary.
-# CHECK-LABEL: lit.func @"mutate_in_addrspace
+# CHECK-LABEL: lit.fn @"mutate_in_addrspace
 fn mutate_in_addrspace(
     a: ExampleRegPassable,
     ptr: UnsafePointer[ExampleRegPassable, AddressSpace(1)],
@@ -304,7 +304,7 @@ fn test_matrix_equal[
     return True
 
 
-# CHECK-LABEL: lit.func @"partialBind
+# CHECK-LABEL: lit.fn @"partialBind
 fn partialBind(mut C: Matrix[`1`, `2`]) raises:
     # CHECK-NEXT: %exp = lit.var.decl "exp
     # CHECK-NEXT: lit.call @{{.*}}::@"test_matrix_equal{{.*}}"[mut *"C`{{.*}}", mut *"__error__`{{.*}}", mut *"exp`{{.*}}"]
@@ -315,7 +315,7 @@ fn partialBind(mut C: Matrix[`1`, `2`]) raises:
 
 
 # MOCO-692: [mojo-lang][ownership] Implicit conversion failure
-# CHECK-LABEL: lit.func @"test_implicit_conversion_bvalue
+# CHECK-LABEL: lit.fn @"test_implicit_conversion_bvalue
 fn test_implicit_conversion_bvalue():
     # CHECK-NEXT: %foo = lit.var.decl
     # CHECK-NEXT: Struct1::@"__init__
@@ -355,7 +355,7 @@ fn also_broken(r: Pointer[String]) -> String:
 
 
 # MOCO-858: isSafeToUseValueDestForDirectResult doesn't handle aliasing through references
-# CHECK-LABEL: lit.func @"test_byref_slot_with_references
+# CHECK-LABEL: lit.fn @"test_byref_slot_with_references
 fn test_byref_slot_with_references():
     var f = String()
 
@@ -375,9 +375,9 @@ fn test_byref_slot_with_references():
     # CHECK-NEXT: lit.call {{.*}}String::@"__moveinit__{{.*}}([[RESULTTMP]], %f)
 
 
-# CHECK-LABEL: lit.func @"test_byref_slot_closure_capture
+# CHECK-LABEL: lit.fn @"test_byref_slot_closure_capture
 fn test_byref_slot_closure_capture(owned x: String):
-    # CHECK: lit.func *"capture
+    # CHECK: lit.fn *"capture
     @parameter
     fn capture() -> String:
         return x
@@ -392,7 +392,7 @@ fn test_int_ref(ref x: Int) -> ref [x] Int:
     return x
 
 
-# CHECK-LABEL: lit.func @"complex_ref_box_emission
+# CHECK-LABEL: lit.fn @"complex_ref_box_emission
 fn complex_ref_box_emission[p: Int](a: Int):
     # Parameter ref just needs a box.
     _ = test_int_ref(p)
@@ -445,7 +445,7 @@ struct ViewOfHeavy:
 
 fn takeOwnedValue(owned view: ViewOfHeavy): pass
 
-# CHECK-LABEL: lit.func @"testUnneededCopy
+# CHECK-LABEL: lit.fn @"testUnneededCopy
 fn testUnneededCopy(heavy: Heavy):
   # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl
   # CHECK-NEXT: lit.call {{.*}}ViewOfHeavy::@"__init__{{.*}}(%heavy, [[TMP]])

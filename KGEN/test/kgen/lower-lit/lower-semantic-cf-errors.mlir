@@ -1,31 +1,31 @@
 // RUN: kgen-opt %s -allow-unregistered-dialect -lower-semantic-cf -verify-diagnostics
 
-lit.func @dead_code() {
+lit.fn @dead_code() {
   lit.return
   // expected-warning @below {{unreachable code after return statement}}
   "do.something"() : () -> ()
-  lit.end_func
+  lit.end_fn
 }
 
-lit.func @no_return_result() -> i32 {
+lit.fn @no_return_result() -> i32 {
   // expected-error @below {{return expected at end of function with results}}
-  lit.end_func
+  lit.end_fn
 }
 
-lit.func @bad_break() {
+lit.fn @bad_break() {
   // expected-error @below {{'break' is not inside a loop}}
   lit.break
-  lit.end_func
+  lit.end_fn
 }
 
-lit.func @bad_continue() {
+lit.fn @bad_continue() {
   // expected-error @below {{'continue' is not inside a loop}}
   lit.continue
-  lit.end_func
+  lit.end_fn
 }
 
 // break in an 'else' is an error unless in a nested loop.
-lit.func @bad_break_2(%arg0: i1) {
+lit.fn @bad_break_2(%arg0: i1) {
   // CHECK: hlcf.loop "_loop_0"
   lit.loop cond {
     lit.loop.condition %arg0: i1
@@ -37,5 +37,5 @@ lit.func @bad_break_2(%arg0: i1) {
   }
 
   lit.return
-  lit.end_func
+  lit.end_fn
 }

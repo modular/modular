@@ -49,7 +49,7 @@ using namespace M::KGEN::LIT;
 ///
 /// TODO(MOCO-1259): Support static methods with associated aliases
 LITSignatureGeneratorType LIT::substituteTraitAliasesIntoSignature(
-    DeclResolver &declResolver, ASTDecl *traitDecl, LIT::FuncOp candidateFunc,
+    DeclResolver &declResolver, ASTDecl *traitDecl, FnOp candidateFunc,
     LITSignatureGeneratorType desiredSignature, PValue selfPValue) {
   ParserParamEvaluator traitAliasReplacer(declResolver);
   for (auto &[name, decls] : traitDecl->getDeclsInScope()) {
@@ -769,8 +769,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   return {bindings, fitness, std::move(diag)};
 }
 
-TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,
-                                              StringRef baseName,
+TypedAttr ParamBindings::getBoundConstAttrFor(FnOp funcOp, StringRef baseName,
                                               const ExprNode *expr) const {
   LITSignatureGeneratorType signature = funcOp.getFullSignature();
 

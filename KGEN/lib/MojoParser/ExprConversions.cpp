@@ -174,7 +174,7 @@ static std::string generateThunkName(Type expected, Type actual) {
   return name;
 }
 
-static LIT::FuncOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
+static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
   auto &shared = moduleDecl.getShared();
   // Don't generate any debuginfo for the thunk. Push a null scope.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
@@ -420,7 +420,7 @@ static CValue convertFunctionValue(CValue value, const ExprNode *expr,
   // We can attempt to generate the thunk now.
   Attribute key = ArrayAttr::get(
       ctx, {TypeAttr::get(reparamActual), TypeAttr::get(reparamExpected)});
-  LIT::FuncOp thunk =
+  FnOp thunk =
       emitter.shared.getOrCreateFunctionThunk(key, generateConversionThunk);
   if (!thunk) {
     dest.resetForError();
@@ -694,7 +694,7 @@ struct TraitSelfBinder : public IndexParameterReplacer<TraitSelfBinder> {
 ///        !lit.ref<:trait<@Movable> MTT>, mut *[0,0]> owned_in_mem) -> none>>
 /// Resolving the *(0,0) into the Movable type, as well as the first param type.
 static LITSignatureGeneratorType
-createRequirementSignature(LIT::FuncOp traitFn, ASTType newSelfType,
+createRequirementSignature(FnOp traitFn, ASTType newSelfType,
                            ParserParamEvaluator &traitAliasReplacer,
                            const DenseMap<StringAttr, TypedAttr> &aliasValues,
                            DeclResolver &declResolver) {
@@ -939,12 +939,12 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
     }
 
     // Traits shouldn't have var decls or other things.
-    if (!isa<LIT::FuncOp>(requirementDecls.front()))
+    if (!isa<FnOp>(requirementDecls.front()))
       continue;
 
     // Each requirement may be overloaded, resolve each individually.
     for (ASTDecl *expected : requirementDecls) {
-      auto traitFn = dyn_cast<LIT::FuncOp>(expected);
+      auto traitFn = dyn_cast<FnOp>(expected);
       assert(traitFn && "trait has an alias and a fn with the same name!");
 
       // For any given requirement, the implementing type may have multiple
@@ -1017,7 +1017,7 @@ static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
     return false; // an error was emitted
   for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
     for (ASTDecl *decl : decls) {
-      auto traitFn = dyn_cast<LIT::FuncOp>(*decl);
+      auto traitFn = dyn_cast<FnOp>(*decl);
       // Skip any children that aren't methods or are inherited. This could be
       // an alias.
       if (!traitFn || traitFn.getIsInherited())
@@ -1073,7 +1073,7 @@ static PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait,
   // bugs.  We already do this for rp-trivial types which MLIR types are.
   SmallVector<VTableEntryAttr> vtable;
   for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
-    if (decls.empty() || !isa<LIT::FuncOp>(decls.front())) {
+    if (decls.empty() || !isa<FnOp>(decls.front())) {
       InflightDiag diag = shared.emitError(loc, "cannot bind MLIR type ")
                           << mlirType << " to trait " << ASTType(trait);
       diag.attachNote(decls.front()->getLoc())

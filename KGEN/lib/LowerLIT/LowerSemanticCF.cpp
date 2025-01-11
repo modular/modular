@@ -39,7 +39,7 @@ using namespace KGEN;
 namespace {
 /// Each function is lowered in a depth first walk through the region tree.
 struct LowerSemanticCF {
-  LIT::FuncOp theFunc;
+  LIT::FnOp theFunc;
   SymbolRefAttr theFuncSymbol;
 
   // This is the current loop that a break or continue should exit from.
@@ -56,7 +56,7 @@ struct LowerSemanticCF {
   // recursion after the IR is validated and rewritten.
   bool hasRecursiveCalls = false;
 
-  LowerSemanticCF(LIT::FuncOp theFunc) : theFunc(theFunc) {
+  LowerSemanticCF(LIT::FnOp theFunc) : theFunc(theFunc) {
     if (!theFunc.isOptionalSymbol())
       theFuncSymbol = LIT::getFullyResolvedSymbolRef(theFunc);
   }
@@ -159,7 +159,7 @@ static LIT::TryOp lowerTryFinally(LIT::TryOp tryOp) {
   // in one pass over the IR.
   auto checkRegion = [&](Operation *op) {
     // Control-flow will never cross nested functions.
-    if (isa<LIT::FuncOp>(op))
+    if (isa<LIT::FnOp>(op))
       return WalkResult::skip();
 
     // Check for a terminator that will branch past the enclosing try operation.
@@ -220,7 +220,7 @@ static ImplicitLocOpBuilder handleSemanticTerminatorOp(Operation &op,
   if (!isa<ParamIfOp>(op) && !nextOp->hasTrait<OpTrait::IsTerminator>()) {
     // Don't complain if the location is the same as the enclosing function,
     // it is automatically synthesized.
-    auto funcOp = nextOp->getParentOfType<LIT::FuncOp>();
+    auto funcOp = nextOp->getParentOfType<LIT::FnOp>();
     if (!funcOp || funcOp->getLoc() != nextOp->getLoc())
       emitWarning(nextOp->getLoc(), "unreachable code after ") << stmtKind;
   }
@@ -353,7 +353,7 @@ bool LowerSemanticCF::lowerLITLoop(LIT::LoopOp loopOp,
 static void emitRaise(ImplicitLocOpBuilder &b) {
   Operation *opForRaise = LIT::findOpProcessingRaise(b.getInsertionBlock());
   assert(opForRaise && "IR invalid, RaiseOp must only be in valid context");
-  if (isa<LIT::FuncOp>(opForRaise)) {
+  if (isa<LIT::FnOp>(opForRaise)) {
     b.create<LIT::ErrorReturnOp>(
         b.create<ParamConstantOp>(b.getBoolAttr(true)));
   } else {
@@ -483,7 +483,7 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
 
     // Ignore nested functions, they are handled (and lowered) separately by the
     // outer walker, which we are recursing within post-order.
-    if (isa<LIT::FuncOp>(op))
+    if (isa<LIT::FnOp>(op))
       continue;
 
     // Process a try op specially to identify dead code and warn.
@@ -674,7 +674,7 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
 
   // If we fell off the bottom, then we have a fall-through terminator.
   assert((isa<HLCF::YieldOp, HLCF::ElifYieldOp, LIT::TryYieldOp, ParamYieldOp,
-              LIT::EndFuncOp, CO::SuspendEndOp, LIT::LoopConditionOp,
+              LIT::EndFnOp, CO::SuspendEndOp, LIT::LoopConditionOp,
               LIT::LoopYieldOp>(block.back())));
   doesFallThrough = true;
 }
@@ -711,7 +711,7 @@ bool LowerSemanticCF::checkSelfRecursion(Block &block, bool isConditional) {
       continue;
 
     // Ignore nested functions, they are handled separately by the outer walker.
-    if (isa<LIT::FuncOp>(op))
+    if (isa<LIT::FnOp>(op))
       continue;
 
     // If we are already in conditional code, or if this is an 'if'-like
@@ -740,8 +740,8 @@ void LowerSemanticCF::run() {
 
   // A return is required at the end of function, diagnose it if missing.  The
   // parser automatically inserts a `return None` in functions that return None.
-  if (LIT::EndFuncOp endFunc =
-          dyn_cast<LIT::EndFuncOp>(theFunc.getBody()->getTerminator())) {
+  if (LIT::EndFnOp endFunc =
+          dyn_cast<LIT::EndFnOp>(theFunc.getBody()->getTerminator())) {
     emitError(endFunc->getLoc(),
               "return expected at end of function with results");
     hadError = true;
@@ -772,12 +772,12 @@ struct LowerSemanticCFPass : impl::LowerSemanticCFBase<LowerSemanticCFPass> {
   void runOnOperation() override {
     // Walk all functions and update them.
     bool hadError = false;
-    getOperation().walk<mlir::WalkOrder::PostOrder>([&](LIT::FuncOp func) {
+    getOperation().walk<mlir::WalkOrder::PostOrder>([&](LIT::FnOp func) {
       // Skip external functions.
       if (func.isExternal())
         return;
       // Just delete trait functions. They are no longer needed.
-      if (isa<LIT::TraitFuncOp>(func.getBody()->getTerminator())) {
+      if (isa<LIT::TraitFnOp>(func.getBody()->getTerminator())) {
         func.erase();
         return;
       }

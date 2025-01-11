@@ -18,7 +18,7 @@ namespace M::KGEN::LIT {
 using llvm::SMLoc;
 class DeclResolver;
 class ExprNode;
-class FuncOp;
+class FnOp;
 class LITSignatureGeneratorType;
 class ParserParamEvaluator;
 class PogListAttr;
@@ -66,7 +66,7 @@ public:
   /// Utility function to perform substitutions of the bindings into the symbol
   /// for the given function declaration. It returns the resultant
   /// SymbolConstantAttr or produces an error message and returns null.
-  TypedAttr getBoundConstAttrFor(LIT::FuncOp funcOp, StringRef baseName,
+  TypedAttr getBoundConstAttrFor(FnOp funcOp, StringRef baseName,
                                  const ExprNode *expr) const;
 
   /// Return whether there are any bindings given.
@@ -221,7 +221,7 @@ private:
 };
 
 LITSignatureGeneratorType substituteTraitAliasesIntoSignature(
-    DeclResolver &declResolver, ASTDecl *traitDecl, LIT::FuncOp candidateFunc,
+    DeclResolver &declResolver, ASTDecl *traitDecl, FnOp candidateFunc,
     LITSignatureGeneratorType desiredSignature, PValue selfPValue);
 
 } // namespace M::KGEN::LIT

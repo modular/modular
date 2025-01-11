@@ -57,7 +57,7 @@ class BaseDLValue;
 class ExprNode;
 class ExprEmitter;
 class OverloadSet;
-class FuncOp;
+class FnOp;
 class ValueDest;
 class StructFieldOp;
 class GlobalVarDeclOp;

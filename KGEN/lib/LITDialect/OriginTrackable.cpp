@@ -145,7 +145,7 @@ OriginTrackable::OriginTrackable(Value v) {
   auto bbArg = dyn_cast<BlockArgument>(v);
   if (!bbArg || !bbArg.getOwner())
     return;
-  auto func = dyn_cast<LIT::FuncOp>(bbArg.getOwner()->getParentOp());
+  auto func = dyn_cast<FnOp>(bbArg.getOwner()->getParentOp());
   if (!func)
     return;
   LITSignatureGeneratorType signature = func.getSignatureGenerator();

@@ -28,7 +28,7 @@ using namespace LIT;
 /// the trait) type. Also return parameter bindings for specializing the
 /// expected struct method with the current struct type.
 static std::pair<LITSignatureGeneratorType, ParamBindings>
-getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
+getTraitFunctionSignature(ExprEmitter &emitter, FnOp traitFn,
                           ASTType structSelfType, TraitType trait,
                           const ExprNode *expr,
                           const DenseMap<StringAttr, TypedAttr> &aliasValues,
@@ -86,7 +86,7 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl,
   // Synthesize the required special method. Importantly, don't mark the struct
   // as actually having this method so that destructors et al. are not
   // needlessly emitted.
-  LIT::FuncOp func;
+  FnOp func;
   if (kind == SpecialFunctionKind::kDel) {
     // Synthesize an empty destructor. Don't do anything special, because we
     // want check origins to insert a call to the real destructor here, if it
@@ -202,13 +202,13 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
 
   // Returns failure() to stop the verifyConformance loop.
   auto checkMethod = [&](const mlir::StringAttr &name, ASTDecl *traitFnDecl,
-                         LIT::FuncOp traitFn) -> LogicalResult {
+                         FnOp traitFn) -> LogicalResult {
     if (traitFn.getIsInherited()) {
       // Skip inherited methods, they're checked at a different time.
       return success();
     }
     ArrayRef<ASTDecl *> decls = structDecl.lookupInCurrentScope(name);
-    if (decls.empty() || !isa<LIT::FuncOp>(decls.front())) {
+    if (decls.empty() || !isa<FnOp>(decls.front())) {
       if (canSynthesizeIfMissing(name, rpTrivial, regPassable,
                                  implicitlyDestructible)) {
         specialFns.push_back(SpecialFunctionInfo::getKind(name));
@@ -316,20 +316,20 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
   // ```
   // trait Foo:
   //     alias N: Int
-  //     # lit.func @foo(%self: !kgen.param<Self>,
+  //     # lit.fn @foo(%self: !kgen.param<Self>,
   //     #               %x: SIMD[float32, #kgen.param.decl.ref<"N">])
   //     fn foo(self, x: SIMD[DType.float32, N]):
   //         ...
   // struct Impl(Foo):
   //     alias N: Int = 4
-  //     # lit.func @foo(%self: !kgen.param<Self>, %x: SIMD[float32,  4])
+  //     # lit.fn @foo(%self: !kgen.param<Self>, %x: SIMD[float32,  4])
   //     fn foo(self, x: SIMD[DType.float32, 4]):
   //         pass
   // ```
   for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
     for (ASTDecl *decl : decls) {
       // Skip any children that aren't methods or aliases.
-      if (auto traitFn = dyn_cast<LIT::FuncOp>(*decl)) {
+      if (auto traitFn = dyn_cast<FnOp>(*decl)) {
         if (failed(checkMethod(name, decl, traitFn)))
           break;
       }

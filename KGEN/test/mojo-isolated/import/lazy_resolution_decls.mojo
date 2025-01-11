@@ -17,7 +17,7 @@ from imported_cached_module import (
 )
 
 
-# CHECK-LABEL: lit.func @"assign_from()"
+# CHECK-LABEL: lit.fn @"assign_from()"
 fn assign_from():
     # CHECK: string = <"foobar">
     var foo = StringLiteralAlias

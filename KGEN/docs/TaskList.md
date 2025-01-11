@@ -475,7 +475,7 @@ higher level dialect that gets desugared down to kgen.
 ✅[Issue #1410](https://github.com/modularml/modular/issues/1410) When a
 generator implements an interface, it should be able do so with a more
 specialized signature than the interface has, and use that to infer
-constraints. This requires defining a new “`lit.func`” operation.
+constraints. This requires defining a new “`lit.fn`” operation.
 
 ✅We need some sort of module system and an “`kgen.include`” operation. This
 will raise questions like “how does separate compilation work”, “is the

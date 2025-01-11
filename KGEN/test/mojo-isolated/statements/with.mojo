@@ -12,7 +12,7 @@
 
 
 # Issue #12358
-# CHECK-LABEL: lit.func @"raise_string
+# CHECK-LABEL: lit.fn @"raise_string
 fn raise_string() raises:
     # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant: !StringLiteral = <{:string "thing"}>
     # CHECK-NEXT: [[ERR:%.*]] = lit.call {{.*}}Error::@"__init__{{.*}}([[TMP]])
@@ -63,7 +63,7 @@ fn noop(a: Int):
     pass
 
 
-# CHECK-LABEL: lit.func @"testWithNonRaising
+# CHECK-LABEL: lit.fn @"testWithNonRaising
 fn testWithNonRaising(a: ExampleCM):
     # CHECK-NEXT: %$CONTEXTMGR = lit.var.decl "$CONTEXTMGR"
     # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%a, %$CONTEXTMGR)
@@ -118,7 +118,7 @@ fn testWithNonRaising(a: ExampleCM):
     # CHECK-NEXT: ownership.use [[MEM]]
 
 
-# CHECK-LABEL: lit.func @"testWithRaising
+# CHECK-LABEL: lit.fn @"testWithRaising
 fn testWithRaising(a: ExampleCM) raises:
     # CHECK: %$CONTEXTMGR = lit.var.decl
     # CHECK: %val = lit.var.decl {{.*}} imp
@@ -164,7 +164,7 @@ fn testWithRaising(a: ExampleCM) raises:
     # CHECK-NEXT:   call {{.*}}__exit__{{.*}}([[IMMREF]])
 
 
-# CHECK-LABEL: lit.func @"testWithInTry
+# CHECK-LABEL: lit.fn @"testWithInTry
 fn testWithInTry(a: ExampleCM):
     # CHECK: %e = lit.var.decl "e" var
     # CHECK-NEXT: lit.try %e
@@ -185,7 +185,7 @@ fn testWithInTry(a: ExampleCM):
         _ = e
 
 
-# CHECK-LABEL: lit.func @"testWithScoping
+# CHECK-LABEL: lit.fn @"testWithScoping
 fn testWithScoping(a: ExampleCM):
     # This is a test that issue #18811 is fixed, in which a `with`
     # statement inside a `fn` does not respect lexical scope and binds
@@ -198,7 +198,7 @@ fn testWithScoping(a: ExampleCM):
         noop(withDecl)
 
 
-# CHECK-LABEL: lit.func @"testWithInDef
+# CHECK-LABEL: lit.fn @"testWithInDef
 def testWithInDef(a: ExampleCM):
     # This is a test that issue #20141 is fixed.
     # https://github.com/modularml/modular/issues/20141
@@ -243,7 +243,7 @@ struct CMWithoutExit:
         pass
 
 
-# CHECK-LABEL: lit.func @"testCMWithoutExit
+# CHECK-LABEL: lit.fn @"testCMWithoutExit
 fn testCMWithoutExit():
     # CHECK: %$CONTEXTMGR = lit.var.decl "$CONTEXTMGR"
     # CHECK: %a = lit.var.decl
@@ -291,7 +291,7 @@ fn testCMWithoutExit():
         with CMWithoutExit() as b:
             b.method()
 
-# CHECK-LABEL: lit.func @"testMultiClauseWith
+# CHECK-LABEL: lit.fn @"testMultiClauseWith
 fn testMultiClauseWith():
     # Tests that multiple-clause `with` statements (like below) are interpreted
     # as multiple nested "single" with statements like.
@@ -321,7 +321,7 @@ fn testMultiClauseWith():
     # CHECK:   lit.ownership.use %b
     # CHECK:   lit.ownership.use %a
 
-# CHECK-LABEL: lit.func @"testAmbiguousMultiContextWith
+# CHECK-LABEL: lit.fn @"testAmbiguousMultiContextWith
 fn testAmbiguousMultiContextWith():
     # Make sure that we don't interpret the below like this:
     #     with (CMWithoutExit(), CMWithoutExit()) as b:
@@ -333,7 +333,7 @@ fn testAmbiguousMultiContextWith():
         pass
 
 
-# CHECK-LABEL: lit.func @"testCMWithoutExitEarlyReturn
+# CHECK-LABEL: lit.fn @"testCMWithoutExitEarlyReturn
 # https://github.com/modularml/modular/issues/23693
 fn testCMWithoutExitEarlyReturn():
     # CHECK: %$CONTEXTMGR = lit.var.decl "$CONTEXTMGR"
@@ -369,7 +369,7 @@ struct CMUnconditionalExit:
         pass
 
 
-# CHECK-LABEL: lit.func @"unconditional_exit
+# CHECK-LABEL: lit.fn @"unconditional_exit
 fn unconditional_exit() raises:
     # CHECK: lit.try %__with_error__
     with CMUnconditionalExit():

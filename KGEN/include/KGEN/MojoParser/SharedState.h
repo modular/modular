@@ -33,7 +33,7 @@ class DeclResolver;
 class ExprNode;
 struct Operand;
 class FileModuleOp;
-class FuncOp;
+class FnOp;
 class LookupResult;
 class PackageOp;
 class ParserListener;
@@ -278,7 +278,7 @@ public:
   // Debug Info
 
   /// Generate a debug subprogram for this function and set it in its location.
-  void setLocationDebugScope(LIT::FuncOp funcOp);
+  void setLocationDebugScope(FnOp funcOp);
   /// Get the debug source name for a symbol.
   DebugInfo::SourceNameAttr getSourceName(mlir::SymbolOpInterface op);
 
@@ -454,11 +454,11 @@ public:
   /// Function used to create a thunk. This API is limited intentionally to
   /// ensure that the creation is transaction. This is important to retain
   /// invariants with packaging.
-  using CreateThunkFn = LIT::FuncOp (*)(Attribute, ASTDecl &);
+  using CreateThunkFn = FnOp (*)(Attribute, ASTDecl &);
 
   /// This gets a function conversion thunk between the two provided function
   /// types within the provided module, or creates one if needed.
-  LIT::FuncOp getOrCreateFunctionThunk(Attribute key, CreateThunkFn create);
+  FnOp getOrCreateFunctionThunk(Attribute key, CreateThunkFn create);
 
   /// Given a scope that refers to a nested function, return the set of captured
   /// values in the form of a range: the begin and end iterators of the capture

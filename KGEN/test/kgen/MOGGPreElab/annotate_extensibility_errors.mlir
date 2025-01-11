@@ -2,7 +2,7 @@
 // RUN: kgen-opt %s --mogg-annotate --split-input-file --verify-diagnostics
 
 // Hard coded registration function, has special `mogg.intrinsic_register`
-lit.func @"register(::StringLiteral)"(%name: !lit.struct<@stdlib::@builtin::@string_literal::@StringLiteral>, %num_dps_outputs: !lit.struct<@stdlib::@builtin::@int::@Int> = {1}) -> !kgen.none attributes {mogg.intrinsic_register, sourceName = "register", specialFnKind = 0 : i8} {
+lit.fn @"register(::StringLiteral)"(%name: !lit.struct<@stdlib::@builtin::@string_literal::@StringLiteral>, %num_dps_outputs: !lit.struct<@stdlib::@builtin::@int::@Int> = {1}) -> !kgen.none attributes {mogg.intrinsic_register, sourceName = "register", specialFnKind = 0 : i8} {
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }
@@ -10,7 +10,7 @@ lit.func @"register(::StringLiteral)"(%name: !lit.struct<@stdlib::@builtin::@str
 // expected-error @below {{Struct based extensibility needs execute!}}
 lit.struct.decl @just_shape(trait<@stdlib::@builtin::@anytype::@AnyType>)
   decorators <:none apply(:!lit.generator<("name": !lit.struct<@stdlib::@builtin::@string_literal::@StringLiteral>, "num_dps_outputs": !lit.struct<@stdlib::@builtin::@int::@Int> = {1}) -> !kgen.none> @"register(::StringLiteral)", {:string "imposter_add"}, {1})> {
-  lit.func export @"shape"(%x: !lit.struct<@test2<:@DType *"dtype">>, %y: !lit.struct<@test3>) -> !kgen.none
+  lit.fn export @"shape"(%x: !lit.struct<@test2<:@DType *"dtype">>, %y: !lit.struct<@test3>) -> !kgen.none
     attributes {
         isStatic,
         sourceName = "shape", specialFnKind = 0 : i8} {

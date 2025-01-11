@@ -838,7 +838,7 @@ PublicFunctionDecl::PublicFunctionDecl(MojoASTDeclRef declRef)
     : PublicDecl(PublicDeclKind::DK_PublicFunctionDecl,
                  declRef.getName().value_or(StringRef{})),
       deprecated(declRef.getDeprecationWarning().value_or(StringRef{})) {
-  auto funcOp = cast<LIT::FuncOp>(declRef.getIfOperation());
+  auto funcOp = cast<FnOp>(declRef.getIfOperation());
   isStaticFlag = funcOp.getIsStatic();
   isImplicitConversionFlag = funcOp.getIsImplicitConversion();
   isMethodFlag = !isStaticFlag && isa<StructDeclOp>(funcOp->getParentOp());
@@ -928,7 +928,7 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
     bool isSelf = false;
     if (selfType) {
       // Init methods like copyinit have their output argument as 'self'.
-      auto fnDecl = dyn_cast_if_present<LIT::FuncOp>(declRef.getIfOperation());
+      auto fnDecl = dyn_cast_if_present<FnOp>(declRef.getIfOperation());
       if (fnDecl && fnDecl.getSpecialFunctionInfo().hasSelfResult()) {
         isSelf = declConvention == PublicArgumentDecl::Convention::kOut;
       } else {
@@ -1107,12 +1107,12 @@ std::string PublicTraitDecl::getMarkdownDocString() const {
 
 llvm::json::Object PublicTraitDecl::toJSON(MojoParserContext &ctx) const {
   // Ignore some inherited functions.
-  auto shouldHideFn = [](LIT::FuncOp decl, StringRef name) {
+  auto shouldHideFn = [](FnOp decl, StringRef name) {
     return decl.getIsInherited() && name == "__del__";
   };
 
   auto functionOverloads = FunctionDeclOverloadSet::fromSortedFunctions(
-      extractChildDecls<PublicFunctionDecl, LIT::FuncOp>(*decl, shouldHideFn));
+      extractChildDecls<PublicFunctionDecl, FnOp>(*decl, shouldHideFn));
   SmallVector<StringRef> parentTraits;
   collectParentTypes(ctx, parentTraits,
                      cast<TraitDeclOp>(*decl).getParentTypes());
@@ -1226,7 +1226,7 @@ llvm::json::Object PublicStructDecl::toJSON(MojoParserContext &ctx) const {
   auto aliases = extractChildDecls<PublicAliasDecl, AliasDeclOp>(*decl);
   auto fields = extractChildDecls<PublicStructFieldDecl, StructFieldOp>(*decl);
   auto functionOverloads = FunctionDeclOverloadSet::fromSortedFunctions(
-      extractChildDecls<PublicFunctionDecl, LIT::FuncOp>(*decl));
+      extractChildDecls<PublicFunctionDecl, FnOp>(*decl));
   SmallVector<StringRef> parentTraits;
   collectParentTypes(ctx, parentTraits,
                      cast<StructDeclOp>(*decl).getParentTypes());
@@ -1301,7 +1301,7 @@ llvm::json::Object PublicModuleDecl::toJSON(MojoParserContext &ctx) const {
   auto structs = extractChildDecls<PublicStructDecl, StructDeclOp>(*decl);
   auto traits = extractChildDecls<PublicTraitDecl, TraitDeclOp>(*decl);
   auto functionOverloads = FunctionDeclOverloadSet::fromSortedFunctions(
-      extractChildDecls<PublicFunctionDecl, LIT::FuncOp>(*decl));
+      extractChildDecls<PublicFunctionDecl, FnOp>(*decl));
 
   return llvm::json::Object{{"aliases", toJSONArray(ctx, aliases)},
                             {"description", description},

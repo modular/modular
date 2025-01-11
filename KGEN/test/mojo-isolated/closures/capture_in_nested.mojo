@@ -10,7 +10,7 @@ fn use(x: int):
     pass
 
 
-# CHECK-LABEL: lit.func @"function
+# CHECK-LABEL: lit.fn @"function
 fn function():
     # CHECK: materialize: !escaping{{.*}} = <{}>
     fn closure_with_loop(x: int) escaping:

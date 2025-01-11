@@ -12,7 +12,7 @@ struct MemType:
         return MemType()
 
 
-# CHECK-LABEL: lit.func @"makes_escaping_closure
+# CHECK-LABEL: lit.fn @"makes_escaping_closure
 fn makes_escaping_closure(m: MemType, w: Int):
     # CHECK: [[IMPL:%.*]] = lit.var.decl "anonymous*" synth
     # CHECK-NEXT: lit.call @{{.*}}::@"__init__{{.*}}(%m, [[IMPL]])

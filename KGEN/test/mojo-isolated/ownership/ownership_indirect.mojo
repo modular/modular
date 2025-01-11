@@ -21,7 +21,7 @@ struct MyList[T: CollectionElement]:
     fn __getitem__(ref self, idx: Int) -> ref [self.data.get_unique_item_ref(idx)] T:
         return self.data.get_unique_item_ref(idx)
 
-# CHECK-LABEL: lit.func @"test0
+# CHECK-LABEL: lit.fn @"test0
 fn test0():
   # CHECK: lit.call {{.*}}MyList::@"__init__
   var list = MyList[Int]()

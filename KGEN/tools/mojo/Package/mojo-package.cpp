@@ -108,7 +108,7 @@ buildPackageModule(ModuleOp theModule, LIT::PackageOp parsedPackageOp) {
 
   // Include any generated function thunks at the top-level. These are
   // deduplicated when the package is imported.
-  for (auto func : theModule.getOps<LIT::FuncOp>()) {
+  for (auto func : theModule.getOps<LIT::FnOp>()) {
     assert(func.getThunkKeyAttr() && "top-level function must be a thunk");
     pushOpsOntoWorklist(MutableArrayRef(*func));
   }

@@ -63,7 +63,7 @@ ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringAttr name) const {
 /// or trait.
 ASTDecl *ASTDecl::tryGetMethodParentDecl() const {
   // Methods are always FuncOps.
-  if (!isa<LIT::FuncOp>(*this))
+  if (!isa<FnOp>(*this))
     return nullptr;
 
   // Don't return non-null for nested functions or module-level functions.
@@ -173,8 +173,8 @@ std::optional<StringRef> ASTDecl::getNameIfOperation() const {
 }
 
 PValue ASTDecl::getFuncAsPValue() const {
-  return SymbolConstantAttr::get(
-      getSymbolRef(), cast<LIT::FuncOp>(*this).getSignatureGenerator());
+  return SymbolConstantAttr::get(getSymbolRef(),
+                                 cast<FnOp>(*this).getSignatureGenerator());
 }
 
 /// Return the SymbolRefAttr for a declaration, including all scoping that may
@@ -184,9 +184,8 @@ SymbolRefAttr ASTDecl::getSymbolRef() const {
   auto op = dyn_cast_if_present<mlir::SymbolOpInterface>(getIfOperation());
   if (!op)
     return {};
-  assert(
-      (!isa<LIT::FuncOp>(op) || resolvedness >= DeclResolvedness::signature) &&
-      "Functions don't have a symbol until their signatures are resolved");
+  assert((!isa<FnOp>(op) || resolvedness >= DeclResolvedness::signature) &&
+         "Functions don't have a symbol until their signatures are resolved");
   return getFullyResolvedSymbolRef(op);
 }
 

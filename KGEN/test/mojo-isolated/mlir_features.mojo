@@ -10,7 +10,7 @@ alias `1` = __mlir_attr.`1 : index`
 alias `42` = __mlir_attr.`42 : index`
 
 
-# CHECK: lit.func @"mlirMagicTest{{.*}}(%x: bf16, %y: f8E5M2)
+# CHECK: lit.fn @"mlirMagicTest{{.*}}(%x: bf16, %y: f8E5M2)
 fn mlirMagicTest(
     x: __mlir_type.bf16, y: __mlir_type.f8E5M2
 ) -> __mlir_type.index:
@@ -49,7 +49,7 @@ fn mlirMagicTest(
     return __mlir_op.`index.shru`(new_lower, `1`)
 
 
-# CHECK-LABEL: lit.func @"mlirTypesAndAttrs{{.*}}()"<dtype: dtype>()
+# CHECK-LABEL: lit.fn @"mlirTypesAndAttrs{{.*}}()"<dtype: dtype>()
 fn mlirTypesAndAttrs[dtype: __mlir_type.`!kgen.dtype`]():
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<scalar<dtype>, mut
     var a: __mlir_type[`!pop.scalar<`, dtype, `>`]
@@ -71,7 +71,7 @@ fn typePlaceholder():
     var x: __mlir_type[`!kgen.variadic<`, __mlir_type.i32, `>`]
 
 
-# CHECK-LABEL: lit.func @"fancierSubstitutions
+# CHECK-LABEL: lit.fn @"fancierSubstitutions
 fn fancierSubstitutions():
     # CHECK: = lit.var.decl {{.*}} : !lit.ref<complex<i32>,
     var complexInt: __mlir_type[`complex<`, __mlir_type.i32, `>`]
@@ -112,7 +112,7 @@ struct MyPointer[elType: __mlir_type.`!kgen.type`]:
         self.value = value
 
 
-# CHECK-LABEL: lit.func @"structured_for_loop()"
+# CHECK-LABEL: lit.fn @"structured_for_loop()"
 fn structured_for_loop() -> __mlir_type.index:
     # CHECK: %0 = hlcf.loop (%arg0 = %index0 : index) -> index {
     __mlir_region loop_body(i: __mlir_type.index):
@@ -127,7 +127,7 @@ fn structured_for_loop() -> __mlir_type.index:
     ](__mlir_attr.`0 : index`)
 
 
-# CHECK-LABEL: lit.func @"mlir_properties
+# CHECK-LABEL: lit.fn @"mlir_properties
 fn mlir_properties(arg0: __mlir_type.i64, arg1: __mlir_type.i64):
     # CHECK: llvm.add %arg0, %arg1 overflow<nsw> : i64
     _ = __mlir_op.`llvm.add`[

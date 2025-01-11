@@ -16,7 +16,7 @@ fn fudge_int(x: int) -> int:
     return x
 
 
-# CHECK-LABEL: lit.func @"var_decls()
+# CHECK-LABEL: lit.fn @"var_decls()
 fn var_decls():
     # CHECK: %y = lit.var.decl "y" var
     var y: int
@@ -34,7 +34,7 @@ fn var_decls():
     # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant = <42>
     # CHECK-NEXT: lit.ref.store [[TMP]], %z
 
-# CHECK-LABEL: lit.func @"test_var_let_scopes
+# CHECK-LABEL: lit.fn @"test_var_let_scopes
 fn test_var_let_scopes(cond: Bool):
     # CHECK: lit.var.decl "c"
     # CHECK: hlcf.elif
@@ -48,7 +48,7 @@ fn test_var_let_scopes(cond: Bool):
         var c = `123`
 
 
-# CHECK-LABEL: lit.func @"test_var_origin_mangling
+# CHECK-LABEL: lit.fn @"test_var_origin_mangling
 fn test_var_origin_mangling[x: int](c: Bool):
     # CHECK: hlcf.elif
     if c:
@@ -60,14 +60,14 @@ fn test_var_origin_mangling[x: int](c: Bool):
         var y = x
 
 
-# CHECK-LABEL: lit.func @"test_nested_var_origin_mangling
+# CHECK-LABEL: lit.fn @"test_nested_var_origin_mangling
 fn test_nested_var_origin_mangling[x: int](c: Bool):
     # CHECK: hlcf.elif
     if c:
         # CHECK: lit.var.decl "y" var : !lit.ref<index, mut *"y`">
         var y = x
 
-    # CHECK: lit.func *"nested()"
+    # CHECK: lit.fn *"nested()"
     fn nested():
         # CHECK: lit.var.decl "y" var : !lit.ref<index, mut *"y`2x">
         var y = x
@@ -84,7 +84,7 @@ fn test_shadowing_reference_shadowed(cond: Bool):
 # Implicitly declared variables.
 # ===----------------------------------------------------------------------=== #
 
-# CHECK-LABEL: lit.func @"var_decls_implicit()
+# CHECK-LABEL: lit.fn @"var_decls_implicit()
 def var_decls_implicit() -> None:
     # Implicit declaration is mutable.
     # CHECK: %x = lit.var.decl "x" imp
@@ -100,7 +100,7 @@ fn use_int(x: Int): pass
 # Check implicit values are declared at top level where they belong.
 # https://github.com/modularml/modular/issues/34368
 
-# CHECK-LABEL: lit.func @"walrus_control_flow
+# CHECK-LABEL: lit.fn @"walrus_control_flow
 def walrus_control_flow(a: Int):
    # CHECK: %b = lit.var.decl
    # CHECK: %curr = lit.var.decl "curr"
@@ -115,7 +115,7 @@ def walrus_control_flow(a: Int):
      curr = b
 
 # Check that we only get one implicit declaration and all three scopes use it.
-# CHECK-LABEL: lit.func @"reuse_implicit
+# CHECK-LABEL: lit.fn @"reuse_implicit
 def reuse_implicit(a: Int, cond: __mlir_type.i1):
   # CHECK: %implicit = lit.var.decl
 
@@ -138,7 +138,7 @@ def reuse_implicit(a: Int, cond: __mlir_type.i1):
   # CHECK: lit.ref.load %implicit :
   use_int(implicit)
 
-# CHECK-LABEL: lit.func @"addrSpaces
+# CHECK-LABEL: lit.fn @"addrSpaces
 fn addrSpaces[lt1: MutableOrigin, lt2: ImmutableOrigin, as1: AddressSpace]():
   # CHECK: lit.var.decl "ref1" {{.*}}!lit.ref<!MemExample, mut lt1, #lit.struct.extract<:!Int #lit.struct.extract<:!AddressSpace as1, "_value">, "value">>
   var ref1 : Pointer[MemExample, lt1, as1]._mlir_type

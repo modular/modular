@@ -25,10 +25,10 @@ from docs_package import documented_method_defined_in_init
 # CHECK: lit.globalvar.decl @value{{.*}}docString = #[[GLOBAL_VAR_DOC]]
 # CHECK: lit.struct.decl @Struct{{.*}}docString = #[[STRUCT_DOC]]
 # CHECK: lit.struct.field value{{.*}}docString = #[[STRUCT_FIELD_DOC]]
-# CHECK: lit.func @"foo()"{{.*}}docString = #[[FUNCTION_DOC]]
+# CHECK: lit.fn @"foo()"{{.*}}docString = #[[FUNCTION_DOC]]
 
 # CHECK: lit.package @docs_package{{.*}}docString = #[[PACKAGE_DOC]]
-# CHECK: lit.func @"documented_method_defined_in_init()"{{.*}}docString = #[[IMPORTED_FUNC_DOC]]
+# CHECK: lit.fn @"documented_method_defined_in_init()"{{.*}}docString = #[[IMPORTED_FUNC_DOC]]
 
 alias AliasType = __mlir_type.`!kgen.type`
 """This is an alias doc."""

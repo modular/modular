@@ -14,7 +14,7 @@ lit.struct.decl @HasMemFields attributes {destructor = #kgen.symbol.constant<@Ha
   lit.struct.field uninitialized : !lit.struct<@S>
   lit.struct.field register : index
 
-  lit.func @__del__[mut dellife](%self: !lit.ref<@HasMemFields, mut dellife> owned_in_mem) -> !kgen.none {
+  lit.fn @__del__[mut dellife](%self: !lit.ref<@HasMemFields, mut dellife> owned_in_mem) -> !kgen.none {
     // CHECK: %[[VAR0:.*]] = lit.ref.struct.ger %self[a]
     // CHECK: %[[VAR1:.*]] = lit.call @S::@__del__[mut dellife->a](%[[VAR0]])
     // CHECK: %[[VAR2:.*]] = lit.ref.struct.ger %self[stole]
@@ -28,8 +28,8 @@ lit.struct.decl @HasMemFields attributes {destructor = #kgen.symbol.constant<@Ha
   }
 }
 
-// CHECK-LABEL: lit.func @mark_initialized
-lit.func @mark_initialized[mut lt](%arg: !lit.ref<@HasMemFields, mut lt> byref_result) {
+// CHECK-LABEL: lit.fn @mark_initialized
+lit.fn @mark_initialized[mut lt](%arg: !lit.ref<@HasMemFields, mut lt> byref_result) {
   // CHECK-NEXT: lit.ownership.mark_initialized %arg
   lit.ownership.mark_initialized %arg : <@HasMemFields, mut lt>
   kgen.return
@@ -46,13 +46,13 @@ lit.struct.decl @Error register_passable attributes {destructor = #kgen.symbol.c
   lit.struct.field a : index
 }
 
-lit.func @consume_err(%value: !Error) {
+lit.fn @consume_err(%value: !Error) {
   kgen.return
 }
 
-// CHECK-LABEL: lit.func @conditional_consumption_1
+// CHECK-LABEL: lit.fn @conditional_consumption_1
 // Issue#34320: https://github.com/modularml/modular/issues/34320
-lit.func @conditional_consumption_1(%c: i1, %value: !Error) {
+lit.fn @conditional_consumption_1(%c: i1, %value: !Error) {
   // CHECK-NOT: @Error::@__del__
   hlcf.loop {
     hlcf.if %c {
@@ -67,8 +67,8 @@ lit.func @conditional_consumption_1(%c: i1, %value: !Error) {
   kgen.return
 }
 
-// CHECK-LABEL: lit.func @conditional_consumption_2
-lit.func @conditional_consumption_2(%c: i1, %value: !Error) {
+// CHECK-LABEL: lit.fn @conditional_consumption_2
+lit.fn @conditional_consumption_2(%c: i1, %value: !Error) {
   // CHECK-NOT: @Error::@__del__
   hlcf.loop {
     hlcf.if %c {
@@ -83,8 +83,8 @@ lit.func @conditional_consumption_2(%c: i1, %value: !Error) {
   kgen.return
 }
 
-// CHECK-LABEL: lit.func @conditional_consumption_3
-lit.func @conditional_consumption_3(%c: i1, %value: !Error) {
+// CHECK-LABEL: lit.fn @conditional_consumption_3
+lit.fn @conditional_consumption_3(%c: i1, %value: !Error) {
   // CHECK-NOT: @Error::@__del__
   hlcf.loop {
     lit.try {
@@ -106,8 +106,8 @@ lit.func @conditional_consumption_3(%c: i1, %value: !Error) {
   kgen.return
 }
 
-// CHECK-LABEL: lit.func @conditional_consumption_4
-lit.func @conditional_consumption_4(%c: i1, %value: !Error) {
+// CHECK-LABEL: lit.fn @conditional_consumption_4
+lit.fn @conditional_consumption_4(%c: i1, %value: !Error) {
   // CHECK-NOT: @Error::@__del__
   hlcf.loop {
     lit.try {
@@ -140,12 +140,12 @@ lit.struct.decl @Thing {
   lit.struct.field x : index
   lit.struct.field y : index
   lit.struct.field z : index
-  lit.func @get(%self: !lit.ref<!Thing, imm #lit.any.origin> read_mem) {
+  lit.fn @get(%self: !lit.ref<!Thing, imm #lit.any.origin> read_mem) {
     kgen.return
   }
 }
 
-lit.func @top(%c: !lit.ref<@Box<:trait<@AnyType> !Thing>, mut #lit.any.origin> read_mem) {
+lit.fn @top(%c: !lit.ref<@Box<:trait<@AnyType> !Thing>, mut #lit.any.origin> read_mem) {
   %0 = lit.ref.struct.ger %c[x] : <@Box<:trait<@AnyType> !Thing>, mut #lit.any.origin> -> !Thing
   lit.call @Thing::@get(%0) : !lit.generator<("self": !lit.ref<!Thing, mut #lit.any.origin> read_mem) -> ()>
   kgen.return
@@ -199,8 +199,8 @@ lit.struct.decl @Context attributes {destructor = #kgen.symbol.constant<@Context
   lit.struct.field __new_repl_var2 : !kgen.pointer<pointer<!PythonObject>>
 }
 
-// CHECK-LABEL: lit.func @createConditionallyInitializedImmortalReferenceInRepl
-lit.func @createConditionallyInitializedImmortalReferenceInRepl[mut topArg, mut localError, mut localResult](
+// CHECK-LABEL: lit.fn @createConditionallyInitializedImmortalReferenceInRepl
+lit.fn @createConditionallyInitializedImmortalReferenceInRepl[mut topArg, mut localError, mut localResult](
   %__mojo_repl_arg : !lit.ref<!Context, mut topArg> mut,?,
   %__error__: !lit.ref<!Error, mut localError> byref_error,
   %__result__: !lit.ref<none, mut localResult> byref_result) throws|capturing -> i1 {

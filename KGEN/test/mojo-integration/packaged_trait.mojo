@@ -34,7 +34,7 @@ fn bind_trait[T: PackageTrait]():
     pass
 
 
-# CHECK-LABEL: lit.func @"test
+# CHECK-LABEL: lit.fn @"test
 fn test():
     # CHECK-NEXT: [!MyType{{[0-9]*}}, {"method" {{.*}}@MyType::@"method
     bind_trait[MyType]()

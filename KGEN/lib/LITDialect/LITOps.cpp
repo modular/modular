@@ -38,7 +38,7 @@ Operation *LIT::findOpProcessingRaise(Block *currentBlock) {
   Operation *parentOp;
   while (currentBlock && (parentOp = currentBlock->getParentOp())) {
     // If we find a throwing function, return it.
-    if (auto funcOp = dyn_cast<LIT::FuncOp>(parentOp))
+    if (auto funcOp = dyn_cast<FnOp>(parentOp))
       return funcOp.isThrows() ? funcOp : nullptr;
 
     if (auto tryOp = dyn_cast<TryOp>(parentOp)) {
@@ -429,21 +429,21 @@ const SpecialFunctionInfo &SpecialFunctionInfo::get(SpecialFunctionKind kind) {
 
 /// Return the SpecialFunctionKind ID that indicates if this is a special
 /// function like __init__ or __radd__.
-SpecialFunctionKind LIT::FuncOp::getSpecialFunctionKind() {
+SpecialFunctionKind FnOp::getSpecialFunctionKind() {
   return (SpecialFunctionKind)getSpecialFnKind();
 }
-const SpecialFunctionInfo &LIT::FuncOp::getSpecialFunctionInfo() {
+const SpecialFunctionInfo &FnOp::getSpecialFunctionInfo() {
   return SpecialFunctionInfo::get(getSpecialFunctionKind());
 }
 
 /// Returns the user-defined result type, looking through implicit memory
 /// results and stripping off the variant from error throwing results if needed.
-Type LIT::FuncOp::getUserResultType() {
+Type FnOp::getUserResultType() {
   return LIT::getSignatureUserResultType(
       getSignatureGenerator(), getArgumentTypes(), getMLIRResultType());
 }
 
-TypedAttr LIT::FuncOp::getBoundReference(ParameterExprArrayAttr bindings) {
+TypedAttr FnOp::getBoundReference(ParameterExprArrayAttr bindings) {
   if (!bindings) // We allow null for convenience.
     bindings = ParameterExprArrayAttr::get(getContext(), {});
 
@@ -466,12 +466,11 @@ TypedAttr LIT::FuncOp::getBoundReference(ParameterExprArrayAttr bindings) {
                                  bindings);
 }
 
-SymbolConstantAttr
-LIT::FuncOp::getBoundSymbolRef(ParameterExprArrayAttr bindings) {
+SymbolConstantAttr FnOp::getBoundSymbolRef(ParameterExprArrayAttr bindings) {
   return cast<SymbolConstantAttr>(getBoundReference(bindings));
 }
 
-bool LIT::FuncOp::isSynthetic() { return getIsSynthetic(); }
+bool FnOp::isSynthetic() { return getIsSynthetic(); }
 
 /// Parse a fixed mutability specifier that occurs for implicit Origins.
 // Implicit origin params are always known immut or mut, never parametric.
@@ -712,7 +711,7 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
 }
 
 /// Parses a LIT Generator.
-ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
+ParseResult FnOp::parse(OpAsmParser &parser, OperationState &result) {
   ExportKindAttr exportKind;
   if (parseSymbolExport(parser, exportKind))
     return failure();
@@ -781,8 +780,8 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   return success();
 }
 
-// Print the LIT::FuncOp using the shared printing logic.
-void LIT::FuncOp::print(OpAsmPrinter &p) {
+// Print the FnOp using the shared printing logic.
+void FnOp::print(OpAsmPrinter &p) {
   using namespace mlir::function_interface_impl;
 
   // Print the operation and the function name.
@@ -799,7 +798,7 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
   printOptionalInline(p, getInlineLevel());
   printOptionalDecorators(p, *this, getDecorators());
 
-  // Don't print the following in lit.func.
+  // Don't print the following in lit.fn.
   SmallVector<StringRef> ignoredAttrNames(
       (ArrayRef<StringRef>(disallowedAttrNames)));
   if (getLLVMMetadata().empty())
@@ -813,7 +812,7 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
 }
 
 // Name the arguments of the region with the argument names.
-void LIT::FuncOp::getAsmBlockArgumentNames(
+void FnOp::getAsmBlockArgumentNames(
     Region &region, llvm::function_ref<void(Value, StringRef)> setNameFn) {
   if (region.empty())
     return;
@@ -823,7 +822,7 @@ void LIT::FuncOp::getAsmBlockArgumentNames(
     setNameFn(arg, getSignatureGenerator().getArgName(idx).strref());
 }
 
-LogicalResult LIT::FuncOp::verify() {
+LogicalResult FnOp::verify() {
   // Check that the number of argument labels matches the number of argument
   // types.
   if (getSignatureGenerator().getBody().getMetadata().getNumArgs() !=
@@ -845,18 +844,18 @@ LogicalResult LIT::FuncOp::verify() {
   return success();
 }
 
-void LIT::FuncOp::walkDeclarations(function_ref<void(ParamDeclAttr)> walkDecl) {
+void FnOp::walkDeclarations(function_ref<void(ParamDeclAttr)> walkDecl) {
   if (auto decl = getParamDeclAttr())
     walkDecl(decl);
 }
 
-void LIT::FuncOp::walkDefinitions(
+void FnOp::walkDefinitions(
     function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
   if (auto decl = getParamDeclAttr())
     walkDef(decl, &getBodyRegion());
 }
 
-void LIT::FuncOp::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
+void FnOp::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
   if (getParamDecl()) {
     assert(decls.size() == 1);
     setParamDeclAttr(decls.front());
@@ -866,11 +865,10 @@ void LIT::FuncOp::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
 }
 
 /// This operation has no uses to collect in its current scope.
-void LIT::FuncOp::collectParameterUses(function_ref<void(Attribute)> scanAttr,
-                                       function_ref<void(Type)> scanType) {}
+void FnOp::collectParameterUses(function_ref<void(Attribute)> scanAttr,
+                                function_ref<void(Type)> scanType) {}
 
-SmallVector<ParamDeclAttr>
-LIT::FuncOp::collectAllParams(bool includeImplOrigins) {
+SmallVector<ParamDeclAttr> FnOp::collectAllParams(bool includeImplOrigins) {
   auto [_, result] = collectParametricAncestors(getOperation()->getParentOp());
 
   auto params = getParams();
@@ -881,11 +879,11 @@ LIT::FuncOp::collectAllParams(bool includeImplOrigins) {
   return result;
 }
 
-LITSignatureGeneratorType LIT::FuncOp::getFullSignature() {
+LITSignatureGeneratorType FnOp::getFullSignature() {
   return LIT::getFullSignature((*this)->getParentOp(), getSignatureGenerator());
 }
 
-void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
+void FnOp::build(OpBuilder &builder, OperationState &result) {
   MLIRContext *ctx = builder.getContext();
 
   // Before resolution, we treat the function as having type ()->Error,
@@ -932,11 +930,10 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
   result.addRegion()->push_back(new Block());
 }
 
-void LIT::FuncOp::build(OpBuilder &b, OperationState &state,
-                        StringAttr declName, StringRef sourceName,
-                        FunctionType funcType,
-                        ArrayRef<ParamDeclAttr> paramDecls, FnEffects effects,
-                        InlineLevel inlineLevel) {
+void FnOp::build(OpBuilder &b, OperationState &state, StringAttr declName,
+                 StringRef sourceName, FunctionType funcType,
+                 ArrayRef<ParamDeclAttr> paramDecls, FnEffects effects,
+                 InlineLevel inlineLevel) {
   MLIRContext *ctx = b.getContext();
   UnitAttr none;
   SmallVector<ArgConvention> convs(funcType.getNumInputs());
@@ -959,10 +956,9 @@ void LIT::FuncOp::build(OpBuilder &b, OperationState &state,
 }
 
 /// Build a function in a default configuration, used by member synthesization.
-void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
-                        StringAttr name, StringAttr sourceName,
-                        SignatureGeneratorType signature,
-                        SpecialFunctionKind specialFnKind) {
+void FnOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
+                 StringAttr sourceName, SignatureGeneratorType signature,
+                 SpecialFunctionKind specialFnKind) {
   MLIRContext *ctx = builder.getContext();
   UnitAttr none;
   build(builder, result, name, ParamDeclAttr(), TypeAttr::get(signature),
@@ -1924,9 +1920,9 @@ FailureOr<InlineResult> LIT::AsyncCallOp::prepInline(mlir::RewriterBase &b) {
 //===----------------------------------------------------------------------===//
 
 LogicalResult LIT::ReturnOp::verify() {
-  auto func = (*this)->getParentOfType<LIT::FuncOp>();
+  auto func = (*this)->getParentOfType<FnOp>();
   if (!func)
-    return emitOpError("expected to be nested inside a `lit.func` operation");
+    return emitOpError("expected to be nested inside a `lit.fn` operation");
   return checkOperandTypes(*this, func.getResultTypes());
 }
 
@@ -1951,7 +1947,7 @@ LogicalResult RaiseOp::verify() {
         return success();
     }
 
-    if (auto funcOp = dyn_cast<LIT::FuncOp>(parentOp)) {
+    if (auto funcOp = dyn_cast<FnOp>(parentOp)) {
       if (funcOp.isThrows())
         return success();
     }
@@ -1989,13 +1985,13 @@ ErrorTreeOrSuccess LoadConsumeOp::interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 
 LogicalResult ErrorReturnOp::verify() {
-  auto func = (*this)->getParentOfType<LIT::FuncOp>();
+  auto func = (*this)->getParentOfType<FnOp>();
   if (!func)
-    return emitOpError("expected to be nested inside a `lit.func` operation");
+    return emitOpError("expected to be nested inside a `lit.fn` operation");
   return checkOperandTypes(*this, func.getResultTypes());
 }
 
-bool ErrorReturnOp::isParentNode(Operation *op) { return isa<LIT::FuncOp>(op); }
+bool ErrorReturnOp::isParentNode(Operation *op) { return isa<FnOp>(op); }
 
 void ErrorReturnOp::getBranchTargets(
     ArrayRef<Attribute> operands,
@@ -2005,10 +2001,10 @@ void ErrorReturnOp::getBranchTargets(
 }
 
 //===----------------------------------------------------------------------===//
-// TraitFuncOp
+// TraitFnOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult LIT::TraitFuncOp::verify() {
+LogicalResult LIT::TraitFnOp::verify() {
   if (llvm::isa_and_present<TraitDeclOp>(getParentOp()->getParentOp()))
     return success();
 

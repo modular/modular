@@ -27,7 +27,7 @@ namespace M::KGEN::LIT {
 class AliasDeclOp;
 class ASTDecl;
 class FileModuleOp;
-class FuncOp;
+class FnOp;
 class PackageOp;
 class ParserBase;
 class SharedState;
@@ -182,7 +182,7 @@ public:
   /// This registers the finalized function with the DeclResolver after its
   /// signature has been resolved and its mangled name is available.  This
   /// returns an existing function if there is a redefinition problem.
-  Operation *finalizeFuncSignature(LIT::FuncOp funcOp, ASTDecl &decl);
+  Operation *finalizeFuncSignature(FnOp funcOp, ASTDecl &decl);
 
   //===--------------------------------------------------------------------===//
   // Export Handling
@@ -211,8 +211,8 @@ private:
   /// check the signature for the operation.  On parse failure, these should
   /// return a failure, which will cause the driver to mark the decl as invalid
   /// for further references.
-  LogicalResult resolveSignature(LIT::FuncOp op, Lexer &lexer, ASTDecl &decl);
-  ParseResult resolveBody(LIT::FuncOp op, Lexer &lexer, ASTDecl &decl);
+  LogicalResult resolveSignature(FnOp op, Lexer &lexer, ASTDecl &decl);
+  ParseResult resolveBody(FnOp op, Lexer &lexer, ASTDecl &decl);
 
   ParseResult resolveBody(LIT::FileModuleOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(PackageOp op, ASTDecl &decl);
@@ -236,7 +236,7 @@ private:
   /// StructType: StructTypes, aliases, etc.
   DenseMap<SymbolRefAttr, ASTDecl *> declForTypeSymbol;
 
-  /// This map tracks the ASTDecl for every LIT::FuncOp, allowing clients to map
+  /// This map tracks the ASTDecl for every FnOp, allowing clients to map
   /// from MLIR symbol references to their body and AST information.  This is
   /// populated during signature resolution, since the symbol will be mangled.
   DenseMap<SymbolRefAttr, ASTDecl *> declForFuncSymbol;

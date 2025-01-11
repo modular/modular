@@ -59,7 +59,7 @@ inline bool isCustomType(LIT::StructType maybeCustom) {
 
 /// Remove the decorators from the function. Return true if any function had the
 /// kernel decorators.
-bool stripDecorators(LIT::FuncOp func);
+bool stripDecorators(LIT::FnOp func);
 
 void stripDecorators(LIT::StructDeclOp structDecl);
 

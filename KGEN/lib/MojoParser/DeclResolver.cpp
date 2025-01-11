@@ -152,7 +152,7 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
     // don't have symbols until they are fully resolved, but decls inside
     // functions cannot be accessed anyways.
     if (auto symbolDecl = dyn_cast<mlir::SymbolOpInterface>(decl);
-        symbolDecl && !isa<LIT::FuncOp>(*decl)) {
+        symbolDecl && !isa<FnOp>(*decl)) {
       // Make sure there are no name conflicts with the MLIR symbol.  If there
       // are, then addDecl will have rejected it with an error.
       shared.setResolvedDeclSymbol(symbolDecl);
@@ -171,12 +171,12 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
   // actually allow type overloading on parameters theoretically to support
   // T[4] and T[1,7] as different things, but let's no proactively add
   // complexity.
-  if (isa<FuncOp>(*decl)) {
+  if (isa<FnOp>(*decl)) {
     // Verify that all previous entries are also functions.  Note that we can't
     // check the overload set is compatible with each other because the
     // signatures aren't all resolved.
     for (ASTDecl *previous : entries) {
-      if (!isa<FuncOp>(*previous)) {
+      if (!isa<FnOp>(*previous)) {
         auto diag = emitError(decl->getLoc(), "invalid redefinition of ")
                     << name;
         diag.attachNote(previous->getLoc())
@@ -286,14 +286,14 @@ DeclResolver::aliasDeclsImpl(ArrayRef<ASTDecl *> decls, StringAttr name,
   ASTDecl *existing = it->second.back();
 
   // If the decls are functions, try to merge them into the existing set.
-  if (isa<LIT::FuncOp>(*frontDecl) && isa<LIT::FuncOp>(*existing)) {
+  if (isa<FnOp>(*frontDecl) && isa<FnOp>(*existing)) {
     // Check that none of the decls are already in the set.
     auto canMergeDecl = [&](ASTDecl *decl) {
-      LIT::FuncOp declOp = cast<LIT::FuncOp>(decl->getIfOperation());
+      FnOp declOp = cast<FnOp>(decl->getIfOperation());
       return llvm::all_of(entries, [&](ASTDecl *existing) {
         if (failed(resolve(*existing, DeclResolvedness::signature, aliasLoc)))
           return false;
-        LIT::FuncOp existingOp = cast<LIT::FuncOp>(existing->getIfOperation());
+        FnOp existingOp = cast<FnOp>(existing->getIfOperation());
 
         LITSignatureGeneratorType declSignature = declOp.getFullSignature();
         LITSignatureGeneratorType existingSignature =
@@ -457,8 +457,8 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // the `resolveSignature` method for the op, and re-saving the new cursor
     // for the next stage of resolution.
     TypeSwitch<ASTDecl &>(decl)
-        .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, TraitDeclOp,
-              GlobalVarDeclOp, AliasDeclOp>([&](auto op) {
+        .Case<FnOp, StructDeclOp, StructFieldOp, TraitDeclOp, GlobalVarDeclOp,
+              AliasDeclOp>([&](auto op) {
           Lexer lexer(shared.diags, decl.getCursor());
 
           // Generate pretty stack traces if a crash happens in this scope.
@@ -534,8 +534,8 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 
     // Handle each operation that can be name bound.
     TypeSwitch<ASTDecl &>(decl)
-        .Case<FileModuleOp, LIT::FuncOp, StructDeclOp, StructFieldOp,
-              TraitDeclOp, GlobalVarDeclOp, AliasDeclOp>([&](auto op) {
+        .Case<FileModuleOp, FnOp, StructDeclOp, StructFieldOp, TraitDeclOp,
+              GlobalVarDeclOp, AliasDeclOp>([&](auto op) {
           // Parse the body of the declaration from the correct point.
           Lexer lexer(shared.diags, decl.getCursor());
 
@@ -619,7 +619,7 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl,
       if (decl.resolvedness == DeclResolvedness::unparsed) {
         // Some decls always need to be resolved if their parents were resolved,
         // allowlist the decls that we can safely ignore when unparsed.
-        if (isa<FuncOp, FileModuleOp, PackageOp, UnresolvedImportOp,
+        if (isa<FnOp, FileModuleOp, PackageOp, UnresolvedImportOp,
                 UnresolvedWildcardImportOp, StructDeclOp, TraitDeclOp,
                 AliasDeclOp, GlobalVarDeclOp>(decl)) {
           deferredDecls.insert(&decl);
@@ -696,8 +696,7 @@ ASTDecl *DeclResolver::getDeclForFuncSymbol(SymbolRefAttr attr) const {
   return it != declForFuncSymbol.end() ? it->second : nullptr;
 }
 
-Operation *DeclResolver::finalizeFuncSignature(LIT::FuncOp funcOp,
-                                               ASTDecl &decl) {
+Operation *DeclResolver::finalizeFuncSignature(FnOp funcOp, ASTDecl &decl) {
   // Remember the mapping from its fully mangled symbol so we can find its AST
   // representation and body from IR references.
   declForFuncSymbol[getFullyResolvedSymbolRef(funcOp)] = &decl;
@@ -719,7 +718,7 @@ void DeclResolver::registerAndCheckExport(StringRef aliasName, SMLoc loc) {
 }
 
 void DeclResolver::exportMain(ASTDecl &funcDecl) {
-  LIT::FuncOp userMainFn = cast<LIT::FuncOp>(funcDecl);
+  FnOp userMainFn = cast<FnOp>(funcDecl);
   LITSignatureGeneratorType userMainSignature =
       userMainFn.getSignatureGenerator();
   ASTDecl *containingDecl = funcDecl.getParentDecl();
@@ -815,11 +814,11 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   ASTDecl *mainShimProtoDecl = resolveStartDecl("__mojo_main_prototype");
   if (!mainShimProtoDecl)
     return;
-  FuncOp mainShimProtoFn = cast<FuncOp>(*mainShimProtoDecl);
+  FnOp mainShimProtoFn = cast<FnOp>(*mainShimProtoDecl);
 
   // Builder function.
   StringAttr mainAttr = StringAttr::get(getContext(), "main");
-  auto shimMainFn = cast<FuncOp>(builder.clone(*mainShimProtoFn));
+  auto shimMainFn = cast<FnOp>(builder.clone(*mainShimProtoFn));
   shimMainFn.setSymNameAttr(mainAttr);
   shimMainFn.setLinkageNameAttr(mainAttr);
   shimMainFn.setCExported();
@@ -847,7 +846,7 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   ASTDecl *mainWrapperDecl = resolveStartDecl(mainWrapperName);
   if (!mainWrapperDecl)
     return;
-  FuncOp mainWrapperFn = cast<FuncOp>(*mainWrapperDecl);
+  FnOp mainWrapperFn = cast<FnOp>(*mainWrapperDecl);
   LITSignatureGeneratorType mainWrapperSigGen =
       mainWrapperFn.getSignatureGenerator();
 

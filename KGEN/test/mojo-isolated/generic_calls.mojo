@@ -24,7 +24,7 @@ fn borrowed_generic[T: AnyType](x: T):
     pass
 
 
-# CHECK-LABEL: lit.func @"test_owned{{.*}}(%x: !lit.ref<!RegPassable, mut *"x`"> owned_in_mem)
+# CHECK-LABEL: lit.fn @"test_owned{{.*}}(%x: !lit.ref<!RegPassable, mut *"x`"> owned_in_mem)
 fn test_owned(owned x: RegPassable):
     # CHECK: [[XIMUT:%.*]] = lit.ref.immut %x : <!RegPassable, mut *"x`">
     # CHECK: lit.call @{{.*}}::@"borrowed_generic{{.*}}<{{.*}}>([[XIMUT]])
@@ -40,7 +40,7 @@ fn test_owned(owned x: RegPassable):
     owned_generic(x^)
 
 
-# CHECK-LABEL: lit.func @"test_borrowed{{.*}}(%x: !lit.ref<!RegPassable, imm *"x`"> read_mem)
+# CHECK-LABEL: lit.fn @"test_borrowed{{.*}}(%x: !lit.ref<!RegPassable, imm *"x`"> read_mem)
 fn test_borrowed(x: RegPassable):
     # CHECK-NEXT: lit.call @{{.*}}::@"borrowed_generic{{.*}}<{{.*}}>(%x)
     borrowed_generic(x)
@@ -51,7 +51,7 @@ fn test_borrowed(x: RegPassable):
     owned_generic(x)
 
 
-# CHECK-LABEL: lit.func @"function_reference
+# CHECK-LABEL: lit.fn @"function_reference
 fn function_reference():
     # CHECK: create_closure[{{.*}}@"function_reference
     borrowed_generic(function_reference)

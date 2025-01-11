@@ -8,10 +8,10 @@
 
 # CHECK-LABEL: lit.struct.decl @"`_CI_
 # CHECK:         lit.struct.field field0 : index
-# CHECK:         lit.func @"__copyinit__
+# CHECK:         lit.fn @"__copyinit__
 
 
-# CHECK-LABEL: lit.func @"foo
+# CHECK-LABEL: lit.fn @"foo
 fn foo():
     var w = `5`
 

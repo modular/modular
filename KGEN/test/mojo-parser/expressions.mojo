@@ -17,7 +17,7 @@ fn noop(): pass
 struct MemoryOnlyInt:
   var x: Int
 
-  # CHECK-LABEL: lit.func @"__init__
+  # CHECK-LABEL: lit.fn @"__init__
   @implicit
   fn __init__(out self, a: Int = 42):
     # CHECK: %0 = lit.ref.struct.ger %self[x]
@@ -26,7 +26,7 @@ struct MemoryOnlyInt:
     self.x = 1
   fn __del__(owned self): pass
 
-  # CHECK-LABEL: lit.func @"__copyinit__
+  # CHECK-LABEL: lit.fn @"__copyinit__
   fn __copyinit__(out self, other: Self):
     self.x = other.x
 
@@ -48,7 +48,7 @@ struct MemoryOnlyPair:
   var x: MemoryOnlyInt
   var y: Int
 
-  # CHECK: lit.func @"__copyinit__{{.*}}(%other: !lit.ref<!MemoryOnlyPair, imm {{.*}}> read_mem,
+  # CHECK: lit.fn @"__copyinit__{{.*}}(%other: !lit.ref<!MemoryOnlyPair, imm {{.*}}> read_mem,
   # CHECK-SAME: %self: !lit.ref<!MemoryOnlyPair, mut {{.*}}> byref_result)
   fn __copyinit__(out self, other: MemoryOnlyPair):
     # CHECK-NEXT: %0 = lit.ref.struct.ger %other[x]
@@ -61,7 +61,7 @@ struct MemoryOnlyPair:
     self.x = other.x
     self.y = other.y
 
-  # CHECK: lit.func @"method{{.*}}(
+  # CHECK: lit.fn @"method{{.*}}(
   # CHECK-SAME: %self: !lit.ref<!MemoryOnlyPair, mut {{.*}}> owned_in_mem,
   # CHECK-SAME: %arg: !lit.ref<!MemoryOnlyInt, mut {{.*}}> owned_in_mem)
   fn method(owned self, owned arg: MemoryOnlyInt):
@@ -75,7 +75,7 @@ struct MemoryOnlyPair:
 fn inferred_function_with_memory_result[
   width: Int](x: SIMD[DType.float32, width]) -> MemoryOnlyInt: pass
 
-# CHECK-LABEL: lit.func @"memoryOnlyOps
+# CHECK-LABEL: lit.fn @"memoryOnlyOps
 fn memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: %v1 = lit.var.decl {{.*}} var : !lit.ref<!MemoryOnlyPair,
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
@@ -172,7 +172,7 @@ struct DummyFunc:
 
 fn func_arg_conversion(f: DummyFunc): pass
 
-# CHECK-LABEL: lit.func @"implicit_func_conversion()"
+# CHECK-LABEL: lit.fn @"implicit_func_conversion()"
 fn implicit_func_conversion():
     def take_int(x: Int):
         pass
@@ -191,7 +191,7 @@ fn implicit_func_conversion():
 @register_passable
 struct RegPassable:
   var value: Int
-  # CHECK-LABEL: lit.func @"__init__
+  # CHECK-LABEL: lit.fn @"__init__
   # CHECK-NEXT: %self = lit.var.decl "self" initoutarg
   # CHECK-NEXT: [[VALREF:%.*]] = lit.ref.struct.ger %self[value]
   # CHECK-NEXT: lit.ref.store %value, [[VALREF]]
@@ -211,25 +211,25 @@ struct RegPassable:
 # CHECK-LABEL: lit.struct.decl @StructWithFuncParam<comparator: !lit.generator
 # CHECK-SAME: <"T": type>(!kgen.param<*(0,0)>, |)
 struct StructWithFuncParam[comparator: fn[T: AnyTrivialRegType] (T) -> None]:
-    # CHECK-LABEL: lit.func @"f
+    # CHECK-LABEL: lit.fn @"f
     # CHECK-SAME: %self: !lit.ref<{{.*}}<:!lit.generator<<"T": type>(!kgen.param<*(0,0)>
     fn f(self):
         pass
 
-    # CHECK-LABEL: lit.func @"g
+    # CHECK-LABEL: lit.fn @"g
     fn g(self):
         # CHECK: call {{.*}}[imm *"self`2x"]<:!lit.generator<<"T": type>(!kgen.param<*(0,0)>, |)
         # CHECK-SAME: !lit.ref<{{.*}}<"T": type>(!kgen.param<*(0,0)>, |)
         self.f()
 
-# CHECK-LABEL: lit.func @"simpleMath
+# CHECK-LABEL: lit.fn @"simpleMath
 fn simpleMath(a: Int, b: Int) -> Int:
   # CHECK: %0 = lit.call {{.*}}Int::@"__mul__{{.*}}(%b, %a)
   # CHECK: %1 = lit.call {{.*}}Int::@"__sub__{{.*}}(%a, %0)
   # CHECK: lit.return %1 : !Int
   return a-b*a
 
-# CHECK-LABEL: lit.func @"precedence_associativity
+# CHECK-LABEL: lit.fn @"precedence_associativity
 fn precedence_associativity(a: Int):
   # CHECK: %z = lit.var.decl "z" var
   var z: Int = 0
@@ -311,7 +311,7 @@ fn precedence_associativity(a: Int):
   var c = 10
   z = 0 if c == 10 else 1 if c == 11 else 2
 
-# CHECK-LABEL: lit.func @"reverse_operators
+# CHECK-LABEL: lit.fn @"reverse_operators
 fn reverse_operators(a: Int):
   # CHECK: lit.call {{.*}}Int::@"__radd__(::Int,::Int)"
   var z = Int(1).value + a
@@ -349,7 +349,7 @@ fn reverse_operators(a: Int):
   # CHECK: lit.call {{.*}}Int::@"__rxor__(::Int,::Int)"
   z = Int(3).value ^ z
 
-# CHECK-LABEL: lit.func @"precedence_matmul
+# CHECK-LABEL: lit.fn @"precedence_matmul
 fn precedence_matmul(z: RegPassable) -> RegPassable:
   # CHECK:  [[THREE:%.*]] = kgen.param.constant: !Int = <{3}>
   # CHECK-NEXT:  [[THREERP:%.*]] = lit.call {{.*}}@RegPassable::@"__init__{{.*}}([[THREE]])
@@ -375,7 +375,7 @@ fn precedence_matmul(z: RegPassable) -> RegPassable:
   # CHECK-NEXT:  lit.return [[ADD]] : !RegPassable
   return z + RegPassable(3) @ -RegPassable(2)
 
-# CHECK-LABEL: lit.func @"precedence_bitwise
+# CHECK-LABEL: lit.fn @"precedence_bitwise
 fn precedence_bitwise(a: Int, b: Int, c: Int) -> Int:
   # CHECK-NEXT: %[[INT_TWO:.*]] = kgen{{.*}}{2}
   # CHECK-NEXT: %[[MUL:.*]] = lit.call {{.*}}Int::@"__mul__{{.*}}(%a, %[[INT_TWO]])
@@ -432,7 +432,7 @@ fn unary(a: Bool, b: Int, c: Boolish, d: MemBoolish):
   # CHECK-NEXT: lit.call {{.*}}__invert__{{.*}}([[BOOL]])
   _ = not d
 
-# CHECK-LABEL: lit.func @"andOr1
+# CHECK-LABEL: lit.fn @"andOr1
 fn andOr1(a: Boolish, b: Boolish):
   # Short circuiting AND returns second operand when the first is false-y, first
   # otherwise.
@@ -449,7 +449,7 @@ fn andOr1(a: Boolish, b: Boolish):
   _ = a and b
 
 
-# CHECK-LABEL: lit.func @"andOr2
+# CHECK-LABEL: lit.fn @"andOr2
 fn andOr2(a: Boolish, b: Boolish):
   # Short circuiting OR returns first operand when it is true-y, second
   # otherwise.  Boolish is defined with copy ctor so it must be invoked.
@@ -465,7 +465,7 @@ fn andOr2(a: Boolish, b: Boolish):
   # CHECK-NEXT: }
   _ = a or b
 
-# CHECK-LABEL: lit.func @"andOr3
+# CHECK-LABEL: lit.fn @"andOr3
 fn andOr3(a: Boolish, c: Bool):
   # Testing two different logic'y types returns the common bool type if present.
 
@@ -479,7 +479,7 @@ fn andOr3(a: Boolish, c: Bool):
   # CHECK-NEXT: }
   _ = a and c
 
-# CHECK-LABEL: lit.func @"andOr4
+# CHECK-LABEL: lit.fn @"andOr4
 fn andOr4(b: Boolish, c: Bool):
   # Check incompatible types that are nevertheless boolish.
   # CHECK: [[BBOOL:%.*]] = lit.call {{.*}}__bool__{{.*}}(%b)
@@ -492,7 +492,7 @@ fn andOr4(b: Boolish, c: Bool):
   # CHECK-NEXT: }
   _ = b or c
 
-# CHECK-LABEL: lit.func @"andOr2
+# CHECK-LABEL: lit.fn @"andOr2
 fn andOr2(b: Boolish, d: MemBoolish):
   # Check memory-only boolish types.
   # Boolish and MemBoolish has a common type of MemBoolish.
@@ -512,7 +512,7 @@ fn andOr2(b: Boolish, d: MemBoolish):
   # CHECK-NEXT: }
   _ = d or b
 
-# CHECK-LABEL: lit.func @"paramAndOr{{.*}}"<a: !Boolish, b: !Boolish>
+# CHECK-LABEL: lit.fn @"paramAndOr{{.*}}"<a: !Boolish, b: !Boolish>
 fn paramAndOr[a: Boolish, b: Boolish]():
   # Short circuiting AND returns second operand when the first is false-y, first
   # otherwise.
@@ -527,7 +527,7 @@ fn paramAndOr[a: Boolish, b: Boolish]():
   # CHECK: lit.alias.decl *"d{{.*}}": !Boolish = <cond(apply({{.*}}@Bool::@"__mlir_i1__{{.*}}", apply({{.*}}Boolish::@"__bool__{{.*}}"), store_to_mem(a))), a, b)>
   alias d = a or b
 
-# CHECK-LABEL: lit.func @"do_math
+# CHECK-LABEL: lit.fn @"do_math
 fn do_math(a: Int, b: Int, c: Int) -> Int:
   # CHECK-NEXT: %z = lit.var.decl "z" var
   var z : Int
@@ -553,7 +553,7 @@ z
   # CHECK-NEXT: lit.return [[TMP]]
   return x
 
-# CHECK-LABEL: lit.func @"listValues()"
+# CHECK-LABEL: lit.fn @"listValues()"
 fn listValues():
   # CHECK: %[[LIST:.*]] = lit.call {{.*}}@ListLiteral::@"__init__{{.*}}(%a
   var a = [1, 2, 2+1]
@@ -564,7 +564,7 @@ fn listValues():
   # CHECK: %[[LIST:.*]] = lit.call {{.*}}@ListLiteral::@"__init__{{.*}}({{.*}}, %b)
   var b = []
 
-# CHECK-LABEL: lit.func @"initializers
+# CHECK-LABEL: lit.fn @"initializers
 fn initializers():
   # CHECK-NEXT: %a = lit.var.decl "a"
   # CHECK: %0 = kgen.param.constant: !Int = <{42}>
@@ -577,7 +577,7 @@ fn initializers():
   # Issue #12067, suffix stuff ok.
   _ = Int{ value: Int(1).value }.value
 
-# CHECK-LABEL: lit.func @"test_if_cond
+# CHECK-LABEL: lit.fn @"test_if_cond
 fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
     # CHECK: %i = lit.var.decl "i"
     # CHECK: %[[COND:.*]] = lit.ref.load %cond
@@ -599,7 +599,7 @@ fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
     if cond:     # 'if' stmt, not an 'if' expression.
         i += 1
 
-# CHECK-LABEL: lit.func @"test_param_if_cond{{.*}}"<cond: !Bool>
+# CHECK-LABEL: lit.fn @"test_param_if_cond{{.*}}"<cond: !Bool>
 fn test_param_if_cond[cond: Bool]() -> Int:
   # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !IntLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", cond), {:!kgen.int_literal 2}, {:!kgen.int_literal 3})>
   alias i = 2 if cond else 3
@@ -610,40 +610,40 @@ fn test_param_if_cond[cond: Bool]() -> Int:
   # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = {{.*}}IntLiteral
   return i
 
-# CHECK-LABEL: lit.func @"callable_mv[fn(::Int, /) -> ::Int](::Int)"
+# CHECK-LABEL: lit.fn @"callable_mv[fn(::Int, /) -> ::Int](::Int)"
 # CHECK-SAME: <callable: !lit.generator<(!Int, |) -> !Int>>(%a: !Int) -> !Int
 fn callable_mv[callable: fn (Int) -> Int](a: Int) -> Int:
   # CHECK-NEXT: lit.call[!lit.generator<(!Int, |) -> !Int>: callable](%a)
   return callable(a)
 
-# CHECK-LABEL: lit.func @"callable_mv_inputs{{.*}})"<
+# CHECK-LABEL: lit.fn @"callable_mv_inputs{{.*}})"<
 # CHECK-SAME: callable: !lit.generator<<"x": !Int>(!Int, |) -> !Int>, b: !Int>(%a: !Int) -> !Int
 fn callable_mv_inputs[callable: fn[x: Int](Int) -> Int, b: Int](a: Int) -> Int:
   # CHECK-NEXT: lit.call[!lit.generator<(!Int, |) -> !Int>: bind_signature({{.*}}callable, b)](%a)
   return callable[b](a)
 
-# CHECK-LABEL: lit.func @"takeIndexParam{{.*}}"<a: !Int>() -> !Int
+# CHECK-LABEL: lit.fn @"takeIndexParam{{.*}}"<a: !Int>() -> !Int
 fn takeIndexParam[a: Int]() -> Int:
   return a + 1
 
-# CHECK-LABEL: lit.func @"returnIndex()"() -> !Int
+# CHECK-LABEL: lit.fn @"returnIndex()"() -> !Int
 fn returnIndex() -> Int:
   return 0
 
-# CHECK-LABEL: lit.func @"returnIndex2()"() -> !Int
+# CHECK-LABEL: lit.fn @"returnIndex2()"() -> !Int
 fn returnIndex2() -> Int:
   # CHECK-NEXT: %0 = lit.call @{{.*}}takeIndexParam{{.*}}"<:!Int apply({{.*}}@{{.*}}returnIndex()")>()
   # CHECK-NEXT: return %0
   return takeIndexParam[returnIndex()]()
 
-# CHECK-LABEL: lit.func @"callInParam[fn[::Int](::Int, /) -> ::Int]()"
+# CHECK-LABEL: lit.fn @"callInParam[fn[::Int](::Int, /) -> ::Int]()"
 # CHECK-SAME: <callable: !lit.generator<<"x": !Int>(!Int, |) -> !Int>>() -> !Int
 fn callInParam[callable: fn[x: Int](Int) -> Int]() -> Int:
   # CHECK-NEXT: %0 = lit.call @{{.*}}takeIndexParam{{.*}}()"<:!Int apply({{.*}}bind_signature({{.*}}callable, {1}), {1})>()
   # CHECK-NEXT: return %0
   return takeIndexParam[callable[1](1)]()
 
-# CHECK-LABEL: lit.func @"parameterExprs{{.*}}()"
+# CHECK-LABEL: lit.fn @"parameterExprs{{.*}}()"
 # CHECK-SAME: <a: !Int, a2: !Int>
 fn parameterExprs[a: Int, a2: Int]():
   # CHECK: lit.alias.decl *"b{{.*}}": !Int = <apply({{.*}}__sub__{{.*}}, a, a)>
@@ -657,7 +657,7 @@ fn parameterExprs[a: Int, a2: Int]():
 # Patterns, LValues and RValues
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"patterns()
+# CHECK-LABEL: lit.fn @"patterns()
 fn patterns():
   # CHECK: %z2 = lit.var.decl "z2" var
   var z2: Int
@@ -690,7 +690,7 @@ fn patterns():
   var someSIMD : SIMD[DType.float64, 4]
   (someSIMD) += someSIMD
 
-# CHECK-LABEL: lit.func @"byval_byref_function(::Int,::Int&)"{{.*}}(%a: !Int, %b: !lit.ref<!Int, mut {{.*}}> mut) -> !kgen.none
+# CHECK-LABEL: lit.fn @"byval_byref_function(::Int,::Int&)"{{.*}}(%a: !Int, %b: !lit.ref<!Int, mut {{.*}}> mut) -> !kgen.none
 fn byval_byref_function(a: Int, mut b: Int):
   # CHECK-NEXT: lit.ref.store %a, %b
   b = a
@@ -703,13 +703,13 @@ fn byval_byref_function(a: Int, mut b: Int):
   # CHECK: = lit.call @{{.*}}::@"byval_byref_function{{.*}}([[TMP]], %b)
   byval_byref_function(b, b)
 
-# CHECK-LABEL: lit.func @"lvaluesAndRValues()
+# CHECK-LABEL: lit.fn @"lvaluesAndRValues()
 fn lvaluesAndRValues() -> __mlir_type.index:
   # CHECK: [[VALUE:%.*]] = kgen.param.constant = <4>
   # CHECK: lit.return [[VALUE]] : index
   return Int(4).value
 
-# CHECK-LABEL: lit.func @"mvalueStructField()"
+# CHECK-LABEL: lit.fn @"mvalueStructField()"
 fn mvalueStructField():
   # CHECK: lit.alias.decl [[INT:.*]]: !Int = <{4}>
   alias int = Int(4)
@@ -721,7 +721,7 @@ fn mvalueStructField():
 # Augmented Assignments
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"basic_assignments
+# CHECK-LABEL: lit.fn @"basic_assignments
 fn basic_assignments(a0: Int, b: Int, c: RegPassable, d: RegPassable):
   var a = a0
   # CHECK-NEXT:      %a = lit.var.decl "a" var
@@ -764,7 +764,7 @@ fn basic_assignments(a0: Int, b: Int, c: RegPassable, d: RegPassable):
   _ = simpleMath(a, x := 7)
 
 # Issue #20145: Walrus operator should implicitly declare variable in def functions.
-# CHECK-LABEL: lit.func @"walrus_implicit_decl
+# CHECK-LABEL: lit.fn @"walrus_implicit_decl
 def walrus_implicit_decl():
   # CHECK:      %d = lit.var.decl "d" imp
   # CHECK:      %c = lit.var.decl "c" imp
@@ -792,7 +792,7 @@ def walrus_implicit_decl():
 # Literals
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"literals
+# CHECK-LABEL: lit.fn @"literals
 def literals():
     a = 5             # CHECK: 5
     a = 55            # CHECK: 55
@@ -816,7 +816,7 @@ def literals():
     c = False         # CHECK: !Bool = <{:i1 0}>
     c = True          # CHECK: !Bool = <{:i1 1}>
 
-# CHECK-LABEL: lit.func @"_strings
+# CHECK-LABEL: lit.fn @"_strings
 fn _strings():
    """
       Various tests on strings
@@ -871,11 +871,11 @@ world"
     a = r"A\zB"            # CHECK: "A\\zB"
 
     # Issue #201: https://github.com/modularml/mojo/issues/201
-    # CHECK: lit.func *"hello{{.*}} {
+    # CHECK: lit.fn *"hello{{.*}} {
     fn hello() -> StringLiteral:
         # CHECK: kgen.param.constant: !StringLiteral = <{:string "123"}>
         return "123"
-        # lit.end_func
+        # lit.end_fn
     """other comment"""
 
 
@@ -888,7 +888,7 @@ struct MemoryOnlyIntArray:
   fn __getitem__(mut self, x: Int) -> MemoryOnlyInt: pass
   fn __setitem__(mut self, x: Int, owned value: MemoryOnlyInt): pass
 
-# CHECK-LABEL: lit.func @"testMemoryOnlyIntArray
+# CHECK-LABEL: lit.fn @"testMemoryOnlyIntArray
 fn testMemoryOnlyIntArray(mut arr: MemoryOnlyIntArray, x: Int, owned moi: MemoryOnlyInt):
   # CHECK: lit.call {{.*}}__setitem__{{.*}}(%arr, %x, %moi)
   arr[x] = moi^
@@ -923,7 +923,7 @@ fn testMemoryOnlyIntArray(mut arr: MemoryOnlyIntArray, x: Int, owned moi: Memory
 # CHECK-LABEL: lit.struct.decl @MyInlineIntInit
 struct MyInlineIntInit:
     var value: MemoryOnlyInt
-    # CHECK-LABEL: lit.func @"__init__(expressions::MemoryOnlyInt)"
+    # CHECK-LABEL: lit.fn @"__init__(expressions::MemoryOnlyInt)"
     # CHECK-SAME: (%value: !lit.ref<!MemoryOnlyInt, imm {{.*}}> read_mem, ?, %self: !lit.ref<!MyInlineIntInit, mut {{.*}}> byref_result) -> !kgen.none
     @implicit
     fn __init__(out self, value: MemoryOnlyInt):
@@ -950,7 +950,7 @@ struct DynamicObject:
         pass
 
 
-# CHECK-LABEL: lit.func @"dynamic_attribute()"
+# CHECK-LABEL: lit.fn @"dynamic_attribute()"
 fn dynamic_attribute():
     # CHECK: %const_obj = lit.var.decl "const_obj"
     var const_obj = ConstDynamicObject()
@@ -970,7 +970,7 @@ fn dynamic_attribute():
     obj.some_attr = 42
 
 
-# CHECK-LABEL: lit.func @"chained_cmp
+# CHECK-LABEL: lit.fn @"chained_cmp
 fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK-NEXT: %res = lit.var.decl "res"
     # CHECK:      [[CMP_A_B:%.*]] = lit.call @{{.*}}__lt__{{.*}}(%a, %b)
@@ -1051,7 +1051,7 @@ fn chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
   # between recursive calls of emitNextCmp calls to get this to work.
   var mixedChain = 0 < 1 < a < 10 < 11 < b < 20 < 21 < c < 30 < 31
 
-# CHECK-LABEL: lit.func @"ref_utilities
+# CHECK-LABEL: lit.fn @"ref_utilities
 fn ref_utilities(a: MemoryOnlyInt, mut b: MemoryOnlyInt,
                  mut c: MemoryOnlyInt,
                  cond: __mlir_type.i1):
@@ -1114,7 +1114,7 @@ struct CallableStruct:
     fn __call__(self, rhs: Int) -> Int:
         return self.value + rhs
 
-# CHECK-LABEL: lit.func @"test_call_method()"
+# CHECK-LABEL: lit.fn @"test_call_method()"
 fn test_call_method():
     # CHECK: %[[C2:.*]] = kgen.param.constant: !Int = <{2}>
     # CHECK-NEXT: lit.call {{.*}}@"__call__{{.*}}(%{{.*}}, %[[C2]])
@@ -1133,7 +1133,7 @@ struct RegType: pass
 @register_passable("trivial")
 struct ParamType[a: Int]: pass
 
-# CHECK-LABEL: lit.func @"function_types
+# CHECK-LABEL: lit.fn @"function_types
 fn function_types[
   # CHECK-SAME: p0: {{.*}}<<"a": !Int>(!lit.struct<#ParamType <:!Int *(0,0)>{{.*}}>, |) -> !kgen.none
   p0: fn[a: Int](ParamType[a]) -> None,
@@ -1192,7 +1192,7 @@ struct TwoParamsStruct[a: Int, b: Int]:
     fn __copyinit__(out self, other: Self):
         pass
 
-# CHECK-LABEL: lit.func @"variadic_subscript{{.*}}"<idx: !Int, a: variadic<!Int> var>
+# CHECK-LABEL: lit.fn @"variadic_subscript{{.*}}"<idx: !Int, a: variadic<!Int> var>
 fn variadic_subscript[idx: Int, *a: Int](*b: Int):
     # CHECK-NEXT: %b_0 = lit.var.decl "b"
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}VariadicList{{.*}}__init__{{.*}}(%b)
@@ -1209,7 +1209,7 @@ fn variadic_subscript[idx: Int, *a: Int](*b: Int):
     var v2 = b[idx]
 
 
-# CHECK-LABEL: lit.func @"variadic_memory_subscript
+# CHECK-LABEL: lit.fn @"variadic_memory_subscript
 # CHECK-SAME: variadic<!lit.ref<{{.*}}TwoParamsStruct<
 # CHECK-SAME:   :!Int variadic_get({{.*}}a, 0)
 # CHECK-SAME:   :!Int variadic_get({{.*}}a, 1)
@@ -1327,7 +1327,7 @@ fn thing_taking_ref2[type: AnyType](ref arg: type): pass
 
 fn thing_taking_pointer2[type: AnyType](arg: Pointer[type, _]): pass
 
-# CHECK-LABEL: lit.func @"test_thing_taking_reference
+# CHECK-LABEL: lit.fn @"test_thing_taking_reference
 fn test_thing_taking_reference(mut x: String):
   # CHECK-NEXT: lit.call {{.*}}thing_taking_ref{{.*}}(%x)
   thing_taking_ref(x)
@@ -1349,7 +1349,7 @@ fn infer_through_alias():
   _ = MyType(4)
 
 
-# CHECK-LABEL: lit.func @"infer_address_space
+# CHECK-LABEL: lit.fn @"infer_address_space
 fn infer_address_space[
     is_mutable: __mlir_type.i1,
     origin: Origin[is_mutable]._mlir_type
@@ -1367,7 +1367,7 @@ struct ThingWithMethodReferenceSelf:
     fn method(ref a: Self):
       pass
 
-# CHECK-LABEL: lit.func @"testThingWithMethodReferenceSelf
+# CHECK-LABEL: lit.fn @"testThingWithMethodReferenceSelf
 fn testThingWithMethodReferenceSelf[a: ThingWithMethodReferenceSelf]():
     # CHECK-NEXT: lit.alias.decl *"sizzle`": none =
     # CHECK-SAME: <apply(:!lit.generator<("a": !lit.ref<!ThingWithMethodReferenceSelf,

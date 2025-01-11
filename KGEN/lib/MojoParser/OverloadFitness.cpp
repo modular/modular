@@ -660,7 +660,7 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
                                           const OverloadSet &callable,
                                           PValue selfPValue) {
   DeclResolver &resolver = *callable.getShared().declResolver;
-  auto func = cast<LIT::FuncOp>(*candidate);
+  auto func = cast<FnOp>(*candidate);
   LITSignatureGeneratorType signature = func.getFullSignature();
 
   if (selfPValue) {
@@ -708,7 +708,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureGeneratorType signature,
     if (auto selfCValue = operands[0].ir.getIfCValue()) {
       if (auto selfPValue = PValue(selfCValue.getRValueType().mlirType)) {
         // TODO(MOCO-1259): Support static methods with associated aliases
-        if (auto func = dyn_cast_or_null<LIT::FuncOp>(funcIfDirect)) {
+        if (auto func = dyn_cast_or_null<FnOp>(funcIfDirect)) {
           auto parentDecl = funcIfDirect->getParentDecl();
           if (dyn_cast_or_null<TraitDeclOp>(parentDecl)) {
             signature = substituteTraitAliasesIntoSignature(
@@ -765,7 +765,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureGeneratorType signature,
           // Hide the implicit trait parameter from the diagnostic.
           size_t hidden = 0;
           if (funcIfDirect &&
-              isa<TraitDeclOp>(cast<LIT::FuncOp>(*funcIfDirect)->getParentOp()))
+              isa<TraitDeclOp>(cast<FnOp>(*funcIfDirect)->getParentOp()))
             hidden = 1;
           size_t numExpected = signature.getInputParamTypes().size() - hidden -
                                countNumImplicitKinds(paramListAttr) -
@@ -813,7 +813,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureGeneratorType signature,
         // its self parameters, complain about the struct.
         if (funcIfDirect) {
           if (auto structOp = dyn_cast<StructDeclOp>(
-                  cast<LIT::FuncOp>(*funcIfDirect)->getParentOp())) {
+                  cast<FnOp>(*funcIfDirect)->getParentOp())) {
             auto structSig = structOp.getSignature();
             if (paramIdx < structSig.getNumParams()) {
               emitMessage(structSig);
@@ -897,9 +897,8 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureGeneratorType signature,
     // for inferring parameters on Self.
     bool returnsSelf = false;
     if (funcIfDirect)
-      returnsSelf = cast<LIT::FuncOp>(*funcIfDirect)
-                        .getSpecialFunctionInfo()
-                        .hasSelfResult();
+      returnsSelf =
+          cast<FnOp>(*funcIfDirect).getSpecialFunctionInfo().hasSelfResult();
 
     // Infer information from this signature holistically.
     if (failed(inference.infer(signature, operands, variadicKwOperands,
@@ -927,7 +926,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureGeneratorType signature,
     // TODO: Provide a first class representation for conditional conformance
     // that doesn't have us shadowing parameters like this!
     if (funcIfDirect) {
-      auto func = cast<LIT::FuncOp>(*funcIfDirect);
+      auto func = cast<FnOp>(*funcIfDirect);
       if (!func.getIsStatic() && isa<StructDeclOp>(func->getParentOp())) {
         if (failed(inference.inferCTADParams(signature, operands)))
           return PValue();
@@ -1158,7 +1157,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureGeneratorType signature,
 
   // Fail if this is an implicit conversion but the ctor is not marked @implicit
   if (funcIfDirect && callable.syntax == CallSyntax::kImplicitConvert &&
-      !cast<LIT::FuncOp>(funcIfDirect).getIsImplicitConversion()) {
+      !cast<FnOp>(funcIfDirect).getIsImplicitConversion()) {
     ASTType fromType = operands[0].ir.getRValueTypeIfResolvable();
     return emitDiagFor.badImplicitConversion(fromType,
                                              signature.getUserResultType());

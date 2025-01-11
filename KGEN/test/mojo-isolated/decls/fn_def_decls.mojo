@@ -7,61 +7,61 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-# CHECK-LABEL: lit.func @"empty_def()"() -> !kgen.none
-# CHECK: lit.end_func
+# CHECK-LABEL: lit.fn @"empty_def()"() -> !kgen.none
+# CHECK: lit.end_fn
 fn empty_def():
     pass
 
 
-# CHECK-LABEL: lit.func @"slash
+# CHECK-LABEL: lit.fn @"slash
 # CHECK-SAME: (%a: index, |, %b: index)
 fn slash(a: int, /, b: int):
     pass
 
 
-# CHECK-LABEL: lit.func @"trailing_slash
+# CHECK-LABEL: lit.fn @"trailing_slash
 # CHECK-SAME: (%a: index, |)
 fn trailing_slash(a: int, /):
     pass
 
 
-# CHECK-LABEL: lit.func @"star
+# CHECK-LABEL: lit.fn @"star
 # CHECK-SAME: (%a: index, *, %b: index)
 fn star(a: int, *, b: int):
     pass
 
 
-# CHECK-LABEL: lit.func @"leading_star
+# CHECK-LABEL: lit.fn @"leading_star
 # CHECK-SAME: (*, %a: index)
 fn leading_star(*, a: int):
     pass
 
 
-# CHECK-LABEL: lit.func @"star_and_slash
+# CHECK-LABEL: lit.fn @"star_and_slash
 # CHECK-LABEL: (%a: index, |, *, %b: index)
 fn star_and_slash(a: int, /, *, b: int):
     pass
 
 
-# CHECK-LABEL: lit.func @"star_and_slash_2
+# CHECK-LABEL: lit.fn @"star_and_slash_2
 # CHECK-SAME: (%a: index, |, %b: index, *, %c: index)
 fn star_and_slash_2(a: int, /, b: int, *, c: int):
     pass
 
 
-# CHECK-LABEL: lit.func @"default_args
+# CHECK-LABEL: lit.fn @"default_args
 # CHECK-SAME: (%a: index, %b: index = 8, *, %c: index, %d: index = 9)
 fn default_args(a: int, b: int = `8`, *, c: int, d: int = `9`):
     pass
 
 
-# CHECK-LABEL: lit.func @"variadic_and_kw_only
+# CHECK-LABEL: lit.fn @"variadic_and_kw_only
 # CHECK-SAME: (%a: index, %b: index, %args: !kgen.variadic<index> var, *, %c: index, %d: index = 9)
 fn variadic_and_kw_only(a: int, b: int, *args: int, c: int, d: int = `9`):
     pass
 
 
-# CHECK-LABEL: lit.func @"variadic_arg_after_default
+# CHECK-LABEL: lit.fn @"variadic_arg_after_default
 # CHECK-SAME: (%a: index, %b: index = 0, %args: !kgen.variadic<index> var = *?,
 # CHECK-SAME:  *, %c: index, %d: index = 1, %kwargs: {{.*}}|var = *?)
 fn variadic_arg_after_default(
@@ -70,7 +70,7 @@ fn variadic_arg_after_default(
     pass
 
 
-# CHECK-LABEL: lit.func @"variadic_param_after_default
+# CHECK-LABEL: lit.fn @"variadic_param_after_default
 # CHECK-SAME: <a, b = 0, args: {{.*}} var = *?, *, c, d = 1>()
 fn variadic_param_after_default[
     a: int, b: int = `0`, *args: int, c: int, d: int = `1`
@@ -78,27 +78,27 @@ fn variadic_param_after_default[
     pass
 
 
-# CHECK-LABEL: lit.func @"inferred_params
+# CHECK-LABEL: lit.fn @"inferred_params
 # CHECK-SAME: <x, y, +>
 fn inferred_params[x: int, y: int, //]():
     # CHECK-NEXT: !lit.generator<<"x": index, "y": index, +>() -> !kgen.none> = <@
     alias fn_type: fn[x: int, y: int, //] () -> None = inferred_params
 
 
-# CHECK-LABEL: lit.func @"inferred_params_regular
+# CHECK-LABEL: lit.fn @"inferred_params_regular
 # CHECK-SAME: <x, +, y>
 fn inferred_params_regular[x: int, //, y: int]():
     # CHECK-NEXT: !lit.generator<<"x": index, +, "y": index>() -> !kgen.none> = <@
     alias fn_type: fn[x: int, //, y: int] () -> None = inferred_params_regular
 
 
-# CHECK-LABEL: lit.func @"inferred_params_pos_only
+# CHECK-LABEL: lit.fn @"inferred_params_pos_only
 # CHECK-SAME: <x, +, y = 1, |>
 fn inferred_params_pos_only[x: int, //, y: int = `1`, /]():
     pass
 
 
-# CHECK-LABEL: lit.func @"inferred_params_kw_only
+# CHECK-LABEL: lit.fn @"inferred_params_kw_only
 # CHECK-SAME: <x, +, *, y>
 fn inferred_params_kw_only[x: int, //, *, y: int]():
     pass
@@ -120,7 +120,7 @@ struct NonTrivialReg:
     pass
 
 
-# CHECK-LABEL: lit.func @"defTests({{.*}}, %untyped: !lit.ref<!object, imm {{.*}}> read_mem,
+# CHECK-LABEL: lit.fn @"defTests({{.*}}, %untyped: !lit.ref<!object, imm {{.*}}> read_mem,
 def defTests(
     a: Int, b: Int, mem: MemoryOnly, reg: NonTrivialReg, untyped
 ) -> None:
@@ -189,13 +189,13 @@ def test_multi_tuple_def_value():
     a, b = returnsMultiple()
 
 
-# CHECK-LABEL: lit.func @"ref_result
+# CHECK-LABEL: lit.fn @"ref_result
 fn ref_result(mut x: MemoryOnly) -> ref [x] MemoryOnly:
     # CHECK-NEXT: lit.return %x : !lit.ref<!MemoryOnly, mut *"x`">
     return x
 
 
-# CHECK-LABEL: lit.func @"def_ref_result
+# CHECK-LABEL: lit.fn @"def_ref_result
 def def_ref_result(mut x: MemoryOnly) -> ref [x] MemoryOnly:
     # CHECK-NEXT: lit.ref.store %x, %__result__
     # CHECK-NEXT: %0 = kgen.param.constant: i1 = <0>
@@ -203,7 +203,7 @@ def def_ref_result(mut x: MemoryOnly) -> ref [x] MemoryOnly:
     return x
 
 
-# CHECK-LABEL: lit.func @"use_ref_result
+# CHECK-LABEL: lit.fn @"use_ref_result
 def use_ref_result():
     # CHECK-NEXT: %a = lit.var.decl "a"
     # CHECK-NEXT: [[TMP:%.*]] = kgen.param.materialize: !MemoryOnly = <{}>
@@ -223,7 +223,7 @@ def use_ref_result():
     def_ref_result(a) = MemoryOnly()
 
 
-# CHECK-LABEL: lit.func @"return_def_arg_box
+# CHECK-LABEL: lit.fn @"return_def_arg_box
 def return_def_arg_box(abc: MemoryOnly) -> ref [abc] MemoryOnly:
     # CHECK-NEXT: lit.ref.store %abc, %__result__
     return abc

@@ -11,7 +11,7 @@
 # CHECK-NEXT: move :!lit.generator
 # CHECK-NEXT: copy :!lit.generator
 
-# CHECK-LABEL: lit.func @"__init__{{.*}}(%impl: {{.*}} owned_in_mem, |, ?, %self: !lit.ref<!MemType1, mut *"self`"> byref_result)
+# CHECK-LABEL: lit.fn @"__init__{{.*}}(%impl: {{.*}} owned_in_mem, |, ?, %self: !lit.ref<!MemType1, mut *"self`"> byref_result)
 # CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure[!lit.generator<[2](!kgen.pointer<none>, |, "n": !lit.ref<!MemType, {{.*}}> read_mem, ?, "__result__": !lit.ref<!MemType, {{.*}}> byref_result) -> !kgen.none
 # CHECK-NEXT: %[[callPtr:.*]] = lit.ref.struct.ger %self[call]
 # CHECK-NEXT: lit.ref.store %[[ptrToCall]], %[[callPtr]]
@@ -40,17 +40,17 @@
 
 # CHECK-NEXT:  %[[V4:.*]] = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT:  lit.return %[[V4]] : !kgen.none
-# CHECK-NEXT:  lit.end_func
+# CHECK-NEXT:  lit.end_fn
 # CHECK-NEXT:  }
 
 # CHECK: lit.struct.decl @MemType
 
-# CHECK-LABEL: lit.func @"fn{{.*}}_dtor_`_CI_{{.*}}(%self: !kgen.pointer<none>, |)
+# CHECK-LABEL: lit.fn @"fn{{.*}}_dtor_`_CI_{{.*}}(%self: !kgen.pointer<none>, |)
 # CHECK-NEXT: %0 = pop.pointer.bitcast %self
 # CHECK-NEXT: %1 = lit.ref.from_pointer %0 end_uninit
 # CHECK-NEXT: pop.aligned_free %0
 
-# CHECK-LABEL: lit.func @"fn{{.*}}_call_`_CI_{{.*}}](
+# CHECK-LABEL: lit.fn @"fn{{.*}}_call_`_CI_{{.*}}](
 # CHECK-SAME: %[[SELF:.*]][{{.*}}]: !kgen.pointer<none>, |, %n: !lit.ref<!MemType, imm {{.*}}> read_mem
 # CHECK-SAME: %[[RES:.*]]: !lit.ref<!MemType, mut {{.*}}> byref_result)
 # CHECK-NEXT: %[[A0:.*]] = pop.pointer.bitcast %[[SELF]]

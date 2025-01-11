@@ -30,7 +30,7 @@ struct MyUnsafePointer[
     fn __init__(out self, value: Self._mlir_type):
         self.address = value
 
-# CHECK-LABEL: lit.func @"unsafe_ptr
+# CHECK-LABEL: lit.fn @"unsafe_ptr
 fn unsafe_ptr(s: __mlir_type.`!kgen.string`):
     # CHECK:      lit.call @{{.*}}::@MyUnsafePointer::@"__init__{{.*}}"[mut *"{{.*}}"]
     # CHECK-SAME: <:!AnyType #type_value,

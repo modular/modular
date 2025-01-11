@@ -24,9 +24,9 @@ kgen.generator @declref_metatype(%arg0: !lit.struct<@MyStruct, type>) {
 
 // CHECK-LABEL: lit.trait.decl @TParam<MT: type, T: !kgen.param<MT>>
 lit.trait.decl @TParam<MT: type, T: !kgen.param<MT>> {
-  // CHECK-NEXT: lit.func @f(%self: !kgen.param<:!kgen.param<MT> T>) -> !kgen.none
-  lit.func @f(%self: !kgen.param<:!kgen.param<MT> T>) -> !kgen.none {
-    lit.trait_func
+  // CHECK-NEXT: lit.fn @f(%self: !kgen.param<:!kgen.param<MT> T>) -> !kgen.none
+  lit.fn @f(%self: !kgen.param<:!kgen.param<MT> T>) -> !kgen.none {
+    lit.trait_fn
   }
 }
 
@@ -34,7 +34,7 @@ lit.trait.decl @MyTrait {}
 
 // CHECK-LABEL: @trait_metatype
 // CHECK-SAME: !kgen.param<:trait<@MyTrait> T>
-lit.func @trait_metatype<T: trait<@MyTrait>>(%arg0: !kgen.param<:trait<@MyTrait> T>) {
+lit.fn @trait_metatype<T: trait<@MyTrait>>(%arg0: !kgen.param<:trait<@MyTrait> T>) {
   kgen.return
 }
 
@@ -104,12 +104,12 @@ kgen.generator @passing_kinds(
     "j": index owned, "k": index owned, "l": index owned, "m": index owned
 ) -> !kgen.none>>
 
-// CHECK-LABEL: lit.func @long_sig(%t: !kgen.generator<!lit.generator<
+// CHECK-LABEL: lit.fn @long_sig(%t: !kgen.generator<!lit.generator<
 // CHECK-SAME: "a": index owned, |, *,
 // CHECK-SAME: "b": index owned, "c": index owned, "d": index owned, "e": index owned,
 // CHECK-SAME: "f": index owned, "g": index owned, "h": index owned, "i": index owned,
 // CHECK-SAME: "j": index owned, "k": index owned, "l": index owned, "m": index owned
-lit.func @long_sig(%t: !t) {
+lit.fn @long_sig(%t: !t) {
     kgen.return
 }
 

@@ -24,8 +24,8 @@ lit.struct.decl @StructReturns<() -> dtype> {}
 
 // -----
 
-// expected-error @below {{custom op 'lit.func' expected no result parameters}}
-lit.func @func_param_return<() -> dtype> {}
+// expected-error @below {{custom op 'lit.fn' expected no result parameters}}
+lit.fn @func_param_return<() -> dtype> {}
 
 // -----
 
@@ -116,105 +116,105 @@ kgen.generator @invalid_field_name(%a: index, %container: !lit.struct<@Bar>) {
 // -----
 
 // expected-error @below {{expected SSA operand}}
-lit.func @no_names(index)
+lit.fn @no_names(index)
 
 // -----
 
 // expected-error @below {{only one '|' allowed in signature}}
-lit.func @twoSlash(%a: index, |, |, %b: index) {
+lit.fn @twoSlash(%a: index, |, |, %b: index) {
   kgen.return
 }
 
 // -----
 
 // expected-error @below {{only one '*' allowed in signature}}
-lit.func @twoStar(%a: index, *, *, %b: index) {
+lit.fn @twoStar(%a: index, *, *, %b: index) {
   kgen.return
 }
 
 // -----
 
 // expected-error @below {{'*' cannot precede '|' in signature}}
-lit.func @slashAfterStar(%a: index, *, |, %b: index) {
+lit.fn @slashAfterStar(%a: index, *, |, %b: index) {
   kgen.return
 }
 
 // -----
 
 // expected-error @+1 {{expected 'var' or 'pack', got: stuff}}
-lit.func @incorrect_arg_variadicness(%a: index read|stuff) {
+lit.fn @incorrect_arg_variadicness(%a: index read|stuff) {
   kgen.return
 }
 
 // -----
 
 // expected-error @+1 {{expected convention|variadicness, got: stuff}}
-lit.func @incorrect_arg_conv_and_variadicness(%a: index stuff) {
+lit.fn @incorrect_arg_conv_and_variadicness(%a: index stuff) {
   kgen.return
 }
 
 // -----
 
 // expected-error @+1 {{expected 'var' or 'pack', got: stuff}}
-lit.func @incorrect_param_variadicness<a: dtype stuff>() {
+lit.fn @incorrect_param_variadicness<a: dtype stuff>() {
   kgen.return
 }
 
 // -----
 
-// expected-error @below {{'lit.func' expected positional parameter with default value}}
-lit.func @default_pos_params<a: dtype, b: dtype = f32, w: scalar<si32>>() attributes {isParametric} {
+// expected-error @below {{'lit.fn' expected positional parameter with default value}}
+lit.fn @default_pos_params<a: dtype, b: dtype = f32, w: scalar<si32>>() attributes {isParametric} {
   %0 = kgen.param.constant: none = <#kgen.none>
-  lit.end_func
+  lit.end_fn
 }
 
 // -----
 
-// expected-error @below {{'lit.func' expected keyword-only parameter with default value}}
-lit.func @default_kw_only_params<a: dtype, b: dtype = f32, *, b: dtype = f16, w: scalar<si32>>() attributes {isParametric} {
+// expected-error @below {{'lit.fn' expected keyword-only parameter with default value}}
+lit.fn @default_kw_only_params<a: dtype, b: dtype = f32, *, b: dtype = f16, w: scalar<si32>>() attributes {isParametric} {
   %0 = kgen.param.constant: none = <#kgen.none>
-  lit.end_func
+  lit.end_fn
 }
 
 // -----
 
 kgen.generator @not_lit_func() {
-  // expected-error @below {{'lit.return' op expected to be nested inside a `lit.func` operation}}
+  // expected-error @below {{'lit.return' op expected to be nested inside a `lit.fn` operation}}
   lit.return
   kgen.return
 }
 
 // -----
 
-lit.func @mismatched_return_types(%arg0: i64) -> i32 {
+lit.fn @mismatched_return_types(%arg0: i64) -> i32 {
   // expected-error @below {{'lit.return' op operand #0 has type 'i64' but expected 'i32'}}
   lit.return %arg0 : i64
-  lit.end_func
+  lit.end_fn
 }
 
 // -----
 
-lit.func @does_not_throw() {
+lit.fn @does_not_throw() {
   // expected-error @below {{'lit.raise' op must be nested inside the 'try' region of a `lit.try` operation or a throwing function}}
   lit.raise
-  lit.end_func
+  lit.end_fn
 }
 
 // -----
 
-lit.func @not_async() {
+lit.fn @not_async() {
   // expected-error @below {{'lit.async.call' op callable must be 'async'}}
   %0 = lit.async.call[() -> (): @not_async]()
-  lit.end_func
+  lit.end_fn
 }
 
 // -----
 
-lit.func @im_a_func() {
+lit.fn @im_a_func() {
   kgen.return
 }
 
-lit.func @struct_attr() {
+lit.fn @struct_attr() {
   // expected-error @below {{invalid symbol use within this operator}}
   // expected-error @below {{struct attribute type @im_a_func does not refer to a struct declaration}}
   kgen.param.constant: @im_a_func = <#lit.struct<{}>>
@@ -229,7 +229,7 @@ lit.struct.decl @TwoFields {
   lit.struct.field b : index
 }
 
-lit.func @struct_attr() {
+lit.fn @struct_attr() {
   // expected-error @below {{invalid symbol use within this operator}}
   // expected-error @below {{struct declaration expected 2 fields but struct attribute has 0}}
   kgen.param.constant: @TwoFields = <#lit.struct<{}>>
@@ -244,7 +244,7 @@ lit.struct.decl @TwoFields {
   lit.struct.field b : index
 }
 
-lit.func @struct_attr() {
+lit.fn @struct_attr() {
   // expected-error @below {{invalid symbol use within this operator}}
   // expected-error @below {{struct attribute field name "c" at position #1 does not match the name "b" in the struct declaration}}
   kgen.param.constant: @TwoFields = <#lit.struct<{a = 1, c = 2}>>
@@ -258,7 +258,7 @@ lit.struct.decl @ParamField<ty: type> {
   lit.struct.field a : !kgen.param<ty>
 }
 
-lit.func @struct_attr() {
+lit.fn @struct_attr() {
   // expected-error @below {{invalid symbol use within this operator}}
   // expected-error @below {{struct attribute field #0 has type 'index' but corresponding struct field "a" expected 'i1'}}
   kgen.param.constant: @ParamField<:type i1> = <#lit.struct<{a = 5}>>
@@ -271,7 +271,7 @@ lit.struct.decl @ParamField<ty: type> {
   lit.struct.field a : !kgen.param<ty>
 }
 
-lit.func @struct_attr() {
+lit.fn @struct_attr() {
   // expected-error @below {{'kgen.param.constant' op invalid use of parameter with no declaration "A"}}
   kgen.param.constant: @ParamField<:type i1> = <#lit.struct<{a: i1 = A}>>
   kgen.return
@@ -279,7 +279,7 @@ lit.func @struct_attr() {
 
 // -----
 
-lit.func @unbound_region() {
+lit.fn @unbound_region() {
   // expected-error @below {{'lit.unbound_region' op is never valid. Was it not erased by the parser?}}
   "lit.unbound_region"() ({
   ^bb0(%arg0: index):
@@ -290,10 +290,10 @@ lit.func @unbound_region() {
 
 // -----
 
-lit.func @no_struct_decl(%a: index) {
+lit.fn @no_struct_decl(%a: index) {
   // expected-error @below {{expected to find a struct decl for '!lit.struct<@Bar<:type index>>'}}
   %0 = lit.struct.create(x=%a) : (index) -> !lit.struct<@Bar<:type index>>
-  lit.end_func
+  lit.end_fn
 }
 
 // -----
@@ -306,7 +306,7 @@ lit.package @MyPackage {
 
 // -----
 
-lit.func @declareWrongType() {
+lit.fn @declareWrongType() {
   // expected-error @below {{op declares a parameter with type 'index' but parameter expression has type 'i32'}}
   "lit.alias.decl"() {paramDecl = #kgen<param.decl p1 : index>, value = 1 : i32} : () -> ()
   kgen.return
@@ -314,7 +314,7 @@ lit.func @declareWrongType() {
 
 // -----
 
-lit.func @wrong_error_return1(%arg0: i32) -> i1 {
+lit.fn @wrong_error_return1(%arg0: i32) -> i1 {
   %0 = kgen.param.constant = <0>
   // expected-error @below {{'lit.error_return' op operand #0 has type 'index' but expected 'i1'}}
   lit.error_return %0 : index
@@ -322,7 +322,7 @@ lit.func @wrong_error_return1(%arg0: i32) -> i1 {
 
 // -----
 
-lit.func @wrong_error_return2(%arg0: i32) -> !kgen.variant<index> {
+lit.fn @wrong_error_return2(%arg0: i32) -> !kgen.variant<index> {
   %var = kgen.variant.create %arg0, 0 : <i32, index>
   // expected-error @below {{'lit.error_return' op operand #0 has type '!kgen.variant<i32, index>' but expected '!kgen.variant<index>'}}
   lit.error_return %var : !kgen.variant<i32, index>
@@ -335,9 +335,9 @@ lit.unresolved_import @module as @newModule declNameLoc(loc(unknown))
 
 // -----
 
-lit.func @f() -> !kgen.none {
-  // expected-error @below {{'lit.trait_func' op expected a parent function in a trait}}
-  lit.trait_func
+lit.fn @f() -> !kgen.none {
+  // expected-error @below {{'lit.trait_fn' op expected a parent function in a trait}}
+  lit.trait_fn
 }
 
 // -----
@@ -372,7 +372,7 @@ lit.call @calls[mut a]() : !lit.generator<[1](!lit.ref<index, mut *[0,1]>) -> ()
 
 // -----
 
-lit.func @ref_immut<life: origin<0>>(%ref1: !lit.ref<index, imm life>) ->  !lit.ref<index, imm life> {
+lit.fn @ref_immut<life: origin<0>>(%ref1: !lit.ref<index, imm life>) ->  !lit.ref<index, imm life> {
   %ref2 = lit.ref.immut %ref1: !lit.ref<index, imm life>
   kgen.return %ref2: !lit.ref<index, imm life>
 }

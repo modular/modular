@@ -7,7 +7,7 @@
 
 # COM: This tests that code generated to support capturing closures is located and scoped correctly.
 
-# CHECK-LABEL:    lit.func @"makes_escaping_closure
+# CHECK-LABEL:    lit.fn @"makes_escaping_closure
 # CHECK-NEXT:    %anonymous2A = lit.var.decl "anonymous*" synth : !lit.ref<!escaping
 # CHECK-NEXT:    %0 = lit.call {{.*}}CI{{.*}}__init__{{.*}}"[{{.*}}](%m, %anonymous2A)
 # CHECK-NEXT:    %myclosure = lit.var.decl "myclosure" var : !lit.ref<!index
@@ -33,7 +33,7 @@ fn makes_escaping_closure(m: int, z: int) -> fn (n: int) escaping -> int:
 
 # CHECK-DAG: #Bool_name = #debuginfo.source_name<(struct)"Bool" from {{.*}}>
 
-# CHECK-LABEL: lit.func @"closure_in_block
+# CHECK-LABEL: lit.fn @"closure_in_block
 # CHECK:       hlcf.elif
 # CHECK:         %anonymous2A = lit.var.decl "anonymous*" synth : {{.*}} loc(#[[LOC0:.*]])
 # CHECK-NEXT:     = lit.call {{.*}}CI{{.*}}__init__{{.*}}"[{{.*}}](%m, %anonymous2A) : {{.*}} loc(#[[LOC0]])

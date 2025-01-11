@@ -11,14 +11,14 @@
 from imported_module import *
 
 
-# CHECK-LABEL: lit.func @"foo
+# CHECK-LABEL: lit.fn @"foo
 fn foo():
     imported_fn()
 
 
 # CHECK-LABEL: lit.file_module @imported_module
 
-# CHECK-LABEL: lit.func @"imported_fn
+# CHECK-LABEL: lit.fn @"imported_fn
 # CHECK: } loc(#[[LOC_IMPORTED_FN:.+]])
 
 # CHECK: #[[FILE_IMPORTED_MODULE:.+]] = #debuginfo.file<"{{.*}}/imported_module.mojo"

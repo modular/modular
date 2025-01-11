@@ -66,7 +66,7 @@ struct VariadicIndexList:
     fn __setitem__(mut self, *indices: Int, val: Int):
         pass
 
-# CHECK-LABEL: lit.func @"testVariadicIndexList
+# CHECK-LABEL: lit.fn @"testVariadicIndexList
 # MOCO-696: Support variadic length keys in __setitem__
 fn testVariadicIndexList(mut foo: VariadicIndexList, i: Int, the_value: Int):
     # Getter is straight-forward.

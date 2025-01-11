@@ -8,8 +8,8 @@ lit.struct.decl @FooStruct {
   lit.struct.field b : index
 }
 
-// CHECK-LABEL: lit.func @struct_extract_fold_create
-lit.func @struct_extract_fold_create(%a: index, %b: index) -> index {
+// CHECK-LABEL: lit.fn @struct_extract_fold_create
+lit.fn @struct_extract_fold_create(%a: index, %b: index) -> index {
   // CHECK-NOT: lit.struct.create
   // CHECK-NOT: lit.struct.extract
   // CHECK: kgen.return %a
@@ -18,8 +18,8 @@ lit.func @struct_extract_fold_create(%a: index, %b: index) -> index {
   kgen.return %field : index
 }
 
-// CHECK-LABEL: lit.func @struct_extract_fold_create_b
-lit.func @struct_extract_fold_create_b(%a: index, %b: index) -> index {
+// CHECK-LABEL: lit.fn @struct_extract_fold_create_b
+lit.fn @struct_extract_fold_create_b(%a: index, %b: index) -> index {
   // CHECK-NOT: lit.struct.create
   // CHECK-NOT: lit.struct.extract
   // CHECK: kgen.return %b
@@ -28,8 +28,8 @@ lit.func @struct_extract_fold_create_b(%a: index, %b: index) -> index {
   kgen.return %field : index
 }
 
-// CHECK-LABEL: lit.func @struct_extract_fold_insert
-lit.func @struct_extract_fold_insert(%struct0: !lit.struct<@FooStruct>) -> index {
+// CHECK-LABEL: lit.fn @struct_extract_fold_insert
+lit.fn @struct_extract_fold_insert(%struct0: !lit.struct<@FooStruct>) -> index {
   // CHECK-NOT: lit.struct.insert
   // CHECK-NOT: lit.struct.extract
   // CHECK: kgen.return %idx10
@@ -39,8 +39,8 @@ lit.func @struct_extract_fold_insert(%struct0: !lit.struct<@FooStruct>) -> index
   kgen.return %field : index
 }
 
-// CHECK-LABEL: lit.func @struct_extract_no_fold_insert
-lit.func @struct_extract_no_fold_insert(%struct0: !lit.struct<@FooStruct>) -> index {
+// CHECK-LABEL: lit.fn @struct_extract_no_fold_insert
+lit.fn @struct_extract_no_fold_insert(%struct0: !lit.struct<@FooStruct>) -> index {
   // CHECK: lit.struct.insert
   // CHECK-NEXT: lit.struct.extract
   // CHECK-NEXT: kgen.return
@@ -50,7 +50,7 @@ lit.func @struct_extract_no_fold_insert(%struct0: !lit.struct<@FooStruct>) -> in
   kgen.return %field : index
 }
 
-lit.func @struct_ops_fold() -> (!lit.struct<@FooStruct>, !lit.struct<@FooStruct>, index) {
+lit.fn @struct_ops_fold() -> (!lit.struct<@FooStruct>, !lit.struct<@FooStruct>, index) {
   // CHECK-DAG: %[[V0:.*]] = {{.*}} @FooStruct = <{a = 0, b = 0}>
   // CHECK-DAG: %[[V1:.*]] = {{.*}} @FooStruct = <{a = 0, b = 3}>
   // CHECK-DAG: %[[V2:.*]] = {{.*}} = <3>
@@ -76,8 +76,8 @@ lit.struct.decl @Int register_passable_trivial {
 }
 
 
-// CHECK-LABEL: lit.func @fold_ger
-lit.func @fold_ger[mut lt]() -> !lit.ref<index, mut lt->first->value> {
+// CHECK-LABEL: lit.fn @fold_ger
+lit.fn @fold_ger[mut lt]() -> !lit.ref<index, mut lt->first->value> {
   // CHECK-NEXT: kgen.param.constant: !lit.ref<index, mut lt->first->value> =
   // CHECK-SAME: <#lit.struct.ger<#lit.struct.ger<#interp.symbolic_pointer<0>
   // CHECK-SAME: : !lit.ref<@Pair, mut lt>, "first"> : !lit.ref<@Int, mut lt->first>, "value">>

@@ -7,7 +7,7 @@
 # RUN: kgen-translate -import-mojo --allow-unregistered-dialect %s | FileCheck %s
 
 
-# CHECK-LABEL: lit.func @"import_of_import
+# CHECK-LABEL: lit.fn @"import_of_import
 # CHECK-SAME: #SIMD <:!DType {:dtype f64}, :!Int {1}>
 fn import_of_import(arg: Float64):
     pass
@@ -16,7 +16,7 @@ fn import_of_import(arg: Float64):
 import builtin
 
 
-# CHECK-LABEL: lit.func @"test_function_calls(::Int)"
+# CHECK-LABEL: lit.fn @"test_function_calls(::Int)"
 fn test_function_calls(arg: builtin.int.Int):
     pass
 
@@ -32,7 +32,7 @@ fn hasMultiReturnMLIROp() -> Tuple[Int, Int]:
 
 
 # COM: Check that a load from a SIMD field works.
-# CHECK-LABEL: lit.func @"testSIMDGetter
+# CHECK-LABEL: lit.fn @"testSIMDGetter
 fn testSIMDGetter[
     type: DType
 ](owned a: SIMD[type, 2]) -> __mlir_type[`!pop.scalar<`, type.value, `>`]:

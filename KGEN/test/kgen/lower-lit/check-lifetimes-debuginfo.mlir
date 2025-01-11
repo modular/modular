@@ -26,7 +26,7 @@ lit.struct.decl @S attributes {
 
   lit.struct.field a : index
 
-  lit.func @__init__(%num: index, %self: !lit.ref<@S, mut selflife> byref_result) -> !kgen.none
+  lit.fn @__init__(%num: index, %self: !lit.ref<@S, mut selflife> byref_result) -> !kgen.none
       attributes {sourceName = "__init__", specialFnKind = 2 : i8} {
     %0 = lit.ref.struct.ger %self[a] : <@S, mut selflife> -> index
     lit.ref.store %num, %0 : !lit.ref<index, mut selflife->a>
@@ -36,8 +36,8 @@ lit.struct.decl @S attributes {
   }
 }
 
-// CHECK-LABEL: lit.func @test_var
-lit.func @test_var() -> index {
+// CHECK-LABEL: lit.fn @test_var
+lit.fn @test_var() -> index {
   // Create `x`.
   // CHECK-NEXT: %x = lit.var.decl "x" var : ![[VAR_X_TYPE:.*]] loc
   %x = lit.var.decl "x"  var : !lit.ref<@S, mut xlife> loc(#locX)
@@ -65,15 +65,15 @@ lit.func @test_var() -> index {
   kgen.return %x_a_val : index loc(#locRet)
 } loc(fused<#sp>["test.mlir":10:10])
 
-// CHECK-LABEL: lit.func @test_uninit_var
-lit.func @test_uninit_var() {
+// CHECK-LABEL: lit.fn @test_uninit_var
+lit.fn @test_uninit_var() {
   // CHECK-NOT: debuginfo.{{(value)|(kill)}}
   %x = lit.var.decl "x"  var : !lit.ref<@S, mut xlife> loc(#locX)
   kgen.return loc(#locRet)
 } loc(fused<#sp>["test.mlir":10:10])
 
-// CHECK-LABEL: lit.func @test_def_in_loop
-lit.func @test_def_in_loop() {
+// CHECK-LABEL: lit.fn @test_def_in_loop
+lit.fn @test_def_in_loop() {
   // Create `x`.
   // CHECK-NEXT: %x = lit.var.decl "x" var : ![[VAR_X_TYPE:.*]] loc
   %x = lit.var.decl "x"  var : !lit.ref<@S, mut xlife> loc(#locX)
@@ -92,8 +92,8 @@ lit.func @test_def_in_loop() {
   kgen.return loc(#locRet)
 } loc(fused<#sp>["test.mlir":10:10])
 
-// CHECK-LABEL: lit.func @test_def_twice
-lit.func @test_def_twice() -> index {
+// CHECK-LABEL: lit.fn @test_def_twice
+lit.fn @test_def_twice() -> index {
   // Create `x`.
   // CHECK-NEXT: %x = lit.var.decl "x" var : ![[VAR_X_TYPE:.*]] loc
   %x = lit.var.decl "x"  var : !lit.ref<@S, mut xlife> loc(#locX)
@@ -118,8 +118,8 @@ lit.func @test_def_twice() -> index {
   kgen.return %0 : index loc(#locRet)
 } loc(fused<#sp>["test.mlir":10:10])
 
-// CHECK-LABEL: lit.func @test_consumed
-lit.func @test_consumed() -> index {
+// CHECK-LABEL: lit.fn @test_consumed
+lit.fn @test_consumed() -> index {
   // Create `x`.
   // CHECK-NEXT: %x = lit.var.decl "x" var
   %x = lit.var.decl "x"  var : !lit.ref<@S, mut xlife> loc(#locX)
@@ -152,8 +152,8 @@ lit.func @test_consumed() -> index {
   kgen.return %y_a_val : index loc(#locRet)
 } loc(fused<#sp>["test.mlir":10:10])
 
-// CHECK-LABEL: lit.func @test_arg(%x: {{.*}}, %ys: {{.*}}, %z:
-lit.func @test_arg(%x: !lit.ref<@S, mut xlife> loc(#locX) owned_in_mem, %ys: !kgen.variadic<!lit.ref<@S, imm *"ys">, read_mem> loc(#locY) read|var, %z: index loc(#locZ) owned) -> index {
+// CHECK-LABEL: lit.fn @test_arg(%x: {{.*}}, %ys: {{.*}}, %z:
+lit.fn @test_arg(%x: !lit.ref<@S, mut xlife> loc(#locX) owned_in_mem, %ys: !kgen.variadic<!lit.ref<@S, imm *"ys">, read_mem> loc(#locY) read|var, %z: index loc(#locZ) owned) -> index {
   // CHECK: debuginfo.value #[[DIARG_X]] #[[DIEXPR_DEREF_X]] = %x
   // CHECK-NOT: debuginfo.value {{.*}} = %ys
   // CHECK-NOT: debuginfo.value {{.*}} = %z

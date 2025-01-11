@@ -9,7 +9,7 @@
 # The following function has a use of the builtin Error type, make sure that
 # gets pulled in.
 
-# CHECK: lit.func @"use_of_error_type
+# CHECK: lit.fn @"use_of_error_type
 # CHECK: lit.try %__try_error__ : !lit.ref<!Error,
 
 # CHECK: lit.package @builtin

@@ -6,7 +6,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-# CHECK-LABEL: lit.func @"closure_kw
+# CHECK-LABEL: lit.fn @"closure_kw
 fn closure_kw(a: Int):
     fn has_kw(b: Int) escaping -> Int:
         return a + b

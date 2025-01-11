@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
-# CHECK: lit.func @"__copyinit__{{.*}}(%other: {{.*}}!MemType1{{.*}}read_mem
+# CHECK: lit.fn @"__copyinit__{{.*}}(%other: {{.*}}!MemType1{{.*}}read_mem
 # CHECK-SAME: %self: !lit.ref<!MemType1, mut {{.*}}> byref_result) 
 # CHECK-NEXT:   [[M0:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:   [[existing_impl:%.*]] = lit.ref.struct.ger %other[field0]
@@ -34,11 +34,11 @@
 # CHECK-NEXT:  [[W3:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:  store [[W5]], [[W3]]
 # CHECK-NEXT:  lit.return
-# CHECK-NEXT:  lit.end_func
+# CHECK-NEXT:  lit.end_fn
 
-# CHECK-LABEL: lit.func @"materialize_escaping_closure
+# CHECK-LABEL: lit.fn @"materialize_escaping_closure
 
-# CHECK: lit.func @"fn{{.*}}_copyinit_`_CI_{{.*}}(%other: !kgen.pointer<none>, |)
+# CHECK: lit.fn @"fn{{.*}}_copyinit_`_CI_{{.*}}(%other: !kgen.pointer<none>, |)
 
 # Allocate memory on the heap for impl and copy existing contents into it.
 # CHECK-NEXT:  %[[SIZEOF:.*]] = kgen.param.constant = <get_sizeof(
