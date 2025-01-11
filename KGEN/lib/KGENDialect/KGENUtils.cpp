@@ -956,6 +956,18 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
         p.parseComma() || parseColonTypeParamValue(p, operands.emplace_back()))
       return failure();
     return success();
+
+  case (uint32_t)POC::CompileOffloadClosure: {
+    // Parse the type.
+    // Use type with parseParamValue here instead of
+    // using parseColonTypeParamValue to get the type because the parser
+    // should already parsed the function type here if it's the first operand.
+    if (parseParamValue(p, operands.emplace_back(), type))
+      return failure();
+
+    return success();
+  }
+
   case (uint32_t)POC::GetVTableEntry:
     if (!type)
       type = TypeType::get(p.getContext());
@@ -1258,6 +1270,11 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
     p << ", ";
     printColonTypeParamValue(p, operands[1]);
     break;
+
+  case POC::CompileOffloadClosure:
+    printColonTypeParamValue(p, operands[0]);
+    break;
+
   case POC::GetVTableEntry:
     if (!isa<TypeType>(operands[0].getType())) {
       p << ':';

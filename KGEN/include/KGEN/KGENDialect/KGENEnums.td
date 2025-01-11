@@ -67,37 +67,38 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   // Evaluator.
   I32EnumAttrCase<"VariadicGet", 28, "variadic_get">,
   I32EnumAttrCase<"CompileAssembly", 30, "compile_assembly">,
-  I32EnumAttrCase<"GetLinkageName", 31, "get_linkage_name">,
+  I32EnumAttrCase<"CompileOffloadClosure", 31, "compile_offload_closure">,
+  I32EnumAttrCase<"GetLinkageName", 32, "get_linkage_name">,
 
   // Generics.
-  I32EnumAttrCase<"GetVTableEntry", 32, "get_vtable_entry">,
-  I32EnumAttrCase<"PtrBitcast", 33, "ptr_bitcast">,
-  I32EnumAttrCase<"LoadFromMem", 34, "load_from_mem">,
+  I32EnumAttrCase<"GetVTableEntry", 33, "get_vtable_entry">,
+  I32EnumAttrCase<"PtrBitcast", 34, "ptr_bitcast">,
+  I32EnumAttrCase<"LoadFromMem", 35, "load_from_mem">,
 
   // Given a list of !variadic<sometype> type, return the same list with each
   // element wrapped in a kgen pointer type: [i32, f32] -> [ptr<i32>, ptr<f32>].
   // The first operand is the list, the second operand is an integer addrspace.
-  I32EnumAttrCase<"VariadicPtrMap", 35, "variadic_ptr_map">,
+  I32EnumAttrCase<"VariadicPtrMap", 36, "variadic_ptr_map">,
   // Given a list of !variadic<pointer<sometype>> type, return the same list
   // with each element stripped of kgen pointer type:
   //     [ptr<i32>, ptr<f32>] -> [i32, f32].
   // This takes one operand, the list of pointer types.
-  I32EnumAttrCase<"VariadicPtrRemoveMap", 36, "variadic_ptrremove_map">,
+  I32EnumAttrCase<"VariadicPtrRemoveMap", 37, "variadic_ptrremove_map">,
 
   /// Replace the symbol reference to a StructGeneratorOp with a reference to
   /// the concreteized StructInstanceOp.
-  I32EnumAttrCase<"InstantiateStructRef", 37, "inst_struct_ref">,
+  I32EnumAttrCase<"InstantiateStructRef", 38, "inst_struct_ref">,
   /// Convert an arbitrary MLIR attribute into a !kgen.string using
   /// mlir::debugString on the attribute.
-  I32EnumAttrCase<"AttrToStr", 38, "attr_to_str">,
+  I32EnumAttrCase<"AttrToStr", 39, "attr_to_str">,
   /// Convert a length+pointer representation in interpreter memory into a
   /// !kgen.string, used to convert comp-time String (and related types) to
   /// StringLiteral.
-  I32EnumAttrCase<"DataToStr", 39, "data_to_str">,
+  I32EnumAttrCase<"DataToStr", 40, "data_to_str">,
   /// Concatenate two values of !kgen.string type.
-  I32EnumAttrCase<"StrConcat", 40, "str_concat">,
+  I32EnumAttrCase<"StrConcat", 41, "str_concat">,
   /// Get the arguments from a function signature as a kgen.variadic.
-  I32EnumAttrCase<"FunctionGetArgTypes", 41, "function_get_arg_types">,
+  I32EnumAttrCase<"FunctionGetArgTypes", 42, "function_get_arg_types">,
 
   /// HELLO INTREPID COMPILER DEVELOPER!  Are you thinking about adding another
   /// POC opcode for something that isn't a trivial expression like add or sub?

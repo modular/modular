@@ -1108,6 +1108,7 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::VariadicGet:
   case POC::CompileAssembly:
   case POC::GetLinkageName:
+  case POC::CompileOffloadClosure:
   case POC::GetVTableEntry:
   case POC::PtrBitcast:
   case POC::InstantiateStructRef:
@@ -1315,6 +1316,12 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError()
              << "'get_linkage_name' first operand should be a target type";
     break;
+
+  case POC::CompileOffloadClosure: {
+    if (operands.size() != 1)
+      return emitError() << "'compile_offload_closure' requires 1 operands";
+    break;
+  }
   case POC::GetVTableEntry:
     return verifyGetVTableEntry(operands, type, emitError);
   case POC::PtrBitcast:
@@ -2745,6 +2752,7 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
   case POC::GetEnv:
   case POC::CompileAssembly:
   case POC::GetLinkageName:
+  case POC::CompileOffloadClosure:
   case POC::InstantiateStructRef:
   case POC::AttrToStr:
     result = {};
@@ -2803,7 +2811,8 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
              {POC::BindSignature, POC::Apply, POC::ApplyResultSlot,
               POC::TargetHasFeature, POC::TargetGetField, POC::AcceleratorArch,
               POC::GetSizeOf, POC::GetAlignOf, POC::VariadicGet, POC::GetEnv,
-              POC::CompileAssembly, POC::GetLinkageName, POC::GetVTableEntry,
+              POC::CompileAssembly, POC::GetLinkageName,
+              POC::CompileOffloadClosure, POC::GetVTableEntry,
               POC::VariadicPtrMap, POC::VariadicPtrRemoveMap},
              opcode) ||
          llvm::all_of(operandsIn.drop_front(),
