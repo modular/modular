@@ -69,7 +69,7 @@ fn _block_swizzle_by_scale[
     bx = bx + by // grid_dim.data[1] * (grid_dim.data[0] >> scale)
     by = by % grid_dim.data[1]
 
-    return __type_of(block_idx)(int(bx), int(by))
+    return __type_of(block_idx)(Int(bx), Int(by))
 
 
 # ===------------------------------------------------------------------===#
@@ -142,13 +142,13 @@ struct MatmulConfig[
 
     fn grid_dim(self, m: UInt, n: UInt) -> IndexList[3]:
         return Index(
-            int(ceildiv(n, self.block_tile_shape[1])),
-            int(ceildiv(m, self.block_tile_shape[0])),
-            int(self.num_k_partitions),
+            Int(ceildiv(n, self.block_tile_shape[1])),
+            Int(ceildiv(m, self.block_tile_shape[0])),
+            Int(self.num_k_partitions),
         )
 
     fn block_dim(self) -> IndexList[3]:
-        return Index(int(self.num_threads()), 1, 1)
+        return Index(Int(self.num_threads()), 1, 1)
 
     fn work_space_size(self, M: UInt, N: UInt) -> UInt:
         return M * N * (self.num_k_partitions - 1)

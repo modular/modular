@@ -84,7 +84,7 @@ struct Backend:
         return not (self == other)
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
     fn __str__(self) -> String:
         if self is Self.AUTOMATIC:

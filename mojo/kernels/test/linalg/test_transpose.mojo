@@ -122,7 +122,7 @@ fn test_transpose_8x8():
     for i in range(num_rows):
         for j in range(num_cols):
             var expected: Int = j * num_rows + i
-            var actual: Int = int(matrix[i, j][0])
+            var actual: Int = Int(matrix[i, j][0])
             # CHECK-NOT: Transpose 8x8 failed
             if expected != actual:
                 print("Transpose 8x8 failed")
@@ -151,7 +151,7 @@ fn test_transpose_16x16():
     for i in range(num_rows):
         for j in range(num_cols):
             var expected: Int = j * num_rows + i
-            var actual: Int = int(matrix[i, j][0])
+            var actual: Int = Int(matrix[i, j][0])
             # CHECK-NOT: Transpose 16x16 failed
             if expected != actual:
                 print("Transpose 16x16 failed")

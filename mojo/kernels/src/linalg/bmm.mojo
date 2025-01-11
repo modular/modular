@@ -518,7 +518,7 @@ fn batched_matmul_kernel[
         nd_corrds[rank - 2] = y
         elementwise_lambda[c_type, 1, rank](nd_corrds, val.cast[c_type]())
     else:
-        c_buff[Index(int(z), int(y), int(x))] = val.cast[c_type]()
+        c_buff[Index(Int(z), Int(y), Int(x))] = val.cast[c_type]()
 
 
 @always_inline

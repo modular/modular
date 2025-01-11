@@ -176,7 +176,7 @@ fn test_micro_kernel[
     matmul_inner_loop[config](c, a, b_packed, m, n, k)
 
     # CHECK: 256
-    print(int(c[0, 0]))
+    print(Int(c[0, 0]))
     a_ptr.free()
     b_packed_ptr.free()
     c_ptr.free()

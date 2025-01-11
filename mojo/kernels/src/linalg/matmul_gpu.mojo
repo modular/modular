@@ -1338,7 +1338,7 @@ fn multistage_gemm[
                 gemm_kernel_type,
                 # dump_asm = Path("./pipeline-gemm.ptx"),
             ](
-                threads_per_block=int(config.num_threads()),
+                threads_per_block=Int(config.num_threads()),
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                     config.shared_mem_usage()
                 ),
@@ -1367,7 +1367,7 @@ fn multistage_gemm[
             )
             var work_space = NDBuffer[work_space_type, 3](
                 work_space_data.ptr,
-                Index(int(runtime_config.num_k_partitions), M, N),
+                Index(Int(runtime_config.num_k_partitions), M, N),
             )
 
             alias gemm_kernel_type = multistage_gemm_split_k_kernel[
@@ -1388,7 +1388,7 @@ fn multistage_gemm[
                 gemm_kernel_type,
                 # dump_asm = Path("./pipeline-gemm.ptx"),
             ](
-                threads_per_block=int(config.num_threads()),
+                threads_per_block=Int(config.num_threads()),
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                     config.shared_mem_usage()
                 ),
@@ -1432,7 +1432,7 @@ fn multistage_gemm[
     ]
 
     var gemm_kernel = ctx.compile_function[gemm_kernel_type,](
-        threads_per_block=int(config.num_threads()),
+        threads_per_block=Int(config.num_threads()),
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             config.shared_mem_usage()
         ),

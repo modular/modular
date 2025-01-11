@@ -266,7 +266,7 @@ fn gemv_split_k[
     for idxK in range(tid * simd_width, k, tile_k):
 
         @parameter
-        for i in range(int(tile_n)):
+        for i in range(Int(tile_n)):
             var b_vec = weight.data.load[
                 width=simd_width, alignment=align_weight
             ](weight_idx + i * k + idxK)
@@ -274,7 +274,7 @@ fn gemv_split_k[
             tile_w.store[alignment=align_weight](i * simd_width, b_vec)
 
         @parameter
-        for i in range(int(tile_m)):
+        for i in range(Int(tile_m)):
             var a_vec = act.data.load[width=simd_width, alignment=align_act](
                 act_idx + i * k + idxK
             )
@@ -282,10 +282,10 @@ fn gemv_split_k[
             tile_a.store[alignment=align_act](i * simd_width, a_vec)
 
             @parameter
-            for j in range(int(tile_n)):
+            for j in range(Int(tile_n)):
 
                 @parameter
-                for l in range(int(simd_width)):
+                for l in range(Int(simd_width)):
                     acc[i * tile_n + j] += (
                         tile_a[l].cast[s_type]()
                         * tile_w[j * simd_width + l].cast[s_type]()
@@ -304,10 +304,10 @@ fn gemv_split_k[
     # Each warp sums across its threads and stages results in shared memory.
     # Shared memory data is row mojor (num_warps, tile_m, tile_n) stored in 1D.
     @parameter
-    for mi in range(int(tile_m)):
+    for mi in range(Int(tile_m)):
 
         @parameter
-        for ni in range(int(tile_n)):
+        for ni in range(Int(tile_n)):
             var val = warp_sum(acc[mi * tile_n + ni])
             if lane_id == 0:
                 shmem[mi * tile_n + ni + warp_id * tile_m * tile_n] = val
@@ -322,7 +322,7 @@ fn gemv_split_k[
         var val = Scalar[s_type]()
 
         @parameter
-        for jj in range(int(k_warp_num)):
+        for jj in range(Int(k_warp_num)):
             val += shmem[jj * tile_m * tile_n + ii]
 
         @parameter

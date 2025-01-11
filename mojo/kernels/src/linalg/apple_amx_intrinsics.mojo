@@ -242,7 +242,7 @@ fn _encode_load_store[
     """
     Utility to do the bit encoding for load and store ops.
     """
-    var src_idx = int(src) | (start_index << 56)
+    var src_idx = Int(src) | (start_index << 56)
 
     @parameter
     if row_count == 2:
@@ -402,7 +402,7 @@ fn dot_at_b_impl(
     var b_pointer = b.data
     var c_pointer = c.data
 
-    alias num_elements = int(c.shape.at[1]() * c.shape.at[0]())
+    alias num_elements = Int(c.shape.at[1]() * c.shape.at[0]())
 
     # TODO: We can elide the copy if the data is already is already aligned.
     var a_buffer = stack_allocation[num_elements, Float32, alignment=128]()
@@ -421,8 +421,8 @@ fn dot_at_b_impl(
 
         @parameter
         for i in range(8):
-            ldx((i << 56) | int(b_buffer.offset((j * 8 + i) * b.dim[0]())))
-            ldy((i << 56) | int(a_buffer.offset((j * 8 + i) * a.dim[0]())))
+            ldx((i << 56) | Int(b_buffer.offset((j * 8 + i) * b.dim[0]())))
+            ldy((i << 56) | Int(a_buffer.offset((j * 8 + i) * a.dim[0]())))
 
         @parameter
         for i in range(8):
@@ -430,7 +430,7 @@ fn dot_at_b_impl(
 
     @parameter
     for i in range(0, 64, 4):
-        stz((i << 56) | int(c_buffer.offset((i >> 2) * c.dim[0]())))
+        stz((i << 56) | Int(c_buffer.offset((i >> 2) * c.dim[0]())))
 
     _clr()
 
@@ -447,7 +447,7 @@ fn dot_at_b_impl(
     var b_pointer = b.data
     var c_pointer = c.data
 
-    alias num_elements = int(c.shape.at[1]() * c.shape.at[0]())
+    alias num_elements = Int(c.shape.at[1]() * c.shape.at[0]())
 
     var a_buffer = stack_allocation[num_elements, Float16, alignment=128]()
     var b_buffer = stack_allocation[num_elements, Float16, alignment=128]()
@@ -465,8 +465,8 @@ fn dot_at_b_impl(
 
         @parameter
         for i in range(8):
-            ldx((i << 56) | int(b_buffer.offset((j * 8 + i) * b.dim[0]())))
-            ldy((i << 56) | int(a_buffer.offset((j * 8 + i) * a.dim[0]())))
+            ldx((i << 56) | Int(b_buffer.offset((j * 8 + i) * b.dim[0]())))
+            ldy((i << 56) | Int(a_buffer.offset((j * 8 + i) * a.dim[0]())))
 
         @parameter
         for i in range(8):
@@ -474,7 +474,7 @@ fn dot_at_b_impl(
 
     @parameter
     for i in range(0, 64, 2):
-        stz((i << 56) | int(c_buffer.offset((i >> 1) * c.dim[0]())))
+        stz((i << 56) | Int(c_buffer.offset((i >> 1) * c.dim[0]())))
 
     _clr()
 

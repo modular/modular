@@ -68,7 +68,7 @@ from .utils_gpu import MatmulConfig, MatmulKernels, block_swizzle
 fn distance[
     type: DType, //
 ](arg0: UnsafePointer[Scalar[type]], arg1: UnsafePointer[Scalar[type]]) -> Int:
-    return (int(arg0) - int(arg1)) // sizeof[arg1.type]()
+    return (Int(arg0) - Int(arg1)) // sizeof[arg1.type]()
 
 
 @always_inline
@@ -146,10 +146,10 @@ fn attn_mma[
 
     alias b_wtile_dim0 = WN if transpose_b else BK
     alias b_wtile_dim1 = BK if transpose_b else WN
-    var b_wtile_coord0 = int(warp_x) if transpose_b else 0
-    var b_wtile_coord1 = 0 if transpose_b else int(warp_x)
+    var b_wtile_coord0 = Int(warp_x) if transpose_b else 0
+    var b_wtile_coord1 = 0 if transpose_b else Int(warp_x)
 
-    var a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
+    var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
     var b_warp_tile = b_smem_iter[].tile[b_wtile_dim0, b_wtile_dim1](
         b_wtile_coord0, b_wtile_coord1
     )
@@ -157,7 +157,7 @@ fn attn_mma[
     var mma_op = TensorCore[accum_type, a_type, mma_shape, transpose_b]()
 
     @parameter
-    for i in range(int(k_group_size)):
+    for i in range(Int(k_group_size)):
 
         @parameter
         if a_iter.address_space == AddressSpace.LOCAL:
@@ -170,7 +170,7 @@ fn attn_mma[
                 a_warp_tile, a_reg_tiles[i].vectorize[1, a_frag_size](), i
             )
 
-        mma_op.load_b(b_warp_tile, b_reg_tiles[i], i, int(warp_x))
+        mma_op.load_b(b_warp_tile, b_reg_tiles[i], i, Int(warp_x))
 
     @parameter
     if a_iter.address_space == AddressSpace.LOCAL:
@@ -183,43 +183,43 @@ fn attn_mma[
             )
 
             @parameter
-            for k_mma0 in range(int(num_k_mma_iters)):
+            for k_mma0 in range(Int(num_k_mma_iters)):
 
                 @parameter
-                for k_mma1 in range(int(k_group_size)):
+                for k_mma1 in range(Int(k_group_size)):
                     alias k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
                     alias current = k_mma % num_reg_tiles
                     alias k_mma_next = k_mma + k_group_size
-                    alias next = int(k_mma_next % num_reg_tiles)
+                    alias next = Int(k_mma_next % num_reg_tiles)
 
                     @parameter
                     if k_mma_next == num_k_mmas:
                         b_smem_iter._incr()
 
-                        a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
+                        a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
                         b_warp_tile = b_smem_iter[].tile[
                             b_wtile_dim0, b_wtile_dim1
                         ](b_wtile_coord0, b_wtile_coord1)
 
                     # Assume input is the 16x8 output of 16x8x16 or 16x8x8 mma.
-                    copy_local_to_local(a_reg_tiles[int(next)], a_iter[])
+                    copy_local_to_local(a_reg_tiles[Int(next)], a_iter[])
                     a_iter._incr()
 
                     alias kidx = k_mma_next % num_k_mmas
                     mma_op.load_b(
                         b_warp_tile,
-                        b_reg_tiles[int(next)],
-                        int(kidx),
-                        int(warp_x),
+                        b_reg_tiles[Int(next)],
+                        Int(kidx),
+                        Int(warp_x),
                     )
 
                 @parameter
-                for k_mma1 in range(int(k_group_size)):
+                for k_mma1 in range(Int(k_group_size)):
                     alias k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
                     alias current = k_mma % num_reg_tiles
                     mma_op.mma(
-                        a_reg_tiles[int(current)].vectorize[1, a_frag_size](),
-                        b_reg_tiles[int(current)],
+                        a_reg_tiles[Int(current)].vectorize[1, a_frag_size](),
+                        b_reg_tiles[Int(current)],
                         c.vectorize[1, c_frag_size](),
                     )
 
@@ -227,7 +227,7 @@ fn attn_mma[
 
     @parameter
     for _ in range(num_k_iters):
-        var a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
+        var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
         var b_warp_tile = b_smem_iter[].tile[b_wtile_dim0, b_wtile_dim1](
             b_wtile_coord0,
             b_wtile_coord1,
@@ -236,26 +236,26 @@ fn attn_mma[
         # Perform prefetch registers and mma until current shared memory tile's
         # data has all been loaded to registers.
         @parameter
-        for k_mma0 in range(int(num_k_mma_iters)):
+        for k_mma0 in range(Int(num_k_mma_iters)):
 
             @parameter
-            for k_mma1 in range(int(k_group_size)):
+            for k_mma1 in range(Int(k_group_size)):
                 alias k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
                 alias current = k_mma % num_reg_tiles
                 alias k_mma_next = k_mma + k_group_size
-                alias next = int(k_mma_next % num_reg_tiles)
+                alias next = Int(k_mma_next % num_reg_tiles)
 
                 @parameter
                 if k_mma_next == num_k_mmas:
                     a_smem_iter._incr()
                     b_smem_iter._incr()
 
-                    a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
+                    a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
                     b_warp_tile = b_smem_iter[].tile[
                         b_wtile_dim0, b_wtile_dim1
                     ](b_wtile_coord0, b_wtile_coord1)
 
-                alias kidx = int(k_mma_next % num_k_mmas)
+                alias kidx = Int(k_mma_next % num_k_mmas)
                 mma_op.load_a[swizzle_a](
                     a_warp_tile,
                     a_reg_tiles[next].vectorize[1, a_frag_size](),
@@ -266,16 +266,16 @@ fn attn_mma[
                     b_warp_tile,
                     b_reg_tiles[next],
                     kidx,
-                    int(warp_x),
+                    Int(warp_x),
                 )
 
             @parameter
-            for k_mma1 in range(int(k_group_size)):
+            for k_mma1 in range(Int(k_group_size)):
                 alias k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
                 alias current = k_mma % num_reg_tiles
                 mma_op.mma(
-                    a_reg_tiles[int(current)].vectorize[1, a_frag_size](),
-                    b_reg_tiles[int(current)],
+                    a_reg_tiles[Int(current)].vectorize[1, a_frag_size](),
+                    b_reg_tiles[Int(current)],
                     c.vectorize[1, c_frag_size](),
                 )
 
@@ -479,12 +479,12 @@ fn multistage_mma[
         2 * k_group_size * num_n_mmas, b_frag_size
     ]().local().alloc().vectorize[1, b_frag_size]().split[2 * k_group_size]()
 
-    var a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
+    var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
 
     alias b_wtile_dim0 = WN if transpose_b else BK
     alias b_wtile_dim1 = BK if transpose_b else WN
-    var b_wtile_coord0 = int(warp_x) if transpose_b else 0
-    var b_wtile_coord1 = 0 if transpose_b else int(warp_x)
+    var b_wtile_coord0 = Int(warp_x) if transpose_b else 0
+    var b_wtile_coord1 = 0 if transpose_b else Int(warp_x)
     var b_warp_tile = b_smem_iter[].tile[b_wtile_dim0, b_wtile_dim1](
         b_wtile_coord0, b_wtile_coord1
     )
@@ -492,7 +492,7 @@ fn multistage_mma[
     var mma_op = TensorCore[accum_type, a_type, mma_shape, transpose_b]()
 
     @parameter
-    for i in range(int(k_group_size)):
+    for i in range(Int(k_group_size)):
 
         @parameter
         if a_iter.address_space == AddressSpace.LOCAL:
@@ -505,7 +505,7 @@ fn multistage_mma[
                 a_warp_tile, a_reg_tiles[i].vectorize[1, a_frag_size](), i
             )
 
-        mma_op.load_b(b_warp_tile, b_reg_tiles[i], i, int(warp_x))
+        mma_op.load_b(b_warp_tile, b_reg_tiles[i], i, Int(warp_x))
 
     @parameter
     if a_iter.address_space == AddressSpace.LOCAL:
@@ -524,14 +524,14 @@ fn multistage_mma[
             # Perform prefetch registers and mma until current shared memory tile's
             # data has all been loaded to registers.
             @parameter
-            for k_mma0 in range(int(num_k_mma_iters)):
+            for k_mma0 in range(Int(num_k_mma_iters)):
 
                 @parameter
-                for k_mma1 in range(int(k_group_size)):
+                for k_mma1 in range(Int(k_group_size)):
                     alias k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
                     alias current = k_mma % num_reg_tiles
                     alias k_mma_next = k_mma + k_group_size
-                    alias next = int(k_mma_next % num_reg_tiles)
+                    alias next = Int(k_mma_next % num_reg_tiles)
 
                     @parameter
                     if k_mma_next == num_k_mmas:
@@ -575,37 +575,37 @@ fn multistage_mma[
 
                         b_smem_iter._incr()
 
-                        a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
+                        a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
                         b_warp_tile = b_smem_iter[].tile[
                             b_wtile_dim0, b_wtile_dim1
                         ](b_wtile_coord0, b_wtile_coord1)
 
                     # Assume input is the 16x8 output of 16x8x16 or 16x8x8 mma.
-                    copy_local_to_local(a_reg_tiles[int(next)], a_iter[])
+                    copy_local_to_local(a_reg_tiles[Int(next)], a_iter[])
                     a_iter._incr()
 
                     alias kidx = k_mma_next % num_k_mmas
                     mma_op.load_b(
                         b_warp_tile,
-                        b_reg_tiles[int(next)],
-                        int(kidx),
-                        int(warp_x),
+                        b_reg_tiles[Int(next)],
+                        Int(kidx),
+                        Int(warp_x),
                     )
 
                 @parameter
-                for k_mma1 in range(int(k_group_size)):
+                for k_mma1 in range(Int(k_group_size)):
                     alias k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
                     alias current = k_mma % num_reg_tiles
                     mma_op.mma(
-                        a_reg_tiles[int(current)].vectorize[1, a_frag_size](),
-                        b_reg_tiles[int(current)],
+                        a_reg_tiles[Int(current)].vectorize[1, a_frag_size](),
+                        b_reg_tiles[Int(current)],
                         c.vectorize[1, c_frag_size](),
                     )
 
         return
 
     for k_tile_id in range(num_iters):
-        var a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
+        var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
         var b_warp_tile = b_smem_iter[].tile[b_wtile_dim0, b_wtile_dim1](
             b_wtile_coord0,
             b_wtile_coord1,
@@ -614,14 +614,14 @@ fn multistage_mma[
         # Perform prefetch registers and mma until current shared memory tile's
         # data has all been loaded to registers.
         @parameter
-        for k_mma0 in range(int(num_k_mma_iters)):
+        for k_mma0 in range(Int(num_k_mma_iters)):
 
             @parameter
-            for k_mma1 in range(int(k_group_size)):
+            for k_mma1 in range(Int(k_group_size)):
                 alias k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
                 alias current = k_mma % num_reg_tiles
                 alias k_mma_next = k_mma + k_group_size
-                alias next = int(k_mma_next % num_reg_tiles)
+                alias next = Int(k_mma_next % num_reg_tiles)
 
                 @parameter
                 if k_mma_next == num_k_mmas:
@@ -716,12 +716,12 @@ fn multistage_mma[
                     a_smem_iter._incr()
                     b_smem_iter._incr()
 
-                    a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
+                    a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
                     b_warp_tile = b_smem_iter[].tile[
                         b_wtile_dim0, b_wtile_dim1
                     ](b_wtile_coord0, b_wtile_coord1)
 
-                alias kidx = int(k_mma_next % num_k_mmas)
+                alias kidx = Int(k_mma_next % num_k_mmas)
                 mma_op.load_a[swizzle_a](
                     a_warp_tile,
                     a_reg_tiles[next].vectorize[1, a_frag_size](),
@@ -731,16 +731,16 @@ fn multistage_mma[
                     b_warp_tile,
                     b_reg_tiles[next],
                     kidx,
-                    int(warp_x),
+                    Int(warp_x),
                 )
 
             @parameter
-            for k_mma1 in range(int(k_group_size)):
+            for k_mma1 in range(Int(k_group_size)):
                 alias k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
                 alias current = k_mma % num_reg_tiles
                 mma_op.mma(
-                    a_reg_tiles[int(current)].vectorize[1, a_frag_size](),
-                    b_reg_tiles[int(current)],
+                    a_reg_tiles[Int(current)].vectorize[1, a_frag_size](),
+                    b_reg_tiles[Int(current)],
                     c.vectorize[1, c_frag_size](),
                 )
 
@@ -897,7 +897,7 @@ fn multistage_gemm_kernel[
 
     # Map global memory tile down to thread.
     var c_gmem_tile = c.tile[BM, BN](block_idx[1], block_idx[0])
-    var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](int(warp_y), int(warp_x))
+    var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
 
     @always_inline
     @parameter
@@ -937,8 +937,8 @@ fn multistage_gemm_kernel[
             else:
                 dst_idx = c_gmem_frag.runtime_layout(i)
             alias alignment = alignof[SIMD[c_type, src_simd_width_y]]()
-            var m = int((thread_offset + dst_idx) // N)
-            var n = int((thread_offset + dst_idx) % N)
+            var m = Int((thread_offset + dst_idx) // N)
+            var n = Int((thread_offset + dst_idx) % N)
             if m < M and n < N:
                 var vec = c_reg_frag.ptr.offset(src_idx).load[
                     width=src_simd_width_y,
@@ -1021,8 +1021,8 @@ fn multistage_gemm_kernel[
                 else:
                     dst_idx = c_gmem_frag.runtime_layout(i)
 
-                var m = int((thread_offset + dst_idx) // N)
-                var n = int((thread_offset + dst_idx) % N)
+                var m = Int((thread_offset + dst_idx) // N)
+                var n = Int((thread_offset + dst_idx) % N)
                 alias alignment = alignof[SIMD[c_type, simd_size]]()
                 if m < M and n < N:
                     epilogue[alignment=alignment](

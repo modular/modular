@@ -36,8 +36,8 @@ fn matrix_band_part[
     output: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
 ):
-    var lower_diagonal_index = int(num_lower[0])
-    var upper_diagonal_index = int(num_upper[0])
+    var lower_diagonal_index = Int(num_lower[0])
+    var upper_diagonal_index = Int(num_upper[0])
 
     @__copy_capture(
         input_shape, lower_diagonal_index, upper_diagonal_index, output
