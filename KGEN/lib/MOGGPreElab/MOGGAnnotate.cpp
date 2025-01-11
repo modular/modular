@@ -58,7 +58,7 @@ getDecoratorLambdaArgument(ModuleOp mod, TypedAttr decorator,
   if (!sym)
     return std::nullopt;
 
-  auto decoratorFunc = mod.lookupSymbol<LIT::FuncOp>(sym.getSymbol());
+  auto decoratorFunc = mod.lookupSymbol<LIT::FnOp>(sym.getSymbol());
   if (!decoratorFunc || !decoratorFunc->hasAttr(expectedFuncAttr))
     return std::nullopt;
 
@@ -80,7 +80,7 @@ LIT::StructType getAsDeclRefOrNull(Type t) {
 }
 
 /// Check if the function is a DPS kernel with by-ref tensor arguments.
-static LogicalResult checkByRefTensorArgs(LIT::FuncOp func) {
+static LogicalResult checkByRefTensorArgs(LIT::FnOp func) {
   LIT::LITSignatureGeneratorType signature = func.getSignatureGenerator();
   for (auto [index, litType] : llvm::enumerate(signature.getArguments())) {
     if (LIT::StructType asDeclRef = getAsDeclRefOrNull(litType)) {
@@ -96,7 +96,7 @@ static LogicalResult checkByRefTensorArgs(LIT::FuncOp func) {
   return success();
 }
 
-static LogicalResult annotateTypes(LIT::FuncOp func) {
+static LogicalResult annotateTypes(LIT::FnOp func) {
   // Anything taking a tensor needs the annotation.
   bool takesTensor = false;
   for (Type litType : func.getArgumentTypes()) {
@@ -330,7 +330,7 @@ getUnboundParametersForTensorList(LIT::StructType &structType,
   return listNamedAttrs;
 }
 
-static void labelTensorParamsInKernel(LIT::FuncOp funcOp) {
+static void labelTensorParamsInKernel(LIT::FnOp funcOp) {
   OpBuilder builder{funcOp.getContext()};
 
   if (!isDPSKernel(funcOp))
@@ -427,7 +427,7 @@ isExtensibilityAPIStruct(LIT::StructDeclOp structDeclOp, ModuleOp moduleOp,
     // Handle elementwise annotation
     if (auto directSym = dyn_cast<SymbolConstantAttr>(decorator)) {
       auto decoratorFunc =
-          moduleOp.lookupSymbol<LIT::FuncOp>(directSym.getSymbol());
+          moduleOp.lookupSymbol<LIT::FnOp>(directSym.getSymbol());
 
       if (decoratorFunc && decoratorFunc->hasAttr(MOGG_INTRINSIC_ELEMENTWISE)) {
         if (registrationInfo.isElementwiseKernel)
@@ -483,7 +483,7 @@ isExtensibilityAPIStruct(LIT::StructDeclOp structDeclOp, ModuleOp moduleOp,
 // `builder` builder for ops
 LogicalResult processStructFuncCommon(
     LIT::StructDeclOp structDeclOp, ExtensibilityAPIStructInfo registrationInfo,
-    LIT::FuncOp func, StringLiteral annotation, OpBuilder &builder) {
+    LIT::FnOp func, StringLiteral annotation, OpBuilder &builder) {
   if (!func.getIsStatic()) {
     func->emitError("Function is not static");
     return failure();
@@ -511,7 +511,7 @@ LogicalResult processStructFuncCommon(
 // `builder` builder for ops
 bool processStructExecuteFunc(ModuleOp moduleOp,
                               ExtensibilityAPIStructInfo registrationInfo,
-                              LIT::StructDeclOp structDeclOp, LIT::FuncOp func,
+                              LIT::StructDeclOp structDeclOp, LIT::FnOp func,
                               StringLiteral annotation, OpBuilder &builder) {
   if (failed(processStructFuncCommon(structDeclOp, registrationInfo, func,
                                      annotation, builder)))
@@ -621,7 +621,7 @@ public:
     // Do a first walk through the IR to strip the decorators and add
     // attributes. Mostly used for older extensibility API iterations
     moduleOp->walk([](Operation *operation) {
-      if (auto func = dyn_cast<LIT::FuncOp>(operation)) {
+      if (auto func = dyn_cast<LIT::FnOp>(operation)) {
         stripDecorators(func);
         if (failed(annotateTypes(func)))
           return WalkResult::interrupt();
@@ -649,9 +649,9 @@ public:
       // Is not extensibility struct, but maybe some regular mojo object
       if (!isExtensibilityStruct.takeValue())
         return WalkResult::advance();
-      LIT::FuncOp executeOp, shapeOp;
+      LIT::FnOp executeOp, shapeOp;
       for (auto &curOp : structDeclOp.getFields().front()) {
-        auto func = dyn_cast<LIT::FuncOp>(curOp);
+        auto func = dyn_cast<LIT::FnOp>(curOp);
         if (!func)
           continue;
 
@@ -687,8 +687,7 @@ public:
     if (moduleOp.walk(walker).wasInterrupted())
       signalPassFailure();
 
-    moduleOp.walk(
-        [](LIT::FuncOp funcOp) { labelTensorParamsInKernel(funcOp); });
+    moduleOp.walk([](LIT::FnOp funcOp) { labelTensorParamsInKernel(funcOp); });
   }
 };
 } // namespace

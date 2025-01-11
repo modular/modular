@@ -314,7 +314,7 @@ struct SharedState::Impl {
   DenseMap<ASTDecl *, llvm::MapVector<ASTDecl *, Capture>> capturesInScope;
 
   /// Function type conversion thunks in each module.
-  DenseMap<Attribute, LIT::FuncOp> conversionThunks;
+  DenseMap<Attribute, FnOp> conversionThunks;
 
   /// This caches non-trivial implicit convertibility checks from one type to
   /// another.
@@ -447,7 +447,7 @@ void SharedState::deleteDecl(ASTDecl &decl) {
 
   // Remove from global maps.
   // Func needs a special case since it may or may not be a symbol.
-  if (auto func = dyn_cast<FuncOp>(op)) {
+  if (auto func = dyn_cast<FnOp>(op)) {
     if (SymbolRefAttr sym = decl.getSymbolRef())
       declResolver->declForFuncSymbol.erase(sym);
     impl->sourceNames.forgetSourceName(func);
@@ -1182,7 +1182,7 @@ ArrayRef<ASTDecl *> SharedState::getBuiltinFunction(ASTDecl &module,
     return {};
   }
   ArrayRef<ASTDecl *> decls = result.getIfSuccess();
-  if (!isa<LIT::FuncOp>(decls.front())) {
+  if (!isa<FnOp>(decls.front())) {
     emitError(loc, "internal error: builtin '")
         << fnName << "' does not refer to a function";
     return {};
@@ -1349,11 +1349,10 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
   // Process each of the stubs, deduplicating each of them into the shared
   // state. For any added thunks, we have to register a decl for them.
   auto theModule = cast<ModuleOp>(getTopLevelDecl());
-  for (auto thunk :
-       llvm::make_early_inc_range(tmpModule.getOps<LIT::FuncOp>())) {
+  for (auto thunk : llvm::make_early_inc_range(tmpModule.getOps<FnOp>())) {
     Attribute key = thunk.getThunkKeyAttr();
     assert(key && "thunk is missing its key");
-    LIT::FuncOp &registeredThunk = impl->conversionThunks[key];
+    FnOp &registeredThunk = impl->conversionThunks[key];
     if (registeredThunk)
       continue; // thunk already exists
     registeredThunk = thunk;
@@ -1471,7 +1470,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
 
     LogicalResult result =
         llvm::TypeSwitch<Operation *, LogicalResult>(declOp)
-            .Case([&](LIT::FuncOp funcOp) {
+            .Case([&](FnOp funcOp) {
               declResolver->declForFuncSymbol[decl.getSymbolRef()] = &decl;
 
               // Resolve the references from the signature.
@@ -1592,7 +1591,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
   for (Region &region : declOp->getRegions()) {
     for (Operation &op : region.getOps()) {
       TypeSwitch<Operation *>(&op)
-          .Case([&](LIT::FuncOp op) { addDeclForOp(op, op.getDeclName()); })
+          .Case([&](FnOp op) { addDeclForOp(op, op.getDeclName()); })
           .Case([&](UnresolvedImportOp op) {
             addDeclForOp(op, op.getImportNameAttr());
           })
@@ -1779,9 +1778,9 @@ SharedState::getOrCreateClosureWrapper(SMLoc loc, SignatureGeneratorType sig,
   return existing;
 }
 
-LIT::FuncOp SharedState::getOrCreateFunctionThunk(Attribute key,
-                                                  CreateThunkFn create) {
-  LIT::FuncOp &thunk = impl->conversionThunks[key];
+FnOp SharedState::getOrCreateFunctionThunk(Attribute key,
+                                           CreateThunkFn create) {
+  FnOp &thunk = impl->conversionThunks[key];
   if (!thunk)
     thunk = create(key, getTopLevelDecl());
   return thunk;
@@ -1796,7 +1795,7 @@ void SharedState::addCaptureToScope(ASTDecl &scope, ASTDecl *captureDecl,
                                     Capture capture) {
   getImpl().capturesInScope[&scope].insert({captureDecl, capture});
   if (captureDecl->getParentDecl() != scope.parentDecl) {
-    if (scope.getNearestDeclOfType<LIT::FuncOp>())
+    if (scope.getNearestDeclOfType<FnOp>())
       addCaptureToScope(*scope.parentDecl, captureDecl, capture);
   }
 }

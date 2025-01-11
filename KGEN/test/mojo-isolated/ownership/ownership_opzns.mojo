@@ -62,7 +62,7 @@ struct MemoryUniqueMovable:
     fn __init__(out self):
         self.state = MemExample()
 
-    # CHECK: lit.func @"__moveinit__
+    # CHECK: lit.fn @"__moveinit__
     fn __moveinit__(out self, owned other: Self):
         # Mercilessly steal 'other's state which could be interesting.
 
@@ -96,7 +96,7 @@ struct MemoryMovableCopyable:
         pass
 
 
-# CHECK-LABEL: lit.func @"result_mem1
+# CHECK-LABEL: lit.fn @"result_mem1
 fn result_mem1(owned a: MemoryUniqueMovable) -> MemoryUniqueMovable:
     # CHECK-NEXT: lit.ownership.use %a
     # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%a, %__result__)
@@ -105,7 +105,7 @@ fn result_mem1(owned a: MemoryUniqueMovable) -> MemoryUniqueMovable:
     return a^
 
 
-# CHECK-LABEL: lit.func @"result_mem3
+# CHECK-LABEL: lit.fn @"result_mem3
 fn result_mem3(owned a: MemoryMovableCopyable) -> MemoryMovableCopyable:
     # CHECK-NEXT: lit.ownership.use %a
     # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%a, %__result__){{.*}} owned_in_mem{{.*}}byref_result
@@ -113,7 +113,7 @@ fn result_mem3(owned a: MemoryMovableCopyable) -> MemoryMovableCopyable:
     # CHECK-NEXT: kgen.return
     return a^
 
-# CHECK-LABEL: lit.func @"self_copy
+# CHECK-LABEL: lit.fn @"self_copy
 fn self_copy(mut x: MemoryMovableCopyable):
     # Mojo introduces a temporary to avoid exclusivity error.
     # CHECK: %__call_result_tmp__ = lit.var.decl
@@ -143,7 +143,7 @@ struct RegMovableCopyable:
         pass
 
 
-# CHECK-LABEL: lit.func @"result_reg1
+# CHECK-LABEL: lit.fn @"result_reg1
 fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
     # CHECK-NEXT: lit.ownership.use %a
     # CHECK-NEXT: [[AVAL:%.*]] = lit.load.consume %a
@@ -151,14 +151,14 @@ fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
     return a^
 
 
-# CHECK-LABEL: lit.func @"result_reg2
+# CHECK-LABEL: lit.fn @"result_reg2
 fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
     # CHECK-NEXT: [[A:%.*]] = lit.load.consume %a
     # CHECK-NEXT: kgen.return [[A]]
     return a
 
 
-# CHECK-LABEL: lit.func @"result_reg3
+# CHECK-LABEL: lit.fn @"result_reg3
 fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
     # CHECK-NEXT: lit.ownership.use %a
     # CHECK-NEXT: [[A:%.*]] = lit.load.consume %a
@@ -166,7 +166,7 @@ fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
     return a^
 
 
-# CHECK-LABEL: lit.func @"result_reg4
+# CHECK-LABEL: lit.fn @"result_reg4
 fn result_reg4(owned a: RegMovableCopyable) -> RegMovableCopyable:
     # CHECK-NEXT: %x = lit.var.decl "x"
     # CHECK-NEXT: lit.ownership.use %a
@@ -186,7 +186,7 @@ fn takeOwnedInt(owned x: Int):
     pass
 
 
-# CHECK-LABEL: lit.func @"passFieldToOwnedInt
+# CHECK-LABEL: lit.fn @"passFieldToOwnedInt
 fn passFieldToOwnedInt(owned a: MemExample):
     # CHECK-NEXT: %0 = lit.ref.struct.ger %a[x]
     # CHECK-NEXT: %1 = lit.ref.load %0
@@ -219,7 +219,7 @@ fn takeTwo(owned x: MemExample, owned y: MemExample):
 
 
 # Check that copies that are immediately destroyed are elided.
-# CHECK-LABEL: lit.func @"optimizeCopyElision
+# CHECK-LABEL: lit.fn @"optimizeCopyElision
 fn optimizeCopyElision():
     # CHECK: %a = lit.var.decl "a"
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
@@ -272,7 +272,7 @@ fn consume(owned value: MemExample):
     pass
 
 
-# CHECK-LABEL: lit.func @"copyElisionArgument
+# CHECK-LABEL: lit.fn @"copyElisionArgument
 fn copyElisionArgument(owned value: MemExample):
     # CHECK-NEXT: %0 = lit.ref.immut %value
     # CHECK-NEXT: kgen.param.declare
@@ -282,7 +282,7 @@ fn copyElisionArgument(owned value: MemExample):
     consume(value)
 
 
-# CHECK-LABEL: lit.func @"optimizeCopyToMove
+# CHECK-LABEL: lit.fn @"optimizeCopyToMove
 fn optimizeCopyToMove():
     # All the copy ctors should be eliminated in favor of moves.
 
@@ -348,7 +348,7 @@ fn optimizeCopyToMove():
 
 
 # This is an integration test for elideCopyDestroyPair
-# CHECK-LABEL: lit.func @"optimize_copies
+# CHECK-LABEL: lit.fn @"optimize_copies
 fn optimize_copies() -> MemExample:
     # CHECK: lit.call {{.*}}__init__{{.*}}(%x
     var x = MemExample()
@@ -370,7 +370,7 @@ fn optimize_copies() -> MemExample:
 # to insert, so it is a different optimization.
 
 
-# CHECK-LABEL: lit.func @"optimize_transfers
+# CHECK-LABEL: lit.fn @"optimize_transfers
 # Issue #34138
 fn optimize_transfers() -> MemExample:
     # CHECK: lit.call {{.*}}__init__{{.*}}(%x

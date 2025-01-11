@@ -96,7 +96,7 @@ OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
 static PValue getCallee(ASTDecl *fnDecl, StringRef baseName,
                         const ParamBindings &paramBindings,
                         const ExprNode *expr) {
-  auto funcOp = cast<LIT::FuncOp>(*fnDecl);
+  auto funcOp = cast<FnOp>(*fnDecl);
   // Check if the function overload set resolved to a deprecated overload.
   if (StringAttr warning = funcOp.getDeprecationWarningAttr()) {
     auto diag =
@@ -149,7 +149,7 @@ selectBestCandidates(ArrayRef<ASTDecl *> fnDecls,
 
     // If the current best candidates are not static, we ignore new static
     // candidates.
-    bool isStatic = cast<LIT::FuncOp>(*candidate).getIsStatic();
+    bool isStatic = cast<FnOp>(*candidate).getIsStatic();
     if (!areTheBestCandidatesStatic && isStatic)
       continue;
 
@@ -158,7 +158,7 @@ selectBestCandidates(ArrayRef<ASTDecl *> fnDecls,
     // converted. Otherwise the implicit ctor + explicit trait ctor will be
     // ambiguous when initializing with an implicitly convertible type e.g.
     // Bool is Intable and ImplicitlyIntable, so `Int(True)` would be ambiguous.
-    bool isImplicit = cast<LIT::FuncOp>(*candidate).getIsImplicitConversion();
+    bool isImplicit = cast<FnOp>(*candidate).getIsImplicitConversion();
     if (!areTheBestCandidatesImplicit && isImplicit)
       continue;
 
@@ -232,7 +232,7 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
     for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
       diag.attachNote(candidate->getLoc())
           << "candidate not viable: " << eval.takeDiag();
-      auto func = cast<LIT::FuncOp>(candidate);
+      auto func = cast<FnOp>(candidate);
       if (func.getIsSynthetic()) {
         diag.attachNote(candidate->getLoc())
             << "generated function with type "
@@ -273,7 +273,7 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
   else
     diag.attachNote(expr->getLoc()) << "did you mean to call it?";
   for (ASTDecl *candidate : newFnDecls) {
-    auto func = cast<LIT::FuncOp>(candidate);
+    auto func = cast<FnOp>(candidate);
     InflightDiag &note = diag.attachNote(candidate->getLoc());
     if (func.getIsSynthetic()) {
       note << "candidate generated with type "
@@ -344,7 +344,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
   SmallVector<OverloadFitness> evaluations;
   bool anyValid = false;
   for (ASTDecl *candidate : fnDecls) {
-    auto func = cast<LIT::FuncOp>(*candidate);
+    auto func = cast<FnOp>(*candidate);
 
     // If we are dealing with a static method, we check if the operands include
     // a self operand and remove it, otherwise the signature might not match.
@@ -456,7 +456,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
 
     // If there is a single callee, emit a specific error about the call.
     if (fnDecls.size() == 1) {
-      auto fnDecl = cast<LIT::FuncOp>(*fnDecls[0]);
+      auto fnDecl = cast<FnOp>(*fnDecls[0]);
       diag << ": " << evaluations[0].takeDiag();
       diag.attachNote(fnDecl.getLoc()) << "function declared here";
       return {};
@@ -466,7 +466,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
       diag.attachNote(candidate->getLoc())
           << "candidate not viable: " << eval.takeDiag();
-      auto func = cast<LIT::FuncOp>(candidate);
+      auto func = cast<FnOp>(candidate);
       if (func.getIsSynthetic()) {
         diag.attachNote(candidate->getLoc())
             << "generated function with type "
@@ -490,7 +490,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
   // If we found exactly one viable candidate then we succeed.
   if (newFnDecls.size() == 1) {
     ASTDecl *selectedDecl = newFnDecls[0];
-    auto selectedFunc = cast<LIT::FuncOp>(selectedDecl);
+    auto selectedFunc = cast<FnOp>(selectedDecl);
 
     // If the target is static and there is a self operand, remove it from the
     // operand list so it doesn't get passed.
@@ -544,7 +544,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
                 << " implicit conversion" << plural(minConversions)
                 << ", disambiguate with an explicit cast" << expr->getRange();
     for (ASTDecl *candidate : newFnDecls) {
-      auto func = cast<LIT::FuncOp>(candidate);
+      auto func = cast<FnOp>(candidate);
       InflightDiag &note = diag.attachNote(candidate->getLoc());
       if (func.getIsSynthetic()) {
         note << "candidate generated with type "
@@ -586,7 +586,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
       for (ASTDecl *candidate : fnDecls)
         diag.attachNote(candidate->getLoc())
             << "candidate declared here with type "
-            << ASTType(cast<LIT::FuncOp>(*candidate).getFullSignature());
+            << ASTType(cast<FnOp>(*candidate).getFullSignature());
     }
     return {};
   }
@@ -627,7 +627,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
   SmallVector<ParameterExprArrayAttr> candidateBindings;
   for (ASTDecl *candidate : fnDecls) {
     LITSignatureGeneratorType candidateType =
-        cast<LIT::FuncOp>(*candidate).getFullSignature();
+        cast<FnOp>(*candidate).getFullSignature();
     if (ParameterExprArrayAttr bindings =
             getBindingsIfValidCandidate(candidateType)) {
       validCandidates.push_back(candidate);
@@ -672,7 +672,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
   for (ASTDecl *candidate : declsToReport) {
     diag.attachNote(candidate->getLoc())
         << "candidate declared here with type "
-        << ASTType(cast<LIT::FuncOp>(*candidate).getFullSignature());
+        << ASTType(cast<FnOp>(*candidate).getFullSignature());
   }
   return {};
 }
@@ -694,7 +694,7 @@ TypedAttr OverloadSet::getBoundConstantAttr() const {
   diag.attachNote(expr->getLoc()) << "did you mean to call it?";
 
   for (ASTDecl *candidate : fnDecls) {
-    auto func = cast<LIT::FuncOp>(candidate);
+    auto func = cast<FnOp>(candidate);
     InflightDiag &note = diag.attachNote(candidate->getLoc());
     if (func.getIsSynthetic()) {
       note << "candidate generated with type "
@@ -747,7 +747,7 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
 
     // If we find a vardecl or any other thing, then fail to find anything
     // because it cannot be called.
-    if (!isa<LIT::FuncOp>(*resultDecls[0]))
+    if (!isa<FnOp>(*resultDecls[0]))
       // FIXME: This seems wrong. why aren't we emitting an error??
       return result;
 
@@ -773,7 +773,7 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
 
         // If we find a vardecl or any other thing, then fail to find anything
         // because it cannot be called.
-        if (!isa<LIT::FuncOp>(*resultDecls[0]))
+        if (!isa<FnOp>(*resultDecls[0]))
           // FIXME: This seems wrong. why aren't we emitting an error??
           return result;
         result.fnDecls.append(resultDecls.begin(), resultDecls.end());
@@ -827,7 +827,7 @@ PValue OverloadSet::getDirectSymbol(ASTType expectedType,
   if (fnDecls.size() == 1) {
     // This is an unbound function. Just return a reference.
     if (paramBindings.empty())
-      return cast<LIT::FuncOp>(*fnDecls.front()).getBoundReference();
+      return cast<FnOp>(*fnDecls.front()).getBoundReference();
 
     // Bind the parameters.
     return getBoundConstantAttr();
@@ -859,8 +859,8 @@ PValue OverloadSet::getIfPValue() const {
   if (fnDecls.size() != 1)
     return {};
 
-  return paramBindings.getBoundConstAttrFor(cast<LIT::FuncOp>(*fnDecls[0]),
-                                            baseName, expr);
+  return paramBindings.getBoundConstAttrFor(cast<FnOp>(*fnDecls[0]), baseName,
+                                            expr);
 }
 
 /// Emit this as a RValue if it can be resolved, otherwise emit an ambiguity

@@ -1433,10 +1433,9 @@ void MojoDocument::onSemanticTokens(
 /// of a method.
 static bool isSelfArgument(MojoASTDeclRef decl) {
   if (decl.getName() == "self") {
-    auto parentFunc = dyn_cast<KGEN::LIT::FuncOp>(decl->getParentDecl());
+    auto parentFunc = dyn_cast<FnOp>(decl->getParentDecl());
     return parentFunc &&
-           isa<KGEN::LIT::StructDeclOp, KGEN::LIT::TraitDeclOp>(
-               parentFunc->getParentOp()) &&
+           isa<StructDeclOp, TraitDeclOp>(parentFunc->getParentOp()) &&
            !parentFunc.getIsStatic();
   }
   return false;
@@ -1452,7 +1451,7 @@ getSemanticTokenKind(MojoASTDeclRef symDecl,
 
   switch (*declKind) {
   case PublicDeclKind::DK_PublicAliasDecl: {
-    auto aliasOp = cast<KGEN::LIT::AliasDeclOp>(symDecl->getIfOperation());
+    auto aliasOp = cast<AliasDeclOp>(symDecl->getIfOperation());
     if (Attribute aliasValue = aliasOp.getValueAttr()) {
       // Try to decipher a token kind from the alias value.
       if (isa<ModuleAttr>(aliasValue))

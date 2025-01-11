@@ -161,7 +161,7 @@ struct StmtParser : public ParserBase {
     // If we are parsing into a function, then we need a position to synthesize
     // variable definitions at the top of the function.
     // TODO: If we're parsing into top level code, we don't know how to do this.
-    if (auto funcOp = dyn_cast<LIT::FuncOp>(getParentDecl())) {
+    if (auto funcOp = dyn_cast<FnOp>(getParentDecl())) {
       // The operation builder inserts before its insertion point, but for a
       // stable insertion point, keep the previous iterator position.
       varDeclCursor = OpBuilder(builder.getInsertionBlock(),
@@ -703,7 +703,7 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
 
   // Ok, now that we parsed all the tokens for this statement, do semantic
   // analysis.  First ensure we're in a function.
-  auto func = dyn_cast<LIT::FuncOp>(getParentDecl());
+  auto func = dyn_cast<FnOp>(getParentDecl());
   if (!func) {
     emitError(loc, "cannot return from this context");
     return success();
@@ -854,7 +854,7 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
 static std::pair<TryOp, bool> findParentTry(Block *currentBlock) {
   while (Operation *parentOp = currentBlock->getParentOp()) {
     // If we hit the top of the function we aren't nested.
-    if (isa<LIT::FuncOp>(parentOp))
+    if (isa<FnOp>(parentOp))
       break;
 
     // If this is a try, determine which region we're in.
@@ -928,8 +928,7 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
     InflightDiag diag =
         emitError(loc.Start, "cannot raise error in this context") << loc;
     diag.attachNote(loc.Start) << "try surrounding 'raise' in a 'try' block";
-    if (auto func =
-            getBlockParentOfType<LIT::FuncOp>(builder.getInsertionBlock()))
+    if (auto func = getBlockParentOfType<FnOp>(builder.getInsertionBlock()))
       diag.attachNote(func.getLoc())
           << "or mark surrounding function as 'raises'";
     return success();
@@ -1620,8 +1619,8 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   // should decide whether it is lexical or global scope.  This largely depends
   // on our view of what `python superset` or `python++` means.
   bool useLexicalScope = true;
-  if (auto funcDecl = curDeclScope->getNearestDeclOfType<LIT::FuncOp>())
-    useLexicalScope = !cast<LIT::FuncOp>(*funcDecl).isDef();
+  if (auto funcDecl = curDeclScope->getNearestDeclOfType<FnOp>())
+    useLexicalScope = !cast<FnOp>(*funcDecl).isDef();
 
   // If there is an explicit target specified, use it.
   ValueDest enterDest(EC_WithContextMgr);
@@ -2389,7 +2388,7 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
   if (parseIdentifier(baseName, "expected function name", &loc))
     return failure();
 
-  auto funcOp = builder.create<LIT::FuncOp>(translateLocation(loc));
+  auto funcOp = builder.create<FnOp>(translateLocation(loc));
 
   // If marked as 'def', remember this on the function decl.
   if (isDef)
@@ -2403,7 +2402,7 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
                                 startCursor, getLexer().getCursor(), curIndent);
   // If this is a nested function, parse its body right now so captures can be
   // resolved correctly.
-  if (curDeclScope->getNearestDeclOfType<LIT::FuncOp>())
+  if (curDeclScope->getNearestDeclOfType<FnOp>())
     (void)getDeclResolver().resolveFully(funcDecl, loc);
   return success();
 }
@@ -2445,7 +2444,7 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
     emitError(loc, "TODO: fields in traits are not supported yet");
     skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
     return success();
-  } else if (isa<LIT::FuncOp>(getParentDecl())) {
+  } else if (isa<FnOp>(getParentDecl())) {
     rejectDecorator();
     // This is a local let/var declaration.
 
@@ -2600,7 +2599,7 @@ ParseResult StmtParser::parseStructStmt(LexerCursor startCursor,
   } else if (isa<TraitDeclOp>(getParentDecl())) {
     emitTokenError("nested struct in a trait not supported here");
     nestFailure = true;
-  } else if (isa<LIT::FuncOp>(getParentDecl())) {
+  } else if (isa<FnOp>(getParentDecl())) {
     emitTokenError("struct inside a function not supported here");
     nestFailure = true;
   }

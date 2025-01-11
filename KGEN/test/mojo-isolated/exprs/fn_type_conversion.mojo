@@ -25,7 +25,7 @@ fn func_with_default(a: int = `0`):
     pass
 
 
-# CHECK-LABEL: lit.func @"test_passing_funcs
+# CHECK-LABEL: lit.fn @"test_passing_funcs
 fn test_passing_funcs():
     # CHECK: lit.call @{{.*}}::@"take_func_without_arg_name{{.*}}"<
     # CHECK-SAME: :!lit.generator<(index, |) -> !kgen.none> rebind(:!lit.generator<("a": index) -> !kgen.none>

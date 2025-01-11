@@ -10,7 +10,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-# CHECK-LABEL: lit.func @"test_elif_chain
+# CHECK-LABEL: lit.fn @"test_elif_chain
 # CHECK-NEXT:    hlcf.elif {
 # CHECK-NEXT:      [[TEST_A:%.*]] = lit.call @{{.*}}::@Bool::@"__mlir_i1__{{.*}}"(%a)
 # CHECK-NEXT:      hlcf.elif.yield [[TEST_A]] : i1
@@ -46,7 +46,7 @@ fn test_elif_chain(a: Bool, b: Int, c: Bool, d: Int) -> Bool:
     return a
 
 
-# CHECK-LABEL: lit.func @"test_constant
+# CHECK-LABEL: lit.fn @"test_constant
 fn test_constant(a: Bool) -> Bool:
     # CHECK: [[FOUR:%.*]] = kgen.param.constant{{.*}}4
     # CHECK-NEXT: store [[FOUR]], %z
@@ -65,7 +65,7 @@ fn test_constant(a: Bool) -> Bool:
     return a
 
 
-# CHECK-LABEL: lit.func @"test_if_nested
+# CHECK-LABEL: lit.fn @"test_if_nested
 fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
     # CHECK-NEXT: hlcf.elif {
     # CHECK-NEXT:   %0 = lit.call @{{.*}}@"__mlir_i1__{{.*}}"(%a)
@@ -108,7 +108,7 @@ fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
     return a
 
 
-# CHECK-LABEL: lit.func @"param_if{{.*}}"<a: i1, b: !Bool>()
+# CHECK-LABEL: lit.fn @"param_if{{.*}}"<a: i1, b: !Bool>()
 fn param_if[a: __mlir_type.i1, b: Bool]():
     # CHECK: kgen.param.if <a> {
     @parameter
@@ -126,7 +126,7 @@ fn param_if[a: __mlir_type.i1, b: Bool]():
     # CHECK: }
 
 
-# CHECK-LABEL: lit.func @"param_if_andor_i1{{.*}}"<a: i1, b: i1>()
+# CHECK-LABEL: lit.fn @"param_if_andor_i1{{.*}}"<a: i1, b: i1>()
 fn param_if_andor_i1[a: __mlir_type.i1, b: __mlir_type.i1]():
     # CHECK: kgen.param.if <cond(a, b, a)>
     @parameter
@@ -141,7 +141,7 @@ fn param_if_andor_i1[a: __mlir_type.i1, b: __mlir_type.i1]():
         var w: Int
 
 
-# CHECK-LABEL: lit.func @"param_if_and{{.*}}"<a: !Bool, b: !Bool>()
+# CHECK-LABEL: lit.fn @"param_if_and{{.*}}"<a: !Bool, b: !Bool>()
 fn param_if_and[a: Bool, b: Bool]():
     # CHECK: kgen.param.if <apply(
     # CHECK-SAME: !lit.generator<("self": !Bool) -> i1> {{.*}}@Bool::@"__mlir_i1__({{.*}}Bool)", cond(
@@ -156,7 +156,7 @@ fn param_if_and[a: Bool, b: Bool]():
 
 # [Mojo] Can't have try inside else branch
 # https://github.com/modularml/modular/issues/25305
-# CHECK-LABEL: lit.func @"if_try
+# CHECK-LABEL: lit.fn @"if_try
 fn if_try(p: Bool):
     # CHECK:      hlcf.elif {
     # CHECK-NEXT:   [[TEST_P:%*.]] = lit.call @{{.*}}@"__mlir_i1__{{.*}}"(%p)
@@ -193,14 +193,14 @@ fn if_try(p: Bool):
         var d = 3
 
 
-# CHECK-LABEL: lit.func @"testCondAsArg
+# CHECK-LABEL: lit.fn @"testCondAsArg
 fn testCondAsArg(exit_early: __mlir_type.i1):
     # CHECK: hlcf.elif
     if exit_early:
         return
 
 
-# CHECK-LABEL: lit.func @"constantTrue
+# CHECK-LABEL: lit.fn @"constantTrue
 fn constantTrue(cond: Bool, x: Int, y: Int) -> Int:
     # CHECK-NEXT: hlcf.elif {
     # CHECK-NEXT:  %0 = kgen.param.constant: i1 = <1>
@@ -215,7 +215,7 @@ fn constantTrue(cond: Bool, x: Int, y: Int) -> Int:
     return y
 
 
-# CHECK-LABEL: lit.func @"constantFalse
+# CHECK-LABEL: lit.fn @"constantFalse
 fn constantFalse(cond: Bool, x: Int, y: Int) -> Int:
     # CHECK:      hlcf.elif {
     # CHECK-NEXT:   %0 = lit.call @{{.*}}@"__mlir_i1__{{.*}}"(%cond)
@@ -244,7 +244,7 @@ fn constantFalse(cond: Bool, x: Int, y: Int) -> Int:
 ##===----------------------------------------------------------------------===##
 
 
-# CHECK-LABEL: lit.func @"test_while
+# CHECK-LABEL: lit.fn @"test_while
 # CHECK:       %inside_a = lit.var.decl "inside_a" var
 # CHECK:       %inside_b = lit.var.decl "inside_b" var
 # CHECK:       %inside_else = lit.var.decl "inside_else" var
@@ -282,7 +282,7 @@ fn test_while(a: Bool, b: Bool) -> Bool:
     return a
 
 
-# CHECK-LABEL: lit.func @"test_else_outside_while
+# CHECK-LABEL: lit.fn @"test_else_outside_while
 def test_else_outside_while(a: Bool, b: Bool) -> Bool:
     # CHECK: hlcf.elif {
     # CHECK:   hlcf.elif.yield
@@ -308,7 +308,7 @@ def test_else_outside_while(a: Bool, b: Bool) -> Bool:
     return a
 
 
-# CHECK-LABEL: lit.func @"test_break_continue_inside_while
+# CHECK-LABEL: lit.fn @"test_break_continue_inside_while
 def test_break_continue_inside_while(a: Bool) -> Bool:
     # CHECK: lit.loop cond {
     # CHECK:   [[V1:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__({{.*}}Bool)"(%a)
@@ -334,7 +334,7 @@ def test_break_continue_inside_while(a: Bool) -> Bool:
     return a
 
 
-# CHECK-LABEL: lit.func @"test_early_return
+# CHECK-LABEL: lit.fn @"test_early_return
 def test_early_return():
     # CHECK:  hlcf.elif {
     # CHECK:    hlcf.elif.yield
@@ -354,38 +354,38 @@ def test_early_return():
     c = 3
     # CHECK: lit.return
     return
-    # CHECK: lit.end_func
+    # CHECK: lit.end_fn
 
 
 ##===----------------------------------------------------------------------===##
 # pass
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"pass
+# CHECK-LABEL: lit.fn @"pass
 def `pass`():
     pass
-    # CHECK: lit.end_func
+    # CHECK: lit.end_fn
 
 
 ##===----------------------------------------------------------------------===##
 # return
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"return_impl_convert
+# CHECK-LABEL: lit.fn @"return_impl_convert
 fn return_impl_convert() -> Int:
     # CHECK: %0 = kgen{{.*}}{4}
     # CHECK: lit.return %0
     return 4  # Implicit conversion from literal to Int
 
 
-# CHECK-LABEL: lit.func @"return_new_line
+# CHECK-LABEL: lit.fn @"return_new_line
 fn return_new_line() -> Int:
     # CHECK: %0 = kgen{{.*}}{17}
     return
         17  # Weird indentation should be fine
 
 
-# CHECK-LABEL: lit.func @"return_impl_convert_raises
+# CHECK-LABEL: lit.fn @"return_impl_convert_raises
 fn return_impl_convert_raises() raises -> Int:
     # CHECK: %0 = kgen{{.*}}{4}
     # CHECK-NEXT: lit.ref.store %0, %__result__
@@ -398,7 +398,7 @@ fn return_impl_convert_raises() raises -> Int:
 # while
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"test_simple
+# CHECK-LABEL: lit.fn @"test_simple
 # CHECK:       lit.loop cond {
 # CHECK:         [[V0:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__({{.*}}Bool)"(%a)
 # CHECK:         lit.loop.condition [[V0]] : i1
@@ -409,7 +409,7 @@ fn return_impl_convert_raises() raises -> Int:
 # CHECK-NEXT:  }
 # CHECK-NEXT:   %none = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT:   lit.return %none :  !kgen.none
-# CHECK-NEXT:   lit.end_func
+# CHECK-NEXT:   lit.end_fn
 # CHECK-NEXT: }
 fn test_simple(a: Bool):
     while a:
@@ -433,7 +433,7 @@ struct ListValueIter:
 fn use(value: Int): pass
 
 
-# CHECK-LABEL: lit.func @"for_range_loop
+# CHECK-LABEL: lit.fn @"for_range_loop
 fn for_range_loop():
     var value_iter_list = ListValueIter()
 
@@ -467,7 +467,7 @@ struct ListWithRefIter:
     fn __iter__(ref self) -> RefIter[__origin_of(self)]:
         return RefIter[__origin_of(self)]()
 
-# CHECK-LABEL: lit.func @"for_range_ref_loop
+# CHECK-LABEL: lit.fn @"for_range_ref_loop
 fn for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
                       mut mut_list_ref_iter: ListWithRefIter):
 
@@ -534,7 +534,7 @@ struct MyType:
 fn use(value: MyType):
     pass
 
-# CHECK-LABEL: lit.func @"parameter_for
+# CHECK-LABEL: lit.fn @"parameter_for
 # CHECK-SAME: <a: !Int>[mut [[LT:.*]]](%value: !lit.ref<!MyType, mut [[LT]]>
 fn parameter_for[a: Int](owned value: MyType):
     # CHECK-NEXT: kgen.param.for [[i:.*]]: !Int in :!IterRange apply
@@ -546,7 +546,7 @@ fn parameter_for[a: Int](owned value: MyType):
         use(value)
         # CHECK: kgen.param.for.continue
 
-# CHECK-LABEL: lit.func @"weird_llvm_dialect_op
+# CHECK-LABEL: lit.fn @"weird_llvm_dialect_op
 # https://github.com/modularml/mojo/issues/3805
 fn weird_llvm_dialect_op():
     # CHECK: %0 = llvm.mlir.zero : !llvm.ptr

@@ -27,7 +27,7 @@ void SourceNames::processDecorators(Operation *op,
     if (auto sym = dyn_cast_or_null<SymbolConstantAttr>(opDecorator)) {
       ASTDecl *decoratorDecl =
           shared.declResolver->getDeclForFuncSymbol(sym.getSymbol());
-      if (auto decoratorFunc = dyn_cast_or_null<LIT::FuncOp>(decoratorDecl))
+      if (auto decoratorFunc = dyn_cast_or_null<FnOp>(decoratorDecl))
         return getSourceName(decoratorFunc);
     }
     return {};
@@ -40,7 +40,7 @@ void SourceNames::processDecorators(Operation *op,
   };
   if (auto hasDecls = dyn_cast<StructDeclOp>(op))
     gatherDecorators(hasDecls.getDecorators());
-  else if (auto hasDecls = dyn_cast<LIT::FuncOp>(op))
+  else if (auto hasDecls = dyn_cast<FnOp>(op))
     gatherDecorators(hasDecls.getDecorators());
 }
 
@@ -69,7 +69,7 @@ SourceNameAttr SourceNames::getSourceName(mlir::SymbolOpInterface op) {
     for (Type type : structOp.getSignature().getParamTypes())
       paramTypes.push_back(getSourceName(type));
     kind = DebugInfo::SourceNameKind::Struct;
-  } else if (auto func = dyn_cast<LIT::FuncOp>(*op)) {
+  } else if (auto func = dyn_cast<FnOp>(*op)) {
     // Query the source name. Fall back to the symbol name otherwise.
     name = func.getSourceNameAttr();
     if (!name)
@@ -133,7 +133,7 @@ SourceNameAttr SourceNames::getSourceName(Type type) {
   return SourceNameAttr::get(getTypeAsString(type));
 }
 
-void SharedState::setLocationDebugScope(LIT::FuncOp funcOp) {
+void SharedState::setLocationDebugScope(FnOp funcOp) {
   if (!diBuilder) {
     // Ensure no debug scope for function.
     if (auto fusedLoc = dyn_cast<mlir::FusedLocWith<DebugInfo::DIScopeAttr>>(

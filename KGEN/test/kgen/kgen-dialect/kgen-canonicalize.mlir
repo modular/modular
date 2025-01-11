@@ -154,7 +154,7 @@ kgen.generator @call_param_bound_symbol() {
 
 
 lit.struct.decl @Struct {
-  lit.func @Nested() {
+  lit.fn @Nested() {
     kgen.return
   }
 }

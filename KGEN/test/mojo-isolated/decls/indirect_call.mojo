@@ -8,7 +8,7 @@
 fn return_function[T: AnyType]() -> T:
     pass
 
-# CHECK-LABEL: lit.func @"mrvalue_indirect_callee
+# CHECK-LABEL: lit.fn @"mrvalue_indirect_callee
 fn mrvalue_indirect_callee():
     # CHECK-NEXT: [[RESULT:%.*]] = lit.var.decl
     # CHECK-NEXT: call {{.*}}return_function{{.*}}([[RESULT]])
@@ -19,7 +19,7 @@ fn mrvalue_indirect_callee():
 fn indirect_callee() raises -> fn()->None:
     pass
 
-# CHECK-LABEL: lit.func @"call_it
+# CHECK-LABEL: lit.fn @"call_it
 fn call_it() raises:
     # CHECK-NEXT: [[RESULT:%.*]] = lit.var.decl
     # CHECK-NEXT: call {{.*}}indirect_callee{{.*}}(%__error__, [[RESULT]])

@@ -86,12 +86,12 @@ struct Bar:
         pass
 
 
-# CHECK-LABEL: lit.func @"construct_implicit_type_explicitly
+# CHECK-LABEL: lit.fn @"construct_implicit_type_explicitly
 fn construct_implicit_type_explicitly():
     _ = Bar(Foo())
 
 
-# CHECK-LABEL: lit.func @"async_trait
+# CHECK-LABEL: lit.fn @"async_trait
 fn async_trait[T: AsyncTrait](value: T):
     # CHECK: lit.async.call[!lit.generator<[2]("self": {{.*}} read_mem, ?, "__result__": !lit.ref<!Int, mut *[0,1]> byref_result) async -> !kgen.none>: get_vtable_entry
     _ = value.foo()
@@ -101,7 +101,7 @@ fn take_intable[T: Intable](x: T):
     pass
 
 
-# CHECK-LABEL: lit.func @"nonmaterializable_trait
+# CHECK-LABEL: lit.fn @"nonmaterializable_trait
 fn nonmaterializable_trait():
     # CHECK-NEXT: [[SLOT:%.*]] = lit.var.decl {{.*}} : !lit.ref<!Int,
     # CHECK-NEXT: [[VAL:%.*]] = kgen.param.constant: !Int = <{1}>

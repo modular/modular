@@ -413,7 +413,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
 
   // Create a clone of the parser module so that we can compile it without
   // thrashing on the current parser state.
-  LIT::FuncOp exprFn = cast<LIT::FuncOp>(result.exprFnDecl.getIfOperation());
+  auto exprFn = cast<LIT::FnOp>(result.exprFnDecl.getIfOperation());
   exprFn.setLinkageName(exprFnName);
   mlir::IRMapping mapping;
   OwningOpRef<ModuleOp> module =
@@ -427,7 +427,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   extendWithModularEnvAttr(*module);
 
   // Ensure the expression function in the cloned module gets exported.
-  auto clonedExprFn = cast<LIT::FuncOp>(mapping.lookup(&*exprFn));
+  auto clonedExprFn = cast<LIT::FnOp>(mapping.lookup(&*exprFn));
   clonedExprFn.setCExported();
 
   // Log the pre-elaboration module.

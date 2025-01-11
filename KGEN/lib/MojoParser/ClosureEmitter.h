@@ -47,9 +47,8 @@ public:
 
   /// Generate an initializer on the ClosureWrapper that accepts a ClosureImpl
   /// instance.
-  LIT::FuncOp createWrapperInitWithImpl(StructDeclOp closureWrapper,
-                                        StructDeclOp closureImpl,
-                                        SMLoc location);
+  FnOp createWrapperInitWithImpl(StructDeclOp closureWrapper,
+                                 StructDeclOp closureImpl, SMLoc location);
 
 private:
   MLIRContext *ctx;

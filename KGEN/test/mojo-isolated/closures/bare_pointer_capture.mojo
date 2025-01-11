@@ -10,7 +10,7 @@ alias ptr = __mlir_type.`!kgen.pointer<none>`
 
 # CHECK: lit.struct.field field0 : !kgen.pointer<none>
 
-# CHECK: lit.func @"__init__({{.*}}%fld0: !kgen.pointer<none>,
+# CHECK: lit.fn @"__init__({{.*}}%fld0: !kgen.pointer<none>,
 # CHECK-SAME: byref_result)
 
 

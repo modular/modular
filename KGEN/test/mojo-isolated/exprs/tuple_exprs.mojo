@@ -11,7 +11,7 @@
 ##===----------------------------------------------------------------------===##
 
 
-# CHECK-LABEL: lit.func @"tuples_rv
+# CHECK-LABEL: lit.fn @"tuples_rv
 fn tuples_rv(a: Int, b: FloatDyn):
     # CHECK: [[PACK0:%.*]] = kgen.param.constant: !lit.ref.pack
     # CHECK-SAME: <:variadic<!AnyType> [], imm {}> = <<>>
@@ -59,7 +59,7 @@ fn tuples_rv(a: Int, b: FloatDyn):
 ##===----------------------------------------------------------------------===##
 
 
-# CHECK-LABEL: lit.func @"tuples_lv
+# CHECK-LABEL: lit.fn @"tuples_lv
 fn tuples_lv(i0: Int, f0: FloatDyn):
     var i1 = 1
     var i2 = 2
@@ -128,7 +128,7 @@ struct Container[T: CollectionType]:
         return self.x
 
 
-# CHECK-LABEL: lit.func @"swap_container_fields
+# CHECK-LABEL: lit.fn @"swap_container_fields
 fn swap_container_fields(mut v: Container[_]):
     v[0], v[1] = v[1], v[0]
 
@@ -140,7 +140,7 @@ fn swap_container_fields(mut v: Container[_]):
 # FIXME: Empty tuple `Tuple[]` cannot be spelled.
 
 
-# CHECK-LABEL: lit.func @"returnTup0
+# CHECK-LABEL: lit.fn @"returnTup0
 # CHECK-SAME: %__result__: !lit.ref<{{.*}}@Tuple<:variadic<!AnyType> []>
 fn returnTup0() -> Tuple:
     # FIXME: Why isn't this a kgen.param.constant for the whole call?
@@ -148,7 +148,7 @@ fn returnTup0() -> Tuple:
     return ()
 
 
-# CHECK-LABEL: lit.func @"returnTup0a
+# CHECK-LABEL: lit.fn @"returnTup0a
 # CHECK-SAME: %__result__: !lit.ref<{{.*}}@Tuple<:variadic<!AnyType> []>
 fn returnTup0a() -> ():
     # FIXME: Why isn't this a kgen.param.constant for the whole call?
@@ -157,7 +157,7 @@ fn returnTup0a() -> ():
     return ()
 
 
-# CHECK-LABEL: lit.func @"returnTup1
+# CHECK-LABEL: lit.fn @"returnTup1
 # CHECK-SAME: %__result__: !lit.ref<{{.*}}@Tuple<:variadic<!AnyType> [#Int1]>,
 fn returnTup1() -> Tuple[Int]:
     # CHECK: %0 = kgen.param.constant: !Int
@@ -166,7 +166,7 @@ fn returnTup1() -> Tuple[Int]:
     return (Int(4),)
 
 
-# CHECK-LABEL: lit.func @"returnTup1
+# CHECK-LABEL: lit.fn @"returnTup1
 # CHECK-SAME: %__result__: !lit.ref<{{.*}}@Tuple<:variadic<!AnyType> [#Int1]>
 fn returnTup1a() -> (Int,):
     return (Int(4),)
@@ -176,7 +176,7 @@ fn returnTup1b() -> (Int,):
     return (Int(4),)
 
 
-# CHECK-LABEL: lit.func @"returnTup2
+# CHECK-LABEL: lit.fn @"returnTup2
 # CHECK-SAME:  %__result__: !lit.ref<{{.*}}@Tuple<:variadic<!AnyType> [#Int1, #FloatDyn1]>
 fn returnTup2() -> Tuple[Int, FloatDyn]:
     # CHECK:  = kgen.param.constant{{.*}}4
@@ -185,19 +185,19 @@ fn returnTup2() -> Tuple[Int, FloatDyn]:
     return (Int(4), 2.0)
 
 
-# CHECK-LABEL: lit.func @"returnTup2a
+# CHECK-LABEL: lit.fn @"returnTup2a
 # CHECK-SAME: %__result__: !lit.ref<{{.*}}@Tuple<:variadic<!AnyType> [#Int1, #FloatDyn1]>,
 fn returnTup2a() -> (Int, FloatDyn):
     # CHECK: lit.ref.pack.create({{.*}}) : !lit.ref.pack<:variadic<!AnyType> [#Int1, #FloatDyn1]
     return (Int(4), 2.0)
 
 
-# CHECK-LABEL: lit.func @"returnTup2b
+# CHECK-LABEL: lit.fn @"returnTup2b
 fn returnTup2b() -> (Int, FloatDyn):
     return Int(4), 2.0
 
 
-# CHECK-LABEL: lit.func @"takesSugarTuple{{.*}}<T: !Copyable>
+# CHECK-LABEL: lit.fn @"takesSugarTuple{{.*}}<T: !Copyable>
 # CHECK-SAME: @Tuple<:variadic<!AnyType> [#type_value1, #type_value1]>
 fn takesSugarTuple[T: Copyable](elements: (T, T)):
     pass

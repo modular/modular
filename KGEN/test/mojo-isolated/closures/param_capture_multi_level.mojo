@@ -20,7 +20,7 @@ fn bar[a: Int, b: Int]() -> Int:
 
 
 # CHECK: lit.struct.decl @"`_CI_{{.*}}escaping0"<X: !lit.generator<() -> !Int>, Y: {{.*}}Foo<:!Int apply(:!lit.generator<() -> !Int> X)>
-# CHECK: lit.func @"__call__{{.*}}(
+# CHECK: lit.fn @"__call__{{.*}}(
 # CHECK: constant: !Int = <{{.*}} X)> Y, "b">
 fn parameter_capture_multiple_levels[
     a: Int, X: fn()->Int, Y: Foo[X()]

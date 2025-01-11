@@ -2,8 +2,8 @@
 
 // CHECK-LABEL: lit.struct.decl @SomeStruct
 lit.struct.decl @SomeStruct {
-  // CHECK-LABEL: lit.func @dead_returns
-  lit.func @dead_returns(%c: i1, %a: i32, %b: i32) -> i32 {
+  // CHECK-LABEL: lit.fn @dead_returns
+  lit.fn @dead_returns(%c: i1, %a: i32, %b: i32) -> i32 {
     // CHECK: hlcf.if %c
     hlcf.if %c {
       // CHECK-NEXT: kgen.return %b : i32
@@ -17,7 +17,7 @@ lit.struct.decl @SomeStruct {
     // CHECK: kgen.return %a : i32
     lit.return %a : i32
     lit.return %b : i32 // expected-warning {{unreachable code after return statement}}
-    lit.end_func
+    lit.end_fn
   // CHECK-NEXT: }
   }
 }
@@ -26,8 +26,8 @@ lit.struct.decl @SomeStruct {
 lit.file_module @FileModule {
   // CHECK-LABEL: lit.struct.decl @SomeStruct
   lit.struct.decl @SomeStruct {
-    // CHECK-LABEL: lit.func @try_and_raise
-    lit.func @try_and_raise(%a: i32) throws {
+    // CHECK-LABEL: lit.fn @try_and_raise
+    lit.fn @try_and_raise(%a: i32) throws {
       // CHECK-NEXT: lit.try
       lit.try {
         // CHECK-NEXT: lit.try.raise
@@ -53,12 +53,12 @@ lit.file_module @FileModule {
       // CHECK-NEXT: kgen.unreachable
       // expected-warning @+1 {{unreachable code after try statement that doesn't fall through}}
       lit.return
-      lit.end_func
+      lit.end_fn
     }
   }
 
-  // CHECK-LABEL: lit.func @break_and_continue
-  lit.func @break_and_continue(%c: i1) {
+  // CHECK-LABEL: lit.fn @break_and_continue
+  lit.fn @break_and_continue(%c: i1) {
     // CHECK-NEXT: hlcf.loop
     // CHECK-NEXT: hlcf.if %c {
     // CHECK-NEXT:   hlcf.yield
@@ -92,19 +92,19 @@ lit.file_module @FileModule {
 
     // CHECK-NEXT: kgen.return
     lit.return
-    lit.end_func
+    lit.end_fn
   }
 }
 
-// CHECK-LABEL: lit.func @no_return
-lit.func @no_return() -> !kgen.none {
+// CHECK-LABEL: lit.fn @no_return
+lit.fn @no_return() -> !kgen.none {
   // CHECK: kgen.return
   %0 = kgen.param.constant: none = <#kgen.none>
   lit.return %0 :  !kgen.none
-  lit.end_func
+  lit.end_fn
 }
 
-lit.func @if_true_return() -> index {
+lit.fn @if_true_return() -> index {
   %0 = index.constant 0
   %true = index.bool.constant true
   hlcf.if %true {
@@ -115,10 +115,10 @@ lit.func @if_true_return() -> index {
     lit.return %0 : index
     hlcf.yield
   }
-  lit.end_func
+  lit.end_fn
 }
 
-lit.func @while_true() -> index {
+lit.fn @while_true() -> index {
   %true = index.bool.constant true
   lit.loop cond {
     lit.loop.condition %true: i1
@@ -134,11 +134,11 @@ lit.func @while_true() -> index {
   } else {
     lit.loop.yield
   }
-  lit.end_func
+  lit.end_fn
 }
 
-// CHECK-LABEL: lit.func @if_false_raise
-lit.func @if_false_raise() throws -> i1 {
+// CHECK-LABEL: lit.fn @if_false_raise
+lit.fn @if_false_raise() throws -> i1 {
   %false = index.bool.constant false
   hlcf.if %false {
     hlcf.yield
@@ -149,11 +149,11 @@ lit.func @if_false_raise() throws -> i1 {
     lit.raise
     hlcf.yield
   }
-  lit.end_func
+  lit.end_fn
 }
 
-// CHECK-LABEL: lit.func @raise_raise
-lit.func @raise_raise() throws {
+// CHECK-LABEL: lit.fn @raise_raise
+lit.fn @raise_raise() throws {
   // CHECK: lit.try
   lit.try {
     // CHECK: lit.try.raise
@@ -172,24 +172,24 @@ lit.func @raise_raise() throws {
     lit.try.yield
   }
 
-  lit.end_func
+  lit.end_fn
 }
 
-// CHECK-LABEL: lit.func @throwing_func
-lit.func @throwing_func[mut elt, mut lt](
+// CHECK-LABEL: lit.fn @throwing_func
+lit.fn @throwing_func[mut elt, mut lt](
     %0[*""]: !lit.ref<@Error, mut elt> byref_error,
     %1[*""]: !lit.ref<none, mut *[0,1]> byref_result
 ) throws -> i1 {
   // CHECK-NEXT: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
   // CHECK-NEXT: lit.error_return [[TRUE]]
   lit.raise
-  lit.end_func
+  lit.end_fn
 }
 
 lit.struct.decl @Error {}
 
-// CHECK-LABEL: lit.func @throwing_calls
-lit.func @throwing_calls(
+// CHECK-LABEL: lit.fn @throwing_calls
+lit.fn @throwing_calls(
     %f: !lit.generator<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> i1>
 ) throws -> i1 {
   %err = lit.var.decl "err" synth : !lit.ref<@Error, mut elt>
@@ -229,8 +229,8 @@ lit.func @throwing_calls(
   kgen.unreachable
 }
 
-// CHECK-LABEL: lit.func @unreachable_try
-lit.func @unreachable_try() {
+// CHECK-LABEL: lit.fn @unreachable_try
+lit.fn @unreachable_try() {
   lit.try {
     lit.try.yield
   } except {
@@ -246,11 +246,11 @@ lit.func @unreachable_try() {
   // CHECK: kgen.unreachable
   // expected-warning @+1 {{unreachable code after try statement that doesn't fall through}}
   index.constant 0
-  lit.end_func
+  lit.end_fn
 }
 
-// CHECK-LABEL: lit.func @suppressed_try
-lit.func @suppressed_try() {
+// CHECK-LABEL: lit.fn @suppressed_try
+lit.fn @suppressed_try() {
   lit.try {
     lit.try.yield
   } except {
@@ -268,30 +268,30 @@ lit.func @suppressed_try() {
   // CHECK: kgen.unreachable
   // expected-warning @+1 {{unreachable code after try statement that doesn't fall through}}
   index.constant 0
-  lit.end_func
+  lit.end_fn
 }
 
-// CHECK-LABEL: lit.func @coroutine() async -> index
-lit.func @coroutine() async -> index {
+// CHECK-LABEL: lit.fn @coroutine() async -> index
+lit.fn @coroutine() async -> index {
   %idx0 = index.constant 0
   // CHECK: return %idx0
   lit.return %idx0 : index
-  lit.end_func
+  lit.end_fn
 }
 
-// CHECK-LABEL: lit.func @call_coroutine
+// CHECK-LABEL: lit.fn @call_coroutine
 // CHECK-SAME: coro: () async -> !kgen.none
 // CHECK-SAME: ) async -> !kgen.none
-lit.func @call_coroutine<coro: () async -> !kgen.none>() async -> !kgen.none {
+lit.fn @call_coroutine<coro: () async -> !kgen.none>() async -> !kgen.none {
   // CHECK-NEXT: lit.async.call[() async -> !kgen.none: coro]()
   lit.async.call[() async -> !kgen.none: coro]()
   %0 = kgen.param.constant: none = <#kgen.none>
   lit.return %0 :  !kgen.none
-  lit.end_func
+  lit.end_fn
 }
 
-// CHECK-LABEL: lit.func @return_after_return
-lit.func @return_after_return() -> !kgen.none {
+// CHECK-LABEL: lit.fn @return_after_return
+lit.fn @return_after_return() -> !kgen.none {
   %0 = kgen.param.constant: none = <#kgen.none>
   // CHECK: kgen.return %none : !kgen.none
   lit.return %0 : !kgen.none
@@ -303,11 +303,11 @@ lit.func @return_after_return() -> !kgen.none {
   } else {
     hlcf.yield
   }
-  lit.end_func
+  lit.end_fn
 }
 
-// CHECK-LABEL: lit.func @if_else_return
-lit.func @if_else_return(%cond: i1) -> index {
+// CHECK-LABEL: lit.fn @if_else_return
+lit.fn @if_else_return(%cond: i1) -> index {
   %0 = index.constant 0
   hlcf.if %cond {
     lit.return %0 : index
@@ -317,11 +317,11 @@ lit.func @if_else_return(%cond: i1) -> index {
     hlcf.yield
   }
   // CHECK: kgen.unreachable
-  lit.end_func
+  lit.end_fn
 }
 
-// CHECK-LABEL: lit.func @coroutine2
-lit.func @coroutine2() async -> index {
+// CHECK-LABEL: lit.fn @coroutine2
+lit.fn @coroutine2() async -> index {
   %0 = index.constant 0
   %true = index.bool.constant true
 
@@ -336,11 +336,11 @@ lit.func @coroutine2() async -> index {
   }
 
   // CHECK: kgen.unreachable
-  lit.end_func
+  lit.end_fn
 }
 
-// CHECK-LABEL: lit.func @pointlessTry
-lit.func @pointlessTry() -> !kgen.none {
+// CHECK-LABEL: lit.fn @pointlessTry
+lit.fn @pointlessTry() -> !kgen.none {
   lit.try { // expected-warning {{try body doesn't raise an exception}}
     lit.try.yield
   } except {
@@ -352,11 +352,11 @@ lit.func @pointlessTry() -> !kgen.none {
   }
   %0 = kgen.param.constant: none = <#kgen.none>
   lit.return %0 :  !kgen.none
-  lit.end_func
+  lit.end_fn
 }
 
-// CHECK-LABEL: lit.func @reraise_in_try
-lit.func @reraise_in_try() {
+// CHECK-LABEL: lit.fn @reraise_in_try
+lit.fn @reraise_in_try() {
   // CHECK-NEXT: lit.try
   lit.try {
     // CHECK-NEXT: lit.try
@@ -393,8 +393,8 @@ lit.func @reraise_in_try() {
   kgen.return
 }
 
-// CHECK-LABEL: lit.func @finally_breaks
-lit.func @finally_breaks() -> index {
+// CHECK-LABEL: lit.fn @finally_breaks
+lit.fn @finally_breaks() -> index {
   // CHECK-LABEL: lit.try
   lit.try {
     // CHECK-NEXT: lit.try.yield
@@ -414,11 +414,11 @@ lit.func @finally_breaks() -> index {
     lit.try.yield
   }
   // CHECK: kgen.unreachable
-  lit.end_func
+  lit.end_fn
 }
 
-// CHECK-LABEL: lit.func @try_finally
-lit.func @try_finally(%arg0: i1, %arg1: i32, %arg2: i64) -> (i32, i64) {
+// CHECK-LABEL: lit.fn @try_finally
+lit.fn @try_finally(%arg0: i1, %arg1: i32, %arg2: i64) -> (i32, i64) {
   %true = index.bool.constant true
 
   // CHECK: hlcf.loop "_loop_0" {
@@ -468,8 +468,8 @@ lit.func @try_finally(%arg0: i1, %arg1: i32, %arg2: i64) -> (i32, i64) {
   kgen.return %arg1, %arg2 : i32, i64
 }
 
-// CHECK-LABEL: lit.func @try_finally_return
-lit.func @try_finally_return(%arg0: index, %arg1: index, %arg2: i1) -> index {
+// CHECK-LABEL: lit.fn @try_finally_return
+lit.fn @try_finally_return(%arg0: index, %arg1: index, %arg2: i1) -> index {
   %true = index.bool.constant true
 
   // CHECK: hlcf.loop "_loop_0" {
@@ -511,8 +511,8 @@ lit.func @try_finally_return(%arg0: index, %arg1: index, %arg2: i1) -> index {
   kgen.return %arg1 : index
 }
 
-// CHECK-LABEL: lit.func @nested_try_finally
-lit.func @nested_try_finally() {
+// CHECK-LABEL: lit.fn @nested_try_finally
+lit.fn @nested_try_finally() {
   // CHECK-NEXT: lit.try
   lit.try {
     // CHECK-NEXT: lit.try
@@ -545,8 +545,8 @@ lit.func @nested_try_finally() {
   kgen.return
 }
 
-// CHECK-LABEL: lit.func @try_in_loop
-lit.func @try_in_loop(%arg0: i1) {
+// CHECK-LABEL: lit.fn @try_in_loop
+lit.fn @try_in_loop(%arg0: i1) {
   lit.loop cond {
     lit.loop.condition %arg0: i1
   } body {
@@ -571,19 +571,19 @@ lit.func @try_in_loop(%arg0: i1) {
   kgen.return
 }
 
-// CHECK-LABEL: lit.func @recurse
+// CHECK-LABEL: lit.fn @recurse
 // CHECK-SAME (%x: !pop.scalar<index>) -> !pop.scalar<index> {
 // CHECK-NEXT: %0 = kgen.call @recurse(%x) : !lit.generator<("x": !pop.scalar<index>) -> !pop.scalar<index>>
 // CHECK-NEXT: kgen.return %0 : !pop.scalar<index>
 // CHECK-NEXT:}
-lit.func @recurse(%x: !pop.scalar<index>) -> !pop.scalar<index> {
+lit.fn @recurse(%x: !pop.scalar<index>) -> !pop.scalar<index> {
   %0 = kgen.call @recurse(%x) : !lit.generator<("x": !pop.scalar<index>) -> !pop.scalar<index>>
   lit.return %0 : !pop.scalar<index>
-  lit.end_func
+  lit.end_fn
 }
 
-// CHECK-LABEL: lit.func @coroutine_await
-lit.func @coroutine_await(%arg0: i1) {
+// CHECK-LABEL: lit.fn @coroutine_await
+lit.fn @coroutine_await(%arg0: i1) {
   // CHECK-NEXT: co.suspend
   co.suspend (%hdl0) {
     hlcf.if %arg0 {
@@ -597,11 +597,11 @@ lit.func @coroutine_await(%arg0: i1) {
     co.suspend.end
   }
   lit.return
-  lit.end_func
+  lit.end_fn
 }
 
-// CHECK-LABEL: lit.func @loop_with_else
-lit.func @loop_with_else(%arg0: i1) {
+// CHECK-LABEL: lit.fn @loop_with_else
+lit.fn @loop_with_else(%arg0: i1) {
   // CHECK: hlcf.loop "_loop_0"
   lit.loop cond {
     lit.loop.condition %arg0: i1
@@ -635,22 +635,22 @@ lit.func @loop_with_else(%arg0: i1) {
   }
 
   lit.return
-  lit.end_func
+  lit.end_fn
 }
 
 // CHECK-LABEL: lit.trait.decl @Trait
 lit.trait.decl @Trait {
   // CHECK-NOT: @trait_fn
-  lit.func @trait_fn() {
-    lit.trait_func
+  lit.fn @trait_fn() {
+    lit.trait_fn
   }
 }
 
-// CHECK-LABEL: lit.func @loop_with_cond_raise
+// CHECK-LABEL: lit.fn @loop_with_cond_raise
 // Crash handling exception
 // https://github.com/modularml/modular/issues/27937
 // Checking the loop body clobbered the "can raise" flag for the try block.
-lit.func @loop_with_cond_raise(%cond: i1) {
+lit.fn @loop_with_cond_raise(%cond: i1) {
   lit.try {
     hlcf.if %cond {
       lit.raise
@@ -683,19 +683,19 @@ lit.func @loop_with_cond_raise(%cond: i1) {
     lit.try.yield
   }
   lit.return
-  lit.end_func
+  lit.end_fn
 }
 
 // [QoI] Generate error for obviously self recursive functions
 // https://github.com/modularml/mojo/issues/222
-lit.func @self_recursive() -> !kgen.none {
+lit.fn @self_recursive() -> !kgen.none {
   // expected-warning @+1 {{self recursive call will cause an infinite loop}}
   %0 = lit.call @self_recursive() : !lit.generator<() -> !kgen.none>
   %none = kgen.param.constant: none = <#kgen.none>
   lit.return %none : !kgen.none
-  lit.end_func
+  lit.end_fn
 }
-lit.func @self_recursive_arg(%a: index, %cond: i1) -> !kgen.none {
+lit.fn @self_recursive_arg(%a: index, %cond: i1) -> !kgen.none {
   // expected-warning @+1 {{self recursive call will cause an infinite loop}}
   %0 = lit.call @self_recursive_arg(%a, %cond) : !lit.generator<("a": index, "cond": i1) -> !kgen.none>
   hlcf.if %cond {
@@ -709,10 +709,10 @@ lit.func @self_recursive_arg(%a: index, %cond: i1) -> !kgen.none {
   }
   %none = kgen.param.constant: none = <#kgen.none>
   lit.return %none : !kgen.none
-  lit.end_func
+  lit.end_fn
 }
 
-lit.func @self_recursive_param<a: index, cond: i1>() -> !kgen.none attributes {sourceName = "self_recursive_param", specialFnKind = 0 : i8} {
+lit.fn @self_recursive_param<a: index, cond: i1>() -> !kgen.none attributes {sourceName = "self_recursive_param", specialFnKind = 0 : i8} {
   // expected-warning @+1 {{self recursive call will cause an infinite loop}}
   %0 = lit.call @self_recursive_param<a, :i1 cond>() : !lit.generator<() -> !kgen.none>
   kgen.param.if <cond> {
@@ -724,11 +724,11 @@ lit.func @self_recursive_param<a: index, cond: i1>() -> !kgen.none attributes {s
   }
   %none = kgen.param.constant: none = <#kgen.none>
   lit.return %none : !kgen.none
-  lit.end_func
+  lit.end_fn
 }
 
 // #28551: Should report infinite recursion on this testcase
-lit.func @self_recursive_arg_diff(%a: index) -> !kgen.none {
+lit.fn @self_recursive_arg_diff(%a: index) -> !kgen.none {
   %one = kgen.param.constant: index = <1>
   %b = index.sub %a, %one
   // expected-warning @+1 {{self recursive call will cause an infinite loop}}
@@ -736,10 +736,10 @@ lit.func @self_recursive_arg_diff(%a: index) -> !kgen.none {
 
   %none = kgen.param.constant: none = <#kgen.none>
   lit.return %none : !kgen.none
-  lit.end_func
+  lit.end_fn
 }
 
-// CHECK-LABEL: lit.func @elif
+// CHECK-LABEL: lit.fn @elif
 // CHECK-NEXT: %idx0 = index.constant 0
 // CHECK-NEXT: %idx1 = index.constant 1
 // CHECK-NEXT: %idx2 = index.constant 2
@@ -756,7 +756,7 @@ lit.func @self_recursive_arg_diff(%a: index) -> !kgen.none {
 // CHECK-NEXT: } else {
 // CHECK-NEXT: kgen.return %arg1 : index
 // CHECK-NEXT: }
-lit.func @elif(%arg0: index, %arg1: index, %arg2: index) -> index {
+lit.fn @elif(%arg0: index, %arg1: index, %arg2: index) -> index {
   %idx0 = index.constant 0
   %idx1 = index.constant 1
   %idx2 = index.constant 2
@@ -782,8 +782,8 @@ lit.func @elif(%arg0: index, %arg1: index, %arg2: index) -> index {
 // COM: https://github.com/modularml/modular/issues/33570
 // COM: When cloning the finally block, we must uniquely mangle parameters to
 // COM: avoid duplicate parameter name errors.
-// CHECK-LABEL: lit.func @mangle_params_finally_1
-lit.func @mangle_params_finally_1<x>(%c: i1 read) -> !kgen.none {
+// CHECK-LABEL: lit.fn @mangle_params_finally_1
+lit.fn @mangle_params_finally_1<x>(%c: i1 read) -> !kgen.none {
   lit.try {
     // CHECK: hlcf.if %c
     hlcf.if %c {
@@ -813,12 +813,12 @@ lit.func @mangle_params_finally_1<x>(%c: i1 read) -> !kgen.none {
   }
   %none = kgen.param.constant: none = <#kgen.none>
   lit.return %none : !kgen.none
-  lit.end_func
+  lit.end_fn
 }
 
 
-// CHECK-LABEL: lit.func @mangle_params_finally_2
-lit.func @mangle_params_finally_2<x>(%c: i1 read) -> !kgen.none {
+// CHECK-LABEL: lit.fn @mangle_params_finally_2
+lit.fn @mangle_params_finally_2<x>(%c: i1 read) -> !kgen.none {
   lit.try {
     // CHECK: hlcf.if %c
     hlcf.if %c {
@@ -864,20 +864,20 @@ lit.func @mangle_params_finally_2<x>(%c: i1 read) -> !kgen.none {
   // expected-warning @+1 {{unreachable code after try statement that doesn't fall through}}
   %none = kgen.param.constant: none = <#kgen.none>
   lit.return %none : !kgen.none
-  lit.end_func
+  lit.end_fn
 }
 
 
-// CHECK-LABEL: lit.func @mangle_params_finally_3
-lit.func @mangle_params_finally_3<x>(%c: i1 read) -> !kgen.none {
+// CHECK-LABEL: lit.fn @mangle_params_finally_3
+lit.fn @mangle_params_finally_3<x>(%c: i1 read) -> !kgen.none {
   lit.try {
-    // CHECK: lit.func nested()
-    lit.func nested() -> !kgen.none {
+    // CHECK: lit.fn nested()
+    lit.fn nested() -> !kgen.none {
       // CHECK-NEXT: %[[NONE:.*]] = kgen.param.constant: none
       %none_0 = kgen.param.constant: none = <#kgen.none>
       // CHECK-NEXT: kgen.return %[[NONE:.*]]
       lit.return %none_0 : !kgen.none
-      lit.end_func
+      lit.end_fn
     }
     // CHECK: hlcf.if
     hlcf.if %c {
@@ -905,11 +905,11 @@ lit.func @mangle_params_finally_3<x>(%c: i1 read) -> !kgen.none {
   }
   %none = kgen.param.constant: none = <#kgen.none>
   lit.return %none : !kgen.none
-  lit.end_func
+  lit.end_fn
 }
 
-// CHECK-LABEL: lit.func @containsEarlyReturn
-lit.func @containsEarlyReturn(%arg: i1) -> !kgen.none {
+// CHECK-LABEL: lit.fn @containsEarlyReturn
+lit.fn @containsEarlyReturn(%arg: i1) -> !kgen.none {
   // CHECK: hlcf.elif {
   // CHECK:     hlcf.elif.yield %arg : i1
   // CHECK:    } then {
@@ -931,11 +931,11 @@ lit.func @containsEarlyReturn(%arg: i1) -> !kgen.none {
     lit.return %none_0 : !kgen.none
     hlcf.yield
   }
-  lit.end_func
+  lit.end_fn
 }
 
-// CHECK-LABEL: lit.func @fallthrough
-lit.func @fallthrough<cond0: i1, cond1: i1>(%lhs: index, %rhs: index, %cond2 : i1) -> index {
+// CHECK-LABEL: lit.fn @fallthrough
+lit.fn @fallthrough<cond0: i1, cond1: i1>(%lhs: index, %rhs: index, %cond2 : i1) -> index {
 // CHECK: kgen.param.if <cond0> {
 // CHECK-NEXT:   kgen.return %lhs : index
 // CHECK-NEXT: } else {
@@ -976,12 +976,12 @@ lit.func @fallthrough<cond0: i1, cond1: i1>(%lhs: index, %rhs: index, %cond2 : i
    }
    kgen.param.yield
  }
- lit.end_func
+ lit.end_fn
 }
 
 
-// CHECK-LABEL: lit.func @consecutiveElifs
-lit.func @consecutiveElifs(%arg0: index, %arg1: index) -> index {
+// CHECK-LABEL: lit.fn @consecutiveElifs
+lit.fn @consecutiveElifs(%arg0: index, %arg1: index) -> index {
   %idx0 = index.constant 0
   %idx1 = index.constant 1
 
@@ -1015,11 +1015,11 @@ lit.func @consecutiveElifs(%arg0: index, %arg1: index) -> index {
   }
   // CHECK-NEXT: kgen.unreachable
   // CHECK-NEXT: }
-  lit.end_func
+  lit.end_fn
 }
 
 // Derived from MOCO-1475
-lit.func @crashing_try_warning(%cond: i1) -> !kgen.none {
+lit.fn @crashing_try_warning(%cond: i1) -> !kgen.none {
   lit.loop cond {
     lit.loop.condition %cond : i1
   } body {
@@ -1038,5 +1038,5 @@ lit.func @crashing_try_warning(%cond: i1) -> !kgen.none {
   }
   %none = kgen.param.constant: none = <#kgen.none>
   lit.return %none : !kgen.none
-  lit.end_func
+  lit.end_fn
 }

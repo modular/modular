@@ -1626,7 +1626,7 @@ MLValue ExprEmitter::findNearestErrorSlot() {
     return {};
 
   // In a raising function, the error slot is always the second last argument.
-  if (auto func = dyn_cast<LIT::FuncOp>(opForRaise)) {
+  if (auto func = dyn_cast<FnOp>(opForRaise)) {
     return func
         .getArguments()[func.getNumArguments() -
                         func.getSignatureGenerator().getErrorSlotOffset()];
@@ -1637,7 +1637,7 @@ MLValue ExprEmitter::findNearestErrorSlot() {
 
 void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
                                    bool emitEndFunc) {
-  auto func = getBlockParentOfType<LIT::FuncOp>(builder.getInsertionBlock());
+  auto func = getBlockParentOfType<FnOp>(builder.getInsertionBlock());
   assert(func && "Emitting a return in a non-function?");
 
   // If we're missing a value, then we either have a memory result that has
@@ -1700,7 +1700,7 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
 
   // If requested, emit the end func.
   if (emitEndFunc)
-    builder.create<LIT::EndFuncOp>();
+    builder.create<EndFnOp>();
 }
 
 /// Emit a normal return (not a 'raise' return) out of the function, along
@@ -1715,10 +1715,10 @@ void ExprEmitter::emitNormalReturn(Location loc, Value value,
   // to have a local vardecl that can be mutated, and is loaded implicitly
   // when a "return" with no expression is used.
   if (!value) {
-    auto func = getBlockParentOfType<LIT::FuncOp>(builder->getInsertionBlock());
+    auto func = getBlockParentOfType<FnOp>(builder->getInsertionBlock());
     if (func.getNamedResultAttr() &&
         !func.getSignatureGenerator().hasMemoryOnlyResult()) {
-      auto *funcDecl = declScope.getNearestDeclOfType<LIT::FuncOp>();
+      auto *funcDecl = declScope.getNearestDeclOfType<FnOp>();
       assert(funcDecl && "must be in a function");
       ArrayRef<ASTDecl *> declList =
           funcDecl->lookupInCurrentScope(func.getNamedResultAttr());

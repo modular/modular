@@ -27,7 +27,7 @@ fn getUnmovable(a: Unmovable) -> Unmovable:
 
 
 # This can only be codegen'd directly into x.
-# CHECK-LABEL: lit.func @"testUnmovable
+# CHECK-LABEL: lit.fn @"testUnmovable
 fn testUnmovable(a: Unmovable):
     # CHECK-NEXT: %x = lit.var.decl "x"
     # CHECK-NEXT: lit.call {{.*}}(%a, %x)
@@ -41,20 +41,20 @@ fn testUnmovable(a: Unmovable):
 alias index = __mlir_type.index
 
 
-# CHECK-LABEL: lit.func @"simple_typeof_return(
+# CHECK-LABEL: lit.fn @"simple_typeof_return(
 # CHECK: __mlir_type.index)"(%x: index) -> index
 fn simple_typeof_return(x: index) -> __type_of(x):
     return x
 
 
-# CHECK-LABEL: lit.func @"typeof_arg(
+# CHECK-LABEL: lit.fn @"typeof_arg(
 # CHECK: __mlir_type.index,__mlir_type.index)"(%x: index, %y: index) -> index
 fn typeof_arg(x: index, y: __type_of(x)) -> index:
     var z: __type_of(x) = y
     return z
 
 
-# CHECK-LABEL: lit.func @"typeof_dynval_in_param(
+# CHECK-LABEL: lit.fn @"typeof_dynval_in_param(
 fn typeof_dynval_in_param(x: index):
     # CHECK-NEXT:  %y = lit.var.decl
     # CHECK-NEXT: lit.call {{.*}}String::@"__init__
@@ -74,7 +74,7 @@ fn typeof_dynval_in_param(x: index):
 ##===----------------------------------------------------------------------===##
 
 
-# CHECK-LABEL: lit.func @"lifetime_of
+# CHECK-LABEL: lit.fn @"lifetime_of
 fn lifetime_of(x: Unmovable, y: Unmovable, mut z: Unmovable):
     # CHECK-NEXT: origin<0> = <{}>
     alias lt0 = __origin_of()
@@ -93,7 +93,7 @@ fn lifetime_of(x: Unmovable, y: Unmovable, mut z: Unmovable):
 ##===----------------------------------------------------------------------===##
 
 
-# CHECK-LABEL: lit.func @"test_in
+# CHECK-LABEL: lit.fn @"test_in
 fn test_in(a: String, b: String):
     # CHECK-NEXT: lit.call {{.*}}__contains__{{.*}}(%b, %a)
     _ = a in b

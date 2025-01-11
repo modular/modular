@@ -13,7 +13,7 @@ from imported_module import *
 from test_package.module import top_level_alias
 
 
-# CHECK-LABEL: lit.func @"foo
+# CHECK-LABEL: lit.fn @"foo
 fn foo():
     var t = top_level_alias
 
@@ -25,7 +25,7 @@ fn foo():
 
 from test_package_user import using_test_package
 
-# CHECK-LABEL: lit.func @"test_package_user
+# CHECK-LABEL: lit.fn @"test_package_user
 
 
 fn test_package_user():
@@ -38,19 +38,19 @@ from test_package.module import function
 from test_package.test_nested_package.module import nested_function
 from test_package import *
 
-# CHECK-LABEL: lit.func @"test_function_calls
+# CHECK-LABEL: lit.fn @"test_function_calls
 # CHECK:  lit.call @test_package::@module::@"function()"
 # CHECK:  lit.call @test_package::@test_nested_package::@module::@"nested_function()"
 # CHECK:  lit.call @test_package::@__init__::@"method_defined_in_init()"()
 
 # CHECK-LABEL: lit.package @test_package
 # CHECK:  lit.file_module @module
-# CHECK:    lit.func @"function()"
-# CHECK:      lit.func @"call_nested_function()"
+# CHECK:    lit.fn @"function()"
+# CHECK:      lit.fn @"call_nested_function()"
 # CHECK:        lit.call @test_package::@test_nested_package::@module::@"nested_function()"
 # CHECK:  lit.package @test_nested_package
 # CHECK:    lit.file_module @module
-# CHECK:      lit.func @"nested_function()"
+# CHECK:      lit.fn @"nested_function()"
 
 
 fn test_function_calls():

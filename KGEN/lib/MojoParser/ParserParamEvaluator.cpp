@@ -45,7 +45,7 @@ ErrorOr<Region *> ParserInterpreter::lookupFunctionBody(SymbolRefAttr symbol) {
   if (failed(resolver.resolveSignature(*decl, decl->getLoc())))
     return Error("failed to resolve function signature");
 
-  auto func = cast<LIT::FuncOp>(*decl);
+  auto func = cast<FnOp>(*decl);
   if (func.getInlineLevel() == InlineLevel::Automatic ||
       func.getInlineLevel() == InlineLevel::Never)
     return Error("function is not always_inline");
@@ -114,7 +114,7 @@ ParserParamEvaluator::evaluateFunctionCallImpl(SymbolRefAttr symbol,
   }
   Region &body = **bodyOr;
   LITSignatureGeneratorType sig =
-      cast<LIT::FuncOp>(body.getParentOp()).getSignatureGenerator();
+      cast<FnOp>(body.getParentOp()).getSignatureGenerator();
 
   TypedAttr value;
   if (sig.hasMemoryOnlyResult()) {

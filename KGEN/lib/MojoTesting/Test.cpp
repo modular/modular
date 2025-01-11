@@ -389,7 +389,7 @@ struct Test::TestDiscovery {
                                      SharedState &shared) {
     // Tests are defined by functions at starting with `test_` or ends with
     // `_test`, that are defined at the top-level scope.
-    auto fn = dyn_cast_if_present<LIT::FuncOp>(declOp);
+    auto fn = dyn_cast_if_present<FnOp>(declOp);
     if (!fn || !isa<FileModuleOp>(declOp->getParentOp()) ||
         !isa<ModuleOp>(fn->getParentOp()->getParentOp()))
       return false;

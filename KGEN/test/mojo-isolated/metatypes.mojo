@@ -45,7 +45,7 @@ struct NMType:
     pass
 
 
-# CHECK-LABEL: lit.func @"metatypes()"
+# CHECK-LABEL: lit.fn @"metatypes()"
 fn metatypes():
     # COM: Test that a local alias can retain type properties.
     # CHECK: lit.alias.decl [[T:\*"T.*]]: !mt_Thing = <!Thing>

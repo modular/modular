@@ -8,7 +8,7 @@
 
 # CHECK-LABEL: lit.file_module @pybind
 
-# CHECK-LABEL: lit.func @"PyInit_impl_pybind
+# CHECK-LABEL: lit.fn @"PyInit_impl_pybind
 # CHECK-SAME: (?, %error: !lit.ref<!Error, {{.*}}, %result: !lit.ref<!PythonObject, {{.*}}) throws -> i1
 # CHECK-NEXT: [[MODULE:%.*]] = lit.var.decl {{.*}}TypedPythonObject{{.*}}Module
 # CHECK-NEXT: lit.call {{.*}}create_pybind_module{{.*}}"pybind"{{.*}}(%error, [[MODULE]])
@@ -21,7 +21,7 @@
 # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
 # CHECK-NEXT: return [[FALSE]]
 
-# CHECK-LABEL: lit.func export C @"PyInit_pybind
+# CHECK-LABEL: lit.fn export C @"PyInit_pybind
 # CHECK-SAME: () -> !PythonObject
 # CHECK-SAME: linkageName = "PyInit_pybind"
 # CHECK-NEXT: %module = lit.var.decl {{.*}}!PythonObject

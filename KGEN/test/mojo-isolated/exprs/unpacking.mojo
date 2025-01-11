@@ -31,7 +31,7 @@ fn variadic_params[*a: int]():
     pass
 
 
-# CHECK-LABEL: lit.func @"test_unbound_pack
+# CHECK-LABEL: lit.fn @"test_unbound_pack
 fn test_unbound_pack():
     # CHECK: lit.alias.decl *"all_unbound`": anystruct<#StructWithDefault <?, ?, ?, ?>, <"a": index, "b": index, "c": index = 1, "d": index = 2>>
     alias all_unbound = StructWithDefault[*_]

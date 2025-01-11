@@ -58,7 +58,7 @@ fn nmResult() -> NmStruct:
     pass
 
 
-# CHECK-LABEL: lit.func @"useNonmaterializable
+# CHECK-LABEL: lit.fn @"useNonmaterializable
 fn useNonmaterializable(p: Bool):
     # CHECK: lit.var.decl "gotConverted1" var : !lit.ref<!NmTarget
     # CHECK: kgen.param.constant: !NmTarget {{.*}}{:i1 1}

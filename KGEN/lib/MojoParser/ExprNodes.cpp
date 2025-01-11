@@ -511,7 +511,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // subsequent uses find this one.  We don't want implicit declarations in
     // different subscopes to get different implicit declarations.
     ASTDecl *scopeToInsert = &container;
-    while (!isa<FuncOp>(*scopeToInsert)) {
+    while (!isa<FnOp>(*scopeToInsert)) {
       scopeToInsert = scopeToInsert->getParentDecl();
       assert(scopeToInsert && "not in a def?");
     }
@@ -552,12 +552,12 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       } else if (isa<StructDeclOp>(*failureDecls[0]->getParentDecl())) {
         const char *replacement = "self.";
         // References to static methods can always use capital Self.
-        if (auto firstCandidate = dyn_cast<FuncOp>(failureDecls[0]))
+        if (auto firstCandidate = dyn_cast<FnOp>(failureDecls[0]))
           if (firstCandidate.getIsStatic())
             replacement = "Self.";
 
         // References /from/ static methods can only use capital Self.
-        if (auto curFn = dyn_cast<FuncOp>(container))
+        if (auto curFn = dyn_cast<FnOp>(container))
           if (curFn.getIsStatic())
             replacement = "Self.";
 
@@ -579,7 +579,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   emitter.shared.notifyListenerOnRef(decls, spelling, this);
 
   // Functions form an address, and may be overloaded.
-  if (auto firstCandidate = dyn_cast<LIT::FuncOp>(decls[0])) {
+  if (auto firstCandidate = dyn_cast<FnOp>(decls[0])) {
     // Form an overload set value with all the candidates.
     auto result = OverloadSetUValue::create(
         spelling, decls, ParamBindings(emitter.getDeclScope()), this,
@@ -648,14 +648,14 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Now that we're referencing a potentially dynamic value, see if it is from
   // an outer function.  If so, record it as a capture in this nested function.
   ASTDecl *declRef = nullptr;
-  if (!isa<LIT::FuncOp>(*decls[0])) {
+  if (!isa<FnOp>(*decls[0])) {
     assert(decls.size() == 1 && "Only functions may be overloaded");
     declRef = decls[0];
   }
 
   // Find the nearest escaping closure, if there is one.
   ASTDecl *nearestEscapingFnOrNone =
-      declRef ? container.getNearestDeclOfType<LIT::FuncOp>() : nullptr;
+      declRef ? container.getNearestDeclOfType<FnOp>() : nullptr;
   if (nearestEscapingFnOrNone) {
     assert(declRef && "can only reach here if single decl known");
     auto needsCapture = [&]() -> bool {
@@ -1036,8 +1036,7 @@ static LogicalResult bindParamValuesToDirectCall(OverloadSet &overloadSet,
   unsigned numPosBindings =
       overloadSet.paramBindings.getParameters().getNumPositional();
   for (ASTDecl *fnDecl : overloadSet.fnDecls) {
-    LITSignatureGeneratorType sig =
-        cast<LIT::FuncOp>(fnDecl).getFullSignature();
+    LITSignatureGeneratorType sig = cast<FnOp>(fnDecl).getFullSignature();
     bindables.emplace_back(sig.getInputParamTypes(), sig.getParamListAttrs(),
                            numPosBindings);
   }
@@ -1127,7 +1126,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   for (ASTDecl *elt : nonemptySet->fnDecls) {
     // TODO: This is really naive: it doesn't account for default arguments,
     // variadic, byref_result, etc etc etc.
-    if (cast<LIT::FuncOp>(*elt).getSignatureGenerator().getArguments().size() !=
+    if (cast<FnOp>(*elt).getSignatureGenerator().getArguments().size() !=
         size_t(/*newValue*/ !isGetterPresent) + /*self*/ 1) {
       shouldBindParameters = false;
       break;
@@ -1252,7 +1251,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   // at the first entry of the set to see what it uses and assume the rest use
   // the same name.
   auto firstFnSig =
-      cast<LIT::FuncOp>(*setterSet.fnDecls.front()).getSignatureGenerator();
+      cast<FnOp>(*setterSet.fnDecls.front()).getSignatureGenerator();
 
   // Find the last user declared argument.
   auto argNo = firstFnSig.getNumArguments();
@@ -1409,7 +1408,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   shared.notifyListenerOnRef(memberDecls, spelling, this);
 
   // Handle method references, which might be overloaded.
-  if (isa<LIT::FuncOp>(memberDecls[0])) {
+  if (isa<FnOp>(memberDecls[0])) {
     // Build an overload set of all matching function declarations.
 
     // TODO(ParameterizedType): This representation is subtly wrong.  We should

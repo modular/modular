@@ -69,7 +69,7 @@ struct InferredStructConversion[
     pass
 
 
-# CHECK-LABEL: lit.func @"test_inferred_params
+# CHECK-LABEL: lit.fn @"test_inferred_params
 fn test_inferred_params[x: int, y: ParamType[x], z: DependentParam[x, y]]():
     # CHECK: inferred_param_from_arg{{.*}}<x>(%0)
     inferred_param_from_arg(y)
@@ -119,12 +119,12 @@ struct MyOptional[T: CollectionElement]:
     fn __eq__[U: FancyTrait](self: MyOptional[U], rhs: MyOptional[U]) -> Bool:
         pass
 
-  # CHECK-LABEL: lit.func @"__ne__
+  # CHECK-LABEL: lit.fn @"__ne__
     fn __ne__[U: FancyTrait](self: MyOptional[U], rhs: MyOptional[U]) -> Bool:
         # CHECK-NEXT: lit.call {{.*}}MyOptional::@"__eq__{{.*}}(%self, %rhs)
         return not (self == rhs)
 
-# CHECK-LABEL: lit.func @"testMyOptional
+# CHECK-LABEL: lit.fn @"testMyOptional
 fn testMyOptional(a: MyOptional[Int]):
     # CHECK-NEXT: lit.call {{.*}}MyOptional::@"__eq__{{.*}}(%a, %a)
     _ = a.__eq__(a)
@@ -135,7 +135,7 @@ fn testMyOptional(a: MyOptional[Int]):
 
 
 
-# CHECK-LABEL: lit.func @"findall
+# CHECK-LABEL: lit.fn @"findall
 # CHECK-NEXT: lit.call {{.*}}Pointer::@"address_of{{.*}}(%self)
 struct DefBoxInference:
     def findall(self) -> DefBoxInferenceIter[__origin_of(self)]:

@@ -25,14 +25,14 @@ fn use(y: MemType, z: Int, u: int):
 # CHECK-NEXT: lit.struct.field field1 : !Int
 # CHECK-NEXT: lit.struct.field field2 : index
 
-# CHECK:      lit.func @"__del__
+# CHECK:      lit.fn @"__del__
 # CHECK-NEXT:    [[VAR0:%.*]] = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT:    lit.ownership.mark_destroyed %self
 # CHECK-NEXT:    lit.return [[VAR0]] : !kgen.none
-# CHECK-NEXT:    lit.end_func
+# CHECK-NEXT:    lit.end_fn
 # CHECK-NEXT: }
 
-# CHECK-LABEL: lit.func @"__copyinit__(
+# CHECK-LABEL: lit.fn @"__copyinit__(
 # CHECK-SAME:   %other: !lit.ref<{{.*}}> read_mem,
 # CHECK-SAME:   %self: !lit.ref<{{.*}}> byref_result
 # CHECK-SAME: ) -> !kgen.none {{.*}}specialFnKind = 3 : i8
@@ -49,10 +49,10 @@ fn use(y: MemType, z: Int, u: int):
 # CHECK-NEXT:   lit.ref.store [[V8]], [[V6]]
 # CHECK-NEXT:   [[V9:%.*]] = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT:   lit.return [[V9]] : !kgen.none
-# CHECK-NEXT:   lit.end_func
+# CHECK-NEXT:   lit.end_fn
 # CHECK-NEXT: }
 
-# CHECK-LABEL: lit.func @"__moveinit__(
+# CHECK-LABEL: lit.fn @"__moveinit__(
 # CHECK-SAME:   %other: !lit.ref<{{.*}}> owned_in_mem,
 # CHECK-SAME:   %self: !lit.ref<{{.*}}> byref_result
 # CHECK-SAME: ) -> !kgen.none {{.*}}specialFnKind = 4 : i8
@@ -70,10 +70,10 @@ fn use(y: MemType, z: Int, u: int):
 # CHECK-NEXT:   [[W9:%.*]] = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT:   lit.ownership.mark_destroyed %other
 # CHECK-NEXT:   lit.return %none : !kgen.none
-# CHECK-NEXT:   lit.end_func
+# CHECK-NEXT:   lit.end_fn
 # CHECK-NEXT: }
 
-# CHECK-LABEL: lit.func @"__init__
+# CHECK-LABEL: lit.fn @"__init__
 # CHECK-NEXT:   [[Q0:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:   [[Q1:%.*]] = lit.call @{{.*}}::@"__copyinit__{{.*}}(%fld0, [[Q0]])
 # CHECK-NEXT:   [[Q2:%.*]] = lit.ref.struct.ger %self[field1]
@@ -82,7 +82,7 @@ fn use(y: MemType, z: Int, u: int):
 # CHECK-NEXT:   lit.ref.store %fld2, [[Q3]]
 # CHECK-NEXT:   [[Q4:%.*]] = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT:   lit.return [[Q4]] : !kgen.none
-# CHECK-NEXT:   lit.end_func
+# CHECK-NEXT:   lit.end_fn
 
 
 fn makes_escaping_closure(m: MemType, z: MemType, y: Bool):

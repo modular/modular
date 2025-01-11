@@ -12,7 +12,7 @@ from test_package.module import `use()weird[]`
 # CHECK: lit.package @test_package
 # CHECK-NEXT: lit.file_module @module
 # CHECK: lit.struct.decl @"weird()struct[]"
-# CHECK: lit.func @"use()weird[]()"
+# CHECK: lit.fn @"use()weird[]()"
 
 
 fn weird_struct():

@@ -25,7 +25,7 @@ fn overloaded_param[a: int, b: int]():
     pass
 
 
-# CHECK-LABEL: lit.func @"test_kw_params_overload{{.*}}"<x, y>
+# CHECK-LABEL: lit.fn @"test_kw_params_overload{{.*}}"<x, y>
 fn test_kw_params_overload[x: int, y: int]():
     # CHECK: call {{.*}}@"overloaded_param{{.*}}"<x, y>()
     overloaded_param[b=y, a=x]()
@@ -43,7 +43,7 @@ fn overloaded_arg(a: int, b: int):
     pass
 
 
-# CHECK-LABEL: lit.func @"test_kw_args_overload{{.*}}"(%x: index, %y: index)
+# CHECK-LABEL: lit.fn @"test_kw_args_overload{{.*}}"(%x: index, %y: index)
 fn test_kw_args_overload(x: int, y: int):
     # CHECK: call {{.*}}@"overloaded_arg{{.*}}"(%x, %y)
     overloaded_arg(b=y, a=x)
@@ -62,7 +62,7 @@ fn take_kw_param_infer[B: AnyTrivialRegType](a: MyInt, b: B):
     pass
 
 
-# CHECK-LABEL: lit.func @"test_kw_args_param_infer
+# CHECK-LABEL: lit.fn @"test_kw_args_param_infer
 fn test_kw_args_param_infer(x: int, f: float, s: MyInt):
     # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType,AnyTrivialRegType]{{.*}}"<:type index, :type scalar<f64>>(%x, %f)
     take_kw_param_infer(x, b=f)
@@ -93,7 +93,7 @@ struct StaticOverloadStruct:
         pass
 
 
-# CHECK-LABEL: lit.func @"test_static_overload()"
+# CHECK-LABEL: lit.fn @"test_static_overload()"
 fn test_static_overload():
     var a = StaticOverloadStruct()
     # CHECK-NEXT: %a = lit.var.decl
@@ -126,7 +126,7 @@ struct MyContainer[T: Copyable]:
         return self.v
 
 
-# CHECK-LABEL: lit.func @"test_impl
+# CHECK-LABEL: lit.fn @"test_impl
 fn test_impl(a: MyContainer[MyElement], b: int):
     # CHECK: lit.call @{{.*}}@MyContainer::@"foo{{.*}}, "index": index
     _ = a.foo(b)

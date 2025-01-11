@@ -162,9 +162,9 @@ SingletonTypeHelper::lookupStructFields(SymbolRefAttr ref, StructDeclOp decl) {
   return it;
 }
 
-/// This processes a `lit.func` and returns the param declarations for the
+/// This processes a `lit.fn` and returns the param declarations for the
 /// normal input parameters, ignoring the origin parameters.
-static ArrayRef<ParamDeclAttr> extractImplicitOriginParams(LIT::FuncOp func) {
+static ArrayRef<ParamDeclAttr> extractImplicitOriginParams(FnOp func) {
   size_t numImplicitOrigins =
       func.getSignatureGenerator().getNumImplicitOriginDecls();
   return func.getInputParams().drop_back(numImplicitOrigins);
@@ -206,13 +206,13 @@ namespace {
 struct LITLowerer {
   /// Given a function, check to see if it is a top-level function.  If not,
   /// lower it to a ParamDeclareRegionOp.
-  void lowerNestedFunction(LIT::FuncOp func);
+  void lowerNestedFunction(FnOp func);
   /// Lower LIT dialect operations in a function body.
-  void lowerLITOps(LIT::FuncOp func);
-  /// Lower a lit.func to kgen.generator.
-  LogicalResult lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
+  void lowerLITOps(FnOp func);
+  /// Lower a lit.fn to kgen.generator.
+  LogicalResult lowerLITFunc(FnOp func, Block::iterator symTableIt,
                              const Twine &parentPrefix);
-  LogicalResult lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
+  LogicalResult lowerLITFunc(FnOp func, Block::iterator symTableIt,
                              const Twine &parentPrefix,
                              ArrayRef<ParamDeclAttr> parentInputParams,
                              ArrayRef<bool> parentVariadicMask);
@@ -231,7 +231,7 @@ struct LITLowerer {
 };
 } // namespace
 
-void LITLowerer::lowerLITOps(LIT::FuncOp func) {
+void LITLowerer::lowerLITOps(FnOp func) {
   func.getBodyRegion().walk([&](Operation *op) {
     // Lower any aliases within the function body to param declare.
     IRRewriter b{OpBuilder(op)};
@@ -293,7 +293,7 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
       b.replaceOpWithNewOp<mlir::UnrealizedConversionCastOp>(
           globalRefOp, ArrayRef<Type>(globalRefOp.getType()), newAddr);
 
-    } else if (auto funcOp = dyn_cast<LIT::FuncOp>(op)) {
+    } else if (auto funcOp = dyn_cast<FnOp>(op)) {
       lowerNestedFunction(funcOp);
     }
   });
@@ -323,18 +323,17 @@ static StringAttr flattenAndRenameSymbol(T op, SymbolTable &symbolTable,
   return mangled.mangled;
 }
 
-LogicalResult LITLowerer::lowerLITFunc(LIT::FuncOp func,
-                                       Block::iterator symTableIt,
+LogicalResult LITLowerer::lowerLITFunc(FnOp func, Block::iterator symTableIt,
                                        const Twine &parentPrefix) {
   return lowerLITFunc(func, symTableIt, parentPrefix, /*parentInputParams=*/{},
                       /*parentVariadicMask=*/{});
 }
 
-/// This lowers a top level (not nested function) lit.func to a kgen.generator.
+/// This lowers a top level (not nested function) lit.fn to a kgen.generator.
 /// If this is a method of a struct, the struct my have parameters indicated by
 /// parentInputParams.
 LogicalResult
-LITLowerer::lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
+LITLowerer::lowerLITFunc(FnOp func, Block::iterator symTableIt,
                          const Twine &parentPrefix,
                          ArrayRef<ParamDeclAttr> parentInputParams,
                          ArrayRef<bool> parentVariadicMask) {
@@ -402,7 +401,7 @@ LITLowerer::lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
   return success();
 }
 
-void LITLowerer::lowerNestedFunction(LIT::FuncOp func) {
+void LITLowerer::lowerNestedFunction(FnOp func) {
   // Process a nested function by lowering it straight to a
   // `kgen.param.declare.region`. Nested functions are denoted with an
   // parameter declaration on the function declaration.
@@ -441,7 +440,7 @@ LogicalResult LITLowerer::lowerStructDecl(StructDeclOp structDecl,
       continue;
     }
 
-    auto func = dyn_cast<LIT::FuncOp>(member);
+    auto func = dyn_cast<FnOp>(member);
     if (!func)
       return member.emitError("unsupported op in lit lowering");
 
@@ -495,7 +494,7 @@ LogicalResult LITLowerer::lowerModuleDecl(Block *moduleBody,
 
     LogicalResult result =
         TypeSwitch<Operation *, LogicalResult>(&op)
-            .Case([&](LIT::FuncOp op) {
+            .Case([&](FnOp op) {
               return lowerLITFunc(op, opSymTableIt, parentPrefix);
             })
             .Case([&](StructDeclOp op) {
@@ -722,7 +721,7 @@ orderAndLowerGlobalVariables(ModuleOp module,
     }
 
     // Skip over the bodies of operations where global variables cannot exist.
-    if (isa<LIT::StructDeclOp, LIT::FuncOp>(op))
+    if (isa<LIT::StructDeclOp, FnOp>(op))
       return WalkResult::skip();
     return WalkResult::advance();
   });
@@ -781,7 +780,7 @@ orderAndLowerGlobalVariables(ModuleOp module,
         PogListAttr::get(b.getContext()));
     auto makeXtor = [&](Location xtorLoc, StringAttr xtorName, Region &body) {
       b.setInsertionPoint(op);
-      auto fn = b.create<LIT::FuncOp>(xtorLoc, xtorName, StringAttr(), sig);
+      auto fn = b.create<FnOp>(xtorLoc, xtorName, StringAttr(), sig);
       fn.getBodyRegion().takeBody(body);
 
       // If we have a debuginfo scope available, we update the ops in the body.
@@ -795,8 +794,8 @@ orderAndLowerGlobalVariables(ModuleOp module,
       b.create<KGEN::ReturnOp>(xtorLoc);
       return fn;
     };
-    LIT::FuncOp ctorFn = makeXtor(ctorLoc, ctorName, op.getCtor());
-    LIT::FuncOp dtorFn = makeXtor(dtorLoc, dtorName, op.getDtor());
+    FnOp ctorFn = makeXtor(ctorLoc, ctorName, op.getCtor());
+    FnOp dtorFn = makeXtor(dtorLoc, dtorName, op.getDtor());
 
     // If the global had a linkage name, make sure it gets renamed.
     StringAttr linkageName = op.getLinkageNameAttr();

@@ -194,10 +194,10 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
   if (dtor.empty() || copy.empty())
     return;
 
-  Value dtorRef = b.create<CreateClosureOp>(
-      cast<LIT::FuncOp>(dtor.front()).getBoundReference());
-  Value copyRef = b.create<CreateClosureOp>(
-      cast<LIT::FuncOp>(copy.front()).getBoundReference());
+  Value dtorRef =
+      b.create<CreateClosureOp>(cast<FnOp>(dtor.front()).getBoundReference());
+  Value copyRef =
+      b.create<CreateClosureOp>(cast<FnOp>(copy.front()).getBoundReference());
   storeField(b, self, dtorRef, b.getStringAttr("dtor"));
   storeField(b, self, copyRef, b.getStringAttr("_copy"));
 
@@ -311,16 +311,16 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       structDecl, /*generateFieldwiseInit=*/false,
       /*forceGenerateDestructor=*/true);
   assert(stubs && "expected the stubs on a purely synthetic class to succeed.");
-  LIT::FuncOp destructor = stubs->dtor;
+  FnOp destructor = stubs->dtor;
   declOp.setDestructorAttr(destructor.getBoundSymbolRef());
 
-  LIT::FuncOp copyCtr = stubs->copyCtr;
+  FnOp copyCtr = stubs->copyCtr;
   SymbolConstantAttr copyCtrRef = copyCtr.getBoundSymbolRef();
   declOp.setCopyInitAttr(copyCtrRef);
   ASTDecl *copyCtrDecl =
       shared.declResolver->getDeclForFuncSymbol(copyCtrRef.getSymbol());
 
-  LIT::FuncOp moveCtr = stubs->moveCtr;
+  FnOp moveCtr = stubs->moveCtr;
   SymbolConstantAttr moveCtrRef = moveCtr.getBoundSymbolRef();
   declOp.setMoveInitAttr(moveCtrRef);
   ASTDecl *moveCtrDecl =
@@ -440,7 +440,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
 
   // Create map from the parent name to the index of the parameter in the
   // closure struct.
-  FuncOp nestedFn = cast<LIT::FuncOp>(nestedFnDecl);
+  FnOp nestedFn = cast<FnOp>(nestedFnDecl);
   wrapperSig = nestedFn.getSignatureGenerator();
   if (!wrapperSig.getInputParamTypes().empty()) {
     shared.emitError(
@@ -561,7 +561,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   std::optional<GeneratedStubs> stubs = addMissingValueMemberStubsToStruct(
       structDecl, /*generateFieldwiseInit=*/false,
       /*forceGenerateDestructor=*/true);
-  LIT::FuncOp initFunc = synthesizeMemberwiseInit(
+  FnOp initFunc = synthesizeMemberwiseInit(
       structDecl, initSigTypes, initSigConventions,
       PogListAttr::get(ctx, initSigNames, initSigPassingKinds));
   builder =
@@ -600,11 +600,11 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     emitter.emitConstructorCall(clType, {}, loc, CallSyntax::kDirectCall, dest);
   }
 
-  LIT::FuncOp copyCtr = stubs->copyCtr;
+  FnOp copyCtr = stubs->copyCtr;
   SymbolConstantAttr copyCtrRef = copyCtr.getBoundSymbolRef();
   ASTDecl *copyCtrDecl =
       shared.declResolver->getDeclForFuncSymbol(copyCtrRef.getSymbol());
-  LIT::FuncOp moveCtr = stubs->moveCtr;
+  FnOp moveCtr = stubs->moveCtr;
   SymbolConstantAttr moveCtrRef = moveCtr.getBoundSymbolRef();
   ASTDecl *moveCtrDecl =
       shared.declResolver->getDeclForFuncSymbol(moveCtrRef.getSymbol());
@@ -621,7 +621,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   else
     declOp.setMoveInitAttr(moveCtrRef);
 
-  if (LIT::FuncOp dtor = stubs->dtor)
+  if (FnOp dtor = stubs->dtor)
     declOp.setDestructorAttr(dtor.getBoundSymbolRef());
 
   // Populate the body of the call op.
@@ -770,9 +770,9 @@ getDemangledNames(ArrayRef<ParamDeclAttr> decls) {
   });
 }
 
-LIT::FuncOp
-ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
-                                          StructDeclOp closureImpl, SMLoc loc) {
+FnOp ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
+                                               StructDeclOp closureImpl,
+                                               SMLoc loc) {
   // The __init__ will take self and the impl. We first build the types. Add the
   // parameter references captured only in the body to the signature of the
   // constructor. Pass the ones captured in the signature from the wrapper to
@@ -819,9 +819,9 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
   ASTDecl &closureDecl =
       *ASTType(ASTDecl::computeSelfTypeForStruct(closureWrapper))
            .getDecl(shared);
-  FuncOp init = addVoidMethod(closureDecl, "__init__", argTypes, argConventions,
-                              argListAttrsOfInit, SpecialFunctionKind::kInit,
-                              initParams, paramListAttrsOfInit);
+  FnOp init = addVoidMethod(closureDecl, "__init__", argTypes, argConventions,
+                            argListAttrsOfInit, SpecialFunctionKind::kInit,
+                            initParams, paramListAttrsOfInit);
   init.setInlineLevel(InlineLevel::Always);
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
@@ -856,7 +856,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
         .str();
   };
   TopLevelTypes topLevelTypes = collectTopLevelFunctionTypes(closureWrapper);
-  auto setMember = [&](LIT::FuncOp topLevelFunc, StringAttr fieldName,
+  auto setMember = [&](FnOp topLevelFunc, StringAttr fieldName,
                        Type fieldType) {
     builder = ImplicitLocOpBuilder::atBlockBegin(init.getLoc(), init.getBody());
     TypedAttr funcSymbol = topLevelFunc.getBoundReference(

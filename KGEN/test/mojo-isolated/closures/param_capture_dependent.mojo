@@ -13,7 +13,7 @@ struct Foo[a: Int]:
 
 
 # CHECK: lit.struct.decl @"`_CI_{{.*}}"<[[a:.*a]]: !Int, X: [[FOO:.*]]<:!Int [[a]]>, |>
-# CHECK: lit.func @"__call__{{.*}}({{.*}}<:!Int [[a]], :[[FOO]]<:!Int [[a]]>
+# CHECK: lit.fn @"__call__{{.*}}({{.*}}<:!Int [[a]], :[[FOO]]<:!Int [[a]]>
 # CHECK-NEXT: [[VAR1:%.*]] = lit.ref.struct.ger %0[field0]
 # CHECK-NEXT: [[VAR2:%.*]] = lit.ref.load [[VAR1]]
 # CHECK-NEXT: kgen.param.constant: !Int = <#lit.struct.extract<:[[FOO]]<:!Int [[a]]> X, "b">>

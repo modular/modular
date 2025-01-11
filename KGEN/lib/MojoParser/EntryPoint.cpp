@@ -136,7 +136,7 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
           op->erase();
           return WalkResult::skip();
         }
-        if (isa<StructDeclOp, LIT::FuncOp, LIT::TraitDeclOp>(op))
+        if (isa<StructDeclOp, FnOp, LIT::TraitDeclOp>(op))
           return WalkResult::skip();
         return WalkResult::advance();
       });
@@ -149,7 +149,7 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
       return WalkResult::skip();
     }
     // Functions have nothing to check inside them.
-    if (isa<LIT::FuncOp>(op))
+    if (isa<FnOp>(op))
       return WalkResult::skip();
     return WalkResult::advance();
   });
@@ -187,12 +187,11 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
     Operation *cur = worklist.back();
     worklist.pop_back();
     // Collect symbol references between this symbol table and any child symbol
-    // tables. Nested `lit.func` operations are trickier, however.
+    // tables. Nested `lit.fn` operations are trickier, however.
     cur->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
       if (op != cur) {
         // Mark nested functions as live, which also recurses on them.
-        if (auto func = dyn_cast<LIT::FuncOp>(op);
-            func && func.getParamDeclAttr())
+        if (auto func = dyn_cast<FnOp>(op); func && func.getParamDeclAttr())
           markLive(func);
         if (op->hasTrait<OpTrait::SymbolTable>())
           return WalkResult::skip();
@@ -215,14 +214,13 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
     if (op == declOp && isa<PackageOp>(declOp))
       return WalkResult::skip();
 
-    if (isa<mlir::SymbolOpInterface, LIT::FuncOp>(op) &&
-        !liveSymbols.contains(op)) {
+    if (isa<mlir::SymbolOpInterface, FnOp>(op) && !liveSymbols.contains(op)) {
       op->erase();
       return WalkResult::skip();
     }
 
     // We never need to erase anything inside functions.
-    if (isa<LIT::FuncOp>(op))
+    if (isa<FnOp>(op))
       return WalkResult::skip();
 
     return WalkResult::advance();

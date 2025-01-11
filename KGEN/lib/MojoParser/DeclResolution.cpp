@@ -326,7 +326,7 @@ static void applyExport(SMLoc loc, ASTDecl &decl, StringRef unmangledName,
   if (aliasName == kMainSymbolName) {
     if (unmangledName != kMainSymbolName)
       shared.emitError(loc, "only 'main' can be exported as 'main'");
-    if (!isa<LIT::FuncOp>(decl))
+    if (!isa<FnOp>(decl))
       shared.emitError(loc, "exported 'main' must be a function");
     return;
   }
@@ -335,7 +335,7 @@ static void applyExport(SMLoc loc, ASTDecl &decl, StringRef unmangledName,
     return;
   }
 
-  llvm::TypeSwitch<ASTDecl &, void>(decl).Case<LIT::FuncOp, GlobalVarDeclOp>(
+  llvm::TypeSwitch<ASTDecl &, void>(decl).Case<FnOp, GlobalVarDeclOp>(
       [aliasName](auto op) { op.setLinkageName(aliasName); });
   if (isCExport)
     itf.setCExported();
@@ -391,8 +391,8 @@ struct FnSigDecorators : public SharedStateUser {
   FnSigDecorators(ASTDecl &decl, ASTDecl &sigDecl, SharedState &shared,
                   StringRef baseName, TypeCheckedFnSignature &tcSignature)
       : SharedStateUser(shared), decl(decl), sigDecl(sigDecl),
-        funcOp(cast<LIT::FuncOp>(decl)), baseName(baseName),
-        tcSignature(tcSignature) {}
+        funcOp(cast<FnOp>(decl)), baseName(baseName), tcSignature(tcSignature) {
+  }
 
   /// Apply a function signature decorator.
   LogicalResult apply(ExprNode *decorator);
@@ -406,7 +406,7 @@ private:
 
   ASTDecl &decl;
   ASTDecl &sigDecl;
-  LIT::FuncOp funcOp;
+  FnOp funcOp;
   StringRef baseName;
   TypeCheckedFnSignature &tcSignature;
 };
@@ -545,7 +545,7 @@ void FnSigDecorators::applyCopyOrMoveCapture(const CallNode &node, bool isMove,
     }
 
     // Emit an immutable copy of the captured declaration.
-    LIT::FuncOp parentOp = funcOp->getParentOfType<LIT::FuncOp>();
+    FnOp parentOp = funcOp->getParentOfType<FnOp>();
     if (!parentOp) {
       emitError(declRef->getLoc(), "'@")
           << decoratorSpelling
@@ -653,7 +653,7 @@ static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
   // For each argument and result type, generate the set of explicit trait
   // conformances and witness tables. We need to dig out the declared argument
   // and result types.
-  auto func = cast<LIT::FuncOp>(decl);
+  auto func = cast<FnOp>(decl);
   if (!(isa<FileModuleOp>(func->getParentOp()) || func.getIsStatic())) {
     shared.emitError(decl.getLoc(), "@")
         << spelling << " is only supported on top-level or static functions";
@@ -756,7 +756,7 @@ static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
 
 /// Given the lexical context of a function, return true if the default bit
 /// for the function is capturing.
-static bool isCapturingByDefault(LIT::FuncOp funcOp, StructDeclOp parent,
+static bool isCapturingByDefault(FnOp funcOp, StructDeclOp parent,
                                  ArrayRef<ParamDeclAttr> paramDecls) {
   // Any function that contains a capturing closure as a parameter is itself
   // capturing, include parent struct parameters.
@@ -796,7 +796,7 @@ DeclResolver::createSelfContainedSignature(LITSignatureGeneratorType original) {
 static MLValue emitClosureInstance(ArrayRef<Capture> captures,
                                    ArrayRef<ParamDeclRefAttr> paramCaptures,
                                    ASTDecl &nestedFnDecl, SharedState &shared) {
-  LIT::FuncOp nestedFn = cast<LIT::FuncOp>(nestedFnDecl);
+  FnOp nestedFn = cast<FnOp>(nestedFnDecl);
   StringAttr fnName = nestedFn.getSourceNameAttr();
   SMLoc loc = nestedFnDecl.getLoc();
   Location mlirLoc = shared.translateLocation(loc);
@@ -878,7 +878,7 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
 ///                "(" [argument_list] ")" ["->" expression] ":" suite
 /// def_or_fn ::= "def" | "fn"
 ///
-LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
+LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
                                              ASTDecl &decl) {
   ParserBase p(shared, lexer);
   auto decoratorExprs = p.parseDecorators(decl);
@@ -1010,7 +1010,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   if (StringAttr resultName = tcSignature.argList.resultArg.name)
     attrs.set(funcOp.getNamedResultAttrName(), resultName);
 
-  // Remove the temporary "sym_namex" attribute set up in FuncOp::build, see
+  // Remove the temporary "sym_namex" attribute set up in FnOp::build, see
   // that method for an explanation.
   attrs.erase("sym_namex");
 
@@ -1020,7 +1020,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Set the symbol and notice if we are redeclaring something.
   if (Operation *existing = finalizeFuncSignature(funcOp, decl)) {
     const char *errorMessage = nullptr;
-    auto existingFunc = cast<LIT::FuncOp>(existing);
+    auto existingFunc = cast<FnOp>(existing);
 
     // We need to compare the (name erased) user result types, since memory-only
     // types may result in `!kgen.none` in the mlir signature result.
@@ -1057,7 +1057,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   // Upon fully resolving a nonparametric closure, immediately materialize it as
   // a runtime value. It cannot be used as a parameter.
-  if (!funcOp->getParentOfType<LIT::FuncOp>())
+  if (!funcOp->getParentOfType<FnOp>())
     return success();
 
   // Fully resolve the body so we can swap the IR value of the decl. Later on,
@@ -1172,7 +1172,7 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
   return varDecl;
 }
 
-ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
+ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
                                       ASTDecl &decl) {
   // Push the debug scope for this function if necessary so that nested
   // operations have proper debug info.
@@ -1330,7 +1330,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
   } else if (!body.empty() && isa<LIT::ReturnOp, LIT::RaiseOp>(body.back())) {
     // If the function had an explicit return, just append the default end
     // terminator.
-    emitter.builder->create<LIT::EndFuncOp>(funcOp.getLoc());
+    emitter.builder->create<EndFnOp>(funcOp.getLoc());
   } else {
     // Determine if this is falling off the bottom of the function is an
     // implicit return or if it should "fall off" in the case of a missing
@@ -1359,7 +1359,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     if (needDefaultReturn)
       emitter.emitNormalReturn(funcOp.getLoc());
     else
-      emitter.builder->create<LIT::EndFuncOp>(funcOp.getLoc());
+      emitter.builder->create<EndFnOp>(funcOp.getLoc());
   }
 
   // Now that the body of the function is parsed, run any body decorators.
@@ -1953,7 +1953,7 @@ static SymbolConstantAttr lookupDestructor(ASTDecl &structDecl,
     return {};
   }
   ASTDecl &delDecl = *entries[0];
-  LIT::FuncOp func = dyn_cast<LIT::FuncOp>(delDecl);
+  FnOp func = dyn_cast<FnOp>(delDecl);
   if (!func) {
     shared.emitError(delDecl.getLoc(), "'__del__' must be a method");
     return {};
@@ -1971,7 +1971,7 @@ static SymbolConstantAttr lookupSpecialMethod(ASTDecl &structDecl,
       name, structDecl.getLoc(), structDecl, /*searchParentScopes=*/false);
 
   for (ASTDecl *candidate : inits.getIfSuccess()) {
-    LIT::FuncOp func = dyn_cast<LIT::FuncOp>(candidate);
+    FnOp func = dyn_cast<FnOp>(candidate);
     if (func && func.getSpecialFunctionKind() == specialKind)
       return func.getBoundSymbolRef();
   }
@@ -1987,13 +1987,12 @@ struct StructBodyDecorators : public SharedStateUser {
         structDecl(structDecl), structFields(structFields) {}
 
   LogicalResult processDecorator(ExprNode *decorator, StructDeclOp structOp,
-                                 LIT::FuncOp moveFunc, LIT::FuncOp copyFunc);
+                                 FnOp moveFunc, FnOp copyFunc);
 
 private:
   /// Process the @value body decorator on structs.  This synthesizes the
   /// memberwise init, copy ctor and move ctor if requested.
-  void processValueDecorator(SMLoc decoratorLoc, LIT::FuncOp moveFunc,
-                             LIT::FuncOp copyFunc);
+  void processValueDecorator(SMLoc decoratorLoc, FnOp moveFunc, FnOp copyFunc);
 
   /// Get a constant symbol to a method, and return null if it is missing or
   /// something went wrong.
@@ -2011,8 +2010,7 @@ private:
 /// Synthesize the `__copyinit__` and `__moveinit__` stubs for `@value`
 /// decorated structs early to ensure their movability and copyability
 /// requirements are satisfied.
-static std::pair<LIT::FuncOp, LIT::FuncOp>
-preprocessValueDecorator(ASTDecl &structDecl) {
+static std::pair<FnOp, FnOp> preprocessValueDecorator(ASTDecl &structDecl) {
   auto declOp = cast<StructDeclOp>(structDecl);
   for (ExprNode *decorator : structDecl.getBodyDecorators()) {
     if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
@@ -2021,7 +2019,7 @@ preprocessValueDecorator(ASTDecl &structDecl) {
         if (!info)
           break;
         StructEmitter emitter(structDecl.getShared());
-        LIT::FuncOp moveFunc, copyFunc;
+        FnOp moveFunc, copyFunc;
         if (!declOp.isRegisterPassable() && !info->hasMove()) {
           moveFunc = emitter.synthesizeEmptyMoveInit(structDecl);
           moveFunc.setInlineLevel(InlineLevel::AlwaysNoDebug);
@@ -2038,8 +2036,7 @@ preprocessValueDecorator(ASTDecl &structDecl) {
 }
 
 void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc,
-                                                 LIT::FuncOp moveFunc,
-                                                 LIT::FuncOp copyFunc) {
+                                                 FnOp moveFunc, FnOp copyFunc) {
   // Check to see the classification of the fields, the result type will be
   // copyable/movable iff all the fields are.
   bool isCopyable = true, isMovable = true;
@@ -2076,7 +2073,7 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc,
   stubs->moveCtr = moveFunc;
   stubs->copyCtr = copyFunc;
 
-  if (LIT::FuncOp copyCtr = stubs->copyCtr) {
+  if (FnOp copyCtr = stubs->copyCtr) {
     SymbolConstantAttr ref = copyCtr.getBoundSymbolRef();
     ASTDecl *copyCtrDecl =
         getDeclResolver().getDeclForFuncSymbol(ref.getSymbol());
@@ -2085,7 +2082,7 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc,
     else
       declOp.setCopyInitAttr(ref);
   }
-  if (LIT::FuncOp moveCtr = stubs->moveCtr) {
+  if (FnOp moveCtr = stubs->moveCtr) {
     SymbolConstantAttr ref = moveCtr.getBoundSymbolRef();
     ASTDecl *moveCtrDecl =
         getDeclResolver().getDeclForFuncSymbol(ref.getSymbol());
@@ -2121,8 +2118,8 @@ SymbolConstantAttr StructBodyDecorators::getSymbolForMethod(
 
 LogicalResult StructBodyDecorators::processDecorator(ExprNode *decorator,
                                                      StructDeclOp structOp,
-                                                     LIT::FuncOp moveFunc,
-                                                     LIT::FuncOp copyFunc) {
+                                                     FnOp moveFunc,
+                                                     FnOp copyFunc) {
   // @value decorator
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "value") {
@@ -2535,8 +2532,7 @@ struct AttrReplacer : public ParameterReplacer<AttrReplacer> {
 
 /// Update the types for a method pulled from a trait base to a derived trait,
 /// so they refer to the correct self type.
-static void replaceTraitMethodSelfTypes(LIT::FuncOp func,
-                                        TypedAttr parentSelfType,
+static void replaceTraitMethodSelfTypes(FnOp func, TypedAttr parentSelfType,
                                         TypedAttr traitSelfType) {
   assert(isa<ParamDeclRefAttr>(parentSelfType) &&
          isa<ParamDeclRefAttr>(traitSelfType));
@@ -2566,10 +2562,10 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
   // overload candidates.
   DenseSet<std::pair<StringAttr, StringAttr>> existingFns;
   for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
-    if (decls.empty() || !isa<LIT::FuncOp>(decls.front()))
+    if (decls.empty() || !isa<FnOp>(decls.front()))
       continue;
     for (ASTDecl *decl : decls) {
-      auto func = cast<LIT::FuncOp>(*decl);
+      auto func = cast<FnOp>(*decl);
       if (failed(resolveFully(*decl, decl->getLoc())))
         return failure();
 
@@ -2580,7 +2576,7 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
                          "declaration, use `...` or `pass`");
       }
       auto b = ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), func.getBody());
-      b.create<TraitFuncOp>();
+      b.create<TraitFnOp>();
     }
   }
 
@@ -2601,12 +2597,12 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
     // Inherit function members, which we can override without worry because
     // they are all just declarations.
     for (auto &[name, decls] : parentDecl.getDeclsInScope()) {
-      if (decls.empty() || !isa<LIT::FuncOp>(decls.front()))
+      if (decls.empty() || !isa<FnOp>(decls.front()))
         continue;
       for (ASTDecl *decl : decls) {
         if (failed(resolveFully(*decl, traitDecl.getLoc())))
           continue;
-        auto func = cast<LIT::FuncOp>(decl);
+        auto func = cast<FnOp>(decl);
         // Ensure that a function with the same name and signature hasn't
         // already been declared.
         if (!existingFns.insert({name, func.getSymNameAttr()}).second)

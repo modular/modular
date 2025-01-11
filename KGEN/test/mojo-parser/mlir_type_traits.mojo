@@ -10,7 +10,7 @@ trait Composition(Movable, Copyable):
     pass
 
 
-# CHECK-LABEL: lit.func @"mlir_type_trait_conformance
+# CHECK-LABEL: lit.fn @"mlir_type_trait_conformance
 fn mlir_type_trait_conformance():
     # CHECK: !AnyType = <[index, {"__del__" : {{.*}}@__MLIRType::@"__del__
     alias Any: AnyType = __mlir_type.index

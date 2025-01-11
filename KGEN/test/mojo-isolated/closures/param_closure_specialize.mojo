@@ -11,7 +11,7 @@ struct Thing[x: int]:
     pass
 
 
-# CHECK-LABEL: lit.func @"pass_param_closure
+# CHECK-LABEL: lit.fn @"pass_param_closure
 fn pass_param_closure():
     fn closure(x: Thing[`2`]) escaping:
         pass

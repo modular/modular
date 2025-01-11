@@ -12,7 +12,7 @@
 ##===----------------------------------------------------------------------===##
 
 
-# CHECK-LABEL: lit.func @"testAlwaysInline
+# CHECK-LABEL: lit.fn @"testAlwaysInline
 # CHECK-SAME: always_inline
 @always_inline
 fn testAlwaysInline():
@@ -20,7 +20,7 @@ fn testAlwaysInline():
     pass
 
 
-# CHECK-LABEL: lit.func @"testAlwaysInlineNoDebug
+# CHECK-LABEL: lit.fn @"testAlwaysInlineNoDebug
 # CHECK-SAME: always_inline_no_debug
 @always_inline("nodebug")
 fn testAlwaysInlineNoDebug():
@@ -34,7 +34,7 @@ fn testAlwaysInlineNoDebug():
 # // -----
 
 
-# CHECK-LABEL: lit.func @"testImplicitVarDeclScope
+# CHECK-LABEL: lit.fn @"testImplicitVarDeclScope
 def testImplicitVarDeclScope():
     # CHECK-DAG: lit.var.decl "outer" {{.*}} loc(#[[LOC_OUTER:.+]])
     # CHECK-DAG: lit.var.decl "inner" {{.*}} loc(#[[LOC_INNER:.+]])
@@ -43,7 +43,7 @@ def testImplicitVarDeclScope():
         inner = 5
 
 
-# CHECK-LABEL: lit.func @"testImplicitVarDeclScopeNoDebug
+# CHECK-LABEL: lit.fn @"testImplicitVarDeclScopeNoDebug
 # CHECK-SAME: always_inline_no_debug
 @always_inline("nodebug")
 def testImplicitVarDeclScopeNoDebug():

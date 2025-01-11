@@ -20,7 +20,7 @@ struct MemType:
 # CHECK-NEXT:    lit.struct.field _copy : {{.*}}<("other": !kgen.pointer<none>, |) -> !kgen.pointer<none>>
 # CHECK-NEXT:    lit.struct.field call : {{.*}}<[1](!kgen.pointer<none>, |, ?, "__result__": !lit.ref<!MemType, mut *[0,0]> byref_result) -> !kgen.none>
 
-# CHECK-LABEL:   lit.func @"__del__
+# CHECK-LABEL:   lit.fn @"__del__
 # CHECK-NEXT:      [[REF_TO_IMPL:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:      [[OPAQUE_IMPL:%.*]] = lit.ref.load [[REF_TO_IMPL]]
 # CHECK-NEXT:      [[DTOR_PTR:%.*]] = lit.ref.struct.ger %self[dtor]
@@ -29,9 +29,9 @@ struct MemType:
 # CHECK-NEXT:      kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT:      lit.ownership.mark_destroyed %self
 # CHECK-NEXT:      lit.return %none : !kgen.none
-# CHECK-NEXT:      lit.end_func
+# CHECK-NEXT:      lit.end_fn
 
-# CHECK-LABEL:   lit.func @"__copyinit__
+# CHECK-LABEL:   lit.fn @"__copyinit__
 # CHECK-NEXT:      [[P0:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:      [[existing_impl:%.*]] = lit.ref.struct.ger %other[field0]
 # CHECK-NEXT:      [[loaded_existing_impl:%.*]] = lit.ref.load [[existing_impl]]
@@ -57,7 +57,7 @@ struct MemType:
 # CHECK-NEXT:      [[SELF_IMPL_REF:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:      store [[NEW]], [[SELF_IMPL_REF]]
 
-# CHECK-LABEL:  lit.func @"__moveinit__
+# CHECK-LABEL:  lit.fn @"__moveinit__
 # CHECK-NEXT:     [[M0:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:     [[mov_existing_impl:%.*]] = lit.ref.struct.ger %other[field0]
 # CHECK-NEXT:     [[mov_loaded_existing_impl:%.*]] = lit.load.consume [[mov_existing_impl]]

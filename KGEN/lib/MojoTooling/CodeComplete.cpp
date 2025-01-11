@@ -206,7 +206,7 @@ struct CodeCompletionListener : public BaseCompletionListener {
             .Case([](PackageOp) { return CodeCompletionResult::kPackage; })
             .Case([](StructDeclOp) { return CodeCompletionResult::kStruct; })
             .Case([](TraitDeclOp) { return CodeCompletionResult::kTrait; })
-            .Case([](LIT::FuncOp) { return CodeCompletionResult::kFunction; })
+            .Case([](FnOp) { return CodeCompletionResult::kFunction; })
             .Case([](StructFieldOp) { return CodeCompletionResult::kField; })
             .Case([](VarDeclOp op) { return CodeCompletionResult::kVariable; })
             .Default(CodeCompletionResult::kUnknown);

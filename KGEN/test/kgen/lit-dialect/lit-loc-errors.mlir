@@ -5,9 +5,9 @@
 #file = #debuginfo.file<"test.mlir" in "">
 #loc = loc("foo.mlir":7:8)
 
-lit.func @foo() {
+lit.fn @foo() {
   lit.return
-// CHECK: foo.mlir:7:8: error: 'lit.func' op must have subprogram scope in location, but got #debuginfo.file<"test.mlir" in "">
+// CHECK: foo.mlir:7:8: error: 'lit.fn' op must have subprogram scope in location, but got #debuginfo.file<"test.mlir" in "">
 } loc(fused<#file>[#loc])
 
 // -----
@@ -54,7 +54,7 @@ lit.globalvar.decl @foo : index {
 #loc4 = loc(fused<#subprogram>[#loc1])
 #loc5 = loc(fused<#subprogram1>[#loc2])
 
-lit.func @foo() {
+lit.fn @foo() {
   %0 = co.execute {
     kgen.return loc(#loc5)
   // CHECK: foo.mlir:325:11: error: 'co.execute' op must have callsite location

@@ -63,7 +63,7 @@ fn upcastLinearCopyable(owned x: LinearCopyableStruct):
     receiveLinearCopyable(x)
 
 
-# CHECK-LABEL: lit.func @"callsWith
+# CHECK-LABEL: lit.fn @"callsWith
 fn callsWith():
   # expected-error @below {{Unhandled explicit_destroy type Coroutine}}
   x = testAsyncVoid()

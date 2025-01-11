@@ -54,7 +54,7 @@ bool LIT::shouldHideDeclInDocGen(ASTDecl &decl, StringRef name) {
 
   // Otherwise, check to see if this was marked explicitly to be hidden.
   return TypeSwitch<ASTDecl &, bool>(decl)
-      .Case<FuncOp, GlobalVarDeclOp, StructDeclOp>(
+      .Case<FnOp, GlobalVarDeclOp, StructDeclOp>(
           [&](auto op) { return hasDocPrivateDecorator(op.getDecorators()); })
       .Default(false);
 }
@@ -72,7 +72,7 @@ static bool requiresDocString(ASTDeclInterface op) {
 ///    underscore, unless it's a special function such as `__init__`.
 /// 2. It's defined at the top level of a module, or as a (not-synthesized)
 ///    method on a struct that itself requires a doc string.
-static bool requiresDocString(LIT::FuncOp op) {
+static bool requiresDocString(FnOp op) {
   StringRef name = *op.getSourceName();
   if (name.starts_with("_") && !isPublicSpecialFunction(name))
     return false;
@@ -286,7 +286,7 @@ StringRef DocString::CodeBlock::getRawCode() const {
 //===----------------------------------------------------------------------===//
 
 /// Return the names of the arguments to the given function.
-static SmallVector<StringAttr> getFunctionArgumentNames(LIT::FuncOp funcOp) {
+static SmallVector<StringAttr> getFunctionArgumentNames(FnOp funcOp) {
   // In general, each function argument must be documented, but exceptions are
   // pruned from the list below.
   LITSignatureGeneratorType sig = funcOp.getSignatureGenerator();
@@ -310,7 +310,7 @@ static SmallVector<StringAttr> getFunctionArgumentNames(LIT::FuncOp funcOp) {
 }
 
 /// Return the names of the parameters to the given function.
-static SmallVector<StringAttr> getFunctionParameterNames(LIT::FuncOp funcOp) {
+static SmallVector<StringAttr> getFunctionParameterNames(FnOp funcOp) {
   SmallVector<StringAttr> result;
   for (PogMetadataAttr pogAttr :
        funcOp.getSignatureGenerator().getParamListAttrs().getPogs())
@@ -321,7 +321,7 @@ static SmallVector<StringAttr> getFunctionParameterNames(LIT::FuncOp funcOp) {
 }
 
 /// Return if the given function is expecting results.
-static bool doesFunctionHaveResults(LIT::FuncOp funcOp) {
+static bool doesFunctionHaveResults(FnOp funcOp) {
   return !ASTType(funcOp.getUserResultType()).isNoneType();
 }
 
@@ -367,8 +367,7 @@ public:
     if (decl.isErroneous())
       return;
     TypeSwitch<ASTDecl &>(decl)
-        .Case<LIT::FuncOp, StructDeclOp, StructFieldOp,
-              TraitDeclOp>([&](auto op) {
+        .Case<FnOp, StructDeclOp, StructFieldOp, TraitDeclOp>([&](auto op) {
           ValidationKind validation = requiresDocString(op)
                                           ? ValidationKind::Strict
                                           : ValidationKind::Normal;
@@ -606,8 +605,7 @@ private:
   // Functions
 
   /// Validate documentation for the given function.
-  void validateDecl(ASTDecl &decl, LIT::FuncOp funcOp,
-                    ValidationKind validation) {
+  void validateDecl(ASTDecl &decl, FnOp funcOp, ValidationKind validation) {
     // Grab the types of the arguments to the function.
     llvm::MapVector<StringRef, const char *> seenArguments;
     for (StringAttr argName : getFunctionArgumentNames(funcOp))
@@ -777,22 +775,22 @@ public:
       return std::nullopt;
 
     TypeSwitch<ASTDecl &>(decl)
-        .Case<LIT::FuncOp, FileModuleOp, StructDeclOp, StructFieldOp,
-              TraitDeclOp>([&](auto op) {
-          StringRef summaryCodeBlock = "[summary].";
-          os << summaryCodeBlock;
+        .Case<FnOp, FileModuleOp, StructDeclOp, StructFieldOp, TraitDeclOp>(
+            [&](auto op) {
+              StringRef summaryCodeBlock = "[summary].";
+              os << summaryCodeBlock;
 
-          // Indent and generate the rest of the decl.
-          for (size_t i = 0; i < indent; i += 2)
-            os.indent();
-          generateDecl(decl, op);
+              // Indent and generate the rest of the decl.
+              for (size_t i = 0; i < indent; i += 2)
+                os.indent();
+              generateDecl(decl, op);
 
-          // If we added anything other than the summary, add a newline.
-          if (rawOS.str().size() > summaryCodeBlock.size()) {
-            os << "\n";
-            os.indent(indent);
-          }
-        });
+              // If we added anything other than the summary, add a newline.
+              if (rawOS.str().size() > summaryCodeBlock.size()) {
+                os << "\n";
+                os.indent(indent);
+              }
+            });
 
     // If we actually generated something, return it, otherwise bail.
     if (rawOS.str().empty())
@@ -822,7 +820,7 @@ private:
   //===--------------------------------------------------------------------===//
   // Functions
 
-  void generateDecl(ASTDecl &decl, LIT::FuncOp funcOp) {
+  void generateDecl(ASTDecl &decl, FnOp funcOp) {
     processParameters(getFunctionParameterNames(funcOp));
     processArguments(getFunctionArgumentNames(funcOp));
     if (doesFunctionHaveResults(funcOp))

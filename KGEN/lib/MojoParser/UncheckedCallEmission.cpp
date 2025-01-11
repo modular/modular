@@ -839,7 +839,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
                   << callExpr->getRange();
       diag.attachNote(callExpr->getLoc())
           << "try surrounding the call in a 'try' block";
-      if (auto func = getBlockParentOfType<LIT::FuncOp>(
+      if (auto func = getBlockParentOfType<FnOp>(
               emitter.builder->getInsertionBlock())) {
         diag.attachNote(func.getLoc())
             << "or mark surrounding function as 'raises'";
@@ -1195,7 +1195,7 @@ void CallEmitter::emitDirectCallWarnings(LIT::CallOp call,
       emitter.getDeclResolver().getDeclForFuncSymbol(symbol.getSymbol());
   if (!calleeDecl)
     return;
-  auto calleeFunc = cast<LIT::FuncOp>(*calleeDecl);
+  auto calleeFunc = cast<FnOp>(*calleeDecl);
 
   // The __del__ special function takes its operand as an owning reference,
   // and destroys it.  It is a bit silly, but you can call it directly on an
@@ -1458,7 +1458,7 @@ void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
         // Figure out what is getting called and include it.
         if (ASTDecl *calleeDecl =
                 getDeclResolver().getDeclForFuncSymbol(symbol.getSymbol())) {
-          auto calleeFunc = cast<LIT::FuncOp>(*calleeDecl);
+          auto calleeFunc = cast<FnOp>(*calleeDecl);
 
           if (auto sourceName = calleeFunc.getSourceNameAttr())
             diag << sourceName << ' ';
@@ -1525,9 +1525,9 @@ void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
   // obvious what is going on.
   if (builder && builder->getBlock()) {
     Block &block = *builder->getBlock();
-    LIT::FuncOp parentFunc = dyn_cast<LIT::FuncOp>(block.getParentOp());
+    FnOp parentFunc = dyn_cast<FnOp>(block.getParentOp());
     if (!parentFunc)
-      parentFunc = block.getParentOp()->getParentOfType<LIT::FuncOp>();
+      parentFunc = block.getParentOp()->getParentOfType<FnOp>();
     if (parentFunc && parentFunc.isSynthetic()) {
       // sourceName
       diag.attachNote(parentFunc.getLoc()) << "in synthesized method";

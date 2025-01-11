@@ -19,7 +19,7 @@ constexpr StringLiteral COMPILER_PREFIX = "compiler";
 constexpr StringLiteral INTERNAL_PREFIX = "register";
 
 // Returns true if all inputs are extensibility tensors.
-static bool isExtensibilityKernel(LIT::FuncOp func) {
+static bool isExtensibilityKernel(LIT::FnOp func) {
   if (func.getNumArguments() == 0)
     return false;
 
@@ -38,7 +38,7 @@ static bool isExtensibilityKernel(LIT::FuncOp func) {
   return true;
 }
 
-static void annotateExtensibilityKernels(LIT::FuncOp func,
+static void annotateExtensibilityKernels(LIT::FnOp func,
                                          SmallVector<NamedAttribute> &newAttrs,
                                          OpBuilder &b) {
   // If we are a kernel and we are using the extensibility tensors we should
@@ -58,7 +58,7 @@ static void annotateExtensibilityKernels(LIT::FuncOp func,
   }
 }
 
-bool stripDecorators(LIT::FuncOp func) {
+bool stripDecorators(LIT::FnOp func) {
   SmallVector<TypedAttr> decoratorsToCopy;
   OpBuilder builder{func.getContext()};
 

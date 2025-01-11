@@ -108,6 +108,6 @@
 // -----
 
 // expected-error @below {{pack not supported in parameter list}}
-lit.func @foo() -> !lit<type_signature<"j": variadic<index> pack>> {
+lit.fn @foo() -> !lit<type_signature<"j": variadic<index> pack>> {
   kgen.return
 }

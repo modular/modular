@@ -26,7 +26,7 @@ struct Param[T: AnyTrivialRegType]:
     pass
 
 
-# CHECK-LABEL: lit.func @"capturing_in_struct
+# CHECK-LABEL: lit.fn @"capturing_in_struct
 # CHECK-SAME: capturing -> !kgen.none
 fn capturing_in_struct[x: Param[fn () capturing -> int]]():
     pass
@@ -34,12 +34,12 @@ fn capturing_in_struct[x: Param[fn () capturing -> int]]():
 
 # CHECK-LABEL: lit.struct.decl @CapturingMember
 struct CapturingMember[f: fn () capturing -> None]:
-    # CHECK-LABEL: lit.func @"member
+    # CHECK-LABEL: lit.fn @"member
     # CHECK-SAME: capturing -> !kgen.none attributes
     fn member(self):
         pass
 
-    # CHECK-LABEL: lit.func @"static_method
+    # CHECK-LABEL: lit.fn @"static_method
     # CHECK-SAME: capturing -> !kgen.none attributes
     @staticmethod
     fn static_method():

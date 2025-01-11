@@ -54,7 +54,7 @@ struct MemExample:
         pass
 
 
-# CHECK-LABEL: lit.func @"if_examples
+# CHECK-LABEL: lit.fn @"if_examples
 fn if_examples(cond: __mlir_type.i1):
     # CHECK: %a = lit.var.decl
     var a: MemExample
@@ -136,7 +136,7 @@ fn if_examples(cond: __mlir_type.i1):
     # CHECK-NEXT: lifetime.end %d
 
 
-# CHECK-LABEL: lit.func @"try_examples
+# CHECK-LABEL: lit.fn @"try_examples
 fn try_examples(cond: __mlir_type.i1, err: Error):
     # CHECK-NEXT: %a = lit.var.decl
     var a: MemExample
@@ -261,7 +261,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     # CHECK-NEXT: lifetime.end %d
 
 
-# CHECK-LABEL: lit.func @"chris_origin_example
+# CHECK-LABEL: lit.fn @"chris_origin_example
 fn chris_origin_example(a: Bool, b: Bool):
     var x: MemExample
     # CHECK: lit.try
@@ -301,7 +301,7 @@ fn chris_origin_example(a: Bool, b: Bool):
     # CHECK-NEXT: lit.try.yield
 
 
-# CHECK-LABEL: lit.func @"loop_example
+# CHECK-LABEL: lit.fn @"loop_example
 fn loop_example(cond1: __mlir_type.i1, cond2: __mlir_type.i1):
     # CHECK-NEXT: %a = lit.var.decl "a"
     var a: MemExample
@@ -372,7 +372,7 @@ fn loop_example(cond1: __mlir_type.i1, cond2: __mlir_type.i1):
 struct TestLoopWithWholeObjectBit:
     var field: MemExample
 
-    # CHECK: lit.func @"__init__
+    # CHECK: lit.fn @"__init__
     @implicit
     fn __init__(out self, cond: __mlir_type.i1):
         # CHECK-NEXT: %buf = lit.var.decl "buf"
@@ -402,7 +402,7 @@ struct TestLoopWithWholeObjectBit:
         self.field = buf^
 
 
-# CHECK-LABEL: lit.func @"testInfiniteloop
+# CHECK-LABEL: lit.fn @"testInfiniteloop
 fn testInfiniteloop():
     # CHECK-NEXT:  hlcf.loop "_loop_0" {
     # CHECK-NEXT:    %0 = kgen.param.constant: i1 = <1>
@@ -443,7 +443,7 @@ struct TrivialRange:
 
 
 # Issue #98: https://github.com/modularml/mojo/issues/98
-# CHECK-LABEL: lit.func @"mojo98
+# CHECK-LABEL: lit.fn @"mojo98
 fn mojo98(n: Int):
     var a = MemExample()
     for i in TrivialRange():
@@ -466,7 +466,7 @@ struct MyStringReturningCtx:
         return ""
 
 
-# CHECK-LABEL: lit.func @"testErrorReturn
+# CHECK-LABEL: lit.fn @"testErrorReturn
 fn testErrorReturn() raises:
     var input: String
     # CHECK: try
@@ -482,7 +482,7 @@ fn marker():
     pass
 
 
-# CHECK-LABEL: lit.func @"test_param_for1
+# CHECK-LABEL: lit.fn @"test_param_for1
 # MOCO-831
 fn test_param_for1(cond: Bool, cond2: Bool):
     # CHECK-NEXT: %mem = lit.var.decl
@@ -539,7 +539,7 @@ fn test_param_for1(cond: Bool, cond2: Bool):
         # CHECK-NEXT: kgen.param.yield
 
 
-# CHECK-LABEL: lit.func @"test_param_for2
+# CHECK-LABEL: lit.fn @"test_param_for2
 # MOCO-831
 fn test_param_for2():
     # CHECK: lit.call {{.*}}__init__{{.*}}(%mem)
@@ -567,7 +567,7 @@ fn test_param_for2():
         # CHECK-NEXT: kgen.param.yield
 
 
-# CHECK-LABEL: lit.func @"test_elif
+# CHECK-LABEL: lit.fn @"test_elif
 fn test_elif(cond: Bool, cond2: Bool):
     var mem1 = MemExample()
     var mem2 = MemExample()
@@ -633,7 +633,7 @@ fn test_elif(cond: Bool, cond2: Bool):
 
 # https://github.com/modularml/mojo/issues/3710
 # Mojo frees memory while reference to it is still in use
-# CHECK-LABEL: lit.func @"loop_any_origin
+# CHECK-LABEL: lit.fn @"loop_any_origin
 fn loop_any_origin(owned mem: MemExample, cond: Bool):
   # CHECK: lit.call {{.*}}unsafe_ptr
   ptr = mem.unsafe_ptr()

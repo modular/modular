@@ -16,7 +16,7 @@ struct Foo[x: int]:
 
 
 # CHECK: lit.struct.decl @"`_CI_{{.*}}"<a, Y: {{.*}}Foo<a>
-# CHECK: lit.func @"__call__
+# CHECK: lit.fn @"__call__
 # CHECK-SAME: @Foo<apply(:{{.*}}@Foo::@"get{{.*}}"<a>), store_to_mem(Y))>
 
 

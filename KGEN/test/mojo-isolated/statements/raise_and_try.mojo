@@ -11,7 +11,7 @@
 ##===----------------------------------------------------------------------===##
 
 
-# CHECK-LABEL: lit.func @"simpleTryExcept
+# CHECK-LABEL: lit.fn @"simpleTryExcept
 fn simpleTryExcept():
     var a: Int
     # CHECK: lit.try
@@ -25,10 +25,10 @@ fn simpleTryExcept():
         pass
     # CHECK-NEXT: else
     # CHECK-NEXT: lit.try.yield
-    # CHECK: lit.end_func
+    # CHECK: lit.end_fn
 
 
-# CHECK-LABEL: lit.func @"tryExceptElse
+# CHECK-LABEL: lit.fn @"tryExceptElse
 fn tryExceptElse():
     var a: Int
     # CHECK: lit.try
@@ -47,7 +47,7 @@ fn eatError(err: Error):
     pass
 
 
-# CHECK-LABEL: lit.func @"tryExceptArgDef
+# CHECK-LABEL: lit.fn @"tryExceptArgDef
 fn tryExceptArgDef():
     try:
         pass
@@ -58,7 +58,7 @@ fn tryExceptArgDef():
         eatError(err)
 
 
-# CHECK-LABEL: lit.func @"tryFinally
+# CHECK-LABEL: lit.fn @"tryFinally
 fn tryFinally():
     # CHECK: lit.try
     try:
@@ -90,14 +90,14 @@ def maybeRaises() -> Int:
     return 0
 
 
-# CHECK-LABEL: lit.func @"propagateErrorInDef
+# CHECK-LABEL: lit.fn @"propagateErrorInDef
 def propagateErrorInDef():
     # CHECK: %a = lit.var.decl "a"
     # CHECK: lit.call {{.*}}maybeRaises{{.*}}(%__error__, %a)
     a = maybeRaises()
 
 
-# CHECK-LABEL: lit.func @"propagateErrorInRaisingFn
+# CHECK-LABEL: lit.fn @"propagateErrorInRaisingFn
 fn propagateErrorInRaisingFn() raises:
     # CHECK:  %a = lit.var.decl {{.*}} : !lit.ref<!Int,
     var a: Int
@@ -105,7 +105,7 @@ fn propagateErrorInRaisingFn() raises:
     a = maybeRaises()
 
 
-# CHECK-LABEL: lit.func @"propagateErrorInTry
+# CHECK-LABEL: lit.fn @"propagateErrorInTry
 fn propagateErrorInTry():
     var a: Int
     # CHECK: lit.try
@@ -117,7 +117,7 @@ fn propagateErrorInTry():
         pass
 
 
-# CHECK-LABEL: lit.func @"raiseError
+# CHECK-LABEL: lit.fn @"raiseError
 def raiseErrorInDef(err: Error):
     # CHECK: [[ERR:%.*]] = lit.call {{.*}}@Error::@"__copyinit__{{.*}}(%err)
     # CHECK-NEXT: lit.ref.store [[ERR]], %__error__
@@ -125,7 +125,7 @@ def raiseErrorInDef(err: Error):
     raise err
 
 
-# CHECK-LABEL: lit.func @"raiseErrorInIf
+# CHECK-LABEL: lit.fn @"raiseErrorInIf
 def raiseErrorInIf(cond: Bool, err: Error):
     # CHECK: hlcf.elif
     if cond:
@@ -135,7 +135,7 @@ def raiseErrorInIf(cond: Bool, err: Error):
         raise err
 
 
-# CHECK-LABEL: lit.func @"raiseErrorInTry
+# CHECK-LABEL: lit.fn @"raiseErrorInTry
 fn raiseErrorInTry(err: Error):
     # CHECK: lit.try %__try_error__
     try:
@@ -147,7 +147,7 @@ fn raiseErrorInTry(err: Error):
         pass
 
 
-# CHECK-LABEL: lit.func @"rethrowsToRethrow
+# CHECK-LABEL: lit.fn @"rethrowsToRethrow
 fn rethrowsToRethrow():
     # CHECK: lit.try [[TRY_ERROR1:%.*]] :
     try:
@@ -186,7 +186,7 @@ fn fail() raises -> S:
     return 0
 
 
-# CHECK-LABEL: lit.func @"call_raising
+# CHECK-LABEL: lit.fn @"call_raising
 fn call_raising():
     # CHECK: lit.try %e
     try:
@@ -208,7 +208,7 @@ fn fail_register() raises -> Int:
     return 0
 
 
-# CHECK-LABEL: lit.func @"fail_register_raises
+# CHECK-LABEL: lit.fn @"fail_register_raises
 fn fail_register_raises() raises -> Int:
     # CHECK-NEXT: call {{.*}}fail_register{{.*}}(%__error__, %__result__)
     # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
