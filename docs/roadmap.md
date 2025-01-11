@@ -374,11 +374,9 @@ print(One()) # prints '1'
 ```
 
 Mojo currently supports similar functionality through the
-[`Writable`](/mojo/stdlib/utils/write/Writable) trait, so that
-`print()` works on all `Writable` types. Similar support exists for the
-[`int()`](/mojo/stdlib/builtin/int/int-function) and
-[`len()`](/mojo/stdlib/builtin/len/len) functions. We'll continue to
-add traits support to the standard library to enable common use cases like this.
+[`Writable`](/mojo/stdlib/utils/write/Writable) trait, so that `print()` works
+on all `Writable` types. We'll continue to add traits support to the standard
+library to enable common use cases like this.
 
 ### The standard library has limited exceptions use
 

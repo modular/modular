@@ -221,7 +221,7 @@ fn _DJBX33A_SECRET() -> UInt64:
     """Example how secret and seed can be stored and retrieved."""
     try:
         var secret_string = getenv("DJBX33A_SECRET", "")
-        return bitcast[DType.uint64](Int64(int(secret_string)))
+        return bitcast[DType.uint64](Int64(Int(secret_string)))
     except:
         var value = random_si64(Int64.MIN, Int64.MAX)
         _ = setenv("DJBX33A_SECRET", str(value))

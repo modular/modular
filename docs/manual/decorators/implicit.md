@@ -19,7 +19,7 @@ struct MyInt:
         self.value = value
 
     fn __init__(out self, value: Float64):
-        self.value = int(value)
+        self.value = Int(value)
 
 
 ```
