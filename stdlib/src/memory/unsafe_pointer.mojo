@@ -320,6 +320,18 @@ struct UnsafePointer[
         """
         return Int(self) == Int(rhs)
 
+    @always_inline("nodebug")
+    fn __eq__(self, none: NoneType) -> Bool:
+        """Returns True if the pointer is null.
+
+        Args:
+            none: The NoneType value.
+
+        Returns:
+            True if the pointer is null and False otherwise.
+        """
+        return not self
+
     @__unsafe_disable_nested_origin_exclusivity
     @always_inline("nodebug")
     fn __ne__(self, rhs: Self) -> Bool:
@@ -332,6 +344,18 @@ struct UnsafePointer[
             True if the two pointers are not equal and False otherwise.
         """
         return not (self == rhs)
+
+    @always_inline("nodebug")
+    fn __ne__(self, none: NoneType) -> Bool:
+        """Returns True if the pointer is not null.
+
+        Args:
+            none: The NoneType value.
+
+        Returns:
+            True if the pointer is null and False otherwise.
+        """
+        return self
 
     @__unsafe_disable_nested_origin_exclusivity
     @always_inline("nodebug")
@@ -388,6 +412,30 @@ struct UnsafePointer[
             False otherwise.
         """
         return Int(self) >= Int(rhs)
+
+    @always_inline("nodebug")
+    fn __is__(self, none: NoneType) -> Bool:
+        """Returns True if the pointer is null.
+
+        Args:
+            none: The NoneType value.
+
+        Returns:
+            True if the pointer is null and False otherwise.
+        """
+        return self == None
+
+    @always_inline("nodebug")
+    fn __isnot__(self, none: NoneType) -> Bool:
+        """Returns True if the pointer is not null.
+
+        Args:
+            none: The NoneType value.
+
+        Returns:
+            True if the pointer is not null and False otherwise.
+        """
+        return self != None
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
