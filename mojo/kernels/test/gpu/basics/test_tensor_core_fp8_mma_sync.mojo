@@ -9,7 +9,7 @@
 from builtin.io import _printf
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
-from gpu.id import ThreadIdx
+from gpu.id import thread_idx
 from gpu.mma import mma
 
 
@@ -21,7 +21,7 @@ fn mma_sync_16x8x32_E4M3():
     mma(d, a, b, c)
 
     _printf["thread %d : %g %g %g %g\n"](
-        ThreadIdx.x,
+        thread_idx.x,
         d[0].cast[DType.float64](),
         d[1].cast[DType.float64](),
         d[2].cast[DType.float64](),
@@ -50,7 +50,7 @@ fn mma_sync_16x8x32_E4M2():
     mma(d, a, b, c)
 
     _printf["thread %d : %g %g %g %g\n"](
-        ThreadIdx.x,
+        thread_idx.x,
         d[0].cast[DType.float64](),
         d[1].cast[DType.float64](),
         d[2].cast[DType.float64](),

@@ -9,7 +9,7 @@
 from builtin.io import _printf
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
-from gpu.id import BlockIdx, ThreadIdx
+from gpu.id import block_idx, thread_idx
 from layout import Layout, LayoutTensor
 from layout.tma_async import TMATensorTile, create_tma_tile, TMABarrier
 from layout._utils import ManagedLayoutTensor
@@ -28,14 +28,14 @@ fn test_tma_async_load[
         dtype, layout, address_space = _GPUAddressSpace.SHARED
     ].stack_allocation()
     barrier = TMABarrier()
-    tma_tile.async_copy(tile, barrier, (BlockIdx.x * 4, BlockIdx.y * 4))
+    tma_tile.async_copy(tile, barrier, (block_idx.x * 4, block_idx.y * 4))
     barrier.wait()
 
     _printf[
         "(%lu, %lu) : %g %g %g %g; %g %g %g %g; %g %g %g %g; %g %g %g %g\n"
     ](
-        BlockIdx.x,
-        BlockIdx.y,
+        block_idx.x,
+        block_idx.y,
         tile.ptr[0].cast[DType.float64](),
         tile.ptr[1].cast[DType.float64](),
         tile.ptr[2].cast[DType.float64](),
@@ -86,16 +86,16 @@ fn test_tma_async_load_multiple_threads[
         dtype, layout, address_space = _GPUAddressSpace.SHARED
     ].stack_allocation()
     barrier = TMABarrier()
-    if ThreadIdx.x == 0:
-        tma_tile.async_copy(tile, barrier, (BlockIdx.x * 4, BlockIdx.y * 4))
+    if thread_idx.x == 0:
+        tma_tile.async_copy(tile, barrier, (block_idx.x * 4, block_idx.y * 4))
     barrier.wait()
 
     _printf[
         "(%lu, %lu) (%lu): %g %g %g %g; %g %g %g %g; %g %g %g %g; %g %g %g %g\n"
     ](
-        BlockIdx.x,
-        BlockIdx.y,
-        ThreadIdx.x,
+        block_idx.x,
+        block_idx.y,
+        thread_idx.x,
         tile.ptr[0].cast[DType.float64](),
         tile.ptr[1].cast[DType.float64](),
         tile.ptr[2].cast[DType.float64](),

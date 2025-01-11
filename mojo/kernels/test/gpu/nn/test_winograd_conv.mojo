@@ -22,7 +22,7 @@ from testing import assert_true
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from gpu.id import BlockDim, BlockIdx, ThreadIdx
+from gpu.id import block_dim, block_idx, thread_idx
 from layout import LayoutTensor, Layout
 from layout.int_tuple import to_int
 from layout.nd_buffer_stub import from_ndbuffer_row_major
@@ -189,9 +189,9 @@ fn winograd_conv2d_gpu_nhwc[
     var a = _get_a[input_type]()
 
     # Thread indices
-    var n = BlockIdx.z
-    var h_out = (BlockIdx.x * BlockDim.x + ThreadIdx.x) * 2
-    var w_out = (BlockIdx.y * BlockDim.y + ThreadIdx.y) * 2
+    var n = block_idx.z
+    var h_out = (block_idx.x * block_dim.x + thread_idx.x) * 2
+    var w_out = (block_idx.y * block_dim.y + thread_idx.y) * 2
 
     # Check bounds
     if h_out + 1 >= H_out or w_out + 1 >= W_out:

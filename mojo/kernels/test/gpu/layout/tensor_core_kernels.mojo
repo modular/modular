@@ -10,7 +10,7 @@
 from builtin.io import _printf
 from gpu import barrier, lane_id
 from gpu.host import DeviceContext
-from gpu.id import ThreadIdx
+from gpu.id import thread_idx
 from gpu.memory import _GPUAddressSpace as AddressSpace
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor, load_to_simd
@@ -46,7 +46,7 @@ fn mma_load_and_multiply[
             "thread %u a_vals=[%g %g %g %g %g %g %g %g], b_vals=[%g %g %g %g],"
             " d_vals=[%g %g %g %g]\n"
         ](
-            ThreadIdx.x,
+            thread_idx.x,
             a_frags[0],
             a_frags[1],
             a_frags[2],
@@ -69,7 +69,7 @@ fn mma_load_and_multiply[
             "thread %u a_vals=[%g %g %g %g], b_vals=[%g %g], d_vals=[%g %g %g"
             " %g]\n"
         ](
-            ThreadIdx.x,
+            thread_idx.x,
             a_frags[0],
             a_frags[1],
             a_frags[2],
@@ -85,7 +85,7 @@ fn mma_load_and_multiply[
         _printf[
             "thread %u a_vals=[%g %g], b_vals=[%g], d_vals=[%g %g %g %g]\n"
         ](
-            ThreadIdx.x,
+            thread_idx.x,
             a_frags[0],
             a_frags[1],
             b_frags[0],
@@ -106,7 +106,7 @@ fn mma_write_operand_kernel[
     var thread_reg_tile = mma.c_reg_tile_type.stack_allocation()
     var thread_reg_tile_v = thread_reg_tile.vectorize[1, mma.c_reg_type.size]()
     thread_reg_tile_v[0, 0] = rebind[__type_of(thread_reg_tile_v[0, 0])](
-        mma.c_reg_type(ThreadIdx.x)
+        mma.c_reg_type(thread_idx.x)
     )
     mma.store_d(out, thread_reg_tile)
 
@@ -459,7 +459,7 @@ fn mma_load_and_print_operands_kernel_ldmatrix[
     @parameter
     if a_frags.size == 4 and b_frags.size == 2:
         _printf["thread %u a_vals=[%g %g %g %g], b_vals=[%g %g]\n"](
-            ThreadIdx.x,
+            thread_idx.x,
             a_frags[0],
             a_frags[1],
             a_frags[2],
@@ -471,7 +471,7 @@ fn mma_load_and_print_operands_kernel_ldmatrix[
         _printf[
             "thread %u a_vals=[%g %g %g %g %g %g %g %g], b_vals=[%g %g %g %g]\n"
         ](
-            ThreadIdx.x,
+            thread_idx.x,
             a_frags[0],
             a_frags[1],
             a_frags[2],

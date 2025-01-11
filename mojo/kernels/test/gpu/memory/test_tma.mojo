@@ -10,7 +10,7 @@ from builtin.io import _printf
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.host.nvidia_cuda import TMADescriptor, create_tma_descriptor
-from gpu.id import BlockIdx
+from gpu.id import block_idx
 from gpu.memory import (
     _GPUAddressSpace,
     cp_async_bulk_tensor_shared_cluster_global,
@@ -41,15 +41,15 @@ fn kernel_copy_async_tma(descriptor: TMADescriptor):
 
     mbarrier_arrive_expect_tx_shared(mbar, 64)
     cp_async_bulk_tensor_shared_cluster_global(
-        shmem, descriptor_ptr, mbar, Index(BlockIdx.x * 4, BlockIdx.y * 4)
+        shmem, descriptor_ptr, mbar, Index(block_idx.x * 4, block_idx.y * 4)
     )
     mbarrier_try_wait_parity_shared(mbar, 0, 10000000)
 
     _printf[
         "(%lu, %lu) : %g %g %g %g; %g %g %g %g; %g %g %g %g; %g %g %g %g\n"
     ](
-        BlockIdx.x,
-        BlockIdx.y,
+        block_idx.x,
+        block_idx.y,
         shmem[0].cast[DType.float64](),
         shmem[1].cast[DType.float64](),
         shmem[2].cast[DType.float64](),

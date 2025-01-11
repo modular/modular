@@ -12,7 +12,7 @@ from builtin.io import _printf
 from gpu import barrier
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
-from gpu.id import ThreadIdx
+from gpu.id import thread_idx
 from gpu.intrinsics import threadfence
 from gpu.memory import AddressSpace
 from gpu.mma import (
@@ -66,7 +66,7 @@ fn wgmma_f32_kernel[
         var operand_a_sm_tile = smem_operand_a.tile[M, WMMA_K](0, k_i)
         var operand_b_sm_tile = smem_operand_b.tile[WMMA_K, N](k_i, 0)
 
-        if ThreadIdx.x == 0:
+        if thread_idx.x == 0:
             operand_a_sm_tile.copy_from(operand_a_tile)
             operand_b_sm_tile.copy_from(operand_b_tile)
 
@@ -89,8 +89,8 @@ fn wgmma_f32_kernel[
         threadfence()
         wgmma_fence_aligned()
 
-    var warp_id = ThreadIdx.x // 32
-    var lan_id = ThreadIdx.x % 32
+    var warp_id = thread_idx.x // 32
+    var lan_id = thread_idx.x % 32
     # Refer to this layout:
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-D.png
     # Each warp updates a 16x8 tile, and within each tile,
@@ -141,7 +141,7 @@ fn wgmma_f16_kernel[
         var operand_a_sm_tile = smem_operand_a.tile[M, WMMA_K](0, k_i)
         var operand_b_sm_tile = smem_operand_b.tile[WMMA_K, N](k_i, 0)
 
-        if ThreadIdx.x == 0:
+        if thread_idx.x == 0:
             operand_a_sm_tile.copy_from(operand_a_tile)
             operand_b_sm_tile.copy_from(operand_b_tile)
 
@@ -164,8 +164,8 @@ fn wgmma_f16_kernel[
         threadfence()
         wgmma_fence_aligned()
 
-    var warp_id = ThreadIdx.x // 32
-    var lan_id = ThreadIdx.x % 32
+    var warp_id = thread_idx.x // 32
+    var lan_id = thread_idx.x % 32
     # Refer to this layout:
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-D.png
     # Each warp updates a 16x8 tile, and within each tile,

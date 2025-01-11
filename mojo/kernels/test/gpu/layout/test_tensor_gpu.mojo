@@ -8,7 +8,7 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from builtin.io import _printf
-from gpu import BlockIdx, GridDim, ThreadIdx, barrier
+from gpu import block_idx, grid_dim, thread_idx, barrier
 from gpu.host import DeviceContext
 from gpu.memory import (
     _GPUAddressSpace,
@@ -37,7 +37,7 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext):
         dram_tensor: LayoutTensor[DType.float32, layout],
         flag: UnsafePointer[Bool],
     ):
-        var dram_tile = dram_tensor.tile[4, 4](0, BlockIdx.x)
+        var dram_tile = dram_tensor.tile[4, 4](0, block_idx.x)
         var sram_tensor = LayoutTensor[
             DType.float32,
             Layout.row_major(4, 4),
@@ -48,7 +48,7 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext):
         async_copy_commit_group()
         async_copy_wait_group(0)
 
-        var col_offset = BlockIdx.x * 4
+        var col_offset = block_idx.x * 4
 
         for r in range(4):
             for c in range(4):

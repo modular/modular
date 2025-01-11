@@ -6,7 +6,7 @@
 # RUN: %mojo-no-debug-no-assert %s | FileCheck %s
 
 from buffer import NDBuffer
-from gpu import ThreadIdx
+from gpu import thread_idx
 from gpu.host import DeviceContext
 from internal_utils import HostNDBuffer
 
@@ -38,7 +38,7 @@ def trait_repro_sub[
     @parameter
     @__copy_capture(thing)
     fn kernel_fn():
-        var idx = ThreadIdx.x
+        var idx = thread_idx.x
         print(Float32(thing.get_val(idx)) * 2)
 
     cuda_fn = ctx.compile_function[kernel_fn]()

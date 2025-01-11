@@ -10,7 +10,7 @@
 from math import ceildiv
 from random import random_si64
 
-from gpu import WARP_SIZE, ThreadIdx, barrier, lane_id
+from gpu import WARP_SIZE, thread_idx, barrier, lane_id
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from gpu.mma import ld_matrix, mma
@@ -34,7 +34,7 @@ fn test_ldmatrix_fp32(
     alias mma_k: UInt = 8
 
     var d_reg = SIMD[DType.float32, 4](0)
-    var tid = ThreadIdx.x
+    var tid = thread_idx.x
     var a_shared = stack_allocation[
         mma_m * mma_k,
         DType.float32,

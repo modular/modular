@@ -11,7 +11,7 @@ from sys import sizeof
 
 from gpu.host import ConstantMemoryMapping, DeviceContext, FuncAttribute
 from gpu.host._compile import _compile_code_asm
-from gpu.id import ThreadIdx
+from gpu.id import thread_idx
 from gpu.memory import AddressSpace, external_memory
 from gpu.sync import barrier
 from memory import UnsafePointer, stack_allocation
@@ -51,7 +51,7 @@ def test_constant_mem(ctx: DeviceContext):
 
     fn static_constant_kernel[n: Int](data: UnsafePointer[Float32]):
         alias val = _fill_impl[n]()
-        data[ThreadIdx.x] = val[ThreadIdx.x]
+        data[thread_idx.x] = val[thread_idx.x]
 
     var func = ctx.compile_function[static_constant_kernel[16]]()
 
@@ -97,7 +97,7 @@ def test_constant_mem_via_func(ctx: DeviceContext):
         ]
     ](data: UnsafePointer[Float32]):
         alias val = get_constant_memory()
-        data[ThreadIdx.x] = val[ThreadIdx.x]
+        data[thread_idx.x] = val[thread_idx.x]
 
     var func = ctx.compile_function[static_constant_kernel[_fill_impl[20]]]()
 
@@ -131,7 +131,7 @@ def test_external_constant_mem(ctx: DeviceContext):
             address_space = AddressSpace.CONSTANT,
             alignment=8,
         ]()
-        data[ThreadIdx.x] = static_constant[ThreadIdx.x]
+        data[thread_idx.x] = static_constant[thread_idx.x]
 
     var constant_memory = List[Float32](
         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15

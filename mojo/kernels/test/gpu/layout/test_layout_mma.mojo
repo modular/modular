@@ -12,11 +12,11 @@ from random import random_float64
 
 from gpu import (
     WARP_SIZE,
-    BlockDim,
-    BlockIdx,
-    GridDim,
-    ThreadIdx,
-    GlobalIdx,
+    block_dim,
+    block_idx,
+    grid_dim,
+    thread_idx,
+    global_idx,
     barrier,
     lane_id,
 )
@@ -60,8 +60,8 @@ fn matmul_naive[
     mat_a: LayoutTensor[in_type, layout_a],
     mat_b: LayoutTensor[in_type, layout_b],
 ):
-    var x = GlobalIdx.x
-    var y = GlobalIdx.y
+    var x = global_idx.x
+    var y = global_idx.y
 
     if Int(x) >= mat_c.shape[0]() or Int(y) >= mat_c.shape[1]():
         return

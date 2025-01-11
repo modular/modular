@@ -20,7 +20,7 @@ fn vec_func[
     out: UnsafePointer[Float32],
     len: Int,
 ):
-    var tid = GlobalIdx.x
+    var tid = global_idx.x
     if tid >= len:
         return
     out[tid] = op(in0[tid], in1[tid])

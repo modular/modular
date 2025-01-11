@@ -6,7 +6,7 @@
 # RUN: %mojo-no-debug-no-assert %s | FileCheck %s
 
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.id import ThreadIdx
+from gpu.id import thread_idx
 from gpu.memory import AddressSpace, external_memory
 from gpu.sync import barrier
 from memory import UnsafePointer
@@ -20,9 +20,9 @@ fn test_external_shared_mem(ctx: DeviceContext) raises:
         var dynamic_sram = external_memory[
             Float32, address_space = AddressSpace.SHARED, alignment=4
         ]()
-        dynamic_sram[ThreadIdx.x] = ThreadIdx.x
+        dynamic_sram[thread_idx.x] = thread_idx.x
         barrier()
-        data[ThreadIdx.x] = dynamic_sram[ThreadIdx.x]
+        data[thread_idx.x] = dynamic_sram[thread_idx.x]
 
     # The default limitation is < 48KB for sm_80, 86, 89.
     var func = ctx.compile_function[dynamic_smem_kernel](

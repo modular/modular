@@ -53,7 +53,7 @@ fn mandelbrot_kernel[
 
 fn mandelbrot(out_ptr: UnsafePointer[Scalar[int_type]]):
     # Each task gets a row.
-    var row = GlobalIdx.x
+    var row = global_idx.x
     if row >= height:
         return
 

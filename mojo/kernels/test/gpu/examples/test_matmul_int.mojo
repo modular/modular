@@ -8,7 +8,14 @@
 from math import ceildiv
 
 from buffer import DimList, NDBuffer
-from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx, GlobalIdx, barrier
+from gpu import (
+    AddressSpace,
+    block_dim,
+    block_idx,
+    thread_idx,
+    global_idx,
+    barrier,
+)
 from gpu.host import DeviceContext
 from memory import UnsafePointer, memset_zero, stack_allocation
 
@@ -48,8 +55,8 @@ fn matmul(
     ]()
 
     # Thread indexing offsets.
-    var row: UInt = GlobalIdx.x
-    var col: UInt = BlockIdx.y * TILE_SZ_B
+    var row: UInt = global_idx.x
+    var col: UInt = block_idx.y * TILE_SZ_B
 
     # Privatization of the C matrix.
     var c_reg = stack_allocation[TILE_SZ_B, DType.index]()
@@ -58,8 +65,8 @@ fn matmul(
 
     # Loop over each input tile.
     for tile_idx in range((k - 1) // TILE_SZ_RATIO + 1):
-        var i: UInt = ThreadIdx.x // TILE_SZ_B
-        var j: UInt = ThreadIdx.x % TILE_SZ_B
+        var i: UInt = thread_idx.x // TILE_SZ_B
+        var j: UInt = thread_idx.x % TILE_SZ_B
 
         # Load the B matrix into shared memory.
         var b_val = Int(b[tile_idx * TILE_SZ_RATIO + Int(i), Int(col) + Int(j)])

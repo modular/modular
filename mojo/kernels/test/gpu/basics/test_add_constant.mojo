@@ -16,7 +16,7 @@ fn add_constant_fn(
     constant: Float32,
     len: Int,
 ):
-    var tid = GlobalIdx.x
+    var tid = global_idx.x
     if tid >= len:
         return
     out[tid] = input[tid] + constant

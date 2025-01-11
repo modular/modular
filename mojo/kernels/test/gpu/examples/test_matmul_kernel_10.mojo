@@ -14,7 +14,7 @@ from sys.info import alignof
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, GlobalIdx, barrier
+from gpu import WARP_SIZE, block_dim, block_idx, thread_idx, global_idx, barrier
 from gpu.host import DeviceContext
 from gpu.intrinsics import ldg
 from gpu.memory import AddressSpace
@@ -66,11 +66,11 @@ fn sgemm_warp_tiling_kernel[
     var K = mat_a.dim[1]()
     var N = mat_c.dim[1]()
 
-    var c_row = BlockIdx.y
-    var c_col = BlockIdx.x
+    var c_row = block_idx.y
+    var c_col = block_idx.x
 
     # Placement of the warp in the threadblock tile.
-    var warp_idx = ThreadIdx.x // WARP_SIZE  # the warp this thread is in
+    var warp_idx = thread_idx.x // WARP_SIZE  # the warp this thread is in
     var warp_col = warp_idx % (BN // WN)
     var warp_row = warp_idx // (BN // WN)
 
@@ -79,7 +79,7 @@ fn sgemm_warp_tiling_kernel[
     alias w_sub_n = WN // WNITER  # 32/2=16
 
     # Placement of the thread in the warp subtile.
-    var thread_Idx_In_warp = ThreadIdx.x % WARP_SIZE  # [0, 31]
+    var thread_Idx_In_warp = thread_idx.x % WARP_SIZE  # [0, 31]
     var thread_col_in_warp = thread_Idx_In_warp % (w_sub_n // TN)  # i%(16/4)
     var thread_row_in_warp = thread_Idx_In_warp // (w_sub_n // TN)  # i/4
 
@@ -111,11 +111,11 @@ fn sgemm_warp_tiling_kernel[
 
     # Calculate the indices that this thread will load into SMEM.
     # We load 128bit / 32bit = 4 elements per thread at each step.
-    var inner_row_a = ThreadIdx.x // (BK // 4)
-    var inner_col_a = ThreadIdx.x % (BK // 4)
+    var inner_row_a = thread_idx.x // (BK // 4)
+    var inner_col_a = thread_idx.x % (BK // 4)
     alias row_stride_a = (NUM_THREADS * 4) // BK
-    var inner_row_b = ThreadIdx.x // (BN // 4)
-    var inner_co_ib = ThreadIdx.x % (BN // 4)
+    var inner_row_b = thread_idx.x // (BN // 4)
+    var inner_co_ib = thread_idx.x % (BN // 4)
     alias row_stride_b = NUM_THREADS // (BN // 4)
 
     # TODO: We want these to be register-allocated!
@@ -282,8 +282,8 @@ fn matmul_naive(
     n: Int,
     k: Int,
 ):
-    var x: UInt = GlobalIdx.x
-    var y: UInt = GlobalIdx.y
+    var x: UInt = global_idx.x
+    var y: UInt = global_idx.y
 
     if x >= m or y >= n:
         return

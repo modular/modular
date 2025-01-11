@@ -6,7 +6,7 @@
 # REQUIRES: NVIDIA-GPU
 # RUN: %mojo-no-debug-no-assert %s
 
-from gpu import ThreadIdx
+from gpu import thread_idx
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.intrinsics import ldg
 from memory import UnsafePointer
@@ -27,7 +27,7 @@ fn register_intrinsics(
 ):
     # Note we perform the store purely to avoid the compiler from optimizing
     # away the statements.
-    var tid = ThreadIdx.x
+    var tid = thread_idx.x
     i8.store(tid, ldg(i8))
     ui8.store(tid, ldg(ui8))
     i16.store(tid, ldg(i16))

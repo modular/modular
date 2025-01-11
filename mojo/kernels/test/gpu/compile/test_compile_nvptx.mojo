@@ -9,7 +9,7 @@
 from pathlib import Path
 from sys._assembly import inlined_assembly
 
-from gpu import ThreadIdx, barrier
+from gpu import thread_idx, barrier
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code_asm
 from gpu.memory import AddressSpace
@@ -17,7 +17,7 @@ from memory import UnsafePointer, stack_allocation
 
 
 fn kernel(x: Int) -> Int:
-    return ThreadIdx.x
+    return thread_idx.x
 
 
 fn parametric[f: fn (Int) -> Int]() -> Int:
@@ -44,7 +44,7 @@ def test_compile_function():
     print("== test_compile_function")
 
     fn kernel(x: UnsafePointer[Int]):
-        x[0] = ThreadIdx.x
+        x[0] = thread_idx.x
 
     # CHECK: tid.x
 
@@ -111,7 +111,7 @@ def test_short_nvptx_ptr():
         var a = stack_allocation[
             20, Int32, address_space = AddressSpace.SHARED
         ]()
-        a[ThreadIdx.x] = src[0]
+        a[thread_idx.x] = src[0]
         barrier()
 
     # CHECK: // demoted variable

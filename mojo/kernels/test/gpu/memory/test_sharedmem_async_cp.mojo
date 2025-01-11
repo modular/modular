@@ -9,7 +9,7 @@
 import time
 
 import builtin
-from gpu import AddressSpace, ThreadIdx, memory, sync
+from gpu import AddressSpace, thread_idx, memory, sync
 from gpu.host import DeviceContext
 from memory import UnsafePointer, stack_allocation
 
@@ -18,7 +18,7 @@ fn copy_via_shared(
     src: UnsafePointer[Float32],
     dst: UnsafePointer[Float32],
 ):
-    var thId = Int(ThreadIdx.x)
+    var thId = Int(thread_idx.x)
     var mem_buff: UnsafePointer[
         Float32, address_space = AddressSpace.SHARED
     ] = stack_allocation[16, Float32, address_space = AddressSpace.SHARED]()

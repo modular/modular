@@ -8,7 +8,7 @@
 from pathlib import Path
 from sys._assembly import inlined_assembly
 
-from gpu import BlockDim, GridDim, ThreadIdx, barrier, lane_id
+from gpu import block_dim, grid_dim, thread_idx, barrier, lane_id
 from gpu.globals import WARP_SIZE
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
@@ -20,7 +20,7 @@ alias FULL_MASK_AMD = 2**WARP_SIZE - 1
 
 
 fn kernel(x: UnsafePointer[Int]):
-    x[0] = ThreadIdx.x
+    x[0] = thread_idx.x
 
 
 fn kernel_laneid(x: UnsafePointer[Int]):
@@ -63,7 +63,7 @@ fn parametric[f: fn (UnsafePointer[Int]) -> None](ptr: UnsafePointer[Int]):
 fn load_store(
     n: Int, input: UnsafePointer[Float32], output: UnsafePointer[Float32]
 ):
-    var tid = ThreadIdx.x + BlockDim.x * GridDim.x
+    var tid = thread_idx.x + block_dim.x * grid_dim.x
     output[tid] = input[tid]
 
 

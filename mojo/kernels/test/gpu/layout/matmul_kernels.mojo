@@ -11,7 +11,7 @@ from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from builtin.io import _printf
-from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier
+from gpu import WARP_SIZE, block_dim, block_idx, thread_idx, barrier
 from gpu.cublas.cublas import check_cublas_error, cublasContext
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.memory import async_copy_wait_all
@@ -131,10 +131,10 @@ fn gemm_kernel_1[
     b: LayoutTensor[dtype, b_layout],
     c: LayoutTensor[dtype, c_layout],
 ):
-    var col = ThreadIdx.y
-    var row = ThreadIdx.x
-    var bidx = BlockIdx.x
-    var bidy = BlockIdx.y
+    var col = thread_idx.y
+    var row = thread_idx.x
+    var bidx = block_idx.x
+    var bidy = block_idx.y
 
     var dst = c.tile[BM, BN](bidy, bidx)
     var dst_reg: c.element_type = 0
@@ -215,10 +215,10 @@ fn gemm_kernel_2[
     b: LayoutTensor[dtype, b_layout],
     c: LayoutTensor[dtype, c_layout],
 ):
-    var col = ThreadIdx.x
-    var row = ThreadIdx.y
-    var bidx = BlockIdx.x
-    var bidy = BlockIdx.y
+    var col = thread_idx.x
+    var row = thread_idx.y
+    var bidx = block_idx.x
+    var bidy = block_idx.y
 
     var dst = c.tile[BM, BN](bidy, bidx)
 
@@ -302,10 +302,10 @@ fn gemm_kernel_3[
     b: LayoutTensor[dtype, b_layout],
     c: LayoutTensor[dtype, c_layout],
 ):
-    var col = ThreadIdx.x % BN
-    var row = ThreadIdx.x // BN
+    var col = thread_idx.x % BN
+    var row = thread_idx.x // BN
 
-    var dst = c.tile[BM, BN](BlockIdx.y, BlockIdx.x)
+    var dst = c.tile[BM, BN](block_idx.y, block_idx.x)
 
     var a_smem = tb[dtype]().row_major[BM, BK]().shared().alloc()
     var b_smem = tb[dtype]().row_major[BK, BN]().shared().alloc()
@@ -315,8 +315,8 @@ fn gemm_kernel_3[
     for block in range(b.dim(0) // BK):
         alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
         alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
-        var a_tile = a.tile[BM, BK](BlockIdx.y, block)
-        var b_tile = b.tile[BK, BN](block, BlockIdx.x)
+        var a_tile = a.tile[BM, BK](block_idx.y, block)
+        var b_tile = b.tile[BK, BN](block, block_idx.x)
         copy_dram_to_sram_async[thread_layout=load_a_layout](a_smem, a_tile)
         copy_dram_to_sram_async[thread_layout=load_b_layout](b_smem, b_tile)
         async_copy_wait_all()
@@ -404,10 +404,10 @@ fn gemm_kernel_4[
     b: LayoutTensor[dtype, b_layout],
     c: LayoutTensor[dtype, c_layout],
 ):
-    var col = ThreadIdx.x % BN
-    var row = ThreadIdx.x // BN
-    var bidx = BlockIdx.x
-    var bidy = BlockIdx.y
+    var col = thread_idx.x % BN
+    var row = thread_idx.x // BN
+    var bidx = block_idx.x
+    var bidy = block_idx.y
 
     var dst = c.tile[BM, BN](bidy, bidx).tile[TM, 1](row, col)
 
@@ -420,8 +420,8 @@ fn gemm_kernel_4[
     for block in range(b.dim(0) // BK):
         alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
         alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
-        var a_tile = a.tile[BM, BK](BlockIdx.y, block)
-        var b_tile = b.tile[BK, BN](block, BlockIdx.x)
+        var a_tile = a.tile[BM, BK](block_idx.y, block)
+        var b_tile = b.tile[BK, BN](block, block_idx.x)
         copy_dram_to_sram_async[thread_layout=load_a_layout](a_smem, a_tile)
         copy_dram_to_sram_async[thread_layout=load_b_layout](b_smem, b_tile)
         async_copy_wait_all()
@@ -519,10 +519,10 @@ fn gemm_kernel_5[
     b: LayoutTensor[dtype, b_layout],
     c: LayoutTensor[dtype, c_layout],
 ):
-    var partition_col = ThreadIdx.x % (BN // TN)
-    var partition_row = ThreadIdx.x // (BN // TN)
-    var bidx = BlockIdx.x
-    var bidy = BlockIdx.y
+    var partition_col = thread_idx.x % (BN // TN)
+    var partition_row = thread_idx.x // (BN // TN)
+    var bidx = block_idx.x
+    var bidy = block_idx.y
 
     var dst = c.tile[BM, BN](bidy, bidx).tile[TM, TN](
         partition_row, partition_col
@@ -541,8 +541,8 @@ fn gemm_kernel_5[
     for block in range(ntiles):
         alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
         alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
-        var a_tile = a.tile[BM, BK](BlockIdx.y, block)
-        var b_tile = b.tile[BK, BN](block, BlockIdx.x)
+        var a_tile = a.tile[BM, BK](block_idx.y, block)
+        var b_tile = b.tile[BK, BN](block, block_idx.x)
         copy_dram_to_sram_async[thread_layout=load_a_layout](a_smem, a_tile)
         copy_dram_to_sram_async[thread_layout=load_b_layout](b_smem, b_tile)
 
@@ -640,10 +640,10 @@ fn gemm_kernel_6[
     c: LayoutTensor[dtype, c_layout],
 ):
     alias simd_width = simdwidthof[dtype]()
-    var partition_col = ThreadIdx.x % (BN // TN)
-    var partition_row = ThreadIdx.x // (BN // TN)
-    var bidx = BlockIdx.x
-    var bidy = BlockIdx.y
+    var partition_col = thread_idx.x % (BN // TN)
+    var partition_row = thread_idx.x // (BN // TN)
+    var bidx = block_idx.x
+    var bidy = block_idx.y
 
     var dst = c.tile[BM, BN](bidy, bidx).tile[TM, TN](
         partition_row, partition_col
@@ -666,8 +666,8 @@ fn gemm_kernel_6[
     for block in range(ntiles):
         alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
         alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
-        var a_tile = a.tile[BM, BK](BlockIdx.y, block)
-        var b_tile = b.tile[BK, BN](block, BlockIdx.x)
+        var a_tile = a.tile[BM, BK](block_idx.y, block)
+        var b_tile = b.tile[BK, BN](block, block_idx.x)
         copy_dram_to_sram_async[thread_layout=load_a_layout](
             a_smem.vectorize[simd_width, 1](), a_tile.vectorize[simd_width, 1]()
         )
@@ -775,12 +775,12 @@ fn matmul_kernel_tc[
     alias MMA_N = 8
     alias MMA_K = 8
 
-    var warp_id = ThreadIdx.x // 32
+    var warp_id = thread_idx.x // 32
 
     warp_y = warp_id // (BN // WN)
     warp_x = warp_id % (BN // WN)
 
-    C_warp_tile = C.tile[BM, BN](BlockIdx.y, BlockIdx.x).tile[WM, WN](
+    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
         warp_y, warp_x
     )
 
@@ -804,8 +804,8 @@ fn matmul_kernel_tc[
 
     for k_i in range(K // BK):
         barrier()
-        A_dram_tile = A.tile[BM, BK](BlockIdx.y, k_i)
-        B_dram_tile = B.tile[BK, BN](k_i, BlockIdx.x)
+        A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
+        B_dram_tile = B.tile[BK, BN](k_i, block_idx.x)
         copy_dram_to_sram_async[thread_layout = Layout.row_major(4, 8)](
             A_sram_tile.vectorize[1, 4](), A_dram_tile.vectorize[1, 4]()
         )

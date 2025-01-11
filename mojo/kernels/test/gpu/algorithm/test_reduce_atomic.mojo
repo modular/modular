@@ -36,7 +36,7 @@ fn reduce(
     vec: UnsafePointer[Float32],
     len: Int,
 ):
-    var tid = GlobalIdx.x
+    var tid = global_idx.x
 
     if tid >= len:
         return

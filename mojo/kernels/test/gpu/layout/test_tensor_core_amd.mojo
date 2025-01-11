@@ -9,7 +9,7 @@
 from builtin.io import _printf
 from gpu import WARP_SIZE, barrier, lane_id
 from gpu.host import DeviceContext
-from gpu.id import ThreadIdx
+from gpu.id import thread_idx
 from gpu.memory import _GPUAddressSpace as AddressSpace
 from layout import Layout, LayoutTensor
 from layout._utils import load_to_simd

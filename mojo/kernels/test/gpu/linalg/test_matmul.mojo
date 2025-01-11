@@ -18,7 +18,7 @@ from algorithm.functional import elementwise
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList, _make_tuple
 from builtin._location import __source_location
-from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
+from gpu import block_dim, block_idx, thread_idx, barrier
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.host.info import DEFAULT_GPU_ARCH

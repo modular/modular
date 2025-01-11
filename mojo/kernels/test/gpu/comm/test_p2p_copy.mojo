@@ -8,7 +8,7 @@
 from math import ceildiv
 from sys import env_get_int
 
-from gpu import BlockDim, BlockIdx, GridDim, ThreadIdx, GlobalIdx
+from gpu import block_dim, block_idx, grid_dim, thread_idx, global_idx
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import UnsafePointer
 from testing import assert_almost_equal
@@ -19,7 +19,7 @@ fn p2p_copy_kernel(
     src: UnsafePointer[Scalar[DType.float32]],
     num_elements: Int,
 ):
-    var tid = GlobalIdx.x
+    var tid = global_idx.x
     if tid < num_elements:
         dst[tid] = src[tid]
 

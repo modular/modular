@@ -9,7 +9,7 @@
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.memory import AddressSpace
-from gpu.id import ThreadIdx
+from gpu.id import thread_idx
 from gpu.sync import barrier
 
 
@@ -38,7 +38,7 @@ fn tensor_core_async_tf32_tf32_kernel[
     smem_operand_a = tensor_core_async.allocate_lhs()
     smem_operand_b = tensor_core_async.allocate_rhs()
 
-    if ThreadIdx.x == 0:
+    if thread_idx.x == 0:
         smem_operand_a.copy_from(lhs)
         smem_operand_b.copy_from(rhs)
 
@@ -172,7 +172,7 @@ fn tensor_core_async_bf16_bf16_f32_kernel[
     smem_operand_a = tensor_core_async.allocate_lhs()
     smem_operand_b = tensor_core_async.allocate_rhs()
 
-    if ThreadIdx.x == 0:
+    if thread_idx.x == 0:
         smem_operand_a.copy_from(lhs)
         smem_operand_b.copy_from(rhs)
 

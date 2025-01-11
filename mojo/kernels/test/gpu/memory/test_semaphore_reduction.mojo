@@ -12,7 +12,7 @@ from random import rand
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import BlockDim, BlockIdx, GridDim, ThreadIdx
+from gpu import block_dim, block_idx, grid_dim, thread_idx
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.semaphore import Semaphore
 from memory import UnsafePointer, memset_zero
@@ -30,12 +30,12 @@ fn semaphore_vector_reduce[
     a_ptr: UnsafePointer[Scalar[type]],
     locks: UnsafePointer[Int32],
 ):
-    var tid = ThreadIdx.x
-    var block_idx = BlockIdx.x
+    var tid = thread_idx.x
+    var block_idx = block_idx.x
     var sema = Semaphore(locks.offset(0), tid)
 
     sema.fetch()
-    # for each block the partition id is the same as blockIdx
+    # for each block the partition id is the same as block_idx
 
     sema.wait(block_idx)
 
@@ -117,14 +117,14 @@ fn semaphore_matrix_reduce[
     a_ptr: UnsafePointer[Scalar[type]],
     locks: UnsafePointer[Int32],
 ):
-    var tid = ThreadIdx.x
-    var block_idx = BlockIdx.x
+    var tid = thread_idx.x
+    var block_idx = block_idx.x
     var sema = Semaphore(locks.offset(0), tid)
 
     sema.fetch()
 
     sema.wait(block_idx)
-    for x in range(tid, M * N, BlockDim.x):
+    for x in range(tid, M * N, block_dim.x):
         var row = x // N
         var col = x % N
         c_ptr[row * N + col] += a_ptr[

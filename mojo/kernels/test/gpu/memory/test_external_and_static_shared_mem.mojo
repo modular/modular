@@ -8,7 +8,7 @@
 from sys.info import alignof, simdwidthof
 
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.id import ThreadIdx
+from gpu.id import thread_idx
 from gpu.memory import AddressSpace, external_memory
 from gpu.sync import barrier
 from memory import UnsafePointer, stack_allocation
@@ -27,10 +27,10 @@ def test_external_shared_mem(ctx: DeviceContext):
             address_space = AddressSpace.SHARED,
             alignment = alignof[Scalar[DType.float32]](),
         ]()
-        dynamic_sram[ThreadIdx.x] = ThreadIdx.x
-        sram[ThreadIdx.x] = ThreadIdx.x
+        dynamic_sram[thread_idx.x] = thread_idx.x
+        sram[thread_idx.x] = thread_idx.x
         barrier()
-        data[ThreadIdx.x] = dynamic_sram[ThreadIdx.x] + sram[ThreadIdx.x]
+        data[thread_idx.x] = dynamic_sram[thread_idx.x] + sram[thread_idx.x]
 
     # The default limitation is < 48KB for sm_80, 86, 89.
     var func = ctx.compile_function[dynamic_smem_kernel, dump_llvm=True](

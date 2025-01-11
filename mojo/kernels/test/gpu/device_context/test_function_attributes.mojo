@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug-no-assert %s
 
-from gpu import ThreadIdx
+from gpu import thread_idx
 from gpu.host import DeviceContext
 from gpu.host.func_attribute import Attribute
 from memory import UnsafePointer, stack_allocation
@@ -15,7 +15,7 @@ from testing import *
 # CHECK-LABEL: test_function_attributes
 def test_function_attributes():
     fn kernel(x: UnsafePointer[Int]):
-        x[0] = ThreadIdx.x
+        x[0] = thread_idx.x
 
     with DeviceContext() as ctx:
         var func = ctx.compile_function[kernel]()

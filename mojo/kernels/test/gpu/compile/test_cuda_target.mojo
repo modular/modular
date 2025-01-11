@@ -14,10 +14,10 @@ from algorithm.functional import elementwise
 from builtin.io import _printf
 from gpu import (
     WARP_SIZE,
-    BlockDim,
-    BlockIdx,
-    ThreadIdx,
-    GlobalIdx,
+    block_dim,
+    block_idx,
+    thread_idx,
+    global_idx,
     barrier,
     lane_id,
     shuffle_down,
@@ -107,7 +107,7 @@ def test_hello_mojo_sm90():
 fn erf_elementwise(buf: UnsafePointer[Float32], len: Int, ctx: DeviceContext):
     # Each thread will process 4 * simd_width elements.
     alias granularity = 4 * simdwidthof[DType.float32]()
-    var tid = granularity * GlobalIdx.x
+    var tid = granularity * global_idx.x
 
     @always_inline
     @__copy_capture(tid)
@@ -150,7 +150,7 @@ def test_erf_elementwise_sm90():
 
 
 fn erf_kernel(buf: UnsafePointer[Float32], len: Int):
-    var tid = ThreadIdx.x + BlockDim.y * BlockIdx.y
+    var tid = thread_idx.x + block_dim.y * block_idx.y
 
     if tid >= len:
         return
@@ -289,8 +289,8 @@ fn gemm(
     ]()
 
     # Thread indexing offsets.
-    var row = GlobalIdx.x
-    var col = BlockIdx.y * TILE_SZ_B
+    var row = global_idx.x
+    var col = block_idx.y * TILE_SZ_B
 
     # Privatization of the C matrix.
     var c_reg = stack_allocation[TILE_SZ_B, DType.float32]()
@@ -299,8 +299,8 @@ fn gemm(
 
     # Loop over each input tile.
     for tile_idx in range((k - 1) // TILE_SZ_RATIO + 1):
-        var i = ThreadIdx.x // TILE_SZ_B
-        var j = ThreadIdx.x % TILE_SZ_B
+        var i = thread_idx.x // TILE_SZ_B
+        var j = thread_idx.x % TILE_SZ_B
 
         # Load the B matrix into shared memory.
         var b_val: Float32
@@ -466,7 +466,7 @@ fn block_reduce(val: Float32) -> Float32:
     alias warp_shift = log2_floor(WARP_SIZE)
 
     var lane = lane_id()
-    var warp = ThreadIdx.x // 32
+    var warp = thread_idx.x // 32
 
     var warp_sum = warp_sum_reduce(val)
 
@@ -476,7 +476,7 @@ fn block_reduce(val: Float32) -> Float32:
     barrier()
 
     return warp_sum_reduce(
-        shared.load(lane) if ThreadIdx.x < BlockDim.x // 32 else 0
+        shared.load(lane) if thread_idx.x < block_dim.x // 32 else 0
     )
 
 

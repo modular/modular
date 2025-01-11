@@ -6,7 +6,7 @@
 # RUN: %mojo-no-debug-no-assert %s | FileCheck %s
 
 
-from gpu import ThreadIdx
+from gpu import thread_idx
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.memory import AddressSpace, external_memory
 from memory import UnsafePointer
@@ -32,7 +32,7 @@ fn test_case_thread_id_nvidia():
     print("== test_case_thread_id_nvidia")
 
     fn kernel(output: UnsafePointer[Int32]):
-        output[] = ThreadIdx.x + ThreadIdx.x + ThreadIdx.x
+        output[] = thread_idx.x + thread_idx.x + thread_idx.x
 
     # CHECK-COUNT-1: call i32 @llvm.nvvm.read.ptx.sreg.tid.x()
     print(
@@ -47,7 +47,7 @@ fn test_case_thread_id_mi300x():
     print("== test_case_thread_id_mi300x")
 
     fn kernel(output: UnsafePointer[Int32]):
-        output[] = ThreadIdx.x + ThreadIdx.x + ThreadIdx.x
+        output[] = thread_idx.x + thread_idx.x + thread_idx.x
 
     # CHECK-COUNT-1: call i32 @llvm.amdgcn.workitem.id.x()
     print(

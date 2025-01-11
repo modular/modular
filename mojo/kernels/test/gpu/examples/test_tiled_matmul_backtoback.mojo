@@ -17,7 +17,7 @@ import layout.runtime_tuple
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from builtin.io import _printf
-from gpu import WARP_SIZE, BlockIdx, GridDim, ThreadIdx, barrier, lane_id
+from gpu import WARP_SIZE, block_idx, grid_dim, thread_idx, barrier, lane_id
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.memory import (
     AddressSpace,
@@ -209,7 +209,7 @@ fn b2b_gemm[
     alias num_warps_n = config.num_warps_n()
     alias num_threads = config.num_threads()
 
-    var tid = ThreadIdx.x
+    var tid = thread_idx.x
     # var ln_id = lane_id()
     var warp_id = tid // WARP_SIZE
 
@@ -219,9 +219,9 @@ fn b2b_gemm[
     # NOTE: the condition ( not (N // BN & 1)) is for a temporary solution
     # for solving mismatches in some shapes
     var block_idx = block_swizzle(
-        (Int(BlockIdx.x), Int(BlockIdx.y)),
-        (Int(GridDim.x), Int(GridDim.y)),
-    ) if swizzle_block else Index(Int(BlockIdx.x), Int(BlockIdx.y))
+        (Int(block_idx.x), Int(block_idx.y)),
+        (Int(grid_dim.x), Int(grid_dim.y)),
+    ) if swizzle_block else Index(Int(block_idx.x), Int(block_idx.y))
 
     # Coordinates of the current warp.
     warp_y, warp_x = divmod(warp_id, num_warps_n)
@@ -377,9 +377,9 @@ fn b2b_gemm[
             )
         # var ab0 = ab_reg_tile.ptr[0]
         # # ab_reg_tile.ptr[0] = ab0.cast[accum_type]()
-        # _printf["ab_threadIdx %ld, val: %g\n"](tid, ab0)
+        # _printf["ab_thread_idx %ld, val: %g\n"](tid, ab0)
         # print("thread_idx: ", tid, "val: ", ab0)
-        # _printf["ab_threadIdx %ld\n"](tid)
+        # _printf["ab_thread_idx %ld\n"](tid)
         # Now we have `ab_reg_tile` as local memory, which
         # `multistage_mma` conveniently accepts.
         # NOTE that `multistage_mma` gets `a_type` from `a_smem_iter`.
@@ -472,10 +472,10 @@ fn b2b_gemm[
             )
             var d_gmem_frag = d_gmem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute[warp_layout](ThreadIdx.x)
+            ]().distribute[warp_layout](thread_idx.x)
             var d_smem_frag = accum_smem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute[warp_layout](ThreadIdx.x)
+            ]().distribute[warp_layout](thread_idx.x)
             var thread_offset = d_gmem_frag.distance(D.ptr)
             alias num_stores_per_thread = __type_of(d_gmem_frag).layout.size()
             alias src_align = alignof[

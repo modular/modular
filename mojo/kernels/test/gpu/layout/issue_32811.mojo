@@ -7,7 +7,7 @@
 
 
 from gpu.host import DeviceContext
-from gpu.id import BlockIdx, ThreadIdx
+from gpu.id import block_idx, thread_idx
 from layout import *
 from memory import UnsafePointer
 
@@ -17,8 +17,9 @@ fn gpu_kernel(
     rhs: UnsafePointer[Float32],
     lhs: UnsafePointer[Float32],
 ):
-    dst[BlockIdx.x * 4 + ThreadIdx.x] = (
-        rhs[BlockIdx.x * 4 + ThreadIdx.x] + lhs[BlockIdx.x * 4 + ThreadIdx.x]
+    dst[block_idx.x * 4 + thread_idx.x] = (
+        rhs[block_idx.x * 4 + thread_idx.x]
+        + lhs[block_idx.x * 4 + thread_idx.x]
     )
 
     var dst_tensor = LayoutTensor[

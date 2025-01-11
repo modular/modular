@@ -14,7 +14,7 @@ from random import rand
 from sys import alignof, argv, simdwidthof
 from buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
-from gpu import WARP_SIZE, BlockIdx, GridDim, ThreadIdx, barrier, lane_id
+from gpu import WARP_SIZE, block_idx, grid_dim, thread_idx, barrier, lane_id
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.memory import (
     AddressSpace,
