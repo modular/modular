@@ -144,8 +144,8 @@ struct _Rep16(Stringable, Writable, EqualityComparable):
         Returns:
           The rank of the representation.
         """
-        debug_assert(int(self.rank) <= 6, "index out of range")
-        return int(self.rank)
+        debug_assert(Int(self.rank) <= 6, "index out of range")
+        return Int(self.rank)
 
     @always_inline
     fn get_num_elements(self) -> Int:
@@ -157,7 +157,7 @@ struct _Rep16(Stringable, Writable, EqualityComparable):
         var rank = self.get_rank()
         var product: Int = 1
         for i in range(rank):
-            product *= int(self.dims[i])
+            product *= Int(self.dims[i])
         return product
 
     @always_inline
@@ -170,7 +170,7 @@ struct _Rep16(Stringable, Writable, EqualityComparable):
         Returns:
           The value at the specified dimension.
         """
-        return int(self.dims[index])
+        return Int(self.dims[index])
 
     @always_inline
     fn __setitem__(mut self, index: Int, val: Int):
@@ -275,8 +275,8 @@ struct _Rep32(Writable, EqualityComparable):
         Returns:
           The rank of the representation.
         """
-        debug_assert(int(self.rank) <= 4, "index out of range")
-        return int(self.rank)
+        debug_assert(Int(self.rank) <= 4, "index out of range")
+        return Int(self.rank)
 
     @always_inline
     fn get_num_elements(self) -> Int:
@@ -288,10 +288,10 @@ struct _Rep32(Writable, EqualityComparable):
         var rank = self.get_rank()
         var product: Int = 1
         if rank == 4:
-            product = int(self.dim3)
+            product = Int(self.dim3)
             rank -= 1
         for i in range(rank):
-            product *= int(self.dims012[i])
+            product *= Int(self.dims012[i])
         return product
 
     @always_inline
@@ -306,9 +306,9 @@ struct _Rep32(Writable, EqualityComparable):
         """
         debug_assert(index <= 3, "index out of range")
         if index == 3:
-            return int(self.dim3)
+            return Int(self.dim3)
         else:
-            return int(self.dims012[index])
+            return Int(self.dims012[index])
 
     @always_inline
     fn __setitem__(mut self, index: Int, val: Int):
@@ -419,7 +419,7 @@ struct _RepOutOfLine(Writable, EqualityComparable):
         Returns:
           The rank of the representation.
         """
-        return int(self.rank)
+        return Int(self.rank)
 
     @always_inline
     fn __getitem__(self, index: Int) -> Int:
@@ -431,7 +431,7 @@ struct _RepOutOfLine(Writable, EqualityComparable):
         Returns:
           The value at the specified dimension.
         """
-        return int(self.dims.load(index))
+        return Int(self.dims.load(index))
 
     @always_inline
     fn __setitem__(mut self, index: Int, val: Int):

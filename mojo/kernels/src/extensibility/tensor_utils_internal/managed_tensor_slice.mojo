@@ -337,7 +337,7 @@ struct ManagedTensorSlice[
 
         var adjusted_shape = IndexList[rank]()
         for i in range(rank):
-            adjusted_shape[i] = int(ceil((stop[i] - start[i]) / step[i]))
+            adjusted_shape[i] = Int(ceil((stop[i] - start[i]) / step[i]))
         var slice_spec = RuntimeTensorSpec[type](adjusted_shape)
 
         var slicer_strides = _row_major_strides(slicer_spec)
@@ -570,7 +570,7 @@ struct ManagedTensorSlice[
                     offset = fma(
                         Int32(index[i]), Int32(static_strides.get[i]()), offset
                     )
-            return int(offset)
+            return Int(offset)
 
         var offset = 0
 
