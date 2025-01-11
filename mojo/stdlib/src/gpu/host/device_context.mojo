@@ -408,8 +408,6 @@ struct DeviceFunction[
         *,
         max_registers: OptionalReg[Int] = None,
         threads_per_block: OptionalReg[Int] = None,
-        cache_mode: OptionalReg[CacheMode] = None,
-        cache_config: OptionalReg[CacheConfig] = None,
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
         alias debug_level = env_get_string["DEBUG_LEVEL", "none"]()
@@ -436,7 +434,7 @@ struct DeviceFunction[
         #     const DeviceFunction **result, const DeviceContext *ctx,
         #     const char *module_name, const char *function_name, const void *data,
         #     int32_t max_registers, int32_t threads_per_block,
-        #     int32_t cache_mode, int32_t cache_config, int32_t max_dynamic_shared_bytes,
+        #     int32_t max_dynamic_shared_bytes,
         #     const char* debug_level, int32_t optimization_level)
         var result = _DeviceFunctionPtr()
         _checked(
@@ -451,8 +449,6 @@ struct DeviceFunction[
                 Int32,
                 Int32,
                 Int32,
-                Int32,
-                Int32,
                 _CharPtr,
                 Int32,
             ](
@@ -463,8 +459,6 @@ struct DeviceFunction[
                 self._func_impl.asm.unsafe_ptr(),
                 max_registers.or_else(-1),
                 threads_per_block.or_else(-1) if is_nvidia_gpu() else -1,
-                Int(cache_mode.or_else(-1)),
-                cache_config.or_else(CacheConfig(-1)).code,
                 max_dynamic_shared_size_bytes,
                 debug_level.unsafe_cstr_ptr().bitcast[UInt8](),
                 optimization_level,
@@ -886,8 +880,6 @@ struct DeviceContext:
         *,
         max_registers: OptionalReg[Int] = None,
         threads_per_block: OptionalReg[Int] = None,
-        cache_mode: OptionalReg[CacheMode] = None,
-        cache_config: OptionalReg[CacheConfig] = None,
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceFunction[
             func,
@@ -914,8 +906,6 @@ struct DeviceContext:
             self,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
-            cache_mode=cache_mode,
-            cache_config=cache_config,
             func_attribute=func_attribute,
         )
 

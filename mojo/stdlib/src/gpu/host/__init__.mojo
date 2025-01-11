@@ -5,8 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the gpu host package."""
 
-from .cache_config import CacheConfig
-from .cache_mode import CacheMode
 from .constant_memory_mapping import ConstantMemoryMapping
 from .device_attribute import DeviceAttribute
 from .device_context import (
