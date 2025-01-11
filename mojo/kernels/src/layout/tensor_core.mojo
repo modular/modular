@@ -9,7 +9,7 @@ matrix operations.
 
 from math import align_down
 from sys import has_nvidia_gpu_accelerator, is_nvidia_gpu, simdwidthof, sizeof
-from gpu import WARP_SIZE, BlockIdx, ThreadIdx, lane_id
+from gpu import WARP_SIZE, block_idx, thread_idx, lane_id
 from gpu.intrinsics import lop
 from gpu.memory import AddressSpace
 from gpu.mma import ld_matrix, mma
@@ -878,7 +878,7 @@ struct TensorCore[
         ](0, mma_tile_coord_k)
 
         var vec = bitcast[DType.int32, 4](
-            mma_tile.vectorize[1, 4]()[ThreadIdx.x % WARP_SIZE]
+            mma_tile.vectorize[1, 4]()[thread_idx.x % WARP_SIZE]
         )
 
         @parameter

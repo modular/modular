@@ -9,7 +9,7 @@ from sys import alignof, sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from gpu.id import ThreadIdx
+from gpu.id import thread_idx
 from gpu.memory import CacheEviction, Fill, async_copy
 from layout import Layout, LayoutTensor
 from layout.int_tuple import depth, to_int
@@ -1328,9 +1328,9 @@ fn copy_from_nd_buffer_async[
     src_buffer: NDBuffer[dtype, src_rank, src_buff_shape],
 ):
     copy_from_nd_buffer[thread_layout=thread_layout, is_async=True](
-        dst_tensor.distribute[thread_layout](ThreadIdx.x),
+        dst_tensor.distribute[thread_layout](thread_idx.x),
         src_buffer,
-        Int(ThreadIdx.x),
+        Int(thread_idx.x),
     )
 
 

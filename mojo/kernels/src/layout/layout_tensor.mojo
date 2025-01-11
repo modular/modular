@@ -19,7 +19,7 @@ from sys.intrinsics import PrefetchOptions
 
 from algorithm import vectorize
 from bit import log2_floor
-from gpu.id import BlockIdx, ThreadIdx
+from gpu.id import block_idx, thread_idx
 from gpu.memory import CacheEviction, Fill, async_copy
 from layout.element import Element, MemoryElement
 from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
@@ -2320,9 +2320,9 @@ fn copy_dram_to_sram[
         "dst address space must be SHARED.",
     ]()
 
-    var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x)
+    var src_fragments = src.distribute[src_thread_layout](thread_idx.x)
     var dst_fragments = dst.distribute[dst_thread_layout, swizzle=swizzle](
-        ThreadIdx.x
+        thread_idx.x
     )
 
     alias simd_width = simdwidthof[dst.dtype]()
@@ -2434,7 +2434,7 @@ fn copy_dram_to_sram_async[
     # of input tensors. Return if current thread doesn't have work.
     @parameter
     if num_threads > num_busy_threads:
-        if ThreadIdx.x >= num_busy_threads:
+        if thread_idx.x >= num_busy_threads:
             return
 
     alias row_size = dst.stride[0]()
@@ -2465,8 +2465,8 @@ fn copy_dram_to_sram_async[
         )
     )
 
-    var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x)
-    var dst_fragments = dst.distribute[dst_thread_layout](ThreadIdx.x)
+    var src_fragments = src.distribute[src_thread_layout](thread_idx.x)
+    var dst_fragments = dst.distribute[dst_thread_layout](thread_idx.x)
 
     var dst_frag_offset = rebind[dst_fragments.uint_type](
         dst_fragments.distance(dst.ptr) if swizzle else 0
@@ -2563,11 +2563,11 @@ fn copy_sram_to_dram[
 
     @parameter
     if num_threads > num_busy_threads:
-        if ThreadIdx.x >= num_busy_threads:
+        if thread_idx.x >= num_busy_threads:
             return
 
-    var src_fragments = src.distribute[thread_layout](ThreadIdx.x)
-    var dst_fragments = dst.distribute[thread_layout](ThreadIdx.x)
+    var src_fragments = src.distribute[thread_layout](thread_idx.x)
+    var dst_fragments = dst.distribute[thread_layout](thread_idx.x)
 
     # TODO: copy_from only allows static layout
     @parameter
@@ -2718,10 +2718,10 @@ fn copy_sram_to_local[
     if axis:
         var src_fragments = src.distribute[
             src_warp_layout, axis = axis.value()
-        ](ThreadIdx.x)
+        ](thread_idx.x)
         dst.copy_from(src_fragments)
     else:
-        var src_fragments = src.distribute[src_warp_layout](ThreadIdx.x)
+        var src_fragments = src.distribute[src_warp_layout](thread_idx.x)
         dst.copy_from(src_fragments)
 
 
@@ -2745,7 +2745,7 @@ fn copy_local_to_dram[
         "dst address space must be GENERIC.",
     ]()
 
-    var dst_fragments = dst.distribute[dst_thread_layout](ThreadIdx.x)
+    var dst_fragments = dst.distribute[dst_thread_layout](thread_idx.x)
 
     @parameter
     if not dst_fragments.masked:
@@ -2813,7 +2813,7 @@ fn copy_local_to_sram[
         "src address space must be LOCAL.",
     ]()
 
-    var dst_frag = dst.distribute[thread_layout](ThreadIdx.x)
+    var dst_frag = dst.distribute[thread_layout](thread_idx.x)
 
     constrained[
         src.dtype == dst.dtype

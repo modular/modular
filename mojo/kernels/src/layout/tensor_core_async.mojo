@@ -10,7 +10,7 @@ from layout import IntTuple, Layout, LayoutTensor
 
 from gpu import WARP_SIZE
 from gpu.memory import AddressSpace
-from gpu.id import ThreadIdx
+from gpu.id import thread_idx
 from gpu.mma import (
     WGMMADescriptor,
     wgmma_async,
@@ -176,7 +176,7 @@ struct TensorCoreAsync[
             + str(mma_shape)
             + "' is not supported",
         ]()
-        warp_id, lan_id = divmod(ThreadIdx.x, UInt(WARP_SIZE))
+        warp_id, lan_id = divmod(thread_idx.x, UInt(WARP_SIZE))
         alias warp_row_major_layout = Layout.row_major(8, 4)
 
         var th_local_res = (
