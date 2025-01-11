@@ -137,28 +137,7 @@ fn _ord(_p: UnsafePointer[UInt8]) -> (Int, Int):
 fn _write_rune(rune: UInt32, p: UnsafePointer[UInt8]) -> Int:
     """Write rune as UTF-8 into provided pointer. Return number of added bytes.
     """
-    if (rune >> 7) == 0:  # This is 1 byte ASCII char
-        p[0] = rune.cast[DType.uint8]()
-        return 1
-
-    @always_inline
-    fn _utf8_len(val: UInt32) -> Int:
-        alias sizes = SIMD[DType.uint32, 4](
-            0, 0b1111_111, 0b1111_1111_111, 0b1111_1111_1111_1111
-        )
-        var values = SIMD[DType.uint32, 4](val)
-        var mask = values > sizes
-        return Int(mask.cast[DType.uint8]().reduce_add())
-
-    var num_bytes = _utf8_len(rune)
-    var shift = 6 * (num_bytes - 1)
-    var mask = UInt32(0xFF) >> (num_bytes + 1)
-    var num_bytes_marker = UInt32(0xFF) << (8 - num_bytes)
-    p[0] = (((rune >> shift) & mask) | num_bytes_marker).cast[DType.uint8]()
-    for i in range(1, num_bytes):
-        shift -= 6
-        p[i] = (((rune >> shift) & 0b00111111) | 0b10000000).cast[DType.uint8]()
-    return num_bytes
+    return Char(unsafe_unchecked_codepoint=rune).unsafe_write_utf8(p)
 
 
 fn to_lowercase(s: StringSlice) -> String:

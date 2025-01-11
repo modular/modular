@@ -15,6 +15,7 @@
 from collections import KeyElement, List, Optional
 from collections._index_normalization import normalize_index
 from hashlib._hasher import _HashableWithHasher, _Hasher
+from os import abort
 from sys import bitwidthof, llvm_intrinsic
 from sys.ffi import c_char
 from sys.intrinsics import _type_is_eq
@@ -41,7 +42,6 @@ from collections.string._unicode import (
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string.string_slice import (
     StringSlice,
-    _shift_unicode_to_utf8,
     _StringSliceIter,
     _to_string_list,
     _utf8_byte_type,
@@ -121,17 +121,21 @@ fn chr(c: Int) -> String:
     if c < 0b1000_0000:  # 1 byte ASCII char
         return String(String._buffer_type(c, 0))
 
-    # FIXME: Validate that this is a valid scalar value
-    var num_bytes = Char(unsafe_unchecked_codepoint=c).utf8_byte_length()
-    var p = UnsafePointer[UInt8].alloc(num_bytes + 1)
-    _shift_unicode_to_utf8(p, c, num_bytes)
-    # TODO: decide whether to use replacement char (�) or raise ValueError
-    # if not _is_valid_utf8(p, num_bytes):
-    #     debug_assert(False, "Invalid Unicode code point")
-    #     p.free()
-    #     return chr(0xFFFD)
-    p[num_bytes] = 0
-    return String(ptr=p, length=num_bytes + 1)
+    var char_opt = Char.from_u32(c)
+    if not char_opt:
+        # TODO: Raise ValueError instead.
+        return abort[String](
+            String.write("chr(", c, ") is not a valid Unicode codepoint")
+        )
+
+    # SAFETY: We just checked that `char` is present.
+    var char = char_opt.unsafe_value()
+
+    var num_bytes = char.utf8_byte_length()
+    var ptr = UnsafePointer[UInt8].alloc(num_bytes + 1)
+    _ = char.unsafe_write_utf8(ptr)
+    ptr[num_bytes] = 0
+    return String(ptr=ptr, length=num_bytes + 1)
 
 
 # ===----------------------------------------------------------------------=== #

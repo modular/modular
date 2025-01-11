@@ -100,6 +100,9 @@ what we publish.
 
 - Added `Char`, for representing and storing single Unicode characters.
 
+- `chr(Int)` will now abort if given a codepoint value that is not a valid
+  `Char`.
+
 - Added `StringSlice.from_utf()` factor method, for validated construction of
   a `StringSlice` from a buffer containing UTF-8 encoded data. This method will
   raise if the buffer contents are not valid UTF-8.

@@ -14,6 +14,8 @@
 
 from collections import Optional
 
+from memory import UnsafePointer
+
 
 @always_inline
 fn _is_unicode_scalar_value(codepoint: UInt32) -> Bool:
@@ -125,6 +127,54 @@ struct Char(CollectionElement):
         return self._scalar_value <= 0b0111_1111
 
     @always_inline
+    fn unsafe_write_utf8(self, ptr: UnsafePointer[Byte]) -> UInt:
+        """Shift unicode to utf8 representation.
+
+        Safety:
+            `ptr` MUST point to at least `self.utf8_byte_length()` allocated
+            bytes or else an out-of-bounds write will occur, which is undefined
+            behavior.
+
+        Args:
+            ptr: Pointer value to write the encoded UTF-8 bytes. Must validly
+                point to a sufficient number of bytes (1-4) to hold the encoded
+                data.
+
+        Returns:
+            Returns the number of bytes written.
+
+        ### Unicode (represented as UInt32 BE) to UTF-8 conversion:
+        - 1: 00000000 00000000 00000000 0aaaaaaa -> 0aaaaaaa
+            - a
+        - 2: 00000000 00000000 00000aaa aabbbbbb -> 110aaaaa 10bbbbbb
+            - (a >> 6)  | 0b11000000, b         | 0b10000000
+        - 3: 00000000 00000000 aaaabbbb bbcccccc -> 1110aaaa 10bbbbbb 10cccccc
+            - (a >> 12) | 0b11100000, (b >> 6)  | 0b10000000, c        | 0b10000000
+        - 4: 00000000 000aaabb bbbbcccc ccdddddd -> 11110aaa 10bbbbbb 10cccccc
+        10dddddd
+            - (a >> 18) | 0b11110000, (b >> 12) | 0b10000000, (c >> 6) | 0b10000000,
+            d | 0b10000000
+        .
+        """
+        var c = Int(self)
+
+        var num_bytes = self.utf8_byte_length()
+
+        if num_bytes == 1:
+            ptr[0] = UInt8(c)
+            return 1
+
+        var shift = 6 * (num_bytes - 1)
+        var mask = UInt8(0xFF) >> (num_bytes + 1)
+        var num_bytes_marker = UInt8(0xFF) << (8 - num_bytes)
+        ptr[0] = ((c >> shift) & mask) | num_bytes_marker
+        for i in range(1, num_bytes):
+            shift -= 6
+            ptr[i] = ((c >> shift) & 0b0011_1111) | 0b1000_0000
+
+        return num_bytes
+
+    @always_inline
     fn utf8_byte_length(self) -> UInt:
         """Returns the number of UTF-8 bytes required to encode this character.
 
@@ -145,4 +195,12 @@ struct Char(CollectionElement):
 
         # Count how many of the minimums this codepoint exceeds, which is equal
         # to the number of bytes needed to encode it.
-        return UInt(Int((sizes <= Int(self)).cast[DType.uint8]().reduce_add()))
+        var lt = (sizes <= Int(self)).cast[DType.uint8]()
+
+        # TODO(MOCO-1537): Support `reduce_add()` at compile time.
+        #   var count = Int(lt.reduce_add())
+        var count = 0
+        for i in range(len(lt)):
+            count += Int(lt[i])
+
+        return UInt(count)

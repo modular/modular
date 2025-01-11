@@ -51,6 +51,62 @@ def test_char_properties():
     assert_false(Char.from_u32(0b1111_1111).value().is_ascii())
 
 
+fn assert_utf8_bytes(codepoint: UInt32, owned expected: List[Byte]) raises:
+    var char_opt = Char.from_u32(codepoint)
+    var char = char_opt.value()
+
+    # Allocate a length-4 buffer to write to.
+    var buffer = List[Byte](0, 0, 0, 0)
+    var written = char.unsafe_write_utf8(buffer.unsafe_ptr())
+
+    # Check that the number of bytes written was as expected.
+    assert_equal(
+        written,
+        len(expected),
+        "wrong byte count written encoding codepoint: {}".format(codepoint),
+    )
+
+    # Normalize `expected` to length 4 so we can compare the written byte
+    # values with `buffer`.
+    for _ in range(4 - len(expected)):
+        expected.append(0)
+
+    assert_equal(
+        buffer,
+        expected,
+        "wrong byte values written encoding codepoint: {}".format(codepoint),
+    )
+
+
+def test_char_utf8_encoding():
+    assert_utf8_bytes(0, List[Byte](0))
+    assert_utf8_bytes(1, List[Byte](1))
+    assert_utf8_bytes(127, List[Byte](127))
+
+    # Smallest 2-byte codepoint
+    assert_utf8_bytes(128, List[Byte](0b1100_0010, 0b1000_0000))
+    # Largest 2-byte codepoint
+    assert_utf8_bytes(2**11 - 1, List[Byte](0b1101_1111, 0b1011_1111))
+
+    # Smallest 3-byte codepoint -- 2^11 == 2048
+    assert_utf8_bytes(
+        2**11, List[Byte](0b1110_0000, 0b1010_0000, 0b1000_0000)
+    )
+    # Largest 3-byte codepoint -- 2^16 - 1 == 65535 == 0xFFFF
+    assert_utf8_bytes(
+        2**16 - 1, List[Byte](0b1110_1111, 0b1011_1111, 0b1011_1111)
+    )
+
+    # Smallest 4-byte codepoint
+    assert_utf8_bytes(
+        2**16, List[Byte](0b1111_0000, 0b1001_0000, 0b1000_0000, 0b1000_0000)
+    )
+    # Largest 4-byte codepoint -- Maximum Unicode codepoint
+    assert_utf8_bytes(
+        0x10FFFF, List[Byte](0b1111_0100, 0b1000_1111, 0b1011_1111, 0b1011_1111)
+    )
+
+
 def test_char_utf8_byte_length():
     fn codepoint_len(cp: UInt32) -> Int:
         return Char.from_u32(cp).value().utf8_byte_length()
@@ -79,7 +135,17 @@ def test_char_utf8_byte_length():
     assert_equal(codepoint_len(0x10FFFF), 4)  # Maximum Unicode codepoint
 
 
+def test_char_comptime():
+    alias c1 = Char.from_u32(32).value()
+
+    # Test that `utf8_byte_length()` works at compile time.
+    alias c1_bytes = c1.utf8_byte_length()
+    assert_equal(c1_bytes, 1)
+
+
 def main():
     test_char_validity()
     test_char_properties()
+    test_char_utf8_encoding()
     test_char_utf8_byte_length()
+    test_char_comptime()
