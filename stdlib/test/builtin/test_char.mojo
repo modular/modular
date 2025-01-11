@@ -41,6 +41,15 @@ def test_char_validity():
     assert_false(Char.from_u32(0x10FFFF + 1))
 
 
+def test_char_from_u8():
+    var c1 = Char(UInt8(0))
+    assert_true(c1.is_ascii())
+
+    # All non-negative 8-bit integers are codepoints, but not all are ASCII.
+    var c2 = Char(UInt8(255))
+    assert_false(c2.is_ascii())
+
+
 def test_char_properties():
     assert_true(Char.from_u32(0).value().is_ascii())
     # Last ASCII codepoint.
@@ -145,6 +154,7 @@ def test_char_comptime():
 
 def main():
     test_char_validity()
+    test_char_from_u8()
     test_char_properties()
     test_char_utf8_encoding()
     test_char_utf8_byte_length()

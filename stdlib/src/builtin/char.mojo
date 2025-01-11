@@ -88,6 +88,18 @@ struct Char(CollectionElement):
 
         self._scalar_value = unsafe_unchecked_codepoint
 
+    @always_inline
+    fn __init__(out self, codepoint: UInt8):
+        """Construct a `Char` from a single byte value.
+
+        This constructor cannot fail because non-negative 8-bit integers are
+        valid Unicode scalar values.
+
+        Args:
+            codepoint: The 8-bit codepoint value to convert to a `Char`.
+        """
+        self._scalar_value = UInt32(Int(codepoint))
+
     # ===-------------------------------------------------------------------===#
     # Factory methods
     # ===-------------------------------------------------------------------===#
