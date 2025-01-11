@@ -374,7 +374,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<StrAttr>:$deprecationWarning,
     OptionalAttr<SourceNameAttr>:$sourceName,
-    EnumProperty<"TypeConvention">:$convention
+    EnumProp<"TypeConvention">:$convention
   );
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
@@ -606,7 +606,7 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     TypeAttrOf<LIT_TypeSignatureType>:$signature,
     KGEN_ParamDeclArrayAttr:$params,
     TypeLineageArrayAttr:$parentTypes,
-    EnumProperty<"TypeConvention">:$convention,
+    EnumProp<"TypeConvention">:$convention,
     OptionalAttr<TypeAttrOf<KGEN_SignatureGeneratorType>>:$dtorSig,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<StrAttr>:$deprecationWarning,

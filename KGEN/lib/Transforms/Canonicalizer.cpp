@@ -396,7 +396,7 @@ void Canonicalizer::runOnOperation() {
   // Run the canonicalization patterns
   mlir::GreedyRewriteConfig config;
   config.enableRegionSimplification = mlir::GreedySimplifyRegionLevel::Disabled;
-  (void)applyPatternsAndFoldGreedily(getOperation(), patterns, config);
+  (void)applyPatternsGreedily(getOperation(), patterns, config);
 }
 
 void Canonicalizer::addNonCustomCanonicalizationPatterns(
