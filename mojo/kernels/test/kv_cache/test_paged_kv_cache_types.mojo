@@ -54,8 +54,8 @@ def do_test[cache_block_size: Int, layout_block_size: Int]():
     )
 
     alias layout = Layout(
-        IntTuple(layout_block_size, int(kv_params.head_size)),
-        IntTuple(int(kv_params.num_heads * kv_params.head_size), 1),
+        IntTuple(layout_block_size, Int(kv_params.head_size)),
+        IntTuple(Int(kv_params.num_heads * kv_params.head_size), 1),
     )
 
     var cache = collection.get_key_cache(1)

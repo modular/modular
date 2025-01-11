@@ -189,7 +189,7 @@ struct ContiguousKVCache[
         debug_assert(
             batch_idx < self.batch_size, "KVCache batch_idx is out of bounds"
         )
-        return int(self.cache_lengths[batch_idx])
+        return Int(self.cache_lengths[batch_idx])
 
     @always_inline
     fn load[
@@ -349,7 +349,7 @@ struct ContinuousBatchingKVCache[
         debug_assert(
             batch_idx < self.batch_size, "KVCache batch_idx is out of bounds"
         )
-        return int(self.cache_lengths[batch_idx][0])
+        return Int(self.cache_lengths[batch_idx][0])
 
     @always_inline
     fn load[
@@ -364,7 +364,7 @@ struct ContinuousBatchingKVCache[
 
         var block_idx = self.lookup_table[bs]
         var idx = self._get_idx_tuple(
-            int(block_idx), head_idx, tok_idx, head_dim_idx
+            Int(block_idx), head_idx, tok_idx, head_dim_idx
         )
         return self.blocks.load[width=width](idx)
 
@@ -383,7 +383,7 @@ struct ContinuousBatchingKVCache[
         )
         var block_idx = self.lookup_table[bs]
         var idx = self._get_idx_tuple(
-            int(block_idx), head_idx, tok_idx, head_dim_idx
+            Int(block_idx), head_idx, tok_idx, head_dim_idx
         )
         self.blocks.store(idx, val)
 
@@ -418,7 +418,7 @@ struct ContinuousBatchingKVCache[
         head_idx: Int,
         head_dim_idx: Int = 0,
     ) -> UnsafePointer[Scalar[Self.type]]:
-        var block_idx = int(self.lookup_table[batch_idx])
+        var block_idx = Int(self.lookup_table[batch_idx])
         var full_block_idx = self._get_idx_tuple(
             block_idx, head_idx, start_tok_idx, head_dim_idx
         )
@@ -478,7 +478,7 @@ struct PagedKVCache[type_: DType, kv_params_: KVCacheStaticParams](KVCacheT):
 
     fn cache_length(self, batch_idx: Int) -> Int:
         """Returns the length of the cache for a given batch index."""
-        return int(self.cache_lengths[batch_idx])
+        return Int(self.cache_lengths[batch_idx])
 
     @always_inline
     fn _get_idx(
@@ -510,7 +510,7 @@ struct PagedKVCache[type_: DType, kv_params_: KVCacheStaticParams](KVCacheT):
             " with page size ",
             self.page_size,
         )
-        block_idx = int(self.lookup_table[bs, lut_block_index])
+        block_idx = Int(self.lookup_table[bs, lut_block_index])
         return IndexList[6](
             self.layer_idx,
             self.kv_idx,
@@ -728,7 +728,7 @@ struct ContiguousKVCacheCollection[
         debug_assert(
             batch_idx < self.batch_size, "KVCache batch_idx is out of bounds"
         )
-        return int(self.cache_lengths[batch_idx])
+        return Int(self.cache_lengths[batch_idx])
 
 
 struct ContinuousBatchingKVCacheCollection[
@@ -840,7 +840,7 @@ struct ContinuousBatchingKVCacheCollection[
         )
 
     fn cache_length(self, bs_idx: Int) -> Int:
-        return int(self.cache_lengths[bs_idx])
+        return Int(self.cache_lengths[bs_idx])
 
 
 struct PagedKVCacheCollection[
@@ -921,4 +921,4 @@ struct PagedKVCacheCollection[
         )
 
     fn cache_length(self, bs_idx: Int) -> Int:
-        return int(self.cache_lengths[bs_idx])
+        return Int(self.cache_lengths[bs_idx])
