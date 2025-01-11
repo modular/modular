@@ -113,6 +113,18 @@ struct Char(CollectionElement):
     # ===-------------------------------------------------------------------===#
 
     @always_inline
+    fn is_ascii(self) -> Bool:
+        """Returns True if this `Char` is an ASCII character.
+
+        All ASCII characters are less than or equal to codepoint value 127, and
+        take exactly 1 byte to encode in UTF-8.
+
+        Returns:
+            A boolean indicating if this `Char` is an ASCII character.
+        """
+        return self._scalar_value <= 0b0111_1111
+
+    @always_inline
     fn utf8_byte_length(self) -> UInt:
         """Returns the number of UTF-8 bytes required to encode this character.
 

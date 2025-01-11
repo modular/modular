@@ -41,6 +41,16 @@ def test_char_validity():
     assert_false(Char.from_u32(0x10FFFF + 1))
 
 
+def test_char_properties():
+    assert_true(Char.from_u32(0).value().is_ascii())
+    # Last ASCII codepoint.
+    assert_true(Char.from_u32(0b0111_1111).value().is_ascii())  # ASCII 127 0x7F
+
+    # First non-ASCII codepoint.
+    assert_false(Char.from_u32(0b1000_0000).value().is_ascii())
+    assert_false(Char.from_u32(0b1111_1111).value().is_ascii())
+
+
 def test_char_utf8_byte_length():
     fn codepoint_len(cp: UInt32) -> Int:
         return Char.from_u32(cp).value().utf8_byte_length()
@@ -71,4 +81,5 @@ def test_char_utf8_byte_length():
 
 def main():
     test_char_validity()
+    test_char_properties()
     test_char_utf8_byte_length()
