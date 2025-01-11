@@ -241,7 +241,7 @@ struct InlineArray[
             return self.unsafe_get(idx)
         else:
             var normalized_index = normalize_index["InlineArray"](
-                int(idx), self
+                Int(idx), self
             )
             return self.unsafe_get(normalized_index)
 
@@ -258,16 +258,16 @@ struct InlineArray[
         Returns:
             A reference to the item at the given index.
         """
-        constrained[-size <= int(idx) < size, "Index must be within bounds."]()
+        constrained[-size <= Int(idx) < size, "Index must be within bounds."]()
 
         @parameter
         if _type_is_eq[I, UInt]():
             return self.unsafe_get(idx)
         else:
-            var normalized_idx = int(idx)
+            var normalized_idx = Int(idx)
 
             @parameter
-            if int(idx) < 0:
+            if Int(idx) < 0:
                 normalized_idx += size
 
             return self.unsafe_get(normalized_idx)
@@ -310,9 +310,9 @@ struct InlineArray[
         """
         var i = index(idx)
         debug_assert(
-            0 <= int(i) < size,
+            0 <= Int(i) < size,
             " InlineArray.unsafe_get() index out of bounds: ",
-            int(idx),
+            Int(idx),
             " should be less than: ",
             size,
         )

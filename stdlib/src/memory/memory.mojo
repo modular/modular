@@ -79,7 +79,7 @@ fn _memcmp_impl_unconstrained[
         var s2i = s2.load[width=simd_width](i)
         var diff = s1i != s2i
         if any(diff):
-            var index = int(
+            var index = Int(
                 diff.select(
                     iota, SIMD[DType.uint8, simd_width](255)
                 ).reduce_min()
@@ -90,7 +90,7 @@ fn _memcmp_impl_unconstrained[
     var s2i = s2.load[width=simd_width](last)
     var diff = s1i != s2i
     if any(diff):
-        var index = int(
+        var index = Int(
             diff.select(iota, SIMD[DType.uint8, simd_width](255)).reduce_min()
         )
         return -1 if s1i[index] < s2i[index] else 1

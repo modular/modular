@@ -147,7 +147,7 @@ struct InlineList[ElementType: CollectionElementNew, capacity: Int = 16](Sized):
         Returns:
             A reference to the item at the given index.
         """
-        var index = int(idx)
+        var index = Int(idx)
         debug_assert(
             -self._size <= index < self._size, "Index must be within bounds."
         )
@@ -244,7 +244,7 @@ struct InlineList[ElementType: CollectionElementNew, capacity: Int = 16](Sized):
 
         var count = 0
         for e in self:
-            count += int(rebind[C](e[]) == value)
+            count += Int(rebind[C](e[]) == value)
         return count
 
     fn append(mut self, owned value: ElementType):

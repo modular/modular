@@ -555,14 +555,14 @@ struct Header:
             ]()
             self._handle[].service = service_id
 
-        payload[int(me), 0] = arg0
-        payload[int(me), 1] = arg1
-        payload[int(me), 2] = arg2
-        payload[int(me), 3] = arg3
-        payload[int(me), 4] = arg4
-        payload[int(me), 5] = arg5
-        payload[int(me), 6] = arg6
-        payload[int(me), 7] = arg7
+        payload[Int(me), 0] = arg0
+        payload[Int(me), 1] = arg1
+        payload[Int(me), 2] = arg2
+        payload[Int(me), 3] = arg3
+        payload[Int(me), 4] = arg4
+        payload[Int(me), 5] = arg5
+        payload[Int(me), 6] = arg6
+        payload[Int(me), 7] = arg7
 
     fn get_return_value(
         mut self, payload: Payload, me: UInt32, low: UInt32
@@ -605,7 +605,7 @@ struct Header:
 
             sleep(UInt(1))
 
-        var ptr = payload._handle[].slots[int(me)]
+        var ptr = payload._handle[].slots[Int(me)]
         var value0 = ptr[0]
         var value1 = ptr[1]
         return value0, value1

@@ -1131,11 +1131,11 @@ def test_removesuffix():
 
 
 def test_intable():
-    assert_equal(int(String("123")), 123)
-    assert_equal(int(String("10"), base=8), 8)
+    assert_equal(Int(String("123")), 123)
+    assert_equal(Int(String("10"), base=8), 8)
 
     with assert_raises():
-        _ = int(String("hi"))
+        _ = Int(String("hi"))
 
 
 def test_string_mul():
@@ -1147,7 +1147,7 @@ def test_string_mul():
 def test_indexing():
     a = String("abc")
     assert_equal(a[False], "a")
-    assert_equal(a[int(1)], "b")
+    assert_equal(a[Int(1)], "b")
     assert_equal(a[2], "c")
 
 

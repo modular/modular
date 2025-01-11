@@ -187,7 +187,7 @@ struct AddressSpace(EqualityComparable, Stringable, Writable):
         Args:
           value: The address space value.
         """
-        self._value = int(value)
+        self._value = Int(value)
 
     @always_inline("nodebug")
     fn value(self) -> Int:

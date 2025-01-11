@@ -208,7 +208,7 @@ def test_hash():
 def test_indexing():
     var s = "hello"
     assert_equal(s[False], "h")
-    assert_equal(s[int(1)], "e")
+    assert_equal(s[Int(1)], "e")
     assert_equal(s[2], "l")
 
 
@@ -286,7 +286,7 @@ def test_layout():
     # Test empty StringLiteral contents
     var empty = "".unsafe_ptr()
     # An empty string literal is stored as just the NUL terminator.
-    assert_true(int(empty) != 0)
+    assert_true(Int(empty) != 0)
     # TODO(MSTDL-596): This seems to hang?
     # assert_equal(empty[0], 0)
 

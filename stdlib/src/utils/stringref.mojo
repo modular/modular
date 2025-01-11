@@ -241,7 +241,7 @@ struct StringRef(
         Returns:
           The character at the specified position.
         """
-        return StringRef {data: self.data + int(idx), length: 1}
+        return StringRef {data: self.data + Int(idx), length: 1}
 
     @always_inline
     fn __eq__(self, rhs: StringRef) -> Bool:
@@ -293,7 +293,7 @@ struct StringRef(
         """
         var len1 = len(self)
         var len2 = len(rhs)
-        return int(len1 < len2) > _memcmp_impl_unconstrained(
+        return Int(len1 < len2) > _memcmp_impl_unconstrained(
             self.data, rhs.data, min(len1, len2)
         )
 
@@ -373,8 +373,8 @@ struct StringRef(
     fn __int__(self) raises -> Int:
         """Parses the given string as a base-10 integer and returns that value.
 
-        For example, `int("19")` returns `19`. If the given string cannot be parsed
-        as an integer value, an error is raised. For example, `int("hi")` raises an
+        For example, `Int("19")` returns `19`. If the given string cannot be parsed
+        as an integer value, an error is raised. For example, `Int("hi")` raises an
         error.
 
         Returns:
@@ -523,7 +523,7 @@ struct StringRef(
         if not loc:
             return -1
 
-        return int(loc) - int(self.unsafe_ptr())
+        return Int(loc) - Int(self.unsafe_ptr())
 
     fn rfind(self, substr: StringRef, start: Int = 0) -> Int:
         """Finds the offset of the last occurrence of `substr` starting at
@@ -556,7 +556,7 @@ struct StringRef(
         if not loc:
             return -1
 
-        return int(loc) - int(self.unsafe_ptr())
+        return Int(loc) - Int(self.unsafe_ptr())
 
     fn _from_start(self, start: Int) -> StringRef:
         """Gets the StringRef pointing to the substring after the specified slice start position.
@@ -656,7 +656,7 @@ fn _memchr[
         var bool_mask = source.load[width=bool_mask_width](i) == first_needle
         var mask = pack_bits(bool_mask)
         if mask:
-            return source + int(i + count_trailing_zeros(mask))
+            return source + Int(i + count_trailing_zeros(mask))
 
     for i in range(vectorized_end, len):
         if source[i] == char:
@@ -701,7 +701,7 @@ fn _memmem[
         var mask = pack_bits(bool_mask)
 
         while mask:
-            var offset = int(i + count_trailing_zeros(mask))
+            var offset = Int(i + count_trailing_zeros(mask))
             if memcmp(haystack + offset + 1, needle + 1, needle_len - 1) == 0:
                 return haystack + offset
             mask = mask & (mask - 1)

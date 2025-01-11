@@ -52,22 +52,22 @@ fn _constrain_unix():
 fn _get_stat_st_mode(path: String) raises -> Int:
     @parameter
     if os_is_macos():
-        return int(_stat_macos(path).st_mode)
+        return Int(_stat_macos(path).st_mode)
     elif has_neon():
-        return int(_stat_linux_arm(path).st_mode)
+        return Int(_stat_linux_arm(path).st_mode)
     else:
-        return int(_stat_linux_x86(path).st_mode)
+        return Int(_stat_linux_x86(path).st_mode)
 
 
 @always_inline
 fn _get_lstat_st_mode(path: String) raises -> Int:
     @parameter
     if os_is_macos():
-        return int(_lstat_macos(path).st_mode)
+        return Int(_lstat_macos(path).st_mode)
     elif has_neon():
-        return int(_lstat_linux_arm(path).st_mode)
+        return Int(_lstat_linux_arm(path).st_mode)
     else:
-        return int(_lstat_linux_x86(path).st_mode)
+        return Int(_lstat_linux_x86(path).st_mode)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -489,7 +489,7 @@ fn _is_shell_special_variable(byte: Byte) -> Bool:
         ord("8"),
         ord("9"),
     )
-    return int(byte) in shell_variables
+    return Int(byte) in shell_variables
 
 
 fn _is_alphanumeric(byte: Byte) -> Bool:
@@ -501,7 +501,7 @@ fn _is_alphanumeric(byte: Byte) -> Bool:
     Returns:
         True if the byte is an ASCII letter, number, or underscore and False otherwise.
     """
-    var b = int(byte)
+    var b = Int(byte)
     return (
         b == ord("_")
         or ord("0") <= b

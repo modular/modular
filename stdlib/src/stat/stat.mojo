@@ -50,7 +50,7 @@ fn S_ISLNK[intable: Intable](mode: intable) -> Bool:
     Returns:
       True if the mode is a symlink and False otherwise.
     """
-    return (int(mode) & S_IFMT) == S_IFLNK
+    return (Int(mode) & S_IFMT) == S_IFLNK
 
 
 fn S_ISREG[intable: Intable](mode: intable) -> Bool:
@@ -66,7 +66,7 @@ fn S_ISREG[intable: Intable](mode: intable) -> Bool:
     Returns:
       True if the mode is a regular file and False otherwise.
     """
-    return (int(mode) & S_IFMT) == S_IFREG
+    return (Int(mode) & S_IFMT) == S_IFREG
 
 
 fn S_ISDIR[intable: Intable](mode: intable) -> Bool:
@@ -82,7 +82,7 @@ fn S_ISDIR[intable: Intable](mode: intable) -> Bool:
     Returns:
       True if the mode is a directory and False otherwise.
     """
-    return (int(mode) & S_IFMT) == S_IFDIR
+    return (Int(mode) & S_IFMT) == S_IFDIR
 
 
 fn S_ISCHR[intable: Intable](mode: intable) -> Bool:
@@ -98,7 +98,7 @@ fn S_ISCHR[intable: Intable](mode: intable) -> Bool:
     Returns:
       True if the mode is a character device and False otherwise.
     """
-    return (int(mode) & S_IFMT) == S_IFCHR
+    return (Int(mode) & S_IFMT) == S_IFCHR
 
 
 fn S_ISBLK[intable: Intable](mode: intable) -> Bool:
@@ -114,7 +114,7 @@ fn S_ISBLK[intable: Intable](mode: intable) -> Bool:
     Returns:
       True if the mode is a block device and False otherwise.
     """
-    return (int(mode) & S_IFMT) == S_IFBLK
+    return (Int(mode) & S_IFMT) == S_IFBLK
 
 
 fn S_ISFIFO[intable: Intable](mode: intable) -> Bool:
@@ -130,7 +130,7 @@ fn S_ISFIFO[intable: Intable](mode: intable) -> Bool:
     Returns:
       True if the mode is a fifo and False otherwise.
     """
-    return (int(mode) & S_IFMT) == S_IFIFO
+    return (Int(mode) & S_IFMT) == S_IFIFO
 
 
 fn S_ISSOCK[intable: Intable](mode: intable) -> Bool:
@@ -146,4 +146,4 @@ fn S_ISSOCK[intable: Intable](mode: intable) -> Bool:
     Returns:
       True if the mode is a socket and False otherwise.
     """
-    return (int(mode) & S_IFMT) == S_IFSOCK
+    return (Int(mode) & S_IFMT) == S_IFSOCK

@@ -318,7 +318,7 @@ struct UnsafePointer[
         Returns:
             True if the two pointers are equal and False otherwise.
         """
-        return int(self) == int(rhs)
+        return Int(self) == Int(rhs)
 
     @__unsafe_disable_nested_origin_exclusivity
     @always_inline("nodebug")
@@ -344,7 +344,7 @@ struct UnsafePointer[
         Returns:
             True if this pointer represents a lower address and False otherwise.
         """
-        return int(self) < int(rhs)
+        return Int(self) < Int(rhs)
 
     @__unsafe_disable_nested_origin_exclusivity
     @always_inline("nodebug")
@@ -358,7 +358,7 @@ struct UnsafePointer[
         Returns:
             True if this pointer represents a lower address and False otherwise.
         """
-        return int(self) <= int(rhs)
+        return Int(self) <= Int(rhs)
 
     @__unsafe_disable_nested_origin_exclusivity
     @always_inline("nodebug")
@@ -372,7 +372,7 @@ struct UnsafePointer[
             True if this pointer represents a higher than or equal address and
             False otherwise.
         """
-        return int(self) > int(rhs)
+        return Int(self) > Int(rhs)
 
     @__unsafe_disable_nested_origin_exclusivity
     @always_inline("nodebug")
@@ -387,7 +387,7 @@ struct UnsafePointer[
             True if this pointer represents a higher than or equal address and
             False otherwise.
         """
-        return int(self) >= int(rhs)
+        return Int(self) >= Int(rhs)
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -400,7 +400,7 @@ struct UnsafePointer[
         Returns:
             Whether the pointer is null.
         """
-        return int(self) != 0
+        return Int(self) != 0
 
     @always_inline
     fn __as_bool__(self) -> Bool:
@@ -427,7 +427,7 @@ struct UnsafePointer[
         Returns:
             The string representation of the pointer.
         """
-        return hex(int(self))
+        return hex(Int(self))
 
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):
@@ -569,7 +569,7 @@ struct UnsafePointer[
             The loaded value.
         """
         constrained[offset.type.is_integral(), "offset must be integer"]()
-        return self.offset(int(offset)).load[
+        return self.offset(Int(offset)).load[
             width=width,
             alignment=alignment,
             volatile=volatile,
@@ -701,7 +701,7 @@ struct UnsafePointer[
         """
         constrained[mut, _must_be_mut_err]()
         constrained[offset_type.is_integral(), "offset must be integer"]()
-        self.offset(int(offset))._store[alignment=alignment, volatile=volatile](
+        self.offset(Int(offset))._store[alignment=alignment, volatile=volatile](
             val
         )
 
@@ -736,7 +736,7 @@ struct UnsafePointer[
         """
         constrained[mut, _must_be_mut_err]()
         constrained[offset_type.is_integral(), "offset must be integer"]()
-        self.offset(int(offset))._store[alignment=alignment, volatile=volatile](
+        self.offset(Int(offset))._store[alignment=alignment, volatile=volatile](
             val
         )
 
@@ -829,7 +829,7 @@ struct UnsafePointer[
         Returns:
             A vector which is stride loaded.
         """
-        return strided_load(self, int(stride), SIMD[DType.bool, width](True))
+        return strided_load(self, Int(stride), SIMD[DType.bool, width](True))
 
     @always_inline("nodebug")
     fn strided_store[
@@ -853,7 +853,7 @@ struct UnsafePointer[
             stride: The stride between stores.
         """
         constrained[mut, _must_be_mut_err]()
-        strided_store(val, self, int(stride), True)
+        strided_store(val, self, Int(stride), True)
 
     @always_inline("nodebug")
     fn gather[
@@ -907,7 +907,7 @@ struct UnsafePointer[
             "alignment must be a power of two integer value",
         ]()
 
-        var base = offset.cast[DType.index]().fma(sizeof[type](), int(self))
+        var base = offset.cast[DType.index]().fma(sizeof[type](), Int(self))
         return gather(base, mask, default, alignment)
 
     @always_inline("nodebug")
@@ -962,7 +962,7 @@ struct UnsafePointer[
             "alignment must be a power of two integer value",
         ]()
 
-        var base = offset.cast[DType.index]().fma(sizeof[type](), int(self))
+        var base = offset.cast[DType.index]().fma(sizeof[type](), Int(self))
         scatter(val, base, mask, alignment)
 
     @always_inline

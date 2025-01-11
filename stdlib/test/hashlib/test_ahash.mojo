@@ -587,7 +587,7 @@ fn gen_word_pairs[words: String = words_en]() -> List[String]:
 
 
 def dif_bits(i1: UInt64, i2: UInt64) -> Int:
-    return int(pop_count(i1 ^ i2))
+    return Int(pop_count(i1 ^ i2))
 
 
 @always_inline
@@ -696,7 +696,7 @@ def assert_fill_factor[
     var buckets = List[Int](0) * num_buckets
     for w in words:
         var h = hash[HasherType=hasher0](w[])
-        buckets[int(h) % num_buckets] += 1
+        buckets[Int(h) % num_buckets] += 1
     var unfilled = 0
     for v in buckets:
         if v[] == 0:

@@ -35,7 +35,7 @@ fn _get_random_name(size: Int = 8) -> String:
     alias characters = String("abcdefghijklmnopqrstuvwxyz0123456789_")
     var name_list = List[UInt8](capacity=size + 1)
     for _ in range(size):
-        var rand_index = int(
+        var rand_index = Int(
             random.random_ui64(0, characters.byte_length() - 1)
         )
         name_list.append(ord(characters[rand_index]))

@@ -320,16 +320,16 @@ struct _DictIndex:
     fn get_index(self, reserved: Int, slot: UInt64) -> Int:
         if reserved <= 128:
             var data = self.data.bitcast[Int8]()
-            return int(data.load(slot & (reserved - 1)))
+            return Int(data.load(slot & (reserved - 1)))
         elif reserved <= 2**16 - 2:
             var data = self.data.bitcast[Int16]()
-            return int(data.load(slot & (reserved - 1)))
+            return Int(data.load(slot & (reserved - 1)))
         elif reserved <= 2**32 - 2:
             var data = self.data.bitcast[Int32]()
-            return int(data.load(slot & (reserved - 1)))
+            return Int(data.load(slot & (reserved - 1)))
         else:
             var data = self.data.bitcast[Int64]()
-            return int(data.load(slot & (reserved - 1)))
+            return Int(data.load(slot & (reserved - 1)))
 
     fn set_index(mut self, reserved: Int, slot: UInt64, value: Int):
         if reserved <= 128:
@@ -1012,7 +1012,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
     fn _next_index_slot(self, mut slot: UInt64, mut perturb: UInt64):
         alias PERTURB_SHIFT = 5
         perturb >>= PERTURB_SHIFT
-        slot = ((5 * slot) + int(perturb + 1)) & (self._reserved() - 1)
+        slot = ((5 * slot) + Int(perturb + 1)) & (self._reserved() - 1)
 
     fn _find_empty_index(self, hash: UInt64) -> UInt64:
         var slot = hash & (self._reserved() - 1)

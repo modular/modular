@@ -20,7 +20,7 @@ from testing import assert_equal
 fn sum_items(data: List[Int8]) -> Int:
     var sum: Int = 0
     for i in range(len(data)):
-        sum += int(data[i])
+        sum += Int(data[i])
     return sum
 
 

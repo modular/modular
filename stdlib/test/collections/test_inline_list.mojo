@@ -155,7 +155,7 @@ def test_indexing():
         list.append(i)
 
     assert_equal(list[True], 1)
-    assert_equal(list[int(4)], 4)
+    assert_equal(list[Int(4)], 4)
     assert_equal(list[0], 0)
 
 

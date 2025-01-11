@@ -299,13 +299,13 @@ struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
         else:
             new_idx += 1
 
-        var extra = int(new_idx < field_len)
+        var extra = Int(new_idx < field_len)
         var fmt_field = _build_slice(field_ptr, new_idx + extra, field_len)
         self.format_spec = _FormatSpec.parse(fmt_field)
-        var w = int(self.format_spec.value().width) if self.format_spec else 0
+        var w = Int(self.format_spec.value().width) if self.format_spec else 0
         # fully guessing the byte width here to be at least 8 bytes per entry
         # minus the length of the whole format specification
-        total_estimated_entry_byte_width += 8 * int(w > 0) + w - (field_len + 2)
+        total_estimated_entry_byte_width += 8 * Int(w > 0) + w - (field_len + 2)
 
         if field.byte_length() == 0:
             # an empty field, so it's automatic indexing
@@ -318,7 +318,7 @@ struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
                 # field is a number for manual indexing:
                 # TODO: add support for "My name is {0.name}".format(Person(name="Fred"))
                 # TODO: add support for "My name is {0[name]}".format({"name": "Fred"})
-                var number = int(field)
+                var number = Int(field)
                 self.field = number
                 if number >= len_pos_args or number < 0:
                     raised_manual_index = number

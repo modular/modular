@@ -90,8 +90,8 @@ trait Intable(CollectionElement):
     """The `Intable` trait describes a type that can be converted to an Int.
 
     Any type that conforms to `Intable` or
-    [`IntableRaising`](/mojo/stdlib/builtin/int/IntableRaising) works with
-    the built-in [`int()`](/mojo/stdlib/builtin/int/int-function) function.
+    [`IntableRaising`](/mojo/stdlib/builtin/int/IntableRaising) can construct an
+    `Int`.
 
     This trait requires the type to implement the `__int__()` method. For
     example:
@@ -105,13 +105,12 @@ trait Intable(CollectionElement):
             return self.i
     ```
 
-    Now you can use the `int()` function to convert a `Foo` to an
-    `Int`:
+    Now you can construct an `Int`:
 
     ```mojo
     %# from testing import assert_equal
     foo = Foo(42)
-    assert_equal(int(foo), 42)
+    assert_equal(Int(foo), 42)
     ```
 
     **Note:** If the `__int__()` method can raise an error, use the
@@ -134,8 +133,7 @@ trait IntableRaising:
     the conversion might raise an error.
 
     Any type that conforms to [`Intable`](/mojo/stdlib/builtin/int/Intable)
-    or `IntableRaising` works with the built-in
-    [`int()`](/mojo/stdlib/builtin/int/int-function) function.
+    or `IntableRaising` can construct an `Int`.
 
     This trait requires the type to implement the `__int__()` method, which can
     raise an error. For example:
@@ -149,13 +147,12 @@ trait IntableRaising:
             return self.i
     ```
 
-    Now you can use the `int()` function to convert a `Foo` to an
-    `Int`:
+    Now you can construct an `Int`:
 
     ```mojo
     %# from testing import assert_equal
     foo = Foo(42)
-    assert_equal(int(foo), 42)
+    assert_equal(Int(foo), 42)
     ```
     """
 
@@ -208,96 +205,6 @@ trait ImplicitlyIntable(Intable):
 
 
 # ===----------------------------------------------------------------------=== #
-#  int
-# ===----------------------------------------------------------------------=== #
-
-
-@always_inline
-fn int[T: Intable](value: T) -> Int:
-    """Get the Int representation of the value.
-
-    Parameters:
-        T: The Intable type.
-
-    Args:
-        value: The object to get the integral representation of.
-
-    Returns:
-        The integral representation of the value.
-    """
-    return value.__int__()
-
-
-@always_inline
-fn int[T: IntableRaising](value: T) raises -> Int:
-    """Get the Int representation of the value.
-
-    Parameters:
-        T: The Intable type.
-
-    Args:
-        value: The object to get the integral representation of.
-
-    Returns:
-        The integral representation of the value.
-
-    Raises:
-        If the type does not have an integral representation.
-    """
-    return value.__int__()
-
-
-fn int(value: StringSlice, base: Int = 10) raises -> Int:
-    """Parses and returns the given string as an integer in the given base.
-
-    If base is set to 0, the string is parsed as an Integer literal, with the
-    following considerations:
-    - '0b' or '0B' prefix indicates binary (base 2)
-    - '0o' or '0O' prefix indicates octal (base 8)
-    - '0x' or '0X' prefix indicates hexadecimal (base 16)
-    - Without a prefix, it's treated as decimal (base 10)
-
-    Args:
-        value: A string to be parsed as an integer in the given base.
-        base: Base used for conversion, value must be between 2 and 36, or 0.
-
-    Returns:
-        An integer value that represents the string.
-
-    Raises:
-        If the given string cannot be parsed as an integer value or if an
-        incorrect base is provided.
-
-    Examples:
-        >>> int("32")
-        32
-        >>> int("FF", 16)
-        255
-        >>> int("0xFF", 0)
-        255
-        >>> int("0b1010", 0)
-        10
-
-    Notes:
-        This follows [Python's integer literals](
-        https://docs.python.org/3/reference/lexical_analysis.html#integers).
-    """
-    return atol(value, base)
-
-
-fn int(value: UInt) -> Int:
-    """Get the Int representation of the value.
-
-    Args:
-        value: The object to get the integral representation of.
-
-    Returns:
-        The integral representation of the value.
-    """
-    return value.value
-
-
-# ===----------------------------------------------------------------------=== #
 #  Int
 # ===----------------------------------------------------------------------=== #
 
@@ -320,10 +227,10 @@ struct Int(
     var value: __mlir_type.index
     """The underlying storage for the integer value."""
 
-    alias MAX = int(Scalar[DType.index].MAX)
+    alias MAX = Int(Scalar[DType.index].MAX)
     """Returns the maximum integer value."""
 
-    alias MIN = int(Scalar[DType.index].MIN)
+    alias MIN = Int(Scalar[DType.index].MIN)
     """Returns the minimum value of type."""
 
     # ===------------------------------------------------------------------=== #
@@ -379,6 +286,43 @@ struct Int(
 
     @always_inline("nodebug")
     @implicit
+    fn __init__(out self, value: UInt):
+        """Construct Int from the given UInt value.
+
+        Args:
+            value: The init value.
+        """
+        self = Self(value.value)
+
+    @always_inline("nodebug")
+    fn __init__[T: Intable](out self, value: T):
+        """Get the Int representation of the value.
+
+        Parameters:
+            T: The Intable type.
+
+        Args:
+            value: The object to get the integral representation of.
+        """
+        self = value.__int__()
+
+    @always_inline("nodebug")
+    fn __init__[T: IntableRaising](out self, value: T) raises:
+        """Get the Int representation of the value.
+
+        Parameters:
+            T: The Intable type.
+
+        Args:
+            value: The object to get the integral representation of.
+
+        Raises:
+            If the type does not have an integral representation.
+        """
+        self = value.__int__()
+
+    @always_inline("nodebug")
+    @implicit
     fn __init__[I: ImplicitlyIntable](out self, value: I):
         """Construct Int from implicitly convertable type.
 
@@ -391,14 +335,39 @@ struct Int(
         self = value.__as_int__()
 
     @always_inline("nodebug")
-    @implicit
-    fn __init__(out self, value: UInt):
-        """Construct Int from the given UInt value.
+    fn __init__(out self, value: StringSlice, base: UInt = 10) raises:
+        """Parses and returns the given string as an integer in the given base.
+
+        If base is set to 0, the string is parsed as an Integer literal, with the
+        following considerations:
+        - '0b' or '0B' prefix indicates binary (base 2)
+        - '0o' or '0O' prefix indicates octal (base 8)
+        - '0x' or '0X' prefix indicates hexadecimal (base 16)
+        - Without a prefix, it's treated as decimal (base 10)
 
         Args:
-            value: The init value.
+            value: A string to be parsed as an integer in the given base.
+            base: Base used for conversion, value must be between 2 and 36, or 0.
+
+        Raises:
+            If the given string cannot be parsed as an integer value or if an
+            incorrect base is provided.
+
+        Examples:
+            >>> Int("32")
+            32
+            >>> Int("FF", 16)
+            255
+            >>> Int("0xFF", 0)
+            255
+            >>> Int("0b1010", 0)
+            10
+
+        Notes:
+            This follows [Python's integer literals](
+            https://docs.python.org/3/reference/lexical_analysis.html#integers).
         """
-        self = Self(value.value)
+        self = atol(value, base)
 
     # ===------------------------------------------------------------------=== #
     # Operator dunders

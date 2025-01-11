@@ -182,10 +182,10 @@ struct Span[
         """
         # TODO: Simplify this with a UInt type.
         debug_assert(
-            -self._len <= int(idx) < self._len, "index must be within bounds"
+            -self._len <= Int(idx) < self._len, "index must be within bounds"
         )
         # TODO(MSTDL-1086): optimize away SIMD/UInt normalization check
-        var offset = int(idx)
+        var offset = Int(idx)
         if offset < 0:
             offset += len(self)
         return self._data[offset]

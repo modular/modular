@@ -75,24 +75,24 @@ fn ord(s: StringSlice) -> Int:
     var b1 = p[]
     if (b1 >> 7) == 0:  # This is 1 byte ASCII char
         debug_assert(s.byte_length() == 1, "input string length must be 1")
-        return int(b1)
+        return Int(b1)
     var num_bytes = count_leading_zeros(~b1)
     debug_assert(
-        s.byte_length() == int(num_bytes), "input string must be one character"
+        s.byte_length() == Int(num_bytes), "input string must be one character"
     )
     debug_assert(
-        1 < int(num_bytes) < 5, "invalid UTF-8 byte ", b1, " at index 0"
+        1 < Int(num_bytes) < 5, "invalid UTF-8 byte ", b1, " at index 0"
     )
-    var shift = int((6 * (num_bytes - 1)))
+    var shift = Int((6 * (num_bytes - 1)))
     var b1_mask = 0b11111111 >> (num_bytes + 1)
-    var result = int(b1 & b1_mask) << shift
+    var result = Int(b1 & b1_mask) << shift
     for i in range(1, num_bytes):
         p += 1
         debug_assert(
             p[] >> 6 == 0b00000010, "invalid UTF-8 byte ", b1, " at index ", i
         )
         shift -= 6
-        result |= int(p[] & 0b00111111) << shift
+        result |= Int(p[] & 0b00111111) << shift
     return result
 
 
@@ -298,7 +298,7 @@ fn atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
     # underscores under the conditions they have a prefix
     var was_last_digit_underscore = not (real_base in (2, 8, 16) and has_prefix)
     for pos in range(start, str_len):
-        var ord_current = int(buff[pos])
+        var ord_current = Int(buff[pos])
         if ord_current == ord_underscore:
             if was_last_digit_underscore:
                 raise Error(_str_to_base_error(base, str_slice))
@@ -362,7 +362,7 @@ fn _trim_and_handle_sign(str_slice: StringSlice, str_len: Int) -> (Int, Bool):
         start += 1
     var p: Bool = buff[start] == ord("+")
     var n: Bool = buff[start] == ord("-")
-    return start + (int(p) or int(n)), n
+    return start + (Int(p) or Int(n)), n
 
 
 @always_inline
@@ -388,7 +388,7 @@ fn _handle_base_prefix(
     var start = pos
     var buff = str_slice.unsafe_ptr()
     if start + 1 < str_len:
-        var prefix_char = chr(int(buff[start + 1]))
+        var prefix_char = chr(Int(buff[start + 1]))
         if buff[start] == ord("0") and (
             (base == 2 and (prefix_char == "b" or prefix_char == "B"))
             or (base == 8 and (prefix_char == "o" or prefix_char == "O"))
@@ -498,7 +498,7 @@ fn atof(str_slice: StringSlice) raises -> Float64:
     # read before dot
     for pos in range(start, str_len):
         if ord_0 <= buff[pos] <= ord_9:
-            result = result * 10.0 + int(buff[pos] - ord_0)
+            result = result * 10.0 + Int(buff[pos] - ord_0)
             start += 1
         else:
             break
@@ -507,7 +507,7 @@ fn atof(str_slice: StringSlice) raises -> Float64:
         start += 1
         for pos in range(start, str_len):
             if ord_0 <= buff[pos] <= ord_9:
-                result = result * 10.0 + int(buff[pos] - ord_0)
+                result = result * 10.0 + Int(buff[pos] - ord_0)
                 exponent -= 1
             else:
                 break
@@ -525,7 +525,7 @@ fn atof(str_slice: StringSlice) raises -> Float64:
                 sign = -1
             elif ord_0 <= buff[start] <= ord_9:
                 has_number = True
-                shift = shift * 10 + int(buff[pos] - ord_0)
+                shift = shift * 10 + Int(buff[pos] - ord_0)
             else:
                 break
             start += 1
@@ -568,7 +568,7 @@ fn isdigit(c: UInt8) -> Bool:
     """
     alias ord_0 = ord("0")
     alias ord_9 = ord("9")
-    return ord_0 <= int(c) <= ord_9
+    return ord_0 <= Int(c) <= ord_9
 
 
 # ===----------------------------------------------------------------------=== #
@@ -594,7 +594,7 @@ fn isupper(c: UInt8) -> Bool:
 fn _is_ascii_uppercase(c: UInt8) -> Bool:
     alias ord_a = ord("A")
     alias ord_z = ord("Z")
-    return ord_a <= int(c) <= ord_z
+    return ord_a <= Int(c) <= ord_z
 
 
 # ===----------------------------------------------------------------------=== #
@@ -620,7 +620,7 @@ fn islower(c: UInt8) -> Bool:
 fn _is_ascii_lowercase(c: UInt8) -> Bool:
     alias ord_a = ord("a")
     alias ord_z = ord("z")
-    return ord_a <= int(c) <= ord_z
+    return ord_a <= Int(c) <= ord_z
 
 
 # ===----------------------------------------------------------------------=== #
@@ -699,7 +699,7 @@ fn isprintable(c: UInt8) -> Bool:
     """
     alias ord_space = ord(" ")
     alias ord_tilde = ord("~")
-    return ord_space <= int(c) <= ord_tilde
+    return ord_space <= Int(c) <= ord_tilde
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1137,7 +1137,7 @@ struct String(
         var buffer = Self._buffer_type(capacity=sum_len + 1)
         var ptr = buffer.unsafe_ptr()
         memcpy(ptr, lhs_ptr, lhs_len)
-        memcpy(ptr + lhs_len, rhs_ptr, rhs_len + int(rhs_has_null))
+        memcpy(ptr + lhs_len, rhs_ptr, rhs_len + Int(rhs_has_null))
         buffer.size = sum_len + 1
 
         @parameter
@@ -1182,7 +1182,7 @@ struct String(
         var sum_len = s_len + o_len
         self._buffer.reserve(sum_len + 1)
         var s_ptr = self.unsafe_ptr()
-        memcpy(s_ptr + s_len, o_ptr, o_len + int(has_null))
+        memcpy(s_ptr + s_len, o_ptr, o_len + Int(has_null))
         self._buffer.size = sum_len + 1
 
         @parameter
@@ -1483,7 +1483,7 @@ struct String(
             This does not include the trailing null terminator in the count.
         """
         var length = len(self._buffer)
-        return length - int(length > 0)
+        return length - Int(length > 0)
 
     fn _steal_ptr(mut self) -> UnsafePointer[UInt8]:
         """Transfer ownership of pointer to the underlying memory.
@@ -1652,7 +1652,7 @@ struct String(
 
         fn num_bytes(b: UInt8) -> Int:
             var flipped = ~b
-            return int(count_leading_zeros(flipped) + (flipped >> 7))
+            return Int(count_leading_zeros(flipped) + (flipped >> 7))
 
         var output = List[String]()
         var str_byte_len = self.byte_length() - 1
@@ -1736,7 +1736,7 @@ struct String(
         res.reserve(self_len + (old_len - new_len) * occurrences + 1)
 
         for _ in range(occurrences):
-            var curr_offset = int(self_ptr) - int(self_start)
+            var curr_offset = Int(self_ptr) - Int(self_start)
 
             var idx = self.find(old, curr_offset)
 
@@ -2188,10 +2188,10 @@ fn _calc_initial_buffer_size_int32(n0: Int) -> Int:
         42949672960,
     )
     var n = UInt32(n0)
-    var log2 = int(
+    var log2 = Int(
         (bitwidthof[DType.uint32]() - 1) ^ count_leading_zeros(n | 1)
     )
-    return (n0 + lookup_table[int(log2)]) >> 32
+    return (n0 + lookup_table[Int(log2)]) >> 32
 
 
 fn _calc_initial_buffer_size_int64(n0: UInt64) -> Int:
@@ -2230,7 +2230,7 @@ fn _calc_initial_buffer_size[type: DType](n0: Scalar[type]) -> Int:
 
         @parameter
         if is_32bit_system or bitwidthof[type]() <= 32:
-            return sign + _calc_initial_buffer_size_int32(int(n)) + 1
+            return sign + _calc_initial_buffer_size_int32(Int(n)) + 1
         else:
             return (
                 sign

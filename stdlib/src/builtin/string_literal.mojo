@@ -363,7 +363,7 @@ struct StringLiteral(
         Returns:
             An integer value that represents the string, or otherwise raises.
         """
-        return int(self.as_string_slice())
+        return Int(self.as_string_slice())
 
     @always_inline
     fn __float__(self) raises -> Float64:

@@ -41,8 +41,8 @@ fn _build_pw_struct(passwd_ptr: UnsafePointer[_C_Passwd]) raises -> Passwd:
     var passwd = Passwd(
         pw_name=String(c_pwuid.pw_name),
         pw_passwd=String(c_pwuid.pw_passwd),
-        pw_uid=int(c_pwuid.pw_uid),
-        pw_gid=int(c_pwuid.pw_gid),
+        pw_uid=Int(c_pwuid.pw_uid),
+        pw_gid=Int(c_pwuid.pw_gid),
         pw_gecos=String(c_pwuid.pw_gecos),
         pw_dir=String(c_pwuid.pw_dir),
         pw_shell=String(c_pwuid.pw_shell),

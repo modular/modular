@@ -243,7 +243,7 @@ fn sqrt[
 
         @parameter
         for i in range(simd_width):
-            res[i] = sqrt(int(x[i]))
+            res[i] = sqrt(Int(x[i]))
         return res
     elif is_nvidia_gpu():
 

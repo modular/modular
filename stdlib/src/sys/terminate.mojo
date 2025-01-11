@@ -34,4 +34,4 @@ fn exit[intable: Intable](code: intable):
     Args:
         code: The exit code.
     """
-    libc.exit(c_int(int(code)))
+    libc.exit(c_int(Int(code)))

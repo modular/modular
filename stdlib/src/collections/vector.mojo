@@ -217,7 +217,7 @@ struct InlinedFixedVector[
         Returns:
             The element at the given index.
         """
-        var index = int(idx)
+        var index = Int(idx)
         debug_assert(
             -self.current_size <= index < self.current_size,
             "index must be within bounds",
@@ -244,7 +244,7 @@ struct InlinedFixedVector[
             idx: The index of the element.
             value: The value to assign.
         """
-        var index = int(idx)
+        var index = Int(idx)
         debug_assert(
             -self.current_size <= index < self.current_size,
             "index must be within bounds",

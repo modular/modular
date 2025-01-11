@@ -101,7 +101,7 @@ struct _FILETIME:
         ) + self.dw_low_date_time.cast[
             DType.uint64
         ]() - windows_to_unix_epoch_offset_ns
-        return int(interval_count * 100)
+        return Int(interval_count * 100)
 
 
 @always_inline
@@ -123,7 +123,7 @@ fn _gettime_as_nsec_unix(clockid: Int) -> UInt:
         var ts = _clock_gettime(clockid)
         return ts.as_nanoseconds()
     else:
-        return int(
+        return Int(
             external_call["clock_gettime_nsec_np", Int64](Int32(clockid))
         )
 
@@ -132,7 +132,7 @@ fn _gettime_as_nsec_unix(clockid: Int) -> UInt:
 fn _gpu_clock() -> UInt:
     """Returns a 64-bit unsigned cycle counter."""
     alias asm = "llvm.nvvm.read.ptx.sreg.clock64" if is_nvidia_gpu() else "llvm.amdgcn.s.memtime"
-    return int(llvm_intrinsic[asm, Int64]())
+    return Int(llvm_intrinsic[asm, Int64]())
 
 
 @always_inline
@@ -271,7 +271,7 @@ fn _time_function_windows[
 
     # Note: Windows performance counter resolution is in µs.
     var elapsed_time_in_ns = (elapsed_ticks * 1_000_000_000) // ticks_per_sec
-    return int(elapsed_time_in_ns)
+    return Int(elapsed_time_in_ns)
 
 
 @always_inline
@@ -340,8 +340,8 @@ fn sleep(sec: Float64):
     alias NANOSECONDS_IN_SECOND = 1_000_000_000
     var total_secs = floor(sec)
     var tv_spec = _CTimeSpec(
-        int(total_secs),
-        int((sec - total_secs) * NANOSECONDS_IN_SECOND),
+        Int(total_secs),
+        Int((sec - total_secs) * NANOSECONDS_IN_SECOND),
     )
     var req = UnsafePointer[_CTimeSpec].address_of(tv_spec)
     var rem = UnsafePointer[_CTimeSpec]()

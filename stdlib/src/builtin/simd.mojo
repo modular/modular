@@ -1532,7 +1532,7 @@ struct SIMD[type: DType, size: Int](
         constrained[
             type.is_integral(), "cannot index using a floating point type"
         ]()
-        return int(self).value
+        return Int(self).value
 
     @always_inline("nodebug")
     fn __float__(self) -> Float64:
@@ -2165,7 +2165,7 @@ struct SIMD[type: DType, size: Int](
         ```
         result = SIMD[Self.type, mask_size]()
         for i in range(mask_size):
-            result[i] = self[int(mask[i])]
+            result[i] = self[Int(mask[i])]
         ```
 
         Parameters:
@@ -2223,7 +2223,7 @@ struct SIMD[type: DType, size: Int](
 
         @parameter
         for i in range(0, mask_size):
-            result[i] = self[int(mask[i])]
+            result[i] = self[Int(mask[i])]
         return result
 
     @always_inline
@@ -2717,12 +2717,12 @@ struct SIMD[type: DType, size: Int](
 
         @parameter
         if type is DType.bool:
-            return int(self.cast[DType.uint8]().reduce_add())
+            return Int(self.cast[DType.uint8]().reduce_add())
         else:
             constrained[
                 type.is_integral(), "Expected either integral or bool type"
             ]()
-            return int(pop_count(self).reduce_add())
+            return Int(pop_count(self).reduce_add())
 
     # ===------------------------------------------------------------------=== #
     # select

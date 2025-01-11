@@ -175,7 +175,7 @@ struct PyObjectPtr:
         Returns:
             Bool: True if the pointers are equal, False otherwise.
         """
-        return int(self.unsized_obj_ptr) == int(rhs.unsized_obj_ptr)
+        return Int(self.unsized_obj_ptr) == Int(rhs.unsized_obj_ptr)
 
     fn __ne__(self, rhs: PyObjectPtr) -> Bool:
         """Compare two PyObjectPtr for inequality.
@@ -233,16 +233,16 @@ struct PyObjectPtr:
         Returns:
             Bool: True if the pointer is null, False otherwise.
         """
-        return int(self.unsized_obj_ptr) == 0
+        return Int(self.unsized_obj_ptr) == 0
 
-    # TODO: Consider removing this and inlining int(p.value) into callers
+    # TODO: Consider removing this and inlining Int(p.value) into callers
     fn _get_ptr_as_int(self) -> Int:
         """Get the pointer value as an integer.
 
         Returns:
             Int: The integer representation of the pointer.
         """
-        return int(self.unsized_obj_ptr)
+        return Int(self.unsized_obj_ptr)
 
 
 @value
@@ -1469,13 +1469,13 @@ struct CPython:
         """[Reference](
         https://docs.python.org/3/c-api/object.html#c.PyObject_Length).
         """
-        return int(self.lib.call["PyObject_Length", Int](obj))
+        return Int(self.lib.call["PyObject_Length", Int](obj))
 
     fn PyObject_Hash(mut self, obj: PyObjectPtr) -> Int:
         """[Reference](
         https://docs.python.org/3/c-api/object.html#c.PyObject_Hash).
         """
-        return int(self.lib.call["PyObject_Hash", Int](obj))
+        return Int(self.lib.call["PyObject_Hash", Int](obj))
 
     fn PyObject_GetIter(
         mut self, traversable_py_object: PyObjectPtr

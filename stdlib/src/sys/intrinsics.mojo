@@ -661,7 +661,7 @@ fn strided_load[
     if simd_width == 1:
         return addr.load() if mask else Scalar[type]()
 
-    var offset = int(addr) + stride * sizeof[type]() * math.iota[
+    var offset = Int(addr) + stride * sizeof[type]() * math.iota[
         DType.index, simd_width
     ]()
     var passthrough = SIMD[type, simd_width]()
@@ -702,7 +702,7 @@ fn strided_store[
             addr.store(value[0])
         return
 
-    var offset = int(addr) + stride * sizeof[type]() * math.iota[
+    var offset = Int(addr) + stride * sizeof[type]() * math.iota[
         DType.index, simd_width
     ]()
     scatter(value, offset, mask)
@@ -880,7 +880,7 @@ fn lane_id() -> UInt:
     @parameter
     if is_nvidia_gpu():
         return UInt(
-            int(
+            Int(
                 llvm_intrinsic[
                     "llvm.nvvm.read.ptx.sreg.laneid",
                     Int32,
@@ -896,7 +896,7 @@ fn lane_id() -> UInt:
             "llvm.amdgcn.mbcnt.lo", Int32, has_side_effect=False
         ](none, zero)
         return UInt(
-            int(
+            Int(
                 llvm_intrinsic[
                     "llvm.amdgcn.mbcnt.hi", Int32, has_side_effect=False
                 ](none, t).cast[DType.uint32]()

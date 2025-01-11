@@ -34,9 +34,9 @@ fn test_string_slice_layout() raises:
 
     var str_slice = StringSlice("")
 
-    var base_ptr = int(UnsafePointer.address_of(str_slice))
-    var first_word_ptr = int(UnsafePointer.address_of(str_slice._slice._data))
-    var second_word_ptr = int(UnsafePointer.address_of(str_slice._slice._len))
+    var base_ptr = Int(UnsafePointer.address_of(str_slice))
+    var first_word_ptr = Int(UnsafePointer.address_of(str_slice._slice._data))
+    var second_word_ptr = Int(UnsafePointer.address_of(str_slice._slice._len))
 
     # 1st field should be at 0-byte offset from base ptr
     assert_equal(first_word_ptr - base_ptr, 0)
@@ -113,7 +113,7 @@ fn test_string_byte_span() raises:
     assert_equal(len(sub5), 0)
 
     # Empty slices still have a pointer value
-    assert_equal(int(sub5.unsafe_ptr()) - int(sub4.unsafe_ptr()), 2)
+    assert_equal(Int(sub5.unsafe_ptr()) - Int(sub4.unsafe_ptr()), 2)
 
     # ----------------------------------
     # Test invalid slicing

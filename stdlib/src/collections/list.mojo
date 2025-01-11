@@ -504,7 +504,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
             Except for 0 capacity where it sets 1.
         """
         if self.size >= self.capacity:
-            self._realloc(self.capacity * 2 | int(self.capacity == 0))
+            self._realloc(self.capacity * 2 | Int(self.capacity == 0))
         (self.data + self.size).init_pointee_move(value^)
         self.size += 1
 
@@ -868,7 +868,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         if _type_is_eq[I, UInt]():
             return (self.data + idx)[]
         else:
-            var normalized_idx = int(idx)
+            var normalized_idx = Int(idx)
             debug_assert(
                 -self.size <= normalized_idx < self.size,
                 "index: ",

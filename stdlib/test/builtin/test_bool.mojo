@@ -23,8 +23,8 @@ def test_bool_cast_to_int():
     assert_equal(False.__int__(), 0)
     assert_equal(True.__int__(), 1)
 
-    assert_equal(int(False), 0)
-    assert_equal(int(True), 1)
+    assert_equal(Int(False), 0)
+    assert_equal(Int(True), 1)
 
 
 def test_bool_none():

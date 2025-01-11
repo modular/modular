@@ -51,10 +51,10 @@ def test_cast():
     )
 
     var b: UInt16 = 128
-    assert_equal(int(b.cast[DType.uint8]()), 128)
-    assert_equal(int(b.cast[DType.uint16]()), 128)
-    assert_equal(int(b.cast[DType.int8]()), -128)
-    assert_equal(int(b.cast[DType.int16]()), 128)
+    assert_equal(Int(b.cast[DType.uint8]()), 128)
+    assert_equal(Int(b.cast[DType.uint16]()), 128)
+    assert_equal(Int(b.cast[DType.int8]()), -128)
+    assert_equal(Int(b.cast[DType.int16]()), 128)
 
     @parameter
     if not has_neon():
@@ -1114,7 +1114,7 @@ def test_clamp():
 def test_indexing():
     var s = SIMD[DType.int32, 4](1, 2, 3, 4)
     assert_equal(s[False], 1)
-    assert_equal(s[int(2)], 3)
+    assert_equal(s[Int(2)], 3)
     assert_equal(s[3], 4)
 
 
@@ -1136,7 +1136,7 @@ def test_reduce():
             x8 = X8(0, 1, 2, 3, 4, 5, 6, 7)
             x4 = X4(4, 6, 8, 10)
             x2 = X2(12, 16)
-            x1 = X1(int(28))  # TODO: fix MOCO-697 and use X1(28) instead
+            x1 = X1(Int(28))  # TODO: fix MOCO-697 and use X1(28) instead
             assert_equal(x8.reduce_add(), x1)
             assert_equal(x4.reduce_add(), x1)
             assert_equal(x2.reduce_add(), x1)
@@ -1153,7 +1153,7 @@ def test_reduce():
             x8 = X8(0, 1, 2, 3, 4, 5, 6, 7)
             x4 = X4(0, 5, 12, 21)
             x2 = X2(0, 105)
-            x1 = X1(int(0))  # TODO: fix MOCO-697 and use X1(0) instead
+            x1 = X1(Int(0))  # TODO: fix MOCO-697 and use X1(0) instead
             assert_equal(x8.reduce_mul(), x1)
             assert_equal(x4.reduce_mul(), x1)
             assert_equal(x2.reduce_mul(), x1)
@@ -1170,7 +1170,7 @@ def test_reduce():
             x8 = X8(0, 1, 2, 3, 4, 5, 6, 7)
             x4 = X4(0, 1, 2, 3)
             x2 = X2(0, 1)
-            x1 = X1(int(0))  # TODO: fix MOCO-697 and use X1(0) instead
+            x1 = X1(Int(0))  # TODO: fix MOCO-697 and use X1(0) instead
             assert_equal(x8.reduce_min(), x1)
             assert_equal(x4.reduce_min(), x1)
             assert_equal(x2.reduce_min(), x1)
@@ -1187,7 +1187,7 @@ def test_reduce():
             x8 = X8(0, 1, 2, 3, 4, 5, 6, 7)
             x4 = X4(4, 5, 6, 7)
             x2 = X2(6, 7)
-            x1 = X1(int(7))  # TODO: fix MOCO-697 and use X1(7) instead
+            x1 = X1(Int(7))  # TODO: fix MOCO-697 and use X1(7) instead
             assert_equal(x8.reduce_max(), x1)
             assert_equal(x4.reduce_max(), x1)
             assert_equal(x2.reduce_max(), x1)
@@ -1206,7 +1206,7 @@ def test_reduce():
             x8 = X8(0, -1, 2, -3, 4, -5, 6, -7)
             x4 = X4(4, -6, 8, -10)
             x2 = X2(12, -16)
-            x1 = X1(int(-4))  # TODO: fix MOCO-697 and use X1(-4) instead
+            x1 = X1(Int(-4))  # TODO: fix MOCO-697 and use X1(-4) instead
             assert_equal(x8.reduce_add(), x1)
             assert_equal(x4.reduce_add(), x1)
             assert_equal(x2.reduce_add(), x1)
@@ -1223,7 +1223,7 @@ def test_reduce():
             x8 = X8(0, -1, 2, -3, 4, -5, 6, -7)
             x4 = X4(0, 5, 12, 21)
             x2 = X2(0, 105)
-            x1 = X1(int(0))  # TODO: fix MOCO-697 and use X1(0) instead
+            x1 = X1(Int(0))  # TODO: fix MOCO-697 and use X1(0) instead
             assert_equal(x8.reduce_mul(), x1)
             assert_equal(x4.reduce_mul(), x1)
             assert_equal(x2.reduce_mul(), x1)
@@ -1240,7 +1240,7 @@ def test_reduce():
             x8 = X8(0, -1, 2, -3, 4, -5, 6, -7)
             x4 = X4(0, -5, 2, -7)
             x2 = X2(0, -7)
-            x1 = X1(int(-7))  # TODO: fix MOCO-697 and use X1(-7) instead
+            x1 = X1(Int(-7))  # TODO: fix MOCO-697 and use X1(-7) instead
             assert_equal(x8.reduce_min(), x1)
             assert_equal(x4.reduce_min(), x1)
             assert_equal(x2.reduce_min(), x1)
@@ -1257,7 +1257,7 @@ def test_reduce():
             x8 = X8(0, -1, 2, -3, 4, -5, 6, -7)
             x4 = X4(4, -1, 6, -3)
             x2 = X2(6, -1)
-            x1 = X1(int(6))  # TODO: fix MOCO-697 and use X1(6) instead
+            x1 = X1(Int(6))  # TODO: fix MOCO-697 and use X1(6) instead
             assert_equal(x8.reduce_max(), x1)
             assert_equal(x4.reduce_max(), x1)
             assert_equal(x2.reduce_max(), x1)
@@ -1316,7 +1316,7 @@ def test_reduce():
             x8 = X8(0, 1, 2, 3, 4, 5, 6, 7)
             x4 = X4(0, 1, 2, 3)
             x2 = X2(0, 1)
-            x1 = X1(int(0))  # TODO: fix MOCO-697 and use X1(0) instead
+            x1 = X1(Int(0))  # TODO: fix MOCO-697 and use X1(0) instead
             assert_equal(x8.reduce_and(), x1)
             assert_equal(x4.reduce_and(), x1)
             assert_equal(x2.reduce_and(), x1)
@@ -1333,7 +1333,7 @@ def test_reduce():
             x8 = X8(0, 1, 2, 3, 4, 5, 6, 7)
             x4 = X4(4, 5, 6, 7)
             x2 = X2(6, 7)
-            x1 = X1(int(7))  # TODO: fix MOCO-697 and use X1(7) instead
+            x1 = X1(Int(7))  # TODO: fix MOCO-697 and use X1(7) instead
             assert_equal(x8.reduce_or(), x1)
             assert_equal(x4.reduce_or(), x1)
             assert_equal(x2.reduce_or(), x1)

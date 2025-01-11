@@ -158,11 +158,11 @@ def test_div_mod():
 
 
 def test_int_conversion():
-    assert_equal(int(-4.0), -4)
-    assert_equal(int(-4.5), -4)
-    assert_equal(int(-4.3), -4)
-    assert_equal(int(4.5), 4)
-    assert_equal(int(4.0), 4)
+    assert_equal(Int(-4.0), -4)
+    assert_equal(Int(-4.5), -4)
+    assert_equal(Int(-4.3), -4)
+    assert_equal(Int(4.5), 4)
+    assert_equal(Int(4.0), 4)
 
 
 def test_bool():

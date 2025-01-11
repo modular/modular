@@ -191,10 +191,10 @@ def test_decimal_digit_count():
 
 def test_int_uint():
     var u1 = UInt(42)
-    assert_equal(42, int(u1))
+    assert_equal(42, Int(u1))
 
     var u2 = UInt(0)
-    assert_equal(0, int(u2))
+    assert_equal(0, Int(u2))
 
 
 def test_comparison():

@@ -224,7 +224,7 @@ fn _snprintf[
     var loaded_pack = args.get_loaded_kgen_pack()
 
     # FIXME: external_call should handle this
-    return int(
+    return Int(
         __mlir_op.`pop.external_call`[
             func = "snprintf".value,
             variadicType = __mlir_attr[

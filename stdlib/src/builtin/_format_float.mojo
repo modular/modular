@@ -106,16 +106,16 @@ fn _write_float[W: Writer, type: DType, //](mut writer: W, value: Scalar[type]):
 
     @parameter
     if type is DType.float8e5m2:
-        return writer.write(float8e5m2_to_str[int(bitcast[DType.uint8](value))])
+        return writer.write(float8e5m2_to_str[Int(bitcast[DType.uint8](value))])
     elif type is DType.float8e4m3:
-        return writer.write(float8e4m3_to_str[int(bitcast[DType.uint8](value))])
+        return writer.write(float8e4m3_to_str[Int(bitcast[DType.uint8](value))])
     elif type is DType.float8e5m2fnuz:
         return writer.write(
-            float8e5m2fnuz_to_str[int(bitcast[DType.uint8](value))]
+            float8e5m2fnuz_to_str[Int(bitcast[DType.uint8](value))]
         )
     elif type is DType.float8e4m3fnuz:
         return writer.write(
-            float8e4m3fnuz_to_str[int(bitcast[DType.uint8](value))]
+            float8e4m3fnuz_to_str[Int(bitcast[DType.uint8](value))]
         )
     else:
         # Upcast the float16 types to float32
@@ -493,25 +493,25 @@ fn _remove_trailing_zeros[
     if CarrierDType is DType.uint64:
         var r = _rotr(sig * 28999941890838049, 8)
         var b = r < 184467440738
-        var s = int(b)
+        var s = Int(b)
         if b:
             sig = r
 
         r = _rotr(sig * 182622766329724561, 4)
         b = r < 1844674407370956
-        s = s * 2 + int(b)
+        s = s * 2 + Int(b)
         if b:
             sig = r
 
         r = _rotr(sig * 10330176681277348905, 2)
         b = r < 184467440737095517
-        s = s * 2 + int(b)
+        s = s * 2 + Int(b)
         if b:
             sig = r
 
         r = _rotr(sig * 14757395258967641293, 1)
         b = r < 1844674407370955162
-        s = s * 2 + int(b)
+        s = s * 2 + Int(b)
         if b:
             sig = r
 
@@ -519,19 +519,19 @@ fn _remove_trailing_zeros[
     else:
         var r = _rotr(sig * 184254097, 4)
         var b = r < 429497
-        var s = int(b)
+        var s = Int(b)
         if b:
             sig = r
 
         r = _rotr(sig * 42949673, 2)
         b = r < 42949673
-        s = s * 2 + int(b)
+        s = s * 2 + Int(b)
         if b:
             sig = r
 
         r = _rotr(sig * 1288490189, 1)
         b = r < 429496730
-        s = s * 2 + int(b)
+        s = s * 2 + Int(b)
         if b:
             sig = r
 

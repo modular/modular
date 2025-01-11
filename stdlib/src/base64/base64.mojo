@@ -99,7 +99,7 @@ fn b64encode(input_bytes: Span[Byte, _]) -> String:
         The ASCII base64 encoded string.
     """
     # +1 for the null terminator and +1 to be sure
-    var result = List[UInt8, True](capacity=int(len(input_bytes) * (4 / 3)) + 2)
+    var result = List[UInt8, True](capacity=Int(len(input_bytes) * (4 / 3)) + 2)
     b64encode(input_bytes, result)
     # null-terminate the result
     result.append(0)
@@ -177,14 +177,14 @@ fn b16encode(str: StringSlice) -> String:
     @parameter
     @always_inline
     fn str_bytes(idx: UInt8) -> UInt8:
-        return str._slice[int(idx)]
+        return str._slice[Int(idx)]
 
     for i in range(length):
         var str_byte = str_bytes(i)
         var hi = str_byte >> 4
         var lo = str_byte & 0b1111
-        out.append(b16chars[int(hi)])
-        out.append(b16chars[int(lo)])
+        out.append(b16chars[Int(hi)])
+        out.append(b16chars[Int(lo)])
 
     out.append(0)
 

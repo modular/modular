@@ -54,11 +54,11 @@ fn _count_utf8_continuation_bytes(span: Span[Byte]) -> Int:
             for _ in range(rest // s):
                 var vec = (ptr + processed).load[width=s]()
                 var comp = (vec & 0b1100_0000) == 0b1000_0000
-                amnt += int(comp.cast[DType.uint8]().reduce_add())
+                amnt += Int(comp.cast[DType.uint8]().reduce_add())
                 processed += s
 
     for i in range(num_bytes - processed):
-        amnt += int((ptr[processed + i] & 0b1100_0000) == 0b1000_0000)
+        amnt += Int((ptr[processed + i] & 0b1100_0000) == 0b1000_0000)
 
     return amnt
 
@@ -68,7 +68,7 @@ fn _unicode_codepoint_utf8_byte_length(c: Int) -> Int:
         0 <= c <= 0x10FFFF, "Value: ", c, " is not a valid Unicode code point"
     )
     alias sizes = SIMD[DType.int32, 4](0, 0b0111_1111, 0b0111_1111_1111, 0xFFFF)
-    return int((sizes < c).cast[DType.uint8]().reduce_add())
+    return Int((sizes < c).cast[DType.uint8]().reduce_add())
 
 
 @always_inline
@@ -80,7 +80,7 @@ fn _utf8_first_byte_sequence_length(b: Byte) -> Int:
         (b & 0b1100_0000) != 0b1000_0000,
         "Function does not work correctly if given a continuation byte.",
     )
-    return int(count_leading_zeros(~b)) + int(b < 0b1000_0000)
+    return Int(count_leading_zeros(~b)) + Int(b < 0b1000_0000)
 
 
 fn _shift_unicode_to_utf8(ptr: UnsafePointer[UInt8], c: Int, num_bytes: Int):
@@ -574,7 +574,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         var len1 = len(self)
         var len2 = len(rhs)
-        return int(len1 < len2) > _memcmp_impl_unconstrained(
+        return Int(len1 < len2) > _memcmp_impl_unconstrained(
             self.unsafe_ptr(), rhs.unsafe_ptr(), min(len1, len2)
         )
 
@@ -996,7 +996,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         if not loc:
             return -1
 
-        return int(loc) - int(self.unsafe_ptr())
+        return Int(loc) - Int(self.unsafe_ptr())
 
     fn rfind(self, substr: StringSlice, start: Int = 0) -> Int:
         """Finds the offset of the last occurrence of `substr` starting at
@@ -1029,7 +1029,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         if not loc:
             return -1
 
-        return int(loc) - int(self.unsafe_ptr())
+        return Int(loc) - Int(self.unsafe_ptr())
 
     fn isspace(self) -> Bool:
         """Determines whether every character in the given StringSlice is a
@@ -1148,17 +1148,17 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
                 var isnewline = unlikely(
                     _is_newline_char(ptr, eol_start, b0, char_len)
                 )
-                var char_end = int(isnewline) * (eol_start + char_len)
-                var next_idx = char_end * int(char_end < length)
+                var char_end = Int(isnewline) * (eol_start + char_len)
+                var next_idx = char_end * Int(char_end < length)
                 var is_r_n = b0 == `\r` and next_idx != 0 and ptr[
                     next_idx
                 ] == `\n`
-                eol_length = int(isnewline) * char_len + int(is_r_n)
+                eol_length = Int(isnewline) * char_len + Int(is_r_n)
                 if isnewline:
                     break
                 eol_start += char_len
 
-            var str_len = eol_start - offset + int(keepends) * eol_length
+            var str_len = eol_start - offset + Int(keepends) * eol_length
             var s = StringSlice[O](ptr=ptr + offset, length=str_len)
             output.append(s)
             offset = eol_start + eol_length

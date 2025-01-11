@@ -201,7 +201,7 @@ fn getuid() -> Int:
     constrained[
         not os_is_windows(), "operating system must be Linux or macOS"
     ]()
-    return int(external_call["getuid", UInt32]())
+    return Int(external_call["getuid", UInt32]())
 
 
 # ===----------------------------------------------------------------------=== #

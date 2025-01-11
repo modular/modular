@@ -25,7 +25,7 @@ from testing import assert_equal, assert_not_equal, assert_true
 
 def same_low_bits(i1: Int, i2: Int, bits: Int = 5) -> UInt8:
     var mask = (1 << bits) - 1
-    return int(not (i1 ^ i2) & mask)
+    return Int(not (i1 ^ i2) & mask)
 
 
 def test_hash_byte_array():

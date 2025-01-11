@@ -41,11 +41,11 @@ from memory import UnsafePointer, bitcast, memcpy, memset_zero, stack_allocation
 # Doing so can help prevent DDOS attacks on data structures relying on these
 # hash functions. See `hash(bytes, n)` documentation for more details.
 # TODO(27659): This is always 0 right now
-# var HASH_SECRET = int(random.random_ui64(0, UInt64.MAX)
+# var HASH_SECRET = Int(random.random_ui64(0, UInt64.MAX)
 
 
 fn _init_hash_secret() -> Int:
-    return int(random.random_ui64(0, UInt64.MAX))
+    return Int(random.random_ui64(0, UInt64.MAX))
 
 
 alias _HASH_SECRET_VALUE = _Global["HASH_SECRET", Int, _init_hash_secret]
@@ -173,7 +173,7 @@ fn _hash_simd[type: DType, size: Int](data: SIMD[type, size]) -> UInt:
             bitcast[int_type, 1](hash_data[i]).cast[DType.uint64](),
         )
 
-    return int(final_data)
+    return Int(final_data)
 
 
 fn hash(bytes: UnsafePointer[UInt8], n: Int) -> UInt:

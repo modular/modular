@@ -49,7 +49,7 @@ fn _to_index[lookup: List[UInt32, **_]](rune: Int) -> Int:
     while length > 1:
         var half = length >> 1
         length -= half
-        cursor += int(b.load(cursor + half - 1) < x) * half
+        cursor += Int(b.load(cursor + half - 1) < x) * half
 
     return cursor if b.load(cursor) == x else -1
 
@@ -122,16 +122,16 @@ fn _ord(_p: UnsafePointer[UInt8]) -> (Int, Int):
     var p = _p
     var b1 = p[]
     if (b1 >> 7) == 0:  # This is 1 byte ASCII char
-        return int(b1), 1
+        return Int(b1), 1
     var num_bytes = count_leading_zeros(~b1)
-    var shift = int((6 * (num_bytes - 1)))
+    var shift = Int((6 * (num_bytes - 1)))
     var b1_mask = 0b11111111 >> (num_bytes + 1)
-    var result = int(b1 & b1_mask) << shift
+    var result = Int(b1 & b1_mask) << shift
     for _ in range(1, num_bytes):
         p += 1
         shift -= 6
-        result |= int(p[] & 0b00111111) << shift
-    return result, int(num_bytes)
+        result |= Int(p[] & 0b00111111) << shift
+    return result, Int(num_bytes)
 
 
 fn _write_rune(rune: UInt32, p: UnsafePointer[UInt8]) -> Int:
@@ -148,7 +148,7 @@ fn _write_rune(rune: UInt32, p: UnsafePointer[UInt8]) -> Int:
         )
         var values = SIMD[DType.uint32, 4](val)
         var mask = values > sizes
-        return int(mask.cast[DType.uint8]().reduce_add())
+        return Int(mask.cast[DType.uint8]().reduce_add())
 
     var num_bytes = _utf8_len(rune)
     var shift = 6 * (num_bytes - 1)

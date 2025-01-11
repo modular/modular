@@ -514,7 +514,7 @@ struct DType(
         """
 
         if self._is_non_index_integral():
-            return int(
+            return Int(
                 UInt8(
                     __mlir_op.`pop.shl`(
                         UInt8(1).value,

@@ -88,20 +88,20 @@ struct _c_stat(Stringable):
 
     fn _to_stat_result(self) -> stat_result:
         return stat_result(
-            st_dev=int(self.st_dev),
-            st_mode=int(self.st_mode),
-            st_nlink=int(self.st_nlink),
-            st_ino=int(self.st_ino),
-            st_uid=int(self.st_uid),
-            st_gid=int(self.st_gid),
-            st_rdev=int(self.st_rdev),
+            st_dev=Int(self.st_dev),
+            st_mode=Int(self.st_mode),
+            st_nlink=Int(self.st_nlink),
+            st_ino=Int(self.st_ino),
+            st_uid=Int(self.st_uid),
+            st_gid=Int(self.st_gid),
+            st_rdev=Int(self.st_rdev),
             st_atimespec=self.st_atimespec,
             st_ctimespec=self.st_ctimespec,
             st_mtimespec=self.st_mtimespec,
             st_birthtimespec=self.st_birthtimespec,
-            st_size=int(self.st_size),
-            st_blocks=int(self.st_blocks),
-            st_blksize=int(self.st_blksize),
+            st_size=Int(self.st_size),
+            st_blocks=Int(self.st_blocks),
+            st_blksize=Int(self.st_blksize),
             st_flags=0,
         )
 

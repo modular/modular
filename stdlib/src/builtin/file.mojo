@@ -193,7 +193,7 @@ struct FileHandle:
         if err_msg:
             raise err_msg^.consume_as_error()
 
-        return String(ptr=buf, length=int(size_copy) + 1)
+        return String(ptr=buf, length=Int(size_copy) + 1)
 
     fn read[
         type: DType
@@ -337,7 +337,7 @@ struct FileHandle:
             raise (err_msg^).consume_as_error()
 
         var list = List[UInt8](
-            ptr=buf, length=int(size_copy), capacity=int(size_copy)
+            ptr=buf, length=Int(size_copy), capacity=Int(size_copy)
         )
 
         return list
@@ -463,7 +463,7 @@ struct FileHandle:
         return self^
 
     fn _get_raw_fd(self) -> Int:
-        return int(
+        return Int(
             external_call[
                 "KGEN_CompilerRT_IO_GetFD",
                 Int64,

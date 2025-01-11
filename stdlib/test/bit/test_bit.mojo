@@ -506,7 +506,7 @@ def test_rotate_bits_simd():
 
 
 fn _log2_floor(n: Int) -> Int:
-    return int(floor(log2(float(n))))
+    return Int(floor(log2(float(n))))
 
 
 def test_log2_floor():

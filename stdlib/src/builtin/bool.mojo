@@ -285,7 +285,7 @@ struct Bool(
         Returns:
             1 if the Bool is True, 0 otherwise.
         """
-        return int(self).value
+        return Int(self).value
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: Bool) -> Bool:

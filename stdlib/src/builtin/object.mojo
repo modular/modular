@@ -589,7 +589,7 @@ struct _ObjectImpl(
             return
         if self.is_func():
             writer.write(
-                "Function at address " + hex(int(self.get_as_func().value))
+                "Function at address " + hex(Int(self.get_as_func().value))
             )
             return
         if self.is_list():
@@ -986,10 +986,10 @@ struct object(
             return 1 if self._value.get_as_bool() else 0
 
         if self._value.is_int():
-            return int(self._value.get_as_int())
+            return Int(self._value.get_as_int())
 
         if self._value.is_float():
-            return int(self._value.get_as_float())
+            return Int(self._value.get_as_float())
 
         raise "object type cannot be converted to an integer"
 
@@ -1833,10 +1833,10 @@ struct object(
     @always_inline
     fn _convert_index_to_int(i: object) raises -> Int:
         if i._value.is_bool():
-            return int(i._value.convert_bool_to_int().get_as_int())
+            return Int(i._value.convert_bool_to_int().get_as_int())
         elif not i._value.is_int():
             raise Error("TypeError: string indices must be integers")
-        return int(i._value.get_as_int())
+        return Int(i._value.get_as_int())
 
     @always_inline
     fn __getitem__(self, i: object) raises -> object:
@@ -1862,7 +1862,7 @@ struct object(
             var char = self._value.get_as_string().data[index]
             impl.data.init_pointee_move(char)
             return object(impl)
-        return self._value.get_list_element(int(i._value.get_as_int()))
+        return self._value.get_list_element(Int(i._value.get_as_int()))
 
     @always_inline
     fn __getitem__(self, *index: object) raises -> object:

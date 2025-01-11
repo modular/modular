@@ -37,7 +37,7 @@ fn randomize_list[
 ](mut list: List[Scalar[dt]], size: Int, max: Scalar[dt] = Scalar[dt].MAX):
     @parameter
     if dt.is_integral():
-        randint(list.data, size, 0, int(max))
+        randint(list.data, size, 0, Int(max))
     else:
         for i in range(size):
             var res = random_float64()

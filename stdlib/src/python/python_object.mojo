@@ -364,7 +364,7 @@ struct PythonObject(
             value: The boolean value.
         """
         cpython = _get_global_python_itf().cpython()
-        self.py_object = cpython.PyBool_FromLong(int(value))
+        self.py_object = cpython.PyBool_FromLong(Int(value))
 
     @implicit
     fn __init__(out self, integer: Int):
@@ -392,7 +392,7 @@ struct PythonObject(
 
         @parameter
         if dt is DType.bool:
-            self.py_object = cpython.PyBool_FromLong(int(value))
+            self.py_object = cpython.PyBool_FromLong(Int(value))
         elif dt.is_integral():
             int_val = value.cast[DType.index]().value
             self.py_object = cpython.PyLong_FromSsize_t(int_val)
@@ -1573,7 +1573,7 @@ struct PythonObject(
         Returns:
             An `UnsafePointer` for the underlying Python data.
         """
-        var tmp = int(self)
+        var tmp = Int(self)
         var result = UnsafePointer.address_of(tmp).bitcast[
             UnsafePointer[Scalar[type]]
         ]()[]
