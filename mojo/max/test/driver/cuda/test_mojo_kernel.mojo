@@ -27,7 +27,7 @@ from max.driver._cuda import cuda_device
 import max.driver._cuda as cuda
 from testing import assert_equal
 from max.tensor import TensorShape
-from gpu.id import ThreadIdx, BlockDim, BlockIdx
+from gpu.id import thread_idx, block_dim, block_idx
 from gpu.host import Dim
 from pathlib import Path
 
@@ -39,8 +39,8 @@ fn vec_add[
     in1: ManagedTensorSlice[type, rank],
     out: ManagedTensorSlice[type, rank],
 ):
-    var row = ThreadIdx.x
-    var col = ThreadIdx.y
+    var row = thread_idx.x
+    var col = thread_idx.y
     out[row, col] = in0[row, col] + in1[row, col]
 
 
