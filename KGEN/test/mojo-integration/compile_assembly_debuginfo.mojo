@@ -15,7 +15,7 @@ fn get_type(dtype: DType) -> DType:
 
 fn compiled_fn[dtype: DType](M: SIMD[get_type(dtype), 4]) -> Int:
     alias b = sizeof[get_type(dtype)]()
-    return b + int(M[0])
+    return b + Int(M[0])
 
 
 fn main():

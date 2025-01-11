@@ -352,7 +352,7 @@ fn sum_intable[*Ts: Intable](*pack: *Ts) -> Int:
 
     @parameter
     fn process[T: Intable](a: T):
-        result += int(a)
+        result += Int(a)
 
     pack.each[process]()
     return result
