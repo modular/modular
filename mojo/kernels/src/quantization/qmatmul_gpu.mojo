@@ -223,11 +223,11 @@ fn multistage_mma_q[
                         ]().vectorize[1, 4]().distribute[
                             async_copy_scales_layout
                         ](
-                            int(tid)
+                            Int(tid)
                         )
                         var dst_fragments = scales_smem_tile.vectorize[
                             1, 4
-                        ]().distribute[async_copy_scales_layout](int(tid))
+                        ]().distribute[async_copy_scales_layout](Int(tid))
 
                         dst_fragments.copy_from_async[](src_fragments)
 
@@ -266,7 +266,7 @@ fn multistage_mma_q[
         num_n_mmas, 1
     ]().local().alloc().vectorize[1, 1]()
 
-    var a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
+    var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
 
     alias b_wtile_dim0 = WN // repack_tile[0] if transpose_b else (
         (BK * repack_tile[0]) // pack_factor
@@ -274,13 +274,13 @@ fn multistage_mma_q[
     alias b_wtile_dim1 = (
         (BK * repack_tile[0]) // pack_factor
     ) if transpose_b else WN // repack_tile[0]
-    var b_wtile_coord0 = int(warp_x) if transpose_b else 0
-    var b_wtile_coord1 = 0 if transpose_b else int(warp_x)
+    var b_wtile_coord0 = Int(warp_x) if transpose_b else 0
+    var b_wtile_coord1 = 0 if transpose_b else Int(warp_x)
     var b_warp_tile = b_smem_iter[].tile[b_wtile_dim0, b_wtile_dim1](
         b_wtile_coord0, b_wtile_coord1
     )
     var scales_warp_tile = scales_smem_iter[].tile[ceildiv(BK, group_size), WN](
-        0, int(warp_x)
+        0, Int(warp_x)
     )
 
     var mma_op = TensorCore[accum_type, a_type, mma_shape, transpose_b]()
@@ -295,13 +295,13 @@ fn multistage_mma_q[
     scales_reg_tiles.vectorize[simd_size, 1]().copy_from(
         scales_warp_tile.vectorize[1, simd_size]().distribute[
             smem_reg_scales_layout, axis=0
-        ](int(lane_id))
+        ](Int(lane_id))
     )
 
     mma_op.load_b(b_warp_tile, b_reg_tiles[0], scales_reg_tiles, 0)
 
     for k_tile_id in range(num_iters):
-        var a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
+        var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
         var b_warp_tile = b_smem_iter[].tile[b_wtile_dim0, b_wtile_dim1](
             b_wtile_coord0,
             b_wtile_coord1,
@@ -318,7 +318,7 @@ fn multistage_mma_q[
                 a_smem_iter._incr()
                 b_smem_iter._incr()
 
-                a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
+                a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
                 b_warp_tile = b_smem_iter[].tile[b_wtile_dim0, b_wtile_dim1](
                     b_wtile_coord0, b_wtile_coord1
                 )
@@ -328,11 +328,11 @@ fn multistage_mma_q[
                     scales_smem_iter._incr()
                     scales_warp_tile = scales_smem_iter[].tile[
                         ceildiv(BK, group_size), WN
-                    ](0, int(warp_x))
+                    ](0, Int(warp_x))
                     scales_reg_tiles.vectorize[simd_size, 1]().copy_from(
                         scales_warp_tile.vectorize[1, simd_size]().distribute[
                             smem_reg_scales_layout, axis=0
-                        ](int(lane_id))
+                        ](Int(lane_id))
                     )
 
             mma_op.load_a[swizzle_a](
@@ -411,12 +411,12 @@ fn multistage_mma_q[
                                 ]().vectorize[1, 4]().distribute[
                                     async_copy_scales_layout
                                 ](
-                                    int(tid)
+                                    Int(tid)
                                 )
                                 var dst_fragments = scales_smem_tile.vectorize[
                                     1, 4
                                 ]().distribute[async_copy_scales_layout](
-                                    int(tid)
+                                    Int(tid)
                                 )
 
                                 dst_fragments.copy_from_async[](
@@ -501,9 +501,9 @@ fn multistage_gemm_q[
     alias swizzle_block = a_type.is_half_float() and b_type.is_half_float()
 
     var block_idx = block_swizzle(
-        (int(BlockIdx.x), int(BlockIdx.y)),
-        (int(GridDim.x), int(GridDim.y)),
-    ) if swizzle_block else Index(int(BlockIdx.x), int(BlockIdx.y))
+        (Int(BlockIdx.x), Int(BlockIdx.y)),
+        (Int(GridDim.x), Int(GridDim.y)),
+    ) if swizzle_block else Index(Int(BlockIdx.x), Int(BlockIdx.y))
 
     # Coordinates of the current warp.
     var warp_x = warp_id % num_warps_n
@@ -617,7 +617,7 @@ fn multistage_gemm_q[
 
     # Map global memory tile down to thread.
     var c_gmem_tile = c.tile[BM, BN](block_idx[1], block_idx[0])
-    var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](int(warp_y), int(warp_x))
+    var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
 
     # Store FP32 mma results to half precision buffer in global memory.
     # Each thread's fragment has 2x2 fp32 values. Casting to half float and
@@ -633,7 +633,7 @@ fn multistage_gemm_q[
         var accum_smem_warp_tile = tb[c_type]().row_major[
             WM, WN
         ]().shared().view(
-            a_smem.bitcast[Scalar[c_type]]() + int(warp_id * WM * WN)
+            a_smem.bitcast[Scalar[c_type]]() + Int(warp_id * WM * WN)
         )
 
         copy_local_to_sram[
@@ -760,7 +760,7 @@ fn repack_Q4_0_for_sm8x[
     var warp_x: UInt = warp_id % num_warps_x
     var warp_y: UInt = warp_id // num_warps_x
     var lane_id: Int = tid % WARP_SIZE
-    var block_idx = Index(int(BlockIdx.x), int(BlockIdx.y))
+    var block_idx = Index(Int(BlockIdx.x), Int(BlockIdx.y))
 
     alias N = to_int(q_layout.shape[0])
     alias K = to_int(q_layout.shape[1]) // group_bytes * group_size
@@ -944,7 +944,7 @@ fn repack_GPTQ_for_sm8x[
     var warp_x: UInt = warp_id % num_warps_x
     var warp_y: UInt = warp_id // num_warps_x
     var lane_id: Int = tid % WARP_SIZE
-    var block_idx = Index(int(BlockIdx.x), int(BlockIdx.y))
+    var block_idx = Index(Int(BlockIdx.x), Int(BlockIdx.y))
 
     alias N = to_int(in_layout.shape[1])
     alias K = to_int(in_layout.shape[0]) // group_bytes * group_size
@@ -1100,13 +1100,13 @@ fn repack_GPTQ_for_sm8x[
                     for i_e in range(16):
                         if i_e % 2 == 0 and i_e > 0:
                             n_idx += 8
-                        var k_idx: Int = int(thd_idx[i_e % 2][0])
+                        var k_idx: Int = Int(thd_idx[i_e % 2][0])
                         var packed_int = weights_K_wrap[
                             n_idx, k_idx // pack_factor
                         ]
                         tmp[i_e] |= unpack_4bit_int(packed_int, k_idx % 8)
 
-                        k_idx = int(thd_idx[i_e % 2][1])
+                        k_idx = Int(thd_idx[i_e % 2][1])
                         packed_int = weights_K_wrap[n_idx, k_idx // pack_factor]
                         tmp[i_e] |= unpack_4bit_int(packed_int, k_idx % 8) << 4
 
@@ -1229,7 +1229,7 @@ fn matmul_gpu_qint4[
     ]
 
     var func = cuda_ctx.compile_function[gemm,](
-        threads_per_block=int(config.num_threads()),
+        threads_per_block=Int(config.num_threads()),
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_usage),
     )
 
@@ -1242,7 +1242,7 @@ fn matmul_gpu_qint4[
         tensor_a,
         tensor_b,
         grid_dim=(ceildiv(n, BN), ceildiv(m, BM), 1),
-        block_dim=(int(config.num_threads()), 1, 1),
+        block_dim=(Int(config.num_threads()), 1, 1),
         shared_mem_bytes=smem_usage,
     )
 
@@ -1284,7 +1284,7 @@ fn gpu_qint4_repack_Q4_0[
     ]
 
     var repack_func = cuda_ctx.compile_function[repack,](
-        threads_per_block=int(128),
+        threads_per_block=Int(128),
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_usage),
     )
 
@@ -1355,7 +1355,7 @@ fn gpu_qint4_repack_GPTQ[
         ]
 
         var repack_func = cuda_ctx.compile_function[repack,](
-            threads_per_block=int(128),
+            threads_per_block=Int(128),
         )
 
         cuda_ctx.enqueue_function(
@@ -1377,7 +1377,7 @@ fn gpu_qint4_repack_GPTQ[
         ]
 
         var repack_func = cuda_ctx.compile_function[repack,](
-            threads_per_block=int(128),
+            threads_per_block=Int(128),
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 smem_usage
             ),
