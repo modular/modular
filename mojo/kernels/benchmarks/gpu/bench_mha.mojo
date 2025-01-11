@@ -263,10 +263,10 @@ fn main() raises:
     alias num_heads = env_get_int["num_heads", 32]()
     alias group = env_get_int["group", 1]()
 
-    var seq_len = int(arg_parse("seq_len", 64))
-    var num_keys = int(arg_parse("num_keys", 64))
-    var batch_size = int(arg_parse("batch_size", 1))
-    var num_partitions = int(arg_parse("num_partitions", 1))
+    var seq_len = Int(arg_parse("seq_len", 64))
+    var num_keys = Int(arg_parse("num_keys", 64))
+    var batch_size = Int(arg_parse("batch_size", 1))
+    var num_partitions = Int(arg_parse("num_partitions", 1))
     var mode = str(arg_parse("mode", "none"))
 
     alias cfg = MHA_cfg(

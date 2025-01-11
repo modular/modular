@@ -86,7 +86,7 @@ def execute_kv_cache_ragged_rope[
 
         input_row_offsets_host.tensor[i] = curr_seq_length
         if curr_seq_length > max_prompt_length:
-            max_prompt_length = int(curr_seq_length)
+            max_prompt_length = Int(curr_seq_length)
 
         cache_lengths_host.tensor[i] = cache_len
         total_seq_len += curr_seq_length
@@ -96,7 +96,7 @@ def execute_kv_cache_ragged_rope[
     var cache_lengths_device = cache_lengths_host.copy_to_device(ctx)
 
     var q_host = HostNDBuffer[dtype, 3, DimList(Dim(), num_q_heads, head_dim)](
-        IndexList[3](int(total_seq_len), num_q_heads, head_dim)
+        IndexList[3](Int(total_seq_len), num_q_heads, head_dim)
     )
     random(q_host.tensor)
     var q_device = q_host.copy_to_device(ctx)
@@ -107,7 +107,7 @@ def execute_kv_cache_ragged_rope[
             num_blocks,
             2,
             num_layers,
-            int(max_prompt_length + cache_len),
+            Int(max_prompt_length + cache_len),
             num_kv_heads,
             head_dim,
         ),
@@ -124,7 +124,7 @@ def execute_kv_cache_ragged_rope[
     var block_idx_set = Set[Int]()
     var idx = 0
     while idx < batch_size:
-        var randval = int(random_ui64(0, num_blocks - 1))
+        var randval = Int(random_ui64(0, num_blocks - 1))
         if randval in block_idx_set:
             continue
 
@@ -146,7 +146,7 @@ def execute_kv_cache_ragged_rope[
     ]((max_seq_len, head_dim), ctx=ctx)
 
     num_flops_per_elem = 6
-    num_elems = int(total_seq_len) * num_q_heads * num_kv_heads * head_dim // 2
+    num_elems = Int(total_seq_len) * num_q_heads * num_kv_heads * head_dim // 2
     flop_count = num_flops_per_elem * num_elems
 
     @parameter

@@ -398,7 +398,7 @@ def accuracy_test():
         var i2 = bitcast[DType.int32, 1](r2)
 
         var diff = i1 - i2
-        var id = int(diff.clamp(delta_min, delta_max))
+        var id = Int(diff.clamp(delta_min, delta_max))
         deltas[id - delta_min] = deltas[id - delta_min] + 1
 
         if id == delta_max:

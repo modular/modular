@@ -211,7 +211,7 @@ fn create_matmul_bench[
 fn main() raises:
     alias dtype = env_get_dtype["dtype", DType.bfloat16]()
 
-    var M = int(arg_parse("M", 1))
+    var M = Int(arg_parse("M", 1))
     alias N = env_get_int["N", 1]()
     alias K = env_get_int["K", 1]()
 

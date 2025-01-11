@@ -50,15 +50,15 @@ fn bench_stencil_avg_pool[
 
     # Create host buffers
     var h_input_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        int(input_shape.product())
+        Int(input_shape.product())
     )
     var h_input = NDBuffer[dtype, rank, input_shape](h_input_ptr)
     var h_output_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        int(output_shape.product())
+        Int(output_shape.product())
     )
     var h_output = NDBuffer[dtype, rank, output_shape](h_output_ptr)
     var h_output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        int(output_shape.product())
+        Int(output_shape.product())
     )
     var h_output_ref = NDBuffer[dtype, rank, output_shape](h_output_ref_ptr)
 
@@ -70,11 +70,11 @@ fn bench_stencil_avg_pool[
 
     # Create device buffers
     var d_input_buf = ctx.enqueue_create_buffer[dtype](
-        int(input_shape.product())
+        Int(input_shape.product())
     )
     var d_input = NDBuffer[dtype, rank](d_input_buf.ptr, input_shape)
     var d_output_buf = ctx.enqueue_create_buffer[dtype](
-        int(output_shape.product())
+        Int(output_shape.product())
     )
     var d_output = NDBuffer[dtype, rank](d_output_buf.ptr, output_shape)
 
@@ -258,15 +258,15 @@ fn bench_stencil_max_pool[
 
     # Create host buffers
     var h_input_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        int(input_shape.product())
+        Int(input_shape.product())
     )
     var h_input = NDBuffer[dtype, rank, input_shape](h_input_ptr)
     var h_output_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        int(output_shape.product())
+        Int(output_shape.product())
     )
     var h_output = NDBuffer[dtype, rank, output_shape](h_output_ptr)
     var h_output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        int(output_shape.product())
+        Int(output_shape.product())
     )
     var h_output_ref = NDBuffer[dtype, rank, output_shape](h_output_ref_ptr)
 
@@ -278,11 +278,11 @@ fn bench_stencil_max_pool[
 
     # Create device buffers
     var d_input_buf = ctx.enqueue_create_buffer[dtype](
-        int(input_shape.product())
+        Int(input_shape.product())
     )
     var d_input = NDBuffer[dtype, rank](d_input_buf.ptr, input_shape)
     var d_output_buf = ctx.enqueue_create_buffer[dtype](
-        int(output_shape.product())
+        Int(output_shape.product())
     )
     var d_output = NDBuffer[dtype, rank](d_output_buf.ptr, output_shape)
 
@@ -462,15 +462,15 @@ fn bench_stencil_avg_pool_padded[
 
     # Create host buffers
     var h_input_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        int(input_shape.product())
+        Int(input_shape.product())
     )
     var h_input = NDBuffer[dtype, rank, input_shape](h_input_ptr)
     var h_output_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        int(output_shape.product())
+        Int(output_shape.product())
     )
     var h_output = NDBuffer[dtype, rank, output_shape](h_output_ptr)
     var h_output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        int(output_shape.product())
+        Int(output_shape.product())
     )
     var h_output_ref = NDBuffer[dtype, rank, output_shape](h_output_ref_ptr)
 
@@ -482,11 +482,11 @@ fn bench_stencil_avg_pool_padded[
 
     # Create device buffers
     var d_input_buf = ctx.enqueue_create_buffer[dtype](
-        int(input_shape.product())
+        Int(input_shape.product())
     )
     var d_input = NDBuffer[dtype, rank](d_input_buf.ptr, input_shape)
     var d_output_buf = ctx.enqueue_create_buffer[dtype](
-        int(output_shape.product())
+        Int(output_shape.product())
     )
     var d_output = NDBuffer[dtype, rank](d_output_buf.ptr, output_shape)
 

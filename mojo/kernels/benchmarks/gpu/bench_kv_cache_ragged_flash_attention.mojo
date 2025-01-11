@@ -118,7 +118,7 @@ def execute_kv_cache_ragged_flash_attention[
         cache_lengths_host.tensor[i] = curr_cache_length
         total_seq_len += curr_seq_length
 
-        flop_count += int(
+        flop_count += Int(
             4
             * num_q_heads
             * (curr_cache_length + curr_seq_length)
@@ -131,7 +131,7 @@ def execute_kv_cache_ragged_flash_attention[
     var cache_lengths_device = cache_lengths_host.copy_to_device(ctx)
 
     q_host = HostNDBuffer[dtype, 3, DimList(Dim(), num_q_heads, head_dim)](
-        IndexList[3](int(total_seq_len), num_q_heads, head_dim)
+        IndexList[3](Int(total_seq_len), num_q_heads, head_dim)
     )
     random(q_host.tensor)
     var q_device = q_host.copy_to_device(ctx)
@@ -144,7 +144,7 @@ def execute_kv_cache_ragged_flash_attention[
 
     # initialize reference output
     output_host = HostNDBuffer[dtype, 3, DimList(Dim(), num_q_heads, head_dim)](
-        IndexList[3](int(total_seq_len), num_q_heads, head_dim)
+        IndexList[3](Int(total_seq_len), num_q_heads, head_dim)
     )
     var output_device = output_host.copy_to_device(ctx)
 
@@ -172,7 +172,7 @@ def execute_kv_cache_ragged_flash_attention[
     var block_idx_set = Set[Int]()
     var idx = 0
     while idx < batch_size:
-        var randval = int(random_ui64(0, num_blocks - 1))
+        var randval = Int(random_ui64(0, num_blocks - 1))
         if randval in block_idx_set:
             continue
 

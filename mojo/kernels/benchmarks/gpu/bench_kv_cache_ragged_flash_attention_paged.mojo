@@ -111,7 +111,7 @@ def execute_kv_cache_ragged_flash_attention[
             curr_seq_length = random_ui64(1, seq_len).cast[DType.uint32]()
         else:
             curr_seq_length = seq_len
-        valid_lengths.append(int(curr_seq_length))
+        valid_lengths.append(Int(curr_seq_length))
 
         var curr_cache_length: UInt32
         if use_random_cache_lengths:
@@ -119,7 +119,7 @@ def execute_kv_cache_ragged_flash_attention[
         else:
             curr_cache_length = cache_len
 
-        curr_context_length = int(curr_cache_length) + int(curr_seq_length)
+        curr_context_length = Int(curr_cache_length) + Int(curr_seq_length)
 
         max_context_length = max(max_context_length, curr_context_length)
         max_cache_length = max(max_cache_length, curr_cache_length)
@@ -129,7 +129,7 @@ def execute_kv_cache_ragged_flash_attention[
         cache_lengths_host.tensor[i] = curr_cache_length
         total_seq_len += curr_seq_length
 
-        flop_count += int(
+        flop_count += Int(
             4
             * num_q_heads
             * (curr_cache_length + curr_seq_length)
@@ -142,7 +142,7 @@ def execute_kv_cache_ragged_flash_attention[
     var cache_lengths_device = cache_lengths_host.copy_to_device(ctx)
 
     q_host = HostNDBuffer[dtype, 3, DimList(Dim(), num_q_heads, head_dim)](
-        IndexList[3](int(total_seq_len), num_q_heads, head_dim)
+        IndexList[3](Int(total_seq_len), num_q_heads, head_dim)
     )
     random(q_host.tensor)
     var q_device = q_host.copy_to_device(ctx)
@@ -155,7 +155,7 @@ def execute_kv_cache_ragged_flash_attention[
 
     # initialize reference output
     output_host = HostNDBuffer[dtype, 3, DimList(Dim(), num_q_heads, head_dim)](
-        IndexList[3](int(total_seq_len), num_q_heads, head_dim)
+        IndexList[3](Int(total_seq_len), num_q_heads, head_dim)
     )
     var output_device = output_host.copy_to_device(ctx)
     paged_lut_host = HostNDBuffer[DType.uint32, 2](
@@ -163,11 +163,11 @@ def execute_kv_cache_ragged_flash_attention[
     )
     paged_lut_set = Set[Int]()
     for bs in range(batch_size):
-        curr_seq_len = int(cache_lengths_host.tensor[bs]) + valid_lengths[bs]
+        curr_seq_len = Int(cache_lengths_host.tensor[bs]) + valid_lengths[bs]
         for block_idx in range(0, ceildiv(curr_seq_len, block_size)):
-            var randval = int(random_ui64(0, num_blocks - 1))
+            var randval = Int(random_ui64(0, num_blocks - 1))
             while randval in paged_lut_set:
-                randval = int(random_ui64(0, num_blocks - 1))
+                randval = Int(random_ui64(0, num_blocks - 1))
 
             paged_lut_set.add(randval)
             paged_lut_host.tensor[bs, block_idx] = randval

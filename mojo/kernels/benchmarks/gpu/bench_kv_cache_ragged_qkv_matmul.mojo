@@ -85,7 +85,7 @@ def execute_kv_cache_ragged_matmul[
     var prefix_sums_device = prefix_sums_host.copy_to_device(ctx)
 
     var hidden_state_host = HostNDBuffer[dtype, 2, DimList(Dim(), hidden_size)](
-        (int(total_seq_len), hidden_size),
+        (Int(total_seq_len), hidden_size),
     )
     random(hidden_state_host.tensor)
     var hidden_state_device = hidden_state_host.copy_to_device(ctx)
@@ -97,7 +97,7 @@ def execute_kv_cache_ragged_matmul[
     var weight_device = weight_host.copy_to_device(ctx)
 
     var output_host = HostNDBuffer[dtype, 2, DimList(Dim(), hidden_size)](
-        (int(total_seq_len), combined_hidden_size),
+        (Int(total_seq_len), combined_hidden_size),
     )
     random(output_host.tensor)
     var output_device = output_host.copy_to_device(ctx)
@@ -123,7 +123,7 @@ def execute_kv_cache_ragged_matmul[
     var block_idx_set = Set[Int]()
     var idx = 0
     while idx < batch_size:
-        var randval = int(random_ui64(0, num_blocks - 1))
+        var randval = Int(random_ui64(0, num_blocks - 1))
         if randval in block_idx_set:
             continue
 
@@ -194,7 +194,7 @@ def execute_kv_cache_ragged_matmul[
         ThroughputMeasure(
             BenchMetric.flops,
             # Flop: 2*M*N*K. Use A and C shapes since they're not transposed.
-            2 * int(total_seq_len) * hidden_size * combined_hidden_size,
+            2 * Int(total_seq_len) * hidden_size * combined_hidden_size,
         ),
     )
 
