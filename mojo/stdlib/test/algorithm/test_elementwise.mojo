@@ -67,7 +67,7 @@ fn test_elementwise_implicit_runtime():
     elementwise[func, simd_width=1](20)
 
     for i in range(len(vector)):
-        if int(vector[i]) != 42:
+        if Int(vector[i]) != 42:
             print("ERROR: Expecting the result to be 42")
             return
 

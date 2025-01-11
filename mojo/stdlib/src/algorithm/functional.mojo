@@ -1201,8 +1201,8 @@ fn _get_start_indices_of_nth_subvolume_uint[
     Returns:
         Constructed ND-index.
     """
-    return _get_start_indices_of_nth_subvolume[int(subvolume_rank)](
-        int(n), shape
+    return _get_start_indices_of_nth_subvolume[Int(subvolume_rank)](
+        Int(n), shape
     )
 
 
@@ -1670,7 +1670,7 @@ fn _elementwise_impl_gpu[
                 if start_indices[rank - 1] + simd_width >= shape[rank - 1]:
 
                     @parameter
-                    for off in range(int(simd_width)):
+                    for off in range(Int(simd_width)):
                         func[1, rank](
                             _get_start_indices_of_nth_subvolume_uint[0](
                                 idx * simd_width + off,
@@ -1697,7 +1697,7 @@ fn _elementwise_impl_gpu[
                 ]
             ]()
             ctx.enqueue_function(
-                gpu_func, grid_dim=int(num_blocks), block_dim=int(block_size)
+                gpu_func, grid_dim=Int(num_blocks), block_dim=Int(block_size)
             )
         else:
             var gpu_func = ctx.compile_function[
@@ -1706,7 +1706,7 @@ fn _elementwise_impl_gpu[
                 ]
             ]()
             ctx.enqueue_function(
-                gpu_func, grid_dim=int(num_blocks), block_dim=int(block_size)
+                gpu_func, grid_dim=Int(num_blocks), block_dim=Int(block_size)
             )
 
     except e:
