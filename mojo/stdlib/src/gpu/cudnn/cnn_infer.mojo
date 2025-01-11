@@ -454,7 +454,7 @@ struct cudnnFusedOpsConstParamLabel_t:
         return "cudnnFusedOpsConstParamLabel_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnSetConvolutionReorderType(
@@ -509,7 +509,7 @@ struct cudnnReorderType_t:
         return "cudnnReorderType_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 alias cudnnConvolutionBwdDataAlgoPerf_t = cudnnConvolutionBwdDataAlgoPerfStruct
@@ -670,7 +670,7 @@ struct cudnnFusedOps_t:
         return "cudnnFusedOps_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnGetConvolutionBackwardDataAlgorithmMaxCount(
@@ -734,7 +734,7 @@ struct cudnnFusedOpsPointerPlaceHolder_t:
         return "cudnnFusedOpsPointerPlaceHolder_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 alias cudnnFusedOpsPlan_t = UnsafePointer[cudnnFusedOpsPlanStruct]
@@ -922,7 +922,7 @@ struct cudnnFusedOpsVariantParamLabel_t:
         return "cudnnFusedOpsVariantParamLabel_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnGetConvolutionBackwardDataAlgorithm_v7(
@@ -1359,7 +1359,7 @@ struct cudnnConvolutionMode_t:
         return "cudnnConvolutionMode_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnGetFoldedConvBackwardDataDescriptors(

@@ -524,12 +524,12 @@ struct Info:
     fn _blocks_per_multiprocessor_register_limited(
         self, *, threads_per_block: Int, registers_per_thread: Int
     ) -> Int:
-        return int(
+        return Int(
             self._warps_per_multiprocessor_register_limited(
                 registers_per_thread
             )
             / self._warps_per_block(threads_per_block)
-        ) * int(self.register_file_size / self.max_registers_per_block)
+        ) * Int(self.register_file_size / self.max_registers_per_block)
 
     fn _block_runtime_shared_memory(self) -> Int:
         if self.compute > 8:
@@ -819,11 +819,11 @@ fn _get_compute(target_arch: String) -> Float32:
 
 
 fn _quantized_ceil(a: Float64, b: Int) -> Int:
-    return int(ceildiv(a, b) * b)
+    return Int(ceildiv(a, b) * b)
 
 
 fn _quantized_floor(a: Float64, b: Int) -> Int:
-    return int(floor(a / b) * b)
+    return Int(floor(a / b) * b)
 
 
 fn is_gpu[target: StringLiteral]() -> Bool:

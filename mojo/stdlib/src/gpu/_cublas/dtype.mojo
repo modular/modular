@@ -36,7 +36,7 @@ struct Property:
         return abort[String]("invalid Property entry")
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -150,4 +150,4 @@ struct DataType:
         return abort[String]("invalid DataType entry")
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)

@@ -551,7 +551,7 @@ struct WGMMADescriptor[dtype: DType]:
         var stride_dim = Int64(stride_byte_offset)
         var lead_dim = Int64(leading_byte_offset)
 
-        var base_ptr = int(smem_ptr)
+        var base_ptr = Int(smem_ptr)
         var start_address = (base_ptr >> 4)
 
         var desc = Int64(0)

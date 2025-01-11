@@ -773,7 +773,7 @@ struct cublasPointerMode_t:
         return abort[String]("invalid cublasPointerMode_t entry")
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cublasDnrm2(
@@ -944,7 +944,7 @@ struct cublasMath_t:
         return abort[String]("invalid cublasMath_t entry")
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cublasSdot(
@@ -2177,7 +2177,7 @@ struct Algorithm:
         return abort[String]("invalid Algorithm entry")
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cublasSsyrk(
@@ -2624,7 +2624,7 @@ struct cublasDiagType_t:
         return abort[String]("invalid cublasDiagType_t entry")
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -2680,7 +2680,7 @@ struct ComputeType:
         return abort[String]("invalid ComputeType entry")
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cublasDsymm(
@@ -4671,7 +4671,7 @@ struct FillMode:
         return abort[String]("invalid FillMode entry")
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cublasSspr2(
@@ -6118,7 +6118,7 @@ struct cublasAtomicsMode_t:
         return abort[String]("invalid cublasAtomicsMode_t entry")
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cublasSsyr2k(
@@ -6420,7 +6420,7 @@ struct cublasSideMode_t:
         return abort[String]("invalid cublasSideMode_t entry")
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cublasSetMatrix(
@@ -7057,7 +7057,7 @@ struct cublasOperation_t:
         return abort[String]("invalid cublasOperation_t entry")
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cublasIdamin(

@@ -37,7 +37,7 @@ struct Operation:
         return not (self == other)
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -60,7 +60,7 @@ struct Fill:
         return not (self == other)
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -82,7 +82,7 @@ struct Diagonal:
         return not (self == other)
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -105,7 +105,7 @@ struct Side:
         return not (self == other)
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -162,7 +162,7 @@ struct DataType:
         return not (self == other)
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -188,7 +188,7 @@ struct ComputeType:
         return not (self == other)
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -224,7 +224,7 @@ struct Status:
         return not (self == other)
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
     @no_inline
     fn __str__(self) -> String:
@@ -287,7 +287,7 @@ struct PointerMode:
         return not (self == other)
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -315,7 +315,7 @@ struct Algorithm:
         return not (self == other)
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -337,4 +337,4 @@ struct GEAMExOp:
         return not (self == other)
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)

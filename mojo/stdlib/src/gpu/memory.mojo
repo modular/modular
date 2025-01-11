@@ -150,11 +150,11 @@ fn async_copy[
         @parameter
         if eviction_policy is CacheEviction.EVICT_NORMAL:
             inlined_assembly[asm + ";", NoneType, constraints="r,l,n,r"](
-                Int32(int(dst)), src, Int32(size), Int32(src_size)
+                Int32(Int(dst)), src, Int32(size), Int32(src_size)
             )
         else:
             inlined_assembly[asm + ", $4;", NoneType, constraints="r,l,n,r,l"](
-                Int32(int(dst)), src, Int32(size), Int32(src_size), cache_policy
+                Int32(Int(dst)), src, Int32(size), Int32(src_size), cache_policy
             )
     elif fill:
         constrained[
@@ -189,8 +189,8 @@ fn async_copy[
                 NoneType,
                 constraints="r,r,l,n,r,r,r,r",
             ](
-                Int32(int(predicate)),
-                Int32(int(dst)),
+                Int32(Int(predicate)),
+                Int32(Int(dst)),
                 src,
                 Int32(size),
                 fill_val,
@@ -204,8 +204,8 @@ fn async_copy[
                 NoneType,
                 constraints="r,r,l,n,r,r,r,r,l",
             ](
-                Int32(int(predicate)),
-                Int32(int(dst)),
+                Int32(Int(predicate)),
+                Int32(Int(dst)),
                 src,
                 Int32(size),
                 fill_val,
@@ -226,11 +226,11 @@ fn async_copy[
         @parameter
         if eviction_policy is CacheEviction.EVICT_NORMAL:
             inlined_assembly[asm + ";", NoneType, constraints="r,l,n"](
-                Int32(int(dst)), src, Int32(size)
+                Int32(Int(dst)), src, Int32(size)
             )
         else:
             inlined_assembly[asm + ", $3;", NoneType, constraints="r,l,n,l"](
-                Int32(int(dst)), src, Int32(size), cache_policy
+                Int32(Int(dst)), src, Int32(size), cache_policy
             )
 
 

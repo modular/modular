@@ -235,7 +235,7 @@ struct cudnnForwardMode_t:
         return "cudnnForwardMode_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnDestroyAttnDescriptor(
@@ -802,7 +802,7 @@ struct cudnnSeqDataAxis_t:
         return "cudnnSeqDataAxis_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnSetRNNPaddingMode(

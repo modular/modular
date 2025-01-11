@@ -107,7 +107,7 @@ struct cudnnSoftmaxMode_t:
         return "cudnnSoftmaxMode_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnDestroyAlgorithmPerformance(
@@ -171,7 +171,7 @@ struct cudnnReduceTensorIndices_t:
         return "cudnnReduceTensorIndices_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnReduceTensor(
@@ -379,7 +379,7 @@ struct cudnnReduceTensorOp_t:
         return "cudnnReduceTensorOp_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnSetTensor4dDescriptor(
@@ -472,7 +472,7 @@ struct cudnnDeterminism_t:
         return "cudnnDeterminism_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 alias cudnnAlgorithmDescriptor_t = UnsafePointer[cudnnAlgorithmStruct]
@@ -559,7 +559,7 @@ struct cudnnStatus_t:
         return "cudnnStatus_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -602,7 +602,7 @@ struct cudnnCTCLossAlgo_t:
         return "cudnnCTCLossAlgo_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnGetFilter4dDescriptor(
@@ -671,7 +671,7 @@ struct cudnnTensorFormat_t:
         return "cudnnTensorFormat_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnAddTensor(
@@ -837,7 +837,7 @@ struct cudnnNormAlgo_t:
         return "cudnnNormAlgo_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -892,7 +892,7 @@ struct cudnnOpTensorOp_t:
         return "cudnnOpTensorOp_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnCreateReduceTensorDescriptor(
@@ -1195,7 +1195,7 @@ struct cudnnActivationMode_t:
         return "cudnnActivationMode_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnSpatialTfGridGeneratorForward(
@@ -1283,7 +1283,7 @@ struct cudnnConvolutionBwdDataAlgo_t:
         return "cudnnConvolutionBwdDataAlgo_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnGetFilterNdDescriptor(
@@ -1370,7 +1370,7 @@ struct cudnnSamplerType_t:
         return "cudnnSamplerType_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnSpatialTfSamplerForward(
@@ -1440,7 +1440,7 @@ struct cudnnNormMode_t:
         return "cudnnNormMode_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnSetPooling2dDescriptor(
@@ -1560,7 +1560,7 @@ struct cudnnNormOps_t:
         return "cudnnNormOps_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnSoftmaxForward(
@@ -1638,7 +1638,7 @@ struct cudnnSoftmaxAlgorithm_t:
         return "cudnnSoftmaxAlgorithm_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnGetErrorString(status: cudnnStatus_t) -> UnsafePointer[Int8]:
@@ -1728,7 +1728,7 @@ struct cudnnBatchNormOps_t:
         return "cudnnBatchNormOps_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -1794,7 +1794,7 @@ struct cudnnConvolutionFwdAlgo_t:
         return "cudnnConvolutionFwdAlgo_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnSaveAlgorithm(
@@ -2021,7 +2021,7 @@ struct cudnnLRNMode_t:
         return "cudnnLRNMode_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnSetTensorNdDescriptorEx(
@@ -2149,7 +2149,7 @@ struct cudnnFoldingDirection_t:
         return "cudnnFoldingDirection_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnGetTensorNdDescriptor(
@@ -2216,7 +2216,7 @@ struct cudnnErrQueryMode_t:
         return "cudnnErrQueryMode_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnGetOpTensorDescriptor(
@@ -2377,7 +2377,7 @@ struct cudnnBatchNormMode_t:
         return "cudnnBatchNormMode_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 alias cudnnCTCLossDescriptor_t = UnsafePointer[cudnnCTCLossStruct]
@@ -2470,7 +2470,7 @@ struct cudnnSeverity_t:
         return "cudnnSeverity_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 alias cudnnDebug_t = cudnnDebugStruct
@@ -2522,7 +2522,7 @@ struct cudnnMathType_t:
         return "cudnnMathType_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -2565,7 +2565,7 @@ struct cudnnNanPropagation_t:
         return "cudnnNanPropagation_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 alias cudnnFilterDescriptor_t = UnsafePointer[cudnnFilterStruct]
@@ -2620,7 +2620,7 @@ struct cudnnRNNAlgo_t:
         return "cudnnRNNAlgo_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 alias cudnnOpTensorDescriptor_t = UnsafePointer[cudnnOpTensorStruct]
@@ -2780,7 +2780,7 @@ struct cudnnDataType_t:
         return "cudnnDataType_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnSetLRNDescriptor(
@@ -2949,7 +2949,7 @@ struct cudnnIndicesType_t:
         return "cudnnIndicesType_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnSetTensorTransformDescriptor(
@@ -3249,7 +3249,7 @@ struct cudnnConvolutionBwdFilterAlgo_t:
         return "cudnnConvolutionBwdFilterAlgo_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnQueryRuntimeError(
@@ -3396,7 +3396,7 @@ struct cudnnPoolingMode_t:
         return "cudnnPoolingMode_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnGetMaxDeviceVersion() -> Int:
@@ -3489,7 +3489,7 @@ struct cudnnDivNormMode_t:
         return "cudnnDivNormMode_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnCreateOpTensorDescriptor(

@@ -143,7 +143,7 @@ struct FuncAttribute(CollectionElement, EqualityComparable):
     fn CACHE_MODE_CA(val: Bool) -> FuncAttribute:
         """Indicates whether the function has been compiled with user specified
         option CacheMode.L1_CACHE_DISABLED set."""
-        return FuncAttribute(Attribute.CACHE_MODE_CA, int(val))
+        return FuncAttribute(Attribute.CACHE_MODE_CA, Int(val))
 
     @always_inline
     @staticmethod

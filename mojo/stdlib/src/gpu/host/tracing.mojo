@@ -192,7 +192,7 @@ struct EventAttributes:
             size=sizeof[_C_EventAttributes](),
             category=category,
             color_type=Color.FORMAT,
-            color=int(resolved_color),
+            color=Int(resolved_color),
             payload_type=0,
             _reserved=0,
             event_payload=0,

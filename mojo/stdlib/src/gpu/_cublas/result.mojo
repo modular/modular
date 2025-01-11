@@ -62,4 +62,4 @@ struct Result(Writable):
         return abort("unreachable: invalid Result entry")
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)

@@ -200,7 +200,7 @@ struct cudnnBackendKnobType_t:
         return "cudnnBackendKnobType_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -387,7 +387,7 @@ struct cudnnPointwiseMode_t:
         return "cudnnPointwiseMode_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -557,7 +557,7 @@ struct cudnnBackendDescriptorType_t:
         return "cudnnBackendDescriptorType_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnBackendSetAttribute(
@@ -635,7 +635,7 @@ struct cudnnBackendBehaviorNote_t:
         return "cudnnBackendBehaviorNote_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -687,7 +687,7 @@ struct cudnnBackendLayoutType_t:
         return "cudnnBackendLayoutType_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -730,7 +730,7 @@ struct cudnnBackendNormFwdPhase_t:
         return "cudnnBackendNormFwdPhase_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -782,7 +782,7 @@ struct cudnnBackendHeurMode_t:
         return "cudnnBackendHeurMode_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @register_passable("trivial")
@@ -857,7 +857,7 @@ struct cudnnBackendNumericalNote_t:
         return "cudnnBackendNumericalNote_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnBackendCreateDescriptor(
@@ -996,7 +996,7 @@ struct cudnnBackendAttributeType_t:
         return "cudnnBackendAttributeType_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -1042,7 +1042,7 @@ struct cudnnRngDistribution_t:
         return "cudnnRngDistribution_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnBackendFinalize(descriptor: UnsafePointer[NoneType]) -> cudnnStatus_t:
@@ -1094,7 +1094,7 @@ struct cudnnBackendTensorReordering_t:
         return "cudnnBackendTensorReordering_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -1863,7 +1863,7 @@ struct cudnnBackendAttributeName_t:
         return "cudnnBackendAttributeName_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -1915,7 +1915,7 @@ struct cudnnBackendNormMode_t:
         return "cudnnBackendNormMode_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -1958,7 +1958,7 @@ struct cudnnSignalMode_t:
         return "cudnnSignalMode_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 alias cudnnBackendDescriptor_t = UnsafePointer[NoneType]
@@ -2004,7 +2004,7 @@ struct cudnnBnFinalizeStatsMode_t:
         return "cudnnBnFinalizeStatsMode_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -2044,7 +2044,7 @@ struct cudnnGenStatsMode_t:
         return "cudnnGenStatsMode_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cudnnBackendDestroyDescriptor(
@@ -2123,7 +2123,7 @@ struct cudnnResampleMode_t:
         return "cudnnResampleMode_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 alias cudnnFraction_t = cudnnFractionStruct
@@ -2200,4 +2200,4 @@ struct cudnnPaddingMode_t:
         return "cudnnPaddingMode_t(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)

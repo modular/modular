@@ -46,7 +46,7 @@ struct _ThreadIdx:
         ]()
         alias intrinsic_name = Self._get_intrinsic_name[dim]()
         return UInt(
-            int(llvm_intrinsic[intrinsic_name, Int32, has_side_effect=False]())
+            Int(llvm_intrinsic[intrinsic_name, Int32, has_side_effect=False]())
         )
 
 
@@ -88,7 +88,7 @@ struct _BlockIdx:
         ]()
         alias intrinsic_name = Self._get_intrinsic_name[dim]()
         return UInt(
-            int(llvm_intrinsic[intrinsic_name, Int32, has_side_effect=False]())
+            Int(llvm_intrinsic[intrinsic_name, Int32, has_side_effect=False]())
         )
 
 
@@ -106,7 +106,7 @@ fn _get_gcn_idx[offset: Int]() -> UInt:
         UnsafePointer[Int16, address_space=4],
         has_side_effect=False,
     ]()
-    return UInt(int(ptr.load[alignment=4](offset)))
+    return UInt(Int(ptr.load[alignment=4](offset)))
 
 
 @register_passable("trivial")
@@ -133,7 +133,7 @@ struct _BlockDim:
         if is_nvidia_gpu():
             alias intrinsic_name = "llvm.nvvm.read.ptx.sreg.ntid." + dim
             return UInt(
-                int(
+                Int(
                     llvm_intrinsic[
                         intrinsic_name, Int32, has_side_effect=False
                     ]()
@@ -186,7 +186,7 @@ struct _GridDim:
         if is_nvidia_gpu():
             alias intrinsic_name = "llvm.nvvm.read.ptx.sreg.nctaid." + dim
             return UInt(
-                int(
+                Int(
                     llvm_intrinsic[
                         intrinsic_name, Int32, has_side_effect=False
                     ]()
@@ -259,7 +259,7 @@ fn sm_id() -> UInt:
     @parameter
     if is_nvidia_gpu():
         return UInt(
-            int(
+            Int(
                 llvm_intrinsic[
                     "llvm.nvvm.read.ptx.sreg.smid", Int32, has_side_effect=False
                 ]().cast[DType.uint32]()

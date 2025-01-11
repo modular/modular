@@ -173,7 +173,7 @@ struct Order:
         return abort[String]("invalid Order entry")
 
     fn __int__(self) raises -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cublasLtMatrixLayoutSetAttribute(
@@ -489,7 +489,7 @@ struct ClusterShape:
         return abort[String]("invalid ClusterShape entry")
 
     fn __int__(self) raises -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cublasLtHeuristicsCacheSetCapacity(capacity: Int) raises -> Result:
@@ -670,7 +670,7 @@ struct MatmulAlgorithmCapability:
         return abort[String]("invalid MatmulAlgorithmCapability entry")
 
     fn __int__(self) raises -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cublasLtGetStatusString(status: Result) raises -> UnsafePointer[Int8]:
@@ -727,7 +727,7 @@ struct PointerMode:
         return abort[String]("invalid PointerMode entry")
 
     fn __int__(self) raises -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cublasLtMatmulDescGetAttribute(
@@ -876,7 +876,7 @@ struct Search:
         return abort[String]("invalid Search entry")
 
     fn __int__(self) raises -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -928,7 +928,7 @@ struct ReductionScheme:
         return abort[String]("invalid ReductionScheme entry")
 
     fn __int__(self) raises -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cublasLtLoggerSetCallback(
@@ -1361,7 +1361,7 @@ struct cublasLtMatmulDescAttributes_t:
         return abort[String]("invalid cublasLtMatmulDescAttributes_t entry")
 
     fn __int__(self) raises -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cublasLtMatrixTransformDescInit_internal(
@@ -1713,7 +1713,7 @@ struct Preference:
         return abort[String]("invalid Preference entry")
 
     fn __int__(self) raises -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @register_passable("trivial")
@@ -1825,7 +1825,7 @@ struct AlgorithmConfig:
         return abort[String]("invalid AlgorithmConfig entry")
 
     fn __int__(self) raises -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cublasLtMatmulPreferenceDestroy(
@@ -1946,7 +1946,7 @@ struct InnerShape:
         return abort[String]("invalid InnerShape entry")
 
     fn __int__(self) raises -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -2050,7 +2050,7 @@ struct LayoutAttribute:
         return abort[String]("invalid LayoutAttribute entry")
 
     fn __int__(self) raises -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cublasLtDestroy(light_handle: UnsafePointer[Context]) raises -> Result:
@@ -2284,7 +2284,7 @@ struct Stages:
         return abort[String]("invalid Stages entry")
 
     fn __int__(self) raises -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cublasLtMatmulDescDestroy(
@@ -2545,7 +2545,7 @@ struct Epilogue:
         return abort[String]("invalid Epilogue entry")
 
     fn __int__(self) raises -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @register_passable("trivial")
@@ -2621,7 +2621,7 @@ struct PointerModeMask:
         return abort[String]("invalid PointerModeMask entry")
 
     fn __int__(self) raises -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @register_passable("trivial")
@@ -2788,7 +2788,7 @@ struct Tile:
         return abort[String]("invalid Tile entry")
 
     fn __int__(self) raises -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn cublasLtGetStatusName(status: Result) raises -> UnsafePointer[Int8]:
@@ -3072,7 +3072,7 @@ struct TransformDescriptor:
         return abort[String]("invalid TransformDescriptor entry")
 
     fn __int__(self) raises -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 # fn cublasLtMatmulAlgoGetIds(

@@ -463,7 +463,7 @@ struct DeviceFunction[
                 self._func_impl.asm.unsafe_ptr(),
                 max_registers.or_else(-1),
                 threads_per_block.or_else(-1) if is_nvidia_gpu() else -1,
-                int(cache_mode.or_else(-1)),
+                Int(cache_mode.or_else(-1)),
                 cache_config.or_else(CacheConfig(-1)).code,
                 max_dynamic_shared_size_bytes,
                 debug_level.unsafe_cstr_ptr().bitcast[UInt8](),
@@ -703,7 +703,7 @@ struct DeviceFunction[
                 attr.code,
             )
         )
-        return int(result)
+        return Int(result)
 
 
 @register_passable
@@ -1202,9 +1202,9 @@ struct DeviceContext:
 
         @parameter
         if bitwidth == 8:
-            value = UInt32(int(bitcast[DType.uint8, 1](val)))
+            value = UInt32(Int(bitcast[DType.uint8, 1](val)))
         elif bitwidth == 16:
-            value = UInt32(int(bitcast[DType.uint16, 1](val)))
+            value = UInt32(Int(bitcast[DType.uint16, 1](val)))
         else:
             value = bitcast[DType.uint32, 1](val)
 
@@ -1238,9 +1238,9 @@ struct DeviceContext:
 
         @parameter
         if bitwidth == 8:
-            value = UInt32(int(bitcast[DType.uint8, 1](val)))
+            value = UInt32(Int(bitcast[DType.uint8, 1](val)))
         elif bitwidth == 16:
-            value = UInt32(int(bitcast[DType.uint16, 1](val)))
+            value = UInt32(Int(bitcast[DType.uint16, 1](val)))
         else:
             value = bitcast[DType.uint32, 1](val)
 
@@ -1297,7 +1297,7 @@ struct DeviceContext:
                 self._handle,
             )
         )
-        return int(value)
+        return Int(value)
 
     @always_inline
     fn get_attribute(self, attr: DeviceAttribute) raises -> Int:
@@ -1313,10 +1313,10 @@ struct DeviceContext:
             ](
                 UnsafePointer.address_of(value),
                 self._handle,
-                int(attr._value),
+                Int(attr._value),
             )
         )
-        return int(value)
+        return Int(value)
 
     @always_inline
     fn is_compatible(self) raises:
@@ -1343,7 +1343,7 @@ struct DeviceContext:
                 _DeviceContextPtr,
             ](UnsafePointer.address_of(compute_capability), self._handle)
         )
-        return int(compute_capability)
+        return Int(compute_capability)
 
     @always_inline
     fn get_memory_info(self) raises -> (_SizeT, _SizeT):
@@ -1404,7 +1404,7 @@ struct DeviceContext:
     @always_inline
     fn number_of_devices(*, api: String = Self.device_api) -> Int:
         # int32_t *AsyncRT_DeviceContext_numberOfDevices(const char* kind)
-        return int(
+        return Int(
             external_call[
                 "AsyncRT_DeviceContext_numberOfDevices",
                 Int32,

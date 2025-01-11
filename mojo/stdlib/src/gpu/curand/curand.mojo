@@ -246,7 +246,7 @@ struct curandRngType:
         return "curandRngType(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 alias curandHistogramM2K_t = UnsafePointer[Int16]
@@ -605,7 +605,7 @@ struct curandMethod:
         return "curandMethod(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn curandSetGeneratorOffset(
@@ -767,7 +767,7 @@ struct curandStatus:
         return "curandStatus(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 @value
@@ -820,7 +820,7 @@ struct curandDirectionVectorSet:
         return "curandDirectionVectorSet(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn curandGenerateUniform(
@@ -1296,7 +1296,7 @@ struct curandOrdering:
         return "curandOrdering(" + str(self) + ")"
 
     fn __int__(self) -> Int:
-        return int(self._value)
+        return Int(self._value)
 
 
 fn curandSetPseudoRandomGeneratorSeed(

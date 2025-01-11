@@ -635,8 +635,8 @@ fn warp_broadcast[
 
 
 fn warp_broadcast(val: Int) -> Int:
-    return int(shuffle_idx(Scalar[DType.int32](val), 0))
+    return Int(shuffle_idx(Scalar[DType.int32](val), 0))
 
 
 fn warp_broadcast(val: UInt) -> UInt:
-    return int(shuffle_idx(Scalar[DType.int32](val), 0))
+    return Int(shuffle_idx(Scalar[DType.int32](val), 0))
