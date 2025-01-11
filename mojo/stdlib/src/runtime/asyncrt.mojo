@@ -156,7 +156,7 @@ fn _get_current_runtime() -> UnsafePointer[NoneType]:
 @always_inline
 fn parallelism_level() -> Int:
     """Gets the parallelism level of the Runtime."""
-    return int(
+    return Int(
         external_call[
             "KGEN_CompilerRT_AsyncRT_ParallelismLevel",
             Int32,

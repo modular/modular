@@ -404,17 +404,17 @@ struct Trace[
                 # Convert to String since nvtx range APIs copy messages anyway.
                 # TODO(KERN-1052): optimize by exposing explicit string
                 # registration.
-                self.event_id = int(
+                self.event_id = Int(
                     _start_gpu_range(
                         message=self._get_name_as_str()
                         + (("/" + self.detail) if self.detail else ""),
-                        category=int(category),
+                        category=Int(category),
                     )
                 )
             else:
-                self.event_id = int(
+                self.event_id = Int(
                     _start_gpu_range(
-                        message=self._get_name_as_str(), category=int(category)
+                        message=self._get_name_as_str(), category=Int(category)
                     )
                 )
             return
