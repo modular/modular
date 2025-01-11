@@ -18,7 +18,7 @@ from algorithm.functional import (
 from algorithm.reduction import _reduce_generator
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import BlockDim, BlockIdx, ThreadIdx, GlobalIdx
+from gpu import block_dim, block_idx, thread_idx, global_idx
 from gpu.host import DeviceContext
 from gpu.host.info import is_valid_target, is_cpu
 from memory import UnsafePointer, memset_zero
@@ -495,9 +495,9 @@ fn batched_matmul_kernel[
     var n: UInt = c_buff.dim(2)
     var k: UInt = a_buff.dim(2)
 
-    var x = GlobalIdx.x
-    var y = GlobalIdx.y
-    var z = BlockIdx.z
+    var x = global_idx.x
+    var y = global_idx.y
+    var z = block_idx.z
 
     if z >= batch_size or x >= n or y >= m:
         return

@@ -24,10 +24,10 @@ from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import (
     WARP_SIZE,
-    BlockDim,
-    BlockIdx,
-    ThreadIdx,
-    GlobalIdx,
+    block_dim,
+    block_idx,
+    thread_idx,
+    global_idx,
     barrier,
     lane_id,
 )
@@ -142,12 +142,12 @@ fn matmul_kernel[
     # Global index in C.
     # These are the same indices in A and B when loading to SRAM.
     # Map thread x to column for coalesced access in B.
-    var col = GlobalIdx.x
-    var row = GlobalIdx.y
+    var col = global_idx.x
+    var row = global_idx.y
 
     # Local index in the c sub-matrix updated by current block.
-    var localCol = ThreadIdx.x
-    var localRow = ThreadIdx.y
+    var localCol = thread_idx.x
+    var localRow = thread_idx.y
 
     # Result of current thread in C.
     var result = Scalar[s_type](0)
@@ -230,8 +230,8 @@ fn matmul_kernel_naive[
     n: Int,
     k: Int,
 ):
-    var x = GlobalIdx.x
-    var y = GlobalIdx.y
+    var x = global_idx.x
+    var y = global_idx.y
 
     if x >= m or y >= n:
         return

@@ -14,10 +14,10 @@ from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import (
     WARP_SIZE,
-    BlockDim,
-    BlockIdx,
-    ThreadIdx,
-    GlobalIdx,
+    block_dim,
+    block_idx,
+    thread_idx,
+    global_idx,
     barrier,
     lane_id,
 )
@@ -94,7 +94,7 @@ fn gemv_kernel[
     n: Int,
     k: Int,
 ):
-    var tid = GlobalIdx.x
+    var tid = global_idx.x
     var warp_id = warp_broadcast(tid // WARP_SIZE)
 
     if warp_id >= m:
@@ -152,7 +152,7 @@ fn gemv_kernel_vector[
 ):
     alias align_a = alignof[SIMD[a_type, simd_width]]()
     alias align_b = alignof[SIMD[b_type, simd_width]]()
-    var tid = GlobalIdx.x
+    var tid = global_idx.x
     var warp_id = warp_broadcast(tid // WARP_SIZE)
 
     var a_ptr = (
@@ -240,9 +240,9 @@ fn gemv_split_k[
     """
     # Nvidia vectorized load is 16B.
     alias tile_k = simd_width * num_threads
-    var tile_id_m = BlockIdx.x * tile_m
-    var tile_id_n = BlockIdx.y * tile_n
-    var tid = ThreadIdx.x
+    var tile_id_m = block_idx.x * tile_m
+    var tile_id_n = block_idx.y * tile_n
+    var tid = thread_idx.x
     var tile_a = stack_allocation[
         simd_width, a_type, address_space = AddressSpace.LOCAL
     ]()
@@ -352,11 +352,11 @@ fn gevm_kernel[
     n: Int,
     k: Int,
 ):
-    var warps_per_block = BlockDim.x // WARP_SIZE
-    var warp_id = ThreadIdx.x // WARP_SIZE
+    var warps_per_block = block_dim.x // WARP_SIZE
+    var warp_id = thread_idx.x // WARP_SIZE
     var accum = Scalar[s_type]()
-    var col = BlockIdx.x * WARP_SIZE + lane_id()
-    var tid = GlobalIdx.x
+    var col = block_idx.x * WARP_SIZE + lane_id()
+    var tid = global_idx.x
     var global_warp_id = tid // WARP_SIZE
 
     var x_shared = stack_allocation[
@@ -375,7 +375,7 @@ fn gevm_kernel[
     x_shared[lane_id() * WARP_SIZE + warp_id] = accum
     barrier()
 
-    var total = x_shared.load(ThreadIdx.x).cast[s_type]()
+    var total = x_shared.load(thread_idx.x).cast[s_type]()
     total = warp_sum(total)
 
     if lane_id() == 0:
@@ -409,11 +409,11 @@ fn gevm_tc_kernel_vector_8x[
     alias align_b = alignof[SIMD[b_type, simd_width]]()
     alias align_x = alignof[SIMD[s_type, simd_width]]()
 
-    var warps_per_block = BlockDim.x // WARP_SIZE
-    var warp_id = ThreadIdx.x // WARP_SIZE
+    var warps_per_block = block_dim.x // WARP_SIZE
+    var warp_id = thread_idx.x // WARP_SIZE
     var accum = SIMD[s_type, simd_width]()
-    var col = BlockIdx.x * WARP_SIZE * simd_width + lane_id() * simd_width
-    var tid = GlobalIdx.x
+    var col = block_idx.x * WARP_SIZE * simd_width + lane_id() * simd_width
+    var tid = global_idx.x
     var global_warp_id = warp_broadcast(tid // WARP_SIZE)
 
     var x_shared = stack_allocation[

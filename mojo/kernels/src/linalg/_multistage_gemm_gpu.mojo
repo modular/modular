@@ -13,10 +13,10 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import (
     WARP_SIZE,
-    BlockIdx,
-    GridDim,
-    BlockDim,
-    ThreadIdx,
+    block_idx,
+    grid_dim,
+    block_dim,
+    thread_idx,
     barrier,
     lane_id,
     warp_broadcast,
@@ -102,7 +102,7 @@ fn attn_mma[
         b_type, b_smem_layout, address_space = AddressSpace.SHARED, **_
     ],
 ):
-    var tid: UInt32 = ThreadIdx.x
+    var tid: UInt32 = thread_idx.x
     var warp_id = warp_broadcast(tid // WARP_SIZE)
 
     alias num_warps_m = BM // WM
@@ -339,7 +339,7 @@ fn multistage_mma[
 ):
     alias simd_size = simdwidthof[a_type]()
 
-    var tid: UInt32 = ThreadIdx.x
+    var tid: UInt32 = thread_idx.x
     var warp_id = warp_broadcast(tid // WARP_SIZE)
 
     alias num_warps_m = BM // WM
@@ -789,7 +789,7 @@ fn multistage_gemm_kernel[
     alias num_warps_n = config.num_warps_n()
     alias num_threads = config.num_threads()
 
-    var tid = ThreadIdx.x
+    var tid = thread_idx.x
     var ln_id = lane_id()
     var warp_id = warp_broadcast(tid // WARP_SIZE)
 
@@ -798,11 +798,11 @@ fn multistage_gemm_kernel[
 
     # NOTE: the condition ( not (N // BN & 1)) is for a temporary solution
     # for solving mismatches in some shapes
-    var block_idx = block_swizzle(
-        Index[element_bitwidth=32, unsigned=True](BlockIdx.x, BlockIdx.y),
-        Index[element_bitwidth=32, unsigned=True](GridDim.x, GridDim.y),
+    var block_idx_swizzle = block_swizzle(
+        Index[element_bitwidth=32, unsigned=True](block_idx.x, block_idx.y),
+        Index[element_bitwidth=32, unsigned=True](grid_dim.x, grid_dim.y),
     ) if swizzle_block else Index[element_bitwidth=32, unsigned=True](
-        BlockIdx.x, BlockIdx.y
+        block_idx.x, block_idx.y
     )
 
     # Coordinates of the current warp.
@@ -852,8 +852,11 @@ fn multistage_gemm_kernel[
 
     # create input layout tensors A and Bv
     # global memory iterator
-    var a_gmem_iter = a.tiled_iterator[BM, BK, axis=1](block_idx[1], 0)
-    var b_tile_coords = (block_idx[0], 0) if transpose_b else (0, block_idx[0])
+    var a_gmem_iter = a.tiled_iterator[BM, BK, axis=1](block_idx_swizzle[1], 0)
+    var b_tile_coords = (block_idx_swizzle[0], 0) if transpose_b else (
+        0,
+        block_idx_swizzle[0],
+    )
     alias b_tile_axis = 1 if transpose_b else 0
     var b_gmem_iter = b.tiled_iterator[BD_0, BD_1, axis=b_tile_axis](
         b_tile_coords[0], b_tile_coords[1]
@@ -896,7 +899,7 @@ fn multistage_gemm_kernel[
     )
 
     # Map global memory tile down to thread.
-    var c_gmem_tile = c.tile[BM, BN](block_idx[1], block_idx[0])
+    var c_gmem_tile = c.tile[BM, BN](block_idx_swizzle[1], block_idx_swizzle[0])
     var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
 
     @always_inline
@@ -992,10 +995,10 @@ fn multistage_gemm_kernel[
             )
             var c_gmem_frag = c_gmem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute[warp_layout](ThreadIdx.x)
+            ]().distribute[warp_layout](thread_idx.x)
             var c_smem_frag = accum_smem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute[warp_layout](ThreadIdx.x)
+            ]().distribute[warp_layout](thread_idx.x)
             var thread_offset = c_gmem_frag.distance(c.ptr)
             alias num_stores_per_thread = __type_of(c_gmem_frag).layout.size()
 
@@ -1032,15 +1035,17 @@ fn multistage_gemm_kernel[
                         ](swizzled_idx).cast[c_type](),
                     )
         else:
-            var num_parts = GridDim.z
+            var num_parts = grid_dim.z
             if serial_reduction and num_parts > 1:
-                var bid = block_idx[1] + BlockDim.x * block_idx[0]
-                var semaphore = Semaphore(locks.offset(bid), ThreadIdx.x)
+                var bid = block_idx_swizzle[
+                    1
+                ] + block_dim.x * block_idx_swizzle[0]
+                var semaphore = Semaphore(locks.offset(bid), thread_idx.x)
                 semaphore.fetch()
-                semaphore.wait(BlockIdx.z)
+                semaphore.wait(block_idx.z)
 
                 # For the very first block the comes in, it needs to just copy and not reduce_copy
-                if BlockIdx.z == 0:
+                if block_idx.z == 0:
                     copy_sram_to_dram[
                         thread_layout = Layout.row_major(
                             WARP_SIZE * simd_size // WN, WN // simd_size
@@ -1072,10 +1077,10 @@ fn multistage_gemm_kernel[
                     )
 
                 var lock_flag = 0
-                if num_parts == (BlockIdx.z + 1):
+                if num_parts == (block_idx.z + 1):
                     lock_flag = 0
                 else:
-                    lock_flag = BlockIdx.z + 1
+                    lock_flag = block_idx.z + 1
                 semaphore.release(lock_flag)
 
             else:
@@ -1158,9 +1163,9 @@ fn multistage_gemm_split_k_kernel[
 
     # If K is not divisible by num_partitions, the first num_partitions-1 parts
     # will be rounded up to multiple of BK.
-    var a_part = a.split[axis=1, alignment=BK](num_partitions, BlockIdx.z)
+    var a_part = a.split[axis=1, alignment=BK](num_partitions, block_idx.z)
     var b_part = b.split[axis= 1 if transpose_b else 0, alignment=BK](
-        num_partitions, BlockIdx.z
+        num_partitions, block_idx.z
     )
 
     @parameter
@@ -1186,7 +1191,7 @@ fn multistage_gemm_split_k_kernel[
         ](c, a_part, b_part, locks)
     else:
         var work_space_part = LayoutTensor[work_space_type, c_layout](
-            work_space.data + BlockIdx.z * M * N,
+            work_space.data + block_idx.z * M * N,
             RuntimeLayout[c_layout].row_major(IndexList[2](M, N)),
         )
         alias k_partition_config = MatmulConfig[

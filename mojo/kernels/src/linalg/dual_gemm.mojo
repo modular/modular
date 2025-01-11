@@ -13,9 +13,9 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import (
     WARP_SIZE,
-    BlockIdx,
-    GridDim,
-    ThreadIdx,
+    block_idx,
+    grid_dim,
+    thread_idx,
     barrier,
     lane_id,
     warp_broadcast,
@@ -119,7 +119,7 @@ fn multistage_dual_mma[
     ]()
     alias simd_size = simdwidthof[a_type]()
 
-    var tid: UInt32 = ThreadIdx.x
+    var tid: UInt32 = thread_idx.x
     var warp_id = warp_broadcast(tid // WARP_SIZE)
 
     alias num_warps_m = BM // WM
@@ -448,7 +448,7 @@ fn multistage_dual_gemm_kernel[
     alias num_warps_n = config.num_warps_n()
     alias num_threads = config.num_threads()
 
-    var tid = ThreadIdx.x
+    var tid = thread_idx.x
     var ln_id = lane_id()
     var warp_id = warp_broadcast(tid // WARP_SIZE)
 
@@ -458,10 +458,10 @@ fn multistage_dual_gemm_kernel[
     # NOTE: the condition ( not (N // BN & 1)) is for a temporary solution
     # for solving mismatches in some shapes
     var block_idx = block_swizzle(
-        Index[element_bitwidth=32, unsigned=True](BlockIdx.x, BlockIdx.y),
-        Index[element_bitwidth=32, unsigned=True](GridDim.x, GridDim.y),
+        Index[element_bitwidth=32, unsigned=True](block_idx.x, block_idx.y),
+        Index[element_bitwidth=32, unsigned=True](grid_dim.x, grid_dim.y),
     ) if swizzle_block else Index[element_bitwidth=32, unsigned=True](
-        BlockIdx.x, BlockIdx.y
+        block_idx.x, block_idx.y
     )
 
     # Coordinates of the current warp.
@@ -620,10 +620,10 @@ fn multistage_dual_gemm_kernel[
             )
             var c_gmem_frag = c_gmem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute[warp_layout](ThreadIdx.x)
+            ]().distribute[warp_layout](thread_idx.x)
             var c_smem_frag = accum_smem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute[warp_layout](ThreadIdx.x)
+            ]().distribute[warp_layout](thread_idx.x)
             var thread_offset = c_gmem_frag.distance(c.ptr)
             alias num_stores_per_thread = __type_of(c_gmem_frag).layout.size()
 
@@ -1119,13 +1119,13 @@ fn dual_gemv_kernel[
     var n: UInt = b0.dim(0)
     var k: UInt = b0.dim(1)
 
-    var tid = ThreadIdx.x
+    var tid = thread_idx.x
 
     # tile_m is number of rows in A, defaults to 1.
     # tile_n is number of rows in B0 and B1, each gets tile_n // 2.
     alias tile_n_per_B = tile_n // 2
-    var tile_id_m = BlockIdx.x * tile_m
-    var tile_id_n = BlockIdx.y * tile_n_per_B
+    var tile_id_m = block_idx.x * tile_m
+    var tile_id_n = block_idx.y * tile_n_per_B
 
     alias tile_k = simd_width * num_threads
     var tile_a = stack_allocation[
