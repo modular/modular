@@ -869,6 +869,13 @@ kgen.generator @compile_assembly<emission_kind: !kgen.int_literal>() {
   kgen.return
 }
 
+// CHECK-LABEL: @compile_offload_closure
+kgen.generator @compile_offload_closure() {
+  // CHECK: constant: string = <compile_offload_closure(:() -> () @kernel)>
+  kgen.param.constant: string = <compile_offload_closure(:() -> () @kernel)>
+  kgen.return
+}
+
 // CHECK-LABEL: @get_likage_name
 kgen.generator @get_likage_name() {
   // CHECK: constant: string = <get_linkage_name(current_target(), :() -> () @kernel)>
