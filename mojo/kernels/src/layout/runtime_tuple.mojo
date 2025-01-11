@@ -131,7 +131,7 @@ struct RuntimeTuple[
     @always_inline
     fn __setitem__[i: Int](mut self, val: Scalar[Self.int_type]):
         alias offset = Self.offset_until[i]()
-        self.value[offset] = int(val)
+        self.value[offset] = Int(val)
 
     @no_inline
     fn __str__(self) -> String:
@@ -277,7 +277,7 @@ fn idx2crd[
     var res = __type_of(result)()
     constrained[idx_t.is_value(), "Only scalar index is supported"]()
     for i in range(res.scalar_length):
-        res.value[i] = (int(to_int(idx)) // stride.value[i]) % shape.value[i]
+        res.value[i] = (Int(to_int(idx)) // stride.value[i]) % shape.value[i]
     return res
 
 
@@ -319,7 +319,7 @@ fn crd2idx[
             r += crd2idx(crd[i], shape[i], stride[i])
         return r
     else:
-        var int_crd: Int = 0 if len(crd) == 0 else int(to_int(crd))
+        var int_crd: Int = 0 if len(crd) == 0 else Int(to_int(crd))
 
         @parameter
         if shape_t.is_tuple():  # "int" tuple tuple
@@ -341,7 +341,7 @@ fn crd2idx[
                 int_crd, shape[last_elem_idx], stride[last_elem_idx]
             )
         else:  # "int" "int" "int"
-            return int_crd * int(to_int(stride))
+            return int_crd * Int(to_int(stride))
 
 
 # TODO: This isn't necessarily needed. We need to revisit and simplify
@@ -378,8 +378,8 @@ fn shape_div[
         else:
             var res = RuntimeTuple[shape_div_int_tuple(a_t, b_t)]()
             # FIXME: this used to be simpler
-            # var vb = int(to_int(b))
-            var vb = RuntimeTuple[IntTuple(UNKNOWN_VALUE)](int(to_int(b)))
+            # var vb = Int(to_int(b))
+            var vb = RuntimeTuple[IntTuple(UNKNOWN_VALUE)](Int(to_int(b)))
 
             @parameter
             for i in range(len(a_t)):
@@ -390,8 +390,8 @@ fn shape_div[
                     res.value[i + j] = res_i.value[j]
 
                 # FIXME: this used to be simpler
-                # vb = int(to_int(shape_div(vb, product(a[i]))))
-                vb = int(
+                # vb = Int(to_int(shape_div(vb, product(a[i]))))
+                vb = Int(
                     to_int(
                         shape_div(
                             vb,
@@ -408,8 +408,8 @@ fn shape_div[
         if b_t.is_tuple():
             return shape_div(a, b)
         else:
-            var va = int(to_int(a))
-            var vb = int(to_int(b))
+            var va = Int(to_int(a))
+            var vb = Int(to_int(b))
 
             if not (va % vb == 0 or vb % va == 0):
                 abort("Incompatible shape values: " + str(va) + " " + str(vb))

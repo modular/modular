@@ -995,7 +995,7 @@ fn _load_matrix_frag[
     )
 
     var lane_offset = eval_composed[ldmatrix_layout](
-        int(lane), offset
+        Int(lane), offset
     ) * simd_size
 
     return ld_matrix[__output_width, transpose=transposed](

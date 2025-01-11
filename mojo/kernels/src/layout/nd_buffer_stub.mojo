@@ -253,7 +253,7 @@ fn distribute[
         )
 
     var res = NDBuffer[dtype, rank, _result_shape](
-        buff.data.offset(int(thread_offset)),
+        buff.data.offset(Int(thread_offset)),
         dynamic_shape=res_shape,
         dynamic_stride=res_strides,
     )
@@ -1330,7 +1330,7 @@ fn copy_from_nd_buffer_async[
     copy_from_nd_buffer[thread_layout=thread_layout, is_async=True](
         dst_tensor.distribute[thread_layout](ThreadIdx.x),
         src_buffer,
-        int(ThreadIdx.x),
+        Int(ThreadIdx.x),
     )
 
 

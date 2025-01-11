@@ -623,7 +623,7 @@ fn format_layout[W: Writer](layout: Layout, mut writer: W):
 
         for n in range(layout[1].size()):
             writer.write("| ")
-            int(layout(IntTuple(m, n))).write_padded(
+            Int(layout(IntTuple(m, n))).write_padded(
                 writer,
                 width=idx_width - 2,
             )
