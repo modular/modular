@@ -226,7 +226,7 @@ struct _Matmul[
     fn _pack_buffer_transposed[
         input_b_fn: Self._input_fn_type, static_k: Dim
     ](packed_ptr: UnsafePointer[Scalar[type]], N: Int, dynamic_k: Int):
-        var K = int(static_k) if static_k else dynamic_k
+        var K = Int(static_k) if static_k else dynamic_k
 
         var aligned_n = align_up(N, simd_width)
 
@@ -316,7 +316,7 @@ struct _Matmul[
         a_ptr: UnsafePointer[Scalar[type]],
         c_ptr: UnsafePointer[Scalar[type]],
     ):
-        var K = int(static_k) if static_k else dynamic_k
+        var K = Int(static_k) if static_k else dynamic_k
 
         var cn_ptr = c_ptr
 
@@ -501,7 +501,7 @@ struct _FlashAttentionConfig[
         @parameter
         if depth_static_dim:
             # Extract the static depth dimension with a guard against zero.
-            var depth_dim = max(int(depth_static_dim), 1)
+            var depth_dim = max(Int(depth_static_dim), 1)
 
             # Compute the number of columns for the output block array. If the
             # count is too large, then use the default size.
@@ -1311,12 +1311,12 @@ fn flash_attention_kv_cache[
     @always_inline
     @parameter
     fn q_length_fn(batch: Int) -> Int:
-        return int(q_input_row_offsets[batch + 1] - q_input_row_offsets[batch])
+        return Int(q_input_row_offsets[batch + 1] - q_input_row_offsets[batch])
 
     @always_inline
     @parameter
     fn kv_length_fn(batch: Int) -> Int:
-        return int(
+        return Int(
             kv_input_row_offsets[batch + 1] - kv_input_row_offsets[batch]
         )
 
@@ -1325,7 +1325,7 @@ fn flash_attention_kv_cache[
     fn input_q_ptr_fn(idx: IndexList[4]) -> UnsafePointer[Scalar[type]]:
         var bs = idx[0]
         var tok_idx = idx[1]
-        var q_start = int(q_input_row_offsets[bs]) + tok_idx
+        var q_start = Int(q_input_row_offsets[bs]) + tok_idx
         var flat_idx = IndexList[3](q_start, idx[2], idx[3])
         return q._offset(flat_idx)
 
@@ -1334,7 +1334,7 @@ fn flash_attention_kv_cache[
     fn output_ptr_fn(idx: IndexList[4]) -> UnsafePointer[Scalar[type]]:
         var bs = idx[0]
         var tok_idx = idx[1]
-        var q_start = int(q_input_row_offsets[bs]) + tok_idx
+        var q_start = Int(q_input_row_offsets[bs]) + tok_idx
         var flat_idx = IndexList[3](q_start, idx[2], idx[3])
         return output._offset(flat_idx)
 

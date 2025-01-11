@@ -91,7 +91,7 @@ def execute_ragged_flash_attention[
     # Don't worry about padded values, we won't read them.
     for bs in range(batch_size):
         unpadded_seq_len = valid_lengths_list[bs]
-        ragged_start_idx = int(input_row_offsets.tensor[bs])
+        ragged_start_idx = Int(input_row_offsets.tensor[bs])
         padded_ptr = q_padded.tensor._offset((bs, 0, 0, 0))
         ragged_ptr = q_ragged.tensor._offset((ragged_start_idx, 0, 0))
         memcpy(
@@ -145,7 +145,7 @@ def execute_ragged_flash_attention[
     var block_idx_set = Set[Int]()
     var idx = 0
     while idx < batch_size:
-        var randval = int(random_ui64(0, num_blocks - 1))
+        var randval = Int(random_ui64(0, num_blocks - 1))
         if randval in block_idx_set:
             continue
 
@@ -198,8 +198,8 @@ def execute_ragged_flash_attention[
     ref_out = ref_output.tensor
     test_out = test_output.tensor
     for bs in range(batch_size):
-        prompt_len = int(valid_lengths.tensor[bs])
-        ragged_offset = int(input_row_offsets.tensor[bs])
+        prompt_len = Int(valid_lengths.tensor[bs])
+        ragged_offset = Int(input_row_offsets.tensor[bs])
         for s in range(prompt_len):
             for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):
@@ -243,8 +243,8 @@ def execute_flash_attention_suite():
         tg_seq_lens = List[Int]()
         for _ in range(bs):
             tg_seq_lens.append(1)
-            tg_cache_sizes.append(int(random_ui64(1, 100)))
-            ce_seq_lens.append(int(random_ui64(1, 100)))
+            tg_cache_sizes.append(Int(random_ui64(1, 100)))
+            ce_seq_lens.append(Int(random_ui64(1, 100)))
             ce_cache_sizes.append(0)
         print("CE", bs, type)
         execute_ragged_flash_attention[

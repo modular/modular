@@ -50,7 +50,7 @@ def test_fused_qk_rope[type: DType]() -> None:
 
     constrained[
         max_seq_len
-        > (seq_len + int(_max[DType.uint32, items=start_positions]())),
+        > (seq_len + Int(_max[DType.uint32, items=start_positions]())),
         "KV cache size smaller than sum of sequence length and start pos",
     ]()
     alias num_heads = 2
@@ -78,7 +78,7 @@ def test_fused_qk_rope[type: DType]() -> None:
             dest=(
                 k_cache_block_buffer.data
                 + (batch_idx * max_seq_len * dim)
-                + int(start_positions[batch_idx] * dim)
+                + Int(start_positions[batch_idx] * dim)
             ),
             src=k_cache_input_buffer.data + (batch_idx * seq_len * dim),
             count=seq_len * dim,
@@ -170,7 +170,7 @@ def test_fused_qk_rope[type: DType]() -> None:
                 k_cache_block_buffer.data
                 + (batch_idx * max_seq_len * dim)
                 # Account for the start_pos (cache_length) for this batch item.
-                + int(start_positions[batch_idx] * dim)
+                + Int(start_positions[batch_idx] * dim)
             ),
             expected_k_out_buffer.data + (batch_idx * seq_len * dim),
             # Number of elements in one batch item.

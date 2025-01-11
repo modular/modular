@@ -62,7 +62,7 @@ struct KVCacheMHAOperand[cache_t: KVCacheT](MHAOperand):
         head_dim_idx: UInt32 = 0,
     ) -> UnsafePointer[Scalar[Self.type]]:
         return self.cache.block_paged_ptr[tile_size](
-            int(batch_idx), int(start_tok_idx), int(head_idx), int(head_dim_idx)
+            Int(batch_idx), Int(start_tok_idx), Int(head_idx), Int(head_dim_idx)
         )
 
     @always_inline
@@ -97,10 +97,10 @@ struct NDBufferMHAOperand[
     ) -> UnsafePointer[Scalar[Self.type]]:
         var ret_ptr = self.buffer._offset(
             (
-                int(batch_idx),
-                int(start_tok_idx),
-                int(head_idx),
-                int(head_dim_idx),
+                Int(batch_idx),
+                Int(start_tok_idx),
+                Int(head_idx),
+                Int(head_dim_idx),
             )
         )
         return rebind[UnsafePointer[Scalar[Self.type]]](ret_ptr)

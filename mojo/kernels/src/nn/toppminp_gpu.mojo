@@ -432,20 +432,20 @@ fn radix_sort_pairs_kernel[
         if index < num_keys:
             var key = input_keys[index]
             var normalized_key = normalize(key)
-            var radix = int((normalized_key >> current_bit) & (NUM_BUCKETS - 1))
+            var radix = Int((normalized_key >> current_bit) & (NUM_BUCKETS - 1))
 
             # Adjust global_offset for ascending or descending order
             var global_offset: Int
 
             @parameter
             if ascending:
-                global_offset = int(
+                global_offset = Int(
                     total_offsets[radix]
                     + s_thread_offsets[tid * NUM_BUCKETS + radix]
                     + local_offsets[radix]
                 )
             else:
-                global_offset = int(
+                global_offset = Int(
                     total_offsets_descending[radix]
                     + s_thread_offsets[tid * NUM_BUCKETS + radix]
                     + local_offsets[radix]
@@ -711,11 +711,11 @@ fn _topp_minp_sampling_gpu[
     #   token exceeds P. If it does, we skip sorting by setting
     #   begin_offset_buf[bi] = offset_buf[bi]
     # materialize a vals buffer
-    var max_vals_cache_buf = ctx.enqueue_create_buffer[type](int(batch_size))
+    var max_vals_cache_buf = ctx.enqueue_create_buffer[type](Int(batch_size))
     var max_vals = NDBuffer[type, rank](
         max_vals_cache_buf.ptr, DimList(batch_size)
     )
-    var skip_sort_buf = ctx.enqueue_create_buffer[DType.bool](int(batch_size))
+    var skip_sort_buf = ctx.enqueue_create_buffer[DType.bool](Int(batch_size))
     var skip_sort = NDBuffer[DType.bool, rank](
         skip_sort_buf.ptr, DimList(batch_size)
     )

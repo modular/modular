@@ -269,8 +269,8 @@ fn pad_shape[
     var output_shape = IndexList[input_rank]()
 
     for axis in range(input_rank):
-        var pre_pad = int(paddings_buf[2 * axis])
-        var post_pad = int(paddings_buf[2 * axis + 1])
+        var pre_pad = Int(paddings_buf[2 * axis])
+        var post_pad = Int(paddings_buf[2 * axis + 1])
         output_shape[axis] = pre_pad + input_buf.dim(axis) + post_pad
 
     return output_shape
@@ -338,8 +338,8 @@ struct _AxisParams[rank: Int, type: DType, paddings_type: DType](
         output_shape: IndexList[rank],
     ):
         var axis_dim = output_shape[axis]
-        var pre_pad = int(paddings[2 * axis])
-        var post_pad = int(paddings[2 * axis + 1])
+        var pre_pad = Int(paddings[2 * axis])
+        var post_pad = Int(paddings[2 * axis + 1])
         var non_pad = axis_dim - pre_pad - post_pad
 
         self.pre_pad = pre_pad
@@ -426,8 +426,8 @@ fn _pad_constant_axis[
     if axis == (rank - 1):
         axis_params[axis].base(output, input, constant, output_shape[axis])
     else:
-        var output_axis_stride = int(output_strides[axis])
-        var input_axis_stride = int(input_strides[axis])
+        var output_axis_stride = Int(output_strides[axis])
+        var input_axis_stride = Int(input_strides[axis])
         for i in range(output_shape[axis]):
             axis_params[axis].pre_check(i)
 
@@ -578,8 +578,8 @@ struct _AxisParamsReflect[rank: Int, type: DType, paddings_type: DType](
         output_shape: IndexList[rank],
     ):
         var axis_dim = output_shape[axis]
-        var pre_pad = int(paddings[2 * axis])
-        var post_pad = int(paddings[2 * axis + 1])
+        var pre_pad = Int(paddings[2 * axis])
+        var post_pad = Int(paddings[2 * axis + 1])
         var non_pad = axis_dim - pre_pad - post_pad
 
         self.pre_pad = pre_pad
@@ -655,7 +655,7 @@ fn _pad_reflect_axis[
         _AxisParamsReflect[rank, type, paddings_type], rank
     ],
 ):
-    var output_axis_stride = int(output_strides[axis])
+    var output_axis_stride = Int(output_strides[axis])
     var input_offset: Int
     var output_offset: Int
 
@@ -677,8 +677,8 @@ fn _pad_reflect_axis[
     if axis == rank - 1:
         axis_params[axis].base(output_offset, input_offset, output, input)
     else:
-        var output_axis_stride_next = int(output_strides[axis + 1])
-        var input_axis_stride = int(input_strides[axis])
+        var output_axis_stride_next = Int(output_strides[axis + 1])
+        var input_axis_stride = Int(input_strides[axis])
         for i in range(
             axis_params[axis].pre_pad,
             axis_params[axis].pre_pad + axis_params[axis].non_pad,
@@ -784,8 +784,8 @@ fn pad_repeat[
     var post_pads = IndexList[rank]()
 
     for axis in range(rank):
-        pre_pads[axis] = int(paddings[2 * axis])
-        post_pads[axis] = int(paddings[2 * axis + 1])
+        pre_pads[axis] = Int(paddings[2 * axis])
+        post_pads[axis] = Int(paddings[2 * axis + 1])
 
     var loop_bounds = _NestedLoopIter[rank].LoopBoundSpec(rank)
 

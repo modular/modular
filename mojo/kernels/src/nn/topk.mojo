@@ -48,8 +48,8 @@ fn top_k_shape_impl[
     Returns:
         The output shape.
     """
-    var axis = int(axis_buf[0])
-    var k = int(k_buf[0])
+    var axis = Int(axis_buf[0])
+    var k = Int(k_buf[0])
 
     if axis < 0 or axis >= rank:
         raise Error("[top/bottom-k] axis must be within [0, rank]")
@@ -168,7 +168,7 @@ fn _top_k[
             @parameter
             @always_inline
             fn indices_to_val(idx: Int64) -> Scalar[type]:
-                indices[axis] = int(idx)
+                indices[axis] = Int(idx)
                 return input[indices]
 
             if largest:
@@ -202,11 +202,11 @@ fn _top_k[
                 # https://github.com/tensorflow/tensorflow/blob/v2.10.0/tensorflow/core/kernels/topk_op.cc#L171-L172
                 var i = 0
                 while i < shape[axis] - 1:
-                    indices[axis] = int(idxs[i])
+                    indices[axis] = Int(idxs[i])
                     var curr = input[indices]
                     var num_equal = 1
                     for j in range(i + 1, shape[axis]):
-                        indices[axis] = int(idxs[j])
+                        indices[axis] = Int(idxs[j])
                         var next = input[indices]
                         if curr != next:
                             break
@@ -221,7 +221,7 @@ fn _top_k[
                     i += num_equal
 
             for i in range(k):
-                indices[axis] = int(idxs[i])
+                indices[axis] = Int(idxs[i])
                 var val = input[indices]
                 indices[axis] = i
                 out_vals[indices] = val
@@ -314,7 +314,7 @@ fn _top_k_sampling[
         internal_bs = orig_in_shape[0]
         internal_in_shape = rebind[IndexList[internal_rank]](orig_in_shape)
     elif rank > internal_rank:
-        internal_bs = int(orig_in_shape.flattened_length() / last_dim)
+        internal_bs = Int(orig_in_shape.flattened_length() / last_dim)
         internal_in_shape = IndexList[internal_rank](internal_bs, last_dim)
     else:
         raise Error("Unsupported input rank. Must be >= 1.")
@@ -328,7 +328,7 @@ fn _top_k_sampling[
     # End reshape to internal rank
 
     var out_idxs_tmp = NDBuffer[DType.int64, internal_rank](
-        UnsafePointer[Int64].alloc(int(out_vals.size())),
+        UnsafePointer[Int64].alloc(Int(out_vals.size())),
         internal_out_shape,  # topk returns K as last dim
     )
     _top_k[rank=internal_rank, type=type](

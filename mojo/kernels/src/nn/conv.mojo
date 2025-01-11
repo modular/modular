@@ -2833,7 +2833,7 @@ fn conv_shape[
     var input_channels = input_buf.dim(input_rank - 1)
     var filter_channels = filter_buf.dim(input_rank - 2)
     var output_channels = filter_buf.dim(input_rank - 1)
-    var num_groups = int(num_groups_buf[0])
+    var num_groups = Int(num_groups_buf[0])
 
     if input_channels != (num_groups * filter_channels):
         raise Error(
@@ -2857,9 +2857,9 @@ fn conv_shape[
         var output_spatial_dim = get_sliding_window_out_dim(
             input_spatial_dim,
             filter_spatial_dim,
-            int(dilations_buf[i - 1]),
-            int(strides_buf[i - 1]),
-            int(paddings_buf[2 * i - 2] + paddings_buf[2 * i - 1]),
+            Int(dilations_buf[i - 1]),
+            Int(strides_buf[i - 1]),
+            Int(paddings_buf[2 * i - 2] + paddings_buf[2 * i - 1]),
         )
 
         if output_spatial_dim <= 0:

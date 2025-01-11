@@ -158,11 +158,11 @@ fn pool_shape_impl[
 
     @parameter
     for i in range(0, input_rank - 2):
-        var input_spatial_dim = int(input_buf.dim(i + 1))
-        var filter = int(filter_buf[i])
-        var stride = int(strides_buf[i])
-        var dilation = int(dilations_buf[i])
-        var pad = int(paddings_buf[2 * i] + paddings_buf[2 * i + 1])
+        var input_spatial_dim = Int(input_buf.dim(i + 1))
+        var filter = Int(filter_buf[i])
+        var stride = Int(strides_buf[i])
+        var dilation = Int(dilations_buf[i])
+        var pad = Int(paddings_buf[2 * i] + paddings_buf[2 * i + 1])
         var output_spatial_dim = get_sliding_window_out_dim[ceil_mode](
             input_spatial_dim, filter, dilation, stride, pad
         )
@@ -207,24 +207,24 @@ fn max_pool[
             empty_padding = False
             break
 
-    var padding_h_low = 0 if empty_padding else int(paddings[0])
-    var padding_h_high = 0 if empty_padding else int(paddings[1])
-    var padding_w_low = 0 if empty_padding else int(paddings[2])
-    var padding_w_high = 0 if empty_padding else int(paddings[3])
+    var padding_h_low = 0 if empty_padding else Int(paddings[0])
+    var padding_h_high = 0 if empty_padding else Int(paddings[1])
+    var padding_w_low = 0 if empty_padding else Int(paddings[2])
+    var padding_w_high = 0 if empty_padding else Int(paddings[3])
 
     alias simd_width = simdwidthof[type]()
 
     var input_height = input.dim(1)
     var input_width = input.dim(2)
 
-    var pool_window_h = int(filter[0])
-    var pool_window_w = int(filter[1])
+    var pool_window_h = Int(filter[0])
+    var pool_window_w = Int(filter[1])
 
-    var stride_h = int(strides[0])
-    var stride_w = int(strides[1])
+    var stride_h = Int(strides[0])
+    var stride_w = Int(strides[1])
 
-    var dilation_h = int(dilations[0])
-    var dilation_w = int(dilations[1])
+    var dilation_h = Int(dilations[0])
+    var dilation_w = Int(dilations[1])
 
     alias stencil_rank = 2
     alias stencil_axis = IndexList[stencil_rank](1, 2)
@@ -292,7 +292,7 @@ fn max_pool[
     @always_inline
     @parameter
     fn dilation_fn(dim: Int) -> Int:
-        return int(dilations[dim])
+        return Int(dilations[dim])
 
     alias stencil_with_padding = stencil[
         rank,
@@ -365,24 +365,24 @@ fn max_pool_gpu[
             empty_padding = False
             break
 
-    var padding_h_low = 0 if empty_padding else int(paddings[0])
-    var padding_h_high = 0 if empty_padding else int(paddings[1])
-    var padding_w_low = 0 if empty_padding else int(paddings[2])
-    var padding_w_high = 0 if empty_padding else int(paddings[3])
+    var padding_h_low = 0 if empty_padding else Int(paddings[0])
+    var padding_h_high = 0 if empty_padding else Int(paddings[1])
+    var padding_w_low = 0 if empty_padding else Int(paddings[2])
+    var padding_w_high = 0 if empty_padding else Int(paddings[3])
 
     alias simd_width = 1
 
     var input_height = input.dim(1)
     var input_width = input.dim(2)
 
-    var pool_window_h = int(filter[0])
-    var pool_window_w = int(filter[1])
+    var pool_window_h = Int(filter[0])
+    var pool_window_w = Int(filter[1])
 
-    var stride_h = int(strides[0])
-    var stride_w = int(strides[1])
+    var stride_h = Int(strides[0])
+    var stride_w = Int(strides[1])
 
-    var dilation_h = int(dilations[0])
-    var dilation_w = int(dilations[1])
+    var dilation_h = Int(dilations[0])
+    var dilation_w = Int(dilations[1])
     if dilations.get_shape().flattened_length() > 2:
         raise Error("Dilation not supported for size > 2")
 
@@ -517,10 +517,10 @@ fn avg_pool[
             empty_padding = False
             break
 
-    var padding_h_low = 0 if empty_padding else int(paddings[0])
-    var padding_h_high = 0 if empty_padding else int(paddings[1])
-    var padding_w_low = 0 if empty_padding else int(paddings[2])
-    var padding_w_high = 0 if empty_padding else int(paddings[3])
+    var padding_h_low = 0 if empty_padding else Int(paddings[0])
+    var padding_h_high = 0 if empty_padding else Int(paddings[1])
+    var padding_w_low = 0 if empty_padding else Int(paddings[2])
+    var padding_w_high = 0 if empty_padding else Int(paddings[3])
 
     # If ceil_mode = True, there can be an implicit padding to the right
     # and bottom, so this needs to be added (to later be ignored in
@@ -528,11 +528,11 @@ fn avg_pool[
     # Implicit padding equals SAME_UPPER calculations as shown at:
     # https://github.com/onnx/onnx/blob/main/docs/Operators.md#averagepool
     if ceil_mode and not count_boundary:
-        var implicit_pad0 = (output.dim(1) - 1) * int(strides[0]) + (
-            (int(filter[0]) - 1) * int(dilations[0]) + 1
+        var implicit_pad0 = (output.dim(1) - 1) * Int(strides[0]) + (
+            (Int(filter[0]) - 1) * Int(dilations[0]) + 1
         ) - input.dim(1)
-        var implicit_pad1 = (output.dim(2) - 1) * int(strides[1]) + (
-            (int(filter[1]) - 1) * int(dilations[1]) + 1
+        var implicit_pad1 = (output.dim(2) - 1) * Int(strides[1]) + (
+            (Int(filter[1]) - 1) * Int(dilations[1]) + 1
         ) - input.dim(2)
         # Add implicit padding to any specified explicit padding.
         padding_h_high = padding_h_high + implicit_pad0
@@ -546,14 +546,14 @@ fn avg_pool[
     var output_height = output.dim(1)
     var output_width = output.dim(2)
 
-    var pool_window_h = int(filter[0])
-    var pool_window_w = int(filter[1])
+    var pool_window_h = Int(filter[0])
+    var pool_window_w = Int(filter[1])
 
-    var stride_h = int(strides[0])
-    var stride_w = int(strides[1])
+    var stride_h = Int(strides[0])
+    var stride_w = Int(strides[1])
 
-    var dilation_h = int(dilations[0])
-    var dilation_w = int(dilations[1])
+    var dilation_h = Int(dilations[0])
+    var dilation_w = Int(dilations[1])
 
     alias stencil_rank = 2
     alias stencil_axis = IndexList[stencil_rank](1, 2)
@@ -665,7 +665,7 @@ fn avg_pool[
     @always_inline
     @parameter
     fn dilation_fn(dim: Int) -> Int:
-        return int(dilations[dim])
+        return Int(dilations[dim])
 
     alias stencil_with_padding = stencil[
         rank,
@@ -764,10 +764,10 @@ fn avg_pool_gpu[
             empty_padding = False
             break
 
-    var padding_h_low = 0 if empty_padding else int(paddings[0])
-    var padding_h_high = 0 if empty_padding else int(paddings[1])
-    var padding_w_low = 0 if empty_padding else int(paddings[2])
-    var padding_w_high = 0 if empty_padding else int(paddings[3])
+    var padding_h_low = 0 if empty_padding else Int(paddings[0])
+    var padding_h_high = 0 if empty_padding else Int(paddings[1])
+    var padding_w_low = 0 if empty_padding else Int(paddings[2])
+    var padding_w_high = 0 if empty_padding else Int(paddings[3])
 
     # If ceil_mode = True, there can be an implicit padding to the right
     # and bottom, so this needs to be added (to later be ignored in
@@ -775,11 +775,11 @@ fn avg_pool_gpu[
     # Implicit padding equals SAME_UPPER calculations as shown at:
     # https://github.com/onnx/onnx/blob/main/docs/Operators.md#averagepool
     if ceil_mode and not count_boundary:
-        var implicit_pad0 = (output.dim(1) - 1) * int(strides[0]) + (
-            (int(filter[0]) - 1) * int(dilations[0]) + 1
+        var implicit_pad0 = (output.dim(1) - 1) * Int(strides[0]) + (
+            (Int(filter[0]) - 1) * Int(dilations[0]) + 1
         ) - input.dim(1)
-        var implicit_pad1 = (output.dim(2) - 1) * int(strides[1]) + (
-            (int(filter[1]) - 1) * int(dilations[1]) + 1
+        var implicit_pad1 = (output.dim(2) - 1) * Int(strides[1]) + (
+            (Int(filter[1]) - 1) * Int(dilations[1]) + 1
         ) - input.dim(2)
         # Add implicit padding to any specified explicit padding.
         padding_h_high = padding_h_high + implicit_pad0
@@ -793,14 +793,14 @@ fn avg_pool_gpu[
     var output_height = output.dim(1)
     var output_width = output.dim(2)
 
-    var pool_window_h = int(filter[0])
-    var pool_window_w = int(filter[1])
+    var pool_window_h = Int(filter[0])
+    var pool_window_w = Int(filter[1])
 
-    var stride_h = int(strides[0])
-    var stride_w = int(strides[1])
+    var stride_h = Int(strides[0])
+    var stride_w = Int(strides[1])
 
-    var dilation_h = int(dilations[0])
-    var dilation_w = int(dilations[1])
+    var dilation_h = Int(dilations[0])
+    var dilation_w = Int(dilations[1])
     if dilations.get_shape().flattened_length() > 2:
         raise Error("Dilation not supported for size > 2")
 

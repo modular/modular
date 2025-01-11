@@ -211,7 +211,7 @@ fn argmax(
         output: The axis tensor.
     """
 
-    argmax(input, int(axis_buf[0]), output)
+    argmax(input, Int(axis_buf[0]), output)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -250,4 +250,4 @@ fn argmin(
         output: The axis tensor.
     """
 
-    argmin(input, int(axis_buf[0]), output)
+    argmin(input, Int(axis_buf[0]), output)

@@ -75,8 +75,8 @@ fn _bilinear_interpolate[
     #
     #   (y_high, x_low)      (y_high, x_high)
     # and bilinear weights (w1, w2, w3, w4)
-    var y_low = min(int(y), height - 1)
-    var x_low = min(int(x), width - 1)
+    var y_low = min(Int(y), height - 1)
+    var x_low = min(Int(x), width - 1)
     var y_high = min(y_low + 1, height - 1)
     var x_high = min(x_low + 1, width - 1)
 
@@ -163,7 +163,7 @@ fn roi_align_nhwc[
 
     for ri in range(n_regions):
         # Region coordinates and batch index
-        var roi_batch_idx = int(rois[ri, 0])
+        var roi_batch_idx = Int(rois[ri, 0])
         var roi_start_w = rois[ri, 1].cast[
             DType.float32
         ]() * spatial_scale - offset
@@ -191,10 +191,10 @@ fn roi_align_nhwc[
 
         # Use pooling window size as either sampling_ratio x sampling_ratio or
         # ⌈bin_size_h x bin_size_w⌉.
-        var roi_bin_grid_h = int(
+        var roi_bin_grid_h = Int(
             sampling_ratio if sampling_ratio > 0 else ceil(bin_size_h)
         )
-        var roi_bin_grid_w = int(
+        var roi_bin_grid_w = Int(
             sampling_ratio if sampling_ratio > 0 else ceil(bin_size_w)
         )
 

@@ -277,7 +277,7 @@ fn layer_norm_gpu_warp_tiling[
 
         # every thread computes its own simd width of mean and variance
         @parameter
-        for i in range(int(simd_width)):
+        for i in range(Int(simd_width)):
             welford_update(vec_data[i], thread_mean, thread_m2, thread_count)
 
     # a whole block computes part of the row main and variance and broadcasts to
@@ -332,7 +332,7 @@ fn layer_norm_gpu_block[
             var vec_data = input_fn[simd_width](row, offset).cast[accum_type]()
 
             @parameter
-            for i in range(int(simd_width)):
+            for i in range(Int(simd_width)):
                 welford_update(
                     vec_data[i], thread_mean, thread_m2, thread_count
                 )

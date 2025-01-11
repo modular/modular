@@ -100,22 +100,22 @@ fn tile[
             for r in range(num_rows_input):
                 # print(dp, d, r)
                 var input_src_index = dp * num_depth_input * num_rows_input * num_cols_input + d * num_rows_input * num_cols_input + r * num_cols_input
-                var output_src_index = dp * num_depth_input * int(
+                var output_src_index = dp * num_depth_input * Int(
                     repeats[repeats_len - 3]
-                ) * num_rows_input * int(
+                ) * num_rows_input * Int(
                     repeats[repeats_len - 2]
-                ) * num_cols_input * int(
+                ) * num_cols_input * Int(
                     repeats[repeats_len - 1]
-                ) + d * num_rows_input * int(
+                ) + d * num_rows_input * Int(
                     repeats[repeats_len - 2]
-                ) * num_cols_input * int(
+                ) * num_cols_input * Int(
                     repeats[repeats_len - 1]
-                ) + r * num_cols_input * int(
+                ) + r * num_cols_input * Int(
                     repeats[repeats_len - 1]
                 )
                 var output_src_stride = num_cols_input
                 var count = output_src_stride
-                for rep in range(int(repeats[repeats_len - 1])):
+                for rep in range(Int(repeats[repeats_len - 1])):
                     var src_ptr = input.data.offset(input_src_index)
                     var dst_ptr = output.data.offset(
                         output_src_index + rep * output_src_stride
@@ -134,24 +134,24 @@ fn tile[
     # replicate contiguous memory areas (representing a dimension to be tiled).
     @parameter
     if rank >= 2:
-        var src_index_stride = num_rows_input * num_cols_input * int(
+        var src_index_stride = num_rows_input * num_cols_input * Int(
             repeats[repeats_len - 1]
         )
         var count = src_index_stride
         for dp in range(num_dp_input):
             for d in range(num_depth_input):
-                var src_index = dp * num_depth_input * int(
+                var src_index = dp * num_depth_input * Int(
                     repeats[repeats_len - 3]
-                ) * num_rows_input * int(
+                ) * num_rows_input * Int(
                     repeats[repeats_len - 2]
-                ) * num_cols_input * int(
+                ) * num_cols_input * Int(
                     repeats[repeats_len - 1]
-                ) + d * num_rows_input * int(
+                ) + d * num_rows_input * Int(
                     repeats[repeats_len - 2]
-                ) * num_cols_input * int(
+                ) * num_cols_input * Int(
                     repeats[repeats_len - 1]
                 )
-                for rep in range(int(repeats[repeats_len - 2] - 1)):
+                for rep in range(Int(repeats[repeats_len - 2] - 1)):
                     var src_ptr = output.data.offset(src_index)
                     var dst_ptr = output.data.offset(
                         src_index + (rep + 1) * src_index_stride
@@ -161,19 +161,19 @@ fn tile[
     # Handles tiling across the third dimension from the end (if tensor rank >= 3)
     @parameter
     if rank >= 3:
-        var src_index_stride = num_depth_input * int(
+        var src_index_stride = num_depth_input * Int(
             repeats[repeats_len - 2]
-        ) * num_rows_input * num_cols_input * int(repeats[repeats_len - 1])
+        ) * num_rows_input * num_cols_input * Int(repeats[repeats_len - 1])
         var count = src_index_stride
         for dp in range(num_dp_input):
-            var src_index = dp * num_depth_input * int(
+            var src_index = dp * num_depth_input * Int(
                 repeats[repeats_len - 3]
-            ) * num_rows_input * int(
+            ) * num_rows_input * Int(
                 repeats[repeats_len - 2]
-            ) * num_cols_input * int(
+            ) * num_cols_input * Int(
                 repeats[repeats_len - 1]
             )
-            for rep in range(int(repeats[repeats_len - 3] - 1)):
+            for rep in range(Int(repeats[repeats_len - 3] - 1)):
                 var src_ptr = output.data.offset(src_index)
                 var dst_ptr = output.data.offset(
                     src_index + (rep + 1) * src_index_stride
@@ -183,16 +183,16 @@ fn tile[
     # Handles tiling across the fourth dimension from the end(if tensor rank >= 3)
     @parameter
     if rank == 4:
-        var src_index_stride = num_dp_input * int(
+        var src_index_stride = num_dp_input * Int(
             repeats[repeats.dim(0) - 3]
-        ) * num_depth_input * int(
+        ) * num_depth_input * Int(
             repeats[repeats.dim(0) - 2]
-        ) * num_rows_input * num_cols_input * int(
+        ) * num_rows_input * num_cols_input * Int(
             repeats[repeats.dim(0) - 1]
         )
         var count = src_index_stride
         var src_index = 0
-        for rep in range(int(repeats[repeats.dim(0) - 4] - 1)):
+        for rep in range(Int(repeats[repeats.dim(0) - 4] - 1)):
             var src_ptr = output.data.offset(src_index)
             var dst_ptr = output.data.offset(
                 src_index + (rep + 1) * src_index_stride
@@ -239,6 +239,6 @@ fn tile_shape[
     var output_shape = IndexList[input_rank]()
 
     for i in range(input_rank):
-        output_shape[i] = input_buf.dim(i) * int(repeats_buf[i])
+        output_shape[i] = input_buf.dim(i) * Int(repeats_buf[i])
 
     return output_shape

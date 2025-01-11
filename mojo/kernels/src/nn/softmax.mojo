@@ -713,7 +713,7 @@ fn softmax_kernel[
     ):
         # Step 1: compute max in row
         var row_coords = _get_nd_indices_from_flat_index(
-            int(row_idx), shape, axis
+            Int(row_idx), shape, axis
         )
         var row_max = row_reduce[
             BLOCK_SIZE,
@@ -723,7 +723,7 @@ fn softmax_kernel[
             1,
             rank,
             accum_type=accum_type,
-        ](row_coords, axis, Scalar[type].MIN, int(row_size))
+        ](row_coords, axis, Scalar[type].MIN, Int(row_size))
 
         if ThreadIdx.x == 0:
             max_buf[0] = row_max
@@ -738,7 +738,7 @@ fn softmax_kernel[
             if idx_in_padded_row >= row_size:
                 break
 
-            row_coords[axis] = int(idx_in_padded_row)
+            row_coords[axis] = Int(idx_in_padded_row)
 
             # loads from input_fn twice
             var val = exp(
@@ -765,7 +765,7 @@ fn softmax_kernel[
             if idx_in_padded_row >= row_size:
                 break
 
-            row_coords[axis] = int(idx_in_padded_row)
+            row_coords[axis] = Int(idx_in_padded_row)
             output[row_coords] *= block_exp_sum_recip.cast[type]()
 
 
@@ -909,14 +909,14 @@ fn _online_softmax_kernel[
 
     # If we do more than 2 iterations, the first N - 2 iterations won't be
     # corrected with the right rowmax.
-    var input_warp_tile0 = input.tile[WM, WN](0, int(warp_id))
+    var input_warp_tile0 = input.tile[WM, WN](0, Int(warp_id))
     var input_warp_tile1 = input.tile[WM, WN](
-        0, int(warp_id) + num_rowwise_warps
+        0, Int(warp_id) + num_rowwise_warps
     )
 
-    var output_warp_tile0 = output.tile[WM, WN](0, int(warp_id))
+    var output_warp_tile0 = output.tile[WM, WN](0, Int(warp_id))
     var output_warp_tile1 = output.tile[WM, WN](
-        0, int(warp_id) + num_rowwise_warps
+        0, Int(warp_id) + num_rowwise_warps
     )
 
     var p = LayoutTensor[
@@ -1136,7 +1136,7 @@ fn _online_softmax_iter_for_mma_output[
         @parameter
         for row in range(frag_num_rows):
             score_frag_rowmax[col_tile, row] = lane_group_max_and_broadcast[
-                int(num_rowwise_lanes)
+                Int(num_rowwise_lanes)
             ](score_frag_rowmax[col_tile, row])
 
     # If a row is split across multiple warps, communicate via shared memory
@@ -1157,7 +1157,7 @@ fn _online_softmax_iter_for_mma_output[
                     # warp scratch has layout row_major(num_warps, num_rows). The
                     # "score_row_idx" is the idx-th row in the score matrix.
                     warp_scratch[
-                        int(warp_x), int(score_row_idx)
+                        Int(warp_x), Int(score_row_idx)
                     ] = score_frag_rowmax[col_tile, row][0]
 
         barrier()
@@ -1181,7 +1181,7 @@ fn _online_softmax_iter_for_mma_output[
                                 score_frag_rowmax[col_tile, row]
                             ),
                             rebind[Scalar[type]](
-                                warp_scratch[row_warp, int(score_row_idx)]
+                                warp_scratch[row_warp, Int(score_row_idx)]
                             ),
                         )
 
@@ -1196,7 +1196,7 @@ fn _online_softmax_iter_for_mma_output[
             @parameter
             for row in range(frag_num_rows):
                 score_frag_rowmax[col_tile, row] = lane_group_max_and_broadcast[
-                    int(num_rowwise_lanes)
+                    Int(num_rowwise_lanes)
                 ](score_frag_rowmax[col_tile, row])
 
         # Corrention since previous max may be updated.
@@ -1250,7 +1250,7 @@ fn _online_softmax_iter_for_mma_output[
         @parameter
         for row in range(frag_num_rows):
             score_frag_rowsum[col_tile, row] = lane_group_sum_and_broadcast[
-                int(num_rowwise_lanes)
+                Int(num_rowwise_lanes)
             ](score_frag_rowsum[col_tile, row])
 
     # Reduce rowsum via shared memory.
@@ -1271,7 +1271,7 @@ fn _online_softmax_iter_for_mma_output[
                     ) * frag_num_rows + row
 
                     warp_scratch[
-                        warp_x + num_rowwise_warps, int(score_row_idx)
+                        warp_x + num_rowwise_warps, Int(score_row_idx)
                     ] = score_frag_rowsum[col_tile, row][0]
 
         # Guard writing warp_scratch
@@ -1297,7 +1297,7 @@ fn _online_softmax_iter_for_mma_output[
                             Scalar[type]
                         ](
                             warp_scratch[
-                                row_warp + num_rowwise_warps, int(score_row_idx)
+                                row_warp + num_rowwise_warps, Int(score_row_idx)
                             ]
                         )
 
@@ -1310,7 +1310,7 @@ fn _online_softmax_iter_for_mma_output[
             for row in range(frag_num_rows):
                 # Broadcast to 4 threads in the same row.
                 score_frag_rowsum[col_tile, row] = lane_group_max_and_broadcast[
-                    int(num_rowwise_lanes)
+                    Int(num_rowwise_lanes)
                 ](score_frag_rowsum[col_tile, row])
 
     # Correct previous result

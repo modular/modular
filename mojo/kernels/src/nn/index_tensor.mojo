@@ -277,7 +277,7 @@ fn _index_tensor_1d[
                 var data_coord = IndexList[reshaped_data_rank]()
                 data_coord[0] = i
                 for k in range(last_index_dim):
-                    data_coord[k + 1] = int(
+                    data_coord[k + 1] = Int(
                         indices[IndexList[indices_rank](j, k)]
                     )
 
@@ -332,7 +332,7 @@ fn _index_tensor_impl[
         # walk the last dimensions, which are the slices we're gathering
         for i in range(indices_last_dim):
             indices_idx[indices_rank - 1] = i
-            data_idx[batch_dims + i] = int(indices[indices_idx])
+            data_idx[batch_dims + i] = Int(indices[indices_idx])
 
         # fill in the last slices in the input
         num_tail_elems = data_rank - batch_dims - indices_last_dim

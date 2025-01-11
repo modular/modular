@@ -164,7 +164,7 @@ fn fused_qk_rope[
     alias num_k_heads = kv_params.num_heads
     alias head_size = q_proj.shape.get[3]()
 
-    var k_cache = kv_collection.get_key_cache(int(layer_idx))
+    var k_cache = kv_collection.get_key_cache(Int(layer_idx))
 
     @always_inline
     @parameter
@@ -254,7 +254,7 @@ fn fused_qk_rope_ragged[
     alias head_size = q_proj.shape.get[2]()
     var batch_size = input_row_offsets.dim[0]() - 1
 
-    var k_cache = kv_collection.get_key_cache(int(layer_idx))
+    var k_cache = kv_collection.get_key_cache(Int(layer_idx))
 
     @always_inline
     @parameter
@@ -273,7 +273,7 @@ fn fused_qk_rope_ragged[
             var batch_idx: Int = get_batch_from_row_offsets(
                 input_row_offsets, global_token_idx
             )
-            var token_idx = int(global_token_idx - input_row_offsets[batch_idx])
+            var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
 
             var post_seq_idx = k_cache.cache_length(batch_idx) + token_idx
             var head_idx = idx[1]

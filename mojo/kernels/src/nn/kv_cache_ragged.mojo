@@ -854,7 +854,7 @@ fn _fused_qkv_matmul_kv_cache_ragged[
         context: The call context pointer, passed by the graph compiler.
     """
     var cuda_ctx: Optional[DeviceContext] = None
-    var layer_idx_cast = int(layer_idx)
+    var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
     var v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
@@ -935,7 +935,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
             input_row_offsets, global_token_idx
         )
 
-        token_idx = int(global_token_idx - input_row_offsets[batch_idx])
+        token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
 
         var h_idx: UInt
         var hd_idx: UInt
@@ -1096,7 +1096,7 @@ fn _matmul_kv_cache_ragged[
         context: Pointer containing the runtime context for the target device.
     """
     var cuda_ctx: Optional[DeviceContext] = None
-    layer_idx_cast = int(layer_idx)
+    layer_idx_cast = Int(layer_idx)
     k_cache = kv_collection.get_key_cache(layer_idx_cast)
     v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
@@ -1175,7 +1175,7 @@ fn _matmul_kv_cache_ragged_impl[
         batch_idx = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
         )
-        token_idx = int(global_token_idx - input_row_offsets[batch_idx])
+        token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
 
         if idx[1] < k_offset:
             # Write this element to the K cache.
@@ -2422,7 +2422,7 @@ fn _cross_attention_kv_cache_ragged[
             (batch_size, num_heads, seq_len, head_size).
         context: Pointer containing the runtime context for the target device.
     """
-    var layer_idx_cast = int(layer_idx)
+    var layer_idx_cast = Int(layer_idx)
     var k = kv_collection.get_key_cache(layer_idx_cast)
     var v = kv_collection.get_value_cache(layer_idx_cast)
 
@@ -2444,7 +2444,7 @@ fn _cross_attention_kv_cache_ragged[
             output,
             q,
             q_input_row_offsets,
-            int(q_max_seq_len),
+            Int(q_max_seq_len),
             k,
             v,
             kv_input_row_offsets,
@@ -2923,7 +2923,7 @@ fn _flash_attention_kv_cache_ragged_impl[
         context: CUDA DeviceContext. This is not used if is_cpu[target]()
     """
 
-    var layer_idx_cast = int(layer_idx)
+    var layer_idx_cast = Int(layer_idx)
     var k = kv_collection.get_key_cache(layer_idx_cast)
     var v = kv_collection.get_value_cache(layer_idx_cast)
 
@@ -2966,7 +2966,7 @@ fn _flash_attention_kv_cache_alibi_mask_ragged_impl[
         context: CUDA DeviceContext. This is not used if is_cpu[target]()
     """
 
-    var layer_idx_cast = int(layer_idx)
+    var layer_idx_cast = Int(layer_idx)
     var k = kv_collection.get_key_cache(layer_idx_cast)
     var v = kv_collection.get_value_cache(layer_idx_cast)
 
@@ -3046,7 +3046,7 @@ fn _flash_attention_kv_cache_alibi_mask_ragged_gpu[
     ]()
 
     # This assumes that, the q tensor is static in the 1 dim.
-    alias num_q_heads = int(q.shape.at[1]())
+    alias num_q_heads = Int(q.shape.at[1]())
 
     gpu_flash_attention[add_attn_mask=False, use_score_mod=True, ragged=True](
         output,

@@ -101,7 +101,7 @@ fn warp_reduce_topk[
     ) -> TopK_2[T, largest]:
         return TopK_2[T, largest](
             u=shuffle_down(v.u, offset),  # u is the value
-            p=int(
+            p=Int(
                 shuffle_down(Scalar[DType.int32](v.p), offset)
             ),  # p is the index
         )
@@ -186,8 +186,8 @@ fn block_reduce_topk[
     # Store warp-level results in shared memory
     if lane_id() == 0 and warp < num_warps_needed:
         # Note: Potential bank conflict for sub 4 byte data elements
-        p_sram[int(warp) * p_width] = Scalar[DType.index](warp_accum.p)
-        u_sram[int(warp) * u_width] = warp_accum.u
+        p_sram[Int(warp) * p_width] = Scalar[DType.index](warp_accum.p)
+        u_sram[Int(warp) * u_width] = warp_accum.u
     barrier()
 
     # Load warp results into final warp for block-level reduction
@@ -196,7 +196,7 @@ fn block_reduce_topk[
     if thread_in_final_warp:
         var p_idx = p_sram[lane_id() * p_width]  # loaded value is a scalar
         block_accum = TopK_2[T, largest](
-            p=int(p_idx), u=u_sram[lane_id() * u_width]  # Convert back to int
+            p=Int(p_idx), u=u_sram[lane_id() * u_width]  # Convert back to int
         )
     else:
         # Initialize unused threads with dummy values
@@ -297,7 +297,7 @@ fn topk_stage1[
 @always_inline("nodebug")
 fn _get_shmem_size_stg_1[type: DType](block_size: Int) -> Int:
     # Get dynamic shared memory size for stage 1
-    return int(block_size * sizeof[TopK_2[type]]())
+    return Int(block_size * sizeof[TopK_2[type]]())
 
 
 fn topk_stage2[
@@ -576,7 +576,7 @@ fn _topk_gpu[
     var shared_mem_bytes_2 = num_elem_reduced * (
         sizeof[Scalar[type]]() + sizeof[DType.index]()
     ) + num_bytes_sample_cache
-    shared_mem_bytes_2 = int(
+    shared_mem_bytes_2 = Int(
         ceildiv(shared_mem_bytes_2, WARP_SIZE) * WARP_SIZE
     )  # align to warp size
 
@@ -705,7 +705,7 @@ fn topk_gpu[
     else:  # rank > 2
         # Handle higher dimensional inputs by flattening all but the last dimension
         var _last_dim = orig_in_shape[rank - 1]
-        internal_bs = int(orig_in_shape.flattened_length() / _last_dim)
+        internal_bs = Int(orig_in_shape.flattened_length() / _last_dim)
 
         var internal_in_shape = IndexList[internal_rank](internal_bs, _last_dim)
         var internal_out_idxs_shape = IndexList[internal_rank](
@@ -728,7 +728,7 @@ fn topk_gpu[
 
     # Create temporary buffer for local top-K values
     var internal_vals_buf = ctx.enqueue_create_buffer[type](
-        int(internal_cache_shape.product())
+        Int(internal_cache_shape.product())
     )
     var device_local_topk_vals = NDBuffer[type, internal_rank](
         internal_vals_buf.ptr, internal_cache_shape
@@ -736,7 +736,7 @@ fn topk_gpu[
 
     # Create temporary buffer for local top-K indices
     var internal_idxs_buf = ctx.enqueue_create_buffer[out_idx_type](
-        int(internal_cache_shape.product())
+        Int(internal_cache_shape.product())
     )
     var device_local_topk_idxs = NDBuffer[out_idx_type, internal_rank](
         internal_idxs_buf.ptr, internal_cache_shape

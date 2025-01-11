@@ -73,7 +73,7 @@ struct Axis(Intable, Indexer):
     fn __init__[
         type: DType
     ](mut self, axis_unnormalized: Scalar[type], rank: Int):
-        self.axis = int(normalize_neg_index(axis_unnormalized, rank))
+        self.axis = Int(normalize_neg_index(axis_unnormalized, rank))
 
     @always_inline
     fn __int__(self) -> Int:
@@ -220,7 +220,7 @@ fn gather_reduce[
                     @parameter
                     for unroll_idx in range(0, unroll_factor):
                         var gather_chunk = input.load[width=simd_width](
-                            int(idxs[unroll_idx]), k
+                            Int(idxs[unroll_idx]), k
                         )
                         out[unroll_idx] = reduce_fn[type, simd_width](
                             accums[unroll_idx], gather_chunk
@@ -298,13 +298,13 @@ fn gather[
         if prefetch_offset > 0:
             var indices_ptr = indices._offset(indices_coords)
             var indices_remaining = (
-                int(end_indices_ptr) - int(indices_ptr)
+                Int(end_indices_ptr) - Int(indices_ptr)
             ) // sizeof[indices_type]()
             # assumes that indices are layed out in row major order
             var next_idx_ptr = indices._offset(indices_coords) + min(
                 indices_remaining - 1, prefetch_offset
             )
-            input_coords[axis] = int(
+            input_coords[axis] = Int(
                 normalize_neg_index(
                     next_idx_ptr.load(),
                     input.get_shape()[axis],
@@ -397,13 +397,13 @@ fn gather[
         if prefetch_offset > 0:
             var indices_ptr = indices._offset(indices_coords)
             var indices_remaining = (
-                int(end_indices_ptr) - int(indices_ptr)
+                Int(end_indices_ptr) - Int(indices_ptr)
             ) // sizeof[indices_type]()
             # assumes that indices are layed out in row major order
             var next_idx_ptr = indices._offset(indices_coords) + min(
                 indices_remaining - 1, prefetch_offset
             )
-            input_coords[axis] = int(
+            input_coords[axis] = Int(
                 normalize_neg_index(
                     next_idx_ptr.load(),
                     input.get_shape()[axis],
@@ -462,7 +462,7 @@ fn gather_guards(
     indices_shape: IndexList,
     output_shape: IndexList,
 ) raises -> None:
-    if int(axis) < 0:
+    if Int(axis) < 0:
         raise Error("gather kernel does not support negative axis")
     for i in range(axis):
         if output_shape[i] != input_shape[i]:
@@ -470,19 +470,19 @@ fn gather_guards(
                 "gather: output_shape[0:axis] does not match"
                 " input_shape[0:axis]"
             )
-    for i in range(axis, int(axis) + indices_shape.size):
-        if output_shape[i] != indices_shape[i - int(axis)]:
+    for i in range(axis, Int(axis) + indices_shape.size):
+        if output_shape[i] != indices_shape[i - Int(axis)]:
             raise Error(
                 "gather: output_shape[axis:axis+indices_rank] does not"
                 " match indices_shape"
             )
-    for i in range(int(axis) + indices_shape.size, output_shape.size):
+    for i in range(Int(axis) + indices_shape.size, output_shape.size):
         if output_shape[i] != input_shape[i - indices_shape.size + 1]:
             raise Error(
                 "gather: output_shape[axis + indices_rank:] does not match"
                 " input_shape[axis:]"
             )
-    if int(axis) >= input_shape.size:
+    if Int(axis) >= input_shape.size:
         raise Error("gather: axis must be less than input rank")
 
 
@@ -529,7 +529,7 @@ fn gather_elementwise_fn_wrapper[
         # Get the indices of the index.
         @parameter
         for i in range(indices_shape.size):
-            indices_index[i] = idx[i + int(axis)]
+            indices_index[i] = idx[i + Int(axis)]
 
         # The index we are gathering.
         var data_index = indices_fn[1, indices_shape.size](indices_index)
@@ -543,11 +543,11 @@ fn gather_elementwise_fn_wrapper[
         # with an index from the indices tensor.
         @parameter
         for i in range(input_shape.size):
-            if i == int(axis):
-                data_indices[i] = int(
+            if i == Int(axis):
+                data_indices[i] = Int(
                     normalize_neg_index(data_index, input_shape[axis])
                 )
-            elif i > int(axis):
+            elif i > Int(axis):
                 # Skip over any extra indices dimensions. These are essentially new dimensions.
                 data_indices[i] = idx[i + skip_factor]
             else:
@@ -633,7 +633,7 @@ fn gather[
             )
 
         # If we are gathering on the last dimension then we have to be scalar.
-        if int(axis) == input_shape.size - 1:
+        if Int(axis) == input_shape.size - 1:
             elementwise[
                 gather_elementwise_fn,
                 simd_width=1,
@@ -717,7 +717,7 @@ fn gather[
             )
 
         # If we are gathering on the last dimension then we have to be scalar.
-        if int(axis) == input_shape.size - 1:
+        if Int(axis) == input_shape.size - 1:
             elementwise[
                 gather_elementwise_fn,
                 simd_width=1,
@@ -878,7 +878,7 @@ fn scatter_nd_generator[
             indices_index[indices_rank - 1] = dim
 
             var idx_on_axis = indices[indices_index]
-            var pos_idx_on_axis = int(
+            var pos_idx_on_axis = Int(
                 normalize_neg_index(idx_on_axis, input_ax_dim)
             )
             output_index_tensor[dim] = pos_idx_on_axis
@@ -1081,7 +1081,7 @@ fn gather_shape[
         )
 
     # extract hyper parameter
-    var axis = int(axis_buf[0])
+    var axis = Int(axis_buf[0])
     if axis < 0:
         axis += input_rank
     if axis < 0 or input_rank <= axis:
@@ -1168,7 +1168,7 @@ fn scatter_elements[
         var indices_coords = rebind[IndexList[rank]](_indices_coords)
         var idx_on_axis = indices[indices_coords]
         var output_coords = indices_coords
-        output_coords[axis] = int(
+        output_coords[axis] = Int(
             normalize_neg_index(idx_on_axis, input_ax_dim)
         )
         var curr = output[output_coords]
@@ -1221,7 +1221,7 @@ fn scatter_elements_shape[
     """
 
     # Normalize and check axis
-    var axis_int = int(axis[0])
+    var axis_int = Int(axis[0])
     if axis_int < 0:
         axis_int += rank
     if axis_int < 0 or rank <= axis_int:
@@ -1294,7 +1294,7 @@ fn gather_elements[
         var output_coords = rebind[IndexList[rank]](_output_coords)
         var idx_on_axis = indices[output_coords]
         var input_coords = output_coords
-        input_coords[axis] = int(normalize_neg_index(idx_on_axis, input_ax_dim))
+        input_coords[axis] = Int(normalize_neg_index(idx_on_axis, input_ax_dim))
         output[output_coords] = input[input_coords]
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
@@ -1488,7 +1488,7 @@ fn _gather_nd_impl[
         # walk the last dimensions, which are the slices we're gathering
         for i in range(indices_last_dim):
             indices_idx[indices_rank - 1] = i
-            data_idx[batch_dims + i] = int(indices[indices_idx])
+            data_idx[batch_dims + i] = Int(indices[indices_idx])
 
         # fill in the last slices in the input
         num_tail_elems = data_rank - batch_dims - indices_last_dim

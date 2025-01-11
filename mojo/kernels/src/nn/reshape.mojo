@@ -87,7 +87,7 @@ fn reshape_shape[
     var to_be_inferred_axis = -1
     var non_negative_dim_product = 1
     for axis in range(output_rank):
-        var target_dim = int(target_shape_buf[axis])
+        var target_dim = Int(target_shape_buf[axis])
         target_shape[axis] = target_dim
         if target_dim < 0:
             if target_dim != -1:

@@ -122,7 +122,7 @@ fn non_max_suppression_shape_func[
         score_threshold,
     )
 
-    return IndexList[2](int(box_pred_count), 3)
+    return IndexList[2](Int(box_pred_count), 3)
 
 
 fn non_max_suppression[
@@ -198,7 +198,7 @@ fn non_max_suppression[
             @parameter
             @always_inline
             fn _greater_than(lhs: Int64, rhs: Int64) -> Bool:
-                return per_class_scores[int(lhs)] > per_class_scores[int(rhs)]
+                return per_class_scores[Int(lhs)] > per_class_scores[Int(rhs)]
 
             # sort box_idxs based on corresponding scores
             sort[_greater_than](box_idxs)
@@ -208,7 +208,7 @@ fn non_max_suppression[
                 pred_idx < max_output_boxes_per_class
                 and num_boxes_remaining > 0
             ):
-                var pred = _get_bounding_box(b, int(box_idxs[pred_idx]), boxes)
+                var pred = _get_bounding_box(b, Int(box_idxs[pred_idx]), boxes)
                 num_boxes_remaining -= 1
                 # each output prediction contains 3 values: [batch_index, class_index, box_index]
                 func(b, c, box_idxs[pred_idx])
@@ -221,10 +221,10 @@ fn non_max_suppression[
                 for i in range(
                     pred_idx + 1, pred_idx + 1 + num_boxes_curr_pred
                 ):
-                    var next_box = _get_bounding_box(b, int(box_idxs[i]), boxes)
+                    var next_box = _get_bounding_box(b, Int(box_idxs[i]), boxes)
 
                     if pred.iou(next_box) > iou_threshold.cast[type]():
-                        per_class_scores[int(box_idxs[i])] = Scalar[type].MIN
+                        per_class_scores[Int(box_idxs[i])] = Scalar[type].MIN
                         num_boxes_remaining -= 1
                 pred_idx += 1
                 # don't need to sort all of box_idxs because:
@@ -243,8 +243,8 @@ fn non_max_suppression[
             fn sorted() -> Bool:
                 for i in range(len(box_idxs) - 1):
                     if (
-                        per_class_scores[int(box_idxs[i])]
-                        < per_class_scores[int(box_idxs[i + 1])]
+                        per_class_scores[Int(box_idxs[i])]
+                        < per_class_scores[Int(box_idxs[i + 1])]
                     ):
                         return False
                 return True

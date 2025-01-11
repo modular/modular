@@ -63,13 +63,13 @@ fn _bmm0_bs[
     var padded_num_keys = kv_max_seq_len + max_cache_size
     var p_offset = batch_head * q_max_seq_len * padded_num_keys
 
-    q_seq_start = int(q_input_row_offsets[batch])
-    q_seq_end = int(q_input_row_offsets[batch + 1])
+    q_seq_start = Int(q_input_row_offsets[batch])
+    q_seq_end = Int(q_input_row_offsets[batch + 1])
     cur_query_len = q_seq_end - q_seq_start
-    q_offset = int((q_seq_start * num_heads + head) * depth)
+    q_offset = Int((q_seq_start * num_heads + head) * depth)
 
-    kv_seq_start = int(kv_input_row_offsets[batch])
-    kv_seq_end = int(kv_input_row_offsets[batch + 1])
+    kv_seq_start = Int(kv_input_row_offsets[batch])
+    kv_seq_end = Int(kv_input_row_offsets[batch + 1])
     cur_kv_len = kv_seq_end - kv_seq_start
     # num_heads * kv_max_seq_len * batch * depth + depth * head
     num_keys = cur_kv_len + k_cache.cache_length(batch)
@@ -82,7 +82,7 @@ fn _bmm0_bs[
 
     var q = q_ptr + q_offset
 
-    var kv_head = int(head // group)
+    var kv_head = Int(head // group)
 
     var p = p_ptr + Int(p_offset)
 
@@ -114,7 +114,7 @@ fn _bmm0_bs[
     var score_row = y
     var score_col = x
     p[y * padded_num_keys + x] = mask_functor.mask(
-        Index(int(batch), int(head), int(score_row), int(score_col)),
+        Index(Int(batch), Int(head), Int(score_row), Int(score_col)),
         accum * scale.cast[p_type](),
     )
     p[y * padded_num_keys + x] = _kernel_mask(
@@ -161,14 +161,14 @@ fn _bmm1_bs[
     var padded_num_keys = kv_max_seq_len + max_cache_size
     var p_offset = batch_head * q_max_seq_len * padded_num_keys
 
-    q_seq_start = int(q_input_row_offsets[batch])
-    q_seq_end = int(q_input_row_offsets[batch + 1])
+    q_seq_start = Int(q_input_row_offsets[batch])
+    q_seq_end = Int(q_input_row_offsets[batch + 1])
     cur_query_len = q_seq_end - q_seq_start
 
-    output_offset = int((q_seq_start * num_heads + head) * depth)
+    output_offset = Int((q_seq_start * num_heads + head) * depth)
 
-    kv_seq_start = int(kv_input_row_offsets[batch])
-    kv_seq_end = int(kv_input_row_offsets[batch + 1])
+    kv_seq_start = Int(kv_input_row_offsets[batch])
+    kv_seq_end = Int(kv_input_row_offsets[batch + 1])
     cur_kv_len = kv_seq_end - kv_seq_start
 
     debug_assert(cur_query_len <= q_max_seq_len, "Invalid cur_query_len")
@@ -179,7 +179,7 @@ fn _bmm1_bs[
 
     var p = p_ptr + p_offset
 
-    var kv_head = int(head // group)
+    var kv_head = Int(head // group)
     var output = output_ptr + Int(output_offset)
 
     var accum = SIMD[DType.float32, 1](0.0)
@@ -255,13 +255,13 @@ fn mha_cross_gpu_naive[
         type, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
     )
 
-    alias num_heads = int(config.num_heads)
-    alias depth = int(config.depth)
+    alias num_heads = Int(config.num_heads)
+    alias depth = Int(config.depth)
     alias kv_num_heads = cache_t.kv_params.num_heads
     alias group = config.num_heads // kv_num_heads
-    var kv_max_seq_len = int(k.get_max_seq_length())
+    var kv_max_seq_len = Int(k.get_max_seq_length())
     var batch_size = q_input_row_offsets.dim[0]() - 1
-    var max_cache_size = int(k.get_max_cache_length())
+    var max_cache_size = Int(k.get_max_cache_length())
 
     alias q_type = q.type
     alias k_type = cache_t.type

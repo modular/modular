@@ -96,9 +96,9 @@ fn slice_as_view[
 
     @parameter
     for i in range(rank):
-        var start = int(starts[i])
-        var stop = int(ends[i])
-        var step = int(steps[i])
+        var start = Int(starts[i])
+        var stop = Int(ends[i])
+        var step = Int(steps[i])
         var dim_i = tensor.dim(i)
         var stride_i = tensor.stride(i)
 
@@ -237,9 +237,9 @@ fn slice_shape[
     var output_shape = IndexList[input_rank]()
 
     for i in range(input_rank):
-        var start = int(start_buf[i])
-        var stop = int(stop_buf[i])
-        var step = int(step_buf[i])
+        var start = Int(start_buf[i])
+        var stop = Int(stop_buf[i])
+        var step = Int(step_buf[i])
         var dim_i = input_buf.dim(i)
 
         start = _normalize_and_clamp_dim(start, step, dim_i)

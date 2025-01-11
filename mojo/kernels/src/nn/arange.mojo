@@ -55,6 +55,6 @@ fn arange_shape[
         if step < 0 and start < stop:
             raise Error("[range] requires (stop <= start) for negative step")
 
-        return IndexList[1](len(range(int(start), int(stop), int(step))))
+        return IndexList[1](len(range(Int(start), Int(stop), Int(step))))
     else:
-        return IndexList[1](int(ceil(abs(stop - start) / abs(step))))
+        return IndexList[1](Int(ceil(abs(stop - start) / abs(step))))

@@ -252,11 +252,11 @@ fn conv_transpose_shape[
     for i in range(input_rank - 2):
         var input_spatial_dim = input.dim(i + 1)
         var kernel_spatial_dim = kernel.dim(i)
-        var stride = int(strides[i])
-        var dilation = int(dilations[i])
-        var pre_pad = int(pads[2 * i])
-        var post_pad = int(pads[2 * i + 1])
-        var out_pad = int(output_pads[i])
+        var stride = Int(strides[i])
+        var dilation = Int(dilations[i])
+        var pre_pad = Int(pads[2 * i])
+        var post_pad = Int(pads[2 * i + 1])
+        var out_pad = Int(output_pads[i])
         var output_spatial_dim = compute_output_spatial_dim(
             input_spatial_dim,
             kernel_spatial_dim,

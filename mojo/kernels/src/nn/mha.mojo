@@ -380,13 +380,13 @@ fn flash_attention[
                 mask.dim[mask.rank - 1]() - mask.dim[mask.rank - 2]()
             )
         else:
-            max_cache_valid_length = int(k.get_max_cache_length())
+            max_cache_valid_length = Int(k.get_max_cache_length())
 
         var max_prompt_len: Int
 
         @parameter
         if ragged:
-            max_prompt_len = int(k.get_max_seq_length())
+            max_prompt_len = Int(k.get_max_seq_length())
         else:
             max_prompt_len = q.dim[1]()
 
@@ -680,8 +680,8 @@ fn flash_attention_dispatch[
                     Index(
                         num_partitions_value,
                         batch_size,
-                        int(num_heads),
-                        int(depth),
+                        Int(num_heads),
+                        Int(depth),
                     ),
                 )
 
@@ -694,7 +694,7 @@ fn flash_attention_dispatch[
                     Index(
                         num_partitions_value,
                         batch_size,
-                        int(num_heads),
+                        Int(num_heads),
                     ),
                 )
 
@@ -704,7 +704,7 @@ fn flash_attention_dispatch[
 
                 var qk_max = NDBuffer[accum_type, 3](
                     qk_max_data.ptr,
-                    Index(num_partitions_value, batch_size, int(num_heads)),
+                    Index(num_partitions_value, batch_size, Int(num_heads)),
                 )
 
                 ctx.enqueue_function(
@@ -752,7 +752,7 @@ fn flash_attention_dispatch[
                     num_partitions_value,
                     grid_dim=(
                         1,
-                        int(num_heads),
+                        Int(num_heads),
                         batch_size,
                     ),
                     block_dim=(WARP_SIZE, 1, 1),
@@ -945,16 +945,16 @@ fn _copy_frag_to_smem[
         Layout.row_major(BM, BN),
         address_space = AddressSpace.SHARED,
     ](p_smem_iter.ptr)
-    var p_smem_warp_tile = p_smem_tile.tile[WM, WN](int(warp_y), int(warp_x))
+    var p_smem_warp_tile = p_smem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
     var p_reg_vecs = p_reg_tile.vectorize[1, frag_simd_width]()
 
     alias swizzle_fn = make_ldmatrix_swizzle[p_smem_tile.dtype, BK]()
 
     @parameter
-    for n_mma in range(int(num_n_mmas)):
+    for n_mma in range(Int(num_n_mmas)):
 
         @parameter
-        for m_mma in range(int(num_m_mmas)):
+        for m_mma in range(Int(num_m_mmas)):
             var p_smem_mma_tile = p_smem_warp_tile.tile[MMA_M, MMA_N](
                 m_mma, n_mma
             ).vectorize[1, frag_simd_width]()
@@ -983,7 +983,7 @@ fn _copy_frag_to_smem[
                 ]()
                 # Grep the right BMxBK tile and store the casted vec.
                 var tile_BMxBK = p_smem_iter.next_unsafe(
-                    int((offset_BMxBN % BN) // BK)
+                    Int((offset_BMxBN % BN) // BK)
                 )[]
                 alias align = alignof[SIMD[p_smem_iter.type, frag_simd_width]]()
                 tile_BMxBK.ptr.store[alignment=align](offset_BMxBK, vec)
@@ -1028,8 +1028,8 @@ fn mha[
     @parameter
     if ragged:
         # treat valid_lengths as a input_row_offsets
-        start_of_seq = int(valid_length[batch_idx])
-        end_of_seq = int(valid_length[batch_idx + 1])
+        start_of_seq = Int(valid_length[batch_idx])
+        end_of_seq = Int(valid_length[batch_idx + 1])
         seq_len = end_of_seq - start_of_seq
         q_batch_offset = start_of_seq * config.depth * config.num_heads
     # KVCache inputs, prompt lengths are all padded to the max in batch.
@@ -1038,7 +1038,7 @@ fn mha[
         q_batch_offset = (
             config.depth * config.num_heads * max_seq_len * batch_idx
         )
-        seq_len = int(valid_length[batch_idx])
+        seq_len = Int(valid_length[batch_idx])
     # NDBuffer inputs, homogeneous batching.
     else:
         q_batch_offset = (
@@ -1229,10 +1229,10 @@ fn mha_single_batch[
     var q_tile_num_rows = min(BM, UInt(seq_len) - q_tile_idx * BM)
     var q_offset = depth * (head_idx + num_heads * q_tile_idx * BM)
     var q_gmem_block = LayoutTensor[q_type, q_gmem_layout, masked=True,](
-        q_ptr + int(q_offset),
+        q_ptr + Int(q_offset),
         RuntimeLayout(
             RuntimeTuple[q_gmem_layout.shape, unsigned=True](
-                int(q_tile_num_rows), depth
+                Int(q_tile_num_rows), depth
             ),
             RuntimeTuple[q_gmem_layout.stride, unsigned=True](
                 num_heads * depth, 1
@@ -1302,7 +1302,7 @@ fn mha_single_batch[
     var mask_offset = mask_block_row * mask_tensor_col + (
         head_idx * max_seq_len * mask_tensor_col if mask_rank == 4 else 0
     )
-    var mask_tile_ptr = mask_ptr + int(mask_offset)
+    var mask_tile_ptr = mask_ptr + Int(mask_offset)
     var mask_warp_row = warp_y * WM
     var mask_warp_col = warp_x * WN
 
@@ -1318,7 +1318,7 @@ fn mha_single_batch[
     )
 
     @parameter
-    for q_id in range(int(depth // BK)):
+    for q_id in range(Int(depth // BK)):
         var q_smem_tile = q_smem_iter.next_unsafe(q_id)[]
 
         copy_dram_to_sram_async[
@@ -1352,9 +1352,9 @@ fn mha_single_batch[
         if (
             mask.status(
                 Index[element_bitwidth=32, unsigned=True](
-                    int(q_tile_idx * BM), int(kv_tile_start_row)
+                    Int(q_tile_idx * BM), Int(kv_tile_start_row)
                 ),
-                Index[element_bitwidth=32, unsigned=True](int(BM), int(BN)),
+                Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
             )
             == TileMaskStatus.FULL_MASK
         ):
@@ -1364,7 +1364,7 @@ fn mha_single_batch[
             IntTuple(Int(BN), Int(depth)),
             IntTuple(Int(kv_num_heads * depth), 1),
         )
-        var kv_tile_num_rows = min(int(tile_size), end - kv_tile_start_row)
+        var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
 
         # kv cache gmem has to clip num rows as runtime layout
         var kv_runtime_layout = RuntimeLayout(
@@ -1382,7 +1382,7 @@ fn mha_single_batch[
             masked = not not_last_iter,
         ](
             k.block_paged_ptr[BN](
-                batch_idx, kv_tile_start_row, int(head_idx // group), 0
+                batch_idx, kv_tile_start_row, Int(head_idx // group), 0
             ),
             kv_runtime_layout,
         )
@@ -1394,7 +1394,7 @@ fn mha_single_batch[
             masked = not not_last_iter,
         ](
             v.block_paged_ptr[BN](
-                batch_idx, kv_tile_start_row, int(head_idx // group), 0
+                batch_idx, kv_tile_start_row, Int(head_idx // group), 0
             ),
             kv_runtime_layout,
         )
@@ -1428,7 +1428,7 @@ fn mha_single_batch[
 
         # load K tile into smem
         @parameter
-        for k_id in range(int(depth // BK)):
+        for k_id in range(Int(depth // BK)):
             var k_smem_tile = k_smem_iter.next_unsafe(k_id)[]
 
             copy_dram_to_sram_async[
@@ -1501,7 +1501,7 @@ fn mha_single_batch[
                         ):
                             var mask_vec = (
                                 mask_tile_ptr
-                                + int(
+                                + Int(
                                     (mask_frag_row + i * MMA_M // 2)
                                     * mask_tensor_col
                                     + mask_frag_col
@@ -1563,10 +1563,10 @@ fn mha_single_batch[
                                         element_bitwidth=32,
                                         unsigned=True,
                                     ](
-                                        int(BlockIdx.z),
-                                        int(BlockIdx.y),
-                                        int(score_row),
-                                        int(score_col),
+                                        Int(BlockIdx.z),
+                                        Int(BlockIdx.y),
+                                        Int(score_row),
+                                        Int(score_col),
                                     ),
                                     p_reg_vec2[mma_id, i] * scale_log2e,
                                 )
@@ -1584,10 +1584,10 @@ fn mha_single_batch[
                                             element_bitwidth=32,
                                             unsigned=True,
                                         ](
-                                            int(BlockIdx.z),
-                                            int(BlockIdx.y),
-                                            int(score_row),
-                                            int(score_col),
+                                            Int(BlockIdx.z),
+                                            Int(BlockIdx.y),
+                                            Int(score_row),
+                                            Int(score_col),
                                         ),
                                         p_reg_vec2[mma_id, i],
                                     )
@@ -1598,7 +1598,7 @@ fn mha_single_batch[
                                 p_reg_vec2[mma_id, i] = _kernel_mask(
                                     IndexList[
                                         2, element_bitwidth=32, unsigned=True
-                                    ](int(score_row), int(score_col)),
+                                    ](Int(score_row), Int(score_col)),
                                     IndexList[
                                         2, element_bitwidth=32, unsigned=True
                                     ](seq_len, mask_tensor_col),
@@ -1608,9 +1608,9 @@ fn mha_single_batch[
             unswitch[_apply_mask](
                 mask.status(
                     Index[element_bitwidth=32, unsigned=True](
-                        int(q_tile_idx * BM), kv_tile_start_row
+                        Int(q_tile_idx * BM), kv_tile_start_row
                     ),
-                    Index[element_bitwidth=32, unsigned=True](int(BM), int(BN)),
+                    Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
                 )
                 == TileMaskStatus.PARTIAL_MASK
             )
@@ -1633,7 +1633,7 @@ fn mha_single_batch[
         ](
             output_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
             p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
-            warp_scratch.tile[num_warps_n, WM](0, int(warp_y)),
+            warp_scratch.tile[num_warps_n, WM](0, Int(warp_y)),
             rowmax,
             rowsum,
         )
@@ -1647,13 +1647,13 @@ fn mha_single_batch[
 
         # load V tile into smem
         @parameter
-        for v_id in range(int(BN // BK)):
+        for v_id in range(Int(BN // BK)):
             var v_smem_tile = v_smem_iter.next_unsafe(v_id)[]
 
             @parameter
             if not not_last_iter:
                 var num_rows_bound = min(
-                    int(BK), end - (kv_tile_start_row + v_id * BK)
+                    Int(BK), end - (kv_tile_start_row + v_id * BK)
                 )
                 v_tensor = _mask_tensor_row(v_gmem_iter[], num_rows_bound)
             else:
@@ -1750,10 +1750,10 @@ fn mha_single_batch[
     var output_gmem_tile = LayoutTensor[
         output_type, output_gmem_layout, masked=True
     ](
-        output_ptr + int(q_offset),
+        output_ptr + Int(q_offset),
         RuntimeLayout(
             RuntimeTuple[output_gmem_layout.shape, unsigned=True](
-                int(q_tile_num_rows), depth
+                Int(q_tile_num_rows), depth
             ),
             RuntimeTuple[output_gmem_layout.stride, unsigned=True](
                 num_heads * depth, 1
@@ -1761,7 +1761,7 @@ fn mha_single_batch[
         ),
     )
     var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](
-        int(warp_y), int(warp_x)
+        Int(warp_y), Int(warp_x)
     )
 
     # Write to global memory.
@@ -1778,7 +1778,7 @@ fn mha_single_batch[
         ](q_smem.bitcast[Scalar[output_type]]())
 
         var accum_smem_warp_tile = accum_smem_tile.tile[WM, WN](
-            int(warp_y), int(warp_x)
+            Int(warp_y), Int(warp_x)
         )
         copy_local_to_sram[
             thread_layout = Layout.row_major(8, 4), swizzle=swizzle
@@ -1924,10 +1924,10 @@ fn mha_single_batch_pipelined[
     var q_tile_num_rows = min(BM, UInt(seq_len) - q_tile_idx * BM)
     var q_offset = depth * (head_idx + num_heads * q_tile_idx * BM)
     var q_gmem_block = LayoutTensor[q_type, q_gmem_layout, masked=True,](
-        q_ptr + int(q_offset),
+        q_ptr + Int(q_offset),
         RuntimeLayout(
             RuntimeTuple[q_gmem_layout.shape, unsigned=True](
-                int(q_tile_num_rows), depth
+                Int(q_tile_num_rows), depth
             ),
             RuntimeTuple[q_gmem_layout.stride, unsigned=True](
                 num_heads * depth, 1
@@ -1997,7 +1997,7 @@ fn mha_single_batch_pipelined[
     var mask_offset = mask_block_row * mask_tensor_col + (
         head_idx * max_seq_len * mask_tensor_col if mask_rank == 4 else 0
     )
-    var mask_tile_ptr = mask_ptr + int(mask_offset)
+    var mask_tile_ptr = mask_ptr + Int(mask_offset)
     var mask_warp_row = warp_y * WM
     var mask_warp_col = warp_x * WN
 
@@ -2023,9 +2023,9 @@ fn mha_single_batch_pipelined[
         if (
             mask.status(
                 Index[element_bitwidth=32, unsigned=True](
-                    int(q_tile_idx * BM), int(kv_tile_start_row)
+                    Int(q_tile_idx * BM), Int(kv_tile_start_row)
                 ),
-                Index[element_bitwidth=32, unsigned=True](int(BM), int(BN)),
+                Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
             )
             == TileMaskStatus.FULL_MASK
         ):
@@ -2035,7 +2035,7 @@ fn mha_single_batch_pipelined[
             IntTuple(Int(BN), Int(depth)),
             IntTuple(Int(kv_num_heads * depth), 1),
         )
-        var kv_tile_num_rows = min(int(tile_size), end - kv_tile_start_row)
+        var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
 
         # kv cache gmem has to clip num rows as runtime layout
         var kv_runtime_layout = RuntimeLayout(
@@ -2053,7 +2053,7 @@ fn mha_single_batch_pipelined[
             masked = not not_last_iter,
         ](
             k.block_paged_ptr[BN](
-                batch_idx, kv_tile_start_row, int(head_idx // group), 0
+                batch_idx, kv_tile_start_row, Int(head_idx // group), 0
             ),
             kv_runtime_layout,
         )
@@ -2065,7 +2065,7 @@ fn mha_single_batch_pipelined[
             masked = not not_last_iter,
         ](
             v.block_paged_ptr[BN](
-                batch_idx, kv_tile_start_row, int(head_idx // group), 0
+                batch_idx, kv_tile_start_row, Int(head_idx // group), 0
             ),
             kv_runtime_layout,
         )
@@ -2171,7 +2171,7 @@ fn mha_single_batch_pipelined[
                         ):
                             var mask_vec = (
                                 mask_tile_ptr
-                                + int(
+                                + Int(
                                     (mask_frag_row + i * MMA_M // 2)
                                     * mask_tensor_col
                                     + mask_frag_col
@@ -2233,10 +2233,10 @@ fn mha_single_batch_pipelined[
                                         element_bitwidth=32,
                                         unsigned=True,
                                     ](
-                                        int(BlockIdx.z),
-                                        int(BlockIdx.y),
-                                        int(score_row),
-                                        int(score_col),
+                                        Int(BlockIdx.z),
+                                        Int(BlockIdx.y),
+                                        Int(score_row),
+                                        Int(score_col),
                                     ),
                                     p_reg_vec2[mma_id, i] * scale_log2e,
                                 )
@@ -2254,10 +2254,10 @@ fn mha_single_batch_pipelined[
                                             element_bitwidth=32,
                                             unsigned=True,
                                         ](
-                                            int(BlockIdx.z),
-                                            int(BlockIdx.y),
-                                            int(score_row),
-                                            int(score_col),
+                                            Int(BlockIdx.z),
+                                            Int(BlockIdx.y),
+                                            Int(score_row),
+                                            Int(score_col),
                                         ),
                                         p_reg_vec2[mma_id, i],
                                     )
@@ -2268,7 +2268,7 @@ fn mha_single_batch_pipelined[
                                 p_reg_vec2[mma_id, i] = _kernel_mask(
                                     IndexList[
                                         2, element_bitwidth=32, unsigned=True
-                                    ](int(score_row), int(score_col)),
+                                    ](Int(score_row), Int(score_col)),
                                     IndexList[
                                         2, element_bitwidth=32, unsigned=True
                                     ](seq_len, mask_tensor_col),
@@ -2278,9 +2278,9 @@ fn mha_single_batch_pipelined[
             unswitch[_apply_mask](
                 mask.status(
                     Index[element_bitwidth=32, unsigned=True](
-                        int(q_tile_idx * BM), kv_tile_start_row
+                        Int(q_tile_idx * BM), kv_tile_start_row
                     ),
-                    Index[element_bitwidth=32, unsigned=True](int(BM), int(BN)),
+                    Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
                 )
                 == TileMaskStatus.PARTIAL_MASK
             )
@@ -2303,7 +2303,7 @@ fn mha_single_batch_pipelined[
         ](
             output_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
             p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
-            warp_scratch.tile[num_warps_n, WM](0, int(warp_y)),
+            warp_scratch.tile[num_warps_n, WM](0, Int(warp_y)),
             rowmax,
             rowsum,
         )
@@ -2359,7 +2359,7 @@ fn mha_single_batch_pipelined[
                 num_pipeline_stages,
                 False,  # transpose_b
                 swizzle_a=False,
-                static_num_iters = int(BN // BK),
+                static_num_iters = Int(BN // BK),
                 prefetch_init=False,
                 k_group_size = config.k_group_size,
             ](
@@ -2396,10 +2396,10 @@ fn mha_single_batch_pipelined[
     var output_gmem_tile = LayoutTensor[
         output_type, output_gmem_layout, masked=True
     ](
-        output_ptr + int(q_offset),
+        output_ptr + Int(q_offset),
         RuntimeLayout(
             RuntimeTuple[output_gmem_layout.shape, unsigned=True](
-                int(q_tile_num_rows), depth
+                Int(q_tile_num_rows), depth
             ),
             RuntimeTuple[output_gmem_layout.stride, unsigned=True](
                 num_heads * depth, 1
@@ -2407,7 +2407,7 @@ fn mha_single_batch_pipelined[
         ),
     )
     var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](
-        int(warp_y), int(warp_x)
+        Int(warp_y), Int(warp_x)
     )
 
     # Write to global memory.
@@ -2424,7 +2424,7 @@ fn mha_single_batch_pipelined[
         ](q_smem.bitcast[Scalar[output_type]]())
 
         var accum_smem_warp_tile = accum_smem_tile.tile[WM, WN](
-            int(warp_y), int(warp_x)
+            Int(warp_y), Int(warp_x)
         )
         copy_local_to_sram[
             thread_layout = Layout.row_major(8, 4), swizzle=swizzle
@@ -2545,14 +2545,14 @@ fn mha_decoding[
     @parameter
     if ragged:
         # treat valid_lengths as a input_row_offsets
-        start_of_seq = int(valid_length[batch_idx])
-        end_of_seq = int(valid_length[batch_idx + 1])
+        start_of_seq = Int(valid_length[batch_idx])
+        end_of_seq = Int(valid_length[batch_idx + 1])
         seq_len = end_of_seq - start_of_seq
         q_batch_offset = start_of_seq * depth * num_heads
     elif _use_valid_length:
         # treat valid_lengths as valid lengths
         q_batch_offset = depth * num_heads * batch_idx
-        seq_len = int(valid_length[batch_idx])
+        seq_len = Int(valid_length[batch_idx])
     else:
         seq_len = 1
         q_batch_offset = depth * num_heads * batch_idx
@@ -2692,7 +2692,7 @@ fn scale_and_mask_helper[
         # Current thread's offset mapped in num_keys dim
         var key_offset = warp_offset + frag_offset
         # Current thread's index in current mma tile, e.g. T1 is 2 in 16x8 mma output.
-        var frag_lane_col = int((lane % 4) * simd_width)
+        var frag_lane_col = Int((lane % 4) * simd_width)
 
         var mask_frag_ptr = q_mask_warp_ptr + frag_offset
 
@@ -2717,10 +2717,10 @@ fn scale_and_mask_helper[
 
                 p_reg_tile[n_mma, i] = mask.mask(
                     Index(
-                        int(BlockIdx.z),
-                        int(q_head_idx),
-                        int(score_row),
-                        int(score_col),
+                        Int(BlockIdx.z),
+                        Int(q_head_idx),
+                        Int(score_row),
+                        Int(score_col),
                     ),
                     p_reg_tile[n_mma, i] * scale.cast[p_type](),
                 )
@@ -2729,10 +2729,10 @@ fn scale_and_mask_helper[
                 if use_score_mod:
                     p_reg_tile[n_mma, i] = score_mod.score_mod(
                         Index(
-                            int(BlockIdx.z),
-                            int(q_head_idx),
-                            int(score_row),
-                            int(score_col),
+                            Int(BlockIdx.z),
+                            Int(q_head_idx),
+                            Int(score_row),
+                            Int(score_col),
                         ),
                         p_reg_tile[n_mma, i],
                     )
@@ -2927,7 +2927,7 @@ fn mha_decoding_single_batch[
 
     alias q_gmem_layout = Layout.row_major(BM, depth)
     var q_gmem_block = LayoutTensor[q_type, q_gmem_layout, masked=True](
-        q_ptr + int(q_offset),
+        q_ptr + Int(q_offset),
         RuntimeLayout(
             RuntimeTuple[q_gmem_layout.shape, unsigned=True](group, depth),
             RuntimeTuple[q_gmem_layout.stride, unsigned=True](depth, 1),
@@ -2965,7 +2965,7 @@ fn mha_decoding_single_batch[
         )
 
     @parameter
-    for q_id in range(int(depth // BK)):
+    for q_id in range(Int(depth // BK)):
         var q_smem_tile = q_smem_iter.next_unsafe(q_id)[]
 
         copy_dram_to_sram_async[
@@ -2999,7 +2999,7 @@ fn mha_decoding_single_batch[
         ](k_ptr)
         var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
 
-        var kv_tile_num_rows = min(int(BN), end - kv_tile_start_row)
+        var kv_tile_num_rows = min(Int(BN), end - kv_tile_start_row)
 
         _ = p_reg_tile.fill(0)
 
@@ -3013,7 +3013,7 @@ fn mha_decoding_single_batch[
 
         # load K tile into smem
         @parameter
-        for k_id in range(int(depth // BK)):
+        for k_id in range(Int(depth // BK)):
             var k_smem_tile = k_smem_iter.next_unsafe(k_id)[]
 
             @parameter
@@ -3096,7 +3096,7 @@ fn mha_decoding_single_batch[
         ](
             output_reg_vecs,
             p_reg_vecs,
-            warp_scratch.tile[num_warps_n, WM](0, int(warp_y)),
+            warp_scratch.tile[num_warps_n, WM](0, Int(warp_y)),
             rowmax,
             rowsum,
         )
@@ -3123,7 +3123,7 @@ fn mha_decoding_single_batch[
 
         # load V tile into smem
         @parameter
-        for v_id in range(int(BN // BK)):
+        for v_id in range(Int(BN // BK)):
             var v_smem_tile = v_smem_iter.next_unsafe(v_id)[]
 
             @parameter
@@ -3221,7 +3221,7 @@ fn mha_decoding_single_batch[
         masked=True,
     ](output_ptr + q_offset, output_gmem_runtime_layout)
     var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](
-        int(warp_y), int(warp_x)
+        Int(warp_y), Int(warp_x)
     )
 
     copy_sram_to_dram[
@@ -3409,7 +3409,7 @@ fn mha_decoding_single_batch_pipelined[
 
     alias q_gmem_layout = Layout.row_major(BM, depth)
     var q_gmem_block = LayoutTensor[q_type, q_gmem_layout, masked=True](
-        q_ptr + int(q_offset),
+        q_ptr + Int(q_offset),
         RuntimeLayout(
             RuntimeTuple[q_gmem_layout.shape, unsigned=True](group, depth),
             RuntimeTuple[q_gmem_layout.stride, unsigned=True](depth, 1),
@@ -3530,7 +3530,7 @@ fn mha_decoding_single_batch_pipelined[
         ](
             output_reg_vecs,
             p_reg_vecs,
-            warp_scratch.tile[num_warps_n, WM](0, int(warp_y)),
+            warp_scratch.tile[num_warps_n, WM](0, Int(warp_y)),
             rowmax,
             rowsum,
         )
@@ -3624,7 +3624,7 @@ fn mha_decoding_single_batch_pipelined[
         masked=True,
     ](output_ptr + q_offset, output_gmem_runtime_layout)
     var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](
-        int(warp_y), int(warp_x)
+        Int(warp_y), Int(warp_x)
     )
 
     copy_sram_to_dram[
@@ -3907,20 +3907,20 @@ fn _bmm0_bs[
 
     @parameter
     if ragged:
-        seq_start = int(valid_length[batch])
-        seq_end = int(valid_length[batch + 1])
+        seq_start = Int(valid_length[batch])
+        seq_end = Int(valid_length[batch + 1])
         cur_query_len = seq_end - seq_start
-        q_offset = int((seq_start * num_heads + head) * depth)
+        q_offset = Int((seq_start * num_heads + head) * depth)
         cur_cache_len = cur_query_len + k.cache_length(batch)
     elif _use_valid_length:
-        cur_query_len = int(valid_length[batch])
-        q_offset = int(depth * (head + num_heads * max_prompt_len * batch))
+        cur_query_len = Int(valid_length[batch])
+        q_offset = Int(depth * (head + num_heads * max_prompt_len * batch))
         cur_cache_len = cur_query_len + k.cache_length(batch)
     # When inputs are all NDBuffers i.e. all sequences in batch have the same
     # length and same cache length
     else:
         cur_query_len = max_prompt_len
-        q_offset = int(depth * (head + num_heads * max_prompt_len * batch))
+        q_offset = Int(depth * (head + num_heads * max_prompt_len * batch))
         cur_cache_len = max_cache_size
         padded_num_keys = max_cache_size
         p_offset = batch_head * max_prompt_len * max_cache_size
@@ -3933,7 +3933,7 @@ fn _bmm0_bs[
 
     var q = q_ptr + q_offset
 
-    var kv_head = int(head // group)
+    var kv_head = Int(head // group)
 
     var p = p_ptr + Int(p_offset)
 
@@ -3966,10 +3966,10 @@ fn _bmm0_bs[
         var score_col = x
         p[y * padded_num_keys + x] = mask_functor.mask(
             Index(
-                int(batch),
-                int(head),
-                int(score_row),
-                int(score_col),
+                Int(batch),
+                Int(head),
+                Int(score_row),
+                Int(score_col),
             ),
             accum * scale.cast[p_type](),
         )
@@ -4016,13 +4016,13 @@ fn _bmm1_bs[
 
     @parameter
     if ragged:
-        seq_start = int(valid_length[batch])
-        seq_end = int(valid_length[batch + 1])
+        seq_start = Int(valid_length[batch])
+        seq_end = Int(valid_length[batch + 1])
         cur_query_len = seq_end - seq_start
-        output_offset = int((seq_start * num_heads + head) * depth)
+        output_offset = Int((seq_start * num_heads + head) * depth)
         cur_cache_len = cur_query_len + v.cache_length(batch)
     elif _use_valid_length:
-        cur_query_len = int(valid_length[batch])
+        cur_query_len = Int(valid_length[batch])
         output_offset = depth * (head + num_heads * max_prompt_len * batch)
         cur_cache_len = cur_query_len + v.cache_length(batch)
     # When inputs are all NDBuffers i.e. all sequences in batch have the same
@@ -4041,7 +4041,7 @@ fn _bmm1_bs[
 
     var p = p_ptr + p_offset
 
-    var kv_head = int(head // group)
+    var kv_head = Int(head // group)
     var output = output_ptr + Int(output_offset)
 
     var accum = SIMD[DType.float32, 1](0.0)

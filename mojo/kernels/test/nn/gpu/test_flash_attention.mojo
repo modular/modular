@@ -316,8 +316,8 @@ fn test[
         for h in range(num_heads):
             for s in range(seq_len):
                 for d in range(depth):
-                    var actual = flash_output[Index(bs, s, int(h), int(d))]
-                    var expect = output[Index(bs, s, int(h), int(d))]
+                    var actual = flash_output[Index(bs, s, Int(h), Int(d))]
+                    var expect = output[Index(bs, s, Int(h), Int(d))]
                     if not isclose(actual, expect, atol=1e-5, rtol=rtol):
                         var rerr = abs((actual - expect) / expect)
                         print(bs, h, s, d, actual, expect, rerr)

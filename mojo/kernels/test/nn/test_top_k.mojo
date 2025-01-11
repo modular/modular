@@ -49,7 +49,7 @@ fn test_case_sampling[
     ] -> None,
 ](K: Int, axis: Int, input_shape: DimList,) raises:
     var input_ptr = UnsafePointer[Scalar[type]].alloc(
-        int(input_shape.product())
+        Int(input_shape.product())
     )
     var input = NDBuffer[type, rank](input_ptr, input_shape)
 
@@ -70,10 +70,10 @@ fn test_case_sampling[
         )
 
     var output_vals_ptr = UnsafePointer[Scalar[type]].alloc(
-        int(output_shape.product())
+        Int(output_shape.product())
     )
     var output_idxs_ptr = UnsafePointer[Scalar[DType.int64]].alloc(
-        int(output_idxs_shape.product())
+        Int(output_idxs_shape.product())
     )
     var out_vals = NDBuffer[type, rank](output_vals_ptr, output_shape)
     var out_idxs = NDBuffer[DType.int64, rank](

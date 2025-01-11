@@ -135,8 +135,8 @@ fn _pad_constant_impl_rec[
     # TODO this recursion can add up for larger tensors, optimize in #24565
 
     var axis_dim = output_shape[axis]
-    var pre_pad = int(paddings[2 * axis])
-    var post_pad = int(paddings[2 * axis + 1])
+    var pre_pad = Int(paddings[2 * axis])
+    var post_pad = Int(paddings[2 * axis + 1])
     var non_pad = axis_dim - pre_pad - post_pad
 
     if axis + 1 == rank:
@@ -158,8 +158,8 @@ fn _pad_constant_impl_rec[
 
     debug_assert(axis + 1 < rank, "axis is not within range")
 
-    var input_axis_stride = int(input_strides[axis])
-    var output_axis_stride = int(output_strides[axis])
+    var input_axis_stride = Int(input_strides[axis])
+    var output_axis_stride = Int(output_strides[axis])
 
     var next_input_offset: Int = input_offset
     var next_output_offset: Int = output_offset
@@ -343,14 +343,14 @@ fn _pad_reflect_impl_rec[
     """
 
     var axis_dim = output_shape[axis]
-    var pre_pad = int(paddings[2 * axis])
-    var post_pad = int(paddings[2 * axis + 1])
+    var pre_pad = Int(paddings[2 * axis])
+    var post_pad = Int(paddings[2 * axis + 1])
     var non_pad = axis_dim - pre_pad - post_pad
     var pre_pad_start_ptr = output.offset(output_offset)
     var input_start_ptr = input.offset(input_offset)
 
-    var input_axis_stride = int(input_strides[axis])
-    var output_axis_stride = int(output_strides[axis])
+    var input_axis_stride = Int(input_strides[axis])
+    var output_axis_stride = Int(output_strides[axis])
 
     # first fill the unpadded regions
     if axis + 1 != rank:
@@ -442,7 +442,7 @@ fn bench[
     var ms_iter = benchmark.run[runner_iter](1, 10)
     var ms_recursive = benchmark.run[runner_recursive](1, 10)
 
-    var ratio = int(
+    var ratio = Int(
         100.0 * ms_recursive.mean(Unit.ns) / ms_iter.mean(Unit.ns)
     ) / 100.0
     var msg: String
@@ -492,8 +492,8 @@ fn test_pad_constant_nd[
     alias in_shape = in_out_shape[0]
     alias out_shape = in_out_shape[1]
 
-    alias in_size = int(in_shape.product[rank]())
-    alias out_size = int(out_shape.product[rank]())
+    alias in_size = Int(in_shape.product[rank]())
+    alias out_size = Int(out_shape.product[rank]())
 
     # create a big input matrix and fill it with 1
     var input_ptr = UnsafePointer[Scalar[DType.index]].alloc(in_size)
@@ -569,8 +569,8 @@ fn test_pad_reflect_nd[
     alias in_shape = in_out_shape[0]
     alias out_shape = in_out_shape[1]
 
-    alias in_size = int(in_shape.product[rank]())
-    alias out_size = int(out_shape.product[rank]())
+    alias in_size = Int(in_shape.product[rank]())
+    alias out_size = Int(out_shape.product[rank]())
 
     # create a big input matrix and fill it with 1
     var input_ptr = UnsafePointer[Scalar[DType.index]].alloc(in_size)

@@ -387,8 +387,8 @@ fn _fused_qkv_matmul_kv_cache_impl[
     var k_dim = kv_params.head_size * kv_params.num_heads
     var qk_offset = q_dim + k_dim
 
-    var k_cache = kv_collection.get_key_cache(int(layer_idx))
-    var v_cache = kv_collection.get_value_cache(int(layer_idx))
+    var k_cache = kv_collection.get_key_cache(Int(layer_idx))
+    var v_cache = kv_collection.get_value_cache(Int(layer_idx))
 
     @parameter
     @__copy_capture(q_dim, qk_offset, SEQ_LEN, k_cache, v_cache)
@@ -398,7 +398,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
         b_idx, t_idx = divmod(UInt(idx[0]), SEQ_LEN)
         if idx[1] < q_dim:
             output.store[width=width, alignment=alignment](
-                Index(int(b_idx), int(t_idx), idx[1]),
+                Index(Int(b_idx), Int(t_idx), idx[1]),
                 rebind[SIMD[type, width]](val),
             )
             return
@@ -1007,7 +1007,7 @@ fn _flash_attention_kv_cache_impl[
         context: CUDA DeviceContext. This is not used if is_cpu[target]()
     """
 
-    var layer_idx_cast = int(layer_idx)
+    var layer_idx_cast = Int(layer_idx)
     var k = kv_collection.get_key_cache(layer_idx_cast)
     var v = kv_collection.get_value_cache(layer_idx_cast)
 
@@ -1387,7 +1387,7 @@ fn _flash_attention_kv_cache_causal_mask_impl[
             (batch_size, num_heads, seq_len, head_size).
         context: CUDA DeviceContext. This is not used if is_cpu[target]()
     """
-    var layer_idx_cast = int(layer_idx)
+    var layer_idx_cast = Int(layer_idx)
     var k = kv_collection.get_key_cache(layer_idx_cast)
     var v = kv_collection.get_value_cache(layer_idx_cast)
 
@@ -1564,7 +1564,7 @@ fn _flash_attention_kv_cache_causal_alibi_mask_impl[
             (batch_size, num_heads, seq_len, head_size).
         context: CUDA DeviceContext. This is not used if is_cpu[target]()
     """
-    var layer_idx_cast = int(layer_idx)
+    var layer_idx_cast = Int(layer_idx)
     var k = kv_collection.get_key_cache(layer_idx_cast)
     var v = kv_collection.get_value_cache(layer_idx_cast)
 
@@ -1600,7 +1600,7 @@ fn _flash_attention_kv_cache_causal_alibi_mask_gpu[
     )
 
     # This assumes that, the q tensor is static in the 1 dim.
-    alias num_q_heads = int(q.shape.at[1]())
+    alias num_q_heads = Int(q.shape.at[1]())
 
     # GPU flash attention kernel gets the cache length from the k tensor shape
     # TODO remove this an instead pass in explicit KVCache lengths to the GPU kernel.
@@ -1647,10 +1647,10 @@ def rms_norm_kv_cache_ragged_continuous_batching_nhead_8_hdim_128[
     """
     # Rank of ragged tensors of shape (total_seq_len, num_heads, head_dim).
     alias rank = 3
-    var k_cache = kv_collection.get_key_cache(int(layer_idx))
+    var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     var kv_params = k_cache.kv_params
     var shape = IndexList[rank](
-        int(total_seq_len), kv_params.num_heads, kv_params.head_size
+        Int(total_seq_len), kv_params.num_heads, kv_params.head_size
     )
 
     @always_inline
@@ -1668,7 +1668,7 @@ def rms_norm_kv_cache_ragged_continuous_batching_nhead_8_hdim_128[
         var batch_idx = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
         )
-        var token_idx = int(global_token_idx - input_row_offsets[batch_idx])
+        var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
 
         return k_cache.load[width=width](
             bs=batch_idx,
@@ -1687,7 +1687,7 @@ def rms_norm_kv_cache_ragged_continuous_batching_nhead_8_hdim_128[
         var batch_idx = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
         )
-        var token_idx = int(global_token_idx - input_row_offsets[batch_idx])
+        var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
 
         k_cache.store(
             bs=batch_idx,
@@ -1841,7 +1841,7 @@ def _print_cache[
     # Only abbreviate output when `is_print_compact` is set.
     var num_to_print: Int = 7 if is_print_compact else Int.MAX
     for b_idx in range(kv_collection.batch_size):
-        var total_cache_length = int(
+        var total_cache_length = Int(
             valid_lengths[b_idx] + cache.cache_length(b_idx)
         )
         for t_idx in range(min(num_to_print, total_cache_length)):
@@ -1849,12 +1849,12 @@ def _print_cache[
                 for hd in range(
                     min(
                         num_to_print,
-                        int(kv_collection.kv_params.head_size),
+                        Int(kv_collection.kv_params.head_size),
                     )
                 ):
                     print(
                         cache.load[width=1](
-                            int(b_idx), int(h), int(t_idx), int(hd)
+                            Int(b_idx), Int(h), Int(t_idx), Int(hd)
                         ),
                         end=", ",
                     )
@@ -1874,8 +1874,8 @@ def print_kv_cache_cont_batch_generic_cpu[
     is_print_compact: Bool,
     context: MojoCallContextPtr,
 ):
-    var k_cache = kv_collection.get_key_cache(int(layer_idx))
-    var v_cache = kv_collection.get_value_cache(int(layer_idx))
+    var k_cache = kv_collection.get_key_cache(Int(layer_idx))
+    var v_cache = kv_collection.get_value_cache(Int(layer_idx))
 
     print("K:")
     _print_cache(k_cache, kv_collection, valid_lengths, is_print_compact)
@@ -1950,8 +1950,8 @@ def print_kv_cache_cont_batch_generic_gpu[
         valid_lengths.num_elements(),
     )
 
-    var k_cache = host_kv_collection.get_key_cache(int(layer_idx))
-    var v_cache = host_kv_collection.get_value_cache(int(layer_idx))
+    var k_cache = host_kv_collection.get_key_cache(Int(layer_idx))
+    var v_cache = host_kv_collection.get_value_cache(Int(layer_idx))
 
     # Bring host buffers in sync with device buffers.
     dev_ctx.synchronize()
