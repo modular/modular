@@ -12,7 +12,7 @@ from gpu import WARP_SIZE
 from math import fma
 
 # ===-----------------------------------------------------------------------===#
-# ThreadIdx
+# thread_idx
 # ===-----------------------------------------------------------------------===#
 
 
@@ -50,11 +50,11 @@ struct _ThreadIdx:
         )
 
 
-alias ThreadIdx = _ThreadIdx()
+alias thread_idx = _ThreadIdx()
 
 
 # ===-----------------------------------------------------------------------===#
-# BlockIdx
+# block_idx
 # ===-----------------------------------------------------------------------===#
 
 
@@ -92,10 +92,10 @@ struct _BlockIdx:
         )
 
 
-alias BlockIdx = _BlockIdx()
+alias block_idx = _BlockIdx()
 
 # ===-----------------------------------------------------------------------===#
-# BlockDim
+# block_dim
 # ===-----------------------------------------------------------------------===#
 
 
@@ -155,10 +155,10 @@ struct _BlockDim:
             return _get_gcn_idx[_get_offset()]()
 
 
-alias BlockDim = _BlockDim()
+alias block_dim = _BlockDim()
 
 # ===-----------------------------------------------------------------------===#
-# GridDim
+# grid_dim
 # ===-----------------------------------------------------------------------===#
 
 
@@ -208,16 +208,16 @@ struct _GridDim:
             return _get_gcn_idx[_get_offset()]()
 
 
-alias GridDim = _GridDim()
+alias grid_dim = _GridDim()
 
 # ===-----------------------------------------------------------------------===#
-# GridDim
+# grid_idx
 # ===-----------------------------------------------------------------------===#
 
 
 @register_passable("trivial")
-struct _GlobalIdx:
-    """Global provides static methods for getting the x/y/z global offset of
+struct _GridIdx:
+    """GlobalIdx provides static methods for getting the x/y/z global offset of
     the kernel launch."""
 
     @always_inline("nodebug")
@@ -234,14 +234,14 @@ struct _GlobalIdx:
         constrained[
             dim in ("x", "y", "z"), "the accessor must be either x, y, or z"
         ]()
-        var thread_idx = ThreadIdx.__getattr__[dim]()
-        var block_idx = BlockIdx.__getattr__[dim]()
-        var block_dim = BlockDim.__getattr__[dim]()
+        var thread_idx = thread_idx.__getattr__[dim]()
+        var block_idx = block_idx.__getattr__[dim]()
+        var block_dim = block_dim.__getattr__[dim]()
 
         return fma(block_idx, block_dim, thread_idx)
 
 
-alias GlobalIdx = _GlobalIdx()
+alias global_idx = _GridIdx()
 
 
 # ===-----------------------------------------------------------------------===#

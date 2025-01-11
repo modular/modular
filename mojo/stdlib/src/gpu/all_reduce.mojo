@@ -7,7 +7,7 @@
 from math import ceildiv
 
 from buffer import Buffer, NDBuffer
-from gpu import BlockDim, BlockIdx, GridDim, ThreadIdx, barrier
+from gpu import block_dim, block_idx, grid_dim, thread_idx, barrier
 from gpu.host import DeviceBuffer, DeviceContext, Dim
 from gpu.intrinsics import (
     Scope,
@@ -70,8 +70,8 @@ fn naive_reduce_kernel[
 
     Each thread handles multiple elements with striding for coalesced memory access.
     """
-    var tid = GlobalIdx.x
-    var stride = GridDim.x * BlockDim.x
+    var tid = global_idx.x
+    var stride = grid_dim.x * block_dim.x
 
     # Each thread handles multiple elements with striding
     for i in range(tid, num_elements, stride):
@@ -223,13 +223,13 @@ fn multi_gpu_barrier[
     constrained[
         not (need_fence and is_start), "Start barrier should not need fence"
     ]()
-    var bid = BlockIdx.x
+    var bid = block_idx.x
 
-    if ThreadIdx.x < ngpus:
+    if thread_idx.x < ngpus:
         # NOTE: (MOCO-1431) the use of pointer arithmetic here is a temporary workaround
         # to avoid functional issues that arise with increased register pressure when
         # dealing with static tuples
-        var my_gpu = ThreadIdx.x
+        var my_gpu = thread_idx.x
         # Each thread increments it's own counter
         # Technically we only need one counter, but we use
         # multiple per block to eliminate the need to share the counter via smem.
@@ -310,9 +310,9 @@ fn all_reduce_p2p_kernel[
     Uses P2P access to directly read from other GPU buffers and perform reduction.
     Synchronizes using multi_gpu_barrier before and after reduction.
     """
-    var tid = ThreadIdx.x
-    var global_tid = BlockIdx.x * BlockDim.x + tid
-    var stride = GridDim.x * BlockDim.x
+    var tid = thread_idx.x
+    var global_tid = block_idx.x * block_dim.x + tid
+    var stride = grid_dim.x * block_dim.x
     var my_sig: UnsafePointer[Signal] = rank_sigs[my_rank]
 
     multi_gpu_barrier[ngpus, True](rank_sigs, my_sig, my_rank)
