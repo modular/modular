@@ -13,7 +13,7 @@ from sys._assembly import inlined_assembly
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from gpu import WARP_SIZE, BlockIdx, GridDim, ThreadIdx, barrier, lane_id
+from gpu import WARP_SIZE, block_idx, grid_dim, thread_idx, barrier, lane_id
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.info import DEFAULT_GPU_ARCH, is_gpu
 from gpu.intrinsics import lop
@@ -134,7 +134,7 @@ fn multistage_mma_q[
     ) + 1
     alias repack_tile = Index(64, 16)
 
-    var tid: UInt32 = ThreadIdx.x
+    var tid: UInt32 = thread_idx.x
     var warp_id = tid // WARP_SIZE
     var lane_id = tid % WARP_SIZE
 
@@ -494,16 +494,16 @@ fn multistage_gemm_q[
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
-    var tid: UInt32 = ThreadIdx.x
+    var tid: UInt32 = thread_idx.x
     var warp_id = tid // WARP_SIZE
 
     # Only apply block swizzling for half precision types.
     alias swizzle_block = a_type.is_half_float() and b_type.is_half_float()
 
     var block_idx = block_swizzle(
-        (Int(BlockIdx.x), Int(BlockIdx.y)),
-        (Int(GridDim.x), Int(GridDim.y)),
-    ) if swizzle_block else Index(Int(BlockIdx.x), Int(BlockIdx.y))
+        (Int(block_idx.x), Int(block_idx.y)),
+        (Int(grid_dim.x), Int(grid_dim.y)),
+    ) if swizzle_block else Index(Int(block_idx.x), Int(block_idx.y))
 
     # Coordinates of the current warp.
     var warp_x = warp_id % num_warps_n
@@ -754,13 +754,13 @@ fn repack_Q4_0_for_sm8x[
     alias BN = 128
     alias BK = 1024
 
-    var tid: UInt = ThreadIdx.x
+    var tid: UInt = thread_idx.x
     var warp_id: UInt = tid // WARP_SIZE
     alias num_warps_x = BN // repack_tile[0]
     var warp_x: UInt = warp_id % num_warps_x
     var warp_y: UInt = warp_id // num_warps_x
     var lane_id: Int = tid % WARP_SIZE
-    var block_idx = Index(Int(BlockIdx.x), Int(BlockIdx.y))
+    var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
 
     alias N = to_int(q_layout.shape[0])
     alias K = to_int(q_layout.shape[1]) // group_bytes * group_size
@@ -938,13 +938,13 @@ fn repack_GPTQ_for_sm8x[
     alias BN = 128
     alias BK = 1024
 
-    var tid: UInt = ThreadIdx.x
+    var tid: UInt = thread_idx.x
     var warp_id: UInt = tid // WARP_SIZE
     alias num_warps_x = BN // repack_tile[0]
     var warp_x: UInt = warp_id % num_warps_x
     var warp_y: UInt = warp_id // num_warps_x
     var lane_id: Int = tid % WARP_SIZE
-    var block_idx = Index(Int(BlockIdx.x), Int(BlockIdx.y))
+    var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
 
     alias N = to_int(in_layout.shape[1])
     alias K = to_int(in_layout.shape[0]) // group_bytes * group_size
