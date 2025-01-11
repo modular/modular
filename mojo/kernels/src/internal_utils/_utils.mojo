@@ -206,7 +206,7 @@ struct TestTensor[type: DType, rank: Int]:
         shape: DimList,
         values: List[Scalar[type]] = List[Scalar[type]](),
     ):
-        self.num_elements = int(shape.product[rank]())
+        self.num_elements = Int(shape.product[rank]())
         self.shape = shape
         self.ndbuffer = NDBuffer[type, rank](
             UnsafePointer[Scalar[type]].alloc(self.num_elements), shape
@@ -327,7 +327,7 @@ fn parse_shape[name: StringLiteral]() -> List[Int]:
 
     @parameter
     for i in range(len(name)):
-        alias diff = int(name_unsafe_ptr[i] - zero)
+        alias diff = Int(name_unsafe_ptr[i] - zero)
         constrained[Bool(name_unsafe_ptr[i] == x_ptr) or Bool(0 <= diff <= 9)]()
 
         @parameter
@@ -404,7 +404,7 @@ fn arg_parse(handle: String, default: Int) raises -> Int:
     for i in range(len(args)):
         if String(args[i]).startswith("--" + handle):
             var name_val = String(args[i]).split("=")
-            return int(name_val[1])
+            return Int(name_val[1])
     return default
 
 
