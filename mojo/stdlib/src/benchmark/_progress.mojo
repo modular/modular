@@ -20,8 +20,8 @@ fn _get_terminal_size(fallback: Tuple[Int, Int] = (80, 24)) -> Tuple[Int, Int]:
       The width and height of the terminal.
     """
     try:
-        var columns = int(getenv("COLUMNS", str(fallback[0])))
-        var rows = int(getenv("LINES", str(fallback[1])))
+        var columns = Int(getenv("COLUMNS", str(fallback[0])))
+        var rows = Int(getenv("LINES", str(fallback[1])))
 
         return (columns, rows)
     except:
@@ -98,7 +98,7 @@ struct Progress:
             i = self._range.__next__()
 
         var width = self._term_dims[0]
-        var blocks_to_print = int(i * width * self._percentage) + 1
+        var blocks_to_print = Int(i * width * self._percentage) + 1
         var placeholders_to_print = max(width - blocks_to_print, 0)
 
         _del()

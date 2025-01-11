@@ -285,7 +285,7 @@ struct BenchConfig(CollectionElement):
                     self.out_file = Path(args[i + 1])
                     i += 2
                 elif args[i] == "-r":
-                    self.num_repetitions = int(args[i + 1])
+                    self.num_repetitions = Int(args[i + 1])
                 elif args[i] == "--tabular":
                     self.tabular_view = True
                 elif args[i] == "--no-progress":

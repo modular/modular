@@ -580,7 +580,7 @@ fn _run_impl(opts: _RunOptions) raises -> Report:
 
     var prev_dur: Int = 0
     var prev_iters: Int = 0
-    var min_warmup_time_ns = int(opts.min_warmuptime_secs * 1_000_000_000)
+    var min_warmup_time_ns = Int(opts.min_warmuptime_secs * 1_000_000_000)
     if min_warmup_time_ns > 0:
         # Make sure to warm up the function and use one iteration to compute
         # the previous duration.
@@ -595,8 +595,8 @@ fn _run_impl(opts: _RunOptions) raises -> Report:
 
     var total_iters: Int = 0
     var time_elapsed: Int = 0
-    var min_time_ns = int(opts.min_runtime_secs * 1_000_000_000)
-    var max_time_ns = int(opts.max_runtime_secs * 1_000_000_000)
+    var min_time_ns = Int(opts.min_runtime_secs * 1_000_000_000)
+    var max_time_ns = Int(opts.max_runtime_secs * 1_000_000_000)
 
     while time_elapsed < min_time_ns:
         if time_elapsed > max_time_ns or total_iters > opts.max_iters:
@@ -620,8 +620,8 @@ fn _run_impl(opts: _RunOptions) raises -> Report:
             # The batch size should not be larger than 1.0e9.
             n = min(n, 1.0e9)
 
-        prev_dur = opts.timing_fn(int(n))
-        prev_iters = int(n)
+        prev_dur = opts.timing_fn(Int(n))
+        prev_iters = Int(n)
         report.runs.append(Batch(prev_dur, prev_iters, False))
         total_iters += prev_iters
         time_elapsed += prev_dur
