@@ -18,7 +18,7 @@ from sys import bitwidthof, is_nvidia_gpu, num_physical_cores, simdwidthof
 
 from bit import is_power_of_two
 from buffer import NDBuffer
-from gpu import BlockDim, BlockIdx, GridDim, ThreadIdx
+from gpu import block_dim, block_idx, grid_dim, thread_idx
 from gpu.host import DeviceContext
 from gpu.host.info import Info, is_gpu, is_cpu, is_valid_target
 from runtime import tracing
@@ -1655,11 +1655,11 @@ fn _elementwise_impl_gpu[
     @__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](block_size))
     fn _elementwise_gpu_kernel[*, block_size: UInt, handle_uneven_simd: Bool]():
         # process the packed region
-        var tid = ThreadIdx.x + block_size * BlockIdx.x
+        var tid = thread_idx.x + block_size * block_idx.x
         for idx in range(
             tid,
             num_packed_elems,
-            block_size * GridDim.x,
+            block_size * grid_dim.x,
         ):
             var start_indices = _get_start_indices_of_nth_subvolume_uint[0](
                 idx * simd_width, shape
@@ -1975,15 +1975,15 @@ fn _stencil_impl_gpu[
     @parameter
     fn stencil_kernel():
         # Get thread indices
-        var tid_x = ThreadIdx.x
-        var tid_y = ThreadIdx.y
-        var bid_x = BlockIdx.x
-        var bid_y = BlockIdx.y
-        var bid_z = BlockIdx.z
+        var tid_x = thread_idx.x
+        var tid_y = thread_idx.y
+        var bid_x = block_idx.x
+        var bid_y = block_idx.y
+        var bid_z = block_idx.z
 
         # Calculate global indices
-        var x = bid_x * BlockDim.x + tid_x
-        var y = bid_y * BlockDim.y + tid_y
+        var x = bid_x * block_dim.x + tid_x
+        var y = bid_y * block_dim.y + tid_y
 
         # Calculate batch and channel from bid_z
         var batch_idx = bid_z // shape[3]

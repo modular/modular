@@ -9,10 +9,10 @@ from math import align_up
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from gpu import (
     WARP_SIZE,
-    BlockDim,
-    BlockIdx,
-    GridDim,
-    ThreadIdx,
+    block_dim,
+    block_idx,
+    grid_dim,
+    thread_idx,
     barrier,
     lane_id,
     shuffle_down,
@@ -105,7 +105,7 @@ fn block_reduce[
         address_space = AddressSpace.SHARED,
     ]()
 
-    var warp: UInt = ThreadIdx.x // WARP_SIZE
+    var warp: UInt = thread_idx.x // WARP_SIZE
 
     var warp_accum = do_warp_reduce(val)
 
@@ -123,7 +123,7 @@ fn block_reduce[
 
     var last_accum = StaticTuple[SIMD[type, simd_width], num_reductions]()
 
-    if ThreadIdx.x < (BlockDim.x // WARP_SIZE):
+    if thread_idx.x < (block_dim.x // WARP_SIZE):
 
         @parameter
         for i in range(num_reductions):
@@ -229,7 +229,7 @@ fn row_reduce[
         init_cast[i] = init[i].cast[accum_type]()
         accum[i] = init_cast[i]
 
-    var tid: UInt = ThreadIdx.x
+    var tid: UInt = thread_idx.x
     for offset_in_row in range(0, row_size_padded, BLOCK_SIZE):
         var idx_in_padded_row: UInt = (tid + offset_in_row) * simd_width
 
@@ -292,7 +292,7 @@ fn reduce_kernel[
 
     # grid stride loop over rows
     # each block reduces a row, which requires no partial reductions
-    for row_idx in range(BlockIdx.x, UInt(num_rows), GridDim.x):
+    for row_idx in range(block_idx.x, UInt(num_rows), grid_dim.x):
         var row_coords = _get_nd_indices_from_flat_index(
             Int(row_idx), shape, axis
         )
@@ -308,7 +308,7 @@ fn reduce_kernel[
             accum_type=accum_type,
         ](row_coords, axis, init, row_size)
 
-        if ThreadIdx.x == 0:
+        if thread_idx.x == 0:
             var row_accum_cast = StaticTuple[Scalar[type], num_reductions]()
 
             @parameter
