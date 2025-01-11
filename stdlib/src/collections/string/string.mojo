@@ -44,7 +44,6 @@ from collections.string.string_slice import (
     _shift_unicode_to_utf8,
     _StringSliceIter,
     _to_string_list,
-    _unicode_codepoint_utf8_byte_length,
     _utf8_byte_type,
 )
 
@@ -122,7 +121,8 @@ fn chr(c: Int) -> String:
     if c < 0b1000_0000:  # 1 byte ASCII char
         return String(String._buffer_type(c, 0))
 
-    var num_bytes = _unicode_codepoint_utf8_byte_length(c)
+    # FIXME: Validate that this is a valid scalar value
+    var num_bytes = Char(unsafe_unchecked_codepoint=c).utf8_byte_length()
     var p = UnsafePointer[UInt8].alloc(num_bytes + 1)
     _shift_unicode_to_utf8(p, c, num_bytes)
     # TODO: decide whether to use replacement char (�) or raise ValueError
