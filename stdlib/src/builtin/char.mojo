@@ -14,6 +14,8 @@
 
 from collections import Optional
 
+from bit import count_leading_zeros
+
 from memory import UnsafePointer
 
 
@@ -121,6 +123,69 @@ struct Char(CollectionElement):
             return Char(unsafe_unchecked_codepoint=codepoint)
         else:
             return None
+
+    @staticmethod
+    fn unsafe_decode_utf8_char(_ptr: UnsafePointer[Byte]) -> (Char, Int):
+        """Decodes a single `Char` and number of bytes read from a given UTF-8
+        string pointer.
+
+        Safety:
+            `_ptr` MUST point to the first byte in a **known-valid** UTF-8
+            character sequence. This function MUST NOT be used on unvalidated
+            input.
+
+        Args:
+            _ptr: Pointer to UTF-8 encoded data containing at least one valid
+                encoded codepoint.
+
+        Returns:
+            The decoded codepoint `Char`, as well as the number of bytes read.
+
+        """
+        # UTF-8 to Unicode conversion:              (represented as UInt32 BE)
+        # 1: 0aaaaaaa                            -> 00000000 00000000 00000000 0aaaaaaa     a
+        # 2: 110aaaaa 10bbbbbb                   -> 00000000 00000000 00000aaa aabbbbbb     a << 6  | b
+        # 3: 1110aaaa 10bbbbbb 10cccccc          -> 00000000 00000000 aaaabbbb bbcccccc     a << 12 | b << 6  | c
+        # 4: 11110aaa 10bbbbbb 10cccccc 10dddddd -> 00000000 000aaabb bbbbcccc ccdddddd     a << 18 | b << 12 | c << 6 | d
+        var ptr = _ptr
+
+        var b1 = ptr[]
+        if (b1 >> 7) == 0:  # This is 1 byte ASCII char
+            return Char(b1), 1
+
+        # TODO: Use _utf8_first_byte_sequence_length() here instead for
+        #   consistency.
+        var num_bytes = count_leading_zeros(~b1)
+        debug_assert(
+            1 < Int(num_bytes) < 5, "invalid UTF-8 byte ", b1, " at index 0"
+        )
+
+        var shift = Int((6 * (num_bytes - 1)))
+        var b1_mask = 0b11111111 >> (num_bytes + 1)
+        var result = Int(b1 & b1_mask) << shift
+        for i in range(1, num_bytes):
+            ptr += 1
+            # Assert that this is a continuation byte
+            debug_assert(
+                ptr[] >> 6 == 0b00000010,
+                "invalid UTF-8 byte ",
+                ptr[],
+                " at index ",
+                i,
+            )
+            shift -= 6
+            result |= Int(ptr[] & 0b00111111) << shift
+
+        # SAFETY: Safe because the input bytes are required to be valid UTF-8,
+        #   and valid UTF-8 will never decode to an out of bounds codepoint
+        #   using the above algorithm.
+        # FIXME:
+        #   UTF-8 encoding algorithms that do not properly exclude surrogate
+        #   pair code points are actually relatively common (as I understand
+        #   it); the algorithm above does not check for that.
+        var char = Char(unsafe_unchecked_codepoint=result)
+
+        return char, Int(num_bytes)
 
     # ===-------------------------------------------------------------------===#
     # Methods

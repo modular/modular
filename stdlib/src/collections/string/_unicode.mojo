@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from bit import count_leading_zeros
 from memory import UnsafePointer, memcpy
 from collections.string._unicode_lookups import *
 
@@ -116,24 +115,6 @@ fn is_lowercase(s: StringSlice) -> Bool:
     return found
 
 
-fn _ord(_p: UnsafePointer[UInt8]) -> (Int, Int):
-    """Return the rune and number of bytes to be consumed, for given UTF-8 string pointer
-    """
-    var p = _p
-    var b1 = p[]
-    if (b1 >> 7) == 0:  # This is 1 byte ASCII char
-        return Int(b1), 1
-    var num_bytes = count_leading_zeros(~b1)
-    var shift = Int((6 * (num_bytes - 1)))
-    var b1_mask = 0b11111111 >> (num_bytes + 1)
-    var result = Int(b1 & b1_mask) << shift
-    for _ in range(1, num_bytes):
-        p += 1
-        shift -= 6
-        result |= Int(p[] & 0b00111111) << shift
-    return result, Int(num_bytes)
-
-
 fn _write_rune(rune: UInt32, p: UnsafePointer[UInt8]) -> Int:
     """Write rune as UTF-8 into provided pointer. Return number of added bytes.
     """
@@ -155,8 +136,8 @@ fn to_lowercase(s: StringSlice) -> String:
     var input_offset = 0
     var output_offset = 0
     while input_offset < s.byte_length():
-        var rune_and_size = _ord(input + input_offset)
-        var index = _lowercase_mapping_index(rune_and_size[0])
+        var rune_and_size = Char.unsafe_decode_utf8_char(input + input_offset)
+        var index = _lowercase_mapping_index(Int(rune_and_size[0]))
         if index == -1:
             memcpy(
                 output + output_offset, input + input_offset, rune_and_size[1]
@@ -200,13 +181,13 @@ fn to_uppercase(s: StringSlice) -> String:
     var input_offset = 0
     var output_offset = 0
     while input_offset < s.byte_length():
-        var rune_and_size = _ord(input + input_offset)
-        var index = _uppercase_mapping_index(rune_and_size[0])
+        var rune_and_size = Char.unsafe_decode_utf8_char(input + input_offset)
+        var index = _uppercase_mapping_index(Int(rune_and_size[0]))
         var index2 = _uppercase_mapping2_index(
-            rune_and_size[0]
+            Int(rune_and_size[0])
         ) if index == -1 else -1
         var index3 = _uppercase_mapping3_index(
-            rune_and_size[0]
+            Int(rune_and_size[0])
         ) if index == -1 and index2 == -1 else -1
         if index != -1:
             output_offset += _write_rune(

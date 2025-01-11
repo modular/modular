@@ -65,34 +65,10 @@ fn ord(s: StringSlice) -> Int:
     Returns:
         An integer representing the code point of the given character.
     """
-    # UTF-8 to Unicode conversion:              (represented as UInt32 BE)
-    # 1: 0aaaaaaa                            -> 00000000 00000000 00000000 0aaaaaaa     a
-    # 2: 110aaaaa 10bbbbbb                   -> 00000000 00000000 00000aaa aabbbbbb     a << 6  | b
-    # 3: 1110aaaa 10bbbbbb 10cccccc          -> 00000000 00000000 aaaabbbb bbcccccc     a << 12 | b << 6  | c
-    # 4: 11110aaa 10bbbbbb 10cccccc 10dddddd -> 00000000 000aaabb bbbbcccc ccdddddd     a << 18 | b << 12 | c << 6 | d
-    var p = s.unsafe_ptr()
-    var b1 = p[]
-    if (b1 >> 7) == 0:  # This is 1 byte ASCII char
-        debug_assert(s.byte_length() == 1, "input string length must be 1")
-        return Int(b1)
-    var num_bytes = count_leading_zeros(~b1)
-    debug_assert(
-        s.byte_length() == Int(num_bytes), "input string must be one character"
-    )
-    debug_assert(
-        1 < Int(num_bytes) < 5, "invalid UTF-8 byte ", b1, " at index 0"
-    )
-    var shift = Int((6 * (num_bytes - 1)))
-    var b1_mask = 0b11111111 >> (num_bytes + 1)
-    var result = Int(b1 & b1_mask) << shift
-    for i in range(1, num_bytes):
-        p += 1
-        debug_assert(
-            p[] >> 6 == 0b00000010, "invalid UTF-8 byte ", b1, " at index ", i
-        )
-        shift -= 6
-        result |= Int(p[] & 0b00111111) << shift
-    return result
+    # SAFETY:
+    #   This is safe because `s.unsafe_ptr()` is guaranteed to be valid UTF-8.
+    char, _ = Char.unsafe_decode_utf8_char(s.unsafe_ptr())
+    return Int(char)
 
 
 # ===----------------------------------------------------------------------=== #
