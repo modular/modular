@@ -59,7 +59,7 @@ def test_data_layout_asm():
         var a = stack_allocation[
             20, Int32, address_space = AddressSpace.SHARED
         ]()
-        a[ThreadIdx.x] = src[0]
+        a[thread_idx.x] = src[0]
         barrier()
 
     var target_short_asm = _internal_compile_code[
