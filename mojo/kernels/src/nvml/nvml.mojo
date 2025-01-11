@@ -80,13 +80,13 @@ struct DriverVersion:
         self._value = value
 
     fn major(self) raises -> Int:
-        return int(self._value[0])
+        return Int(self._value[0])
 
     fn minor(self) raises -> Int:
-        return int(self._value[1])
+        return Int(self._value[1])
 
     fn patch(self) raises -> Int:
-        return int(self._value[2])
+        return Int(self._value[2])
 
     fn __str__(self) raises -> String:
         return (
@@ -423,7 +423,7 @@ struct Device(Writable):
                 fn (_DeviceImpl, ClockType, UnsafePointer[UInt32]) -> Result,
             ]()(self.device, clock_type, UnsafePointer.address_of(clock))
         )
-        return int(clock)
+        return Int(clock)
 
     fn max_mem_clock(self) raises -> Int:
         return self._max_clock(ClockType.MEM)
@@ -448,7 +448,7 @@ struct Device(Writable):
             _check_error(result)
 
         var clocks = List[UInt32]()
-        clocks.resize(int(num_clocks), value=0)
+        clocks.resize(Int(num_clocks), value=0)
 
         _check_error(
             _get_dylib_function[
@@ -461,7 +461,7 @@ struct Device(Writable):
 
         var res = List[Int, hint_trivial_type=True](capacity=len(clocks))
         for clock in clocks:
-            res.append(int(clock[]))
+            res.append(Int(clock[]))
 
         return res
 
@@ -492,7 +492,7 @@ struct Device(Writable):
             _check_error(result)
 
         var clocks = List[UInt32]()
-        clocks.resize(int(num_clocks), value=0)
+        clocks.resize(Int(num_clocks), value=0)
 
         _check_error(
             _get_dylib_function[
@@ -513,7 +513,7 @@ struct Device(Writable):
 
         var res = List[Int, hint_trivial_type=True](capacity=len(clocks))
         for clock in clocks:
-            res.append(int(clock[]))
+            res.append(Int(clock[]))
 
         return res
 
