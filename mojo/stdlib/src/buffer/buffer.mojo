@@ -377,7 +377,7 @@ fn _compute_ndbuffer_offset(
         for i in range(buf.rank):
             result = fma(Int32(buf.stride[i]()), Int32(index[i]), result)
 
-        return int(result)
+        return Int(result)
 
     else:
         var result: Int = 0
@@ -418,7 +418,7 @@ fn _compute_ndbuffer_offset(
         for i in range(rank):
             result = fma(Int32(buf.stride[i]()), Int32(index[i]), result)
 
-        return int(result)
+        return Int(result)
 
     else:
         var result: Int = 0
@@ -1271,7 +1271,7 @@ struct NDBuffer[
 
         @parameter
         if shape.all_known[rank]():
-            alias count = int(shape.product())
+            alias count = Int(shape.product())
             memset_zero[count=count](self.data)
         else:
             memset_zero(self.data, len(self))
