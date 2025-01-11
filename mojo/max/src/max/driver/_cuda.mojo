@@ -13,7 +13,6 @@ from gpu.host import (
     DeviceFunction as CUDAFunction,
     Dim,
     FuncAttribute,
-    CacheConfig,
 )
 from memory import UnsafePointer
 from pathlib import Path
