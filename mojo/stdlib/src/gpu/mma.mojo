@@ -580,7 +580,7 @@ fn wgmma_commit_group_sync():
 @always_inline
 fn wgmma_wait_group_sync():
     __mlir_op.`nvvm.wgmma.wait.group.sync.aligned`[
-        _properties = __mlir_attr.`{group = 0 : i32}`, _type=None
+        _properties = __mlir_attr.`{group = 0 : i64}`, _type=None
     ]()
 
 
