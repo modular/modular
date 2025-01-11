@@ -53,7 +53,7 @@ fn parameterized_on_cuda() -> Int:
 @always_inline
 fn _verify_parameterized_on_cuda(asm: String) raises -> None:
     assert_true("test_cuda_target_parameterized" in asm)
-    assert_true("mov.u64" in asm)
+    assert_true("mov.b64" in asm)
 
 
 def test_parameterized_on_cuda_sm80():
