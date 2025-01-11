@@ -15,10 +15,10 @@ from buffer.dimlist import DimList
 from builtin.io import _printf
 from gpu import (
     WARP_SIZE,
-    BlockDim,
-    BlockIdx,
-    GridDim,
-    ThreadIdx,
+    block_dim,
+    block_idx,
+    grid_dim,
+    thread_idx,
     barrier,
     lane_id,
     shuffle_down,
@@ -177,7 +177,7 @@ fn block_reduce_topk[
     ]()
 
     # Calculate warp id and thread information
-    var warp: UInt = warp_broadcast(ThreadIdx.x // WARP_SIZE)
+    var warp: UInt = warp_broadcast(thread_idx.x // WARP_SIZE)
     alias num_warps_needed = MAX_BLOCK_SIZE // WARP_SIZE
 
     # Each warp reduces its own TopK_2 value
@@ -192,7 +192,7 @@ fn block_reduce_topk[
 
     # Load warp results into final warp for block-level reduction
     var block_accum = TopK_2[T, largest]()
-    var thread_in_final_warp = ThreadIdx.x < (BlockDim.x // WARP_SIZE)
+    var thread_in_final_warp = thread_idx.x < (block_dim.x // WARP_SIZE)
     if thread_in_final_warp:
         var p_idx = p_sram[lane_id() * p_width]  # loaded value is a scalar
         block_accum = TopK_2[T, largest](
@@ -246,9 +246,9 @@ fn topk_stage1[
     Note:
         The output buffers (local_topk_vals and local_topk_idxs) should be of size num_blocks_per_input * K.
     """
-    tid = ThreadIdx.x
-    bid = BlockIdx.x
-    block_size = BlockDim.x
+    tid = thread_idx.x
+    bid = block_idx.x
+    block_size = block_dim.x
 
     batch_id = bid // num_blocks_per_input
     block_lane = bid % num_blocks_per_input
@@ -347,10 +347,10 @@ fn topk_stage2[
     # compute the total number of elements reduced from stage 1
     var num_elem_reduced = num_blocks_per_input * K
 
-    var tid = ThreadIdx.x
-    var batch_id = BlockIdx.x
-    # assert (BlockIdx.x == 0)
-    # assert (GridDim.x == 1)
+    var tid = thread_idx.x
+    var batch_id = block_idx.x
+    # assert (block_idx.x == 0)
+    # assert (grid_dim.x == 1)
     var batch_i_topk_vals = global_topk_vals + batch_id * K
     var batch_i_topk_idxs = global_topk_idxs + batch_id * (1 if sampling else K)
     var _local_topk_vals = local_topk_vals + batch_id * num_elem_reduced
@@ -391,7 +391,7 @@ fn topk_stage2[
     var max_logit = Scalar[T](0)
 
     # Cache local top-K results from stage 1 into shared memory
-    for i in range(tid, num_elem_reduced, BlockDim.x):
+    for i in range(tid, num_elem_reduced, block_dim.x):
         vals_sram[i] = _local_topk_vals[i]
         idxs_sram[i] = i
     barrier()
@@ -400,7 +400,7 @@ fn topk_stage2[
         # Re-initialize partial for each thread
         var partial = TopK_2[T, largest]()
         # TODO: unroll this
-        for i in range(tid, num_elem_reduced, BlockDim.x):
+        for i in range(tid, num_elem_reduced, block_dim.x):
             partial.insert(vals_sram[i], i)
 
         barrier()
@@ -541,14 +541,14 @@ fn _topk_gpu[
         topk_stage1[type, out_idx_type, largest], dump_asm=False
     ]()
     # Define grid and block dimensions for stage 1
-    var griddim_stage1 = Dim(num_blocks_per_input_ * batch_size)
-    var blockdim_stage1 = Dim(block_size)
+    var grid_dim_stage1 = Dim(num_blocks_per_input_ * batch_size)
+    var block_dim_stage1 = Dim(block_size)
 
     # Enqueue the first kernel (stage 1)
     @parameter
     if DEBUG_FILE:
-        _printf["[DEBUG] stg 1 grid_dim: %d\n"](griddim_stage1)
-        _printf["[DEBUG] stg 1 block_dim: %d\n"](blockdim_stage1)
+        _printf["[DEBUG] stg 1 grid_dim: %d\n"](grid_dim_stage1)
+        _printf["[DEBUG] stg 1 block_dim: %d\n"](block_dim_stage1)
         _printf["[DEBUG] stg 1 shared_mem_bytes: %d\n"](shared_mem_bytes_1)
         _printf["[DEBUG] stg 1 num_blocks_per_input: %d\n"](
             num_blocks_per_input_
@@ -562,8 +562,8 @@ fn _topk_gpu[
         input_buf.data,
         device_local_topk_vals.data,
         device_local_topk_idxs.data,
-        grid_dim=griddim_stage1,
-        block_dim=blockdim_stage1,
+        grid_dim=grid_dim_stage1,
+        block_dim=block_dim_stage1,
         shared_mem_bytes=shared_mem_bytes_1,
     )
 
@@ -585,18 +585,18 @@ fn _topk_gpu[
     ]()
 
     # Define grid and block dimensions for stage 2
-    var griddim_stage2 = Dim(
+    var grid_dim_stage2 = Dim(
         batch_size
     )  # Single block since num_elements_stage2 is small
-    var blockdim_stage2 = Dim(block_size)
+    var block_dim_stage2 = Dim(block_size)
 
     @parameter
     if DEBUG_FILE:
         _printf["[DEBUG] stg2 num_blocks_per_input_: %d\n"](
             num_blocks_per_input_
         )
-        _printf["[DEBUG] stg2 grid_dim: %d\n"](griddim_stage2)
-        _printf["[DEBUG] stg2 block_dim: %d\n"](blockdim_stage2)
+        _printf["[DEBUG] stg2 grid_dim: %d\n"](grid_dim_stage2)
+        _printf["[DEBUG] stg2 block_dim: %d\n"](block_dim_stage2)
         _printf["[DEBUG] stg2 shared_mem_bytes: %d\n"](shared_mem_bytes_2)
 
     # Enqueue the second kernel (stage 2)
@@ -608,8 +608,8 @@ fn _topk_gpu[
         device_local_topk_idxs.data,
         out_vals.data,
         out_idxs.data,
-        grid_dim=griddim_stage2,
-        block_dim=blockdim_stage2,
+        grid_dim=grid_dim_stage2,
+        block_dim=block_dim_stage2,
         shared_mem_bytes=shared_mem_bytes_2,
     )
 

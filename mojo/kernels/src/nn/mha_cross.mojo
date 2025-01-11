@@ -7,7 +7,7 @@
 from algorithm.functional import vectorize
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import BlockIdx, GlobalIdx
+from gpu import block_idx, global_idx
 from gpu.host import DeviceContext
 from kv_cache.types import KVCacheT
 from layout.tensor_core import get_accum_type
@@ -44,14 +44,14 @@ fn _bmm0_bs[
     mask_functor: mask_t,
 ):
     # total_context_length
-    var x = GlobalIdx.x
+    var x = global_idx.x
     # prompt_length
-    var y = GlobalIdx.y
+    var y = global_idx.y
 
     alias k_type = cache_t.type
     alias kv_num_heads = cache_t.kv_params.num_heads
 
-    var batch_head = BlockIdx.z
+    var batch_head = block_idx.z
     var batch: UInt
     var head: UInt
     batch, head = divmod(batch_head, UInt(num_heads))
@@ -146,11 +146,11 @@ fn _bmm1_bs[
     alias kv_num_heads = cache_t.kv_params.num_heads
 
     # head_size
-    var x = GlobalIdx.x
+    var x = global_idx.x
     # query seq_len
-    var y = GlobalIdx.y
+    var y = global_idx.y
 
-    var batch_head = BlockIdx.z
+    var batch_head = block_idx.z
     var batch: UInt
     var head: UInt
     batch, head = divmod(batch_head, UInt(num_heads))

@@ -18,7 +18,7 @@ from bit import log2_floor
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
 from builtin.uint import _temp_uint_from_int
-from gpu import WARP_SIZE, BlockIdx, GridDim, ThreadIdx, barrier, lane_id
+from gpu import WARP_SIZE, block_idx, grid_dim, thread_idx, barrier, lane_id
 from gpu.host import DeviceAttribute, DeviceContext
 from gpu.host.info import is_gpu, is_cpu
 from gpu.memory import AddressSpace
@@ -707,9 +707,9 @@ fn softmax_kernel[
     # each block reduces a row, which is convenient because it requires no partial
     # reductions across blocks
     for row_idx in range(
-        BlockIdx.x,
+        block_idx.x,
         num_rows,
-        GridDim.x,
+        grid_dim.x,
     ):
         # Step 1: compute max in row
         var row_coords = _get_nd_indices_from_flat_index(
@@ -725,7 +725,7 @@ fn softmax_kernel[
             accum_type=accum_type,
         ](row_coords, axis, Scalar[type].MIN, Int(row_size))
 
-        if ThreadIdx.x == 0:
+        if thread_idx.x == 0:
             max_buf[0] = row_max
         barrier()
 
@@ -734,7 +734,7 @@ fn softmax_kernel[
         for offset_in_row in range(
             UInt(0), row_size_padded, _temp_uint_from_int(BLOCK_SIZE)
         ):
-            var idx_in_padded_row = ThreadIdx.x + offset_in_row
+            var idx_in_padded_row = thread_idx.x + offset_in_row
             if idx_in_padded_row >= row_size:
                 break
 
@@ -752,7 +752,7 @@ fn softmax_kernel[
             exp_sum += val
 
         var block_exp_sum = block_reduce[BLOCK_SIZE, _sum](exp_sum, 0)
-        if ThreadIdx.x == 0:
+        if thread_idx.x == 0:
             exp_sum_buf[0] = block_exp_sum
         barrier()
 
@@ -761,7 +761,7 @@ fn softmax_kernel[
         for offset_in_row in range(
             UInt(0), row_size_padded, _temp_uint_from_int(BLOCK_SIZE)
         ):
-            var idx_in_padded_row = ThreadIdx.x + offset_in_row
+            var idx_in_padded_row = thread_idx.x + offset_in_row
             if idx_in_padded_row >= row_size:
                 break
 
@@ -904,7 +904,7 @@ fn _online_softmax_kernel[
 
     alias frag_size = get_fragment_size[mma_shape]()[2]
 
-    var warp_id: UInt = warp_broadcast(ThreadIdx.x // WARP_SIZE)
+    var warp_id: UInt = warp_broadcast(thread_idx.x // WARP_SIZE)
     var lane = lane_id()
 
     # If we do more than 2 iterations, the first N - 2 iterations won't be
@@ -1052,7 +1052,7 @@ fn _online_softmax_iter_for_mma_output[
     alias num_colwise_warps = block_layout_by_warp.shape[0].value()
     alias num_rowwise_warps = block_layout_by_warp.shape[1].value()
 
-    var tid = ThreadIdx.x
+    var tid = thread_idx.x
     var lane = lane_id()
     var warp_x = warp_broadcast(tid // WARP_SIZE) % UInt(num_rowwise_warps)
 

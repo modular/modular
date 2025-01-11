@@ -49,7 +49,7 @@ from gpu.cudnn.infer import (
     cudnnTensorStruct,
 )
 from gpu.host import DeviceContext
-from gpu.id import BlockDim, BlockIdx, ThreadIdx
+from gpu.id import block_dim, block_idx, thread_idx
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from memory import UnsafePointer, stack_allocation
@@ -3015,9 +3015,9 @@ fn conv2d_gpu_naive_nhwc_rscf[
     var dil_h = dilation[0]
     var dil_w = dilation[1]
 
-    var n = BlockIdx.z
-    var h = BlockIdx.y * BlockDim.y + ThreadIdx.y
-    var w = BlockIdx.x * BlockDim.x + ThreadIdx.x
+    var n = block_idx.z
+    var h = block_idx.y * block_dim.y + thread_idx.y
+    var w = block_idx.x * block_dim.x + thread_idx.x
 
     if h >= H_out or w >= W_out:
         return
