@@ -17,7 +17,6 @@ from gpu.host import (
 from memory import UnsafePointer
 from pathlib import Path
 from collections import Optional, OptionalReg
-from collections.dict import OwnedKwargsDict
 from utils import Variant
 from gpu.host._compile import _get_gpu_target
 from ._status import Status
@@ -95,34 +94,14 @@ struct CompiledDeviceKernel[func_type: AnyTrivialRegType, //, func: func_type]:
         )
 
 
-alias CompileArg = Variant[Int, Path, Bool]
-
-
-@value
-struct CUDACompiledKernelArgs:
-    var max_registers: Optional[Int]
-
-    @staticmethod
-    fn _get_opt[
-        T: CollectionElement
-    ](kwargs: OwnedKwargsDict[CompileArg], key: String) raises -> Optional[T]:
-        return kwargs.find(key).value()[T] if key in kwargs else Optional[T]()
-
-    fn __init__(out self, kwargs: OwnedKwargsDict[CompileArg]) raises:
-        self.max_registers = Self._get_opt[Int](kwargs, "max_registers")
-
-
 fn compile[
     func_type: AnyTrivialRegType, //, func: func_type
-](device: Device, **kwargs: CompileArg) raises -> CompiledDeviceKernel[func]:
+](device: Device) raises -> CompiledDeviceKernel[func]:
     """Compiles a function which can be executed on device.
 
     Args:
         device: Device for which to compile the function. The returned CompiledDeviceKernel
             can execute on a different Device, as long as the device architecture matches.
-        kwargs:
-            verbose (Bool): Prints verbose log messages from cuModuleLoadEx during compilation/linking.
-            max_registers (Int): Limits the max of registers that can be used by your kernel.
     Returns:
         Kernel which can be launched on a Device.
 
@@ -134,12 +113,7 @@ fn compile[
         device._lib.value().get_handle(), "M_getDeviceContext", device._cdev
     )
 
-    var compile_args = CUDACompiledKernelArgs(kwargs)
     var cuda_func = device_context[].compile_function[
         func, _target = _get_gpu_target()
-    ](
-        max_registers=OptionalReg(
-            compile_args.max_registers.value()
-        ) if compile_args.max_registers else OptionalReg[Int](None),
-    )
+    ]()
     return CompiledDeviceKernel(cuda_func)

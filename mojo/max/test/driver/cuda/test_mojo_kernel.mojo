@@ -61,7 +61,7 @@ def test_vec_add():
     in1 = fill(cuda_dev, shape, 2).to_tensor[type, 2]()
     out = fill(cuda_dev, shape, 0).to_tensor[type, 2]()
 
-    kernel = cuda.compile[vec_add[type, 2]](cuda_dev, max_registers=128)
+    kernel = cuda.compile[vec_add[type, 2]](cuda_dev)
     kernel(
         cuda_dev,
         in0.unsafe_slice(),
