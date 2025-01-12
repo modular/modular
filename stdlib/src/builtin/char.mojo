@@ -219,7 +219,7 @@ struct Char(CollectionElement, EqualityComparable, Intable, Stringable):
             True if this character and `other` have the same codepoint value;
             False otherwise.
         """
-        return Int(self) == Int(other)
+        return self.to_u32() == other.to_u32()
 
     fn __ne__(self, other: Self) -> Bool:
         """Return True if this character has a different codepoint value from
@@ -232,7 +232,7 @@ struct Char(CollectionElement, EqualityComparable, Intable, Stringable):
             True if this character and `other` have different codepoint values;
             False otherwise.
         """
-        return Int(self) != Int(other)
+        return self.to_u32() != other.to_u32()
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -317,6 +317,17 @@ struct Char(CollectionElement, EqualityComparable, Intable, Stringable):
             or c == `\x1d`
             or c == `\x1e`
         )
+
+    @always_inline
+    fn to_u32(self) -> UInt32:
+        """Returns the numeric value of this scalar value as an unsigned 32-bit
+        integer.
+
+        Returns:
+            The numeric value of this scalar value as an unsigned 32-bit
+            integer.
+        """
+        return self._scalar_value
 
     @always_inline
     fn unsafe_write_utf8(self, ptr: UnsafePointer[Byte]) -> UInt:

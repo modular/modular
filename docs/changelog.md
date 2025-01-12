@@ -102,6 +102,7 @@ what we publish.
   - `Char` implements `CollectionElement`, `EqualityComparable`, `Intable`, and
     `Stringable`.
   - Added `String` constructor from `Char`
+  - `Char` can be converted to `UInt32` via `Char.to_u32()`.
 
 - `chr(Int)` will now abort if given a codepoint value that is not a valid
   `Char`.
