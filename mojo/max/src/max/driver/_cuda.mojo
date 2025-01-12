@@ -101,7 +101,6 @@ alias CompileArg = Variant[Int, Path, Bool]
 @value
 struct CUDACompiledKernelArgs:
     var max_registers: Optional[Int]
-    var threads_per_block: Optional[Int]
 
     @staticmethod
     fn _get_opt[
@@ -111,7 +110,6 @@ struct CUDACompiledKernelArgs:
 
     fn __init__(out self, kwargs: OwnedKwargsDict[CompileArg]) raises:
         self.max_registers = Self._get_opt[Int](kwargs, "max_registers")
-        self.threads_per_block = Self._get_opt[Int](kwargs, "threads_per_block")
 
 
 fn compile[
@@ -125,8 +123,6 @@ fn compile[
         kwargs:
             verbose (Bool): Prints verbose log messages from cuModuleLoadEx during compilation/linking.
             max_registers (Int): Limits the max of registers that can be used by your kernel.
-            threads_per_block (Int): Block size that will be used to launch the kernel. Can help
-                the compiler decide how to tradeoff resources (e.g. registers).
     Returns:
         Kernel which can be launched on a Device.
 
@@ -145,8 +141,5 @@ fn compile[
         max_registers=OptionalReg(
             compile_args.max_registers.value()
         ) if compile_args.max_registers else OptionalReg[Int](None),
-        threads_per_block=OptionalReg(
-            compile_args.threads_per_block.value()
-        ) if compile_args.threads_per_block else OptionalReg[Int](None),
     )
     return CompiledDeviceKernel(cuda_func)
