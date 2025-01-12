@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from testing import assert_true, assert_false, assert_equal
+from testing import assert_true, assert_false, assert_equal, assert_not_equal
 
 
 def test_char_validity():
@@ -48,6 +48,19 @@ def test_char_from_u8():
     # All non-negative 8-bit integers are codepoints, but not all are ASCII.
     var c2 = Char(UInt8(255))
     assert_false(c2.is_ascii())
+
+
+def test_char_comparison():
+    assert_equal(Char(0), Char(0))
+    assert_not_equal(Char(0), Char(1))
+
+
+def test_char_formatting():
+    assert_equal(str(Char(0)), "\0")
+    assert_equal(str(Char(32)), " ")
+    assert_equal(str(Char(97)), "a")
+    assert_equal(str(Char.from_u32(0x00BE).value()), "¾")
+    assert_equal(str(Char.from_u32(0x1F642).value()), "🙂")
 
 
 def test_char_properties():
@@ -177,6 +190,8 @@ def test_char_comptime():
 def main():
     test_char_validity()
     test_char_from_u8()
+    test_char_comparison()
+    test_char_formatting()
     test_char_properties()
     test_char_is_posix_space()
     test_char_utf8_encoding()

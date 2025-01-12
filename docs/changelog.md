@@ -99,6 +99,8 @@ what we publish.
   functionality.
 
 - Added `Char`, for representing and storing single Unicode characters.
+  - `Char` implements `CollectionElement`, `EqualityComparable`, `Intable`, and
+    `Stringable`.
   - Added `String` constructor from `Char`
 
 - `chr(Int)` will now abort if given a codepoint value that is not a valid

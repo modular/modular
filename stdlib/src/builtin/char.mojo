@@ -36,7 +36,7 @@ fn _is_unicode_scalar_value(codepoint: UInt32) -> Bool:
 
 
 @value
-struct Char(CollectionElement):
+struct Char(CollectionElement, EqualityComparable, Intable, Stringable):
     """A single textual character.
 
     This type represents a single textual character. Specifically, this type
@@ -52,19 +52,6 @@ struct Char(CollectionElement):
 
     var _scalar_value: UInt32
     """The Unicode scalar value represented by this type."""
-
-    # ===-------------------------------------------------------------------===#
-    # Trait implementations
-    # ===-------------------------------------------------------------------===#
-
-    @always_inline
-    fn __int__(self) -> Int:
-        """Returns the numeric value of this scalar value as an integer.
-
-        Returns:
-            The numeric value of this scalar value as an integer.
-        """
-        return Int(self._scalar_value)
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -217,6 +204,57 @@ struct Char(CollectionElement):
         var char = Char(unsafe_unchecked_codepoint=result)
 
         return char, Int(num_bytes)
+
+    # ===-------------------------------------------------------------------===#
+    # Operator dunders
+    # ===-------------------------------------------------------------------===#
+
+    fn __eq__(self, other: Self) -> Bool:
+        """Return True if this character has the same codepoint value as `other`.
+
+        Args:
+            other: The codepoint value to compare against.
+
+        Returns:
+            True if this character and `other` have the same codepoint value;
+            False otherwise.
+        """
+        return Int(self) == Int(other)
+
+    fn __ne__(self, other: Self) -> Bool:
+        """Return True if this character has a different codepoint value from
+        `other`.
+
+        Args:
+            other: The codepoint value to compare against.
+
+        Returns:
+            True if this character and `other` have different codepoint values;
+            False otherwise.
+        """
+        return Int(self) != Int(other)
+
+    # ===-------------------------------------------------------------------===#
+    # Trait implementations
+    # ===-------------------------------------------------------------------===#
+
+    @always_inline
+    fn __int__(self) -> Int:
+        """Returns the numeric value of this scalar value as an integer.
+
+        Returns:
+            The numeric value of this scalar value as an integer.
+        """
+        return Int(self._scalar_value)
+
+    @always_inline
+    fn __str__(self) -> String:
+        """Formats this `Char` as a single-character string.
+
+        Returns:
+            A string containing this single character.
+        """
+        return String(self)
 
     # ===-------------------------------------------------------------------===#
     # Methods
