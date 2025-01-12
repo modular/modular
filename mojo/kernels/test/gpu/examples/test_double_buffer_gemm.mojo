@@ -314,7 +314,7 @@ fn test(ctx: DeviceContext) raises:
         TN,
         NUM_THREADS,
     ]
-    var func = ctx.compile_function[gemm](threads_per_block=NUM_THREADS)
+    var func = ctx.compile_function[gemm]()
 
     if is_benchmark():
         alias nrun = 200
@@ -357,9 +357,7 @@ fn test(ctx: DeviceContext) raises:
     alias gemm_naive = matmul_kernel_naive[
         DType.float32, DType.float32, DType.float32, BLOCK_DIM
     ]
-    var func_naive = ctx.compile_function[gemm_naive](
-        threads_per_block=NUM_THREADS
-    )
+    var func_naive = ctx.compile_function[gemm_naive]()
     var c_buffer_ref = NDBuffer[DType.float32, 2, DimList(M, N)](
         c_device_ref.ptr
     )

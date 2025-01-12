@@ -63,7 +63,7 @@ fn test_cublas(ctx: DeviceContext) raises:
 
     alias BLOCK_DIM = 16
     alias gemm_naive = matmul_kernel_naive[type, type, type, BLOCK_DIM]
-    var func_naive = ctx.compile_function[gemm_naive](threads_per_block=256)
+    var func_naive = ctx.compile_function[gemm_naive]()
     ctx.enqueue_function(
         func_naive,
         c_ref,

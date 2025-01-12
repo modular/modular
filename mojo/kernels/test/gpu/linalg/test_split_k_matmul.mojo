@@ -162,7 +162,6 @@ fn test_split_k_multistage_gemm[
     print("copied to device")
 
     var multistage_func = ctx.compile_function[mgemm](
-        threads_per_block=Int(config.num_threads()),
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             config.shared_mem_usage()
         ),

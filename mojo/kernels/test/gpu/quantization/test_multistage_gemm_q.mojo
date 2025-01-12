@@ -76,6 +76,7 @@ from quantization import Q4sym
 from quantization.qmatmul_gpu import pack_Q_tile
 
 from utils.index import Index, IndexList
+from utils import StaticTuple
 
 
 fn is_benchmark() -> Bool:
@@ -867,6 +868,7 @@ fn repack_Q4_0_for_sm8x[
 # Within each tile, weights are repacked similarly to the Marlin kernel.
 # The memory address for tile [i, j] is (i * (N//64) + j) * tile_size,
 # where tile_size is 64 * 16 * 4 / pack_factor = 512 Bytes.
+@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](128))
 fn create_ref_b[
     type_q: DType,
     type_b: DType,
@@ -1140,8 +1142,7 @@ fn test_repack_Q4_0_for_sm8x(
         DType.bfloat16,
     ]
 
-    var repack_func = ctx.compile_function[repack,](
-        threads_per_block=Int(128),
+    var repack_func = ctx.compile_function[repack](
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_usage),
     )
 
@@ -1154,9 +1155,7 @@ fn test_repack_Q4_0_for_sm8x(
         pack_factor,
     ]
 
-    var dequan_func = ctx.compile_function[dequan,](
-        threads_per_block=Int(128),
-    )
+    var dequan_func = ctx.compile_function[dequan]()
 
     ctx.enqueue_function(
         repack_func,
@@ -1334,7 +1333,6 @@ fn test_quantized[
         # dump_llvm=Path("./pipeline-gemm.ir"),
         # dump_asm=Path("./pipeline-gemm-2.ptx"),
     ](
-        threads_per_block=Int(config.num_threads()),
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             smem_usage  # config.shared_mem_usage()
         ),
@@ -1353,9 +1351,7 @@ fn test_quantized[
         dequan,
         # dump_llvm=Path("./pipeline-gemm.ir"),
         # dump_asm=Path("./pipeline-gemm-2.ptx"),
-    ](
-        threads_per_block=Int(128),
-    )
+    ]()
 
     alias BM = config.block_tile_shape[0]
     alias BN = config.block_tile_shape[1]

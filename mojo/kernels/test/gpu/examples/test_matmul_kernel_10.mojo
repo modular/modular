@@ -437,11 +437,7 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         TN=K10_TN,
         NUM_THREADS=K10_NUM_THREADS,
     ]
-    var func = ctx.compile_function[
-        sgemm_type
-    ]() if has_amd_gpu_accelerator() else ctx.compile_function[sgemm_type](
-        threads_per_block=K10_NUM_THREADS
-    )
+    var func = ctx.compile_function[sgemm_type]()
 
     @parameter
     @always_inline

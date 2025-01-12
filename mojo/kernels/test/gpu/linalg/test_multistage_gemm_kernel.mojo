@@ -46,7 +46,6 @@ fn multistage_gemm_simple[
     ]
 
     var gemm_kernel = ctx.compile_function[gemm_kernel_type, dump_asm=True](
-        threads_per_block=Int(config.num_threads()),
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             config.shared_mem_usage()
         ),

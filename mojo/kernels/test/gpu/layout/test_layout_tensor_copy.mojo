@@ -325,7 +325,7 @@ fn test_swizzle_copy[
         BK,
         num_threads,
     ]
-    var func = ctx.compile_function[copy](threads_per_block=num_threads)
+    var func = ctx.compile_function[copy]()
 
     ctx.enqueue_function(
         func,

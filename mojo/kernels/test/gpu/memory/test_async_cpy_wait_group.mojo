@@ -155,7 +155,7 @@ fn test_copy_with_src_size(ctx: DeviceContext) raises:
     ctx.enqueue_copy_to_device(a_device, a_host)
 
     alias kernel = copy_with_src_size
-    var func = ctx.compile_function[kernel](threads_per_block=1)
+    var func = ctx.compile_function[kernel]()
 
     alias src_size = 3 * sizeof[DType.float32]()
 
@@ -208,7 +208,7 @@ fn test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
     ctx.enqueue_copy_to_device(a_device, a_host)
 
     alias kernel = copy_with_non_zero_fill[2 * size]
-    var func = ctx.compile_function[kernel](threads_per_block=1)
+    var func = ctx.compile_function[kernel]()
 
     alias src_size = 3 * sizeof[DType.bfloat16]()
 

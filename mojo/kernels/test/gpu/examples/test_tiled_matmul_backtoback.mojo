@@ -52,6 +52,7 @@ from linalg.utils_gpu import MatmulConfig, block_swizzle
 from testing import assert_almost_equal, assert_false
 
 from utils.index import Index, IndexList
+from utils import StaticTuple
 
 
 @value
@@ -136,6 +137,7 @@ struct BackToBackMatmulConfig[
 #
 # We parallelize blocks across rows of A/D and columns of C/D
 # One invocation evaluates `(A[block_x, :] * B) * C[:, block_y]`
+@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](config.num_threads()))
 fn b2b_gemm[
     d_type: DType,
     in_type: DType,
@@ -600,7 +602,6 @@ fn multistage_b2b_gemm[
         var smem_use: Int = config.shared_mem_usage(size(A.layout.shape[1]))
         print("smem_use =", smem_use)
         var kernel = ctx.compile_function[b2b_fn](
-            threads_per_block=Int(config.num_threads()),
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 smem_use
             ),

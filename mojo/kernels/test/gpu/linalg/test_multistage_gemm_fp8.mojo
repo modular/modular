@@ -142,7 +142,6 @@ fn test_fp8_multistage_gemm[
         # dump_llvm=Path("./pipeline-gemm.ir"),
         # dump_asm=Path("./pipeline-gemm.ptx"),
     ](
-        threads_per_block=Int(config.num_threads()),
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             config.shared_mem_usage()
         ),
