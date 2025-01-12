@@ -35,14 +35,8 @@ ASTType::ASTType(TypedAttr typeParamExpr) {
   if (!typeParamExpr) // Null attribute.
     return;
 
-  // Avoid MLIRContext round trip in common case.
-  if (auto type = dyn_cast<TypeParamAttr>(typeParamExpr)) {
-    mlirType = type.getMlirType();
-    return;
-  }
-
-  // If this is a parameter expression of type value, use ParamType to turn
-  // it into a type.
+  // ParamType is the canonical way to turn a parameter expression into a type.
+  // It handles stripping of metatype information, looks through upcasts etc.
   assert(LIT::isTypeExpr(typeParamExpr) &&
          "parameter expr must be a type expression");
   mlirType = ParamType::get(typeParamExpr);
@@ -356,7 +350,7 @@ RefPackType ASTType::getVariadicPackInfo() const {
 }
 
 ASTType ASTType::getKwargsDictValueType() const {
-  return cast<TypeParamAttr>(getParamBindings()[0]).getMlirType();
+  return ASTType(getParamBindings()[0]);
 }
 
 ASTType ASTType::getKwargsDictRefValueType() const {
@@ -588,6 +582,9 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     ASTType(typeAttr.getMlirType()).print(os, diagShared);
     return;
   }
+  if (auto upcast = dyn_cast<UpcastAttr>(param))
+    return printDemangledParam(os, upcast.getInputTypeValue(), diagShared);
+
   if (auto extractAttr = dyn_cast<LIT::StructExtractAttr>(param)) {
     printDemangledParam(os, extractAttr.getStructValue(), diagShared);
     os << '.' << extractAttr.getField().getValue();

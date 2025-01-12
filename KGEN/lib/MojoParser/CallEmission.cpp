@@ -926,6 +926,7 @@ CValue OverloadSet::emitCall(CallOperands &&operands, ValueDest &dest,
     dest.resetForError();
     return {};
   }
+
   return emitter.emitCallUnchecked(callee, operands, dest, syntax, expr);
 }
 

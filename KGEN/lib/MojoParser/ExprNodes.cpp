@@ -1294,12 +1294,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // In-order to allow parameter expressions which technically include a runtime
   // reference, i.e `x.static_field` we allow some values which would otherwise
   // produce a value in a parameter context to still propagate up.
-  AnyValue baseAnyVal = emitter.emitExpr(base, EC_AttributeRefBase);
-  if (!baseAnyVal)
-    return {};
-
-  // Otherwise must have a concrete type.
-  CValue baseVal = emitter.emitCValue({baseAnyVal, this}, EC_AttributeRefBase);
+  CValue baseVal = emitter.emitExprCValue(base, EC_AttributeRefBase);
   if (!baseVal)
     return {};
 
