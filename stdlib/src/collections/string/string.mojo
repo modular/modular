@@ -65,10 +65,7 @@ fn ord(s: StringSlice) -> Int:
     Returns:
         An integer representing the code point of the given character.
     """
-    # SAFETY:
-    #   This is safe because `s.unsafe_ptr()` is guaranteed to be valid UTF-8.
-    char, _ = Char.unsafe_decode_utf8_char(s.unsafe_ptr())
-    return Int(char)
+    return Int(Char.ord(s))
 
 
 # ===----------------------------------------------------------------------=== #

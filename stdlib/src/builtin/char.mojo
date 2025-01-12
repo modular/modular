@@ -13,6 +13,7 @@
 """Implements the `Char` type for representing single characters."""
 
 from collections import Optional
+from collections.string import StringSlice
 
 from bit import count_leading_zeros
 
@@ -123,6 +124,36 @@ struct Char(CollectionElement):
             return Char(unsafe_unchecked_codepoint=codepoint)
         else:
             return None
+
+    @staticmethod
+    fn ord(string: StringSlice) -> Char:
+        """Returns the `Char` that represents the given one-character string.
+
+        Given a string representing one character, return a `Char`
+        representing the codepoint of that character. For example, `Char.ord("a")`
+        returns the codepoint `97`. This is the inverse of the `chr()` function.
+
+        This function is similar to the `ord()` free function, except that it
+        returns a `Char` instead of an `Int`.
+
+        Args:
+            string: The input string, which must contain only a single character.
+
+        Returns:
+            A `Char` representing the codepoint of the given character.
+        """
+
+        # SAFETY:
+        #   This is safe because `StringSlice` is guaranteed to point to valid
+        #   UTF-8.
+        char, num_bytes = Char.unsafe_decode_utf8_char(string.unsafe_ptr())
+
+        debug_assert(
+            string.byte_length() == Int(num_bytes),
+            "input string must be one character",
+        )
+
+        return char
 
     @staticmethod
     fn unsafe_decode_utf8_char(_ptr: UnsafePointer[Byte]) -> (Char, Int):
