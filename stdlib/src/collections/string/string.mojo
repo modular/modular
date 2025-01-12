@@ -104,11 +104,7 @@ fn chr(c: Int) -> String:
     # SAFETY: We just checked that `char` is present.
     var char = char_opt.unsafe_value()
 
-    var num_bytes = char.utf8_byte_length()
-    var ptr = UnsafePointer[UInt8].alloc(num_bytes + 1)
-    _ = char.unsafe_write_utf8(ptr)
-    ptr[num_bytes] = 0
-    return String(ptr=ptr, length=num_bytes + 1)
+    return String(char)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -667,6 +663,20 @@ struct String(
     # ===------------------------------------------------------------------=== #
 
     @always_inline
+    fn __init__(out self):
+        """Construct an uninitialized string."""
+        self._buffer = Self._buffer_type()
+
+    @always_inline
+    fn __init__(out self, *, capacity: Int):
+        """Construct an uninitialized string with the given capacity.
+
+        Args:
+            capacity: The capacity of the string.
+        """
+        self._buffer = Self._buffer_type(capacity=capacity)
+
+    @always_inline
     fn __init__(out self, owned buffer: List[UInt8, *_]):
         """Construct a string from a buffer of bytes without copying the
         allocated data.
@@ -690,20 +700,6 @@ struct String(
         )
         self._buffer = buffer^._cast_hint_trivial_type[True]()
 
-    @always_inline
-    fn __init__(out self):
-        """Construct an uninitialized string."""
-        self._buffer = Self._buffer_type()
-
-    @always_inline
-    fn __init__(out self, *, capacity: Int):
-        """Construct an uninitialized string with the given capacity.
-
-        Args:
-            capacity: The capacity of the string.
-        """
-        self._buffer = Self._buffer_type(capacity=capacity)
-
     fn copy(self) -> Self:
         """Explicitly copy the provided value.
 
@@ -711,6 +707,23 @@ struct String(
             A copy of the value.
         """
         return self  # Just use the implicit copyinit.
+
+    fn __init__(out self, char: Char):
+        """Construct a string from a character.
+
+        Args:
+            char: The character to construct this string from.
+
+        Notes:
+            This will allocate a new string holding the UTF-8 encoded
+            representation of `char`.
+        """
+        var char_len = char.utf8_byte_length()
+        var buffer = List[Byte](capacity=char_len + 1)
+        _ = char.unsafe_write_utf8(buffer.unsafe_ptr())
+        buffer.unsafe_ptr()[char_len] = 0
+        buffer.size = char_len + 1
+        self = String(buffer^)
 
     fn __init__(out self, strref: StringRef):
         """Construct a string from a StringRef object.

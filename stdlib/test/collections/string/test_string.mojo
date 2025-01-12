@@ -75,6 +75,11 @@ def test_constructors():
     var s4 = String(capacity=1)
     assert_equal(s4._buffer.capacity, 1)
 
+    # Construction from Char
+    var s5 = String(Char(65))
+    assert_equal(s4._buffer.capacity, 1)
+    assert_equal(s5, "A")
+
 
 def test_copy():
     var s0 = String("find")
