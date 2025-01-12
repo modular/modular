@@ -738,6 +738,7 @@ fn unpack_4bit_int(val: SIMD[DType.uint32, _], idx: Int) -> Scalar[DType.uint8]:
     return (u32_val >> (idx * 4)).cast[DType.uint8]() & 0x0F
 
 
+@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](128))
 fn repack_Q4_0_for_sm8x[
     q_layout: Layout,
     repack_layout: Layout,
@@ -917,6 +918,7 @@ fn repack_Q4_0_for_sm8x[
 # will be a uint32 matrix of shape [K // 8, N], and scales will be of shape
 # [K_groups, N]. The input is a uint8 tensor of shape
 # [K_groups * group_bytes, N].
+@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](128))
 fn repack_GPTQ_for_sm8x[
     in_layout: Layout,
     out_layout: Layout,
@@ -1228,8 +1230,7 @@ fn matmul_gpu_qint4[
         config,
     ]
 
-    var func = cuda_ctx.compile_function[gemm,](
-        threads_per_block=Int(config.num_threads()),
+    var func = cuda_ctx.compile_function[gemm](
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_usage),
     )
 
@@ -1278,13 +1279,10 @@ fn gpu_qint4_repack_Q4_0[
     var smem_usage: Int = BN * 2 * group_bytes
 
     alias repack = repack_Q4_0_for_sm8x[
-        tensor_b.layout,
-        tensor_packed_b.layout,
-        DType.bfloat16,
+        tensor_b.layout, tensor_packed_b.layout, DType.bfloat16
     ]
 
-    var repack_func = cuda_ctx.compile_function[repack,](
-        threads_per_block=Int(128),
+    var repack_func = cuda_ctx.compile_function[repack](
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_usage),
     )
 
@@ -1354,9 +1352,7 @@ fn gpu_qint4_repack_GPTQ[
             perm_layout = tensor_perm.layout,
         ]
 
-        var repack_func = cuda_ctx.compile_function[repack,](
-            threads_per_block=Int(128),
-        )
+        var repack_func = cuda_ctx.compile_function[repack]()
 
         cuda_ctx.enqueue_function(
             repack_func,
@@ -1376,8 +1372,7 @@ fn gpu_qint4_repack_GPTQ[
             False,
         ]
 
-        var repack_func = cuda_ctx.compile_function[repack,](
-            threads_per_block=Int(128),
+        var repack_func = cuda_ctx.compile_function[repack](
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 smem_usage
             ),
