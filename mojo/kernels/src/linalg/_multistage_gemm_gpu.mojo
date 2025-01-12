@@ -62,6 +62,7 @@ from utils.index import Index, IndexList
 from .matmul_gpu import matmul_kernel_naive
 from .utils import apply_epilogue, elementwise_epilogue_type
 from .utils_gpu import MatmulConfig, MatmulKernels, block_swizzle
+from utils import StaticTuple
 
 
 @always_inline
@@ -1136,6 +1137,7 @@ fn multistage_gemm_kernel[
                 )
 
 
+@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](config.num_threads()))
 fn multistage_gemm_split_k_kernel[
     c_type: DType,
     c_layout: Layout,

@@ -67,6 +67,7 @@ from .utils_gpu import (
     block_swizzle,
     select_config,
 )
+from utils import StaticTuple
 
 
 @always_inline
@@ -406,6 +407,7 @@ alias binary_fn_type = fn[type: DType, width: Int] (
 ) -> SIMD[type, width]
 
 
+@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](config.num_threads()))
 fn multistage_dual_gemm_kernel[
     c_type: DType,
     c_layout: Layout,
@@ -753,12 +755,11 @@ fn multistage_dual_gemm[
             b_layout,
             transpose_b,
             config,
-            binary_lambda_fn,
-            elementwise_lambda_fn,
+            binary_lambda_fn=binary_lambda_fn,
+            elementwise_lambda_fn=elementwise_lambda_fn,
         ]
 
-        var gemm_kernel = ctx.compile_function[gemm_kernel_type,](
-            threads_per_block=Int(config.num_threads()),
+        var gemm_kernel = ctx.compile_function[gemm_kernel_type](
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 smem_usage
             ),
@@ -1095,6 +1096,7 @@ fn dual_gemm[
 # ---------------------------------------------------------------------------- #
 
 
+@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](num_threads))
 fn dual_gemv_kernel[
     c_type: DType,
     c_shape: DimList,
@@ -1276,9 +1278,7 @@ fn dual_gemv[
         elementwise_lambda_fn,
     ]
 
-    var kernel = ctx.compile_function[kernel_type](
-        threads_per_block=Int(num_threads)
-    )
+    var kernel = ctx.compile_function[kernel_type]()
 
     ctx.enqueue_function(
         kernel,
