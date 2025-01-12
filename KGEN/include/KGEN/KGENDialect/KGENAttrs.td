@@ -391,6 +391,62 @@ def KGEN_TypeParamAttr : KGEN_ExprAttr<"TypeParam", "type"> {
 }
 
 //===----------------------------------------------------------------------===//
+// UpcastAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_UpcastAttr : KGEN_ExprAttr<"Upcast", "upcast"> {
+  let summary = "Rebind a type with metatype information to base trait.";
+  let description = [{
+    The `#kgen.upcast` attribute is used to convert from a typeValue (which
+    carries a vtable and other metadate) to a typeValue of a less-derived trait.
+    For example, this can represent a cast from Movable to AnyType, handling the
+    rebind of the `__del__` member.
+
+    This aggressively canonicalizes, e.g. when the operand is a simple type
+    value like a struct, it will return a TypeParamAttr.
+
+    Example:
+
+    ```mlir
+    #kgen.upcast<#kgen.param.decl.ref<"T"> : !lit.trait<Movable>,
+        "__del__" : !lit.generator<("self": !lit.ref<:trait<Movable> T> owned_in_mem, |) -> !kgen.none>
+            = get_vtable_entry(:trait<Movable> T, "__del__")> : !lit.trait<AnyType>
+    ```
+  }];
+
+  let parameters = (ins
+    AttributeSelfTypeParameter<"", "Type">:$type,
+    "TypedAttr":$inputTypeValue,
+    VTableParam:$vTable
+  );
+  let assemblyFormat = "`<` $inputTypeValue `,` $vTable `>`";
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return an UpcastAttr.
+    AttrBuilderWithInferredContext<(ins
+       "Type":$type, "TypedAttr":$inputTypeValue,
+       "VTableAttr":$vTable), "", "TypedAttr">,
+
+    // Verbose form with MLIRContext, needed for ODS constructors.
+    AttrBuilder<(ins "Type":$type, "TypedAttr":$inputTypeValue,
+                     "VTableAttr":$vTable), [{
+      return get(type, inputTypeValue, vTable);
+    }], "TypedAttr">,
+  ];
+
+  let extraClassDeclaration = [{
+    /// If the specified attribute is an upcast, remove it.
+    static TypedAttr strip(TypedAttr value) {
+      if (auto upcast = llvm::dyn_cast<UpcastAttr>(value))
+        return upcast.getInputTypeValue();
+      return value;
+    }
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // TypeConstantRefAttr
 //===----------------------------------------------------------------------===//
 

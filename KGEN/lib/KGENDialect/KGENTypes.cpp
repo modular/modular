@@ -93,9 +93,14 @@ void KGENDialect::registerTypes() {
 
 Type ParamType::get(TypedAttr param) {
   // If the parameter is already resolved to a constant, fold this to the
-  // indicated type.
-  if (auto constant = llvm::dyn_cast<TypeParamAttr>(param))
+  // indicated type.  ParamType does not propagate the typeValue.
+  if (auto constant = ::dyn_cast<TypeParamAttr>(param))
     return constant.getMlirType();
+
+  // If this is an trait upcast, we can look through it because we don't
+  // propagate the typeValue, only the mlirType.
+  if (auto upcast = ::dyn_cast<UpcastAttr>(param))
+    return get(upcast.getInputTypeValue());
 
   // Otherwise, form the ParamType like normal.
   return Base::get(param.getContext(), param);

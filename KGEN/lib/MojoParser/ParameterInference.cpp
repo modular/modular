@@ -34,6 +34,7 @@ using namespace M::KGEN::LIT;
 
 void InferenceFailure::emitSpecificNote(
     function_ref<InflightDiag &()> attachNote) const {
+
   if (isa<NotFoundFailure>(info)) {
     attachNote() << "parameter isn't used in any argument";
     return;
@@ -283,6 +284,10 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
   // If the attrs trivial match then we're done and there is no inference to do.
   if (actualAttr == expectedAttr)
     return success();
+
+  // Look through type upcasts to the more derived type.
+  actualAttr = UpcastAttr::strip(actualAttr);
+  expectedAttr = UpcastAttr::strip(expectedAttr);
 
   // We can only match up these values if their types match.
   if (actualAttr.getType() != expectedAttr.getType()) {

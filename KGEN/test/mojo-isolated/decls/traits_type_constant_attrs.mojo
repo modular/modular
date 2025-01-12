@@ -88,3 +88,14 @@ fn callIt() -> int:
     var t = MainImplT()
     var a = repro_issue(t, t)
     return a
+
+# ===----------------------------------------------------------------------=== #
+# Upcast tests
+# ===----------------------------------------------------------------------=== #
+
+# Just make sure this parses.
+fn declval[T: AnyType]() -> T: pass
+trait MyThingTrait:
+    fn thing(self) -> __mlir_type.i1: ...
+fn propagate_type[T: MyThingTrait](range: T) -> __type_of(declval[T]().thing()):
+    pass

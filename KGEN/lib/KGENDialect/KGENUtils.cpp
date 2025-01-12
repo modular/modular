@@ -1084,9 +1084,26 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
 
     // Decode the name as an operation code.
     auto opcode = getOpcodeFromString(keyword);
-    if (opcode == (uint32_t)POCAliases::kInvalid)
+
+    // Handle other expressions with the same syntax as ParamOperatorAttr
+    // TODO: Could turn this into a trait and push all this logic into the
+    // attrs, which would also be nice for LIT attrs.
+    if (opcode == (uint32_t)POCAliases::kInvalid) {
+      if (keyword == "upcast" && operandType) {
+        TypedAttr operand;
+        VTableAttr vtable;
+        if (parseParamValue(p, operand, operandType) || p.parseComma() ||
+            (!(vtable = cast_or_null<VTableAttr>(VTableAttr::parse(p, {}))) ||
+             p.parseRParen()))
+          return failure();
+        value = UpcastAttr::get(type, operand, vtable);
+        return success();
+      }
+
       return p.emitError(loc, "unknown expression ") << keyword;
-    // If it is a known opcode, parse the operand list.
+    }
+
+    // Otherwise it is a ParamOperatorAttr.  Parse the operand list.
     SmallVector<TypedAttr> operands;
 
     // If there was no specified element type, then pick a default based on the
@@ -1380,6 +1397,20 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type,
     }
 
     return printExpr(stringifyEnum(expr.getOpcode()), expr.getOperands());
+  }
+
+  // Handle other expressions with the same syntax as ParamOperatorAttr
+  // TODO: Could turn this into a trait like ParameterTypeInterface and push all
+  // this logic into the attrs, which would also be nice for LIT attrs.
+  if (auto upcast = dyn_cast<UpcastAttr>(value)) {
+    p << "upcast(:";
+    printKGENType(p, upcast.getInputTypeValue().getType());
+    p << ' ';
+    printParamValue(p, upcast.getInputTypeValue());
+    p << ", ";
+    p.printStrippedAttrOrType(upcast.getVTable());
+    p << ')';
+    return;
   }
 
   // If this is an i1 integer attr, print it as zero or one; not true/false

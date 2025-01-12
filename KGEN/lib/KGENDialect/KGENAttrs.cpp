@@ -281,6 +281,33 @@ bool TypeParamAttr::hasIdenticalRepresentation() {
 }
 
 //===----------------------------------------------------------------------===//
+// UpcastAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr UpcastAttr::get(Type type, TypedAttr inputTypeValue,
+                          VTableAttr vtable) {
+  // If this is a constant type coming in, we can fold this.  If not, stage it
+  // until elaboration or something else simplifies things.
+  if (auto typeAttr = ::dyn_cast<TypeParamAttr>(inputTypeValue)) {
+    // If we have a type constant, then we are requesting an upcast from
+    // something like Movable to AnyType, and we have a concrete type like Int.
+    // We need to return a new TypeParamAttr with the correct vtable for the
+    // expected type (a !lit.trait, but we can't reason about that down here in
+    // KGEN).
+    return TypeParamAttr::get(typeAttr.getTypeValue(), typeAttr.getMlirType(),
+                              type, vtable);
+  }
+
+  // upcast(upcast(x)) = upcast(x)
+  if (auto upcast = ::dyn_cast<UpcastAttr>(inputTypeValue))
+    return get(type, upcast.getInputTypeValue(), vtable);
+
+  return Base::get(type.getContext(), type, inputTypeValue, vtable);
+}
+
+bool UpcastAttr::isConstant() const { return false; }
+
+//===----------------------------------------------------------------------===//
 // TypeConstantRefAttr
 //===----------------------------------------------------------------------===//
 
@@ -2494,13 +2521,21 @@ static TypedAttr simplifyCond(ArrayRef<TypedAttr> operands) {
 
 static TypedAttr simplifyGetVTableEntry(ArrayRef<TypedAttr> operands,
                                         Type resultType) {
-  auto typeConstant = dyn_cast<TypeParamAttr>(operands[0]);
-  // typeConstant may actually be a parameter if this is called before
-  // elaboration.  But after elaboration it should always be a TypeParamAttr.
-  if (!typeConstant)
-    return {};
-  VTableAttr vtable = typeConstant.getVTable();
+  auto typeValue = operands[0];
   StringAttr targetName = cast<StringAttr>(operands[1]);
+
+  // If the input is a TypeParamAttr or upcast from a more derived type, then we
+  // can fold the lookup against their vtables when we have a match.
+  VTableAttr vtable;
+  if (auto typeAttr = dyn_cast<TypeParamAttr>(typeValue))
+    vtable = typeAttr.getVTable();
+  else if (auto upcast = dyn_cast<UpcastAttr>(typeValue))
+    vtable = upcast.getVTable();
+
+  // typeValue may be a parameter before elaboration.  But after elaboration it
+  // should always be a TypeParamAttr.
+  if (!vtable)
+    return {};
 
   // Scan the vtable for a name + signature match, then the method is the
   // payload.  Traits may have overloaded requirements, and it is important to

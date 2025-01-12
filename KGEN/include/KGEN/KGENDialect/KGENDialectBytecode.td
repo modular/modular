@@ -241,6 +241,12 @@ def PackAttr : DialectAttribute<(attr
   ConcreteType<"PackType">:$type
 )>;
 
+def UpcastAttr : DialectAttribute<(attr
+  Type:$type,
+  TypedAttr:$inputTypeValue,
+  ConcreteAttribute<"VTableAttr">:$vTable
+)>;
+
 def VariantAttr : DialectAttribute<(attr
   TypedAttr:$value,
   VarInt:$index,
@@ -305,6 +311,7 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     StructAttr,
     WrappedStructExtractAttr,
     PackAttr,
+    UpcastAttr,
     VariantAttr,
     EnvAttr,
     WrappedParamOperatorAttr,
