@@ -406,7 +406,6 @@ struct DeviceFunction[
         mut self,
         ctx: DeviceContext,
         *,
-        max_registers: OptionalReg[Int] = None,
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
         alias debug_level = env_get_string["DEBUG_LEVEL", "none"]()
@@ -432,8 +431,8 @@ struct DeviceFunction[
         # const char *AsyncRT_DeviceContext_loadFunction(
         #     const DeviceFunction **result, const DeviceContext *ctx,
         #     const char *module_name, const char *function_name, const void *data,
-        #     int32_t max_registers, int32_t max_dynamic_shared_bytes,
-        #     const char* debug_level, int32_t optimization_level)
+        #     int32_t max_dynamic_shared_bytes, const char* debug_level,
+        #     int32_t optimization_level)
         var result = _DeviceFunctionPtr()
         _checked(
             external_call[
@@ -445,7 +444,6 @@ struct DeviceFunction[
                 _CharPtr,
                 _CharPtr,
                 Int32,
-                Int32,
                 _CharPtr,
                 Int32,
             ](
@@ -454,7 +452,6 @@ struct DeviceFunction[
                 self._func_impl.module_name.unsafe_ptr(),
                 self._func_impl.function_name.unsafe_ptr(),
                 self._func_impl.asm.unsafe_ptr(),
-                max_registers.or_else(-1),
                 max_dynamic_shared_size_bytes,
                 debug_level.unsafe_cstr_ptr().bitcast[UInt8](),
                 optimization_level,
@@ -874,7 +871,6 @@ struct DeviceContext:
     ](
         self,
         *,
-        max_registers: OptionalReg[Int] = None,
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceFunction[
             func,
@@ -899,7 +895,6 @@ struct DeviceContext:
         ]()
         result = result_type(
             self,
-            max_registers=max_registers,
             func_attribute=func_attribute,
         )
 
