@@ -14,7 +14,6 @@
 """
 
 from collections.string import StringSlice
-from collections.string.string import _isspace
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from sys import simdwidthof
 from sys.ffi import c_char

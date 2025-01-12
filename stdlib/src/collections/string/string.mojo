@@ -293,13 +293,13 @@ fn atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
         elif ord_letter_min[1] <= ord_current <= ord_letter_max[1]:
             result += ord_current - ord_letter_min[1] + 10
             found_valid_chars_after_start = True
-        elif _isspace(ord_current):
+        elif Char(UInt8(ord_current)).is_posix_space():
             has_space_after_number = True
             start = pos + 1
             break
         else:
             raise Error(_str_to_base_error(base, str_slice))
-        if pos + 1 < str_len and not _isspace(buff[pos + 1]):
+        if pos + 1 < str_len and not Char(buff[pos + 1]).is_posix_space():
             var nextresult = result * real_base
             if nextresult < result:
                 raise Error(
@@ -313,7 +313,7 @@ fn atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
 
     if has_space_after_number:
         for pos in range(start, str_len):
-            if not _isspace(buff[pos]):
+            if not Char(buff[pos]).is_posix_space():
                 raise Error(_str_to_base_error(base, str_slice))
     if is_negative:
         result = -result
@@ -335,7 +335,7 @@ fn _trim_and_handle_sign(str_slice: StringSlice, str_len: Int) -> (Int, Bool):
     """
     var buff = str_slice.unsafe_ptr()
     var start: Int = 0
-    while start < str_len and _isspace(buff[start]):
+    while start < str_len and Char(buff[start]).is_posix_space():
         start += 1
     var p: Bool = buff[start] == ord("+")
     var n: Bool = buff[start] == ord("-")
@@ -598,66 +598,6 @@ fn _is_ascii_lowercase(c: UInt8) -> Bool:
     alias ord_a = ord("a")
     alias ord_z = ord("z")
     return ord_a <= Int(c) <= ord_z
-
-
-# ===----------------------------------------------------------------------=== #
-# _isspace
-# ===----------------------------------------------------------------------=== #
-
-
-fn _isspace(c: StringSlice) -> Bool:
-    """Determines whether the given character is a whitespace character.
-
-    This only respects the default "C" locale, i.e. returns True only if the
-    character specified is one of " \\t\\n\\v\\f\\r". For semantics similar
-    to Python, use `String.isspace()`.
-
-    Args:
-        c: The character to check.
-
-    Returns:
-        True iff the character is one of the whitespace characters listed above.
-    """
-    return _isspace(ord(c))
-
-
-fn _isspace(c: UInt8) -> Bool:
-    """Determines whether the given character is a whitespace character.
-
-    This only respects the default "C" locale, i.e. returns True only if the
-    character specified is one of " \\t\\n\\v\\f\\r". For semantics similar
-    to Python, use `String.isspace()`.
-
-    Args:
-        c: The character to check.
-
-    Returns:
-        True iff the character is one of the whitespace characters listed above.
-    """
-
-    # NOTE: a global LUT doesn't work at compile time so we can't use it here.
-    alias ` ` = UInt8(ord(" "))
-    alias `\t` = UInt8(ord("\t"))
-    alias `\n` = UInt8(ord("\n"))
-    alias `\r` = UInt8(ord("\r"))
-    alias `\f` = UInt8(ord("\f"))
-    alias `\v` = UInt8(ord("\v"))
-    alias `\x1c` = UInt8(ord("\x1c"))
-    alias `\x1d` = UInt8(ord("\x1d"))
-    alias `\x1e` = UInt8(ord("\x1e"))
-
-    # This compiles to something very clever that's even faster than a LUT.
-    return (
-        c == ` `
-        or c == `\t`
-        or c == `\n`
-        or c == `\r`
-        or c == `\f`
-        or c == `\v`
-        or c == `\x1c`
-        or c == `\x1d`
-        or c == `\x1e`
-    )
 
 
 # ===----------------------------------------------------------------------=== #

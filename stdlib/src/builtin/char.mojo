@@ -234,6 +234,52 @@ struct Char(CollectionElement):
         """
         return self._scalar_value <= 0b0111_1111
 
+    fn is_posix_space(self) -> Bool:
+        """Returns True if this `Char` is a **space** character according to the
+        [POSIX locale][1].
+
+        The POSIX locale is also known as the C locale.
+
+        [1]: https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap07.html#tag_07_03_01
+
+        This only respects the default "C" locale, i.e. returns True only if the
+        character specified is one of " \\t\\n\\v\\f\\r". For semantics similar
+        to Python, use `String.isspace()`.
+
+        Returns:
+            True iff the character is one of the whitespace characters listed
+            above.
+        """
+        if not self.is_ascii():
+            return False
+
+        # ASCII char
+        var c = UInt8(Int(self))
+
+        # NOTE: a global LUT doesn't work at compile time so we can't use it here.
+        alias ` ` = UInt8(ord(" "))
+        alias `\t` = UInt8(ord("\t"))
+        alias `\n` = UInt8(ord("\n"))
+        alias `\r` = UInt8(ord("\r"))
+        alias `\f` = UInt8(ord("\f"))
+        alias `\v` = UInt8(ord("\v"))
+        alias `\x1c` = UInt8(ord("\x1c"))
+        alias `\x1d` = UInt8(ord("\x1d"))
+        alias `\x1e` = UInt8(ord("\x1e"))
+
+        # This compiles to something very clever that's even faster than a LUT.
+        return (
+            c == ` `
+            or c == `\t`
+            or c == `\n`
+            or c == `\r`
+            or c == `\f`
+            or c == `\v`
+            or c == `\x1c`
+            or c == `\x1d`
+            or c == `\x1e`
+        )
+
     @always_inline
     fn unsafe_write_utf8(self, ptr: UnsafePointer[Byte]) -> UInt:
         """Shift unicode to utf8 representation.

@@ -60,6 +60,28 @@ def test_char_properties():
     assert_false(Char.from_u32(0b1111_1111).value().is_ascii())
 
 
+def test_char_is_posix_space():
+    # checking true cases
+    assert_true(Char.ord(" ").is_posix_space())
+    assert_true(Char.ord("\n").is_posix_space())
+    assert_true(Char.ord("\n").is_posix_space())
+    assert_true(Char.ord("\t").is_posix_space())
+    assert_true(Char.ord("\r").is_posix_space())
+    assert_true(Char.ord("\v").is_posix_space())
+    assert_true(Char.ord("\f").is_posix_space())
+
+    # Checking false cases
+    assert_false(Char.ord("a").is_posix_space())
+    assert_false(Char.ord("a").is_posix_space())
+    assert_false(Char.ord("u").is_posix_space())
+    assert_false(Char.ord("s").is_posix_space())
+    assert_false(Char.ord("t").is_posix_space())
+    assert_false(Char.ord("i").is_posix_space())
+    assert_false(Char.ord("n").is_posix_space())
+    assert_false(Char.ord("z").is_posix_space())
+    assert_false(Char.ord(".").is_posix_space())
+
+
 fn assert_utf8_bytes(codepoint: UInt32, owned expected: List[Byte]) raises:
     var char_opt = Char.from_u32(codepoint)
     var char = char_opt.value()
@@ -156,6 +178,7 @@ def main():
     test_char_validity()
     test_char_from_u8()
     test_char_properties()
+    test_char_is_posix_space()
     test_char_utf8_encoding()
     test_char_utf8_byte_length()
     test_char_comptime()
