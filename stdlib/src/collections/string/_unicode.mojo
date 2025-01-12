@@ -41,16 +41,13 @@ fn _lowercase_mapping_index(rune: Int) -> Int:
 fn _to_index[lookup: List[UInt32, **_]](rune: Int) -> Int:
     """Find index of rune in lookup with binary search.
     Returns -1 if not found."""
-    var cursor = 0
-    var x = UInt32(rune)
-    var b = lookup.data
-    var length = len(lookup)
-    while length > 1:
-        var half = length >> 1
-        length -= half
-        cursor += Int(b.load(cursor + half - 1) < x) * half
 
-    return cursor if b.load(cursor) == x else -1
+    var result = lookup._binary_search_index(UInt32(rune))
+
+    if result:
+        return result.unsafe_value()
+    else:
+        return -1
 
 
 fn is_uppercase(s: StringSlice) -> Bool:

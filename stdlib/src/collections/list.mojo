@@ -808,6 +808,31 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
                 return i
         raise "ValueError: Given element is not in list"
 
+    fn _binary_search_index[
+        dtype: DType, //,
+    ](self: List[Scalar[dtype], **_], needle: Scalar[dtype]) -> Optional[UInt]:
+        """Finds the index of `needle` with binary search.
+
+        This function will return an unspecified index if `self` is not
+        sorted in ascending order.
+
+        Args:
+            needle: The value to binary search for.
+
+        Returns:
+            Returns None if `needle` is not present, or if `self` was not
+            sorted.
+        """
+        var cursor = UInt(0)
+        var b = self.data
+        var length = len(self)
+        while length > 1:
+            var half = length >> 1
+            length -= half
+            cursor += Int(b[cursor + half - 1] < needle) * half
+
+        return Optional(cursor) if b[cursor] == needle else None
+
     fn clear(mut self):
         """Clears the elements in the list."""
         for i in range(self.size):
