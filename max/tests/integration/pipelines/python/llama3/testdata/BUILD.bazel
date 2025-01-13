@@ -23,7 +23,6 @@ modular_py_binary(
         "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/llama3/testdata",
     },
     imports = ["."],
-    use_legacy_binary = True,
     visibility = ["//visibility:public"],
     deps = [
         "//SDK/integration-test/pipelines/python/llama3:evaluate_llama",

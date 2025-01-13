@@ -56,7 +56,6 @@ modular_py_binary(
             "SDK/integration-test/pipelines/python/llama3/testdata"
         ),
     },
-    use_legacy_binary = True,
     visibility = ["//visibility:public"],
     deps = [
         requirement("click"),
@@ -127,7 +126,6 @@ modular_py_binary(
     },
     imports = ["."],
     main = "generate_llm_logits.py",
-    use_legacy_binary = True,
     visibility = ["//visibility:public"],
     deps = [
         "//SDK/integration-test/pipelines/python/llama3/testdata:run_torch_llama",
@@ -175,8 +173,8 @@ modular_py_test(
 modular_py_binary(
     name = "lm-eval",
     srcs = ["run_lm_eval.py"],
+    ignore_collisions = True,
     main = "run_lm_eval.py",
-    use_legacy_binary = True,
     # Some of lm-eval's optional deps are not picked up by Bazel for some
     # reason so we have to include them explicitly here.
     deps = [
@@ -212,7 +210,6 @@ modular_py_binary(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     main = "pipelines_lm_eval.py",
-    use_legacy_binary = True,
     deps = [
         "//SDK/integration-test/pipelines/python/eval_tasks/human_eval",
         "@rules_python//python/runfiles",
