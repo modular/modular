@@ -336,12 +336,15 @@ PIPELINES = {
             version="llama3_2",
             encoding="bfloat16",
             pregenerated_torch_goldens_rlocation="torch_llama3-vision_golden/torch_llama3_2_bfloat16_golden.json",
-            # TODO(AIPIPE-262): These tolerances are very high since there are
-            # still correctness issues with the Llama Vision pipeline.
-            kl_div_threshold=float("inf"),
-            cos_dist_threshold=2.0,
-            absolute_tolerance=100,
-            relative_tolerance=2.0,
+            kl_div_threshold=4e-3,
+            cos_dist_threshold=2e-3,
+            # TODO(bduke): Absolute tolerance here is larger than expected.
+            absolute_tolerance=1.0,
+            # TODO(bduke): Relative tolerance is high due to sign flips for
+            # small values near zero.
+            # We should account for this since otherwise relative elementwise
+            # tolerance isn't useful.
+            relative_tolerance=2.5,
         ),
     ),
     "pixtral-bfloat16": PipelineDef(
