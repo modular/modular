@@ -270,10 +270,8 @@ struct TwoLifetimes[a_origin: ImmutableOrigin,
 
 # Test that we can infer the type of 'T' in the func param invocation.
 # CHECK-LABEL: CutDownVariadicPack
-struct CutDownVariadicPack[
-    element_trait: __mlir_type[`!lit.anytrait<`, AnyType, `>`],
-    *element_types: element_trait,
-]:
+struct CutDownVariadicPack[element_trait: __type_of(AnyType),
+                           *element_types: element_trait]:
 
     # CHECK: lit.fn @"each_hack
     fn each_hack[i: Int, func: fn[T: element_trait] (T) -> None](self):

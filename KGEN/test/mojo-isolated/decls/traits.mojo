@@ -906,7 +906,7 @@ fn test_infer_sub_trait[T: OtherEmptyTrait](owned foo: Foo[T], bar: Bar[T]):
 
 # CHECK-LABEL: lit.fn @"test_anytrait_subtyping
 # CHECK-SAME: <ty: !lit.anytrait<!AnyType>>
-fn test_anytrait_subtyping[ty: __mlir_type[`!lit.anytrait<`, AnyType, `>`]]():
+fn test_anytrait_subtyping[ty: __type_of(AnyType)]():
     # Call !lit.anytrait subtyping.
     # CHECK-NEXT: lit.call {{.*}}test_anytrait_subtyping{{.*}}<:!lit.anytrait<!AnyType> !AnyType>()
     test_anytrait_subtyping[AnyType]()
@@ -917,10 +917,8 @@ fn test_anytrait_subtyping[ty: __mlir_type[`!lit.anytrait<`, AnyType, `>`]]():
 # CHECK-LABEL: lit.fn @"take_many_things_of_specified_trait
 # CHECK-SAME: <element_type: !lit.anytrait<!AnyType>,
 # CHECK-SAME: element_types: variadic<:!lit.anytrait<!AnyType> element_type> var>()
-fn take_many_things_of_specified_trait[
-    element_type: __mlir_type[`!lit.anytrait<`, AnyType, `>`],
-    *element_types: element_type,
-]():
+fn take_many_things_of_specified_trait[element_type: __type_of(AnyType),
+                                       *element_types: element_type]():
     pass
 
 
@@ -941,8 +939,7 @@ fn call_many_things_of_specified_trait(a: TraitStruct):
     take_many_things_of_specified_trait[SimpleTrait, TraitStruct, TraitStruct]()
 
 
-alias _AnyTypeMetaType = __mlir_type[`!lit.anytrait<`, AnyType, `>`]
-
+alias _AnyTypeMetaType = __type_of(AnyType)
 
 # CHECK-LABEL: lit.struct.decl @TestAnyTrait
 struct TestAnyTrait[element_trait: _AnyTypeMetaType]:
@@ -998,7 +995,7 @@ fn test_pack_of_traits2[elt_trait: _AnyTypeMetaType, *elt_types: elt_trait](
      pass
 
 
-alias _MovableMetaType = __mlir_type[`!lit.anytrait<`, Movable, `>`]
+alias _MovableMetaType = __type_of(Movable)
 
 fn take_anytype_ref[type: AnyType](ref value: type): pass
 
@@ -1011,7 +1008,7 @@ fn pass_movable_mt_ref[elt_trait: _MovableMetaType, PassT: elt_trait](mut a: Pas
     # CHECK-SAME: : !lit.generator<("value": !lit.ref<:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT, mut *"a`"> ref) -> !kgen.none>
     take_anytype_ref(a)
 
-alias _CollectionElementMetaType = __mlir_type[`!lit.anytrait<`, CollectionElement, `>`]
+alias _CollectionElementMetaType = __type_of(CollectionElement)
 
 struct FormVariadicPackWithCastedElementVariadic[
     element_trait: _CollectionElementMetaType, //,

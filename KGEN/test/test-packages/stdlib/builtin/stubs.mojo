@@ -546,7 +546,7 @@ struct VariadicListMem[
         ](0, Pointer.address_of(self))
 
 
-alias _AnyTypeMetaType = __mlir_type[`!lit.anytrait<`, AnyType, `>`]
+alias _AnyTypeMetaType = __type_of(AnyType)
 
 
 @register_passable
