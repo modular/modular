@@ -85,10 +85,10 @@ from nn.gather_scatter import scatter_nd_generator, scatter_nd_shape
 from nn.index_tensor import index_tensor as _index_tensor
 from nn.kv_cache import (
     rms_norm_kv_cache_ragged_continuous_batching_nhead_8_hdim_128,
-    print_kv_cache_cont_batch_h2_d128,
-    print_kv_cache_cont_batch_h8_d128,
-    print_kv_cache_cont_batch_h16_d128,
-    print_kv_cache_cont_batch_h32_d128,
+    print_kv_cache_continuous_batching_nhead_2_hdim_128_fp32,
+    print_kv_cache_continuous_batching_nhead_8_hdim_128_fp32,
+    print_kv_cache_continuous_batching_nhead_16_hdim_128_fp32,
+    print_kv_cache_continuous_batching_nhead_32_hdim_128_fp32,
     kv_collection_ctor_continuous_batching_nhead_1_hdim_16,
     kv_collection_ctor_continuous_batching_nhead_2_hdim_2,
     kv_collection_ctor_continuous_batching_nhead_3_hdim_64,
@@ -320,10 +320,10 @@ fn MOGGExport():
 
     # kv-cache
     alias _rms_norm_kv_cache_ragged_continuous_batching_nhead_8_hdim_128 = rms_norm_kv_cache_ragged_continuous_batching_nhead_8_hdim_128
-    alias _print_kv_cache_cont_batch_h2_d128 = print_kv_cache_cont_batch_h2_d128
-    alias _print_kv_cache_cont_batch_h8_d128 = print_kv_cache_cont_batch_h8_d128
-    alias _print_kv_cache_cont_batch_h16_d128 = print_kv_cache_cont_batch_h16_d128
-    alias _print_kv_cache_cont_batch_h32_d128 = print_kv_cache_cont_batch_h32_d128
+    alias _print_kv_cache_continuous_batching_nhead_2_hdim_128_fp32 = print_kv_cache_continuous_batching_nhead_2_hdim_128_fp32
+    alias _print_kv_cache_continuous_batching_nhead_8_hdim_128_fp32 = print_kv_cache_continuous_batching_nhead_8_hdim_128_fp32
+    alias _print_kv_cache_continuous_batching_nhead_16_hdim_128_fp32 = print_kv_cache_continuous_batching_nhead_16_hdim_128_fp32
+    alias _print_kv_cache_continuous_batching_nhead_32_hdim_128_fp32 = print_kv_cache_continuous_batching_nhead_32_hdim_128_fp32
     alias _fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_128 = fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_128
     alias _fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_32 = fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_32
     alias _fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_64 = fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_64

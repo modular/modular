@@ -9420,8 +9420,11 @@ fn print_kv_cache_cont_batch_generic_kernel_api[
         )
 
 
-@compiler.register("print_kv_cache_cont_batch_h8_d128", num_dps_outputs=0)
-struct Struct_print_kv_cache_cont_batch_h8_d128:
+@compiler.register(
+    "mo.print_kv_cache.continuous_batching.nhead_8.hdim_128.fp32",
+    num_dps_outputs=0,
+)
+struct Struct_print_kv_cache_continuous_batching_nhead_8_hdim_128_fp32:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9445,8 +9448,11 @@ struct Struct_print_kv_cache_cont_batch_h8_d128:
         )
 
 
-@compiler.register("print_kv_cache_cont_batch_h2_d128", num_dps_outputs=0)
-struct Struct_print_kv_cache_cont_batch_h2_d128:
+@compiler.register(
+    "mo.print_kv_cache.continuous_batching.nhead_2.hdim_128.fp32",
+    num_dps_outputs=0,
+)
+struct Struct_print_kv_cache_continuous_batching_nhead_2_hdim_128_fp32:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9470,8 +9476,11 @@ struct Struct_print_kv_cache_cont_batch_h2_d128:
         )
 
 
-@compiler.register("print_kv_cache_cont_batch_h16_d128")
-struct Struct_print_kv_cache_cont_batch_h16_d128:
+@compiler.register(
+    "mo.print_kv_cache.continuous_batching.nhead_16.hdim_128.fp32",
+    num_dps_outputs=0,
+)
+struct Struct_print_kv_cache_continuous_batching_nhead_16_hdim_128_fp32:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9495,8 +9504,11 @@ struct Struct_print_kv_cache_cont_batch_h16_d128:
         )
 
 
-@compiler.register("print_kv_cache_cont_batch_h32_d128")
-struct Struct_print_kv_cache_cont_batch_h32_d128:
+@compiler.register(
+    "mo.print_kv_cache.continuous_batching.nhead_32.hdim_128.fp32",
+    num_dps_outputs=0,
+)
+struct Struct_print_kv_cache_continuous_batching_nhead_32_hdim_128_fp32:
     @uses_opaque
     @always_inline
     @staticmethod
