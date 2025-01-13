@@ -201,3 +201,18 @@ fn returnTup2b() -> (Int, FloatDyn):
 # CHECK-SAME: @Tuple<:variadic<!AnyType> [#type_value1, #type_value1]>
 fn takesSugarTuple[T: Copyable](elements: (T, T)):
     pass
+
+# CHECK-LABEL: lit.fn @"index_homogenous_tuple
+fn index_homogenous_tuple[idx: Int]():
+    var tup = (1, 2, 3, 4)
+    # CHECK: %test1 = lit.var.decl "test1"
+    # CHECK-NEXT: [[ELTPTR:%.*]] = lit.call {{.*}}Tuple::@"__getitem__{{.*}}:!Int {1}{{.*}}(%tup)
+    # CHECK-NEXT: [[INTVAL:%.*]] = lit.ref.load [[ELTPTR]]
+    # CHECK-NEXT: lit.ref.store [[INTVAL]], %test1
+    var test1 : Int = tup[1]
+
+    # CHECK: %test2 = lit.var.decl "test2"
+    # CHECK-NEXT: [[ELTPTR:%.*]] = lit.call {{.*}}Tuple::@"__getitem__{{.*}}:!Int idx{{.*}}(%tup)
+    # CHECK-NEXT: [[INTVAL:%.*]] = lit.ref.load [[ELTPTR]]
+    # CHECK-NEXT: lit.ref.store [[INTVAL]], %test2
+    var test2 : Int = tup[idx]

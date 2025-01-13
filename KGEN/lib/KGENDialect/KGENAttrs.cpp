@@ -2408,13 +2408,22 @@ static TypedAttr simplifyVariadicGet(ArrayRef<TypedAttr> operands,
                                      Type &resultType) {
   resultType = cast<VariadicType>(operands.front().getType()).getElementType();
 
-  if (auto variadic = dyn_cast<VariadicAttr>(operands.front())) {
-    auto index = dyn_cast<IntegerAttr>(operands.back());
-    if (!index || index.getInt() < 0 ||
-        index.getInt() >= static_cast<ssize_t>(variadic.getValues().size()))
-      return {};
+  // Attempt to simplify variadic get when the first operand is a known array.
+  auto variadic = dyn_cast<VariadicAttr>(operands.front());
+  if (!variadic)
+    return {};
 
+  // If the index is known-constant and in-range, we can simplify it.
+  if (auto index = dyn_cast<IntegerAttr>(operands.back());
+      index && size_t(index.getInt()) < variadic.getValues().size())
     return variadic.getValues()[index.getInt()];
+
+  // Otherwise, if all the elements are the same, we can also fold it.
+  if (!variadic.getValues().empty()) {
+    auto first = variadic.getValues()[0];
+    if (llvm::all_of(variadic.getValues().drop_front(),
+                     [&](auto elt) { return elt == first; }))
+      return first;
   }
 
   return {};
