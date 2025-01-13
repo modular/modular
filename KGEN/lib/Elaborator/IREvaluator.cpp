@@ -303,9 +303,9 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetEnv(ParamOperatorAttr op) {
 
 /// Compute the expected mangled name of a generator, assuming it has one
 /// successful implementation. If it doesn't, elaboration will fail anyways.
-static StringAttr getExpectedMangledName(GeneratorOp func,
-                                         ArrayRef<TypedAttr> params,
-                                         bool sanitize) {
+StringAttr KGEN::getExpectedMangledName(GeneratorOp func,
+                                        ArrayRef<TypedAttr> params,
+                                        bool sanitize) {
   auto baseName =
       StringAttr::get(func.getContext(), mangleParameterValues(func, params));
   if (sanitize)

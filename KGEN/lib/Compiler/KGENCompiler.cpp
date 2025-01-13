@@ -52,8 +52,11 @@ using namespace KGEN;
 /// Generate a stub function that calls into the sliced function with input
 /// parameters, then rename it to match the expected symbol name and export it
 /// This is how compilation is rooted at instantiations of parametric functions.
-static void generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
-                                    StringAttr name, IRMapping &mapping) {
+static void
+generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
+                        StringAttr name, IRMapping &mapping,
+                        SymbolTable *symtab = nullptr,
+                        std::optional<uint64_t> kernelId = std::nullopt) {
   GeneratorOp sliced = cast<GeneratorOp>(mapping.lookup(func));
   ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(sliced));
   StringAttr stubName = b.getStringAttr(name.getValue() + "_asm_stub");
@@ -88,10 +91,23 @@ static void generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
 
   sliced.setNotExported();
   sliced.setInlineLevel(InlineLevel::Always);
-  sliced.setSymNameAttr(stubName);
+  if (symtab) {
+    sliced = sliced.clone();
+    sliced.setSymNameAttr(stubName);
+    symtab->insert(sliced);
+
+  } else {
+    sliced.setSymNameAttr(stubName);
+  }
   auto wrapper = b.create<GeneratorOp>(name, sigGen);
   wrapper.setExported();
-  wrapper.setLLVMMetadataAttr(sliced.getLLVMMetadataAttr());
+  NamedAttrList newAttrs = sliced.getLLVMMetadataAttr();
+  if (kernelId) {
+    newAttrs.append(NamedAttribute{
+        StringAttr::get(sliced->getContext(), "kgen.offload.kernelid"),
+        b.getIndexAttr(*kernelId)});
+  }
+  wrapper.setLLVMMetadataAttr(newAttrs.getDictionary(sliced.getContext()));
   Block *entry =
       b.createBlock(&wrapper.getBodyRegion(), {}, sigBase.getArguments(),
                     llvm::map_to_vector(sliced.getArguments(),
@@ -181,9 +197,11 @@ writeCaptureArgs(ModuleOp module, StringAttr name) {
   return {std::move(func), captures.size()};
 }
 
-//===----------------------------------------------------------------------===//
-// compileElaboratorAsm
-//===----------------------------------------------------------------------===//
+static ErrorOr<DenseMap<uint64_t, OffloadCompilationResult>> compileOffloads(
+    ModuleOp theModule,
+    llvm::MapVector<TargetInfoAttr, OffloadInfo> &targetOffloadInfos,
+    const SymbolTable &symtab, CompilationOptions compilationOptions,
+    ElaborateGeneratorsOptions elabOptions, mlir::DiagnosticEngine::HandlerID);
 
 /// Given the pre-elaboration function `func` belonging to a module with the
 /// symbol table `symtab`, slice out a standalone module rooted at `func` and
@@ -250,8 +268,9 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
     pm.enableTiming(std::make_unique<TimeProfilerTimingManager>());
   configurePassManager(pm);
 
-  pm.addPass(createElaborateGenerators(
-      target, elaboratorOptions, compilationOptions, compileElaboratorAsm));
+  pm.addPass(createElaborateGenerators(target, elaboratorOptions,
+                                       compilationOptions, compileElaboratorAsm,
+                                       compileOffloads));
   buildPostElaborationPipeline(pm, compilationOptions);
 
   if (failed(pm.run(*module)))
@@ -259,21 +278,9 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
   auto [capturesFunc, numCaptures] = writeCaptureArgs(*module, name);
 
   // Handle the emission options.
-  auto options = llvm::cl::getRegisteredOptions();
-  for (StringRef elem : emissionOptions) {
-    if (!elem.contains("="))
-      return Error("emission option must be of the form `option=value`");
-    auto [key, value] = elem.split("=");
-    if (value.equals_insensitive("true") || value.equals_insensitive("false")) {
-      auto *boolVal = static_cast<llvm::cl::opt<bool> *>(options[key]);
-      boolVal->setValue(value.equals_insensitive("true"));
-    } else if (llvm::all_of(value, llvm::isDigit)) {
-      auto *intVal = static_cast<llvm::cl::opt<int> *>(options[key]);
-      intVal->setValue(std::atoi(value.data()));
-    } else {
-      return Error("invalid emission option (only boolean and integer values "
-                   "are currently supported)");
-    }
+  ErrorOrSuccess parseResult = parseEmissionOptions(emissionOptions);
+  if (parseResult.isError()) {
+    return parseResult.takeError();
   }
 
   // Prepare a buffer to write string output to.
@@ -325,6 +332,142 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
 }
 
 //===----------------------------------------------------------------------===//
+// compileOffloads
+//===----------------------------------------------------------------------===//
+
+static ErrorOr<DenseMap<uint64_t, OffloadCompilationResult>> compileOffloads(
+    ModuleOp theModule,
+    llvm::MapVector<TargetInfoAttr, OffloadInfo> &targetOffloadInfos,
+    const SymbolTable &symtab, CompilationOptions compilationOptions,
+    ElaborateGeneratorsOptions elabOptions, mlir::DiagnosticEngine::HandlerID) {
+
+  DenseMap<uint64_t, OffloadCompilationResult> result;
+
+  for (auto [target, offloadInfo] : targetOffloadInfos) {
+    IRMapping mapping;
+    OwningOpRef<ModuleOp> module =
+        produceStandaloneModule(symtab, offloadInfo.exportedSymbols, mapping);
+
+    // Override the target.
+    eraseTargetInfo(*module);
+    setTargetInfo(*module, target);
+    SymbolTable slicedSymtab(*module);
+
+    for (auto [op, symbolInfo] : offloadInfo.symbols) {
+      // If there are input parameters, we have to go generate a stub to root
+      // instantiation of the generator. Go find the cloned generator.
+      auto func = cast<GeneratorOp>(op);
+      for (auto [symbol, kernelInfo] : symbolInfo) {
+        if (!symbol.getParamValues().empty()) {
+          generateInstantiateStub(func, symbol, kernelInfo.name, mapping,
+                                  &slicedSymtab, kernelInfo.kernelId);
+        } else {
+          // Set kernelId
+          GeneratorOp sliced = cast<GeneratorOp>(mapping.lookup(func));
+          ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(sliced));
+          NamedAttrList newAttrs = sliced.getLLVMMetadataAttr();
+          newAttrs.append(NamedAttribute{
+              StringAttr::get(sliced->getContext(), "kgen.offload.kernelid"),
+              b.getIndexAttr(kernelInfo.kernelId)});
+          sliced.setLLVMMetadataAttr(
+              newAttrs.getDictionary(sliced.getContext()));
+        }
+      }
+    }
+
+    // Configure the compilation options given the new target.
+    compilationOptions.targetTriple = target.getTripleStr();
+    compilationOptions.targetCpu = target.getArch();
+    compilationOptions.targetFeatures = target.getFeatures();
+    compilationOptions.targetAccelerator =
+        AsyncRT::Device::getAcceleratorArchOrEmpty();
+    compilationOptions.relocModel = target.getRelocationModel();
+
+    // Initialize the object compiler.
+    ErrorOr<std::unique_ptr<ObjectCompiler>> compilerOr =
+        ObjectCompiler::create(".mojo_cache", compilationOptions, /*isJIT=*/
+                               false, *target.getContext());
+
+    if (compilerOr.isError())
+      return compilerOr.takeError();
+
+    std::unique_ptr<ObjectCompiler> compiler = compilerOr.takeValue();
+
+    // Initialize the target machine.
+    auto tmOr = createTargetMachine(compilationOptions, /*isJIT=*/false);
+    if (tmOr.isError())
+      return tmOr.takeError();
+    std::unique_ptr<llvm::TargetMachine> tm = tmOr.takeValue();
+
+    // Run elaboration through to the end of the optimization pipeline.
+    mlir::PassManager pm(target.getContext());
+    if constexpr (KGEN::kIsTracingEnabled)
+      pm.enableTiming(std::make_unique<TimeProfilerTimingManager>());
+    configurePassManager(pm);
+
+    pm.addPass(
+        createElaborateGenerators(target, elabOptions, compilationOptions,
+                                  compileElaboratorAsm, compileOffloads));
+
+    buildPostElaborationPipeline(pm, compilationOptions);
+
+    if (failed(pm.run(*module)))
+      return Error("failed to run the pass manager for offload functions");
+
+    // Prepare a buffer to write string output to.
+    SmallVector<char> buf;
+    buf.reserve(256 * 128); // 32 KB
+    llvm::raw_svector_ostream os(buf);
+
+    llvm::MapVector<uint64_t, std::pair<OwningOpRef<FuncOp>, unsigned>>
+        captures;
+
+    for (auto [op, symbols] : offloadInfo.symbols) {
+      for (auto [symbol, kernel] : symbols) {
+
+        auto [capturesFunc, numCaptures] =
+            writeCaptureArgs(*module, kernel.name);
+
+        captures.insert({kernel.kernelId,
+                         std::make_pair(std::move(capturesFunc), numCaptures)});
+      }
+    }
+
+    ErrorOr<SmallVector<std::pair<BufferRef, uint64_t>>> kernelsOr =
+        compiler->emitGPUKernels(std::move(module), EmitAs::ASM);
+
+    if (kernelsOr.isError())
+      return kernelsOr.takeError();
+
+    OpBuilder b(theModule);
+    for (auto &bufAndIdx : *kernelsOr) {
+      uint64_t idx = bufAndIdx.second;
+      BufferRef &buf = bufAndIdx.first;
+
+      auto iter = captures.find(idx);
+      if (iter == captures.end())
+        return Error("Can't find offload capture.");
+
+      OwningOpRef<FuncOp> func = std::move(iter->second.first);
+      unsigned numCaptures = iter->second.second;
+
+      auto populate = cast<FuncOp>(func.get());
+      auto populateFnRef = SymbolConstantAttr::get(populate);
+
+      result.insert(
+          {idx, OffloadCompilationResult{
+                    {std::move(func)},
+                    StringAttr::get(buf->getBuffer(),
+                                    StringType::get(theModule->getContext())),
+                    b.getIndexAttr(numCaptures),
+                    populateFnRef}});
+    }
+  }
+
+  return result;
+}
+
+//===----------------------------------------------------------------------===//
 // Caching
 //===----------------------------------------------------------------------===//
 
@@ -344,7 +487,8 @@ static ErrorOr<RCRef<Cache::BlobCacheBackend>> getMojoCacheBackend() {
 /// JITs and executes in-process.
 std::unique_ptr<Pass> KGEN::createElaborateGeneratorsWithDefaultJIT() {
   return createElaborateGenerators(TargetInfoAttr(), /*elabOpts=*/{},
-                                   /*options=*/{}, compileElaboratorAsm);
+                                   /*options=*/{}, compileElaboratorAsm,
+                                   compileOffloads);
 }
 
 //===----------------------------------------------------------------------===//
@@ -354,7 +498,8 @@ std::unique_ptr<Pass> KGEN::createElaborateGeneratorsWithDefaultJIT() {
 void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
                                          TargetInfoAttr target,
                                          const CompilationOptions &options) {
-  buildElaborateModulePipeline(pm, target, options, compileElaboratorAsm);
+  buildElaborateModulePipeline(pm, target, options, compileElaboratorAsm,
+                               compileOffloads);
   buildPostElaborationPipeline(pm, options);
 }
 
@@ -431,7 +576,9 @@ KGENCompiler::runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
                               std::function<void(Operation *)> moreOnMiss,
                               std::function<void(Operation *)> moreOnHit) {
   // Set the target now, so it's included in the cache key.
-  setTargetInfo(theModule, target);
+  if (!getTargetInfo(theModule))
+    setTargetInfo(theModule, target);
+
   mlir::PassManager pm =
       createPassManager(pmConfigOptions.operationName, &context);
 
@@ -549,5 +696,30 @@ ErrorOrSuccess KGENCompiler::runElaborationPipeline(
   AsyncRT::await(ready);
   if (ready.isError())
     return ready.takeDiagnostic().getMessage().copy();
+  return success();
+}
+
+ErrorOrSuccess KGEN::parseEmissionOptions(EmissionOptions emissionOptions) {
+  // Handle the emission options.
+  // Parse the emission options from a comma separated list of values.
+  llvm::StringMap<llvm::cl::Option *> options =
+      llvm::cl::getRegisteredOptions();
+
+  for (StringRef elem : emissionOptions) {
+    if (!elem.contains("=")) {
+      return Error("emission option must be of the form `option=value`");
+    }
+    auto [key, value] = elem.split("=");
+    if (value.equals_insensitive("true") || value.equals_insensitive("false")) {
+      auto *boolVal = static_cast<llvm::cl::opt<bool> *>(options[key]);
+      boolVal->setValue(value.equals_insensitive("true"));
+    } else if (llvm::all_of(value, llvm::isDigit)) {
+      auto *intVal = static_cast<llvm::cl::opt<int> *>(options[key]);
+      intVal->setValue(std::atoi(value.data()));
+    } else {
+      return Error("invalid emission option (only boolean and integer values "
+                   "are currently supported)");
+    }
+  }
   return success();
 }
