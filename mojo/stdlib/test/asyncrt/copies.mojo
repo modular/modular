@@ -44,7 +44,7 @@ fn _run_memcpy(ctx: DeviceContext, length: Int) raises:
     ctx.free_host(in_host)
 
 
-fn _run_memcpy_async(ctx: DeviceContext, length: Int) raises:
+fn _run_memcpy_async(ctx: DeviceContext, length: Int, use_context: Bool) raises:
     print("-")
     print("_run_memcpy_async(" + str(length) + ")")
 
@@ -60,7 +60,10 @@ fn _run_memcpy_async(ctx: DeviceContext, length: Int) raises:
 
     # Copy to and from device buffers.
     ctx.enqueue_copy_to_device(in_dev, in_host)
-    ctx.enqueue_copy_device_to_device(out_dev, in_dev)
+    if use_context:
+        ctx.enqueue_copy_device_to_device(out_dev, in_dev)
+    else:
+        in_dev.enqueue_copy_to(out_dev)
     ctx.enqueue_copy_from_device(out_host, out_dev)
 
     # Wait for the copies to be completed.
@@ -206,8 +209,10 @@ fn main() raises:
     _run_memcpy(ctx, 64)
     _run_memcpy(ctx, one_mb)
 
-    _run_memcpy_async(ctx, 64)
-    _run_memcpy_async(ctx, one_mb)
+    _run_memcpy_async(ctx, 64, True)
+    _run_memcpy_async(ctx, one_mb, True)
+    _run_memcpy_async(ctx, 64, False)
+    _run_memcpy_async(ctx, one_mb, False)
 
     _run_sub_memcpy_async(ctx, 64)
 
