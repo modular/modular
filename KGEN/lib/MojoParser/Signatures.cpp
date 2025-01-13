@@ -849,8 +849,8 @@ PogListAttr TypeCheckedParamList::getParamListAttr() {
 /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
 /// param_list   ::= argument_list | "(" ")"
 /// param_result_types ::= expression ("," expression)*
-ParseResult ParsedParamList::parseOptionalParameters(ParserBase &p,
-                                                     ArgListKind kind) {
+ParseResult ParsedParamList::parseParametersIfPresent(ParserBase &p,
+                                                      ArgListKind kind) {
   // Check to see if a parameter signature exists at all.
   if (!p.consumeIf(Token::l_square) || p.consumeIf(Token::r_square))
     return success();

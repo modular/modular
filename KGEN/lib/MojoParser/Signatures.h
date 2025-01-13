@@ -142,7 +142,7 @@ public:
   /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
   /// param_list   ::= argument_list | "(" ")"
   /// param_result_types ::= expression ("," expression)*
-  ParseResult parseOptionalParameters(ParserBase &p, ArgListKind kind);
+  ParseResult parseParametersIfPresent(ParserBase &p, ArgListKind kind);
 };
 
 /// This contains the result state from type checking a parameter signature.
