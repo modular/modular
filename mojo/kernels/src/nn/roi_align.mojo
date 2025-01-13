@@ -255,10 +255,10 @@ fn roi_align_nhwc[
                                 roi_bin_grid_h,
                                 roi_bin_grid_w,
                             )
-                            var p1 = p.get[0, Weighted2DPoint[type]]()
-                            var p2 = p.get[1, Weighted2DPoint[type]]()
-                            var p3 = p.get[2, Weighted2DPoint[type]]()
-                            var p4 = p.get[3, Weighted2DPoint[type]]()
+                            var p1 = p[0]
+                            var p2 = p[1]
+                            var p3 = p[2]
+                            var p4 = p[3]
                             pool_val = update_fn(
                                 pool_val,
                                 p1.w * input[roi_batch_idx, p1.y, p1.x, c],
