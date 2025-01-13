@@ -184,6 +184,31 @@ what we publish.
           return self.i
   ```
 
+- You can now cast SIMD types using constructors:
+
+  ```mojo
+  var val = Int8(42)
+  var cast = Int32(val)
+  ```
+
+  It also works when passing a scalar type to larger vector size:
+
+  ```mojo
+  var vector = SIMD[DType.int64, 4](cast) # [42, 42, 42, 42]
+  ```
+
+  For values other than scalars the size of the SIMD vector needs to be equal:
+
+  ```mojo
+  var float_vector = SIMD[DType.float64, 4](vector)
+  ```
+
+  `SIMD.cast` still exists to infer the size of new vector:
+
+  ```mojo
+  var inferred_size = float_vector.cast[DType.uint64]() # [42, 42, 42, 42]
+  ```
+
 ### Tooling changes
 
 - mblack (aka `mojo format`) no longer formats non-mojo files. This prevents
