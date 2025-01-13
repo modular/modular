@@ -910,7 +910,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   // signature list resolve to enclosing scopes, and we add them before the
   // value signature list so the types and parameters can resolve to the bound
   // values.
-  if (parsedParamList.parseOptionalParameters(p, ArgListKind::kParamList))
+  if (parsedParamList.parseParametersIfPresent(p, ArgListKind::kParamList))
     return failure();
   TypeCheckedParamList paramList(parsedParamList.params, sigDecl);
 
@@ -1845,7 +1845,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                    "internal error: checked by stmt parser") ||
       p.parseIdentifier("internal error: checked by stmt parser",
                         &identifierLoc) ||
-      parsedParams.parseOptionalParameters(p, ArgListKind::kParamList) ||
+      parsedParams.parseParametersIfPresent(p, ArgListKind::kParamList) ||
       parseOptionalParentList(p, sigDecl, structOp.getSymName(), parentTypes,
                               shared) ||
       p.parseToken(Token::colon, "expected ':' in struct definition") ||

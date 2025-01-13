@@ -993,7 +993,8 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   }
 
   // Parameter signature, argument list and the function effects next.
-  if (paramList.parseOptionalParameters(*this, ArgListKind::kFnTypeParamList) ||
+  if (paramList.parseParametersIfPresent(*this,
+                                         ArgListKind::kFnTypeParamList) ||
       fnSignature.parseArgumentListAndEffects(*this,
                                               ArgListKind::kFnTypeArgList))
     return failure();
