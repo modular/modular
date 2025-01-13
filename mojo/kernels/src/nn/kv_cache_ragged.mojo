@@ -1141,6 +1141,10 @@ fn _matmul_kv_cache_ragged_impl[
             (batch_size, max_seq_len, num_kv_heads, head_size).
         ctx: Pointer containing the runtime context for the target device.
     """
+    if hidden_state.num_elements() == 0:
+        # Nothing to do.
+        return
+
     alias kv_params = cache_t.kv_params
     alias N: UInt = weight.shape.get[0]()
     alias K: UInt = weight.shape.get[1]()

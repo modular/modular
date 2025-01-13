@@ -1010,6 +1010,10 @@ fn _rms_norm_impl[
             + "."
         )
 
+    if shape.flattened_length() == 0:
+        # Nothing to do.
+        return
+
     @parameter
     if is_cpu[target]():
         rms_norm_cpu[input_0_fn, output_fn](shape, gamma, epsilon)
