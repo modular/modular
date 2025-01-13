@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-trait Comparable(EqualityComparable):
-    """A type which can be compared with other instances of itself."""
+trait LessThanComparable:
+    """A type which can be less than compared with other instances of itself."""
 
     fn __lt__(self, rhs: Self) -> Bool:
         """Define whether `self` is less than `rhs`.
@@ -26,16 +26,10 @@ trait Comparable(EqualityComparable):
         """
         ...
 
-    fn __le__(self, rhs: Self) -> Bool:
-        """Define whether `self` is less than or equal to `rhs`.
 
-        Args:
-            rhs: The right hand side of the comparison.
-
-        Returns:
-            True if `self` is less than or equal to `rhs`.
-        """
-        ...
+trait GreaterThanComparable:
+    """A type which can be greater than compared with other instances of itself.
+    """
 
     fn __gt__(self, rhs: Self) -> Bool:
         """Define whether `self` is greater than `rhs`.
@@ -48,6 +42,27 @@ trait Comparable(EqualityComparable):
         """
         ...
 
+
+trait LessThanOrEqualComparable:
+    """A type which can be less than or equal to compared with other instances of itself.
+    """
+
+    fn __le__(self, rhs: Self) -> Bool:
+        """Define whether `self` is less than or equal to `rhs`.
+
+        Args:
+            rhs: The right hand side of the comparison.
+
+        Returns:
+            True if `self` is less than or equal to `rhs`.
+        """
+        ...
+
+
+trait GreaterThanOrEqualComparable:
+    """A type which can be greater than or equal to compared with other instances of itself.
+    """
+
     fn __ge__(self, rhs: Self) -> Bool:
         """Define whether `self` is greater than or equal to `rhs`.
 
@@ -58,3 +73,13 @@ trait Comparable(EqualityComparable):
             True if `self` is greater than or equal to `rhs`.
         """
         ...
+
+
+trait Comparable(
+    EqualityComparable,
+    LessThanComparable,
+    GreaterThanComparable,
+    LessThanOrEqualComparable,
+    GreaterThanOrEqualComparable,
+):
+    """A type which can be compared with other instances of itself."""
