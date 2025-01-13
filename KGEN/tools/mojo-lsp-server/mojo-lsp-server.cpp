@@ -14,6 +14,8 @@
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Program.h"
 
+#include <unistd.h>
+
 using namespace M;
 using namespace M::KGEN::LIT;
 using namespace mlir::lsp;
@@ -76,6 +78,13 @@ int main(int argc, char **argv) {
                           "resolve imported modules in a document")};
 
   llvm::cl::ParseCommandLineOptions(argc, argv, "Mojo LSP Language Server");
+
+  if (isatty(STDOUT_FILENO)) {
+    llvm::errs()
+        << "The Mojo Language Server is not intended to be executed directly. "
+           "Please refer to your editor documentation for instructions on "
+           "integrating the language server with your editor.\n";
+  }
 
   // When testing, updating flags that make the server a bit easier to interact
   // with.
