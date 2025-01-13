@@ -45,7 +45,7 @@ class PrintKVCacheModel:
         ops.inplace_custom(
             # TODO(bduke): currently hardcoded to h8/d128.
             # Fix once we store parameters in the opaque MLIR type.
-            "print_kv_cache_cont_batch_h8_d128",
+            "mo.print_kv_cache.continuous_batching.nhead_8.hdim_128.fp32",
             values=[
                 valid_lengths,
                 kv_collection,
