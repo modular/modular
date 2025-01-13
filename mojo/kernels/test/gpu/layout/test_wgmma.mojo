@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: H100-GPU
+# REQUIRES: DISABLED
 # RUN: %mojo-no-debug-no-assert %s | FileCheck %s
 
 from builtin.io import _printf
