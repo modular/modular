@@ -1170,8 +1170,11 @@ ErrorOrSuccess ObjectCompiler::emitAssembly(OwningOpRef<ModuleOp> module,
 // emitSharedObject
 //===----------------------------------------------------------------------===//
 
-ErrorOr<BufferRef> ObjectCompiler::createSharedObject(BufferRef buf,
-                                                      StringRef moduleName) {
+/// Utility function for creating shared object from buf
+/// (mostly for AMD GPU kernels)
+static ErrorOr<BufferRef> createSharedObject(BufferRef buf,
+                                             CompilationOptions options,
+                                             StringRef moduleName) {
   llvm::StringRef libInExt = ".o";
   llvm::StringRef libOutExt = ".so";
   std::string objName = moduleName.str() + "-%%%%%%%" + libInExt.str();
@@ -1288,7 +1291,8 @@ ErrorOrSuccess ObjectCompiler::emitSharedObject(OwningOpRef<ModuleOp> module,
     return Error("failed to lower LLVM IR to object binary");
 
   // Create shared object in buffer.
-  ErrorOr<BufferRef> sharedObjBufOr = createSharedObject(*bufOr, moduleName);
+  ErrorOr<BufferRef> sharedObjBufOr =
+      createSharedObject(*bufOr, options, moduleName);
 
   if (sharedObjBufOr.isError())
     return sharedObjBufOr.takeError();
@@ -1297,4 +1301,259 @@ ErrorOrSuccess ObjectCompiler::emitSharedObject(OwningOpRef<ModuleOp> module,
   os << sharedObjBufOr->getPointer()->getBuffer();
 
   return success();
+}
+
+static ErrorOr<uint64_t> getKernelIDFromLLVMModule(llvm::Module &module) {
+  for (llvm::Function &func : module) {
+    if (func.isDeclaration())
+      continue;
+
+    const llvm::AttributeList &funcAttrs = func.getAttributes();
+    for (auto [idx, attrSet] : llvm::enumerate(funcAttrs)) {
+      for (auto &attr : attrSet) {
+        if (!attr.isStringAttribute())
+          continue;
+        if (attr.getKindAsString() == "kgen.accelerator.kernelid") {
+          uint64_t kernelId;
+          if (llvm::to_integer(attr.getValueAsString(), kernelId)) {
+            // Remove the ID attribute so that caching won't take this into
+            // consideration.
+            llvm::AttributeList newList = funcAttrs.removeAttribute(
+                module.getContext(), idx, attr.getKindAsString());
+            func.setAttributes(newList);
+            return kernelId;
+          }
+        }
+      }
+    }
+  }
+
+  return Error("Can't find kgen.accelerator.kernelid from the llvm split.");
+}
+
+static AnyAsyncValueRef
+lowerLLVMModuleToObject(llvm::Module &module, Location loc,
+                        RCRef<Cache::TransformCache> transformCache,
+                        std::optional<size_t> moduleIdx,
+                        AsyncRT::Runtime &runtime, CompilationOptions options,
+                        bool isJIT, bool emitAssembly) {
+
+  WriteableBufferRef keyBuf = WriteableBuffer::get();
+  options.print(*keyBuf << "compileLLVMModuleToObject(");
+  *keyBuf << ")";
+
+  llvm::WriteBitcodeToFile(module, *keyBuf);
+
+  auto runTransformation = [loc, moduleIdx, isJIT, options, &runtime,
+                            emitAssembly, keyBuf = keyBuf.copy(),
+                            &module](WriteableBufferRef buf,
+                                     AsyncRT::AnyAsyncValueRef chain) mutable {
+    auto output = AsyncRT::AsyncValueRef<BufferRef>::allocate(runtime);
+#ifdef MODULAR_ENABLE_TELEMETRY
+    Cache::CacheTelemetryContext::getCacheTelemetryContext(runtime.context)
+        .recordCacheMiss("lowerLLVMModuleToObjectGPU");
+#endif
+
+    chain.andThenAsync([loc, &runtime, emitAssembly, output = output.copy(),
+                        buf = buf.copy(), keyBuf = std::move(keyBuf), options,
+                        isJIT, moduleIdx, &module]() mutable {
+      CompilerTimeTraceScope traceScope("lowerLLVMModuleToObjectGPU");
+
+      // Create the target machine.
+      auto tmOr = createTargetMachine(options, isJIT);
+      if (failed(tmOr)) {
+        return std::move(output).setToError(
+            AsyncRT::getMLIRDiagnostic(tmOr.takeError(), loc));
+      }
+      llvm::TargetMachine &tm = **tmOr;
+
+      // Optimize the llvm Module.
+      if (failed(optimizeLLVMModule(module, tm, options, runtime, moduleIdx))) {
+        return std::move(output).setToError(
+            AsyncRT::getMLIRDiagnostic("failed to optimize LLVM IR.", loc));
+      }
+
+      std::unique_ptr<llvm::MachineModuleInfo> machineModuleInfo;
+      std::unique_ptr<llvm::MCContext> mcContext;
+      if (failed(runLlcPasses(
+              module, options, tm, *buf, machineModuleInfo, mcContext,
+              emitAssembly ? llvm::CodeGenFileType::AssemblyFile
+                           : llvm::CodeGenFileType::ObjectFile,
+              /*stopBeforeAsmPrint=*/false, 0, nullptr,
+              runtime.context->get<M::Telemetry::TelemetryContext>()))) {
+        return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+            "llc failed to codegen LLVM IR to object code", loc));
+      }
+
+      if (emitAssembly) {
+        std::move(output).emplace(buf.copy());
+      } else {
+
+        ErrorOr<BufferRef> bufOr = createSharedObject(
+            BufferRef::create(buf->Buffer::getBuffer()), options, "");
+        if (bufOr.isError()) {
+          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+              "failed to create shared object file", loc));
+        }
+
+        std::move(output).emplace(*bufOr);
+      }
+    });
+    return output;
+  };
+
+  auto onCacheHit = [&](BufferRef buf) {
+#ifdef MODULAR_ENABLE_TELEMETRY
+    Cache::CacheTelemetryContext::getCacheTelemetryContext(runtime.context)
+        .recordCacheHit("lowerLLVMModuleToObjectGPU");
+#endif
+    return buf.copy();
+  };
+
+  return Cache::cachedTransform(
+      AsyncRT::MLIRLocationDecoder::getEncodedLocation(loc),
+      transformCache.copy(),
+      AsyncRT::AsyncValueRef<Chain>::createReady(runtime), keyBuf.copy(),
+      std::move(runTransformation), onCacheHit);
+}
+
+static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
+    llvm::unique_function<LLVMModuleAndContext()> produceModule, Location loc,
+    RCRef<Cache::TransformCache> transformCache,
+    std::optional<size_t> moduleIdx, AsyncRT::Runtime &runtime,
+    CompilationOptions options, bool isJIT, bool emitAssembly) {
+
+  auto resultBuf = AsyncRT::AsyncValueRef<BufferRef>::allocate(runtime);
+  auto resultKernelId = AsyncRT::AsyncValueRef<uint64_t>::allocate(runtime);
+
+  runtime.getWorkQueue()->addTask([result = resultBuf.copy(),
+                                   resultKernelId = resultKernelId.copy(),
+                                   produceModule = std::move(produceModule),
+                                   loc, moduleIdx, isJIT, options, &runtime,
+                                   &transformCache, emitAssembly]() mutable {
+    CompilerTimeTraceScope traceScope("lowerLLVMModuleToObjectGPU");
+
+    // Materialize the module.
+    LLVMModuleAndContext module = produceModule();
+
+    ErrorOr<uint64_t> kernelIdOr = getKernelIDFromLLVMModule(*module);
+    if (kernelIdOr) {
+      std::move(result).setToError(
+          AsyncRT::getMLIRDiagnostic("Can't find kernelId", loc));
+      std::move(resultKernelId)
+          .setToError(AsyncRT::getMLIRDiagnostic(kernelIdOr.takeError(), loc));
+      return;
+    }
+
+    // This step is cached.
+    AnyAsyncValueRef resultBuf =
+        lowerLLVMModuleToObject(*module, loc, transformCache, moduleIdx,
+                                runtime, options, isJIT, emitAssembly);
+    await(resultBuf);
+
+    std::move(result).emplace(resultBuf.get<BufferRef>());
+    std::move(resultKernelId).emplace(*kernelIdOr);
+  });
+
+  return std::make_pair(std::move(resultBuf), std::move(resultKernelId));
+}
+
+// Emit GPU kernels.
+// The input module is a bundle of multiple GPU kernels.
+// Th output is a vector of compiled GPU kernels with their corresponding
+// kernel ids.
+// This function does the following steps:
+// - Split the input module into submodules for each kernel.
+//   We don't do per function splitting for GPU kernels since
+//   the backends are inter-procedural.
+// - Extract kernel ID for each split.
+// - Run LLVM pipleine (opt + asmprint) to generate code for each kernel:
+//   PTX for Nvidia, an so lib for AMD.
+ErrorOr<SmallVector<std::pair<BufferRef, uint64_t>>>
+ObjectCompiler::emitGPUKernels(OwningOpRef<ModuleOp> module,
+                               EmitAs emissionKind) {
+
+  CompilerTimeTraceScope traceScope("emitGPUKernels");
+
+  // Perform a cache aware transformation to translate the module to an archive
+  // file.
+
+#ifdef MODULAR_ENABLE_TELEMETRY
+  [[maybe_unused]] auto timeScope =
+      loadContext(module->getContext())
+          ->get<M::Telemetry::TelemetryContext>()
+          ->createUInt64Timer<std::chrono::milliseconds>(
+              "mojo.compile.cache.miss.time", M::Telemetry::Level::L2,
+              {{"pipeline", "ObjectCompiler::emitArchive"}});
+#endif
+
+  // Lower the module to LLVM.
+  LLVMModuleAndContext llvmModule;
+  Location moduleLoc = module->getLoc();
+
+  if (auto err = llvmModule.create([&](llvm::LLVMContext &ctx) {
+        return lowerAllFuncsToLLVM(ctx, *module);
+      })) {
+    module->erase();
+    return Error(
+        Twine("failed to lower module to LLVM IR for archive compilation, ") +
+        err.getError());
+  }
+
+  // Split the module into multiple slices and compile each in parallel.
+  [[maybe_unused]] bool isNVPTX = isNVPTXBackend(options);
+
+  std::string moduleName = llvmModule->getName().str();
+
+  SmallVector<AsyncRT::AnyAsyncValueRef> cachedResults;
+  SmallVector<AsyncRT::AnyAsyncValueRef> cachedIDResults;
+
+  (void)writeTempModule("pre-split", options.saveTempsPrefix, *llvmModule);
+  options.saveTempsPrefix = "";
+
+  auto handleSplit =
+      [&](llvm::unique_function<LLVMModuleAndContext()> produceModule,
+          std::optional<int64_t> idx, unsigned numFunctionsBase) {
+        auto result = lowerLLVMModuleToObject(std::move(produceModule),
+                                              moduleLoc, transformCache, idx,
+                                              runtime, options, isJIT, isNVPTX);
+        cachedResults.push_back(std::move(result.first));
+        cachedIDResults.push_back(std::move(result.second));
+      };
+
+  splitPerExported(std::move(llvmModule), handleSplit);
+  for (auto &value : cachedIDResults) {
+    cachedResults.push_back(std::move(value));
+  }
+
+  auto result = AsyncRT::AsyncValueRef<
+      SmallVector<std::pair<BufferRef, uint64_t>>>::allocate(runtime);
+
+  andThenSyncMoving(
+      cachedResults, [result = result.copy()](
+                         MutableArrayRef<AnyAsyncValueRef> values) mutable {
+        SmallVector<std::pair<BufferRef, uint64_t>> results;
+        size_t numTotalKernels = values.size() / 2;
+
+        for (size_t i = 0; i < numTotalKernels; ++i) {
+          AnyAsyncValueRef &buf = values[i];
+          AnyAsyncValueRef &kernelId = values[i + numTotalKernels];
+
+          if (buf.isError())
+            return std::move(result).setToError(buf.takeDiagnostic());
+          if (kernelId.isError())
+            return std::move(result).setToError(kernelId.takeDiagnostic());
+
+          results.emplace_back(std::make_pair(std::move(buf.get<BufferRef>()),
+                                              kernelId.get<uint64_t>()));
+        }
+        std::move(result).emplace(std::move(results));
+      });
+
+  await(result);
+
+  if (result.isError())
+    return {std::move(result.takeDiagnostic().getMessage())};
+
+  return std::move(result.get());
 }

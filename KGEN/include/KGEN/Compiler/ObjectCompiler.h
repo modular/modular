@@ -77,6 +77,9 @@ public:
   LogicalResult emitCXXHeader(ModuleOp module, StringRef filename,
                               raw_ostream &os);
 
+  ErrorOr<SmallVector<std::pair<BufferRef, uint64_t>>>
+  emitGPUKernels(OwningOpRef<ModuleOp> module, EmitAs emissionKind);
+
   /// Get a reference to the object compiler's transform cache.
   RCRef<Cache::TransformCache> getTransformCache() {
     return transformCache.copy();
@@ -116,10 +119,6 @@ private:
 
   /// Generate saveTempsPrefix files.
   ErrorOrSuccess emitArchiveSaveTemps(ModuleOp module, StringRef moduleName);
-
-  /// Utility function for creating shared object from buf
-  /// (mostly for AMD GPU kernels)
-  ErrorOr<BufferRef> createSharedObject(BufferRef buf, StringRef moduleName);
 
   /// The caches needed for compilation.
   RCRef<Cache::TransformCache> transformCache;
