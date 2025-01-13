@@ -837,18 +837,12 @@ def execute_cont_batch_fused_qkv_matmul[
 
 # TODO implement fused qkv matmul for paged
 def execute_fused_matmul_suite(ctx: DeviceContext):
-    alias types_tolerances = Tuple[
-        Tuple[DType, Float64], Tuple[DType, Float64]
-    ]((DType.float32, 1e-4), (DType.bfloat16, 1e-2))
+    alias types_tolerances = ((DType.float32, 1e-4), (DType.bfloat16, 1e-2))
 
     @parameter
     for type_idx in range(2):
-        alias type = types_tolerances.get[
-            type_idx, Tuple[DType, Float64]
-        ]().get[0, DType]()
-        alias rtol = types_tolerances.get[
-            type_idx, Tuple[DType, Float64]
-        ]().get[1, Float64]()
+        alias type = types_tolerances[type_idx][0]
+        alias rtol = types_tolerances[type_idx][1]
 
         for bs_ref in List[Int](1, 16):
             bs = bs_ref[]

@@ -259,11 +259,11 @@ def execute_flash_attention[
 
 
 def execute_flash_attention_suite(ctx: DeviceContext):
-    alias types = Tuple[DType, DType](DType.float32, DType.bfloat16)
+    alias types = (DType.float32, DType.bfloat16)
 
     @parameter
     for type_idx in range(2):
-        alias type = types.get[type_idx, DType]()
+        alias type = types[type_idx]
 
         bs = 1
         # Replit context encoding

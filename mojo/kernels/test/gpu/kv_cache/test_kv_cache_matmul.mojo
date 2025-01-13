@@ -279,11 +279,11 @@ def execute_fused_qkv_matmul[
 
 
 def execute_fused_matmul_suite(ctx: DeviceContext):
-    alias types = Tuple[DType, DType](DType.float32, DType.bfloat16)
+    alias types = (DType.float32, DType.bfloat16)
 
     @parameter
     for type_idx in range(2):
-        alias type = types.get[type_idx, DType]()
+        alias type = types[type_idx]
         for bs_ref in List[Int](1, 16):
             bs = bs_ref[]
 

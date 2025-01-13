@@ -325,7 +325,7 @@ def execute_flash_attention[
 
 
 def execute_flash_attention_suite(ctx: DeviceContext):
-    alias types = Tuple[DType, DType](DType.float32, DType.bfloat16)
+    alias types = (DType.float32, DType.bfloat16)
     var bs = 2
     var valid_length_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(bs)
     var valid_length = NDBuffer[DType.uint32, 1](valid_length_ptr, Index(1))
@@ -337,7 +337,7 @@ def execute_flash_attention_suite(ctx: DeviceContext):
 
     @parameter
     for type_idx in range(2):
-        alias type = types.get[type_idx, DType]()
+        alias type = types[type_idx]
 
         # Replit context encoding [testing even query valid lengths].
         valid_length[0] = 128
