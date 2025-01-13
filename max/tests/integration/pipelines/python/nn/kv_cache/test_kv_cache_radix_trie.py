@@ -334,3 +334,51 @@ async def test_kv_cache_radix_trie_raises() -> None:
         trie.insert([], [])
     with pytest.raises(ValueError):
         trie.match_prefix([])
+
+
+@pytest.mark.asyncio
+async def test_kv_cache_radix_trie_with_page_size_gt_1() -> None:
+    trie = RadixTrie(page_size=2)
+    trie.insert(["i", "like", "tasty", "food"], ["BLOCK 0", "BLOCK 1"])
+    assert trie.pretty_format() == [
+        "['i', 'like', 'tasty', 'food']",
+    ]
+
+    _, blocks = trie.match_prefix(["i"])
+    assert blocks == []
+
+    _, blocks = trie.match_prefix(["i", "like"])
+    assert blocks == ["BLOCK 0"]
+
+    # AIPIPE-323: We should also return first token of BLOCK 1 in future
+    _, blocks = trie.match_prefix(["i", "like", "tasty"])
+    assert blocks == ["BLOCK 0"]
+
+    _, blocks = trie.match_prefix(["i", "like", "tasty", "food"])
+    assert blocks == ["BLOCK 0", "BLOCK 1"]
+
+    # AIPIPE-323: We should also return first token of BLOCK 1 in future
+    _, blocks = trie.match_prefix(["i", "like", "tasty", "pizza"])
+    assert blocks == ["BLOCK 0"]
+
+    _, blocks = trie.match_prefix(["we", "like", "tasty", "food"])
+    assert blocks == []
+
+    _, blocks = trie.match_prefix(["i", "like", "yummy", "food"])
+    assert blocks == ["BLOCK 0"]
+
+    node = trie.insert(
+        ["i", "like", "tasty", "oranges"], ["BLOCK 0", "BLOCK 2"]
+    )
+    assert trie.pretty_format(print_blocks=True) == [
+        "['i', 'like'] : ['BLOCK 0']",
+        "--['tasty', 'food'] : ['BLOCK 1']",
+        "--['tasty', 'oranges'] : ['BLOCK 2']",
+    ]
+    trie.mark_in_use_by(node, 0)
+
+    assert trie.evict_blocks(desired_num_evicted=999) == ["BLOCK 1"]
+    assert trie.pretty_format(print_blocks=True) == [
+        "['i', 'like'] : ['BLOCK 0']",
+        "--['tasty', 'oranges'] : ['BLOCK 2']",
+    ]
