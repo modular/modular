@@ -9,7 +9,7 @@
 from collections import List, Optional
 from pathlib import Path
 from sys import env_get_int, env_get_string, external_call, sizeof
-from sys.info import _get_arch, is_triple
+from sys.info import _get_arch, is_triple, has_nvidia_gpu_accelerator
 from builtin._location import __call_location, _SourceLocation
 
 from gpu.host._compile import (
@@ -373,6 +373,16 @@ fn _is_amd_gpu[target: __mlir_type.`!kgen.target`]() -> Bool:
     return is_triple["amdgcn-amd-amdhsa", target]()
 
 
+fn _get_optimization_level() -> Int:
+    """This function returns the optimization level to use for the current
+    target. If the target is an NVIDIA GPU, it returns 4 if the specified
+    Mojo optimization level 3, otherwise it returns the value of the
+    OPTIMIZATION_LEVEL environment variable.
+    """
+    alias level = env_get_int["OPTIMIZATION_LEVEL", 4]()
+    return 4 if level == 3 and has_nvidia_gpu_accelerator() else level
+
+
 struct DeviceFunction[
     func_type: AnyTrivialRegType, //,
     func: func_type,
@@ -420,7 +430,7 @@ struct DeviceFunction[
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
         alias debug_level = env_get_string["DEBUG_LEVEL", "none"]()
-        alias optimization_level = env_get_int["OPTIMIZATION_LEVEL", 4]()
+        alias optimization_level = _get_optimization_level()
 
         var max_dynamic_shared_size_bytes: Int32 = -1
         if func_attribute:
