@@ -128,6 +128,8 @@ M::produceStandaloneModule(const SymbolTable &symtab,
     if (!sliceFn) {
       sliceFn = cast<ExportInterface>(func->clone(mapping));
       sliceSymtab.insert(sliceFn);
+    } else {
+      mapping.map(func.getOperation(), sliceFn.getOperation());
     }
     ExportKind kind = func.getExportKind();
     sliceFn.setExportKind(kind == ExportKind::NotExported ? exportVal.kind

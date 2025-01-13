@@ -196,6 +196,7 @@ public:
   Elaborator(SymbolTable &symtab, ParameterCollector::Analysis &paramCache,
              TargetInfoAttr target, const CompilationOptions &options,
              ElaboratorCompileAsmFn compileAsmFn,
+             ElaboratorCompileOffloadFn compileOffloadFn,
              const ElaborateGeneratorsOptions &config);
 
   //===--------------------------------------------------------------------===//
@@ -376,6 +377,8 @@ private:
   /// the current implementation node should be suspended.
   ElaborationState processOp(ImplNode *node, Operation *op);
 
+  ElaborationState bundleOffloadModules(ImplNode *node, CompileOffloadOp op);
+
   //===--------------------------------------------------------------------===//
   // Specialization
   //===--------------------------------------------------------------------===//
@@ -460,8 +463,14 @@ private:
   /// Callbacks to use for JIT functionalities.
   ElaboratorCompileAsmFn compileAsmFn;
 
+  /// Callbacks to use for bundling offload functions.
+  ElaboratorCompileOffloadFn compileOffloadFn;
+
   /// Deferred generated symbols to append to the module.
   SmallVector<FuncOp> deferredSymbols;
+
+  /// Bundled offload functions for different targets.
+  Shared<llvm::MapVector<TargetInfoAttr, OffloadInfo>> targetOffloadInfos;
 
   friend class IREvaluator;
 };

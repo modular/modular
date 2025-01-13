@@ -196,6 +196,13 @@ convertLLVMMetadata(LLVM::LLVMFuncOp func, NewSignatureType sig,
 
     // For anything else, forward them as function attributes.
     if (isa<UnitAttr, IntegerAttr>(value)) {
+      // HACK make kgen.offload.kernelid as passthrough attribute so that
+      // it gets kept during llvm lowering.
+      if (attr.getName() == "kgen.offload.kernelid") {
+        passthrough.push_back(b.getArrayAttr(
+            {attr.getName(), b.getStringAttr(std::to_string(
+                                 cast<IntegerAttr>(value).getInt()))}));
+      }
       // Propagate unit and integer attribute.
       attrs.append(attr.getName(), value);
     } else if (auto str = dyn_cast<StringAttr>(value)) {

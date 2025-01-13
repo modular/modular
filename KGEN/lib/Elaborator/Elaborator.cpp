@@ -20,6 +20,7 @@
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/ManglingUtils.h"
+#include "Support/Compiler/DiagnosticHandler.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -27,6 +28,7 @@
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/SCCIterator.h"
+#include "llvm/ADT/StringExtras.h"
 
 using namespace M;
 using namespace KGEN;
@@ -371,6 +373,7 @@ Elaborator::Elaborator(SymbolTable &symtab,
                        ParameterCollector::Analysis &paramCache,
                        TargetInfoAttr target, const CompilationOptions &options,
                        ElaboratorCompileAsmFn compileAsmFn,
+                       ElaboratorCompileOffloadFn compileOffloadFn,
                        const ElaborateGeneratorsOptions &config)
     : InterpreterCache(target, config.optimizeInterpreter), target(target),
       options(options), config(config), oldSymTab(symtab),
@@ -378,7 +381,7 @@ Elaborator::Elaborator(SymbolTable &symtab,
       runtime(*loadContext(target.getContext())->get<AsyncRT::Runtime>()),
       g(this->runtime),
       paramCache(paramCache, runtime.getWorkQueue()->getParallelismLevel()),
-      compileAsmFn(compileAsmFn) {}
+      compileAsmFn(compileAsmFn), compileOffloadFn(compileOffloadFn) {}
 
 //===----------------------------------------------------------------------===//
 // Elaborator::finalizeInstance
@@ -406,8 +409,12 @@ ErrorTreeOr<FuncOp> Elaborator::getConcreteFunction(ImplNode *parent,
   // If this doesn't reference anything in the existing module, then it must
   // refer to a concrete function in the new module.
   if (!gen) {
-    return cast<FuncOp>(
-        *concreteInsts.read([name](auto &insts) { return insts.at(name); }));
+    return concreteInsts.read([name](auto &insts) {
+      auto iter = insts.find(name);
+      if (iter == insts.end())
+        return FuncOp();
+      return cast<FuncOp>(iter->second);
+    });
   }
 
   auto vals =
@@ -1255,6 +1262,8 @@ ElaborationState Elaborator::processOp(ImplNode *node, Operation *op) {
     return processParamForOp(node, forOp);
   if (auto call = dyn_cast<GeneratorUserOpInterface>(op))
     return processCallOp(node, call);
+  if (auto compileOffload = dyn_cast<CompileOffloadOp>(op))
+    return bundleOffloadModules(node, compileOffload);
 
   // Delay elaboration of the DILocalVariableAttr until when locations are
   // elaborated.
@@ -1488,6 +1497,109 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
   g.numWorkItems.fetch_add(1);
   scheduleImplNode(newFuncNode);
   return ElaborationState::skipNode();
+}
+
+//===----------------------------------------------------------------------===//
+// Elaborator::bundleOffloadModules
+//===----------------------------------------------------------------------===//
+
+ElaborationState Elaborator::bundleOffloadModules(ImplNode *parent,
+                                                  CompileOffloadOp op) {
+
+  SmallVector<NamedAttribute> newAttrs;
+  bool changedAttrs = false;
+  for (const NamedAttribute &namedAttr : op->getAttrs()) {
+    Attribute value;
+    HANDLE_EVALUATOR_CONC(value, parent, op->getLoc(), namedAttr.getValue());
+    newAttrs.emplace_back(namedAttr.getName(), value);
+    changedAttrs |= namedAttr.getValue() != newAttrs.back().getValue();
+  }
+  if (changedAttrs)
+    op->setAttrs(newAttrs);
+
+  TargetInfoAttr target =
+      cast<TargetParamAttr>(op.getTargetTypeAttr()).getTarget();
+  EmitAs emissionKind = cast<EmitAsAttr>(op.getEmissionKindAttr()).getValue();
+
+  StringRef emissionOptionsStr =
+      cast<StringAttr>(op.getEmissionOptionAttr()).getValue();
+  auto symbol = dyn_cast<SymbolConstantAttr>(op.getFuncAttr());
+  if (!symbol || !symbol.getType().isFullyBound()) {
+    parent->setToError(
+        ErrorTree(op.getLoc(), "'compile_assembly' function is not concrete"));
+    return failure();
+  }
+
+  // Handle the emission options.
+  // Parse the emission options from a comma separated list of values.
+  SmallVector<StringRef> emissionOptions;
+  emissionOptionsStr.split(emissionOptions, /*Separator=*/",",
+                           /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+
+  // Handle the emission options.
+  ErrorOrSuccess parseResult = parseEmissionOptions(emissionOptions);
+  if (parseResult.isError()) {
+    parent->setToError(ErrorTree(op.getLoc(), parseResult.takeError()));
+    return failure();
+  }
+
+  SymbolTable symtabCopy = oldSymTab;
+
+  auto func = symtabCopy.lookup<GeneratorOp>(
+      cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr());
+  assert(func && "expected a valid generator reference");
+
+  // Construct the expected result type.
+  MLIRContext *ctx = op.getContext();
+  Builder b(ctx);
+  auto noneType = KGEN::NoneType::get(ctx);
+  auto populateFnType = SignatureGeneratorType::get(
+      {}, b.getFunctionType(PointerType::get(noneType), noneType),
+      {ArgConvention::ReadReg}, FnEffects().setCapturing());
+
+  // Specialize the generator with another target by slicing it and its
+  // transitive dependencies out of the IR and re-invoking the elaborator. If it
+  // turns out that the specialization has more than one implementation, then
+  // the elaborator invocation will fail due to multiple implementations of a
+  // primary generator, and the functor will return an error.
+  StringAttr name =
+      getExpectedMangledName(func, symbol.getParamValues(), /*sanitize=*/false);
+
+  targetOffloadInfos.modify([&](auto &info) {
+    OffloadInfo &offloadInfo = info[target];
+
+    auto iter =
+        offloadInfo.symbols.insert({func, OffloadInfo::SymbolInfo{}}).first;
+
+    auto pair = iter->second.insert(
+        {symbol, OffloadInfo::KernelInfo{
+                     name, offloadInfo.numKernels, populateFnType, {}}});
+
+    if (pair.second)
+      offloadInfo.numKernels += 1;
+
+    pair.first->second.emissionKinds.insert(emissionKind);
+
+    OpBuilder b(ctx);
+    op.setKernelIDAttr(b.getIndexAttr(pair.first->second.kernelId));
+
+    // Slice out a pre-elaboration module for the new target to compile for.
+    ExportMap &exportedSymbols = offloadInfo.exportedSymbols;
+    exportedSymbols.insert({func.getSymNameAttr(), ExportKind::Exported});
+
+    // Make sure to slice out anything referenced in the input parameters. When
+    // generator references are instantiated in the standalone module, they are
+    // instantiated with the new target.
+    mlir::AttrTypeWalker walker;
+    walker.addWalk([&](SymbolConstantAttr ref) {
+      exportedSymbols.insert(
+          {ref.getSymbol().getRootReference(), ExportKind::NotExported});
+    });
+    for (TypedAttr attr : symbol.getParamValues())
+      walker.walk(attr);
+  });
+
+  return ElaborationState::advance();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1810,12 +1922,35 @@ Elaborator::run(ModuleOp theModule,
                            "call expansion failed");
     }
   }
+
+  // Compile the offload functions here.
+  MLIRContext *ctx = theModule.getContext();
+  DiagnosticHandler handler(ctx);
+  ErrorOr<DenseMap<uint64_t, OffloadCompilationResult>> compiledOffloadOr =
+      compileOffloadFn(theModule, targetOffloadInfos.get(), oldSymTab, options,
+                       getOptions(), handler.getHandlerID());
+  failed |= compiledOffloadOr.isError();
+  handler.release();
+
   if (failed) {
     for (InstantiatedOpInterface inst :
          llvm::make_second_range(concreteInsts.get()))
       inst.erase();
 
     return failure();
+  }
+
+  for (auto &[idx, kernel] : *compiledOffloadOr) {
+    auto populate = cast<FuncOp>(kernel.func.get());
+    auto symbol = SymbolConstantAttr::get(populate);
+
+    FuncOp func = *getConcreteFunction(nullptr, populate.getLoc(), symbol);
+    if (func) {
+      // Now filling in the actual body of the populate closure which is
+      // generated while compiling all the offload functions.
+      func.getBodyRegion().takeBody(
+          cast<FuncOp>(kernel.func.release()).getBodyRegion());
+    }
   }
 
   // Cleanup pass - we want to remove generators and interfaces by replacing
@@ -1871,6 +2006,36 @@ Elaborator::run(ModuleOp theModule,
   // Update the symbol table with the new one.
   theModule.getBody()->erase();
   theModule.getBodyRegion().push_back(newBlock);
+
+  // Plug offload compilation results as strings back to the elaborated IR.
+  DenseMap<uint64_t, OffloadCompilationResult> compiledOffload =
+      compiledOffloadOr.takeValue();
+
+  theModule.walk([&](CompileOffloadOp op) {
+    auto kernelID = cast<IntegerAttr>(op.getKernelIDAttr()).getInt();
+    auto iter = compiledOffload.find(kernelID);
+    if (iter != compiledOffload.end()) {
+      OpBuilder b(op);
+      auto content = iter->second.content;
+      auto numCaptures = iter->second.numCaptures;
+      auto structType = StructType::get(
+          op->getContext(), {content.getType(), numCaptures.getType()});
+
+      SmallVector<Value> values;
+
+      auto constantV = b.create<ParamConstantOp>(op.getLoc(), content);
+      auto numCapturesV = b.create<ParamConstantOp>(op.getLoc(), numCaptures);
+      values.push_back(constantV);
+      values.push_back(numCapturesV);
+      auto newOp =
+          b.create<KGEN::StructCreateOp>(op->getLoc(), structType, values);
+
+      op->replaceUsesOfWith(op.getResult(), newOp);
+      op.replaceAllUsesWith(newOp.getResult());
+      op.erase();
+    }
+  });
+
   // Recompute the new symbol table.
   oldSymTab = SymbolTable(theModule);
   return success();
@@ -1895,9 +2060,11 @@ public:
   ElaborateGeneratorsPass(const ElaborateGeneratorsOptions &elabOpts = {},
                           TargetInfoAttr target = nullptr,
                           const CompilationOptions &options = {},
-                          ElaboratorCompileAsmFn compileAsmFn = {})
+                          ElaboratorCompileAsmFn compileAsmFn = {},
+                          ElaboratorCompileOffloadFn compileOffloadFn = {})
       : ElaborateGeneratorsBase(elabOpts), target(target), options(options),
-        compileAsmFn(std::move(compileAsmFn)) {}
+        compileAsmFn(std::move(compileAsmFn)),
+        compileOffloadFn(std::move(compileOffloadFn)) {}
 
   LogicalResult initialize(MLIRContext *ctx) override {
     // Default to the host target if one was not specified
@@ -1970,7 +2137,8 @@ public:
     VerboseCompilerTimeTraceScope traceScope("elaborate-generators");
 
     // Now, construct and run the elaborator.
-    Elaborator impl(symtab, paramCache, target, options, compileAsmFn, config);
+    Elaborator impl(symtab, paramCache, target, options, compileAsmFn,
+                    compileOffloadFn, config);
     if (failed(impl.run(theModule, roots.takeVector())))
       return signalPassFailure();
   }
@@ -1982,12 +2150,17 @@ private:
   CompilationOptions options;
   /// The functor used to compile a module to assembly.
   ElaboratorCompileAsmFn compileAsmFn;
+
+  /// The functor used to compile bundled offload functions.
+  ElaboratorCompileOffloadFn compileOffloadFn;
 };
 } // namespace
 
 std::unique_ptr<mlir::Pass> KGEN::createElaborateGenerators(
     TargetInfoAttr target, const ElaborateGeneratorsOptions &elabOpts,
-    const CompilationOptions &options, ElaboratorCompileAsmFn compileAsmFn) {
+    const CompilationOptions &options, ElaboratorCompileAsmFn compileAsmFn,
+    ElaboratorCompileOffloadFn compileOffloadFn) {
   return std::make_unique<ElaborateGeneratorsPass>(elabOpts, target, options,
-                                                   std::move(compileAsmFn));
+                                                   std::move(compileAsmFn),
+                                                   std::move(compileOffloadFn));
 }

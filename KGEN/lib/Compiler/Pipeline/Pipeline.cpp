@@ -115,10 +115,10 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
   }
 }
 
-void KGEN::buildElaborateModulePipeline(mlir::PassManager &pm,
-                                        TargetInfoAttr target,
-                                        const CompilationOptions &options,
-                                        ElaboratorCompileAsmFn compileAsmFn) {
+void KGEN::buildElaborateModulePipeline(
+    mlir::PassManager &pm, TargetInfoAttr target,
+    const CompilationOptions &options, ElaboratorCompileAsmFn compileAsmFn,
+    ElaboratorCompileOffloadFn compileOffloadFn) {
   pm.addPass(createEliminateDeadSymbols());
 
   // Erase debuginfo from all sources if compiling with no debuginfo.
@@ -146,7 +146,7 @@ void KGEN::buildElaborateModulePipeline(mlir::PassManager &pm,
   // When compiling with -O0, optimize functions before interpreting them.
   elaboratorOptions.optimizeInterpreter = options.optimizationLevel == 0;
   pm.addPass(createElaborateGenerators(target, elaboratorOptions, options,
-                                       compileAsmFn));
+                                       compileAsmFn, compileOffloadFn));
 }
 
 void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,

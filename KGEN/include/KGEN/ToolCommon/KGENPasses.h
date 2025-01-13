@@ -7,12 +7,14 @@
 #ifndef KGEN_TOOLCOMMON_KGENPASSES_H
 #define KGEN_TOOLCOMMON_KGENPASSES_H
 
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassOptions.h"
+#include "llvm/ADT/SmallSet.h"
 
 //===----------------------------------------------------------------------===//
 // Forward Declarations
@@ -110,6 +112,28 @@ struct CrossDeviceFunction {
   OwningOpRef<Operation *> populateCapturesFn;
 };
 
+struct OffloadInfo {
+  struct KernelInfo {
+    StringAttr name;
+    uint64_t kernelId;
+    SignatureGeneratorType populateFnType;
+    llvm::SmallSet<EmitAs, 4> emissionKinds;
+  };
+
+  using SymbolInfo = llvm::MapVector<SymbolConstantAttr, KernelInfo>;
+
+  uint64_t numKernels = 0;
+  ExportMap exportedSymbols;
+  llvm::MapVector<Operation *, SymbolInfo> symbols;
+};
+
+struct OffloadCompilationResult {
+  OwningOpRef<Operation *> func;
+  StringAttr content;
+  IntegerAttr numCaptures;
+  SymbolConstantAttr populate;
+};
+
 using EmissionOptions = ArrayRef<StringRef>;
 /// Function to slice and compile the generator to assembly with the provided
 /// input parameters and target. The expected mangled name of the generate is
@@ -119,13 +143,27 @@ using ElaboratorCompileAsmFn = ErrorOr<CrossDeviceFunction> (*)(
     TargetInfoAttr, EmitAs, EmissionOptions, CompilationOptions,
     ElaborateGeneratorsOptions, mlir::DiagnosticEngine::HandlerID);
 
+/// Function to prepare slice and compile the generator to its offload target
+/// with the provided input parameters and target. The actual compilation
+/// will happen later when all generators for the same target are collected and
+/// will be compiled together.
+/// The expected mangled name of the generate is passed to be used
+/// as the entry point.
+using ElaboratorCompileOffloadFn =
+    ErrorOr<DenseMap<uint64_t, OffloadCompilationResult>> (*)(
+        ModuleOp module,
+        llvm::MapVector<TargetInfoAttr, OffloadInfo> &targetOffloadInfos,
+        const SymbolTable &, CompilationOptions, ElaborateGeneratorsOptions,
+        mlir::DiagnosticEngine::HandlerID);
+
 /// Create an instance of the elaborator pass that captures all of the
 /// referenced include files.
 std::unique_ptr<mlir::Pass>
 createElaborateGenerators(TargetInfoAttr target,
                           const ElaborateGeneratorsOptions &elabOpts = {},
                           const CompilationOptions &options = {},
-                          ElaboratorCompileAsmFn compileAsmFn = {});
+                          ElaboratorCompileAsmFn compileAsmFn = {},
+                          ElaboratorCompileOffloadFn compileOffloadFn = {});
 
 //===----------------------------------------------------------------------===//
 // Inlining
@@ -199,6 +237,9 @@ struct LowerToLLVMOptions
 
 /// Register the lower to LLVM pipeline.
 void registerLowerToLLVMPipeline();
+
+///
+ErrorOrSuccess parseEmissionOptions(EmissionOptions emissionOptions);
 
 } // namespace KGEN
 } // namespace M

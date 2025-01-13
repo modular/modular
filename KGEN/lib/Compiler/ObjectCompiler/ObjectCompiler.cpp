@@ -1313,7 +1313,7 @@ static ErrorOr<uint64_t> getKernelIDFromLLVMModule(llvm::Module &module) {
       for (auto &attr : attrSet) {
         if (!attr.isStringAttribute())
           continue;
-        if (attr.getKindAsString() == "kgen.accelerator.kernelid") {
+        if (attr.getKindAsString() == "kgen.offload.kernelid") {
           uint64_t kernelId;
           if (llvm::to_integer(attr.getValueAsString(), kernelId)) {
             // Remove the ID attribute so that caching won't take this into
@@ -1328,7 +1328,7 @@ static ErrorOr<uint64_t> getKernelIDFromLLVMModule(llvm::Module &module) {
     }
   }
 
-  return Error("Can't find kgen.accelerator.kernelid from the llvm split.");
+  return Error("Can't find kgen.offload.kernelid from the llvm split.");
 }
 
 static AnyAsyncValueRef
@@ -1430,7 +1430,8 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
                                    resultKernelId = resultKernelId.copy(),
                                    produceModule = std::move(produceModule),
                                    loc, moduleIdx, isJIT, options, &runtime,
-                                   &transformCache, emitAssembly]() mutable {
+                                   transformCache = transformCache.copy(),
+                                   emitAssembly]() mutable {
     CompilerTimeTraceScope traceScope("lowerLLVMModuleToObjectGPU");
 
     // Materialize the module.
