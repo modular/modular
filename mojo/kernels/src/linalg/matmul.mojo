@@ -88,7 +88,7 @@ fn elementwise_epilogue_c_tile[
 
 
 # Interface method
-fn tiledMatmulRun[
+fn tiled_matmul_run[
     config: KernelConfig,
     transpose_b: Bool,
     b_packed: Bool,
@@ -861,7 +861,7 @@ fn _submatmul_sequential_sync[
         else:
             pass
 
-    tiledMatmulRun[
+    tiled_matmul_run[
         config,
         transpose_b,
         b_packed,
