@@ -162,17 +162,6 @@ def test_eq():
 
     var p4 = UnsafePointer.address_of(local).origin_cast[mut=False]()
     assert_equal(p1, p4)
-
-    var p5 = UnsafePointer[Int]()
-    assert_true(p5 == None)
-    assert_true(p5 is None)
-    assert_false(p5 != None)
-    assert_false(p5 is not None)
-    assert_false(p1 == None)
-    assert_false(p1 is None)
-    assert_true(p1 != None)
-    assert_true(p1 is not None)
-
     _ = local
     _ = other_local
 

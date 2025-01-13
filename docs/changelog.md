@@ -171,10 +171,6 @@ what we publish.
 - `bit_ceil` has been renamed to `next_power_of_two`, and `bit_floor` to
   `prev_power_of_two`. This is to improve readability and clarity in their use.
 
-- The `UnsafePointer` type now is comparable against the `None` type. This
-  enables one to write code like `if ptr is not None:` to check if the value
-  of the pointer is not a null ptr.
-
 - The `Indexer` and `IntLike` traits which were previously both used for
   indexing have been combined. This enables SIMD scalar integer types and UInt
   to be used for indexing into all of the collection types, as well as
