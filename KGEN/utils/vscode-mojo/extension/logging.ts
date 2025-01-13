@@ -13,12 +13,36 @@ import { window } from 'vscode';
 
 import { DisposableContext } from './utils/disposableContext';
 
-type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'NONE';
+enum LogLevel {
+  Trace = 0,
+  Debug = 1,
+  Info = 2,
+  Warn = 3,
+  Error = 4,
+  None = 5,
+}
+
+const logLevelToString = (level: LogLevel) => {
+  switch (level) {
+    case LogLevel.Trace:
+      return 'TRACE';
+    case LogLevel.Debug:
+      return 'DEBUG';
+    case LogLevel.Info:
+      return 'INFO';
+    case LogLevel.Warn:
+      return 'WARN';
+    case LogLevel.Error:
+      return 'ERROR';
+    case LogLevel.None:
+      return 'NONE';
+  }
+};
 
 class LogChannel {
   readonly outputChannel: vscode.OutputChannel;
-  private logLevel: LogLevel = 'INFO';
-  public logCallback?: (level: LogLevel, message: string) => void;
+  private logLevel: LogLevel = LogLevel.Info;
+  public logCallback?: (level: string, message: string) => void;
 
   constructor(outputChannelName: string) {
     this.outputChannel = window.createOutputChannel(outputChannelName);
@@ -34,17 +58,9 @@ class LogChannel {
    * @param message The message to append to the output channel
    */
   public logDebug(message: string, data?: unknown): void {
-    if (
-      this.logLevel === 'NONE' ||
-      this.logLevel === 'INFO' ||
-      this.logLevel === 'WARN' ||
-      this.logLevel === 'ERROR'
-    ) {
-      return;
-    }
-    this.logMessage(message, 'DEBUG');
+    this.log(LogLevel.Debug, message);
     if (data) {
-      this.logObject(data);
+      this.log(LogLevel.Debug, data);
     }
   }
 
@@ -54,16 +70,9 @@ class LogChannel {
    * @param message The message to append to the output channel
    */
   public logInfo(message: string, data?: unknown): void {
-    if (
-      this.logLevel === 'NONE' ||
-      this.logLevel === 'WARN' ||
-      this.logLevel === 'ERROR'
-    ) {
-      return;
-    }
-    this.logMessage(message, 'INFO');
+    this.log(LogLevel.Info, message);
     if (data) {
-      this.logObject(data);
+      this.log(LogLevel.Info, data);
     }
   }
 
@@ -73,33 +82,27 @@ class LogChannel {
    * @param message The message to append to the output channel
    */
   public logWarning(message: string, data?: unknown): void {
-    if (this.logLevel === 'NONE' || this.logLevel === 'ERROR') {
-      return;
-    }
-    this.logMessage(message, 'WARN');
+    this.log(LogLevel.Warn, message);
     if (data) {
-      this.logObject(data);
+      this.log(LogLevel.Warn, data);
     }
   }
 
   public logError(message: string, error?: unknown) {
-    if (this.logLevel === 'NONE') {
-      return;
-    }
-    this.logMessage(message, 'ERROR');
+    this.log(LogLevel.Error, message);
     if (typeof error === 'string') {
       // Errors as a string usually only happen with plugins that don't return
       // the expected error.
-      this.outputChannel.appendLine(error);
+      this.log(LogLevel.Error, error);
     } else if (error instanceof Error) {
       if (error?.message) {
-        this.logMessage(error.message, 'ERROR');
+        this.log(LogLevel.Error, error.message);
       }
       if (error?.stack) {
-        this.outputChannel.appendLine(error.stack);
+        this.log(LogLevel.Error, error.stack);
       }
     } else if (error) {
-      this.logObject(error);
+      this.log(LogLevel.Error, error);
     }
   }
 
@@ -107,26 +110,28 @@ class LogChannel {
     this.outputChannel.show();
   }
 
-  private logObject(data: unknown): void {
-    const message = JSON.stringify(data, null, 2);
-    this.outputChannel.appendLine(message);
-
-    if (this.logCallback) {
-      this.logCallback('NONE', message);
-    }
-  }
-
   /**
    * Append messages to the output channel and format it with a title
    *
    * @param message The message to append to the output channel
    */
-  private logMessage(message: string, logLevel: LogLevel): void {
+  private log(logLevel: LogLevel, message: unknown): void {
+    if (this.logLevel > logLevel) {
+      return;
+    }
+
+    if (typeof message !== 'string') {
+      message = JSON.stringify(message, null, 2);
+    }
+
     const title = new Date().toLocaleTimeString();
-    this.outputChannel.appendLine(`["${logLevel}" - ${title}] ${message}`);
+    this.outputChannel.appendLine(
+      `["${logLevelToString(logLevel)}" - ${title}] ${message}`,
+    );
 
     if (this.logCallback) {
-      this.logCallback(logLevel, message);
+      // tsc doesn't understand that `message` is guaranteed to be a string at this point.
+      this.logCallback(logLevelToString(logLevel), message as string);
     }
   }
 
@@ -147,8 +152,8 @@ export class Logger extends DisposableContext {
     this.lsp = new LogChannel('Mojo Language Server' + suffix);
 
     if (isNightly) {
-      this.main.setOutputLevel('DEBUG');
-      this.lsp.setOutputLevel('DEBUG');
+      this.main.setOutputLevel(LogLevel.Debug);
+      this.lsp.setOutputLevel(LogLevel.Debug);
     }
 
     this.pushSubscription(this.main);
