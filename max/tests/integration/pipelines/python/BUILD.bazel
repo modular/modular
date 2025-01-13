@@ -173,37 +173,6 @@ modular_py_test(
 )
 
 modular_py_binary(
-    name = "evaluate_pipelines",
-    srcs = ["evaluate_pipelines.py"],
-    data = [
-        "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
-        "//Kernels/tools/gpu-query",
-        "//SDK/integration-test/pipelines/python/llama3/testdata",
-        "//Support/tools/system-info",
-        "@llvm-project//compiler-rt:orc_rt",
-    ],
-    env = {
-        "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/gpu-query)",
-        "PIPELINES_TESTDATA": (
-            "SDK/integration-test/pipelines/python/llama3/testdata"
-        ),
-    },
-    tags = ["no-mypy"],  # TODO
-    visibility = ["//visibility:public"],
-    deps = [
-        requirement("click"),
-        requirement("lm-eval"),
-        requirement("scipy"),
-        requirement("numpy"),
-        requirement("pillow"),
-        requirement("requests"),
-        ":generate_llm_logits",
-        "//SDK/integration-test/pipelines/python/test_common",
-    ],
-)
-
-modular_py_binary(
     name = "lm-eval",
     srcs = ["run_lm_eval.py"],
     main = "run_lm_eval.py",
