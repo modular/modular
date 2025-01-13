@@ -53,10 +53,8 @@ struct TraitStruct(SimpleTrait):
         pass
 
 
-fn test_many_things_of_specified_trait[
-    element_type: __mlir_type[`!lit.anytrait<`, AnyType, `>`],
-    *element_types: element_type,
-]():
+fn test_many_things_of_specified_trait[element_type: __type_of(AnyType),
+                                       *element_types: element_type]():
     pass
 
 
