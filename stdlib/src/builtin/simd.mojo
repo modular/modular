@@ -287,15 +287,55 @@ struct SIMD[type: DType, size: Int](
         _simd_construction_checks[type, size]()
         self = _unchecked_zero[type, size]()
 
-    # FIXME(MOCO-1291): Can't implement this due to ambiguity.
-    # @always_inline("nodebug")
-    # fn __init__(out self, *, other: SIMD[type, size]):
-    #    """Explicitly copy the provided value.
+    @always_inline("nodebug")
+    fn __init__[other_type: DType, //](out self, value: SIMD[other_type, size]):
+        """Initialize from another SIMD of the same size. If the value
+        passed is a scalar, you can initialize a SIMD vector with more elements.
 
-    #    Args:
-    #        other: The value to copy.
-    #    """
-    #    self = other
+        Parameters:
+            other_type: The type of the value that is being cast from.
+
+        Args:
+            value: The value to cast from.
+
+        Example:
+
+        ```mojo
+        print(UInt64(UInt8(42))) # 42
+        print(SIMD[DType.uint64, 4](UInt8(42))) # [42, 42, 42, 42]
+        ```
+
+        Casting behavior:
+
+        ```mojo
+        # Basic casting preserves value within range
+        Int8(UInt8(127)) == Int8(127)
+
+        # Numbers above signed max wrap to negative using two's complement
+        Int8(UInt8(128)) == Int8(-128)
+        Int8(UInt8(129)) == Int8(-127)
+        Int8(UInt8(256)) == Int8(0)
+
+        # Negative signed cast to unsigned using two's complement
+        UInt8(Int8(-128)) == UInt8(128)
+        UInt8(Int8(-127)) == UInt8(129)
+        UInt8(Int8(-1)) == UInt8(255)
+
+        # Truncate precision after downcast and upcast
+        Float64(Float32(Float64(123456789.123456789))) == Float64(123456792.0)
+
+        # Rightmost bits of significand become 0's on upcast
+        Float64(Float32(0.3)) == Float64(0.30000001192092896)
+
+        # Numbers equal after truncation of float literal and cast truncation
+        Float32(Float64(123456789.123456789)) == Float32(123456789.123456789)
+
+        # Float to int/uint floors
+        Int64(Float64(42.2)) == Int64(42)
+        ```
+        .
+        """
+        self = value.cast[type]()
 
     @always_inline
     fn copy(self) -> Self:
@@ -620,19 +660,23 @@ struct SIMD[type: DType, size: Int](
                 )
             )
 
-    fn __init__[
+    @staticmethod
+    fn from_bits[
         int_type: DType, //
-    ](mut self, *, from_bits: SIMD[int_type, size]):
+    ](value: SIMD[int_type, size]) -> SIMD[type, size]:
         """Initializes the SIMD vector from the bits of an integral SIMD vector.
 
         Parameters:
             int_type: The integral type of the input SIMD vector.
 
         Args:
-            from_bits: The SIMD vector to copy the bits from.
+            value: The SIMD vector to copy the bits from.
+
+        Returns:
+            The bitcast SIMD vector.
         """
         constrained[int_type.is_integral(), "the SIMD type must be integral"]()
-        self = bitcast[type, size](from_bits)
+        return bitcast[type, size](value)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -1637,7 +1681,7 @@ struct SIMD[type: DType, size: Int](
 
             # FIXME: This should be an alias
             var mask = FPUtils[type].exponent_mantissa_mask()
-            return Self(from_bits=self.to_bits() & mask)
+            return Self.from_bits(self.to_bits() & mask)
         else:
             return (self < 0).select(-self, self)
 
@@ -1719,6 +1763,36 @@ struct SIMD[type: DType, size: Int](
         Returns:
             A new SIMD vector whose elements have been casted to the target
             element type.
+
+        Casting behavior:
+
+        ```mojo
+        # Basic casting preserves value within range
+        Int8(UInt8(127)) == Int8(127)
+
+        # Numbers above signed max wrap to negative using two's complement
+        Int8(UInt8(128)) == Int8(-128)
+        Int8(UInt8(129)) == Int8(-127)
+        Int8(UInt8(256)) == Int8(0)
+
+        # Negative signed cast to unsigned using two's complement
+        UInt8(Int8(-128)) == UInt8(128)
+        UInt8(Int8(-127)) == UInt8(129)
+        UInt8(Int8(-1)) == UInt8(255)
+
+        # Truncate precision after downcast and upcast
+        Float64(Float32(Float64(123456789.123456789))) == Float64(123456792.0)
+
+        # Rightmost bits of significand become 0's on upcast
+        Float64(Float32(0.3)) == Float64(0.30000001192092896)
+
+        # Numbers equal after truncation of float literal and cast truncation
+        Float32(Float64(123456789.123456789)) == Float32(123456789.123456789)
+
+        # Float to int/uint floors
+        Int64(Float64(42.2)) == Int64(42)
+        ```
+        .
         """
 
         @parameter
@@ -3444,7 +3518,7 @@ fn _floor(x: SIMD) -> __type_of(x):
         bits & ~((1 << (shift_factor - e)) - 1),
         bits,
     )
-    return __type_of(x)(from_bits=bits)
+    return __type_of(x).from_bits(bits)
 
 
 fn _write_scalar[

@@ -69,6 +69,42 @@ def test_cast():
         )
 
 
+def test_cast_init():
+    # Basic casting preserves value within range
+    assert_equal(Int8(UInt8(127)), Int8(127))
+
+    # Numbers above signed max wrap to negative using two's complement
+    assert_equal(Int8(UInt8(128)), Int8(-128))
+    assert_equal(Int8(UInt8(129)), Int8(-127))
+    assert_equal(Int8(UInt8(256)), Int8(0))
+
+    # Negative signed convert to unsigned using two's complement
+    assert_equal(UInt8(Int8(-128)), UInt8(128))
+    assert_equal(UInt8(Int8(-127)), UInt8(129))
+    assert_equal(UInt8(Int8(-1)), UInt8(255))
+
+    # Truncate precision after downcast and upcast
+    assert_equal(
+        Float64(Float32(Float64(123456789.123456789))), Float64(123456792.0)
+    )
+
+    # Rightmost bits of significand become 0's on upcast
+    assert_equal(Float64(Float32(0.3)), Float64(0.30000001192092896))
+
+    # Numbers equal after truncation of float literal and cast truncation
+    assert_equal(
+        Float32(Float64(123456789.123456789)), Float32(123456789.123456789)
+    )
+
+    # Float to int/uint floors
+    assert_equal(Int64(Float64(42.2)), Int64(42))
+
+    # Pass a scalar to initialize a SIMD vector with more elements
+    assert_equal(
+        SIMD[DType.float64, 4](Float32(21.5)), SIMD[DType.float64, 4](21.5)
+    )
+
+
 def test_simd_variadic():
     assert_equal(str(SIMD[DType.index, 4](52, 12, 43, 5)), "[52, 12, 43, 5]")
 
@@ -1839,6 +1875,7 @@ def main():
     test_abs()
     test_add()
     test_cast()
+    test_cast_init()
     test_ceil()
     test_convert_simd_to_string()
     test_simd_repr()

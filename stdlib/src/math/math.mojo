@@ -421,8 +421,8 @@ fn exp2[
             1.33336498402e-3,
         ),
     ](xc)
-    return __type_of(r)(
-        from_bits=(r.to_bits() + (m << FPUtils[type].mantissa_width()))
+    return __type_of(r).from_bits(
+        (r.to_bits() + (m << FPUtils[type].mantissa_width()))
     )
 
 
@@ -489,7 +489,7 @@ fn _ldexp_impl[
     alias integral_type = FPUtils[type].integral_type
     var m = exp.cast[integral_type]() + FPUtils[type].exponent_bias()
 
-    return x * __type_of(x)(from_bits=m << FPUtils[type].mantissa_width())
+    return x * __type_of(x).from_bits(m << FPUtils[type].mantissa_width())
 
 
 @always_inline
@@ -676,7 +676,7 @@ fn frexp[
         (((mask1 & x_int) >> mantissa_width) - exponent_bias).cast[type](),
         zero,
     )
-    var frac = selector.select(T(from_bits=x_int & ~mask1 | mask2), zero)
+    var frac = selector.select(T.from_bits(x_int & ~mask1 | mask2), zero)
     return StaticTuple[size=2](frac, exp)
 
 
