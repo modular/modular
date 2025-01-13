@@ -113,21 +113,16 @@ static constexpr bool kIsProfilingEnabled =
 // giving the user more control over which types of traces they want to see.
 struct Trace {
   enum Type : uint8_t {
-    // For traces not covered by any of the following.
+    // kOther:
+    //   For traces not covered by any of the following.
     // Level 1:
     //   DriverProfilerEntry for mt's execution.
-    //   MGPProfilerEntry for mgp primitives which use addTask.
-    //   CUDAProfilerEntry for cuda primitives which use addTask.
-    //   ATenProfilerEntry for fallback ATen primitives.
-    //   TFProfilerEntry for fallback TF primitives.
-    //   TFLProfilerEntry for fallback TFL primitives.
-    //   malloc.
-    // Level 2:
+    //   ATENProfilerEntry for fallback ATen primitives.
     //   RuntimeCacheProfilerEntry for cache transforms.
     kOther = 0,
-    // For traces related to core AsyncRT scheduling and runtime.
-    // Level 1:
-    //   none
+
+    // kAsyncRT:
+    //   For traces related to core AsyncRT scheduling and runtime.
     // Level 2:
     //   AlgorithmProfilerEntry for addTask via parallization helpers
     //   InternalProfilerEntry for tracking thread spinning and sleeping.
@@ -135,7 +130,9 @@ struct Trace {
     //   AsyncProfilerEntry for AsyncValue allocation and premature freeing.
     //   AlllWorkItemsProfilerEntry for the execution of every work/wait item.
     kAsyncRT = 1,
-    // For traces related to memory usage.
+
+    // kMem:
+    //   For traces related to memory usage.
     // Level 1:
     //   MemCopyProfilerEntry for memcpy.
     // Level 2:
@@ -144,13 +141,19 @@ struct Trace {
     //   BufferRefLifetimeProfilerEntry for all buffer lifetimes.
     //   MemProfilerEntry for outstanding bytes allocated.
     kMem = 2,
-    // For traces related to mojo kernels. Controlled from Mojo side only.
+
+    // kMojo:
+    //   For traces related to mojo kernels. Controlled from Mojo side only.
     kMojo = 3,
-    // For the GraphRT executor.
+
+    // kPrimitives:
+    //   For traces related to GraphRT executor.
     // Level 1:
     //   PrimitiveProfilerEntry for all GraphRT primitives.
     kPrimitives = 4,
-    // For traces related to compilation.
+
+    // kCompiler:
+    //   For traces related to compilation.
     // Level 1:
     //   InterpreterProfilerEntry for Mojo interpreter traces.
     // Level 2:
@@ -291,7 +294,7 @@ struct BlockList {
 /// NOTE: `Label::intern()` returns a pointer into this `StringArena`.
 /// So it is important that those pointers are still valid after further
 /// insertion into the `StringArena`.
-/// `unordered_set` satisfies this property, but not that for example
+/// `unordered_set` satisfies this property, but note that for example
 /// `llvm::DenseSet` does not.
 using StringArena = std::unordered_set<std::string>;
 
@@ -776,7 +779,7 @@ struct GlobalProfilerContext {
   void writeJsonTrace(llvm::raw_pwrite_stream &os,
                       ArrayRef<CompletedEntry> entries);
 
-  /// Write all the completed entries in plaint text form to os.
+  /// Write all the completed entries in plain text form to os.
   void writeTextTrace(llvm::raw_pwrite_stream &os,
                       ArrayRef<CompletedEntry> entries);
 
