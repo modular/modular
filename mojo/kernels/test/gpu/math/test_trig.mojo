@@ -3,8 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# FIXME: KERN-1377
-# UNSUPPORTED: AMD-GPU
 # RUN: %mojo-no-debug-no-assert %s
 
 from math import cos, sin
@@ -19,8 +17,8 @@ fn run_func[
     type: DType, kernel_fn: fn (SIMD[type, 1]) capturing -> SIMD[type, 1]
 ](
     out_prefix: String,
-    val: SIMD[type, 1],
-    ref_: SIMD[type, 1],
+    val: Scalar[type],
+    ref_: Scalar[type],
     ctx: DeviceContext,
 ) raises:
     print("test trignometric functions on gpu")
@@ -38,7 +36,12 @@ fn run_func[
     var out_h = UnsafePointer[Scalar[type]].alloc(1)
     ctx.enqueue_copy_from_device(out_h, out)
     ctx.synchronize()
-    assert_almost_equal(out_h[0], ref_)
+    assert_almost_equal(
+        out_h[0],
+        ref_,
+        msg="while testing " + out_prefix + " for the dtype " + str(type),
+        atol=Scalar[type](1e-2) if type.is_half_float() else Scalar[type](1e-8),
+    )
     _ = out
     _ = func^
 
@@ -61,7 +64,7 @@ def main():
         return sin(val)
 
     with DeviceContext() as ctx:
-        run_func[DType.float32, cos_fn]("./cos", 10, -0.83907192945480347, ctx)
-        run_func[DType.float16, cos_fn]("./cos", 10, -0.8388671875, ctx)
-        run_func[DType.float32, sin_fn]("./sin", 10, -0.54402029514312744, ctx)
-        run_func[DType.float16, sin_fn]("./sin", 10, -0.5439453125, ctx)
+        run_func[DType.float32, cos_fn]("cos", 10, -0.83907192945480347, ctx)
+        run_func[DType.float16, cos_fn]("cos", 10, -0.8388671875, ctx)
+        run_func[DType.float32, sin_fn]("sin", 10, -0.54402029514312744, ctx)
+        run_func[DType.float16, sin_fn]("sin", 10, -0.5439453125, ctx)
