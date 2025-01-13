@@ -2486,11 +2486,10 @@ fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "cross_attention_kv_cache_h"
+        "mo.cross_attention.ragged.continuous_batching.null_mask.no_pos.nhead_"
         + str(kv_collection.kv_params.num_heads)
-        + "_d"
-        + str(kv_collection.kv_params.head_size)
-        + "_null_mask_cont_batch_ragged",
+        + ".hdim_"
+        + str(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         return _cross_attention_kv_cache_ragged[
@@ -2510,9 +2509,9 @@ fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged[
 
 
 @register_internal(
-    "cross_attention_kv_cache_h8_d128_null_mask_cont_batch_ragged"
+    "mo.cross_attention.ragged.continuous_batching.null_mask.no_pos.nhead_8.hdim_128"
 )
-fn cross_attention_kv_cache_h8_d128_null_mask_cont_batch_ragged[
+fn cross_attention_kv_cache_ragged_continuous_batching_null_mask_no_pos_nhead_8_hdim_128[
     type: DType, //, target: StringLiteral
 ](
     q: NDBuffer[type, 3, *_],
