@@ -331,7 +331,7 @@ fn count_many_things[*ArgTypes: Intable](*args: *ArgTypes) -> Int:
 
     @parameter
     fn add[Type: Intable](value: Type):
-        total += int(value)
+        total += Int(value)
 
     args.each[add]()
     return total
