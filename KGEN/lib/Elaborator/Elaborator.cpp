@@ -2013,11 +2013,13 @@ Elaborator::run(ModuleOp theModule,
 
   theModule.walk([&](CompileOffloadOp op) {
     auto kernelID = cast<IntegerAttr>(op.getKernelIDAttr()).getInt();
+    EmitAs emissionKind = cast<EmitAsAttr>(op.getEmissionKindAttr()).getValue();
+
     auto iter = compiledOffload.find(kernelID);
     if (iter != compiledOffload.end()) {
       OpBuilder b(op);
-      auto content = iter->second.content;
-      auto numCaptures = iter->second.numCaptures;
+      StringAttr content = iter->second.contents[emissionKind];
+      IntegerAttr numCaptures = iter->second.numCaptures;
       auto structType = StructType::get(
           op->getContext(), {content.getType(), numCaptures.getType()});
 

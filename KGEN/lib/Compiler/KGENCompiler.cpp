@@ -422,6 +422,8 @@ static ErrorOr<DenseMap<uint64_t, OffloadCompilationResult>> compileOffloads(
     llvm::MapVector<uint64_t, std::pair<OwningOpRef<FuncOp>, unsigned>>
         captures;
 
+    llvm::DenseMap<uint64_t, llvm::SmallSet<EmitAs, 4>> kernelEmissionKinds;
+
     for (auto [op, symbols] : offloadInfo.symbols) {
       for (auto [symbol, kernel] : symbols) {
 
@@ -430,21 +432,22 @@ static ErrorOr<DenseMap<uint64_t, OffloadCompilationResult>> compileOffloads(
 
         captures.insert({kernel.kernelId,
                          std::make_pair(std::move(capturesFunc), numCaptures)});
+        kernelEmissionKinds.insert({kernel.kernelId, kernel.emissionKinds});
       }
     }
 
-    ErrorOr<SmallVector<std::pair<BufferRef, uint64_t>>> kernelsOr =
-        compiler->emitGPUKernels(std::move(module), EmitAs::ASM);
+    ErrorOr<DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>> compiledKernelsOr =
+        compiler->emitGPUKernels(std::move(module), kernelEmissionKinds);
 
-    if (kernelsOr.isError())
-      return kernelsOr.takeError();
+    if (compiledKernelsOr.isError())
+      return compiledKernelsOr.takeError();
 
     OpBuilder b(theModule);
-    for (auto &bufAndIdx : *kernelsOr) {
-      uint64_t idx = bufAndIdx.second;
-      BufferRef &buf = bufAndIdx.first;
+    for (auto idAndKernels : *compiledKernelsOr) {
+      uint64_t kernelID = idAndKernels.first;
+      DenseMap<EmitAs, BufferRef> &bufs = idAndKernels.second;
 
-      auto iter = captures.find(idx);
+      auto iter = captures.find(kernelID);
       if (iter == captures.end())
         return Error("Can't find offload capture.");
 
@@ -453,14 +456,20 @@ static ErrorOr<DenseMap<uint64_t, OffloadCompilationResult>> compileOffloads(
 
       auto populate = cast<FuncOp>(func.get());
       auto populateFnRef = SymbolConstantAttr::get(populate);
+      DenseMap<EmitAs, StringAttr> contents;
+
+      for (auto kindAndContent : bufs) {
+        EmitAs kind = kindAndContent.first;
+        contents.insert(
+            {kind, StringAttr::get(kindAndContent.second->getBuffer(),
+                                   StringType::get(theModule->getContext()))});
+      }
 
       result.insert(
-          {idx, OffloadCompilationResult{
-                    {std::move(func)},
-                    StringAttr::get(buf->getBuffer(),
-                                    StringType::get(theModule->getContext())),
-                    b.getIndexAttr(numCaptures),
-                    populateFnRef}});
+          {kernelID, OffloadCompilationResult{{std::move(func)},
+                                              b.getIndexAttr(numCaptures),
+                                              populateFnRef,
+                                              std::move(contents)}});
     }
   }
 

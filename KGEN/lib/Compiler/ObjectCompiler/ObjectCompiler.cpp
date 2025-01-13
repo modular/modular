@@ -1309,20 +1309,22 @@ static ErrorOr<uint64_t> getKernelIDFromLLVMModule(llvm::Module &module) {
       continue;
 
     const llvm::AttributeList &funcAttrs = func.getAttributes();
-    for (auto [idx, attrSet] : llvm::enumerate(funcAttrs)) {
-      for (auto &attr : attrSet) {
-        if (!attr.isStringAttribute())
-          continue;
-        if (attr.getKindAsString() == "kgen.offload.kernelid") {
-          uint64_t kernelId;
-          if (llvm::to_integer(attr.getValueAsString(), kernelId)) {
-            // Remove the ID attribute so that caching won't take this into
-            // consideration.
-            llvm::AttributeList newList = funcAttrs.removeAttribute(
-                module.getContext(), idx, attr.getKindAsString());
-            func.setAttributes(newList);
-            return kernelId;
-          }
+
+    for (auto &attr :
+         funcAttrs.getAttributes(llvm::AttributeList::FunctionIndex)) {
+      if (!attr.isStringAttribute())
+        continue;
+      if (attr.getKindAsString() == "kgen.offload.kernelid") {
+        uint64_t kernelId;
+        if (llvm::to_integer(attr.getValueAsString(), kernelId)) {
+          // Remove the ID attribute so that caching won't take this into
+          // consideration.
+          llvm::AttributeList newList = funcAttrs.removeAttribute(
+              func.getContext(), llvm::AttributeList::FunctionIndex,
+              attr.getKindAsString());
+
+          func.setAttributes(newList);
+          return kernelId;
         }
       }
     }
@@ -1332,32 +1334,79 @@ static ErrorOr<uint64_t> getKernelIDFromLLVMModule(llvm::Module &module) {
 }
 
 static AnyAsyncValueRef
-lowerLLVMModuleToObject(llvm::Module &module, Location loc,
+lowerLLVMModuleToObject(llvm::Module &inputModule, Location loc,
                         RCRef<Cache::TransformCache> transformCache,
                         std::optional<size_t> moduleIdx,
                         AsyncRT::Runtime &runtime, CompilationOptions options,
-                        bool isJIT, bool emitAssembly) {
+                        bool isJIT, bool shouldDeserialize,
+                        EmitAs emissionKind) {
 
   WriteableBufferRef keyBuf = WriteableBuffer::get();
   options.print(*keyBuf << "compileLLVMModuleToObject(");
   *keyBuf << ")";
+  *keyBuf << " emitAs = " << emissionKind;
+  *keyBuf << " isJIT = " << isJIT;
+  size_t nonBitcodeKeySize = keyBuf->getBufferSize();
 
-  llvm::WriteBitcodeToFile(module, *keyBuf);
+  llvm::WriteBitcodeToFile(inputModule, *keyBuf);
 
   auto runTransformation = [loc, moduleIdx, isJIT, options, &runtime,
-                            emitAssembly, keyBuf = keyBuf.copy(),
-                            &module](WriteableBufferRef buf,
-                                     AsyncRT::AnyAsyncValueRef chain) mutable {
+                            emissionKind, keyBuf = keyBuf.copy(), &inputModule,
+                            nonBitcodeKeySize, shouldDeserialize](
+                               WriteableBufferRef buf,
+                               AsyncRT::AnyAsyncValueRef chain) mutable {
     auto output = AsyncRT::AsyncValueRef<BufferRef>::allocate(runtime);
 #ifdef MODULAR_ENABLE_TELEMETRY
     Cache::CacheTelemetryContext::getCacheTelemetryContext(runtime.context)
         .recordCacheMiss("lowerLLVMModuleToObjectGPU");
 #endif
 
-    chain.andThenAsync([loc, &runtime, emitAssembly, output = output.copy(),
+    chain.andThenAsync([loc, &runtime, emissionKind, output = output.copy(),
                         buf = buf.copy(), keyBuf = std::move(keyBuf), options,
-                        isJIT, moduleIdx, &module]() mutable {
+                        isJIT, moduleIdx, &inputModule, nonBitcodeKeySize,
+                        shouldDeserialize]() mutable {
       CompilerTimeTraceScope traceScope("lowerLLVMModuleToObjectGPU");
+
+      LLVMModuleAndContext deserializedModule;
+      // We need to deserialize the llvm::Module into a separate copy here
+      // when the same module split needs different emission kinds to avoid
+      // data race on running optimization son the same module for different
+      // parallel emission kind tasks. If there is only one emission kind,
+      // we don't nee to do the extra deserialize since there will not be
+      // any data race.
+      if (shouldDeserialize) {
+        if (auto err = deserializedModule.create(
+                [&](llvm::LLVMContext &ctx)
+                    -> ErrorOr<std::unique_ptr<llvm::Module>> {
+                  BufferRef keyBufRef(std::move(keyBuf));
+                  StringRef bitcodeBuffer = keyBufRef->getBuffer();
+                  bitcodeBuffer = bitcodeBuffer.drop_front(nonBitcodeKeySize);
+
+                  // Load the cached bytecode into a new context. This is
+                  // necessary to avoid data races during multi-threading.
+                  llvm::Expected<std::unique_ptr<llvm::Module>> moduleOr =
+                      llvm::parseBitcodeFile(
+                          llvm::MemoryBufferRef(bitcodeBuffer,
+                                                inputModule.getName()),
+                          ctx);
+                  if (!moduleOr) {
+                    return Error("failed to load LLVM IR bitcode");
+                  }
+                  return std::move(*moduleOr);
+                })) {
+          return std::move(output).setToError(
+              AsyncRT::getMLIRDiagnostic(err.takeError(), loc));
+        }
+      }
+
+      llvm::Module &module =
+          shouldDeserialize ? *deserializedModule : inputModule;
+
+      if (emissionKind == EmitAs::LLVM) {
+        *buf << module;
+        std::move(output).emplace(buf.copy());
+        return;
+      }
 
       // Create the target machine.
       auto tmOr = createTargetMachine(options, isJIT);
@@ -1373,22 +1422,28 @@ lowerLLVMModuleToObject(llvm::Module &module, Location loc,
             AsyncRT::getMLIRDiagnostic("failed to optimize LLVM IR.", loc));
       }
 
+      if (emissionKind == EmitAs::LLVM_OPT) {
+        *buf << module;
+        std::move(output).emplace(buf.copy());
+        return;
+      }
+
       std::unique_ptr<llvm::MachineModuleInfo> machineModuleInfo;
       std::unique_ptr<llvm::MCContext> mcContext;
       if (failed(runLlcPasses(
               module, options, tm, *buf, machineModuleInfo, mcContext,
-              emitAssembly ? llvm::CodeGenFileType::AssemblyFile
-                           : llvm::CodeGenFileType::ObjectFile,
+              emissionKind == EmitAs::ASM ? llvm::CodeGenFileType::AssemblyFile
+                                          : llvm::CodeGenFileType::ObjectFile,
               /*stopBeforeAsmPrint=*/false, 0, nullptr,
               runtime.context->get<M::Telemetry::TelemetryContext>()))) {
         return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
             "llc failed to codegen LLVM IR to object code", loc));
       }
 
-      if (emitAssembly) {
+      if (emissionKind == EmitAs::ASM) {
         std::move(output).emplace(buf.copy());
       } else {
-
+        // Emitting as a shared object
         ErrorOr<BufferRef> bufOr = createSharedObject(
             BufferRef::create(buf->Buffer::getBuffer()), options, "");
         if (bufOr.isError()) {
@@ -1421,17 +1476,19 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
     llvm::unique_function<LLVMModuleAndContext()> produceModule, Location loc,
     RCRef<Cache::TransformCache> transformCache,
     std::optional<size_t> moduleIdx, AsyncRT::Runtime &runtime,
-    CompilationOptions options, bool isJIT, bool emitAssembly) {
+    CompilationOptions options, bool isJIT,
+    DenseMap<uint64_t, llvm::SmallSet<EmitAs, 4>> &kernelEmissionKinds) {
 
-  auto resultBuf = AsyncRT::AsyncValueRef<BufferRef>::allocate(runtime);
+  auto resultBufs =
+      AsyncRT::AsyncValueRef<DenseMap<EmitAs, BufferRef>>::allocate(runtime);
   auto resultKernelId = AsyncRT::AsyncValueRef<uint64_t>::allocate(runtime);
 
-  runtime.getWorkQueue()->addTask([result = resultBuf.copy(),
+  runtime.getWorkQueue()->addTask([resultBufs = resultBufs.copy(),
                                    resultKernelId = resultKernelId.copy(),
                                    produceModule = std::move(produceModule),
                                    loc, moduleIdx, isJIT, options, &runtime,
                                    transformCache = transformCache.copy(),
-                                   emitAssembly]() mutable {
+                                   &kernelEmissionKinds]() mutable {
     CompilerTimeTraceScope traceScope("lowerLLVMModuleToObjectGPU");
 
     // Materialize the module.
@@ -1439,24 +1496,59 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
 
     ErrorOr<uint64_t> kernelIdOr = getKernelIDFromLLVMModule(*module);
     if (kernelIdOr) {
-      std::move(result).setToError(
-          AsyncRT::getMLIRDiagnostic("Can't find kernelId", loc));
+      std::move(resultBufs)
+          .setToError(AsyncRT::getMLIRDiagnostic("Can't find kernelId", loc));
       std::move(resultKernelId)
           .setToError(AsyncRT::getMLIRDiagnostic(kernelIdOr.takeError(), loc));
       return;
     }
 
-    // This step is cached.
-    AnyAsyncValueRef resultBuf =
-        lowerLLVMModuleToObject(*module, loc, transformCache, moduleIdx,
-                                runtime, options, isJIT, emitAssembly);
-    await(resultBuf);
+    SmallVector<EmitAs> emissionKinds;
+    SmallVector<AsyncRT::AnyAsyncValueRef> emissionResults;
+    llvm::SmallSet<EmitAs, 4> &kinds = kernelEmissionKinds[*kernelIdOr];
 
-    std::move(result).emplace(resultBuf.get<BufferRef>());
+    for (EmitAs kind : kinds) {
+      emissionKinds.push_back(kind);
+      switch (kind) {
+      case EmitAs::ASM:
+      case EmitAs::LLVM:
+      case EmitAs::LLVM_OPT:
+      case EmitAs::SHARED_OBJ:
+        emissionResults.push_back(lowerLLVMModuleToObject(
+            *module, loc, transformCache, moduleIdx, runtime, options, isJIT,
+            (kinds.size() > 1), kind));
+        break;
+
+      default:
+        std::move(resultBufs)
+            .setToError(
+                AsyncRT::getMLIRDiagnostic("EmitAs kind not supported", loc));
+        std::move(resultKernelId)
+            .setToError(
+                AsyncRT::getMLIRDiagnostic("EmitAs kind not supported", loc));
+        return;
+      }
+    }
+
+    auto kernelBufs =
+        AsyncRT::AsyncValueRef<DenseMap<EmitAs, BufferRef>>::allocate(runtime);
+
+    andThenSyncMoving(
+        emissionResults, [emissionKinds, resultBufs = kernelBufs.copy()](
+                             MutableArrayRef<AnyAsyncValueRef> values) mutable {
+          DenseMap<EmitAs, BufferRef> kernelResults;
+          for (auto [idx, result] : llvm::enumerate(values)) {
+            kernelResults.insert({emissionKinds[idx], result.get<BufferRef>()});
+          }
+          std::move(resultBufs).emplace(kernelResults);
+        });
+    await(kernelBufs);
+
+    std::move(resultBufs).emplace(kernelBufs.get());
     std::move(resultKernelId).emplace(*kernelIdOr);
   });
 
-  return std::make_pair(std::move(resultBuf), std::move(resultKernelId));
+  return std::make_pair(std::move(resultBufs), std::move(resultKernelId));
 }
 
 // Emit GPU kernels.
@@ -1470,9 +1562,10 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
 // - Extract kernel ID for each split.
 // - Run LLVM pipleine (opt + asmprint) to generate code for each kernel:
 //   PTX for Nvidia, an so lib for AMD.
-ErrorOr<SmallVector<std::pair<BufferRef, uint64_t>>>
-ObjectCompiler::emitGPUKernels(OwningOpRef<ModuleOp> module,
-                               EmitAs emissionKind) {
+ErrorOr<DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>>
+ObjectCompiler::emitGPUKernels(
+    OwningOpRef<ModuleOp> module,
+    llvm::DenseMap<uint64_t, llvm::SmallSet<EmitAs, 4>> kernelEmissionKinds) {
 
   CompilerTimeTraceScope traceScope("emitGPUKernels");
 
@@ -1515,9 +1608,9 @@ ObjectCompiler::emitGPUKernels(OwningOpRef<ModuleOp> module,
   auto handleSplit =
       [&](llvm::unique_function<LLVMModuleAndContext()> produceModule,
           std::optional<int64_t> idx, unsigned numFunctionsBase) {
-        auto result = lowerLLVMModuleToObject(std::move(produceModule),
-                                              moduleLoc, transformCache, idx,
-                                              runtime, options, isJIT, isNVPTX);
+        auto result = lowerLLVMModuleToObject(
+            std::move(produceModule), moduleLoc, transformCache, idx, runtime,
+            options, isJIT, kernelEmissionKinds);
         cachedResults.push_back(std::move(result.first));
         cachedIDResults.push_back(std::move(result.second));
       };
@@ -1528,25 +1621,25 @@ ObjectCompiler::emitGPUKernels(OwningOpRef<ModuleOp> module,
   }
 
   auto result = AsyncRT::AsyncValueRef<
-      SmallVector<std::pair<BufferRef, uint64_t>>>::allocate(runtime);
+      DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>>::allocate(runtime);
 
   andThenSyncMoving(
       cachedResults, [result = result.copy()](
                          MutableArrayRef<AnyAsyncValueRef> values) mutable {
-        SmallVector<std::pair<BufferRef, uint64_t>> results;
+        DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>> results;
         size_t numTotalKernels = values.size() / 2;
 
         for (size_t i = 0; i < numTotalKernels; ++i) {
-          AnyAsyncValueRef &buf = values[i];
+          AnyAsyncValueRef &bufs = values[i];
           AnyAsyncValueRef &kernelId = values[i + numTotalKernels];
 
-          if (buf.isError())
-            return std::move(result).setToError(buf.takeDiagnostic());
+          if (bufs.isError())
+            return std::move(result).setToError(bufs.takeDiagnostic());
           if (kernelId.isError())
             return std::move(result).setToError(kernelId.takeDiagnostic());
 
-          results.emplace_back(std::make_pair(std::move(buf.get<BufferRef>()),
-                                              kernelId.get<uint64_t>()));
+          results.insert({kernelId.get<uint64_t>(),
+                          std::move(bufs.get<DenseMap<EmitAs, BufferRef>>())});
         }
         std::move(result).emplace(std::move(results));
       });

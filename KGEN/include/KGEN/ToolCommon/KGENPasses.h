@@ -129,9 +129,9 @@ struct OffloadInfo {
 
 struct OffloadCompilationResult {
   OwningOpRef<Operation *> func;
-  StringAttr content;
   IntegerAttr numCaptures;
   SymbolConstantAttr populate;
+  DenseMap<EmitAs, StringAttr> contents;
 };
 
 using EmissionOptions = ArrayRef<StringRef>;
