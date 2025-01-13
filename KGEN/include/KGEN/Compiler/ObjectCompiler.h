@@ -16,6 +16,7 @@
 #include "KGEN/ToolCommon/PassManagerConfigOptions.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
+#include "llvm/ADT/SmallSet.h"
 #include <filesystem>
 #include <string>
 
@@ -77,8 +78,9 @@ public:
   LogicalResult emitCXXHeader(ModuleOp module, StringRef filename,
                               raw_ostream &os);
 
-  ErrorOr<SmallVector<std::pair<BufferRef, uint64_t>>>
-  emitGPUKernels(OwningOpRef<ModuleOp> module, EmitAs emissionKind);
+  ErrorOr<DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>> emitGPUKernels(
+      OwningOpRef<ModuleOp> module,
+      llvm::DenseMap<uint64_t, llvm::SmallSet<EmitAs, 4>> kernelEmissionKinds);
 
   /// Get a reference to the object compiler's transform cache.
   RCRef<Cache::TransformCache> getTransformCache() {
