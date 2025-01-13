@@ -229,6 +229,8 @@ what we publish.
   - Added `Path` explicit constructor from `StringSlice`.
   - removed `StringRef.startswith()` and `StringRef.endswith()`
   - removed `StringRef.strip()`
+- The `Tuple.get[i, T]()` method has been removed. Please use `tup[i]` or
+  `rebind[T](tup[i])` as needed instead.
 
 ### 🛠️ Fixed
 
@@ -248,3 +250,6 @@ what we publish.
 
 - The Mojo Language Server doesn't crash anymore on empty **init**.mojo files.
   [Issue #3826](https://github.com/modularml/mojo/issues/3826).
+
+- [Issue #3935](https://github.com/modularml/mojo/issues/3935) - Confusing OOM
+   error when using Tuple.get incorrectly.

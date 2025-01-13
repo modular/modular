@@ -499,21 +499,21 @@ struct PythonObject(
 
             @parameter
             if _type_is_eq[T, PythonObject]():
-                obj = value.get[i, PythonObject]()
+                obj = rebind[PythonObject](value[i])
             elif _type_is_eq[T, Int]():
-                obj = PythonObject(value.get[i, Int]())
+                obj = PythonObject(rebind[Int](value[i]))
             elif _type_is_eq[T, Float64]():
-                obj = PythonObject(value.get[i, Float64]())
+                obj = PythonObject(rebind[Float64](value[i]))
             elif _type_is_eq[T, Bool]():
-                obj = PythonObject(value.get[i, Bool]())
+                obj = PythonObject(rebind[Bool](value[i]))
             elif _type_is_eq[T, StringRef]():
                 obj = PythonObject(
                     StringSlice[MutableAnyOrigin](
-                        unsafe_from_utf8_strref=value.get[i, StringRef]()
+                        unsafe_from_utf8_strref=rebind[StringRef](value[i])
                     )
                 )
             elif _type_is_eq[T, StringLiteral]():
-                obj = PythonObject(value.get[i, StringLiteral]())
+                obj = PythonObject(rebind[StringLiteral](value[i]))
             else:
                 obj = PythonObject(0)
                 constrained[
