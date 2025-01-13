@@ -400,11 +400,7 @@ def main(
     verdicts: dict[str, VerificationVerdict] = {}
     if pipeline is None:
         for pipeline_name, pipeline_def in PIPELINES.items():
-            if os.getenv(
-                "MODULAR_ONLY_USE_NEW_EXTENSIBILITY_API"
-            ) == "true" and (
-                pipeline_name in ["llama3-vision-bfloat16", "pixtral-bfloat16"]
-            ):
+            if pipeline_name in ["llama3-vision-bfloat16", "pixtral-bfloat16"]:
                 # TODO(GEX-1541): Re-enable after fixing Llama vision and Pixtral segfault.
                 continue
 
