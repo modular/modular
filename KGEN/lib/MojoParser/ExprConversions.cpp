@@ -702,6 +702,17 @@ createRequirementSignature(FnOp traitFn, ASTType newSelfType,
   // value below.
   TypedAttr newSelfValue = PValue(newSelfType).get();
 
+  if (auto paramType = dyn_cast<ParamType>(newSelfType.getMetaType())) {
+    auto simpleTraitType =
+        cast<AnyTraitType>(paramType.getParam().getType()).getTraitType();
+    // Upcast from a parametric type of trait metatype value (e.g. "some
+    // type that conforms to Movable) to the simple trait type (Movable)
+    // so we can substitute the value into the signature.
+    newSelfValue =
+        UpcastAttr::get(simpleTraitType, PValue(newSelfType),
+                        VTableAttr::get(simpleTraitType.getContext(), {}));
+  }
+
   // Start with the full signature for the trait requirement.
   LITSignatureGeneratorType signature = traitFn.getFullSignature();
 
@@ -828,24 +839,6 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
     return {};
   }
 
-  // The source value may be a struct like Int, it may be something of trait
-  // type like Movable, or it may be something of AnyTraitType type, like
-  //   fn ex[Trait: MovableMetaType, T: Trait](argument: T):
-  // where T is some type that is known to conform to Movable.  In the later
-  // case we just know that the input type conforms to Movable, and we want to
-  // look up members to bind in Movable, so bind the Trait type here.  If this
-  // is a struct, or simple trait, keep it.
-  Type traitOrStructType = type;
-  if (auto paramRef = dyn_cast<ParamType>(type.getMetaType())) {
-    auto simpleTraitType =
-        cast<AnyTraitType>(paramRef.getParam().getType()).getTraitType();
-    // Cast from a parametric type of trait metatype value (e.g. "some type that
-    // conforms to Movable) to the simple trait type (Movable) so we can
-    // substitute the value into the signature.
-    traitOrStructType = ASTType(ParamOperatorAttr::get(
-        POC::Rebind, {PValue(type).get()}, simpleTraitType));
-  }
-
   // Synthesize the vtable required for the trait from the struct. Make sure the
   // trait body is fully resolved so we know what the methods are.
   ASTDecl *traitDecl = ASTType(trait).getDecl(shared);
@@ -961,13 +954,12 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
       // changes the metatype of the value.  To support this, we use a custom
       // replacer.
       LITSignatureGeneratorType requirementSig = createRequirementSignature(
-          traitFn, traitOrStructType, traitAliasReplacer, aliasValues,
-          getDeclResolver());
+          traitFn, type, traitAliasReplacer, aliasValues, getDeclResolver());
 
       // Form a set of bindings to plow into the impl signature by binding Self
       // to the appropriate Struct or derived Trait type.
-      auto implBindings = ParamBindings::getForDeclaredType(
-          getDeclScope(), traitOrStructType, value.expr);
+      auto implBindings =
+          ParamBindings::getForDeclaredType(getDeclScope(), type, value.expr);
       // Leave the rest of the the parameters Unbound.
       ParserParamEvaluator evaluator(getDeclResolver());
       for (Type type : requirementSig.getInputParamTypes()) {
@@ -1284,7 +1276,7 @@ CValue ExprEmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
     }
 
     // This is just the trait itself, not a conformance, so we can use an empty
-    // vtable, just upcast from
+    // vtable, just upcast.
     return TypeParamAttr::get(ASTType(typePValue), anyTrait);
   }
 

@@ -115,8 +115,28 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
   }
 
   // When binding a trait function, add the self type bindings.
-  if (isa<TraitDeclOp>(decl))
-    paramBindings.addPrechecked(expr, PValue(type).get());
+  if (isa<TraitDeclOp>(decl)) {
+    auto typeAttr = PValue(type).get();
+
+    // The source value be something of trait type like Movable, or it may be
+    // something of AnyTraitType type, like
+    //   fn ex[Trait: MovableMetaType, T: Trait](argument: T):
+    // where T is some type that is known to conform to Movable.  In the later
+    // case we just know that the input type conforms to Movable, and we want to
+    // look up members to bind in Movable, so bind the Trait type here.  If this
+    // is a struct, or simple trait, keep it.
+    if (auto paramType = dyn_cast<ParamType>(type.getMetaType())) {
+      auto simpleTraitType =
+          cast<AnyTraitType>(paramType.getParam().getType()).getTraitType();
+      // Upcast from a parametric type of trait metatype value (e.g. "some
+      // type that conforms to Movable) to the simple trait type (Movable)
+      // so we can substitute the value into the signature.
+      typeAttr =
+          UpcastAttr::get(simpleTraitType, PValue(type),
+                          VTableAttr::get(simpleTraitType.getContext(), {}));
+    }
+    paramBindings.addPrechecked(expr, typeAttr);
+  }
 
   ArrayRef<TypedAttr> paramValues = type.getParamBindings();
   for (TypedAttr value : paramValues)
@@ -811,9 +831,8 @@ TypedAttr ParamBindings::getBoundConstAttrFor(FnOp funcOp, StringRef baseName,
     paramValues.push_back(UnboundAttr::get(type));
 
   ASTDecl &traitDecl = *selfExpr.getType().getDecl(shared);
-  auto selfPValue = PValue(selfExpr);
   signature = substituteTraitAliasesIntoSignature(
-      *shared.declResolver, &traitDecl, funcOp, signature, selfPValue);
+      *shared.declResolver, &traitDecl, funcOp, signature, selfExpr);
 
   signature = signature.getSpecializedGenerator(paramValues, [&]() {
     return mlir::emitError(shared.translateLocation(expr->getLoc()))
@@ -823,9 +842,10 @@ TypedAttr ParamBindings::getBoundConstAttrFor(FnOp funcOp, StringRef baseName,
 
   TypedAttr fnRef = ParamOperatorAttr::get(
       POC::GetVTableEntry,
-      {PValue(selfExpr),
+      {selfExpr,
        StringAttr::get(baseName, StringType::get(funcOp.getContext()))},
       signature);
+
   if (bindings.empty())
     return fnRef;
 

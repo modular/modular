@@ -1006,8 +1006,9 @@ fn take_anytype_ref[type: AnyType](ref value: type): pass
 fn pass_movable_mt_ref[elt_trait: _MovableMetaType, PassT: elt_trait](mut a: PassT):
     # CHECK-NEXT: lit.call @traits::@"take_anytype_ref
     # CHECK-SAME: <:!AnyType [!kgen.param<:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT>, {
-    # CHECK-SAME: "__del__" : !lit.generator<[1]("self": !lit.ref<:!Movable rebind(:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT), mut *[0,0]> owned_in_mem, |) -> !kgen.none>
-    # CHECK-SAME: = get_vtable_entry(:!Movable rebind(:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT), "__del__")}], :i1 1, :origin<1> *"a`">(%a) : !lit.generator<("value": !lit.ref<:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT, mut *"a`"> ref)
+    # CHECK-SAME: "__del__" : !lit.generator<[1]("self": !lit.ref<:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT, mut *[0,0]> owned_in_mem, |) -> !kgen.none>
+    # CHECK-SAME: = get_vtable_entry(:!Movable upcast(:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT), "__del__")}], :i1 1, :origin<1> *"a`">(%a)
+    # CHECK-SAME: : !lit.generator<("value": !lit.ref<:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT, mut *"a`"> ref) -> !kgen.none>
     take_anytype_ref(a)
 
 alias _CollectionElementMetaType = __mlir_type[`!lit.anytrait<`, CollectionElement, `>`]
@@ -1021,3 +1022,18 @@ struct FormVariadicPackWithCastedElementVariadic[
         self.foo(args^)
     fn foo(self, owned storage: VariadicPack[_, element_trait, *element_types]):
         pass
+
+# This tests that we can take UnsafePointer (which has an AnyType bound for T)
+# and conditional conformance rebind the parametric type with AnyType bound down
+# to Movable correctly.
+fn take_movable_pointer[T: Movable](ptr: UnsafePointer[T]): pass
+# CHECK-LABEL: test_parametric_anytype_movable
+# CHECK-SAME: %ptr: !lit.struct<#UnsafePointer <:!AnyType [!kgen.param<:!kgen.param<:!lit.anytrait<!CollectionElement> element_trait> 
+fn test_parametric_anytype_movable[element_trait: _CollectionElementMetaType,
+                                  *element_types: element_trait]
+                                  (ptr: UnsafePointer[element_types[0]]):
+
+        # CHECK: lit.call {{.*}}take_movable_pointer
+        # CHECK-SAME: <:!Movable [!kgen.param<:!kgen.param<:!lit.anytrait<!CollectionElement> element_trait> 
+        take_movable_pointer(ptr)
+
