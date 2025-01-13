@@ -287,6 +287,17 @@ struct DeviceBuffer[type: DType](Sized):
         )
         return DeviceBuffer[view_type](new_handle, new_device_ptr)
 
+    fn enqueue_copy_to(self, dst: Self) raises:
+        # const char * AsyncRT_DeviceBuffer_copyTo(const DeviceBuffer* src, const DeviceBuffer *dst)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceBuffer_copyTo",
+                _CharPtr,
+                _DeviceBufferPtr,
+                _DeviceBufferPtr,
+            ](self._handle, dst._handle)
+        )
+
     fn take_ptr(owned self) -> UnsafePointer[Scalar[type]]:
         # void AsyncRT_DeviceBuffer_release_ptr(const DeviceBuffer *buffer)
         external_call[
