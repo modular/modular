@@ -8142,9 +8142,9 @@ fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged_kernel_api[
 
 
 @compiler.register(
-    "cross_attention_kv_cache_h8_d128_null_mask_cont_batch_ragged"
+    "mo.cross_attention.ragged.continuous_batching.null_mask.no_pos.nhead_8.hdim_128"
 )
-struct Struct_cross_attention_kv_cache_h8_d128_null_mask_cont_batch_ragged:
+struct Struct_cross_attention_ragged_continuous_batching_null_mask_no_pos_nhead_8_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8553,11 +8553,6 @@ struct Struct_mha_ragged_continuous_batching_causal_mask_no_pos_nhead_32_hdim_12
             output,
             context,
         )
-
-
-######
-# continuous_kv_cache_collection_*_bshd
-######
 
 
 @always_inline

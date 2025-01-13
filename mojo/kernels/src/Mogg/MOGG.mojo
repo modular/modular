@@ -161,7 +161,7 @@ from nn.kv_cache_ragged import (
     mha_ragged_paged_causal_mask_no_pos_nhead_8_hdim_128,
     mha_ragged_paged_causal_mask_no_pos_nhead_8_hdim_512,
     mha_ragged_paged_causal_mask_no_pos_nhead_32_hdim_128,
-    cross_attention_kv_cache_h8_d128_null_mask_cont_batch_ragged,
+    cross_attention_kv_cache_ragged_continuous_batching_null_mask_no_pos_nhead_8_hdim_128,
     fused_qk_rope_ragged_continuous_batching_nhead_1_hdim_16,
     fused_qk_rope_ragged_continuous_batching_nhead_2_hdim_2,
     fused_qk_rope_ragged_continuous_batching_nhead_3_hdim_64,
@@ -375,7 +375,7 @@ fn MOGGExport():
     alias _kv_collection_ctor_continuous_batching_nhead_8_hdim_80 = kv_collection_ctor_continuous_batching_nhead_8_hdim_80
     alias _kv_collection_ctor_continuous_batching_nhead_8_hdim_128 = kv_collection_ctor_continuous_batching_nhead_8_hdim_128
     alias _kv_collection_ctor_continuous_batching_nhead_8_hdim_512 = kv_collection_ctor_continuous_batching_nhead_8_hdim_512
-    alias _kv_collection_ctor_continuous_batching_nhead_2_hdim_128 = kv_collection_ctor_continuous_batching_nhead_2_hdim_128
+    alias _cross_attention_kv_cache_ragged_continuous_batching_null_mask_no_pos_nhead_8_hdim_128 = cross_attention_kv_cache_ragged_continuous_batching_null_mask_no_pos_nhead_8_hdim_128
     alias _kv_collection_ctor_continuous_batching_nhead_4_hdim_128 = kv_collection_ctor_continuous_batching_nhead_4_hdim_128
     alias _kv_collection_ctor_continuous_batching_nhead_16_hdim_128 = kv_collection_ctor_continuous_batching_nhead_16_hdim_128
     alias _kv_collection_ctor_continuous_batching_nhead_32_hdim_128 = kv_collection_ctor_continuous_batching_nhead_32_hdim_128
