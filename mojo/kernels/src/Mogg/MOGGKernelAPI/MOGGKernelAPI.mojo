@@ -8594,9 +8594,10 @@ fn generic_get_continuous_cache_kernel_api[
 
 
 @compiler.register(
-    "continuous_batching_kv_cache_collection_h2_d2_bshd", num_dps_outputs=0
+    "mo.kv_collection_ctor.continuous_batching.nhead_2.hdim_2",
+    num_dps_outputs=0,
 )
-struct Struct_continuous_batching_kv_cache_collection_h2_d2_bshd:
+struct Struct_kv_collection_ctor_continuous_batching_nhead_2_hdim_2:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8617,9 +8618,10 @@ struct Struct_continuous_batching_kv_cache_collection_h2_d2_bshd:
 
 
 @compiler.register(
-    "continuous_batching_kv_cache_collection_h2_d128_bshd", num_dps_outputs=0
+    "mo.kv_collection_ctor.continuous_batching.nhead_2.hdim_128",
+    num_dps_outputs=0,
 )
-struct Struct_continuous_batching_kv_cache_collection_h2_d128_bshd:
+struct Struct_kv_collection_ctor_continuous_batching_nhead_2_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8640,9 +8642,10 @@ struct Struct_continuous_batching_kv_cache_collection_h2_d128_bshd:
 
 
 @compiler.register(
-    "continuous_batching_kv_cache_collection_h3_d64_bshd", num_dps_outputs=0
+    "mo.kv_collection_ctor.continuous_batching.nhead_3.hdim_64",
+    num_dps_outputs=0,
 )
-struct Struct_continuous_batching_kv_cache_collection_h3_d64_bshd:
+struct Struct_kv_collection_ctor_continuous_batching_nhead_3_hdim_64:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8663,9 +8666,10 @@ struct Struct_continuous_batching_kv_cache_collection_h3_d64_bshd:
 
 
 @compiler.register(
-    "continuous_batching_kv_cache_collection_h4_d128_bshd", num_dps_outputs=0
+    "mo.kv_collection_ctor.continuous_batching.nhead_4.hdim_128",
+    num_dps_outputs=0,
 )
-struct Struct_continuous_batching_kv_cache_collection_h4_d128_bshd:
+struct Struct_kv_collection_ctor_continuous_batching_nhead_4_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8686,9 +8690,10 @@ struct Struct_continuous_batching_kv_cache_collection_h4_d128_bshd:
 
 
 @compiler.register(
-    "continuous_batching_kv_cache_collection_h8_d80_bshd", num_dps_outputs=0
+    "mo.kv_collection_ctor.continuous_batching.nhead_8.hdim_80",
+    num_dps_outputs=0,
 )
-struct Struct_continuous_batching_kv_cache_collection_h8_d80_bshd:
+struct Struct_kv_collection_ctor_continuous_batching_nhead_8_hdim_80:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8709,9 +8714,10 @@ struct Struct_continuous_batching_kv_cache_collection_h8_d80_bshd:
 
 
 @compiler.register(
-    "continuous_batching_kv_cache_collection_h8_d128_bshd", num_dps_outputs=0
+    "mo.kv_collection_ctor.continuous_batching.nhead_8.hdim_128",
+    num_dps_outputs=0,
 )
-struct Struct_continuous_batching_kv_cache_collection_h8_d128_bshd:
+struct Struct_kv_collection_ctor_continuous_batching_nhead_8_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8732,9 +8738,10 @@ struct Struct_continuous_batching_kv_cache_collection_h8_d128_bshd:
 
 
 @compiler.register(
-    "continuous_batching_kv_cache_collection_h8_d32_bshd", num_dps_outputs=0
+    "mo.kv_collection_ctor.continuous_batching.nhead_8.hdim_32",
+    num_dps_outputs=0,
 )
-struct Struct_continuous_batching_kv_cache_collection_h8_d32_bshd:
+struct Struct_kv_collection_ctor_continuous_batching_nhead_8_hdim_32:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8755,9 +8762,10 @@ struct Struct_continuous_batching_kv_cache_collection_h8_d32_bshd:
 
 
 @compiler.register(
-    "continuous_batching_kv_cache_collection_h8_d64_bshd", num_dps_outputs=0
+    "mo.kv_collection_ctor.continuous_batching.nhead_8.hdim_64",
+    num_dps_outputs=0,
 )
-struct Struct_continuous_batching_kv_cache_collection_h8_d64_bshd:
+struct Struct_kv_collection_ctor_continuous_batching_nhead_8_hdim_64:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8778,9 +8786,10 @@ struct Struct_continuous_batching_kv_cache_collection_h8_d64_bshd:
 
 
 @compiler.register(
-    "continuous_batching_kv_cache_collection_h8_d512_bshd", num_dps_outputs=0
+    "mo.kv_collection_ctor.continuous_batching.nhead_8.hdim_512",
+    num_dps_outputs=0,
 )
-struct Struct_continuous_batching_kv_cache_collection_h8_d512_bshd:
+struct Struct_kv_collection_ctor_continuous_batching_nhead_8_hdim_512:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8801,9 +8810,10 @@ struct Struct_continuous_batching_kv_cache_collection_h8_d512_bshd:
 
 
 @compiler.register(
-    "continuous_batching_kv_cache_collection_h16_d128_bshd", num_dps_outputs=0
+    "mo.kv_collection_ctor.continuous_batching.nhead_16.hdim_128",
+    num_dps_outputs=0,
 )
-struct Struct_continuous_batching_kv_cache_collection_h16_d128_bshd:
+struct Struct_kv_collection_ctor_continuous_batching_nhead_16_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8824,9 +8834,10 @@ struct Struct_continuous_batching_kv_cache_collection_h16_d128_bshd:
 
 
 @compiler.register(
-    "continuous_batching_kv_cache_collection_h32_d128_bshd", num_dps_outputs=0
+    "mo.kv_collection_ctor.continuous_batching.nhead_32.hdim_128",
+    num_dps_outputs=0,
 )
-struct Struct_continuous_batching_kv_cache_collection_h32_d128_bshd:
+struct Struct_kv_collection_ctor_continuous_batching_nhead_32_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8847,9 +8858,10 @@ struct Struct_continuous_batching_kv_cache_collection_h32_d128_bshd:
 
 
 @compiler.register(
-    "continuous_batching_kv_cache_collection_h1_d16_bshd", num_dps_outputs=0
+    "mo.kv_collection_ctor.continuous_batching.nhead_1.hdim_16",
+    num_dps_outputs=0,
 )
-struct Struct_continuous_batching_kv_cache_collection_h1_d16_bshd:
+struct Struct_kv_collection_ctor_continuous_batching_nhead_1_hdim_16:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9508,8 +9520,10 @@ struct Struct_print_kv_cache_cont_batch_h32_d128:
         )
 
 
-@compiler.register("paged_kv_cache_collection_h1_d16_bshd", num_dps_outputs=0)
-struct Struct_paged_kv_cache_collection_h1_d16_bshd:
+@compiler.register(
+    "mo.kv_collection_ctor.paged.nhead_1.hdim_16", num_dps_outputs=0
+)
+struct Struct_kv_collection_ctor_paged_nhead_1_hdim_16:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9530,8 +9544,10 @@ struct Struct_paged_kv_cache_collection_h1_d16_bshd:
         )
 
 
-@compiler.register("paged_kv_cache_collection_h6_d48_bshd", num_dps_outputs=0)
-struct Struct_paged_kv_cache_collection_h6_d48_bshd:
+@compiler.register(
+    "mo.kv_collection_ctor.paged.nhead_6.hdim_48", num_dps_outputs=0
+)
+struct Struct_kv_collection_ctor_paged_nhead_6_hdim_48:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9552,8 +9568,10 @@ struct Struct_paged_kv_cache_collection_h6_d48_bshd:
         )
 
 
-@compiler.register("paged_kv_cache_collection_h8_d128_bshd", num_dps_outputs=0)
-struct Struct_paged_kv_cache_collection_h8_d128_bshd:
+@compiler.register(
+    "mo.kv_collection_ctor.paged.nhead_8.hdim_128", num_dps_outputs=0
+)
+struct Struct_kv_collection_ctor_paged_nhead_8_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9574,8 +9592,10 @@ struct Struct_paged_kv_cache_collection_h8_d128_bshd:
         )
 
 
-@compiler.register("paged_kv_cache_collection_h8_d16_bshd", num_dps_outputs=0)
-struct Struct_paged_kv_cache_collection_h8_d16_bshd:
+@compiler.register(
+    "mo.kv_collection_ctor.paged.nhead_8.hdim_16", num_dps_outputs=0
+)
+struct Struct_kv_collection_ctor_paged_nhead_8_hdim_16:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9596,8 +9616,10 @@ struct Struct_paged_kv_cache_collection_h8_d16_bshd:
         )
 
 
-@compiler.register("paged_kv_cache_collection_h8_d512_bshd", num_dps_outputs=0)
-struct Struct_paged_kv_cache_collection_h8_d512_bshd:
+@compiler.register(
+    "mo.kv_collection_ctor.paged.nhead_8.hdim_512", num_dps_outputs=0
+)
+struct Struct_kv_collection_ctor_paged_nhead_8_hdim_512:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9618,8 +9640,10 @@ struct Struct_paged_kv_cache_collection_h8_d512_bshd:
         )
 
 
-@compiler.register("paged_kv_cache_collection_h8_d32_bshd", num_dps_outputs=0)
-struct Struct_paged_kv_cache_collection_h8_d32_bshd:
+@compiler.register(
+    "mo.kv_collection_ctor.paged.nhead_8.hdim_32", num_dps_outputs=0
+)
+struct Struct_kv_collection_ctor_paged_nhead_8_hdim_32:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9640,8 +9664,10 @@ struct Struct_paged_kv_cache_collection_h8_d32_bshd:
         )
 
 
-@compiler.register("paged_kv_cache_collection_h8_d64_bshd", num_dps_outputs=0)
-struct Struct_paged_kv_cache_collection_h8_d64_bshd:
+@compiler.register(
+    "mo.kv_collection_ctor.paged.nhead_8.hdim_64", num_dps_outputs=0
+)
+struct Struct_kv_collection_ctor_paged_nhead_8_hdim_64:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -9662,8 +9688,10 @@ struct Struct_paged_kv_cache_collection_h8_d64_bshd:
         )
 
 
-@compiler.register("paged_kv_cache_collection_h32_d128_bshd", num_dps_outputs=0)
-struct Struct_paged_kv_cache_collection_h32_d128_bshd:
+@compiler.register(
+    "mo.kv_collection_ctor.paged.nhead_32.hdim_128", num_dps_outputs=0
+)
+struct Struct_kv_collection_ctor_paged_nhead_32_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod

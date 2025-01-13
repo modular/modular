@@ -89,25 +89,25 @@ from nn.kv_cache import (
     print_kv_cache_cont_batch_h8_d128,
     print_kv_cache_cont_batch_h16_d128,
     print_kv_cache_cont_batch_h32_d128,
-    continuous_batching_kv_cache_collection_h1_d16_bshd,
-    continuous_batching_kv_cache_collection_h2_d2_bshd,
-    continuous_batching_kv_cache_collection_h3_d64_bshd,
-    continuous_batching_kv_cache_collection_h8_d32_bshd,
-    continuous_batching_kv_cache_collection_h8_d64_bshd,
-    continuous_batching_kv_cache_collection_h8_d80_bshd,
-    continuous_batching_kv_cache_collection_h8_d128_bshd,
-    continuous_batching_kv_cache_collection_h8_d512_bshd,
-    continuous_batching_kv_cache_collection_h4_d128_bshd,
-    continuous_batching_kv_cache_collection_h2_d128_bshd,
-    continuous_batching_kv_cache_collection_h16_d128_bshd,
-    continuous_batching_kv_cache_collection_h32_d128_bshd,
-    paged_kv_cache_collection_h1_d16_bshd,
-    paged_kv_cache_collection_h6_d48_bshd,
-    paged_kv_cache_collection_h8_d32_bshd,
-    paged_kv_cache_collection_h8_d64_bshd,
-    paged_kv_cache_collection_h8_d128_bshd,
-    paged_kv_cache_collection_h8_d512_bshd,
-    paged_kv_cache_collection_h32_d128_bshd,
+    kv_collection_ctor_continuous_batching_nhead_1_hdim_16,
+    kv_collection_ctor_continuous_batching_nhead_2_hdim_2,
+    kv_collection_ctor_continuous_batching_nhead_3_hdim_64,
+    kv_collection_ctor_continuous_batching_nhead_8_hdim_32,
+    kv_collection_ctor_continuous_batching_nhead_8_hdim_64,
+    kv_collection_ctor_continuous_batching_nhead_8_hdim_80,
+    kv_collection_ctor_continuous_batching_nhead_8_hdim_128,
+    kv_collection_ctor_continuous_batching_nhead_8_hdim_512,
+    kv_collection_ctor_continuous_batching_nhead_2_hdim_128,
+    kv_collection_ctor_continuous_batching_nhead_4_hdim_128,
+    kv_collection_ctor_continuous_batching_nhead_16_hdim_128,
+    kv_collection_ctor_continuous_batching_nhead_32_hdim_128,
+    kv_collection_ctor_paged_nhead_1_hdim_16,
+    kv_collection_ctor_paged_nhead_6_hdim_48,
+    kv_collection_ctor_paged_nhead_8_hdim_32,
+    kv_collection_ctor_paged_nhead_8_hdim_64,
+    kv_collection_ctor_paged_nhead_8_hdim_128,
+    kv_collection_ctor_paged_nhead_8_hdim_512,
+    kv_collection_ctor_paged_nhead_32_hdim_128,
     mha_padded_continuous_batching_tensor_mask_no_pos_nhead_1_hdim_16,
     mha_padded_continuous_batching_causal_mask_no_pos_nhead_1_hdim_16,
     mha_padded_continuous_batching_causal_mask_alibi_pos_nhead_1_hdim_16,
@@ -369,25 +369,25 @@ fn MOGGExport():
     alias _mha_padded_continuous_batching_causal_mask_alibi_pos_nhead_8_hdim_32 = mha_padded_continuous_batching_causal_mask_alibi_pos_nhead_8_hdim_32
     alias _mha_padded_continuous_batching_causal_mask_alibi_pos_nhead_8_hdim_64 = mha_padded_continuous_batching_causal_mask_alibi_pos_nhead_8_hdim_64
     alias _mha_padded_continuous_batching_causal_mask_alibi_pos_nhead_1_hdim_16 = mha_padded_continuous_batching_causal_mask_alibi_pos_nhead_1_hdim_16
-    alias _continuous_batching_kv_cache_collection_h8_d32_bshd = continuous_batching_kv_cache_collection_h8_d32_bshd
-    alias _continuous_batching_kv_cache_collection_h2_d2_bshd = continuous_batching_kv_cache_collection_h2_d2_bshd
-    alias _continuous_batching_kv_cache_collection_h8_d64_bshd = continuous_batching_kv_cache_collection_h8_d64_bshd
-    alias _continuous_batching_kv_cache_collection_h8_d80_bshd = continuous_batching_kv_cache_collection_h8_d80_bshd
-    alias _continuous_batching_kv_cache_collection_h8_d128_bshd = continuous_batching_kv_cache_collection_h8_d128_bshd
-    alias _continuous_batching_kv_cache_collection_h8_d512_bshd = continuous_batching_kv_cache_collection_h8_d512_bshd
-    alias _continuous_batching_kv_cache_collection_h2_d128_bshd = continuous_batching_kv_cache_collection_h2_d128_bshd
-    alias _continuous_batching_kv_cache_collection_h4_d128_bshd = continuous_batching_kv_cache_collection_h4_d128_bshd
-    alias _continuous_batching_kv_cache_collection_h16_d128_bshd = continuous_batching_kv_cache_collection_h16_d128_bshd
-    alias _continuous_batching_kv_cache_collection_h32_d128_bshd = continuous_batching_kv_cache_collection_h32_d128_bshd
-    alias _continuous_batching_kv_cache_collection_h1_d16_bshd = continuous_batching_kv_cache_collection_h1_d16_bshd
-    alias _continuous_batching_kv_cache_collection_h3_d64_bshd = continuous_batching_kv_cache_collection_h3_d64_bshd
-    alias _paged_kv_cache_collection_h1_d16_bshd = paged_kv_cache_collection_h1_d16_bshd
-    alias _paged_kv_cache_collection_h6_d48_bshd = paged_kv_cache_collection_h6_d48_bshd
-    alias _paged_kv_cache_collection_h8_d32_bshd = paged_kv_cache_collection_h8_d32_bshd
-    alias _paged_kv_cache_collection_h8_d64_bshd = paged_kv_cache_collection_h8_d64_bshd
-    alias _paged_kv_cache_collection_h8_d128_bshd = paged_kv_cache_collection_h8_d128_bshd
-    alias _paged_kv_cache_collection_h8_d512_bshd = paged_kv_cache_collection_h8_d512_bshd
-    alias _paged_kv_cache_collection_h32_d128_bshd = paged_kv_cache_collection_h32_d128_bshd
+    alias _kv_collection_ctor_continuous_batching_nhead_8_hdim_32 = kv_collection_ctor_continuous_batching_nhead_8_hdim_32
+    alias _kv_collection_ctor_continuous_batching_nhead_2_hdim_2 = kv_collection_ctor_continuous_batching_nhead_2_hdim_2
+    alias _kv_collection_ctor_continuous_batching_nhead_8_hdim_64 = kv_collection_ctor_continuous_batching_nhead_8_hdim_64
+    alias _kv_collection_ctor_continuous_batching_nhead_8_hdim_80 = kv_collection_ctor_continuous_batching_nhead_8_hdim_80
+    alias _kv_collection_ctor_continuous_batching_nhead_8_hdim_128 = kv_collection_ctor_continuous_batching_nhead_8_hdim_128
+    alias _kv_collection_ctor_continuous_batching_nhead_8_hdim_512 = kv_collection_ctor_continuous_batching_nhead_8_hdim_512
+    alias _kv_collection_ctor_continuous_batching_nhead_2_hdim_128 = kv_collection_ctor_continuous_batching_nhead_2_hdim_128
+    alias _kv_collection_ctor_continuous_batching_nhead_4_hdim_128 = kv_collection_ctor_continuous_batching_nhead_4_hdim_128
+    alias _kv_collection_ctor_continuous_batching_nhead_16_hdim_128 = kv_collection_ctor_continuous_batching_nhead_16_hdim_128
+    alias _kv_collection_ctor_continuous_batching_nhead_32_hdim_128 = kv_collection_ctor_continuous_batching_nhead_32_hdim_128
+    alias _kv_collection_ctor_continuous_batching_nhead_1_hdim_16 = kv_collection_ctor_continuous_batching_nhead_1_hdim_16
+    alias _kv_collection_ctor_continuous_batching_nhead_3_hdim_64 = kv_collection_ctor_continuous_batching_nhead_3_hdim_64
+    alias _kv_collection_ctor_paged_nhead_1_hdim_16 = kv_collection_ctor_paged_nhead_1_hdim_16
+    alias _kv_collection_ctor_paged_nhead_6_hdim_48 = kv_collection_ctor_paged_nhead_6_hdim_48
+    alias _kv_collection_ctor_paged_nhead_8_hdim_32 = kv_collection_ctor_paged_nhead_8_hdim_32
+    alias _kv_collection_ctor_paged_nhead_8_hdim_64 = kv_collection_ctor_paged_nhead_8_hdim_64
+    alias _kv_collection_ctor_paged_nhead_8_hdim_128 = kv_collection_ctor_paged_nhead_8_hdim_128
+    alias _kv_collection_ctor_paged_nhead_8_hdim_512 = kv_collection_ctor_paged_nhead_8_hdim_512
+    alias _kv_collection_ctor_paged_nhead_32_hdim_128 = kv_collection_ctor_paged_nhead_32_hdim_128
     alias _fused_qkv_matmul_ragged_continuous_batching_nhead_2_hdim_128 = fused_qkv_matmul_ragged_continuous_batching_nhead_2_hdim_128
     alias _fused_qkv_matmul_ragged_continuous_batching_nhead_4_hdim_128 = fused_qkv_matmul_ragged_continuous_batching_nhead_4_hdim_128
     alias _fused_qkv_matmul_ragged_continuous_batching_nhead_8_hdim_80 = fused_qkv_matmul_ragged_continuous_batching_nhead_8_hdim_80
@@ -429,7 +429,6 @@ fn MOGGExport():
     alias _mha_ragged_paged_causal_mask_no_pos_nhead_8_hdim_128 = mha_ragged_paged_causal_mask_no_pos_nhead_8_hdim_128
     alias _mha_ragged_paged_causal_mask_no_pos_nhead_8_hdim_512 = mha_ragged_paged_causal_mask_no_pos_nhead_8_hdim_512
     alias _mha_ragged_paged_causal_mask_no_pos_nhead_32_hdim_128 = mha_ragged_paged_causal_mask_no_pos_nhead_32_hdim_128
-    alias _cross_attention_kv_cache_h8_d128_null_mask_cont_batch_ragged = cross_attention_kv_cache_h8_d128_null_mask_cont_batch_ragged
     alias _kv_matmul_ragged_continuous_batching_nhead_8_hdim_128 = kv_matmul_ragged_continuous_batching_nhead_8_hdim_128
 
 
