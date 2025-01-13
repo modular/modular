@@ -5,10 +5,10 @@ modular_cc_binary(
     srcs = glob(["*.cpp"]),
     visibility = ["//visibility:public"],
     deps = [
-        "//AsyncRT:RuntimeGlobals.static",
+        "//AsyncRT:RuntimeGlobals",
         "//Init",
         "//Support:Base",
         "//Support:CrashReporting",
-        "//Support:Globals.static",
+        "//Support:Globals",
     ],
 )
