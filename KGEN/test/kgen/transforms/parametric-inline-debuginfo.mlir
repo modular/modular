@@ -150,25 +150,6 @@ kgen.generator @has_debuginfo() {
 
 // -----
 
-// CHECK-LABEL: kgen.generator @foo
-kgen.generator @foo<DT>() {
-  // CHECK-NEXT: kgen.param.declare.region
-  // CHECK-NEXT:   hlcf.loop
-  // CHECK-NEXT:     kgen.param.declare A = <1> loc(#[[LOC0:.*]])
-  kgen.call @bar() : () -> ()
-  kgen.return
-}
-kgen.generator @bar() always_inline {
-  kgen.param.declare.region SomeClosure = <DT: dtype, N>(%arg0: !pop.simd<N, DT>) capturing -> !pop.simd<N, DT> {
-    hlcf.loop {
-      kgen.param.declare A = <1> loc(#loc)
-      hlcf.break loc(#loc)
-    } loc(#loc)
-    kgen.return %arg0 : !pop.simd<N, DT> loc(#loc)
-  } loc(#loc)
-  kgen.return
-}
-
 // CHECK-DAG: ![[M:.*]] = !debuginfo.member<value: !pop.simd<N, DT>>
 // CHECK-DAG: ![[M0:.*]] = !debuginfo.member<value: !pop.simd<N0, DT0>>
 // CHECK-DAG: ![[STR:.*]] = !debuginfo.struct<"builtin::$simd::SIMD"(![[M]])>
@@ -184,5 +165,36 @@ kgen.generator @bar() always_inline {
 #subprogram2 = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, sourceName = <"SomeClosure">, linkageName = "SomeClosure", file = #file, line = 1314, scopeLine = 1314, subprogramFlags = "Definition|Optimized"> : !debuginfo.subroutine<(!struct) -> (!struct): DW_CC_normal>
 
 // CHECK-DAG: #[[LOC_ORI:.*]] = loc("foo.mlir":1317:13)
-// CHECK-DAG: #[[LOC0]] = loc(fused<#[[SP0]]>[#[[LOC_ORI]]])
+// CHECK-DAG: #[[LOC0:.*]] = loc(fused<#[[SP0]]>[#[[LOC_ORI]]])
 #loc = loc(fused<#subprogram2>["foo.mlir":1317:13])
+
+// CHECK-LABEL: kgen.generator @foo
+kgen.generator @foo<DT>() {
+  // CHECK-NEXT: kgen.param.declare.region
+  // CHECK-NEXT:   hlcf.loop
+  // CHECK-NEXT:     kgen.param.declare A = <1> loc(#[[LOC0]])
+  // CHECK:        kgen.param.for
+  // CHECK-NEXT:     (%arg1 loc(fused<#[[SP0]]>[#[[LOC_ORI]]]) = %arg0 : !pop.simd<N0, DT0>) -> !pop.simd<N0, DT0>
+  // CHECK:        } else (%arg1: !pop.simd<N0, DT0> loc(fused<#[[SP0]]>[#[[LOC_ORI]]]))
+  kgen.call @bar() : () -> ()
+  kgen.return
+}
+
+kgen.generator @bar() always_inline {
+  kgen.param.declare.region SomeClosure = <DT: dtype, N>(%arg0: !pop.simd<N, DT>) capturing -> !pop.simd<N, DT> {
+    hlcf.loop {
+      kgen.param.declare A = <1> loc(#loc)
+      hlcf.break loc(#loc)
+    } loc(#loc)
+
+    %0 = kgen.param.for I in ? iter :() -> () ?
+    (%arg1 loc(#loc) = %arg0 : !pop.simd<N, DT>) -> !pop.simd<N, DT> {
+      kgen.param.yield %arg1 : !pop.simd<N, DT> loc(#loc)
+    } else (%arg1 : !pop.simd<N, DT> loc(#loc)) {
+      kgen.param.yield %arg1 : !pop.simd<N, DT> loc(#loc)
+    } loc(#loc)
+
+    kgen.return %0 : !pop.simd<N, DT> loc(#loc)
+  } loc(#loc)
+  kgen.return
+}

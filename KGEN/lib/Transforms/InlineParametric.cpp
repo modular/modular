@@ -511,9 +511,18 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
 
   // When building in debuginfo, mangle parameters in all op locations.
   if (updateDebugInfo) {
-    scope.getBody().walk([&](Operation *op) {
-      op->setLoc(cast<LocationAttr>(mangler.mangleRefsIn(op->getLoc())));
-    });
+    OpRegionBlockWalker walker(
+        [&](Operation *op) {
+          op->setLoc(cast<LocationAttr>(mangler.mangleRefsIn(op->getLoc())));
+          return WalkResult::advance();
+        },
+        nullptr,
+        [&](Block *block) {
+          for (BlockArgument arg : block->getArguments())
+            arg.setLoc(cast<LocationAttr>(mangler.mangleRefsIn(arg.getLoc())));
+          return WalkResult::advance();
+        });
+    walker.walk(&scope.getBody());
   }
 
   // Handle all terminators.
