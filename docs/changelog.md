@@ -34,6 +34,14 @@ what we publish.
   `ExplicitlyCopyable` trait. This will ease the transition to explicit
   copyablility requirements by default in the Mojo collection types.
 
+- Indexing into a homogenous tuple now produces the consistent element type
+  without needing a rebind:
+
+  ```mojo
+    var x = (1, 2, 3, 3, 4)
+    var y : Int = x[idx]     # Just works!
+  ```
+
 ### Standard library changes
 
 - The `int` function to construct an `Int` has been removed, this was a

@@ -132,7 +132,7 @@ def main():
 
     @parameter
     for i in range(len(sizes)):
-        alias size = sizes.get[i, Int]()
+        alias size = sizes[i]
         m.bench_function[bench_dict_insert[size]](
             BenchId("bench_dict_insert[" + str(size) + "]")
         )
@@ -144,7 +144,7 @@ def main():
 
     @parameter
     for i in range(len(sizes)):
-        alias size = sizes.get[i, Int]()
+        alias size = sizes[i]
         var mem_s = total_bytes_used(make_dict[size]())
         print(
             '"bench_dict_memory_size[' + str(size) + ']",' + str(mem_s) + ",0"

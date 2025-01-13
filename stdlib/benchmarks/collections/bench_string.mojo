@@ -255,13 +255,13 @@ def main():
 
     @parameter
     for i in range(len(lengths)):
-        alias length = lengths.get[i, Int]()
+        alias length = lengths[i]
 
         @parameter
         for j in range(len(filenames)):
-            alias fname = filenames.get[j, StringLiteral]()
-            alias old = old_chars.get[j, StringLiteral]()
-            alias new = new_chars.get[j, StringLiteral]()
+            alias fname = filenames[j]
+            alias old = old_chars[j]
+            alias new = new_chars[j]
             suffix = "[" + str(length) + "]"  # "(" + fname + ")"
             m.bench_function[bench_string_count[length, fname, old]](
                 BenchId("bench_string_count" + suffix)

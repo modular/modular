@@ -305,7 +305,7 @@ def test_truthy():
 
     @parameter
     fn test_dtype_unrolled[i: Int]() raises:
-        alias type = dtypes.get[i, DType]()
+        alias type = dtypes[i]
         test_dtype[type]()
 
     unroll[test_dtype_unrolled, dtypes.__len__()]()
@@ -1837,7 +1837,7 @@ def test_comparison():
 
     @parameter
     fn test_dtype_unrolled[i: Int]() raises:
-        alias type = dtypes.get[i, DType]()
+        alias type = dtypes[i]
         test_dtype[type]()
 
     unroll[test_dtype_unrolled, dtypes.__len__()]()
