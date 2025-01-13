@@ -2009,8 +2009,8 @@ fn generic_get_continuous_cache[
     )
 
 
-@register_internal("continuous_batching_kv_cache_collection_h2_d2_bshd")
-fn continuous_batching_kv_cache_collection_h2_d2_bshd[
+@register_internal("mo.kv_collection_ctor.continuous_batching.nhead_2.hdim_2")
+fn kv_collection_ctor_continuous_batching_nhead_2_hdim_2[
     type: DType, //, target: StringLiteral
 ](
     blocks: NDBuffer[type, 6],
@@ -2026,8 +2026,8 @@ fn continuous_batching_kv_cache_collection_h2_d2_bshd[
     )
 
 
-@register_internal("continuous_batching_kv_cache_collection_h8_d80_bshd")
-fn continuous_batching_kv_cache_collection_h8_d80_bshd[
+@register_internal("mo.kv_collection_ctor.continuous_batching.nhead_8.hdim_80")
+fn kv_collection_ctor_continuous_batching_nhead_8_hdim_80[
     type: DType, //, target: StringLiteral
 ](
     blocks: NDBuffer[type, 6],
@@ -2043,8 +2043,8 @@ fn continuous_batching_kv_cache_collection_h8_d80_bshd[
     )
 
 
-@register_internal("continuous_batching_kv_cache_collection_h8_d128_bshd")
-fn continuous_batching_kv_cache_collection_h8_d128_bshd[
+@register_internal("mo.kv_collection_ctor.continuous_batching.nhead_8.hdim_128")
+fn kv_collection_ctor_continuous_batching_nhead_8_hdim_128[
     type: DType, //, target: StringLiteral
 ](
     blocks: NDBuffer[type, 6],
@@ -2060,8 +2060,8 @@ fn continuous_batching_kv_cache_collection_h8_d128_bshd[
     )
 
 
-@register_internal("continuous_batching_kv_cache_collection_h8_d32_bshd")
-fn continuous_batching_kv_cache_collection_h8_d32_bshd[
+@register_internal("mo.kv_collection_ctor.continuous_batching.nhead_8.hdim_32")
+fn kv_collection_ctor_continuous_batching_nhead_8_hdim_32[
     type: DType, //, target: StringLiteral
 ](
     blocks: NDBuffer[type, 6],
@@ -2077,8 +2077,8 @@ fn continuous_batching_kv_cache_collection_h8_d32_bshd[
     )
 
 
-@register_internal("continuous_batching_kv_cache_collection_h8_d64_bshd")
-fn continuous_batching_kv_cache_collection_h8_d64_bshd[
+@register_internal("mo.kv_collection_ctor.continuous_batching.nhead_8.hdim_64")
+fn kv_collection_ctor_continuous_batching_nhead_8_hdim_64[
     type: DType, //, target: StringLiteral
 ](
     blocks: NDBuffer[type, 6],
@@ -2094,8 +2094,8 @@ fn continuous_batching_kv_cache_collection_h8_d64_bshd[
     )
 
 
-@register_internal("continuous_batching_kv_cache_collection_h1_d16_bshd")
-fn continuous_batching_kv_cache_collection_h1_d16_bshd[
+@register_internal("mo.kv_collection_ctor.continuous_batching.nhead_1.hdim_16")
+fn kv_collection_ctor_continuous_batching_nhead_1_hdim_16[
     type: DType, //, target: StringLiteral
 ](
     blocks: NDBuffer[type, 6],
@@ -2111,8 +2111,8 @@ fn continuous_batching_kv_cache_collection_h1_d16_bshd[
     )
 
 
-@register_internal("continuous_batching_kv_cache_collection_h3_d64_bshd")
-fn continuous_batching_kv_cache_collection_h3_d64_bshd[
+@register_internal("mo.kv_collection_ctor.continuous_batching.nhead_3.hdim_64")
+fn kv_collection_ctor_continuous_batching_nhead_3_hdim_64[
     type: DType, //, target: StringLiteral
 ](
     blocks: NDBuffer[type, 6],
@@ -2128,8 +2128,8 @@ fn continuous_batching_kv_cache_collection_h3_d64_bshd[
     )
 
 
-@register_internal("continuous_batching_kv_cache_collection_h8_d512_bshd")
-fn continuous_batching_kv_cache_collection_h8_d512_bshd[
+@register_internal("mo.kv_collection_ctor.continuous_batching.nhead_8.hdim_512")
+fn kv_collection_ctor_continuous_batching_nhead_8_hdim_512[
     type: DType, //, target: StringLiteral
 ](
     blocks: NDBuffer[type, 6],
@@ -2145,8 +2145,8 @@ fn continuous_batching_kv_cache_collection_h8_d512_bshd[
     )
 
 
-@register_internal("continuous_batching_kv_cache_collection_h4_d128_bshd")
-fn continuous_batching_kv_cache_collection_h4_d128_bshd[
+@register_internal("mo.kv_collection_ctor.continuous_batching.nhead_4.hdim_128")
+fn kv_collection_ctor_continuous_batching_nhead_4_hdim_128[
     type: DType, //, target: StringLiteral
 ](
     blocks: NDBuffer[type, 6],
@@ -2162,8 +2162,8 @@ fn continuous_batching_kv_cache_collection_h4_d128_bshd[
     )
 
 
-@register_internal("continuous_batching_kv_cache_collection_h2_d128_bshd")
-fn continuous_batching_kv_cache_collection_h2_d128_bshd[
+@register_internal("mo.kv_collection_ctor.continuous_batching.nhead_2.hdim_128")
+fn kv_collection_ctor_continuous_batching_nhead_2_hdim_128[
     type: DType, //, target: StringLiteral
 ](
     blocks: NDBuffer[type, 6],
@@ -2179,8 +2179,10 @@ fn continuous_batching_kv_cache_collection_h2_d128_bshd[
     )
 
 
-@register_internal("continuous_batching_kv_cache_collection_h16_d128_bshd")
-fn continuous_batching_kv_cache_collection_h16_d128_bshd[
+@register_internal(
+    "mo.kv_collection_ctor.continuous_batching.nhead_16.hdim_128"
+)
+fn kv_collection_ctor_continuous_batching_nhead_16_hdim_128[
     type: DType, //, target: StringLiteral
 ](
     blocks: NDBuffer[type, 6],
@@ -2196,8 +2198,10 @@ fn continuous_batching_kv_cache_collection_h16_d128_bshd[
     )
 
 
-@register_internal("continuous_batching_kv_cache_collection_h32_d128_bshd")
-fn continuous_batching_kv_cache_collection_h32_d128_bshd[
+@register_internal(
+    "mo.kv_collection_ctor.continuous_batching.nhead_32.hdim_128"
+)
+fn kv_collection_ctor_continuous_batching_nhead_32_hdim_128[
     type: DType, //, target: StringLiteral
 ](
     blocks: NDBuffer[type, 6],
@@ -2232,8 +2236,8 @@ fn generic_get_paged_cache[
     )
 
 
-@register_internal("paged_kv_cache_collection_h1_d16_bshd")
-fn paged_kv_cache_collection_h1_d16_bshd[
+@register_internal("mo.kv_collection_ctor.paged.nhead_1.hdim_16")
+fn kv_collection_ctor_paged_nhead_1_hdim_16[
     type: DType, //,
     target: StringLiteral,
 ](
@@ -2247,8 +2251,8 @@ fn paged_kv_cache_collection_h1_d16_bshd[
     )
 
 
-@register_internal("paged_kv_cache_collection_h6_d48_bshd")
-fn paged_kv_cache_collection_h6_d48_bshd[
+@register_internal("mo.kv_collection_ctor.paged.nhead_6.hdim_48")
+fn kv_collection_ctor_paged_nhead_6_hdim_48[
     type: DType, //,
     target: StringLiteral,
 ](
@@ -2262,8 +2266,8 @@ fn paged_kv_cache_collection_h6_d48_bshd[
     )
 
 
-@register_internal("paged_kv_cache_collection_h8_d128_bshd")
-fn paged_kv_cache_collection_h8_d128_bshd[
+@register_internal("mo.kv_collection_ctor.paged.nhead_8.hdim_128")
+fn kv_collection_ctor_paged_nhead_8_hdim_128[
     type: DType, //,
     target: StringLiteral,
 ](
@@ -2277,8 +2281,8 @@ fn paged_kv_cache_collection_h8_d128_bshd[
     )
 
 
-@register_internal("paged_kv_cache_collection_h8_d16_bshd")
-fn paged_kv_cache_collection_h8_d16_bshd[
+@register_internal("mo.kv_collection_ctor.paged.nhead_8.hdim_16")
+fn kv_collection_ctor_paged_nhead_8_hdim_16[
     type: DType, //,
     target: StringLiteral,
 ](
@@ -2292,8 +2296,8 @@ fn paged_kv_cache_collection_h8_d16_bshd[
     )
 
 
-@register_internal("paged_kv_cache_collection_h8_d512_bshd")
-fn paged_kv_cache_collection_h8_d512_bshd[
+@register_internal("mo.kv_collection_ctor.paged.nhead_8.hdim_512")
+fn kv_collection_ctor_paged_nhead_8_hdim_512[
     type: DType, //,
     target: StringLiteral,
 ](
@@ -2307,8 +2311,8 @@ fn paged_kv_cache_collection_h8_d512_bshd[
     )
 
 
-@register_internal("paged_kv_cache_collection_h8_d32_bshd")
-fn paged_kv_cache_collection_h8_d32_bshd[
+@register_internal("mo.kv_collection_ctor.paged.nhead_8.hdim_32")
+fn kv_collection_ctor_paged_nhead_8_hdim_32[
     type: DType, //,
     target: StringLiteral,
 ](
@@ -2322,8 +2326,8 @@ fn paged_kv_cache_collection_h8_d32_bshd[
     )
 
 
-@register_internal("paged_kv_cache_collection_h8_d64_bshd")
-fn paged_kv_cache_collection_h8_d64_bshd[
+@register_internal("mo.kv_collection_ctor.paged.nhead_8.hdim_64")
+fn kv_collection_ctor_paged_nhead_8_hdim_64[
     type: DType, //,
     target: StringLiteral,
 ](
@@ -2337,8 +2341,8 @@ fn paged_kv_cache_collection_h8_d64_bshd[
     )
 
 
-@register_internal("paged_kv_cache_collection_h32_d128_bshd")
-fn paged_kv_cache_collection_h32_d128_bshd[
+@register_internal("mo.kv_collection_ctor.paged.nhead_32.hdim_128")
+fn kv_collection_ctor_paged_nhead_32_hdim_128[
     type: DType, //,
     target: StringLiteral,
 ](
