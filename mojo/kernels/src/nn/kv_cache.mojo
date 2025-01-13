@@ -1705,8 +1705,10 @@ def rms_norm_kv_cache_ragged_continuous_batching_nhead_8_hdim_128[
         ](shape, gamma, epsilon, context)
 
 
-@register_internal("print_kv_cache_cont_batch_h8_d128")
-def print_kv_cache_cont_batch_h8_d128[
+@register_internal(
+    "mo.print_kv_cache.continuous_batching.nhead_8.hdim_128.fp32"
+)
+def print_kv_cache_continuous_batching_nhead_8_hdim_128_fp32[
     target: StringLiteral
 ](
     valid_lengths: NDBuffer[DType.uint32, 1],
@@ -1736,8 +1738,10 @@ def print_kv_cache_cont_batch_h8_d128[
         )
 
 
-@register_internal("print_kv_cache_cont_batch_h2_d128")
-def print_kv_cache_cont_batch_h2_d128[
+@register_internal(
+    "mo.print_kv_cache.continuous_batching.nhead_2.hdim_128.fp32"
+)
+def print_kv_cache_continuous_batching_nhead_2_hdim_128_fp32[
     target: StringLiteral
 ](
     valid_lengths: NDBuffer[DType.uint32, 1],
@@ -1767,8 +1771,10 @@ def print_kv_cache_cont_batch_h2_d128[
         )
 
 
-@register_internal("print_kv_cache_cont_batch_h16_d128")
-def print_kv_cache_cont_batch_h16_d128[
+@register_internal(
+    "mo.print_kv_cache.continuous_batching.nhead_16.hdim_128.fp32"
+)
+def print_kv_cache_continuous_batching_nhead_16_hdim_128_fp32[
     target: StringLiteral
 ](
     valid_lengths: NDBuffer[DType.uint32, 1],
@@ -1798,8 +1804,10 @@ def print_kv_cache_cont_batch_h16_d128[
         )
 
 
-@register_internal("print_kv_cache_cont_batch_h32_d128")
-def print_kv_cache_cont_batch_h32_d128[
+@register_internal(
+    "mo.print_kv_cache.continuous_batching.nhead_32.hdim_128.fp32"
+)
+def print_kv_cache_continuous_batching_nhead_32_hdim_128_fp32[
     target: StringLiteral
 ](
     valid_lengths: NDBuffer[DType.uint32, 1],
