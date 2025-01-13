@@ -177,40 +177,36 @@ fn to_lowercase(s: StringSlice) -> String:
         A new string where cased letters have been converted to lowercase.
     """
     var input = s.unsafe_ptr()
-    var capacity = (s.byte_length() >> 1) * 3 + 1
-    var output = UnsafePointer[UInt8].alloc(capacity)
+    var output = List[Byte](capacity=_estimate_needed_size(s.byte_length()))
     var input_offset = 0
-    var output_offset = 0
     while input_offset < s.byte_length():
         var rune_and_size = Char.unsafe_decode_utf8_char(input + input_offset)
         var lowercase_char_opt = _get_lowercase_mapping(rune_and_size[0])
         if lowercase_char_opt is None:
             memcpy(
-                output + output_offset, input + input_offset, rune_and_size[1]
+                output._unsafe_next_uninit_ptr(),
+                input + input_offset,
+                rune_and_size[1],
             )
-            output_offset += rune_and_size[1]
+            output.size += rune_and_size[1]
         else:
             var lower_char: Char = lowercase_char_opt.unsafe_value()
-            output_offset += lower_char.unsafe_write_utf8(
-                output + output_offset
+            output.size += lower_char.unsafe_write_utf8(
+                output._unsafe_next_uninit_ptr()
             )
 
         input_offset += rune_and_size[1]
 
-        if output_offset >= (
-            capacity - 5
-        ):  # check if we need to resize the ouput
-            capacity += ((s.byte_length() - input_offset) >> 1) * 3 + 1
-            var new_output = UnsafePointer[UInt8].alloc(capacity)
-            memcpy(new_output, output, output_offset)
-            output.free()
-            output = new_output
+        # Check if we need to reserve additional capacity.
+        if output.size >= output.capacity - 5:
+            output.reserve(
+                output.capacity
+                + _estimate_needed_size(s.byte_length() - input_offset)
+            )
 
-    output[output_offset] = 0
-    var list = List[UInt8](
-        ptr=output, length=(output_offset + 1), capacity=capacity
-    )
-    return String(list)
+    # Add NUL terminator
+    output.append(0)
+    return String(output^)
 
 
 fn to_uppercase(s: StringSlice) -> String:
@@ -223,10 +219,8 @@ fn to_uppercase(s: StringSlice) -> String:
         A new string where cased letters have been converted to uppercase.
     """
     var input = s.unsafe_ptr()
-    var capacity = (s.byte_length() >> 1) * 3 + 1
-    var output = UnsafePointer[UInt8].alloc(capacity)
+    var output = List[Byte](capacity=_estimate_needed_size(s.byte_length()))
     var input_offset = 0
-    var output_offset = 0
     while input_offset < s.byte_length():
         var rune_and_size = Char.unsafe_decode_utf8_char(input + input_offset)
 
@@ -242,26 +236,31 @@ fn to_uppercase(s: StringSlice) -> String:
             )
             for char_idx in range(count):
                 var char: Char = uppercase_replacement_chars[char_idx]
-                output_offset += char.unsafe_write_utf8(output + output_offset)
+                output.size += char.unsafe_write_utf8(
+                    output._unsafe_next_uninit_ptr()
+                )
         else:
             memcpy(
-                output + output_offset, input + input_offset, rune_and_size[1]
+                output._unsafe_next_uninit_ptr(),
+                input + input_offset,
+                rune_and_size[1],
             )
-            output_offset += rune_and_size[1]
+            output.size += rune_and_size[1]
 
         input_offset += rune_and_size[1]
 
-        if output_offset >= (
-            capacity - 5
-        ):  # check if we need to resize the ouput
-            capacity += ((s.byte_length() - input_offset) >> 1) * 3 + 1
-            var new_output = UnsafePointer[UInt8].alloc(capacity)
-            memcpy(new_output, output, output_offset)
-            output.free()
-            output = new_output
+        # Check if we need to reserve additional capacity.
+        if output.size >= output.capacity - 5:
+            output.reserve(
+                output.capacity
+                + _estimate_needed_size(s.byte_length() - input_offset)
+            )
 
-    output[output_offset] = 0
-    var list = List[UInt8](
-        ptr=output, length=(output_offset + 1), capacity=capacity
-    )
-    return String(list)
+    # Add NUL terminator
+    output.append(0)
+    return String(output^)
+
+
+@always_inline
+fn _estimate_needed_size(byte_len: Int) -> Int:
+    return 3 * (byte_len >> 1) + 1
