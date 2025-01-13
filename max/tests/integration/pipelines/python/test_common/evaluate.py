@@ -38,7 +38,7 @@ PROMPTS_MULTI_MODAL = (
     "<|image|><|begin_of_text|>If I had to write a haiku for this one"
 )
 
-IMAGES_MULTI_MODEL = "https://huggingface.co/datasets/huggingface/documentation-images/resolve/0052a70beed5bf71b92610a43a52df6d286cd5f3/diffusers/rabbit.jpg"
+IMAGES_MULTI_MODAL = "https://huggingface.co/datasets/huggingface/documentation-images/resolve/0052a70beed5bf71b92610a43a52df6d286cd5f3/diffusers/rabbit.jpg"
 
 PIXTRAL_PROMPT = "<s>[INST]Describe the images.\n[IMG][/INST]"
 PIXTRAL_IMG_URL = "https://picsum.photos/id/237/400/300"

@@ -145,7 +145,7 @@ class MultiModalPipelineOracle(PipelineOracle):
     @property
     def images(self) -> Optional[Sequence[str]]:
         """Images to run a multi-modal model on."""
-        return [evaluate.IMAGES_MULTI_MODEL]
+        return [evaluate.IMAGES_MULTI_MODAL]
 
 
 class LlamaPipelineOracle(PipelineOracle):
