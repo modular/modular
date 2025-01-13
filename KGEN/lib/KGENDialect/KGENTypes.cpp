@@ -117,7 +117,7 @@ ParamType ParamType::getFromBytecode(TypedAttr param) {
 Type TypeValueType::get(TypedAttr typeValue) {
   // If the type-value is already resolved to a type constant, and it is
   // trivially a mlir Type, fold this to the indicated type.
-  if (auto constant = llvm::dyn_cast<TypeParamAttr>(typeValue))
+  if (auto constant = ::dyn_cast<TypeParamAttr>(typeValue))
     if (constant.hasIdenticalRepresentation())
       return constant.getMlirType();
 

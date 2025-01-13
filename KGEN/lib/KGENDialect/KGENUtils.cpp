@@ -1092,9 +1092,16 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
       if (keyword == "upcast" && operandType) {
         TypedAttr operand;
         VTableAttr vtable;
-        if (parseParamValue(p, operand, operandType) || p.parseComma() ||
-            (!(vtable = cast_or_null<VTableAttr>(VTableAttr::parse(p, {}))) ||
-             p.parseRParen()))
+        if (parseParamValue(p, operand, operandType))
+          return failure();
+        if (succeeded(p.parseOptionalComma())) {
+          vtable = cast_or_null<VTableAttr>(VTableAttr::parse(p, {}));
+          if (!vtable)
+            return failure();
+        } else {
+          vtable = VTableAttr::get(type.getContext(), {});
+        }
+        if (p.parseRParen())
           return failure();
         value = UpcastAttr::get(type, operand, vtable);
         return success();
@@ -1407,8 +1414,10 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type,
     printKGENType(p, upcast.getInputTypeValue().getType());
     p << ' ';
     printParamValue(p, upcast.getInputTypeValue());
-    p << ", ";
-    p.printStrippedAttrOrType(upcast.getVTable());
+    if (!upcast.getVTable().getEntries().empty()) {
+      p << ", ";
+      p.printStrippedAttrOrType(upcast.getVTable());
+    }
     p << ')';
     return;
   }

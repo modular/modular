@@ -294,6 +294,9 @@ TypedAttr UpcastAttr::get(Type type, TypedAttr inputTypeValue,
     // We need to return a new TypeParamAttr with the correct vtable for the
     // expected type (a !lit.trait, but we can't reason about that down here in
     // KGEN).
+    if (vtable.getEntries().empty())
+      vtable = typeAttr.getVTable();
+
     return TypeParamAttr::get(typeAttr.getTypeValue(), typeAttr.getMlirType(),
                               type, vtable);
   }
@@ -2410,6 +2413,7 @@ static TypedAttr simplifyVariadicGet(ArrayRef<TypedAttr> operands,
     if (!index || index.getInt() < 0 ||
         index.getInt() >= static_cast<ssize_t>(variadic.getValues().size()))
       return {};
+
     return variadic.getValues()[index.getInt()];
   }
 
@@ -2596,7 +2600,7 @@ static TypedAttr simplifyVariadicPtrMap(TypedAttr variadicOperand,
   auto resultEltType = cast<VariadicType>(resultType).getElementType();
 
   SmallVector<TypedAttr> results;
-  // Map each type to PointerType of their type.
+  // Map each type to PointerType of their type, retaining their metatype.
   for (auto elt : variadic.getValues()) {
     Type typeValue =
         PointerType::get(TypeValueType::get(elt), addrSpaceOperand);
