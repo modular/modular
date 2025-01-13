@@ -205,7 +205,7 @@ modular_cc_library(
     hdrs = glob(["include/Support/ADT/*.h"]),
     deps = [
         ":Base",
-        ":Globals.headers",
+        ":Globals",
     ],
 )
 
@@ -385,7 +385,7 @@ modular_cc_library(
     defines = ASYNCRT_PROFILING_LOCAL_DEFINES,
     deps = [
         ":Base",
-        ":Globals.headers",
+        ":Globals",
         ":MArchTargetMinimal",
     ],
 )
