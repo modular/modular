@@ -39,8 +39,14 @@ from builtin.builtin_list import (
     VariadicPack,
 )
 from builtin.builtin_slice import Slice, slice
+from builtin.comparable import (
+    LessThanComparable,
+    GreaterThanComparable,
+    LessThanOrEqualComparable,
+    GreaterThanOrEqualComparable,
+    Comparable,
+)
 from builtin.char import Char
-from builtin.comparable import Comparable
 from builtin.constrained import constrained
 from builtin.coroutine import AnyCoroutine, Coroutine, RaisingCoroutine
 from builtin.debug_assert import debug_assert

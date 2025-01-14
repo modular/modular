@@ -59,6 +59,10 @@ def test_min():
     assert_equal(min(i, I(-9, -6, -4, 11)), I(-10, -6, -4, 10))
     assert_equal(min(i, -4), I(-10, -5, -4, -4))
 
+    assert_equal(min(1), 1)
+    assert_equal(min(1, 2, 3, 4), 1)
+    assert_equal(min(500, 1, 2, 3, 4), 1)
+
 
 def test_max():
     assert_equal(-1, max(-2, -1))
@@ -78,6 +82,10 @@ def test_max():
     var i = I(-10, -5, 5, 10)
     assert_equal(max(i, I(-9, -6, -4, 11)), I(-9, -5, 5, 11))
     assert_equal(max(i, -4), I(-4, -4, 5, 10))
+
+    assert_equal(max(1), 1)
+    assert_equal(max(1, 2, 3, 4), 4)
+    assert_equal(max(-10, 2, 3, 4, -10), 4)
 
 
 def test_round():

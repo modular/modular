@@ -206,6 +206,31 @@ fn max[dtype: DType, //](x: SIMD[dtype, _], y: __type_of(x), /) -> __type_of(x):
         return __mlir_op.`pop.max`(x.value, y.value)
 
 
+trait _CopyableGreaterThanComparable(Copyable, GreaterThanComparable):
+    ...
+
+
+@always_inline
+fn max[T: _CopyableGreaterThanComparable](x: T, *ys: T) -> T:
+    """Gets the maximum value from a sequence of values.
+
+    Parameters:
+        T: A type that is both copyable and comparable with greater than.
+
+    Args:
+        x: The first value to compare.
+        ys: Zero or more additional values to compare.
+
+    Returns:
+        The maximum value from the input sequence.
+    """
+    var res = x
+    for y in ys:
+        if y[] > res:
+            res = y[]
+    return res
+
+
 # ===----------------------------------------------------------------------=== #
 # min
 # ===----------------------------------------------------------------------=== #
@@ -269,6 +294,31 @@ fn min[dtype: DType, //](x: SIMD[dtype, _], y: __type_of(x), /) -> __type_of(x):
         ]()
 
         return __mlir_op.`pop.min`(x.value, y.value)
+
+
+trait _CopyableLessThanComparable(Copyable, LessThanComparable):
+    ...
+
+
+@always_inline
+fn min[T: _CopyableLessThanComparable](x: T, *ys: T) -> T:
+    """Gets the minimum value from a sequence of values.
+
+    Parameters:
+        T: A type that is both copyable and comparable with less than.
+
+    Args:
+        x: The first value to compare.
+        ys: Zero or more additional values to compare.
+
+    Returns:
+        The minimum value from the input sequence.
+    """
+    var res = x
+    for y in ys:
+        if y[] < res:
+            res = y[]
+    return res
 
 
 # ===----------------------------------------------------------------------=== #

@@ -213,6 +213,8 @@ what we publish.
   var inferred_size = float_vector.cast[DType.uint64]() # [42, 42, 42, 42]
   ```
 
+- You can now use `max()` and `min()` with variadic number of arguments.
+
 ### Tooling changes
 
 - mblack (aka `mojo format`) no longer formats non-mojo files. This prevents
