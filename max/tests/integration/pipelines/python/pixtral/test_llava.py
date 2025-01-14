@@ -271,7 +271,7 @@ def vision_encoder_given_pytorch_vision_encoder(pytorch_model, config):
         )
 
     graph_transformer = Transformer(
-        config.num_attention_heads, attention_layers
+        config.num_attention_heads, attention_layers, DType.float32
     )
 
     graph_encoder = VisionEncoder(

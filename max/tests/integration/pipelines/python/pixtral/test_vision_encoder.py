@@ -212,7 +212,9 @@ def vision_encoder(pytorch_pixtral_vision_encoder):
             TransformerBlock(attention, mlp, attention_norm, mlp_norm)
         )
 
-    graph_transformer = Transformer(num_attention_heads, attention_layers)
+    graph_transformer = Transformer(
+        num_attention_heads, attention_layers, DType.float32
+    )
 
     graph_encoder = VisionEncoder(
         patch_conv=graph_patch_conv,
