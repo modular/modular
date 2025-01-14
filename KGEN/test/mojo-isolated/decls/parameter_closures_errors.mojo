@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
 
-fn bind_fat_to_thin_target[g: fn (y: int) -> int](x: int):
+fn bind_fat_to_thin_target[g: fn (y: Index) -> Index](x: Index):
     pass
 
 
@@ -16,7 +16,7 @@ fn bind_fat_to_thin_main():
 
     @__copy_capture(x)
     @parameter
-    fn g(y: int) -> int:
+    fn g(y: Index) -> Index:
         return x
 
     # expected-error @below {{cannot pass 'fn(y: index) capturing -> index' value, expected 'fn(y: index) -> index' in call parameter}}
@@ -24,12 +24,12 @@ fn bind_fat_to_thin_main():
     Bound(3)
 
 
-fn makeClosure(x: int):
+fn makeClosure(x: Index):
     var z = __mlir_op.`index.add`(x, x)
 
     @__copy_capture(z)
     @parameter
-    fn writer() -> int:
+    fn writer() -> Index:
         # expected-error @below {{expression must be mutable in assignment}}
         z = __mlir_op.`index.add`(z, z)
         return z
@@ -39,7 +39,7 @@ fn makeClosure(x: int):
 
 @value
 struct MemType:
-    var a: int
+    var a: Index
 
     fn foo(self) -> MemType:
         return MemType(__mlir_op.`index.add`(self.a, self.a))
@@ -47,10 +47,10 @@ struct MemType:
 
 @register_passable
 struct NoCopyType:
-    var a: int
+    var a: Index
 
     @implicit
-    fn __init__(out self, aa: int):
+    fn __init__(out self, aa: Index):
         self.a = aa
 
     fn foo(self) -> NoCopyType:
@@ -64,7 +64,7 @@ fn makeClosure(x: MemType):
     # expected-error @below {{'NoCopyType' is not copyable because it has no '__copyinit__'}}
     @__copy_capture(rp)
     @parameter
-    fn writer() -> int:
+    fn writer() -> Index:
         pass
 
 

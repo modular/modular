@@ -13,7 +13,7 @@
 # CHECK-LABEL: lit.struct.decl @Param
 @value
 @register_passable("trivial")
-struct Param[x: int]:
+struct Param[x: Index]:
     alias value = x
 
     @staticmethod
@@ -31,7 +31,7 @@ struct Param[x: int]:
 # CHECK-LABEL: lit.struct.decl @TwoParam
 @value
 @register_passable("trivial")
-struct TwoParam[x: int, y: int]:
+struct TwoParam[x: Index, y: Index]:
     alias first = x
     alias second = y
 
@@ -118,7 +118,7 @@ fn partial_autoparam(value: TwoParam[y=`1`]):
 # CHECK-LABEL: lit.struct.decl @ParamVarArg<F, I: variadic<index> var>
 @value
 @register_passable("trivial")
-struct ParamVarArg[F: int, *I: int]:
+struct ParamVarArg[F: Index, *I: Index]:
     # CHECK-LABEL: lit.fn @"self_type
     # CHECK-SAME: #ParamVarArg <F, :variadic<index> I>
     @staticmethod

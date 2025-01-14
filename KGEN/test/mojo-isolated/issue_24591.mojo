@@ -16,11 +16,11 @@ struct Optional[T: AnyTrivialRegType]:
         pass
 
 
-alias int = __mlir_type.index
+alias Index = __mlir_type.index
 
 
 @register_passable
-struct Param[x: int]:
+struct Param[x: Index]:
     pass
 
 
@@ -35,5 +35,5 @@ struct IntLiteral:
 # COM: struct so we can match with 0.
 # CHECK: "lit.struct.decl"() <{convention = 0 :
 # CHECK-SAME: signature = !lit.type_signature<"x": index, "y": [[OPT:.*:@Optional]]<:type !lit.generator<<"y": index>() -> !lit.struct<#Param <*(1,0)>>
-struct Thing[x: int, y: Optional[fn[y: int] () -> Param[x]] = None]:
+struct Thing[x: Index, y: Optional[fn[y: Index] () -> Param[x]] = None]:
     alias z = 1

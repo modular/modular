@@ -31,13 +31,13 @@ fn makes_escaping_closurenocopy(m: StringNoCopy):
 # COM: When a runtime argument has incorrect type, nested function bodies may
 # COM: still be resolved. Ensure that we don't crash when the arg is used.
 @value
-struct Parametric[a: int]:
+struct Parametric[a: Index]:
     pass
 
 
 fn test_suppressed_dyn_binding_error[
-    x: int
+    x: Index
     # expected-error @below {{parametric functions may not be used as arguments; consider passing as a parameter instead}}
-](pval: Parametric[x], func: fn[y: int] (p: Parametric[y]) -> None):
+](pval: Parametric[x], func: fn[y: Index] (p: Parametric[y]) -> None):
     fn nested():
         func(pval)

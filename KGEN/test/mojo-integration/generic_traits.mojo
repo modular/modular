@@ -5,19 +5,19 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen -elaborate -O0 %s -S | FileCheck %s
 
-alias int = __mlir_type.index
+alias Index = __mlir_type.index
 
 
 trait SimpleTrait:
     @staticmethod
-    fn bar() -> int:
+    fn bar() -> Index:
         ...
 
 
 struct MemType(SimpleTrait):
     @staticmethod
     @always_inline
-    fn bar() -> int:
+    fn bar() -> Index:
         return __mlir_attr.`1:index`
 
 
@@ -25,21 +25,21 @@ struct MemType(SimpleTrait):
 struct RegType(SimpleTrait):
     @staticmethod
     @always_inline
-    fn bar() -> int:
+    fn bar() -> Index:
         return __mlir_attr.`2:index`
 
 
 @register_passable("trivial")
 struct RegTypeTrivial(SimpleTrait):
-    var x: int
+    var x: Index
 
     @staticmethod
     @always_inline
-    fn bar() -> int:
+    fn bar() -> Index:
         return __mlir_attr.`3:index`
 
 
-fn generic_arg[T: SimpleTrait](x: T) -> int:
+fn generic_arg[T: SimpleTrait](x: T) -> Index:
     return T.bar()
 
 

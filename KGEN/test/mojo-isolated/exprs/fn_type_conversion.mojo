@@ -7,21 +7,21 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-fn take_func_without_arg_name[f: fn (int) -> None]():
+fn take_func_without_arg_name[f: fn (Index) -> None]():
     pass
 
 
-fn func_with_arg_name(a: int):
+fn func_with_arg_name(a: Index):
     pass
 
 
 # COM: Issue https://github.com/modularml/mojo/issues/1307
 # COM: Test that functions with defaults can be passed where no defaults are expected
-fn take_func_without_default[f: fn (a: int) -> None]():
+fn take_func_without_default[f: fn (a: Index) -> None]():
     pass
 
 
-fn func_with_default(a: int = `0`):
+fn func_with_default(a: Index = `0`):
     pass
 
 

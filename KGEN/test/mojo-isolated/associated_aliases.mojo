@@ -12,7 +12,7 @@
 # CHECK-DAG: #[[StructWithMatchingAlias_VTable:.*]] = #kgen.type<!StructWithMatchingAlias, {"N" : !Int = {42}, {{.*}} : !TraitWithAlias
 # CHECK-DAG: #[[StructWithAliasArgMethod_VTable:.*]] = #kgen.type<!StructWithAliasArgMethod,{{.*}}"lork" : !lit.generator<{{.*}}"thing": !lit.ref<@associated_aliases::@SIMD<:!ATrait #type_value>{{.*}}> = @associated_aliases::@StructWithAliasArgMethod::@"lork({{.*}}SIMD[__mlir_type.index])",{{.*}}> : !TraitWithAliasArgMethod
 
-alias int = __mlir_type.index
+alias Index = __mlir_type.index
 
 
 # CHECK-LABEL: lit.trait.decl @TraitWithAlias
@@ -60,9 +60,9 @@ trait TraitWithAliasReturnMethod:
 # CHECK-LABEL: lit.struct.decl @ExplicitStructWithAliasMethod
 @value
 struct ExplicitStructWithAliasMethod(TraitWithAliasReturnMethod):
-    alias T: ATrait = int
-    fn bork(self) -> SIMD[int]:
-        return SIMD[int]()
+    alias T: ATrait = Index
+    fn bork(self) -> SIMD[Index]:
+        return SIMD[Index]()
 
 
 fn receiveTraitWithAliasReturnMethod[X: TraitWithAliasReturnMethod](t: X):
@@ -78,9 +78,9 @@ fn testUpcastingExplicitStructWithAliasMethod():
 # CHECK-LABEL: lit.struct.decl @ImplicitStructWithAliasMethod
 @value
 struct ImplicitStructWithAliasMethod:
-    alias T: ATrait = int
-    fn bork(self) -> SIMD[int]:
-        return SIMD[int]()
+    alias T: ATrait = Index
+    fn bork(self) -> SIMD[Index]:
+        return SIMD[Index]()
 
 
 # CHECK-LABEL: lit.fn @"testUpcastingImplicitStructWithAliasMethod
@@ -107,7 +107,7 @@ struct GenericStructWithAliasMethod[Z: ATrait](TraitWithAliasReturnMethod):
 # CHECK-LABEL: lit.fn @"testUpcastingGenericStructWithAliasMethod
 fn testUpcastingGenericStructWithAliasMethod():
     # CHECK: {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasReturnMethod{{.*}}<:!TraitWithAliasReturnMethod #[[GenericStructWithAliasMethod_VTable]]>
-    receiveTraitWithAliasReturnMethod(GenericStructWithAliasMethod[int]())
+    receiveTraitWithAliasReturnMethod(GenericStructWithAliasMethod[Index]())
 
 
 trait TraitWithAliasArgMethod:
@@ -118,8 +118,8 @@ trait TraitWithAliasArgMethod:
 
 @value
 struct StructWithAliasArgMethod(TraitWithAliasArgMethod):
-    alias T: ATrait = int
-    fn lork(self, thing: SIMD[int]):
+    alias T: ATrait = Index
+    fn lork(self, thing: SIMD[Index]):
         pass
 
 fn receiveTraitWithAliasArgMethod[X: TraitWithAliasArgMethod](t: X):
@@ -150,7 +150,7 @@ trait TraitWithSelfDotAliasReturnMethod:
 
 
 struct StructWithSelfDotAliasReturnMethod(TraitWithSelfDotAliasReturnMethod):
-    alias T: ATrait = int
+    alias T: ATrait = Index
 
     fn bork(self) -> SIMD[Self.T]:
         return SIMD[Self.T]()
@@ -170,7 +170,7 @@ struct GenericStructWithSelfDotAliasReturnMethod[Z: ATrait](TraitWithSelfDotAlia
         return SIMD[Z]()
 
 fn testUpcastingGenericStructWithSelfDotAliasReturnMethod():
-    receiveTraitWithSelfDotAliasReturnMethod(GenericStructWithSelfDotAliasReturnMethod[int]())
+    receiveTraitWithSelfDotAliasReturnMethod(GenericStructWithSelfDotAliasReturnMethod[Index]())
 
 
 # TODO(MOCO-1259): Support static methods with associated aliases

@@ -7,27 +7,27 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-struct Parametric[a: int]:
+struct Parametric[a: Index]:
     pass
 
 
-struct StructWithDefault[a: int, b: int, c: int = `1`, d: int = `2`]:
+struct StructWithDefault[a: Index, b: Index, c: Index = `1`, d: Index = `2`]:
     pass
 
 
-struct StructWithDefaultKwOnly[a: int, b: int, c: int = `1`, *, d: int = `2`]:
+struct StructWithDefaultKwOnly[a: Index, b: Index, c: Index = `1`, *, d: Index = `2`]:
     pass
 
 
-struct StructWithVariadic[a: int = `1`, *b: int]:
+struct StructWithVariadic[a: Index = `1`, *b: Index]:
     pass
 
 
-struct DefaultPosOnly[a: int = `1`, /, b: int = `2`, *, c: int = `3`]:
+struct DefaultPosOnly[a: Index = `1`, /, b: Index = `2`, *, c: Index = `3`]:
     pass
 
 
-fn variadic_params[*a: int]():
+fn variadic_params[*a: Index]():
     pass
 
 

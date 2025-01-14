@@ -377,7 +377,7 @@ fn test_too_few_pos_only(a: Int, msg: Int = 3):
 
 # COM: Issue #23007
 # expected-note @+1 {{function declared here}}
-fn missing_args(a: int, b: int, c: int = `2`, d: int = `2`): pass
+fn missing_args(a: Index, b: Index, c: Index = `2`, d: Index = `2`): pass
 
 fn test_missing_args():
   # expected-error @+1 {{invalid call to 'missing_args': missing 2 required positional arguments: 'a', 'b'}}
@@ -442,7 +442,7 @@ struct InitOverloaded:
   fn __init__(out self, a: Int): pass
   # expected-note @below {{argument #0 cannot be converted from 'StringLiteral' to 'index'}}
   # expected-note @below {{argument #0 cannot be converted from 'Parametric[1]' to 'index'}}
-  fn __init__(out self, a: int): pass
+  fn __init__(out self, a: Index): pass
 
 fn testOverloadInitError(a: InitOverloaded, b: Parametric[1], c: Int):
   # expected-error @+1 {{cannot construct 'InitOverloaded' with itself, you can remove the constructor call}}
@@ -819,7 +819,7 @@ fn bad_trait_params[T: EverythingIsWrongTrait](x: T):
   x.parametric()
 
 trait Shape(Copyable, Movable):
-	fn area(self) -> int:
+	fn area(self) -> Index:
 	    ...
 
 @value
@@ -996,8 +996,8 @@ struct AnyTypeMember[T: AnyType]:
 # Ensure @value fails gracefully in the presence of duplicate field names.
 @value
 struct BadStruct:
-    var b: int  # expected-note {{previous definition here}}
-    var b: int  # expected-error {{invalid redefinition of 'b'}}
+    var b: Index  # expected-note {{previous definition here}}
+    var b: Index  # expected-error {{invalid redefinition of 'b'}}
 
 
 # Also ensure that @value doesn't fail if a method/alias shadows it.
@@ -1005,7 +1005,7 @@ struct BadStruct:
 struct OtherBadStruct:
     # expected-note @below {{previous definition here}}
     # expected-note @below {{cannot overload with this non-function definition}}
-    var b: int
+    var b: Index
     alias b = `0`  # expected-error {{invalid redefinition of 'b'}}
 
     fn b(mut self):  # expected-error {{invalid redefinition of 'b'}}

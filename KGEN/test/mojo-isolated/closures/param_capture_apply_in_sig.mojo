@@ -8,10 +8,10 @@
 
 @value
 @register_passable
-struct Foo[x: int]:
-    var b: int
+struct Foo[x: Index]:
+    var b: Index
 
-    fn get(self) -> int:
+    fn get(self) -> Index:
         return self.b
 
 
@@ -20,8 +20,8 @@ struct Foo[x: int]:
 # CHECK-SAME: @Foo<apply(:{{.*}}@Foo::@"get{{.*}}"<a>), store_to_mem(Y))>
 
 
-fn alias_ref_apply_in_sig[a: int, Y: Foo[a]]():
+fn alias_ref_apply_in_sig[a: Index, Y: Foo[a]]():
     #alias Y = Foo[a](__mlir_attr.`2 : index`)
 
-    fn p_capture(x: int, y: Foo[Y.get()]) escaping -> int:
+    fn p_capture(x: Index, y: Foo[Y.get()]) escaping -> Index:
         return Foo[a](x).get()

@@ -6,7 +6,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-fn use(x: int):
+fn use(x: Index):
     pass
 
 
@@ -14,7 +14,7 @@ fn use(x: int):
 # CHECK: lit.struct.field field0 : index
 
 
-fn makes_escaping_closure(x: int):
+fn makes_escaping_closure(x: Index):
     fn bar():
         try:
             use(x)

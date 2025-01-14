@@ -15,6 +15,6 @@
 fn foo():
     var w = `5`
 
-    fn bar() -> int:
+    fn bar() -> Index:
         var x = __mlir_op.`index.add`(w, w)
         return x

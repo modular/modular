@@ -17,7 +17,7 @@ import builtin
 
 
 # CHECK-LABEL: lit.fn @"test_function_calls(::Int)"
-fn test_function_calls(arg: builtin.int.Int):
+fn test_function_calls(arg: builtin.Int):
     pass
 
 

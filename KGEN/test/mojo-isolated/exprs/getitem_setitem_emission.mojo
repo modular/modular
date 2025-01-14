@@ -8,27 +8,27 @@
 
 
 struct WeirdArray:
-    fn __getitem__(self, x: int) -> int:
+    fn __getitem__(self, x: Index) -> Index:
         return x
 
-    fn __getitem__(self, x: int, y: int) -> int:
+    fn __getitem__(self, x: Index, y: Index) -> Index:
         return x
 
-    fn __getitem__(self, x: int, y: int, z: int) -> int:
+    fn __getitem__(self, x: Index, y: Index, z: Index) -> Index:
         return x
 
-    fn __getitem__(self, x: float, *ints: int) -> int:
+    fn __getitem__(self, x: float, *ints: Index) -> Index:
         return `1`
 
-    fn __setitem__(self, x: int, y: int, value: int):
+    fn __setitem__(self, x: Index, y: Index, value: Index):
         pass
 
-    fn __getitem__(self, s: Slice) -> int:
+    fn __getitem__(self, s: Slice) -> Index:
         return `2`
 
 
 # CHECK-LABEL: lit.fn @"test_getitem
-fn test_getitem(a: WeirdArray, idx: int, f: float):
+fn test_getitem(a: WeirdArray, idx: Index, f: float):
     # CHECK: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %idx)
     _ = a[idx]
 
@@ -43,7 +43,7 @@ fn test_getitem(a: WeirdArray, idx: int, f: float):
     _ = a[f, idx, idx, idx, idx]
 
 
-fn test_getitem_kw(a: WeirdArray, idx: int, idx2: int, idx3: int):
+fn test_getitem_kw(a: WeirdArray, idx: Index, idx2: Index, idx3: Index):
     # CHECK: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %idx)
     _ = a[x=idx]
 
@@ -58,14 +58,14 @@ fn test_getitem_kw(a: WeirdArray, idx: int, idx2: int, idx3: int):
 
 
 # CHECK-LABEL: lit.fn @"test_setitem
-fn test_setitem[x: int](a: WeirdArray, idx: int):
+fn test_setitem[x: Index](a: WeirdArray, idx: Index):
     # CHECK: %[[X:.*]] = kgen.param.constant = <x>
     # CHECK: lit.call {{.*}}__setitem__{{.*}}(%a, %idx, %idx, %[[X]])
     a[idx, idx] = x
 
 
 # CHECK-LABEL: lit.fn @"test_getitem_slice
-fn test_getitem_slice(a: WeirdArray, i: int, j: int, k: int):
+fn test_getitem_slice(a: WeirdArray, i: Index, j: Index, k: Index):
     # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:type none, :type none, :type none>(%none{{.*}}, %none{{.*}}, %none{{.*}}) :
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[:]
@@ -88,28 +88,28 @@ fn test_getitem_slice(a: WeirdArray, i: int, j: int, k: int):
 
 
 struct IndexArray:
-    fn __getitem__(mut self, x: int) -> int:
+    fn __getitem__(mut self, x: Index) -> Index:
         pass
 
-    fn __setitem__(mut self, x: int, value: int):
+    fn __setitem__(mut self, x: Index, value: Index):
         pass
 
 
 struct IndexArrayArray:
-    fn __getitem__(mut self, x: int) -> IndexArray:
+    fn __getitem__(mut self, x: Index) -> IndexArray:
         pass
 
-    fn __setitem__(mut self, x: int, owned value: IndexArray):
+    fn __setitem__(mut self, x: Index, owned value: IndexArray):
         pass
 
 
-fn takes_inout_int(mut a: int):
+fn takes_inout_int(mut a: Index):
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_writeback1
 fn test_writeback1[
-    x: int, y: int
+    x: Index, y: Index
 ](mut a: IndexArray, mut b: IndexArrayArray):
     # CHECK: %[[LT:.*]] = lit.var.decl "anonymous*" synth
     # CHECK-NEXT: %[[V0:.*]] = kgen.param.constant = <x>
@@ -123,7 +123,7 @@ fn test_writeback1[
 
 # CHECK-LABEL: lit.fn @"test_writeback2
 fn test_writeback2[
-    x: int, y: int
+    x: Index, y: Index
 ](mut a: IndexArray, mut b: IndexArrayArray):
     # CHECK-NEXT: %[[LT1:.*]] = lit.var.decl
     # CHECK-NEXT: %[[LT2:.*]] = lit.var.decl {{.*}}!IndexArray
@@ -149,15 +149,15 @@ fn test_writeback2[
 
 @register_passable
 struct RegWeirdArray:
-    fn __getitem__(self, idx: int) -> int:
+    fn __getitem__(self, idx: Index) -> Index:
         return idx
 
-    fn __setitem__(self, idx: int, value: int):
+    fn __setitem__(self, idx: Index, value: Index):
         pass
 
 
 # CHECK-LABEL: lit.fn @"test_dlvalue_to_pvalue
-fn test_dlvalue_to_pvalue[arr: RegWeirdArray, y: int]():
+fn test_dlvalue_to_pvalue[arr: RegWeirdArray, y: Index]():
     # CHECK-NEXT: lit.alias.decl *"x{{.*}}" = <apply({{.*}}@RegWeirdArray::@"__getitem__{{.*}}"), store_to_mem(arr), y)>
     alias x = arr[y]
 
@@ -183,7 +183,7 @@ struct ParamIndex:
 fn test_param_indexing(a: XYZ, b: ParamIndex) -> Int:
   # Issue #35662: Support parameter input to getattr
   # CHECK: lit.call {{.*}}__getattr__{{.*}}<:!StringLiteral {:string "x"}>(%a)
-  _ = a.x 
+  _ = a.x
   # CHECK: lit.call {{.*}}__getattr__{{.*}}<:!StringLiteral {:string "y"}>(%a)
   _ = a.y
   # CHECK: lit.call {{.*}}__getitem__{{.*}}<:!Int {2}, :!Int {4}>(%b)

@@ -7,8 +7,8 @@
 
 
 @register_passable
-struct C[B: int]:
-    fn get(self) -> int:
+struct C[B: Index]:
+    fn get(self) -> Index:
         pass
 
 
@@ -16,17 +16,17 @@ struct C[B: int]:
 # CHECK-COUNT-1: lit.struct.decl @"fn[index](
 
 
-fn use(a: int):
+fn use(a: Index):
     pass
 
 
 fn take_closure[
-    c_type: int
+    c_type: Index
 ](x: C[c_type], closure: fn (z: C[c_type]) escaping -> None):
     closure(x)
 
 
-fn make_closure[c_type: int]() -> fn (z: C[c_type]) escaping -> None:
+fn make_closure[c_type: Index]() -> fn (z: C[c_type]) escaping -> None:
     fn foo(z: C[c_type]) escaping -> None:
         use(z.get())
 

@@ -9,36 +9,36 @@
 @register_passable
 struct SomeNonTrivRegPassable: pass
 
-fn takes_pos_or_kw_arg(i: int, j: int):
+fn takes_pos_or_kw_arg(i: Index, j: Index):
     pass
 
 
-fn test_duplicate_kw_arg(x: int):
+fn test_duplicate_kw_arg(x: Index):
     takes_pos_or_kw_arg(
         j=x,  # expected-note {{previously specified here}}
         j=x,  # expected-error {{duplicate keyword argument 'j'}}
     )
 
 
-fn test_pos_after_kw_arg(x: int):
+fn test_pos_after_kw_arg(x: Index):
     takes_pos_or_kw_arg(
         j=x,
         x,  # expected-error {{positional argument follows keyword argument}}
     )
 
 
-fn takes_pos_or_kw_param[i: int, j: int]():
+fn takes_pos_or_kw_param[i: Index, j: Index]():
     pass
 
 
-fn test_duplicate_kw_param[x: int]():
+fn test_duplicate_kw_param[x: Index]():
     takes_pos_or_kw_param[
         j=x,  # expected-note {{previously specified here}}
         j=x,  # expected-error {{duplicate keyword parameter 'j'}}
     ]
 
 
-fn test_pos_after_kw_param[x: int]():
+fn test_pos_after_kw_param[x: Index]():
     takes_pos_or_kw_param[
         j=x,
         x,  # expected-error {{positional parameter follows keyword parameter}}
@@ -107,7 +107,7 @@ struct SomethingWithInferredParam[T: CollectionElement]:
 # expected-note @+1 {{function declared here}}
 fn SomethingWithInferredParamCallee(mut v: SomethingWithInferredParam):
   pass
- 
+
 fn SomethingWithInferredParamCaller(v: SomethingWithInferredParam):
   # expected-error @+1 {{must be mutable in order to pass to a mutating argument}}
   SomethingWithInferredParamCallee(v)
@@ -683,7 +683,7 @@ fn field_sensitive_origins(a: ThingWithFields)
   # expected-error @+1 {{'ThingWithFields' value has no attribute 'field_abc'}}
   _ = __origin_of(a.field_abc)
   # expected-error @+1 {{MLIR type 'index' has no attributes}}
-  _ = __origin_of(int.field_abc)
+  _ = __origin_of(Index.field_abc)
 
   # expected-error @+1 {{cannot implicitly convert 'ThingWithFields' value to 'Pointer[ThingWithFields, a.field]'}}
   return a
@@ -707,7 +707,7 @@ fn bad_named_return3() -> Int as output: pass
 
 fn bad_arg_convention(
     # expected-warning @+1 {{'borrowed' syntax deprecated, please use 'read' instead}}
-    borrowed x: Int, 
+    borrowed x: Int,
     # expected-warning @+1 {{'inout' syntax deprecated, please use 'mut' instead}}
     inout y: Int): pass
 
@@ -759,7 +759,7 @@ struct HasIntParam[p: Int]:
 # MOCO-846: Poor error message when type conversion fails due to IntLiteral materialization
 
 # expected-note @below {{function declared here}}
-fn take_dep_args[width: Int, x: IntLiteral](a: HasIntParam[width], b: HasIntParam[width * 4]): 
+fn take_dep_args[width: Int, x: IntLiteral](a: HasIntParam[width], b: HasIntParam[width * 4]):
   # expected-error @below {{cannot be converted from 'HasIntParam[Int(x.__mul__(4))]' to 'HasIntParam[Int(x).__mul__(4)]'}}
   # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
   take_dep_args[x, x](HasIntParam[x](), HasIntParam[x*4]())

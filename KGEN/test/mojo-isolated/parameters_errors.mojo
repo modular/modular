@@ -102,7 +102,7 @@ fn testSIMD(
     twoUses(a, b)
 
 
-struct TwoParams[a: int, b: int]:
+struct TwoParams[a: Index, b: Index]:
     @implicit
     fn __init__(out self, other: TwoParams[`1`, `1`]):
         pass
@@ -110,7 +110,7 @@ struct TwoParams[a: int, b: int]:
 
 # expected-note @below {{function declared here}}
 fn infer_then_convert[
-    a: int, b: int
+    a: Index, b: Index
 ](lhs: TwoParams[a, b], rhs: TwoParams[a, b]):
     pass
 
@@ -184,7 +184,7 @@ fn callVariadic():
 
 
 # expected-note @below {{'StructWithVariadic' declared here}}
-struct StructWithVariadic[*a: int]:
+struct StructWithVariadic[*a: Index]:
     pass
 
 
