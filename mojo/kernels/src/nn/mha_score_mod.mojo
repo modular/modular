@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from bit import is_power_of_two, log2_floor
 from math import exp2, iota
 from sys import bitwidthof
 
@@ -26,6 +27,7 @@ trait ScoreModTrait:
             4, element_bitwidth=element_bitwidth, unsigned=unsigned
         ],
         score_vec: SIMD[type, width],
+        max_prompt_len: Int = 0,
     ) -> SIMD[type, width]:
         """Return score vector at given coordinates given a score_mod.
 
@@ -40,7 +42,9 @@ trait ScoreModTrait:
 
 @value
 @register_passable("trivial")
-struct AlibiScoreMod[num_heads: Int](ScoreModTrait):
+struct AlibiScoreMod[
+    num_heads: Int,
+](ScoreModTrait):
     """AlibiScoreMod adds the appropriate ALiBi constant bias to attention score.
     """
 
@@ -52,14 +56,34 @@ struct AlibiScoreMod[num_heads: Int](ScoreModTrait):
     ](
         self,
         head_idx: SIMD[coords_dtype, width],
-        q_idx: SIMD[coords_dtype, width],
         k_idx: SIMD[coords_dtype, width],
+        max_prompt_len: Int,
     ) -> SIMD[type, width]:
-        var scale = exp2(-((head_idx + 1).cast[type]() * 8.0 / num_heads))
-        var bias = (q_idx - k_idx - iota[coords_dtype, width]()).cast[
-            type
-        ]() * scale
-        return bias
+        var scale = SIMD[type, width](0)
+
+        @parameter
+        if is_power_of_two(num_heads):
+            scale = exp2(-((head_idx + 1).cast[type]() * 8.0 / num_heads))
+        else:
+            var log2_floor_num_heads = log2_floor(num_heads)
+            var closest_power_of_2 = 2**log2_floor_num_heads
+            if head_idx[0] < closest_power_of_2:
+                scale = exp2(
+                    -((head_idx + 1).cast[type]() * 8.0 / closest_power_of_2)
+                )
+            else:
+                scale = exp2(
+                    -(
+                        ((head_idx - closest_power_of_2) * 2 + 1).cast[type]()
+                        * 8.0
+                        / (closest_power_of_2 * 2)
+                    )
+                )
+        var bias = -(
+            max_prompt_len - 1 - k_idx - iota[coords_dtype, width]()
+        ).cast[type]()
+        var alibi_bias = bias * scale
+        return alibi_bias
 
     @always_inline
     fn score_mod[
@@ -74,6 +98,7 @@ struct AlibiScoreMod[num_heads: Int](ScoreModTrait):
             4, element_bitwidth=element_bitwidth, unsigned=unsigned
         ],
         score_vec: SIMD[type, width],
+        max_prompt_len: Int,
     ) -> SIMD[type, width]:
         var score_mod_vec = score_vec
 
@@ -90,7 +115,7 @@ struct AlibiScoreMod[num_heads: Int](ScoreModTrait):
         score_mod_vec = (q_idx >= (k_idx + iota[coords_dtype, width]())).select(
             score_vec
             + self._generate_alibi_bias[coords_dtype, type, width](
-                head_idx, q_idx, k_idx
+                head_idx, k_idx, max_prompt_len
             ),
             score_vec,
         )
@@ -116,5 +141,6 @@ struct IdentityScoreMod(ScoreModTrait):
             4, element_bitwidth=element_bitwidth, unsigned=unsigned
         ],
         score_vec: SIMD[type, width],
+        max_prompt_len: Int = 0,
     ) -> SIMD[type, width]:
         return score_vec

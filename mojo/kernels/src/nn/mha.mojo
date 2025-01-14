@@ -645,7 +645,6 @@ fn flash_attention_dispatch[
                 ](
                     batch_size, max_cache_valid_length, ctx
                 )
-
             if num_partitions_value == 1:
                 ctx.enqueue_function(
                     func,
@@ -1598,6 +1597,7 @@ fn mha_single_batch[
                                             Int(score_col),
                                         ),
                                         p_reg_vec2[mma_id, i],
+                                        max_seq_len,
                                     )
                                     * log2e
                                 )
@@ -2282,6 +2282,7 @@ fn mha_single_batch_pipelined[
                                             Int(score_col),
                                         ),
                                         p_reg_vec2[mma_id, i],
+                                        max_seq_len,
                                     )
                                     * log2e
                                 )
@@ -2688,6 +2689,7 @@ fn scale_and_mask_helper[
     score_mod: score_mod_t,
     kv_tile_start_row: Int,
     mask_stride: UInt,
+    max_seq_len: Int,  # max_prompt_len + max_cache_len
 ):
     # Apply mask and scale to mma result. Only the first row (lane 0-3) has
     # meaningful data, other fragments are zero. The mask is an 1D vector.
@@ -2757,6 +2759,7 @@ fn scale_and_mask_helper[
                             Int(score_col),
                         ),
                         p_reg_tile[n_mma, i],
+                        max_seq_len,
                     )
 
                 p_reg_tile[n_mma, i] = _kernel_mask(
@@ -3102,6 +3105,7 @@ fn mha_decoding_single_batch[
             score_mod,
             kv_tile_start_row,
             stride,
+            max_cache_valid_length,
         )
         # Increment mask to next BM x BN block.
         mask_warp_ptr += BN
@@ -3544,6 +3548,7 @@ fn mha_decoding_single_batch_pipelined[
             score_mod,
             kv_tile_start_row,
             stride,
+            max_cache_valid_length,
         )
         # Increment mask to next BM x BN block.
         mask_warp_ptr += BN
