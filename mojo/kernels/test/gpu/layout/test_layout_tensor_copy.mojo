@@ -900,35 +900,44 @@ def run_copy_local_to_local_tests(ctx: DeviceContext):
 
 @always_inline
 fn copy_local_to_sram_kernel[
-    type: DType, layout: Layout, WM: Int, WN: Int, MMA_M: Int, MMA_N: Int
+    type: DType,
+    layout: Layout,
+    WM: Int,
+    WN: Int,
+    MMA_M: Int,
+    MMA_N: Int,
+    simd_size_row: Int,
+    simd_size_col: Int,
 ](output: LayoutTensor[type, layout]):
-    alias simd_size = 2
-
     var reg_tile0 = LayoutTensor[
         DType.float32,
-        Layout.row_major(MMA_M, MMA_N * simd_size),
+        Layout.row_major(MMA_M * simd_size_row, MMA_N * simd_size_col),
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     arange(reg_tile0)
 
     var smem_warp_tile = LayoutTensor[
-        DType.float32,
+        type,
         Layout.row_major(WM, WN),
         address_space = AddressSpace.SHARED,
     ].stack_allocation().fill(0)
 
     copy_local_to_sram[
-        thread_layout = Layout.row_major(WM // MMA_M, WN // simd_size // MMA_N)
+        thread_layout = Layout.row_major(
+            WM // simd_size_row // MMA_M, WN // simd_size_col // MMA_N
+        )
     ](
-        smem_warp_tile.vectorize[1, simd_size](),
-        reg_tile0.vectorize[1, simd_size](),
+        smem_warp_tile.vectorize[simd_size_row, simd_size_col](),
+        reg_tile0.vectorize[simd_size_row, simd_size_col](),
     )
 
     copy_sram_to_dram[
-        thread_layout = Layout.row_major(WM // MMA_M, WN // simd_size // MMA_N)
+        thread_layout = Layout.row_major(
+            WM // simd_size_row // MMA_M, WN // simd_size_col // MMA_N
+        )
     ](
-        output.vectorize[1, simd_size](),
-        smem_warp_tile.vectorize[1, simd_size](),
+        output.vectorize[simd_size_row, simd_size_col](),
+        smem_warp_tile.vectorize[simd_size_row, simd_size_col](),
     )
 
 
@@ -938,8 +947,17 @@ fn test_copy_local_to_sram[
     WN: Int,
     MMA_M: Int,
     MMA_N: Int,
+    simd_size_row: Int,
+    simd_size_col: Int,
 ](ctx: DeviceContext) raises:
-    print("=== test_copy_local_to_sram")
+    print(
+        "=== test_copy_local_to_sram_",
+        type,
+        "_simd_size_",
+        simd_size_row,
+        simd_size_col,
+        sep="",
+    )
 
     alias layout = Layout.row_major(WM, WN)
     var output = ManagedLayoutTensor[
@@ -948,7 +966,7 @@ fn test_copy_local_to_sram[
     ](ctx)
 
     alias kernel_type = copy_local_to_sram_kernel[
-        type, layout, WM, WN, MMA_M, MMA_N
+        type, layout, WM, WN, MMA_M, MMA_N, simd_size_row, simd_size_col
     ]
     var kernel = ctx.compile_function[kernel_type]()
 
@@ -966,8 +984,8 @@ fn test_copy_local_to_sram[
     _ = output^
 
 
-def run_copy_local_to_sram_tests(ctx: DeviceContext):
-    # CHECK: === test_copy_local_to_sram
+def run_copy_local_to_sram_tests_float32_simd_size_12(ctx: DeviceContext):
+    # CHECK: === test_copy_local_to_sram_float32_simd_size_12
     # CHECK: 0.0 1.0 0.0 1.0 2.0 3.0 2.0 3.0 4.0 5.0 4.0 5.0 6.0 7.0 6.0 7.0
     # CHECK: 0.0 1.0 0.0 1.0 2.0 3.0 2.0 3.0 4.0 5.0 4.0 5.0 6.0 7.0 6.0 7.0
     # CHECK: 8.0 9.0 8.0 9.0 10.0 11.0 10.0 11.0 12.0 13.0 12.0 13.0 14.0 15.0 14.0 15.0
@@ -982,6 +1000,71 @@ def run_copy_local_to_sram_tests(ctx: DeviceContext):
         WN=16,
         MMA_M=4,
         MMA_N=4,
+        simd_size_row=1,
+        simd_size_col=2,
+    ](ctx)
+
+
+def run_copy_local_to_sram_tests_float32_simd_size_21(ctx: DeviceContext):
+    # CHECK: === test_copy_local_to_sram_float32_simd_size_21
+    # CHECK: 0.0 0.0 0.0 0.0 1.0 1.0 1.0 1.0 2.0 2.0 2.0 2.0 3.0 3.0 3.0 3.0
+    # CHECK: 4.0 4.0 4.0 4.0 5.0 5.0 5.0 5.0 6.0 6.0 6.0 6.0 7.0 7.0 7.0 7.0
+    # CHECK: 8.0 8.0 8.0 8.0 9.0 9.0 9.0 9.0 10.0 10.0 10.0 10.0 11.0 11.0 11.0 11.0
+    # CHECK: 12.0 12.0 12.0 12.0 13.0 13.0 13.0 13.0 14.0 14.0 14.0 14.0 15.0 15.0 15.0 15.0
+    # CHECK: 16.0 16.0 16.0 16.0 17.0 17.0 17.0 17.0 18.0 18.0 18.0 18.0 19.0 19.0 19.0 19.0
+    # CHECK: 20.0 20.0 20.0 20.0 21.0 21.0 21.0 21.0 22.0 22.0 22.0 22.0 23.0 23.0 23.0 23.0
+    # CHECK: 24.0 24.0 24.0 24.0 25.0 25.0 25.0 25.0 26.0 26.0 26.0 26.0 27.0 27.0 27.0 27.0
+    # CHECK: 28.0 28.0 28.0 28.0 29.0 29.0 29.0 29.0 30.0 30.0 30.0 30.0 31.0 31.0 31.0 31.0
+    test_copy_local_to_sram[
+        DType.float32,
+        WM=8,
+        WN=16,
+        MMA_M=4,
+        MMA_N=4,
+        simd_size_row=2,
+        simd_size_col=1,
+    ](ctx)
+
+
+def run_copy_local_to_sram_tests_bfloat16_simd_size_12(ctx: DeviceContext):
+    # CHECK: === test_copy_local_to_sram_bfloat16_simd_size_12
+    # CHECK: 0.0 1.0 0.0 1.0 2.0 3.0 2.0 3.0 4.0 5.0 4.0 5.0 6.0 7.0 6.0 7.0
+    # CHECK: 0.0 1.0 0.0 1.0 2.0 3.0 2.0 3.0 4.0 5.0 4.0 5.0 6.0 7.0 6.0 7.0
+    # CHECK: 8.0 9.0 8.0 9.0 10.0 11.0 10.0 11.0 12.0 13.0 12.0 13.0 14.0 15.0 14.0 15.0
+    # CHECK: 8.0 9.0 8.0 9.0 10.0 11.0 10.0 11.0 12.0 13.0 12.0 13.0 14.0 15.0 14.0 15.0
+    # CHECK: 16.0 17.0 16.0 17.0 18.0 19.0 18.0 19.0 20.0 21.0 20.0 21.0 22.0 23.0 22.0 23.0
+    # CHECK: 16.0 17.0 16.0 17.0 18.0 19.0 18.0 19.0 20.0 21.0 20.0 21.0 22.0 23.0 22.0 23.0
+    # CHECK: 24.0 25.0 24.0 25.0 26.0 27.0 26.0 27.0 28.0 29.0 28.0 29.0 30.0 31.0 30.0 31.0
+    # CHECK: 24.0 25.0 24.0 25.0 26.0 27.0 26.0 27.0 28.0 29.0 28.0 29.0 30.0 31.0 30.0 31.0
+    test_copy_local_to_sram[
+        DType.bfloat16,
+        WM=8,
+        WN=16,
+        MMA_M=4,
+        MMA_N=4,
+        simd_size_row=1,
+        simd_size_col=2,
+    ](ctx)
+
+
+def run_copy_local_to_sram_tests_bfloat16_simd_size_21(ctx: DeviceContext):
+    # CHECK: === test_copy_local_to_sram_bfloat16_simd_size_21
+    # CHECK: 0.0 0.0 0.0 0.0 1.0 1.0 1.0 1.0 2.0 2.0 2.0 2.0 3.0 3.0 3.0 3.0
+    # CHECK: 4.0 4.0 4.0 4.0 5.0 5.0 5.0 5.0 6.0 6.0 6.0 6.0 7.0 7.0 7.0 7.0
+    # CHECK: 8.0 8.0 8.0 8.0 9.0 9.0 9.0 9.0 10.0 10.0 10.0 10.0 11.0 11.0 11.0 11.0
+    # CHECK: 12.0 12.0 12.0 12.0 13.0 13.0 13.0 13.0 14.0 14.0 14.0 14.0 15.0 15.0 15.0 15.0
+    # CHECK: 16.0 16.0 16.0 16.0 17.0 17.0 17.0 17.0 18.0 18.0 18.0 18.0 19.0 19.0 19.0 19.0
+    # CHECK: 20.0 20.0 20.0 20.0 21.0 21.0 21.0 21.0 22.0 22.0 22.0 22.0 23.0 23.0 23.0 23.0
+    # CHECK: 24.0 24.0 24.0 24.0 25.0 25.0 25.0 25.0 26.0 26.0 26.0 26.0 27.0 27.0 27.0 27.0
+    # CHECK: 28.0 28.0 28.0 28.0 29.0 29.0 29.0 29.0 30.0 30.0 30.0 30.0 31.0 31.0 31.0 31.0
+    test_copy_local_to_sram[
+        DType.bfloat16,
+        WM=8,
+        WN=16,
+        MMA_M=4,
+        MMA_N=4,
+        simd_size_row=2,
+        simd_size_col=1,
     ](ctx)
 
 
@@ -995,4 +1078,7 @@ fn main() raises:
         run_partial_copy_dram_to_sram_async(ctx)
         run_copy_sram_to_dram_tests(ctx)
         run_copy_local_to_local_tests(ctx)
-        run_copy_local_to_sram_tests(ctx)
+        run_copy_local_to_sram_tests_float32_simd_size_12(ctx)
+        run_copy_local_to_sram_tests_float32_simd_size_21(ctx)
+        run_copy_local_to_sram_tests_bfloat16_simd_size_12(ctx)
+        run_copy_local_to_sram_tests_bfloat16_simd_size_21(ctx)
