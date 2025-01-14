@@ -174,7 +174,7 @@ fn _simd_construction_checks[type: DType, size: Int]():
 
     Parameters:
       type: The data type of SIMD vector elements.
-      size: The number of elements in the SIMD vector.
+      size: The number of elements in the SIMD vector. The size must not be greater than 2**15.
     """
     constrained[
         type is not DType.invalid, "simd type cannot be DType.invalid"
@@ -184,6 +184,16 @@ fn _simd_construction_checks[type: DType, size: Int]():
     constrained[
         not (type is DType.bfloat16 and has_neon()),
         "bf16 is not supported for ARM architectures",
+    ]()
+    # MOCO-1388: Until LLVM's issue #122571 is fixed, LLVM's SelectionDAG has
+    # a limit of 2^15 for the number of operands of the instruction.
+    # NOTE: Even after the limit increases in LLVM, compile time might be 3x
+    # slower than with GCC, therefore until we have a real use case for large
+    # SIMD, we better to keep limit at 2^15.
+    # NOTE: Might need to revisit the limit for targets that use GlobalISel
+    # as it does have smaller limit now.
+    constrained[
+        size <= 2**15, "simd size is too large and must be less than 2^15"
     ]()
 
 
