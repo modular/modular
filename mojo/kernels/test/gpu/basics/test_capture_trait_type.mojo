@@ -3,8 +3,9 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# FIXME: KERN-1489
+# UNSUPPORTED: AMD-GPU
 # RUN: %mojo-no-debug-no-assert %s | FileCheck %s
-
 from buffer import NDBuffer
 from gpu import thread_idx
 from gpu.host import DeviceContext
