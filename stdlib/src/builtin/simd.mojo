@@ -1843,12 +1843,14 @@ struct SIMD[type: DType, size: Int](
                 return self.cast[DType.float32]().cast[target]()
 
         @parameter
-        if type is DType.float32 and target in (
-            DType.float8e4m3,
-            DType.float8e5m2,
-        ):
-            return _convert_f32_to_float8[size=size, target=target](
-                rebind[SIMD[DType.float32, size]](self)
+        if target in (DType.float8e4m3, DType.float8e5m2):
+            # TODO(KERN-1488): use gpu (H100) instruction to convert from fp16 to fp8
+            return rebind[SIMD[target, size]](
+                _convert_f32_to_float8[size=size, target=target](
+                    rebind[SIMD[DType.float32, size]](
+                        self.cast[DType.float32]()
+                    )
+                )
             )
 
         @parameter
