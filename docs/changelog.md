@@ -119,6 +119,10 @@ what we publish.
   a `StringSlice` from a buffer containing UTF-8 encoded data. This method will
   raise if the buffer contents are not valid UTF-8.
 
+- Added `StringSlice.chars()` which returns an iterator over `Char`s. This is a
+  compliant UTF-8 decoder that returns each Unicode codepoint encoded in the
+  string.
+
 - Several standard library functions have been changed to take `StringSlice`
   instead of `String`. This generalizes them to be used for any appropriately
   encoded string in memory, without requiring that the string be heap allocated.

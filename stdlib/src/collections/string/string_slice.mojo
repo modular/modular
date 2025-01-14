@@ -194,6 +194,144 @@ struct _StringSliceIter[
 
 
 @value
+struct CharsIter[mut: Bool, //, origin: Origin[mut]]:
+    """Iterator over the `Char`s in a string slice, constructed by
+    `StringSlice.chars()`.
+
+    Parameters:
+        mut: Mutability of the underlying string data.
+        origin: Origin of the underlying string data.
+    """
+
+    var _slice: StringSlice[origin]
+    """String slice containing the bytes that have not been read yet.
+
+    When this iterator advances, the pointer in `_slice` is advanced by the
+    byte length of each read character, and the slice length is decremented by
+    the same amount.
+    """
+
+    # Note:
+    #   Marked private since `StringSlice.chars()` is the intended public way to
+    #   construct this type.
+    @doc_private
+    fn __init__(out self, str_slice: StringSlice[origin]):
+        self._slice = str_slice
+
+    # ===-------------------------------------------------------------------===#
+    # Trait implementations
+    # ===-------------------------------------------------------------------===#
+
+    @doc_private
+    fn __iter__(self) -> Self:
+        return self
+
+    fn __next__(mut self) -> Char:
+        """Get the next character in the underlying string slice.
+
+        This returns the next `Char` encoded in the underlying string, and
+        advances the iterator state.
+
+        This function will abort if this iterator has been exhausted.
+
+        Returns:
+            The next character in the string.
+        """
+
+        return self.next().value()
+
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        """Returns True if there are still elements in this iterator.
+
+        Returns:
+            A boolean indicating if there are still elements in this iterator.
+        """
+        return bool(self.peek_next())
+
+    @always_inline
+    fn __len__(self) -> Int:
+        """Returns the remaining length of this iterator in `Char`s.
+
+        The value returned from this method indicates the number of subsequent
+        calls to `next()` that will return a value.
+
+        Returns:
+            Number of codepoints remaining in this iterator.
+        """
+        return self._slice.char_length()
+
+    # ===-------------------------------------------------------------------===#
+    # Methods
+    # ===-------------------------------------------------------------------===#
+
+    fn peek_next(self) -> Optional[Char]:
+        """Check what the next character in this iterator is, without advancing
+        the iterator state.
+
+        Repeated calls to this method will return the same value.
+
+        Returns:
+            The next character in the underlying string, or None if the string
+            is empty.
+
+        # Examples
+
+        `peek_next()` does not advance the iterator, so repeated calls will
+        return the same value:
+
+        ```mojo
+        from collections.string import StringSlice
+        from testing import assert_equal
+
+        var input = StringSlice("123")
+        var iter = input.chars()
+
+        assert_equal(iter.peek_next().value(), Char.ord("1"))
+        assert_equal(iter.peek_next().value(), Char.ord("1"))
+        assert_equal(iter.peek_next().value(), Char.ord("1"))
+
+        # A call to `next()` return the same value as `peek_next()` had,
+        # but also advance the iterator.
+        assert_equal(iter.next().value(), Char.ord("1"))
+
+        # Later `peek_next()` calls will return the _new_ next character:
+        assert_equal(iter.peek_next().value(), Char.ord("2"))
+        ```
+        .
+        """
+        if len(self._slice) > 0:
+            # SAFETY: Will not read out of bounds because `_slice` is guaranteed
+            #   to contain valid UTF-8.
+            char, _ = Char.unsafe_decode_utf8_char(self._slice.unsafe_ptr())
+            return char
+        else:
+            return None
+
+    fn next(mut self) -> Optional[Char]:
+        """Get the next character in the underlying string slice, or None if
+        the iterator is empty.
+
+        This returns the next `Char` encoded in the underlying string, and
+        advances the iterator state.
+
+        Returns:
+            A character if the string is not empty, otherwise None.
+        """
+        var result: Optional[Char] = self.peek_next()
+
+        if result:
+            # SAFETY: We just checked that `result` holds a value
+            var char_len = result.unsafe_value().utf8_byte_length()
+            # Advance the pointer in _slice.
+            self._slice._slice._data += char_len
+            # Decrement the byte-length of _slice.
+            self._slice._slice._len -= char_len
+
+        return result
+
+
+@value
 @register_passable("trivial")
 struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     Stringable,
@@ -771,6 +909,51 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         ):
             l_idx += 1
         return Self(unsafe_from_utf8=self.as_bytes()[l_idx:])
+
+    @always_inline
+    fn chars(self) -> CharsIter[origin]:
+        """Returns an iterator over the `Char`s encoded in this string slice.
+
+        Returns:
+            An iterator type that returns successive `Char` values stored in
+            this string slice.
+
+        # Examples
+
+        Print the characters in a string:
+
+        ```mojo
+        from collections.string import StringSlice
+        from testing import assert_equal
+
+        var s = StringSlice("abc")
+        var iter = s.chars()
+        assert_equal(iter.__next__(), Char.ord("a"))
+        assert_equal(iter.__next__(), Char.ord("b"))
+        assert_equal(iter.__next__(), Char.ord("c"))
+        assert_equal(iter.__has_next__(), False)
+        ```
+
+        `chars()` iterates over Unicode codepoints, and supports multibyte
+        codepoints:
+
+        ```mojo
+        from collections.string import StringSlice
+        from testing import assert_equal
+
+        # A visual character composed of a combining sequence of 2 codepoints.
+        var s = StringSlice("á")
+        assert_equal(s.byte_length(), 3)
+
+        var iter = s.chars()
+        assert_equal(iter.__next__(), Char.ord("a"))
+         # U+0301 Combining Acute Accent
+        assert_equal(iter.__next__().to_u32(), 0x0301)
+        assert_equal(iter.__has_next__(), False)
+        ```
+        .
+        """
+        return CharsIter(self)
 
     @always_inline
     fn as_bytes(self) -> Span[Byte, origin]:

@@ -714,6 +714,79 @@ def test_count():
     assert_equal(StringSlice("aaaaaa").count("aa"), 3)
 
 
+def test_chars_iter():
+    # Test `for` loop iteration support
+    for char in StringSlice("abc").chars():
+        assert_true(char in (Char.ord("a"), Char.ord("b"), Char.ord("c")))
+
+    # Test empty string chars
+    var s0 = StringSlice("")
+    var s0_iter = s0.chars()
+
+    assert_false(s0_iter.__has_next__())
+    assert_true(s0_iter.peek_next() is None)
+    assert_true(s0_iter.next() is None)
+
+    # Test simple ASCII string chars
+    var s1 = StringSlice("abc")
+    var s1_iter = s1.chars()
+
+    assert_equal(s1_iter.next().value(), Char.ord("a"))
+    assert_equal(s1_iter.next().value(), Char.ord("b"))
+    assert_equal(s1_iter.next().value(), Char.ord("c"))
+    assert_true(s1_iter.next() is None)
+
+    # Multibyte character decoding: A visual character composed of a combining
+    # sequence of 2 codepoints.
+    var s2 = StringSlice("á")
+    assert_equal(s2.byte_length(), 3)
+    assert_equal(s2.char_length(), 2)
+
+    var iter = s2.chars()
+    assert_equal(iter.__next__(), Char.ord("a"))
+    # U+0301 Combining Acute Accent
+    assert_equal(iter.__next__().to_u32(), 0x0301)
+    assert_equal(iter.__has_next__(), False)
+
+    # A piece of text containing, 1-byte, 2-byte, 3-byte, and 4-byte codepoint
+    # sequences.
+    # For a visualization of this sequence, see:
+    #   https://connorgray.com/ephemera/project-log#2025-01-13
+    var s3 = StringSlice("߷കൈ🔄!")
+    assert_equal(s3.byte_length(), 13)
+    assert_equal(s3.char_length(), 5)
+    var s3_iter = s3.chars()
+
+    # Iterator __len__ returns length in codepoints, not bytes.
+    assert_equal(s3_iter.__len__(), 5)
+    assert_equal(s3_iter._slice.byte_length(), 13)
+    assert_equal(s3_iter.__has_next__(), True)
+    assert_equal(s3_iter.__next__(), Char.ord("߷"))
+
+    assert_equal(s3_iter.__len__(), 4)
+    assert_equal(s3_iter._slice.byte_length(), 11)
+    assert_equal(s3_iter.__next__(), Char.ord("ക"))
+
+    # Combining character, visually comes first, but codepoint-wise comes
+    # after the character it combines with.
+    assert_equal(s3_iter.__len__(), 3)
+    assert_equal(s3_iter._slice.byte_length(), 8)
+    assert_equal(s3_iter.__next__(), Char.ord("ൈ"))
+
+    assert_equal(s3_iter.__len__(), 2)
+    assert_equal(s3_iter._slice.byte_length(), 5)
+    assert_equal(s3_iter.__next__(), Char.ord("🔄"))
+
+    assert_equal(s3_iter.__len__(), 1)
+    assert_equal(s3_iter._slice.byte_length(), 1)
+    assert_equal(s3_iter.__has_next__(), True)
+    assert_equal(s3_iter.__next__(), Char.ord("!"))
+
+    assert_equal(s3_iter.__len__(), 0)
+    assert_equal(s3_iter._slice.byte_length(), 0)
+    assert_equal(s3_iter.__has_next__(), False)
+
+
 def main():
     test_string_slice_layout()
     test_string_literal_byte_span()
@@ -742,3 +815,4 @@ def main():
     test_strip()
     test_startswith()
     test_endswith()
+    test_chars_iter()
