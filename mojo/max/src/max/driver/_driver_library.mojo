@@ -82,7 +82,7 @@ struct DriverLibrary:
         ]("M_createCPUDevice")
         self.create_cuda_device_fn = lib.get_function[
             Self.create_cuda_device_fn_sig
-        ]("M_createCUDADevice")
+        ]("M_createAcceleratorDevice")
         self.copy_device_fn = lib.get_function[Self.copy_device_fn_sig](
             "M_copyDevice"
         )
