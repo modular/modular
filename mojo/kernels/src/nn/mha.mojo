@@ -851,7 +851,7 @@ fn flash_attention[
     # fmt: off
     alias head_depth_known = q.shape.all_known[2, 4]() and k.shape.has_value[2]()
     # Current impl has only been verified for depth = 128.
-    alias flash_attention_applicable = head_depth_known and q.shape.get[3]() == 128
+    alias flash_attention_applicable = has_nvidia_gpu_accelerator() and head_depth_known and q.shape.get[3]() == 128
     alias q_half_float = q.type in (DType.float16, DType.bfloat16)
     alias kv_num_heads = k.shape.get[2]()
     # fmt: on
@@ -3897,7 +3897,7 @@ fn mha_gpu_naive[
         block_dim=(32, 16, 1),
     )
 
-    _ = p_device
+    _ = p_device^
 
 
 @always_inline

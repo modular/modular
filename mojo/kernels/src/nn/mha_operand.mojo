@@ -9,6 +9,7 @@ from buffer import NDBuffer
 from layout.layout import DimList
 
 
+@register_passable("trivial")
 trait MHAOperand:
     """This serves as the trait to support arguments to our MHA kernel."""
 
@@ -38,6 +39,7 @@ trait MHAOperand:
         ...
 
 
+@register_passable("trivial")
 struct KVCacheMHAOperand[cache_t: KVCacheT](MHAOperand):
     """An implementation for `mo.opaque` KVCacheT arguments to MHA kernels.
 
@@ -74,6 +76,7 @@ struct KVCacheMHAOperand[cache_t: KVCacheT](MHAOperand):
         return self.cache.get_max_cache_length()
 
 
+@register_passable("trivial")
 struct NDBufferMHAOperand[
     type_: DType, rank: Int, shape: DimList, stride: DimList
 ](MHAOperand):
