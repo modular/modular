@@ -23,7 +23,6 @@ from sys.intrinsics import (
 )
 from time import sleep
 from collections import InlineArray
-from utils import StaticTuple
 
 # NOTE: MOST OF THE CODE HERE IS ADAPTED FROM
 # AMD'S `device-libs`.
@@ -547,12 +546,11 @@ struct Header:
         me: UInt32,
         low: UInt32,
     ):
+        var active = ballot[DType.int64](True).cast[DType.uint64]()
         if me == low:
             var control = set_ready_flag(0)
             self._handle[].control = control
-            self._handle[].activemask = ballot[DType.int64](True).cast[
-                DType.uint64
-            ]()
+            self._handle[].activemask = active
             self._handle[].service = service_id
 
         payload[Int(me), 0] = arg0
@@ -605,7 +603,7 @@ struct Header:
 
             sleep(UInt(1))
 
-        var ptr = payload._handle[].slots[Int(me)]
+        var ptr = payload._handle[].slots[Int(me) * 8]
         var value0 = ptr[0]
         var value1 = ptr[1]
         return value0, value1
@@ -627,9 +625,7 @@ struct header_t:
 @value
 @register_passable("trivial")
 struct Payload:
-    var _handle: UnsafePointer[
-        payload_t, address_space = _GPUAddressSpace.GLOBAL
-    ]
+    var _handle: UnsafePointer[payload_t]
 
     @always_inline
     fn __setitem__(mut self, idx0: Int, idx1: Int, value: UInt64):
@@ -641,9 +637,8 @@ struct Payload:
 # but this is actually just conforming to the ABI of:
 # https://github.com/ROCm/clr/blob/f5b2516f5d8a44b06ad1907594db1be25a9fe57b/rocclr/device/devhostcall.hpp#L99
 @value
-@register_passable("trivial")
 struct payload_t:
-    var slots: StaticTuple[StaticTuple[UInt64, 8], 64]
+    var slots: InlineArray[InlineArray[UInt64, 8], 64]
 
 
 @value
@@ -752,9 +747,7 @@ struct buffer_t:
     var headers: UnsafePointer[
         header_t, address_space = _GPUAddressSpace.GLOBAL
     ]
-    var payloads: UnsafePointer[
-        payload_t, address_space = _GPUAddressSpace.GLOBAL
-    ]
+    var payloads: UnsafePointer[payload_t]
     var doorbell: UInt64
     var free_stack: UInt64
     var ready_stack: UInt64
