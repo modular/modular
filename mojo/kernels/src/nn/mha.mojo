@@ -62,7 +62,7 @@ from layout.tensor_core import (
     get_fragment_size,
     get_mma_shape,
 )
-from linalg._multistage_gemm_gpu import multistage_mma, attn_mma
+from linalg._multistage_gemm_gpu import multistage_mma
 from linalg.bmm import batched_matmul
 from linalg.matmul import matmul
 from linalg.transpose import transpose
@@ -1451,21 +1451,26 @@ fn mha_single_batch[
         async_copy_wait_all()
         barrier()
 
-        attn_mma[
+        multistage_mma[
             BM,
             BN,
             BK,
             WM,
             WN,
-            depth // BK,
-            True,  # transpose B
+            num_threads,
+            num_pipeline_stages,
+            True,  # transpose_b
             swizzle_a=True,
+            prefetch_init=False,
+            static_num_iters = Int(depth // BK),
             k_group_size = config.k_group_size,
         ](
             p_reg_tile,
             q_smem_iter,
+            k_smem_iter,
             q_smem_iter,
             k_smem_iter,
+            depth // BK,
         )
 
         # Vectorize by 2.
@@ -1685,21 +1690,26 @@ fn mha_single_batch[
             async_copy_wait_all()
             barrier()
 
-            attn_mma[
+            multistage_mma[
                 BM,
                 BN,
                 BK,
                 WM,
                 WN,
-                BN // BK,
-                False,  # transpose B
+                num_threads,
+                num_pipeline_stages,
+                False,  # transpose_b
                 swizzle_a=True,
+                prefetch_init=False,
+                static_num_iters = Int(BN // BK),
                 k_group_size = config.k_group_size,
             ](
                 output_reg_tile,
                 p_smem_iter,
+                v_smem_iter,
                 p_smem_iter,
                 v_smem_iter,
+                BN // BK,
             )
 
         else:
@@ -1712,21 +1722,26 @@ fn mha_single_batch[
             async_copy_wait_all()
             barrier()
 
-            attn_mma[
+            multistage_mma[
                 BM,
                 BN,
                 BK,
                 WM,
                 WN,
-                BN // BK,
-                False,  # transpose B
+                num_threads,
+                num_pipeline_stages,
+                False,  # transpose_b
                 swizzle_a=False,
+                prefetch_init=False,
+                static_num_iters = Int(BN // BK),
                 k_group_size = config.k_group_size,
             ](
                 output_reg_tile,
                 p_reg_iter,
+                v_smem_iter,
                 p_smem_iter,
                 v_smem_iter,
+                BN // BK,
             )
 
     tile_and_unswitch[loop_over_kvcache, VariadicList[Int](BN)](0, num_keys)
@@ -3045,20 +3060,25 @@ fn mha_decoding_single_batch[
         async_copy_wait_all()
         barrier()
 
-        attn_mma[
+        multistage_mma[
             BM,
             BN,
             BK,
             WM,
             WN,
-            depth // BK,
-            True,  # transpose B
+            num_threads,
+            num_pipeline_stages,
+            True,  # transpose_b
             swizzle_a=True,
+            prefetch_init=False,
+            static_num_iters = Int(depth // BK),
         ](
             p_reg_tile,
             q_smem_iter,
+            k_smem_iter,
             q_smem_iter,
             k_smem_iter,
+            depth // BK,
         )
 
         scale_and_mask_helper[
@@ -3163,20 +3183,25 @@ fn mha_decoding_single_batch[
         async_copy_wait_all()
         barrier()
 
-        attn_mma[
+        multistage_mma[
             BM,
             BN,
             BK,
             WM,
             WN,
-            BN // BK,
-            False,  # transpose B
+            num_threads,
+            num_pipeline_stages,
+            False,  # transpose_b
             swizzle_a=True,
+            prefetch_init=False,
+            static_num_iters = Int(BN // BK),
         ](
             output_reg_tile,
             p_smem_iter,
+            v_smem_iter,
             p_smem_iter,
             v_smem_iter,
+            BN // BK,
         )
 
     tile_and_unswitch[loop_over_kvcache, VariadicList[Int](BN)](start, end)
@@ -3664,7 +3689,11 @@ fn mha_splitk_reduce[
 ):
     # we only reduce over a warp so limit number of warps to 1
     constrained[
-        num_threads == WARP_SIZE, "num_threads should be equal to the warp_size"
+        num_threads == WARP_SIZE,
+        "num_threads: "
+        + str(num_threads)
+        + " should be equal to the warp_size:"
+        + str(WARP_SIZE),
     ]()
     debug_assert(
         block_dim.x == WARP_SIZE, "block_dim.x should be equal to the warp_size"
