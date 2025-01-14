@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # FIXME: KERN-1480
 # UNSUPPORTED: NVIDIA-GPU
+# UNSUPPORTED: AMD-GPU
 # RUN: %mojo-no-debug-no-assert %s
 
 from math import ceildiv
