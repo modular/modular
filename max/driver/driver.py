@@ -18,7 +18,7 @@ from max._driver import cpu_device as _cpu_device
 
 @dataclass
 class Device:
-    """Device object. Limited to accelerator and CPU devices for now."""
+    """Device object. Limited to accelerator (e.g. GPU) and CPU devices for now."""
 
     # Note: External users should never initialize these fields themselves.
     _device: _Device
@@ -67,6 +67,10 @@ class Device:
         """
         Returns device label.
 
+        Possible values are:
+        - "cpu" for host devices
+        - "gpu" for accelerators
+
         .. code-block:: python
 
             from max import driver
@@ -79,7 +83,12 @@ class Device:
     @property
     def api(self) -> str:
         """
-        Returns API used to program the device. Example: "cuda" for NVIDIA GPUs
+        Returns the API used to program the device.
+
+        Possible values are:
+        - "cpu" for host devices
+        - "cuda" for NVIDIA GPUs
+        - "hip" for AMD GPUs
 
         .. code-block:: python
 
@@ -93,7 +102,10 @@ class Device:
     @property
     def id(self) -> int:
         """
-        Returns device id.
+        Returns a zero-based device id. For a CPU device this is the numa id.
+        For GPU accelerators this is the id of the device relative to this host.
+        Along with the `label`, an id can uniquely identify a device,
+        e.g. "gpu:0", "gpu:1".
 
         .. code-block:: python
 
