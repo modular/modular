@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
+from bit import is_power_of_two, log2_floor
 from math import exp2, iota
 
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
@@ -21,9 +22,33 @@ fn generate_alibi_bias[
     head_idx: SIMD[DType.index, width],
     q_idx: SIMD[DType.index, width],
     k_idx: SIMD[DType.index, width],
+    max_prompt_len: Int = 0,
 ) -> SIMD[type, width]:
-    var scale = exp2(-((head_idx + 1).cast[type]() * 8.0 / num_heads))
-    var bias = (q_idx - k_idx - iota[DType.index, width]()).cast[type]() * scale
+    var scale = SIMD[type, width](0)
+
+    @parameter
+    if is_power_of_two(num_heads):
+        scale = exp2(-((head_idx + 1).cast[type]() * 8.0 / num_heads))
+    else:
+        var log2_floor_num_heads = log2_floor(num_heads)
+        var closest_power_of_2 = 2**log2_floor_num_heads
+        if head_idx < closest_power_of_2:
+            scale = exp2(
+                -((head_idx + 1).cast[type]() * 8.0 / closest_power_of_2)
+            )
+        else:
+            scale = exp2(
+                -(
+                    ((head_idx - closest_power_of_2) * 2 + 1).cast[type]()
+                    * 8.0
+                    / (closest_power_of_2 * 2)
+                )
+            )
+    # print(scale)
+    var bias = -(max_prompt_len - 1 - k_idx - iota[DType.index, width]()).cast[
+        type
+    ]() * scale
+    # print(bias)
     return bias
 
 
@@ -32,6 +57,7 @@ def test_alibi_score_mod():
     alias type = DType.float32
     alias width = 4
     alias num_heads = 4
+    var max_seq_len = 12
 
     var alibi_mod = AlibiScoreMod[num_heads]()
 
@@ -43,12 +69,17 @@ def test_alibi_score_mod():
 
     var reference = (q_idx >= (k_idx + iota[DType.index, width]())).select(
         score_vec
-        + generate_alibi_bias[type, width, num_heads](head_idx, q_idx, k_idx),
+        + generate_alibi_bias[type, width, num_heads](
+            head_idx,
+            q_idx,
+            k_idx,
+            max_seq_len,
+        ),
         score_vec,
     )
 
     var result = alibi_mod.score_mod(
-        Index(0, 0, 2, 1), SIMD[type, width](0, 1, 2, 3)
+        Index(0, 0, 2, 1), SIMD[type, width](0, 1, 2, 3), max_seq_len
     )
 
     assert_equal(reference, result)

@@ -13,6 +13,7 @@
 
 
 from algorithm import max
+from bit import is_power_of_two, log2_floor
 from buffer import Buffer, Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
@@ -44,9 +45,31 @@ fn generate_alibi_bias[
     head_idx: SIMD[DType.index, width],
     q_idx: SIMD[DType.index, width],
     k_idx: SIMD[DType.index, width],
+    max_prompt_len: Int = 0,
 ) -> SIMD[type, width]:
-    var scale = exp2(-((head_idx + 1).cast[type]() * 8.0 / num_heads))
-    var bias = (q_idx - k_idx - iota[DType.index, width]()).cast[type]() * scale
+    var scale = SIMD[type, width](0)
+
+    @parameter
+    if is_power_of_two(num_heads):
+        scale = exp2(-((head_idx + 1).cast[type]() * 8.0 / num_heads))
+    else:
+        var log2_floor_num_heads = log2_floor(num_heads)
+        var closest_power_of_2 = 2**log2_floor_num_heads
+        if head_idx < closest_power_of_2:
+            scale = exp2(
+                -((head_idx + 1).cast[type]() * 8.0 / closest_power_of_2)
+            )
+        else:
+            scale = exp2(
+                -(
+                    ((head_idx - closest_power_of_2) * 2 + 1).cast[type]()
+                    * 8.0
+                    / (closest_power_of_2 * 2)
+                )
+            )
+    var bias = -(max_prompt_len - 1 - k_idx - iota[DType.index, width]()).cast[
+        type
+    ]() * scale
     return bias
 
 
@@ -153,7 +176,10 @@ def execute_flash_attention[
                     mask_host_mod.tensor.store(
                         Index(b, h, q_idx, k_idx),
                         generate_alibi_bias[DType.float32, 1, num_q_heads](
-                            h, q_idx, k_idx
+                            h,
+                            q_idx,
+                            k_idx,
+                            max_prompt_len + max_cache_valid_length,
                         ) if q_idx
                         + max_cache_valid_length
                         >= k_idx else min_or_neg_inf[DType.float32](),
