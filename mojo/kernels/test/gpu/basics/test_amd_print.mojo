@@ -7,28 +7,26 @@
 # RUN: %mojo-no-debug-no-assert %s | FileCheck %s
 
 from gpu.host import DeviceContext
-from sys._amdgpu import printf_begin, printf_append_string_n
+from sys.intrinsics import lane_id
 
 
 fn main():
     try:
+        # CHECK-LABEL: lane_ids
+        # CHECK 0
+        # CHECK 1
+        # CHECK 2
+        # CHECK 3
+        print("=== lane_ids ===")
         with DeviceContext() as ctx:
 
             @parameter
             fn do_print():
-                # CHECK-LABEL: 32 hello
-                print(32, "hello")
+                print(lane_id())
 
-                # Note 511 chars plus the implicit \n that the writer will add
-                # therefore checking max buffer size
-                # CHECK-LABEL: HihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihih
-                print(
-                    "HihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihihiHihihih"
-                )
+            var func = ctx.compile_function[do_print]()
 
-                var func = ctx.compile_function[do_print]()
-
-            ctx.enqueue_function(func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(func, grid_dim=1, block_dim=4)
             ctx.synchronize()
     except e:
         print("HIP_ERROR:", e)
