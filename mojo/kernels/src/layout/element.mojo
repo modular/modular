@@ -498,10 +498,11 @@ struct MemoryElement[
         return src.store(self.ptr)
 
     fn transfer(self, src: MemoryElement):
-        constrained[
-            dtype == src.dtype,
-            "Element transfer requires element to have the same dtype",
-        ]()
+        # Load source element and convert to destination dtype if needed
+        var src_element = src.load()
+        var converted_element = Element[
+            dtype, src.layout, bitwidth = src.bitwidth
+        ](src_element.element_data.cast[dtype](), src_element.runtime_layout)
         self.store(
-            rebind[Element[dtype, layout, bitwidth=bitwidth]](src.load())
+            rebind[Element[dtype, layout, bitwidth=bitwidth]](converted_element)
         )

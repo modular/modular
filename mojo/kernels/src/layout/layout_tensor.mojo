@@ -2849,20 +2849,8 @@ fn copy_local_to_sram[
                 swizzled_idx, src_vec.cast[dst.dtype]()
             )
 
-    elif src.dtype == dst.dtype:
-        dst_frag.copy_from(src)
-
     else:
-        alias num_stores_per_thread = dst_frag.layout.size()
-        alias elem_size = src.element_size
-
-        @parameter
-        for i in range(num_stores_per_thread):
-            alias dst_idx = dst_frag.layout(i)
-
-            dst_frag.ptr.store[
-                alignment = alignof[SIMD[dst.dtype, src.element_size]](),
-            ](dst_idx, src.aligned_load[elem_size](i, 0).cast[dst.dtype]())
+        dst_frag.copy_from(src)
 
 
 @always_inline
