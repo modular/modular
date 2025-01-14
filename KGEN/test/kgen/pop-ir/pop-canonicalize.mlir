@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -canonicalize | FileCheck %s
+// RUN: kgen-opt -split-input-file %s -canonicalize | FileCheck %s
 
 // CHECK-LABEL: @neg
 kgen.func @neg() -> (!pop.simd<2, si8>, !pop.simd<2, f32>) {
@@ -618,6 +618,16 @@ kgen.func @cast() -> (
     !pop.scalar<ui8>, !pop.scalar<ui8>, !pop.scalar<ui8>,
     !pop.scalar<bool>, !pop.scalar<bool>, !pop.scalar<bool>,
     !pop.scalar<index>, !pop.scalar<index>, !pop.scalar<index>
+}
+
+// CHECK-LABEL: @cast_si64_ui64_index
+kgen.func @cast_si64_ui64_index(%in : !pop.scalar<si64>) -> !pop.scalar<index> {
+  // CHECK-NEXT: pop.cast {{.*}} !pop.scalar<si64> to !pop.scalar<ui64>
+  %1 = pop.cast %in : !pop.scalar<si64> to !pop.scalar<ui64>
+  // CHECK-NEXT: pop.cast {{.*}} !pop.scalar<ui64> to !pop.scalar<index>
+  %2 = pop.cast %1 : !pop.scalar<ui64> to !pop.scalar<index>
+
+  kgen.return %2 : !pop.scalar<index>
 }
 
 // CHECK-LABEL: @cast_fp_too_big
@@ -1401,6 +1411,45 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     %out = pop.cast %in : !pop.scalar<ui8> to !pop.scalar<index>
     kgen.return %out : !pop.scalar<index>
   }
+
+  // CHECK-LABEL: @cast_si64_ui64_index
+  kgen.func @cast_si64_ui64_index(%in : !pop.scalar<si64>) -> !pop.scalar<index> {
+    // CHECK-NEXT: pop.cast {{.*}} : !pop.scalar<si64> to !pop.scalar<index>
+    %1 = pop.cast %in : !pop.scalar<si64> to !pop.scalar<ui64>
+    %2 = pop.cast %1 : !pop.scalar<ui64> to !pop.scalar<index>
+
+    kgen.return %2 : !pop.scalar<index>
+  }
+
+  // CHECK-LABEL: @cast_si64_index_f64
+  kgen.func @cast_si64_index_f64(%in : !pop.scalar<si64>) -> !pop.scalar<f64> {
+    // CHECK-NEXT:pop.cast {{.*}} : !pop.scalar<si64> to !pop.scalar<index>
+    %1 = pop.cast %in : !pop.scalar<si64> to !pop.scalar<index>
+    // CHECK-NEXT:pop.cast {{.*}} : !pop.scalar<index> to !pop.scalar<f64>
+    %2 = pop.cast %1 : !pop.scalar<index> to !pop.scalar<f64>
+
+    kgen.return %2 : !pop.scalar<f64>
+  }
+
+  // CHECK-LABEL: @cast_si32_index_f64
+  kgen.func @cast_si32_index_f64(%in : !pop.scalar<si32>) -> !pop.scalar<f64> {
+    // CHECK-NEXT:pop.cast {{.*}} : !pop.scalar<si32> to !pop.scalar<index>
+    %1 = pop.cast %in : !pop.scalar<si32> to !pop.scalar<index>
+    // CHECK-NEXT:pop.cast {{.*}} : !pop.scalar<index> to !pop.scalar<f64>
+    %2 = pop.cast %1 : !pop.scalar<index> to !pop.scalar<f64>
+
+    kgen.return %2 : !pop.scalar<f64>
+  }
+
+  // CHECK-LABEL: @cast_index_ui32_f64
+  kgen.func @cast_index_ui32_f64(%in : !pop.scalar<index>) -> !pop.scalar<f64> {
+    // CHECK-NEXT:pop.cast {{.*}} : !pop.scalar<index> to !pop.scalar<ui32>
+    %1 = pop.cast %in : !pop.scalar<index> to !pop.scalar<ui32>
+    // CHECK-NEXT:pop.cast {{.*}} : !pop.scalar<ui32> to !pop.scalar<f64>
+    %2 = pop.cast %1 : !pop.scalar<ui32> to !pop.scalar<f64>
+
+    kgen.return %2 : !pop.scalar<f64>
+  }
 }
 
 // -----
@@ -1412,5 +1461,44 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     %in = kgen.param.constant: scalar<ui8> = <128>
     %out = pop.cast %in : !pop.scalar<ui8> to !pop.scalar<index>
     kgen.return %out : !pop.scalar<index>
+  }
+
+  // CHECK-LABEL: @cast_si64_ui64_index
+  kgen.func @cast_si64_ui64_index(%in : !pop.scalar<si64>) -> !pop.scalar<index> {
+    // CHECK-NEXT: pop.cast {{.*}} : !pop.scalar<si64> to !pop.scalar<index>
+    %1 = pop.cast %in : !pop.scalar<si64> to !pop.scalar<ui64>
+    %2 = pop.cast %1 : !pop.scalar<ui64> to !pop.scalar<index>
+
+    kgen.return %2 : !pop.scalar<index>
+  }
+
+  // CHECK-LABEL: @cast_si64_index_f64
+  kgen.func @cast_si64_index_f64(%in : !pop.scalar<si64>) -> !pop.scalar<f64> {
+    // CHECK-NEXT:pop.cast {{.*}} : !pop.scalar<si64> to !pop.scalar<index>
+    %1 = pop.cast %in : !pop.scalar<si64> to !pop.scalar<index>
+    // CHECK-NEXT:pop.cast {{.*}} : !pop.scalar<index> to !pop.scalar<f64>
+    %2 = pop.cast %1 : !pop.scalar<index> to !pop.scalar<f64>
+
+    kgen.return %2 : !pop.scalar<f64>
+  }
+
+  // CHECK-LABEL: @cast_si32_index_f64
+  kgen.func @cast_si32_index_f64(%in : !pop.scalar<si32>) -> !pop.scalar<f64> {
+    // CHECK-NEXT:pop.cast {{.*}} : !pop.scalar<si32> to !pop.scalar<index>
+    %1 = pop.cast %in : !pop.scalar<si32> to !pop.scalar<index>
+    // CHECK-NEXT:pop.cast {{.*}} : !pop.scalar<index> to !pop.scalar<f64>
+    %2 = pop.cast %1 : !pop.scalar<index> to !pop.scalar<f64>
+
+    kgen.return %2 : !pop.scalar<f64>
+  }
+
+  // CHECK-LABEL: @cast_index_ui32_f64
+  kgen.func @cast_index_ui32_f64(%in : !pop.scalar<index>) -> !pop.scalar<f64> {
+    // CHECK-NEXT:pop.cast {{.*}} : !pop.scalar<index> to !pop.scalar<ui32>
+    %1 = pop.cast %in : !pop.scalar<index> to !pop.scalar<ui32>
+    // CHECK-NEXT:pop.cast {{.*}} : !pop.scalar<ui32> to !pop.scalar<f64>
+    %2 = pop.cast %1 : !pop.scalar<ui32> to !pop.scalar<f64>
+
+    kgen.return %2 : !pop.scalar<f64>
   }
 }
