@@ -70,8 +70,8 @@ static void moveInvariants(FunctionLike func, mlir::DominanceInfo &domInfo,
         if (auto *op = leastDominatingOperand.dyn_cast<Operation *>()) {
           if (domInfo.dominates(op, parent))
             leastDominatingOperand = parent;
-        } else if (leastDominatingOperand.get<Region *>()->isAncestor(
-                       parent->getParentRegion())) {
+        } else if (cast<Region *>(leastDominatingOperand)
+                       ->isAncestor(parent->getParentRegion())) {
           leastDominatingOperand = parent;
         }
       } else {
@@ -79,8 +79,8 @@ static void moveInvariants(FunctionLike func, mlir::DominanceInfo &domInfo,
         if (auto *op = leastDominatingOperand.dyn_cast<Operation *>()) {
           if (op->getParentRegion()->isProperAncestor(region))
             leastDominatingOperand = region;
-        } else if (leastDominatingOperand.get<Region *>()->isProperAncestor(
-                       region)) {
+        } else if (cast<Region *>(leastDominatingOperand)
+                       ->isProperAncestor(region)) {
           leastDominatingOperand = region;
         }
       }
@@ -91,7 +91,7 @@ static void moveInvariants(FunctionLike func, mlir::DominanceInfo &domInfo,
     if (auto *region = leastDominatingOperand.dyn_cast<Region *>())
       op.moveBefore(&region->front(), region->front().begin());
     else
-      op.moveAfter(leastDominatingOperand.get<Operation *>());
+      op.moveAfter(cast<Operation *>(leastDominatingOperand));
     ++numHoisted;
   }
 }
