@@ -1283,7 +1283,10 @@ fn mha_single_batch[
     # This overlaps key tile but are used at the same time i.e. no race condition.
     var p_smem = (v_smem + v_smem_size).bitcast[Scalar[v_type]]()
     var p_smem_iter = LayoutTensorIter[
-        v_type, Layout.row_major(BM, BK), address_space = AddressSpace.SHARED
+        v_type,
+        Layout.row_major(BM, BK),
+        address_space = AddressSpace.SHARED,
+        circular=True,
     ](p_smem, BM * BN)
 
     # Scratch shared memory for reduction across warps.
@@ -1975,10 +1978,14 @@ fn mha_single_batch_pipelined[
         rowsum.store(i, SIMD[accum_type, 2](0))
 
     # Shared memory for P = Q * K^t
-    # This overlaps key tile but are used at the same time i.e. no race condition.
+    # Only use BN/BK tiles. Setting circular so that the prefetch in matmul
+    # doesn't go OOB at the last tile.
     var p_smem = (k_smem + k_smem_size).bitcast[Scalar[v_type]]()
     var p_smem_iter = LayoutTensorIter[
-        v_type, Layout.row_major(BM, BK), address_space = AddressSpace.SHARED
+        v_type,
+        Layout.row_major(BM, BK),
+        address_space = AddressSpace.SHARED,
+        circular=True,
     ](p_smem, BM * BN)
 
     # Scratch shared memory for reduction across warps.
@@ -3382,7 +3389,10 @@ fn mha_decoding_single_batch_pipelined[
     var p_smem = (v_smem + v_smem_size).bitcast[Scalar[v_type]]()
     alias p_smem_size = BM * BN
     var p_smem_iter = LayoutTensorIter[
-        v_type, Layout.row_major(BM, BK), address_space = AddressSpace.SHARED
+        v_type,
+        Layout.row_major(BM, BK),
+        address_space = AddressSpace.SHARED,
+        circular=True,
     ](p_smem, BM * BN)
 
     # Scratch shared memory for reduction across warps.
