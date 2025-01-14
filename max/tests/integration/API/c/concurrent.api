@@ -1,6 +1,5 @@
 // (TODO: MSDK-480)
 // REQUIRES: disabled
-// RUN: python3 -m %modeltool download --format tensorflow-savedmodel %modelsdir/Experimental/ResNet50/resnet50-v1.5.yaml --weights-dir %concurrent_api_models_dir
 // RUN: c-api-validator --paths=%concurrent_api_models_dir/resnet50-v1.5 --input-shapes=1x224x224x3  --input-names=input --threaded --num-initialized=8 --num-sequential-requests=5 --use-mo-ops=True | FileCheck %s
 // RUN: c-api-validator --paths=%concurrent_api_models_dir/resnet50-v1.5 --input-shapes=1x224x224x3  --input-names=input --threaded --num-initialized=8 --num-sequential-requests=5 --use-mo-ops=False | FileCheck %s
 

@@ -1,8 +1,6 @@
 // REQUIRES: disabled
 // (TODO: MSDK-481)
 // REQUIRES: disabled
-// RUN: python3 -m %modeltool download --format tensorflow-savedmodel %modelsdir/Experimental/ResNet50/resnet50-v1.5.yaml --weights-dir %multi_tenancy_api_models_dir
-// RUN: python3 -m %modeltool download --format tflite %modelsdir/Experimental/ResNet50/resnet50-v1.5.yaml --weights-dir %multi_tenancy_api_models_dir
 // RUN: c-api-validator --paths=%multi_tenancy_api_models_dir/resnet50-v1.5 --paths=%multi_tenancy_api_models_dir/resnet50-v1.5.tflite --input-shapes=1x224x224x3 --input-names=input | FileCheck %s
 
 // CHECK: INFO: Compiling {{.*}}/resnet50-v1.5{{/?}}
