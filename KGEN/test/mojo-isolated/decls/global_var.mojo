@@ -18,7 +18,7 @@ var inferred_type = `1`
 @value
 struct ConvertibleFromInt:
     @implicit
-    fn __init__(out self, v: int):
+    fn __init__(out self, v: Index):
         pass
 
     fn __del__(owned self):
@@ -64,7 +64,7 @@ var reg_global: RegType = RegType()
 var reg_global_implicit = RegType()
 
 
-fn borrowGlobalInt(x: int):
+fn borrowGlobalInt(x: Index):
     pass
 
 

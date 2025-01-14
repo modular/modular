@@ -7,7 +7,7 @@
 
 
 @register_passable
-struct Thing[x: int]:
+struct Thing[x: Index]:
     pass
 
 
@@ -20,5 +20,5 @@ fn pass_param_closure():
     take_param_closure[`2`](closure)
 
 
-fn take_param_closure[dt: int](cls: fn (Thing[dt]) escaping -> None):
+fn take_param_closure[dt: Index](cls: fn (Thing[dt]) escaping -> None):
     pass

@@ -483,7 +483,7 @@ fn for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
         # CHECK: } body {
         # CHECK:   [[ELTREF:%.*]] = lit.call {{.*}}RefIter::@"__next__{{.*}}(%$RANGE)
 
-        # The int value from this element is captured into item, not the reference.
+        # The Index value from this element is captured into item, not the reference.
         # CHECK: [[ELTVAL:%.*]] = lit.ref.load [[ELTREF]]
         # CHECK: lit.ref.store [[ELTVAL]], %item
 

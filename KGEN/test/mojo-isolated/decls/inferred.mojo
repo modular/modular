@@ -16,28 +16,28 @@ trait SomeTrait:
 
 
 @register_passable("trivial")
-struct ParamType[x: int](SomeTrait):
+struct ParamType[x: Index](SomeTrait):
     pass
 
 
 @register_passable("trivial")
-struct DependentParam[x: int, y: ParamType[x]]:
+struct DependentParam[x: Index, y: ParamType[x]]:
     pass
 
 
-fn inferred_param_from_arg[x: int, //](y: ParamType[x]):
+fn inferred_param_from_arg[x: Index, //](y: ParamType[x]):
     pass
 
 
-fn inferred_param_from_param[x: int, //, y: ParamType[x]]():
+fn inferred_param_from_param[x: Index, //, y: ParamType[x]]():
     pass
 
 
-fn inferred_param_variadic[x: int, //, *y: ParamType[x]]():
+fn inferred_param_variadic[x: Index, //, *y: ParamType[x]]():
     pass
 
 
-fn inferred_with_default[x: int, //, y: ParamType[x], z: int = `1`]():
+fn inferred_with_default[x: Index, //, y: ParamType[x], z: Index = `1`]():
     pass
 
 
@@ -46,31 +46,31 @@ fn inferred_trait[T: SomeTrait, //, y: T]():
 
 
 fn inferred_dependent_param[
-    x: int, y: ParamType[x], //, z: DependentParam[x, y]
+    x: Index, y: ParamType[x], //, z: DependentParam[x, y]
 ]():
     pass
 
 
-fn inferred_partial[x: int, //, y: int](z: ParamType[x]):
+fn inferred_partial[x: Index, //, y: Index](z: ParamType[x]):
     pass
 
 
-fn inferred_partial_dependent[x: int, //, y: int, z: ParamType[x]]():
+fn inferred_partial_dependent[x: Index, //, y: Index, z: ParamType[x]]():
     pass
 
 
-struct InferredStruct[x: int, //, y: int, z: ParamType[x]]:
+struct InferredStruct[x: Index, //, y: Index, z: ParamType[x]]:
     pass
 
 
 struct InferredStructConversion[
-    x: int, //, y: AnyTrivialRegType, z: ParamType[x]
+    x: Index, //, y: AnyTrivialRegType, z: ParamType[x]
 ]:
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_inferred_params
-fn test_inferred_params[x: int, y: ParamType[x], z: DependentParam[x, y]]():
+fn test_inferred_params[x: Index, y: ParamType[x], z: DependentParam[x, y]]():
     # CHECK: inferred_param_from_arg{{.*}}<x>(%0)
     inferred_param_from_arg(y)
     # CHECK: inferred_param_from_param{{.*}}<x, :[[PARAMTYPE:@.*ParamType]]<x> y>

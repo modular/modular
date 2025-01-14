@@ -221,12 +221,12 @@ fn fn_raises():
 
 
 # expected-warning @below {{function has results, but no 'Returns' in doc string}}
-fn fn_args_missing_return() -> int:
+fn fn_args_missing_return() -> Index:
     """This doc string is missing a `Returns:` section."""
     return `0`
 
 
-fn fn_returns_section_empty() -> int:
+fn fn_returns_section_empty() -> Index:
     """This doc string includes a `Returns:` section, but it's empty.
 
     # expected-warning @below {{'Returns' section is empty}}
@@ -235,7 +235,7 @@ fn fn_returns_section_empty() -> int:
     return `0`
 
 
-fn fn_returns_section_poor_style() -> int:
+fn fn_returns_section_poor_style() -> Index:
     """This doc string has a `Returns:` section with poor style.
 
     Returns:
@@ -265,7 +265,7 @@ struct Error:
     pass
 
 
-fn fn_raises_with_return_type(x: int) raises -> int:
+fn fn_raises_with_return_type(x: Index) raises -> Index:
     """This is a function that raises, with an explicit return type.
 
     Because it raises, it implicitly has a memory-only `__result__` argument.
@@ -287,7 +287,7 @@ struct object:
     pass
 
 
-def def_implicit_object_return_type(x: int):
+def def_implicit_object_return_type(x: Index):
     """This is a `def` function with no explicit return type.
 
     Because it implicitly returns an object, it has a hidden `__result__`

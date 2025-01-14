@@ -11,7 +11,7 @@ alias z = __mlir_attr.`0: index`
 
 
 # CHECK-LABEL: lit.struct.decl @A<x, x_0>
-struct A[x: int, x_0: int]:
+struct A[x: Index, x_0: Index]:
     # CHECK: lit.alias.decl *"z`" = <1>
     alias z = __mlir_attr.`1: index`
     # CHECK: lit.alias.decl *"y`1" = <11>
@@ -19,7 +19,7 @@ struct A[x: int, x_0: int]:
 
     # CHECK-LABEL: lit.fn @"foo
     # CHECK-SAME: <*"x`2x", x_1>[imm *"self`2x1"]
-    fn foo[x: int, x_1: int](self):
+    fn foo[x: Index, x_1: Index](self):
         # CHECK: lit.alias.decl *"z`2x2" = <2>
         alias z = __mlir_attr.`2: index`
         # CHECK: lit.alias.decl *"y`2x3" = <12>
@@ -29,13 +29,13 @@ struct A[x: int, x_0: int]:
 
         # CHECK-LABEL: lit.fn *"bar
         # CHECK-SAME: <*"x`3x", x_2>
-        fn bar[x: int, x_2: int]():
+        fn bar[x: Index, x_2: Index]():
             # CHECK: lit.alias.decl *"z`3x1" = <3>
             alias z = __mlir_attr.`3: index`
 
 
 # COM: test names of implicit parameters
-struct MyStruct[a: int, b: int]:
+struct MyStruct[a: Index, b: Index]:
     pass
 
 
@@ -46,7 +46,7 @@ fn test_implicit_parameters(x: MyStruct, y: MyStruct):
 
 
 # CHECK-LABEL: lit.fn @"test_nested_alias_mangling_1
-fn test_nested_alias_mangling_1[x: int](c: Bool):
+fn test_nested_alias_mangling_1[x: Index](c: Bool):
     # CHECK: hlcf.elif
     if c:
         # CHECK: lit.alias.decl *"y`"
@@ -60,7 +60,7 @@ fn test_nested_alias_mangling_1[x: int](c: Bool):
 
 
 # CHECK-LABEL: lit.fn @"test_nested_alias_mangling_2
-fn test_nested_alias_mangling_2[x: int](c: Bool):
+fn test_nested_alias_mangling_2[x: Index](c: Bool):
     # CHECK: hlcf.elif
     if c:
         # CHECK: lit.alias.decl *"y`"

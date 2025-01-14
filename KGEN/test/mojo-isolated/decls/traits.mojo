@@ -38,14 +38,14 @@ trait Trait:
     fn overloaded(self):
         ...
 
-    fn overloaded(self, x: int):
+    fn overloaded(self, x: Index):
         ...
 
     fn overloaded(self, x: string):
         ...
 
     # CHECK-LABEL: lit.fn @"parametric{{.*}}<x>
-    fn parametric[x: int](self):
+    fn parametric[x: Index](self):
         ...
 
 
@@ -150,26 +150,26 @@ fn existential_arg(x: Trait):
 
 
 trait SimpleTrait:
-    fn method(self, y: int):
+    fn method(self, y: Index):
         ...
 
-    fn param_method[x: int](self):
+    fn param_method[x: Index](self):
         ...
 
 
 struct TraitStruct(SimpleTrait):
-    fn method(self, y: int):
+    fn method(self, y: Index):
         pass
 
-    fn param_method[x: int](self):
+    fn param_method[x: Index](self):
         pass
 
 
-struct ParametricTraitStruct[z: int](SimpleTrait):
-    fn method(self, y: int):
+struct ParametricTraitStruct[z: Index](SimpleTrait):
+    fn method(self, y: Index):
         pass
 
-    fn param_method[x: int](self):
+    fn param_method[x: Index](self):
         pass
 
 
@@ -247,7 +247,7 @@ fn move_me[T: Movable](owned value: T) -> T:
 # COM: Just check that conformance checking succeeds.
 trait TraitForReg:
     @implicit
-    fn __init__(out self, x: int):
+    fn __init__(out self, x: Index):
         ...
 
     fn __copyinit__(out self, existing: Self):
@@ -272,7 +272,7 @@ struct RegTraitType(TraitForReg):
     # CHECK-LABEL: lit.fn @"__init__
     # CHECK-SAME: (%x: index) -> !RegTraitType
     @implicit
-    fn __init__(out self, x: int):
+    fn __init__(out self, x: Index):
         pass
 
     fn __copyinit__(out self, existing: Self):
@@ -297,7 +297,7 @@ fn raising_method[T: TraitForReg](x: T) raises:
 trait CrazyTrait:
     pass
 
-    fn foo[b: int](self, c: int) -> Self:
+    fn foo[b: Index](self, c: Index) -> Self:
         ...
 
 
@@ -332,7 +332,7 @@ trait SimpleTraitMethod:
 
 
 @register_passable
-struct VariadicTrait[*I: int](SimpleTraitMethod):
+struct VariadicTrait[*I: Index](SimpleTraitMethod):
     fn foo(self):
         pass
 
@@ -755,12 +755,12 @@ struct ConcreteType(TraitParameterized):
 
 
 trait KeysBuilder:
-    fn add[x: int](mut self):
+    fn add[x: Index](mut self):
         ...
 
 
-struct KeysContainer[end: int](KeysBuilder):
-    fn add[x: int](mut self):
+struct KeysContainer[end: Index](KeysBuilder):
+    fn add[x: Index](mut self):
         pass
 
 
@@ -957,7 +957,7 @@ struct TestAnyTrait[element_trait: _AnyTypeMetaType]:
 
 
 @register_passable("trivial")
-struct ParamType[x: int]:
+struct ParamType[x: Index]:
     pass
 
 # CHECK: lit.trait.decl @RGTrait{{.*}} register_passable
@@ -1025,12 +1025,11 @@ struct FormVariadicPackWithCastedElementVariadic[
 # to Movable correctly.
 fn take_movable_pointer[T: Movable](ptr: UnsafePointer[T]): pass
 # CHECK-LABEL: test_parametric_anytype_movable
-# CHECK-SAME: %ptr: !lit.struct<#UnsafePointer <:!AnyType [!kgen.param<:!kgen.param<:!lit.anytrait<!CollectionElement> element_trait> 
+# CHECK-SAME: %ptr: !lit.struct<#UnsafePointer <:!AnyType [!kgen.param<:!kgen.param<:!lit.anytrait<!CollectionElement> element_trait>
 fn test_parametric_anytype_movable[element_trait: _CollectionElementMetaType,
                                   *element_types: element_trait]
                                   (ptr: UnsafePointer[element_types[0]]):
 
         # CHECK: lit.call {{.*}}take_movable_pointer
-        # CHECK-SAME: <:!Movable [!kgen.param<:!kgen.param<:!lit.anytrait<!CollectionElement> element_trait> 
+        # CHECK-SAME: <:!Movable [!kgen.param<:!kgen.param<:!lit.anytrait<!CollectionElement> element_trait>
         take_movable_pointer(ptr)
-

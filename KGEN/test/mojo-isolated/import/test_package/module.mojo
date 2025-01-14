@@ -22,7 +22,7 @@ fn call_nested_function():
 
 @value
 struct SomeType:
-    var value: int
+    var value: Index
 
 
 @value
@@ -35,13 +35,13 @@ fn `use()weird[]`() -> `weird()struct[]`:
 
 
 @value
-struct ParameterizedType[value: int]:
+struct ParameterizedType[value: Index]:
     pass
 
 
 @value
 struct Wrapper:
-    var data: int
+    var data: Index
 
     alias MyType = ParameterizedType[__mlir_attr.`42 : index`]
 

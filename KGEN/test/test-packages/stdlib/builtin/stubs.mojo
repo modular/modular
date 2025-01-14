@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-alias int = __mlir_type.index
+alias Index = __mlir_type.index
 alias string = __mlir_type.`!kgen.string`
 alias float = __mlir_type.`!pop.scalar<f64>`
 
@@ -222,14 +222,14 @@ struct FloatDyn:
 @value
 @register_passable("trivial")
 struct Int(Copyable):
-    var value: int
+    var value: Index
 
     fn __init__(out self):
         self.value = __mlir_op.`index.constant`[value = __mlir_attr.`0:index`]()
 
     @always_inline("nodebug")
     @implicit
-    fn __init__(out self, value: int):
+    fn __init__(out self, value: Index):
         self.value = value
 
     @always_inline("nodebug")
@@ -365,10 +365,10 @@ struct Bool(AnyType):
 @register_passable("trivial")
 struct Slice:
     @implicit
-    fn __init__(out self, end: int):
+    fn __init__(out self, end: Index):
         pass
 
-    fn __init__(out self, start: int, end: int):
+    fn __init__(out self, start: Index, end: Index):
         return
 
     fn __init__[

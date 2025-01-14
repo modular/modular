@@ -1307,12 +1307,12 @@ fn closureParameterCaptures[
 
 
 @register_passable("trivial")
-struct HasParam[p: int]:
+struct HasParam[p: Index]:
     pass
 
 
 fn closureParameterInference[
-    p: int, //, f: fn () capturing -> None
+    p: Index, //, f: fn () capturing -> None
 ](arg: HasParam[p]):
     pass
 
@@ -1335,7 +1335,7 @@ fn inaccessibleImplicitLifetimeParam(arg: HasLifetimeParam):
 
 
 # CHECK-LABEL: lit.struct.decl @CapturingStruct
-struct CapturingStruct[a: int]:
+struct CapturingStruct[a: Index]:
     @staticmethod
     fn takeClosure[
         origins: OriginSet, //,
@@ -1368,7 +1368,7 @@ struct CapturingStructTrait(CapturingTrait):
 # CHECK-LABEL: lit.fn @"inferCaptureOrigins
 fn inferCaptureOrigins[
     lt: MutableOrigin, param: HasLifetimeParam[lt]
-](mut x: int, mut y: int, arg: HasParam):
+](mut x: Index, mut y: Index, arg: HasParam):
     @parameter
     fn bareFunc():
         pass
@@ -1413,7 +1413,7 @@ fn inferCaptureOrigins[
 
 
 # CHECK-LABEL: lit.fn @"testParameterCapture
-fn testParameterCapture(mut x: int, mut y: int):
+fn testParameterCapture(mut x: Index, mut y: Index):
     # CHECK: lit.fn *"capture()":{mut *"x`"}
     @parameter
     fn capture():

@@ -712,9 +712,9 @@ fn lvaluesAndRValues() -> __mlir_type.index:
 # CHECK-LABEL: lit.fn @"mvalueStructField()"
 fn mvalueStructField():
   # CHECK: lit.alias.decl [[INT:.*]]: !Int = <{4}>
-  alias int = Int(4)
+  alias Index = Int(4)
   # CHECK: lit.alias.decl *"value{{.*}}" = <4>
-  alias value = int.value
+  alias value = Index.value
   alias foldToValue = Int(5).value
 
 ##===----------------------------------------------------------------------===##
@@ -1245,7 +1245,7 @@ alias bigggNumber = 2 << 255
 fn useBigNumber() -> Int:
   # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <{512}>
   var notSoBig = bigggNumber // (2 << 246)
-  # Easy min-int
+  # Easy min-Index
   # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <{-9223372036854775808}>
   var minInt = -(2<<62)
   return notSoBig

@@ -8,7 +8,7 @@
 
 @value
 @register_passable("trivial")
-struct int:
+struct Index:
     pass
 
 
@@ -18,21 +18,21 @@ struct MemType:
         return MemType()
 
 
-fn foo(x: int, y: MemType, z: MemType):
+fn foo(x: Index, y: MemType, z: MemType):
     pass
 
 
-# CHECK: lit.struct.field field0 : !int
+# CHECK: lit.struct.field field0 : !Index
 # CHECK: lit.struct.field field1 : !MemType
 # CHECK: lit.struct.field field2 : !MemType
 # CHECK: lit.fn @"__init__{{.*}}(
-# CHECK-SAME: %fld0: !int,
+# CHECK-SAME: %fld0: !Index,
 # CHECK-SAME: %fld1: !lit.ref<!MemType, imm {{[^>]*}}> read_mem,
 # CHECK-SAME: %fld2: !lit.ref<!MemType, imm {{.*}}> read_mem,
 # CHECK-SAME: %self: !lit.ref<{{.*}}> byref_result)
 
 
 # CHECK-LABEL: lit.fn @"makes_escaping_closure_3
-fn makes_escaping_closure_3(owned x: int, owned y: MemType, mut z: MemType):
+fn makes_escaping_closure_3(owned x: Index, owned y: MemType, mut z: MemType):
     fn take_owned_and_escape():
         foo(x, y, z)

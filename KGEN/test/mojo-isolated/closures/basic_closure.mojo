@@ -15,7 +15,7 @@ struct MemType:
         pass
 
 
-fn use(y: MemType, z: Int, u: int):
+fn use(y: MemType, z: Int, u: Index):
     pass
 
 

@@ -212,12 +212,12 @@ struct ParamSubst[
 # CHECK-LABEL: lit.fn @"testParamSubst
 fn testParamSubst():
   # CHECK: %xx = lit.var.decl {{.*}} : !lit.ref<@parameters::@ParamSubst<:type index, :variadic<index> [1, 2]>
-  var xx : ParamSubst[int, __mlir_attr.`#kgen.variadic<1, 2> : !kgen.variadic<index>`]
+  var xx : ParamSubst[Index, __mlir_attr.`#kgen.variadic<1, 2> : !kgen.variadic<index>`]
 
 
 # Test parameter substitution.
 # CHECK-LABEL: lit.fn @"fnToCall{{.*}}"<size, arr: array<size, f32>>()
-fn fnToCall[size: int, arr: __mlir_type[`!pop.array<`, size, `, f32>`]]():
+fn fnToCall[size: Index, arr: __mlir_type[`!pop.array<`, size, `, f32>`]]():
   pass
 
 # CHECK: lit.fn @"fnWithCall{{.*}}"<array: array<10, f32>
@@ -303,7 +303,7 @@ fn explicit_autoparameterization(v: TwoParams[5, _], w: TwoParams[b=_, a=_]):
     pass
 
 @register_passable("trivial")
-struct IndexParam[x: int]:
+struct IndexParam[x: Index]:
     @implicit
     fn __init__(out self, p: __mlir_type.`!kgen.none`):
         pass
@@ -311,13 +311,13 @@ struct IndexParam[x: int]:
 
 # CHECK-LABEL: lit.fn @"autoparam_of_params
 # CHECK-SAME: <[""]*"x`", a, +, b: {{.*}}IndexParam<*"x`">, c: {{.*}}IndexParam<a>
-fn autoparam_of_params[a: int, //, b: IndexParam, c: IndexParam[a]]():
+fn autoparam_of_params[a: Index, //, b: IndexParam, c: IndexParam[a]]():
     pass
 
 
 @value
 @register_passable("trivial")
-struct DependentParams[x: int, //, p: IndexParam[x]]:
+struct DependentParams[x: Index, //, p: IndexParam[x]]:
     pass
 
 
@@ -349,12 +349,12 @@ fn nonprop_capture_set[f: fn[g: fn () capturing [_] -> None] () -> None]():
 
 # CHECK-LABEL: lit.fn @"autoparam_param_vararg
 # CHECK-SAME: <[""]*"__origins__`": origin.set, +, f: {{.*}}, x: variadic<index> var>
-fn autoparam_param_vararg[f: fn () [_] -> None, *x: int]():
+fn autoparam_param_vararg[f: fn () [_] -> None, *x: Index]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"auto_kw_default{{.*}}"<u = 3, |, v = 3, ?, {{.*}}, {{.*}}>(%a
-fn auto_kw_default[u: int = `3`, /, v: int = `3`](a: IndexParam, b: IndexParam):
+fn auto_kw_default[u: Index = `3`, /, v: Index = `3`](a: IndexParam, b: IndexParam):
   pass
 
 
@@ -548,22 +548,22 @@ fn parameter_call_drop_dangling_implicit_origins[b: IntBox]():
 # CHECK-LABEL: lit.fn @"takeCallable{{.*}}"<
 # CHECK-SAME: callable: !lit.generator<(index, |) -> index>>(%a: index) -> index
 fn takeCallable[
-     callable: fn(int) -> int
-   ](a: int) -> int:
+     callable: fn(Index) -> Index
+   ](a: Index) -> Index:
   # CHECK-NEXT: %0 = lit.call[!lit.generator<(index, |) -> index>: callable](%a)
   # CHECK-NEXT: lit.return %0
   return callable(a)
 
-fn takeAndReturnIndex(x: int) -> int:
+fn takeAndReturnIndex(x: Index) -> Index:
   return x
 
-fn posOnlyArg(x: int, /):
+fn posOnlyArg(x: Index, /):
   pass
 
 # CHECK-LABEL: lit.fn @"takeAndReturnIndex
-fn passFunction(a: int) -> int:
+fn passFunction(a: Index) -> Index:
   # CHECK: rebind(:!lit.generator<("x": index, |) -> !kgen.none> {{.*}}posOnlyArg
-  alias changeKw: fn(x: int) -> None = posOnlyArg
+  alias changeKw: fn(x: Index) -> None = posOnlyArg
 
   # CHECK: lit.call @parameters::@"takeCallable{{.*}}<:!lit.generator<(index, |) -> index>
   # CHECK-SAME: rebind(:!lit.generator<("x": index) -> index> {{.*}}takeAndReturnIndex{{.*}}")>(%a)
@@ -587,12 +587,12 @@ fn passFunctionParam2():
 
 
 @register_passable("trivial")
-struct ParamType[x: int]:
+struct ParamType[x: Index]:
     pass
 
 
 # CHECK-LABEL: lit.fn @"dependent_function_type
-fn dependent_function_type[a: int, f: fn (ParamType[a]) -> None]():
+fn dependent_function_type[a: Index, f: fn (ParamType[a]) -> None]():
     alias func = dependent_function_type
     # CHECK: lit.call{{.*}}dependent_function_type
     func[a, f]()
@@ -600,13 +600,13 @@ fn dependent_function_type[a: int, f: fn (ParamType[a]) -> None]():
 fn overloaded_function():
     pass
 
-fn overloaded_function(a: int):
+fn overloaded_function(a: Index):
     pass
 
 struct ParamFuncType[f: fn() -> None]:
     pass
 
-fn bind_twice[f: fn() -> None, g: fn(int) -> None]():
+fn bind_twice[f: fn() -> None, g: fn(Index) -> None]():
     pass
 
 fn variadic_func_param[*fs: fn() -> None]():
@@ -654,13 +654,13 @@ fn testUseOfAliases():
 
 @register_passable
 struct MyDType:
-  var state : int
+  var state : Index
 
   fn __copyinit__(out self, existing: Self):
     self.state = self.state
 
   @implicit
-  fn __init__(out self, value: int):
+  fn __init__(out self, value: Index):
      self.state = value
 
   fn __eq__(self, rhs: MyDType) -> Bool:
@@ -830,7 +830,7 @@ struct StaticVec[size: Int]:
 
 fn callee1[size: Int](v: StaticVec[size]): pass
 fn callee2[T: __mlir_type.`!kgen.type`](v: T): pass
-fn callee3[size: int, type: __mlir_type.`!kgen.dtype`]
+fn callee3[size: Index, type: __mlir_type.`!kgen.dtype`]
    (v:  __mlir_type[`!pop.simd<`, size, `, `, type, `>`]): pass
 fn callee4[T: __mlir_type.`!kgen.type`]
    (v:  __mlir_type[`!kgen.pointer<`, T, `>`]): pass
@@ -983,7 +983,7 @@ fn deduce_kw_only[*Ts: Int, x: Int](y: Abstraction[x]):
 
 
 # CHECK-LABEL: lit.fn @"out_of_order_kw
-fn out_of_order_kw[x: int, y: IndexParam[x]]():
+fn out_of_order_kw[x: Index, y: IndexParam[x]]():
     # CHECK-NEXT: out_of_order_kw{{.*}}<0, :{{.*}}IndexParam<0> {{.*}}IndexParam::@"__init__{{.*}}<0>, #kgen.none)>>
     alias bound = out_of_order_kw[y=None, x=`0`]
 
@@ -1169,7 +1169,7 @@ fn reference_params_through_struct():
 
 
 @register_passable
-struct DependentParam[x: int, y: ParamType[x]]:
+struct DependentParam[x: Index, y: ParamType[x]]:
     pass
 
 
@@ -1273,7 +1273,7 @@ struct Optional[T: AnyType]:
     fn __init__(out self, value: T):
         pass
 
-fn default_on_infer_failure[p: int = `0`](a: Optional[ParamType[p]] = None):
+fn default_on_infer_failure[p: Index = `0`](a: Optional[ParamType[p]] = None):
     pass
 
 # CHECK-LABEL: lit.fn @"test_optional_inference
@@ -1526,7 +1526,7 @@ fn test_inference_from_Self_type(x: Int):
   # CHECK: lit.call {{.*}}__init__{{.*}}<:!AnyType [!Int, {{.*}}], :!Movable [!Int, {{.*}}]>{{.*}}([[TMP]], {{.*}})
   _ = DependentSpecificInitSelf(x)
 
-struct AutoParamDefault[value: int, param: int, default: int = param]:
+struct AutoParamDefault[value: Index, param: Index, default: Index = param]:
     @implicit
     fn __init__(out self, ptr: ParamType[value]): pass
     fn __init__(out self, *, other: Self): pass

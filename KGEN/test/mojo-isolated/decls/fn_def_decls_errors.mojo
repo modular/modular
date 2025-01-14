@@ -14,7 +14,7 @@ fn test_never_declared_fn():
     # expected-error @+1 {{use of unknown declaration 'never_declared_fn'}}
     never_declared_fn()
 
-fn implicit_var_decl(a: int):
+fn implicit_var_decl(a: Index):
     c = a  # implicit declaration of c
 
 # expected-error @+1 {{'__add__' requires 2 operands}}
@@ -22,7 +22,7 @@ fn __add__():
     pass
 
 # expected-error @+1 {{'__sub__' must be a method}}
-fn __sub__(self: int, a: int):
+fn __sub__(self: Index, a: Index):
     pass
 
 fn missing_colon()  # expected-error {{expected ':' in function definition}}
@@ -37,10 +37,10 @@ def missing_colon_2()
     test_never_declared_fn()
 
 # expected-error @below {{expected argument name}}
-fn missing_argument_name(*: int): pass
+fn missing_argument_name(*: Index): pass
 
 # expected-error @below {{expected parameter name}}
-fn missing_parameter_name[: int](): pass
+fn missing_parameter_name[: Index](): pass
 
 # expected-error @+1 {{use of unknown declaration 'InvalidType'}}
 fn test_unknown_arg_type(a: InvalidType):
@@ -48,27 +48,27 @@ fn test_unknown_arg_type(a: InvalidType):
     return
 
 # expected-error @+1 {{cannot have two '*' markers in the same argument list}}
-fn two_stars(a: int, *, *, b: int):
+fn two_stars(a: Index, *, *, b: Index):
     pass
 
 # expected-error @+1 {{cannot have two '/' markers in the same argument list}}
-fn two_slashes(a: int, /, /, b: int):
+fn two_slashes(a: Index, /, /, b: Index):
     pass
 
 # expected-error @+1 {{cannot specify '/' marker after '*' marker}}
-fn slash_after_start(a: int, *, /, b: int):
+fn slash_after_start(a: Index, *, /, b: Index):
     pass
 
 # expected-error @+1 {{'/' marker cannot be used at the start of the argument list}}
-fn leading_slash(/, a: int):
+fn leading_slash(/, a: Index):
     pass
 
 # expected-error @+1 {{'*' marker is not allowed at end of argument list}}
-fn trailing_star(a: int, *):
+fn trailing_star(a: Index, *):
     pass
 
 # # expected-error @+1 {{cannot have two '*' markers in the same argument list}}
-fn two_variadics(*a: int, *b: int):
+fn two_variadics(*a: Index, *b: Index):
     pass
 
 # expected-error @+1 {{cannot have two '*' markers in the same argument list}}
@@ -76,34 +76,34 @@ fn two_variadic_packs[*Ts: AnyTrivialRegType](*a: *Ts, *b: *Ts):
     pass
 
 # expected-error @+1 {{parametric functions may not be used as arguments; consider passing as a parameter instead}}
-fn foo(x: fn[a: int] () -> None):
+fn foo(x: fn[a: Index] () -> None):
     pass
 
 # expected-error @below {{non-owned variadic keyword arguments are not supported yet}}
-fn borrowed_kwargs(read **kwargs: int):
+fn borrowed_kwargs(read **kwargs: Index):
     pass
 
 # expected-error @below {{'//' marker cannot be used at the start of the parameter list}}
-fn invalid_inferred[//, x: int]():
+fn invalid_inferred[//, x: Index]():
     pass
 
 # expected-error @below {{cannot specify '//' marker after '*' marker in parameter list}}
-fn invalid_inferred_kw_only[*, x: int, //, y: int]():
+fn invalid_inferred_kw_only[*, x: Index, //, y: Index]():
     pass
 
 # expected-error @below {{'//' can only be used in parameter lists to denote inferred parameters}}
-fn invalid_inferred_argument(x: int, //):
+fn invalid_inferred_argument(x: Index, //):
     pass
 
 # expected-error @below {{inferred parameters may not have defaults}}
-fn invalid_inferred_default[x: int = `1`, //]():
+fn invalid_inferred_default[x: Index = `1`, //]():
     pass
 
 struct NonCopyable:
     fn __init__(out self):
        pass
 
-def test_non_copyable_def_arg(arg: NonCopyable, arg2: int):
+def test_non_copyable_def_arg(arg: NonCopyable, arg2: Index):
     # expected-error @+1 {{'NonCopyable' is not copyable because it has no '__copyinit__'}}
     arg = NonCopyable()
 

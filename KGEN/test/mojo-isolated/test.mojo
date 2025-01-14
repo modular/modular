@@ -17,4 +17,4 @@
 # CHECK: lit.struct.decl @BoxedInt(!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable, !ExplicitlyCopyable)
 @value
 struct BoxedInt:
-    var value: int
+    var value: Index

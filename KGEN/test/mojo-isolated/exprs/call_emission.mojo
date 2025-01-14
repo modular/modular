@@ -7,12 +7,12 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-fn has_default_args(a: int, b: int = `1`, c: int = `2`):
+fn has_default_args(a: Index, b: Index = `1`, c: Index = `2`):
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_kw_arg_passing
-fn test_kw_arg_passing(x: int, y: int, z: int):
+fn test_kw_arg_passing(x: Index, y: Index, z: Index):
     # CHECK: %[[C2:.*]] = kgen.param.constant = <2>
     # CHECK: call {{.*}}@"has_default_args{{.*}}"(%x, %y, %[[C2]])
     has_default_args(x, b=y)
@@ -35,7 +35,7 @@ fn test_kw_arg_passing(x: int, y: int, z: int):
 
 
 # CHECK-LABEL: lit.fn @"test_kw_arg_passing_indirect
-fn test_kw_arg_passing_indirect[callee: fn(a: int, b: int=`1`, c: int=`2`)->None](x: int, y: int, z: int):
+fn test_kw_arg_passing_indirect[callee: fn(a: Index, b: Index=`1`, c: Index=`2`)->None](x: Index, y: Index, z: Index):
     # CHECK-DAG: %[[C1:.*]] = kgen.param.constant = <1>
     # CHECK-NEXT: lit.call[{{.*}}](%x, %[[C1]], %z)
     callee(x, c=z)
@@ -43,12 +43,12 @@ fn test_kw_arg_passing_indirect[callee: fn(a: int, b: int=`1`, c: int=`2`)->None
     # CHECK-NEXT: lit.call[{{.*}}](%x, %y, %z)
     callee(c=z, b=y, a=x)
 
-fn has_default_params[a: int, b: int = `1`, c: int = `2`]():
+fn has_default_params[a: Index, b: Index = `1`, c: Index = `2`]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_kw_param_passing
-fn test_kw_param_passing[x: int, y: int, z: int]():
+fn test_kw_param_passing[x: Index, y: Index, z: Index]():
     # CHECK: lit.call @{{.*}}@"has_default_params{{.*}}"<x, y, 2>
     has_default_params[x, b=y]()
 
@@ -69,8 +69,8 @@ fn test_kw_param_passing[x: int, y: int, z: int]():
 
 
 # CHECK-LABEL: lit.fn @"test_kw_param_passing_indirect
-fn test_kw_param_passing_indirect[x: int, y: int, z: int,
-                                  callee: fn[a: int, b: int=`1`, c: int=`2`]()->None]():
+fn test_kw_param_passing_indirect[x: Index, y: Index, z: Index,
+                                  callee: fn[a: Index, b: Index=`1`, c: Index=`2`]()->None]():
 
     # CHECK: call{{.*}}bind_signature(:!lit.generator<{{.*}}> callee, x, 1, z)]()
     callee[x, c=z]()
@@ -81,12 +81,12 @@ fn test_kw_param_passing_indirect[x: int, y: int, z: int,
 
 @value
 struct MyCallable:
-    fn __call__(self, m: int, n: int = `2`):
+    fn __call__(self, m: Index, n: Index = `2`):
         pass
 
 
 # CHECK-LABEL: lit.fn @"test_callable_object
-fn test_callable_object(x: int, y: int):
+fn test_callable_object(x: Index, y: Index):
     # CHECK: %[[CALLABLE:.*]] = lit.var.decl {{.*}}: !lit.ref<!MyCallable
     var callable = MyCallable()
 
@@ -100,12 +100,12 @@ fn test_callable_object(x: int, y: int):
     callable(n=x, m=y)
 
 
-fn takes_kw_only_args(a: int, b: int = `1`, *, c: int, d: int = `2`):
+fn takes_kw_only_args(a: Index, b: Index = `1`, *, c: Index, d: Index = `2`):
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_kw_only_args
-fn test_kw_only_args(x: int):
+fn test_kw_only_args(x: Index):
     # CHECK-DAG: %[[C1:.*]] = kgen.param.constant = <1>
     # CHECK-DAG: %[[C2:.*]] = kgen.param.constant = <2>
     # CHECK-NEXT: lit.call {{.*}}@"takes_kw_only_args{{.*}}"(%x, %[[C1]], %x, %[[C2]])
@@ -129,7 +129,7 @@ fn test_kw_only_args(x: int):
 
 
 # CHECK-LABEL: lit.fn @"test_kw_only_indirect
-fn test_kw_only_indirect[callee: fn(a: int, b: int = `1`, *, c: int, d: int = `2`)->None](x: int):
+fn test_kw_only_indirect[callee: fn(a: Index, b: Index = `1`, *, c: Index, d: Index = `2`)->None](x: Index):
 
     # CHECK-DAG: %[[C1:.*]] = kgen.param.constant = <1>
     # CHECK-DAG: %[[C2:.*]] = kgen.param.constant = <2>
@@ -141,12 +141,12 @@ fn test_kw_only_indirect[callee: fn(a: int, b: int = `1`, *, c: int, d: int = `2
     callee(x, d=x, c=x)
 
 
-fn takes_kw_only_params[a: int, b: int = `1`, *, c: int, d: int = `2`]():
+fn takes_kw_only_params[a: Index, b: Index = `1`, *, c: Index, d: Index = `2`]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_kw_only_params
-fn test_kw_only_params[x: int]():
+fn test_kw_only_params[x: Index]():
     # CHECK: call {{.*}}takes_kw_only_params{{.*}}"<x, 1, x, 2>()
     takes_kw_only_params[x, c=x]()
 
@@ -164,7 +164,7 @@ fn test_kw_only_params[x: int]():
 
 
 # CHECK-LABEL: lit.fn @"test_kw_only_params_indirect
-fn test_kw_only_params_indirect[x: int, callee: fn[a: int, b: int = `1`, *, c: int, d: int = `2`]()->None]():
+fn test_kw_only_params_indirect[x: Index, callee: fn[a: Index, b: Index = `1`, *, c: Index, d: Index = `2`]()->None]():
 
     # CHECK: call{{.*}}bind_signature(:!lit.generator<{{.*}}> callee, x, 1, x, 2)]()
     callee[x, c=x]()
@@ -174,13 +174,13 @@ fn test_kw_only_params_indirect[x: int, callee: fn[a: int, b: int = `1`, *, c: i
 
 
 fn takes_variadic_and_kw_only_args(
-    a: int, b: int, *args: int, c: int, d: int = `0`
+    a: Index, b: Index, *args: Index, c: Index, d: Index = `0`
 ):
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_variadic_and_kw_only_args
-fn test_variadic_and_kw_only_args(x: int):
+fn test_variadic_and_kw_only_args(x: Index):
     # CHECK-DAG: %[[VAR:.*]] = kgen.param.constant: variadic<index> = <[]>
     # CHECK-DAG: %[[ZERO:.*]] = kgen.param.constant = <0>
     # CHECK-NEXT: lit.call {{.*}}@"takes_variadic_and_kw_only_args{{.*}}"(%x, %x, %[[VAR]], %x, %[[ZERO]])
@@ -197,13 +197,13 @@ fn test_variadic_and_kw_only_args(x: int):
 
 
 fn takes_variadic_and_kw_only_params[
-    a: int, b: int, *args: int, c: int, d: int = `0`
+    a: Index, b: Index, *args: Index, c: Index, d: Index = `0`
 ]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_variadic_and_kw_only_params
-fn test_variadic_and_kw_only_params[x: int]():
+fn test_variadic_and_kw_only_params[x: Index]():
     # CHECK: call {{.*}}takes_variadic_and_kw_only_param{{.*}}"<x, x, :variadic<index> [], x, 0>()
     takes_variadic_and_kw_only_params[x, x, c=x]()
 
@@ -215,8 +215,8 @@ fn test_variadic_and_kw_only_params[x: int]():
 
 
 # CHECK-LABEL: lit.fn @"test_variadic_and_kw_only_params_indirect
-fn test_variadic_and_kw_only_params_indirect[x: int,
-    callee: fn [a: int, b: int, *args: int, c: int, d: int = `0`]()->None]():
+fn test_variadic_and_kw_only_params_indirect[x: Index,
+    callee: fn [a: Index, b: Index, *args: Index, c: Index, d: Index = `0`]()->None]():
 
     # CHECK: lit.call{{.*}}bind_signature(:!lit.generator<{{.*}}> callee, x, x, ?, x, 0), [])]()
     callee[x, x, c=x]()
@@ -288,11 +288,11 @@ struct ExampleRegPassable:
 ## Partial Binding of Function Symbols With Implicit Parameters
 
 
-struct Matrix[rows: int, cols: int]:
+struct Matrix[rows: Index, cols: Index]:
     pass
 
 
-fn matmul_unrolled[I: int](mut C: Matrix):
+fn matmul_unrolled[I: Index](mut C: Matrix):
     pass
 
 

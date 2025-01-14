@@ -12,14 +12,14 @@ fn return_generic_memory_only[T: AnyType]() -> T:
     pass
 
 
-fn fudge_int(x: int) -> int:
+fn fudge_int(x: Index) -> Index:
     return x
 
 
 # CHECK-LABEL: lit.fn @"var_decls()
 fn var_decls():
     # CHECK: %y = lit.var.decl "y" var
-    var y: int
+    var y: Index
 
     # CHECK: %[[Y:.*]] = lit.ref.load %y
     # CHECK: %[[F:.*]] = lit.call {{.*}}::@"fudge_int{{.*}}(%[[Y]])
@@ -49,7 +49,7 @@ fn test_var_let_scopes(cond: Bool):
 
 
 # CHECK-LABEL: lit.fn @"test_var_origin_mangling
-fn test_var_origin_mangling[x: int](c: Bool):
+fn test_var_origin_mangling[x: Index](c: Bool):
     # CHECK: hlcf.elif
     if c:
         # CHECK: lit.var.decl "y" var : !lit.ref<index, mut *"y`">
@@ -61,7 +61,7 @@ fn test_var_origin_mangling[x: int](c: Bool):
 
 
 # CHECK-LABEL: lit.fn @"test_nested_var_origin_mangling
-fn test_nested_var_origin_mangling[x: int](c: Bool):
+fn test_nested_var_origin_mangling[x: Index](c: Bool):
     # CHECK: hlcf.elif
     if c:
         # CHECK: lit.var.decl "y" var : !lit.ref<index, mut *"y`">
@@ -76,7 +76,7 @@ fn test_nested_var_origin_mangling[x: int](c: Bool):
 # Issue #18157 and issue #18158, shadowing variables should be able to reference
 # the shadowed variable on the RHS.
 fn test_shadowing_reference_shadowed(cond: Bool):
-    var num: int = `10`
+    var num: Index = `10`
     if cond:
         var num = fudge_int(`42`)
 

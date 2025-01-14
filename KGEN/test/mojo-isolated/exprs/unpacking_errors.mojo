@@ -8,7 +8,7 @@
 
 
 # expected-note @+1 {{declared here}}
-struct Parametric[a: int]:
+struct Parametric[a: Index]:
     pass
 
 
