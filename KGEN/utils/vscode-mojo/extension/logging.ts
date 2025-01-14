@@ -13,7 +13,7 @@ import { window } from 'vscode';
 
 import { DisposableContext } from './utils/disposableContext';
 
-enum LogLevel {
+export enum LogLevel {
   Trace = 0,
   Debug = 1,
   Info = 2,
@@ -39,7 +39,7 @@ const logLevelToString = (level: LogLevel) => {
   }
 };
 
-class LogChannel {
+export class LogChannel {
   readonly outputChannel: vscode.OutputChannel;
   private logLevel: LogLevel = LogLevel.Info;
   public logCallback?: (level: string, message: string) => void;
