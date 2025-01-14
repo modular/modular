@@ -2803,6 +2803,50 @@ fn mha_ragged_continuous_batching_alibi_mask_no_pos_nhead_8_hdim_128[
     ](q, input_row_offsets, kv_collection, layer_idx, scale, output, context)
 
 
+@register_internal(
+    "mo.mha.ragged.continuous_batching.causal_mask.alibi_pos.nhead_8.hdim_128"
+)
+fn mha_ragged_continuous_batching_causal_mask_alibi_pos_nhead_8_hdim_128[
+    type: DType, //,
+    target: StringLiteral,
+](
+    q: NDBuffer[type, 3, *_],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type, kv_params_h8_d128_bshd
+    ],
+    layer_idx: UInt32,
+    scale: Float32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr,
+) raises:
+    generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged[
+        target=target
+    ](q, input_row_offsets, kv_collection, layer_idx, scale, output, context)
+
+
+@register_internal(
+    "mo.mha.ragged.continuous_batching.causal_mask.alibi_pos.nhead_32.hdim_128"
+)
+fn mha_ragged_continuous_batching_causal_mask_alibi_pos_nhead_32_hdim_128[
+    type: DType, //,
+    target: StringLiteral,
+](
+    q: NDBuffer[type, 3, *_],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type, kv_params_h32_d128_bshd
+    ],
+    layer_idx: UInt32,
+    scale: Float32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr,
+) raises:
+    generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged[
+        target=target
+    ](q, input_row_offsets, kv_collection, layer_idx, scale, output, context)
+
+
 @always_inline
 fn _flash_attention_kv_cache_ragged[
     type: DType,
