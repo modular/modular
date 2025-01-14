@@ -1390,3 +1390,27 @@ kgen.func @unwrap_wrap_type(%arg0: i32) -> i64 {
   %1 = pop.union.unwrap %0 : <i32, i64> as  i64
   kgen.return %1 : i64
 }
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="p:32:32">} {
+  // CHECK-LABEL: @cast_const_ui8_to_index_folding
+  kgen.func @cast_const_ui8_to_index_folding() -> !pop.scalar<index> {
+    // CHECK-NEXT: kgen.param.constant: scalar<index> = <128>
+    %in = kgen.param.constant: scalar<ui8> = <128>
+    %out = pop.cast %in : !pop.scalar<ui8> to !pop.scalar<index>
+    kgen.return %out : !pop.scalar<index>
+  }
+}
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="p:64:64">} {
+  // CHECK-LABEL: @cast_const_ui8_to_index_folding
+  kgen.func @cast_const_ui8_to_index_folding() -> !pop.scalar<index> {
+    // CHECK-NEXT: kgen.param.constant: scalar<index> = <128>
+    %in = kgen.param.constant: scalar<ui8> = <128>
+    %out = pop.cast %in : !pop.scalar<ui8> to !pop.scalar<index>
+    kgen.return %out : !pop.scalar<index>
+  }
+}
