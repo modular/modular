@@ -753,8 +753,10 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
     return {};
   }
 
+  std::optional<KGENDType> inType = in.getType().getResolvedDType();
+
   // Exit early if the input and output dtypes are the same.
-  if (*dtype == *in.getType().getResolvedDType())
+  if (*dtype == *inType)
     return in;
 
   if (dtype->isFloat()) {
@@ -797,7 +799,9 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
     // Cast to index like it's a 64-bit integer. Address is handled like index.
     return foldSIMDOpResult<::Detail::kOtherResult>(
         adaptor.getOperands(), *dtype,
-        [](const APSInt &in) -> int64_t { return in.getSExtValue(); },
+        [inType](const APSInt &in) -> int64_t {
+          return inType->isSInt() ? in.getSExtValue() : in.getZExtValue();
+        },
         [](const APFloat &in) -> std::optional<int64_t> {
           APSInt iv(64, /*isUnsigned=*/false);
           bool ignored;
