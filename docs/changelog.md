@@ -44,10 +44,11 @@ what we publish.
 
 ### Standard library changes
 
-- The `int` function to construct an `Int` has been removed, this was a
+- The `int` function to construct an `Int` has been deprecated, this was a
   temporary workaround when Mojo didn't have a way to distinguish between
-  implicit and explicit constructors. You can do a search and replace for `int(`
-  to `Int(` to update your programs.
+  implicit and explicit constructors. You can do a search and replace from
+  `int(` to `Int(` to update your programs, the `int` function will be removed
+  in the next release.
 
 - `UnsafePointer`'s `bitcast` method has now been split into `bitcast`
   for changing the type, `origin_cast` for changing mutability,
