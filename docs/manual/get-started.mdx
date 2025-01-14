@@ -344,7 +344,7 @@ def main():
 ## 5. Create and use a function to print the grid
 
 Now let's create a function to generate a string representation of the game grid
-that we can print it to the terminal.
+that we can print to the terminal.
 
 There are actually two different keywords that we can use to define functions in
 Mojo: `def` and `fn`. Using `fn` gives us finer level control over the function
@@ -362,7 +362,7 @@ def grid_str(rows: Int, cols: Int, grid: List[List[Int]]) -> String:
 
     # Iterate through rows 0 through rows-1
     for row in range(rows):
-	      # Iterate through columns 0 through cols-1
+        # Iterate through columns 0 through cols-1
         for col in range(cols):
             if grid[row][col] == 1:
                 str += "*"  # If cell is populated, append an asterisk
@@ -540,7 +540,7 @@ def grid_str(grid: Grid) -> String:
 
     # Iterate through rows 0 through rows-1
     for row in range(grid.rows):
-	      # Iterate through columns 0 through cols-1
+        # Iterate through columns 0 through cols-1
         for col in range(grid.cols):
             if grid.data[row][col] == 1:
                 str += "*"  # If cell is populated, append an asterisk
@@ -876,7 +876,9 @@ respectively. This function actually returns a value of type `Int64`, which is a
 signed 64-bit integer value. As described in [Numeric
 types](/mojo/manual/types#numeric-types), this is *not* the same as the `Int`
 type whose precision is dependent on the native word size of the system.
-Therefore we're passing this value to the built-in
+Therefore we're passing this value to the
+[`Int()`](/mojo/stdlib/builtin/int/Int/#__init__) constructor, which explicitly
+converts a numeric value to an `Int`.
 
 The return type of the method is `Self`, which is an alias for the type of the
 struct. This is a convenient shortcut if the actual name of the struct is long
