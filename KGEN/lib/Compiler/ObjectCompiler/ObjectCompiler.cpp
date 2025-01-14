@@ -1268,12 +1268,12 @@ static ErrorOr<BufferRef> createSharedObject(BufferRef buf,
 
 ErrorOrSuccess ObjectCompiler::emitSharedObject(OwningOpRef<ModuleOp> module,
                                                 llvm::raw_pwrite_stream &os) {
+  llvm::Triple triple(options.targetTriple);
+
   // This function is added to support AMD GPU compilation to hsaco binary.
   // Generalize to all platforms+formats when needed.
-  if (llvm::Triple(options.targetTriple).getObjectFormat() !=
-          llvm::Triple::ELF &&
-      llvm::Triple(options.targetTriple).getObjectFormat() !=
-          llvm::Triple::MachO)
+  if (!llvm::is_contained({llvm::Triple::ELF, llvm::Triple::MachO},
+                          triple.getObjectFormat()))
     return Error("cannot create shared object binary from target triple that "
                  "is not ELF or MachO");
 
