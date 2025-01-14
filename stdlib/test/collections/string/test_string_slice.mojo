@@ -170,6 +170,26 @@ fn test_slice_len() raises:
     assert_equal(1, len(slice5))
 
 
+fn test_slice_char_length() raises:
+    var s0 = StringSlice("")
+    assert_equal(s0.byte_length(), 0)
+    assert_equal(s0.char_length(), 0)
+
+    var s1 = StringSlice("foo")
+    assert_equal(s1.byte_length(), 3)
+    assert_equal(s1.char_length(), 3)
+
+    # This string contains 1-, 2-, 3-, and 4-byte codepoint sequences.
+    var s2 = StringSlice("߷കൈ🔄!")
+    assert_equal(s2.byte_length(), 13)
+    assert_equal(s2.char_length(), 5)
+
+    # Just a bit of Zalgo text.
+    var s3 = StringSlice("H̵͙̖̼̬̬̲̱͊̇̅͂̍͐͌͘͜͝")
+    assert_equal(s3.byte_length(), 37)
+    assert_equal(s3.char_length(), 19)
+
+
 fn test_slice_eq() raises:
     var str1: String = "12345"
     var str2: String = "12345"
@@ -460,9 +480,10 @@ def test_count_utf8_continuation_bytes():
     alias b4 = UInt8(0b1111_0000)
 
     def _test(amnt: Int, items: List[UInt8]):
-        p = items.unsafe_ptr()
-        span = Span[Byte, StaticConstantOrigin](ptr=p, length=len(items))
-        assert_equal(amnt, _count_utf8_continuation_bytes(span))
+        var p = items.unsafe_ptr()
+        var span = Span[Byte, StaticConstantOrigin](ptr=p, length=len(items))
+        var str_slice = StringSlice(unsafe_from_utf8=span)
+        assert_equal(amnt, _count_utf8_continuation_bytes(str_slice))
 
     _test(5, List[UInt8](c, c, c, c, c))
     _test(2, List[UInt8](b2, c, b2, c, b1))
@@ -699,6 +720,7 @@ def main():
     test_string_byte_span()
     test_heap_string_from_string_slice()
     test_slice_len()
+    test_slice_char_length()
     test_slice_eq()
     test_slice_bool()
     test_slice_repr()

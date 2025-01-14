@@ -149,6 +149,15 @@ what we publish.
   has narrower comparison methods that support comparing only with
   `StringSlice`'s with the exact same origin.
 
+- Added `StringSlice.char_length()` method, to pair with the existing
+  `StringSlice.byte_length()` method.
+
+  In a future version of Mojo, `StringSlice.__len__()` may be changed to return
+  the length in bytes, matching the convention of string length methods in
+  languages like C++ and Rust. Callers that know they need the length in
+  Unicode codepoints should update to calling `StringSlice.char_length()`
+  instead.
+
 - Removed `@implicit` decorator from some standard library initializer methods
   that perform allocation. This reduces places where Mojo code could implicitly
   allocate where the user may not be aware.

@@ -36,10 +36,10 @@ alias StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice."""
 
 
-fn _count_utf8_continuation_bytes(span: Span[Byte]) -> Int:
+fn _count_utf8_continuation_bytes(str_slice: StringSlice) -> Int:
     alias sizes = (256, 128, 64, 32, 16, 8)
-    var ptr = span.unsafe_ptr()
-    var num_bytes = len(span)
+    var ptr = str_slice.unsafe_ptr()
+    var num_bytes = str_slice.byte_length()
     var amnt: Int = 0
     var processed = 0
 
@@ -181,17 +181,16 @@ struct _StringSliceIter[
     fn __len__(self) -> Int:
         @parameter
         if forward:
-            remaining = self.length - self.index
-            cont = _count_utf8_continuation_bytes(
-                Span[Byte, ImmutableAnyOrigin](
-                    ptr=self.ptr + self.index, length=remaining
-                )
+            var remaining = self.length - self.index
+            var span = Span[Byte, ImmutableAnyOrigin](
+                ptr=self.ptr + self.index, length=remaining
             )
-            return remaining - cont
+            return StringSlice(unsafe_from_utf8=span).char_length()
         else:
-            return self.index - _count_utf8_continuation_bytes(
-                Span[Byte, ImmutableAnyOrigin](ptr=self.ptr, length=self.index)
+            var span = Span[Byte, ImmutableAnyOrigin](
+                ptr=self.ptr, length=self.index
             )
+            return StringSlice(unsafe_from_utf8=span).char_length()
 
 
 @value
@@ -408,10 +407,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
             The length in Unicode codepoints.
         """
-        var b_len = self.byte_length()
-        alias S = Span[Byte, StaticConstantOrigin]
-        var s = S(ptr=self.unsafe_ptr(), length=b_len)
-        return b_len - _count_utf8_continuation_bytes(s)
+        return self.char_length()
 
     fn write_to[W: Writer](self, mut writer: W):
         """Formats this string slice to the provided `Writer`.
@@ -805,6 +801,28 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
 
         return len(self.as_bytes())
+
+    fn char_length(self) -> UInt:
+        """Returns the length in Unicode codepoints.
+
+        This returns the number of `Char` codepoint values encoded in the UTF-8
+        representation of this string.
+
+        Note: To get the length in bytes, use `StringSlice.byte_length()`.
+
+        Returns:
+            The length in Unicode codepoints.
+        """
+        # Every codepoint is encoded as one leading byte + 0 to 3 continuation
+        # bytes.
+        # The total number of codepoints is equal the number of leading bytes.
+        # So we can compute the number of leading bytes (and thereby codepoints)
+        # by subtracting the number of continuation bytes length from the
+        # overall length in bytes.
+        # For a visual explanation of how this UTF-8 codepoint counting works:
+        #   https://connorgray.com/ephemera/project-log#2025-01-13
+        var continuation_count = _count_utf8_continuation_bytes(self)
+        return self.byte_length() - continuation_count
 
     fn get_immutable(
         self,
