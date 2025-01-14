@@ -95,6 +95,42 @@ def test_char_is_posix_space():
     assert_false(Char.ord(".").is_posix_space())
 
 
+alias SIGNIFICANT_CODEPOINTS = List[Tuple[Int, List[Byte]]](
+    # --------------------------
+    # 1-byte (ASCII) codepoints
+    # --------------------------
+    # Smallest 1-byte codepoint value
+    (0, List[Byte](0)),
+    (1, List[Byte](1)),
+    (32, List[Byte](32)),  # First non-control character
+    (0b0111_1111, List[Byte](127)),  # 127
+    # ------------------
+    # 2-byte codepoints -- 0b110x_xxxx 0b10xx_xxxx (11 x's)
+    # ------------------
+    # Smallest 2-byte codepoint
+    (128, List[Byte](0b1100_0010, 0b1000_0000)),
+    # Largest 2-byte codepoint -- 2^11 - 1 == 2047
+    (2**11 - 1, List[Byte](0b1101_1111, 0b1011_1111)),
+    # ------------------
+    # 3-byte codepoints -- 0b1110_xxxx 0b10xx_xxxx 0b10xx_xxxx (16 x's)
+    # ------------------
+    # Smallest 3-byte codepoint -- 2^11 == 2048
+    (2**11, List[Byte](0b1110_0000, 0b1010_0000, 0b1000_0000)),
+    # Largest 3-byte codepoint -- 2^16 - 1 == 65535 == 0xFFFF
+    (2**16 - 1, List[Byte](0b1110_1111, 0b1011_1111, 0b1011_1111)),
+    # ------------------
+    # 4-byte codepoints 0b1111_0xxx 0b10xx_xxxx 0b10xx_xxxx 0b10xx_xxxx (21 x's)
+    # ------------------
+    # Smallest 4-byte codepoint
+    (2**16, List[Byte](0b1111_0000, 0b1001_0000, 0b1000_0000, 0b1000_0000)),
+    # Largest 4-byte codepoint -- Maximum Unicode codepoint
+    (
+        0x10FFFF,
+        List[Byte](0b1111_0100, 0b1000_1111, 0b1011_1111, 0b1011_1111),
+    ),
+)
+
+
 fn assert_utf8_bytes(codepoint: UInt32, owned expected: List[Byte]) raises:
     var char_opt = Char.from_u32(codepoint)
     var char = char_opt.value()
@@ -123,60 +159,21 @@ fn assert_utf8_bytes(codepoint: UInt32, owned expected: List[Byte]) raises:
 
 
 def test_char_utf8_encoding():
-    assert_utf8_bytes(0, List[Byte](0))
-    assert_utf8_bytes(1, List[Byte](1))
-    assert_utf8_bytes(127, List[Byte](127))
+    for entry in SIGNIFICANT_CODEPOINTS:
+        var codepoint = entry[][0]
+        var expected_utf8 = entry[][1]
 
-    # Smallest 2-byte codepoint
-    assert_utf8_bytes(128, List[Byte](0b1100_0010, 0b1000_0000))
-    # Largest 2-byte codepoint
-    assert_utf8_bytes(2**11 - 1, List[Byte](0b1101_1111, 0b1011_1111))
-
-    # Smallest 3-byte codepoint -- 2^11 == 2048
-    assert_utf8_bytes(
-        2**11, List[Byte](0b1110_0000, 0b1010_0000, 0b1000_0000)
-    )
-    # Largest 3-byte codepoint -- 2^16 - 1 == 65535 == 0xFFFF
-    assert_utf8_bytes(
-        2**16 - 1, List[Byte](0b1110_1111, 0b1011_1111, 0b1011_1111)
-    )
-
-    # Smallest 4-byte codepoint
-    assert_utf8_bytes(
-        2**16, List[Byte](0b1111_0000, 0b1001_0000, 0b1000_0000, 0b1000_0000)
-    )
-    # Largest 4-byte codepoint -- Maximum Unicode codepoint
-    assert_utf8_bytes(
-        0x10FFFF, List[Byte](0b1111_0100, 0b1000_1111, 0b1011_1111, 0b1011_1111)
-    )
+        assert_utf8_bytes(codepoint, expected_utf8)
 
 
 def test_char_utf8_byte_length():
-    fn codepoint_len(cp: UInt32) -> Int:
-        return Char.from_u32(cp).value().utf8_byte_length()
+    for entry in SIGNIFICANT_CODEPOINTS:
+        var codepoint = entry[][0]
+        var expected_utf8 = entry[][1]
 
-    # 1-byte (ASCII) codepoints
-    assert_equal(codepoint_len(0), 1)
-    assert_equal(codepoint_len(32), 1)
-    assert_equal(codepoint_len(127), 1)
+        var computed_len = Char.from_u32(codepoint).value().utf8_byte_length()
 
-    # 2-byte codepoints -- 0b110x_xxxx 0b10xx_xxxx (11 x's)
-    # Smallest 2-byte codepoint
-    assert_equal(codepoint_len(128), 2)
-    # Largest 2-byte codepoint
-    assert_equal(codepoint_len(2**11 - 1), 2)  # 2^11 - 1 == 2047
-
-    # 3-byte codepoints -- 0b1110_xxxx 0b10xx_xxxx 0b10xx_xxxx (16 x's)
-    # Smallest 3-byte codepoint
-    assert_equal(codepoint_len(2**11), 3)  # 2^11 == 2048
-    # Largest 3-byte codepoint
-    assert_equal(codepoint_len(2**16 - 1), 3)  # 2^16 - 1 == 65535 == 0xFFFF
-
-    # 4-byte codepoints 0b1111_0xxx 0b10xx_xxxx 0b10xx_xxxx 0b10xx_xxxx (21 x's)
-    # Smallest 4-byte codepoint
-    assert_equal(codepoint_len(2**16), 4)
-    # Largest 4-byte codepoint
-    assert_equal(codepoint_len(0x10FFFF), 4)  # Maximum Unicode codepoint
+        assert_equal(computed_len, len(expected_utf8))
 
 
 def test_char_comptime():
