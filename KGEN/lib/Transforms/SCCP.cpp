@@ -256,8 +256,8 @@ void SCCPAnalysis::visitOperation(Operation *op, AnalysisStateType &state) {
       (void)lattice->join(ConstantValue(attr, op->getDialect()));
     } else {
       LLVM_DEBUG(llvm::dbgs()
-                 << "Folded to value: " << foldResult.get<Value>() << "\n");
-      (void)lattice->join(*getLatticeElement(foldResult.get<Value>(), state));
+                 << "Folded to value: " << cast<Value>(foldResult) << "\n");
+      (void)lattice->join(*getLatticeElement(cast<Value>(foldResult), state));
     }
   }
 }

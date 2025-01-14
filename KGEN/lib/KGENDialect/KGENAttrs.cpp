@@ -2377,7 +2377,7 @@ static Attribute simplifyApply(ArrayRef<TypedAttr> operands, Type &resultType) {
       return cast<TypedAttr>(result);
     // If the fold hook returned an operation, just look up the corresponding
     // input.
-    return operands[cast<BlockArgument>(results.front().get<Value>())
+    return operands[cast<BlockArgument>(cast<Value>(results.front()))
                         .getArgNumber()];
   }
 

@@ -37,7 +37,7 @@ struct IndexOpInterpretInterface
 
             SmallVector<Attribute> results =
                 llvm::map_to_vector(foldResults, [](OpFoldResult foldResult) {
-                  return foldResult.get<Attribute>();
+                  return cast<Attribute>(foldResult);
                 });
             state.mapResults(results);
             return success();

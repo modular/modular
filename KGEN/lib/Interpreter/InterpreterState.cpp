@@ -804,7 +804,7 @@ IRInterpreter::interpretOpWithFolder(Operation *op,
     if (auto value = llvm::dyn_cast<Attribute>(result))
       mapOrOverwrite(output, value);
     else
-      mapOrOverwrite(output, lookupValue(result.get<Value>()));
+      mapOrOverwrite(output, lookupValue(cast<Value>(result)));
   }
   return success();
 }
