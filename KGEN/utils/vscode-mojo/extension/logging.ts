@@ -57,7 +57,19 @@ export class LogChannel {
    *
    * @param message The message to append to the output channel
    */
-  public logDebug(message: string, data?: unknown): void {
+  public trace(message: string, data?: unknown): void {
+    this.log(LogLevel.Trace, message);
+    if (data) {
+      this.log(LogLevel.Trace, data);
+    }
+  }
+
+  /**
+   * Append messages to the output channel and format it with a title
+   *
+   * @param message The message to append to the output channel
+   */
+  public debug(message: string, data?: unknown): void {
     this.log(LogLevel.Debug, message);
     if (data) {
       this.log(LogLevel.Debug, data);
@@ -69,7 +81,7 @@ export class LogChannel {
    *
    * @param message The message to append to the output channel
    */
-  public logInfo(message: string, data?: unknown): void {
+  public info(message: string, data?: unknown): void {
     this.log(LogLevel.Info, message);
     if (data) {
       this.log(LogLevel.Info, data);
@@ -81,14 +93,14 @@ export class LogChannel {
    *
    * @param message The message to append to the output channel
    */
-  public logWarning(message: string, data?: unknown): void {
+  public warn(message: string, data?: unknown): void {
     this.log(LogLevel.Warn, message);
     if (data) {
       this.log(LogLevel.Warn, data);
     }
   }
 
-  public logError(message: string, error?: unknown) {
+  public error(message: string, error?: unknown) {
     this.log(LogLevel.Error, message);
     if (typeof error === 'string') {
       // Errors as a string usually only happen with plugins that don't return

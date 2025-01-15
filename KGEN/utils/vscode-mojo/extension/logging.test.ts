@@ -24,43 +24,57 @@ suite('Logging', () => {
     channel.logCallback = callback;
 
     channel.setOutputLevel(LogLevel.None);
-    channel.logError('error');
-    channel.logWarning('warn');
-    channel.logInfo('info');
-    channel.logDebug('debug');
+    channel.error('error');
+    channel.warn('warn');
+    channel.info('info');
+    channel.debug('debug');
+    channel.trace('trace');
     assert.deepStrictEqual(lines, []);
     lines.length = 0;
 
     channel.setOutputLevel(LogLevel.Error);
-    channel.logError('error');
-    channel.logWarning('warn');
-    channel.logInfo('info');
-    channel.logDebug('debug');
+    channel.error('error');
+    channel.warn('warn');
+    channel.info('info');
+    channel.debug('debug');
+    channel.trace('trace');
     assert.deepStrictEqual(lines, ['error']);
     lines.length = 0;
 
     channel.setOutputLevel(LogLevel.Warn);
-    channel.logError('error');
-    channel.logWarning('warn');
-    channel.logInfo('info');
-    channel.logDebug('debug');
+    channel.error('error');
+    channel.warn('warn');
+    channel.info('info');
+    channel.debug('debug');
+    channel.trace('trace');
     assert.deepStrictEqual(lines, ['error', 'warn']);
     lines.length = 0;
 
     channel.setOutputLevel(LogLevel.Info);
-    channel.logError('error');
-    channel.logWarning('warn');
-    channel.logInfo('info');
-    channel.logDebug('debug');
+    channel.error('error');
+    channel.warn('warn');
+    channel.info('info');
+    channel.debug('debug');
+    channel.trace('trace');
     assert.deepStrictEqual(lines, ['error', 'warn', 'info']);
     lines.length = 0;
 
     channel.setOutputLevel(LogLevel.Debug);
-    channel.logError('error');
-    channel.logWarning('warn');
-    channel.logInfo('info');
-    channel.logDebug('debug');
+    channel.error('error');
+    channel.warn('warn');
+    channel.info('info');
+    channel.debug('debug');
+    channel.trace('trace');
     assert.deepStrictEqual(lines, ['error', 'warn', 'info', 'debug']);
+    lines.length = 0;
+
+    channel.setOutputLevel(LogLevel.Trace);
+    channel.error('error');
+    channel.warn('warn');
+    channel.info('info');
+    channel.debug('debug');
+    channel.trace('trace');
+    assert.deepStrictEqual(lines, ['error', 'warn', 'info', 'debug', 'trace']);
     lines.length = 0;
   });
 });

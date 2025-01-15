@@ -88,7 +88,7 @@ export class MAXSDKConfig {
         env: { ...process.env },
         encoding: 'utf-8',
       });
-      logger.main.logInfo(
+      logger.main.info(
         `${driverPath} --version results\n` + stderr + '\n' + stdout,
       );
 
@@ -117,7 +117,7 @@ export class MAXSDKConfig {
         driverPath,
       );
     } catch (e) {
-      logger.main.logError('Unable to parse version from `mojo` driver: ', e);
+      logger.main.error('Unable to parse version from `mojo` driver: ', e);
       return undefined;
     }
   }
