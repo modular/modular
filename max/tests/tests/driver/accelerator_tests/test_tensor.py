@@ -14,15 +14,15 @@ from max.dtype import DType
 
 
 @pytest.mark.skipif(accelerator_api() == "hip", reason="KERN-1454")
-def test_from_numpy_cuda():
-    # A user should be able to create a GPU tensor from a numpy array.
+def test_from_numpy_accelerator():
+    # A user should be able to create an accelerator tensor from a numpy array.
     arr = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
     tensor = Tensor.from_numpy(arr).to(Accelerator())
     assert tensor.shape == (2, 3)
     assert tensor.dtype == DType.int32
 
 
-def test_is_host_cuda():
+def test_is_host_accelerator():
     # Accelerator tensors should be marked as not being on-host.
     assert not Tensor((1, 1), DType.int32, device=Accelerator()).is_host
 
@@ -42,12 +42,12 @@ def test_host_device_copy():
 
 def test_device_device_copy():
     # We should be able to freely copy tensors between device and device.
-    cuda = Accelerator()
+    acc = Accelerator()
 
     device_tensor1 = Tensor.from_numpy(np.array([1, 2, 3], dtype=np.int32)).to(
-        cuda
+        acc
     )
-    device_tensor2 = device_tensor1.copy(cuda)
+    device_tensor2 = device_tensor1.copy(acc)
     tensor = device_tensor2.copy(CPU())
 
     assert tensor.shape == device_tensor1.shape
@@ -63,26 +63,26 @@ def test_torch_tensor_conversion():
     # Accelerator-compatible version of torch available yet.
     torch_tensor = torch.reshape(torch.arange(1, 11, dtype=torch.int32), (2, 5))
     host_tensor = Tensor.from_dlpack(torch_tensor)
-    gpu_tensor = host_tensor.to(Accelerator())
-    assert gpu_tensor.shape == (2, 5)
-    assert gpu_tensor.dtype == DType.int32
-    host_tensor = gpu_tensor.to(CPU())
+    acc_tensor = host_tensor.to(Accelerator())
+    assert acc_tensor.shape == (2, 5)
+    assert acc_tensor.dtype == DType.int32
+    host_tensor = acc_tensor.to(CPU())
     torch_tensor_copy = torch.from_dlpack(host_tensor)
     assert torch.all(torch.eq(torch_tensor, torch_tensor_copy))
 
 
 def test_to_device():
     cpu = CPU()
-    cuda = Accelerator()
+    acc = Accelerator()
 
     host_tensor = Tensor((3, 3), dtype=DType.int32, device=cpu)
-    gpu_tensor = host_tensor.to(cuda)
+    acc_tensor = host_tensor.to(acc)
 
     assert cpu == host_tensor.device
-    assert cuda == gpu_tensor.device
+    assert acc == acc_tensor.device
 
-    assert cuda != host_tensor.device
-    assert cpu != gpu_tensor.device
+    assert acc != host_tensor.device
+    assert cpu != acc_tensor.device
 
 
 def test_zeros():
@@ -110,20 +110,20 @@ DLPACK_DTYPES = {
 
 
 @pytest.mark.skipif(accelerator_api() == "hip", reason="KERN-1454")
-def test_dlpack_gpu():
+def test_dlpack_accelerator():
     # TODO(MSDK-897): improve test coverage with different shapes and strides.
     for dtype, torch_dtype in DLPACK_DTYPES.items():
         tensor = Tensor((1, 4), dtype)
         for j in range(4):
             tensor[0, j] = j
-        gpu_tensor = tensor.to(Accelerator())
+        acc_tensor = tensor.to(Accelerator())
 
-        torch_tensor = torch.from_dlpack(gpu_tensor)
+        torch_tensor = torch.from_dlpack(acc_tensor)
         assert torch_tensor.dtype == torch_dtype
-        assert gpu_tensor.shape == torch_tensor.shape
+        assert acc_tensor.shape == torch_tensor.shape
 
         torch_tensor[0, 0] = 7
-        assert gpu_tensor[0, 0].to(CPU()).item() == 7
+        assert acc_tensor[0, 0].to(CPU()).item() == 7
 
 
 @pytest.mark.skipif(accelerator_api() == "hip", reason="KERN-1454")
@@ -131,12 +131,12 @@ def test_from_dlpack():
     # TODO(MSDK-897): improve test coverage with different shapes and strides.
     for dtype, torch_dtype in DLPACK_DTYPES.items():
         torch_tensor = torch.tensor([0, 1, 2, 3], dtype=torch_dtype).cuda()
-        gpu_tensor = Tensor.from_dlpack(torch_tensor)
-        assert gpu_tensor.dtype == dtype
-        assert gpu_tensor.shape == torch_tensor.shape
+        acc_tensor = Tensor.from_dlpack(torch_tensor)
+        assert acc_tensor.dtype == dtype
+        assert acc_tensor.shape == torch_tensor.shape
 
         torch_tensor[0] = 7
-        assert gpu_tensor[0].to(CPU()).item() == 7
+        assert acc_tensor[0].to(CPU()).item() == 7
 
 
 def test_dlpack_device():
@@ -152,21 +152,21 @@ def test_dlpack_device():
 
 
 def test_scalar():
-    # We should be able to create scalar values on GPUs.
-    cuda = Accelerator()
-    scalar = Tensor.scalar(5, DType.int32, device=cuda)
-    assert scalar.device == cuda
+    # We should be able to create scalar values on accelerators.
+    acc = Accelerator()
+    scalar = Tensor.scalar(5, DType.int32, device=acc)
+    assert scalar.device == acc
 
     host_scalar = scalar.to(CPU())
     assert host_scalar.item() == 5
 
 
-def test_gpu_to_numpy():
-    cuda = Accelerator()
-    tensor = Tensor.zeros((3, 3), DType.int32, device=cuda)
+def test_accelerator_to_numpy():
+    acc = Accelerator()
+    tensor = Tensor.zeros((3, 3), DType.int32, device=acc)
 
     with pytest.raises(
         RuntimeError,
-        match=re.escape(f"Cannot convert tensor on {cuda} to numpy"),
+        match=re.escape(f"Cannot convert tensor on {acc} to numpy"),
     ):
         tensor.to_numpy()
