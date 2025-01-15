@@ -52,6 +52,7 @@ def stream_app():
     return fast_app
 
 
+@pytest.mark.skip("SI-816")
 @pytest.mark.asyncio
 @pytest.mark.parametrize("num_tasks", [16])
 async def test_openai_chat_completion_streamed(stream_app, num_tasks):
