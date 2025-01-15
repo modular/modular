@@ -68,7 +68,7 @@ struct _fdopen[mode: StringLiteral = "a"]:
         """Closes the file handle."""
         _ = fclose(self.handle)
 
-    fn readline(self) -> String:
+    fn readline(self) raises -> String:
         """Reads an entire line from stdin or until EOF. Lines are delimited by a newline character.
 
         Returns:
@@ -95,7 +95,7 @@ struct _fdopen[mode: StringLiteral = "a"]:
         """
         return self.read_until_delimiter("\n")
 
-    fn read_until_delimiter(self, delimiter: StringSlice) -> String:
+    fn read_until_delimiter(self, delimiter: StringSlice) raises -> String:
         """Reads an entire line from a stream, up to the `delimiter`.
         Does not include the delimiter in the result.
 
@@ -140,6 +140,13 @@ struct _fdopen[mode: StringLiteral = "a"]:
             ord(delimiter),
             self.handle,
         )
+        # Per man getdelim(3), getdelim will return -1 if an error occurs
+        # (or the user sends EOF without providing any input). We must
+        # raise an error in this case because otherwise, String() will crash mojo
+        # if the user sends EOF with no input.
+        # TODO: check errno to ensure we haven't encountered EINVAL or ENOMEM instead
+        if bytes_read == -1:
+            raise Error("EOF")
         # Copy the buffer (excluding the delimiter itself) into a Mojo String.
         var s = String(StringRef(buffer, bytes_read - 1))
         # Explicitly free the buffer using free() instead of the Mojo allocator.
@@ -283,7 +290,7 @@ fn print[
 # ===----------------------------------------------------------------------=== #
 
 
-fn input(prompt: String = "") -> String:
+fn input(prompt: String = "") raises -> String:
     """Reads a line of input from the user.
 
     Reads a line from standard input, converts it to a string, and returns that string.
