@@ -72,7 +72,6 @@ modular_py_test(
         "//KGEN:CompilerRT",
         "@llvm-project//compiler-rt:orc_rt",
     ],
-    requires_gpu = False,
     tags = [
         "huggingface",
         "no-remote-exec",
@@ -226,7 +225,6 @@ modular_py_test(
         "//KGEN:CompilerRT",
         "@llvm-project//compiler-rt:orc_rt",
     ],
-    requires_gpu = False,
     tags = [
         "huggingface",
         "no-remote-exec",

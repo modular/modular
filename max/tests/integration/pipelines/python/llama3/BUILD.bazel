@@ -94,7 +94,6 @@ modular_py_binary(
                 "$(location //Support/tools/system-info)"
             ),
         },
-        requires_gpu = False,
         tags = [
             "huggingface",
             "no-remote-exec",

@@ -21,7 +21,6 @@ modular_py_test(
         "//ModularFramework/tools/mof",
         "@llvm-project//compiler-rt:orc_rt",
     ],
-    requires_gpu = False,
     tags = [
         "huggingface",
         "no-remote-exec",

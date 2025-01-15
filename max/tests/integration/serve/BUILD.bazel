@@ -18,7 +18,6 @@ modular_py_test(
     env = {
         "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/llama3/testdata",
     },
-    requires_gpu = False,
     tags = [
         "requires-network",
     ],

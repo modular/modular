@@ -15,7 +15,6 @@ modular_py_test(
         "//Support/tools/system-info",
         "@llvm-project//compiler-rt:orc_rt",
     ],
-    requires_gpu = False,
     tags = [
         "huggingface",
         "no-remote-exec",
@@ -65,7 +64,6 @@ modular_py_test(
         "//Support/tools/system-info",
         "@llvm-project//compiler-rt:orc_rt",
     ],
-    requires_gpu = False,
     target_compatible_with = select({
         # TODO: Sanitizer libs aren't available when python loads pybind shared libs
         "//:asan": ["@platforms//:incompatible"],
