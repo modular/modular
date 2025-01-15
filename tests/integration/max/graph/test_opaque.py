@@ -36,13 +36,8 @@ def bumper_model(session: InferenceSession, counter_ops_path: Path) -> Model:
     counter_type = _OpaqueType("Counter")
     bumper_graph = Graph("bumper", input_types=[counter_type], output_types=[])
     with bumper_graph:
-        # TODO(MSDK-950): Avoid DCE in the graph compiler and remove return value.
-        c = ops.inplace_custom(
-            "bump_counter",
-            [bumper_graph.inputs[0]],
-            [TensorType(DType.bool, [1])],
-        )
-        bumper_graph.output(c[0])
+        ops.inplace_custom("bump_counter", [bumper_graph.inputs[0]], [])
+        bumper_graph.output()
     bumper_compiled = session.load(
         bumper_graph, custom_extensions=counter_ops_path
     )
