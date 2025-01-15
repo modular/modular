@@ -51,7 +51,10 @@ from runtime.tracing import Trace, TraceLevel, trace_arg
 from utils.index import Index, IndexList
 
 # ===-----------------------------------------------------------------------===#
-# Fused QKV Matmul
+# Fused QKV matmul (ragged)
+#
+# Expected kernel name format:
+# mo.fused_qkv_matmul.ragged.<continuous_batching/paged>.nhead_<NUM_HEADS>.hdim_<HEAD_SIZE>
 # ===-----------------------------------------------------------------------===#
 
 
@@ -1010,7 +1013,10 @@ fn _matmul_common[
 
 
 # ===-----------------------------------------------------------------------===#
-# Unfused KV cache matmul
+# Unfused KV cache matmul (ragged)
+#
+# Expected kernel name format:
+# mo.kv_matmul.ragged.<continuous_batching/paged>.nhead_<NUM_HEADS>.hdim_<HEAD_SIZE>
 # ===-----------------------------------------------------------------------===#
 
 
@@ -1217,7 +1223,10 @@ fn _matmul_kv_cache_ragged_impl[
 
 
 # ===-----------------------------------------------------------------------===#
-# Fused QK Rope
+# Fused QK RoPE (ragged)
+#
+# Expected kernel name format:
+# mo.fused_qk_rope.ragged.<continuous_batching/paged>.nhead_<NUM_HEADS>.hdim_<HEAD_SIZE>
 # ===-----------------------------------------------------------------------===#
 
 
@@ -2036,7 +2045,10 @@ fn fused_qk_rope_ragged_paged_nhead_32_hdim_128[
 
 
 # ===-----------------------------------------------------------------------===#
-#   Flash Attention
+# MHA (ragged)
+#
+# Expected kernel name format:
+# mo.mha.ragged.<continuous_batching/paged>.<MASK_TYPE>.<POS_TYPE>.nhead_<NUM_HEADS>.hdim_<HEAD_SIZE>
 # ===-----------------------------------------------------------------------===#
 
 
@@ -2456,87 +2468,6 @@ fn _cross_attention_kv_cache_ragged[
             scale,
             context.get_device_context(),
         )
-
-
-@always_inline
-fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged[
-    type: DType, //, target: StringLiteral
-](
-    q: NDBuffer[type, 3, *_],
-    q_input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    q_max_seq_len: NDBuffer[DType.uint32, 1, *_],
-    kv_input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    kv_collection: ContinuousBatchingKVCacheCollection,
-    layer_idx: UInt32,
-    scale: Float32,
-    output: NDBuffer[type, 3, *_],
-    context: MojoCallContextPtr,
-) raises:
-    @always_inline
-    @parameter
-    fn description_fn() -> String:
-        return String(";").join(
-            trace_arg("output", output),
-            trace_arg("q", q),
-            trace_arg("q_input_row_offsets", q_input_row_offsets),
-            trace_arg("kv_input_row_offsets", kv_input_row_offsets),
-            "layer_idx=" + str(layer_idx),
-            "num_heads=" + str(kv_collection.kv_params.num_heads),
-            "head_size=" + str(kv_collection.kv_params.head_size),
-        )
-
-    with Trace[TraceLevel.OP, target=target](
-        "mo.cross_attention.ragged.continuous_batching.null_mask.no_pos.nhead_"
-        + str(kv_collection.kv_params.num_heads)
-        + ".hdim_"
-        + str(kv_collection.kv_params.head_size),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-    ):
-        return _cross_attention_kv_cache_ragged[
-            kv_collection.CacheType, target=target
-        ](
-            q,
-            q_input_row_offsets,
-            q_max_seq_len[0],
-            kv_input_row_offsets,
-            kv_collection,
-            layer_idx,
-            NullMask(),
-            scale,
-            output,
-            context,
-        )
-
-
-@register_internal(
-    "mo.cross_attention.ragged.continuous_batching.null_mask.no_pos.nhead_8.hdim_128"
-)
-fn cross_attention_kv_cache_ragged_continuous_batching_null_mask_no_pos_nhead_8_hdim_128[
-    type: DType, //, target: StringLiteral
-](
-    q: NDBuffer[type, 3, *_],
-    q_input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    q_max_seq_len: NDBuffer[DType.uint32, 1, *_],
-    kv_input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    kv_collection: ContinuousBatchingKVCacheCollection[
-        type, kv_params_h8_d128_bshd
-    ],
-    layer_idx: UInt32,
-    scale: Float32,
-    output: NDBuffer[type, 3, *_],
-    context: MojoCallContextPtr,
-) raises:
-    generic_cross_attention_kv_cache_null_mask_cont_batch_ragged[target=target](
-        q,
-        q_input_row_offsets,
-        q_max_seq_len,
-        kv_input_row_offsets,
-        kv_collection,
-        layer_idx,
-        scale,
-        output,
-        context,
-    )
 
 
 @register_internal(
@@ -3105,5 +3036,94 @@ fn _flash_attention_kv_cache_alibi_mask_ragged_gpu[
         AlibiScoreMod[num_q_heads](),
         input_row_offsets,
         scale,
+        context,
+    )
+
+
+# ===-----------------------------------------------------------------------===#
+# Cross attention (ragged)
+#
+# Expected kernel name format:
+# mo.cross_attention.ragged.<continuous_batching/paged>.<MASK_TYPE>.<POS_TYPE>.nhead_<NUM_HEADS>.hdim_<HEAD_SIZE>
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged[
+    type: DType, //, target: StringLiteral
+](
+    q: NDBuffer[type, 3, *_],
+    q_input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    q_max_seq_len: NDBuffer[DType.uint32, 1, *_],
+    kv_input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection,
+    layer_idx: UInt32,
+    scale: Float32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr,
+) raises:
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            trace_arg("output", output),
+            trace_arg("q", q),
+            trace_arg("q_input_row_offsets", q_input_row_offsets),
+            trace_arg("kv_input_row_offsets", kv_input_row_offsets),
+            "layer_idx=" + str(layer_idx),
+            "num_heads=" + str(kv_collection.kv_params.num_heads),
+            "head_size=" + str(kv_collection.kv_params.head_size),
+        )
+
+    with Trace[TraceLevel.OP, target=target](
+        "mo.cross_attention.ragged.continuous_batching.null_mask.no_pos.nhead_"
+        + str(kv_collection.kv_params.num_heads)
+        + ".hdim_"
+        + str(kv_collection.kv_params.head_size),
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+        return _cross_attention_kv_cache_ragged[
+            kv_collection.CacheType, target=target
+        ](
+            q,
+            q_input_row_offsets,
+            q_max_seq_len[0],
+            kv_input_row_offsets,
+            kv_collection,
+            layer_idx,
+            NullMask(),
+            scale,
+            output,
+            context,
+        )
+
+
+@register_internal(
+    "mo.cross_attention.ragged.continuous_batching.null_mask.no_pos.nhead_8.hdim_128"
+)
+fn cross_attention_kv_cache_ragged_continuous_batching_null_mask_no_pos_nhead_8_hdim_128[
+    type: DType, //, target: StringLiteral
+](
+    q: NDBuffer[type, 3, *_],
+    q_input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    q_max_seq_len: NDBuffer[DType.uint32, 1, *_],
+    kv_input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type, kv_params_h8_d128_bshd
+    ],
+    layer_idx: UInt32,
+    scale: Float32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr,
+) raises:
+    generic_cross_attention_kv_cache_null_mask_cont_batch_ragged[target=target](
+        q,
+        q_input_row_offsets,
+        q_max_seq_len,
+        kv_input_row_offsets,
+        kv_collection,
+        layer_idx,
+        scale,
+        output,
         context,
     )

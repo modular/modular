@@ -55,6 +55,14 @@ alias kv_params_h8_d64_bshd = KVCacheStaticParams(num_heads=8, head_size=64)
 alias kv_params_h32_d128_bshd = KVCacheStaticParams(num_heads=32, head_size=128)
 
 
+# ===-----------------------------------------------------------------------===#
+# Fused QKV matmul (padded)
+#
+# Expected kernel name format:
+# mo.fused_qkv_matmul.padded.<continuous_batching/paged>.nhead_<NUM_HEADS>.hdim_<HEAD_SIZE>
+# ===-----------------------------------------------------------------------===#
+
+
 @always_inline
 fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
     type: DType,
@@ -482,6 +490,14 @@ fn _matmul_common[
         c_nd.data.free()
 
 
+# ===-----------------------------------------------------------------------===#
+# Fused QK RoPE (padded)
+
+# Expected kernel name format:
+# mo.fused_qk_rope.padded.<continuous_batching/paged>.nhead_<NUM_HEADS>.hdim_<HEAD_SIZE>
+# ===-----------------------------------------------------------------------===#
+
+
 @always_inline
 fn generic_fused_qk_rope_bshd_continuous_batch[
     target: StringLiteral, type: DType
@@ -689,6 +705,14 @@ fn fused_qk_rope_padded_continuous_batching_nhead_8_hdim_64[
         output,
         context,
     )
+
+
+# ===-----------------------------------------------------------------------===#
+# MHA (padded)
+#
+# Expected kernel name format:
+# mo.mha.padded.<continuous_batching/paged>.<MASK_TYPE>.<POS_TYPE>.nhead_<NUM_HEADS>.hdim_<HEAD_SIZE>
+# ===-----------------------------------------------------------------------===#
 
 
 @always_inline
@@ -1619,6 +1643,14 @@ fn _flash_attention_kv_cache_causal_alibi_mask_gpu[
     )
 
 
+# ===-----------------------------------------------------------------------===#
+# RMSNorm
+#
+# Expected kernel name format:
+# mo.rms_norm_kv_cache.<padded/ragged>.<continuous_batching/paged>.nhead_<NUM_HEADS>.hdim_<HEAD_SIZE>
+# ===-----------------------------------------------------------------------===#
+
+
 @register_internal(
     "mo.rms_norm_kv_cache.ragged.continuous_batching.nhead_8.hdim_128"
 )
@@ -1703,6 +1735,14 @@ def rms_norm_kv_cache_ragged_continuous_batching_nhead_8_hdim_128[
         _rms_norm_impl[
             type, rank, key_cache_input_fn, key_cache_output_fn, target=target
         ](shape, gamma, epsilon, context)
+
+
+# ===-----------------------------------------------------------------------===#
+# Print KV Cache
+#
+# Expected kernel name format:
+# mo.print_kv_cache.<continuous_batching/paged>.nhead_<NUM_HEADS>.hdim_<HEAD_SIZE>
+# ===-----------------------------------------------------------------------===#
 
 
 @register_internal(
@@ -1978,6 +2018,14 @@ def print_kv_cache_cont_batch_generic_gpu[
     cache_lengths_host_nd.data.free()
     lookup_table_host_nd.data.free()
     valid_lengths_host_nd.data.free()
+
+
+# ===-----------------------------------------------------------------------===#
+# KV Collection Constructors (Ctor)
+#
+# Expected kernel name format:
+# mo.kv_collection_ctor.<continuous_batching/paged>.nhead_<NUM_HEADS>.hdim_<HEAD_SIZE>
+# ===-----------------------------------------------------------------------===#
 
 
 fn _continuous_batch_kv_cache_collection[
