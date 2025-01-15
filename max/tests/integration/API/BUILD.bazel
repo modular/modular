@@ -23,10 +23,15 @@ filegroup(
 lit_tests(
     name = "test",
     size = "large",
-    srcs = glob([
-        "**/*.api",
-        "**/*.mojo",
-    ]),
+    srcs = glob(
+        [
+            "**/*.api",
+            "**/*.mojo",
+        ],
+        exclude = [
+            "mojo/test_devicetensor_gpu.mojo",
+        ],
+    ),
     available_features = [
         "mtorch",
         "numpy",
@@ -54,16 +59,12 @@ lit_tests(
     env = {
         "MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false",
     },
-    gpu_only_srcs = [
-        "mojo/test_devicetensor_gpu.mojo",
-    ],
     mojo_deps = [
         "//SDK/lib/API/mojo/max/max",
         "//open-source/mojo/stdlib/stdlib",
         "//Kernels/mojo/register",
     ],
     tags = [
-        "gpu",
         "no-sandbox",  # These tests use openmp which validates only 1 shared library is loaded at the same time, the libraries in the sandbox appear different so running them in parallel fails otherwise.
     ],
     target_compatible_with = select({
@@ -81,4 +82,28 @@ lit_tests(
         requirement("torch"),
         requirement("torchvision"),
     ],
+)
+
+lit_tests(
+    name = "gpu-test",
+    size = "large",
+    srcs = ["mojo/test_devicetensor_gpu.mojo"],
+    data = [
+        ":inputs",
+        "//GenericML:DeviceDriver",
+        "//GenericML:MGPRT",
+        "//GenericML:modular-framework-common",
+        "//KGEN:CompilerRT",
+        "//ModularFramework/tools/mof",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    env = {
+        "MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false",
+    },
+    mojo_deps = [
+        "//SDK/lib/API/mojo/max/max",
+        "//open-source/mojo/stdlib/stdlib",
+    ],
+    tags = ["gpu"],
+    tools = ["//KGEN/tools/mojo"],
 )
