@@ -123,6 +123,7 @@ modular_cc_library(
     deps = [
         ":DeviceBufferCache",
         ":DeviceContext.headers",
+        "//Support:Configuration",
     ],
 )
 
