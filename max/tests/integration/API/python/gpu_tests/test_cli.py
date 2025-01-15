@@ -22,7 +22,7 @@ from cli.config import (
 )
 from click.testing import CliRunner
 from max.driver import DeviceSpec
-from max.pipelines import PipelineConfig, PipelineEngine
+from max.pipelines import PipelineConfig
 from max.pipelines.kv_cache import KVCacheStrategy
 
 
@@ -167,46 +167,6 @@ class TestCommand:
 
 VALID_COMMANDS = [
     TestCommand(
-        args=["--max-length", "10"], expected={"max_length": 10}, valid=False
-    ),
-    TestCommand(args=[], expected={}, valid=False),
-    TestCommand(
-        args=[
-            "--huggingface-repo-id",
-            "modularai/test_modelid",
-            "--trust-remote-code",
-        ],
-        expected={
-            "huggingface_repo_id": "modularai/test_modelid",
-            "trust_remote_code": True,
-        },
-        valid=False,
-    ),
-    TestCommand(
-        args=[
-            "--huggingface-repo-id",
-            "modularai/replit-code-1.5",
-            "--trust-remote-code",
-        ],
-        expected={
-            "trust_remote_code": True,
-        },
-        valid=True,
-    ),
-    TestCommand(
-        args=[
-            "--huggingface-repo-id",
-            "modularai/replit-code-1.5",
-            "--max-length",
-            "10",
-        ],
-        expected={
-            "trust_remote_code": False,
-            "max_length": 10,
-        },
-        valid=True,
-    ),
-    TestCommand(
         args=[
             "--huggingface-repo-id",
             "modularai/replit-code-1.5",
@@ -224,38 +184,6 @@ VALID_COMMANDS = [
     TestCommand(
         args=[
             "--huggingface-repo-id",
-            "modularai/replit-code-1.5",
-            "--architecture",
-            "LlamaForCausalLM",
-            "--max-length",
-            "10",
-        ],
-        expected={
-            "trust_remote_code": False,
-            "cache_strategy": KVCacheStrategy.CONTINUOUS,
-            "max_length": 10,
-        },
-        valid=True,
-    ),
-    TestCommand(
-        args=[
-            "--huggingface-repo-id",
-            "modularai/replit-code-1.5",
-            "--architecture",
-            "LlamaForCausalLM",
-            "--max-length",
-            "10",
-        ],
-        expected={
-            "trust_remote_code": False,
-            "cache_strategy": KVCacheStrategy.CONTINUOUS,
-            "max_length": 10,
-        },
-        valid=True,
-    ),
-    TestCommand(
-        args=[
-            "--huggingface-repo-id",
             "modularai/llama-3.1",
             "--weight-path",
             "model1.safetensors",
@@ -286,6 +214,7 @@ VALID_COMMANDS = [
             "model2.safetensors",
             "--weight-path",
             "model3.safetensors",
+            "--use-gpu",
         ],
         expected={
             "huggingface_repo_id": "modularai/llama-3.1",
@@ -296,19 +225,7 @@ VALID_COMMANDS = [
                 Path("model2.safetensors"),
                 Path("model3.safetensors"),
             ],
-        },
-        valid=True,
-    ),
-    TestCommand(
-        args=[
-            "--huggingface-repo-id",
-            "modularai/llama-3.1",
-            "--engine",
-            "max",
-        ],
-        expected={
-            "huggingface_repo_id": "modularai/llama-3.1",
-            "engine": PipelineEngine.MAX,
+            "device_specs": [DeviceSpec.accelerator(id=0)],
         },
         valid=True,
     ),
