@@ -22,6 +22,11 @@ Its implementation closely mirrors Python's `dict` implementation:
 - Insertion order is implicitly preserved. Iteration over keys, values, and
   items have a deterministic order based on insertion.
 
+- For more information on the Mojo `Dict` type, see the
+  [Mojo `Dict` manual](/mojo/manual/types/#dict). To learn more about using
+  Python dictionaries from Mojo, see
+  [Python types in Mojo](/mojo/manual/python/types/#python-types-in-mojo).
+
 Key elements must implement the `KeyElement` trait, which encompasses
 Movable, Hashable, and EqualityComparable. It also includes CollectionElement
 and Copyable until we push references through the standard library types.
@@ -380,6 +385,11 @@ struct Dict[K: KeyElement, V: CollectionElement](
         K: The type of the dictionary key. Must be Hashable and EqualityComparable
            so we can find the key in the map.
         V: The value type of the dictionary. Currently must be CollectionElement.
+
+    For more information on the Mojo `Dict` type, see the
+    [Mojo `Dict` manual](/mojo/manual/types/#dict). To learn more about using
+    Python dictionaries from Mojo, see
+    [Python types in Mojo](/mojo/manual/python/types/#python-types-in-mojo).
     """
 
     # Implementation:
