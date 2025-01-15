@@ -53,16 +53,16 @@ fn make_counter() -> Counter:
     return Counter()
 
 
-# TODO(MSDK-950): Avoid DCE in the graph compiler and remove return value.
 @register_internal("bump_counter")
-fn bump_counter(mut c: Counter, output: NDBuffer[DType.bool, 1, DimList(1)]):
+fn bump_counter(mut c: Counter) -> None:
     print("bumping")
     c.bump()
-    output[0] = True
 
 
 @register_internal("read_counter")
-fn read_counter(c: Counter, output: NDBuffer[DType.int32, 1, DimList(2)]):
+fn read_counter(
+    c: Counter, output: NDBuffer[DType.int32, 1, DimList(2)]
+) -> None:
     output[0] = c.a
     output[1] = c.b
 
