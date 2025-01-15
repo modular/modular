@@ -116,6 +116,11 @@ class Device:
         """
         return self._device.id
 
+    @property
+    def is_compatible_with_max(self) -> bool:
+        """Returns whether this device is compatible with MAX."""
+        return self._device.is_compatible_with_max
+
     @classmethod
     def cpu(cls, id: int = -1) -> Device:
         """Creates a CPU device with the provided numa id."""
