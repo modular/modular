@@ -200,7 +200,8 @@ struct RuntimeTuple[
 
     @always_inline
     fn __len__(self) -> Int:
-        return len(S)
+        alias l = len(S)
+        return l
 
     @always_inline
     fn cast[
