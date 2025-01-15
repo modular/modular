@@ -25,7 +25,7 @@ from utils.variant import Variant
 # ===-----------------------------------------------------------------------===#
 
 alias CUDA_NVTX_LIBRARY_PATH = "/usr/local/cuda/lib64/libnvToolsExt.so"
-alias ROCTX_LIBRARY_PATH = "/opt/rocm/lib/libroctx64.so"
+alias ROCTX_LIBRARY_PATH = "/opt/rocm/lib/librocprofiler-sdk-roctx.so"
 
 alias _TraceType_OTHER = 0
 alias _TraceType_ASYNCRT = 1
