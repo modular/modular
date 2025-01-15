@@ -22,8 +22,8 @@ modular_py_test(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
-        "MODULAR_COUNTER_OPS_PATH": "$(location //SDK/integration-test:counter_ops)",
-        "CUSTOM_OPS_PATH": "$(location //SDK/integration-test:test_user_op)",
+        "MODULAR_COUNTER_OPS_PATH": "$(rootpath //SDK/integration-test:counter_ops)",
+        "CUSTOM_OPS_PATH": "$(rootpath //SDK/integration-test:test_user_op)",
         "MODULAR_PATH": ".",
         "GRAPH_TESTDATA": "SDK/test/API/graph/python/pytests/testdata",
     },
@@ -91,8 +91,8 @@ modular_py_test(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
-        "MODULAR_COUNTER_OPS_PATH": "$(location //SDK/integration-test:counter_ops)",
-        "CUSTOM_OPS_PATH": "$(location //SDK/integration-test:test_user_op)",
+        "MODULAR_COUNTER_OPS_PATH": "$(rootpath //SDK/integration-test:counter_ops)",
+        "CUSTOM_OPS_PATH": "$(rootpath //SDK/integration-test:test_user_op)",
         "MODULAR_PATH": ".",
         "GRAPH_TESTDATA": "SDK/test/API/graph/python/pytests/testdata",
     },
@@ -147,7 +147,7 @@ modular_py_test(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
-        "CUSTOM_OPS_PATH": "$(location //SDK/integration-test:test_user_op)",
+        "CUSTOM_OPS_PATH": "$(rootpath //SDK/integration-test:test_user_op)",
         "MODULAR_PATH": ".",
         "GRAPH_TESTDATA": "SDK/test/API/graph/python/pytests/testdata",
     },
@@ -188,7 +188,7 @@ modular_py_test(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
-        "CUSTOM_OPS_PATH": "$(location //SDK/integration-test:test_user_op)",
+        "CUSTOM_OPS_PATH": "$(rootpath //SDK/integration-test:test_user_op)",
         "MODULAR_PATH": ".",
         "GRAPH_TESTDATA": "SDK/test/API/graph/python/pytests/testdata",
     },
