@@ -36,7 +36,6 @@
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
-#include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ToolOutputFile.h"

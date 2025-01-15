@@ -36,7 +36,6 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
-#include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/EndianStream.h"
 #include "llvm/Target/TargetMachine.h"
 

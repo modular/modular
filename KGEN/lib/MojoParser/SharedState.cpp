@@ -45,7 +45,6 @@
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/ADT/bit.h"
 #include "llvm/BinaryFormat/Dwarf.h"
-#include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/EndianStream.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
