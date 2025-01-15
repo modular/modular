@@ -74,7 +74,7 @@ async def lifespan(
             async with pipeline:
                 yield
     except Exception as e:
-        logger.exception("Error occurred in model worker.", e)
+        logger.exception("Error occurred in model worker. %s", e)
     finally:
         logger.critical("start_model_worker has completed")
         await METRICS.shutdown()

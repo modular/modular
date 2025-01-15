@@ -144,7 +144,7 @@ class MaxDirectInferenceService(GRPCInferenceServiceServicer):
             self.logger.debug(f"Response is {text}")
         except Exception as e:
             self.logger.exception(
-                "Error in model infer::", e, exc_info=True, stack_info=True
+                "Error in model infer::%s", e, exc_info=True, stack_info=True
             )
         finally:
             self.logger.info("Completed request %s", tg_request)
@@ -181,7 +181,7 @@ class MaxDirectInferenceService(GRPCInferenceServiceServicer):
             self.logger.debug(f"Response is {text}")
         except Exception as e:
             self.logger.exception(
-                "Error in model infer stream::",
+                "Error in model infer stream::%s",
                 e,
                 exc_info=True,
                 stack_info=True,
@@ -257,7 +257,7 @@ class MaxServeInferenceService(GRPCInferenceServiceServicer):
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(error_msg)
             self.logger.exception(
-                "Error in model infer::", e, exc_info=True, stack_info=True
+                "Error in model infer::%s", e, exc_info=True, stack_info=True
             )
         finally:
             self.logger.info(f"Request completed : {tg_request}")
@@ -277,7 +277,7 @@ class MaxServeInferenceService(GRPCInferenceServiceServicer):
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(error_msg)
             self.logger.exception(
-                "Error in model infer::", e, exc_info=True, stack_info=True
+                "Error in model infer::%s", e, exc_info=True, stack_info=True
             )
         finally:
             self.logger.info(f"Request completed : {tg_request}")
@@ -381,7 +381,7 @@ async def grpc_serve(
             logging.info("Started server (via serve API)...")
             await server.wait_for_termination()
     except Exception as ex:
-        logging.exception("Exception in grpc_serve ", ex)
+        logging.exception("Exception in grpc_serve %s", ex)
     finally:
         await server.stop(None)
         logging.info("Shutting down!")

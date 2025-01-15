@@ -56,7 +56,7 @@ def _model_worker_process_fn(
         pass
     except Exception as e:
         logger.exception(
-            "Encountered an error in _model_worker_process_fn ",
+            "Encountered an error in _model_worker_process_fn %s",
             e,
             stack_info=True,
         )
@@ -266,7 +266,7 @@ async def model_worker_run_v2(
                 try:
                     health_q.put_nowait("OK")  # TODO make this better
                 except queue.Full as e:
-                    logger.exception("health check queue is full", e)
+                    logger.exception("health check queue is full %s", e)
 
             if should_schedule_ce(
                 batch_continuous,
