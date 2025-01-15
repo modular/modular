@@ -512,7 +512,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         var result = String()
         var use_dquote = False
-        for s in self:
+        for s in self.char_slices():
             use_dquote = use_dquote or (s == "'")
 
             if s == "\\":
@@ -675,15 +675,14 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             self.unsafe_ptr(), rhs.unsafe_ptr(), min(len1, len2)
         )
 
+    @deprecated("Use `str.chars()` or `str.char_slices()` instead.")
     fn __iter__(self) -> _StringSliceIter[origin]:
         """Iterate over the string, returning immutable references.
 
         Returns:
             An iterator of references to the string elements.
         """
-        return _StringSliceIter[origin](
-            ptr=self.unsafe_ptr(), length=self.byte_length()
-        )
+        return self.char_slices()
 
     fn __reversed__(self) -> _StringSliceIter[origin, False]:
         """Iterate backwards over the string, returning immutable references.
@@ -954,6 +953,16 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         .
         """
         return CharsIter(self)
+
+    fn char_slices(self) -> _StringSliceIter[origin]:
+        """Iterate over the string, returning immutable references.
+
+        Returns:
+            An iterator of references to the string elements.
+        """
+        return _StringSliceIter[origin](
+            ptr=self.unsafe_ptr(), length=self.byte_length()
+        )
 
     @always_inline
     fn as_bytes(self) -> Span[Byte, origin]:
@@ -1265,7 +1274,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             )
         else:
             var offset = 0
-            for s in self:
+            for s in self.char_slices():
                 var b_len = s.byte_length()
                 if not _is_newline_char(ptr, offset, ptr[offset], b_len):
                     return False

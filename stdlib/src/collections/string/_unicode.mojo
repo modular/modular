@@ -117,19 +117,18 @@ fn is_uppercase(s: StringSlice) -> Bool:
         there is at least one cased character, False otherwise.
     """
     var found = False
-    for c in s:
-        var rune = Char.ord(c)
-        var index = _lowercase_mapping_index(rune)
+    for char in s.chars():
+        var index = _lowercase_mapping_index(char)
         if index != -1:
             found = True
             continue
-        index = _uppercase_mapping_index(rune)
+        index = _uppercase_mapping_index(char)
         if index != -1:
             return False
-        index = _uppercase_mapping2_index(rune)
+        index = _uppercase_mapping2_index(char)
         if index != -1:
             return False
-        index = _uppercase_mapping3_index(rune)
+        index = _uppercase_mapping3_index(char)
         if index != -1:
             return False
     return found
@@ -147,21 +146,20 @@ fn is_lowercase(s: StringSlice) -> Bool:
         there is at least one cased character, False otherwise.
     """
     var found = False
-    for c in s:
-        var rune = Char.ord(c)
-        var index = _uppercase_mapping_index(rune)
+    for char in s.chars():
+        var index = _uppercase_mapping_index(char)
         if index != -1:
             found = True
             continue
-        index = _uppercase_mapping2_index(rune)
+        index = _uppercase_mapping2_index(char)
         if index != -1:
             found = True
             continue
-        index = _uppercase_mapping3_index(rune)
+        index = _uppercase_mapping3_index(char)
         if index != -1:
             found = True
             continue
-        index = _lowercase_mapping_index(rune)
+        index = _lowercase_mapping_index(char)
         if index != -1:
             return False
     return found
