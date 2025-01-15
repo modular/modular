@@ -2,6 +2,7 @@
 title: Testing
 sidebar_position: 2
 description: Testing Mojo programs.
+github_url: https://github.com/modularml/mojo/tree/nightly/examples/testing
 ---
 
 Mojo includes a framework for developing and executing unit tests. The framework
@@ -66,7 +67,7 @@ mojo test test_quickstart.mojo
 You should see output similar to this (note that this example elides the full
 filesystem paths from the output shown):
 
-```
+```output
 Testing Time: 1.193s
 
 Total Discovered Tests: 2
@@ -92,15 +93,20 @@ its error message.
 
 ### Next steps
 
-* [The `testing` module](#the-testing-module) describes the assertion
+- [The `testing` module](#the-testing-module) describes the assertion
   functions available to help implement tests.
-* [Writing unit tests](#writing-unit-tests) shows how to write unit tests and
+- [Writing unit tests](#writing-unit-tests) shows how to write unit tests and
   organize them into test files.
-* [The `mojo test` command](#the-mojo-test-command) describes how to execute
+- [The `mojo test` command](#the-mojo-test-command) describes how to execute
   and collect lists of tests.
-* [Writing API documentation tests](#writing-api-documentation-tests)
+- [Writing API documentation tests](#writing-api-documentation-tests)
   discusses how to use the Mojo testing framework to test code examples in your
   API documentation.
+- The public [GitHub repo](https://github.com/modularml/mojo/tree/nightly)
+  contains an [example
+  project](https://github.com/modularml/mojo/tree/nightly/examples/testing) to
+  demonstrate both unit testing and docstring testing. Several of the examples
+  shown later are based on this project.
 
 ## The `testing` module
 
@@ -108,15 +114,15 @@ The Mojo standard library includes a [`testing`](/mojo/stdlib/testing/testing/)
 module that defines several assertion functions for implementing tests. Each
 assertion returns `None` if its condition is met or raises an error if it isn't.
 
-* [`assert_true()`](/mojo/stdlib/testing/testing/assert_true):
+- [`assert_true()`](/mojo/stdlib/testing/testing/assert_true):
   Asserts that the input value is `True`.
-* [`assert_false()`](/mojo/stdlib/testing/testing/assert_false):
+- [`assert_false()`](/mojo/stdlib/testing/testing/assert_false):
   Asserts that the input value is `False`.
-* [`assert_equal()`](/mojo/stdlib/testing/testing/assert_equal):
+- [`assert_equal()`](/mojo/stdlib/testing/testing/assert_equal):
   Asserts that the input values are equal.
-* [`assert_not_equal()`](/mojo/stdlib/testing/testing/assert_not_equal):
+- [`assert_not_equal()`](/mojo/stdlib/testing/testing/assert_not_equal):
   Asserts that the input values are not equal.
-* [`assert_almost_equal()`](/mojo/stdlib/testing/testing/assert_almost_equal):
+- [`assert_almost_equal()`](/mojo/stdlib/testing/testing/assert_almost_equal):
   Asserts that the input values are equal up to a tolerance.
 
 The boolean assertions report a basic error message when they fail.
@@ -191,8 +197,7 @@ Error: AssertionError: Didn't raise at Expression [4] wrapper:18:23
 
 The example above assigns the return value from `inc()` to a
 [*discard pattern*](/mojo/manual/lifecycle/death#explicit-lifetimes).
-Without it, the Mojo compiler detects that the return value is unused and
-optimizes the code to eliminate the function call.
+Without it, the Mojo compiler reports a warning that the return value is unused.
 
 :::
 
@@ -222,11 +227,11 @@ Error: invalid value
 
 A Mojo unit test is simply a function that fulfills all of these requirements:
 
-* Has a name that starts with `test_`.
-* Accepts no arguments.
-* Returns either `None` or a value of type `object`.
-* Raises an error to indicate test failure.
-* Is defined at the module scope, not as a Mojo struct method.
+- Has a name that starts with `test_`.
+- Accepts no arguments.
+- Returns either `None` or a value of type `object`.
+- Raises an error to indicate test failure.
+- Is defined at the module scope, not as a Mojo struct method.
 
 You can use either `def` or `fn` to define a test function. Because a test
 function always raises an error to indicate failure, any test function defined
@@ -269,9 +274,9 @@ The unique identity of a unit test consists of the path of the test file and the
 name of the test function, separated by `::`. So the test IDs from the example
 above are:
 
-* `test_my_target_module.mojo::test_validate_input()`
-* `test_my_target_module.mojo::test_convert_input()`
-* `test_my_target_module.mojo::test_convert_error()`
+- `test_my_target_module.mojo::test_validate_input()`
+- `test_my_target_module.mojo::test_convert_input()`
+- `test_my_target_module.mojo::test_convert_error()`
 
 ## The `mojo test` command
 
@@ -283,18 +288,19 @@ command for running tests or collecting a list of tests.
 By default, the `mojo test` command runs the tests that you specify using one of
 the following:
 
-* A single test ID with either an absolute or relative file path, to run only
+- A single test ID with either an absolute or relative file path, to run only
   that test.
-* A single absolute or relative file path, to run all tests in that file.
-* A single absolute or relative directory path, to recurse through that
+- A single absolute or relative file path, to run all tests in that file.
+- A single absolute or relative directory path, to recurse through that
   directory hierarchy and run all tests found.
 
 If needed, you can optionally use the `-I` option one or more times to append
 additional paths to the list of directories searched to import Mojo modules and
-packages. For example, consider a project with the following directory
-structure:
+packages. Consider the [example testing
+project](https://github.com/modularml/mojo/tree/nightly/examples/testing) in
+GitHub, which has the following directory structure:
 
-```
+```output
 .
 ├── src
 │   ├── example.mojo
@@ -307,11 +313,14 @@ structure:
         └── test_inc.mojo
 ```
 
-From the project root directory, you could execute all of the tests in the
-`test` directory like this:
+From the project root directory, you can execute all of the tests in the `test`
+directory like this:
 
+```bash
+mojo test -I src test
 ```
-$ mojo test -I src test
+
+```output
 Testing Time: 3.433s
 
 Total Discovered Tests: 4
@@ -321,10 +330,13 @@ Failed : 0 (0.00%)
 Skipped: 0 (0.00%)
 ```
 
-You could run the tests contained in only the `test_dec.mojo` file like this:
+You can run the tests contained in only the `test_dec.mojo` file like this:
 
+```bash
+mojo test -I src test/my_math/test_dec.mojo
 ```
-$ mojo test -I src test/my_math/test_dec.mojo
+
+```output
 Testing Time: 1.175s
 
 Total Discovered Tests: 2
@@ -334,11 +346,14 @@ Failed : 0 (0.00%)
 Skipped: 0 (0.00%)
 ```
 
-And you could run a single test from a file by providing its fully qualified
+And you can run a single test from a file by providing its fully qualified
 ID like this:
 
+```bash
+mojo test -I src 'test/my_math/test_dec.mojo::test_dec_valid()'
 ```
-$ mojo test -I src 'test/my_math/test_dec.mojo::test_dec_valid()'
+
+```output
 Testing Time: 0.66s
 
 Total Discovered Tests: 1
@@ -353,9 +368,11 @@ Skipped: 0 (0.00%)
 By including the `--collect-only` or `--co` option, you can use `mojo test` to
 discover and print a list of tests.
 
-As an example, consider the project structure shown in the
-[Running tests](#running-tests) section. The following command produces a list
-of all of the tests defined in the `test` directory hierarchy.
+Consider the [example testing
+project](https://github.com/modularml/mojo/tree/nightly/examples/testing)
+directory structure shown in the [Running tests](#running-tests) section. The
+following command produces a list of all of the tests defined in the `test`
+directory hierarchy.
 
 ```bash
 mojo test --co test
@@ -364,7 +381,7 @@ mojo test --co test
 The output shows the hierarchy of directories, test files, and individual tests
 (note that this example elides the full filesystem paths from the output shown):
 
-```
+```output
 <ROOT_DIR/test/my_math>
   <ROOT_DIR/test/my_math/test_dec.mojo>
     <ROOT_DIR/test/my_math/test_dec.mojo::test_dec_valid()>
@@ -380,7 +397,7 @@ By default `mojo test` produces concise, human-readable output. Alternatively
 you can produce JSON formatted output more suitable for input to other tools by
 including the `--diagnostic-format json` option.
 
-For example, you could run the tests in the `test_quickstart.mojo` file shown
+For example, you can run the tests in the `test_quickstart.mojo` file shown
 in the [Get started](#get-started) section with JSON formatted output using this
 command:
 
@@ -392,7 +409,7 @@ The output shows the detailed results for each individual test and summary
 results (note that this example elides the full filesystem paths from the
 output shown):
 
-```
+```json
 {
   "children": [
     {
@@ -421,19 +438,21 @@ output shown):
 }
 ```
 
-You can also produce JSON output for test collection as well. As an example,
-consider the project structure shown in the [Running tests](#running-tests)
-section. The following command collects a list in JSON format of all of the
-tests defined in the `test` directory hierarchy:
+You can also produce JSON output for test collection as well. Consider the
+[example testing
+project](https://github.com/modularml/mojo/tree/nightly/examples/testing)
+directory structure shown in the [Running tests](#running-tests) section. The
+following command collects a list in JSON format of all of the tests defined in
+the `test` directory hierarchy:
 
 ```bash
 mojo test --diagnostic-format json --co test
 ```
 
-The output would appear as follows (note that this example elides the full
+The output will appear as follows (note that this example elides the full
 filesystem paths from the output shown):
 
-```
+```json
 {
   "children": [
     {
@@ -442,18 +461,18 @@ filesystem paths from the output shown):
           "id": "ROOT_DIR/test/my_math/test_dec.mojo::test_dec_valid()",
           "location": {
             "endColumn": 5,
-            "endLine": 5,
+            "endLine": 19,
             "startColumn": 5,
-            "startLine": 5
+            "startLine": 19
           }
         },
         {
           "id": "ROOT_DIR/test/my_math/test_dec.mojo::test_dec_min()",
           "location": {
             "endColumn": 5,
-            "endLine": 9,
+            "endLine": 24,
             "startColumn": 5,
-            "startLine": 9
+            "startLine": 24
           }
         }
       ],
@@ -465,18 +484,18 @@ filesystem paths from the output shown):
           "id": "ROOT_DIR/test/my_math/test_inc.mojo::test_inc_valid()",
           "location": {
             "endColumn": 5,
-            "endLine": 5,
+            "endLine": 19,
             "startColumn": 5,
-            "startLine": 5
+            "startLine": 19
           }
         },
         {
           "id": "ROOT_DIR/test/my_math/test_inc.mojo::test_inc_max()",
           "location": {
             "endColumn": 5,
-            "endLine": 9,
+            "endLine": 24,
             "startColumn": 5,
-            "startLine": 9
+            "startLine": 24
           }
         }
       ],
@@ -539,7 +558,7 @@ assert_equals(b, 2)
 
 Sometimes you might want to execute a line of code as part of the test but *not*
 display that line in the API documentation. To achieve this, prefix the line of
-code with `%#`. For example, you could use this technique to omit `import`
+code with `%#`. For example, you can use this technique to omit `import`
 statements and assertion functions from the documentation.
 
 ````
@@ -560,7 +579,7 @@ print(c)
 ### Documentation test suites and scoping
 
 The Mojo testing framework treats each docstring as a separate *test suite*.
-In other words, a single test suite could correspond to the docstring for an
+In other words, a single test suite can correspond to the docstring for an
 individual package, module, function, struct, struct method, etc.
 
 Each executable code block within a given docstring is a single test of the same
@@ -606,43 +625,45 @@ suite within the same module.
 ### Documentation test identifiers
 
 The format of a documentation test identifier is `<path>@<test-suite>::<test>`.
-This is best explained by an example. Consider the project structure shown in
-the [Running tests](#running-tests) section. The source files in the `src`
-directory might contain docstrings for the `my_math` package, the `utils.mojo`
-module, and the individual functions within that module. You could collect the
-full list of tests by executing:
+This is best explained by an example. Consider the [example testing
+project](https://github.com/modularml/mojo/tree/nightly/examples/testing)
+directory structure shown in the [Running tests](#running-tests) section. The
+source files in the `src` directory might contain docstrings for the `my_math`
+package, the `utils.mojo` module, and the individual functions within that
+module. You can collect the full list of tests by executing:
 
-```
+```bash
 mojo test --co src
 ```
 
 The output shows the hierarchy of directories, test files, and individual tests
 (note that this example elides the full filesystem paths from the output shown):
 
-```
+```output
 <ROOT_DIR/src/my_math>
   <ROOT_DIR/src/my_math/__init__.mojo>
     <ROOT_DIR/src/my_math/__init__.mojo@__doc__>
       <ROOT_DIR/src/my_math/__init__.mojo@__doc__::0>
       <ROOT_DIR/src/my_math/__init__.mojo@__doc__::1>
+      <ROOT_DIR/src/my_math/__init__.mojo@__doc__::2>
   <ROOT_DIR/src/my_math/utils.mojo>
     <ROOT_DIR/src/my_math/utils.mojo@__doc__>
       <ROOT_DIR/src/my_math/utils.mojo@__doc__::0>
-    <ROOT_DIR/src/my_math/utils.mojo@inc(stdlib\3A\3Abuiltin\3A\3Aint\3A\3AInt).__doc__>
-      <ROOT_DIR/src/my_math/utils.mojo@inc(stdlib\3A\3Abuiltin\3A\3Aint\3A\3AInt).__doc__::0>
-      <ROOT_DIR/src/my_math/utils.mojo@inc(stdlib\3A\3Abuiltin\3A\3Aint\3A\3AInt).__doc__::1>
-    <ROOT_DIR/src/my_math/utils.mojo@dec(stdlib\3A\3Abuiltin\3A\3Aint\3A\3AInt).__doc__>
-      <ROOT_DIR/src/my_math/utils.mojo@dec(stdlib\3A\3Abuiltin\3A\3Aint\3A\3AInt).__doc__::0>
-      <ROOT_DIR/src/my_math/utils.mojo@dec(stdlib\3A\3Abuiltin\3A\3Aint\3A\3AInt).__doc__::1>
+    <ROOT_DIR/src/my_math/utils.mojo@inc(\3A\3AInt).__doc__>
+      <ROOT_DIR/src/my_math/utils.mojo@inc(\3A\3AInt).__doc__::0>
+      <ROOT_DIR/src/my_math/utils.mojo@inc(\3A\3AInt).__doc__::1>
+    <ROOT_DIR/src/my_math/utils.mojo@dec(\3A\3AInt).__doc__>
+      <ROOT_DIR/src/my_math/utils.mojo@dec(\3A\3AInt).__doc__::0>
+      <ROOT_DIR/src/my_math/utils.mojo@dec(\3A\3AInt).__doc__::1>
 ```
 
 Several different test suites appear in this result:
 
-| Test suite scope | File                        | Test suite name                                      |
-| ---------------- | --------------------------- | ---------------------------------------------------- |
-| Package          | `src/my_math/__init__.mojo` | `__doc__`                                            |
-| Module           | `src/my_math/utils.mojo`    | `__doc__`                                            |
-| Function         | `src/my_math/utils.mojo`    | `inc(stdlib\3A\3Abuiltin\3A\3Aint\3A\3AInt).__doc__` |
+| Test suite scope | File                        | Test suite name          |
+| ---------------- | --------------------------- | ------------------------ |
+| Package          | `src/my_math/__init__.mojo` | `__doc__`                |
+| Module           | `src/my_math/utils.mojo`    | `__doc__`                |
+| Function         | `src/my_math/utils.mojo`    | `inc(\3A\3AInt).__doc__` |
 
 Then within a specific test suite, tests are numbered sequentially in the order
 they appear in the docstring, starting with 0.

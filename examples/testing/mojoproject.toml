@@ -1,0 +1,16 @@
+[project]
+authors = ["Modular <hello@modular.com>"]
+channels = ["conda-forge", "https://conda.modular.com/max-nightly"]
+description = "An example of using the Mojo testing framework"
+name = "testing"
+platforms = ["osx-arm64", "linux-64", "linux-aarch64"]
+version = "0.1.0"
+
+[tasks]
+main = "mojo run src/example.mojo"
+doc-tests = "mojo test src"
+unit-tests = "mojo test -I src test"
+tests = { depends-on = ["doc-tests", "unit-tests"] }
+
+[dependencies]
+max = "*"
