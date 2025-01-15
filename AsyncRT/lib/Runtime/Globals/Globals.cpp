@@ -4,7 +4,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+// NOTE: We use the legacy tcmalloc on macOS only because the modern tcmalloc
+// doesn't support it
+#if defined(__APPLE__)
 #include <gperftools/tcmalloc.h>
+#else
+#include <tcmalloc/tcmalloc.h>
+#endif
 
 #include "AsyncRT/Runtime/CompactRuntimePtr.h"
 #include "AsyncRT/Runtime/Globals/Globals.h"
@@ -32,8 +38,16 @@ M::AsyncRT::Globals::getRuntimeTableSingleton(
 
 MODULAR_CXX_EXPORT void *TCMallocGlobals::tc_new(size_t size,
                                                  size_t alignment) {
+#if defined(__APPLE__)
   return ::tc_new_aligned(size, std::align_val_t(alignment));
+#else
+  return TCMallocInternalNewAligned(size, std::align_val_t(alignment));
+#endif
 }
 MODULAR_CXX_EXPORT void TCMallocGlobals::tc_delete(void *ptr) {
+#if defined(__APPLE__)
   return ::tc_delete(ptr);
+#else
+  return TCMallocInternalDelete(ptr);
+#endif
 }
