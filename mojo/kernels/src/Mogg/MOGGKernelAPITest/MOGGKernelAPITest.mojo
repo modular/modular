@@ -751,3 +751,22 @@ struct MTorchAbsOverload:
 
         print("The custom identity op is running!")
         foreach[func](out_tensor)
+
+
+@compiler.register("op_with_custom_params")
+struct OpWithCustomParams:
+    @staticmethod
+    fn execute[
+        type: DType,
+        rank: Int,
+        custom_int: Int,
+        custom_str: StringLiteral,
+        custom_dtype: DType,
+    ](
+        out_tensor: ManagedTensorSlice[type, rank],
+        in_tensor: ManagedTensorSlice[type, rank],
+    ) raises:
+        out_tensor[0] = in_tensor[0]
+        print("custom_int =", custom_int)
+        print("custom_str =", custom_str)
+        print("custom_dtype =", custom_dtype)
