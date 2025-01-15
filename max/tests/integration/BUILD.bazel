@@ -23,7 +23,9 @@ mojo_library(
     visibility = [":__subpackages__"],
     deps = [
         "//Kernels/mojo/buffer",
+        "//Kernels/mojo/extensibility/compiler_internal",
         "//Kernels/mojo/register",
+        "//SDK/lib/API/mojo/max/tensor_utils",
         "//open-source/mojo/stdlib/stdlib",
     ],
 )

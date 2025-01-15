@@ -4,17 +4,17 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
-from register import register_internal
+import compiler_internal as compiler
 from utils.index import IndexList
-from buffer import NDBuffer
 from buffer.dimlist import DimList
 from python.python import _get_global_python_itf
 from python import Python, PythonObject
 from os import abort
+from register import register_internal, uses_opaque
+from tensor_utils import ManagedTensorSlice
 
 
-struct Counter(Movable):
+struct Counter[stride: Int](Movable):
     var a: Int
     var b: Int
 
@@ -36,35 +36,51 @@ struct Counter(Movable):
         print("counter del")
 
     fn bump(mut self):
-        self.a += 1
+        self.a += Self.stride
         self.b += self.a
         print("bumped", self.a, self.b)
 
 
-@register_internal("make_counter_from_tensor")
-fn make_counter(init: NDBuffer[DType.int32, 1]) -> Counter:
-    print("making. init:", init[0], init[1])
-    return Counter(Int(init[0]), Int(init[1]))
+@compiler.register("make_counter_from_tensor", num_dps_outputs=0)
+struct MakeCounterFromTensor:
+    @uses_opaque
+    @staticmethod
+    fn execute[
+        stride: Int,
+    ](init: ManagedTensorSlice[DType.int32, 1]) -> Counter[stride]:
+        print("making. init:", init[0], init[1])
+        return Counter[stride](Int(init[0]), Int(init[1]))
 
 
-@register_internal("make_counter")
-fn make_counter() -> Counter:
-    print("making")
-    return Counter()
+@compiler.register("make_counter")
+struct MakeCounter:
+    @uses_opaque
+    @staticmethod
+    fn execute[stride: Int]() -> Counter[stride]:
+        print("making")
+        return Counter[stride]()
 
 
-@register_internal("bump_counter")
-fn bump_counter(mut c: Counter) -> None:
-    print("bumping")
-    c.bump()
+@compiler.register("bump_counter", num_dps_outputs=0)
+struct BumpCounter:
+    @uses_opaque
+    @staticmethod
+    fn execute[
+        stride: Int,
+    ](mut c: Counter[stride]) -> None:
+        print("bumping")
+        c.bump()
 
 
-@register_internal("read_counter")
-fn read_counter(
-    c: Counter, output: NDBuffer[DType.int32, 1, DimList(2)]
-) -> None:
-    output[0] = c.a
-    output[1] = c.b
+@compiler.register("read_counter")
+struct ReadCounter:
+    @uses_opaque
+    @staticmethod
+    fn execute[
+        stride: Int
+    ](output: ManagedTensorSlice[DType.int32, 1], c: Counter[stride]):
+        output[0] = c.a
+        output[1] = c.b
 
 
 @register_internal("bump_python_counter")
