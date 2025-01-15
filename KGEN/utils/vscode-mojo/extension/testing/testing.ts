@@ -369,7 +369,7 @@ export class MojoTestManager extends DisposableContext {
           try {
             resolve(JSON.parse(stdout));
           } catch (e) {
-            logger.main.logError(
+            logger.main.error(
               `Received invalid JSON response from mojo CLI\n${stdout}`,
             );
             resolve(undefined);
@@ -387,14 +387,14 @@ export class MojoTestManager extends DisposableContext {
       return;
     }
 
-    this.logger.main.logDebug(`Discovering tests in ${document.uri}`);
+    this.logger.main.debug(`Discovering tests in ${document.uri}`);
 
     // Invoke the mojo tool to discover tests in the document.
     // We use 'hideRepeatedErrors' because this action is automated.
     let sdk = await this.sdkManager.findSDK(/*hideRepeatedErrors=*/ true);
     if (!sdk) {
       this.controller.items.delete(document.uri.fsPath);
-      this.logger.main.logDebug(
+      this.logger.main.debug(
         `No SDK present, clearing tests for ${document.uri}`,
       );
       return;

@@ -105,7 +105,7 @@ export class MojoLSPManager extends DisposableContext {
     sdk: MAXSDK,
     includeDirs: string[],
   ): vscodelc.LanguageClient {
-    this.logger.lsp.logInfo('Activating language client');
+    this.logger.lsp.info('Activating language client');
 
     let serverArgs: string[] = [];
 
@@ -181,13 +181,13 @@ export class MojoLSPManager extends DisposableContext {
       }),
     );
 
-    this.logger.lsp.logInfo(
+    this.logger.lsp.info(
       `Launching Language Server '${
         initializationOptions.serverPath
       }' with options:`,
       initializationOptions.serverArgs,
     );
-    this.logger.lsp.logInfo('Launching Language Server');
+    this.logger.lsp.info('Launching Language Server');
     // We intentionally don't await the `start` so that we can cancelling it
     // during a long initialization, which can happen when in debug mode.
     languageClient.start();

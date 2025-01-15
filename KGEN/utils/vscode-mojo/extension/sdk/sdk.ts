@@ -46,17 +46,17 @@ export class MAXSDK {
       stderr = (stderr || '') as string;
 
       if (stdout.indexOf('101') != -1) {
-        this.logger.main.logInfo('Python scripting support in LLDB found.');
+        this.logger.main.info('Python scripting support in LLDB found.');
         return true;
       } else {
-        this.logger.main.logInfo(
+        this.logger.main.info(
           `Python scripting support in LLDB not found. The test script returned:\n${
             stdout
           }\n${stderr}`,
         );
       }
     } catch (e) {
-      this.logger.main.logError(
+      this.logger.main.error(
         'Python scripting support in LLDB not found. The test script failed with',
         e,
       );

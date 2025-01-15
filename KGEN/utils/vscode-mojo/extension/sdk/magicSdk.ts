@@ -46,7 +46,7 @@ async function downloadFile(
     return true;
   } catch (ex: any) {
     vscode.window.showErrorMessage(errorMessage, ex.message);
-    logger.main.logError(errorMessage, ex);
+    logger.main.error(errorMessage, ex);
     return false;
   }
 }
@@ -141,7 +141,7 @@ async function getAllNightlyMAXVersions(
 
     const repodataUrl =
       'https://conda.modular.com/max-nightly/noarch/repodata.json';
-    logger.main.logInfo(`Will download ${repodataUrl} into ${repodataFile}`);
+    logger.main.info(`Will download ${repodataUrl} into ${repodataFile}`);
     if (
       !(await downloadFile(
         repodataUrl,
@@ -153,7 +153,7 @@ async function getAllNightlyMAXVersions(
     ) {
       return undefined;
     }
-    logger.main.logInfo('Successfully downloaded');
+    logger.main.info('Successfully downloaded');
   }
   contents = await readFile(repodataFile);
   if (!contents) {
@@ -273,7 +273,7 @@ async function doInstallMagicAndMAXSDK(
 ): Promise<void> {
   await rm(downloadSpec.doneDirectory, { recursive: true, force: true });
 
-  logger.main.logInfo(
+  logger.main.info(
     `Will download ${downloadSpec.magicUrl} into ${downloadSpec.magicPath}`,
   );
   if (token.isCancellationRequested) {
@@ -287,18 +287,18 @@ async function doInstallMagicAndMAXSDK(
     "Couldn't download magic",
     logger,
   );
-  logger.main.logInfo('Successfully downloaded magic.');
+  logger.main.info('Successfully downloaded magic.');
   await chmod(downloadSpec.magicPath, 0o755);
-  logger.main.logInfo(
+  logger.main.info(
     `The permissions for ${downloadSpec.magicPath} have been changed and it's now executable.`,
   );
 
-  logger.main.logInfo(`Will prepare the MAX SDK installation.`);
+  logger.main.info(`Will prepare the MAX SDK installation.`);
   const env = { ...process.env };
   env['MAGIC_DATA_HOME'] = downloadSpec.magicDataHome;
   // We remove data home before installing again in case another process is
   // trying to write to it for some weird reason.
-  logger.main.logInfo(`Removing magic-data-home`);
+  logger.main.info(`Removing magic-data-home`);
   await rm(downloadSpec.magicDataHome, {
     recursive: true,
     force: true,
@@ -309,7 +309,7 @@ async function doInstallMagicAndMAXSDK(
     downloadOverride ??
     'https://conda.modular.com/max' + (isNightly ? '-nightly' : '');
 
-  logger.main.logDebug(`Downloading MAX from ${downloadOverride}.`);
+  logger.main.debug(`Downloading MAX from ${downloadOverride}.`);
 
   const args = [
     'global',
@@ -321,10 +321,10 @@ async function doInstallMagicAndMAXSDK(
     `max==${downloadSpec.version}`,
     'python>=3.11,<3.12',
   ];
-  logger.main.logInfo(`Installing the MAX SDK.`);
+  logger.main.info(`Installing the MAX SDK.`);
 
   if (token.isCancellationRequested) {
-    logger.main.logInfo('SDK installation was cancelled.');
+    logger.main.info('SDK installation was cancelled.');
     throw new Error(SDK_INSTALLATION_CANCELLATION_MSG);
   }
 
@@ -336,7 +336,7 @@ async function doInstallMagicAndMAXSDK(
   });
   await child;
 
-  logger.main.logInfo(`Successfully installed MAX.`);
+  logger.main.info(`Successfully installed MAX.`);
 
   await mkdirp(downloadSpec.doneDirectory);
   await mkdirp(downloadSpec.versionDoneDir);
@@ -352,7 +352,7 @@ async function installMagicAndMAXSDKWithProgress(
   reinstall: boolean,
 ): Promise<Optional<string>> {
   if (!reinstall && (await directoryExists(downloadSpec.versionDoneDir))) {
-    logger.main.logInfo('Magic SDK present. Skipping installation.');
+    logger.main.info('Magic SDK present. Skipping installation.');
     return undefined;
   }
   await rm(downloadSpec.versionDoneDirParent, {
@@ -370,7 +370,7 @@ async function installMagicAndMAXSDKWithProgress(
         await doInstallMagicAndMAXSDK(downloadSpec, logger, isNightly, token);
         return undefined;
       } catch (e: any) {
-        logger.main.logError("Couldn't install the MAX SDK for VS Code", e);
+        logger.main.error("Couldn't install the MAX SDK for VS Code", e);
         return e.message;
       }
     },
@@ -385,9 +385,9 @@ async function acquireLockIfNeeded(
   if (!useLock) {
     return async () => {};
   }
-  logger.main.logInfo('Trying to acquire installation lock...');
+  logger.main.info('Trying to acquire installation lock...');
   const releaseLock = await lock(downloadSpec.privateDir, { retries: 10 });
-  logger.main.logInfo('Lock acquired...');
+  logger.main.info('Lock acquired...');
   return releaseLock;
 }
 
@@ -407,7 +407,7 @@ export async function installMagicSDK(
   let success = false;
   var errorMessage: string | undefined = '';
   try {
-    logger.main.logInfo('Trying to acquire installation lock...');
+    logger.main.info('Trying to acquire installation lock...');
     const releaseLock = await acquireLockIfNeeded(
       logger,
       withLock,
@@ -424,7 +424,7 @@ export async function installMagicSDK(
     }
     await releaseLock();
   } catch (e: any) {
-    logger.main.logError(
+    logger.main.error(
       'Error while handling the lock for the MAX SDK for VS Code',
       e,
     );

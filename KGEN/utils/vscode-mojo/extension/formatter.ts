@@ -38,9 +38,7 @@ export function registerFormatter(maxSDKManager: MAXSDKManager) {
             // necessarily fatal, so this doesn't prevent edits from being
             // applied.
             if (error) {
-              maxSDKManager.logger.main.logError(
-                `Formatting error:\n${stderr}`,
-              );
+              maxSDKManager.logger.main.error(`Formatting error:\n${stderr}`);
               reject(error);
               return;
             }
