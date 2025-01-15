@@ -32,12 +32,6 @@ lit_tests(
             "mojo/test_devicetensor_gpu.mojo",
         ],
     ),
-    available_features = [
-        "mtorch",
-        "numpy",
-        "pytorch-generated-tests",
-        "requests",
-    ],
     custom_substitutions = {
         "%pytorch_generated_tests_dir": "../../../../PyTorch/test/utils",
         "%onnx_test_models_dir": "../../../../../onnx+/onnx/backend/test/data/node",
