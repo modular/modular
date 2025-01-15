@@ -158,8 +158,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
         self._background_tasks: set[asyncio.Task] = set()
 
     async def next_token(
-        self,
-        request: TokenGeneratorRequest,
+        self, request: TokenGeneratorRequest
     ) -> AsyncGenerator[TokenGeneratorOutput, None]:
         """Generates and streams tokens for the provided request."""
         total_sw = StopWatch()
@@ -169,6 +168,10 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
             request.index,
             total_sw.elapsed_ms,
         )
+
+        # Skip special tokens if tool use is enabled
+        tool_use = request.tools is not None
+        skip_special_tokens = tool_use
 
         try:
             with record_ms(METRICS.input_time):
@@ -194,14 +197,18 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                             for token_id, value in top_log_probs.items():
                                 decoded_log_probs[
                                     await self.tokenizer.decode(
-                                        context, token_id
+                                        context,
+                                        token_id,
+                                        skip_special_tokens=skip_special_tokens,
                                     )
                                 ] = value
                             top_log_probabilities.append(decoded_log_probs)
 
                     yield TokenGeneratorOutput(
                         decoded_token=await self.tokenizer.decode(
-                            context, response.next_token
+                            context,
+                            response.next_token,
+                            skip_special_tokens=skip_special_tokens,
                         ),
                         token_log_probabilities=token_log_probabilities,
                         top_log_probabilities=top_log_probabilities,

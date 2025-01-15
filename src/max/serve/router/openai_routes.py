@@ -9,6 +9,7 @@ import base64
 import json
 import logging
 import queue
+import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
 from json.decoder import JSONDecodeError
@@ -21,12 +22,17 @@ from httpx import AsyncClient
 from max.pipelines import (
     PipelineTokenizer,
     TokenGeneratorRequest,
+    TokenGeneratorRequestFunction,
     TokenGeneratorRequestMessage,
+    TokenGeneratorRequestTool,
 )
 from max.serve.pipelines.llm import TokenGeneratorOutput, TokenGeneratorPipeline
 from max.serve.schemas.openai import (  # type: ignore
+    ChatCompletionMessageToolCall,
+    ChatCompletionMessageToolCalls,
     ChatCompletionResponseMessage,
     ChatCompletionStreamResponseDelta,
+    ChatCompletionTool,
     Choice,
     Choice1,
     Choice3,
@@ -38,6 +44,7 @@ from max.serve.schemas.openai import (  # type: ignore
     CreateCompletionResponse,
     Error,
     ErrorResponse,
+    Function1,
     Logprobs,
     Logprobs2,
     PromptItem,
@@ -187,25 +194,48 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
         n_tokens = 0
         request_timer = StopWatch(start_ns=request.timestamp_ns)
         status_code = 200
+        tool_use = request.tools is not None
+
         try:
             completed_outputs = await self.pipeline.all_tokens(request)
             n_tokens = len(completed_outputs)
             response_message = "".join(
                 output.decoded_token for output in completed_outputs
             )
-            response_choices = [
-                Choice1(
-                    index=0,
-                    message=ChatCompletionResponseMessage(
-                        content=response_message,
-                        role="assistant",
-                        function_call=None,
-                        refusal="",
-                    ),
-                    finish_reason="stop",
-                    logprobs=Logprobs2(content=[], refusal=[]),
-                )
-            ]
+
+            response_choices: List[Choice1] = []
+            if tool_use:
+                # Try to parse and handle tool calls if tool_use is enabled
+                tool_calls_resp = self._parse_resp_to_json(response_message)
+
+                if tool_calls_resp:
+                    tool_calls: List[ChatCompletionMessageToolCall] = []
+                    for tool_data in tool_calls_resp:
+                        self._handle_tool_calls_response(tool_data, tool_calls)
+
+                    response_choices.append(
+                        Choice1(
+                            index=0,
+                            message=ChatCompletionResponseMessage(
+                                content="",
+                                role="assistant",
+                                tool_calls=ChatCompletionMessageToolCalls(
+                                    root=tool_calls
+                                ),
+                            ),
+                            finish_reason="tool_calls",
+                            logprobs=Logprobs2(content=[], refusal=[]),
+                        )
+                    )
+                else:
+                    # Handle as regular text response if JSON cannot be parsed
+                    self._handle_text_response(
+                        response_message, response_choices
+                    )
+            else:
+                # Handle as regular text response if tool_use is disabled
+                self._handle_text_response(response_message, response_choices)
+
             response = CreateChatCompletionResponse(
                 id=request.id,
                 choices=response_choices,
@@ -228,6 +258,64 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                 request_timer.elapsed_ms,
                 n_tokens,
             )
+
+    def _parse_resp_to_json(self, text: str) -> Optional[List[dict]]:
+        """Parse the response message to valid tool call JSON objects."""
+        segments = [
+            segment.strip() for segment in text.splitlines() if segment.strip()
+        ]
+        split_segments = []
+        for segment in segments:
+            split_segments.extend(segment.split(";"))
+
+        # Filter out empty segments and parse as JSON
+        json_objects = []
+        for segment in split_segments:
+            if segment.strip():  # Ignore empty segments
+                try:
+                    json_objects.append(json.loads(segment))
+                except json.JSONDecodeError as e:
+                    return None
+
+        if not json_objects:
+            return None
+
+        return json_objects
+
+    def _handle_text_response(
+        self, response_message: str, response_choices: list
+    ) -> None:
+        """Handle regular text response by appending to response_choices."""
+        response_choices.append(
+            Choice1(
+                index=0,
+                message=ChatCompletionResponseMessage(
+                    content=response_message,
+                    role="assistant",
+                    tool_calls=None,
+                    function_call=None,
+                    refusal="",
+                ),
+                finish_reason="stop",
+                logprobs=Logprobs2(content=[], refusal=[]),
+            )
+        )
+
+    def _handle_tool_calls_response(
+        self, tool_data: dict, tool_calls: list
+    ) -> None:
+        """Handle tool response by appending to response_choices."""
+        if "function" in tool_data and "parameters" in tool_data:
+            short_uuid = str(uuid.uuid4()).replace("-", "")[:16]
+            tool_call = ChatCompletionMessageToolCall(
+                id=f"call_{short_uuid}",
+                type="function",
+                function=Function1(
+                    name=tool_data["function"],
+                    arguments=json.dumps(tool_data["parameters"]),
+                ),
+            )
+            tool_calls.append(tool_call)
 
 
 def openai_parse_chat_completion_request(
@@ -328,6 +416,10 @@ async def openai_create_chat_completion(
             ]
             request_images = await asyncio.gather(*resolve_image_tasks)
 
+        tools = _convert_chat_completion_tools_to_token_generator_tools(
+            completion_request.tools
+        )
+
         response_generator = OpenAIChatResponseGenerator(pipeline)
         token_request = TokenGeneratorRequest(
             id=request_id,
@@ -335,12 +427,20 @@ async def openai_create_chat_completion(
             model_name=completion_request.model,
             messages=request_messages,
             images=request_images,
+            tools=tools,
             max_new_tokens=completion_request.max_tokens,
             timestamp_ns=request.state.request_timer.start_ns,
             request_path=request.url.path,
         )
 
         if completion_request.stream:
+            # Currently, tools are not supported in streaming mode.
+            if tools:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Tools are not supported in streaming mode.",
+                )
+
             # We set a large timeout for ping otherwise benchmarking scripts
             # such as sglang will fail in parsing the ping message.
             return EventSourceResponse(
@@ -361,6 +461,34 @@ async def openai_create_chat_completion(
         # but we don't necessarily want to expose the full error description
         # to the user. There are many different ValueErrors that can be raised.
         raise HTTPException(status_code=400, detail="Value error.") from e
+
+
+def _convert_chat_completion_tools_to_token_generator_tools(
+    chat_tools: Optional[List[ChatCompletionTool]],
+) -> Optional[List[TokenGeneratorRequestTool]]:
+    """Convert ChatCompletionTool list to TokenGeneratorRequestTool list."""
+    if not chat_tools:
+        return None
+
+    token_generator_tools = []
+    for tool in chat_tools:
+        parameters = (
+            tool.function.parameters.model_dump()
+            if tool.function.parameters
+            else {}
+        )
+
+        token_generator_tool = TokenGeneratorRequestTool(
+            type=tool.type,
+            function=TokenGeneratorRequestFunction(
+                name=tool.function.name,
+                description=tool.function.description,
+                parameters=parameters,
+            ),
+        )
+        token_generator_tools.append(token_generator_tool)
+
+    return token_generator_tools
 
 
 class CompletionResponseStreamChoice(BaseModel):
