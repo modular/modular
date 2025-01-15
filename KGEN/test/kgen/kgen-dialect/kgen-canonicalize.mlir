@@ -534,6 +534,30 @@ kgen.generator @param_if_unreachable(%arg0: !kgen.pointer<index>, %arg1: index) 
   kgen.return
 }
 
+// CHECK-LABEL: @param_if_empty_before_break
+kgen.generator @param_if_empty_before_break<cond: i1>(%arg0: !kgen.pointer<index>, %arg1: index) {
+  // CHECK-NEXT: kgen.return
+  hlcf.loop {
+    kgen.param.if <cond> {
+      kgen.param.yield
+    } else {
+      hlcf.break
+    }
+    hlcf.break
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: @param_if_empty_yield
+kgen.generator @param_if_empty_yield<cond: i1>(%arg0: !kgen.pointer<index>, %arg1: index) {
+  // CHECK-NEXT: kgen.return
+  kgen.param.if <cond> {
+    kgen.param.yield
+  } else {
+    kgen.param.yield
+  }
+  kgen.return
+}
 
 // CHECK-LABEL: @trivial_struct_copy
 kgen.func @trivial_struct_copy(%arg0: !kgen.struct<(i1)>, %arg1: !kgen.struct<(i1, i1)>) -> (!kgen.struct<()>, !kgen.struct<(i1)>, !kgen.struct<(i1, i1)>, !kgen.struct<(i1, i1)>) {

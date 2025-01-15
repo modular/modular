@@ -139,6 +139,33 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
 //===----------------------------------------------------------------------===//
 
 LogicalResult ParamIfOp::canonicalize(ParamIfOp op, PatternRewriter &b) {
+  Block &ifBranch = op->getRegion(0).front();
+  Block &elseBranch = op->getRegion(1).front();
+  Operation *ifTerm = ifBranch.getTerminator();
+  Operation *elseTerm = elseBranch.getTerminator();
+
+  // Simple patterns to handle the case of branches containing just terminator
+  // ops.
+  if (ifTerm == &ifBranch.front() && elseTerm == &elseBranch.front() &&
+      op->getNumResults() == 0) {
+    // If both sides are yielding, we can delete the op.
+    if (isa<ParamYieldOp>(ifTerm) && isa<ParamYieldOp>(elseTerm)) {
+      b.eraseOp(op);
+      return success();
+    }
+
+    // If one branch yields and another breaks we can delete the op if the op is
+    // immediately preceding another break. The terminators can't have any
+    // returns.
+    if (ifTerm->getNumOperands() == 0 && elseTerm->getNumOperands() == 0 &&
+        isa<ParamYieldOp, HLCF::BreakOp>(ifTerm) &&
+        isa<ParamYieldOp, HLCF::BreakOp>(elseTerm) &&
+        isa<HLCF::BreakOp>(op->getNextNode())) {
+      b.eraseOp(op);
+      return success();
+    }
+  }
+
   auto condAttr = dyn_cast<BoolAttr>(op.getCond());
   if (!condAttr)
     return b.notifyMatchFailure(op.getLoc(), "condition is not a constant");
