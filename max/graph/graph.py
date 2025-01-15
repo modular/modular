@@ -254,6 +254,13 @@ class Graph:
         return self._mlir_op.regions[0].blocks[0]
 
     def _add_op(self, op, *args, **kwargs) -> list[Value]:
+        """Wrapper for clients that only require the op results."""
+        results, _ = self._add_op_get_op_with_results(op, *args, **kwargs)
+        return results
+
+    def _add_op_get_op_with_results(
+        self, op, *args, **kwargs
+    ) -> tuple[list[Value], mlir.OpView]:
         # Convert args from instances of Python graph-api Value() to mlir.Value
         def unwrap(arg):
             if isinstance(arg, Value):
@@ -295,8 +302,12 @@ class Graph:
                     # Intentionally suppress extra stack traces from max._mlir.
                 ) from None
 
+        # Get the op we just staged, which is the last op in the body block.
+        ops = self._body.operations
+        staged_op = ops[len(ops) - 1]
+
         if isinstance(results, (mlir.Operation, mlir.OpView)):
-            return []
+            return [], staged_op
 
         # Convert op results from  mlir.Value to instances of Value graph-api
         if isinstance(results, mlir.Value):
@@ -326,10 +337,7 @@ class Graph:
         new_params = dict.fromkeys(new_params.keys() - self._params.keys())
         self._params.update(new_params)
         if new_params:
-            # The last op in the block is the op we just created.
-            # Add the output params to it.
-            ops = self._body.operations
-            op = ops[len(ops) - 1]
+            # Add the output parms to the op we just created.
             param_decl = _graph.dim_param_decl_array_attr(
                 self._context,
                 [
@@ -337,9 +345,9 @@ class Graph:
                     for p in new_params
                 ],
             )
-            op.attributes["outputParamDecls"] = param_decl
+            staged_op.attributes["outputParamDecls"] = param_decl
 
-        return results
+        return results, staged_op
 
     def output(self, *outputs: Value) -> None:
         """Sets the output nodes of the :obj:`Graph`."""
