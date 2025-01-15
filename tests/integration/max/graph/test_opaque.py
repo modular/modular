@@ -24,7 +24,14 @@ def maker_model(session: InferenceSession, counter_ops_path: Path) -> Model:
     counter_type = _OpaqueType("Counter")
     maker_graph = Graph("maker", input_types=[], output_types=[counter_type])
     with maker_graph:
-        maker_graph.output(ops.custom("make_counter", [], [counter_type])[0])
+        maker_graph.output(
+            ops.custom(
+                "make_counter",
+                values=[],
+                out_types=[counter_type],
+                parameters={"stride": 1},
+            )[0]
+        )
     maker_compiled = session.load(
         maker_graph, custom_extensions=counter_ops_path
     )
@@ -36,7 +43,12 @@ def bumper_model(session: InferenceSession, counter_ops_path: Path) -> Model:
     counter_type = _OpaqueType("Counter")
     bumper_graph = Graph("bumper", input_types=[counter_type], output_types=[])
     with bumper_graph:
-        ops.inplace_custom("bump_counter", [bumper_graph.inputs[0]], [])
+        ops.inplace_custom(
+            "bump_counter",
+            values=[bumper_graph.inputs[0]],
+            out_types=[],
+            parameters={"stride": 1},
+        )
         bumper_graph.output()
     bumper_compiled = session.load(
         bumper_graph, custom_extensions=counter_ops_path
@@ -51,8 +63,9 @@ def reader_model(session: InferenceSession, counter_ops_path: Path) -> Model:
     with reader_graph:
         c = ops.inplace_custom(
             "read_counter",
-            [reader_graph.inputs[0]],
-            [TensorType(DType.int32, [2])],
+            values=[reader_graph.inputs[0]],
+            out_types=[TensorType(DType.int32, [2])],
+            parameters={"stride": 1},
         )
         reader_graph.output(c[0])
     reader_compiled = session.load(
@@ -61,7 +74,7 @@ def reader_model(session: InferenceSession, counter_ops_path: Path) -> Model:
     return reader_compiled
 
 
-def test_opaque(
+def test_opaque_simple(
     maker_model: Model, bumper_model: Model, reader_model: Model
 ) -> None:
     counter = maker_model.execute_legacy()["output0"]
@@ -89,6 +102,7 @@ def test_opaque_driver_constructor(
                 "make_counter_from_tensor",
                 values=[maker_graph.inputs[0]],
                 out_types=[counter_type],
+                parameters={"stride": 1},
             )[0]
         )
     maker_compiled = session.load(

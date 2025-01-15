@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from max.mlir import StringAttr
+from max import mlir
+from max.mlir import IndexType, IntegerAttr, StringAttr
 from max.mlir.dialects import mo
 
 from ..graph import Graph
@@ -17,8 +18,24 @@ from ..type import Type, _ChainType
 from ..value import BufferValue, Value, _OpaqueValue
 
 
+def _parameter_attribute(
+    param: int | str, context: mlir.Context
+) -> mlir.Attribute:
+    """Converts a Python type to an MLIR attribute to parametrize a kernel."""
+    if isinstance(param, int):
+        return IntegerAttr.get(IndexType.get(context), param)
+    elif isinstance(param, str):
+        return StringAttr.get(param, context)
+    else:
+        msg = f"unsupported parameter type {type(param)} for custom op"
+        raise TypeError(msg)
+
+
 def custom(
-    name: str, values: list[Value], out_types: list[Type]
+    name: str,
+    values: list[Value],
+    out_types: list[Type],
+    parameters: dict[str, int | str] | None = None,
 ) -> list[Value]:
     """Creates a node to execute a custom graph operation in the graph.
 
@@ -30,6 +47,7 @@ def custom(
         name: The op name provided to ``max.register.op``.
         values: The op function's arguments.
         out_types: The list of op function's return type.
+        parameters: Dictionary of extra parameters expected by the kernel.
 
     Returns:
         Symbolic values representing the outputs of the op in the graph.
@@ -45,13 +63,24 @@ def custom(
         )
         raise TypeError(msg)
 
-    return graph._add_op(
+    results, custom_op = graph._add_op_get_op_with_results(
         mo.custom, [t.to_mlir() for t in out_types], values, symbol=symbol_attr
     )
 
+    if parameters is not None:
+        for name, param in parameters.items():
+            custom_op.attributes[name] = _parameter_attribute(
+                param, graph._context
+            )
+
+    return results
+
 
 def inplace_custom(
-    name: str, values: Iterable[Value], out_types: Iterable[Type] | None = None
+    name: str,
+    values: Iterable[Value],
+    out_types: Iterable[Type] | None = None,
+    parameters: dict[str, int | str] | None = None,
 ) -> list[Value]:
     """Creates a node to execute an in-place custom graph operation in the graph.
 
@@ -84,12 +113,18 @@ def inplace_custom(
     graph = Graph.current
     current_chain = graph._current_chain
 
-    *results, out_chain = graph._add_op(
+    (*results, out_chain), custom_op = graph._add_op_get_op_with_results(
         mo.custom,
         results_=[*out_mlir_types, _ChainType().to_mlir()],
         operands_=[*values, current_chain],
         symbol=StringAttr.get(name, graph._context),
     )
     graph._update_chain(out_chain._mlir_value)
+
+    if parameters is not None:
+        for name, param in parameters.items():
+            custom_op.attributes[name] = _parameter_attribute(
+                param, graph._context
+            )
 
     return results
