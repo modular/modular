@@ -151,7 +151,6 @@ modular_py_test(
         "//KGEN:CompilerRT",
         "@llvm-project//compiler-rt:orc_rt",
     ],
-    requires_gpu = True,
     tags = [
         "gpu",
         "huggingface",

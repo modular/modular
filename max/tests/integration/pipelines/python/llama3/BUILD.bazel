@@ -167,7 +167,6 @@ modular_py_test(
             "SDK/integration-test/pipelines/python/llama3/testdata"
         ),
     },
-    requires_gpu = True,
     tags = [
         "A100",
         "gpu",

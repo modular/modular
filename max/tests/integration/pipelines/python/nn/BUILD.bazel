@@ -110,7 +110,6 @@ modular_py_test(
         "//Support/tools/system-info",
         "@llvm-project//compiler-rt:orc_rt",
     ],
-    requires_gpu = True,
     tags = [
         "gpu",
     ],
@@ -153,7 +152,6 @@ modular_py_test(
         "//Support/tools/system-info",
         "@llvm-project//compiler-rt:orc_rt",
     ],
-    requires_gpu = True,
     tags = [
         "multi-gpu",
         "no-mypy",  # TODO: Fix and remove
@@ -197,7 +195,6 @@ modular_py_test(
     env = {
         "BAZEL": "true",
     },
-    requires_gpu = True,
     tags = [
         "gpu",
         # FIXME: KERN-1469
