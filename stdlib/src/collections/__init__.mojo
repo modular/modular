@@ -21,3 +21,4 @@ from .list import List
 from .optional import Optional, OptionalReg
 from .set import Set
 from .vector import InlinedFixedVector
+from .linked_list import LinkedList

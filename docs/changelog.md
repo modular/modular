@@ -231,6 +231,8 @@ what we publish.
 
 - You can now use `max()` and `min()` with variadic number of arguments.
 
+- A new `LinkedList` type has been added to the standard library.
+
 ### Tooling changes
 
 - mblack (aka `mojo format`) no longer formats non-mojo files. This prevents
