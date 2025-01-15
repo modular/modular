@@ -1201,44 +1201,42 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     fn isspace(self) -> Bool:
         """Determines whether every character in the given StringSlice is a
         python whitespace String. This corresponds to Python's
-        [universal separators:](
-        https://docs.python.org/3/library/stdtypes.html#str.splitlines)
-        `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029"`.
+        [universal separators](
+        https://docs.python.org/3/library/stdtypes.html#str.splitlines):
+         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029"`.
 
         Returns:
             True if the whole StringSlice is made up of whitespace characters
             listed above, otherwise False.
+
+        Examples:
+
+        Check if a string contains only whitespace:
+
+        ```mojo
+        from collections.string import StringSlice
+        from testing import assert_true, assert_false
+
+        # An empty string is not considered to contain only whitespace chars:
+        assert_false(StringSlice("").isspace())
+
+        # ASCII space characters
+        assert_true(StringSlice(" ").isspace())
+        assert_true(StringSlice("\t").isspace())
+
+        # Contains non-space characters
+        assert_false(StringSlice(" abc  ").isspace())
+        ```
+        .
         """
 
         if self.byte_length() == 0:
             return False
 
-        # TODO add line and paragraph separator as stringliteral
-        # once Unicode escape sequences are accepted
-        var next_line = List[UInt8](0xC2, 0x85)
-        """TODO: \\x85"""
-        var unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8)
-        """TODO: \\u2028"""
-        var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
-        """TODO: \\u2029"""
-
-        for s in self:
-            var no_null_len = s.byte_length()
-            var ptr = s.unsafe_ptr()
-            if no_null_len == 1 and Char(ptr[0]).is_posix_space():
-                continue
-            elif (
-                no_null_len == 2 and memcmp(ptr, next_line.unsafe_ptr(), 2) == 0
-            ):
-                continue
-            elif no_null_len == 3 and (
-                memcmp(ptr, unicode_line_sep.unsafe_ptr(), 3) == 0
-                or memcmp(ptr, unicode_paragraph_sep.unsafe_ptr(), 3) == 0
-            ):
-                continue
-            else:
+        for s in self.chars():
+            if not s.is_python_space():
                 return False
-        _ = next_line, unicode_line_sep, unicode_paragraph_sep
+
         return True
 
     fn isnewline[single_character: Bool = False](self) -> Bool:

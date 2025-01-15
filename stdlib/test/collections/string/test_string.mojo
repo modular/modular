@@ -876,6 +876,8 @@ def test_upper():
 
 
 def test_isspace():
+    assert_false(String("").isspace())
+
     # test all utf8 and unicode separators
     # 0 is to build a String with null terminator
     alias next_line = List[UInt8](0xC2, 0x85, 0)

@@ -272,6 +272,48 @@ struct Char(CollectionElement, EqualityComparable, Intable, Stringable):
         """
         return self._scalar_value <= 0b0111_1111
 
+    @always_inline
+    fn is_python_space(self) -> Bool:
+        """Determines whether this character is a Python whitespace string.
+
+        This corresponds to Python's [universal separators](
+        https://docs.python.org/3/library/stdtypes.html#str.splitlines):
+         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029"`.
+
+        Returns:
+            True if this character is one of the whitespace characters listed
+            above, otherwise False.
+
+        # Examples
+
+        Check if a string contains only whitespace:
+
+        ```mojo
+        from testing import assert_true, assert_false
+
+        # ASCII space characters
+        assert_true(Char.ord(" ").is_python_space())
+        assert_true(Char.ord("\t").is_python_space())
+
+        # Unicode paragraph separator:
+        assert_true(Char.from_u32(0x2029).value().is_python_space())
+
+        # Letters are not space characters
+        assert_fales(Char.ord("a").is_python_space())
+        ```
+        .
+        """
+
+        alias next_line = Char.from_u32(0x85).value()
+        alias unicode_line_sep = Char.from_u32(0x2028).value()
+        alias unicode_paragraph_sep = Char.from_u32(0x2029).value()
+
+        return self.is_posix_space() or self in (
+            next_line,
+            unicode_line_sep,
+            unicode_paragraph_sep,
+        )
+
     fn is_posix_space(self) -> Bool:
         """Returns True if this `Char` is a **space** character according to the
         [POSIX locale][1].
