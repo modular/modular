@@ -113,7 +113,9 @@ what we publish.
   - Added `String` constructor from `Char`
   - `Char` can be converted to `UInt32` via `Char.to_u32()`.
   - `Char` provides methods for categorizing character types, including:
-    `Char.is_ascii()`, `Char.is_posix_space()`, `Char.is_python_space()`.
+    `Char.is_ascii()`, `Char.is_posix_space()`, `Char.is_python_space()`,
+    `Char.is_ascii_digit()`, `Char.is_ascii_upper()`, `Char.is_ascii_lower()`,
+    `Char.is_ascii_printable()`.
 
 - `chr(Int)` will now abort if given a codepoint value that is not a valid
   `Char`.

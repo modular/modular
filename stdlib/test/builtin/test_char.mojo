@@ -95,6 +95,49 @@ def test_char_is_posix_space():
     assert_false(Char.ord(".").is_posix_space())
 
 
+def test_char_is_lower():
+    assert_true(Char.ord("a").is_ascii_lower())
+    assert_true(Char.ord("b").is_ascii_lower())
+    assert_true(Char.ord("y").is_ascii_lower())
+    assert_true(Char.ord("z").is_ascii_lower())
+
+    assert_false(Char.from_u32(ord("a") - 1).value().is_ascii_lower())
+    assert_false(Char.from_u32(ord("z") + 1).value().is_ascii_lower())
+
+    assert_false(Char.ord("!").is_ascii_lower())
+    assert_false(Char.ord("0").is_ascii_lower())
+
+
+def test_char_is_upper():
+    assert_true(Char.ord("A").is_ascii_upper())
+    assert_true(Char.ord("B").is_ascii_upper())
+    assert_true(Char.ord("Y").is_ascii_upper())
+    assert_true(Char.ord("Z").is_ascii_upper())
+
+    assert_false(Char.from_u32(ord("A") - 1).value().is_ascii_upper())
+    assert_false(Char.from_u32(ord("Z") + 1).value().is_ascii_upper())
+
+    assert_false(Char.ord("!").is_ascii_upper())
+    assert_false(Char.ord("0").is_ascii_upper())
+
+
+def test_char_is_digit():
+    assert_true(Char.ord("1").is_ascii_digit())
+    assert_false(Char.ord("g").is_ascii_digit())
+
+    # Devanagari Digit 6 — non-ASCII digits are not "ascii digit".
+    assert_false(Char.ord("६").is_ascii_digit())
+
+
+def test_char_is_printable():
+    assert_true(Char.ord("a").is_ascii_printable())
+    assert_false(Char.ord("\n").is_ascii_printable())
+    assert_false(Char.ord("\t").is_ascii_printable())
+
+    # Non-ASCII characters are not considered "ascii printable".
+    assert_false(Char.ord("स").is_ascii_printable())
+
+
 alias SIGNIFICANT_CODEPOINTS = List[Tuple[Int, List[Byte]]](
     # --------------------------
     # 1-byte (ASCII) codepoints
@@ -191,6 +234,10 @@ def main():
     test_char_formatting()
     test_char_properties()
     test_char_is_posix_space()
+    test_char_is_lower()
+    test_char_is_upper()
+    test_char_is_digit()
+    test_char_is_printable()
     test_char_utf8_encoding()
     test_char_utf8_byte_length()
     test_char_comptime()

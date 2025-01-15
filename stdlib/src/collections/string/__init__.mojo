@@ -18,10 +18,6 @@ from .string import (
     atof,
     atol,
     chr,
-    isdigit,
-    islower,
-    isprintable,
-    isupper,
     ord,
 )
 from .string_slice import StringSlice, StaticString

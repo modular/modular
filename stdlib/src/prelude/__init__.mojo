@@ -21,10 +21,6 @@ from collections.string import (
     atof,
     atol,
     chr,
-    isdigit,
-    islower,
-    isprintable,
-    isupper,
     ord,
 )
 from hashlib.hash import Hashable, hash

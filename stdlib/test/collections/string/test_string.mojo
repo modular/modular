@@ -814,17 +814,6 @@ def test_splitlines():
 
 
 def test_isupper():
-    assert_true(isupper(ord("A")))
-    assert_true(isupper(ord("B")))
-    assert_true(isupper(ord("Y")))
-    assert_true(isupper(ord("Z")))
-
-    assert_false(isupper(ord("A") - 1))
-    assert_false(isupper(ord("Z") + 1))
-
-    assert_false(isupper(ord("!")))
-    assert_false(isupper(ord("0")))
-
     assert_true(String("ASDG").isupper())
     assert_false(String("AsDG").isupper())
     assert_true(String("ABC123").isupper())
@@ -834,17 +823,6 @@ def test_isupper():
 
 
 def test_islower():
-    assert_true(islower(ord("a")))
-    assert_true(islower(ord("b")))
-    assert_true(islower(ord("y")))
-    assert_true(islower(ord("z")))
-
-    assert_false(islower(ord("a") - 1))
-    assert_false(islower(ord("z") + 1))
-
-    assert_false(islower(ord("!")))
-    assert_false(islower(ord("0")))
-
     assert_true(String("asdfg").islower())
     assert_false(String("asdFDg").islower())
     assert_true(String("abc123").islower())
@@ -1425,9 +1403,6 @@ def test_format_conversion_flags():
 
 
 def test_isdigit():
-    assert_true(isdigit(ord("1")))
-    assert_false(isdigit(ord("g")))
-
     assert_false(String("").isdigit())
     assert_true(String("123").isdigit())
     assert_false(String("asdg").isdigit())
@@ -1435,10 +1410,6 @@ def test_isdigit():
 
 
 def test_isprintable():
-    assert_true(isprintable(ord("a")))
-    assert_false(isprintable(ord("\n")))
-    assert_false(isprintable(ord("\t")))
-
     assert_true(String("aasdg").isprintable())
     assert_false(String("aa\nae").isprintable())
     assert_false(String("aa\tae").isprintable())

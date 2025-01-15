@@ -140,7 +140,7 @@ fn _repr_ascii(c: UInt8) -> String:
 
     if c == ord_back_slash:
         return r"\\"
-    elif isprintable(c):
+    elif Char(c).is_ascii_printable():
         return _chr_ascii(c)
     elif c == ord_tab:
         return r"\t"
@@ -523,96 +523,6 @@ fn atof(str_slice: StringSlice) raises -> Float64:
         result /= shift
     # apply sign
     return result * sign
-
-
-# ===----------------------------------------------------------------------=== #
-# isdigit
-# ===----------------------------------------------------------------------=== #
-
-
-fn isdigit(c: UInt8) -> Bool:
-    """Determines whether the given character is a digit [0-9].
-
-    Args:
-        c: The character to check.
-
-    Returns:
-        True if the character is a digit.
-    """
-    alias ord_0 = ord("0")
-    alias ord_9 = ord("9")
-    return ord_0 <= Int(c) <= ord_9
-
-
-# ===----------------------------------------------------------------------=== #
-# isupper
-# ===----------------------------------------------------------------------=== #
-
-
-fn isupper(c: UInt8) -> Bool:
-    """Determines whether the given character is an uppercase character.
-
-    This currently only respects the default "C" locale, i.e. returns True iff
-    the character specified is one of "ABCDEFGHIJKLMNOPQRSTUVWXYZ".
-
-    Args:
-        c: The character to check.
-
-    Returns:
-        True if the character is uppercase.
-    """
-    return _is_ascii_uppercase(c)
-
-
-fn _is_ascii_uppercase(c: UInt8) -> Bool:
-    alias ord_a = ord("A")
-    alias ord_z = ord("Z")
-    return ord_a <= Int(c) <= ord_z
-
-
-# ===----------------------------------------------------------------------=== #
-# islower
-# ===----------------------------------------------------------------------=== #
-
-
-fn islower(c: UInt8) -> Bool:
-    """Determines whether the given character is an lowercase character.
-
-    This currently only respects the default "C" locale, i.e. returns True iff
-    the character specified is one of "abcdefghijklmnopqrstuvwxyz".
-
-    Args:
-        c: The character to check.
-
-    Returns:
-        True if the character is lowercase.
-    """
-    return _is_ascii_lowercase(c)
-
-
-fn _is_ascii_lowercase(c: UInt8) -> Bool:
-    alias ord_a = ord("a")
-    alias ord_z = ord("z")
-    return ord_a <= Int(c) <= ord_z
-
-
-# ===----------------------------------------------------------------------=== #
-# isprintable
-# ===----------------------------------------------------------------------=== #
-
-
-fn isprintable(c: UInt8) -> Bool:
-    """Determines whether the given character is a printable character.
-
-    Args:
-        c: The character to check.
-
-    Returns:
-        True if the character is a printable character, otherwise False.
-    """
-    alias ord_space = ord(" ")
-    alias ord_tilde = ord("~")
-    return ord_space <= Int(c) <= ord_tilde
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1961,8 +1871,8 @@ struct String(
         """
         if not self:
             return False
-        for c in self:
-            if not isdigit(ord(c)):
+        for char in self.as_string_slice().chars():
+            if not char.is_ascii_digit():
                 return False
         return True
 
@@ -1994,8 +1904,8 @@ struct String(
         Returns:
             True if all characters are printable else False.
         """
-        for c in self:
-            if not isprintable(ord(c)):
+        for char in self.as_string_slice().chars():
+            if not char.is_ascii_printable():
                 return False
         return True
 

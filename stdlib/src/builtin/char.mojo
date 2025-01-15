@@ -272,6 +272,52 @@ struct Char(CollectionElement, EqualityComparable, Intable, Stringable):
         """
         return self._scalar_value <= 0b0111_1111
 
+    fn is_ascii_digit(self) -> Bool:
+        """Determines whether the given character is a digit [0-9].
+
+        Returns:
+            True if the character is a digit.
+        """
+        alias ord_0 = UInt32(ord("0"))
+        alias ord_9 = UInt32(ord("9"))
+        return ord_0 <= self.to_u32() <= ord_9
+
+    fn is_ascii_upper(self) -> Bool:
+        """Determines whether the given character is an uppercase character.
+
+        This currently only respects the default "C" locale, i.e. returns True
+        iff the character specified is one of "ABCDEFGHIJKLMNOPQRSTUVWXYZ".
+
+        Returns:
+            True if the character is uppercase.
+        """
+        alias ord_a = UInt32(ord("A"))
+        alias ord_z = UInt32(ord("Z"))
+        return ord_a <= self.to_u32() <= ord_z
+
+    fn is_ascii_lower(self) -> Bool:
+        """Determines whether the given character is an lowercase character.
+
+        This currently only respects the default "C" locale, i.e. returns True
+        iff the character specified is one of "abcdefghijklmnopqrstuvwxyz".
+
+        Returns:
+            True if the character is lowercase.
+        """
+        alias ord_a = UInt32(ord("a"))
+        alias ord_z = UInt32(ord("z"))
+        return ord_a <= self.to_u32() <= ord_z
+
+    fn is_ascii_printable(self) -> Bool:
+        """Determines whether the given character is a printable character.
+
+        Returns:
+            True if the character is a printable character, otherwise False.
+        """
+        alias ord_space = UInt32(ord(" "))
+        alias ord_tilde = UInt32(ord("~"))
+        return ord_space <= self.to_u32() <= ord_tilde
+
     @always_inline
     fn is_python_space(self) -> Bool:
         """Determines whether this character is a Python whitespace string.

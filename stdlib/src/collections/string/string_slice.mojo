@@ -524,12 +524,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             elif s == "\r":
                 result += r"\r"
             else:
-                var codepoint = ord(s)
-                if isprintable(codepoint):
+                var codepoint = Char.ord(s)
+                if codepoint.is_ascii_printable():
                     result += s
-                elif codepoint < 0x10:
+                elif codepoint.to_u32() < 0x10:
                     result += hex(codepoint, prefix=r"\x0")
-                elif codepoint < 0x20 or codepoint == 0x7F:
+                elif codepoint.to_u32() < 0x20 or codepoint.to_u32() == 0x7F:
                     result += hex(codepoint, prefix=r"\x")
                 else:  # multi-byte character
                     result += s
