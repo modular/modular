@@ -1191,6 +1191,17 @@ fn test_repack_Q4_0_for_sm8x(
         rtol=rtol,
     )
 
+    _ = gguf_dequan_ref_host
+    _ = repacked_dequan_tensor
+    _ = repacked_dequan_host
+    _ = repacked_dequan_device
+    _ = gguf_b_tensor
+    _ = gguf_b_device
+    _ = gguf_b_host
+    _ = repacked_b_tensor
+    _ = repacked_b_device
+    _ = repacked_b_host
+
 
 fn test_quantized[
     type: DType
@@ -1458,12 +1469,11 @@ fn test_quantized[
 
 def main():
     with DeviceContext() as ctx:
-        # FIXME: test_repack_Q4_0_for_sm8x seems to have a memory leak corrupting Layout data leading to generating INVALID_PTX
-        # test_repack_Q4_0_for_sm8x(
-        #     ctx,
-        #     static[4096](),
-        #     static[4096](),
-        # )
+        test_repack_Q4_0_for_sm8x(
+            ctx,
+            static[4096](),
+            static[4096](),
+        )
         test_quantized[DType.uint8](
             ctx, static[482](), static[6144](), static[4096]()
         )
