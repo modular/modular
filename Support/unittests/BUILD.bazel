@@ -222,10 +222,6 @@ modular_pybind_library_test(
     name = "CPythonUtilTest",
     srcs = ["CPython/UtilTest.cpp"],
     py_deps = [],
-    target_compatible_with = select({
-        "//:asan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         "//Support:CPython",
     ],
@@ -235,10 +231,6 @@ modular_pybind_library_test(
     name = "CPythonPybindUtilTest",
     srcs = ["CPython/UtilTest.cpp"],
     py_deps = [],
-    target_compatible_with = select({
-        "//:asan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         "//Support:CPythonPybind",
     ],
