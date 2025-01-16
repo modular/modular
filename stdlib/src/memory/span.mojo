@@ -68,16 +68,14 @@ struct _SpanIter[
         return self
 
     @always_inline
-    fn __next__(
-        mut self,
-    ) -> Pointer[T, origin]:
+    fn __next__(mut self, out p: Pointer[T, origin]):
         @parameter
         if forward:
+            p = Pointer.address_of(self.src[self.index])
             self.index += 1
-            return Pointer.address_of(self.src[self.index - 1])
         else:
             self.index -= 1
-            return Pointer.address_of(self.src[self.index])
+            p = Pointer.address_of(self.src[self.index])
 
     @always_inline
     fn __has_next__(self) -> Bool:
