@@ -776,7 +776,7 @@ fn get_conv_num_partitions[
     # TODO: make this bias factor part of function parameter/argument and
     # unifies interface with matmul partition, e.x. bias=1 for matmul.
     alias bias = 0.25
-    var matmul_M_biased = Int(max(float(matmul_M) * bias, 1))
+    var matmul_M_biased = Int(max(Float64(matmul_M) * bias, 1))
 
     # The ideal partition in theory is to balance the cost of memory access in
     # M and N dimensions using square sub-matrix (after applying the bias).
