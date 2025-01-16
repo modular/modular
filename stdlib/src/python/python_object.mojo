@@ -1531,7 +1531,7 @@ struct PythonObject(
         """
 
         # TODO: Avoid this intermediate String allocation, if possible.
-        writer.write(str(self))
+        writer.write(String(self))
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -1589,7 +1589,7 @@ struct PythonObject(
         var actual_type = cpython.Py_TYPE(self.unsafe_as_py_object_ptr())
         var actual_type_name = PythonObject(cpython.PyType_GetName(actual_type))
 
-        return str(actual_type_name)
+        return String(actual_type_name)
 
 
 # ===-----------------------------------------------------------------------===#

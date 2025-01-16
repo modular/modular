@@ -100,11 +100,12 @@ what we publish.
 
 ### Standard library changes
 
-- The `int` function to construct an `Int` has been deprecated, this was a
-  temporary workaround when Mojo didn't have a way to distinguish between
-  implicit and explicit constructors. You can do a search and replace from
-  `int(` to `Int(` to update your programs, the `int` function will be removed
-  in the next release.
+- These functions have been deprecated: `int`, `str` in favor of constructors:
+  `Int`, `String`. The functions were a temporary workaround for when Mojo
+  didn't have a way to distinguish between implicit and explicit constructors.
+  You can do a search and replace e.g. from `int(` to `Int(` to update your
+  programs. This release will show a deprecation warning for the old functions,
+  and they'll be removed in the next release.
 
 - `UnsafePointer`'s `bitcast` method has now been split into `bitcast`
   for changing the type, `origin_cast` for changing mutability,

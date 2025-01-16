@@ -401,7 +401,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         print(my_list.__str__())
         ```
 
-        When the compiler supports conditional methods, then a simple `str(my_list)` will
+        When the compiler supports conditional methods, then a simple `String(my_list)` will
         be enough.
 
         The elements' type must implement the `__repr__()` method for this to work.

@@ -68,14 +68,14 @@ trait Writer:
         fn write_to[W: Writer](self, mut writer: W):
             writer.write("Point(", self.x, ", ", self.y, ")")
 
-        # Enable conversion to a String using `str(point)`
+        # Enable conversion to a String using `String(point)`
         fn __str__(self) -> String:
             return String.write(self)
 
 
     fn main():
         var point = Point(1, 2)
-        var new_string = NewString(str(point))
+        var new_string = NewString(String(point))
         new_string.write("\\n", Point(3, 4))
         print(new_string)
     ```

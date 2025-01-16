@@ -103,7 +103,7 @@ conforms to the [`Stringable`](/mojo/stdlib/builtin/str/Stringable) trait:
 fn repeat[MsgType: Stringable, count: Int](msg: MsgType):
     @parameter
     for i in range(count):
-        print(str(msg))
+        print(String(msg))
 
 # Must use keyword parameter for `count`
 repeat[count=2](42)
@@ -125,7 +125,7 @@ by the argument. Now you can pass the following parameter `count` positionally:
 fn repeat[MsgType: Stringable, //, count: Int](msg: MsgType):
     @parameter
     for i in range(count):
-        print(str(msg))
+        print(String(msg))
 
 # MsgType is always inferred, so first positional keyword `2` is passed to `count`
 repeat[2](42)
@@ -252,7 +252,7 @@ struct Container[ElementType: CollectionElement]:
 
     def __str__[StrElementType: StringableCollectionElement, //](
             self: Container[StrElementType]) -> String:
-        return str(self.element)
+        return String(self.element)
 
 def use_container():
     float_container = Container(5)
@@ -282,7 +282,7 @@ This trait must be a superset of `ElementType`'s original trait: for example,
 all of requirements of the original trait.
 
 Note that the `use_container()` function calls the `__str__()` method directly,
-rather than calling `str(float_container)`. One current limitation of
+rather than calling `String(float_container)`. One current limitation of
 conditional conformance is that Mojo can't recognize the struct
 `Container[Int]` as conforming to `Stringable`, even though the `__str__()`
 method is implemented for any `ElementType` that's also `Stringable`.
@@ -545,11 +545,11 @@ struct Two[Type: StringableCollectionElement]:
     fn __init__(out self, one: One[Type], another: One[Type]):
         self.val1 = one.value
         self.val2 = another.value
-        print(str(self.val1), str(self.val2))
+        print(String(self.val1), String(self.val2))
 
     @staticmethod
     fn fire(thing1: One[Type], thing2: One[Type]):
-        print("🔥", str(thing1.value), str(thing2.value))
+        print("🔥", String(thing1.value), String(thing2.value))
 
 def use_two():
     s3 = Two(One("infer"), One("me"))
@@ -1163,9 +1163,7 @@ For example, suppose we have a `Fudge` struct with three parameters:
 @value
 struct Fudge[sugar: Int, cream: Int, chocolate: Int = 7](Stringable):
     fn __str__(self) -> String:
-        return str("Fudge (") + str(sugar) + "," +
-            str(cream) + "," + str(chocolate) + ")"
-
+        return String.write("Fudge (", sugar, ",", cream, ",", chocolate, ")")
 ```
 
 We can write a function that takes a `Fudge` argument with just one bound
@@ -1173,7 +1171,7 @@ parameter (it's *partially bound*):
 
 ```mojo
 fn eat(f: Fudge[5, *_]):
-    print("Ate " + str(f))
+    print("Ate " + String(f))
 ```
 
 The `eat()` function takes a `Fudge` struct with the first parameter (`sugar`)
@@ -1185,7 +1183,7 @@ on the `eat` function. In practice, this is roughly equivalent to writing:
 
 ```mojo
 fn eat[cr: Int, ch: Int](f: Fudge[5, cr, ch]):
-    print("Ate", str(f))
+    print("Ate", String(f))
 ```
 
 In both cases, we can call the function by passing in an instance with the
@@ -1218,7 +1216,7 @@ parameter value with a single underscore (`_`):
 
 ```mojo
 fn devour(f: Fudge[_, 6, _]):
-    print("Devoured",  str(f))
+    print("Devoured",  String(f))
 ```
 
 Again, the unbound parameters (`sugar` and `chocolate`) are added as implicit
@@ -1228,7 +1226,7 @@ parameters, `su` and `ch`:
 
 ```mojo
 fn devour[su: Int, ch: Int](f: Fudge[su, 6, ch]):
-    print("Devoured", str(f))
+    print("Devoured", String(f))
 ```
 
 You can also specify parameters by keyword, or mix positional and keyword
@@ -1239,7 +1237,7 @@ And `cream` is explicitly bound to the value 6:
 
 ```mojo
 fn devour(f: Fudge[_, chocolate=_, cream=6]):
-    print("Devoured",  str(f))
+    print("Devoured", String(f))
 ```
 
 All three versions of the `devour()` function work with the following calls:
@@ -1261,7 +1259,7 @@ for example:
 
 ```mojo
 fn nibble(f: Fudge[5]):
-    print("Ate", str(f))
+    print("Ate", String(f))
 
 nibble(Fudge[5, 4, 7]())
 

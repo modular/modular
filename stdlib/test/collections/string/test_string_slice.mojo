@@ -225,7 +225,7 @@ fn test_slice_bool() raises:
 def test_slice_repr():
     # Standard single-byte characters
     assert_equal(StringSlice.__repr__("hello"), "'hello'")
-    assert_equal(StringSlice.__repr__(str(0)), "'0'")
+    assert_equal(StringSlice.__repr__(String(0)), "'0'")
     assert_equal(StringSlice.__repr__("A"), "'A'")
     assert_equal(StringSlice.__repr__(" "), "' '")
     assert_equal(StringSlice.__repr__("~"), "'~'")
@@ -334,34 +334,40 @@ fn test_utf8_validation() raises:
 
 
 def test_find():
-    haystack = str("abcdefg").as_string_slice()
-    haystack_with_special_chars = str("abcdefg@#$").as_string_slice()
-    haystack_repeated_chars = str("aaaaaaaaaaaaaaaaaaaaaaaa").as_string_slice()
+    haystack = String("abcdefg").as_string_slice()
+    haystack_with_special_chars = String("abcdefg@#$").as_string_slice()
+    haystack_repeated_chars = String(
+        "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ).as_string_slice()
 
-    assert_equal(haystack.find(str("a").as_string_slice()), 0)
-    assert_equal(haystack.find(str("ab").as_string_slice()), 0)
-    assert_equal(haystack.find(str("abc").as_string_slice()), 0)
-    assert_equal(haystack.find(str("bcd").as_string_slice()), 1)
-    assert_equal(haystack.find(str("de").as_string_slice()), 3)
-    assert_equal(haystack.find(str("fg").as_string_slice()), 5)
-    assert_equal(haystack.find(str("g").as_string_slice()), 6)
-    assert_equal(haystack.find(str("z").as_string_slice()), -1)
-    assert_equal(haystack.find(str("zzz").as_string_slice()), -1)
+    assert_equal(haystack.find(String("a").as_string_slice()), 0)
+    assert_equal(haystack.find(String("ab").as_string_slice()), 0)
+    assert_equal(haystack.find(String("abc").as_string_slice()), 0)
+    assert_equal(haystack.find(String("bcd").as_string_slice()), 1)
+    assert_equal(haystack.find(String("de").as_string_slice()), 3)
+    assert_equal(haystack.find(String("fg").as_string_slice()), 5)
+    assert_equal(haystack.find(String("g").as_string_slice()), 6)
+    assert_equal(haystack.find(String("z").as_string_slice()), -1)
+    assert_equal(haystack.find(String("zzz").as_string_slice()), -1)
 
-    assert_equal(haystack.find(str("@#$").as_string_slice()), -1)
+    assert_equal(haystack.find(String("@#$").as_string_slice()), -1)
     assert_equal(
-        haystack_with_special_chars.find(str("@#$").as_string_slice()), 7
-    )
-
-    assert_equal(haystack_repeated_chars.find(str("aaa").as_string_slice()), 0)
-    assert_equal(haystack_repeated_chars.find(str("AAa").as_string_slice()), -1)
-
-    assert_equal(
-        haystack.find(str("hijklmnopqrstuvwxyz").as_string_slice()), -1
+        haystack_with_special_chars.find(String("@#$").as_string_slice()), 7
     )
 
     assert_equal(
-        str("").as_string_slice().find(str("abc").as_string_slice()), -1
+        haystack_repeated_chars.find(String("aaa").as_string_slice()), 0
+    )
+    assert_equal(
+        haystack_repeated_chars.find(String("AAa").as_string_slice()), -1
+    )
+
+    assert_equal(
+        haystack.find(String("hijklmnopqrstuvwxyz").as_string_slice()), -1
+    )
+
+    assert_equal(
+        String("").as_string_slice().find(String("abc").as_string_slice()), -1
     )
 
 
@@ -510,7 +516,7 @@ def test_splitlines():
     ](l1: List[StringSlice[O1]], l2: List[String]) raises:
         assert_equal(len(l1), len(l2))
         for i in range(len(l1)):
-            assert_equal(str(l1[i]), l2[i])
+            assert_equal(String(l1[i]), l2[i])
 
     # Test with no line breaks
     assert_equal(S("hello world").splitlines(), L("hello world"))

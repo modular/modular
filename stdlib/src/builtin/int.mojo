@@ -209,7 +209,7 @@ trait ImplicitlyIntable(Intable):
 # ===----------------------------------------------------------------------=== #
 
 
-# FIXME(25.1): Move `int` deprecation warnings to a compiler error
+# FIXME(25.2): Move `int` deprecation warnings to a compiler error
 @deprecated(
     "the `int` function is deprecated, use the `Int` constructor instead."
 )
@@ -1149,7 +1149,7 @@ struct Int(
         Returns:
             A string representation.
         """
-        return str(self)
+        return String(self)
 
     fn __hash__(self) -> UInt:
         """Hash the int using builtin hash.

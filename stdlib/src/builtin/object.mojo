@@ -568,18 +568,18 @@ struct _ObjectImpl(
             writer.write("None")
             return
         if self.is_bool():
-            writer.write(str(self.get_as_bool()))
+            writer.write(String(self.get_as_bool()))
             return
         if self.is_int():
-            writer.write(str(self.get_as_int()))
+            writer.write(String(self.get_as_int()))
             return
         if self.is_float():
-            writer.write(str(self.get_as_float()))
+            writer.write(String(self.get_as_float()))
             return
         if self.is_str():
             writer.write(
                 "'"
-                + str(
+                + String(
                     StringRef(
                         self.get_as_string().data, self.get_as_string().length
                     )
@@ -597,7 +597,7 @@ struct _ObjectImpl(
             for j in range(self.get_list_length()):
                 if j != 0:
                     writer.write(", ")
-                writer.write(str(object(self.get_list_element(j))))
+                writer.write(String(object(self.get_list_element(j))))
             writer.write("]")
             return
 
@@ -609,9 +609,9 @@ struct _ObjectImpl(
                 writer.write(", ")
             writer.write(
                 "'"
-                + str(entry[].key)
+                + String(entry[].key)
                 + "' = "
-                + str(object(entry[].value.copy()))
+                + String(object(entry[].value.copy()))
             )
             print_sep = True
         writer.write("}")

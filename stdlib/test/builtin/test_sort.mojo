@@ -49,14 +49,15 @@ fn random_numbers[
 #     sort[dtype](list)
 #     for i in range(1, len(list)):
 #         assert_true(
-#             list[i] >= list[i - 1], str(list[i - 1]) + " > " + str(list[i])
+#             list[i] >= list[i - 1], String(list[i - 1]) + " > " + String(list[i])
 #         )
 
 
 fn assert_sorted_string(mut list: List[String]) raises:
     for i in range(1, len(list)):
         assert_true(
-            list[i] >= list[i - 1], str(list[i - 1]) + " > " + str(list[i])
+            list[i] >= list[i - 1],
+            String(list[i - 1]) + " > " + String(list[i]),
         )
 
 
@@ -64,7 +65,7 @@ fn assert_sorted[
     type: ComparableCollectionElement
 ](mut list: List[type]) raises:
     for i in range(1, len(list)):
-        assert_true(list[i] >= list[i - 1], "error at index: " + str(i))
+        assert_true(list[i] >= list[i - 1], "error at index: " + String(i))
 
 
 fn test_sort_small_3() raises:
@@ -522,7 +523,7 @@ def test_sort_string_small_list():
     var list = random_numbers[DType.int32](10)
     var string_list = List[String]()
     for n in list:
-        string_list.append(str(Int(n[])))
+        string_list.append(String(Int(n[])))
     sort(string_list)
     assert_sorted_string(string_list)
 
@@ -531,7 +532,7 @@ def test_sort_string_big_list():
     var list = random_numbers[DType.int32](1000)
     var string_list = List[String]()
     for n in list:
-        string_list.append(str(Int(n[])))
+        string_list.append(String(Int(n[])))
     sort(string_list)
     assert_sorted_string(string_list)
 

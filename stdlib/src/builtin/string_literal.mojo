@@ -135,7 +135,7 @@ struct StringLiteral(
         Returns:
             The string value as a StringLiteral.
         """
-        return Self._from_string[str(value)]()
+        return Self._from_string[String(value)]()
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -470,7 +470,7 @@ struct StringLiteral(
         Returns:
             A new string containing the character at the specified position.
         """
-        return str(self)[idx]
+        return String(self)[idx]
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -648,7 +648,7 @@ struct StringLiteral(
         Returns:
             The joined string.
         """
-        return str(self).join(elems)
+        return String(self).join(elems)
 
     fn join(self, *elems: Int) -> String:
         """Joins the elements from the tuple using the current string literal as a
@@ -662,9 +662,9 @@ struct StringLiteral(
         """
         if len(elems) == 0:
             return ""
-        var curr = str(elems[0])
+        var curr = String(elems[0])
         for i in range(1, len(elems)):
-            curr += self + str(elems[i])
+            curr += self + String(elems[i])
         return curr
 
     fn join[*Types: Stringable](self, *elems: *Types) -> String:
@@ -689,7 +689,7 @@ struct StringLiteral(
                 is_first = False
             else:
                 result += self
-            result += str(a)
+            result += String(a)
 
         elems.each[add_elt]()
         return result
@@ -717,7 +717,7 @@ struct StringLiteral(
         ```
         .
         """
-        return str(self).split(sep, maxsplit)
+        return String(self).split(sep, maxsplit)
 
     fn split(self, sep: NoneType = None, maxsplit: Int = -1) -> List[String]:
         """Split the string literal by every whitespace separator.
@@ -745,7 +745,7 @@ struct StringLiteral(
         ```
         .
         """
-        return str(self).split(sep, maxsplit)
+        return String(self).split(sep, maxsplit)
 
     fn splitlines(self, keepends: Bool = False) -> List[String]:
         """Split the string literal at line boundaries. This corresponds to Python's
@@ -774,7 +774,7 @@ struct StringLiteral(
         Returns:
           The number of occurrences of `substr`.
         """
-        return str(self).count(substr)
+        return String(self).count(substr)
 
     fn lower(self) -> String:
         """Returns a copy of the string literal with all cased characters
@@ -784,7 +784,7 @@ struct StringLiteral(
             A new string where cased letters have been converted to lowercase.
         """
 
-        return str(self).lower()
+        return String(self).lower()
 
     fn upper(self) -> String:
         """Returns a copy of the string literal with all cased characters
@@ -794,7 +794,7 @@ struct StringLiteral(
             A new string where cased letters have been converted to uppercase.
         """
 
-        return str(self).upper()
+        return String(self).upper()
 
     fn rjust(self, width: Int, fillchar: StringLiteral = " ") -> String:
         """Returns the string right justified in a string literal of specified width.
@@ -806,7 +806,7 @@ struct StringLiteral(
         Returns:
             Returns right justified string, or self if width is not bigger than self length.
         """
-        return str(self).rjust(width, fillchar)
+        return String(self).rjust(width, fillchar)
 
     fn ljust(self, width: Int, fillchar: StringLiteral = " ") -> String:
         """Returns the string left justified in a string literal of specified width.
@@ -818,7 +818,7 @@ struct StringLiteral(
         Returns:
             Returns left justified string, or self if width is not bigger than self length.
         """
-        return str(self).ljust(width, fillchar)
+        return String(self).ljust(width, fillchar)
 
     fn center(self, width: Int, fillchar: StringLiteral = " ") -> String:
         """Returns the string center justified in a string literal of specified width.
@@ -830,7 +830,7 @@ struct StringLiteral(
         Returns:
             Returns center justified string, or self if width is not bigger than self length.
         """
-        return str(self).center(width, fillchar)
+        return String(self).center(width, fillchar)
 
     fn startswith(
         self, prefix: StringSlice, start: Int = 0, end: Int = -1
@@ -872,7 +872,7 @@ struct StringLiteral(
         Returns:
             True if all characters are digits else False.
         """
-        return str(self).isdigit()
+        return String(self).isdigit()
 
     fn isupper(self) -> Bool:
         """Returns True if all cased characters in the string literal are
@@ -884,7 +884,7 @@ struct StringLiteral(
             True if all cased characters in the string literal are uppercase
             and there is at least one cased character, False otherwise.
         """
-        return str(self).isupper()
+        return String(self).isupper()
 
     fn islower(self) -> Bool:
         """Returns True if all cased characters in the string literal
@@ -896,7 +896,7 @@ struct StringLiteral(
             True if all cased characters in the string literal are lowercase
             and there is at least one cased character, False otherwise.
         """
-        return str(self).islower()
+        return String(self).islower()
 
     fn strip(self) -> String:
         """Return a copy of the string literal with leading and trailing
@@ -930,7 +930,7 @@ struct StringLiteral(
         Returns:
             A string with no trailing characters.
         """
-        return String(str(self).rstrip(chars))
+        return String(String(self).rstrip(chars))
 
     fn rstrip(self) -> String:
         """Return a copy of the string with trailing whitespaces removed. This
@@ -961,4 +961,4 @@ struct StringLiteral(
         Returns:
             A copy of the string with no leading whitespaces.
         """
-        return String(str(self).lstrip())
+        return String(String(self).lstrip())

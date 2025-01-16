@@ -134,10 +134,10 @@ def main():
     for i in range(len(sizes)):
         alias size = sizes[i]
         m.bench_function[bench_dict_insert[size]](
-            BenchId("bench_dict_insert[" + str(size) + "]")
+            BenchId("bench_dict_insert[" + String(size) + "]")
         )
         m.bench_function[bench_dict_lookup[size]](
-            BenchId("bench_dict_lookup[" + str(size) + "]")
+            BenchId("bench_dict_lookup[" + String(size) + "]")
         )
 
     m.dump_report()
@@ -147,5 +147,9 @@ def main():
         alias size = sizes[i]
         var mem_s = total_bytes_used(make_dict[size]())
         print(
-            '"bench_dict_memory_size[' + str(size) + ']",' + str(mem_s) + ",0"
+            '"bench_dict_memory_size['
+            + String(size)
+            + ']",'
+            + String(mem_s)
+            + ",0"
         )

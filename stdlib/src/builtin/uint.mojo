@@ -121,7 +121,7 @@ struct UInt(Indexer, _HashableWithHasher):
         ```mojo
         %# from testing import assert_equal
         x = UInt(50)
-        assert_equal(str(x), "50")
+        assert_equal(String(x), "50")
         ```
 
         Returns:
@@ -164,7 +164,7 @@ struct UInt(Indexer, _HashableWithHasher):
         Returns:
             The string representation of this UInt.
         """
-        return String.write("UInt(", str(self), ")")
+        return String.write("UInt(", String(self), ")")
 
     fn __hash__(self) -> UInt:
         """Hash the UInt using builtin hash.

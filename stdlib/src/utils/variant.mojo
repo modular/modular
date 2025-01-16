@@ -22,7 +22,7 @@ fn to_string(mut x: IntOrString) -> String:
   if x.isa[String]():
     return x[String]
   # x.isa[Int]()
-  return str(x[Int])
+  return String(x[Int])
 
 # They have to be mutable for now, and implement CollectionElement
 var an_int = IntOrString(4)
@@ -85,7 +85,7 @@ struct Variant[*Ts: CollectionElement](
         if x.isa[String]():
             return x[String]
         # x.isa[Int]()
-        return str(x[Int])
+        return String(x[Int])
 
     # They have to be mutable for now, and implement CollectionElement
     var an_int = IntOrString(4)

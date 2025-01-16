@@ -367,8 +367,8 @@ def split[PathLike: os.PathLike, //](path: PathLike) -> (String, String):
     fspath = path.__fspath__()
     i = fspath.rfind(os.sep) + 1
     head, tail = fspath[:i], fspath[i:]
-    if head and head != str(os.sep) * len(head):
-        head = str(head.rstrip(sep))
+    if head and head != String(os.sep) * len(head):
+        head = String(head.rstrip(sep))
     return head, tail
 
 

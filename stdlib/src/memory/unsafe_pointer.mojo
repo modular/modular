@@ -442,7 +442,7 @@ struct UnsafePointer[
         """
 
         # TODO: Avoid intermediate String allocation.
-        writer.write(str(self))
+        writer.write(String(self))
 
     # ===-------------------------------------------------------------------===#
     # Methods

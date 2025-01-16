@@ -16,7 +16,7 @@ from testing import assert_equal
 
 
 def test_str_none():
-    assert_equal(str(None), "None")
+    assert_equal(String(None), "None")
 
 
 def main():

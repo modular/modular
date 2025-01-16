@@ -78,7 +78,7 @@ struct _CTimeSpec(Stringable):
 
     @no_inline
     fn __str__(self) -> String:
-        return str(self.as_nanoseconds()) + "ns"
+        return String(self.as_nanoseconds()) + "ns"
 
 
 @value

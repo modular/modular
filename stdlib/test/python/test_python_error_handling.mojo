@@ -21,7 +21,7 @@ fn test_python_exception_import() raises:
     try:
         var sys = Python.import_module("my_uninstalled_module")
     except e:
-        assert_equal(str(e), "No module named 'my_uninstalled_module'")
+        assert_equal(String(e), "No module named 'my_uninstalled_module'")
 
 
 fn test_python_exception_getattr() raises:
@@ -31,7 +31,7 @@ fn test_python_exception_getattr() raises:
             var person = my_module.Person()
             var expec_fail = person.undefined()
     except e:
-        assert_equal(str(e), "'Person' object has no attribute 'undefined'")
+        assert_equal(String(e), "'Person' object has no attribute 'undefined'")
 
 
 fn test_python_exception_getitem() raises:
@@ -39,7 +39,7 @@ fn test_python_exception_getitem() raises:
         var list = PythonObject([1, 2, 3])
         var should_fail = list[13]
     except e:
-        assert_equal(str(e), "list index out of range")
+        assert_equal(String(e), "list index out of range")
 
 
 fn test_python_exception_call() raises:

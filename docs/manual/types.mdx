@@ -322,11 +322,23 @@ Testing Mojo strings
 
 Most standard library types conform to the
 [`Stringable`](/mojo/stdlib/builtin/str/Stringable) trait, which represents
-a type that can be converted to a string. Use `str(value)` to
+a type that can be converted to a string. Use `String(value)` to
 explicitly convert a value to a string:
 
 ```mojo
-var s = str("Items in list: ") + str(5)
+var s = String("Items in list: ") + String(5)
+print(s)
+```
+
+```output
+Items in list: 5
+```
+
+Or use `String.write` to take variadic `Stringable` types, so you don't have to
+call `String()` on each value:
+
+```mojo
+var s = String.write("Items in list: ", 5)
 print(s)
 ```
 
@@ -362,9 +374,8 @@ Note that the triple double quote form is also used for API documentation
 strings.
 
 Unlike `IntLiteral` and `FloatLiteral`, `StringLiteral` doesn't automatically
-materialize to a runtime type. In some cases, you may need to manually convert
-`StringLiteral` values to `String` using the built-in
-[`str()`](/mojo/stdlib/builtin/str/str) method.
+materialize to a runtime type. In some cases, you may need to explicitly convert
+`StringLiteral` values to `String`.
 
 ```mojo
 # Variable is type `StringLiteral`
@@ -374,7 +385,7 @@ var s1 = "Example"
 var s2: String = "Example"
 
 # Variable is type `String`
-var s3 = str("Example")
+var s3 = String("Example")
 ```
 
 ## Booleans
@@ -428,7 +439,7 @@ same tuple from the previous example with implicit typing instead of explicit,
 we must also convert `"Example"` from type `StringLiteral` to type `String`.
 
 ```mojo
-example_tuple = (1, str("Example"))
+example_tuple = (1, String("Example"))
 s = example_tuple.get[1, String]()
 print(s)
 ```
@@ -672,7 +683,7 @@ results in undefined behavior, so you should always guard a call to `value()`
 inside a conditional that checks whether a value exists.
 
 ```mojo
-var opt: Optional[String] = str("Testing")
+var opt: Optional[String] = String("Testing")
 if opt:
     var value_ref = opt.value()
     print(value_ref)
@@ -689,7 +700,7 @@ value if there is one, or a user-specified default value otherwise:
 var custom_greeting: Optional[String] = None
 print(custom_greeting.or_else("Hello"))
 
-custom_greeting = str("Hi")
+custom_greeting = String("Hi")
 print(custom_greeting.or_else("Hello"))
 
 ```

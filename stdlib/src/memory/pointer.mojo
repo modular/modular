@@ -417,4 +417,4 @@ struct Pointer[
         Returns:
             The string representation of the Pointer.
         """
-        return str(UnsafePointer.address_of(self[]))
+        return String(UnsafePointer.address_of(self[]))

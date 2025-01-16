@@ -40,7 +40,7 @@ def inc(n: Int) -> Int:
          k = inc(Int.MAX)
     except e:
          print(e)  # inc overflow
-    %#      assert_equal("inc overflow", str(e))
+    %#      assert_equal("inc overflow", String(e))
     ```
 
     Args:
@@ -76,7 +76,7 @@ def dec(n: Int) -> Int:
          k = dec(Int.MIN)
     except e:
          print(e)  # inc overflow
-    %#      assert_equal("dec overflow", str(e))
+    %#      assert_equal("dec overflow", String(e))
     ```
 
     Args:

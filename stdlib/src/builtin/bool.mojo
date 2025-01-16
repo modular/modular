@@ -248,7 +248,7 @@ struct Bool(
         Returns:
             A string representation.
         """
-        return str(self)
+        return String(self)
 
     @always_inline("nodebug")
     fn __int__(self) -> Int:

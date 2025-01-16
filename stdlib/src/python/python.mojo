@@ -412,7 +412,7 @@ struct Python:
             "invalid unchecked conversion of Python error to Mojo error",
         )
 
-        var error: Error = str(PythonObject(cpython.PyErr_Fetch()))
+        var error: Error = String(PythonObject(cpython.PyErr_Fetch()))
         cpython.PyErr_Clear()
         return error
 

@@ -239,7 +239,7 @@ fn source_loc_with_debug() -> _SourceLocation:
 
 fn test_source_location_struct() raises:
     var source_loc = _SourceLocation(50, 60, "/path/to/some_file.mojo")
-    assert_equal(str(source_loc), "/path/to/some_file.mojo:50:60")
+    assert_equal(String(source_loc), "/path/to/some_file.mojo:50:60")
 
 
 fn main() raises:

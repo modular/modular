@@ -20,9 +20,9 @@ from testing import assert_equal
 fn test_execute_python_string(mut python: Python) -> String:
     try:
         _ = Python.evaluate("print('evaluated by PyRunString')")
-        return str(Python.evaluate("'a' + 'b'"))
+        return String(Python.evaluate("'a' + 'b'"))
     except e:
-        return str(e)
+        return String(e)
 
 
 fn test_local_import(mut python: Python) -> String:
@@ -31,10 +31,10 @@ fn test_local_import(mut python: Python) -> String:
         if my_module:
             var foo = my_module.Foo("apple")
             foo.bar = "orange"
-            return str(foo.bar)
+            return String(foo.bar)
         return "no module, no fruit"
     except e:
-        return str(e)
+        return String(e)
 
 
 fn test_dynamic_import(mut python: Python, times: Int = 1) -> String:
@@ -51,15 +51,15 @@ def hello(name):
         var mod = Python.evaluate(INLINE_MODULE, file=True)
         for _ in range(times - 1):
             mod.hello("world")
-        return str(mod.hello("world"))
+        return String(mod.hello("world"))
     except e:
-        return str(e)
+        return String(e)
 
 
 fn test_call(mut python: Python) -> String:
     try:
         var my_module: PythonObject = Python.import_module("my_module")
-        return str(
+        return String(
             my_module.eat_it_all(
                 "carrot",
                 "bread",
@@ -70,7 +70,7 @@ fn test_call(mut python: Python) -> String:
             )
         )
     except e:
-        return str(e)
+        return String(e)
 
 
 def main():
@@ -93,12 +93,12 @@ def main():
     )
 
     var obj: PythonObject = [1, 2.4, True, "False"]
-    assert_equal(str(obj), "[1, 2.4, True, 'False']")
+    assert_equal(String(obj), "[1, 2.4, True, 'False']")
 
     obj = (1, 2.4, True, "False")
-    assert_equal(str(obj), "(1, 2.4, True, 'False')")
+    assert_equal(String(obj), "(1, 2.4, True, 'False')")
 
     obj = None
-    assert_equal(str(obj), "None")
+    assert_equal(String(obj), "None")
 
     assert_equal(test_execute_python_string(python), "ab")

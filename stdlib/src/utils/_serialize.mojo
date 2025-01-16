@@ -170,7 +170,7 @@ fn _serialize[
         for i in range(len(shape)):
             if i:
                 shape_str += "x"
-            shape_str += str(shape[i])
+            shape_str += String(shape[i])
         serialize_fn(shape_str)
 
     if serialize_end_line:

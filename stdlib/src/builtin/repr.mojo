@@ -50,7 +50,7 @@ trait Representable:
     This is typically used for debugging, so it is important that the representation is information-rich and unambiguous.
 
     Note that when computing the string representation of a collection (`Dict`, `List`, `Set`, etc...),
-    the `repr` function is called on each element, not the `str()` function.
+    the `repr` function is called on each element, not the `String()` function.
     """
 
     fn __repr__(self) -> String:

@@ -255,7 +255,7 @@ fn atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
         real_base = base
 
     if real_base <= 10:
-        ord_num_max = ord(str(real_base - 1))
+        ord_num_max = ord(String(real_base - 1))
     else:
         ord_num_max = ord("9")
         ord_letter_max = (
@@ -374,9 +374,9 @@ fn _handle_base_prefix(
 fn _str_to_base_error(base: Int, str_slice: StringSlice) -> String:
     return (
         "String is not convertible to integer with base "
-        + str(base)
+        + String(base)
         + ": '"
-        + str(str_slice)
+        + String(str_slice)
         + "'"
     )
 
@@ -416,7 +416,9 @@ fn _identify_base(str_slice: StringSlice, start: Int) -> Tuple[Int, Int]:
 
 
 fn _atof_error(str_ref: StringSlice) -> Error:
-    return Error("String is not convertible to float: '" + str(str_ref) + "'")
+    return Error(
+        "String is not convertible to float: '" + String(str_ref) + "'"
+    )
 
 
 fn atof(str_slice: StringSlice) raises -> Float64:
@@ -577,6 +579,42 @@ struct String(
         """Construct an uninitialized string."""
         self._buffer = Self._buffer_type()
 
+    @no_inline
+    fn __init__[T: Stringable](out self, value: T):
+        """Initialize from a type conforming to `Stringable`.
+
+        Parameters:
+            T: The type conforming to Stringable.
+
+        Args:
+            value: The object to get the string representation of.
+        """
+        self = value.__str__()
+
+    @no_inline
+    fn __init__[T: StringableRaising](out self, value: T) raises:
+        """Initialize from a type conforming to `StringableRaising`.
+
+        Parameters:
+            T: The type conforming to Stringable.
+
+        Args:
+            value: The object to get the string representation of.
+
+        Raises:
+            If there is an error when computing the string representation of the type.
+        """
+        self = value.__str__()
+
+    @no_inline
+    fn __init__(out self, value: None):
+        """Initialize a `None` type as "None".
+
+        Args:
+            value: The object to get the string representation of.
+        """
+        self = "None"
+
     @always_inline
     fn __init__(out self, *, capacity: Int):
         """Construct an uninitialized string with the given capacity.
@@ -617,53 +655,6 @@ struct String(
             A copy of the value.
         """
         return self  # Just use the implicit copyinit.
-
-    fn __init__(out self, char: Char):
-        """Construct a string from a character.
-
-        Args:
-            char: The character to construct this string from.
-
-        Notes:
-            This will allocate a new string holding the UTF-8 encoded
-            representation of `char`.
-        """
-        var char_len = char.utf8_byte_length()
-        var buffer = List[Byte](capacity=char_len + 1)
-        _ = char.unsafe_write_utf8(buffer.unsafe_ptr())
-        buffer.unsafe_ptr()[char_len] = 0
-        buffer.size = char_len + 1
-        self = String(buffer^)
-
-    fn __init__(out self, strref: StringRef):
-        """Construct a string from a StringRef object.
-
-        Args:
-            strref: The StringRef from which to construct this string object.
-        """
-        var length = len(strref)
-        var buffer = Self._buffer_type()
-        # +1 for null terminator, initialized to 0
-        buffer.resize(length + 1, 0)
-        memcpy(dest=buffer.data, src=strref.data, count=length)
-        self = Self(buffer^)
-
-    fn __init__(out self, str_slice: StringSlice):
-        """Construct a string from a string slice.
-
-        Args:
-            str_slice: The string slice from which to construct this string.
-
-        Notes:
-            This will allocate a new string that copies the string contents from
-            the provided string slice.
-        """
-
-        var length = str_slice.byte_length()
-        var ptr = UnsafePointer[Byte].alloc(length + 1)  # null terminator
-        memcpy(ptr, str_slice.unsafe_ptr(), length)
-        ptr[length] = 0
-        self = String(ptr=ptr, length=length + 1)
 
     @always_inline
     @implicit
@@ -1145,9 +1136,9 @@ struct String(
         """
         if len(elems) == 0:
             return ""
-        var curr = str(elems[0])
+        var curr = String(elems[0])
         for i in range(1, len(elems)):
-            curr += self + str(elems[i])
+            curr += self + String(elems[i])
         return curr
 
     fn join[*Types: Writable](self, *elems: *Types) -> String:
@@ -1210,7 +1201,7 @@ struct String(
                     is_first = False
                 else:
                     result += self
-                result += str(e[])
+                result += String(e[])
 
             return result
 

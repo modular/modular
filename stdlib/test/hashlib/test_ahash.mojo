@@ -577,7 +577,7 @@ fn gen_word_pairs[words: String = words_en]() -> List[String]:
     try:
         var list = words.split(", ")
         for w in list:
-            var w1 = str(w[].strip())
+            var w1 = String(w[].strip())
             for w in list:
                 var w2 = w[].strip()
                 result.append(w1 + " " + w2)
@@ -597,7 +597,7 @@ def assert_dif_hashes(hashes: List[UInt64], upper_bound: Int):
             var diff = dif_bits(hashes[i], hashes[j])
             assert_true(
                 diff > upper_bound,
-                str("Index: {}:{}, diff between: {} and {} is: {}").format(
+                String("Index: {}:{}, diff between: {} and {} is: {}").format(
                     i, j, hashes[i], hashes[j], diff
                 ),
                 location=__call_location(),
@@ -653,7 +653,7 @@ def test_avalanche():
         var diff = dif_bits(hashes0[i], hashes1[i])
         assert_true(
             diff > 16,
-            str("Index: {}, diff between: {} and {} is: {}").format(
+            String("Index: {}, diff between: {} and {} is: {}").format(
                 i, hashes0[i], hashes1[i], diff
             ),
         )
@@ -678,7 +678,7 @@ def test_trailing_zeros():
         var diff = dif_bits(hashes0[i], hashes1[i])
         assert_true(
             diff > 18,
-            str("Index: {}, diff between: {} and {} is: {}").format(
+            String("Index: {}, diff between: {} and {} is: {}").format(
                 i, hashes0[i], hashes1[i], diff
             ),
         )
@@ -705,7 +705,7 @@ def assert_fill_factor[
     var fill_factor = 1 - unfilled / num_buckets
     assert_true(
         fill_factor >= lower_bound,
-        str("Fill factor for {} is {}, provided lower boound was {}").format(
+        String("Fill factor for {} is {}, provided lower boound was {}").format(
             label, fill_factor, lower_bound
         ),
         location=__call_location(),
@@ -730,7 +730,7 @@ def assert_fill_factor_old_hash[
     var fill_factor = 1 - unfilled / num_buckets
     assert_true(
         fill_factor >= lower_bound,
-        str("Fill factor for {} is {}, provided lower bound was {}").format(
+        String("Fill factor for {} is {}, provided lower bound was {}").format(
             label, fill_factor, lower_bound
         ),
         location=__call_location(),

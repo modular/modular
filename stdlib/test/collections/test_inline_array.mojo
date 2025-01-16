@@ -187,8 +187,8 @@ def test_array_unsafe_assume_initialized_constructor_string():
 
 def test_array_contains():
     var arr = InlineArray[String, 3]("hi", "hello", "hey")
-    assert_true(str("hi") in arr)
-    assert_true(not str("greetings") in arr)
+    assert_true(String("hi") in arr)
+    assert_true(not String("greetings") in arr)
 
 
 def test_inline_array_runs_destructors():

@@ -496,12 +496,20 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
     @no_inline
     fn __str__(self) -> String:
-        """Gets this slice as a standard `String`.
+        """Convert this StringSlice to a String.
 
         Returns:
-            The string representation of the slice.
+            A new String.
+
+        Notes:
+            This will allocate a new string that copies the string contents from
+            the provided string slice.
         """
-        return String(str_slice=self)
+        var length = self.byte_length()
+        var ptr = UnsafePointer[Byte].alloc(length + 1)  # null terminator
+        memcpy(ptr, self.unsafe_ptr(), length)
+        ptr[length] = 0
+        return String(ptr=ptr, length=length + 1)
 
     fn __repr__(self) -> String:
         """Return a Mojo-compatible representation of this string slice.
@@ -582,7 +590,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
           The file system path representation as a string.
         """
-        return String(self)
+        return self.__str__()
 
     # ===------------------------------------------------------------------===#
     # Operator dunders

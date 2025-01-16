@@ -29,24 +29,24 @@ def test_random():
         var random_float = random_float64(0, 1)
         assert_true(
             random_float >= 0,
-            "Value " + str(random_float) + " is not above or equal to 0",
+            "Value " + String(random_float) + " is not above or equal to 0",
         )
         assert_true(
             random_float <= 1,
-            "Value " + str(random_float) + " is not below or equal to 1",
+            "Value " + String(random_float) + " is not below or equal to 1",
         )
 
         var random_signed = random_si64(-255, 255)
         assert_true(
             random_signed >= -255,
             "Signed value "
-            + str(random_signed)
+            + String(random_signed)
             + " is not above or equal to -255",
         )
         assert_true(
             random_signed <= 255,
             "Signed value "
-            + str(random_signed)
+            + String(random_signed)
             + " is not below or equal to 255",
         )
 
@@ -54,13 +54,13 @@ def test_random():
         assert_true(
             random_unsigned >= 0,
             "Unsigned value "
-            + str(random_unsigned)
+            + String(random_unsigned)
             + " is not above or equal to 0",
         )
         assert_true(
             random_unsigned <= 255,
             "Unsigned value "
-            + str(random_unsigned)
+            + String(random_unsigned)
             + " is not below or equal to 255",
         )
 
@@ -135,14 +135,14 @@ def test_shuffle():
     var i = L_l_s()
     var j = L_l_s()
     for x in range(10):
-        i.append(L_s(str(x), str(x + 1), str(x + 3)))
-        j.append(L_s(str(x), str(x + 1), str(x + 3)))
+        i.append(L_s(String(x), String(x + 1), String(x + 3)))
+        j.append(L_s(String(x), String(x + 1), String(x + 3)))
     shuffle(i)
     # TODO: Uncomment when possible
     # assert_true(g != h)
     assert_equal(len(i), len(j))
     for x in range(10):
-        var target: List[String] = L_s(str(x), str(x + 1), str(x + 3))
+        var target: List[String] = L_s(String(x), String(x + 1), String(x + 3))
         var found = False
         for y in range(len(i)):
             if j[y] == target:

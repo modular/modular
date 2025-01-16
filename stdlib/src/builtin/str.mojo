@@ -28,7 +28,7 @@ trait Stringable:
     Any type that conforms to `Stringable` or
     [`StringableRaising`](/mojo/stdlib/builtin/str/StringableRaising) works
     with the built-in [`print()`](/mojo/stdlib/builtin/io/print) and
-    [`str()`](/mojo/stdlib/builtin/str/str) functions.
+    [`String()`](/mojo/stdlib/builtin/str/str) functions.
 
     The `Stringable` trait requires the type to define the `__str__()` method.
     For example:
@@ -42,12 +42,12 @@ trait Stringable:
             return self.s
     ```
 
-    Now you can pass an instance of `Foo` to the `str()` function to get back a
+    Now you can pass an instance of `Foo` to the `String()` function to get back a
     `String`:
 
     ```mojo
     var foo = Foo("test")
-    print(str(foo) == "test")
+    print(String(foo) == "test")
     ```
 
     ```plaintext
@@ -83,7 +83,7 @@ trait StringableRaising:
     [`Stringable`](/mojo/stdlib/builtin/str/Stringable) or
     `StringableRaising` works with the built-in
     [`print()`](/mojo/stdlib/builtin/io/print) and
-    [`str()`](/mojo/stdlib/builtin/str/str) functions.
+    [`String()`](/mojo/stdlib/builtin/str/str) functions.
 
     The `StringableRaising` trait requires the type to define the `__str__()`
     method, which can raise an error. For example:
@@ -99,13 +99,13 @@ trait StringableRaising:
             return self.s
     ```
 
-    Now you can pass an instance of `Foo` to the `str()` function to get back a
+    Now you can pass an instance of `Foo` to the `String()` function to get back a
     `String`:
 
     ```mojo
     fn main() raises:
         var foo = Foo("test")
-        print(str(foo) == "test")
+        print(String(foo) == "test")
     ```
 
     ```plaintext
@@ -130,6 +130,10 @@ trait StringableRaising:
 # ===----------------------------------------------------------------------=== #
 
 
+# FIXME(25.2): Move `str` deprecation warnings to a compiler error
+@deprecated(
+    "the `str` function is deprecated, use the `String` constructor instead."
+)
 @no_inline
 fn str[T: Stringable](value: T) -> String:
     """Get the string representation of a value.
@@ -146,19 +150,10 @@ fn str[T: Stringable](value: T) -> String:
     return value.__str__()
 
 
-@no_inline
-fn str(value: None) -> String:
-    """Get the string representation of the `None` type.
-
-    Args:
-        value: The object to get the string representation of.
-
-    Returns:
-        The string representation of the object.
-    """
-    return "None"
-
-
+# FIXME(25.2): Move `str` deprecation warnings to a compiler error
+@deprecated(
+    "the `str` function is deprecated, use the `String` constructor instead."
+)
 @no_inline
 fn str[T: StringableRaising](value: T) raises -> String:
     """Get the string representation of a value.

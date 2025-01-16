@@ -66,7 +66,7 @@ def test_equality():
     assert_true(StringLiteral.__ne__("five", "six"))
     assert_false(StringLiteral.__ne__("six", "six"))
 
-    var hello = str("hello")
+    var hello = String("hello")
     var hello_ref = hello.as_string_slice()
 
     assert_false(StringLiteral.__eq__("goodbye", hello))

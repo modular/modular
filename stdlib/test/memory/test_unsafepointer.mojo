@@ -142,11 +142,11 @@ def test_bitcast():
 
 def test_unsafepointer_string():
     var nullptr = UnsafePointer[Int]()
-    assert_equal(str(nullptr), "0x0")
+    assert_equal(String(nullptr), "0x0")
 
     var ptr = UnsafePointer[Int].alloc(1)
-    assert_true(str(ptr).startswith("0x"))
-    assert_not_equal(str(ptr), "0x0")
+    assert_true(String(ptr).startswith("0x"))
+    assert_not_equal(String(ptr), "0x0")
     ptr.free()
 
 

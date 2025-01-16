@@ -254,7 +254,12 @@ struct Char(CollectionElement, EqualityComparable, Intable, Stringable):
         Returns:
             A string containing this single character.
         """
-        return String(self)
+        var char_len = self.utf8_byte_length()
+        var buffer = List[Byte](capacity=char_len + 1)
+        _ = self.unsafe_write_utf8(buffer.unsafe_ptr())
+        buffer.unsafe_ptr()[char_len] = 0
+        buffer.size = char_len + 1
+        return String(buffer^)
 
     # ===-------------------------------------------------------------------===#
     # Methods

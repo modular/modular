@@ -169,10 +169,10 @@ struct stat_result(Stringable, Writable):
         writer.write(", st_uid=", self.st_uid)
         writer.write(", st_gid=", self.st_gid)
         writer.write(", st_size=", self.st_size)
-        writer.write(", st_atime=", str(self.st_atimespec))
-        writer.write(", st_mtime=", str(self.st_mtimespec))
-        writer.write(", st_ctime=", str(self.st_ctimespec))
-        writer.write(", st_birthtime=", str(self.st_birthtimespec))
+        writer.write(", st_atime=", String(self.st_atimespec))
+        writer.write(", st_mtime=", String(self.st_mtimespec))
+        writer.write(", st_ctime=", String(self.st_ctimespec))
+        writer.write(", st_birthtime=", String(self.st_birthtimespec))
         writer.write(", st_blocks=", self.st_blocks)
         writer.write(", st_blksize=", self.st_blksize)
         writer.write(", st_rdev=", self.st_rdev)
@@ -194,7 +194,7 @@ struct stat_result(Stringable, Writable):
         Returns:
           A representation of stat_result.
         """
-        return str(self)
+        return String(self)
 
 
 # ===----------------------------------------------------------------------=== #

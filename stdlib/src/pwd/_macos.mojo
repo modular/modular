@@ -10,9 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from sys.ffi import c_char, external_call
-
+from utils import StringRef
 from memory import UnsafePointer
+from sys.ffi import c_char, external_call
 
 from .pwd import Passwd
 
@@ -39,13 +39,13 @@ struct _C_Passwd:
 fn _build_pw_struct(passwd_ptr: UnsafePointer[_C_Passwd]) raises -> Passwd:
     var c_pwuid = passwd_ptr[]
     var passwd = Passwd(
-        pw_name=String(c_pwuid.pw_name),
-        pw_passwd=String(c_pwuid.pw_passwd),
+        pw_name=String(StringRef(c_pwuid.pw_name)),
+        pw_passwd=String(StringRef(c_pwuid.pw_passwd)),
         pw_uid=Int(c_pwuid.pw_uid),
         pw_gid=Int(c_pwuid.pw_gid),
-        pw_gecos=String(c_pwuid.pw_gecos),
-        pw_dir=String(c_pwuid.pw_dir),
-        pw_shell=String(c_pwuid.pw_shell),
+        pw_gecos=String(StringRef(c_pwuid.pw_gecos)),
+        pw_dir=String(StringRef(c_pwuid.pw_dir)),
+        pw_shell=String(StringRef(c_pwuid.pw_shell)),
     )
     return passwd
 
@@ -53,7 +53,7 @@ fn _build_pw_struct(passwd_ptr: UnsafePointer[_C_Passwd]) raises -> Passwd:
 fn _getpw_macos(uid: UInt32) raises -> Passwd:
     var passwd_ptr = external_call["getpwuid", UnsafePointer[_C_Passwd]](uid)
     if not passwd_ptr:
-        raise "user ID not found in the password database: " + str(uid)
+        raise "user ID not found in the password database: " + String(uid)
     return _build_pw_struct(passwd_ptr)
 
 

@@ -198,48 +198,48 @@ def test_memcmp_extensive[
     assert_equal(
         memcmp(ptr1, ptr1, count),
         0,
-        "for dtype=" + str(type) + ";count=" + str(count),
+        "for dtype=" + String(type) + ";count=" + String(count),
     )
     assert_equal(
         memcmp(ptr1, ptr2, count),
         -1,
-        "for dtype=" + str(type) + ";count=" + str(count),
+        "for dtype=" + String(type) + ";count=" + String(count),
     )
     assert_equal(
         memcmp(ptr2, ptr1, count),
         1,
-        "for dtype=" + str(type) + ";count=" + str(count),
+        "for dtype=" + String(type) + ";count=" + String(count),
     )
 
     assert_equal(
         memcmp(dptr1, dptr1, count),
         0,
         "for dtype="
-        + str(type)
+        + String(type)
         + ";extremes="
-        + str(extermes)
+        + String(extermes)
         + ";count="
-        + str(count),
+        + String(count),
     )
     assert_equal(
         memcmp(dptr1, dptr2, count),
         -1,
         "for dtype="
-        + str(type)
+        + String(type)
         + ";extremes="
-        + str(extermes)
+        + String(extermes)
         + ";count="
-        + str(count),
+        + String(count),
     )
     assert_equal(
         memcmp(dptr2, dptr1, count),
         1,
         "for dtype="
-        + str(type)
+        + String(type)
         + ";extremes="
-        + str(extermes)
+        + String(extermes)
         + ";count="
-        + str(count),
+        + String(count),
     )
 
     ptr1.free()
@@ -313,21 +313,21 @@ def test_memset():
 
 def test_pointer_string():
     var nullptr = UnsafePointer[Int]()
-    assert_equal(str(nullptr), "0x0")
+    assert_equal(String(nullptr), "0x0")
 
     var ptr = UnsafePointer[Int].alloc(1)
-    assert_true(str(ptr).startswith("0x"))
-    assert_not_equal(str(ptr), "0x0")
+    assert_true(String(ptr).startswith("0x"))
+    assert_not_equal(String(ptr), "0x0")
     ptr.free()
 
 
 def test_dtypepointer_string():
     var nullptr = UnsafePointer[Float32]()
-    assert_equal(str(nullptr), "0x0")
+    assert_equal(String(nullptr), "0x0")
 
     var ptr = UnsafePointer[Float32].alloc(1)
-    assert_true(str(ptr).startswith("0x"))
-    assert_not_equal(str(ptr), "0x0")
+    assert_true(String(ptr).startswith("0x"))
+    assert_not_equal(String(ptr), "0x0")
     ptr.free()
 
 
@@ -367,8 +367,8 @@ def test_pointer_refitem_pair():
 
 
 def test_address_space_str():
-    assert_equal(str(AddressSpace.GENERIC), "AddressSpace.GENERIC")
-    assert_equal(str(AddressSpace(17)), "AddressSpace(17)")
+    assert_equal(String(AddressSpace.GENERIC), "AddressSpace.GENERIC")
+    assert_equal(String(AddressSpace(17)), "AddressSpace(17)")
 
 
 def test_dtypepointer_gather():

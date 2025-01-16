@@ -68,7 +68,7 @@ def check_float64_values():
     )
 
     assert_equal(
-        str(
+        String(
             Float64(
                 __mlir_op.`pop.cast`[_type = __mlir_type[`!pop.scalar<f64>`]](
                     __mlir_op.`kgen.param.constant`[

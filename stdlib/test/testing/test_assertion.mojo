@@ -35,22 +35,22 @@ def test_assert_messages():
     try:
         assert_true(False)
     except e:
-        assert_true(assertion in str(e) and assertion_error in str(e))
+        assert_true(assertion in String(e) and assertion_error in String(e))
 
     try:
         assert_false(True)
     except e:
-        assert_true(assertion in str(e) and assertion_error in str(e))
+        assert_true(assertion in String(e) and assertion_error in String(e))
 
     try:
         assert_equal(1, 0)
     except e:
-        assert_true(assertion in str(e) and assertion_error in str(e))
+        assert_true(assertion in String(e) and assertion_error in String(e))
 
     try:
         assert_not_equal(0, 0)
     except e:
-        assert_true(assertion in str(e) and assertion_error in str(e))
+        assert_true(assertion in String(e) and assertion_error in String(e))
 
 
 @value
@@ -236,8 +236,8 @@ def test_assert_custom_location():
             location=location,
         )
     except e:
-        assert_true(str(location) in str(e))
-        assert_true("always_false" in str(e))
+        assert_true(String(location) in String(e))
+        assert_true("always_false" in String(e))
 
 
 def test_assert_equal_stringslice():

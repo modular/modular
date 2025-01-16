@@ -20,38 +20,38 @@ from utils import Index, IndexList
 def test_basics():
     assert_equal(IndexList[2](1, 2), IndexList[2](1, 2))
     assert_equal(IndexList[3](1, 2, 3), IndexList[3](1, 2, 3))
-    assert_equal(str(IndexList[3](1, 2, 3)), "(1, 2, 3)")
+    assert_equal(String(IndexList[3](1, 2, 3)), "(1, 2, 3)")
     assert_equal(IndexList[3](1, 2, 3)[2], 3)
 
 
 def test_cast():
     assert_equal(
-        str(IndexList[1](1)),
+        String(IndexList[1](1)),
         "(1,)",
     )
     assert_equal(
-        str(IndexList[2](1, 2).cast[DType.int32]()),
+        String(IndexList[2](1, 2).cast[DType.int32]()),
         "(1, 2)",
     )
     assert_equal(
-        str(IndexList[2, element_bitwidth=64](1, 2).cast[DType.int32]()),
+        String(IndexList[2, element_bitwidth=64](1, 2).cast[DType.int32]()),
         "(1, 2)",
     )
     assert_equal(
-        str(IndexList[2, element_bitwidth=32](1, 2).cast[DType.int64]()),
+        String(IndexList[2, element_bitwidth=32](1, 2).cast[DType.int64]()),
         "(1, 2)",
     )
     assert_equal(
-        str(
+        String(
             IndexList[2, element_bitwidth=32](1, -2).cast[element_bitwidth=64]()
         ),
         "(1, -2)",
     )
     assert_equal(
-        str(IndexList[2, element_bitwidth=32](1, 2)),
+        String(IndexList[2, element_bitwidth=32](1, 2)),
         "(1, 2)",
     )
-    alias s = str(
+    alias s = String(
         IndexList[2, element_bitwidth=32](1, 2).cast[
             element_bitwidth=64, unsigned=True
         ]()
@@ -61,10 +61,10 @@ def test_cast():
 
 
 def test_index():
-    assert_equal(str(Index[element_bitwidth=64](1, 2, 3)), "(1, 2, 3)")
-    assert_equal(str(Index[element_bitwidth=32](1, 2, 3)), "(1, 2, 3)")
+    assert_equal(String(Index[element_bitwidth=64](1, 2, 3)), "(1, 2, 3)")
+    assert_equal(String(Index[element_bitwidth=32](1, 2, 3)), "(1, 2, 3)")
     assert_equal(
-        str(Index[element_bitwidth=32, unsigned=True](1, 2, 3)), "(1, 2, 3)"
+        String(Index[element_bitwidth=32, unsigned=True](1, 2, 3)), "(1, 2, 3)"
     )
 
 

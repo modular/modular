@@ -23,15 +23,15 @@ def test_error_raising():
     try:
         raise_an_error()
     except e:
-        assert_equal(str(e), "MojoError: This is an error!")
+        assert_equal(String(e), "MojoError: This is an error!")
 
 
 def test_from_and_to_string():
     var my_string: String = "FOO"
     var error = Error(my_string)
-    assert_equal(str(error), "FOO")
+    assert_equal(String(error), "FOO")
 
-    assert_equal(str(Error("bad")), "bad")
+    assert_equal(String(Error("bad")), "bad")
     assert_equal(repr(Error("err")), "Error('err')")
 
 

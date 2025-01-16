@@ -262,7 +262,7 @@ def main():
             alias fname = filenames[j]
             alias old = old_chars[j]
             alias new = new_chars[j]
-            suffix = "[" + str(length) + "]"  # "(" + fname + ")"
+            suffix = "[" + String(length) + "]"  # "(" + fname + ")"
             m.bench_function[bench_string_count[length, fname, old]](
                 BenchId("bench_string_count" + suffix)
             )

@@ -444,7 +444,7 @@ struct Deque[ElementType: CollectionElement](
         print(my_deque.__str__())
         ```
 
-        When the compiler supports conditional methods, then a simple `str(my_deque)` will
+        When the compiler supports conditional methods, then a simple `String(my_deque)` will
         be enough.
 
         The elements' type must implement the `__repr__()` method for this to work.

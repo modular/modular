@@ -23,16 +23,16 @@ alias TEMP_FILE = env_get_string["TEMP_FILE"]()
 
 
 def test_cwd():
-    assert_true(str(cwd()).startswith("/"))
+    assert_true(String(cwd()).startswith("/"))
 
 
 def test_path():
-    assert_true(str(Path() / "some" / "dir").endswith("/some/dir"))
+    assert_true(String(Path() / "some" / "dir").endswith("/some/dir"))
 
-    assert_equal(str(Path("/foo") / "bar" / "jar"), "/foo/bar/jar")
+    assert_equal(String(Path("/foo") / "bar" / "jar"), "/foo/bar/jar")
 
     assert_equal(
-        str(Path("/foo" + DIR_SEPARATOR) / "bar" / "jar"), "/foo/bar/jar"
+        String(Path("/foo" + DIR_SEPARATOR) / "bar" / "jar"), "/foo/bar/jar"
     )
 
     assert_not_equal(Path().stat().st_mode, 0)
@@ -102,7 +102,7 @@ fn get_current_home() -> String:
 
 
 def set_home(path: Path):
-    path_str = str(path)
+    path_str = String(path)
 
     @parameter
     if os_is_windows():
@@ -152,7 +152,7 @@ def test_stat():
     var path = Path(__source_location().file_name)
     var stat = path.stat()
     assert_equal(
-        str(stat),
+        String(stat),
         "os.stat_result(st_mode={}, st_ino={}, st_dev={}, st_nlink={},"
         " st_uid={}, st_gid={}, st_size={}, st_atime={}, st_mtime={},"
         " st_ctime={}, st_birthtime={}, st_blocks={}, st_blksize={},"
@@ -164,10 +164,10 @@ def test_stat():
             stat.st_uid,
             stat.st_gid,
             stat.st_size,
-            str(stat.st_atimespec),
-            str(stat.st_mtimespec),
-            str(stat.st_ctimespec),
-            str(stat.st_birthtimespec),
+            String(stat.st_atimespec),
+            String(stat.st_mtimespec),
+            String(stat.st_ctimespec),
+            String(stat.st_birthtimespec),
             stat.st_blocks,
             stat.st_blksize,
             stat.st_rdev,

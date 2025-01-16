@@ -61,8 +61,8 @@ fn _dir_of_current_file() raises -> Path:
 
 @no_inline
 fn _dir_of_current_file_impl(file_name: StringLiteral) raises -> Path:
-    var i = str(file_name).rfind(DIR_SEPARATOR)
-    return Path(str(file_name)[0:i])
+    var i = String(file_name).rfind(DIR_SEPARATOR)
+    return Path(String(file_name)[0:i])
 
 
 @value
@@ -184,7 +184,7 @@ struct Path(
         Returns:
           A string representation of the path.
         """
-        return str(self)
+        return String(self)
 
     fn __repr__(self) -> String:
         """Returns a printable representation of the path.
@@ -192,7 +192,7 @@ struct Path(
         Returns:
           A printable representation of the path.
         """
-        return str(self)
+        return String(self)
 
     fn __eq__(self, other: Self) -> Bool:
         """Returns True if the two paths are equal.
@@ -203,7 +203,7 @@ struct Path(
         Returns:
           True if the paths are equal and False otherwise.
         """
-        return str(self) == str(other)
+        return String(self) == String(other)
 
     fn __eq__(self, other: StringSlice) -> Bool:
         """Returns True if the two paths are equal.
@@ -340,7 +340,7 @@ struct Path(
           value: The value to write.
         """
         with open(self, "w") as f:
-            f.write(str(value))
+            f.write(String(value))
 
     fn suffix(self) -> String:
         """The path's extension, if any.

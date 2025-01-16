@@ -24,4 +24,4 @@ def main():
     try:
         foo("Hello")
     except e:
-        assert_equal(str(e), "Failed on: Hello")
+        assert_equal(String(e), "Failed on: Hello")

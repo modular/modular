@@ -78,7 +78,7 @@ def test_basic_no_copies():
 def test_multiple_resizes():
     var dict = Dict[String, Int]()
     for i in range(20):
-        dict["key" + str(i)] = i + 1
+        dict["key" + String(i)] = i + 1
     assert_equal(11, dict["key10"])
     assert_equal(20, dict["key19"])
 
@@ -99,7 +99,7 @@ def test_bool_conversion():
 def test_big_dict():
     var dict = Dict[String, Int]()
     for i in range(2000):
-        dict["key" + str(i)] = i + 1
+        dict["key" + String(i)] = i + 1
     assert_equal(2000, len(dict))
 
 
@@ -132,7 +132,7 @@ def test_dict_string_representation_int_int():
 def test_compact():
     var dict = Dict[String, Int]()
     for i in range(20):
-        var key = "key" + str(i)
+        var key = "key" + String(i)
         dict[key] = i + 1
         _ = dict.pop(key)
     assert_equal(0, len(dict))
@@ -141,10 +141,10 @@ def test_compact():
 def test_compact_with_elements():
     var dict = Dict[String, Int]()
     for i in range(5):
-        var key = "key" + str(i)
+        var key = "key" + String(i)
         dict[key] = i + 1
     for i in range(5, 20):
-        var key = "key" + str(i)
+        var key = "key" + String(i)
         dict[key] = i + 1
         _ = dict.pop(key)
     assert_equal(5, len(dict))
@@ -270,7 +270,7 @@ def test_dict_copy_add_new_item():
     # test there are two copies of dict and
     # they don't share underlying memory
     copy["b"] = 2
-    assert_false(str(2) in orig)
+    assert_false(String(2) in orig)
 
 
 def test_dict_copy_calls_copy_constructor():
@@ -608,14 +608,14 @@ def test_compile_time_dict():
     fn _get_dict() -> Dict[String, Int32]:
         var res = Dict[String, Int32]()
         for i in range(N):
-            res[str(i)] = i
+            res[String(i)] = i
         return res
 
     alias my_dict = _get_dict()
 
     @parameter
     for i in range(N):
-        alias val = my_dict.get(str(i)).value()
+        alias val = my_dict.get(String(i)).value()
         assert_equal(val, i)
 
 

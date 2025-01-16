@@ -371,7 +371,7 @@ a closure as a parameter that only runs when assertions are enabled:
 tensor = Tensor[DType.uint8, 1](TensorShape(1), cpu_device())
 
 fn _test_cpu() capturing -> Bool:
-    return "cpu" in str(tensor._device)
+    return "cpu" in String(tensor._device)
 
 debug_assert[_test_cpu]("This code is only runnable on CPU")
 ```

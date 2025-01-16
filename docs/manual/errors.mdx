@@ -103,12 +103,12 @@ recovery that's appropriate for your application.
 
 If you provide the name of a variable after the `except` keyword, then the
 `Error` instance is bound to the variable if an error occurs. The `Error` type
-implements the [`Writable`](/mojo/stdlib/utils/write/Writable) trait, so
-you can pass it as an argument to the [`print()`](/mojo/stdlib/builtin/io/print)
+implements the [`Writable`](/mojo/stdlib/utils/write/Writable) trait, so you can
+pass it as an argument to the [`print()`](/mojo/stdlib/builtin/io/print)
 function if you'd like to print its error message to the console. It also
 implements the [`Stringable`](/mojo/stdlib/builtin/str/Stringable) trait, so you
-can pass it to the [`str()`](/mojo/stdlib/builtin/str/str) function if you want
-to extract the error message as a `String` for further processing.
+can construct a `String` with `String(error)` if you want to extract the error
+message as a `String` for further processing.
 
 If desired, you can re-raise an error condition from your `except` clause simply
 by executing a `raise` statement from within its code block. This can be either
@@ -152,7 +152,7 @@ def main():
             print("try     =>", value[])
             if value[] == 1:
                 continue
-            result = str("{} incremented is {}").format(value[], incr(value[]))
+            result = String("{} incremented is {}").format(value[], incr(value[]))
         except e:
             print("except  =>", e)
         else:
@@ -384,7 +384,7 @@ struct ConditionalTimer:
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
 
     fn __exit__(mut self, e: Error) raises -> Bool:
-        if str(e) == "just a warning":
+        if String(e) == "just a warning":
             print("Suppressing error:", e)
             self.__exit__()
             return True

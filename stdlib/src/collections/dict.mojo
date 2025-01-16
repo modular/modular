@@ -712,7 +712,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
         # prints "{1: 1.1, 2: 2.2}"
         ```
 
-        When the compiler supports conditional methods, then a simple `str(my_dict)` will
+        When the compiler supports conditional methods, then a simple `String(my_dict)` will
         be enough.
 
         Note that both they keys and values' types must implement the `__repr__()` method
@@ -748,11 +748,11 @@ struct Dict[K: KeyElement, V: CollectionElement](
 
     fn _minimum_size_of_string_representation(self) -> Int:
         # we do a rough estimation of the minimum number of chars that we'll see
-        # in the string representation, we assume that str(key) and str(value)
+        # in the string representation, we assume that String(key) and String(value)
         # will be both at least one char.
         return (
             2  # '{' and '}'
-            + len(self) * 6  # str(key), str(value) ": " and ", "
+            + len(self) * 6  # String(key), String(value) ": " and ", "
             - 2  # remove the last ", "
         )
 

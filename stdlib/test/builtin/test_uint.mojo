@@ -19,12 +19,12 @@ from testing import assert_equal, assert_false, assert_not_equal, assert_true
 
 
 def test_simple_uint():
-    assert_equal(str(UInt(32)), "32")
+    assert_equal(String(UInt(32)), "32")
 
-    assert_equal(str(UInt(0)), "0")
-    assert_equal(str(UInt()), "0")
+    assert_equal(String(UInt(0)), "0")
+    assert_equal(String(UInt()), "0")
 
-    assert_equal(str(UInt(18446744073709551615)), "18446744073709551615")
+    assert_equal(String(UInt(18446744073709551615)), "18446744073709551615")
 
 
 def test_uint_representation():

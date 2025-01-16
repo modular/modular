@@ -35,7 +35,7 @@ def test_fixed_string():
     var s = _FixedString[50]("hello world")
 
     # Test conversion to String
-    assert_equal(str(s), "hello world")
+    assert_equal(String(s), "hello world")
 
     # Test comparison with StringLiteral
     assert_equal(s, "hello world")
@@ -55,7 +55,7 @@ def test_fixed_string():
     var s3 = _FixedString[1]("")
 
     assert_equal(len(s3), 0)
-    assert_equal(str(s3), "")
+    assert_equal(String(s3), "")
 
 
 def test_fixed_string_growth():
@@ -65,7 +65,7 @@ def test_fixed_string_growth():
     s1 += "hello "
 
     assert_equal(len(s1), 6)
-    assert_equal(str(s1), "hello ")
+    assert_equal(String(s1), "hello ")
 
     try:
         s1 += "world"
@@ -80,7 +80,7 @@ def test_fixed_string_growth():
         )
 
     # s1 should be unchanged by the failed append
-    assert_equal(str(s1), "hello ")
+    assert_equal(String(s1), "hello ")
 
 
 def test_small_string_construction():
@@ -149,7 +149,7 @@ def test_small_string_iadd():
     assert_equal(len(s1), 37)
     assert_true(not s1._is_small())
 
-    assert_equal(str(s1), "Hello world, how's it going? The End.")
+    assert_equal(String(s1), "Hello world, how's it going? The End.")
 
     # ==================================
     # Test appending String to InlineString
@@ -158,7 +158,7 @@ def test_small_string_iadd():
     var s2 = InlineString("")
     s2 += String("Hello, World!")
 
-    assert_equal(str(s2), "Hello, World!")
+    assert_equal(String(s2), "Hello, World!")
     assert_equal(len(s2), 13)
 
 
@@ -169,7 +169,7 @@ def test_small_string_add():
 
     var s1: InlineString = InlineString("hello") + " world"
 
-    assert_equal(str(s1), "hello world")
+    assert_equal(String(s1), "hello world")
     assert_equal(len(s1), "11")
 
     #
@@ -178,7 +178,7 @@ def test_small_string_add():
 
     var s2: InlineString = InlineString("hello") + InlineString(" world")
 
-    assert_equal(str(s2), "hello world")
+    assert_equal(String(s2), "hello world")
     assert_equal(len(s2), "11")
 
     #
@@ -187,5 +187,5 @@ def test_small_string_add():
 
     var s3: InlineString = InlineString("hello") + String(" world")
 
-    assert_equal(str(s3), "hello world")
+    assert_equal(String(s3), "hello world")
     assert_equal(len(s3), "11")

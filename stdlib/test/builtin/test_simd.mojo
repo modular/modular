@@ -106,32 +106,32 @@ def test_cast_init():
 
 
 def test_simd_variadic():
-    assert_equal(str(SIMD[DType.index, 4](52, 12, 43, 5)), "[52, 12, 43, 5]")
+    assert_equal(String(SIMD[DType.index, 4](52, 12, 43, 5)), "[52, 12, 43, 5]")
 
 
 def test_convert_simd_to_string():
     var a: SIMD[DType.float32, 2] = 5
-    assert_equal(str(a), "[5.0, 5.0]")
+    assert_equal(String(a), "[5.0, 5.0]")
 
     var b: SIMD[DType.float64, 4] = 6
-    assert_equal(str(b), "[6.0, 6.0, 6.0, 6.0]")
+    assert_equal(String(b), "[6.0, 6.0, 6.0, 6.0]")
 
     var c: SIMD[DType.index, 8] = 7
-    assert_equal(str(c), "[7, 7, 7, 7, 7, 7, 7, 7]")
+    assert_equal(String(c), "[7, 7, 7, 7, 7, 7, 7, 7]")
 
     # TODO: uncomment when https://github.com/modularml/mojo/issues/2353 is fixed
-    # assert_equal(str(UInt32(-1)), "4294967295")
-    assert_equal(str(UInt64(-1)), "18446744073709551615")
+    # assert_equal(String(UInt32(-1)), "4294967295")
+    assert_equal(String(UInt64(-1)), "18446744073709551615")
 
-    assert_equal(str((UInt16(32768))), "32768")
-    assert_equal(str((UInt16(65535))), "65535")
-    assert_equal(str((Int16(-2))), "-2")
+    assert_equal(String((UInt16(32768))), "32768")
+    assert_equal(String((UInt16(65535))), "65535")
+    assert_equal(String((Int16(-2))), "-2")
 
-    assert_equal(str(UInt64(16646288086500911323)), "16646288086500911323")
+    assert_equal(String(UInt64(16646288086500911323)), "16646288086500911323")
 
     # https://github.com/modularml/mojo/issues/556
     assert_equal(
-        str(
+        String(
             SIMD[DType.uint64, 4](
                 0xA0761D6478BD642F,
                 0xE7037ED1A0B428DB,
@@ -146,7 +146,7 @@ def test_convert_simd_to_string():
     )
 
     assert_equal(
-        str(
+        String(
             SIMD[DType.int32, 4](-943274556, -875902520, -808530484, -741158448)
         ),
         "[-943274556, -875902520, -808530484, -741158448]",
@@ -195,12 +195,12 @@ def test_issue_1625():
 
     # FIXME (40568) should directly use the SIMD assert_equal
     assert_equal(
-        str(evens_and_odds[0]),
-        str(SIMD[DType.int64, 8](0, 2, 4, 6, 8, 10, 12, 14)),
+        String(evens_and_odds[0]),
+        String(SIMD[DType.int64, 8](0, 2, 4, 6, 8, 10, 12, 14)),
     )
     assert_equal(
-        str(evens_and_odds[1]),
-        str(SIMD[DType.int64, 8](1, 3, 5, 7, 9, 11, 13, 15)),
+        String(evens_and_odds[1]),
+        String(SIMD[DType.int64, 8](1, 3, 5, 7, 9, 11, 13, 15)),
     )
     ptr.free()
 
@@ -1052,7 +1052,8 @@ def test_join():
 
 def test_interleave():
     assert_equal(
-        str(Int32(0).interleave(Int32(1))), str(SIMD[DType.index, 2](0, 1))
+        String(Int32(0).interleave(Int32(1))),
+        String(SIMD[DType.index, 2](0, 1)),
     )
 
     assert_equal(

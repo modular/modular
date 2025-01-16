@@ -239,7 +239,7 @@ fn get_cwd_and_paths() raises -> List[String]:
     result = List[String]()
     result.append(pathlib.get_cwd_message())
     for path in cwd().listdir():
-        result.append(str(path[]))
+        result.append(String(path[]))
 ```
 
 This won't work because it's importing `pathlib` from the `stdlib.mojopkg` that

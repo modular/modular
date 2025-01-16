@@ -67,7 +67,7 @@ struct SliceStringable:
         pass
 
     fn __getitem__(self, a: Slice) -> String:
-        return str(a)
+        return String(a)
 
 
 def test_slice_stringable():

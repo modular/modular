@@ -472,5 +472,5 @@ converting string literals to `String` values. For example:
 ```mojo
 var h: String = "hello"
 # or
-print(g or str("hello"))
+print(g or String("hello"))
 ```

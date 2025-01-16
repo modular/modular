@@ -53,7 +53,7 @@ def test_gridv2_index():
 
 def test_gridv2_str():
     grid = grid4x4()
-    grid_str = str(grid)
+    grid_str = String(grid)
     assert_equal(str4x4, grid_str)
 
 

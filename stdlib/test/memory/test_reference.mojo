@@ -38,7 +38,7 @@ def test_equality():
 def test_str():
     var a = Int(42)
     var a_ref = Pointer.address_of(a)
-    assert_true(str(a_ref).startswith("0x"))
+    assert_true(String(a_ref).startswith("0x"))
 
 
 def main():

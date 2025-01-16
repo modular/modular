@@ -486,7 +486,7 @@ struct PyObject(Stringable, Representable, Writable):
         Returns:
             A string representation.
         """
-        return str(self)
+        return String(self)
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -574,7 +574,7 @@ struct PyModuleDef_Base(Stringable, Representable, Writable):
         Returns:
             A string representation.
         """
-        return str(self)
+        return String(self)
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -694,7 +694,7 @@ struct PyModuleDef(Stringable, Representable, Writable):
         Returns:
             A string representation.
         """
-        return str(self)
+        return String(self)
 
     # ===-------------------------------------------------------------------===#
     # Methods

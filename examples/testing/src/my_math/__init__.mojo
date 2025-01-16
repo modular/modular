@@ -43,7 +43,7 @@ try:
     c = inc(Int.MAX)
 except e:
     print(e)
-%#     assert_equal("inc overflow", str(e))
+%#     assert_equal("inc overflow", String(e))
 ```
 
 """

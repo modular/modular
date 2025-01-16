@@ -191,8 +191,8 @@ def test_function_raises(a) -> object:
 
 def test_object_function():
     var a: object = test_function
-    assert_true(str(a).startswith("Function at address 0x"))
-    assert_equal(str(a(1, 2)), str(3))
+    assert_true(String(a).startswith("Function at address 0x"))
+    assert_equal(String(a(1, 2)), String(3))
     a = test_function_raises
     with assert_raises(contains="Error from function type"):
         a(1)
@@ -254,22 +254,22 @@ def test_matrix():
         C.append(row_zero)
 
     matmul_untyped(C, A, B)
-    assert_equal(str(C[0]), "[5, 8, 11]")
-    assert_equal(str(C[1]), "[8, 14, 20]")
-    assert_equal(str(C[2]), "[11, 20, 29]")
+    assert_equal(String(C[0]), "[5, 8, 11]")
+    assert_equal(String(C[1]), "[8, 14, 20]")
+    assert_equal(String(C[2]), "[11, 20, 29]")
 
 
 def test_convert_to_string():
     var a: object = True
-    assert_equal(str(a), "True")
+    assert_equal(String(a), "True")
     a = 42
-    assert_equal(str(a), "42")
+    assert_equal(String(a), "42")
     a = 2.5
-    assert_equal(str(a), "2.5")
+    assert_equal(String(a), "2.5")
     a = "hello"
-    assert_equal(str(a), "'hello'")
+    assert_equal(String(a), "'hello'")
     a = []
-    assert_equal(str(a), "[]")
+    assert_equal(String(a), "[]")
     a.append(3)
     a.append(False)
     a.append(5.5)
@@ -277,30 +277,32 @@ def test_convert_to_string():
     b.append("foo")
     b.append("baz")
     a.append(b)
-    assert_equal(str(a), "[3, False, 5.5, ['foo', 'baz']]")
-    assert_equal(str(a[3, 1]), "'baz'")
+    assert_equal(String(a), "[3, False, 5.5, ['foo', 'baz']]")
+    assert_equal(String(a[3, 1]), "'baz'")
     a[3, 1] = "bar"
-    assert_equal(str(a[3, 1]), "'bar'")
+    assert_equal(String(a[3, 1]), "'bar'")
     var c = a + b
-    assert_equal(str(c), "[3, False, 5.5, ['foo', 'bar'], 'foo', 'bar']")
+    assert_equal(String(c), "[3, False, 5.5, ['foo', 'bar'], 'foo', 'bar']")
     b.append(False)
-    assert_equal(str(c), "[3, False, 5.5, ['foo', 'bar', False], 'foo', 'bar']")
-    assert_equal(str(a), "[3, False, 5.5, ['foo', 'bar', False]]")
-    assert_equal(str(c[3]), "['foo', 'bar', False]")
+    assert_equal(
+        String(c), "[3, False, 5.5, ['foo', 'bar', False], 'foo', 'bar']"
+    )
+    assert_equal(String(a), "[3, False, 5.5, ['foo', 'bar', False]]")
+    assert_equal(String(c[3]), "['foo', 'bar', False]")
     b[1] = object()
-    assert_equal(str(a), "[3, False, 5.5, ['foo', None, False]]")
+    assert_equal(String(a), "[3, False, 5.5, ['foo', None, False]]")
     a = "abc"
     b = a[True]
-    assert_equal(str(b), "'b'")
+    assert_equal(String(b), "'b'")
     b = a[2]
-    assert_equal(str(b), "'c'")
+    assert_equal(String(b), "'c'")
     a = [1, 1.2, False, "true"]
-    assert_equal(str(a), "[1, 1.2, False, 'true']")
+    assert_equal(String(a), "[1, 1.2, False, 'true']")
 
     a = object(Attr("foo", 5), Attr("bar", "hello"), Attr("baz", False))
-    assert_equal(str(a.bar), "'hello'")
+    assert_equal(String(a.bar), "'hello'")
     a.bar = [1, 2]
-    assert_equal(str(a), "{'foo' = 5, 'bar' = [1, 2], 'baz' = False}")
+    assert_equal(String(a), "{'foo' = 5, 'bar' = [1, 2], 'baz' = False}")
     assert_equal(repr(a), "{'foo' = 5, 'bar' = [1, 2], 'baz' = False}")
 
 

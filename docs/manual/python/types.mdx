@@ -149,18 +149,19 @@ Currently `PythonObject` conforms to the
 [`Boolable`](/mojo/stdlib/builtin/bool/Boolable),
 [`Floatable`](/mojo/stdlib/builtin/floatable/Floatable/), and
 [`Intable`](/mojo/stdlib/builtin/int/Intable) traits, which means you can
-convert Python values to Mojo `String`, `Bool`, and `Float64` types using the
-[`str()`](/mojo/stdlib/builtin/str/str),
+convert Python values to Mojo `Bool` and `Float64` types using the
 [`bool()`](/mojo/stdlib/builtin/bool/bool-function) and
-[`float()`](/mojo/stdlib/builtin/floatable/float/) built-in functions, and
-construct an `Int` using the [`Int()`](/mojo/stdlib/builtin/int/Int/#__init__)
-constructor. `PythonObject` also conforms to the
+[`float()`](/mojo/stdlib/builtin/floatable/float/) built-in functions, construct
+an `Int` using the [`Int()`](/mojo/stdlib/builtin/int/Int/#__init__)
+constructor, and construct a `String` using the
+[`String()`](/mojo/stdlib/collections/string/String/#__init__) constructor.
+`PythonObject` also conforms to the
 [`Writable`](/mojo/stdlib/utils/write/Writable) trait so that you can print
 Python values using the built-in [`print()`](/mojo/stdlib/builtin/io/print)
 function.
 
 ```mojo
-var s: String = str(py_string)
+var s: String = String(py_string)
 var b: Bool = bool(py_bool)
 var f: Float64 = float(py_float)
 var i: Int = Int(py_int)

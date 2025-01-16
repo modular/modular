@@ -113,7 +113,7 @@ fn debug_assert[
     ```mojo
     person = "name: john, age: 50"
     name = "john"
-    debug_assert(str("name: ") + name == person, "unexpected name")
+    debug_assert(String("name: ") + name == person, "unexpected name")
     ```
 
     This will have a runtime penality due to allocating a `String` in the
@@ -122,7 +122,7 @@ fn debug_assert[
 
     ```mojo
     fn check_name() capturing -> Bool:
-        return str("name: ") + name == person
+        return String("name: ") + name == person
 
     debug_assert[check_name]("unexpected name")
     ```
@@ -196,7 +196,7 @@ fn debug_assert[
     ```mojo
     person = "name: john, age: 50"
     name = "john"
-    debug_assert(str("name: ") + name == person, "unexpected name")
+    debug_assert(String("name: ") + name == person, "unexpected name")
     ```
 
     This will have a runtime penality due to allocating a `String` in the
@@ -205,7 +205,7 @@ fn debug_assert[
 
     ```mojo
     fn check_name() capturing -> Bool:
-        return str("name: ") + name == person
+        return String("name: ") + name == person
 
     debug_assert[check_name]("unexpected name")
     ```

@@ -248,7 +248,7 @@ struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
         elif manual_indexing_count and automatic_indexing_count:
             raise Error("Cannot both use manual and automatic indexing")
         elif raised_manual_index:
-            var val = str(raised_manual_index.value())
+            var val = String(raised_manual_index.value())
             raise Error("Index " + val + " not in *args")
         elif start:
             raise Error(l_err)
@@ -326,11 +326,11 @@ struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
                 manual_indexing_count += 1
             except e:
                 alias unexp = "Not the expected error from atol"
-                debug_assert("not convertible to integer" in str(e), unexp)
+                debug_assert("not convertible to integer" in String(e), unexp)
                 # field is a keyword for **kwargs:
                 # TODO: add support for "My name is {person.name}".format(person=Person(name="Fred"))
                 # TODO: add support for "My name is {person[name]}".format(person={"name": "Fred"})
-                var f = str(field)
+                var f = String(field)
                 self.field = f
                 raised_kwarg_field = f
                 return True
@@ -362,16 +362,16 @@ struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
 
                     var data: String
                     if empty and type_impls_write_str:
-                        data = str(args[i])  # TODO: use writer and return
+                        data = String(args[i])  # TODO: use writer and return
                     elif empty and type_impls_str:
-                        data = str(args[i])
+                        data = String(args[i])
                     elif flag == `s` and type_impls_write_str:
                         if empty:
                             # TODO: use writer and return
                             pass
-                        data = str(args[i])
+                        data = String(args[i])
                     elif flag == `s` and type_impls_str:
-                        data = str(args[i])
+                        data = String(args[i])
                     elif flag == `r` and type_impls_write_repr:
                         if empty:
                             # TODO: use writer and return
@@ -387,7 +387,9 @@ struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
                         alias does_not = " does not implement the trait "
                         alias needed = "needed for conversion_flag: "
                         var flg = String(List[UInt8](flag, 0))
-                        raise Error(argnum + str(i) + does_not + needed + flg)
+                        raise Error(
+                            argnum + String(i) + does_not + needed + flg
+                        )
 
                     if self.format_spec:
                         self.format_spec.value().format(
@@ -586,7 +588,7 @@ struct _FormatSpec:
     large as needed to represent the given value faithfully.\
     For Decimal, this is the same as either 'g' or 'G' depending on the value\
     of context.capitals for the current decimal context.\
-    The overall effect is to match the output of str() as altered by the other\
+    The overall effect is to match the output of String() as altered by the other\
     format modifiers.|
     """
 
@@ -699,7 +701,7 @@ struct _FormatSpec:
         # TODO: transform to int/float depending on format spec
         # TODO: send to float/int 's  __format__ method
         # their methods should stringify as hex/bin/oct etc.
-        res += str(item)
+        res += String(item)
 
 
 # ===-----------------------------------------------------------------------===#

@@ -40,7 +40,7 @@ struct _SourceLocation(Writable, Stringable):
         Args:
             msg: The message to attach the prefix to.
         """
-        return "At " + str(self) + ": " + str(msg)
+        return "At " + String(self) + ": " + String(msg)
 
     fn write_to[W: Writer](self, mut writer: W):
         """

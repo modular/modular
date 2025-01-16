@@ -647,11 +647,11 @@ produces the same output. You can verify that by running the program again.
 
 ## 9. Implement support for the `StringableRaising` trait
 
-You can pass most Mojo types to the built-in `str()` function to produce a
+You can convert most Mojo types to `String` using `String(my_val)` to produce a
 `String` representation of that instance. But you'll get an error if you try to
 do that with our current implementation of `Grid`. So let's fix that.
 
-Because the Mojo compiler performs static type checking, a function like `str()`
+Because the Mojo compiler performs static type checking, a `String` constructor
 can accept a value only if its type implements some required behavior—in this
 case, it only accepts types that can generate a `String` representation.
 
@@ -663,7 +663,7 @@ any type that conform to a specified trait. (This type of function is sometimes
 referred to as a [*generic*
 function](/mojo/manual/parameters/#parameters-and-generics).)
 
-In the case of `str()`, it requires a type to conform to either the `Stringable`
+In the case of `String()`, it requires a type to conform to either the `Stringable`
 or `StringableRaising` trait. Each trait requires a conforming type to implement
 a `__str__()` method that returns a `String` representation. The only difference
 between the two traits is that `Stringable` requires that the method *cannot*
@@ -692,13 +692,13 @@ struct Grid(StringableRaising):
         ...
 ```
 
-Now let's verify that `str()` works with an instance of `Grid`.
+Now let's verify that `String()` works with an instance of `Grid`.
 
 ```mojo title="life.mojo"
 def main():
     ...
     start = Grid(8, 8, glider)
-    print(str(start))
+    print(String(start))
 ```
 
 If you run the program again, you should still see the same glider pattern as before.
@@ -896,7 +896,7 @@ and print it.
 
 def main():
     start = Grid.random(8, 16)
-    print(str(start))
+    print(String(start))
 ```
 
 Run the program a few times to verify that it generates a different grid each
@@ -1009,7 +1009,7 @@ from gridv1 import Grid
 
 def run_display(owned grid: Grid) -> None:
     while True:
-        print(str(grid))
+        print(String(grid))
         print()
         if input("Enter 'q' to quit or press <Enter> to continue: ") == "q":
             break

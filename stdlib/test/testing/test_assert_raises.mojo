@@ -39,9 +39,9 @@ fn test_assert_raises_no_error() raises:
             pass
         raise Error("This should not be reachable.")
     except e:
-        assert_true(str(e).startswith("AssertionError: Didn't raise"))
-        assert_true(str(e).endswith(":27"))  # col 27
-        assert_true(str(e) != "This should not be reachable.")
+        assert_true(String(e).startswith("AssertionError: Didn't raise"))
+        assert_true(String(e).endswith(":27"))  # col 27
+        assert_true(String(e) != "This should not be reachable.")
 
 
 fn test_assert_raises_no_match() raises:
@@ -50,7 +50,7 @@ fn test_assert_raises_no_match() raises:
             raise "OtherError"
         raise Error("This should not be reachable.")
     except e:
-        assert_equal(str(e), "OtherError")
+        assert_equal(String(e), "OtherError")
 
 
 def main():

@@ -147,13 +147,13 @@ fn bench_tiny_list_sort[type: DType](mut m: Bench) raises:
             _ = list^
 
         m.bench_function[bench_sort_list](
-            BenchId("std_sort_random_" + str(count) + "_" + str(type))
+            BenchId("std_sort_random_" + String(count) + "_" + String(type))
         )
         m.bench_function[bench_small_sort](
-            BenchId("sml_sort_random_" + str(count) + "_" + str(type))
+            BenchId("sml_sort_random_" + String(count) + "_" + String(type))
         )
         m.bench_function[bench_insertion_sort](
-            BenchId("ins_sort_random_" + str(count) + "_" + str(type))
+            BenchId("ins_sort_random_" + String(count) + "_" + String(type))
         )
 
 
@@ -202,10 +202,10 @@ fn bench_small_list_sort[type: DType](mut m: Bench, count: Int) raises:
         _ = list^
 
     m.bench_function[bench_sort_list](
-        BenchId("std_sort_random_" + str(count) + "_" + str(type))
+        BenchId("std_sort_random_" + String(count) + "_" + String(type))
     )
     m.bench_function[bench_insertion_sort](
-        BenchId("ins_sort_random_" + str(count) + "_" + str(type))
+        BenchId("ins_sort_random_" + String(count) + "_" + String(type))
     )
 
 
@@ -254,11 +254,11 @@ fn bench_large_list_sort[type: DType](mut m: Bench, count: Int) raises:
         _ = list^
 
     m.bench_function[bench_sort_list](
-        BenchId("std_sort_random_" + str(count) + "_" + str(type))
+        BenchId("std_sort_random_" + String(count) + "_" + String(type))
     )
 
     m.bench_function[bench_heap_sort](
-        BenchId("heap_sort_random_" + str(count) + "_" + str(type))
+        BenchId("heap_sort_random_" + String(count) + "_" + String(type))
     )
 
 
@@ -307,10 +307,14 @@ fn bench_low_cardinality_list_sort(mut m: Bench, count: Int, delta: Int) raises:
         _ = list^
 
     m.bench_function[bench_sort_list](
-        BenchId("std_sort_low_card_" + str(count) + "_delta_" + str(delta))
+        BenchId(
+            "std_sort_low_card_" + String(count) + "_delta_" + String(delta)
+        )
     )
     m.bench_function[bench_heap_sort](
-        BenchId("heap_sort_low_card_" + str(count) + "_delta_" + str(delta))
+        BenchId(
+            "heap_sort_low_card_" + String(count) + "_delta_" + String(delta)
+        )
     )
 
 

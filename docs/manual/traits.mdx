@@ -385,13 +385,11 @@ True
 ### The `Stringable`, `Representable`, and `Writable` traits
 
 The [`Stringable`](/mojo/stdlib/builtin/str/Stringable) trait identifies a type
-that can be implicitly converted to
+that can be explicitly converted to
 [`String`](/mojo/stdlib/collections/string/String). The
 [`StringableRaising`](/mojo/stdlib/builtin/str/StringableRaising) trait
 describes a type that can be converted to a `String`, but the conversion might
-raise an error. Any type that conforms to `Stringable` or `StringableRaising`
-also works with the built-in [`str()`](/mojo/stdlib/builtin/str/str) function to
-explicitly return a `String`. These traits also mean that the type can support
+raise an error. These traits also mean that the type can support
 both the `{!s}` and `{}` format specifiers of the `String` class's
 [`format()`](/mojo/stdlib/collections/string/String#format) method. These traits
 require the type to define the

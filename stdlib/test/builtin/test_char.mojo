@@ -56,11 +56,11 @@ def test_char_comparison():
 
 
 def test_char_formatting():
-    assert_equal(str(Char(0)), "\0")
-    assert_equal(str(Char(32)), " ")
-    assert_equal(str(Char(97)), "a")
-    assert_equal(str(Char.from_u32(0x00BE).value()), "¾")
-    assert_equal(str(Char.from_u32(0x1F642).value()), "🙂")
+    assert_equal(String(Char(0)), "\0")
+    assert_equal(String(Char(32)), " ")
+    assert_equal(String(Char(97)), "a")
+    assert_equal(String(Char.from_u32(0x00BE).value()), "¾")
+    assert_equal(String(Char.from_u32(0x1F642).value()), "🙂")
 
 
 def test_char_properties():

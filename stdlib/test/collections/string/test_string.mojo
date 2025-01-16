@@ -37,10 +37,10 @@ struct AString(Stringable):
 
 
 def test_stringable():
-    assert_equal("hello", str("hello"))
-    assert_equal("0", str(0))
-    assert_equal("AAA", str(StringRef("AAA")))
-    assert_equal("a string", str(AString()))
+    assert_equal("hello", String("hello"))
+    assert_equal("0", String(0))
+    assert_equal("AAA", String(StringRef("AAA")))
+    assert_equal("a string", String(AString()))
 
 
 def test_constructors():
@@ -49,17 +49,17 @@ def test_constructors():
     assert_true(not String())
 
     # Construction from Int
-    var s0 = str(0)
-    assert_equal("0", str(0))
+    var s0 = String(0)
+    assert_equal("0", String(0))
     assert_equal(1, len(s0))
 
-    var s1 = str(123)
-    assert_equal("123", str(123))
+    var s1 = String(123)
+    assert_equal("123", String(123))
     assert_equal(3, len(s1))
 
     # Construction from StringLiteral
     var s2 = String("abc")
-    assert_equal("abc", str(s2))
+    assert_equal("abc", String(s2))
     assert_equal(3, len(s2))
 
     # Construction from UnsafePointer
@@ -83,7 +83,7 @@ def test_constructors():
 
 def test_copy():
     var s0 = String("find")
-    var s1 = str(s0)
+    var s1 = String(s0)
     s1._buffer[3] = ord("e")
     assert_equal("find", s0)
     assert_equal("fine", s1)
@@ -171,7 +171,7 @@ def test_add():
 
     var s8 = String("abc is ")
     var s9 = AString()
-    assert_equal("abc is a string", str(s8) + str(s9))
+    assert_equal("abc is a string", String(s8) + String(s9))
 
 
 def test_add_string_slice():

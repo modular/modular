@@ -101,7 +101,7 @@ def test_setitem():
 
 def test_str():
     var l1 = LinkedList[Int](1, 2, 3)
-    assert_equal(str(l1), "[1, 2, 3]")
+    assert_equal(String(l1), "[1, 2, 3]")
 
 
 def test_repr():

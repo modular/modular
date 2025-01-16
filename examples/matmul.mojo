@@ -84,7 +84,7 @@ def run_matmul_python() -> Float64:
     var pymatmul: PythonObject = Python.import_module("pymatmul")
     var py = Python.import_module("builtins")
 
-    var gflops = pymatmul.benchmark_matmul_python(128, 128, 128).to_float64()
+    var gflops = float(pymatmul.benchmark_matmul_python(128, 128, 128))
     py.print(py.str("{:<18}{:>8.3f} GFLOPS").format("Python:", gflops))
 
     return gflops
@@ -94,7 +94,7 @@ def run_matmul_numpy() -> Float64:
     var pymatmul: PythonObject = Python.import_module("pymatmul")
     var py = Python.import_module("builtins")
 
-    var gflops = pymatmul.benchmark_matmul_numpy(M, N, K).to_float64()
+    var gflops = float(pymatmul.benchmark_matmul_numpy(M, N, K))
     py.print(py.str("{:<18}{:>8.3f} GFLOPS").format("Numpy:", gflops))
 
     return gflops

@@ -101,7 +101,7 @@ def _set_up_gettempdir_test(
         os.rmdir(dir_with_writing_access)
         raise Error(
             "Failed to setup test, couldn't create "
-            + str(dir_without_writing_access)
+            + String(dir_without_writing_access)
         )
 
 
@@ -109,7 +109,7 @@ def test_gettempdir():
     var non_existing_dir = Path() / "non_existing_dir"
     assert_false(
         exists(non_existing_dir),
-        "Unexpected dir" + str(non_existing_dir),
+        "Unexpected dir" + String(non_existing_dir),
     )
     var dir_without_writing_access = Path() / "dir_without_writing_access"
     var dir_with_writing_access = Path() / "dir_with_writing_access"
@@ -119,7 +119,7 @@ def test_gettempdir():
     var vars_to_set = Dict[String, String]()
 
     # test TMPDIR is used first
-    vars_to_set["TMPDIR"] = str(dir_with_writing_access)
+    vars_to_set["TMPDIR"] = String(dir_with_writing_access)
     with TempEnvWithCleanup(
         vars_to_set,
         _clean_up_gettempdir_test,
@@ -128,13 +128,13 @@ def test_gettempdir():
         assert_true(tmpdir_result, "Failed to get temporary directory")
         assert_equal(
             tmpdir_result.value(),
-            str(dir_with_writing_access),
-            "expected to get:" + str(dir_with_writing_access),
+            String(dir_with_writing_access),
+            "expected to get:" + String(dir_with_writing_access),
         )
 
     # test gettempdir falls back to TEMP
-    vars_to_set["TMPDIR"] = str(non_existing_dir)
-    vars_to_set["TEMP"] = str(dir_with_writing_access)
+    vars_to_set["TMPDIR"] = String(non_existing_dir)
+    vars_to_set["TEMP"] = String(dir_with_writing_access)
     with TempEnvWithCleanup(
         vars_to_set,
         _clean_up_gettempdir_test,
@@ -143,14 +143,14 @@ def test_gettempdir():
         assert_true(tmpdir_result, "Failed to get temporary directory")
         assert_equal(
             tmpdir_result.value(),
-            str(dir_with_writing_access),
-            "expected to get:" + str(dir_with_writing_access),
+            String(dir_with_writing_access),
+            "expected to get:" + String(dir_with_writing_access),
         )
 
     # test gettempdir falls back to TMP
-    vars_to_set["TMPDIR"] = str(non_existing_dir)
-    vars_to_set["TEMP"] = str(non_existing_dir)
-    vars_to_set["TMP"] = str(dir_with_writing_access)
+    vars_to_set["TMPDIR"] = String(non_existing_dir)
+    vars_to_set["TEMP"] = String(non_existing_dir)
+    vars_to_set["TMP"] = String(dir_with_writing_access)
     with TempEnvWithCleanup(
         vars_to_set,
         _clean_up_gettempdir_test,
@@ -159,8 +159,8 @@ def test_gettempdir():
         assert_true(tmpdir_result, "Failed to get temporary directory")
         assert_equal(
             tmpdir_result.value(),
-            str(dir_with_writing_access),
-            "expected to get:" + str(dir_with_writing_access),
+            String(dir_with_writing_access),
+            "expected to get:" + String(dir_with_writing_access),
         )
 
     _clean_up_gettempdir_test()

@@ -20,7 +20,7 @@ from sys.ffi import c_char
 
 from bit import count_trailing_zeros
 from builtin.dtype import _uint_type_of_width
-from memory import UnsafePointer, memcmp, pack_bits, Span
+from memory import UnsafePointer, memcmp, pack_bits, Span, memcpy
 from memory.memory import _memcmp_impl_unconstrained
 
 
@@ -400,7 +400,12 @@ struct StringRef(
         Returns:
             A new string.
         """
-        return String.write(self)
+        var length = len(self)
+        var buffer = String._buffer_type()
+        # +1 for null terminator, initialized to 0
+        buffer.resize(length + 1, 0)
+        memcpy(dest=buffer.data, src=self.data, count=length)
+        return String(buffer^)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -409,7 +414,7 @@ struct StringRef(
         Returns:
             The String representation of the StringRef.
         """
-        return String.write("StringRef(", repr(str(self)), ")")
+        return String.write("StringRef(", repr(String(self)), ")")
 
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):

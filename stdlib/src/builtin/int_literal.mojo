@@ -701,7 +701,7 @@ struct IntLiteral(
         Returns:
             The value as a string.
         """
-        return str(Int(self))
+        return String(Int(self))
 
     @always_inline
     fn __ceildiv__(self, denominator: Self) -> Self:

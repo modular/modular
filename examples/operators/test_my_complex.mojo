@@ -35,7 +35,7 @@ def test_str():
     str1 = "({} + {}i)".format(re1, im1)
     out_str1 = String()
     c1 = Complex(re1, im1)
-    assert_equal(str1, str(c1))
+    assert_equal(str1, String(c1))
 
     c1.write_to(out_str1)
     assert_equal(str1, out_str1)
@@ -45,7 +45,7 @@ def test_str():
     str2 = "({} - {}i)".format(re2, abs(im2))
     out_str2 = String()
     c2 = Complex(re2, im2)
-    assert_equal(str2, str(c2))
+    assert_equal(str2, String(c2))
 
     c2.write_to(out_str2)
     assert_equal(str2, out_str2)

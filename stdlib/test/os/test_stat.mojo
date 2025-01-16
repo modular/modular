@@ -21,5 +21,5 @@ from testing import assert_not_equal, assert_true
 
 def main():
     var st = stat(__source_location().file_name)
-    assert_not_equal(str(st), "")
+    assert_not_equal(String(st), "")
     assert_true(S_ISREG(st.st_mode))

@@ -21,6 +21,6 @@ from testing import assert_false, assert_true
 
 def main():
     assert_true(isdir(Path()))
-    assert_true(isdir(str(cwd())))
-    assert_false(isdir(str(cwd() / "nonexistent")))
+    assert_true(isdir(String(cwd())))
+    assert_false(isdir(String(cwd() / "nonexistent")))
     assert_false(isdir(__source_location().file_name))

@@ -1100,7 +1100,7 @@ c2: Real: 3.1415899999999999; Imaginary: 0.0
 To make it simpler to print `Complex` values, let's implement the
 [Writable](/mojo/stdlib/utils/write/Writable) trait. While we're at it, let's
 also implement the [`Stringable`](/mojo/stdlib/builtin/str/Stringable) trait so
-that we can use the `str()` function to generate a `String` representation of a
+that we can use the `String()` constructor to generate a `String` representation of a
 `Complex` value. You can find out more about these traits and their associated
 methods in [The `Stringable`, `Representable`, and `Writable`
 traits](/mojo/manual/traits#the-stringable-representable-and-writable-traits).
@@ -1137,13 +1137,14 @@ between defining functions with `def` and `fn`.
 :::
 
 Now we can print a `Complex` value directly, and we can explicitly generate a
-`String` representation by passing a `Complex` value to `str()`.
+`String` representation by passing a `Complex` value to `String.write()` which
+constructs a new `String` from all the arguments passed to it.
 
 ```mojo
 c3 = Complex(3.14159, -2.71828)
 print("c3 =", c3)
 
-var msg: String = "The value is: " + str(c3)
+var msg = String.write("The value is: ", c3)
 print(msg)
 ```
 

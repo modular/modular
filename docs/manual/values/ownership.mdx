@@ -256,7 +256,7 @@ fn append_twice(mut s: String, other: String):
    s += other
 
 fn invalid_access():
-  var my_string = str("o")
+  var my_string = String("o")
 
   # error: passing `my_string` mut is invalid since it is also passed
   # read.
@@ -274,8 +274,8 @@ reference (or need to pass the same value to two arguments) is to make a copy:
 
 ```mojo
 fn valid_access():
-  var my_string = str("o")
-  var other_string = str(my_string)
+  var my_string = String("o")
+  var other_string = String(my_string)
   append_twice(my_string, other_string)
   print(my_string)
 ```

@@ -43,7 +43,7 @@ fn test_mkdir_and_rmdir(path: String) raises:
     # verify that the test dir does not exist before starting the test
     assert_false(
         exists(path),
-        "Unexpected dir " + str(path) + " it should not exist",
+        "Unexpected dir " + String(path) + " it should not exist",
     )
 
     os.mkdir(path, 0o777)
@@ -63,7 +63,7 @@ fn test_mkdir_and_rmdir(path: Path) raises:
     # verify that the test dir does not exist before starting the test
     assert_false(
         exists(path),
-        "Unexpected dir " + str(path) + " it should not exist",
+        "Unexpected dir " + String(path) + " it should not exist",
     )
 
     os.mkdir(path, 0o777)
@@ -83,7 +83,7 @@ fn test_makedirs_and_removedirs(path: Path) raises:
     # verify that the test dir does not exist before starting the test
     assert_false(
         exists(path),
-        "Unexpected dir " + str(path) + " it should not exist",
+        "Unexpected dir " + String(path) + " it should not exist",
     )
     os.makedirs(path, exist_ok=True)
     assert_true(exists(path))
