@@ -71,7 +71,7 @@ what we publish.
     var vals: List[Int]
 
     fn __init__(out self):
-        self.vals = List[Int](0, 1, 2, 3, 4)
+        self.vals = List[Int](0, 1, 2)
 
     fn __getitem__(self, idx: Int) -> Int:
         return self.vals[idx]
@@ -100,12 +100,23 @@ what we publish.
 
 ### Standard library changes
 
-- These functions have been deprecated: `int`, `str` in favor of constructors:
-  `Int`, `String`. The functions were a temporary workaround for when Mojo
-  didn't have a way to distinguish between implicit and explicit constructors.
-  You can do a search and replace e.g. from `int(` to `Int(` to update your
-  programs. This release will show a deprecation warning for the old functions,
-  and they'll be removed in the next release.
+- The free floating functions for constructing different types have been
+  deprecated for actual constructors:
+  
+  ```plaintext
+  before   after
+  ------------------
+  int()    Int()
+  str()    String()
+  bool()   Bool()
+  float()  Float64()
+  ```
+  
+  These functions were a workaround before Mojo had a way to distinguish between
+  implicit and explicit constructors. For this release you'll get a deprecation
+  warning, and in the next release they'll become compiler errors. You can
+  quickly update your code by doing a `Match Case` and `Match Whole Word`
+  search and replace for `int(` to `Int(` etc.
 
 - `UnsafePointer`'s `bitcast` method has now been split into `bitcast`
   for changing the type, `origin_cast` for changing mutability,
