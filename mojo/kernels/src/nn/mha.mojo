@@ -365,7 +365,7 @@ fn flash_attention[
         #       We'll just implement a flag on the cache object which is true
         #       when the batch contains all cache_lens == 0. Remove this when
         #       such flag (part of ContiguousKVCache) is implemented.
-        var is_context_encoding = k.empty_cache()
+        var is_token_generation = k.get_max_seq_length() == 1 and not k.empty_cache()
 
         var max_cache_valid_length: Int
 
@@ -435,7 +435,7 @@ fn flash_attention[
             max_prompt_len,
             max_cache_valid_length,
             scale,
-            is_context_encoding,
+            is_token_generation,
             ctx,
             num_partitions,
         )
@@ -480,7 +480,7 @@ fn flash_attention_dispatch[
     max_prompt_len: Int,
     max_cache_valid_length: Int,
     scale: Float32,
-    is_context_encoding: Bool,
+    is_token_generation: Bool,
     ctx: DeviceContext,
     num_partitions: OptionalReg[Int] = None,
 ) raises:
@@ -510,7 +510,7 @@ fn flash_attention_dispatch[
     if _is_flash_attention_applicable:
         # Attention mask tensor needs to be aligned to even length. This
         # is not needed when computing mask on the fly.
-        if is_context_encoding and (
+        if not is_token_generation and (
             max_prompt_len % 2 == 0 or not add_attn_mask
         ):
             # Choose matmul parameters based on dtype.
@@ -566,7 +566,7 @@ fn flash_attention_dispatch[
             )
 
         # Decoding impl only support half precision.
-        elif q_half_float and max_prompt_len == 1 and not is_context_encoding:
+        elif q_half_float and is_token_generation:
             alias BM = 16
             alias BN = depth
             alias BK = 16 if q.type is DType.float32 else 32
@@ -597,7 +597,6 @@ fn flash_attention_dispatch[
                 + 2 * num_warps * BM * sizeof[accum_type]()
             )
             alias num_blocks_y = num_heads // group
-
             var func = ctx.compile_function[
                 mha_decoding[
                     mask.rank,
@@ -858,7 +857,7 @@ fn flash_attention[
     # TODO: This should be done based on smem size instead of arch.
     alias is_shared_kv = ctx.device_info is not A100
 
-    var is_context_encoding = seq_len == num_keys and seq_len > 1
+    var is_token_generation = seq_len == 1 and num_keys > seq_len
 
     var k_operand = NDBufferMHAOperand(k)
     var v_operand = NDBufferMHAOperand(v)
@@ -888,7 +887,7 @@ fn flash_attention[
         q.dim[1](),
         num_keys,
         scale,
-        is_context_encoding,
+        is_token_generation,
         ctx,
         num_partitions,
     )
@@ -1072,7 +1071,7 @@ fn mha[
             mask_ptr.offset(mask_batch_offset),
             output_ptr.offset(q_batch_offset),
             scale,
-            key_length,
+            seq_len,
             max_seq_len,
             key_length,
             max_seq_len,
@@ -1094,7 +1093,7 @@ fn mha[
             mask_ptr.offset(mask_batch_offset),
             output_ptr.offset(q_batch_offset),
             scale,
-            key_length,
+            seq_len,
             max_seq_len,
             key_length,
             max_seq_len,
@@ -1609,7 +1608,7 @@ fn mha_single_batch[
                                     ](Int(score_row), Int(score_col)),
                                     IndexList[
                                         2, element_bitwidth=32, unsigned=True
-                                    ](seq_len, mask_tensor_col),
+                                    ](seq_len, num_keys),
                                     p_reg_vec2[mma_id, i],
                                 )
 
@@ -2294,7 +2293,7 @@ fn mha_single_batch_pipelined[
                                     ](Int(score_row), Int(score_col)),
                                     IndexList[
                                         2, element_bitwidth=32, unsigned=True
-                                    ](seq_len, mask_tensor_col),
+                                    ](seq_len, num_keys),
                                     p_reg_vec2[mma_id, i],
                                 )
 

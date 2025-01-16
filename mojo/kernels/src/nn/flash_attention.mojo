@@ -1340,10 +1340,7 @@ fn flash_attention_kv_cache[
 
     alias mask_rank = 4
     var num_batches = q_input_row_offsets.dim[0]() - 1
-    var max_seq_len = -1
-    for bs in range(num_batches):
-        max_seq_len = max(max_seq_len, q_length_fn(bs))
-
+    var max_seq_len = k.get_max_seq_length()
     alias num_heads = q.shape.get[q.rank - 2]()
     alias head_size = cache_t.kv_params.head_size
     alias output_shape = DimList(Dim(), Dim(), num_heads, head_size)
@@ -1356,4 +1353,4 @@ fn flash_attention_kv_cache[
         mask_fn,
         mask_rank,
         output_shape,
-    ](k, v, num_batches, num_heads, max_seq_len, scale)
+    ](k, v, num_batches, num_heads, Int(max_seq_len), scale)
