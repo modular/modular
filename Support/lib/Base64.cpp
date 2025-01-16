@@ -39,7 +39,7 @@ ErrorOr<std::string> M::decodeURLSafeBase64(StringRef str) {
   std::vector<char> output;
   auto err = llvm::decodeBase64(out, output);
   if (err)
-    return Error(toString(std::move(err)));
+    return toModularError(std::move(err));
 
   return std::string(output.begin(), output.end());
 }
