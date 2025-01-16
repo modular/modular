@@ -263,7 +263,7 @@ struct UInt(Indexer, _HashableWithHasher):
             rhs: The value to divide on.
 
         Returns:
-            `float(self)/float(rhs)` value.
+            `Float64(self)/Float64(rhs)` value.
         """
         return Float64(self) / Float64(rhs)
 

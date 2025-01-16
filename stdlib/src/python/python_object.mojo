@@ -1492,7 +1492,7 @@ struct PythonObject(
         cpython = _get_global_python_itf().cpython()
         return cpython.PyFloat_AsDouble(self.py_object)
 
-    @deprecated("Use `float(obj)` instead.")
+    @deprecated("Use `Float64(obj)` instead.")
     fn to_float64(self) -> Float64:
         """Returns a float representation of the object.
 

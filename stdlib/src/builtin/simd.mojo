@@ -388,7 +388,6 @@ struct SIMD[type: DType, size: Int](
     @implicit
     fn __init__(out self, value: __mlir_type.index):
         _simd_construction_checks[type, size]()
-
         var t0 = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<index>`
         ](value)
@@ -398,6 +397,35 @@ struct SIMD[type: DType, size: Int](
         self.value = __mlir_op.`pop.simd.splat`[
             _type = __mlir_type[`!pop.simd<`, size.value, `, `, type.value, `>`]
         ](casted)
+
+    @always_inline
+    fn __init__[T: Floatable](out self: Scalar[DType.float64], value: T):
+        """Initialize a Float64 from a type conforming to Floatable.
+
+        Parameters:
+            T: The Floatable type.
+
+        Args:
+            value: The object to get the float point representation of.
+        """
+        self = value.__float__()
+
+    @always_inline
+    fn __init__[
+        T: FloatableRaising
+    ](out self: Scalar[DType.float64], value: T) raises:
+        """Initialize a Float64 from a type conforming to FloatableRaising.
+
+        Parameters:
+            T: The FloatableRaising type.
+
+        Args:
+            value: The object to get the float point representation of.
+
+        Raises:
+            If the type does not have a float point representation.
+        """
+        self = value.__float__()
 
     @always_inline("nodebug")
     @implicit

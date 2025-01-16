@@ -18,10 +18,7 @@ These are Mojo built-ins, so you don't need to import them.
 
 
 trait Floatable:
-    """The `Floatable` trait describes a type that can be converted to a Float.
-
-    Any type that conforms to `Floatable` works with the built-in `float`
-    function.
+    """The `Floatable` trait describes a type that can be converted to a Float64.
 
     This trait requires the type to implement the `__float__()` method.
 
@@ -36,10 +33,10 @@ trait Floatable:
             return self.i
     ```
 
-    A `Foo` can now be converted to a `Float64` using `float`:
+    A `Foo` can now be converted to a `Float64`:
 
     ```mojo
-    var f = float(Foo(5.5))
+    var f = Float64(Foo(5.5))
     ```
 
     **Note:** If the `__float__()` method can raise an error, use
@@ -58,10 +55,7 @@ trait Floatable:
 
 trait FloatableRaising:
     """The `FloatableRaising` trait describes a type that can be converted to a
-    Float, but the conversion might raise an error (e.g.: a string).
-
-    Any type that conforms to `FloatableRaising` works with the built-in `float`
-    function.
+    Float64, but the conversion might raise an error (e.g.: a string).
 
     This trait requires the type to implement the `__float__()` method, which
     can raise an error.
@@ -81,11 +75,11 @@ trait FloatableRaising:
             return self.value[Float64]
     ```
 
-    A `MaybeFloat` can now be converted to `Float64` using `float`:
+    A `MaybeFloat` can now be converted to `Float64`:
 
     ```mojo
     try:
-        print(float(MaybeFloat(4.6)))
+        print(Float64(MaybeFloat(4.6)))
     except:
         print("error occured")
     ```
@@ -103,6 +97,10 @@ trait FloatableRaising:
         ...
 
 
+# FIXME(25.2): Move float deprecation warnings to compiler errors
+@deprecated(
+    "the `float` function is deprecated, use the `Float64` constructor instead"
+)
 @always_inline
 fn float[T: Floatable](value: T, /) -> Float64:
     """Get the Float representation of the value.
@@ -119,6 +117,9 @@ fn float[T: Floatable](value: T, /) -> Float64:
     return value.__float__()
 
 
+@deprecated(
+    "the `float` function is deprecated, use the `Float64` constructor instead"
+)
 @always_inline
 fn float[T: FloatableRaising](value: T, /) raises -> Float64:
     """Get the Float representation of the value.
@@ -138,8 +139,9 @@ fn float[T: FloatableRaising](value: T, /) raises -> Float64:
     return value.__float__()
 
 
-# TODO: Int can't conform to Floatable at the moment due to circular
-#       dependency with SIMD.
+@deprecated(
+    "the `float` function is deprecated, use the `Float64` constructor instead"
+)
 @always_inline
 fn float(value: Int, /) -> Float64:
     """Get the Float representation of the Int.

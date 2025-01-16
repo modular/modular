@@ -555,7 +555,7 @@ struct Bool(
 
 
 @deprecated(
-    "the `bool` function is deprecated, use the `Bool` constructor instead."
+    "the `bool` function is deprecated, use the `Bool` constructor instead"
 )
 @always_inline
 fn bool[T: Boolable, //](value: T) -> Bool:

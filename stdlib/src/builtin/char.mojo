@@ -461,7 +461,7 @@ struct Char(CollectionElement, EqualityComparable, Intable, Stringable):
             return 1
 
         var shift = 6 * (num_bytes - 1)
-        var mask = UInt8(0xFF) >> (num_bytes + 1)
+        var mask = UInt8(0xFF) >> UInt8(num_bytes + 1)
         var num_bytes_marker = UInt8(0xFF) << (8 - num_bytes)
         ptr[0] = ((c >> shift) & mask) | num_bytes_marker
         for i in range(1, num_bytes):

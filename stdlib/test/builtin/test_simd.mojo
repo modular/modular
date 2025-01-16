@@ -1850,9 +1850,9 @@ def test_comparison():
 
 
 def test_float_conversion():
-    assert_almost_equal(float(Int32(45)), 45.0)
-    assert_almost_equal(float(Float32(34.32)), 34.32)
-    assert_almost_equal(float(UInt64(36)), 36.0)
+    assert_almost_equal(Float64(Int32(45)), 45.0)
+    assert_almost_equal(Float64(Float32(34.32)), 34.32)
+    assert_almost_equal(Float64(UInt64(36)), 36.0)
 
 
 def test_reversed():

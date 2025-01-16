@@ -1437,9 +1437,9 @@ def test_float_conversion():
     # This is basically just a wrapper around atof which is
     # more throughouly tested above
     assert_equal(String("4.5").__float__(), 4.5)
-    assert_equal(float(String("4.5")), 4.5)
+    assert_equal(Float64(String("4.5")), 4.5)
     with assert_raises():
-        _ = float(String("not a float"))
+        _ = Float64(String("not a float"))
 
 
 def test_slice_contains():

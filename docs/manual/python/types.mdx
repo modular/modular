@@ -148,15 +148,14 @@ Currently `PythonObject` conforms to the
 [`Stringable`](/mojo/stdlib/builtin/str/Stringable),
 [`Boolable`](/mojo/stdlib/builtin/bool/Boolable),
 [`Intable`](/mojo/stdlib/builtin/int/Intable), and
-[`Floatable`](/mojo/stdlib/builtin/floatable/Floatable/) traits, which allows
-you to convert a `PythonObject` to the corresponding Mojo types.
+[`Floatable`](/mojo/stdlib/builtin/floatable/Floatable/) traits. This allows you
+to convert a `PythonObject` to the corresponding Mojo types.
 
 ```mojo
 var s = String(py_string)
 var b = Bool(py_bool)
 var i = Int(py_int)
-
-var f: Float64 = float(py_float)
+var f = Float64(py_float)
 ```
 
 PythonObject also implements the [`Writable`](/mojo/stdlib/utils/write/Writable)

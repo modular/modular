@@ -530,7 +530,7 @@ struct _FormatSpec:
 
     In addition to the above presentation types, integers can be formatted with
     the floating-point presentation types listed below (except 'n' and None).
-    When doing so, float() is used to convert the integer to a floating-point
+    When doing so, Float64() is used to convert the integer to a floating-point
     number before formatting.
 
     The available presentation types for float and Decimal values are:

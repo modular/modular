@@ -132,7 +132,7 @@ trait StringableRaising:
 
 # FIXME(25.2): Move `str` deprecation warnings to a compiler error
 @deprecated(
-    "the `str` function is deprecated, use the `String` constructor instead."
+    "the `str` function is deprecated, use the `String` constructor instead"
 )
 @no_inline
 fn str[T: Stringable](value: T) -> String:
@@ -152,7 +152,7 @@ fn str[T: Stringable](value: T) -> String:
 
 # FIXME(25.2): Move `str` deprecation warnings to a compiler error
 @deprecated(
-    "the `str` function is deprecated, use the `String` constructor instead."
+    "the `str` function is deprecated, use the `String` constructor instead"
 )
 @no_inline
 fn str[T: StringableRaising](value: T) raises -> String:

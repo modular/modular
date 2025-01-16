@@ -230,7 +230,7 @@ def test_comparison():
 
 
 def test_float_conversion():
-    assert_equal(float(Int(45)), Float64(45))
+    assert_equal(Float64(Int(45)), Float64(45))
 
 
 def test_conversion_from_python():

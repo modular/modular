@@ -211,7 +211,7 @@ trait ImplicitlyIntable(Intable):
 
 # FIXME(25.2): Move `int` deprecation warnings to a compiler error
 @deprecated(
-    "the `int` function is deprecated, use the `Int` constructor instead."
+    "the `int` function is deprecated, use the `Int` constructor instead"
 )
 @always_inline
 fn int[T: Intable](value: T) -> Int:
@@ -230,7 +230,7 @@ fn int[T: Intable](value: T) -> Int:
 
 
 @deprecated(
-    "the `int` function is deprecated, use the `Int` constructor instead."
+    "the `int` function is deprecated, use the `Int` constructor instead"
 )
 @always_inline
 fn int[T: IntableRaising](value: T) raises -> Int:
@@ -252,7 +252,7 @@ fn int[T: IntableRaising](value: T) raises -> Int:
 
 
 @deprecated(
-    "the `int` function is deprecated, use the `Int` constructor instead."
+    "the `int` function is deprecated, use the `Int` constructor instead"
 )
 fn int(value: StringSlice, base: Int = 10) raises -> Int:
     """Parses and returns the given string as an integer in the given base.
@@ -293,7 +293,7 @@ fn int(value: StringSlice, base: Int = 10) raises -> Int:
 
 
 @deprecated(
-    "the `int` function is deprecated, use the `Int` constructor instead."
+    "the `int` function is deprecated, use the `Int` constructor instead"
 )
 fn int(value: UInt) -> Int:
     """Get the Int representation of the value.
@@ -635,7 +635,7 @@ struct Int(
             rhs: The value to divide on.
 
         Returns:
-            `float(self)/float(rhs)` value.
+            `Float64(self)/Float64(rhs)` value.
         """
         return Float64(self) / Float64(rhs)
 
