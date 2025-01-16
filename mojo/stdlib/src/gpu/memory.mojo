@@ -139,7 +139,7 @@ fn async_copy[
     alias cp_async_asm = "cp.async." + cache_op + ".shared.global" + cache_hint + l2_prefetch_substr
 
     @parameter
-    if bool(fill) and bool(fill.value() == 0):
+    if Bool(fill) and Bool(fill.value() == 0):
         debug_assert(
             not predicate, "Predicate bit has to be set False for zero fill."
         )
