@@ -2588,7 +2588,7 @@ trait CeilDivable:
         var x: Float64
 
         fn __ceildiv__(self, denominator: Self) -> Self:
-            return -(self.x // -denominator.x)
+            return Self(self.x // denominator.x)
     ```
     """
 
@@ -2621,7 +2621,7 @@ trait CeilDivableRaising:
         var x: object
 
         fn __ceildiv__(self, denominator: Self) raises -> Self:
-            return -(self.x // -denominator.x)
+            return Self(self.x // denominator.x)
     ```
     """
 
