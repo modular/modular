@@ -202,8 +202,8 @@ struct LinkedList[ElementType: WritableCollectionElement]:
             curr[].next = prev
             prev = curr
             curr = next
+        self._tail = self._head
         self._head = prev
-        self._tail = self._head[].prev
 
     fn pop(mut self) -> ElementType:
         """Remove and return the first element of the list.
@@ -232,6 +232,33 @@ struct LinkedList[ElementType: WritableCollectionElement]:
             curr = curr[].next
         return new^
 
+    fn _get_node_ptr(ref self, index: Int) -> UnsafePointer[Node[ElementType]]:
+        """Get a pointer to the node at the specified index.
+
+        This method optimizes traversal by starting from either the head or tail
+        depending on which is closer to the target index.
+
+        Args:
+            index: The index of the node to get.
+
+        Returns:
+            A pointer to the node at the specified index.
+        """
+        var l = len(self)
+        var i = normalize_index[container_name="LinkedList"](index, self)
+        debug_assert(0 <= i < l, "index out of bounds")
+        var mid = l // 2
+        if i <= mid:
+            var curr = self._head
+            for _ in range(i):
+                curr = curr[].next
+            return curr
+        else:
+            var curr = self._tail
+            for _ in range(l - i - 1):
+                curr = curr[].prev
+            return curr
+
     fn __getitem__(ref self, index: Int) -> ref [self] ElementType:
         """Get the element at the specified index.
 
@@ -241,12 +268,8 @@ struct LinkedList[ElementType: WritableCollectionElement]:
         Returns:
             The element at the specified index.
         """
-        var curr = self._head
-        for _ in range(
-            normalize_index[container_name="LinkedList"](index, self)
-        ):
-            curr = curr[].next
-        return curr[].value
+        debug_assert(len(self) > 0, "unable to get item from empty list")
+        return self._get_node_ptr(index)[].value
 
     fn __setitem__(mut self, index: Int, owned value: ElementType):
         """Set the element at the specified index.
@@ -255,12 +278,8 @@ struct LinkedList[ElementType: WritableCollectionElement]:
             index: The index of the element to set.
             value: The new value to set.
         """
-        var curr = self._head
-        for _ in range(
-            normalize_index[container_name="LinkedList"](index, self)
-        ):
-            curr = curr[].next
-        curr[].value = value^
+        debug_assert(len(self) > 0, "unable to set item from empty list")
+        self._get_node_ptr(index)[].value = value^
 
     fn __len__(self) -> Int:
         """Get the number of elements in the list.
