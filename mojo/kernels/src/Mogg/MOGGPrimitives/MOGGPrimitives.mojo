@@ -603,9 +603,9 @@ fn mgp_buffer_constant_external[
     if (Int(weight_ptr) % dAlign) != 0:
         raise Error(
             "invalid alignment for address "
-            + str(weight_ptr)
+            + String(weight_ptr)
             + " and align "
-            + str(dAlign)
+            + String(dAlign)
         )
 
     return NDBuffer[DType.int8, 1](weight_ptr.bitcast[Int8](), DimList(cSize))

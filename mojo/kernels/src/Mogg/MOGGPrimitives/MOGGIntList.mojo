@@ -238,7 +238,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
     fn print(self):
         var result: String = "("
         for i in range(len(self)):
-            result += str(self[i])
+            result += String(self[i])
             if i != (len(self) - 1):
                 result += ", "
         result += ")"
