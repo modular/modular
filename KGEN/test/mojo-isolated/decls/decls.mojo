@@ -1659,6 +1659,95 @@ fn testRegPassableInitSelf():
     x.a = 1
 
 
+struct OverloadedKwArgs:
+    var val: Int
+
+    fn __init__(out self, single: Int):
+        self.val = single
+
+    fn __init__(out self, *, double: Int):
+        self.val = double * 2
+
+    fn __init__(out self, *, triple: Int):
+        self.val = triple * 3
+
+    fn __getitem__(self, idx: Int) -> Int:
+        return self.val
+
+    fn __getitem__(self, *, idx2: Int) -> Int:
+        return self.val * 2
+
+    fn __setitem__(mut self, idx: Int, val: Int):
+        self.val = val
+
+    fn __setitem__(mut self, val: Int, *, idx2: Int):
+        self.val = val * 2
+
+    fn overloaded_fn(mut self, x: Int, *, y: Int, z: Int):
+        self.val = x + y + z
+
+    fn overloaded_fn(mut self, x: Int, *, y2: Int, z: Int):
+        self.val = x + y2 * 2 + z
+
+
+# CHECK-LABEL: lit.fn @"testOverloadKwArgs
+fn testOverloadKwArgs():
+    # CHECK-NEXT: %x = lit.var.decl
+    # CHECK-NEXT: %0 = kgen.param.constant: !Int = <{1}>
+    # CHECK-NEXT: %1 = lit.call @decls::@OverloadedKwArgs{{.*}}single
+    var x = OverloadedKwArgs(1)
+
+    # CHECK-NEXT: %2 = kgen.param.constant: !Int = <{1}>
+    # CHECK-NEXT: %3 = lit.call @decls::@OverloadedKwArgs{{.*}}single
+    x = OverloadedKwArgs(single=1)
+
+    # CHECK-NEXT: %4 = kgen.param.constant: !Int = <{1}>
+    # CHECK-NEXT: %5 = lit.call @decls::@OverloadedKwArgs{{.*}}double
+    x = OverloadedKwArgs(double=1)
+
+    # CHECK-NEXT: %6 = kgen.param.constant: !Int = <{1}>
+    # CHECK-NEXT: %7 = lit.call @decls::@OverloadedKwArgs{{.*}}triple
+    x = OverloadedKwArgs(triple=1)
+
+    # CHECK-NEXT: %8 = kgen.param.constant: !Int = <{1}>
+    # CHECK-NEXT: %9 = kgen.param.constant: !Int = <{42}>
+    # CHECK-NEXT: %10 = lit.call @decls::@OverloadedKwArgs::@"__setitem__{{.*}}"idx"
+    x[1] = 42
+
+    # CHECK-NEXT: %11 = kgen.param.constant: !Int = <{42}>
+    # CHECK-NEXT: %12 = kgen.param.constant: !Int = <{1}>
+    # CHECK-NEXT: %13 = lit.call @decls::@OverloadedKwArgs::@"__setitem__{{.*}}"idx2"
+    x[idx2=1] = 42
+
+    # CHECK-NEXT: %y = lit.var.decl
+    # CHECK-NEXT: %14 = lit.ref.immut %x : <!OverloadedKwArgs, mut *"x`">
+    # CHECK-NEXT: %15 = kgen.param.constant: !Int = <{1}>
+    # CHECK-NEXT: %16 = lit.call @decls::@OverloadedKwArgs::@"__getitem__{{.*}}idx
+    # CHECK-NEXT: lit.ref.store %16, %y : <!Int, mut *"y`1">
+    # CHECK-NEXT: %17 = lit.ref.immut %x : <!OverloadedKwArgs, mut *"x`">
+    var y = x[1]
+
+    # CHECK-NEXT: %18 = kgen.param.constant: !Int = <{1}
+    # CHECK-NEXT: %19 = lit.call @decls::@OverloadedKwArgs::@"__getitem__{{.*}}idx2
+    # CHECK-NEXT: lit.ref.store %19, %y : <!Int, mut *"y`1">
+    y = x[idx2=1]
+
+    # CHECK-NEXT: %z = lit.var.decl "z" var : !lit.ref<none, mut *"z`2">
+    # CHECK-NEXT: %20 = kgen.param.constant: !Int = <{1}>
+    # CHECK-NEXT: %21 = kgen.param.constant: !Int = <{2}>
+    # CHECK-NEXT: %22 = kgen.param.constant: !Int = <{3}>
+    # CHECK-NEXT: %23 = lit.call @decls::@OverloadedKwArgs{{.*}}"y"
+    # CHECK-NEXT: lit.ref.store %23, %z : <none, mut *"z`2">
+    var z = x.overloaded_fn(1, y=2, z=3)
+
+    # CHECK-NEXT: %24 = kgen.param.constant: !Int = <{1}>
+    # CHECK-NEXT: %25 = kgen.param.constant: !Int = <{2}>
+    # CHECK-NEXT: %26 = kgen.param.constant: !Int = <{3}>
+    # CHECK-NEXT: %27 = lit.call @decls::@OverloadedKwArgs{{.*}}"y2"
+    # CHECK-NEXT: lit.ref.store %27, %z : <none, mut *"z`2">
+    z = x.overloaded_fn(1, y2=2, z=3)
+
+
 # Can't generate the constructors for a type wrapping !lit.ref
 @value
 struct MOCO1320[mut: Bool, //, origin: Origin[mut]]:

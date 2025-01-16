@@ -1025,11 +1025,28 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     // We need to compare the (name erased) user result types, since memory-only
     // types may result in `!kgen.none` in the mlir signature result.
     auto resTy = ASTType(signature.getUserResultType());
+
+    // Loop through the args and check if any are keyword-only while overloading
+    // the name of the argument.
+    bool overloadedKeywordArgName = false;
+    auto existingArgs =
+        existingFunc.getSignatureGenerator().getArgListAttrs().getPogs();
+    for (auto [arg, existingArg] :
+         llvm::zip(tcSignature.argList.parsedArgs, existingArgs)) {
+      if ((arg.kwArgHandling == KWArgHandling::kKeywordOnly ||
+           existingArg.getPassingKind() == PassingKind::KwOnly) &&
+          arg.name != existingArg.getName()) {
+        overloadedKeywordArgName = true;
+        break;
+      }
+    }
+
     auto existingResTy =
         ASTType(existingFunc.getSignatureGenerator().getUserResultType());
+
     if (!resTy.isEqualCanon(existingResTy))
       errorMessage = " cannot overload on return type only";
-    else
+    else if (!overloadedKeywordArgName)
       errorMessage = " with identical signature";
 
     // On redefinition this is an overload of the same name.
