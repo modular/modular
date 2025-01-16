@@ -89,6 +89,20 @@ def test_copy():
     assert_equal("fine", s1)
 
 
+def test_len():
+    # String length is in bytes, not codepoints.
+    var s0 = String("ನಮಸ್ಕಾರ")
+
+    assert_equal(len(s0), 21)
+    assert_equal(len(s0.chars()), 7)
+
+    # For ASCII string, the byte and codepoint length are the same:
+    var s1 = String("abc")
+
+    assert_equal(len(s1), 3)
+    assert_equal(len(s1.chars()), 3)
+
+
 def test_equality_operators():
     var s0 = String("abc")
     var s1 = String("def")
@@ -1475,6 +1489,7 @@ def test_reserve():
 def main():
     test_constructors()
     test_copy()
+    test_len()
     test_equality_operators()
     test_comparison_operators()
     test_add()

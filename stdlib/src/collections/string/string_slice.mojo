@@ -547,13 +547,48 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         else:
             return "'" + result + "'"
 
+    @always_inline
     fn __len__(self) -> Int:
-        """Nominally returns the _length in Unicode codepoints_ (not bytes!).
+        """Get the string length in bytes.
+
+        This function returns the number of bytes in the underlying UTF-8
+        representation of the string.
+
+        To get the number of Unicode codepoints in a string, use
+        `len(str.chars())`.
 
         Returns:
-            The length in Unicode codepoints.
+            The string length in bytes.
+
+        # Examples
+
+        Query the length of a string, in bytes and Unicode codepoints:
+
+        ```mojo
+        from collections.string import StringSlice
+        from testing import assert_equal
+
+        var s = StringSlice("ನಮಸ್ಕಾರ")
+
+        assert_equal(len(s), 21)
+        assert_equal(len(s.chars()), 7)
+        ```
+
+        Strings containing only ASCII characters have the same byte and
+        Unicode codepoint length:
+
+        ```mojo
+        from collections.string import StringSlice
+        from testing import assert_equal
+
+        var s = StringSlice("abc")
+
+        assert_equal(len(s), 3)
+        assert_equal(len(s.chars()), 3)
+        ```
+        .
         """
-        return self.char_length()
+        return self.byte_length()
 
     fn write_to[W: Writer](self, mut writer: W):
         """Formats this string slice to the provided `Writer`.
@@ -1012,6 +1047,46 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         Returns:
             The length in Unicode codepoints.
+
+        # Examples
+
+        Query the length of a string, in bytes and Unicode codepoints:
+
+        ```mojo
+        from collections.string import StringSlice
+        from testing import assert_equal
+
+        var s = StringSlice("ನಮಸ್ಕಾರ")
+
+        assert_equal(s.char_length(), 7)
+        assert_equal(len(s), 21)
+        ```
+
+        Strings containing only ASCII characters have the same byte and
+        Unicode codepoint length:
+
+        ```mojo
+        from collections.string import StringSlice
+        from testing import assert_equal
+
+        var s = StringSlice("abc")
+
+        assert_equal(s.char_length(), 3)
+        assert_equal(len(s), 3)
+        ```
+
+        The character length of a string with visual combining characters is
+        the length in Unicode codepoints, not grapheme clusters:
+
+        ```mojo
+        from collections.string import StringSlice
+        from testing import assert_equal
+
+        var s = StringSlice("á")
+        assert_equal(s.char_length(), 2)
+        assert_equal(s.byte_length(), 3)
+        ```
+        .
         """
         # Every codepoint is encoded as one leading byte + 0 to 3 continuation
         # bytes.

@@ -1063,22 +1063,46 @@ struct String(
         """
         return self.byte_length() > 0
 
+    @always_inline
     fn __len__(self) -> Int:
-        """Gets the string length, in bytes (for now) PREFER:
-        String.byte_length(), a future version will make this method return
-        Unicode codepoints.
+        """Get the string length of in bytes.
+
+        This function returns the number of bytes in the underlying UTF-8
+        representation of the string.
+
+        To get the number of Unicode codepoints in a string, use
+        `len(str.chars())`.
 
         Returns:
-            The string length, in bytes (for now).
+            The string length in bytes.
+
+        # Examples
+
+        Query the length of a string, in bytes and Unicode codepoints:
+
+        ```mojo
+        from testing import assert_equal
+
+        var s = String("ನಮಸ್ಕಾರ")
+
+        assert_equal(len(s), 21)
+        assert_equal(len(s.chars()), 7)
+        ```
+
+        Strings containing only ASCII characters have the same byte and
+        Unicode codepoint length:
+
+        ```mojo
+        from testing import assert_equal
+
+        var s = String("abc")
+
+        assert_equal(len(s), 3)
+        assert_equal(len(s.chars()), 3)
+        ```
+        .
         """
-        var unicode_length = self.byte_length()
-
-        # TODO: everything uses this method assuming it's byte length
-        # for i in range(unicode_length):
-        #     if _utf8_byte_type(self._buffer[i]) == 1:
-        #         unicode_length -= 1
-
-        return unicode_length
+        return self.byte_length()
 
     @always_inline
     fn __str__(self) -> String:

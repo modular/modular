@@ -151,23 +151,22 @@ fn test_heap_string_from_string_slice() raises:
 
 
 fn test_slice_len() raises:
-    alias str1: StringLiteral = "12345"
-    alias str2: StringLiteral = "1234"
-    alias str3: StringLiteral = "123"
-    alias str4: StringLiteral = "12"
-    alias str5: StringLiteral = "1"
+    assert_equal(5, len(StringSlice("12345")))
+    assert_equal(4, len(StringSlice("1234")))
+    assert_equal(3, len(StringSlice("123")))
+    assert_equal(2, len(StringSlice("12")))
+    assert_equal(1, len(StringSlice("1")))
+    assert_equal(0, len(StringSlice("")))
 
-    alias slice1 = str1.as_string_slice()
-    alias slice2 = str2.as_string_slice()
-    alias slice3 = str3.as_string_slice()
-    alias slice4 = str4.as_string_slice()
-    alias slice5 = str5.as_string_slice()
+    # String length is in bytes, not codepoints.
+    var s0 = String("ನಮಸ್ಕಾರ")
+    assert_equal(len(s0), 21)
+    assert_equal(len(s0.chars()), 7)
 
-    assert_equal(5, len(slice1))
-    assert_equal(4, len(slice2))
-    assert_equal(3, len(slice3))
-    assert_equal(2, len(slice4))
-    assert_equal(1, len(slice5))
+    # For ASCII string, the byte and codepoint length are the same:
+    var s1 = String("abc")
+    assert_equal(len(s1), 3)
+    assert_equal(len(s1.chars()), 3)
 
 
 fn test_slice_char_length() raises:
@@ -188,6 +187,13 @@ fn test_slice_char_length() raises:
     var s3 = StringSlice("H̵͙̖̼̬̬̲̱͊̇̅͂̍͐͌͘͜͝")
     assert_equal(s3.byte_length(), 37)
     assert_equal(s3.char_length(), 19)
+
+    # Character length is codepoints, not graphemes
+    # This is thumbs up + a skin tone modifier codepoint.
+    var s4 = StringSlice("👍🏻")
+    assert_equal(s4.byte_length(), 8)
+    assert_equal(s4.char_length(), 2)
+    # TODO: assert_equal(s4.grapheme_count(), 1)
 
 
 fn test_slice_eq() raises:

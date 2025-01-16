@@ -236,6 +236,19 @@ what we publish.
       # ...
   ```
 
+- The `String.__len__()` and `StringSlice.__len__()` methods now return the
+  length of the string in bytes.
+
+  Previously, these methods were documented to note that they would eventually
+  return a length in Unicode codepoints. They have been changed to guarantee
+  a length in bytes, since the length in bytes is how they are most often used
+  today (for example, as bounds to low-level memory manipulation logic).
+  Additionally, length in codepoints is a more specialized notion of string
+  length that is rarely the correct metric.
+
+  Users that know they need the length in codepoints can use the
+  `str.char_length()` method, or `len(str.chars())`.
+
 - Various functionality has moved from `String` and `StringRef` to the more
   general `StringSlice` type.
 
