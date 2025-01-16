@@ -27,7 +27,7 @@ fn main():
     var s1 = String("let_string")
     var s2 = String("")
     for i in range(0, 100):
-        s2 += str(i)
+        s2 += String(i)
     var s3 = String()
     test(s2)
     var s4 = UnsafePointer[String].address_of(s2)

@@ -10,14 +10,14 @@ fn simple_fn(x: Int):
 
 
 fn parametrized_fn[T: Stringable](x: T):
-    print(str(x))  # parametrized_fn stop
+    print(String(x))  # parametrized_fn stop
 
 
 @value
 struct Struct[T1: Stringable]:
     fn parametrized_method[T2: Stringable](self, x: T1, y: T2):
-        print(str(x))  # parametrized_method stop
-        print(str(y))
+        print(String(x))  # parametrized_method stop
+        print(String(y))
 
 
 fn main():
