@@ -57,11 +57,11 @@ struct Info:
 
     @no_inline
     fn write_text[path_like: PathLike](self, path: path_like) raises:
-        Path(path.__fspath__()).write_text(str(self))
+        Path(path.__fspath__()).write_text(String(self))
 
     @no_inline
     fn __contains__(self, content: String) -> Bool:
-        return content in str(self)
+        return content in String(self)
 
 
 alias _EMISSION_KIND_ASM = 0
