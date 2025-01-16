@@ -782,7 +782,7 @@ fn matmul[
     constrained[is_valid_target[target](), "unsupported target"]()
     constrained[not transpose_a, "transpose_a not yet supported"]()
     debug_assert(
-        is_cpu[target]() or bool(ctx),
+        is_cpu[target]() or Bool(ctx),
         "expected DeviceContext to be provided if target != cpu",
     )
 
