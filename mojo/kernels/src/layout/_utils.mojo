@@ -64,7 +64,7 @@ struct ManagedLayoutTensor[
         update: Bool = True
     ](self) raises -> LayoutTensor[dtype, layout]:
         debug_assert(
-            bool(self.ctx),
+            Bool(self.ctx),
             "device_tensor cannot be constructed for host only tensor.",
         )
 
