@@ -1379,8 +1379,8 @@ fn elementwise[
     @parameter
     fn description_fn() -> String:
         var shape_str = trace_arg("shape", shape)
-        var vector_width_str = "vector_width=" + str(simd_width)
-        var single_thread_blocking_override = "single_thread_blocking_override=" + str(
+        var vector_width_str = "vector_width=" + String(simd_width)
+        var single_thread_blocking_override = "single_thread_blocking_override=" + String(
             use_blocking_impl
         )
 
