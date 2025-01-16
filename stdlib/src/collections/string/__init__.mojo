@@ -20,4 +20,4 @@ from .string import (
     chr,
     ord,
 )
-from .string_slice import StringSlice, StaticString
+from .string_slice import StringSlice, StaticString, CharsIter

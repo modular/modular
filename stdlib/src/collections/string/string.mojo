@@ -13,6 +13,7 @@
 """Implements basic object methods for working with strings."""
 
 from collections import KeyElement, List, Optional
+from collections.string import CharsIter
 from collections._index_normalization import normalize_index
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from os import abort
@@ -1030,15 +1031,14 @@ struct String(
         """
         self._iadd[False](other.as_bytes())
 
+    @deprecated("Use `str.chars()` or `str.char_slices()` instead.")
     fn __iter__(self) -> _StringSliceIter[__origin_of(self)]:
         """Iterate over the string, returning immutable references.
 
         Returns:
             An iterator of references to the string elements.
         """
-        return _StringSliceIter[__origin_of(self)](
-            ptr=self.unsafe_ptr(), length=self.byte_length()
-        )
+        return self.char_slices()
 
     fn __reversed__(self) -> _StringSliceIter[__origin_of(self), False]:
         """Iterate backwards over the string, returning immutable references.
@@ -1251,6 +1251,76 @@ struct String(
         buf.size = capacity
         buf.append(0)
         return String(buf^)
+
+    @always_inline
+    fn chars(self) -> CharsIter[__origin_of(self)]:
+        """Returns an iterator over the `Char`s encoded in this string slice.
+
+        Returns:
+            An iterator type that returns successive `Char` values stored in
+            this string slice.
+
+        # Examples
+
+        Print the characters in a string:
+
+        ```mojo
+        from testing import assert_equal
+
+        var s = String("abc")
+        var iter = s.chars()
+        assert_equal(iter.__next__(), Char.ord("a"))
+        assert_equal(iter.__next__(), Char.ord("b"))
+        assert_equal(iter.__next__(), Char.ord("c"))
+        assert_equal(iter.__has_next__(), False)
+        ```
+
+        `chars()` iterates over Unicode codepoints, and supports multibyte
+        codepoints:
+
+        ```mojo
+        from testing import assert_equal
+
+        # A visual character composed of a combining sequence of 2 codepoints.
+        var s = String("á")
+        assert_equal(s.byte_length(), 3)
+
+        var iter = s.chars()
+        assert_equal(iter.__next__(), Char.ord("a"))
+         # U+0301 Combining Acute Accent
+        assert_equal(iter.__next__().to_u32(), 0x0301)
+        assert_equal(iter.__has_next__(), False)
+        ```
+        .
+        """
+        return self.as_string_slice().chars()
+
+    fn char_slices(self) -> _StringSliceIter[__origin_of(self)]:
+        """Returns an iterator over single-character slices of this string.
+
+        Each returned slice points to a single Unicode codepoint encoded in the
+        underlying UTF-8 representation of this string.
+
+        Returns:
+            An iterator of references to the string elements.
+
+        # Examples
+
+        Iterate over the character slices in a string:
+
+        ```mojo
+        from testing import assert_equal, assert_true
+
+        var s = String("abc")
+        var iter = s.char_slices()
+        assert_true(iter.__next__() == "a")
+        assert_true(iter.__next__() == "b")
+        assert_true(iter.__next__() == "c")
+        assert_equal(iter.__has_next__(), False)
+        ```
+        .
+        """
+        return self.as_string_slice().char_slices()
 
     fn unsafe_ptr(
         ref self,
@@ -1494,7 +1564,7 @@ struct String(
         while lhs <= str_byte_len:
             # Python adds all "whitespace chars" as one separator
             # if no separator was specified
-            for s in self[lhs:]:
+            for s in self[lhs:].char_slices():
                 if not s.isspace():
                     break
                 lhs += s.byte_length()
@@ -1508,7 +1578,9 @@ struct String(
                 output.append(self[str_byte_len])
                 break
             rhs = lhs + num_bytes(self.unsafe_ptr()[lhs])
-            for s in self[lhs + num_bytes(self.unsafe_ptr()[lhs]) :]:
+            for s in self[
+                lhs + num_bytes(self.unsafe_ptr()[lhs]) :
+            ].char_slices():
                 if s.isspace():
                     break
                 rhs += s.byte_length()
@@ -1863,7 +1935,7 @@ struct String(
         """
         if not self:
             return False
-        for char in self.as_string_slice().chars():
+        for char in self.chars():
             if not char.is_ascii_digit():
                 return False
         return True
@@ -1896,7 +1968,7 @@ struct String(
         Returns:
             True if all characters are printable else False.
         """
-        for char in self.as_string_slice().chars():
+        for char in self.chars():
             if not char.is_ascii_printable():
                 return False
         return True
