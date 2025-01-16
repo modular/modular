@@ -319,7 +319,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
         var keys_arr = self._ptr.keys(UnsafePointer.address_of(size), self._lib)
         var keys = List[String](capacity=Int(size))
         for i in range(Int(size)):
-            keys.append(str(keys_arr[i]))
+            keys.append(String(keys_arr[i]))
 
         call_dylib_func[NoneType](
             self._lib, Self._DeleteTensorMapKeysFnName, keys_arr
@@ -359,31 +359,31 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
                 var dtype = self.get_spec(key).dtype()
                 repr += "'" + key + "' : "
                 if dtype is DType.bool:
-                    repr += str(self.get[DType.bool](key))
+                    repr += String(self.get[DType.bool](key))
                 elif dtype is DType.uint8:
-                    repr += str(self.get[DType.uint8](key))
+                    repr += String(self.get[DType.uint8](key))
                 elif dtype is DType.uint16:
-                    repr += str(self.get[DType.uint16](key))
+                    repr += String(self.get[DType.uint16](key))
                 elif dtype is DType.uint32:
-                    repr += str(self.get[DType.uint32](key))
+                    repr += String(self.get[DType.uint32](key))
                 elif dtype is DType.uint64:
-                    repr += str(self.get[DType.uint64](key))
+                    repr += String(self.get[DType.uint64](key))
                 elif dtype is DType.int8:
-                    repr += str(self.get[DType.int8](key))
+                    repr += String(self.get[DType.int8](key))
                 elif dtype is DType.int16:
-                    repr += str(self.get[DType.int16](key))
+                    repr += String(self.get[DType.int16](key))
                 elif dtype is DType.int32:
-                    repr += str(self.get[DType.int32](key))
+                    repr += String(self.get[DType.int32](key))
                 elif dtype is DType.int64:
-                    repr += str(self.get[DType.int64](key))
+                    repr += String(self.get[DType.int64](key))
                 elif dtype is DType.float16:
-                    repr += str(self.get[DType.float16](key))
+                    repr += String(self.get[DType.float16](key))
                 elif dtype is DType.float32:
-                    repr += str(self.get[DType.float32](key))
+                    repr += String(self.get[DType.float32](key))
                 elif dtype is DType.float64:
-                    repr += str(self.get[DType.float64](key))
+                    repr += String(self.get[DType.float64](key))
                 else:
-                    repr += str(self.get[DType.uint8](key))
+                    repr += String(self.get[DType.uint8](key))
         except:
             return "{}"
 

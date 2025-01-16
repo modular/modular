@@ -18,7 +18,7 @@ fn test_numpy_view() raises:
 
     var n1_view = EngineNumpyView(n1)
 
-    assert_equal(str(n1_view.spec()), "3xfloat32")
+    assert_equal(String(n1_view.spec()), "3xfloat32")
 
     _ = n1^
 

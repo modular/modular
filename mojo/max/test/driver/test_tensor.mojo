@@ -189,8 +189,8 @@ def test_round_trip():
     assert_equal(tensor[1, 0], 3)
 
     dt2 = tensor^.to_device_tensor()
-    assert_true("DeviceTensor(Device(type=cpu,target_info(" in str(dt2))
-    assert_true("Spec(10x2xfloat32))" in str(dt2))
+    assert_true("DeviceTensor(Device(type=cpu,target_info(" in String(dt2))
+    assert_true("Spec(10x2xfloat32))" in String(dt2))
 
     tensor2 = dt2^.to_tensor[DType.float32, 2]()
     assert_equal(tensor2[1, 0], 3)
@@ -405,7 +405,7 @@ def test_print():
         "Tensor([[1.0, 2.0],[3.0, 4.0],[5.0, 6.0],..., [15.0, 16.0],[17.0,"
         " 18.0],[19.0, 20.0]], dtype=float32, shape=10x2)"
     )
-    s = str(tensor).replace("\n", "")
+    s = String(tensor).replace("\n", "")
     assert_equal(s, expected)
 
 

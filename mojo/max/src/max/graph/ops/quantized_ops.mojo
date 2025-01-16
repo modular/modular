@@ -112,7 +112,7 @@ def qmatmul[encoding: QuantizationEncoding](lhs: Symbol, rhs: Symbol) -> Symbol:
     # rhs is uint8 and in a packed format such as Q4_0, Q4_K, or Q6_K.
     rhs_dtype = rhs.type().tensor().dtype
     if rhs_dtype is not DType.uint8:
-        raise "expected uint8 DType but got " + str(rhs_dtype)
+        raise "expected uint8 DType but got " + String(rhs_dtype)
 
     g = lhs.graph()
     lhs_type = lhs.tensor_type()

@@ -31,13 +31,13 @@ def test_read_version():
     var header = String(header_buf)
     var major_version: UInt32 = 1234567
     var minor_version: UInt32 = 8910
-    with NamedTemporaryFile(name=str("test_simple")) as TEMP_FILE:
+    with NamedTemporaryFile(name=String("test_simple")) as TEMP_FILE:
         with open(TEMP_FILE.name, "wb") as f:
             f.write(header)
             _write_int(major_version, f)
             _write_int(minor_version, f)
             # Write some arbitary text
-            f.write(str("this should not be read "))
+            f.write(String("this should not be read "))
 
         version = read_version(TEMP_FILE.name)
         testing.assert_equal(1234567, version.major_version)
@@ -50,13 +50,13 @@ def test_bad_header():
     var header = String(header_buf)
     var major_version: UInt32 = 1234567
     var minor_version: UInt32 = 8910
-    with NamedTemporaryFile(name=str("test_simple")) as TEMP_FILE:
+    with NamedTemporaryFile(name=String("test_simple")) as TEMP_FILE:
         with open(TEMP_FILE.name, "wb") as f:
             f.write(header)
             _write_int(major_version, f)
             _write_int(minor_version, f)
             # Write some arbitary text
-            f.write(str("this should not be read "))
+            f.write(String("this should not be read "))
 
         with testing.assert_raises(contains="not a max.graph checkpoint"):
             _ = read_version(TEMP_FILE.name)

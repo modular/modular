@@ -108,7 +108,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
             status.impl,
         )
         if status:
-            raise str(status)
+            raise String(status)
         self.name = name
         self.num_bytes = num_bytes
 
@@ -211,9 +211,9 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
         return (
             "DeviceMemory("
             + (self.name.value() + "," if self.name else "")
-            + str(self.get_device())
+            + String(self.get_device())
             + ",Bytecount("
-            + str(self.bytecount())
+            + String(self.bytecount())
             + "))"
         )
 
@@ -251,7 +251,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
             dst_memory._impl_ptr, self._impl_ptr, status.impl
         )
         if status:
-            raise str(status)
+            raise String(status)
 
     fn copy_to(
         self, dev: Device, name: Optional[String] = None
@@ -270,7 +270,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
             If the DeviceMemory is backed by the same Device object as dev.
         """
         if dev == self._device:
-            raise str(self) + "is already allocated on " + str(dev)
+            raise String(self) + "is already allocated on " + String(dev)
 
         var dst = dev.allocate(self.bytecount(), name)
         self.copy_into(dst)
@@ -448,9 +448,9 @@ struct DeviceTensor(DeviceBuffer, StringableRaising, CollectionElement):
         return (
             "DeviceTensor("
             + (self._storage.name.value() + "," if self._storage.name else "")
-            + str(self.device())
+            + String(self.device())
             + ",Spec("
-            + str(self.spec)
+            + String(self.spec)
             + "))"
         )
 

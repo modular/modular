@@ -89,21 +89,21 @@ fn _format_error_impl[
     location: Optional[_SourceLocation],
     call_loc: _SourceLocation,
 ) -> String:
-    var layer_string = str("")
+    var layer_string = String("")
     if graph:
-        layer_string = str(graph.value().current_layer())
+        layer_string = String(graph.value().current_layer())
 
     var message_string: String
     if layer_string:
-        message_string = layer_string + " - " + str(message)
+        message_string = layer_string + " - " + String(message)
     else:
-        message_string = str(message)
+        message_string = String(message)
 
     return (
         "\n\n"
         + message_string
         + "\n\tat "
-        + str((location or call_loc).value())
+        + String((location or call_loc).value())
         + "\n\n"
     )
 
@@ -124,7 +124,7 @@ def format_system_stack[MAX_STACK_SIZE: Int = 128]() -> String:
     frame_strs = external_call[
         "backtrace_symbols", UnsafePointer[UnsafePointer[c_char]]
     ](call_stack, frames)
-    formatted = str("System stack:\n")
+    formatted = String("System stack:\n")
     for i in range(frames):
-        formatted += "\t" + str(StringRef(frame_strs[i])) + "\n"
+        formatted += "\t" + String(StringRef(frame_strs[i])) + "\n"
     return formatted

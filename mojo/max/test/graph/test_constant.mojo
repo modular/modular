@@ -17,9 +17,9 @@ fn test_basic_tensor() raises:
     g.output(y)
 
     testing.assert_true(
-        "value = #M.dense_array<1, 2> : tensor<1x2xsi32>" in str(y)
+        "value = #M.dense_array<1, 2> : tensor<1x2xsi32>" in String(y)
     )
-    testing.assert_true("!mo.tensor<[1, 2], si32>" in str(y))
+    testing.assert_true("!mo.tensor<[1, 2], si32>" in String(y))
 
 
 fn test_scalar_basic() raises:
@@ -27,8 +27,10 @@ fn test_scalar_basic() raises:
     var y = g.scalar[DType.bool](True)
     g.output(y)
 
-    testing.assert_true("value = #M.dense_array<true> : tensor<i1>" in str(y))
-    testing.assert_true(": !mo.tensor<[], bool>" in str(y))
+    testing.assert_true(
+        "value = #M.dense_array<true> : tensor<i1>" in String(y)
+    )
+    testing.assert_true(": !mo.tensor<[], bool>" in String(y))
 
 
 fn test_scalar_high_rank() raises:
@@ -37,9 +39,9 @@ fn test_scalar_high_rank() raises:
     g.output(y)
 
     testing.assert_true(
-        "value = #M.dense_array<true> : tensor<1x1x1xi1>" in str(y)
+        "value = #M.dense_array<true> : tensor<1x1x1xi1>" in String(y)
     )
-    testing.assert_true(": !mo.tensor<[1, 1, 1], bool>" in str(y))
+    testing.assert_true(": !mo.tensor<[1, 1, 1], bool>" in String(y))
 
 
 fn test_basic_i64() raises:
@@ -47,8 +49,10 @@ fn test_basic_i64() raises:
     var y = g.scalar(Int64(1), rank=1)
     _ = g.output(y)
 
-    testing.assert_true("value = #M.dense_array<1> : tensor<1xsi64>" in str(y))
-    testing.assert_true(": !mo.tensor<[1], si64>" in str(y))
+    testing.assert_true(
+        "value = #M.dense_array<1> : tensor<1xsi64>" in String(y)
+    )
+    testing.assert_true(": !mo.tensor<[1], si64>" in String(y))
 
 
 fn main() raises:

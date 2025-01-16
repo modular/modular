@@ -204,7 +204,7 @@ struct AnyTensor:
                     writer.write("x")
                 writer.write(self._spec.shape[i])
 
-        var device_str = str(self._device)
+        var device_str = String(self._device)
         if "cpu" not in device_str:
             writer.write("<Unable to print device tensor>, ")
             writer.write(device_str)

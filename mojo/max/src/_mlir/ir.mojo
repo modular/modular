@@ -669,7 +669,7 @@ struct Type(CollectionElement, Stringable, Writable):
 
     fn write_to[W: Writer](self, mut writer: W):
         # TODO: Avoid this intermediate String allocation.
-        writer.write(str(self))
+        writer.write(String(self))
 
 
 @value

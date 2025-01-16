@@ -72,7 +72,9 @@ def test_implicit_conversion():
     )
 
     # FIXME (40568) should remove str
-    assert_equal(str(_function_that_takes_anytensor(tensor^, dt2^)), str(4))
+    assert_equal(
+        String(_function_that_takes_anytensor(tensor^, dt2^)), String(4)
+    )
 
 
 @value
@@ -125,7 +127,7 @@ def test_print_any_tensor():
 
     expected = """Tensor([[1.0, 2.0],
 [3.0, 4.0]], dtype=float32, shape=2x2)"""
-    assert_equal(expected, str(anytensor))
+    assert_equal(expected, String(anytensor))
 
 
 def main():

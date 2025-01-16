@@ -101,7 +101,7 @@ def rebind(v: Symbol, out_dims: List[Dim], message: String) -> Symbol:
         if not (x.is_symbolic() and y.is_static()):
             return
 
-        x_str = str(x)
+        x_str = String(x)
         y_int = y.num_elements()
 
         if x_str not in known_dims:
@@ -116,9 +116,9 @@ def rebind(v: Symbol, out_dims: List[Dim], message: String) -> Symbol:
                 ' (value "'
                 + x_str
                 + '") rebinds to two different constants: '
-                + str(known_dim)
+                + String(known_dim)
                 + " and "
-                + str(y_int),
+                + String(y_int),
             )
 
     # Build mapping from symbolic to known statically known values.
@@ -139,8 +139,8 @@ def rebind(v: Symbol, out_dims: List[Dim], message: String) -> Symbol:
         if d.is_static():
             return d.num_elements()
 
-        if d.is_symbolic() and str(d) in known_dims:
-            return known_dims[str(d)]
+        if d.is_symbolic() and String(d) in known_dims:
+            return known_dims[String(d)]
 
         return None
 
@@ -156,13 +156,13 @@ def rebind(v: Symbol, out_dims: List[Dim], message: String) -> Symbol:
                 g,
                 "rebind out_dims statically known to be incorrect. Dimension"
                 ' (name: "'
-                + str(src_dim)
+                + String(src_dim)
                 + ", value: "
-                + str(src_size.value())
+                + String(src_size.value())
                 + '") cannot rebind to Dimension (name: '
-                + str(dst_dim)
+                + String(dst_dim)
                 + ", value: "
-                + str(dst_size.value())
+                + String(dst_size.value())
                 + ")",
             )
 
@@ -245,9 +245,9 @@ def unsqueeze(v: Symbol, axis: Int) -> Symbol:
         raise error(
             g,
             "unsqueeze axis out of bounds: axis="
-            + str(axis)
+            + String(axis)
             + ", rank="
-            + str(rank),
+            + String(rank),
         )
 
     # Short circuit to handle scalars with less ops.

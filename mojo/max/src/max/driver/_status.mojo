@@ -25,7 +25,7 @@ struct _CStatus:
         var err = call_dylib_func[CString](
             lib.get_handle(), get_error_func, self
         )
-        return str(err)
+        return String(err)
 
     fn free(self, lib: DriverLibrary):
         alias free_func = "M_deleteStatus"

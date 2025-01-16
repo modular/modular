@@ -17,7 +17,7 @@ fn test_list_empty() raises:
     g.output(l)
 
     g.verify()
-    testing.assert_true("mo.list.create" in str(g))
+    testing.assert_true("mo.list.create" in String(g))
 
     var lst = _testing.execute_nullary_list(g)
     testing.assert_equal(len(lst), 0)
@@ -31,7 +31,7 @@ fn test_list_nonempty() raises:
     var x = Tensor[DType.float32](TensorShape(1), 1.0)
 
     g.verify()
-    testing.assert_true("mo.list.create" in str(g))
+    testing.assert_true("mo.list.create" in String(g))
     print(g)
 
     var lst = _testing.execute_unary_list(g, x)

@@ -18,7 +18,7 @@ fn test_simple() raises:
     tensors.set("x", Tensor[DType.int32](TensorShape(1, 2, 2), 1, 2, 3, 4))
     tensors.set("y", Tensor[DType.float32](TensorShape(10, 5), -1.23))
 
-    with NamedTemporaryFile(name=str("test_simple")) as TEMP_FILE:
+    with NamedTemporaryFile(name=String("test_simple")) as TEMP_FILE:
         save(tensors, TEMP_FILE.name)
 
         var loaded = load(TEMP_FILE.name)
@@ -48,7 +48,7 @@ fn test_weird_keys() raises:
         Tensor[DType.uint64](TensorShape(2), 123, 4567),
     )
 
-    with NamedTemporaryFile(name=str("test_weird_keys")) as TEMP_FILE:
+    with NamedTemporaryFile(name=String("test_weird_keys")) as TEMP_FILE:
         save(tensors, TEMP_FILE.name)
 
         var loaded = load(TEMP_FILE.name)
@@ -73,7 +73,7 @@ fn test_large_tensor() raises:
     var tensors = TensorDict()
     tensors.set("x", Tensor[DType.int32](TensorShape(100, 200, 200), 567))
 
-    with NamedTemporaryFile(name=str("test_large_tensor")) as TEMP_FILE:
+    with NamedTemporaryFile(name=String("test_large_tensor")) as TEMP_FILE:
         save(tensors, TEMP_FILE.name)
 
         var loaded = load(TEMP_FILE.name)

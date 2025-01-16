@@ -125,7 +125,7 @@ struct Symbol(CollectionElement, Stringable, Writable):
             writer: The object to write to.
         """
 
-        writer.write(str(self.handle))
+        writer.write(String(self.handle))
 
     # ===------------------------------------------------------------------=== #
     # Casting and reshaping operators.

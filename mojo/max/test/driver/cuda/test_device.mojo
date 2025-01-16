@@ -31,7 +31,7 @@ def _to_device_str(gpu_id: Int, sm_ver: Int) -> String:
 def test_cuda_device():
     gpu = cuda_device(gpu_id=0)
     assert_equal(
-        str(gpu),
+        String(gpu),
         _to_device_str(0, DeviceContext(0).compute_capability()),
     )
 
@@ -129,21 +129,21 @@ def test_print():
     input_cpu = input^.to_device_tensor()
     gpu_tensor1 = input_cpu.copy_to(gpu)
 
-    assert_true("DeviceTensor(Device(" in str(gpu_tensor1))
-    assert_true("Spec(10x2xfloat32))" in str(gpu_tensor1))
+    assert_true("DeviceTensor(Device(" in String(gpu_tensor1))
+    assert_true("Spec(10x2xfloat32))" in String(gpu_tensor1))
 
     # AnyTensor
     any_tensor = AnyTensor(gpu_tensor1^)
 
-    assert_true("Tensor(<Unable to print device tensor>," in str(any_tensor))
-    assert_true("Device(" in str(any_tensor))
-    assert_true("dtype=float32, shape=10x2" in str(any_tensor))
+    assert_true("Tensor(<Unable to print device tensor>," in String(any_tensor))
+    assert_true("Device(" in String(any_tensor))
+    assert_true("dtype=float32, shape=10x2" in String(any_tensor))
 
     # Tensor
     tensor = any_tensor^.to_device_tensor().to_tensor[DType.float32, 2]()
-    assert_true("Tensor(<Unable to print device tensor>," in str(tensor))
-    assert_true("Device(" in str(tensor))
-    assert_true("dtype=float32, shape=10x2" in str(tensor))
+    assert_true("Tensor(<Unable to print device tensor>," in String(tensor))
+    assert_true("Device(" in String(tensor))
+    assert_true("dtype=float32, shape=10x2" in String(tensor))
 
 
 def main():

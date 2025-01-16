@@ -46,9 +46,9 @@ def gather(input: Symbol, indices: Symbol, axis: Int = 0) -> Symbol:
         raise error(
             g,
             "gather axis out of bounds: axis="
-            + str(axis)
+            + String(axis)
             + ", rank="
-            + str(input_type.rank()),
+            + String(input_type.rank()),
         )
 
     var dims = List[Dim]()
@@ -96,7 +96,7 @@ def slice(
     var input_type = input.tensor_type()
     var loc = location or __call_location()
     if len(slices) > input_type.rank():
-        message = str("got {} slices, tensor only has rank {}")
+        message = String("got {} slices, tensor only has rank {}")
         raise error(g, message.format(len(slices), input_type.rank()), loc)
 
     var out_shape = out_dims
@@ -263,7 +263,7 @@ def slice(
     t = input.tensor_type()
     loc = location or __call_location()
     if len(slices) > t.rank():
-        message = str("got {} slices, tensor only has rank {}")
+        message = String("got {} slices, tensor only has rank {}")
         raise error(g, message.format(len(slices), t.rank()), loc)
 
     slice_max = Int(Int64.MAX)
@@ -311,7 +311,7 @@ def slice(
             raise error(
                 input.graph(),
                 "Could not calculate slice size at graph build time for dim="
-                + str(i)
+                + String(i)
                 + ". Please set out_dims.",
                 loc,
             )
@@ -322,11 +322,11 @@ def slice(
             raise error(
                 input.graph(),
                 "Calculate slice end for dim="
-                + str(i)
+                + String(i)
                 + " was "
-                + str(slice.end.value())
+                + String(slice.end.value())
                 + ", but the dimensions only has "
-                + str(length.value())
+                + String(length.value())
                 + " elements.",
                 loc,
             )
@@ -464,7 +464,7 @@ def concat(
         raise error(g, "must concat at least 1 value")
 
     var ctx = g._context()
-    var axisAttr = Attribute.parse(ctx, str(axis))
+    var axisAttr = Attribute.parse(ctx, String(axis))
     var namedAxisAttr = NamedAttribute(Identifier(ctx, "axis"), axisAttr)
     var attrs = List[NamedAttribute](namedAxisAttr)
     if out_dim:
@@ -486,7 +486,7 @@ def concat(
         # There is a chance that concat was unable to simplify the expression and returned an invalid shape.
         # If this happens, the users must set `out_dim` to give the output dim a new value.
         # We explicitly match that error and rewrite it with something with more context.
-        if "Unsupported dim type" in str(e):
+        if "Unsupported dim type" in String(e):
             raise error(
                 g,
                 (

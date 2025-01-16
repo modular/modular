@@ -17,7 +17,7 @@ fn main() raises:
         ctx.allow_unregistered_dialects()
         var loc = _mlir.Location.unknown(ctx)
         var module = Module(loc)
-        assert_equal("module {\n}\n", str(module))
+        assert_equal("module {\n}\n", String(module))
 
         var rewriter = Rewriter(ctx)
         rewriter.set_insertion_point_to_start(module.body())
@@ -25,7 +25,7 @@ fn main() raises:
         var new_module_str = """module {
   "d.new_op"() : () -> ()
 }\n"""
-        assert_equal(new_module_str, str(module))
+        assert_equal(new_module_str, String(module))
 
         var replacing_op = rewriter.insert(Operation("d.replacing_op", loc))
         rewriter.replace_op_with(new_op, replacing_op)
@@ -33,7 +33,7 @@ fn main() raises:
         new_module_str = """module {
   "d.replacing_op"() : () -> ()
 }\n"""
-        assert_equal(new_module_str, str(module))
+        assert_equal(new_module_str, String(module))
 
         # Right now the lifetime of `module` is poorly defined.
         # This `destroy()` is just a temp. workaround so

@@ -57,7 +57,7 @@ struct _CDevice:
         var status = Status(lib)
         lib.free_device_data_fn(self._ptr, data, status.impl)
         if status:
-            raise str(status)
+            raise String(status)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._ptr == other._ptr
@@ -194,5 +194,5 @@ fn cpu_device() raises -> Device:
     var status = Status(lib)
     var device = lib.create_cpu_device_fn(descriptor.numa_id, status.impl)
     if status:
-        raise str(status)
+        raise String(status)
     return Device(lib, owned_ptr=device)

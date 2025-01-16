@@ -250,7 +250,7 @@ fn execute_base(
 
     var input_map = session.new_tensor_map()
     for i in range(len(tensors)):
-        input_map.borrow("input" + str(i), tensors[i])
+        input_map.borrow("input" + String(i), tensors[i])
 
     var result_map = model.execute(input_map)
 

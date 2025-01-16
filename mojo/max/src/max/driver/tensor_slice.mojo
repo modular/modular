@@ -88,7 +88,7 @@ struct TensorSlice[
         @always_inline
         @parameter
         fn _indexible() -> Bool:
-            return is_nvidia_gpu() or "cpu" in str(self._ref[]._device)
+            return is_nvidia_gpu() or "cpu" in String(self._ref[]._device)
 
         debug_assert[_indexible](
             "Cannot index into non-CPU Tensor from host",
@@ -111,7 +111,7 @@ struct TensorSlice[
         @always_inline
         @parameter
         fn _is_cpu() -> Bool:
-            return is_nvidia_gpu() or "cpu" in str(self._ref[]._device)
+            return is_nvidia_gpu() or "cpu" in String(self._ref[]._device)
 
         debug_assert[_is_cpu](
             "Cannot index into non-CPU Tensor from host",

@@ -21,7 +21,7 @@ fn test_tensor_spec_basic() raises:
 
     assert_equal(engine_spec.get_name(), "tensor")
 
-    assert_equal(str(engine_spec), "{name=tensor, spec=1x2x3xfloat32}")
+    assert_equal(String(engine_spec), "{name=tensor, spec=1x2x3xfloat32}")
 
     assert_equal(engine_spec.get_as_tensor_spec(), spec)
 
@@ -39,7 +39,7 @@ fn test_tensor_spec_basic() raises:
 
     assert_true(dynamic_dim_spec.has_rank())
 
-    assert_equal(str(dynamic_dim_spec), "{name=tensor, spec=-1x1x2xfloat32}")
+    assert_equal(String(dynamic_dim_spec), "{name=tensor, spec=-1x1x2xfloat32}")
 
     var dynamic_rank_spec = session.get_as_engine_tensor_spec(
         "tensor", None, DType.float32
@@ -49,7 +49,9 @@ fn test_tensor_spec_basic() raises:
 
     assert_false(dynamic_rank_spec.has_rank())
 
-    assert_equal(str(dynamic_rank_spec), "{name=tensor, spec=None x float32}")
+    assert_equal(
+        String(dynamic_rank_spec), "{name=tensor, spec=None x float32}"
+    )
 
 
 fn test_engine_tensor_spec_static_dim_copy() raises:
@@ -69,7 +71,7 @@ fn test_engine_tensor_spec_static_dim_copy() raises:
     )
 
     assert_equal(
-        str(static_engine_spec_copy), "{name=tensor, spec=1x2x3xfloat32}"
+        String(static_engine_spec_copy), "{name=tensor, spec=1x2x3xfloat32}"
     )
 
     assert_equal(static_engine_spec_copy.get_as_tensor_spec(), spec)
@@ -102,7 +104,8 @@ fn test_engine_tensor_spec_dynamic_dim_copy() raises:
     )
 
     assert_equal(
-        str(dynamic_dim_shape_spec_copy), "{name=tensor, spec=-1x1x2xfloat32}"
+        String(dynamic_dim_shape_spec_copy),
+        "{name=tensor, spec=-1x1x2xfloat32}",
     )
 
     var dynamic_rank_spec = session.get_as_engine_tensor_spec(
@@ -115,7 +118,7 @@ fn test_engine_tensor_spec_dynamic_dim_copy() raises:
     assert_false(dynamic_rank_spec_copy.has_rank())
 
     assert_equal(
-        str(dynamic_rank_spec_copy), "{name=tensor, spec=None x float32}"
+        String(dynamic_rank_spec_copy), "{name=tensor, spec=None x float32}"
     )
 
 

@@ -36,11 +36,11 @@ fn list(elements: List[Symbol]) raises -> Symbol:
             raise error(
                 g,
                 "elements must all have the same type "
-                + str(type.to_mlir(ctx))
+                + String(type.to_mlir(ctx))
                 + ", got "
-                + str(elt_type.to_mlir(ctx))
+                + String(elt_type.to_mlir(ctx))
                 + " at position "
-                + str(i),
+                + String(i),
             )
 
     return g.op("mo.list.create", elements, ListType(type))

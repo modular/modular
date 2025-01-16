@@ -129,7 +129,7 @@ struct Model:
         """
         var input_map = self._session.new_tensor_map()
         for py_pair in inputs.items():
-            input_map.borrow(str(py_pair[0]), EngineNumpyView(py_pair[1]))
+            input_map.borrow(String(py_pair[0]), EngineNumpyView(py_pair[1]))
         return self.execute(input_map)
 
     fn execute(self, *inputs: NamedTensor) raises -> TensorMap:
@@ -411,7 +411,7 @@ struct Model:
         )
 
         if status:
-            raise str(status)
+            raise String(status)
 
         if len(output_list) != output_count:
             raise "internal error: mismatch on output count during ffi"

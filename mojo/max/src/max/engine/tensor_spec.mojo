@@ -353,9 +353,9 @@ struct EngineTensorSpec(Stringable, CollectionElement):
                 if not dim[]:
                     _repr += "-1"
                 else:
-                    _repr += str(dim[].value())
+                    _repr += String(dim[].value())
                 _repr += "x"
-        _repr += str(self.get_dtype())
+        _repr += String(self.get_dtype())
         _repr += "}"
         return _repr
 

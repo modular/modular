@@ -58,7 +58,7 @@ struct Diagnostic(Stringable, Writable):
         )
 
     fn write_to[W: Writer](self, mut writer: W):
-        writer.write(str(self))
+        writer.write(String(self))
 
     fn get_severity(self) -> DiagnosticSeverity:
         return _c.Diagnostics.mlirDiagnosticGetSeverity(self.c)
@@ -182,14 +182,14 @@ struct ErrorCapturingDiagnosticHandler:
     fn __exit__(mut self, error: Error) raises -> Bool:
         self.handler.unsafe_take().detach()
         self.handler = None
-        raise str("MLIR Diagnostic: {}\nError: {}").format(
-            self.error, str(error)
+        raise String("MLIR Diagnostic: {}\nError: {}").format(
+            self.error, String(error)
         )
 
     @staticmethod
     fn set_error(diagnostic: Diagnostic, mut error: String) -> Bool:
         if diagnostic.get_severity() == DiagnosticSeverity.ERROR:
-            error = str(diagnostic)
+            error = String(diagnostic)
         return True
 
     @staticmethod

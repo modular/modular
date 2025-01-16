@@ -27,7 +27,7 @@ fn test_concat() raises:
     # shape_1: [3, 4]
     var cc1 = concat(List[Symbol](g[0], g[1]), axis=1)
     # TODO(GEX-552): Enable comparison of shape directly instead of printing full mlir
-    assert_true(str(cc1).endswith("!mo.tensor<[3, 6], si32>"))
+    assert_true(String(cc1).endswith("!mo.tensor<[3, 6], si32>"))
 
     #      concat axis
     #              |
@@ -36,7 +36,7 @@ fn test_concat() raises:
     # shape_1: [3, x]
     var cc2 = concat(List[Symbol](g[1], g[2]), axis=1, out_dim=Dim("y"))
     # TODO(GEX-552): Enable comparison of shape directly instead of printing full mlir
-    assert_true(str(cc2).endswith("!mo.tensor<[3, y], si32>"))
+    assert_true(String(cc2).endswith("!mo.tensor<[3, y], si32>"))
 
 
 fn test_concat_error() raises:

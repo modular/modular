@@ -160,7 +160,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         @always_inline
         @parameter
         fn _is_cpu() -> Bool:
-            return "cpu" in str(self._device)
+            return "cpu" in String(self._device)
 
         debug_assert[_is_cpu](
             "Cannot index into non-CPU Tensor from host",
@@ -312,7 +312,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
                     writer.write("x")
                 writer.write(self._spec.shape[i])
 
-        var device_str = str(self._device)
+        var device_str = String(self._device)
         if "cpu" not in device_str:
             writer.write("<Unable to print device tensor>, ")
             writer.write(device_str)

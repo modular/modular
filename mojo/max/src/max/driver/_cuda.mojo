@@ -28,7 +28,7 @@ fn cuda_device(gpu_id: Int = 0) raises -> Device:
     var status = Status(lib)
     var device = lib.create_cuda_device_fn(gpu_id, status.impl)
     if status:
-        raise str(status)
+        raise String(status)
     var cuda_dev = Device(
         lib,
         owned_ptr=device,
@@ -70,7 +70,7 @@ struct CompiledDeviceKernel[func_type: AnyTrivialRegType, //, func: func_type]:
                 shared_mem_bytes (Int): Dynamic shared memory size available to kernel.
         """
 
-        if "gpu" not in str(device):
+        if "gpu" not in String(device):
             raise "launch() expects GPU device."
 
         if "grid_dim" not in kwargs or "block_dim" not in kwargs:
@@ -106,7 +106,7 @@ fn compile[
         Kernel which can be launched on a Device.
 
     """
-    if "gpu" not in str(device):
+    if "gpu" not in String(device):
         raise "compile() expects GPU device."
 
     var device_context = call_dylib_func[DeviceContextPtr](

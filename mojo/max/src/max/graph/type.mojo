@@ -327,7 +327,7 @@ struct Dim(CollectionElement):
         elif _c.dim_is_static(dim_attr):
             return Dim.static(_c.dim_static_value(dim_attr))
         elif _c.dim_is_symbolic(dim_attr):
-            return Dim.symbolic(str(_c.dim_symbolic_name(dim_attr)))
+            return Dim.symbolic(String(_c.dim_symbolic_name(dim_attr)))
         else:
             debug_assert(
                 _c.dim_is_algebraic(dim_attr),
@@ -347,7 +347,7 @@ struct Dim(CollectionElement):
             return self.value[SymbolicDim].name
         else:
             debug_assert(self.value.isa[StaticDim](), "variant cases")
-            return str(self.value[StaticDim].dim)
+            return String(self.value[StaticDim].dim)
 
 
 @value

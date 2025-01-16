@@ -13,7 +13,7 @@ from testing import assert_equal
 def main():
     with _mlir.Context() as ctx:
         var module = _mlir.Module(_mlir.Location.unknown(ctx))
-        assert_equal("module {\n}\n", str(module))
+        assert_equal("module {\n}\n", String(module))
 
         # Right now the lifetime of `module` is poorly defined.
         # This `destroy()` is just a temp. workaround so

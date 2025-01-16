@@ -42,7 +42,7 @@ struct VersionInfo:
     var minor_version: UInt32
 
     def __str__(self) -> String:
-        return str(self.major_version) + "." + str(self.minor_version)
+        return String(self.major_version) + "." + String(self.minor_version)
 
 
 def current_version() -> VersionInfo:

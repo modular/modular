@@ -60,10 +60,10 @@ fn test_tensor_spec():
     print("== test_tensor_spec")
 
     # CHECK: 1x2x3xfloat32
-    print(str(TensorSpec(DType.float32, 1, 2, 3)))
+    print(String(TensorSpec(DType.float32, 1, 2, 3)))
 
     # CHECK: 1x2x3x4x5x6xfloat32
-    print(str(TensorSpec(DType.float32, 1, 2, 3, 4, 5, 6)))
+    print(String(TensorSpec(DType.float32, 1, 2, 3, 4, 5, 6)))
 
     # CHECK: True
     print(
@@ -88,7 +88,7 @@ fn test_tensor_spec():
         shape_vec.append(i)
 
     # CHECK: 1x2x3x4xfloat32
-    print(str(TensorSpec(DType.float32, shape_vec)))
+    print(String(TensorSpec(DType.float32, shape_vec)))
 
     # Check that dynamic dims work.
     # CHECK: True

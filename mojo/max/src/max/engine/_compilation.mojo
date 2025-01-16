@@ -141,7 +141,7 @@ struct TorchInputSpec(Movable):
             status.ptr,
         )
         if status:
-            raise Error(str(status))
+            raise Error(String(status))
         self.ptr = ptr
         self.torch_lib = lib
 
@@ -180,7 +180,7 @@ struct TorchInputSpec(Movable):
         )
 
         if status:
-            raise Error(str(status))
+            raise Error(String(status))
         self.ptr = ptr
         self.torch_lib = lib
 
@@ -204,7 +204,7 @@ struct TorchInputSpec(Movable):
             status.ptr,
         )
         if status:
-            raise Error(str(status))
+            raise Error(String(status))
         self.ptr = ptr
         self.torch_lib = lib
 

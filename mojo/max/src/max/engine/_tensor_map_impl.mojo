@@ -128,7 +128,7 @@ struct CTensorMap:
         )
         _ = name
         if status:
-            raise str(status)
+            raise String(status)
 
     fn keys(
         self, size_ptr: UnsafePointer[Int64], lib: DLHandle

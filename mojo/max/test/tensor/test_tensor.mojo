@@ -219,7 +219,7 @@ fn test_tensor_astype() raises:
     var a_int64 = a.astype[DType.int64]()
     print(a_int64)
 
-    assert_equal(str(a_int64._spec.dtype()), "int64")
+    assert_equal(String(a_int64._spec.dtype()), "int64")
 
 
 # CHECK: test_euclidean_distance
@@ -533,7 +533,7 @@ fn test_print_small():
     # CHECK{LITERAL}: [9, 10, 11]]], dtype=index, shape=2x2x3)
     var tensor = Tensor[DType.index](2, 2, 3)
     iota(tensor.unsafe_ptr(), tensor.num_elements())
-    print(str(tensor))
+    print(String(tensor))
 
 
 # CHECK-LABEL: test_print_large
@@ -547,14 +547,14 @@ fn test_print_large():
     # CHECK{LITERAL}: [1482183, 1482184, 1482185, ..., 1482513, 1482514, 1482515]]], dtype=index, shape=212x21x333)
     var tensor = Tensor[DType.index](212, 21, 333)
     iota(tensor.unsafe_ptr(), tensor.num_elements())
-    print(str(tensor))
+    print(String(tensor))
 
 
 # CHECK-LABEL: test_tensor
 def test_tensor_from_file():
     print("== test_tensor")
     var tensor = Tensor[DType.int8](TensorShape(4), 1, 2, 3, 4)
-    with NamedTemporaryFile(name=str("test_tensor_from_file")) as TEMP_FILE:
+    with NamedTemporaryFile(name=String("test_tensor_from_file")) as TEMP_FILE:
         tensor.tofile(TEMP_FILE.name)
         var tensor_from_file = Tensor[DType.int8].fromfile(TEMP_FILE.name)
 
@@ -569,7 +569,7 @@ fn test_tensor_load_save() raises:
     var tensor = Tensor[DType.int8](2, 2, 3)
     tensor._to_buffer().fill(2)
 
-    with NamedTemporaryFile(name=str("test_tensor_load_save")) as TEMP_FILE:
+    with NamedTemporaryFile(name=String("test_tensor_load_save")) as TEMP_FILE:
         tensor.save(TEMP_FILE.name)
 
         var tensor_loaded = Tensor[DType.int8].load(TEMP_FILE.name)

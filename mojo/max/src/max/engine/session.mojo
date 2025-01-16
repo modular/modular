@@ -452,7 +452,7 @@ struct InferenceSession:
 
         """
         var device = options._device.or_else(cpu_device())
-        if "cuda" in str(device):
+        if "cuda" in String(device):
             # This should eventually be a method on the device itself so we can
             # avoid having `session.mojo` depend on CUDA.
             check_compute_capability(device)

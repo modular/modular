@@ -64,7 +64,7 @@ struct _OwnedGraph(Movable):
             for dim in type[].dims():
                 if not dim[].is_symbolic():
                     continue
-                var name = str(dim[])
+                var name = String(dim[])
                 self.parameters.add(name)
 
     fn current_layer(self) -> String:
@@ -361,8 +361,8 @@ struct Graph(CollectionElement, Stringable, Writable):
 
     fn _name(self) raises -> String:
         """Returns the `Graph`'s name."""
-        # Can use str() here because 'name' is a string attribute.
-        return str(self._graph[].op.get_inherent_attr("name"))
+        # Can use String() here because 'name' is a string attribute.
+        return String(self._graph[].op.get_inherent_attr("name"))
 
     def _new_parameters(self, dims: List[Dim]) -> Optional[_mlir.Attribute]:
         """Create an `outputParamDecls` for all newly introduced parameters."""
@@ -370,7 +370,7 @@ struct Graph(CollectionElement, Stringable, Writable):
         new_params = List[_mlir.Attribute]()
         for dim in dims:
             if dim[].is_symbolic():
-                name = str(dim[])
+                name = String(dim[])
                 if name not in self._graph[].parameters:
                     self._graph[].parameters.add(name)
                     new_params.append(_c.attr_new_dim_param_decl(ctx, name))
@@ -406,9 +406,9 @@ struct Graph(CollectionElement, Stringable, Writable):
             raise error(
                 self,
                 "index out of bounds: "
-                + str(n)
+                + String(n)
                 + ", graph has "
-                + str(num_args)
+                + String(num_args)
                 + " arguments",
             )
         return Symbol(self._graph, self._body().argument(n))
@@ -735,7 +735,9 @@ struct Graph(CollectionElement, Stringable, Writable):
         if dtype is DType.float64:
             return self.scalar(Float64(value))
 
-        raise error(self, "unimplemented Int conversion dtype: " + str(dtype))
+        raise error(
+            self, "unimplemented Int conversion dtype: " + String(dtype)
+        )
 
     fn scalar(self, value: Float64, dtype: DType) raises -> Symbol:
         """Adds a node representing a `mo.constant` operation.
@@ -770,7 +772,8 @@ struct Graph(CollectionElement, Stringable, Writable):
             return self.scalar(value)
 
         raise error(
-            self, "unimplemented FloatLiteral conversion dtype: " + str(dtype)
+            self,
+            "unimplemented FloatLiteral conversion dtype: " + String(dtype),
         )
 
     fn range[
@@ -921,7 +924,7 @@ struct Graph(CollectionElement, Stringable, Writable):
         )
         function_type.results = results^
         var signature = _mlir.Type.parse(
-            ctx, "!kgen.generator<" + str(function_type.to_mlir()) + ">"
+            ctx, "!kgen.generator<" + String(function_type.to_mlir()) + ">"
         )
         op.set_inherent_attr(
             "functionType", TypeAttr(function_type.to_mlir()).to_mlir()
@@ -930,9 +933,9 @@ struct Graph(CollectionElement, Stringable, Writable):
 
         # Set the result_names metadata on the staged op, which is needed by
         # the engine for execution.
-        var result_names = str("[")
+        var result_names = String("[")
         for i in range(len(outputs)):
-            result_names += '"output' + str(i) + '"'
+            result_names += '"output' + String(i) + '"'
             if i < (len(outputs) - 1):
                 result_names += ", "
         result_names += "]"
