@@ -311,6 +311,91 @@ TypedAttr UpcastAttr::get(Type type, TypedAttr inputTypeValue,
 bool UpcastAttr::isConstant() const { return false; }
 
 //===----------------------------------------------------------------------===//
+// BindParamsAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
+                              ArrayRef<TypedAttr> paramValues, Type type) {
+  if (paramValues.empty())
+    return generator;
+
+  // If the actual generator is a SymbolConstantAttr, then we can simplify by
+  // folding the parameter values into it directly (this will be cleaned up once
+  // we remove param bindings from SymbolConstantAttr).
+  if (auto symbolConstant = ::dyn_cast<SymbolConstantAttr>(generator)) {
+    bool hasUnboundParameters = symbolConstant.getParamValues().empty();
+    hasUnboundParameters |=
+        llvm::any_of(symbolConstant.getParamValues(),
+                     [](TypedAttr value) { return ::isa<UnboundAttr>(value); });
+    assert(hasUnboundParameters &&
+           "cannot have already bound all the input parameters, because we'd "
+           "end up with a nongeneric signature that would fail verification");
+
+    if (symbolConstant.getParamValues().empty())
+      return SymbolConstantAttr::get(symbolConstant.getSymbol(),
+                                     ::cast<SignatureGeneratorType>(type),
+                                     paramValues);
+
+    // We have to interleave the new values wherever there's an unbound thing
+    // so we preserve the order. Drop the first operand because it's the
+    // signature itself.
+    SmallVector<TypedAttr> mergedParamValues;
+    auto operandIt = paramValues.begin();
+    for (TypedAttr param : symbolConstant.getParamValues()) {
+      // If we have this parameter already, we're good. otherwise, bind it to
+      // the operand provided.
+      if (!::isa<UnboundAttr>(param))
+        mergedParamValues.push_back(param);
+      else
+        mergedParamValues.push_back(*operandIt++);
+    }
+    assert(operandIt == paramValues.end() && "Didn't use all the operands?");
+
+    return SymbolConstantAttr::get(symbolConstant.getSymbol(),
+                                   ::cast<SignatureGeneratorType>(type),
+                                   mergedParamValues);
+  }
+
+  return Base::get(generator.getContext(), generator, paramValues, type);
+}
+
+TypedAttr
+BindParamsAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                           MLIRContext *context, TypedAttr generator,
+                           ArrayRef<TypedAttr> paramValues, Type type) {
+  if (failed(verify(emitError, generator, paramValues, type)))
+    return {};
+  return get(context, generator, paramValues, type);
+}
+
+TypedAttr BindParamsAttr::get(TypedAttr generator,
+                              ArrayRef<TypedAttr> paramValues) {
+  if (paramValues.empty())
+    return generator;
+  auto genType = ::cast<GeneratorType>(generator.getType());
+  Type resultType = genType.getSpecializedGenerator(paramValues);
+  return get(generator.getContext(), generator, paramValues, resultType);
+}
+
+bool BindParamsAttr::isConstant() const { return false; }
+
+LogicalResult
+BindParamsAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                       TypedAttr generator, ArrayRef<TypedAttr> paramValues,
+                       Type type) {
+  auto genType = ::dyn_cast<GeneratorType>(generator.getType());
+  if (!genType)
+    return emitError()
+           << "bind_params generator operand must have a GeneratorType, got "
+           << generator.getType();
+
+  // It's not currently possible to always enforce result type equivalence
+  // since it's possible that types involve not yet resolved param decl
+  // references.
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // TypeConstantRefAttr
 //===----------------------------------------------------------------------===//
 

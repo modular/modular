@@ -754,6 +754,41 @@ ParseResult KGEN::parseParamName(AsmParser &p, StringAttr &name) {
   return success();
 }
 
+ParseResult KGEN::parseBindParams(AsmParser &p, TypedAttr &generator,
+                                  SmallVectorImpl<TypedAttr> &paramValues,
+                                  Type preParsedGeneratorType) {
+  if (!preParsedGeneratorType &&
+      parseColonTypeOrIndex(p, preParsedGeneratorType))
+    return failure();
+
+  if (parseParamValue(p, generator, preParsedGeneratorType))
+    return failure();
+
+  auto genType = cast<GeneratorType>(preParsedGeneratorType);
+  // Parse each operand, inferring its type from the signature type. Bound
+  // parameters are allowed to refine the types of subsequent parameters, so
+  // specialize the types as we go.
+  ParameterEvaluator evaluator;
+  for (Type type : genType.getInputParamTypes()) {
+    if (failed(p.parseOptionalComma()))
+      break;
+    if (parseParamValue(p, paramValues.emplace_back(),
+                        evaluator.getReboundType(type)))
+      return failure();
+    evaluator.addInputValue(paramValues.back());
+  }
+  return success();
+}
+
+void KGEN::printBindParams(AsmPrinter &p, TypedAttr generator,
+                           ArrayRef<TypedAttr> paramValues) {
+  printColonTypeParamValue(p, generator);
+  for (TypedAttr value : paramValues) {
+    p << ", ";
+    printParamValue(p, value);
+  }
+}
+
 /// Print a parameter name correctly, using a double quoted syntax if it
 /// conflicts with an MLIR or KGEN keyword, or a bareword otherwise.
 void KGEN::printParamName(AsmPrinter &p, StringAttr name, bool isRef) {
@@ -1107,6 +1142,17 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
         return success();
       }
 
+      if (keyword == "bind_params" && operandType) {
+        TypedAttr generator;
+        SmallVector<TypedAttr> paramValues;
+        if (parseBindParams(p, generator, paramValues, operandType))
+          return failure();
+        if (p.parseRParen())
+          return failure();
+        value = BindParamsAttr::get(generator, paramValues);
+        return success();
+      }
+
       return p.emitError(loc, "unknown expression ") << keyword;
     }
 
@@ -1340,6 +1386,13 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type,
 
   if (isa<UnboundAttr>(value)) {
     p << '?';
+    return;
+  }
+
+  if (auto bindParams = dyn_cast<BindParamsAttr>(value)) {
+    p << "bind_params(";
+    printBindParams(p, bindParams.getGenerator(), bindParams.getParamValues());
+    p << ')';
     return;
   }
 
