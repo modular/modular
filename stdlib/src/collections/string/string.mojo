@@ -19,6 +19,7 @@ from os import abort
 from sys import bitwidthof, llvm_intrinsic
 from sys.ffi import c_char
 from sys.intrinsics import _type_is_eq
+from utils.write import write_buffered
 
 from bit import count_leading_zeros
 from memory import UnsafePointer, memcmp, memcpy, Span
@@ -742,9 +743,9 @@ struct String(
         ```
         .
         """
-        var output = String()
-        write_args(output, args, sep=sep, end=end)
-        return output^
+        var string = String()
+        write_buffered[buffer_size=4096](string, args, sep=sep, end=end)
+        return string^
 
     @staticmethod
     @no_inline
@@ -784,9 +785,9 @@ struct String(
         ```
         .
         """
-        var output = String()
-        write_args(output, args, sep=sep, end=end)
-        return output^
+        var string = String()
+        write_buffered[buffer_size=4096](string, args, sep=sep, end=end)
+        return string^
 
     @staticmethod
     @always_inline

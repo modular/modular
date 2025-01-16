@@ -217,12 +217,6 @@ fn write_args[
         end.write_to(writer)
 
 
-trait MovableWriter(Movable, Writer):
-    """Allows moving a Writer into a buffer."""
-
-    ...
-
-
 struct _WriteBufferHeap(Writer):
     var data: UnsafePointer[UInt8]
     var pos: Int
@@ -272,19 +266,21 @@ struct _ArgBytes(Writer):
         args.each[write_arg]()
 
 
-struct _WriteBufferStack[W: MovableWriter, //, capacity: Int](Writer):
+struct _WriteBufferStack[origin: MutableOrigin, W: Writer, //, capacity: Int](
+    Writer
+):
     var data: InlineArray[UInt8, capacity]
     var pos: Int
-    var writer: W
+    var writer: Pointer[W, origin]
 
     @implicit
-    fn __init__(out self, owned writer: W):
+    fn __init__(out self, ref [origin]writer: W):
         self.data = InlineArray[UInt8, capacity](unsafe_uninitialized=True)
         self.pos = 0
-        self.writer = writer^
+        self.writer = Pointer.address_of(writer)
 
     fn flush(mut self):
-        self.writer.write_bytes(
+        self.writer[].write_bytes(
             Span[Byte, ImmutableAnyOrigin](
                 ptr=self.data.unsafe_ptr(), length=self.pos
             )
@@ -299,7 +295,7 @@ struct _WriteBufferStack[W: MovableWriter, //, capacity: Int](Writer):
         # If span is too large to fit in buffer, write directly and return
         if len_bytes > capacity:
             self.flush()
-            self.writer.write_bytes(bytes)
+            self.writer[].write_bytes(bytes)
             return
         # If buffer would overflow, flush writer and reset pos to 0.
         if self.pos + len_bytes > capacity:
@@ -317,11 +313,11 @@ struct _WriteBufferStack[W: MovableWriter, //, capacity: Int](Writer):
 
 
 fn write_buffered[
-    W: MovableWriter, //,
+    W: Writer, //,
     *Ts: Writable,
     buffer_size: Int,
 ](
-    owned writer: W,
+    mut writer: W,
     args: VariadicPack[_, Writable, *Ts],
     *,
     sep: StaticString = "",
@@ -379,6 +375,6 @@ fn write_buffered[
             Span[Byte, ImmutableAnyOrigin](ptr=buffer.data, length=buffer.pos)
         )
     else:
-        var buffer = _WriteBufferStack[buffer_size](writer^)
+        var buffer = _WriteBufferStack[buffer_size](writer)
         write_args(buffer, args, sep=sep, end=end)
         buffer.flush()
