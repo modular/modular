@@ -19,13 +19,13 @@ def test_abs():
 
 
 def test_complex_str():
-    assert_equal(str(ComplexFloat32(0, 0)), "0.0")
-    assert_equal(str(ComplexFloat32(1, 0)), "1.0")
-    assert_equal(str(ComplexFloat32(0, 1)), "0.0 + 1.0i")
-    assert_equal(str(ComplexFloat32(1, 1)), "1.0 + 1.0i")
+    assert_equal(String(ComplexFloat32(0, 0)), "0.0")
+    assert_equal(String(ComplexFloat32(1, 0)), "1.0")
+    assert_equal(String(ComplexFloat32(0, 1)), "0.0 + 1.0i")
+    assert_equal(String(ComplexFloat32(1, 1)), "1.0 + 1.0i")
 
     assert_equal(
-        str(
+        String(
             ComplexSIMD[DType.float32, 2](
                 SIMD[DType.float32, 2](1, 0),
                 SIMD[DType.float32, 2](0, 1),
