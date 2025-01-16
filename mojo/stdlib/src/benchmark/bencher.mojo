@@ -109,14 +109,14 @@ struct BenchMetric(CollectionElement):
                 return m[]
 
         var err: String = "\n"
-        err += str("-") * 80 + "\n"
-        err += str("-") * 80 + "\n"
+        err += String("-") * 80 + "\n"
+        err += String("-") * 80 + "\n"
         err += "Couldn't match metric [" + name + "]\n"
         err += "Available throughput metrics (case-insensitive) in the list:\n"
         for m in metric_list:
             err += "    metric: [" + m[].name.lower() + "]\n"
-        err += str("-") * 80 + "\n"
-        err += str("-") * 80 + "\n"
+        err += String("-") * 80 + "\n"
+        err += String("-") * 80 + "\n"
         err += "[ERROR]: metric [" + name + "] is NOT supported!\n"
         raise Error(err)
 
@@ -168,7 +168,7 @@ struct ThroughputMeasure(CollectionElement):
         Returns:
             The string represntation.
         """
-        return str(self.metric)
+        return String(self.metric)
 
     fn compute(self, elapsed_sec: Float64) -> Float64:
         """Computes throughput rate for this metric per unit of time (second).
@@ -392,7 +392,7 @@ struct BenchmarkInfo(CollectionElement, Stringable):
         var throughput: String = ""
         for i in range(len(self.measures)):
             var rate = self.measures[i].compute(self.result.mean(unit=Unit.s))
-            throughput = throughput + "," + str(rate)
+            throughput = throughput + "," + String(rate)
 
         # add verbose-timing results
         if self.verbose_timing:
@@ -403,16 +403,16 @@ struct BenchmarkInfo(CollectionElement, Stringable):
                 self.result.duration(unit=Unit.ms),
             )
             for t in verbose_timing_vals:
-                throughput = throughput + "," + str(t[])
+                throughput = throughput + "," + String(t[])
 
         return (
             '"'
             + self.name
             + '"'
             + ","
-            + str(self.result.mean(unit=Unit.ms))
+            + String(self.result.mean(unit=Unit.ms))
             + ","
-            + str(self.result.iters())
+            + String(self.result.iters())
             + throughput
         )
 
@@ -852,7 +852,7 @@ struct Bench:
             )
             if num_runs > 0:
                 for measure in self.info_vec[0].measures:
-                    var measure_name = str(measure[])
+                    var measure_name = String(measure[])
                     report += _str_fmt_width(
                         ", " + measure_name, RATE_WIDTH + 2
                     )
@@ -872,7 +872,7 @@ struct Bench:
             report += String("name,met (ms),iters")
             if num_runs > 0:
                 for measure in self.info_vec[0].measures:
-                    report += "," + str(measure[])
+                    report += "," + String(measure[])
 
                 if self.config.verbose_timing:
                     for t in self.config.VERBOSE_TIMING_LABELS:
@@ -882,11 +882,11 @@ struct Bench:
 
             for i in range(num_runs):
                 var sep = "\n" if i < num_runs - 1 else ""
-                report += str(self.info_vec[i]) + sep
+                report += String(self.info_vec[i]) + sep
         print()
-        print(str("-") * 80)
+        print(String("-") * 80)
         print("Benchmark results")
-        print(str("-") * 80)
+        print(String("-") * 80)
         print(report)
 
         if self.config.out_file:

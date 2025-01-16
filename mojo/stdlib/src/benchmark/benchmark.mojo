@@ -332,11 +332,11 @@ struct Report(CollectionElement):
             unit: The time unit to display for example: ns, ms, s (default `s`).
         """
         var divisor = Unit._divisor(unit)
-        print(str("-") * 80)
+        print(String("-") * 80)
         print("Benchmark Report (", end="")
         print(unit, end="")
         print(")")
-        print(str("-") * 80)
+        print(String("-") * 80)
         print("Mean:", self.mean(unit))
         print("Total:", self.duration(unit))
         print("Iters:", self.iters())

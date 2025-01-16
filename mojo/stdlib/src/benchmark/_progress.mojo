@@ -20,8 +20,8 @@ fn _get_terminal_size(fallback: Tuple[Int, Int] = (80, 24)) -> Tuple[Int, Int]:
       The width and height of the terminal.
     """
     try:
-        var columns = Int(getenv("COLUMNS", str(fallback[0])))
-        var rows = Int(getenv("LINES", str(fallback[1])))
+        var columns = Int(getenv("COLUMNS", String(fallback[0])))
+        var rows = Int(getenv("LINES", String(fallback[1])))
 
         return (columns, rows)
     except:
@@ -87,8 +87,8 @@ struct Progress:
         self._term_dims = (other._term_dims[0], other._term_dims[1])
 
     fn advance(mut self, steps: Int = 1):
-        alias BLOCK = str("▇")
-        alias PLACE_HOLDER = str(" ")
+        alias BLOCK = String("▇")
+        alias PLACE_HOLDER = String(" ")
 
         if len(self._range) <= 0 or steps <= 0:
             return

@@ -50,7 +50,7 @@ def main():
     inputs.append("input2")
     for i in range(len(inputs)):
         m.bench_with_input[String, bench2](
-            BenchId("bench2", str(i)),
+            BenchId("bench2", String(i)),
             inputs[i],
             ThroughputMeasure(BenchMetric.elements, len(inputs[i])),
             ThroughputMeasure(BenchMetric.flops, len(inputs[i])),
