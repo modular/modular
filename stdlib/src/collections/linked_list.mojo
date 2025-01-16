@@ -174,10 +174,9 @@ struct LinkedList[ElementType: WritableCollectionElement]:
         addr.init_pointee_move(node)
         if self:
             self._tail[].next = addr
-            self._tail = addr
         else:
             self._head = addr
-            self._tail = addr
+        self._tail = addr
         self._size += 1
 
     fn prepend(mut self, owned value: ElementType):
@@ -191,10 +190,9 @@ struct LinkedList[ElementType: WritableCollectionElement]:
         addr.init_pointee_move(node)
         if self:
             self._head[].prev = addr
-            self._head = addr
         else:
-            self._head = addr
             self._tail = addr
+        self._head = addr
         self._size += 1
 
     fn reverse(mut self):
