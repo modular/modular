@@ -260,7 +260,7 @@ fn trace_arg(name: String, shape: IndexList) -> String:
     for i in range(len(shape)):
         if i != 0:
             s += "x"
-        s += str(shape[i])
+        s += String(shape[i])
     return s
 
 
@@ -268,7 +268,7 @@ fn trace_arg(name: String, shape: IndexList) -> String:
 fn trace_arg(name: String, shape: IndexList, dtype: DType) -> String:
     """Helper to stringify the type and shape of a kernel argument for tracing.
     """
-    return trace_arg(name, shape) + "x" + str(dtype)
+    return trace_arg(name, shape) + "x" + String(dtype)
 
 
 @always_inline
@@ -335,7 +335,7 @@ struct Trace[
             if target:
                 if self.detail:
                     self.detail += ";"
-                self.detail += "target=" + str(target.value())
+                self.detail += "target=" + String(target.value())
             self.int_payload = None
         else:
             self.name = ""
@@ -382,7 +382,7 @@ struct Trace[
             if target:
                 if self.detail:
                     self.detail += ";"
-                self.detail += "target=" + str(target.value())
+                self.detail += "target=" + String(target.value())
             self.int_payload = task_id
         else:
             self.name = ""
@@ -505,7 +505,7 @@ struct Trace[
 
     @always_inline
     fn _get_name_as_str(self) -> String:
-        message = str(self.name[StringLiteral]) if self.name.isa[
+        message = String(self.name[StringLiteral]) if self.name.isa[
             StringLiteral
         ]() else self.name[String]
         return message
