@@ -58,11 +58,11 @@ def test_ldexp_extensive_float32():
             ldexp(frac, exp),
             ldexp_libm(frac, exp),
             msg="unmatched results for frac="
-            + str(frac)
+            + String(frac)
             + " and exp="
-            + str(exp)
+            + String(exp)
             + " at index "
-            + str(i),
+            + String(i),
         )
         i += 1007
 
