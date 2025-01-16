@@ -35,7 +35,7 @@ def test_buffer_tofile():
     print("== test_buffer")
     var buf = Buffer[DType.float32, 4].stack_allocation()
     buf.fill(2.0)
-    with NamedTemporaryFile(name=str("test_buffer")) as TEMP_FILE:
+    with NamedTemporaryFile(name=String("test_buffer")) as TEMP_FILE:
         buf.tofile(TEMP_FILE.name)
 
         with open(TEMP_FILE.name, "r") as f:

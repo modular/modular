@@ -272,7 +272,7 @@ def test_print():
                 buffer[Index(i, j, k)] = i * 2 * 3 + j * 3 + k
 
     assert_equal(
-        str(buffer),
+        String(buffer),
         (
             "NDBuffer([[[0, 1, 2],\n"
             "[3, 4, 5]],\n"
@@ -287,7 +287,7 @@ def test_ndbuffer_tofile():
     print("== test_ndbuffer")
     var buf = NDBuffer[DType.float32, 2, DimList(2, 2)].stack_allocation()
     buf.fill(2.0)
-    with NamedTemporaryFile(name=str("test_ndbuffer")) as TEMP_FILE:
+    with NamedTemporaryFile(name=String("test_ndbuffer")) as TEMP_FILE:
         buf.tofile(TEMP_FILE.name)
 
         with open(TEMP_FILE.name, "r") as f:

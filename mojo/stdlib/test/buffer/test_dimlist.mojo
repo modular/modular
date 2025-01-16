@@ -70,10 +70,10 @@ fn test_dim():
 
 
 def test_dim_to_string():
-    assert_equal(str(Dim()), "?")
-    assert_equal(str(Dim(33)), "33")
-    assert_equal(str(DimList(2, Dim(), 3)), "[2, ?, 3]")
-    assert_equal(str(DimList.create_unknown[5]()), "[?, ?, ?, ?, ?]")
+    assert_equal(String(Dim()), "?")
+    assert_equal(String(Dim(33)), "33")
+    assert_equal(String(DimList(2, Dim(), 3)), "[2, ?, 3]")
+    assert_equal(String(DimList.create_unknown[5]()), "[?, ?, ?, ?, ?]")
 
 
 def test_dimlist_eq():
