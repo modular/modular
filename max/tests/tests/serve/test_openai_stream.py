@@ -52,7 +52,6 @@ def stream_app():
     return fast_app
 
 
-@pytest.mark.skip("SI-816")
 @pytest.mark.asyncio
 @pytest.mark.parametrize("num_tasks", [16])
 async def test_openai_chat_completion_streamed(stream_app, num_tasks):
@@ -81,7 +80,7 @@ async def test_openai_chat_completion_streamed(stream_app, num_tasks):
         assert response_text == (request_content[::-1])
         return response_text
 
-    async with TestClient(stream_app, timeout=5.0) as client:
+    async with TestClient(stream_app, timeout=20.0) as client:
         tasks = []
         for i in range(num_tasks):
             tasks.append(asyncio.create_task(stream_request(client, i)))
