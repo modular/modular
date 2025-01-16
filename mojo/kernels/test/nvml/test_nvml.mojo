@@ -29,6 +29,6 @@ def main():
         print("Clock =", clock[])
     var driver_version = dev.get_driver_version()
     # CHECK: Driver version =
-    print("Driver version =", str(driver_version))
+    print("Driver version =", String(driver_version))
     # CHECK: Driver major version =
     print("Driver major version =", driver_version.major())

@@ -10,6 +10,7 @@ from os import abort
 from pathlib import Path
 from sys.ffi import _OwnedDLHandle, _Global
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function, c_char
+from utils import StringRef
 
 from memory import UnsafePointer, stack_allocation
 
@@ -35,9 +36,11 @@ fn _get_nvml_library_path() raises -> Path:
     for fd in CUDA_NVML_LIBRARY_DIR.listdir():
         if not (CUDA_NVML_LIBRARY_DIR / fd[]).is_file():
             continue
-        if CUDA_NVML_LIBRARY_BASE_NAME in str(fd[]):
+        if CUDA_NVML_LIBRARY_BASE_NAME in String(fd[]):
             return fd[]
-    raise "the CUDA NVML library was not found in " + str(CUDA_NVML_LIBRARY_DIR)
+    raise "the CUDA NVML library was not found in " + String(
+        CUDA_NVML_LIBRARY_DIR
+    )
 
 
 alias CUDA_NVML_LIBRARY = _Global[
@@ -48,7 +51,7 @@ alias CUDA_NVML_LIBRARY = _Global[
 fn _init_dylib() -> _OwnedDLHandle:
     try:
         var lib_path = _get_nvml_library_path()
-        var dylib = _OwnedDLHandle(str(lib_path))
+        var dylib = _OwnedDLHandle(String(lib_path))
         _ = dylib._handle.get_function[fn () -> Result]("nvmlInit_v2")()
         return dylib^
     except e:
@@ -90,11 +93,11 @@ struct DriverVersion:
 
     fn __str__(self) raises -> String:
         return (
-            str(self.major())
+            String(self.major())
             + "."
-            + str(self.minor())
+            + String(self.minor())
             + "."
-            + str(self.patch())
+            + String(self.patch())
         )
 
 
@@ -303,7 +306,7 @@ struct Result(Stringable, EqualityComparable):
 @always_inline
 fn _check_error(err: Result) raises:
     if err != Result.SUCCESS:
-        raise str(err)
+        raise String(err)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -411,7 +414,9 @@ struct Device(Writable):
                 fn (UnsafePointer[c_char], UInt32) -> Result,
             ]()(driver_version_buffer, UInt32(max_length))
         )
-        var driver_version_list = String(driver_version_buffer).split(".")
+        var driver_version_list = String(
+            StringRef(driver_version_buffer)
+        ).split(".")
         var driver_version = DriverVersion(driver_version_list)
         return driver_version
 
@@ -606,7 +611,7 @@ struct Device(Writable):
             except:
                 pass
 
-        raise "unable to set max gpu clock for " + str(device)
+        raise "unable to set max gpu clock for " + String(device)
 
     @no_inline
     fn __str__(self) -> String:
