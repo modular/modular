@@ -72,10 +72,10 @@ fn test_kw_param_passing[x: Index, y: Index, z: Index]():
 fn test_kw_param_passing_indirect[x: Index, y: Index, z: Index,
                                   callee: fn[a: Index, b: Index=`1`, c: Index=`2`]()->None]():
 
-    # CHECK: call{{.*}}bind_signature(:!lit.generator<{{.*}}> callee, x, 1, z)]()
+    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, x, 1, z)]()
     callee[x, c=z]()
 
-    # CHECK: call{{.*}}bind_signature(:!lit.generator<{{.*}}> callee, x, y, z)]()
+    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, x, y, z)]()
     callee[c=z, b=y, a=x]()
 
 
@@ -166,10 +166,10 @@ fn test_kw_only_params[x: Index]():
 # CHECK-LABEL: lit.fn @"test_kw_only_params_indirect
 fn test_kw_only_params_indirect[x: Index, callee: fn[a: Index, b: Index = `1`, *, c: Index, d: Index = `2`]()->None]():
 
-    # CHECK: call{{.*}}bind_signature(:!lit.generator<{{.*}}> callee, x, 1, x, 2)]()
+    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, x, 1, x, 2)]()
     callee[x, c=x]()
 
-    # CHECK: call{{.*}}bind_signature(:!lit.generator<{{.*}}> callee, x, 1, x, x)]()
+    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, x, 1, x, x)]()
     callee[x, d=x, c=x]()
 
 
@@ -218,10 +218,10 @@ fn test_variadic_and_kw_only_params[x: Index]():
 fn test_variadic_and_kw_only_params_indirect[x: Index,
     callee: fn [a: Index, b: Index, *args: Index, c: Index, d: Index = `0`]()->None]():
 
-    # CHECK: lit.call{{.*}}bind_signature(:!lit.generator<{{.*}}> callee, x, x, ?, x, 0), [])]()
+    # CHECK: lit.call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, x, x, ?, x, 0), [])]()
     callee[x, x, c=x]()
 
-    # CHECK: call{{.*}}bind_signature(:!lit.generator<{{.*}}> callee, x, x, [x, x], x, 0)]()
+    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, x, x, [x, x], x, 0)]()
     callee[x, x, x, x, c=x]()
 
 

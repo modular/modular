@@ -59,7 +59,6 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   I32EnumAttrCase<"GetAlignOf", 23, "get_alignof">,
 
   // Signature processing.
-  I32EnumAttrCase<"BindSignature", 24, "bind_signature">,
   I32EnumAttrCase<"Apply", 25, "apply">,
   I32EnumAttrCase<"ApplyResultSlot", 26, "apply_result_slot">,
   I32EnumAttrCase<"Rebind", 27, "rebind">,

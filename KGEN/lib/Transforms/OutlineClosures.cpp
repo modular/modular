@@ -71,7 +71,7 @@ void OutlineClosuresPass::runOnOperation() {
   auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
 
   // Walk over all the param.declare.region ops and create structs with the SSA
-  // captures, use bind_signature to deal with parameter captures.
+  // captures, use BindParamsAttr to deal with parameter captures.
   unsigned counter = 0;
   for (auto generator : theModule.getOps<GeneratorOp>()) {
     unsigned varCounter = 0;
@@ -218,20 +218,20 @@ void OutlineClosuresPass::runOnOperation() {
       DebugInfo::updateSubprogram(liftedWrapper,
                                   liftedWrapper.getSymNameAttr());
 
-      Attribute bindSignature = wrapperSymbol;
-      // If we have parameter captures, create a bind_signature operator.
+      Attribute signature = wrapperSymbol;
+      // If we have parameter captures, create a BindParamsAttr.
       if (!capturedParamValues.empty()) {
         // OK cool, now we need a partial binding. First we insert the lifted
         // symbol at the beginning of the vector.
-        SmallVector<TypedAttr> partialBindings = {wrapperSymbol};
+        SmallVector<TypedAttr> partialBindings;
         llvm::append_range(partialBindings, capturedParamValues);
 
         // Ignore implicit lifetimes.
         for (Type paramType :
              regionDecl.getSignatureGenerator().getInputParamTypes())
           partialBindings.push_back(UnboundAttr::get(paramType));
-        bindSignature =
-            ParamOperatorAttr::get(POC::BindSignature, partialBindings);
+
+        signature = BindParamsAttr::get(wrapperSymbol, partialBindings);
       }
 
       // Now replace the region decl with a partial binding to the lifted
@@ -263,7 +263,7 @@ void OutlineClosuresPass::runOnOperation() {
       // Create the decl that replaces the regionDecl with its parameter being
       // this new partial binding.
       b.create<ParamDeclareOp>(regionDecl.getParamDecl(),
-                               cast<TypedAttr>(bindSignature));
+                               cast<TypedAttr>(signature));
 
       // And we can drop the regionDecl now, we're done with it.
       toErase.push_back(regionDecl);

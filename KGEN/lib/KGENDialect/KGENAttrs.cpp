@@ -1056,26 +1056,6 @@ ParamOperatorAttr::getFromBytecode(POC opcode, ArrayRef<TypedAttr> operands,
   return Base::get(type.getContext(), opcode, operands, type);
 }
 
-static FailureOr<SignatureGeneratorType>
-verifyBindSignature(ArrayRef<TypedAttr> operands,
-                    function_ref<InFlightDiagnostic()> emitError) {
-  if (operands.empty())
-    return emitError() << "'bind_signature' requires a function parameter";
-  auto signature = dyn_cast<SignatureGeneratorType>(operands[0].getType());
-  if (!signature)
-    return emitError()
-           << "first operand of 'bind_signature' must have signature type";
-
-  // Get the specialized version of the signature with all the known parameters
-  // substituted in.
-  auto result =
-      signature.getSpecializedGenerator(operands.drop_front(), emitError);
-  if (!result)
-    return failure();
-
-  return result;
-}
-
 /// The 'apply' operator is the only way to call a signature value inside a
 /// parameter expression. Therefore, it is the only place where an index
 /// parameter reference can cross upwards across a signature. We need to
@@ -1218,7 +1198,6 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::GetEnv:
   case POC::GetSizeOf:
   case POC::GetAlignOf:
-  case POC::BindSignature:
   case POC::Apply:
   case POC::ApplyResultSlot:
   case POC::Rebind:
@@ -1338,13 +1317,6 @@ LogicalResult ParamOperatorAttr::verify(
                          << " should return an index or !kgen.int_literal";
     }
     break;
-  case POC::BindSignature: {
-    // It's possible that a function's specialized signature is more specific
-    // than KGEN can determine using a `ParameterEvaluator`. In particular,
-    // types need to be allowed to vary when parameter expression nodes rooted
-    // at 'apply' operators are allowed to differ.
-    break;
-  }
   case POC::Apply:
     if (failed(verifyApply(operands, type, emitError)))
       return failure();
@@ -2360,70 +2332,6 @@ static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands,
   return b.getAttr<IntLiteralAttr>(*size);
 }
 
-static Attribute simplifyBindSignature(MLIRContext *ctx,
-                                       ArrayRef<TypedAttr> operands,
-                                       Type &resultType) {
-  // If there is only a single operand, then nothing is bound.
-  if (operands.size() == 1)
-    return operands[0];
-
-  // Otherwise, compute the result type if requested. If an error is producted,
-  // just abort.
-  if (!resultType) {
-    auto resultSigOr =
-        verifyBindSignature(operands, [ctx]() -> mlir::InFlightDiagnostic {
-          return mlir::emitError(UnknownLoc::get(ctx));
-        });
-    if (failed(resultSigOr))
-      llvm::report_fatal_error("invalid bind_signature operator");
-    resultType = *resultSigOr;
-  }
-
-  auto processSignatureLike = [&](auto attr, auto cloneWith) {
-    bool hasUnboundParameters = attr.getParamValues().empty();
-    hasUnboundParameters |=
-        llvm::any_of(attr.getParamValues(),
-                     [](TypedAttr value) { return isa<UnboundAttr>(value); });
-    assert(hasUnboundParameters &&
-           "cannot have already bound all the input parameters, because we'd "
-           "end up with a nongeneric signature that would fail verification");
-
-    if (attr.getParamValues().empty())
-      return cloneWith(operands.drop_front(),
-                       cast<SignatureGeneratorType>(resultType));
-
-    // We have to interleave the new values wherever there's an unbound thing
-    // so we preserve the order. Drop the first operand because it's the
-    // signature itself.
-    SmallVector<TypedAttr> paramValues;
-    auto operandIt = operands.begin() + 1;
-    for (TypedAttr param : attr.getParamValues()) {
-      // If we have this parameter already, we're good. otherwise, bind it to
-      // the operand provided.
-      if (!isa<UnboundAttr>(param))
-        paramValues.push_back(param);
-      else
-        paramValues.push_back(*operandIt++);
-    }
-    assert(operandIt == operands.end() && "Didn't use all the operands?");
-
-    return cloneWith(paramValues, cast<SignatureGeneratorType>(resultType));
-  };
-
-  // If the actual operand is a SymbolConstantAttr operand, then we can simplify
-  // the bind_signature by folding the parameter values into it directly.
-  if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(operands.front())) {
-    return processSignatureLike(
-        symbolConstant,
-        [&](ArrayRef<TypedAttr> paramValues, SignatureGeneratorType type) {
-          return SymbolConstantAttr::get(symbolConstant.getSymbol(), type,
-                                         paramValues);
-        });
-  }
-
-  return {};
-}
-
 static Attribute simplifyApply(ArrayRef<TypedAttr> operands, Type &resultType) {
   TypedAttr func = operands.front();
   operands = operands.drop_front();
@@ -2868,9 +2776,6 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
   case POC::GetAlignOf:
     result = simplifyGetAlignOf(operands, resultType);
     break;
-  case POC::BindSignature:
-    result = simplifyBindSignature(ctx, operands, resultType);
-    break;
   case POC::Apply:
     result = simplifyApply(operands, resultType);
     break;
@@ -2939,17 +2844,16 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   Type resultType;
   if (opcode == POC::Cond)
     resultType = operandsIn[1].getType();
-  else if (opcode != POC::BindSignature && opcode != POC::GetSizeOf &&
-           opcode != POC::GetAlignOf)
+  else if (opcode != POC::GetSizeOf && opcode != POC::GetAlignOf)
     resultType = operandsIn.front().getType();
-  assert(llvm::is_contained(
-             {POC::BindSignature, POC::Apply, POC::ApplyResultSlot,
-              POC::TargetHasFeature, POC::TargetGetField, POC::AcceleratorArch,
-              POC::GetSizeOf, POC::GetAlignOf, POC::VariadicGet, POC::GetEnv,
-              POC::CompileAssembly, POC::GetLinkageName,
-              POC::CompileOffloadClosure, POC::GetVTableEntry,
-              POC::VariadicPtrMap, POC::VariadicPtrRemoveMap},
-             opcode) ||
+  assert(llvm::is_contained({POC::Apply, POC::ApplyResultSlot,
+                             POC::TargetHasFeature, POC::TargetGetField,
+                             POC::AcceleratorArch, POC::GetSizeOf,
+                             POC::GetAlignOf, POC::VariadicGet, POC::GetEnv,
+                             POC::CompileAssembly, POC::GetLinkageName,
+                             POC::CompileOffloadClosure, POC::GetVTableEntry,
+                             POC::VariadicPtrMap, POC::VariadicPtrRemoveMap},
+                            opcode) ||
          llvm::all_of(operandsIn.drop_front(),
                       [&](auto op) { return op.getType() == resultType; }));
 

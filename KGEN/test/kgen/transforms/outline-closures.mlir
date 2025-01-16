@@ -3,8 +3,8 @@
 // COM: This shouldn't change at all, save for whatever canonicalizations happen at parse time.
 // CHECK-LABEL: @call_region<fn: <index>() capturing -> index>() -> index
 kgen.generator @call_region<fn: <index>() capturing ->index>() -> index {
-  // CHECK-NEXT: kgen.param.declare BoundFn: () capturing -> index = <bind_signature(:<index>() capturing -> index fn, 2)>
-  kgen.param.declare BoundFn: () capturing -> index = <bind_signature(:<index>() capturing -> index fn, 2)>
+  // CHECK-NEXT: kgen.param.declare BoundFn: () capturing -> index = <bind_params(:<index>() capturing -> index fn, 2)>
+  kgen.param.declare BoundFn: () capturing -> index = <bind_params(:<index>() capturing -> index fn, 2)>
   // CHECK-NEXT: %0 = kgen.call_param[() capturing -> index: BoundFn]()
   %0 = kgen.call_param[() capturing -> index: BoundFn]()
   // CHECK-NEXT: kgen.return %0 : index
@@ -33,8 +33,8 @@ kgen.generator @raiseClosure<Jefffffffffff>(%arg0: index) -> index {
     kgen.return %1 : index
   } {LLVMMetadata = {llvm.someattr = 4 : index}}
   // CHECK: kgen.param.declare Fn: <index, index>() capturing -> index = <@raiseClosure_Fn<Jefffffffffff, C, ?, ?>>
-  // CHECK: kgen.param.declare BoundFn: <index>() capturing -> index = <bind_signature(:<index, index>() capturing -> index Fn, ?, 1)>
-  kgen.param.declare BoundFn: <index>() capturing -> index = <bind_signature(:<index, index>() capturing -> index Fn, ?, 1)>
+  // CHECK: kgen.param.declare BoundFn: <index>() capturing -> index = <bind_params(:<index, index>() capturing -> index Fn, ?, 1)>
+  kgen.param.declare BoundFn: <index>() capturing -> index = <bind_params(:<index, index>() capturing -> index Fn, ?, 1)>
   // CHECK: kgen.call @call_region<:<index>() capturing -> index BoundFn>() : () -> index
   %0 = kgen.call @call_region<:<index>() capturing -> index BoundFn>() : () -> index
   kgen.return %0 : index
@@ -207,7 +207,7 @@ kgen.generator @parametrizedSSACapture<T: type>(%arg0 : !kgen.param<T>) -> index
 // COM: We should not try and capture parameters.
 // CHECK-LABEL: @dontBindInputParameters_fn<T: type, N>
 kgen.generator @dontBindInputParameters<T: type, I>(%arg0 : !kgen.param<T>) -> index {
-  %0 = kgen.call_param[() capturing -> index: bind_signature(:<index>() capturing -> index fn, I)]()
+  %0 = kgen.call_param[() capturing -> index: bind_params(:<index>() capturing -> index fn, I)]()
   // CHECK: kgen.param.declare fn: <index>() capturing -> index = <@dontBindInputParameters_fn<:type T, ?>>
   kgen.param.declare.region fn = <N>() capturing -> index {
     %1 = kgen.param.constant = <N>

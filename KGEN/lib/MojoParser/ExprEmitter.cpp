@@ -743,10 +743,7 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
 
       // Apply whatever it produced to the attr of signature type to resolve the
       // remaining arguments.
-      SmallVector<TypedAttr> bindOperands;
-      bindOperands.push_back(attr);
-      llvm::append_range(bindOperands, bindingAttr);
-      attr = ParamOperatorAttr::get(POC::BindSignature, bindOperands);
+      attr = BindParamsAttr::get(attr, bindingAttr);
     }
 
     // Reject unbound result parameters.

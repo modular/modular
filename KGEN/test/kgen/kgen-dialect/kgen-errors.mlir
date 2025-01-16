@@ -362,7 +362,7 @@ kgen.generator @call_param() {
 
 kgen.generator @call_param<fn: <type>()->()>() {
   // expected-error @+1 {{cannot name an operation with no results}}
-  %0 = kgen.call_param[()->(): bind_signature(:<type>()->() fn, f32)]()
+  %0 = kgen.call_param[()->(): bind_params(:<type>()->() fn, f32)]()
   kgen.return
 }
 

@@ -619,7 +619,7 @@ fn callable_mv[callable: fn (Int) -> Int](a: Int) -> Int:
 # CHECK-LABEL: lit.fn @"callable_mv_inputs{{.*}})"<
 # CHECK-SAME: callable: !lit.generator<<"x": !Int>(!Int, |) -> !Int>, b: !Int>(%a: !Int) -> !Int
 fn callable_mv_inputs[callable: fn[x: Int](Int) -> Int, b: Int](a: Int) -> Int:
-  # CHECK-NEXT: lit.call[!lit.generator<(!Int, |) -> !Int>: bind_signature({{.*}}callable, b)](%a)
+  # CHECK-NEXT: lit.call[!lit.generator<(!Int, |) -> !Int>: bind_params({{.*}}callable, b)](%a)
   return callable[b](a)
 
 # CHECK-LABEL: lit.fn @"takeIndexParam{{.*}}"<a: !Int>() -> !Int
@@ -639,7 +639,7 @@ fn returnIndex2() -> Int:
 # CHECK-LABEL: lit.fn @"callInParam[fn[::Int](::Int, /) -> ::Int]()"
 # CHECK-SAME: <callable: !lit.generator<<"x": !Int>(!Int, |) -> !Int>>() -> !Int
 fn callInParam[callable: fn[x: Int](Int) -> Int]() -> Int:
-  # CHECK-NEXT: %0 = lit.call @{{.*}}takeIndexParam{{.*}}()"<:!Int apply({{.*}}bind_signature({{.*}}callable, {1}), {1})>()
+  # CHECK-NEXT: %0 = lit.call @{{.*}}takeIndexParam{{.*}}()"<:!Int apply({{.*}}bind_params({{.*}}callable, {1}), {1})>()
   # CHECK-NEXT: return %0
   return takeIndexParam[callable[1](1)]()
 

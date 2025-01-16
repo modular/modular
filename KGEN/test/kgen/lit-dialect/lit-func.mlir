@@ -191,13 +191,9 @@ lit.fn @parametric_default_param<x, y = x>() {
 lit.fn @call_default_param() {
   // CHECK: ref: !lit.generator<<"x": index, "y": index = *(0,0)>() -> ()> = <@parametric_default_param>
   kgen.param.declare ref: !lit.generator<<"x": index, "y": index = *(0,0)>() -> ()> = <@parametric_default_param>
-  // CHECK: bound: !lit.generator<<index = 1>() -> ()> = <bind_signature(
+  // CHECK: bound: !lit.generator<<"y": index = 1>() -> ()> = <bind_params(
   // CHECK-SAME: :!lit.generator<<"x": index, "y": index = *(0,0)>() -> ()> ref, 1, ?)>
-  kgen.param.declare bound: !lit.generator<<index = 1>() -> ()> = <bind_signature(
-    :!lit.generator<<"x": index, "y": index = *(0,0)>() -> ()> ref, 1, ?)>
-  // CHECK: bound_new: !lit.generator<<"z": index = 1>() -> ()> = <bind_signature(
-  // CHECK-SAME: :!lit.generator<<"x": index, "y": index = *(0,0)>() -> ()> ref, 1, ?)>
-  kgen.param.declare bound_new: !lit.generator<<"z": index = 1>() -> ()> = <bind_signature(
+  kgen.param.declare bound: !lit.generator<<"y": index = 1>() -> ()> = <bind_params(
     :!lit.generator<<"x": index, "y": index = *(0,0)>() -> ()> ref, 1, ?)>
   kgen.return
 }

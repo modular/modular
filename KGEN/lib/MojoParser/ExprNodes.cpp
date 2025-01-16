@@ -1020,9 +1020,7 @@ static PValue bindToIndirectCall(PValue callable, LITSignatureGeneratorType sig,
   if (!newBindings)
     return {};
 
-  SmallVector<TypedAttr> bindOperands{{callable.get()}};
-  llvm::append_range(bindOperands, newBindings);
-  return ParamOperatorAttr::get(POC::BindSignature, bindOperands);
+  return BindParamsAttr::get(callable.get(), newBindings);
 }
 
 /// When subscripting a callable with a bound symbol (i.e. a direct method call

@@ -455,12 +455,8 @@ TypedAttr FnOp::getBoundReference(ParameterExprArrayAttr bindings) {
   std::tie(resultType, bindings) =
       getUnboundSpecializedSignature(getFullSignature(), bindings);
 
-  if (ParamDeclAttr decl = getParamDeclAttr()) {
-    SmallVector<TypedAttr> bindOperands{ParamDeclRefAttr::get(decl)};
-    for (TypedAttr binding : bindings)
-      bindOperands.push_back(binding);
-    return ParamOperatorAttr::get(POC::BindSignature, bindOperands);
-  }
+  if (ParamDeclAttr decl = getParamDeclAttr())
+    return BindParamsAttr::get(ParamDeclRefAttr::get(decl), bindings);
 
   return SymbolConstantAttr::get(getFullyResolvedSymbolRef(*this), resultType,
                                  bindings);

@@ -630,7 +630,7 @@ kgen.generator @replace_in_signature_with_shadow<width>() {
   // CHECK: kgen.param.declare width0 = <width>
   // CHECK-NEXT: kgen.param.declare fn: <index>(!pop.simd<*(0,0), bool>) -> () = <@param_arg>
   // CHECK-NEXT: kgen.param.declare bound: (!pop.simd<width0, bool>) -> ()
-  // CHECK-SAME: = <bind_signature(:<index>(!pop.simd<*(0,0), bool>) -> () fn, width0)>
+  // CHECK-SAME: = <bind_params(:<index>(!pop.simd<*(0,0), bool>) -> () fn, width0)>
   kgen.call @callee<width>() : () -> ()
   kgen.return
 }
@@ -644,7 +644,7 @@ kgen.generator @param_arg<width>(%arg0: !pop.simd<width, bool>) {
 kgen.generator @callee<width>() always_inline {
   kgen.param.declare fn: <index>(!pop.simd<*(0,0), bool>) -> () = <@param_arg>
   kgen.param.declare bound: (!pop.simd<width, bool>) -> () =
-    <bind_signature(:<index>(!pop.simd<*(0,0), bool>) -> () fn, width)>
+    <bind_params(:<index>(!pop.simd<*(0,0), bool>) -> () fn, width)>
   kgen.return
 }
 
@@ -737,7 +737,7 @@ kgen.generator @mid<rank, shape: array<rank, index>>() always_inline {
 // COM: https://github.com/modularml/modular/issues/8586
 
 kgen.generator @unroll<func: <index>() -> ()>() always_inline {
-  kgen.param.constant: () -> () = <bind_signature(:<index>() -> () func, 1)>
+  kgen.param.constant: () -> () = <bind_params(:<index>() -> () func, 1)>
   kgen.return
 }
 
@@ -770,7 +770,7 @@ kgen.generator @main() {
     // CHECK: kgen.param.declare.region nested_func = <idx>() {
       // CHECK: kgen.call_param[() -> (): func]
     // CHECK: kgen.param.declare func0: <index>() -> () = <nested_func>
-    // CHECK: kgen.param.constant: () -> () = <bind_signature(:<index>() -> () func0, 1)>
+    // CHECK: kgen.param.constant: () -> () = <bind_params(:<index>() -> () func0, 1)>
   // CHECK: kgen.call_param[() -> (): func_wrapper]
   kgen.call @pass_it() : () -> ()
 
@@ -780,7 +780,7 @@ kgen.generator @main() {
     // CHECK: kgen.param.declare.region nested_func0 = <idx0>() {
       // CHECK: kgen.call_param[() -> (): func1]
     // CHECK: kgen.param.declare func2: <index>() -> () = <nested_func0>
-    // CHECK: kgen.param.constant: () -> () = <bind_signature(:<index>() -> () func2, 1)>
+    // CHECK: kgen.param.constant: () -> () = <bind_params(:<index>() -> () func2, 1)>
   // CHECK: kgen.call_param[() -> (): func_wrapper0]
   kgen.call @pass_it() : () -> ()
   kgen.return
