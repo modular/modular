@@ -14,7 +14,7 @@ from memory import UnsafePointer
 
 fn _run_memcpy(ctx: DeviceContext, length: Int) raises:
     print("-")
-    print("_run_memcpy(" + str(length) + ")")
+    print("_run_memcpy(" + String(length) + ")")
 
     var in_host = ctx.malloc_host[Float32](length)
     var out_host = UnsafePointer[Float32].alloc(length)
@@ -37,7 +37,7 @@ fn _run_memcpy(ctx: DeviceContext, length: Int) raises:
         expect_eq(
             out_host[i],
             i,
-            "at index " + str(i) + " the value is " + str(out_host[i]),
+            "at index " + String(i) + " the value is " + String(out_host[i]),
         )
 
     out_host.free()
@@ -46,7 +46,7 @@ fn _run_memcpy(ctx: DeviceContext, length: Int) raises:
 
 fn _run_memcpy_async(ctx: DeviceContext, length: Int, use_context: Bool) raises:
     print("-")
-    print("_run_memcpy_async(" + str(length) + ")")
+    print("_run_memcpy_async(" + String(length) + ")")
 
     var in_host = ctx.malloc_host[Float32](length)
     var out_host = ctx.malloc_host[Float32](length)
@@ -75,7 +75,7 @@ fn _run_memcpy_async(ctx: DeviceContext, length: Int, use_context: Bool) raises:
         expect_eq(
             out_host[i],
             i,
-            "at index " + str(i) + " the value is " + str(out_host[i]),
+            "at index " + String(i) + " the value is " + String(out_host[i]),
         )
 
     ctx.free_host(out_host)
@@ -84,7 +84,7 @@ fn _run_memcpy_async(ctx: DeviceContext, length: Int, use_context: Bool) raises:
 
 fn _run_sub_memcpy_async(ctx: DeviceContext, length: Int) raises:
     print("-")
-    print("_run_sub_memcpy_async(" + str(length) + ")")
+    print("_run_sub_memcpy_async(" + String(length) + ")")
 
     var half_length = length // 2
 
@@ -124,7 +124,7 @@ fn _run_sub_memcpy_async(ctx: DeviceContext, length: Int) raises:
         expect_eq(
             out_host[i],
             expected,
-            "at index " + str(i) + " the value is " + str(out_host[i]),
+            "at index " + String(i) + " the value is " + String(out_host[i]),
         )
 
     ctx.free_host(out_host)
@@ -137,9 +137,9 @@ fn _run_fake_memcpy_async(
     print("-")
     print(
         "_run_fake_memcpy_async("
-        + str(length)
+        + String(length)
         + ", take_ptr = "
-        + str(use_take_ptr)
+        + String(use_take_ptr)
         + ")"
     )
 
@@ -191,7 +191,7 @@ fn _run_fake_memcpy_async(
         expect_eq(
             out_host[i],
             expected,
-            "at index " + str(i) + " the value is " + str(out_host[i]),
+            "at index " + String(i) + " the value is " + String(out_host[i]),
         )
 
     ctx.free_host(out_host)

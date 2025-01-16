@@ -15,7 +15,7 @@ fn _run_memset[
     type: DType
 ](ctx: DeviceContext, length: Int, val: Scalar[type]) raises:
     print("-")
-    print("_run_memset(" + str(length) + ", " + str(val) + ")")
+    print("_run_memset(" + String(length) + ", " + String(val) + ")")
 
     var in_host = ctx.malloc_host[Scalar[type]](length)
     var out_host = ctx.malloc_host[Scalar[type]](length)
@@ -37,7 +37,7 @@ fn _run_memset[
         expect_eq(
             out_host[i],
             val,
-            "at index " + str(i) + " the value is " + str(out_host[i]),
+            "at index " + String(i) + " the value is " + String(out_host[i]),
         )
 
     ctx.free_host(out_host)
@@ -48,7 +48,7 @@ fn _run_memset_async[
     type: DType
 ](ctx: DeviceContext, length: Int, val: Scalar[type]) raises:
     print("-")
-    print("_run_memset_async(" + str(length) + ", " + str(val) + ")")
+    print("_run_memset_async(" + String(length) + ", " + String(val) + ")")
 
     var in_host = ctx.malloc_host[Scalar[type]](length)
     var out_host = ctx.malloc_host[Scalar[type]](length)
@@ -73,7 +73,7 @@ fn _run_memset_async[
         expect_eq(
             out_host[i],
             val,
-            "at index " + str(i) + " the value is " + str(out_host[i]),
+            "at index " + String(i) + " the value is " + String(out_host[i]),
         )
 
     ctx.free_host(out_host)

@@ -75,7 +75,7 @@ fn test_function(ctx: DeviceContext) raises:
         expect_eq(
             out_host[i],
             i + 2,
-            "at index " + str(i) + " the value is " + str(out_host[i]),
+            "at index " + String(i) + " the value is " + String(out_host[i]),
         )
 
     ctx.free_host(out_host)

@@ -17,7 +17,7 @@ fn _run_cuda_context(ctx: DeviceContext) raises:
     print("_run_cuda_context()")
 
     var cuda_ctx: CUcontext = CUDA(ctx)
-    print("CUcontext: " + str(cuda_ctx))
+    print("CUcontext: " + String(cuda_ctx))
 
 
 fn _run_cuda_stream(ctx: DeviceContext) raises:
@@ -29,7 +29,7 @@ fn _run_cuda_stream(ctx: DeviceContext) raises:
     print("Synchronizing on `stream`.")
     stream.synchronize()
     var cuda_stream = CUDA(stream)
-    print("CUstream: " + str(cuda_stream))
+    print("CUstream: " + String(cuda_stream))
 
 
 fn main() raises:

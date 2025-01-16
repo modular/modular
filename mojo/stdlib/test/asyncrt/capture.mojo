@@ -30,7 +30,7 @@ fn vec_func[
 @no_inline
 fn run_captured_func(ctx: DeviceContext, captured: Float32) raises:
     print("-")
-    print("run_captured_func(" + str(captured) + "):")
+    print("run_captured_func(" + String(captured) + "):")
 
     alias length = 1024
 
@@ -82,7 +82,7 @@ fn run_captured_func(ctx: DeviceContext, captured: Float32) raises:
         expect_eq(
             out_host[i],
             i + 2 + captured,
-            "at index " + str(i) + " the value is " + str(out_host[i]),
+            "at index " + String(i) + " the value is " + String(out_host[i]),
         )
 
     ctx.free_host(out_host)

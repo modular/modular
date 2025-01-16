@@ -24,7 +24,7 @@ from utils.index import Index
 
 fn run_elementwise[type: DType](ctx: DeviceContext) raises:
     print("-")
-    print("run_elementwise[" + str(type) + "]:")
+    print("run_elementwise[" + String(type) + "]:")
 
     alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
 
@@ -77,7 +77,7 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
         expect_eq(
             out_host[i],
             i + 42,
-            "at index " + str(i) + " the value is " + str(out_host[i]),
+            "at index " + String(i) + " the value is " + String(out_host[i]),
         )
 
     ctx.free_host(out_host)
