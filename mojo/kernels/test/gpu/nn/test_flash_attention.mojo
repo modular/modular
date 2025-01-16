@@ -575,7 +575,6 @@ fn test_cross_attention[batch_size: Int](ctx: DeviceContext) raises:
         3,
         against_gpu_naive=True,
     ](15, 18, ctx)
-
     test[
         3,
         DType.bfloat16,
