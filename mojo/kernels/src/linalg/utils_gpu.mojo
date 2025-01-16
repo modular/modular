@@ -635,3 +635,13 @@ fn get_config_from_shape[
             return MXXXX_N6144_K4096_config
 
     return default_config
+
+
+@parameter
+fn _get_block_warp_tile_shape[
+    BM: Int, BN: Int, BK: Int
+]() -> List[IndexList[3]]:
+    alias WM = 64
+    alias WN = 64
+    alias WK = BK
+    return List[IndexList[3]](Index(BM, BN, BK), Index(WM, WN, WK))

@@ -65,7 +65,33 @@ from ._multistage_gemm_gpu import (
 )
 from .gemv import gemv_gpu
 from .utils import GemmShape, apply_epilogue, elementwise_epilogue_type
-from .utils_gpu import MatmulConfig, MatmulKernels, _bk_base, select_config
+from .utils_gpu import (
+    MatmulConfig,
+    MatmulKernels,
+    _bk_base,
+    select_config,
+    _get_block_warp_tile_shape,
+)
+
+
+alias tile_shapes_64X64X32 = _get_block_warp_tile_shape[64, 64, 32]()
+alias tile_shapes_64X128X32 = _get_block_warp_tile_shape[64, 128, 32]()
+alias tile_shapes_64X256X32 = _get_block_warp_tile_shape[64, 256, 32]()
+alias tile_shapes_128X64X32 = _get_block_warp_tile_shape[128, 64, 32]()
+alias tile_shapes_128X128X32 = _get_block_warp_tile_shape[128, 128, 32]()
+alias tile_shapes_128X256X32 = _get_block_warp_tile_shape[128, 256, 32]()
+alias tile_shapes_256X64X32 = _get_block_warp_tile_shape[256, 64, 32]()
+alias tile_shapes_256X128X32 = _get_block_warp_tile_shape[256, 128, 32]()
+alias tile_shapes_256X256X32 = _get_block_warp_tile_shape[256, 256, 32]()
+alias tile_shapes_64X64X64 = _get_block_warp_tile_shape[64, 64, 64]()
+alias tile_shapes_64X128X64 = _get_block_warp_tile_shape[64, 128, 64]()
+alias tile_shapes_64X256X64 = _get_block_warp_tile_shape[64, 256, 64]()
+alias tile_shapes_128X64X64 = _get_block_warp_tile_shape[128, 64, 64]()
+alias tile_shapes_128X128X64 = _get_block_warp_tile_shape[128, 128, 64]()
+alias tile_shapes_128X256X64 = _get_block_warp_tile_shape[128, 256, 64]()
+alias tile_shapes_256X64X64 = _get_block_warp_tile_shape[256, 64, 64]()
+alias tile_shapes_256X128X64 = _get_block_warp_tile_shape[256, 128, 64]()
+alias tile_shapes_256X256X64 = _get_block_warp_tile_shape[256, 256, 64]()
 
 
 @always_inline
@@ -353,7 +379,6 @@ fn _matmul_gpu[
             ):
                 alias static_K = a_shape.get[1]()
                 alias static_N = c_shape.get[1]()
-                alias warp_shape = Index(64, 64, _bk_base[a_type]())
 
                 @parameter
                 if static_K == 4096 and static_N == 4096:
@@ -361,8 +386,8 @@ fn _matmul_gpu[
                         alias M256_N4096_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(64, 256, 32),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_64X256X32[0],
+                            warp_tile_shape=tile_shapes_64X256X32[1],
                             num_pipeline_stages=4,
                             num_k_partitions=1,
                         )
@@ -382,8 +407,8 @@ fn _matmul_gpu[
                         alias M512_N4096_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(128, 128, 32),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_128X128X32[0],
+                            warp_tile_shape=tile_shapes_128X128X32[1],
                             num_pipeline_stages=4,
                             num_k_partitions=2,
                         )
@@ -403,8 +428,8 @@ fn _matmul_gpu[
                         alias M768_N4096_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(128, 256, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_128X256X64[0],
+                            warp_tile_shape=tile_shapes_128X256X64[1],
                             num_pipeline_stages=3,
                             num_k_partitions=1,
                         )
@@ -421,11 +446,14 @@ fn _matmul_gpu[
                         )
                         return
                     if 768 < m <= 1280:
+                        alias tile_shapes = _get_block_warp_tile_shape[
+                            128, 128, 32
+                        ]()
                         alias M896_N4096_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(128, 128, 32),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_128X128X32[0],
+                            warp_tile_shape=tile_shapes_128X128X32[1],
                             num_pipeline_stages=4,
                             num_k_partitions=1,
                         )
@@ -445,8 +473,8 @@ fn _matmul_gpu[
                         alias M1606_N4096_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(128, 256, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_128X256X64[0],
+                            warp_tile_shape=tile_shapes_128X256X64[1],
                             num_pipeline_stages=3,
                             num_k_partitions=1,
                         )
@@ -463,11 +491,14 @@ fn _matmul_gpu[
                         )
                         return
                     if 1606 < m <= 2048:
+                        alias tile_shapes = _get_block_warp_tile_shape[
+                            128, 128, 32
+                        ]()
                         alias M2048_N4096_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(128, 128, 32),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_128X128X32[0],
+                            warp_tile_shape=tile_shapes_128X128X32[1],
                             num_pipeline_stages=4,
                             num_k_partitions=1,
                         )
@@ -490,8 +521,8 @@ fn _matmul_gpu[
                         alias M128_N4096_K14336_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(64, 256, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_64X256X64[0],
+                            warp_tile_shape=tile_shapes_64X256X64[1],
                             num_pipeline_stages=4,
                             num_k_partitions=3,
                         )
@@ -511,8 +542,8 @@ fn _matmul_gpu[
                         alias M512_N4096_K14336_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(256, 128, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_256X128X64[0],
+                            warp_tile_shape=tile_shapes_256X128X64[1],
                             num_pipeline_stages=3,
                             num_k_partitions=3,
                         )
@@ -532,8 +563,8 @@ fn _matmul_gpu[
                         alias M768_N4096_K14336_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(128, 256, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_128X256X64[0],
+                            warp_tile_shape=tile_shapes_128X256X64[1],
                             num_pipeline_stages=3,
                             num_k_partitions=1,
                         )
@@ -553,8 +584,8 @@ fn _matmul_gpu[
                         alias M896_N4096_K14336_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(128, 128, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_128X128X64[0],
+                            warp_tile_shape=tile_shapes_128X128X64[1],
                             num_pipeline_stages=4,
                             num_k_partitions=3,
                         )
@@ -574,8 +605,8 @@ fn _matmul_gpu[
                         alias M1024_N4096_K14336_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(128, 128, 32),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_128X128X32[0],
+                            warp_tile_shape=tile_shapes_128X128X32[1],
                             num_pipeline_stages=4,
                             num_k_partitions=2,
                         )
@@ -595,8 +626,8 @@ fn _matmul_gpu[
                         alias M1152_N4096_K14336_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(128, 256, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_128X256X64[0],
+                            warp_tile_shape=tile_shapes_128X256X64[1],
                             num_pipeline_stages=3,
                             num_k_partitions=3,
                         )
@@ -616,8 +647,8 @@ fn _matmul_gpu[
                         alias M1280_N4096_K14336_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(256, 128, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_256X128X64[0],
+                            warp_tile_shape=tile_shapes_256X128X64[1],
                             num_pipeline_stages=3,
                             num_k_partitions=2,
                         )
@@ -637,8 +668,8 @@ fn _matmul_gpu[
                         alias M1606_N4096_K14336_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(128, 256, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_128X256X64[0],
+                            warp_tile_shape=tile_shapes_128X256X64[1],
                             num_pipeline_stages=3,
                             num_k_partitions=1,
                         )
@@ -658,8 +689,8 @@ fn _matmul_gpu[
                         alias M2048_N4096_K14336_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(256, 128, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_256X128X64[0],
+                            warp_tile_shape=tile_shapes_256X128X64[1],
                             num_pipeline_stages=3,
                             num_k_partitions=2,
                         )
@@ -682,8 +713,8 @@ fn _matmul_gpu[
                         alias M128_N128256_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(128, 256, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_128X256X64[0],
+                            warp_tile_shape=tile_shapes_128X256X64[1],
                             num_pipeline_stages=3,
                             num_k_partitions=1,
                         )
@@ -703,8 +734,8 @@ fn _matmul_gpu[
                         alias M768_N128256_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(128, 128, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_128X128X64[0],
+                            warp_tile_shape=tile_shapes_128X128X64[1],
                             num_pipeline_stages=4,
                             num_k_partitions=1,
                         )
@@ -724,8 +755,8 @@ fn _matmul_gpu[
                         alias M2048_N128256_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(256, 128, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_256X128X64[0],
+                            warp_tile_shape=tile_shapes_256X128X64[1],
                             num_pipeline_stages=3,
                             num_k_partitions=1,
                         )
@@ -748,8 +779,8 @@ fn _matmul_gpu[
                         alias M128_N28672_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(128, 128, 32),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_128X128X32[0],
+                            warp_tile_shape=tile_shapes_128X128X32[1],
                             num_pipeline_stages=4,
                             num_k_partitions=1,
                         )
@@ -769,8 +800,8 @@ fn _matmul_gpu[
                         alias M256_N28672_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(64, 256, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_64X256X64[0],
+                            warp_tile_shape=tile_shapes_64X256X64[1],
                             num_pipeline_stages=4,
                             num_k_partitions=1,
                         )
@@ -790,8 +821,8 @@ fn _matmul_gpu[
                         alias M512_N28672_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(128, 128, 32),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_128X128X32[0],
+                            warp_tile_shape=tile_shapes_128X128X32[1],
                             num_pipeline_stages=4,
                             num_k_partitions=1,
                         )
@@ -811,8 +842,8 @@ fn _matmul_gpu[
                         alias M768_N28672_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(256, 128, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_256X128X64[0],
+                            warp_tile_shape=tile_shapes_256X128X64[1],
                             num_pipeline_stages=3,
                             num_k_partitions=1,
                         )
@@ -832,8 +863,8 @@ fn _matmul_gpu[
                         alias M896_N28672_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(128, 256, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_128X256X64[0],
+                            warp_tile_shape=tile_shapes_128X256X64[1],
                             num_pipeline_stages=3,
                             num_k_partitions=1,
                         )
@@ -853,8 +884,8 @@ fn _matmul_gpu[
                         alias M1024_N28672_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(256, 128, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_256X128X64[0],
+                            warp_tile_shape=tile_shapes_256X128X64[1],
                             num_pipeline_stages=3,
                             num_k_partitions=1,
                         )
@@ -874,8 +905,8 @@ fn _matmul_gpu[
                         alias M1152_N28672_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(128, 256, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_128X256X64[0],
+                            warp_tile_shape=tile_shapes_128X256X64[1],
                             num_pipeline_stages=3,
                             num_k_partitions=1,
                         )
@@ -895,8 +926,8 @@ fn _matmul_gpu[
                         alias M1280_N28672_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(256, 128, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_256X128X64[0],
+                            warp_tile_shape=tile_shapes_256X128X64[1],
                             num_pipeline_stages=3,
                             num_k_partitions=1,
                         )
@@ -916,8 +947,8 @@ fn _matmul_gpu[
                         alias M1606_N28672_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(128, 256, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_128X256X64[0],
+                            warp_tile_shape=tile_shapes_128X256X64[1],
                             num_pipeline_stages=3,
                             num_k_partitions=1,
                         )
@@ -937,8 +968,8 @@ fn _matmul_gpu[
                         alias M2048_N28672_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(256, 128, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_256X128X64[0],
+                            warp_tile_shape=tile_shapes_256X128X64[1],
                             num_pipeline_stages=3,
                             num_k_partitions=1,
                         )
@@ -961,8 +992,8 @@ fn _matmul_gpu[
                         alias M256_N6144_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(128, 128, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_128X128X64[0],
+                            warp_tile_shape=tile_shapes_128X128X64[1],
                             num_pipeline_stages=4,
                             num_k_partitions=1,
                         )
@@ -982,8 +1013,8 @@ fn _matmul_gpu[
                         alias M512_N6144_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(256, 128, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_256X128X64[0],
+                            warp_tile_shape=tile_shapes_256X128X64[1],
                             num_pipeline_stages=3,
                             num_k_partitions=1,
                         )
@@ -1003,8 +1034,8 @@ fn _matmul_gpu[
                         alias M768_N6144_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(128, 128, 32),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_128X128X32[0],
+                            warp_tile_shape=tile_shapes_128X128X32[1],
                             num_pipeline_stages=4,
                             num_k_partitions=1,
                         )
@@ -1024,8 +1055,8 @@ fn _matmul_gpu[
                         alias M896_N6144_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(128, 256, 32),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_128X256X32[0],
+                            warp_tile_shape=tile_shapes_128X256X32[1],
                             num_pipeline_stages=3,
                             num_k_partitions=1,
                         )
@@ -1045,8 +1076,8 @@ fn _matmul_gpu[
                         alias M1024_N6144_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(256, 128, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_256X128X64[0],
+                            warp_tile_shape=tile_shapes_256X128X64[1],
                             num_pipeline_stages=3,
                             num_k_partitions=1,
                         )
@@ -1066,8 +1097,8 @@ fn _matmul_gpu[
                         alias M768_N6144_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(128, 256, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_128X256X64[0],
+                            warp_tile_shape=tile_shapes_128X256X64[1],
                             num_pipeline_stages=3,
                             num_k_partitions=1,
                         )
@@ -1087,8 +1118,8 @@ fn _matmul_gpu[
                         alias M768_N6144_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(128, 128, 32),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_128X128X32[0],
+                            warp_tile_shape=tile_shapes_128X128X32[1],
                             num_pipeline_stages=4,
                             num_k_partitions=1,
                         )
@@ -1108,8 +1139,8 @@ fn _matmul_gpu[
                         alias M1606_N6144_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(128, 256, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_128X256X64[0],
+                            warp_tile_shape=tile_shapes_128X256X64[1],
                             num_pipeline_stages=3,
                             num_k_partitions=1,
                         )
@@ -1129,8 +1160,8 @@ fn _matmul_gpu[
                         alias M2048_N6144_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(256, 128, 64),
-                            warp_tile_shape=warp_shape,
+                            block_tile_shape=tile_shapes_256X128X64[0],
+                            warp_tile_shape=tile_shapes_256X128X64[1],
                             num_pipeline_stages=3,
                             num_k_partitions=1,
                         )
