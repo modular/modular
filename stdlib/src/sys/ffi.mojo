@@ -206,7 +206,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
             name.unsafe_cstr_ptr(),
         )
 
-        return bool(opaque_function_ptr)
+        return Bool(opaque_function_ptr)
 
     # TODO(#15590): Implement support for windows and remove the always_inline.
     @always_inline

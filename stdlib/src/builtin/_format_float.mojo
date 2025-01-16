@@ -545,16 +545,16 @@ fn _divide_by_pow10[
     if CarrierDType is DType.uint64:
 
         @parameter
-        if N == 1 and bool(n_max <= 4611686018427387908):
+        if N == 1 and Bool(n_max <= 4611686018427387908):
             return _umul128_upper64(n, 1844674407370955162)
-        elif N == 3 and bool(n_max <= 15534100272597517998):
+        elif N == 3 and Bool(n_max <= 15534100272597517998):
             return _umul128_upper64(n, 4722366482869645214) >> 8
         else:
             return n / pow(10, N)
     else:
 
         @parameter
-        if N == 1 and bool(n_max <= 1073741828):
+        if N == 1 and Bool(n_max <= 1073741828):
             return (_umul64(n.cast[DType.uint32](), 429496730) >> 32).cast[
                 CarrierDType
             ]()

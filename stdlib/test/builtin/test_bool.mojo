@@ -29,8 +29,8 @@ def test_bool_cast_to_int():
 
 def test_bool_none():
     var test = None
-    assert_equal(bool(None), False)
-    assert_equal(bool(test), False)
+    assert_equal(Bool(None), False)
+    assert_equal(Bool(test), False)
 
 
 @value
@@ -48,7 +48,7 @@ fn takes_bool(cond: Bool) -> Bool:
 
 def test_convert_from_implicitly_boolable():
     assert_true(takes_bool(MyTrue()))
-    assert_true(bool(MyTrue()))
+    assert_true(Bool(MyTrue()))
 
 
 # def test_bool_to_string():

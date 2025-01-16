@@ -160,7 +160,7 @@ struct Counter[V: KeyElement](Sized, CollectionElement, Boolable):
         Returns:
             `False` if the Counter is empty, `True` otherwise.
         """
-        return bool(len(self))
+        return Bool(len(self))
 
     # ===------------------------------------------------------------------=== #
     # Comparison operators

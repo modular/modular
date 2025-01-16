@@ -247,7 +247,7 @@ struct CharsIter[mut: Bool, //, origin: Origin[mut]]:
         Returns:
             A boolean indicating if there are still elements in this iterator.
         """
-        return bool(self.peek_next())
+        return Bool(self.peek_next())
 
     @always_inline
     fn __len__(self) -> Int:

@@ -94,7 +94,7 @@ fn bench_string_count[
         keep(amnt)
 
     b.iter[call_fn]()
-    keep(bool(items))
+    keep(Bool(items))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -121,7 +121,7 @@ fn bench_string_split[
         keep(res.data)
 
     b.iter[call_fn]()
-    keep(bool(items))
+    keep(Bool(items))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -140,7 +140,7 @@ fn bench_string_splitlines[
         keep(res.data)
 
     b.iter[call_fn]()
-    keep(bool(items))
+    keep(Bool(items))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -159,7 +159,7 @@ fn bench_string_lower[
         keep(res._buffer.data)
 
     b.iter[call_fn]()
-    keep(bool(items))
+    keep(Bool(items))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -178,7 +178,7 @@ fn bench_string_upper[
         keep(res._buffer.data)
 
     b.iter[call_fn]()
-    keep(bool(items))
+    keep(Bool(items))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -200,7 +200,7 @@ fn bench_string_replace[
         keep(res._buffer.data)
 
     b.iter[call_fn]()
-    keep(bool(items))
+    keep(Bool(items))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -219,7 +219,7 @@ fn bench_string_is_valid_utf8[
         keep(res)
 
     b.iter[call_fn]()
-    keep(bool(items))
+    keep(Bool(items))
 
 
 # ===-----------------------------------------------------------------------===#

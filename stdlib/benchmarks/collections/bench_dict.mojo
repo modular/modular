@@ -65,7 +65,7 @@ fn bench_dict_insert[size: Int](mut b: Bencher) raises:
             items[key] = Int(random.random_si64(0, size))
 
     b.iter[call_fn]()
-    keep(bool(items))
+    keep(Bool(items))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -93,7 +93,7 @@ fn bench_dict_lookup[size: Int](mut b: Bencher) raises:
                 keep(res)
 
     b.iter[call_fn]()
-    keep(bool(items))
+    keep(Bool(items))
 
 
 # ===-----------------------------------------------------------------------===#

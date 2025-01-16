@@ -147,25 +147,24 @@ explicitly convert a Python value into a native Mojo value.
 Currently `PythonObject` conforms to the
 [`Stringable`](/mojo/stdlib/builtin/str/Stringable),
 [`Boolable`](/mojo/stdlib/builtin/bool/Boolable),
-[`Floatable`](/mojo/stdlib/builtin/floatable/Floatable/), and
-[`Intable`](/mojo/stdlib/builtin/int/Intable) traits, which means you can
-convert Python values to Mojo `Bool` and `Float64` types using the
-[`bool()`](/mojo/stdlib/builtin/bool/bool-function) and
-[`float()`](/mojo/stdlib/builtin/floatable/float/) built-in functions, construct
-an `Int` using the [`Int()`](/mojo/stdlib/builtin/int/Int/#__init__)
-constructor, and construct a `String` using the
-[`String()`](/mojo/stdlib/collections/string/String/#__init__) constructor.
-`PythonObject` also conforms to the
-[`Writable`](/mojo/stdlib/utils/write/Writable) trait so that you can print
-Python values using the built-in [`print()`](/mojo/stdlib/builtin/io/print)
-function.
+[`Intable`](/mojo/stdlib/builtin/int/Intable), and
+[`Floatable`](/mojo/stdlib/builtin/floatable/Floatable/) traits, which allows
+you to convert a `PythonObject` to the corresponding Mojo types.
 
 ```mojo
-var s: String = String(py_string)
-var b: Bool = bool(py_bool)
+var s = String(py_string)
+var b = Bool(py_bool)
+var i = Int(py_int)
+
 var f: Float64 = float(py_float)
-var i: Int = Int(py_int)
-print(py_obj)
+```
+
+PythonObject also implements the [`Writable`](/mojo/stdlib/utils/write/Writable)
+trait, so that you can print Python values using the built-in
+[`print()`](/mojo/stdlib/builtin/io/print) function.
+
+```mojo
+print(python_object)
 ```
 
 ### Comparing Python types in Mojo

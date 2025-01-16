@@ -22,7 +22,7 @@ var a = Optional(1)
 var b = Optional[Int](None)
 if a:
     print(a.value())  # prints 1
-if b:  # bool(b) is False, so no print
+if b:  # Bool(b) is False, so no print
     print(b.value())
 var c = a.or_else(2)
 var d = b.or_else(2)
@@ -73,7 +73,7 @@ struct Optional[T: CollectionElement](
     var b = Optional[Int](None)
     if a:
         print(a.value())  # prints 1
-    if b:  # bool(b) is False, so no print
+    if b:  # Bool(b) is False, so no print
         print(b.value())
     var c = a.or_else(2)
     var d = b.or_else(2)

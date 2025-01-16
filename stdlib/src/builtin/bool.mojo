@@ -167,6 +167,27 @@ struct Bool(
         """
         self = value.__bool__()
 
+    @always_inline
+    fn __init__[T: Boolable, //](out self, value: T):
+        """Set the bool representation of the object.
+
+        Parameters:
+            T: The type of the object.
+
+        Args:
+            value: The object to get the bool representation of.
+        """
+        self = value.__bool__()
+
+    @always_inline
+    fn __init__(out self, value: None):
+        """Set the bool representation of the `None` type to `False`.
+
+        Args:
+            value: The object to get the bool representation of.
+        """
+        self = False
+
     @always_inline("nodebug")
     @implicit
     fn __init__(out self, value: SIMD[DType.bool, 1]):
@@ -533,19 +554,9 @@ struct Bool(
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
-fn bool(value: None) -> Bool:
-    """Get the bool representation of the `None` type.
-
-    Args:
-        value: The object to get the bool representation of.
-
-    Returns:
-        The bool representation of the object.
-    """
-    return False
-
-
+@deprecated(
+    "the `bool` function is deprecated, use the `Bool` constructor instead."
+)
 @always_inline
 fn bool[T: Boolable, //](value: T) -> Bool:
     """Get the bool representation of the object.
