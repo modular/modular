@@ -442,9 +442,9 @@ struct DeviceFunction[
             else:
                 print(
                     "DeviceFunction.__init__: func_attribute = ["
-                    + str(func_attribute.value().attribute.code)
+                    + String(func_attribute.value().attribute.code)
                     + ", "
-                    + str(func_attribute.value().value)
+                    + String(func_attribute.value().value)
                     + "]"
                 )
                 not_implemented_yet["DeviceFunction.__init__: func_attribute"]()

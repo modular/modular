@@ -50,11 +50,11 @@ struct Dim(Stringable, Writable):
 
     @no_inline
     fn __str__(self) -> String:
-        var res = String("(x=") + str(self.x()) + ", "
+        var res = String("(x=") + String(self.x()) + ", "
         if self.y() != 1 or self.z() != 1:
-            res += String("y=") + str(self.y())
+            res += String("y=") + String(self.y())
             if self.z() != 1:
-                res += ", z=" + str(self.z())
+                res += ", z=" + String(self.z())
         res += ")"
         return res
 

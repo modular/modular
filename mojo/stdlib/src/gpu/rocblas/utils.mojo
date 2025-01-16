@@ -46,4 +46,4 @@ fn _get_dylib_function[
 @always_inline
 fn check_error(stat: Status) raises:
     if stat != Status.SUCCESS:
-        raise Error("ROCBLAS ERROR:" + str(stat))
+        raise Error("ROCBLAS ERROR:" + String(stat))

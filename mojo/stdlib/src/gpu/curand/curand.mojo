@@ -243,7 +243,7 @@ struct curandRngType:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "curandRngType(" + str(self) + ")"
+        return "curandRngType(" + String(self) + ")"
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -602,7 +602,7 @@ struct curandMethod:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "curandMethod(" + str(self) + ")"
+        return "curandMethod(" + String(self) + ")"
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -764,7 +764,7 @@ struct curandStatus:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "curandStatus(" + str(self) + ")"
+        return "curandStatus(" + String(self) + ")"
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -817,7 +817,7 @@ struct curandDirectionVectorSet:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "curandDirectionVectorSet(" + str(self) + ")"
+        return "curandDirectionVectorSet(" + String(self) + ")"
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1293,7 +1293,7 @@ struct curandOrdering:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "curandOrdering(" + str(self) + ")"
+        return "curandOrdering(" + String(self) + ")"
 
     fn __int__(self) -> Int:
         return Int(self._value)

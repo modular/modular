@@ -20,21 +20,21 @@ fn _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     constrained[
         False,
         "no valid implementation of mma for for a="
-        + str(a.size)
+        + String(a.size)
         + "x"
-        + str(a.type)
+        + String(a.type)
         + ", b="
-        + str(b.size)
+        + String(b.size)
         + "x"
-        + str(b.type)
+        + String(b.type)
         + ", c="
-        + str(c.size)
+        + String(c.size)
         + "x"
-        + str(c.type)
+        + String(c.type)
         + ", and d="
-        + str(d.size)
+        + String(d.size)
         + "x"
-        + str(d.type),
+        + String(d.type),
     ]()
 
 

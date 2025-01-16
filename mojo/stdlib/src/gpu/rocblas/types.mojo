@@ -151,7 +151,7 @@ struct DataType:
         elif dtype is DType.float64:
             self = Self.F64_R
         else:
-            raise "the dtype '" + str(
+            raise "the dtype '" + String(
                 dtype
             ) + "' is not currently handled by rocBLAS"
 

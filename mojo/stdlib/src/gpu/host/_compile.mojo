@@ -89,7 +89,7 @@ fn _to_sass[
 ](asm: String, *, nvdisasm_opts: String = "") raises -> String:
     alias nvdisasm_path = Path("/usr/local/cuda/bin/nvdisasm")
     if not nvdisasm_path.exists():
-        raise "the `nvdisasm` binary does not exist in '" + str(
+        raise "the `nvdisasm` binary does not exist in '" + String(
             nvdisasm_path
         ) + "'"
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
@@ -99,7 +99,11 @@ fn _to_sass[
             output_file=elf_file,
         )
         return subprocess.run(
-            str(nvdisasm_path) + " -c " + nvdisasm_opts + " " + str(elf_file)
+            String(nvdisasm_path)
+            + " -c "
+            + nvdisasm_opts
+            + " "
+            + String(elf_file)
         )
     return ""
 
@@ -117,20 +121,22 @@ fn _ptxas_compile[
 ) raises -> String:
     alias ptxas_path = Path("/usr/local/cuda/bin/ptxas")
     if not ptxas_path.exists():
-        raise "the `ptxas` binary does not exist in '" + str(ptxas_path) + "'"
+        raise "the `ptxas` binary does not exist in '" + String(
+            ptxas_path
+        ) + "'"
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
         var ptx_file = Path(tmpdir) / "output.ptx"
         var elf_file = Path(tmpdir) / "output.elf"
         ptx_file.write_text(asm)
         return subprocess.run(
-            str(ptxas_path)
+            String(ptxas_path)
             + " --gpu-name "
             + _get_arch[target]()
             + " -O3 "
-            + str(ptx_file)
+            + String(ptx_file)
             + " "
             + options
             + " -o "
-            + str(output_file.or_else(elf_file))
+            + String(output_file.or_else(elf_file))
         )
     return ""
