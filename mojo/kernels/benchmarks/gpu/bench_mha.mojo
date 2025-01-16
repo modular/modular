@@ -154,15 +154,15 @@ fn run_mha[
         BenchId(
             "mha",
             input_id="qkv_type="
-            + str(qkv_type)
+            + String(qkv_type)
             + "/num_heads="
-            + str(num_heads)
+            + String(num_heads)
             + "/seq_len="
-            + str(seq_len)
+            + String(seq_len)
             + "/num_keys="
-            + str(num_keys)
+            + String(num_keys)
             + "/batch_size="
-            + str(batch_size)
+            + String(batch_size)
             + "/mode="
             + mode,
         ),
@@ -240,19 +240,19 @@ struct MHA_cfg:
     fn __str__(self) -> String:
         return (
             "qkv_type="
-            + str(self.qkv_type)
+            + String(self.qkv_type)
             + "/"
             + "mask_type="
-            + str(self.mask_type)
+            + String(self.mask_type)
             + "/"
             + "depth="
-            + str(self.depth)
+            + String(self.depth)
             + "/"
             + "num_heads="
-            + str(self.num_heads)
+            + String(self.num_heads)
             + "/"
             + "group="
-            + str(self.group)
+            + String(self.group)
         )
 
 
@@ -267,7 +267,7 @@ fn main() raises:
     var num_keys = Int(arg_parse("num_keys", 64))
     var batch_size = Int(arg_parse("batch_size", 1))
     var num_partitions = Int(arg_parse("num_partitions", 1))
-    var mode = str(arg_parse("mode", "none"))
+    var mode = String(arg_parse("mode", "none"))
 
     alias cfg = MHA_cfg(
         qkv_type=qkv_type,

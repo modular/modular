@@ -208,7 +208,7 @@ fn run_elementwise[
             + "/"
             + fn_name
             + "/"
-            + str(type)
+            + String(type)
             + "/"
             + name,
         ),

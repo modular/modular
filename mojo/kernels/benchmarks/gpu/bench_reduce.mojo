@@ -113,7 +113,7 @@ fn run_reduce[
         b.iter_custom[kernel_launch](ctx)
 
     m.bench_function[bench_func](
-        BenchId("reduce", input_id=str(type) + "/shape=" + str(shape)),
+        BenchId("reduce", input_id=String(type) + "/shape=" + String(shape)),
         ThroughputMeasure(BenchMetric.elements, in_size),
     )
 

@@ -60,7 +60,7 @@ fn bench_add[
         b.iter_custom[kernel_launch](ctx)
 
     b.bench_with_input[__type_of(shape), bench_func](
-        BenchId("add", str(shape)),
+        BenchId("add", String(shape)),
         shape,
         # TODO: Pick relevant benchmetric.
         ThroughputMeasure(BenchMetric.elements, size * sizeof[type]() * 3),
@@ -75,7 +75,7 @@ fn bench_add[
             == input0_ptr_host.load[width=nelts](i)
             + input1_ptr_host.load[width=nelts](i)
         ).reduce_and():
-            raise Error("mismatch at flattened idx " + str(i))
+            raise Error("mismatch at flattened idx " + String(i))
 
     _ = input0_ptr
     _ = input1_ptr

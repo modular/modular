@@ -92,7 +92,8 @@ fn bench_layer_norm_gpu[
 
     b.bench_function[bench_fn](
         BenchId(
-            "layer_norm", input_id=fn_name + "/" + str(type) + "/" + str(shape)
+            "layer_norm",
+            input_id=fn_name + "/" + String(type) + "/" + String(shape),
         ),
     )
 
@@ -173,7 +174,8 @@ fn bench_rms_norm_gpu[
 
     b.bench_function[bench_fn](
         BenchId(
-            "rms_norm", input_id=fn_name + "/" + str(type) + "/" + str(shape)
+            "rms_norm",
+            input_id=fn_name + "/" + String(type) + "/" + String(shape),
         ),
     )
 

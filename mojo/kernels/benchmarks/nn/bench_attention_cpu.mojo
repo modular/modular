@@ -29,13 +29,13 @@ struct AttentionSpec(Stringable):
     fn __str__(self) -> String:
         return (
             "batch_size="
-            + str(self.batch_size)
+            + String(self.batch_size)
             + ",seq_len="
-            + str(self.seq_len)
+            + String(self.seq_len)
             + ",kv_seq_len="
-            + str(self.kv_seq_len)
+            + String(self.kv_seq_len)
             + ",depth_dim="
-            + str(self.depth_dim)
+            + String(self.depth_dim)
         )
 
 
@@ -115,7 +115,7 @@ def bench_attention[type: DType](mut m: Bench, spec: AttentionSpec):
         # Fallback to dispatch with a dynamic shape.
         b.iter[iter_fn[Dim()]]()
 
-    m.bench_function[flash_bench_fn](BenchId("flash", str(spec)))
+    m.bench_function[flash_bench_fn](BenchId("flash", String(spec)))
 
     _ = q
     _ = k

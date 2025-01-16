@@ -57,7 +57,7 @@ fn bench_matmul_spec(mut m: Bench, spec: MatmulSpec) raises:
     m.bench_with_input[
         MatmulSpec[spec.static_info], bench_matmul[spec.static_info]
     ](
-        BenchId("matmul", str(spec)),
+        BenchId("matmul", String(spec)),
         spec,
         # TODO: Pick relevant benchmetric
         ThroughputMeasure(BenchMetric.elements, spec.flops()),
@@ -155,19 +155,19 @@ struct MatmulSpec[static_info: MatmulSpecStatic](Stringable):
     fn __str__(self) -> String:
         return (
             "m="
-            + str(self.m)
+            + String(self.m)
             + ";n="
-            + str(self.n)
+            + String(self.n)
             + ";k="
-            + str(self.k)
+            + String(self.k)
             + ";b_packed="
-            + str(Self.static_info.b_packed)
+            + String(Self.static_info.b_packed)
             + ";a_type="
-            + str(Self.static_info.a_type)
+            + String(Self.static_info.a_type)
             + ";b_type="
-            + str(Self.static_info.b_type)
+            + String(Self.static_info.b_type)
             + ";c_type="
-            + str(Self.static_info.c_type)
+            + String(Self.static_info.c_type)
         )
 
     fn flops(self) -> Int:

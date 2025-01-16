@@ -74,7 +74,7 @@ fn bench_vec_add(
         b.iter_custom[kernel_launch](context)
 
     b.bench_function[bench_func](
-        BenchId("vec_add", input_id="block_dim=" + str(block_dim)),
+        BenchId("vec_add", input_id="block_dim=" + String(block_dim)),
         ThroughputMeasure(BenchMetric.flops, length),
     )
     context.synchronize()

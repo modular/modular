@@ -10,7 +10,7 @@ fn get_sample():
     # alias num_stages = [@stages]
     # alias shape = [@shape]
     # var x = [@$x]
-    # print(str(dtype), num_stages)
+    # print(String(dtype), num_stages)
     pass
 
 

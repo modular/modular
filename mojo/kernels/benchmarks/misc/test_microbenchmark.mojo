@@ -79,11 +79,11 @@ struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
     fn __str__(self) -> String:
         return (
             "m = "
-            + str(self.m)
+            + String(self.m)
             + ", n = "
-            + str(self.n)
+            + String(self.n)
             + ", k = "
-            + str(self.k)
+            + String(self.k)
         )
 
     fn __del__(owned self):
@@ -163,11 +163,11 @@ struct MatmulTest[a_type: DType, b_type: DType, c_type: DType](Benchmarkable):
     fn __str__(self) -> String:
         return (
             "m = "
-            + str(self.m)
+            + String(self.m)
             + ", n = "
-            + str(self.n)
+            + String(self.n)
             + ", k = "
-            + str(self.k)
+            + String(self.k)
         )
 
     fn __del__(owned self):

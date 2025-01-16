@@ -25,7 +25,7 @@ fn bench_scatter(mut m: Bench, spec: ScatterSpec) raises:
         bench_scatter(b, concrete_spec)
 
     m.bench_with_input[ScatterSpec, bench_scatter_wrapper](
-        BenchId("scatter", str(spec)), spec
+        BenchId("scatter", String(spec)), spec
     )
 
 
@@ -118,15 +118,15 @@ struct ScatterSpec(Stringable):
     fn __str__(self) -> String:
         return (
             "axis="
-            + str(self.axis)
+            + String(self.axis)
             + ";Dim=("
-            + str(self.m1)
+            + String(self.m1)
             + ","
-            + str(self.m2)
+            + String(self.m2)
             + ")("
-            + str(self.n1)
+            + String(self.n1)
             + ","
-            + str(self.n2)
+            + String(self.n2)
             + ")"
         )
 

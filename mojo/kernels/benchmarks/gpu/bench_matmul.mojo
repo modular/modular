@@ -42,23 +42,23 @@ fn _get_run_name[
     shape_b_dim: IndexList[2],
 ) -> String:
     var name = String("vendor_matmul" if use_vendor_blas else "matmul") + "("
-    name += str(type)
+    name += String(type)
     name += ") : "
     # M
-    name += str(shape_c_dim[0])
+    name += String(shape_c_dim[0])
     # N
     name += (
         "_dynamic"
         + " x "
-        + str(shape_c_dim[1]) if shape_c.at[0]().is_dynamic() else " x "
-        + str(shape_c_dim[1])
+        + String(shape_c_dim[1]) if shape_c.at[0]().is_dynamic() else " x "
+        + String(shape_c_dim[1])
     )
     # K
     name += (
         "_dynamic"
         + " x "
-        + str(shape_a_dim[1]) if shape_c.at[1]().is_dynamic() else " x "
-        + str(shape_a_dim[1])
+        + String(shape_a_dim[1]) if shape_c.at[1]().is_dynamic() else " x "
+        + String(shape_a_dim[1])
     )
     name += "_dynamic" if shape_a.at[1]().is_dynamic() else ""
     name += " transpose_b" if transpose_b else ""

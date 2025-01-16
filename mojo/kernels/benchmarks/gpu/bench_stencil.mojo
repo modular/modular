@@ -212,9 +212,9 @@ fn bench_stencil_avg_pool[
     assert_allclose(h_output_ref, h_output)
 
     # Run benchmarks
-    var bench_name = "stencil_avg_pool_" + str(batch_size) + "x" + str(
+    var bench_name = "stencil_avg_pool_" + String(batch_size) + "x" + String(
         input_height
-    ) + "x" + str(input_width) + "x" + str(num_channels)
+    ) + "x" + String(input_width) + "x" + String(num_channels)
     m.bench_function[bench_gpu](
         BenchId(bench_name + "_gpu"),
         ThroughputMeasure(BenchMetric.flops, compute_flops()),
@@ -415,9 +415,9 @@ fn bench_stencil_max_pool[
         )  # One comparison per window element
 
     # Run benchmarks
-    var bench_name = "stencil_max_pool_" + str(batch_size) + "x" + str(
+    var bench_name = "stencil_max_pool_" + String(batch_size) + "x" + String(
         input_height
-    ) + "x" + str(input_width) + "x" + str(num_channels)
+    ) + "x" + String(input_width) + "x" + String(num_channels)
     m.bench_function[bench_gpu](
         BenchId(bench_name + "_gpu"),
         ThroughputMeasure(BenchMetric.flops, compute_flops()),
@@ -626,9 +626,15 @@ fn bench_stencil_avg_pool_padded[
     assert_allclose(h_output_ref, h_output)
 
     # Run benchmarks
-    var bench_name = "stencil_avg_pool_padded_" + str(batch_size) + "x" + str(
-        input_height
-    ) + "x" + str(input_width) + "_pad" + str(pad_h) + "x" + str(pad_w)
+    var bench_name = "stencil_avg_pool_padded_" + String(
+        batch_size
+    ) + "x" + String(input_height) + "x" + String(
+        input_width
+    ) + "_pad" + String(
+        pad_h
+    ) + "x" + String(
+        pad_w
+    )
 
     m.bench_function[bench_gpu](
         BenchId(bench_name + "_gpu"),

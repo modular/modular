@@ -46,7 +46,7 @@ fn bench_concat[
     )
     randn(inputs_host[0].data, size)
     ctx.enqueue_copy_to_device(input0_ptr, inputs_host[0].data)
-    name += str(shape)
+    name += String(shape)
     out_axis += shape[axis]
 
     shape = shapes[1]
@@ -58,12 +58,12 @@ fn bench_concat[
     )
     randn(inputs_host[1].data, size)
     ctx.enqueue_copy_to_device(input1_ptr, inputs_host[1].data)
-    name += str(shape)
+    name += String(shape)
     out_axis += shape[axis]
 
     var out_shape = shapes[0]
     out_shape[axis] = out_axis
-    name += "->" + str(out_shape)
+    name += "->" + String(out_shape)
     var output_ptr = ctx.enqueue_create_buffer[type](
         out_shape.flattened_length()
     )
@@ -109,7 +109,7 @@ fn bench_concat[
                 output_host[rebind[IndexList[rank]](out_coords)]
                 != input[rebind[IndexList[rank]](coords)]
             ):
-                abort("mismatch at coords " + str(out_coords))
+                abort("mismatch at coords " + String(out_coords))
 
         elementwise[check, 1](input.get_shape())
         offset += input.get_shape()[axis]

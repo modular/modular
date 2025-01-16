@@ -185,7 +185,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
         b.iter[bench_fn]()
 
     m.bench_with_input[ConvSpec[spec.static_info], bench_conv_wrapper](
-        BenchId("Conv", str(spec)),
+        BenchId("Conv", String(spec)),
         spec,
         # TODO: Pick relevant benchmetric.
         ThroughputMeasure(BenchMetric.elements, spec.flops()),
@@ -221,13 +221,13 @@ struct ConvSpec[static_info: ConvSpecStatic](Stringable):
     fn __str__(self) -> String:
         # fmt: off
         return (
-            "n=" + str(self.n)
-            + ";input=" + str(self.input_dims)
-            + ";c=" + str(self.c)
-            + ";f=" + str(self.f)
-            + ";filter=" + str(self.filter_dims)
-            + ";stride=" + str(self.stride)
-            + ";padding=" + str(self.pad)
+            "n=" + String(self.n)
+            + ";input=" + String(self.input_dims)
+            + ";c=" + String(self.c)
+            + ";f=" + String(self.f)
+            + ";filter=" + String(self.filter_dims)
+            + ";stride=" + String(self.stride)
+            + ";padding=" + String(self.pad)
         )
         # fmt: on
 

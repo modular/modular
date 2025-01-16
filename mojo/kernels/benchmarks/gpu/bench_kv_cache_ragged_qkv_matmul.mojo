@@ -30,17 +30,17 @@ fn _get_run_name[
     head_dim: Int,
 ](seq_len: Int, batch_size: Int, use_random_lengths: Bool) -> String:
     var name = String("fused_qkv_ragged_matmul") + "("
-    name += str(type)
+    name += String(type)
     name += ") : "
 
     # head_info
-    name += "num_q_heads=" + str(num_q_heads) + ", "
-    name += "num_kv_heads=" + str(num_kv_heads) + ", "
-    name += "head_dim=" + str(head_dim) + " :"
+    name += "num_q_heads=" + String(num_q_heads) + ", "
+    name += "num_kv_heads=" + String(num_kv_heads) + ", "
+    name += "head_dim=" + String(head_dim) + " :"
 
-    name += "batch_size=" + str(batch_size) + ", "
-    name += "seq_len=" + str(seq_len) + ", "
-    name += "use_random_lengths=" + str(use_random_lengths)
+    name += "batch_size=" + String(batch_size) + ", "
+    name += "seq_len=" + String(seq_len) + ", "
+    name += "use_random_lengths=" + String(use_random_lengths)
 
     return name
 

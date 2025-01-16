@@ -24,7 +24,7 @@ fn bench_gather(mut m: Bench, spec: GatherSpec) raises:
         bench_gather(b, concrete_spec)
 
     m.bench_with_input[GatherSpec, bench_gather_wrapper](
-        BenchId("gather", str(spec)), spec
+        BenchId("gather", String(spec)), spec
     )
 
 
@@ -91,15 +91,15 @@ struct GatherSpec(Stringable):
     fn __str__(self) -> String:
         return (
             "axis="
-            + str(self.axis)
+            + String(self.axis)
             + ";Dim=("
-            + str(self.m1)
+            + String(self.m1)
             + ","
-            + str(self.m2)
+            + String(self.m2)
             + ")("
-            + str(self.n1)
+            + String(self.n1)
             + ","
-            + str(self.n2)
+            + String(self.n2)
             + ")"
         )
 

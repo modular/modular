@@ -76,7 +76,7 @@ def bench_unary[
         b.iter[iter_fn]()
 
     m.bench_with_input[Int, bench](
-        BenchId(op_name, str(size)),
+        BenchId(op_name, String(size)),
         size,
         # TODO: Pick relevant benchmetric.
         ThroughputMeasure(BenchMetric.elements, size * sizeof[type]()),
