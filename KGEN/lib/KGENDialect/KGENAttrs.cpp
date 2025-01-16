@@ -630,10 +630,12 @@ SymbolConstantAttr::verifySymbolUses(Operation *module,
     if (fnMetadata)
       fnMetadata = remapper.replace(fnMetadata);
 
-    declSignature = SignatureGeneratorType::getSpecializedGenerator(
-        getParamValues(), [&] { return emitError(loc); }, inputParamTypes,
-        remapper.replace(baseSig.getValues()), baseSig.getArgConventions(),
-        baseSig.getFnEffects(), fnMetadata, genMetadata);
+    auto remappedGenerator = SignatureGeneratorType::get(
+        inputParamTypes, remapper.replace(baseSig.getValues()),
+        baseSig.getArgConventions(), baseSig.getFnEffects(), fnMetadata,
+        genMetadata);
+    declSignature = remappedGenerator.getSpecializedGenerator(
+        getParamValues(), [&] { return emitError(loc); });
   }
   if (!declSignature)
     return failure();

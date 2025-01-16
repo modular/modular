@@ -679,7 +679,7 @@ kgen.func @invalid(%arg0: !kgen.pointer<index> byref_result, %arg1: index) -> !k
 
 kgen.generator @two_params<a, b>() {
   // expected-error @below {{invalid symbol use within this operator}}
-  // expected-error @below {{callee expects 2 parameters but only got 1}}
+  // expected-error @below {{generator type expects 2 parameters but got bindings for 1}}
   kgen.param.declare f: <index, index>() -> () = <@two_params<?>>
   kgen.return
 }
