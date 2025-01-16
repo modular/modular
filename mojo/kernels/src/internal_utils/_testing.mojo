@@ -41,7 +41,7 @@ fn assert_almost_equal[
         testing.assert_almost_equal(
             x[i],
             y[i],
-            msg=msg + " at i=" + str(i),
+            msg=msg + " at i=" + String(i),
             atol=atol,
             rtol=rtol,
             equal_nan=equal_nan,
@@ -64,7 +64,7 @@ fn assert_almost_equal(
         testing.assert_almost_equal(
             x.data[i],
             y.data[i],
-            msg=msg + " at " + str(x.get_nd_index(i)),
+            msg=msg + " at " + String(x.get_nd_index(i)),
             atol=atol,
             rtol=rtol,
             equal_nan=equal_nan,
@@ -133,7 +133,7 @@ fn assert_equal(
         testing.assert_equal(
             x.data[i],
             y.data[i],
-            msg=msg + " at " + str(x.get_nd_index(i)),
+            msg=msg + " at " + String(x.get_nd_index(i)),
             location=location.or_else(__call_location()),
         )
 
@@ -201,7 +201,10 @@ fn _assert_with_measure_impl[
     var t = threshold.or_else(sqrt_eps)
     if m > t:
         raise _assert_cmp_error["`left > right`, left = measure"](
-            str(m), str(t), msg=msg, loc=location.or_else(__call_location())
+            String(m),
+            String(t),
+            msg=msg,
+            loc=location.or_else(__call_location()),
         )
 
 
