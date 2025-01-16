@@ -379,7 +379,7 @@ fn _index_tensor_impl[
             ](output.get_shape())
     else:
         debug_assert(
-            bool(ctx), "Must provide DeviceContext if executing on GPU."
+            Bool(ctx), "Must provide DeviceContext if executing on GPU."
         )
         var cuda_ctx = ctx.value()
         if use_simd:
