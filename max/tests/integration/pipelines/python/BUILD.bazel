@@ -150,6 +150,7 @@ modular_py_test(
         "//KGEN:CompilerRT",
         "@llvm-project//compiler-rt:orc_rt",
     ],
+    gpu_constraints = ["//:has_gpu"],
     tags = [
         "gpu",
         "huggingface",

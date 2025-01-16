@@ -94,6 +94,7 @@ lit_tests(
     env = {
         "MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false",
     },
+    gpu_constraints = ["//:has_gpu"],
     mojo_deps = [
         "//SDK/lib/API/mojo/max/max",
         "//open-source/mojo/stdlib/stdlib",

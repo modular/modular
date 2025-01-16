@@ -151,6 +151,7 @@ modular_py_test(
         "MODULAR_PATH": ".",
         "GRAPH_TESTDATA": "SDK/test/API/graph/python/pytests/testdata",
     },
+    gpu_constraints = ["//:has_gpu"],
     tags = [
         "gpu",
         "no-mypy",  # TODO: fix and remove
@@ -195,6 +196,7 @@ modular_py_test(
         "MODULAR_PATH": ".",
         "GRAPH_TESTDATA": "SDK/test/API/graph/python/pytests/testdata",
     },
+    gpu_constraints = ["//:has_gpu"],
     tags = ["multi-gpu"],
     target_compatible_with = select({
         # TODO: Sanitizer libs aren't available when python loads pybind shared libs

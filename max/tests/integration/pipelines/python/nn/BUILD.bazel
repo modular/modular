@@ -108,6 +108,7 @@ modular_py_test(
         "//Support/tools/system-info",
         "@llvm-project//compiler-rt:orc_rt",
     ],
+    gpu_constraints = ["//:has_gpu"],
     tags = [
         "gpu",
     ],
@@ -150,6 +151,7 @@ modular_py_test(
         "//Support/tools/system-info",
         "@llvm-project//compiler-rt:orc_rt",
     ],
+    gpu_constraints = ["//:has_gpu"],
     tags = [
         "multi-gpu",
         "no-mypy",  # TODO: Fix and remove
@@ -193,6 +195,7 @@ modular_py_test(
     env = {
         "BAZEL": "true",
     },
+    gpu_constraints = ["//:has_gpu"],
     tags = [
         "gpu",
         # FIXME: KERN-1469

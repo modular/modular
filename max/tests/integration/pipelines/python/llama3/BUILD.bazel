@@ -166,6 +166,7 @@ modular_py_test(
             "SDK/integration-test/pipelines/python/llama3/testdata"
         ),
     },
+    gpu_constraints = ["//:has_gpu"],
     tags = [
         "A100",
         "gpu",

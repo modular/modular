@@ -52,6 +52,7 @@ modular_py_test(
         "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/llama3/testdata",
         "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/gpu-query)",
     },
+    gpu_constraints = ["//:has_gpu"],
     tags = [
         "gpu",
         "requires-network",
