@@ -437,14 +437,17 @@ struct Dog(Stringable, Representable, Writable):
     var name: String
     var age: Int
 
-    fn __repr__(self) -> String:
-        return "Dog(name=" + repr(self.name) + ", age=" + repr(self.age) + ")"
+    # Allows the type to be written into any `Writer`
+    fn write_to[W: Writer](self, mut writer: W) -> None:
+        writer.write("Dog(", self.name, ", ", self.age, ")")
 
+    # Construct and return a `String` using the previous method
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W) -> None:
-        writer.write("Dog(", self.name, ", ", self.age, ")")
+    # Alternative full representation when calling `repr`
+    fn __repr__(self) -> String:
+        return String("Dog(name=", repr(self.name)", age=", repr(self.age), ")")
 
 var dog = Dog("Rex", 5)
 print(repr(dog))

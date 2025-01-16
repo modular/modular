@@ -1486,6 +1486,22 @@ def test_reserve():
     assert_equal(s._buffer.capacity, 1)
 
 
+def test_variadic_ctors():
+    var s = String("message", 42, 42.2, True, sep=", ")
+    assert_equal(s, "message, 42, 42.2, True")
+
+    var s2 = String.write("message", 42, 42.2, True, sep=", ")
+    assert_equal(s2, "message, 42, 42.2, True")
+
+    fn forward_variadic_pack[
+        *Ts: Writable,
+    ](*args: *Ts) -> String:
+        return String(args)
+
+    var s3 = forward_variadic_pack(1, ", ", 2.0, ", ", "three")
+    assert_equal(s3, "1, 2.0, three")
+
+
 def main():
     test_constructors()
     test_copy()
@@ -1538,3 +1554,4 @@ def main():
     test_center()
     test_float_conversion()
     test_slice_contains()
+    test_variadic_ctors()

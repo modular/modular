@@ -164,7 +164,7 @@ struct UInt(Indexer, _HashableWithHasher):
         Returns:
             The string representation of this UInt.
         """
-        return String.write("UInt(", String(self), ")")
+        return String("UInt(", String(self), ")")
 
     fn __hash__(self) -> UInt:
         """Hash the UInt using builtin hash.

@@ -340,6 +340,33 @@ what we publish.
 
 - A new `LinkedList` type has been added to the standard library.
 
+- The `String.write` static method has moved to a `String` constructor, and
+  is now buffered. Instead of doing:
+
+  ```mojo
+  var msg = "my message " + String(x) + " " + String(y) + " " + String(z)
+  ```
+
+  Which reallocates the `String` you should do:
+
+  ```mojo
+  var msg = String("my message", x, y, z, sep=" ")
+  ```
+
+  Which is cleaner, and buffers to the stack so the `String` is allocated only
+  once.
+
+- You can now pass any `Writer` to `write_buffered`:
+
+  ```mojo
+  from utils.write import write_buffered
+
+  var string = String("existing string")
+  write_buffered(string, 42, 42.4, True, sep=" ")
+  ```
+
+  This writes to a buffer on the stack before reallocating the `String`.
+
 ### Tooling changes
 
 - mblack (aka `mojo format`) no longer formats non-mojo files. This prevents

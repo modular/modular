@@ -414,7 +414,7 @@ struct StringRef(
         Returns:
             The String representation of the StringRef.
         """
-        return String.write("StringRef(", repr(String(self)), ")")
+        return String("StringRef(", repr(String(self)), ")")
 
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):

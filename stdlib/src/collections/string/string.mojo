@@ -100,7 +100,7 @@ fn chr(c: Int) -> String:
     if not char_opt:
         # TODO: Raise ValueError instead.
         return abort[String](
-            String.write("chr(", c, ") is not a valid Unicode codepoint")
+            String("chr(", c, ") is not a valid Unicode codepoint")
         )
 
     # SAFETY: We just checked that `char` is present.
@@ -609,6 +609,74 @@ struct String(
         self = value.__str__()
 
     @no_inline
+    fn __init__[
+        *Ts: Writable
+    ](out self, *args: *Ts, sep: StaticString = "", end: StaticString = ""):
+        """
+        Construct a string by concatenating a sequence of Writable arguments.
+
+        Args:
+            args: A sequence of Writable arguments.
+            sep: The separator used between elements.
+            end: The String to write after printing the elements.
+
+        Parameters:
+            Ts: The types of the arguments to format. Each type must be satisfy
+                `Writable`.
+
+        Examples:
+
+        Construct a String from several `Writable` arguments:
+
+        ```mojo
+        var string = String(1, 2.0, "three", sep=", ")
+        print(string) # "1, 2.0, three"
+        ```
+        .
+        """
+        self = String()
+        write_buffered(self, args, sep=sep, end=end)
+
+    @staticmethod
+    @no_inline
+    fn __init__[
+        *Ts: Writable
+    ](
+        out self,
+        args: VariadicPack[_, Writable, *Ts],
+        sep: StaticString = "",
+        end: StaticString = "",
+    ):
+        """
+        Construct a string by passing a variadic pack.
+
+        Args:
+            args: A VariadicPack of Writable arguments.
+            sep: The separator used between elements.
+            end: The String to write after printing the elements.
+
+        Parameters:
+            Ts: The types of the arguments to format. Each type must be satisfy
+                `Writable`.
+
+        Examples:
+
+        ```mojo
+        fn variadic_pack_to_string[
+            *Ts: Writable,
+        ](*args: *Ts) -> String:
+            return String(args)
+
+        string = variadic_pack_to_string(1, ", ", 2.0, ", ", "three")
+        %# from testing import assert_equal
+        %# assert_equal(string, "1, 2.0, three")
+        ```
+        .
+        """
+        self = String()
+        write_buffered(self, args, sep=sep, end=end)
+
+    @no_inline
     fn __init__(out self, value: None):
         """Initialize a `None` type as "None".
 
@@ -717,8 +785,7 @@ struct String(
     fn write[
         *Ts: Writable
     ](*args: *Ts, sep: StaticString = "", end: StaticString = "") -> Self:
-        """
-        Construct a string by concatenating a sequence of Writable arguments.
+        """Construct a string by concatenating a sequence of Writable arguments.
 
         Args:
             args: A sequence of Writable arguments.
@@ -732,57 +799,23 @@ struct String(
         Returns:
             A string formed by formatting the argument sequence.
 
-        Examples:
-
-        Construct a String from several `Writable` arguments:
+        This is used only when reusing the `write_to` method for
+        `__str__` in order to avoid an endless loop recalling
+        the constructor:
 
         ```mojo
-        var string = String.write(1, ", ", 2.0, ", ", "three")
-        print(string) # "1, 2.0, three"
-        %# from testing import assert_equal
-        %# assert_equal(string, "1, 2.0, three")
+        fn write_to[W: Writer](self, mut writer: W):
+            writer.write_bytes(self.as_bytes())
+
+        fn __str__(self) -> String:
+            return String.write(self)
         ```
-        .
-        """
-        var string = String()
-        write_buffered(string, args, sep=sep, end=end)
-        return string^
 
-    @staticmethod
-    @no_inline
-    fn write[
-        *Ts: Writable
-    ](
-        args: VariadicPack[_, Writable, *Ts],
-        sep: StaticString = "",
-        end: StaticString = "",
-    ) -> Self:
-        """
-        Construct a string by passing a variadic pack.
-
-        Args:
-            args: A VariadicPack of Writable arguments.
-            sep: The separator used between elements.
-            end: The String to write after printing the elements.
-
-        Parameters:
-            Ts: The types of the arguments to format. Each type must be satisfy
-                `Writable`.
-
-        Returns:
-            A string formed by formatting the VariadicPack.
-
-        Examples:
+        Otherwise you can use the `String` constructor directly without calling
+        the `String.write` static method:
 
         ```mojo
-        fn variadic_pack_to_string[
-            *Ts: Writable,
-        ](*args: *Ts) -> String:
-            return String.write(args)
-
-        string = variadic_pack_to_string(1, ", ", 2.0, ", ", "three")
-        %# from testing import assert_equal
-        %# assert_equal(string, "1, 2.0, three")
+        var msg = String("my message", 42, 42.2, True)
         ```
         .
         """
