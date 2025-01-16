@@ -42,6 +42,62 @@ what we publish.
     var y : Int = x[idx]     # Just works!
   ```
 
+- You can now overload positional arguments with a keyword-only argument, and
+  keyword-only arguments with different names:
+
+  ```mojo
+    struct OverloadedKwArgs:
+        var val: Int
+
+        fn __init__(out self, single: Int):
+            self.val = single
+
+        fn __init__(out self, *, double: Int):
+            self.val = double * 2
+
+        fn __init__(out self, *, triple: Int):
+            self.val = triple * 3
+
+        fn main():
+            OverloadedKwArgs(1)        # val=1
+            OverloadedKwArgs(double=1) # val=2
+            OverloadedKwArgs(triple=2) # val=3
+  ```
+
+  This also works with indexing operations:
+
+  ```mojo
+  struct OverloadedKwArgs:
+    var vals: List[Int]
+
+    fn __init__(out self):
+        self.vals = List[Int](0, 1, 2, 3, 4)
+
+    fn __getitem__(self, idx: Int) -> Int:
+        return self.vals[idx]
+
+    fn __getitem__(self, *, idx2: Int) -> Int:
+        return self.vals[idx2 * 2]
+
+    fn __setitem__(mut self, idx: Int, val: Int):
+        self.vals[idx] = val
+
+    fn __setitem__(mut self, val: Int, *, idx2: Int):
+          self.vals[idx2 * 2] = val
+
+
+  fn main():
+      var x = OverloadedKwArgs()
+      print(x[1])       # 1
+      print(x[idx2=1])  # 2
+
+      x[1] = 42
+      x[idx2=1] = 84
+
+      print(x[1])       # 42
+      print(x[idx2=1])  # 84
+  ```
+
 ### Standard library changes
 
 - The `int` function to construct an `Int` has been deprecated, this was a
