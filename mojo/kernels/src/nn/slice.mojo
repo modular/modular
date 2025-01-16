@@ -152,9 +152,9 @@ fn copy_to_slice[
         raise Error(
             "Shape mismatch for mo.mutable.store.slice: expected 'slice'"
             " operand to have shape: "
-            + str(expected_shape)
+            + String(expected_shape)
             + " but got: "
-            + str(in_slice.get_shape())
+            + String(in_slice.get_shape())
         )
 
     var buffer_slice_view = slice_as_view(buffer, start, end, step)

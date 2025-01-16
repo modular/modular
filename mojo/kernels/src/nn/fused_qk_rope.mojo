@@ -99,9 +99,9 @@ fn rope_k_cache[
     constrained[
         cache_type == type,
         "Expected cache type "
-        + str(cache_type)
+        + String(cache_type)
         + " to match input type "
-        + str(type),
+        + String(type),
     ]()
 
     var val: SIMD[type, width]

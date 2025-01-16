@@ -401,8 +401,8 @@ fn pretty_print(
             " {:>8.3f} (ms), ratio: {:>4.2f}x {}"
         ).format(
             name,
-            str(rounds),
-            str(size),
+            String(rounds),
+            String(size),
             time_rec,
             time_iter,
             ratio,

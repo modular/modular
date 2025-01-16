@@ -1004,9 +1004,9 @@ fn _rms_norm_impl[
     if gamma.dynamic_shape[0] != shape[rank - 1]:
         raise Error(
             "Gamma size "
-            + str(gamma.dynamic_shape[0])
+            + String(gamma.dynamic_shape[0])
             + " does not match dimension of reduction "
-            + str(shape[rank - 1])
+            + String(shape[rank - 1])
             + "."
         )
 

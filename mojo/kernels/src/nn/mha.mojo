@@ -3696,9 +3696,9 @@ fn mha_splitk_reduce[
     constrained[
         num_threads == WARP_SIZE,
         "num_threads: "
-        + str(num_threads)
+        + String(num_threads)
         + " should be equal to the warp_size:"
-        + str(WARP_SIZE),
+        + String(WARP_SIZE),
     ]()
     debug_assert(
         block_dim.x == WARP_SIZE, "block_dim.x should be equal to the warp_size"

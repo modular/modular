@@ -2913,7 +2913,7 @@ fn conv_nhwc_direct[
             trace_arg("input", input),
             trace_arg("filter", filter),
             trace_arg("output", output),
-            "group=" + str(num_groups),
+            "group=" + String(num_groups),
             "stride=" + String("x").join(stride),
             "padding_h=" + String("x").join(pad_h),
             "padding_w=" + String("x").join(pad_w),

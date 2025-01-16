@@ -1305,7 +1305,7 @@ fn conv_transposed[
             trace_arg("input", input),
             trace_arg("filter", filter),
             trace_arg("output", output),
-            "group=" + str(1),
+            "group=" + String(1),
             "stride=" + String("x").join(stride),
             "padding_d=" + String("x").join(Index(0, 0)),
             "padding_h=" + String("x").join(pad_h),

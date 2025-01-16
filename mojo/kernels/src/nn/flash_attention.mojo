@@ -1180,9 +1180,9 @@ fn _flash_attention_kv_cache[
     constrained[
         cache_type == type,
         "Expected cache type ("
-        + str(cache_type)
+        + String(cache_type)
         + ") to match input type ("
-        + str(type)
+        + String(type)
         + ")",
     ]()
 
