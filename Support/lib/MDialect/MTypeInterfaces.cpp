@@ -33,7 +33,7 @@ struct IntegerLayout
 };
 
 struct FloatLayout
-    : public DataLayoutInterface::ExternalModel<FloatLayout, FloatType> {
+    : public DataLayoutInterface::ExternalModel<FloatLayout, Type> {
   /// The size of an integer type is its width in bytes.
   std::optional<int64_t> getTypeSize(Type type, TargetInfoAttr target) const {
     return cast<FloatType>(type).getWidth() / CHAR_BIT;
