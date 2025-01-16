@@ -157,8 +157,6 @@ struct LinkedList[ElementType: WritableCollectionElement]:
         var curr = self._head
         while curr:
             var next = curr[].next
-            curr[].prev = __type_of(self._head)()
-            curr[].next = __type_of(self._tail)()
             curr.destroy_pointee()
             curr.free()
             curr = next
@@ -217,6 +215,8 @@ struct LinkedList[ElementType: WritableCollectionElement]:
         var value = elem[].value
         self._tail = elem[].prev
         self._size -= 1
+        if self._size == 0:
+            self._head = __type_of(self._head)()
         return value^
 
     fn copy(self) -> Self:
