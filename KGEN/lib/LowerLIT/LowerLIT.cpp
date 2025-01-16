@@ -652,18 +652,18 @@ lowerAttributesAndTypes(Operation *op,
                                        newParams);
     }
 
-    // Remove singleton parameter values from bind_signature.
-    if (auto paramOperator = dyn_cast<ParamOperatorAttr>(attr)) {
-      if (paramOperator.getOpcode() == POC::BindSignature) {
-        SmallVector<TypedAttr> newOperands;
-        for (auto op : paramOperator.getOperands()) {
-          auto adjusted = cast<TypedAttr>(replacer.replace(op));
-          if (!singletonTypeHelper.isSingletonType(adjusted.getType()))
-            newOperands.push_back(adjusted);
-        }
-        if (newOperands.size() != paramOperator.getNumOperands())
-          return ParamOperatorAttr::get(paramOperator.getOpcode(), newOperands);
+    // Remove singleton parameter values from BindParamsAttr.
+    if (auto bindParams = dyn_cast<BindParamsAttr>(attr)) {
+      SmallVector<TypedAttr> newOperands;
+      for (auto op : bindParams.getParamValues()) {
+        auto adjusted = cast<TypedAttr>(replacer.replace(op));
+        if (!singletonTypeHelper.isSingletonType(adjusted.getType()))
+          newOperands.push_back(adjusted);
       }
+      if (newOperands.size() != bindParams.getParamValues().size())
+        return BindParamsAttr::get(
+            cast<TypedAttr>(replacer.replace(bindParams.getGenerator())),
+            newOperands);
     }
 
     return attr;

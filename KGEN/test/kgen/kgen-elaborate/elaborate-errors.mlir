@@ -104,7 +104,7 @@ kgen.generator @fail_if_zero<value>() -> index {
 }
 
 kgen.generator @unused_param_declare() {
-  kgen.param.declare unused = <apply(:() -> index bind_signature(:<index>() -> index @fail_if_zero, 0))>
+  kgen.param.declare unused = <apply(:() -> index bind_params(:<index>() -> index @fail_if_zero, 0))>
   kgen.return
 }
 

@@ -228,9 +228,9 @@ kgen.generator @takeUnary
   %one = kgen.param.constant: scalar<si64> = <1>
   %0 = pop.cast %one : !pop.scalar<si64> to !pop.scalar<dt>
   %1 = kgen.call_param[(!pop.scalar<dt>) -> !pop.scalar<dt>:
-    bind_signature(:<dtype>(!pop.scalar<*(0,0)>) -> !pop.scalar<*(0,0)> fn, dt)](%0)
+    bind_params(:<dtype>(!pop.scalar<*(0,0)>) -> !pop.scalar<*(0,0)> fn, dt)](%0)
   %2 = kgen.call_param[(!pop.scalar<dt>) -> !pop.scalar<dt>:
-    bind_signature(:<dtype>(!pop.scalar<*(0,0)>) -> !pop.scalar<*(0,0)> fn, dt)](%1)
+    bind_params(:<dtype>(!pop.scalar<*(0,0)>) -> !pop.scalar<*(0,0)> fn, dt)](%1)
   kgen.return
 }
 
@@ -253,7 +253,7 @@ kgen.generator @takeParametricBinary
   %0 = pop.cast %one : !pop.scalar<si64> to !pop.scalar<dt>
 
   %1 = kgen.call_param[(!pop.scalar<dt>, !pop.scalar<dt>) -> !pop.scalar<dt>:
-    bind_signature(:<index, dtype>(!pop.simd<*(0,0),*(0,1)>, !pop.simd<*(0,0),*(0,1)>) -> !pop.simd<*(0,0),*(0,1)> fn, 1, dt)](%0, %0)
+    bind_params(:<index, dtype>(!pop.simd<*(0,0),*(0,1)>, !pop.simd<*(0,0),*(0,1)>) -> !pop.simd<*(0,0),*(0,1)> fn, 1, dt)](%0, %0)
   kgen.return
 }
 
@@ -301,7 +301,7 @@ kgen.generator @takeParametricBinary
 
   // CHECK: kgen.call @"parametricBinOp,ty=scalar<f32>"
   %1 = kgen.call_param[(!pop.scalar<dt>, !pop.scalar<dt>) -> !pop.scalar<dt>:
-    bind_signature(:<type>(!kgen.param<*(0,0)>, !kgen.param<*(0,0)>) -> !kgen.param<*(0,0)>
+    bind_params(:<type>(!kgen.param<*(0,0)>, !kgen.param<*(0,0)>) -> !kgen.param<*(0,0)>
       fn, !pop.scalar<dt>)](%0, %0)
   kgen.return
 }
@@ -360,7 +360,7 @@ kgen.generator @elaborateFnWithContextualType() -> index {
 kgen.generator @elaborateFnWithContextualType2() -> (index, index) {
   // Show we can bind a generic signature to a concrete one.
   kgen.param.declare boundFn: ()->index =
-    <bind_signature(:<type, ()->!kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> @takeFnContextualType,
+    <bind_params(:<type, ()->!kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> @takeFnContextualType,
                     index, @sillyFn)>
 
   // CHECK-NEXT: %0 = kgen.call @"takeFnContextualType,ty=index,fn=_sillyFn"()
@@ -369,7 +369,7 @@ kgen.generator @elaborateFnWithContextualType2() -> (index, index) {
   kgen.param.declare fn: <type, ()->!kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> = <@takeFnContextualType>
 
   kgen.param.declare boundFn2: ()->index =
-    <bind_signature(:<type, ()->!kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> fn,
+    <bind_params(:<type, ()->!kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> fn,
                     index, @sillyFn)>
 
   // CHECK-NEXT: %1 = kgen.call @"takeFnContextualType,ty=index,fn=_sillyFn"()
@@ -491,11 +491,11 @@ kgen.generator @param_add<A, B>() -> index {
   kgen.return %0 : index
 }
 
-// CHECK-LABEL: kgen.func @partial_bind_signature_region
-kgen.generator @partial_bind_signature_region() -> index {
-  kgen.param.declare BoundFn: <index>() -> index = <bind_signature(:<index, index>() -> index @param_add, 1, ?)>
+// CHECK-LABEL: kgen.func @partial_bind_params_region
+kgen.generator @partial_bind_params_region() -> index {
+  kgen.param.declare BoundFn: <index>() -> index = <bind_params(:<index, index>() -> index @param_add, 1, ?)>
   // CHECK-NEXT: %0 = kgen.call @"param_add,A=1,B=2"() : () -> index
-  %0 = kgen.call_param[() -> index: bind_signature(:<index>() -> index BoundFn, 2)]()
+  %0 = kgen.call_param[() -> index: bind_params(:<index>() -> index BoundFn, 2)]()
   // CHECK-NEXT: kgen.return %0
   kgen.return %0 : index
 }
@@ -508,12 +508,12 @@ kgen.generator @param_add2<A, B, C>() -> index {
   kgen.return %0 : index
 }
 
-// CHECK-LABEL: kgen.func @partial_bind_signature_region_2
-kgen.generator @partial_bind_signature_region_2() -> index {
-  kgen.param.declare BoundFn: <index, index>() -> index = <bind_signature(:<index, index, index>() -> index @param_add2, 1, ?, ?)>
-  kgen.param.declare BoundFn2: <index>() -> index = <bind_signature(:<index, index>() -> index BoundFn, ?, 3)>
+// CHECK-LABEL: kgen.func @partial_bind_params_region_2
+kgen.generator @partial_bind_params_region_2() -> index {
+  kgen.param.declare BoundFn: <index, index>() -> index = <bind_params(:<index, index, index>() -> index @param_add2, 1, ?, ?)>
+  kgen.param.declare BoundFn2: <index>() -> index = <bind_params(:<index, index>() -> index BoundFn, ?, 3)>
   // CHECK-NEXT: %0 = kgen.call @"param_add2,A=1,B=2,C=3"() : () -> index
-  %0 = kgen.call_param[() -> index: bind_signature(:<index>() -> index BoundFn2, 2)]()
+  %0 = kgen.call_param[() -> index: bind_params(:<index>() -> index BoundFn2, 2)]()
   // CHECK-NEXT: kgen.return %0
   kgen.return %0 : index
 }
@@ -1128,7 +1128,7 @@ kgen.generator @foo_k<N, M>() capturing -> !pop.scalar<index> {
 kgen.generator @foo<N>(%arg0: !pop.scalar<index>) {
   kgen.param.declare k: <index>() capturing -> !pop.scalar<index> = <@foo_k<N, ?>>
   // CHECK: kgen.create_closure[() capturing -> !pop.scalar<index>: @"foo_k,N=5,M=3"]()
-  %1 = kgen.create_closure[() capturing -> !pop.scalar<index>: bind_signature(:<index>() capturing -> !pop.scalar<index> k, 3)]()
+  %1 = kgen.create_closure[() capturing -> !pop.scalar<index>: bind_params(:<index>() capturing -> !pop.scalar<index> k, 3)]()
   kgen.return
 }
 
@@ -1322,7 +1322,7 @@ kgen.generator @params<a, b>() -> (index, index) {
 }
 
 kgen.generator @func_param<f: <index, index>() -> (index, index)>() -> index {
-  kgen.param.declare bind: () -> (index, index) = <bind_signature(:<index, index>() -> (index, index) f, 7, 9)>
+  kgen.param.declare bind: () -> (index, index) = <bind_params(:<index, index>() -> (index, index) f, 7, 9)>
   %0, %1 = kgen.call_param[() -> (index, index): bind]()
   %2 = index.add %0, %1
   kgen.return %2 : index
@@ -1550,7 +1550,7 @@ kgen.generator @generic_call<T: type>(%arg0: !kgen.param<T>) -> index{
 
   kgen.param.declare parametric: <index>() -> ()  = <get_vtable_entry(T, "parametric")>
   // CHECK: kgen.call @"parametricTraitMethod,param=2"
-  kgen.call_param[() -> (): bind_signature(:<index>() -> () parametric, 2)]()
+  kgen.call_param[() -> (): bind_params(:<index>() -> () parametric, 2)]()
 
   kgen.param.declare bound: () -> () = <get_vtable_entry(T, "bound")>
   // CHECK: kgen.call @"parametricTraitMethod,param=1"
@@ -1558,7 +1558,7 @@ kgen.generator @generic_call<T: type>(%arg0: !kgen.param<T>) -> index{
 
   kgen.param.declare partial: <index>() -> () = <get_vtable_entry(T, "partial")>
   // CHECK: kgen.call @"twoParameters,parent=11,func=42"
-  kgen.call_param[() -> (): bind_signature(:<index>() -> () partial, 11)]()
+  kgen.call_param[() -> (): bind_params(:<index>() -> () partial, 11)]()
 
   kgen.return %result : index
 }
@@ -1602,7 +1602,7 @@ kgen.generator @self_ref_apply<param>(%arg0: !pop.array<apply(:()->index @sizeof
 kgen.generator export @param_alias(%arg0: !pop.array<apply(:()->index @sizeof<:type array<2, index>>), i8>) {
   kgen.param.declare fn: <index>(!pop.array<apply(:()->index @sizeof<:type array<*(0,0), index>>), i8>) -> () = <@self_ref_apply>
   // CHECK: call @"self_ref_apply,param=2"(%arg0)
-  kgen.call_param[(!pop.array<apply(:()->index @sizeof<:type array<2, index>>), i8>) -> (): bind_signature(:<index>(!pop.array<apply(:()->index @sizeof<:type array<*(0,0), index>>), i8>) -> () fn, 2)](%arg0)
+  kgen.call_param[(!pop.array<apply(:()->index @sizeof<:type array<2, index>>), i8>) -> (): bind_params(:<index>(!pop.array<apply(:()->index @sizeof<:type array<*(0,0), index>>), i8>) -> () fn, 2)](%arg0)
   kgen.return
 }
 

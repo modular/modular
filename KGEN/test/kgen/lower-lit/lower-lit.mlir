@@ -117,8 +117,8 @@ lit.struct.decl @StructWithNestedFn<a_param> {
     lit.fn paramNestedFunc<c_param>() {
       kgen.return
     }
-    // CHECK: kgen.param.declare c: () -> () = <bind_signature(:<index>() -> () paramNestedFunc, 2)>
-    kgen.param.declare c: !lit.generator<() -> ()> = <bind_signature(:!lit.generator<<"c_param": index>() -> ()> paramNestedFunc, 2)>
+    // CHECK: kgen.param.declare c: () -> () = <bind_params(:<index>() -> () paramNestedFunc, 2)>
+    kgen.param.declare c: !lit.generator<() -> ()> = <bind_params(:!lit.generator<<"c_param": index>() -> ()> paramNestedFunc, 2)>
 
     %idx0_0 = index.constant 0
     kgen.return %idx0_0 : index

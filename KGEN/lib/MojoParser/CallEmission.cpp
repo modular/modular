@@ -967,13 +967,10 @@ CValue ExprEmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
   // inferred parameters must be a PValue.
   auto boundCalleeRV = calleeRV;
   if (!fitness.getParamBindings().empty()) {
-    SmallVector<TypedAttr> bindOperands;
     auto calleePVal = calleeRV.getIfPValue();
     assert(calleePVal && "cannot call a parameterized function indirectly");
-    bindOperands.push_back(calleePVal);
-    llvm::append_range(bindOperands, fitness.getParamBindings());
-    boundCalleeRV =
-        PValue(ParamOperatorAttr::get(POC::BindSignature, bindOperands));
+    boundCalleeRV = PValue(
+        BindParamsAttr::get(calleePVal, fitness.getParamBindings().getValue()));
   }
 
   // If the selected candidate needs some register operands emitted to memory,

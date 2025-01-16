@@ -138,7 +138,7 @@ fn generic_trait_fn[T: Trait](x: T):
     x.overloaded(__mlir_attr.`"trait" : !kgen.string`)
 
     # CHECK: lit.call[!lit.generator<[1]("self": {{[^)]*}} read_mem)
-    # CHECK-SAME: bind_signature(:!lit.generator<<"x": index>[1](
+    # CHECK-SAME: bind_params(:!lit.generator<<"x": index>[1](
     # CHECK-SAME: get_vtable_entry(:{{.*}} T, "parametric"), 1)
     x.parametric[`1`]()
 

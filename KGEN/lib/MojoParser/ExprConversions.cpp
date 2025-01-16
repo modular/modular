@@ -294,12 +294,9 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
   // Bind the function parameters declared on the thunk to the callee. This does
   // NOT include the capture parameters -- the callee has already been rebound
   // to them when it was declared on the parameter list.
-  SmallVector<TypedAttr> bindOperands{ParamDeclRefAttr::get(calleeDecl)};
-  llvm::append_range(
-      bindOperands,
+  TypedAttr calleeParam = BindParamsAttr::get(
+      ParamDeclRefAttr::get(calleeDecl),
       ArrayRef(paramValues).take_back(actual.getInputParamTypes().size()));
-  TypedAttr calleeParam =
-      ParamOperatorAttr::get(POC::BindSignature, bindOperands);
   assert(cast<LITSignatureGeneratorType>(calleeParam.getType())
              .getInputParamTypes()
              .size() == 0);

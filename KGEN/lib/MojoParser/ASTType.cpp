@@ -500,6 +500,15 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     }
     return;
   }
+  if (auto bindParams = dyn_cast<BindParamsAttr>(param)) {
+    printDemangledParam(os, bindParams.getGenerator(), diagShared);
+    os << '[';
+    llvm::interleaveComma(
+        bindParams.getParamValues(), os,
+        [&](TypedAttr value) { printDemangledParam(os, value, diagShared); });
+    os << ']';
+    return;
+  }
   if (auto symbolCst = dyn_cast<SymbolConstantAttr>(param)) {
     printSymbol(os, symbolCst.getSymbol(), diagShared, /*isFunc=*/true);
     if (!symbolCst.getParamValues().empty()) {
@@ -549,14 +558,6 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
       os << ')';
       return;
     }
-    case POC::BindSignature:
-      printDemangledParam(os, operands.front(), diagShared);
-      os << '[';
-      llvm::interleaveComma(operands.drop_front(), os, [&](TypedAttr value) {
-        printDemangledParam(os, value, diagShared);
-      });
-      os << ']';
-      return;
     case POC::Cond:
       printDemangledParam(os, operands[1], diagShared);
       os << " if ";

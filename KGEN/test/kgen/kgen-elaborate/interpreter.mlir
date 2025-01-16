@@ -97,12 +97,12 @@ kgen.generator @return_it<A>() -> index {
 // CHECK-LABEL: kgen.func @call_it
 kgen.generator @call_it() {
   // CHECK-NEXT: <1>
-  kgen.param.constant = <apply(:() -> index bind_signature(:<index>() -> index @return_it, 1))>
+  kgen.param.constant = <apply(:() -> index bind_params(:<index>() -> index @return_it, 1))>
   // CHECK-NEXT: <2>
-  kgen.param.constant = <apply(:() -> index bind_signature(:<index>() -> index @return_it, 2))>
+  kgen.param.constant = <apply(:() -> index bind_params(:<index>() -> index @return_it, 2))>
   // CHECK-NEXT: <3>
-  kgen.param.constant = <apply(:() -> index bind_signature(:<index>() -> index @return_it,
-    apply(:() -> index bind_signature(:<index>() -> index @return_it, 3))))>
+  kgen.param.constant = <apply(:() -> index bind_params(:<index>() -> index @return_it,
+    apply(:() -> index bind_params(:<index>() -> index @return_it, 3))))>
   kgen.return
 }
 
@@ -184,7 +184,7 @@ kgen.generator @rebind_value<dtype: dtype>(%a: !pop.scalar<ui8>) -> !pop.scalar<
 kgen.generator @rebind_it() {
   // CHECK-NEXT: constant: scalar<ui8> = <4>
   kgen.param.declare Fn: (!pop.scalar<ui8>) -> !pop.scalar<ui8> =
-    <bind_signature(:<dtype>(!pop.scalar<ui8>) -> !pop.scalar<*(0,0)> @rebind_value, ui8)>
+    <bind_params(:<dtype>(!pop.scalar<ui8>) -> !pop.scalar<*(0,0)> @rebind_value, ui8)>
   kgen.param.constant: scalar<ui8> = <apply(:(!pop.scalar<ui8>) -> !pop.scalar<ui8> Fn, <4>)>
   kgen.return
 }
@@ -217,7 +217,7 @@ kgen.generator @unbox_in_result_sig() {
     !pop.array<apply(:(!kgen.struct<(index)>) -> index @unbox,
                      apply(:(index) -> !kgen.struct<(index)> @box, a)),
                index>) -> ():
-    bind_signature(:<!kgen.struct<(index)>>(
+    bind_params(:<!kgen.struct<(index)>>(
       !pop.array<apply(:(!kgen.struct<(index)>) -> index @unbox, *(0,0)), index>
      ) -> () fn, apply(:(index) -> !kgen.struct<(index)> @box, a))]()
   kgen.return
@@ -625,7 +625,7 @@ kgen.generator @embedMemRefInSymbol<dst_layout: pointer<index>>() -> index {
   kgen.param.apply callIt = [(!kgen.pointer<<dtype>(index) -> index>) -> !kgen.generator<<dtype>(index) -> index>: @call_it](store_to_mem(symbolWithMemRef))
 
   // The call_param of the loaded symbol results in a read of the symbol with the unmapped pointer symbol
-  %1 = kgen.call_param[(index) -> index: bind_signature(:<dtype>(index) -> index callIt, index)](%0)
+  %1 = kgen.call_param[(index) -> index: bind_params(:<dtype>(index) -> index callIt, index)](%0)
   kgen.return %1 : index
 }
 

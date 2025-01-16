@@ -863,27 +863,6 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
                         TargetType::get(p.getContext())))
       return failure();
     return success();
-  case (uint32_t)POC::BindSignature: {
-    auto sigGen = dyn_cast_or_null<SignatureGeneratorType>(type);
-    if (!sigGen)
-      return p.emitError(
-          p.getCurrentLocation(),
-          "expected a signature generator type for 'bind_signature'");
-
-    if (parseParamValue(p, operands.emplace_back(), sigGen))
-      return failure();
-    // Parse each operand, inferring its type from the signature type. Bound
-    // parameters are allowed to refine the types of subsequent parameters, so
-    // specialize the types as we go.
-    ParameterEvaluator evaluator;
-    for (Type type : sigGen.getInputParamTypes()) {
-      if (p.parseComma() || parseParamValue(p, operands.emplace_back(),
-                                            evaluator.getReboundType(type)))
-        return failure();
-      evaluator.addInputValue(operands.back());
-    }
-    return success();
-  }
   case (uint32_t)POC::Apply: {
     auto sigGen = dyn_cast_or_null<SignatureGeneratorType>(type);
     if (!sigGen)
@@ -1149,7 +1128,8 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
           return failure();
         if (p.parseRParen())
           return failure();
-        value = BindParamsAttr::get(generator, paramValues);
+        value =
+            BindParamsAttr::get(p.getContext(), generator, paramValues, type);
         return success();
       }
 
@@ -1280,7 +1260,6 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
     break;
 
   case POC::Apply:
-  case POC::BindSignature:
     // Print the signature operand with a type. Print all other operands without
     // types.
     printColonTypeOrIndexPrefix(p, operands.front().getType());

@@ -1434,7 +1434,7 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
 
     # CHECK: lit.alias.decl *"thinref{{.*}}": !lit.generator<<"b_param": index>() -> !kgen.none> = <*"nestedFunction[__mlir_type.index]()">
     alias thinref = nestedFunction
-    # CHECK: call[{{.*}}: bind_signature(:!lit.generator<<"b_param": index>() -> !kgen.none> *"nestedFunction[__mlir_type.index]()", 2)]()
+    # CHECK: call[{{.*}}: bind_params(:!lit.generator<<"b_param": index>() -> !kgen.none> *"nestedFunction[__mlir_type.index]()", 2)]()
     nestedFunction[Int(2).value]()
 
     var value = 0
@@ -1457,7 +1457,7 @@ struct SomeParamStruct[c_param: Int]:
 
         # CHECK: lit.alias.decl *"reff{{.*}}": !lit.generator<<"b_param": !Int>() -> !kgen.none> = <*"nestedFunction[{{.*}}Int]()">
         alias reff = nestedFunction
-        # CHECK: call[{{.*}}: bind_signature(:!lit.generator<<"b_param": !Int>() -> !kgen.none> *"nestedFunction[{{.*}}Int]()", {{.*}}2{{.*}})]()
+        # CHECK: call[{{.*}}: bind_params(:!lit.generator<<"b_param": !Int>() -> !kgen.none> *"nestedFunction[{{.*}}Int]()", {{.*}}2{{.*}})]()
         nestedFunction[2]()
 
 

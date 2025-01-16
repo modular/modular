@@ -855,10 +855,7 @@ TypedAttr ParamBindings::getBoundConstAttrFor(FnOp funcOp, StringRef baseName,
   if (!newBindings)
     return {};
 
-  SmallVector<TypedAttr> bindSigOperands;
-  bindSigOperands.push_back(fnRef);
-  llvm::append_range(bindSigOperands, newBindings);
-  return ParamOperatorAttr::get(POC::BindSignature, bindSigOperands);
+  return BindParamsAttr::get(fnRef, newBindings);
 }
 
 void ParamBindings::dump() const { llvm::errs() << parameters << "\n"; }
