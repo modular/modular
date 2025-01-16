@@ -745,7 +745,7 @@ struct String(
         .
         """
         var string = String()
-        write_buffered[buffer_size=4096](string, args, sep=sep, end=end)
+        write_buffered(string, args, sep=sep, end=end)
         return string^
 
     @staticmethod
@@ -787,7 +787,7 @@ struct String(
         .
         """
         var string = String()
-        write_buffered[buffer_size=4096](string, args, sep=sep, end=end)
+        write_buffered(string, args, sep=sep, end=end)
         return string^
 
     @staticmethod

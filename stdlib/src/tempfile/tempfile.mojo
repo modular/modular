@@ -415,7 +415,7 @@ struct NamedTemporaryFile:
             args: Sequence of arguments to write to this Writer.
         """
         var file = FileDescriptor(self._file_handle._get_raw_fd())
-        write_buffered[buffer_size=4096](file, args)
+        write_buffered(file, args)
 
     @always_inline
     fn write_bytes(mut self, bytes: Span[Byte, _]):

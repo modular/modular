@@ -315,7 +315,7 @@ struct _WriteBufferStack[origin: MutableOrigin, W: Writer, //, capacity: Int](
 fn write_buffered[
     W: Writer, //,
     *Ts: Writable,
-    buffer_size: Int,
+    buffer_size: Int = 4096,
 ](
     mut writer: W,
     args: VariadicPack[_, Writable, *Ts],
@@ -328,11 +328,11 @@ fn write_buffered[
     the buffer would overflow it writes to the `writer` passed in. You can also
     add seperators between the args, and end characters.
 
-
     Parameters:
         W: The type of the `Writer` to write to.
         Ts: The types of each arg to write. Each type must satisfy `Writable`.
-        buffer_size: How many bytes to write to a buffer before writing out.
+        buffer_size: How many bytes to write to a buffer before writing out to
+            the `writer` (default `4096`).
 
     Args:
         writer: The `Writer` to write to.
@@ -349,8 +349,13 @@ fn write_buffered[
     fn print_err_buffered[*Ts: Writable](
         *args: *Ts, sep: StringLiteral, end: StringLiteral
     ):
-        var stdout = sys.stderr
-        write_buffered[buffer_size=4096](stdout, args, sep=sep, end=end)
+        var stderr = sys.stderr
+        write_buffered(stdout, args, sep=sep, end=end)
+
+        # Buffer before allocating a string
+        var string = String()
+        write_buffered(string, args, sep=sep, end=end)
+
 
     print_err_buffered(3, "total", "args", sep=",", end="[end]")
     ```
@@ -363,11 +368,11 @@ fn write_buffered[
 
     @parameter
     if is_nvidia_gpu():
-        # Stack space is very small on GPU due to many threads, so use heap
         # Count the total length of bytes to allocate only once
         var arg_bytes = _ArgBytes()
         write_args(arg_bytes, args, sep=sep, end=end)
 
+        # Stack space is very small on GPU due to many threads, so use heap
         var buffer = _WriteBufferHeap(arg_bytes.size + 1)
         write_args(buffer, args, sep=sep, end=end)
         buffer.data[buffer.pos] = 0

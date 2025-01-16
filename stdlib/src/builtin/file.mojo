@@ -424,7 +424,7 @@ struct FileHandle:
             args: Sequence of arguments to write to this Writer.
         """
         var file = FileDescriptor(self._get_raw_fd())
-        write_buffered[buffer_size=4096](file, args)
+        write_buffered(file, args)
 
     fn _write[
         address_space: AddressSpace
