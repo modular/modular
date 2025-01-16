@@ -819,6 +819,27 @@ kgen.generator @partial_bind_index<c>() {
   kgen.return
 }
 
+// CHECK-LABEL: @bindParams
+kgen.generator @bindParams<c, d: type>() {
+  kgen.param.declare.region fn = <a, b: type>(%arg0: !pop.array<a, b>) {
+    kgen.return
+  }
+
+  // CHECK: declare bind0: <type>(!pop.array<c, *(0,0)>) -> () =
+  // CHECK-SAME: <bind_params(:<index, type>(!pop.array<*(0,0), *(0,1)>) -> () fn, c, ?)>
+  kgen.param.declare bind0: <type>(!pop.array<c, *(0,0)>) -> () =
+    <#kgen.bind_params<:!kgen.generator<<index, type>(!pop.array<*(0,0), *(0,1)>) -> ()> fn, c, ?>>
+  // CHECK: declare bind1: <index>(!pop.array<*(0,0), d>) -> () =
+  // CHECK-SAME: <bind_params(:<index, type>(!pop.array<*(0,0), *(0,1)>) -> () fn, ?, d)>
+  kgen.param.declare bind1: <index>(!pop.array<*(0,0), d>) -> () =
+    <#kgen.bind_params<:!kgen.generator<<index, type>(!pop.array<*(0,0), *(0,1)>) -> ()> fn, ?, d>>
+  // CHECK: declare bind_all: (!pop.array<c, d>) -> () =
+  // CHECK-SAME: <bind_params(:<index, type>(!pop.array<*(0,0), *(0,1)>) -> () fn, c, d)>
+  kgen.param.declare bind_all: (!pop.array<c, d>) -> () =
+    <#kgen.bind_params<:!kgen.generator<<index, type>(!pop.array<*(0,0), *(0,1)>) -> ()> fn, c, d>>
+  kgen.return
+}
+
 kgen.generator @result_slot(%arg1: index, %arg0: !kgen.pointer<index> byref_result) -> !kgen.none {
   %0 = kgen.param.constant: none = <#kgen.none>
   kgen.return %0 : !kgen.none

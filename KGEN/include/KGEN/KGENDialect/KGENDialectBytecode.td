@@ -164,6 +164,12 @@ def WrappedTypeConstantAttr : DialectAttribute<(attr
   ConcreteAttribute<"VTableAttr">:$vTable
 )>;
 
+def BindParamsAttr : DialectAttribute<(attr
+  ConcreteAttribute<"TypedAttr">:$generator,
+  TypedAttrArray:$paramValues,
+  Type:$type
+)>;
+
 def TypeConstantRefAttr : DialectAttribute<(attr
   ConcreteAttribute<"SymbolRefAttr">:$symbol,
   TypedAttrArray:$paramValues,
@@ -301,6 +307,7 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     VTableAttr,
     VTableEntryAttr,
     WrappedTypeConstantAttr,
+    BindParamsAttr,
     TypeConstantRefAttr,
     DTypeConstantAttr,
     IntLiteralAttr,

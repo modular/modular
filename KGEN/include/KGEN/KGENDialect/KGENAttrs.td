@@ -447,6 +447,53 @@ def KGEN_UpcastAttr : KGEN_ExprAttr<"Upcast", "upcast"> {
 }
 
 //===----------------------------------------------------------------------===//
+// BindParams
+//===----------------------------------------------------------------------===//
+
+def KGEN_BindParamsAttr : KGEN_ExprAttr<"BindParams", "bind_params"> {
+  let summary = "Bind params onto an expression with generator type.";
+  let description = [{
+    The `#kgen.bind_params` attribute is used to bind parameters onto a
+    generator parameter (a parameter whose type is some GeneratorType).
+
+    Partial & out-of-order parameter binding is allowed by specifying the
+    unbound positions with UnboundAttr.
+
+    Example:
+
+    Given
+    ```mlir
+      @SIMD : !kgen.generator<<dtype, index> AnyStruct<@SIMD<*(0,0), *(0,1)>>>
+    ```
+
+    This attr binds the index parameter but not the dtype
+    ```mlir
+    #kgen.bind_param<@SIMD<?, 2>>
+      : !kgen.generator<<dtype> AnyStruct<@SIMD<*(0,0), 2>>>
+    ```
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$generator,
+    OptionalArrayRefParameter<"TypedAttr">:$paramValues,
+    AttributeSelfTypeParameter<"", "Type">:$type
+  );
+  let assemblyFormat = "`<` custom<BindParams>($generator, $paramValues) `>`";
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    AttrBuilder<(ins
+       "TypedAttr":$generator, "ArrayRef<TypedAttr>":$paramValues,
+       "Type":$type), "", "TypedAttr">,
+    // Builder that derives the result type from the input paramValues.
+    AttrBuilderWithInferredContext<(ins
+       "TypedAttr":$generator, "ArrayRef<TypedAttr>":$paramValues), "",
+       "TypedAttr">
+  ];
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // TypeConstantRefAttr
 //===----------------------------------------------------------------------===//
 

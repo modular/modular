@@ -122,6 +122,12 @@ void printStructDefFields(AsmPrinter &p, ArrayRef<StructDefFieldAttr> fields);
 // Parameter Printing and Parsing
 //===----------------------------------------------------------------------===//
 
+ParseResult parseBindParams(AsmParser &p, TypedAttr &generator,
+                            SmallVectorImpl<TypedAttr> &paramValues,
+                            Type preParsedGeneratorType = {});
+void printBindParams(AsmPrinter &p, TypedAttr generator,
+                     ArrayRef<TypedAttr> paramValues);
+
 /// Print a parameter name correctly, using a double quoted syntax if it
 /// conflicts with an MLIR or KGEN keyword, or a bareword otherwise. When
 /// printing a parameter name in a reference, the name must be escaped to
