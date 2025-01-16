@@ -13,8 +13,12 @@ from sys import (
     alignof,
     bitwidthof,
     has_nvidia_gpu_accelerator,
+    has_amd_gpu_accelerator,
     simdwidthof,
     sizeof,
+    is_amd_gpu,
+    is_nvidia_gpu,
+    env_get_bool,
 )
 from sys.intrinsics import _type_is_eq
 from bit import next_power_of_two
@@ -55,7 +59,7 @@ from layout.layout_tensor import (
 )
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
-from layout.swizzle import make_ldmatrix_swizzle, make_swizzle
+from layout.swizzle import make_ldmatrix_swizzle, make_swizzle, Swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb, static
 from layout.tensor_core import (
     get_accum_type,
@@ -160,7 +164,7 @@ struct MHAConfig:
                 + self.warp_scratch_smem_size()
             )
 
-        if self.num_warps_n() > 1:
+        if self.num_warps_n() > 1 or has_amd_gpu_accelerator():
             num_smem_elements += self.p_smem_size()
 
         return num_smem_elements
@@ -187,7 +191,8 @@ struct MHAConfig:
         # those that depend on `depth`.
         # Currently, all are `OptionalReg` for consistency.
         self.num_queries_per_block = num_queries_per_block.or_else(
-            32 if type is DType.float32 else 64
+            32 if type
+            is DType.float32 else (64 if has_nvidia_gpu_accelerator() else 32)
         )
         self.num_keys_per_block = num_keys_per_block.or_else(depth)
         self.BK = BK.or_else(16 if type is DType.float32 else 32)
@@ -276,6 +281,13 @@ fn get_mha_decoding_num_partitions[
             4,
         )
     return 1
+
+
+fn flash_attention_hw_supported() -> Bool:
+    return (
+        has_nvidia_gpu_accelerator()
+        or env_get_bool["FLASH_ATTENTION_HW_SUPPORTED", False]()
+    )
 
 
 # Entry point for flash_attention with batch_size > 1.
@@ -395,9 +407,7 @@ fn flash_attention[
         # fmt: off
         alias head_depth_known = q.shape.all_known[rank-2, rank]()
         # Current impl has only been verified for depth = 128.
-        alias flash_attention_applicable = has_nvidia_gpu_accelerator() \
-            and head_depth_known \
-            and q.shape.get[rank-1]() == 128
+        alias flash_attention_applicable = flash_attention_hw_supported() and head_depth_known and q.shape.get[rank-1]() == 128
         # fmt: on
         alias q_half_float = q.type in (DType.float16, DType.bfloat16)
 
@@ -635,7 +645,7 @@ fn flash_attention_dispatch[
             var num_partitions_value: Int
 
             @parameter
-            if _is_paged:
+            if _is_paged or is_amd_gpu():
                 # TODO(KERN-1358) Support num_partitions > 1 for paged attn.
                 num_partitions_value = 1
             else:
@@ -644,6 +654,7 @@ fn flash_attention_dispatch[
                 ](
                     batch_size, max_cache_valid_length, ctx
                 )
+
             if num_partitions_value == 1:
                 ctx.enqueue_function(
                     func,
@@ -849,7 +860,8 @@ fn flash_attention[
     # fmt: off
     alias head_depth_known = q.shape.all_known[2, 4]() and k.shape.has_value[2]()
     # Current impl has only been verified for depth = 128.
-    alias flash_attention_applicable = has_nvidia_gpu_accelerator() and head_depth_known and q.shape.get[3]() == 128
+    alias flash_attention_applicable = flash_attention_hw_supported() and head_depth_known and q.shape.get[3]() == 128
+
     alias q_half_float = q.type in (DType.float16, DType.bfloat16)
     alias kv_num_heads = k.shape.get[2]()
     # fmt: on
@@ -923,6 +935,42 @@ fn _copy_frag_to_smem[
     warp_x: UInt32,
     warp_y: UInt32,
 ):
+    @parameter
+    if is_nvidia_gpu():
+        _copy_frag_to_smem_nvidia[
+            BM, BN, BK, WM, WN, MMA_M, MMA_N, frag_simd_width
+        ](p_smem_iter, p_reg_tile, warp_x, warp_y)
+    else:
+        _copy_frag_to_smem_amd[
+            BM, BN, BK, WM, WN, MMA_M, MMA_N, frag_simd_width
+        ](p_smem_iter, p_reg_tile, warp_x, warp_y)
+
+
+@always_inline
+fn _copy_frag_to_smem_nvidia[
+    BM: UInt,
+    BN: UInt,
+    BK: UInt,
+    WM: UInt,
+    WN: UInt,
+    MMA_M: UInt,
+    MMA_N: UInt,
+    frag_simd_width: UInt,
+    *,
+    type0: DType,
+    layout0: Layout,
+    type1: DType,
+    layout1: Layout,
+](
+    p_smem_iter: LayoutTensorIter[
+        type0, layout0, address_space = AddressSpace.SHARED, **_
+    ],
+    p_reg_tile: LayoutTensor[
+        type1, layout1, address_space = AddressSpace.LOCAL
+    ],
+    warp_x: UInt32,
+    warp_y: UInt32,
+):
     """Copy p fragments to shared memory.
 
     Logically P has shape BM x BN. It's sharded across threads in 16x8 mma layout.
@@ -934,7 +982,6 @@ fn _copy_frag_to_smem[
     alias simd_width = simdwidthof[p_smem_tile.dtype]()
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // MMA_N
-    # alias BN = p_smem_tile.dim[1]()
 
     # This tile is used for offset computation because 1st mma output is organized
     # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
@@ -985,6 +1032,81 @@ fn _copy_frag_to_smem[
                 )[]
                 alias align = alignof[SIMD[p_smem_iter.type, frag_simd_width]]()
                 tile_BMxBK.ptr.store[alignment=align](offset_BMxBK, vec)
+
+
+@always_inline
+fn _copy_frag_to_smem_amd[
+    BM: UInt,
+    BN: UInt,
+    BK: UInt,
+    WM: UInt,
+    WN: UInt,
+    MMA_M: UInt,
+    MMA_N: UInt,
+    frag_simd_width: UInt,
+    *,
+    type0: DType,
+    layout0: Layout,
+    type1: DType,
+    layout1: Layout,
+](
+    p_smem_iter: LayoutTensorIter[
+        type0, layout0, address_space = AddressSpace.SHARED, **_
+    ],
+    p_reg_tile: LayoutTensor[
+        type1, layout1, address_space = AddressSpace.LOCAL
+    ],
+    warp_x: UInt32,
+    warp_y: UInt32,
+):
+    """Copy p fragments to shared memory.
+    Logically P has shape BM x BN. It's sharded across threads in 16x16 mma layout.
+    The BM x BN matrix is divided to BM x BK tiles, each tile is CONTIGUOUS for
+    the 2nd mma. This function maps each fragment to the right BM x BK tile.
+    """
+    alias simd_width = 1
+    alias num_m_mmas = WM // MMA_M
+    alias num_n_mmas = WN // MMA_N
+
+    # This tile is used for offset computation because 1st mma output is organized
+    # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
+    var p_smem_tile = LayoutTensor[
+        p_smem_iter.type,
+        Layout.row_major(BM, BN),
+        address_space = AddressSpace.SHARED,
+    ](p_smem_iter.ptr)
+
+    var p_smem_warp_tile = p_smem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
+    var p_reg_vecs = p_reg_tile.vectorize[1, frag_simd_width]()
+
+    @parameter
+    for n_mma in range(Int(num_n_mmas)):
+
+        @parameter
+        for m_mma in range(Int(num_m_mmas)):
+            var p_smem_mma_tile = p_smem_warp_tile.tile[MMA_M, MMA_N](
+                m_mma, n_mma
+            ).vectorize[frag_simd_width, 1]()
+            var p_smem_frag = p_smem_mma_tile.distribute[
+                Layout.row_major(4, 16)
+            ](lane_id())
+            var frag_offset = p_smem_frag.distance(p_smem_tile)
+
+            @parameter
+            for i in range(Int(frag_simd_width)):
+                alias offset_in_frag = BN * i
+                # Translate offset in BM x BN matrix to the right BM x BK tile.
+                var offset_BMxBN = frag_offset + offset_in_frag
+                var offset_BMxBK = (offset_BMxBN // BN) * BK + offset_BMxBN % BK
+
+                var vec = p_reg_vecs[n_mma * num_m_mmas + m_mma, 0][i].cast[
+                    p_smem_tile.dtype
+                ]()
+                # Grep the right BMxBK tile and store the casted vec.
+                var tile_BMxBK = p_smem_iter.next_unsafe(
+                    Int((offset_BMxBN % BN) // BK)
+                )[]
+                tile_BMxBK.ptr.store(offset_BMxBK, vec)
 
 
 # Entry point for mha with batch_size > 1.
@@ -1967,7 +2089,7 @@ fn mha_single_batch_pipelined[
     alias accum_type = get_accum_type[q_type]()
     alias frag_size = get_fragment_size[mma_shape]()
     alias p_frag_size = frag_size[2]
-    alias p_frag_simdwidth = p_frag_size // 2
+    alias p_frag_simdwidth = p_frag_size // 2 if is_nvidia_gpu() else p_frag_size
 
     var p_reg_tile = LayoutTensor[
         accum_type,
@@ -1987,9 +2109,11 @@ fn mha_single_batch_pipelined[
     var rowsum = stack_allocation[WM, accum_type, alignment=row_alignment]()
 
     @parameter
-    for i in range(0, Int(WM), 2):
-        rowmax.store(i, SIMD[accum_type, 2](min_or_neg_inf[accum_type]()))
-        rowsum.store(i, SIMD[accum_type, 2](0))
+    for i in range(0, Int(WM), p_frag_simdwidth):
+        rowmax.store(
+            i, SIMD[accum_type, p_frag_simdwidth](min_or_neg_inf[accum_type]())
+        )
+        rowsum.store(i, SIMD[accum_type, p_frag_simdwidth](0))
 
     # Shared memory for P = Q * K^t
     # Only use BN/BK tiles. Setting circular so that the prefetch in matmul
@@ -2005,12 +2129,12 @@ fn mha_single_batch_pipelined[
     # Scratch shared memory for reduction across warps.
     var warp_scratch = LayoutTensor[
         accum_type,
-        Layout.row_major(2 * num_warps_n, BM),
+        Layout.row_major(p_frag_simdwidth * num_warps_n, BM),
         address_space = AddressSpace.SHARED,
     ](
-        (p_smem + (BM * BN if num_warps_n > 1 else 0)).bitcast[
-            Scalar[accum_type]
-        ]()
+        (
+            p_smem + (BM * BN if (num_warps_n > 1 or is_amd_gpu()) else 0)
+        ).bitcast[Scalar[accum_type]]()
     )
 
     # Mask global memory iterator.
@@ -2110,6 +2234,7 @@ fn mha_single_batch_pipelined[
                 num_threads,
                 num_pipeline_stages,
                 True,  # transpose_b
+                swizzle_a = is_nvidia_gpu(),
                 continue_prefetch_b=True,
                 b_next_smem_layout = Layout.row_major(BK, BN),
                 next_op_b_iter_masked = __type_of(v_gmem_iter).masked,
@@ -2137,6 +2262,7 @@ fn mha_single_batch_pipelined[
                 num_threads,
                 num_pipeline_stages,
                 True,  # transpose_b
+                swizzle_a = is_nvidia_gpu(),
                 continue_prefetch_b=True,
                 b_next_smem_layout = Layout.row_major(BK, BN),
                 next_op_b_iter_masked = __type_of(v_gmem_iter).masked,
@@ -2174,32 +2300,55 @@ fn mha_single_batch_pipelined[
                     var mask_frag_col = mask_warp_col + n_mma * MMA_N
 
                     # Offset to current thread's fragment
-                    mask_frag_row += lane // (MMA_N // p_frag_simdwidth)
-                    mask_frag_col += lane * p_frag_simdwidth % MMA_N
+                    @parameter
+                    if is_nvidia_gpu():
+                        mask_frag_row += lane // (MMA_N // p_frag_simdwidth)
+                        mask_frag_col += lane * p_frag_simdwidth % MMA_N
+                    else:
+                        mask_frag_row += (lane // MMA_N) * p_frag_simdwidth
+                        mask_frag_col += lane % MMA_N
 
                     alias mask_align = alignof[
                         SIMD[mask_type, p_frag_simdwidth]
                     ]()
 
                     @parameter
-                    for i in range(2):
+                    for i in range(2 if is_nvidia_gpu() else 1):
                         # The intermediate result is logically BM x BN.
                         # The overall mask tensor is seqlen x seqlen, some remainder tiles
                         # may not fit in BM x BN.
+                        var mask_frag_row_i = mask_frag_row + (
+                            i * MMA_M // 2 if is_nvidia_gpu() else 0
+                        )
                         if (
-                            mask_frag_row + i * MMA_M // 2 < seq_len
+                            mask_frag_row_i < seq_len
                             and mask_frag_col < num_keys
                         ):
-                            var mask_vec = (
-                                mask_tile_ptr
-                                + Int(
-                                    (mask_frag_row + i * MMA_M // 2)
-                                    * mask_tensor_col
-                                    + mask_frag_col
-                                )
-                            ).load[
-                                width=p_frag_simdwidth, alignment=mask_align
-                            ]()
+                            var mask_vec = SIMD[mask_type, p_frag_simdwidth]()
+
+                            @parameter
+                            if is_nvidia_gpu():
+                                mask_vec = (
+                                    mask_tile_ptr
+                                    + Int(
+                                        (mask_frag_row_i) * mask_tensor_col
+                                        + mask_frag_col
+                                    )
+                                ).load[
+                                    width=p_frag_simdwidth, alignment=mask_align
+                                ]()
+                            else:
+
+                                @parameter
+                                for j in range(p_frag_simdwidth):
+                                    mask_vec[j] = (
+                                        mask_tile_ptr
+                                        + Int(
+                                            (mask_frag_row_i + j)
+                                            * mask_tensor_col
+                                            + mask_frag_col
+                                        )
+                                    ).load[width=1, alignment=mask_align]()
 
                             p_reg_vec2[mma_id, i] = (
                                 p_reg_vec2[mma_id, i] * scale.cast[accum_type]()
@@ -2235,32 +2384,59 @@ fn mha_single_batch_pipelined[
                         var mask_frag_row = mask_warp_row + m_mma * MMA_M
                         var mask_frag_col = mask_warp_col + n_mma * MMA_N
 
-                        # Offset to current thread's fragment
-                        mask_frag_row += lane // (MMA_N // p_frag_simdwidth)
-                        mask_frag_col += lane * p_frag_simdwidth % MMA_N
+                        @parameter
+                        if is_nvidia_gpu():
+                            mask_frag_row += lane // (MMA_N // p_frag_simdwidth)
+                            mask_frag_col += lane * p_frag_simdwidth % MMA_N
+                        else:
+                            mask_frag_row += (lane // MMA_N) * p_frag_simdwidth
+                            mask_frag_col += lane % MMA_N
 
                         @parameter
-                        for i in range(2):
+                        for i in range(2 if is_nvidia_gpu() else 1):
                             # The row in score matrix of shape seq_len x num_keys.
                             # Mask col is score col since we don't partition in col.
-                            var score_row = mask_block_row + mask_frag_row + i * MMA_M // 2
+                            var score_row = mask_block_row + mask_frag_row + (
+                                i * MMA_M // 2 if is_nvidia_gpu() else 0
+                            )
                             var score_col = mask_frag_col
 
                             @parameter
                             if masked:
-                                p_reg_vec2[mma_id, i] = mask.mask(
-                                    IndexList[
-                                        4,
-                                        element_bitwidth=32,
-                                        unsigned=True,
-                                    ](
-                                        Int(block_idx.z),
-                                        Int(block_idx.y),
-                                        Int(score_row),
-                                        Int(score_col),
-                                    ),
-                                    p_reg_vec2[mma_id, i] * scale_log2e,
-                                )
+
+                                @parameter
+                                if is_nvidia_gpu():
+                                    p_reg_vec2[mma_id, i] = mask.mask(
+                                        IndexList[
+                                            4,
+                                            element_bitwidth=32,
+                                            unsigned=True,
+                                        ](
+                                            Int(block_idx.z),
+                                            Int(block_idx.y),
+                                            Int(score_row),
+                                            Int(score_col),
+                                        ),
+                                        p_reg_vec2[mma_id, i] * scale_log2e,
+                                    )
+                                else:
+
+                                    @parameter
+                                    for j in range(p_frag_simdwidth):
+                                        p_reg_vec2[mma_id, i][j] = mask.mask(
+                                            IndexList[
+                                                4,
+                                                element_bitwidth=32,
+                                                unsigned=True,
+                                            ](
+                                                Int(block_idx.z),
+                                                Int(block_idx.y),
+                                                Int(score_row + j),
+                                                Int(score_col),
+                                            ),
+                                            p_reg_vec2[mma_id, i][j]
+                                            * scale_log2e,
+                                        )
                             else:
                                 p_reg_vec2[mma_id, i] = (
                                     p_reg_vec2[mma_id, i] * scale_log2e
@@ -2287,15 +2463,42 @@ fn mha_single_batch_pipelined[
                                 )
 
                             if not not_last_iter:
-                                p_reg_vec2[mma_id, i] = _kernel_mask(
-                                    IndexList[
-                                        2, element_bitwidth=32, unsigned=True
-                                    ](Int(score_row), Int(score_col)),
-                                    IndexList[
-                                        2, element_bitwidth=32, unsigned=True
-                                    ](seq_len, num_keys),
-                                    p_reg_vec2[mma_id, i],
-                                )
+
+                                @parameter
+                                if is_nvidia_gpu():
+                                    p_reg_vec2[mma_id, i] = _kernel_mask(
+                                        IndexList[
+                                            2,
+                                            element_bitwidth=32,
+                                            unsigned=True,
+                                        ](Int(score_row), Int(score_col)),
+                                        IndexList[
+                                            2,
+                                            element_bitwidth=32,
+                                            unsigned=True,
+                                        ](seq_len, num_keys),
+                                        p_reg_vec2[mma_id, i],
+                                    )
+                                else:
+
+                                    @parameter
+                                    for j in range(p_frag_simdwidth):
+                                        p_reg_vec2[mma_id, i][j] = _kernel_mask(
+                                            IndexList[
+                                                2,
+                                                element_bitwidth=32,
+                                                unsigned=True,
+                                            ](
+                                                Int(score_row + j),
+                                                Int(score_col),
+                                            ),
+                                            IndexList[
+                                                2,
+                                                element_bitwidth=32,
+                                                unsigned=True,
+                                            ](seq_len, num_keys),
+                                            p_reg_vec2[mma_id, i][j],
+                                        )
 
             unswitch[_apply_mask](
                 mask.status(
@@ -2312,19 +2515,28 @@ fn mha_single_batch_pipelined[
 
         alias reg_layout_by_mma_unit = Layout.row_major(
             2 * num_m_mmas * num_n_mmas, 2
-        )
+        ) if is_nvidia_gpu() else Layout.row_major(num_m_mmas * num_n_mmas, 4)
+
         _online_softmax_iter_for_mma_output[
             accum_type,
             # score layout by mma unit
             # TODO: generalize beyond 16x8 layout
-            Layout.row_major(2 * num_m_mmas, num_n_mmas),
+            Layout.row_major(
+                2 * num_m_mmas, num_n_mmas
+            ) if is_nvidia_gpu() else Layout.row_major(num_m_mmas, num_n_mmas),
             # threads layout by warp
             Layout.row_major(num_warps_m, num_warps_n),
-            Layout.row_major(8, 4),
+            Layout.row_major(8, 4) if is_nvidia_gpu() else Layout.row_major(
+                4, 16
+            ),
             use_exp2=True,
         ](
-            output_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
-            p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
+            output_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[
+                1, p_frag_simdwidth
+            ](),
+            p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[
+                1, p_frag_simdwidth
+            ](),
             warp_scratch.tile[num_warps_n, WM](0, Int(warp_y)),
             rowmax,
             rowsum,
@@ -2336,7 +2548,7 @@ fn mha_single_batch_pipelined[
         ]().bitcast[v_type]()
 
         @parameter
-        if num_warps_n > 1:
+        if num_warps_n > 1 or is_amd_gpu():
             # Pack the per-thread fragments in shared memory for 2nd mma.
             _copy_frag_to_smem[
                 BM, BN, BK, WM, WN, MMA_M, MMA_N, p_frag_simdwidth
@@ -2352,7 +2564,7 @@ fn mha_single_batch_pipelined[
                 num_threads,
                 num_pipeline_stages,
                 False,  # transpose_b
-                swizzle_a=True,
+                swizzle_a = is_nvidia_gpu(),
                 prefetch_init=False,
                 k_group_size = config.k_group_size,
             ](
@@ -2380,7 +2592,7 @@ fn mha_single_batch_pipelined[
                 num_threads,
                 num_pipeline_stages,
                 False,  # transpose_b
-                swizzle_a=False,
+                swizzle_a = is_nvidia_gpu(),
                 static_num_iters = Int(BN // BK),
                 prefetch_init=False,
                 k_group_size = config.k_group_size,
@@ -2396,21 +2608,39 @@ fn mha_single_batch_pipelined[
 
     tile_and_unswitch[loop_over_kvcache, VariadicList[Int](BN)](0, num_keys)
 
-    # Apply softmax denumerator.
     @parameter
-    for m_mma in range(Int(num_m_mmas)):
-        var rowsum_inv0 = recip(rowsum[2 * m_mma])
-        var rowsum_inv1 = recip(rowsum[2 * m_mma + 1])
+    if is_nvidia_gpu():
 
         @parameter
-        for n_mma in range(Int(num_n_mmas)):
+        for m_mma in range(Int(num_m_mmas)):
+            var rowsum_inv0 = recip(rowsum[2 * m_mma])
+            var rowsum_inv1 = recip(rowsum[2 * m_mma + 1])
 
             @parameter
-            for i in range(p_frag_size // 2):
-                output_reg_tile[n_mma * num_m_mmas + m_mma, i] *= rowsum_inv0
-                output_reg_tile[
-                    n_mma * num_m_mmas + m_mma, i + p_frag_size // 2
-                ] *= rowsum_inv1
+            for n_mma in range(Int(num_n_mmas)):
+
+                @parameter
+                for i in range(p_frag_size // 2):
+                    output_reg_tile[
+                        n_mma * num_m_mmas + m_mma, i
+                    ] *= rowsum_inv0
+                    output_reg_tile[
+                        n_mma * num_m_mmas + m_mma, i + p_frag_size // 2
+                    ] *= rowsum_inv1
+    else:
+        # Apply softmax denumerator.
+        @parameter
+        for m_mma in range(Int(num_m_mmas)):
+
+            @parameter
+            for n_mma in range(Int(num_n_mmas)):
+
+                @parameter
+                for i in range(p_frag_size):
+                    var rowsum_inv0 = recip(rowsum[4 * m_mma + i])
+                    output_reg_tile[
+                        n_mma * num_m_mmas + m_mma, i
+                    ] *= rowsum_inv0
 
     alias output_gmem_layout = Layout(
         IntTuple(Int(BM), Int(depth)), IntTuple(Int(num_heads * depth), 1)
@@ -2435,9 +2665,6 @@ fn mha_single_batch_pipelined[
     # Write to global memory.
     @parameter
     if output_type.is_half_float():
-        alias swizzle = make_swizzle[
-            num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
-        ]()
         # Reuse a_smem for c tile in smem
         var accum_smem_tile = LayoutTensor[
             output_type,
@@ -2448,28 +2675,52 @@ fn mha_single_batch_pipelined[
         var accum_smem_warp_tile = accum_smem_tile.tile[WM, WN](
             Int(warp_y), Int(warp_x)
         )
-        copy_local_to_sram[
-            thread_layout = Layout.row_major(8, 4), swizzle=swizzle
-        ](
-            accum_smem_warp_tile.vectorize[1, 2](),
-            output_reg_tile.vectorize[1, 2]().transpose(),
-        )
+
+        @parameter
+        if is_nvidia_gpu():
+            alias swizzle = make_swizzle[
+                num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
+            ]()
+
+            copy_local_to_sram[
+                thread_layout = Layout.row_major(8, 4), swizzle=swizzle
+            ](
+                accum_smem_warp_tile.vectorize[1, 2](),
+                output_reg_tile.vectorize[1, 2]().transpose(),
+            )
+            barrier()
+            copy_sram_to_dram[
+                thread_layout = Layout.row_major(
+                    num_threads * simd_size // depth, depth // simd_size
+                ),
+                swizzle=swizzle,
+            ](
+                output_gmem_tile.vectorize[1, simd_size](),
+                accum_smem_tile.vectorize[1, simd_size](),
+            )
+        else:
+            copy_local_to_sram[thread_layout = Layout.row_major(4, 16)](
+                accum_smem_warp_tile.vectorize[4, 1](),
+                output_reg_tile.vectorize[1, 4](),
+            )
+            barrier()
+            copy_sram_to_dram[
+                thread_layout = Layout.row_major(
+                    num_threads * simd_size // depth, depth // simd_size
+                ),
+            ](
+                output_gmem_tile.vectorize[1, simd_size](),
+                accum_smem_tile.vectorize[1, simd_size](),
+            )
 
         # Guard writing to shared memory.
+
         barrier()
 
         # Vectorized copy from shared to global memory, during which every 2 FP32
         # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
         # vector and stored using 16B store instruction.
-        copy_sram_to_dram[
-            thread_layout = Layout.row_major(
-                num_threads * simd_size // depth, depth // simd_size
-            ),
-            swizzle=swizzle,
-        ](
-            output_gmem_tile.vectorize[1, simd_size](),
-            accum_smem_tile.vectorize[1, simd_size](),
-        )
+
     else:
         copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
             output_gmem_warp_tile.vectorize[1, 2](),
