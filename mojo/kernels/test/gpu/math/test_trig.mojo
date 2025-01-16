@@ -39,7 +39,7 @@ fn run_func[
     assert_almost_equal(
         out_h[0],
         ref_,
-        msg="while testing " + out_prefix + " for the dtype " + str(type),
+        msg="while testing " + out_prefix + " for the dtype " + String(type),
         atol=Scalar[type](1e-2) if type.is_half_float() else Scalar[type](1e-8),
     )
     _ = out

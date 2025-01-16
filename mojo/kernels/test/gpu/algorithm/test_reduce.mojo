@@ -96,10 +96,10 @@ fn fused_reduce_inner_test[
     ctx.synchronize()
 
     for i in range(out_shape.flattened_length()):
-        assert_equal(str(res_host0[i]), str(expected_vals0[i]))
+        assert_equal(String(res_host0[i]), String(expected_vals0[i]))
 
     for i in range(out_shape.flattened_length()):
-        assert_equal(str(res_host1[i]), str(expected_vals1[i]))
+        assert_equal(String(res_host1[i]), String(expected_vals1[i]))
 
     _ = vec_device
     _ = res_device0
@@ -188,7 +188,7 @@ fn reduce_inner_test[
     ctx.enqueue_copy_from_device(res_host, res_device)
 
     for i in range(out_shape.flattened_length()):
-        assert_equal(str(res_host[i]), str(expected_vals[i]))
+        assert_equal(String(res_host[i]), String(expected_vals[i]))
 
     _ = vec_device
     _ = res_device

@@ -54,7 +54,10 @@ fn run_vector_reduction[
     num_parts: Int,
 ](ctx: DeviceContext,) raises:
     print(
-        "== run_semaphore vector reduction kernel => ", str(type), N, num_parts
+        "== run_semaphore vector reduction kernel => ",
+        String(type),
+        N,
+        num_parts,
     )
 
     alias PN = N * num_parts
@@ -147,7 +150,7 @@ fn run_matrix_reduction[
 ](ctx: DeviceContext,) raises:
     print(
         "== run_semaphore matrix reduction kernel => ",
-        str(type),
+        String(type),
         M,
         N,
         num_parts,

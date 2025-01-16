@@ -48,9 +48,9 @@ def execute_flash_attention[
     debug_assert(
         batch_size < max_batch_size,
         "batch_size passed to unit test ("
-        + str(batch_size)
+        + String(batch_size)
         + ") is larger than configured max_batch_size ("
-        + str(max_batch_size)
+        + String(max_batch_size)
         + ")",
     )
 
@@ -292,12 +292,12 @@ def execute_flash_attention[
             @parameter
             if (config.block_k() % (mma_shape[2] << blf)) != 0:
                 continue
-            var config_str = "ampere_" + str(type) + "_"
-            config_str += str(kv_params.head_size) + "x"
-            config_str += str(32 if type is DType.float32 else 64) + "_"
-            config_str += str(BK)
-            config_str += "x" + str(nps)
-            assert_equal(str(config), config_str)
+            var config_str = "ampere_" + String(type) + "_"
+            config_str += String(kv_params.head_size) + "x"
+            config_str += String(32 if type is DType.float32 else 64) + "_"
+            config_str += String(BK)
+            config_str += "x" + String(nps)
+            assert_equal(String(config), config_str)
             flash_attention[config=config](
                 test_output_device.tensor,
                 q_device.tensor,

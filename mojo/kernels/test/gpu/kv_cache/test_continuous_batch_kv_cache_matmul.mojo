@@ -59,9 +59,9 @@ def execute_fused_qkv_matmul[
     debug_assert(
         batch_size < num_blocks,
         "batch_size passed to unit test ("
-        + str(batch_size)
+        + String(batch_size)
         + ") is larger than configured max_batch_size ("
-        + str(num_blocks)
+        + String(num_blocks)
         + ")",
     )
     # initialize hidden state

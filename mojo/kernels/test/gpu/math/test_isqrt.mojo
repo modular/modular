@@ -62,9 +62,9 @@ def run_elementwise[
     for i in range(length):
         var msg = (
             "values did not match at position "
-            + str(i)
+            + String(i)
             + " for dtype="
-            + str(type)
+            + String(type)
         )
 
         @parameter

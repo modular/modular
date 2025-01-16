@@ -95,8 +95,8 @@ fn test_cublas(ctx: DeviceContext) raises:
 
 
 def test_cublas_result_format():
-    assert_equal(str(Result.SUCCESS), "SUCCESS")
-    assert_equal(str(Result.LICENSE_ERROR), "LICENSE_ERROR")
+    assert_equal(String(Result.SUCCESS), "SUCCESS")
+    assert_equal(String(Result.LICENSE_ERROR), "LICENSE_ERROR")
 
 
 def main():

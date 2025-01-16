@@ -158,7 +158,7 @@ fn run_matmul[
     rng_width: Float64 = Float64(100.0),
     debug: Bool = True,
 ) raises:
-    print("== run_matmul kernel => ", str(type), M, N, K)
+    print("== run_matmul kernel => ", String(type), M, N, K)
 
     var a_host = UnsafePointer[Scalar[type]].alloc(M * K)
     var b_host = UnsafePointer[Scalar[type]].alloc(K * N)
@@ -279,7 +279,11 @@ fn run_matmul_split_k[
     debug: Bool = True,
 ) raises:
     print(
-        "== run_matmul kernel split_k serial reduction => ", str(type), M, N, K
+        "== run_matmul kernel split_k serial reduction => ",
+        String(type),
+        M,
+        N,
+        K,
     )
 
     var a_host = UnsafePointer[Scalar[type]].alloc(M * K)
@@ -402,7 +406,7 @@ fn run_matmul_transpose[
     rng_width: Float64 = Float64(100.0),
     debug: Bool = True,
 ) raises:
-    print("== run_matmul kernel transpose => ", str(type), M, N, K)
+    print("== run_matmul kernel transpose => ", String(type), M, N, K)
 
     alias transpose_b = True
     var a_host = UnsafePointer[Scalar[type]].alloc(M * K)

@@ -57,11 +57,11 @@ def run_elementwise[type: DType](ctx: DeviceContext):
     for i in range(length):
         var msg = (
             "values did not match at position "
-            + str(i)
+            + String(i)
             + " for dtype="
-            + str(type)
+            + String(type)
             + " and value="
-            + str(in_host[i])
+            + String(in_host[i])
         )
 
         @parameter

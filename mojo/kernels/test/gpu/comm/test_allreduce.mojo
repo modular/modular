@@ -27,8 +27,8 @@ fn _pretty_print_float(val: Float64) -> String:
     if not needed (e.g. prints 2 instead of 2.0).
     """
     if Float64(floor(val)) == val:
-        return str(Int(val))
-    return str(val)
+        return String(Int(val))
+    return String(val)
 
 
 fn _human_memory(size: Int) -> String:
@@ -45,7 +45,7 @@ fn _human_memory(size: Int) -> String:
     if size >= KB:
         return _pretty_print_float(Float64(size) / KB) + "KB"
 
-    return str(size) + "B"
+    return String(size) + "B"
 
 
 fn all_reduce_test[
@@ -140,9 +140,9 @@ fn all_reduce_test[
 fn _get_test_str(type: DType, ngpus: Int, length: Int) -> String:
     return (
         "====allreduce-"
-        + str(type)
+        + String(type)
         + "-"
-        + str(ngpus)
+        + String(ngpus)
         + "-"
         + _human_memory(length)
     )

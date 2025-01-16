@@ -88,7 +88,7 @@ fn test_layout_mma[
     rng_width: Float64 = Float64(10.0),
     debug: Bool = False,
 ) raises:
-    print("== run layout mma => ", str(out_type), str(in_type), M, N, K)
+    print("== run layout mma => ", String(out_type), String(in_type), M, N, K)
 
     alias layout_a = Layout(IntTuple(M, K), IntTuple(K, 1))
     alias layout_b = Layout(IntTuple(K, N), IntTuple(N, 1))

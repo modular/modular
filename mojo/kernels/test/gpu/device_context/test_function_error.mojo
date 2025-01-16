@@ -27,7 +27,7 @@ def test_function_error(ctx: DeviceContext):
     except e:
         assert_true(
             "Kernels/test/gpu/device_context/test_function_error.mojo:27:24"
-            in str(e)
+            in String(e)
         )
 
 

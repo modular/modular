@@ -64,7 +64,7 @@ def test_load():
     )
 
     assert_equal(
-        str(
+        String(
             _compile_code_asm[
                 load_value[width=64, prefetch_size=128], emission_kind="asm"
             ]()

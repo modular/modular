@@ -90,9 +90,9 @@ def execute_flash_attention[
     debug_assert(
         batch_size < max_batch_size,
         "batch_size passed to unit test ("
-        + str(batch_size)
+        + String(batch_size)
         + ") is larger than configured max_batch_size ("
-        + str(max_batch_size)
+        + String(max_batch_size)
         + ")",
     )
 
@@ -504,4 +504,4 @@ def main():
 
         print("Success!")
     except e:
-        print("CUDA ERROR:", str(e))
+        print("CUDA ERROR:", String(e))
