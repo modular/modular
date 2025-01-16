@@ -136,6 +136,8 @@ struct ContiguousKVCache[
     var is_cache_empty: Bool
     var cache_lengths: NDBuffer[DType.uint32, 1]
     var batch_size: Int
+    var max_seq_length: UInt32
+    var max_cache_length: UInt32
 
     fn __init__(
         mut self,
@@ -143,11 +145,15 @@ struct ContiguousKVCache[
         cache_lengths: NDBuffer[DType.uint32, 1],
         is_cache_empty: Bool,
         batch_size: Int,
+        max_seq_length: UInt32,
+        max_cache_length: UInt32,
     ):
         self._block = block
         self.cache_lengths = cache_lengths
         self.is_cache_empty = is_cache_empty
         self.batch_size = batch_size
+        self.max_seq_length = max_seq_length
+        self.max_cache_length = max_cache_length
 
     @staticmethod
     fn id() -> String:
@@ -216,12 +222,10 @@ struct ContiguousKVCache[
         return self.is_cache_empty
 
     fn get_max_seq_length(self) -> UInt32:
-        # This cache type does not support ragged tensors.
-        constrained[False, "get_max_seq_length not implemented"]()
-        return 0
+        return self.max_seq_length
 
     fn get_max_cache_length(self) -> UInt32:
-        return UInt32(self._block.dim[1]())
+        return self.max_cache_length
 
     @always_inline
     fn block_paged_ptr[
@@ -233,7 +237,6 @@ struct ContiguousKVCache[
         head_idx: Int,
         head_dim_idx: Int = 0,
     ) -> UnsafePointer[Scalar[Self.type]]:
-        debug_assert(tile_size < self._block.dim[1](), "tile_size out of range")
         var idx = self._get_idx_tuple(
             batch_idx, head_idx, start_tok_idx, head_dim_idx
         )
@@ -623,7 +626,9 @@ struct ContiguousKVCacheCollection[
     var is_context_encoding: Bool
     var num_layers: Int
     var batch_size: Int
-    var max_seq_len: Int
+    var max_seq_len_limit: Int
+    var max_seq_len_in_batch: Int
+    var max_cache_len_in_batch: Int
 
     fn __init__(
         mut self,
@@ -633,6 +638,8 @@ struct ContiguousKVCacheCollection[
         is_context_encoding: Bool,
         num_layers: Int,
         batch_size: Int,
+        max_seq_len_in_batch: Int,
+        max_cache_len_in_batch: Int,
     ):
         debug_assert(key_cache.dim[0]() == num_layers, "invalid key_cache size")
         debug_assert(
@@ -643,7 +650,9 @@ struct ContiguousKVCacheCollection[
         self.value_cache = value_cache
         self.num_layers = num_layers
         self.batch_size = batch_size
-        self.max_seq_len = key_cache.dim[2]()
+        self.max_seq_len_limit = key_cache.dim[2]()
+        self.max_seq_len_in_batch = max_seq_len_in_batch
+        self.max_cache_len_in_batch = max_cache_len_in_batch
         self.cache_lengths = cache_lengths
         self.is_context_encoding = is_context_encoding
 
@@ -654,7 +663,9 @@ struct ContiguousKVCacheCollection[
         self.is_context_encoding = other.is_context_encoding
         self.num_layers = other.num_layers
         self.batch_size = other.batch_size
-        self.max_seq_len = other.max_seq_len
+        self.max_seq_len_limit = other.max_seq_len_limit
+        self.max_seq_len_in_batch = other.max_seq_len_in_batch
+        self.max_cache_len_in_batch = other.max_cache_len_in_batch
 
     @always_inline
     fn copy(self) -> Self:
@@ -672,7 +683,9 @@ struct ContiguousKVCacheCollection[
         self.is_context_encoding = other.is_context_encoding
         self.num_layers = other.num_layers
         self.batch_size = other.batch_size
-        self.max_seq_len = other.max_seq_len
+        self.max_seq_len_limit = other.max_seq_len_limit
+        self.max_seq_len_in_batch = other.max_seq_len_in_batch
+        self.max_cache_len_in_batch = other.max_cache_len_in_batch
 
     @staticmethod
     fn id() -> String:
@@ -686,7 +699,7 @@ struct ContiguousKVCacheCollection[
         )
 
     fn get_key_cache(self, layer_idx: Int) -> Self.CacheType:
-        var layer_size = self.batch_size * self.kv_params.num_heads * self.max_seq_len * self.kv_params.head_size
+        var layer_size = self.batch_size * self.kv_params.num_heads * self.max_seq_len_limit * self.kv_params.head_size
         var k_shape = IndexList[4](
             self.key_cache.dim[1](),
             self.key_cache.dim[2](),
@@ -702,10 +715,12 @@ struct ContiguousKVCacheCollection[
             self.cache_lengths,
             self.is_context_encoding,
             self.batch_size,
+            self.max_seq_len_in_batch,
+            self.max_cache_len_in_batch,
         )
 
     fn get_value_cache(self, layer_idx: Int) -> Self.CacheType:
-        var layer_size = self.batch_size * self.kv_params.num_heads * self.max_seq_len * self.kv_params.head_size
+        var layer_size = self.batch_size * self.kv_params.num_heads * self.max_seq_len_limit * self.kv_params.head_size
         var v_shape = IndexList[4](
             self.value_cache.dim[1](),
             self.value_cache.dim[2](),
@@ -722,6 +737,8 @@ struct ContiguousKVCacheCollection[
             self.cache_lengths,
             self.is_context_encoding,
             self.batch_size,
+            self.max_seq_len_in_batch,
+            self.max_cache_len_in_batch,
         )
 
     fn cache_length(self, batch_idx: Int) -> Int:
