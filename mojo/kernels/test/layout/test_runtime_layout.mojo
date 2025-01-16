@@ -33,8 +33,8 @@ def test_runtime_layout_const():
 
     var layout_r = RuntimeLayout[layout](shape_runtime, stride_runtime)
 
-    assert_equal(str(layout_r.layout), "((-1, 8):(8, 1))")
-    assert_equal(str(layout_r), "((16, 8):(8, 1))")
+    assert_equal(String(layout_r.layout), "((-1, 8):(8, 1))")
+    assert_equal(String(layout_r), "((16, 8):(8, 1))")
 
 
 # CHECK-LABEL: test_static_and_dynamic_size
@@ -117,8 +117,8 @@ def test_sublayout_indexing():
         RuntimeTuple[layout_t.shape, unsigned=True](8, 4),
         RuntimeTuple[layout_t.stride, unsigned=True](4, 1),
     )
-    assert_equal(str(layout.sublayout[0]()), "(8:4)")
-    assert_equal(str(layout.sublayout[1]()), "(4:1)")
+    assert_equal(String(layout.sublayout[0]()), "(8:4)")
+    assert_equal(String(layout.sublayout[1]()), "(4:1)")
 
 
 # CHECK-LABEL: test_coalesce
@@ -129,8 +129,8 @@ def test_coalesce():
         RuntimeTuple[layout_t.shape, unsigned=True](8, 1),
         RuntimeTuple[layout_t.stride, unsigned=True](1, 1),
     )
-    assert_equal(str(coalesce(layout)), "((8, 1):(1, 1))")
-    assert_equal(str(coalesce_layout(layout_t)), "((-1, -1):(-1, 1))")
+    assert_equal(String(coalesce(layout)), "((8, 1):(1, 1))")
+    assert_equal(String(coalesce_layout(layout_t)), "((-1, -1):(-1, 1))")
 
     alias layout_t_2 = Layout(
         IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE, 8, 1),
@@ -141,9 +141,9 @@ def test_coalesce():
         RuntimeTuple[layout_t_2.stride, unsigned=True](16, 8, 1, 1),
     )
 
-    assert_equal(str(coalesce(layout_2)), "((32, 16, 8):(16, 8, 1))")
+    assert_equal(String(coalesce(layout_2)), "((32, 16, 8):(16, 8, 1))")
     assert_equal(
-        str(coalesce_layout(layout_t_2)),
+        String(coalesce_layout(layout_t_2)),
         "((-1, -1, 8):(-1, 8, 1))",
     )
 
@@ -161,7 +161,7 @@ def test_make_layout():
         RuntimeTuple[layout_t.stride, unsigned=True](4, 1),
     )
     assert_equal(
-        str(make_layout(l_a, l_b)), "(((2, 2), (4, 4)):((2, 1), (4, 1)))"
+        String(make_layout(l_a, l_b)), "(((2, 2), (4, 4)):((2, 1), (4, 1)))"
     )
 
 

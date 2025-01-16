@@ -321,17 +321,17 @@ fn validate_complement[layout: Layout]() raises:
 fn test_complement() raises:
     print("== test_complement")
     alias c0 = complement(Layout(4, 1), 24)
-    assert_equal(str(c0), "(6:4)")
-    assert_equal(str(complement(Layout(6, 4), 24)), "(4:1)")
+    assert_equal(String(c0), "(6:4)")
+    assert_equal(String(complement(Layout(6, 4), 24)), "(4:1)")
     assert_equal(
-        str(complement(Layout(IntTuple(4, 6), IntTuple(1, 4)), 24)), "(1:0)"
+        String(complement(Layout(IntTuple(4, 6), IntTuple(1, 4)), 24)), "(1:0)"
     )
-    assert_equal(str(complement(Layout(4, 2), 24)), "((2, 3):(1, 8))")
+    assert_equal(String(complement(Layout(4, 2), 24)), "((2, 3):(1, 8))")
     assert_equal(
-        str(complement(Layout(IntTuple(2, 4), IntTuple(1, 6)), 24)), "(3:2)"
+        String(complement(Layout(IntTuple(2, 4), IntTuple(1, 6)), 24)), "(3:2)"
     )
     assert_equal(
-        str(complement(Layout(IntTuple(2, 2), IntTuple(1, 6)), 24)),
+        String(complement(Layout(IntTuple(2, 2), IntTuple(1, 6)), 24)),
         "((3, 2):(2, 12))",
     )
 
@@ -373,9 +373,9 @@ fn test_logcial_divide() raises:
     var ld0 = logical_divide(
         Layout(IntTuple(4, 2, 3), IntTuple(2, 1, 8)), Layout(4, 2)
     )
-    assert_equal(str(ld0), "(((2, 2), (2, 3)):((4, 1), (2, 8)))")
+    assert_equal(String(ld0), "(((2, 2), (2, 3)):((4, 1), (2, 8)))")
     assert_equal(
-        str(
+        String(
             logical_divide(
                 Layout(
                     IntTuple(9, IntTuple(4, 8)), IntTuple(59, IntTuple(13, 1))
@@ -395,9 +395,9 @@ fn test_logical_product() raises:
     var lp0 = logical_product(
         Layout(IntTuple(2, 2), IntTuple(4, 1)), Layout(6, 1)
     )
-    assert_equal(str(lp0), "(((2, 2), (2, 3)):((4, 1), (2, 8)))")
+    assert_equal(String(lp0), "(((2, 2), (2, 3)):((4, 1), (2, 8)))")
     assert_equal(
-        str(
+        String(
             logical_product(
                 Layout(IntTuple(2, 5), IntTuple(5, 1)),
                 MakeLayoutList(Layout(3, 5), Layout(4, 6)),
@@ -466,26 +466,27 @@ fn test_zipped_divide() raises:
     print("== test_zipped_divide")
     alias layout_4x4_row_major = Layout(IntTuple(4, 4), IntTuple(4, 1))
     assert_equal(
-        str(zipped_divide(layout_4x4_row_major, Layout(2, 1))),
+        String(zipped_divide(layout_4x4_row_major, Layout(2, 1))),
         "((2, (2, 4)):(4, (8, 1)))",
     )
     var zd0 = zipped_divide(
         layout_4x4_row_major,
         MakeLayoutList(Layout(2, 1), Layout(2, 1)),
     )
-    assert_equal(str(zd0), "(((2, 2), (2, 2)):((4, 1), (8, 2)))")
+    assert_equal(String(zd0), "(((2, 2), (2, 2)):((4, 1), (8, 2)))")
 
 
 # CHECK-LABEL: test_sublayout
 def test_sublayout():
     print("== test_sublayout")
     alias layout_2x3x4 = Layout(IntTuple(2, 3, 4), IntTuple(12, 4, 1))
-    assert_equal(str(sublayout(layout_2x3x4, 0, 2)), "((2, 4):(12, 1))")
+    assert_equal(String(sublayout(layout_2x3x4, 0, 2)), "((2, 4):(12, 1))")
     alias layout_2x3x4_rank_2 = Layout(
         IntTuple(IntTuple(2, 3), 2, 4), IntTuple(IntTuple(12, 4), 4, 1)
     )
     assert_equal(
-        str(sublayout(layout_2x3x4_rank_2, 0, 1)), "(((2, 3), 2):((12, 4), 4))"
+        String(sublayout(layout_2x3x4_rank_2, 0, 1)),
+        "(((2, 3), 2):((12, 4), 4))",
     )
 
 

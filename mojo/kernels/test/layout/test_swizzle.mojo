@@ -135,11 +135,11 @@ struct WaveFrontSummary:
     fn __str__(self) -> String:
         return (
             "WaveFrontSummary(total_wavefronts="
-            + str(self.total_wavefronts)
+            + String(self.total_wavefronts)
             + ", expected_wavefronts="
-            + str(self.expected_wavefronts)
+            + String(self.expected_wavefronts)
             + ", excess_wavefronts="
-            + str(self.excess_wavefronts())
+            + String(self.excess_wavefronts())
             + ")"
         )
 

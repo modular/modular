@@ -28,7 +28,12 @@ struct Dim(Stringable):
     @no_inline
     fn __str__(self) -> String:
         return (
-            "m: " + str(self.m) + ", n: " + str(self.n) + ", k: " + str(self.k)
+            "m: "
+            + String(self.m)
+            + ", n: "
+            + String(self.n)
+            + ", k: "
+            + String(self.k)
         )
 
 

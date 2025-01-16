@@ -287,11 +287,11 @@ struct Swizzle(LayoutTrait, Stringable, Writable):
 
     fn write_to[W: Writer](self, mut writer: W):
         writer.write("(")
-        writer.write(str(self.bits))
+        writer.write(String(self.bits))
         writer.write(",")
-        writer.write(str(self.base))
+        writer.write(String(self.base))
         writer.write(",")
-        writer.write(str(self.shift))
+        writer.write(String(self.shift))
         writer.write(")")
 
     fn __str__(self) -> String:

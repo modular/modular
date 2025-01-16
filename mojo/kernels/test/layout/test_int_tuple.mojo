@@ -23,16 +23,16 @@ def test_tuple_basic():
 
     # Test single integer value tuple
     alias t0: IntTuple = 5
-    assert_equal(str(t0), "5")
+    assert_equal(String(t0), "5")
 
     # Test simple tuple compositions
-    assert_equal(str(IntTuple(IntTuple(IntTuple()))), "((()))")
-    assert_equal(str(IntTuple(IntTuple(IntTuple(3)))), "((3))")
+    assert_equal(String(IntTuple(IntTuple(IntTuple()))), "((()))")
+    assert_equal(String(IntTuple(IntTuple(IntTuple(3)))), "((3))")
     assert_equal(
-        str(IntTuple(7, IntTuple(2, 3, 4, IntTuple(5, 6)))),
+        String(IntTuple(7, IntTuple(2, 3, 4, IntTuple(5, 6)))),
         "(7, (2, 3, 4, (5, 6)))",
     )
-    assert_equal(str(IntTuple(2, IntTuple(3, 4))), "(2, (3, 4))")
+    assert_equal(String(IntTuple(2, IntTuple(3, 4))), "(2, (3, 4))")
 
     # Test basic tuple operations
     var tt = IntTuple(
@@ -42,21 +42,21 @@ def test_tuple_basic():
         IntTuple(3, 66, IntTuple(6, 99, IntTuple(4, 68, 721))),
         42,
     )
-    assert_equal(str(tt), "(5, 7, 2, (3, 66, (6, 99, (4, 68, 721))), 42)")
+    assert_equal(String(tt), "(5, 7, 2, (3, 66, (6, 99, (4, 68, 721))), 42)")
 
     # tt[1] = 8
     # tt.append(81)
-    # assert_equal(str(tt), "(5, 8, 2, (3, 66, (6, 99, (4, 68, 721))), 42, 81)")
+    # assert_equal(String(tt), "(5, 8, 2, (3, 66, (6, 99, (4, 68, 721))), 42, 81)")
 
     # tt[3][2][2] = IntTuple(5, 69, 722)
-    # assert_equal(str(tt), "(5, 8, 2, (3, 66, (6, 99, (5, 69, 722))), 42, 81)")
+    # assert_equal(String(tt), "(5, 8, 2, (3, 66, (6, 99, (5, 69, 722))), 42, 81)")
 
     # Tests interaction with compiler interpreter
     alias works = IntTuple(IntTuple(2, 2), IntTuple(2, 3))
-    assert_equal(str(works), "((2, 2), (2, 3))")
+    assert_equal(String(works), "((2, 2), (2, 3))")
 
     alias works_too = IntTuple(IntTuple(2, 2), IntTuple(2, 2))
-    assert_equal(str(works_too), "((2, 2), (2, 2))")
+    assert_equal(String(works_too), "((2, 2), (2, 2))")
 
     # Tests IntTuple equality operations
     assert_equal(IntTuple(1, 2) == IntTuple(1, 2), True)
@@ -87,15 +87,15 @@ def test_tuple_slicing():
     alias sl6 = tr[-3:]
     alias sl7 = tr[-3:-1]
     alias sl8 = tr[:-1]
-    assert_equal(str(sl0), "4")
-    assert_equal(str(sl1), "3")
-    assert_equal(str(sl2), "(1, 2, 3)")
-    assert_equal(str(sl3), "(1, 3)")
-    assert_equal(str(sl4), "(0, 1, 2, 3, 4)")
-    assert_equal(str(sl5), "(0, 2, 4)")
-    assert_equal(str(sl6), "(2, 3, 4)")
-    assert_equal(str(sl7), "(2, 3)")
-    assert_equal(str(sl8), "(0, 1, 2, 3)")
+    assert_equal(String(sl0), "4")
+    assert_equal(String(sl1), "3")
+    assert_equal(String(sl2), "(1, 2, 3)")
+    assert_equal(String(sl3), "(1, 3)")
+    assert_equal(String(sl4), "(0, 1, 2, 3, 4)")
+    assert_equal(String(sl5), "(0, 2, 4)")
+    assert_equal(String(sl6), "(2, 3, 4)")
+    assert_equal(String(sl7), "(2, 3)")
+    assert_equal(String(sl8), "(0, 1, 2, 3)")
 
 
 # CHECK-LABEL: test_tuple_basic_ops
@@ -105,9 +105,9 @@ def test_tuple_basic_ops():
     alias p0 = product(2)
     alias p1 = product(IntTuple(3, 2))
     alias p2 = product(IntTuple(IntTuple(2, 3), 4))
-    assert_equal(str(p0), "2")
-    assert_equal(str(p1), "6")
-    assert_equal(str(p2), "24")
+    assert_equal(String(p0), "2")
+    assert_equal(String(p1), "6")
+    assert_equal(String(p2), "24")
 
     alias tt = IntTuple(
         5,
@@ -118,19 +118,19 @@ def test_tuple_basic_ops():
     )
 
     alias f = flatten(tt)
-    assert_equal(str(f), "(5, 7, 2, 3, 66, 6, 99, 4, 68, 721, 42)")
+    assert_equal(String(f), "(5, 7, 2, 3, 66, 6, 99, 4, 68, 721, 42)")
 
     alias tt_unknown = to_unknown(tt)
     assert_equal(
-        str(tt_unknown),
+        String(tt_unknown),
         "(-1, -1, -1, (-1, -1, (-1, -1, (-1, -1, -1))), -1)",
     )
 
     alias ts = IntTuple(0, 1, IntTuple(-2, 3), -4)
-    assert_equal(str(abs(ts)), "(0, 1, (2, 3), 4)")
+    assert_equal(String(abs(ts)), "(0, 1, (2, 3), 4)")
 
     alias tm = IntTuple(0, 1, IntTuple(2, 3), 4)
-    assert_equal(str(mul(tm, 4)), "(0, 4, (8, 12), 16)")
+    assert_equal(String(mul(tm, 4)), "(0, 4, (8, 12), 16)")
 
     alias s = sum(IntTuple(IntTuple(2, 3), 4))
     assert_equal(s, 9)
@@ -167,13 +167,13 @@ def test_sorted():
     print("== test_sorted")
 
     alias t0 = sorted[lt](IntTuple(7, 3, 1, 5, 0))
-    assert_equal(str(t0), "(0, 1, 3, 5, 7)")
+    assert_equal(String(t0), "(0, 1, 3, 5, 7)")
 
     alias t1 = sorted[lt](IntTuple(IntTuple(7, 3), IntTuple(1, 5, 0)))
-    assert_equal(str(t1), "((1, 5, 0), (7, 3))")
+    assert_equal(String(t1), "((1, 5, 0), (7, 3))")
 
     alias t2 = sorted[lt](IntTuple(IntTuple(7, 3), IntTuple(1, IntTuple(5, 0))))
-    assert_equal(str(t2), "((1, (5, 0)), (7, 3))")
+    assert_equal(String(t2), "((1, (5, 0)), (7, 3))")
 
     assert_equal(lt(IntTuple(4, 6, 8), IntTuple(5, 6, 7)), True)
 
@@ -270,14 +270,14 @@ def test_idx2crd():
     alias xc5 = idx2crd(5, IntTuple(4, 2), IntTuple(1, 4))
     alias xc6 = idx2crd(6, IntTuple(4, 2), IntTuple(1, 4))
     alias xc7 = idx2crd(7, IntTuple(4, 2), IntTuple(1, 4))
-    assert_equal(str(xc0), "(0, 0)")
-    assert_equal(str(xc1), "(1, 0)")
-    assert_equal(str(xc2), "(2, 0)")
-    assert_equal(str(xc3), "(3, 0)")
-    assert_equal(str(xc4), "(0, 1)")
-    assert_equal(str(xc5), "(1, 1)")
-    assert_equal(str(xc6), "(2, 1)")
-    assert_equal(str(xc7), "(3, 1)")
+    assert_equal(String(xc0), "(0, 0)")
+    assert_equal(String(xc1), "(1, 0)")
+    assert_equal(String(xc2), "(2, 0)")
+    assert_equal(String(xc3), "(3, 0)")
+    assert_equal(String(xc4), "(0, 1)")
+    assert_equal(String(xc5), "(1, 1)")
+    assert_equal(String(xc6), "(2, 1)")
+    assert_equal(String(xc7), "(3, 1)")
 
 
 # CHECK-LABEL: test_weakly_congruent
