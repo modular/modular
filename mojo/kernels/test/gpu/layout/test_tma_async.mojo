@@ -23,10 +23,12 @@ from utils.static_tuple import StaticTuple
 fn test_tma_async_load[
     dtype: DType, layout: Layout
 ](tma_tile: TMATensorTile[dtype, layout]):
-    # FIXME(KERN-1365): This test case fails if the barrier is created before the memory!
+    barrier = TMABarrier()
+    # There is an undocumented requriement for alignment for shared memory address.
+    # In practice, we find 128 is the minimum, see KERN-1365.
     tile = LayoutTensor[
         dtype, layout, address_space = _GPUAddressSpace.SHARED
-    ].stack_allocation()
+    ].stack_allocation[alignment=128]()
     barrier = TMABarrier()
     tma_tile.async_copy(tile, barrier, (block_idx.x * 4, block_idx.y * 4))
     barrier.wait()
@@ -81,10 +83,9 @@ def test_tma_async_copy(ctx: DeviceContext):
 fn test_tma_async_load_multiple_threads[
     dtype: DType, layout: Layout
 ](tma_tile: TMATensorTile[dtype, layout]):
-    # FIXME(KERN-1365): This test case fails if the barrier is created before the memory!
     tile = LayoutTensor[
         dtype, layout, address_space = _GPUAddressSpace.SHARED
-    ].stack_allocation()
+    ].stack_allocation[alignment=128]()
     barrier = TMABarrier()
     if thread_idx.x == 0:
         tma_tile.async_copy(tile, barrier, (block_idx.x * 4, block_idx.y * 4))
