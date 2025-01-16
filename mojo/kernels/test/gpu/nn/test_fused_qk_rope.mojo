@@ -136,6 +136,11 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
     k_cache_block_dev = k_cache_block_host.copy_to_device(ctx)
 
     # Create the actual KV cache type.
+    var max_cache_len_in_batch = 0
+    for i in range(batch_size):
+        max_cache_len_in_batch = max(
+            max_cache_len_in_batch, Int(start_positions[i])
+        )
     cache_lengths = DeviceNDBuffer[
         DType.uint32, 1, shape = DimList(batch_size)
     ](ctx=ctx)
@@ -151,6 +156,8 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
         is_context_encoding=False,
         num_layers=num_layers,
         batch_size=batch_size,
+        max_seq_len_in_batch=seq_len,
+        max_cache_len_in_batch=max_cache_len_in_batch,
     )
 
     # Create and initialize query buffer.

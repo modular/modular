@@ -167,6 +167,8 @@ def execute_flash_attention[
         is_context_encoding=is_context_encoding,
         num_layers=num_layers,
         batch_size=batch_size,
+        max_seq_len_in_batch=prompt_len,
+        max_cache_len_in_batch=cache_size,
     )
 
     valid_lengths_host = HostNDBuffer[DType.uint32, 1](Index(batch_size))

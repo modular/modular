@@ -12,7 +12,7 @@
 # CHECK-NOT: CUDA ERROR
 
 
-from algorithm import max
+from algorithm import max as tensor_max
 from bit import is_power_of_two, log2_floor
 from buffer import Buffer, Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
@@ -97,7 +97,7 @@ def execute_flash_attention[
     )
 
     var max_cache_valid_length = Int(
-        max(Buffer[DType.uint32](cache_valid_length.data, batch_size))
+        tensor_max(Buffer[DType.uint32](cache_valid_length.data, batch_size))
     )
 
     # initialize q tensor
@@ -259,9 +259,15 @@ def execute_flash_attention[
 
     # initialize our KVCache
     var is_context_encoding = True
+    var max_cache_len_in_batch = 0
+    var max_seq_len_in_batch = 0
     for i in range(batch_size):
         if cache_valid_length[i] != 0:
             is_context_encoding = False
+        max_cache_len_in_batch = max(
+            max_cache_len_in_batch, Int(cache_valid_length[i])
+        )
+        max_seq_len_in_batch = max(max_seq_len_in_batch, Int(valid_length[i]))
     var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
 
     ctx.enqueue_copy_to_device(cache_lengths_dev, cache_valid_length.data)
@@ -302,6 +308,8 @@ def execute_flash_attention[
         cache_lengths,
         is_context_encoding,
         batch_size,
+        max_seq_len_in_batch,
+        max_cache_len_in_batch,
     )
 
     v_block_host = HostNDBuffer[
@@ -337,6 +345,8 @@ def execute_flash_attention[
         cache_lengths,
         is_context_encoding,
         batch_size,
+        max_seq_len_in_batch,
+        max_cache_len_in_batch,
     )
 
     flash_attention[add_attn_mask=False, use_score_mod=True](

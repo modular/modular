@@ -130,12 +130,16 @@ def execute_fused_qkv_matmul[
     # initialize our KVCache
     var is_context_encoding = True
     var valid_lengths_host_ptr = UnsafePointer[UInt32].alloc(max_batch_size)
+    var max_seq_len_in_batch = 0
+    var max_cache_len_in_batch = 0
     for i in range(max_batch_size):
         valid_lengths_host_ptr[i] = -1
     for i in range(batch_size):
         if valid_lengths_host_ptr[i] != 0:
             is_context_encoding = False
         valid_lengths_host_ptr[i] = cache_size
+        max_seq_len_in_batch = max(max_seq_len_in_batch, prompt_len)
+        max_cache_len_in_batch = max(max_cache_len_in_batch, cache_size)
     var valid_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](
         max_batch_size
     )
@@ -175,6 +179,8 @@ def execute_fused_qkv_matmul[
         is_context_encoding,
         num_layers,
         batch_size,
+        max_seq_len_in_batch,
+        max_cache_len_in_batch,
     )
     var kv_collection_host = ContiguousKVCacheCollection[type, kv_params,](
         k_block_host.tensor,
@@ -183,6 +189,8 @@ def execute_fused_qkv_matmul[
         is_context_encoding,
         num_layers,
         batch_size,
+        max_seq_len_in_batch,
+        max_cache_len_in_batch,
     )
 
     _fused_qkv_matmul_kv_cache_impl[target="gpu",](
