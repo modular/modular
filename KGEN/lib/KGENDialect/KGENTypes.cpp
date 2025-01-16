@@ -314,6 +314,98 @@ ErrorOr<TypedAttr> GeneratorType::readFrom(int64_t addr,
   return Error("Generator not a readable type");
 }
 
+GeneratorType GeneratorType::getSpecializedGenerator(
+    ArrayRef<TypedAttr> paramBindings,
+    function_ref<InFlightDiagnostic()> emitErrorFn) {
+  VerboseCompilerTimeTraceScope traceScope(
+      "GeneratorType::getSpecializedGenerator");
+
+  // If the signature isn't parameterized, then there are no substitutions to
+  // perform.
+  if (paramBindings.empty()) {
+    return *this;
+  }
+
+  ArrayRef<Type> inputParamTypes = getInputParamTypes();
+
+  // Verify the number of input parameters.
+  if (paramBindings.size() != inputParamTypes.size()) {
+    assert(emitErrorFn && "unexpected invalid bindings");
+    emitErrorFn() << "generator type expects " << inputParamTypes.size()
+                  << " parameters but got bindings for "
+                  << paramBindings.size();
+    return {};
+  }
+
+  ParameterEvaluator evaluator;
+  evaluator.setInputDepth(1);
+  IndexDepthAdjuster plusOneAdjuster(/*adjustDepth=*/1);
+  IndexDepthAdjuster minusOneAdjuster(/*adjustDepth=*/-1);
+
+  auto remapType = [&](Type type) -> Type {
+    return evaluator.getReboundType(type);
+  };
+
+  SmallVector<Type, 16> unboundParamTypes;
+  llvm::BitVector boundParams(inputParamTypes.size());
+  for (auto [paramNo, value, type] :
+       llvm::enumerate(paramBindings, inputParamTypes)) {
+    // Bound parameters are allowed to refine the type of subsequent
+    // parameters, e.g. in `<ty: type, fn: () -> !kgen.param<ty>>`, the
+    // expected type of the second parameter will be refined when the first
+    // parameter is bound.
+    auto remappedDeclType = remapType(type);
+
+    // Even if we're skipping a binding site, we still need to remap the decl.
+    // TODO: Disallow UnboundAttr for skipping bindings.
+    if (::isa<UnboundAttr>(value)) {
+      // Set the binding to a declref of the thing itself - that will keep it
+      // from becoming #kgen.unbound.  This #param.index.ref will have a level
+      // of -1, and we adjust the level of its type by -1 so it balances out
+      // correctly when referenced.
+      auto adjustedParamType = minusOneAdjuster.replace(remappedDeclType);
+      auto value = ParamIndexRefAttr::get(
+          /*depth=*/-1, /*isResult=*/false, unboundParamTypes.size(),
+          adjustedParamType);
+      unboundParamTypes.push_back(remappedDeclType);
+      evaluator.addInputValue(value);
+    } else {
+      // We must remap the value type being provided as well, because it may
+      // be referring to outer-context indexed parameters, whose depth will be
+      // increased when substituted into this signature.
+      Type reboundType = plusOneAdjuster.replace(value.getType());
+      if (reboundType != remappedDeclType) {
+        assert(emitErrorFn && "unexpected invalid signature");
+        emitErrorFn() << "caller input parameter #" << paramNo << " has type "
+                      << reboundType << " but callee expected type "
+                      << remappedDeclType;
+        return {};
+      }
+
+      evaluator.addInputValue(value);
+      boundParams.set(paramNo);
+    }
+  }
+
+  GeneratorMetadataAttrInterface genMetadata = getMetadata();
+  if (genMetadata) {
+    genMetadata = ::cast<GeneratorMetadataAttrInterface>(
+        evaluator.getReboundAttribute(genMetadata));
+    genMetadata = genMetadata.getWithBoundParams(boundParams);
+  }
+
+  return GeneratorType::get(unboundParamTypes,
+                            evaluator.getReboundType(getBody()), genMetadata);
+}
+
+GeneratorType
+GeneratorType::getSpecializedGenerator(ArrayRef<TypedAttr> paramBindings,
+                                       Location location) {
+  return getSpecializedGenerator(paramBindings, [&]() -> InFlightDiagnostic {
+    return emitError(location);
+  });
+}
+
 //===----------------------------------------------------------------------===//
 // NewSignatureType
 //===----------------------------------------------------------------------===//
@@ -463,160 +555,6 @@ NewSignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-/// A temporary shared implementation for specialize signature generators during
-/// the migration process. When the old KGEN::SignatureType goes away, this will
-/// be merged into SignatureGeneratorType.
-struct SpecializeSignatureResult {
-  SpecializeSignatureResult()
-      : success(false), genMetadata({}), inputParamTypes({}),
-        resultParamTypes({}), values({}), argConventions({}), effects({}),
-        fnMetadata({}) {}
-  SpecializeSignatureResult(GeneratorMetadataAttrInterface genMetadata,
-                            ArrayRef<Type> inputParamTypes,
-                            ArrayRef<Type> resultParamTypes,
-                            FunctionType values,
-                            ArrayRef<ArgConvention> argConventions,
-                            FnEffects effects,
-                            FnMetadataAttrInterface fnMetadata)
-      : success(true), genMetadata(genMetadata),
-        inputParamTypes(inputParamTypes), resultParamTypes(resultParamTypes),
-        values(values), argConventions(argConventions), effects(effects),
-        fnMetadata(fnMetadata) {}
-
-  bool success = false;
-  GeneratorMetadataAttrInterface genMetadata;
-
-  SmallVector<Type> inputParamTypes;
-  SmallVector<Type> resultParamTypes;
-  FunctionType values;
-  SmallVector<ArgConvention> argConventions;
-  FnEffects effects;
-  FnMetadataAttrInterface fnMetadata;
-};
-
-static SpecializeSignatureResult
-specializeSignature(ArrayRef<TypedAttr> inputParamValues,
-                    GeneratorMetadataAttrInterface genMetadata,
-                    function_ref<InFlightDiagnostic()> emitErrorFn,
-                    ArrayRef<Type> inputParamTypes,
-                    ArrayRef<Type> resultParamTypes, FunctionType values,
-                    ArrayRef<ArgConvention> argConventions, FnEffects effects,
-                    FnMetadataAttrInterface fnMetadata) {
-  VerboseCompilerTimeTraceScope traceScope(
-      "NewSignatureType::getSpecializedSignature");
-
-  // If the signature isn't parameterized, then there
-  // are no substitutions to perform.
-  if (inputParamValues.empty()) {
-    return {genMetadata,    inputParamTypes, resultParamTypes, values,
-            argConventions, effects,         fnMetadata};
-  }
-
-  MLIRContext *ctx = inputParamValues.front().getContext();
-  // Verify the number of input parameters.
-  if (inputParamTypes.size() != inputParamValues.size()) {
-    assert(emitErrorFn && "unexpected invalid signature");
-    emitErrorFn() << "callee expects " << inputParamTypes.size()
-                  << " parameters but only got " << inputParamValues.size();
-    return {};
-  }
-
-  // We need to substitute and simplify expressions that occur in the argument
-  // list and parameter types, e.g.:
-  //     kgen.generator @callee1<type: dtype>(%x: !pop.scalar<type>)
-  //     kgen.generator @callee2<size>(%x: !pop.simd<size, f32>)
-  // ... call @callee1<type: dtype = f32>(%arg1) : (!pop.scalar<f32>) -> ()
-  // ... call @callee2<size=4>(%arg2) : (!pop.simd<4, f32>) -> ()
-  //
-  // This can also occur in parameter types, e.g. for region types (dt vs f32):
-  //     kgen.generator @g<dt: dtype, region: () -> !pop.scalar<dt>>(...
-  //     call @g<dt: dtype = f32, region: () -> !pop.scalar<f32>(...
-
-  // We do this with with ParameterEvaluator which can do the remapping for us.
-  ParameterEvaluator evaluator;
-  evaluator.setInputDepth(1);
-  IndexDepthAdjuster plusOneAdjuster(/*adjustDepth=*/1);
-  IndexDepthAdjuster minusOneAdjuster(/*adjustDepth=*/-1);
-
-  auto remapType = [&](Type type) -> Type {
-    return evaluator.getReboundType(type);
-  };
-
-  SmallVector<Type, 16> unboundParamTypes;
-  llvm::BitVector boundParams(inputParamTypes.size());
-  for (auto [paramNo, value, type] :
-       llvm::enumerate(inputParamValues, inputParamTypes)) {
-    // Bound parameters are allowed to refine the type of subsequent parameters,
-    // e.g. in `<ty: type, fn: () -> !kgen.param<ty>>`, the expected type of
-    // the second parameter will be refined when the first parameter is bound.
-    auto remappedDeclType = remapType(type);
-    // If we're attempting to bind to an unknown attribute, we need to update
-    // the decl, and keep it around so that we can continue to use it (as in a
-    // partial bind).
-    if (::isa<UnboundAttr>(value)) {
-      // Set the binding to a declref of the thing itself - that will keep it
-      // from becoming #kgen.unbound.  This #param.index.ref will have a level
-      // of -1, and we adjust the level of its type by -1 so it balances out
-      // correctly when referenced.
-      auto adjustedParamType = minusOneAdjuster.replace(remappedDeclType);
-      auto value = ParamIndexRefAttr::get(
-          /*depth=*/-1, /*isResult=*/false, unboundParamTypes.size(),
-          adjustedParamType);
-      unboundParamTypes.push_back(remappedDeclType);
-      evaluator.addInputValue(value);
-    } else {
-      // We must remap the value type being provided as well, because it may be
-      // referring to outer-context indexed parameters, whose depth will be
-      // increased when substituted into this signature.
-      Type reboundType = plusOneAdjuster.replace(value.getType());
-      if (reboundType != remappedDeclType) {
-        assert(emitErrorFn && "unexpected invalid signature");
-        emitErrorFn() << "caller input parameter #" << paramNo << " has type "
-                      << reboundType << " but callee expected type "
-                      << remappedDeclType;
-        return {};
-      }
-
-      evaluator.addInputValue(value);
-      boundParams.set(paramNo);
-    }
-  }
-
-  // FIXME: Signature typed attributes need to contain result parameter
-  // declarations. For now, just bind them to themselves.
-  for (auto [idx, type] : llvm::enumerate(resultParamTypes)) {
-    evaluator.addResultValue(
-        ParamIndexRefAttr::get(/*depth=*/-1, /*isResult=*/true, idx, type));
-  }
-
-  // Remap the result parameter types, and input/result argument types. The size
-  // of the SmallVector here has been determined by manual micro-optimizations.
-  SmallVector<Type, 16> newParamResultTypes, inputTypes, resultTypes;
-  llvm::append_range(newParamResultTypes,
-                     llvm::map_range(resultParamTypes, remapType));
-  llvm::append_range(inputTypes,
-                     llvm::map_range(values.getInputs(), remapType));
-  llvm::append_range(resultTypes,
-                     llvm::map_range(values.getResults(), remapType));
-
-  if (genMetadata) {
-    genMetadata = ::cast<GeneratorMetadataAttrInterface>(
-        evaluator.getReboundAttribute(genMetadata));
-    genMetadata = genMetadata.getWithBoundParams(boundParams);
-  }
-
-  if (fnMetadata) {
-    // Rebind input parameter references in the metadata.
-    fnMetadata = ::cast<FnMetadataAttrInterface>(
-        evaluator.getReboundAttribute(fnMetadata));
-  }
-
-  return {genMetadata,         unboundParamTypes,
-          newParamResultTypes, FunctionType::get(ctx, inputTypes, resultTypes),
-          argConventions,      effects,
-          fnMetadata};
-}
-
 //===----------------------------------------------------------------------===//
 // SignatureGeneratorType
 //===----------------------------------------------------------------------===//
@@ -640,45 +578,16 @@ SignatureGeneratorType::get(ArrayRef<Type> inputParamTypes, FunctionType values,
 }
 
 SignatureGeneratorType SignatureGeneratorType::getSpecializedGenerator(
-    ArrayRef<TypedAttr> inputParamValues,
+    ArrayRef<TypedAttr> paramBindings,
     function_ref<InFlightDiagnostic()> emitErrorFn) {
-  if (inputParamValues.empty())
-    return *this;
-  NewSignatureType sig = getBody();
-  SpecializeSignatureResult result = specializeSignature(
-      inputParamValues, getMetadata(), emitErrorFn, getInputParamTypes(),
-      /*resultParamTypes=*/{}, sig.getValues(), sig.getArgConventions(),
-      sig.getFnEffects(), sig.getMetadata());
-  if (!result.success)
-    return {};
-  return SignatureGeneratorType::get(result.inputParamTypes, result.values,
-                                     result.argConventions, result.effects,
-                                     result.fnMetadata, result.genMetadata);
+  return ::cast_or_null<SignatureGeneratorType>(
+      GeneratorType::getSpecializedGenerator(paramBindings, emitErrorFn));
 }
 
 SignatureGeneratorType SignatureGeneratorType::getSpecializedGenerator(
-    ArrayRef<TypedAttr> inputParamValues, Location location) {
-  return getSpecializedGenerator(inputParamValues, [&]() -> InFlightDiagnostic {
-    return emitError(location);
-  });
-}
-
-SignatureGeneratorType SignatureGeneratorType::getSpecializedGenerator(
-    ArrayRef<TypedAttr> inputParamValues,
-    function_ref<InFlightDiagnostic()> emitErrorFn,
-    ArrayRef<Type> inputParamTypes, FunctionType values,
-    ArrayRef<ArgConvention> argConventions, FnEffects effects,
-    FnMetadataAttrInterface fnMetadata,
-    GeneratorMetadataAttrInterface genMetadata) {
-  SpecializeSignatureResult result = specializeSignature(
-      inputParamValues, genMetadata, emitErrorFn, inputParamTypes,
-      /*resultParamTypes=*/{}, values, argConventions, effects, fnMetadata);
-  if (!result.success)
-    return {};
-
-  return SignatureGeneratorType::get(result.inputParamTypes, result.values,
-                                     result.argConventions, result.effects,
-                                     result.fnMetadata, result.genMetadata);
+    ArrayRef<TypedAttr> paramBindings, Location location) {
+  return ::cast_or_null<SignatureGeneratorType>(
+      GeneratorType::getSpecializedGenerator(paramBindings, location));
 }
 
 SignatureGeneratorType SignatureGeneratorType::remapToSignatureGenerator(

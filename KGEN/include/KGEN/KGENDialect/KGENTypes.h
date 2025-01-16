@@ -50,19 +50,12 @@ public:
       ArrayRef<ArgConvention> argConvs = {}, FnEffects effects = {},
       Attribute fnMetadata = {}, Attribute genMetadata = {});
 
+  /// Get this GeneratorType with some parameters bound.
   SignatureGeneratorType
-  getSpecializedGenerator(ArrayRef<TypedAttr> inputParamValues,
+  getSpecializedGenerator(ArrayRef<TypedAttr> paramBindings,
                           function_ref<InFlightDiagnostic()> emitErrorFn = {});
   SignatureGeneratorType
-  getSpecializedGenerator(ArrayRef<TypedAttr> inputParamValues,
-                          Location location);
-  static SignatureGeneratorType
-  getSpecializedGenerator(ArrayRef<TypedAttr> inputParamValues,
-                          function_ref<InFlightDiagnostic()> emitErrorFn,
-                          ArrayRef<Type> inputParamTypes, FunctionType values,
-                          ArrayRef<ArgConvention> argConventions,
-                          FnEffects effects, FnMetadataAttrInterface fnMetadata,
-                          GeneratorMetadataAttrInterface genMetadata);
+  getSpecializedGenerator(ArrayRef<TypedAttr> paramBindings, Location location);
 
   /// Construct a signature from named parameter declarations, a function
   /// type, and metadata. This helper is used to convert between a named
