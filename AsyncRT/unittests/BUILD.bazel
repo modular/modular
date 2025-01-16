@@ -50,6 +50,7 @@ modular_cc_test(
     name = "GPUDeviceContextTest",
     size = "small",
     srcs = ["GPUDeviceContextTest.cpp"],
+    gpu_constraints = ["//:has_gpu"],
     tags = [
         "A100",
         "gpu",
@@ -64,6 +65,7 @@ modular_cc_test(
     name = "CUDADeviceContextTest",
     size = "small",
     srcs = ["CUDADeviceContextTest.cpp"],
+    gpu_constraints = ["//:has_gpu"],
     tags = [
         "A100",
         "gpu",
