@@ -73,6 +73,7 @@ def test_fused_qk_rope[type: DType]() -> None:
 
     # Initialize KV cache block buffer with golden values.
     k_cache_input_buffer = k_cache_input[type]()
+    max_cache_len_in_batch = 0
     for batch_idx in range(batch_size):
         memcpy(
             dest=(
@@ -82,6 +83,9 @@ def test_fused_qk_rope[type: DType]() -> None:
             ),
             src=k_cache_input_buffer.data + (batch_idx * seq_len * dim),
             count=seq_len * dim,
+        )
+        max_cache_len_in_batch = max(
+            max_cache_len_in_batch, Int(start_positions[batch_idx])
         )
 
     # Create the actual KV cache type.
@@ -100,6 +104,8 @@ def test_fused_qk_rope[type: DType]() -> None:
         is_context_encoding=False,
         num_layers=num_layers,
         batch_size=batch_size,
+        max_seq_len_in_batch=seq_len,
+        max_cache_len_in_batch=max_cache_len_in_batch,
     )
 
     # Create and initialize query buffer.
