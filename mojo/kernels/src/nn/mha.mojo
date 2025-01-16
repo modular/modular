@@ -520,14 +520,19 @@ fn flash_attention_dispatch[
     if _is_flash_attention_applicable:
         # Attention mask tensor needs to be aligned to even length. This
         # is not needed when computing mask on the fly.
+        @parameter
+        if _use_valid_length:
+            mask_tensor_col = max_prompt_len
+        else:
+            mask_tensor_col = max_cache_valid_length
+
         if not is_token_generation and (
-            max_prompt_len % 2 == 0 or not add_attn_mask
+            mask_tensor_col % 2 == 0 or not add_attn_mask
         ):
             # Choose matmul parameters based on dtype.
             alias smem_use = config.shared_mem_elements[
                 is_shared_kv
             ]() * sizeof[config.type]()
-
             var func = ctx.compile_function[
                 mha[
                     mask.rank,
@@ -563,6 +568,7 @@ fn flash_attention_dispatch[
                 scale,
                 batch_size,
                 max_prompt_len,
+                max_cache_valid_length,
                 valid_length,
                 mask_functor,
                 score_mod_functor,
@@ -1109,7 +1115,6 @@ fn _copy_frag_to_smem_amd[
                 tile_BMxBK.ptr.store(offset_BMxBK, vec)
 
 
-# Entry point for mha with batch_size > 1.
 @__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](config.num_threads()))
 fn mha[
     mask_rank: Int,
@@ -1136,14 +1141,22 @@ fn mha[
     output_ptr: UnsafePointer[Scalar[output_type]],
     scale: Float32,
     batch_size: Int,
-    max_seq_len: Int,  # max query length (i.e., padded query)
-    valid_length: NDBuffer[DType.uint32, 1],  # valid length per batch
+    seq_len_arg: Int,
+    num_keys_arg: Int,
+    valid_length: NDBuffer[DType.uint32, 1],
     mask: mask_t,
     score_mod: score_mod_t,
 ):
+    alias depth = config.depth
+    alias num_heads = config.num_heads
     var batch_idx = block_idx.z
-    var curr_batch_seq_len: Int
-    var q_batch_offset: Int
+
+    # mha inputs
+    var seq_len: Int
+    var max_seq_len: Int
+    var num_keys: Int
+    var mask_tensor_col: Int
+    var mask_batch_offset: Int
 
     @parameter
     if ragged:
@@ -1151,32 +1164,67 @@ fn mha[
         start_of_seq = Int(valid_length[batch_idx])
         end_of_seq = Int(valid_length[batch_idx + 1])
         seq_len = end_of_seq - start_of_seq
+
+        if seq_len < block_idx.x * config.block_m():
+            return
+
+        @parameter
+        if not _is_cache_length_accurate:
+            seq_len += k.cache_length(batch_idx)
+
+        max_seq_len = seq_len_arg
+        num_keys = seq_len
+        mask_tensor_col = seq_len_arg
         q_batch_offset = start_of_seq * config.depth * config.num_heads
+        mask_batch_offset = (
+            batch_idx
+            * max_seq_len
+            * max_seq_len
+            * (config.num_heads if mask_rank == 4 else 1)
+        )
     # KVCache inputs, prompt lengths are all padded to the max in batch.
     elif _use_valid_length:
         # treat valid_lengths as valid lengths
+        seq_len = Int(valid_length[batch_idx])
+
+        if seq_len < block_idx.x * config.block_m():
+            return
+
+        @parameter
+        if not _is_cache_length_accurate:
+            seq_len += k.cache_length(batch_idx)
+
+        max_seq_len = seq_len_arg
+        num_keys = seq_len
+        mask_tensor_col = seq_len_arg
         q_batch_offset = (
             config.depth * config.num_heads * max_seq_len * batch_idx
         )
-        seq_len = Int(valid_length[batch_idx])
+        mask_batch_offset = (
+            batch_idx
+            * max_seq_len
+            * max_seq_len
+            * (config.num_heads if mask_rank == 4 else 1)
+        )
     # NDBuffer inputs, homogeneous batching.
     else:
+        seq_len = seq_len_arg
+
+        if seq_len < block_idx.x * config.block_m():
+            return
+
+        max_seq_len = seq_len_arg
+        num_keys = num_keys_arg
+        mask_tensor_col = num_keys_arg
         q_batch_offset = (
             config.depth * config.num_heads * max_seq_len * batch_idx
         )
-        seq_len = max_seq_len
-
-    if seq_len < block_idx.x * config.block_m():
-        return
-
-    var mask_batch_offset = batch_idx * max_seq_len * max_seq_len * (
-        config.num_heads if mask_rank == 4 else 1
-    )
-    var key_length = k.cache_length(batch_idx)
-
-    @parameter
-    if not _is_cache_length_accurate:
-        key_length += seq_len
+        mask_batch_offset = (
+            batch_idx
+            * max_seq_len
+            * num_keys
+            * (config.num_heads if mask_rank == 4 else 1)
+        )
 
     @parameter
     if is_shared_kv:
@@ -1195,8 +1243,8 @@ fn mha[
             scale,
             seq_len,
             max_seq_len,
-            key_length,
-            max_seq_len,
+            num_keys,
+            mask_tensor_col,
             mask,
             score_mod,
             batch_idx,
@@ -1217,8 +1265,8 @@ fn mha[
             scale,
             seq_len,
             max_seq_len,
-            key_length,
-            max_seq_len,
+            num_keys,
+            mask_tensor_col,
             mask,
             score_mod,
             batch_idx,
