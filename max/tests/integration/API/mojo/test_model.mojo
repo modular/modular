@@ -56,7 +56,7 @@ fn test_model_metadata() raises:
 
     for input in input_metadata:
         assert_equal(input[].get_name(), "input")
-        assert_equal(str(input[].get_dtype()), "float32")
+        assert_equal(String(input[].get_dtype()), "float32")
 
     var output_metadata = compiled_model.get_model_output_metadata()
     var num_outputs = len(output_metadata)
@@ -65,7 +65,7 @@ fn test_model_metadata() raises:
 
     for output in output_metadata:
         assert_equal(output[].get_name(), "output")
-        assert_equal(str(output[].get_dtype()), "float32")
+        assert_equal(String(output[].get_dtype()), "float32")
 
 
 fn test_model_mismatched_input_output_count() raises:
@@ -82,7 +82,7 @@ fn test_model_mismatched_input_output_count() raises:
 
     var count = 0
     for name in input_names:
-        assert_equal(name[], "input" + str(count))
+        assert_equal(name[], "input" + String(count))
         count += 1
 
     assert_equal(input_names[1], "input1")
@@ -114,7 +114,7 @@ fn test_model() raises:
     _ = input_tensor^  # Keep inputs alive
     var output_tensor = outputs.get[DType.float32]("output")
 
-    assert_equal(str(output_tensor.spec()), "5xfloat32")
+    assert_equal(String(output_tensor.spec()), "5xfloat32")
 
     var expected_output = Tensor[DType.float32](
         TensorShape(5), 4.0, 2.0, -5.0, 3.0, 6.0
@@ -136,7 +136,7 @@ fn test_model_tuple_input() raises:
     var outputs = model.execute(NamedTensor("input", input_tensor^))
     var output_tensor = outputs.get[DType.float32]("output")
 
-    assert_equal(str(output_tensor.spec()), "5xfloat32")
+    assert_equal(String(output_tensor.spec()), "5xfloat32")
 
     var expected_output = Tensor[DType.float32](
         TensorShape(5), List[Float32](4.0, 2.0, -5.0, 3.0, 6.0)
@@ -163,7 +163,7 @@ fn test_model_tuple_input_different_dtypes() raises:
     )
     var output_tensor = outputs.get[DType.int32]("output")
 
-    assert_equal(str(output_tensor.spec()), "5xint32")
+    assert_equal(String(output_tensor.spec()), "5xint32")
 
     for i in range(5):
         assert_equal(output_tensor[i], i)
@@ -186,7 +186,7 @@ fn test_model_tuple_input_dynamic() raises:
     var outputs = model.execute(NamedTensor(tensor_name, input_tensor^))
     var output_tensor = outputs.get[DType.float32]("output")
 
-    assert_equal(str(output_tensor.spec()), "5xfloat32")
+    assert_equal(String(output_tensor.spec()), "5xfloat32")
 
     var expected_output = Tensor[DType.float32](
         TensorShape(5), List[Float32](4.0, 2.0, -5.0, 3.0, 6.0)
@@ -204,7 +204,7 @@ fn test_model_py_dict_execute() raises:
     var outputs = model.execute(inputs)
     var output_tensor = outputs.get[DType.float32]("output")
 
-    assert_equal(str(output_tensor.spec()), "5xfloat32")
+    assert_equal(String(output_tensor.spec()), "5xfloat32")
 
     var expected_output = Tensor[DType.float32](
         TensorShape(5), List[Float32](3.0, 2.0, -4.0, 5.0, 9.0)

@@ -38,7 +38,7 @@ fn test_model_numpy_input() raises:
     _ = input_np_tensor^
     var output_np_tensor = np_outputs.get[DType.float32]("output")
 
-    assert_equal(str(output_np_tensor.spec()), "5xfloat32")
+    assert_equal(String(output_np_tensor.spec()), "5xfloat32")
 
     assert_equal(expected_output, output_np_tensor)
 

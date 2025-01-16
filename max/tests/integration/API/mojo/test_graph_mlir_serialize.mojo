@@ -46,7 +46,7 @@ fn execute_graph_and_write_mlir(
 ) raises -> Tensor[DType.float32]:
     var graph = create_graph()
     with open(filename, "w") as f:
-        f.write(str(graph))
+        f.write(String(graph))
     return run_on_graph(graph, input)
 
 
