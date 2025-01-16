@@ -50,11 +50,11 @@
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/StandardInstrumentations.h"
-#include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Support/xxhash.h"
 #include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Transforms/Utils/Cloning.h"
@@ -1103,7 +1103,7 @@ ObjectCompiler::emitArchiveAttr(OwningOpRef<ModuleOp> module) {
   BufferRef buffer = bufferOr.takeValue();
 
   // Hash it so the name isn't enormous.
-  auto hash = llvm::BLAKE3::hash(
+  auto hash = llvm::xxHash64(
       ArrayRef((const uint8_t *)produceStandaloneArchiveKey->getBufferStart(),
                produceStandaloneArchiveKey->getBufferSize()));
 
