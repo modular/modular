@@ -95,7 +95,7 @@ struct Level:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "Level." + str(self)
+        return "Level." + String(self)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -126,7 +126,7 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
 
         var writer = self._fd
 
-        writer.write(str(target_level), "::: ")
+        writer.write(String(target_level), "::: ")
         write_args(writer, values, sep=" ", end="\n")
 
     fn info[*Ts: Writable](self, *values: *Ts):
@@ -138,7 +138,7 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
 
         var writer = self._fd
 
-        writer.write(str(target_level), "::: ")
+        writer.write(String(target_level), "::: ")
         write_args(writer, values, sep=" ", end="\n")
 
     fn warning[*Ts: Writable](self, *values: *Ts):
@@ -150,7 +150,7 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
 
         var writer = self._fd
 
-        writer.write(str(target_level), "::: ")
+        writer.write(String(target_level), "::: ")
         write_args(writer, values, sep=" ", end="\n")
 
     fn error[*Ts: Writable](self, *values: *Ts):
@@ -162,7 +162,7 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
 
         var writer = self._fd
 
-        writer.write(str(target_level), "::: ")
+        writer.write(String(target_level), "::: ")
         write_args(writer, values, sep=" ", end="\n")
 
     fn critical[*Ts: Writable](self, *values: *Ts):
@@ -174,7 +174,7 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
 
         var writer = self._fd
 
-        writer.write(str(target_level), "::: ")
+        writer.write(String(target_level), "::: ")
         write_args(writer, values, sep=" ", end="\n")
 
         abort()
