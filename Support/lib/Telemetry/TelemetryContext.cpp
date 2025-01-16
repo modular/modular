@@ -144,8 +144,8 @@ std::pair<std::string, std::string> M::Telemetry::createLocalIDs() {
 
   // Construct a machine ID.
   auto hash = hashState.result();
-  std::string machine_id =
-      encodeURLSafeBase64(std::string({hash.begin(), hash.end()}));
+  std::string machineID =
+      encodeURLSafeBase64(StringRef((char *)hash.begin(), hash.size()));
 
   // Mix in some random bytes in order to construct a local session identifier.
   // This may suffer from a cardinality explosion (and we may choose to rely on
@@ -157,18 +157,18 @@ std::pair<std::string, std::string> M::Telemetry::createLocalIDs() {
   assert(!err.isError());
   hashState.update(scratchBuf);
   hash = hashState.result();
-  std::string session_id =
-      encodeURLSafeBase64(std::string({hash.begin(), hash.end()}));
+  std::string sessionID =
+      encodeURLSafeBase64(StringRef((char *)hash.begin(), hash.size()));
 
   // Return the pair.
-  return std::pair<std::string, std::string>(machine_id, session_id);
+  return std::make_pair(machineID, sessionID);
 }
 
 static size_t getMaxProcessors(const HostMachineInfo &hostInfo) {
   auto limitsOr = CPULimits::get();
   if (!limitsOr.isError()) {
     auto millicores = limitsOr->millicores;
-    if (millicores.has_value())
+    if (millicores)
       return *millicores / 1000;
   }
   return hostInfo.numPhysicalCores;
@@ -258,9 +258,8 @@ TelemetryContext::TelemetryContext(
 
   // Check if we are running in a container
   auto isInContainer = getHostIsInContainer();
-  if (!isInContainer.isError()) {
+  if (!isInContainer.isError())
     attrs.SetAttribute("system.in.container", isInContainer.takeValue());
-  }
 
   // Set the underlying Modular version.
   auto version = getModularVersion();
@@ -272,11 +271,11 @@ TelemetryContext::TelemetryContext(
   attrs.SetAttribute("modular.version.buildtype", version.buildType);
 
   // Set the local machineid.
-  static std::pair<std::string, std::string> local_ids = createLocalIDs();
+  static std::pair<std::string, std::string> localIDs = createLocalIDs();
   // WARNING: Metering & billing depends on machineid. Do not remove!
-  attrs.SetAttribute("machineid", local_ids.first);
-  attrs.SetAttribute("sessionid", local_ids.second);
-  machineId = local_ids.first;
+  attrs.SetAttribute("machineid", localIDs.first);
+  attrs.SetAttribute("sessionid", localIDs.second);
+  machineId = localIDs.first;
 
   auto webId = dyn_cast_if_present<StringRef>(settings.get("web.id"));
   if (webId.empty()) {
@@ -496,9 +495,8 @@ bool TelemetryContext::initUserMetricsReader(
 
 bool TelemetryContext::clearUserMetricsReader() {
 #ifdef MODULAR_ENABLE_TELEMETRY
-  if (!userMetricsProvider) {
+  if (!userMetricsProvider)
     return false;
-  }
 
   userMetricsProvider.reset();
   userMeter.reset();
