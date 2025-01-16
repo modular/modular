@@ -241,6 +241,10 @@ fn normalize(
         return normalize(rebind[Scalar[DType.uint16]](value)).cast[
             result.type
         ]()
+    elif type is DType.float16:
+        return normalize(rebind[Scalar[DType.float16]](value)).cast[
+            result.type
+        ]()
     elif type is DType.bfloat16:
         return normalize(rebind[Scalar[DType.bfloat16]](value)).cast[
             result.type
