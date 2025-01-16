@@ -197,17 +197,17 @@ def test_matmul[
                     c[i, j],
                     golden[i, j],
                     msg="values do not agree for "
-                    + str(m)
+                    + String(m)
                     + "x"
-                    + str(n)
+                    + String(n)
                     + "x"
-                    + str(k)
+                    + String(k)
                     + " using the dtype="
-                    + str(a_type)
+                    + String(a_type)
                     + ","
-                    + str(b_type)
+                    + String(b_type)
                     + ","
-                    + str(c_type),
+                    + String(c_type),
                 )
 
     c1_ptr.free()
@@ -575,15 +575,15 @@ def test_batched_matmul[
     assert_true(
         errors == 0,
         "num of errors must be 0, but got "
-        + str(errors)
+        + String(errors)
         + " for dimensions Batch="
-        + str(batches)
+        + String(batches)
         + " M="
-        + str(m)
+        + String(m)
         + ", N="
-        + str(n)
+        + String(n)
         + ", K="
-        + str(k),
+        + String(k),
     )
 
     golden_ptr.free()

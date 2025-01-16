@@ -143,7 +143,9 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
             self._handle = handle
         else:
             raise Error(
-                "the backend '" + str(backend) + "' is not currently supported"
+                "the backend '"
+                + String(backend)
+                + "' is not currently supported"
             )
 
     @always_inline
@@ -262,7 +264,7 @@ fn matmul[
     else:
         raise Error(
             "the backend '"
-            + str(handle.backend)
+            + String(handle.backend)
             + "' is not currently supported"
         )
 

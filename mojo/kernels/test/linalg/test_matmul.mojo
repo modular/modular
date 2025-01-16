@@ -158,17 +158,17 @@ def test_matmul[
         for j in range(n):
             var msg = (
                 "values do not agree for "
-                + str(m)
+                + String(m)
                 + "x"
-                + str(n)
+                + String(n)
                 + "x"
-                + str(k)
+                + String(k)
                 + " using the dtype="
-                + str(a_type)
+                + String(a_type)
                 + ","
-                + str(b_type)
+                + String(b_type)
                 + ","
-                + str(c_type)
+                + String(c_type)
             )
 
             @parameter

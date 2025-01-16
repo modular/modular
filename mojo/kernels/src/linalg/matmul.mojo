@@ -791,15 +791,15 @@ fn matmul[
     fn description_fn() -> String:
         var shape = GemmShape.get[transpose_b](c, a, b)
         return String(";").join(
-            str(target),
+            String(target),
             trace_arg("A", IndexList[2](shape.M, shape.K), a.type),
             trace_arg("B", IndexList[2](shape.K, shape.N), b.type),
             trace_arg("C", IndexList[2](shape.M, shape.N), c.type),
-            "transpose_a=" + str(transpose_a),
-            "transpose_b=" + str(transpose_b),
-            "b_packed=" + str(b_packed),
+            "transpose_a=" + String(transpose_a),
+            "transpose_b=" + String(transpose_b),
+            "b_packed=" + String(b_packed),
             "single_thread_blocking_override="
-            + str(single_thread_blocking_override),
+            + String(single_thread_blocking_override),
         )
 
     # TODO(#23049): Pipe info on whether using faster, saturated_vnni is ok

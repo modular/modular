@@ -259,10 +259,10 @@ fn batched_matmul[
             trace_arg("A", a_buf),
             trace_arg("B", b_buf),
             trace_arg("C", c_buf),
-            "transpose_a=" + str(transpose_a),
-            "transpose_b=" + str(transpose_b),
+            "transpose_a=" + String(transpose_a),
+            "transpose_b=" + String(transpose_b),
             "single_thread_blocking_override="
-            + str(single_thread_blocking_override),
+            + String(single_thread_blocking_override),
         )
 
     with Trace[TraceLevel.OP, target=target](

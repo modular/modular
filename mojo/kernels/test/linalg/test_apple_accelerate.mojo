@@ -76,13 +76,13 @@ def test_matmul(c: NDBuffer, a: NDBuffer, b: NDBuffer, m: Int, n: Int, k: Int):
     assert_true(
         errors == 0,
         "num of errors must be 0, but got "
-        + str(errors)
+        + String(errors)
         + " for dimensions M="
-        + str(m)
+        + String(m)
         + ", N="
-        + str(n)
+        + String(n)
         + ", K="
-        + str(k),
+        + String(k),
     )
 
     golden_ptr.free()
@@ -182,15 +182,15 @@ def test_batched_matmul(
     assert_true(
         errors == 0,
         "num of errors must be 0, but got "
-        + str(errors)
+        + String(errors)
         + " for dimensions Batch="
-        + str(batches)
+        + String(batches)
         + " M="
-        + str(m)
+        + String(m)
         + ", N="
-        + str(n)
+        + String(n)
         + ", K="
-        + str(k),
+        + String(k),
     )
 
     golden_ptr.free()
