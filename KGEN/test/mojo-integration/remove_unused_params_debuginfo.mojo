@@ -13,8 +13,8 @@ from memory import UnsafePointer
 fn agnostic_user[
     T: AnyType, dt: DType
 ](b: UnsafePointer[T], dp: UnsafePointer[Scalar[dt]]):
-    print(bool(b.bitcast[UInt32]()))
-    print(bool(dp.bitcast[UInt32]()))
+    print(Bool(b.bitcast[UInt32]()))
+    print(Bool(dp.bitcast[UInt32]()))
 
 
 # There should only be one instantiation of agnostic_user
