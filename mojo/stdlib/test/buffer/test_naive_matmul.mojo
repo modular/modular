@@ -26,7 +26,7 @@
 # def fill_b(buf):
 #     for i in range(len(buf)):
 #         for j in range(len(buf[i])):
-#             buf[i][j] = float(i // (j + 1) + j)
+#             buf[i][j] = Float64(i // (j + 1) + j)
 #
 #
 # def print_matrix(buf):
