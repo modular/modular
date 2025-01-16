@@ -46,8 +46,14 @@ struct TMABarrier(CollectionElement):
 
     @always_inline
     fn __init__(mut self):
+        # We follow cutlass to adopt 16B alignment instead of 8B suggested by the ptx doc.
+        # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html?highlight=fence%2520proxy%2520async%2520shared%25203A%25203Acta#size-and-alignment-of-mbarrier-object
+        # https://github.com/NVIDIA/cutlass/blob/main/test/unit/cute/hopper/tma_load_testbed.hpp#L50
         self.mbar = stack_allocation[
-            1, Int64, address_space = AddressSpace.SHARED
+            1,
+            Int64,
+            address_space = AddressSpace.SHARED,
+            alignment=16,
         ]()
 
         mbarrier_init(self.mbar, 1)
