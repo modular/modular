@@ -60,7 +60,7 @@ fn MLIR_func[
             UnsafePointer[NoneType]
         ]()[]
         if not ptr:
-            abort("cannot load " + String(name) + " from graph library")
+            abort(String("cannot load ", name, " from graph library"))
         return f(loaded_args_pack)
     else:
         return external_call[name, T](loaded_args_pack)
