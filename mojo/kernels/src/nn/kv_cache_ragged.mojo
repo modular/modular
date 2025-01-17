@@ -41,6 +41,7 @@ from nn.kv_cache import (
     kv_params_h32_d128_bshd,
 )
 from nn.mha import flash_attention as gpu_flash_attention
+from nn.mha_cross import mha_cross_gpu_naive as gpu_cross_attention
 from nn.mha_mask import CausalMask, MHAMask, NullMask
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
 from register import register_internal
@@ -2414,7 +2415,7 @@ fn _cross_attention_kv_cache_ragged[
     q: NDBuffer[type, 3, *_],
     q_input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     q_max_seq_len: UInt32,
-    kv_input_row_offsets: NDBuffer[DType.uint32, 1],
+    kv_input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     kv_collection: collection_t,
     layer_idx: UInt32,
     mask: mask_t,
@@ -2455,22 +2456,17 @@ fn _cross_attention_kv_cache_ragged[
             output,
         )
     else:
-        var dummy_mask = NDBuffer[type, 4, DimList.create_unknown[4]()](
-            UnsafePointer[Scalar[type]](), Index(0, 0, 0, 0)
-        )
-        gpu_flash_attention[add_attn_mask=False, ragged=True](
+        gpu_cross_attention(
             output,
             q,
+            q_input_row_offsets,
+            Int(q_max_seq_len),
             k,
             v,
-            dummy_mask,
+            kv_input_row_offsets,
             mask,
-            IdentityScoreMod(),
-            q_input_row_offsets,
             scale,
             context.get_device_context(),
-            kv_input_row_offsets,
-            None,
         )
 
 
@@ -3014,7 +3010,7 @@ fn _flash_attention_kv_cache_alibi_mask_ragged_gpu[
     type: DType, cache_t: KVCacheT, //, *, target: StringLiteral
 ](
     q: NDBuffer[type, 3, *_],
-    input_row_offsets: NDBuffer[DType.uint32, 1],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     k: cache_t,
     v: cache_t,
     scale: Float32,

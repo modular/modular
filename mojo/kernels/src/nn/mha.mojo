@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from collections import OptionalReg, Optional
+from collections import OptionalReg
 from math import align_down, align_up, ceildiv, exp, recip
 from math.constants import log2e
 from os import abort
@@ -316,7 +316,6 @@ fn flash_attention[
     valid_length: NDBuffer[DType.uint32, 1, *_],
     scale: Float32,
     ctx: DeviceContext,
-    kv_input_row_offsets: OptionalReg[NDBuffer[DType.uint32, 1]] = None,
     num_partitions: OptionalReg[Int] = None,
 ) raises:
     """Flash attention 2 algorithm.
@@ -448,7 +447,6 @@ fn flash_attention[
             scale,
             is_token_generation,
             ctx,
-            kv_input_row_offsets,
             num_partitions,
         )
 
@@ -494,7 +492,6 @@ fn flash_attention_dispatch[
     scale: Float32,
     is_token_generation: Bool,
     ctx: DeviceContext,
-    kv_input_row_offsets: OptionalReg[NDBuffer[DType.uint32, 1]] = None,
     num_partitions: OptionalReg[Int] = None,
 ) raises:
     alias num_heads = config.num_heads
@@ -573,7 +570,6 @@ fn flash_attention_dispatch[
                 max_prompt_len,
                 max_cache_valid_length,
                 valid_length,
-                kv_input_row_offsets,
                 mask_functor,
                 score_mod_functor,
                 grid_dim=(
@@ -912,7 +908,6 @@ fn flash_attention[
         scale,
         is_token_generation,
         ctx,
-        None,
         num_partitions,
     )
 
@@ -1150,7 +1145,6 @@ fn mha[
     seq_len_arg: Int,
     num_keys_arg: Int,
     valid_length: NDBuffer[DType.uint32, 1],
-    kv_input_row_offsets: OptionalReg[NDBuffer[DType.uint32, 1]],
     mask: mask_t,
     score_mod: score_mod_t,
 ):
@@ -1179,18 +1173,8 @@ fn mha[
         if not _is_cache_length_accurate:
             seq_len += k.cache_length(batch_idx)
 
-        # this is used for cross attention where we get the num_keys
-        # from kv_input_row_offsets. This is when num_keys != seq_len
-        if kv_input_row_offsets:
-            var kv_row_offsets = kv_input_row_offsets.value()
-            kv_seq_start = Int(kv_row_offsets[batch_idx])
-            kv_seq_end = Int(kv_row_offsets[batch_idx + 1])
-            cur_kv_len = kv_seq_end - kv_seq_start
-            num_keys = cur_kv_len + k.cache_length(batch_idx)
-        else:
-            num_keys = seq_len
-
         max_seq_len = seq_len_arg
+        num_keys = seq_len
         mask_tensor_col = seq_len_arg
         q_batch_offset = start_of_seq * config.depth * config.num_heads
         mask_batch_offset = (
