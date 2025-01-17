@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "copy_files", "modular_py_library", "modular_pybind_extension")
+load("//bazel:api.bzl", "copy_files", "modular_nanobind_extension", "modular_py_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -25,17 +25,18 @@ modular_py_library(
     visibility = ["//visibility:public"],
 )
 
-modular_pybind_extension(
+modular_nanobind_extension(
     name = "_mlir",
-    srcs = ["//:pybind_mlir_srcs"],
+    srcs = ["//:nanobind_mlir_srcs"],
     local_defines = [
         # Set definition used in Interop.h to prefix the MLIR package.
         "MLIR_PYTHON_PACKAGE_PREFIX=max._mlir.",
     ],
-    pybind_deps = [
+    nanobind_deps = [
         "//:MLIRBindingsPythonHeaders",
     ],
-    tags = ["no-clang-tidy-headers"],
+    # Don't lint these files, they're from LLVM.
+    tags = ["no-clang-tidy"],
     deps = [
         "//ModularFramework/tools/mof",
     ],
