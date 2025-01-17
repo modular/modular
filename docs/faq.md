@@ -147,7 +147,7 @@ develop AI algorithms, but as we grow Mojo into a superset of Python, you can
 use it for other things like HPC, data transformations, writing pre/post
 processing operations, and much more. For examples of how Mojo can be used for
 other general programming tasks, see our [Mojo
-examples](https://github.com/modularml/mojo/tree/main/examples).
+examples](https://github.com/modular/mojo/tree/main/examples).
 
 ### Is Mojo interpreted or compiled?
 
@@ -245,7 +245,7 @@ multiplication](https://www.modular.com/blog/the-worlds-fastest-unified-matrix-m
 ### Mojo’s matmul performance in the notebook doesn’t seem that great. What’s going on?
 
 The [Mojo Matmul
-notebook](https://github.com/modularml/mojo/blob/main/examples/notebooks/Matmul.ipynb)
+notebook](https://github.com/modular/mojo/blob/main/examples/notebooks/Matmul.ipynb)
 uses matrix multiplication to show off some Mojo features in a scenario that
 you would never attempt in pure Python. So that implementation is like a “toy”
 matmul implementation and it doesn’t measure up to the state of the art.
@@ -282,7 +282,7 @@ Yes, but it's different. When we first announced Mojo, it was available
 only through login, in a JupyterLab environment. Now that Mojo is available
 for local development, we've shut down that service (you can instead [run
 Mojo notebooks
-locally](https://github.com/modularml/mojo/tree/main/examples/notebooks#readme)).
+locally](https://github.com/modular/mojo/tree/main/examples/notebooks#readme)).
 
 The new [Mojo Playground](/mojo/playground) is built into the docs website
 and does not require login.
@@ -301,7 +301,7 @@ and does not require login.
   using buttons in the Playground toolbar.
 
 - There might be some bugs. Please [report issues and feedback on
-  GitHub](https://github.com/modularml/mojo/issues/new/choose).
+  GitHub](https://github.com/modular/mojo/issues/new/choose).
 
 ### What are the license terms for the SDK?
 
