@@ -40,7 +40,7 @@ fn _get_random_name(size: Int = 8) -> String:
         )
         name_list.append(ord(characters[rand_index]))
     name_list.append(0)
-    return String(name_list^)
+    return String(buffer=name_list^)
 
 
 fn _candidate_tempdir_list() -> List[String]:

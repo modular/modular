@@ -188,7 +188,7 @@ fn b16encode(str: StringSlice) -> String:
 
     out.append(0)
 
-    return String(out^)
+    return String(buffer=out^)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -233,4 +233,4 @@ fn b16decode(str: StringSlice) -> String:
         p.append(decode(hi) << 4 | decode(lo))
 
     p.append(0)
-    return String(p^)
+    return String(buffer=p^)

@@ -259,7 +259,7 @@ struct Char(CollectionElement, EqualityComparable, Intable, Stringable):
         _ = self.unsafe_write_utf8(buffer.unsafe_ptr())
         buffer.unsafe_ptr()[char_len] = 0
         buffer.size = char_len + 1
-        return String(buffer^)
+        return String(buffer=buffer^)
 
     # ===-------------------------------------------------------------------===#
     # Methods

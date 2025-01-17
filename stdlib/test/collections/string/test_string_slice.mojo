@@ -560,11 +560,11 @@ def test_splitlines():
     )
 
     # test \x85 \u2028 \u2029
-    var next_line = String(List[UInt8](0xC2, 0x85, 0))
+    var next_line = String(buffer=List[UInt8](0xC2, 0x85, 0))
     """TODO: \\x85"""
-    var unicode_line_sep = String(List[UInt8](0xE2, 0x80, 0xA8, 0))
+    var unicode_line_sep = String(buffer=List[UInt8](0xE2, 0x80, 0xA8, 0))
     """TODO: \\u2028"""
-    var unicode_paragraph_sep = String(List[UInt8](0xE2, 0x80, 0xA9, 0))
+    var unicode_paragraph_sep = String(buffer=List[UInt8](0xE2, 0x80, 0xA9, 0))
     """TODO: \\u2029"""
 
     for i in List(next_line, unicode_line_sep, unicode_paragraph_sep):

@@ -386,10 +386,8 @@ struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
                         alias argnum = "Argument number: "
                         alias does_not = " does not implement the trait "
                         alias needed = "needed for conversion_flag: "
-                        var flg = String(List[UInt8](flag, 0))
-                        raise Error(
-                            argnum + String(i) + does_not + needed + flg
-                        )
+                        var flg = String(buffer=List[UInt8](flag, 0))
+                        raise Error(String(argnum, i, does_not, needed, flg))
 
                     if self.format_spec:
                         self.format_spec.value().format(

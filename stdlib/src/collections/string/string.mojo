@@ -695,7 +695,7 @@ struct String(
         self._buffer = Self._buffer_type(capacity=capacity)
 
     @always_inline
-    fn __init__(out self, owned buffer: List[UInt8, *_]):
+    fn __init__(out self, *, owned buffer: List[UInt8, *_]):
         """Construct a string from a buffer of bytes without copying the
         allocated data.
 

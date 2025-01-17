@@ -53,9 +53,9 @@ fn make_string[
                 items.append(items[i])
                 i = i + 1 if i < len(items) - 1 else 0
             items.append(0)
-            return String(items^)
+            return String(buffer=items^)
         else:
-            return String(f.read_bytes())
+            return String(buffer=f.read_bytes())
     except e:
         print(e, file=2)
     return abort[String]()

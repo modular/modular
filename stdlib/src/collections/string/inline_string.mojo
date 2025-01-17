@@ -140,7 +140,7 @@ struct InlineString(Sized, Stringable, CollectionElement, CollectionElementNew):
             # Copy the bytes from the additional string.
             buffer.extend(str_slice.as_bytes())
             buffer.append(0)  # Add the NUL byte
-            self._storage = Self.Layout(String(buffer^))
+            self._storage = Self.Layout(String(buffer=buffer^))
 
     fn __add__(self, other: StringSlice) -> Self:
         """Construct a string by appending another string at the end of this string.

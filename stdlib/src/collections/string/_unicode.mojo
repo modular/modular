@@ -204,7 +204,7 @@ fn to_lowercase(s: StringSlice) -> String:
 
     # Add NUL terminator
     output.append(0)
-    return String(output^)
+    return String(buffer=output^)
 
 
 fn to_uppercase(s: StringSlice) -> String:
@@ -256,7 +256,7 @@ fn to_uppercase(s: StringSlice) -> String:
 
     # Add NUL terminator
     output.append(0)
-    return String(output^)
+    return String(buffer=output^)
 
 
 @always_inline
