@@ -541,3 +541,10 @@ ErrorTreeOr<Type> IREvaluator::concretizeParameterExpr(ImplNode *parent,
     return std::move(*error);
   return result;
 }
+
+void IREvaluator::addCustomReplacementsToLiftStore(
+    mlir::AttrTypeReplacer &liftStore) {
+  liftStore.addReplacement([](VTableAttr vtable) {
+    return std::make_pair(vtable, WalkResult::skip());
+  });
+}

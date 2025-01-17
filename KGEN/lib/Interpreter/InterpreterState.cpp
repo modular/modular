@@ -650,6 +650,7 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
         }
         return {ptr.takeValue(), WalkResult::advance()};
       });
+  addCustomReplacementsToLiftStore(liftStore);
 
   for (Attribute &arg : args) {
     arg = replacer.replace(arg);
