@@ -116,9 +116,6 @@ TEST(PrimitiveTypesTest, testStructFieldOffset) {
 }
 
 TEST(PrimitiveTypesTest, testRecursiveStruct) {
-  /// Make sure pointer to self type can be seen and doesn't crash.
-  return; // FIXME(clattner): workaround to get #52887 to land
-
   StopContext ctx = buildAndLaunch("recursive_struct.mojo");
 
   SBValue strct = ctx.frame.FindVariable("f2");

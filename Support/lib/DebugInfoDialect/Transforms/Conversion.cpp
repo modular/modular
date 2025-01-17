@@ -30,7 +30,8 @@ static std::pair<uint64_t, uint32_t> getIntFloatDebugSizeAlign(unsigned width) {
   return std::make_pair(llvm::alignTo(width, align), align);
 }
 
-DebugInfoTypeConverter::DebugInfoTypeConverter() {
+template <bool isCyclic>
+DebugInfoTypeConverterBase<isCyclic>::DebugInfoTypeConverterBase() {
   // Fallback that handle unresolved types.
   replacer.addReplacement(
       [&](Type type) -> std::optional<std::pair<Type, WalkResult>> {
@@ -70,20 +71,25 @@ DebugInfoTypeConverter::DebugInfoTypeConverter() {
       });
 }
 
-DIType DebugInfoTypeConverter::convertDebugType(Type type) {
+template <bool isCyclic>
+DIType DebugInfoTypeConverterBase<isCyclic>::convertDebugType(Type type) {
   if (!type)
     return {};
   return dyn_cast_or_null<DIType>(replacer.replace(type));
 }
 
-Attribute DebugInfoTypeConverter::convertDebugTypesIn(Attribute attr) {
+template <bool isCyclic>
+Attribute
+DebugInfoTypeConverterBase<isCyclic>::convertDebugTypesIn(Attribute attr) {
   auto result = replacer.replace(attr);
   if (auto expr = dyn_cast<DIAggregatesIntoExprAttr>(result))
     assert(isa<DIStructType>(expr.getType()));
   return result;
 }
 
-void DebugInfoTypeConverter::addUnresolvedConverter(TypeConverter &converter) {
+template <bool isCyclic>
+void DebugInfoTypeConverterBase<isCyclic>::addUnresolvedConverter(
+    TypeConverter &converter) {
   replacer.addReplacement(
       [&](Type type) -> std::optional<std::pair<Type, WalkResult>> {
         if (isa<DIType>(type))
@@ -100,7 +106,8 @@ void DebugInfoTypeConverter::addUnresolvedConverter(TypeConverter &converter) {
       });
 }
 
-void DebugInfoTypeConverter::applyRecursively(Operation *op) {
+template <bool isCyclic>
+void DebugInfoTypeConverterBase<isCyclic>::applyRecursively(Operation *op) {
   DIAttrTypeReplacer opReplacer;
   opReplacer.addReplacement(
       [&](DIType type) { return replacer.replace(type); });
@@ -108,6 +115,9 @@ void DebugInfoTypeConverter::applyRecursively(Operation *op) {
       [&](DIExprAttr attr) { return replacer.replace(attr); });
   opReplacer.recursivelyReplaceElementsIn(op);
 }
+
+template class DebugInfo::DebugInfoTypeConverterBase<true>;
+template class DebugInfo::DebugInfoTypeConverterBase<false>;
 
 //===----------------------------------------------------------------------===//
 // Conversion Patterns
