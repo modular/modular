@@ -42,29 +42,29 @@ bool M::areEquivalentFloatTypes(DType dtype, FloatType fpType) {
 FloatType M::getEquivalentFloatType(MLIRContext *ctx, DType dtype) {
   switch (dtype.getValue()) {
   case DType::f8e5m2:
-    return FloatType::getFloat8E5M2(ctx);
+    return Float8E5M2Type::get(ctx);
   case DType::f8e5m2fnuz:
-    return FloatType::getFloat8E5M2FNUZ(ctx);
+    return Float8E5M2FNUZType::get(ctx);
   case DType::f8e4m3:
-    return FloatType::getFloat8E4M3(ctx);
+    return Float8E4M3Type::get(ctx);
   case DType::f8e4m3fnuz:
-    return FloatType::getFloat8E4M3FNUZ(ctx);
+    return Float8E4M3FNUZType::get(ctx);
   case DType::f8e3m4:
-    return FloatType::getFloat8E3M4(ctx);
+    return Float8E3M4Type::get(ctx);
   case DType::f16:
-    return FloatType::getF16(ctx);
+    return Float16Type::get(ctx);
   case DType::bf16:
-    return FloatType::getBF16(ctx);
+    return BFloat16Type::get(ctx);
   case DType::f32:
-    return FloatType::getF32(ctx);
+    return Float32Type::get(ctx);
   case DType::tf32:
-    return FloatType::getTF32(ctx);
+    return FloatTF32Type::get(ctx);
   case DType::f64:
-    return FloatType::getF64(ctx);
+    return Float64Type::get(ctx);
   case DType::f80:
-    return FloatType::getF80(ctx);
+    return Float80Type::get(ctx);
   case DType::f128:
-    return FloatType::getF128(ctx);
+    return Float128Type::get(ctx);
   default:
     return {}; // null denotes failure
   }
