@@ -22,7 +22,7 @@ modular_py_test(
         "requires-network",
     ],
     target_compatible_with = select({
-        # TODO: Sanitizer libs aren't available when python loads pybind shared libs
+        # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
         "//:asan": ["@platforms//:incompatible"],
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -65,7 +65,7 @@ modular_py_test(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     target_compatible_with = select({
-        # TODO: Sanitizer libs aren't available when python loads pybind shared libs
+        # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
         "//:asan": ["@platforms//:incompatible"],
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -113,7 +113,7 @@ modular_py_test(
         "gpu",
     ],
     target_compatible_with = select({
-        # TODO: Sanitizer libs aren't available when python loads pybind shared libs
+        # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
         "//:asan": ["@platforms//:incompatible"],
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -157,7 +157,7 @@ modular_py_test(
         "no-mypy",  # TODO: Fix and remove
     ],
     target_compatible_with = select({
-        # TODO: Sanitizer libs aren't available when python loads pybind shared libs
+        # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
         "//:asan": ["@platforms//:incompatible"],
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -202,7 +202,7 @@ modular_py_test(
         "H100-DISABLE",
     ],
     target_compatible_with = select({
-        # TODO: Sanitizer libs aren't available when python loads pybind shared libs
+        # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
         "//:asan": ["@platforms//:incompatible"],
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],

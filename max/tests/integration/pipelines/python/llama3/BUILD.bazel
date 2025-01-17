@@ -102,7 +102,7 @@ modular_py_binary(
         ],
         target_compatible_with = select(
             {
-                # TODO: Sanitizer libs aren't available when python loads pybind shared libs
+                # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
                 "//:asan": ["@platforms//:incompatible"],
                 "//:tsan": ["@platforms//:incompatible"],
                 "//conditions:default": [],
@@ -177,7 +177,7 @@ modular_py_test(
     ],
     target_compatible_with = select(
         {
-            # TODO: Sanitizer libs aren't available when python loads pybind shared libs
+            # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
             "//:asan": ["@platforms//:incompatible"],
             "//:tsan": ["@platforms//:incompatible"],
             "//conditions:default": [],

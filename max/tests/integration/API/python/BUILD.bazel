@@ -43,12 +43,13 @@ modular_py_test(
         "requires-network",
     ],
     target_compatible_with = select({
-        # TODO: Sanitizer libs aren't available when python loads pybind shared libs
+        # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
         "//:asan": ["@platforms//:incompatible"],
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = [
+        ":modular_graph_test",
         "//SDK/lib/API/python/max/engine",
         "//SDK/public/max-repo/pipelines/python/cli",
         "//SDK/public/max-repo/pipelines/python/llama3",
@@ -108,7 +109,7 @@ modular_py_test(
     ],
     tags = ["no-mypy"],  # TODO: fix and remove
     target_compatible_with = select({
-        # TODO: Sanitizer libs aren't available when python loads pybind shared libs
+        # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
         "//:asan": ["@platforms//:incompatible"],
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -158,7 +159,7 @@ modular_py_test(
         "requires-network",
     ],
     target_compatible_with = select({
-        # TODO: Sanitizer libs aren't available when python loads pybind shared libs
+        # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
         "//:asan": ["@platforms//:incompatible"],
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -199,7 +200,7 @@ modular_py_test(
     gpu_constraints = ["//:has_gpu"],
     tags = ["multi-gpu"],
     target_compatible_with = select({
-        # TODO: Sanitizer libs aren't available when python loads pybind shared libs
+        # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
         "//:asan": ["@platforms//:incompatible"],
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
