@@ -167,7 +167,7 @@ struct LinkedList[ElementType: WritableCollectionElement]:
         Args:
             value: The value to append.
         """
-        var node = Node[ElementType](value^, self._tail, None)
+        var node = Node(value^, self._tail, None)
         var addr = UnsafePointer[__type_of(node)].alloc(1)
         addr.init_pointee_move(node)
         if self:
@@ -183,7 +183,7 @@ struct LinkedList[ElementType: WritableCollectionElement]:
         Args:
             value: The value to prepend.
         """
-        var node = Node[ElementType](value^, None, self._head)
+        var node = Node(value^, None, self._head)
         var addr = UnsafePointer[__type_of(node)].alloc(1)
         addr.init_pointee_move(node)
         if self:
