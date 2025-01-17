@@ -9447,7 +9447,7 @@ struct Struct_mha_ragged_paged_causal_mask_no_pos_nhead_32_hdim_128:
 # Cross attention
 #
 # Expected kernel name format:
-# mo.cross_attention.<padded/ragged>.<continuous_batching/paged>.<MASK_TYPE>.<POS_TYPE>.nhead_<NUM_HEADS>.hdim_<HEAD_SIZE>
+# mo.cross_attention.<padded/ragged>.<continuous_batching/paged>.<MASK_TYPE>.<POS_TYPE>
 # ===-----------------------------------------------------------------------===#
 
 
@@ -9495,14 +9495,14 @@ fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged_kernel_api[
 
 
 @compiler.register(
-    "mo.cross_attention.ragged.continuous_batching.null_mask.no_pos.nhead_8.hdim_128"
+    "mo.cross_attention.ragged.continuous_batching.null_mask.no_pos"
 )
-struct Struct_cross_attention_ragged_continuous_batching_null_mask_no_pos_nhead_8_hdim_128:
+struct Struct_cross_attention_ragged_continuous_batching_null_mask_no_pos:
     @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
-        type: DType, target: StringLiteral
+        type: DType, num_heads: Int, head_dim: Int, target: StringLiteral
     ](
         output: ManagedTensorSlice[type, 3],
         q: ManagedTensorSlice[type, 3],
@@ -9510,7 +9510,7 @@ struct Struct_cross_attention_ragged_continuous_batching_null_mask_no_pos_nhead_
         q_max_seq_len: ManagedTensorSlice[DType.uint32, 1],
         kv_input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         kv_collection: ContinuousBatchingKVCacheCollection[
-            type, kv_params_h8_d128_bshd
+            type, KVCacheStaticParams(num_heads=num_heads, head_size=head_dim)
         ],
         layer_idx: UInt32,
         scale: Float32,
