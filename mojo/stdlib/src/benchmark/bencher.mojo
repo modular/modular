@@ -56,7 +56,19 @@ struct BenchMetric(CollectionElement):
 
         Returns:
             The string representation."""
-        return self.name + " (" + self.unit + ")"
+        return String.write(self)
+
+    fn write_to[W: Writer](self, mut writer: W):
+        """
+        Formats this BenchMetric to the provided Writer.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
+
+        Args:
+            writer: The object to write to.
+        """
+        writer.write(self.name, " (", self.unit, ")")
 
     fn __eq__(self, other: Self) -> Bool:
         """Compares two metrics for equality.
@@ -169,6 +181,18 @@ struct ThroughputMeasure(CollectionElement):
             The string represntation.
         """
         return String(self.metric)
+
+    fn write_to[W: Writer](self, mut writer: W):
+        """
+        Formats this ThroughputMeasure to the provided Writer.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
+
+        Args:
+            writer: The object to write to.
+        """
+        return writer.write(self.metric)
 
     fn compute(self, elapsed_sec: Float64) -> Float64:
         """Computes throughput rate for this metric per unit of time (second).
@@ -392,7 +416,7 @@ struct BenchmarkInfo(CollectionElement, Stringable):
         var throughput: String = ""
         for i in range(len(self.measures)):
             var rate = self.measures[i].compute(self.result.mean(unit=Unit.s))
-            throughput = throughput + "," + String(rate)
+            throughput = String(throughput, ",", rate)
 
         # add verbose-timing results
         if self.verbose_timing:
@@ -403,17 +427,17 @@ struct BenchmarkInfo(CollectionElement, Stringable):
                 self.result.duration(unit=Unit.ms),
             )
             for t in verbose_timing_vals:
-                throughput = throughput + "," + String(t[])
+                throughput = String(throughput, ",", t[])
 
-        return (
-            '"'
-            + self.name
-            + '"'
-            + ","
-            + String(self.result.mean(unit=Unit.ms))
-            + ","
-            + String(self.result.iters())
-            + throughput
+        return String(
+            '"',
+            self.name,
+            '"',
+            ",",
+            self.result.mean(unit=Unit.ms),
+            ",",
+            self.result.iters(),
+            throughput,
         )
 
     fn _csv_str(self, column_width: VariadicList[Int]) -> String:
@@ -872,7 +896,7 @@ struct Bench:
             report += String("name,met (ms),iters")
             if num_runs > 0:
                 for measure in self.info_vec[0].measures:
-                    report += "," + String(measure[])
+                    report = String(report, ",", measure[])
 
                 if self.config.verbose_timing:
                     for t in self.config.VERBOSE_TIMING_LABELS:
