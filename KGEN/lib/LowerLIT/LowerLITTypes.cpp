@@ -459,15 +459,15 @@ struct LITTypeLowerer : public IRRewriter, LowerLITReplacer {
   /// The struct decl map.
   StructDecls &structDecls;
   /// Converter for debuginfo.
-  DebugInfo::DebugInfoTypeConverter debugTypeConverter;
+  DebugInfo::DebugInfoNonCyclicTypeConverter debugTypeConverter;
   /// Unrealized casts to resolve at the end of type lowering.
   SmallVector<mlir::UnrealizedConversionCastOp> unrealizedCasts;
 };
 } // namespace
 
-static DebugInfo::DIType
-buildDebugInfoForStructRef(LIT::StructType ref, StructDecls &structDecls,
-                           DebugInfo::DebugInfoTypeConverter &converter) {
+static DebugInfo::DIType buildDebugInfoForStructRef(
+    LIT::StructType ref, StructDecls &structDecls,
+    DebugInfo::DebugInfoNonCyclicTypeConverter &converter) {
   // Substitute parameters into the field types.
   StructDecl &decl = structDecls.get(ref.getName());
   ParameterEvaluator evaluator(decl.decls, ref.getParamValues());
@@ -477,10 +477,8 @@ buildDebugInfoForStructRef(LIT::StructType ref, StructDecls &structDecls,
     auto reboundType = evaluator.getReboundType(type);
     DebugInfo::DIType fieldDIType = converter.convertDebugType(reboundType);
     if (!fieldDIType) {
-      if (isa<KGEN::PointerType>(reboundType)) {
-        fieldDIType = converter.convertDebugType(
-            PointerType::get(KGEN::NoneType::get(type.getContext())));
-      }
+      fieldDIType = converter.convertDebugType(
+          PointerType::get(KGEN::NoneType::get(type.getContext())));
     }
     return DebugInfo::DIMemberType::get(name, fieldDIType);
   };
@@ -596,9 +594,6 @@ LITTypeLowerer::LITTypeLowerer(MLIRContext *ctx, StructDecls &structDecls)
   debugTypeConverter.addConversion([&](RefType type) -> DebugInfo::DIType {
     return debugTypeConverter.convertDebugType(type.getAsPointerType());
   });
-  // Preserve original behavior for now. This is going away immediately.
-  debugTypeConverter.addCycleBreaker(
-      [noneType](LIT::StructType type) { return noneType; });
 
   addInferredDomainNonRecursiveReplacement([&](DebugInfo::DIType type) {
     return debugTypeConverter.convertDebugType(type);

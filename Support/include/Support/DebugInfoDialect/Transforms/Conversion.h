@@ -18,9 +18,10 @@ namespace M::DebugInfo {
 /// This class enables the conversion of DebugInfo constructs in the presence of
 /// type conversions. It describes how to convert the debug type information,
 /// and how to update location expressions to account for type changes.
-class DebugInfoTypeConverter {
+template <bool isCyclic>
+class DebugInfoTypeConverterBase {
 public:
-  DebugInfoTypeConverter();
+  DebugInfoTypeConverterBase();
 
   /// Convert the given type to a debug info type. Returns a null type in the
   /// case of failure.
@@ -56,16 +57,21 @@ public:
   void applyRecursively(Operation *op);
 
   /// Add cycle breaker in the case of known recursive replacements.
-  template <typename FnT>
-  void addCycleBreaker(FnT &&callback) {
+  template <typename FnT, bool C = isCyclic>
+  std::enable_if_t<C> addCycleBreaker(FnT &&callback) {
     replacer.addCycleBreaker(callback);
   }
 
 private:
   /// The underlying attr/type replacer, used to perform the actual
   /// conversions.
-  mlir::CyclicAttrTypeReplacer replacer;
+  std::conditional_t<isCyclic, mlir::CyclicAttrTypeReplacer,
+                     mlir::AttrTypeReplacer>
+      replacer;
 };
+
+using DebugInfoTypeConverter = DebugInfoTypeConverterBase<true>;
+using DebugInfoNonCyclicTypeConverter = DebugInfoTypeConverterBase<false>;
 
 /// Populate conversion patterns for transforming debug info dialect operations
 /// in the presence of type conversions.
