@@ -253,7 +253,9 @@ KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error(
   ArrayRef asyncArray(asyncs, arrayLen);
   for (AsyncRTWrapper<AnyAsyncValueRef> async : asyncArray) {
     AnyAsyncValueRef &value = unwrap(async);
-    EncodedDiagnostic diagnostic{Twine(errorMsg), unwrap(ctx).loc.copy()};
+
+    EncodedDiagnostic diagnostic{Twine(errorMsg),
+                                 UnknownLocationDecoder::getEncodedLocation()};
     if (value.getPointer() && value.getPointer()->isIndirect())
       value.copy().setToError(std::move(diagnostic));
     else
