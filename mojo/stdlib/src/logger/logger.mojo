@@ -95,7 +95,7 @@ struct Level:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "Level." + String(self)
+        return String("Level.", self)
 
 
 # ===-----------------------------------------------------------------------===#
