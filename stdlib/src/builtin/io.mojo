@@ -144,8 +144,10 @@ struct _fdopen[mode: StringLiteral = "a"]:
         # (or the user sends EOF without providing any input). We must
         # raise an error in this case because otherwise, String() will crash mojo
         # if the user sends EOF with no input.
-        # TODO: check errno to ensure we haven't encountered EINVAL or ENOMEM instead
         if bytes_read == -1:
+            if buffer:
+                libc.free(buffer.bitcast[NoneType]())
+            # TODO: check errno to ensure we haven't encountered EINVAL or ENOMEM instead
             raise Error("EOF")
         # Copy the buffer (excluding the delimiter itself) into a Mojo String.
         var s = String(StringRef(buffer, bytes_read - 1))
