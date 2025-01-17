@@ -463,7 +463,10 @@ def main(
         tokenizer: PipelineTokenizer = EchoPipelineTokenizer()
         pipeline: TokenGenerator = EchoTokenGenerator()
     else:
-        tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(config)
+        tokenizer, _pipeline = PIPELINE_REGISTRY.retrieve(config)
+        # Do the following extra steps to resolve mypy type checking.
+        assert isinstance(_pipeline, TokenGenerator)
+        pipeline = _pipeline
 
     logger.info(
         "Loaded model %s, %s on %s",

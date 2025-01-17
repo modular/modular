@@ -158,6 +158,7 @@ def next_token_with_logits(
         model_inputs = model.prepare_initial_token_inputs(context_batch)
 
         model_outputs = model.execute(*model_inputs, *kv_inputs)
+        assert model_outputs.next_token_logits
         logits = model_outputs.next_token_logits.to(CPU()).to_numpy()
         next_tokens = [req_logits.argmax(axis=-1) for req_logits in logits]
 
