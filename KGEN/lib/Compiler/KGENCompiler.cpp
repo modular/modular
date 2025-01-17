@@ -215,8 +215,10 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
   compilationOptions.targetTriple = target.getTripleStr();
   compilationOptions.targetCpu = target.getArch();
   compilationOptions.targetFeatures = target.getFeatures();
-  compilationOptions.targetAccelerator =
-      AsyncRT::Device::getAcceleratorArchOrEmpty();
+  if (compilationOptions.targetAccelerator.empty()) {
+    compilationOptions.targetAccelerator =
+        AsyncRT::Device::getAcceleratorArchOrEmpty();
+  }
   compilationOptions.relocModel = target.getRelocationModel();
 
   // Initialize the object compiler.
@@ -378,8 +380,10 @@ static ErrorOr<DenseMap<uint64_t, OffloadCompilationResult>> compileOffloads(
     compilationOptions.targetTriple = target.getTripleStr();
     compilationOptions.targetCpu = target.getArch();
     compilationOptions.targetFeatures = target.getFeatures();
-    compilationOptions.targetAccelerator =
-        AsyncRT::Device::getAcceleratorArchOrEmpty();
+    if (compilationOptions.targetAccelerator.empty()) {
+      compilationOptions.targetAccelerator =
+          AsyncRT::Device::getAcceleratorArchOrEmpty();
+    }
     compilationOptions.relocModel = target.getRelocationModel();
 
     // Initialize the object compiler.
