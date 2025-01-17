@@ -13,7 +13,6 @@
 #define KGEN_KGENDIALECT_KGENUTILS_H
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
-#include "KGEN/KGENDialect/KGENCompilationContext.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
@@ -102,14 +101,13 @@ bool isTypeExpr(TypedAttr attr);
 /// Gets the common Modular environment attribute (also known as `-D` defines)
 /// for the given module. This includes things like `MODULAR_PARANOID`,
 /// `BUILD_TYPE`, AsyncRT profiling level, etc.
-EnvAttr getModularEnvAttr(MLIRContext *ctx, CompilationContext *compileCtx);
+EnvAttr getModularEnvAttr(MLIRContext *ctx);
 
 /// Extends the module EnvAttr with common Modular environment attribute (also
 /// known as `-D` defines) for the given module. This includes things like
 /// `MODULAR_PARANOID`, `BUILD_TYPE`, AsyncRT profiling level, etc. Note that
 /// the existing EnvAttr module values take precedence here.
-void extendWithModularEnvAttr(ModuleOp moduleOp,
-                              CompilationContext *compileCtx);
+void extendWithModularEnvAttr(ModuleOp moduleOp);
 
 /// Parser & printer for the bool flag "memoryOnly".
 void printIsMemoryOnly(AsmPrinter &p, bool isMemoryOnly);
