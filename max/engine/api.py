@@ -532,13 +532,13 @@ class TorchInputSpec:
         return self._impl.device
 
 
-def _unwrap_pybind_objects(value: Any) -> Any:
-    """Unwraps pybind objects from python class wrappers."""
+def _unwrap_nanobind_objects(value: Any) -> Any:
+    """Unwraps nanobind objects from python class wrappers."""
     if isinstance(value, list):
-        return [_unwrap_pybind_objects(v) for v in value]
+        return [_unwrap_nanobind_objects(v) for v in value]
     if isinstance(value, dict):
         return {
-            _unwrap_pybind_objects(k): _unwrap_pybind_objects(v)
+            _unwrap_nanobind_objects(k): _unwrap_nanobind_objects(v)
             for k, v in value.items()
         }
     if isinstance(value, TensorSpec):
@@ -776,7 +776,7 @@ class InferenceSession:
                 _process_custom_extensions_objects(custom_ops_path)
             )
         if input_specs is not None:
-            options_dict["input_specs"] = _unwrap_pybind_objects(input_specs)
+            options_dict["input_specs"] = _unwrap_nanobind_objects(input_specs)
 
         if isinstance(model, (str, bytes)):
             model = Path(str(model))
