@@ -617,6 +617,7 @@ fn flash_attention_dispatch[
                 + 2 * num_warps * BM * sizeof[accum_type]()
             )
             alias num_blocks_y = num_heads // group
+
             var func = ctx.compile_function[
                 mha_decoding[
                     mask.rank,
@@ -2975,7 +2976,7 @@ fn mha_decoding[
 
 
 @always_inline
-fn scale_and_mask_helper[
+fn _scale_and_mask_helper_nvidia[
     p_type: DType,
     p_layout: Layout,
     mask_type: DType,
@@ -3090,6 +3091,217 @@ fn scale_and_mask_helper[
                     ),
                     p_reg_tile[n_mma, i],
                 )
+
+
+@always_inline
+fn _scale_and_mask_helper_amd[
+    p_type: DType,
+    p_layout: Layout,
+    mask_type: DType,
+    mask_t: MHAMask,
+    score_mod_t: ScoreModTrait,
+    group: Int,
+    mask_rank: Int,
+    num_n_mmas: Int,
+    WN: Int,
+    MMA_N: Int,
+    simd_width: Int,
+    use_mask_tensor: Bool = True,
+    use_score_mod: Bool = False,
+](
+    p_reg_tile: LayoutTensor[
+        p_type, p_layout, address_space = AddressSpace.LOCAL
+    ],
+    mask_warp_ptr: UnsafePointer[Scalar[mask_type]],
+    scale: Float32,
+    num_keys: UInt,
+    bound: UInt,
+    lane: UInt,
+    warp: UInt,
+    mask: mask_t,
+    score_mod: score_mod_t,
+    kv_tile_start_row: Int,
+    mask_stride: UInt,
+    max_seq_len: Int,  # max_prompt_len + max_cache_len
+):
+    # Apply mask and scale to mma result. For AMD matrix cores:
+    # - each wave (64 lanes) processes a 16x16 tile
+    # - lanes 0-15 handle the first 4 rows 16-31 next 4 rows, etc.
+    # - each lanes processes 4 elements in a column
+    # The mask is a 1D vector and its dimensions are assumed dynamic,
+    # so we still use explicit index calculations.
+    # TODO: check if the explicit index calculation can be avoided.
+
+    if lane >= 16 * ceildiv(group, simd_width):
+        return
+
+    var batch_cache_valid_length = num_keys - 1
+    var warp_offset = warp * WN
+
+    @parameter
+    for n_mma in range(Int(num_n_mmas)):
+        # offset in fragment
+        var frag_offset = n_mma * MMA_N
+        # Current thread's offset mapped in num_keys dim
+        var key_offset = warp_offset + frag_offset
+
+        var frag_lane_col = Int(lane % 16)
+
+        @parameter
+        if use_mask_tensor:
+
+            @parameter
+            for i in range(simd_width):
+                var group_idx = (lane // 16) * simd_width + i
+                var q_head_offset = Int(
+                    mask_stride * group_idx
+                ) if mask_rank == 4 else 0
+                var q_mask_warp_ptr = mask_warp_ptr + q_head_offset
+                var mask_frag_ptr = q_mask_warp_ptr + frag_offset
+                if key_offset + frag_lane_col < bound:
+                    p_reg_tile[n_mma, i] = (
+                        p_reg_tile[n_mma, i] * scale.cast[p_type]()
+                        + mask_frag_ptr[frag_lane_col].cast[p_type]()
+                    )
+                else:
+                    p_reg_tile[n_mma, i] = min_or_neg_inf[p_type]()
+        else:
+
+            @parameter
+            for i in range(simd_width):
+                var score_row = batch_cache_valid_length
+                var score_col = kv_tile_start_row + key_offset + frag_lane_col
+                var group_idx = (lane // 16) * simd_width + i
+                var q_head_idx = block_idx.y * group + group_idx
+                p_reg_tile[n_mma, i] = mask.mask(
+                    Index(
+                        Int(block_idx.z),
+                        Int(q_head_idx),
+                        Int(score_row),
+                        Int(score_col),
+                    ),
+                    p_reg_tile[n_mma, i] * scale.cast[p_type](),
+                )
+
+                @parameter
+                if use_score_mod:
+                    p_reg_tile[n_mma, i] = score_mod.score_mod(
+                        Index(
+                            Int(block_idx.z),
+                            Int(q_head_idx),
+                            Int(score_row),
+                            Int(score_col),
+                        ),
+                        p_reg_tile[n_mma, i],
+                        max_seq_len,
+                    )
+
+                p_reg_tile[n_mma, i] = _kernel_mask(
+                    Index(score_row, score_col),
+                    Index(
+                        batch_cache_valid_length + 1,
+                        # The following setting ensures that out of bound check happens at
+                        # every function call, also it corrects the bounds to be exact.
+                        # Previous version was using batch_cache_valid_length + 1 which was fine
+                        # with the non-split-k based mha as the ooo would have been triggered only
+                        # for the last iteration of the outer loop. So while the bound was not exact, it
+                        # led to correct output.
+                        kv_tile_start_row + bound,
+                    ),
+                    p_reg_tile[n_mma, i],
+                )
+
+
+@always_inline
+fn scale_and_mask_helper[
+    p_type: DType,
+    p_layout: Layout,
+    mask_type: DType,
+    mask_t: MHAMask,
+    score_mod_t: ScoreModTrait,
+    group: Int,
+    mask_rank: Int,
+    num_n_mmas: Int,
+    WN: Int,
+    MMA_N: Int,
+    simd_width: Int,
+    use_mask_tensor: Bool = True,
+    use_score_mod: Bool = False,
+](
+    p_reg_tile: LayoutTensor[
+        p_type, p_layout, address_space = AddressSpace.LOCAL
+    ],
+    mask_warp_ptr: UnsafePointer[Scalar[mask_type]],
+    scale: Float32,
+    num_keys: UInt,
+    bound: UInt,
+    lane: UInt,
+    warp: UInt,
+    mask: mask_t,
+    score_mod: score_mod_t,
+    kv_tile_start_row: Int,
+    mask_stride: UInt,
+    max_seq_len: Int,  # max_prompt_len + max_cache_len
+):
+    @parameter
+    if is_nvidia_gpu():
+        _scale_and_mask_helper_nvidia[
+            p_type,
+            p_layout,
+            mask_type,
+            mask_t,
+            score_mod_t,
+            group,
+            mask_rank,
+            num_n_mmas,
+            WN,
+            MMA_N,
+            simd_width,
+            use_mask_tensor,
+            use_score_mod,
+        ](
+            p_reg_tile,
+            mask_warp_ptr,
+            scale,
+            num_keys,
+            bound,
+            lane,
+            warp,
+            mask,
+            score_mod,
+            kv_tile_start_row,
+            mask_stride,
+            max_seq_len,
+        )
+    else:
+        _scale_and_mask_helper_amd[
+            p_type,
+            p_layout,
+            mask_type,
+            mask_t,
+            score_mod_t,
+            group,
+            mask_rank,
+            num_n_mmas,
+            WN,
+            MMA_N,
+            simd_width,
+            use_mask_tensor,
+            use_score_mod,
+        ](
+            p_reg_tile,
+            mask_warp_ptr,
+            scale,
+            num_keys,
+            bound,
+            lane,
+            warp,
+            mask,
+            score_mod,
+            kv_tile_start_row,
+            mask_stride,
+            max_seq_len,
+        )
 
 
 fn mha_decoding_single_batch[
@@ -3694,7 +3906,7 @@ fn mha_decoding_single_batch_pipelined[
     alias accum_type = get_accum_type[q_type]()
     alias frag_size = get_fragment_size[mma_shape]()
     alias p_frag_size = frag_size[2]
-    alias p_frag_simdwidth = p_frag_size // 2
+    alias p_frag_simdwidth = p_frag_size // 2 if is_nvidia_gpu() else p_frag_size
 
     var p_reg_tile = LayoutTensor[
         accum_type,
@@ -3741,7 +3953,7 @@ fn mha_decoding_single_batch_pipelined[
     # Scratch shared memory for reduction across warps.
     var warp_scratch = LayoutTensor[
         accum_type,
-        Layout.row_major(2 * num_warps_n, BM),
+        Layout.row_major(p_frag_simdwidth * num_warps_n, BM),
         address_space = AddressSpace.SHARED,
     ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]())
 
@@ -3810,7 +4022,7 @@ fn mha_decoding_single_batch_pipelined[
                 num_threads,
                 num_pipeline_stages,
                 True,  # transpose_b
-                swizzle_a=True,
+                swizzle_a = is_nvidia_gpu(),
             ](
                 p_reg_tile,
                 q_gmem_iter,
@@ -3830,7 +4042,7 @@ fn mha_decoding_single_batch_pipelined[
                 num_threads,
                 num_pipeline_stages,
                 True,  # transpose_b
-                swizzle_a=True,
+                swizzle_a = is_nvidia_gpu(),
             ](
                 p_reg_tile,
                 q_smem_iter,
@@ -3867,27 +4079,52 @@ fn mha_decoding_single_batch_pipelined[
         # Increment mask to next BM x BN block.
         mask_warp_ptr += BN
 
-        # For 16x8 mma output, only the top 8x4 matrix matters for GQA since
-        # G <= 8 typically holds
-        var output_reg_vecs = output_reg_tile.tile[
-            num_m_mmas * num_n_mmas, p_frag_size // 2
-        ](0, 0).vectorize[1, p_frag_size // 2]()
-        var p_reg_vecs = p_reg_tile.tile[
-            num_m_mmas * num_n_mmas, p_frag_size // 2
-        ](0, 0).vectorize[1, p_frag_size // 2]()
+        @parameter
+        if is_nvidia_gpu():
+            # For 16x8 mma output, only the top 8x4 matrix matters for GQA since
+            # G <= 8 typically holds
+            var output_reg_vecs = output_reg_tile.tile[
+                num_m_mmas * num_n_mmas, p_frag_size // 2
+            ](0, 0).vectorize[1, p_frag_size // 2]()
+            var p_reg_vecs = p_reg_tile.tile[
+                num_m_mmas * num_n_mmas, p_frag_size // 2
+            ](0, 0).vectorize[1, p_frag_size // 2]()
 
-        _online_softmax_iter_for_mma_output[
-            accum_type,
-            Layout.row_major(num_m_mmas, num_n_mmas),
-            Layout.row_major(num_warps_m, num_warps_n),
-            Layout.row_major(8, 4),
-        ](
-            output_reg_vecs,
-            p_reg_vecs,
-            warp_scratch.tile[num_warps_n, WM](0, Int(warp_y)),
-            rowmax,
-            rowsum,
-        )
+            _online_softmax_iter_for_mma_output[
+                accum_type,
+                Layout.row_major(num_m_mmas, num_n_mmas),
+                Layout.row_major(num_warps_m, num_warps_n),
+                Layout.row_major(8, 4),
+            ](
+                output_reg_vecs,
+                p_reg_vecs,
+                warp_scratch.tile[num_warps_n, WM](0, Int(warp_y)),
+                rowmax,
+                rowsum,
+            )
+        else:
+            alias reg_layout_by_mma_unit = Layout.row_major(
+                num_m_mmas * num_n_mmas, 4
+            )
+            _online_softmax_iter_for_mma_output[
+                accum_type,
+                # score layout by mma unit
+                # TODO: generalize beyond 16x8 layout
+                Layout.row_major(num_m_mmas, num_n_mmas),
+                # threads layout by warp
+                Layout.row_major(num_warps_m, num_warps_n),
+                Layout.row_major(4, 16),
+            ](
+                output_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[
+                    1, p_frag_simdwidth
+                ](),
+                p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[
+                    1, p_frag_simdwidth
+                ](),
+                warp_scratch.tile[num_warps_n, WM](0, Int(warp_y)),
+                rowmax,
+                rowsum,
+            )
 
         var v_ptr = v.block_paged_ptr[BN](
             batch_idx, kv_tile_start_row, kv_head_idx, 0
@@ -3918,7 +4155,7 @@ fn mha_decoding_single_batch_pipelined[
             num_threads,
             num_pipeline_stages,
             False,  # transpose_b
-            swizzle_a=True,
+            swizzle_a = is_nvidia_gpu(),
         ](
             output_reg_tile,
             p_smem_iter,
@@ -3933,13 +4170,30 @@ fn mha_decoding_single_batch_pipelined[
 
     # Apply softmax denumerator.
     @parameter
-    for m_mma in range(Int(num_m_mmas)):
-        var rowsum_inv0 = 1.0 / rowsum[2 * m_mma]
+    if is_nvidia_gpu():
 
         @parameter
-        for n_mma in range(Int(num_n_mmas)):
-            output_reg_tile[n_mma, 0] *= rowsum_inv0
-            output_reg_tile[n_mma, 1] *= rowsum_inv0
+        for m_mma in range(Int(num_m_mmas)):
+            var rowsum_inv0 = 1.0 / rowsum[2 * m_mma]
+
+            @parameter
+            for n_mma in range(Int(num_n_mmas)):
+                output_reg_tile[n_mma, 0] *= rowsum_inv0
+                output_reg_tile[n_mma, 1] *= rowsum_inv0
+    else:
+
+        @parameter
+        for m_mma in range(Int(num_m_mmas)):
+
+            @parameter
+            for n_mma in range(Int(num_n_mmas)):
+
+                @parameter
+                for i in range(Int(p_frag_simdwidth)):
+                    var rowsum_inv0 = 1.0 / rowsum[4 * m_mma + i]
+                    output_reg_tile[
+                        n_mma * num_m_mmas + m_mma, i
+                    ] *= rowsum_inv0
 
     if num_partitions > 1:
         if thread_idx.x % 4 == 0 and thread_idx.x < 4 * group:
@@ -3956,40 +4210,75 @@ fn mha_decoding_single_batch_pipelined[
         address_space = AddressSpace.SHARED,
     ](q_smem.bitcast[Scalar[output_type]]() + warp_id * WM * WN)
 
-    alias swizzle = make_swizzle[
-        num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
-    ]()
-    copy_local_to_sram[thread_layout = Layout.row_major(8, 4), swizzle=swizzle](
-        accum_smem_warp_tile.vectorize[1, 2](),
-        output_reg_tile.vectorize[1, 2]().transpose(),
-    )
+    @parameter
+    if is_nvidia_gpu():
+        alias swizzle = make_swizzle[
+            num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
+        ]()
+        copy_local_to_sram[
+            thread_layout = Layout.row_major(8, 4), swizzle=swizzle
+        ](
+            accum_smem_warp_tile.vectorize[1, 2](),
+            output_reg_tile.vectorize[1, 2]().transpose(),
+        )
 
-    # Guard writing to shared memory.
-    barrier()
+        # Guard writing to shared memory.
+        barrier()
 
-    alias output_gmem_layout = Layout.row_major(BM, depth)
-    var output_gmem_runtime_layout = RuntimeLayout(
-        RuntimeTuple[output_gmem_layout.shape, unsigned=True](group, depth),
-        RuntimeTuple[output_gmem_layout.stride, unsigned=True](depth, 1),
-    )
-    var output_gmem_tile = LayoutTensor[
-        output_type,
-        Layout.row_major(BM, depth),
-        masked=True,
-    ](output_ptr + q_offset, output_gmem_runtime_layout)
-    var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](
-        Int(warp_y), Int(warp_x)
-    )
+        alias output_gmem_layout = Layout.row_major(BM, depth)
+        var output_gmem_runtime_layout = RuntimeLayout(
+            RuntimeTuple[output_gmem_layout.shape, unsigned=True](group, depth),
+            RuntimeTuple[output_gmem_layout.stride, unsigned=True](depth, 1),
+        )
+        var output_gmem_tile = LayoutTensor[
+            output_type,
+            Layout.row_major(BM, depth),
+            masked=True,
+        ](output_ptr + q_offset, output_gmem_runtime_layout)
+        var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](
+            Int(warp_y), Int(warp_x)
+        )
 
-    copy_sram_to_dram[
-        thread_layout = Layout.row_major(
-            WARP_SIZE * simd_size // WN, WN // simd_size
-        ),
-        swizzle=swizzle,
-    ](
-        output_gmem_warp_tile.vectorize[1, simd_size](),
-        accum_smem_warp_tile.vectorize[1, simd_size](),
-    )
+        copy_sram_to_dram[
+            thread_layout = Layout.row_major(
+                WARP_SIZE * simd_size // WN, WN // simd_size
+            ),
+            swizzle=swizzle,
+        ](
+            output_gmem_warp_tile.vectorize[1, simd_size](),
+            accum_smem_warp_tile.vectorize[1, simd_size](),
+        )
+    else:
+        copy_local_to_sram[thread_layout = Layout.row_major(4, 16)](
+            accum_smem_warp_tile.vectorize[4, 1](),
+            output_reg_tile.vectorize[1, 4](),
+        )
+        barrier()
+
+        alias output_gmem_layout = Layout.row_major(BM, depth)
+        var output_gmem_runtime_layout = RuntimeLayout(
+            RuntimeTuple[output_gmem_layout.shape, unsigned=True](group, depth),
+            RuntimeTuple[output_gmem_layout.stride, unsigned=True](depth, 1),
+        )
+        var output_gmem_tile = LayoutTensor[
+            output_type,
+            Layout.row_major(BM, depth),
+            masked=True,
+        ](output_ptr + q_offset, output_gmem_runtime_layout)
+        var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](
+            Int(warp_y), Int(warp_x)
+        )
+
+        # TODO(KERN-1495): Revert to copy_sram_to_dram once the bug is fixed
+        for i in range(output_gmem_warp_tile.dim(0)):
+            for j in range(lane_id(), output_gmem_warp_tile.dim(1), WARP_SIZE):
+                output_gmem_warp_tile[i, j] = accum_smem_warp_tile[i, j]
+        # copy_sram_to_dram[
+        #    thread_layout = Layout.row_major(1, WARP_SIZE),
+        # ](
+        #    output_gmem_warp_tile,
+        #    accum_smem_warp_tile,
+        # )
 
 
 fn mha_splitk_reduce[
