@@ -212,12 +212,12 @@ fn test_static_stride_deduction[
 @register_internal("test_address_space_deduction")
 fn test_address_space_deduction(tensor: NDBuffer):
     print("Printing address space: ")
-    print("Address Space: " + String(tensor.address_space._value))
+    print("Address Space: ", tensor.address_space._value)
 
 
 @register_internal("test_ndbuffer_exclusive_deduction")
 fn test_ndbuffer_exclusive_deduction(tensor: NDBuffer):
-    print("Printing exclusive flag: " + String(tensor.exclusive))
+    print("Printing exclusive flag: ", tensor.exclusive)
 
 
 @register_internal("test_static_shape_output")

@@ -602,10 +602,10 @@ fn mgp_buffer_constant_external[
     var weight_ptr = weights[][bName]
     if (Int(weight_ptr) % dAlign) != 0:
         raise Error(
-            "invalid alignment for address "
-            + String(weight_ptr)
-            + " and align "
-            + String(dAlign)
+            "invalid alignment for address ",
+            weight_ptr,
+            " and align ",
+            dAlign,
         )
 
     return NDBuffer[DType.int8, 1](weight_ptr.bitcast[Int8](), DimList(cSize))
