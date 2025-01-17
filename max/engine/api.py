@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+from enum import IntEnum, auto
 from inspect import Parameter, Signature
 from pathlib import Path
 from typing import (
@@ -650,6 +651,11 @@ def _process_custom_extensions_objects(
     ]
 
 
+class SplitKReductionPrecision(IntEnum):
+    ACCUM = auto()
+    OUTPUT = auto()
+
+
 class InferenceSession:
     """Manages an inference session in which you can load and run models.
 
@@ -877,6 +883,20 @@ class InferenceSession:
                     "Debug print output directory cannot be empty."
                 )
         self._impl.set_debug_print_options(style, precision, output_directory)
+
+    def set_split_k_reduction_precision(
+        self, precision: Union[str, SplitKReductionPrecision]
+    ):
+        if isinstance(precision, str):
+            precision = cast(
+                Union[str, SplitKReductionPrecision],
+                getattr(SplitKReductionPrecision, precision, precision),
+            )
+        if not isinstance(precision, SplitKReductionPrecision):
+            raise TypeError(
+                "Invalid precision. Please use one of 'ACCUM' or 'OUTPUT'"
+            )
+        self._impl.set_split_k_reduction_precision(precision)
 
     @property
     def stats_report(self) -> Dict[str, Any]:
