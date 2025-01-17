@@ -631,7 +631,7 @@ def OriginMutCastAttr : LITTypedAttr<"OriginMutCast", "origin.mutcast", [
 //===----------------------------------------------------------------------===//
 
 def OriginFieldAttr : LITTypedAttr<"OriginField", "origin.field", [
-          DeclareAttrInterfaceMethods<ParameterAttrInterface>
+          DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>
   ]> {
   let summary = "Get a field-sensitive subfield of another origin";
   let description = [{

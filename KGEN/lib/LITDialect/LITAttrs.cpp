@@ -773,37 +773,32 @@ TypedAttr OriginUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
 
   // Canonicalize the operands, sorting by name/index and eliminating raw
   // #lit.any.origin members.
-  SmallVector<TypedAttr> operands(operandsIn);
+  llvm::SetVector<TypedAttr> operandSet;
 
   // Preprocess operands.
-  for (size_t i = 0, e = operands.size(); i != e; ++i) {
-    assert(operands[i].getType() == type &&
+  for (TypedAttr operand : operandsIn) {
+    assert(operand.getType() == type &&
            "all members of a origin union must have matching type");
     // Union{a, b, #lit.any.origin} => #lit.any.origin since #lit.origin
     // represents "possibly anything".
-    if (::isa<AnyOriginAttr>(operands[i]))
-      return operands[i];
+    if (::isa<AnyOriginAttr>(operand))
+      return operand;
 
     // Flatten any of the same operation into the operand list:
     // `(union x, (union y, z))` => `(union x, y, z)`.
-    if (auto subexpr = ::dyn_cast<OriginUnionAttr>(operands[i])) {
-      operands[i] = operands.back();
-      operands.pop_back();
-      operands.append(subexpr.getOperands().begin(),
-                      subexpr.getOperands().end());
-      // No need to check these operands, they've already been checked when
-      // the subunion was formed.
-      --e, --i;
-      continue;
+    if (auto subexpr = ::dyn_cast<OriginUnionAttr>(operand)) {
+      operandSet.insert(subexpr.getOperands().begin(),
+                        subexpr.getOperands().end());
+    } else {
+      operandSet.insert(operand);
     }
   }
+
+  SmallVector<TypedAttr> operands = operandSet.takeVector();
 
   // Impose an ordering on the operands, sorting by name where possible - but
   // predictably ordered w.r.t. each other.
   llvm::stable_sort(operands, unionArgCompare);
-
-  // Remove duplicates which will now be sorted next to each other.
-  removeDuplicates(operands);
 
   // If one result, use it.
   if (operands.size() == 1)
@@ -959,6 +954,15 @@ OriginFieldAttr OriginFieldAttr::getFromBytecode(TypedAttr structOrigin,
 // Fields are simple constants if their base is.
 bool OriginFieldAttr::isConstant() const {
   return ParameterAttr::isSimpleConstant(getBase());
+}
+
+std::optional<bool> OriginFieldAttr::isLessThan(Attribute rhs) const {
+  if (auto rhsField = ::dyn_cast<OriginFieldAttr>(rhs)) {
+    if (getBase() == rhsField.getBase())
+      return getField().getValue() < rhsField.getField().getValue();
+    return ParameterAttr::compare(getBase(), rhsField.getBase());
+  }
+  return ParameterAttr::compare(getBase(), rhs);
 }
 
 //===----------------------------------------------------------------------===//
