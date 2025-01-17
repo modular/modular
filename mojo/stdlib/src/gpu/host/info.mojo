@@ -14,6 +14,8 @@ alias DEFAULT_GPU_ARCH = _accelerator_arch()
 alias DEFAULT_GPU = Info.from_name[DEFAULT_GPU_ARCH]()
 alias DEFAULT_GPU_TARGET = DEFAULT_GPU.target()
 
+alias _KB = 1024
+
 # ===-----------------------------------------------------------------------===#
 # Vendor
 # ===-----------------------------------------------------------------------===#
@@ -312,6 +314,7 @@ fn _get_h100_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
     ]
 
 
+# https://resources.nvidia.com/en-us-tensor-core/gtc22-whitepaper-hopper
 alias H100 = Info(
     name="H100",
     vendor=Vendor.NVIDIA_GPU,
@@ -320,14 +323,14 @@ alias H100 = Info(
     compile_options="nvptx-short-ptr=true",
     compute=9.0,
     version="sm_90a",
-    sm_count=114,
+    sm_count=132,
     warp_size=32,
     threads_per_sm=-1,
     threads_per_warp=32,
     warps_per_multiprocessor=64,
     threads_per_multiprocessor=2048,
     thread_blocks_per_multiprocessor=32,
-    shared_memory_per_multiprocessor=167936,
+    shared_memory_per_multiprocessor=228 * _KB,
     register_file_size=65536,
     register_allocation_unit_size=256,
     allocation_granularity="warp",
