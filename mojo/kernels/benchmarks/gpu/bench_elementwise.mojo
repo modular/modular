@@ -202,15 +202,17 @@ fn run_elementwise[
     m.bench_function[bench_func](
         BenchId(
             "elementwise",
-            input_id="/"
-            + ("aligned" if use_aligned_memory else "unaligned")
-            + ("/graph_compiler_emulated" if emulate_graph_compiler else "")
-            + "/"
-            + fn_name
-            + "/"
-            + String(type)
-            + "/"
-            + name,
+            input_id=String(
+                "/",
+                ("aligned" if use_aligned_memory else "unaligned"),
+                ("/graph_compiler_emulated" if emulate_graph_compiler else ""),
+                "/",
+                fn_name,
+                "/",
+                type,
+                "/",
+                name,
+            ),
         ),
         ThroughputMeasure(BenchMetric.bytes, num_bytes),
     )

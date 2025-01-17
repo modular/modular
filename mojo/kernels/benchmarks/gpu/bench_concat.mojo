@@ -63,7 +63,7 @@ fn bench_concat[
 
     var out_shape = shapes[0]
     out_shape[axis] = out_axis
-    name += "->" + String(out_shape)
+    name += String("->", out_shape)
     var output_ptr = ctx.enqueue_create_buffer[type](
         out_shape.flattened_length()
     )
@@ -109,7 +109,7 @@ fn bench_concat[
                 output_host[rebind[IndexList[rank]](out_coords)]
                 != input[rebind[IndexList[rank]](coords)]
             ):
-                abort("mismatch at coords " + String(out_coords))
+                abort(String("mismatch at coords ", out_coords))
 
         elementwise[check, 1](input.get_shape())
         offset += input.get_shape()[axis]

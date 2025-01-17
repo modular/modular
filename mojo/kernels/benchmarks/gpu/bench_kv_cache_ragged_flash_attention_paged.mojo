@@ -42,20 +42,30 @@ fn _get_run_name[
     cache_len: Int,
     use_random_cache_lengths: Bool,
 ) -> String:
-    var name = String("fused_qkv_ragged_flash_attention") + "("
-    name += String(type)
-    name += ") : "
-
-    # head_info
-    name += "num_q_heads=" + String(num_q_heads) + ", "
-    name += "num_kv_heads=" + String(num_kv_heads) + ", "
-    name += "head_dim=" + String(head_dim) + " : "
-
-    name += "batch_size=" + String(batch_size) + ", "
-    name += "seq_len=" + String(seq_len) + ", "
-    name += "use_random_seq_lengths=" + String(use_random_seq_lengths) + ", "
-    name += "cache_len=" + String(cache_len) + ", "
-    name += "use_random_cache_lengths=" + String(use_random_cache_lengths)
+    var name = String(
+        "fused_qkv_ragged_flash_attention",
+        "(",
+        type,
+        ") : ",
+        # head_info
+        "num_q_heads=",
+        num_q_heads,
+        ", num_kv_heads=",
+        num_kv_heads,
+        ", head_dim=",
+        head_dim,
+        " : ",
+        "batch_size=",
+        batch_size,
+        ", seq_len=",
+        seq_len,
+        ", use_random_seq_lengths=",
+        use_random_seq_lengths,
+        ", cache_len=",
+        cache_len,
+        ", use_random_cache_lengths=",
+        use_random_cache_lengths,
+    )
 
     return name
 
@@ -85,11 +95,13 @@ def execute_kv_cache_ragged_flash_attention[
 
     debug_assert(
         batch_size < num_blocks,
-        "batch_size passed to unit test ("
-        + String(batch_size)
-        + ") is larger than configured num_blocks ("
-        + String(num_blocks)
-        + ")",
+        String(
+            "batch_size passed to unit test (",
+            batch_size,
+            ") is larger than configured num_blocks (",
+            num_blocks,
+            ")",
+        ),
     )
 
     var input_row_offsets_host = HostNDBuffer[DType.uint32, 1](

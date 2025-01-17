@@ -27,16 +27,14 @@ struct AttentionSpec(Stringable):
 
     @no_inline
     fn __str__(self) -> String:
-        return (
-            "batch_size="
-            + String(self.batch_size)
-            + ",seq_len="
-            + String(self.seq_len)
-            + ",kv_seq_len="
-            + String(self.kv_seq_len)
-            + ",depth_dim="
-            + String(self.depth_dim)
+        # fmt: off
+        return String(
+            "batch_size=", self.batch_size,
+            ",seq_len=", self.seq_len,
+            ",kv_seq_len=", self.kv_seq_len,
+            ",depth_dim=", self.depth_dim,
         )
+        # fmt: on
 
 
 def bench_attention[type: DType](mut m: Bench, spec: AttentionSpec):

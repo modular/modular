@@ -153,18 +153,16 @@ fn run_mha[
     m.bench_function[bench_func](
         BenchId(
             "mha",
-            input_id="qkv_type="
-            + String(qkv_type)
-            + "/num_heads="
-            + String(num_heads)
-            + "/seq_len="
-            + String(seq_len)
-            + "/num_keys="
-            + String(num_keys)
-            + "/batch_size="
-            + String(batch_size)
-            + "/mode="
-            + mode,
+            # fmt: off
+        input_id=String(
+            "qkv_type=", qkv_type,
+            "/num_heads=", num_heads,
+            "/seq_len=", seq_len,
+            "/num_keys=", num_keys,
+            "/batch_size=", batch_size,
+            "/mode=", mode,
+        ),
+            # fmt: on
         ),
         ThroughputMeasure(BenchMetric.flops, compute_flops()),
     )
@@ -238,22 +236,15 @@ struct MHA_cfg:
 
     @no_inline
     fn __str__(self) -> String:
-        return (
-            "qkv_type="
-            + String(self.qkv_type)
-            + "/"
-            + "mask_type="
-            + String(self.mask_type)
-            + "/"
-            + "depth="
-            + String(self.depth)
-            + "/"
-            + "num_heads="
-            + String(self.num_heads)
-            + "/"
-            + "group="
-            + String(self.group)
+        # fmt: off
+        return String(
+            "qkv_type=", self.qkv_type,
+            "/mask_type=", self.mask_type,
+            "/depth=", self.depth,
+            "/num_heads=", self.num_heads,
+            "/group=", self.group,
         )
+        # fmt: on
 
 
 fn main() raises:

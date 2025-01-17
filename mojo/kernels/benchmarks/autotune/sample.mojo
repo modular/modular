@@ -37,9 +37,9 @@ fn bench_func[
 
         b.iter[call_fn]()
 
-    var name = "gemm/dtype=" + String(dtype) + "/m=" + String(
-        M
-    ) + "/n=" + String(N) + "/k=" + String(N) + "/stages=" + String(stages)
+    var name = String(
+        "gemm/dtype=", dtype, "/m=", M, "/n=", N, "/k=", N, "/stages=", stages
+    )
     m.bench_function[bench_iter](BenchId(name))
     if verify:
         print("verifying dummy results...PASS")

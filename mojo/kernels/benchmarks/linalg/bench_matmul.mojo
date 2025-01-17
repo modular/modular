@@ -153,21 +153,21 @@ struct MatmulSpec[static_info: MatmulSpecStatic](Stringable):
 
     @no_inline
     fn __str__(self) -> String:
-        return (
-            "m="
-            + String(self.m)
-            + ";n="
-            + String(self.n)
-            + ";k="
-            + String(self.k)
-            + ";b_packed="
-            + String(Self.static_info.b_packed)
-            + ";a_type="
-            + String(Self.static_info.a_type)
-            + ";b_type="
-            + String(Self.static_info.b_type)
-            + ";c_type="
-            + String(Self.static_info.c_type)
+        return String(
+            "m=",
+            self.m,
+            ";n=",
+            self.n,
+            ";k=",
+            self.k,
+            ";b_packed=",
+            Self.static_info.b_packed,
+            ";a_type=",
+            Self.static_info.a_type,
+            ";b_type=",
+            Self.static_info.b_type,
+            ";c_type=",
+            Self.static_info.c_type,
         )
 
     fn flops(self) -> Int:

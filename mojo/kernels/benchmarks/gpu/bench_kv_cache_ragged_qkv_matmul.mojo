@@ -29,20 +29,20 @@ fn _get_run_name[
     num_kv_heads: Int,
     head_dim: Int,
 ](seq_len: Int, batch_size: Int, use_random_lengths: Bool) -> String:
-    var name = String("fused_qkv_ragged_matmul") + "("
-    name += String(type)
-    name += ") : "
+    # fmt: off
+    return String(
+        "fused_qkv_ragged_matmul(", type, ") : ",
 
-    # head_info
-    name += "num_q_heads=" + String(num_q_heads) + ", "
-    name += "num_kv_heads=" + String(num_kv_heads) + ", "
-    name += "head_dim=" + String(head_dim) + " :"
+        # head_info
+        "num_q_heads=", num_q_heads, ", ",
+        "num_kv_heads=", num_kv_heads, ", ",
+        "head_dim=", head_dim, " :",
 
-    name += "batch_size=" + String(batch_size) + ", "
-    name += "seq_len=" + String(seq_len) + ", "
-    name += "use_random_lengths=" + String(use_random_lengths)
-
-    return name
+        "batch_size=", batch_size, ", ",
+        "seq_len=", seq_len, ", ",
+        "use_random_lengths=", use_random_lengths,
+    )
+    # fmt: on
 
 
 def execute_kv_cache_ragged_matmul[

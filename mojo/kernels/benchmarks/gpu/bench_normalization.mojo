@@ -91,10 +91,7 @@ fn bench_layer_norm_gpu[
         b.iter_custom[kernel_launch](ctx)
 
     b.bench_function[bench_fn](
-        BenchId(
-            "layer_norm",
-            input_id=fn_name + "/" + String(type) + "/" + String(shape),
-        ),
+        BenchId("layer_norm", input_id=String(fn_name, type, shape, sep="/"))
     )
 
     ctx.synchronize()
@@ -173,10 +170,7 @@ fn bench_rms_norm_gpu[
         b.iter_custom[kernel_launch](ctx)
 
     b.bench_function[bench_fn](
-        BenchId(
-            "rms_norm",
-            input_id=fn_name + "/" + String(type) + "/" + String(shape),
-        ),
+        BenchId("rms_norm", input_id=String(fn_name, "/", type, "/", shape)),
     )
 
     ctx.synchronize()

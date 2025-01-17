@@ -41,29 +41,27 @@ fn _get_run_name[
     shape_a_dim: IndexList[2],
     shape_b_dim: IndexList[2],
 ) -> String:
-    var name = String("vendor_matmul" if use_vendor_blas else "matmul") + "("
-    name += String(type)
-    name += ") : "
-    # M
-    name += String(shape_c_dim[0])
-    # N
-    name += (
-        "_dynamic"
-        + " x "
-        + String(shape_c_dim[1]) if shape_c.at[0]().is_dynamic() else " x "
-        + String(shape_c_dim[1])
+    return String(
+        "vendor_matmul" if use_vendor_blas else "matmul",
+        "(",
+        type,
+        ") : ",
+        # M
+        shape_c_dim[0],
+        # N
+        "_dynamic",
+        " x ",
+        String(shape_c_dim[1]) if shape_c.at[0]().is_dynamic() else " x ",
+        shape_c_dim[1],
+        # K
+        "_dynamic",
+        " x ",
+        String(shape_a_dim[1]) if shape_c.at[1]().is_dynamic() else " x ",
+        shape_a_dim[1],
+        "_dynamic" if shape_a.at[1]().is_dynamic() else "",
+        " transpose_b" if transpose_b else "",
+        " cache_busting" if cache_busting else "",
     )
-    # K
-    name += (
-        "_dynamic"
-        + " x "
-        + String(shape_a_dim[1]) if shape_c.at[1]().is_dynamic() else " x "
-        + String(shape_a_dim[1])
-    )
-    name += "_dynamic" if shape_a.at[1]().is_dynamic() else ""
-    name += " transpose_b" if transpose_b else ""
-    name += " cache_busting" if cache_busting else ""
-    return name
 
 
 fn bench_matmul[

@@ -116,18 +116,18 @@ struct ScatterSpec(Stringable):
 
     @no_inline
     fn __str__(self) -> String:
-        return (
-            "axis="
-            + String(self.axis)
-            + ";Dim=("
-            + String(self.m1)
-            + ","
-            + String(self.m2)
-            + ")("
-            + String(self.n1)
-            + ","
-            + String(self.n2)
-            + ")"
+        return String(
+            "axis=",
+            self.axis,
+            ";Dim=(",
+            self.m1,
+            ",",
+            self.m2,
+            ")(",
+            self.n1,
+            ",",
+            self.n2,
+            ")",
         )
 
 

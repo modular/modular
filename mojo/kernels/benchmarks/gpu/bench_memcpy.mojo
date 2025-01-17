@@ -59,17 +59,23 @@ struct Config:
 
     @no_inline
     fn __str__(self) -> String:
-        var host_str: String
-        if self.pinned_memory:
-            host_str = "host_pinned"
-        else:
-            host_str = "host"
+        return String.write(self)
+
+    fn write_to[W: Writer](self, mut writer: W):
+        if self.direction == Self.DToD:
+            writer.write("device_to_device")
+            return
+
         if self.direction == Self.DToH:
-            return "device_to_" + host_str
-        elif self.direction == Self.HToD:
-            return host_str + "_to_device"
+            writer.write("device_to_")
+
+        if self.pinned_memory:
+            writer.write("host_pinned")
         else:
-            return "device_to_device"
+            writer.write("host")
+
+        if self.direction == Self.HToD:
+            writer.write("_to_device")
 
 
 @no_inline
@@ -102,7 +108,7 @@ fn bench_memcpy[
 
     b.bench_function[bench_func](
         BenchId(
-            "memcpy_" + String(config),
+            String("memcpy_", config),
             input_id="length=" + _human_memory(length),
         ),
         ThroughputMeasure(BenchMetric.bytes, length * sizeof[dtype]()),

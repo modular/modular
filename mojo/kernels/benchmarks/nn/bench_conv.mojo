@@ -220,14 +220,14 @@ struct ConvSpec[static_info: ConvSpecStatic](Stringable):
     @no_inline
     fn __str__(self) -> String:
         # fmt: off
-        return (
-            "n=" + String(self.n)
-            + ";input=" + String(self.input_dims)
-            + ";c=" + String(self.c)
-            + ";f=" + String(self.f)
-            + ";filter=" + String(self.filter_dims)
-            + ";stride=" + String(self.stride)
-            + ";padding=" + String(self.pad)
+        return String(
+            "n=", self.n,
+            ";input=", self.input_dims,
+            ";c=", self.c,
+            ";f=", self.f,
+            ";filter=", self.filter_dims,
+            ";stride=", self.stride,
+            ";padding=", self.pad,
         )
         # fmt: on
 
