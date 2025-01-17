@@ -157,13 +157,13 @@ struct ContiguousKVCache[
 
     @staticmethod
     fn id() -> String:
-        return (
-            "ContiguousKVCache+"
-            + String(Self.type)
-            + "+"
-            + String(Self.kv_params.num_heads)
-            + "+"
-            + String(Self.kv_params.head_size)
+        return String(
+            "ContiguousKVCache+",
+            Self.type,
+            "+",
+            Self.kv_params.num_heads,
+            "+",
+            Self.kv_params.head_size,
         )
 
     @always_inline
@@ -477,7 +477,7 @@ struct PagedKVCache[type_: DType, kv_params_: KVCacheStaticParams](KVCacheT):
     fn id() -> String:
         """Returns a string id describing the type, this is used when defining
         mo.opaque symbols."""
-        return "PagedKVCache+" + String(Self.type)
+        return String("PagedKVCache+", Self.type)
 
     fn cache_length(self, batch_idx: Int) -> Int:
         """Returns the length of the cache for a given batch index."""
@@ -689,13 +689,13 @@ struct ContiguousKVCacheCollection[
 
     @staticmethod
     fn id() -> String:
-        return (
-            "ContiguousKVCacheCollection+"
-            + String(Self.type)
-            + "+"
-            + String(Self.kv_params.num_heads)
-            + "+"
-            + String(Self.kv_params.head_size)
+        return String(
+            "ContiguousKVCacheCollection+",
+            Self.type,
+            "+",
+            Self.kv_params.num_heads,
+            "+",
+            Self.kv_params.head_size,
         )
 
     fn get_key_cache(self, layer_idx: Int) -> Self.CacheType:
@@ -913,7 +913,7 @@ struct PagedKVCacheCollection[
 
     @staticmethod
     fn id() -> String:
-        return "PagedKVCacheCollection+" + String(Self.type)
+        return String("PagedKVCacheCollection+", Self.type)
 
     fn get_key_cache(self, layer_idx: Int) -> Self.CacheType:
         return self.CacheType(
