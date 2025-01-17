@@ -446,7 +446,7 @@ struct DeviceContextPtr:
 
     var handle_: UnsafePointer[NoneType]
 
-    fn __init__(mut self, handle: UnsafePointer[NoneType]):
+    fn __init__(out self, handle: UnsafePointer[NoneType]):
         self.handle_ = handle
 
     fn __getitem__(self) -> DeviceContext:
