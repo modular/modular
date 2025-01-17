@@ -305,13 +305,14 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
         self, tool_data: dict, tool_calls: list
     ) -> None:
         """Handle tool response by appending to response_choices."""
-        if "function" in tool_data and "parameters" in tool_data:
+        function_name = tool_data.get("name")
+        if function_name and "parameters" in tool_data:
             short_uuid = str(uuid.uuid4()).replace("-", "")[:16]
             tool_call = ChatCompletionMessageToolCall(
                 id=f"call_{short_uuid}",
                 type="function",
                 function=Function1(
-                    name=tool_data["function"],
+                    name=function_name,
                     arguments=json.dumps(tool_data["parameters"]),
                 ),
             )
