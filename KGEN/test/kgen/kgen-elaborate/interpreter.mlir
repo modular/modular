@@ -696,3 +696,42 @@ module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arc
     kgen.return %0 :  index
   }
 }
+
+// -----
+
+// COM: Ensure vTables attributes are ignored in interpreter calls
+
+kgen.generator @variadic_sz<element_trait: type>(%arg0:!kgen.variadic<element_trait>) capturing -> index {
+   %0 = pop.variadic.size %arg0 : !kgen.variadic<element_trait>
+   kgen.return %0 : index
+}
+
+kgen.generator @second(%arg0:!kgen.pointer<struct<(index, index)>>) -> index {
+   %0 = kgen.struct.gep %arg0[1] : <struct<(index, index)>>
+   %1 = pop.load %0 : !kgen.pointer<index>
+   kgen.return %1 : index
+}
+
+kgen.generator @impl<S: struct<(index, index)>>() -> !pop.array<3, i32> {
+  kgen.param.declare ARR : !pop.array<3, i32> = <#pop.array<2, 2, 2>>
+  %0 = kgen.param.constant:!pop.array<3, i32> = <ARR>
+  kgen.return %0 : !pop.array<3, i32>
+}
+
+// CHECK-LABEL: kgen.func @root
+// CHECK-NEXT: %index1 = kgen.param.constant = <1>
+// CHECK-NEXT: kgen.return %index1 : index
+kgen.generator @root() -> index {
+    kgen.param.declare X : !kgen.variadic<type> = <#kgen.variadic<[
+        typevalue<#kgen.typeref<@"Dummy">>,
+        struct<(index, index)>,
+        {"impl": <struct<(index, index)>>() -> !pop.array<apply(:(!kgen.pointer<struct<(index, index)>>) -> index
+          @second,
+          store_to_mem(*(0,0))), i32> = @impl<:struct<(index, index)> ?>
+        }
+    ]>>
+    kgen.param.declare my_variadic_size : (!kgen.variadic<type>) capturing -> index = <@variadic_sz<:type type>>
+    kgen.param.apply Y = [(!kgen.variadic<type>) capturing -> index: my_variadic_size](X)
+    %index = kgen.param.constant = <Y>
+    kgen.return %index : index
+}

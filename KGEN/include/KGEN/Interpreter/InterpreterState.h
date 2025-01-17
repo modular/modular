@@ -414,6 +414,8 @@ protected:
     popBackCount(table.blobs, numStackAllocs);
     popBackCount(symbolicMemory, numSymbolicAllocs);
   }
+  virtual void
+  addCustomReplacementsToLiftStore(mlir::AttrTypeReplacer &liftStore) {}
 
 private:
   /// All interpreter memory tables, containing stack, heap, persistent, and
