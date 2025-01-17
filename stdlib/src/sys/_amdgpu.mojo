@@ -660,11 +660,8 @@ struct Buffer:
             self._handle[].payloads.offset(ptr & self._handle[].index_mask)
         )
 
-    fn pop(
-        mut self,
-        mut top: UInt64,
-    ) -> UInt64:
-        var f = Atomic._fetch_add(UnsafePointer.address_of(top), 0)
+    fn pop(mut self, top: UnsafePointer[UInt64, **_]) -> UInt64:
+        var f = Atomic._fetch_add(top, 0)
         # F is guaranteed to be non-zero, since there are at least as
         # many packets as there are waves, and each wave can hold at most
         # one packet.
@@ -674,9 +671,7 @@ struct Buffer:
                 UnsafePointer.address_of(p._handle[].next),
                 0,
             )
-            if _compare_exchange_weak_integral_impl[scope=""](
-                UnsafePointer.address_of(top), f, n
-            ):
+            if _compare_exchange_weak_integral_impl[scope=""](top, f, n):
                 break
 
             sleep(UInt(1))
@@ -691,7 +686,7 @@ struct Buffer:
         if me == low:
             packet_ptr = Self.pop(
                 self,
-                self._handle[].free_stack,
+                UnsafePointer.address_of(self._handle[].free_stack),
             )
 
         var ptr_lo = packet_ptr
@@ -704,14 +699,12 @@ struct Buffer:
             | ptr_lo_32.cast[DType.uint64]()
         )
 
-    fn push(mut self, mut top: UInt64, ptr: UInt64):
-        var f = Atomic._fetch_add(UnsafePointer.address_of(top), 0)
+    fn push(mut self, top: UnsafePointer[UInt64, **_], ptr: UInt64):
+        var f = Atomic._fetch_add(top, 0)
         var p = self.get_header(ptr)
         while True:
             p._handle[].next = f
-            if _compare_exchange_weak_integral_impl[scope=""](
-                UnsafePointer.address_of(top), f, ptr
-            ):
+            if _compare_exchange_weak_integral_impl[scope=""](top, f, ptr):
                 break
             sleep(UInt(1))
 
@@ -721,7 +714,7 @@ struct Buffer:
         packet and signal the host.
         """
         if me == low:
-            self.push(self._handle[].ready_stack, ptr)
+            self.push(UnsafePointer.address_of(self._handle[].ready_stack), ptr)
             send_signal(self._handle[].doorbell)
 
     fn return_free_packet(mut self, ptr: UInt64, me: UInt32, low: UInt32):
@@ -730,7 +723,7 @@ struct Buffer:
         """
         if me == low:
             var ptr = inc_ptr_tag(ptr, self._handle[].index_mask)
-            self.push(self._handle[].free_stack, ptr)
+            self.push(UnsafePointer.address_of(self._handle[].free_stack), ptr)
 
 
 # Must match the ABI of:
