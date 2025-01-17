@@ -429,11 +429,10 @@ fn eval_composed[
             # var coor_i = a_idx % shape_a[i].value()
             # b_idx += coor_i * stride_a[i].value()
             # a_idx = a_idx // shape_a[i].value()
-            alias shape_a_i = shape_a[i].value()
+            alias shape_a_i = UInt(shape_a[i].value())
             alias stride_a_i = stride_a[i].value()
-            var coord_i = a_idx % shape_a_i
+            a_idx, coord_i = divmod(a_idx, shape_a_i)
             b_idx += coord_i * stride_a_i
-            a_idx = a_idx // shape_a_i
     # swizzle
     else:
         b_idx = composed_layout.layout_a(b_idx)
