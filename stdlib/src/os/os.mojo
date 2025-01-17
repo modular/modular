@@ -250,16 +250,16 @@ fn abort[result: AnyType = NoneType._mlir_type]() -> result:
 
 @no_inline
 fn abort[
-    result: AnyType = NoneType._mlir_type, *, W: Writable
-](message: W) -> result:
+    result: AnyType = NoneType._mlir_type, *Ts: Writable
+](*messages: *Ts) -> result:
     """Calls a target dependent trap instruction if available.
 
     Parameters:
         result: The result type.
-        W: The Writable type.
+        Ts: The Writable types.
 
     Args:
-        message: The message to include when aborting.
+        messages: The messages to include when aborting.
 
     Returns:
         A null result type.
@@ -267,7 +267,7 @@ fn abort[
 
     @parameter
     if not is_gpu():
-        print(message, flush=True)
+        print(String(messages), flush=True)
 
     return abort[result]()
 
