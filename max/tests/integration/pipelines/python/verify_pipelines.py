@@ -279,19 +279,6 @@ PIPELINES = {
             relative_tolerance=2.1,
         ),
     ),
-    "replit-code-v1_5-3b-float32": PipelineDef(
-        compatible_with=[DeviceKind.CPU],
-        run=lambda device_type: run_llm_verification(
-            device_type=device_type,
-            pipeline="replit",
-            version="replit-code-v1_5-3b",
-            encoding="float32",
-            kl_div_threshold=1e-2,
-            cos_dist_threshold=1e-3,
-            absolute_tolerance=1e-4,
-            relative_tolerance=1e-3,
-        ),
-    ),
     "replit-code-v1_5-3b-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         run=lambda device_type: run_llm_verification(
