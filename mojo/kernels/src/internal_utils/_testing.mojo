@@ -41,7 +41,7 @@ fn assert_almost_equal[
         testing.assert_almost_equal(
             x[i],
             y[i],
-            msg=msg + " at i=" + String(i),
+            msg=String(msg, " at i=", i),
             atol=atol,
             rtol=rtol,
             equal_nan=equal_nan,
@@ -64,7 +64,7 @@ fn assert_almost_equal(
         testing.assert_almost_equal(
             x.data[i],
             y.data[i],
-            msg=msg + " at " + String(x.get_nd_index(i)),
+            msg=String(msg, " at ", x.get_nd_index(i)),
             atol=atol,
             rtol=rtol,
             equal_nan=equal_nan,
@@ -133,7 +133,7 @@ fn assert_equal(
         testing.assert_equal(
             x.data[i],
             y.data[i],
-            msg=msg + " at " + String(x.get_nd_index(i)),
+            msg=String(msg, " at ", x.get_nd_index(i)),
             location=location.or_else(__call_location()),
         )
 
