@@ -270,8 +270,8 @@ dashboard](https://www.modular.com/max/performance).
 
 ### How can I get access to the SDK?
 
-Mojo is included with the MAX SDK, which you can [download and use for
-free](/max/install).
+Mojo is included with the `max` conda package. Try it now by following
+the tutorial to [get started with Mojo](/mojo/manual/get-started).
 
 Read more about [why Mojo is bundled with
 MAX](/max/faq#why-bundle-mojo-with-max).
