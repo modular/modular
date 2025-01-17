@@ -34,7 +34,7 @@ struct ManagedLayoutTensor[
         self.runtime_layout = __type_of(self.runtime_layout)()
 
     @always_inline
-    fn __init__(mut self, runtime_layout: RuntimeLayout[layout, **_]):
+    fn __init__(out self, runtime_layout: RuntimeLayout[layout, **_]):
         self.ctx = None
         self.device_data = None
         self.host_data = __type_of(self.host_data).alloc(runtime_layout.size())
@@ -51,7 +51,7 @@ struct ManagedLayoutTensor[
 
     @always_inline
     fn __init__(
-        mut self, runtime_layout: RuntimeLayout[layout, **_], ctx: DeviceContext
+        out self, runtime_layout: RuntimeLayout[layout, **_], ctx: DeviceContext
     ) raises:
         self.ctx = ctx
         self.device_data = ctx.create_buffer_sync[dtype](runtime_layout.size())
