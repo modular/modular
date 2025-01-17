@@ -19,7 +19,7 @@ from multiprocessing.synchronize import Event
 from typing import AsyncGenerator, Mapping, Optional
 
 import uvloop
-from max.pipelines.interfaces import TokenGeneratorFactory
+from max.pipelines import PipelinesFactory, TokenGenerator
 from max.profiler import Tracer, traced
 from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
 from max.serve.scheduler.queues import STOP_STREAM, BatchInputs, EngineQueue
@@ -40,7 +40,7 @@ class ModelWorkerConfig:
 
 
 def _model_worker_process_fn(
-    model_factory: TokenGeneratorFactory,
+    model_factory: PipelinesFactory,
     pipeline_config: TokenGeneratorPipelineConfig,
     worker_config: ModelWorkerConfig,
     queues: Mapping[str, Queue],
@@ -64,14 +64,14 @@ def _model_worker_process_fn(
 
 @asynccontextmanager
 async def start_model_worker(
-    model_factory: TokenGeneratorFactory,
+    model_factory: PipelinesFactory,
     pipeline_config: TokenGeneratorPipelineConfig,
     config: ModelWorkerConfig = ModelWorkerConfig(),
 ) -> AsyncGenerator[EngineQueue, None]:
     """Starts a model worker and associated process.
 
     Args:
-        factories (TokenGeneratorFactoryMap): Token generator factory functions.
+        factories (PipelinesFactory): Token generator factory functions.
         name (str, optional): Worker name. Defaults to "MODEL_<uuid>".
 
     Returns:
@@ -205,7 +205,7 @@ async def start_model_worker(
 
 @traced
 async def model_worker_run_v2(
-    model_factory: TokenGeneratorFactory,
+    model_factory: PipelinesFactory,
     pipeline_config: TokenGeneratorPipelineConfig,
     worker_config: ModelWorkerConfig,
     queues: Mapping[str, Queue],
@@ -233,6 +233,7 @@ async def model_worker_run_v2(
         # Initialize all token generators.
         with record_ms(METRICS.model_load_time), Tracer("model_factory"):
             model = model_factory()
+            assert isinstance(model, TokenGenerator)
         config = pipeline_config
         max_batch_size_tg = config.token_generation.size
         max_forward_steps_tg = config.token_generation.max_forward_steps

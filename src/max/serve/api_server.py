@@ -20,7 +20,7 @@ from functools import partial
 
 import uvloop
 from fastapi import FastAPI
-from max.pipelines.interfaces import PipelineTokenizer, TokenGeneratorFactory
+from max.pipelines import PipelinesFactory, PipelineTokenizer
 from max.serve.config import APIType, Settings, api_prefix
 from max.serve.debug import DebugSettings, register_debug
 from max.serve.pipelines.echo_gen import (
@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class ServingTokenGeneratorSettings:
     model_name: str
-    model_factory: TokenGeneratorFactory
+    model_factory: PipelinesFactory
     pipeline_config: TokenGeneratorPipelineConfig
     tokenizer: PipelineTokenizer
 
