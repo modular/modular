@@ -296,7 +296,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   theModule.get()->setAttr(EnvAttr::getEnvAttrName(), env.takeValue());
 
   // Extend the module with the Module env-attrs.
-  extendWithModularEnvAttr(theModule.get());
+  extendWithModularEnvAttr(theModule.get(),
+                           (*ctxOr)->get<CompilationContext>());
 
   // If we are generating a dependency file, do so now.
   if (!clOptions.dependencyFilename.empty()) {
