@@ -127,7 +127,6 @@ modular_py_binary(
     main = "generate_llm_logits.py",
     visibility = ["//visibility:public"],
     deps = [
-        "//SDK/integration-test/pipelines/python/llama3/testdata:run_torch_llama",
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/public/max-repo/pipelines/python/architectures",
         "//SDK/public/max-repo/pipelines/python/llama3",

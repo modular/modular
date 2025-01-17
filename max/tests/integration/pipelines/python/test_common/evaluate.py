@@ -49,7 +49,7 @@ def resolve_image_from_url(image_ref: str) -> bytes:
 
 
 def run_model(
-    model: Any,  # TODO(kathywu): Update to PipelineModel
+    model: PipelineModel,
     tokenizer: PipelineTokenizer,
     prompts: Iterable[str] = PROMPTS,
     images: Optional[Iterable[str]] = None,

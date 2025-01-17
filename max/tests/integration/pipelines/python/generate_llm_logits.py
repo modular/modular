@@ -17,11 +17,10 @@ from typing import Any, Mapping, Optional, Sequence, Union
 # 3rd-party
 import click
 import huggingface_hub
-import llama3
+import llama3.config
 
 # Tests
 import replit_compat
-import run_torch_llama
 import torch
 import transformers
 
@@ -32,7 +31,12 @@ from architectures import register_all_models
 from max import driver, pipelines
 from max.pipelines import interfaces
 from max.pipelines.kv_cache import KVCacheStrategy
-from test_common import evaluate, numpy_encoder
+from test_common import (
+    evaluate,
+    evaluate_embeddings,
+    numpy_encoder,
+    torch_utils,
+)
 
 
 @dataclass
@@ -41,7 +45,8 @@ class MaxPipelineAndTokenizer:
 
     model: pipelines.PipelineModel
     generator: Union[
-        interfaces.TokenGenerator, pipelines.TextGenerationPipeline
+        pipelines.TextGenerationPipeline,
+        pipelines.EmbeddingsPipeline,
     ]  # TODO(kcaverly): Move to only TextGenerationPipeline
     tokenizer: interfaces.PipelineTokenizer
 
@@ -65,6 +70,8 @@ class PipelineOracle(ABC):
     Can provide information about that pipeline, and create other objects
     necessary to run the model.
     """
+
+    task: interfaces.PipelineTask = interfaces.PipelineTask.TEXT_GENERATION
 
     @property
     @abstractmethod
@@ -557,6 +564,7 @@ class GenericOracle(PipelineOracle):
         prompts: list[str] | None = None,
         auto_model_cls: Any = transformers.AutoModelForCausalLM,
         auto_processor_cls: Any = transformers.AutoTokenizer,
+        task: interfaces.PipelineTask = interfaces.PipelineTask.TEXT_GENERATION,
     ) -> None:
         self.huggingface_repo_id = huggingface_repo_id
         self.architecture = architecture
@@ -564,6 +572,7 @@ class GenericOracle(PipelineOracle):
         self._prompts = prompts
         self.auto_model_cls = auto_model_cls
         self.auto_processor_cls = auto_processor_cls
+        self.task = task
 
     @property
     def supported_versions(self) -> Sequence[str]:
@@ -601,8 +610,13 @@ class GenericOracle(PipelineOracle):
             huggingface_repo_id=self.huggingface_repo_id,
             **self.config_params,
         )
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
-        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
+            config, task=self.task
+        )
+        assert isinstance(
+            pipeline,
+            (pipelines.TextGenerationPipeline, pipelines.EmbeddingsPipeline),
+        )
         return MaxPipelineAndTokenizer(
             model=pipeline._pipeline_model,
             generator=pipeline,
@@ -648,6 +662,15 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         "LlamaForCausalLM",
         config_params={"max_length": 512},
         prompts=[p[:502] for p in evaluate.PROMPTS],
+    ),
+    "mpnet": GenericOracle(
+        "sentence-transformers/all-mpnet-base-v2",
+        "MPNetForMaskedLM",
+        # Maximum length accepted by MPNet tokenizer is 512.
+        config_params={"max_length": 512},
+        prompts=[p[:502] for p in evaluate.PROMPTS],
+        auto_model_cls=transformers.AutoModel,
+        task=interfaces.PipelineTask.EMBEDDINGS_GENERATION,
     ),
 }
 
@@ -758,14 +781,32 @@ def main(
             encoding=encoding_name,
             device_specs=device_specs,
         )
-        results = evaluate.run_model(
-            max_pipeline_and_tokenizer.model,
-            max_pipeline_and_tokenizer.tokenizer,
-            prompts=pipeline_oracle.prompts,
-            images=pipeline_oracle.images
-            if isinstance(pipeline_oracle, MultiModalPipelineOracle)
-            else None,
-        )
+        if pipeline_oracle.task == interfaces.PipelineTask.TEXT_GENERATION:
+            results = evaluate.run_model(
+                max_pipeline_and_tokenizer.model,
+                max_pipeline_and_tokenizer.tokenizer,
+                prompts=pipeline_oracle.prompts,
+                images=pipeline_oracle.images
+                if isinstance(pipeline_oracle, MultiModalPipelineOracle)
+                else None,
+            )
+        elif (
+            pipeline_oracle.task
+            == interfaces.PipelineTask.EMBEDDINGS_GENERATION
+        ):
+            assert isinstance(
+                max_pipeline_and_tokenizer.generator,
+                pipelines.EmbeddingsPipeline,
+            )
+            results = evaluate_embeddings.encode(
+                max_pipeline_and_tokenizer.generator,
+                max_pipeline_and_tokenizer.tokenizer,
+                pipeline_oracle.prompts,
+            )
+        else:
+            raise ValueError(
+                f"Evaluating task {pipeline_oracle.task} is not supported."
+            )
     elif framework_name == "torch":
         torch_device: torch.device
         if device_type == "cpu":
@@ -779,17 +820,30 @@ def main(
         torch_pipeline_and_tokenizer = pipeline_oracle.create_torch_pipeline(
             version=version_name, encoding=encoding_name, device=torch_device
         )
-        # Despite the name, run_torch_llama3 works for all transformers, not
-        # just Llama.
-        results = run_torch_llama.run_torch_llama3(
-            model=torch_pipeline_and_tokenizer.model,
-            data_processor=torch_pipeline_and_tokenizer.data_processor,
-            device=torch_device,
-            prompts=pipeline_oracle.prompts,
-            images=pipeline_oracle.images
-            if isinstance(pipeline_oracle, MultiModalPipelineOracle)
-            else None,
-        )
+        if pipeline_oracle.task == interfaces.PipelineTask.TEXT_GENERATION:
+            results = torch_utils.run_text_generation(
+                model=torch_pipeline_and_tokenizer.model,
+                data_processor=torch_pipeline_and_tokenizer.data_processor,
+                device=torch_device,
+                prompts=pipeline_oracle.prompts,
+                images=pipeline_oracle.images
+                if isinstance(pipeline_oracle, MultiModalPipelineOracle)
+                else None,
+            )
+        elif (
+            pipeline_oracle.task
+            == interfaces.PipelineTask.EMBEDDINGS_GENERATION
+        ):
+            results = torch_utils.run_embeddings_generation(
+                model=torch_pipeline_and_tokenizer.model,
+                data_processor=torch_pipeline_and_tokenizer.data_processor,
+                device=torch_device,
+                prompts=pipeline_oracle.prompts,
+            )
+        else:
+            raise ValueError(
+                f"Evaluating task {pipeline_oracle.task} is not supported."
+            )
     else:
         raise NotImplementedError(
             f"Framework {framework_name!r} not implemented"

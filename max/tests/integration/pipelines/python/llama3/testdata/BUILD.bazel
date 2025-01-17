@@ -1,5 +1,3 @@
-load("//bazel:api.bzl", "modular_py_binary", "requirement")
-
 package(default_visibility = ["//visibility:public"])
 
 filegroup(
@@ -10,61 +8,4 @@ filegroup(
             "*.gguf",
         ],
     ),
-)
-
-modular_py_binary(
-    name = "run_torch_llama",
-    srcs = ["run_torch_llama.py"],
-    data = [
-        ":testdata",
-    ],
-    env = {
-        "MODULAR_PATH": ".",
-        "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/llama3/testdata",
-    },
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//SDK/integration-test/pipelines/python/llama3:evaluate_llama",
-        requirement("accelerate"),
-        requirement("click"),
-        requirement("numpy"),
-        requirement("pillow"),
-        requirement("sentencepiece"),
-        requirement("tokenizers"),
-        requirement("torch"),
-        requirement("transformers"),
-    ],
-)
-
-# Deprecated.  Instead, use run_torch_llama with
-# --//SDK/integration-test/pipelines/python:use_gpu_torch=true on the Bazel
-# command line.
-# TODO(akirchhoff): Remove run_torch_llama_gpu.
-modular_py_binary(
-    name = "run_torch_llama_gpu",
-    srcs = ["run_torch_llama.py"],
-    data = [
-        ":testdata",
-        "//Kernels/tools/gpu-query",
-    ],
-    env = {
-        "MODULAR_PATH": ".",
-        "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/gpu-query)",
-        "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/llama3/testdata",
-    },
-    imports = ["."],
-    main = "run_torch_llama.py",
-    visibility = ["//visibility:public"],
-    deps = [
-        "//SDK/integration-test/pipelines/python/llama3:evaluate_llama",
-        requirement("accelerate"),
-        requirement("click"),
-        requirement("numpy"),
-        requirement("pillow"),
-        requirement("sentencepiece"),
-        requirement("tokenizers"),
-        requirement("torch"),
-        requirement("transformers"),
-    ],
 )

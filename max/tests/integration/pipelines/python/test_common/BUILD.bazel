@@ -15,10 +15,12 @@ modular_py_library(
         requirement("numpy"),
         ":distance_metrics",
         ":evaluate",
+        ":evaluate_embeddings",
         ":ndarray_from_tensor_type",
         ":numpy_encoder",
         ":path",
         ":registry",
+        ":torch_utils",
     ],
 )
 
@@ -64,6 +66,16 @@ modular_py_library(
 )
 
 modular_py_library(
+    name = "evaluate_embeddings",
+    srcs = ["evaluate_embeddings.py"],
+    imports = [".."],
+    deps = [
+        "//SDK/lib/API/python/max/driver",
+        "//SDK/lib/API/python/max/pipelines",
+    ],
+)
+
+modular_py_library(
     name = "path",
     srcs = ["path.py"],
     imports = [".."],
@@ -82,5 +94,18 @@ modular_py_library(
         "//SDK/lib/API/python/max/pipelines",
         "//SDK/public/max-repo/pipelines/python/architectures",
         "@rules_python//python/runfiles",
+    ],
+)
+
+modular_py_library(
+    name = "torch_utils",
+    srcs = ["torch_utils.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("accelerate"),  # Required to run torch models on GPU.
+        requirement("pillow"),
+        requirement("torch"),
+        requirement("transformers"),
     ],
 )
