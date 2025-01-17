@@ -106,13 +106,8 @@ fn test_case[
     fill_fn: fn[rank: Int, type: DType] (mut NDBuffer[type, rank]) capturing [
         _
     ] -> None,
-](
-    K: Int,
-    axis: Int,
-    input_shape: IndexList[rank],
     largest: Bool = True,
-    sorted: Bool = True,
-):
+](K: Int, axis: Int, input_shape: IndexList[rank], sorted: Bool = True,):
     var input = TestTensor[rank, type](input_shape)
 
     var output_shape = input_shape
@@ -123,11 +118,10 @@ fn test_case[
     var input_buf = input.to_ndbuffer()
     fill_fn[rank, type](input_buf)
 
-    _top_k(
+    _top_k[largest=largest](
         input.to_ndbuffer(),
         K,
         axis,
-        largest,
         out_vals.to_ndbuffer(),
         out_idxs.to_ndbuffer(),
         1,  # force multithreading for small test cases,
@@ -199,7 +193,9 @@ fn main() raises:
 
     fn test_smallest():
         print("== test_smallest")
-        test_case[2, DType.float32, fill_iota](2, 1, IndexList[2](4, 4), False)
+        test_case[2, DType.float32, fill_iota, largest=False](
+            2, 1, IndexList[2](4, 4), False
+        )
 
     # CHECK-LABEL: test_smallest
     # CHECK: 0.0,1.0,4.0,5.0,8.0,9.0,12.0,13.0,

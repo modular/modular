@@ -97,12 +97,14 @@ fn bottom_k_shape[
 
 
 fn top_k[
-    rank: Int, type: DType, out_idx_type: DType = DType.int64
+    rank: Int,
+    type: DType,
+    out_idx_type: DType = DType.int64,
+    largest: Bool = True,
 ](
     input: NDBuffer[type, rank],
     k: Int,
     axis: Int,
-    largest: Bool,
     out_vals: NDBuffer[type, rank],
     out_idxs: NDBuffer[out_idx_type, rank],
     sorted: Bool = True,
@@ -114,23 +116,22 @@ fn top_k[
     Parameters:
         rank: Rank of the input.
         type: Data type of the input buffer.
-        out_idx_type: DType - The data type of the output indices (default is DType.int64).
+        out_idx_type: The data type of the output indices (default is DType.int64).
+        largest: Whether to find the maximum (top k) or minimum value (bottom k).
 
     Args:
         input: The input tensor.
         k: Represents the K largest/smallest value.
         axis: On which axis it should operate.
-        largest: If true, acts like top K. Otherwise, bottom K.
         out_vals: Output values.
         out_idxs: Output indices.
         sorted: Indicates if the top/bottom K elements are in (stable) sorted order.
     """
     alias grain_size = 1000
-    _top_k(
+    _top_k[largest=largest](
         input,
         k,
         axis,
-        largest,
         out_vals,
         out_idxs,
         grain_size,
@@ -142,11 +143,11 @@ fn _top_k[
     rank: Int,
     type: DType,
     out_idx_type: DType,
+    largest: Bool,
 ](
     input: NDBuffer[type, rank],
     k: Int,
     axis: Int,
-    largest: Bool,
     out_vals: NDBuffer[type, rank],
     out_idxs: NDBuffer[out_idx_type, rank],
     parallelism_grain_size: Int,  # impl detail, exposed for testing
@@ -174,6 +175,7 @@ fn _top_k[
                 indices[axis] = Int(idx)
                 return input[indices]
 
+            @parameter
             if largest:
 
                 @parameter
@@ -334,11 +336,10 @@ fn _top_k_sampling[
         UnsafePointer[Int64].alloc(Int(out_vals.size())),
         internal_out_shape,  # topk returns K as last dim
     )
-    _top_k[rank=internal_rank, type=type](
+    _top_k[rank=internal_rank, type=type, largest=True](
         reshape(input, internal_in_shape),
         k,
         axis=internal_rank - 1,  # Always operate on the last axis
-        largest=True,
         out_vals=internal_out_vals,
         out_idxs=out_idxs_tmp,
         sorted=True,
