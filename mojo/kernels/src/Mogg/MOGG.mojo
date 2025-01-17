@@ -3699,11 +3699,10 @@ fn bottom_k[
                 out_idxs_type == DType.int64,
                 "out_idxs_type must be int64 for cpu",
             ]()
-            _top_k[rank, type](
+            _top_k[rank, type, largest=False](
                 input,
                 Int(k_buf),
                 Int(axis),
-                False,
                 rebind[NDBuffer[type, rank]](out_vals),
                 rebind[NDBuffer[DType.int64, rank]](out_idxs),
                 sorted[0],
@@ -3761,11 +3760,10 @@ fn top_k[
                 out_idxs_type == DType.int64,
                 "out_idxs_type must be int64 for cpu",
             ]()
-            _top_k[rank, type](
+            _top_k[rank, type, largest=True](
                 input,
                 Int(k_buf),
                 Int(axis),
-                True,
                 rebind[NDBuffer[type, rank]](out_vals),
                 rebind[NDBuffer[DType.int64, rank]](out_idxs),
                 sorted[0],

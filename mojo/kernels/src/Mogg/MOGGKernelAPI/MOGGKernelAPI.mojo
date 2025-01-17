@@ -4093,13 +4093,12 @@ struct BottomK:
         axis: Scalar,
         sorted: Scalar[type = DType.bool],
     ):
-        top_k(
+        top_k[largest=False](
             managed_tensor_slice_to_ndbuffer_with_spec[
                 compiler.specsof[input.type, input.rank]("input")
             ](input),
             Int(k),
             Int(axis),
-            False,
             managed_tensor_slice_to_ndbuffer_with_spec[
                 compiler.specsof[values.type, values.rank]("values")
             ](values),
@@ -4145,13 +4144,12 @@ struct TopK:
         axis: Scalar,
         sorted: Scalar[type = DType.bool],
     ):
-        top_k(
+        top_k[largest=True](
             managed_tensor_slice_to_ndbuffer_with_spec[
                 compiler.specsof[input.type, input.rank]("input")
             ](input),
             Int(k),
             Int(axis),
-            True,
             managed_tensor_slice_to_ndbuffer_with_spec[
                 compiler.specsof[values.type, values.rank]("values")
             ](values),
