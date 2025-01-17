@@ -84,6 +84,7 @@ modular_py_test(
         "//PyTorch:ATenRT",
         "//PyTorch:TorchRuntimePlugins",
         "//PyTorch/tools/torch:mtorch",
+        "//SDK/integration-test:compile_config_ops",
         "//SDK/integration-test:counter_ops",
         "//SDK/integration-test:test_user_op",
         "//SDK/integration-test/API:inputs",
@@ -93,6 +94,7 @@ modular_py_test(
     ],
     env = {
         "MODULAR_COUNTER_OPS_PATH": "$(rootpath //SDK/integration-test:counter_ops)",
+        "MODULAR_COMPILE_CONFIG_OPS_PATH": "$(rootpath //SDK/integration-test:compile_config_ops)",
         "CUSTOM_OPS_PATH": "$(rootpath //SDK/integration-test:test_user_op)",
         "MODULAR_PATH": ".",
         "GRAPH_TESTDATA": "SDK/test/API/graph/python/pytests/testdata",

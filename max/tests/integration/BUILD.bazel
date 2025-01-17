@@ -30,6 +30,17 @@ mojo_library(
     ],
 )
 
+mojo_library(
+    name = "compile_config_ops",
+    srcs = glob(["Inputs/compile_config_ops/*.mojo"]),
+    visibility = [":__subpackages__"],
+    deps = [
+        "//Kernels/mojo/buffer",
+        "//Kernels/mojo/register",
+        "//open-source/mojo/stdlib/stdlib",
+    ],
+)
+
 lit_tests(
     name = "test",
     size = "large",
