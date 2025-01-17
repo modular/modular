@@ -14,6 +14,9 @@ fi
 if [ -z "$_START_MODULAR_INCLUDED" ]; then
   export _START_MODULAR_INCLUDED=yes
   export PS1="[M] $PS1"
+else
+ echo "Already in a Modular shell. Please start a new shell instance and source this file there."
+ return 1
 fi
 
 if [ -n "$ZSH_VERSION" ]; then
