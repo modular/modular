@@ -57,7 +57,7 @@ fn _get_dylib_function[
 @always_inline
 fn check_cublas_error(stat: Result) raises:
     if stat != Result.SUCCESS:
-        raise Error("CUBLAS ERROR:" + String(stat))
+        raise Error(String("CUBLAS ERROR:", stat))
 
 
 @always_inline

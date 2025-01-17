@@ -19,22 +19,15 @@ from utils import StaticTuple
 fn _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     constrained[
         False,
-        "no valid implementation of mma for for a="
-        + String(a.size)
-        + "x"
-        + String(a.type)
-        + ", b="
-        + String(b.size)
-        + "x"
-        + String(b.type)
-        + ", c="
-        + String(c.size)
-        + "x"
-        + String(c.type)
-        + ", and d="
-        + String(d.size)
-        + "x"
-        + String(d.type),
+        # fmt: off
+        String(
+            "no valid implementation of mma for for a=", 
+            a.size, "x", a.type,
+            ", b=", b.size, "x", b.type,
+            ", c=", c.size, "x", c.type,
+            ", and d=", d.size, "x", d.type,
+        )
+        # fmt: on
     ]()
 
 

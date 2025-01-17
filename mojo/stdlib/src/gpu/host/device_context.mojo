@@ -441,11 +441,11 @@ struct DeviceFunction[
                 max_dynamic_shared_size_bytes = func_attribute.value().value
             else:
                 print(
-                    "DeviceFunction.__init__: func_attribute = ["
-                    + String(func_attribute.value().attribute.code)
-                    + ", "
-                    + String(func_attribute.value().value)
-                    + "]"
+                    "DeviceFunction.__init__: func_attribute = [",
+                    func_attribute.value().attribute.code,
+                    ", ",
+                    func_attribute.value().value,
+                    "]",
                 )
                 not_implemented_yet["DeviceFunction.__init__: func_attribute"]()
 

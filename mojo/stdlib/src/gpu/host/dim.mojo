@@ -50,19 +50,18 @@ struct Dim(Stringable, Writable):
 
     @no_inline
     fn __str__(self) -> String:
-        var res = String("(x=") + String(self.x()) + ", "
-        if self.y() != 1 or self.z() != 1:
-            res += String("y=") + String(self.y())
-            if self.z() != 1:
-                res += ", z=" + String(self.z())
-        res += ")"
-        return res
+        return String.write(self)
 
     fn __repr__(self) -> String:
-        return self.__str__()
+        return String.write(self)
 
     fn write_to[W: Writer](self, mut writer: W):
-        writer.write(repr(self))
+        writer.write("(x=", self.x(), ", ")
+        if self.y() != 1 or self.z() != 1:
+            writer.write("y=", self.y())
+            if self.z() != 1:
+                writer.write(", z=", self.z())
+        writer.write(")")
 
     fn z(self) -> Int:
         return self[2]

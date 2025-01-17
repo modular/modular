@@ -151,9 +151,9 @@ struct DataType:
         elif dtype is DType.float64:
             self = Self.F64_R
         else:
-            raise "the dtype '" + String(
-                dtype
-            ) + "' is not currently handled by rocBLAS"
+            raise String(
+                "the dtype '", dtype, "' is not currently handled by rocBLAS"
+            )
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value

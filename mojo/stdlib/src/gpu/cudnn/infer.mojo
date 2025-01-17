@@ -104,7 +104,7 @@ struct cudnnSoftmaxMode_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnSoftmaxMode_t(" + String(self) + ")"
+        return String("cudnnSoftmaxMode_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -168,7 +168,7 @@ struct cudnnReduceTensorIndices_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnReduceTensorIndices_t(" + String(self) + ")"
+        return String("cudnnReduceTensorIndices_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -376,7 +376,7 @@ struct cudnnReduceTensorOp_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnReduceTensorOp_t(" + String(self) + ")"
+        return String("cudnnReduceTensorOp_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -469,7 +469,7 @@ struct cudnnDeterminism_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnDeterminism_t(" + String(self) + ")"
+        return String("cudnnDeterminism_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -556,7 +556,7 @@ struct cudnnStatus_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnStatus_t(" + String(self) + ")"
+        return String("cudnnStatus_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -599,7 +599,7 @@ struct cudnnCTCLossAlgo_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnCTCLossAlgo_t(" + String(self) + ")"
+        return String("cudnnCTCLossAlgo_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -668,7 +668,7 @@ struct cudnnTensorFormat_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnTensorFormat_t(" + String(self) + ")"
+        return String("cudnnTensorFormat_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -834,7 +834,7 @@ struct cudnnNormAlgo_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnNormAlgo_t(" + String(self) + ")"
+        return String("cudnnNormAlgo_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -889,7 +889,7 @@ struct cudnnOpTensorOp_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnOpTensorOp_t(" + String(self) + ")"
+        return String("cudnnOpTensorOp_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1192,7 +1192,7 @@ struct cudnnActivationMode_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnActivationMode_t(" + String(self) + ")"
+        return String("cudnnActivationMode_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1280,7 +1280,7 @@ struct cudnnConvolutionBwdDataAlgo_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnConvolutionBwdDataAlgo_t(" + String(self) + ")"
+        return String("cudnnConvolutionBwdDataAlgo_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1367,7 +1367,7 @@ struct cudnnSamplerType_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnSamplerType_t(" + String(self) + ")"
+        return String("cudnnSamplerType_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1437,7 +1437,7 @@ struct cudnnNormMode_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnNormMode_t(" + String(self) + ")"
+        return String("cudnnNormMode_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1557,7 +1557,7 @@ struct cudnnNormOps_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnNormOps_t(" + String(self) + ")"
+        return String("cudnnNormOps_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1635,7 +1635,7 @@ struct cudnnSoftmaxAlgorithm_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnSoftmaxAlgorithm_t(" + String(self) + ")"
+        return String("cudnnSoftmaxAlgorithm_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1725,7 +1725,7 @@ struct cudnnBatchNormOps_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnBatchNormOps_t(" + String(self) + ")"
+        return String("cudnnBatchNormOps_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1791,7 +1791,7 @@ struct cudnnConvolutionFwdAlgo_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnConvolutionFwdAlgo_t(" + String(self) + ")"
+        return String("cudnnConvolutionFwdAlgo_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -2018,7 +2018,7 @@ struct cudnnLRNMode_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnLRNMode_t(" + String(self) + ")"
+        return String("cudnnLRNMode_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -2146,7 +2146,7 @@ struct cudnnFoldingDirection_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnFoldingDirection_t(" + String(self) + ")"
+        return String("cudnnFoldingDirection_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -2213,7 +2213,7 @@ struct cudnnErrQueryMode_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnErrQueryMode_t(" + String(self) + ")"
+        return String("cudnnErrQueryMode_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -2374,7 +2374,7 @@ struct cudnnBatchNormMode_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnBatchNormMode_t(" + String(self) + ")"
+        return String("cudnnBatchNormMode_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -2467,7 +2467,7 @@ struct cudnnSeverity_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnSeverity_t(" + String(self) + ")"
+        return String("cudnnSeverity_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -2519,7 +2519,7 @@ struct cudnnMathType_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnMathType_t(" + String(self) + ")"
+        return String("cudnnMathType_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -2562,7 +2562,7 @@ struct cudnnNanPropagation_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnNanPropagation_t(" + String(self) + ")"
+        return String("cudnnNanPropagation_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -2617,7 +2617,7 @@ struct cudnnRNNAlgo_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnRNNAlgo_t(" + String(self) + ")"
+        return String("cudnnRNNAlgo_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -2777,7 +2777,7 @@ struct cudnnDataType_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnDataType_t(" + String(self) + ")"
+        return String("cudnnDataType_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -2946,7 +2946,7 @@ struct cudnnIndicesType_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnIndicesType_t(" + String(self) + ")"
+        return String("cudnnIndicesType_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -3246,7 +3246,7 @@ struct cudnnConvolutionBwdFilterAlgo_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnConvolutionBwdFilterAlgo_t(" + String(self) + ")"
+        return String("cudnnConvolutionBwdFilterAlgo_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -3393,7 +3393,7 @@ struct cudnnPoolingMode_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnPoolingMode_t(" + String(self) + ")"
+        return String("cudnnPoolingMode_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -3486,7 +3486,7 @@ struct cudnnDivNormMode_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnDivNormMode_t(" + String(self) + ")"
+        return String("cudnnDivNormMode_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)

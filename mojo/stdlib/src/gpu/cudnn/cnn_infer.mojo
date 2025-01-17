@@ -451,7 +451,7 @@ struct cudnnFusedOpsConstParamLabel_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnFusedOpsConstParamLabel_t(" + String(self) + ")"
+        return String("cudnnFusedOpsConstParamLabel_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -506,7 +506,7 @@ struct cudnnReorderType_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnReorderType_t(" + String(self) + ")"
+        return String("cudnnReorderType_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -667,7 +667,7 @@ struct cudnnFusedOps_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnFusedOps_t(" + String(self) + ")"
+        return String("cudnnFusedOps_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -731,7 +731,7 @@ struct cudnnFusedOpsPointerPlaceHolder_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnFusedOpsPointerPlaceHolder_t(" + String(self) + ")"
+        return String("cudnnFusedOpsPointerPlaceHolder_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -919,7 +919,7 @@ struct cudnnFusedOpsVariantParamLabel_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnFusedOpsVariantParamLabel_t(" + String(self) + ")"
+        return String("cudnnFusedOpsVariantParamLabel_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1356,7 +1356,7 @@ struct cudnnConvolutionMode_t:
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cudnnConvolutionMode_t(" + String(self) + ")"
+        return String("cudnnConvolutionMode_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
