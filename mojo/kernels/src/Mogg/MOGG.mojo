@@ -45,7 +45,6 @@ from linalg.utils import GemmShape
 from memory import AddressSpace, UnsafePointer, memcpy, memset_zero
 from memory.unsafe import bitcast
 from MOGGIntList import IntList
-from nn._optional_param import OptionalParamInt
 from nn.activations import gelu, relu
 from nn.arange import arange, arange_shape
 from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
