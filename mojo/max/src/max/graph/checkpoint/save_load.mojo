@@ -49,7 +49,7 @@ def save[PathLike: PathLike](tensor_dict: TensorDict, path: PathLike):
     """
     # Write header and metadata
     var header_buf = _serialization_header()
-    var header = String(header_buf)
+    var header = String(buffer=header_buf^)
     var version = current_version()
 
     # Compute metadata size and tensor offsets.
@@ -144,7 +144,7 @@ fn _read_string(f: FileHandle, size: UInt32) raises -> String:
     """Reads string of the specified size from a file."""
     var string_bytes = f.read_bytes(size.cast[DType.int64]())
     string_bytes.append(0)  # Add null terminator
-    return String(string_bytes)
+    return String(buffer=string_bytes^)
 
 
 @value
