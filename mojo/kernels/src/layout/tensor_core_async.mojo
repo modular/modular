@@ -42,7 +42,7 @@ fn _lhs_layout[mma_shape: IndexList[3]]() -> Layout:
 
     constrained[
         mma_shape in supported_mma_shape,
-        "WGMMA operation of shape '" + String(mma_shape) + "' is not supported",
+        String("WGMMA operation of shape '", mma_shape, "' is not supported"),
     ]()
 
     return Layout()
@@ -57,7 +57,7 @@ fn _rhs_layout[mma_shape: IndexList[3]]() -> Layout:
 
     constrained[
         mma_shape in supported_mma_shape,
-        "WGMMA operation of shape '" + String(mma_shape) + "' is not supported",
+        String("WGMMA operation of shape '", mma_shape, "' is not supported"),
     ]()
 
     return Layout()
@@ -70,7 +70,7 @@ fn _lhs_descriptor[
 ) -> WGMMADescriptor[tensor.dtype]:
     constrained[
         mma_shape in supported_mma_shape,
-        "WGMMA operation of shape '" + String(mma_shape) + "' is not supported",
+        String("WGMMA operation of shape '", mma_shape, "' is not supported"),
     ]()
     return WGMMADescriptor.create[8, 64](tensor.ptr)
 
@@ -82,7 +82,7 @@ fn _rhs_descriptor[
 ) -> WGMMADescriptor[tensor.dtype]:
     constrained[
         mma_shape in supported_mma_shape,
-        "WGMMA operation of shape '" + String(mma_shape) + "' is not supported",
+        String("WGMMA operation of shape '", mma_shape, "' is not supported"),
     ]()
     return WGMMADescriptor.create[1, 8](tensor.ptr)
 
@@ -93,7 +93,7 @@ fn _output_register_size[
 ](in_dtype: DType, out_dtype: DType) -> Int:
     constrained[
         mma_shape in supported_mma_shape,
-        "WGMMA operation of shape '" + String(mma_shape) + "' is not supported",
+        String("WGMMA operation of shape '", mma_shape, "' is not supported"),
     ]()
     return 4
 
@@ -129,9 +129,9 @@ struct TensorCoreAsync[
     fn __init__(out self):
         constrained[
             mma_shape in supported_mma_shape,
-            "WGMMA operation of shape '"
-            + String(mma_shape)
-            + "' is not supported",
+            String(
+                "WGMMA operation of shape '", mma_shape, "' is not supported"
+            ),
         ]()
 
     @staticmethod
@@ -172,9 +172,9 @@ struct TensorCoreAsync[
     ):
         constrained[
             mma_shape in supported_mma_shape,
-            "WGMMA operation of shape '"
-            + String(mma_shape)
-            + "' is not supported",
+            String(
+                "WGMMA operation of shape '", mma_shape, "' is not supported"
+            ),
         ]()
         warp_id, lan_id = divmod(thread_idx.x, UInt(WARP_SIZE))
         alias warp_row_major_layout = Layout.row_major(8, 4)

@@ -413,11 +413,6 @@ fn shape_div[
             var vb = Int(to_int(b))
 
             if not (va % vb == 0 or vb % va == 0):
-                abort(
-                    "Incompatible shape values: "
-                    + String(va)
-                    + " "
-                    + String(vb)
-                )
+                abort("Incompatible shape values: ", va, " ", vb)
 
             return va // vb if va % vb == 0 else signum(va * vb)

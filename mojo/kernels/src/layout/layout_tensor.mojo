@@ -2422,10 +2422,12 @@ fn copy_dram_to_sram_async[
 
     constrained[
         src_thread_layout.size() == dst_thread_layout.size(),
-        "src thread layout size "
-        + String(src_thread_layout.size())
-        + " does not match dst thread layout size "
-        + String(dst_thread_layout.size()),
+        String(
+            "src thread layout size ",
+            src_thread_layout.size(),
+            " does not match dst thread layout size ",
+            dst_thread_layout.size(),
+        ),
     ]()
 
     alias num_busy_threads = src_thread_layout.size()

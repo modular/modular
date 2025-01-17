@@ -342,10 +342,12 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
             var computed_size = Self.tuple_size(self._store)
             if data_size != computed_size:
                 abort(
-                    "size validation failed: "
-                    + String(data_size)
-                    + " != "
-                    + String(computed_size)
+                    String(
+                        "size validation failed: ",
+                        data_size,
+                        " != ",
+                        computed_size,
+                    )
                 )
 
     @always_inline
@@ -779,12 +781,7 @@ fn apply_zip[
 
 fn tuple_min(a: IntTuple, b: IntTuple) -> IntTuple:
     if len(a) != len(b):
-        abort(
-            "Tuple sizes don't match: "
-            + String(len(a))
-            + " != "
-            + String(len(b))
-        )
+        abort("Tuple sizes don't match: ", len(a), " != ", len(b))
     if is_int(a):
         if UNKNOWN_VALUE in (to_int(a), to_int(b)):
             return UNKNOWN_VALUE
@@ -794,12 +791,7 @@ fn tuple_min(a: IntTuple, b: IntTuple) -> IntTuple:
 
 fn inner_product(a: IntTuple, b: IntTuple) -> Int:
     if len(a) != len(b):
-        abort(
-            "Tuple sizes don't match: "
-            + String(len(a))
-            + " != "
-            + String(len(b))
-        )
+        abort("Tuple sizes don't match: ", len(a), " != ", len(b))
     if is_int(a):
         return to_int(a) * to_int(b)
     var r: Int = 0
@@ -952,12 +944,7 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
     if is_tuple(a):
         if is_tuple(b):  # tuple tuple
             if len(a) != len(b):
-                abort(
-                    "Tuple sizes don't match: "
-                    + String(len(a))
-                    + " != "
-                    + String(len(b))
-                )
+                abort("Tuple sizes don't match: ", len(a), " != ", len(b))
             return apply_zip[shape_div](a, b)
         else:  # tuple "int"
             var vb = to_int(b)
@@ -977,12 +964,7 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
                 return UNKNOWN_VALUE
 
             if not (va % vb == 0 or vb % va == 0):
-                abort(
-                    "Incompatible shape values: "
-                    + String(va)
-                    + " "
-                    + String(vb)
-                )
+                abort("Incompatible shape values: ", va, " ", vb)
 
             return va // vb if va % vb == 0 else signum(va * vb)
 
