@@ -9,16 +9,15 @@
 
 #include "mlir/IR/BuiltinAttributes.h"
 
-#include <array>
+#include "llvm/ADT/ArrayRef.h"
 
 namespace M::KGEN::MOGGPreElab {
 
 /// Returns true if the symbol's references (files/modules it came from) match
 /// the provided path.
-template <unsigned long N>
 inline bool symbolMatches(mlir::SymbolRefAttr symbol,
-                          const std::array<llvm::StringLiteral, N> &path) {
-  if (symbol.getNestedReferences().size() != N - 1)
+                          llvm::ArrayRef<llvm::StringLiteral> path) {
+  if (symbol.getNestedReferences().size() != path.size() - 1)
     return false;
 
   if (!symbol.getRootReference().strref().contains(path.front()))
