@@ -287,3 +287,81 @@ def main():
             128,
             1,
         ](528, 528, ctx)
+
+        # BF16 token gen
+
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+            32,
+        ](1, 512, ctx, is_benchmark())
+
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+            11,
+        ](1, 256, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.float32,
+            128,
+            1,
+        ](1, 11, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+            2,
+        ](1, 523, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.float32,
+            128,
+            24,
+            group=3,
+        ](1, 29, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+            3,
+            group=3,
+        ](1, 156, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+            3,
+            group=3,
+        ](1, 208, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+            32,
+            group=4,
+        ](1, 1208, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+            32,
+            group=4,
+        ](1, 2008, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+            32,
+            group=4,
+        ](1, 5000, ctx)

@@ -24,6 +24,8 @@ from nn.mha import (
 from nn.mha_mask import NullMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
+from internal_utils import assert_with_measure
+from internal_utils._measure import cosine
 
 from utils.index import Index
 from utils.numerics import min_or_neg_inf, neg_inf
@@ -78,7 +80,7 @@ fn test[
     ]()
 
     # Query, key, value dimensions.
-    alias scale = Float32(1)  # rsqrt[type, 1](Float32(depth))
+    alias scale = Float32(0.25)  # rsqrt[type, 1](Float32(depth))
     alias kv_num_heads = num_heads // group
 
     # Q, K, V shapes.
@@ -135,7 +137,6 @@ fn test[
         rand[qkv_type](k_ptr, k_size)
         rand[qkv_type](v_ptr, v_size)
         rand[mask_type](mask_ptr, mask_size)
-        # Disable mask for now.
 
     # Contruct buffers.
     var q = NDBuffer[qkv_type, 4](
@@ -304,18 +305,25 @@ fn test[
         ctx.enqueue_copy_from_device(output_ptr, output_ref_device_ptr)
         _ = output_ref_device_ptr
 
-    var rtol = Scalar[qkv_type](2e-2)
+    assert_with_measure[cosine](
+        flash_output, output, threshold=Scalar[DType.float64](1e-5)
+    )
 
-    for bs in range(batch_size):
-        for h in range(num_heads):
-            for s in range(seq_len):
-                for d in range(depth):
-                    var actual = flash_output[Index(bs, s, Int(h), Int(d))]
-                    var expect = output[Index(bs, s, Int(h), Int(d))]
-                    if not isclose(actual, expect, atol=1e-5, rtol=rtol):
-                        var rerr = abs((actual - expect) / expect)
-                        print(h, s, d, actual, expect, rerr)
-                    assert_almost_equal(actual, expect, atol=1e-5, rtol=rtol)
+    # This is useful for debugging.
+    if False:
+        var rtol = Scalar[qkv_type](2e-2)
+        for bs in range(batch_size):
+            for h in range(num_heads):
+                for s in range(seq_len):
+                    for d in range(depth):
+                        var actual = flash_output[Index(bs, s, Int(h), Int(d))]
+                        var expect = output[Index(bs, s, Int(h), Int(d))]
+                        if not isclose(actual, expect, atol=1e-5, rtol=rtol):
+                            var rerr = abs((actual - expect) / expect)
+                            print(h, s, d, actual, expect, rerr)
+                        assert_almost_equal(
+                            actual, expect, atol=1e-5, rtol=rtol
+                        )
 
     _ = q_device_ptr
     _ = k_device_ptr
@@ -438,6 +446,73 @@ fn test_context_encoding[batch_size: Int](ctx: DeviceContext) raises:
     ](528, 528, ctx)
 
 
+fn test_decoding[
+    batch_size: Int,
+    num_partitions: OptionalReg[Int] = None,
+    qkv_type: DType = DType.bfloat16,
+](ctx: DeviceContext, use_index_input: Bool) raises:
+    # fp32 arbitrary depth and num_heads, baseline impl.
+    # BF16 token gen
+    test[
+        3,
+        qkv_type,
+        DType.float32,
+        128,
+        2,
+        against_gpu_naive=True,
+        batch_size=batch_size,
+        num_partitions=num_partitions,
+    ](1, 512, ctx, use_index_input=use_index_input)
+    test[
+        4,
+        qkv_type,
+        DType.bfloat16,
+        128,
+        2,
+        against_gpu_naive=True,
+        batch_size=batch_size,
+        num_partitions=num_partitions,
+    ](1, 512, ctx, use_index_input=use_index_input)
+    test[
+        3,
+        qkv_type,
+        DType.float32,
+        128,
+        1,
+        group=1,
+        against_gpu_naive=True,
+        batch_size=batch_size,
+        num_partitions=num_partitions,
+    ](1, 128, ctx, use_index_input=use_index_input)
+    test[
+        4,
+        qkv_type,
+        DType.bfloat16,
+        128,
+        3,
+        group=3,
+        against_gpu_naive=True,
+        batch_size=batch_size,
+        num_partitions=num_partitions,
+    ](1, 156, ctx, use_index_input=use_index_input)
+    test[
+        4,
+        qkv_type,
+        DType.bfloat16,
+        128,
+        3,
+        group=3,
+        against_gpu_naive=True,
+        batch_size=batch_size,
+        num_partitions=num_partitions,
+    ](1, 208, ctx, use_index_input=use_index_input)
+
+
 def main():
     with DeviceContext() as ctx:
         test_context_encoding[1](ctx)
+
+        @parameter
+        for batch_size in range(1, 5, 3):
+            test_decoding[batch_size, 1](ctx, False)
+            test_decoding[batch_size, 1, DType.float32](ctx, False)
