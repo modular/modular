@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_cc_test", "modular_pybind_library_test")
+load("//bazel:api.bzl", "modular_cc_test", "modular_python_binding_library_test")
 
 modular_cc_test(
     name = "ASN1Test",
@@ -218,7 +218,7 @@ modular_cc_test(
     deps = ["//Support:Diagnostics"],
 )
 
-modular_pybind_library_test(
+modular_python_binding_library_test(
     name = "CPythonUtilTest",
     srcs = ["CPython/UtilTest.cpp"],
     py_deps = [],
@@ -227,11 +227,11 @@ modular_pybind_library_test(
     ],
 )
 
-modular_pybind_library_test(
-    name = "CPythonPybindUtilTest",
+modular_python_binding_library_test(
+    name = "CPythonNanobindUtilTest",
     srcs = ["CPython/UtilTest.cpp"],
     py_deps = [],
     deps = [
-        "//Support:CPythonPybind",
+        "//Support:CPythonNanobind",
     ],
 )

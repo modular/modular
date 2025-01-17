@@ -9,14 +9,17 @@
 
 #include "Support/ML/DType.h"
 #include "mlir-c/BuiltinAttributes.h"
-#include "mlir/Bindings/Python/PybindAdaptors.h"
+#include "mlir/Bindings/Python/NanobindAdaptors.h"
 #include "mlir/CAPI/IR.h"
 #include "mlir/IR/BuiltinDialect.h"
-#include "pybind11/pybind11.h"
+#include "nanobind/nanobind.h"
+#include <type_traits>
+
+namespace nb = nanobind;
 
 namespace M::Graph::Python {
 template <typename T>
-class PybindWrapper {
+class NanobindWrapper {
   // This exists because of typeinfo madness.
   // MLIR doesn't generate typeinfo, and _most_ of its types don't have
   // a key function, so we can generate them ourselves.
@@ -27,12 +30,12 @@ class PybindWrapper {
   // and then we codegen usages of it.
 public:
   T value;
-  PybindWrapper(T &&value) : value(value) {}
+  NanobindWrapper(T &&value) : value(value) {}
   operator T() { return value; }
 };
 } // namespace M::Graph::Python
 
-namespace PYBIND11_NAMESPACE {
+namespace NB_NAMESPACE {
 namespace detail {
 
 /// Casts object <-> MLIRContext.
@@ -42,23 +45,26 @@ protected:
   ::mlir::MLIRContext *value;
 
 public:
-  static constexpr auto name = const_name("Context");
+  static constexpr auto Name = const_name("Context");
+
+  template <typename T>
+  using Cast = ::mlir::MLIRContext *;
 
   operator ::mlir::MLIRContext *() { return value; }
   operator ::mlir::MLIRContext *&() { return value; }
   template <typename T>
-  using cast_op_type =
-      conditional_t<std::is_pointer<remove_reference_t<T>>::value,
-                    typename std::add_pointer<intrinsic_t<T>>::type,
-                    typename std::add_lvalue_reference<intrinsic_t<T>>::type>;
+  using cast_op_type = std::conditional_t<
+      std::is_pointer<std::remove_reference_t<T>>::value,
+      typename std::add_pointer<intrinsic_t<T>>::type,
+      typename std::add_lvalue_reference<intrinsic_t<T>>::type>;
 
-  bool load(handle src, bool should_implicit_convert) {
+  bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
     if (src.is_none()) {
-      src = py::module::import(MAKE_MLIR_PYTHON_QUALNAME("ir"))
+      src = nb::module_::import_(MAKE_MLIR_PYTHON_QUALNAME("ir"))
                 .attr("Context")
                 .attr("current");
     }
-    py::object capsule = mlirApiObjectToCapsule(src);
+    nb::object capsule = mlirApiObjectToCapsule(src);
     value = unwrap(mlirPythonCapsuleToContext(capsule.ptr()));
     return !mlirContextIsNull(wrap(value));
   }
@@ -67,16 +73,17 @@ public:
 /// Casts object <-> MlirType.
 template <>
 struct type_caster<::mlir::Type> {
-  PYBIND11_TYPE_CASTER(::mlir::Type, const_name("Type"));
-  bool load(handle src, bool) {
-    py::object capsule = mlirApiObjectToCapsule(src);
+  NB_TYPE_CASTER(::mlir::Type, const_name("Type"))
+  bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) {
+    nb::object capsule = mlirApiObjectToCapsule(src);
     value = unwrap(mlirPythonCapsuleToType(capsule.ptr()));
     return !mlirTypeIsNull(wrap(value));
   }
-  static handle cast(::mlir::Type t, return_value_policy, handle) {
-    py::object capsule =
-        py::reinterpret_steal<py::object>(mlirPythonTypeToCapsule(wrap(t)));
-    return py::module::import(MAKE_MLIR_PYTHON_QUALNAME("ir"))
+  static handle from_cpp(::mlir::Type t, rv_policy policy,
+                         cleanup_list *cleanup) {
+    nb::object capsule =
+        nb::steal<nb::object>(mlirPythonTypeToCapsule(wrap(t)));
+    return nb::module_::import_(MAKE_MLIR_PYTHON_QUALNAME("ir"))
         .attr("Type")
         .attr(MLIR_PYTHON_CAPI_FACTORY_ATTR)(capsule)
         .attr(MLIR_PYTHON_MAYBE_DOWNCAST_ATTR)()
@@ -87,17 +94,18 @@ struct type_caster<::mlir::Type> {
 /// Casts object <-> DType.
 template <>
 struct type_caster<::M::DType> {
-  PYBIND11_TYPE_CASTER(::M::DType, const_name("DType"));
-  bool load(handle src, bool) {
-    value = M::DType(src.cast<uint8_t>());
+  NB_TYPE_CASTER(::M::DType, const_name("DType"))
+  bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) {
+    value = M::DType(nb::cast<uint8_t>(src));
     return true;
   }
-  static handle cast(::M::DType t, return_value_policy, handle) {
-    return py::cast(t.getValue());
+  static handle from_cpp(::M::DType t, rv_policy policy,
+                         cleanup_list *cleanup) {
+    return nb::cast(t.getValue());
   }
 };
 
 } // namespace detail
-} // namespace PYBIND11_NAMESPACE
+} // namespace NB_NAMESPACE
 
 #endif // SDK_GRAPHAPI_PYTHON_TYPECASTERS_H

@@ -5,7 +5,7 @@ load(
     "gentbl_mlir_dialect",
     "gentbl_modular_passes",
     "modular_cc_library",
-    "modular_pybind_library",
+    "modular_nanobind_library",
     "modular_shared_library",
     "td_library",
 )
@@ -932,7 +932,7 @@ modular_cc_library(
     name = "CPython",
     srcs = glob(["lib/CPython/*.cpp"]),
     hdrs = glob(["include/Support/CPython/*.h"]),
-    # Intentionally propagated so it cannot be used with pybind
+    # Intentionally propagated so it cannot be used with nanobind
     defines = ["Py_LIMITED_API=0x03090000"],
     deps = [
         "@llvm-project//llvm:Support",
@@ -940,8 +940,8 @@ modular_cc_library(
     ],
 )
 
-modular_pybind_library(
-    name = "CPythonPybind",
+modular_nanobind_library(
+    name = "CPythonNanobind",
     srcs = glob(["lib/CPython/*.cpp"]),
     hdrs = glob(["include/Support/CPython/*.h"]),
     # NOTE: python headers are still version dependent
