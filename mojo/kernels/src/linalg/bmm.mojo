@@ -255,15 +255,16 @@ fn batched_matmul[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return String(";").join(
+        # fmt: off
+        return String(
             trace_arg("A", a_buf),
-            trace_arg("B", b_buf),
-            trace_arg("C", c_buf),
-            "transpose_a=" + String(transpose_a),
-            "transpose_b=" + String(transpose_b),
-            "single_thread_blocking_override="
-            + String(single_thread_blocking_override),
+            ";", trace_arg("B", b_buf),
+            ";", trace_arg("C", c_buf),
+            ";transpose_a=", transpose_a,
+            ";transpose_b=", transpose_b,
+            ";single_thread_blocking_override=", single_thread_blocking_override,
         )
+        # fmt: on
 
     with Trace[TraceLevel.OP, target=target](
         "batched_matmul",

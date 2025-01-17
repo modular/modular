@@ -87,13 +87,16 @@ struct Backend:
         return Int(self._value)
 
     fn __str__(self) -> String:
+        return String.write(self)
+
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.AUTOMATIC:
-            return "AUTOMATIC"
+            return writer.write("AUTOMATIC")
         if self is Self.CUBLAS:
-            return "CUBLAS"
+            return writer.write("CUBLAS")
         if self is Self.CUBLASLT:
-            return "CUBLASLT"
-        return "ROCBLAS"
+            return writer.write("CUBLASLT")
+        writer.write("ROCBLAS")
 
 
 fn _resolve_backend[backend: Backend, type: DType = DType.invalid]() -> Backend:
@@ -143,9 +146,9 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
             self._handle = handle
         else:
             raise Error(
-                "the backend '"
-                + String(backend)
-                + "' is not currently supported"
+                "the backend '",
+                backend,
+                "' is not currently supported",
             )
 
     @always_inline
@@ -262,10 +265,10 @@ fn matmul[
             transpose_b=transpose_b,
         )
     else:
-        raise Error(
-            "the backend '"
-            + String(handle.backend)
-            + "' is not currently supported"
+        raise String(
+            "the backend '",
+            handle.backend,
+            "' is not currently supported",
         )
 
 
