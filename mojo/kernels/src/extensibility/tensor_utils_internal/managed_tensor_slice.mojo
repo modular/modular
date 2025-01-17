@@ -38,6 +38,7 @@ from .tensor_like import TensorLike
 # ===----------------------------------------------------------------------=== #
 
 
+@doc_private
 @parameter
 @always_inline
 fn gcd_pow2[a: Int, b: Int]() -> Int:
@@ -57,6 +58,7 @@ fn gcd_pow2[a: Int, b: Int]() -> Int:
 # predictably introspect and manipulate these particular functions.
 #
 # They are set to be inlined further down graph compiler stack.
+@doc_private
 @register_internal_override("simd_store_into_managed_tensor_slice", 1)
 @no_inline
 fn simd_store_into_managed_tensor_slice[
@@ -127,6 +129,7 @@ fn simd_store_into_managed_tensor_slice[
             store_strided(static_stride.get())
 
 
+@doc_private
 @register_internal_override("simd_load_from_managed_tensor_slice", 1)
 @no_inline
 fn simd_load_from_managed_tensor_slice[
@@ -294,16 +297,15 @@ struct ManagedTensorSlice[
     type: DType,
     rank: Int,
 ](CollectionElement, TensorLike):
-    """ManagedTensorSlice is like TensorSlice but it does not effect the life
-    of the underlying allocated pointer. Unlike TensorSlice, when the object
-    lifetime ends it does not affect the lifetime of the underlying pointer.
-    Conversly, if a ManagedTensorSlice is created, it will not extend the life
-    of the underlying pointer.
+    """A view of a tensor that does not own the underlying allocated pointer.
+    When the object lifetime ends it does not free the underlying pointer.
+    Conversely, if a `ManagedTensorSlice` is created, it will not extend the
+    life of the underlying pointer.
 
-    Therefore, the user must take care to keep the ptr alive until
-    ManagedTensorSlice's last use. This class is useful for writing kernels
-    where memory is managed by an external runtime like in MAX's inference
-    stack.
+    Therefore, the user must take care to keep the pointer alive until the last
+    use of a `ManagedTensorSlice` instance. This class is useful for writing
+    custom operations where memory is managed by an external runtime like in
+    MAX's inference stack.
     """
 
     var _ptr: UnsafePointer[Scalar[type]]
@@ -316,6 +318,14 @@ struct ManagedTensorSlice[
         slices: InlineArray[Slice, rank],
         slicer_spec: RuntimeTensorSpec[type, rank],
     ):
+        """Initializes a ManagedTensorSlice from a pointer, array of slices and
+        tensor spec.
+
+        In general, custom operations should not create `ManagedTensorSlice`
+        instances, but instead use the ones provided by the MAX inference
+        engine.
+        """
+
         @parameter
         @always_inline
         fn start_fn(slice: Slice) -> Int:
@@ -356,6 +366,12 @@ struct ManagedTensorSlice[
         ptr: UnsafePointer[Scalar[type]],
         shape: IndexList[rank],
     ):
+        """Initializes a ManagedTensorSlice from a pointer and shape.
+
+        In general, custom operations should not create `ManagedTensorSlice`
+        instances, but instead use the ones provided by the MAX inference
+        engine.
+        """
         self._ptr = ptr
         self._spec = RuntimeTensorSpec[type, rank](shape)
         self._runtime_strides = _row_major_strides(self._spec)
@@ -366,12 +382,19 @@ struct ManagedTensorSlice[
         shape: IndexList[rank],
         strides: IndexList[rank],
     ):
+        """Initializes a ManagedTensorSlice from a pointer, shape, and strides.
+
+        In general, custom operations should not create `ManagedTensorSlice`
+        instances, but instead use the ones provided by the MAX inference
+        engine.
+        """
         self = Self(
             ptr,
             RuntimeTensorSpec[type, rank](shape),
             strides,
         )
 
+    @doc_private
     @implicit
     fn __init__(out self, ndbuffer: NDBuffer[type, rank]):
         """Initializes a ManagedTensorSlice from an NDBuffer.
@@ -435,10 +458,21 @@ struct ManagedTensorSlice[
         self._ptr[offset] = val
 
     fn spec(self) -> TensorSpec:
+        """Gets the `TensorSpec` of this tensor slice, which provides meta-data
+        about the tensor slice.
+
+        Returns:
+            The static `TensorSpec` for this tensor slice.
+        """
         return self._spec.get_tensor_spec()
 
     @always_inline
     fn shape(self) -> IndexList[rank]:
+        """Gets the shape of this tensor slice, as an `IndexList`.
+
+        Returns:
+            The shape of this tensor slice.
+        """
         alias static_shape = specsof[type, rank]("self").shape
         return _make_partially_static_index_list[rank, static_shape](
             self._spec.shape
@@ -446,10 +480,28 @@ struct ManagedTensorSlice[
 
     @always_inline
     fn dim_size(self, index: Int) -> Int:
+        """Gets the size of a given dimension of this tensor slice using a run
+        time value.
+
+        Args:
+            index: The zero-based index of the dimension.
+
+        Returns:
+            The size of the tensor slice in the given dimension.
+        """
         return self.shape()[index]
 
     @always_inline
     fn dim_size[index: Int](self) -> Int:
+        """Gets the size of a given dimension of this tensor slice using a
+        compile time value.
+
+        Parameters:
+            index: The zero-based index of the dimension.
+
+        Returns:
+            The size of the tensor slice in the given dimension.
+        """
         alias static_shape = specsof[type, rank]("self").shape
 
         @parameter
@@ -460,17 +512,42 @@ struct ManagedTensorSlice[
 
     @always_inline
     fn strides(self) -> IndexList[rank]:
+        """Gets the strides of this tensor slice, as an `IndexList`.
+
+        Returns:
+            The strides of this tensor slice.
+        """
         alias static_shape = specsof[type, rank]("self").strides
         return _make_partially_static_index_list[rank, static_shape](
             self._runtime_strides
         )
 
+    @doc_private
     @always_inline
     fn stride_length(self, index: Int) -> Int:
+        """Gets the length of the stride of a given dimension of this tensor
+        slice using a run time value.
+
+        Args:
+            index: The zero-based index of the dimension.
+
+        Returns:
+            The size of the tensor slice in the given dimension.
+        """
         return self.strides()[index]
 
+    @doc_private
     @always_inline
     fn stride_length[index: Int](self) -> Int:
+        """Gets the length of the stride of a given dimension of this tensor
+        slice using a compile time value.
+
+        Parameters:
+            index: The zero-based index of the dimension.
+
+        Returns:
+            The size of the tensor slice in the given dimension.
+        """
         alias static_strides = specsof[type, rank]("self").strides
 
         @parameter
@@ -484,7 +561,7 @@ struct ManagedTensorSlice[
         """Computes the tensor slice's number of elements.
 
         Returns:
-            The total number of elements in the ManagedTensorSlice.
+            The total number of elements in the tensor slice.
         """
         var product: Int = 1
 
@@ -496,6 +573,19 @@ struct ManagedTensorSlice[
 
     @always_inline
     fn unsafe_ptr[__type: DType = type](self) -> UnsafePointer[Scalar[__type]]:
+        """Get the pointer stored in this tensor slice.
+
+        Danger: This method obtains the pointer stored in this tensor slice.
+        In general, it should not be used, as it can modify the invariants of
+        this tensor slice and lead to unexpected behavior. Custom operations
+        should avoid using this method.
+
+        Parameters:
+            __type: The type of the `UnsafePointer` in this tensor slice.
+
+        Returns:
+            The `UnsafePointer` which contains the data for this tensor slice.
+        """
         return rebind[UnsafePointer[Scalar[__type]]](self._ptr)
 
     @always_inline
@@ -504,6 +594,21 @@ struct ManagedTensorSlice[
         # Necessary to make it simpler on the call site.
         _rank: Int,
     ](self, index: IndexList[_rank]) -> SIMD[type, width]:
+        """Gets data from this tensor slice as a `SIMD`.
+
+        Danger: This method separates the data of this tensor slice from the
+        tensor slice itself. Custom operations should avoid using this method.
+
+        Parameters:
+            width: The width of the `SIMD` value. This must be large enough to contain the data from this tensor slice.
+            _rank: The rank of the tensor slice.
+
+        Args:
+            index: An `IndexList` of size `_rank` to indicate the dimension of the tensor slice to obtain data from.
+
+        Returns:
+            Data from this tensor slice at dimension `index`.
+        """
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
         alias static_specs = specsof[type, rank]("self")
@@ -591,6 +696,19 @@ struct ManagedTensorSlice[
         # Necessary to make it simpler on the call site.
         _rank: Int,
     ](self, index: IndexList[_rank], val: SIMD[type, width]):
+        """Sets data in this tensor slice from a `SIMD`.
+
+        Danger: This method changes the data in this tensor slice without any
+        safety guarantees. Custom operations should avoid using this method.
+
+        Parameters:
+            width: The width of the `SIMD` value.
+            _rank: The rank of the tensor slice.
+
+        Args:
+            index: An `IndexList` of size `_rank` to indicate the dimension of the tensor slice to set data in.
+            val: The data to set into this tensor slice.
+        """
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
 
@@ -634,6 +752,7 @@ struct ManagedTensorSlice[
 # ===----------------------------------------------------------------------=== #
 
 
+@doc_private
 fn get_kernel_simd_width[type: DType, target: StringLiteral]() -> Int:
     return simdwidthof[type]() if is_cpu[target]() else simdwidthof[
         type, target = _get_gpu_target()
@@ -642,6 +761,7 @@ fn get_kernel_simd_width[type: DType, target: StringLiteral]() -> Int:
 
 # This version of the function supports CPU only. For GPU, use the one with the
 # MojoCallContextPtr.
+@doc_private
 @__mogg_intrinsic_attr("mogg.for_each")
 @no_inline
 fn foreach[
@@ -678,6 +798,21 @@ fn foreach[
     target: StringLiteral = "cpu",
     simd_width: Int = get_kernel_simd_width[type, target](),
 ](tensor: ManagedTensorSlice[type, rank], ctx: MojoCallContextPtr):
+    """Apply the function `func` to each element of the tensor slice.
+
+    Parameters:
+        type: The data type of the elements in the tensor slice.
+        rank: The rank of the tensor slice.
+        func: The function to apply to each element of the tensor slice.
+        synchronous: True to run the custom op synchronously in the runtime (defaults to False).
+        target: A `StringLiteral` indicating the type of the target device (e.g. "CPU", "CUDA").
+        simd_width: The SIMD width for the target (usually leave this as its default value).
+
+    Args:
+        tensor: The output tensor slice which receives the return values from `func`.
+        ctx: The call context (forward this from the custom operation).
+    """
+
     @parameter
     @always_inline
     fn elementwise_fn_wrapper[
@@ -696,6 +831,7 @@ fn foreach[
 
 # TensorCopy intrinsic used by view kernels.
 # z is a kernel output, and x a view of the input.
+@doc_private
 @no_inline
 fn view_copy_impl[
     synchronous: Bool,
