@@ -1301,16 +1301,18 @@ fn conv_transposed[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return String(";").join(
+        # fmt: off
+        return String(
             trace_arg("input", input),
-            trace_arg("filter", filter),
-            trace_arg("output", output),
-            "group=" + String(1),
-            "stride=" + String("x").join(stride),
-            "padding_d=" + String("x").join(Index(0, 0)),
-            "padding_h=" + String("x").join(pad_h),
-            "padding_w=" + String("x").join(pad_w),
+            ";", trace_arg("filter", filter),
+            ";", trace_arg("output", output),
+            ";group=1",
+            ";stride=", stride,
+            ";padding_d=", Index(0, 0),
+            ";padding_h=", pad_h,
+            ";padding_w=", pad_w,
         )
+        # fmt: on
 
     with Trace[TraceLevel.OP, target="cpu"](
         "conv_transposed",
