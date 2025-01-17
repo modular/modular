@@ -97,14 +97,14 @@ fn bottom_k_shape[
 
 
 fn top_k[
-    rank: Int, type: DType
+    rank: Int, type: DType, out_idx_type: DType = DType.int64
 ](
     input: NDBuffer[type, rank],
     k: Int,
     axis: Int,
     largest: Bool,
     out_vals: NDBuffer[type, rank],
-    out_idxs: NDBuffer[DType.int64, rank],
+    out_idxs: NDBuffer[out_idx_type, rank],
     sorted: Bool = True,
 ):
     """
@@ -114,6 +114,7 @@ fn top_k[
     Parameters:
         rank: Rank of the input.
         type: Data type of the input buffer.
+        out_idx_type: DType - The data type of the output indices (default is DType.int64).
 
     Args:
         input: The input tensor.
@@ -138,14 +139,16 @@ fn top_k[
 
 
 fn _top_k[
-    rank: Int, type: DType
+    rank: Int,
+    type: DType,
+    out_idx_type: DType,
 ](
     input: NDBuffer[type, rank],
     k: Int,
     axis: Int,
     largest: Bool,
     out_vals: NDBuffer[type, rank],
-    out_idxs: NDBuffer[DType.int64, rank],
+    out_idxs: NDBuffer[out_idx_type, rank],
     parallelism_grain_size: Int,  # impl detail, exposed for testing
     sorted: Bool,
 ):
@@ -225,7 +228,7 @@ fn _top_k[
                 var val = input[indices]
                 indices[axis] = i
                 out_vals[indices] = val
-                out_idxs[indices] = idxs[i]
+                out_idxs[indices] = rebind[Scalar[out_idx_type]](idxs[i])
 
     parallelize_over_rows[process_rows](shape, axis, parallelism_grain_size)
 
