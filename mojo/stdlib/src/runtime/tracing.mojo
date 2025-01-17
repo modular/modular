@@ -300,7 +300,7 @@ struct Trace[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         name: Variant[String, StringLiteral],
         detail: String = "",
         parent_id: Int = 0,
@@ -344,7 +344,7 @@ struct Trace[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         name: Variant[String, StringLiteral],
         task_id: Int,
         detail: String = "",
