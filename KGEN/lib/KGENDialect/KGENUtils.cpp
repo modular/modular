@@ -10,6 +10,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "AsyncRT/CompilerSupport/Context.h"
 #include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -1475,7 +1476,8 @@ bool KGEN::isTypeExprType(Type type) { return isa<TypeType>(type); }
 
 bool KGEN::isTypeExpr(TypedAttr attr) { return isTypeExprType(attr.getType()); }
 
-KGEN::EnvAttr KGEN::getModularEnvAttr(MLIRContext *ctx) {
+KGEN::EnvAttr KGEN::getModularEnvAttr(MLIRContext *ctx,
+                                      CompilationContext *compileCtx) {
   NamedAttrList envAttrs;
 
 #ifdef MODULAR_PRODUCTION
@@ -1502,6 +1504,25 @@ KGEN::EnvAttr KGEN::getModularEnvAttr(MLIRContext *ctx) {
                IntegerAttr::get(IndexType::get(ctx),
                                 MODULAR_ASYNCRT_MAX_PROFILING_LEVEL));
 
+  if (compileCtx) {
+    for (auto entry : compileCtx->mojoDefines) {
+      auto k = entry.first;
+      std::visit(
+          [&](auto &&v) {
+            using T = std::decay_t<decltype(v)>;
+            if constexpr (std::is_same_v<T, bool>)
+              envAttrs.set(k, BoolAttr::get(ctx, v));
+            else if constexpr (std::is_same_v<T, int>)
+              envAttrs.set(k, IntegerAttr::get(IndexType::get(ctx), v));
+            else if constexpr (std::is_same_v<T, llvm::StringRef>)
+              envAttrs.set(k, StringAttr::get(v, KGEN::StringType::get(ctx)));
+            else
+              static_assert(false, "non-exhaustive visitor!");
+          },
+          entry.second);
+    }
+  }
+
   return KGEN::EnvAttr::get(envAttrs.getDictionary(ctx));
 }
 
@@ -1513,9 +1534,10 @@ static KGEN::EnvAttr getModuleEnvAttr(ModuleOp moduleOp) {
   return EnvAttr::get(DictionaryAttr::get(moduleOp.getContext()));
 }
 
-void KGEN::extendWithModularEnvAttr(ModuleOp moduleOp) {
+void KGEN::extendWithModularEnvAttr(ModuleOp moduleOp,
+                                    CompilationContext *compileCtx) {
   moduleOp->setAttr(KGEN::EnvAttr::getEnvAttrName(),
-                    KGEN::getModularEnvAttr(moduleOp.getContext())
+                    KGEN::getModularEnvAttr(moduleOp.getContext(), compileCtx)
                         .extend(getModuleEnvAttr(moduleOp)));
 }
 
