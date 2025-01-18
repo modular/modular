@@ -10,12 +10,14 @@ from builtin.io import _printf
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.id import block_idx, thread_idx
+from gpu import barrier
 from layout import Layout, LayoutTensor
 from layout.tma_async import TMATensorTile, create_tma_tile, TMABarrier
 from layout._utils import ManagedLayoutTensor
 from layout.fillers import arange
 from memory.pointer import _GPUAddressSpace
 
+from sys import sizeof
 from utils.static_tuple import StaticTuple
 
 
@@ -23,15 +25,21 @@ from utils.static_tuple import StaticTuple
 fn test_tma_async_load[
     dtype: DType, layout: Layout
 ](tma_tile: TMATensorTile[dtype, layout]):
-    barrier = TMABarrier()
+    alias tileM = 4
+    alias tileN = 4
+    alias expected_bytes = tileM * tileN * sizeof[dtype]()
+
+    mbar = TMABarrier()
     # There is an undocumented requriement for alignment for shared memory address.
     # In practice, we find 128 is the minimum, see KERN-1365.
     tile = LayoutTensor[
         dtype, layout, address_space = _GPUAddressSpace.SHARED
     ].stack_allocation[alignment=128]()
-    barrier = TMABarrier()
-    tma_tile.async_copy(tile, barrier, (block_idx.x * 4, block_idx.y * 4))
-    barrier.wait()
+    mbar = TMABarrier()
+    mbar.init()
+    mbar.expect_bytes(expected_bytes)
+    tma_tile.async_copy(tile, mbar, (block_idx.x * 4, block_idx.y * 4))
+    mbar.wait()
 
     _printf[
         "(%lu, %lu) : %g %g %g %g; %g %g %g %g; %g %g %g %g; %g %g %g %g\n"
@@ -83,13 +91,22 @@ def test_tma_async_copy(ctx: DeviceContext):
 fn test_tma_async_load_multiple_threads[
     dtype: DType, layout: Layout
 ](tma_tile: TMATensorTile[dtype, layout]):
+    alias tileM = 4
+    alias tileN = 4
+    alias expected_bytes = tileM * tileN * sizeof[dtype]()
+
     tile = LayoutTensor[
         dtype, layout, address_space = _GPUAddressSpace.SHARED
     ].stack_allocation[alignment=128]()
-    barrier = TMABarrier()
+    mbar = TMABarrier()
     if thread_idx.x == 0:
-        tma_tile.async_copy(tile, barrier, (block_idx.x * 4, block_idx.y * 4))
-    barrier.wait()
+        mbar.init()
+        mbar.expect_bytes(expected_bytes)
+        tma_tile.async_copy(
+            tile, mbar, (block_idx.x * tileN, block_idx.y * tileM)
+        )
+    barrier()
+    mbar.wait()
 
     _printf[
         "(%lu, %lu) (%lu): %g %g %g %g; %g %g %g %g; %g %g %g %g; %g %g %g %g\n"
