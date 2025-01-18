@@ -35,6 +35,7 @@ def create_paged_manager(num_blocks: int, page_size: int = 1) -> KVCacheManager:
     NUM_KV_HEADS = 1
     HEAD_DIM = 1
     NUM_LAYERS = 1
+    MIN_PAGE_SIZE = 128
 
     kv_params = KVCacheParams(
         dtype=DType.float32,
@@ -51,7 +52,7 @@ def create_paged_manager(num_blocks: int, page_size: int = 1) -> KVCacheManager:
         * NUM_LAYERS
         * NUM_KV_HEADS
         * HEAD_DIM
-        * page_size
+        * MIN_PAGE_SIZE
         * num_blocks
         * kv_params.dtype.size_in_bytes
     )
@@ -63,10 +64,18 @@ def create_paged_manager(num_blocks: int, page_size: int = 1) -> KVCacheManager:
         devices=[CPU()],
         session=session,
         available_cache_memory=available_cache_memory,
-        page_size=page_size,
+        page_size=MIN_PAGE_SIZE,
     )
 
     assert len(kv_manager.available_blocks) == num_blocks  # type: ignore
+
+    # TODO(KERN-1308) remove this hack as we generalize page_size
+    #
+    # We circumvent the page size check in the KV cache manager.
+    # That check does not matter for these tests since we don't run the kernels.
+    kv_manager.page_size = page_size  # type: ignore
+    kv_manager.radix_trie.page_size = page_size  # type: ignore
+
     return kv_manager
 
 
