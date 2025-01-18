@@ -631,6 +631,7 @@ fn split_dim_indices[
     # If we are accessing the index [21, 16, 1] in the original shape then to
     # preserve the reshape we would need to transform the indices into [2, 5, 16, 1].
     # Or [21 // 8, 21 % 8, ...old dims...].
+    # In this case, the axis = 0 and the new_shape_dim = 8.
 
     @parameter
     for i in range(rank + 1):
@@ -644,6 +645,34 @@ fn split_dim_indices[
             out[i] = indices[i]
         elif i > axis:
             out[i] = indices[i - 1]
+
+    return out
+
+
+@register_internal_override("merge_dim_indices", 1)
+@always_inline
+fn merge_dim_indices[
+    rank: Int, axis: Int
+](indices: IndexList[rank], old_shape_dim: Int64) -> IndexList[rank - 1]:
+    var out = IndexList[rank - 1]()
+
+    # This op is transforming the INDICES of an access into a reshaped tensor.
+    # Consider the tensor is [5, 8, 30, 2] and we reshape it to [40, 30, 2].
+    # If we are accessing the index [2, 5, 16, 1] in the original shape then to
+    # preserve the reshape we would need to transform the indices into [21, 16, 1].
+    # Or [2 * 8 + 5, 16, 1].
+    # In this case, the axis = 0 and the old_shape_dim = 8.
+
+    @parameter
+    for i in range(rank - 1):
+
+        @parameter
+        if i == axis:
+            out[i] = indices[i] * Int(old_shape_dim) + indices[i + 1]
+        elif i < axis:
+            out[i] = indices[i]
+        elif i > axis:
+            out[i] = indices[i + 1]
 
     return out
 
