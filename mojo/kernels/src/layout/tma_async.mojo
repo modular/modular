@@ -56,7 +56,13 @@ struct TMABarrier(CollectionElement):
             alignment=16,
         ]()
 
-        mbarrier_init(self.mbar, 1)
+    @always_inline
+    fn init(self, num_threads: Int32 = 1):
+        mbarrier_init(self.mbar, num_threads)
+
+    @always_inline
+    fn expect_bytes(self, bytes: Int32):
+        mbarrier_arrive_expect_tx_shared(self.mbar, bytes)
 
     @always_inline
     fn wait(self):
@@ -95,10 +101,6 @@ struct TMATensorTile[
         mem_barrier: TMABarrier,
         coords: Tuple[UInt, UInt],
     ):
-        alias size_in_bytes = layout.size() * sizeof[dtype]()
-
-        mbarrier_arrive_expect_tx_shared(mem_barrier.mbar, size_in_bytes)
-
         cp_async_bulk_tensor_shared_cluster_global(
             dst.ptr,
             UnsafePointer.address_of(self.descriptor).bitcast[NoneType](),
