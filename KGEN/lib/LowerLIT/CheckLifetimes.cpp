@@ -378,12 +378,14 @@ std::pair<StringAttr, Type>
 TypeDeclInfo::getFieldContaining(LIT::StructType declRef, unsigned fieldNo) {
   LIT::StructDeclOp decl = getStructDeclForType(declRef);
 
+  ParameterEvaluator evaluator(decl.getInputParams(), declRef.getParamValues());
   // Scan to find the field that contains this.
   unsigned startFieldIdx = 0;
   for (auto field : decl.getFieldDecls()) {
     // This range check is needed to handle zero-sized fields: they don't
     // contain a field even if they start at the beginning of it.
-    unsigned numSubFields = getNumFieldsInType(field.getType());
+    Type reboundType = evaluator.getReboundType(field.getType());
+    unsigned numSubFields = getNumFieldsInType(reboundType);
     if (startFieldIdx <= fieldNo && startFieldIdx + numSubFields > fieldNo)
       return {field.getNameAttr(), field.getType()};
     startFieldIdx += numSubFields;
