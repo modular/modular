@@ -185,21 +185,14 @@ fn multistage_mma[
     fn _copy_tensor_to_sram[
         thread_layout: Layout, swizzle: Bool
     ](dst: LayoutTensor, src: LayoutTensor,):
-        @parameter
-        if is_nvidia_gpu():
-            copy_dram_to_sram_async[
-                thread_layout=thread_layout,
-                swizzle=swizzle,
-                num_threads=num_threads,
-            ](
-                dst.vectorize[1, simd_size](),
-                src.vectorize[1, simd_size](),
-            )
-        else:
-            copy_dram_to_sram[thread_layout=thread_layout](
-                dst.vectorize[1, simd_size](),
-                src.vectorize[1, simd_size](),
-            )
+        copy_dram_to_sram_async[
+            thread_layout=thread_layout,
+            swizzle=swizzle,
+            num_threads=num_threads,
+        ](
+            dst.vectorize[1, simd_size](),
+            src.vectorize[1, simd_size](),
+        )
 
     # Prefetch (num_pipeline_stages - 1) stages.
     @parameter
