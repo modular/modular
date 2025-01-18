@@ -1878,35 +1878,41 @@ def print_kv_cache_continuous_batching_nhead_32_hdim_128_fp32[
 
 
 def _print_cache[
-    cache_t: KVCacheT, *, type: DType, kv_params: KVCacheStaticParams
+    collection_t: KVCollectionT,
+    *,
 ](
-    cache: cache_t,
-    kv_collection: ContinuousBatchingKVCacheCollection[type, kv_params],
+    cache: collection_t.CacheType,
+    kv_collection: collection_t,
     valid_lengths: NDBuffer[DType.uint32, 1],
     is_print_compact: Bool,
 ) -> None:
     """Prints a cache buffer, abbreviating output with ellipses."""
+    alias kv_params = collection_t.CacheType.kv_params
+
     # Only abbreviate output when `is_print_compact` is set.
     var num_to_print: Int = 7 if is_print_compact else Int.MAX
-    for b_idx in range(kv_collection.batch_size):
+    for b_idx in range(valid_lengths.dim[0]()):
         var total_cache_length = Int(
             valid_lengths[b_idx] + cache.cache_length(b_idx)
         )
         for t_idx in range(min(num_to_print, total_cache_length)):
-            for h in range(kv_collection.kv_params.num_heads):
+            for h in range(kv_params.num_heads):
                 for hd in range(
                     min(
                         num_to_print,
-                        Int(kv_collection.kv_params.head_size),
+                        Int(kv_params.head_size),
                     )
                 ):
                     print(
                         cache.load[width=1](
-                            Int(b_idx), Int(h), Int(t_idx), Int(hd)
+                            Int(b_idx),
+                            Int(h),
+                            Int(t_idx),
+                            Int(hd),
                         ),
                         end=", ",
                     )
-                if kv_collection.kv_params.head_size > num_to_print:
+                if kv_params.head_size > num_to_print:
                     print("...", end=", ")
             if total_cache_length > num_to_print:
                 print("\n...", end=",")
@@ -1926,10 +1932,49 @@ def print_kv_cache_cont_batch_generic_cpu[
     var v_cache = kv_collection.get_value_cache(Int(layer_idx))
 
     print("K:")
-    _print_cache(k_cache, kv_collection, valid_lengths, is_print_compact)
+    _print_cache[__type_of(kv_collection)](
+        k_cache,
+        kv_collection,
+        valid_lengths,
+        is_print_compact,
+    )
 
     print("V:")
-    _print_cache(v_cache, kv_collection, valid_lengths, is_print_compact)
+    _print_cache[__type_of(kv_collection)](
+        v_cache,
+        kv_collection,
+        valid_lengths,
+        is_print_compact,
+    )
+
+
+def print_kv_cache_paged_generic_cpu[
+    target: StringLiteral, type: DType, kv_params: KVCacheStaticParams
+](
+    valid_lengths: NDBuffer[DType.uint32, 1],
+    kv_collection: PagedKVCacheCollection[type, kv_params],
+    layer_idx: UInt32,
+    is_print_compact: Bool,
+    context: MojoCallContextPtr,
+):
+    var k_cache = kv_collection.get_key_cache(Int(layer_idx))
+    var v_cache = kv_collection.get_value_cache(Int(layer_idx))
+
+    print("K:")
+    _print_cache[__type_of(kv_collection)](
+        k_cache,
+        kv_collection,
+        valid_lengths,
+        is_print_compact,
+    )
+
+    print("V:")
+    _print_cache[__type_of(kv_collection)](
+        v_cache,
+        kv_collection,
+        valid_lengths,
+        is_print_compact,
+    )
 
 
 def print_kv_cache_cont_batch_generic_gpu[
@@ -2005,13 +2050,109 @@ def print_kv_cache_cont_batch_generic_gpu[
     dev_ctx.synchronize()
 
     print("K:")
-    _print_cache(
-        k_cache, host_kv_collection, valid_lengths_host_nd, is_print_compact
+    _print_cache[__type_of(kv_collection)](
+        k_cache,
+        host_kv_collection,
+        valid_lengths_host_nd,
+        is_print_compact,
     )
 
     print("V:")
-    _print_cache(
-        v_cache, host_kv_collection, valid_lengths_host_nd, is_print_compact
+    _print_cache[__type_of(kv_collection)](
+        v_cache,
+        host_kv_collection,
+        valid_lengths_host_nd,
+        is_print_compact,
+    )
+
+    blocks_host_nd.data.free()
+    cache_lengths_host_nd.data.free()
+    lookup_table_host_nd.data.free()
+    valid_lengths_host_nd.data.free()
+
+
+def print_kv_cache_paged_generic_gpu[
+    target: StringLiteral, type: DType, kv_params: KVCacheStaticParams
+](
+    valid_lengths: NDBuffer[DType.uint32, 1],
+    kv_collection: PagedKVCacheCollection[type, kv_params],
+    layer_idx: UInt32,
+    is_print_compact: Bool,
+    context: MojoCallContextPtr,
+):
+    var blocks_ptr = UnsafePointer[Scalar[type]].alloc(
+        kv_collection.blocks.num_elements()
+    )
+    var blocks_host_nd = __type_of(kv_collection.blocks)(
+        blocks_ptr, kv_collection.blocks.dynamic_shape
+    )
+    var dev_ctx = context.get_device_context()
+    dev_ctx.enqueue_copy_from_device(
+        blocks_host_nd.data,
+        kv_collection.blocks.data,
+        kv_collection.blocks.num_elements(),
+    )
+    var cache_lengths_ptr = UnsafePointer[UInt32].alloc(
+        kv_collection.cache_lengths.num_elements()
+    )
+    var cache_lengths_host_nd = __type_of(kv_collection.cache_lengths)(
+        cache_lengths_ptr, kv_collection.cache_lengths.dynamic_shape
+    )
+    dev_ctx.enqueue_copy_from_device(
+        cache_lengths_host_nd.data,
+        kv_collection.cache_lengths.data,
+        kv_collection.cache_lengths.num_elements(),
+    )
+    var lookup_table_ptr = UnsafePointer[UInt32].alloc(
+        kv_collection.lookup_table.num_elements()
+    )
+    var lookup_table_host_nd = __type_of(kv_collection.lookup_table)(
+        lookup_table_ptr, kv_collection.lookup_table.dynamic_shape
+    )
+    dev_ctx.enqueue_copy_from_device(
+        lookup_table_host_nd.data,
+        kv_collection.lookup_table.data,
+        kv_collection.lookup_table.num_elements(),
+    )
+    var host_kv_collection = __type_of(kv_collection)(
+        blocks_host_nd,
+        cache_lengths_host_nd,
+        lookup_table_host_nd,
+        kv_collection.max_seq_length,
+        kv_collection.max_cache_length,
+    )
+    var valid_lengths_host_ptr = UnsafePointer[UInt32].alloc(
+        valid_lengths.num_elements()
+    )
+    var valid_lengths_host_nd = __type_of(valid_lengths)(
+        valid_lengths_host_ptr, valid_lengths.dynamic_shape
+    )
+    dev_ctx.enqueue_copy_from_device(
+        valid_lengths_host_nd.data,
+        valid_lengths.data,
+        valid_lengths.num_elements(),
+    )
+
+    var k_cache = host_kv_collection.get_key_cache(Int(layer_idx))
+    var v_cache = host_kv_collection.get_value_cache(Int(layer_idx))
+
+    # Bring host buffers in sync with device buffers.
+    dev_ctx.synchronize()
+
+    print("K:")
+    _print_cache[__type_of(kv_collection)](
+        k_cache,
+        host_kv_collection,
+        valid_lengths_host_nd,
+        is_print_compact,
+    )
+
+    print("V:")
+    _print_cache[__type_of(kv_collection)](
+        v_cache,
+        host_kv_collection,
+        valid_lengths_host_nd,
+        is_print_compact,
     )
 
     blocks_host_nd.data.free()
