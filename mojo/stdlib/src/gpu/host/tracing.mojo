@@ -24,8 +24,16 @@ from utils.variant import Variant
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias CUDA_NVTX_LIBRARY_PATH = "/usr/local/cuda/lib64/libnvToolsExt.so"
-alias ROCTX_LIBRARY_PATH = "/opt/rocm/lib/librocprofiler-sdk-roctx.so"
+alias CUDA_NVTX_LIBRARY_PATHS = List[String](
+    "/usr/local/cuda/lib64/libnvToolsExt.so",
+    "/usr/lib/x86_64-linux-gnu/libnvToolsExt.so.1",
+)
+alias ROCTX_LIBRARY_PATHS = List[String](
+    "/opt/rocm/lib/librocprofiler-sdk-roctx.so"
+)
+
+alias LIBRARY_PATHS = CUDA_NVTX_LIBRARY_PATHS if has_nvidia_gpu_accelerator() else ROCTX_LIBRARY_PATHS
+
 
 alias _TraceType_OTHER = 0
 alias _TraceType_ASYNCRT = 1
@@ -58,19 +66,27 @@ alias GPU_TRACING_LIBRARY = _Global[
 ]()
 
 
+fn _find_library_path() -> Optional[String]:
+    for path in LIBRARY_PATHS:
+        if Path(path[]).exists():
+            return path[]
+    return None
+
+
 fn _init_dylib() -> _OwnedDLHandle:
     @parameter
     if _is_disabled():
         return abort[_OwnedDLHandle]("cannot load dylib when disabled")
 
-    alias library_path = CUDA_NVTX_LIBRARY_PATH if has_nvidia_gpu_accelerator() else ROCTX_LIBRARY_PATH
+    var library_path = _find_library_path()
 
-    if not Path(library_path).exists():
+    if not library_path:
         return abort[_OwnedDLHandle](
-            "the GPU tracing library was not found at " + library_path
+            "the GPU tracing library was not found at "
+            + ",".join(LIBRARY_PATHS)
         )
 
-    var dylib = _OwnedDLHandle(library_path)
+    var dylib = _OwnedDLHandle(library_path.value())
 
     @parameter
     if has_nvidia_gpu_accelerator():
