@@ -425,7 +425,7 @@ fn stack_allocation[
                 name = global_name.value,
                 count = count.value,
                 _type = UnsafePointer[
-                    type, address_space=address_space
+                    type, address_space=address_space, alignment=alignment
                 ]._mlir_type,
                 alignment = alignment.value,
             ]()
@@ -447,7 +447,9 @@ fn stack_allocation[
     # Perofrm a stack allocation of the requested size, alignment, and type.
     return __mlir_op.`pop.stack_allocation`[
         count = count.value,
-        _type = UnsafePointer[type, address_space=address_space]._mlir_type,
+        _type = UnsafePointer[
+            type, address_space=address_space, alignment=alignment
+        ]._mlir_type,
         alignment = alignment.value,
     ]()
 
