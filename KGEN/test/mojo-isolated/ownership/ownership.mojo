@@ -1371,3 +1371,15 @@ fn test_min2(a: String):
 def origin_of_def_arg(a: String):
     o = __origin_of(a)
 
+# MOCO-1542: Need to rebind field type when checking size.
+@value
+struct MyParameterizedField[T: CollectionElement]:
+  var a: T
+  var b: T
+
+fn use_parameterized_field():
+  var s = MyParameterizedField[Dim](Dim(8), Dim(3))
+  var litref = __get_mvalue_as_litref(s.b)
+  var rebind = __mlir_op.`kgen.rebind`
+    [_type=Pointer[Int, __origin_of(s.b)]._mlir_type](litref)
+  var mvalue = __get_litref_as_mvalue(rebind)
