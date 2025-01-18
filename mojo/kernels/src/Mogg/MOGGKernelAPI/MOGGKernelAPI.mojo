@@ -101,6 +101,8 @@ from nn.index_tensor import index_tensor
 from nn.kv_cache import (
     print_kv_cache_cont_batch_generic_gpu,
     print_kv_cache_cont_batch_generic_cpu,
+    print_kv_cache_paged_generic_cpu,
+    print_kv_cache_paged_generic_gpu,
     rms_norm_kv_cache_ragged_continuous_batching_nhead_8_hdim_128,
     generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch,
     generic_flash_attention_kv_cache_causal_mask_continuous_batch,
@@ -10266,6 +10268,63 @@ fn print_kv_cache_cont_batch_generic_kernel_api[
             kv_collection,
             layer_idx,
             is_print_compact[0],
+            context,
+        )
+
+
+fn print_kv_cache_paged_generic_kernel_api[
+    type: DType, //,
+    target: StringLiteral,
+](
+    valid_lengths: ManagedTensorSlice[DType.uint32, 1],
+    kv_collection: PagedKVCacheCollection[type, *_],
+    layer_idx: Scalar[DType.uint32],
+    is_print_compact: ManagedTensorSlice[DType.bool, 1],
+    context: MojoCallContextPtr,
+) raises:
+    @parameter
+    if is_gpu[target]():
+        print_kv_cache_paged_generic_gpu[target](
+            managed_tensor_slice_to_ndbuffer(valid_lengths),
+            kv_collection,
+            layer_idx,
+            True,
+            context,
+        )
+    elif is_cpu[target]():
+        print_kv_cache_paged_generic_cpu[target](
+            managed_tensor_slice_to_ndbuffer(valid_lengths),
+            kv_collection,
+            layer_idx,
+            is_print_compact[0],
+            context,
+        )
+
+
+@compiler.register(
+    "mo.print_kv_cache.paged.nhead_8.hdim_128.bf16",
+    num_dps_outputs=0,
+)
+struct Struct_print_kv_cache_paged_nhead_8_hdim_128_bf16:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        target: StringLiteral
+    ](
+        valid_lengths: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: PagedKVCacheCollection[
+            DType.bfloat16, kv_params_h8_d128_bshd
+        ],
+        layer_idx: Scalar[DType.uint32],
+        is_print_compact: ManagedTensorSlice[DType.bool, 1],
+        context: MojoCallContextPtr,
+    ) raises:
+        print_kv_cache_paged_generic_kernel_api[target](
+            valid_lengths,
+            kv_collection,
+            layer_idx,
+            is_print_compact,
             context,
         )
 
