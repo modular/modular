@@ -11,8 +11,8 @@ if [ -n "$MODULAR_HOME" ]; then
   return 1
 fi
 
-if [ -z "$_START_MODULAR_INCLUDED" ]; then
-  export _START_MODULAR_INCLUDED=yes
+if [ -z "$_KGEN_START_MODULAR_INCLUDED" ]; then
+  export _KGEN_START_MODULAR_INCLUDED=yes
   export PS1="[M] $PS1"
 else
  echo "Already in a Modular shell. Please start a new shell instance and source this file there."
