@@ -1918,13 +1918,17 @@ struct SIMD[type: DType, size: Int](
             return rebind[SIMD[target, size]](self != 0)
 
         @parameter
-        if type is DType.bfloat16 and not _has_native_bf16_support():
+        if type is DType.bfloat16 and (
+            not _has_native_bf16_support() or is_amd_gpu()
+        ):
             return _bfloat16_to_f32(
                 rebind[SIMD[DType.bfloat16, size]](self)
             ).cast[target]()
 
         @parameter
-        if target is DType.bfloat16 and not _has_native_bf16_support():
+        if target is DType.bfloat16 and (
+            not _has_native_bf16_support() or is_amd_gpu()
+        ):
             return rebind[SIMD[target, size]](
                 _f32_to_bfloat16(self.cast[DType.float32]())
             )
@@ -3568,6 +3572,27 @@ fn _f32_to_bfloat16_scalar(
     if has_neon():
         # TODO(KERN-228): support BF16 on neon systems.
         return _unchecked_zero[DType.bfloat16, 1]()
+
+    elif is_amd_gpu():
+        alias nan_val = _nan[DType.float32]()
+        alias round_bias = 0x7FFF
+
+        var tmp = UInt32(0)
+        var res = inlined_assembly[
+            """\0A
+            v_cmp_u_f32 $0, $2, $2 \0A
+            v_bfe_u32 $1, $2, 16, 1 \0A
+            v_add3_u32 $1, $2, $1, $3 \0A
+            v_cndmask_b32 $2, $1, $4, $0 \0A
+            v_lshrrev_b32 $2, 16, $2 \0A
+            """,
+            _RegisterPackType[SIMD[DType.uint32, 2], Int32, Float32],
+            constraints="=s,=v,=v,v,v,1,2",
+            has_side_effect=False,
+        ](round_bias, nan_val, tmp, val)
+        return bitcast[DType.bfloat16, 1](
+            UInt16(bitcast[DType.uint32, 1](res[2]))
+        )
 
     if _isnan(val):
         return -_nan[DType.bfloat16]() if FPUtils[DType.float32].get_sign(
