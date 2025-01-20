@@ -44,16 +44,18 @@ class PrintKVCacheModel:
         """
         kv_collection = self.fetch_layer(*fetch_args)
         ops.inplace_custom(
-            # TODO(bduke): currently hardcoded to h8/d128.
-            # Fix once we store parameters in the opaque MLIR type.
-            "mo.print_kv_cache.continuous_batching.nhead_8.hdim_128",
+            "mo.print_kv_cache.continuous_batching",
             values=[
                 valid_lengths,
                 kv_collection,
                 ops.constant(self.layer_idx, DType.uint32),
                 ops.constant(True, DType.bool),
             ],
-            parameters={"type": self.kv_params.dtype},
+            parameters={
+                "num_heads": self.kv_params.n_kv_heads_per_device,
+                "head_dim": self.kv_params.head_dim,
+                "type": self.kv_params.dtype,
+            },
         )
 
 
