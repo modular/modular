@@ -6,6 +6,7 @@
 
 from dataclasses import dataclass
 
+import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -45,20 +46,40 @@ class PrintKVCacheModel:
         ops.inplace_custom(
             # TODO(bduke): currently hardcoded to h8/d128.
             # Fix once we store parameters in the opaque MLIR type.
-            "mo.print_kv_cache.continuous_batching.nhead_8.hdim_128.fp32",
+            "mo.print_kv_cache.continuous_batching.nhead_8.hdim_128",
             values=[
                 valid_lengths,
                 kv_collection,
                 ops.constant(self.layer_idx, DType.uint32),
                 ops.constant(True, DType.bool),
             ],
+            parameters={"type": self.kv_params.dtype},
         )
 
 
-def test_print_kv_cache() -> None:
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        d
+        for d in DType
+        if d
+        not in [
+            # Skip types unsupported on CPU.
+            DType._unknown,
+            DType.f8e4m3,
+            DType.f8e4m3fnuz,
+            DType.f8e5m2,
+            DType.f8e5m2fnuz,
+            DType.float16,
+            # Skip bf16 since ARM CPU doesn't support it.
+            DType.bfloat16,
+        ]
+    ],
+)
+def test_print_kv_cache(dtype: DType) -> None:
     """Tests compiling a print KV cache op."""
     kv_params = KVCacheParams(
-        dtype=DType.float32,
+        dtype=dtype,
         n_kv_heads=8,
         head_dim=128,
         cache_strategy=KVCacheStrategy.CONTINUOUS,
