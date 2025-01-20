@@ -91,6 +91,7 @@ def inplace_custom(
     Args:
         name: The op name provided to ``max.register.op``.
         values: The op function's arguments.
+        parameters: Dictionary of extra parameters expected by the kernel.
     """
     # Unfortunately there's no existing way to mark a particular NDBuffer input
     # as needing to be backed by a `mo.buffer` value at the graph level.

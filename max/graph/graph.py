@@ -337,7 +337,7 @@ class Graph:
         new_params = dict.fromkeys(new_params.keys() - self._params.keys())
         self._params.update(new_params)
         if new_params:
-            # Add the output parms to the op we just created.
+            # Add the output params to the op we just created.
             param_decl = _graph.dim_param_decl_array_attr(
                 self._context,
                 [
