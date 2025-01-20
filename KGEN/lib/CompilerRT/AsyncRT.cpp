@@ -244,8 +244,8 @@ KGEN_CompilerRT_AsyncRT_MojoCallContext_GetDeviceContext(
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error(
-    AsyncRTMojoCallContextRef ctx, AsyncRTWrapper<AnyAsyncValueRef> *asyncs,
-    size_t arrayLen, AsyncRTWrapper<Runtime> runtimePtr, const char *messagePtr,
+    AsyncRTWrapper<AnyAsyncValueRef> *asyncs, size_t arrayLen,
+    AsyncRTWrapper<Runtime> runtimePtr, const char *messagePtr,
     size_t messageLen) {
   StringRef errorMsg(messagePtr, messageLen);
   Runtime &runtime = unwrap(runtimePtr);
