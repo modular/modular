@@ -99,6 +99,12 @@ struct TMATensorTile[
         mem_barrier: TMABarrier,
         coords: Tuple[UInt, UInt],
     ):
+        # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
+        constrained[
+            __type_of(dst).alignment % 128 == 0,
+            "TMA requires 128B alignment in shared memory",
+        ]()
+
         cp_async_bulk_tensor_shared_cluster_global(
             dst.ptr,
             UnsafePointer.address_of(self.descriptor).bitcast[NoneType](),
