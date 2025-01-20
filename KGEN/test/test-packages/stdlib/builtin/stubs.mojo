@@ -36,19 +36,19 @@ alias `False` = __mlir_attr.`0 : i1`
 @value
 @register_passable("trivial")
 struct Origin[is_mutable: Bool]:
-    alias type = __mlir_type[
+    alias _mlir_type = __mlir_type[
         `!lit.origin<`,
         is_mutable.value,
         `>`,
     ]
 
-    var _mlir_origin: Self.type
+    var _mlir_origin: Self._mlir_type
 
     alias cast_from = _lit_mut_cast[result_mutable=is_mutable]
 
     @implicit
     @always_inline("nodebug")
-    fn __init__(out self, mlir_origin: Self.type):
+    fn __init__(out self, mlir_origin: Self._mlir_type):
         """Initialize an Origin from a raw MLIR `!lit.origin` value.
 
         Args:
@@ -79,7 +79,7 @@ alias StaticConstantOrigin = __mlir_attr[
 
 
 struct _lit_indirect_origin[
-    is_mutable: Bool, //, base: Origin[is_mutable].type
+    is_mutable: Bool, //, base: Origin[is_mutable]._mlir_type
 ]:
     alias result = __mlir_attr[
         `#lit.indirect.origin<`,
@@ -459,7 +459,7 @@ struct _lit_origin_union[
 struct _VariadicListMemIter[
     elt_is_mutable: Bool, //,
     elt_type: AnyType,
-    elt_origin: Origin[elt_is_mutable].type,
+    elt_origin: Origin[elt_is_mutable],
     list_origin: ImmutableOrigin,
 ]:
     """Iterator for VariadicListMem.
@@ -487,25 +487,25 @@ struct _VariadicListMemIter[
 struct VariadicListMem[
     elt_is_mutable: Bool, //,
     element_type: AnyType,
-    origin: __mlir_type[`!lit.origin<`, elt_is_mutable.value, `>`],
+    origin: Origin[elt_is_mutable],
 ]:
-    alias _mlir_type = __mlir_type[
-        `!lit.ref<`, element_type, `, `, origin, `, 0>`
-    ]
-
     alias reference_type = Pointer[element_type, origin]
+    alias _mlir_ref_type = Self.reference_type._mlir_type
+    alias _mlir_type = __mlir_type[
+        `!kgen.variadic<`, Self._mlir_ref_type, `, read_mem>`
+    ]
 
     @implicit
     fn __init__(
         mut self,
-        value: __mlir_type[`!kgen.variadic<`, Self._mlir_type, `, read_mem>`],
+        value: Self._mlir_type,
     ):
         pass
 
     @implicit
     fn __init__(
         mut self,
-        value: __mlir_type[`!kgen.variadic<`, Self._mlir_type, `, mut>`],
+        value: __mlir_type[`!kgen.variadic<`, Self._mlir_ref_type, `, mut>`],
     ):
         pass
 
@@ -513,7 +513,7 @@ struct VariadicListMem[
     fn __init__(
         mut self,
         value: __mlir_type[
-            `!kgen.variadic<`, Self._mlir_type, `, owned_in_mem>`
+            `!kgen.variadic<`, Self._mlir_ref_type, `, owned_in_mem>`
         ],
     ):
         pass
@@ -633,14 +633,14 @@ struct AddressSpace:
 struct Pointer[
     is_mutable: Bool, //,
     type: AnyType,
-    origin: Origin[is_mutable].type,
+    origin: Origin[is_mutable],
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]:
     alias _mlir_type = __mlir_type[
         `!lit.ref<`,
         type,
         `, `,
-        origin,
+        origin._mlir_origin,
         `, `,
         address_space._value.value,
         `>`,
@@ -687,7 +687,7 @@ struct Tuple[*element_types: AnyType]:
 struct UnsafePointer[
     T: AnyType,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    origin: Origin[True].type = MutableAnyOrigin,
+    origin: Origin[True]._mlir_type = MutableAnyOrigin,
 ]:
     alias _mlir_type = __mlir_type[
         `!kgen.pointer<`, T, `,`, address_space._value.value, `>`
