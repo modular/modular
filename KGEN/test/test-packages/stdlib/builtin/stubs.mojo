@@ -552,7 +552,7 @@ alias _AnyTypeMetaType = __type_of(AnyType)
 @register_passable
 struct VariadicPack[
     elt_is_mutable: Bool, //,
-    origin: __mlir_type[`!lit.origin<`, elt_is_mutable.value, `>`],
+    origin: Origin[elt_is_mutable],
     element_trait: _AnyTypeMetaType,
     *element_types: element_trait,
 ]:
@@ -562,7 +562,7 @@ struct VariadicPack[
         `> `,
         element_types,
         `, `,
-        origin,
+        origin._mlir_origin,
         `>`,
     ]
 

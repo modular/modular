@@ -438,8 +438,9 @@ calculateRequiredPosOperandsForPacks(LITSignatureGeneratorType signature) {
   // _must_ be provided positional operands explicitly, and therefore the
   // preceding defaults won't be used anyway.
   if (ASTType variadicPackType = signature.getIfVariadicPack(lastPosIdx)) {
-    RefPackType packType = variadicPackType.getVariadicPackInfo();
-    VariadicAttr packed = packType.getVariadicIfResolved();
+    VariadicAttr packed = // See if resolved.
+        dyn_cast<VariadicAttr>(variadicPackType.getVariadicPackTypeList());
+
     // The caller should know the concrete type list unless we binded the pack
     // directly as a parameter.  This is an unpack like situation.
     // TODO: This happens in error cases and needs to be re-evaluated.
@@ -1129,7 +1130,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureGeneratorType signature,
             signature.getIfVariadicPack(expectedArgIdx)) {
       auto actualArgConvention =
           signature.getPackVarArgConvention(expectedArgIdx);
-      RefPackType packType = variadicPackType.getVariadicPackInfo();
+      RefPackType packType = variadicPackType.getVariadicPackInfo(shared);
       for (TypedAttr element : packType.getVariadicIfResolved().getValues()) {
         auto refType = packType.getElementRefTypeFor(ASTType(element).mlirType);
         if (auto result =

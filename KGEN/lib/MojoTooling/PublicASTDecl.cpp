@@ -183,7 +183,7 @@ generateTypeString(SharedState &shared, Type type, VariadicKind varKind,
     if (convention && hasAddress(*convention))
       astType = astType.getReferenceElementType();
 
-    ASTType::printParam(os, astType.getVariadicPackInfo().getVariadic(),
+    ASTType::printParam(os, astType.getVariadicPackTypeList(),
                         /*forDiag=*/&shared, /*demangleParams=*/true);
     return os.str();
   }

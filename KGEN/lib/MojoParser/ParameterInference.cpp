@@ -223,7 +223,8 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
   if (auto actual = dyn_cast<RefPackType>(actualType))
     if (auto expected = dyn_cast<RefPackType>(expectedType)) {
       if (failed(matchParams(actual.getVariadic(), expected.getVariadic())) ||
-          failed(matchParams(actual.getOrigin(), expected.getOrigin())))
+          failed(
+              matchSingleEltStruct(actual.getOrigin(), expected.getOrigin())))
         return failure();
       return matchParams(actual.getAddressSpace(), expected.getAddressSpace());
     }
@@ -1097,7 +1098,7 @@ LogicalResult ParameterInferenceState::infer(
     // their RValue types as bindings.
     if (ASTType variadicPackType =
             signature.getIfVariadicPack(expectedArgIdx)) {
-      RefPackType packType = variadicPackType.getVariadicPackInfo();
+      RefPackType packType = variadicPackType.getVariadicPackInfo(shared);
 
       // Figure out that the element type of the list is, e.g. AnyType or
       // Stringable.

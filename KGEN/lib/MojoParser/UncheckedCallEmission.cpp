@@ -40,7 +40,7 @@ static CValue emitVariadicPackConstructor(
     ASTType variadicPackType, ArgConvention declaredArgConvention,
     TypedAttr originToUse, const ExprNode *expr, ExprEmitter &emitter,
     std::function<CValue(RefPackType)> refPackBuilder) {
-  RefPackType packType = variadicPackType.getVariadicPackInfo();
+  RefPackType packType = variadicPackType.getVariadicPackInfo(emitter.shared);
 
   // If there was no origin specified, use an immortal one with the same
   // mutability.
@@ -216,7 +216,7 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     expectedType = cast<VariadicType>(expectedType).getElementType();
     convention = calleeSig.getPosVarArgConvention(argIdx);
   } else if (ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx)) {
-    RefPackType packType = variadicPackType.getVariadicPackInfo();
+    RefPackType packType = variadicPackType.getVariadicPackInfo(emitter.shared);
 
     // Operands being applied to a concrete pack type argument must be
     // converted to the pack element type at that index.  The calleeSig has the
@@ -542,8 +542,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 
     // Pack arguments are fulfilled with an empty #lit.ref.pack.
     if (ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx)) {
-      assert(variadicPackType.getVariadicPackInfo()
-                 .getVariadicIfResolved()
+      assert(cast<VariadicAttr>(variadicPackType.getVariadicPackTypeList())
                  .getValues()
                  .empty() &&
              "pack type already checked against operand count");
@@ -1688,7 +1687,8 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
         argRVType = argRVType.getReferenceElementType();
 
       // Include the union origin that covers all the values.
-      implicitOrigins.push_back(argRVType.getVariadicPackInfo().getOrigin());
+      implicitOrigins.push_back(
+          argRVType.getVariadicPackInfo(shared).getOrigin());
     }
 
     // See if we have an implicit origin bound for this argument.
