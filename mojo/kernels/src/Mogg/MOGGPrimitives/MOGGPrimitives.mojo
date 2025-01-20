@@ -114,11 +114,9 @@ struct StateContext:
 fn byte_buffer_alloc[
     target: StringLiteral,
     alignment: Int,
-](
-    byte_size: Int,
-    device_context: DeviceContextPtr,
-    call_ctx: MojoCallContextPtr,
-) raises -> NDBuffer[DType.int8, 1]:
+](byte_size: Int, device_context: DeviceContextPtr) raises -> NDBuffer[
+    DType.int8, 1
+]:
     """Function will allocate a 1-D buffer with the specified size/alignment on device.
     """
     # This primitive has a byte-size input, so always assume a byte format
@@ -135,7 +133,6 @@ fn byte_buffer_alloc[
 @register_internal("builtin.create_error_async_values_and_destruct_error")
 @no_inline
 fn create_error_async_values_and_destruct_error(
-    ctx: MojoCallContextPtr,
     async_ptr: UnsafePointer[UnsafePointer[NoneType]],
     async_len: Int,
     runtime: UnsafePointer[NoneType],
@@ -145,7 +142,6 @@ fn create_error_async_values_and_destruct_error(
     var str = err.__str__()
     var strslice = str.as_string_slice()
     external_call["KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error", NoneType](
-        ctx,
         async_ptr,
         async_len,
         runtime,
@@ -230,7 +226,6 @@ fn create_non_tracked_buffer_ref_async[
     buffer: NDBuffer[DType.int8, 1],
     async_ptr: UnsafePointer[NoneType],
     runtime: UnsafePointer[NoneType],
-    call_ctx: MojoCallContextPtr,
 ):
     external_call["KGEN_CompilerRT_CreateAsyncNonTrackedBufferRef", NoneType](
         buffer.data, len(buffer), async_ptr, runtime
@@ -559,15 +554,13 @@ fn mgp_tensor_extract_buffer[
 fn mgp_buffer_alloc[
     bRawAlign: UInt64,
     cDevice: StringLiteral,
-](
-    byte_size: Int,
-    dev_context: DeviceContextPtr,
-    call_ctx: MojoCallContextPtr,
-) raises -> NDBuffer[DType.int8, 1]:
+](byte_size: Int, dev_context: DeviceContextPtr) raises -> NDBuffer[
+    DType.int8, 1
+]:
     # Default to alignment of 0 which means kPreferredMemoryAlignment if cRawAlign is kUnknownSize (SizeUtils.h).
     alias alignment = 0 if bRawAlign == UInt64.MAX else Int(bRawAlign)
     return byte_buffer_alloc[cDevice, alignment=alignment](
-        byte_size, dev_context, call_ctx
+        byte_size, dev_context
     )
 
 
@@ -588,10 +581,7 @@ fn mgp_buffer_constant_external[
     cSize: UInt64,
     dAlign: UInt64,
     eDevice: StringLiteral,
-](
-    weights: UnsafePointer[WeightsRegistry],
-    call_ctx: MojoCallContextPtr,
-) raises -> NDBuffer[DType.int8, 1]:
+](weights: UnsafePointer[WeightsRegistry]) raises -> NDBuffer[DType.int8, 1]:
     constrained[dAlign > 0, "dAlign must be a positive integer value"]()
 
     if not weights:
@@ -713,7 +703,6 @@ fn mgp_buffer_device_to_host[
     dev_buf: NDBuffer[DType.uint8, 1],
     host_buf: NDBuffer[DType.uint8, 1],
     dev_ctx: DeviceContextPtr,
-    call_ctx: MojoCallContextPtr,
 ) raises -> Int:
     @parameter
     if is_cpu[dHostDevice]() and is_gpu[cOtherDevice]():
@@ -741,7 +730,6 @@ fn mgp_buffer_device_to_device[
     dst_buf: NDBuffer[DType.uint8, 1],
     src_dev_ctx: DeviceContextPtr,
     dst_dev_ctx: DeviceContextPtr,
-    call_ctx: MojoCallContextPtr,
 ) raises -> Int:
     @parameter
     if is_gpu[cSrcDevice]() and is_gpu[dDstDevice]():
@@ -778,7 +766,6 @@ fn mgp_buffer_host_to_device[
     host_buf: NDBuffer[DType.uint8, 1],
     dev_buf: NDBuffer[DType.uint8, 1],
     dev_ctx: DeviceContextPtr,
-    call_ctx: MojoCallContextPtr,
 ) raises -> Int:
     @parameter
     if is_gpu[dOtherDevice]() and is_cpu[cHostDevice]():
@@ -914,11 +901,7 @@ fn mgp_device_context_destroy(dev_ctx: DeviceContextPtr):
 @no_inline
 fn mgp_sync[
     bDevice: StringLiteral,
-](
-    ctx: StateContext,
-    dev_ctx: DeviceContextPtr,
-    call_ctx: MojoCallContextPtr,
-) raises -> Int:
+](ctx: StateContext, dev_ctx: DeviceContextPtr) raises -> Int:
     dev_ctx[].synchronize()
     return 0
 
