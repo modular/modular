@@ -20,6 +20,7 @@ from tensor_utils_internal import (
 )
 
 from utils import IndexList, StaticTuple
+from sys import external_call
 
 
 # TODO(MOCO-1413): remove this need to keep imported exported funcs alive.
@@ -701,7 +702,6 @@ struct OpThatAlwaysFailsConstraint:
             1 == 2,
             "Expected constraint failure for error message testing",
         ]()
-        out_tensor[0] = in_tensor[0]
 
 
 @compiler.register("mo.test.return_error")
@@ -770,3 +770,94 @@ struct OpWithCustomParams:
         print("custom_int =", custom_int)
         print("custom_str =", custom_str)
         print("custom_dtype =", custom_dtype)
+
+
+@compiler.register("mgprt_test_func")
+struct MGPRTTestFunc:
+    @staticmethod
+    fn execute(out_tensor: ManagedTensorSlice) raises:
+        external_call["MGP_RT_TEST", NoneType]()
+
+
+@compiler.register("mutable_test_op", num_dps_outputs=0)
+struct MutableTestOp:
+    @staticmethod
+    fn execute(in_place_tensor: ManagedTensorSlice) raises:
+        in_place_tensor._ptr.store(0, 0)
+
+
+# For testing support for Scalar[...] in Mojo
+@compiler.register("supports_scalar_kernel")
+struct SupportsScalarKernel:
+    @staticmethod
+    fn execute[
+        type: DType
+    ](
+        out: ManagedTensorSlice[type, 1],
+        x: ManagedTensorSlice[type, 1],
+        y: Scalar[type],
+    ) raises:
+        print("datatype is", type)
+
+
+@compiler.register("basic_target")
+struct BasicTarget:
+    @staticmethod
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        out: ManagedTensorSlice[type, *_], x: ManagedTensorSlice[type, *_]
+    ) raises:
+        print("hello from kernel on", target)
+
+
+@value
+@register_passable
+struct MyCustomScalarReg[type: DType]:
+    var val: Scalar[type]
+
+    @implicit
+    fn __init__(out self, val: Scalar[type]):
+        print("MyCustomScalarReg.__init__", val)
+        self.val = val
+
+    fn __del__(owned self):
+        print("MyCustomScalarReg.__del__", self.val)
+
+
+@compiler.register("buff_to_my_custom_scalar_reg", num_dps_outputs=0)
+struct BuffToMyCustomScalarReg:
+    @uses_opaque
+    @staticmethod
+    fn execute[
+        target: StringLiteral
+    ](x: ManagedTensorSlice[DType.int32, 1]) -> MyCustomScalarReg[DType.int32]:
+        return MyCustomScalarReg(x[0])
+
+
+@compiler.register("test_custom_op")
+struct TestCustomOp:
+    @staticmethod
+    fn execute[
+        target: StringLiteral, type: DType, rank: Int
+    ](
+        out: ManagedTensorSlice[type, rank],
+        input: ManagedTensorSlice[type, rank],
+    ):
+        print("World!")
+
+    @staticmethod
+    fn shape[
+        type: DType, rank: Int
+    ](input: ManagedTensorSlice[type, rank]) -> IndexList[rank]:
+        print("Hello")
+        return input.shape()
+
+
+@compiler.register("invalid_kernel_owned_arg", num_dps_outputs=0)
+struct InvalidOwnedArgConvention:
+    @staticmethod
+    fn execute[
+        target: StringLiteral, type: DType, rank: Int
+    ](owned input: MyCustomScalarSI32) -> MyCustomScalarSI32:
+        return MyCustomScalarSI32(input.val)
