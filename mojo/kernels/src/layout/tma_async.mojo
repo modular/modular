@@ -65,8 +65,10 @@ struct TMABarrier(CollectionElement):
         mbarrier_arrive_expect_tx_shared(self.mbar, bytes)
 
     @always_inline
-    fn wait(self):
-        mbarrier_try_wait_parity_shared(self.mbar, 0, 10000000)
+    fn wait(self, phase: Int32 = 0):
+        # Exit barrier if threads have waited this long (nano seconds) at the barrier.
+        alias threshold_to_exit = 10000000
+        mbarrier_try_wait_parity_shared(self.mbar, phase, threshold_to_exit)
 
 
 # TMATensorTile is created on the host with specific memory and tile sizes.
