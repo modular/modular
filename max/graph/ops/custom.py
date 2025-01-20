@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from max import mlir
+from max import _graph, mlir
+from max.dtype import DType
 from max.mlir import IndexType, IntegerAttr, StringAttr
 from max.mlir.dialects import mo
 
@@ -19,13 +20,19 @@ from ..value import BufferValue, Value, _OpaqueValue
 
 
 def _parameter_attribute(
-    param: int | str, context: mlir.Context
+    param: int | str | DType, context: mlir.Context
 ) -> mlir.Attribute:
     """Converts a Python type to an MLIR attribute to parametrize a kernel."""
     if isinstance(param, int):
         return IntegerAttr.get(IndexType.get(context), param)
     elif isinstance(param, str):
         return StringAttr.get(param, context)
+    elif isinstance(param, DType):
+        # Wrap the MLIR type corresponding to dtype in a TypeAttr,
+        # which MOToKGENLowering expects.
+        return mlir.TypeAttr.get(
+            _graph.dtype_type(Graph.current._context, param._mlir)
+        )
     else:
         msg = f"unsupported parameter type {type(param)} for custom op"
         raise TypeError(msg)
@@ -35,7 +42,7 @@ def custom(
     name: str,
     values: list[Value],
     out_types: list[Type],
-    parameters: dict[str, int | str] | None = None,
+    parameters: dict[str, int | str | DType] | None = None,
 ) -> list[Value]:
     """Creates a node to execute a custom graph operation in the graph.
 
@@ -80,7 +87,7 @@ def inplace_custom(
     name: str,
     values: Iterable[Value],
     out_types: Iterable[Type] | None = None,
-    parameters: dict[str, int | str] | None = None,
+    parameters: dict[str, int | str | DType] | None = None,
 ) -> list[Value]:
     """Creates a node to execute an in-place custom graph operation in the graph.
 
