@@ -11,6 +11,7 @@
 #include "DLValues.h"
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 
 #include "KGEN/LITDialect/LITOps.h"
@@ -353,6 +354,19 @@ DefArgumentWrapperDLValue::prepareForMutAccess(SMLoc loc,
   // Okay, if the by-reg def argument is mutated, we need to snap into action
   // and lazily build a shadow in the function entry.
   auto func = cast<FnOp>(argDecl->getParentDecl());
+
+  // We may have already emitted read-only accesses that use the argument, and
+  // they need to be revectored to the new vardecl.  Collect them so we can
+  // update them later and not get confused by the access we're about to
+  // generate. This can matter on things like:
+  //    for ...:
+  //      use(arg)  # Emitted as a direct use of the arg.
+  //      arg += 1  # Forces mutation after the use was emitted.
+  BlockArgument bbArg = func.getArgument(argIndex);
+  SmallVector<OpOperand *> argUses;
+  for (auto &use : bbArg.getUses())
+    argUses.push_back(&use);
+
   ExprEmitter entryEmitter(*argDecl->getParentDecl(),
                            OpBuilder::atBlockBegin(func.getBody()));
   StringAttr argName = func.getSignatureGenerator().getArgName(argIndex);
@@ -361,8 +375,6 @@ DefArgumentWrapperDLValue::prepareForMutAccess(SMLoc loc,
   VarDeclOp varDecl = entryEmitter.emitVarDecl(argName, argRef.getRValueType(),
                                                emitter.translateLocation(loc),
                                                VarDeclKind::Arg);
-
-  // Expr to provide location information.
   if (!entryEmitter.emitStoreToLValue({argRef, SyntheticNode(loc)},
                                       MLValue(varDecl), EC_OwnedRegArgShadow)) {
     // This can fail if not copyable/movable.
@@ -370,11 +382,34 @@ DefArgumentWrapperDLValue::prepareForMutAccess(SMLoc loc,
     return LValue();
   }
 
+  // Now that we've got the new representation as an MLValue, we need to update
+  // the previous uses.  The arg was either an MBValue (for normal types) or
+  // SRValue for trivial types.
+  bool isTrivial = argRef.getIfSRValue() != SRValue();
+  for (OpOperand *use : argUses) {
+    Value valueToUse = varDecl.getResult();
+    auto *user = use->getOwner();
+    OpBuilder builder(user);
+
+    if (isTrivial) {
+      // Trivial values need a load from the vardecl at the point of the use.
+      valueToUse = builder.create<RefLoadOp>(user->getLoc(), valueToUse);
+    } else {
+      // Non-trivial need an adjustment of the reference type because the
+      // origins mismatch.
+      // FIXME: This won't propagate the origin of the vardecl correctly for
+      // ref-returning values.
+      valueToUse = builder.create<RebindOp>(user->getLoc(),
+                                            use->get().getType(), valueToUse);
+    }
+    use->set(valueToUse);
+  }
+
   // This helps debug info and QoI.
   varDecl.setArgShadowIndex(argIndex);
-
   // Update the representation so we don't do this again.
   argDecl->setIRValue(MLValue(varDecl));
+
   return MLValue(varDecl);
 }
 

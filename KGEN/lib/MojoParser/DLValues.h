@@ -132,7 +132,7 @@ public:
 
   /// This is the argument decl we're the representation of.
   ASTDecl *argDecl;
-  // This is the MBValue or SRValue for the argument.
+  // The MBValue (normal things) or SRValue (trivial types) for the argument.
   CValue argRef;
   size_t argIndex;
 };
