@@ -36,16 +36,24 @@ struct TileMaskStatus(Stringable, Writable):
     fn __eq__(self, rhs: Self) -> Bool:
         return self.status == rhs.status
 
+    fn __ne__(self, rhs: Self) -> Bool:
+        return self.status != rhs.status
+
+    fn __is__(self, rhs: Self) -> Bool:
+        return self.status == rhs.status
+
+    fn __is_not__(self, rhs: Self) -> Bool:
+        return self.status != rhs.status
+
     fn __str__(self) -> String:
         return String.write(self)
 
     fn write_to[W: Writer](self, mut writer: W):
-        if self.status == 0:
-            writer.write("not masked")
-        elif self.status == 1:
-            writer.write("partially masked")
-        else:
-            writer.write("fully masked")
+        if self is Self.NO_MASK:
+            return writer.write("not masked")
+        if self is Self.PARTIAL_MASK:
+            return writer.write("partially masked")
+        writer.write("fully masked")
 
 
 # ===-----------------------------------------------------------------------===#
