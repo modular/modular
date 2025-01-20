@@ -558,19 +558,14 @@ struct String(
     """The underlying storage for the string."""
 
     """ Useful string aliases. """
-    alias ASCII_LOWERCASE = String("abcdefghijklmnopqrstuvwxyz")
-    alias ASCII_UPPERCASE = String("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-    alias ASCII_LETTERS = String.ASCII_LOWERCASE + String.ASCII_UPPERCASE
-    alias DIGITS = String("0123456789")
-    alias HEX_DIGITS = String.DIGITS + String("abcdef") + String("ABCDEF")
-    alias OCT_DIGITS = String("01234567")
-    alias PUNCTUATION = String("""!"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~""")
-    alias PRINTABLE = (
-        String.DIGITS
-        + String.ASCII_LETTERS
-        + String.PUNCTUATION
-        + " \t\n\r\v\f"  # single byte utf8 whitespaces
-    )
+    alias ASCII_LOWERCASE = "abcdefghijklmnopqrstuvwxyz"
+    alias ASCII_UPPERCASE = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    alias ASCII_LETTERS = Self.ASCII_LOWERCASE + Self.ASCII_UPPERCASE
+    alias DIGITS = "0123456789"
+    alias HEX_DIGITS = Self.DIGITS + "abcdef" + "ABCDEF"
+    alias OCT_DIGITS = "01234567"
+    alias PUNCTUATION = """!"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"""
+    alias PRINTABLE = Self.DIGITS + Self.ASCII_LETTERS + Self.PUNCTUATION + " \t\n\r\v\f"
 
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
