@@ -94,9 +94,7 @@ struct TMATensorTile[
     fn async_copy(
         self,
         dst: LayoutTensor[
-            dtype,
-            layout,
-            address_space = AddressSpace.SHARED,
+            dtype, layout, address_space = AddressSpace.SHARED, **_
         ],
         mem_barrier: TMABarrier,
         coords: Tuple[UInt, UInt],

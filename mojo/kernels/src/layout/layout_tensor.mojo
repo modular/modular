@@ -194,6 +194,7 @@ struct LayoutTensor[
     element_layout: Layout = Layout(1, 1),
     layout_bitwidth: Int = bitwidthof[_get_index_type(address_space)](),
     masked: Bool = False,
+    alignment: Int = alignof[dtype](),
 ](CollectionElement, CollectionElementNew, Stringable, Writable):
     """This is a Tensor type that has a specified memory layout and rank. The
     following example demonstrate a LayoutTensor of float32 with a row major
@@ -210,12 +211,15 @@ struct LayoutTensor[
         element_layout: The memory layout of each element in the Tensor.
         layout_bitwidth: The bitwidth of each dimension of runtime layout.
         masked: If true the tensor is masked and runtime layouts determine the shape.
+        alignment: Alignment of the data pointer.
     """
 
     alias index_type: DType = _get_index_type(layout, address_space)
     alias uint_type = Scalar[_get_unsigned_type(layout, address_space)]
 
-    var ptr: UnsafePointer[Scalar[dtype], address_space=address_space]
+    var ptr: UnsafePointer[
+        Scalar[dtype], address_space=address_space, alignment=alignment
+    ]
 
     var runtime_layout: RuntimeLayout[layout, bitwidth=layout_bitwidth]
 
@@ -231,7 +235,8 @@ struct LayoutTensor[
     @always_inline
     @implicit
     fn __init__(
-        out self, ptr: UnsafePointer[Scalar[dtype], address_space=address_space]
+        out self,
+        ptr: UnsafePointer[Scalar[dtype], address_space=address_space, **_],
     ):
         """Create a LayoutTensor with an UnsafePointer. Expect layout to be
         fully static.
@@ -250,7 +255,7 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         mut self,
-        ptr: UnsafePointer[Scalar[dtype], address_space=address_space],
+        ptr: UnsafePointer[Scalar[dtype], address_space=address_space, **_],
         runtime_layout: RuntimeLayout[layout, **_],
     ):
         """Create a LayoutTensor with an UnsafePointer. Expect element layout
@@ -279,7 +284,7 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         mut self,
-        ptr: UnsafePointer[Scalar[dtype], address_space=address_space],
+        ptr: UnsafePointer[Scalar[dtype], address_space=address_space, **_],
         runtime_layout: RuntimeLayout[layout, bitwidth = Self.layout_bitwidth],
         element_runtime_layout: RuntimeLayout[element_layout],
     ):
@@ -960,15 +965,25 @@ struct LayoutTensor[
 
     @staticmethod
     @always_inline("nodebug")
-    fn stack_allocation[*, alignment: Int = alignof[dtype]()]() -> Self:
+    fn stack_allocation[*, alignment: Int = Self.alignment]() -> Self:
         """Allocates stack memory for a LayoutTensor. Expects layout to be
         fully static.
 
         Parameters:
-            alignment: The memory alignment of the underlying pointer.
+            alignment: Alignment of the allocation. It must be multiple of
+              the tensor's alignment, which is the minimum required by
+              arch, instruction, etc.
         """
 
         constrained[layout.all_dims_known(), "Requires fully static layout"]()
+        constrained[
+            alignment % Self.alignment == 0,
+            "Stack allocation alignment "
+            + String(alignment)
+            + " must be multiple of tensor alignment "
+            + String(Self.alignment),
+        ]()
+
         var ptr = stack_allocation[
             layout.size(),
             dtype,
