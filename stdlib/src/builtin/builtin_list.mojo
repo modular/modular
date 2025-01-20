@@ -280,7 +280,7 @@ struct _VariadicListMemIter[
 struct VariadicListMem[
     elt_is_mutable: Bool, //,
     element_type: AnyType,
-    origin: Origin[elt_is_mutable]._mlir_type,
+    origin: Origin[elt_is_mutable],
 ](Sized):
     """A utility class to access variadic function arguments of memory-only
     types that may have ownership. It exposes references to the elements in a
