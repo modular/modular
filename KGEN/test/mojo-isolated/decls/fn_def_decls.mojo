@@ -176,6 +176,43 @@ def test_def_arg_box_mbvalue(
     # CHECK-NEXT: [[MEMBERREF:%.*]] = lit.ref.struct.ger %b[member]
     _ = b.member.method()
 
+fn use(a: Int): pass
+fn use(a: String): pass
+
+# https://github.com/modular/mojo/issues/3955
+# Unexpected copy-on-write behaviour with for loops
+# CHECK-LABEL: test_mutable_def_arg_emission
+def test_mutable_def_arg_emission(byte: Int, str: String):
+   # CHECK-NEXT: %str_0 = lit.var.decl "str"
+   # CHECK-NEXT: lit.call {{.*}}String::@"__copyinit__{{.*}}(%str, %str_0)
+   # CHECK-NEXT: %byte_1 = lit.var.decl "byte"
+   # CHECK-NEXT: lit.ref.store %byte, %byte_1 
+
+   # CHECK: } body {
+    while True:
+        # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %byte_1
+        # CHECK-NEXT: lit.call {{.*}}use(::Int)"([[TMP]])        
+        use(byte)
+
+        # CHECK: lit.call {{.*}}@Int::@"__iadd__{{.*}}(%byte_1, 
+        byte += 1
+        # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %byte_1
+        # CHECK-NEXT: lit.call {{.*}}use(::Int)"([[TMP]])        
+        use(byte)
+        # CHECK-NEXT: lit.break
+        break
+
+    # CHECK: } body {
+    while True:
+        # CHECK-NEXT: [[TMP:%.*]] = kgen.rebind %str_0
+        # CHECK-NEXT: lit.call {{.*}}use(::String)"{{.*}}([[TMP]])        
+        use(str)
+        # CHECK: lit.call {{.*}}String::@"__iadd__{{.*}}(%str_0, 
+        str += ""
+        # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut %str_0 
+        # CHECK: lit.call {{.*}}use(::String)"{{.*}}([[TMP]])        
+        use(str)
+        break
 
 fn returnsMultiple() -> (Int, MemoryOnly):
     pass
