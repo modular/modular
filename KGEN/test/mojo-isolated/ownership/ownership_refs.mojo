@@ -47,7 +47,7 @@ fn implicit_owned(owned a: MemExample):
 # CHECK-SAME: (%a: !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "value">, life>)
 # CHECK-SAME: -> !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "value">, life>
 fn parametricMut[isMut: Bool,
-                 life: Origin[isMut].type](a: Pointer[MemExample, life]._mlir_type)
+                 life: Origin[isMut]._mlir_type](a: Pointer[MemExample, life]._mlir_type)
    -> Pointer[MemExample, life]._mlir_type:
   return a
 
@@ -165,7 +165,7 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
   # CHECK: lit.call @{{.*}}@Pointer::@"address_of{{.*}}(%a)
   var aref = Pointer.address_of(a)
   # CHECK: lit.alias.decl *"aLifetime{{.*}}": origin<1> = <*"a`1">
-  alias aLifetime =  aref.origin
+  alias aLifetime =  aref.origin._mlir_origin
 
   # CHECK-NEXT: [[AR:%.*]] = lit.ref.load %aref
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[AR]])
@@ -219,17 +219,17 @@ struct SelfRefTest:
 # CHECK-LABEL: lit.fn @"testSelfRef
 fn testSelfRef(a: SelfRefTest, mut b: SelfRefTest):
   # Bind immutably to a
-  # CHECK: = lit.call {{.*}}method{{.*}}<:!Bool {:i1 0}, :!AnyType #SelfRefTest1, :origin<0> *"a`"
+  # CHECK: = lit.call {{.*}}method{{.*}}<:!Bool {:i1 0}, :!AnyType #SelfRefTest1, {{.*}}origin<0> = *"a`"
   _ = a.method()
 
   # Bind mutably to b
-  # CHECK: = lit.call {{.*}}method{{.*}}<:!Bool {:i1 1}, :!AnyType #SelfRefTest1, :origin<1> *"b`1"
+  # CHECK: = lit.call {{.*}}method{{.*}}<:!Bool {:i1 1}, :!AnyType #SelfRefTest1, {{.*}}origin<1> = *"b`1"
   _ = b.method()
 
 
 # CHECK-LABEL: lit.fn @"testLifetimeOf1
 # CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> read_mem) ->
-# CHECK-SAME: Pointer <{{.*}}, :origin<0> *"a`", :!AddressSpace {_value: !Int = {0}}>>
+# CHECK-SAME: Pointer <{{.*}}origin<0> = *"a`"}, :!AddressSpace {_value: !Int = {0}}>>
 fn testLifetimeOf1(a: MemExample) -> Pointer[MemExample, __origin_of(a)]:
   return Pointer.address_of(a)
 
@@ -296,7 +296,7 @@ fn test_immortal_to_mortal(arg: Pointer[Int, _])
   # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"address_of{{.*}}([[ARGREF]])
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}UnsafePointer::@"__getitem__{{.*}}([[PTRVAL]])
 
-  # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[REF]] : !lit.ref<!Int, mut #lit.any.origin> to !lit.ref<!Int, mut=#lit.struct.extract<:!Bool *"is_mutable`", "value">, *"origin`1">
+  # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[REF]] : !lit.ref<!Int, mut #lit.any.origin> to !lit.ref<!Int, mut=#lit.struct.extract<:!Bool *"is_mutable`", "value">, #lit.struct.extract<:@stdlib::@builtin::@stubs::@Origin<:!Bool *"is_mutable`"> *"origin`1", "_mlir_origin">>
   # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}address_of{{.*}}([[ADJREFVAL]])
   # CHECK-NEXT: kgen.return [[RES]]
   return Pointer[Int, arg.origin].address_of(UnsafePointer.address_of(arg[])[])
@@ -326,7 +326,7 @@ struct ThingWithFields:
 # CHECK-LABEL: lit.fn @"parametric_mut_mbvalue
 fn parametric_mut_mbvalue[
     is_mutable: __mlir_type.i1,
-    origin: Origin[is_mutable].type,
+    origin: Origin[is_mutable]._mlir_type,
  ](a: Pointer[ThingWithFields, origin])
    -> Pointer[Int, __origin_of(a[].field)]:
   # CHECK: lit.ref.struct.ger
@@ -393,7 +393,7 @@ fn test_pvalue_ref_formation[a: SelfRefTest]():
   # CHECK: [[ANONTMP:%.*]] = lit.var.decl "anonymous*" {{.*}}!lit.ref<!SelfRefTest, mut *"anonymous*`1">
   var r = a.method()
   # The result reference should have inferred the origin of the temp
-  # CHECK: lit.ref.store {{.*}}, %r : {{.*}}#SelfRefTest1, :origin<0> (mutcast mut *"anonymous*`1"),
+  # CHECK: lit.ref.store {{.*}}, %r : {{.*}}#SelfRefTest1, {{.*}}origin<0> = (mutcast mut *"anonymous*`1")},
 
   # This use of the temp should keep it alive.
   # CHECK: [[REFERENCE:%.*]] = lit.ref.load %r

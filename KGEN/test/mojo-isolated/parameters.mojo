@@ -1588,7 +1588,7 @@ fn call_variadic_pack_with_function():
 struct MOCO1065[
     is_mutable: Bool, //,
     T: CollectionElement,
-    o: Origin[is_mutable].type,
+    o: Origin[is_mutable]._mlir_type,
 ]:
     fn __init__(mut self: MOCO1065[UInt8, o], ref [o] string: Empty):
         pass
