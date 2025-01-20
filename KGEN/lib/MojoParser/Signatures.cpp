@@ -57,6 +57,22 @@ static TypedAttr digOutSingleField(TypedAttr value, StringRef fieldName,
   return LIT::StructExtractAttr::get(value, fieldOp);
 };
 
+/// Given a parameter that is a !lit.origin or an Origin, return the
+/// underlying !lit.origin.  This returns null on failure.
+TypedAttr ASTType::extractOriginOf(SMLoc loc, TypedAttr value,
+                                   SharedState &shared) {
+  // A raw !lit.origin always works.
+  if (isa<OriginType>(value.getType()))
+    return value;
+
+  // If this is a value of Origin type, process it.
+  if (auto extractVal =
+          digOutSingleField(value, ORIGIN_FIELD_NAME, loc, shared))
+    if (isa<OriginType>(extractVal.getType()))
+      return extractVal;
+  return {};
+}
+
 /// Given an expression that can be used in __origin_of or a ref expression,
 /// analyze it to determine which origin it represents.  If it doesn't work,
 /// emit an error and return null.
@@ -73,15 +89,9 @@ TypedAttr ExprEmitter::extractOriginOf(const ExprNode *expr, CValue value) {
 
   // Check for !lit.origin and Origin struct.
   if (auto pv = value.getIfPValue()) {
-    // A raw !lit.origin always works.
-    if (isa<OriginType>(pv.getType()))
-      return pv.get();
-
-    // If this is a value of Origin type, process it.
-    if (auto extractVal = digOutSingleField(pv.get(), ORIGIN_FIELD_NAME,
-                                            expr->getLoc(), shared))
-      if (isa<OriginType>(extractVal.getType()))
-        return extractVal;
+    if (TypedAttr result =
+            ASTType::extractOriginOf(expr->getLoc(), pv.get(), shared))
+      return result;
   }
 
   emitError(expr->getLoc())
@@ -1013,7 +1023,7 @@ static RefType makeImplicitRefTypeForArg(const ParsedArgument &arg, size_t idx,
 // expression is "Ts", and the star before it was syntactically parsed.
 // This expression must be a PValue of variadic metatype.  We need to
 // process it into a VariadicPack.
-static Type
+static ASTType
 typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
                                    ExprEmitter &emitter,
                                    TypeCheckedFnSignature &tcSignature) {
@@ -1058,52 +1068,81 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
   RefType refType = makeImplicitRefTypeForArg(arg, argIdx, elementType,
                                               isMutable, tcSignature);
 
-  // Form a VariadicPack type.
+  // Form a VariadicPack type.  Note that we cannot use ParamBindings to do this
+  // as we have no way to "splat" the type list into the variadic list :-(.
   ASTType variadicPackType =
       emitter.shared.getBuiltinVariadicPackType(emitter.declScope, arg.loc);
-
-  // Sanity check the returned VariadicPack declaration.
   if (isa<TypeCheckErrorType>(variadicPackType))
-    return {};
-  auto packStruct = dyn_cast_if_present<StructDeclOp>(
-      variadicPackType.getDecl(emitter.shared));
+    return {}; // Sanity check the returned VariadicPack declaration.
+  ASTDecl *packDecl = variadicPackType.getDecl(emitter.shared);
 
-  auto builtinBoolMlirType =
-      emitter.shared.getBuiltinBoolType(emitter.declScope, arg.loc).mlirType;
-
-  if (!packStruct || packStruct.getParams().size() != 4 ||
-      packStruct.getParams()[0].getType() != builtinBoolMlirType ||
-      !isa<OriginType>(packStruct.getParams()[1].getType()) ||
-      !isa<AnyTraitType>(packStruct.getParams()[2].getType()) ||
-      !isa<VariadicType>(packStruct.getParams()[3].getType())) {
+  // We expect:
+  // VariadicPack[
+  //   mut: Bool, //, origin: Origin[mut],
+  //   element_trait: _AnyTypeMetaType, *element_types: element_trait]
+  auto packStruct = dyn_cast_if_present<StructDeclOp>(packDecl);
+  if (!packStruct || packStruct.getParams().size() != 4) {
     emitter.emitError(arg.loc, "malformed VariadicPack");
     return {};
   }
+  auto typeSig = packStruct.getSignature();
+
+#if 0
+  // TODO: This should work, but cannot because the type list is parametric and
+  // we have no "splat list" operator.
+  ParamBindings bindings(emitter.declScope);
+  bindings.add(arg.typeExpr, refType.getOrigin());
+  bindings.add(arg.typeExpr, PValue(elementType));
+  bindings.add(arg.typeExpr, param.get());
+
+  ParameterExprArrayAttr bindingValuesAttr = bindings.verifyBindings(
+      packStruct, typeSig, arg.typeExpr->getLoc(), /*partial=*/false);
+  if (!bindingValuesAttr)
+    return {};
+  return BindTypeAttr::get(PValue(variadicPackType), bindingValuesAttr);
+#endif
+
+  auto isMutType = typeSig.getParamTypes()[0];
+  auto originType = typeSig.getParamTypes()[1];
+  auto traitMetaType = typeSig.getParamTypes()[2];
+  if (!isa<LIT::StructType>(isMutType) || !isa<LIT::StructType>(originType) ||
+      !isa<AnyTraitType>(traitMetaType) ||
+      !isa<VariadicType>(typeSig.getParamTypes()[3])) {
+    emitter.emitError(arg.loc, "malformed VariadicPack");
+    return {};
+  }
+
+  // Use a ParameterEvaluator to figure out which (rebound) types are needed,
+  // so we get the Bool type, the Origin type etc.
+  ParameterEvaluator evaluator;
+  PValue isMut = emitter.emitPValue({refType.isMutable(), arg.typeExpr},
+                                    EC_Type, isMutType);
+  if (!isMut)
+    return {};
+  evaluator.addInputValue(isMut);
+  PValue origin =
+      emitter.emitPValue({refType.getOrigin(), arg.typeExpr}, EC_Type,
+                         evaluator.getReboundType(originType));
+  if (!origin)
+    return {};
+  evaluator.addInputValue(origin);
+
   // The default element_trait param type is
   // !lit.anytrait<<@stdlib::@builtin::@anytype::@AnyType>>
   // reflecting that it takes any trait like Stringable.
-  auto elementTraitParamTy = packStruct.getParams()[2].getType();
-
   // If the declared type of the pack elements is a trait subtype of AnyType,
   // it will be that traits metatype.  Downcast to the same type, but with
   // !lit.anytrait<AnyType> type.
-  TypedAttr elementTrait = emitter.emitPValue(
-      {PValue(elementType), arg.typeExpr}, EC_Type, elementTraitParamTy);
-  if (!elementTrait)
+  PValue traitMT = emitter.emitPValue({PValue(elementType), arg.typeExpr},
+                                      EC_Type, traitMetaType);
+  if (!traitMT)
     return {};
-  elementType = ASTType(elementTrait);
-
-  CValue isMutableCValue =
-      emitter.emitBool({refType.isMutable(), arg.typeExpr}, EC_Type);
-
-  PValue isMutablePValue = isMutableCValue.getIfPValue();
-  assert(isMutablePValue &&
-         "constructing a bool from a parameter should create a parameter");
+  evaluator.addInputValue(traitMT);
 
   // Bind the VariadicPack[isMutable, origin, element_trait, element_types]
   // parameters.
   return packStruct.bindReference(
-      {isMutablePValue.get(), refType.getOrigin(), elementTrait, param.get()});
+      {isMut.get(), origin.get(), traitMT.get(), param.get()});
 }
 
 /// Type check each argument in turn, resolving their type and default

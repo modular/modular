@@ -688,7 +688,7 @@ static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
       // metatype.
       Type metatype = ASTType(type)
                           .getReferenceElementType()
-                          .getVariadicPackInfo()
+                          .getVariadicPackInfo(shared)
                           .getVariadicElementType();
       type = ParamType::get(UnknownAttr::get(metatype));
       conv = ArgConvention::ReadReg;

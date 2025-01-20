@@ -138,7 +138,11 @@ public:
   ASTType getVariadicElementType() const;
 
   /// Return the RefPackType that corresponds to the VariadicPack instance.
-  RefPackType getVariadicPackInfo() const;
+  RefPackType getVariadicPackInfo(SharedState &shared) const;
+  /// Return the type list for the variadic argument in a VariadicPack.  This
+  /// will be a VariadicAttr when concrete (e.g. on the caller side) or a
+  /// parameter on the callee side.
+  TypedAttr getVariadicPackTypeList() const;
 
   /// Given a variadic keyword dictionary type, return the dictionary's value
   /// type as an ASTType.
@@ -203,6 +207,11 @@ public:
   /// Create and return a reference type with 'this' as the underlying element
   /// type an implicit origin reference with the specified arg name.
   RefType getRefForArgument(const Twine &argName, bool isMut);
+
+  /// Given a parameter that is a !lit.origin or an Origin, return the
+  /// underlying !lit.origin.  This returns null on failure.
+  static TypedAttr extractOriginOf(llvm::SMLoc loc, TypedAttr value,
+                                   SharedState &shared);
 };
 raw_ostream &operator<<(raw_ostream &os, ASTType type);
 

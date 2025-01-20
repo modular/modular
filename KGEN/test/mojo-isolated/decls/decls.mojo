@@ -71,7 +71,7 @@ fn variadic_trait_elt[T: Copyable](*xs: T):
 
 # CHECK-LABEL: lit.fn @"trait_pack
 # CHECK-SAME: <{{.*}}, Ts:
-# CHECK-SAME: %rest: !lit.ref<@stdlib::@builtin::@stubs::@VariadicPack<:!Bool {:i1 0}, :origin<0> *"rest`1", :!lit.anytrait<!AnyType> !Copyable, :variadic<!Copyable> Ts>, imm *"rest`2"> read_mem|pack)
+# CHECK-SAME: %rest: !lit.ref<@stdlib::@builtin::@stubs::@VariadicPack<:!Bool {:i1 0}, {{.*}}origin<0> = *"rest`1"}, :!lit.anytrait<!AnyType> !Copyable, :variadic<!Copyable> Ts>, imm *"rest`2"> read_mem|pack)
 fn trait_pack[T: Copyable, *Ts: Copyable](first: T, *rest: *Ts):
     pass
 
