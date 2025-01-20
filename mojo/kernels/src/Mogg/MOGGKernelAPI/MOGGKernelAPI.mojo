@@ -10449,191 +10449,25 @@ struct Struct_print_kv_cache_continuous_batching_nhead_32_hdim_128_fp32:
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register(
-    "mo.kv_collection_ctor.paged.nhead_1.hdim_16", num_dps_outputs=0
-)
-struct Struct_kv_collection_ctor_paged_nhead_1_hdim_16:
+@compiler.register("mo.kv_collection_ctor.paged", num_dps_outputs=0)
+struct Struct_kv_collection_ctor_paged:
     @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
         type: DType,
+        num_heads: Int,
+        head_dim: Int,
         target: StringLiteral,
     ](
         blocks: ManagedTensorSlice[type, 6],
         cache_lengths: ManagedTensorSlice[DType.uint32, 1],
         lookup_table: ManagedTensorSlice[DType.uint32, 2],
         max_lengths: ManagedTensorSlice[DType.uint32, 2],
-    ) -> PagedKVCacheCollection[type, kv_params_h1_d16_bshd]:
-        return generic_get_paged_cache[kv_params=kv_params_h1_d16_bshd](
-            managed_tensor_slice_to_ndbuffer(blocks),
-            managed_tensor_slice_to_ndbuffer(cache_lengths),
-            managed_tensor_slice_to_ndbuffer(lookup_table),
-            managed_tensor_slice_to_ndbuffer(max_lengths),
-        )
-
-
-@compiler.register(
-    "mo.kv_collection_ctor.paged.nhead_6.hdim_48", num_dps_outputs=0
-)
-struct Struct_kv_collection_ctor_paged_nhead_6_hdim_48:
-    @uses_opaque
-    @always_inline
-    @staticmethod
-    fn execute[
-        type: DType,
-        target: StringLiteral,
-    ](
-        blocks: ManagedTensorSlice[type, 6],
-        cache_lengths: ManagedTensorSlice[DType.uint32, 1],
-        lookup_table: ManagedTensorSlice[DType.uint32, 2],
-        max_lengths: ManagedTensorSlice[DType.uint32, 2],
-    ) -> PagedKVCacheCollection[type, kv_params_h6_d48_bshd]:
-        return generic_get_paged_cache[kv_params=kv_params_h6_d48_bshd](
-            managed_tensor_slice_to_ndbuffer(blocks),
-            managed_tensor_slice_to_ndbuffer(cache_lengths),
-            managed_tensor_slice_to_ndbuffer(lookup_table),
-            managed_tensor_slice_to_ndbuffer(max_lengths),
-        )
-
-
-@compiler.register(
-    "mo.kv_collection_ctor.paged.nhead_8.hdim_128", num_dps_outputs=0
-)
-struct Struct_kv_collection_ctor_paged_nhead_8_hdim_128:
-    @uses_opaque
-    @always_inline
-    @staticmethod
-    fn execute[
-        type: DType,
-        target: StringLiteral,
-    ](
-        blocks: ManagedTensorSlice[type, 6],
-        cache_lengths: ManagedTensorSlice[DType.uint32, 1],
-        lookup_table: ManagedTensorSlice[DType.uint32, 2],
-        max_lengths: ManagedTensorSlice[DType.uint32, 2],
-    ) -> PagedKVCacheCollection[type, kv_params_h8_d128_bshd]:
-        return generic_get_paged_cache[kv_params=kv_params_h8_d128_bshd](
-            managed_tensor_slice_to_ndbuffer(blocks),
-            managed_tensor_slice_to_ndbuffer(cache_lengths),
-            managed_tensor_slice_to_ndbuffer(lookup_table),
-            managed_tensor_slice_to_ndbuffer(max_lengths),
-        )
-
-
-@compiler.register(
-    "mo.kv_collection_ctor.paged.nhead_8.hdim_16", num_dps_outputs=0
-)
-struct Struct_kv_collection_ctor_paged_nhead_8_hdim_16:
-    @uses_opaque
-    @always_inline
-    @staticmethod
-    fn execute[
-        type: DType,
-        target: StringLiteral,
-    ](
-        blocks: ManagedTensorSlice[type, 6],
-        cache_lengths: ManagedTensorSlice[DType.uint32, 1],
-        lookup_table: ManagedTensorSlice[DType.uint32, 2],
-        max_lengths: ManagedTensorSlice[DType.uint32, 2],
-    ) -> PagedKVCacheCollection[type, kv_params_h8_d16_bshd]:
-        return generic_get_paged_cache[kv_params=kv_params_h8_d16_bshd](
-            managed_tensor_slice_to_ndbuffer(blocks),
-            managed_tensor_slice_to_ndbuffer(cache_lengths),
-            managed_tensor_slice_to_ndbuffer(lookup_table),
-            managed_tensor_slice_to_ndbuffer(max_lengths),
-        )
-
-
-@compiler.register(
-    "mo.kv_collection_ctor.paged.nhead_8.hdim_512", num_dps_outputs=0
-)
-struct Struct_kv_collection_ctor_paged_nhead_8_hdim_512:
-    @uses_opaque
-    @always_inline
-    @staticmethod
-    fn execute[
-        type: DType,
-        target: StringLiteral,
-    ](
-        blocks: ManagedTensorSlice[type, 6],
-        cache_lengths: ManagedTensorSlice[DType.uint32, 1],
-        lookup_table: ManagedTensorSlice[DType.uint32, 2],
-        max_lengths: ManagedTensorSlice[DType.uint32, 2],
-    ) -> PagedKVCacheCollection[type, kv_params_h8_d512_bshd]:
-        return generic_get_paged_cache[kv_params=kv_params_h8_d512_bshd](
-            managed_tensor_slice_to_ndbuffer(blocks),
-            managed_tensor_slice_to_ndbuffer(cache_lengths),
-            managed_tensor_slice_to_ndbuffer(lookup_table),
-            managed_tensor_slice_to_ndbuffer(max_lengths),
-        )
-
-
-@compiler.register(
-    "mo.kv_collection_ctor.paged.nhead_8.hdim_32", num_dps_outputs=0
-)
-struct Struct_kv_collection_ctor_paged_nhead_8_hdim_32:
-    @uses_opaque
-    @always_inline
-    @staticmethod
-    fn execute[
-        type: DType,
-        target: StringLiteral,
-    ](
-        blocks: ManagedTensorSlice[type, 6],
-        cache_lengths: ManagedTensorSlice[DType.uint32, 1],
-        lookup_table: ManagedTensorSlice[DType.uint32, 2],
-        max_lengths: ManagedTensorSlice[DType.uint32, 2],
-    ) -> PagedKVCacheCollection[type, kv_params_h8_d32_bshd]:
-        return generic_get_paged_cache[kv_params=kv_params_h8_d32_bshd](
-            managed_tensor_slice_to_ndbuffer(blocks),
-            managed_tensor_slice_to_ndbuffer(cache_lengths),
-            managed_tensor_slice_to_ndbuffer(lookup_table),
-            managed_tensor_slice_to_ndbuffer(max_lengths),
-        )
-
-
-@compiler.register(
-    "mo.kv_collection_ctor.paged.nhead_8.hdim_64", num_dps_outputs=0
-)
-struct Struct_kv_collection_ctor_paged_nhead_8_hdim_64:
-    @uses_opaque
-    @always_inline
-    @staticmethod
-    fn execute[
-        type: DType,
-        target: StringLiteral,
-    ](
-        blocks: ManagedTensorSlice[type, 6],
-        cache_lengths: ManagedTensorSlice[DType.uint32, 1],
-        lookup_table: ManagedTensorSlice[DType.uint32, 2],
-        max_lengths: ManagedTensorSlice[DType.uint32, 2],
-    ) -> PagedKVCacheCollection[type, kv_params_h8_d64_bshd]:
-        return generic_get_paged_cache[kv_params=kv_params_h8_d64_bshd](
-            managed_tensor_slice_to_ndbuffer(blocks),
-            managed_tensor_slice_to_ndbuffer(cache_lengths),
-            managed_tensor_slice_to_ndbuffer(lookup_table),
-            managed_tensor_slice_to_ndbuffer(max_lengths),
-        )
-
-
-@compiler.register(
-    "mo.kv_collection_ctor.paged.nhead_32.hdim_128", num_dps_outputs=0
-)
-struct Struct_kv_collection_ctor_paged_nhead_32_hdim_128:
-    @uses_opaque
-    @always_inline
-    @staticmethod
-    fn execute[
-        type: DType,
-        target: StringLiteral,
-    ](
-        blocks: ManagedTensorSlice[type, 6],
-        cache_lengths: ManagedTensorSlice[DType.uint32, 1],
-        lookup_table: ManagedTensorSlice[DType.uint32, 2],
-        max_lengths: ManagedTensorSlice[DType.uint32, 2],
-    ) -> PagedKVCacheCollection[type, kv_params_h32_d128_bshd]:
-        return generic_get_paged_cache[kv_params=kv_params_h32_d128_bshd](
+    ) -> PagedKVCacheCollection[type, KVCacheStaticParams(num_heads, head_dim)]:
+        return generic_get_paged_cache[
+            kv_params = KVCacheStaticParams(num_heads, head_dim)
+        ](
             managed_tensor_slice_to_ndbuffer(blocks),
             managed_tensor_slice_to_ndbuffer(cache_lengths),
             managed_tensor_slice_to_ndbuffer(lookup_table),

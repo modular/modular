@@ -100,13 +100,6 @@ from nn.kv_cache import (
     kv_collection_ctor_continuous_batching_nhead_4_hdim_128,
     kv_collection_ctor_continuous_batching_nhead_16_hdim_128,
     kv_collection_ctor_continuous_batching_nhead_32_hdim_128,
-    kv_collection_ctor_paged_nhead_1_hdim_16,
-    kv_collection_ctor_paged_nhead_6_hdim_48,
-    kv_collection_ctor_paged_nhead_8_hdim_32,
-    kv_collection_ctor_paged_nhead_8_hdim_64,
-    kv_collection_ctor_paged_nhead_8_hdim_128,
-    kv_collection_ctor_paged_nhead_8_hdim_512,
-    kv_collection_ctor_paged_nhead_32_hdim_128,
     mha_padded_continuous_batching_tensor_mask_no_pos_nhead_1_hdim_16,
     mha_padded_continuous_batching_causal_mask_no_pos_nhead_1_hdim_16,
     mha_padded_continuous_batching_causal_mask_alibi_pos_nhead_1_hdim_16,
@@ -382,13 +375,6 @@ fn MOGGExport():
     alias _kv_collection_ctor_continuous_batching_nhead_32_hdim_128 = kv_collection_ctor_continuous_batching_nhead_32_hdim_128
     alias _kv_collection_ctor_continuous_batching_nhead_1_hdim_16 = kv_collection_ctor_continuous_batching_nhead_1_hdim_16
     alias _kv_collection_ctor_continuous_batching_nhead_3_hdim_64 = kv_collection_ctor_continuous_batching_nhead_3_hdim_64
-    alias _kv_collection_ctor_paged_nhead_1_hdim_16 = kv_collection_ctor_paged_nhead_1_hdim_16
-    alias _kv_collection_ctor_paged_nhead_6_hdim_48 = kv_collection_ctor_paged_nhead_6_hdim_48
-    alias _kv_collection_ctor_paged_nhead_8_hdim_32 = kv_collection_ctor_paged_nhead_8_hdim_32
-    alias _kv_collection_ctor_paged_nhead_8_hdim_64 = kv_collection_ctor_paged_nhead_8_hdim_64
-    alias _kv_collection_ctor_paged_nhead_8_hdim_128 = kv_collection_ctor_paged_nhead_8_hdim_128
-    alias _kv_collection_ctor_paged_nhead_8_hdim_512 = kv_collection_ctor_paged_nhead_8_hdim_512
-    alias _kv_collection_ctor_paged_nhead_32_hdim_128 = kv_collection_ctor_paged_nhead_32_hdim_128
     alias _fused_qkv_matmul_ragged_continuous_batching_nhead_2_hdim_128 = fused_qkv_matmul_ragged_continuous_batching_nhead_2_hdim_128
     alias _fused_qkv_matmul_ragged_continuous_batching_nhead_4_hdim_128 = fused_qkv_matmul_ragged_continuous_batching_nhead_4_hdim_128
     alias _fused_qkv_matmul_ragged_continuous_batching_nhead_8_hdim_80 = fused_qkv_matmul_ragged_continuous_batching_nhead_8_hdim_80
