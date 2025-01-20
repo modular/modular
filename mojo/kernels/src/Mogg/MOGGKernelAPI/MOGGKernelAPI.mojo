@@ -10245,10 +10245,10 @@ struct Struct_rms_norm_kv_cache_ragged_continuous_batching_nhead_8_hdim_128:
 
 
 fn print_kv_cache_cont_batch_generic_kernel_api[
-    target: StringLiteral
+    type: DType, //, target: StringLiteral
 ](
     valid_lengths: ManagedTensorSlice[DType.uint32, 1],
-    kv_collection: ContinuousBatchingKVCacheCollection[DType.float32, _],
+    kv_collection: ContinuousBatchingKVCacheCollection[type, _],
     layer_idx: Scalar[DType.uint32],
     is_print_compact: ManagedTensorSlice[DType.bool, 1],
     context: MojoCallContextPtr,
@@ -10330,19 +10330,19 @@ struct Struct_print_kv_cache_paged_nhead_8_hdim_128_bf16:
 
 
 @compiler.register(
-    "mo.print_kv_cache.continuous_batching.nhead_8.hdim_128.fp32",
+    "mo.print_kv_cache.continuous_batching.nhead_8.hdim_128",
     num_dps_outputs=0,
 )
-struct Struct_print_kv_cache_continuous_batching_nhead_8_hdim_128_fp32:
+struct Struct_print_kv_cache_continuous_batching_nhead_8_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
-        target: StringLiteral
+        type: DType, target: StringLiteral
     ](
         valid_lengths: ManagedTensorSlice[DType.uint32, 1],
         kv_collection: ContinuousBatchingKVCacheCollection[
-            DType.float32, kv_params_h8_d128_bshd
+            type, kv_params_h8_d128_bshd
         ],
         layer_idx: Scalar[DType.uint32],
         is_print_compact: ManagedTensorSlice[DType.bool, 1],
@@ -10358,19 +10358,19 @@ struct Struct_print_kv_cache_continuous_batching_nhead_8_hdim_128_fp32:
 
 
 @compiler.register(
-    "mo.print_kv_cache.continuous_batching.nhead_2.hdim_128.fp32",
+    "mo.print_kv_cache.continuous_batching.nhead_2.hdim_128",
     num_dps_outputs=0,
 )
-struct Struct_print_kv_cache_continuous_batching_nhead_2_hdim_128_fp32:
+struct Struct_print_kv_cache_continuous_batching_nhead_2_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
-        target: StringLiteral
+        type: DType, target: StringLiteral
     ](
         valid_lengths: ManagedTensorSlice[DType.uint32, 1],
         kv_collection: ContinuousBatchingKVCacheCollection[
-            DType.float32, kv_params_h2_d128_bshd
+            type, kv_params_h2_d128_bshd
         ],
         layer_idx: Scalar[DType.uint32],
         is_print_compact: ManagedTensorSlice[DType.bool, 1],
@@ -10386,19 +10386,19 @@ struct Struct_print_kv_cache_continuous_batching_nhead_2_hdim_128_fp32:
 
 
 @compiler.register(
-    "mo.print_kv_cache.continuous_batching.nhead_16.hdim_128.fp32",
+    "mo.print_kv_cache.continuous_batching.nhead_16.hdim_128",
     num_dps_outputs=0,
 )
-struct Struct_print_kv_cache_continuous_batching_nhead_16_hdim_128_fp32:
+struct Struct_print_kv_cache_continuous_batching_nhead_16_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
-        target: StringLiteral
+        type: DType, target: StringLiteral
     ](
         valid_lengths: ManagedTensorSlice[DType.uint32, 1],
         kv_collection: ContinuousBatchingKVCacheCollection[
-            DType.float32, kv_params_h16_d128_bshd
+            type, kv_params_h16_d128_bshd
         ],
         layer_idx: Scalar[DType.uint32],
         is_print_compact: ManagedTensorSlice[DType.bool, 1],
@@ -10414,19 +10414,19 @@ struct Struct_print_kv_cache_continuous_batching_nhead_16_hdim_128_fp32:
 
 
 @compiler.register(
-    "mo.print_kv_cache.continuous_batching.nhead_32.hdim_128.fp32",
+    "mo.print_kv_cache.continuous_batching.nhead_32.hdim_128",
     num_dps_outputs=0,
 )
-struct Struct_print_kv_cache_continuous_batching_nhead_32_hdim_128_fp32:
+struct Struct_print_kv_cache_continuous_batching_nhead_32_hdim_128:
     @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
-        target: StringLiteral
+        type: DType, target: StringLiteral
     ](
         valid_lengths: ManagedTensorSlice[DType.uint32, 1],
         kv_collection: ContinuousBatchingKVCacheCollection[
-            DType.float32, kv_params_h32_d128_bshd
+            type, kv_params_h32_d128_bshd
         ],
         layer_idx: Scalar[DType.uint32],
         is_print_compact: ManagedTensorSlice[DType.bool, 1],
