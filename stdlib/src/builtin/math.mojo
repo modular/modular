@@ -175,7 +175,7 @@ fn max(x: UInt, y: UInt, /) -> UInt:
 
 
 @always_inline("nodebug")
-fn max[dtype: DType, //](x: SIMD[dtype, _], y: __type_of(x), /) -> __type_of(x):
+fn max(x: SIMD, y: __type_of(x), /) -> __type_of(x):
     """Performs elementwise maximum of x and y.
 
     An element of the result SIMD vector will be the maximum of the
@@ -183,9 +183,6 @@ fn max[dtype: DType, //](x: SIMD[dtype, _], y: __type_of(x), /) -> __type_of(x):
 
     Constraints:
         The type of the inputs must be numeric or boolean.
-
-    Parameters:
-        dtype: The data type of the SIMD vector.
 
     Args:
         x: First SIMD vector.
@@ -265,7 +262,7 @@ fn min(x: UInt, y: UInt, /) -> UInt:
 
 
 @always_inline("nodebug")
-fn min[dtype: DType, //](x: SIMD[dtype, _], y: __type_of(x), /) -> __type_of(x):
+fn min(x: SIMD, y: __type_of(x), /) -> __type_of(x):
     """Gets the elementwise minimum of x and y.
 
     An element of the result SIMD vector will be the minimum of the
@@ -273,9 +270,6 @@ fn min[dtype: DType, //](x: SIMD[dtype, _], y: __type_of(x), /) -> __type_of(x):
 
     Constraints:
         The type of the inputs must be numeric or boolean.
-
-    Parameters:
-        dtype: The data type of the SIMD vector.
 
     Args:
         x: First SIMD vector.
