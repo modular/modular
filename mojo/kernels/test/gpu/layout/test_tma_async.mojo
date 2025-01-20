@@ -30,11 +30,12 @@ fn test_tma_async_load[
     alias expected_bytes = tileM * tileN * sizeof[dtype]()
 
     mbar = TMABarrier()
-    # There is an undocumented requriement for alignment for shared memory address.
-    # In practice, we find 128 is the minimum, see KERN-1365.
     tile = LayoutTensor[
-        dtype, layout, address_space = _GPUAddressSpace.SHARED
-    ].stack_allocation[alignment=128]()
+        dtype,
+        layout,
+        address_space = _GPUAddressSpace.SHARED,
+        alignment=128,
+    ].stack_allocation()
     mbar = TMABarrier()
     mbar.init()
     mbar.expect_bytes(expected_bytes)
@@ -96,8 +97,8 @@ fn test_tma_async_load_multiple_threads[
     alias expected_bytes = tileM * tileN * sizeof[dtype]()
 
     tile = LayoutTensor[
-        dtype, layout, address_space = _GPUAddressSpace.SHARED
-    ].stack_allocation[alignment=128]()
+        dtype, layout, address_space = _GPUAddressSpace.SHARED, alignment=128
+    ].stack_allocation()
     mbar = TMABarrier()
     if thread_idx.x == 0:
         mbar.init()
