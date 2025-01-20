@@ -52,6 +52,7 @@
 #include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
+#include "llvm/Support/SHA256.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/xxhash.h"
@@ -61,7 +62,6 @@
 #include "llvm/Transforms/Utils/SplitModule.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 #include <llvm/Support/raw_ostream.h>
-
 using namespace M;
 using namespace KGEN;
 using namespace Cache;
@@ -290,18 +290,39 @@ runLlcPasses(llvm::Module &module, CompilationOptions &options,
   return mlir::success();
 }
 
-static LogicalResult writeTempModule(const std::string &phase,
-                                     const std::string &saveTempsPrefix,
-                                     llvm::Module &module) {
+// Write the given `buf` to a file with the given prefix and postfix.
+// Appends a hash based on `buf` contents to emitted file name.
+static LogicalResult
+writeBytesToTempWithHash(const std::string &saveTempsPrefix,
+                         const std::string &postfix, StringRef buf) {
   if (saveTempsPrefix.empty())
     return success();
-  std::string outPath = saveTempsPrefix + "." + phase + ".ll";
+
+  // Include unique hash as part of name.
+  assert(sizeof(uint8_t) == sizeof(char) && "Assume char is 8 bits");
+  auto hash =
+      llvm::xxh3_128bits(ArrayRef((const uint8_t *)buf.data(), buf.size()));
+  std::string outPath =
+      saveTempsPrefix + "." + llvm::utohexstr(hash.high64, /*LowerCase=*/true) +
+      llvm::utohexstr(hash.low64, /*LowerCase=*/true) + postfix;
+
   auto outFile = mlir::openOutputFile(outPath);
   if (!outFile)
     return failure();
-  outFile->os() << module;
+  outFile->os() << buf;
   outFile->keep();
   return success();
+}
+
+static LogicalResult writeTempModule(const std::string &saveTempsPrefix,
+                                     llvm::Module &module) {
+  if (saveTempsPrefix.empty())
+    return success();
+
+  std::string str;
+  llvm::raw_string_ostream ss(str);
+  ss << module;
+  return writeBytesToTempWithHash(saveTempsPrefix, ".ll", str);
 }
 
 /// Compile optimized llvm::Module module to object through the llc pipeline
@@ -395,7 +416,7 @@ static AsyncRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
             saveTempsPrefix += "__" + std::to_string(*splitIdx);
         }
 
-        if (failed(writeTempModule("pre-llc", saveTempsPrefix,
+        if (failed(writeTempModule(saveTempsPrefix + ".pre-llc",
                                    *moduleAndContext))) {
           return std::move(output).setToError(
               AsyncRT::getMLIRDiagnostic("failed save pre-llc llvm IR", loc));
@@ -416,7 +437,7 @@ static AsyncRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
         }
 
         if (!options.saveTempsPrefix.empty()) {
-          if (failed(writeTempModule("post-llc", saveTempsPrefix,
+          if (failed(writeTempModule(saveTempsPrefix + ".post-llc",
                                      *moduleAndContext))) {
             return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
                 "failed save post-llc llvm IR", loc));
@@ -466,13 +487,13 @@ static LogicalResult optimizeLLVMModule(llvm::Module &module,
   if (moduleIdx && !options.saveTempsPrefix.empty())
     saveTempsPrefix += "." + std::to_string(moduleIdx.value());
 
-  if (failed(writeTempModule("pre-opt", saveTempsPrefix, module)))
+  if (failed(writeTempModule(saveTempsPrefix + ".pre-opt", module)))
     return failure();
 
   if (failed(runLLVMOptPasses(module, targetMachine, options, runtime)))
     return failure();
 
-  if (failed(writeTempModule("post-opt", saveTempsPrefix, module)))
+  if (failed(writeTempModule(saveTempsPrefix + ".post-opt", module)))
     return failure();
 
   return success();
@@ -672,22 +693,6 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   return llvmModule;
 }
 
-static LogicalResult writeBufToTemp(const std::string &saveTempsPrefix,
-                                    const std::string &fileType,
-                                    const Buffer &buf) {
-  if (saveTempsPrefix.empty())
-    return success();
-
-  std::string outPath = saveTempsPrefix + fileType;
-
-  auto outFile = mlir::openOutputFile(outPath);
-  if (!outFile)
-    return failure();
-  outFile->os() << buf.getBuffer();
-  outFile->keep();
-  return success();
-}
-
 SmallVector<AsyncRT::AnyAsyncValueRef>
 ObjectCompiler::emitArchiveParallelCompilation(
     LLVMModuleAndContext llvmModule, Location opLoc,
@@ -713,7 +718,7 @@ ObjectCompiler::emitArchiveParallelCompilation(
         forwardModule(std::move(llvmModule)), opLoc, targetMachine, parLLC,
         std::nullopt, /*numFunctionsBase=*/0));
   } else {
-    (void)writeTempModule("pre-split", options.saveTempsPrefix, *llvmModule);
+    (void)writeTempModule(options.saveTempsPrefix + ".pre-split", *llvmModule);
 
     auto handleSplit =
         [&](llvm::unique_function<LLVMModuleAndContext()> produceModule,
@@ -818,7 +823,10 @@ ErrorOrSuccess ObjectCompiler::emitArchiveSaveTemps(ModuleOp module,
         }
 
         WriteableBufferRef linkedObj = *mcLinkResult;
-        if (failed(writeBufToTemp(options.saveTempsPrefix, ".s", *linkedObj))) {
+        StringRef toEmit(linkedObj->getBufferStart(),
+                         linkedObj->getBufferSize());
+        if (failed(writeBytesToTempWithHash(options.saveTempsPrefix, ".s",
+                                            toEmit))) {
           return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
               "failed to save asm to saveTempsPrefix", module->getLoc()));
         }
@@ -958,8 +966,10 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
               if (isNVPTXBackend(options))
                 postfix = ".ptx";
 
-              if (failed(writeBufToTemp(options.saveTempsPrefix, postfix,
-                                        *linkedObj))) {
+              StringRef toEmit(linkedObj->getBufferStart(),
+                               linkedObj->getBufferSize());
+              if (failed(writeBytesToTempWithHash(options.saveTempsPrefix,
+                                                  postfix, toEmit))) {
                 return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
                     "failed to save asm to saveTempsPrefix", moduleLoc));
               }
@@ -1257,10 +1267,10 @@ static ErrorOr<BufferRef> createSharedObject(BufferRef buf,
     return Error("failed to open shared object binary");
 
   // Save to temp file if needed.
-  if (failed(writeBufToTemp(options.saveTempsPrefix,
-                            std::string(".") + sharedObjPath.stem().c_str() +
-                                ".so",
-                            **sharedObjBufOr)))
+  if (failed(writeBytesToTempWithHash(options.saveTempsPrefix,
+                                      std::string(".") +
+                                          sharedObjPath.stem().c_str() + ".so",
+                                      (*sharedObjBufOr)->getBuffer())))
     return Error("failed to write shared object binary to saveTemps");
 
   return sharedObjBufOr;
@@ -1602,7 +1612,7 @@ ObjectCompiler::emitGPUKernels(
   SmallVector<AsyncRT::AnyAsyncValueRef> cachedResults;
   SmallVector<AsyncRT::AnyAsyncValueRef> cachedIDResults;
 
-  (void)writeTempModule("pre-split", options.saveTempsPrefix, *llvmModule);
+  (void)writeTempModule(options.saveTempsPrefix + ".pre-split", *llvmModule);
   options.saveTempsPrefix = "";
 
   auto handleSplit =

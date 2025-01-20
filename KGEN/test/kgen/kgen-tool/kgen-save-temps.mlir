@@ -1,7 +1,7 @@
 // RUN: kgen %s -emit -o %t_my_kernel.o --save-temps --temps-dir=%t_temps
 // COM: Check the save tmp files.
-// RUN: cat %t_temps.s| FileCheck %s -check-prefix=ASM
-// RUN: cat %t_temps.pre-split.ll| FileCheck %s -check-prefix=PRESPLIT
+// RUN: find $(dirname %t_temps) -type f -name "*.s" -print -quit | xargs cat | FileCheck %s -check-prefix=ASM
+// RUN: find $(dirname %t_temps) -type f -name "*.pre-split.*.ll" -print -quit | xargs cat | FileCheck %s -check-prefix=PRESPLIT
 
 kgen.func export C @my_exported_kernel(%arg0: f32) -> f32 {
   kgen.return %arg0 : f32
