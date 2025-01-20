@@ -87,7 +87,7 @@ M::AsyncRT::getThreadAffinityCpuIds(bool withAffinity, size_t numThreads,
   std::vector<size_t> cpuIDs(numThreads, kNoAffinity);
   if (withAffinity && haveThreadAffinity()) {
     ErrorOr<CPUSystemInfo> errOrSystemInfo = CPUSystemInfo::get();
-    if (const char *err = errOrSystemInfo.getError()) {
+    if ([[maybe_unused]] const char *err = errOrSystemInfo.getError()) {
       // We will be using the defaults, already set above.
       LLVM_DEBUG(
           llvm::dbgs()
@@ -113,7 +113,7 @@ void M::AsyncRT::runWithThreadAffinity(size_t cpuID,
     workFn();
   } else {
     ErrorOrSuccess errOr = M::runWithThreadAffinity(cpuID, workFn);
-    if (const char *err = errOr.getError()) {
+    if ([[maybe_unused]] const char *err = errOr.getError()) {
       LLVM_DEBUG(llvm::dbgs()
                  << "unable to run with thread affinity: " << err << "\n");
       workFn();
@@ -124,7 +124,7 @@ void M::AsyncRT::runWithThreadAffinity(size_t cpuID,
 void M::AsyncRT::setThreadAffinity(size_t cpuID) {
   if (cpuID != kNoAffinity) {
     ErrorOrSuccess errOr = M::setThreadAffinity(cpuID);
-    if (const char *err = errOr.getError()) {
+    if ([[maybe_unused]] const char *err = errOr.getError()) {
       LLVM_DEBUG(llvm::dbgs()
                  << "unable to set thread affinity: " << err << "\n");
     }
