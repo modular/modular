@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: H100-GPU
-# RUN: %mojo-no-debug-no-assert %s | FileCheck %s
+# RUN: %mojo-no-debug-no-assert %s
 
 from builtin.io import _printf
 from gpu.host import DeviceContext
@@ -15,170 +15,116 @@ from layout import Layout, LayoutTensor
 from layout.tma_async import TMATensorTile, create_tma_tile, TMABarrier
 from layout._utils import ManagedLayoutTensor
 from layout.fillers import arange
+from layout.layout_tensor import copy_sram_to_dram
 from memory.pointer import _GPUAddressSpace
 
+from math import align_up, ceildiv
 from sys import sizeof
+from testing import assert_equal
 from utils.static_tuple import StaticTuple
 
 
-@__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 1](0))
-fn test_tma_async_load[
-    dtype: DType, layout: Layout
-](tma_tile: TMATensorTile[dtype, layout]):
-    alias tileM = 4
-    alias tileN = 4
-    alias expected_bytes = tileM * tileN * sizeof[dtype]()
+@__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 1](1))
+fn test_tma_load_kernel[
+    dtype: DType,
+    layout: Layout,
+    tile_layout: Layout,
+    thread_layout: Layout,
+](
+    dst: LayoutTensor[dtype, layout],
+    tma_tile: TMATensorTile[dtype, tile_layout],
+):
+    alias tileM = tile_layout.shape[0].value()
+    alias tileN = tile_layout.shape[1].value()
+    alias expected_bytes = tile_layout.size() * sizeof[dtype]()
 
-    mbar = TMABarrier()
     tile = LayoutTensor[
         dtype,
-        layout,
+        tile_layout,
         address_space = _GPUAddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
+
     mbar = TMABarrier()
-    mbar.init()
-    mbar.expect_bytes(expected_bytes)
-    tma_tile.async_copy(tile, mbar, (block_idx.x * 4, block_idx.y * 4))
-    mbar.wait()
 
-    _printf[
-        "(%lu, %lu) : %g %g %g %g; %g %g %g %g; %g %g %g %g; %g %g %g %g\n"
-    ](
-        block_idx.x,
-        block_idx.y,
-        tile.ptr[0].cast[DType.float64](),
-        tile.ptr[1].cast[DType.float64](),
-        tile.ptr[2].cast[DType.float64](),
-        tile.ptr[3].cast[DType.float64](),
-        tile.ptr[4].cast[DType.float64](),
-        tile.ptr[5].cast[DType.float64](),
-        tile.ptr[6].cast[DType.float64](),
-        tile.ptr[7].cast[DType.float64](),
-        tile.ptr[8].cast[DType.float64](),
-        tile.ptr[9].cast[DType.float64](),
-        tile.ptr[10].cast[DType.float64](),
-        tile.ptr[11].cast[DType.float64](),
-        tile.ptr[12].cast[DType.float64](),
-        tile.ptr[13].cast[DType.float64](),
-        tile.ptr[14].cast[DType.float64](),
-        tile.ptr[15].cast[DType.float64](),
-    )
-
-
-def test_tma_async_copy(ctx: DeviceContext):
-    print("== test_tma_async_copy")
-    var tensor = ManagedLayoutTensor[DType.float32, Layout.row_major(8, 8)](ctx)
-    arange(tensor.tensor())
-    var tma_tensor = create_tma_tile[4, 4](ctx, tensor.device_tensor())
-    ctx.synchronize()
-
-    var kernel_copy_async = ctx.compile_function[
-        test_tma_async_load[
-            __type_of(tma_tensor).dtype,
-            __type_of(tma_tensor).layout,
-        ],
-        _target = _get_gpu_target["sm_90"](),
-    ]()
-    ctx.enqueue_function(
-        kernel_copy_async, tma_tensor, grid_dim=(2, 2), block_dim=(1)
-    )
-    ctx.synchronize()
-    _ = kernel_copy_async^
-    _ = tensor^
-
-
-@__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 1](0))
-fn test_tma_async_load_multiple_threads[
-    dtype: DType, layout: Layout
-](tma_tile: TMATensorTile[dtype, layout]):
-    alias tileM = 4
-    alias tileN = 4
-    alias expected_bytes = tileM * tileN * sizeof[dtype]()
-
-    tile = LayoutTensor[
-        dtype, layout, address_space = _GPUAddressSpace.SHARED, alignment=128
-    ].stack_allocation()
-    mbar = TMABarrier()
     if thread_idx.x == 0:
         mbar.init()
         mbar.expect_bytes(expected_bytes)
         tma_tile.async_copy(
             tile, mbar, (block_idx.x * tileN, block_idx.y * tileM)
         )
+    # Ensure all threads sees initialized mbarrier
     barrier()
     mbar.wait()
 
-    _printf[
-        "(%lu, %lu) (%lu): %g %g %g %g; %g %g %g %g; %g %g %g %g; %g %g %g %g\n"
-    ](
-        block_idx.x,
-        block_idx.y,
-        thread_idx.x,
-        tile.ptr[0].cast[DType.float64](),
-        tile.ptr[1].cast[DType.float64](),
-        tile.ptr[2].cast[DType.float64](),
-        tile.ptr[3].cast[DType.float64](),
-        tile.ptr[4].cast[DType.float64](),
-        tile.ptr[5].cast[DType.float64](),
-        tile.ptr[6].cast[DType.float64](),
-        tile.ptr[7].cast[DType.float64](),
-        tile.ptr[8].cast[DType.float64](),
-        tile.ptr[9].cast[DType.float64](),
-        tile.ptr[10].cast[DType.float64](),
-        tile.ptr[11].cast[DType.float64](),
-        tile.ptr[12].cast[DType.float64](),
-        tile.ptr[13].cast[DType.float64](),
-        tile.ptr[14].cast[DType.float64](),
-        tile.ptr[15].cast[DType.float64](),
-    )
+    dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
+    copy_sram_to_dram[thread_layout](dst_tile, tile)
 
 
-def test_tma_async_copy_multiple_threads(ctx: DeviceContext):
-    print("== test_tma_async_copy_multiple_threads")
-    var tensor = ManagedLayoutTensor[DType.float32, Layout.row_major(8, 8)](ctx)
-    arange(tensor.tensor(), 1)
-    var tma_tensor = create_tma_tile[4, 4](ctx, tensor.device_tensor())
+def test_tma_load_row_major[
+    src_layout: Layout, tile_layout: Layout
+](ctx: DeviceContext):
+    alias M = src_layout.shape[0].value()
+    alias N = src_layout.shape[1].value()
+    alias tileM = tile_layout.shape[0].value()
+    alias tileN = tile_layout.shape[1].value()
+    alias M_roundup = align_up(M, tileM)
+    alias N_roundup = align_up(N, tileN)
+
+    var src = ManagedLayoutTensor[DType.float32, src_layout](ctx)
+    var dst = ManagedLayoutTensor[
+        DType.float32, Layout.row_major(M_roundup, N_roundup)
+    ](ctx)
+
+    arange(src.tensor(), 1)
+    var tma_tensor = create_tma_tile[tileM, tileN](ctx, src.device_tensor())
     ctx.synchronize()
 
-    var kernel_copy_async = ctx.compile_function[
-        test_tma_async_load_multiple_threads[
+    var kernel = ctx.compile_function[
+        test_tma_load_kernel[
             __type_of(tma_tensor).dtype,
-            __type_of(tma_tensor).layout,
+            Layout.row_major(M_roundup, N_roundup),  # dst layout
+            __type_of(tma_tensor).layout,  # smem layout
+            __type_of(tma_tensor).layout,  # thread layout
         ],
         _target = _get_gpu_target["sm_90"](),
     ]()
     ctx.enqueue_function(
-        kernel_copy_async, tma_tensor, grid_dim=(2, 2), block_dim=(4)
+        kernel,
+        dst.device_tensor(),
+        tma_tensor,
+        grid_dim=(N_roundup // tileN, M_roundup // tileM),
+        block_dim=(tileM * tileN),
     )
+
+    src_host = dst.tensor()
+    dst_host = dst.tensor()
+
+    # Check M x N keep the same value and others in M_roundup x N_roundup
+    # are set to zeros.
+    for m in range(M_roundup):
+        for n in range(N_roundup):
+            if m < M and n < N:
+                assert_equal(
+                    src_host[m, n].cast[DType.float32](),
+                    dst_host[m, n].cast[DType.float32](),
+                )
+            else:
+                assert_equal(dst_host[m, n].cast[DType.float32](), 0.0)
+
     ctx.synchronize()
-    _ = kernel_copy_async^
-    _ = tensor^
+    _ = kernel^
+    _ = src^
+    _ = dst^
 
 
 def main():
     with DeviceContext() as ctx:
-        # CHECK-LABLE: test_tma_async_copy
-        # CHECK-DAG: (0, 0) : 0 1 2 3; 8 9 10 11; 16 17 18 19; 24 25 26 27
-        # CHECK-DAG: (1, 0) : 4 5 6 7; 12 13 14 15; 20 21 22 23; 28 29 30 31
-        # CHECK-DAG: (0, 1) : 32 33 34 35; 40 41 42 43; 48 49 50 51; 56 57 58 59
-        # CHECK-DAG: (1, 1) : 36 37 38 39; 44 45 46 47; 52 53 54 55; 60 61 62 63
-        test_tma_async_copy(ctx)
-        # CHECK-LABEL: == test_tma_async_copy_multiple_threads
-        # CHECK-DAG: (0, 1) (0): 33 34 35 36; 41 42 43 44; 49 50 51 52; 57 58 59 60
-        # CHECK-DAG: (0, 1) (1): 33 34 35 36; 41 42 43 44; 49 50 51 52; 57 58 59 60
-        # CHECK-DAG: (0, 1) (2): 33 34 35 36; 41 42 43 44; 49 50 51 52; 57 58 59 60
-        # CHECK-DAG: (0, 1) (3): 33 34 35 36; 41 42 43 44; 49 50 51 52; 57 58 59 60
-        # CHECK-DAG: (1, 1) (0): 37 38 39 40; 45 46 47 48; 53 54 55 56; 61 62 63 64
-        # CHECK-DAG: (1, 1) (1): 37 38 39 40; 45 46 47 48; 53 54 55 56; 61 62 63 64
-        # CHECK-DAG: (1, 1) (2): 37 38 39 40; 45 46 47 48; 53 54 55 56; 61 62 63 64
-        # CHECK-DAG: (1, 1) (3): 37 38 39 40; 45 46 47 48; 53 54 55 56; 61 62 63 64
-        # CHECK-DAG: (0, 0) (0): 1 2 3 4; 9 10 11 12; 17 18 19 20; 25 26 27 28
-        # CHECK-DAG: (0, 0) (1): 1 2 3 4; 9 10 11 12; 17 18 19 20; 25 26 27 28
-        # CHECK-DAG: (0, 0) (2): 1 2 3 4; 9 10 11 12; 17 18 19 20; 25 26 27 28
-        # CHECK-DAG: (0, 0) (3): 1 2 3 4; 9 10 11 12; 17 18 19 20; 25 26 27 28
-        # CHECK-DAG: (1, 0) (0): 5 6 7 8; 13 14 15 16; 21 22 23 24; 29 30 31 32
-        # CHECK-DAG: (1, 0) (1): 5 6 7 8; 13 14 15 16; 21 22 23 24; 29 30 31 32
-        # CHECK-DAG: (1, 0) (2): 5 6 7 8; 13 14 15 16; 21 22 23 24; 29 30 31 32
-        # CHECK-DAG: (1, 0) (3): 5 6 7 8; 13 14 15 16; 21 22 23 24; 29 30 31 32
-        test_tma_async_copy_multiple_threads(ctx)
+        # fmt: off
+        print("test_tma_load")
+        test_tma_load_row_major[Layout.row_major(8, 8), Layout.row_major(4, 4)](ctx)
+        test_tma_load_row_major[Layout.row_major(9, 24), Layout.row_major(3, 8)](ctx)
+        print("test_tma_load_oob_file")
+        test_tma_load_row_major[Layout.row_major(7, 8), Layout.row_major(4, 4)](ctx)
+        test_tma_load_row_major[Layout.row_major(10, 12), Layout.row_major(4, 8)](ctx)
+        # fmt: on
