@@ -315,14 +315,16 @@ writeBytesToTempWithHash(const std::string &saveTempsPrefix,
 }
 
 static LogicalResult writeTempModule(const std::string &saveTempsPrefix,
+                                     const std::string &phase,
                                      llvm::Module &module) {
   if (saveTempsPrefix.empty())
     return success();
 
+  const std::string finalSavePrefix = saveTempsPrefix + phase;
   std::string str;
   llvm::raw_string_ostream ss(str);
   ss << module;
-  return writeBytesToTempWithHash(saveTempsPrefix, ".ll", str);
+  return writeBytesToTempWithHash(finalSavePrefix, ".ll", str);
 }
 
 /// Compile optimized llvm::Module module to object through the llc pipeline
@@ -416,7 +418,7 @@ static AsyncRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
             saveTempsPrefix += "__" + std::to_string(*splitIdx);
         }
 
-        if (failed(writeTempModule(saveTempsPrefix + ".pre-llc",
+        if (failed(writeTempModule(saveTempsPrefix, ".pre-llc",
                                    *moduleAndContext))) {
           return std::move(output).setToError(
               AsyncRT::getMLIRDiagnostic("failed save pre-llc llvm IR", loc));
@@ -437,7 +439,7 @@ static AsyncRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
         }
 
         if (!options.saveTempsPrefix.empty()) {
-          if (failed(writeTempModule(saveTempsPrefix + ".post-llc",
+          if (failed(writeTempModule(saveTempsPrefix, ".post-llc",
                                      *moduleAndContext))) {
             return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
                 "failed save post-llc llvm IR", loc));
@@ -487,13 +489,13 @@ static LogicalResult optimizeLLVMModule(llvm::Module &module,
   if (moduleIdx && !options.saveTempsPrefix.empty())
     saveTempsPrefix += "." + std::to_string(moduleIdx.value());
 
-  if (failed(writeTempModule(saveTempsPrefix + ".pre-opt", module)))
+  if (failed(writeTempModule(saveTempsPrefix, ".pre-opt", module)))
     return failure();
 
   if (failed(runLLVMOptPasses(module, targetMachine, options, runtime)))
     return failure();
 
-  if (failed(writeTempModule(saveTempsPrefix + ".post-opt", module)))
+  if (failed(writeTempModule(saveTempsPrefix, ".post-opt", module)))
     return failure();
 
   return success();
@@ -718,7 +720,7 @@ ObjectCompiler::emitArchiveParallelCompilation(
         forwardModule(std::move(llvmModule)), opLoc, targetMachine, parLLC,
         std::nullopt, /*numFunctionsBase=*/0));
   } else {
-    (void)writeTempModule(options.saveTempsPrefix + ".pre-split", *llvmModule);
+    (void)writeTempModule(options.saveTempsPrefix, ".pre-split", *llvmModule);
 
     auto handleSplit =
         [&](llvm::unique_function<LLVMModuleAndContext()> produceModule,
@@ -1612,7 +1614,7 @@ ObjectCompiler::emitGPUKernels(
   SmallVector<AsyncRT::AnyAsyncValueRef> cachedResults;
   SmallVector<AsyncRT::AnyAsyncValueRef> cachedIDResults;
 
-  (void)writeTempModule(options.saveTempsPrefix + ".pre-split", *llvmModule);
+  (void)writeTempModule(options.saveTempsPrefix, ".pre-split", *llvmModule);
   options.saveTempsPrefix = "";
 
   auto handleSplit =
