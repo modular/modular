@@ -1823,30 +1823,7 @@ struct SIMD[type: DType, size: Int](
         if is_nvidia_gpu():
 
             @parameter
-            if size > 1 and type is DType.float32 and target.is_half_float():
-                # For size == 1, the LLVM backend generates the correct `cvt.rn.f16.f32`
-                # instruction. This is why we do not handle it here.
-                alias vector_asm_prefix = "cvt.rn.f16x2.f32" if target is DType.float16 else "cvt.rn.bf16x2.f32"
-                var res = SIMD[target, size]()
-
-                @parameter
-                for i in range(0, size, 2):
-                    var bf16x2_as_uint32 = inlined_assembly[
-                        vector_asm_prefix + " $0, $1, $2;",
-                        UInt32,
-                        constraints="=r,f,f",
-                        has_side_effect=False,
-                    ](
-                        rebind[Float32](self[i + 1]),
-                        rebind[Float32](self[i]),
-                    )
-                    res = res.insert[offset=i](
-                        bitcast[target, 2](bf16x2_as_uint32)
-                    )
-
-                return res
-
-            elif type is DType.bfloat16 and target is DType.float64:
+            if type is DType.bfloat16 and target is DType.float64:
                 # Convert to F64 via a Float32 pathway. This would allow us to
                 # use the optimizations defined above.
                 return self.cast[DType.float32]().cast[target]()
