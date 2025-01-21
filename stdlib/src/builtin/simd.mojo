@@ -43,7 +43,7 @@ from sys import (
     sizeof,
 )
 from sys._assembly import inlined_assembly
-from sys.info import _current_arch, _is_sm_8x, _is_sm_9x
+from sys.info import _current_arch, _is_sm_9x
 
 from bit import pop_count
 from builtin._format_float import _write_float
@@ -1667,7 +1667,6 @@ struct SIMD[type: DType, size: Int](
         Returns:
             The elementwise truncated values of this SIMD vector.
         """
-
         return self._floor_ceil_trunc_impl["llvm.trunc"]()
 
     @always_inline
@@ -2026,36 +2025,6 @@ struct SIMD[type: DType, size: Int](
             `self[i]*multiplier[i] + accumulator[i]`.
         """
         constrained[type.is_numeric(), "the SIMD type must be numeric"]()
-
-        @parameter
-        if (_is_sm_8x() or _is_sm_9x()) and type.is_half_float():
-            alias prefix = "fma.rn.bf16" if type is DType.bfloat16 else "fma.rn.f16"
-
-            @parameter
-            if size == 1:
-                return inlined_assembly[
-                    prefix + " $0, $1, $2, $3;",
-                    Self,
-                    constraints="=h,h,h,h",
-                    has_side_effect=False,
-                ](self, multiplier, accumulator)
-
-            var res = Self()
-
-            @parameter
-            for i in range(0, size, 2):
-                var val = inlined_assembly[
-                    prefix + "x2 $0, $1, $2, $3;",
-                    SIMD[type, 2],
-                    constraints="=r,r,r,r",
-                    has_side_effect=False,
-                ](
-                    self.slice[2, offset=i](),
-                    multiplier.slice[2, offset=i](),
-                    accumulator.slice[2, offset=i](),
-                )
-                res = res.insert[offset=i](val)
-            return res
 
         return __mlir_op.`pop.fma`(
             self.value, multiplier.value, accumulator.value
