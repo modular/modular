@@ -13,7 +13,6 @@ from max.driver import CPU, Accelerator, Tensor, accelerator_api
 from max.dtype import DType
 
 
-@pytest.mark.skipif(accelerator_api() == "hip", reason="KERN-1454")
 def test_from_numpy_accelerator():
     # A user should be able to create an accelerator tensor from a numpy array.
     arr = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
@@ -144,9 +143,12 @@ def test_dlpack_device():
     device_tuple = tensor.__dlpack_device__()
     assert len(device_tuple) == 2
     assert isinstance(device_tuple[0], int)
-    assert (
-        device_tuple[0] == 2
-    )  # 2 is the value of DLDeviceType::kDLAccelerator
+    if accelerator_api() == "hip":
+        # 10 is the value of DLDeviceType::kDLROCM
+        assert device_tuple[0] == 10
+    else:
+        # 2 is the value of DLDeviceType::kDLCUDA
+        assert device_tuple[0] == 2
     assert isinstance(device_tuple[1], int)
     assert device_tuple[1] == 0  # should be the default device
 
