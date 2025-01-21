@@ -410,3 +410,5 @@ what we publish.
 
 - [Issue #3955](https://github.com/modular/mojo/issues/3955) - Unexpected
   copy behaviour with `def` arguments in loops
+
+- [Issue #3960](https://github.com/modular/mojo/issues/3960) - Infinite for loop
