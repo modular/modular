@@ -461,35 +461,6 @@ fn get_int_from_shape[
     return shape[param_index]
 
 
-# Note: this is not a "real" index_tensor op that covers all cases, but rather
-# a stopgap measure for some important models (DLRM, CLIP-ViT, LLaMa2)
-@register_internal_override("index_tensor", 1)
-@always_inline
-fn index_tensor_primitive[
-    type: DType,
-    indices_type: DType,
-    data_rank: Int,
-    indices_rank: Int,
-    output_rank: Int,
-    batch_dims: Int,
-    target: StringLiteral = "cpu",
-](
-    data: NDBuffer[type, data_rank],
-    indices: NDBuffer[indices_type, indices_rank],
-    output: NDBuffer[type, output_rank],
-    ctx: MojoCallContextPtr,
-):
-    index_tensor[
-        type,
-        indices_type,
-        data_rank,
-        indices_rank,
-        output_rank,
-        batch_dims,
-        target=target,
-    ](data, indices, output, ctx)
-
-
 # ===-----------------------------------------------------------------------===#
 # Helpers
 # ===-----------------------------------------------------------------------===#
@@ -7860,4 +7831,45 @@ struct DistributedAllReduceSum:
         outputs[0][0] = inputs[0][0]
         print(
             "Hello! You should not run this kernel: `DistributedAllReduceSum`"
+        )
+
+
+# Note: this is not a "real" index_tensor op that covers all cases, but rather
+# a stopgap measure for some important models (DLRM, CLIP-ViT, LLaMa2)
+@compiler.register("index_tensor")
+struct IndexTensor:
+    @staticmethod
+    fn execute[
+        type: DType,
+        indices_type: DType,
+        data_rank: Int,
+        indices_rank: Int,
+        output_rank: Int,
+        batch_dims: Int,
+        target: StringLiteral = "cpu",
+    ](
+        output: ManagedTensorSlice[type, output_rank],
+        data: ManagedTensorSlice[type, data_rank],
+        indices: ManagedTensorSlice[indices_type, indices_rank],
+        ctx: MojoCallContextPtr,
+    ):
+        index_tensor[
+            type,
+            indices_type,
+            data_rank,
+            indices_rank,
+            output_rank,
+            batch_dims,
+            target=target,
+        ](
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[data.type, data.rank]("data")
+            ](data),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[indices.type, indices.rank]("indices")
+            ](indices),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[output.type, output.rank]("output")
+            ](output),
+            ctx,
         )
