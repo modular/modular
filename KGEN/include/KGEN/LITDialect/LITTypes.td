@@ -346,6 +346,35 @@ def LIT_AnyTraitType : LITType<"AnyTrait", "anytrait",
 }
 
 //===----------------------------------------------------------------------===//
+// MetaType
+//===----------------------------------------------------------------------===//
+
+def LIT_MetaType : LITType<"Meta", "meta",
+    [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
+  let summary = "The singleton metatype of a type.";
+  let description = [{
+    The `!lit.meta` type represents a singleton metatype, which is a metatype
+    that has only one constituent type. It is the “tightest” metatype a type can
+    have.
+
+    Example:
+
+    ```mlir
+    !lit.meta<@Int>
+    ```
+  }];
+
+  let parameters = (ins "Type":$type);
+  let assemblyFormat = "`<` $type `>`";
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Type":$type), [{
+      return get(type.getContext(), type);
+    }]>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // OriginType
 //===----------------------------------------------------------------------===//
 

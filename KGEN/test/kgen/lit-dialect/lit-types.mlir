@@ -183,3 +183,14 @@ kgen.func @new_signature_types() {
   kgen.param.declare type3: type = <!lit.signature<("a": index, "b": i8 = 2) -> none>>
   kgen.return
 }
+
+// CHECK-LABEL: kgen.generator @meta_type
+kgen.generator @meta_type() {
+  // CHECK: kgen.param.declare my_struct: meta<!lit.struct<@MyStruct>> = <@MyStruct>
+  kgen.param.declare my_struct: meta<!lit.struct<@MyStruct>> = <@MyStruct>
+  // CHECK: kgen.param.declare my_struct_params: meta<!lit.struct<@MyStructParams<1, :dtype f32, :type i32>>> = <@MyStructParams<1, :dtype f32, :type i32>>
+  kgen.param.declare my_struct_params: meta<!lit.struct<@MyStructParams<1, :dtype f32, :type i32>>> = <@MyStructParams<1, :dtype f32, :type i32>>
+  // CHECK: kgen.param.declare my_trait: meta<!lit.trait<@MyTrait>> = <@MyTrait>
+  kgen.param.declare my_trait: meta<!lit.trait<@MyTrait>> = <@MyTrait>
+  kgen.return
+}
