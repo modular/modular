@@ -3501,30 +3501,44 @@ fn _f32_to_bfloat16_scalar(
         return _unchecked_zero[DType.bfloat16, 1]()
 
     elif is_amd_gpu():
-        alias nan_val = _nan[DType.float32]()
-        alias round_bias = 0x7FFF
+        alias round_bias = Int32(0x7FFF)
 
-        var tmp = UInt32(0)
-        var res = inlined_assembly[
-            """\0A
-            v_cmp_u_f32 $0, $2, $2 \0A
-            v_bfe_u32 $1, $2, 16, 1 \0A
-            v_add3_u32 $1, $2, $1, $3 \0A
-            v_cndmask_b32 $2, $1, $4, $0 \0A
-            v_lshrrev_b32 $2, 16, $2 \0A
-            """,
-            _RegisterPackType[SIMD[DType.uint32, 2], Int32, Float32],
-            constraints="=s,=v,=v,v,v,1,2",
+        # Compute the mask of unordered values.
+        var unordered_mask = inlined_assembly[
+            "v_cmp_u_f32 $0, $1, $1",
+            SIMD[DType.uint64, 1],
+            constraints="=s,v",
             has_side_effect=False,
-        ](round_bias, nan_val, tmp, val)
+        ](val)
+
+        # Compute "rounded_val = val + lsb + round_bias" to round-to-nearest.
+        var lsb = inlined_assembly[
+            "v_bfe_u32 $0, $1, 16, 1",
+            SIMD[DType.uint32, 1],
+            constraints="=v,v",
+            has_side_effect=False,
+        ](val)
+        var rounded_val = inlined_assembly[
+            "v_add3_u32 $0, $1, $2, $3",
+            SIMD[DType.uint32, 1],
+            constraints="=v,v,v,v",
+            has_side_effect=False,
+        ](val, lsb, round_bias)
+
+        # Select the rounded value or NaN based on the unordered mask.
+        var float_bits = inlined_assembly[
+            "v_cndmask_b32 $0, $1, $2, $3",
+            SIMD[DType.uint32, 1],
+            constraints="=v,v,v,s",
+            has_side_effect=False,
+        ](rounded_val, _nan[DType.float32](), unordered_mask)
+
         return bitcast[DType.bfloat16, 1](
-            UInt16(bitcast[DType.uint32, 1](res[2]))
+            UInt16(float_bits >> _fp32_bf16_mantissa_diff)
         )
 
     if _isnan(val):
-        return -_nan[DType.bfloat16]() if FPUtils[DType.float32].get_sign(
-            val
-        ) else _nan[DType.bfloat16]()
+        return _nan[DType.bfloat16]()
 
     var float_bits = FPUtils[DType.float32].bitcast_to_integer(val)
 
