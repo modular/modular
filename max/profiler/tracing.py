@@ -58,7 +58,7 @@ def traced(
             pass
     """
     if not is_profiling_enabled():
-        return func if func is not None else lambda f: func
+        return func if func is not None else lambda f: f
 
     if func is None:
         return lambda f: traced(f, message=message, color=color)
