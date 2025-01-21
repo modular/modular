@@ -324,6 +324,9 @@ struct CompileConfig:
 
         self._ptr[].free(self.lib)
 
+        # TODO(clattner): workaround MOCO-1558
+        _ = self.borrow_ptr()
+
 
 @value
 @register_passable("trivial")
