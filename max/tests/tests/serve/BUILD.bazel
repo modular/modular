@@ -1,0 +1,27 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+modular_py_test(
+    name = "tests",
+    srcs = glob(
+        ["*.py"],
+    ),
+    env = {
+        "MAX_SERVE_DISABLE_TELEMETRY": "-1",
+    },
+    deps = [
+        "//SDK/lib/API/python/max/serve",
+        "//SDK/lib/API/python/max/serve/grpc_serve",
+        "//SDK/lib/API/python/max/serve/router",
+        "//SDK/lib/API/python/max/serve/scheduler",
+        requirement("async-asgi-testclient"),
+        requirement("fastapi"),
+        requirement("gguf"),
+        requirement("hypothesis"),
+        requirement("pytest-asyncio"),
+        requirement("sentencepiece"),
+        requirement("sse-starlette"),
+        requirement("sseclient-py"),
+        requirement("transformers"),
+        requirement("pytest-grpc"),
+    ],
+)
