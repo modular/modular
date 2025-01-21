@@ -3277,25 +3277,19 @@ void DestructorInsertion::checkUse(Value value, bool isDeref,
     return;
   }
 
-  // We are not tracking this value directly, but it is tied to a origin
+  // We are not tracking this value directly, it could be tied to an origin
   // declared by a value we do track. If this is the case, check these values
   // for destruction.
-  if (isDeref) {
-    SmallVector<ValueRef> originRelatedValues = valueSet.getValueRefsForOrigin(
-        cast<RefType>(value.getType()).getOrigin());
-    for (auto valueRef : originRelatedValues) {
-      ValueInfo &valueInfo = valueSet.getValueInfos()[valueRef.valueId];
-
-      // We expand the origin use to be an access to the full value being
-      // accessed, even if it we have field sensitivity.  The reason for this
-      // is that we don't have the right Value to pass in to
-      // scheduleNeededDtors.
-      // TODO: We could extend this to re-derive the field values from the base
-      // like `destroyValuesAtEntryIfNeeded` and unify this and the "direct"
-      // path better.
-      valueRef = valueInfo.getFullValueRef(valueRef.valueId);
-      scheduleNeededDtors(valueInfo.value, valueRef, dtorInserter);
-    }
+  SmallVector<ValueRef> accesses =
+      valueSet.getValueRefsForAccess(value, isDeref);
+  for (ValueRef access : accesses) {
+    // The value may be the last use of multiple different tracked values, eg
+    // in the case of: use(cond ? a.subfield1, b.subfield2).  The 'value' will
+    // end up being the result of the ternary, but we need to destroy the
+    // values according to the original "a" and "b" reference. Fetch the
+    // original values like 'a' and 'b' to pass in.
+    ValueInfo &valueInfo = valueSet.getValueInfos()[access.valueId];
+    scheduleNeededDtors(valueInfo.value, access, dtorInserter);
   }
 }
 

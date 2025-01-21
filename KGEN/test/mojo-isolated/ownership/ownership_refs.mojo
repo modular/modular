@@ -492,3 +492,27 @@ fn another_min[is_mutable: Bool, //, ao: Origin[is_mutable], bo: Origin[is_mutab
         return a
     else: # This failed due to union canonicalization problems.
         return b
+
+struct RefResultStruct:
+  var x: Int
+  fn __init__(out self):  self.x = 1
+  fn method(self) -> ref [self.x] Int: return self.x
+
+# https://github.com/modular/mojo/issues/3960
+# CHECK-LABEL: lit.struct.decl @FieldSensitiveUse
+struct FieldSensitiveUse:
+    var x: RefResultStruct
+    var y: String
+
+    # CHECK: lit.fn @"__init__
+    fn __init__(out self):
+        # CHECK: lit.call {{.*}}RefResultStruct::@"__init__
+        self.x = RefResultStruct()
+        # CHECK: [[TMP:%.*]] = lit.call {{.*}}RefResultStruct::@"method
+        _ = self.x.method()
+        # CHECK-NEXT: lit.ref.load [[TMP]]
+        self.y = String()
+        # CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[y]
+        # CHECK-NEXT: lit.call {{.*}}String::@"__init__{{.*}}([[TMP]])
+
+
