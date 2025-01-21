@@ -14,9 +14,6 @@ fi
 if [ -z "$_KGEN_START_MODULAR_INCLUDED" ]; then
   export _KGEN_START_MODULAR_INCLUDED=yes
   export PS1="[M] $PS1"
-else
- echo "Already in a Modular shell. Please start a new shell instance and source this file there."
- return 1
 fi
 
 if [ -n "$ZSH_VERSION" ]; then
