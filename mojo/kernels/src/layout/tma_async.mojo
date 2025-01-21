@@ -17,6 +17,7 @@ from gpu.sync import (
 from layout import IntTuple, LayoutTensor
 from memory import UnsafePointer, stack_allocation
 
+from sys._assembly import inlined_assembly
 from utils.index import Index
 
 
@@ -66,9 +67,19 @@ struct TMABarrier(CollectionElement):
 
     @always_inline
     fn wait(self, phase: Int32 = 0):
-        # Exit barrier if threads have waited this long (nano seconds) at the barrier.
-        alias threshold_to_exit = 10000000
-        mbarrier_try_wait_parity_shared(self.mbar, phase, threshold_to_exit)
+        # Based on cutlass
+        # https://github.com/NVIDIA/cutlass/blob/b78588d1630aa6643bf021613717bafb705df4ef/include/cute/arch/copy_sm90_desc.hpp#L92-L110
+        alias asm = """{
+            .reg .pred P1;
+            LAB_WAIT:
+            mbarrier.try_wait.parity.shared::cta.b64 P1, [$0], $1;
+            @P1 bra DONE;
+            bra LAB_WAIT;
+            DONE:
+        }"""
+        inlined_assembly[asm, NoneType, constraints="r,r"](
+            Int32(Int(self.mbar)), phase
+        )
 
 
 # TMATensorTile is created on the host with specific memory and tile sizes.
