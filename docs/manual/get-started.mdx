@@ -7,7 +7,8 @@ image: /images/artwork/mojo-get-started.jpg
 ---
 
 import GetMagic from '@site/src/includes/get_magic.mdx';
-
+import Requirements from '@site/src/components/Requirements';
+import { requirementsNoGPU } from '@site/docs/max/requirements';
 
 :::tip
 
@@ -38,6 +39,9 @@ you to go learn more about each topic. If you just want to see the finished
 code, you can [get it on
 GitHub](https://github.com/modular/mojo/tree/nightly/examples/life).
 
+System requirements:
+
+<Requirements requirementsData={requirementsNoGPU} />
 
 ## 1. Create a Mojo project with `magic`
 
