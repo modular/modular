@@ -511,8 +511,11 @@ struct DeviceFunction[
 
     @staticmethod
     fn _cleanup_asm(s: StringLiteral) -> StringLiteral:
-        return s.replace("\t// begin inline asm\n", "").replace(
-            "\t// end inline asm\n", ""
+        return (
+            s.replace("\t// begin inline asm\n", "")
+            .replace("\t// end inline asm\n", "")
+            .replace("\t;;#ASMSTART\n", "")
+            .replace("\t;;#ASMEND\n", "")
         )
 
     @no_inline
