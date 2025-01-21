@@ -1158,6 +1158,7 @@ fn mha[
     var num_keys: Int
     var mask_tensor_col: Int
     var mask_batch_offset: Int
+    var start_pos: UInt32 = 0
 
     @parameter
     if ragged:
@@ -1171,7 +1172,9 @@ fn mha[
 
         @parameter
         if not _is_cache_length_accurate:
-            seq_len += k.cache_length(batch_idx)
+            var cache_length = k.cache_length(batch_idx)
+            start_pos = cache_length
+            seq_len += cache_length
 
         max_seq_len = seq_len_arg
         num_keys = seq_len
@@ -1193,7 +1196,9 @@ fn mha[
 
         @parameter
         if not _is_cache_length_accurate:
-            seq_len += k.cache_length(batch_idx)
+            var cache_length = k.cache_length(batch_idx)
+            start_pos = cache_length
+            seq_len += cache_length
 
         max_seq_len = seq_len_arg
         num_keys = seq_len
@@ -1244,6 +1249,7 @@ fn mha[
             scale,
             seq_len,
             max_seq_len,
+            start_pos,
             num_keys,
             mask_tensor_col,
             mask,
@@ -1266,6 +1272,7 @@ fn mha[
             scale,
             seq_len,
             max_seq_len,
+            start_pos,
             num_keys,
             mask_tensor_col,
             mask,
@@ -1298,6 +1305,7 @@ fn mha_single_batch[
     scale: Float32,
     seq_len: Int,  # valid sequence length i.e. w/o padding.
     max_seq_len: Int,  # sequence length after padding.
+    start_pos: UInt32,
     num_keys: Int,
     mask_tensor_col: Int,  # second dimension of mask tensor
     mask: mask_t,
@@ -1515,7 +1523,7 @@ fn mha_single_batch[
     #       loop_over_kvcache[tile_size, True]
     #   ```
     # Only the last iteration is doing boundary check.
-    @__copy_capture(seq_len, max_seq_len, num_keys)
+    @__copy_capture(seq_len, max_seq_len, num_keys, start_pos)
     @always_inline
     @parameter
     fn loop_over_kvcache[
@@ -1524,7 +1532,8 @@ fn mha_single_batch[
         if (
             mask.status(
                 Index[element_bitwidth=32, unsigned=True](
-                    Int(q_tile_idx * BM), Int(kv_tile_start_row)
+                    Int(q_tile_idx * BM + start_pos),
+                    Int(kv_tile_start_row),
                 ),
                 Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
             )
@@ -1732,6 +1741,8 @@ fn mha_single_batch[
                             var score_row = mask_block_row + mask_frag_row + i * MMA_M // 2
                             var score_col = mask_frag_col
 
+                            score_row_with_start_pos = score_row + start_pos
+
                             @parameter
                             if masked:
                                 p_reg_vec2[mma_id, i] = mask.mask(
@@ -1742,7 +1753,7 @@ fn mha_single_batch[
                                     ](
                                         Int(block_idx.z),
                                         Int(block_idx.y),
-                                        Int(score_row),
+                                        Int(score_row_with_start_pos),
                                         Int(score_col),
                                     ),
                                     p_reg_vec2[mma_id, i] * scale_log2e,
@@ -1763,7 +1774,7 @@ fn mha_single_batch[
                                         ](
                                             Int(block_idx.z),
                                             Int(block_idx.y),
-                                            Int(score_row),
+                                            Int(score_row_with_start_pos),
                                             Int(score_col),
                                         ),
                                         p_reg_vec2[mma_id, i],
@@ -1779,14 +1790,18 @@ fn mha_single_batch[
                                     ](Int(score_row), Int(score_col)),
                                     IndexList[
                                         2, element_bitwidth=32, unsigned=True
-                                    ](seq_len, num_keys),
+                                    ](
+                                        seq_len,
+                                        num_keys,
+                                    ),
                                     p_reg_vec2[mma_id, i],
                                 )
 
             unswitch[_apply_mask](
                 mask.status(
                     Index[element_bitwidth=32, unsigned=True](
-                        Int(q_tile_idx * BM), kv_tile_start_row
+                        Int(q_tile_idx * BM + start_pos),
+                        kv_tile_start_row,
                     ),
                     Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
                 )
@@ -2021,6 +2036,7 @@ fn mha_single_batch_pipelined[
     scale: Float32,
     seq_len: Int,  # valid sequence length i.e. w/o padding.
     max_seq_len: Int,  # sequence length after padding.
+    start_pos: UInt32,
     num_keys: Int,
     mask_tensor_col: Int,  # second dimension of mask tensor
     mask: mask_t,
@@ -2217,7 +2233,7 @@ fn mha_single_batch_pipelined[
         if (
             mask.status(
                 Index[element_bitwidth=32, unsigned=True](
-                    Int(q_tile_idx * BM), Int(kv_tile_start_row)
+                    Int(q_tile_idx * BM + start_pos), Int(kv_tile_start_row)
                 ),
                 Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
             )
@@ -2450,6 +2466,8 @@ fn mha_single_batch_pipelined[
                             )
                             var score_col = mask_frag_col
 
+                            var score_row_with_start_pos = score_row + start_pos
+
                             @parameter
                             if masked:
 
@@ -2463,7 +2481,7 @@ fn mha_single_batch_pipelined[
                                         ](
                                             Int(block_idx.z),
                                             Int(block_idx.y),
-                                            Int(score_row),
+                                            Int(score_row_with_start_pos),
                                             Int(score_col),
                                         ),
                                         p_reg_vec2[mma_id, i] * scale_log2e,
@@ -2480,7 +2498,7 @@ fn mha_single_batch_pipelined[
                                             ](
                                                 Int(block_idx.z),
                                                 Int(block_idx.y),
-                                                Int(score_row + j),
+                                                Int(score_row_with_start_pos),
                                                 Int(score_col),
                                             ),
                                             p_reg_vec2[mma_id, i][j]
@@ -2502,7 +2520,7 @@ fn mha_single_batch_pipelined[
                                         ](
                                             Int(block_idx.z),
                                             Int(block_idx.y),
-                                            Int(score_row),
+                                            Int(score_row_with_start_pos),
                                             Int(score_col),
                                         ),
                                         p_reg_vec2[mma_id, i],
@@ -2552,7 +2570,7 @@ fn mha_single_batch_pipelined[
             unswitch[_apply_mask](
                 mask.status(
                     Index[element_bitwidth=32, unsigned=True](
-                        Int(q_tile_idx * BM), kv_tile_start_row
+                        Int(q_tile_idx * BM + start_pos), kv_tile_start_row
                     ),
                     Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
                 )
