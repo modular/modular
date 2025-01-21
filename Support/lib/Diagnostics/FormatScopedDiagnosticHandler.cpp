@@ -33,7 +33,8 @@ static std::string locationToString(Location location) {
       .str();
 }
 
-static void emitDiagnosticToStream(raw_ostream &os, const Diagnostic &diag) {
+void FormatScopedDiagnosticHandler::emitDiagnosticToStream(
+    raw_ostream &os, const Diagnostic &diag) {
   // Only display the location if it is meaningful.
   std::string location = locationToString(diag.getLocation());
   if (!location.empty())
