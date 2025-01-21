@@ -142,10 +142,10 @@ def run_llm_verification(
     version: str,
     encoding: str,
     pregenerated_torch_goldens_rlocation: Optional[str] = None,
-    kl_div_threshold: float,
-    cos_dist_threshold: float,
-    absolute_tolerance: float,
-    relative_tolerance: float,
+    kl_div_threshold: Optional[float] = None,
+    cos_dist_threshold: Optional[float] = None,
+    absolute_tolerance: Optional[float] = None,
+    relative_tolerance: Optional[float] = None,
 ) -> VerificationVerdict:
     """Run a Llama3 verification with the given model and weights encoding.
 
@@ -186,18 +186,33 @@ def run_llm_verification(
             encoding=encoding,
             output_path=torch_golden_path,
         )
+
+    eval_metrics = []
+    threshold_flags = []
+    if absolute_tolerance is not None and relative_tolerance is not None:
+        eval_metrics.append("tol")
+        threshold_flags.append(f"--absolute-tolerance={absolute_tolerance}")
+        threshold_flags.append(f"--relative-tolerance={relative_tolerance}")
+    if cos_dist_threshold is not None:
+        eval_metrics.append("cos")
+        threshold_flags.append(f"--cos-dist-threshold={cos_dist_threshold}")
+    if kl_div_threshold is not None:
+        eval_metrics.append("kl")
+        threshold_flags.append(f"--kl-div-threshold={kl_div_threshold}")
+    if not eval_metrics:
+        raise ValueError(
+            "Please provide absolute, relative, cos, or kldiv error thresholds."
+            " Otherwise no metrics will be computed."
+        )
     try:
         subprocess.run(
             [
                 os.environ["LLAMA3_VERIFY_BIN"],
                 str(max_golden_path),
                 str(torch_golden_path),
-                "--eval-metric=tol,cos,kl",
-                f"--kl-div-threshold={kl_div_threshold}",
-                f"--cos-dist-threshold={cos_dist_threshold}",
-                f"--absolute-tolerance={absolute_tolerance}",
-                f"--relative-tolerance={relative_tolerance}",
-            ],
+                "--eval-metric=" + ",".join(eval_metrics),
+            ]
+            + threshold_flags,
             check=True,
         )
     except subprocess.CalledProcessError:
@@ -347,6 +362,19 @@ PIPELINES = {
             cos_dist_threshold=0.005,
             absolute_tolerance=1.0,
             relative_tolerance=2.0,
+        ),
+    ),
+    "mpnet-float32": PipelineDef(
+        compatible_with=[DeviceKind.CPU],
+        run=lambda device_type: run_llm_verification(
+            device_type=device_type,
+            pipeline="mpnet",
+            version="general",
+            encoding="float32",
+            pregenerated_torch_goldens_rlocation="torch_mpnet_golden/torch_mpnet_float32_golden.json",
+            cos_dist_threshold=1e-5,
+            absolute_tolerance=1e-4,
+            relative_tolerance=0.5,
         ),
     ),
 }

@@ -223,6 +223,26 @@ def next_token_with_logits(
 
 
 def compare_values(actual, expected, *, rtol=1e-2, atol=1e-5, compare_fn=None):
+    """Compares two dictionaries of values."""
+    keys = expected[0].keys()
+    if keys == {"prompt", "values"}:
+        compare_text_generation(
+            actual, expected, rtol=rtol, atol=atol, compare_fn=compare_fn
+        )
+    elif keys == {"prompt", "embeddings"}:
+        compare_embeddings(
+            actual, expected, rtol=rtol, atol=atol, compare_fn=compare_fn
+        )
+    else:
+        raise ValueError(
+            f"Unable to compare dictionaries with keys {keys}, does not match "
+            "the expected keys of a text generation or embedding model."
+        )
+
+
+def compare_text_generation(
+    actual, expected, *, rtol=1e-2, atol=1e-5, compare_fn=None
+):
     """Compares the values between two computed logits.
 
     The data structure of the actual/expected logits should be:
@@ -250,8 +270,8 @@ def compare_values(actual, expected, *, rtol=1e-2, atol=1e-5, compare_fn=None):
     expected_prompts = {x["prompt"]: x["values"] for x in expected}
     actual_prompts = {x["prompt"]: x["values"] for x in actual}
 
-    if expected_prompts.keys() < actual_prompts.keys():
-        diff = actual_prompts.keys() - expected_prompts.keys()
+    diff = actual_prompts.keys() - expected_prompts.keys()
+    if diff:
         raise ValueError(
             f"Golden values for prompts {diff} not found. Please re-run"
             " `gen_golden_values`."
@@ -283,3 +303,51 @@ def compare_values(actual, expected, *, rtol=1e-2, atol=1e-5, compare_fn=None):
                         err_msg=f"Got different values for {description}.",
                         verbose=True,
                     )
+
+
+def compare_embeddings(
+    actual, expected, *, rtol=1e-2, atol=1e-5, compare_fn=None
+):
+    """Compares the values between two computed embeddings.
+
+    The data structure of the actual/expected dictionaries should be:
+    [
+        {"prompt": "prompt 1", "embeddings": embeddings,
+        {"prompt": "prompt 2", "embeddings": embeddings,
+        ...
+    ]
+
+    Args:
+        actual: Data structure containing computed values.
+        expected: Data structure containing reference values.
+        rtol: The relative tolerance (used if `compare_fn` is not provided).
+        atol: The absolute tolerance (used if `compare_fn` is not provided).
+        compare_fn: A callable that takes the arguments
+            (actual, expected, description) and raises an assertion error
+            if the check fails.
+    """
+    expected_prompts = {x["prompt"]: x["embeddings"] for x in expected}
+    actual_prompts = {x["prompt"]: x["embeddings"] for x in actual}
+
+    if expected_prompts.keys() < actual_prompts.keys():
+        diff = actual_prompts.keys() - expected_prompts.keys()
+        raise ValueError(
+            f"Golden values for prompts {diff} not found. Please re-run"
+            " `gen_golden_values`."
+        )
+
+    for prompt, embeddings in actual_prompts.items():
+        expected_embeddings = expected_prompts[prompt]
+        short = f"{prompt[:15]}..." if len(prompt) > 15 else prompt
+        description = f"embeddings for prompt '{short}'"
+        if compare_fn:
+            compare_fn(embeddings, expected_embeddings, description)
+        else:
+            np.testing.assert_allclose(
+                embeddings,
+                expected_embeddings,
+                rtol=rtol,
+                atol=atol,
+                err_msg=f"Got different {description}.",
+                verbose=True,
+            )

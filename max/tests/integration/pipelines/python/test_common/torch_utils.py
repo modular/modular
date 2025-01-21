@@ -111,5 +111,6 @@ def run_embeddings_generation(
         ).to(device)
         output = model(**encoded_input)
         embeddings = output.last_hidden_state.cpu().detach().numpy()
+        embeddings = embeddings[0]
         results.append({"prompt": prompt, "embeddings": embeddings})
     return results

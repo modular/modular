@@ -43,6 +43,7 @@ modular_py_binary(
         "@torch_llama3-vision_golden",
         "@torch_llama_golden",
         "@torch_mistral_golden",
+        "@torch_mpnet_golden",
         "@torch_pixtral_golden",
         "@torch_replit_golden",
     ],
