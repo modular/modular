@@ -27,7 +27,7 @@ def execute_ragged_flash_attention(
     alias kv_params = KVCacheStaticParams(num_heads=8, head_size=128)
     alias type = DType.float32
     alias num_paged_blocks = 32
-    alias block_size = 512
+    alias block_size = 128
     alias PagedCacheType = PagedKVCache[type, kv_params]
     var num_layers = 1
     var layer_idx = 0
@@ -238,7 +238,7 @@ def execute_ragged_flash_attention(
         true_ce_k_cache_device,
         true_ce_v_cache_paged_device,
         dummy_mask,
-        NullMask(),
+        CausalMask(),
         IdentityScoreMod(),
         true_ce_row_offsets_device.tensor,
         # TODO take scale from argument GRA-750
@@ -255,7 +255,7 @@ def execute_ragged_flash_attention(
         mixed_ce_k_cache_device,
         mixed_ce_v_cache_paged_device,
         dummy_mask,
-        NullMask(),
+        CausalMask(),
         IdentityScoreMod(),
         mixed_ce_row_offsets_device.tensor,
         # TODO take scale from argument GRA-750
@@ -284,11 +284,14 @@ def execute_ragged_flash_attention(
         for s in range(mixed_ce_prompt_len):
             for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):
+                    true_ce_val = true_ce_out[true_ce_ragged_offset + s, h, hd]
+                    mixed_ce_val = mixed_ce_out[
+                        mixed_ce_ragged_offset + s, h, hd
+                    ]
                     try:
                         assert_almost_equal(
-                            true_ce_out[true_ce_ragged_offset + s, h, hd],
-                            mixed_ce_out[mixed_ce_ragged_offset + s, h, hd],
-                            atol=1e-3,
+                            true_ce_val,
+                            mixed_ce_val,
                         )
                     except e:
                         print(
@@ -297,8 +300,6 @@ def execute_ragged_flash_attention(
                             s,
                             h,
                             hd,
-                            true_ce_out[true_ce_ragged_offset + s, h, hd],
-                            mixed_ce_out[mixed_ce_ragged_offset + s, h, hd],
                         )
                         raise e
 
