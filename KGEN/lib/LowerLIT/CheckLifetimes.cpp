@@ -3393,47 +3393,10 @@ void DestructorInsertion::scheduleNeededDtors(
     Value value, ValueRef valueRef, DestructorInserter &dtorInserter) {
   assert(valueRef && "Only works on valid refs");
 
+  // If the accessed value had an error already or nothing in this value needs
+  // destroying, then ignore the request.
   ValueInfo &valueInfo = valueSet.getValueInfos()[valueRef.valueId];
-  if (valueInfo.hasErrorDiagnosed)
-    return;
-
-  // If this is the last use of some subfield of a value that needs to be
-  // destroyed, emit the whole object destructor for the overall value.
-  //
-  //   init(&aggregate)
-  //   use(aggregate.field1)
-  //   use(aggregate.field2)  <<-- We are here.
-  //
-  // Here we emit `aggregate.__del__()` to destroy the overall value, which will
-  // also handle deleting the field in question.
-  //
-  // This also handles the case of indirect references, resetting to the
-  // correct value to destroy.
-  // If dryRun, then the upward consume set is unset for values potentially
-  // consumed beneath the loop. As a result, we don't know if this is the last
-  // reference to whole value. Assuming that it is will result in destruction
-  // of that value in a break branch.
-  auto fullValueRef = valueInfo.getFullValueRef(valueRef.valueId);
-  if (!consumedValues[valueInfo.endValueBit - 1] && !dryRun &&
-      valueRef != fullValueRef) {
-    // The full value must be live at this point for us to destroy the full
-    // value.  We've already checked that values are defined before use, so
-    // in this scenario, the full object bit will be handled somehow else,
-    // e.g. by an explicit mark_destroyed.
-    //
-    //  init(&aggregate)
-    //  use(aggregate)
-    //  mark_destroyed(aggregate)
-    //  use(aggregate.field1)       <<-- We are here.
-    //  consume(aggregate.field2)
-    if (fullValueRef.isAllMissing(consumedValues)) {
-      value = valueInfo.value;
-      valueRef = fullValueRef;
-    }
-  }
-
-  // If nothing in this value needs destroying, then ignore the request.
-  if (valueRef.isAllPresent(consumedValues))
+  if (valueInfo.hasErrorDiagnosed || valueRef.isAllPresent(consumedValues))
     return;
 
   // If we are just computing the consumedValue set, don't actually insert any
@@ -3441,6 +3404,39 @@ void DestructorInsertion::scheduleNeededDtors(
   if (dryRun) {
     valueRef.markBits(consumedValues, true);
     return;
+  }
+
+  // If this is the last use of some subfield of a value that needs to be
+  // destroyed, emit the whole object destructor for the overall value.
+  //
+  //   init(&aggregate)
+  //   use(aggregate.field1)
+  //   use(aggregate.field2.subelt)  <<-- We are here.
+  //
+  // Here we emit `aggregate.__del__()` to destroy the overall value, or (if
+  // the whole object bit for the aggregate is already cleared) we should use
+  // aggregate.field2.__del__() which will also handle deleting the field in
+  // question.
+  //
+  // If dryRun, then the upward consume set is unset for values potentially
+  // consumed beneath the loop. As a result, we don't know if this is the last
+  // reference to whole value. Assuming that it is will result in destruction
+  // of that value in a break branch.
+  auto fullValueRef = valueInfo.getFullValueRef(valueRef.valueId);
+  if (valueRef != fullValueRef && !consumedValues[valueInfo.endValueBit - 1] &&
+      // The full value must be non-destroyed at this point for us to destroy
+      // the full value.  We've already checked that values are defined before
+      // use, so in this scenario, the full object bit will be handled somehow
+      // else, e.g. by an explicit mark_destroyed.
+      //
+      //  init(&aggregate)
+      //  use(aggregate)
+      //  mark_destroyed(aggregate)
+      //  use(aggregate.field1)       <<-- We are here.
+      //  consume(aggregate.field2)
+      fullValueRef.isAllMissing(consumedValues)) {
+    value = valueInfo.value;
+    valueRef = fullValueRef;
   }
 
   // Get the type for the value so we can poke at it.
