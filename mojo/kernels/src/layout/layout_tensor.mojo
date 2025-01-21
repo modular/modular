@@ -11,7 +11,6 @@ from sys import (
     alignof,
     bitwidthof,
     is_nvidia_gpu,
-    is_amd_gpu,
     prefetch,
     simdwidthof,
     sizeof,
@@ -2116,13 +2115,10 @@ struct LayoutTensor[
         # Eligibility for 4, 8, 16 bytes async load.
         alias element_size_bytes = sizeof[dtype]() * src_element_size
         constrained[
-            (
-                element_size_bytes == 4
-                or element_size_bytes == 8
-                or element_size_bytes == 16
-            )
-            or is_amd_gpu(),
-            "copy_from_async only allows 4, 8, 16 bytes element for NVIDIA GPU",
+            element_size_bytes == 4
+            or element_size_bytes == 8
+            or element_size_bytes == 16,
+            "copy_from_async only allows 4, 8, 16 bytes element",
         ]()
 
         # Share memory must always have static layout.
