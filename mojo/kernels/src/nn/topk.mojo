@@ -99,7 +99,7 @@ fn bottom_k_shape[
 fn top_k[
     rank: Int,
     type: DType,
-    out_idx_type: DType = DType.int64,
+    out_idx_type: DType, //,
     largest: Bool = True,
 ](
     input: NDBuffer[type, rank],
@@ -127,6 +127,11 @@ fn top_k[
         out_idxs: Output indices.
         sorted: Indicates if the top/bottom K elements are in (stable) sorted order.
     """
+    constrained[
+        out_idx_type == DType.int64,
+        "out_idx_type must be int64 for cpu",
+    ]()
+
     alias grain_size = 1000
     _top_k[largest=largest](
         input,
