@@ -42,6 +42,10 @@ def AnyTraitType : DialectType<(type
   ConcreteType<"TraitType">:$traitType
 )>;
 
+def MetaType : DialectType<(type
+  Type:$type
+)>;
+
 def OriginType : DialectType<(type
   TypedAttr:$isMutable
 )>;
@@ -79,6 +83,7 @@ def LITDialectTypes : DialectTypes<"lit"> {
     AnyStructType,
     TraitType,
     AnyTraitType,
+    MetaType,
     OriginType,
     OriginSetType,
     RefType,

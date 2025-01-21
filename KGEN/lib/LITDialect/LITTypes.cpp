@@ -32,6 +32,7 @@ void LITDialect::registerTypes() {
 
   auto *dialect = getContext()->getOrLoadDialect<KGENDialect>();
   dialect->registerMnemonicType<AnyStructType>();
+  dialect->registerMnemonicType<MetaType>();
   dialect->registerMnemonicType<TraitType>();
   dialect->registerMnemonicType<OriginType>();
   dialect->registerMnemonicType<OriginSetType>();
@@ -496,6 +497,19 @@ OptionalParseResult AnyTraitType::parseValue(AsmParser &p,
 LogicalResult AnyTraitType::printValue(AsmPrinter &p, TypedAttr value) const {
   return printTypeValue(p, value, *this);
 }
+
+//===----------------------------------------------------------------------===//
+// MetaType
+//===----------------------------------------------------------------------===//
+
+OptionalParseResult MetaType::parseValue(AsmParser &p, TypedAttr &value) const {
+  return parseTypeValue(p, value, *this);
+}
+
+LogicalResult MetaType::printValue(AsmPrinter &p, TypedAttr value) const {
+  return printTypeValue(p, value, *this);
+}
+
 //===----------------------------------------------------------------------===//
 // OriginType
 //===----------------------------------------------------------------------===//
