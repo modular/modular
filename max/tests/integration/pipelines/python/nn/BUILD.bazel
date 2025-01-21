@@ -179,7 +179,7 @@ modular_py_test(
 )
 
 modular_py_test(
-    name = "tests_attention_gpu.py",
+    name = "tests_attention_gpu",
     srcs = glob(
         [
             "**/*_attention_gpu.py",
