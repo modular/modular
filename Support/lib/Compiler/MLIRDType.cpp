@@ -104,15 +104,15 @@ bool M::hasEquivalentIntegerType(DType dtype) {
 }
 
 DType M::getEquivalentDType(FloatType fpType) {
-  if (fpType.isFloat8E5M2())
+  if (isa<Float8E5M2Type>(fpType))
     return DType::f8e5m2;
-  if (fpType.isFloat8E5M2FNUZ())
+  if (isa<Float8E5M2FNUZType>(fpType))
     return DType::f8e5m2fnuz;
-  if (fpType.isFloat8E4M3())
+  if (isa<Float8E4M3Type>(fpType))
     return DType::f8e4m3;
-  if (fpType.isFloat8E4M3FNUZ())
+  if (isa<Float8E4M3FNUZType>(fpType))
     return DType::f8e4m3fnuz;
-  if (fpType.isFloat8E3M4())
+  if (isa<Float8E3M4Type>(fpType))
     return DType::f8e3m4;
   if (fpType.isF16())
     return DType::f16;

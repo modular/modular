@@ -763,9 +763,9 @@ LogicalResult UnionUnwrapOp::verify() {
 //===----------------------------------------------------------------------===//
 
 static bool isValidInputOperandType(Type type) {
-  if (type.isTF32() || type.isBF16() || type.isF16() || type.isFloat8E4M3() ||
-      type.isFloat8E5M2() || type.isSignedInteger(8) ||
-      type.isUnsignedInteger(8))
+  if (type.isTF32() || type.isBF16() || type.isF16() ||
+      isa<Float8E4M3Type>(type) || isa<Float8E5M2Type>(type) ||
+      type.isSignedInteger(8) || type.isUnsignedInteger(8))
     return true;
   return false;
 }
