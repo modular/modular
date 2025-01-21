@@ -316,6 +316,8 @@ fn flash_attention[
     valid_length: NDBuffer[DType.uint32, 1, *_],
     scale: Float32,
     ctx: DeviceContext,
+    q_max_seq_len: OptionalReg[Int] = None,
+    kv_input_row_offsets: OptionalReg[NDBuffer[DType.uint32, 1]] = None,
     num_partitions: OptionalReg[Int] = None,
 ) raises:
     """Flash attention 2 algorithm.
@@ -394,13 +396,22 @@ fn flash_attention[
         else:
             max_cache_valid_length = Int(k.get_max_cache_length())
 
+        var kv_max_seq_len: Int
         var max_prompt_len: Int
+        var num_keys: Int
 
         @parameter
         if ragged:
-            max_prompt_len = Int(k.get_max_seq_length())
+            kv_max_seq_len = Int(k.get_max_seq_length())
+            num_keys = max_cache_valid_length + kv_max_seq_len
         else:
-            max_prompt_len = q.dim[1]()
+            kv_max_seq_len = q.dim[1]()
+            num_keys = max_cache_valid_length
+
+        if q_max_seq_len:
+            max_prompt_len = q_max_seq_len.value()
+        else:
+            max_prompt_len = kv_max_seq_len
 
         # Whether head and depth are static. With BSHD, B and S are dynamic.
         # H and D are always known for opaque KVCache types, we only check Q.
@@ -409,12 +420,7 @@ fn flash_attention[
         # Current impl has only been verified for depth = 128.
         alias flash_attention_applicable = flash_attention_hw_supported() and head_depth_known and q.shape.get[rank-1]() == 128
         # fmt: on
-        alias q_half_float = q.type in (DType.float16, DType.bfloat16)
-
-        alias num_heads = config.num_heads
-        alias depth = config.depth
         alias kv_num_heads = cache_t.kv_params.num_heads
-        alias group = config.num_heads // kv_num_heads
 
         # If it's paged attention, we temporarily disable split-k mha.
         # TODO: remove this parameter once the restriction is lifted.
@@ -443,10 +449,11 @@ fn flash_attention[
             score_mod_functor,
             valid_length,
             max_prompt_len,
-            max_cache_valid_length,
+            num_keys,
             scale,
             is_token_generation,
             ctx,
+            kv_input_row_offsets,
             num_partitions,
         )
 
@@ -492,6 +499,7 @@ fn flash_attention_dispatch[
     scale: Float32,
     is_token_generation: Bool,
     ctx: DeviceContext,
+    kv_input_row_offsets: OptionalReg[NDBuffer[DType.uint32, 1]] = None,
     num_partitions: OptionalReg[Int] = None,
 ) raises:
     alias num_heads = config.num_heads
@@ -570,6 +578,7 @@ fn flash_attention_dispatch[
                 max_prompt_len,
                 max_cache_valid_length,
                 valid_length,
+                kv_input_row_offsets,
                 mask_functor,
                 score_mod_functor,
                 grid_dim=(
@@ -908,6 +917,7 @@ fn flash_attention[
         scale,
         is_token_generation,
         ctx,
+        None,
         num_partitions,
     )
 
@@ -1145,6 +1155,7 @@ fn mha[
     seq_len_arg: Int,
     num_keys_arg: Int,
     valid_length: NDBuffer[DType.uint32, 1],
+    kv_input_row_offsets: OptionalReg[NDBuffer[DType.uint32, 1]],
     mask: mask_t,
     score_mod: score_mod_t,
 ):
@@ -1176,8 +1187,18 @@ fn mha[
             start_pos = cache_length
             seq_len += cache_length
 
+        # this is used for cross attention where we get the num_keys
+        # from kv_input_row_offsets. This is when num_keys != seq_len
+        if kv_input_row_offsets:
+            var kv_row_offsets = kv_input_row_offsets.value()
+            kv_seq_start = Int(kv_row_offsets[batch_idx])
+            kv_seq_end = Int(kv_row_offsets[batch_idx + 1])
+            cur_kv_len = kv_seq_end - kv_seq_start
+            num_keys = cur_kv_len + k.cache_length(batch_idx)
+        else:
+            num_keys = seq_len
+
         max_seq_len = seq_len_arg
-        num_keys = seq_len
         mask_tensor_col = seq_len_arg
         q_batch_offset = start_of_seq * config.depth * config.num_heads
         mask_batch_offset = (
