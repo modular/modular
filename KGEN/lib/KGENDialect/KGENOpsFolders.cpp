@@ -1365,27 +1365,27 @@ floatLiteralConvertOpHelper(FloatLiteralSpecialValues special,
   unsigned bias = 0;
   llvm::APFloatBase::Semantics semantics = llvm::APFloatBase::S_IEEEhalf;
 
-  if (outType.isFloat8E5M2()) {
+  if (isa<Float8E5M2Type>(outType)) {
     totalLength = 8;
     exponentLength = 5;
     bias = 15;
     semantics = llvm::APFloatBase::S_Float8E5M2;
-  } else if (outType.isFloat8E5M2FNUZ()) {
+  } else if (isa<Float8E5M2FNUZType>(outType)) {
     totalLength = 8;
     exponentLength = 5;
     bias = 16;
     semantics = llvm::APFloatBase::S_Float8E5M2FNUZ;
-  } else if (outType.isFloat8E4M3()) {
+  } else if (isa<Float8E4M3Type>(outType)) {
     totalLength = 8;
     exponentLength = 4;
     bias = 7;
     semantics = llvm::APFloatBase::S_Float8E4M3;
-  } else if (outType.isFloat8E4M3FNUZ()) {
+  } else if (isa<Float8E4M3FNUZType>(outType)) {
     totalLength = 8;
     exponentLength = 4;
     bias = 8;
     semantics = llvm::APFloatBase::S_Float8E4M3FNUZ;
-  } else if (outType.isFloat8E3M4()) {
+  } else if (isa<Float8E3M4Type>(outType)) {
     totalLength = 8;
     exponentLength = 3;
     bias = 3;
