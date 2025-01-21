@@ -21,6 +21,7 @@ from nn.mha import MHAConfig, flash_attention, mha_gpu_naive
 from nn.mha_mask import NullMask
 from nn.mha_score_mod import IdentityScoreMod
 from runtime.asyncrt import MojoCallContextPtr
+from sys import has_nvidia_gpu_accelerator
 from testing import assert_almost_equal, assert_equal
 
 from utils import IndexList
@@ -304,7 +305,15 @@ def execute_flash_attention[
                 continue
             var config_str = "ampere_" + String(type) + "_"
             config_str += String(kv_params.head_size) + "x"
-            config_str += String(32 if type is DType.float32 else 64) + "_"
+            config_str += (
+                String(
+                    32 if type
+                    is DType.float32 else (
+                        64 if has_nvidia_gpu_accelerator() else 32
+                    )
+                )
+                + "_"
+            )
             config_str += String(BK)
             config_str += "x" + String(nps)
             assert_equal(String(config), config_str)
