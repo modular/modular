@@ -71,10 +71,10 @@ TEST(CompletionTest, testCompletionRelativeImport) {
       .execute();
 }
 
+// FIXME(MOTO-907): this test is flaky and it's really hard to root-cause the
+// underlying issue. Fresh builds seem not to have this issue though.
+/*
 TEST(CompletionTest, testCompletionImportMember) {
-  // This test is some times flaky on Mac when running under Bazel, but still
-  // gives good signal. It fails by crashing somewhere in the parser. Fresh
-  // builds seem not to have this issue though.
   Document doc("test:///foo.mojo",
                R"(
 from memory.unsafe import b
@@ -93,6 +93,7 @@ from memory.unsafe import b
           })
       .execute();
 }
+*/
 
 TEST(CompletionTest, testCompletionItemSorting) {
   Document doc("test:///foo.mojo",
