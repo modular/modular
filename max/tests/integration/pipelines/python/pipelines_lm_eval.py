@@ -174,7 +174,8 @@ def main(
         lm_eval_path = override_lm_eval
     else:
         lm_eval_path = _must_rlocation(
-            runfiles, "_main/SDK/integration-test/pipelines/python/lm-eval"
+            runfiles,
+            "_main/SDK/integration-test/pipelines/python/run_lm_eval.py",
         )
     logger.debug("Pipelines binary at: %s", pipelines_path)
     logger.debug("lm-eval binary at: %s", lm_eval_path)
@@ -196,7 +197,9 @@ def main(
                 probe_port=pipelines_probe_port, timeout=pipelines_probe_timeout
             )
         logger.info(f"Running lm-eval with provided args: {lm_eval_args}")
-        lm_eval_proc = subprocess.run([str(lm_eval_path)] + lm_eval_args)
+        lm_eval_proc = subprocess.run(
+            [sys.executable, str(lm_eval_path)] + lm_eval_args
+        )
         logger.info(
             f"lm-eval exited with status code {lm_eval_proc.returncode}"
         )

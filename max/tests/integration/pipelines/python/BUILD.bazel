@@ -171,7 +171,7 @@ modular_py_test(
 modular_py_binary(
     name = "lm-eval",
     srcs = ["run_lm_eval.py"],
-    ignore_collisions = True,
+    ignore_collisions = True,  # duplicate examples/__init__.py from deps
     main = "run_lm_eval.py",
     # Some of lm-eval's optional deps are not picked up by Bazel for some
     # reason so we have to include them explicitly here.
@@ -200,15 +200,17 @@ modular_py_binary(
     name = "pipelines-lm-eval",
     srcs = ["pipelines_lm_eval.py"],
     data = [
-        ":lm-eval",
+        "run_lm_eval.py",
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
         "//SDK/integration-test/pipelines/python/eval_tasks",
         "//SDK/public/max-repo/pipelines/python:pipelines",
         "@llvm-project//compiler-rt:orc_rt",
     ],
+    ignore_collisions = True,  # duplicate examples/__init__.py from deps
     main = "pipelines_lm_eval.py",
     deps = [
+        ":lm-eval",
         "//SDK/integration-test/pipelines/python/eval_tasks/human_eval",
         "@rules_python//python/runfiles",
         requirement("click"),
@@ -225,6 +227,7 @@ modular_py_test(
         "//KGEN:CompilerRT",
         "@llvm-project//compiler-rt:orc_rt",
     ],
+    ignore_collisions = True,  # duplicate examples/__init__.py from deps
     tags = [
         "huggingface",
         "no-remote-exec",
