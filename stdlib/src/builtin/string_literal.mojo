@@ -27,6 +27,7 @@ from hashlib._hasher import _HashableWithHasher, _Hasher
 from memory import UnsafePointer, memcpy, Span
 from sys.ffi import c_char
 from utils import Writable, Writer
+from utils.write import _WriteBufferStack
 from utils._visualizers import lldb_formatter_wrapping_type
 
 
@@ -636,7 +637,7 @@ struct StringLiteral(
         """
         return __mlir_op.`pop.string.replace`(self.value, old.value, new.value)
 
-    fn join[T: StringableCollectionElement](self, elems: List[T, *_]) -> String:
+    fn join[T: WritableCollectionElement](self, elems: List[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
 
         Parameters:
@@ -648,30 +649,20 @@ struct StringLiteral(
         Returns:
             The joined string.
         """
-        return String(self).join(elems)
+        var string = String()
+        var buffer = _WriteBufferStack(string)
+        for i in range(len(elems)):
+            buffer.write(elems[i])
+            if i < len(elems) - 1:
+                buffer.write(self)
+        buffer.flush()
+        return string
 
-    fn join(self, *elems: Int) -> String:
-        """Joins the elements from the tuple using the current string literal as a
-        delimiter.
-
-        Args:
-            elems: The input tuple.
-
-        Returns:
-            The joined string.
-        """
-        if len(elems) == 0:
-            return ""
-        var curr = String(elems[0])
-        for i in range(1, len(elems)):
-            curr += self + String(elems[i])
-        return curr
-
-    fn join[*Types: Stringable](self, *elems: *Types) -> String:
+    fn join[*Ts: Writable](self, *elems: *Ts) -> String:
         """Joins string elements using the current string as a delimiter.
 
         Parameters:
-            Types: The types of the elements.
+            Ts: The types of the elements.
 
         Args:
             elems: The input values.
@@ -679,20 +670,7 @@ struct StringLiteral(
         Returns:
             The joined string.
         """
-
-        var result: String = ""
-        var is_first = True
-
-        @parameter
-        fn add_elt[T: Stringable](a: T):
-            if is_first:
-                is_first = False
-            else:
-                result += self
-            result += String(a)
-
-        elems.each[add_elt]()
-        return result
+        return String(elems, sep=self)
 
     fn split(self, sep: StringSlice, maxsplit: Int = -1) raises -> List[String]:
         """Split the string literal by a separator.

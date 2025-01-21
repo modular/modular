@@ -20,7 +20,7 @@ from os import abort
 from sys import bitwidthof, llvm_intrinsic
 from sys.ffi import c_char
 from sys.intrinsics import _type_is_eq
-from utils.write import write_buffered
+from utils.write import write_buffered, _WriteBufferStack
 
 from bit import count_leading_zeros
 from memory import UnsafePointer, memcmp, memcpy, Span
@@ -1177,28 +1177,11 @@ struct String(
 
         writer.write_bytes(self.as_bytes())
 
-    fn join(self, *elems: Int) -> String:
-        """Joins the elements from the tuple using the current string as a
-        delimiter.
-
-        Args:
-            elems: The input tuple.
-
-        Returns:
-            The joined string.
-        """
-        if len(elems) == 0:
-            return ""
-        var curr = String(elems[0])
-        for i in range(1, len(elems)):
-            curr += self + String(elems[i])
-        return curr
-
-    fn join[*Types: Writable](self, *elems: *Types) -> String:
+    fn join[*Ts: Writable](self, *elems: *Ts) -> String:
         """Joins string elements using the current string as a delimiter.
 
         Parameters:
-            Types: The types of the elements.
+            Ts: The types of the elements.
 
         Args:
             elems: The input values.
@@ -1206,22 +1189,10 @@ struct String(
         Returns:
             The joined string.
         """
+        var sep = StaticString(ptr=self.unsafe_ptr(), length=len(self))
+        return String(elems, sep=sep)
 
-        var result = String()
-        var is_first = True
-
-        @parameter
-        fn add_elt[T: Writable](a: T):
-            if is_first:
-                is_first = False
-            else:
-                result.write(self)
-            result.write(a)
-
-        elems.each[add_elt]()
-        return result
-
-    fn join[T: StringableCollectionElement](self, elems: List[T, *_]) -> String:
+    fn join[T: WritableCollectionElement](self, elems: List[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
 
         Parameters:
@@ -1233,76 +1204,14 @@ struct String(
         Returns:
             The joined string.
         """
-
-        # TODO(#3403): Simplify this when the linked conditional conformance
-        # feature is added.  Runs a faster algorithm if the concrete types are
-        # able to be converted to a span of bytes.
-        @parameter
-        if _type_is_eq[T, String]():
-            return self.fast_join(rebind[List[String]](elems))
-        elif _type_is_eq[T, StringLiteral]():
-            return self.fast_join(rebind[List[StringLiteral]](elems))
-        # FIXME(#3597): once StringSlice conforms to CollectionElement trait:
-        # if _type_is_eq[T, StringSlice]():
-        # return self.fast_join(rebind[List[StringSlice]](elems))
-        else:
-            var result: String = ""
-            var is_first = True
-
-            for e in elems:
-                if is_first:
-                    is_first = False
-                else:
-                    result += self
-                result += String(e[])
-
-            return result
-
-    fn fast_join[
-        T: BytesCollectionElement, //,
-    ](self, elems: List[T, *_]) -> String:
-        """Joins string elements using the current string as a delimiter.
-
-        Parameters:
-            T: The types of the elements.
-
-        Args:
-            elems: The input values.
-
-        Returns:
-            The joined string.
-        """
-        var n_elems = len(elems)
-        if n_elems == 0:
-            return String("")
-        var len_self = self.byte_length()
-        var len_elems = 0
-        # Calculate the total size of the elements to join beforehand
-        # to prevent alloc syscalls as we know the buffer size.
-        # This can hugely improve the performance on large lists
-        for e_ref in elems:
-            len_elems += len(e_ref[].as_bytes())
-        var capacity = len_self * (n_elems - 1) + len_elems
-        var buf = Self._buffer_type(capacity=capacity)
-        var self_ptr = self.unsafe_ptr()
-        var ptr = buf.unsafe_ptr()
-        var offset = 0
-        var i = 0
-        var is_first = True
-        while i < n_elems:
-            if is_first:
-                is_first = False
-            else:
-                memcpy(dest=ptr + offset, src=self_ptr, count=len_self)
-                offset += len_self
-            var e = elems[i].as_bytes()
-            var e_len = len(e)
-            memcpy(dest=ptr + offset, src=e.unsafe_ptr(), count=e_len)
-            offset += e_len
-            i += 1
-        buf.size = capacity
-        buf.append(0)
-        return String(buf^)
+        var string = String()
+        var buffer = _WriteBufferStack(string)
+        for i in range(len(elems)):
+            buffer.write(elems[i])
+            if i < len(elems) - 1:
+                buffer.write(self)
+        buffer.flush()
+        return string
 
     @always_inline
     fn chars(self) -> CharsIter[__origin_of(self)]:

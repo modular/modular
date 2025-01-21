@@ -16,16 +16,6 @@ from collections import Optional
 from collections._index_normalization import normalize_index
 
 
-trait WritableCollectionElement(CollectionElement, Writable):
-    """A trait that combines CollectionElement and Writable traits.
-
-    This trait requires types to implement both CollectionElement and Writable
-    interfaces, allowing them to be used in collections and written to output.
-    """
-
-    pass
-
-
 @value
 struct Node[ElementType: WritableCollectionElement]:
     """A node in a linked list data structure.

@@ -39,7 +39,6 @@ See the `Dict` docs for more details.
 from sys.ffi import OpaquePointer
 
 from bit import is_power_of_two
-from builtin.value import StringableCollectionElement
 from memory import UnsafePointer, bitcast, memcpy
 
 from .optional import Optional

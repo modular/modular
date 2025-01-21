@@ -266,9 +266,9 @@ struct _ArgBytes(Writer):
         args.each[write_arg]()
 
 
-struct _WriteBufferStack[origin: MutableOrigin, W: Writer, //, capacity: Int](
-    Writer
-):
+struct _WriteBufferStack[
+    origin: MutableOrigin, W: Writer, //, capacity: Int = 4096
+](Writer):
     var data: InlineArray[UInt8, capacity]
     var pos: Int
     var writer: Pointer[W, origin]
