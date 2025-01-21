@@ -38,10 +38,9 @@ from .tensor_like import TensorLike
 # ===----------------------------------------------------------------------=== #
 
 
-@doc_private
 @parameter
 @always_inline
-fn gcd_pow2[a: Int, b: Int]() -> Int:
+fn _gcd_pow2[a: Int, b: Int]() -> Int:
     # alignments should always be powers of 2
     constrained[
         is_power_of_two(a) and is_power_of_two(b),
@@ -78,7 +77,7 @@ fn simd_store_into_managed_tensor_slice[
     )
 
     # Store alignment cannot exceed the data type's alignment.
-    alias max_alignment = gcd_pow2[alignment, alignof[type]()]()
+    alias max_alignment = _gcd_pow2[alignment, alignof[type]()]()
 
     alias static_stride = static_strides.at[rank - 1]()
 
@@ -148,7 +147,7 @@ fn simd_load_from_managed_tensor_slice[
     alias static_stride = static_strides.at[rank - 1]()
 
     # Load alignment cannot exceed the data type's alignment.
-    alias max_alignment = gcd_pow2[alignment, alignof[type]()]()
+    alias max_alignment = _gcd_pow2[alignment, alignof[type]()]()
 
     # Stride = 1
     @parameter
@@ -522,7 +521,6 @@ struct ManagedTensorSlice[
             self._runtime_strides
         )
 
-    @doc_private
     @always_inline
     fn stride_length(self, index: Int) -> Int:
         """Gets the length of the stride of a given dimension of this tensor
@@ -536,7 +534,6 @@ struct ManagedTensorSlice[
         """
         return self.strides()[index]
 
-    @doc_private
     @always_inline
     fn stride_length[index: Int](self) -> Int:
         """Gets the length of the stride of a given dimension of this tensor
