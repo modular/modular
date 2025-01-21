@@ -800,6 +800,17 @@ struct SupportsScalarKernel:
         print("datatype is", type)
 
 
+@compiler.register("kernel_with_no_target")
+struct KernelWithNoTarget:
+    @staticmethod
+    fn execute[
+        type: DType
+    ](
+        out: ManagedTensorSlice[type, *_], x: ManagedTensorSlice[type, *_]
+    ) raises:
+        print("hello from kernel with no target")
+
+
 @compiler.register("basic_target")
 struct BasicTarget:
     @staticmethod
@@ -833,6 +844,19 @@ struct BuffToMyCustomScalarReg:
         target: StringLiteral
     ](x: ManagedTensorSlice[DType.int32, 1]) -> MyCustomScalarReg[DType.int32]:
         return MyCustomScalarReg(x[0])
+
+
+@compiler.register("my_custom_scalar_reg_to_buff")
+struct CustomScalarRegToBuff:
+    @uses_opaque
+    @staticmethod
+    fn execute[
+        target: StringLiteral
+    ](
+        input: ManagedTensorSlice[DType.int32, 1],
+        x: MyCustomScalarReg[DType.int32],
+    ):
+        input[0] = x.val
 
 
 @compiler.register("test_custom_op")
