@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import unittest.mock
+
 import pytest
 from max.profiler import Trace, traced
 
@@ -27,6 +29,13 @@ def test_profiling() -> None:
     bar()
 
     Trace("I'm here").mark()
+
+
+def test_profiling_disabled() -> None:
+    with unittest.mock.patch(
+        "max.profiler.tracing.is_profiling_enabled", return_value=False
+    ) as m:
+        test_profiling()
 
 
 @pytest.mark.asyncio
