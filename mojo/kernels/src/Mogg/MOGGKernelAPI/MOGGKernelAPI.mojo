@@ -143,7 +143,7 @@ from nn.split import split
 from nn.tile import tile, tile_shape
 from nn.topk import top_k, top_k_shape_impl
 from nn.topk import top_k_fused_sampling as _topk_fused_sampling
-from nn.topk_gpu import topk_fused_sampling_gpu as _topk_fused_sampling_gpu
+from nn.topk import topk_fused_sampling_gpu as _topk_fused_sampling_gpu
 
 from tensor_utils_internal import (
     simd_store_into_managed_tensor_slice,
