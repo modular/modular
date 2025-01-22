@@ -139,11 +139,7 @@ modular_py_test(
 modular_py_test(
     name = "tests_distributed_gpu",
     size = "enormous",
-    srcs = glob(
-        [
-            "**/*_distributed_gpu.py",
-        ],
-    ),
+    srcs = glob(["**/*_distributed_gpu.py"]),
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
@@ -151,7 +147,7 @@ modular_py_test(
         "//Support/tools/system-info",
         "@llvm-project//compiler-rt:orc_rt",
     ],
-    gpu_constraints = ["//:has_gpu"],
+    gpu_constraints = ["//:has_multi_gpu"],
     tags = [
         "multi-gpu",
         "no-mypy",  # TODO: Fix and remove
