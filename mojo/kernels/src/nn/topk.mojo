@@ -13,9 +13,15 @@ from algorithm.functional import parallelize_over_rows
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from buffer import NDBuffer
 from builtin.sort import _quicksort
+from gpu.host.info import is_cpu
 from memory import UnsafePointer, Span
+from nn.gather_scatter import (
+    normalize_neg_index,
+)
 from nn.reshape import reshape
+from nn.topk_gpu import topk_gpu  # temporary as we merge the files
 from register import register_internal_shape_func
+from runtime.asyncrt import MojoCallContextPtr
 
 from utils import IndexList
 
@@ -101,14 +107,16 @@ fn top_k[
     type: DType,
     out_idx_type: DType, //,
     largest: Bool = True,
+    target: StringLiteral = "cpu",
 ](
     input: NDBuffer[type, rank],
     k: Int,
     axis: Int,
     out_vals: NDBuffer[type, rank],
     out_idxs: NDBuffer[out_idx_type, rank],
-    sorted: Bool = True,
-):
+    sorted: Bool,
+    ctx: MojoCallContextPtr,
+) raises:
     """
     Implementation of the Top K algorithm. Returns the top or bottom K elements
     and their index along a specified axis.
@@ -118,6 +126,7 @@ fn top_k[
         type: Data type of the input buffer.
         out_idx_type: The data type of the output indices (default is DType.int64).
         largest: Whether to find the maximum (top k) or minimum value (bottom k).
+        target: The target to run on.
 
     Args:
         input: The input tensor.
@@ -126,22 +135,39 @@ fn top_k[
         out_vals: Output values.
         out_idxs: Output indices.
         sorted: Indicates if the top/bottom K elements are in (stable) sorted order.
+        ctx: The device call context.
     """
-    constrained[
-        out_idx_type == DType.int64,
-        "out_idx_type must be int64 for cpu",
-    ]()
 
-    alias grain_size = 1000
-    _top_k[largest=largest](
-        input,
-        k,
-        axis,
-        out_vals,
-        out_idxs,
-        grain_size,
-        sorted,
-    )
+    @parameter
+    if is_cpu[target]():
+        constrained[
+            out_idx_type == DType.int64,
+            "out_idx_type must be int64 for cpu",
+        ]()
+
+        alias grain_size = 1000
+        _top_k[largest=largest](
+            input,
+            k,
+            axis,
+            out_vals,
+            out_idxs,
+            grain_size,
+            sorted,
+        )
+    else:
+        var normalized_axis = Int(normalize_neg_index(Scalar(axis), rank))
+        if normalized_axis != rank - 1:
+            raise Error("axis other than -1 not supported on GPU")
+        if not sorted:
+            print(
+                "Warning: Unsorted top-k is not supported on GPU. Falling"
+                " back to sorted top-k."
+            )
+        var cuda_ctx = ctx.get_device_context()
+        topk_gpu[sampling=False, largest=largest](
+            cuda_ctx, k, input, out_vals, out_idxs
+        )
 
 
 fn _top_k[
