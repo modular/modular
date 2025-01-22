@@ -102,14 +102,10 @@ fn test_multi_function(ctx1: DeviceContext, ctx2: DeviceContext) raises:
             print("at index", i, "the value is", out_host1[i])
             print("at index", i, "the value is", out_host2[i])
         expect_eq(
-            out_host1[i],
-            i + 2,
-            "at index " + String(i) + " the value is " + String(out_host1[i]),
+            out_host1[i], i + 2, "at index ", i, " the value is ", out_host1[i]
         )
         expect_eq(
-            out_host2[i],
-            i + 2,
-            "at index " + String(i) + " the value is " + String(out_host2[i]),
+            out_host2[i], i + 2, "at index ", i, " the value is ", out_host2[i]
         )
 
     ctx1.free_host(out_host1)

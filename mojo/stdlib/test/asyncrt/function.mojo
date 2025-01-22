@@ -73,9 +73,7 @@ fn test_function(ctx: DeviceContext) raises:
         if i < 10:
             print("at index", i, "the value is", out_host[i])
         expect_eq(
-            out_host[i],
-            i + 2,
-            "at index " + String(i) + " the value is " + String(out_host[i]),
+            out_host[i], i + 2, "at index ", i, " the value is ", out_host[i]
         )
 
     ctx.free_host(out_host)

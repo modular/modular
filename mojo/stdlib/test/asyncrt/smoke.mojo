@@ -23,29 +23,27 @@ fn _ownership_helper_buf[
     type: DType
 ](owned buf: DeviceBuffer[type]) raises -> DeviceBuffer[type]:
     var buf_copy = buf
-    print("local buf_copy: " + String(len(buf)))
+    print("local buf_copy: ", len(buf))
     return buf_copy
 
 
 fn _run_ownership_transfer(ctx: DeviceContext) raises:
-    print("-")
-    print("_run_ownership_transfer()")
+    print("-\n_run_ownership_transfer()")
 
     var ctx_copy = _ownership_helper(ctx)
-    print("ctx_copy: " + ctx_copy.name())
+    print("ctx_copy: ", ctx_copy.name())
 
     var buf = ctx.create_buffer_sync[DType.float32](32)
-    print("buf: " + String(len(buf)))
+    print("buf: ", len(buf))
     var buf_copy = _ownership_helper_buf(buf)
-    print("buf_copy: " + String(len(buf_copy)))
+    print("buf_copy: ", len(buf_copy))
 
     # Make sure buf survives to the end of the test function.
     _ = buf
 
 
 fn _run_device_info(ctx: DeviceContext) raises:
-    print("-")
-    print("_run_device_info()")
+    print("-\n_run_device_info()")
 
     (free_before, total_before) = ctx.get_memory_info()
 
@@ -53,14 +51,14 @@ fn _run_device_info(ctx: DeviceContext) raises:
 
     (free_after, total_after) = ctx.get_memory_info()
     print(
-        "Memory info (before -> after) - total: "
-        + String(total_before)
-        + " -> "
-        + String(total_after)
-        + " , free: "
-        + String(free_before)
-        + " -> "
-        + String(free_after)
+        "Memory info (before -> after) - total: ",
+        total_before,
+        " -> ",
+        total_after,
+        " , free: ",
+        free_before,
+        " -> ",
+        free_after,
     )
 
     # Make sure buf survives to the end of the test function.
@@ -68,40 +66,34 @@ fn _run_device_info(ctx: DeviceContext) raises:
 
 
 fn _run_compute_capability(ctx: DeviceContext) raises:
-    print("-")
-    print("_run_compute_capability()")
-
-    print("Compute capability: " + String(ctx.compute_capability()))
+    print(
+        "-\n_run_compute_capability()\nCompute capability: ",
+        ctx.compute_capability(),
+    )
 
 
 fn _run_get_attribute(ctx: DeviceContext) raises:
-    print("-")
-    print("_run_get_attribute()")
-
     print(
-        "clock_rate: " + String(ctx.get_attribute(DeviceAttribute.CLOCK_RATE))
+        "-\n_run_get_attribute()\nclock_rate: ",
+        ctx.get_attribute(DeviceAttribute.CLOCK_RATE),
+        "\nwarp_size: ",
+        ctx.get_attribute(DeviceAttribute.WARP_SIZE),
     )
-    print("warp_size: " + String(ctx.get_attribute(DeviceAttribute.WARP_SIZE)))
 
 
 fn _run_get_stream(ctx: DeviceContext) raises:
-    print("-")
-    print("_run_get_stream()")
-
-    print("Getting the stream.")
+    print("-\n_run_get_stream()\nGetting the stream.")
     var stream = ctx.stream()
     print("Synchronizing on `stream`.")
     stream.synchronize()
 
 
 fn _run_peer_access(ctx: DeviceContext) raises:
-    print("-")
-    print("_run_peer_access()")
-
+    print("-\n_run_peer_access()")
     expect_eq(ctx.can_access(ctx), False, "self access is not enabled")
 
     var num_gpus = DeviceContext.number_of_devices(api=ctx.api())
-    print("Number of GPU devices: " + String(num_gpus))
+    print("Number of GPU devices: ", num_gpus)
 
     if num_gpus > 1:
         var peer = create_test_device_context(device_id=1)
@@ -114,8 +106,7 @@ fn _run_peer_access(ctx: DeviceContext) raises:
 
 fn main() raises:
     var ctx = create_test_device_context()
-    print("-------")
-    print("Running test_smoke(" + ctx.name() + "):")
+    print("-------\nRunning test_smoke(", ctx.name(), "):")
 
     _run_ownership_transfer(ctx)
     _run_device_info(ctx)
