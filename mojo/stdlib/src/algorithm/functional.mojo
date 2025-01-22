@@ -1378,16 +1378,11 @@ fn elementwise[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        var shape_str = trace_arg("shape", shape)
-        var vector_width_str = String("vector_width=", simd_width)
-        var single_thread_blocking_override = String(
-            "single_thread_blocking_override=", use_blocking_impl
-        )
-
-        return String(";").join(
-            shape_str,
-            vector_width_str,
-            single_thread_blocking_override,
+        return String(
+            trace_arg("shape", shape),
+            trace_arg("vector_width", simd_width),
+            trace_arg("single_thread_blocking_override", use_blocking_impl),
+            sep=";",
         )
 
     with Trace[TraceLevel.OP, target=target](
