@@ -120,16 +120,19 @@ struct BenchMetric(CollectionElement):
             if m[].check_name(name):
                 return m[]
 
-        var err: String = "\n"
-        err += String("-") * 80 + "\n"
-        err += String("-") * 80 + "\n"
-        err += "Couldn't match metric [" + name + "]\n"
-        err += "Available throughput metrics (case-insensitive) in the list:\n"
+        alias sep = "-" * 80 + "\n"
+        var err = String(
+            "\n",
+            sep,
+            sep,
+            "Couldn't match metric [" + name + "]\n",
+            "Available throughput metrics (case-insensitive) in the list:\n",
+        )
         for m in metric_list:
-            err += "    metric: [" + m[].name.lower() + "]\n"
-        err += String("-") * 80 + "\n"
-        err += String("-") * 80 + "\n"
-        err += "[ERROR]: metric [" + name + "] is NOT supported!\n"
+            err += String("    metric: [" + m[].name.lower(), "]\n")
+        err += String(
+            sep, sep, "[ERROR]: metric [", name, "] is NOT supported!\n"
+        )
         raise Error(err)
 
 
