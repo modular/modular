@@ -194,9 +194,9 @@ struct Error(
         Args:
             writer: The object to write to.
         """
-
-        # TODO: Avoid this unnecessary intermediate String allocation.
-        writer.write(self._message())
+        if not self:
+            return
+        writer.write(StringRef(self.unsafe_cstr_ptr()))
 
     @no_inline
     fn __repr__(self) -> String:
@@ -205,7 +205,9 @@ struct Error(
         Returns:
             A printable representation of the error message.
         """
-        return String("Error(", repr(self._message()), ")")
+        return String(
+            "Error(", repr(String(StringRef(self.unsafe_cstr_ptr()))), ")"
+        )
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -220,20 +222,6 @@ struct Error(
             The pointer to the underlying memory.
         """
         return self.data.bitcast[c_char]()
-
-    fn _message(self) -> String:
-        """Converts the Error to string representation.
-
-        Returns:
-            A String of the error message.
-        """
-        if not self:
-            return ""
-
-        var length = self.loaded_length
-        if length < 0:
-            length = -length
-        return String(StringRef(self.data, length))
 
 
 @doc_private
