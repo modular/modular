@@ -4079,7 +4079,8 @@ struct BottomK:
         k: Scalar,
         axis: Scalar,
         sorted: Scalar[type = DType.bool],
-    ):
+        ctx: MojoCallContextPtr,
+    ) raises:
         top_k[largest=False](
             managed_tensor_slice_to_ndbuffer_with_spec[
                 compiler.specsof[input.type, input.rank]("input")
@@ -4093,6 +4094,7 @@ struct BottomK:
                 compiler.specsof[indices.type, indices.rank]("indices")
             ](indices),
             sorted,
+            ctx,
         )
 
     @staticmethod
@@ -4130,7 +4132,8 @@ struct TopK:
         k: Scalar,
         axis: Scalar,
         sorted: Scalar[type = DType.bool],
-    ):
+        ctx: MojoCallContextPtr,
+    ) raises:
         top_k[largest=True](
             managed_tensor_slice_to_ndbuffer_with_spec[
                 compiler.specsof[input.type, input.rank]("input")
@@ -4144,6 +4147,7 @@ struct TopK:
                 compiler.specsof[indices.type, indices.rank]("indices")
             ](indices),
             sorted,
+            ctx,
         )
 
     @staticmethod
