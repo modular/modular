@@ -108,7 +108,6 @@ DLPACK_DTYPES = {
 }
 
 
-@pytest.mark.skipif(accelerator_api() == "hip", reason="KERN-1454")
 def test_dlpack_accelerator():
     # TODO(MSDK-897): improve test coverage with different shapes and strides.
     for dtype, torch_dtype in DLPACK_DTYPES.items():
@@ -125,7 +124,6 @@ def test_dlpack_accelerator():
         assert acc_tensor[0, 0].to(CPU()).item() == 7
 
 
-@pytest.mark.skipif(accelerator_api() == "hip", reason="KERN-1454")
 def test_from_dlpack():
     # TODO(MSDK-897): improve test coverage with different shapes and strides.
     for dtype, torch_dtype in DLPACK_DTYPES.items():
