@@ -124,8 +124,8 @@ class Tensor(DLPackArray):
         false if the tensor is a non-contiguous slice.
 
         Currently, we consider certain situations that are contiguous as
-        non-contiguous for the purposes of our engine. These situations include:
-        * A tensor with negative steps."""
+        non-contiguous for the purposes of our engine, such as when a tensor
+        has negative steps."""
         return self._impl.is_contiguous
 
     def _iterate_indices(self) -> Generator[ShapeType]:
@@ -181,6 +181,7 @@ class Tensor(DLPackArray):
         """Create a deep copy on an optionally given device.
 
         If a device is None (default), a copy is created on the same device.
+
         .. code-block:: python
 
             from max import driver
