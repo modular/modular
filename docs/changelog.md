@@ -102,7 +102,7 @@ what we publish.
 
 - The free floating functions for constructing different types have been
   deprecated for actual constructors:
-  
+
   ```plaintext
   before   after
   ------------------
@@ -111,7 +111,7 @@ what we publish.
   bool()   Bool()
   float()  Float64()
   ```
-  
+
   These functions were a workaround before Mojo had a way to distinguish between
   implicit and explicit constructors. For this release you'll get a deprecation
   warning, and in the next release they'll become compiler errors. You can
@@ -195,6 +195,9 @@ what we publish.
 - Added `StringSlice.chars()` which returns an iterator over `Char`s. This is a
   compliant UTF-8 decoder that returns each Unicode codepoint encoded in the
   string.
+
+- Added `StringSlice.__getitem__(Slice)` which returns a substring.
+  Only step sizes of 1 are supported.
 
 - Several standard library functions have been changed to take `StringSlice`
   instead of `String`. This generalizes them to be used for any appropriately

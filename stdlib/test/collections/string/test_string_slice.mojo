@@ -150,6 +150,64 @@ fn test_heap_string_from_string_slice() raises:
     assert_equal(heap_string, "Hello")
 
 
+fn test_string_substring() raises:
+    var string = String("Hello")
+    var str_slice = string.as_string_slice()
+
+    assert_equal(len(str_slice), 5)
+    assert_equal(str_slice[0], "H")
+    assert_equal(str_slice[1], "e")
+    assert_equal(str_slice[2], "l")
+    assert_equal(str_slice[3], "l")
+    assert_equal(str_slice[4], "o")
+
+    # ----------------------------------
+    # Test subslicing
+    # ----------------------------------
+
+    # Slice the whole thing
+    var sub1 = str_slice[:5]
+    assert_equal(len(sub1), 5)
+    assert_equal(sub1[0], "H")
+    assert_equal(sub1[1], "e")
+    assert_equal(sub1[2], "l")
+    assert_equal(sub1[3], "l")
+    assert_equal(sub1[4], "o")
+
+    # Slice the end
+    var sub2 = str_slice[2:5]
+    assert_equal(len(sub2), 3)
+    assert_equal(sub2[0], "l")
+    assert_equal(sub2[1], "l")
+    assert_equal(sub2[2], "o")
+
+    # Slice the first element
+    var sub3 = str_slice[0:1]
+    assert_equal(len(sub3), 1)
+    assert_equal(sub3[0], "H")
+    assert_equal(sub3[-1], "H")
+
+    # ----------------------------------
+    # Test empty subslicing
+    # ----------------------------------
+
+    var sub4 = str_slice[0:0]
+    assert_equal(len(sub4), 0)
+
+    var sub5 = str_slice[2:2]
+    assert_equal(len(sub5), 0)
+
+    # Empty slices still have a pointer value
+    assert_equal(Int(sub5.unsafe_ptr()) - Int(sub4.unsafe_ptr()), 2)
+
+    # ----------------------------------
+    # Test disallowed stepsize
+    # ----------------------------------
+
+    with assert_raises():
+        var sub6 = str_slice[0:0:2]
+
+
 fn test_slice_len() raises:
     assert_equal(5, len(StringSlice("12345")))
     assert_equal(4, len(StringSlice("1234")))

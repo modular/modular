@@ -627,6 +627,26 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return self.__str__()
 
+    @always_inline
+    fn __getitem__(self, span: Slice) raises -> Self:
+        """Gets the sequence of characters at the specified positions.
+
+        Args:
+            span: A slice that specifies positions of the new substring.
+
+        Returns:
+            A new StringSlice containing the substring at the specified positions.
+        """
+        var step: Int
+        var start: Int
+        var end: Int
+        start, end, step = span.indices(len(self))
+
+        if step != 1:
+            raise Error("Slice must be within bounds and step must be 1")
+
+        return Self(unsafe_from_utf8=self._slice[span])
+
     # ===------------------------------------------------------------------===#
     # Operator dunders
     # ===------------------------------------------------------------------===#
