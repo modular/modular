@@ -39,6 +39,7 @@ def Canonicalizer : Pass<"canonicalizer"> {
     "MDialect",
     "mlir::LLVM::LLVMDialect",
     "mlir::NVVM::NVVMDialect",
+    "mlir::ROCDL::ROCDLDialect",
     "mlir::index::IndexDialect",
   ];
 }
@@ -242,6 +243,7 @@ def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "ModuleOp"> {
     "MDialect",
     "mlir::LLVM::LLVMDialect",
     "mlir::NVVM::NVVMDialect",
+    "mlir::ROCDL::ROCDLDialect",
     "mlir::index::IndexDialect",
     "DebugInfo::DebugInfoDialect"
   ];
@@ -344,6 +346,7 @@ def ElaborateGenerators : Pass<"elaborate-generators", "ModuleOp"> {
     "MDialect",
     "mlir::LLVM::LLVMDialect",
     "mlir::NVVM::NVVMDialect",
+    "mlir::ROCDL::ROCDLDialect",
     "mlir::index::IndexDialect",
   ];
 
