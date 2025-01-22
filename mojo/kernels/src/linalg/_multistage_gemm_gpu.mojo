@@ -73,6 +73,60 @@ fn distance[
 
 
 @always_inline
+fn warp_split_k_reduction[
+    c_type: DType,
+    c_layout: Layout, //,
+    BM: Int,
+    BN: Int,
+    num_threads_per_warp_k_part: Int,
+    num_warp_k_partitions: Int,
+](
+    warp_k_part_id: Int,
+    c_reg_tile: LayoutTensor[
+        c_type, c_layout, address_space = AddressSpace.LOCAL, **_
+    ],
+):
+    alias red_layout = Layout.row_major(1, num_threads_per_warp_k_part)
+
+    alias num_mmas = c_layout.shape[0].value()
+    alias c_frag_size = c_layout.shape[1].value()
+
+    var i_red = num_warp_k_partitions // 2
+    var tid = thread_idx.x
+
+    var smem = external_memory[
+        Scalar[c_type],
+        address_space = AddressSpace.SHARED,
+        alignment = alignof[SIMD[c_type, c_frag_size]](),
+    ]()
+
+    while i_red > 0:
+        barrier()
+        var red_tb_smem = tb[c_type]().row_major[1, BM * BN]().shared().view(
+            smem.bitcast[Scalar[c_type]]()
+            + ((warp_k_part_id % i_red) * BM * BN)
+        ).vectorize[1, c_frag_size]()
+        if i_red <= warp_k_part_id < 2 * i_red:
+            copy_local_to_sram[thread_layout=red_layout](
+                red_tb_smem,
+                c_reg_tile.vectorize[1, c_frag_size](),
+            )
+        barrier()
+        if warp_k_part_id < i_red:
+            var red_tb_thread_tile = red_tb_smem.distribute[red_layout](tid)
+            var c_reg_tile_vectorized = c_reg_tile.vectorize[
+                1, c_frag_size
+            ]().transpose()
+
+            @parameter
+            for i in range(num_mmas):
+                c_reg_tile_vectorized[0, i] += rebind[
+                    __type_of(c_reg_tile_vectorized[0, i])
+                ](red_tb_thread_tile[0, i])
+        i_red /= 2
+
+
+@always_inline
 fn multistage_mma[
     c_type: DType,
     c_layout: Layout,
@@ -131,7 +185,10 @@ fn multistage_mma[
 ):
     alias simd_size = simdwidthof[a_type]()
 
-    var tid: UInt32 = thread_idx.x
+    # In the slice-K method, we pass `num_threads_per_warp_k_part` as `num_threads`
+    # in the parameters. This ensures that `tid` represents the relative thread position
+    # within each warp_k_part_id groups.
+    var tid: UInt32 = thread_idx.x % num_threads
     var warp_id = warp_broadcast(tid // WARP_SIZE)
 
     alias num_warps_m = BM // WM
@@ -597,9 +654,15 @@ fn multistage_gemm_kernel[
     alias num_warps_n = config.num_warps_n()
     alias num_threads = config.num_threads()
 
+    alias num_warp_k_partitions = config.num_warp_k_partitions
+    alias num_threads_per_warp_k_part = num_threads // num_warp_k_partitions
+
     var tid = thread_idx.x
     var ln_id = lane_id()
-    var warp_id = warp_broadcast(tid // WARP_SIZE)
+    var warp_k_part_id = tid // num_threads_per_warp_k_part if num_warp_k_partitions > 1 else 0
+    var warp_id = warp_broadcast(
+        (tid % num_threads_per_warp_k_part) // WARP_SIZE
+    )
 
     # Only apply block swizzling for half precision types.
     alias swizzle_block = a_type.is_half_float() and b_type.is_half_float() and is_nvidia_gpu()
@@ -641,12 +704,15 @@ fn multistage_gemm_kernel[
                     circular=True,
                 ]().ptr
             )
-        ](a_smem),
+        ](a_smem)
+        + warp_k_part_id * a_smem_size,
         a_smem_size,
     )
 
     # There is one pre-allocated shared buffer. Explicitly offset B after at A's end.
-    var b_smem = (a_smem + a_smem_size).bitcast[Scalar[b_type]]()
+    var b_smem = (a_smem + num_warp_k_partitions * a_smem_size).bitcast[
+        Scalar[b_type]
+    ]()
     alias b_smem_size = num_pipeline_stages * BK * BN
     alias BD_0 = BN if transpose_b else BK
     alias BD_1 = BK if transpose_b else BN
@@ -656,13 +722,16 @@ fn multistage_gemm_kernel[
         b_smem_layout,
         address_space = AddressSpace.SHARED,
         circular=True,
-    ](b_smem, b_smem_size)
+    ](b_smem + warp_k_part_id * b_smem_size, b_smem_size)
 
     # create input layout tensors A and Bv
     # global memory iterator
-    var a_gmem_iter = a.tiled_iterator[BM, BK, axis=1](block_idx_swizzle[1], 0)
-    var b_tile_coords = (block_idx_swizzle[0], 0) if transpose_b else (
-        0,
+    var bk_start: Int = (K // BK // num_warp_k_partitions) * warp_k_part_id
+    var a_gmem_iter = a.tiled_iterator[BM, BK, axis=1](
+        block_idx_swizzle[1], bk_start
+    )
+    var b_tile_coords = (block_idx_swizzle[0], bk_start) if transpose_b else (
+        bk_start,
         block_idx_swizzle[0],
     )
     alias b_tile_axis = 1 if transpose_b else 0
@@ -692,7 +761,7 @@ fn multistage_gemm_kernel[
         BK,
         WM,
         WN,
-        num_threads,
+        num_threads_per_warp_k_part,
         num_pipeline_stages,
         transpose_b,
         k_group_size = config.k_group_size,
@@ -703,8 +772,23 @@ fn multistage_gemm_kernel[
         b_gmem_iter,
         a_smem_iter,
         b_smem_iter,
-        ceildiv(K, BK),
+        ceildiv(K // num_warp_k_partitions, BK),
     )
+
+    # reduce within the threadblock
+    @parameter
+    if num_warp_k_partitions > 1:
+        warp_split_k_reduction[
+            BM,
+            BN,
+            num_threads_per_warp_k_part,
+            num_warp_k_partitions,
+        ](
+            warp_k_part_id,
+            c_reg_tile,
+        )
+        if warp_k_part_id > 0:
+            return
 
     # Map global memory tile down to thread.
     var c_gmem_tile = c.tile[BM, BN](block_idx_swizzle[1], block_idx_swizzle[0])
@@ -781,6 +865,7 @@ fn multistage_gemm_kernel[
         var accum_smem_warp_tile = tb[c_type]().row_major[
             WM, WN
         ]().shared().view(a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN)
+
         copy_local_to_sram[
             thread_layout = Layout.row_major(8, 4),
             swizzle=swizzle,
@@ -910,7 +995,9 @@ fn multistage_gemm_kernel[
 
         else:
             var c_reg_tile_out = LayoutTensor[
-                c_type, c_reg_tile.layout, address_space = AddressSpace.LOCAL
+                c_type,
+                c_reg_tile.layout,
+                address_space = AddressSpace.LOCAL,
             ].stack_allocation()
 
             @parameter

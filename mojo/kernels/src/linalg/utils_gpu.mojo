@@ -94,6 +94,8 @@ struct MatmulConfig[
 
     var k_group_size: UInt
 
+    var num_warp_k_partitions: UInt
+
     alias accum_type = get_accum_type[a_type]()  # TODO: factor b_type
     alias mma_shape = get_mma_shape[a_type, get_accum_type[a_type]()]()
 
@@ -119,12 +121,14 @@ struct MatmulConfig[
         num_pipeline_stages: UInt = 4,
         num_k_partitions: UInt = 1,
         k_group_size: UInt = 1,
+        num_warp_k_partitions: UInt = 1,
     ):
         self.block_tile_shape = block_tile_shape
         self.warp_tile_shape = warp_tile_shape
         self.num_pipeline_stages = num_pipeline_stages
         self.num_k_partitions = num_k_partitions
         self.k_group_size = k_group_size
+        self.num_warp_k_partitions = num_warp_k_partitions
 
     fn num_warps_m(self) -> UInt:
         return self.block_tile_shape[0] // self.warp_tile_shape[0]
@@ -133,11 +137,18 @@ struct MatmulConfig[
         return self.block_tile_shape[1] // self.warp_tile_shape[1]
 
     fn num_threads(self) -> UInt:
-        return self.num_warps_m() * self.num_warps_n() * WARP_SIZE
+        return (
+            self.num_warps_m()
+            * self.num_warps_n()
+            * self.num_warp_k_partitions
+            * WARP_SIZE
+        )
 
     fn shared_mem_usage(self) -> Int:
         return _shared_memory_usage[a_type, b_type, c_type](
-            self.block_tile_shape, self.num_pipeline_stages
+            self.block_tile_shape,
+            self.num_pipeline_stages,
+            self.num_warp_k_partitions,
         )
 
     fn grid_dim(self, m: UInt, n: UInt) -> IndexList[3]:
@@ -179,6 +190,8 @@ struct MatmulConfig[
         writer.write(self.num_pipeline_stages, "_")
         if self.num_k_partitions > 1:
             writer.write("k", self.num_k_partitions, "_")
+        if self.num_warp_k_partitions > 1:
+            writer.write("warp_k", self.num_warp_k_partitions, "_")
         # transpose A
         writer.write("N")
         # transpose B
@@ -204,6 +217,7 @@ struct MatmulConfig[
         hasher.update(self.warp_tile_shape)
         hasher.update(self.num_pipeline_stages)
         hasher.update(self.num_k_partitions)
+        hasher.update(self.num_warp_k_partitions)
         hasher.update(self.k_group_size)
         hasher.update(self.split_k_reduction_scheme)
 
@@ -222,14 +236,16 @@ fn _bk_base[type: DType]() -> Int:
 @always_inline
 fn _shared_memory_usage[
     a_type: DType, b_type: DType, c_type: DType
-](block_mnk: IndexList[3], num_pipeline_stages: Int) -> UInt:
+](block_mnk: IndexList[3], num_pipeline_stages: Int, slice_k: Int = 1) -> UInt:
     # fmt: off
-    var a_usage = block_mnk[0] * block_mnk[2] * num_pipeline_stages * sizeof[a_type]()
-    var b_usage = block_mnk[1] * block_mnk[2] * num_pipeline_stages * sizeof[b_type]()
+    var a_usage = slice_k * block_mnk[0] * block_mnk[2] * num_pipeline_stages * sizeof[a_type]()
+    var b_usage = slice_k * block_mnk[1] * block_mnk[2] * num_pipeline_stages * sizeof[b_type]()
+    # reduction within thread blocks is done with fp32
+    var slice_k_reduction = block_mnk[0] * block_mnk[1] * (slice_k // 2) * sizeof[DType.float32]()
     var c_usage = block_mnk[0] * block_mnk[1] * \
                   sizeof[c_type]() if c_type.is_half_float() else 0
     # fmt: on
-    return max(a_usage + b_usage, c_usage)
+    return max(max(a_usage + b_usage, c_usage), slice_k_reduction)
 
 
 @value
