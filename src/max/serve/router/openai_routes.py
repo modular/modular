@@ -147,7 +147,7 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                     id=request.id,
                     choices=choices,
                     created=int(datetime.now().timestamp()),
-                    model="",
+                    model=self.pipeline.model_name,
                     object="chat.completion.chunk",
                     system_fingerprint=None,
                     usage=None,
@@ -240,7 +240,7 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                 id=request.id,
                 choices=response_choices,
                 created=int(datetime.now().timestamp()),
-                model="",
+                model=self.pipeline.model_name,
                 object="chat.completion",
                 system_fingerprint=None,
                 service_tier=None,
@@ -562,7 +562,7 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
                     id=request.id,
                     choices=choices,
                     created=int(datetime.now().timestamp()),
-                    model="",
+                    model=self.pipeline.model_name,
                     object="text_completion",
                 )
                 n_tokens += 1
@@ -633,7 +633,7 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
                 id=request.id,
                 choices=response_choices,
                 created=int(datetime.now().timestamp()),
-                model="",
+                model=self.pipeline.model_name,
                 object="text_completion",
                 system_fingerprint=None,
             )
