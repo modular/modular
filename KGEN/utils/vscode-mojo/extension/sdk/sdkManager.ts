@@ -251,7 +251,7 @@ export class MAXSDKManager extends DisposableContext {
         errorMessage += `\nPlease reinstall or rebuild the SDK given by ${selectedSDK.sdkSpec.modularHomePath}.`;
         vscode.window.showErrorMessage(errorMessage);
       }
-      this.logger.main.error(errorMessage);
+      this.logger.error(errorMessage);
       return undefined;
     }
     return result.value;
@@ -316,10 +316,7 @@ export class MAXSDKManager extends DisposableContext {
       };
     }
     const modularConfig = ini.parse(modularConfigContents);
-    this.logger.main.info(
-      `'${modularConfigPath}' with contents`,
-      modularConfig,
-    );
+    this.logger.info(`'${modularConfigPath}' with contents`, modularConfig);
     const mojoConfig = modularConfig['mojo-max'];
     if (!mojoConfig) {
       return {
@@ -364,7 +361,7 @@ export class MAXSDKManager extends DisposableContext {
     // If we're only going to use the release SDK specs, don't bother looking for others.
     if (process.env['MOJO_EXTENSION_FORCE_MAGIC']) {
       const releaseSDKSpecs = await this.findMagicSDKSpecs();
-      this.logger.main.debug(
+      this.logger.debug(
         'MOJO_EXTENSION_FORCE_MAGIC is set; using release SDK spec(s)',
         releaseSDKSpecs,
       );
@@ -394,7 +391,7 @@ export class MAXSDKManager extends DisposableContext {
         const modularConfig = path.join(modularHomePath, 'modular.cfg');
         const contents = await readFile(modularConfig);
         if (contents === undefined) {
-          this.logger.main.error(
+          this.logger.error(
             `Unable to read ${modularConfig}. Skipping the user-provided SDK ${modularHomePath}`,
           );
           return undefined;

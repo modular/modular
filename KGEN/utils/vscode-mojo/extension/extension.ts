@@ -66,13 +66,13 @@ export class MojoExtension extends DisposableContext {
       }
 
       if (this.areThereIncompatibleExtensions(this.isNightly)) {
-        this.logger.main.info(
+        this.logger.info(
           'Not activating the Mojo Context due to another Mojo extension being enabled.',
         );
         return this;
       }
 
-      this.logger.main.info(`
+      this.logger.info(`
 =============================
 Activating the Mojo Extension
 =============================
@@ -126,19 +126,19 @@ Activating the Mojo Extension
       await this.lspManager.activate();
       this.pushSubscription(this.lspManager);
 
-      this.logger.main.info('MojoContext activated.');
+      this.logger.info('MojoContext activated.');
       this.pushSubscription(
         new vscode.Disposable(() => {
-          logger.main.info('Disposing MOJOContext.');
+          logger.info('Disposing MOJOContext.');
         }),
       );
 
       // Initialize the RPC server
       const rpcServer = new RpcServer(this.logger);
-      this.logger.main.info('Starting RPC server');
+      this.logger.info('Starting RPC server');
       this.pushSubscription(rpcServer);
       rpcServer.listen();
-      this.logger.main.info('Mojo extension initialized.');
+      this.logger.info('Mojo extension initialized.');
       return this;
     });
   }
@@ -177,7 +177,7 @@ Activating the Mojo Extension
   }
 
   override dispose() {
-    this.logger.main.info('Disposing the extension.');
+    this.logger.info('Disposing the extension.');
     super.dispose();
   }
 }
@@ -212,9 +212,9 @@ export async function activate(
  * disabled the extension manually.
  */
 export function deactivate() {
-  logger.main.info('Deactivating the extension.');
+  logger.info('Deactivating the extension.');
   extension.dispose();
-  logger.main.info('Extension deactivated.');
+  logger.info('Extension deactivated.');
   logger.dispose();
 }
 

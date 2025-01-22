@@ -90,7 +90,7 @@ export class RpcServer extends DisposableContext {
           client.destroy();
         }
         this.server.close(() => {
-          this.logger.main.info('RPC server closed.');
+          this.logger.info('RPC server closed.');
           this.server.unref();
         });
       }),
@@ -106,13 +106,11 @@ export class RpcServer extends DisposableContext {
 
   private onError(err: Error): void {
     if (err.message.includes('EADDRINUSE') && this.port < PORT_MAX) {
-      this.logger.main.info(
-        'Will try to start the RPC Server with a new port.',
-      );
+      this.logger.info('Will try to start the RPC Server with a new port.');
       this.port += 1;
       this.listen();
     } else {
-      this.logger.main.error(
+      this.logger.error(
         'RPC Server error. You might need to restart VS Code to fix this issue.',
         err,
       );
@@ -149,7 +147,7 @@ export class RpcServer extends DisposableContext {
         request = parsedRequest;
       }
     } catch (err) {
-      this.logger.main.info(`RPC Server request parsing error: ${err}`);
+      this.logger.info(`RPC Server request parsing error: ${err}`);
     }
 
     if (request === undefined) {
@@ -160,7 +158,7 @@ export class RpcServer extends DisposableContext {
       socket.end(JSON.stringify(response) + this.protocolSeparator);
       return;
     }
-    this.logger.main.info(`RPC Server request: ${JSON.stringify(request)}`);
+    this.logger.info(`RPC Server request: ${JSON.stringify(request)}`);
 
     if (instanceOfConnect(request)) {
       let name = '[VSCode]';
@@ -184,7 +182,7 @@ export class RpcServer extends DisposableContext {
         ),
         name,
       };
-      this.logger.main.info(`RPC Server response: ${JSON.stringify(response)}`);
+      this.logger.info(`RPC Server response: ${JSON.stringify(response)}`);
       socket.write(JSON.stringify(response) + this.protocolSeparator);
     } else if (instanceOfDebug(request)) {
       const debugConfig: DebugConfiguration = request.debugConfiguration;
@@ -194,9 +192,7 @@ export class RpcServer extends DisposableContext {
           success: true,
           kind: 'debug',
         };
-        this.logger.main.info(
-          `RPC Server response: ${JSON.stringify(response)}`,
-        );
+        this.logger.info(`RPC Server response: ${JSON.stringify(response)}`);
         socket.write(JSON.stringify(response) + this.protocolSeparator);
       } catch (err) {
         const response: RPCServerResponse = {
@@ -204,9 +200,7 @@ export class RpcServer extends DisposableContext {
           message: `${err}`,
           kind: 'debug',
         };
-        this.logger.main.info(
-          `RPC Server response: ${JSON.stringify(response)}`,
-        );
+        this.logger.info(`RPC Server response: ${JSON.stringify(response)}`);
         socket.write(JSON.stringify(response) + this.protocolSeparator);
       }
     } else {
@@ -214,7 +208,7 @@ export class RpcServer extends DisposableContext {
         success: false,
         message: 'Invalid request',
       };
-      this.logger.main.info(`RPC Server response: ${JSON.stringify(response)}`);
+      this.logger.info(`RPC Server response: ${JSON.stringify(response)}`);
       socket.end(JSON.stringify(response) + this.protocolSeparator);
     }
   }
@@ -239,7 +233,7 @@ export class RpcServer extends DisposableContext {
    * Listens to messages using the provided network options.
    */
   public async listen() {
-    this.logger.main.info(
+    this.logger.info(
       `Attempting to create the RPC server with port ${this.port}`,
     );
 
