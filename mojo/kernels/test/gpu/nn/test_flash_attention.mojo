@@ -48,6 +48,7 @@ fn test[
     against_gpu_naive: Bool = False,
     batch_size: Int = 1,
     num_partitions: OptionalReg[Int] = None,
+    decoding_warp_split_k: Bool = False,
 ](
     seq_len: Int,
     num_keys: Int,
@@ -213,7 +214,7 @@ fn test[
     fn kernel_launch(ctx: DeviceContext) raises:
         @parameter
         if mask_rank == 3:
-            flash_attention(
+            flash_attention[decoding_warp_split_k=decoding_warp_split_k](
                 output_device,
                 q_device,
                 k_device,
@@ -226,7 +227,7 @@ fn test[
                 num_partitions,
             )
         else:
-            flash_attention(
+            flash_attention[decoding_warp_split_k=decoding_warp_split_k](
                 output_device,
                 q_device,
                 k_device,
@@ -438,7 +439,8 @@ fn test_context_encoding[batch_size: Int](ctx: DeviceContext) raises:
 
 fn test_decoding[
     batch_size: Int,
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: OptionalReg[Int],
+    split_k: Bool,
     qkv_type: DType = DType.bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool) raises:
     # fp32 arbitrary depth and num_heads, baseline impl.
@@ -452,6 +454,7 @@ fn test_decoding[
         against_gpu_naive=True,
         batch_size=batch_size,
         num_partitions=num_partitions,
+        decoding_warp_split_k=split_k,
     ](1, 11, ctx, use_index_input=use_index_input)
     test[
         4,
@@ -462,6 +465,7 @@ fn test_decoding[
         against_gpu_naive=True,
         batch_size=batch_size,
         num_partitions=num_partitions,
+        decoding_warp_split_k=split_k,
     ](1, 523, ctx, use_index_input=use_index_input)
     test[
         4,
@@ -473,6 +477,7 @@ fn test_decoding[
         against_gpu_naive=True,
         batch_size=batch_size,
         num_partitions=num_partitions,
+        decoding_warp_split_k=split_k,
     ](1, 29, ctx, use_index_input=use_index_input)
     test[
         4,
@@ -484,6 +489,7 @@ fn test_decoding[
         against_gpu_naive=True,
         batch_size=batch_size,
         num_partitions=num_partitions,
+        decoding_warp_split_k=split_k,
     ](1, 156, ctx, use_index_input=use_index_input)
     test[
         4,
@@ -495,6 +501,7 @@ fn test_decoding[
         against_gpu_naive=True,
         batch_size=batch_size,
         num_partitions=num_partitions,
+        decoding_warp_split_k=split_k,
     ](1, 208, ctx, use_index_input=use_index_input)
 
 
@@ -591,11 +598,24 @@ def main():
         test_cross_attention[1](ctx)
 
         @parameter
-        for batch_size in range(1, 5, 3):
-            test_decoding[batch_size, 1](ctx, False)
-            test_decoding[batch_size, 1, DType.float32](ctx, False)
-            test_decoding[batch_size, 2](ctx, False)
-            test_decoding[batch_size, 4](ctx, False)
-            test_decoding[batch_size, 4, DType.float32](ctx, False)
-            test_decoding[batch_size, None](ctx, False)
-            test_decoding[batch_size, 32](ctx, False)
+        for split_k in range(2):
+
+            @parameter
+            for batch_size in range(1, 5, 3):
+                test_decoding[batch_size, 1, split_k](ctx, False)
+
+                @parameter
+                if not split_k:
+                    test_decoding[batch_size, 1, split_k, DType.float32](
+                        ctx, False
+                    )
+                test_decoding[batch_size, 2, split_k](ctx, False)
+                test_decoding[batch_size, 4, split_k](ctx, False)
+
+                @parameter
+                if not split_k:
+                    test_decoding[batch_size, 4, split_k, DType.float32](
+                        ctx, False
+                    )
+                test_decoding[batch_size, None, split_k](ctx, False)
+                test_decoding[batch_size, 32, split_k](ctx, False)
