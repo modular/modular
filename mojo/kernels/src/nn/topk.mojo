@@ -839,7 +839,7 @@ fn _topk_stage2[
 fn _topk_gpu[
     type: DType,
     rank: Int,
-    out_idx_type: DType = DType.index,
+    out_idx_type: DType, //,
     sampling: Bool = True,
     largest: Bool = True,
 ](
@@ -977,7 +977,7 @@ fn _topk_gpu[
 fn topk_gpu[
     type: DType,
     rank: Int,
-    out_idx_type: DType = DType.index,
+    out_idx_type: DType, //,
     sampling: Bool = True,
     largest: Bool = True,
 ](
@@ -1121,7 +1121,7 @@ fn topk_gpu[
 fn topk_fused_sampling_gpu[
     type: DType,
     rank: Int,
-    out_idx_type: DType,
+    out_idx_type: DType, //,
 ](
     ctx: DeviceContext,
     K: Int,  # num top elements to keep
