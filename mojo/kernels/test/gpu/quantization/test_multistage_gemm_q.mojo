@@ -63,7 +63,7 @@ from layout.tensor_core import (
     get_fragment_size,
     get_mma_shape,
 )
-from linalg.matmul_gpu import _matmul_gpu
+from linalg.matmul_gpu import _matmul_gpu, multistage_gemm
 from linalg.utils_gpu import (
     MatmulConfig,
     MatmulKernels,
@@ -73,7 +73,11 @@ from linalg.utils_gpu import (
 from memory import UnsafePointer
 from memory.unsafe import bitcast
 from quantization import Q4sym
-from quantization.qmatmul_gpu import pack_Q_tile
+from quantization.qmatmul_gpu import (
+    pack_Q_tile,
+    multistage_gemm_q,
+    q_smem_usage,
+)
 
 from utils.index import Index, IndexList
 from utils import StaticTuple
@@ -93,598 +97,6 @@ fn args_to_tuple[swap: Bool](arg_0: Int, arg_1: Int) -> Tuple[Int, Int]:
         return Tuple(arg_1, arg_0)
     else:
         return Tuple(arg_0, arg_1)
-
-
-@always_inline
-fn multistage_mma_q[
-    BM: Int,
-    BN: Int,
-    BK: Int,
-    WM: Int,
-    WN: Int,
-    num_threads: Int,
-    num_pipeline_stages: Int,
-    transpose_b: Bool,
-    group_size: Int,
-    pack_factor: Int,
-    c_type: DType,
-    c_layout: Layout,
-    a_type: DType,
-    a_layout: Layout,
-    a_smem_layout: Layout,
-    b_type: DType,
-    b_layout: Layout,
-    b_smem_layout: Layout,
-    scales_type: DType,
-    scales_layout: Layout,
-    scales_smem_layout: Layout,
-    # Hack:
-    /,
-    *,
-    swizzle_a: Bool = True,
-    static_num_iters: Dim = Dim(),
-    prefetch_init: Bool = True,
-    continue_prefetch_b: Bool = False,
-    transpose_b_next: Bool = False,
-    b_next_gmem_layout: Layout = Layout(),
-    b_next_smem_layout: Layout = Layout(),
-    next_op_b_iter_alignment: Int = alignof[b_type](),
-](
-    c: LayoutTensor[c_type, c_layout, address_space = AddressSpace.LOCAL],
-    a_iter_arg: LayoutTensorIter[_, a_layout, **_],
-    b_iter_arg: LayoutTensorIter[b_type, b_layout, **_],
-    a_smem_iter_arg: LayoutTensorIter[
-        a_type, a_smem_layout, address_space = AddressSpace.SHARED, **_
-    ],
-    mut b_smem_iter: LayoutTensorIter[
-        b_type, b_smem_layout, address_space = AddressSpace.SHARED, **_
-    ],
-    scales_smem_iter_arg: LayoutTensorIter[
-        scales_type,
-        scales_smem_layout,
-        address_space = AddressSpace.SHARED, **_,
-    ],
-    scales_iter_arg: LayoutTensorIter[scales_type, scales_layout, **_],
-    num_iters: Int,
-    /,
-    *,
-    num_b_rows: OptionalReg[Int] = None,
-):
-    alias simd_size = simdwidthof[a_type]()
-    alias simd_b_size = simdwidthof[b_type]()
-    alias num_scales_stages = ceildiv(
-        (num_pipeline_stages - 1) * BK, group_size
-    ) + 1
-    alias repack_tile = Index(64, 16)
-
-    var tid: UInt32 = thread_idx.x
-    var warp_id = tid // WARP_SIZE
-    var lane_id = tid % WARP_SIZE
-
-    alias num_warps_m = BM // WM
-    alias num_warps_n = BN // WN
-    var warp_x = warp_id % num_warps_n
-    var warp_y = warp_id // num_warps_n
-
-    var a_iter = a_iter_arg
-    var b_iter = b_iter_arg
-    var scales_iter = scales_iter_arg
-    var a_smem_iter = a_smem_iter_arg
-    var scales_smem_iter = scales_smem_iter_arg
-    # work around mut argument can't have default value.
-    alias async_copy_a_layout = Layout.row_major(
-        num_threads * simd_size // BK, BK // simd_size
-    )
-
-    alias async_copy_b_layout = Layout.row_major(
-        num_threads * simd_b_size // b_smem_layout.stride[0].value(),
-        b_smem_layout.stride[0].value() // simd_b_size,
-    )
-    alias swizzle_b = transpose_b or b_type.is_half_float()
-
-    alias async_copy_scales_layout = Layout.row_major(1, 32)
-
-    alias smem_reg_scales_layout = Layout.row_major(8, 4)
-
-    @always_inline
-    @parameter
-    fn _copy_tensor_to_sram[
-        thread_layout: Layout, swizzle: Bool
-    ](dst: LayoutTensor, src: LayoutTensor,):
-        copy_dram_to_sram_async[thread_layout=thread_layout, swizzle=swizzle,](
-            dst.vectorize[1, simd_size](),
-            src.vectorize[1, simd_size](),
-        )
-
-    # Prefetch (num_pipeline_stages - 1) stages.
-    @parameter
-    if prefetch_init:
-
-        @parameter
-        for stage in range(num_pipeline_stages - 1):
-
-            @parameter
-            if a_iter.address_space == AddressSpace.GENERIC:
-                var a_smem_tile = a_smem_iter.next_unsafe(stage)[]
-
-                _copy_tensor_to_sram[async_copy_a_layout, swizzle_a](
-                    a_smem_tile, a_iter[]
-                )
-
-                a_iter._incr()
-
-            @parameter
-            if b_iter.address_space == AddressSpace.GENERIC:
-                var b_smem_tile = b_smem_iter.next_unsafe(stage)[]
-
-                copy_dram_to_sram_async[
-                    thread_layout=async_copy_b_layout,
-                    swizzle=False,
-                ](
-                    b_smem_tile.vectorize[1, simd_b_size](),
-                    b_iter[]
-                    .bitcast[b_type, address_space = AddressSpace.GENERIC]()
-                    .vectorize[1, simd_b_size](),
-                )
-
-                b_iter._incr()
-
-            # Every group_size rows share a scale
-            # Only load scales when necessary
-            @parameter
-            if scales_iter.address_space == AddressSpace.GENERIC:
-                if stage % (group_size // BK) == 0:
-                    alias scales_stage = stage // (group_size // BK)
-                    var scales_smem_tile = scales_smem_iter.next_unsafe(
-                        scales_stage
-                    )[]
-
-                    # We only need one warp for copying scales...
-                    if tid < 32:
-                        var src_fragments = scales_iter[].bitcast[
-                            scales_type, address_space = AddressSpace.GENERIC
-                        ]().vectorize[1, 4]().distribute[
-                            async_copy_scales_layout
-                        ](
-                            Int(tid)
-                        )
-                        var dst_fragments = scales_smem_tile.vectorize[
-                            1, 4
-                        ]().distribute[async_copy_scales_layout](Int(tid))
-
-                        dst_fragments.copy_from_async[](src_fragments)
-
-                    scales_iter._incr()
-
-            async_copy_commit_group()
-
-        # Guard stage 0.
-        async_copy_wait_group(num_pipeline_stages - 2)
-        barrier()
-
-    alias mma_shape = get_mma_shape[a_type, get_accum_type[a_type]()]()
-    alias MMA_M = mma_shape[0]
-    alias MMA_N = mma_shape[1]
-    alias MMA_K = mma_shape[2]
-    alias num_k_mmas = BK // MMA_K
-    alias num_m_mmas = WM // MMA_M
-    alias num_n_mmas = WN // MMA_N
-
-    alias accum_type = get_accum_type[a_type]()
-    alias frag_size = get_fragment_size[mma_shape]()
-    alias a_frag_size = frag_size[0]
-    alias b_frag_size = frag_size[1]
-    alias c_frag_size = frag_size[2]
-
-    # Register tiles.
-    var a_reg_tiles = tb[a_type]().row_major[
-        2 * num_m_mmas, a_frag_size
-    ]().local().alloc().split[2]()
-
-    var b_reg_tiles = tb[a_type]().row_major[
-        2 * num_n_mmas, b_frag_size
-    ]().local().alloc().vectorize[1, b_frag_size]().split[2]()
-
-    var scales_reg_tiles = tb[scales_type]().row_major[
-        num_n_mmas, 1
-    ]().local().alloc().vectorize[1, 1]()
-
-    var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
-
-    alias b_wtile_dim0 = WN // repack_tile[0] if transpose_b else (
-        (BK * repack_tile[0]) // pack_factor
-    )
-    alias b_wtile_dim1 = (
-        (BK * repack_tile[0]) // pack_factor
-    ) if transpose_b else WN // repack_tile[0]
-    var b_wtile_coord0 = Int(warp_x) if transpose_b else 0
-    var b_wtile_coord1 = 0 if transpose_b else Int(warp_x)
-    var b_warp_tile = b_smem_iter[].tile[b_wtile_dim0, b_wtile_dim1](
-        b_wtile_coord0, b_wtile_coord1
-    )
-    var scales_warp_tile = scales_smem_iter[].tile[ceildiv(BK, group_size), WN](
-        0, Int(warp_x)
-    )
-
-    var mma_op = TensorCore[accum_type, a_type, mma_shape, transpose_b]()
-
-    mma_op.load_a[swizzle_a](
-        a_warp_tile, a_reg_tiles[0].vectorize[1, a_frag_size]()
-    )
-
-    # load scales into regs
-    # for thread 0-3, scales for col 0, 8, 16, ..., 56 are stored locally
-    # thread 4-7 stores scales for col 1, 9, 17, ..., 57
-    scales_reg_tiles.vectorize[simd_size, 1]().copy_from(
-        scales_warp_tile.vectorize[1, simd_size]().distribute[
-            smem_reg_scales_layout, axis=0
-        ](Int(lane_id))
-    )
-
-    mma_op.load_b(b_warp_tile, b_reg_tiles[0], scales_reg_tiles, 0)
-
-    for k_tile_id in range(num_iters):
-        var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
-        var b_warp_tile = b_smem_iter[].tile[b_wtile_dim0, b_wtile_dim1](
-            b_wtile_coord0,
-            b_wtile_coord1,
-        )
-
-        # Perform prefetch registers and mma until current shared memory tile's
-        # data has all been loaded to registers.
-        @parameter
-        for k_mma in range(num_k_mmas):
-            var current = k_mma % 2
-            var next = (k_mma + 1) % 2
-
-            if k_mma == num_k_mmas - 1:
-                a_smem_iter._incr()
-                b_smem_iter._incr()
-
-                a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
-                b_warp_tile = b_smem_iter[].tile[b_wtile_dim0, b_wtile_dim1](
-                    b_wtile_coord0, b_wtile_coord1
-                )
-
-                # prefecth scales into regs every (group_size) rows
-                if (k_tile_id + 1) % (group_size // BK) == 0:
-                    scales_smem_iter._incr()
-                    scales_warp_tile = scales_smem_iter[].tile[
-                        ceildiv(BK, group_size), WN
-                    ](0, Int(warp_x))
-                    scales_reg_tiles.vectorize[simd_size, 1]().copy_from(
-                        scales_warp_tile.vectorize[1, simd_size]().distribute[
-                            smem_reg_scales_layout, axis=0
-                        ](Int(lane_id))
-                    )
-
-            mma_op.load_a[swizzle_a](
-                a_warp_tile,
-                a_reg_tiles[next].vectorize[1, a_frag_size](),
-                (k_mma + 1) % num_k_mmas,
-            )
-            mma_op.load_b(
-                b_warp_tile,
-                b_reg_tiles[next],
-                scales_reg_tiles,
-                (k_mma + 1) % num_k_mmas,
-            )
-
-            mma_op.mma(
-                a_reg_tiles[current].vectorize[1, a_frag_size](),
-                b_reg_tiles[current],
-                c.vectorize[1, c_frag_size](),
-            )
-
-            if k_mma + 2 == num_k_mmas:
-                var prefetch_tile_id = k_tile_id + num_pipeline_stages - 1
-
-                # Prefetch one k tile (if valid) from global memory to current
-                # shared memory buffer.
-                if prefetch_tile_id < num_iters:
-
-                    @parameter
-                    if a_iter.address_space == AddressSpace.GENERIC:
-                        var a_smem_prefetch_tile = a_smem_iter.next_unsafe(
-                            num_pipeline_stages - 1
-                        )[]
-
-                        _copy_tensor_to_sram[async_copy_a_layout, swizzle_a](
-                            a_smem_prefetch_tile, a_iter[]
-                        )
-
-                        a_iter._incr()
-
-                    @parameter
-                    if b_iter.address_space == AddressSpace.GENERIC:
-                        var b_smem_prefetch_tile = b_smem_iter.next_unsafe(
-                            num_pipeline_stages - 1
-                        )[]
-
-                        copy_dram_to_sram_async[
-                            thread_layout=async_copy_b_layout,
-                            swizzle=False,
-                        ](
-                            b_smem_prefetch_tile.vectorize[1, simd_b_size](),
-                            b_iter[]
-                            .bitcast[
-                                b_type, address_space = AddressSpace.GENERIC
-                            ]()
-                            .vectorize[1, simd_b_size](),
-                        )
-
-                        b_iter._incr()
-
-                    @parameter
-                    if scales_iter.address_space == AddressSpace.GENERIC:
-                        # Every group_size rows share a scale
-                        # Only load scales when necessary
-                        if (k_tile_id + num_pipeline_stages - 1) % (
-                            group_size // BK
-                        ) == 0:
-                            var scales_smem_tile = scales_smem_iter.next_unsafe(
-                                num_scales_stages - 1
-                            )[]
-
-                            # We only need one warp for copying scales...
-                            if tid < 32:
-                                var src_fragments = scales_iter[].bitcast[
-                                    scales_type,
-                                    address_space = AddressSpace.GENERIC,
-                                ]().vectorize[1, 4]().distribute[
-                                    async_copy_scales_layout
-                                ](
-                                    Int(tid)
-                                )
-                                var dst_fragments = scales_smem_tile.vectorize[
-                                    1, 4
-                                ]().distribute[async_copy_scales_layout](
-                                    Int(tid)
-                                )
-
-                                dst_fragments.copy_from_async[](
-                                    src_fragments, base_offset=0
-                                )
-
-                            scales_iter._incr()
-
-                async_copy_commit_group()
-
-                # Guard the next k tile's shared memory buffer.
-                async_copy_wait_group(num_pipeline_stages - 2)
-                barrier()
-
-
-fn multistage_gemm_q[
-    c_type: DType,
-    c_layout: Layout,
-    a_type: DType,
-    a_layout: Layout,
-    b_packed_type: DType,
-    b_layout: Layout,
-    group_size: Int,
-    pack_factor: Int,
-    transpose_b: Bool,
-    config: MatmulConfig[a_type, b_packed_type, c_type, transpose_b],
-](
-    c: LayoutTensor[c_type, c_layout],
-    a: LayoutTensor[a_type, a_layout],
-    b_packed: LayoutTensor[b_packed_type, b_layout],
-):
-    alias simd_size = simdwidthof[c_type]()
-
-    alias repack_tile = Index(64, 16)
-    alias group_bytes = group_size // 2 + 2
-
-    var M: UInt = c.dim(0)
-    alias N = to_int(b_layout.shape[0])
-    alias K = to_int(b_layout.shape[1]) // group_bytes * group_size
-
-    alias BM = config.block_tile_shape[0]
-    alias BN = config.block_tile_shape[1]
-    alias BK = config.block_tile_shape[2]
-    alias WM = config.warp_tile_shape[0]
-    alias WN = config.warp_tile_shape[1]
-    alias num_pipeline_stages = config.num_pipeline_stages
-
-    alias num_warps_m = config.num_warps_m()
-    alias num_warps_n = config.num_warps_n()
-    alias num_threads = config.num_threads()
-
-    # Unpack quantized weights
-    alias scales_type = DType.bfloat16
-    alias b_type = DType.uint32
-    alias b_weight_layout = Layout.row_major(N // 64, K * 64 // pack_factor)
-    var b = LayoutTensor[b_type, b_weight_layout,](
-        b_packed.ptr.bitcast[Scalar[b_type]](),
-    )
-
-    alias b_scales_layout = Layout.row_major(K // group_size, N)
-    var b_scales_ptr = b_packed.ptr + N * K // 2
-    var scales = LayoutTensor[scales_type, b_scales_layout,](
-        b_scales_ptr.bitcast[Scalar[scales_type]](),
-    )
-
-    # Hold on adding fp16 because it counld have differnet precisions than bf16.
-    # constrained[
-    #    (a_type is DType.float32 or a_type is DType.bfloat16)
-    #    and a_type == b_type == c_type,
-    #    "Pipeline gemm only supports tf32 or BF16 mma",
-    # ]()
-
-    constrained[
-        num_warps_m * num_warps_n == num_threads // WARP_SIZE,
-        "Number of warps doesn't match warp tile sizes.",
-    ]()
-
-    var tid: UInt32 = thread_idx.x
-    var warp_id = tid // WARP_SIZE
-
-    # Only apply block swizzling for half precision types.
-    alias swizzle_block = a_type.is_half_float() and b_type.is_half_float()
-
-    var block_idx = block_swizzle(
-        (Int(block_idx.x), Int(block_idx.y)),
-        (Int(grid_dim.x), Int(grid_dim.y)),
-    ) if swizzle_block else Index(Int(block_idx.x), Int(block_idx.y))
-
-    # Coordinates of the current warp.
-    var warp_x = warp_id % num_warps_n
-    var warp_y = warp_id // num_warps_n
-
-    # Prepare circular shared memory buffer for A and B.
-    # Each pipeline stage has its own buffer.
-    var a_smem = external_memory[
-        Scalar[a_type],
-        address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[a_type, simd_size]](),
-    ]()
-    alias a_smem_size = num_pipeline_stages * BM * BK
-
-    var a_smem_iter = LayoutTensorIter[
-        a_type,
-        Layout.row_major(BM, BK),
-        address_space = AddressSpace.SHARED,
-        alignment = a_smem.alignment,
-        circular=True,
-    ](
-        rebind[
-            __type_of(
-                LayoutTensorIter[
-                    a_type,
-                    Layout.row_major(BM, BK),
-                    address_space = AddressSpace.SHARED,
-                    alignment = a_smem.alignment,
-                    circular=True,
-                ]().ptr
-            )
-        ](a_smem),
-        a_smem_size,
-    )
-
-    # There is one pre-allocated shared buffer. Explicitly offset B after at A's end.
-    var b_smem = (a_smem + a_smem_size).bitcast[Scalar[b_type]]()
-    alias b_smem_size = num_pipeline_stages * BK * BN // pack_factor
-    alias BD_0 = BN // repack_tile[0]
-    alias BD_1 = (BK * repack_tile[0]) // pack_factor
-    alias b_smem_layout = Layout.row_major(BD_0, BD_1)
-
-    var b_smem_iter = LayoutTensorIter[
-        b_type,
-        b_smem_layout,
-        address_space = AddressSpace.SHARED,
-        circular=True,
-    ](b_smem, b_smem_size)
-
-    # multiple stages may share the same scales
-    alias num_scales_stages = ceildiv(
-        (num_pipeline_stages - 1) * BK, group_size
-    ) + 1
-    var scales_smem = (b_smem + b_smem_size).bitcast[Scalar[scales_type]]()
-    alias scales_smem_size = num_scales_stages * BN * ceildiv(BK, group_size)
-    alias scales_smem_layout = Layout.row_major(ceildiv(BK, group_size), BN)
-
-    var scales_smem_iter = LayoutTensorIter[
-        scales_type,
-        scales_smem_layout,
-        address_space = AddressSpace.SHARED,
-        circular=True,
-    ](scales_smem, scales_smem_size)
-
-    # global memory iterator
-    var a_gmem_iter = a.tiled_iterator[BM, BK, axis=1](block_idx[1], 0)
-    var b_tile_coords = args_to_tuple[transpose_b](0, block_idx[0])
-    alias b_tile_axis = 1 if transpose_b else 0
-    var b_gmem_iter = b.tiled_iterator[BD_0, BD_1, axis=b_tile_axis](
-        b_tile_coords[0], b_tile_coords[1]
-    )
-    var scales_gmem_iter = scales.tiled_iterator[
-        ceildiv(BK, group_size), BN, axis=0
-    ](b_tile_coords[1], b_tile_coords[0])
-
-    alias mma_shape = get_mma_shape[a_type, get_accum_type[a_type]()]()
-    alias MMA_M = mma_shape[0]
-    alias MMA_N = mma_shape[1]
-    alias num_m_mmas = WM // MMA_M
-    alias num_n_mmas = WN // MMA_N
-
-    alias accum_type = get_accum_type[a_type]()
-    alias frag_size = get_fragment_size[mma_shape]()
-    alias c_frag_size = frag_size[2]
-
-    var c_reg_tile = tb[accum_type]().row_major[
-        num_m_mmas * num_n_mmas, c_frag_size
-    ]().local().alloc().fill(0)
-
-    multistage_mma_q[
-        BM,
-        BN,
-        BK,
-        WM,
-        WN,
-        num_threads,
-        num_pipeline_stages,
-        transpose_b,
-        group_size,
-        pack_factor,
-    ](
-        c_reg_tile,
-        a_gmem_iter,
-        b_gmem_iter,
-        a_smem_iter,
-        b_smem_iter,
-        scales_smem_iter,
-        scales_gmem_iter,
-        ceildiv(K, BK),
-    )
-
-    # Map global memory tile down to thread.
-    var c_gmem_tile = c.tile[BM, BN](block_idx[1], block_idx[0])
-    var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
-
-    # Store FP32 mma results to half precision buffer in global memory.
-    # Each thread's fragment has 2x2 fp32 values. Casting to half float and
-    # directly storing to global memory results in 2 4B writes. Following cutlass,
-    # we stage the fragments in shared memory so that each thread can store 16B.
-
-    @parameter
-    if c_type.is_half_float():
-        alias swizzle = make_swizzle[
-            num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
-        ]()
-
-        var accum_smem_warp_tile = tb[c_type]().row_major[
-            WM, WN
-        ]().shared().view(
-            a_smem.bitcast[Scalar[c_type]]() + Int(warp_id * WM * WN)
-        )
-
-        copy_local_to_sram[
-            thread_layout = Layout.row_major(8, 4),
-            swizzle=swizzle,
-        ](
-            accum_smem_warp_tile.vectorize[1, 2](),
-            c_reg_tile.vectorize[1, 2]().transpose(),
-        )
-
-        # Guard writing to shared memory.
-        barrier()
-
-        copy_sram_to_dram[
-            thread_layout = Layout.row_major(
-                WARP_SIZE * simd_size // WN, WN // simd_size
-            ),
-            swizzle=swizzle,
-        ](
-            c_gmem_warp_tile.vectorize[1, simd_size](),
-            accum_smem_warp_tile.vectorize[1, simd_size](),
-        )
-
-    else:
-        copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
-            c_gmem_warp_tile.vectorize[1, 2](),
-            c_reg_tile.vectorize[1, 2]().transpose(),
-        )
 
 
 fn repack_Q4_0_for_sm8x[
@@ -1262,7 +674,7 @@ fn test_quantized[
     var a_device = DeviceNDBuffer[a_type, 2, static_a_shape](
         dynamic_a_shape, ctx=ctx
     )
-    var b_device = DeviceNDBuffer[type, 2, static_b_shape](
+    var b_device = DeviceNDBuffer[type, 2, shape=static_b_shape](
         dynamic_b_shape, ctx=ctx
     )
     var b_device_ref = DeviceNDBuffer[a_type, 2, static_b_ref_shape](
@@ -1275,19 +687,9 @@ fn test_quantized[
     ctx.enqueue_copy_to_device(a_device.buffer, a_host.tensor.data)
     ctx.enqueue_copy_to_device(b_device.buffer, b_host.tensor.data)
 
-    alias c_layout = Layout.row_major[c_device.rank](c_device.shape)
-    alias a_layout = Layout.row_major[c_device.rank](a_device.shape)
     alias b_layout = Layout.row_major[c_device.rank](b_device.shape)
     alias b_ref_layout = Layout.row_major[b_device_ref.rank](b_device_ref.shape)
 
-    var c_tensor = LayoutTensor[a_type, c_layout,](
-        c_device.buffer.ptr,
-        RuntimeLayout[c_layout].row_major(c_device.tensor.dynamic_shape),
-    )
-    var a_tensor = LayoutTensor[a_type, a_layout,](
-        a_device.buffer.ptr,
-        RuntimeLayout[a_layout].row_major(a_device.tensor.dynamic_shape),
-    )
     var b_tensor = LayoutTensor[type, b_layout,](
         b_device.buffer.ptr,
         RuntimeLayout[b_layout].row_major(b_device.tensor.dynamic_shape),
@@ -1305,49 +707,6 @@ fn test_quantized[
 
     alias kernels = MatmulKernels[a_type, type, a_type, True]()
     alias config = kernels.ampere_128x128_4
-
-    # estimate smem usage
-    var smem_usage: Int = 0
-    var block_mnk = config.block_tile_shape
-    var num_pipeline_stages = config.num_pipeline_stages
-    var a_usage = block_mnk[0] * block_mnk[2] * num_pipeline_stages * sizeof[
-        a_type
-    ]()
-    var b_usage = block_mnk[1] * block_mnk[2] * num_pipeline_stages * sizeof[
-        type
-    ]() // pack_factor
-    var c_usage = block_mnk[0] * block_mnk[1] * sizeof[DType.float32]()
-    var num_scales_stages = ceildiv(
-        (num_pipeline_stages - 1) * block_mnk[2], group_size
-    ) + 1
-    var scales_usage = block_mnk[1] * ceildiv(
-        block_mnk[2], group_size
-    ) * num_scales_stages * sizeof[a_type]()
-    smem_usage = a_usage + b_usage + scales_usage
-    smem_usage = max(c_usage, smem_usage)
-
-    alias gemm = multistage_gemm_q[
-        a_type,  # c_type
-        c_tensor.layout,
-        a_type,  # a_type
-        a_tensor.layout,
-        type,  # b_type
-        b_tensor.layout,
-        group_size,
-        pack_factor,
-        True,
-        config,
-    ]
-
-    var func = ctx.compile_function[
-        gemm,
-        # dump_llvm=Path("./pipeline-gemm.ir"),
-        # dump_asm=Path("./pipeline-gemm-2.ptx"),
-    ](
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            smem_usage  # config.shared_mem_usage()
-        ),
-    )
 
     alias dequan = create_ref_b[
         type,
@@ -1374,27 +733,15 @@ fn test_quantized[
         @always_inline
         @parameter
         fn run_func(ctx: DeviceContext) raises:
-            ctx.enqueue_function(
-                func,
-                c_tensor,
-                a_tensor,
-                b_tensor,
-                grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
-                block_dim=(Int(config.num_threads()), 1, 1),
-                shared_mem_bytes=smem_usage,
-            )
+            multistage_gemm_q[
+                group_size=group_size, pack_factor=pack_factor, config=config
+            ](c_device.tensor, a_device.tensor, b_device.tensor, config, ctx)
 
         # Warmup
         for _ in range(nwarmup):
-            ctx.enqueue_function(
-                func,
-                c_tensor,
-                a_tensor,
-                b_tensor,
-                grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
-                block_dim=(Int(config.num_threads()), 1, 1),
-                shared_mem_bytes=smem_usage,
-            )
+            multistage_gemm_q[
+                group_size=group_size, pack_factor=pack_factor, config=config
+            ](c_device.tensor, a_device.tensor, b_device.tensor, config, ctx)
 
         var nstime = ctx.execution_time[run_func](nrun) / nrun
         var sectime = nstime * 1e-9
@@ -1409,15 +756,9 @@ fn test_quantized[
             TFlop / sectime,
         )
 
-    ctx.enqueue_function(
-        func,
-        c_tensor,
-        a_tensor,
-        b_tensor,
-        grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
-        block_dim=(Int(config.num_threads()), 1, 1),
-        shared_mem_bytes=smem_usage,  # config.shared_mem_usage(),
-    )
+    multistage_gemm_q[
+        group_size=group_size, pack_factor=pack_factor, config=config
+    ](c_device.tensor, a_device.tensor, b_device.tensor, config, ctx)
 
     ctx.enqueue_function(
         func_dequan,
@@ -1459,11 +800,8 @@ fn test_quantized[
     _ = a_device
     _ = b_device
 
-    _ = a_tensor
     _ = b_tensor
-    _ = c_tensor
 
-    _ = func^
     _ = func_dequan^
 
 
