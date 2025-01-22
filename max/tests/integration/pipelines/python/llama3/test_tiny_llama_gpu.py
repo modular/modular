@@ -137,7 +137,9 @@ async def test_tinyllama_multistep_execution_gpu(
         random.shuffle(single_step_contexts)
         single_step_context_dict = dict(single_step_contexts)
 
-        response = tinyllama_pipeline.next_token(single_step_context_dict)[0]
+        response = tinyllama_pipeline.next_token(
+            single_step_context_dict, num_steps=1
+        )[0]
         for k, v in response.items():
             single_step_tokens[k].append(v.next_token)
 

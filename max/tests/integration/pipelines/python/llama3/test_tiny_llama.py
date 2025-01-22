@@ -209,7 +209,9 @@ async def test_tinyllama_max_new_tokens(
     tokens = []
     request_id = str(uuid4())
     while True:
-        response = tinyllama_pipeline.next_token({request_id: context})[0]
+        response = tinyllama_pipeline.next_token(
+            {request_id: context}, num_steps=1
+        )[0]
         if request_id not in response:
             tinyllama_pipeline.release(context)
             break
@@ -234,7 +236,9 @@ async def test_tinyllama_max_new_tokens(
     tokens = []
     request_id = str(uuid4())
     while True:
-        response = tinyllama_pipeline.next_token({request_id: context})[0]
+        response = tinyllama_pipeline.next_token(
+            {request_id: context}, num_steps=1
+        )[0]
         if request_id not in response:
             tinyllama_pipeline.release(context)
             break
@@ -280,7 +284,7 @@ async def test_tinyllama_multistep_execution(
     single_step_request_id = str(uuid4())
     for _ in range(num_steps):
         response = tinyllama_pipeline.next_token(
-            {single_step_request_id: single_step_context}
+            {single_step_request_id: single_step_context}, num_steps=1
         )[0]
         assert single_step_request_id in response
         token = response[single_step_request_id]

@@ -145,7 +145,7 @@ def test_llama_with_tools(pipeline_registry):
 
     tokens = []
     while True:
-        next_token = pipeline.next_token({request_id: context})
+        next_token = pipeline.next_token({request_id: context}, num_steps=1)
         if request_id not in next_token[0]:
             break
 

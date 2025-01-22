@@ -112,7 +112,7 @@ async def test_pipeline_static_batch_same_prompt_same_output(
 
     # Execute these batches until they are complete
     for _ in range(context.current_length, context.max_length):
-        response = pipeline.next_token(context_batch)[0]
+        response = pipeline.next_token(context_batch, num_steps=1)[0]
         assert context_batch.keys() == response.keys()
         response_tokens = list(response.values())
         assert all(response_tokens[0] == t for t in response_tokens)
@@ -121,7 +121,7 @@ async def test_pipeline_static_batch_same_prompt_same_output(
 
     # The last execution must complete all batches
     assert len(context_batch) == batch_size
-    last = pipeline.next_token(context_batch)[0]
+    last = pipeline.next_token(context_batch, num_steps=1)[0]
     assert not last
 
     # We should be resetting the cache
@@ -185,7 +185,7 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
             batch_id: c.current_length for batch_id, c in context_batch.items()
         }
         print(f"{i}-Input: {batch_ids_with_lengths}")
-        response = pipeline.next_token(context_batch)[0]
+        response = pipeline.next_token(context_batch, num_steps=1)[0]
         print(f"{i}-Output: {response}")
         completed_batch_ids = context_batch.keys() - response.keys()
         for batch_id in completed_batch_ids:
@@ -200,7 +200,7 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
     # The last execution must complete all batches
     # print(f"Remaining: {context_batch.keys()}")
     assert len(context_batch) == 1
-    last = pipeline.next_token(context_batch)[0]
+    last = pipeline.next_token(context_batch, num_steps=1)[0]
     assert not last
 
     for context in context_batch.values():
@@ -266,7 +266,7 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
 
         # Execute these batches until they are complete
         for _ in range(context.current_length, max_tokens):
-            response = pipeline.next_token(context_batch)[0]
+            response = pipeline.next_token(context_batch, num_steps=1)[0]
             assert context_batch.keys() == response.keys()
             response_tokens = list(response.values())
             assert all(response_tokens[0] == t for t in response_tokens)
@@ -275,7 +275,7 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
 
         # The last execution must complete all batches
         assert len(context_batch) == batch_size
-        last = pipeline.next_token(context_batch)[0]
+        last = pipeline.next_token(context_batch, num_steps=1)[0]
         assert not last
 
         # for batch_id, batch_context in context_batch.items():
