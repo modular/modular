@@ -82,7 +82,7 @@ fn test_model_mismatched_input_output_count() raises:
 
     var count = 0
     for name in input_names:
-        assert_equal(name[], "input" + String(count))
+        assert_equal(name[], String("input", count))
         count += 1
 
     assert_equal(input_names[1], "input1")
