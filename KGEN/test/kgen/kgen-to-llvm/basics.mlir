@@ -305,3 +305,12 @@ kgen.func @kgen_fp8_ptr_arg(%arg0: !kgen.pointer<scalar<f8e5m2>>) -> !pop.scalar
 }
 
 }
+
+// -----
+
+module attributes {M.target_info = #M.target<triple = "amdgcn-amd-amdhsa", arch = "gfx942", data_layout = "", simd_bit_width = 128, index_bit_width = 64>} {
+  // CHECK: llvm.func amdgpu_kernelcc @test() attributes {{{.*}} rocdl.flat_work_group_size = "128"}
+  kgen.func export @test() attributes {LLVMMetadata = {rocdl.flat_work_group_size = #pop.array<128> : !pop.array<1, scalar<si32>>}} {
+    kgen.return
+  }
+}

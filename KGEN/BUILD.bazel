@@ -1028,6 +1028,7 @@ modular_cc_library(
         "@llvm-project//mlir:CAPIIRHeaders",
         "@llvm-project//mlir:CAPITransformsHeaders",
         "@llvm-project//mlir:IndexDialect",
+        "@llvm-project//mlir:ROCDLDialect",
         "@llvm-project//mlir:TransformUtils",
     ],
 )
@@ -1045,6 +1046,7 @@ modular_cc_library(
         "//AsyncRT:CompilerSupport",
         "//Cache",
         "@llvm-project//mlir:IndexDialect",
+        "@llvm-project//mlir:ROCDLDialect",
     ],
 )
 
@@ -1205,6 +1207,7 @@ modular_cc_library(
         "@llvm-project//mlir:IndexDialect",
         "@llvm-project//mlir:LLVMToLLVMIRTranslation",
         "@llvm-project//mlir:NVVMToLLVMIRTranslation",
+        "@llvm-project//mlir:ROCDLToLLVMIRTranslation",
     ],
 )
 

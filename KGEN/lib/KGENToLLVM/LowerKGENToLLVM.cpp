@@ -25,6 +25,7 @@
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/NVVMDialect.h"
+#include "mlir/Dialect/LLVMIR/ROCDLDialect.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Threading.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -105,6 +106,36 @@ static ErrorOrSuccess addArrayAttrToDict(Builder builder, NamedAttrList &attrs,
   }
 
   return Error("non-integral dtypes are not supported");
+}
+
+template <typename AttrT>
+static ErrorOrSuccess addFlatWorkGroupSizeAttr(Builder builder,
+                                               NamedAttrList &attrs,
+                                               StringRef name, AttrT attr) {
+  std::string value;
+  if constexpr (std::is_same_v<POP::ArrayAttr, AttrT>) {
+    if (attr.getValues().size() != 1)
+      return Error("ArrayAttr must contain exactly one value");
+
+    Attribute element = attr.getValues()[0];
+
+    if (auto integerAttr = ::dyn_cast<IntegerAttr>(element)) {
+      value = std::to_string(integerAttr.getInt());
+    } else {
+      value = std::to_string(static_cast<int64_t>(::cast<POP::SIMDAttr>(element)
+                                                      .getValues()
+                                                      .front()
+                                                      .getIntVal()
+                                                      .getSExtValue()));
+    }
+  } else if constexpr (std::is_same_v<IntegerAttr, AttrT>) {
+    value = std::to_string(static_cast<int64_t>(attr.getInt()));
+  } else {
+    static_assert(0,
+                  "must be either an ArrayAttr of 1 elementor an IntegerAttr");
+  }
+  attrs.append(name, builder.getStringAttr(value));
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -191,6 +222,34 @@ convertLLVMMetadata(LLVM::LLVMFuncOp func, NewSignatureType sig,
               IntegerAttr::get(b.getI32Type(), 64));
         }
         continue;
+      }
+    } else if (isa<mlir::ROCDL::ROCDLDialect>(nameDialect)) {
+      // FIXME: Remove when integer conversion to StringAttr is done by the
+      // ROCDL -> LLVM IR
+      if (attr.getName() ==
+          mlir::ROCDL::ROCDLDialect::getFlatWorkGroupSizeAttrName()) {
+        if (auto array = dyn_cast<POP::ArrayAttr>(value)) {
+          if (auto err =
+                  addFlatWorkGroupSizeAttr(b, attrs, attr.getName(), array);
+              err.isError())
+            return mlir::emitError(func.getLoc(),
+                                   "unsupported `rocdl.flat_work_group_size`: ")
+                   << err.takeError();
+          continue;
+        }
+        if (auto integer = dyn_cast<IntegerAttr>(value)) {
+          if (auto err =
+                  addFlatWorkGroupSizeAttr(b, attrs, attr.getName(), integer);
+              err.isError())
+            return mlir::emitError(func.getLoc(),
+                                   "unsupported `rocdl.flat_work_group_size`: ")
+                   << err.takeError();
+          continue;
+        }
+        return mlir::emitError(
+            func.getLoc(),
+            "unsupported `rocdl.flat_work_group_size`: attribute type must "
+            "either be ArrayAttr of 1 element or IntegerAttr ");
       }
     }
 
