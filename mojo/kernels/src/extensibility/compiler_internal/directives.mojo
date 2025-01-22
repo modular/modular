@@ -55,7 +55,7 @@ struct StaticTensorSpec[
     alias in_lambda_t = fn[simd_width: Int] (IndexList[rank]) capturing -> SIMD[
         type, simd_width
     ]
-    alias out_lambda_t = fn[simd_width: Int] (
+    alias out_lambda_t = fn[simd_width: Int, element_alignment: Int = 1] (
         IndexList[rank], SIMD[type, simd_width]
     ) capturing -> None
 

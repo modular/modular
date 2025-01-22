@@ -64,9 +64,10 @@ fn simd_store_into_managed_tensor_slice[
     type: DType,
     rank: Int,
     simd_width: Int,
-    alignment: Int = 1,
+    buffer_alignment: Int = 1,
     address_space: AddressSpace = AddressSpace.GENERIC,
     static_strides: DimList = DimList.create_unknown[rank](),
+    element_alignment: Int = 1,
 ](
     tensor: ManagedTensorSlice[type, rank],
     indices: IndexList[rank],
@@ -77,7 +78,9 @@ fn simd_store_into_managed_tensor_slice[
     )
 
     # Store alignment cannot exceed the data type's alignment.
-    alias max_alignment = _gcd_pow2[alignment, alignof[type]()]()
+    alias max_alignment = _gcd_pow2[
+        buffer_alignment, element_alignment * alignof[type]()
+    ]()
 
     alias static_stride = static_strides.at[rank - 1]()
 
@@ -270,16 +273,19 @@ fn _output_fusion_hook_impl[
 ](tensor: ManagedTensorSlice[type, rank]):
     @always_inline
     @parameter
-    fn _output_lambda[_w: Int](i: IndexList[rank], v: SIMD[type, _w]):
+    fn _output_lambda[
+        _w: Int, _elem_align: Int = 1
+    ](i: IndexList[rank], v: SIMD[type, _w]):
         alias static_specs = _get_tensor_specs_without_lambdas[type, rank]()
 
         # We use these methods to help with fusion passes which manipulates
         # calls. It is helpful to have a registered function.
         simd_store_into_managed_tensor_slice[
             simd_width=_w,
-            alignment = static_specs.alignment,
+            buffer_alignment = static_specs.alignment,
             address_space = static_specs.address_space,
             static_strides = static_specs.strides,
+            element_alignment=_elem_align,
         ](tensor, i, rebind[SIMD[type, _w]](v))
 
     _extract_output_lambda[type, rank, _output_lambda]()
@@ -692,6 +698,7 @@ struct ManagedTensorSlice[
         width: Int,
         # Necessary to make it simpler on the call site.
         _rank: Int,
+        element_alignment: Int = 1,
     ](self, index: IndexList[_rank], val: SIMD[type, width]):
         """Sets data in this tensor slice from a `SIMD`.
 
@@ -701,6 +708,7 @@ struct ManagedTensorSlice[
         Parameters:
             width: The width of the `SIMD` value.
             _rank: The rank of the tensor slice.
+            element_alignment: Indicate the alignment of the pointer stored to memory. This is needed to issue vector store for GPUs with strict alignment requirements.
 
         Args:
             index: An `IndexList` of size `_rank` to indicate the dimension of the tensor slice to set data in.
@@ -712,9 +720,10 @@ struct ManagedTensorSlice[
         alias static_specs = specsof[type, rank]("self")
         simd_store_into_managed_tensor_slice[
             simd_width=width,
-            alignment = static_specs.alignment,
+            buffer_alignment = static_specs.alignment,
             address_space = static_specs.address_space,
             static_strides = static_specs.strides,
+            element_alignment=element_alignment,
         ](self, ridx, val)
 
     @always_inline
@@ -722,6 +731,7 @@ struct ManagedTensorSlice[
         width: Int,
         # Necessary to make it simpler on the call site.
         _rank: Int,
+        element_alignment: Int = 1,
     ](self, index: IndexList[_rank], val: SIMD[type, width]):
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
@@ -734,13 +744,14 @@ struct ManagedTensorSlice[
         @parameter
         if out_lambda:
             alias out_fn = out_lambda.value()
-            out_fn[width](ridx, val)
+            out_fn[width, element_alignment](ridx, val)
         else:
             simd_store_into_managed_tensor_slice[
                 simd_width=width,
-                alignment=alignment,
+                buffer_alignment=alignment,
                 address_space=address_space,
                 static_strides=strides,
+                element_alignment=element_alignment,
             ](self, ridx, val)
 
 
