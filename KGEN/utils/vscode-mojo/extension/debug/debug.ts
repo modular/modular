@@ -106,12 +106,12 @@ class MojoDebugAdapterDescriptorFactory
     // We don't need to show error messages here because
     // `findSDKConfigForDebugSession` does that.
     if (!sdk) {
-      this.sdkManager.logger.main.error(
+      this.sdkManager.logger.error(
         "Couldn't find an SDK for the debug session",
       );
       return undefined;
     }
-    this.sdkManager.logger.main.info(
+    this.sdkManager.logger.info(
       `Using the SDK ${sdk.config.version.toString()} for the debug session`,
     );
     if (sdk.config.modularHomePath.endsWith('.derived')) {
@@ -124,15 +124,15 @@ class MojoDebugAdapterDescriptorFactory
         this.sdkManager.logger.main.outputChannel.appendLine(
           '\n\n\n===== LLDB Debug Adapter verification =====',
         );
-        this.sdkManager.logger.main.error(
+        this.sdkManager.logger.error(
           'Unable to execute the LLDB Debug Adapter.',
           ex,
         );
         if (stdout) {
-          this.sdkManager.logger.main.info('stdout: ' + stdout);
+          this.sdkManager.logger.info('stdout: ' + stdout);
         }
         if (stderr) {
-          this.sdkManager.logger.main.info('stderr: ' + stderr);
+          this.sdkManager.logger.info('stderr: ' + stderr);
         }
         this.sdkManager.logger.main.outputChannel.show();
 
@@ -209,7 +209,7 @@ class MojoDebugConfigurationResolver
         const message = `Mojo Debug error: the file '${
           debugConfiguration.mojoFile
         }' doesn't have the .🔥 or .mojo extension.`;
-        this.sdkManager.logger.main.error(message);
+        this.sdkManager.logger.error(message);
         vscode.window.showErrorMessage(message);
         return undefined;
       }

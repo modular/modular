@@ -171,4 +171,39 @@ export class Logger extends DisposableContext {
     this.pushSubscription(this.main);
     this.pushSubscription(this.lsp);
   }
+
+  /**
+   * Logs a TRACE message to the main log channel.
+   */
+  public trace(message: string, data?: unknown) {
+    this.main.trace(message, data);
+  }
+
+  /**
+   * Logs a DEBUG message to the main log channel.
+   */
+  public debug(message: string, data?: unknown) {
+    this.main.debug(message, data);
+  }
+
+  /**
+   * Logs an INFO message to the main log channel.
+   */
+  public info(message: string, data?: unknown) {
+    this.main.info(message, data);
+  }
+
+  /**
+   * Logs a WARN message to the main log channel.
+   */
+  public warn(message: string, data?: unknown) {
+    this.main.warn(message, data);
+  }
+
+  /**
+   * Logs an ERROR message to the main log channel.
+   */
+  public error(message: string, data?: unknown) {
+    this.main.error(message, data);
+  }
 }
