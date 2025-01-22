@@ -43,7 +43,7 @@ fn PyInit_mojo_module() -> PythonObject:
     try:
         Python.add_functions(module, funcs)
     except e:
-        abort("Error adding functions to PyModule: " + String(e))
+        abort("Error adding functions to PyModule: ", e)
 
     # end up with a PythonModule with list of functions set on the module
     # (name,args,calling conv,etc.)

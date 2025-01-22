@@ -39,9 +39,7 @@ fn PyInit_mojo_module() -> PythonObject:
     try:
         module = Python.create_module("bindings")
     except e:
-        return abort[PythonObject](
-            "failed to create Python module: " + String(e)
-        )
+        return abort[PythonObject]("failed to create Python module: ", e)
 
     # ----------------------------------
     # Populate the Python module
@@ -81,7 +79,7 @@ fn PyInit_mojo_module() -> PythonObject:
     try:
         Python.add_functions(module, funcs)
     except e:
-        abort("Error adding functions to PyModule: " + String(e))
+        abort("Error adding functions to PyModule: ", e)
 
     add_person_type(module)
     add_int_type(module)
@@ -200,7 +198,7 @@ fn add_person_type(mut module: TypedPythonObject["Module"]):
 
         Python.add_object(module, "Person", type_obj)
     except e:
-        abort("error adding object: " + String(e))
+        abort("error adding object: ", e)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -220,7 +218,7 @@ fn add_int_type(mut module: TypedPythonObject["Module"]):
 
         Python.add_object(module, "Int", type_obj)
     except e:
-        abort("error adding object: " + String(e))
+        abort("error adding object: ", e)
 
 
 fn incr_int(mut arg: Int):
@@ -288,7 +286,7 @@ fn add_string_type(mut module: TypedPythonObject["Module"]):
 
         Python.add_object(module, "String", type_obj)
     except e:
-        abort("error adding object: " + String(e))
+        abort("error adding object: ", e)
 
 
 fn create_string() raises -> String:
