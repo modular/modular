@@ -77,4 +77,33 @@ suite('Logging', () => {
     assert.deepStrictEqual(lines, ['error', 'warn', 'info', 'debug', 'trace']);
     lines.length = 0;
   });
+
+  test('data should be logged as JSON', () => {
+    const channel = new LogChannel('Test Channel');
+    const [lines, callback] = createLogSpy();
+    channel.logCallback = callback;
+
+    channel.setOutputLevel(LogLevel.Info);
+
+    channel.info('message', { foo: 123, bar: true, baz: [1, 2, 3] });
+    assert.equal(lines.length, 2);
+    assert.equal(lines[0], 'message');
+
+    const json = JSON.parse(lines[1]);
+    assert.deepStrictEqual(json, {
+      foo: 123,
+      bar: true,
+      baz: [1, 2, 3],
+    });
+  });
+
+  test('data should respect log level', () => {
+    const channel = new LogChannel('Test Channel');
+    const [lines, callback] = createLogSpy();
+    channel.logCallback = callback;
+    channel.setOutputLevel(LogLevel.Info);
+
+    channel.debug('message', { foo: 123 });
+    assert.deepStrictEqual(lines, []);
+  });
 });
