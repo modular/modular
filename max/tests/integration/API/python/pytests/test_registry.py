@@ -4,9 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 from functools import wraps
 from pathlib import Path
-from typing import Sequence
+from typing import Sequence, cast
 
 import pytest
 from max.driver import Tensor
@@ -15,6 +17,7 @@ from max.engine import InferenceSession, Model
 from max.graph import Graph, TensorType
 from max.pipelines import (
     PIPELINE_REGISTRY,
+    ModelInputs,
     ModelOutputs,
     PipelineConfig,
     PipelineEngine,
@@ -45,16 +48,40 @@ def prepare_registry(func):
     return wrapper
 
 
+class DummyModelInputs(ModelInputs):
+    input1: Tensor | None = None
+    input2: Tensor | None = None
+    input3: Tensor | None = None
+    input4: Tensor | None = None
+
+    def __init__(
+        self,
+        input1: Tensor | None = None,
+        input2: Tensor | None = None,
+        input3: Tensor | None = None,
+        input4: Tensor | None = None,
+    ):
+        self.input1 = input1
+        self.input2 = input2
+        self.input3 = input3
+        self.input4 = input4
+
+
 class DummyPipelineModel(PipelineModel):
     """A pipeline model with setup, input preparation and execution methods."""
 
-    def execute(self, *model_inputs: Tensor) -> ModelOutputs:
+    def execute(
+        self,
+        model_inputs: ModelInputs,
+        kv_cache_inputs: Sequence[Tensor] | None = None,
+    ) -> ModelOutputs:
         """Runs the graph."""
-        return ModelOutputs(next_token_logits=model_inputs[0])
+        model_inputs = cast(DummyModelInputs, model_inputs)
+        return ModelOutputs(next_token_logits=model_inputs.input1)
 
     def prepare_initial_token_inputs(
         self, context_batch: Sequence[InputContext]
-    ) -> tuple[Tensor, ...]:
+    ) -> DummyModelInputs:
         """Prepares the initial inputs to be passed to `.execute()`.
 
         The inputs and functionality of this method can vary per model.
@@ -65,19 +92,24 @@ class DummyPipelineModel(PipelineModel):
         This function would batch the encoded tensors, claim a slot in the kv
         cache if the ID hasn't been seen before, and return the inputs and
         caches as a list of tensors."""
-        return (Tensor.zeros((0, 0), DType.float32),)
+        return DummyModelInputs(
+            input1=Tensor.zeros((0, 0), DType.float32),
+            input2=Tensor.zeros((0, 0), DType.float32),
+            input3=Tensor.zeros((0, 0), DType.float32),
+            input4=Tensor.zeros((0, 0), DType.float32),
+        )
 
     def prepare_next_token_inputs(
         self,
         next_tokens: Tensor,
-        prev_model_inputs: tuple[Tensor, ...],
-    ) -> tuple[Tensor, ...]:
+        prev_model_inputs: ModelInputs,
+    ) -> DummyModelInputs:
         """Prepares the secondary inputs to be passed to `.execute()`.
 
         While `prepare_initial_token_inputs` is responsible for managing the initial inputs.
         This function is responsible for updating the inputs, for each step in a multi-step execution pattern.
         """
-        return (Tensor.zeros((0, 0), DType.float32),)
+        return DummyModelInputs(input1=Tensor.zeros((0, 0), DType.float32))
 
     def _get_kv_params(self) -> KVCacheParams:
         cache_dtype = (
