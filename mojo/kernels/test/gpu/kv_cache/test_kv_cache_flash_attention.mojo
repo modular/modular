@@ -49,11 +49,11 @@ def execute_flash_attention[
 
     debug_assert(
         batch_size < max_batch_size,
-        "batch_size passed to unit test ("
-        + String(batch_size)
-        + ") is larger than configured max_batch_size ("
-        + String(max_batch_size)
-        + ")",
+        "batch_size passed to unit test (",
+        batch_size,
+        ") is larger than configured max_batch_size (",
+        max_batch_size,
+        ")",
     )
     # initialize q tensor
     # TODO parameterize to layout

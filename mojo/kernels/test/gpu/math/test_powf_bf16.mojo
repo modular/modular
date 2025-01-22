@@ -62,7 +62,7 @@ def run_elementwise(exponent: BFloat16, ctx: DeviceContext):
         assert_almost_equal(
             out_host[i],
             expected_value,
-            msg="values did not match at position " + String(i),
+            msg=String("values did not match at position ", i),
             atol=1e-04,
             rtol=2e-02,
         )

@@ -55,13 +55,13 @@ def run_elementwise[type: DType](ctx: DeviceContext):
     ctx.synchronize()
 
     for i in range(length):
-        var msg = (
-            "values did not match at position "
-            + String(i)
-            + " for dtype="
-            + String(type)
-            + " and value="
-            + String(in_host[i])
+        var msg = String(
+            "values did not match at position ",
+            i,
+            " for dtype=",
+            type,
+            " and value=",
+            in_host[i],
         )
 
         @parameter

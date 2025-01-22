@@ -57,11 +57,11 @@ def execute_ragged_flash_attention[
     var batch_size = len(valid_lengths)
     debug_assert(
         batch_size < num_continuous_blocks,
-        "batch_size passed to unit test ("
-        + String(batch_size)
-        + ") is larger than configured num_continuous_blocks ("
-        + String(num_continuous_blocks)
-        + ")",
+        "batch_size passed to unit test (",
+        batch_size,
+        ") is larger than configured num_continuous_blocks (",
+        num_continuous_blocks,
+        ")",
     )
     debug_assert(
         len(valid_lengths) == len(cache_lengths),

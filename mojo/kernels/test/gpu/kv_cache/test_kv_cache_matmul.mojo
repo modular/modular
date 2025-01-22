@@ -51,11 +51,11 @@ def execute_fused_qkv_matmul[
 
     debug_assert(
         batch_size < max_batch_size,
-        "batch_size passed to unit test ("
-        + String(batch_size)
-        + ") is larger than configured max_batch_size ("
-        + String(max_batch_size)
-        + ")",
+        "batch_size passed to unit test (",
+        batch_size,
+        ") is larger than configured max_batch_size (",
+        max_batch_size,
+        ")",
     )
     # initialize hidden state
     hidden_state_host = HostNDBuffer[

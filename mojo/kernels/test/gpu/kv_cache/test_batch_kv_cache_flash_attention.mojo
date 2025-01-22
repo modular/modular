@@ -48,11 +48,11 @@ def execute_flash_attention[
 
     debug_assert(
         batch_size < max_batch_size,
-        "batch_size passed to unit test ("
-        + String(batch_size)
-        + ") is larger than configured max_batch_size ("
-        + String(max_batch_size)
-        + ")",
+        "batch_size passed to unit test (",
+        batch_size,
+        ") is larger than configured max_batch_size (",
+        max_batch_size,
+        ")",
     )
 
     var max_cache_valid_length = tensor_max(
@@ -303,19 +303,14 @@ def execute_flash_attention[
             @parameter
             if (config.block_k() % (mma_shape[2] << blf)) != 0:
                 continue
-            var config_str = "ampere_" + String(type) + "_"
-            config_str += String(kv_params.head_size) + "x"
-            config_str += (
-                String(
-                    32 if type
-                    is DType.float32 else (
-                        64 if has_nvidia_gpu_accelerator() else 32
-                    )
-                )
-                + "_"
+            alias width = 32 if type is DType.float32 or not has_nvidia_gpu_accelerator() else 64
+            # fmt: off
+            var config_str = String(
+                "ampere_", type, "_",
+                kv_params.head_size, "x", width, "_",
+                BK, "x", nps,
             )
-            config_str += String(BK)
-            config_str += "x" + String(nps)
+            # fmt: on
             assert_equal(String(config), config_str)
             flash_attention[config=config](
                 test_output_device.tensor,

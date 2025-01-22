@@ -150,11 +150,11 @@ def execute_matmul_kv_cache_ragged[
 
     debug_assert(
         batch_size < num_blocks,
-        "batch_size passed to unit test ("
-        + String(batch_size)
-        + ") is larger than configured num_blocks ("
-        + String(num_blocks)
-        + ")",
+        "batch_size passed to unit test (",
+        batch_size,
+        ") is larger than configured num_blocks (",
+        num_blocks,
+        ")",
     )
 
     # Initialize input row offsets and hidden states.
@@ -479,11 +479,11 @@ def generic_execute_fused_qkv_cache_ragged[
 
     debug_assert(
         batch_size < num_blocks,
-        "batch_size passed to unit test ("
-        + String(batch_size)
-        + ") is larger than configured max_batch_size ("
-        + String(num_blocks)
-        + ")",
+        "batch_size passed to unit test (",
+        batch_size,
+        ") is larger than configured max_batch_size (",
+        num_blocks,
+        ")",
     )
 
     # Initialize input row offsets and hidden states.
