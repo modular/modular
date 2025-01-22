@@ -207,14 +207,26 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
 
     fn __str__(self) raises -> String:
         """Returns a description of the DeviceMemory."""
+        return String.write(self)
 
-        return (
-            "DeviceMemory("
-            + (self.name.value() + "," if self.name else "")
-            + String(self.get_device())
-            + ",Bytecount("
-            + String(self.bytecount())
-            + "))"
+    fn write_to[W: Writer](self, mut writer: W):
+        """
+        Formats a description of the DeviceMemory to the provided Writer.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
+
+        Args:
+            writer: The object to write to.
+        """
+        writer.write(
+            "DeviceMemory(",
+            self.name.value() if self.name else "",
+            "," if self.name else "",
+            self.get_device(),
+            ",Bytecount(",
+            self.bytecount(),
+            "))",
         )
 
     fn _steal_impl_ptr(owned self) -> UnsafePointer[NoneType]:
@@ -270,7 +282,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
             If the DeviceMemory is backed by the same Device object as dev.
         """
         if dev == self._device:
-            raise String(self) + "is already allocated on " + String(dev)
+            raise Error(self, "is already allocated on ", dev)
 
         var dst = dev.allocate(self.bytecount(), name)
         self.copy_into(dst)
@@ -444,14 +456,26 @@ struct DeviceTensor(DeviceBuffer, StringableRaising, CollectionElement):
 
     fn __str__(self) raises -> String:
         """Returns a descriptor for the DeviceTensor."""
+        return String.write(self)
 
-        return (
-            "DeviceTensor("
-            + (self._storage.name.value() + "," if self._storage.name else "")
-            + String(self.device())
-            + ",Spec("
-            + String(self.spec)
-            + "))"
+    fn write_to[W: Writer](self, mut writer: W):
+        """
+        Formats a description of the DeviceTensor to the provided Writer.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
+
+        Args:
+            writer: The object to write to.
+        """
+        writer.write(
+            "DeviceTensor(",
+            self._storage.name.value() if self._storage.name else "",
+            "," if self._storage.name else "",
+            self.device(),
+            ",Spec(",
+            self.spec,
+            "))",
         )
 
     fn bytecount(self) -> Int:

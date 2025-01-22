@@ -341,13 +341,25 @@ struct Dim(CollectionElement):
         Returns:
             A human-readable string of the dimension.
         """
+        return String.write(self)
+
+    fn write_to[W: Writer](self, mut writer: W):
+        """
+        Formats a description of the DeviceMemory to the provided Writer.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
+
+        Args:
+            writer: The object to write to.
+        """
         if self.value.isa[DynamicDim]():
-            return "?"
+            return writer.write("?")
         elif self.value.isa[SymbolicDim]():
-            return self.value[SymbolicDim].name
+            return writer.write(self.value[SymbolicDim].name)
         else:
             debug_assert(self.value.isa[StaticDim](), "variant cases")
-            return String(self.value[StaticDim].dim)
+            return writer.write(self.value[StaticDim].dim)
 
 
 @value

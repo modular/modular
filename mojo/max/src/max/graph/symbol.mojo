@@ -145,7 +145,7 @@ struct Symbol(CollectionElement, Stringable, Writable):
         var message = format_error(
             self.graph(),
             "Failed to rebind runtime shape",
-            call_loc,
+            location=call_loc,
         )
         return ops.rebind(self, out_dims, message)
 
@@ -201,7 +201,7 @@ struct Symbol(CollectionElement, Stringable, Writable):
         try:
             return ops.reshape(self, shape)
         except e:
-            raise error(self.graph(), e, call_loc)
+            raise error(self.graph(), e, location=call_loc)
 
     @always_inline
     fn reshape(self, *dims: Dim) raises -> Symbol:
@@ -230,7 +230,7 @@ struct Symbol(CollectionElement, Stringable, Writable):
         try:
             return ops.reshape(self, shape)
         except e:
-            raise error(self.graph(), e, call_loc)
+            raise error(self.graph(), e, location=call_loc)
 
     fn reshape(self, *dims: Variant[Symbol, Int]) raises -> Symbol:
         """Reshapes this `Symbol`.
@@ -348,7 +348,7 @@ struct Symbol(CollectionElement, Stringable, Writable):
                 raise error(
                     self.graph(),
                     "Slicing a tensor by Symbol requires a rank 0 index",
-                    call_loc,
+                    location=call_loc,
                 )
 
             index_sym = i[Symbol]

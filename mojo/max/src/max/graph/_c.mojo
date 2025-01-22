@@ -54,7 +54,7 @@ fn cfunc[func_name: StringLiteral, T: AnyTrivialRegType]() -> T:
     ]()
     var ptr = UnsafePointer.address_of(f).bitcast[UnsafePointer[NoneType]]()[]
     if not ptr:
-        abort("cannot load " + String(func_name) + " from graph library")
+        abort("cannot load ", func_name, " from graph library")
     return f
 
 

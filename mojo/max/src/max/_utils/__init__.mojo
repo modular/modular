@@ -128,9 +128,13 @@ struct OwningVector[T: Movable](Sized):
 
     fn get(self, idx: Int) raises -> UnsafePointer[T]:
         if idx >= self.size:
-            raise "requested index(" + String(
-                idx
-            ) + ") exceeds size of vector(" + String(self.size) + ")"
+            raise Error(
+                "requested index(",
+                idx,
+                ") exceeds size of vector(",
+                self.size,
+                ")",
+            )
         return self.ptr + idx
 
     fn __len__(self) -> Int:
@@ -150,9 +154,9 @@ fn get_lib_path_from_cfg(
     ](name)
 
     if not lib_path_str_ptr:
-        raise "cannot get the location of " + String(
-            name
-        ) + " library from modular.cfg"
+        raise Error(
+            "cannot get the location of ", name, " library from modular.cfg"
+        )
 
     # this transfers ownership of the underlying data buffer allocated in
     # `KGEN_CompilerRT_getMAXConfigValue` so that it can be destroyed by Mojo.

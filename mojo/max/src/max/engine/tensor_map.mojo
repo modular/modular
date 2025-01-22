@@ -11,6 +11,7 @@ from memory import UnsafePointer
 from memory.unsafe import bitcast
 from sys.ffi import DLHandle
 from max._utils import call_dylib_func, exchange, CString
+from utils.write import _WriteBufferStack
 
 from .session import InferenceSession
 from ._context import CRuntimeContext
@@ -342,50 +343,65 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
         self._ptr.free(self._lib)
         _ = self._session^
 
+    fn write_to[W: Writer](self, mut writer: W):
+        """
+        Formats a description of the DeviceMemory to the provided Writer.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
+
+        Args:
+            writer: The object to write to.
+        """
+        try:
+            var string = String()
+            var buffer = _WriteBufferStack(string)
+            buffer.write("{")
+            var keys = self.keys()
+            for i in range(len(keys)):
+                if i > 0:
+                    buffer.write(",\n")
+
+                var key = keys[i]
+                var dtype = self.get_spec(key).dtype()
+                buffer.write("'", key, "' : ")
+                if dtype is DType.bool:
+                    buffer.write(self.get[DType.bool](key))
+                elif dtype is DType.uint8:
+                    buffer.write(self.get[DType.uint8](key))
+                elif dtype is DType.uint16:
+                    buffer.write(self.get[DType.uint16](key))
+                elif dtype is DType.uint32:
+                    buffer.write(self.get[DType.uint32](key))
+                elif dtype is DType.uint64:
+                    buffer.write(self.get[DType.uint64](key))
+                elif dtype is DType.int8:
+                    buffer.write(self.get[DType.int8](key))
+                elif dtype is DType.int16:
+                    buffer.write(self.get[DType.int16](key))
+                elif dtype is DType.int32:
+                    buffer.write(self.get[DType.int32](key))
+                elif dtype is DType.int64:
+                    buffer.write(self.get[DType.int64](key))
+                elif dtype is DType.float16:
+                    buffer.write(self.get[DType.float16](key))
+                elif dtype is DType.float32:
+                    buffer.write(self.get[DType.float32](key))
+                elif dtype is DType.float64:
+                    buffer.write(self.get[DType.float64](key))
+                else:
+                    buffer.write(self.get[DType.uint8](key))
+                buffer.write("}")
+                buffer.flush()
+
+                return writer.write(string)
+        except:
+            writer.write("{}")
+
     fn __str__(self) -> String:
         """Returns a `String` representation of this `TensorMap`.
 
         Returns:
             A textual representation of this `TensorMap`.
         """
-        var repr: String = "{"
-        try:
-            var keys = self.keys()
-            for i in range(len(keys)):
-                if i > 0:
-                    repr += ",\n"
-
-                var key = keys[i]
-                var dtype = self.get_spec(key).dtype()
-                repr += "'" + key + "' : "
-                if dtype is DType.bool:
-                    repr += String(self.get[DType.bool](key))
-                elif dtype is DType.uint8:
-                    repr += String(self.get[DType.uint8](key))
-                elif dtype is DType.uint16:
-                    repr += String(self.get[DType.uint16](key))
-                elif dtype is DType.uint32:
-                    repr += String(self.get[DType.uint32](key))
-                elif dtype is DType.uint64:
-                    repr += String(self.get[DType.uint64](key))
-                elif dtype is DType.int8:
-                    repr += String(self.get[DType.int8](key))
-                elif dtype is DType.int16:
-                    repr += String(self.get[DType.int16](key))
-                elif dtype is DType.int32:
-                    repr += String(self.get[DType.int32](key))
-                elif dtype is DType.int64:
-                    repr += String(self.get[DType.int64](key))
-                elif dtype is DType.float16:
-                    repr += String(self.get[DType.float16](key))
-                elif dtype is DType.float32:
-                    repr += String(self.get[DType.float32](key))
-                elif dtype is DType.float64:
-                    repr += String(self.get[DType.float64](key))
-                else:
-                    repr += String(self.get[DType.uint8](key))
-        except:
-            return "{}"
-
-        repr += "}"
-        return repr
+        return String.write(self)

@@ -9,6 +9,7 @@ from builtin._location import __call_location, _SourceLocation
 from collections import Set, Optional
 from memory import ArcPointer
 from sys.info import has_neon
+from utils.write import _WriteBufferStack
 from os import abort
 from pathlib import Path
 
@@ -405,11 +406,11 @@ struct Graph(CollectionElement, Stringable, Writable):
         if (n >= num_args) or (n < 0):
             raise error(
                 self,
-                "index out of bounds: "
-                + String(n)
-                + ", graph has "
-                + String(num_args)
-                + " arguments",
+                "index out of bounds: ",
+                n,
+                ", graph has ",
+                num_args,
+                " arguments",
             )
         return Symbol(self._graph, self._body().argument(n))
 
@@ -735,9 +736,7 @@ struct Graph(CollectionElement, Stringable, Writable):
         if dtype is DType.float64:
             return self.scalar(Float64(value))
 
-        raise error(
-            self, "unimplemented Int conversion dtype: " + String(dtype)
-        )
+        raise error(self, "unimplemented Int conversion dtype: ", dtype)
 
     fn scalar(self, value: Float64, dtype: DType) raises -> Symbol:
         """Adds a node representing a `mo.constant` operation.
@@ -772,8 +771,7 @@ struct Graph(CollectionElement, Stringable, Writable):
             return self.scalar(value)
 
         raise error(
-            self,
-            "unimplemented FloatLiteral conversion dtype: " + String(dtype),
+            self, "unimplemented FloatLiteral conversion dtype: ", dtype
         )
 
     fn range[
@@ -924,7 +922,7 @@ struct Graph(CollectionElement, Stringable, Writable):
         )
         function_type.results = results^
         var signature = _mlir.Type.parse(
-            ctx, "!kgen.generator<" + String(function_type.to_mlir()) + ">"
+            ctx, String("!kgen.generator<", function_type.to_mlir(), ">")
         )
         op.set_inherent_attr(
             "functionType", TypeAttr(function_type.to_mlir()).to_mlir()
@@ -933,12 +931,15 @@ struct Graph(CollectionElement, Stringable, Writable):
 
         # Set the result_names metadata on the staged op, which is needed by
         # the engine for execution.
-        var result_names = String("[")
+        var result_names = String()
+        var buffer = _WriteBufferStack(result_names)
+        buffer.write("[")
         for i in range(len(outputs)):
-            result_names += '"output' + String(i) + '"'
+            buffer.write('"output', i, '"')
             if i < (len(outputs) - 1):
-                result_names += ", "
-        result_names += "]"
+                buffer.write(", ")
+        buffer.write("]")
+        buffer.flush()
 
         op.set_discardable_attr(
             "result_names", _mlir.Attribute.parse(ctx, result_names)

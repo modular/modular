@@ -564,7 +564,7 @@ fn _op_impl[
     try:
         return _binary_op[op_name](lhs, rhs)
     except e:
-        raise error(lhs.graph(), e, location or call_loc)
+        raise error(lhs.graph(), e, location=location or call_loc)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -582,8 +582,8 @@ def _unary_float_op[op_name: StringLiteral](value: Symbol) -> Symbol:
     if not dtype.is_floating_point():
         raise error(
             value.graph(),
-            op_name
-            + " only supports floating point inputs. Please explicitly cast to"
+            op_name,
+            " only supports floating point inputs. Please explicitly cast to",
             " your desired float type first.",
         )
     return value.graph().op(op_name, value, value.tensor_type())

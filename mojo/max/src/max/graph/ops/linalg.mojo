@@ -71,7 +71,7 @@ def matmul(
     try:
         return g.op("rmo.matmul", List(lhs, rhs))
     except e:
-        raise error(g, e, location or __call_location())
+        raise error(g, e, location=location or __call_location())
 
 
 def band_part(

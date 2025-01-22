@@ -156,8 +156,19 @@ struct Device(Stringable):
         Returns:
             String representation of device.
         """
+        return String.write(self)
 
-        return String(
+    fn write_to[W: Writer](self, mut writer: W):
+        """
+        Formats this Device to the provided Writer.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
+
+        Args:
+            writer: The object to write to.
+        """
+        writer.write(
             StringRef(ptr=self._lib.value().get_device_desc_fn(self._cdev._ptr))
         )
 

@@ -45,10 +45,10 @@ def gather(input: Symbol, indices: Symbol, axis: Int = 0) -> Symbol:
     if axis < 0 or axis >= input_type.rank():
         raise error(
             g,
-            "gather axis out of bounds: axis="
-            + String(axis)
-            + ", rank="
-            + String(input_type.rank()),
+            "gather axis out of bounds: axis=",
+            axis,
+            ", rank=",
+            input_type.rank(),
         )
 
     var dims = List[Dim]()
@@ -97,14 +97,16 @@ def slice(
     var loc = location or __call_location()
     if len(slices) > input_type.rank():
         message = String("got {} slices, tensor only has rank {}")
-        raise error(g, message.format(len(slices), input_type.rank()), loc)
+        raise error(
+            g, message.format(len(slices), input_type.rank()), location=loc
+        )
 
     var out_shape = out_dims
     if len(out_shape) != len(slices):
         raise error(
             input.graph(),
             "Must specify an output dim for every sliced dimension",
-            loc,
+            location=loc,
         )
 
     # Append inner unsliced dims to the output shape.
@@ -181,7 +183,7 @@ def select(
             List(condition, x, y),
         )
     except e:
-        raise error(g, e, location or __call_location())
+        raise error(g, e, location=location or __call_location())
 
 
 def _slice_size(s: Slice, length: Optional[Int64]) -> Optional[Int]:
@@ -264,7 +266,7 @@ def slice(
     loc = location or __call_location()
     if len(slices) > t.rank():
         message = String("got {} slices, tensor only has rank {}")
-        raise error(g, message.format(len(slices), t.rank()), loc)
+        raise error(g, message.format(len(slices), t.rank()), location=loc)
 
     slice_max = Int(Int64.MAX)
     empty_slice = Slice(start=None, end=None, step=1)
@@ -280,7 +282,7 @@ def slice(
             raise error(
                 input.graph(),
                 "Must specify an output dim for every sliced dimension",
-                loc,
+                location=loc,
             )
 
     for i in range(t.rank()):
@@ -310,10 +312,10 @@ def slice(
         if not size:
             raise error(
                 input.graph(),
-                "Could not calculate slice size at graph build time for dim="
-                + String(i)
-                + ". Please set out_dims.",
-                loc,
+                "Could not calculate slice size at graph build time for dim=",
+                i,
+                ". Please set out_dims.",
+                location=loc,
             )
         # TODO(GEX-578): This should be handled by the slice op builder.
         # It should raise if the slice may load the wrong number of elements.
@@ -321,14 +323,14 @@ def slice(
         if length and slice.end and slice.end.value() > Int(length.value()):
             raise error(
                 input.graph(),
-                "Calculate slice end for dim="
-                + String(i)
-                + " was "
-                + String(slice.end.value())
-                + ", but the dimensions only has "
-                + String(length.value())
-                + " elements.",
-                loc,
+                "Calculate slice end for dim=",
+                i,
+                " was ",
+                slice.end.value(),
+                ", but the dimensions only has ",
+                length.value(),
+                " elements.",
+                location=loc,
             )
         dims.append(size.value())
 
@@ -489,15 +491,13 @@ def concat(
         if "Unsupported dim type" in String(e):
             raise error(
                 g,
-                (
-                    "Concat does not support outputting algebraic expressions,"
-                    " but the axis dimension could not be simplified. Please"
-                    " set out_dim."
-                ),
-                __call_location(),
+                "Concat does not support outputting algebraic expressions,",
+                " but the axis dimension could not be simplified.",
+                " Please set out_dim.",
+                location=__call_location(),
             )
 
-        raise error(g, e, __call_location())
+        raise error(g, e, location=__call_location())
 
     return out
 

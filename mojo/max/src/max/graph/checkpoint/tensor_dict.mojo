@@ -130,7 +130,7 @@ struct TensorDict(Sized):
         try:
             return self._items[key].copy_to_tensor[type]()
         except e:
-            raise "Error when getting key '" + key + "': " + String(e)
+            raise Error("Error when getting key '", key, "': ", e)
 
     fn _set(mut self, key: String, value: _CheckpointTensor):
         """Adds or updates a tensor in the dictionary.
@@ -164,7 +164,7 @@ struct TensorDict(Sized):
         try:
             return self._items.pop(key).to_tensor[type]()
         except e:
-            raise "Error when getting key '" + key + "': " + String(e)
+            raise Error("Error when getting key '", key, "': ", e)
 
     fn __len__(self) -> Int:
         return len(self._items)
@@ -203,17 +203,21 @@ struct TensorDict(Sized):
         self._items = existing._items^
 
     fn __str__(self) -> String:
-        var contents: String = ""
+        return String.write(self)
+
+    fn write_to[W: Writer](self, mut writer: W):
+        writer.write("TensorDict(")
         var first = True
         for key_ref in self._items.keys():
             var key = key_ref[]
             if first:
                 first = False
             else:
-                contents += ", "
+                writer.write(", ")
+            writer.write(key, ": ")
             try:
-                contents += key + ": " + String(self._items[key].spec)
+                writer.write(self._items[key].spec)
             except:
                 # Should never happen.
-                contents += key + ": " + "(contents could not be read)"
-        return "TensorDict(" + contents + ")"
+                writer.write("(contents could not be read)")
+        writer.write(")")

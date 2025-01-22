@@ -185,11 +185,11 @@ def load[PathLike: PathLike](path: PathLike) -> TensorDict:
         file_version = _read_version(path, f)
 
         if file_version.major_version > version.major_version:
-            raise (
-                "Cannot read from checkpoint version "
-                + String(file_version)
-                + ". Current version: "
-                + String(version)
+            raise Error(
+                "Cannot read from checkpoint version ",
+                file_version,
+                ". Current version: ",
+                version,
             )
         var metadata_size = _read_int[DType.uint64](f)
 

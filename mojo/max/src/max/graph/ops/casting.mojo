@@ -112,13 +112,13 @@ def rebind(v: Symbol, out_dims: List[Dim], message: String) -> Symbol:
         if known_dim != y_int:
             raise error(
                 g,
-                "rebind out_dims statically known to be incorrect. Dimension"
-                ' (value "'
-                + x_str
-                + '") rebinds to two different constants: '
-                + String(known_dim)
-                + " and "
-                + String(y_int),
+                "rebind out_dims statically known to be incorrect.",
+                ' Dimension (value "',
+                x_str,
+                '") rebinds to two different constants: ',
+                known_dim,
+                " and ",
+                y_int,
             )
 
     # Build mapping from symbolic to known statically known values.
@@ -152,18 +152,18 @@ def rebind(v: Symbol, out_dims: List[Dim], message: String) -> Symbol:
         src_size = known_dim_size(src_dim)
         dst_size = known_dim_size(dst_dim)
         if src_size and dst_size and src_size.value() != dst_size.value():
-            raise error(
+            raise Error(
                 g,
-                "rebind out_dims statically known to be incorrect. Dimension"
-                ' (name: "'
-                + String(src_dim)
-                + ", value: "
-                + String(src_size.value())
-                + '") cannot rebind to Dimension (name: '
-                + String(dst_dim)
-                + ", value: "
-                + String(dst_size.value())
-                + ")",
+                "rebind out_dims statically known to be incorrect. Dimension",
+                ' (name: "',
+                src_dim,
+                ", value: ",
+                src_size.value(),
+                '") cannot rebind to Dimension (name: ',
+                dst_dim,
+                ", value: ",
+                dst_size.value(),
+                ")",
             )
 
     ctx = g._context()
@@ -242,12 +242,8 @@ def unsqueeze(v: Symbol, axis: Int) -> Symbol:
     if axis < 0:
         axis += rank + 1
     if axis < 0 or axis > rank:
-        raise error(
-            g,
-            "unsqueeze axis out of bounds: axis="
-            + String(axis)
-            + ", rank="
-            + String(rank),
+        raise Error(
+            g, "unsqueeze axis out of bounds: axis=", axis, ", rank=", rank
         )
 
     # Short circuit to handle scalars with less ops.
@@ -476,7 +472,7 @@ def broadcast_to(
             attrs=List[NamedAttribute](newShapeAttr),
         )
     except e:
-        raise error(g, e, location or __call_location())
+        raise error(g, e, location=location or __call_location())
 
 
 # ===----------------------------------------------------------------------=== #

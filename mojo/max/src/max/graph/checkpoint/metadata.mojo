@@ -41,8 +41,11 @@ struct VersionInfo:
     var major_version: UInt32
     var minor_version: UInt32
 
-    def __str__(self) -> String:
-        return String(self.major_version) + "." + String(self.minor_version)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    fn write_to[W: Writer](self, mut writer: W):
+        writer.write(self.major_version, ".", self.minor_version)
 
 
 def current_version() -> VersionInfo:
