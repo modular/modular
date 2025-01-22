@@ -49,6 +49,7 @@ from layout.tensor_core import (
     get_mma_shape,
 )
 from linalg.matmul_gpu import _matmul_gpu
+from linalg._multistage_gemm_gpu import warp_split_k_reduction
 from linalg.utils import GemmShape
 from linalg.utils_gpu import (
     MatmulConfig,
@@ -134,7 +135,7 @@ fn multistage_mma_q[
     ) + 1
     alias repack_tile = Index(64, 16)
 
-    var tid: UInt32 = thread_idx.x
+    var tid: UInt32 = thread_idx.x % num_threads
     var warp_id = tid // WARP_SIZE
     var lane_id = tid % WARP_SIZE
 
@@ -154,12 +155,14 @@ fn multistage_mma_q[
     )
 
     alias async_copy_b_layout = Layout.row_major(
-        num_threads * simd_b_size // b_smem_layout.stride[0].value(),
-        b_smem_layout.stride[0].value() // simd_b_size,
+        ceildiv(num_threads * simd_b_size, b_smem_layout.stride[0].value()),
+        num_threads
+        // ceildiv(num_threads * simd_b_size, b_smem_layout.stride[0].value()),
     )
     alias swizzle_b = transpose_b or b_type.is_half_float()
 
-    alias async_copy_scales_layout = Layout.row_major(1, 32)
+    alias async_copy_scales_layout = Layout.row_major(1, WARP_SIZE)
+    alias async_copy_scales_veclen = BN // WARP_SIZE
 
     alias smem_reg_scales_layout = Layout.row_major(8, 4)
 
@@ -217,16 +220,16 @@ fn multistage_mma_q[
                     )[]
 
                     # We only need one warp for copying scales...
-                    if tid < 32:
+                    if tid < WARP_SIZE:
                         var src_fragments = scales_iter[].bitcast[
                             scales_type, address_space = AddressSpace.GENERIC
-                        ]().vectorize[1, 4]().distribute[
+                        ]().vectorize[1, async_copy_scales_veclen]().distribute[
                             async_copy_scales_layout
                         ](
                             Int(tid)
                         )
                         var dst_fragments = scales_smem_tile.vectorize[
-                            1, 4
+                            1, async_copy_scales_veclen
                         ]().distribute[async_copy_scales_layout](Int(tid))
 
                         dst_fragments.copy_from_async[](src_fragments)
@@ -404,17 +407,19 @@ fn multistage_mma_q[
                             )[]
 
                             # We only need one warp for copying scales...
-                            if tid < 32:
+                            if tid < WARP_SIZE:
                                 var src_fragments = scales_iter[].bitcast[
                                     scales_type,
                                     address_space = AddressSpace.GENERIC,
-                                ]().vectorize[1, 4]().distribute[
+                                ]().vectorize[
+                                    1, async_copy_scales_veclen
+                                ]().distribute[
                                     async_copy_scales_layout
                                 ](
                                     Int(tid)
                                 )
                                 var dst_fragments = scales_smem_tile.vectorize[
-                                    1, 4
+                                    1, async_copy_scales_veclen
                                 ]().distribute[async_copy_scales_layout](
                                     Int(tid)
                                 )
@@ -432,7 +437,7 @@ fn multistage_mma_q[
                 barrier()
 
 
-fn multistage_gemm_q[
+fn multistage_qgemm_kernel[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -482,20 +487,12 @@ fn multistage_gemm_q[
         b_scales_ptr.bitcast[Scalar[scales_type]](),
     )
 
-    # Hold on adding fp16 because it counld have differnet precisions than bf16.
-    # constrained[
-    #    (a_type is DType.float32 or a_type is DType.bfloat16)
-    #    and a_type == b_type == c_type,
-    #    "Pipeline gemm only supports tf32 or BF16 mma",
-    # ]()
+    alias num_warp_k_partitions = config.num_warp_k_partitions
+    alias num_threads_per_warp_k_part = num_threads // num_warp_k_partitions
 
-    constrained[
-        num_warps_m * num_warps_n == num_threads // WARP_SIZE,
-        "Number of warps doesn't match warp tile sizes.",
-    ]()
-
-    var tid: UInt32 = thread_idx.x
-    var warp_id = tid // WARP_SIZE
+    var tid = thread_idx.x
+    var warp_k_part_id = tid // num_threads_per_warp_k_part if num_warp_k_partitions > 1 else 0
+    var warp_id = (tid % num_threads_per_warp_k_part) // WARP_SIZE
 
     # Only apply block swizzling for half precision types.
     alias swizzle_block = a_type.is_half_float() and b_type.is_half_float()
@@ -535,12 +532,15 @@ fn multistage_gemm_q[
                     circular=True,
                 ]().ptr
             )
-        ](a_smem),
+        ](a_smem)
+        + warp_k_part_id * a_smem_size,
         a_smem_size,
     )
 
     # There is one pre-allocated shared buffer. Explicitly offset B after at A's end.
-    var b_smem = (a_smem + a_smem_size).bitcast[Scalar[b_type]]()
+    var b_smem = (a_smem + num_warp_k_partitions * a_smem_size).bitcast[
+        Scalar[b_type]
+    ]()
     alias b_smem_size = num_pipeline_stages * BK * BN // pack_factor
     alias BD_0 = BN // repack_tile[0]
     alias BD_1 = (BK * repack_tile[0]) // pack_factor
@@ -551,13 +551,15 @@ fn multistage_gemm_q[
         b_smem_layout,
         address_space = AddressSpace.SHARED,
         circular=True,
-    ](b_smem, b_smem_size)
+    ](b_smem + warp_k_part_id * b_smem_size, b_smem_size)
 
     # multiple stages may share the same scales
     alias num_scales_stages = ceildiv(
         (num_pipeline_stages - 1) * BK, group_size
     ) + 1
-    var scales_smem = (b_smem + b_smem_size).bitcast[Scalar[scales_type]]()
+    var scales_smem = (b_smem + num_warp_k_partitions * b_smem_size).bitcast[
+        Scalar[scales_type]
+    ]()
     alias scales_smem_size = num_scales_stages * BN * ceildiv(BK, group_size)
     alias scales_smem_layout = Layout.row_major(ceildiv(BK, group_size), BN)
 
@@ -566,18 +568,23 @@ fn multistage_gemm_q[
         scales_smem_layout,
         address_space = AddressSpace.SHARED,
         circular=True,
-    ](scales_smem, scales_smem_size)
+    ](scales_smem + warp_k_part_id * scales_smem_size, scales_smem_size)
 
     # global memory iterator
-    var a_gmem_iter = a.tiled_iterator[BM, BK, axis=1](block_idx[1], 0)
-    var b_tile_coords = args_to_tuple[transpose_b](0, block_idx[0])
+    var bk_start: Int = (K // BK // num_warp_k_partitions) * warp_k_part_id
+    var a_gmem_iter = a.tiled_iterator[BM, BK, axis=1](block_idx[1], bk_start)
+    var b_tile_coords = args_to_tuple[transpose_b](bk_start, block_idx[0])
     alias b_tile_axis = 1 if transpose_b else 0
     var b_gmem_iter = b.tiled_iterator[BD_0, BD_1, axis=b_tile_axis](
         b_tile_coords[0], b_tile_coords[1]
     )
+    alias groups_per_iter = ceildiv(BK, group_size)
+    var bk_scales_start: Int = (
+        K // (groups_per_iter * group_size) // num_warp_k_partitions
+    ) * warp_k_part_id
     var scales_gmem_iter = scales.tiled_iterator[
         ceildiv(BK, group_size), BN, axis=0
-    ](b_tile_coords[1], b_tile_coords[0])
+    ](bk_scales_start, block_idx[0])
 
     alias mma_shape = get_mma_shape[a_type, get_accum_type[a_type]()]()
     alias MMA_M = mma_shape[0]
@@ -599,7 +606,7 @@ fn multistage_gemm_q[
         BK,
         WM,
         WN,
-        num_threads,
+        num_threads_per_warp_k_part,
         num_pipeline_stages,
         transpose_b,
         group_size,
@@ -612,8 +619,23 @@ fn multistage_gemm_q[
         b_smem_iter,
         scales_smem_iter,
         scales_gmem_iter,
-        ceildiv(K, BK),
+        ceildiv(K // num_warp_k_partitions, BK),
     )
+
+    # reduce within the threadblock
+    @parameter
+    if num_warp_k_partitions > 1:
+        warp_split_k_reduction[
+            BM,
+            BN,
+            num_threads_per_warp_k_part,
+            num_warp_k_partitions,
+        ](
+            warp_k_part_id,
+            c_reg_tile,
+        )
+        if warp_k_part_id > 0:
+            return
 
     # Map global memory tile down to thread.
     var c_gmem_tile = c.tile[BM, BN](block_idx[1], block_idx[0])
@@ -1160,6 +1182,84 @@ fn repack_GPTQ_for_sm8x[
 
 
 @always_inline
+fn q_smem_usage[config: MatmulConfig, group_size: Int]() -> Int:
+    alias num_warp_k_partitions = config.num_warp_k_partitions
+    alias block_mnk = config.block_tile_shape
+    alias num_pipeline_stages = config.num_pipeline_stages
+    alias pack_factor = 8
+
+    # fmt: off
+    var a_usage = block_mnk[0] * block_mnk[2] * num_pipeline_stages * sizeof[config.a_type]()
+    var b_usage = block_mnk[1] * block_mnk[2] * num_pipeline_stages * sizeof[DType.uint32]() // pack_factor
+    var c_usage = block_mnk[0] * block_mnk[1] * sizeof[DType.float32]()
+    var num_scales_stages = ceildiv((num_pipeline_stages - 1) * block_mnk[2], group_size) + 1
+    var scales_usage = block_mnk[1] * ceildiv(block_mnk[2], group_size
+    ) * num_scales_stages * sizeof[config.a_type]()
+    var slice_k_reduction = block_mnk[0] * block_mnk[1] * (num_warp_k_partitions // 2) * sizeof[DType.float32]()
+    # fmt: on
+
+    var smem_usage = num_warp_k_partitions * (a_usage + b_usage + scales_usage)
+    return max(c_usage, smem_usage, slice_k_reduction)
+
+
+fn multistage_gemm_q[
+    c_type: DType,
+    c_shape: DimList,
+    a_type: DType,
+    a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList, //,
+    *,
+    group_size: Int,
+    pack_factor: Int,
+    config: MatmulConfig[a_type, b_type, c_type, True],
+](
+    c: NDBuffer[c_type, 2, c_shape],
+    a: NDBuffer[a_type, 2, a_shape],
+    b: NDBuffer[b_type, 2, b_shape],
+    runtime_config: MatmulConfig[a_type, b_type, c_type, True],
+    ctx: DeviceContext,
+) raises:
+    var M = c.dim[0]()
+    var N = c.dim[1]()
+
+    var tensor_c = from_ndbuffer_row_major(c)
+    var tensor_a = from_ndbuffer_row_major(a)
+    var tensor_b = from_ndbuffer_row_major(b)
+
+    var smem_usage = q_smem_usage[config, group_size]()
+
+    alias gemm_kernel_type = multistage_qgemm_kernel[
+        c_type,  # c_type
+        tensor_c.layout,
+        a_type,  # a_type
+        tensor_a.layout,
+        b_type,  # b_type
+        tensor_b.layout,
+        group_size,
+        pack_factor,
+        True,
+        config,
+    ]
+
+    var gemm_kernel = ctx.compile_function[gemm_kernel_type](
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            smem_usage,
+        ),
+    )
+
+    ctx.enqueue_function(
+        gemm_kernel,
+        tensor_c,
+        tensor_a,
+        tensor_b,
+        grid_dim=runtime_config.grid_dim(M, N),
+        block_dim=runtime_config.block_dim(),
+        shared_mem_bytes=smem_usage,
+    )
+
+
+@always_inline
 fn matmul_gpu_qint4[
     c_type: DType,
     a_type: DType,
@@ -1172,7 +1272,7 @@ fn matmul_gpu_qint4[
     b: NDBuffer[DType.uint8, 2, b_shape],
     ctx: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
-    constrained[is_gpu[target](), "unsupported target"]()
+    # constrained[is_gpu[target](), "unsupported target"]()
     var cuda_ctx = ctx.get_device_context()
 
     alias pack_factor = 8
@@ -1184,67 +1284,419 @@ fn matmul_gpu_qint4[
     var n = shape.N
     var k = shape.K
 
-    var tensor_c = from_ndbuffer_row_major(
-        rebind[NDBuffer[c_type, 2, c_shape]](c)
+    alias static_K = a_shape.get[1]()
+    alias static_N = c_shape.get[1]()
+
+    @parameter
+    if static_K == 4096 and static_N == 4096:
+        if m <= 16:
+            alias M16_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+                block_tile_shape=Index(16, 64, 128),
+                warp_tile_shape=Index(16, 64, 32),
+                num_pipeline_stages=4,
+                num_k_partitions=1,
+                num_warp_k_partitions=4,
+            )
+            multistage_gemm_q[
+                group_size=group_size,
+                pack_factor=pack_factor,
+                config=M16_config,
+            ](
+                rebind[NDBuffer[c_type, 2, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                M16_config,
+                cuda_ctx,
+            )
+            return
+        if 16 < m <= 32:
+            alias M32_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+                block_tile_shape=Index(32, 64, 128),
+                warp_tile_shape=Index(16, 64, 32),
+                num_pipeline_stages=3,
+                num_k_partitions=1,
+                num_warp_k_partitions=4,
+            )
+            multistage_gemm_q[
+                group_size=group_size,
+                pack_factor=pack_factor,
+                config=M32_config,
+            ](
+                rebind[NDBuffer[c_type, 2, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                M32_config,
+                cuda_ctx,
+            )
+            return
+        if 32 < m <= 64:
+            alias M64_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+                block_tile_shape=Index(64, 64, 32),
+                warp_tile_shape=Index(64, 64, 32),
+                num_pipeline_stages=5,
+                num_k_partitions=1,
+                num_warp_k_partitions=4,
+            )
+            multistage_gemm_q[
+                group_size=group_size,
+                pack_factor=pack_factor,
+                config=M64_config,
+            ](
+                rebind[NDBuffer[c_type, 2, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                M64_config,
+                cuda_ctx,
+            )
+            return
+        if 64 < m <= 128:
+            alias M128_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+                block_tile_shape=Index(64, 128, 32),
+                warp_tile_shape=Index(64, 64, 32),
+                num_pipeline_stages=4,
+                num_k_partitions=1,
+                num_warp_k_partitions=4,
+            )
+            multistage_gemm_q[
+                group_size=group_size,
+                pack_factor=pack_factor,
+                config=M128_config,
+            ](
+                rebind[NDBuffer[c_type, 2, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                M128_config,
+                cuda_ctx,
+            )
+            return
+        if 128 < m <= 512:
+            alias M512_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+                block_tile_shape=Index(64, 64, 32),
+                warp_tile_shape=Index(64, 64, 32),
+                num_pipeline_stages=3,
+                num_k_partitions=1,
+                num_warp_k_partitions=4,
+            )
+            multistage_gemm_q[
+                group_size=group_size,
+                pack_factor=pack_factor,
+                config=M512_config,
+            ](
+                rebind[NDBuffer[c_type, 2, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                M512_config,
+                cuda_ctx,
+            )
+            return
+
+    @parameter
+    if static_K == 4096 and static_N == 6144:
+        if m <= 16:
+            alias M16_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+                block_tile_shape=Index(16, 64, 128),
+                warp_tile_shape=Index(16, 64, 32),
+                num_pipeline_stages=4,
+                num_k_partitions=1,
+                num_warp_k_partitions=4,
+            )
+            multistage_gemm_q[
+                group_size=group_size,
+                pack_factor=pack_factor,
+                config=M16_config,
+            ](
+                rebind[NDBuffer[c_type, 2, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                M16_config,
+                cuda_ctx,
+            )
+            return
+        if 16 < m <= 32:
+            alias M32_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+                block_tile_shape=Index(32, 64, 128),
+                warp_tile_shape=Index(16, 64, 32),
+                num_pipeline_stages=3,
+                num_k_partitions=1,
+                num_warp_k_partitions=4,
+            )
+            multistage_gemm_q[
+                group_size=group_size,
+                pack_factor=pack_factor,
+                config=M32_config,
+            ](
+                rebind[NDBuffer[c_type, 2, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                M32_config,
+                cuda_ctx,
+            )
+            return
+        if 32 < m <= 64:
+            alias M64_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+                block_tile_shape=Index(64, 64, 32),
+                warp_tile_shape=Index(64, 64, 32),
+                num_pipeline_stages=5,
+                num_k_partitions=1,
+                num_warp_k_partitions=4,
+            )
+            multistage_gemm_q[
+                group_size=group_size,
+                pack_factor=pack_factor,
+                config=M64_config,
+            ](
+                rebind[NDBuffer[c_type, 2, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                M64_config,
+                cuda_ctx,
+            )
+            return
+        if 64 < m <= 128:
+            alias M128_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+                block_tile_shape=Index(64, 128, 32),
+                warp_tile_shape=Index(64, 64, 32),
+                num_pipeline_stages=4,
+                num_k_partitions=1,
+                num_warp_k_partitions=4,
+            )
+            multistage_gemm_q[
+                group_size=group_size,
+                pack_factor=pack_factor,
+                config=M128_config,
+            ](
+                rebind[NDBuffer[c_type, 2, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                M128_config,
+                cuda_ctx,
+            )
+            return
+        if 128 < m <= 256:
+            alias M256_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+                block_tile_shape=Index(128, 128, 32),
+                warp_tile_shape=Index(64, 64, 32),
+                num_pipeline_stages=3,
+                num_k_partitions=1,
+                num_warp_k_partitions=2,
+            )
+            multistage_gemm_q[
+                group_size=group_size,
+                pack_factor=pack_factor,
+                config=M256_config,
+            ](
+                rebind[NDBuffer[c_type, 2, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                M256_config,
+                cuda_ctx,
+            )
+            return
+
+    @parameter
+    if static_K == 4096 and static_N == 14336:
+        if m <= 16:
+            alias M16_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+                block_tile_shape=Index(16, 64, 32),
+                warp_tile_shape=Index(16, 64, 32),
+                num_pipeline_stages=5,
+                num_k_partitions=1,
+                num_warp_k_partitions=4,
+            )
+            multistage_gemm_q[
+                group_size=group_size,
+                pack_factor=pack_factor,
+                config=M16_config,
+            ](
+                rebind[NDBuffer[c_type, 2, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                M16_config,
+                cuda_ctx,
+            )
+            return
+        if 16 < m <= 32:
+            alias M32_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+                block_tile_shape=Index(16, 64, 32),
+                warp_tile_shape=Index(16, 64, 32),
+                num_pipeline_stages=5,
+                num_k_partitions=1,
+                num_warp_k_partitions=4,
+            )
+            multistage_gemm_q[
+                group_size=group_size,
+                pack_factor=pack_factor,
+                config=M32_config,
+            ](
+                rebind[NDBuffer[c_type, 2, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                M32_config,
+                cuda_ctx,
+            )
+            return
+        if 32 < m <= 64:
+            alias M64_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+                block_tile_shape=Index(32, 64, 32),
+                warp_tile_shape=Index(32, 64, 32),
+                num_pipeline_stages=3,
+                num_k_partitions=1,
+                num_warp_k_partitions=4,
+            )
+            multistage_gemm_q[
+                group_size=group_size,
+                pack_factor=pack_factor,
+                config=M64_config,
+            ](
+                rebind[NDBuffer[c_type, 2, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                M64_config,
+                cuda_ctx,
+            )
+            return
+        if 64 < m <= 256:
+            alias M128_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+                block_tile_shape=Index(64, 64, 32),
+                warp_tile_shape=Index(64, 64, 32),
+                num_pipeline_stages=4,
+                num_k_partitions=1,
+                num_warp_k_partitions=4,
+            )
+            multistage_gemm_q[
+                group_size=group_size,
+                pack_factor=pack_factor,
+                config=M128_config,
+            ](
+                rebind[NDBuffer[c_type, 2, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                M128_config,
+                cuda_ctx,
+            )
+            return
+
+    @parameter
+    if static_K == 14336 and static_N == 4096:
+        if m <= 16:
+            alias M16_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+                block_tile_shape=Index(16, 64, 32),
+                warp_tile_shape=Index(16, 64, 32),
+                num_pipeline_stages=4,
+                num_k_partitions=1,
+                num_warp_k_partitions=8,
+            )
+            multistage_gemm_q[
+                group_size=group_size,
+                pack_factor=pack_factor,
+                config=M16_config,
+            ](
+                rebind[NDBuffer[c_type, 2, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                M16_config,
+                cuda_ctx,
+            )
+            return
+        if 16 < m <= 32:
+            alias M32_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+                block_tile_shape=Index(16, 64, 32),
+                warp_tile_shape=Index(16, 64, 32),
+                num_pipeline_stages=4,
+                num_k_partitions=1,
+                num_warp_k_partitions=4,
+            )
+            multistage_gemm_q[
+                group_size=group_size,
+                pack_factor=pack_factor,
+                config=M32_config,
+            ](
+                rebind[NDBuffer[c_type, 2, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                M32_config,
+                cuda_ctx,
+            )
+            return
+        if 32 < m <= 64:
+            alias M64_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+                block_tile_shape=Index(32, 64, 32),
+                warp_tile_shape=Index(32, 64, 32),
+                num_pipeline_stages=4,
+                num_k_partitions=1,
+                num_warp_k_partitions=4,
+            )
+            multistage_gemm_q[
+                group_size=group_size,
+                pack_factor=pack_factor,
+                config=M64_config,
+            ](
+                rebind[NDBuffer[c_type, 2, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                M64_config,
+                cuda_ctx,
+            )
+            return
+        if 64 < m <= 128:
+            alias M128_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+                block_tile_shape=Index(32, 64, 32),
+                warp_tile_shape=Index(32, 64, 32),
+                num_pipeline_stages=3,
+                num_k_partitions=1,
+                num_warp_k_partitions=4,
+            )
+            multistage_gemm_q[
+                group_size=group_size,
+                pack_factor=pack_factor,
+                config=M128_config,
+            ](
+                rebind[NDBuffer[c_type, 2, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                M128_config,
+                cuda_ctx,
+            )
+            return
+        if 128 < m <= 512:
+            alias M512_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+                block_tile_shape=Index(64, 64, 32),
+                warp_tile_shape=Index(64, 64, 32),
+                num_pipeline_stages=3,
+                num_k_partitions=1,
+                num_warp_k_partitions=4,
+            )
+            multistage_gemm_q[
+                group_size=group_size,
+                pack_factor=pack_factor,
+                config=M512_config,
+            ](
+                rebind[NDBuffer[c_type, 2, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                M512_config,
+                cuda_ctx,
+            )
+            return
+
+    alias default_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+        block_tile_shape=Index(128, 128, 32),
+        warp_tile_shape=Index(64, 64, 32),
+        num_pipeline_stages=5,
+        num_k_partitions=1,
+        num_warp_k_partitions=1,
     )
-    var tensor_a = from_ndbuffer_row_major(
-        rebind[NDBuffer[a_type, 2, a_shape]](a)
-    )
-    var tensor_b = from_ndbuffer_row_major(
-        rebind[NDBuffer[DType.uint8, 2, b_shape]](b)
-    )
 
-    alias kernels = MatmulKernels[a_type, DType.uint8, c_type, True]()
-    alias config = kernels.ampere_128x128_4
-
-    # estimate smem usage
-    var smem_usage: Int = 0
-    var block_mnk = config.block_tile_shape
-    var num_pipeline_stages = config.num_pipeline_stages
-    var a_usage = block_mnk[0] * block_mnk[2] * num_pipeline_stages * sizeof[
-        a_type
-    ]()
-    var b_usage = block_mnk[1] * block_mnk[2] * num_pipeline_stages * sizeof[
-        DType.uint32
-    ]() // pack_factor
-    var c_usage = block_mnk[0] * block_mnk[1] * sizeof[DType.float32]()
-    var num_scales_stages = ceildiv(
-        (num_pipeline_stages - 1) * block_mnk[2], group_size
-    ) + 1
-    var scales_usage = block_mnk[1] * ceildiv(
-        block_mnk[2], group_size
-    ) * num_scales_stages * sizeof[a_type]()
-    smem_usage = a_usage + b_usage + scales_usage
-    smem_usage = max(c_usage, smem_usage)
-
-    alias gemm = multistage_gemm_q[
-        c_type,  # c_type
-        tensor_c.layout,
-        a_type,  # a_type
-        tensor_a.layout,
-        DType.uint8,  # b_type
-        tensor_b.layout,
-        group_size,
-        pack_factor,
-        True,
-        config,
-    ]
-
-    var func = cuda_ctx.compile_function[gemm](
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_usage),
-    )
-
-    alias BM = config.block_tile_shape[0]
-    alias BN = config.block_tile_shape[1]
-
-    cuda_ctx.enqueue_function(
-        func,
-        tensor_c,
-        tensor_a,
-        tensor_b,
-        grid_dim=(ceildiv(n, BN), ceildiv(m, BM), 1),
-        block_dim=(Int(config.num_threads()), 1, 1),
-        shared_mem_bytes=smem_usage,
+    multistage_gemm_q[
+        group_size=group_size,
+        pack_factor=pack_factor,
+        config=default_config,
+    ](
+        rebind[NDBuffer[c_type, 2, c_shape]](c),
+        rebind[NDBuffer[a_type, 2, a_shape]](a),
+        rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+        default_config,
+        cuda_ctx,
     )
 
 
