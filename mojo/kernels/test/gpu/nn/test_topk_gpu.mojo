@@ -76,16 +76,6 @@ fn test_case_batched[
 
     # Fill the buffer with consecutive values
     fill_fn(in_buffer.tensor)
-    # print("Input buffer: ", in_buffer.tensor)
-
-    # Run the Top-K kernel
-    alias topk_kernel = _topk_gpu[
-        type,
-        rank=rank,
-        out_idx_type=out_idx_type,
-        sampling=sampling,
-        largest=largest,
-    ]
 
     # Move data to device
     var device_in = DeviceNDBuffer[type, rank](DimList(batch_size, N), ctx=ctx)
@@ -115,7 +105,7 @@ fn test_case_batched[
         @always_inline
         @parameter
         fn run_func(ctx: DeviceContext) raises:
-            topk_kernel(
+            _topk_gpu[sampling=sampling, largest=largest](
                 ctx,
                 K,
                 device_in.tensor,
@@ -137,7 +127,7 @@ fn test_case_batched[
         alias msg = "tk-smpl-gpu" if sampling else "tk-gpu"
         time_kernel[run_func](m, ctx, msg)
 
-    _topk_gpu[sampling=sampling, largest=largest,](
+    _topk_gpu[sampling=sampling, largest=largest](
         ctx,
         K,
         device_in.tensor,
