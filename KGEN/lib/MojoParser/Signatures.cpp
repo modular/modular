@@ -1358,10 +1358,11 @@ static void typeCheckOneArgument(size_t idx, bool isDef, bool isStaticMethod,
     ASTType dictType = shared.getOwnedKwargsDictType(arg.loc);
 
     auto dictDecl = cast<LIT::StructType>(dictType.mlirType);
-    auto dictMetatype = cast<AnyStructType>(dictDecl.getMetaType());
-    ArrayRef<Type> inputTypes =
-        dictMetatype.getSignature().getInputParamTypes();
-    if (inputTypes.size() != 1) {
+    // We know these are all UnboundAttrs created by
+    // StructDeclOp::bindReference. The correct way is to have bindReference
+    // return a GeneratorType.
+    ArrayRef<TypedAttr> inputUnboundParams = dictDecl.getParamValues();
+    if (inputUnboundParams.size() != 1) {
       shared.emitError(arg.loc)
           << "internal compiler error: OwnedKwargsDict type has unexpected "
              "parameter signature; please file a bug";
@@ -1373,7 +1374,7 @@ static void typeCheckOneArgument(size_t idx, bool isDef, bool isStaticMethod,
     if (arg.isErroneous)
       return;
 
-    auto collectionElement = cast<TraitType>(inputTypes[0]);
+    auto collectionElement = cast<TraitType>(inputUnboundParams[0].getType());
     PValue binding;
     if (!arg.typeExpr) {
       assert(isDef);

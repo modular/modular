@@ -25,7 +25,7 @@ kgen.generator @type_values() {
 // CHECK: kgen.struct.generator @Bar : type
 // CHECK-NEXT: kgen.struct.info :type [struct_inst<"Bar"(foo: typevalue<inst_struct_ref(#kgen.typeref<@Foo>)>)>, pointer<none>]
 lit.struct.decl @Bar register_passable {
-  lit.struct.field foo: !lit.struct<@Foo, !lit.anystruct<@Foo>>
+  lit.struct.field foo: !lit.struct<@Foo>
 }
 
 // CHECK: kgen.struct.generator @Foo : type

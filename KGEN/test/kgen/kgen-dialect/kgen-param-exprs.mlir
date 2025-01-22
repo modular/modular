@@ -905,8 +905,8 @@ kgen.generator @get_likage_name() {
 
 // CHECK-LABEL: @unification
 kgen.generator @unification() {
-  // CHECK: T0: type = <@unification : !metatype.type>
-  kgen.param.declare T0: type = <rebind(:!metatype.type #kgen.type<!lit.struct<@unification, !metatype.type>>)>
+  // CHECK: T0: type = <@unification>
+  kgen.param.declare T0: type = <rebind(:!metatype.type #kgen.type<!lit.struct<@unification>>)>
   kgen.return
 }
 

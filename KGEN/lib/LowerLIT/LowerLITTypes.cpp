@@ -209,7 +209,8 @@ void StructDecls::buildReplacer(LowerLITReplacer &replacer, MLIRContext *ctx) {
       [&replacer, typeType](BindTypeAttr bind) {
         AnyStructType metatype = bind.getType();
         auto ref = LIT::StructType::get(metatype.getSymbol(),
-                                        metatype.getParamValues(), typeType);
+                                        metatype.getParamValues(),
+                                        metatype.getSignature());
         return TypeParamAttr::get(replacer.replace(ref, TypeDomain::AsValue),
                                   replacer.replace(ref, TypeDomain::AsType),
                                   typeType);
@@ -376,11 +377,11 @@ LogicalResult StructDecls::process(ModuleOp module, SymbolTable &symtab) {
     auto structInstType =
         StructInstanceType::get(structName, paramNames, paramValues, fieldDecls,
                                 !info.isRegisterPassable);
-    TypedAttr typeConstant =
-        TypeParamAttr::get(structInstType,
-                           LIT::StructType::get(SymbolRefAttr::get(structName),
-                                                paramValues, typeType),
-                           typeType);
+    TypedAttr typeConstant = TypeParamAttr::get(
+        structInstType,
+        LIT::StructType::get(SymbolRefAttr::get(structName), paramValues,
+                             TypeSignatureType::get(ctx)),
+        typeType);
     b.create<KGEN::StructInfoOp>(op.getLoc(), typeConstant);
 
     structDecls.try_emplace(structName, std::move(info));
@@ -559,7 +560,9 @@ LITTypeLowerer::LITTypeLowerer(MLIRContext *ctx, StructDecls &structDecls)
             }));
         auto concreteSymRef = TypeConstantRefAttr::get(
             decl.symRef, loweredParamValues,
-            replace(ref.getMetaType(), TypeDomain::AsType));
+            replace(AnyStructType::get(decl.symRef, loweredParamValues,
+                                       ref.getSignature()),
+                    TypeDomain::AsType));
 
         auto appliedStructTypeAttr =
             ParamOperatorAttr::get(POC::InstantiateStructRef, {concreteSymRef});
