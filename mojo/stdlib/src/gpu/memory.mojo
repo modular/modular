@@ -18,7 +18,7 @@ from memory.unsafe import bitcast
 
 from utils import IndexList, StaticTuple
 
-from ._utils import to_i32, to_llvm_ptr, to_llvm_shared_mem_ptr
+from ._utils import to_i32, to_i64, to_llvm_ptr, to_llvm_shared_mem_ptr
 
 # ===-----------------------------------------------------------------------===#
 # AddressSpace
@@ -327,6 +327,14 @@ fn fence_proxy_tensormap_generic_sys_release():
 
 
 @always_inline
+fn tma_store_fence():
+    """Fence for SMEM stores for subsequent TMA STORE."""
+    __mlir_op.`nvvm.fence.proxy`[
+        _properties = __mlir_attr.`{ kind = #nvvm.proxy_kind<async.shared>, space = #nvvm.shared_space<cta>}`
+    ]()
+
+
+@always_inline
 fn cp_async_bulk_tensor_shared_cluster_global[
     dst_type: AnyType, mbr_type: AnyType, rank: Int
 ](
@@ -365,6 +373,108 @@ fn cp_async_bulk_tensor_shared_cluster_global[
             to_llvm_ptr(tma_descriptor),
             to_i32(coords[0]),
             to_llvm_shared_mem_ptr(mem_bar),
+        )
+
+
+@always_inline
+fn cp_async_bulk_tensor_global_shared_cta[
+    src_type: AnyType,
+    rank: Int,
+    /,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+](
+    src_mem: UnsafePointer[src_type, address_space = GPUAddressSpace.SHARED],
+    tma_descriptor: UnsafePointer[NoneType],
+    coords: IndexList[rank],
+):
+    """Initiates an asynchronous copy operation on the tensor data from shared cta
+    memory to global memory.
+
+    Args:
+        src_mem: Pointer to source shared memory.
+        tma_descriptor: Pointer to tensor map descriptor.
+        coords: Tile coordinates.
+    """
+    constrained[rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"]()
+
+    alias cache_hint: Bool = eviction_policy is not CacheEviction.EVICT_NORMAL
+
+    @parameter
+    if rank == 2:
+        llvm_intrinsic["llvm.nvvm.cp.async.bulk.tensor.s2g.tile.2d", NoneType,](
+            src_mem,
+            tma_descriptor,
+            Int32(coords[0]),
+            Int32(coords[1]),
+            eviction_policy._value,
+            cache_hint,
+        )
+    else:
+        llvm_intrinsic["llvm.nvvm.cp.async.bulk.tensor.s2g.tile.1d", NoneType,](
+            src_mem,
+            tma_descriptor,
+            Int32(coords[0]),
+            eviction_policy._value,
+            cache_hint,
+        )
+
+
+@always_inline
+fn cp_async_bulk_tensor_reduce[
+    src_type: AnyType,
+    rank: Int,
+    /,
+    *,
+    reduction_kind: StringLiteral,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+](
+    src_mem: UnsafePointer[src_type, address_space = GPUAddressSpace.SHARED],
+    tma_descriptor: UnsafePointer[NoneType],
+    coords: IndexList[rank],
+):
+    """These instructions initiate an asynchronous reduction operation of tensor data
+       in global memory with the tensor data in shared{::cta} memory, using ``tile`` mode.
+
+    Args:
+        src_mem: Pointer to source shared memory.
+        tma_descriptor: Pointer to tensor map descriptor.
+        coords: Tile coordinates.
+    """
+    constrained[rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"]()
+    constrained[
+        reduction_kind
+        in ("add", "min", "max", "inc", "dec", "and", "or", "xor"),
+        "reduction type " + reduction_kind + " is not supported",
+    ]()
+    alias cache_hint: Bool = eviction_policy is not CacheEviction.EVICT_NORMAL
+
+    @parameter
+    if rank == 2:
+        llvm_intrinsic[
+            "llvm.nvvm.cp.async.bulk.tensor.reduce."
+            + reduction_kind
+            + ".tile.2d",
+            NoneType,
+        ](
+            src_mem,
+            tma_descriptor,
+            Int32(coords[0]),
+            Int32(coords[1]),
+            UInt64(eviction_policy._value),
+            cache_hint,
+        )
+    else:
+        llvm_intrinsic[
+            "llvm.nvvm.cp.async.bulk.tensor.reduce."
+            + reduction_kind
+            + ".tile.1d",
+            NoneType,
+        ](
+            src_mem,
+            tma_descriptor,
+            Int32(coords[0]),
+            UInt64(eviction_policy._value),
+            cache_hint,
         )
 
 

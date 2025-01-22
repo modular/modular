@@ -56,3 +56,16 @@ fn to_i32(val: Int32) -> __mlir_type.i32:
        Input casted to MLIR i32 value.
     """
     return __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.`i32`](val.value)
+
+
+@always_inline
+fn to_i64(val: Int64) -> __mlir_type.i64:
+    """Cast Scalar I64 value into MLIR i64.
+
+    Args:
+        val: Scalar I64 value.
+
+    Returns:
+       Input casted to MLIR i64 value.
+    """
+    return __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.`i64`](val.value)

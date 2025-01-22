@@ -275,3 +275,52 @@ fn mbarrier_try_wait_parity_shared[
                 " on AMD GPUs."
             ),
         ]()
+
+
+@always_inline
+fn cp_async_bulk_commit_group():
+    """Commits all prior initiated but uncommitted cp.async.bulk instructions into a cp.async.bulk-group.
+    """
+
+    @parameter
+    if is_nvidia_gpu():
+        __mlir_op.`nvvm.cp.async.bulk.commit.group`[_type=None]()
+    else:
+        constrained[
+            False,
+            (
+                "The cp_async_bulk_commit_group function is not supported"
+                " on AMD GPUs."
+            ),
+        ]()
+
+
+@always_inline
+fn cp_async_bulk_wait_group[n: Int32, read: Bool = True]():
+    """Causes the executing thread to wait until only N or fewer of the most recent bulk async-groups
+    are pending and all the prior bulk async-groups committed by the executing threads are complete
+    When N is 0, the executing thread waits on all the prior bulk async-groups to complete.
+    """
+
+    @parameter
+    fn get_asm() -> StringLiteral:
+        alias base = "llvm.nvvm.cp.async.bulk.wait.group"
+        if read:
+            return base + ".read"
+        return base
+
+    @parameter
+    if is_nvidia_gpu():
+        llvm_intrinsic[
+            get_asm(),
+            NoneType,
+        ](n)
+
+    else:
+        constrained[
+            False,
+            (
+                "The cp_async_bulk_commit_group function is not supported"
+                " on AMD GPUs."
+            ),
+        ]()
