@@ -30,7 +30,7 @@ from gpu.memory import AddressSpace, external_memory
 from gpu.random import Random
 from memory import UnsafePointer, bitcast, stack_allocation
 from nn.softmax import _softmax_gpu
-from nn.topk_gpu import (
+from nn.topk import (
     TopK_2,
     _get_shmem_size_stg_1,
     _topk_dead_val,
@@ -64,7 +64,7 @@ fn topk_wrapper[
     skip_sort: UnsafePointer[Scalar[DType.bool]],
 ):
     """
-    Copy of `Kernels/mojo/nn/topk_gpu.mojo:topk_stage1` with the addition of
+    Copy of `Kernels/mojo/nn/topk.mojo:topk_stage1` with the addition of
     max_vals and p_threshold arguments to determine if sorting is needed for
     top-p/min-p sampling.
 
