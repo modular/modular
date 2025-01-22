@@ -224,16 +224,8 @@ def LIT_AnyStructType : LITType<"AnyStruct", "anystruct",
     ```
   }];
 
-  let parameters = (ins
-    "SymbolAttr":$value,
-    OptionalArrayRefParameter<"TypedAttr">:$paramValues,
-    DefaultValuedParameter<"TypeSignatureType",
-                           "TypeSignatureType::get($_ctxt)">:$signature
-  );
-  let assemblyFormat = [{
-    `<` custom<ParameterizedSymbol>($value, $paramValues) ``
-        (`,` $signature^)? `>`
-  }];
+  let parameters = (ins "StructType":$structType);
+  let assemblyFormat = "`<` $structType `>`";
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol,
@@ -247,9 +239,8 @@ def LIT_AnyStructType : LITType<"AnyStruct", "anystruct",
 
   let extraClassDeclaration = [{
     SymbolRefAttr getSymbol() const;
-
-    /// Return the struct type this metatype corresponds to.
-    StructType getStructType();
+    TypeSignatureType getSignature() const;
+    ArrayRef<TypedAttr> getParamValues() const;
 
     /// Bind parameter values to the metatype, returning a new metatype.
     AnyStructType bind(ArrayRef<TypedAttr> values) const;

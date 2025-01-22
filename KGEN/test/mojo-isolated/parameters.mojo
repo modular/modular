@@ -614,9 +614,9 @@ fn variadic_func_param[*fs: fn() -> None]():
 
 # CHECK-LABEL: lit.fn @"bind_overloaded_fn
 fn bind_overloaded_fn[f: fn[f: fn () -> None] () -> None]():
-    # CHECK-NEXT: anystruct<#ParamFuncType <:!lit.generator<() -> !kgen.none> {{.*}}@"overloaded_function()"
+    # CHECK-NEXT: anystruct<<#ParamFuncType <:!lit.generator<() -> !kgen.none> {{.*}}@"overloaded_function()"
     alias T = ParamFuncType[overloaded_function]
-    # CHECK-NEXT: anystruct<#ParamFuncType <:!lit.generator<() -> !kgen.none> {{.*}}@"overloaded_function()"
+    # CHECK-NEXT: anystruct<<#ParamFuncType <:!lit.generator<() -> !kgen.none> {{.*}}@"overloaded_function()"
     alias U = ParamFuncType[f=overloaded_function]
 
     # CHECK-NEXT: bind_params(:{{.*}} f, {{.*}}@"overloaded_function()")
@@ -1330,7 +1330,7 @@ struct AllDefaultParams[x: Int = 0, v: MemoryOnlyType = MemoryOnlyType()]: pass
 
 # CHECK-LABEL: lit.fn @"test_default_param_struct_all_default()"
 fn test_default_param_struct_all_default():
-    # CHECK: lit.alias.decl *"T{{.*}}": anystruct<{{.*}}#AllDefaultParams{{.*}}> = <@{{.*}}::@AllDefaultParams<
+    # CHECK: lit.alias.decl *"T{{.*}}": anystruct<<{{.*}}#AllDefaultParams{{.*}}>> = <@{{.*}}::@AllDefaultParams<
     # CHECK-SAME: :!Int {0},
     # CHECK-SAME: :!MemoryOnlyType {}
     alias T = AllDefaultParams[]
@@ -1350,7 +1350,7 @@ struct StructWithParametricDefaultValue[T: AnyTrivialRegType, N: Int = IntForTyp
 
 # CHECK-LABEL: lit.fn @"test_struct_with_parametric_default_value()"
 fn test_struct_with_parametric_default_value():
-    # CHECK: lit.alias.decl *"a{{.*}}": anystruct<{{.*}}> = <@{{.*}}::@StructWithParametricDefaultValue<
+    # CHECK: lit.alias.decl *"a{{.*}}": anystruct<<{{.*}}>> = <@{{.*}}::@StructWithParametricDefaultValue<
     # CHECK-SAME: :type !Int
     # CHECK-SAME: :!Int apply(:!lit.generator<() -> !Int> @{{.*}}::@"IntForType[AnyTrivialRegType]()"{{.*}}<:type !Int>)>
     alias a = StructWithParametricDefaultValue[Int]
@@ -1467,7 +1467,7 @@ alias Scalar = SIMD[_, 1]
 
 # CHECK-LABEL: lit.fn @"scalar_type{{.*}}"<dt: !DType>
 fn scalar_type[dt: DType]():
-    # CHECK: alias.decl [[T:.*]]: anystruct<{{.*}}SIMD<:!DType dt, :!Int {1}>
+    # CHECK: alias.decl [[T:.*]]: anystruct<{{.*}}SIMD<:!DType dt, :!Int {1}>>
     alias T = Scalar[dt]
 
     #FIXME(29495): reenable.

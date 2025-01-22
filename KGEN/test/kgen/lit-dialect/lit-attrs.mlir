@@ -116,8 +116,8 @@ kgen.generator @indirect_origin_attr<orig: !lit.origin<0>>
 
 // CHECK-LABEL: kgen.generator @anystruct
 kgen.generator @anystruct() {
-  // CHECK: T: anystruct<@Foo> = <@Foo>
-  kgen.param.declare T: anystruct<@Foo> = <@Foo>
+  // CHECK: T: anystruct<<@Foo>> = <@Foo>
+  kgen.param.declare T: anystruct<<@Foo>> = <@Foo>
   kgen.return
 }
 
@@ -125,48 +125,48 @@ lit.struct.decl @Bar<a, b: dtype> {}
 lit.struct.decl @BarDefaults<a, b: dtype = f32> {}
 
 // CHECK-LABEL: kgen.generator @bind_type
-kgen.generator @bind_type<T: anystruct<@Bar<?, :dtype ?>, <index, dtype>>>() {
-  // CHECK: FullyBound: anystruct<@Bar<16, :dtype f32>> =
-  // CHECK-SAME: #lit.bind_type<:anystruct<@Bar<?, :dtype ?>, <index, dtype>> T, [16, f32]>
-  kgen.param.declare FullyBound: anystruct<@Bar<16, :dtype f32>> = <
+kgen.generator @bind_type<T: anystruct<<@Bar<?, :dtype ?>, <index, dtype>>>>() {
+  // CHECK: FullyBound: anystruct<<@Bar<16, :dtype f32>>> =
+  // CHECK-SAME: #lit.bind_type<:anystruct<<@Bar<?, :dtype ?>, <index, dtype>>> T, [16, f32]>
+  kgen.param.declare FullyBound: anystruct<<@Bar<16, :dtype f32>>> = <
     #lit.bind_type<
-      :anystruct<@Bar<?, :dtype ?>, <index, dtype>> T,
+      :anystruct<<@Bar<?, :dtype ?>, <index, dtype>>> T,
       [16, f32]
     >
   >
 
-  // CHECK: PartiallyBound: anystruct<@Bar<?, :dtype f32>, <index>> =
-  // CHECK-SAME: #lit.bind_type<:anystruct<@Bar<?, :dtype ?>, <index, dtype>> T, [?, f32]>
-  kgen.param.declare PartiallyBound: anystruct<@Bar<?, :dtype f32>, <index>> = <
+  // CHECK: PartiallyBound: anystruct<<@Bar<?, :dtype f32>, <index>>> =
+  // CHECK-SAME: #lit.bind_type<:anystruct<<@Bar<?, :dtype ?>, <index, dtype>>> T, [?, f32]>
+  kgen.param.declare PartiallyBound: anystruct<<@Bar<?, :dtype f32>, <index>>> = <
     #lit.bind_type<
-      :anystruct<@Bar<?, :dtype ?>, <index, dtype>> T,
+      :anystruct<<@Bar<?, :dtype ?>, <index, dtype>>> T,
       [?, f32]
     >
   >
 
-  // CHECK: PartiallyBoundDefaults: anystruct<@BarDefaults<16, :dtype ?>, <dtype = f32>> =
-  // CHECK-SAME: #lit.bind_type<:anystruct<@BarDefaults<?, :dtype ?>, <index, dtype = f32>> ?, [16, ?]>
-  kgen.param.declare PartiallyBoundDefaults: anystruct<@BarDefaults<16, :dtype ?>, <dtype = f32>> = <
+  // CHECK: PartiallyBoundDefaults: anystruct<<@BarDefaults<16, :dtype ?>, <dtype = f32>>> =
+  // CHECK-SAME: #lit.bind_type<:anystruct<<@BarDefaults<?, :dtype ?>, <index, dtype = f32>>> ?, [16, ?]>
+  kgen.param.declare PartiallyBoundDefaults: anystruct<<@BarDefaults<16, :dtype ?>, <dtype = f32>>> = <
     #lit.bind_type<
-      :anystruct<@BarDefaults<?, :dtype ?>, <index, dtype = f32>> ?,
+      :anystruct<<@BarDefaults<?, :dtype ?>, <index, dtype = f32>>> ?,
       [16, ?]
     >
   >
 
-  // CHECK: BoundDeclRef: anystruct<@Bar<?, :dtype f32>, <index>> =
+  // CHECK: BoundDeclRef: anystruct<<@Bar<?, :dtype f32>, <index>>> =
   // CHECK-SAME: <@Bar<?, :dtype f32>>
-  kgen.param.declare BoundDeclRef: anystruct<@Bar<?, :dtype f32>, <index>> = <
+  kgen.param.declare BoundDeclRef: anystruct<<@Bar<?, :dtype f32>, <index>>> = <
     #lit.bind_type<
-      :anystruct<@Bar<?, :dtype ?>, <index, dtype>> @Bar<?, :dtype ?>,
+      :anystruct<<@Bar<?, :dtype ?>, <index, dtype>>> @Bar<?, :dtype ?>,
       [?, f32]
     >
   >
 
-  // CHECK: BoundFromPartial: anystruct<@Bar<16, :dtype f32>> =
-  // CHECK-SAME: #lit.bind_type<:anystruct<@Bar<?, :dtype f32>, <index>> ?, [16]>
-  kgen.param.declare BoundFromPartial: anystruct<@Bar<16, :dtype f32>> = <
+  // CHECK: BoundFromPartial: anystruct<<@Bar<16, :dtype f32>>> =
+  // CHECK-SAME: #lit.bind_type<:anystruct<<@Bar<?, :dtype f32>, <index>>> ?, [16]>
+  kgen.param.declare BoundFromPartial: anystruct<<@Bar<16, :dtype f32>>> = <
     #lit.bind_type<
-      :anystruct<@Bar<?, :dtype f32>, <index>> ?,
+      :anystruct<<@Bar<?, :dtype f32>, <index>>> ?,
       [16]
     >
   >
