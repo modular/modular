@@ -106,26 +106,6 @@ struct StateContext:
 
 
 # ===-----------------------------------------------------------------------===#
-# Helper functions
-# ===-----------------------------------------------------------------------===#
-
-
-@no_inline
-fn byte_buffer_alloc[
-    target: StringLiteral,
-    alignment: Int,
-](byte_size: Int, device_context: DeviceContextPtr) raises -> NDBuffer[
-    DType.int8, 1
-]:
-    """Function will allocate a 1-D buffer with the specified size/alignment on device.
-    """
-    # This primitive has a byte-size input, so always assume a byte format
-    var shape = IndexList[1](byte_size)
-    var buf = device_context[].enqueue_create_buffer[DType.int8](byte_size)
-    return NDBuffer[DType.int8, 1](buf^.take_ptr(), shape)
-
-
-# ===-----------------------------------------------------------------------===#
 # Async Packing/Unpacking functions
 # ===-----------------------------------------------------------------------===#
 
@@ -553,15 +533,16 @@ fn mgp_tensor_extract_buffer[
 @no_inline
 fn mgp_buffer_alloc[
     bRawAlign: UInt64,
-    cDevice: StringLiteral,
 ](byte_size: Int, dev_context: DeviceContextPtr) raises -> NDBuffer[
     DType.int8, 1
 ]:
     # Default to alignment of 0 which means kPreferredMemoryAlignment if cRawAlign is kUnknownSize (SizeUtils.h).
-    alias alignment = 0 if bRawAlign == UInt64.MAX else Int(bRawAlign)
-    return byte_buffer_alloc[cDevice, alignment=alignment](
-        byte_size, dev_context
-    )
+    # alias alignment = 0 if bRawAlign == UInt64.MAX else Int(bRawAlign)
+
+    # This primitive has a byte-size input, so always assume a byte format
+    var shape = IndexList[1](byte_size)
+    var buf = dev_context[].enqueue_create_buffer[DType.int8](byte_size)
+    return NDBuffer[DType.int8, 1](buf^.take_ptr(), shape)
 
 
 @register_internal("mgp.buffer.constant")
