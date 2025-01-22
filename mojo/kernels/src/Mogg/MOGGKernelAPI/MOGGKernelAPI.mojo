@@ -4278,7 +4278,7 @@ struct Matmul:
         fn output_fn[
             _type: DType, _width: Int, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[_type, _width]):
-            c._fused_store[width=_width](
+            c._fused_store[width=_width, element_alignment=alignment](
                 coords,
                 rebind[SIMD[c.type, _width]](val),
             )
@@ -4329,7 +4329,7 @@ struct BatchMatmul:
         fn output_fn[
             _type: DType, _width: Int, _rank: Int, *, alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_type, _width]):
-            c._fused_store[width=_width](
+            c._fused_store[width=_width, element_alignment=alignment](
                 rebind[IndexList[c.rank]](coords),
                 rebind[SIMD[c.type, _width]](val),
             )
@@ -4926,7 +4926,7 @@ struct Concat:
         fn epilogue_wrapper[
             _type: DType, _rank: Int, width: Int, *, alignment: Int = 1
         ](indices: IndexList[_rank], value: SIMD[_type, width]):
-            output._fused_store[width=width](
+            output._fused_store[width=width, element_alignment=alignment](
                 rebind[IndexList[output.rank]](indices),
                 rebind[SIMD[output.type, width]](value),
             )
