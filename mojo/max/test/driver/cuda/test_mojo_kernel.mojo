@@ -4,8 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# FIXME: GEX-1720
-# REQUIRES: NVIDIA-GPU
 # RUN: %mojo %s %t1
 
 # COM: Test with mojo build
