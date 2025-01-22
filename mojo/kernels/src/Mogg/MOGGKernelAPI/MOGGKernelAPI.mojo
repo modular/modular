@@ -142,7 +142,7 @@ from nn.softmax import logsoftmax, softmax
 from nn.split import split
 from nn.tile import tile, tile_shape
 from nn.topk import top_k, top_k_shape_impl
-from nn.topk import top_k_fused_sampling as _topk_fused_sampling
+from nn.topk import top_k_fused_sampling_cpu as _topk_fused_sampling_cpu
 from nn.topk import topk_fused_sampling_gpu as _topk_fused_sampling_gpu
 
 from tensor_utils_internal import (
@@ -7777,7 +7777,7 @@ struct Struct_topk_fused_sampling:
 
             @parameter
             if is_cpu[target]():
-                _topk_fused_sampling(Int(K), input_buf, out_idxs_buf)
+                _topk_fused_sampling_cpu(Int(K), input_buf, out_idxs_buf)
             else:
                 var cuda_ctx = ctx.get_device_context()
                 _topk_fused_sampling_gpu(
