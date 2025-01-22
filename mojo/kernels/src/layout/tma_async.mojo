@@ -8,7 +8,12 @@ from sys import sizeof
 
 from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host.nvidia_cuda import TMADescriptor, create_tma_descriptor
-from gpu.memory import AddressSpace, cp_async_bulk_tensor_shared_cluster_global
+from gpu.memory import (
+    AddressSpace,
+    cp_async_bulk_tensor_shared_cluster_global,
+    cp_async_bulk_tensor_global_shared_cta,
+    cp_async_bulk_tensor_reduce,
+)
 from gpu.sync import (
     mbarrier_arrive_expect_tx_shared,
     mbarrier_init,
@@ -122,6 +127,48 @@ struct TMATensorTile[
             dst.ptr,
             UnsafePointer.address_of(self.descriptor).bitcast[NoneType](),
             mem_barrier.mbar,
+            Index(coords[0], coords[1]),
+        )
+
+    # Schedules an asynchronous store into the global memory
+    @always_inline
+    fn async_store(
+        self,
+        src: LayoutTensor[
+            dtype, layout, address_space = AddressSpace.SHARED, **_
+        ],
+        coords: Tuple[UInt, UInt],
+    ):
+        # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
+        constrained[
+            __type_of(src).alignment % 128 == 0,
+            "TMA requires 128B alignment in shared memory",
+        ]()
+        cp_async_bulk_tensor_global_shared_cta(
+            src.ptr,
+            UnsafePointer.address_of(self.descriptor).bitcast[NoneType](),
+            Index(coords[0], coords[1]),
+        )
+
+    # Schedules an asynchronous store into the global memory
+    @always_inline
+    fn async_reduce[
+        reduction_kind: StringLiteral
+    ](
+        self,
+        src: LayoutTensor[
+            dtype, layout, address_space = AddressSpace.SHARED, **_
+        ],
+        coords: Tuple[UInt, UInt],
+    ):
+        # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
+        constrained[
+            __type_of(src).alignment % 128 == 0,
+            "TMA requires 128B alignment in shared memory",
+        ]()
+        cp_async_bulk_tensor_reduce[reduction_kind=reduction_kind](
+            src.ptr,
+            UnsafePointer.address_of(self.descriptor).bitcast[NoneType](),
             Index(coords[0], coords[1]),
         )
 
