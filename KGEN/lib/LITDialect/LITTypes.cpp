@@ -385,10 +385,20 @@ static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value) {
 AnyStructType AnyStructType::get(SymbolRefAttr symbol,
                                  ArrayRef<TypedAttr> values,
                                  TypeSignatureType signature) {
-  return get(symbol.getContext(), SymbolAttr::get(symbol), values, signature);
+  return get(symbol.getContext(), StructType::get(symbol, values, signature));
 }
 
-SymbolRefAttr AnyStructType::getSymbol() const { return getValue().getValue(); }
+SymbolRefAttr AnyStructType::getSymbol() const {
+  return getStructType().getValue().getValue();
+}
+
+TypeSignatureType AnyStructType::getSignature() const {
+  return getStructType().getSignature();
+}
+
+ArrayRef<TypedAttr> AnyStructType::getParamValues() const {
+  return getStructType().getParamValues();
+}
 
 OptionalParseResult AnyStructType::parseValue(AsmParser &p,
                                               TypedAttr &value) const {
@@ -397,11 +407,6 @@ OptionalParseResult AnyStructType::parseValue(AsmParser &p,
 
 LogicalResult AnyStructType::printValue(AsmPrinter &p, TypedAttr value) const {
   return printTypeValue(p, value);
-}
-
-/// Return the struct type this metatype corresponds to.
-LIT::StructType AnyStructType::getStructType() {
-  return LIT::StructType::get(getSymbol(), getParamValues(), getSignature());
 }
 
 /// Bind parameter values to the metatype, returning a new metatype.

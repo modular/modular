@@ -142,10 +142,10 @@ kgen.generator @ref_types(%arg0: !lit.ref<index, imm #lit.any.origin, 4>) {
 }
 
 // FIXME: This isn't valid IR!
-// CHECK-LABEL: kgen.generator @escape_meta_type_param_names<type: anystruct<@Trait>>()
-kgen.generator @escape_meta_type_param_names<type: anystruct<@Trait>>() {
-  // CHECK: kgen.param.declare T: anystruct<@Trait> = <*"type">
-  kgen.param.declare T: anystruct<@Trait> = <*"type">
+// CHECK-LABEL: kgen.generator @escape_meta_type_param_names<type: anystruct<<@Trait>>>()
+kgen.generator @escape_meta_type_param_names<type: anystruct<!lit.struct<@Trait>>>() {
+  // CHECK: kgen.param.declare T: anystruct<<@Trait>> = <*"type">
+  kgen.param.declare T: anystruct<<@Trait>> = <*"type">
   kgen.return
 }
 

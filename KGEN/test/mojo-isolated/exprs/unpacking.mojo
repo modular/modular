@@ -33,28 +33,28 @@ fn variadic_params[*a: Index]():
 
 # CHECK-LABEL: lit.fn @"test_unbound_pack
 fn test_unbound_pack():
-    # CHECK: lit.alias.decl *"all_unbound`": anystruct<#StructWithDefault <?, ?, ?, ?>, <"a": index, "b": index, "c": index = 1, "d": index = 2>>
+    # CHECK: lit.alias.decl *"all_unbound`": anystruct<<#StructWithDefault <?, ?, ?, ?>, <"a": index, "b": index, "c": index = 1, "d": index = 2>>>
     alias all_unbound = StructWithDefault[*_]
 
-    # CHECK: lit.alias.decl *"first_bound`{{.*}}": anystruct<#StructWithDefault <5, ?, ?, ?>, <"b": index, "c": index = 1, "d": index = 2>>
+    # CHECK: lit.alias.decl *"first_bound`{{.*}}": anystruct<<#StructWithDefault <5, ?, ?, ?>, <"b": index, "c": index = 1, "d": index = 2>>>
     alias first_bound = StructWithDefault[`5`, *_]
 
-    # CHECK: lit.alias.decl *"last_bound_with_kw`{{.*}}": anystruct<#StructWithDefaultKwOnly <8, ?, ?, ?>, <"b": index, "c": index = 1, *, "d": index = 2>>
+    # CHECK: lit.alias.decl *"last_bound_with_kw`{{.*}}": anystruct<<#StructWithDefaultKwOnly <8, ?, ?, ?>, <"b": index, "c": index = 1, *, "d": index = 2>>>
     alias last_bound_with_kw = StructWithDefaultKwOnly[`8`, d=_, *_]
 
-    # CHECK: lit.alias.decl *"prev_bound_with_kw`{{.*}}: anystruct<#StructWithDefaultKwOnly <8, ?, ?, ?>, <"b": index, "c": index = 1, *, "d": index = 2>>
+    # CHECK: lit.alias.decl *"prev_bound_with_kw`{{.*}}: anystruct<<#StructWithDefaultKwOnly <8, ?, ?, ?>, <"b": index, "c": index = 1, *, "d": index = 2>>>
     alias prev_bound_with_kw = StructWithDefaultKwOnly[`8`, *_, d=_]
 
-    # CHECK: lit.alias.decl *"kw_unpacked`{{.*}}: anystruct<#StructWithDefaultKwOnly <?, ?, ?, ?>, <"a": index, "b": index, "c": index = 1, *, "d": index = 2>>
+    # CHECK: lit.alias.decl *"kw_unpacked`{{.*}}: anystruct<<#StructWithDefaultKwOnly <?, ?, ?, ?>, <"a": index, "b": index, "c": index = 1, *, "d": index = 2>>>
     alias kw_unpacked = StructWithDefaultKwOnly[**_]
 
-    # CHECK: lit.alias.decl *"unpack_both{{.*}}: anystruct<#DefaultPosOnly <?, ?, ?>, <"a": index = 1, |, "b": index = 2, *, "c": index = 3>>
+    # CHECK: lit.alias.decl *"unpack_both{{.*}}: anystruct<<#DefaultPosOnly <?, ?, ?>, <"a": index = 1, |, "b": index = 2, *, "c": index = 3>>>
     alias unpack_both = DefaultPosOnly[*_, **_]
 
-    # CHECK: lit.alias.decl *"pos_only_kw_unpacked`{{.*}}: anystruct<#DefaultPosOnly <1, ?, ?>, <"b": index = 2, *, "c": index = 3>>
+    # CHECK: lit.alias.decl *"pos_only_kw_unpacked`{{.*}}: anystruct<<#DefaultPosOnly <1, ?, ?>, <"b": index = 2, *, "c": index = 3>>>
     alias pos_only_kw_unpacked = DefaultPosOnly[**_]
 
-    # CHECK: lit.alias.decl *"unbound_variadic`{{.*}}": anystruct<#StructWithVariadic <?, :variadic<index> ?>
+    # CHECK: lit.alias.decl *"unbound_variadic`{{.*}}": anystruct<<#StructWithVariadic <?, :variadic<index> ?>
     alias unbound_variadic = StructWithVariadic[*_]
 
     # CHECK: lit.alias.decl *"unpack_variadic`{{.*}}": !lit.generator<<"a": variadic<index> var>() -> !kgen.none> = <{{.*}}variadic_params{{.*}}<:variadic<index> ?>>
