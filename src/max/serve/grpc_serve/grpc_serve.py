@@ -134,7 +134,7 @@ class MaxDirectInferenceService(GRPCInferenceServiceServicer):
                 else DEFAULT_MAX_TOKENS
             )
             for i in range(max_tokens):
-                resp = self.pipeline.next_token(batch)
+                resp = self.pipeline.next_token(batch, num_steps=1)
                 if tg_request.id in resp[0]:
                     text += await self.tokenizer.decode(
                         text_context, resp[0][tg_request.id].next_token
@@ -170,7 +170,7 @@ class MaxDirectInferenceService(GRPCInferenceServiceServicer):
             batch = {tg_request.id: text_context}
             text = ""
             for i in range(num_tokens):
-                resp = self.pipeline.next_token(batch)
+                resp = self.pipeline.next_token(batch, num_steps=1)
                 if tg_request.id in resp[0]:
                     text += await self.tokenizer.decode(
                         text_context, resp[0][tg_request.id].next_token
