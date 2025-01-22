@@ -171,7 +171,8 @@ ASTType LValue::getType() const { return getTypeFrom(storage); }
 static Type extractMetaType(Type type) {
   // The metatype is stored on the type.
   if (auto declRef = dyn_cast<LIT::StructType>(type))
-    return declRef.getMetaType();
+    return AnyStructType::get(declRef.getSymbol(), declRef.getParamValues(),
+                              declRef.getSignature());
   // The metatype is the type of the carried type expression.
   if (auto paramRef = dyn_cast<ParamType>(type))
     return paramRef.getParam().getType();

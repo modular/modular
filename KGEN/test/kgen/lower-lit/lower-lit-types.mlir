@@ -433,7 +433,7 @@ lit.fn @trait_fn<T: trait<@Trait>>() {
 // Erase pointer types in struct
 //===----------------------------------------------------------------------===//
 
-!ptr = !lit.struct<@Ptr, !lit.anystruct<@Ptr>>
+!ptr = !lit.struct<@Ptr>
 
 lit.struct.decl @Ptr register_passable {
   lit.struct.field ptr: !kgen.pointer<index>
@@ -460,8 +460,8 @@ kgen.func @pass_it(%y: !ptr) {
 // More Recursive Structs
 //===----------------------------------------------------------------------===//
 
-!bar = !lit.struct<@Bar, !lit.anystruct<@Bar>>
-!foo = !lit.struct<@Foo, !lit.anystruct<@Foo>>
+!bar = !lit.struct<@Bar>
+!foo = !lit.struct<@Foo>
 
 lit.struct.decl @Bar register_passable {
   lit.struct.field foo: !foo

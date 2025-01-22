@@ -163,19 +163,20 @@ def LIT_StructType : LITType<"Struct", "struct", [
   let parameters = (ins
     "SymbolAttr":$value,
     OptionalArrayRefParameter<"TypedAttr">:$paramValues,
-    "Type":$metaType
+    DefaultValuedParameter<"TypeSignatureType",
+                           "TypeSignatureType::get($_ctxt)">:$signature
   );
   let assemblyFormat = [{
     `<` custom<ParameterizedSymbol>($value, $paramValues) ``
-        custom<OptionalMetaType>($metaType, ref($value), ref($paramValues)) `>`
+        (`,` $signature^)? `>`
   }];
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name,
-                                        "Type":$metatype)>,
+                                        "TypeSignatureType":$signature)>,
     TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name,
                                         "ArrayRef<TypedAttr>":$paramValues,
-                                        "Type":$metatype)>
+                                        "TypeSignatureType":$signature)>
   ];
 
   let extraClassDeclaration = [{

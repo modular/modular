@@ -1075,14 +1075,12 @@ LIT::StructType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
       unbound.push_back(UnboundAttr::get(evaluator.getReboundType(type)));
       evaluator.addInputValue(unbound.back());
     }
-    return LIT::StructType::get(symbol, unbound,
-                                AnyStructType::get(symbol, unbound, sig));
+    return LIT::StructType::get(symbol, unbound, sig);
   }
 
   // Compute the resultant signature.
   auto newSig = sig.bind(paramValues);
-  return LIT::StructType::get(symbol, paramValues,
-                              AnyStructType::get(symbol, paramValues, newSig));
+  return LIT::StructType::get(symbol, paramValues, newSig);
 }
 
 /// Verify the debuginfo scope of an op that must be a top-level declaration.

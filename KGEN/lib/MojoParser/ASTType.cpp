@@ -46,7 +46,8 @@ Type ASTType::getMetaType() const {
   if (!mlirType)
     return {};
   if (auto declRef = dyn_cast<StructType>(mlirType))
-    return declRef.getMetaType();
+    return AnyStructType::get(declRef.getSymbol(), declRef.getParamValues(),
+                              declRef.getSignature());
   if (auto paramRef = dyn_cast<ParamType>(mlirType))
     return paramRef.getParam().getType();
   if (auto traitRef = dyn_cast<TraitType>(mlirType))

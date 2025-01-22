@@ -43,15 +43,18 @@ void LITDialect::registerTypes() {
         SmallVector<TypedAttr> values;
         if (parseParameterValues(p, values))
           return failure();
-        Type metatype;
+        // Delete all this meta type stuff and remove from tests.
+        TypeSignatureType typeSig;
         if (succeeded(p.parseOptionalColon())) {
+          Type metatype;
           if (parseKGENType(p, metatype))
             return failure();
-        } else {
-          metatype = AnyStructType::get(symbol, values,
-                                        TypeSignatureType::get(p.getContext()));
+          if (auto anyStruct = dyn_cast<AnyStructType>(metatype))
+            typeSig = anyStruct.getSignature();
         }
-        return StructType::get(symbol, values, metatype);
+        if (!typeSig)
+          typeSig = TypeSignatureType::get(p.getContext());
+        return StructType::get(symbol, values, typeSig);
       });
 }
 
@@ -241,12 +244,13 @@ LogicalResult LIT::StructType::printValue(AsmPrinter &p,
 
 LIT::StructType LIT::StructType::get(SymbolRefAttr name,
                                      ArrayRef<TypedAttr> paramValues,
-                                     Type metatype) {
-  return get(name.getContext(), SymbolAttr::get(name), paramValues, metatype);
+                                     TypeSignatureType signature) {
+  return get(name.getContext(), SymbolAttr::get(name), paramValues, signature);
 }
 
-LIT::StructType LIT::StructType::get(SymbolRefAttr name, Type metatype) {
-  return get(name, {}, metatype);
+LIT::StructType LIT::StructType::get(SymbolRefAttr name,
+                                     TypeSignatureType signature) {
+  return get(name, {}, signature);
 }
 
 SymbolRefAttr LIT::StructType::getSymbol() const {
@@ -323,32 +327,6 @@ void LIT::StructType::printSymbol(AsmPrinter &p) const {
 
   p << getSymbol();
   printParameterValues(p, getParamValues());
-  if (auto mt = ::dyn_cast<AnyStructType>(getMetaType()))
-    if (mt.getSignature().getInputParamTypes().empty())
-      return;
-  p << " : ";
-  printKGENType(p, getMetaType());
-}
-
-static ParseResult parseOptionalMetaType(AsmParser &p, Type &metatype,
-                                         SymbolAttr symbol,
-                                         ArrayRef<TypedAttr> paramValues) {
-  if (succeeded(p.parseOptionalComma()))
-    return parseKGENType(p, metatype);
-
-  metatype = AnyStructType::get(symbol.getValue(), paramValues,
-                                TypeSignatureType::get(p.getContext()));
-  return success();
-}
-
-static void printOptionalMetaType(AsmPrinter &p, Type metatype,
-                                  SymbolAttr symbol,
-                                  ArrayRef<TypedAttr> paramValues) {
-  if (auto mt = dyn_cast<AnyStructType>(metatype))
-    if (mt.getSignature().getInputParamTypes().empty())
-      return;
-  p << ", ";
-  printKGENType(p, metatype);
 }
 
 /// Get the name of the referenced type, ignoring packages.
@@ -375,11 +353,12 @@ static OptionalParseResult parseTypeValue(AsmParser &p, TypedAttr &value,
       SmallVector<TypedAttr> values;
       if (parseParameterValues(p, values))
         return failure();
-      Type declRefMetaType = metatype;
-      if (succeeded(p.parseOptionalColon()))
-        if (parseKGENType(p, declRefMetaType))
-          return failure();
-      typeValue = LIT::StructType::get(symbol, values, declRefMetaType);
+      TypeSignatureType typeSig;
+      if (auto anyStruct = dyn_cast<AnyStructType>(metatype))
+        typeSig = anyStruct.getSignature();
+      else
+        typeSig = TypeSignatureType::get(p.getContext());
+      typeValue = LIT::StructType::get(symbol, values, typeSig);
     } else {
       result = parseOptionalKGENType(p, typeValue);
     }
@@ -388,18 +367,13 @@ static OptionalParseResult parseTypeValue(AsmParser &p, TypedAttr &value,
   return parseSugaredTypeValue(p, value, metatype, typeParser);
 }
 
-static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value,
-                                    Type metatype) {
-  auto typePrinter = [metatype](AsmPrinter &p, Type type) {
+static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value) {
+  auto typePrinter = [](AsmPrinter &p, Type type) {
     if (auto ref = ::dyn_cast<LIT::StructType>(type)) {
       // Use the alias printer if suitable.
       if (failed(p.printAlias(ref))) {
         p << ref.getSymbol();
         printParameterValues(p, ref.getParamValues());
-        if (ref.getMetaType() != metatype) {
-          p << " : ";
-          printKGENType(p, ref.getMetaType());
-        }
       }
     } else {
       printKGENType(p, type);
@@ -422,12 +396,12 @@ OptionalParseResult AnyStructType::parseValue(AsmParser &p,
 }
 
 LogicalResult AnyStructType::printValue(AsmPrinter &p, TypedAttr value) const {
-  return printTypeValue(p, value, *this);
+  return printTypeValue(p, value);
 }
 
 /// Return the struct type this metatype corresponds to.
 LIT::StructType AnyStructType::getStructType() {
-  return LIT::StructType::get(getSymbol(), getParamValues(), *this);
+  return LIT::StructType::get(getSymbol(), getParamValues(), getSignature());
 }
 
 /// Bind parameter values to the metatype, returning a new metatype.
@@ -473,7 +447,7 @@ OptionalParseResult TraitType::parseValue(AsmParser &p,
 }
 
 LogicalResult TraitType::printValue(AsmPrinter &p, TypedAttr value) const {
-  return printTypeValue(p, value, *this);
+  return printTypeValue(p, value);
 }
 
 /// Return the metatype for this this trait as a value.
@@ -495,7 +469,7 @@ OptionalParseResult AnyTraitType::parseValue(AsmParser &p,
 }
 
 LogicalResult AnyTraitType::printValue(AsmPrinter &p, TypedAttr value) const {
-  return printTypeValue(p, value, *this);
+  return printTypeValue(p, value);
 }
 
 //===----------------------------------------------------------------------===//
@@ -507,7 +481,7 @@ OptionalParseResult MetaType::parseValue(AsmParser &p, TypedAttr &value) const {
 }
 
 LogicalResult MetaType::printValue(AsmPrinter &p, TypedAttr value) const {
-  return printTypeValue(p, value, *this);
+  return printTypeValue(p, value);
 }
 
 //===----------------------------------------------------------------------===//
