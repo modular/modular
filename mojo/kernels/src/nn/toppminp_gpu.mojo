@@ -34,7 +34,7 @@ from nn.topk import (
     TopK_2,
     _get_shmem_size_stg_1,
     _topk_dead_val,
-    block_reduce_topk,
+    _block_reduce_topk,
 )
 
 from utils import IndexList
@@ -64,7 +64,7 @@ fn topk_wrapper[
     skip_sort: UnsafePointer[Scalar[DType.bool]],
 ):
     """
-    Copy of `Kernels/mojo/nn/topk.mojo:topk_stage1` with the addition of
+    Copy of `Kernels/mojo/nn/topk.mojo:_topk_stage1` with the addition of
     max_vals and p_threshold arguments to determine if sorting is needed for
     top-p/min-p sampling.
 
@@ -116,7 +116,7 @@ fn topk_wrapper[
         var partial = topk_sram[tid]
 
         # Perform block-level reduction to find the maximum TopK_2
-        var total = block_reduce_topk[T, largest](partial)
+        var total = _block_reduce_topk[T, largest](partial)
 
         if tid == 0:
             # Store the local top-K values and indices in global memory

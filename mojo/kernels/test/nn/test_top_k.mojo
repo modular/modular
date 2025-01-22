@@ -14,7 +14,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from internal_utils import HostNDBuffer
 from memory import UnsafePointer
-from nn.topk import _top_k, _top_k_sampling, top_k_fused_sampling
+from nn.topk import _top_k_cpu, _top_k_sampling, top_k_fused_sampling_cpu
 
 from utils import IndexList
 
@@ -118,7 +118,7 @@ fn test_case[
     var input_buf = input.to_ndbuffer()
     fill_fn[rank, type](input_buf)
 
-    _top_k[largest=largest](
+    _top_k_cpu[largest=largest](
         input.to_ndbuffer(),
         K,
         axis,

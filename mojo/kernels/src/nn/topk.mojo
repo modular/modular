@@ -57,7 +57,7 @@ fn top_k_shape_impl[
     axis_buf: NDBuffer[axis_type, 1],
 ) raises -> IndexList[rank]:
     """
-    Compute the output shape of a  top/bottom k operation.
+    Compute the output shape of a top/bottom k operation.
 
     Parameters:
         type: Data type of the input buffer.
@@ -165,7 +165,7 @@ fn top_k[
         ]()
 
         alias grain_size = 1000
-        _top_k[largest=largest](
+        _top_k_cpu[largest=largest](
             input,
             k,
             axis,
@@ -189,7 +189,7 @@ fn top_k[
         )
 
 
-fn _top_k[
+fn _top_k_cpu[
     rank: Int,
     type: DType,
     out_idx_type: DType,
@@ -286,7 +286,7 @@ fn _top_k[
 
 
 @always_inline
-fn top_k_fused_sampling[
+fn top_k_fused_sampling_cpu[
     type: DType,
     rank: Int,
     out_idx_type: DType,
@@ -386,7 +386,7 @@ fn _top_k_sampling[
         UnsafePointer[Int64].alloc(Int(out_vals.size())),
         internal_out_shape,  # topk returns K as last dim
     )
-    _top_k[rank=internal_rank, type=type, largest=True](
+    _top_k_cpu[rank=internal_rank, type=type, largest=True](
         reshape(input, internal_in_shape),
         k,
         axis=internal_rank - 1,  # Always operate on the last axis
@@ -455,7 +455,7 @@ struct TopK_2[T: DType, largest: Bool = True]:
 # Function to perform warp-level reduction to find the maximum TopK_2
 @always_inline
 @parameter
-fn warp_reduce_topk[
+fn _warp_reduce_topk[
     T: DType, largest: Bool
 ](val: TopK_2[T, largest]) -> TopK_2[T, largest]:
     """
@@ -510,7 +510,7 @@ fn warp_reduce_topk[
 
 # Function to perform block-level reduction to find the maximum TopK_2
 @always_inline
-fn block_reduce_topk[
+fn _block_reduce_topk[
     T: DType, largest: Bool
 ](val: TopK_2[T, largest]) -> TopK_2[T, largest]:
     """
@@ -562,7 +562,7 @@ fn block_reduce_topk[
     alias num_warps_needed = MAX_BLOCK_SIZE // WARP_SIZE
 
     # Each warp reduces its own TopK_2 value
-    var warp_accum: TopK_2[T, largest] = warp_reduce_topk[T, largest](val)
+    var warp_accum: TopK_2[T, largest] = _warp_reduce_topk[T, largest](val)
 
     # Store warp-level results in shared memory
     if lane_id() == 0 and warp < num_warps_needed:
@@ -585,10 +585,10 @@ fn block_reduce_topk[
         block_accum.u = _topk_dead_val[T, largest]()
 
     # Perform final warp-level reduction for block result
-    return warp_reduce_topk[T, largest](block_accum)
+    return _warp_reduce_topk[T, largest](block_accum)
 
 
-fn topk_stage1[
+fn _topk_stage1[
     T: DType,
     out_idx_type: DType,
     largest: Bool = True,
@@ -658,7 +658,7 @@ fn topk_stage1[
         var partial = topk_sram[tid]
 
         # Perform block-level reduction to find the maximum TopK_2
-        var total = block_reduce_topk[T, largest](partial)
+        var total = _block_reduce_topk[T, largest](partial)
 
         if tid == 0:
             # Store the local top-K values and indices in global memory
@@ -681,7 +681,7 @@ fn _get_shmem_size_stg_1[type: DType](block_size: Int) -> Int:
     return Int(block_size * sizeof[TopK_2[type]]())
 
 
-fn topk_stage2[
+fn _topk_stage2[
     T: DType,
     out_idx_type: DType,
     sampling: Bool = True,
@@ -786,7 +786,7 @@ fn topk_stage2[
 
         barrier()
         # Perform block-level reduction to find the maximum TopK_2
-        var total: TopK_2[T, largest] = block_reduce_topk[T, largest](partial)
+        var total: TopK_2[T, largest] = _block_reduce_topk[T, largest](partial)
 
         if tid == 0:
 
@@ -856,8 +856,8 @@ fn _topk_gpu[
     """Computes the Top-K elements from the input tensor using a GPU-accelerated two-stage algorithm.
 
     This function implements a two-stage Top-K algorithm:
-    1. Stage 1 (topk_stage1): Divides the input into blocks and computes local Top-K for each block.
-    2. Stage 2 (topk_stage2): Merges the local Top-K results to obtain the global Top-K.
+    1. Stage 1 (_topk_stage1): Divides the input into blocks and computes local Top-K for each block.
+    2. Stage 2 (_topk_stage2): Merges the local Top-K results to obtain the global Top-K.
 
     Parameters:
         type: DType - The data type of the input tensor.
@@ -915,7 +915,7 @@ fn _topk_gpu[
 
     # Compile the kernels
     var gpu_fn_stage1 = ctx.compile_function[
-        topk_stage1[type, out_idx_type, largest], dump_asm=False
+        _topk_stage1[type, out_idx_type, largest], dump_asm=False
     ]()
     # Define grid and block dimensions for stage 1
     var grid_dim_stage1 = Dim(num_blocks_per_input_ * batch_size)
@@ -949,7 +949,7 @@ fn _topk_gpu[
     )  # align to warp size
 
     var gpu_fn_stage2 = ctx.compile_function[
-        topk_stage2[type, out_idx_type, sampling, largest], dump_asm=False
+        _topk_stage2[type, out_idx_type, sampling, largest], dump_asm=False
     ]()
 
     # Define grid and block dimensions for stage 2
