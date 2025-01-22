@@ -90,7 +90,12 @@ from gpu.shuffle import (
     warp_max,
     warp_sum,
 )
-from .softmax import _online_softmax_iter_for_mma_output, _softmax_gpu, softmax
+from .softmax import (
+    _online_softmax_iter_for_mma_output,
+    _softmax_gpu,
+    softmax,
+    _online_softmax_iter_for_mma_output_split_warp_reduce,
+)
 
 # ===-----------------------------------------------------------------------===#
 # Multi-Head Attention
@@ -223,6 +228,7 @@ fn flash_attention[
     add_attn_mask: Bool = True,
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
+    decoding_warp_split_k: Bool = False,
 ](
     output: NDBuffer[_, rank, *_],
     q: NDBuffer[type, rank, q_shape, *_],
@@ -256,6 +262,7 @@ fn flash_attention[
             add_attn_mask=add_attn_mask,
             use_score_mod=use_score_mod,
             config=config,
+            decoding_warp_split_k=decoding_warp_split_k,
         ](
             output,
             q,
@@ -305,6 +312,7 @@ fn flash_attention[
         type, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
     ),
     ragged: Bool = False,
+    decoding_warp_split_k: Bool = False,
 ](
     output: NDBuffer[_, rank, *_],
     q: NDBuffer[type, rank, q_shape, *_],
@@ -439,6 +447,7 @@ fn flash_attention[
             ragged=ragged,
             _is_flash_attention_applicable=flash_attention_applicable,
             _is_paged=is_paged,
+            decoding_warp_split_k=decoding_warp_split_k,
         ](
             output,
             q,
@@ -485,6 +494,7 @@ fn flash_attention_dispatch[
     _use_valid_length: Bool = True,
     # This is to temporarily avoid using split-k with paged attention.
     _is_paged: Bool = False,
+    decoding_warp_split_k: Bool = False,
 ](
     output: NDBuffer[_, rank, *_],
     q: NDBuffer[type, rank, q_shape, *_],
@@ -649,6 +659,7 @@ fn flash_attention_dispatch[
                     is_shared_kv=is_shared_kv,
                     _use_valid_length=_use_valid_length,
                     _is_cache_length_accurate=_is_cache_length_accurate,
+                    decoding_warp_split_k=decoding_warp_split_k,
                 ]
             ](
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
@@ -848,6 +859,7 @@ fn flash_attention[
     add_attn_mask: Bool = True,
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
+    decoding_warp_split_k: Bool = False,
 ](
     output: NDBuffer[_, rank, *_],
     q: NDBuffer[type, rank, q_shape, *_],
@@ -903,6 +915,7 @@ fn flash_attention[
         _is_flash_attention_applicable=flash_attention_applicable,
         _is_cache_length_accurate=True,
         _use_valid_length=False,
+        decoding_warp_split_k=decoding_warp_split_k,
     ](
         output,
         q,
@@ -2867,6 +2880,7 @@ fn mha_decoding[
     is_shared_kv: Bool = False,
     _use_valid_length: Bool = False,
     _is_cache_length_accurate: Bool = False,
+    decoding_warp_split_k: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: k_t,
@@ -2949,6 +2963,7 @@ fn mha_decoding[
             group=group,
             use_mask_tensor=use_mask_tensor,
             use_score_mod=use_score_mod,
+            decoding_warp_split_k=decoding_warp_split_k,
         ](
             q_ptr.offset(q_batch_offset),
             k,
@@ -2980,6 +2995,7 @@ fn mha_decoding[
             group=group,
             use_mask_tensor=use_mask_tensor,
             use_score_mod=use_score_mod,
+            decoding_warp_split_k=decoding_warp_split_k,
         ](
             q_ptr.offset(q_batch_offset),
             k,
@@ -3037,7 +3053,6 @@ fn _scale_and_mask_helper_nvidia[
     # For mma output, thread 0-3 are on the first row, 4-7 second row, etc.
     if lane >= 4 * group:
         return
-
     var batch_cache_valid_length = num_keys - 1
     var warp_offset = warp * WN
 
@@ -3349,6 +3364,7 @@ fn mha_decoding_single_batch[
     group: UInt = 1,
     use_mask_tensor: Bool = True,
     use_score_mod: Bool = False,
+    decoding_warp_split_k: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: k_t,
@@ -3454,9 +3470,15 @@ fn mha_decoding_single_batch[
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
+    # Note that
+    # num_warps_n * num_n_mmas == BN // WN * num_n_mmas
+    # so we can use multistage_mma
+    alias num_output_rows = num_m_mmas * num_n_mmas
+    alias num_output_rows_full = num_warps_n * num_output_rows if decoding_warp_split_k else num_output_rows
+    # alias num_output_rows = num_warps_n * num_m_mmas * num_n_mmas if decoding_warp_split_k else num_m_mmas * num_n_mmas
     var output_reg_tile = LayoutTensor[
         accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
+        Layout.row_major(num_output_rows_full, p_frag_size),
         address_space = AddressSpace.LOCAL,
     ].stack_allocation().fill(0.0)
 
@@ -3662,17 +3684,20 @@ fn mha_decoding_single_batch[
         # For 16x8 mma output, only the top 8x4 matrix matters for GQA since
         # G <= 8 typically holds
         var output_reg_vecs = output_reg_tile.tile[
-            num_m_mmas * num_n_mmas, p_frag_size // 2
+            num_output_rows_full, p_frag_size // 2
         ](0, 0).vectorize[1, p_frag_size // 2]()
         var p_reg_vecs = p_reg_tile.tile[
             num_m_mmas * num_n_mmas, p_frag_size // 2
         ](0, 0).vectorize[1, p_frag_size // 2]()
 
+        # FIXME: pass `warp_split_k` to delay inter-warp communication.
         _online_softmax_iter_for_mma_output[
             accum_type,
             Layout.row_major(num_m_mmas, num_n_mmas),
             Layout.row_major(num_warps_m, num_warps_n),
             Layout.row_major(8, 4),
+            warp_split_k=False,
+            # warp_split_k=decoding_warp_split_k,
         ](
             output_reg_vecs,
             p_reg_vecs,
@@ -3695,10 +3720,8 @@ fn mha_decoding_single_batch[
         var v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
 
         alias async_copy_v_layout = Layout.row_major(
-            min(num_threads, kv_num_vecs)
-            * simd_size
-            // v_smem_iter.layout.stride[0].value(),
-            v_smem_iter.layout.stride[0].value() // simd_size,
+            min(num_threads, kv_num_vecs) * simd_size // BN,
+            BN // simd_size,
         )
 
         # load V tile into smem
@@ -3728,36 +3751,103 @@ fn mha_decoding_single_batch[
 
             v_gmem_iter._incr()
 
-        # Copy score fragments to shared memory with swizzling to resolve bank
-        # conflicts for ldmatrix in the 2nd matmul.
-        _copy_frag_to_smem[BM, BN, BK, WM, WN, MMA_M, MMA_N, p_frag_simdwidth](
-            p_smem_iter, p_reg_tile, warp_x, warp_y
-        )
+        @parameter
+        if not decoding_warp_split_k:
+            # Copy score fragments to shared memory with swizzling to resolve bank
+            # conflicts for ldmatrix in the 2nd matmul.
+            # warp_split_k does not need the copy as warps don't perform reduction
+            # iterating across tiles, but use extra registers to perform MMAs
+            # with warp-local data.
+            _copy_frag_to_smem[
+                BM, BN, BK, WM, WN, MMA_M, MMA_N, p_frag_simdwidth
+            ](p_smem_iter, p_reg_tile, warp_x, warp_y)
+
         async_copy_wait_all()
         barrier()
 
-        multistage_mma[
-            BM,
-            BN,
-            BK,
-            WM,
-            WN,
-            num_threads,
-            num_pipeline_stages,
-            False,  # transpose_b
-            swizzle_a=True,
-            prefetch_init=False,
-            static_num_iters = Int(BN // BK),
-        ](
-            output_reg_tile,
-            p_smem_iter,
-            v_smem_iter,
-            p_smem_iter,
-            v_smem_iter,
-            BN // BK,
-        )
+        # if decoding_warp_split_k:
+        #   S[m, (0:WN) + n*WN] @ V[(0:WN) + n*WN, :]
+        # else:
+        #   S[m, :] @ V[:, (0:WN) + n*WN]
+        @parameter
+        if decoding_warp_split_k:
+            var p_reg_iter = p_reg_tile.tiled_iterator[
+                MMA_K // MMA_N * num_m_mmas, p_frag_size
+            ](0, 0)
+            var v_smem_sub = LayoutTensorIter[
+                v_type,
+                Layout.row_major(WN, BN),
+                address_space = AddressSpace.SHARED,
+                circular=True,
+            ](v_smem + BN * WN * warp_x, kv_smem_size)
+            multistage_mma[
+                BM,
+                BN,
+                WN,  # BK
+                WM,
+                BN,  # WN
+                num_threads,
+                num_pipeline_stages,
+                False,  # transpose_b
+                swizzle_a=True,
+                prefetch_init=False,
+                static_num_iters=1,
+            ](
+                output_reg_tile,
+                p_reg_iter,
+                v_smem_sub,
+                p_smem_iter,
+                v_smem_sub,
+                1,
+            )
+        else:
+            multistage_mma[
+                BM,
+                BN,
+                BK,
+                WM,
+                WN,
+                num_threads,
+                num_pipeline_stages,
+                False,  # transpose_b
+                swizzle_a=True,
+                prefetch_init=False,
+                static_num_iters = Int(BN // BK),
+            ](
+                output_reg_tile,
+                p_smem_iter,
+                v_smem_iter,
+                p_smem_iter,
+                v_smem_iter,
+                BN // BK,
+            )
 
     tile_and_unswitch[loop_over_kvcache, VariadicList[Int](BN)](start, end)
+
+    @parameter
+    if decoding_warp_split_k:
+        var output_reg_vecs = output_reg_tile.tile[
+            num_warps_n * num_m_mmas * num_n_mmas, p_frag_size // 2
+        ](0, 0).vectorize[1, p_frag_size // 2]()
+        var scratch = LayoutTensor[
+            accum_type,
+            Layout.row_major(2 * num_warps_n, BM),
+            address_space = AddressSpace.SHARED,
+        ](q_smem.bitcast[Scalar[accum_type]]())
+
+        _online_softmax_iter_for_mma_output_split_warp_reduce[
+            accum_type,
+            Layout.row_major(num_m_mmas, num_n_mmas),
+            Layout.row_major(num_warps_m, num_warps_n),
+            Layout.row_major(8, 4),
+            WM,
+            WN,
+        ](
+            output_reg_vecs,
+            scratch.tile[2 * num_warps_n, WM](0, Int(warp_y)),
+            rowmax,
+            rowsum,
+        )
 
     # Apply softmax denumerator.
     @parameter
@@ -3787,10 +3877,24 @@ fn mha_decoding_single_batch[
     alias swizzle = make_swizzle[
         num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
     ]()
-    copy_local_to_sram[thread_layout = Layout.row_major(8, 4), swizzle=swizzle](
-        accum_smem_warp_tile.vectorize[1, 2](),
-        output_reg_tile.vectorize[1, 2]().transpose(),
-    )
+
+    @parameter
+    if decoding_warp_split_k:
+        copy_local_to_sram[
+            thread_layout = Layout.row_major(8, 4), swizzle=swizzle
+        ](
+            accum_smem_warp_tile.vectorize[1, 2](),
+            output_reg_tile.tile[num_output_rows, p_frag_size](0, 0)
+            .vectorize[1, 2]()
+            .transpose(),
+        )
+    else:
+        copy_local_to_sram[
+            thread_layout = Layout.row_major(8, 4), swizzle=swizzle
+        ](
+            accum_smem_warp_tile.vectorize[1, 2](),
+            output_reg_tile.vectorize[1, 2]().transpose(),
+        )
 
     # Guard writing to shared memory.
     barrier()
@@ -3842,6 +3946,7 @@ fn mha_decoding_single_batch_pipelined[
     group: UInt = 1,
     use_mask_tensor: Bool = True,
     use_score_mod: Bool = False,
+    decoding_warp_split_k: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: k_t,

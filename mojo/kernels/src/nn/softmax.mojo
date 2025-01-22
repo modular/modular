@@ -1042,6 +1042,7 @@ fn _online_softmax_iter_for_mma_output[
     block_layout_by_warp: Layout,
     warp_layout: Layout,
     use_exp2: Bool = False,
+    warp_split_k: Bool = False,
 ](
     output_reg_tile: LayoutTensor[type, *_, **_],
     score_reg_tile: LayoutTensor[type, *_, **_],
@@ -1142,7 +1143,7 @@ fn _online_softmax_iter_for_mma_output[
     # If a row is split across multiple warps, communicate via shared memory
     # to achieve the rowwise max.
     @parameter
-    if num_rowwise_warps > 1:
+    if num_rowwise_warps > 1 and not warp_split_k:
         # Write per warp rowmax to shared memory.
         if lane % num_rowwise_lanes == 0:
 
@@ -1191,7 +1192,7 @@ fn _online_softmax_iter_for_mma_output[
     for col_tile in range(num_colwise_tiles):
         # Broadcast to 4 threads in the same row.
         @parameter
-        if num_rowwise_warps > 1:
+        if num_rowwise_warps > 1 and not warp_split_k:
 
             @parameter
             for row in range(frag_num_rows):
@@ -1256,7 +1257,7 @@ fn _online_softmax_iter_for_mma_output[
     # Reduce rowsum via shared memory.
 
     @parameter
-    if num_rowwise_warps > 1:
+    if num_rowwise_warps > 1 and not warp_split_k:
         # Write per warp rowmax to shared memory.
         if lane % num_rowwise_lanes == 0:
 
@@ -1313,29 +1314,43 @@ fn _online_softmax_iter_for_mma_output[
                     Int(num_rowwise_lanes)
                 ](score_frag_rowsum[col_tile, row])
 
-    # Correct previous result
+    alias num_output_replications = output_reg_tile.layout.shape[0].value() // (
+        num_colwise_tiles * num_rowwise_tiles
+    )
+    # if num_output_replications != 1, then `warp_split_k` and it must equal `num_warps_n`.
+    # FIXME: require `warp_split_k` when delaying inter-warp communication.
+    constrained[
+        num_output_replications == 1
+        or num_output_replications == num_rowwise_warps
+        # or (warp_split_k and num_output_replications == num_rowwise_warps)
+    ]()
+
+    # if num_output_replications
     @parameter
-    for col_tile in range(num_colwise_tiles):
-
+    for k in range(num_output_replications):
+        # Correct previous result
         @parameter
-        for row_tile in range(num_rowwise_tiles):
-            alias tile_id = col_tile + row_tile * num_colwise_tiles
-
-            alias output_frag_type = __type_of(output_reg_tile).element_type
+        for col_tile in range(num_colwise_tiles):
 
             @parameter
-            if is_nvidia_gpu():
-                output_reg_tile[tile_id, 0] = output_reg_tile[
-                    tile_id, 0
-                ] * output_frag_type(correction[col_tile, 0][0])
-            else:
+            for row_tile in range(num_rowwise_tiles):
+                alias tile_id = col_tile + row_tile * num_colwise_tiles + k * num_colwise_tiles * num_rowwise_tiles
+
+                alias output_frag_type = __type_of(output_reg_tile).element_type
 
                 @parameter
-                for row in range(frag_num_rows):
-                    output_reg_tile[tile_id, 0][row] = (
-                        output_reg_tile[tile_id, 0][row]
-                        * correction[col_tile, row][0]
-                    )
+                if is_nvidia_gpu():
+                    output_reg_tile[tile_id, 0] = output_reg_tile[
+                        tile_id, 0
+                    ] * output_frag_type(correction[col_tile, 0][0])
+                else:
+
+                    @parameter
+                    for row in range(frag_num_rows):
+                        output_reg_tile[tile_id, 0][row] = (
+                            output_reg_tile[tile_id, 0][row]
+                            * correction[col_tile, row][0]
+                        )
 
     # Save current rowmax and rowsum
     @parameter
@@ -1348,3 +1363,195 @@ fn _online_softmax_iter_for_mma_output[
                 rowsum_tensor[col_tile, row] * correction[col_tile, row]
                 + score_frag_rowsum[col_tile, row]
             )
+
+
+# This performs a reduction after warp-level split-K for mha
+# See `_online_softmax_iter_for_mma_output_split_warp` for
+# the implementation of the online component that
+# accumulates into separate tiles.
+# `output_reg_tile` is `num_warps_n * num_m_mmas * num_n_mmas` rows.
+# This performs the reduction, accumulating the `num_warps_n`
+# row blocks of size `num_m_mmas * num_n_mmas` into the first row.
+#
+# This performns:
+# m_i_x = -Inf
+# for k in range(0, K): # across warps
+#   m_i_x = max(m_i_x, m_i_k_{T_c-1})
+# O_i_x = 0
+# l_i_x_x_x 0
+# for k in range(0, K): # across warps
+#   c_k_x = exp(m_i_k_{T_c-1} - m_i_x)
+#   O_i_x += O_i_k_{T_c-1} * c_k_x
+#   l_i_x += l_i_k_{T_c-1} * c_k_x
+#
+# O_i = diag(l_i_x)^(-1) @ O_i_x
+#
+# Note that the `for k` loops are across warps (k is the index into
+# the `num_warps_n` rowwise warps).
+fn _online_softmax_iter_for_mma_output_split_warp_reduce[
+    output_layout: Layout, //,
+    type: DType,
+    score_layout_by_mma_unit: Layout,
+    block_layout_by_warp: Layout,
+    warp_layout: Layout,
+    WM: UInt,
+    WN: UInt,
+    /,
+    use_exp2: Bool = False,
+](
+    output_reg_tile: LayoutTensor[
+        type,
+        output_layout,
+        *_,
+        address_space = AddressSpace.LOCAL, **_,
+    ],
+    warp_scratch: LayoutTensor[
+        type, *_, address_space = AddressSpace.SHARED, **_
+    ],
+    rowmax: UnsafePointer[Scalar[type], **_],
+    rowsum: UnsafePointer[Scalar[type], **_],
+):
+    # Here, we use naming conventions alligning with MHA's
+    alias num_m_mmas = score_layout_by_mma_unit.shape[0].value()
+    alias num_n_mmas = score_layout_by_mma_unit.shape[1].value()
+    alias num_warps_m = block_layout_by_warp.shape[0].value()
+    alias num_warps_n = block_layout_by_warp.shape[1].value()
+    alias num_lanes_m = UInt32(warp_layout.shape[0].value())
+    alias num_lanes_n = UInt32(warp_layout.shape[1].value())
+    # Note that MHA cut the frag size in half:
+    # var output_reg_vecs = output_reg_tile.tile[
+    #     num_warps_n * num_m_mmas * num_n_mmas, p_frag_size // 2
+    # ](0, 0).vectorize[1, p_frag_size // 2]()
+    alias frag_size = output_reg_tile.element_layout.size()
+    constrained[
+        WM * WN == (2 * frag_size) * WARP_SIZE * num_m_mmas * num_n_mmas
+    ]()
+    # alias num_m_mmas = WM // MMA_M
+    # alias num_n_mmas = WN // MMA_N
+    # alias frag_size = MMA_M * MMA_N // WARP_SIZE
+    #
+
+    var tid = thread_idx.x
+    var lane = lane_id()
+    warp_y, warp_x = divmod(tid // WARP_SIZE, UInt(num_warps_n))
+
+    alias fragment_layout = Layout.row_major(
+        1, 2
+    ) if is_nvidia_gpu() else Layout.row_major(4, 1)
+    alias frag_num_rows = fragment_layout.shape[0].value()
+
+    # if tid == 0 and block_idx.x == 0:
+    #     print("output_reg_tile[0,0] =", output_reg_tile[0, 0])
+    # Write output reg to smem
+    # Each warp has `num_warps_n` output register tiles
+    # P(A @ B) @ C
+    # `P(A @ B)` is a a `num_warps_m` x `num_warps_n` grid of warp tiles.
+    # `C` is partitioned into a `num_warps_n` x `num_warps_n` grid of warp tiles
+    #
+    # When we don't `split_k_warp`, `P(A @ B)` is copied to smem, so that a warp tile
+    # for `D = P(A @ B) @ C` can iterate across all columns of `P(A @ B)`.
+    #
+    # However, with `split_k_warp`, we skip this copy to smem.
+    # Instead, for each `num_warps_n`, they calculate a row of `D`,
+    # corresponding to their local columns `P(A @ B)`/rows `C`.
+    # We must then perform the reduction afterwards.
+    # First, each warp writes the parts other warps need to smem.
+    #
+    # o_smem is implicitly partitioned into a 5d array:
+    # num_warps_m x num_warps_n x (num_warps_n - 1) x
+    #    (num_m_mmas * num_n_mmas) x frag_size
+    # The axis are:
+    # 0. warp_m: No communication across `warps_m` is needed, so we offset the
+    #    smem ptr immediately rather than representing this explicitly.
+    # 1. warp_n: currently local to a warp, corresponding to axis 0 of
+    #    `output_reg_tile`. We iterate across this when writing, and keep it
+    #    constant when reducing.
+    # 2. warp_n - 1: the other warp_n - 1 column tiles of the answer. We keep it
+    #    constant when writing, and iterate across it when reducing.
+    # 3-4. ((WM*WN)//frag_size) x frag_size: the two trailing dimensions of
+    #    output_reg_tile
+    alias warp_tile_size = WM * WN  # ((WM*WN)//frag_size) x frag_size
+    alias row_warp_tile_size = (num_warps_n - 1) * warp_tile_size
+    # Makes sure arithmetic is optimized away when `num_warps_m == 1`.
+    var o_smem_ptr = warp_scratch.ptr + warp_y * (
+        num_warps_n - 1
+    ) * row_warp_tile_size if num_warps_m > 1 else warp_scratch.ptr
+
+    # NOTE: we must ensure that `output_reg_tile` is only ever indexed by constants.
+    var out_reg_tile = output_reg_tile.tile[num_m_mmas * num_n_mmas, 1](0, 0)
+
+    alias o_smem_layout = Layout.row_major(
+        WM * WN // (2 * frag_size), frag_size
+    )
+
+    @parameter
+    for warp_n in range(num_warps_n):
+        var reg_tile = output_reg_tile.tile[num_m_mmas * num_n_mmas, 1](
+            warp_n, 0
+        )
+        if warp_n == warp_x:
+
+            @parameter
+            if warp_n > 0:
+                # we want `output_reg_tile[0,:,:]` to be the real output reg tile.
+                out_reg_tile.copy_from(reg_tile)
+        else:
+            # copy output reg tile to smem
+            # Example smem row, col when `num_warps_n = 4`:
+            # -----------------------------------
+            # | N\X |   0  |   1  |   2  |   3  |
+            # |  0  |      | 0, 0 | 0, 1 | 0, 2 |
+            # |  1  | 1, 0 |      | 1, 1 | 1, 2 |
+            # |  2  | 2, 0 | 2, 1 |      | 2, 2 |
+            # |  3  | 3, 0 | 3, 1 | 3, 2 |      |
+            # -----------------------------------
+            # `N\X` refer to `warp_n`, `warp_x`
+            alias row = warp_n
+            var col = warp_x - (1 if warp_x > warp_n else 0)
+            var o_smem_ptr_write = o_smem_ptr + (
+                row * (num_warps_n - 1) + col
+            ) * warp_tile_size
+            var o_smem_write = LayoutTensor[
+                type,
+                o_smem_layout,
+                address_space = AddressSpace.SHARED,
+            ](o_smem_ptr_write).vectorize[1, frag_size]().distribute[
+                Layout.row_major(WARP_SIZE, 1)
+            ](
+                lane
+            )
+            # after distribute and vectorize, the shape should be
+            # WM * WN // (2*frag_size * WARP_SIZE), 1
+            # Note that we have
+            # frag_size = MMA_M * MMA_N // (2*WARP_SIZE)
+            # num_m_mmas = WM // MMA_M
+            # num_n_mmas = WN // MMA_N
+            # so (because 2*WARP_SIZE*frag_size == MMA_M * MMA_N):
+            # WM * WN // (2*frag_size * WARP_SIZE) = WM * WN // (MMA_M * MMA_N)
+            #   = num_m_mmas * num_n_mmas
+            # thus the shape of `o_smem_write` matches that of `reg_tile`.
+            o_smem_write.copy_from(reg_tile)
+
+    barrier()
+
+    # Perform the reduction.
+    @parameter
+    for warp_n in range(num_warps_n - 1):
+        var row = warp_x
+        alias col = warp_n
+        var o_smem_ptr_reduce = o_smem_ptr + (
+            row * (num_warps_n - 1) + col
+        ) * warp_tile_size
+        var o_smem_reduce = LayoutTensor[
+            type,
+            o_smem_layout,
+            address_space = AddressSpace.SHARED,
+        ](o_smem_ptr_reduce).vectorize[1, frag_size]().distribute[
+            Layout.row_major(WARP_SIZE, 1)
+        ](
+            lane
+        )
+
+        @parameter
+        for i in range(o_smem_reduce.layout.size()):
+            out_reg_tile[i] += rebind[SIMD[type, frag_size]](o_smem_reduce[i])
