@@ -14,6 +14,11 @@ def test_accelerator_device():
     assert not dev.is_host
 
 
+def test_accelerator_is_compatible():
+    accelerator = Accelerator()
+    assert accelerator.is_compatible_with_max
+
+
 def test_accelerator_device_label_id():
     # Test the label property and attempt to map to graph.DeviceRef.
     dev_id = 0
