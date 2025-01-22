@@ -21,7 +21,6 @@
 
 #include "Helpers.h"
 #include "Support/AssertStream.h"
-#include "UserLibraryChecker.h"
 
 using namespace M;
 using namespace KGEN;
@@ -211,12 +210,7 @@ public:
         outLambdaTemplate = LambdaTemplate{func};
     }
 
-    auto checker = UserLibraryChecker(mod, symTab);
-    if (failed(checker.run())) {
-      signalPassFailure();
-      return;
-    }
-
+    DenseSet<GeneratorOp> seenFuncs;
     for (GeneratorOp userKernel :
          llvm::make_early_inc_range(mod.getOps<GeneratorOp>())) {
       // Only look at the DPS execute functions.
