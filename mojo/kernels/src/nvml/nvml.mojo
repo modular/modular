@@ -38,8 +38,8 @@ fn _get_nvml_library_path() raises -> Path:
             continue
         if CUDA_NVML_LIBRARY_BASE_NAME in String(fd[]):
             return fd[]
-    raise "the CUDA NVML library was not found in " + String(
-        CUDA_NVML_LIBRARY_DIR
+    raise Error(
+        "the CUDA NVML library was not found in ", CUDA_NVML_LIBRARY_DIR
     )
 
 
@@ -92,13 +92,7 @@ struct DriverVersion:
         return Int(self._value[2])
 
     fn __str__(self) raises -> String:
-        return (
-            String(self.major())
-            + "."
-            + String(self.minor())
-            + "."
-            + String(self.patch())
-        )
+        return String(self.major(), ".", self.minor(), ".", self.patch())
 
 
 # ===-----------------------------------------------------------------------===#
@@ -611,7 +605,7 @@ struct Device(Writable):
             except:
                 pass
 
-        raise "unable to set max gpu clock for " + String(device)
+        raise Error("unable to set max gpu clock for ", device)
 
     @no_inline
     fn __str__(self) -> String:
