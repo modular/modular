@@ -11,16 +11,6 @@ include "mlir/Pass/PassBase.td"
 //===----------------------------------------------------------------------===//
 
 def SliceMOGGFuncs : Pass<"slice-mogg-funcs", "ModuleOp"> {
-  let summary = "Slices shape and compute from mogg kernels";
-  let description = [{
-    A mogg domain specific pass which performs KGEN to KGEN transforms that
-    the graph compiler can understand. The KGEN will be legal regardless.
-
-    This description to expand as the functionality is added to the pass.
-  }];
-}
-
-def SliceMOGGDPSFuncs : Pass<"slice-mogg-dps-funcs", "ModuleOp"> {
   let summary = "Slices compute from DPS kernels";
   let description = [{
     A mogg domain specific pass which performs KGEN to KGEN transforms that

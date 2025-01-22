@@ -20,6 +20,7 @@
 #include "mlir/Pass/Pass.h"
 
 #include "Helpers.h"
+#include "Support/AssertStream.h"
 #include "UserLibraryChecker.h"
 
 using namespace M;
@@ -33,87 +34,42 @@ namespace M::KGEN::MOGGPreElab {
 
 namespace {
 class SliceMOGGFuncsPass
-    : public M::KGEN::MOGGPreElab::impl::SliceMOGGFuncsBase<
-          SliceMOGGFuncsPass> {
+    : public MOGGPreElab::impl::SliceMOGGFuncsBase<SliceMOGGFuncsPass> {
 private:
-  // We have a special mojo hook which show us what the canonical lambda
-  // looks like and a call which tells us the resulting type with the lambda
-  // applied.
+  /// We have a special mojo hook which show us what the canonical lambda
+  /// looks like and a call which tells us the resulting type with the lambda
+  /// applied.
   struct LambdaTemplate {
     LambdaTemplate() = default;
 
-    // Scan the hook for the properties that we know exist.
+    /// Scan the hook for the properties that we know exist.
     LambdaTemplate(GeneratorOp hook) : templateOp(hook) {
-      for (auto region : hook.getOps<KGEN::ParamDeclareRegionOp>())
+      for (auto region : hook.getOps<ParamDeclareRegionOp>()) {
+        ASSERT_STREAM(
+            canonicalLambda == nullptr,
+            "there must be only one region in the I/O lambda intrinsic");
         canonicalLambda = region;
-      for (auto call : hook.getOps<KGEN::CallOp>())
-        callUsingLambda = call;
+      }
+      ASSERT_STREAM(canonicalLambda != nullptr,
+                    "missing region in the I/O lambda intrinsic");
     }
-    // The op we are pulling this info from.
-    KGEN::GeneratorOp templateOp;
+    /// The op we are pulling this info from.
+    GeneratorOp templateOp;
 
-    // This the the template lambda we will clone as the input or output lambda.
-    KGEN::ParamDeclareRegionOp canonicalLambda;
-
-    // This call shows us how the lambda needs to be bound.
-    KGEN::CallOp callUsingLambda;
+    /// This the the template lambda we will clone as the input or output
+    /// lambda.
+    ParamDeclareRegionOp canonicalLambda;
   };
 
   MLIRContext *ctx;
 
-  // The reference input and output lambdas we should use for materializing the
-  // input/output fusion.
+  /// The reference input and output lambdas we should use for materializing the
+  /// input/output fusion.
   LambdaTemplate inLambdaTemplate, outLambdaTemplate;
-
-  /// Instantiate all input/output lambdas which have NOT been toggled on to a
-  /// None value. This will cause the tensor internally to fallback on its non
-  /// lambda fusion path for load / store.
-  void instantiateNoneParamLambdas(GeneratorOp gen) {
-    Block *computeBlock = gen.getBody();
-
-    int num_params = 0;
-    // For now assume all variant parameters are referring to a lambda. Each
-    // variant parameter will be initalized as a None type to represent no
-    // fusion.
-    for (auto param : gen.getInputParams()) {
-      if (auto asVariant = dyn_cast<KGEN::VariantType>(param.getType())) {
-        OpBuilder b{computeBlock, computeBlock->begin()};
-
-        auto lambdaNoneTy = KGEN::VariantAttr::get(
-            b.getIntegerAttr(b.getI1Type(), 0), 1, asVariant);
-
-        std::string newalias = "_none_lambda_" + std::to_string(num_params++);
-        b.create<ParamDeclareOp>(gen.getLoc(),
-                                 ParamDeclAttr::get(newalias, param.getType()),
-                                 lambdaNoneTy);
-
-        ParamDeclRefAttr newRef =
-            ParamDeclRefAttr::get(newalias, param.getType());
-        ParamDeclRefAttr oldRef =
-            ParamDeclRefAttr::get(param.getName(), param.getType());
-        mlir::AttrTypeReplacer walker;
-        walker.addReplacement(
-            [&](KGEN::ParamDeclRefAttr attr) -> std::optional<TypedAttr> {
-              if (attr == oldRef)
-                return newRef;
-              return std::nullopt;
-            });
-
-        gen.walk([&](Operation *op) {
-          if (op == gen) {
-            walker.recursivelyReplaceElementsIn(op, /*replaceAttrs=*/true,
-                                                /*replaceLocs=*/false,
-                                                /*replaceTypes=*/true);
-          }
-        });
-      }
-    }
-  }
 
   void attachMetadataToGenerator(GeneratorOp gen,
                                  ArrayRef<std::string> inputLambdaNames,
-                                 ArrayRef<std::string> outputLambdaNames,
-                                 bool isView = false) {
+                                 ArrayRef<std::string> outputLambdaNames) {
     // The new attributes on the generator.
     SmallVector<NamedAttribute> newAttrs;
 
@@ -127,24 +83,119 @@ private:
     newAttrs.push_back(
         NamedAttribute{b.getStringAttr(SLICED_ATTR), b.getUnitAttr()});
 
-    if (isView) {
-      newAttrs.push_back(
-          NamedAttribute{b.getStringAttr("_view_op"), b.getUnitAttr()});
-    }
-
     // Attach the lambda metadata.
     SmallVector<StringRef> inNames;
-    for (const std::string &name : inputLambdaNames)
+    for (StringRef name : inputLambdaNames)
       inNames.push_back(name);
     newAttrs.push_back(NamedAttribute{b.getStringAttr(kMOGGInputLambdas),
                                       b.getStrArrayAttr(inNames)});
 
     SmallVector<StringRef> outNames;
-    for (const std::string &name : outputLambdaNames)
+    for (StringRef name : outputLambdaNames)
       outNames.push_back(name);
     newAttrs.push_back(NamedAttribute{b.getStringAttr(kMOGGOutputLambdas),
                                       b.getStrArrayAttr(outNames)});
     gen->setAttrs(newAttrs);
+  }
+
+  /// We enable fusion for I/Os tensors that have opted in.
+  /// Enabling fusion involves materializing a call to the input/output lambda
+  /// within the body of the function and building a new tensor spec parameter
+  /// with the lambda replaced.
+  void enableFusion(GeneratorOp gen,
+                    MutableArrayRef<std::string> inputLambdaNames,
+                    MutableArrayRef<std::string> outputLambdaNames,
+                    ArrayRef<unsigned> fusedOperands) {
+    Block *computeBlock = gen.getBody();
+
+    ArrayAttr argumentTypeNames =
+        cast<ArrayAttr>(gen->getAttr(MOGG_ARG_TYPE_NAMES));
+
+    ArrayAttr argsParams =
+        dyn_cast_or_null<ArrayAttr>(gen->getAttr(MOGG_TENSOR_ARG_PARAMS));
+    if (!argsParams)
+      return;
+
+    for (unsigned idx : fusedOperands) {
+      Value tensorFusionEnabledOn = gen.getBody()->getArgument(idx);
+
+      bool isInput = idx > 0;
+      auto typeNameAttr =
+          dyn_cast<StringAttr>(argumentTypeNames.getValue()[idx]);
+      bool isVariadic =
+          typeNameAttr && typeNameAttr.getValue() == MOJO_STATIC_INT_TUPLE_NAME;
+      ASSERT_STREAM(inLambdaTemplate.templateOp && outLambdaTemplate.templateOp,
+                    "intrinsic I/O fusion hooks not found");
+      LambdaTemplate *lambda = isInput ? &inLambdaTemplate : &outLambdaTemplate;
+      std::string newLambdaName =
+          isInput ? "input_" + std::to_string(idx) + "_fn" : "output_0_fn";
+      if (isInput)
+        inputLambdaNames[idx - 1] = newLambdaName;
+      else
+        outputLambdaNames[0] = newLambdaName;
+
+      // Instead of referring to the `self` argument of the wrapper function
+      // which contains the canonical lambda we remap onto the argument of
+      // this function which invoked the enable fusion method.
+      IRMapping mapper;
+      ASSERT_STREAM(lambda->templateOp != nullptr, "missing lambda");
+
+      OpBuilder builder{computeBlock, computeBlock->begin()};
+
+      if (isVariadic) {
+        // The fused argument is a StaticTuple (array) of tensors.
+        // We load the tensor at index 0 here (In MoToMOGG 0 will be replaced
+        // with the right index for each input lambda). We insert the load
+        // outside of the lambda first, then move it inside later (to ensure
+        // mapper works correctly).
+        tensorFusionEnabledOn = builder.create<KGEN::POP::ArrayGetOp>(
+            tensorFusionEnabledOn.getLoc(), tensorFusionEnabledOn, 0);
+      }
+
+      mapper.map(lambda->templateOp.getBody()->getArgument(0),
+                 tensorFusionEnabledOn);
+
+      // Copy the param region into the body.
+      auto newLambda = cast<ParamDeclareRegionOp>(
+          builder.clone(*lambda->canonicalLambda, mapper));
+
+      if (isVariadic) {
+        // Move the ArrayGetOp at the beginning of the block.
+        Operation *getTensorOp = tensorFusionEnabledOn.getDefiningOp();
+        getTensorOp->moveBefore(&newLambda.getBodyRegion().front(),
+                                newLambda.getBodyRegion().front().begin());
+      }
+
+      SmallVector<TypedAttr> remappedLambdaParams;
+      for (auto attr : cast<ArrayAttr>(argsParams[idx]).getValue())
+        remappedLambdaParams.push_back(cast<TypedAttr>(attr));
+      ASSERT_STREAM(remappedLambdaParams.size() ==
+                        lambda->templateOp.getInputParams().size(),
+                    << "parameters count mismatch");
+
+      // Rebind the parameters of the lambda from the `self` argument in the
+      // method onto the specific parameters of the tensor being used at the
+      // callsite.
+      ParameterEvaluator evaluator;
+
+      for (auto [localParamRef, methodParamDecl] : llvm::zip(
+               remappedLambdaParams, lambda->templateOp.getInputParams())) {
+        auto methodDeclRef = ParamDeclRefAttr::get(methodParamDecl.getName(),
+                                                   methodParamDecl.getType());
+        evaluator.setParameterValue(methodDeclRef.getName(), localParamRef);
+      }
+
+      // Update the parameter attributes.
+      mlir::AttrTypeReplacer walker;
+      walker.addReplacement([&](ParamDeclRefAttr attr) {
+        return evaluator.getReboundAttribute(attr);
+      });
+      walker.recursivelyReplaceElementsIn(newLambda, /*replaceAttrs=*/true,
+                                          /*replaceLocs=*/false,
+                                          /*replaceTypes=*/true);
+      newLambda.setParamDeclAttr(ParamDeclAttr::get(
+          newLambdaName, newLambda.getParamDecl().getType()));
+    }
   }
 
 public:
@@ -157,13 +208,11 @@ public:
     // Scan the generators to find the global helper functions we will need to
     // call or inspect.
     for (GeneratorOp func : mod.getOps<GeneratorOp>()) {
-      if (func->hasAttr(Decorators::INPUT_FUSION.attr))
+      if (func->hasAttr(MOGG_INTRINSIC_INPUT_FUSION_HOOK))
         inLambdaTemplate = LambdaTemplate{func};
-      else if (func->hasAttr(Decorators::OUTPUT_FUSION.attr))
+      else if (func->hasAttr(MOGG_INTRINSIC_OUTPUT_FUSION_HOOK))
         outLambdaTemplate = LambdaTemplate{func};
     }
-
-    DenseSet<GeneratorOp> seenFuncs;
 
     auto checker = UserLibraryChecker(mod, symTab);
     if (failed(checker.run())) {
@@ -173,115 +222,66 @@ public:
 
     for (GeneratorOp userKernel :
          llvm::make_early_inc_range(mod.getOps<GeneratorOp>())) {
-
-      if (seenFuncs.contains(userKernel))
+      // Only look at the DPS execute functions.
+      if (!userKernel->hasAttr(kMOGGExecuteFunctionLabel))
         continue;
 
-      // Skip non kernels.
-      if (!isKernel(userKernel))
+      // Don't process again functions that we already sliced.
+      if (userKernel->hasAttr(SLICED_ATTR))
         continue;
 
-      // Currently we only support kernels which return something. We will
-      // later enforce that this is a tensor.
-      if (!userKernel.getSignatureGenerator().getBody().hasMemoryOnlyResult())
+      // Dummy execute function without operands (mo.reshape).
+      /// TODO: this should not be allowed for users.
+      ArrayAttr argumentTypeNames =
+          dyn_cast_or_null<ArrayAttr>(userKernel->getAttr(MOGG_ARG_TYPE_NAMES));
+      if (!argumentTypeNames)
         continue;
 
       // Slice out a new compute kernel. This replaces the old kernel as the
       // entry point for the thing we are going to execute.
-      KGEN::GeneratorOp slicedComputeFunction = userKernel.clone();
-      std::string name =
-          (Twine(userKernel.getSymName()) + Twine("_COMPUTE")).str();
+      GeneratorOp slicedComputeFunction = userKernel.clone();
+      std::string name = (Twine(userKernel.getSymName()) + "_COMPUTE").str();
       slicedComputeFunction.setSymName(name);
 
-      // Search for any function which allocates a new tensor and a move from
-      // that into one of the input operands (meaning it is actually an
-      // output).
-      KGEN::CallOp allocationFunc, constructor;
-
-      // If the user has any call to enable fusion then we turn on fusion for
-      // that tensor.
-      SmallVector<KGEN::CallOp> enableFusionFuncs;
-      SmallVector<KGEN::CallOp> deconstructors;
-
-      // Scan the kernel and identify the callsites of annotated functions
-      // that we can understand.
-      for (KGEN::CallOp call : slicedComputeFunction.getOps<KGEN::CallOp>()) {
-        auto func = dyn_cast_or_null<KGEN::GeneratorOp>(symTab.lookup(
-            cast<FlatSymbolRefAttr>(call.getCalleeSymbol()).getValue()));
-        if (!func)
-          continue;
-
-        if (func->hasAttr(Decorators::ENABLE_FUSION.attr))
-          enableFusionFuncs.push_back(call);
+      // Figure out the number of tensor inputs for the kernel.
+      // The first operand is always the output.
+      // And there might be non-tensor arguments (eg MojoCallContext).
+      unsigned kernelInputsCount = 0;
+      /// TODO: GEX-1046: We should have markers in Mojo for what is an input
+      /// and what is an output (ex: mo.top_k).
+      unsigned kernelOutputsCount = 1;
+      for (size_t i = 1, e = argumentTypeNames.getValue().size(); i < e; i++) {
+        auto nameAttr = dyn_cast<StringAttr>(argumentTypeNames.getValue()[i]);
+        if (nameAttr &&
+            (nameAttr.getValue() == MOJO_INTERNAL_DPS_TENSOR_TYPE_NAME ||
+             nameAttr.getValue() == MOJO_STATIC_INT_TUPLE_NAME)) {
+          ++kernelInputsCount;
+        }
       }
 
-      // Strip all debug info. Its too annoying to maintain and there is no
-      // way to actually debug the sliced kernel directly. Users would debug
-      // the base kernel.
-      DebugInfo::stripDebugInfo(slicedComputeFunction,
-                                /*preserveLineTables=*/true);
-
-      // Clean up all the deconstructors. Not strictly needed as they will be
-      // elaborated with the ref counting / allocation off.
-      for (KGEN::CallOp deconstruct : deconstructors)
-        deconstruct.erase();
+      // Figure out which kernel input / outputs are fused.
+      SmallVector<unsigned> fusedOperands;
+      if (userKernel->hasAttr(kMOGGElementFunction)) {
+        // For elementwise kernel, fuse everything.
+        for (unsigned i = 0, e = kernelInputsCount + kernelOutputsCount; i < e;
+             ++i)
+          fusedOperands.push_back(i);
+      } else if (auto fusedOperandsAttr = dyn_cast_or_null<ArrayAttr>(
+                     userKernel->getAttr(kMOGGFusableArgs))) {
+        for (Attribute attr : fusedOperandsAttr.getValue())
+          fusedOperands.push_back(
+              cast<IntegerAttr>(attr).getValue().getZExtValue());
+      }
 
       // Resize the input and output lambda metadata to encapsulate all inputs
       // and outputs. Each one is marked off. As we detect in / out lambdas we
       // will populate these.
       SmallVector<std::string> inputLambdaNames, outputLambdaNames;
-      inputLambdaNames.resize(userKernel.getBody()->getArguments().size() - 1,
-                              "");
-      outputLambdaNames.resize(1, "");
+      inputLambdaNames.resize(kernelInputsCount, "");
+      outputLambdaNames.resize(kernelOutputsCount, "");
 
-      // Output tensor is the last argument.
-      assert(slicedComputeFunction.getSignatureGenerator()
-                 .getBody()
-                 .hasMemoryOnlyResult());
-      Value outputTensor =
-          slicedComputeFunction.getBody()->getArguments().back();
-
-      bool isView = false;
-      // Any MOGG annotated kernel which has no allocation should be treated
-      // as a view.
-      if (!allocationFunc) {
-        isView = true;
-      } else if (!constructor) {
-        // Exit and clean up if the kernel is not what we expect. Allocators
-        // and constructors are expected to appear as a pair.
-        slicedComputeFunction.erase();
-        continue;
-      } else {
-        // Erase any lifetime markers on the temporary if it has them.
-        Value tmpTensor = constructor.getOperand(1);
-        auto alloc = tmpTensor.getDefiningOp<POP::StackAllocationOp>();
-        if (alloc && alloc.getMarkedLifetimes()) {
-          for (Operation *user :
-               llvm::make_early_inc_range(tmpTensor.getUsers())) {
-            if (isa<POP::StackAllocLifetimeStartOp,
-                    POP::StackAllocLifetimeEndOp>(user))
-              user->erase();
-          }
-        }
-
-        // Functions with tensor allocation will follow the rough pattern.
-        //
-        // ```
-        // fn (*tensor):
-        //   tmp = allocate(...)
-        //   ...
-        //   copy_construct(tensor, tmp)
-        // ```
-        //
-        // We can use this to identify the output tensor and the the tensor
-        // which has been allocated. To us they are an alias.
-        tmpTensor.replaceAllUsesWith(outputTensor);
-
-        // Remove the allocation and assignment from the sliced compute
-        // function.
-        constructor.erase();
-        allocationFunc.erase();
-      }
+      enableFusion(slicedComputeFunction, inputLambdaNames, outputLambdaNames,
+                   fusedOperands);
 
       // Strip all debug info. Its too annoying to maintain and there is no
       // way to actually debug the sliced kernel directly. Users would debug
@@ -295,13 +295,15 @@ public:
 
       // Add info for mogg to read off the kernel.
       attachMetadataToGenerator(slicedComputeFunction, inputLambdaNames,
-                                outputLambdaNames, isView);
+                                outputLambdaNames);
 
-      // Remove the kernel attr from the user kernel.
+      // Remove attributes that would cause MojoLibraryAnalysis to treat the
+      // sliced function as a registered kernel.
       userKernel->removeAttr(kernelRegistrationAttr);
-
-      //  Don't process the function we just added if we see it again.
-      seenFuncs.insert(slicedComputeFunction);
+      userKernel->removeAttr(kMOGGExecuteFunctionLabel);
+      userKernel->removeAttr(shapeFuncRegistrationAttr);
+      userKernel->removeAttr(kMOGGShapeFunctionLabel);
+      userKernel->removeAttr(kMOGGPyTorchFallbackFunctionLabel);
     }
   }
 };
