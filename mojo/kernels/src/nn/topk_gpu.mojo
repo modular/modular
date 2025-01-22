@@ -36,7 +36,6 @@ from utils import IndexList
 from utils.numerics import max_or_inf, min_or_neg_inf
 
 alias SEED = 0
-alias DEBUG_FILE = False
 
 
 @always_inline("nodebug")
@@ -446,10 +445,6 @@ fn topk_stage2[
             for ki in range(K):
                 var exp_logit = s_val2[ki]
 
-                # TMP (debug - store prob of largest logit)
-                @parameter
-                if DEBUG_FILE:
-                    batch_i_topk_vals[ki] = exp_logit / softmax_norm
                 r -= exp_logit
                 if r <= 0.0 or ki == K - 1:
                     # uncomment below to return prob of largest logit
@@ -545,15 +540,6 @@ fn _topk_gpu[
     var block_dim_stage1 = Dim(block_size)
 
     # Enqueue the first kernel (stage 1)
-    @parameter
-    if DEBUG_FILE:
-        _printf["[DEBUG] stg 1 grid_dim: %d\n"](grid_dim_stage1)
-        _printf["[DEBUG] stg 1 block_dim: %d\n"](block_dim_stage1)
-        _printf["[DEBUG] stg 1 shared_mem_bytes: %d\n"](shared_mem_bytes_1)
-        _printf["[DEBUG] stg 1 num_blocks_per_input: %d\n"](
-            num_blocks_per_input_
-        )
-
     ctx.enqueue_function(
         gpu_fn_stage1,
         K,
@@ -589,15 +575,6 @@ fn _topk_gpu[
         batch_size
     )  # Single block since num_elements_stage2 is small
     var block_dim_stage2 = Dim(block_size)
-
-    @parameter
-    if DEBUG_FILE:
-        _printf["[DEBUG] stg2 num_blocks_per_input_: %d\n"](
-            num_blocks_per_input_
-        )
-        _printf["[DEBUG] stg2 grid_dim: %d\n"](grid_dim_stage2)
-        _printf["[DEBUG] stg2 block_dim: %d\n"](block_dim_stage2)
-        _printf["[DEBUG] stg2 shared_mem_bytes: %d\n"](shared_mem_bytes_2)
 
     # Enqueue the second kernel (stage 2)
     ctx.enqueue_function(
@@ -741,17 +718,6 @@ fn topk_gpu[
     var device_local_topk_idxs = NDBuffer[out_idx_type, internal_rank](
         internal_idxs_buf.ptr, internal_cache_shape
     )
-
-    @parameter
-    if DEBUG_FILE:
-        print("[DEBUG] internal_input shape: ", internal_input.get_shape())
-        print(
-            "[DEBUG] internal_out_vals shape: ", internal_out_vals.get_shape()
-        )
-        print(
-            "[DEBUG] internal_out_idxs shape: ", internal_out_idxs.get_shape()
-        )
-        print("[DEBUG] internal_cache_shape: ", internal_cache_shape)
 
     _topk_gpu[sampling=sampling, largest=largest](
         ctx,
