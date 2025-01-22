@@ -19,8 +19,7 @@ from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
 from memory import UnsafePointer
-from nn.topk import _top_k
-from nn.topk_gpu import _topk_gpu, topk_gpu
+from nn.topk import _top_k, _topk_gpu, topk_gpu
 from testing import assert_almost_equal, assert_equal
 
 from utils import IndexList
