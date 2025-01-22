@@ -2530,7 +2530,9 @@ fn mha_single_batch_pipelined[
                                             ](
                                                 Int(block_idx.z),
                                                 Int(block_idx.y),
-                                                Int(score_row_with_start_pos),
+                                                Int(
+                                                    score_row_with_start_pos + j
+                                                ),
                                                 Int(score_col),
                                             ),
                                             p_reg_vec2[mma_id, i][j]
