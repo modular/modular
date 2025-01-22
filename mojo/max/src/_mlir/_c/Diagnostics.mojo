@@ -16,6 +16,7 @@
 from memory import UnsafePointer
 
 from utils import StringRef
+from utils.write import _WriteBufferStack
 
 from .ffi import MLIR_func
 from .IR import *
@@ -66,15 +67,13 @@ alias MlirDiagnosticHandler = fn (
 ) -> MlirLogicalResult
 
 
-fn mlirDiagnosticPrint(
-    diagnostic: MlirDiagnostic,
-    callback: MlirStringCallback,
-    user_data: UnsafePointer[NoneType],
-) -> None:
+fn mlirDiagnosticPrint[W: Writer](mut writer: W, diagnostic: MlirDiagnostic):
     """Prints a diagnostic using the provided callback."""
-    return MLIR_func["mlirDiagnosticPrint", NoneType._mlir_type](
-        diagnostic, callback, user_data
+    var buffer = _WriteBufferStack(writer)
+    MLIR_func["mlirDiagnosticPrint", NoneType._mlir_type](
+        diagnostic, write_buffered_callback[W], UnsafePointer.address_of(buffer)
     )
+    buffer.flush()
 
 
 fn mlirDiagnosticGetLocation(diagnostic: MlirDiagnostic) -> MlirLocation:

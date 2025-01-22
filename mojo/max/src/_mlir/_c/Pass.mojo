@@ -16,6 +16,7 @@
 from memory import UnsafePointer
 
 from utils import StringRef
+from utils.write import _WriteBufferStack
 
 from .ffi import MLIR_func
 from .IR import *
@@ -180,46 +181,63 @@ fn mlirOpPassManagerAddOwnedPass(
     )
 
 
-fn mlirOpPassManagerAddPipeline(
+fn mlirOpPassManagerAddPipeline[
+    W: Writer
+](
+    mut writer: W,
     pass_manager: MlirOpPassManager,
     pipeline_elements: MlirStringRef,
-    callback: MlirStringCallback,
-    user_data: UnsafePointer[NoneType],
 ) -> MlirLogicalResult:
     """Parse a sequence of textual MLIR pass pipeline elements and add them to the
     provided OpPassManager. If parsing fails an error message is reported using
     the provided callback."""
-    return MLIR_func["mlirOpPassManagerAddPipeline", MlirLogicalResult](
-        pass_manager, pipeline_elements, callback, user_data
+    var buffer = _WriteBufferStack(writer)
+    var result = MLIR_func["mlirOpPassManagerAddPipeline", MlirLogicalResult](
+        pass_manager,
+        pipeline_elements,
+        write_buffered_callback[W],
+        UnsafePointer.address_of(buffer),
     )
+    buffer.flush()
+    return result
 
 
-fn mlirPrintPassPipeline(
-    pass_manager: MlirOpPassManager,
-    callback: MlirStringCallback,
-    user_data: UnsafePointer[NoneType],
-) -> None:
+fn mlirPrintPassPipeline[
+    W: Writer
+](mut writer: W, pass_manager: MlirOpPassManager):
     """Print a textual MLIR pass pipeline by sending chunks of the string
     representation and forwarding `userData to `callback`. Note that the
     callback may be called several times with consecutive chunks of the string.
     """
-    return MLIR_func["mlirPrintPassPipeline", NoneType._mlir_type](
-        pass_manager, callback, user_data
+    var buffer = _WriteBufferStack(writer)
+    var result = MLIR_func["mlirPrintPassPipeline", NoneType._mlir_type](
+        pass_manager,
+        write_buffered_callback[W],
+        UnsafePointer.address_of(buffer),
     )
+    buffer.flush()
+    return result
 
 
-fn mlirParsePassPipeline(
+fn mlirParsePassPipeline[
+    W: Writer
+](
+    mut writer: W,
     pass_manager: MlirOpPassManager,
     pipeline: MlirStringRef,
-    callback: MlirStringCallback,
-    user_data: UnsafePointer[NoneType],
 ) -> MlirLogicalResult:
     """Parse a textual MLIR pass pipeline and assign it to the provided
     OpPassManager. If parsing fails an error message is reported using the
     provided callback."""
-    return MLIR_func["mlirParsePassPipeline", MlirLogicalResult](
-        pass_manager, pipeline, callback, user_data
+    var buffer = _WriteBufferStack(writer)
+    var result = MLIR_func["mlirParsePassPipeline", MlirLogicalResult](
+        pass_manager,
+        pipeline,
+        write_buffered_callback[W],
+        UnsafePointer.address_of(buffer),
     )
+    buffer.flush()
+    return result
 
 
 # ===----------------------------------------------------------------------===//

@@ -16,6 +16,7 @@
 from memory import UnsafePointer
 
 from utils import StringRef
+from utils.write import _WriteBufferStack
 
 from .AffineExpr import *
 from .ffi import MLIR_func
@@ -67,17 +68,15 @@ fn mlirIntegerSetEqual(s1: MlirIntegerSet, s2: MlirIntegerSet) -> Bool:
     return MLIR_func["mlirIntegerSetEqual", Bool](s1, s2)
 
 
-fn mlirIntegerSetPrint(
-    set: MlirIntegerSet,
-    callback: MlirStringCallback,
-    user_data: UnsafePointer[NoneType],
-) -> None:
+fn mlirIntegerSetPrint[W: Writer](mut writer: W, set: MlirIntegerSet):
     """Prints an integer set by sending chunks of the string representation and
     forwarding `userData to `callback`. Note that the callback may be called
     several times with consecutive chunks of the string."""
-    return MLIR_func["mlirIntegerSetPrint", NoneType._mlir_type](
-        set, callback, user_data
+    var buffer = _WriteBufferStack(writer)
+    MLIR_func["mlirIntegerSetPrint", NoneType._mlir_type](
+        set, write_buffered_callback[W], UnsafePointer.address_of(buffer)
     )
+    buffer.flush()
 
 
 fn mlirIntegerSetDump(set: MlirIntegerSet) -> None:

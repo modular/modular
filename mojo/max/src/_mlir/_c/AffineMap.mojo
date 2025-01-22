@@ -16,6 +16,7 @@
 from memory import UnsafePointer
 
 from utils import StringRef
+from utils.write import _WriteBufferStack
 
 from .AffineExpr import *
 from .ffi import MLIR_func
@@ -63,17 +64,15 @@ fn mlirAffineMapEqual(a1: MlirAffineMap, a2: MlirAffineMap) -> Bool:
     return MLIR_func["mlirAffineMapEqual", Bool](a1, a2)
 
 
-fn mlirAffineMapPrint(
-    affine_map: MlirAffineMap,
-    callback: MlirStringCallback,
-    user_data: UnsafePointer[NoneType],
-) -> None:
+fn mlirAffineMapPrint[W: Writer](mut writer: W, affine_map: MlirAffineMap):
     """Prints an affine map by sending chunks of the string representation and
     forwarding `userData to `callback`. Note that the callback may be called
     several times with consecutive chunks of the string."""
-    return MLIR_func["mlirAffineMapPrint", NoneType._mlir_type](
-        affine_map, callback, user_data
+    var buffer = _WriteBufferStack(writer)
+    MLIR_func["mlirAffineMapPrint", NoneType._mlir_type](
+        affine_map, write_buffered_callback[W], UnsafePointer.address_of(buffer)
     )
+    buffer.flush()
 
 
 fn mlirAffineMapDump(affine_map: MlirAffineMap) -> None:

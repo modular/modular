@@ -91,14 +91,6 @@ fn mlirStringRefEqual(string: MlirStringRef, other: MlirStringRef) -> Bool:
     return MLIR_func["mlirStringRefEqual", Bool](string, other)
 
 
-# A callback for returning string references.
-#
-# This function is called back by the functions that need to return a
-# reference to the portion of the string with the following arguments:
-#  - an MlirStringRef representing the current portion of the string
-#  - a pointer to user data forwarded from the printing call.
-alias MlirStringCallback = fn (MlirStringRef, UnsafePointer[NoneType]) -> None
-
 # ===----------------------------------------------------------------------===//
 #  MlirLogicalResult.
 # ===----------------------------------------------------------------------===//

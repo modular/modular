@@ -16,7 +16,6 @@ import ._c.Diagnostics
 import ._c.IR
 from ._c.ffi import MLIR_func
 from ._c.Support import MlirLogicalResult
-from .ir import _to_string
 
 
 @value
@@ -53,12 +52,10 @@ struct Diagnostic(Stringable, Writable):
         self.c = c
 
     fn __str__(self) -> String:
-        return _to_string[Self.cType, _c.Diagnostics.mlirDiagnosticPrint](
-            self.c
-        )
+        return String.write(self)
 
     fn write_to[W: Writer](self, mut writer: W):
-        writer.write(String(self))
+        _c.Diagnostics.mlirDiagnosticPrint(writer, self.c)
 
     fn get_severity(self) -> DiagnosticSeverity:
         return _c.Diagnostics.mlirDiagnosticGetSeverity(self.c)

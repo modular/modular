@@ -20,6 +20,7 @@ from utils import StringRef
 from .AffineMap import MlirAffineMap
 from .ffi import MLIR_func
 from .IR import *
+from utils.write import _WriteBufferStack
 
 # ===-- mlir-c/AffineExpr.h - C API for MLIR Affine Expressions ---*- C -*-===//
 #
@@ -63,17 +64,17 @@ fn mlirAffineExprEqual(lhs: MlirAffineExpr, rhs: MlirAffineExpr) -> Bool:
 # FIXEME(codegen): static function mlirAffineExprIsNull
 
 
-fn mlirAffineExprPrint(
-    affine_expr: MlirAffineExpr,
-    callback: MlirStringCallback,
-    user_data: UnsafePointer[NoneType],
-) -> None:
+fn mlirAffineExprPrint[W: Writer](mut writer: W, affine_expr: MlirAffineExpr):
     """Prints an affine expression by sending chunks of the string representation
     and forwarding `userData to `callback`. Note that the callback may be called
     several times with consecutive chunks of the string."""
-    return MLIR_func["mlirAffineExprPrint", NoneType._mlir_type](
-        affine_expr, callback, user_data
+    var buffer = _WriteBufferStack(writer)
+    MLIR_func["mlirAffineExprPrint", NoneType._mlir_type](
+        affine_expr,
+        write_buffered_callback[W],
+        UnsafePointer.address_of(buffer),
     )
+    buffer.flush()
 
 
 fn mlirAffineExprDump(affine_expr: MlirAffineExpr) -> None:

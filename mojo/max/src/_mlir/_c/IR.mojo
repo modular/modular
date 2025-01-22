@@ -16,6 +16,7 @@
 from memory import UnsafePointer
 
 from utils import StringRef
+from utils.write import _WriteBufferStack
 
 from .ffi import MLIR_func
 from .Support import *
@@ -148,6 +149,20 @@ struct MlirNamedAttribute:
 
     var name: MlirIdentifier
     var attribute: MlirAttribute
+
+
+# ===----------------------------------------------------------------------===//
+#  write_buffered_callback.
+# ===----------------------------------------------------------------------===//
+# This is used by functions that write a string representation of
+# the type being passed in:
+#  - an MlirStringRef representing the current portion of the string
+#  - a pointer to a buffer for any mutable `Writer` type.
+fn write_buffered_callback[
+    W: Writer
+](chunk: StringRef, data: UnsafePointer[NoneType]):
+    var buffer = data.bitcast[_WriteBufferStack[origin=MutableAnyOrigin, W=W]]()
+    buffer[].write(chunk)
 
 
 # ===----------------------------------------------------------------------===//
@@ -447,17 +462,15 @@ fn mlirLocationEqual(l1: MlirLocation, l2: MlirLocation) -> Bool:
     return MLIR_func["mlirLocationEqual", Bool](l1, l2)
 
 
-fn mlirLocationPrint(
-    location: MlirLocation,
-    callback: MlirStringCallback,
-    user_data: UnsafePointer[NoneType],
-) -> None:
+fn mlirLocationPrint[W: Writer](mut writer: W, location: MlirLocation):
     """Prints a location by sending chunks of the string representation and
     forwarding `userData to `callback`. Note that the callback may be called
     several times with consecutive chunks of the string."""
-    return MLIR_func["mlirLocationPrint", NoneType._mlir_type](
-        location, callback, user_data
+    var buffer = _WriteBufferStack(writer)
+    MLIR_func["mlirLocationPrint", NoneType._mlir_type](
+        location, write_buffered_callback[W], UnsafePointer.address_of(buffer)
     )
+    buffer.flush()
 
 
 # ===----------------------------------------------------------------------===//
@@ -1052,67 +1065,68 @@ fn mlirOperationRemoveAttributeByName(
     return MLIR_func["mlirOperationRemoveAttributeByName", Bool](op, name)
 
 
-fn mlirOperationPrint(
-    op: MlirOperation,
-    callback: MlirStringCallback,
-    user_data: UnsafePointer[NoneType],
-) -> None:
+fn mlirOperationPrint[W: Writer](mut writer: W, op: MlirOperation):
     """Prints an operation by sending chunks of the string representation and
     forwarding `userData to `callback`. Note that the callback may be called
     several times with consecutive chunks of the string."""
-    return MLIR_func["mlirOperationPrint", NoneType._mlir_type](
-        op, callback, user_data
+    var buffer = _WriteBufferStack(writer)
+    MLIR_func["mlirOperationPrint", NoneType._mlir_type](
+        op, write_buffered_callback[W], UnsafePointer.address_of(buffer)
     )
+    buffer.flush()
 
 
-fn mlirOperationPrintWithFlags(
-    op: MlirOperation,
-    flags: MlirOpPrintingFlags,
-    callback: MlirStringCallback,
-    user_data: UnsafePointer[NoneType],
-) -> None:
+fn mlirOperationPrintWithFlags[
+    W: Writer
+](mut writer: W, op: MlirOperation, flags: MlirOpPrintingFlags):
     """Same as mlirOperationPrint but accepts flags controlling the printing
     behavior."""
-    return MLIR_func["mlirOperationPrintWithFlags", NoneType._mlir_type](
-        op, flags, callback, user_data
+    var buffer = _WriteBufferStack(writer)
+    MLIR_func["mlirOperationPrintWithFlags", NoneType._mlir_type](
+        op, flags, write_buffered_callback[W], UnsafePointer.address_of(buffer)
     )
+    buffer.flush()
 
 
-fn mlirOperationPrintWithState(
-    op: MlirOperation,
-    state: MlirAsmState,
-    callback: MlirStringCallback,
-    user_data: UnsafePointer[NoneType],
-) -> None:
+fn mlirOperationPrintWithState[
+    W: Writer
+](mut writer: W, op: MlirOperation, state: MlirAsmState):
     """Same as mlirOperationPrint but accepts AsmState controlling the printing
     behavior as well as caching computed names."""
-    return MLIR_func["mlirOperationPrintWithState", NoneType._mlir_type](
-        op, state, callback, user_data
+    var buffer = _WriteBufferStack(writer)
+    MLIR_func["mlirOperationPrintWithState", NoneType._mlir_type](
+        op, state, write_buffered_callback[W], UnsafePointer.address_of(buffer)
     )
+    buffer.flush()
 
 
-fn mlirOperationWriteBytecode(
-    op: MlirOperation,
-    callback: MlirStringCallback,
-    user_data: UnsafePointer[NoneType],
-) -> None:
+fn mlirOperationWriteBytecode[W: Writer](mut writer: W, op: MlirOperation):
     """Same as mlirOperationPrint but writing the bytecode format."""
-    return MLIR_func["mlirOperationWriteBytecode", NoneType._mlir_type](
-        op, callback, user_data
+    var buffer = _WriteBufferStack(writer)
+    MLIR_func["mlirOperationWriteBytecode", NoneType._mlir_type](
+        op, write_buffered_callback[W], UnsafePointer.address_of(buffer)
     )
+    buffer.flush()
 
 
-fn mlirOperationWriteBytecodeWithConfig(
-    op: MlirOperation,
-    config: MlirBytecodeWriterConfig,
-    callback: MlirStringCallback,
-    user_data: UnsafePointer[NoneType],
+fn mlirOperationWriteBytecodeWithConfig[
+    W: Writer
+](
+    mut writer: W, op: MlirOperation, config: MlirBytecodeWriterConfig
 ) -> MlirLogicalResult:
     """Same as mlirOperationWriteBytecode but with writer config and returns
     failure only if desired bytecode could not be honored."""
-    return MLIR_func["mlirOperationWriteBytecodeWithConfig", MlirLogicalResult](
-        op, config, callback, user_data
+    var buffer = _WriteBufferStack(writer)
+    var result = MLIR_func[
+        "mlirOperationWriteBytecodeWithConfig", MlirLogicalResult
+    ](
+        op,
+        config,
+        write_buffered_callback[W],
+        UnsafePointer.address_of(buffer),
     )
+    buffer.flush()
+    return result
 
 
 fn mlirOperationDump(op: MlirOperation) -> None:
@@ -1407,17 +1421,15 @@ fn mlirBlockGetArgument(block: MlirBlock, pos: Int) -> MlirValue:
     return MLIR_func["mlirBlockGetArgument", MlirValue](block, pos)
 
 
-fn mlirBlockPrint(
-    block: MlirBlock,
-    callback: MlirStringCallback,
-    user_data: UnsafePointer[NoneType],
-) -> None:
+fn mlirBlockPrint[W: Writer](mut writer: W, block: MlirBlock):
     """Prints a block by sending chunks of the string representation and
     forwarding `userData to `callback`. Note that the callback may be called
     several times with consecutive chunks of the string."""
-    return MLIR_func["mlirBlockPrint", NoneType._mlir_type](
-        block, callback, user_data
+    var buffer = _WriteBufferStack(writer)
+    MLIR_func["mlirBlockPrint", NoneType._mlir_type](
+        block, write_buffered_callback[W], UnsafePointer.address_of(buffer)
     )
+    buffer.flush()
 
 
 # ===----------------------------------------------------------------------===//
@@ -1487,29 +1499,29 @@ fn mlirValueDump(value: MlirValue) -> None:
     return MLIR_func["mlirValueDump", NoneType._mlir_type](value)
 
 
-fn mlirValuePrint(
-    value: MlirValue,
-    callback: MlirStringCallback,
-    user_data: UnsafePointer[NoneType],
-) -> None:
+fn mlirValuePrint[W: Writer](mut writer: W, value: MlirValue):
     """Prints a value by sending chunks of the string representation and
     forwarding `userData to `callback`. Note that the callback may be called
     several times with consecutive chunks of the string."""
-    return MLIR_func["mlirValuePrint", NoneType._mlir_type](
-        value, callback, user_data
+    var buffer = _WriteBufferStack(writer)
+    MLIR_func["mlirValuePrint", NoneType._mlir_type](
+        value, write_buffered_callback[W], UnsafePointer.address_of(buffer)
     )
+    buffer.flush()
 
 
-fn mlirValuePrintAsOperand(
-    value: MlirValue,
-    state: MlirAsmState,
-    callback: MlirStringCallback,
-    user_data: UnsafePointer[NoneType],
-) -> None:
+fn mlirValuePrintAsOperand[
+    W: Writer
+](mut writer: W, value: MlirValue, state: MlirAsmState):
     """Prints a value as an operand (i.e., the ValueID)."""
-    return MLIR_func["mlirValuePrintAsOperand", NoneType._mlir_type](
-        value, state, callback, user_data
+    var buffer = _WriteBufferStack(writer)
+    MLIR_func["mlirValuePrintAsOperand", NoneType._mlir_type](
+        value,
+        state,
+        write_buffered_callback[W],
+        UnsafePointer.address_of(buffer),
     )
+    buffer.flush()
 
 
 fn mlirValueGetFirstUse(value: MlirValue) -> MlirOpOperand:
@@ -1591,17 +1603,15 @@ fn mlirTypeEqual(t1: MlirType, t2: MlirType) -> Bool:
     return MLIR_func["mlirTypeEqual", Bool](t1, t2)
 
 
-fn mlirTypePrint(
-    type: MlirType,
-    callback: MlirStringCallback,
-    user_data: UnsafePointer[NoneType],
-) -> None:
+fn mlirTypePrint[W: Writer](mut writer: W, type: MlirType):
     """Prints a location by sending chunks of the string representation and
     forwarding `userData to `callback`. Note that the callback may be called
     several times with consecutive chunks of the string."""
-    return MLIR_func["mlirTypePrint", NoneType._mlir_type](
-        type, callback, user_data
+    var buffer = _WriteBufferStack(writer)
+    MLIR_func["mlirTypePrint", NoneType._mlir_type](
+        type, write_buffered_callback[W], UnsafePointer.address_of(buffer)
     )
+    buffer.flush()
 
 
 fn mlirTypeDump(type: MlirType) -> None:
@@ -1649,17 +1659,15 @@ fn mlirAttributeEqual(a1: MlirAttribute, a2: MlirAttribute) -> Bool:
     return MLIR_func["mlirAttributeEqual", Bool](a1, a2)
 
 
-fn mlirAttributePrint(
-    attr: MlirAttribute,
-    callback: MlirStringCallback,
-    user_data: UnsafePointer[NoneType],
-) -> None:
+fn mlirAttributePrint[W: Writer](mut writer: W, attr: MlirAttribute):
     """Prints an attribute by sending chunks of the string representation and
     forwarding `userData to `callback`. Note that the callback may be called
     several times with consecutive chunks of the string."""
-    return MLIR_func["mlirAttributePrint", NoneType._mlir_type](
-        attr, callback, user_data
+    var buffer = _WriteBufferStack(writer)
+    MLIR_func["mlirAttributePrint", NoneType._mlir_type](
+        attr, write_buffered_callback[W], UnsafePointer.address_of(buffer)
     )
+    buffer.flush()
 
 
 fn mlirAttributeDump(attr: MlirAttribute) -> None:

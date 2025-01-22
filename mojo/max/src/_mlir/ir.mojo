@@ -21,6 +21,7 @@ from .diagnostics import (
     DiagnosticSeverity,
     ErrorCapturingDiagnosticHandler,
 )
+from utils.write import _WriteBufferStack
 
 # Ownership:
 #
@@ -242,7 +243,10 @@ struct Location(CollectionElement, Stringable):
         return _c.IR.mlirLocationEqual(self.c, other.c)
 
     fn __str__(self) -> String:
-        return _to_string[Self.cType, _c.IR.mlirLocationPrint](self.c)
+        return String.write(self)
+
+    fn write_to[W: Writer](self, mut writer: W):
+        _c.IR.mlirLocationPrint(writer, self.c)
 
 
 @value
@@ -484,37 +488,29 @@ struct Operation(CollectionElement, Stringable, Writable):
     fn verify(self) -> Bool:
         return _c.IR.mlirOperationVerify(self.c)
 
-    fn write(self, file: FileHandle, version: Optional[Int64] = None) raises:
+    fn write[
+        origin: MutableOrigin
+    ](
+        self, ref [origin]file: FileHandle, version: Optional[Int64] = None
+    ) raises:
+        if not file.handle:
+            raise "Writing op bytecode to file failed: invalid file handle"
+
         var config = _c.IR.mlirBytecodeWriterConfigCreate()
         if version:
             _c.IR.mlirBytecodeWriterConfigDesiredEmitVersion(
                 config, version.value()
             )
 
-        var write_state = _WriteState(
-            handle=UnsafePointer.address_of(file),
-            errors=List[String](),
-        )
-
-        fn callback(buf: StringRef, _data: UnsafePointer[NoneType]):
-            var state = _data.bitcast[_WriteState]()[]
-            state.handle[].write(buf)
-
         var result = _c.IR.mlirOperationWriteBytecodeWithConfig(
+            file,
             self.c,
-            config=config,
-            callback=callback,
-            user_data=UnsafePointer.address_of(write_state).bitcast[NoneType](),
+            config,
         )
         _c.IR.mlirBytecodeWriterConfigDestroy(config)
 
         if result.value == 0:
             raise "Writing op bytecode to file failed"
-
-        if len(write_state.errors):
-            # Only report the first error
-            var msg = write_state.errors[0]
-            raise "One or more errors while writing op to bytecode: " + msg
 
     fn bytecode(self, version: Optional[Int64] = None) raises -> List[Int8]:
         var config = _c.IR.mlirBytecodeWriterConfigCreate()
@@ -523,17 +519,11 @@ struct Operation(CollectionElement, Stringable, Writable):
                 config, version.value()
             )
 
-        var data = List[Int8]()
-
-        fn callback(buf: StringRef, _data: UnsafePointer[NoneType]):
-            for i in range(len(buf)):
-                _data.bitcast[List[UInt8]]()[].append(buf.data[i])
-
+        var data = String()
         var result = _c.IR.mlirOperationWriteBytecodeWithConfig(
+            data,
             self.c,
-            config=config,
-            callback=callback,
-            user_data=UnsafePointer.address_of(data).bitcast[NoneType](),
+            config,
         )
         _c.IR.mlirBytecodeWriterConfigDestroy(config)
 
@@ -541,9 +531,9 @@ struct Operation(CollectionElement, Stringable, Writable):
             raise "Bytecode conversion failed"
 
         # Add a trailing 0 for default-conversion to a string
-        data.append(0)
+        data.write(0)
 
-        return data
+        return rebind[List[Int8]](data._buffer)
 
     fn name(self) -> Identifier:
         return _c.IR.mlirOperationGetName(self.c)
@@ -603,20 +593,19 @@ struct Operation(CollectionElement, Stringable, Writable):
     fn debug_str(self, pretty_print: Bool = False) -> String:
         var flags = _c.IR.mlirOpPrintingFlagsCreate()
         _c.IR.mlirOpPrintingFlagsEnableDebugInfo(flags, True, pretty_print)
-        return _to_string[
-            Self.cType,
-            _c.IR.MlirOpPrintingFlags,
-            _c.IR.mlirOperationPrintWithFlags,
-        ](self.c, flags)
+        var result = String()
+        _c.IR.mlirOperationPrintWithFlags(
+            result,
+            self.c,
+            flags,
+        )
+        return result
 
     fn __str__(self) -> String:
         return String.write(self)
 
     fn write_to[W: Writer](self, mut writer: W):
-        # TODO: Avoid this intermediate String allocation.
-        var string = _to_string[Self.cType, _c.IR.mlirOperationPrint](self.c)
-
-        writer.write(string)
+        _c.IR.mlirOperationPrint(writer, self.c)
 
 
 @value
@@ -665,11 +654,10 @@ struct Type(CollectionElement, Stringable, Writable):
         return _c.IR.mlirTypeGetContext(self.c)
 
     fn __str__(self) -> String:
-        return _to_string[Self.cType, _c.IR.mlirTypePrint](self.c)
+        return String.write(self)
 
     fn write_to[W: Writer](self, mut writer: W):
-        # TODO: Avoid this intermediate String allocation.
-        writer.write(String(self))
+        _c.IR.mlirTypePrint(writer, self.c)
 
 
 @value
@@ -720,7 +708,10 @@ struct Value(CollectionElement, Stringable):
         return not _c.IR.mlirValueEqual(self.c, other.c)
 
     fn __str__(self) -> String:
-        return _to_string[Self.cType, _c.IR.mlirValuePrint](self.c)
+        return String.write(self)
+
+    fn write_to[W: Writer](self, mut writer: W):
+        _c.IR.mlirValuePrint(writer, self.c)
 
 
 @value
@@ -750,7 +741,10 @@ struct Attribute(CollectionElement, Stringable):
         return result
 
     fn __str__(self) -> String:
-        return _to_string[Self.cType, _c.IR.mlirAttributePrint](self.c)
+        return String.write(self)
+
+    fn write_to[W: Writer](self, mut writer: W):
+        _c.IR.mlirAttributePrint(writer, self.c)
 
 
 @value
@@ -818,7 +812,10 @@ struct Block(CollectionElement, Stringable):
         return Optional(Operation(op)) if op.ptr else None
 
     fn __str__(self) -> String:
-        return _to_string[Self.cType, _c.IR.mlirBlockPrint](self.c)
+        return String.write(self)
+
+    fn write_to[W: Writer](self, mut writer: W):
+        _c.IR.mlirBlockPrint(writer, self.c)
 
 
 @value
@@ -842,48 +839,3 @@ struct Region(CollectionElement):
         if not block.ptr:
             raise "Region has no block"
         return block
-
-
-alias _ToStringCallback = fn (StringRef, UnsafePointer[String]) -> None
-
-
-fn _to_string_callback(chunk: StringRef, data: UnsafePointer[NoneType]):
-    var data_ = data.bitcast[String]()
-    for i in range(chunk.length):
-        data_[]._buffer.append(chunk.unsafe_ptr()[i])
-
-
-@always_inline
-fn _to_string[
-    T: AnyTrivialRegType,
-    call: fn (
-        T, _c.Support.MlirStringCallback, UnsafePointer[NoneType]
-    ) -> None,
-](t: T) -> String:
-    var string = String()
-    call(
-        t,
-        _to_string_callback,
-        UnsafePointer.address_of(string).bitcast[NoneType](),
-    )
-    string._buffer.append(0)  # null terminate
-    return string
-
-
-@always_inline
-fn _to_string[
-    T: AnyTrivialRegType,
-    U: AnyTrivialRegType,
-    call: fn (
-        T, U, _c.Support.MlirStringCallback, UnsafePointer[NoneType]
-    ) -> None,
-](t: T, u: U) -> String:
-    var string = String()
-    call(
-        t,
-        u,
-        _to_string_callback,
-        UnsafePointer.address_of(string).bitcast[NoneType](),
-    )
-    string._buffer.append(0)  # null terminate
-    return string
