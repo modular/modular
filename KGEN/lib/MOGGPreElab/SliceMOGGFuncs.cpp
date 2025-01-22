@@ -74,25 +74,22 @@ private:
     SmallVector<NamedAttribute> newAttrs;
 
     // Add all the old attributes.
-    for (NamedAttribute attr : gen->getAttrs())
-      newAttrs.push_back(attr);
+    llvm::append_range(newAttrs, gen->getAttrs());
 
-    OpBuilder b{ctx};
+    Builder b{ctx};
 
     // Mark this as a sliced function so MOGG lowering can identify it.
     newAttrs.push_back(
         NamedAttribute{b.getStringAttr(SLICED_ATTR), b.getUnitAttr()});
 
     // Attach the lambda metadata.
-    SmallVector<StringRef> inNames;
-    for (StringRef name : inputLambdaNames)
-      inNames.push_back(name);
+    SmallVector<StringRef> inNames =
+        llvm::to_vector_of<StringRef>(inputLambdaNames);
     newAttrs.push_back(NamedAttribute{b.getStringAttr(kMOGGInputLambdas),
                                       b.getStrArrayAttr(inNames)});
 
-    SmallVector<StringRef> outNames;
-    for (StringRef name : outputLambdaNames)
-      outNames.push_back(name);
+    SmallVector<StringRef> outNames =
+        llvm::to_vector_of<StringRef>(outputLambdaNames);
     newAttrs.push_back(NamedAttribute{b.getStringAttr(kMOGGOutputLambdas),
                                       b.getStrArrayAttr(outNames)});
     gen->setAttrs(newAttrs);
