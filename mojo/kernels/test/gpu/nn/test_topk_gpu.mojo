@@ -19,7 +19,7 @@ from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
 from memory import UnsafePointer
-from nn.topk import _top_k, _topk_gpu, topk_gpu
+from nn.topk import _top_k_cpu, _topk_gpu, topk_gpu
 from testing import assert_almost_equal, assert_equal
 
 from utils import IndexList
@@ -179,7 +179,7 @@ fn test_case_batched[
             @always_inline
             @parameter
             fn run_func_cpu(ctx: DeviceContext) raises:
-                _top_k[rank=rank, type=type, largest=largest](
+                _top_k_cpu[rank=rank, type=type, largest=largest](
                     in_buffer.tensor,
                     K,
                     rank - 1,
@@ -191,7 +191,7 @@ fn test_case_batched[
 
             time_kernel[run_func_cpu](m, ctx, "topk-cpu")
 
-        _top_k[rank=rank, type=type, largest=largest](
+        _top_k_cpu[rank=rank, type=type, largest=largest](
             in_buffer.tensor,
             K,
             rank - 1,
@@ -287,7 +287,7 @@ fn test_case_multi_rank[
         var topk_vals_cpu = HostNDBuffer[type, rank](out_vals_shape)
         var topk_idxs_cpu = HostNDBuffer[DType.int64, rank](out_idxs_shape)
 
-        _top_k[rank=rank, type=type, largest=largest](
+        _top_k_cpu[rank=rank, type=type, largest=largest](
             in_buffer.tensor,
             K,
             rank - 1,
