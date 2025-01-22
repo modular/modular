@@ -48,12 +48,12 @@ fn _build_pw_struct(passwd_ptr: UnsafePointer[_C_Passwd]) raises -> Passwd:
 fn _getpw_linux(uid: UInt32) raises -> Passwd:
     var passwd_ptr = external_call["getpwuid", UnsafePointer[_C_Passwd]](uid)
     if not passwd_ptr:
-        raise "user ID not found in the password database: " + String(uid)
+        raise Error("user ID not found in the password database: ", uid)
     return _build_pw_struct(passwd_ptr)
 
 
 fn _getpw_linux(name: String) raises -> Passwd:
     var passwd_ptr = external_call["getpwnam", UnsafePointer[_C_Passwd]](name)
     if not passwd_ptr:
-        raise "user name not found in the password database: " + name
+        raise Error("user name not found in the password database: ", name)
     return _build_pw_struct(passwd_ptr)

@@ -515,7 +515,7 @@ def test_log2_floor():
         assert_equal(
             log2_floor(i),
             _log2_floor(i),
-            msg="mismatching value for the input value of " + String(i),
+            msg=String("mismatching value for the input value of ", i),
         )
 
     fn _check_alias[n: Int](expected: Int) raises:

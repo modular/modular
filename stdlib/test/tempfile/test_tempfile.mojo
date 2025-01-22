@@ -100,16 +100,14 @@ def _set_up_gettempdir_test(
     except:
         os.rmdir(dir_with_writing_access)
         raise Error(
-            "Failed to setup test, couldn't create "
-            + String(dir_without_writing_access)
+            "Failed to setup test, couldn't create ", dir_without_writing_access
         )
 
 
 def test_gettempdir():
     var non_existing_dir = Path() / "non_existing_dir"
     assert_false(
-        exists(non_existing_dir),
-        "Unexpected dir" + String(non_existing_dir),
+        exists(non_existing_dir), String("Unexpected dir", non_existing_dir)
     )
     var dir_without_writing_access = Path() / "dir_without_writing_access"
     var dir_with_writing_access = Path() / "dir_with_writing_access"
@@ -129,7 +127,7 @@ def test_gettempdir():
         assert_equal(
             tmpdir_result.value(),
             String(dir_with_writing_access),
-            "expected to get:" + String(dir_with_writing_access),
+            String("expected to get:", dir_with_writing_access),
         )
 
     # test gettempdir falls back to TEMP
@@ -144,7 +142,7 @@ def test_gettempdir():
         assert_equal(
             tmpdir_result.value(),
             String(dir_with_writing_access),
-            "expected to get:" + String(dir_with_writing_access),
+            String("expected to get:", dir_with_writing_access),
         )
 
     # test gettempdir falls back to TMP
@@ -160,7 +158,7 @@ def test_gettempdir():
         assert_equal(
             tmpdir_result.value(),
             String(dir_with_writing_access),
-            "expected to get:" + String(dir_with_writing_access),
+            String("expected to get:", dir_with_writing_access),
         )
 
     _clean_up_gettempdir_test()

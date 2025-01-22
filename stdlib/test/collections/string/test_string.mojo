@@ -647,18 +647,20 @@ def test_split():
     # TODO add line and paragraph separator as StringLiteral once unicode
     # escape secuences are accepted
     var univ_sep_var = (
-        String(" ")
-        + String("\t")
-        + String("\n")
-        + String("\r")
-        + String("\v")
-        + String("\f")
-        + String("\x1c")
-        + String("\x1d")
-        + String("\x1e")
-        + String(buffer=next_line)
-        + String(buffer=unicode_line_sep)
-        + String(buffer=unicode_paragraph_sep)
+        String(
+            " ",
+            "\t",
+            "\n",
+            "\r",
+            "\v",
+            "\f",
+            "\x1c",
+            "\x1d",
+            "\x1e",
+            String(buffer=next_line),
+            String(buffer=unicode_line_sep),
+            String(buffer=unicode_paragraph_sep),
+        )
     )
     var s = univ_sep_var + "hello" + univ_sep_var + "world" + univ_sep_var
     d = s.split()

@@ -121,8 +121,8 @@ struct InlineString(Sized, Stringable, CollectionElement, CollectionElementNew):
                 self._storage[_FixedString[Self.SMALL_CAP]] += str_slice
             except e:
                 abort(
-                    "unreachable: InlineString append to FixedString failed: "
-                    + String(e),
+                    "unreachable: InlineString append to FixedString failed: ",
+                    e,
                 )
         else:
             # We're currently in the small layout but must change to the
@@ -302,11 +302,11 @@ struct _FixedString[CAP: Int](
         """
         if len(literal) > CAP:
             raise Error(
-                "String literal (len="
-                + String(len(literal))
-                + ") is longer than FixedString capacity ("
-                + String(CAP)
-                + ")"
+                "String literal (len=",
+                len(literal),
+                ") is longer than FixedString capacity (",
+                CAP,
+                ")",
             )
 
         self.buffer = InlineArray[UInt8, CAP]()
@@ -384,12 +384,12 @@ struct _FixedString[CAP: Int](
         if total_len > CAP:
             return Optional(
                 Error(
-                    "Insufficient capacity to append len="
-                    + String(len(bytes))
-                    + " string to len="
-                    + String(len(self))
-                    + " FixedString with capacity="
-                    + String(CAP),
+                    "Insufficient capacity to append len=",
+                    len(bytes),
+                    " string to len=",
+                    len(self),
+                    " FixedString with capacity=",
+                    CAP,
                 )
             )
 

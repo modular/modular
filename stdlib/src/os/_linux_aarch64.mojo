@@ -67,24 +67,30 @@ struct _c_stat(Stringable):
         self.st_birthtimespec = _CTimeSpec()
         self.unused = InlineArray[Int64, 2](0, 0)
 
+    fn write_to[W: Writer](self, mut writer: W):
+        # fmt: off
+        writer.write(
+            "{\nst_dev: ", self.st_dev,
+            ",\nst_mode: ", self.st_mode,
+            ",\nst_nlink: ", self.st_nlink,
+            ",\nst_ino: ", self.st_ino,
+            ",\nst_uid: ", self.st_uid,
+            ",\nst_gid: ", self.st_gid,
+            ",\nst_rdev: ", self.st_rdev,
+            ",\nst_size: ", self.st_size,
+            ",\nst_blksize: ", self.st_blksize,
+            ",\nst_blocks: ", self.st_blocks,
+            ",\nst_atimespec: ", self.st_atimespec,
+            ",\nst_mtimespec: ", self.st_mtimespec,
+            ",\nst_ctimespec: ", self.st_ctimespec,
+            ",\nst_birthtimespec: ", self.st_birthtimespec,
+            "\n}",
+        )
+        # fmt: on
+
     @no_inline
     fn __str__(self) -> String:
-        var res = String("{\n")
-        res += "st_dev: " + String(self.st_dev) + ",\n"
-        res += "st_mode: " + String(self.st_mode) + ",\n"
-        res += "st_nlink: " + String(self.st_nlink) + ",\n"
-        res += "st_ino: " + String(self.st_ino) + ",\n"
-        res += "st_uid: " + String(self.st_uid) + ",\n"
-        res += "st_gid: " + String(self.st_gid) + ",\n"
-        res += "st_rdev: " + String(self.st_rdev) + ",\n"
-        res += "st_size: " + String(self.st_size) + ",\n"
-        res += "st_blksize: " + String(self.st_blksize) + ",\n"
-        res += "st_blocks: " + String(self.st_blocks) + ",\n"
-        res += "st_atimespec: " + String(self.st_atimespec) + ",\n"
-        res += "st_mtimespec: " + String(self.st_mtimespec) + ",\n"
-        res += "st_ctimespec: " + String(self.st_ctimespec) + ",\n"
-        res += "st_birthtimespec: " + String(self.st_birthtimespec) + "\n"
-        return res + "}"
+        return String.write(self)
 
     fn _to_stat_result(self) -> stat_result:
         return stat_result(

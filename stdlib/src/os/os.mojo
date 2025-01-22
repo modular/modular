@@ -367,11 +367,12 @@ def makedirs[
         mkdir(path, mode)
     except e:
         if not exist_ok:
-            raise String(
-                e
-            ) + "\nset `makedirs(path, exist_ok=True)` to allow existing dirs"
+            raise Error(
+                e,
+                "\nset `makedirs(path, exist_ok=True)` to allow existing dirs",
+            )
         if not os.path.isdir(path):
-            raise "path not created: " + path.__fspath__() + "\n" + String(e)
+            raise Error("path not created: ", path.__fspath__(), "\n", e)
 
 
 fn rmdir[PathLike: os.PathLike](path: PathLike) raises:

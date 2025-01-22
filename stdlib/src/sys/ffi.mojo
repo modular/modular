@@ -174,7 +174,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
             var handle = dlopen(path.unsafe_cstr_ptr(), flags)
             if handle == OpaquePointer():
                 var error_message = dlerror()
-                abort("dlopen failed: " + String(error_message))
+                abort("dlopen failed: ", String(StringRef(error_message)))
             self.handle = handle
         else:
             self.handle = OpaquePointer()
@@ -355,7 +355,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
             var err = dlerror()
 
             if err:
-                abort("dlsym failed: " + String(err))
+                abort("dlsym failed: ", String(StringRef(err)))
 
         return res
 

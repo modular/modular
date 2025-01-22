@@ -577,15 +577,8 @@ struct _ObjectImpl(
             writer.write(String(self.get_as_float()))
             return
         if self.is_str():
-            writer.write(
-                "'"
-                + String(
-                    StringRef(
-                        self.get_as_string().data, self.get_as_string().length
-                    )
-                )
-                + "'"
-            )
+            var string = self.get_as_string()
+            writer.write("'", StringRef(string.data, string.length), "'")
             return
         if self.is_func():
             writer.write(
@@ -607,12 +600,7 @@ struct _ObjectImpl(
         for entry in ptr[].impl[].items():
             if print_sep:
                 writer.write(", ")
-            writer.write(
-                "'"
-                + String(entry[].key)
-                + "' = "
-                + String(object(entry[].value.copy()))
-            )
+            writer.write("'", entry[].key, "' = ", object(entry[].value.copy()))
             print_sep = True
         writer.write("}")
         return

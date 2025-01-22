@@ -29,39 +29,43 @@ def test_random():
         var random_float = random_float64(0, 1)
         assert_true(
             random_float >= 0,
-            "Value " + String(random_float) + " is not above or equal to 0",
+            String("Value ", random_float, " is not above or equal to 0"),
         )
         assert_true(
             random_float <= 1,
-            "Value " + String(random_float) + " is not below or equal to 1",
+            String("Value ", random_float, " is not below or equal to 1"),
         )
 
         var random_signed = random_si64(-255, 255)
         assert_true(
             random_signed >= -255,
-            "Signed value "
-            + String(random_signed)
-            + " is not above or equal to -255",
+            String(
+                "Signed value ", random_signed, " is not above or equal to -255"
+            ),
         )
         assert_true(
             random_signed <= 255,
-            "Signed value "
-            + String(random_signed)
-            + " is not below or equal to 255",
+            String(
+                "Signed value ", random_signed, " is not below or equal to 255"
+            ),
         )
 
         var random_unsigned = random_ui64(0, 255)
         assert_true(
             random_unsigned >= 0,
-            "Unsigned value "
-            + String(random_unsigned)
-            + " is not above or equal to 0",
+            String(
+                "Unsigned value ",
+                random_unsigned,
+                " is not above or equal to 0",
+            ),
         )
         assert_true(
             random_unsigned <= 255,
-            "Unsigned value "
-            + String(random_unsigned)
-            + " is not below or equal to 255",
+            String(
+                "Unsigned value ",
+                random_unsigned,
+                " is not below or equal to 255",
+            ),
         )
 
     var random_normal = randn_float64(0, 1)

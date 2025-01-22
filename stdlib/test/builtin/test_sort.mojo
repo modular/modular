@@ -45,19 +45,11 @@ fn random_numbers[
     return result
 
 
-# fn assert_sorted[dtype: DType](mut list: List[Scalar[dtype]]) raises:
-#     sort[dtype](list)
-#     for i in range(1, len(list)):
-#         assert_true(
-#             list[i] >= list[i - 1], String(list[i - 1]) + " > " + String(list[i])
-#         )
-
-
 fn assert_sorted_string(mut list: List[String]) raises:
     for i in range(1, len(list)):
         assert_true(
             list[i] >= list[i - 1],
-            String(list[i - 1]) + " > " + String(list[i]),
+            String(list[i - 1], " > ", list[i]),
         )
 
 
@@ -65,7 +57,7 @@ fn assert_sorted[
     type: ComparableCollectionElement
 ](mut list: List[type]) raises:
     for i in range(1, len(list)):
-        assert_true(list[i] >= list[i - 1], "error at index: " + String(i))
+        assert_true(list[i] >= list[i - 1], String("error at index: ", i))
 
 
 fn test_sort_small_3() raises:

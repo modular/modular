@@ -78,7 +78,7 @@ def test_basic_no_copies():
 def test_multiple_resizes():
     var dict = Dict[String, Int]()
     for i in range(20):
-        dict["key" + String(i)] = i + 1
+        dict[String("key", i)] = i + 1
     assert_equal(11, dict["key10"])
     assert_equal(20, dict["key19"])
 
@@ -99,7 +99,7 @@ def test_bool_conversion():
 def test_big_dict():
     var dict = Dict[String, Int]()
     for i in range(2000):
-        dict["key" + String(i)] = i + 1
+        dict[String("key", i)] = i + 1
     assert_equal(2000, len(dict))
 
 
@@ -132,7 +132,7 @@ def test_dict_string_representation_int_int():
 def test_compact():
     var dict = Dict[String, Int]()
     for i in range(20):
-        var key = "key" + String(i)
+        var key = String("key", i)
         dict[key] = i + 1
         _ = dict.pop(key)
     assert_equal(0, len(dict))
@@ -141,10 +141,10 @@ def test_compact():
 def test_compact_with_elements():
     var dict = Dict[String, Int]()
     for i in range(5):
-        var key = "key" + String(i)
+        var key = String("key", i)
         dict[key] = i + 1
     for i in range(5, 20):
-        var key = "key" + String(i)
+        var key = String("key", i)
         dict[key] = i + 1
         _ = dict.pop(key)
     assert_equal(5, len(dict))

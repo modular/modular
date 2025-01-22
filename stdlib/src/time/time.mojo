@@ -61,7 +61,7 @@ alias _WINDOWS_LARGE_INTEGER = Int64
 
 @value
 @register_passable("trivial")
-struct _CTimeSpec(Stringable):
+struct _CTimeSpec(Stringable, Writable):
     var tv_sec: Int  # Seconds
     var tv_subsec: Int  # subsecond (nanoseconds on linux and usec on mac)
 
@@ -78,7 +78,11 @@ struct _CTimeSpec(Stringable):
 
     @no_inline
     fn __str__(self) -> String:
-        return String(self.as_nanoseconds()) + "ns"
+        return String.write(self)
+
+    @no_inline
+    fn write_to[W: Writer](self, mut writer: W):
+        writer.write(self.as_nanoseconds(), "ns")
 
 
 @value

@@ -27,7 +27,7 @@ def main():
     # Examples of using Complex values with String(), repr(), and print()
     c3 = Complex(3.14159, -2.71828)
     print("c3 =", c3)
-    var msg: String = "The value is: " + String(c3)
+    var msg = String("The value is: ", c3)
     print(msg)
     print(String("{!r}").format(c3))
 

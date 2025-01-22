@@ -262,30 +262,30 @@ def main():
             alias fname = filenames[j]
             alias old = old_chars[j]
             alias new = new_chars[j]
-            suffix = "[" + String(length) + "]"  # "(" + fname + ")"
+            alias suffix = String("[", length, "]")  # "(" + fname + ")"
             m.bench_function[bench_string_count[length, fname, old]](
-                BenchId("bench_string_count" + suffix)
+                BenchId(String("bench_string_count", suffix))
             )
             m.bench_function[bench_string_split[length, fname, old]](
-                BenchId("bench_string_split" + suffix)
+                BenchId(String("bench_string_split", suffix))
             )
             m.bench_function[bench_string_split[length, fname]](
-                BenchId("bench_string_split_none" + suffix)
+                BenchId(String("bench_string_split_none", suffix))
             )
             m.bench_function[bench_string_splitlines[length, fname]](
-                BenchId("bench_string_splitlines" + suffix)
+                BenchId(String("bench_string_splitlines" + suffix))
             )
             m.bench_function[bench_string_lower[length, fname]](
-                BenchId("bench_string_lower" + suffix)
+                BenchId(String("bench_string_lower" + suffix))
             )
             m.bench_function[bench_string_upper[length, fname]](
-                BenchId("bench_string_upper" + suffix)
+                BenchId(String("bench_string_upper" + suffix))
             )
             m.bench_function[bench_string_replace[length, fname, old, new]](
-                BenchId("bench_string_replace" + suffix)
+                BenchId(String("bench_string_replace" + suffix))
             )
             m.bench_function[bench_string_is_valid_utf8[length, fname]](
-                BenchId("bench_string_is_valid_utf8" + suffix)
+                BenchId(String("bench_string_is_valid_utf8" + suffix))
             )
 
     results = Dict[String, (Float64, Int)]()
