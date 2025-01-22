@@ -523,12 +523,12 @@ if __name__ == "__main__":
         bazelw run //SDK/integration-test/pipelines/python:evaluate_batch_scenarios -- --batch-mode dynamic --max-cache-batch-size 4 --model-name llama3 --quantization-encoding q4_k
     GPU
         Produces valid outputs until the first request in the batch completes - then garbage.
-        bazelw run //SDK/integration-test/pipelines/python:evaluate_batch_scenarios -- --batch-mode dynamic --max-cache-batch-size 4 --model-name llama3 --use-gpu
+        bazelw run //SDK/integration-test/pipelines/python:evaluate_batch_scenarios -- --batch-mode dynamic --max-cache-batch-size 4 --model-name llama3
 
     ** Continuous Batching Simulation **
     CPU
         bazelw run //SDK/integration-test/pipelines/python:evaluate_batch_scenarios -- --batch-mode continuous --max-cache-batch-size 4 --model-name llama3 --quantization-encoding float32 --cache-strategy continuous
     GPU
-        bazelw run //SDK/integration-test/pipelines/python:evaluate_batch_scenarios -- --batch-mode continuous --max-cache-batch-size 4 --model-name llama3 --use-gpu --cache-strategy continuous
+        bazelw run //SDK/integration-test/pipelines/python:evaluate_batch_scenarios -- --batch-mode continuous --max-cache-batch-size 4 --model-name llama3 --cache-strategy continuous
     """
     main()

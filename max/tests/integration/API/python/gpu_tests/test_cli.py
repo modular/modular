@@ -174,6 +174,8 @@ VALID_COMMANDS = [
             "LlamaForCausalLM",
             "--cache-strategy",
             "naive",
+            "--devices",
+            "gpu",
         ],
         expected={
             "trust_remote_code": False,
@@ -214,7 +216,8 @@ VALID_COMMANDS = [
             "model2.safetensors",
             "--weight-path",
             "model3.safetensors",
-            "--use-gpu",
+            "--devices",
+            "gpu-0",
         ],
         expected={
             "huggingface_repo_id": "modularai/llama-3.1",

@@ -167,14 +167,22 @@ class TestCommand:
 
 VALID_COMMANDS = [
     TestCommand(
-        args=["--max-length", "10"], expected={"max_length": 10}, valid=False
+        args=["--max-length", "10", "--devices", "cpu"],
+        expected={"max_length": 10},
+        valid=False,
     ),
-    TestCommand(args=[], expected={}, valid=False),
+    TestCommand(
+        args=["--devices", "cpu"],
+        expected={},
+        valid=False,
+    ),
     TestCommand(
         args=[
             "--huggingface-repo-id",
             "modularai/test_modelid",
             "--trust-remote-code",
+            "--devices",
+            "cpu",
         ],
         expected={
             "huggingface_repo_id": "modularai/test_modelid",
@@ -187,6 +195,8 @@ VALID_COMMANDS = [
             "--huggingface-repo-id",
             "modularai/replit-code-1.5",
             "--trust-remote-code",
+            "--devices",
+            "cpu",
         ],
         expected={
             "trust_remote_code": True,
@@ -199,6 +209,8 @@ VALID_COMMANDS = [
             "modularai/replit-code-1.5",
             "--max-length",
             "10",
+            "--devices",
+            "cpu",
         ],
         expected={
             "trust_remote_code": False,
@@ -214,6 +226,8 @@ VALID_COMMANDS = [
             "LlamaForCausalLM",
             "--cache-strategy",
             "naive",
+            "--devices",
+            "cpu",
         ],
         expected={
             "trust_remote_code": False,
@@ -229,6 +243,8 @@ VALID_COMMANDS = [
             "LlamaForCausalLM",
             "--max-length",
             "10",
+            "--devices",
+            "cpu",
         ],
         expected={
             "trust_remote_code": False,
@@ -245,6 +261,8 @@ VALID_COMMANDS = [
             "LlamaForCausalLM",
             "--max-length",
             "10",
+            "--devices",
+            "cpu",
         ],
         expected={
             "trust_remote_code": False,
@@ -263,6 +281,8 @@ VALID_COMMANDS = [
             "model2.safetensors",
             "--weight-path",
             "model3.safetensors",
+            "--devices",
+            "cpu",
         ],
         expected={
             "huggingface_repo_id": "modularai/llama-3.1",
@@ -286,6 +306,8 @@ VALID_COMMANDS = [
             "model2.safetensors",
             "--weight-path",
             "model3.safetensors",
+            "--devices",
+            "cpu",
         ],
         expected={
             "huggingface_repo_id": "modularai/llama-3.1",
@@ -305,6 +327,8 @@ VALID_COMMANDS = [
             "modularai/llama-3.1",
             "--engine",
             "max",
+            "--devices",
+            "cpu",
         ],
         expected={
             "huggingface_repo_id": "modularai/llama-3.1",
@@ -351,6 +375,8 @@ def testing(
 def test_cli__terminal_commands():
     runner = CliRunner()
     for idx, command in enumerate(VALID_COMMANDS):
+        # idx here is the index of the command in the VALID_COMMANDS list.
+        # This makes it easier for us to identify which command failed.
         command.args.extend(["--idx", str(idx)])
         print(f"full_args: {command.args}")
         result = runner.invoke(testing, command.args)
