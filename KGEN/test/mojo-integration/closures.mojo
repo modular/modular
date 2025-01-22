@@ -38,4 +38,4 @@ fn main():
         # CHECK: 4
         print(w)
     except e:
-        print(e._message())
+        print(e)
