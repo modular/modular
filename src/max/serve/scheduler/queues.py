@@ -20,14 +20,9 @@ from typing import AsyncGenerator, Generator, Generic, Optional, TypeVar
 import psutil
 import sentinel
 
-BatchReqId = TypeVar("BatchReqId")
-BatchReqInput = TypeVar("BatchReqInput")
-
 ReqId = TypeVar("ReqId")
 ReqInput = TypeVar("ReqInput")
 ReqOutput = TypeVar("ReqOutput")
-
-BatchInputs = dict[BatchReqId, BatchReqInput]
 
 """The sentinel used to indicate a queue is finished."""
 STOP_STREAM = sentinel.create("STOP_STREAM")

@@ -6,7 +6,6 @@
 
 import asyncio
 import logging
-import math
 import multiprocessing
 import os
 import queue
@@ -16,13 +15,14 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from multiprocessing import Queue
 from multiprocessing.synchronize import Event
-from typing import AsyncGenerator, Mapping, Optional
+from typing import AsyncGenerator, Mapping
 
 import uvloop
 from max.pipelines import PipelinesFactory, TokenGenerator
 from max.profiler import Tracer, traced
 from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
-from max.serve.scheduler.queues import STOP_STREAM, BatchInputs, EngineQueue
+from max.serve.pipelines.scheduler import Scheduler
+from max.serve.scheduler.queues import STOP_STREAM, EngineQueue
 from max.serve.telemetry.metrics import METRICS, configure_metrics
 from max.serve.telemetry.stopwatch import record_ms
 
@@ -234,31 +234,13 @@ async def model_worker_run_v2(
         with record_ms(METRICS.model_load_time), Tracer("model_factory"):
             model = model_factory()
             assert isinstance(model, TokenGenerator)
-        config = pipeline_config
-        max_batch_size_tg = config.token_generation.size
-        max_forward_steps_tg = config.token_generation.max_forward_steps
-        if config.context_encoding:
-            max_batch_size_ce = config.context_encoding.size
-            max_forward_steps_ce = config.context_encoding.max_forward_steps
-            target_sum_seq_len = config.context_encoding.target_sum_seq_len
-            if math.isclose(config.context_encoding.timeout, 0.0):
-                batch_timeout = None
-            else:
-                batch_timeout = config.context_encoding.timeout
-        else:
-            max_batch_size_ce = max_batch_size_tg
-            max_forward_steps_ce = max_forward_steps_tg
-            target_sum_seq_len = None
-            batch_timeout = None
+
+        scheduler = Scheduler(request_q, pipeline_config)
         logger.info("Token generators loaded!")
 
         started.set()
         logger.info("Started model worker!")
 
-        cache_indices = set(range(max_batch_size_tg))
-        batch_continuous: BatchInputs = {}
-        # it's a list to pass it by "reference" and mutate inside should_schedule_ce
-        start_time: list = [None]
         i = 0
         while i % 100 or not shutdown.is_set():
             i += 1
@@ -269,76 +251,23 @@ async def model_worker_run_v2(
                 except queue.Full as e:
                     logger.exception("health check queue is full %s", e)
 
-            if should_schedule_ce(
-                batch_continuous,
-                request_q,
-                max_batch_size_tg,
-                start_time,
-                batch_timeout,
-            ):
-                tracer.push("scheduling_ce")
-                max_batch_size_to_execute = min(
-                    max_batch_size_ce, max_batch_size_tg - len(batch_continuous)
-                )
-                if len(
-                    batch_to_execute := create_batch(
-                        request_q,
-                        max_batch_size_to_execute,
-                        cache_indices,
-                        target_sum_seq_len,
-                    )
-                ):
-                    tracer.push("batch_to_execute")
-                    logger.debug(
-                        "Scheduling CE with BS: %d", len(batch_to_execute)
-                    )
-                    batch_responses = model.next_token(
-                        batch_to_execute, num_steps=max_forward_steps_ce
-                    )
-                    handle_terminated_responses(
-                        batch_to_execute, batch_responses, model, cache_indices
-                    )
+            prepared_batch = schedule(scheduler)
 
-                    for req_id in batch_to_execute:
-                        batch_continuous[req_id] = batch_to_execute[req_id]
+            if not prepared_batch.requests:
+                await asyncio.sleep(0)
+                continue
 
-                    tracer.push("put_nowait")
-                    response_q.put_nowait(batch_responses)
-                    tracer.pop()  # pops put_nowait
-                    start_time[0] = None
-                    tracer.pop()  # pops batch_to_execute
-                tracer.pop()  # pops scheduling_ce
+            batch_responses = next_token(model, prepared_batch, scheduler)
 
-            elif batch_continuous:
-                tracer.push("batch_continuous")
-                logger.debug("Scheduling TG with BS: %d", len(batch_continuous))
-                batch_responses = model.next_token(
-                    batch_continuous, num_steps=max_forward_steps_tg
-                )
-                handle_terminated_responses(
-                    batch_continuous, batch_responses, model, cache_indices
-                )
+            handle_terminated_responses(
+                prepared_batch.requests, batch_responses, model, scheduler
+            )
 
-                tracer.push("put_nowait")  # pops batch_continuous
-                response_q.put_nowait(batch_responses)
-                tracer.pop()  # pops put_nowait
-                tracer.pop()  # pops batch_continuous
+            submit_responses(response_q, batch_responses)
 
             # Occasionally clear out contexts cancelled out API worker side.
             if i % 20 == 0 and not cancel_q.empty():
-                tracer.push("cancel_queue")
-                try:
-                    for req_id in cancel_q.get_nowait():
-                        if req_id in batch_continuous:
-                            model.release(batch_continuous[req_id])
-                            cache_indices.add(
-                                batch_continuous[req_id].cache_seq_id
-                            )
-                            del batch_continuous[req_id]
-                except queue.Empty:
-                    tracer.pop()  # pops cancel_queue
-                    continue
-                tracer.pop()  # pops cancel_queue
+                handle_cancelled_requests(cancel_q, scheduler, model)
 
             await asyncio.sleep(0)
 
@@ -352,89 +281,54 @@ async def model_worker_run_v2(
 
 
 @traced
-def should_schedule_ce(
-    batch_continuous: BatchInputs,
-    request_q: Queue,
-    max_batch_size_tg: int,
-    start_time: list,
-    batch_timeout_s: Optional[float],
-):
-    # The incoming request queue is empty; no CE to schedule
-    if request_q.empty():
-        return False
-
-    # logger.info("Worker-Queue-Size: %d", request_q.qsize())
-
-    # At this point there are incoming requests, we start the batch clock if not yet
-    if not start_time[0]:
-        start_time[0] = time.monotonic()
-
-    # If TG batch is full then no reason to schedule CE
-    if len(batch_continuous) >= max_batch_size_tg:
-        return False
-
-    # If TG batch is empty then schedule CE
-    if len(batch_continuous) == 0:
-        return True
-
-    # If batch timeout is set
-    if batch_timeout_s:
-        # If batch timeout is reached then schedule CE
-        if time.monotonic() >= start_time[0] + batch_timeout_s:
-            return True
-        else:
-            # TODO(SI-808): The The multiprocessing.Queue implementation isn't portable.
-            # Its Queue.qsize() method throws NotImplementedError exception on MacOS and Graviton
-            # messages_needed = max_batch_size_tg - len(batch_continuous)
-            # if request_q.qsize() >= messages_needed:
-            #     # If there are enough request to fill the TG batch then schedule CE
-            #     return True
-            # else:
-            #     # If not enough requests then wait with CE and continue with TG
-            #     return False
-
-            return False
-
-    return True
+def schedule(scheduler):
+    return scheduler.schedule()
 
 
 @traced
-def create_batch(
-    request_q: Queue,
-    max_batch_size: int,
-    request_indices: set,
-    target_sum_seq_len: Optional[int],
-) -> BatchInputs:
-    batch: BatchInputs = {}
-    sum_seq_len = 0
-    while len(batch) < max_batch_size:
-        try:
-            req_id, data = request_q.get_nowait()
-            data.cache_seq_id = request_indices.pop()
-            batch[req_id] = data
-            sum_seq_len += getattr(data, "seq_len", 0)
-            # if the batch has hit the target sum sequence length, break early
-            if (
-                target_sum_seq_len is not None
-                and sum_seq_len > target_sum_seq_len
-            ):
-                break
-        except queue.Empty:
-            break
-    return batch
+def next_token(model, prepared_batch, scheduler):
+    output = model.next_token(
+        prepared_batch.requests, num_steps=prepared_batch.num_steps
+    )
+    scheduler.step(prepared_batch.requests)
+    return output
+
+
+@traced
+def submit_responses(response_q, batch_responses):
+    response_q.put_nowait(batch_responses)
+
+
+@traced
+def handle_cancelled_requests(cancel_q, scheduler, model):
+    try:
+        for req_id in cancel_q.get_nowait():
+            if not scheduler.contains(req_id):
+                continue
+
+            model.release(scheduler.get_request(req_id))
+            scheduler.release(req_id)
+    except queue.Empty:
+        pass
 
 
 @traced
 def handle_terminated_responses(
-    batch_executed, batch_responses, model, cache_indices
+    batch_executed, batch_responses, model, scheduler
 ):
     already_terminated = set()
+    not_terminated = set(batch_executed.keys())
+
     for batch_response in batch_responses:
-        terminated = batch_executed.keys() - batch_response.keys()
+        terminated = not_terminated - batch_response.keys()
         for req_id in terminated:
-            if req_id not in already_terminated:
-                model.release(batch_executed[req_id])
-                cache_indices.add(batch_executed[req_id].cache_seq_id)
-                del batch_executed[req_id]
-                batch_response[req_id] = STOP_STREAM
-                already_terminated.add(req_id)
+            if req_id in already_terminated:
+                continue
+
+            model.release(batch_executed[req_id])
+
+            batch_response[req_id] = STOP_STREAM
+            already_terminated.add(req_id)
+            not_terminated.remove(req_id)
+
+    scheduler.release(already_terminated)
