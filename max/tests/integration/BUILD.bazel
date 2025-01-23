@@ -64,6 +64,7 @@ lit_tests(
         "//PyTorch/tools/torch:mtorch",
         "@llvm-project//compiler-rt:orc_rt",
     ],
+    generate_litcfg = True,
     tags = [
         "no-sandbox",  # These tests use openmp which validates only 1 shared library is loaded at the same time, the libraries in the sandbox appear different so running them in parallel fails otherwise.
     ],
