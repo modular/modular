@@ -8,6 +8,7 @@ lit_tests(
             "definition.test",  # TODO: Debug and enable
         ],
     ),
+    generate_litcfg = True,
     mojo_deps = [
         "//open-source/mojo/stdlib/stdlib",
     ],
