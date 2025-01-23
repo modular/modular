@@ -21,6 +21,9 @@ lit_tests(
         ],
         exclude = _DATA,
     ),
+    custom_substitutions = {
+        "%parse-mojo-isolated": "$(rlocationpath //KGEN/tools/kgen-translate) -import-mojo -mojo-enable-prebuilt-packages",
+    },
     data = [
         "//KGEN/test/test-packages",
         "//KGEN/test/test-packages:stdlib/__init__.mojo",
@@ -29,6 +32,7 @@ lit_tests(
     env = {
         "MODULAR_MOJO_IMPORT_SRCS": "$(locations //KGEN/test/test-packages:stdlib/__init__.mojo) $(locations //KGEN/test/test-packages:stdlib/prelude/__init__.mojo)",
     },
+    generate_litcfg = True,
     target_compatible_with = select({
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
