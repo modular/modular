@@ -359,7 +359,7 @@ async def grpc_serve(
         async with (
             start_model_worker(
                 model_factory=model_factory,
-                pipeline_config=cont_batching,
+                batch_config=cont_batching,
             ) as worker_queue,
             TokenGeneratorPipeline(
                 model_name, tokenizer, worker_queue

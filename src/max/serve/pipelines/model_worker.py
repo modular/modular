@@ -41,7 +41,7 @@ class ModelWorkerConfig:
 
 def _model_worker_process_fn(
     model_factory: PipelinesFactory,
-    pipeline_config: TokenGeneratorPipelineConfig,
+    batch_config: TokenGeneratorPipelineConfig,
     worker_config: ModelWorkerConfig,
     queues: Mapping[str, Queue],
     events: Mapping[str, Event],
@@ -49,7 +49,7 @@ def _model_worker_process_fn(
     try:
         uvloop.run(
             model_worker_run_v2(
-                model_factory, pipeline_config, worker_config, queues, events
+                model_factory, batch_config, worker_config, queues, events
             )
         )
     except KeyboardInterrupt:
@@ -65,7 +65,7 @@ def _model_worker_process_fn(
 @asynccontextmanager
 async def start_model_worker(
     model_factory: PipelinesFactory,
-    pipeline_config: TokenGeneratorPipelineConfig,
+    batch_config: TokenGeneratorPipelineConfig,
     config: ModelWorkerConfig = ModelWorkerConfig(),
 ) -> AsyncGenerator[EngineQueue, None]:
     """Starts a model worker and associated process.
@@ -105,7 +105,7 @@ async def start_model_worker(
         daemon=True,
         args=(
             model_factory,
-            pipeline_config,
+            batch_config,
             config,
             queue_args,
             event_args,
@@ -206,7 +206,7 @@ async def start_model_worker(
 @traced
 async def model_worker_run_v2(
     model_factory: PipelinesFactory,
-    pipeline_config: TokenGeneratorPipelineConfig,
+    batch_config: TokenGeneratorPipelineConfig,
     worker_config: ModelWorkerConfig,
     queues: Mapping[str, Queue],
     events: Mapping[str, Event],
@@ -235,7 +235,7 @@ async def model_worker_run_v2(
             model = model_factory()
             assert isinstance(model, TokenGenerator)
 
-        scheduler = Scheduler(request_q, pipeline_config)
+        scheduler = Scheduler(request_q, batch_config)
         logger.info("Token generators loaded!")
 
         started.set()

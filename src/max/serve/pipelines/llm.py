@@ -15,7 +15,9 @@ from functools import partial
 from typing import AsyncGenerator, Callable, Generic, Optional, TypeVar
 
 import psutil
+from max.pipelines.config import PipelineConfig
 from max.pipelines.interfaces import PipelineTokenizer, TokenGeneratorRequest
+from max.pipelines.kv_cache import KVCacheStrategy
 from max.serve.scheduler.queues import (
     BatchingStrategy,
     BatchQueueConfig,
@@ -23,6 +25,8 @@ from max.serve.scheduler.queues import (
 )
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -293,3 +297,58 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
             # Shut server down.
             # Sending SIGTERM is ugly, but simplifies the internal plumbing.
             os.kill(os.getpid(), signal.SIGTERM)
+
+
+def get_target_ce_batch_tokens(pipeline_config: PipelineConfig) -> int:
+    if pipeline_config.target_num_new_tokens is not None:
+        return pipeline_config.target_num_new_tokens
+
+    # TODO(E2EOPT-23) temporary hard-coded default. We'll make this smarter later.
+    return 4096
+
+
+def batch_config_from_pipeline_config(
+    pipeline_config: PipelineConfig, batch_timeout: float = 0.0
+) -> TokenGeneratorPipelineConfig:
+    target_ce_batch_tokens = get_target_ce_batch_tokens(pipeline_config)
+    if pipeline_config.cache_strategy == KVCacheStrategy.CONTINUOUS:
+        batch_config = TokenGeneratorPipelineConfig.continuous_heterogenous(
+            tg_batch_size=pipeline_config.max_cache_batch_size,
+            ce_batch_size=min(
+                pipeline_config.max_cache_batch_size,
+                pipeline_config.max_ce_batch_size,
+            ),
+            ce_batch_timeout=batch_timeout,
+            max_forward_steps=pipeline_config.max_num_steps,
+            target_ce_batch_tokens=target_ce_batch_tokens,
+        )
+    elif pipeline_config.cache_strategy == KVCacheStrategy.NAIVE:
+        batch_config = TokenGeneratorPipelineConfig.dynamic_homogenous(
+            batch_size=pipeline_config.max_cache_batch_size,
+            batch_timeout=batch_timeout,
+            max_forward_steps=pipeline_config.max_num_steps,
+        )
+    elif pipeline_config.cache_strategy == KVCacheStrategy.PAGED:
+        batch_config = TokenGeneratorPipelineConfig.paged(
+            tg_batch_size=pipeline_config.max_cache_batch_size,
+            ce_batch_size=min(
+                pipeline_config.max_cache_batch_size,
+                pipeline_config.max_ce_batch_size,
+            ),
+            ce_batch_timeout=batch_timeout,
+            max_forward_steps=pipeline_config.max_num_steps,
+            target_ce_batch_tokens=target_ce_batch_tokens,
+        )
+    else:
+        raise ValueError(
+            f"{pipeline_config.cache_strategy} caching strategy is not"
+            " supported by Serving."
+        )
+
+    logger.info(
+        "Server configured with %s caching with batch size %s",
+        pipeline_config.cache_strategy,
+        pipeline_config.max_cache_batch_size,
+    )
+
+    return batch_config
