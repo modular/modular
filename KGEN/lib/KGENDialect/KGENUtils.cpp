@@ -1354,22 +1354,25 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
 
 // NOTE: This is an alternative implementation of llvm::printEscapedString
 // that also supports writing "non-readable" characters like newlines.
-void KGEN::printHumanReadableString(StringRef Name, raw_ostream &Out) {
-#if 1
+//
+// Example:
+// StringSlice("\OA") -> StringSlice("\n")
+void KGEN::printHumanReadableString(StringRef name, raw_ostream &out) {
   using namespace llvm;
-  for (unsigned char C : Name) {
+  for (unsigned char C : name) {
     if (C == '\\')
-      Out << '\\' << C;
+      out << '\\' << C;
     else if (C == '\n')
-      Out << "\\n";
+      out << "\\n";
+    else if (C == '\t')
+      out << "\\t";
+    else if (C == '\r')
+      out << "\\r";
     else if (llvm::isPrint(C) && C != '"')
-      Out << C;
+      out << C;
     else
-      Out << '\\' << hexdigit(C >> 4) << hexdigit(C & 0x0F);
+      out << '\\' << hexdigit(C >> 4) << hexdigit(C & 0x0F);
   }
-#else
-  llvm::printEscapedString(Name, Out);
-#endif
 }
 
 void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type,

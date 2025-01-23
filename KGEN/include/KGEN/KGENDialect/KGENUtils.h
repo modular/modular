@@ -459,7 +459,8 @@ bool hasAnyDecorator(ArrayRef<TypedAttr> decorators,
 ParseResult parseRegionWithArgs(OpAsmParser &p, Region &region);
 void printRegionWithArgs(OpAsmPrinter &p, Operation *op, Region &region);
 
-/// This is an alternative implementation of llvm::printEscapedString.
+/// This is an alternative implementation of llvm::printEscapedString
+/// that also supports writing "non-readable" characters like newlines.
 void printHumanReadableString(StringRef Name, raw_ostream &Out);
 
 } // namespace M::KGEN
