@@ -582,14 +582,14 @@ static void printUnpackKind(AsmPrinter &p, bool kwOnly) {
 
 BindTypeAttr BindTypeAttr::getFromBytecode(TypedAttr typeValue,
                                            ArrayRef<TypedAttr> values,
-                                           AnyStructType type) {
+                                           StructMetaType type) {
   return Base::get(type.getContext(), typeValue, values, type);
 }
 
 static ParseResult parseBindTypeParams(AsmParser &p,
                                        SmallVectorImpl<TypedAttr> &values,
                                        TypedAttr typeValue) {
-  auto metatype = dyn_cast<AnyStructType>(typeValue.getType());
+  auto metatype = dyn_cast<StructMetaType>(typeValue.getType());
   if (!metatype) {
     return p.emitError(p.getCurrentLocation(),
                        "'bind_type' expected a metatyped type value");
@@ -617,8 +617,8 @@ static void printBindTypeParams(AsmPrinter &p, ArrayRef<TypedAttr> values,
 LogicalResult BindTypeAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                    TypedAttr typeValue,
                                    ArrayRef<TypedAttr> values,
-                                   AnyStructType type) {
-  auto metatype = ::dyn_cast<AnyStructType>(typeValue.getType());
+                                   StructMetaType type) {
+  auto metatype = ::dyn_cast<StructMetaType>(typeValue.getType());
   if (!metatype)
     return emitError() << "'bind_type' expected a metatyped type value";
 
@@ -687,9 +687,9 @@ LogicalResult BindTypeAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 /// Infer the result type for `BindTypeAttr`.
-static AnyStructType getBindTypeResultType(TypedAttr typeValue,
-                                           ArrayRef<TypedAttr> values) {
-  auto metatype = cast<AnyStructType>(typeValue.getType());
+static StructMetaType getBindTypeResultType(TypedAttr typeValue,
+                                            ArrayRef<TypedAttr> values) {
+  auto metatype = cast<StructMetaType>(typeValue.getType());
   SmallVector<TypedAttr> bindings;
   auto it = values.begin();
   for (TypedAttr value : metatype.getParamValues()) {
@@ -706,7 +706,7 @@ static AnyStructType getBindTypeResultType(TypedAttr typeValue,
 /// construction.
 static TypedAttr getOrFoldBindType(TypedAttr typeValue,
                                    ArrayRef<TypedAttr> values,
-                                   AnyStructType type) {
+                                   StructMetaType type) {
   // Assume the inputs are verified. If the type value is a `StructType` then
   // bind it and return a type constant.
   if (auto typeCst = dyn_cast<TypeParamAttr>(typeValue)) {
@@ -723,14 +723,14 @@ static TypedAttr getOrFoldBindType(TypedAttr typeValue,
 TypedAttr BindTypeAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
                                    MLIRContext *context, TypedAttr typeValue,
                                    ArrayRef<TypedAttr> values,
-                                   AnyStructType type) {
+                                   StructMetaType type) {
   if (failed(verify(emitError, typeValue, values, type)))
     return {};
   return getOrFoldBindType(typeValue, values, type);
 }
 
 TypedAttr BindTypeAttr::get(MLIRContext *context, TypedAttr typeValue,
-                            ArrayRef<TypedAttr> values, AnyStructType type) {
+                            ArrayRef<TypedAttr> values, StructMetaType type) {
   return getOrFoldBindType(typeValue, values, type);
 }
 

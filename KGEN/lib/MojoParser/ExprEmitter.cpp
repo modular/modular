@@ -1602,7 +1602,7 @@ ASTType ExprEmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
     bindings.add(&tmpExpr, PValue(elt));
 
   // Check the bindings.
-  auto metaType = cast<AnyStructType>(tupleType.getMetaType());
+  auto metaType = cast<StructMetaType>(tupleType.getMetaType());
   auto bindingsAttr = bindings.verifyBindings(structOp, metaType.getSignature(),
                                               loc, /*partial=*/false);
   if (!bindingsAttr)

@@ -461,8 +461,8 @@ bool ExprEmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
   if (isa<TypeType>(toType)) {
     if (isa<AnyTraitType>(fromType))
       return true;
-    if (auto structType = dyn_cast<AnyStructType>(fromType)) {
-      return ASTType(structType.getStructType())
+    if (auto structType = dyn_cast<StructMetaType>(fromType)) {
+      return ASTType(structType.getType())
                  .getRegisterPassability(SMLoc(), shared) ==
              TypeConvention::RegisterPassableTrivial;
     }
@@ -810,9 +810,9 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
     return {};
   }
 
-  // Get the AnyStructType or the TraitType of the value that we're checking for
-  // conversion to the trait type.  This can also bind empty variadic parameter
-  // lists and default parameters.
+  // Get the StructMetaType or the TraitType of the value that we're checking
+  // for conversion to the trait type.  This can also bind empty variadic
+  // parameter lists and default parameters.
   ASTType type = emitType({typePValue, value.expr}, /*allowUnbound*/ false);
   if (!type)
     return {};

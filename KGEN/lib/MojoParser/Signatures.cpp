@@ -764,7 +764,7 @@ static ASTType addImplicitTypeParams(ASTType type,
   }
 
   // Check for a struct type.
-  auto metatype = dyn_cast_or_null<AnyStructType>(type.getMetaType());
+  auto metatype = dyn_cast_or_null<StructMetaType>(type.getMetaType());
   if (!metatype)
     return type;
 
@@ -1052,7 +1052,7 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
   }
 
   auto metaType = ASTType(elementType).getMetaType();
-  if (!metaType || !isa<AnyStructType, AnyTraitType>(metaType)) {
+  if (!metaType || !isa<StructMetaType, AnyTraitType>(metaType)) {
     emitter.emitError(arg.typeExpr->getLoc(),
                       "argument type list elements must be types")
         << arg.typeExpr->getRange();

@@ -31,7 +31,6 @@ void LITDialect::registerTypes() {
       >();
 
   auto *dialect = getContext()->getOrLoadDialect<KGENDialect>();
-  dialect->registerMnemonicType<AnyStructType>();
   dialect->registerMnemonicType<MetaType>();
   dialect->registerMnemonicType<TraitType>();
   dialect->registerMnemonicType<OriginType>();
@@ -49,7 +48,7 @@ void LITDialect::registerTypes() {
           Type metatype;
           if (parseKGENType(p, metatype))
             return failure();
-          if (auto anyStruct = dyn_cast<AnyStructType>(metatype))
+          if (auto anyStruct = dyn_cast<StructMetaType>(metatype))
             typeSig = anyStruct.getSignature();
         }
         if (!typeSig)
@@ -338,7 +337,7 @@ StringAttr LIT::StructType::getName() {
 }
 
 //===----------------------------------------------------------------------===//
-// AnyStructType
+// StructMetaType
 //===----------------------------------------------------------------------===//
 
 static OptionalParseResult parseTypeValue(AsmParser &p, TypedAttr &value,
@@ -354,7 +353,7 @@ static OptionalParseResult parseTypeValue(AsmParser &p, TypedAttr &value,
       if (parseParameterValues(p, values))
         return failure();
       TypeSignatureType typeSig;
-      if (auto anyStruct = dyn_cast<AnyStructType>(metatype))
+      if (auto anyStruct = dyn_cast<StructMetaType>(metatype))
         typeSig = anyStruct.getSignature();
       else
         typeSig = TypeSignatureType::get(p.getContext());
@@ -380,66 +379,6 @@ static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value) {
     }
   };
   return printSugaredTypeValue(p, value, typePrinter);
-}
-
-AnyStructType AnyStructType::get(SymbolRefAttr symbol,
-                                 ArrayRef<TypedAttr> values,
-                                 TypeSignatureType signature) {
-  return get(symbol.getContext(), StructType::get(symbol, values, signature));
-}
-
-SymbolRefAttr AnyStructType::getSymbol() const {
-  return getStructType().getValue().getValue();
-}
-
-TypeSignatureType AnyStructType::getSignature() const {
-  return getStructType().getSignature();
-}
-
-ArrayRef<TypedAttr> AnyStructType::getParamValues() const {
-  return getStructType().getParamValues();
-}
-
-OptionalParseResult AnyStructType::parseValue(AsmParser &p,
-                                              TypedAttr &value) const {
-  return parseTypeValue(p, value, *this);
-}
-
-LogicalResult AnyStructType::printValue(AsmPrinter &p, TypedAttr value) const {
-  return printTypeValue(p, value);
-}
-
-/// Bind parameter values to the metatype, returning a new metatype.
-AnyStructType AnyStructType::bind(ArrayRef<TypedAttr> values) const {
-  assert(getParamValues().size() == values.size() && "expected full value set");
-
-  // The AnyStruct will have all of the parameters specified, e.g. something
-  // like:
-  // AnyStructType[Int : AnyType, UnboundAttr : I8, 42 : Int, UnboundAttr: F32]
-  // but the TypeSignatureType will just have [I8, F32].  The input value
-  // bindings must line up where they are already specified, but can further
-  // refine the SignatureType.  See what to pass down to it.
-
-  SmallVector<TypedAttr> newSignatureBindings;
-  bool hadNewBinding = false;
-  for (auto [cur, val] : llvm::zip(getParamValues(), values)) {
-    // If the current value is bound, maintain it.
-    if (!::isa<UnboundAttr>(cur)) {
-      assert(cur == val && "cannot change bound parameter value");
-    } else {
-      hadNewBinding |= !::isa<UnboundAttr>(val);
-      // Otherwise, propagate it into the TypeSignatureType.
-      newSignatureBindings.push_back(val);
-    }
-  }
-
-  // If we're refining our signature because we have new bindings, return an
-  // AnyStruct with the updated signature and values.
-  if (!hadNewBinding)
-    return *this;
-
-  auto newSig = getSignature().bind(newSignatureBindings);
-  return AnyStructType::get(getSymbol(), values, newSig);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1465,6 +1404,54 @@ bool LITSignatureGeneratorType::classof(Type type) {
   if (auto sig = ::dyn_cast<SignatureGeneratorType>(type))
     return classof(sig);
   return false;
+}
+
+//===----------------------------------------------------------------------===//
+// MetaTypeOf
+//===----------------------------------------------------------------------===//
+
+SymbolRefAttr StructMetaType::getSymbol() const {
+  return getType().getValue().getValue();
+}
+
+TypeSignatureType StructMetaType::getSignature() const {
+  return getType().getSignature();
+}
+
+ArrayRef<TypedAttr> StructMetaType::getParamValues() const {
+  return getType().getParamValues();
+}
+
+StructMetaType StructMetaType::bind(ArrayRef<TypedAttr> values) const {
+  assert(getParamValues().size() == values.size() && "expected full value set");
+
+  // The AnyStruct will have all of the parameters specified, e.g. something
+  // like:
+  // StructMetaType[Int : AnyType, UnboundAttr : I8, 42 : Int, UnboundAttr: F32]
+  // but the TypeSignatureType will just have [I8, F32].  The input value
+  // bindings must line up where they are already specified, but can further
+  // refine the SignatureType.  See what to pass down to it.
+
+  SmallVector<TypedAttr> newSignatureBindings;
+  bool hadNewBinding = false;
+  for (auto [cur, val] : llvm::zip(getParamValues(), values)) {
+    // If the current value is bound, maintain it.
+    if (!::isa<UnboundAttr>(cur)) {
+      assert(cur == val && "cannot change bound parameter value");
+    } else {
+      hadNewBinding |= !::isa<UnboundAttr>(val);
+      // Otherwise, propagate it into the TypeSignatureType.
+      newSignatureBindings.push_back(val);
+    }
+  }
+
+  // If we're refining our signature because we have new bindings, return an
+  // AnyStruct with the updated signature and values.
+  if (!hadNewBinding)
+    return *this;
+
+  auto newSig = getSignature().bind(newSignatureBindings);
+  return StructMetaType::get(LIT::StructType::get(getSymbol(), values, newSig));
 }
 
 //===----------------------------------------------------------------------===//

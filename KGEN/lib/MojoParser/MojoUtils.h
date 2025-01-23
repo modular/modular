@@ -25,7 +25,7 @@ class SignatureGeneratorType;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
-class AnyStructType;
+class StructMetaType;
 class ASTType;
 class OriginSetAttr;
 class PogListAttr;
@@ -113,7 +113,7 @@ std::string nameForPosOnly(size_t idx, const Twine &argOrParam);
 void printNameOrIdx(StringAttr name, size_t idx, InflightDiag &diag);
 
 /// Emit diagnostics when the user tries to call or subscript a module.
-void emitModuleCallSubscriptDiag(InflightDiag &diag, AnyStructType metaType,
+void emitModuleCallSubscriptDiag(InflightDiag &diag, StructMetaType metaType,
                                  const Twine &callOrSubscript, llvm::SMLoc loc,
                                  SharedState &shared);
 

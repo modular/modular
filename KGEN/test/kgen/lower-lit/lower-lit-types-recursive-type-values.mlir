@@ -12,7 +12,7 @@ lit.struct.decl @ListNode {
 
 kgen.generator @type_values() {
   // CHECK: kgen.param.declare listnode: type = <[typevalue<inst_struct_ref(#kgen.typeref<@ListNode>)>, struct<(pointer<none>) memoryOnly>]>
-  kgen.param.declare listnode: !lit.anystruct<<@ListNode>> = <[@ListNode]>
+  kgen.param.declare listnode: meta<!lit.struct<@ListNode>> = <[@ListNode]>
   kgen.return
 }
 
@@ -36,9 +36,9 @@ lit.struct.decl @Foo register_passable {
 
 kgen.generator @type_values() {
   // CHECK: kgen.param.declare bar: type = <[typevalue<inst_struct_ref(#kgen.typeref<@Bar>)>, pointer<none>]>
-  kgen.param.declare bar: !lit.anystruct<<@Bar>> = <[@Bar]>
+  kgen.param.declare bar: meta<!lit.struct<@Bar>> = <[@Bar]>
   // CHECK: kgen.param.declare foo: type = <[typevalue<inst_struct_ref(#kgen.typeref<@Foo>)>, pointer<none>]>
-  kgen.param.declare foo: !lit.anystruct<<@Foo>> = <[@Foo]>
+  kgen.param.declare foo: meta<!lit.struct<@Foo>> = <[@Foo]>
   kgen.return
 }
 
@@ -62,6 +62,6 @@ lit.struct.decl @Pointer<ty: type> register_passable {
 
 kgen.generator @type_values() {
   // CHECK: kgen.param.declare listnode: type = <[typevalue<inst_struct_ref(#kgen.typeref<@ListNode>)>, struct<(pointer<none>) memoryOnly>]>
-  kgen.param.declare listnode: !lit.anystruct<<@ListNode>> = <[@ListNode]>
+  kgen.param.declare listnode: meta<!lit.struct<@ListNode>> = <[@ListNode]>
   kgen.return
 }

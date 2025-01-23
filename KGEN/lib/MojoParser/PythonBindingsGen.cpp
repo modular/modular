@@ -119,7 +119,7 @@ static ASTType makeTupleTypedPythonObj(ASTDecl &moduleDecl,
   bindings.add(&synth, tupleNameStrPValue);
 
   // Check the bindings.
-  auto metaType = cast<AnyStructType>(typedPyObjType.getMetaType());
+  auto metaType = cast<StructMetaType>(typedPyObjType.getMetaType());
   auto bindingsAttr = bindings.verifyBindings(structOp, metaType.getSignature(),
                                               moduleLoc, /*partial=*/false);
   if (!bindingsAttr)

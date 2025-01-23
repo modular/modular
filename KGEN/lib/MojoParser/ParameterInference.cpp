@@ -49,8 +49,8 @@ void InferenceFailure::emitSpecificNote(
 
   auto failure = cast<TypeConflictFailure>(info);
   if (isa<TypeType>(failure.paramType)) {
-    if (auto anyStruct = dyn_cast<AnyStructType>(failure.argParamType)) {
-      attachNote() << "argument type " << anyStruct.getStructType()
+    if (auto anyStruct = dyn_cast<StructMetaType>(failure.argParamType)) {
+      attachNote() << "argument type " << anyStruct.getType()
                    << " is not a '@register_passable(\"trivial\")' type, so "
                       "does not satisfy AnyTrivialRegType";
       return;
@@ -58,8 +58,8 @@ void InferenceFailure::emitSpecificNote(
   }
 
   if (isa<TraitType>(failure.paramType)) {
-    if (auto anyStruct = dyn_cast<AnyStructType>(failure.argParamType)) {
-      attachNote() << "argument type " << anyStruct.getStructType()
+    if (auto anyStruct = dyn_cast<StructMetaType>(failure.argParamType)) {
+      attachNote() << "argument type " << anyStruct.getType()
                    << " does not conform to trait " << failure.paramType;
       return;
     }
@@ -263,8 +263,8 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
   // TODO: Why isn't this a general solution?
   if (auto actualParamRef = dyn_cast<ParamType>(actualType)) {
     if (auto actualMetaType = ASTType(actualType).getMetaType()) {
-      if (auto structMeta = dyn_cast<AnyStructType>(actualMetaType))
-        return matchTypes(structMeta.getStructType(), expectedType);
+      if (auto structMeta = dyn_cast<StructMetaType>(actualMetaType))
+        return matchTypes(structMeta.getType(), expectedType);
       if (auto traitMeta = dyn_cast<AnyTraitType>(actualMetaType))
         return matchTypes(traitMeta.getTraitType(), expectedType);
     }

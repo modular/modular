@@ -725,7 +725,7 @@ static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
       return conformances;
     }
     // Otherwise, generate bindings for each explicit conformance.
-    assert(isa<AnyStructType>(metatype));
+    assert(isa<StructMetaType>(metatype));
     auto structDecl = cast<StructDeclOp>(type.getDecl(shared));
     for (TypeLineageAttr parentAttr : structDecl.getParentTypes()) {
       auto trait = cast<TraitType>(parentAttr.getType());

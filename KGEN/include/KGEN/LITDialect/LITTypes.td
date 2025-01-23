@@ -192,64 +192,6 @@ def LIT_StructType : LITType<"Struct", "struct", [
 }
 
 //===----------------------------------------------------------------------===//
-// AnyStructType
-//===----------------------------------------------------------------------===//
-
-def LIT_AnyStructType : LITType<"AnyStruct", "anystruct",
-    [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
-  let summary = "Type of a struct value.";
-  let description = [{
-    The `!lit.anystruct` type represents the metatype of a struct, e.g.
-    `typeof(Int)`.  The meta-type stores the prototype of a type value in its
-    type so that member inspection can be performed through the type system
-    during member lookup or implicit conversions to other meta-types.
-
-    Example:
-
-    ```mlir
-    !lit.anystruct<@SomeStruct>
-    ```
-
-    The meta-type is propagated through values by attaching itself to type
-    values.
-
-    Example:
-
-    ```mlir
-    // Concrete type value.
-    #kgen.type<!lit.struct<@SomeStruct>> : !lit.anystruct<@SomeStruct>
-
-    // Parametric type value.
-    #kgen.param.decl.ref<"some_type"> : !lit.anystruct<@SomeStruct>
-    ```
-  }];
-
-  let parameters = (ins "StructType":$structType);
-  let assemblyFormat = "`<` $structType `>`";
-
-  let builders = [
-    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol,
-                                        "ArrayRef<TypedAttr>":$values,
-                                        "TypeSignatureType":$signature)>,
-    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol,
-                                        "TypeSignatureType":$signature), [{
-      return get(symbol, {}, signature);
-    }]>
-  ];
-
-  let extraClassDeclaration = [{
-    SymbolRefAttr getSymbol() const;
-    TypeSignatureType getSignature() const;
-    ArrayRef<TypedAttr> getParamValues() const;
-
-    /// Bind parameter values to the metatype, returning a new metatype.
-    AnyStructType bind(ArrayRef<TypedAttr> values) const;
-    /// Return whether the type is a metatype.
-    bool isMetaType() { return true; }
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // TraitType
 //===----------------------------------------------------------------------===//
 

@@ -196,7 +196,7 @@ private:
   }
   WalkResult processBytecodeReferences(Type type) {
     return TypeSwitch<Type, WalkResult>(type)
-        .Case<AnyStructType, LIT::StructType, TraitType>([&](auto ref) {
+        .Case<StructMetaType, LIT::StructType, TraitType>([&](auto ref) {
           return success(
               resolveBytecodeReferenceSignature(shared, ref.getSymbol()));
         })

@@ -146,7 +146,7 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
       if (!elideType)
         os << ":" << ASTType(indexVal.getType()).mlirType << " ";
       os << ASTType(indexVal).mlirType;
-    } else if (isa<TypeType, AnyStructType, AnyTraitType>(indexVal.getType()))
+    } else if (isa<TypeType, StructMetaType, AnyTraitType>(indexVal.getType()))
       os << ASTType(indexVal).mlirType;
     else // Otherwise print it as an attribute.
       indexVal.get().print(os, elideType);
@@ -617,8 +617,8 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // If this is a module or package declaration, form a module reference.
   if (isa<FileModuleOp, PackageOp>(decl)) {
-    PValue result(ModuleAttr::get(AnyStructType::get(
-        decl.getSymbolRef(), TypeSignatureType::get(emitter.getContext()))));
+    PValue result(ModuleAttr::get(StructMetaType::get(LIT::StructType::get(
+        decl.getSymbolRef(), TypeSignatureType::get(emitter.getContext())))));
     return emitter.emitResult(result, this, dest);
   }
 
@@ -964,7 +964,7 @@ static std::optional<ParamBindings> getBindingsForParameterOperands(
 static PValue substituteParametersIntoUserDefinedType(
     PValue typeValue, ArrayRef<Operand> operands, SMLoc loc, SMLoc lhsLoc,
     SMLoc rhsLoc, ExprEmitter &emitter) {
-  auto metaType = cast<AnyStructType>(typeValue.getType());
+  auto metaType = cast<StructMetaType>(typeValue.getType());
   ASTDecl *typeDecl = ASTType(typeValue).getDecl(emitter.shared);
   auto structOp = dyn_cast_or_null<StructDeclOp>(typeDecl);
   if (!structOp) {
@@ -1068,8 +1068,8 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   auto lookupError = [&] {
     auto diagType = baseType;
     // Complain about "SomeType" in 'SomeType.foo' not 'AnyStruct[SomeType]'.
-    if (auto anyStruct = dyn_cast<AnyStructType>(diagType))
-      diagType = anyStruct.getStructType();
+    if (auto anyStruct = dyn_cast<StructMetaType>(diagType))
+      diagType = anyStruct.getType();
     else if (auto anyTrait = dyn_cast<AnyTraitType>(diagType))
       diagType = anyTrait.getTraitType();
 
@@ -1470,7 +1470,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // If the field is a variable, emit a reference to it.
   if (auto fieldOp = dyn_cast<StructFieldOp>(memberDecl)) {
-    if (hasTypeBase || isa<AnyStructType>(baseRVType)) {
+    if (hasTypeBase || isa<StructMetaType>(baseRVType)) {
       emitter.emitError(getLoc(), "cannot access instance field '")
           << spelling << "' without an instance of " << baseRVType
           << getRange();
@@ -1570,14 +1570,14 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
         state.types.push_back(ASTType(type));
         return success();
       };
-      if (auto valueMetaType = dyn_cast<AnyStructType>(value.getType())) {
+      if (auto valueMetaType = dyn_cast<StructMetaType>(value.getType())) {
         ASTType tupleType = emitter.shared.getBuiltinTupleType(
             emitter.declScope, call.getLoc());
         // If the _type field is a Tuple of types, then the operation
         // returns multiple results, with types specified in the list.  We
         // need to take apart the Tuple value to get the types from inside it.
         if (valueMetaType.getSymbol() ==
-            cast<AnyStructType>(tupleType.getMetaType()).getSymbol()) {
+            cast<StructMetaType>(tupleType.getMetaType()).getSymbol()) {
           // Dig out the types from the tuple.  Tuple literals must always
           // have this particular shape.
           auto tca = cast<TypeParamAttr>(value);
@@ -1937,7 +1937,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // If the sub-value is an unbound Type, try binding parameters to it!
   if (Type typeValue = baseValue.getIfTypeValue()) {
     // Handle user-defined types and custom MLIR types.
-    if (auto structValue = dyn_cast<AnyStructType>(baseType)) {
+    if (auto structValue = dyn_cast<StructMetaType>(baseType)) {
       PValue result = substituteParametersIntoUserDefinedType(
           baseValue.getIfPValue(), operands, getLoc(), lsquareLoc, rsquareLoc,
           emitter);

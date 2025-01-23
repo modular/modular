@@ -16,7 +16,7 @@
 namespace M::KGEN {
 class NoneType;
 namespace LIT {
-class AnyStructType;
+class StructMetaType;
 class StructType;
 class OriginType;
 class OriginSetType;
