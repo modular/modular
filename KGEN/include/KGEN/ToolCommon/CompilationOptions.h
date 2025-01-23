@@ -93,6 +93,7 @@ public:
   std::string targetTriple = llvm::sys::getDefaultTargetTriple();
   std::string targetCpu = llvm::sys::getHostCPUName().str();
   std::string targetFeatures = getHostCPUFeatures();
+  std::string targetDataLayout = "";
   std::optional<llvm::CodeModel::Model> mcmodel = {};
   std::optional<uint64_t> largeDataThreshold = {};
 
