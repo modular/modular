@@ -4,10 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from register import *
-from buffer import NDBuffer
+import compiler
+from tensor_utils import ManagedTensorSlice
 
 
-@register_internal("fails_to_elaborate")
-fn fails_to_elaborate(out: NDBuffer[DType.int32, 1]):
-    constrained[False, "oops"]()
+@compiler.register("fails_to_elaborate")
+struct FailsToElaborate:
+    @uses_opaque
+    @staticmethod
+    fn execute(
+        out: ManagedTensorSlice[DType.int32, 1],
+    ):
+        constrained[False, "oops"]()

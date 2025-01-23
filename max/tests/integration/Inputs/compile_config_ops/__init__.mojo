@@ -4,13 +4,18 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-from register import register_internal
+import compiler
+from tensor_utils import ManagedTensorSlice
 from sys import env_get_int
 
 
-@register_internal("expose_env")
-fn expose_env(output: NDBuffer[DType.int32, 1, DimList(1)]):
-    alias split_k_reduction_scheme = env_get_int["SPLITK_REDUCTION_SCHEME", 2]()
-    output[0] = split_k_reduction_scheme
+@compiler.register("expose_env")
+struct ExposeEnv:
+    @staticmethod
+    fn execute(
+        out: ManagedTensorSlice[DType.int32, 1],
+    ):
+        alias split_k_reduction_scheme = env_get_int[
+            "SPLITK_REDUCTION_SCHEME", 2
+        ]()
+        out[0] = split_k_reduction_scheme

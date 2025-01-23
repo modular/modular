@@ -83,20 +83,21 @@ struct ReadCounter:
         output[1] = c.b
 
 
-@register_internal("bump_python_counter")
-fn bump_python_counter(
-    counter: PythonObject,
-) -> PythonObject:
-    var cpython = _get_global_python_itf().cpython()
-    var state = cpython.PyGILState_Ensure()
-    try:
-        cpython.check_init_error()
-        new_counter = counter.copy()
-        new_counter.bump()
-        return new_counter
-    except e:
-        abort(e)
-    finally:
-        cpython.PyGILState_Release(state)
+@compiler.register("bump_python_counter", num_dps_outputs=0)
+struct BumpPythonCounter:
+    @uses_opaque
+    @staticmethod
+    fn execute[stride: Int](counter: PythonObject) -> PythonObject:
+        var cpython = _get_global_python_itf().cpython()
+        var state = cpython.PyGILState_Ensure()
+        try:
+            cpython.check_init_error()
+            new_counter = counter.copy()
+            new_counter.bump()
+            return new_counter
+        except e:
+            abort(e)
+        finally:
+            cpython.PyGILState_Release(state)
 
-    return None
+        return None

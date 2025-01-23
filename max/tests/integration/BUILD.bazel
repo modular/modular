@@ -11,8 +11,8 @@ mojo_library(
     srcs = glob(["Inputs/test_user_op/*.mojo"]),
     visibility = [":__subpackages__"],
     deps = [
-        "//Kernels/mojo/buffer",
-        "//Kernels/mojo/register",
+        "//SDK/lib/API/mojo/max/compiler",
+        "//SDK/lib/API/mojo/max/tensor_utils",
         "//open-source/mojo/stdlib/stdlib",
     ],
 )
@@ -37,6 +37,8 @@ mojo_library(
     deps = [
         "//Kernels/mojo/buffer",
         "//Kernels/mojo/register",
+        "//SDK/lib/API/mojo/max/compiler",
+        "//SDK/lib/API/mojo/max/tensor_utils",
         "//open-source/mojo/stdlib/stdlib",
     ],
 )
