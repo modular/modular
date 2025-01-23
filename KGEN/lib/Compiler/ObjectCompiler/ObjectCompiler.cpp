@@ -1615,7 +1615,6 @@ ObjectCompiler::emitGPUKernels(
   SmallVector<AsyncRT::AnyAsyncValueRef> cachedIDResults;
 
   (void)writeTempModule(options.saveTempsPrefix, ".pre-split", *llvmModule);
-  options.saveTempsPrefix = "";
 
   auto handleSplit =
       [&](llvm::unique_function<LLVMModuleAndContext()> produceModule,
@@ -1636,7 +1635,7 @@ ObjectCompiler::emitGPUKernels(
       DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>>::allocate(runtime);
 
   andThenSyncMoving(
-      cachedResults, [result = result.copy()](
+      cachedResults, [result = result.copy(), options = options](
                          MutableArrayRef<AnyAsyncValueRef> values) mutable {
         DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>> results;
         size_t numTotalKernels = values.size() / 2;
@@ -1645,10 +1644,15 @@ ObjectCompiler::emitGPUKernels(
           AnyAsyncValueRef &bufs = values[i];
           AnyAsyncValueRef &kernelId = values[i + numTotalKernels];
 
+          if (kernelId.isError()) {
+            if (isGPUBackend(options))
+              return std::move(result).setToError(kernelId.takeDiagnostic());
+            else
+              continue;
+          }
+
           if (bufs.isError())
             return std::move(result).setToError(bufs.takeDiagnostic());
-          if (kernelId.isError())
-            return std::move(result).setToError(kernelId.takeDiagnostic());
 
           results.insert({kernelId.get<uint64_t>(),
                           std::move(bufs.get<DenseMap<EmitAs, BufferRef>>())});
