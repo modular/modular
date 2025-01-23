@@ -533,6 +533,7 @@ static void addSpecParametersToSpecialization(CallGraphNode *node) {
   // the original one).
   func->removeAttr(MOGGPreElab::kMOGGExecuteFunctionLabel);
   func->removeAttr(MOGGPreElab::kMOGGShapeFunctionLabel);
+  func->removeAttr(MOGGPreElab::kMOGGPyTorchFallbackFunctionLabel);
 }
 
 /// Update each CallOp in the specialization of `node` to call the specialized
