@@ -97,8 +97,8 @@ trait Quackable:
 ```
 
 A trait looks a lot like a struct, except it's introduced by the `trait`
-keyword. Right now, a trait can only contain method signatures, and cannot
-include method implementations. Each method signature must be followed by
+keyword. A trait can contain method signatures, but it can't implement those
+methods. Each method signature must be followed by
 three dots (`...`) to indicate that the method is unimplemented.
 
 A trait can also include associated aliases—compile-time constant values that

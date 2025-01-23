@@ -23,51 +23,6 @@ Functions declared inside a [`struct`](/mojo/manual/structs) are called
 
 :::
 
-## `fn` functions
-
-The `fn` function has somewhat stricter rules than the `def` function.
-
-Here's an example of an `fn` function:
-
-```mojo
-fn greet(name: String) -> String:
-    var greeting = "Hello, " + name + "!"
-    return greeting
-```
-
-As far as a function caller is concerned, `def` and `fn` functions are
-interchangeable. That is, there's nothing a `def` can do that an `fn` can't
-(and vice versa). The difference is that, compared to a `def` function, an `fn`
-function is more strict on the inside.
-
-Here's everything to know about `fn`:
-
-* Arguments must specify a type (except for the
-  `self` argument in [struct methods](/mojo/manual/structs#methods)).
-
-* Return values must specify a type, unless the function doesn't return a value.
-
-  If you don't specify a return type, it defaults to `None` (meaning no return
-  value).
-
-* By default, arguments are received as an immutable reference (values are
-  read-only, using the `read` [argument
-  convention](/mojo/manual/values/ownership#argument-conventions)).
-
-  This prevents accidental mutations, and permits the use of non-copyable types
-  as arguments.
-
-  If you want a local copy, you can simply assign the value to a local
-  variable. Or, you can get a mutable reference to the value by declaring the
-  `mut` [argument
-  convention](/mojo/manual/values/ownership#argument-conventions)).
-
-* If the function raises an exception, it must be explicitly declared with the
-  `raises` keyword. (A `def` function does not need to declare exceptions.)
-
-By enforcing these type checks, using the `fn` function helps avoid a variety
-of runtime errors.
-
 ## `def` functions
 
 Compared to an `fn` function, a `def` function has fewer restrictions.
@@ -83,7 +38,7 @@ def greet(name):
 In a Mojo `def` function, you have the option to specify the argument type and
 the return type. You can also declare variables with `var`, with or without
 explicit typing. So you can write a `def` function that looks almost exactly
-like the `fn` function shown earlier:
+like an `fn` function:
 
 ```mojo
 def greet(name: String) -> String:
@@ -146,6 +101,53 @@ The `object` type is still a work in progress. It doesn't support all of the
 possible underlying types, for example.
 
 :::
+
+## `fn` functions
+
+The `fn` function has somewhat stricter rules than the `def` function.
+
+Here's an example of an `fn` function:
+
+```mojo
+fn greet(name: String) -> String:
+    var greeting = "Hello, " + name + "!"
+    return greeting
+```
+
+As far as a function caller is concerned, `def` and `fn` functions are
+interchangeable. That is, there's nothing a `def` can do that an `fn` can't
+(and vice versa). The difference is that, compared to a `def` function, an `fn`
+function is more strict on the inside.
+
+Here's everything to know about `fn`:
+
+* Arguments must specify a type (except for the
+  `self` argument in [struct methods](/mojo/manual/structs#methods)).
+
+* Return values must specify a type, unless the function doesn't return a value.
+
+  If you don't specify a return type, it defaults to `None` (meaning no return
+  value).
+
+* By default, arguments are received as an immutable reference (values are
+  read-only, using the `read` [argument
+  convention](/mojo/manual/values/ownership#argument-conventions)).
+
+  This prevents accidental mutations, and permits the use of non-copyable types
+  as arguments.
+
+  If you want a local copy, you can simply assign the value to a local
+  variable. Or, you can get a mutable reference to the value by declaring the
+  `mut` [argument
+  convention](/mojo/manual/values/ownership#argument-conventions)).
+
+* If the function can raise an error, it must be explicitly declared with the
+  `raises` keyword. A `def` function does not need to add the `raises` keyword.
+  For information, see
+  [Raising and non-raising functions](#raising-and-non-raising-functions).
+
+By enforcing these type checks, using the `fn` function helps avoid a variety
+of runtime errors.
 
 ## Function arguments
 
@@ -702,3 +704,40 @@ returned immediately:
 def create_immovable_object3(owned name: String) -> ImmovableObject:
     return ImmovableObject(name^) # OK
 ```
+
+## Raising and non-raising functions
+
+By default, when a function raises an error, the function terminates immediately
+and the error propagates to the calling function. If the calling function
+doesn't handle the error, it continues to propagate up the call stack.
+
+```mojo
+def raises_error():
+    raise Error("There was an error.")
+```
+
+Functions declared with `fn` without the `raises` keyword are _non-raising
+functions_—that is, they are not allowed to propagate an error to the calling
+function. If a non-raising function calls a raising function, it **must handle
+any possible errors.**
+
+```mojo
+# This function will not compile
+fn unhandled_error():
+    raises_error()   # Error: can't call raising function in a non-raising context
+
+fn handle_error():
+    try:
+        raises_error()
+    except e:
+        print("Handled an error," e)
+```
+
+If you're writing code that you expect to use widely or distribute as a package,
+you may want to use `fn` functions for APIs that don't raise errors to limit
+the number of places users need to add unnecessary error handling code. For some
+extremely performance-sensitive code, it may be preferable to avoid runtime
+error-handling.
+
+For more information, see
+[Errors, error handling, and context managers](/mojo/manual/errors).

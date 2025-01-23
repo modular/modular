@@ -214,6 +214,14 @@ However, the `self` value inside the `__del__()` destructor is still whole (so
 all fields are still usable) until the destructor returns, as we'll discuss
 more in the following section.
 
+:::note Destructors cannot raise errors
+
+Currently a Mojo destructor isn't allowed to raise an error. This means that the
+destructor must be defined as an `fn` function without the `raises` keyword.
+Mojo won't allow you to define a destructor using `fn raises` or `def`.
+
+:::
+
 ## Field lifetimes
 
 In addition to tracking the lifetime of all objects in a program, Mojo also

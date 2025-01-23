@@ -128,6 +128,22 @@ you can elide it because Mojo already knows its type (`MyPair` in this case).
 
 :::
 
+### `fn` versus `def` in struct methods
+
+Struct methods can be declared with either the `def` or `fn` keywords. One
+important difference is that an `fn` function without the `raises` keyword can't
+raise an error. When you call a function that *can* raise an error from inside a
+method that *can't* raise an error, Mojo requires you to handle any errors, as
+described in
+[Errors, error handling, and context managers](/mojo/manual/errors).
+
+If you're writing code that you expect to use widely or distribute as a package,
+you may want to use `fn` functions for APIs that can't raise an error to limit
+the number of places users need to add error handling code.
+
+A struct's `__del__()` method, or destructor, **must** be a non-raising method,
+so it's always declared with `fn` (and without the `raises` keyword).
+
 ### Static methods
 
 A struct can also have *static methods*. A static method can be called without
