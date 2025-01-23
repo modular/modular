@@ -805,7 +805,7 @@ void KGEN::printParamName(AsmPrinter &p, StringAttr name, bool isRef) {
                                 isMLIRBuiltinType(name) || isSugaredType()));
   if (needsQuotes)
     p << "*\"";
-  llvm::printEscapedString(name, p.getStream());
+  printHumanReadableString(name, p.getStream());
   if (needsQuotes)
     p << '"';
 }
@@ -1352,6 +1352,26 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
   }
 }
 
+// NOTE: This is an alternative implementation of llvm::printEscapedString
+// that also supports writing "non-readable" characters like newlines.
+void KGEN::printHumanReadableString(StringRef Name, raw_ostream &Out) {
+#if 1
+  using namespace llvm;
+  for (unsigned char C : Name) {
+    if (C == '\\')
+      Out << '\\' << C;
+    else if (C == '\n')
+      Out << "\\n";
+    else if (llvm::isPrint(C) && C != '"')
+      Out << C;
+    else
+      Out << '\\' << hexdigit(C >> 4) << hexdigit(C & 0x0F);
+  }
+#else
+  llvm::printEscapedString(Name, Out);
+#endif
+}
+
 void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type,
                            bool forDiag) {
   // If the attribute's type provides a pretty printing hook, try to use it.
@@ -1381,7 +1401,7 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type,
     if (auto type = dyn_cast<ParameterTypeInterface>(value.getType()))
       isRef |= type.isMetaType();
     if (forDiag)
-      llvm::printEscapedString(declRef.getName(), p.getStream());
+      printHumanReadableString(declRef.getName(), p.getStream());
     else
       printParamName(p, declRef.getName(), isRef);
     return;

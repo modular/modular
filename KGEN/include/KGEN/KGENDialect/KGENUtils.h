@@ -459,6 +459,9 @@ bool hasAnyDecorator(ArrayRef<TypedAttr> decorators,
 ParseResult parseRegionWithArgs(OpAsmParser &p, Region &region);
 void printRegionWithArgs(OpAsmPrinter &p, Operation *op, Region &region);
 
+/// This is an alternative implementation of llvm::printEscapedString.
+void printHumanReadableString(StringRef Name, raw_ostream &Out);
+
 } // namespace M::KGEN
 
 #endif // KGEN_KGENDIALECT_KGENUTILS_H
