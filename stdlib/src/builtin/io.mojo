@@ -277,9 +277,13 @@ fn print[
         file: The output stream.
     """
 
-    write_buffered[buffer_size = 512 if is_amd_gpu() else 4096](
-        file, values, sep=sep, end=end
-    )
+    @parameter
+    if is_amd_gpu():
+        write_buffered[buffer_size=512](file, values, sep=sep, end=end)
+    elif is_nvidia_gpu():
+        write_buffered[use_heap=True](file, values, sep=sep, end=end)
+    else:
+        write_buffered(file, values, sep=sep, end=end)
 
     @parameter
     if not is_gpu():

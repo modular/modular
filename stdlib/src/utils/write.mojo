@@ -316,6 +316,7 @@ fn write_buffered[
     W: Writer, //,
     *Ts: Writable,
     buffer_size: Int = 4096,
+    use_heap: Bool = False,
 ](
     mut writer: W,
     args: VariadicPack[_, Writable, *Ts],
@@ -326,13 +327,19 @@ fn write_buffered[
     """
     Use a buffer on the stack to minimize expensive calls to the writer. When
     the buffer would overflow it writes to the `writer` passed in. You can also
-    add seperators between the args, and end characters.
+    add seperators between the args, and end characters. The default stack space
+    used for the buffer is 4096 bytes which matches the default arm64 and x86-64
+    page size, you can modify this e.g. when writing a large amount of data to a
+    file.
 
     Parameters:
         W: The type of the `Writer` to write to.
         Ts: The types of each arg to write. Each type must satisfy `Writable`.
         buffer_size: How many bytes to write to a buffer before writing out to
             the `writer` (default `4096`).
+        use_heap: Buffer to the heap, first calculating the total byte size
+            of all the args and then allocating only once. `buffer_size` is not
+            used in this case as it's dynamically calculated. (default `False`).
 
     Args:
         writer: The `Writer` to write to.
@@ -367,12 +374,11 @@ fn write_buffered[
     """
 
     @parameter
-    if is_nvidia_gpu():
+    if use_heap:
         # Count the total length of bytes to allocate only once
         var arg_bytes = _ArgBytes()
         write_args(arg_bytes, args, sep=sep, end=end)
 
-        # Stack space is very small on GPU due to many threads, so use heap
         var buffer = _WriteBufferHeap(arg_bytes.size + 1)
         write_args(buffer, args, sep=sep, end=end)
         buffer.data[buffer.pos] = 0
