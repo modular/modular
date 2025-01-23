@@ -64,6 +64,8 @@ def traced(
                 @functools.wraps(func)
                 async def wrapper(*args, **kwargs):
                     return await func(*args, **kwargs)
+
+                return wrapper
             else:
                 return func
         else:
