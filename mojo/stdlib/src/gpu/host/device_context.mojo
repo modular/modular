@@ -1335,6 +1335,13 @@ struct DeviceContext:
         )
 
     @always_inline
+    fn id(self) raises -> Int64:
+        # int64_t AsyncRT_DeviceContext_id(const DeviceContext *ctx)
+        return external_call[
+            "AsyncRT_DeviceContext_id", Int64, _DeviceContextPtr
+        ](self._handle)
+
+    @always_inline
     fn compute_capability(self) raises -> Int:
         var compute_capability: Int32 = 0
         # const char * AsyncRT_DeviceContext_computeCapability(int32_t *result, const DeviceContext *ctx)
