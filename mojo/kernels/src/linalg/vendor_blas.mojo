@@ -6,7 +6,7 @@
 from sys import sizeof, has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
 from buffer import DimList, NDBuffer
-from gpu.cublas.cublas import (
+from gpu._cublas.cublas import (
     Algorithm,
     ComputeType,
     _convert_to_cublas_datatype,
@@ -18,7 +18,7 @@ from gpu.cublas.cublas import (
     cublasCreate,
     cublasDestroy,
 )
-from gpu.cublas.cublaslt import (
+from gpu._cublas.cublaslt import (
     Context,
     MatmulAlgorithm,
     Preference,
@@ -42,14 +42,14 @@ from gpu.cublas.cublaslt import (
     cublasLtMatrixLayoutCreate,
     cublasLtMatrixLayoutDestroy,
 )
-from gpu.cublas.dtype import DataType
-from gpu.cublas.result import Result
+from gpu._cublas.dtype import DataType
+from gpu._cublas.result import Result
 from gpu.host import DeviceContext
 from gpu.host.nvidia_cuda import CUDA
 from layout import Layout
 from memory import UnsafePointer
 from utils.variant import Variant
-import gpu.rocblas
+import gpu._rocblas
 from os import abort
 
 # ===----------------------------------------------------------------------===#
@@ -120,7 +120,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
     alias resolved_backend = _resolve_backend[backend]()
     alias _cublas_type = UnsafePointer[cublasContext]
     alias _cublaslt_type = UnsafePointer[Context]
-    alias _rocblas_type = rocblas.Handle
+    alias _rocblas_type = _rocblas.Handle
     alias type = Variant[
         Self._cublas_type, Self._cublaslt_type, Self._rocblas_type
     ]
@@ -138,8 +138,8 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
             self._handle = handle
         elif Self.resolved_backend is Backend.ROCBLAS:
             var handle = Self._rocblas_type()
-            rocblas.check_error(
-                rocblas.rocblas.rocblas_create_handle(
+            _rocblas.check_error(
+                _rocblas.rocblas.rocblas_create_handle(
                     UnsafePointer.address_of(handle)
                 )
             )
@@ -167,8 +167,8 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
             self._handle = Self._cublaslt_type()
             return
         elif Self.resolved_backend is Backend.ROCBLAS:
-            rocblas.check_error(
-                rocblas.rocblas.rocblas_destroy_handle(self._get_rocblas())
+            _rocblas.check_error(
+                _rocblas.rocblas.rocblas_destroy_handle(self._get_rocblas())
             )
             self._handle = Self._rocblas_type()
             return
@@ -389,7 +389,7 @@ fn _rocblas_matmul[
     use_tf32: Bool = False,
 ](
     ctx: DeviceContext,
-    handle: rocblas.Handle,
+    handle: _rocblas.Handle,
     c: NDBuffer[_, 2, _],
     a: NDBuffer[_, 2, _],
     b: NDBuffer[_, 2, _],
@@ -414,7 +414,7 @@ fn _rocblas_matmul[
     var alpha = Scalar[DType.float32](1.0)
     var beta = Scalar[DType.float32](0.0)
 
-    var compute_type = rocblas.types.DataType(DType.float32)
+    var compute_type = _rocblas.types.DataType(DType.float32)
 
     # Cublas is by default column-major but we like to have the output in row-major
     # to compare with our results. To do this without an explicit transpose, we
@@ -428,14 +428,14 @@ fn _rocblas_matmul[
     # transformation. To be rigorous though, we should set `c_is_row_major = True`
     # for accuracy validations and uses default column-major in benchmark.
 
-    fn _convert_to_rocblas_transpose(tr: Bool) -> rocblas.types.Operation:
+    fn _convert_to_rocblas_transpose(tr: Bool) -> _rocblas.types.Operation:
         if tr:
-            return rocblas.types.Operation.TRANSPOSE
-        return rocblas.types.Operation.NONE
+            return _rocblas.types.Operation.TRANSPOSE
+        return _rocblas.types.Operation.NONE
 
     if c_row_major:
-        return rocblas.check_error(
-            rocblas.rocblas.rocblas_gemm_ex(
+        return _rocblas.check_error(
+            _rocblas.rocblas.rocblas_gemm_ex(
                 handle,
                 _convert_to_rocblas_transpose(transpose_b),
                 _convert_to_rocblas_transpose(transpose_a),
@@ -444,27 +444,27 @@ fn _rocblas_matmul[
                 K,
                 UnsafePointer.address_of(alpha).bitcast[NoneType](),
                 UnsafePointer(b.data.bitcast[NoneType]()),
-                rocblas.types.DataType(b.type),
+                _rocblas.types.DataType(b.type),
                 K if transpose_b else N,
                 UnsafePointer(a.data.bitcast[NoneType]()),
-                rocblas.types.DataType(a.type),
+                _rocblas.types.DataType(a.type),
                 K,
                 UnsafePointer.address_of(beta).bitcast[NoneType](),
                 UnsafePointer(c.data.bitcast[NoneType]()),
-                rocblas.types.DataType(c.type),
+                _rocblas.types.DataType(c.type),
                 N,
                 UnsafePointer(c.data.bitcast[NoneType]()),
-                rocblas.types.DataType(c.type),
+                _rocblas.types.DataType(c.type),
                 N,
                 compute_type,
-                rocblas.rocblas.types.Algorithm.STANDARD,
+                _rocblas.rocblas.types.Algorithm.STANDARD,
                 0,
                 0,
             )
         )
     # Default column-major.
-    rocblas.check_error(
-        rocblas.rocblas.rocblas_gemm_ex(
+    _rocblas.check_error(
+        _rocblas.rocblas.rocblas_gemm_ex(
             handle,
             _convert_to_rocblas_transpose(transpose_a),
             _convert_to_rocblas_transpose(transpose_b),
@@ -473,20 +473,20 @@ fn _rocblas_matmul[
             K,
             UnsafePointer.address_of(alpha).bitcast[NoneType](),
             UnsafePointer(a.data.bitcast[NoneType]()),
-            rocblas.types.DataType(a.type),
+            _rocblas.types.DataType(a.type),
             M,
             UnsafePointer(b.data.bitcast[NoneType]()),
-            rocblas.types.DataType(b.type),
+            _rocblas.types.DataType(b.type),
             N if transpose_b else K,
             UnsafePointer.address_of(beta).bitcast[NoneType](),
             UnsafePointer(c.data.bitcast[NoneType]()),
-            rocblas.types.DataType(c.type),
+            _rocblas.types.DataType(c.type),
             M,
             UnsafePointer(c.data.bitcast[NoneType]()),
-            rocblas.types.DataType(c.type),
+            _rocblas.types.DataType(c.type),
             M,
             compute_type,
-            rocblas.rocblas.types.Algorithm.STANDARD,
+            _rocblas.rocblas.types.Algorithm.STANDARD,
             0,
             0,
         )
