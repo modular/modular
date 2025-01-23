@@ -340,6 +340,21 @@ fn _matmul_gpu[
             alias kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
 
             @parameter
+            if has_amd_gpu_accelerator():
+                multistage_gemm[
+                    transpose_b=transpose_b,
+                    config = kernels.mi300x_128x128_2,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ](
+                    rebind[NDBuffer[c_type, 2, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b_shape]](b),
+                    kernels.mi300x_128x128_2,
+                    ctx,
+                )
+                return
+
+            @parameter
             if is_defined["AUTOTUNING_MODE"]():
                 multistage_gemm[
                     transpose_b=transpose_b,
