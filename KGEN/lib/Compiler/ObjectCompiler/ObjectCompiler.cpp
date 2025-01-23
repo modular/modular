@@ -483,7 +483,11 @@ static LogicalResult optimizeLLVMModule(llvm::Module &module,
                                         CompilationOptions &options,
                                         AsyncRT::Runtime &runtime,
                                         std::optional<size_t> moduleIdx) {
-  module.setDataLayout(targetMachine.createDataLayout());
+  llvm::DataLayout targetDataLayout =
+      options.targetDataLayout.empty()
+          ? targetMachine.createDataLayout()
+          : llvm::DataLayout(options.targetDataLayout);
+  module.setDataLayout(targetDataLayout);
 
   std::string saveTempsPrefix = options.saveTempsPrefix;
   if (moduleIdx && !options.saveTempsPrefix.empty())

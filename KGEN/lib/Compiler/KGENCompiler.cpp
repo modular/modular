@@ -220,6 +220,9 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
         AsyncRT::Device::getAcceleratorArchOrEmpty();
   }
   compilationOptions.relocModel = target.getRelocationModel();
+  StringRef targetDataLayout = target.getDataLayout().toString();
+  if (!targetDataLayout.empty())
+    compilationOptions.targetDataLayout = targetDataLayout;
 
   // Initialize the object compiler.
   ErrorOr<std::unique_ptr<ObjectCompiler>> compilerOr =
@@ -387,6 +390,9 @@ static ElaboratorCompileOffloadRetType compileOffloads(
           AsyncRT::Device::getAcceleratorArchOrEmpty();
     }
     compilationOptions.relocModel = target.getRelocationModel();
+    StringRef targetDataLayout = target.getDataLayout().toString();
+    if (!targetDataLayout.empty())
+      compilationOptions.targetDataLayout = targetDataLayout;
 
     // Initialize the object compiler.
     ErrorOr<std::unique_ptr<ObjectCompiler>> compilerOr =
