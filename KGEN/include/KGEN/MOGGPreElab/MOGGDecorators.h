@@ -206,7 +206,8 @@ inline bool isShapeFunc(Operation *gen) {
 
 inline bool isDPSKernel(Operation *gen) {
   return gen != nullptr && (gen->hasAttr(kMOGGExecuteFunctionLabel) ||
-                            gen->hasAttr(kMOGGShapeFunctionLabel));
+                            gen->hasAttr(kMOGGShapeFunctionLabel) ||
+                            gen->hasAttr(kMOGGPyTorchFallbackFunctionLabel));
 }
 
 //===----------------------------------------------------------------------===//
