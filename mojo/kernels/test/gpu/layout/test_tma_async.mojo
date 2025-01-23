@@ -464,6 +464,309 @@ def test_tma_async_reduce[
     _ = dst^
 
 
+# Test loading tiles along the last axis.
+@__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 2](2, 3))
+fn test_tma_loads_two_buffers_kernel[
+    dtype: DType,
+    a_layout: Layout,
+    b_layout: Layout,
+    a_tile_layout: Layout,
+    b_tile_layout: Layout,
+    a_thread_layout: Layout,
+    b_thread_layout: Layout,
+](
+    a_dst: LayoutTensor[dtype, a_layout],
+    b_dst: LayoutTensor[dtype, b_layout],
+    a_tma_tile: TMATensorTile[dtype, a_tile_layout],
+    b_tma_tile: TMATensorTile[dtype, b_tile_layout],
+):
+    alias tileM = a_tile_layout.shape[0].value()
+    alias tileN = a_tile_layout.shape[1].value()
+    alias expected_bytes = a_tile_layout.size() * sizeof[dtype]()
+
+    alias N = a_layout.shape[1].value()
+    alias num_iters = ceildiv(N, tileN)
+
+    a_tile = LayoutTensor[
+        dtype,
+        a_tile_layout,
+        address_space = _GPUAddressSpace.SHARED,
+        alignment=128,
+    ].stack_allocation()
+
+    b_tile = LayoutTensor[
+        dtype,
+        b_tile_layout,
+        address_space = _GPUAddressSpace.SHARED,
+        alignment=128,
+    ].stack_allocation()
+
+    mbar = TMABarrier()
+
+    if thread_idx.x == 0:
+        mbar.init()
+
+    var phase: Int32 = 0
+
+    for i in range(num_iters):
+        if thread_idx.x == 0:
+            mbar.expect_bytes(expected_bytes * 2)
+            a_tma_tile.async_copy(
+                a_tile, mbar, (UInt(i) * tileN, block_idx.y * tileM)
+            )
+            b_tma_tile.async_copy(
+                b_tile, mbar, (UInt(i) * tileN, block_idx.y * tileM)
+            )
+
+        # Ensure all threads sees initialized mbarrier
+        barrier()
+
+        mbar.wait(phase)
+        phase ^= 1
+
+        a_dst_tile = a_dst.tile[tileM, tileN](block_idx.y, i)
+        b_dst_tile = b_dst.tile[tileM, tileN](block_idx.y, i)
+        copy_sram_to_dram[a_thread_layout](a_dst_tile, a_tile)
+        copy_sram_to_dram[b_thread_layout](b_dst_tile, b_tile)
+
+
+def test_tma_load_two_buffers_row_major[
+    src_layout: Layout, tile_layout: Layout, load_along_last_dim: Bool = False
+](ctx: DeviceContext):
+    alias M = src_layout.shape[0].value()
+    alias N = src_layout.shape[1].value()
+    alias tileM = tile_layout.shape[0].value()
+    alias tileN = tile_layout.shape[1].value()
+    alias M_roundup = align_up(M, tileM)
+    alias N_roundup = align_up(N, tileN)
+
+    var a_src = ManagedLayoutTensor[DType.float32, src_layout](ctx)
+    var b_src = ManagedLayoutTensor[DType.float32, src_layout](ctx)
+
+    var a_dst = ManagedLayoutTensor[
+        DType.float32, Layout.row_major(M_roundup, N_roundup)
+    ](ctx)
+
+    var b_dst = ManagedLayoutTensor[
+        DType.float32, Layout.row_major(M_roundup, N_roundup)
+    ](ctx)
+
+    arange(a_src.tensor(), 1)
+    arange(b_src.tensor(), 1)
+    var a_tma_tensor = create_tma_tile[tileM, tileN](ctx, a_src.device_tensor())
+    var b_tma_tensor = create_tma_tile[tileM, tileN](ctx, b_src.device_tensor())
+    ctx.synchronize()
+
+    var kernel = ctx.compile_function[
+        test_tma_loads_two_buffers_kernel[
+            __type_of(a_tma_tensor).dtype,
+            Layout.row_major(M_roundup, N_roundup),  # dst layout
+            Layout.row_major(M_roundup, N_roundup),  # dst layout
+            __type_of(a_tma_tensor).layout,  # smem layout
+            __type_of(b_tma_tensor).layout,  # smem layout
+            __type_of(a_tma_tensor).layout,  # thread layout
+            __type_of(b_tma_tensor).layout,  # thread layout
+        ],
+        _target = _get_gpu_target["sm_90"](),
+    ]()
+    ctx.enqueue_function(
+        kernel,
+        a_dst.device_tensor(),
+        b_dst.device_tensor(),
+        a_tma_tensor,
+        b_tma_tensor,
+        grid_dim=(1, M_roundup // tileM),
+        block_dim=(tileM * tileN),
+    )
+
+    a_src_host = a_src.tensor()
+    a_dst_host = a_dst.tensor()
+
+    b_src_host = b_src.tensor()
+    b_dst_host = b_dst.tensor()
+
+    # Check M x N keep the same value and others in M_roundup x N_roundup
+    # are set to zeros.
+    for m in range(M_roundup):
+        for n in range(N_roundup):
+            if m < M and n < N:
+                assert_equal(
+                    a_src_host[m, n].cast[DType.float32](),
+                    a_dst_host[m, n].cast[DType.float32](),
+                )
+
+                assert_equal(
+                    b_src_host[m, n].cast[DType.float32](),
+                    b_dst_host[m, n].cast[DType.float32](),
+                )
+
+            else:
+                assert_equal(a_dst_host[m, n].cast[DType.float32](), 0.0)
+                assert_equal(b_dst_host[m, n].cast[DType.float32](), 0.0)
+    ctx.synchronize()
+    _ = a_src^
+    _ = a_dst^
+
+    _ = b_src^
+    _ = b_dst^
+
+
+# Test loading tiles along the last axis.
+@__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 4](0, 1, 2, 3))
+fn test_tma_loads_and_store_two_buffers_kernel[
+    dtype: DType,
+    a_tile_layout: Layout,
+    b_tile_layout: Layout,
+    /,
+    *,
+    a_layout: Layout,
+    b_layout: Layout,
+](
+    a_tma_dst_tile: TMATensorTile[dtype, a_tile_layout],
+    b_tma_dst_tile: TMATensorTile[dtype, b_tile_layout],
+    a_tma_src_tile: TMATensorTile[dtype, a_tile_layout],
+    b_tma_src_tile: TMATensorTile[dtype, b_tile_layout],
+):
+    alias tileM = a_tile_layout.shape[0].value()
+    alias tileN = a_tile_layout.shape[1].value()
+    alias expected_bytes = a_tile_layout.size() * sizeof[dtype]()
+
+    alias N = a_layout.shape[1].value()
+    alias num_iters = ceildiv(N, tileN)
+
+    a_tile = LayoutTensor[
+        dtype,
+        a_tile_layout,
+        address_space = _GPUAddressSpace.SHARED,
+        alignment=128,
+    ].stack_allocation()
+
+    b_tile = LayoutTensor[
+        dtype,
+        b_tile_layout,
+        address_space = _GPUAddressSpace.SHARED,
+        alignment=128,
+    ].stack_allocation()
+
+    mbar = TMABarrier()
+
+    if thread_idx.x == 0:
+        mbar.init()
+
+    var phase: Int32 = 0
+
+    for i in range(num_iters):
+        if thread_idx.x == 0:
+            mbar.expect_bytes(expected_bytes * 2)
+            a_tma_src_tile.async_copy(
+                a_tile, mbar, (UInt(i) * tileN, block_idx.y * tileM)
+            )
+            b_tma_src_tile.async_copy(
+                b_tile, mbar, (UInt(i) * tileN, block_idx.y * tileM)
+            )
+
+        # Ensure all threads sees initialized mbarrier
+        barrier()
+
+        mbar.wait(phase)
+        phase ^= 1
+
+        tma_store_fence()
+
+        if thread_idx.x == 0:
+            a_tma_dst_tile.async_store(
+                a_tile, (UInt(i) * tileN, block_idx.y * tileM)
+            )
+            b_tma_dst_tile.async_store(
+                b_tile, (UInt(i) * tileN, block_idx.y * tileM)
+            )
+            cp_async_bulk_commit_group()
+
+        cp_async_bulk_wait_group[0]()
+
+
+def test_tma_load_and_store_two_buffers_row_major[
+    src_layout: Layout, tile_layout: Layout, dst_layout: Layout
+](ctx: DeviceContext):
+    alias M = src_layout.shape[0].value()
+    alias N = src_layout.shape[1].value()
+    alias tileM = tile_layout.shape[0].value()
+    alias tileN = tile_layout.shape[1].value()
+    alias dst_M = dst_layout.shape[0].value()
+    alias dst_N = dst_layout.shape[1].value()
+
+    var a_src = ManagedLayoutTensor[DType.float32, src_layout](ctx)
+    var b_src = ManagedLayoutTensor[DType.float32, src_layout](ctx)
+    var a_dst = ManagedLayoutTensor[DType.float32, dst_layout](ctx)
+    var b_dst = ManagedLayoutTensor[DType.float32, dst_layout](ctx)
+
+    arange(a_src.tensor(), 1)
+    arange(b_src.tensor(), 1)
+    var a_tma_src_tensor = create_tma_tile[tileM, tileN](
+        ctx, a_src.device_tensor()
+    )
+    var b_tma_src_tensor = create_tma_tile[tileM, tileN](
+        ctx, b_src.device_tensor()
+    )
+    var a_tma_dst_tensor = create_tma_tile[tileM, tileN](
+        ctx, a_dst.device_tensor()
+    )
+    var b_tma_dst_tensor = create_tma_tile[tileM, tileN](
+        ctx, b_dst.device_tensor()
+    )
+    ctx.synchronize()
+
+    var kernel = ctx.compile_function[
+        test_tma_loads_and_store_two_buffers_kernel[
+            __type_of(a_tma_src_tensor).dtype,
+            __type_of(a_tma_src_tensor).layout,  # smem layout
+            __type_of(a_tma_src_tensor).layout,  # smem layout
+            a_layout=dst_layout,  # dst layout
+            b_layout=dst_layout,  # dst layout
+        ],
+        _target = _get_gpu_target["sm_90"](),
+    ]()
+    ctx.enqueue_function(
+        kernel,
+        a_tma_dst_tensor,
+        b_tma_dst_tensor,
+        a_tma_src_tensor,
+        b_tma_src_tensor,
+        grid_dim=(1, dst_M // tileM),
+        block_dim=(tileM * tileN),
+    )
+
+    a_src_host = a_src.tensor()
+    a_dst_host = a_dst.tensor()
+
+    b_src_host = b_src.tensor()
+    b_dst_host = b_dst.tensor()
+
+    for m in range(dst_M):
+        for n in range(dst_N):
+            if m < M and n < N:
+                assert_equal(
+                    a_src_host[m, n].cast[DType.float32](),
+                    a_dst_host[m, n].cast[DType.float32](),
+                )
+
+                assert_equal(
+                    b_src_host[m, n].cast[DType.float32](),
+                    b_dst_host[m, n].cast[DType.float32](),
+                )
+
+            else:
+                assert_equal(a_dst_host[m, n].cast[DType.float32](), 0.0)
+                assert_equal(b_dst_host[m, n].cast[DType.float32](), 0.0)
+
+    ctx.synchronize()
+    _ = a_src^
+    _ = a_dst^
+
+    _ = b_src^
+    _ = b_dst^
+
+
 def main():
     with DeviceContext() as ctx:
         print("test_tma_load")
@@ -604,4 +907,25 @@ def main():
             src_layout = Layout.row_major(32, 16),
             tile_layout = Layout.row_major(8, 8),
             dst_layout = Layout.row_major(26, 12),
+        ](ctx)
+        print("test_tma_load_two_buffer_row_major")
+        test_tma_load_two_buffers_row_major[
+            src_layout = Layout.row_major(32, 64),
+            tile_layout = Layout.row_major(8, 16),
+            load_along_last_dim=True,
+        ](ctx)
+        test_tma_load_two_buffers_row_major[
+            src_layout = Layout.row_major(9, 60),
+            tile_layout = Layout.row_major(8, 16),
+        ](ctx)
+        print("test_tma_load_and_store_two_buffer")
+        test_tma_load_and_store_two_buffers_row_major[
+            src_layout = Layout.row_major(32, 64),
+            tile_layout = Layout.row_major(8, 16),
+            dst_layout = Layout.row_major(32, 64),
+        ](ctx)
+        test_tma_load_and_store_two_buffers_row_major[
+            src_layout = Layout.row_major(32, 64),
+            tile_layout = Layout.row_major(10, 16),
+            dst_layout = Layout.row_major(40, 64),
         ](ctx)
