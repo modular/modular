@@ -83,6 +83,20 @@ def POP_AtomicBinOpAttr : EnumAttr<POPDialect,
                                    "bin_op">;
 
 //===----------------------------------------------------------------------===//
+ // GlobalAlloc
+ //===----------------------------------------------------------------------===//
+
+ def POP_GlobalAllocAddressSpace: POP_Enum<
+     "GlobalAllocAddressSpace", "pop.global_alloc address space", [
+       POP_EnumCase<"IGNORE", 0, "ignore">,
+       POP_EnumCase<"GPU_SHARED", 1, "gpu_shared">
+     ]>;
+
+ def POP_GlobalAllocAddressSpaceAttr: EnumAttr<POPDialect,
+                                               POP_GlobalAllocAddressSpace,
+                                               "global_alloc_addr_space">;
+
+//===----------------------------------------------------------------------===//
 // FastmathFlags
 //===----------------------------------------------------------------------===//
 
@@ -203,7 +217,7 @@ def POP_SIMDAttr : POP_Attr<"SIMD", "simd", [TypedAttrInterface,
   ];
 
 
-  let extraClassDeclaration = [{ 
+  let extraClassDeclaration = [{
     /// Create a "zero" value initialized to 0, 0.0, false, etc.  NOTE: This can
     /// return null if the SIMD type is parametric or we don't know how to make
     /// a zero value of the specified dtype.

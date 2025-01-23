@@ -6,7 +6,10 @@
 
 #include "KGEN/Compiler/LLVMIRUtils.h"
 #include "KGEN/Support/CompilerProfiling.h"
+#include "KGEN/ToolCommon/CompilationOptions.h"
 #include "Support/Buffer.h"
+#include "mlir/Dialect/LLVMIR/NVVMDialect.h"
+#include "mlir/Dialect/LLVMIR/ROCDLDialect.h"
 #include "mlir/Support/LLVM.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SetOperations.h"
@@ -299,6 +302,28 @@ void KGEN::splitPerExported(LLVMModuleAndContext module,
   impl.split(processFn);
 }
 
+static unsigned getGPUSharedAddressSpace(const llvm::Triple &triple) {
+  if (triple.isNVPTX())
+    return mlir::NVVM::kSharedMemorySpace;
+  if (triple.isAMDGPU())
+    return mlir::ROCDL::ROCDLDialect::kSharedMemoryAddressSpace;
+  llvm_unreachable(
+      ("GPU shared AddressSpace not defined for target " + triple.str())
+          .c_str());
+}
+
+static bool isGlobalVarInGPUSharedMem(const std::string &tripleName,
+                                      const llvm::GlobalVariable &global) {
+  llvm::Triple triple(tripleName);
+  if (!isGPUTriple(triple))
+    return false;
+  if (global.getAddressSpace() != getGPUSharedAddressSpace(triple))
+    return false;
+
+  return global.getName().contains("._gpu_shared_mem") ||
+         global.hasExternalLinkage();
+}
+
 void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
   // The use-def list is sparse. Use it to build a sparse dependency graph
   // between global values.
@@ -309,11 +334,14 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
     infos[&value].gvIdx = gvIdx++;
     collectImmediateDependencies(&value, &value);
   };
+
+  const std::string &tripleName = mainModule->getTargetTriple();
   // NOTE: The visitation of globals then functions has to line up with
   // `readAndMaterializeDependencies`.
   for (const llvm::GlobalVariable &global : mainModule->globals()) {
     computeDeps(global);
-    if (!global.hasInternalLinkage() && !global.hasPrivateLinkage())
+    if (!global.hasInternalLinkage() && !global.hasPrivateLinkage() &&
+        !(isGlobalVarInGPUSharedMem(tripleName, global)))
       transitiveDeps[&global];
   }
   for (const llvm::Function &fn : mainModule->functions()) {
@@ -363,8 +391,16 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
       // If this value depends on a mutable global, keep track of it. We have to
       // put all users of a mutable global in the same module.
       if (auto *global = dyn_cast<llvm::GlobalVariable>(it);
-          global && !global->isConstant())
-        splitAnchorUsers[global].insert(&deps);
+          global && !global->isConstant()) {
+        // global alloc in GPU shared memory space are not actual
+        // splitting anchors as they are only shared among threads within
+        // a block but never between kernels.
+        // We also use a name handle "._gpu_shared_mem" to be sure
+        // that this is from stack_allocation in GPU shared memory.
+        if (!isGlobalVarInGPUSharedMem(tripleName, *global)) {
+          splitAnchorUsers[global].insert(&deps);
+        }
+      }
 
       // Recursive on dependencies.
       llvm::append_range(worklist, info.dependencies);

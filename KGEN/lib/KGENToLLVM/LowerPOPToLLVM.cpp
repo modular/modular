@@ -2050,7 +2050,14 @@ struct ConvertPOPGlobalAlloc : public ConvertSymbolOpToLLVM<GlobalAllocOp> {
             cast_or_null<IntegerAttr>(op.getType().getAddressSpace()))
       addrSpace = addrSpaceAttr.getInt();
 
-    StringRef name = cast<StringAttr>(adaptor.getName()).strref();
+    // (HACK) Add a postfix to the name here so that we can identify
+    // this type of variables in the llvm module.
+    // This is a workaround to LLVM MLIR lowering doesn't allow
+    // GlobalValues to have passthrough metadata.
+
+    std::string name = cast<StringAttr>(adaptor.getName()).str();
+    if (op.getMemoryType() == POP::GlobalAllocAddressSpace::GPU_SHARED)
+      name += "._gpu_shared_mem";
 
     // Create the global.
     b.clearInsertionPoint();

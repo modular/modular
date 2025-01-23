@@ -103,9 +103,13 @@ void CompilationOptions::print(raw_ostream &os) const {
   os << " }";
 }
 
+bool M::KGEN::isGPUTriple(const llvm::Triple &triple) {
+  return triple.isNVPTX() || triple.isAMDGPU();
+}
+
 bool M::KGEN::isGPUBackend(const CompilationOptions &options) {
   llvm::Triple triple(options.targetTriple);
-  return triple.isNVPTX() || triple.isAMDGPU();
+  return isGPUTriple(triple);
 }
 
 bool M::KGEN::isNVPTXBackend(const CompilationOptions &options) {
