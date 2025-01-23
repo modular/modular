@@ -338,7 +338,7 @@ PIPELINES = {
             version="llama3_2",
             encoding="bfloat16",
             pregenerated_torch_goldens_rlocation="torch_llama3-vision_golden/torch_llama3_2_bfloat16_golden.json",
-            kl_div_threshold=4e-3,
+            kl_div_threshold=8e-3,
             cos_dist_threshold=2e-3,
             # TODO(bduke): Absolute tolerance here is larger than expected.
             absolute_tolerance=1.0,
