@@ -163,8 +163,9 @@ writeCaptureArgs(ModuleOp module, StringAttr name) {
                        sig, InlineLevel::Always);
 
   // Populate the body. Generate a local variable for each capture argument
-  // and store the addresses to the pointer. The function is marked as
-  // `always_inline`, so this is okay.
+  // and store the addresses to the pointer.
+  // The function has to be `always_inline`, so that the stack allocated ptr
+  // will not go out of scope before use.
   // FIXME: This does not account for copy constructors, obviously.
   Block *body = b.createBlock(&func->getBodyRegion());
   Value argPtrs = body->addArgument(sig.getArguments().front(), b.getLoc());
