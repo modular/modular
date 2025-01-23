@@ -7,6 +7,7 @@
 matrix multiplication operations.
 """
 from layout import IntTuple, Layout, LayoutTensor
+from layout.layout import is_row_major
 
 from gpu import WARP_SIZE
 from gpu.memory import AddressSpace
@@ -18,12 +19,57 @@ from gpu.mma import (
     wgmma_wait_group_sync,
 )
 
+from sys import sizeof
 from utils import Index, IndexList
+
+# ===-----------------------------------------------------------------------===#
+# WGMMA shared memory layout                                                   #
+# ===-----------------------------------------------------------------------===#
+#
+# TODO: add more context for WGMMA, core matrix. Assuming reader know them for now
+#
+#
+# -------------------------------
+# M/N x K, K-major, w/o siwzzling
+# -------------------------------
+#
+# Consider core matrix cm_M x cm_K, where cm_M = 8 and cm_K = 16 // sizeof[type]()
+#
+#    !!!! core matrix one contiguous chunk in row-major(cm_M, cm_K) !!!!
+#
+# E.g.
+#                 | core matrix 00 | core matrix 01 |
+#                 | core matrix 10 | core matrix 11 |
+#
+# The elements are stored in shared memory as
+#
+#       | core matrix 00 | core matrix 10 | core matrix 01 | core matrix 11 |
+#
+# and each core matrix ij is a contiguous 128B with row_major(cm_M, cn_K) layout.
+#
+# The share memory tile is logically mapped to a BM x BK sub-matrix in global memory,
+# Without swizzling, the tile layout is
+#
+#     ((cm_M,  BM // cm_M), (cm_K, BK // cm_K))
+#   : ((cm_K, cm_M * cm_K), (   1, BM  * cm_K))
+#
+# coalesceable to (but we use the above like cutlass)
+#
+#     (  BM, (cm_K, BK // cm_K))
+#   : (cm_K, (   1, BM  * cm_K))
+#
 
 alias supported_mma_shape = (
     Index(64, 8, 8),
     Index(64, 8, 16),
 )
+
+# Core matrix dimensions
+alias _CM_M = 8
+alias _CM_N = 8
+alias _CM_K_BYTES = 16
+
+alias WGMMA_K_BYTES = 32
 
 
 # TODO(KERN-1301): Layouts are calculated for 64x8x8 instruction
@@ -46,6 +92,15 @@ fn _lhs_layout[mma_shape: IndexList[3]]() -> Layout:
     ]()
 
     return Layout()
+
+
+fn tile_layout_k_major[type: DType, BM: Int, BK: Int]() -> Layout:
+    alias _CM_K = _CM_K_BYTES // sizeof[type]()
+
+    return Layout(
+        IntTuple(IntTuple(_CM_M, BM // _CM_M), IntTuple(_CM_K, BK // _CM_K)),
+        IntTuple(IntTuple(_CM_K, _CM_M * _CM_K), IntTuple(1, BM * _CM_K)),
+    )
 
 
 fn _rhs_layout[mma_shape: IndexList[3]]() -> Layout:
@@ -72,11 +127,28 @@ fn _lhs_descriptor[
         mma_shape in supported_mma_shape,
         String("WGMMA operation of shape '", mma_shape, "' is not supported"),
     ]()
-    return WGMMADescriptor.create[8, 64](tensor.ptr)
+
+    alias layout = __type_of(tensor).layout
+    constrained[
+        layout.rank() == 2 and layout[0].rank() == 2 and layout[1].rank() == 2,
+        "shared memory tile layout should have structure (rank-2, rank-2).",
+    ]()
+
+    constrained[
+        layout[0].shape[0].value() == 8 and layout[1].shape[1].value() == 2,
+        "shared memory tile layout should have shape ((8, _), (_, 2)).",
+    ]()
+
+    # Ingore 4 LSB.
+    alias T = __type_of(tensor).dtype
+    alias SBO = (layout[0].stride[1].value() * sizeof[T]()) >> 4
+    alias LBO = (layout[1].stride[1].value() * sizeof[T]()) >> 4
+
+    return WGMMADescriptor.create[SBO, LBO](tensor.ptr)
 
 
 fn _rhs_descriptor[
-    mma_shape: IndexList[3]
+    mma_shape: IndexList[3], transposed: Bool = False
 ](
     tensor: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
 ) -> WGMMADescriptor[tensor.dtype]:
