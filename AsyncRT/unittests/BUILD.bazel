@@ -1,4 +1,17 @@
-load("//bazel:api.bzl", "modular_cc_test")
+load("//bazel:api.bzl", "modular_cc_library", "modular_cc_test")
+
+# Header adding test helpers for using gtest with `ErrorOr<T>`.
+modular_cc_library(
+    name = "TestUtils",
+    testonly = True,
+    hdrs = [
+        "TestUtils.h",
+    ],
+    visibility = ["//visibility:private"],
+    deps = [
+        "@llvm-project//third-party/unittest:gtest_main",
+    ],
+)
 
 modular_cc_test(
     name = "AllocatorTest",
@@ -42,6 +55,7 @@ modular_cc_test(
     size = "small",
     srcs = ["DeviceContextTest.cpp"],
     deps = [
+        ":TestUtils",
         "//AsyncRT:DeviceContext",
     ],
 )
