@@ -23,14 +23,14 @@ fn _verify_clock_functions(asm: String) raises -> None:
 
 
 def test_clock_functions_sm80():
-    alias asm = _compile_code_asm[
+    var asm = _compile_code_asm[
         clock_functions, target = _get_gpu_target["sm_80"]()
     ]()
     _verify_clock_functions(asm)
 
 
 def test_clock_functions_sm90():
-    alias asm = _compile_code_asm[
+    var asm = _compile_code_asm[
         clock_functions, target = _get_gpu_target["sm_90"]()
     ]()
     _verify_clock_functions(asm)
@@ -56,14 +56,14 @@ fn _verify_time_functions(asm: String) raises -> None:
 
 
 def test_time_functions_sm80():
-    alias asm = _compile_code_asm[
+    var asm = _compile_code_asm[
         time_functions, target = _get_gpu_target["sm_80"]()
     ]()
     _verify_time_functions(asm)
 
 
 def test_time_functions_sm90():
-    alias asm = _compile_code_asm[
+    var asm = _compile_code_asm[
         time_functions, target = _get_gpu_target["sm_90"]()
     ]()
     _verify_time_functions(asm)

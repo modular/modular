@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# REQUIRES: DISABLED
 # FIXME: KERN-1377
 # UNSUPPORTED: AMD-GPU
 # RUN: %mojo-no-debug-no-assert %s

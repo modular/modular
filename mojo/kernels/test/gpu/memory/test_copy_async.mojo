@@ -36,13 +36,13 @@ fn _verify_mbarrier(asm: String) raises -> None:
 
 def test_mbarrier_sm80():
     print("test_mbarrier_sm80")
-    alias asm = _compile_code_asm[test_mbarrier, target = _get_gpu_target()]()
+    var asm = _compile_code_asm[test_mbarrier, target = _get_gpu_target()]()
     _verify_mbarrier(asm)
 
 
 def test_mbarrier_sm90():
     print("test_mbarrier_sm90")
-    alias asm = _compile_code_asm[
+    var asm = _compile_code_asm[
         test_mbarrier, target = _get_gpu_target["sm_90"]()
     ]()
     _verify_mbarrier(asm)
@@ -62,7 +62,7 @@ fn _verify_mbarrier_init(asm: String) raises -> None:
 
 def test_mbarrier_init_sm80():
     print("test_mbarrier_init_sm80")
-    alias asm = _compile_code_asm[
+    var asm = _compile_code_asm[
         test_mbarrier_init, target = _get_gpu_target()
     ]()
 
@@ -71,7 +71,7 @@ def test_mbarrier_init_sm80():
 
 def test_mbarrier_init_sm90():
     print("test_mbarrier_init_sm90")
-    alias asm = _compile_code_asm[
+    var asm = _compile_code_asm[
         test_mbarrier_init, target = _get_gpu_target["sm_90"]()
     ]()
     _verify_mbarrier_init(asm)
@@ -92,7 +92,7 @@ fn _verify_mbarrier_test_wait(asm: String) raises -> None:
 
 def test_mbarrier_test_wait_sm80():
     print("test_mbarrier_test_wait_sm80")
-    alias asm = _compile_code_asm[
+    var asm = _compile_code_asm[
         test_mbarrier_test_wait, target = _get_gpu_target()
     ]()
     _verify_mbarrier_test_wait(asm)
@@ -100,7 +100,7 @@ def test_mbarrier_test_wait_sm80():
 
 def test_mbarrier_test_wait_sm90():
     print("test_mbarrier_test_wait_sm90")
-    alias asm = _compile_code_asm[
+    var asm = _compile_code_asm[
         test_mbarrier_test_wait, target = _get_gpu_target["sm_90"]()
     ]()
     assert_true("mbarrier.test_wait.shared.b64" in asm)
@@ -123,13 +123,13 @@ fn _verify_async_copy(asm: String) raises -> None:
 
 def test_async_copy_sm80():
     print("test_async_copy_sm80")
-    alias asm = _compile_code_asm[test_async_copy, target = _get_gpu_target()]()
+    var asm = _compile_code_asm[test_async_copy, target = _get_gpu_target()]()
     _verify_async_copy(asm)
 
 
 def test_async_copy_sm90():
     print("test_async_copy_sm90")
-    alias asm = _compile_code_asm[
+    var asm = _compile_code_asm[
         test_async_copy, target = _get_gpu_target["sm_90"]()
     ]()
     _verify_async_copy(asm)
@@ -152,7 +152,7 @@ fn _verify_async_copy_l2_prefetch(asm: String) raises -> None:
 
 def test_async_copy_l2_prefetch_sm80():
     print("test_async_l2_prefetch_sm80")
-    alias asm = _compile_code_asm[
+    var asm = _compile_code_asm[
         test_async_copy_l2_prefetch, target = _get_gpu_target()
     ]()
     _verify_async_copy_l2_prefetch(asm)
@@ -160,7 +160,7 @@ def test_async_copy_l2_prefetch_sm80():
 
 def test_async_copy_l2_prefetch_sm90():
     print("test_async_l2_prefetch_sm90")
-    alias asm = _compile_code_asm[
+    var asm = _compile_code_asm[
         test_async_copy_l2_prefetch, target = _get_gpu_target["sm_90"]()
     ]()
     _verify_async_copy_l2_prefetch(asm)
@@ -191,7 +191,7 @@ fn _verify_test_async_copy_with_zero_fill(asm: String) raises -> None:
 
 def test_async_copy_with_zero_fill():
     print("test_async_copy_zero_fill")
-    alias asm = _compile_code_asm[
+    var asm = _compile_code_asm[
         test_async_copy_with_zero_fill_kernel, target = _get_gpu_target()
     ]()
     _verify_test_async_copy_with_zero_fill(asm)
@@ -235,7 +235,7 @@ fn _verify_async_copy_with_non_zero_fill(asm: String) raises -> None:
 
 def test_async_copy_with_non_zero_fill():
     print("test_async_copy_with_non_zero_fill")
-    alias asm = _compile_code_asm[
+    var asm = _compile_code_asm[
         async_copy_with_non_zero_fill_kernel, target = _get_gpu_target()
     ]()
     _verify_async_copy_with_non_zero_fill(asm)
@@ -249,7 +249,7 @@ fn _verify_async_copy_with_eviction(asm: String) raises -> None:
 
 def test_async_copy_with_eviction_sm80():
     print("test_async_copy_with_eviction_sm80")
-    alias asm = _compile_code_asm[
+    var asm = _compile_code_asm[
         test_async_copy_l2_prefetch, target = _get_gpu_target()
     ]()
     _verify_async_copy_l2_prefetch(asm)
@@ -257,7 +257,7 @@ def test_async_copy_with_eviction_sm80():
 
 def test_async_copy_with_eviction_sm90():
     print("test_async_copy_with_eviction_sm90")
-    alias asm = _compile_code_asm[
+    var asm = _compile_code_asm[
         test_async_copy_l2_prefetch, target = _get_gpu_target["sm_90"]()
     ]()
     _verify_async_copy_l2_prefetch(asm)

@@ -82,7 +82,7 @@ def test_causal_mask_asm():
 
         return vec[2]
 
-    alias asm = _compile_code_asm[kernel, target = _get_gpu_target()]()
+    var asm = _compile_code_asm[kernel, target = _get_gpu_target()]()
     assert_true("setp.lt.u64" not in asm)
     assert_true("setp.lt.s64" not in asm)
 

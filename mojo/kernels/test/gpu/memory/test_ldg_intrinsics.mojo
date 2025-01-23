@@ -51,14 +51,14 @@ fn _verify_register_intrinsics(asm: String) raises -> None:
 
 
 def test_register_intrinsics_sm80():
-    alias asm = _compile_code_asm[
+    var asm = _compile_code_asm[
         register_intrinsics, target = _get_gpu_target["sm_80"]()
     ]()
     _verify_register_intrinsics(asm)
 
 
 def test_register_intrinsics_sm90():
-    alias asm = _compile_code_asm[
+    var asm = _compile_code_asm[
         register_intrinsics,
         target = _get_gpu_target["sm_90"](),
     ]()

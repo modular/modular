@@ -17,7 +17,7 @@ fn register_intrinsics():
 
 
 def test_register_intrinsics_sm80():
-    alias asm = _compile_code_asm[
+    var asm = _compile_code_asm[
         register_intrinsics, target = _get_gpu_target["sm_80"]()
     ]()
     assert_false("setmaxnreg.inc.sync.aligned.u32" in asm)
@@ -25,7 +25,7 @@ def test_register_intrinsics_sm80():
 
 
 def test_register_intrinsics_sm90():
-    alias asm = _compile_code_asm[
+    var asm = _compile_code_asm[
         register_intrinsics, target = _get_gpu_target["sm_90a"]()
     ]()
     assert_true("setmaxnreg.inc.sync.aligned.u32" in asm)

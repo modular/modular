@@ -26,21 +26,21 @@ fn _verify_sleep_intrinsics_mi300x(asm: String) raises -> None:
 
 
 def test_sleep_intrinsics_sm80():
-    alias asm = _compile_code_asm[
+    var asm = _compile_code_asm[
         sleep_intrinsics, target = _get_gpu_target["sm_80"]()
     ]()
     _verify_sleep_intrinsics_nvidia(asm)
 
 
 def test_sleep_intrinsics_sm90():
-    alias asm = _compile_code_asm[
+    var asm = _compile_code_asm[
         sleep_intrinsics, target = _get_gpu_target["sm_90"]()
     ]()
     _verify_sleep_intrinsics_nvidia(asm)
 
 
 def test_sleep_intrinsics_mi300x():
-    alias asm = _compile_code_asm[
+    var asm = _compile_code_asm[
         sleep_intrinsics, target = _get_gpu_target["mi300x"]()
     ]()
     _verify_sleep_intrinsics_mi300x(asm)
