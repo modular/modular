@@ -670,7 +670,7 @@ fn flash_attention_dispatch[
             var num_partitions_value: Int
 
             @parameter
-            if _is_paged or is_amd_gpu():
+            if _is_paged or has_amd_gpu_accelerator():
                 # TODO(KERN-1358) Support num_partitions > 1 for paged attn.
                 num_partitions_value = 1
             else:
@@ -2805,14 +2805,20 @@ fn mha_single_batch_pipelined[
                 output_reg_tile.vectorize[1, 4](),
             )
             barrier()
-            copy_sram_to_dram[
-                thread_layout = Layout.row_major(
-                    num_threads * simd_size // depth, depth // simd_size
-                ),
-            ](
-                output_gmem_tile.vectorize[1, simd_size](),
-                accum_smem_tile.vectorize[1, simd_size](),
-            )
+
+            # TODO(KERN-1495): Revert to copy_sram_to_dram once the bug is fixed
+            for i in range(output_gmem_tile.dim(0)):
+                for j in range(lane_id(), output_gmem_tile.dim(1), WARP_SIZE):
+                    output_gmem_tile[i, j] = accum_smem_tile[i, j]
+
+            # copy_sram_to_dram[
+            #    thread_layout = Layout.row_major(
+            #         num_threads * simd_size // depth, depth // simd_size
+            #     ),num_threads=num_threads
+            # ](
+            #     output_gmem_tile.vectorize[1, simd_size](),
+            #      accum_smem_tile.vectorize[1, simd_size](),
+            #  )
 
         # Guard writing to shared memory.
 
