@@ -8,10 +8,10 @@
 #define KGEN_LIB_MOJOLLDB_TYPESYSTEM_MOJODWARFPARSER_H
 
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
-#include "llvm-project/lldb/source/Plugins/SymbolFile/DWARF/DWARFASTParser.h"
-#include "llvm-project/lldb/source/Plugins/SymbolFile/DWARF/DWARFDIE.h"
-#include "llvm-project/llvm/include/llvm/ADT/AddressRanges.h"
-#include "llvm-project/llvm/include/llvm/ExecutionEngine/Orc/AbsoluteSymbols.h"
+#include "lldb/source/Plugins/SymbolFile/DWARF/DWARFASTParser.h"
+#include "lldb/source/Plugins/SymbolFile/DWARF/DWARFDIE.h"
+#include "llvm/ADT/AddressRanges.h"
+#include "llvm/ExecutionEngine/Orc/AbsoluteSymbols.h"
 
 namespace lldb_private::plugin::dwarf {
 class DWARFDebugInfoEntry;

@@ -13,9 +13,9 @@
 #include "lldb/Symbol/CompileUnit.h"
 #include "lldb/Symbol/SymbolFile.h"
 #include "lldb/Utility/StreamString.h"
-#include "llvm-project/lldb/source/Plugins/SymbolFile/DWARF/DWARFDIE.h"
-#include "llvm-project/lldb/source/Plugins/SymbolFile/DWARF/DWARFUnit.h"
-#include "llvm-project/lldb/source/Plugins/SymbolFile/DWARF/LogChannelDWARF.h"
+#include "lldb/source/Plugins/SymbolFile/DWARF/DWARFDIE.h"
+#include "lldb/source/Plugins/SymbolFile/DWARF/DWARFUnit.h"
+#include "lldb/source/Plugins/SymbolFile/DWARF/LogChannelDWARF.h"
 #include <filesystem>
 
 using namespace M;
