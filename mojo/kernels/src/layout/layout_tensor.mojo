@@ -2320,6 +2320,7 @@ fn copy_dram_to_sram[
     src_thread_layout: Layout,
     dst_thread_layout: Layout = src_thread_layout,
     swizzle: OptionalReg[Swizzle] = None,
+    num_threads: Int = src_thread_layout.size(),
 ](dst: LayoutTensor, src: LayoutTensor):
     constrained[
         dst.dtype == src.dtype, "src dtype and dst dtype must be the same."
@@ -2334,6 +2335,12 @@ fn copy_dram_to_sram[
         dst.address_space == _GPUAddressSpace.SHARED,
         "dst address space must be SHARED.",
     ]()
+    alias num_busy_threads = src_thread_layout.size()
+
+    @parameter
+    if num_threads > num_busy_threads:
+        if thread_idx.x >= num_busy_threads:
+            return
 
     var src_fragments = src.distribute[src_thread_layout](thread_idx.x)
     var dst_fragments = dst.distribute[dst_thread_layout, swizzle=swizzle](
@@ -2406,11 +2413,13 @@ fn copy_dram_to_sram[
 fn copy_dram_to_sram[
     thread_layout: Layout,
     swizzle: OptionalReg[Swizzle] = None,
+    num_threads: Int = thread_layout.size(),
 ](dst: LayoutTensor, src: LayoutTensor):
     copy_dram_to_sram[
         src_thread_layout=thread_layout,
         dst_thread_layout=thread_layout,
         swizzle=swizzle,
+        num_threads=num_threads,
     ](dst, src)
 
 
