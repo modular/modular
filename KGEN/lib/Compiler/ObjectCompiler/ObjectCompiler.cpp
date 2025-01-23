@@ -968,9 +968,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
 
             WriteableBufferRef linkedObj = *mcLinkResult;
             if (emitAssembly) {
-              std::string postfix = ".s";
-              if (isNVPTXBackend(options))
-                postfix = ".ptx";
+              std::string postfix = isNVPTXBackend(options) ? ".ptx" : ".s";
 
               StringRef toEmit(linkedObj->getBufferStart(),
                                linkedObj->getBufferSize());
@@ -1457,6 +1455,15 @@ lowerLLVMModuleToObject(llvm::Module &inputModule, Location loc,
       }
 
       if (emissionKind == EmitAs::ASM) {
+        std::string postfix = isNVPTXBackend(options) ? ".ptx" : ".s";
+
+        StringRef toEmit(buf->getBufferStart(), buf->getBufferSize());
+        if (failed(writeBytesToTempWithHash(options.saveTempsPrefix, postfix,
+                                            toEmit))) {
+          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+              "failed to save asm to saveTempsPrefix", loc));
+        }
+
         std::move(output).emplace(buf.copy());
       } else {
         // Emitting as a shared object
