@@ -765,3 +765,25 @@ fn right_inverse(layout: Layout) -> Layout:
                 next_stride *= to_int(shape_j)
                 break
     return Layout(shape, stride)
+
+
+fn is_row_major[rank: Int](layout: Layout) -> Bool:
+    var flat_shape = flatten(layout.shape)
+    var flat_stride = flatten(layout.stride)
+    var flat_rank = len(flat_shape)
+
+    if flat_rank != rank:
+        return False
+
+    if flat_stride[flat_rank - 1].value() != 1:
+        return False
+
+    correct_stride = flat_shape[flat_rank - 1].value()
+
+    for i in reversed(range(flat_rank - 1)):
+        stride_i = flat_stride[i].value()
+        if stride_i != correct_stride:
+            return False
+        correct_stride *= flat_shape[i].value()
+
+    return True

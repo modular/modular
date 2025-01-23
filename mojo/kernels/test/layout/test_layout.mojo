@@ -23,6 +23,7 @@ from layout.layout import (
     size,
     sublayout,
     zipped_divide,
+    is_row_major,
 )
 from testing import assert_equal, assert_not_equal
 
@@ -64,6 +65,10 @@ fn test_layout_basic() raises:
     )
 
     assert_equal(Layout.col_major(2, 3), Layout(IntTuple(2, 3), IntTuple(1, 2)))
+
+    # Check if layout is row_major
+    assert_equal(is_row_major[3](Layout.row_major(3, 2, 3)), True)
+    assert_equal(is_row_major[2](Layout.col_major(3, 3)), False)
 
 
 fn validate_coalesce[layout: Layout]() raises:
