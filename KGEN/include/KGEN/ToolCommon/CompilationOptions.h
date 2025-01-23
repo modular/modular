@@ -115,6 +115,7 @@ public:
   bool enableParallelLLC = true;
 };
 
+bool isGPUTriple(const llvm::Triple &triple);
 bool isGPUBackend(const CompilationOptions &options);
 bool isNVPTXBackend(const CompilationOptions &options);
 

@@ -1459,6 +1459,9 @@ def POP_GlobalAllocOp : POPOp<"global_alloc", [Pure,
 
   let arguments = (ins AttrOfType<KGEN_StringType>:$name,
                        AttrOfType<Index>:$count,
+                       DefaultValuedAttr<
+                        POP_GlobalAllocAddressSpaceAttr,
+                        "GlobalAllocAddressSpace::IGNORE">:$memoryType,
                        OptionalAttr<AttrOfType<Index>>:$alignment);
   let results = (outs Res<PointerType, "", [MemAlloc]>:$result);
 
