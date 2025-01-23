@@ -16,6 +16,7 @@ lit_tests(
         "//KGEN/tools/mojo-repl-entry-point",
         "//utils:lit-lldb-init.in",
     ],
+    generate_litcfg = True,
     mojo_deps = [
         "//Kernels/mojo/buffer",
         "//Kernels/mojo/gpu",

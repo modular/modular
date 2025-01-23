@@ -12,6 +12,7 @@ lit_tests(
         "//KGEN/tools/mojo-repl-entry-point",
         "@llvm-project//compiler-rt:orc_rt",
     ],
+    generate_litcfg = True,
     mojo_deps = [
         "//open-source/mojo/stdlib/stdlib",
     ],
