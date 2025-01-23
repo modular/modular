@@ -17,7 +17,7 @@ from utils import IndexList
 from sys import env_get_int, sizeof, env_get_bool
 from math import align_up
 from memory import UnsafePointer
-from gpu.cublas.cublas import (
+from gpu._cublas.cublas import (
     check_cublas_error,
     cublasContext,
     cublasCreate,
