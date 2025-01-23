@@ -37,7 +37,7 @@
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
-#include "llvm-project/lldb/source/Plugins/SymbolFile/DWARF/SymbolFileDWARF.h"
+#include "lldb/source/Plugins/SymbolFile/DWARF/SymbolFileDWARF.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/MLIRContext.h"
