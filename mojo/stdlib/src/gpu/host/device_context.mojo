@@ -7,6 +7,7 @@
 # Implementation of the C++ backed DeviceContext in Mojo
 
 from collections import List, Optional
+from compile.compile import Info
 from pathlib import Path
 from sys import env_get_int, env_get_string, external_call, sizeof
 from sys.info import _get_arch, is_triple, has_nvidia_gpu_accelerator
@@ -392,11 +393,7 @@ struct DeviceFunction[
 ]:
     alias emission_kind = "shared-obj" if _is_amd_gpu[target]() else "asm"
     var _handle: _DeviceFunctionPtr
-    alias _func_impl = _compile_code[
-        func,
-        emission_kind = Self.emission_kind,
-        target=target,
-    ]()
+    var _func_impl: Info[func_type, func]
 
     fn __copyinit__(out self, existing: Self):
         # Increment the reference count before copying the handle.
@@ -408,9 +405,11 @@ struct DeviceFunction[
             _DeviceFunctionPtr,
         ](existing._handle)
         self._handle = existing._handle
+        self._func_impl = existing._func_impl
 
     fn __moveinit__(out self, owned existing: Self):
         self._handle = existing._handle
+        self._func_impl = existing._func_impl
 
     fn __del__(owned self):
         # Decrement the reference count held by this struct.
@@ -455,6 +454,11 @@ struct DeviceFunction[
         #     int32_t max_dynamic_shared_bytes, const char* debug_level,
         #     int32_t optimization_level)
         var result = _DeviceFunctionPtr()
+        self._func_impl = _compile_code[
+            func,
+            emission_kind = self.emission_kind,
+            target=target,
+        ]()
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_loadFunction",
@@ -510,25 +514,25 @@ struct DeviceFunction[
         return val.isa[fn () capturing -> Path]()
 
     @staticmethod
-    fn _cleanup_asm(s: StringLiteral) -> StringLiteral:
+    fn _cleanup_asm(s: StringLiteral) -> String:
         return (
-            s.replace("\t// begin inline asm\n", "")
+            String(s)
+            .replace("\t// begin inline asm\n", "")
             .replace("\t// end inline asm\n", "")
             .replace("\t;;#ASMSTART\n", "")
             .replace("\t;;#ASMEND\n", "")
         )
 
     @no_inline
-    @staticmethod
     fn dump_rep[
         dump_asm: Variant[Bool, Path, fn () capturing -> Path] = False,
         dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
         _dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
         _dump_elabmlir: Variant[Bool, Path, fn () capturing -> Path] = False,
-    ]() raises:
+    ](self) raises:
         @parameter
         if _ptxas_info_verbose:
-            alias ptx = Self._func_impl.asm
+            var ptx = self._func_impl.asm
             print(_ptxas_compile[target](ptx, options="-v"))
 
         @parameter
@@ -537,14 +541,14 @@ struct DeviceFunction[
             fn get_asm() -> StringLiteral:
                 @parameter
                 if Self.emission_kind == "asm":
-                    return Self._func_impl.asm
+                    return self._func_impl.asm
                 return _compile_code_asm[
                     func,
                     emission_kind="asm",
                     target=target,
                 ]()
 
-            alias asm = Self._cleanup_asm(get_asm())
+            var asm = self._cleanup_asm(get_asm())
 
             @parameter
             if dump_asm.isa[fn () capturing -> Path]():
@@ -559,7 +563,7 @@ struct DeviceFunction[
 
         @parameter
         if Self._dump_q[_dump_sass]():
-            alias ptx = Self._cleanup_asm(Self._func_impl.asm)
+            var ptx = Self._cleanup_asm(self._func_impl.asm)
             var sass = _to_sass[target](ptx)
 
             @parameter
@@ -575,7 +579,7 @@ struct DeviceFunction[
 
         @parameter
         if Self._dump_q[_dump_elabmlir]():
-            alias mlir = _compile_code_asm[
+            var mlir = _compile_code_asm[
                 Self.func,
                 emission_kind="elab-mlir",
                 target=target,
@@ -594,7 +598,7 @@ struct DeviceFunction[
 
         @parameter
         if Self._dump_q[dump_llvm]():
-            alias llvm = _compile_code_asm[
+            var llvm = _compile_code_asm[
                 Self.func,
                 emission_kind="llvm-opt",
                 target=target,
@@ -629,25 +633,22 @@ struct DeviceFunction[
         ](),
     ) raises:
         alias num_args = len(VariadicList(Ts))
-        alias num_captures = self._func_impl.num_captures
-        alias populate = self._func_impl.populate
+        var num_captures = self._func_impl.num_captures
+        alias populate = __type_of(self._func_impl).populate
+        alias num_captures_static = 16
 
         var dense_args_addrs = stack_allocation[
-            num_captures + num_args, UnsafePointer[NoneType]
+            num_captures_static + num_args, UnsafePointer[NoneType]
         ]()
 
-        @parameter
-        if num_captures > 0:
-            # Call the populate function to initialize the first values in the arguments array.
-            populate(
-                rebind[UnsafePointer[NoneType]](
-                    dense_args_addrs.bitcast[NoneType]()
-                )
+        if num_captures > num_captures_static:
+            dense_args_addrs = UnsafePointer[UnsafePointer[NoneType]].alloc(
+                num_captures + num_args
             )
 
         @parameter
         for i in range(num_args):
-            alias arg_offset = num_captures + i
+            var arg_offset = num_captures + i
             var first_word_addr = UnsafePointer.address_of(args[i])
             dense_args_addrs[arg_offset] = first_word_addr.bitcast[NoneType]()
 
@@ -665,37 +666,87 @@ struct DeviceFunction[
         #                                                         uint32_t blockX, uint32_t blockY, uint32_t blockZ,
         #                                                         uint32_t sharedMemBytes, void *attrs, uint32_t num_attrs,
         #                                                         void **args)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceContext_enqueueFunctionDirect",
-                _CharPtr,
-                _DeviceContextPtr,
-                _DeviceFunctionPtr,
-                UInt32,
-                UInt32,
-                UInt32,
-                UInt32,
-                UInt32,
-                UInt32,
-                UInt32,
-                UnsafePointer[LaunchAttribute],
-                UInt32,
-                UnsafePointer[UnsafePointer[NoneType]],
-            ](
-                ctx._handle,
-                self._handle,
-                grid_dim.x(),
-                grid_dim.y(),
-                grid_dim.z(),
-                block_dim.x(),
-                block_dim.y(),
-                block_dim.z(),
-                shared_mem_bytes.or_else(0),
-                attributes.unsafe_ptr(),
-                len(attributes),
-                dense_args_addrs,
+
+        if num_captures > 0:
+            # Call the populate function to initialize the first values in the arguments array.
+            # This function (generated by the compiler) has to be inlined here
+            # and be in the same scope as the user of dense_args_addr
+            # (i.e. the following external_call).
+            # Because this closure uses stack allocated ptrs
+            # to store the captured values in dense_args_addrs, they need to
+            # not go out of the scope before dense_args_addr is being use.
+            populate(
+                rebind[UnsafePointer[NoneType]](
+                    dense_args_addrs.bitcast[NoneType]()
+                )
             )
-        )
+
+            _checked(
+                external_call[
+                    "AsyncRT_DeviceContext_enqueueFunctionDirect",
+                    _CharPtr,
+                    _DeviceContextPtr,
+                    _DeviceFunctionPtr,
+                    UInt32,
+                    UInt32,
+                    UInt32,
+                    UInt32,
+                    UInt32,
+                    UInt32,
+                    UInt32,
+                    UnsafePointer[LaunchAttribute],
+                    UInt32,
+                    UnsafePointer[UnsafePointer[NoneType]],
+                ](
+                    ctx._handle,
+                    self._handle,
+                    grid_dim.x(),
+                    grid_dim.y(),
+                    grid_dim.z(),
+                    block_dim.x(),
+                    block_dim.y(),
+                    block_dim.z(),
+                    shared_mem_bytes.or_else(0),
+                    attributes.unsafe_ptr(),
+                    len(attributes),
+                    dense_args_addrs,
+                )
+            )
+        else:
+            _checked(
+                external_call[
+                    "AsyncRT_DeviceContext_enqueueFunctionDirect",
+                    _CharPtr,
+                    _DeviceContextPtr,
+                    _DeviceFunctionPtr,
+                    UInt32,
+                    UInt32,
+                    UInt32,
+                    UInt32,
+                    UInt32,
+                    UInt32,
+                    UInt32,
+                    UnsafePointer[LaunchAttribute],
+                    UInt32,
+                    UnsafePointer[UnsafePointer[NoneType]],
+                ](
+                    ctx._handle,
+                    self._handle,
+                    grid_dim.x(),
+                    grid_dim.y(),
+                    grid_dim.z(),
+                    block_dim.x(),
+                    block_dim.y(),
+                    block_dim.z(),
+                    shared_mem_bytes.or_else(0),
+                    attributes.unsafe_ptr(),
+                    len(attributes),
+                    dense_args_addrs,
+                )
+            )
+
+        if num_captures > num_captures_static:
+            dense_args_addrs.free()
 
     @always_inline
     fn get_attribute(self, attr: Attribute) raises -> Int:
@@ -911,16 +962,17 @@ struct DeviceContext:
             "Requested more than available shared memory.",
         )
         alias result_type = __type_of(result)
-        result_type.dump_rep[
+        result = result_type(
+            self,
+            func_attribute=func_attribute,
+        )
+
+        result.dump_rep[
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
             _dump_sass=_dump_sass,
             _dump_elabmlir=_dump_elabmlir,
         ]()
-        result = result_type(
-            self,
-            func_attribute=func_attribute,
-        )
 
     @parameter
     @always_inline

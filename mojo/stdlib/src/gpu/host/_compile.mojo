@@ -48,7 +48,7 @@ fn _compile_code[
     compile_options: StringLiteral = HardwareInfo.from_target[
         target
     ]().compile_options,
-]() -> Info:
+]() -> Info[func_type, func]:
     return compile_info[
         func,
         emission_kind=emission_kind,
@@ -69,7 +69,7 @@ fn _compile_code_asm[
         target
     ]().compile_options,
 ]() -> StringLiteral:
-    alias asm = compile_info[
+    var asm = compile_info[
         func,
         emission_kind=emission_kind,
         compile_options=compile_options,
