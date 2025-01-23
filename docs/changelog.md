@@ -388,6 +388,9 @@ what we publish.
   - removed `StringRef.strip()`
 - The `Tuple.get[i, T]()` method has been removed. Please use `tup[i]` or
   `rebind[T](tup[i])` as needed instead.
+- `StringableCollectionElement` is deprecated, use `WritableCollectionElement`
+  instead which still allows you to construct a `String`, but can avoid
+  intermediary allocations.
 
 ### 🛠️ Fixed
 

@@ -135,6 +135,7 @@ from builtin.value import (
     Movable,
     RepresentableCollectionElement,
     WritableCollectionElement,
+    StringableCollectionElement,
 )
 from documentation import doc_private
 from memory import AddressSpace, Pointer
