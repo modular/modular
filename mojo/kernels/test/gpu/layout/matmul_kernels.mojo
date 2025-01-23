@@ -12,7 +12,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from builtin.io import _printf
 from gpu import WARP_SIZE, block_dim, block_idx, thread_idx, barrier
-from gpu.cublas.cublas import check_cublas_error, cublasContext
+from gpu._cublas.cublas import check_cublas_error, cublasContext
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.memory import async_copy_wait_all
 from layout.int_tuple import IntTuple

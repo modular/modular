@@ -11,7 +11,7 @@ from random import rand
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from gpu.cublas.cublas import check_cublas_error, cublasContext
+from gpu._cublas.cublas import check_cublas_error, cublasContext
 from gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from internal_utils import (
     DeviceNDBuffer,
