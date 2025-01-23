@@ -153,7 +153,7 @@ static ErrorOr<TempFile> generateEntrypointSource(ArrayRef<TestID> unitTests) {
     os << "fn main() raises:\n";
 
     os.indent();
-    os << "var runAll = bool(getenv('MOJO_TEST_RUN_ALL'))\n";
+    os << "var runAll = Bool(getenv('MOJO_TEST_RUN_ALL'))\n";
     os << "var ids = Set[String]()\n";
     os << "if not runAll:\n";
     os.indent();
