@@ -449,10 +449,9 @@ fn get_buffer_data(buffer: NDBuffer[DType.uint8, 1]) -> UnsafePointer[UInt8]:
 
 @register_internal("mgp.assert")
 @no_inline
-fn mgp_assert[message: StringLiteral](cond: Bool) raises -> Int:
+fn mgp_assert[message: StringLiteral](cond: Bool) raises:
     if not cond:
         raise Error(message)
-    return 0
 
 
 # ===-----------------------------------------------------------------------===#
@@ -597,7 +596,7 @@ fn fill_buffer[
 @no_inline
 fn mgp_buffer_set_with_index[
     bDevice: StringLiteral
-](buffer: NDBuffer[DType.uint8, 1], *vals: Int) raises -> Int:
+](buffer: NDBuffer[DType.uint8, 1], *vals: Int) raises:
     debug_assert(
         is_cpu[bDevice](), "set_with_index can only work on cpu buffers"
     )
@@ -615,7 +614,6 @@ fn mgp_buffer_set_with_index[
         fill_buffer[DType.int64](buffer, vals)
     else:
         raise Error("unsupported element size")
-    return 1  # Dummy int for output chain on DeviceOp.td
 
 
 @register_internal("mgp.buffer.to_bool")
@@ -662,7 +660,7 @@ fn mgp_buffer_concat[
     output: NDBuffer[DType.uint8, 1],
     inputs: StaticTuple[NDBuffer[DType.uint8, 1], *_],
     call_ctx: MojoCallContextPtr,
-) raises -> Int:
+) raises:
     if len(output) < 4096:
         concat[1, DType.uint8, True, bDevice, None](
             output, 0, inputs, context=call_ctx
@@ -671,8 +669,6 @@ fn mgp_buffer_concat[
         concat[1, DType.uint8, False, bDevice, None](
             output, 0, inputs, context=call_ctx
         )
-
-    return 0
 
 
 @register_internal("mgp.buffer.device_to_host")
@@ -684,7 +680,7 @@ fn mgp_buffer_device_to_host[
     dev_buf: NDBuffer[DType.uint8, 1],
     host_buf: NDBuffer[DType.uint8, 1],
     dev_ctx: DeviceContextPtr,
-) raises -> Int:
+) raises:
     @parameter
     if is_cpu[dHostDevice]() and is_gpu[cOtherDevice]():
         dev_ctx[].enqueue_copy_from_device[DType.uint8](
@@ -698,7 +694,6 @@ fn mgp_buffer_device_to_host[
         )
     else:
         raise Error("mgp.buffer.device_to_host must be scheduled on gpu device")
-    return 0
 
 
 @register_internal("mgp.buffer.device_to_device")
@@ -711,7 +706,7 @@ fn mgp_buffer_device_to_device[
     dst_buf: NDBuffer[DType.uint8, 1],
     src_dev_ctx: DeviceContextPtr,
     dst_dev_ctx: DeviceContextPtr,
-) raises -> Int:
+) raises:
     @parameter
     if is_gpu[cSrcDevice]() and is_gpu[dDstDevice]():
         dst_dev_ctx[].enqueue_copy_device_to_device[DType.uint8](
@@ -735,7 +730,6 @@ fn mgp_buffer_device_to_device[
             "mgp.buffer.device_to_device can be scheduled between same device"
             " types (cpu-cpu) or (gpu-gpu)"
         )
-    return 0
 
 
 @register_internal("mgp.buffer.host_to_device")
@@ -747,7 +741,7 @@ fn mgp_buffer_host_to_device[
     host_buf: NDBuffer[DType.uint8, 1],
     dev_buf: NDBuffer[DType.uint8, 1],
     dev_ctx: DeviceContextPtr,
-) raises -> Int:
+) raises:
     @parameter
     if is_gpu[dOtherDevice]() and is_cpu[cHostDevice]():
         dev_ctx[].enqueue_copy_to_device[DType.uint8](
@@ -761,7 +755,6 @@ fn mgp_buffer_host_to_device[
         )
     else:
         raise Error("mgp.buffer.host_to_device must be scheduled on gpu device")
-    return 0
 
 
 @register_internal("mgp.buffer.get_cached")
@@ -788,11 +781,10 @@ fn mgp_buffer_get_cached(
 
 @register_internal("mgp.buffer.remove_cached")
 @no_inline
-fn mgp_buffer_remove_cached(ctx: StateContext, buffer_slot: UInt64) -> Int:
+fn mgp_buffer_remove_cached(ctx: StateContext, buffer_slot: UInt64):
     external_call["MGP_RT_RemoveCachedBuffer", NoneType](
         Int(buffer_slot), ctx.ctx_ptr
     )
-    return 0
 
 
 @register_internal("mgp.buffer.get_size")
@@ -882,9 +874,8 @@ fn mgp_device_context_destroy(dev_ctx: DeviceContextPtr):
 @no_inline
 fn mgp_sync[
     bDevice: StringLiteral,
-](ctx: StateContext, dev_ctx: DeviceContextPtr) raises -> Int:
+](ctx: StateContext, dev_ctx: DeviceContextPtr) raises:
     dev_ctx[].synchronize()
-    return 0
 
 
 @register_internal("mgp.debug.print")
@@ -892,12 +883,11 @@ fn mgp_sync[
 fn mgp_debug_print[
     aDebugString: StringLiteral,
     bLabel: StringLiteral,
-](ctx: StateContext,) raises -> Int:
+](ctx: StateContext,) raises:
     prefix = ""
     if bLabel:
         prefix = "[" + bLabel + "] "
     print(prefix + aDebugString)
-    return 0
 
 
 # ===-----------------------------------------------------------------------===#
