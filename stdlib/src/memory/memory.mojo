@@ -415,12 +415,24 @@ fn stack_allocation[
     @parameter
     if is_gpu():
         # On NVGPU, SHARED and CONSTANT address spaces lower to global memory.
+
+        alias global_name = name.value() if name else "_global_alloc"
+
         @parameter
-        if address_space in (
-            _GPUAddressSpace.SHARED,
-            _GPUAddressSpace.CONSTANT,
-        ):
-            alias global_name = name.value() if name else "_global_alloc"
+        if address_space == _GPUAddressSpace.SHARED:
+            return __mlir_op.`pop.global_alloc`[
+                name = global_name.value,
+                count = count.value,
+                memoryType = __mlir_attr.`#pop<global_alloc_addr_space gpu_shared>`,
+                _type = UnsafePointer[
+                    type, address_space=address_space, alignment=alignment
+                ]._mlir_type,
+                alignment = alignment.value,
+            ]()
+        elif address_space == _GPUAddressSpace.CONSTANT:
+            # No need to annotation this global_alloc because constants in
+            # GPU shared memory won't prevent llvm module splitting to
+            # happen since they are immutables.
             return __mlir_op.`pop.global_alloc`[
                 name = global_name.value,
                 count = count.value,
@@ -429,6 +441,7 @@ fn stack_allocation[
                 ]._mlir_type,
                 alignment = alignment.value,
             ]()
+
         # MSTDL-797: The NVPTX backend requires that `alloca` instructions may
         # only have generic address spaces. When allocating LOCAL memory,
         # addrspacecast the resulting pointer.
