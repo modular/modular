@@ -1586,7 +1586,8 @@ ElaborationState Elaborator::bundleOffloadModules(ImplNode *parent,
 
     // Slice out a pre-elaboration module for the new target to compile for.
     ExportMap &exportedSymbols = offloadInfo.exportedSymbols;
-    exportedSymbols.insert({func.getSymNameAttr(), ExportKind::Exported});
+    exportedSymbols.insert_or_assign(func.getSymNameAttr(),
+                                     ExportKind::Exported);
 
     // Make sure to slice out anything referenced in the input parameters. When
     // generator references are instantiated in the standalone module, they are
