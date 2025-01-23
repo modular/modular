@@ -28,10 +28,6 @@ def StructType : DialectType<(type
   ConcreteType<"TypeSignatureType">:$signature
 )>;
 
-def AnyStructType : DialectType<(type
-  ConcreteType<"StructType">:$structType
-)>;
-
 def TraitType : DialectType<(type
   ConcreteAttribute<"SymbolRefAttr">:$symbol
 )>;
@@ -78,7 +74,6 @@ def LITDialectTypes : DialectTypes<"lit"> {
     UnresolvedType,
     TypeSignatureType,
     StructType,
-    AnyStructType,
     TraitType,
     AnyTraitType,
     MetaType,
@@ -144,13 +139,13 @@ def UnpackedAttr : DialectAttribute<(attr
 )>;
 
 def ModuleAttr : DialectAttribute<(attr
-  ConcreteType<"AnyStructType">:$type
+  ConcreteType<"StructMetaType">:$type
 )>;
 
 def WrappedBindTypeAttr : DialectAttribute<(attr
   TypedAttr:$typeValue,
   TypedAttrArray:$values,
-  ConcreteType<"AnyStructType">:$type
+  ConcreteType<"StructMetaType">:$type
 )>;
 
 def AnyOriginAttr : DialectAttribute<(attr

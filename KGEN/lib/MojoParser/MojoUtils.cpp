@@ -186,14 +186,14 @@ void LIT::printNameOrIdx(StringAttr name, size_t idx, InflightDiag &diag) {
 }
 
 void LIT::emitModuleCallSubscriptDiag(InflightDiag &diag,
-                                      AnyStructType metaType,
+                                      StructMetaType metaType,
                                       const Twine &callOrSubscript, SMLoc loc,
                                       SharedState &shared) {
   StringAttr name = metaType.getSymbol().getLeafReference();
   diag << "module " << name << " is not " << callOrSubscript << "able";
 
   LookupResult lookupResult = shared.lookupAndResolveDecl(
-      name, loc, metaType.getStructType(), /*searchParentScopes=*/false);
+      name, loc, metaType.getType(), /*searchParentScopes=*/false);
   if (ArrayRef<ASTDecl *> resDecls = lookupResult.getIfSuccess();
       !resDecls.empty()) {
     diag << "; did you mean to " << callOrSubscript << ' ' << name.strref()

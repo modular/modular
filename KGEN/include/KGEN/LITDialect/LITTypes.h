@@ -301,6 +301,46 @@ public:
 };
 
 //===----------------------------------------------------------------------===//
+// MetaTypeOf
+//===----------------------------------------------------------------------===//
+
+template <typename T>
+class MetaTypeOf : public MetaType {
+public:
+  using MetaType::MetaType;
+
+  static MetaTypeOf<T> get(T type) {
+    return llvm::cast<MetaTypeOf<T>>(MetaType::get(type));
+  }
+
+  T getType() const { return llvm::cast<T>(MetaType::getType()); }
+
+  static bool classof(Type type) {
+    auto metatype = llvm::dyn_cast<MetaType>(type);
+    return metatype && llvm::isa_and_nonnull<T>(metatype.getType());
+  }
+};
+
+class StructMetaType : public MetaTypeOf<LIT::StructType> {
+private:
+  using Base = MetaTypeOf<LIT::StructType>;
+
+public:
+  using Base::classof;
+  using Base::get;
+  using Base::MetaTypeOf;
+
+  StructMetaType(Base base) : Base(base) {}
+
+  SymbolRefAttr getSymbol() const;
+  TypeSignatureType getSignature() const;
+  ArrayRef<TypedAttr> getParamValues() const;
+
+  /// Bind parameter values to the metatype, returning a new metatype.
+  StructMetaType bind(ArrayRef<TypedAttr> values) const;
+};
+
+//===----------------------------------------------------------------------===//
 // Type Utilities
 //===----------------------------------------------------------------------===//
 

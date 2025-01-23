@@ -46,8 +46,8 @@ Type ASTType::getMetaType() const {
   if (!mlirType)
     return {};
   if (auto declRef = dyn_cast<StructType>(mlirType))
-    return AnyStructType::get(declRef.getSymbol(), declRef.getParamValues(),
-                              declRef.getSignature());
+    return StructMetaType::get(LIT::StructType::get(
+        declRef.getSymbol(), declRef.getParamValues(), declRef.getSignature()));
   if (auto paramRef = dyn_cast<ParamType>(mlirType))
     return paramRef.getParam().getType();
   if (auto traitRef = dyn_cast<TraitType>(mlirType))
@@ -75,7 +75,7 @@ ASTDecl *ASTType::getDecl(SharedState &shared) const {
     type = cast<AnyTraitType>(paramRef.getParam().getType());
   }
 
-  if (auto anyStruct = dyn_cast<AnyStructType>(type))
+  if (auto anyStruct = dyn_cast<StructMetaType>(type))
     return &shared.declResolver->getDeclForTypeSymbol(anyStruct.getSymbol());
   if (auto traitType = dyn_cast<TraitType>(type))
     return &shared.declResolver->getDeclForTypeSymbol(traitType.getSymbol());
@@ -86,7 +86,7 @@ ASTDecl *ASTType::getDecl(SharedState &shared) const {
 }
 
 ArrayRef<TypedAttr> ASTType::getParamBindings() const {
-  if (AnyStructType metaType = dyn_cast_or_null<AnyStructType>(getMetaType()))
+  if (StructMetaType metaType = dyn_cast_or_null<StructMetaType>(getMetaType()))
     return metaType.getParamValues();
   return {};
 }
@@ -97,15 +97,16 @@ ASTType ASTType::getWithoutParameters(SharedState &shared) const {
     return {};
   if (auto declRef = dyn_cast<StructType>(mlirType))
     return cast<StructDeclOp>(getDecl(shared)).bindReference();
-  if (AnyStructType metaType = dyn_cast_or_null<AnyStructType>(mlirType))
-    return AnyStructType::get(metaType.getSymbol(), metaType.getSignature());
+  if (StructMetaType metaType = dyn_cast_or_null<StructMetaType>(mlirType))
+    return StructMetaType::get(
+        LIT::StructType::get(metaType.getSymbol(), metaType.getSignature()));
   // Not parameterized.
   return *this;
 }
 
 ArrayRef<TypedAttr> ASTType::getDefaultPosParams() const {
   // Query the metatype for the parameter signature.
-  if (AnyStructType metaType = dyn_cast_or_null<AnyStructType>(getMetaType()))
+  if (StructMetaType metaType = dyn_cast_or_null<StructMetaType>(getMetaType()))
     return metaType.getSignature().getDefaultPosParams();
   return {};
 }
@@ -116,7 +117,7 @@ bool ASTType::isEqualCanon(ASTType other) const {
     return true;
   // Types with the same metatype are always equal. This is used to detect when
   // two type aliases refer to the same underlying type.
-  if (auto meta = dyn_cast_or_null<AnyStructType>(getMetaType()))
+  if (auto meta = dyn_cast_or_null<StructMetaType>(getMetaType()))
     if (meta == other.getMetaType())
       return true;
   return false;
@@ -840,10 +841,10 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
     if (diagShared)
       decl = ASTType(type).getDecl(*diagShared);
     printUserType(structTy.getSymbol(), structTy.getParamValues(), decl);
-  } else if (auto anyStruct = dyn_cast<AnyStructType>(type)) {
+  } else if (auto anyStruct = dyn_cast<StructMetaType>(type)) {
     ASTDecl *decl = nullptr;
     if (diagShared)
-      decl = ASTType(anyStruct.getStructType()).getDecl(*diagShared);
+      decl = ASTType(anyStruct.getType()).getDecl(*diagShared);
     os << "AnyStruct[";
     printUserType(anyStruct.getSymbol(), anyStruct.getParamValues(), decl);
     os << ']';

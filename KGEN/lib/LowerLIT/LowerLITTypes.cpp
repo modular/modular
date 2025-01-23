@@ -207,7 +207,7 @@ void StructDecls::buildReplacer(LowerLITReplacer &replacer, MLIRContext *ctx) {
   // TODO: Need to codegen here when Mojo has parametric traits.
   replacer.addInferredDomainNonRecursiveReplacement(
       [&replacer, typeType](BindTypeAttr bind) {
-        AnyStructType metatype = bind.getType();
+        StructMetaType metatype = bind.getType();
         auto ref = LIT::StructType::get(metatype.getSymbol(),
                                         metatype.getParamValues(),
                                         metatype.getSignature());
@@ -218,7 +218,7 @@ void StructDecls::buildReplacer(LowerLITReplacer &replacer, MLIRContext *ctx) {
 
   // All metatypes lower to `!kgen.type`.
   replacer.addInferredDomainNonRecursiveReplacement(
-      [=](AnyStructType) { return typeType; });
+      [=](StructMetaType) { return typeType; });
   replacer.addInferredDomainNonRecursiveReplacement(
       [=](AnyTraitType) { return typeType; });
   replacer.addInferredDomainNonRecursiveReplacement(
@@ -560,8 +560,8 @@ LITTypeLowerer::LITTypeLowerer(MLIRContext *ctx, StructDecls &structDecls)
             }));
         auto concreteSymRef = TypeConstantRefAttr::get(
             decl.symRef, loweredParamValues,
-            replace(AnyStructType::get(decl.symRef, loweredParamValues,
-                                       ref.getSignature()),
+            replace(StructMetaType::get(LIT::StructType::get(
+                        decl.symRef, loweredParamValues, ref.getSignature())),
                     TypeDomain::AsType));
 
         auto appliedStructTypeAttr =

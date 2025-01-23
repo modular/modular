@@ -1172,7 +1172,7 @@ static ASTType getBoundCoroutineType(ASTDecl &declScope, const ExprNode *expr,
   auto structOp = cast<StructDeclOp>(decl);
   ASTType coroType = structOp.bindReference();
   ParameterExprArrayAttr bindings = paramBinds.verifyBindings(
-      structOp, cast<AnyStructType>(coroType.getMetaType()).getSignature(),
+      structOp, cast<StructMetaType>(coroType.getMetaType()).getSignature(),
       expr->getLoc(), /*partial=*/false);
   if (!bindings)
     return {};

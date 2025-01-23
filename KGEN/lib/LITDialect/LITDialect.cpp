@@ -73,7 +73,7 @@ struct LITOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
       return AliasResult::NoAlias;
     }
 
-    if (auto meta = dyn_cast<AnyStructType>(type)) {
+    if (auto meta = dyn_cast<StructMetaType>(type)) {
       if (!meta.getParamValues().empty())
         return AliasResult::NoAlias;
       if (std::optional<StringRef> name =

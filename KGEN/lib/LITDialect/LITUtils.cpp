@@ -26,8 +26,8 @@ using namespace LIT;
 
 bool LIT::isTypeExpr(TypedAttr attr) {
   if (auto param = dyn_cast<ParamType>(attr.getType()))
-    return isa<AnyStructType, AnyTraitType>(param.getParam().getType());
-  return isa<TypeType, AnyStructType, TraitType, AnyTraitType>(attr.getType());
+    return isa<StructMetaType, AnyTraitType>(param.getParam().getType());
+  return isa<TypeType, StructMetaType, TraitType, AnyTraitType>(attr.getType());
 }
 
 //===----------------------------------------------------------------------===//
