@@ -23,7 +23,7 @@ from buffer.buffer import (
     prod_dims,
 )
 from buffer.dimlist import Dim, DimList
-from gpu.cudnn.cnn_infer import (
+from gpu._cudnn.cnn_infer import (
     cudnnConvolutionForward,
     cudnnConvolutionMode_t,
     cudnnConvolutionStruct,
@@ -32,7 +32,7 @@ from gpu.cudnn.cnn_infer import (
     cudnnDestroyFilterDescriptor,
     cudnnSetConvolution2dDescriptor,
 )
-from gpu.cudnn.infer import (
+from gpu._cudnn.infer import (
     cudnnContext,
     cudnnConvolutionFwdAlgo_t,
     cudnnCreate,
