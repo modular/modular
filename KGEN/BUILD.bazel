@@ -26,7 +26,7 @@ pkg_files(
         ":KGENDialect.doc",
         ":KGENPassesIncGen.doc",
         ":LITDialect.doc",
-        ":MOGGreElabIncGen.doc",
+        ":MOGGPreElabIncGen.doc",
         ":POPDialect.doc",
     ],
     prefix = "KGEN/docs",
@@ -462,7 +462,7 @@ gentbl_cc_library(
 )
 
 gentbl_modular_passes(
-    name = "MOGGreElabIncGen",
+    name = "MOGGPreElabIncGen",
     td_file = "include/KGEN/MOGGPreElab/MOGGPreElabPasses.td",
     deps = [
         ":KGENPassTdFile",
@@ -480,7 +480,7 @@ modular_cc_library(
     deps = [
         ":KGENDialect",
         ":LITDialect",
-        ":MOGGreElabIncGen",
+        ":MOGGPreElabIncGen",
         ":POPAttrsIncGen",
         ":TransformUtils",
         "//Support:DebugInfoTransforms",
