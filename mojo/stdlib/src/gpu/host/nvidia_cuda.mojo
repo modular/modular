@@ -139,6 +139,10 @@ struct TensorMapSwizzle:
     fn __init__(out self, value: Int32):
         self._value = value
 
+    @always_inline
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
 
 @value
 @register_passable("trivial")
@@ -180,7 +184,7 @@ struct TMADescriptor:
 
 @always_inline
 fn create_tma_descriptor[
-    dtype: DType, rank: Int
+    dtype: DType, rank: Int, swizzle_mode: TensorMapSwizzle
 ](
     global_buf: DeviceBuffer[dtype],
     global_shape: IndexList[rank],
@@ -243,7 +247,7 @@ fn create_tma_descriptor[
             box_dim_arg,
             element_stride_arg,
             TensornsorMapInterleave.INTERLEAVE_NONE._value,
-            TensorMapSwizzle.SWIZZLE_NONE._value,
+            swizzle_mode._value,
             TensorMapL2Promotion.NONE._value,
             TensorMapFloatOOBFill.NONE._value,
         )
