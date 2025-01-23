@@ -377,6 +377,19 @@ PIPELINES = {
             relative_tolerance=0.5,
         ),
     ),
+    "mpnet-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        run=lambda device_type: run_llm_verification(
+            device_type=device_type,
+            pipeline="mpnet",
+            version="general",
+            encoding="bfloat16",
+            pregenerated_torch_goldens_rlocation="torch_mpnet_golden/torch_mpnet_bfloat16_golden.json",
+            cos_dist_threshold=2e-4,
+            # Relative/abs tolerances are a lot higher for bfloat16, but since
+            # the cosine distance is reasonable we just test one metric.
+        ),
+    ),
 }
 
 

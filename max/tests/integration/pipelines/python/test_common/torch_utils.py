@@ -110,7 +110,9 @@ def run_embeddings_generation(
             [prompt], padding=True, truncation=True, return_tensors="pt"
         ).to(device)
         output = model(**encoded_input)
-        embeddings = output.last_hidden_state.cpu().detach().numpy()
+        embeddings = (
+            output.last_hidden_state.cpu().detach().to(torch.float32).numpy()
+        )
         embeddings = embeddings[0]
         results.append({"prompt": prompt, "embeddings": embeddings})
     return results
