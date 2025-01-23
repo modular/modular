@@ -131,8 +131,8 @@ static ErrorOrSuccess addFlatWorkGroupSizeAttr(Builder builder,
   } else if constexpr (std::is_same_v<IntegerAttr, AttrT>) {
     value = std::to_string(static_cast<int64_t>(attr.getInt()));
   } else {
-    static_assert(0,
-                  "must be either an ArrayAttr of 1 elementor an IntegerAttr");
+    llvm_unreachable(
+        "must be either an ArrayAttr of 1 elementor an IntegerAttr");
   }
   attrs.append(name, builder.getStringAttr(value));
   return success();
