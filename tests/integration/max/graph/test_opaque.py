@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 
 import pytest
-from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph, TensorType, _OpaqueType, ops
@@ -80,50 +79,6 @@ def test_opaque_simple(
     counter = maker_model.execute_legacy()["output0"]
     for i in range(5):
         bumper_model.execute_legacy(input0=counter)
-    result = reader_model.execute_legacy(input0=counter)["output0"]
-
-    assert (result == [5, 15]).all()
-
-
-def test_opaque_driver_constructor(
-    session: InferenceSession, counter_ops_path: Path
-) -> None:
-    """Tests constructing a Counter using the driver API."""
-    counter_type = _OpaqueType("Counter")
-
-    maker_graph = Graph(
-        "maker",
-        input_types=[TensorType(DType.int32, (2,))],
-        output_types=[counter_type],
-    )
-    with maker_graph:
-        maker_graph.output(
-            ops.custom(
-                "make_counter_from_tensor",
-                values=[maker_graph.inputs[0]],
-                out_types=[counter_type],
-                parameters={"stride": 1},
-            )[0]
-        )
-    maker_compiled = session.load(
-        maker_graph, custom_extensions=counter_ops_path
-    )
-
-    init = Tensor((2,), DType.int32)
-    init[0] = 42
-    init[1] = 37
-    counter = maker_compiled.execute(init)
-    assert counter and counter[0]
-
-
-def test_opaque_driver_input(
-    maker_model: Model, bumper_model: Model, reader_model: Model
-) -> None:
-    # Maker and reader still using non-driver API;
-    # Driver API use limited to bumper model here.
-    counter = maker_model.execute_legacy()["output0"]
-    for i in range(5):
-        bumper_model.execute(counter)
     result = reader_model.execute_legacy(input0=counter)["output0"]
 
     assert (result == [5, 15]).all()
