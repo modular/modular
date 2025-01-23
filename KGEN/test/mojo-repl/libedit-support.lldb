@@ -6,7 +6,7 @@
 
 # REQUIRES: system-linux
 # We cannot use %debug because it includes some environment variables
-# RUN: ldd $MODULAR_DERIVED_PATH/third-party/llvm-project/build/bin/lldb | FileCheck %s
+# RUN: ldd %mojo-lldb | FileCheck %s
 
 # We need libedit as a dependency on linux to have a nice LLDB and REPL experience.
 # CHECK: libedit.so.2 => /

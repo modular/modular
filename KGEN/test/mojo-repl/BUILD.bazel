@@ -4,10 +4,8 @@ lit_tests(
     name = "test",
     srcs = glob(["**/*.lldb"]),
     custom_substitutions = {
-        # Mirrored from lit.cfg.py to avoid searching $PATH for 'mojo'
         "%repl": "$(rlocationpath //KGEN/tools/mojo) repl --source-quietly -S $(rlocationpath //utils:lit-lldb-init.in)",
-        "\\\\$MODULAR_DERIVED_PATH/third-party/llvm-project/build/bin/lldb": "$(rlocationpath //KGEN:mojo-lldb)",
-        "source \\\\$MODULAR_DERIVED_PATH/autovenv/bin/activate": "true",
+        "%mojo-lldb": "$(rlocationpath //KGEN:mojo-lldb)",
     },
     data = glob(["Inputs/*.mojo"]) + [
         "//KGEN:MojoLLDB",
