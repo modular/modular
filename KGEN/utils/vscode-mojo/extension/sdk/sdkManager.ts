@@ -453,12 +453,12 @@ export class MAXSDKManager extends DisposableContext {
     if (!repoRoot) {
       return undefined;
     }
-    const bazelPath = path.join(repoRoot, 'WORKSPACE.bazel');
+    const bazelPath = path.join(repoRoot, 'MODULE.bazel');
     const bazelContents = await readFile(bazelPath);
     if (!bazelContents) {
       return undefined;
     }
-    if (!bazelContents.includes('workspace(name = "modular")')) {
+    if (!bazelContents.includes('module(name = "modular")')) {
       return undefined;
     }
     // It is possible to clone the monorepo and run the extension without ever creating .derived.
