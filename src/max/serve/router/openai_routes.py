@@ -170,9 +170,11 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                 n_tokens,
             )
             yield "[DONE]"
-        except ValueError as e:
-            status_code = 500
-            logger.exception("ValueError in request %s", request.id)
+        except Exception as e:
+            # Note that for SSE, the server will have already responded with a
+            # 200 when establishing the connection.
+            status_code = 400 if isinstance(e, ValueError) else 500
+            logger.exception("Exception in request %s", request.id)
             error_response = ErrorResponse(
                 error=Error(
                     code=str(status_code), message=str(e), param="", type=""
@@ -246,11 +248,6 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                 service_tier=None,
             )
             return response
-        except ValueError as e:
-            logger.exception("ValueError in %s", request.id)
-            status_code = 500
-            # TODO (SI-722) how to handle error in a stream response via ChatCompletion API.
-            return json.dumps({"result": "error", "message": str(e)})
         finally:
             record_request_end(
                 status_code,
