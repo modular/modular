@@ -7,6 +7,8 @@ lit_tests(
     ]),
     custom_substitutions = {
         "%driver-tblgen": "$(rlocationpath //Support/tools/driver-tblgen) -I $(dirname $(dirname $(dirname ../../../../$(location //Support:include/Support/Driver/DriverCommand.td)))) -I $(dirname $(dirname $(dirname ../../../../../$(rlocationpath @llvm-project//llvm:include/llvm/Option/OptParser.td))))",
+        "%crash-report-path-info": "$(rlocationpath //AsyncRT/tools/crash-report-path-info)",
+        "%modular-crashpad-handler": "$(rlocationpath @crashpad//:modular-crashpad-handler)",
     },
     data = [
         "//Support:DriverCommandTdFiles",
@@ -16,6 +18,7 @@ lit_tests(
     env = {
         "MODULAR_CRASH_REPORTING_HANDLER_PATH": "$(rootpath @crashpad//:modular-crashpad-handler)",
     },
+    generate_litcfg = True,
     tools = [
         "//AsyncRT/tools/crash-report-path-info",
         "//AsyncRT/tools/crash-test-dummy",
