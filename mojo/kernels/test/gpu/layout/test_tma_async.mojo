@@ -114,7 +114,9 @@ fn test_tma_multiple_loads_kernel[
 
 
 def test_tma_load_row_major[
-    src_layout: Layout, tile_layout: Layout, load_along_last_dim: Bool = False
+    src_layout: Layout,
+    tile_layout: Layout,
+    load_along_last_dim: Bool = False,
 ](ctx: DeviceContext):
     alias M = src_layout.shape[0].value()
     alias N = src_layout.shape[1].value()
@@ -182,7 +184,6 @@ def test_tma_load_row_major[
                 )
             else:
                 assert_equal(dst_host[m, n].cast[DType.float32](), 0.0)
-
     ctx.synchronize()
     _ = src^
     _ = dst^
@@ -778,7 +779,6 @@ def main():
             src_layout = Layout.row_major(9, 24),
             tile_layout = Layout.row_major(3, 8),
         ](ctx)
-
         print("test_tma_load_oob_fill")
         test_tma_load_row_major[
             src_layout = Layout.row_major(7, 8),
