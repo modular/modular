@@ -18,6 +18,7 @@
 #include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "KGEN/include/KGEN/ToolCommon/CompilationOptions.h"
 #include "KGENToLLVMPipeline.h"
 #include "LLVMAccessorHelper.h"
 #include "LLVMPassesPipeline.h"
@@ -858,6 +859,10 @@ static void computeFnOrdering(llvm::Module &module,
   }
 }
 
+static std::string getAsmFilePostfix(const CompilationOptions &options) {
+  return isNVPTXBackend(options) ? ".ptx" : ".s";
+}
+
 //===----------------------------------------------------------------------===//
 // emitArchive
 //===----------------------------------------------------------------------===//
@@ -968,8 +973,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
 
             WriteableBufferRef linkedObj = *mcLinkResult;
             if (emitAssembly) {
-              std::string postfix = isNVPTXBackend(options) ? ".ptx" : ".s";
-
+              std::string postfix = getAsmFilePostfix(options);
               StringRef toEmit(linkedObj->getBufferStart(),
                                linkedObj->getBufferSize());
               if (failed(writeBytesToTempWithHash(options.saveTempsPrefix,
@@ -1350,10 +1354,9 @@ static ErrorOr<uint64_t> getKernelIDFromLLVMModule(llvm::Module &module) {
 static AnyAsyncValueRef
 lowerLLVMModuleToObject(llvm::Module &inputModule, Location loc,
                         RCRef<Cache::TransformCache> transformCache,
-                        std::optional<size_t> moduleIdx,
-                        AsyncRT::Runtime &runtime, CompilationOptions options,
-                        bool isJIT, bool shouldDeserialize,
-                        EmitAs emissionKind) {
+                        size_t moduleIdx, AsyncRT::Runtime &runtime,
+                        CompilationOptions options, bool isJIT,
+                        bool shouldDeserialize, EmitAs emissionKind) {
 
   WriteableBufferRef keyBuf = WriteableBuffer::get();
   options.print(*keyBuf << "compileLLVMModuleToObject(");
@@ -1444,19 +1447,18 @@ lowerLLVMModuleToObject(llvm::Module &inputModule, Location loc,
 
       std::unique_ptr<llvm::MachineModuleInfo> machineModuleInfo;
       std::unique_ptr<llvm::MCContext> mcContext;
-      if (failed(runLlcPasses(
-              module, options, tm, *buf, machineModuleInfo, mcContext,
-              emissionKind == EmitAs::ASM ? llvm::CodeGenFileType::AssemblyFile
-                                          : llvm::CodeGenFileType::ObjectFile,
-              /*stopBeforeAsmPrint=*/false, 0, nullptr,
-              runtime.context->get<M::Telemetry::TelemetryContext>()))) {
-        return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-            "llc failed to codegen LLVM IR to object code", loc));
-      }
 
       if (emissionKind == EmitAs::ASM) {
-        std::string postfix = isNVPTXBackend(options) ? ".ptx" : ".s";
+        if (failed(runLlcPasses(
+                module, options, tm, *buf, machineModuleInfo, mcContext,
+                llvm::CodeGenFileType::AssemblyFile,
+                /*stopBeforeAsmPrint=*/false, 0, nullptr,
+                runtime.context->get<M::Telemetry::TelemetryContext>()))) {
+          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+              "llc failed to codegen LLVM IR to object code", loc));
+        }
 
+        std::string postfix = getAsmFilePostfix(options);
         StringRef toEmit(buf->getBufferStart(), buf->getBufferSize());
         if (failed(writeBytesToTempWithHash(options.saveTempsPrefix, postfix,
                                             toEmit))) {
@@ -1466,15 +1468,34 @@ lowerLLVMModuleToObject(llvm::Module &inputModule, Location loc,
 
         std::move(output).emplace(buf.copy());
       } else {
+
+        auto codeBuf = WriteableBuffer::get();
+        if (failed(runLlcPasses(
+                module, options, tm, *codeBuf, machineModuleInfo, mcContext,
+                llvm::CodeGenFileType::ObjectFile,
+                /*stopBeforeAsmPrint=*/false, 0, nullptr,
+                runtime.context->get<M::Telemetry::TelemetryContext>()))) {
+          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+              "llc failed to codegen LLVM IR to object code", loc));
+        }
+
+        StringRef name = "mojo-sharedobj";
+        if (auto moduleLoc = loc->findInstanceOf<FileLineColLoc>())
+          name = llvm::sys::path::filename(moduleLoc.getFilename());
+        std::string moduleName = (name + Twine(moduleIdx)).str();
+
         // Emitting as a shared object
-        ErrorOr<BufferRef> bufOr = createSharedObject(
-            BufferRef::create(buf->Buffer::getBuffer()), options, "");
+        ErrorOr<BufferRef> bufOr =
+            createSharedObject(BufferRef::create(codeBuf->Buffer::getBuffer()),
+                               options, moduleName);
         if (bufOr.isError()) {
           return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
               "failed to create shared object file", loc));
         }
 
-        std::move(output).emplace(*bufOr);
+        (*buf) << (*bufOr)->getBuffer();
+
+        std::move(output).emplace(buf.copy());
       }
     });
     return output;
@@ -1509,7 +1530,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
   runtime.getWorkQueue()->addTask([resultBufs = resultBufs.copy(),
                                    resultKernelId = resultKernelId.copy(),
                                    produceModule = std::move(produceModule),
-                                   loc, moduleIdx, isJIT, options, &runtime,
+                                   loc, isJIT, options, &runtime,
                                    transformCache = transformCache.copy(),
                                    &kernelEmissionKinds]() mutable {
     CompilerTimeTraceScope traceScope("lowerLLVMModuleToObjectGPU");
@@ -1538,7 +1559,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
       case EmitAs::LLVM_OPT:
       case EmitAs::SHARED_OBJ:
         emissionResults.push_back(lowerLLVMModuleToObject(
-            *module, loc, transformCache, moduleIdx, runtime, options, isJIT,
+            *module, loc, transformCache, *kernelIdOr, runtime, options, isJIT,
             (kinds.size() > 1), kind));
         break;
 

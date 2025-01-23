@@ -425,11 +425,6 @@ static ElaboratorCompileOffloadRetType compileOffloads(
     if (failed(pm.run(*module)))
       return Error("failed to run the pass manager for offload functions");
 
-    // Prepare a buffer to write string output to.
-    SmallVector<char> buf;
-    buf.reserve(256 * 128); // 32 KB
-    llvm::raw_svector_ostream os(buf);
-
     llvm::MapVector<uint64_t, std::pair<OwningOpRef<FuncOp>, unsigned>>
         captures;
 
