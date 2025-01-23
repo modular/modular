@@ -196,7 +196,7 @@ writeCaptureArgs(ModuleOp module, StringAttr name) {
   return {std::move(func), captures.size()};
 }
 
-static ErrorOr<DenseMap<uint64_t, OffloadCompilationResult>> compileOffloads(
+static ElaboratorCompileOffloadRetType compileOffloads(
     ModuleOp theModule,
     llvm::MapVector<TargetInfoAttr, OffloadInfo> &targetOffloadInfos,
     const SymbolTable &symtab, CompilationOptions compilationOptions,
@@ -336,15 +336,17 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
 // compileOffloads
 //===----------------------------------------------------------------------===//
 
-static ErrorOr<DenseMap<uint64_t, OffloadCompilationResult>> compileOffloads(
+static ElaboratorCompileOffloadRetType compileOffloads(
     ModuleOp theModule,
     llvm::MapVector<TargetInfoAttr, OffloadInfo> &targetOffloadInfos,
     const SymbolTable &symtab, CompilationOptions compilationOptions,
     ElaborateGeneratorsOptions elabOptions, mlir::DiagnosticEngine::HandlerID) {
 
-  DenseMap<uint64_t, OffloadCompilationResult> result;
+  DenseMap<TargetInfoAttr, DenseMap<uint64_t, OffloadCompilationResult>> result;
 
   for (auto [target, offloadInfo] : targetOffloadInfos) {
+    DenseMap<uint64_t, OffloadCompilationResult> &targetResult = result[target];
+
     IRMapping mapping;
     OwningOpRef<ModuleOp> module =
         produceStandaloneModule(symtab, offloadInfo.exportedSymbols, mapping);
@@ -468,7 +470,7 @@ static ErrorOr<DenseMap<uint64_t, OffloadCompilationResult>> compileOffloads(
                                    StringType::get(theModule->getContext()))});
       }
 
-      result.insert(
+      targetResult.insert(
           {kernelID, OffloadCompilationResult{{std::move(func)},
                                               b.getIndexAttr(numCaptures),
                                               populateFnRef,

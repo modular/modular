@@ -149,12 +149,15 @@ using ElaboratorCompileAsmFn = ErrorOr<CrossDeviceFunction> (*)(
 /// will be compiled together.
 /// The expected mangled name of the generate is passed to be used
 /// as the entry point.
-using ElaboratorCompileOffloadFn =
-    ErrorOr<DenseMap<uint64_t, OffloadCompilationResult>> (*)(
-        ModuleOp module,
-        llvm::MapVector<TargetInfoAttr, OffloadInfo> &targetOffloadInfos,
-        const SymbolTable &, CompilationOptions, ElaborateGeneratorsOptions,
-        mlir::DiagnosticEngine::HandlerID);
+
+using ElaboratorCompileOffloadRetType = ErrorOr<
+    DenseMap<TargetInfoAttr, DenseMap<uint64_t, OffloadCompilationResult>>>;
+
+using ElaboratorCompileOffloadFn = ElaboratorCompileOffloadRetType (*)(
+    ModuleOp module,
+    llvm::MapVector<TargetInfoAttr, OffloadInfo> &targetOffloadInfos,
+    const SymbolTable &, CompilationOptions, ElaborateGeneratorsOptions,
+    mlir::DiagnosticEngine::HandlerID);
 
 /// Create an instance of the elaborator pass that captures all of the
 /// referenced include files.

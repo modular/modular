@@ -1924,15 +1924,6 @@ Elaborator::run(ModuleOp theModule,
     }
   }
 
-  // Compile the offload functions here.
-  MLIRContext *ctx = theModule.getContext();
-  DiagnosticHandler handler(ctx);
-  ErrorOr<DenseMap<uint64_t, OffloadCompilationResult>> compiledOffloadOr =
-      compileOffloadFn(theModule, targetOffloadInfos.get(), oldSymTab, options,
-                       getOptions(), handler.getHandlerID());
-  failed |= compiledOffloadOr.isError();
-  handler.release();
-
   if (failed) {
     for (InstantiatedOpInterface inst :
          llvm::make_second_range(concreteInsts.get()))
@@ -1941,16 +1932,42 @@ Elaborator::run(ModuleOp theModule,
     return failure();
   }
 
-  for (auto &[idx, kernel] : *compiledOffloadOr) {
-    auto populate = cast<FuncOp>(kernel.func.get());
-    auto symbol = SymbolConstantAttr::get(populate);
+  // Compile the offload functions here.
+  MLIRContext *ctx = theModule.getContext();
+  DiagnosticHandler handler(ctx);
+  ElaboratorCompileOffloadRetType compiledOffloadOr =
+      compileOffloadFn(theModule, targetOffloadInfos.get(), oldSymTab, options,
+                       getOptions(), handler.getHandlerID());
+  if (compiledOffloadOr.isError()) {
+    ErrorTree compileOffloadError(theModule->getLoc(),
+                                  compiledOffloadOr.takeError());
+    std::move(compileOffloadError)
+        .emit([](Location loc) { return mlir::emitError(loc); },
+              "Compile offload failed.");
+    for (InstantiatedOpInterface inst :
+         llvm::make_second_range(concreteInsts.get()))
+      inst.erase();
+    handler.release();
+    return failure();
+  }
 
-    FuncOp func = *getConcreteFunction(nullptr, populate.getLoc(), symbol);
-    if (func) {
-      // Now filling in the actual body of the populate closure which is
-      // generated while compiling all the offload functions.
-      func.getBodyRegion().takeBody(
-          cast<FuncOp>(kernel.func.release()).getBodyRegion());
+  handler.release();
+
+  DenseMap<TargetInfoAttr, DenseMap<uint64_t, OffloadCompilationResult>>
+      compiledOffload = compiledOffloadOr.takeValue();
+
+  for (auto &[target, result] : compiledOffload) {
+    for (auto &[_, kernel] : result) {
+      auto populate = cast<FuncOp>(kernel.func.get());
+      auto symbol = SymbolConstantAttr::get(populate);
+
+      FuncOp func = *getConcreteFunction(nullptr, populate.getLoc(), symbol);
+      if (func) {
+        // Now filling in the actual body of the populate closure which is
+        // generated while compiling all the offload functions.
+        func.getBodyRegion().takeBody(
+            cast<FuncOp>(kernel.func.release()).getBodyRegion());
+      }
     }
   }
 
@@ -2009,35 +2026,57 @@ Elaborator::run(ModuleOp theModule,
   theModule.getBodyRegion().push_back(newBlock);
 
   // Plug offload compilation results as strings back to the elaborated IR.
-  DenseMap<uint64_t, OffloadCompilationResult> compiledOffload =
-      compiledOffloadOr.takeValue();
-
   theModule.walk([&](CompileOffloadOp op) {
-    auto kernelID = cast<IntegerAttr>(op.getKernelIDAttr()).getInt();
+    auto kernelId = cast<IntegerAttr>(op.getKernelIDAttr()).getInt();
     EmitAs emissionKind = cast<EmitAsAttr>(op.getEmissionKindAttr()).getValue();
+    TargetInfoAttr target =
+        cast<TargetParamAttr>(op.getTargetTypeAttr()).getTarget();
 
-    auto iter = compiledOffload.find(kernelID);
-    if (iter != compiledOffload.end()) {
-      OpBuilder b(op);
-      StringAttr content = iter->second.contents[emissionKind];
-      IntegerAttr numCaptures = iter->second.numCaptures;
-      auto structType = StructType::get(
-          op->getContext(), {content.getType(), numCaptures.getType()});
-
-      SmallVector<Value> values;
-
-      auto constantV = b.create<ParamConstantOp>(op.getLoc(), content);
-      auto numCapturesV = b.create<ParamConstantOp>(op.getLoc(), numCaptures);
-      values.push_back(constantV);
-      values.push_back(numCapturesV);
-      auto newOp =
-          b.create<KGEN::StructCreateOp>(op->getLoc(), structType, values);
-
-      op->replaceUsesOfWith(op.getResult(), newOp);
-      op.replaceAllUsesWith(newOp.getResult());
-      op.erase();
+    auto targetIter = compiledOffload.find(target);
+    if (targetIter == compiledOffload.end()) {
+      ErrorTree compileOffloadError(theModule->getLoc(),
+                                    "compile offload result missing target");
+      std::move(compileOffloadError)
+          .emit([](Location loc) { return mlir::emitError(loc); },
+                "Compile offload failed.");
+      failed = true;
+      return WalkResult::interrupt();
     }
+
+    auto iter = targetIter->second.find(kernelId);
+    if (iter == targetIter->second.end()) {
+      ErrorTree compileOffloadError(theModule->getLoc(),
+                                    "compile offload result missing kernelId " +
+                                        std::to_string(kernelId));
+      std::move(compileOffloadError)
+          .emit([](Location loc) { return mlir::emitError(loc); },
+                "Compile offload failed.");
+      failed = true;
+      return WalkResult::interrupt();
+    }
+
+    OpBuilder b(op);
+    StringAttr content = iter->second.contents[emissionKind];
+    IntegerAttr numCaptures = iter->second.numCaptures;
+    auto structType = StructType::get(
+        op->getContext(), {content.getType(), numCaptures.getType()});
+
+    SmallVector<Value> values;
+
+    auto constantV = b.create<ParamConstantOp>(op.getLoc(), content);
+    auto numCapturesV = b.create<ParamConstantOp>(op.getLoc(), numCaptures);
+    values.push_back(constantV);
+    values.push_back(numCapturesV);
+    auto newOp = b.create<StructCreateOp>(op->getLoc(), structType, values);
+
+    op->replaceUsesOfWith(op.getResult(), newOp);
+    op.replaceAllUsesWith(newOp.getResult());
+    op.erase();
+    return WalkResult::advance();
   });
+
+  if (failed)
+    return failure();
 
   // Recompute the new symbol table.
   oldSymTab = SymbolTable(theModule);
