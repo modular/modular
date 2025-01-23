@@ -38,12 +38,14 @@ lit_tests(
     ]),
     custom_substitutions = {
         "%driver-tblgen": "$(rlocationpath //Support/tools/driver-tblgen) -I $(dirname $(dirname $(dirname ../../../../$(location //Support:include/Support/Driver/DriverCommand.td)))) -I $(dirname $(dirname $(dirname ../../../../../$(rlocationpath @llvm-project//llvm:include/llvm/Option/OptParser.td))))",
+        "%modular-crashpad-handler": "$(rlocationpath @crashpad//:modular-crashpad-handler)",
     },
     data = [
         "//Support:DriverCommandTdFiles",
         "//Support:include/Support/Driver/DriverCommand.td",
         "@llvm-project//llvm:include/llvm/Option/OptParser.td",
     ],
+    generate_litcfg = True,
     tools = [
         "//Support/tools/build-info",
         "//Support/tools/driver-tblgen",
