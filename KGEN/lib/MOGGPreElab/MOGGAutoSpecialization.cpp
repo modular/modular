@@ -599,8 +599,8 @@ static void updateCallOps(CallGraphNode *node, CallGraph &cg,
     if (addNoneSpecParam) {
       // We just assert here, the analysis already ensured that we don't mix
       // both none spec and arg spec.
-      assert(!addArgSpecParam &&
-             "mix of non-specialized and specialized arguments");
+      ASSERT_STREAM(!addArgSpecParam,
+                    << "mix of non-specialized and specialized arguments");
       LLVM_DEBUG(llvm::dbgs() << "Fixup call: no need for specialization "
                                  "since all tensor specs are none (@"
                               << oldCall.getCalleeSymbol() << ").\n");
