@@ -20,7 +20,7 @@ from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, NullMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
-
+from sys import has_nvidia_gpu_accelerator
 from utils import IndexList
 from utils.index import Index
 
@@ -256,10 +256,12 @@ def execute_ragged_flash_attention[
         for s in range(prompt_len):
             for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):
+                    var ref_val = ref_out[bs, s, h, hd]
+                    var test_val = test_out[ragged_offset + s, h, hd]
                     try:
                         assert_almost_equal(
-                            ref_out[bs, s, h, hd],
-                            test_out[ragged_offset + s, h, hd],
+                            ref_val,
+                            test_val,
                         )
                     except e:
                         print(
@@ -268,8 +270,8 @@ def execute_ragged_flash_attention[
                             s,
                             h,
                             hd,
-                            ref_out[bs, s, h, hd],
-                            test_out[ragged_offset + s, h, hd],
+                            ref_val,
+                            test_val,
                         )
                         raise e
 
@@ -291,15 +293,19 @@ def execute_ragged_flash_attention[
     _ = valid_lengths_host^
     _ = cache_lengths_host^
     _ = cache_lengths_device^
+    _ = input_row_offsets_host^
+    _ = input_row_offsets_device^
 
 
 def execute_flash_attention_suite(ctx: DeviceContext):
-    alias types = (DType.float32, DType.bfloat16)
-
+    alias types = (
+        DType.float32,
+        DType.bfloat16,
+    )
     for bs_ref in List[Int](1, 16):
 
         @parameter
-        for type_idx in range(2):
+        for type_idx in range(len(types)):
             alias type = types[type_idx]
 
             bs = bs_ref[]
