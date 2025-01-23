@@ -14,6 +14,7 @@
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "Support/AssertStream.h"
 #include "mlir/Pass/Pass.h"
 
 #include "Helpers.h"
@@ -87,8 +88,9 @@ static LogicalResult checkByRefTensorArgs(LIT::FnOp func) {
       if (isDPSKernel(func) && isDPSTensor(asDeclRef) &&
           isa<LIT::RefType>(litType)) {
         return func.emitError()
-               << "taking a DPS tensor by reference in argument "
-               << signature.getArgName(index) << " is not supported.";
+               << " Only the borrowed argument (read) convention is supported "
+                  "for tensor arguments ("
+               << signature.getArgName(index) << " is mutable here).";
       }
     }
   }
@@ -204,7 +206,8 @@ getUnboundParametersForTensor(LIT::StructType &structType, OpBuilder &builder) {
   static constexpr unsigned kDTypeIndex = 0;
   static constexpr unsigned kRankIndex = 1;
   auto allParameters = litTypeToParams(structType);
-  assert(allParameters.size() >= 2);
+  ASSERT_STREAM(allParameters.size() >= 2,
+                << "Expected at least two parameters on the tensor type");
   auto dtype = allParameters[kDTypeIndex];
   auto rank = allParameters[kRankIndex];
 
@@ -227,7 +230,8 @@ getUnboundParametersForSIMD(LIT::StructType &structType, OpBuilder &builder) {
   static constexpr unsigned kSizeIndex = 1;
   auto allParameters = litTypeToParams(structType);
 
-  assert(allParameters.size() >= 2);
+  ASSERT_STREAM(allParameters.size() >= 2,
+                << "Expected at least two parameters on the SIMD type");
   auto dtype = allParameters[kDTypeIndex];
   auto size = allParameters[kSizeIndex];
 
@@ -256,7 +260,7 @@ static ArrayAttr getParametersForSimpleType(LIT::StructType &structType,
 
 /// Return a set of named attributes mapping all unbound parameters in the tuple
 /// of tensor struct
-static SmallVector<NamedAttribute>
+static std::optional<SmallVector<NamedAttribute>>
 getUnboundParametersForTensorTuple(LIT::StructType &structType,
                                    OpBuilder &builder) {
   // TODO(GEX-1126): consider a tuple which only contains tensors to
@@ -265,9 +269,12 @@ getUnboundParametersForTensorTuple(LIT::StructType &structType,
   static constexpr unsigned kSizeIndex = 1;
   auto allParameters = litTypeToParams(structType);
 
-  assert(allParameters.size() >= 2);
+  ASSERT_STREAM(
+      allParameters.size() >= 2,
+      << "Expected at least two parameters on the tuple-of-tensors type");
   [[maybe_unused]] auto elementType = allParameters[kElementType];
-  assert(!elementType && "Element type must be defined and be equal to tensor");
+  ASSERT_STREAM(!elementType,
+                << "Element type must be defined and be equal to tensor");
   auto size = allParameters[kSizeIndex];
 
   SmallVector<NamedAttribute> tupleNamedAttrs;
@@ -279,8 +286,10 @@ getUnboundParametersForTensorTuple(LIT::StructType &structType,
       cast<KGEN::TypeParamAttr>(structType.getParamValues()[0]);
   auto elementTypeStruct =
       cast<LIT::StructType>(elementTypeAttr.getTypeValue());
-  assert(symbolMatches(elementTypeStruct.getSymbol(), kMaxManagedTensorSlice) &&
-         "Expect managed tensor slice element type");
+
+  if (!symbolMatches(elementTypeStruct.getSymbol(), kMaxManagedTensorSlice))
+    return std::nullopt;
+
   auto elementTypeParams =
       getUnboundParametersForTensor(elementTypeStruct, builder);
 
@@ -291,19 +300,21 @@ getUnboundParametersForTensorTuple(LIT::StructType &structType,
 // Returns an array of attributes containing all parameters for the tensor type.
 static ArrayAttr getTensorParametersForTensorTuple(LIT::StructType &structType,
                                                    OpBuilder &builder) {
-  assert(structType.getParamValues().size() >= 1);
+  ASSERT_STREAM(structType.getParamValues().size() >= 1,
+                "Expected the tuple of tensor to have at least 1 parameter");
   auto elementTypeAttr =
       cast<KGEN::TypeParamAttr>(structType.getParamValues()[0]);
   auto elementTypeStruct =
       cast<LIT::StructType>(elementTypeAttr.getTypeValue());
-  assert(symbolMatches(elementTypeStruct.getSymbol(), kMaxManagedTensorSlice) &&
-         "Expect managed tensor slice element type");
+  ASSERT_STREAM(
+      symbolMatches(elementTypeStruct.getSymbol(), kMaxManagedTensorSlice),
+      << "Expect managed tensor slice element type");
   return getParametersForSimpleType(elementTypeStruct, builder);
 }
 
 /// Return a set of named attributes mapping all unbound parameters in the list
 /// of tensor struct
-static SmallVector<NamedAttribute>
+static std::optional<SmallVector<NamedAttribute>>
 getUnboundParametersForTensorList(LIT::StructType &structType,
                                   OpBuilder &builder) {
   // TODO(GEX-1126): consider a tuple which only contains tensors to
@@ -311,17 +322,21 @@ getUnboundParametersForTensorList(LIT::StructType &structType,
   static constexpr unsigned kElementType = 0;
   auto allParameters = litTypeToParams(structType);
 
-  assert(allParameters.size() >= 1);
+  ASSERT_STREAM(
+      allParameters.size() >= 2,
+      << "Expected at least two parameters on the list-of-tensor type");
   [[maybe_unused]] auto elementType = allParameters[kElementType];
-  assert(!elementType && "Element type must be defined and be equal to tensor");
+  ASSERT_STREAM(!elementType,
+                << "Element type must be defined and be equal to tensor");
   SmallVector<NamedAttribute> listNamedAttrs;
 
   auto elementTypeAttr =
       cast<KGEN::TypeParamAttr>(structType.getParamValues()[0]);
   auto elementTypeStruct =
       cast<LIT::StructType>(elementTypeAttr.getTypeValue());
-  assert(symbolMatches(elementTypeStruct.getSymbol(), kMaxManagedTensorSlice) &&
-         "Expect managed tensor slice element type");
+
+  if (!symbolMatches(elementTypeStruct.getSymbol(), kMaxManagedTensorSlice))
+    return std::nullopt;
 
   auto elementTypeParams =
       getUnboundParametersForTensor(elementTypeStruct, builder);
@@ -372,18 +387,28 @@ static void labelTensorParamsInKernel(LIT::FnOp funcOp) {
       tensorArgsParams.push_back(
           getParametersForSimpleType(asStructType, builder));
     } else if (symbolMatches(asStructType.getSymbol(), kMaxStaticTuple)) {
-      SmallVector<NamedAttribute> tensorSpecNamedAttrs =
+      auto tensorSpecNamedAttrs =
           getUnboundParametersForTensorTuple(asStructType, builder);
-      tensorSpecs.push_back(
-          DictionaryAttr::get(funcOp.getContext(), tensorSpecNamedAttrs));
-      tensorArgsParams.push_back(
-          getTensorParametersForTensorTuple(asStructType, builder));
+      if (!tensorSpecNamedAttrs) {
+        tensorSpecs.push_back(emptyAttr);
+        tensorArgsParams.push_back(emptyAttr);
+      } else {
+        tensorSpecs.push_back(
+            DictionaryAttr::get(funcOp.getContext(), *tensorSpecNamedAttrs));
+        tensorArgsParams.push_back(
+            getTensorParametersForTensorTuple(asStructType, builder));
+      }
     } else if (symbolMatches(asStructType.getSymbol(), kMaxList)) {
-      SmallVector<NamedAttribute> tensorSpecNamedAttrs =
+      auto tensorSpecNamedAttrs =
           getUnboundParametersForTensorList(asStructType, builder);
-      tensorSpecs.push_back(
-          DictionaryAttr::get(funcOp.getContext(), tensorSpecNamedAttrs));
-      tensorArgsParams.push_back(emptyAttr);
+      if (!tensorSpecNamedAttrs) {
+        tensorSpecs.push_back(emptyAttr);
+        tensorArgsParams.push_back(emptyAttr);
+      } else {
+        tensorSpecs.push_back(
+            DictionaryAttr::get(funcOp.getContext(), *tensorSpecNamedAttrs));
+        tensorArgsParams.push_back(emptyAttr);
+      }
     } else {
       // Unsupported type, can ignore
       tensorSpecs.push_back(emptyAttr);
@@ -431,14 +456,14 @@ isExtensibilityAPIStruct(LIT::StructDeclOp structDeclOp, ModuleOp moduleOp,
 
       if (decoratorFunc && decoratorFunc->hasAttr(MOGG_INTRINSIC_ELEMENTWISE)) {
         if (registrationInfo.isElementwiseKernel)
-          return Error("Op has multiple elementwise annotations");
+          return Error("Kernel has multiple elementwise annotations");
         registrationInfo.isElementwiseKernel = true;
         continue;
       }
 
       if (decoratorFunc && decoratorFunc->hasAttr(MOGG_INTRINSIC_VIEW_KERNEL)) {
         if (registrationInfo.isViewKernel)
-          return Error("Op has multiple view annotations");
+          return Error("Kernel has multiple view annotations");
         registrationInfo.isViewKernel = true;
         continue;
       }
@@ -454,9 +479,9 @@ isExtensibilityAPIStruct(LIT::StructDeclOp structDeclOp, ModuleOp moduleOp,
                              .getValues()
                              .front();
     auto name = dyn_cast<StringAttr>(nameAttr);
-    assert(name);
+    ASSERT_STREAM(name, << "Expected a StringAttr as the registration name");
     if (registrationInfo.registrationName) {
-      return Error("Only one op can be registered per kernel struct");
+      return Error("Only one op can be registered per kernel");
     }
     registrationInfo.registrationName = name;
 
@@ -465,7 +490,8 @@ isExtensibilityAPIStruct(LIT::StructDeclOp structDeclOp, ModuleOp moduleOp,
             .getValues()
             .front();
     auto numDPSOperands = dyn_cast<IntegerAttr>(numDPSOperandsAttr);
-    assert(numDPSOperands);
+    ASSERT_STREAM(numDPSOperands,
+                  << "Expected an IntegerAttr as the number of DPS operands");
     registrationInfo.numDPSOperands = numDPSOperands;
   }
 
@@ -485,7 +511,7 @@ LogicalResult processStructFuncCommon(
     LIT::StructDeclOp structDeclOp, ExtensibilityAPIStructInfo registrationInfo,
     LIT::FnOp func, StringLiteral annotation, OpBuilder &builder) {
   if (!func.getIsStatic()) {
-    func->emitError("Function is not static");
+    func->emitError("This function must be static");
     return failure();
   }
 
@@ -677,7 +703,8 @@ public:
 
       // Some struct verifiers
       if (!executeOp) {
-        structDeclOp.emitError("Struct based extensibility needs execute!");
+        structDeclOp.emitError(llvm::formatv(
+            "The kernel must have an entry point named {0}", kExecuteFuncName));
         return WalkResult::interrupt();
       }
 
