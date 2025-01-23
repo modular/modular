@@ -81,7 +81,7 @@ Note that GPU tests have a different target:
 We use `http_archive` to bundle and download the golden values from S3. To
 add a file to this archive, you need to:
 
-1. Download the existing archive by `cat WORKSPACE.bazel | grep test_llama_golden`
+1. Download the existing archive by `cat MODULE.bazel | grep test_llama_golden`
 , finding the s3 URL (at time of writing this
 was `https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/test_llama_golden/3/90811d3fff2b4d88390fb193bb545651529126729c6af2626c68341640c2d62b/test_llama_golden.tar.gz`)
 and downloading to your local machine (e.g., with wget).
@@ -109,7 +109,7 @@ to package and upload the latest version (current version number is `3`).
     )
    ```
 
-6. Find the associated section in `WORKSPACE.bazel`, delete it, and replace
+6. Find the associated section in `MODULE.bazel`, delete it, and replace
 with this newly generated value.
 
 ## Registering torch golden logits
@@ -129,8 +129,8 @@ Currently we only generate goldens for bfloat16 on GPU.
 ### Uploading new goldens
 
 1. Download the tar file from the URL reported by
-   `cat WORKSPACE.bazel | grep torch_llama_golden`
+   `cat MODULE.bazel | grep torch_llama_golden`
 2. Untar: `tar -xvf torch_llama_golden.tar.gz`
 3. Update file list with new golden files.
 4. Run `./utils/upload-public-bazel-artifact.sh torch_llama_golden 3 torch_*golden.json`
-5. Update `WORKSPACE.bazel` with the result from above.
+5. Update `MODULE.bazel` with the result from above.
