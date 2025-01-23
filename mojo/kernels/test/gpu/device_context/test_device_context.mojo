@@ -7,6 +7,7 @@
 
 from gpu import *
 from gpu.host import DeviceBuffer, DeviceContext, DeviceFunction
+from testing import assert_equal
 
 
 # A Simple Kernel performing the sum of two arrays
@@ -95,9 +96,15 @@ def test_move(ctx: DeviceContext):
     c.synchronize()
 
 
+def test_id(ctx: DeviceContext):
+    # CPU always gets id 0 so test for that.
+    assert_equal(ctx.id(), 0)
+
+
 def main():
     # Create an instance of the DeviceContext
     with DeviceContext() as ctx:
         # Execute our test with the context
         test(ctx)
         test_move(ctx)
+        test_id(ctx)
