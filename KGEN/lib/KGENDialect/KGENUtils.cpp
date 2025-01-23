@@ -1533,13 +1533,13 @@ KGEN::EnvAttr KGEN::getModularEnvAttr(MLIRContext *ctx,
       std::visit(
           [&](auto &&v) {
             using T = std::decay_t<decltype(v)>;
-            if constexpr (std::is_same_v<T, bool>)
+            if constexpr (std::is_same_v<T, bool>) {
               envAttrs.set(k, BoolAttr::get(ctx, v));
-            else if constexpr (std::is_same_v<T, int>)
+            } else if constexpr (std::is_same_v<T, int>) {
               envAttrs.set(k, IntegerAttr::get(IndexType::get(ctx), v));
-            else if constexpr (std::is_same_v<T, llvm::StringRef>)
+            } else if constexpr (std::is_same_v<T, llvm::StringRef>) {
               envAttrs.set(k, StringAttr::get(v, KGEN::StringType::get(ctx)));
-            else {
+            } else {
               // NOTE: This should be a static_assert, but that breaks in torch
               // compile tests on some mac devices.
               assert("non-exhaustive visitor!");
