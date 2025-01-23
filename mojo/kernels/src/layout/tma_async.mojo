@@ -7,7 +7,11 @@
 from sys import sizeof
 
 from gpu.host import DeviceContext, DeviceBuffer
-from gpu.host.nvidia_cuda import TMADescriptor, create_tma_descriptor
+from gpu.host.nvidia_cuda import (
+    TMADescriptor,
+    TensorMapSwizzle,
+    create_tma_descriptor,
+)
 from gpu.memory import (
     AddressSpace,
     cp_async_bulk_tensor_shared_cluster_global,
@@ -177,12 +181,40 @@ struct TMATensorTile[
 #
 @always_inline
 def create_tma_tile[
-    *tile_sizes: Int
+    *tile_sizes: Int,
+    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](ctx: DeviceContext, tensor: LayoutTensor) -> TMATensorTile[
     tensor.dtype,
     Layout.row_major(_to_int_tuple[*tile_sizes]()),
 ]:
-    return create_tma_descriptor[tensor.dtype, 2](
+    # the last dimension of smem shape has to be smaller or equals to the
+    # swizzle bytes.
+    alias swizzle_bytes = tile_sizes[tensor.rank - 1] * sizeof[tensor.dtype]()
+
+    @parameter
+    if swizzle_mode == TensorMapSwizzle.SWIZZLE_32B:
+        constrained[
+            swizzle_bytes <= 32,
+            "Current swizzle bytes is "
+            + String(swizzle_bytes)
+            + " which exceeds 32B swizzle requirement.",
+        ]()
+    elif swizzle_mode == TensorMapSwizzle.SWIZZLE_64B:
+        constrained[
+            swizzle_bytes <= 64,
+            "Current swizzle bytes is "
+            + String(swizzle_bytes)
+            + " which exceeds 64B swizzle requirement.",
+        ]()
+    elif swizzle_mode == TensorMapSwizzle.SWIZZLE_128B:
+        constrained[
+            swizzle_bytes <= 128,
+            "Current swizzle bytes is "
+            + String(swizzle_bytes)
+            + " which exceeds 128B swizzle requirement.",
+        ]()
+
+    return create_tma_descriptor[tensor.dtype, 2, swizzle_mode](
         DeviceBuffer(
             ctx,
             tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
