@@ -727,6 +727,7 @@ struct ManagedTensorSlice[
             element_alignment=element_alignment,
         ](self, ridx, val)
 
+    @__mogg_intrinsic_attr("mogg.tensor_fused_store")
     @always_inline
     fn _fused_store[
         width: Int,
