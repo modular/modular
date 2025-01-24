@@ -61,7 +61,7 @@ alias _SizeT = UInt
 # Define helper methods to call AsyncRT bindings.
 
 
-fn not_implemented_yet[msg: StringLiteral]():
+fn _not_implemented_yet[msg: StringLiteral]():
     # Uncomment to convert runtime errors into compile-time errors:
     # constrained[False, msg]()
     abort(msg)
@@ -103,7 +103,7 @@ struct _DeviceTimer:
 
 
 @value
-struct DeviceSyncMode:
+struct _DeviceSyncMode:
     var _is_sync: Bool
 
 
@@ -119,7 +119,7 @@ struct DeviceBuffer[type: DType](Sized):
         mut self,
         ctx: DeviceContext,
         size: Int,
-        sync_mode: DeviceSyncMode,
+        sync_mode: _DeviceSyncMode,
     ) raises:
         """This init takes in a constructed DeviceContext and schedules an owned buffer allocation
         using the stream in the device context.
@@ -391,7 +391,7 @@ struct DeviceFunction[
     target: __mlir_type.`!kgen.target` = _get_gpu_target(),
     _ptxas_info_verbose: Bool = False,
 ]:
-    alias emission_kind = "shared-obj" if _is_amd_gpu[target]() else "asm"
+    alias _emission_kind = "shared-obj" if _is_amd_gpu[target]() else "asm"
     var _handle: _DeviceFunctionPtr
     var _func_impl: Info[func_type, func]
 
@@ -446,7 +446,9 @@ struct DeviceFunction[
                     func_attribute.value().value,
                     "]",
                 )
-                not_implemented_yet["DeviceFunction.__init__: func_attribute"]()
+                _not_implemented_yet[
+                    "DeviceFunction.__init__: func_attribute"
+                ]()
 
         # const char *AsyncRT_DeviceContext_loadFunction(
         #     const DeviceFunction **result, const DeviceContext *ctx,
@@ -456,7 +458,7 @@ struct DeviceFunction[
         var result = _DeviceFunctionPtr()
         self._func_impl = _compile_code[
             func,
-            emission_kind = self.emission_kind,
+            emission_kind = self._emission_kind,
             target=target,
         ]()
         _checked(
@@ -539,7 +541,7 @@ struct DeviceFunction[
 
             fn get_asm() -> StringLiteral:
                 @parameter
-                if Self.emission_kind == "asm":
+                if Self._emission_kind == "asm":
                     return self._func_impl.asm
                 return _compile_code_asm[
                     func,
@@ -755,8 +757,8 @@ struct DeviceContext:
     alias device_info = DEFAULT_GPU
     alias device_api = Self.device_info.api
 
-    alias SYNC = DeviceSyncMode(True)
-    alias ASYNC = DeviceSyncMode(False)
+    alias _SYNC = _DeviceSyncMode(True)
+    alias _ASYNC = _DeviceSyncMode(False)
 
     var _handle: _DeviceContextPtr
 
@@ -902,13 +904,13 @@ struct DeviceContext:
         type: DType
     ](self, size: Int) raises -> DeviceBuffer[type]:
         """Enqueues a buffer creation using the DeviceBuffer constructor."""
-        return DeviceBuffer[type](self, size, Self.ASYNC)
+        return DeviceBuffer[type](self, size, Self._ASYNC)
 
     fn create_buffer_sync[
         type: DType
     ](self, size: Int) raises -> DeviceBuffer[type]:
         """Creates a buffer synchronously using the DeviceBuffer constructor."""
-        var result = DeviceBuffer[type](self, size, Self.SYNC)
+        var result = DeviceBuffer[type](self, size, Self._SYNC)
         self.synchronize()
         return result
 
