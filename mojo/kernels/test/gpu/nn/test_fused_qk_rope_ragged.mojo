@@ -49,7 +49,7 @@ def execute_fused_qk_rope_ragged(
     alias kv_params = KVCacheStaticParams(num_heads=8, head_size=128)
     alias type = DType.float32
     alias num_paged_blocks = 32
-    alias block_size = 128
+    alias page_size = 128
     var num_layers = 1
     var layer_idx = 0
 
@@ -178,7 +178,7 @@ def execute_fused_qk_rope_ragged(
             num_layers,
             2,
             num_paged_blocks,
-            block_size,
+            page_size,
             kv_params.num_heads,
             kv_params.head_size,
         )
@@ -189,7 +189,7 @@ def execute_fused_qk_rope_ragged(
             num_layers,
             2,
             num_paged_blocks,
-            block_size,
+            page_size,
             kv_params.num_heads,
             kv_params.head_size,
         )
@@ -206,14 +206,14 @@ def execute_fused_qk_rope_ragged(
     paged_lut_host = HostNDBuffer[DType.uint32, 2](
         IndexList[2](
             batch_size,
-            ceildiv(true_ce_max_full_context_length, block_size),
+            ceildiv(true_ce_max_full_context_length, page_size),
         )
     )
     paged_lut_set = Set[Int]()
     for bs in range(batch_size):
         seq_len = true_ce_cache_lens[bs] + true_ce_prompt_lens[bs]
 
-        for block_idx in range(0, ceildiv(seq_len, block_size)):
+        for block_idx in range(0, ceildiv(seq_len, page_size)):
             var randval = Int(random_ui64(0, num_paged_blocks - 1))
             while randval in paged_lut_set:
                 randval = Int(random_ui64(0, num_paged_blocks - 1))
@@ -223,7 +223,9 @@ def execute_fused_qk_rope_ragged(
 
     paged_lut_device = paged_lut_host.copy_to_device(ctx)
 
-    var true_ce_k_cache_collection = PagedKVCacheCollection[type, kv_params](
+    var true_ce_k_cache_collection = PagedKVCacheCollection[
+        type, kv_params, page_size
+    ](
         true_ce_kv_block_paged_device.tensor,
         true_ce_cache_lengths_device.tensor,
         paged_lut_device.tensor,
@@ -231,7 +233,9 @@ def execute_fused_qk_rope_ragged(
         true_ce_max_cache_length,
     )
 
-    var mixed_ce_k_cache_collection = PagedKVCacheCollection[type, kv_params](
+    var mixed_ce_k_cache_collection = PagedKVCacheCollection[
+        type, kv_params, page_size
+    ](
         mixed_ce_kv_block_paged_device.tensor,
         mixed_ce_cache_lengths_device.tensor,
         paged_lut_device.tensor,
@@ -284,7 +288,7 @@ def execute_fused_qk_rope_ragged(
     ctx.synchronize()
 
     var true_ce_k_cache_collection_host = PagedKVCacheCollection[
-        type, kv_params
+        type, kv_params, page_size
     ](
         true_ce_kv_block_paged_host.tensor,
         true_ce_cache_lengths_host.tensor,
@@ -297,7 +301,7 @@ def execute_fused_qk_rope_ragged(
     )
 
     var mixed_ce_k_cache_collection_host = PagedKVCacheCollection[
-        type, kv_params
+        type, kv_params, page_size
     ](
         mixed_ce_kv_block_paged_host.tensor,
         mixed_ce_cache_lengths_host.tensor,

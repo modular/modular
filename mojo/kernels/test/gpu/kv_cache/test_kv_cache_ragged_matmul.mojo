@@ -570,8 +570,8 @@ def execute_paged_fused_qkv_matmul[
     ctx: DeviceContext,
 ):
     alias num_paged_blocks = 32
-    alias block_size = 512
-    alias PagedCacheType = PagedKVCache[type, kv_params]
+    alias page_size = 512
+    alias PagedCacheType = PagedKVCache[type, kv_params, page_size]
     var batch_size = len(prompt_lens)
     debug_assert(
         len(prompt_lens) == len(cache_sizes),
@@ -587,7 +587,7 @@ def execute_paged_fused_qkv_matmul[
             num_layers,
             2,
             num_paged_blocks,
-            block_size,
+            page_size,
             kv_params.num_heads,
             kv_params.head_size,
         )
@@ -609,13 +609,13 @@ def execute_paged_fused_qkv_matmul[
     cache_sizes_device = cache_sizes_host.copy_to_device(ctx)
 
     paged_lut_host = HostNDBuffer[DType.uint32, 2](
-        IndexList[2](batch_size, ceildiv(max_full_context_length, block_size))
+        IndexList[2](batch_size, ceildiv(max_full_context_length, page_size))
     )
     paged_lut_set = Set[Int]()
     for bs in range(batch_size):
         seq_len = cache_sizes[bs] + prompt_lens[bs]
 
-        for block_idx in range(0, ceildiv(seq_len, block_size)):
+        for block_idx in range(0, ceildiv(seq_len, page_size)):
             var randval = Int(random_ui64(0, num_paged_blocks - 1))
             while randval in paged_lut_set:
                 randval = Int(random_ui64(0, num_paged_blocks - 1))

@@ -28,8 +28,8 @@ def execute_ragged_flash_attention(
     alias kv_params = KVCacheStaticParams(num_heads=8, head_size=128)
     alias type = DType.float32
     alias num_paged_blocks = 32
-    alias block_size = 128
-    alias PagedCacheType = PagedKVCache[type, kv_params]
+    alias page_size = 128
+    alias PagedCacheType = PagedKVCache[type, kv_params, page_size]
     var num_layers = 1
     var layer_idx = 0
 
@@ -163,7 +163,7 @@ def execute_ragged_flash_attention(
             num_layers,
             2,
             num_paged_blocks,
-            block_size,
+            page_size,
             kv_params.num_heads,
             kv_params.head_size,
         )
@@ -173,14 +173,14 @@ def execute_ragged_flash_attention(
     paged_lut_host = HostNDBuffer[DType.uint32, 2](
         IndexList[2](
             batch_size,
-            ceildiv(true_ce_max_full_context_length, block_size),
+            ceildiv(true_ce_max_full_context_length, page_size),
         )
     )
     paged_lut_set = Set[Int]()
     for bs in range(batch_size):
         seq_len = true_ce_cache_lens[bs] + true_ce_prompt_lens[bs]
 
-        for block_idx in range(0, ceildiv(seq_len, block_size)):
+        for block_idx in range(0, ceildiv(seq_len, page_size)):
             var randval = Int(random_ui64(0, num_paged_blocks - 1))
             while randval in paged_lut_set:
                 randval = Int(random_ui64(0, num_paged_blocks - 1))
