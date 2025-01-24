@@ -30,20 +30,19 @@ def LIT_GeneratorType : DialectType<LITDialect,
     "LITGeneratorType">;
 
 //===----------------------------------------------------------------------===//
-// NewSignatureType
+// FuncType
 //===----------------------------------------------------------------------===//
 
-def LIT_NewSignatureType : DialectType<LITDialect,
-    CPred<"llvm::isa<LITNewSignatureType>($_self)">, "LIT new signature type",
-    "LITNewSignatureType">;
+def LIT_FnType : DialectType<LITDialect,
+    CPred<"llvm::isa<FnType>($_self)">, "LIT function type", "FnType">;
 
 //===----------------------------------------------------------------------===//
-// SignatureGeneratorType
+// FuncTypeGeneratorType
 //===----------------------------------------------------------------------===//
 
-def LIT_SignatureGeneratorType : DialectType<LITDialect,
-    CPred<"llvm::isa<LITSignatureGeneratorType>($_self)">,
-    "LIT signature generator type", "LITSignatureGeneratorType">;
+def LIT_FnTypeGeneratorType : DialectType<LITDialect,
+    CPred<"llvm::isa<FnTypeGeneratorType>($_self)">,
+    "LIT function type generator type", "FnTypeGeneratorType">;
 
 //===----------------------------------------------------------------------===//
 // TypeCheckErrorType

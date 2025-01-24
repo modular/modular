@@ -1004,7 +1004,7 @@ static PValue substituteParametersIntoUserDefinedType(
 }
 
 /// Bind parameter operands to a callable parameter.
-static PValue bindToIndirectCall(PValue callable, LITSignatureGeneratorType sig,
+static PValue bindToIndirectCall(PValue callable, FnTypeGeneratorType sig,
                                  ArrayRef<Operand> operands,
                                  ExprEmitter &emitter,
                                  const SourceRange &range) {
@@ -1034,7 +1034,7 @@ static LogicalResult bindParamValuesToDirectCall(OverloadSet &overloadSet,
   unsigned numPosBindings =
       overloadSet.paramBindings.getParameters().getNumPositional();
   for (ASTDecl *fnDecl : overloadSet.fnDecls) {
-    LITSignatureGeneratorType sig = cast<FnOp>(fnDecl).getFullSignature();
+    FnTypeGeneratorType sig = cast<FnOp>(fnDecl).getFullSignature();
     bindables.emplace_back(sig.getInputParamTypes(), sig.getParamListAttrs(),
                            numPosBindings);
   }
@@ -1124,7 +1124,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   for (ASTDecl *elt : nonemptySet->fnDecls) {
     // TODO: This is really naive: it doesn't account for default arguments,
     // variadic, byref_result, etc etc etc.
-    if (cast<FnOp>(*elt).getSignatureGenerator().getArguments().size() !=
+    if (cast<FnOp>(*elt).getFuncTypeGenerator().getArguments().size() !=
         size_t(/*newValue*/ !isGetterPresent) + /*self*/ 1) {
       shouldBindParameters = false;
       break;
@@ -1189,7 +1189,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     elementType = getter.getType().getSignatureUserResultType();
 
     // Also look through ref results.
-    if (cast<LITSignatureGeneratorType>(getter.getType()).isRefResult())
+    if (cast<FnTypeGeneratorType>(getter.getType()).isRefResult())
       elementType = cast<RefType>(elementType).getElementType();
   }
 
@@ -1221,7 +1221,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
       lookupError();
       return {}; // Getter invalid.
     }
-    auto sigType = cast<LITSignatureGeneratorType>(directSymbolAttr.getType());
+    auto sigType = cast<FnTypeGeneratorType>(directSymbolAttr.getType());
     // Check basic sanity.
     size_t setValueIdx = operands.getNumPositional();
     if (sigType.getNumArguments() <= setValueIdx) {
@@ -1249,7 +1249,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   // at the first entry of the set to see what it uses and assume the rest use
   // the same name.
   auto firstFnSig =
-      cast<FnOp>(*setterSet.fnDecls.front()).getSignatureGenerator();
+      cast<FnOp>(*setterSet.fnDecls.front()).getFuncTypeGenerator();
 
   // Find the last user declared argument.
   auto argNo = firstFnSig.getNumArguments();
@@ -1925,7 +1925,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
     // If this is a signature-type PValue callable, this is binding parameter
     // values to a call.
-    if (auto sig = dyn_cast<LITSignatureGeneratorType>(baseType)) {
+    if (auto sig = dyn_cast<FnTypeGeneratorType>(baseType)) {
       PValue result =
           bindToIndirectCall(value, sig, operands, emitter, getIndexRange());
       if (!result)
@@ -3190,8 +3190,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
                                      /*fnDecl=*/nullptr, fnInfo);
 
   // Compute the signature of the function.
-  LITSignatureGeneratorType signature =
-      tcSignature.getLITSignatureGeneratorType();
+  FnTypeGeneratorType signature = tcSignature.getFnTypeGeneratorType();
   if (!signature)
     return {}; // Error already emitted.
 
@@ -3207,7 +3206,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // still resolve information about it in tools.
   dummyScope.setIRValue(PValue(signature));
 
-  // The parsed SignatureGeneratorType is set to the pretty type that includes
+  // The parsed FuncTypeGeneratorType is set to the pretty type that includes
   // implicit origins, we strip off the named origin decl references and replace
   // them with indices.
   signature = signature.replaceImplicitOriginsWithIndexes(

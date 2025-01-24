@@ -116,7 +116,7 @@ struct OffloadInfo {
   struct KernelInfo {
     StringAttr name;
     uint64_t kernelId;
-    SignatureGeneratorType populateFnType;
+    FuncTypeGeneratorType populateFnType;
     llvm::SmallSet<EmitAs, 4> emissionKinds;
   };
 

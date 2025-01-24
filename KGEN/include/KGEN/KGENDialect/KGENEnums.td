@@ -155,7 +155,7 @@ def KGEN_TailKind : I32EnumAttr<"TailKind", "tail kind", [
 //===----------------------------------------------------------------------===//
 
 /// This describes the encoding of input argument calling conventions, stored
-/// in the metadata of a NewSignatureType.
+/// in the metadata of a FuncType.
 ///
 /// That these enums have helper functions defined in KGENEnums.h for working
 /// with various classes.
@@ -230,7 +230,7 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
 }
 
 /// This describes the encoding of the function effects in the metadata of a
-/// NewSignatureType.
+/// FuncType.
 def KGEN_FnEffectsImpl : I16BitEnumAttr<"FnEffects", "Function effects", [
   /// This function has no effects.
   I16BitEnumAttrCaseNone<"None", "none">,

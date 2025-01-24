@@ -56,7 +56,7 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
   // reference signature parameters. This OK, however, since every parametric
   // signature requires some concretization point in the elaborator to be
   // useful, and we will pull out the 'apply' operator at those points.
-  replacer.addReplacement([](SignatureGeneratorType signature) {
+  replacer.addReplacement([](FuncTypeGeneratorType signature) {
     if (signature.getInputParamTypes().empty())
       return std::make_pair(signature, WalkResult::advance());
     return std::make_pair(signature, WalkResult::skip());

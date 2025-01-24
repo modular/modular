@@ -26,7 +26,7 @@ namespace M {
 namespace KGEN::LIT {
 class ASTDecl;
 class SharedState;
-class LITSignatureGeneratorType;
+class FnTypeGeneratorType;
 enum class PassingKind : uint32_t;
 } // namespace KGEN::LIT
 
@@ -608,11 +608,11 @@ private:
 
   PublicFunctionDecl(MojoASTDeclRef declRef);
   PublicFunctionDecl(MojoASTDeclRef declRef,
-                     KGEN::LIT::LITSignatureGeneratorType signature);
+                     KGEN::LIT::FnTypeGeneratorType signature);
 
   /// Initialize the function decl with the given signature.
   void initFromSignature(MojoASTDeclRef declRef,
-                         KGEN::LIT::LITSignatureGeneratorType signature,
+                         KGEN::LIT::FnTypeGeneratorType signature,
                          ArrayRef<Type> userArgTypes, Type userResultType);
 
   /// Augment this function decl with docstring documentation, as well as its

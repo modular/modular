@@ -660,7 +660,7 @@ static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
     return;
   }
 
-  LITSignatureGeneratorType sig = func.getFullSignature();
+  FnTypeGeneratorType sig = func.getFullSignature();
   ArrayRef<Type> sigArgTypes = func.getFunctionType().getInputs();
   ASTType resultType = func.getUserResultType();
   // Reduce `sigArgTypes` to just the array of declared arguments.
@@ -761,7 +761,7 @@ static bool isCapturingByDefault(FnOp funcOp, StructDeclOp parent,
   // Any function that contains a capturing closure as a parameter is itself
   // capturing, include parent struct parameters.
   mlir::AttrTypeWalker walker;
-  walker.addWalk([](NewSignatureType sig) {
+  walker.addWalk([](FuncType sig) {
     if (sig.isCapturing())
       return WalkResult::interrupt();
     return WalkResult::advance();
@@ -772,19 +772,19 @@ static bool isCapturingByDefault(FnOp funcOp, StructDeclOp parent,
       [&](ParamDeclAttr decl) { return walker.walk(decl).wasInterrupted(); });
 }
 
-std::pair<SmallVector<ParamDeclRefAttr>, LITSignatureGeneratorType>
-DeclResolver::createSelfContainedSignature(LITSignatureGeneratorType original) {
+std::pair<SmallVector<ParamDeclRefAttr>, FnTypeGeneratorType>
+DeclResolver::createSelfContainedSignature(FnTypeGeneratorType original) {
   // Collect the subset of referenced parameters. Use a set vector to keep the
   // order deterministic.
   llvm::SmallSetVector<ParamDeclRefAttr, 4> capturedRefs;
   original.walk([&](ParamDeclRefAttr ref) { capturedRefs.insert(ref); });
 
   SmallVector<ParamDeclRefAttr> captured = capturedRefs.takeVector();
-  // Unbind the N capture parameters, creating a new signature with N new input
+  // Unbind the N capture parameters, creating a FuncType with N new input
   // parameters prepended.
   // TODO: what if we capture a variadic?
   SmallVector<bool> variadicMask(captured.size(), false);
-  auto unbound = LITSignatureGeneratorType::prependParams(
+  auto unbound = FnTypeGeneratorType::prependParams(
       original,
       llvm::map_to_vector(
           captured,
@@ -811,7 +811,7 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
   ASTDecl *moduleDecl = nestedFnDecl.getNearestDeclOfType<FileModuleOp>();
 
   auto [capturedRefs, wrapperSig] = DeclResolver::createSelfContainedSignature(
-      nestedFn.getSignatureGenerator());
+      nestedFn.getFuncTypeGenerator());
   if (!wrapperSig)
     return {};
   StructDeclOp closureWrapper =
@@ -972,8 +972,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   NamedAttrList attrs = funcOp->getAttrDictionary();
 
   // Compute the signature of the function.
-  LITSignatureGeneratorType signature =
-      tcSignature.getLITSignatureGeneratorType();
+  FnTypeGeneratorType signature = tcSignature.getFnTypeGeneratorType();
   if (!signature)
     return failure();
 
@@ -999,7 +998,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   // with indices.
   signature = signature.replaceImplicitOriginsWithIndexes(
       tcSignature.implicitOriginDecls);
-  attrs.set(funcOp.getSignatureGeneratorAttrName(), TypeAttr::get(signature));
+  attrs.set(funcOp.getFuncTypeGeneratorAttrName(), TypeAttr::get(signature));
 
   // Set the symbol to the mangled name and check for redefinition.
   attrs.set(funcOp.getSymNameAttrName(),
@@ -1030,7 +1029,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     // the name of the argument.
     bool overloadedKeywordArgName = false;
     auto existingArgs =
-        existingFunc.getSignatureGenerator().getArgListAttrs().getPogs();
+        existingFunc.getFuncTypeGenerator().getArgListAttrs().getPogs();
     for (auto [arg, existingArg] :
          llvm::zip(tcSignature.argList.parsedArgs, existingArgs)) {
       if ((arg.kwArgHandling == KWArgHandling::kKeywordOnly ||
@@ -1042,7 +1041,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     }
 
     auto existingResTy =
-        ASTType(existingFunc.getSignatureGenerator().getUserResultType());
+        ASTType(existingFunc.getFuncTypeGenerator().getUserResultType());
 
     if (!resTy.isEqualCanon(existingResTy))
       errorMessage = " cannot overload on return type only";
@@ -1117,7 +1116,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     signature = signature.getWithBody(signature.getBody().getWithMetadata(
         signature.getFnMetadata().addCaptureOrigins(
             OriginSetAttr::get(getContext(), origins))));
-    funcOp.setSignatureGenerator(signature);
+    funcOp.setFuncTypeGenerator(signature);
 
     funcOp.setParamDeclAttr(
         ParamDeclAttr::get(funcOp.getSymNameAttr(), signature));
@@ -1140,7 +1139,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   // Emit closure structures necessary for instantiating an escaping closure
   signature = signature.getWithBody(signature.getBody().getWithFnEffects(
       signature.getFnEffects().setEscaping()));
-  funcOp.setSignatureGenerator(signature);
+  funcOp.setFuncTypeGenerator(signature);
   MLValue instance = emitClosureInstance(captures, paramCaptures, decl, shared);
   if (!instance)
     return failure();
@@ -1201,7 +1200,7 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
   Block &body = *funcOp.getBody();
   ExprEmitter emitter(decl, OpBuilder::atBlockEnd(&body));
 
-  LITSignatureGeneratorType funcSignature = funcOp.getSignatureGenerator();
+  FnTypeGeneratorType funcSignature = funcOp.getFuncTypeGenerator();
 
   // Set up the body of the fn/def, creating declarations for the value
   // parameters and adding them to the symbol table.
@@ -2556,7 +2555,7 @@ static void replaceTraitMethodSelfTypes(FnOp func, TypedAttr parentSelfType,
   AttrReplacer replacer(parentSelfType, traitSelfType);
 
   // Update functionType, signature, and block argument types.
-  func.setSignatureGenerator(replacer.replace(func.getSignatureGenerator()));
+  func.setFuncTypeGenerator(replacer.replace(func.getFuncTypeGenerator()));
   func.setFunctionType(replacer.replace(func.getFunctionType()));
   for (auto arg : func.getBody()->getArguments())
     arg.setType(replacer.replace(arg.getType()));

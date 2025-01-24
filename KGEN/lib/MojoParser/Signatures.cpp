@@ -755,7 +755,7 @@ static ASTType addImplicitTypeParams(ASTType type,
 
   // First check for a function type.
   // FIXME: We need an AnyFunction metatype.
-  if (auto sig = dyn_cast<LITSignatureGeneratorType>(type)) {
+  if (auto sig = dyn_cast<FnTypeGeneratorType>(type)) {
     TypedAttr origins = sig.getCaptureOrigins();
     if (!isa<UnboundAttr>(origins))
       return type;
@@ -1208,7 +1208,7 @@ static void typeCheckOneArgument(size_t idx, bool isDef, bool isStaticMethod,
   tcSignature.argTypes.push_back(type);
 
   // Check if the argument is a parametric function.
-  if (auto fType = dyn_cast<LITSignatureGeneratorType>(type)) {
+  if (auto fType = dyn_cast<FnTypeGeneratorType>(type)) {
     if (!fType.getInputParamTypes().empty()) {
       arg.isErroneous = true;
       shared.emitError(shared.diags.translateLocation(arg.typeExpr->getLoc()),
@@ -1985,8 +1985,7 @@ FunctionType TypeCheckedFnSignature::getFunctionType() const {
 
 /// Form a LIT signature packaging up all the stuff we need to know about this
 /// type checked function.
-LITSignatureGeneratorType
-TypeCheckedFnSignature::getLITSignatureGeneratorType() const {
+FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
   MLIRContext *ctx = paramList.shared.getContext();
 
   size_t numArgs = argList.parsedArgs.size();
@@ -2028,7 +2027,7 @@ TypeCheckedFnSignature::getLITSignatureGeneratorType() const {
   };
 
   FunctionType functionType = getFunctionType();
-  return SignatureGeneratorType::remapToSignatureGenerator(
+  return FuncTypeGeneratorType::remapToFuncTypeGenerator(
       paramList.paramDeclAttrs, functionType, argConventions, argList.effects,
       metadata, paramList.getParamListAttr(), silenceErrors);
 }

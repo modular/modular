@@ -536,7 +536,7 @@ bool LIT::isEmptyOriginSet(TypedAttr attr) {
   return false;
 }
 
-void LIT::printLITNewSignature(AsmPrinter &p, LITNewSignatureType signature) {
+void LIT::printFnType(AsmPrinter &p, FnType signature) {
   FnMetadataAttr metadata = signature.getMetadata();
   if (unsigned numOriginDecls = metadata.getNumImplicitOriginDecls())
     p << '[' << numOriginDecls << ']';

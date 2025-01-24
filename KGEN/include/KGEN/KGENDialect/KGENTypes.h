@@ -24,7 +24,7 @@ class FuncInterface;
 class GeneratorMetadataAttrInterface;
 class ParamDeclAttr;
 class ParamDeclArrayAttr;
-class SignatureGeneratorType;
+class FuncTypeGeneratorType;
 class StructDefFieldAttr;
 class VariadicType;
 class VariadicAttr;
@@ -38,39 +38,39 @@ TypedAttr createUninitializedValueOf(Type type);
 
 namespace M::KGEN {
 //===----------------------------------------------------------------------===//
-// SignatureGeneratorType
+// FuncTypeGeneratorType
 //===----------------------------------------------------------------------===//
-class SignatureGeneratorType : public GeneratorType {
+class FuncTypeGeneratorType : public GeneratorType {
 public:
   using GeneratorType::GeneratorType;
-  SignatureGeneratorType(GeneratorType sig);
+  FuncTypeGeneratorType(GeneratorType sig);
 
-  static SignatureGeneratorType
+  static FuncTypeGeneratorType
   get(ArrayRef<Type> inputParamTypes, FunctionType values,
       ArrayRef<ArgConvention> argConvs = {}, FnEffects effects = {},
       Attribute fnMetadata = {}, Attribute genMetadata = {});
 
   /// Get this GeneratorType with some parameters bound.
-  SignatureGeneratorType
+  FuncTypeGeneratorType
   getSpecializedGenerator(ArrayRef<TypedAttr> paramBindings,
                           function_ref<InFlightDiagnostic()> emitErrorFn = {});
-  SignatureGeneratorType
+  FuncTypeGeneratorType
   getSpecializedGenerator(ArrayRef<TypedAttr> paramBindings, Location location);
 
   /// Construct a signature from named parameter declarations, a function
   /// type, and metadata. This helper is used to convert between a named
-  /// signature structure to a nameless `SignatureGeneratorType`
+  /// signature structure to a nameless `FuncTypeGeneratorType`
   /// representation.
-  static SignatureGeneratorType remapToSignatureGenerator(
+  static FuncTypeGeneratorType remapToFuncTypeGenerator(
       ArrayRef<ParamDeclAttr> inputParams, FunctionType functionType,
       ArrayRef<ArgConvention> argConventions = {}, FnEffects effects = {},
       Attribute fnMetadata = {}, Attribute genMetadata = {},
       function_ref<InFlightDiagnostic()> emitError = {});
 
-  NewSignatureType getBody();
-  NewSignatureType getInstantiatedBody();
+  FuncType getBody();
+  FuncType getInstantiatedBody();
 
-  /// A SignatureGeneratorType is a GeneratorType containing a NewSignatureType.
+  /// A FuncTypeGeneratorType is a GeneratorType containing a FuncType.
   static bool classof(GeneratorType type);
   static bool classof(Type type);
 };

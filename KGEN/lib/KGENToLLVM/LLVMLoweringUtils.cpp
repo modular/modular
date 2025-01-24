@@ -183,7 +183,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
                                         getIndexType());
   });
 
-  addConversion([=](NewSignatureType signatureType) -> std::optional<Type> {
+  addConversion([=](FuncType signatureType) -> std::optional<Type> {
     MLIRContext *ctx = signatureType.getContext();
     if (signatureType.isCapturing()) {
       auto pointerTy = LLVM::LLVMPointerType::get(ctx);
@@ -194,7 +194,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   });
 
   // TODO(MOCO-1253): GeneratorType should not be allowed during LLVM lowering.
-  addConversion([=](SignatureGeneratorType sigGenType) -> std::optional<Type> {
+  addConversion([=](FuncTypeGeneratorType sigGenType) -> std::optional<Type> {
     return convertType(sigGenType.getBody());
   });
 

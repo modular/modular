@@ -36,14 +36,14 @@ public:
   /// pointer to the underlying Closure Implementation instance.
   StructDeclOp
   createClosureWrapperStructDecl(StringAttr name,
-                                 LITSignatureGeneratorType signatureType,
+                                 FnTypeGeneratorType signatureType,
                                  SMLoc nestedFunctionOrTypeLocation);
 
   /// Generate a Closure Implementation Struct, a struct that contains the
   /// capture list.
   StructDeclOp replaceNestedFunctionWithClosureImplStructDecl(
       ArrayRef<Capture> captures, ArrayRef<ParamDeclRefAttr> paramCaptures,
-      ASTDecl &nestedfnDecl, LITSignatureGeneratorType wrapperSigGen);
+      ASTDecl &nestedfnDecl, FnTypeGeneratorType wrapperSigGen);
 
   /// Generate an initializer on the ClosureWrapper that accepts a ClosureImpl
   /// instance.
@@ -71,7 +71,7 @@ private:
   /// Synthesize the constructor for a closure wrapper struct from a bare
   /// function pointer of the same function signature.
   void synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
-                                  LITSignatureGeneratorType sig);
+                                  FnTypeGeneratorType sig);
 };
 
 } // namespace M::KGEN::LIT

@@ -431,7 +431,7 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
   // If this type is a function with no formal arguments and an ignorable type,
   // we emit a warning with a fix it hint suggesting that it get called.
   // TODO: This is incorrect for default arguments and varargs.
-  if (auto sig = dyn_cast<LITSignatureGeneratorType>(valueType)) {
+  if (auto sig = dyn_cast<FnTypeGeneratorType>(valueType)) {
     // Get the result type without any error handling in the way.
     Type resultType = sig.getUserResultType();
     if ((sig.getNumArguments() ==
@@ -710,7 +710,7 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   }
 
   auto emitter = getEmitter();
-  LITSignatureGeneratorType declSig = func.getSignatureGenerator();
+  FnTypeGeneratorType declSig = func.getFuncTypeGenerator();
 
   // Next check the forms: We may or may not have a result expression.  If the
   // result expression is missing and we have a named result slot, just emit a
@@ -1583,8 +1583,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
           CallSyntax::kMethodCall, enterEmitter)) {
     // If there is no exit method, we can pass the argument as an RValue so the
     // enter method can consume the value... unless __enter__ takes self 'mut'.
-    if (auto signature =
-            dyn_cast<SignatureGeneratorType>(enterMethod.getType());
+    if (auto signature = dyn_cast<FuncTypeGeneratorType>(enterMethod.getType());
         signature && !signature.getBody().getArgConventions().empty()) {
       auto firstArgConvention = signature.getBody().getArgConventions()[0];
       if (firstArgConvention != ArgConvention::Mut && !hasExitMethod)

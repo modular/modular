@@ -35,7 +35,7 @@ def GeneratorType : DialectType<(type
   ConcreteOptionalAttribute<"GeneratorMetadataAttrInterface">:$metadata
 )>;
 
-def NewSignatureType : DialectType<(type
+def FuncType : DialectType<(type
   ConcreteType<"FunctionType">:$values,
   EnumAttrArray<"ArgConvention">:$argConventions,
   Custom<"FnEffects">:$fnEffects,
@@ -90,7 +90,7 @@ def KGENDialectTypes : DialectTypes<"kgen"> {
     StringType,
     IntLiteralType,
     GeneratorType,
-    NewSignatureType,
+    FuncType,
     PointerType,
     VariadicType,
     NoneType,
@@ -215,7 +215,7 @@ def WrappedParamOperatorAttr : DialectAttribute<(attr
 def MLIROpAttr : DialectAttribute<(attr
   StringAttr:$name,
   ConcreteAttribute<"DictionaryAttr">:$attrs,
-  ConcreteType<"SignatureGeneratorType">:$type
+  ConcreteType<"FuncTypeGeneratorType">:$type
 )>;
 
 def DecoratorsAttr : DialectAttribute<(attr

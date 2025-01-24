@@ -232,7 +232,7 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(GeneratorType type) {
   return convertDebugType(type.getBody());
 }
 
-DIType KGEN::DebugInfoTypeConverter::buildDebugType(NewSignatureType type) {
+DIType KGEN::DebugInfoTypeConverter::buildDebugType(FuncType type) {
   return buildPointerType(buildDebugSubroutineType(type.getValues()));
 }
 
@@ -350,7 +350,7 @@ KGEN::DebugInfoTypeConverter::DebugInfoTypeConverter(POPToLLVMTypeConverter &tc,
   addConversion([&](IndexType type) { return buildDebugType(type); });
   addConversion([&](ParamType type) { return buildDebugType(type); });
   addConversion([&](StringType type) { return buildDebugType(type); });
-  addConversion([&](NewSignatureType type) { return buildDebugType(type); });
+  addConversion([&](FuncType type) { return buildDebugType(type); });
   addConversion([&](POP::UnionType type) { return buildDebugType(type); });
   addConversion([&](KGEN::NoneType type) { return buildDebugType(type); });
   addConversion([&](POP::ArrayType type) { return buildDebugType(type); });

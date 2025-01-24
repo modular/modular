@@ -148,7 +148,7 @@ OriginTrackable::OriginTrackable(Value v) {
   auto func = dyn_cast<FnOp>(bbArg.getOwner()->getParentOp());
   if (!func)
     return;
-  LITSignatureGeneratorType signature = func.getSignatureGenerator();
+  FnTypeGeneratorType signature = func.getFuncTypeGenerator();
 
   unsigned argIdx = bbArg.getArgNumber();
   switch (signature.getArgConvention(argIdx)) {
@@ -240,7 +240,7 @@ static void getCallOpEffects(
     Operation &op, SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
     SmallVectorImpl<ResultEffect> &results, SmallVectorImpl<TypedAttr> &origins,
     CachedOriginFinder &originFinder) {
-  LITNewSignatureType signature;
+  FnType signature;
   OperandRange callArguments = op.getOperands();
   ArrayRef<ArgConvention> conventions;
   size_t argIdxOffset = 0;

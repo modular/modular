@@ -92,7 +92,7 @@ void ExpandStructsPass::rewriteFn(Operation *op,
   return recursiveRewrite(op, replacer);
 }
 
-NewSignatureType replaceSignature(NewSignatureType sig) {
+FuncType replaceSignature(FuncType sig) {
   SmallVector<Type> newArgTypes, newResTypes;
   SmallVector<ArgConvention> newConvs;
 
@@ -106,7 +106,7 @@ NewSignatureType replaceSignature(NewSignatureType sig) {
   }
 
   auto func = FunctionType::get(sig.getContext(), newArgTypes, newResTypes);
-  return NewSignatureType::get(func, newConvs, sig.getFnEffects());
+  return FuncType::get(func, newConvs, sig.getFnEffects());
 }
 
 void ExpandStructsPass::runOnOperation() {

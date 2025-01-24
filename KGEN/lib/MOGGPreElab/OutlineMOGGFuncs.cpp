@@ -228,8 +228,8 @@ private:
 
     // Create the outlined function to call.
     auto newFuncType = FunctionType::get(ctx, inputArgTypes, returnTypes);
-    SignatureGeneratorType sigType =
-        SignatureGeneratorType::remapToSignatureGenerator(
+    FuncTypeGeneratorType sigType =
+        FuncTypeGeneratorType::remapToFuncTypeGenerator(
             asDecls, newFuncType,
             /*argConventions=*/{}, KGEN::impl::FnEffects::Capturing);
 
@@ -286,7 +286,7 @@ private:
     auto flatSym = FlatSymbolRefAttr::get(ctx, outlinedFunction.getNameAttr());
 
     auto specializedSig =
-        outlinedFunction.getSignatureGenerator().getSpecializedGenerator(
+        outlinedFunction.getFuncTypeGenerator().getSpecializedGenerator(
             paramArgs, outlinedFunction.getLoc());
     auto symbol =
         KGEN::SymbolConstantAttr::get(flatSym, specializedSig, paramArgs);

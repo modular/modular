@@ -162,12 +162,12 @@ parseRegionDeclaration(OpAsmParser &p, ParamDeclAttr &paramDecl,
   StringAttr paramName;
   SmallVector<OpAsmParser::Argument> args;
   FunctionType functionTypeValue;
-  SignatureGeneratorType sigGenType;
+  FuncTypeGeneratorType sigGenType;
   llvm::SMLoc bodyLoc;
   ParamDeclArrayAttr resultParams;
   if (parseParamName(p, paramName) || p.parseEqual() ||
-      parseFunctionSignatureGenerator(p, args, inputParams, resultParams,
-                                      functionTypeValue, sigGenType) ||
+      parseFunctionFuncTypeGenerator(p, args, inputParams, resultParams,
+                                     functionTypeValue, sigGenType) ||
       parseOptionalInline(p, inlineLevel) || p.getCurrentLocation(&bodyLoc) ||
       p.parseRegion(body, args))
     return failure();
@@ -191,9 +191,9 @@ static void printRegionDeclaration(OpAsmPrinter &p, Operation *op,
                                    InlineLevelAttr inlineLevel, Region &body) {
   printParamName(p, paramDecl.getName());
   p << " = ";
-  printFunctionSignatureGenerator(
-      p, &body, inputParams, {}, cast<FunctionType>(functionType.getValue()),
-      cast<SignatureGeneratorType>(type.getValue()));
+  printFunctionFuncTypeGenerator(p, &body, inputParams, {},
+                                 cast<FunctionType>(functionType.getValue()),
+                                 cast<FuncTypeGeneratorType>(type.getValue()));
   printOptionalInline(p, inlineLevel.getValue());
   p << ' ';
   p.printRegion(body, /*printEntryBlockArgs=*/false);
@@ -227,7 +227,7 @@ static ParseResult parseParamApplyOp(AsmParser &p, ParamDeclAttr &paramDecl,
                                      TypedAttr &callee,
                                      ParameterExprArrayAttr &operands) {
   StringAttr paramName;
-  SignatureGeneratorType calleeType;
+  FuncTypeGeneratorType calleeType;
   SmallVector<TypedAttr> operandValues;
   llvm::SMLoc sigLoc;
   if (parseParamName(p, paramName) || p.parseEqual() || p.parseLSquare() ||
@@ -265,7 +265,7 @@ static void printParamApplyOp(AsmPrinter &p, Operation *op,
 }
 
 LogicalResult ParamApplyOp::verify() {
-  auto type = cast<SignatureGeneratorType>(getCallee().getType());
+  auto type = cast<FuncTypeGeneratorType>(getCallee().getType());
   if (type.getInputParamTypes().empty())
     return success();
   return emitOpError("callee signature must be concrete");
@@ -347,11 +347,11 @@ static ParseResult parseGeneratorOp(OpAsmParser &p, ExportKindAttr &exportKind,
     return failure();
 
   SmallVector<OpAsmParser::Argument> args;
-  SignatureGeneratorType signature;
+  FuncTypeGeneratorType signature;
   FunctionType functionType;
   ParamDeclArrayAttr resultParams;
-  if (parseFunctionSignatureGenerator(p, args, inputParams, resultParams,
-                                      functionType, signature))
+  if (parseFunctionFuncTypeGenerator(p, args, inputParams, resultParams,
+                                     functionType, signature))
     return failure();
   if (!resultParams.empty())
     return p.emitError(p.getCurrentLocation(), "invalid result parameters");
@@ -377,18 +377,18 @@ static void printGeneratorOp(OpAsmPrinter &p, Operation *op,
   printSymbolExport(p, op, exportKind);
   p << ' ';
   p.printSymbolName(name);
-  printFunctionSignatureGenerator(
+  printFunctionFuncTypeGenerator(
       p, &body, inputParams, /*resultParams=*/{},
       cast<FunctionType>(functionType.getValue()),
-      cast<SignatureGeneratorType>(signature.getValue()));
+      cast<FuncTypeGeneratorType>(signature.getValue()));
   printOptionalInline(p, inlineLevel.getValue());
   printOptionalDecorators(p, op, decorators);
 
   auto gen = cast<GeneratorOp>(op);
   SmallVector<StringRef, 10> elidedAttrs{
-      gen.getExportKindAttrName(),         gen.getSymNameAttrName(),
-      gen.getSignatureGeneratorAttrName(), gen.getFunctionTypeAttrName(),
-      gen.getInputParamsAttrName(),        gen.getInlineLevelAttrName(),
+      gen.getExportKindAttrName(),        gen.getSymNameAttrName(),
+      gen.getFuncTypeGeneratorAttrName(), gen.getFunctionTypeAttrName(),
+      gen.getInputParamsAttrName(),       gen.getInlineLevelAttrName(),
       gen.getDecoratorsAttrName()};
   if (attrs.get(gen.getLLVMMetadataAttrName()) ==
       DictionaryAttr::get(op->getContext()))
@@ -427,8 +427,8 @@ static ParseResult parseFuncOp(OpAsmParser &p, ExportKindAttr &exportKind,
   if (parseSignatureValues(p, parseArg, functionType, effects,
                            /*optionalResultList=*/true))
     return failure();
-  auto sig = NewSignatureType::getChecked([&] { return p.emitError(loc); },
-                                          functionType, conventions, effects);
+  auto sig = FuncType::getChecked([&] { return p.emitError(loc); },
+                                  functionType, conventions, effects);
   if (!sig)
     return failure();
   signature = TypeAttr::get(GeneratorType::get(/*inputParamTypes=*/{}, sig));
@@ -446,8 +446,7 @@ static void printFuncOp(OpAsmPrinter &p, Operation *op,
                         TypeAttr signature, InlineLevelAttr inlineLevel,
                         DecoratorsAttr decorators, DictionaryAttr attrs,
                         Region &body) {
-  NewSignatureType sig =
-      cast<SignatureGeneratorType>(signature.getValue()).getBody();
+  FuncType sig = cast<FuncTypeGeneratorType>(signature.getValue()).getBody();
   auto func = cast<FuncOp>(op);
 
   printSymbolExport(p, op, exportKind);
@@ -465,7 +464,7 @@ static void printFuncOp(OpAsmPrinter &p, Operation *op,
 
   SmallVector<StringRef, 8> elidedAttrs{
       func.getExportKindAttrName(), func.getSymNameAttrName(),
-      func.getSignatureGeneratorAttrName(), func.getInlineLevelAttrName(),
+      func.getFuncTypeGeneratorAttrName(), func.getInlineLevelAttrName(),
       func.getDecoratorsAttrName()};
   if (attrs.get(func.getLLVMMetadataAttrName()) ==
       DictionaryAttr::get(op->getContext()))
@@ -506,10 +505,10 @@ static ParseResult parseExternGenerator(OpAsmParser &p, TypeAttr &signature,
                                         ParamDeclArrayAttr &inputParams) {
   SmallVector<OpAsmParser::Argument> args;
   FunctionType funcType;
-  SignatureGeneratorType sigType;
+  FuncTypeGeneratorType sigType;
   ParamDeclArrayAttr resultParams;
-  if (parseFunctionSignatureGenerator(p, args, inputParams, resultParams,
-                                      funcType, sigType))
+  if (parseFunctionFuncTypeGenerator(p, args, inputParams, resultParams,
+                                     funcType, sigType))
     return failure();
   if (!resultParams.empty())
     return p.emitError(p.getCurrentLocation(), "invalid result parameters");
@@ -521,10 +520,10 @@ static ParseResult parseExternGenerator(OpAsmParser &p, TypeAttr &signature,
 static void printExternGenerator(OpAsmPrinter &p, Operation *op,
                                  TypeAttr signature, TypeAttr functionType,
                                  ParamDeclArrayAttr inputParams) {
-  printFunctionSignatureGenerator(
+  printFunctionFuncTypeGenerator(
       p, /*region=*/nullptr, inputParams,
       /*resultParams=*/{}, cast<FunctionType>(functionType.getValue()),
-      cast<SignatureGeneratorType>(signature.getValue()));
+      cast<FuncTypeGeneratorType>(signature.getValue()));
 }
 
 //===----------------------------------------------------------------------===//
@@ -580,9 +579,9 @@ parseCallOp(OpAsmParser &p, SymbolConstantAttr &calleeCst,
       p.parseColon())
     return failure();
 
-  SignatureGeneratorType signature;
+  FuncTypeGeneratorType signature;
   FunctionType functionType;
-  if (parseKGENSignatureGenerator(p, functionType, signature))
+  if (parseKGENFuncTypeGenerator(p, functionType, signature))
     return failure();
   calleeCst = SymbolConstantAttr::get(callee, signature, paramValues);
   llvm::append_range(operandTypes, functionType.getInputs());
@@ -621,7 +620,7 @@ FailureOr<InlineResult> CallOp::prepInline(mlir::RewriterBase &b) {
 }
 
 static LogicalResult verifyCallOp(Operation *op, ValueRange args,
-                                  NewSignatureType signature) {
+                                  FuncType signature) {
   if (failed(verifyCallOperands(op, args, signature)) ||
       failed(verifyCallResults(op, op->getResults(), signature)))
     return failure();
@@ -840,15 +839,15 @@ static ParseResult parseStageClosureOp(OpAsmParser &p, Type &resultType,
   // we expect the following syntax:
   // kgen.stage_closure = () capturing -> index {
   // } { name = foo }
-  SignatureGeneratorType signatureType;
+  FuncTypeGeneratorType signatureType;
   ParamDeclArrayAttr inputParams;
   ParamDeclArrayAttr resultParams;
   FunctionType functionTypeValue;
   SmallVector<OpAsmParser::Argument> args;
   llvm::SMLoc bodyLoc;
   if (p.parseEqual() ||
-      parseFunctionSignatureGenerator(p, args, inputParams, resultParams,
-                                      functionTypeValue, signatureType) ||
+      parseFunctionFuncTypeGenerator(p, args, inputParams, resultParams,
+                                     functionTypeValue, signatureType) ||
       p.getCurrentLocation(&bodyLoc) || p.parseRegion(body, args))
     return failure();
   if (!inputParams.empty() || !resultParams.empty())
@@ -858,11 +857,11 @@ static ParseResult parseStageClosureOp(OpAsmParser &p, Type &resultType,
 }
 
 static void printStageClosureOp(OpAsmPrinter &p, Operation *op,
-                                SignatureGeneratorType resultType,
+                                FuncTypeGeneratorType resultType,
                                 Region &body) {
   p << "= ";
-  printFunctionSignatureGenerator(p, &body, {}, {},
-                                  resultType.getBody().getValues(), resultType);
+  printFunctionFuncTypeGenerator(p, &body, {}, {},
+                                 resultType.getBody().getValues(), resultType);
   p << ' ';
   p.printRegion(body, /*printEntryBlockArgs=*/false);
 }
@@ -880,14 +879,14 @@ LogicalResult CreateClosureOp::inferReturnTypes(
     return mlir::emitOptionalError(
         loc, "'create_closure' expected TypedAttr 'callee'");
   }
-  auto sigGen = dyn_cast<SignatureGeneratorType>(callee.getType());
+  auto sigGen = dyn_cast<FuncTypeGeneratorType>(callee.getType());
   if (!sigGen) {
     return mlir::emitOptionalError(
         loc,
-        "'create_closure' attribute 'callee' must have SignatureGeneratorType");
+        "'create_closure' attribute 'callee' must have FuncTypeGeneratorType");
   }
 
-  NewSignatureType sig = sigGen.getBody();
+  FuncType sig = sigGen.getBody();
   unsigned numCaptures = captures.size();
   if (numCaptures > sig.getNumArguments()) {
     return mlir::emitOptionalError(loc, "provided ", numCaptures,
@@ -902,7 +901,7 @@ LogicalResult CreateClosureOp::inferReturnTypes(
   FnEffects effects = sig.getFnEffects();
   if (!captures.empty())
     effects.setCapturing();
-  results.push_back(SignatureGeneratorType::get(
+  results.push_back(FuncTypeGeneratorType::get(
       sigGen.getInputParamTypes(),
       Builder(ctx).getFunctionType(newArgTypes, sig.getResults()), newArgConvs,
       effects,
@@ -916,12 +915,12 @@ static ParseResult
 parseClosureCaptureTypes(AsmParser &p, TypedAttr callee,
                          ArrayRef<OpAsmParser::UnresolvedOperand> captures,
                          SmallVectorImpl<Type> &captureTypes) {
-  auto sigGen = dyn_cast<SignatureGeneratorType>(callee.getType());
+  auto sigGen = dyn_cast<FuncTypeGeneratorType>(callee.getType());
   if (!sigGen) {
     return p.emitError(p.getCurrentLocation(),
-                       "expected type of callee to be SignatureGeneratorType");
+                       "expected type of callee to be FuncTypeGeneratorType");
   }
-  NewSignatureType sig = sigGen.getBody();
+  FuncType sig = sigGen.getBody();
 
   unsigned numCaptures = captures.size();
   if (numCaptures > sig.getNumArguments()) {
@@ -940,14 +939,14 @@ static void printClosureCaptureTypes(AsmPrinter &p, Operation *,
                                      TypeRange captureTypes) {}
 
 LogicalResult CreateClosureOp::verify() {
-  NewSignatureType calleeSig = getCalleeType().getBody();
+  FuncType calleeSig = getCalleeType().getBody();
   if (getNumOperands() > calleeSig.getNumArguments()) {
     return emitOpError("provided ")
            << getNumOperands() << " operands but callee only has "
            << calleeSig.getNumArguments() << " to bind";
   }
   unsigned expectedArgs = calleeSig.getNumArguments() - getNumOperands();
-  NewSignatureType sig = getType().getBody();
+  FuncType sig = getType().getBody();
   if (sig.getNumArguments() != expectedArgs) {
     return emitOpError("result signature has ")
            << sig.getNumArguments() << " arguments but expected "
@@ -987,9 +986,9 @@ FailureOr<InlineResult> CreateClosureOp::prepInline(mlir::RewriterBase &b) {
 //===----------------------------------------------------------------------===//
 
 LogicalResult CreateRegStubOp::verify() {
-  NewSignatureType calleeSig =
-      cast<SignatureGeneratorType>(getCallee().getType()).getBody();
-  NewSignatureType resSig = getType().getBody();
+  FuncType calleeSig =
+      cast<FuncTypeGeneratorType>(getCallee().getType()).getBody();
+  FuncType resSig = getType().getBody();
 
   if (calleeSig.isThrows() || resSig.isThrows())
     return emitOpError("throwing function not supported");
@@ -1027,14 +1026,13 @@ LogicalResult CreateRegStubOp::verify() {
 void CreateRegStubOp::build(mlir::OpBuilder &builder,
                             mlir::OperationState &state,
                             mlir::TypedAttr callee) {
-  NewSignatureType resultSig = getStubSignatureType(
-      cast<SignatureGeneratorType>(callee.getType()).getBody());
+  FuncType resultSig = getStubSignatureType(
+      cast<FuncTypeGeneratorType>(callee.getType()).getBody());
   auto resultTy = GeneratorType::get(/*inputParamTypes=*/{}, resultSig);
   build(builder, state, resultTy, callee);
 }
 
-NewSignatureType
-CreateRegStubOp::getStubSignatureType(NewSignatureType calleeSign) {
+FuncType CreateRegStubOp::getStubSignatureType(FuncType calleeSign) {
   FunctionType values = calleeSign.getValues();
 
   // Check if type is a memory type that can be promoted to value.
@@ -1071,10 +1069,9 @@ CreateRegStubOp::getStubSignatureType(NewSignatureType calleeSign) {
     }
   }
 
-  return NewSignatureType::get(FunctionType::get(calleeSign.getContext(),
-                                                 newArgTypes,
-                                                 values.getResults()),
-                               calleeSign.getArgConventions());
+  return FuncType::get(FunctionType::get(calleeSign.getContext(), newArgTypes,
+                                         values.getResults()),
+                       calleeSign.getArgConventions());
 }
 
 Type CreateRegStubOp::getOriginalArgType(unsigned index) {
@@ -1103,8 +1100,8 @@ Type CreateRegStubOp::getOriginalArgType(unsigned index) {
 
 Type CreateRegStubOp::getCalleeArgType(unsigned index) {
   // Some arguments might be promoted to outputs.
-  NewSignatureType calleeSigBase = getCalleeSignature().getBody();
-  NewSignatureType resSig = getType().getBody();
+  FuncType calleeSigBase = getCalleeSignature().getBody();
+  FuncType resSig = getType().getBody();
   bool promotedOutputs =
       resSig.hasMemoryOnlyResult() && !calleeSigBase.hasMemoryOnlyResult();
   if (!promotedOutputs)

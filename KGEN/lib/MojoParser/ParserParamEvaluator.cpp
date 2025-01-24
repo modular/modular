@@ -49,7 +49,7 @@ ErrorOr<Region *> ParserInterpreter::lookupFunctionBody(SymbolRefAttr symbol) {
   if (func.getInlineLevel() == InlineLevel::Automatic ||
       func.getInlineLevel() == InlineLevel::Never)
     return Error("function is not always_inline");
-  LITSignatureGeneratorType fullSig = func.getFullSignature();
+  FnTypeGeneratorType fullSig = func.getFullSignature();
   if (!fullSig.getInputParamTypes().empty())
     return Error("function is parametric");
 
@@ -113,8 +113,8 @@ ParserParamEvaluator::evaluateFunctionCallImpl(SymbolRefAttr symbol,
     return failure();
   }
   Region &body = **bodyOr;
-  LITSignatureGeneratorType sig =
-      cast<FnOp>(body.getParentOp()).getSignatureGenerator();
+  FnTypeGeneratorType sig =
+      cast<FnOp>(body.getParentOp()).getFuncTypeGenerator();
 
   TypedAttr value;
   if (sig.hasMemoryOnlyResult()) {

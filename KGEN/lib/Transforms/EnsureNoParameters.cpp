@@ -26,8 +26,8 @@ static LogicalResult legalizeOp(Operation *op) {
   mlir::AttrTypeWalker legalizer;
   bool isFailure = false;
 
-  // SignatureGeneratorType must not be parameterized anymore.
-  legalizer.addWalk([&](SignatureGeneratorType sig) {
+  // FuncTypeGeneratorType must not be parameterized anymore.
+  legalizer.addWalk([&](FuncTypeGeneratorType sig) {
     if (!sig.getInputParamTypes().empty()) {
       mlir::emitError(op->getLoc(),
                       "parameterized functions cannot be used at runtime");

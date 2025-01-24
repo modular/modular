@@ -225,7 +225,7 @@ void GeneratorType::print(AsmPrinter &p) const {
 
 OptionalParseResult GeneratorType::parseValue(AsmParser &p,
                                               TypedAttr &value) const {
-  if (auto sigGen = ::dyn_cast<SignatureGeneratorType>(*this)) {
+  if (auto sigGen = ::dyn_cast<FuncTypeGeneratorType>(*this)) {
     // Parse a keyword or string as an MLIR operation attribute.
     std::string opName;
     llvm::SMLoc loc = p.getCurrentLocation();
@@ -264,7 +264,7 @@ OptionalParseResult GeneratorType::parseValue(AsmParser &p,
 }
 
 LogicalResult GeneratorType::printValue(AsmPrinter &p, TypedAttr value) const {
-  if (::isa<SignatureGeneratorType>(*this)) {
+  if (::isa<FuncTypeGeneratorType>(*this)) {
     if (auto mlirOp = ::dyn_cast<MLIROpAttr>(value)) {
       p << mlirOp.getName();
       if (!mlirOp.getAttrs().empty())
@@ -284,32 +284,32 @@ LogicalResult GeneratorType::printValue(AsmPrinter &p, TypedAttr value) const {
 }
 
 std::optional<int64_t> GeneratorType::getTypeSize(TargetInfoAttr target) const {
-  // Temporary back-compat: delegate to new signature type.
-  if (auto sig = ::dyn_cast<NewSignatureType>(getBody()))
+  // Temporary back-compat: delegate to FuncType.
+  if (auto sig = ::dyn_cast<FuncType>(getBody()))
     return sig.getTypeSize(target);
   return std::nullopt;
 }
 
 std::optional<int64_t>
 GeneratorType::getTypeAlign(TargetInfoAttr target) const {
-  // Temporary back-compat: delegate to new signature type.
-  if (auto sig = ::dyn_cast<NewSignatureType>(getBody()))
+  // Temporary back-compat: delegate to FuncType.
+  if (auto sig = ::dyn_cast<FuncType>(getBody()))
     return sig.getTypeAlign(target);
   return std::nullopt;
 }
 
 ErrorOrSuccess GeneratorType::writeTo(TypedAttr value, int64_t addr,
                                       InterpreterState &state) const {
-  // Temporary back-compat: delegate to new signature type.
-  if (auto sig = ::dyn_cast<NewSignatureType>(getBody()))
+  // Temporary back-compat: delegate to FuncType.
+  if (auto sig = ::dyn_cast<FuncType>(getBody()))
     return sig.writeTo(value, addr, state);
   return Error("Generator not a writeable type");
 }
 
 ErrorOr<TypedAttr> GeneratorType::readFrom(int64_t addr,
                                            InterpreterState &state) const {
-  // Temporary back-compat: delegate to new signature type.
-  if (auto sig = ::dyn_cast<NewSignatureType>(getBody()))
+  // Temporary back-compat: delegate to FuncType.
+  if (auto sig = ::dyn_cast<FuncType>(getBody()))
     return sig.readFrom(addr, state);
   return Error("Generator not a readable type");
 }
@@ -407,55 +407,50 @@ GeneratorType::getSpecializedGenerator(ArrayRef<TypedAttr> paramBindings,
 }
 
 //===----------------------------------------------------------------------===//
-// NewSignatureType
+// FuncType
 //===----------------------------------------------------------------------===//
 
-ArrayRef<Type> NewSignatureType::getArguments() const {
+ArrayRef<Type> FuncType::getArguments() const {
   return getValues().getInputs();
 }
-ArrayRef<Type> NewSignatureType::getResults() const {
-  return getValues().getResults();
-}
+ArrayRef<Type> FuncType::getResults() const { return getValues().getResults(); }
 
-bool NewSignatureType::hasMemoryOnlyResult() {
+bool FuncType::hasMemoryOnlyResult() {
   ArrayRef<ArgConvention> conventions = getArgConventions();
   return !conventions.empty() &&
          conventions.back() == ArgConvention::ByRefResult;
 }
 
-NewSignatureType NewSignatureType::getWithFnEffects(FnEffects effects) {
-  return NewSignatureType::get(getValues(), getArgConventions(), effects,
-                               getMetadata());
+FuncType FuncType::getWithFnEffects(FnEffects effects) {
+  return FuncType::get(getValues(), getArgConventions(), effects,
+                       getMetadata());
 }
-NewSignatureType NewSignatureType::getWithValuesReplaced(FunctionType fnType) {
-  return NewSignatureType::get(fnType, getArgConventions(), getFnEffects(),
-                               getMetadata());
-}
-
-NewSignatureType
-NewSignatureType::getWithMetadata(FnMetadataAttrInterface metadata) {
-  return NewSignatureType::get(getValues(), getArgConventions(), getFnEffects(),
-                               metadata);
+FuncType FuncType::getWithValuesReplaced(FunctionType fnType) {
+  return FuncType::get(fnType, getArgConventions(), getFnEffects(),
+                       getMetadata());
 }
 
-size_t NewSignatureType::getNumAsyncReturnSlots() {
+FuncType FuncType::getWithMetadata(FnMetadataAttrInterface metadata) {
+  return FuncType::get(getValues(), getArgConventions(), getFnEffects(),
+                       metadata);
+}
+
+size_t FuncType::getNumAsyncReturnSlots() {
   return isAsync() ? (hasMemoryOnlyResult() + isThrows()) : 0;
 }
 
-std::optional<int64_t>
-NewSignatureType::getTypeSize(TargetInfoAttr target) const {
+std::optional<int64_t> FuncType::getTypeSize(TargetInfoAttr target) const {
   // Non-capturing closures are function pointers. Capturing closures contain
   // a function pointer and a capture state pointer.
   return (isCapturing() ? 2 : 1) * target.getDataLayout().getPointerSize();
 }
 
-std::optional<int64_t>
-NewSignatureType::getTypeAlign(TargetInfoAttr target) const {
+std::optional<int64_t> FuncType::getTypeAlign(TargetInfoAttr target) const {
   return target.getDataLayout().getPointerABIAlign();
 }
 
-ErrorOrSuccess NewSignatureType::writeTo(TypedAttr value, int64_t addr,
-                                         InterpreterState &state) const {
+ErrorOrSuccess FuncType::writeTo(TypedAttr value, int64_t addr,
+                                 InterpreterState &state) const {
   // The index is written to the slot.
   unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
   ErrorOr<void *> mem =
@@ -471,8 +466,8 @@ ErrorOrSuccess NewSignatureType::writeTo(TypedAttr value, int64_t addr,
   return success();
 }
 
-ErrorOr<TypedAttr> NewSignatureType::readFrom(int64_t addr,
-                                              InterpreterState &state) const {
+ErrorOr<TypedAttr> FuncType::readFrom(int64_t addr,
+                                      InterpreterState &state) const {
   // The index is written to the slot.
   unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
   ErrorOr<const void *> mem = state.getReadableMemory(addr, ptrSize);
@@ -484,30 +479,30 @@ ErrorOr<TypedAttr> NewSignatureType::readFrom(int64_t addr,
   return state.getSymbol(value.getZExtValue());
 }
 
-Type NewSignatureType::parse(AsmParser &parser) {
-  NewSignatureType signature;
-  if (parser.parseLess() || parseNewSignature(parser, signature) ||
+Type FuncType::parse(AsmParser &parser) {
+  FuncType signature;
+  if (parser.parseLess() || parseFuncType(parser, signature) ||
       parser.parseGreater())
     return {};
   return signature;
 }
 
-void NewSignatureType::print(AsmPrinter &printer) const {
+void FuncType::print(AsmPrinter &printer) const {
   printer << '<';
-  printNewSignature(printer, *this);
+  printFuncType(printer, *this);
   printer << '>';
 }
 
-NewSignatureType NewSignatureType::get(MLIRContext *context, TypeRange inputs,
-                                       TypeRange results) {
+FuncType FuncType::get(MLIRContext *context, TypeRange inputs,
+                       TypeRange results) {
   return get(FunctionType::get(context, inputs, results));
 }
 
-LogicalResult
-NewSignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
-                         FunctionType values,
-                         ArrayRef<ArgConvention> argConventions,
-                         FnEffects effects, FnMetadataAttrInterface metadata) {
+LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
+                               FunctionType values,
+                               ArrayRef<ArgConvention> argConventions,
+                               FnEffects effects,
+                               FnMetadataAttrInterface metadata) {
   // Check we have the right number of conventions.
   if (argConventions.size() != values.getInputs().size())
     return emitError() << "incorrect # of input conventions specified";
@@ -515,8 +510,7 @@ NewSignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
   // If the signature has metadata, defer to it for further verification.
   // Otherwise, run the standard KGEN signature verification.
   if (metadata) {
-    return metadata.verifyNewSignature(emitError, values, argConventions,
-                                       effects);
+    return metadata.verifyFuncType(emitError, values, argConventions, effects);
   }
 
   // Verify input convention and argument types.
@@ -556,41 +550,40 @@ NewSignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 //===----------------------------------------------------------------------===//
-// SignatureGeneratorType
+// FuncTypeGeneratorType
 //===----------------------------------------------------------------------===//
 
-SignatureGeneratorType::SignatureGeneratorType(GeneratorType gen)
+FuncTypeGeneratorType::FuncTypeGeneratorType(GeneratorType gen)
     : GeneratorType(gen) {
-  assert((!gen || ::isa_and_nonnull<NewSignatureType>(gen.getBody())) &&
-         "expected NewSignatureType as body");
+  assert((!gen || ::isa_and_nonnull<FuncType>(gen.getBody())) &&
+         "expected FuncType as body");
 }
 
-SignatureGeneratorType
-SignatureGeneratorType::get(ArrayRef<Type> inputParamTypes, FunctionType values,
-                            ArrayRef<ArgConvention> argConvs, FnEffects effects,
-                            Attribute fnMetadata, Attribute genMetadata) {
-  auto sig = NewSignatureType::get(
-      values, argConvs, effects,
-      ::cast_or_null<FnMetadataAttrInterface>(fnMetadata));
-  return SignatureGeneratorType(GeneratorType::get(
+FuncTypeGeneratorType
+FuncTypeGeneratorType::get(ArrayRef<Type> inputParamTypes, FunctionType values,
+                           ArrayRef<ArgConvention> argConvs, FnEffects effects,
+                           Attribute fnMetadata, Attribute genMetadata) {
+  auto sig = FuncType::get(values, argConvs, effects,
+                           ::cast_or_null<FnMetadataAttrInterface>(fnMetadata));
+  return FuncTypeGeneratorType(GeneratorType::get(
       inputParamTypes, sig,
       ::cast_or_null<GeneratorMetadataAttrInterface>(genMetadata)));
 }
 
-SignatureGeneratorType SignatureGeneratorType::getSpecializedGenerator(
+FuncTypeGeneratorType FuncTypeGeneratorType::getSpecializedGenerator(
     ArrayRef<TypedAttr> paramBindings,
     function_ref<InFlightDiagnostic()> emitErrorFn) {
-  return ::cast_or_null<SignatureGeneratorType>(
+  return ::cast_or_null<FuncTypeGeneratorType>(
       GeneratorType::getSpecializedGenerator(paramBindings, emitErrorFn));
 }
 
-SignatureGeneratorType SignatureGeneratorType::getSpecializedGenerator(
+FuncTypeGeneratorType FuncTypeGeneratorType::getSpecializedGenerator(
     ArrayRef<TypedAttr> paramBindings, Location location) {
-  return ::cast_or_null<SignatureGeneratorType>(
+  return ::cast_or_null<FuncTypeGeneratorType>(
       GeneratorType::getSpecializedGenerator(paramBindings, location));
 }
 
-SignatureGeneratorType SignatureGeneratorType::remapToSignatureGenerator(
+FuncTypeGeneratorType FuncTypeGeneratorType::remapToFuncTypeGenerator(
     ArrayRef<ParamDeclAttr> inputParams, FunctionType functionType,
     ArrayRef<ArgConvention> argConventions, FnEffects effects,
     Attribute fnMetadata, Attribute genMetadata,
@@ -602,11 +595,11 @@ SignatureGeneratorType SignatureGeneratorType::remapToSignatureGenerator(
 
   if (!emitError) {
     emitError = []() -> InFlightDiagnostic {
-      llvm_unreachable("invalid signature generator");
+      llvm_unreachable("invalid func type generator");
     };
   }
 
-  auto newSig = NewSignatureType::getChecked(
+  auto newSig = FuncType::getChecked(
       emitError, remapper.replace(functionType), argConventions, effects,
       fnMetadata ? remapper.replace(fnMetadata) : nullptr);
   if (!newSig)
@@ -616,19 +609,19 @@ SignatureGeneratorType SignatureGeneratorType::remapToSignatureGenerator(
                                         : nullptr);
 }
 
-NewSignatureType SignatureGeneratorType::getBody() {
-  return ::cast<NewSignatureType>(GeneratorType::getBody());
+FuncType FuncTypeGeneratorType::getBody() {
+  return ::cast<FuncType>(GeneratorType::getBody());
 }
 
-NewSignatureType SignatureGeneratorType::getInstantiatedBody() {
-  return ::cast<NewSignatureType>(GeneratorType::getInstantiatedBody());
+FuncType FuncTypeGeneratorType::getInstantiatedBody() {
+  return ::cast<FuncType>(GeneratorType::getInstantiatedBody());
 }
 
-bool SignatureGeneratorType::classof(GeneratorType type) {
-  return ::isa_and_nonnull<NewSignatureType>(type.getBody());
+bool FuncTypeGeneratorType::classof(GeneratorType type) {
+  return ::isa_and_nonnull<FuncType>(type.getBody());
 }
 
-bool SignatureGeneratorType::classof(Type type) {
+bool FuncTypeGeneratorType::classof(Type type) {
   if (auto gen = ::dyn_cast<GeneratorType>(type))
     return classof(gen);
   return false;

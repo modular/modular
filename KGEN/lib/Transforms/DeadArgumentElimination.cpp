@@ -369,7 +369,7 @@ void DeadArgumentElimination::surveyFunction(FuncOp func) {
   // not in the same compilation unit but may still get to call this function
   // due to per-functions caching.
   for (unsigned idx = 0,
-                e = func.getSignatureGenerator().getBody().getNumResults();
+                e = func.getFuncTypeGenerator().getBody().getNumResults();
        idx < e; ++idx)
     markLive(createRet(func, idx));
 
@@ -439,7 +439,7 @@ void DeadArgumentElimination::markLive(FuncOp func) {
 
   // Mark all return values as live.
   for (unsigned i = 0,
-                e = func.getSignatureGenerator().getBody().getNumResults();
+                e = func.getFuncTypeGenerator().getBody().getNumResults();
        i < e; ++i)
     propagateLiveness(createRet(func, i));
 }
@@ -493,7 +493,7 @@ void DeadArgumentElimination::removeDeadStuffFromFunction(CallGraphNode *node) {
   llvm::SmallSet<Operation *, 4> opsToErase;
   SmallVector<ArgConvention> argConventions;
 
-  NewSignatureType currSig = func.getSignatureGenerator().getBody();
+  FuncType currSig = func.getFuncTypeGenerator().getBody();
   for (BlockArgument arg : func.getArguments()) {
     if (liveValues.count(createArg(func, arg.getArgNumber())) == 0) {
       getOpsToErase(arg, opsToErase);
@@ -513,11 +513,11 @@ void DeadArgumentElimination::removeDeadStuffFromFunction(CallGraphNode *node) {
   OpBuilder b(func);
   FunctionType newFuncType = FunctionType::get(
       func.getContext(), inputTypes,
-      func.getSignatureGenerator().getBody().getValues().getResults());
+      func.getFuncTypeGenerator().getBody().getValues().getResults());
 
-  NewSignatureType newSig =
-      NewSignatureType::get(func.getContext(), newFuncType, argConventions,
-                            currSig.getFnEffects(), currSig.getMetadata());
+  FuncType newSig =
+      FuncType::get(func.getContext(), newFuncType, argConventions,
+                    currSig.getFnEffects(), currSig.getMetadata());
 
   Block *block = func.getBody(0);
   unsigned numArgs = block->getNumArguments();
@@ -540,9 +540,8 @@ void DeadArgumentElimination::removeDeadStuffFromFunction(CallGraphNode *node) {
     block->getArgument(i).dropAllUses();
   block->eraseArguments(0, numArgs);
 
-  // Set the new signature.
-  func.setSignatureGenerator(
-      GeneratorType::get(/*inputParamTypes=*/{}, newSig));
+  // Set the FuncTypeGenerator.
+  func.setFuncTypeGenerator(GeneratorType::get(/*inputParamTypes=*/{}, newSig));
 
   // Update node state to prepare for callee rewrites.
   node->updated = true;

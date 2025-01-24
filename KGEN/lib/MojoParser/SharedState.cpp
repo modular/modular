@@ -1764,7 +1764,7 @@ static void adjustTokenEndPoint(SharedState &shared, SMLoc &loc) {
 }
 
 LIT::StructDeclOp
-SharedState::getOrCreateClosureWrapper(SMLoc loc, SignatureGeneratorType sig,
+SharedState::getOrCreateClosureWrapper(SMLoc loc, FuncTypeGeneratorType sig,
                                        ASTDecl *moduleDecl) {
   StructDeclOp &existing = impl->closureWrappers[{sig, moduleDecl}];
   if (!existing) {

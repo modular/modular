@@ -41,15 +41,15 @@ static std::pair<bool, SmallVector<Type>> removeNoneTypes(TypeRange types) {
 /// Lower the signature results by replacing all the `!kgen.none` results in a
 /// signature. This will also set the signature to non-throwing, and erase
 /// `byref_result` argument conventions.
-static NewSignatureType lowerResult(NewSignatureType signature) {
+static FuncType lowerResult(FuncType signature) {
   auto [anyNone, newResults] = removeNoneTypes(signature.getResults());
   // Micro-optimization: don't hash a new type if it won't change.
   if (!anyNone)
     return signature;
-  return NewSignatureType::get(
-      FunctionType::get(signature.getContext(), signature.getArguments(),
-                        newResults),
-      signature.getArgConventions(), signature.getFnEffects().setThrows(false));
+  return FuncType::get(FunctionType::get(signature.getContext(),
+                                         signature.getArguments(), newResults),
+                       signature.getArgConventions(),
+                       signature.getFnEffects().setThrows(false));
 }
 
 /// Remove none types from the results of debuginfo subroutine types as well.
@@ -112,8 +112,8 @@ static StructAttr lowerVariantAttr(VariantAttr attr) {
 }
 
 static void lowerCreateRegStubOp(IRRewriter &b, CreateRegStubOp op) {
-  SignatureGeneratorType resSigGen = op.getResult().getType();
-  auto calleeSigGen = cast<SignatureGeneratorType>(op.getCallee().getType());
+  FuncTypeGeneratorType resSigGen = op.getResult().getType();
+  auto calleeSigGen = cast<FuncTypeGeneratorType>(op.getCallee().getType());
   SymbolConstantAttr callee = cast<SymbolConstantAttr>(op.getCallee());
 
   if (calleeSigGen == resSigGen) {
@@ -131,8 +131,8 @@ static void lowerCreateRegStubOp(IRRewriter &b, CreateRegStubOp op) {
   Block *body = b.createBlock(&closureWrapper.getBodyRegion());
 
   // Bitcast the function arguments and load the inputs.
-  NewSignatureType resSig = resSigGen.getBody();
-  NewSignatureType calleeSig = calleeSigGen.getBody();
+  FuncType resSig = resSigGen.getBody();
+  FuncType calleeSig = calleeSigGen.getBody();
   SmallVector<Value> insValues;
   SmallVector<Value> outsPointers;
   bool promotedOutputs =

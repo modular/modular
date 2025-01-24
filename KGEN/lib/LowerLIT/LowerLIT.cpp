@@ -166,7 +166,7 @@ SingletonTypeHelper::lookupStructFields(SymbolRefAttr ref, StructDeclOp decl) {
 /// normal input parameters, ignoring the origin parameters.
 static ArrayRef<ParamDeclAttr> extractImplicitOriginParams(FnOp func) {
   size_t numImplicitOrigins =
-      func.getSignatureGenerator().getNumImplicitOriginDecls();
+      func.getFuncTypeGenerator().getNumImplicitOriginDecls();
   return func.getInputParams().drop_back(numImplicitOrigins);
 }
 
@@ -348,7 +348,7 @@ LITLowerer::lowerLITFunc(FnOp func, Block::iterator symTableIt,
 
   lowerLITOps(func);
 
-  LITSignatureGeneratorType signature = func.getSignatureGenerator();
+  FnTypeGeneratorType signature = func.getFuncTypeGenerator();
 
   // Build the parameter list of the new function, prepending the parameters
   // from the parent decl if present.
@@ -358,8 +358,8 @@ LITLowerer::lowerLITFunc(FnOp func, Block::iterator symTableIt,
     llvm::append_range(inputParams, parentInputParams);
     // Offset index references within the current signature to make room.
     // Remap parent input parameter references to indices.
-    signature = LITSignatureGeneratorType::prependParams(
-        signature, parentInputParams, parentVariadicMask);
+    signature = FnTypeGeneratorType::prependParams(signature, parentInputParams,
+                                                   parentVariadicMask);
   }
   llvm::append_range(inputParams, extractImplicitOriginParams(func));
 
@@ -416,7 +416,7 @@ void LITLowerer::lowerNestedFunction(FnOp func) {
   removeSingletonParamDecls(singletonTypeHelper, inputParams);
 
   auto region = b.create<ParamDeclareRegionOp>(
-      decl, func.getSignatureGenerator(), func.getFunctionType(), inputParams,
+      decl, func.getFuncTypeGenerator(), func.getFunctionType(), inputParams,
       func.getInlineLevel(), func.getLLVMMetadata());
   region.getBodyRegion().takeBody(func.getBodyRegion());
   func.erase();
@@ -554,9 +554,9 @@ LogicalResult LITLowerer::lowerModuleDecl(Block *moduleBody,
 /// Check to see if any of the parameters of the specified signature are
 /// singletons like origin parameters.  If so, bind them to a dummy value and
 /// return the updated signature without them.
-static SignatureGeneratorType
+static FuncTypeGeneratorType
 removeSingletonParams(SingletonTypeHelper &singletonTypeHelper,
-                      SignatureGeneratorType signature) {
+                      FuncTypeGeneratorType signature) {
   llvm::SmallVector<TypedAttr> paramsToBind;
   size_t numRemoved = 0;
 
@@ -613,13 +613,12 @@ lowerAttributesAndTypes(Operation *op,
   });
 
   // Remove signature metadata.
-  replacer.addReplacement([&](NewSignatureType sig) {
-    return NewSignatureType::get(
-        cast<FunctionType>(replacer.replace(sig.getValues())),
-        sig.getArgConventions(), sig.getFnEffects());
+  replacer.addReplacement([&](FuncType sig) {
+    return FuncType::get(cast<FunctionType>(replacer.replace(sig.getValues())),
+                         sig.getArgConventions(), sig.getFnEffects());
   });
 
-  replacer.addReplacement([&](SignatureGeneratorType gen) {
+  replacer.addReplacement([&](FuncTypeGeneratorType gen) {
     // Remove uses of any singleton attributes.
     SmallVector<Type> paramTypes;
     for (auto ty : gen.getInputParamTypes())
@@ -774,9 +773,9 @@ orderAndLowerGlobalVariables(ModuleOp module,
     // Outline the constructor and destructor into functions.
     auto sig = LITGeneratorType::get(
         /*inputParamTypes=*/{},
-        LITNewSignatureType::get(b.getContext(), /*inputs=*/TypeRange{},
-                                 /*results=*/TypeRange{},
-                                 /*numImplicitOriginDecls=*/0),
+        FnType::get(b.getContext(), /*inputs=*/TypeRange{},
+                    /*results=*/TypeRange{},
+                    /*numImplicitOriginDecls=*/0),
         PogListAttr::get(b.getContext()));
     auto makeXtor = [&](Location xtorLoc, StringAttr xtorName, Region &body) {
       b.setInsertionPoint(op);

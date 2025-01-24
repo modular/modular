@@ -59,8 +59,8 @@ generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
   GeneratorOp sliced = cast<GeneratorOp>(mapping.lookup(func));
   ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(sliced));
   StringAttr stubName = b.getStringAttr(name.getValue() + "_asm_stub");
-  SignatureGeneratorType sigGen = symbol.getType();
-  NewSignatureType sigBase = sigGen.getBody();
+  FuncTypeGeneratorType sigGen = symbol.getType();
+  FuncType sigBase = sigGen.getBody();
 
   // Build debuginfo for the stub if requested.
   if (auto sp = func.getSubprogramScope()) {
@@ -155,9 +155,8 @@ writeCaptureArgs(ModuleOp module, StringAttr name) {
   // The expected signature is `fn(Pointer[None]) capturing -> None`.
   auto noneType = b.getType<KGEN::NoneType>();
   auto nonePtr = PointerType::get(noneType);
-  auto sig =
-      NewSignatureType::get(b.getFunctionType(nonePtr, noneType),
-                            ArgConvention::ReadReg, FnEffects().setCapturing());
+  auto sig = FuncType::get(b.getFunctionType(nonePtr, noneType),
+                           ArgConvention::ReadReg, FnEffects().setCapturing());
   OwningOpRef<FuncOp> func =
       b.create<FuncOp>(b.getStringAttr(name.getValue() + "_populate_captures"),
                        sig, InlineLevel::Always);

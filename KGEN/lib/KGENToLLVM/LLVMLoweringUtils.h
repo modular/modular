@@ -26,7 +26,7 @@ class KGENDType;
 class GeneratorType;
 class ParamType;
 class PointerType;
-class NewSignatureType;
+class FuncType;
 class NoneType;
 class StringType;
 class StructType;
@@ -338,7 +338,7 @@ private:
   DebugInfo::DIType buildDebugType(IndexType type);
   DebugInfo::DIType buildDebugType(ParamType type);
   DebugInfo::DIType buildDebugType(StringType type);
-  DebugInfo::DIType buildDebugType(NewSignatureType type);
+  DebugInfo::DIType buildDebugType(FuncType type);
   DebugInfo::DIType buildDebugType(POP::UnionType type);
   DebugInfo::DIType buildDebugType(KGEN::NoneType type);
   DebugInfo::DIType buildDebugType(POP::ArrayType type);

@@ -197,14 +197,14 @@ public:
 
   /// Create a name from a signature by appending argument types into the name.
   static StringAttr getMangledName(StringAttr baseName, ASTDecl &container,
-                                   LITSignatureGeneratorType signatureGen);
+                                   FnTypeGeneratorType signatureGen);
 
   /// Given a signature type that may contain references to parameter
   /// declarations in a parent context, isolate it by creating a signatuer with
   /// no external references by inserting an parameter for every captured
   /// parameter declaration. Return the captured parameter references.
-  static std::pair<SmallVector<ParamDeclRefAttr>, LITSignatureGeneratorType>
-  createSelfContainedSignature(LITSignatureGeneratorType original);
+  static std::pair<SmallVector<ParamDeclRefAttr>, FnTypeGeneratorType>
+  createSelfContainedSignature(FnTypeGeneratorType original);
 
 private:
   /// The resolveSignature methods are invoked on an operation to parse and type

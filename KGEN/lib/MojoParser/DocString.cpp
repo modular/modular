@@ -289,7 +289,7 @@ StringRef DocString::CodeBlock::getRawCode() const {
 static SmallVector<StringAttr> getFunctionArgumentNames(FnOp funcOp) {
   // In general, each function argument must be documented, but exceptions are
   // pruned from the list below.
-  LITSignatureGeneratorType sig = funcOp.getSignatureGenerator();
+  FnTypeGeneratorType sig = funcOp.getFuncTypeGenerator();
 
   // The compiler can insert an implicit `__result__` argument, which stores
   // memory-only results, at the end of an argument list.  Because these
@@ -313,7 +313,7 @@ static SmallVector<StringAttr> getFunctionArgumentNames(FnOp funcOp) {
 static SmallVector<StringAttr> getFunctionParameterNames(FnOp funcOp) {
   SmallVector<StringAttr> result;
   for (PogMetadataAttr pogAttr :
-       funcOp.getSignatureGenerator().getParamListAttrs().getPogs())
+       funcOp.getFuncTypeGenerator().getParamListAttrs().getPogs())
     if (pogAttr.getPassingKind() != PassingKind::Implicit &&
         !pogAttr.getName().empty())
       result.emplace_back(pogAttr.getName());
@@ -626,7 +626,7 @@ private:
     };
     ArrayRef<StringRef> description = docStr->getDescription();
     bool hasResults = doesFunctionHaveResults(funcOp);
-    bool canThrow = funcOp.getSignatureGenerator().isThrows();
+    bool canThrow = funcOp.getFuncTypeGenerator().isThrows();
 
     auto processFn = [&](StringRef section, const char *loc) mutable {
       if (section == DocString::kSectionArgs)

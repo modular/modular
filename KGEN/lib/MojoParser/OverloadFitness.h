@@ -18,7 +18,7 @@
 
 namespace M::KGEN::LIT {
 class CallOperands;
-class LITSignatureGeneratorType;
+class FnTypeGeneratorType;
 class PogListAttr;
 
 /// This struct indicates whether a signature can be successfully applied to a
@@ -64,7 +64,7 @@ public:
   ///
   /// The 'funcIfDirect' member is set if this is a direct call, or null if
   /// indirect.  It can be used to tune diagnostics.
-  static OverloadFitness evaluate(LITSignatureGeneratorType signature,
+  static OverloadFitness evaluate(FnTypeGeneratorType signature,
                                   ASTDecl *funcIfDirect,
                                   const OverloadSet &callable,
                                   const CallOperands &callOperands,

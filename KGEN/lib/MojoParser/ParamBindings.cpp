@@ -48,9 +48,9 @@ using namespace M::KGEN::LIT;
 /// https://www.notion.so/modularai/verifyConformance-Arcana-13e1044d37bb80e88cb5c285a232784e?pvs=4#13e1044d37bb80bf8b42f3953af880f8
 ///
 /// TODO(MOCO-1259): Support static methods with associated aliases
-LITSignatureGeneratorType LIT::substituteTraitAliasesIntoSignature(
+FnTypeGeneratorType LIT::substituteTraitAliasesIntoSignature(
     DeclResolver &declResolver, ASTDecl *traitDecl, FnOp candidateFunc,
-    LITSignatureGeneratorType desiredSignature, PValue selfPValue) {
+    FnTypeGeneratorType desiredSignature, PValue selfPValue) {
   ParserParamEvaluator traitAliasReplacer(declResolver);
   for (auto &[name, decls] : traitDecl->getDeclsInScope()) {
     for (ASTDecl *decl : decls) {
@@ -590,7 +590,7 @@ ParamBindings::verifyBindingsImpl(
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindings(
-    LITSignatureGeneratorType sig, const DiagEmitter &diagEmitter,
+    FnTypeGeneratorType sig, const DiagEmitter &diagEmitter,
     ParameterInferenceHookTy parameterInferenceHook) const {
   return verifyBindingsImpl(parameters, sig.getInputParamTypes(),
                             sig.getMetadata(), parameterInferenceHook,
@@ -598,7 +598,7 @@ ParamBindings::verifyBindings(
 }
 
 ParameterExprArrayAttr
-ParamBindings::verifyBindings(LITSignatureGeneratorType sig) const {
+ParamBindings::verifyBindings(FnTypeGeneratorType sig) const {
   return verifyBindings(sig.getInputParamTypes(), sig.getMetadata(),
                         /*partial=*/true);
 }
@@ -635,7 +635,7 @@ ParameterExprArrayAttr ParamBindings::verifyBindings(StructDeclOp structOp,
 }
 
 ParameterExprArrayAttr
-ParamBindings::verifyBindings(LITSignatureGeneratorType sig, StringRef baseName,
+ParamBindings::verifyBindings(FnTypeGeneratorType sig, StringRef baseName,
                               SMLoc exprLoc,
                               std::optional<Location> opLoc) const {
   auto [newBindings, _, diag] =
@@ -791,7 +791,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 
 TypedAttr ParamBindings::getBoundConstAttrFor(FnOp funcOp, StringRef baseName,
                                               const ExprNode *expr) const {
-  LITSignatureGeneratorType signature = funcOp.getFullSignature();
+  FnTypeGeneratorType signature = funcOp.getFullSignature();
 
   // If this is a global function or struct reference, bind it directly.
   auto parentTrait = dyn_cast<TraitDeclOp>(funcOp->getParentOp());

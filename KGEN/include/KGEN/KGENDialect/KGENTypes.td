@@ -237,18 +237,18 @@ def KGEN_GeneratorType : KGENType<"Generator", "generator", [
 }
 
 //===----------------------------------------------------------------------===//
-// SignatureGeneratorType
+// FuncTypeGeneratorType
 //===----------------------------------------------------------------------===//
 
-def KGEN_SignatureGeneratorType : DialectType<KGENDialect,
-    CPred<"llvm::isa<SignatureGeneratorType>($_self)">,
-    "KGEN GeneratorType wrapping a NewSignatureType", "SignatureGeneratorType">;
+def KGEN_FuncTypeGeneratorType : DialectType<KGENDialect,
+    CPred<"llvm::isa<FuncTypeGeneratorType>($_self)">,
+    "KGEN GeneratorType wrapping a FuncType", "FuncTypeGeneratorType">;
 
 //===----------------------------------------------------------------------===//
-// NewSignatureType
+// FuncType
 //===----------------------------------------------------------------------===//
 
-def KGEN_NewSignatureType : KGENType<"NewSignature", "signature", [
+def KGEN_FuncType : KGENType<"Func", "func", [
     DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
     DeclareTypeInterfaceMethods<DataLayoutInterface>]> {
   let summary = "The type of a KGEN function";
@@ -306,11 +306,11 @@ def KGEN_NewSignatureType : KGENType<"NewSignature", "signature", [
     }
 
     /// Set a function convention.
-    NewSignatureType getWithFnEffects(FnEffects effect);
+    FuncType getWithFnEffects(FnEffects effect);
     /// Return this signature type with the value signature replaced.
-    NewSignatureType getWithValuesReplaced(FunctionType fnType);
+    FuncType getWithValuesReplaced(FunctionType fnType);
     /// Return this signature with a new metadata attribute.
-    NewSignatureType getWithMetadata(FnMetadataAttrInterface metadata);
+    FuncType getWithMetadata(FnMetadataAttrInterface metadata);
 
     /// Return the number of arguments.
     size_t getNumArguments() { return getArguments().size(); }
@@ -328,10 +328,10 @@ def KGEN_NewSignatureType : KGENType<"NewSignature", "signature", [
 
 def CalleeArgumentTypes : TypesMatchWith<"operands match callee argument types",
     "callee", "operands",
-    "cast<SignatureGeneratorType>($_self).getBody().getArguments()">;
+    "cast<FuncTypeGeneratorType>($_self).getBody().getArguments()">;
 def CalleeResultTypes : TypesMatchWith<"results match callee result types",
     "callee", "results",
-    "cast<SignatureGeneratorType>($_self).getBody().getResults()">;
+    "cast<FuncTypeGeneratorType>($_self).getBody().getResults()">;
 
 //===----------------------------------------------------------------------===//
 // PointerType

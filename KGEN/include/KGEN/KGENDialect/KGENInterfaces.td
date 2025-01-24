@@ -79,7 +79,7 @@ def DeclInterface : OpInterface<"DeclInterface"> {
 def FuncInterface : OpInterface<"FuncInterface"> {
   let description = [{
     This interface represents an operation that defines a KGEN function. A KGEN
-    function has a `SignatureGeneratorType`, meaning that it can accept
+    function has a `FuncTypeGeneratorType`, meaning that it can accept
     arguments and input parameters and produce results and output parameters.
     Consequently, operations that implement `FuncInterface` must also implement
     `DeclInterface`.
@@ -90,8 +90,8 @@ def FuncInterface : OpInterface<"FuncInterface"> {
 
   let methods = [
     InterfaceMethod<[{
-      Return the function's signature generator type.
-    }], "SignatureGeneratorType", "getSignatureGenerator", (ins)>,
+      Return the function's FuncType generator type.
+    }], "FuncTypeGeneratorType", "getFuncTypeGenerator", (ins)>,
     InterfaceMethod<[{
       Return the function's body argument and result types.
     }], "FunctionType", "getFunctionType", (ins)>,
@@ -117,11 +117,11 @@ def FuncInterface : OpInterface<"FuncInterface"> {
 
     /// Return true if the function throws.
     bool isThrows() {
-      return $_op.getSignatureGenerator().getBody().getFnEffects().isThrows();
+      return $_op.getFuncTypeGenerator().getBody().getFnEffects().isThrows();
     }
     /// Return true if the function is async.
     bool isAsync() {
-      return $_op.getSignatureGenerator().getBody().getFnEffects().isAsync();
+      return $_op.getFuncTypeGenerator().getBody().getFnEffects().isAsync();
     }
 
     //===------------------------------------------------------------------===//
@@ -208,8 +208,8 @@ def KGEN_GeneratorUserOpInterface : OpInterface<"GeneratorUserOpInterface"> {
 
   let extraSharedClassDeclaration = [{
     /// Get the signature type of the callee, if it is known.
-    SignatureGeneratorType getCalleeSignature() {
-      return dyn_cast<SignatureGeneratorType>($_op.getCallee().getType());
+    FuncTypeGeneratorType getCalleeSignature() {
+      return dyn_cast<FuncTypeGeneratorType>($_op.getCallee().getType());
     }
   }];
 
@@ -463,8 +463,8 @@ def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
 
   let extraSharedClassDeclaration = [{
     /// Get the signature type of the callee.
-    SignatureGeneratorType getCalleeType() {
-      return cast<SignatureGeneratorType>($_op.getCallee().getType());
+    FuncTypeGeneratorType getCalleeType() {
+      return cast<FuncTypeGeneratorType>($_op.getCallee().getType());
     }
   }];
 }
