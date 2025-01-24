@@ -23,7 +23,7 @@ import math
 
 from memory import AddressSpace, UnsafePointer
 from memory.pointer import _GPUAddressSpace
-
+from sys.info import _is_sm_9x
 from ._assembly import inlined_assembly
 from .info import is_nvidia_gpu, is_amd_gpu, sizeof
 
@@ -1227,3 +1227,80 @@ struct _GridIdx:
 
 
 alias global_idx = _GridIdx()
+
+
+# ===-----------------------------------------------------------------------===#
+# cluster_dim
+# ===-----------------------------------------------------------------------===#
+
+
+@register_passable("trivial")
+struct _ClusterDim:
+    """ClusterDim provides static methods for getting the x/y/z dimension of a
+    Cluster."""
+
+    @always_inline("nodebug")
+    fn __init__(out self):
+        return
+
+    @always_inline("nodebug")
+    fn __getattr__[dim: StringLiteral](self) -> UInt:
+        """Gets the `x`, `y`, or `z` dimension of the cluster.
+
+        Returns:
+            The `x`, `y`, or `z` dimension of the cluster.
+        """
+        constrained[
+            is_nvidia_gpu() and _is_sm_9x(),
+            "cluster_id is only supported on NVIDIA SM90+ GPUs",
+        ]()
+        constrained[
+            dim in ("x", "y", "z"), "the accessor must be either x, y, or z"
+        ]()
+
+        alias intrinsic_name = "llvm.nvvm.read.ptx.sreg.cluster.nctaid." + dim
+        return UInt(
+            Int(llvm_intrinsic[intrinsic_name, Int32, has_side_effect=False]())
+        )
+
+
+alias cluster_dim = _ClusterDim()
+
+# ===-----------------------------------------------------------------------===#
+# cluster_idx
+# ===-----------------------------------------------------------------------===#
+
+
+@register_passable("trivial")
+struct _ClusterIdx:
+    """_ClusterIdx provides static methods for getting the x/y/z coordinates of
+    a cluster within a grid."""
+
+    @always_inline("nodebug")
+    fn __init__(out self):
+        return
+
+    @always_inline("nodebug")
+    @staticmethod
+    fn _get_intrinsic_name[dim: StringLiteral]() -> StringLiteral:
+        return "llvm.nvvm.read.ptx.sreg.clusterid." + dim
+
+    @always_inline("nodebug")
+    fn __getattr__[dim: StringLiteral](self) -> UInt32:
+        """Gets the `x`, `y`, or `z` coordinates of a cluster within a grid.
+
+        Returns:
+            The `x`, `y`, or `z` coordinates of a cluster within a grid.
+        """
+        constrained[
+            is_nvidia_gpu() and _is_sm_9x(),
+            "cluster_id is only supported on NVIDIA SM90+ GPUs",
+        ]()
+        constrained[
+            dim in ("x", "y", "z"), "the accessor must be either x, y, or z"
+        ]()
+        alias intrinsic_name = Self._get_intrinsic_name[dim]()
+        return llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
+
+
+alias cluster_idx = _ClusterIdx()
