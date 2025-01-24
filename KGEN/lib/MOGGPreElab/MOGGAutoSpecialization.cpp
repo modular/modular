@@ -583,7 +583,7 @@ static void updateCallOps(CallGraphNode *node, CallGraph &cg,
     // Check if the callee arguments that require spec correspond to an function
     // arg (propagate the param) or not (pass a none spec).
     bool addNoneSpecParam = false;
-    bool addArgSpecParam = false;
+    [[maybe_unused]] bool addArgSpecParam = false;
     for (unsigned index : calledFuncNode->argsNeedingSpec.set_bits()) {
       auto val = oldCall->getOperand(index);
       auto itr = tensorsToSpecs.find(val);
