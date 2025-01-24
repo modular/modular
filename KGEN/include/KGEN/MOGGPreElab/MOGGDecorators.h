@@ -84,6 +84,10 @@ constexpr StringLiteral MOGG_INTRINSIC_MUTABLE = "mogg.mutable";
 constexpr StringLiteral MOGG_INTRINSIC_TENSOR_FUSED_LOAD =
     "mogg.tensor_fused_load";
 
+/// MOGG Intrinsic for the ManagedTensorSlice _fused_store method.
+constexpr StringLiteral MOGG_INTRINSIC_TENSOR_FUSED_STORE =
+    "mogg.tensor_fused_store";
+
 /// Track the pair of the decorator as it is seen in the LIT IR in its raw from
 /// and the clean processed attribute which is added after it is processed.
 struct MOGGDecorator {
@@ -199,6 +203,10 @@ static constexpr StringLiteral kMOGGBufferArgs = "mogg.buffer_args";
 static constexpr StringLiteral kMOGGInputLambdas = "_in_lambdas";
 static constexpr StringLiteral kMOGGOutputLambdas = "_out_lambdas";
 static constexpr StringLiteral kMOGGElementwiseLambda = "_elementwise_lambda";
+
+// Mark a function as the outlined body of an elementwise kernel.
+// During InlineLambdas those functions can be CSE.
+static constexpr StringLiteral OUTLINED_ELEMW_ATTR = "mogg.outlined_elemw";
 
 inline bool isExecuteFunc(Operation *gen) {
   return gen != nullptr && gen->hasAttr(kMOGGExecuteFunctionLabel);

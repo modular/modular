@@ -243,6 +243,9 @@ private:
     // to be inlined later when loaded by MOGG.
     outlinedFunction->setAttr(outlinedAttrName, builder.getUnitAttr());
 
+    if (elementwiseOp)
+      outlinedFunction->setAttr(OUTLINED_ELEMW_ATTR, builder.getUnitAttr());
+
     // Add all the old attributes (except the execute related attrs).
     for (NamedAttribute attr : gen->getDialectAttrs())
       if (attr.getName() == kMOGGSynchronousLabel ||
