@@ -673,7 +673,10 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "smollm": GenericOracle(
         "HuggingFaceTB/SmolLM2-135M",
         "LlamaForCausalLM",
-        config_params={"max_length": 512},
+        config_params={
+            "max_length": 512,
+            "cache_strategy": KVCacheStrategy.CONTINUOUS,
+        },
         prompts=[p[:502] for p in evaluate.PROMPTS],
     ),
     "mpnet": GenericOracle(

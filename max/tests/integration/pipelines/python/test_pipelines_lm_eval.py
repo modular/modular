@@ -25,6 +25,7 @@ def test_pipelines_lm_eval_smollm(tmp_path: Path):
             "--pipelines-arg=--quantization-encoding=float32",
             "--pipelines-arg=--max-length=512",
             "--pipelines-arg=--max-new-tokens=10",
+            "--pipelines-arg=--device-memory-utilization=0.3",
             "--lm-eval-arg=--model=local-completions",
             "--lm-eval-arg=--tasks=smol_task",
             "--lm-eval-arg=--model_args=model=HuggingFaceTB/SmolLM2-135M,base_url=http://localhost:8000/v1/completions,tokenized_requests=False,num_concurrent=20,max_retries=3,max_length=512",

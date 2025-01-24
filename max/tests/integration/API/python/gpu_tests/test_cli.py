@@ -170,8 +170,6 @@ VALID_COMMANDS = [
         args=[
             "--huggingface-repo-id",
             "modularai/replit-code-1.5",
-            "--architecture",
-            "LlamaForCausalLM",
             "--cache-strategy",
             "naive",
             "--devices",
@@ -197,7 +195,7 @@ VALID_COMMANDS = [
         expected={
             "huggingface_repo_id": "modularai/llama-3.1",
             "trust_remote_code": False,
-            "cache_strategy": KVCacheStrategy.CONTINUOUS,
+            "cache_strategy": KVCacheStrategy.MODEL_DEFAULT,
             "weight_path": [
                 Path("model1.safetensors"),
                 Path("model2.safetensors"),
@@ -222,7 +220,7 @@ VALID_COMMANDS = [
         expected={
             "huggingface_repo_id": "modularai/llama-3.1",
             "trust_remote_code": False,
-            "cache_strategy": KVCacheStrategy.CONTINUOUS,
+            "cache_strategy": KVCacheStrategy.MODEL_DEFAULT,
             "weight_path": [
                 Path("model1.safetensors"),
                 Path("model2.safetensors"),

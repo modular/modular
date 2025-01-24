@@ -19,6 +19,7 @@ def test_pipelines_cli__smollm_float32(capsys):
                 "Why is the sky blue?",
                 "--trust-remote-code",
                 "--quantization-encoding=float32",
+                "--device-memory-utilization=0.1",
             ]
         )
     captured = capsys.readouterr()

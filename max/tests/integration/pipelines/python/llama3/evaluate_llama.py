@@ -125,6 +125,9 @@ class SupportedTestModels:
             else:
                 raise ValueError(f"version {self.version} not supported.")
 
+        if "device_memory_utilization" not in kwargs:
+            kwargs["device_memory_utilization"] = 0.1
+
         config = PipelineConfig(
             quantization_encoding=self.encoding,
             **kwargs,
