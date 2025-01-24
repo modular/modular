@@ -20,7 +20,7 @@ from os import abort
 from sys import bitwidthof, llvm_intrinsic
 from sys.ffi import c_char
 from sys.intrinsics import _type_is_eq
-from utils.write import write_buffered, _WriteBufferStack
+from utils.write import write_buffered, _TotalWritableBytes, _WriteBufferHeap
 
 from bit import count_leading_zeros
 from memory import UnsafePointer, memcmp, memcpy, Span
@@ -1190,11 +1190,20 @@ struct String(
         var sep = StaticString(ptr=self.unsafe_ptr(), length=len(self))
         return String(elems, sep=sep)
 
-    fn join[T: WritableCollectionElement](self, elems: List[T, *_]) -> String:
+    fn join[
+        T: WritableCollectionElement, //, buffer_size: Int = 4096
+    ](self, elems: List[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
+        Defaults to writing to the stack if total bytes of `elems` is less than
+        `buffer_size`, otherwise will allocate once to the heap and write
+        directly into that. The `buffer_size` defaults to 4096 bytes to match
+        the default page size on arm64 and x86-64, but you can increase this if
+        you're joining a very large `List` of elements to write into the stack
+        instead of the heap.
 
         Parameters:
             T: The types of the elements.
+            buffer_size: The max size of the stack buffer.
 
         Args:
             elems: The input values.
@@ -1202,14 +1211,20 @@ struct String(
         Returns:
             The joined string.
         """
-        var string = String()
-        var buffer = _WriteBufferStack(string)
-        for i in range(len(elems)):
-            buffer.write(elems[i])
-            if i < len(elems) - 1:
-                buffer.write(self)
-        buffer.flush()
-        return string
+        var sep = StaticString(ptr=self.unsafe_ptr(), length=len(self))
+        var total_bytes = _TotalWritableBytes(elems, sep=sep)
+
+        # Use heap if over the stack buffer size
+        if total_bytes.size + 1 > buffer_size:
+            var buffer = _WriteBufferHeap(total_bytes.size + 1)
+            buffer.write_list(elems, sep=sep)
+            buffer.data[total_bytes.size] = 0
+            return String(ptr=buffer.data, length=total_bytes.size + 1)
+        # Use stack otherwise
+        else:
+            var string = String()
+            write_buffered[buffer_size](string, elems, sep=sep)
+            return string
 
     @always_inline
     fn chars(self) -> CharsIter[__origin_of(self)]:

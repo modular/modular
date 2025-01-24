@@ -27,7 +27,7 @@ from builtin._location import __call_location, _SourceLocation
 from memory import UnsafePointer, Span
 
 from utils.write import (
-    _ArgBytes,
+    _TotalWritableBytes,
     _WriteBufferHeap,
     _WriteBufferStack,
     write_args,
@@ -247,7 +247,7 @@ fn _debug_assert_msg(
         pass
     elif is_nvidia_gpu():
         # Count the total length of bytes to allocate only once
-        var arg_bytes = _ArgBytes()
+        var arg_bytes = _TotalWritableBytes()
         arg_bytes.write(
             "At ",
             loc,
@@ -272,6 +272,7 @@ fn _debug_assert_msg(
         stdout.write_bytes(
             Span[Byte, ImmutableAnyOrigin](ptr=buffer.data, length=buffer.pos)
         )
+        buffer.data.free()
 
     else:
         var buffer = _WriteBufferStack[4096](stdout)
