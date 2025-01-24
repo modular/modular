@@ -16,6 +16,6 @@ from tensor_internal.tensor_spec import TensorSpec, RuntimeTensorSpec
 from tensor_internal import (
     ManagedTensorSlice,
     TensorLike,
-    indexing,
+    _indexing,
     foreach,
 )

@@ -26,7 +26,7 @@ from max.tensor import Tensor as OldTensor
 from max._tensor_utils import (
     ManagedTensorSlice,
     TensorLike,
-    indexing,
+    _indexing,
 )
 from collections import Optional, InlineArray
 from memory import UnsafePointer
@@ -70,7 +70,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         self._device = device_tensor.device()
         self.name = device_tensor.name()
         self._spec = device_tensor.spec
-        self._strides = indexing._row_major_strides(self._spec)
+        self._strides = _indexing._row_major_strides(self._spec)
         self._ptr = device_tensor.unsafe_ptr().bitcast[Scalar[type]]()
         var tmp = device_tensor._storage^
         device_tensor._storage = DeviceMemory()
@@ -166,7 +166,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
             "Cannot index into non-CPU Tensor from host",
         )
 
-        var offset = indexing._dot_prod(indices, self._strides)
+        var offset = _indexing._dot_prod(indices, self._strides)
         return self._ptr[offset]
 
     fn _canonicalize_slices(
