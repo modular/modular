@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Generates external checkpoints for testing weight loading.
 
-br //SDK/test/API/graph/python/pytests/testdata:gen_external_checkpoints -- $(pwd)/SDK/test/API/graph/python/pytests/testdata/
+br //SDK/lib/API/python/tests/graph/testdata:gen_external_checkpoints -- $(pwd)/SDK/lib/API/python/tests/graph/testdata/
 """
 
 from pathlib import Path
