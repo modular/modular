@@ -626,7 +626,7 @@ fn merge_dim_indices[
 
         @parameter
         if i == axis:
-            out[i] = indices[i] * Int(old_shape_dim) + indices[i + 1]
+            out[i] = fma(indices[i], Int(old_shape_dim), indices[i + 1])
         elif i < axis:
             out[i] = indices[i]
         elif i > axis:
