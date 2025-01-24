@@ -45,11 +45,38 @@ private:
   MLIRContext *ctx;
   StringAttr outlinedAttrName;
 
+  // We outline the full body of the elementwise loop, except a few specific
+  // calls.
+  bool shouldOutlinefromElemwiseBody(SymbolTable &symTab, Operation *op) {
+    auto callOp = dyn_cast<CallOp>(op);
+    if (!callOp)
+      return true;
+
+    // We are forced to outline an op if one operands was outlined too.
+    // This simple condition works for all @elementwise kernel in
+    // MOGGKernelAPI, but we could need to support rebind or non-argument
+    // from outside the lambda.
+    if (!llvm::all_of(callOp.getOperands(),
+                      [](Value val) { return isa<BlockArgument>(val); }))
+      return true;
+
+    auto symbol = dyn_cast<mlir::FlatSymbolRefAttr>(callOp.getCalleeSymbol());
+    if (!symbol)
+      return true;
+
+    // Don't outline calls `input._fused_load[width](idx)`.
+    // After fusion, the graph compiler can inline those calls to simplify
+    // the IR.
+    auto genOp = cast<GeneratorOp>(symTab.lookup(symbol.getValue()));
+    return !genOp->hasAttr(MOGG_INTRINSIC_TENSOR_FUSED_LOAD);
+  }
+
   void outlineFunction(GeneratorOp gen,
                        SmallVector<KGEN::ParamDeclareRegionOp> &lambdas,
                        CallOp elementwiseOp, SymbolTable &symTab,
                        bool isLegacyMOGGElementwise) {
-    // We are either outlining the full function or just the inner elementwise.
+    // We are either outlining the full function or just the inner
+    // elementwise.
     SmallVector<Operation *> opsToClone;
     ArrayRef<Type> returnTypes;
 
@@ -65,14 +92,22 @@ private:
       }
       ParamDeclRefAttr asParam = cast<ParamDeclRefAttr>(elemwiseLambda);
 
-      // Look for the lambda and clone the body.
+      // Look for the lambda.
+      KGEN::ParamDeclareRegionOp bodyLambda = nullptr;
       for (auto lambda : gen.getOps<KGEN::ParamDeclareRegionOp>()) {
         if (lambda.getParamDecl().getName() == asParam.getName()) {
-          for (Operation &op : lambda.getOps())
-            opsToClone.push_back(&op);
-          returnTypes = lambda.getFunctionType().getResults();
+          assert(bodyLambda == nullptr);
+          bodyLambda = lambda;
         }
       }
+      assert(bodyLambda != nullptr);
+
+      // Clone the body
+      for (Operation &op : bodyLambda.getOps())
+        if (shouldOutlinefromElemwiseBody(symTab, &op))
+          opsToClone.push_back(&op);
+
+      returnTypes = bodyLambda.getFunctionType().getResults();
     } else {
       for (Operation &op : gen.getOps()) {
         // Don't include the input / output lambdas in the cloning. These are
@@ -92,8 +127,8 @@ private:
 
     DenseSet<StringAttr> definedParams;
 
-    // Use set vectors for deterministic traversal. Identify parameters used in
-    // the block and any uses which originate from above.
+    // Use set vectors for deterministic traversal. Identify parameters used
+    // in the block and any uses which originate from above.
     llvm::SetVector<KGEN::ParamDeclRefAttr> usedParams;
     DenseSet<Value> valuesDefinedInBlock;
     llvm::SetVector<Value> usesFromAbove;
@@ -111,8 +146,8 @@ private:
         usedParams.insert(ref);
     });
 
-    // Walk the ops and identify all parameters or SSA value inputs to the block
-    // which will become inputs to our outlined function.
+    // Walk the ops and identify all parameters or SSA value inputs to the
+    // block which will become inputs to our outlined function.
     auto identifyInputParamsAndValues = [&](Operation *op) {
       if (op == gen)
         return mlir::WalkResult::advance();
@@ -156,7 +191,8 @@ private:
       }
 
       if (auto definesParam = dyn_cast<KGEN::ParamOpInterface>(op)) {
-        // Remove any parameters which are defined internally within our region.
+        // Remove any parameters which are defined internally within our
+        // region.
         definesParam.walkDeclarations(
             [&](KGEN::ParamDeclAttr decl) { trackDefinedParams(decl); });
         definesParam.walkDefinitions(
@@ -202,9 +238,9 @@ private:
         gen.getLoc(), builder.getStringAttr(name), sigType, newFuncType,
         asDecls, InlineLevel::Never);
     // We are inlining the function we just outlined because the purpose of
-    // the outlining is just to make sure the graph compiler works on a minimal
-    // set of changes. Make sure we don't inline this now, but mark it to be
-    // inlined later when loaded by MOGG.
+    // the outlining is just to make sure the graph compiler works on a
+    // minimal set of changes. Make sure we don't inline this now, but mark it
+    // to be inlined later when loaded by MOGG.
     outlinedFunction->setAttr(outlinedAttrName, builder.getUnitAttr());
 
     // Add all the old attributes (except the execute related attrs).
@@ -342,8 +378,8 @@ public:
           addedLambdas.push_back(lambda);
       }
 
-      // If this is an elementwise kernel we are expecting to see a call to the
-      // elementwise generator.
+      // If this is an elementwise kernel we are expecting to see a call to
+      // the elementwise generator.
       KGEN::CallOp elementwiseOp = nullptr;
       bool isLegacyMOGGElementwise = false;
 
@@ -384,8 +420,8 @@ public:
           // Last parameter is known to be the lambda...
           elemwiseLambda = elementwiseOp.getParamValues().back();
         } else {
-          // For DPS it's not the last argument since an extra StaticTensorSpec
-          // parameter is added.
+          // For DPS it's not the last argument since an extra
+          // StaticTensorSpec parameter is added.
           elemwiseLambda = elementwiseOp.getParamValues()[2];
         }
         ParamDeclRefAttr asParam = cast<ParamDeclRefAttr>(elemwiseLambda);
