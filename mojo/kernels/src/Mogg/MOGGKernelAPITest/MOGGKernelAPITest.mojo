@@ -9,7 +9,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.matmul import matmul as _matmul
 from register import uses_opaque
-from runtime.asyncrt import MojoCallContextPtr
+from runtime.asyncrt import DeviceContextPtr, MojoCallContextPtr
 from tensor import ManagedTensorSlice, foreach
 from tensor_internal import view_copy_impl
 from tensor_internal import (
@@ -885,3 +885,50 @@ struct InvalidOwnedArgConvention:
         target: StringLiteral, type: DType, rank: Int
     ](owned input: MyCustomScalarSI32) -> MyCustomScalarSI32:
         return MyCustomScalarSI32(input.val)
+
+
+@compiler.register("single_device_context")
+struct SingleDeviceContext:
+    @staticmethod
+    fn execute[
+        type: DType
+    ](
+        out: ManagedTensorSlice[type, *_],
+        x: ManagedTensorSlice[type, *_],
+        dev_ctx: DeviceContextPtr,
+    ) raises:
+        dev_ctx[].synchronize()
+
+
+@compiler.register("multi_device_context", num_dps_outputs=1)
+struct MultiDeviceContext:
+    @staticmethod
+    fn execute[
+        type: DType
+    ](
+        out: ManagedTensorSlice[type, *_],
+        x: ManagedTensorSlice[type, *_],
+        dev_ctx0: DeviceContextPtr,
+        dev_ctx1: DeviceContextPtr,
+        ctx: MojoCallContextPtr,
+    ) raises:
+        print("dev_ctx0.id() =", dev_ctx0[].id())
+        print("dev_ctx1.id() =", dev_ctx1[].id())
+        dev_ctx0[].synchronize()
+        dev_ctx1[].synchronize()
+
+
+@compiler.register("multi_device_context_dedup")
+struct MultiDeviceContextDedup:
+    @staticmethod
+    fn execute[
+        type: DType
+    ](
+        out: ManagedTensorSlice[type, *_],
+        x: ManagedTensorSlice[type, *_],
+        y: ManagedTensorSlice[type, *_],
+        dev_ctx0: DeviceContextPtr,
+        dev_ctx1: DeviceContextPtr,
+    ) raises:
+        dev_ctx0[].synchronize()
+        dev_ctx1[].synchronize()

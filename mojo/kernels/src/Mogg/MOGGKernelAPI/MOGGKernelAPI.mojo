@@ -173,7 +173,7 @@ from quantization.qmatmul_k import (
     matmul_Q6_K_pack_b,
 )
 from register import register_internal_override, uses_opaque, register_internal
-from runtime.asyncrt import MojoCallContextPtr
+from runtime.asyncrt import DeviceContextPtr, MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
 from tensor_internal import ManagedTensorSlice, foreach, view_copy_impl
 
@@ -260,6 +260,11 @@ fn IndexTypeDef(ty: Int) -> Int:
 
 @register_internal_override("mojoCallContext", 1)
 fn MojoCallContextDef(ty: MojoCallContextPtr):
+    pass
+
+
+@register_internal_override("deviceContext", 1)
+fn DeviceContextDef(ty: DeviceContextPtr):
     pass
 
 
