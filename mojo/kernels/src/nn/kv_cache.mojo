@@ -1041,10 +1041,13 @@ def print_kv_cache_cont_batch_generic_cpu[
 
 
 def print_kv_cache_paged_generic_cpu[
-    target: StringLiteral, type: DType, kv_params: KVCacheStaticParams
+    target: StringLiteral,
+    type: DType,
+    kv_params: KVCacheStaticParams,
+    page_size: Int,
 ](
     valid_lengths: NDBuffer[DType.uint32, 1],
-    kv_collection: PagedKVCacheCollection[type, kv_params],
+    kv_collection: PagedKVCacheCollection[type, kv_params, page_size],
     layer_idx: UInt32,
     is_print_compact: Bool,
     context: MojoCallContextPtr,
@@ -1164,10 +1167,13 @@ def print_kv_cache_cont_batch_generic_gpu[
 
 
 def print_kv_cache_paged_generic_gpu[
-    target: StringLiteral, type: DType, kv_params: KVCacheStaticParams
+    target: StringLiteral,
+    type: DType,
+    kv_params: KVCacheStaticParams,
+    page_size: Int,
 ](
     valid_lengths: NDBuffer[DType.uint32, 1],
-    kv_collection: PagedKVCacheCollection[type, kv_params],
+    kv_collection: PagedKVCacheCollection[type, kv_params, page_size],
     layer_idx: UInt32,
     is_print_compact: Bool,
     context: MojoCallContextPtr,
@@ -1298,12 +1304,13 @@ fn generic_get_continuous_cache[
 fn generic_get_paged_cache[
     type: DType,
     kv_params: KVCacheStaticParams,
+    page_size: Int,
 ](
     blocks: NDBuffer[type, 6],
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 2],
     max_lengths: NDBuffer[DType.uint32, 2],
-    out result: PagedKVCacheCollection[type, kv_params],
+    out result: PagedKVCacheCollection[type, kv_params, page_size],
 ):
     return __type_of(result)(
         blocks=blocks,

@@ -431,7 +431,12 @@ fn flash_attention[
         # If it's paged attention, we temporarily disable split-k mha.
         # TODO: remove this parameter once the restriction is lifted.
         alias is_paged = _type_is_eq[
-            cache_t, PagedKVCache[type, cache_t.kv_params]
+            cache_t,
+            PagedKVCache[
+                type,
+                cache_t.kv_params,
+                cache_t.max_tile_size(),
+            ],
         ]()
 
         var k_operand = KVCacheMHAOperand(k)

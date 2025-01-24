@@ -46,9 +46,9 @@ def execute_ragged_flash_attention[
     layer_idx: Int,
 ):
     alias num_continuous_blocks = 32
-    alias block_size = 512
+    alias page_size = 512
     alias num_paged_blocks = 512
-    alias PagedCacheType = PagedKVCache[type, kv_params]
+    alias PagedCacheType = PagedKVCache[type, kv_params, page_size]
     alias ContinuousBatchCacheType = ContinuousBatchingKVCache[type, kv_params]
     var batch_size = len(valid_lengths)
     debug_assert(
@@ -164,21 +164,21 @@ def execute_ragged_flash_attention[
             num_layers,
             2,
             num_paged_blocks,
-            block_size,
+            page_size,
             kv_params.num_heads,
             kv_params.head_size,
         )
     )
 
     paged_lut = HostNDBuffer[DType.uint32, 2](
-        IndexList[2](batch_size, ceildiv(max_full_context_length, block_size))
+        IndexList[2](batch_size, ceildiv(max_full_context_length, page_size))
     )
     paged_lut_set = Set[Int]()
     for bs in range(batch_size):
         seq_len = cache_lengths[bs] + valid_lengths[bs]
         continuous_idx = Int(lookup_table_continuous.tensor[bs])
 
-        for block_idx in range(0, ceildiv(seq_len, block_size)):
+        for block_idx in range(0, ceildiv(seq_len, page_size)):
             var randval = Int(random_ui64(0, num_paged_blocks - 1))
             while randval in paged_lut_set:
                 randval = Int(random_ui64(0, num_paged_blocks - 1))
@@ -196,12 +196,12 @@ def execute_ragged_flash_attention[
                             continuous_idx,
                             kv_idx,
                             layer_idx,
-                            block_idx * block_size,
+                            block_idx * page_size,
                             0,
                             0,
                         )
                     ),
-                    block_size * kv_params.num_heads * kv_params.head_size,
+                    page_size * kv_params.num_heads * kv_params.head_size,
                 )
 
     k_cache_paged = PagedCacheType(
