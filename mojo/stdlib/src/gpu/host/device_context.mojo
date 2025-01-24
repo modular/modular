@@ -528,7 +528,6 @@ struct DeviceFunction[
         dump_asm: Variant[Bool, Path, fn () capturing -> Path] = False,
         dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
         _dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
-        _dump_elabmlir: Variant[Bool, Path, fn () capturing -> Path] = False,
     ](self) raises:
         @parameter
         if _ptxas_info_verbose:
@@ -576,25 +575,6 @@ struct DeviceFunction[
                 _dump_sass.unsafe_get[Path]().write_text(sass)
             else:
                 print(sass)
-
-        @parameter
-        if Self._dump_q[_dump_elabmlir]():
-            var mlir = _compile_code_asm[
-                Self.func,
-                emission_kind="elab-mlir",
-                target=target,
-            ]()
-
-            @parameter
-            if _dump_elabmlir.isa[fn () capturing -> Path]():
-                alias dump_elabmlir_fn = _dump_elabmlir.unsafe_get[
-                    fn () capturing -> Path
-                ]()
-                dump_elabmlir_fn().write_text(mlir)
-            elif _dump_elabmlir.isa[Path]():
-                _dump_elabmlir.unsafe_get[Path]().write_text(mlir)
-            else:
-                print(mlir)
 
         @parameter
         if Self._dump_q[dump_llvm]():
@@ -940,7 +920,6 @@ struct DeviceContext:
         dump_asm: Variant[Bool, Path, fn () capturing -> Path] = False,
         dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
         _dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
-        _dump_elabmlir: Variant[Bool, Path, fn () capturing -> Path] = False,
         _target: __mlir_type.`!kgen.target` = Self.device_info.target(),
         _ptxas_info_verbose: Bool = False,
     ](
@@ -971,7 +950,6 @@ struct DeviceContext:
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
             _dump_sass=_dump_sass,
-            _dump_elabmlir=_dump_elabmlir,
         ]()
 
     @parameter
