@@ -4,7 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 """
-Implements the `TensorSpec` type.
+Implements the `TensorSpec` type - a space efficient representation of a
+tensor shape and dtype.
 
 You can import these APIs from the `max.tensor` package. For example:
 

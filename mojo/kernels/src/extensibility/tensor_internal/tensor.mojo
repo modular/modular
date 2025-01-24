@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 """
-Implements the `Tensor` type.
+Implements the `Tensor` type - a tensor type which owns its underlying data.
 """
 
 from collections import List

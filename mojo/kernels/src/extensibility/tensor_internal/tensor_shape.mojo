@@ -4,7 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 """
-Implements the `TensorShape` type.
+Implements the `TensorShape` type - a space efficient representation of a
+tensor shape.
 
 You can import these APIs from the `tensor` package. For example:
 

@@ -3,6 +3,10 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""
+Implements the `ManagedTensorSlice` type - a view of a tensor that doesn't own
+the underlying data. This type is used to build custom graph operations.
+"""
 
 from collections import InlineArray, OptionalReg
 from gpu.host._compile import _get_gpu_target
