@@ -538,7 +538,7 @@ struct UnsafePointer[
         else:
             return __mlir_op.`pop.load`[alignment = alignment.value](address)
 
-    @always_inline
+    @always_inline("nodebug")
     fn load[
         type: DType, //,
         width: Int = 1,
@@ -612,7 +612,7 @@ struct UnsafePointer[
             invariant=invariant,
         ]()
 
-    @always_inline
+    @always_inline("nodebug")
     fn store[
         I: Indexer,
         type: DType, //,
@@ -639,7 +639,7 @@ struct UnsafePointer[
         constrained[mut, _must_be_mut_err]()
         self.offset(offset)._store[alignment=alignment, volatile=volatile](val)
 
-    @always_inline
+    @always_inline("nodebug")
     fn store[
         I: Indexer,
         type: DType,
@@ -672,7 +672,7 @@ struct UnsafePointer[
         constrained[mut, _must_be_mut_err]()
         self.offset(offset).store[alignment=alignment, volatile=volatile](val)
 
-    @always_inline
+    @always_inline("nodebug")
     fn store[
         type: DType,
         offset_type: DType, //,
@@ -705,7 +705,7 @@ struct UnsafePointer[
             val
         )
 
-    @always_inline
+    @always_inline("nodebug")
     fn store[
         type: DType,
         width: Int,
