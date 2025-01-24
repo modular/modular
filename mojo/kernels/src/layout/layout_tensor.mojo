@@ -2042,7 +2042,7 @@ struct LayoutTensor[
             )(rt)
             return idx
 
-    @always_inline
+    @always_inline("nodebug")
     fn copy_from(self, other: LayoutTensor):
         alias other_layout = other.layout
 
@@ -2081,7 +2081,7 @@ struct LayoutTensor[
 
             dst_element.transfer(src_element)
 
-    @always_inline
+    @always_inline("nodebug")
     fn copy_from_async[
         is_masked: Bool = False,
         swizzle: OptionalReg[Swizzle] = None,
@@ -2315,7 +2315,7 @@ fn stack_allocation_like[
 
 # Synchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
 #
-@always_inline
+@always_inline("nodebug")
 fn copy_dram_to_sram[
     src_thread_layout: Layout,
     dst_thread_layout: Layout = src_thread_layout,
@@ -2409,7 +2409,7 @@ fn copy_dram_to_sram[
 
 # Synchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
 #
-@always_inline
+@always_inline("nodebug")
 fn copy_dram_to_sram[
     thread_layout: Layout,
     swizzle: OptionalReg[Swizzle] = None,
@@ -2425,7 +2425,7 @@ fn copy_dram_to_sram[
 
 # Asynchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
 #
-@always_inline
+@always_inline("nodebug")
 fn copy_dram_to_sram_async[
     src_thread_layout: Layout,
     dst_thread_layout: Layout,
@@ -2541,7 +2541,7 @@ fn copy_dram_to_sram_async[
 
 # Asynchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
 #
-@always_inline
+@always_inline("nodebug")
 fn copy_dram_to_sram_async[
     thread_layout: Layout,
     swizzle: Bool = False,
@@ -2564,7 +2564,7 @@ alias binary_op_type = fn[type: DType, width: Int] (
 ) -> SIMD[type, width]
 
 
-@always_inline
+@always_inline("nodebug")
 fn copy_sram_to_dram[
     thread_layout: Layout,
     swizzle: OptionalReg[Swizzle] = None,
@@ -2721,7 +2721,7 @@ fn copy_sram_to_dram[
 
 # Copy from SRAM to local memory.
 #
-@always_inline
+@always_inline("nodebug")
 fn copy_sram_to_local[
     src_warp_layout: Layout,
     axis: OptionalReg[Int] = None,
@@ -2753,7 +2753,7 @@ fn copy_sram_to_local[
 
 # Copy local memory to DRAM, thread affinity is needed only for dst fragments.
 #
-@always_inline
+@always_inline("nodebug")
 fn copy_local_to_dram[
     dst_thread_layout: Layout,
 ](dst: LayoutTensor, src: LayoutTensor):
@@ -2824,7 +2824,7 @@ fn copy_local_to_dram[
                 ).store(dst_fragments.ptr.offset(dst_idx))
 
 
-@always_inline
+@always_inline("nodebug")
 fn copy_local_to_sram[
     thread_layout: Layout,
     swizzle: OptionalReg[Swizzle] = None,
