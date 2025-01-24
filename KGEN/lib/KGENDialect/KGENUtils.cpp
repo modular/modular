@@ -1524,6 +1524,14 @@ KGEN::EnvAttr KGEN::getModularEnvAttr(MLIRContext *ctx,
   if (compileCtx) {
     for (auto entry : compileCtx->mojoDefines) {
       auto k = entry.first;
+#ifdef MODULAR_PRODUCTION
+      // This is an end users release build. Pretend that the
+      // `MODULAR_PRODUCTION` flag does not exist. This protects us from end
+      // users trying to leak internal details.
+      if (k == "MODULAR_PRODUCTION")
+        continue;
+#endif // MODULAR_PRODUCTION
+
       std::visit(
           [&](auto &&v) {
             using T = std::decay_t<decltype(v)>;
