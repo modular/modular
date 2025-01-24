@@ -3,6 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+from __future__ import annotations
+
 from enum import Enum
 from pathlib import Path
 from typing import Any, List, Mapping, Optional, Union
@@ -55,7 +57,7 @@ class InferenceSession:
     def set_debug_print_options(
         self, style: PrintStyle, precision: int, directory: str
     ) -> None: ...
-    def set_split_k_reduction_precision(self, precision: int) -> None: ...
+    def set_mojo_define(self, key: str, value: bool | int | str) -> None: ...
     @property
     def devices(self) -> List[Device]: ...
 

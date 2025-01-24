@@ -887,6 +887,7 @@ class InferenceSession:
     def set_split_k_reduction_precision(
         self, precision: Union[str, SplitKReductionPrecision]
     ):
+        """Sets the accumulation precision for split k reductions in large matmuls."""
         if isinstance(precision, str):
             precision = cast(
                 Union[str, SplitKReductionPrecision],
@@ -896,7 +897,11 @@ class InferenceSession:
             raise TypeError(
                 "Invalid precision. Please use one of 'ACCUM' or 'OUTPUT'"
             )
-        self._impl.set_split_k_reduction_precision(precision)
+        self._set_mojo_define("SPLITK_REDUCTION_SCHEME", precision)
+
+    def _set_mojo_define(self, key: str, value: bool | int | str):
+        """Enables overwriting of any mojo config directly."""
+        self._impl.set_mojo_define(key, value)
 
     @property
     def stats_report(self) -> Dict[str, Any]:
