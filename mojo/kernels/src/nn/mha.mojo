@@ -675,7 +675,7 @@ fn flash_attention_dispatch[
             var num_partitions_value: Int
 
             @parameter
-            if _is_paged or has_amd_gpu_accelerator():
+            if has_amd_gpu_accelerator():
                 # TODO(KERN-1358) Support num_partitions > 1 for paged attn.
                 num_partitions_value = 1
             else:
@@ -3353,6 +3353,41 @@ fn scale_and_mask_helper[
         )
 
 
+@always_inline
+fn _get_start_and_end_for_partitions[
+    tile_size: Int
+](num_keys: Int, num_partitions: Int, partition_idx: Int) -> Tuple[Int, Int]:
+    """Calculate start and end indices for a partition.
+
+    Args:
+        num_keys: Total number of keys (sequence length)
+        num_partitions: Number of partitions to split keys into
+        partition_idx: Index of current partition (0 to num_partitions-1)
+
+    Returns:
+        Tuple of (start_idx, end_idx) for the partition, aligned to tile_size
+    """
+    var num_keys_per_partition = ceildiv(num_keys, num_partitions)
+
+    # Align start to tile_size
+    var start = align_up(num_keys_per_partition * partition_idx, tile_size)
+    # If start is already beyond num_keys, return empty range
+    if start >= num_keys:
+        return (num_keys, num_keys)
+    var next_start = align_up(
+        num_keys_per_partition * (partition_idx + 1), tile_size
+    )
+    var end = min(num_keys, next_start)
+    return (start, end)
+
+    # ^ may lead to non-uniform distribution of keys across partitions because of alignment requirement,
+    # we may want to use the following instead for non-paged kvcache but then we will have to know which cache is being used.
+    # Keep this here for now, can remove it later if we are only using paged kvcache.
+    # var start = num_keys_per_partition * partition_idx
+    # var end = min(num_keys, start + num_keys_per_partition)
+    # return (start, end)
+
+
 fn mha_decoding_single_batch[
     mask_rank: Int,
     q_type: DType,
@@ -3542,10 +3577,10 @@ fn mha_decoding_single_batch[
     )
     var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
 
-    # Loop over Key and Value tiles
-    var num_keys_per_partition = ceildiv(num_keys, num_partitions)
-    var start = num_keys_per_partition * block_idx.x
-    var end = min(num_keys, start + num_keys_per_partition)
+    start, end = _get_start_and_end_for_partitions[BN](
+        num_keys, num_partitions, block_idx.x
+    )
+
     var mask_warp_ptr = mask_ptr + Int(kv_head_offset) + Int(
         warp_offset
     ) + start
@@ -4122,9 +4157,9 @@ fn mha_decoding_single_batch_pipelined[
     var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
 
     # Loop over Key and Value tiles
-    var num_keys_per_partition = ceildiv(num_keys, num_partitions)
-    var start = num_keys_per_partition * block_idx.x
-    var end = min(num_keys, start + num_keys_per_partition)
+    start, end = _get_start_and_end_for_partitions[BN](
+        num_keys, num_partitions, block_idx.x
+    )
     var mask_warp_ptr = mask_ptr + Int(kv_head_offset) + Int(
         warp_offset
     ) + start
@@ -4147,7 +4182,7 @@ fn mha_decoding_single_batch_pipelined[
         ](k_ptr)
         var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
 
-        var kv_tile_num_rows = min(BN, end - kv_tile_start_row)
+        var kv_tile_num_rows = min(Int(BN), end - kv_tile_start_row)
 
         _ = p_reg_tile.fill(0)
 
