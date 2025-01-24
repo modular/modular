@@ -8,7 +8,7 @@ from collections.optional import OptionalReg
 from math import ceildiv, isclose
 from pathlib import Path
 from random import rand, randint, random_float64, seed
-from sys import alignof, argv, simdwidthof, sizeof
+from sys import alignof, argv, simdwidthof, sizeof, is_nvidia_gpu
 from sys._assembly import inlined_assembly
 
 from buffer import NDBuffer
@@ -50,7 +50,7 @@ from layout.tensor_core import (
 )
 from linalg.matmul_gpu import _matmul_gpu
 from linalg._multistage_gemm_gpu import warp_split_k_reduction
-from linalg.utils import GemmShape
+from linalg.utils import GemmShape, apply_epilogue, elementwise_epilogue_type
 from linalg.utils_gpu import (
     MatmulConfig,
     MatmulKernels,
@@ -448,11 +448,16 @@ fn multistage_qgemm_kernel[
     pack_factor: Int,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_packed_type, c_type, transpose_b],
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout],
     a: LayoutTensor[a_type, a_layout],
     b_packed: LayoutTensor[b_packed_type, b_layout],
 ):
+    constrained[
+        is_nvidia_gpu(),
+        "Quantized gemm only supports NVIDIA hardwares for now.",
+    ]()
     alias simd_size = simdwidthof[c_type]()
 
     alias repack_tile = Index(64, 16)
@@ -491,6 +496,7 @@ fn multistage_qgemm_kernel[
     alias num_threads_per_warp_k_part = num_threads // num_warp_k_partitions
 
     var tid = thread_idx.x
+    var ln_id = lane_id()
     var warp_k_part_id = tid // num_threads_per_warp_k_part if num_warp_k_partitions > 1 else 0
     var warp_id = (tid % num_threads_per_warp_k_part) // WARP_SIZE
 
@@ -503,8 +509,7 @@ fn multistage_qgemm_kernel[
     ) if swizzle_block else Index(Int(block_idx.x), Int(block_idx.y))
 
     # Coordinates of the current warp.
-    var warp_x = warp_id % num_warps_n
-    var warp_y = warp_id // num_warps_n
+    warp_y, warp_x = divmod(warp_id, num_warps_n)
 
     # Prepare circular shared memory buffer for A and B.
     # Each pipeline stage has its own buffer.
@@ -641,13 +646,71 @@ fn multistage_qgemm_kernel[
     var c_gmem_tile = c.tile[BM, BN](block_idx[1], block_idx[0])
     var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
 
+    @always_inline
+    @parameter
+    fn apply_epilogue():
+        # This block is identical to the one used for f32 case
+        # but putting this in a lambda function leads to test failures
+        # TODO: Refactor to remove code duplication
+        constrained[
+            elementwise_lambda_fn is not None,
+            "elementwise_lambda_fn is not valid",
+        ]()
+        alias thread_layout = Layout.row_major(
+            8, 4
+        ) if is_nvidia_gpu() else Layout.row_major(4, 16)
+        alias dst_simd_width_x = 1 if is_nvidia_gpu() else 4
+        alias dst_simd_width_y = 2 if is_nvidia_gpu() else 1
+        alias src_simd_width_x = 1 if is_nvidia_gpu() else 1
+        alias src_simd_width_y = 2 if is_nvidia_gpu() else 4
+        alias epilogue = elementwise_lambda_fn.value()
+        var c_gmem_frag = c_gmem_warp_tile.vectorize[
+            dst_simd_width_x, dst_simd_width_y
+        ]().distribute[thread_layout](ln_id)
+        var c_reg_frag = c_reg_tile.vectorize[
+            src_simd_width_x, src_simd_width_y
+        ]().transpose()
+        var thread_offset = c_gmem_frag.distance(c.ptr)
+
+        @parameter
+        for i in range(__type_of(c_gmem_frag).layout.size()):
+            alias src_idx = c_reg_frag.layout(i)
+            alias dst_static_idx: UInt = __type_of(c_gmem_frag).layout(i)
+            var dst_idx = 0
+
+            @parameter
+            if c_gmem_frag.layout.all_dims_known():
+                dst_idx = dst_static_idx
+            else:
+                dst_idx = c_gmem_frag.runtime_layout(i)
+            alias alignment = alignof[SIMD[c_type, src_simd_width_y]]()
+            var m = Int((thread_offset + dst_idx) // N)
+            var n = Int((thread_offset + dst_idx) % N)
+            if m < M and n < N:
+                var vec = c_reg_frag.ptr.offset(src_idx).load[
+                    width=src_simd_width_y,
+                    alignment = alignof[SIMD[c_type, src_simd_width_y]](),
+                ]()
+
+                @parameter
+                if dst_simd_width_x == 1:
+                    epilogue[alignment=alignment]((m, n), vec)
+                else:
+
+                    @parameter
+                    for j in range(dst_simd_width_x):
+                        if m + j < M:
+                            epilogue[alignment=alignment](
+                                (m + j, n), vec[j].cast[c_type]()
+                            )
+
     # Store FP32 mma results to half precision buffer in global memory.
     # Each thread's fragment has 2x2 fp32 values. Casting to half float and
     # directly storing to global memory results in 2 4B writes. Following cutlass,
     # we stage the fragments in shared memory so that each thread can store 16B.
 
     @parameter
-    if c_type.is_half_float():
+    if c_type.is_half_float() and is_nvidia_gpu():
         alias swizzle = make_swizzle[
             num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
@@ -669,21 +732,109 @@ fn multistage_qgemm_kernel[
         # Guard writing to shared memory.
         barrier()
 
-        copy_sram_to_dram[
-            thread_layout = Layout.row_major(
+        # Vectorized copy from shared to global memory, during which every 2 FP32
+        # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
+        # vector and stored using 16B store instruction.
+        @parameter
+        if elementwise_lambda_fn:
+            alias epilogue = elementwise_lambda_fn.value()
+            alias warp_layout = Layout.row_major(
                 WARP_SIZE * simd_size // WN, WN // simd_size
-            ),
-            swizzle=swizzle,
-        ](
-            c_gmem_warp_tile.vectorize[1, simd_size](),
-            accum_smem_warp_tile.vectorize[1, simd_size](),
-        )
+            )
+            var c_gmem_frag = c_gmem_warp_tile.vectorize[
+                1, simd_size
+            ]().distribute[warp_layout](thread_idx.x)
+            var c_smem_frag = accum_smem_warp_tile.vectorize[
+                1, simd_size
+            ]().distribute[warp_layout](thread_idx.x)
+            var thread_offset = c_gmem_frag.distance(c.ptr)
+            alias num_stores_per_thread = __type_of(c_gmem_frag).layout.size()
 
+            var c_smem_frag_offset = c_smem_frag.distance(
+                accum_smem_warp_tile.ptr
+            )
+
+            @parameter
+            for i in range(num_stores_per_thread):
+                alias src_idx = __type_of(c_smem_frag).layout(i)
+                alias src_idx_base = src_idx % swizzle.size()
+                alias src_idx_diff = src_idx - src_idx_base
+                var swizzled_idx = swizzle(
+                    c_smem_frag_offset + src_idx_base
+                ) + src_idx_diff
+
+                alias dst_static_idx = __type_of(c_gmem_frag).layout(i)
+                var dst_idx = 0
+
+                @parameter
+                if c_gmem_frag.layout.all_dims_known():
+                    dst_idx = dst_static_idx
+                else:
+                    dst_idx = c_gmem_frag.runtime_layout(i)
+
+                var m = Int((thread_offset + dst_idx) // N)
+                var n = Int((thread_offset + dst_idx) % N)
+                alias alignment = alignof[SIMD[c_type, simd_size]]()
+                if m < M and n < N:
+                    epilogue[alignment=alignment](
+                        (m, n),
+                        accum_smem_warp_tile.ptr.load[
+                            width=simd_size, alignment=alignment
+                        ](swizzled_idx).cast[c_type](),
+                    )
+        else:
+            copy_sram_to_dram[
+                thread_layout = Layout.row_major(
+                    WARP_SIZE * simd_size // WN, WN // simd_size
+                ),
+                swizzle=swizzle,
+            ](
+                c_gmem_warp_tile.vectorize[1, simd_size](),
+                accum_smem_warp_tile.vectorize[1, simd_size](),
+            )
+
+    elif c_type.is_half_float() and not is_nvidia_gpu():
+
+        @parameter
+        if elementwise_lambda_fn:
+            apply_epilogue()
+
+        else:
+            var c_reg_tile_out = LayoutTensor[
+                c_type,
+                c_reg_tile.layout,
+                address_space = AddressSpace.LOCAL,
+            ].stack_allocation()
+
+            @parameter
+            for i in range(c_reg_tile.shape[0]()):
+
+                @parameter
+                for j in range(c_reg_tile.shape[1]()):
+                    c_reg_tile_out[i, j] = c_reg_tile[i, j].cast[c_type]()
+            copy_local_to_dram[dst_thread_layout = Layout.row_major(4, 16)](
+                c_gmem_warp_tile.vectorize[4, 1](),
+                c_reg_tile_out.vectorize[1, 4](),
+            )
+    # Store FP32 results to FP32 buffer in global memory.
     else:
-        copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
-            c_gmem_warp_tile.vectorize[1, 2](),
-            c_reg_tile.vectorize[1, 2]().transpose(),
-        )
+
+        @parameter
+        if elementwise_lambda_fn:
+            apply_epilogue()
+        else:
+
+            @parameter
+            if is_nvidia_gpu():
+                copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
+                    c_gmem_warp_tile.vectorize[1, 2](),
+                    c_reg_tile.vectorize[1, 2]().transpose(),
+                )
+            else:
+                copy_local_to_dram[dst_thread_layout = Layout.row_major(4, 16)](
+                    c_gmem_warp_tile.vectorize[4, 1](),
+                    c_reg_tile.vectorize[1, 4](),
+                )
 
 
 # For a 4-bit weight matrix of shape (64 * TN, 16 * TK), we first
@@ -1213,6 +1364,7 @@ fn multistage_gemm_q[
     group_size: Int,
     pack_factor: Int,
     config: MatmulConfig[a_type, b_type, c_type, True],
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, c_shape],
     a: NDBuffer[a_type, 2, a_shape],
@@ -1240,6 +1392,7 @@ fn multistage_gemm_q[
         pack_factor,
         True,
         config,
+        elementwise_lambda_fn,
     ]
 
     var gemm_kernel = ctx.compile_function[gemm_kernel_type](
@@ -1266,6 +1419,7 @@ fn matmul_gpu_qint4[
     b_shape: DimList, //,
     group_size: Int,
     target: StringLiteral,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, _],
     a: NDBuffer[a_type, 2, _],
@@ -1301,6 +1455,7 @@ fn matmul_gpu_qint4[
                 group_size=group_size,
                 pack_factor=pack_factor,
                 config=M16_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
             ](
                 rebind[NDBuffer[c_type, 2, c_shape]](c),
                 rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -1321,6 +1476,7 @@ fn matmul_gpu_qint4[
                 group_size=group_size,
                 pack_factor=pack_factor,
                 config=M32_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
             ](
                 rebind[NDBuffer[c_type, 2, c_shape]](c),
                 rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -1341,6 +1497,7 @@ fn matmul_gpu_qint4[
                 group_size=group_size,
                 pack_factor=pack_factor,
                 config=M64_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
             ](
                 rebind[NDBuffer[c_type, 2, c_shape]](c),
                 rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -1361,6 +1518,7 @@ fn matmul_gpu_qint4[
                 group_size=group_size,
                 pack_factor=pack_factor,
                 config=M128_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
             ](
                 rebind[NDBuffer[c_type, 2, c_shape]](c),
                 rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -1381,6 +1539,7 @@ fn matmul_gpu_qint4[
                 group_size=group_size,
                 pack_factor=pack_factor,
                 config=M512_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
             ](
                 rebind[NDBuffer[c_type, 2, c_shape]](c),
                 rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -1404,6 +1563,7 @@ fn matmul_gpu_qint4[
                 group_size=group_size,
                 pack_factor=pack_factor,
                 config=M16_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
             ](
                 rebind[NDBuffer[c_type, 2, c_shape]](c),
                 rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -1424,6 +1584,7 @@ fn matmul_gpu_qint4[
                 group_size=group_size,
                 pack_factor=pack_factor,
                 config=M32_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
             ](
                 rebind[NDBuffer[c_type, 2, c_shape]](c),
                 rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -1444,6 +1605,7 @@ fn matmul_gpu_qint4[
                 group_size=group_size,
                 pack_factor=pack_factor,
                 config=M64_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
             ](
                 rebind[NDBuffer[c_type, 2, c_shape]](c),
                 rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -1464,6 +1626,7 @@ fn matmul_gpu_qint4[
                 group_size=group_size,
                 pack_factor=pack_factor,
                 config=M128_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
             ](
                 rebind[NDBuffer[c_type, 2, c_shape]](c),
                 rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -1484,6 +1647,7 @@ fn matmul_gpu_qint4[
                 group_size=group_size,
                 pack_factor=pack_factor,
                 config=M256_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
             ](
                 rebind[NDBuffer[c_type, 2, c_shape]](c),
                 rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -1507,6 +1671,7 @@ fn matmul_gpu_qint4[
                 group_size=group_size,
                 pack_factor=pack_factor,
                 config=M16_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
             ](
                 rebind[NDBuffer[c_type, 2, c_shape]](c),
                 rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -1527,6 +1692,7 @@ fn matmul_gpu_qint4[
                 group_size=group_size,
                 pack_factor=pack_factor,
                 config=M32_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
             ](
                 rebind[NDBuffer[c_type, 2, c_shape]](c),
                 rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -1547,6 +1713,7 @@ fn matmul_gpu_qint4[
                 group_size=group_size,
                 pack_factor=pack_factor,
                 config=M64_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
             ](
                 rebind[NDBuffer[c_type, 2, c_shape]](c),
                 rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -1567,6 +1734,7 @@ fn matmul_gpu_qint4[
                 group_size=group_size,
                 pack_factor=pack_factor,
                 config=M128_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
             ](
                 rebind[NDBuffer[c_type, 2, c_shape]](c),
                 rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -1590,6 +1758,7 @@ fn matmul_gpu_qint4[
                 group_size=group_size,
                 pack_factor=pack_factor,
                 config=M16_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
             ](
                 rebind[NDBuffer[c_type, 2, c_shape]](c),
                 rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -1610,6 +1779,7 @@ fn matmul_gpu_qint4[
                 group_size=group_size,
                 pack_factor=pack_factor,
                 config=M32_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
             ](
                 rebind[NDBuffer[c_type, 2, c_shape]](c),
                 rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -1630,6 +1800,7 @@ fn matmul_gpu_qint4[
                 group_size=group_size,
                 pack_factor=pack_factor,
                 config=M64_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
             ](
                 rebind[NDBuffer[c_type, 2, c_shape]](c),
                 rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -1650,6 +1821,7 @@ fn matmul_gpu_qint4[
                 group_size=group_size,
                 pack_factor=pack_factor,
                 config=M128_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
             ](
                 rebind[NDBuffer[c_type, 2, c_shape]](c),
                 rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -1670,6 +1842,7 @@ fn matmul_gpu_qint4[
                 group_size=group_size,
                 pack_factor=pack_factor,
                 config=M512_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
             ](
                 rebind[NDBuffer[c_type, 2, c_shape]](c),
                 rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -1691,6 +1864,7 @@ fn matmul_gpu_qint4[
         group_size=group_size,
         pack_factor=pack_factor,
         config=default_config,
+        elementwise_lambda_fn=elementwise_lambda_fn,
     ](
         rebind[NDBuffer[c_type, 2, c_shape]](c),
         rebind[NDBuffer[a_type, 2, a_shape]](a),
