@@ -798,7 +798,7 @@ struct LayoutTensor[
 
         return self.__elementwise_binary_with_broadcast[div_val](other)
 
-    @always_inline
+    @always_inline("nodebug")
     fn __getitem__(self, *dims: Int) -> Self.element_type:
         """Get the element of the tensor with a specified index. Note that the
         size of index has to match the rank of the tensor.
@@ -816,7 +816,7 @@ struct LayoutTensor[
             .element_data
         )
 
-    @always_inline
+    @always_inline("nodebug")
     fn __setitem__(self, d0: Int, val: Self.element_type):
         """Set the element of the tensor with a specified index and value.
 
@@ -832,7 +832,7 @@ struct LayoutTensor[
             val, self.runtime_element_layout
         ).store(self.ptr.offset(offset))
 
-    @always_inline
+    @always_inline("nodebug")
     fn __setitem__(self, d0: Int, d1: Int, val: Self.element_type):
         """Set the element of the tensor with a specified index and value.
 
@@ -849,7 +849,7 @@ struct LayoutTensor[
             val, self.runtime_element_layout
         ).store(self.ptr.offset(offset))
 
-    @always_inline
+    @always_inline("nodebug")
     fn __setitem__(self, d0: Int, d1: Int, d2: Int, val: Self.element_type):
         """Set the element of the tensor with a specified index and value.
 
@@ -867,7 +867,7 @@ struct LayoutTensor[
             val, self.runtime_element_layout
         ).store(self.ptr.offset(offset))
 
-    @always_inline
+    @always_inline("nodebug")
     fn __setitem__(
         self, d0: Int, d1: Int, d2: Int, d3: Int, val: Self.element_type
     ):
@@ -888,7 +888,7 @@ struct LayoutTensor[
             val, self.runtime_element_layout
         ).store(self.ptr.offset(offset))
 
-    @always_inline
+    @always_inline("nodebug")
     fn load[width: Int](self, m: Int, n: Int) -> SIMD[dtype, width]:
         """Load a value from a specified location.
 
@@ -914,7 +914,7 @@ struct LayoutTensor[
             self.ptr.offset(self._offset(m, n))
         )
 
-    @always_inline
+    @always_inline("nodebug")
     fn aligned_load[width: Int](self, m: Int, n: Int) -> SIMD[dtype, width]:
         """Do a load with a specified alignment base on the dtype and simd width.
 
@@ -931,7 +931,7 @@ struct LayoutTensor[
             self._offset(m, n)
         )
 
-    @always_inline
+    @always_inline("nodebug")
     fn store[width: Int](self, m: Int, n: Int, val: SIMD[dtype, width]):
         """Store a value to a specified location.
 
@@ -946,7 +946,7 @@ struct LayoutTensor[
 
         return self.ptr.store(self._offset(m, n), val)
 
-    @always_inline
+    @always_inline("nodebug")
     fn aligned_store[width: Int](self, m: Int, n: Int, val: SIMD[dtype, width]):
         """Do a store with a specified alignment base on the dtype and simd width.
 

@@ -87,6 +87,7 @@ struct Element[
         self.element_data = element_data
         self.runtime_layout = runtime_layout
 
+    @always_inline("nodebug")
     @staticmethod
     fn load(
         ptr: UnsafePointer[Scalar[dtype], **_],
@@ -156,6 +157,7 @@ struct Element[
                 ]
         return Element(element_data, runtime_layout)
 
+    @always_inline("nodebug")
     @staticmethod
     fn masked_load(
         ptr: UnsafePointer[Scalar[dtype], **_],
@@ -281,6 +283,7 @@ struct Element[
                 ]
         return Element(element_data, runtime_layout)
 
+    @always_inline("nodebug")
     fn store(self, ptr: UnsafePointer[Scalar[dtype], mut=True, **_]):
         constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
 
@@ -340,6 +343,7 @@ struct Element[
                     self.element_data[i + j * dim_0]
                 )
 
+    @always_inline("nodebug")
     fn masked_store(self, ptr: UnsafePointer[Scalar[dtype], mut=True, **_]):
         constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
 
@@ -491,12 +495,15 @@ struct MemoryElement[
         self.ptr = ptr
         self.runtime_layout = runtime_layout
 
+    @always_inline("nodebug")
     fn load(self) -> Element[dtype, layout, bitwidth=bitwidth]:
         return Element.load(self.ptr, self.runtime_layout)
 
+    @always_inline("nodebug")
     fn store(self, src: Element[dtype, layout, bitwidth=bitwidth]):
         return src.store(self.ptr)
 
+    @always_inline("nodebug")
     fn transfer(self, src: MemoryElement):
         # Load source element and convert to destination dtype if needed
         var src_element = src.load()
