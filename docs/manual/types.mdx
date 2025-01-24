@@ -425,7 +425,7 @@ x, y = example_tuple
 print(x, y)
 
 # Get individual values with an index
-s = example_tuple.get[1, String]()
+s = example_tuple[1]
 print(s)
 ```
 
@@ -440,7 +440,7 @@ we must also convert `"Example"` from type `StringLiteral` to type `String`.
 
 ```mojo
 example_tuple = (1, String("Example"))
-s = example_tuple.get[1, String]()
+s = example_tuple[1]
 print(s)
 ```
 
