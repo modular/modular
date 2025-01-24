@@ -70,6 +70,7 @@ modular_cc_test(
         "gpu",
     ],
     deps = [
+        ":TestUtils",
         "//AsyncRT:CUDADeviceContext",
         "//AsyncRT:DeviceContext",
     ],
