@@ -145,7 +145,7 @@ from nn.topk import top_k, top_k_shape_impl
 from nn.topk import top_k_fused_sampling_cpu as _topk_fused_sampling_cpu
 from nn.topk import topk_fused_sampling_gpu as _topk_fused_sampling_gpu
 
-from tensor_utils_internal import (
+from tensor_internal import (
     simd_store_into_managed_tensor_slice,
     simd_load_from_managed_tensor_slice,
     _input_fusion_hook_impl,
@@ -175,7 +175,7 @@ from quantization.qmatmul_k import (
 from register import register_internal_override, uses_opaque, register_internal
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
-from tensor_utils_internal import ManagedTensorSlice, foreach, view_copy_impl
+from tensor_internal import ManagedTensorSlice, foreach, view_copy_impl
 
 from utils import IndexList, StaticTuple
 from utils.index import Index

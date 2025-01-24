@@ -11,8 +11,8 @@ from linalg.matmul import matmul as _matmul
 from register import uses_opaque
 from runtime.asyncrt import MojoCallContextPtr
 from tensor import ManagedTensorSlice, foreach
-from tensor_utils_internal import view_copy_impl
-from tensor_utils_internal import (
+from tensor_internal import view_copy_impl
+from tensor_internal import (
     simd_store_into_managed_tensor_slice,
     simd_load_from_managed_tensor_slice,
     _input_fusion_hook_impl,
