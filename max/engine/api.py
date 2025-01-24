@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import json
-from enum import IntEnum, auto
+from enum import Enum, IntEnum, auto
 from inspect import Parameter, Signature
 from pathlib import Path
 from typing import (
@@ -656,6 +656,22 @@ class SplitKReductionPrecision(IntEnum):
     OUTPUT = auto()
 
 
+class AssertLevel(str, Enum):
+    NONE = "none"
+    WARN = "warn"
+    SAFE = "safe"
+    ALL = "all"
+
+
+class LogLevel(str, Enum):
+    NOTSET = "notset"
+    DEBUG = "debug"
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    CRITICAL = "critical"
+
+
 class InferenceSession:
     """Manages an inference session in which you can load and run models.
 
@@ -885,19 +901,51 @@ class InferenceSession:
         self._impl.set_debug_print_options(style, precision, output_directory)
 
     def set_split_k_reduction_precision(
-        self, precision: Union[str, SplitKReductionPrecision]
+        self, precision: str | SplitKReductionPrecision
     ):
         """Sets the accumulation precision for split k reductions in large matmuls."""
-        if isinstance(precision, str):
-            precision = cast(
-                Union[str, SplitKReductionPrecision],
-                getattr(SplitKReductionPrecision, precision, precision),
-            )
         if not isinstance(precision, SplitKReductionPrecision):
-            raise TypeError(
-                "Invalid precision. Please use one of 'ACCUM' or 'OUTPUT'"
-            )
+            try:
+                precision = SplitKReductionPrecision[precision]
+            except:
+                msg = f"Invalid precision ({precision}). Please use one of: {[x.name for x in SplitKReductionPrecision]}"
+                raise TypeError(msg)
+
         self._set_mojo_define("SPLITK_REDUCTION_SCHEME", precision)
+
+    def set_mojo_log_level(self, level: str | LogLevel):
+        """Sets the verbosity of mojo logging in the compiled model."""
+        if not isinstance(level, LogLevel):
+            try:
+                level = LogLevel[level]
+            except:
+                msg = f"Invalid log level ({level}). Please use one of: {[x.name for x in LogLevel]}"
+                raise TypeError(msg)
+
+        self._set_mojo_define("LOG_LEVEL", level)
+
+    def set_mojo_assert_level(self, level: str | AssertLevel):
+        """Sets which mojo asserts are kept in the compiled model."""
+        if not isinstance(level, AssertLevel):
+            try:
+                level = AssertLevel[level]
+            except:
+                msg = f"Invalid assert level ({level}). Please use one of: {[x.name for x in AssertLevel]}"
+                raise TypeError(msg)
+
+        self._set_mojo_define("ASSERT", level)
+
+    def enable_gpu_profiling(self, detailed: bool = False):
+        """Enables end to end gpu profiling configuration."""
+        self._set_mojo_define("MODULAR_ENABLE_PROFILING", True)
+        self._set_mojo_define("KERNEL_E2E_GPU_PROFILING", True)
+        self._set_mojo_define("KERNEL_E2E_GPU_PROFILING_DETAILED", detailed)
+
+    def disable_gpu_profiling(self):
+        """Disables end to end gpu profiling configuration."""
+        self._set_mojo_define("MODULAR_ENABLE_PROFILING", False)
+        self._set_mojo_define("KERNEL_E2E_GPU_PROFILING", False)
+        self._set_mojo_define("KERNEL_E2E_GPU_PROFILING_DETAILED", False)
 
     def _set_mojo_define(self, key: str, value: bool | int | str):
         """Enables overwriting of any mojo config directly."""
