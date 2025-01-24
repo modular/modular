@@ -6,7 +6,6 @@ lit_tests(
     data = glob([
         "**/*.txt",
     ]),
-    generate_litcfg = True,
     tools = [
         "//Cache/tools/cache-mgr",
     ],

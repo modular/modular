@@ -18,7 +18,6 @@ lit_tests(
     env = {
         "MODULAR_CRASH_REPORTING_HANDLER_PATH": "$(rootpath @crashpad//:modular-crashpad-handler)",
     },
-    generate_litcfg = True,
     tools = [
         "//AsyncRT/tools/crash-report-path-info",
         "//AsyncRT/tools/crash-test-dummy",

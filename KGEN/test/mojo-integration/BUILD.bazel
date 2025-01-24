@@ -13,7 +13,6 @@ lit_tests(
         "//KGEN:CompilerRT",
         "@llvm-project//compiler-rt:orc_rt",
     ],
-    generate_litcfg = True,
     mojo_deps = [
         "//Kernels/mojo/gpu",
         "//Kernels/mojo/_mlir",
@@ -49,7 +48,6 @@ lit_tests(
     env = {
         "MODULAR_MOJO_IMPORT_SRCS": "$(locations //Kernels/mojo/_mlir:_mlir_srcs) $(locations //open-source/mojo/stdlib/stdlib:stdlib_srcs)",
     },
-    generate_litcfg = True,
     mojo_deps = [
         "//open-source/mojo/stdlib/stdlib",
     ],

@@ -20,7 +20,6 @@ lit_tests(
         "@llvm-project//compiler-rt:orc_rt",
         "@llvm-project//lldb:lldb-argdumper",
     ],
-    generate_litcfg = True,
     mojo_deps = [
         "//open-source/mojo/stdlib/stdlib",
     ],

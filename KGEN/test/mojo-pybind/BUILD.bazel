@@ -12,7 +12,6 @@ lit_tests(
         "//KGEN:CompilerRT",
         "@llvm-project//compiler-rt:orc_rt",
     ],
-    generate_litcfg = True,
     mojo_deps = [
         "//open-source/mojo/stdlib/stdlib",
     ],
