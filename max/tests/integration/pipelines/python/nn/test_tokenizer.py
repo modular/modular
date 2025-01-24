@@ -30,7 +30,7 @@ async def test_tokenizer__encode_and_decode():
         max_length=10,
         cache_seq_id=0,
         prompt=test_string,
-        next_tokens=np.array(encoded),
+        tokens=np.array(encoded),
     )
     assert context.current_length == len(encoded)
     decoded = await tokenizer.decode(context, encoded, skip_special_tokens=True)

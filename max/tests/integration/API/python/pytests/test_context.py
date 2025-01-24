@@ -14,7 +14,7 @@ def test_context__current_length():
         cache_seq_id=0,
         prompt="this is a test prompt",
         max_length=10,
-        next_tokens=np.array([0, 1, 2, 3]),
+        tokens=np.array([0, 1, 2, 3]),
     )
 
     assert context.current_length == 4
@@ -26,7 +26,9 @@ def test_context__current_length():
     # here is the next one, and we've generated 3 tokens
     # including that one, so increment the current length
     # accordingly.
-    context.update(5, num_steps=3)
+    for i in range(3):
+        context.update(5 + i)
+
     assert context.current_length == 8
 
 
@@ -35,13 +37,14 @@ def test_context__seq_len():
         cache_seq_id=0,
         prompt="this is a test prompt",
         max_length=10,
-        next_tokens=np.array([0, 1, 2, 3]),
+        tokens=np.array([0, 1, 2, 3]),
     )
 
     assert context.seq_len == 4
     context.update(4)
     assert context.seq_len == 1
-    context.update(5, num_steps=5)
+    for i in range(5):
+        context.update(5 + i)
     assert context.seq_len == 1
 
 
@@ -50,7 +53,7 @@ def test_context__trim_prompt():
         cache_seq_id=0,
         prompt="this is a test prompt",
         max_length=10,
-        next_tokens=np.array([0, 1, 2, 3]),
+        tokens=np.array([0, 1, 2, 3]),
     )
 
     # Can't trim more tokens than the context has.
@@ -72,3 +75,22 @@ def test_context__trim_prompt():
     # Can't trim prompt to 0 tokens.
     with pytest.raises(AssertionError):
         context.trim_prompt(2)
+
+
+def test_context__update_beyond_chunk_size():
+    # This check evaluates whether we can update this array.
+    # However, behaviour with max serve for updating, is slightly
+    # different than behaviour off the server, as the text context
+    # moves between the api worker & server worker.
+    # Before making changes to resize behaviour, ensure you
+    # test with the server, not just the `generate` entrypoint.
+    context = TextContext(
+        cache_seq_id=0,
+        prompt="this is a test prompt",
+        max_length=10,
+        tokens=np.array([0, 1, 2, 3]),
+    )
+
+    # 128, is the CHUNK_SIZE defined in context
+    for i in range(128):
+        context.update(i)
