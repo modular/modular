@@ -1553,25 +1553,9 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
 
     for (EmitAs kind : kinds) {
       emissionKinds.push_back(kind);
-      switch (kind) {
-      case EmitAs::ASM:
-      case EmitAs::LLVM:
-      case EmitAs::LLVM_OPT:
-      case EmitAs::SHARED_OBJ:
-        emissionResults.push_back(lowerLLVMModuleToObject(
-            *module, loc, transformCache, *kernelIdOr, runtime, options, isJIT,
-            (kinds.size() > 1), kind));
-        break;
-
-      default:
-        std::move(resultBufs)
-            .setToError(
-                AsyncRT::getMLIRDiagnostic("EmitAs kind not supported", loc));
-        std::move(resultKernelId)
-            .setToError(
-                AsyncRT::getMLIRDiagnostic("EmitAs kind not supported", loc));
-        return;
-      }
+      emissionResults.push_back(lowerLLVMModuleToObject(
+          *module, loc, transformCache, *kernelIdOr, runtime, options, isJIT,
+          (kinds.size() > 1), kind));
     }
 
     auto kernelBufs =
@@ -1628,6 +1612,15 @@ ObjectCompiler::emitGPUKernels(
   // Lower the module to LLVM.
   LLVMModuleAndContext llvmModule;
   Location moduleLoc = module->getLoc();
+
+  // Save elaborated MLIR module to saveTempsPrefix.
+  if (!options.saveTempsPrefix.empty()) {
+    std::string str;
+    llvm::raw_string_ostream ss(str);
+    ss << *module;
+    if (failed(writeBytesToTempWithHash(options.saveTempsPrefix, ".mlir", str)))
+      return Error("failed to save mlir to saveTempPrefix");
+  }
 
   if (auto err = llvmModule.create([&](llvm::LLVMContext &ctx) {
         return lowerAllFuncsToLLVM(ctx, *module);

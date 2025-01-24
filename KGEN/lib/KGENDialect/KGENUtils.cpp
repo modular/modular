@@ -933,10 +933,9 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
       if (!kind) {
 
 #ifndef MODULAR_PRODUCTION
-        return p.emitError(
-            p.getCurrentLocation(),
-            "the immediate emission kind must be either "
-            "'=llvm', '=asm', '=llvm-opt', '=sharedobj', or '=elabmlir'");
+        return p.emitError(p.getCurrentLocation(),
+                           "the immediate emission kind must be either "
+                           "'=llvm', '=asm', '=llvm-opt', or '=sharedobj'");
 #else
         return p.emitError(p.getCurrentLocation(),
                            "the immediate emission kind must be either "

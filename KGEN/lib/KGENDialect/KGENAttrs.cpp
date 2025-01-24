@@ -75,7 +75,7 @@ bool EmitAsAttr::classof(Attribute attr) {
   return ::isa<IndexType>(intAttr.getType()) &&
          contains_if(
              ArrayRef{EmitAs::ASM, EmitAs::LLVM, EmitAs::LLVM_OPT,
-                      EmitAs::SHARED_OBJ, EmitAs::ELABORATED_MLIR},
+                      EmitAs::SHARED_OBJ},
              [&](EmitAs kind) { return (int)kind == intAttr.getInt(); });
 #else
   return ::isa<IndexType>(intAttr.getType()) &&
@@ -1382,7 +1382,7 @@ LogicalResult ParamOperatorAttr::verify(
 #ifndef MODULAR_PRODUCTION
         return emitError() << "'compile_assembly' second operand should "
                               "evaluate to either 'asm', 'llvm', 'llvm-opt', "
-                              "'sharedobj', or 'elabmlir'";
+                              "or 'sharedobj'";
 #else
         return emitError() << "'compile_assembly' second operand should "
                               "evaluate to either 'asm', 'llvm', 'llvm-opt', "
