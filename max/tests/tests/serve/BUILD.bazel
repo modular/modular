@@ -5,8 +5,12 @@ modular_py_test(
     srcs = glob(
         ["*.py"],
     ),
+    data = [
+        "//SDK/lib/API/python/tests/serve/testdata",
+    ],
     env = {
         "MAX_SERVE_DISABLE_TELEMETRY": "-1",
+        "MAX_SERVE_TESTDATA": "SDK/lib/API/python/tests/serve/testdata",
     },
     deps = [
         "//SDK/lib/API/python/max/serve",
