@@ -3,7 +3,10 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Implements the MAX tensor package."""
+
+# Don't put public documentation strings in this file. The docs build does not
+# recognize these re-exported definitions, so it won't pick up an docs here.
+# The docs are generated from the original implementations.
 
 # Note to make it hard to have circular dependencies, the impl lives elsewhere
 from tensor_internal.tensor import Tensor
