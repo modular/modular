@@ -6469,7 +6469,7 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
     weight: ManagedTensorSlice[type, 2],
     kv_collection: PagedKVCacheCollection[
         type,
-        _,
+        *_,
     ],
     layer_idx: Scalar[DType.uint32],
     output: ManagedTensorSlice[type, 2],
@@ -6504,7 +6504,11 @@ struct Struct_fused_qkv_matmul_padded_ragged:
     @always_inline
     @staticmethod
     fn execute[
-        type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
+        type: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int, //,
+        target: StringLiteral,
     ](
         output: ManagedTensorSlice[type, 2],
         hidden_state: ManagedTensorSlice[type, 2],
@@ -6513,6 +6517,7 @@ struct Struct_fused_qkv_matmul_padded_ragged:
         kv_collection: PagedKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
         ],
         layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
@@ -6691,7 +6696,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
     kv_collection: PagedKVCacheCollection[
         type,
-        _,
+        *_,
     ],
     freqs_cis: ManagedTensorSlice[type, 2],
     layer_idx: Scalar[DType.uint32],
@@ -6727,7 +6732,11 @@ struct Struct_fused_qk_rope_ragged_paged:
     @always_inline
     @staticmethod
     fn execute[
-        type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
+        type: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int, //,
+        target: StringLiteral,
     ](
         output: ManagedTensorSlice[type, 3],
         q_proj: ManagedTensorSlice[type, 3],
@@ -6735,6 +6744,7 @@ struct Struct_fused_qk_rope_ragged_paged:
         kv_collection: PagedKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
         layer_idx: Scalar[DType.uint32],
@@ -7020,7 +7030,7 @@ fn generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
 ](
     q: ManagedTensorSlice[type, 3],
     input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
-    kv_collection: PagedKVCacheCollection[type, _],
+    kv_collection: PagedKVCacheCollection[type, *_],
     layer_idx: Scalar[DType.uint32],
     scale: Scalar[DType.float32],
     output: ManagedTensorSlice[type, 3],
@@ -7051,7 +7061,11 @@ struct Struct_mha_ragged_paged_causal_mask_no_pos:
     @staticmethod
     @always_inline
     fn execute[
-        type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
+        type: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int, //,
+        target: StringLiteral,
     ](
         output: ManagedTensorSlice[type, 3],
         q: ManagedTensorSlice[type, 3],
@@ -7059,6 +7073,7 @@ struct Struct_mha_ragged_paged_causal_mask_no_pos:
         kv_collection: PagedKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
         ],
         layer_idx: Scalar[DType.uint32],
         scale: Scalar[DType.float32],
@@ -7618,12 +7633,17 @@ struct Struct_print_kv_cache_paged:
     @always_inline
     @staticmethod
     fn execute[
-        type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
+        type: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int, //,
+        target: StringLiteral,
     ](
         valid_lengths: ManagedTensorSlice[DType.uint32, 1],
         kv_collection: PagedKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
         ],
         layer_idx: Scalar[DType.uint32],
         is_print_compact: ManagedTensorSlice[DType.bool, 1],
@@ -7681,15 +7701,19 @@ struct Struct_kv_collection_ctor_paged:
         type: DType,
         num_heads: Int,
         head_dim: Int,
+        page_size: Int,
         target: StringLiteral,
     ](
         blocks: ManagedTensorSlice[type, 6],
         cache_lengths: ManagedTensorSlice[DType.uint32, 1],
         lookup_table: ManagedTensorSlice[DType.uint32, 2],
         max_lengths: ManagedTensorSlice[DType.uint32, 2],
-    ) -> PagedKVCacheCollection[type, KVCacheStaticParams(num_heads, head_dim)]:
+    ) -> PagedKVCacheCollection[
+        type, KVCacheStaticParams(num_heads, head_dim), page_size
+    ]:
         return generic_get_paged_cache[
-            kv_params = KVCacheStaticParams(num_heads, head_dim)
+            kv_params = KVCacheStaticParams(num_heads, head_dim),
+            page_size=page_size,
         ](
             managed_tensor_slice_to_ndbuffer(blocks),
             managed_tensor_slice_to_ndbuffer(cache_lengths),
