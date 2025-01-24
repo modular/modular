@@ -874,8 +874,6 @@ kgen.generator @compile_assembly<emission_kind: !kgen.int_literal>() {
 
   // CHECK: constant: string = <compile_assembly(nvptx, =asm, "", 0, :() -> () @kernel)>
   kgen.param.constant: string = <compile_assembly(nvptx, =asm, "", 0, :() -> () @kernel)>
-  // CHECK: constant: string = <compile_assembly(nvptx, =elabmlir, "", 1, :() -> () @kernel)>
-  kgen.param.constant: string = <compile_assembly(nvptx, =elabmlir, "", 1, :() -> () @kernel)>
   // CHECK: constant: string = <compile_assembly(nvptx, =llvm, "", 1, :() -> () @kernel)>
   kgen.param.constant: string = <compile_assembly(nvptx, =llvm, "", 1, :() -> () @kernel)>
   // CHECK: constant: string = <compile_assembly(nvptx, =llvm, "option1=value1,option2=value2", 1, :() -> () @kernel)>
