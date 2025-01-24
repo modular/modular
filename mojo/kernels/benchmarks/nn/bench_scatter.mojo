@@ -13,7 +13,7 @@ from buffer import NDBuffer
 from memory import UnsafePointer
 from buffer.dimlist import Dim, DimList
 from nn.gather_scatter import scatter_elements
-from tensor_utils_internal import ManagedTensorSlice
+from tensor_internal import ManagedTensorSlice
 
 from utils.index import Index
 
