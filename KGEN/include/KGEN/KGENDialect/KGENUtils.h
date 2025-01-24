@@ -459,9 +459,11 @@ bool hasAnyDecorator(ArrayRef<TypedAttr> decorators,
 ParseResult parseRegionWithArgs(OpAsmParser &p, Region &region);
 void printRegionWithArgs(OpAsmPrinter &p, Operation *op, Region &region);
 
-/// This is an alternative implementation of llvm::printEscapedString
-/// that also supports writing "non-readable" characters like newlines.
-void printHumanReadableString(StringRef Name, raw_ostream &Out);
+/// Converts the string into a Mojo string literal, making sure the set of
+/// special characters supported in Lexer::getStringLiteralValue are taken into
+/// account. It is *not* intended to be a general alterative to
+/// llvm::printEscapedString.
+void printAsMojoStringLiteral(StringRef Name, raw_ostream &Out);
 
 } // namespace M::KGEN
 
