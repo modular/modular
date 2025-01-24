@@ -245,6 +245,9 @@ constexpr StringLiteral MOJO_TENSOR_LIST_NAME = "stdlib::InlinedFixedVector";
 constexpr StringLiteral MOJO_EXTENSIBILITY_API_CALL_CONTEXT_PTR_TYPE_NAME =
     "runtime::MojoCallContextPtr";
 
+// The stored mojo type symbol name of device contexts in extensibility kernels.
+constexpr StringLiteral MOJO_EXTENSIBILITY_API_DEVICE_CONTEXT_PTR_TYPE_NAME =
+    "runtime::DeviceContextPtr";
 //===----------------------------------------------------------------------===//
 // Parameter Inference
 //===----------------------------------------------------------------------===//
