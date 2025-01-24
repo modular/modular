@@ -10,7 +10,6 @@ lit_tests(
         "//KGEN:CompilerRT",
         "@llvm-project//compiler-rt:orc_rt",
     ],
-    generate_litcfg = True,
     target_compatible_with = select({
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
