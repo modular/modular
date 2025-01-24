@@ -9,3 +9,4 @@
 # The docs are generated from the original implementations.
 
 from tensor import Tensor, TensorShape, TensorSpec, RuntimeTensorSpec
+from tensor import ManagedTensorSlice, TensorLike, foreach
