@@ -10,6 +10,7 @@ lit_tests(
         "//KGEN:CompilerRT",
     ],
     env = {},
+    generate_litcfg = False,
     mojo_deps = [
         "//open-source/mojo/stdlib/stdlib",
     ],
