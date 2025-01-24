@@ -12,7 +12,7 @@ using namespace M;
 TEST(KernelAPIDecoratorsTest, mutableDecoratorInvalidArgName) {
   Document doc("test:///foo.mojo", R"(
 import compiler_internal as compiler
-from tensor_utils import ManagedTensorSlice, foreach
+from tensor import ManagedTensorSlice, foreach
 
 @compiler.register("mutable", num_dps_outputs=0)
 struct Mutable:
@@ -41,7 +41,7 @@ struct Mutable:
 TEST(KernelAPIDecoratorsTest, enableFusionForInvalidArgName) {
   Document doc("test:///foo.mojo", R"(
 import compiler_internal as compiler
-from tensor_utils import ManagedTensorSlice
+from tensor import ManagedTensorSlice
 
 @compiler.register("fusion")
 struct Fusion:
