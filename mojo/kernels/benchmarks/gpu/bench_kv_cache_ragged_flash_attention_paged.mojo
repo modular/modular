@@ -75,7 +75,7 @@ def execute_kv_cache_ragged_flash_attention[
     head_dim: Int,
     num_q_heads: Int,
     num_kv_heads: Int,
-    block_size: Int,
+    page_size: Int,
 ](
     ctx: DeviceContext,
     mut m: Bench,
@@ -87,19 +87,20 @@ def execute_kv_cache_ragged_flash_attention[
 ):
     alias num_layers = 1
     alias layer_idx = 0
-    var num_blocks = batch_size * ceildiv(seq_len, block_size) * 2
+    var num_pages = batch_size * ceildiv(seq_len, page_size) * 2
     alias CacheType = PagedKVCache[
         dtype,
         KVCacheStaticParams(num_heads=num_kv_heads, head_size=head_dim),
+        page_size,
     ]
 
     debug_assert(
-        batch_size < num_blocks,
+        batch_size < num_pages,
         String(
             "batch_size passed to unit test (",
             batch_size,
-            ") is larger than configured num_blocks (",
-            num_blocks,
+            ") is larger than configured num_pages (",
+            num_pages,
             ")",
         ),
     )
@@ -171,15 +172,15 @@ def execute_kv_cache_ragged_flash_attention[
     )
     var output_device = output_host.copy_to_device(ctx)
     paged_lut_host = HostNDBuffer[DType.uint32, 2](
-        IndexList[2](batch_size, ceildiv(max_context_length, block_size))
+        IndexList[2](batch_size, ceildiv(max_context_length, page_size))
     )
     paged_lut_set = Set[Int]()
     for bs in range(batch_size):
         curr_seq_len = Int(cache_lengths_host.tensor[bs]) + valid_lengths[bs]
-        for block_idx in range(0, ceildiv(curr_seq_len, block_size)):
-            var randval = Int(random_ui64(0, num_blocks - 1))
+        for block_idx in range(0, ceildiv(curr_seq_len, page_size)):
+            var randval = Int(random_ui64(0, num_pages - 1))
             while randval in paged_lut_set:
-                randval = Int(random_ui64(0, num_blocks - 1))
+                randval = Int(random_ui64(0, num_pages - 1))
 
             paged_lut_set.add(randval)
             paged_lut_host.tensor[bs, block_idx] = randval
@@ -190,8 +191,8 @@ def execute_kv_cache_ragged_flash_attention[
         IndexList[6](
             num_layers,
             2,
-            num_blocks,
-            block_size,
+            num_pages,
+            page_size,
             num_kv_heads,
             head_dim,
         )
