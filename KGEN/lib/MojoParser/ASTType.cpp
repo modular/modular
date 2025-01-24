@@ -696,7 +696,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
 
   if (auto strAttr = dyn_cast<StringAttr>(param)) {
     os << '"';
-    printHumanReadableString(strAttr, os);
+    printAsMojoStringLiteral(strAttr, os);
     os << '"';
     return;
   }

@@ -805,7 +805,7 @@ void KGEN::printParamName(AsmPrinter &p, StringAttr name, bool isRef) {
                                 isMLIRBuiltinType(name) || isSugaredType()));
   if (needsQuotes)
     p << "*\"";
-  printHumanReadableString(name, p.getStream());
+  printAsMojoStringLiteral(name, p.getStream());
   if (needsQuotes)
     p << '"';
 }
@@ -1351,26 +1351,21 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
   }
 }
 
-// NOTE: This is an alternative implementation of llvm::printEscapedString
-// that also supports writing "non-readable" characters like newlines.
-//
-// Example:
-// StringSlice("\OA") -> StringSlice("\n")
-void KGEN::printHumanReadableString(StringRef name, raw_ostream &out) {
-  using namespace llvm;
-  for (unsigned char C : name) {
-    if (C == '\\')
-      out << '\\' << C;
-    else if (C == '\n')
-      out << "\\n";
-    else if (C == '\t')
-      out << "\\t";
-    else if (C == '\r')
-      out << "\\r";
-    else if (llvm::isPrint(C) && C != '"')
-      out << C;
+void KGEN::printAsMojoStringLiteral(StringRef name, raw_ostream &out) {
+  static const llvm::SmallDenseMap<char, const char *, 8> sLookup = {
+      {'\n', "\\n"}, {'\t', "\\t"}, {'\r', "\\r"}, {'\a', "\\a"},
+      {'\b', "\\b"}, {'\f', "\\f"}, {'\v', "\\v"},
+  };
+
+  for (unsigned char c : name) {
+    if (c == '\\')
+      out << '\\' << c;
+    else if (auto iter = sLookup.find(c); iter != sLookup.end())
+      out << iter->getSecond();
+    else if (llvm::isPrint(c) && c != '"')
+      out << c;
     else
-      out << '\\' << hexdigit(C >> 4) << hexdigit(C & 0x0F);
+      out << '\\' << llvm::hexdigit(c >> 4) << llvm::hexdigit(c & 0x0F);
   }
 }
 
@@ -1403,7 +1398,7 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type,
     if (auto type = dyn_cast<ParameterTypeInterface>(value.getType()))
       isRef |= type.isMetaType();
     if (forDiag)
-      printHumanReadableString(declRef.getName(), p.getStream());
+      printAsMojoStringLiteral(declRef.getName(), p.getStream());
     else
       printParamName(p, declRef.getName(), isRef);
     return;
