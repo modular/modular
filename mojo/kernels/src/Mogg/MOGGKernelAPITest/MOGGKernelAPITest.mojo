@@ -10,7 +10,7 @@ from buffer.dimlist import DimList
 from linalg.matmul import matmul as _matmul
 from register import uses_opaque
 from runtime.asyncrt import MojoCallContextPtr
-from tensor_utils import ManagedTensorSlice, foreach
+from tensor import ManagedTensorSlice, foreach
 from tensor_utils_internal import view_copy_impl
 from tensor_utils_internal import (
     simd_store_into_managed_tensor_slice,
