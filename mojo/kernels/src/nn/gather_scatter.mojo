@@ -22,7 +22,7 @@ from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
 from register import register_internal, register_internal_shape_func
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel
-from tensor_utils_internal import ManagedTensorSlice
+from tensor_internal import ManagedTensorSlice
 
 from utils import Index, IndexList, StaticTuple, unroll
 
