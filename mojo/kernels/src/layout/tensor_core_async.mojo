@@ -156,6 +156,12 @@ fn _rhs_descriptor[
         mma_shape in supported_mma_shape,
         String("WGMMA operation of shape '", mma_shape, "' is not supported"),
     ]()
+
+    # Transposed case is same to K-major A matrix.
+    @parameter
+    if transposed:
+        return _lhs_descriptor[mma_shape](tensor)
+
     return WGMMADescriptor.create[1, 8](tensor.ptr)
 
 
