@@ -245,3 +245,22 @@ modular_py_test(
         requirement("click"),
     ],
 )
+
+modular_py_binary(
+    name = "pipelines_mteb",
+    srcs = ["pipelines_mteb.py"],
+    data = [
+        "//GenericML:MGPRT",
+        "//KGEN:CompilerRT",
+        "//SDK/public/max-repo/pipelines/python:pipelines",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    ignore_collisions = True,  # duplicate scripts/__init__.py from deps
+    deps = [
+        "//SDK/public/max-repo/pipelines/python/architectures",
+        "//SDK/public/max-repo/pipelines/python/cli",
+        "//SDK/public/max-repo/pipelines/python/dataprocessing",
+        requirement("click"),
+        requirement("mteb"),
+    ],
+)
