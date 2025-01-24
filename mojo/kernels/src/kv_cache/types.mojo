@@ -105,6 +105,11 @@ trait KVCacheT(CollectionElement):
         """
         ...
 
+    @staticmethod
+    fn max_tile_size() -> Int:
+        """Returns the maximum tile size for the KVCache."""
+        ...
+
 
 @value
 @register_passable("trivial")
@@ -165,6 +170,11 @@ struct ContiguousKVCache[
             "+",
             Self.kv_params.head_size,
         )
+
+    @staticmethod
+    fn max_tile_size() -> Int:
+        """Returns the maximum tile size for the KVCache."""
+        return -1
 
     @always_inline
     fn _get_idx_tuple(
@@ -304,6 +314,11 @@ struct ContinuousBatchingKVCache[
             head_dim_idx,
         )
 
+    @staticmethod
+    fn max_tile_size() -> Int:
+        """Returns the maximum tile size for the KVCache."""
+        return -1
+
     fn __init__(
         mut self,
         blocks: Self.BlocksType,
@@ -431,7 +446,11 @@ struct ContinuousBatchingKVCache[
 
 @value
 @register_passable("trivial")
-struct PagedKVCache[type_: DType, kv_params_: KVCacheStaticParams](KVCacheT):
+struct PagedKVCache[
+    type_: DType,
+    kv_params_: KVCacheStaticParams,
+    page_size: Int,
+](KVCacheT):
     """The PagedKVCache is a wrapper around the KVCache blocks for a given layer.
     It is used to access the KVCache blocks for PagedAttention.
     """
@@ -446,7 +465,6 @@ struct PagedKVCache[type_: DType, kv_params_: KVCacheStaticParams](KVCacheT):
     [num_layers, 2, total_num_blocks, page_size, num_heads, head_size].
     """
     var blocks: NDBuffer[Self.type, 6]
-    var page_size: Int
     var cache_lengths: NDBuffer[DType.uint32, 1]
     var lookup_table: NDBuffer[DType.uint32, 2]
     var max_seq_length: UInt32
@@ -464,14 +482,22 @@ struct PagedKVCache[type_: DType, kv_params_: KVCacheStaticParams](KVCacheT):
         layer_idx: Int,
         kv_idx: Int,
     ):
+        debug_assert(
+            blocks.dim[3]() == page_size,
+            "blocks.dim[3]() must be equal to page_size",
+        )
         self.blocks = blocks
-        self.page_size = blocks.dim[3]()
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
         self.max_seq_length = max_seq_length
         self.max_cache_length = max_cache_length
         self.layer_idx = layer_idx
         self.kv_idx = kv_idx
+
+    @staticmethod
+    fn max_tile_size() -> Int:
+        """Returns the maximum tile size for the KVCache."""
+        return page_size
 
     @staticmethod
     fn id() -> String:
@@ -569,13 +595,13 @@ struct PagedKVCache[type_: DType, kv_params_: KVCacheStaticParams](KVCacheT):
         head_idx: Int,
         head_dim_idx: Int = 0,
     ) -> UnsafePointer[Scalar[Self.type]]:
-        debug_assert(
-            tile_size <= self.page_size and self.page_size % tile_size == 0,
+        constrained[
+            tile_size <= page_size and page_size % tile_size == 0,
             (
-                "layout block size must be divisible and less than or equal to"
-                " the block size"
+                "Invalid tile size for PagedKVCache. tile_size must be less"
+                " than or equal to the page size and divisible by the page size"
             ),
-        )
+        ]()
 
         var full_block_idx = self._get_idx(
             batch_idx, head_idx, start_tok_idx, head_dim_idx
@@ -863,10 +889,11 @@ struct ContinuousBatchingKVCacheCollection[
 struct PagedKVCacheCollection[
     type_: DType,
     kv_params_: KVCacheStaticParams,
+    page_size: Int,
 ](KVCollectionT):
     alias type = type_
     alias kv_params = kv_params_
-    alias CacheType = PagedKVCache[Self.type, Self.kv_params]
+    alias CacheType = PagedKVCache[Self.type, Self.kv_params, page_size]
 
     var blocks: NDBuffer[Self.type, 6]
     var cache_lengths: NDBuffer[DType.uint32, 1]

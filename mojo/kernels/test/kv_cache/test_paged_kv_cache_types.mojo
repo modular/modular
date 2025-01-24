@@ -20,7 +20,7 @@ from utils.index import IndexList
 alias kv_params = KVCacheStaticParams(num_heads=16, head_size=16)
 
 
-def do_test[cache_block_size: Int, layout_block_size: Int]():
+def do_test[page_size: Int, layout_block_size: Int]():
     var batch_size = 16
     var max_num_blocks = 100
     var blocks = HostNDBuffer[DType.float32, 6](
@@ -28,7 +28,7 @@ def do_test[cache_block_size: Int, layout_block_size: Int]():
             1,
             2,
             100,
-            cache_block_size,
+            page_size,
             kv_params.num_heads,
             kv_params.head_size,
         )
@@ -45,7 +45,9 @@ def do_test[cache_block_size: Int, layout_block_size: Int]():
     var max_seq_length = UInt32(2048)
     var max_cache_length = UInt32(2048)
 
-    var collection = PagedKVCacheCollection[DType.float32, kv_params](
+    var collection = PagedKVCacheCollection[
+        DType.float32, kv_params, page_size
+    ](
         blocks.tensor,
         cache_lengths.tensor,
         lookup_table.tensor,
