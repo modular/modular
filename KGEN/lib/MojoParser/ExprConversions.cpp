@@ -36,8 +36,8 @@ using namespace LIT;
 // Function Conversions
 //===----------------------------------------------------------------------===//
 
-static bool canConvertFunctionTypes(LITSignatureGeneratorType actual,
-                                    LITSignatureGeneratorType expected) {
+static bool canConvertFunctionTypes(FnTypeGeneratorType actual,
+                                    FnTypeGeneratorType expected) {
   // We should have already checked that the function types are not
   // trivially-convertible between each other.
 
@@ -130,8 +130,7 @@ static bool canConvertFunctionTypes(LITSignatureGeneratorType actual,
   return true;
 }
 
-static LITSignatureGeneratorType
-getReducedFunctionType(LITSignatureGeneratorType sig) {
+static FnTypeGeneratorType getReducedFunctionType(FnTypeGeneratorType sig) {
   MLIRContext *ctx = sig.getContext();
 
   SmallVector<PassingKind> passingKinds(sig.getNumArguments(),
@@ -148,7 +147,7 @@ getReducedFunctionType(LITSignatureGeneratorType sig) {
       PogListAttr::get(ctx, names, passingKinds),
       sig.getNumImplicitOriginDecls(), sig.getCaptureOrigins(),
       sig.getIsNestedOriginExclusivityCheckingDisabled());
-  return SignatureGeneratorType::get(
+  return FuncTypeGeneratorType::get(
       sig.getInputParamTypes(), sig.getValues(), sig.getArgConventions(),
       sig.getFnEffects(), metadata,
       PogListAttr::get(ctx, sig.getInputParamTypes().size()));
@@ -183,9 +182,9 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
 
   auto keyValues = cast<ArrayAttr>(key);
   auto actual =
-      cast<LITSignatureGeneratorType>(cast<TypeAttr>(keyValues[0]).getValue());
+      cast<FnTypeGeneratorType>(cast<TypeAttr>(keyValues[0]).getValue());
   auto expected =
-      cast<LITSignatureGeneratorType>(cast<TypeAttr>(keyValues[1]).getValue());
+      cast<FnTypeGeneratorType>(cast<TypeAttr>(keyValues[1]).getValue());
 
   MLIRContext *ctx = shared.getContext();
   Location mlirLoc = shared.translateLocation(moduleDecl.getLoc());
@@ -297,7 +296,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
   TypedAttr calleeParam = BindParamsAttr::get(
       ParamDeclRefAttr::get(calleeDecl),
       ArrayRef(paramValues).take_back(actual.getInputParamTypes().size()));
-  assert(cast<LITSignatureGeneratorType>(calleeParam.getType())
+  assert(cast<FnTypeGeneratorType>(calleeParam.getType())
              .getInputParamTypes()
              .size() == 0);
 
@@ -330,7 +329,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
 }
 
 static CValue convertFunctionValue(CValue value, const ExprNode *expr,
-                                   LITSignatureGeneratorType expected,
+                                   FnTypeGeneratorType expected,
                                    ExprEmitter &emitter, ValueDest &dest) {
   PValue callee = value.getIfPValue();
   if (!callee) {
@@ -343,13 +342,13 @@ static CValue convertFunctionValue(CValue value, const ExprNode *expr,
   }
 
   MLIRContext *ctx = expected.getContext();
-  auto actual = cast<LITSignatureGeneratorType>(callee.getType());
+  auto actual = cast<FnTypeGeneratorType>(callee.getType());
 
   // Canonicalize the function types. This strips away unnecessary metadata that
   // does not affect the conversion semantics. In other words, a function type
   // and its reduced type can be trivially converted with a rebind.
-  LITSignatureGeneratorType reducedActual = getReducedFunctionType(actual);
-  LITSignatureGeneratorType reducedExpected = getReducedFunctionType(expected);
+  FnTypeGeneratorType reducedActual = getReducedFunctionType(actual);
+  FnTypeGeneratorType reducedExpected = getReducedFunctionType(expected);
 
   // Given a function of type
   //
@@ -394,7 +393,7 @@ static CValue convertFunctionValue(CValue value, const ExprNode *expr,
                                ParamIndexRefAttr::get(i, paramTypes.back()));
   }
   auto reparamActual =
-      cast<LITSignatureGeneratorType>(replacer.getReboundType(reducedActual));
+      cast<FnTypeGeneratorType>(replacer.getReboundType(reducedActual));
 
   // Now reparameterize `reducedExpected`. Captured parameters are replaced with
   // `*(0,i) where i < N` and actual parameters are replaced with `*(0,N+j)`.
@@ -408,7 +407,7 @@ static CValue convertFunctionValue(CValue value, const ExprNode *expr,
       reducedExpected.getNumImplicitOriginDecls(),
       reducedExpected.getCaptureOrigins(),
       reducedExpected.getIsNestedOriginExclusivityCheckingDisabled());
-  auto reparamExpected = SignatureGeneratorType::get(
+  auto reparamExpected = FuncTypeGeneratorType::get(
       paramTypes,
       cast<FunctionType>(replacer.getReboundType(reducedExpected.getValues())),
       reducedExpected.getArgConventions(), reducedExpected.getFnEffects(),
@@ -473,9 +472,9 @@ bool ExprEmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
   auto fromDecl = dyn_cast_or_null<StructDeclOp>(fromType.getDecl(shared));
   auto toDecl = dyn_cast_or_null<StructDeclOp>(toType.getDecl(shared));
   if (fromDecl && toDecl) {
-    SignatureGeneratorType fromSig =
+    FuncTypeGeneratorType fromSig =
         fromDecl.getClosureSignature().value_or(nullptr);
-    SignatureGeneratorType toSig =
+    FuncTypeGeneratorType toSig =
         toDecl.getClosureSignature().value_or(nullptr);
     if (fromSig && toSig) {
       // Compare the specialized signatures.
@@ -534,8 +533,8 @@ bool ExprEmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
   }
 
   // Otherwise handle function conversions.
-  auto from = dyn_cast<LITSignatureGeneratorType>(fromType);
-  auto to = dyn_cast<LITSignatureGeneratorType>(toType);
+  auto from = dyn_cast<FnTypeGeneratorType>(fromType);
+  auto to = dyn_cast<FnTypeGeneratorType>(toType);
   if (!from || !to)
     return false;
 
@@ -690,7 +689,7 @@ struct TraitSelfBinder : public IndexParameterReplacer<TraitSelfBinder> {
 ///    !lit.generator<[1]>("self":
 ///        !lit.ref<:trait<@Movable> MTT>, mut *[0,0]> owned_in_mem) -> none>>
 /// Resolving the *(0,0) into the Movable type, as well as the first param type.
-static LITSignatureGeneratorType
+static FnTypeGeneratorType
 createRequirementSignature(FnOp traitFn, ASTType newSelfType,
                            ParserParamEvaluator &traitAliasReplacer,
                            const DenseMap<StringAttr, TypedAttr> &aliasValues,
@@ -711,7 +710,7 @@ createRequirementSignature(FnOp traitFn, ASTType newSelfType,
   }
 
   // Start with the full signature for the trait requirement.
-  LITSignatureGeneratorType signature = traitFn.getFullSignature();
+  FnTypeGeneratorType signature = traitFn.getFullSignature();
 
   // The requirement will have a Self parameter whose type will be of the
   // current trait.  In order to get types to line up, we need to force it
@@ -760,7 +759,7 @@ createRequirementSignature(FnOp traitFn, ASTType newSelfType,
     }
     return paramOp;
   });
-  signature = cast<LITSignatureGeneratorType>(replacer.replace(signature));
+  signature = cast<FnTypeGeneratorType>(replacer.replace(signature));
 
   // At this point, signature's `self` argument's type is the struct or
   // trait.  For example when binding Self down to some "MTT: Movable", we have:
@@ -950,7 +949,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
       // to the implementation type.  This changes the parameter value, but also
       // changes the metatype of the value.  To support this, we use a custom
       // replacer.
-      LITSignatureGeneratorType requirementSig = createRequirementSignature(
+      FnTypeGeneratorType requirementSig = createRequirementSignature(
           traitFn, type, traitAliasReplacer, aliasValues, getDeclResolver());
 
       // Form a set of bindings to plow into the impl signature by binding Self
@@ -1186,10 +1185,9 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   }
 
   // Check for non-trivial function type conversions.
-  if (auto requiredFunction =
-          dyn_cast<LITSignatureGeneratorType>(requiredType)) {
+  if (auto requiredFunction = dyn_cast<FnTypeGeneratorType>(requiredType)) {
     bool result = false;
-    if (auto rvFunctionType = dyn_cast<LITSignatureGeneratorType>(rvType))
+    if (auto rvFunctionType = dyn_cast<FnTypeGeneratorType>(rvType))
       result = canConvertFunctionTypes(rvFunctionType, requiredFunction);
     return cacheAndReturnVal(result);
   }
@@ -1278,9 +1276,8 @@ CValue ExprEmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
   }
 
   // Support implicit conversions of function types.
-  if (auto requiredFunction =
-          dyn_cast<LITSignatureGeneratorType>(requiredType)) {
-    if (auto rvFunctionType = dyn_cast<LITSignatureGeneratorType>(rvType))
+  if (auto requiredFunction = dyn_cast<FnTypeGeneratorType>(requiredType)) {
+    if (auto rvFunctionType = dyn_cast<FnTypeGeneratorType>(rvType))
       if (canConvertFunctionTypes(rvFunctionType, requiredFunction))
         return convertFunctionValue(value, expr, requiredFunction, *this, dest);
   }

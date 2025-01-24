@@ -716,7 +716,7 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
   // it.
   // TODO: We should have a general predicate from this provided by the KGEN
   // parameter utilities.
-  if (auto signature = dyn_cast<LITSignatureGeneratorType>(attr.getType())) {
+  if (auto signature = dyn_cast<FnTypeGeneratorType>(attr.getType())) {
     // If the value has any unbound parameters, they might be default arguments
     // or an variadic list that should be bound to an empty list.
     if (!signature.getInputParamTypes().empty()) {
@@ -1475,7 +1475,7 @@ ASTType ExprEmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
     return type;
 
   // Check for a function type.
-  if (auto sig = dyn_cast<LITSignatureGeneratorType>(type)) {
+  if (auto sig = dyn_cast<FnTypeGeneratorType>(type)) {
     // For a fully bound type, require that the origin set is concrete.
     if (isa<UnboundAttr>(sig.getCaptureOrigins())) {
       emitError(value.expr->getLoc(),
@@ -1626,7 +1626,7 @@ MLValue ExprEmitter::findNearestErrorSlot() {
   if (auto func = dyn_cast<FnOp>(opForRaise)) {
     return func
         .getArguments()[func.getNumArguments() -
-                        func.getSignatureGenerator().getErrorSlotOffset()];
+                        func.getFuncTypeGenerator().getErrorSlotOffset()];
   }
   // Otherwise, the error slot is carried by the surrounding try op.
   return cast<LIT::TryOp>(opForRaise).getErr();
@@ -1640,7 +1640,7 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
   // If we're missing a value, then we either have a memory result that has
   // already been emitted to its slot, or a function that returns None. Either
   // way, generate a None or i1 to return with lit.return.
-  auto signature = func.getSignatureGenerator();
+  auto signature = func.getFuncTypeGenerator();
   if (!value) {
     // If the function returns a None type value by-reference, fill it in.  This
     // happens in throwing functions.
@@ -1714,7 +1714,7 @@ void ExprEmitter::emitNormalReturn(Location loc, Value value,
   if (!value) {
     auto func = getBlockParentOfType<FnOp>(builder->getInsertionBlock());
     if (func.getNamedResultAttr() &&
-        !func.getSignatureGenerator().hasMemoryOnlyResult()) {
+        !func.getFuncTypeGenerator().hasMemoryOnlyResult()) {
       auto *funcDecl = declScope.getNearestDeclOfType<FnOp>();
       assert(funcDecl && "must be in a function");
       ArrayRef<ASTDecl *> declList =

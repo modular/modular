@@ -205,11 +205,10 @@ static void addTypeConversionDetail(InflightDiag &diag,
     return;
   }
   // Try to detect mismatched memory result type.
-  auto lhsSig = dyn_cast<LITSignatureGeneratorType>(operandType);
-  auto rhsSig = dyn_cast<LITSignatureGeneratorType>(argType);
+  auto lhsSig = dyn_cast<FnTypeGeneratorType>(operandType);
+  auto rhsSig = dyn_cast<FnTypeGeneratorType>(argType);
   if (lhsSig && rhsSig) {
-    auto getByRefResult =
-        [](LITSignatureGeneratorType sig) -> std::pair<bool, Type> {
+    auto getByRefResult = [](FnTypeGeneratorType sig) -> std::pair<bool, Type> {
       return {sig.getBody().hasMemoryOnlyResult(),
               ASTType(sig.getUserResultType())};
     };
@@ -413,7 +412,7 @@ InflightDiag DiagEmitter::badImplicitConversion(ASTType fromType,
 /// Calculate the minimum required and maximum allowed number of positional
 /// operands for a signature, assuming that the signature has a variadic pack;
 static std::pair<size_t, size_t>
-calculateRequiredPosOperandsForPacks(LITSignatureGeneratorType signature) {
+calculateRequiredPosOperandsForPacks(FnTypeGeneratorType signature) {
   // This function heavily assumes that a signature has at most
   // one pack variadic argument and that variadics are always the last
   // positional args.
@@ -662,7 +661,7 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
                                           PValue selfPValue) {
   DeclResolver &resolver = *callable.getShared().declResolver;
   auto func = cast<FnOp>(*candidate);
-  LITSignatureGeneratorType signature = func.getFullSignature();
+  FnTypeGeneratorType signature = func.getFullSignature();
 
   if (selfPValue) {
     // TODO(MOCO-1259): Support static methods with associated aliases
@@ -692,7 +691,7 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
 ///
 /// The 'funcIfDirect' member is set if this is a direct call, or null if
 /// indirect.  It can be used to tune diagnostics.
-OverloadFitness OverloadFitness::evaluate(LITSignatureGeneratorType signature,
+OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
                                           ASTDecl *funcIfDirect,
                                           const OverloadSet &callable,
                                           const CallOperands &operands,

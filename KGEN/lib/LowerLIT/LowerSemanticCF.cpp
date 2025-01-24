@@ -365,7 +365,7 @@ static void emitRaise(ImplicitLocOpBuilder &b) {
 /// This function adds the error branch regions to a call operation to a
 /// throwing function. These are required by CheckLifetimes to understand
 /// conditional initialization of the 'mut' results.
-static void addErrorRegions(Operation &op, LIT::LITNewSignatureType sig,
+static void addErrorRegions(Operation &op, LIT::FnType sig,
                             ValueRange operands) {
   // Clone the op and add the error regions.
   ImplicitLocOpBuilder b(op.getLoc(), OpBuilder(&op));

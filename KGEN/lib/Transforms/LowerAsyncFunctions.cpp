@@ -291,7 +291,7 @@ private:
   /// the frame.
   COTypes calculateFrame(FuncOp original, bool includeArgs);
 
-  FuncOp createColdRamp(StringRef prefix, NewSignatureType originalSignature,
+  FuncOp createColdRamp(StringRef prefix, FuncType originalSignature,
                         COTypes &coTypes, FuncOp resumeFunction);
   /// Given an async function (a:A...) -> B, create a resume function
   /// (continuation:C) -> ()
@@ -368,7 +368,7 @@ enum class VisitedState { SUS, NOSUS, SUS_AND_NOSUS };
 
 static Operation *insertCoroutineEnd(ImplicitLocOpBuilder &builder,
                                      Value callback, Value closure) {
-  auto signatureType = cast<SignatureGeneratorType>(callback.getType());
+  auto signatureType = cast<FuncTypeGeneratorType>(callback.getType());
   auto callIndirect = builder.create<CallIndirectOp>(
       signatureType.getBody().getResults(), callback, closure);
   callIndirect.setTailKind(TailKind::MustTail);
@@ -393,14 +393,14 @@ void LowerAsyncBuildContext::takeSlicedFirstStateFrom(FuncOp hotRamp,
   llvm::append_range(inputs, fromFuncOp.getArgumentTypes());
   llvm::append_range(
       conventions,
-      fromFuncOp.getSignatureGenerator().getBody().getArgConventions());
-  NewSignatureType signature = NewSignatureType::get(
+      fromFuncOp.getFuncTypeGenerator().getBody().getArgConventions());
+  FuncType signature = FuncType::get(
       hotRamp.getContext(),
       FunctionType::get(builder.getContext(), inputs,
                         fromFuncOp.getResultTypes()),
-      conventions, fromFuncOp.getSignatureGenerator().getBody().getFnEffects(),
-      fromFuncOp.getSignatureGenerator().getBody().getMetadata());
-  hotRamp.setSignatureGenerator(
+      conventions, fromFuncOp.getFuncTypeGenerator().getBody().getFnEffects(),
+      fromFuncOp.getFuncTypeGenerator().getBody().getMetadata());
+  hotRamp.setFuncTypeGenerator(
       GeneratorType::get(/*inputParamTypes=*/{}, signature));
   hotRamp.getBodyRegion().takeBody(fromFuncOp.getBodyRegion());
   Value callback = hotRamp.getBodyRegion().front().insertArgument(
@@ -519,10 +519,10 @@ static std::pair<Value, Value> getErrorAndMemoryValues(FuncOp original) {
   Value errorValue;
   Value memoryResultValue;
   if (original.isThrows() ||
-      original.getSignatureGenerator().getBody().hasMemoryOnlyResult()) {
+      original.getFuncTypeGenerator().getBody().hasMemoryOnlyResult()) {
     int errorIndex = -1, resultIndex = -1;
     for (auto [i, convention] : llvm::enumerate(
-             original.getSignatureGenerator().getBody().getArgConventions())) {
+             original.getFuncTypeGenerator().getBody().getArgConventions())) {
       if (convention == ArgConvention::ByRefError)
         errorIndex = i;
       else if (convention == ArgConvention::ByRefResult)
@@ -562,7 +562,7 @@ FrameData LowerAsyncBuildContext::cloneFrameAndFirstStateTo(
   llvm::append_range(inputs, fromFuncOp.getArgumentTypes());
   llvm::append_range(
       conventions,
-      fromFuncOp.getSignatureGenerator().getBody().getArgConventions());
+      fromFuncOp.getFuncTypeGenerator().getBody().getArgConventions());
 
   IRMapping mapping;
   Block &block = hotRamp.getBodyRegion().emplaceBlock();
@@ -573,13 +573,13 @@ FrameData LowerAsyncBuildContext::cloneFrameAndFirstStateTo(
         originalFrameData->valueToIndexInFrame[oldArg];
   }
 
-  NewSignatureType signature = NewSignatureType::get(
+  FuncType signature = FuncType::get(
       hotRamp.getContext(),
       FunctionType::get(builder.getContext(), inputs,
                         PointerType::get(opaqueCoTypes.getHeaderType())),
-      conventions, fromFuncOp.getSignatureGenerator().getBody().getFnEffects(),
-      fromFuncOp.getSignatureGenerator().getBody().getMetadata());
-  hotRamp.setSignatureGenerator(
+      conventions, fromFuncOp.getFuncTypeGenerator().getBody().getFnEffects(),
+      fromFuncOp.getFuncTypeGenerator().getBody().getMetadata());
+  hotRamp.setFuncTypeGenerator(
       GeneratorType::get(/*inputParamTypes=*/{}, signature));
 
   Value callback = hotRamp.getBodyRegion().front().insertArgument(
@@ -683,9 +683,9 @@ FuncOp LowerAsyncBuildContext::createColdResume(StringRef prefix, FuncOp funcOp,
                                                 COTypes &coTypes) {
   builder.setInsertionPoint(funcOp);
   StringAttr resumeName = builder.getStringAttr(prefix + "_resume");
-  auto resumeSignature = NewSignatureType::get(
-      builder.getContext(), PointerType::get(coTypes.getContinuationType()),
-      {});
+  auto resumeSignature =
+      FuncType::get(builder.getContext(),
+                    PointerType::get(coTypes.getContinuationType()), {});
   FuncOp resumeFunction = builder.create<FuncOp>(
       funcOp->getParentOp()->getLoc(), resumeName, resumeSignature);
   resumeFunction.setCoroutineTypeAttr(
@@ -793,12 +793,11 @@ void LowerAsyncBuildContext::populateHotResumeFrom(FuncOp original,
                        true);
   args.reset(0);
   resumeFunction.getBodyRegion().front().eraseArguments(args);
-  resumeFunction.setSignatureGenerator(GeneratorType::get(
+  resumeFunction.setFuncTypeGenerator(GeneratorType::get(
       /*inputParamTypes=*/{},
-      NewSignatureType::get(
-          builder.getContext(),
-          resumeFunction.getBodyRegion().front().getArgumentTypes(),
-          resumeFunction.getResultTypes())));
+      FuncType::get(builder.getContext(),
+                    resumeFunction.getBodyRegion().front().getArgumentTypes(),
+                    resumeFunction.getResultTypes())));
 }
 
 FuncOp LowerAsyncBuildContext::createSharedResume(StringRef prefix,
@@ -861,9 +860,9 @@ FuncOp LowerAsyncBuildContext::createHotRamp(StringRef prefix, FuncOp original,
                                              bool takeOriginal) {
   StringAttr hotRampName = builder.getStringAttr(prefix + "_hot_ramp");
   builder.setInsertionPoint(resumeFunction);
-  FuncOp hotRamp = builder.create<FuncOp>(
-      original->getLoc(), hotRampName,
-      NewSignatureType::get(builder.getContext(), {}, {}));
+  FuncOp hotRamp =
+      builder.create<FuncOp>(original->getLoc(), hotRampName,
+                             FuncType::get(builder.getContext(), {}, {}));
   hotRampName = sharedTable.modify(
       [hotRamp, it = resumeFunction->getIterator()](SymbolTable &symtab) {
         return symtab.insert(hotRamp, it);
@@ -909,11 +908,11 @@ FuncOp LowerAsyncBuildContext::createHotRamp(StringRef prefix, FuncOp original,
   Value continuation = initializeContinuation(hotRamp, resumeFunction, coTypes);
   continuationArg.replaceAllUsesWith(continuation);
   hotRamp.getBodyRegion().front().eraseArgument(indexOfCoroutine);
-  hotRamp.setSignatureGenerator(GeneratorType::get(
+  hotRamp.setFuncTypeGenerator(GeneratorType::get(
       /*inputParamTypes=*/{},
-      NewSignatureType::get(builder.getContext(),
-                            hotRamp.getBodyRegion().getArgumentTypes(),
-                            PointerType::get(coTypes.getHeaderType()))));
+      FuncType::get(builder.getContext(),
+                    hotRamp.getBodyRegion().getArgumentTypes(),
+                    PointerType::get(coTypes.getHeaderType()))));
 
   // Store continuation and closure.
   Value closureSlot = builder.create<StructGEPOp>(continuation, ClosureState);
@@ -970,9 +969,10 @@ FuncOp LowerAsyncBuildContext::createHotRamp(StringRef prefix, FuncOp original,
   return hotRamp;
 }
 
-FuncOp LowerAsyncBuildContext::createColdRamp(
-    StringRef prefix, NewSignatureType originalSignature, COTypes &coTypes,
-    FuncOp resumeFunction) {
+FuncOp LowerAsyncBuildContext::createColdRamp(StringRef prefix,
+                                              FuncType originalSignature,
+                                              COTypes &coTypes,
+                                              FuncOp resumeFunction) {
   StringAttr rampName = builder.getStringAttr(prefix + "_ramp");
   unsigned end = originalSignature.getNumArguments();
   if (originalSignature.isThrows())
@@ -984,7 +984,7 @@ FuncOp LowerAsyncBuildContext::createColdRamp(
     args.push_back(originalSignature.getArguments()[i]);
   FunctionType rampFunctionType =
       builder.getFunctionType(args, PointerType::get(coTypes.getHeaderType()));
-  auto rampSignature = NewSignatureType::get(rampFunctionType);
+  auto rampSignature = FuncType::get(rampFunctionType);
   builder.setInsertionPoint(resumeFunction);
   FuncOp rampFunction = builder.create<FuncOp>(rampName, rampSignature);
   rampName = sharedTable.modify(
@@ -995,7 +995,7 @@ FuncOp LowerAsyncBuildContext::createColdRamp(
   builder.setInsertionPointToStart(
       &rampFunction.getBodyRegion().emplaceBlock());
   for (Type argument :
-       rampFunction.getSignatureGenerator().getBody().getArguments())
+       rampFunction.getFuncTypeGenerator().getBody().getArguments())
     rampFunction.getBodyRegion().addArgument(argument, rampFunction.getLoc());
   Value continuation =
       initializeContinuation(rampFunction, resumeFunction, coTypes);
@@ -1033,8 +1033,8 @@ Coroutine LowerAsyncBuildContext::createCoroutine(FuncOp originalAsyncFunc,
                                                   Temp temperature) {
   StringRef prefix = originalAsyncFunc.getSymName();
   if (temperature == Temp::Cold) {
-    NewSignatureType originalSignature =
-        originalAsyncFunc.getSignatureGenerator().getBody();
+    FuncType originalSignature =
+        originalAsyncFunc.getFuncTypeGenerator().getBody();
     COTypes coTypes(calculateFrame(originalAsyncFunc, /*includeArgs=*/true));
     FuncOp resumeFunction =
         createColdResume(prefix, originalAsyncFunc, coTypes);
@@ -1048,9 +1048,9 @@ Coroutine LowerAsyncBuildContext::createCoroutine(FuncOp originalAsyncFunc,
         calculateFrame(originalAsyncFunc, /*includeArgs=*/false));
     builder.setInsertionPoint(originalAsyncFunc);
     StringAttr resumeName = builder.getStringAttr(prefix + "_resume");
-    auto resumeSignature = NewSignatureType::get(
-        builder.getContext(),
-        PointerType::get(hotCoTypes.getContinuationType()), {});
+    auto resumeSignature =
+        FuncType::get(builder.getContext(),
+                      PointerType::get(hotCoTypes.getContinuationType()), {});
     FuncOp resumeFunction =
         builder.create<FuncOp>(originalAsyncFunc->getParentOp()->getLoc(),
                                resumeName, resumeSignature);
@@ -1068,8 +1068,8 @@ Coroutine LowerAsyncBuildContext::createCoroutine(FuncOp originalAsyncFunc,
     originalAsyncFunc->erase();
     return coro;
   } else if (temperature == Temp::Both) {
-    NewSignatureType originalSignature =
-        originalAsyncFunc.getSignatureGenerator().getBody();
+    FuncType originalSignature =
+        originalAsyncFunc.getFuncTypeGenerator().getBody();
     FuncOp clone = originalAsyncFunc.clone();
     COTypes hotCoTypes(calculateFrame(clone, /*includeArgs=*/false));
     COTypes coTypes(calculateFrame(originalAsyncFunc, /*includeArgs=*/true));
@@ -1334,11 +1334,11 @@ COTypes::COTypes(MLIRContext *cxt, FrameData &&frameData,
   inputs.push_back(opaquePointerType);
   FunctionType resumeFunctionType = FunctionType::get(cxt, inputs, results);
   resumeSignatureType =
-      SignatureGeneratorType::get(/*inputParamTypes=*/{}, resumeFunctionType);
+      FuncTypeGeneratorType::get(/*inputParamTypes=*/{}, resumeFunctionType);
   FunctionType callbackFunctionType =
       FunctionType::get(cxt, opaquePointerType, results);
   callbackSignature =
-      SignatureGeneratorType::get(/*inputParamTypes=*/{}, callbackFunctionType);
+      FuncTypeGeneratorType::get(/*inputParamTypes=*/{}, callbackFunctionType);
 
   // Build Continuation Type.
   size_t size = Promise;

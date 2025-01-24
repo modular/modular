@@ -171,16 +171,16 @@ kgen.func @generator_types() {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @new_signature_types
-kgen.func @new_signature_types() {
-  // CHECK-NEXT: type = <!lit.signature<() -> ()>>
-  kgen.param.declare type0: type = <!lit.signature<() -> ()>>
-  // CHECK-NEXT: type = <!lit.signature<(index, i8) -> ()>>
-  kgen.param.declare type1: type = <!lit.signature<(index, i8) -> ()>>
-  // CHECK-NEXT: type = <!lit.signature<(index, i8) -> ()>>
-  kgen.param.declare type2: type = <!kgen.signature<!lit.signature<(index, i8) -> ()>>>
-  // CHECK-NEXT: type = <!lit.signature<("a": index, "b": i8 = 2) -> none>>
-  kgen.param.declare type3: type = <!lit.signature<("a": index, "b": i8 = 2) -> none>>
+// CHECK-LABEL: kgen.func @fn_types
+kgen.func @fn_types() {
+  // CHECK-NEXT: type = <!lit.fn<() -> ()>>
+  kgen.param.declare type0: type = <!lit.fn<() -> ()>>
+  // CHECK-NEXT: type = <!lit.fn<(index, i8) -> ()>>
+  kgen.param.declare type1: type = <!lit.fn<(index, i8) -> ()>>
+  // CHECK-NEXT: type = <!lit.fn<(index, i8) -> ()>>
+  kgen.param.declare type2: type = <!kgen.func<!lit.fn<(index, i8) -> ()>>>
+  // CHECK-NEXT: type = <!lit.fn<("a": index, "b": i8 = 2) -> none>>
+  kgen.param.declare type3: type = <!lit.fn<("a": index, "b": i8 = 2) -> none>>
   kgen.return
 }
 

@@ -153,9 +153,9 @@ static OptionalParseResult parseOptionalNewKGENSignature(AsmParser &p,
   OptionalParseResult result = parseOptionalSignatureValues(
       p, parseArg, functionType, effects, /*optionalResultList=*/false);
   if (result.has_value() && succeeded(*result)) {
-    signature = NewSignatureType::getChecked([&] { return p.emitError(loc); },
-                                             functionType, argConventions,
-                                             effects, /*metadata=*/{});
+    signature =
+        FuncType::getChecked([&] { return p.emitError(loc); }, functionType,
+                             argConventions, effects, /*metadata=*/{});
     if (!signature)
       return failure();
   }
@@ -179,8 +179,8 @@ static OptionalParseResult parseOptionalKGENGenerator(AsmParser &p,
     }
   }
 
-  // Try to parse an optional new signature immediately here because we do not
-  // allow standalone new signatures yet.
+  // Try to parse an optional FuncType immediately here because we do not
+  // allow standalone FuncTypes yet.
   OptionalParseResult optionalSigBody = parseOptionalNewKGENSignature(p, body);
   if (optionalSigBody.has_value()) {
     if (failed(*optionalSigBody))
@@ -189,7 +189,7 @@ static OptionalParseResult parseOptionalKGENGenerator(AsmParser &p,
     return mlir::success();
   }
 
-  // For anything that's not a signature generator, require a param list.
+  // For anything that's not a func type generator, require a param list.
   if (!sawParamList)
     return std::nullopt;
 
@@ -241,11 +241,11 @@ OptionalParseResult KGEN::parseOptionalKGENType(AsmParser &p, Type &type) {
     }
   }
 
-  // Try to parse an optional new signature. NewSignatures begin with `(`.
-  // For now we parse all standalone new signature types as signature generator
-  // types for back-compat.
+  // Try to parse an optional FuncType. FuncTypes begin with `(`.
+  // For now we parse all standalone FuncTypes as FuncType generator types for
+  // back-compat.
   {
-    NewSignatureType signature;
+    FuncType signature;
     OptionalParseResult result = parseOptionalNewKGENSignature(p, signature);
     if (result.has_value()) {
       if (failed(*result))
@@ -284,8 +284,8 @@ void KGEN::printKGENType(AsmPrinter &p, Type type) {
     it->second(p, type);
   } else if (auto ref = dyn_cast<StructTypeInterface>(type)) {
     ref.printSymbol(p);
-  } else if (auto signature = dyn_cast<NewSignatureType>(type)) {
-    printNewSignature(p, signature);
+  } else if (auto signature = dyn_cast<FuncType>(type)) {
+    printFuncType(p, signature);
   } else if (auto generator = dyn_cast<GeneratorType>(type)) {
     printGenerator(p, generator);
   } else {
@@ -865,10 +865,10 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
       return failure();
     return success();
   case (uint32_t)POC::Apply: {
-    auto sigGen = dyn_cast_or_null<SignatureGeneratorType>(type);
+    auto sigGen = dyn_cast_or_null<FuncTypeGeneratorType>(type);
     if (!sigGen)
       return p.emitError(p.getCurrentLocation(),
-                         "expected a signature generator type for 'apply'");
+                         "expected a func type generator type for 'apply'");
 
     if (parseParamValue(p, operands.emplace_back(), sigGen))
       return failure();
@@ -881,12 +881,12 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
     return success();
   }
   case (uint32_t)POC::ApplyResultSlot: {
-    auto sigGen = dyn_cast_or_null<SignatureGeneratorType>(type);
+    auto sigGen = dyn_cast_or_null<FuncTypeGeneratorType>(type);
     if (!sigGen)
       return p.emitError(
           p.getCurrentLocation(),
-          "expected a signature generator type for 'apply_result_slot'");
-    NewSignatureType sig = sigGen.getBody();
+          "expected a func type generator type for 'apply_result_slot'");
+    FuncType sig = sigGen.getBody();
 
     if (parseParamValue(p, operands.emplace_back(), sigGen))
       return failure();
@@ -1657,10 +1657,10 @@ void KGEN::printSignatureValues(AsmPrinter &p,
     p.printArrowTypeList(functionType.getResults());
 }
 
-ParseResult KGEN::parseFunctionSignatureGenerator(
+ParseResult KGEN::parseFunctionFuncTypeGenerator(
     OpAsmParser &p, SmallVectorImpl<OpAsmParser::Argument> &args,
     ParamDeclArrayAttr &inputParams, ParamDeclArrayAttr &resultParams,
-    FunctionType &functionType, SignatureGeneratorType &signature,
+    FunctionType &functionType, FuncTypeGeneratorType &signature,
     ParamDeclParseHookTy parseDeclElt) {
   llvm::SMLoc loc = p.getCurrentLocation();
   SmallVector<ArgConvention> argConventions;
@@ -1700,19 +1700,21 @@ ParseResult KGEN::parseFunctionSignatureGenerator(
                                   /*optionalResultList=*/true)))
     return failure();
 
-  signature = SignatureGeneratorType::remapToSignatureGenerator(
+  signature = FuncTypeGeneratorType::remapToFuncTypeGenerator(
       inputParams, functionType, argConventions, effects, {}, {},
       [&] { return p.emitError(loc); });
   return success(!!signature);
 }
 
-void KGEN::printFunctionSignatureGenerator(
-    OpAsmPrinter &p, Region *region, ArrayRef<ParamDeclAttr> inputParams,
-    ArrayRef<ParamDeclAttr> resultParams, FunctionType functionType,
-    SignatureGeneratorType signature, ParamDeclPrintHookTy printInputElt,
-    ParamDeclPrintHookTy printResultElt) {
+void KGEN::printFunctionFuncTypeGenerator(OpAsmPrinter &p, Region *region,
+                                          ArrayRef<ParamDeclAttr> inputParams,
+                                          ArrayRef<ParamDeclAttr> resultParams,
+                                          FunctionType functionType,
+                                          FuncTypeGeneratorType signature,
+                                          ParamDeclPrintHookTy printInputElt,
+                                          ParamDeclPrintHookTy printResultElt) {
   // Print the function arguments.
-  NewSignatureType sigBase = signature.getBody();
+  FuncType sigBase = signature.getBody();
   auto printElt = [&](unsigned i) {
     if (!region)
       p << functionType.getInput(i);
@@ -1786,7 +1788,7 @@ void KGEN::printOptionalParamSignature(AsmPrinter &p,
   p << '>';
 }
 
-ParseResult KGEN::parseNewSignature(AsmParser &p, Type &signature) {
+ParseResult KGEN::parseFuncType(AsmParser &p, Type &signature) {
   OptionalParseResult result = parseOptionalNewKGENSignature(p, signature);
   if (result.has_value())
     return *result;
@@ -1796,15 +1798,15 @@ ParseResult KGEN::parseNewSignature(AsmParser &p, Type &signature) {
                        "expected '<' or '(' to begin a signature");
   if (failed(*result))
     return failure();
-  if (!isa<NewSignatureType>(signature))
+  if (!isa<FuncType>(signature))
     return p.emitError(p.getCurrentLocation(), "expected a signature type");
   return success();
 }
 
-void KGEN::printNewSignature(AsmPrinter &p, NewSignatureType signature) {
+void KGEN::printFuncType(AsmPrinter &p, FuncType signature) {
   // If the signature has metadata, ask its dialect to print the signature.
   if (FnMetadataAttrInterface metadata = signature.getMetadata()) {
-    metadata.printNewSignature(p, signature);
+    metadata.printFuncType(p, signature);
     return;
   }
 
@@ -1818,13 +1820,13 @@ void KGEN::printNewSignature(AsmPrinter &p, NewSignatureType signature) {
                        /*optionalResultList=*/false);
 }
 
-ParseResult
-KGEN::parseKGENSignatureGenerator(AsmParser &p, FunctionType &functionType,
-                                  SignatureGeneratorType &generator) {
+ParseResult KGEN::parseKGENFuncTypeGenerator(AsmParser &p,
+                                             FunctionType &functionType,
+                                             FuncTypeGeneratorType &generator) {
   Type type;
   if (parseGenerator(p, type))
     return failure();
-  generator = dyn_cast<SignatureGeneratorType>(type);
+  generator = dyn_cast<FuncTypeGeneratorType>(type);
   if (!generator)
     return failure();
   functionType = generator.getBody().getValues();
@@ -1855,8 +1857,8 @@ void KGEN::printGenerator(AsmPrinter &p, GeneratorType generator) {
   }
 
   // For maximum textual IR back-compat, skip printing the empty angle brackets
-  // for signature generators. We should remove this sugar after the migration.
-  if (!isa<NewSignatureType>(generator.getBody()) ||
+  // for func type generators. We should remove this sugar after the migration.
+  if (!isa<FuncType>(generator.getBody()) ||
       !generator.getInputParamTypes().empty()) {
     p << '<';
     printParamTypes(p, generator.getInputParamTypes());
@@ -1865,57 +1867,15 @@ void KGEN::printGenerator(AsmPrinter &p, GeneratorType generator) {
   printParamType(p, generator.getBody());
 }
 
-ParseResult
-KGEN::parseKGENSignatureGeneratorOld(AsmParser &p, FunctionType &functionType,
-                                     SignatureGeneratorType &sigGen) {
-  llvm::SMLoc loc = p.getCurrentLocation();
-
-  SmallVector<StringAttr> argNames;
-  SmallVector<ArgConvention> argConventions;
-  auto parseArg = [&](SmallVectorImpl<Type> &argTypes) -> ParseResult {
-    if (p.parseType(argTypes.emplace_back()) ||
-        parseArgConvention(p, argConventions.emplace_back()))
-      return failure();
-    return success();
-  };
-
-  FnEffects effects;
-  OptionalParseResult result =
-      parseOptionalSignatureValues(p, parseArg, functionType, effects,
-                                   /*optionalResultList=*/false);
-  if (result.has_value() && failed(*result))
-    return failure();
-  // Try to parse a signature alias.
-  if (!result.has_value()) {
-    result = p.parseOptionalType(sigGen);
-    if (result.has_value() && failed(*result))
-      return failure();
-    if (!result.has_value())
-      return p.emitError(loc, "expected a KGEN signature generator");
-    NewSignatureType signature = sigGen.getBody();
-    functionType = signature.getValues();
-    sigGen = SignatureGeneratorType::remapToSignatureGenerator(
-        {}, functionType, signature.getArgConventions(),
-        signature.getFnEffects(), signature.getMetadata(), sigGen.getMetadata(),
-        [&] { return p.emitError(loc); });
-    return success();
-  }
-
-  sigGen = SignatureGeneratorType::remapToSignatureGenerator(
-      {}, functionType, argConventions, effects, {}, {},
-      [&] { return p.emitError(loc); });
-  return success(!!sigGen);
-}
-
 void KGEN::printSignatureValues(AsmPrinter &p, FunctionType functionType,
-                                SignatureGeneratorType sigGen) {
+                                FuncTypeGeneratorType sigGen) {
   // If the signature has metadata, ask its dialect to print the signature.
   if (GeneratorMetadataAttrInterface metadata = sigGen.getMetadata()) {
     metadata.printGenerator(p, sigGen);
     return;
   }
 
-  NewSignatureType signature = sigGen.getBody();
+  FuncType signature = sigGen.getBody();
   auto printElt = [&](unsigned i) {
     p << functionType.getInput(i);
     printArgConvention(p, signature.getArgConvention(i));
@@ -2060,10 +2020,10 @@ ParseResult KGEN::parseParametricCallee(OpAsmParser &p, TypedAttr &callee) {
       parseParamValue(p, callee, type) || p.parseRSquare())
     return failure();
 
-  if (!isa<ParamType, SignatureGeneratorType>(callee.getType()))
+  if (!isa<ParamType, FuncTypeGeneratorType>(callee.getType()))
     return p.emitError(
                loc,
-               "callee parameter type must be a signature generator type. Got ")
+               "callee parameter type must be a func type generator type. Got ")
            << callee.getType();
   return success();
 }
@@ -2126,12 +2086,12 @@ static ParseResult verifyMatchingLists(
 /// Check that the specified declaration signatures match, checking the
 /// parameter and value type information.
 LogicalResult KGEN::verifyDeclSignaturesMatch(
-    StringRef lhsName, SignatureGeneratorType lhsSigGen, Location lhsLoc,
-    StringRef rhsName, SignatureGeneratorType rhsSigGen, Location rhsLoc) {
+    StringRef lhsName, FuncTypeGeneratorType lhsSigGen, Location lhsLoc,
+    StringRef rhsName, FuncTypeGeneratorType rhsSigGen, Location rhsLoc) {
   VerboseCompilerTimeTraceScope traceScope("verifyDeclSignaturesMatch");
 
-  NewSignatureType lhsSig = lhsSigGen.getBody();
-  NewSignatureType rhsSig = rhsSigGen.getBody();
+  FuncType lhsSig = lhsSigGen.getBody();
+  FuncType rhsSig = rhsSigGen.getBody();
 
   FunctionType lhsType = lhsSig.getValues();
   FunctionType rhsType = rhsSig.getValues();
@@ -2214,8 +2174,7 @@ LogicalResult KGEN::checkResultArgumentTypes(Operation *op,
 }
 
 LogicalResult KGEN::verifyCallOperands(Operation *op, ValueRange args,
-                                       NewSignatureType callee,
-                                       bool ignoreByRef) {
+                                       FuncType callee, bool ignoreByRef) {
   unsigned numByRef = ignoreByRef * callee.getNumAsyncReturnSlots();
   if (args.size() != callee.getNumArguments() - numByRef) {
     return op->emitOpError("callee expected ")
@@ -2234,7 +2193,7 @@ LogicalResult KGEN::verifyCallOperands(Operation *op, ValueRange args,
 }
 
 LogicalResult KGEN::verifyCallResults(Operation *op, ValueRange results,
-                                      NewSignatureType callee) {
+                                      FuncType callee) {
   if (results.size() != callee.getNumResults()) {
     return op->emitOpError("callee expected ")
            << callee.getNumArguments() << " results but operation only has "

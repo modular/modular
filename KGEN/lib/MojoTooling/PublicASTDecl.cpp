@@ -89,7 +89,7 @@ static std::string generatePValueString(SharedState &shared, PValue value) {
 /// Unpack a origin into a printable name when it is uttered in a signature
 /// position.
 static std::string getSignatureOrigin(SharedState &shared, TypedAttr origin,
-                                      LITSignatureGeneratorType signature,
+                                      FnTypeGeneratorType signature,
                                       bool isRefResult) {
   // Strip out extra stuff.
   origin = OriginType::stripMutCastAndFieldExtract(origin);
@@ -138,7 +138,7 @@ static std::string getSignatureOrigin(SharedState &shared, TypedAttr origin,
 /// Unpack a "ref" argument or result type into a string that can be shown to
 /// the user.
 static std::string getRefPrefixAsString(SharedState &shared, RefType refType,
-                                        LITSignatureGeneratorType signature,
+                                        FnTypeGeneratorType signature,
                                         bool isRefResult) {
   std::string signatureLifetime =
       getSignatureOrigin(shared, refType.getOrigin(), signature, isRefResult);
@@ -846,12 +846,12 @@ PublicFunctionDecl::PublicFunctionDecl(MojoASTDeclRef declRef)
   isDefFlag = funcOp.isDef();
   isInit = funcOp.getSpecialFunctionInfo().isInitializer();
 
-  initFromSignature(declRef, funcOp.getSignatureGenerator(),
+  initFromSignature(declRef, funcOp.getFuncTypeGenerator(),
                     funcOp.getArgumentTypes(), funcOp.getUserResultType());
 }
 
-PublicFunctionDecl::PublicFunctionDecl(
-    MojoASTDeclRef declRef, KGEN::LIT::LITSignatureGeneratorType signature)
+PublicFunctionDecl::PublicFunctionDecl(MojoASTDeclRef declRef,
+                                       KGEN::LIT::FnTypeGeneratorType signature)
     : PublicDecl(PublicDeclKind::DK_PublicFunctionDecl,
                  /*name=*/StringRef()) {
   initFromSignature(declRef, signature, signature.getArguments(),
@@ -859,7 +859,7 @@ PublicFunctionDecl::PublicFunctionDecl(
 }
 
 void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
-                                           LITSignatureGeneratorType signature,
+                                           FnTypeGeneratorType signature,
                                            ArrayRef<Type> userArgTypes,
                                            Type userResultType) {
   auto &shared = *declRef.getShared();

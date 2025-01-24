@@ -108,7 +108,7 @@ def CO_InvokeOp : COOp<"invoke", [
   }];
 
   let arguments = (ins
-    AttrOfType<KGEN_SignatureGeneratorType>:$callee,
+    AttrOfType<KGEN_FuncTypeGeneratorType>:$callee,
     Variadic<AnyType>:$operands
   );
   let results = (outs CoroutineType:$coroutine);
@@ -257,7 +257,7 @@ def CO_ResumeOp : COOp<"resume"> {
   }];
 
   let arguments = (ins CoroutineType:$coroutine);
-  let results = (outs KGEN_SignatureGeneratorType:$result);
+  let results = (outs KGEN_FuncTypeGeneratorType:$result);
   let assemblyFormat = "$coroutine attr-dict `:` type($result)";
 }
 
@@ -363,7 +363,7 @@ def CO_HotInvokeOp : COOp<"hot_invoke", [
   }];
 
   let arguments = (ins
-    AttrOfType<KGEN_SignatureGeneratorType>:$callee,
+    AttrOfType<KGEN_FuncTypeGeneratorType>:$callee,
     Variadic<AnyType>:$calleeOperands
   );
   let results = (outs Variadic<AnyType>:$results);

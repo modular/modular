@@ -46,7 +46,7 @@ struct Node : public SCCNode<Node, FuncOp, CallOp> {
     // to them. This sets them to a fixed point, so we don't need to check them.
     bool exported = func.isExported();
     for (ArgConvention conv :
-         func.getSignatureGenerator().getBody().getArgConventions()) {
+         func.getFuncTypeGenerator().getBody().getArgConventions()) {
       // We can't change the ABI of exported functions.
       argStates.push_back(!exported && hasAddress(conv) ? State::NoCapture
                                                         : State::Capture);
@@ -244,7 +244,7 @@ void Graph::doRewrite(const Node *node) {
   // arguments are passed in by value. 'out' arguments are dropped and returned
   // through SSA results.
   Block *body = func.getBody();
-  NewSignatureType signature = func.getSignatureGenerator().getBody();
+  FuncType signature = func.getFuncTypeGenerator().getBody();
   SmallVector<ArgConvention> convs;
   ImplicitLocOpBuilder b{func.getLoc(), OpBuilder::atBlockBegin(body)};
   SmallVector<mlir::TypedValue<PointerType>> outArgs;
@@ -311,9 +311,8 @@ void Graph::doRewrite(const Node *node) {
     newResultTypes.push_back(arg.getType().getElementType());
   auto functionType = FunctionType::get(
       func.getContext(), body->getArgumentTypes(), newResultTypes);
-  signature =
-      NewSignatureType::get(functionType, convs, signature.getFnEffects());
-  func.setSignatureGenerator(
+  signature = FuncType::get(functionType, convs, signature.getFnEffects());
+  func.setFuncTypeGenerator(
       GeneratorType::get(/*inputParamTypes=*/{}, signature));
 
   // For the second part of the rewrite, we perform the corresponding rewrite of
@@ -323,8 +322,8 @@ void Graph::doRewrite(const Node *node) {
     newOperands.clear();
     outArgs.clear();
 
-    SignatureGeneratorType sigGen = call.getCalleeSignature();
-    NewSignatureType sigBase = sigGen.getBody();
+    FuncTypeGeneratorType sigGen = call.getCalleeSignature();
+    FuncType sigBase = sigGen.getBody();
     ImplicitLocOpBuilder b{call.getLoc(), OpBuilder(call)};
     for (auto [arg, conv, state] :
          llvm::zip(call.getOperands(), sigBase.getArgConventions(),
@@ -385,7 +384,7 @@ void Graph::doRewrite(const Node *node) {
     // Finally, update the callee signature.
     functionType = FunctionType::get(func.getContext(), call->getOperandTypes(),
                                      call->getResultTypes());
-    SignatureGeneratorType calleeSignature = SignatureGeneratorType::get(
+    FuncTypeGeneratorType calleeSignature = FuncTypeGeneratorType::get(
         {}, functionType, convs, sigBase.getFnEffects());
     call.setCalleeAttr(
         SymbolConstantAttr::get(call.getCalleeSymbol(), calleeSignature));

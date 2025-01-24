@@ -91,7 +91,7 @@ private:
   LLVM::LLVMFuncOp
   generateWrapperFunction(CreateClosureOp op,
                           ConversionPatternRewriter &rewriter) const {
-    SignatureGeneratorType calleeSignature = op.getCalleeType();
+    FuncTypeGeneratorType calleeSignature = op.getCalleeType();
     FunctionType calleeType = calleeSignature.getBody().getValues();
     MLIRContext *context = getContext();
 
@@ -172,7 +172,7 @@ private:
     rewriter.setInsertionPointToStart(&wrapperFnBody);
 
     Type envCalleeType = adaptor.getCallee().getType();
-    if (auto sigType = dyn_cast<SignatureGeneratorType>(envCalleeType))
+    if (auto sigType = dyn_cast<FuncTypeGeneratorType>(envCalleeType))
       envCalleeType = typeConverter->convertType(sigType.getBody().getValues());
 
     SmallVector<Value> liftedNestedFunctionCallArgs(
@@ -320,7 +320,7 @@ struct CallIndirectOpConversion
     Value callee = op.getCallee();
     LLVM::CallOp llvmCall;
     auto isClosureType = [](Type type) {
-      if (auto sigType = dyn_cast<SignatureGeneratorType>(type))
+      if (auto sigType = dyn_cast<FuncTypeGeneratorType>(type))
         return sigType.getBody().isCapturing();
       return false;
     };
@@ -339,7 +339,7 @@ struct CallIndirectOpConversion
       wrapperFnArgTypes.push_back(pointerType);
 
       auto calleeFuncTy =
-          cast<SignatureGeneratorType>(callee.getType()).getBody().getValues();
+          cast<FuncTypeGeneratorType>(callee.getType()).getBody().getValues();
       for (Type argTy : calleeFuncTy.getInputs()) {
         Type ty = convertType(argTy);
         if (!ty)

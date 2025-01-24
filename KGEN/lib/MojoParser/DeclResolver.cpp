@@ -295,16 +295,15 @@ DeclResolver::aliasDeclsImpl(ArrayRef<ASTDecl *> decls, StringAttr name,
           return false;
         FnOp existingOp = cast<FnOp>(existing->getIfOperation());
 
-        LITSignatureGeneratorType declSignature = declOp.getFullSignature();
-        LITSignatureGeneratorType existingSignature =
-            existingOp.getFullSignature();
+        FnTypeGeneratorType declSignature = declOp.getFullSignature();
+        FnTypeGeneratorType existingSignature = existingOp.getFullSignature();
         // If the argument types match exactly *and* the parameter
         // types match exactly, then we don't want to merge this decl into the
         // set. We also need to remove the by-ref result type from the
         // input types, so that aliasing is strictly based on the actual
         // inputs.
         auto getActualArgs =
-            [](LITSignatureGeneratorType signature) -> ArrayRef<Type> {
+            [](FnTypeGeneratorType signature) -> ArrayRef<Type> {
           ArrayRef<Type> inputTypes = signature.getArguments();
           // Drop the trailing result slots. Memory-only functions and throwing
           // functions each add a result slot.
@@ -719,8 +718,7 @@ void DeclResolver::registerAndCheckExport(StringRef aliasName, SMLoc loc) {
 
 void DeclResolver::exportMain(ASTDecl &funcDecl) {
   FnOp userMainFn = cast<FnOp>(funcDecl);
-  LITSignatureGeneratorType userMainSignature =
-      userMainFn.getSignatureGenerator();
+  FnTypeGeneratorType userMainSignature = userMainFn.getFuncTypeGenerator();
   ASTDecl *containingDecl = funcDecl.getParentDecl();
   SMLoc loc = funcDecl.getLoc();
 
@@ -847,22 +845,21 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   if (!mainWrapperDecl)
     return;
   FnOp mainWrapperFn = cast<FnOp>(*mainWrapperDecl);
-  LITSignatureGeneratorType mainWrapperSigGen =
-      mainWrapperFn.getSignatureGenerator();
+  FnTypeGeneratorType mainWrapperSigGen = mainWrapperFn.getFuncTypeGenerator();
 
   // Generate a reference to the main wrapper function, which expects the user
   // main to be provided via an parameter.
-  LITNewSignatureType mainWrapperSig = mainWrapperSigGen.getBody();
+  FnType mainWrapperSig = mainWrapperSigGen.getBody();
   FnMetadataAttr mainWrapperFnMeta = mainWrapperSig.getMetadata();
   auto strippedMainWrapperFnMeta = FnMetadataAttr::get(
       mainWrapperFnMeta.getArgListAttrs(),
       mainWrapperFnMeta.getNumImplicitOriginDecls(),
       mainWrapperFnMeta.getCaptureOrigins(),
       mainWrapperFnMeta.getIsNestedOriginExclusivityCheckingDisabled());
-  auto strippedMainWrapperSig = NewSignatureType::get(
-      getContext(), mainWrapperSig.getValues(),
-      mainWrapperSig.getArgConventions(), mainWrapperSig.getFnEffects(),
-      strippedMainWrapperFnMeta);
+  auto strippedMainWrapperSig =
+      FuncType::get(getContext(), mainWrapperSig.getValues(),
+                    mainWrapperSig.getArgConventions(),
+                    mainWrapperSig.getFnEffects(), strippedMainWrapperFnMeta);
   SymbolConstantAttr wrapperFnRef = SymbolConstantAttr::get(
       getFullyResolvedSymbolRef(mainWrapperFn),
       GeneratorType::get(/*inputParamTypes=*/{}, strippedMainWrapperSig,
@@ -883,12 +880,11 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
 //===----------------------------------------------------------------------===//
 // Decl Helpers
 
-StringAttr
-DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
-                             LITSignatureGeneratorType signatureGen) {
+StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
+                                        FnTypeGeneratorType signatureGen) {
   // Compute the full signature of the decl to ensure dependent parameters from
   // a parent decl are name-erased in the mangled name.
-  LITSignatureGeneratorType fullSig =
+  FnTypeGeneratorType fullSig =
       LIT::getFullSignature(container.getIfOperation(), signatureGen);
 
   SmallString<64> mangledName(baseName.getValue().begin(),

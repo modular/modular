@@ -61,7 +61,7 @@ static Type lowerPointerType(Type type) {
 
 namespace {
 struct LoweredSignature {
-  NewSignatureType newSig;
+  FuncType newSig;
   SmallVector<size_t> changedIndices;
   SmallVector<Type> newResTypes;
 
@@ -99,8 +99,8 @@ struct LoweredSignature {
 /// Lowers the given signature if needed, and returns the non-result argument
 /// indices (on the input signature) that needed to be changed. A flag is also
 /// returned to indicate if the result of a signature with `byref_result` was
-/// changed, in which case the new signature will no longer have that argument.
-static LoweredSignature lowerSignature(NewSignatureType sig) {
+/// changed, in which case the func type will no longer have that argument.
+static LoweredSignature lowerSignature(FuncType sig) {
   ArrayRef<ArgConvention> oldConvs = sig.getArgConventions();
   SmallVector<ArgConvention> newConvs(oldConvs);
 
@@ -115,7 +115,7 @@ static LoweredSignature lowerSignature(NewSignatureType sig) {
     if (convention == ArgConvention::ReadMem ||
         convention == ArgConvention::OwnedMem) {
       if (Type newArgTy = lowerPointerType(argTy)) {
-        // Update the info needed for the new signature.
+        // Update the info needed for the func type.
         newConvs[idx] = convention == ArgConvention::OwnedMem
                             ? ArgConvention::OwnedReg
                             : ArgConvention::ReadReg;
@@ -158,8 +158,8 @@ static LoweredSignature lowerSignature(NewSignatureType sig) {
 
     auto newFnType =
         FunctionType::get(sig.getContext(), newInputTypes, s.newResTypes);
-    s.newSig = NewSignatureType::get(newFnType, newConvs, sig.getFnEffects(),
-                                     sig.getMetadata());
+    s.newSig = FuncType::get(newFnType, newConvs, sig.getFnEffects(),
+                             sig.getMetadata());
   }
 
   return s;
@@ -168,11 +168,10 @@ static LoweredSignature lowerSignature(NewSignatureType sig) {
 /// Helper to perform the bulk of the lowering for `kgen.call` and
 /// `kgen.call_indirect` ops.
 static void lowerCallOpImpl(
-    Operation *op, Operation::operand_range oldOperands,
-    NewSignatureType oldSig,
-    function_ref<void(Operation *, NewSignatureType, ValueRange)> updateArgs) {
+    Operation *op, Operation::operand_range oldOperands, FuncType oldSig,
+    function_ref<void(Operation *, FuncType, ValueRange)> updateArgs) {
   LoweredSignature s = lowerSignature(oldSig);
-  NewSignatureType newSig = s.newSig;
+  FuncType newSig = s.newSig;
   if (!newSig)
     return;
 
@@ -254,7 +253,7 @@ static void lowerCallOp(CallOp callOp) {
   lowerCallOpImpl(
       callOp, callOp.getOperands(),
       callOp.getCalleeSignature().getInstantiatedBody(),
-      [](Operation *op, NewSignatureType newSig, ValueRange newOperands) {
+      [](Operation *op, FuncType newSig, ValueRange newOperands) {
         auto callOp = cast<CallOp>(op);
         callOp->setOperands(newOperands);
         callOp.setCalleeAttr(SymbolConstantAttr::get(
@@ -264,14 +263,13 @@ static void lowerCallOp(CallOp callOp) {
 
 /// Lower the input conventions for a KGEN::CallIndirectOp if needed.
 static void lowerCallIndirectOp(CallIndirectOp callOp) {
-  NewSignatureType oldSig = callOp.getCallee().getType().getBody();
-  lowerCallOpImpl(callOp, callOp.getArguments(), oldSig,
-                  [&oldSig](Operation *op, NewSignatureType newSig,
-                            ValueRange newOperands) {
-                    auto callOp = cast<CallIndirectOp>(op);
-                    callOp->setOperands(1, oldSig.getNumArguments(),
-                                        newOperands);
-                  });
+  FuncType oldSig = callOp.getCallee().getType().getBody();
+  lowerCallOpImpl(
+      callOp, callOp.getArguments(), oldSig,
+      [&oldSig](Operation *op, FuncType newSig, ValueRange newOperands) {
+        auto callOp = cast<CallIndirectOp>(op);
+        callOp->setOperands(1, oldSig.getNumArguments(), newOperands);
+      });
 }
 
 /// Emit IR for repacking the returned variant in the body of a throwing
@@ -322,9 +320,9 @@ static Value repackFuncVariantResult(ReturnOp returnOp,
 
 /// Lower the input conventions for a KGEN::FuncOp if needed.
 static void lowerFuncOp(FuncOp funcOp) {
-  NewSignatureType oldSig = funcOp.getSignatureGenerator().getBody();
+  FuncType oldSig = funcOp.getFuncTypeGenerator().getBody();
   LoweredSignature s = lowerSignature(oldSig);
-  NewSignatureType newSig = s.newSig;
+  FuncType newSig = s.newSig;
   if (!newSig)
     return;
 
@@ -397,7 +395,7 @@ static void lowerFuncOp(FuncOp funcOp) {
       returnOp->insertOperands(1, newRes);
     });
   }
-  funcOp.setSignatureGenerator(GeneratorType::get(
+  funcOp.setFuncTypeGenerator(GeneratorType::get(
       /*inputParamTypes=*/{}, newSig));
 }
 
@@ -417,8 +415,8 @@ void LowerArgConventionsPass::runOnOperation() {
   // would be difficult to identify for lowering (since their argument types
   // would be lowered already).
   mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([](NewSignatureType sig) {
-    NewSignatureType newSig = lowerSignature(sig).newSig;
+  replacer.addReplacement([](FuncType sig) {
+    FuncType newSig = lowerSignature(sig).newSig;
     return newSig ? newSig : sig;
   });
   auto metatype = TypeType::get(&getContext());

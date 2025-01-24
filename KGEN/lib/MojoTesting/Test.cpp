@@ -397,7 +397,7 @@ struct Test::TestDiscovery {
     std::optional<StringRef> name = fn.getSourceName();
     if (!name || !(name->starts_with("test_") || name->ends_with("_test")))
       return false;
-    auto fnSignature = fn.getSignatureGenerator();
+    auto fnSignature = fn.getFuncTypeGenerator();
 
     // Validate that the test has the expected signature.
     if (!fnSignature.getInputParamTypes().empty() ||

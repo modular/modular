@@ -116,8 +116,8 @@ bool BitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
 bool PointerBitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
   if (inputs.size() != 1 || outputs.size() != 1)
     return false;
-  return isa<ParamType, PointerType, SignatureGeneratorType>(inputs.front()) &&
-         isa<ParamType, PointerType, SignatureGeneratorType>(outputs.front());
+  return isa<ParamType, PointerType, FuncTypeGeneratorType>(inputs.front()) &&
+         isa<ParamType, PointerType, FuncTypeGeneratorType>(outputs.front());
 }
 
 //===----------------------------------------------------------------------===//

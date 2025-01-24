@@ -116,7 +116,7 @@ insertDebugVariableForArg(OpBuilder &builder, FnOp func, BlockArgument arg,
 
   // If this argument has address, its needs an initial deref.
   ArgConvention convention =
-      func.getSignatureGenerator().getArgConvention(arg.getArgNumber());
+      func.getFuncTypeGenerator().getArgConvention(arg.getArgNumber());
   if (hasAddress(convention)) {
     if (auto argRefType = dyn_cast<RefType>(arg.getType())) {
       diExpr =
@@ -266,10 +266,10 @@ static SymbolConstantAttr getSpecialMemberForType(
 TypedAttr TypeDeclInfo::getDestructorForType(Type type) const {
   if (auto generic = dyn_cast<ParamType>(type)) {
     if (auto trait = dyn_cast<TraitType>(generic.getParam().getType())) {
-      SignatureGeneratorType dtorSig =
+      FuncTypeGeneratorType dtorSig =
           TraitDeclOp(traitMap.at(trait.getSymbol()))
               .getDtorSig()
-              .value_or(SignatureGeneratorType());
+              .value_or(FuncTypeGeneratorType());
       if (dtorSig) {
         // Bind the *(0,0) parameter to a concrete type we're using in this
         // context.
@@ -702,7 +702,7 @@ ValueSet::ValueSet(TypeDeclInfo &typeDeclInfo, FnOp func,
       });
 
   ArrayRef<PogMetadataAttr> pogList =
-      func.getSignatureGenerator().getArgListAttrs().getPogs();
+      func.getFuncTypeGenerator().getArgListAttrs().getPogs();
   OpBuilder debugBuilder = OpBuilder::atBlockBegin(func.getBody());
   for (BlockArgument arg : func.getArguments()) {
     DebugInfo::DILocalVariableAttr debugVariable;
@@ -825,8 +825,7 @@ void ValueSet::dump() const {
     // If this is a function argument, be nice and include the name.
     if (auto bbArg = dyn_cast<BlockArgument>(info.value)) {
       if (auto fn = dyn_cast_or_null<FnOp>(bbArg.getOwner()->getParentOp()))
-        os << fn.getSignatureGenerator().getArgName(bbArg.getArgNumber())
-           << " ";
+        os << fn.getFuncTypeGenerator().getArgName(bbArg.getArgNumber()) << " ";
     }
 
     os << info.value << "\n";
@@ -2032,8 +2031,7 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
     return emitLifetimeEnd(value, builder);
   }
 
-  NewSignatureType signature =
-      cast<SignatureGeneratorType>(dtor.getType()).getBody();
+  FuncType signature = cast<FuncTypeGeneratorType>(dtor.getType()).getBody();
   assert(signature.getNumResults() == 1 &&
          "dtor should have one result (none type)");
   assert(signature.getNumArguments() == 1 && "dtor should have one operand");
@@ -2478,8 +2476,7 @@ DestructorInserter::elideCopyInitMem(LIT::CallOp copyInitCall,
 
     // moveCtor must have __moveinit__(out self, owned: Self) type.
 #ifndef NDEBUG
-  NewSignatureType moveSig =
-      cast<SignatureGeneratorType>(moveCtor.getType()).getBody();
+  FuncType moveSig = cast<FuncTypeGeneratorType>(moveCtor.getType()).getBody();
   assert(moveSig.getNumArguments() == 2);
   assert(moveSig.getArgConvention(0) == ArgConvention::OwnedMem);
   assert(moveSig.getArgConvention(1) == ArgConvention::ByRefResult);
@@ -2570,7 +2567,7 @@ private:
   ValueSet &valueSet;
 
   /// This is the signature of the current function being analyzed.
-  SignatureGeneratorType functionSignature;
+  FuncTypeGeneratorType functionSignature;
 
   /// This is the set of values known to be used below this point, so they
   /// should not be destroyed if there are uses.  Any use of a value /not/ in
@@ -2625,7 +2622,7 @@ private:
 }
 
 void DestructorInsertion::scanFunction(FnOp func) {
-  functionSignature = func.getSignatureGenerator();
+  functionSignature = func.getFuncTypeGenerator();
 
   consumedValues.resize(valueSet.getNumTotalBits());
   // Slot 0 indicates this block is reachable.  This will be cleared if an
@@ -2646,7 +2643,7 @@ void DestructorInsertion::scanFunction(FnOp func) {
   // though there is a use.
   for (auto [argValue, conv] :
        llvm::zip(func.getArguments(),
-                 func.getSignatureGenerator().getArgConventions())) {
+                 func.getFuncTypeGenerator().getArgConventions())) {
     // Ignore undef-on-input values.
     if (isResultSlot(conv))
       continue;

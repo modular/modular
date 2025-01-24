@@ -104,7 +104,7 @@ std::optional<FunctionTrait> FunctionTrait::identify(GeneratorOp func) {
   auto ret = dyn_cast<ReturnOp>(func.getBody()->getTerminator());
   if (!ret)
     return {};
-  NewSignatureType sig = func.getSignatureGenerator().getBody();
+  FuncType sig = func.getFuncTypeGenerator().getBody();
   Operation *first = getFirstNonDebugNode(func.getBody());
 
   // Check one argument, one result, return is only operation in the body. It

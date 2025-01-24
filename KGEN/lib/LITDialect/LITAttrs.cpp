@@ -266,12 +266,12 @@ void PogListAttr::printGenerator(AsmPrinter &p, GeneratorType generator) const {
   ArrayRef<Type> paramTypes = generator.getInputParamTypes();
 
   p << "!lit.generator<";
-  if (auto sig = ::dyn_cast<LITNewSignatureType>(generator.getBody())) {
-    // Special case for Signature Generators: Skip the empty angle brackets, and
-    // print the signature without any additional wrapper.
+  if (auto sig = ::dyn_cast<FnType>(generator.getBody())) {
+    // Special case for FnType Generators: Skip the empty angle brackets, and
+    // print the FnType without any additional wrapper.
     if (!paramTypes.empty())
       LIT::printOptionalParamSignature(p, paramTypes, *this);
-    printLITNewSignature(p, sig);
+    printFnType(p, sig);
   } else {
     if (paramTypes.empty())
       p << "<>";
@@ -449,7 +449,7 @@ SmallVector<bool> LIT::getContextualVariadicMask(ArrayRef<Operation *> ops) {
   return variadicMask;
 }
 
-LogicalResult FnMetadataAttr::verifyNewSignature(
+LogicalResult FnMetadataAttr::verifyFuncType(
     function_ref<InFlightDiagnostic()> emitError, FunctionType values,
     ArrayRef<ArgConvention> argConventions, FnEffects effects) const {
   // Verify input conventions.
@@ -543,11 +543,10 @@ bool FnMetadataAttr::isPackVarArg(size_t idx) const {
   return getArgListAttrs().isPack(idx);
 }
 
-void FnMetadataAttr::printNewSignature(AsmPrinter &p,
-                                       NewSignatureType sig) const {
-  p << "!lit.signature<";
-  auto signature = ::cast<LITNewSignatureType>(sig);
-  printLITNewSignature(p, signature);
+void FnMetadataAttr::printFuncType(AsmPrinter &p, FuncType sig) const {
+  p << "!lit.fn<";
+  auto signature = ::cast<FnType>(sig);
+  printFnType(p, signature);
   p << '>';
 }
 

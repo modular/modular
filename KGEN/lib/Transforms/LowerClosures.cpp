@@ -142,7 +142,7 @@ static void lowerAsyncExecute(FuncOp parent, CO::ExecuteOp op,
   if (numByRefResults)
     conventions.push_back(ArgConvention::ByRefResult);
 
-  auto sig = NewSignatureType::get(
+  auto sig = FuncType::get(
       b.getFunctionType(body.getArgumentTypes(), op.getTypes()), conventions,
       FnEffects().setAsync().setThrows(numByRefResults == 2));
   auto lifted = b.create<FuncOp>(name, sig);
@@ -188,7 +188,7 @@ static void lowerAwait(CO::AwaitOp op) {
   Value parent = body->addArgument(op.getCoroutine().getType(), op.getLoc());
 
   auto coroutineType = CO::CoroutineType::get(ctx);
-  auto signatureType = SignatureGeneratorType::get(
+  auto signatureType = FuncTypeGeneratorType::get(
       /*inputParamTypes=*/{}, b.getFunctionType({coroutineType}, {}));
   auto callbackType =
       PointerType::get(StructType::get({signatureType, coroutineType}));
@@ -244,7 +244,7 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
 
   // We need to ensure we have conventions for each argument.
   // TODO: what convention do we use for the captures?
-  NewSignatureType oldSig = op.getType().getBody();
+  FuncType oldSig = op.getType().getBody();
   // TODO: What conventions do we use for captures.
   SmallVector<ArgConvention> newConventions(
       body.getArguments().size() - numArgs, ArgConvention::ReadReg);
@@ -257,8 +257,7 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
   ImplicitLocOpBuilder b(op.getLoc(), ctx);
   FunctionType functionType =
       b.getFunctionType(body.getArgumentTypes(), oldSig.getResults());
-  auto sig = NewSignatureType::get(functionType, newConventions,
-                                   oldSig.getFnEffects());
+  auto sig = FuncType::get(functionType, newConventions, oldSig.getFnEffects());
 
   // Create the lifted function. Make sure it doesn't get inlined back.
   StringAttr name;

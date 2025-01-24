@@ -32,13 +32,13 @@ KGEN::LIT::SharedState *MojoASTDeclRef::getShared() const {
 
 /// Return the signature type contained by this decl (e.g. if it's a function),
 /// or null otherwise.
-static LITSignatureGeneratorType getSignatureFromDecl(ASTDecl *decl) {
+static FnTypeGeneratorType getSignatureFromDecl(ASTDecl *decl) {
   if (!decl)
     return nullptr;
   if (auto func = dyn_cast<FnOp>(*decl))
-    return func.getSignatureGenerator();
+    return func.getFuncTypeGenerator();
   if (auto pValue = decl->getIfIRValue().getIfPValue())
-    return dyn_cast_or_null<LITSignatureGeneratorType>(
+    return dyn_cast_or_null<FnTypeGeneratorType>(
         pValue.getIfTypeValue().mlirType);
   return nullptr;
 }
@@ -149,8 +149,7 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
     return name;
 
   if (BlockArgument bbArg = getIfNotOwnedFunctionArgument(*this)) {
-    LITSignatureGeneratorType signature =
-        getSignatureFromDecl(decl->getParentDecl());
+    FnTypeGeneratorType signature = getSignatureFromDecl(decl->getParentDecl());
     if (!signature)
       return std::nullopt;
     std::optional<size_t> argNumber = getDeclArgIndex(*decl, bbArg);
@@ -254,7 +253,7 @@ ResultType MojoASTDeclRef::getDeclImpl() const {
       } else {
         auto parentFn = varDecl->getParentOfType<FnOp>();
         for (auto [idx, pogAttr] : llvm::enumerate(
-                 parentFn.getSignatureGenerator().getArgListAttrs().getPogs()))
+                 parentFn.getFuncTypeGenerator().getArgListAttrs().getPogs()))
           if (pogAttr.getName() == varDecl.getNameAttr())
             return createPublicArgumentDecl(*this, idx);
       }

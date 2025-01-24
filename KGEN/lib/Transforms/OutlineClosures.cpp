@@ -45,8 +45,8 @@ struct OutlineClosuresPass
 /// Reconstruct the signature using a list of named input parameters and indices
 /// indicating which one of them are variadic. These parameters are prepended to
 /// the current signature and references are remapped to index references.
-static SignatureGeneratorType
-prependParams(SignatureGeneratorType sigGen,
+static FuncTypeGeneratorType
+prependParams(FuncTypeGeneratorType sigGen,
               ArrayRef<ParamDeclAttr> parentParams) {
   assert(!sigGen.getMetadata() && "unlowered lit signature");
 
@@ -58,8 +58,8 @@ prependParams(SignatureGeneratorType sigGen,
   for (Type type : sigGen.getInputParamTypes())
     inputParamTypes.push_back(remapper.replace(type));
 
-  NewSignatureType sig = sigGen.getBody();
-  return SignatureGeneratorType::get(
+  FuncType sig = sigGen.getBody();
+  return FuncTypeGeneratorType::get(
       inputParamTypes, remapper.replace(sig.getValues()),
       sig.getArgConventions(), sig.getFnEffects());
 }
@@ -89,7 +89,7 @@ void OutlineClosuresPass::runOnOperation() {
       llvm::SetVector<Value> captures;
       mlir::getUsedValuesDefinedAbove(regionDecl->getRegions(), captures);
       if (!captures.empty() &&
-          !regionDecl.getSignatureGenerator().getBody().isCapturing()) {
+          !regionDecl.getFuncTypeGenerator().getBody().isCapturing()) {
         InFlightDiagnostic diag = mlir::emitError(regionDecl.getLoc())
                                   << "nested function is marked as "
                                      "@noncapturing, but it captures values";
@@ -170,8 +170,8 @@ void OutlineClosuresPass::runOnOperation() {
           capturedParamDecls.getArrayRef());
       llvm::append_range(inputParamDecls, regionDecl.getInputParams());
 
-      SignatureGeneratorType wrapperSignature = prependParams(
-          regionDecl.getSignatureGenerator(), capturedParamDecls.getArrayRef());
+      FuncTypeGeneratorType wrapperSignature = prependParams(
+          regionDecl.getFuncTypeGenerator(), capturedParamDecls.getArrayRef());
 
       b.setInsertionPoint(generator);
       auto uniqueName = b.getStringAttr(getUniqueSymbolName(
@@ -228,7 +228,7 @@ void OutlineClosuresPass::runOnOperation() {
 
         // Ignore implicit lifetimes.
         for (Type paramType :
-             regionDecl.getSignatureGenerator().getInputParamTypes())
+             regionDecl.getFuncTypeGenerator().getInputParamTypes())
           partialBindings.push_back(UnboundAttr::get(paramType));
 
         signature = BindParamsAttr::get(wrapperSymbol, partialBindings);

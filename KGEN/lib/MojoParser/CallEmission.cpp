@@ -286,7 +286,7 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
 }
 
 static LogicalResult emitOperandsNeedingOriginsToMemory(
-    const OverloadFitness &info, LITSignatureGeneratorType expectedSig,
+    const OverloadFitness &info, FnTypeGeneratorType expectedSig,
     CallOperands &operands, ExprEmitter &emitter) {
   const auto &argsNeedingOrigins = info.getArgsNeedingOrigins();
   assert(argsNeedingOrigins.any() && "should emit something");
@@ -520,8 +520,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
       // Emit one or more operands to memory.  We know this can't infinitely
       // loop because there is a forward progress guarantee here.
       if (failed(emitOperandsNeedingOriginsToMemory(
-              *bestFitness,
-              cast<LITSignatureGeneratorType>(boundFunction.getType()),
+              *bestFitness, cast<FnTypeGeneratorType>(boundFunction.getType()),
               operands, emitter)))
         return {};
 
@@ -578,7 +577,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
     function_ref<InflightDiag &(SMLoc)> emitError) const {
   // If the target type is something weird then don't filter.  Let the error be
   // reported another way.
-  if (!isa<LITSignatureGeneratorType>(functionType)) {
+  if (!isa<FnTypeGeneratorType>(functionType)) {
     if (emitError) {
       auto &diag = emitError(expr->getLoc())
                    << "cannot convert function to non-function type "
@@ -599,7 +598,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
   // TODO: We could also support generating a lambda for fancy implicit
   // conversions and subtyping some day.
   auto getBindingsIfValidCandidate =
-      [&](LITSignatureGeneratorType candidateType) -> ParameterExprArrayAttr {
+      [&](FnTypeGeneratorType candidateType) -> ParameterExprArrayAttr {
     // Apply any bound parameters to the candidate's type since they will be
     // applied when a reference is made.  We only do this if there are some
     // bindings present, because (unlike normal function calls) the result type
@@ -626,7 +625,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
   SmallVector<ASTDecl *> validCandidates;
   SmallVector<ParameterExprArrayAttr> candidateBindings;
   for (ASTDecl *candidate : fnDecls) {
-    LITSignatureGeneratorType candidateType =
+    FnTypeGeneratorType candidateType =
         cast<FnOp>(*candidate).getFullSignature();
     if (ParameterExprArrayAttr bindings =
             getBindingsIfValidCandidate(candidateType)) {
@@ -889,7 +888,7 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
   // Otherwise, we have a base symbol for an instance method /and/ a self value
   // to apply to it.  Partially apply it to form a result closure.
   [[maybe_unused]] auto calleeSignature =
-      cast<LITSignatureGeneratorType>(directSymbolAttr.getType().mlirType);
+      cast<FnTypeGeneratorType>(directSymbolAttr.getType().mlirType);
 
   assert(!calleeSignature.isAnyVarArg(0) && "Error: self shouldn't be varargs");
 
@@ -933,9 +932,9 @@ CValue OverloadSet::emitCall(CallOperands &&operands, ValueDest &dest,
 CValue ExprEmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
                                      ValueDest &dest, CallSyntax syntax,
                                      const ExprNode *callExpr) {
-  auto calleeSig = dyn_cast<SignatureGeneratorType>(callee.getRValueType());
+  auto calleeSig = dyn_cast<FuncTypeGeneratorType>(callee.getRValueType());
   if (!calleeSig) {
-    // If we are invoking something other than a SignatureGeneratorType, try to
+    // If we are invoking something other than a FuncTypeGeneratorType, try to
     // invoke its `__call__` method.
     operands.addSelf({callee, callExpr});
     return emitNamedMethodCall("__call__", std::move(operands), dest, syntax,
@@ -979,7 +978,7 @@ CValue ExprEmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
     // Emit one or more operands to memory.  We know this can't infinitely
     // loop because there is a forward progress guarantee here.
     if (failed(emitOperandsNeedingOriginsToMemory(
-            fitness, cast<LITSignatureGeneratorType>(boundCalleeRV.getType()),
+            fitness, cast<FnTypeGeneratorType>(boundCalleeRV.getType()),
             operands, *this))) {
       dest.resetForError();
       return {};
@@ -1192,8 +1191,8 @@ FailureOr<PValue> OverloadSet::canConstructType(ASTType requiredType,
   // it returns the right thing we were expecting.  It is possible that
   // conditional conformances constrain the result type more than we were
   // expecting.
-  auto resultTy = cast<LITSignatureGeneratorType>(result.get().getType())
-                      .getUserResultType();
+  auto resultTy =
+      cast<FnTypeGeneratorType>(result.get().getType()).getUserResultType();
   auto &shared = paramEmitter.shared;
   if (!requiredType.isEqualCanon(resultTy)) {
     // It is ok if the self type has different parameters than the

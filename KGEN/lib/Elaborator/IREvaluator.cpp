@@ -344,7 +344,7 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   MLIRContext *ctx = op.getContext();
   Builder b(ctx);
   auto noneType = KGEN::NoneType::get(ctx);
-  auto populateFnType = SignatureGeneratorType::get(
+  auto populateFnType = FuncTypeGeneratorType::get(
       /*inputParamTypes=*/{},
       b.getFunctionType(PointerType::get(noneType), noneType),
       {ArgConvention::ReadReg}, FnEffects().setCapturing());
@@ -446,9 +446,8 @@ IREvaluator::evaluateCompileOffloadClosure(ParamOperatorAttr op) {
   // The expected signature is `fn(Pointer[None]) capturing -> None`.
   ImplicitLocOpBuilder bb(loc, OpBuilder(name.getContext()));
   auto nonePtr = PointerType::get(noneType);
-  auto sig =
-      NewSignatureType::get(b.getFunctionType(nonePtr, noneType),
-                            ArgConvention::ReadReg, FnEffects().setCapturing());
+  auto sig = FuncType::get(b.getFunctionType(nonePtr, noneType),
+                           ArgConvention::ReadReg, FnEffects().setCapturing());
 
   OwningOpRef<FuncOp> populateFunc =
       bb.create<FuncOp>(b.getStringAttr(name.getValue() + "_populate_captures"),

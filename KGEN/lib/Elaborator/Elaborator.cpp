@@ -947,7 +947,7 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
     return ElaborationState::skipNode();
 
   if (LLVM_UNLIKELY(!FuncOp(*func)
-                         .getSignatureGenerator()
+                         .getFuncTypeGenerator()
                          .getBody()
                          .hasMemoryOnlyResult())) {
     parent->setToError(
@@ -1387,10 +1387,10 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
   if (auto generatorOp = dyn_cast<GeneratorOp>(*gen)) {
     instance = cast<InstantiatedOpInterface>(*b.create<FuncOp>(
         gen.getLoc(), mangledName,
-        NewSignatureType::get(
+        FuncType::get(
             generatorOp.getFunctionType(),
-            generatorOp.getSignatureGenerator().getBody().getArgConventions(),
-            generatorOp.getSignatureGenerator().getBody().getFnEffects()),
+            generatorOp.getFuncTypeGenerator().getBody().getArgConventions(),
+            generatorOp.getFuncTypeGenerator().getBody().getFnEffects()),
         generatorOp.getInlineLevel(), generatorOp.getExportKind(),
         generatorOp.getDecorators(), generatorOp.getLLVMMetadata()));
 
@@ -1554,7 +1554,7 @@ ElaborationState Elaborator::bundleOffloadModules(ImplNode *parent,
   MLIRContext *ctx = op.getContext();
   Builder b(ctx);
   auto noneType = KGEN::NoneType::get(ctx);
-  auto populateFnType = SignatureGeneratorType::get(
+  auto populateFnType = FuncTypeGeneratorType::get(
       {}, b.getFunctionType(PointerType::get(noneType), noneType),
       {ArgConvention::ReadReg}, FnEffects().setCapturing());
 

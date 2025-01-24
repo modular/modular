@@ -333,7 +333,7 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
 
     if (symbolConstant.getParamValues().empty())
       return SymbolConstantAttr::get(symbolConstant.getSymbol(),
-                                     ::cast<SignatureGeneratorType>(type),
+                                     ::cast<FuncTypeGeneratorType>(type),
                                      paramValues);
 
     // We have to interleave the new values wherever there's an unbound thing
@@ -352,7 +352,7 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
     assert(operandIt == paramValues.end() && "Didn't use all the operands?");
 
     return SymbolConstantAttr::get(symbolConstant.getSymbol(),
-                                   ::cast<SignatureGeneratorType>(type),
+                                   ::cast<FuncTypeGeneratorType>(type),
                                    mergedParamValues);
   }
 
@@ -684,9 +684,9 @@ SymbolConstantAttr::verifySymbolUses(Operation *module,
     }
   }
 
-  SignatureGeneratorType declSignature;
+  FuncTypeGeneratorType declSignature;
   if (symbolOps.size() == 1) {
-    declSignature = func.getSignatureGenerator().getSpecializedGenerator(
+    declSignature = func.getFuncTypeGenerator().getSpecializedGenerator(
         getParamValues(), [&] { return emitError(loc); });
   } else {
     // Collect the contextual parameter values.
@@ -697,8 +697,8 @@ SymbolConstantAttr::verifySymbolUses(Operation *module,
 
     IndexRefRemapper remapper(paramDecls, /*resultParams=*/{},
                               paramDecls.size());
-    SignatureGeneratorType baseSigGen = func.getSignatureGenerator();
-    NewSignatureType baseSig = baseSigGen.getBody();
+    FuncTypeGeneratorType baseSigGen = func.getFuncTypeGenerator();
+    FuncType baseSig = baseSigGen.getBody();
     SmallVector<Type> inputParamTypes;
     for (ParamDeclAttr param : paramDecls)
       inputParamTypes.push_back(remapper.replace(param.getType()));
@@ -715,7 +715,7 @@ SymbolConstantAttr::verifySymbolUses(Operation *module,
     if (fnMetadata)
       fnMetadata = remapper.replace(fnMetadata);
 
-    auto remappedGenerator = SignatureGeneratorType::get(
+    auto remappedGenerator = FuncTypeGeneratorType::get(
         inputParamTypes, remapper.replace(baseSig.getValues()),
         baseSig.getArgConventions(), baseSig.getFnEffects(), fnMetadata,
         genMetadata);
@@ -1074,11 +1074,11 @@ verifyApplyLike(ArrayRef<TypedAttr> operands, bool isApplyResult,
   if (operands.empty())
     return emitError() << prefix << "expected a function parameter";
 
-  auto sigGen = cast<SignatureGeneratorType>(operands.front().getType());
+  auto sigGen = cast<FuncTypeGeneratorType>(operands.front().getType());
   if (!sigGen.getInputParamTypes().empty())
     return emitError() << prefix << "function cannot be parametric";
 
-  NewSignatureType sig = sigGen.getBody();
+  FuncType sig = sigGen.getBody();
   // Verify the inputs.
   // Drop the callee and the result slot type for apply_result.
   operands = operands.drop_front();
@@ -1108,7 +1108,7 @@ static LogicalResult verifyApply(ArrayRef<TypedAttr> operands, Type type,
     return failure();
 
   // Verify the result.
-  auto sig = cast<SignatureGeneratorType>(operands.front().getType()).getBody();
+  auto sig = cast<FuncTypeGeneratorType>(operands.front().getType()).getBody();
   if (sig.getResults().size() != 1)
     return emitError() << "'apply' function must return one result";
   Type resultType = upbindApplyResult(sig.getResults().front());
@@ -1125,7 +1125,7 @@ verifyApplyResultSlot(ArrayRef<TypedAttr> operands, Type type,
   if (failed(verifyApplyLike(operands, /*isApplyResult=*/true, emitError)))
     return failure();
 
-  auto sig = cast<SignatureGeneratorType>(operands.front().getType()).getBody();
+  auto sig = cast<FuncTypeGeneratorType>(operands.front().getType()).getBody();
   // TODO: Cannot check !lit.ref reference types in KGEN.
   auto resultArgType = sig.getArguments().back();
   if (auto resultPtr = dyn_cast<PointerType>(resultArgType)) {
@@ -1451,7 +1451,7 @@ LogicalResult ParamOperatorAttr::verify(
     // we're sure of the types and which invariants we can relax.
     if (operands.size() != 1)
       return emitError() << "'function_get_arg_types' expects one "
-                            "!kgen.signature operand, but got nothing.";
+                            "!kgen.func operand, but got nothing.";
     auto operand = operands[0];
     if (auto paramRef1 = ::dyn_cast<ParamDeclRefAttr>(operand)) {
       if (auto paramRefType1 = ::dyn_cast<ParamType>(paramRef1.getType())) {
@@ -1467,7 +1467,7 @@ LogicalResult ParamOperatorAttr::verify(
       }
     } else if (auto typeConstAttr = ::dyn_cast<TypeParamAttr>(operand)) {
       auto mlirType = typeConstAttr.getMlirType();
-      if (!::isa<SignatureGeneratorType>(mlirType))
+      if (!::isa<FuncTypeGeneratorType>(mlirType))
         return emitError()
                << "'function_get_arg_types' operand typeconstantattr's mlir "
                   "type should be a signature, but got: "
@@ -1476,7 +1476,7 @@ LogicalResult ParamOperatorAttr::verify(
       auto mlirType = paramIndexRef.getType();
       if (::isa<ParamType>(mlirType)) {
         // Do nothing, is fine
-      } else if (::isa<SignatureGeneratorType>(mlirType)) {
+      } else if (::isa<FuncTypeGeneratorType>(mlirType)) {
         // Do nothing, is fine
       } else
         return emitError()
@@ -2336,7 +2336,7 @@ static Attribute simplifyApply(ArrayRef<TypedAttr> operands, Type &resultType) {
   TypedAttr func = operands.front();
   operands = operands.drop_front();
   // Take the result type.
-  resultType = upbindApplyResult(cast<SignatureGeneratorType>(func.getType())
+  resultType = upbindApplyResult(cast<FuncTypeGeneratorType>(func.getType())
                                      .getBody()
                                      .getValues()
                                      .getResult(0));
@@ -2679,7 +2679,7 @@ static TypedAttr simplifyFunctionGetArgTypes(MLIRContext *ctx,
   }
 
   ArrayRef<Type> argTypes;
-  if (auto sigGen = dyn_cast<SignatureGeneratorType>(mlirType))
+  if (auto sigGen = dyn_cast<FuncTypeGeneratorType>(mlirType))
     argTypes = sigGen.getBody().getArguments();
   else
     return {};
@@ -2929,7 +2929,7 @@ std::optional<bool> ParamOperatorAttr::isLessThan(Attribute rhs) const {
 
 LogicalResult MLIROpAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                  StringAttr name, DictionaryAttr attrs,
-                                 SignatureGeneratorType type) {
+                                 FuncTypeGeneratorType type) {
   if (type.getBody().getNumResults() != 1)
     return emitError()
            << "operation parameter expression must return one result";
@@ -2957,7 +2957,7 @@ TypedAttr KGEN::emitMLIROperationCall(
   SmallVector<TypedAttr> applyOperands;
   applyOperands.push_back(
       MLIROpAttr::get(name.getIdentifier(), attrList.getDictionary(ctx),
-                      SignatureGeneratorType::get(
+                      FuncTypeGeneratorType::get(
                           /*inputParamTypes=*/{},
                           FunctionType::get(ctx, operandTypes, resultType))));
   llvm::append_range(applyOperands, operands);

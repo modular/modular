@@ -311,7 +311,7 @@ void BindingGenerator::genModuleBinding(
 
     // TODO(MOCO-1298, MOCO-1299): Reject any functions with non-default
     // effects.
-    LITSignatureGeneratorType sig = func.getSignatureGenerator();
+    FnTypeGeneratorType sig = func.getFuncTypeGenerator();
     if (sig.getFnEffects() != FnEffects()) {
       rejectedDecls.emplace_back(name,
                                  "TODO: Python binding generation is not "
@@ -335,7 +335,7 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
                                                     FnOp func) {
   // First, generate type bindings for each of the function argument and result
   // types.
-  LITSignatureGeneratorType sig = func.getSignatureGenerator();
+  FnTypeGeneratorType sig = func.getFuncTypeGenerator();
   for (auto [type, conv] :
        llvm::zip(func.getArgumentTypes(), sig.getArgConventions())) {
     ASTType rvType = getFunctionArgumentRValueType(type, conv);
@@ -515,7 +515,7 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
 
   // TODO: get this and below in sync with createFunction, this only supports
   // memory only results so far.
-  assert(wrapperFunc.getSignatureGenerator().hasMemoryOnlyResult());
+  assert(wrapperFunc.getFuncTypeGenerator().hasMemoryOnlyResult());
 
   //
   // Emit a return None

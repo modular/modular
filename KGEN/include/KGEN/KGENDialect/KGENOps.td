@@ -81,7 +81,7 @@ def KGEN_FuncOp : KGENOp<"func", [
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
-    TypeAttrOf<KGEN_SignatureGeneratorType>:$signatureGenerator,
+    TypeAttrOf<KGEN_FuncTypeGeneratorType>:$funcTypeGenerator,
     KGEN_DecoratorsAttr:$decorators,
     KGEN_InlineLevelAttr:$inlineLevel,
     KGEN_ExportKindAttr:$exportKind,
@@ -92,7 +92,7 @@ def KGEN_FuncOp : KGENOp<"func", [
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
-    `` custom<FuncOp>($exportKind, $sym_name, $signatureGenerator, $inlineLevel,
+    `` custom<FuncOp>($exportKind, $sym_name, $funcTypeGenerator, $inlineLevel,
                      $decorators, attr-dict, $bodyRegion)
   }];
 
@@ -102,14 +102,14 @@ def KGEN_FuncOp : KGENOp<"func", [
     ArrayRef<ParamDeclAttr> getInputParams() { return {}; }
     ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
     FunctionType getFunctionType() {
-      return getSignatureGenerator().getBody().getValues();
+      return getFuncTypeGenerator().getBody().getValues();
     }
     Region *getCallableRegion() { return &getBodyRegion(); }
   }];
 
   let builders = [
     // Builder to be used when there is no precompiled body.
-    OpBuilder<(ins "StringAttr":$name, "NewSignatureType":$type,
+    OpBuilder<(ins "StringAttr":$name, "FuncType":$type,
                    CArg<"InlineLevel",
                         "InlineLevel::Automatic">:$inlineLevel,
                    CArg<"ExportKind", "ExportKind::NotExported">:$exportKind,
@@ -158,7 +158,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
-    TypeAttrOf<KGEN_SignatureGeneratorType>:$signatureGenerator,
+    TypeAttrOf<KGEN_FuncTypeGeneratorType>:$funcTypeGenerator,
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$inputParams,
     KGEN_DecoratorsAttr:$decorators,
@@ -169,7 +169,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
-    `` custom<GeneratorOp>($exportKind, $sym_name, $signatureGenerator,
+    `` custom<GeneratorOp>($exportKind, $sym_name, $funcTypeGenerator,
                            $functionType, $inputParams, $inlineLevel,
                            $decorators, attr-dict, $bodyRegion)
   }];
@@ -183,7 +183,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
   }];
 
   let builders = [
-    OpBuilder<(ins "StringAttr":$name, "SignatureGeneratorType":$type,
+    OpBuilder<(ins "StringAttr":$name, "FuncTypeGeneratorType":$type,
                    "FunctionType":$functionType,
                    "ArrayRef<ParamDeclAttr>":$inputParams,
                    CArg<"InlineLevel", "InlineLevel::Automatic">:$inlineLevel,
@@ -194,7 +194,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
             /*decorators=*/{}, inlineLevel, ExportKind::NotExported,
             llvmMetadata);
     }]>,
-    OpBuilder<(ins "StringAttr":$name, "SignatureGeneratorType":$type), [{
+    OpBuilder<(ins "StringAttr":$name, "FuncTypeGeneratorType":$type), [{
       build($_builder, $_state, name, type, type.getBody().getValues(), {}, {});
     }]>
   ];
@@ -224,7 +224,7 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
-    TypeAttrOf<KGEN_SignatureGeneratorType>:$signatureGenerator,
+    TypeAttrOf<KGEN_FuncTypeGeneratorType>:$funcTypeGenerator,
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$inputParams,
     KGEN_ExportKindAttr:$exportKind,
@@ -240,7 +240,7 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
 
   let assemblyFormat = [{
     `` custom<SymbolExport>($exportKind) $sym_name ``
-    custom<ExternGenerator>($signatureGenerator, $functionType, $inputParams)
+    custom<ExternGenerator>($funcTypeGenerator, $functionType, $inputParams)
     attr-dict-with-keyword ($body^)?
   }];
 }
@@ -411,8 +411,8 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
       return cast<FlatSymbolRefAttr>(getCallee().getSymbol());
     }
 
-    SignatureGeneratorType getCalleeType() {
-      return cast<SignatureGeneratorType>(getCallee().getType());
+    FuncTypeGeneratorType getCalleeType() {
+      return cast<FuncTypeGeneratorType>(getCallee().getType());
     }
 
     /// Return the bound input parameter values.
@@ -449,7 +449,7 @@ def KGEN_CallParamOp : KGEN_CallOpBase<"call_param",
   }];
 
   let arguments = (ins
-    AttrOfType<KGEN_SignatureGeneratorType>:$callee,
+    AttrOfType<KGEN_FuncTypeGeneratorType>:$callee,
     Variadic<AnyType>:$operands
   );
   let results = (outs Variadic<AnyType>:$results);
@@ -462,8 +462,8 @@ def KGEN_CallParamOp : KGEN_CallOpBase<"call_param",
     void concretizeCallee(IRRewriter &b, SymbolConstantAttr callee);
     bool isAllowedInFunc() { return false; }
 
-    SignatureGeneratorType getCalleeType() {
-      return cast<SignatureGeneratorType>(getCallee().getType());
+    FuncTypeGeneratorType getCalleeType() {
+      return cast<FuncTypeGeneratorType>(getCallee().getType());
     }
   }];
 
@@ -635,7 +635,7 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
 
   let arguments = (ins
     KGEN_ParamDeclAttr:$paramDecl,
-    TypeAttrOf<KGEN_SignatureGeneratorType>:$signatureGenerator,
+    TypeAttrOf<KGEN_FuncTypeGeneratorType>:$funcTypeGenerator,
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$inputParams,
     KGEN_InlineLevelAttr:$inlineLevel,
@@ -646,7 +646,7 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
 
   let assemblyFormat = [{
     custom<RegionDeclaration>($paramDecl, $inputParams, $functionType,
-                              $signatureGenerator, $inlineLevel, $bodyRegion)
+                              $funcTypeGenerator, $inlineLevel, $bodyRegion)
     attr-dict
   }];
 
@@ -663,11 +663,11 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
 
   let builders = [
     OpBuilder<(ins "ParamDeclAttr":$paramDecl,
-                   "SignatureGeneratorType":$signatureGenerator,
+                   "FuncTypeGeneratorType":$funcTypeGenerator,
                    "FunctionType":$functionType,
                    "ArrayRef<ParamDeclAttr>":$inputParams,
                    CArg<"InlineLevel", "InlineLevel::Automatic">:$inlineLevel), [{
-      build($_builder, $_state, paramDecl, signatureGenerator, functionType,
+      build($_builder, $_state, paramDecl, funcTypeGenerator, functionType,
             inputParams, inlineLevel,
             /*llvmMetadata=*/DictionaryAttr::get(paramDecl.getContext()),
             /*isolated=*/false);
@@ -700,7 +700,7 @@ def KGEN_ParamApplyOp : KGENOp<"param.apply",
   }];
 
   let arguments = (ins KGEN_ParamDeclAttr:$paramDecl,
-                       AttrOfType<KGEN_SignatureGeneratorType>:$callee,
+                       AttrOfType<KGEN_FuncTypeGeneratorType>:$callee,
                        KGEN_ParameterExprArrayAttr:$operands);
   let assemblyFormat = [{
     custom<ParamApplyOp>($paramDecl, $callee, $operands) attr-dict
@@ -851,7 +851,7 @@ def KGEN_ParamForOp : KGENOp<"param.for", [DeclInterface,
 
   let arguments = (ins
     TypedAttrInterface:$initial,
-    AttrOfType<KGEN_SignatureGeneratorType>:$iterate,
+    AttrOfType<KGEN_FuncTypeGeneratorType>:$iterate,
     KGEN_ParamDeclAttr:$paramDecl,
     Variadic<AnyType>:$operands,
     UnitAttr:$bodyIsolated,
@@ -1083,13 +1083,13 @@ def KGEN_RebindOp : KGENOp<"rebind", [Pure]> {
 def KGEN_CallIndirectOp : KGENOp<"call_indirect", [
     TypesMatchWith<"operands match callee argument types", "callee",
     "arguments",
-    "cast<SignatureGeneratorType>($_self).getBody().getArguments()">,
+    "cast<FuncTypeGeneratorType>($_self).getBody().getArguments()">,
     CalleeResultTypes,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Call a signature typed instance";
   let description = [{
     The `kgen.call_indirect` operation takes an SSA value of `!kgen.generator`
-    type (that wraps a `!kgen.signature` type) and invokes it with the provided
+    type (that wraps a `!kgen.func` type) and invokes it with the provided
     operands as arguments.
 
     Example:
@@ -1101,7 +1101,7 @@ def KGEN_CallIndirectOp : KGENOp<"call_indirect", [
   }];
 
   let arguments = (ins
-    KGEN_SignatureGeneratorType:$callee,
+    KGEN_FuncTypeGeneratorType:$callee,
     Variadic<AnyType>:$arguments,
     DefaultValuedAttr<KGEN_TailKindAttr, "{}">:$tailKind
   );
@@ -1141,7 +1141,7 @@ def KGEN_StageClosureOp : KGENOp<"stage_closure",
     ```
   }];
 
-  let results = (outs KGEN_SignatureGeneratorType:$result);
+  let results = (outs KGEN_FuncTypeGeneratorType:$result);
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
@@ -1174,9 +1174,9 @@ def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure", [Pure,
     ```
   }];
 
-  let arguments = (ins AttrOfType<KGEN_SignatureGeneratorType>:$callee,
+  let arguments = (ins AttrOfType<KGEN_FuncTypeGeneratorType>:$callee,
                        Variadic<AnyType>:$captures);
-  let results = (outs KGEN_SignatureGeneratorType:$result);
+  let results = (outs KGEN_FuncTypeGeneratorType:$result);
   let assemblyFormat = [{
     `` custom<ParametricCallee>($callee) `(` $captures `)`
     custom<ClosureCaptureTypes>(ref($callee), ref($captures), type($captures))
@@ -1190,8 +1190,8 @@ def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure", [Pure,
   ];
 
   let extraClassDeclaration = [{
-    SignatureGeneratorType getCalleeType() {
-      return cast<SignatureGeneratorType>(getCallee().getType());
+    FuncTypeGeneratorType getCalleeType() {
+      return cast<FuncTypeGeneratorType>(getCallee().getType());
     }
   }];
 
@@ -1251,8 +1251,8 @@ def KGEN_CreateRegStubOp : KGENOp<"create_reg_stub", [Pure,
     ```
   }];
 
-  let arguments = (ins AttrOfType<KGEN_SignatureGeneratorType>:$callee);
-  let results = (outs KGEN_SignatureGeneratorType:$result);
+  let arguments = (ins AttrOfType<KGEN_FuncTypeGeneratorType>:$callee);
+  let results = (outs KGEN_FuncTypeGeneratorType:$result);
 
   let assemblyFormat = [{
     custom<ParametricCallee>($callee) attr-dict `:` type($result)
@@ -1265,7 +1265,7 @@ def KGEN_CreateRegStubOp : KGENOp<"create_reg_stub", [Pure,
   let extraClassDeclaration = [{
     /// Get the signature type of the output stub.
     /// `calleeSign` is the original callee with by-memory operands.
-    static NewSignatureType getStubSignatureType(NewSignatureType calleeSign);
+    static FuncType getStubSignatureType(FuncType calleeSign);
 
     /// The stub signature wraps some arguments to preserve the semantics.
     /// Returns the original (unwrapped) argument type.

@@ -27,14 +27,12 @@ using namespace LIT;
 /// Get specialized signature of a trait function with a struct (who implements
 /// the trait) type. Also return parameter bindings for specializing the
 /// expected struct method with the current struct type.
-static std::pair<LITSignatureGeneratorType, ParamBindings>
-getTraitFunctionSignature(ExprEmitter &emitter, FnOp traitFn,
-                          ASTType structSelfType, TraitType trait,
-                          const ExprNode *expr,
-                          const DenseMap<StringAttr, TypedAttr> &aliasValues,
-                          ParserParamEvaluator &traitAliasReplacer) {
+static std::pair<FnTypeGeneratorType, ParamBindings> getTraitFunctionSignature(
+    ExprEmitter &emitter, FnOp traitFn, ASTType structSelfType, TraitType trait,
+    const ExprNode *expr, const DenseMap<StringAttr, TypedAttr> &aliasValues,
+    ParserParamEvaluator &traitAliasReplacer) {
 
-  LITSignatureGeneratorType signature = traitFn.getFullSignature();
+  FnTypeGeneratorType signature = traitFn.getFullSignature();
   SmallVector<TypedAttr> params;
   ArrayRef<Type> paramTypes = signature.getInputParamTypes();
 
@@ -48,8 +46,7 @@ getTraitFunctionSignature(ExprEmitter &emitter, FnOp traitFn,
     bindings.addPrechecked(expr, params.back());
   }
 
-  LITSignatureGeneratorType newSignature =
-      signature.getSpecializedGenerator(params);
+  FnTypeGeneratorType newSignature = signature.getSpecializedGenerator(params);
 
   auto selfStructAsTrait = TypeParamAttr::get(structSelfType, trait);
 
@@ -68,7 +65,7 @@ getTraitFunctionSignature(ExprEmitter &emitter, FnOp traitFn,
     return paramOp;
   });
   newSignature =
-      cast<KGEN::SignatureGeneratorType>(replacer.replace(newSignature));
+      cast<KGEN::FuncTypeGeneratorType>(replacer.replace(newSignature));
   newSignature = traitAliasReplacer.replace(newSignature);
   return {newSignature, bindings};
 }

@@ -58,7 +58,7 @@ Operation *LIT::findOpProcessingRaise(Block *currentBlock) {
   return nullptr;
 }
 
-LITSignatureGeneratorType LIT::getCalleeType(Operation *op) {
+FnTypeGeneratorType LIT::getCalleeType(Operation *op) {
   if (auto call = dyn_cast<LIT::CallOp>(op))
     return call.getCalleeType();
   return cast<LIT::CallIndirectOp>(op).getCalleeType();
@@ -104,15 +104,14 @@ collectParametricAncestors(Operation *op) {
   return res;
 }
 
-LITSignatureGeneratorType
-LIT::getFullSignature(Operation *container,
-                      LITSignatureGeneratorType signature) {
+FnTypeGeneratorType LIT::getFullSignature(Operation *container,
+                                          FnTypeGeneratorType signature) {
   // Collect contextual params, if there are none, the full signature is the
   // same as the local signature.
   auto [ancestors, params] = collectParametricAncestors(container);
   if (params.empty())
     return signature;
-  return LITSignatureGeneratorType::prependParams(
+  return FnTypeGeneratorType::prependParams(
       signature, params, getContextualVariadicMask(ancestors));
 }
 
@@ -196,21 +195,21 @@ static ParseResult
 parseCallOpTypes(AsmParser &p, SmallVectorImpl<Type> &operandTypes,
                  SmallVectorImpl<Type> &resultTypes, CalleeT callee,
                  ArrayRef<TypedAttr> implicitOrigins) {
-  SignatureGeneratorType calleeType;
+  FuncTypeGeneratorType calleeType;
   if constexpr (std::is_same_v<Type, CalleeT>)
-    calleeType = cast<SignatureGeneratorType>(callee);
+    calleeType = cast<FuncTypeGeneratorType>(callee);
   else
-    calleeType = cast<SignatureGeneratorType>(callee.getType());
+    calleeType = cast<FuncTypeGeneratorType>(callee.getType());
 
   FunctionType values;
   if (implicitOrigins.empty()) {
     values = calleeType.getBody().getValues();
   } else {
-    auto calleeLITTypeGen = dyn_cast<LITSignatureGeneratorType>(calleeType);
+    auto calleeLITTypeGen = dyn_cast<FnTypeGeneratorType>(calleeType);
     if (!calleeLITTypeGen)
       return p.emitError(p.getCurrentLocation(),
-                         "expected a LITSignatureGeneratorType");
-    LITNewSignatureType calleeLITType = calleeLITTypeGen.getBody();
+                         "expected a FnTypeGeneratorType");
+    FnType calleeLITType = calleeLITTypeGen.getBody();
     if (calleeLITType.getNumImplicitOriginDecls() != implicitOrigins.size())
       return p.emitError(p.getNameLoc())
              << implicitOrigins.size()
@@ -262,10 +261,10 @@ parseCallOp(OpAsmParser &p, TypedAttr &calleeAttr,
     return failure();
 
   if (callee) {
-    SignatureGeneratorType signature;
+    FuncTypeGeneratorType signature;
     FunctionType functionType;
     if (p.parseColon() ||
-        parseKGENSignatureGenerator(p, functionType, signature))
+        parseKGENFuncTypeGenerator(p, functionType, signature))
       return failure();
     calleeAttr = SymbolConstantAttr::get(callee, signature, paramValues);
   }
@@ -301,7 +300,7 @@ static void printCallOp(OpAsmPrinter &p, Operation *op, TypedAttr calleeAttr,
 }
 
 template <typename OpT>
-static LogicalResult verifyOriginParams(OpT op, LITNewSignatureType sig) {
+static LogicalResult verifyOriginParams(OpT op, FnType sig) {
   size_t numImplicit = sig.getMetadata().getNumImplicitOriginDecls();
   size_t numParams = op.getImplicitOrigins().size();
   if (numParams == numImplicit)
@@ -314,8 +313,7 @@ static LogicalResult verifyOriginParams(OpT op, LITNewSignatureType sig) {
 }
 
 template <typename OpT>
-static LogicalResult verifyCallOp(OpT op, LITNewSignatureType sig,
-                                  ValueRange operands,
+static LogicalResult verifyCallOp(OpT op, FnType sig, ValueRange operands,
                                   std::optional<TypeRange> results) {
   FunctionType values = sig.substituteImplicitOriginsIntoValues(
       op.getImplicitOrigins(), [&] { return op.emitOpError(); });
@@ -347,9 +345,9 @@ static LogicalResult verifyCallOp(OpT op, LITNewSignatureType sig,
 }
 
 LogicalResult LIT::CallOp::verify() {
-  auto sig = dyn_cast<LITSignatureGeneratorType>(getCallee().getType());
+  auto sig = dyn_cast<FnTypeGeneratorType>(getCallee().getType());
   if (!sig)
-    return emitOpError("callee type must be a LITSignatureGeneratorType");
+    return emitOpError("callee type must be a FnTypeGeneratorType");
   if (failed(verifyOriginParams(*this, sig.getBody())))
     return failure();
   return verifyCallOp(*this, sig.getBody(), getOperands(), getResultTypes());
@@ -387,7 +385,7 @@ FailureOr<InlineResult> LIT::CallOp::prepInline(mlir::RewriterBase &b) {
 //===----------------------------------------------------------------------===//
 
 LogicalResult LIT::CallIndirectOp::verify() {
-  auto sig = cast<LITSignatureGeneratorType>(getCallee().getType());
+  auto sig = cast<FnTypeGeneratorType>(getCallee().getType());
   if (failed(verifyOriginParams(*this, sig.getBody())))
     return failure();
   return verifyCallOp(*this, sig.getBody(), getArguments(), getResultTypes());
@@ -440,7 +438,7 @@ const SpecialFunctionInfo &FnOp::getSpecialFunctionInfo() {
 /// results and stripping off the variant from error throwing results if needed.
 Type FnOp::getUserResultType() {
   return LIT::getSignatureUserResultType(
-      getSignatureGenerator(), getArgumentTypes(), getMLIRResultType());
+      getFuncTypeGenerator(), getArgumentTypes(), getMLIRResultType());
 }
 
 TypedAttr FnOp::getBoundReference(ParameterExprArrayAttr bindings) {
@@ -451,7 +449,7 @@ TypedAttr FnOp::getBoundReference(ParameterExprArrayAttr bindings) {
   // parameters substituted in.  The function reference binds any parameter
   // bindings present on the access (in bindings), which typically concretizes
   // the signature.
-  LITSignatureGeneratorType resultType;
+  FnTypeGeneratorType resultType;
   std::tie(resultType, bindings) =
       getUnboundSpecializedSignature(getFullSignature(), bindings);
 
@@ -491,16 +489,16 @@ static void printImplicitOriginMutability(AsmPrinter &p, OriginType type) {
 // These FuncOp attributes are disallowed while parsing since they can
 // be inferred. Likewise while printing we ignore them.
 static StringRef disallowedAttrNames[] = {
-    "sym_name",       "exportKind",         "isCExported",  "constraints",
-    "implements",     "signatureGenerator", "functionType", "sym_name",
-    "argNames",       "paramNames",         "evaluator",    "defaultImpl",
-    "inlineLevel",    "paramDecl",          "params",       "decorators",
+    "sym_name",       "exportKind",        "isCExported",  "constraints",
+    "implements",     "funcTypeGenerator", "functionType", "sym_name",
+    "argNames",       "paramNames",        "evaluator",    "defaultImpl",
+    "inlineLevel",    "paramDecl",         "params",       "decorators",
     "argPassingKinds"};
 
 static ParseResult parseLITFunctionSignature(
     OpAsmParser &p, SmallVectorImpl<OpAsmParser::Argument> &args,
     ParamDeclArrayAttr &params, FunctionType &functionType,
-    LITSignatureGeneratorType &signature) {
+    FnTypeGeneratorType &signature) {
   llvm::SMLoc startLoc = p.getCurrentLocation();
 
   TypedAttr captureOrigins;
@@ -605,7 +603,7 @@ static ParseResult parseLITFunctionSignature(
                        argPackIndex, origArgPackConvention),
       originDecls.size(), captureOrigins,
       isNestedOriginExclusivityCheckingDisabled);
-  signature = SignatureGeneratorType::remapToSignatureGenerator(
+  signature = FuncTypeGeneratorType::remapToFuncTypeGenerator(
       params, functionType, argConventions, effects, metadata, paramListAttr,
       [&] { return p.emitError(startLoc); });
   if (!signature)
@@ -627,7 +625,7 @@ static ParseResult parseLITFunctionSignature(
 static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
                                       ArrayRef<ParamDeclAttr> params,
                                       FunctionType functionType,
-                                      LITSignatureGeneratorType signature) {
+                                      FnTypeGeneratorType signature) {
   ArrayRef<ParamDeclAttr> originDecls =
       params.drop_front(signature.getInputParamTypes().size());
 
@@ -728,7 +726,7 @@ ParseResult FnOp::parse(OpAsmParser &parser, OperationState &result) {
   SmallVector<OpAsmParser::Argument> entryArgs;
   ParamDeclArrayAttr params;
   FunctionType functionType;
-  LITSignatureGeneratorType signature;
+  FnTypeGeneratorType signature;
   if (parseLITFunctionSignature(parser, entryArgs, params, functionType,
                                 signature))
     return failure();
@@ -754,7 +752,7 @@ ParseResult FnOp::parse(OpAsmParser &parser, OperationState &result) {
   if (parser.parseOptionalAttrDictWithKeyword(parsedAttributes))
     return failure();
 
-  result.addAttribute(getSignatureGeneratorAttrName(result.name),
+  result.addAttribute(getFuncTypeGeneratorAttrName(result.name),
                       TypeAttr::get(signature));
 
   // Disallow attributes that are inferred from elsewhere in the attribute
@@ -790,7 +788,7 @@ void FnOp::print(OpAsmPrinter &p) {
 
   // Print the function arguments. Here we need all the use defined names.
   printLITFunctionSignature(p, &getBodyRegion(), getParams(), getFunctionType(),
-                            getSignatureGenerator());
+                            getFuncTypeGenerator());
   printOptionalInline(p, getInlineLevel());
   printOptionalDecorators(p, *this, getDecorators());
 
@@ -815,25 +813,25 @@ void FnOp::getAsmBlockArgumentNames(
 
   // Set a name for each argument.
   for (auto [idx, arg] : llvm::enumerate(getBody()->getArguments()))
-    setNameFn(arg, getSignatureGenerator().getArgName(idx).strref());
+    setNameFn(arg, getFuncTypeGenerator().getArgName(idx).strref());
 }
 
 LogicalResult FnOp::verify() {
   // Check that the number of argument labels matches the number of argument
   // types.
-  if (getSignatureGenerator().getBody().getMetadata().getNumArgs() !=
+  if (getFuncTypeGenerator().getBody().getMetadata().getNumArgs() !=
       getFunctionType().getNumInputs())
     return emitOpError("incorrect number of value parameter labels");
 
   // Verify the correct number of parameters.
-  if (getSignatureGenerator().getInputParamTypes().size() +
-          getSignatureGenerator().getNumImplicitOriginDecls() !=
+  if (getFuncTypeGenerator().getInputParamTypes().size() +
+          getFuncTypeGenerator().getNumImplicitOriginDecls() !=
       getInputParams().size()) {
     return emitOpError("incorrect number of input params: have ")
            << getParams().size() << ", but expected "
-           << getSignatureGenerator().getNumImplicitOriginDecls()
+           << getFuncTypeGenerator().getNumImplicitOriginDecls()
            << " implicit origins and "
-           << getSignatureGenerator().getInputParamTypes().size()
+           << getFuncTypeGenerator().getInputParamTypes().size()
            << " input params";
   }
 
@@ -870,13 +868,13 @@ SmallVector<ParamDeclAttr> FnOp::collectAllParams(bool includeImplOrigins) {
   auto params = getParams();
   if (!includeImplOrigins)
     params =
-        params.drop_back(getSignatureGenerator().getNumImplicitOriginDecls());
+        params.drop_back(getFuncTypeGenerator().getNumImplicitOriginDecls());
   llvm::append_range(result, params);
   return result;
 }
 
-LITSignatureGeneratorType FnOp::getFullSignature() {
-  return LIT::getFullSignature((*this)->getParentOp(), getSignatureGenerator());
+FnTypeGeneratorType FnOp::getFullSignature() {
+  return LIT::getFullSignature((*this)->getParentOp(), getFuncTypeGenerator());
 }
 
 void FnOp::build(OpBuilder &builder, OperationState &result) {
@@ -887,10 +885,10 @@ void FnOp::build(OpBuilder &builder, OperationState &result) {
   // representation.  This makes sure that the error case doesn't break
   // invariants (that functions always have a single result).
   auto errorType = builder.getType<TypeCheckErrorType>();
-  LITSignatureGeneratorType signatureType = LITGeneratorType::get(
+  FnTypeGeneratorType signatureType = LITGeneratorType::get(
       /*inputParamTypes=*/{},
-      LITNewSignatureType::get(ctx, ArrayRef<Type>(), {errorType},
-                               /*numImplicitOriginDecls=*/0),
+      FnType::get(ctx, ArrayRef<Type>(), {errorType},
+                  /*numImplicitOriginDecls=*/0),
       PogListAttr::get(ctx));
 
   // NOTE: We set an attribute named 'sym_namex' here instead of setting
@@ -908,7 +906,7 @@ void FnOp::build(OpBuilder &builder, OperationState &result) {
 
   result.addAttribute(getExportKindAttrName(result.name),
                       ExportKindAttr::get(ctx, ExportKind::NotExported));
-  result.addAttribute(getSignatureGeneratorAttrName(result.name),
+  result.addAttribute(getFuncTypeGeneratorAttrName(result.name),
                       TypeAttr::get(signatureType));
   result.addAttribute(getFunctionTypeAttrName(result.name),
                       TypeAttr::get(signatureType.getValues()));
@@ -935,7 +933,7 @@ void FnOp::build(OpBuilder &b, OperationState &state, StringAttr declName,
   SmallVector<ArgConvention> convs(funcType.getNumInputs());
   auto fnMetadata =
       FnMetadataAttr::get(ctx, paramDecls.size(), funcType.getNumInputs());
-  auto sig = SignatureGeneratorType::remapToSignatureGenerator(
+  auto sig = FuncTypeGeneratorType::remapToFuncTypeGenerator(
       paramDecls, funcType, convs, effects, fnMetadata,
       PogListAttr::get(b.getContext()));
   build(b, state, StringAttr(), ParamDeclAttr::get(declName, sig),
@@ -953,7 +951,7 @@ void FnOp::build(OpBuilder &b, OperationState &state, StringAttr declName,
 
 /// Build a function in a default configuration, used by member synthesization.
 void FnOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
-                 StringAttr sourceName, SignatureGeneratorType signature,
+                 StringAttr sourceName, FuncTypeGeneratorType signature,
                  SpecialFunctionKind specialFnKind) {
   MLIRContext *ctx = builder.getContext();
   UnitAttr none;
@@ -1892,10 +1890,10 @@ static void printAsyncCallOpTypes(AsmPrinter &, Operation *, TypeRange,
                                   TypedAttr, ArrayRef<TypedAttr>) {}
 
 LogicalResult AsyncCallOp::verify() {
-  auto sig = cast<SignatureGeneratorType>(getCallee().getType()).getBody();
+  auto sig = cast<FuncTypeGeneratorType>(getCallee().getType()).getBody();
   if (!sig.isAsync())
     return emitOpError("callable must be 'async'");
-  if (auto litSigGen = dyn_cast<LITSignatureGeneratorType>(sig)) {
+  if (auto litSigGen = dyn_cast<FnTypeGeneratorType>(sig)) {
     if (failed(verifyOriginParams(*this, litSigGen.getBody())) ||
         failed(verifyCallOp(*this, litSigGen.getBody(), getOperands(),
                             /*results=*/{})))

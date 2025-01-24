@@ -27,7 +27,7 @@ class ASTDecl;
 class ASTType;
 class ExprEmitter;
 class ExprNode;
-class LITSignatureGeneratorType;
+class FnTypeGeneratorType;
 class ParserBase;
 
 //===----------------------------------------------------------------------===//
@@ -254,7 +254,7 @@ public:
 
   /// Form a LIT signature packaging up all the stuff we need to know about this
   /// type checked function.
-  LITSignatureGeneratorType getLITSignatureGeneratorType() const;
+  FnTypeGeneratorType getFnTypeGeneratorType() const;
 };
 
 } // namespace M::KGEN::LIT

@@ -37,7 +37,7 @@ class ParameterExprArrayAttr;
 enum class ArgConvention : uint32_t;
 
 namespace LIT {
-class LITNewSignatureType;
+class FnType;
 enum class PassingKind : uint32_t;
 
 /// Returns whether the given attribute is a LIT type expression.
@@ -136,7 +136,7 @@ void printOriginSet(AsmPrinter &p, ArrayRef<TypedAttr> lifetimes);
 /// Return true if the origin set parameter is an empty set.
 bool isEmptyOriginSet(TypedAttr attr);
 
-void printLITNewSignature(AsmPrinter &p, LITNewSignatureType signature);
+void printFnType(AsmPrinter &p, FnType signature);
 
 //===----------------------------------------------------------------------===//
 // Pog Utils

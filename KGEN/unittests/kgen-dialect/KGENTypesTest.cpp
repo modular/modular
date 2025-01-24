@@ -19,19 +19,19 @@ using namespace mlir;
 using namespace testing;
 
 //===----------------------------------------------------------------------===//
-// SignatureGeneratorType
+// FuncTypeGeneratorType
 //===----------------------------------------------------------------------===//
 
 namespace {
-class SignatureGeneratorTypeTest : public Test {
+class FuncTypeGeneratorTypeTest : public Test {
 protected:
   MLIRContext ctx{MLIRContext::Threading::DISABLED};
 
-  SignatureGeneratorTypeTest() { ctx.loadDialect<KGENDialect, LITDialect>(); }
+  FuncTypeGeneratorTypeTest() { ctx.loadDialect<KGENDialect, LITDialect>(); }
 };
 } // namespace
 
-TEST_F(SignatureGeneratorTypeTest, TestSpecialization) {
+TEST_F(FuncTypeGeneratorTypeTest, TestSpecialization) {
   auto indexType = IndexType::get(&ctx);
   auto typeType = TypeType::get(&ctx);
   auto indexTypeAttr = TypeParamAttr::get(indexType, typeType);
@@ -41,13 +41,13 @@ TEST_F(SignatureGeneratorTypeTest, TestSpecialization) {
 
   // Test bare KGEN Signature
   {
-    SignatureGeneratorType sigGen =
-        SignatureGeneratorType::get(inputParamTypes, funcType);
-    SignatureGeneratorType concreteSigGen =
+    FuncTypeGeneratorType sigGen =
+        FuncTypeGeneratorType::get(inputParamTypes, funcType);
+    FuncTypeGeneratorType concreteSigGen =
         sigGen.getSpecializedGenerator({indexTypeAttr});
 
     EXPECT_EQ(concreteSigGen,
-              SignatureGeneratorType::get(
+              FuncTypeGeneratorType::get(
                   /*inputParamTypes=*/{},
                   FunctionType::get(&ctx, {indexType}, {indexType})));
   }
@@ -67,14 +67,14 @@ TEST_F(SignatureGeneratorTypeTest, TestSpecialization) {
         pogs,
         /*numImplicitOriginDecls=*/0, /*captureOrigins=*/nullptr,
         /*isNestedOriginExclusivityCheckingDisabled=*/false);
-    SignatureGeneratorType sigGen =
-        SignatureGeneratorType::get(inputParamTypes, funcType, /*argConvs=*/{},
-                                    /*effects=*/{}, fnMetadata, pogs);
-    SignatureGeneratorType concreteSigGen =
+    FuncTypeGeneratorType sigGen =
+        FuncTypeGeneratorType::get(inputParamTypes, funcType, /*argConvs=*/{},
+                                   /*effects=*/{}, fnMetadata, pogs);
+    FuncTypeGeneratorType concreteSigGen =
         sigGen.getSpecializedGenerator({indexTypeAttr});
 
     EXPECT_EQ(concreteSigGen,
-              SignatureGeneratorType::get(
+              FuncTypeGeneratorType::get(
                   /*inputParamTypes=*/{},
                   FunctionType::get(&ctx, {indexType}, {indexType}),
                   /*argConvs=*/{},

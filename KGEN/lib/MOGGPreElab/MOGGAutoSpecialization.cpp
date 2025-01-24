@@ -512,11 +512,11 @@ static void addSpecParametersToSpecialization(CallGraphNode *node) {
     tensorSpecParamNames[index] = node->getParamDecl(index);
 
   // Update the signature to add the new tensor types.
-  NewSignatureType oldSig = specialization.getSignatureGenerator().getBody();
+  FuncType oldSig = specialization.getFuncTypeGenerator().getBody();
   FnEffects effects = oldSig.getFnEffects();
   effects.setCapturing(true);
-  specialization.setSignatureGenerator(
-      SignatureGeneratorType::remapToSignatureGenerator(
+  specialization.setFuncTypeGenerator(
+      FuncTypeGeneratorType::remapToFuncTypeGenerator(
           newParams, specialization.getFunctionType(),
           /*argConventions=*/oldSig.getArgConventions(),
           /*fnEffects=*/effects,
@@ -628,7 +628,7 @@ static void updateCallOps(CallGraphNode *node, CallGraph &cg,
     MLIRContext *ctx = oldCall.getContext();
     auto flatSym = FlatSymbolRefAttr::get(ctx, specialized.getSymName());
     auto specializedSig =
-        specialized.getSignatureGenerator().getSpecializedGenerator(
+        specialized.getFuncTypeGenerator().getSpecializedGenerator(
             newParamBuffer, oldCall.getLoc());
     auto symbol =
         SymbolConstantAttr::get(flatSym, specializedSig, newParamBuffer);

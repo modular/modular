@@ -324,15 +324,15 @@ ParseResult parseSignatureValues(
     FunctionType &values, FnEffects &effects, bool optionalResultList);
 void printSignature(AsmPrinter &p, Operation *op, TypeAttr signature);
 void printSignatureValues(AsmPrinter &p, FunctionType functionType,
-                          SignatureGeneratorType sigGen);
+                          FuncTypeGeneratorType sigGen);
 void printSignatureValues(AsmPrinter &p, function_ref<void(unsigned)> printElt,
                           FunctionType functionType,
                           ArrayRef<ArgConvention> argConvs, FnEffects fnEffects,
                           bool optionalResultList);
 
-/// NewSignature versions of print/parse
-void printNewSignature(AsmPrinter &p, NewSignatureType signatureType);
-ParseResult parseNewSignature(AsmParser &p, Type &signature);
+/// FuncType versions of print/parse
+void printFuncType(AsmPrinter &p, FuncType signatureType);
+ParseResult parseFuncType(AsmParser &p, Type &signature);
 
 void printGenerator(AsmPrinter &p, GeneratorType generator);
 inline void printGenerator(AsmPrinter &p, Operation *op, Type generator) {
@@ -340,32 +340,28 @@ inline void printGenerator(AsmPrinter &p, Operation *op, Type generator) {
 }
 ParseResult parseGenerator(AsmParser &p, Type &generator);
 
-/// Parse a plain (i.e. non-lit) signature.
-ParseResult parseKGENSignatureGeneratorOld(AsmParser &p,
-                                           FunctionType &functionType,
-                                           SignatureGeneratorType &signature);
-ParseResult parseKGENSignatureGenerator(AsmParser &p,
-                                        FunctionType &functionType,
-                                        SignatureGeneratorType &generator);
+/// Parse a plain (i.e. non-lit) func type generator.
+ParseResult parseKGENFuncTypeGenerator(AsmParser &p, FunctionType &functionType,
+                                       FuncTypeGeneratorType &generator);
 
 /// Parse a function signature with optional metadata. In the assembly format,
 /// the SSA value names are optional in the argument list. If they are present,
 /// they are populated in `args`. The `parseNames` flag control whether the
 /// signature should include the argument names.
-ParseResult parseFunctionSignatureGenerator(
+ParseResult parseFunctionFuncTypeGenerator(
     OpAsmParser &p, SmallVectorImpl<OpAsmParser::Argument> &args,
     ParamDeclArrayAttr &inputParams, ParamDeclArrayAttr &resultParams,
-    FunctionType &functionType, SignatureGeneratorType &signature,
+    FunctionType &functionType, FuncTypeGeneratorType &signature,
     ParamDeclParseHookTy parseDeclElt = {});
 /// Print a function signature with optional metadata. If `region` is
 /// non-null, then the SSA value names of the region arguments are printed.
-void printFunctionSignatureGenerator(OpAsmPrinter &p, Region *region,
-                                     ArrayRef<ParamDeclAttr> inputParams,
-                                     ArrayRef<ParamDeclAttr> resultParams,
-                                     FunctionType functionType,
-                                     SignatureGeneratorType signature,
-                                     ParamDeclPrintHookTy printInputElt = {},
-                                     ParamDeclPrintHookTy printResultElt = {});
+void printFunctionFuncTypeGenerator(OpAsmPrinter &p, Region *region,
+                                    ArrayRef<ParamDeclAttr> inputParams,
+                                    ArrayRef<ParamDeclAttr> resultParams,
+                                    FunctionType functionType,
+                                    FuncTypeGeneratorType signature,
+                                    ParamDeclPrintHookTy printInputElt = {},
+                                    ParamDeclPrintHookTy printResultElt = {});
 
 /// Parse the always_inline related keywords if present.
 ParseResult parseOptionalInline(OpAsmParser &parser, InlineLevelAttr &attr);
@@ -417,9 +413,9 @@ void printSymbolExport(AsmPrinter &p, Operation *op, ExportKindAttr exportKind);
 /// Check that the specified declaration signatures match, checking the
 /// parameter and value type information.
 LogicalResult verifyDeclSignaturesMatch(
-    StringRef originatorName, SignatureGeneratorType originatorSignature,
+    StringRef originatorName, FuncTypeGeneratorType originatorSignature,
     Location originatorLoc, StringRef interfaceName,
-    SignatureGeneratorType targetSignatureGen, Location targetLoc);
+    FuncTypeGeneratorType targetSignatureGen, Location targetLoc);
 
 /// Check that the parameter bindings match the declarations.
 LogicalResult
@@ -441,12 +437,11 @@ LogicalResult checkResultArgumentTypes(Operation *op,
 /// Verify that the types of operands passed as arguments to a call match the
 /// expected types on the callee signature.
 LogicalResult verifyCallOperands(Operation *op, ValueRange args,
-                                 NewSignatureType callee,
-                                 bool ignoreByRef = false);
+                                 FuncType callee, bool ignoreByRef = false);
 /// Verify that the types of operation results corresponding to call results
 /// match the expected types on the callee signature.
 LogicalResult verifyCallResults(Operation *op, ValueRange results,
-                                NewSignatureType callee);
+                                FuncType callee);
 
 /// Whether the decorator's name is (starts with) the specific annotation.
 bool hasDecorator(ArrayRef<TypedAttr> decorators, StringRef annotation);

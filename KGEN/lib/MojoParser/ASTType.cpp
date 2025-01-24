@@ -381,7 +381,7 @@ ASTType ASTType::getKwargsDictRefValueType() const {
 /// Returns the user-defined result type, looking through implicit memory
 /// results and stripping off the variant from error throwing results if needed.
 ASTType ASTType::getSignatureUserResultType() const {
-  auto sigGenType = cast<LITSignatureGeneratorType>(mlirType);
+  auto sigGenType = cast<FnTypeGeneratorType>(mlirType);
   return LIT::getSignatureUserResultType(sigGenType, sigGenType.getArguments(),
                                          sigGenType.getResults().front());
 }
@@ -871,7 +871,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
     printConvention(variadic.getConvention());
     ASTType(variadic.getElementType()).print(os, diagShared, demangleParams);
     os << "]";
-  } else if (auto sig = dyn_cast<LITSignatureGeneratorType>(type)) {
+  } else if (auto sig = dyn_cast<FnTypeGeneratorType>(type)) {
     if (sig.isAsync())
       os << "async ";
     os << "fn";

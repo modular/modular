@@ -352,7 +352,7 @@ kgen.generator @test2() {
 // -----
 
 kgen.generator @call_param() {
-  // expected-error @+1 {{'kgen.call_param' callee parameter type must be a signature generator type}}
+  // expected-error @+1 {{'kgen.call_param' callee parameter type must be a func type generator type}}
   %0 = kgen.call_param[si32: 4]()
   kgen.return
 }
@@ -405,7 +405,7 @@ kgen.generator @doIt<SomeParam>() {
 // -----
 
 kgen.generator @apply_error() {
-  // expected-error @below {{custom op 'kgen.param.declare' expected a signature generator type for 'apply'}}
+  // expected-error @below {{custom op 'kgen.param.declare' expected a func type generator type for 'apply'}}
   kgen.param.declare fn = <apply(5, 5)>
 }
 
@@ -547,8 +547,8 @@ kgen.generator @bad_index_ref() {
 
 // -----
 
-// expected-error @below {{index reference depth 1 exceeds depth of contextual signatures: 1}}
-kgen.generator @bad_index_ref<fn: <index>(!pop.array<*(1,0), i32>) -> ()>() {
+// expected-error @below {{index reference depth 2 exceeds depth of contextual signatures: 2}}
+kgen.generator @bad_index_ref<fn: <index>(!pop.array<*(2,0), i32>) -> ()>() {
   kgen.return
 }
 

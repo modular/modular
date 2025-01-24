@@ -118,9 +118,9 @@ def DeclRefAttrInterface : AttrInterface<"DeclRefAttrInterface"> {
 
 def FnMetadataAttrInterface : AttrInterface<"FnMetadataAttrInterface"> {
   let description = [{
-    This interface describes attributes that are attached to a `!kgen.signature`
+    This interface describes attributes that are attached to a `!kgen.func`
     type. Function metadata attributes carry additional information about a
-    callable on top of the information in the base `NewSignatureType`. This
+    callable on top of the information in the base `FuncType`. This
     interface defines the required methods for this metadata attribute,
     including verification and print hooks.
   }];
@@ -128,19 +128,19 @@ def FnMetadataAttrInterface : AttrInterface<"FnMetadataAttrInterface"> {
 
   let methods = [
     InterfaceMethod<[{
-      Verify the new signature type parameters using the current metadata.
-    }], "LogicalResult", "verifyNewSignature", (ins
+      Verify the FuncType parameters using the current metadata.
+    }], "LogicalResult", "verifyFuncType", (ins
       "function_ref<InFlightDiagnostic()>":$emitError,
       "FunctionType":$values,
       "ArrayRef<ArgConvention>":$argConventions,
       "FnEffects":$effects)>,
     InterfaceMethod<[{
-      Request the custom metadata attribute print the provided signature.
-    }], "void", "printNewSignature", (ins "AsmPrinter &":$p,
-                                          "NewSignatureType":$sig)>,
+      Request the custom metadata attribute print the provided FuncType.
+    }], "void", "printFuncType", (ins "AsmPrinter &":$p,
+                                          "FuncType":$sig)>,
     InterfaceMethod<[{
-      Get a new metadata attribute for a signature where the first `numBound`
-      positional arguments have been removed from the signature by being
+      Get a new metadata attribute for a FuncType where the first `numBound`
+      positional arguments have been removed from the FuncType by being
       explicitly bound to values, such as in closure formation.
     }], "FnMetadataAttrInterface", "getWithBoundPosArgs", (ins
       "size_t":$numBound)>,

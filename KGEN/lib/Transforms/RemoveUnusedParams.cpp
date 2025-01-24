@@ -67,7 +67,7 @@ private:
 
   void identifyUnusedArguments(GeneratorOp oldFunction, StringAttr oldSymbol,
                                bool isRecursive) {
-    NewSignatureType oldBaseSig = oldFunction.getSignatureGenerator().getBody();
+    FuncType oldBaseSig = oldFunction.getFuncTypeGenerator().getBody();
 
     unusedArgs = llvm::BitVector(oldFunction.getNumArguments(), true);
 
@@ -221,7 +221,7 @@ private:
     }
     auto symbol = SymbolConstantAttr::get(
         flatSym,
-        newFunc.getSignatureGenerator().getSpecializedGenerator(
+        newFunc.getFuncTypeGenerator().getSpecializedGenerator(
             newParams, oldCall.getLoc()),
         newParams);
 
@@ -466,8 +466,8 @@ void RemoveUnusedParams::runOnOperation() {
 
     bool isRecursive = recursiveFuncs.contains(oldFunction);
     StringAttr oldSymbol = oldFunction.getSymNameAttr();
-    SignatureGeneratorType oldSigGen = oldFunction.getSignatureGenerator();
-    NewSignatureType oldBaseSig = oldSigGen.getBody();
+    FuncTypeGeneratorType oldSigGen = oldFunction.getFuncTypeGenerator();
+    FuncType oldBaseSig = oldSigGen.getBody();
 
     // Collate information about unused parameters + arguments in the shared
     // state.
@@ -505,8 +505,8 @@ void RemoveUnusedParams::runOnOperation() {
         ctx, inputTypes, oldFunction.getFunctionType().getResults());
 
     // Update the sig to partially specialize on those function types.
-    newFunc.setSignatureGenerator(
-        SignatureGeneratorType::remapToSignatureGenerator(
+    newFunc.setFuncTypeGenerator(
+        FuncTypeGeneratorType::remapToFuncTypeGenerator(
             inputParams, functionType,
             /*argConventions=*/conventions,
             /*fnEffects=*/oldBaseSig.getFnEffects(),

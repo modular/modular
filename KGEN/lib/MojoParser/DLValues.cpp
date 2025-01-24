@@ -369,7 +369,7 @@ DefArgumentWrapperDLValue::prepareForMutAccess(SMLoc loc,
 
   ExprEmitter entryEmitter(*argDecl->getParentDecl(),
                            OpBuilder::atBlockBegin(func.getBody()));
-  StringAttr argName = func.getSignatureGenerator().getArgName(argIndex);
+  StringAttr argName = func.getFuncTypeGenerator().getArgName(argIndex);
 
   // Create the shadow box that has an address and copy the argument into it.
   VarDeclOp varDecl = entryEmitter.emitVarDecl(argName, argRef.getRValueType(),

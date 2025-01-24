@@ -86,10 +86,9 @@ FnOp StructEmitter::createFunction(
   FunctionType functionType =
       builder.getFunctionType(adjustedArgTypes, {resultType});
   Location location = shared.translateLocation(loc);
-  LITSignatureGeneratorType sigGen =
-      SignatureGeneratorType::remapToSignatureGenerator(
-          params, functionType, argConventions, fnEffects, metadata,
-          paramListAttrs, [&] { return mlir::emitError(location); });
+  FnTypeGeneratorType sigGen = FuncTypeGeneratorType::remapToFuncTypeGenerator(
+      params, functionType, argConventions, fnEffects, metadata, paramListAttrs,
+      [&] { return mlir::emitError(location); });
   // Strip off the named origin decl references and replace them with indices.
   // We keep the named parameters in the ParamDeclAttr list on the FnOp and
   // in the BBArgs.
@@ -587,7 +586,7 @@ std::optional<ValueInfo> ValueInfo::createValueInfo(ASTDecl &structDecl) {
     auto func = dyn_cast<FnOp>(declaration);
     if (!func)
       continue;
-    auto signature = func.getSignatureGenerator();
+    auto signature = func.getFuncTypeGenerator();
     ArrayRef<Type> inputTypes = signature.getArguments();
     ArrayRef<ArgConvention> convs = signature.getArgConventions();
     // Ignore the result slot and error result.
@@ -729,7 +728,7 @@ FnOp StructEmitter::findInitInStruct(StructDeclOp structOp,
 
     bool isMatch = true;
     for (auto [existing, proposed] :
-         llvm::zip(candidate.getSignatureGenerator().getArguments().slice(1),
+         llvm::zip(candidate.getFuncTypeGenerator().getArguments().slice(1),
                    operands)) {
       if (existing != proposed) {
         isMatch = false;

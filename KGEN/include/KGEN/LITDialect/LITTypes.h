@@ -56,13 +56,13 @@ ErrorOr<TypedAttr> createUninitializedValueOf(Type type,
                                               InterpreterState &state);
 
 //===----------------------------------------------------------------------===//
-// LITNewSignatureType
+// FnType
 //===----------------------------------------------------------------------===//
 
-class LITNewSignatureType : public NewSignatureType {
+class FnType : public FuncType {
 public:
-  using NewSignatureType::NewSignatureType;
-  LITNewSignatureType(NewSignatureType sig);
+  using FuncType::FuncType;
+  FnType(FuncType sig);
 
   /// Get the signature metadata.
   FnMetadataAttr getMetadata();
@@ -135,28 +135,27 @@ public:
       ArrayRef<TypedAttr> values, function_ref<InFlightDiagnostic()> emitError);
 
   /// Return this signature with the specified capture lifetimes.
-  LITNewSignatureType getWithCaptureOrigins(TypedAttr lifetimes);
+  FnType getWithCaptureOrigins(TypedAttr lifetimes);
 
-  /// A `NewSignatureType` is a LIT signature if it contains function metadata.
-  static bool classof(NewSignatureType type);
+  /// A `FuncType` is a LIT signature if it contains function metadata.
+  static bool classof(FuncType type);
   static bool classof(Type type);
 
-  static LITNewSignatureType get(MLIRContext *ctx, TypeRange inputs,
-                                 TypeRange results,
-                                 size_t numImplicitOriginDecls);
+  static FnType get(MLIRContext *ctx, TypeRange inputs, TypeRange results,
+                    size_t numImplicitOriginDecls);
 };
 
 //===----------------------------------------------------------------------===//
-// LITSignatureGeneratorType
+// FnTypeGeneratorType
 //===----------------------------------------------------------------------===//
 
-class LITSignatureGeneratorType : public SignatureGeneratorType {
+class FnTypeGeneratorType : public FuncTypeGeneratorType {
 public:
-  using SignatureGeneratorType::SignatureGeneratorType;
-  LITSignatureGeneratorType(LITGeneratorType gen);
-  LITSignatureGeneratorType(SignatureGeneratorType gen);
+  using FuncTypeGeneratorType::FuncTypeGeneratorType;
+  FnTypeGeneratorType(LITGeneratorType gen);
+  FnTypeGeneratorType(FuncTypeGeneratorType gen);
 
-  LITNewSignatureType getBody();
+  FnType getBody();
 
   //===--------------------------------------------------------------------===//
   // Acting as a LITGeneratorType
@@ -173,13 +172,12 @@ public:
   /// prepended to the current signature and references are remapped to index
   /// references. An additional array of indices corresponding to variadic
   /// parameters of the prepended parameters is also required.
-  static LITSignatureGeneratorType
-  prependParams(LITSignatureGeneratorType sig,
-                ArrayRef<ParamDeclAttr> parentParams,
-                ArrayRef<bool> parentVariadicMask);
+  static FnTypeGeneratorType prependParams(FnTypeGeneratorType sig,
+                                           ArrayRef<ParamDeclAttr> parentParams,
+                                           ArrayRef<bool> parentVariadicMask);
 
   //===--------------------------------------------------------------------===//
-  // Acting as a LITNewSignatureType
+  // Acting as a FnType
   //===--------------------------------------------------------------------===//
 
   FunctionType getValues() { return getBody().getValues(); }
@@ -282,12 +280,12 @@ public:
       ArrayRef<TypedAttr> values, function_ref<InFlightDiagnostic()> emitError);
 
   /// Return this signature with the specified capture lifetimes.
-  LITSignatureGeneratorType getWithCaptureOrigins(TypedAttr lifetimes);
+  FnTypeGeneratorType getWithCaptureOrigins(TypedAttr lifetimes);
 
   /// This method replaces direct uses of NAMED implicit origin declarations
   /// with index-based references corresponding to the signature.  lifetimeDecls
   /// specifies the names of the implicit origin decls.
-  LITSignatureGeneratorType
+  FnTypeGeneratorType
   replaceImplicitOriginsWithIndexes(ArrayRef<ParamDeclAttr> lifetimeDecls);
 
   /// This method replaces direct uses of NAMED implicit origin declarations
@@ -296,7 +294,7 @@ public:
   static Type replaceImplicitOriginsWithIndexes(
       Type type, ArrayRef<ParamDeclAttr> lifetimeDecls, size_t indexOffset = 0);
 
-  static bool classof(SignatureGeneratorType type);
+  static bool classof(FuncTypeGeneratorType type);
   static bool classof(Type type);
 };
 
@@ -347,7 +345,7 @@ public:
 /// Returns the user-defined result type of a signature, looking through
 /// implicit memory results and stripping off the variant from error throwing
 /// results if needed.
-Type getSignatureUserResultType(LITSignatureGeneratorType sigType,
+Type getSignatureUserResultType(FnTypeGeneratorType sigType,
                                 ArrayRef<Type> argTypes, Type resultType);
 
 /// The Lit parser and KGEN have different semantics for binding function
@@ -355,8 +353,8 @@ Type getSignatureUserResultType(LITSignatureGeneratorType sigType,
 /// KGEN does not since it cannot always have access to a symbol table.
 /// Specialize a signature type while rebinding the input parameter values to
 /// the expected input parameter types.
-std::pair<LITSignatureGeneratorType, ParameterExprArrayAttr>
-getUnboundSpecializedSignature(LITSignatureGeneratorType type,
+std::pair<FnTypeGeneratorType, ParameterExprArrayAttr>
+getUnboundSpecializedSignature(FnTypeGeneratorType type,
                                ParameterExprArrayAttr bindings);
 
 } // namespace M::KGEN::LIT

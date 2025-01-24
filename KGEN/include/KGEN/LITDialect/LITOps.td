@@ -54,7 +54,7 @@ def LIT_FnOp : LITOp<"fn", [
   let arguments = (ins
     OptionalAttr<SymbolNameAttr>:$sym_name,
     OptionalAttr<KGEN_ParamDeclAttr>:$paramDecl,
-    TypeAttrOf<LIT_SignatureGeneratorType>:$signatureGenerator,
+    TypeAttrOf<LIT_FnTypeGeneratorType>:$funcTypeGenerator,
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$params,
     KGEN_DecoratorsAttr:$decorators,
@@ -117,7 +117,7 @@ def LIT_FnOp : LITOp<"fn", [
 
     /// Return the full signature of this declaration, including parameters from
     /// enclosing struct declarations.
-    LITSignatureGeneratorType getFullSignature();
+    FnTypeGeneratorType getFullSignature();
 
     /// Return a collection of the ParamDeclAttr's that are declared on this
     /// function and any enclosing unit, ordered as will be required by a call.
@@ -139,7 +139,7 @@ def LIT_FnOp : LITOp<"fn", [
                    CArg<"FnEffects", "{}">:$fnEffects,
                    CArg<"InlineLevel", "InlineLevel::Automatic">:$inlineLevel)>,
     OpBuilder<(ins "StringAttr":$name, "StringAttr":$sourceName,
-                   "SignatureGeneratorType":$signatureGenerator,
+                   "FuncTypeGeneratorType":$funcTypeGenerator,
                    CArg<"SpecialFunctionKind", "{}">:$specialFnID)>,
   ];
 
@@ -168,7 +168,7 @@ def LIT_CallOp : LITOp<"call", [
   }];
 
   let arguments = (ins
-    AttrOfType<LIT_SignatureGeneratorType>:$callee,
+    AttrOfType<LIT_FnTypeGeneratorType>:$callee,
     KGEN_ParameterExprArrayAttr:$implicitOrigins,
     Variadic<AnyType>:$operands
   );
@@ -184,8 +184,8 @@ def LIT_CallOp : LITOp<"call", [
     /// Get the direct callee symbol if this is a direct call.
     SymbolRefAttr getDirectCallee();
     /// Get the callee signature type.
-    LITSignatureGeneratorType getCalleeType() {
-      return cast<LITSignatureGeneratorType>(getCallee().getType());
+    FnTypeGeneratorType getCalleeType() {
+      return cast<FnTypeGeneratorType>(getCallee().getType());
     }
   }];
 }
@@ -209,7 +209,7 @@ def LIT_CallIndirectOp : LITOp<"call_indirect"> {
   }];
 
   let arguments = (ins
-    LIT_SignatureGeneratorType:$callee,
+    LIT_FnTypeGeneratorType:$callee,
     KGEN_ParameterExprArrayAttr:$implicitOrigins,
     Variadic<AnyType>:$arguments
   );
@@ -224,7 +224,7 @@ def LIT_CallIndirectOp : LITOp<"call_indirect"> {
   }];
 
   let extraClassDeclaration = [{
-    LITSignatureGeneratorType getCalleeType() { return getCallee().getType(); }
+    FnTypeGeneratorType getCalleeType() { return getCallee().getType(); }
   }];
 }
 
@@ -370,7 +370,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     // This is the error message to produce if a non-destructible type needs an
     // implicit destructor call.
     OptionalAttr<StrAttr>:$linearTypeErrorMsg,
-    OptionalAttr<TypeAttrOf<KGEN_SignatureGeneratorType>>:$closureSignature,
+    OptionalAttr<TypeAttrOf<KGEN_FuncTypeGeneratorType>>:$closureSignature,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<StrAttr>:$deprecationWarning,
     OptionalAttr<SourceNameAttr>:$sourceName,
@@ -607,7 +607,7 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     KGEN_ParamDeclArrayAttr:$params,
     TypeLineageArrayAttr:$parentTypes,
     EnumProp<"TypeConvention">:$convention,
-    OptionalAttr<TypeAttrOf<KGEN_SignatureGeneratorType>>:$dtorSig,
+    OptionalAttr<TypeAttrOf<KGEN_FuncTypeGeneratorType>>:$dtorSig,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<StrAttr>:$deprecationWarning,
     // This is the error message to produce if a non-destructible type needs an
@@ -968,7 +968,7 @@ def LIT_AsyncCallOp : LITOp<"async.call", [
   }];
 
   let arguments = (ins
-    AttrOfType<KGEN_SignatureGeneratorType>:$callee,
+    AttrOfType<KGEN_FuncTypeGeneratorType>:$callee,
     KGEN_ParameterExprArrayAttr:$implicitOrigins,
     Variadic<AnyType>:$operands
   );
