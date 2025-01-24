@@ -622,6 +622,7 @@ struct ManagedTensorSlice[
             static_strides = static_specs.strides,
         ](self, ridx)
 
+    @__mogg_intrinsic_attr("mogg.tensor_fused_load")
     @always_inline
     fn _fused_load[
         width: Int,
