@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 ##===----------------------------------------------------------------------===##
-# Copyright (c) 2024, Modular Inc. All rights reserved.
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -25,7 +25,7 @@ source "${SCRIPT_DIR}"/build-stdlib.sh
 
 echo "Packaging up the test_utils."
 TEST_UTILS_PATH="${REPO_ROOT}/stdlib/test/test_utils"
-# This is needed to compile test_utils.mojopkg correctly, otherwise it 
+# This is needed to compile test_utils.mojopkg correctly, otherwise it
 # uses the stdlib that's given in the nightly, and will fail compilation
 # if some breaking changes are made.
 export MODULAR_MOJO_NIGHTLY_IMPORT_PATH=$BUILD_DIR

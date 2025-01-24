@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2024, Modular Inc. All rights reserved.
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -259,7 +259,7 @@ alias has_uppercase_mapping = List[UInt32, hint_trivial_type=True](
     0x0292,  # LATIN SMALL LETTER EZH ʒ
     0x029D,  # LATIN SMALL LETTER J WITH CROSSED-TAIL ʝ
     0x029E,  # LATIN SMALL LETTER TURNED K ʞ
-    0x0345,  # COMBINING GREEK YPOGEGRAMMENI ͅ
+    0x0345,  # COMBINING GREEK YPOGEGRAMMENI
     0x0371,  # GREEK SMALL LETTER HETA ͱ
     0x0373,  # GREEK SMALL LETTER ARCHAIC SAMPI ͳ
     0x0377,  # GREEK SMALL LETTER PAMPHYLIAN DIGAMMA ͷ
