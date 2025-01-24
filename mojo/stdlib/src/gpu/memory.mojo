@@ -55,7 +55,7 @@ fn _mark_eviction[
         ]()
 
 
-@always_inline
+@always_inline("nodebug")
 fn async_copy[
     type: DType, //,
     size: Int,
