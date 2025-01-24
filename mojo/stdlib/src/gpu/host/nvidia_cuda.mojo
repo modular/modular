@@ -184,7 +184,9 @@ struct TMADescriptor:
 
 @always_inline
 fn create_tma_descriptor[
-    dtype: DType, rank: Int, swizzle_mode: TensorMapSwizzle
+    dtype: DType,
+    rank: Int,
+    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](
     global_buf: DeviceBuffer[dtype],
     global_shape: IndexList[rank],
