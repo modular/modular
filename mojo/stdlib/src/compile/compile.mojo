@@ -81,8 +81,6 @@ alias _EMISSION_KIND_ASM = 0
 alias _EMISSION_KIND_LLVM = 1
 alias _EMISSION_KIND_LLVM_OPT = 2
 alias _EMISSION_KIND_SHARED_OBJ = 3
-# This is should be used internal only.
-alias _EMISSION_KIND_ELABORATED_MLIR = 4
 
 
 fn _get_emission_kind_id[emission_kind: StringLiteral]() -> IntLiteral:
@@ -92,9 +90,7 @@ fn _get_emission_kind_id[emission_kind: StringLiteral]() -> IntLiteral:
     ]()
 
     @parameter
-    if emission_kind == "elab-mlir":
-        return _EMISSION_KIND_ELABORATED_MLIR
-    elif emission_kind == "llvm":
+    if emission_kind == "llvm":
         return _EMISSION_KIND_LLVM
     elif emission_kind == "llvm-opt":
         return _EMISSION_KIND_LLVM_OPT
