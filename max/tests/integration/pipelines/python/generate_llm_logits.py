@@ -405,8 +405,21 @@ class ReplitPipelineOracle(PipelineOracle):
         # However we receive this error if we do:
         #     ValueError: Architecture mpt not supported
         # So we cannot use GGUF here.
+        torch_dtype: torch.dtype
+        if encoding == "float32":
+            torch_dtype = torch.float32
+        elif encoding == "bfloat16":
+            torch_dtype = torch.bfloat16
+        else:
+            raise ValueError(
+                f"Could not convert encoding {encoding} to a torch dtype."
+            )
         model = transformers.AutoModelForCausalLM.from_pretrained(
-            hf_repo_id, config=config, device_map=device, trust_remote_code=True
+            hf_repo_id,
+            config=config,
+            device_map=device,
+            trust_remote_code=True,
+            torch_dtype=torch_dtype,
         )
         return TorchModelAndDataProcessor(model=model, data_processor=tokenizer)
 
