@@ -253,6 +253,7 @@ def test_kv_cache_ragged_attention(session, cache_strategy):
         n_kv_heads=8,
         head_dim=128,
         cache_strategy=cache_strategy,
+        page_size=128,
     )
     prompt_lens = [10, 30]
     batch_size = len(prompt_lens)

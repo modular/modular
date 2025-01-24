@@ -43,6 +43,7 @@ def create_paged_manager(num_blocks: int, page_size: int = 1) -> KVCacheManager:
         head_dim=HEAD_DIM,
         cache_strategy=KVCacheStrategy.PAGED,
         enable_prefix_caching=True,
+        page_size=MIN_PAGE_SIZE,
     )
 
     session = InferenceSession()

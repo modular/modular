@@ -36,6 +36,7 @@ async def test_kv_collection_constructor(cache_strategy, fetch_cls) -> None:
         n_kv_heads=8,
         head_dim=128,
         cache_strategy=cache_strategy,
+        page_size=128,
     )
 
     kv_manager_kwargs = {}
