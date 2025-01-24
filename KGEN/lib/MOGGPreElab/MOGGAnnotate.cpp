@@ -34,7 +34,7 @@ static constexpr llvm::StringLiteral kPyTorchFallbackFuncName =
     "pytorch_fallback";
 
 static constexpr std::array<StringLiteral, 3> kMaxManagedTensorSlice = {
-    "tensor_utils", "managed_tensor_slice", "ManagedTensorSlice"};
+    "tensor_internal", "managed_tensor_slice", "ManagedTensorSlice"};
 static constexpr std::array<StringLiteral, 4> kMaxSIMD = {"stdlib", "builtin",
                                                           "simd", "SIMD"};
 static constexpr std::array<StringLiteral, 4> kMaxStaticTuple = {

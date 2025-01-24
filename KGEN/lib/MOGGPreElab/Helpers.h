@@ -24,7 +24,7 @@ inline bool isExtensibilityTensor(LIT::StructType maybeTensor) {
 
 inline bool isDPSTensor(LIT::StructType maybeTensor) {
   return maybeTensor.getSymbol().getRootReference().strref().starts_with(
-             "tensor_utils") &&
+             "tensor") &&
          maybeTensor.getSymbol().getLeafReference() == "ManagedTensorSlice";
 }
 
