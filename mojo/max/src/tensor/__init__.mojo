@@ -12,3 +12,10 @@
 from tensor_internal.tensor import Tensor
 from tensor_internal.tensor_shape import TensorShape
 from tensor_internal.tensor_spec import TensorSpec, RuntimeTensorSpec
+
+from tensor_utils_internal import (
+    ManagedTensorSlice,
+    TensorLike,
+    indexing,
+    foreach,
+)
