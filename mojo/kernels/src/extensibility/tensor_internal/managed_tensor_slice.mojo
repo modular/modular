@@ -29,7 +29,7 @@ from buffer import NDBuffer, DimList
 from buffer.dimlist import _make_partially_static_index_list
 from utils import IndexList
 from register import register_internal_override
-from .indexing import _dot_prod, _row_major_strides, _slice_to_tuple
+from ._indexing import _dot_prod, _row_major_strides, _slice_to_tuple
 from .tensor_like import TensorLike
 
 
