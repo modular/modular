@@ -80,6 +80,10 @@ constexpr StringLiteral MOGG_INTRINSIC_OUTPUT_FUSION_HOOK =
 /// MOGG Intrinsic for marking a kernel operand being a `mo.buffer`
 constexpr StringLiteral MOGG_INTRINSIC_MUTABLE = "mogg.mutable";
 
+/// MOGG Intrinsic for the ManagedTensorSlice _fused_load method.
+constexpr StringLiteral MOGG_INTRINSIC_TENSOR_FUSED_LOAD =
+    "mogg.tensor_fused_load";
+
 /// Track the pair of the decorator as it is seen in the LIT IR in its raw from
 /// and the clean processed attribute which is added after it is processed.
 struct MOGGDecorator {
