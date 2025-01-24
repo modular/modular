@@ -11,7 +11,7 @@ from python.python import _get_global_python_itf
 from python import Python, PythonObject
 from os import abort
 from register import register_internal, uses_opaque
-from tensor_utils import ManagedTensorSlice
+from tensor import ManagedTensorSlice
 
 
 struct Counter[stride: Int](Movable):

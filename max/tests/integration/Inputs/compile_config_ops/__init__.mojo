@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import compiler
-from tensor_utils import ManagedTensorSlice
+from tensor import ManagedTensorSlice
 from sys import env_get_int
 
 

@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import compiler
-from tensor_utils import ManagedTensorSlice
+from tensor import ManagedTensorSlice
 
 
 @compiler.register("fails_to_elaborate")
