@@ -425,6 +425,14 @@ OpFoldResult LoadOp::fold(FoldAdaptor adaptor) {
 }
 
 LogicalResult LoadOp::canonicalize(LoadOp op, PatternRewriter &b) {
+  // Canonicalize "store x -> ptr; tmp = load ptr" into "store; tmp = x".
+  if (auto store = dyn_cast_if_present<StoreOp>(op->getPrevNode())) {
+    if (store.getPtr() == op.getPtr()) {
+      b.replaceOp(op, store.getArg());
+      return success();
+    }
+  }
+
   // Canonicalize `load(bitcast(ptr)) -> bitcast(load(ptr))` if the element type
   // is also a pointer.
   if (!isa<PointerType>(op.getType()))
