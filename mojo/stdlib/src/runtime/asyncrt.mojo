@@ -306,11 +306,10 @@ struct _TaskGroupBox(CollectionElement):
     # FIXME(MSTDL-573): `List` requires copyability. Just crash here because it
     # should never get called.
     fn __copyinit__(out self, existing: Self):
-        abort("_TaskGroupBox.__copyinit__ should never get called")
-        while True:
-            pass
+        self = abort[Self]("_TaskGroupBox.__copyinit__ should never get called")
 
-    @always_inline
+    # FIXME(MSTDL-573): `List` requires copyability. Just crash here because it
+    # should never get called.
     fn copy(self) -> Self:
         """Explicitly construct a copy of self.
 
