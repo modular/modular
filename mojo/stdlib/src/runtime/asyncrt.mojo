@@ -289,7 +289,7 @@ struct _TaskGroupBox(CollectionElement):
 
     fn __init__[type: AnyType](mut self, owned coro: Coroutine[type]):
         var handle = coro._handle
-        __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(coro))
+        __disable_del coro
         self.handle = handle
 
     fn __init__(out self, *, other: Self):
