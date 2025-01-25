@@ -1801,7 +1801,8 @@ namespace {
 /// operation with the uses (eg if it is a copyinit).
 class DestructorInserter {
 public:
-  DestructorInserter(ValueSet &valueSet) : valueSet(valueSet) {}
+  DestructorInserter(ImplicitLocOpBuilder builder, ValueSet &valueSet)
+      : builder(builder), valueSet(valueSet) {}
 
   /// This method indicates that the specified value needs to be destroyed after
   /// this operation.  If 'fieldsToDestroy' is non-empty then it specifies which
@@ -1827,19 +1828,21 @@ public:
   ///
   /// This returns an enum indicating what to do with opWithUse, e.g. if it is
   /// to be deleted by the caller.
-  DtorEmissionResult emitDestructors(ImplicitLocOpBuilder &builder,
-                                     Operation *opWithUse);
+  DtorEmissionResult emitDestructors(Operation *opWithUse);
 
   /// The same as emitDestructors, but there is no opWithUse so no copyinit
   /// elision can happen.
-  void emitDestructors(ImplicitLocOpBuilder &builder) {
-    auto result = emitDestructors(builder, /*opWithUse*/ nullptr);
+  void emitDestructors() {
+    auto result = emitDestructors(/*opWithUse*/ nullptr);
     assert(result == DtorEmissionResult::KeepOp &&
            "should never delete an op if one isn't provided");
     (void)result;
   }
 
   LLVM_DUMP_METHOD void dump() const;
+
+  /// This is the builder used to insert any destructor calls.
+  ImplicitLocOpBuilder builder;
 
 private:
   ValueSet &valueSet;
@@ -1888,8 +1891,7 @@ void DestructorInserter::dump() const {
 /// This returns an enum indicating what to do with opWithUse, e.g. if it is
 /// to be deleted by the caller.
 DestructorInserter::DtorEmissionResult
-DestructorInserter::emitDestructors(ImplicitLocOpBuilder &builder,
-                                    Operation *opWithUse) {
+DestructorInserter::emitDestructors(Operation *opWithUse) {
   // If this is a __copyinit__ call, we can do elision, which may subsume
   // one of our dtors that we need to emit.
   DtorEmissionResult removedOp = optimizeCopyDestroys(opWithUse);
@@ -2639,8 +2641,6 @@ void DestructorInsertion::scanFunction(FnOp func) {
   // The sentinel tracks reachability.
   assert(consumedValues[0] && "function entry should be reachable");
 
-  DestructorInserter dtorInserter(valueSet);
-
   // If any argument values are unconsumed then they must be unused.
   // Emit their destructor calls at the start of the function by acting as
   // though there is a use.
@@ -2658,8 +2658,9 @@ void DestructorInsertion::scanFunction(FnOp func) {
       loc = FusedLoc::get(loc.getContext(), {loc}, scope);
 
     ImplicitLocOpBuilder builder(loc, &funcBody, funcBody.begin());
+    DestructorInserter dtorInserter(builder, valueSet);
     checkUse(argValue, /*isDeref=*/isIndirect, dtorInserter);
-    dtorInserter.emitDestructors(builder);
+    dtorInserter.emitDestructors();
   }
 }
 
@@ -2673,7 +2674,6 @@ void DestructorInsertion::scanBlock(Block &block) {
   SmallVector<ResultEffect> resultEffects;
   SmallVector<TypedAttr> originEffects;
 
-  DestructorInserter dtorInserter(valueSet);
   SmallVector<Operation *> opsToRemove;
 
   for (Operation &op : llvm::reverse(block)) {
@@ -2708,6 +2708,12 @@ void DestructorInsertion::scanBlock(Block &block) {
       checkTryOp(cast<LIT::TryOp>(op));
       break;
     }
+
+    // Insert any destructor calls immediately /after/ this operation, since
+    // they are for values used by it.
+    ImplicitLocOpBuilder builder(op.getLoc(), op.getBlock(),
+                                 std::next(Block::iterator(&op)));
+    DestructorInserter dtorInserter(builder, valueSet);
 
     assert(resultEffects.size() == op.getNumResults() &&
            "getOperationEffects returned wrong # effects");
@@ -2817,11 +2823,8 @@ void DestructorInsertion::scanBlock(Block &block) {
       }
     }
 
-    // Insert any destructor calls immediately /after/ this operation, since
-    // they are for values used by it.
-    auto insertPt = std::next(Block::iterator(&op));
-    ImplicitLocOpBuilder builder(op.getLoc(), op.getBlock(), insertPt);
-    if (dtorInserter.emitDestructors(builder, &op) ==
+    // Finally emit any enqueued destructors.
+    if (dtorInserter.emitDestructors(&op) ==
         DestructorInserter::DtorEmissionResult::RemoveOpWithUse) {
       // If we replaced this operation, remove it after our sweep.
       opsToRemove.push_back(&op);
@@ -3305,6 +3308,7 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
   // target as being consumed.
   if (ValueRef direct = valueSet.getDirectValueRef(value, isDeref)) {
     if (!dryRun && value.getDefiningOp<VarDeclOp>()) {
+      // Emit this above the operation.
       ImplicitLocOpBuilder builder(op.getLoc(), &op);
       emitDebugInit(value, direct, builder);
       builder.create<VarLifetimeStartOp>(value);
@@ -3321,10 +3325,10 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
   if (!valueSet.isTrivial(value, isDeref) && !dryRun) {
     // Destructor call goes ahead of the mutation, not after.
     ImplicitLocOpBuilder builder(op.getLoc(), &op);
-    DestructorInserter beforeDtorInserter(valueSet);
+    DestructorInserter beforeDtorInserter(builder, valueSet);
     beforeDtorInserter.add(value,
                            /*Just do it*/ ValueRef(0, 0, 0, isDeref));
-    beforeDtorInserter.emitDestructors(builder);
+    beforeDtorInserter.emitDestructors();
   }
 }
 
@@ -3519,7 +3523,9 @@ void DestructorInsertion::destroyValuesAtEntryIfNeeded(
   MutableArrayRef<ValueInfo> valueInfos = valueSet.getValueInfos();
   size_t nextValueInfo = 0;
 
-  DestructorInserter dtorInserter(valueSet);
+  // Any dtor calls will be emitted at the start of the block.
+  DestructorInserter dtorInserter(
+      ImplicitLocOpBuilder(loc, &block, block.begin()), valueSet);
 
   int nextToDestroy = entriesToDestroy.find_first();
   while (nextToDestroy != -1) {
@@ -3542,9 +3548,7 @@ void DestructorInsertion::destroyValuesAtEntryIfNeeded(
     nextToDestroy = entriesToDestroy.find_next(fullValueRef.endBit - 1);
   }
 
-  // Any dtor calls will be emitted at the start of the block.
-  ImplicitLocOpBuilder builder(loc, &block, block.begin());
-  dtorInserter.emitDestructors(builder);
+  dtorInserter.emitDestructors();
 
   // Restore consumedValues.
   consumedValues = std::move(savedConsumedValues);
