@@ -312,10 +312,8 @@ fn disableDtor(owned x: MoreComplexExample):
 
 
 fn badMarkDestroyed(owned x: MoreComplexExample):
-    # expected-error @+1 {{cannot mark subobjects destroyed}}
-    __mlir_op.`lit.ownership.mark_destroyed`[_type=None](
-        __get_mvalue_as_litref(x.mem)
-    )
+    # expected-error @+1 {{can only mark full values as destroyed, not subfields}}
+    __disable_del x.mem
 
 
 fn fieldConsumeError(
@@ -501,3 +499,17 @@ fn test_inout_ref(mut v: StrArray, i: Int):
     var r = Pointer.address_of(get_inout_ref(v[i]))
 
     _ = r[]
+
+
+# expected-note @below {{'a' declared here}}
+fn test_disable_del(owned a: MemExample, owned b: String, owned c: MemExample):
+    tmp1 = a.x
+    __disable_del a
+    # expected-error @+1 {{use of uninitialized value 'a'}}
+    tmp2 = a.y
+
+    # expected-error @+1 {{can only mark directly tracked values as destroyed}}
+    __disable_del get_inout_ref(b)
+
+    # expected-error @+1 {{can only mark full values as destroyed, not subfields}}
+    __disable_del c.x
