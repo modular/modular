@@ -829,9 +829,9 @@ fn call_variadic_inout_mems():
   # CHECK-NEXT: lit.call {{.*}}variadic_inout_mems{{.*}}[mut {*"a`", *"b`1"}]([[VAR]])
   variadic_inout_mems(a, b)
 
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[AR]])
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
   # CHECK-NEXT: lifetime.end %a
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[BR]])
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%b)
   # CHECK-NEXT: lifetime.end %b
 
   # CHECK-NEXT: kgen.param.constant: none

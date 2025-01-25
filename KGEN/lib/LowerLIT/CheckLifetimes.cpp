@@ -2559,8 +2559,8 @@ private:
   void checkDef(Value value, Operation &op, bool isDeref,
                 DestructorInserter &dtorInserter);
   void checkOriginEffect(TypedAttr origin, DestructorInserter &dtorInserter);
-  void scheduleNeededDtors(Value value, ValueRef valueRef,
-                           DestructorInserter &dtorInserter);
+  void scheduleNeededDtors(ValueRef use, DestructorInserter &dtorInserter,
+                           Value value = Value());
 
   /// Emit a debug value for the value if it is tracked with debug info.
   void emitDebugInit(Value value, ValueRef valueRef,
@@ -3273,23 +3273,18 @@ void DestructorInsertion::checkUse(Value value, bool isDeref,
     //   consume(&aggregate)
     //
     // In this case, we need to destroy field1 after this use.
-    scheduleNeededDtors(value, valueRef, dtorInserter);
+    scheduleNeededDtors(valueRef, dtorInserter, value);
     return;
   }
 
   // We are not tracking this value directly, it could be tied to an origin
   // declared by a value we do track. If this is the case, check these values
   // for destruction.
-  SmallVector<ValueRef> accesses =
-      valueSet.getValueRefsForAccess(value, isDeref);
-  for (ValueRef access : accesses) {
-    // The value may be the last use of multiple different tracked values, eg
-    // in the case of: use(cond ? a.subfield1, b.subfield2).  The 'value' will
-    // end up being the result of the ternary, but we need to destroy the
-    // values according to the original "a" and "b" reference. Fetch the
-    // original values like 'a' and 'b' to pass in.
-    ValueInfo &valueInfo = valueSet.getValueInfos()[access.valueId];
-    scheduleNeededDtors(valueInfo.value, access, dtorInserter);
+  for (ValueRef access : valueSet.getValueRefsForAccess(value, isDeref)) {
+    // Do not pass "value" here, because it will refer to the reference, which
+    // may not be to the actual tracked value for 'access'.  For example, in
+    // 'use(cond ? a : b)' we want to think about "a" and "b".
+    scheduleNeededDtors(access, dtorInserter);
   }
 }
 
@@ -3336,15 +3331,9 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
 /// Check any unstructured origins that are accessed by the operation.
 void DestructorInsertion::checkOriginEffect(TypedAttr origin,
                                             DestructorInserter &dtorInserter) {
-  SmallVector<ValueRef> accesses = valueSet.getValueRefsForOrigin(origin);
-  for (auto access : accesses) {
-    // Iff this is the /last/ use of the value, emit a dtor for the value.
-    ValueInfo &valueInfo = valueSet.getValueInfos()[access.valueId];
-    if (valueInfo.hasErrorDiagnosed)
-      continue;
-
-    scheduleNeededDtors(valueInfo.value, access, dtorInserter);
-  }
+  // Iff this is the /last/ use of the value, emit a dtor for the value.
+  for (auto access : valueSet.getValueRefsForOrigin(origin))
+    scheduleNeededDtors(access, dtorInserter);
 }
 
 /// If the specified valueRef corresponds to a trivial value or subfield, clear
@@ -3383,66 +3372,66 @@ static void clearTrivialFields(ValueRef valueRef, Type valueType,
   }
 }
 
-void DestructorInsertion::scheduleNeededDtors(
-    Value value, ValueRef valueRef, DestructorInserter &dtorInserter) {
-  assert(valueRef && "Only works on valid refs");
+/// There is a use of the specified 'use' portion of a live value.  If this is
+/// the last use of some value, schedule a destructor to clean it up.  'value'
+/// is an optional value indicating the MLIR value corresponding to this, which
+/// is useful to avoid emitting redundant lit.struct.ger instructions when we
+/// already have it.
+void DestructorInsertion::scheduleNeededDtors(ValueRef use,
+                                              DestructorInserter &dtorInserter,
+                                              Value value) {
+  assert(use && "Only works on valid refs");
 
   // If the accessed value had an error already or nothing in this value needs
   // destroying, then ignore the request.
-  ValueInfo &valueInfo = valueSet.getValueInfos()[valueRef.valueId];
-  if (valueInfo.hasErrorDiagnosed || valueRef.isAllPresent(consumedValues))
+  ValueInfo &valueInfo = valueSet.getValueInfo(use.valueId);
+  if (valueInfo.hasErrorDiagnosed || use.isAllPresent(consumedValues))
     return;
 
   // If we are just computing the consumedValue set, don't actually insert any
   // destructor calls.
   if (dryRun) {
-    valueRef.markBits(consumedValues, true);
+    use.markBits(consumedValues, true);
     return;
   }
 
   // If this is the last use of some subfield of a value that needs to be
-  // destroyed, emit the whole object destructor for the overall value.
+  // destroyed, emit a destructor for the WHOLE overall value.
   //
   //   init(&aggregate)
-  //   use(aggregate.field1)
-  //   use(aggregate.field2.subelt)  <<-- We are here.
+  //   use(&aggregate.field1)
+  //   use(&aggregate.field2.subelt)  <<-- We are here.
   //
-  // Here we emit `aggregate.__del__()` to destroy the overall value, or (if
-  // the whole object bit for the aggregate is already cleared) we should use
-  // aggregate.field2.__del__() which will also handle deleting the field in
-  // question.
-  //
-  // If dryRun, then the upward consume set is unset for values potentially
-  // consumed beneath the loop. As a result, we don't know if this is the last
-  // reference to whole value. Assuming that it is will result in destruction
-  // of that value in a break branch.
-  auto fullValueRef = valueInfo.getFullValueRef(valueRef.valueId);
-  if (valueRef != fullValueRef && !consumedValues[valueInfo.endValueBit - 1] &&
-      // The full value must be non-destroyed at this point for us to destroy
-      // the full value.  We've already checked that values are defined before
-      // use, so in this scenario, the full object bit will be handled somehow
-      // else, e.g. by an explicit mark_destroyed.
-      //
-      //  init(&aggregate)
-      //  use(aggregate)
-      //  mark_destroyed(aggregate)
-      //  use(aggregate.field1)       <<-- We are here.
-      //  consume(aggregate.field2)
-      fullValueRef.isAllMissing(consumedValues)) {
+  // Here we emit `aggregate.__del__()` to destroy the overall value.  Beware
+  // that the whole object bit for the entire aggregate may already be consumed
+  // if we are on an exception path in an init, or __disable_del is used on the
+  // aggregate (commonly due to destructors).
+  auto fullValueRef = valueInfo.getFullValueRef(use.valueId);
+  if (value && consumedValues[valueInfo.endValueBit - 1]) {
+    // Do not adjust or recompute 'value' if it is already known and the whole
+    // value is set to be destroyed already.  In this case, we're using a
+    // subfield that is getting reinitialized, e.g.:
+    //   init(&aggregate)
+    //   use(&aggregate.field1)  <<-- We are here.
+    //   init(&aggregate.field1)
+    //   __del__(&aggregate)
+    // we want to maintain that subfield pointer.
+
+  } else {
     value = valueInfo.value;
-    valueRef = fullValueRef;
+    use = fullValueRef;
   }
 
   // Get the type for the value so we can poke at it.
   // If a generic type or trivial, then emit a destructor call (or nothing).
-  auto valueType = dyn_cast<LIT::StructType>(valueRef.getValueType(value));
+  auto valueType = dyn_cast<LIT::StructType>(use.getValueType(value));
   if (!valueType) {
     // We are going to emit a destructor for the specified ValueRef, so all none
     // of the things we are about to destroy should already be destroyed.
-    assert(valueRef.isAllMissing(consumedValues) &&
+    assert(use.isAllMissing(consumedValues) &&
            "cannot have partially consumed object");
-    dtorInserter.add(value, valueRef);
-    valueRef.markBits(consumedValues, true);
+    dtorInserter.add(value, use);
+    use.markBits(consumedValues, true);
     return;
   }
 
@@ -3452,30 +3441,29 @@ void DestructorInsertion::scheduleNeededDtors(
   // object as being initialized if all of its fields are.  This allows the
   // definition and rewrite of 'self' to work correctly, but doesn't try to
   // run the destructor on a partially initialized self.
-  ValueInfo &valueEntry = valueSet.getValueInfo(valueRef.valueId);
-  if (valueEntry.isFullObjectLiveOnEntry &&
-      valueEntry.endValueBit == valueRef.endBit &&
-      valueEntry.startValueBit == valueRef.startBit) {
+  if (valueInfo.isFullObjectLiveOnEntry &&
+      valueInfo.endValueBit == use.endBit &&
+      valueInfo.startValueBit == use.startBit) {
     // If some of the fields are already missing, don't destroy self.
-    --valueRef.endBit;
-    if (!valueRef.isAllMissing(consumedValues))
-      consumedValues[valueRef.endBit] = true;
-    ++valueRef.endBit;
+    --use.endBit;
+    if (!use.isAllMissing(consumedValues))
+      consumedValues[use.endBit] = true;
+    ++use.endBit;
   }
 
   // Trivial types don't have __del__ methods and can't be tracked, so if this
   // is referring to one of them, make sure to clear the bits so we don't
   // think they need to be destroyed.
-  clearTrivialFields(valueRef, valueType, consumedValues, valueSet);
+  clearTrivialFields(use, valueType, consumedValues, valueSet);
 
   // If we need to destroy the whole value, we can just use an empty BitVector,
   // otherwise we need to specify which subelements are to be destroyed, so we
   // copy it.
   BitVector fieldsToDestroy;
-  if (!valueRef.isAllMissing(consumedValues))
+  if (!use.isAllMissing(consumedValues))
     fieldsToDestroy = consumedValues;
-  dtorInserter.add(value, valueRef, std::move(fieldsToDestroy));
-  valueRef.markBits(consumedValues, true);
+  dtorInserter.add(value, use, std::move(fieldsToDestroy));
+  use.markBits(consumedValues, true);
 }
 
 void DestructorInsertion::emitDebugInit(Value value, ValueRef valueRef,
@@ -3548,8 +3536,7 @@ void DestructorInsertion::destroyValuesAtEntryIfNeeded(
 
     // Emit destructor calls for the entire value or the correct subfields that
     // need to be destroyed.
-    scheduleNeededDtors(valueInfos[nextValueInfo].value, fullValueRef,
-                        dtorInserter);
+    scheduleNeededDtors(fullValueRef, dtorInserter);
 
     // Find the next object to destroy.
     nextToDestroy = entriesToDestroy.find_next(fullValueRef.endBit - 1);
