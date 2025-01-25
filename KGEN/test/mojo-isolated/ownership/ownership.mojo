@@ -305,8 +305,7 @@ struct FieldSensitiveMemExample:
     # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F2R]])
 
     # CHECK-NEXT: lit.ownership.mark_destroyed %self
-    __mlir_op.`lit.ownership.mark_destroyed`[_type=None](
-       __get_mvalue_as_litref(self))
+    __disable_del self
 
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%self)
     self = FieldSensitiveMemExample()
@@ -330,8 +329,7 @@ fn disableDtor(owned x: FieldSensitiveMemExample):
   # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F2R]])
   # CHECK-NEXT: lit.ownership.mark_destroyed %x
   # CHECK-NEXT: kgen.param.constant: none
-  __mlir_op.`lit.ownership.mark_destroyed`[_type=None](
-       __get_mvalue_as_litref(x))
+  __disable_del x
 
 # CHECK-LABEL: lit.fn @"regpassable_owned_args_mutable
 fn regpassable_owned_args_mutable(owned x: RegExample):
@@ -1025,25 +1023,25 @@ struct MyStructWithMarkDestroyed[T: CollectionElement]:
     var b: T
 
 # CHECK-LABEL: lit.fn @{{.*}}reap
-    fn reap(owned self) -> T:
+    fn reap(owned self, out result: T):
         # "a" field is never used here so it is destroyed early.
         # CHECK-NEXT: [[AREF:%.*]] = lit.ref.struct.ger %self[a]
         # CHECK-NEXT: lit.call{{.*}}__del__{{.*}}([[AREF]]
-
-        # Full object bit is explicitly destroyed.
-        # CHECK-NEXT: lit.ownership.mark_destroyed %self
-        __disable_del self
 
         # Transfer operator includes a lit.ownership.use.
         # CHECK-NEXT: [[BREF:%.*]] = lit.ref.struct.ger %self[b]
         # CHECK-NEXT: lit.ownership.use [[BREF]]
 
         # Rvalue can be moved into the result slot.
-        # CHECK-NEXT: lit.call{{.*}}__moveinit__{{.*}}([[BREF]], %__result__)
+        # CHECK-NEXT: lit.call{{.*}}__moveinit__{{.*}}([[BREF]], %result)
+        result = self.b^
+
+        # Full object bit is explicitly destroyed.
+        # CHECK-NEXT: lit.ownership.mark_destroyed %self
+        __disable_del self
 
         # CHECK-NEXT: kgen.param.constant: none
         # CHECK-NEXT: kgen.return
-        return self.b^
 
 
 # CHECK-LABEL: lit.fn @"field_sensitive_ref_last_use
