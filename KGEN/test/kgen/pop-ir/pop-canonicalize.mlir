@@ -1301,6 +1301,16 @@ kgen.func @load_bitcast_func_ptr(%arg0: !kgen.generator<() -> ()>) ->
   kgen.return %1, %2, %3 : !kgen.pointer<index>, !kgen.pointer<index>, !kgen.pointer<index>
 }
 
+// CHECK-LABEL: @load_of_store
+kgen.func @load_of_store(%arg0: !kgen.pointer<index>, %arg1: index) -> index {
+  // CHECK-NEXT: pop.store %arg1, %arg0
+  pop.store %arg1, %arg0 : !kgen.pointer<index>
+  %1 = pop.load %arg0 : !kgen.pointer<index>
+  // CHECK-NEXT: return %arg1
+  kgen.return %1 : index
+}
+
+
 // CHECK-LABEL: @store_unknown
 kgen.func @store_unknown(%ptr : !kgen.pointer<array<4, index>>) {
   %array = kgen.param.constant: array<4, index> = <#interp.uninitmem>
