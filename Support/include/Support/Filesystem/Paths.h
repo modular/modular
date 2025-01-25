@@ -22,6 +22,9 @@ bool isMojoBinaryPackagePath(const std::filesystem::path &path);
 /// Return if the given file path defines a mojo source file.
 bool isMojoSourceFile(const std::filesystem::path &path);
 
+/// Return if the given file path defines a MLIR bytecode file (`.mlirbc`).
+bool isMLIRByteCodeFile(const std::filesystem::path &path);
+
 } // namespace M::Filesystem
 
 #endif // SUPPORT_FILESYSTEM_PATHS_H

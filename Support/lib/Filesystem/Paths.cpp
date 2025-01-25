@@ -33,3 +33,9 @@ bool M::Filesystem::isMojoSourceFile(const std::filesystem::path &path) {
   return std::filesystem::is_regular_file(path, ec) &&
          llvm::is_contained({".mojo", ".🔥"}, path.extension());
 }
+
+bool M::Filesystem::isMLIRByteCodeFile(const std::filesystem::path &path) {
+  std::error_code ec;
+  return std::filesystem::is_regular_file(path, ec) &&
+         path.extension() == ".mlirbc";
+}
