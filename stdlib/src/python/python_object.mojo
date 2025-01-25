@@ -324,13 +324,10 @@ struct PythonObject(
         Args:
             typed_obj: The typed python object to unwrap.
         """
-
-        # Note: Mark `typed_obj` as destroyed so we can move out of its field.
-        __mlir_op.`lit.ownership.mark_destroyed`(
-            __get_mvalue_as_litref(typed_obj)
-        )
-
         self = typed_obj._obj^
+
+        # Mark destroyed so we can transfer out its field.
+        __disable_del typed_obj
 
     # TODO(MSTDL-715):
     #   This initializer should not be necessary, we should need

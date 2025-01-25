@@ -249,16 +249,14 @@ fn py_c_function_wrapper[
 
     # Do not destroy the provided PyObjectPtr arguments, since they
     # actually have ownership of the underlying object.
-    __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(py_self))
+    __disable_del py_self
 
     # SAFETY:
     #   Prevent `args` AND `args._obj` from being destroyed, since we don't
     #   own them.
-    # TODO: Use a `mem.forget(args^)` function here in the future.
-    __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(args))
     var _obj = args._obj^
-    __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(_obj))
-
+    __disable_del args
+    __disable_del _obj
     return result
 
 

@@ -159,9 +159,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
             src.move_pointee_into(dest)
 
         # Do not destroy the elements when their backing storage goes away.
-        __mlir_op.`lit.ownership.mark_destroyed`(
-            __get_mvalue_as_litref(elements)
-        )
+        __disable_del elements
 
         self.size = length
 

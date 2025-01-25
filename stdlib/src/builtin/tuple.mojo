@@ -81,9 +81,7 @@ struct Tuple[*element_types: CollectionElement](Sized, CollectionElement):
             )
 
         # Do not destroy the elements when 'storage' goes away.
-        __mlir_op.`lit.ownership.mark_destroyed`(
-            __get_mvalue_as_litref(storage)
-        )
+        __disable_del storage
 
     fn __del__(owned self):
         """Destructor that destroys all of the elements."""

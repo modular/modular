@@ -115,9 +115,8 @@ struct LinkedList[ElementType: WritableCollectionElement]:
             self.append(elem[])
 
         # Do not destroy the elements when their backing storage goes away.
-        __mlir_op.`lit.ownership.mark_destroyed`(
-            __get_mvalue_as_litref(elements)
-        )
+        # FIXME(https://github.com/modular/mojo/issues/3969) this is leaking!
+        __disable_del elements
 
     fn __copyinit__(mut self, read other: Self):
         """Initialize this list as a copy of another list.

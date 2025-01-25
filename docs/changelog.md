@@ -370,6 +370,11 @@ what we publish.
 
   This writes to a buffer on the stack before reallocating the `String`.
 
+- The `__disable_del x` operation has been tightened up to treat all fields of
+  'x' as consumed by the point of the del, so it should be used after all the
+  subfields are transferred or otherwise consumed (e.g. at the end of the
+  function) not before uses of the fields.
+
 ### Tooling changes
 
 - mblack (aka `mojo format`) no longer formats non-mojo files. This prevents

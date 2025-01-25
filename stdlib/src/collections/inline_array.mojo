@@ -179,9 +179,7 @@ struct InlineArray[
             UnsafePointer.address_of(storage[i]).move_pointee_into(eltptr)
 
         # Do not destroy the elements when their backing storage goes away.
-        __mlir_op.`lit.ownership.mark_destroyed`(
-            __get_mvalue_as_litref(storage)
-        )
+        __disable_del storage
 
     fn copy(self) -> Self:
         """Explicitly copy the provided value.

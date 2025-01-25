@@ -157,14 +157,11 @@ struct Deque[ElementType: CollectionElement](
         self = Self(capacity=capacity)
 
         for i in range(args_length):
-            src = UnsafePointer.address_of(elements[i])
             dst = self._data + i
-            src.move_pointee_into(dst)
+            UnsafePointer.address_of(elements[i]).move_pointee_into(dst)
 
         # Do not destroy the elements when their backing storage goes away.
-        __mlir_op.`lit.ownership.mark_destroyed`(
-            __get_mvalue_as_litref(elements)
-        )
+        __disable_del elements
 
         self._tail = args_length
 
