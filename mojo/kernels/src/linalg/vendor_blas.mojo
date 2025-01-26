@@ -45,7 +45,7 @@ from gpu._cublas.cublaslt import (
 from gpu._cublas.dtype import DataType
 from gpu._cublas.result import Result
 from gpu.host import DeviceContext
-from gpu.host.nvidia_cuda import CUDA
+from gpu.host._nvidia_cuda import CUDA
 from layout import Layout
 from memory import UnsafePointer
 from utils.variant import Variant
