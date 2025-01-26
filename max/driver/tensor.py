@@ -251,7 +251,7 @@ class Tensor(DLPackArray):
         If the tensor is not on the host, an exception is raised.
         """
         try:
-            return np.from_dlpack(self)
+            return np.from_dlpack(self.to(CPU()))
         except RuntimeError as e:
             if str(e).startswith("Unsupported device in DLTensor"):
                 raise RuntimeError(
