@@ -20,13 +20,13 @@ FAKE_TOKEN = 999
 
 
 def get_blocks_from_kv_tuple(kv_tuple) -> list[list[int]]:
-    return kv_tuple[2].to(CPU()).to_numpy().tolist()
+    return kv_tuple[2].to_numpy().tolist()
 
 
 def get_uncommitted_and_committed_block_counts(
     kv_tuple,
 ) -> list[list[int]]:
-    return kv_tuple[3].to(CPU()).to_numpy().tolist()
+    return kv_tuple[3].to_numpy().tolist()
 
 
 def create_paged_manager(num_blocks: int, page_size: int = 1) -> KVCacheManager:

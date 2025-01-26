@@ -185,7 +185,7 @@ def test_execute_external_weights_gpu_resident() -> None:
     )
 
     # Check that the result is as expected.
-    for idx, elt in enumerate(input_np + weights.to(CPU()).to_numpy()):
+    for idx, elt in enumerate(input_np + weights.to_numpy()):
         assert isclose(output[idx].item(), elt)
 
 

@@ -67,6 +67,4 @@ def test_load_safetensors(
                     torch.from_dlpack(output[n].to(CPU()).view(DType.uint8)),
                 )
             else:
-                np.testing.assert_array_equal(
-                    expected, output[n].to(CPU()).to_numpy()
-                )
+                np.testing.assert_array_equal(expected, output[n].to_numpy())

@@ -507,7 +507,7 @@ def test_cross_attention_gpu(hidden_seq_lens: list[int]) -> None:
 
     # Compare the outputs.
     assert is_euclidean_distance_close(
-        predicted.to(CPU()).to_numpy(),
+        predicted.to_numpy(),
         expected_ragged,
         # Use bfloat16 epsilon since MHA accumulates in bfloat16 even for
         # float32 dtype.

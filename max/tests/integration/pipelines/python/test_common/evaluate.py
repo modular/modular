@@ -11,7 +11,6 @@ from typing import Any, Iterable, Optional
 
 import numpy as np
 import requests
-from max.driver import CPU
 from max.pipelines import PipelineModel
 from max.pipelines.interfaces import PipelineTokenizer, TokenGeneratorRequest
 
@@ -158,7 +157,7 @@ def next_token_with_logits(
         model_inputs = model.prepare_initial_token_inputs(context_batch)
         model_outputs = model.execute(model_inputs, kv_inputs)
         assert model_outputs.next_token_logits
-        logits = model_outputs.next_token_logits.to(CPU()).to_numpy()
+        logits = model_outputs.next_token_logits.to_numpy()
         next_tokens = [req_logits.argmax(axis=-1) for req_logits in logits]
 
         seq_ids_and_new_tokens = {
@@ -190,9 +189,7 @@ def next_token_with_logits(
         token_input = model._prepare_initial_token_inputs(context_batch)
         kv_cache_inputs = kv_manager.fetch(seq_ids_and_prompts)[0]
 
-        logits = (
-            model._execute(*token_input, *kv_cache_inputs).to(CPU()).to_numpy()
-        )
+        logits = model._execute(*token_input, *kv_cache_inputs).to_numpy()
         next_tokens = [req_logits.argmax(axis=-1) for req_logits in logits]
 
         seq_ids_and_new_tokens = {
@@ -201,7 +198,7 @@ def next_token_with_logits(
         }
         kv_manager.step(seq_ids_and_new_tokens)
     else:
-        logits = model._execute(req_to_context_dict).to(CPU()).to_numpy()
+        logits = model._execute(req_to_context_dict).to_numpy()
         next_tokens = [req_logits.argmax(axis=-1) for req_logits in logits]
 
     for req_id, req_logits, next_token in zip(
