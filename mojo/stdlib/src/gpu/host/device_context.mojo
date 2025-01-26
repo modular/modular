@@ -511,7 +511,7 @@ struct DeviceFunction[
         name: StringLiteral, val: Variant[Bool, Path, fn () capturing -> Path]
     ]() -> Bool:
         alias name_upper = StringLiteral.get[String(name).upper()]()
-        alias env_var = "DUMP_MOJO_" + name_upper
+        alias env_var = "DUMP_GPU_" + name_upper
         alias env_val = env_get_bool[env_var, False]()
 
         @parameter
