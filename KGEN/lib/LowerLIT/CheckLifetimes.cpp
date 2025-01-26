@@ -530,6 +530,22 @@ struct ValueRef {
     return ValueRef(valueId, startBit + offset, startBit + offset + width,
                     isIndirect);
   }
+
+  /// Return this ValueRef with the base offset subtracted off. This is useful
+  /// when reasoning about a subfield inside another object without knowing the
+  /// context.
+  ValueRef getWithoutBaseOffset(unsigned offset) const {
+    assert(startBit >= offset && "not offset by this base");
+    return ValueRef(valueId, startBit - offset, endBit - offset, isIndirect);
+  }
+  ValueRef getWithBaseOffset(unsigned offset) const {
+    return ValueRef(valueId, startBit + offset, endBit + offset, isIndirect);
+  }
+
+  /// Return true if this value ref is equal or a superset of the specified one.
+  bool contains(ValueRef other) const {
+    return startBit <= other.startBit && endBit >= other.endBit;
+  }
 };
 
 /// Return a ValueRef that covers this whole value.  The caller must provide
@@ -1959,7 +1975,7 @@ void DestructorInserter::destroyValueIfNeeded(Value value, ValueRef valueRef,
   // Otherwise, we must have an indirect value where some fields are present and
   // some are missing.  Recursively walk the type and destroy just the fields
   // that are missing.
-  auto valueType = dyn_cast<LIT::StructType>(valueRef.getValueType(value));
+  auto valueType = cast<LIT::StructType>(valueRef.getValueType(value));
   LIT::StructDeclOp structDecl =
       valueSet.typeDeclInfo.getStructDeclForType(valueType);
 
@@ -3257,18 +3273,8 @@ void DestructorInsertion::checkUse(Value value, bool isDeref,
   // If this is a direct reference to a value, we are tracking it, meaning
   // there are dedicated bits in the consumedValues bitvector that represent
   // the consumption state of this value.
-  if (ValueRef valueRef = valueSet.getDirectValueRef(value, isDeref)) {
-    // Otherwise, it is possible that that ValueRef is live but the overall
-    // object will be consumed, this happens in scenarios like:
-    //
-    //   init(&aggregate)
-    //   use(&aggregate.field1)  <<-- We are here.
-    //   ... field1 is not consumed here...
-    //   aggregate.field1 = newValue  // overwrite field1.
-    //   consume(&aggregate)
-    //
-    // In this case, we need to destroy field1 after this use.
-    scheduleNeededDtors(valueRef, dtorInserter, value);
+  if (ValueRef access = valueSet.getDirectValueRef(value, isDeref)) {
+    scheduleNeededDtors(access, dtorInserter, value);
     return;
   }
 
@@ -3368,11 +3374,64 @@ static void clearTrivialFields(ValueRef valueRef, Type valueType,
   }
 }
 
-/// There is a use of the specified 'use' portion of a live value.  If this is
-/// the last use of some value, schedule a destructor to clean it up.  'value'
-/// is an optional value indicating the MLIR value corresponding to this, which
-/// is useful to avoid emitting redundant lit.struct.ger instructions when we
-/// already have it.
+/// Given a use of a value or subfield, figure out the maximal unconsumed
+/// subfield that contains it.  For example, in:
+///
+///   init(&aggregate)
+///   use(&aggregate.field1.subfield)  <<-- We are here.
+///   # Should insert: __del__(aggregate.field1)
+///   init(&aggregate.field1)
+///   __del__(&aggregate)
+///
+/// we want to return "aggregate.field1", not subfield.
+static std::pair<SmallVector<StructFieldOp>, ValueRef>
+computeAccessPathForMaxUnconsumedField(ValueRef use,
+                                       const BitVector &consumedValues,
+                                       const ValueInfo &valueInfo,
+                                       TypeDeclInfo &typeDeclInfo) {
+  // This only applies to indirect uses.
+  if (!use.isIndirect)
+    return {{}, use};
+
+  Type valueType = cast<RefType>(valueInfo.value.getType()).getElementType();
+
+  // Figure out where the use is WITHIN the value.
+  ValueRef fullValueRef = valueInfo.getFullValueRef(use.valueId);
+  unsigned numValueBits = fullValueRef.getNumBits();
+  ValueRef useWithinValue = use.getWithoutBaseOffset(fullValueRef.startBit);
+  unsigned totalOffset = fullValueRef.startBit;
+
+  // Drill down into this value until we find something that isn't consumed.
+  SmallVector<StructFieldOp> result;
+  while (consumedValues[totalOffset + numValueBits - 1]) {
+    // Okay, we must be accessing some subfield of this total value.  Figure out
+    // which one, it must be field sensitive.
+    auto [fieldDecl, fieldStartBit, fieldNumBits] =
+        typeDeclInfo.getFieldContaining(cast<LIT::StructType>(valueType),
+                                        useWithinValue.startBit);
+
+    // Don't drill into the subfield if we're spanning multiple of them.
+    if (useWithinValue.getNumBits() > fieldNumBits)
+      break;
+
+    // We're drilling into this field.
+    result.push_back(fieldDecl);
+    useWithinValue = useWithinValue.getWithoutBaseOffset(fieldStartBit);
+    totalOffset += fieldStartBit;
+    numValueBits = fieldNumBits;
+    valueType = fieldDecl.getType();
+  }
+
+  return {std::move(result),
+          ValueRef(use.valueId, totalOffset, totalOffset + numValueBits,
+                   /*isIndirect=*/true)};
+}
+
+/// There is a use of the specified 'use' portion of a live value.  If this
+/// is the last use of some value, schedule a destructor to clean it up.
+/// 'value' is an optional value indicating the MLIR value corresponding to
+/// this, which is useful to avoid emitting redundant lit.struct.ger
+/// instructions when we already have it.
 void DestructorInsertion::scheduleNeededDtors(ValueRef use,
                                               DestructorInserter &dtorInserter,
                                               Value value) {
@@ -3397,25 +3456,31 @@ void DestructorInsertion::scheduleNeededDtors(ValueRef use,
   //   init(&aggregate)
   //   use(&aggregate.field1)
   //   use(&aggregate.field2.subelt)  <<-- We are here.
+  //   # Should insert: __del__(&aggregate)
   //
-  // Here we emit `aggregate.__del__()` to destroy the overall value.  Beware
-  // that the whole object bit for the entire aggregate may already be consumed
-  // if we are on an exception path in an init, or __disable_del is used on the
-  // aggregate (commonly due to destructors).
-  auto fullValueRef = valueInfo.getFullValueRef(use.valueId);
-  if (value && consumedValues[valueInfo.endValueBit - 1]) {
-    // Do not adjust or recompute 'value' if it is already known and the whole
-    // value is set to be destroyed already.  In this case, we're using a
-    // subfield that is getting reinitialized, e.g.:
-    //   init(&aggregate)
-    //   use(&aggregate.field1)  <<-- We are here.
-    //   init(&aggregate.field1)
-    //   __del__(&aggregate)
-    // we want to maintain that subfield pointer.
+  // In this case, we destroy the overall value.  However, we may be in a field
+  // sensitive case where the subfield is getting reinitialized, e.g.:
+  //
+  //   init(&aggregate)
+  //   use(&aggregate.field1.subfield)  <<-- We are here.
+  //   # Should insert: __del__(aggregate.field1)
+  //   init(&aggregate.field1)
+  //   __del__(&aggregate)
+  //
+  // we have to destroy 'aggregate.field1'.  Figure out what access path we need
+  // to destroy.
+  auto [accessPath, adjustedUse] = computeAccessPathForMaxUnconsumedField(
+      use, consumedValues, valueInfo, valueSet.typeDeclInfo);
 
-  } else {
+  // If we were passed in a field that matches what we need, use it to avoid
+  // inserting additional GER operations.  Otherwise we re-derive from the root.
+  if (!value || use != adjustedUse) {
     value = valueInfo.value;
-    use = fullValueRef;
+    use = adjustedUse;
+
+    // Drill into the right field.
+    for (StructFieldOp subfield : accessPath)
+      value = dtorInserter.builder.create<RefStructGEROp>(value, subfield);
   }
 
   // Get the type for the value so we can poke at it.

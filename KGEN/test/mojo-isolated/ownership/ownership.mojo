@@ -829,9 +829,9 @@ fn call_variadic_inout_mems():
   # CHECK-NEXT: lit.call {{.*}}variadic_inout_mems{{.*}}[mut {*"a`", *"b`1"}]([[VAR]])
   variadic_inout_mems(a, b)
 
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[AR]])
   # CHECK-NEXT: lifetime.end %a
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%b)
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[BR]])
   # CHECK-NEXT: lifetime.end %b
 
   # CHECK-NEXT: kgen.param.constant: none
@@ -1381,3 +1381,25 @@ fn use_parameterized_field():
   var rebind = __mlir_op.`kgen.rebind`
     [_type=Pointer[Int, __origin_of(s.b)]._mlir_type](litref)
   var mvalue = __get_litref_as_mvalue(rebind)
+
+# MOCO-1558: Failure handling sub-type elements
+# CHECK-LABEL: OuterStruct
+struct OuterStruct:
+    var outers_field: RefResultStruct
+    # CHECK: lit.fn @"__del__
+    fn __del__(owned self):
+        # CHECK: lit.call {{.*}}use(::String)
+        use(self.outers_field.x)
+        # CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[outers_field]
+        # CHECK-NEXT: lit.call {{.*}}RefResultStruct::@"__del__{{.*}}([[TMP]])
+        # CHECK: lit.ownership.mark_destroyed %self
+
+struct RefResultStruct:
+  var x: String
+  fn __init__(out self): 
+    self.x = String()
+
+  fn method(self) -> ref [self.x] String:
+      return self.x
+
+fn use(a: String): pass
