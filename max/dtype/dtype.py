@@ -174,18 +174,15 @@ class DType(Enum):
 
         return np.dtype(self.to_numpy()).alignment
 
+    def is_integral(self) -> __builtins__.bool:
+        """Returns true if the dtype is an integer."""
+        return self.value & mIsInteger != 0
+
     def is_float(self) -> __builtins__.bool:
         """Returns true if the dtype is floating point."""
-        return self in [
-            DType.f8e4m3,
-            DType.f8e4m3fnuz,
-            DType.f8e5m2,
-            DType.f8e5m2fnuz,
-            DType.bfloat16,
-            DType.float16,
-            DType.float32,
-            DType.float64,
-        ]
+        if self.is_integral():
+            return False
+        return self.value & mIsFloat != 0
 
     @property
     def size_in_bytes(self) -> int:
