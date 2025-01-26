@@ -7,7 +7,7 @@
 from sys import sizeof
 
 from gpu.host import DeviceContext, DeviceBuffer
-from gpu.host.nvidia_cuda import (
+from gpu.host._nvidia_cuda import (
     TMADescriptor,
     TensorMapSwizzle,
     create_tma_descriptor,
