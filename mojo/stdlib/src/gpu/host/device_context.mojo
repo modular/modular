@@ -507,9 +507,17 @@ struct DeviceFunction[
         )
 
     @staticmethod
-    fn _dump_q[val: Variant[Bool, Path, fn () capturing -> Path]]() -> Bool:
+    fn _dump_q[
+        name: StringLiteral, val: Variant[Bool, Path, fn () capturing -> Path]
+    ]() -> Bool:
+        alias name_upper = StringLiteral.get[String(name).upper()]()
+        alias env_var = "DUMP_MOJO_" + name_upper
+        alias env_val = env_get_bool[env_var, False]()
+
         @parameter
-        if val.isa[Bool]():
+        if env_val:
+            return env_val
+        elif val.isa[Bool]():
             return val.unsafe_get[Bool]()
         elif val.isa[Path]():
             return val.unsafe_get[Path]() != Path("")
@@ -537,7 +545,7 @@ struct DeviceFunction[
             print(_ptxas_compile[target](ptx, options="-v"))
 
         @parameter
-        if Self._dump_q[dump_asm]():
+        if Self._dump_q["asm", dump_asm]():
 
             fn get_asm() -> StringLiteral:
                 @parameter
@@ -563,7 +571,7 @@ struct DeviceFunction[
                 print(asm)
 
         @parameter
-        if Self._dump_q[_dump_sass]():
+        if Self._dump_q["sass", _dump_sass]():
             var ptx = Self._cleanup_asm(self._func_impl.asm)
             var sass = _to_sass[target](ptx)
 
@@ -579,7 +587,7 @@ struct DeviceFunction[
                 print(sass)
 
         @parameter
-        if Self._dump_q[dump_llvm]():
+        if Self._dump_q["llvm", dump_llvm]():
             var llvm = _compile_code_asm[
                 Self.func,
                 emission_kind="llvm-opt",
