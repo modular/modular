@@ -4,10 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import re
 
 import numpy as np
-import pytest
 import torch
 from max.driver import CPU, Accelerator, Tensor, accelerator_api
 from max.dtype import DType
@@ -165,8 +163,4 @@ def test_accelerator_to_numpy():
     acc = Accelerator()
     tensor = Tensor.zeros((3, 3), DType.int32, device=acc)
 
-    with pytest.raises(
-        RuntimeError,
-        match=re.escape(f"Cannot convert tensor on {acc} to numpy"),
-    ):
-        tensor.to_numpy()
+    assert np.array_equal(tensor.to_numpy(), np.zeros((3, 3), dtype=np.int32))
