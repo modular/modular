@@ -63,18 +63,25 @@ fn env_get_bool[name: StringLiteral]() -> Bool:
     Returns:
         An boolean parameter value.
     """
-    alias val = env_get_string[name]()
+    alias val = StringLiteral.get[env_get_string[name]().lower()]()
 
     @parameter
-    if val in ("True", "true"):
+    if val in ("true", "1", "on"):
         return True
 
     @parameter
-    if val in ("False", "false"):
+    if val in ("false", "0", "off"):
         return False
 
     constrained[
-        False, "the boolean environment value is neither `True` nor `False`"
+        False,
+        String(
+            "the boolean environment value of `",
+            name,
+            "` with value `",
+            env_get_string[name](),
+            "` is not recognized",
+        ),
     ]()
     return False
 

@@ -16,6 +16,6 @@
 from sys import env_get_bool
 
 
-# CHECK-FAIL: constraint failed: the boolean environment value is neither `True` nor `False`
+# CHECK-FAIL: constraint failed: the boolean environment value of `my_false` with value `blah` is not recognized
 fn main():
     _ = env_get_bool["my_false"]()
