@@ -9,7 +9,7 @@
 
 from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext, DeviceStream
-from gpu.host.nvidia_cuda import CUDA, CUcontext
+from gpu.host._nvidia_cuda import CUDA, CUcontext
 
 
 fn _run_cuda_context(ctx: DeviceContext) raises:

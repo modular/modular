@@ -9,7 +9,7 @@
 
 from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext, DeviceStream
-from gpu.host.amdgpu_hip import HIP, hipCtx_t
+from gpu.host._amdgpu_hip import HIP, hipCtx_t
 
 
 fn _run_hip_context(ctx: DeviceContext) raises:
