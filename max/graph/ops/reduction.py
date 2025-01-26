@@ -62,6 +62,54 @@ def mean(x: TensorValueLike, axis=-1) -> TensorValue:
     )[0].tensor
 
 
+def _argminmax(op, x: TensorValueLike, axis=-1) -> TensorValue:
+    """
+    Reduces a symbolic tensor using either argmax or argmin operation.
+
+    Args:
+        x: The input tensor for the operation.
+        axis: The axis along which to compute the reduction. If negative,
+            indexes from the last dimension. For example, a value of -1 will
+            compute the reduction along the last dimension.
+
+    Returns:
+        A symbolic tensor representing the result of the argmin or argmax operation.
+        The tensor will have the same rank as the input tensor, and the same
+        shape except along the ``axis`` dimension which will have size 1.
+    """
+    x = TensorValue(x)
+
+    if axis < 0:
+        axis += x.rank
+    if not 0 <= axis < x.rank:
+        raise ValueError(f"Invalid {axis=} for input {x.rank=}")
+
+    shape = Shape(x.shape)
+    shape[axis] = Dim(1)
+    type = TensorType(DType.int64, shape, x.device)
+    return Graph.current._add_op(
+        op, type.to_mlir(), x, constant(axis, DType.int64)
+    )[0].tensor
+
+
+def argmin(x: TensorValueLike, axis=-1) -> TensorValue:
+    """
+    Reduces a symbolic tensor using an argmin operation.
+
+    Args:
+        x: The input tensor for the operation.
+        axis: The axis along which to compute the reduction. If negative,
+            indexes from the last dimension. For example, a value of -1 will
+            compute the reduction along the last dimension.
+
+    Returns:
+        A symbolic tensor representing the result of the argmin operation.
+        The tensor will have the same rank as the input tensor, and the same
+        shape except along the ``axis`` dimension which will have size 1.
+    """
+    return _argminmax(rmo.mo_arg_min, x, axis)
+
+
 def argmax(x: TensorValueLike, axis=-1) -> TensorValue:
     """
     Reduces a symbolic tensor using an argmax operation.
@@ -77,16 +125,4 @@ def argmax(x: TensorValueLike, axis=-1) -> TensorValue:
         The tensor will have the same rank as the input tensor, and the same
         shape except along the ``axis`` dimension which will have size 1.
     """
-    x = TensorValue(x)
-
-    if axis < 0:
-        axis += x.rank
-    if not 0 <= axis < x.rank:
-        raise ValueError(f"Invalid {axis=} for input {x.rank=}")
-
-    shape = Shape(x.shape)
-    shape[axis] = Dim(1)
-    type = TensorType(DType.int64, shape, x.device)
-    return Graph.current._add_op(
-        rmo.mo_arg_max, type.to_mlir(), x, constant(axis, DType.int64)
-    )[0].tensor
+    return _argminmax(rmo.mo_arg_max, x, axis)

@@ -13,21 +13,22 @@ from max.dtype import DType
 from max.graph import Graph, TensorType, ops
 
 input_types = st.shared(tensor_types())
+ops = st.sampled_from([ops.argmax, ops.argmin])
 
 
-@given(input_type=input_types, axis=axes(input_types))
-def test_argmax(input_type: TensorType, axis: int):
-    with Graph("argmax", input_types=[input_type]) as graph:
-        out = ops.argmax(graph.inputs[0], axis=axis)
+@given(input_type=input_types, op=ops, axis=axes(input_types))
+def test_argminmax(input_type: TensorType, op, axis: int):
+    with Graph("graph", input_types=[input_type]) as graph:
+        out = op(graph.inputs[0], axis=axis)
         assert out.dtype == DType.int64
         expected_shape = list(input_type.shape)
         expected_shape[axis] = 1
         assert out.shape == expected_shape
 
 
-@given(input_type=input_types, axis=...)
-def test_argmax__invalid_axis(input_type: TensorType, axis: int):
+@given(input_type=input_types, op=ops, axis=...)
+def test_argminmax__invalid_axis(input_type: TensorType, op, axis: int):
     assume(not -input_type.rank <= axis < input_type.rank)
-    with Graph("argmax", input_types=[input_type]) as graph:
+    with Graph("graph", input_types=[input_type]) as graph:
         with pytest.raises(ValueError):
-            ops.argmax(graph.inputs[0], axis=axis)
+            op(graph.inputs[0], axis=axis)
