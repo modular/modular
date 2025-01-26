@@ -9,7 +9,7 @@
 from builtin.io import _printf
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
-from gpu.host.nvidia_cuda import TMADescriptor, create_tma_descriptor
+from gpu.host._nvidia_cuda import TMADescriptor, create_tma_descriptor
 from gpu.id import block_idx
 from gpu.memory import (
     _GPUAddressSpace,
