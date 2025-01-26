@@ -947,6 +947,14 @@ class InferenceSession:
         self._set_mojo_define("KERNEL_E2E_GPU_PROFILING", False)
         self._set_mojo_define("KERNEL_E2E_GPU_PROFILING_DETAILED", False)
 
+    def _dump_gpu_asm(self):
+        """Enables dumping of gpu asm."""
+        self._set_mojo_define("DUMP_GPU_ASM", True)
+
+    def _dump_gpu_llvm(self):
+        """Enables dumping of gpu llvm."""
+        self._set_mojo_define("DUMP_GPU_LLVM", True)
+
     def _set_mojo_define(self, key: str, value: bool | int | str):
         """Enables overwriting of any mojo config directly."""
         self._impl.set_mojo_define(key, value)
