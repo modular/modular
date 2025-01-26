@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
-# RUN: %mojo-no-debug-no-assert -D DUMP_MOJO_ASM=True %s | FileCheck %s
+# RUN: %mojo-no-debug-no-assert -D DUMP_GPU_ASM=True %s | FileCheck %s
 
 
 from gpu import thread_idx
