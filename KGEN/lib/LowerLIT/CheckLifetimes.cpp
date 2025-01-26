@@ -159,18 +159,18 @@ struct TypeDeclInfo {
         traitMap(std::move(traitMap)) {}
 
   /// Return the total number of flattened fields in the specified type.
-  unsigned getNumFieldsInType(Type type);
+  unsigned getNumFieldsInType(Type type) const;
 
   /// Return the start bit for a field with the specified name in the specified
   /// type.
   unsigned getFieldIndex(LIT::StructType type, StringAttr fieldName) const;
   int getFieldIndexOrInvalid(LIT::StructType type, StringAttr fieldName) const;
 
-  /// Given a field number that indicates a stored field in the specified type,
-  /// return the name of the field that contains it as well as its declared
-  /// type.
-  std::pair<StringAttr, Type> getFieldContaining(LIT::StructType type,
-                                                 unsigned fieldNo);
+  /// Given a subfield bit index that indicates a stored field in the specified
+  /// type, return the StructFieldOp of the accessed field, the first bit
+  /// number covered by the subfield, and the total bits covered by the field.
+  std::tuple<StructFieldOp, unsigned, unsigned>
+  getFieldContaining(LIT::StructType type, unsigned bitIndex) const;
 
   /// Return the struct decl for the specified StructType.
   LIT::StructDeclOp getStructDeclForType(LIT::StructType type) const {
@@ -215,12 +215,12 @@ private:
 
   /// This keeps track of the number of fields in the struct specified by the
   /// (fully flattened) symbol and parameters.
-  DenseMap<LIT::StructType, unsigned> numFields;
+  mutable DenseMap<LIT::StructType, unsigned> numFields;
 
   /// A map from struct name and field name to index within the struct.  This
   /// isn't the field number, this is the number of recursively flattened
   /// fields until the start of the field.
-  DenseMap<std::pair<SymbolRefAttr, StringAttr>, unsigned> fieldIndices;
+  mutable DenseMap<std::pair<SymbolRefAttr, StringAttr>, unsigned> fieldIndices;
 };
 
 /// Return true if the specified type is RegisterPassableTrivial - no copy,
@@ -310,7 +310,7 @@ StringAttr TypeDeclInfo::getLinearTypeErrorMsg(Type type) const {
 }
 
 /// Return the total number of flattened fields in the specified type.
-unsigned TypeDeclInfo::getNumFieldsInType(Type type) {
+unsigned TypeDeclInfo::getNumFieldsInType(Type type) const {
   // We currently treat all non-struct types as being a single element, even
   // things like kgen.list containing struct types.
   auto declRef = dyn_cast<LIT::StructType>(type);
@@ -371,11 +371,12 @@ unsigned TypeDeclInfo::getFieldIndex(LIT::StructType type,
   return unsigned(idx);
 }
 
-/// Given a field number that indicates a stored field in the specified type,
-/// return the name of the field that contains it as well as its declared
-/// type.
-std::pair<StringAttr, Type>
-TypeDeclInfo::getFieldContaining(LIT::StructType declRef, unsigned fieldNo) {
+/// Given a subfield bit index that indicates a stored field in the specified
+/// type, return the StructFieldOp of the accessed field, the first bit
+/// number covered by the subfield, and the total bits covered by the field.
+std::tuple<StructFieldOp, unsigned, unsigned>
+TypeDeclInfo::getFieldContaining(LIT::StructType declRef,
+                                 unsigned bitIndex) const {
   LIT::StructDeclOp decl = getStructDeclForType(declRef);
 
   ParameterEvaluator evaluator(decl.getInputParams(), declRef.getParamValues());
@@ -386,8 +387,8 @@ TypeDeclInfo::getFieldContaining(LIT::StructType declRef, unsigned fieldNo) {
     // contain a field even if they start at the beginning of it.
     Type reboundType = evaluator.getReboundType(field.getType());
     unsigned numSubFields = getNumFieldsInType(reboundType);
-    if (startFieldIdx <= fieldNo && startFieldIdx + numSubFields > fieldNo)
-      return {field.getNameAttr(), field.getType()};
+    if (startFieldIdx <= bitIndex && startFieldIdx + numSubFields > bitIndex)
+      return {field, startFieldIdx, numSubFields};
     startFieldIdx += numSubFields;
   }
 
@@ -876,16 +877,13 @@ ValueSet::getValueRefAndTypeForOrigin(TypedAttr origin) const {
       return {valueRef, Type()};
 
     // Figure out the declared type of the field.
-    auto [thisFieldName, fieldType] =
+    auto [fieldDecl, _, numFieldBits] =
         typeDeclInfo.getFieldContaining(containerType, fieldOffset);
-    assert(thisFieldName == fieldName && "index/name mismatch");
+    assert(fieldDecl.getNameAttr() == fieldName && "index/name mismatch");
 
-    // Refine the value ref.
-    unsigned startBit = valueRef.startBit + fieldOffset;
-    valueRef = ValueRef{valueRef.valueId, startBit,
-                        startBit + typeDeclInfo.getNumFieldsInType(fieldType),
-                        /*isIndirect=*/true};
-    return {valueRef, fieldType};
+    // Refine the ValueRef and type.
+    return {valueRef.getSubfield(fieldOffset, numFieldBits),
+            fieldDecl.getType()};
   }
 
   // Otherwise look up the base origin value.
@@ -1087,23 +1085,21 @@ static Type digIntoTypeAtFieldOffset(Type type, unsigned firstInvalidOffset,
     // To index into this type, it must be a DeclRef.
     auto declRefType = cast<LIT::StructType>(type);
 
-    auto [fieldName, fieldType] =
+    auto [fieldDecl, fieldBitOffset, numFieldBits] =
         typeDeclInfo.getFieldContaining(declRefType, firstInvalidOffset);
-    unsigned fieldBitOffset =
-        typeDeclInfo.getFieldIndex(declRefType, fieldName);
     firstInvalidOffset -= fieldBitOffset;
     nextValidOffset -= fieldBitOffset;
-    type = fieldType;
-    diag << "." << fieldName.str();
+    type = fieldDecl.getType();
+    diag << "." << fieldDecl.getName();
   }
 
   // Dig into the field to ignore trailing members that we don't care about.
   while (nextValidOffset < typeDeclInfo.getNumFieldsInType(type)) {
     auto declRefType = cast<LIT::StructType>(type);
-    auto [fieldName, fieldType] =
+    auto [fieldDecl, startBit, numBits] =
         typeDeclInfo.getFieldContaining(declRefType, 0);
-    type = fieldType;
-    diag << "." << fieldName.str();
+    type = fieldDecl.getType();
+    diag << "." << fieldDecl.getName();
   }
 
   return type;
@@ -1973,19 +1969,15 @@ void DestructorInserter::destroyValueIfNeeded(Value value, ValueRef valueRef,
        llvm::zip(structDecl.getParams(), valueType.getParamValues()))
     evaluator.setParameterValue(decl, value);
 
+  assert(valueRef.isIndirect && "register values aren't field sensitive");
+
   unsigned nextBit = 0;
   for (StructFieldOp field : structDecl.getFieldDecls()) {
-    Operation *fieldVal;
-    if (!valueRef.isIndirect)
-      fieldVal = builder.create<LIT::StructExtractOp>(value, field);
-    else
-      fieldVal = builder.create<RefStructGEROp>(value, field);
-
+    auto fieldVal = builder.create<RefStructGEROp>(value, field);
     unsigned numBits = valueSet.typeDeclInfo.getNumFieldsInType(
         evaluator.getReboundType(field.getType()));
-    destroyValueIfNeeded(fieldVal->getResult(0),
-                         valueRef.getSubfield(nextBit, numBits), consumedValues,
-                         builder);
+    destroyValueIfNeeded(fieldVal, valueRef.getSubfield(nextBit, numBits),
+                         consumedValues, builder);
 
     // If there was no destructor generated (because the element has no
     // destructor) then remove the unused pointer access.
