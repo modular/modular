@@ -94,6 +94,7 @@ class EmbeddingModel:
         Returns:
             The encoded sentences.
         """
+        assert self.pipeline_config.max_cache_batch_size is not None
         batch_size = self.pipeline_config.max_cache_batch_size
         start = 0
         loop = asyncio.get_event_loop()

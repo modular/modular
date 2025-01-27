@@ -110,6 +110,9 @@ class SupportedTestModels:
                 else [DeviceSpec.cpu()]
             )
 
+        if "max_cache_batch_size" not in kwargs:
+            kwargs["max_cache_batch_size"] = 1
+
         if "cache_strategy" not in kwargs:
             kwargs["cache_strategy"] = (
                 KVCacheStrategy.CONTINUOUS
@@ -217,6 +220,8 @@ def main(model, encoding, verbose):
     for model_encoding in supported_model_encodings(
         model, encoding, strict=False
     ):
+        print(f"model_encoding: {model}")
+        print(f"encoding: {encoding}")
         try:
             config = model_encoding.build_config(testdata_directory)
             tokenizer = TextTokenizer(config)

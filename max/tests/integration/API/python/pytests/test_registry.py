@@ -8,10 +8,11 @@ from __future__ import annotations
 
 from functools import wraps
 from pathlib import Path
-from typing import Sequence, cast
+from typing import Any, Sequence, cast
+from unittest.mock import patch
 
 import pytest
-from max.driver import Tensor
+from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph, TensorType
@@ -35,6 +36,7 @@ from max.pipelines.kv_cache import (
     estimate_kv_cache_size,
     load_kv_manager,
 )
+from max.pipelines.kv_cache.cache_params import VALID_KV_KERNELS
 
 
 def prepare_registry(func):
@@ -111,22 +113,64 @@ class DummyPipelineModel(PipelineModel):
         """
         return DummyModelInputs(input1=Tensor.zeros((0, 0), DType.float32))
 
-    def _get_kv_params(self) -> KVCacheParams:
+    @classmethod
+    def _get_num_kv_heads(cls, hf_config: Any) -> int:
+        if hasattr(hf_config, "num_key_value_heads"):
+            return hf_config.num_key_value_heads
+        elif hasattr(hf_config, "num_attention_heads"):
+            return hf_config.num_attention_heads
+        elif hasattr(hf_config, "n_heads"):
+            return hf_config.n_heads
+        else:
+            raise ValueError(
+                "num_key_value_heads or num_attention_heads or n_heads not found in huggingface_config"
+            )
+
+    @classmethod
+    def _get_hidden_size(cls, hf_config: Any) -> int:
+        if hasattr(hf_config, "hidden_size"):
+            return hf_config.hidden_size
+        elif hasattr(hf_config, "d_model"):
+            return hf_config.d_model
+        else:
+            raise ValueError(
+                "hidden_size or d_model not found in huggingface_config"
+            )
+
+    @classmethod
+    def get_num_layers(cls, pipeline_config: PipelineConfig) -> int:
+        hf_config = pipeline_config.huggingface_config
+        if hasattr(hf_config, "num_hidden_layers"):
+            return hf_config.num_hidden_layers
+        elif hasattr(hf_config, "num_layers"):
+            return hf_config.num_layers
+        elif hasattr(hf_config, "n_layers"):
+            return hf_config.n_layers
+        else:
+            raise ValueError(
+                "num_hidden_layers or num_layers or n_layers not found in huggingface_config"
+            )
+
+    @classmethod
+    def get_kv_params(cls, pipeline_config: PipelineConfig) -> KVCacheParams:
         cache_dtype = (
             DType.float32
-            if self.pipeline_config.quantization_encoding is not None
-            and self.pipeline_config.quantization_encoding.quantization_encoding
+            if pipeline_config.quantization_encoding is not None
+            and pipeline_config.quantization_encoding.quantization_encoding
             is not None
-            else self.pipeline_config.dtype
+            else pipeline_config.dtype
         )
+        hf_config = pipeline_config.huggingface_config
+        num_kv_heads = cls._get_num_kv_heads(hf_config)
+        hidden_size = cls._get_hidden_size(hf_config)
+
         return KVCacheParams(
             dtype=cache_dtype,
-            n_kv_heads=self.pipeline_config.huggingface_config.num_key_value_heads,
-            head_dim=self.pipeline_config.huggingface_config.hidden_size
-            // self.pipeline_config.huggingface_config.num_attention_heads,
-            cache_strategy=self.pipeline_config.cache_strategy,
-            page_size=self.pipeline_config.kv_cache_page_size,
-            enable_prefix_caching=self.pipeline_config.enable_prefix_caching,
+            n_kv_heads=num_kv_heads,
+            head_dim=hidden_size // num_kv_heads,
+            cache_strategy=pipeline_config.cache_strategy,
+            enable_prefix_caching=pipeline_config.enable_prefix_caching,
+            page_size=pipeline_config.kv_cache_page_size,
         )
 
     def load_kv_manager(
@@ -135,24 +179,35 @@ class DummyPipelineModel(PipelineModel):
         available_cache_memory: int,
     ) -> KVCacheManager:
         """Provided a PipelineConfig and InferenceSession, load the kv manager."""
+        num_layers = self.get_num_layers(self.pipeline_config)
+
         return load_kv_manager(
-            params=self._get_kv_params(),
+            params=self.get_kv_params(self.pipeline_config),
             max_cache_batch_size=self.pipeline_config.max_cache_batch_size,
             max_seq_len=self.pipeline_config.huggingface_config.max_seq_len,
-            num_layers=self.pipeline_config.huggingface_config.num_hidden_layers,
+            num_layers=num_layers,
             devices=self.pipeline_config.devices,
             available_cache_memory=available_cache_memory,
             session=session,
         )
 
-    def estimate_kv_cache_size(self, available_cache_memory: int) -> int:
+    @classmethod
+    def estimate_kv_cache_size(
+        cls,
+        pipeline_config: PipelineConfig,
+        available_cache_memory: int,
+        devices: list[Device],
+    ) -> int:
+        """Estimates the size of the kv cache in bytes."""
+        num_layers = cls.get_num_layers(pipeline_config)
+
         return estimate_kv_cache_size(
-            params=self._get_kv_params(),
-            max_cache_batch_size=self.pipeline_config.max_cache_batch_size,
-            max_seq_len=self.pipeline_config.huggingface_config.max_seq_len,
-            num_layers=self.pipeline_config.huggingface_config.num_hidden_layers,
+            params=cls.get_kv_params(pipeline_config),
+            max_cache_batch_size=pipeline_config.max_cache_batch_size,
+            max_seq_len=pipeline_config.huggingface_config.max_seq_len,
+            num_layers=num_layers,
             available_cache_memory=available_cache_memory,
-            devices=self.pipeline_config.devices,
+            devices=devices,
         )
 
     def load_model(
@@ -325,102 +380,114 @@ def test_registry__update_weight_paths():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
     PIPELINE_REGISTRY.register(REPLIT_ARCH)
 
-    # This first example, is requesting float32 from a gguf repository.
-    config = PipelineConfig(
-        huggingface_repo_id="modularai/llama-3.1",
-        quantization_encoding=SupportedEncoding.float32,
-    )
+    temp_valid_kernels = [
+        ("f32", 4, 4),
+        ("bf16", 4, 4),
+        ("bf16", 24, 128),
+        ("f32", 24, 128),
+    ] + VALID_KV_KERNELS
+    with patch(
+        "max.pipelines.kv_cache.cache_params.VALID_KV_KERNELS",
+        temp_valid_kernels,
+    ):
+        # This first example, is requesting float32 from a gguf repository.
+        config = PipelineConfig(
+            huggingface_repo_id="modularai/llama-3.1",
+            quantization_encoding=SupportedEncoding.float32,
+        )
 
-    config = PIPELINE_REGISTRY.validate_pipeline_config(config)
-
-    assert len(config.weight_path) == 1
-    assert config.weight_path == [Path("llama-3.1-8b-instruct-f32.gguf")]
-
-    # This second example, is requesting float32 from a safetensors repository.
-    config = PipelineConfig(
-        huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
-        quantization_encoding=SupportedEncoding.float32,
-    )
-
-    config = PIPELINE_REGISTRY.validate_pipeline_config(config)
-
-    assert len(config.weight_path) == 1
-    assert config.weight_path == [Path("model.safetensors")]
-
-    # This example, should raise, as you are requesting q6_k from a fp32
-    # safetensors repo.
-    config = PipelineConfig(
-        huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
-        quantization_encoding=SupportedEncoding.q6_k,
-    )
-
-    # This should raise, as this repository, does not have q6_k weights.
-    with pytest.raises(ValueError, match="compatible weights cannot be found"):
-        PIPELINE_REGISTRY.validate_pipeline_config(config)
-
-    # This example, should pass, since using fp32 weights for bfloat16 is
-    # listed as an alternate encoding for fp32.
-    config = PipelineConfig(
-        huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
-        quantization_encoding=SupportedEncoding.bfloat16,
-    )
-
-    # This should pass, since the float16 weights will be used for bfloat16.
-    PIPELINE_REGISTRY.validate_pipeline_config(config)
-    assert len(config.weight_path) == 1
-    assert config.weight_path == [Path("model.safetensors")]
-
-    # This example, should raise as we dont have q4_k listed as supported.
-    config = PipelineConfig(
-        huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
-        quantization_encoding=SupportedEncoding.q4_k,
-        engine=PipelineEngine.MAX,
-    )
-
-    with pytest.raises(ValueError):
         config = PIPELINE_REGISTRY.validate_pipeline_config(config)
 
-    # This example, should raise as we dont have q4_k listed as supported.
-    # If we don't pass MAX though, we should not fail and fall back to HuggingFace.
-    config = PipelineConfig(
-        huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
-        quantization_encoding=SupportedEncoding.q4_k,
-    )
+        assert len(config.weight_path) == 1
+        assert config.weight_path == [Path("llama-3.1-8b-instruct-f32.gguf")]
 
-    config = PIPELINE_REGISTRY.validate_pipeline_config(config)
-    assert config.engine == PipelineEngine.HUGGINGFACE
+        # This second example, is requesting float32 from a safetensors repository.
+        config = PipelineConfig(
+            huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
+            quantization_encoding=SupportedEncoding.float32,
+        )
 
-    # This example, should not raise, as we are showing that we have a weight converter for pytorch for Replit.
-    config = PipelineConfig(
-        huggingface_repo_id="replit/replit-code-v1_5-3b",
-        quantization_encoding=SupportedEncoding.bfloat16,
-        trust_remote_code=True,
-    )
+        config = PIPELINE_REGISTRY.validate_pipeline_config(config)
 
-    config = PIPELINE_REGISTRY.validate_pipeline_config(config)
-    assert config.engine == PipelineEngine.MAX
-    assert config.weight_path == [Path("pytorch_model.bin")]
+        assert len(config.weight_path) == 1
+        assert config.weight_path == [Path("model.safetensors")]
 
-    # Test a partially complete huggingface_repo
-    config = PipelineConfig(
-        huggingface_repo_id="neubla/tiny-random-LlamaForCausalLM",
-    )
-    config = PIPELINE_REGISTRY.validate_pipeline_config(config)
-    assert config.quantization_encoding == SupportedEncoding.float32
-    assert config.engine == PipelineEngine.MAX
-    assert config.weight_path == [Path("model.safetensors")]
+        # This example, should raise, as you are requesting q6_k from a fp32
+        # safetensors repo.
+        config = PipelineConfig(
+            huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
+            quantization_encoding=SupportedEncoding.q6_k,
+        )
 
-    # This example, should not raise as we are passing a valid weights path in a different repository.
-    config = PipelineConfig(
-        huggingface_repo_id="replit/replit-code-v1_5-3b",
-        quantization_encoding=SupportedEncoding.float32,
-        trust_remote_code=True,
-        weight_path=[
-            Path("modularai/replit-code-1.5/replit-code-v1_5-3b-f32.gguf")
-        ],
-    )
+        # This should raise, as this repository, does not have q6_k weights.
+        with pytest.raises(
+            ValueError, match="compatible weights cannot be found"
+        ):
+            PIPELINE_REGISTRY.validate_pipeline_config(config)
 
-    config = PIPELINE_REGISTRY.validate_pipeline_config(config)
-    assert config.engine == PipelineEngine.MAX
-    assert config.weight_path == [Path("replit-code-v1_5-3b-f32.gguf")]
-    assert config._weights_repo_id == "modularai/replit-code-1.5"
+        # This example, should pass, since using fp32 weights for bfloat16 is
+        # listed as an alternate encoding for fp32.
+        config = PipelineConfig(
+            huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
+            quantization_encoding=SupportedEncoding.bfloat16,
+        )
+
+        # This should pass, since the float16 weights will be used for bfloat16.
+        PIPELINE_REGISTRY.validate_pipeline_config(config)
+        assert len(config.weight_path) == 1
+        assert config.weight_path == [Path("model.safetensors")]
+
+        # This example, should raise as we dont have q4_k listed as supported.
+        config = PipelineConfig(
+            huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
+            quantization_encoding=SupportedEncoding.q4_k,
+            engine=PipelineEngine.MAX,
+        )
+
+        with pytest.raises(ValueError):
+            config = PIPELINE_REGISTRY.validate_pipeline_config(config)
+
+        # This example, should raise as we dont have q4_k listed as supported.
+        # If we don't pass MAX though, we should not fail and fall back to HuggingFace.
+        config = PipelineConfig(
+            huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
+            quantization_encoding=SupportedEncoding.q4_k,
+        )
+
+        config = PIPELINE_REGISTRY.validate_pipeline_config(config)
+        assert config.engine == PipelineEngine.HUGGINGFACE
+
+        # This example, should not raise, as we are showing that we have a weight converter for pytorch for Replit.
+        config = PipelineConfig(
+            huggingface_repo_id="replit/replit-code-v1_5-3b",
+            quantization_encoding=SupportedEncoding.bfloat16,
+            trust_remote_code=True,
+        )
+
+        config = PIPELINE_REGISTRY.validate_pipeline_config(config)
+        assert config.engine == PipelineEngine.MAX
+        assert config.weight_path == [Path("pytorch_model.bin")]
+
+        # Test a partially complete huggingface_repo
+        config = PipelineConfig(
+            huggingface_repo_id="neubla/tiny-random-LlamaForCausalLM",
+        )
+        config = PIPELINE_REGISTRY.validate_pipeline_config(config)
+        assert config.quantization_encoding == SupportedEncoding.float32
+        assert config.engine == PipelineEngine.MAX
+        assert config.weight_path == [Path("model.safetensors")]
+
+        # This example, should not raise as we are passing a valid weights path in a different repository.
+        config = PipelineConfig(
+            huggingface_repo_id="replit/replit-code-v1_5-3b",
+            quantization_encoding=SupportedEncoding.float32,
+            trust_remote_code=True,
+            weight_path=[
+                Path("modularai/replit-code-1.5/replit-code-v1_5-3b-f32.gguf")
+            ],
+        )
+
+        config = PIPELINE_REGISTRY.validate_pipeline_config(config)
+        assert config.engine == PipelineEngine.MAX
+        assert config.weight_path == [Path("replit-code-v1_5-3b-f32.gguf")]
+        assert config._weights_repo_id == "modularai/replit-code-1.5"

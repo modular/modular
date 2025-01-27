@@ -501,6 +501,7 @@ def main(
     else:
         raise ValueError("Invalid scenario specified")
 
+    assert config.max_cache_batch_size is not None
     asyncio.run(
         run_batch_scenario(
             pipeline=pipeline,

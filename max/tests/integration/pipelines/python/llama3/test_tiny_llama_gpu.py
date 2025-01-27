@@ -50,7 +50,9 @@ def pipeline_config(testdata_directory, request) -> PipelineConfig:
         max_new_tokens=params.max_new_tokens,
         cache_strategy=params.cache_strategy,
         max_cache_batch_size=16,
+        kv_cache_page_size=128,
         device_specs=[DeviceSpec.accelerator()],
+        _available_cache_memory=1 * 1024 * 1024,
     )
 
 
