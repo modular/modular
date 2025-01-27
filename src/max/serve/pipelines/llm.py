@@ -311,6 +311,8 @@ def batch_config_from_pipeline_config(
     pipeline_config: PipelineConfig, batch_timeout: float = 0.0
 ) -> TokenGeneratorPipelineConfig:
     target_ce_batch_tokens = get_target_ce_batch_tokens(pipeline_config)
+    assert pipeline_config.max_cache_batch_size is not None
+    assert pipeline_config.max_ce_batch_size is not None
     if pipeline_config.cache_strategy == KVCacheStrategy.CONTINUOUS:
         batch_config = TokenGeneratorPipelineConfig.continuous_heterogenous(
             tg_batch_size=pipeline_config.max_cache_batch_size,
