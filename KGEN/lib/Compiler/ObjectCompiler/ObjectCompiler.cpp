@@ -1631,9 +1631,6 @@ ObjectCompiler::emitGPUKernels(
         err.getError());
   }
 
-  // Split the module into multiple slices and compile each in parallel.
-  [[maybe_unused]] bool isNVPTX = isNVPTXBackend(options);
-
   std::string moduleName = llvmModule->getName().str();
 
   SmallVector<AsyncRT::AnyAsyncValueRef> cachedResults;

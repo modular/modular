@@ -575,55 +575,6 @@ M::KGEN::buildLLVMOptimizationPipeline(PassBuilder &passBuilder,
   return buildO3Pipeline(passBuilder, options);
 }
 
-static TargetPassConfig *
-buildPassesToGenerateGPUCode(TargetMachine &tm, PassManagerBase &pm,
-                             bool disableVerify,
-                             MachineModuleInfoWrapperPass &mmiwp) {
-  // Targets may override createPassConfig to provide a target-specific
-  // subclass.
-  TargetPassConfig *passConfig = tm.createPassConfig(pm);
-  if (!passConfig)
-    return nullptr;
-
-  // Set PassConfig options provided by TargetMachine.
-  passConfig->setDisableVerify(disableVerify);
-  pm.add(passConfig);
-  pm.add(&mmiwp);
-
-  if (passConfig->addISelPasses())
-    return nullptr;
-
-  passConfig->addMachinePasses();
-  passConfig->setInitialized();
-  return passConfig;
-}
-
-static bool buildGPULLcPipeline(TargetMachine &targetMachine,
-                                llvm::legacy::PassManagerBase &pm,
-                                raw_pwrite_stream &out,
-                                raw_pwrite_stream *dwoOut,
-                                CodeGenFileType fileType, bool disableVerify,
-                                MachineModuleInfoWrapperPass *mmiwp) {
-  TargetPassConfig *passConfig =
-      buildPassesToGenerateGPUCode(targetMachine, pm, disableVerify, *mmiwp);
-
-  if (!passConfig)
-    return true;
-
-  if (TargetPassConfig::willCompleteCodeGenPipeline()) {
-    if (targetMachine.addAsmPrinter(pm, out, dwoOut, fileType,
-                                    mmiwp->getMMI().getContext()))
-      return true;
-  } else {
-    // MIR printing is redundant with -filetype=null.
-    if (fileType != CodeGenFileType::Null)
-      pm.add(createPrintMIRPass(out));
-  }
-
-  pm.add(createFreeMachineFunctionPass());
-  return false;
-}
-
 bool M::KGEN::addPassesToEmitFile(CompilationOptions &options,
                                   TargetMachine &targetMachine,
                                   llvm::legacy::PassManagerBase &pm,
@@ -631,12 +582,6 @@ bool M::KGEN::addPassesToEmitFile(CompilationOptions &options,
                                   raw_pwrite_stream *dwoOut,
                                   CodeGenFileType fileType, bool disableVerify,
                                   MachineModuleInfoWrapperPass *mmiwp) {
-
-  if (isGPUBackend(options)) {
-    return buildGPULLcPipeline(targetMachine, pm, out, dwoOut, fileType,
-                               disableVerify, mmiwp);
-  }
-
   return targetMachine.addPassesToEmitFile(pm, out, dwoOut, fileType,
                                            disableVerify, mmiwp);
 }
