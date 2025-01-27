@@ -113,7 +113,7 @@ struct TensorMapDataType:
 
 @value
 @register_passable("trivial")
-struct TensornsorMapInterleave:
+struct TensorMapInterleave:
     var _value: Int32
 
     alias INTERLEAVE_NONE = Self(0)
@@ -248,7 +248,7 @@ fn create_tma_descriptor[
             global_strides_arg,
             box_dim_arg,
             element_stride_arg,
-            TensornsorMapInterleave.INTERLEAVE_NONE._value,
+            TensorMapInterleave.INTERLEAVE_NONE._value,
             swizzle_mode._value,
             TensorMapL2Promotion.NONE._value,
             TensorMapFloatOOBFill.NONE._value,
