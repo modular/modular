@@ -386,6 +386,7 @@ static int package(const State &subcommandState) {
       /*definesId=*/llvm::opt::OptSpecifier(), options::OPT_strip_file_prefix,
       options::OPT_disable_builtins,
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
+        parserConfig.exportKgenModule = args.hasArg(options::OPT_kgenModule);
         OwningOpRef<ModuleOp> moduleOp;
         std::tie(moduleOp, packageOp) = LIT::importMojoPackage(
             runtime, packageArgs.inputPath, packageArgs.name, sourceMgr,

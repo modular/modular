@@ -350,8 +350,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
       parserListener(config.parserListener),
       disablePrebuiltPackages(config.disablePrebuiltPackages),
       useBuiltinModule(config.useBuiltinModule),
-      importAllReachableExportedFunctions(
-          config.importAllReachableExportedFunctions),
+      exportKgenModule(config.exportKgenModule),
       impl(std::make_unique<Impl>(*this)) {
   if (!options.searchPaths.empty()) {
     SmallVector<StringRef> paths;
@@ -394,9 +393,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
 
 SharedState::~SharedState() { declResolver.reset(); }
 
-bool SharedState::shouldImportAllReachableExportedFunctions() const {
-  return importAllReachableExportedFunctions;
-}
+bool SharedState::shouldExportKgenModule() const { return exportKgenModule; }
 
 bool SharedState::shouldDiagnoseMissingDocStrings() const {
   return impl->diagnoseMissingDocStrings;
