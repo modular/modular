@@ -62,12 +62,6 @@ public:
       cl::desc("Disable prebuilt packages when parsing the input Mojo file."),
       llvm::cl::init(false)};
 
-  M::cl::MOpt<bool> importAllReachableExportedFunctions{
-      "include-all-exported-functions",
-      cl::desc(
-          "If an exported function is reachable via imports, do not erase it."),
-      llvm::cl::init(false)};
-
   M::cl::MOpt<std::string> dependencyFilename{
       "d", llvm::cl::desc("Path of the dependency file to generate"),
       llvm::cl::value_desc("filename"), llvm::cl::init("")};
@@ -276,8 +270,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     config.stripFilePrefix = clOptions.stripFilePrefix;
     config.useMLIRDiagnostics = clOptions.enableMLIRDiagnostics;
     config.disablePrebuiltPackages = clOptions.disablePrebuiltPackages;
-    config.importAllReachableExportedFunctions =
-        clOptions.importAllReachableExportedFunctions;
     theModule = importMojoFile(runtime, mgr, config, litScope, &includedFiles);
   } else {
     theModule = parseSourceFile<ModuleOp>(mgr, ctx);
