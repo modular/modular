@@ -9,7 +9,8 @@
 from collections import List, Optional
 from compile.compile import Info
 from pathlib import Path
-from sys import env_get_int, env_get_string, external_call, sizeof
+from sys import env_get_int, is_defined, env_get_string, external_call, sizeof
+from sys.param_env import _is_bool_like
 from sys.info import _get_arch, is_triple, has_nvidia_gpu_accelerator
 from builtin._location import __call_location, _SourceLocation
 
@@ -384,6 +385,22 @@ fn _get_optimization_level() -> Int:
     return 4 if level == 3 and has_nvidia_gpu_accelerator() else level
 
 
+fn _is_path_like(val: String) -> Bool:
+    # Ideally we want to use `val.start_with` but we hit a compiler bug if we do
+    # that. So, instead we implement the function inline, since we only care
+    # about whether the string starts with a `/`, `~`, or "./".
+    var ss = val.as_string_slice()
+    if len(ss) == 0:
+        return False
+    if len(ss) >= 1:
+        if ss[0] == "/" or ss[0] == "~":
+            return True
+    if len(ss) >= 2:
+        if ss[0] == "." and ss[1] == "/":
+            return True
+    return False
+
+
 struct DeviceFunction[
     func_type: AnyTrivialRegType, //,
     func: func_type,
@@ -509,19 +526,51 @@ struct DeviceFunction[
     @staticmethod
     fn _dump_q[
         name: StringLiteral, val: Variant[Bool, Path, fn () capturing -> Path]
-    ]() -> Bool:
+    ]() -> (Bool, Variant[Bool, Path, fn () capturing -> Path]):
         alias name_upper = StringLiteral.get[String(name).upper()]()
         alias env_var = "DUMP_GPU_" + name_upper
-        alias env_val = env_get_bool[env_var, False]()
 
         @parameter
-        if env_val:
-            return env_val
-        elif val.isa[Bool]():
-            return val.unsafe_get[Bool]()
-        elif val.isa[Path]():
-            return val.unsafe_get[Path]() != Path("")
-        return val.isa[fn () capturing -> Path]()
+        if is_defined[env_var]():
+            alias env_val = env_get_string[env_var]()
+
+            @parameter
+            if _is_bool_like(env_val):
+                alias env_bool_val = env_get_bool[env_var]()
+                return env_bool_val, Variant[
+                    Bool, Path, fn () capturing -> Path
+                ](env_bool_val)
+
+            @parameter
+            if _is_path_like(env_val):
+                return True, Variant[Bool, Path, fn () capturing -> Path](
+                    Path(env_val)
+                )
+
+            constrained[
+                False,
+                String(
+                    "the environment variable `",
+                    env_var,
+                    (
+                        "` is not a valid value. The value should either be"
+                        " a boolean value or a path like value, but got `"
+                    ),
+                    env_val,
+                    "`",
+                ),
+            ]()
+            return False, val
+
+        @parameter
+        if val.isa[Bool]():
+            return val.unsafe_get[Bool](), val
+
+        @parameter
+        if val.isa[Path]():
+            return val.unsafe_get[Path]() != Path(""), val
+
+        return val.isa[fn () capturing -> Path](), val
 
     @staticmethod
     fn _cleanup_asm(s: StringLiteral) -> String:
@@ -544,8 +593,12 @@ struct DeviceFunction[
             var ptx = self._func_impl.asm
             print(_ptxas_compile[target](ptx, options="-v"))
 
+        alias dump_asm_tup = Self._dump_q["asm", dump_asm]()
+        alias do_dump_asm = dump_asm_tup[0]
+        alias dump_asm_val = dump_asm_tup[1]
+
         @parameter
-        if Self._dump_q["asm", dump_asm]():
+        if do_dump_asm:
 
             fn get_asm() -> StringLiteral:
                 @parameter
@@ -560,34 +613,42 @@ struct DeviceFunction[
             var asm = self._cleanup_asm(get_asm())
 
             @parameter
-            if dump_asm.isa[fn () capturing -> Path]():
-                alias dump_asm_fn = dump_asm.unsafe_get[
+            if dump_asm_val.isa[fn () capturing -> Path]():
+                alias dump_asm_fn = dump_asm_val.unsafe_get[
                     fn () capturing -> Path
                 ]()
                 dump_asm_fn().write_text(asm)
-            elif dump_asm.isa[Path]():
-                dump_asm.unsafe_get[Path]().write_text(asm)
+            elif dump_asm_val.isa[Path]():
+                dump_asm_val.unsafe_get[Path]().write_text(asm)
             else:
                 print(asm)
 
+        alias dump_sass_tup = Self._dump_q["sass", _dump_sass]()
+        alias do_dump_sass = dump_sass_tup[0]
+        alias dump_sass_val = dump_sass_tup[1]
+
         @parameter
-        if Self._dump_q["sass", _dump_sass]():
+        if do_dump_sass:
             var ptx = Self._cleanup_asm(self._func_impl.asm)
             var sass = _to_sass[target](ptx)
 
             @parameter
-            if _dump_sass.isa[fn () capturing -> Path]():
-                alias _dump_sass_fn = _dump_sass.unsafe_get[
+            if dump_sass_val.isa[fn () capturing -> Path]():
+                alias _dump_sass_fn = dump_sass_val.unsafe_get[
                     fn () capturing -> Path
                 ]()
                 _dump_sass_fn().write_text(sass)
-            elif _dump_sass.isa[Path]():
-                _dump_sass.unsafe_get[Path]().write_text(sass)
+            elif dump_sass_val.isa[Path]():
+                dump_sass_val.unsafe_get[Path]().write_text(sass)
             else:
                 print(sass)
 
+        alias dump_llvm_tup = Self._dump_q["llvm", dump_llvm]()
+        alias do_dump_llvm = dump_llvm_tup[0]
+        alias dump_llvm_val = dump_llvm_tup[1]
+
         @parameter
-        if Self._dump_q["llvm", dump_llvm]():
+        if do_dump_llvm:
             var llvm = _compile_code_asm[
                 Self.func,
                 emission_kind="llvm-opt",
@@ -595,13 +656,13 @@ struct DeviceFunction[
             ]()
 
             @parameter
-            if dump_llvm.isa[fn () capturing -> Path]():
-                alias dump_llvm_fn = dump_llvm.unsafe_get[
+            if dump_llvm_val.isa[fn () capturing -> Path]():
+                alias dump_llvm_fn = dump_llvm_val.unsafe_get[
                     fn () capturing -> Path
                 ]()
                 dump_llvm_fn().write_text(llvm)
-            elif dump_llvm.isa[Path]():
-                dump_llvm.unsafe_get[Path]().write_text(llvm)
+            elif dump_llvm_val.isa[Path]():
+                dump_llvm_val.unsafe_get[Path]().write_text(llvm)
             else:
                 print(llvm)
 
