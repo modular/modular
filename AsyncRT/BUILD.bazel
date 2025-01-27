@@ -74,6 +74,9 @@ modular_shared_library(
     srcs = [
         "lib/DeviceContext/MojoBindings.cpp",
     ],
+    hdrs = [
+        "include/AsyncRT/DeviceContext/BinaryID.h",
+    ],
     local_defines = [
         "MODULAR_BUILDING_LIBRARY",
     ],
@@ -81,6 +84,7 @@ modular_shared_library(
     deps = [
         ":DeviceContext",
         ":DeviceContext.headers",
+        "//Support:BinaryID",
     ],
 )
 
