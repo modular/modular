@@ -20,13 +20,17 @@ import requests
 logger = logging.getLogger("pipelines_lm_eval")
 
 
-def _must_rlocation(runfiles: python.runfiles.Runfiles, rloc: str) -> Path:
+def _must_rlocation_str(runfiles: python.runfiles.Runfiles, rloc: str) -> str:
     loc = runfiles.Rlocation(rloc)
     if loc is None:
         raise FileNotFoundError(
             f"Required rlocation {rloc!r} could not be resolved"
         )
-    return Path(loc)
+    return loc
+
+
+def _must_rlocation(runfiles: python.runfiles.Runfiles, rloc: str) -> Path:
+    return Path(_must_rlocation_str(runfiles, rloc))
 
 
 class PipelineSitter:
@@ -140,6 +144,7 @@ class PipelineSitter:
 @click.option("--pipelines-probe-port", type=int)
 @click.option("--pipelines-probe-timeout", type=float)
 @click.option("--pipelines-arg", "pipelines_args", multiple=True)
+@click.option("--evaluator", type=str, default="lm-eval")
 @click.option(
     "--override-lm-eval",
     type=click.Path(
@@ -147,15 +152,25 @@ class PipelineSitter:
     ),
 )
 @click.option("--lm-eval-arg", "lm_eval_args", multiple=True)
+@click.option(
+    "--override-mistral-evals",
+    type=click.Path(
+        exists=True, executable=True, dir_okay=False, path_type=Path
+    ),
+)
+@click.option("--mistral-evals-arg", "mistral_evals_args", multiple=True)
 def main(
     override_pipelines: Optional[Path],
     pipelines_probe_port: Optional[int],
     pipelines_probe_timeout: Optional[int],
     pipelines_args: Sequence[str],
+    evaluator: str,
     override_lm_eval: Optional[Path],
     lm_eval_args: Sequence[str],
+    override_mistral_evals: Optional[Path],
+    mistral_evals_args: Sequence[str],
 ) -> None:
-    """Start pipelines server, run lm-eval, and then shut down server."""
+    """Start pipelines server, run an evaluator, and then shut down server."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s: %(name)s: %(message)s",
@@ -165,45 +180,70 @@ def main(
     if runfiles is None:
         raise FileNotFoundError("Unable to find runfiles tree")
     if override_pipelines is not None:
-        pipelines_path = override_pipelines
+        pipelines_program = [str(override_pipelines)]
     else:
-        pipelines_path = _must_rlocation(
-            runfiles, "_main/SDK/public/max-repo/pipelines/python/pipelines"
-        )
+        pipelines_program = [
+            _must_rlocation_str(
+                runfiles,
+                "_main/SDK/public/max-repo/pipelines/python/pipelines",
+            )
+        ]
     if override_lm_eval is not None:
-        lm_eval_path = override_lm_eval
+        lm_eval_program = [str(override_lm_eval)]
     else:
-        lm_eval_path = _must_rlocation(
-            runfiles,
-            "_main/SDK/integration-test/pipelines/python/run_lm_eval.py",
-        )
-    logger.debug("Pipelines binary at: %s", pipelines_path)
-    logger.debug("lm-eval binary at: %s", lm_eval_path)
+        lm_eval_program = [
+            sys.executable,
+            _must_rlocation_str(
+                runfiles,
+                "_main/SDK/integration-test/pipelines/python/run_lm_eval.py",
+            ),
+        ]
+    if override_mistral_evals is not None:
+        mistral_evals_program = [str(override_mistral_evals)]
+    else:
+        mistral_evals_program = [
+            _must_rlocation_str(runfiles, "mistral-evals/evaluate")
+        ]
+    logger.debug("Pipelines binary at: %r", pipelines_program)
+    evaluator_args: list[str] = []
+    if evaluator == "lm-eval":
+        evaluator_program = lm_eval_program
+        evaluator_args.extend(lm_eval_args)
+    elif evaluator == "mistral-evals":
+        evaluator_program = mistral_evals_program
+        evaluator_args.extend(mistral_evals_args)
+    else:
+        logger.error("Unrecognized evaluator %r", evaluator)
+        sys.exit(1)
+    logger.debug("Evaluator binary at: %r", evaluator_program)
 
-    lm_eval_args = list(lm_eval_args)
-    if not any(arg.startswith("--include_path") for arg in lm_eval_args):
+    if evaluator == "lm-eval" and not any(
+        arg.startswith("--include_path") for arg in evaluator_args
+    ):
         include_path = _must_rlocation(
             runfiles,
             "_main/SDK/integration-test/pipelines/python/eval_tasks/BUILD.bazel",
         ).parent
-        lm_eval_args.append(f"--include_path={include_path}")
+        evaluator_args.append(f"--include_path={include_path}")
         logger.debug("Including path: %s", include_path)
 
     with PipelineSitter(
-        [str(pipelines_path)] + list(pipelines_args)
+        pipelines_program + list(pipelines_args)
     ) as pipeline_sitter:
         if pipelines_probe_port is not None:
             pipeline_sitter.wait_for_alive(
                 probe_port=pipelines_probe_port, timeout=pipelines_probe_timeout
             )
-        logger.info(f"Running lm-eval with provided args: {lm_eval_args}")
-        lm_eval_proc = subprocess.run(
-            [sys.executable, str(lm_eval_path)] + lm_eval_args
-        )
         logger.info(
-            f"lm-eval exited with status code {lm_eval_proc.returncode}"
+            "Running evaluator %r with provided args: %r",
+            evaluator_program,
+            evaluator_args,
         )
-    sys.exit(lm_eval_proc.returncode)
+        evaluator_proc = subprocess.run(evaluator_program + evaluator_args)
+        logger.info(
+            "Evaluator exited with status code %s", evaluator_proc.returncode
+        )
+    sys.exit(evaluator_proc.returncode)
 
 
 if __name__ == "__main__":

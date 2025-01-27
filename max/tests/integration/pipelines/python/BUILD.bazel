@@ -207,12 +207,14 @@ modular_py_binary(
         "//SDK/integration-test/pipelines/python/eval_tasks",
         "//SDK/public/max-repo/pipelines/python:pipelines",
         "@llvm-project//compiler-rt:orc_rt",
+        "@mistral-evals//:evaluate",
     ],
     ignore_collisions = True,  # duplicate examples/__init__.py from deps
     main = "pipelines_lm_eval.py",
     deps = [
         ":lm-eval",
         "//SDK/integration-test/pipelines/python/eval_tasks/human_eval",
+        "@mistral-evals//:evaluate",
         "@rules_python//python/runfiles",
         requirement("click"),
         requirement("requests"),
