@@ -53,6 +53,28 @@ InputType = Union[
 ]
 
 
+def _raise_if_not_contiguous(x: InputType) -> None:
+    should_raise = False
+    if isinstance(x, bool):
+        return
+    elif _is_torch_tensor(x):
+        # This code does not import torch, so we ignore the type checker here
+        if not x.is_contiguous():  # type: ignore
+            should_raise = True
+    elif isinstance(x, np.ndarray) and not x.flags.c_contiguous:
+        should_raise = True
+    elif isinstance(x, Tensor) and not x.is_contiguous:
+        should_raise = True
+    if should_raise:
+        raise ValueError(
+            "Max does not currently support executing"
+            " non-contiguous tensors. Before passing these"
+            " tensors to Max, please make a contiguous copy of them"
+            " using `.contiguous()` before feeding them into the"
+            " `execute` or `load` APIs."
+        )
+
+
 def _map_execute_kwarg(
     input_value: Any, expected_dtype: DType, keep_referenced: dict[int, Any]
 ) -> Any:
@@ -188,6 +210,8 @@ class Model:
 
         input_idx = 0
         for idx, arg in enumerate(args):
+            _raise_if_not_contiguous(arg)
+
             # Validate that input is one of supported types and convert if
             # necessary.
             if isinstance(arg, MojoValue):
@@ -195,14 +219,6 @@ class Model:
                 continue
 
             if isinstance(arg, Tensor):
-                if not arg.is_contiguous:
-                    raise ValueError(
-                        "Max does not currently support executing"
-                        " non-contiguous tensors. Before executing these"
-                        " tensors, please make a contiguous copy of them"
-                        " using `.contiguous` before feeding them into the"
-                        " `execute` API."
-                    )
                 tensor = arg
             elif isinstance(arg, DLPackArray):
                 tensor = Tensor.from_dlpack(arg)
@@ -835,6 +851,15 @@ class InferenceSession:
                     "The model is not a valid string path, Path object, "
                     " torch.jit.ScriptModule or MlirModule."
                 )
+
+        if weights_registry is not None:
+            for weight_name, weight in weights_registry.items():
+                try:
+                    _raise_if_not_contiguous(weight)
+                except ValueError as e:
+                    raise ValueError(
+                        f"Weight '{weight_name}' is not contiguous: {str(e)}"
+                    ) from e
 
         _model.load(weights_registry if weights_registry else {})
         return Model._init(_model)
