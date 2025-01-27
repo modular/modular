@@ -6,12 +6,17 @@ modular_py_test(
         ["**/*.py"],
         exclude = ["testdata/**"],
     ),
-    data = ["//SDK/lib/API/python/tests/graph/testdata"],
+    data = [
+        "//KGEN:CompilerRT",
+        "//SDK/lib/API/python/tests/graph/testdata",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
     env = {"TESTDATA_DIRECTORY": "SDK/lib/API/python/tests/graph/testdata"},
     imports = ["pytests"],
     tags = ["no-mypy"],  # TODO: fix and remove
     deps = [
         "//SDK/lib/API/python/max/dtype",
+        "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/graph",
         requirement("gguf"),
         requirement("hypothesis"),
