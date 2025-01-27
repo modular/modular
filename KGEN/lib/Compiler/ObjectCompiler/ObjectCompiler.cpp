@@ -860,7 +860,13 @@ static void computeFnOrdering(llvm::Module &module,
 }
 
 static std::string getAsmFilePostfix(const CompilationOptions &options) {
-  return isNVPTXBackend(options) ? ".ptx" : ".s";
+  if (isNVPTXBackend(options))
+    return ".ptx";
+
+  if (isAMDBackend(options))
+    return ".amdgcn";
+
+  return ".s";
 }
 
 //===----------------------------------------------------------------------===//
@@ -1550,21 +1556,43 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
     SmallVector<EmitAs> emissionKinds;
     SmallVector<AsyncRT::AnyAsyncValueRef> emissionResults;
     llvm::SmallSet<EmitAs, 4> &kinds = kernelEmissionKinds[*kernelIdOr];
+    bool shouldDeserialize = kinds.size() > 1;
+    bool shouldRunExtraAsm = !options.saveTempsPrefix.empty() &&
+                             kinds.contains(EmitAs::SHARED_OBJ) &&
+                             !kinds.contains(EmitAs::ASM);
+    shouldDeserialize |= shouldRunExtraAsm;
 
     for (EmitAs kind : kinds) {
       emissionKinds.push_back(kind);
       emissionResults.push_back(lowerLLVMModuleToObject(
           *module, loc, transformCache, *kernelIdOr, runtime, options, isJIT,
-          (kinds.size() > 1), kind));
+          shouldDeserialize, kind));
+    }
+
+    if (shouldRunExtraAsm) {
+      // We need to run the llvm lowering again to saveTempsPrefix for assembly
+      // if we are generating object (for GPUs). Since codegen has side effect,
+      // we cannot reuse the same llvm module for assembly and object file, we
+      // have to run the llvm lowering separately for each codegen result.
+      emissionResults.push_back(lowerLLVMModuleToObject(
+          *module, loc, transformCache, *kernelIdOr, runtime, options, isJIT,
+          shouldDeserialize, EmitAs::ASM));
     }
 
     auto kernelBufs =
         AsyncRT::AsyncValueRef<DenseMap<EmitAs, BufferRef>>::allocate(runtime);
 
     andThenSyncMoving(
-        emissionResults, [emissionKinds, resultBufs = kernelBufs.copy()](
-                             MutableArrayRef<AnyAsyncValueRef> values) mutable {
+        emissionResults,
+        [emissionKinds, shouldRunExtraAsm, resultBufs = kernelBufs.copy()](
+            MutableArrayRef<AnyAsyncValueRef> values) mutable {
           DenseMap<EmitAs, BufferRef> kernelResults;
+
+          if (shouldRunExtraAsm) {
+            // No need to process the last result as it's just for printing.
+            values = values.drop_back(1);
+          }
+
           for (auto [idx, result] : llvm::enumerate(values)) {
             kernelResults.insert({emissionKinds[idx], result.get<BufferRef>()});
           }

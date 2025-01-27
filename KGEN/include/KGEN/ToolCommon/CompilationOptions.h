@@ -119,6 +119,7 @@ public:
 bool isGPUTriple(const llvm::Triple &triple);
 bool isGPUBackend(const CompilationOptions &options);
 bool isNVPTXBackend(const CompilationOptions &options);
+bool isAMDBackend(const CompilationOptions &options);
 
 } // namespace M::KGEN
 
