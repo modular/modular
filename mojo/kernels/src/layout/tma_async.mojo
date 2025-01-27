@@ -22,6 +22,7 @@ from gpu.sync import (
     mbarrier_arrive_expect_tx_shared,
     mbarrier_init,
     mbarrier_try_wait_parity_shared,
+    mbarrier_arrive,
 )
 from layout import IntTuple, LayoutTensor
 from memory import UnsafePointer, stack_allocation
@@ -89,6 +90,10 @@ struct TMABarrier(CollectionElement):
         inlined_assembly[asm, NoneType, constraints="r,r"](
             Int32(Int(self.mbar)), phase
         )
+
+    @always_inline
+    fn arrive(self) -> Int:
+        return mbarrier_arrive(self.mbar)
 
 
 # TMATensorTile is created on the host with specific memory and tile sizes.
