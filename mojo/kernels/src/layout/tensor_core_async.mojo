@@ -16,6 +16,7 @@ from gpu.mma import (
     WGMMADescriptor,
     wgmma_async,
     wgmma_commit_group_sync,
+    wgmma_fence_aligned,
     wgmma_wait_group_sync,
 )
 
@@ -135,8 +136,11 @@ fn _lhs_descriptor[
     ]()
 
     constrained[
-        layout[0].shape[0].value() == 8 and layout[1].shape[1].value() == 2,
-        "shared memory tile layout should have shape ((8, _), (_, 2)).",
+        layout[0].shape[0].value() == 8 and layout[1].shape[1].value() % 2 == 0,
+        (
+            "shared memory tile layout should have shape ((8, _), (_, multiple"
+            " of 2))."
+        ),
     ]()
 
     # Ingore 4 LSB.
@@ -166,14 +170,12 @@ fn _rhs_descriptor[
 
 
 # TODO(KERN-1301): Layouts are calculated for 64x8x8 instruction
-fn _output_register_size[
-    mma_shape: IndexList[3]
-](in_dtype: DType, out_dtype: DType) -> Int:
+fn _output_register_size[mma_shape: IndexList[3]]() -> Int:
     constrained[
         mma_shape in supported_mma_shape,
         String("WGMMA operation of shape '", mma_shape, "' is not supported"),
     ]()
-    return 4
+    return mma_shape[0] * mma_shape[1] // 128
 
 
 fn _dtype(dtype: DType) -> DType:
@@ -183,25 +185,25 @@ fn _dtype(dtype: DType) -> DType:
 
 
 struct TensorCoreAsync[
-    out_type: DType,
-    in_type: DType,
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
     mma_shape: IndexList[3],
+    transpose_b: Bool = False,
 ]:
     alias lhs_operand_type = LayoutTensor[
-        in_type,
+        a_type,
         _lhs_layout[mma_shape](),
         address_space = AddressSpace.SHARED,
     ]
 
     alias rhs_operand_type = LayoutTensor[
-        in_type,
+        b_type,
         _rhs_layout[mma_shape](),
         address_space = AddressSpace.SHARED,
     ]
 
-    alias result_operand_type = SIMD[
-        out_type, _output_register_size[mma_shape](out_type, in_type)
-    ]
+    alias result_operand_type = SIMD[c_type, _output_register_size[mma_shape]()]
 
     @always_inline
     fn __init__(out self):
@@ -220,15 +222,67 @@ struct TensorCoreAsync[
         c_reg: Self.result_operand_type,
     ) -> Self.result_operand_type:
         lhs_descriptor = _lhs_descriptor[mma_shape](lhs)
-        rhs_descriptor = _rhs_descriptor[mma_shape](rhs)
+        rhs_descriptor = _rhs_descriptor[
+            mma_shape, transposed = Self.transpose_b
+        ](rhs)
         r_reg = wgmma_async[
             mma_shape[0],
             mma_shape[1],
             mma_shape[2],
-            a_type = _dtype(in_type),
-            b_type = _dtype(in_type),
+            a_type = _dtype(a_type),
+            b_type = _dtype(b_type),
         ](lhs_descriptor, rhs_descriptor, c_reg)
         return r_reg
+
+    @staticmethod
+    @always_inline
+    fn wgmma(
+        a_smem_tile: LayoutTensor[
+            a_type, _, address_space = AddressSpace.SHARED, *_, **_
+        ],
+        b_smem_tile: LayoutTensor[
+            b_type, _, address_space = AddressSpace.SHARED, *_, **_
+        ],
+        mut c_reg: SIMD[c_type, *_],
+    ):
+        a_desc = _lhs_descriptor[mma_shape](a_smem_tile)
+        b_desc = _rhs_descriptor[mma_shape, transpose_b](b_smem_tile)
+
+        alias a_smem_layout = a_smem_tile.layout
+        alias b_smem_layout = b_smem_tile.layout
+
+        alias num_m_mmas = a_smem_layout[0].size() // mma_shape[0]
+        alias num_n_mmas = b_smem_layout[0].size() // mma_shape[1]
+        alias num_k_mmas = a_smem_layout[1].size() // mma_shape[2]
+
+        alias a_wgmma_size = mma_shape[0] * mma_shape[2] * sizeof[a_type]()
+        alias b_wgmma_size = mma_shape[1] * mma_shape[2] * sizeof[b_type]()
+
+        @parameter
+        for m_mma in range(num_m_mmas):
+            a_desc_m = a_desc + m_mma * num_k_mmas * a_wgmma_size
+
+            @parameter
+            for n_mma in range(num_n_mmas):
+                b_desc_n = b_desc + n_mma * num_k_mmas * b_wgmma_size
+
+                @parameter
+                for k_mma in range(num_k_mmas):
+                    c_reg = wgmma_async[
+                        mma_shape[0],
+                        mma_shape[1],
+                        mma_shape[2],
+                        a_type = _dtype(a_type),
+                        b_type = _dtype(b_type),
+                    ](a_desc_m, b_desc_n, c_reg)
+
+                    a_desc_m += a_wgmma_size
+                    b_desc_n += b_wgmma_size
+
+    @staticmethod
+    @always_inline
+    fn arrive():
+        wgmma_fence_aligned()
 
     @staticmethod
     @always_inline
@@ -245,7 +299,7 @@ struct TensorCoreAsync[
     @staticmethod
     @always_inline
     fn store_result(
-        warp_group_tile: LayoutTensor[out_type, _, *_, **_],
+        warp_group_tile: LayoutTensor[c_type, _, *_, **_],
         res_reg_tile: Self.result_operand_type,
     ):
         constrained[
@@ -281,6 +335,6 @@ struct TensorCoreAsync[
     @staticmethod
     @always_inline
     fn allocate_result(
-        initial_val: Scalar[out_type],
+        initial_val: Scalar[c_type],
     ) -> Self.result_operand_type:
         return Self.result_operand_type(initial_val)
