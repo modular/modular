@@ -115,3 +115,7 @@ bool M::KGEN::isGPUBackend(const CompilationOptions &options) {
 bool M::KGEN::isNVPTXBackend(const CompilationOptions &options) {
   return llvm::Triple(options.targetTriple).isNVPTX();
 }
+
+bool M::KGEN::isAMDBackend(const CompilationOptions &options) {
+  return llvm::Triple(options.targetTriple).isAMDGCN();
+}
