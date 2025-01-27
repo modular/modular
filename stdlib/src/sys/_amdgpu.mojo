@@ -54,9 +54,9 @@ struct amd_signal_t:
 
 
 @always_inline
-fn update_mbox(sig: UnsafePointer[amd_signal_t]):
+fn update_mbox(sig: UnsafePointer[amd_signal_t, **_]):
     var mb = UnsafePointer.address_of(sig[].event_mailbox_ptr).bitcast[
-        UnsafePointer[UInt64]
+        UnsafePointer[UInt64, address_space = _GPUAddressSpace.GLOBAL]
     ]()[]
     if mb:
         var id = sig[].event_id.cast[DType.uint64]()
@@ -67,7 +67,7 @@ fn update_mbox(sig: UnsafePointer[amd_signal_t]):
 @always_inline
 fn hsa_signal_add(sig: UInt64, value: UInt64):
     var s = UnsafePointer.address_of(sig).bitcast[
-        UnsafePointer[amd_signal_t]
+        UnsafePointer[amd_signal_t, address_space = _GPUAddressSpace.GLOBAL]
     ]()[]
     _ = Atomic._fetch_add(UnsafePointer.address_of(s[].value), value)
     update_mbox(s)
@@ -156,16 +156,7 @@ fn append_bytes(
     fn pack_uint64() -> UInt64:
         var arg = UInt64(0)
         if len(data) >= 8:
-            arg = (
-                data[0].cast[DType.uint64]()
-                | (data[1].cast[DType.uint64]() << 8)
-                | (data[2].cast[DType.uint64]() << 16)
-                | (data[3].cast[DType.uint64]() << 24)
-                | (data[4].cast[DType.uint64]() << 32)
-                | (data[5].cast[DType.uint64]() << 40)
-                | (data[6].cast[DType.uint64]() << 48)
-                | (data[7].cast[DType.uint64]() << 56)
-            )
+            arg = data.unsafe_ptr().bitcast[UInt64]()[]
             data = data[8:]
         else:
             var ii = 0
@@ -195,6 +186,7 @@ fn append_bytes(
     )
 
 
+@no_inline
 fn message_append_bytes(
     service_id: UInt32, msg_desc: UInt64, data: Span[UInt8]
 ) -> (UInt64, UInt64):
@@ -342,7 +334,7 @@ fn fprintf_stdout_begin() -> UInt64:
     Returns:
         Message descriptor for a new printf invocation.
     """
-    return begin_fprintf(0)
+    return begin_fprintf(FprintfCtrl.stdout)
 
 
 @always_inline
@@ -833,67 +825,7 @@ fn send_signal(signal: UInt64):
     hsa_signal_add(signal, 1)
 
 
-fn _hostcall(
-    mut buffer: Buffer,
-    service_id: UInt32,
-    arg0: UInt64,
-    arg1: UInt64,
-    arg2: UInt64,
-    arg3: UInt64,
-    arg4: UInt64,
-    arg5: UInt64,
-    arg6: UInt64,
-    arg7: UInt64,
-) -> (UInt64, UInt64):
-    """
-    The implementation that should be hidden behind an ABI
-    The transaction is a wave-wide operation, where the service_id
-    must be uniform, but the parameters are different for each
-    workitem. Parameters from all active lanes are written into a
-    hostcall packet. The hostcall blocks until the host processes the
-    request, and returns the response it receiveds.
-
-    TODO: This function and everything above it should eventually move
-    to a separate library that is loaded by the language runtime. The
-    function itself will be exposed as an orindary function symbol to
-    be linked into kernel objects that are loaded after this library.
-
-    *** INTERNAL USE ONLY ***
-    Internal function, not safe for direct use in user
-    code. Application kernels must only use __ockl_hostcall_preview()
-    defined elsewhere."""
-    # all 0s
-    var me = lane_id()
-    # all 0s
-    var low = readfirstlane(me).cast[DType.uint32]()
-
-    var packet_ptr = buffer.pop_free_stack(me, low)
-
-    var header = buffer.get_header(packet_ptr)
-    var payload = buffer.get_payload(packet_ptr)
-
-    header.fill_packet(
-        payload,
-        service_id,
-        arg0,
-        arg1,
-        arg2,
-        arg3,
-        arg4,
-        arg5,
-        arg6,
-        arg7,
-        me,
-        low,
-    )
-
-    buffer.push_ready_stack(packet_ptr, me, low)
-
-    var retval = header.get_return_value(payload, me, low)
-    buffer.return_free_packet(packet_ptr, me, low)
-    return retval
-
-
+@no_inline
 fn hostcall(
     service_id: UInt32,
     arg0: UInt64,
@@ -945,8 +877,16 @@ fn hostcall(
         .offset(10)[]
     )
 
-    return _hostcall(
-        buffer,
+    var me = lane_id()
+    var low = readfirstlane(me).cast[DType.uint32]()
+
+    var packet_ptr = buffer.pop_free_stack(me, low)
+
+    var header = buffer.get_header(packet_ptr)
+    var payload = buffer.get_payload(packet_ptr)
+
+    header.fill_packet(
+        payload,
         service_id,
         arg0,
         arg1,
@@ -956,4 +896,11 @@ fn hostcall(
         arg5,
         arg6,
         arg7,
+        me,
+        low,
     )
+
+    buffer.push_ready_stack(packet_ptr, me, low)
+    var retval = header.get_return_value(payload, me, low)
+    buffer.return_free_packet(packet_ptr, me, low)
+    return retval
