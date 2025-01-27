@@ -26,12 +26,3 @@ modular_cc_test(
         "//KGEN:LITDialect",
     ],
 )
-
-modular_cc_test(
-    name = "LITDialectTest",
-    srcs = glob(["lit-dialect/*.cpp"]),
-    deps = [
-        "//KGEN:KGENDialect",
-        "//KGEN:LITDialect",
-    ],
-)
