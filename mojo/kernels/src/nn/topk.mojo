@@ -755,15 +755,16 @@ fn _topk_stage2[
     ]()
     var idxs_sram = (vals_sram + vals_smem_size).bitcast[Int]()
 
-    # [begin] TODO Make this ONLY for sampling by defining on if @param sampling
-    # var s_val2: UnsafePointer[Scalar[T], address_space = AddressSpace.SHARED]
-    # var s_id: UnsafePointer[Int, address_space = AddressSpace.SHARED]
-    # Storing the top-K logits in shmem for sampling
-    s_id = (idxs_sram + vals_smem_size).bitcast[
-        Int
-    ]()  # 2* for warp align safety
-    s_val2 = (s_id + 2 * K).bitcast[Scalar[T]]()
-    # [end] TODO Make this ONLY for sampling
+    # These values are only read from in the sampling case.
+    var s_val2 = UnsafePointer[Scalar[T], address_space = AddressSpace.SHARED]()
+    var s_id = UnsafePointer[Int, address_space = AddressSpace.SHARED]()
+
+    @parameter
+    if sampling:
+        # Storing the top-K logits in shmem for sampling
+        s_id = (idxs_sram + vals_smem_size).bitcast[Int]()
+        # The 2* below is for warp align safety
+        s_val2 = (s_id + 2 * K).bitcast[Scalar[T]]()
 
     var s_sum = stack_allocation[
         1, Scalar[T], address_space = AddressSpace.SHARED
