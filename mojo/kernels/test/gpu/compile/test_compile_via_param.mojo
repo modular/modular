@@ -5,14 +5,17 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
 # RUN: %mojo-no-debug-no-assert -D DUMP_GPU_ASM=True %s | FileCheck %s
-
+# RUN: rm -fr %tmp-dir/test_compile_via_param/
+# RUN: mkdir -p %tmp-dir/test_compile_via_param/
+# RUN: %mojo-no-debug-no-assert -D DUMP_GPU_ASM=%tmp-dir/test_compile_via_param/test_compile_via_param.ptx %s
+# RUN: cat %tmp-dir/test_compile_via_param/test_compile_via_param.ptx | FileCheck %s
+# RUN: rm -fr %tmp-dir/test_compile_via_param/
 
 from gpu import thread_idx
 from gpu.host import DeviceContext
 from memory import UnsafePointer
 
 
-# CHECK-LABEL: test_compile_function
 def test_compile_function():
     print("== test_compile_function")
 
