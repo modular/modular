@@ -21,7 +21,7 @@ fn _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         False,
         # fmt: off
         String(
-            "no valid implementation of mma for for a=", 
+            "no valid implementation of mma for for a=",
             a.size, "x", a.type,
             ", b=", b.size, "x", b.type,
             ", c=", c.size, "x", c.type,
@@ -527,6 +527,10 @@ struct WGMMADescriptor[dtype: DType]:
     fn __init__(out self, val: Int64):
         self.desc = val
 
+    @always_inline
+    fn _insert_bit[start_bit: Int](self, val: Int64) -> Int64:
+        return self.desc | (val << start_bit)
+
     @staticmethod
     fn create[
         stride_byte_offset: Int, leading_byte_offset: Int, swizzle_mode: Int = 0
@@ -535,10 +539,6 @@ struct WGMMADescriptor[dtype: DType]:
             Scalar[dtype], address_space = AddressSpace.SHARED
         ],
     ) -> Self:
-        @parameter
-        fn insert_bit[start_bit: Int](target: Int64, val: Int64) -> Int64:
-            return target | (val << start_bit)
-
         var swizzle = Int64(swizzle_mode)
         var offset = Int64(0)
         var stride_dim = Int64(stride_byte_offset)
@@ -547,17 +547,36 @@ struct WGMMADescriptor[dtype: DType]:
         var base_ptr = Int(smem_ptr)
         var start_address = (base_ptr >> 4)
 
+        # Start from LSB in case updated higher bits gets overwritten.
         var desc = Int64(0)
-        # bits [63, 62] swizzle type
-        desc = insert_bit[62](desc, swizzle)
-        # bits [51 .. 49] offset
-        desc = insert_bit[49](desc, offset)
         # bits [48 .. 32]
-        desc = insert_bit[32](desc, stride_dim)  # bits [32-45]
-        desc = insert_bit[16](desc, lead_dim)  # bits [16-29]
-        desc = insert_bit[0](desc, start_address)  # bits [0-13]
+        # bits  0:14 address in share memory
+        desc = Self._insert_bit[0](desc, start_address)
+        # bits 14:16 unused
+        # bits 16:30 leading dim byte offset
+        desc = Self._insert_bit[16](desc, lead_dim)
+        # bits 30:32 unused
+        # bits 32:46 stride dim byte offset
+        desc = Self._insert_bit[32](desc, stride_dim)
+        # bits 49:52 offset
+        desc = Self._insert_bit[49](desc, offset)
+        # bits 53:62 unused
+        # bits 62:64 swizzle type
+        desc = Self._insert_bit[62](desc, swizzle)
 
         return desc
+
+    @always_inline
+    fn __iadd__(mut self, offset: Int):
+        # current address
+        address = self.desc & 0x3FFF
+        self.desc = self._insert_bit[0](address + (offset >> 4))
+
+    @always_inline
+    fn __add__(self, offset: Int) -> Self:
+        # current address
+        address = self.desc & 0x3FFF
+        return self._insert_bit[0](address + (offset >> 4))
 
 
 @always_inline
