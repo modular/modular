@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""MAX Engine APIs."""
 
 from __future__ import annotations
 
@@ -380,8 +381,7 @@ class Model:
 
     @property
     def input_metadata(self) -> list[TensorSpec]:
-        """
-        Metadata about the model's input tensors, as a list of
+        """Metadata about the model's input tensors, as a list of
         :obj:`TensorSpec` objects.
 
         For example, you can print the input tensor names, shapes, and dtypes:
@@ -395,8 +395,7 @@ class Model:
 
     @property
     def output_metadata(self) -> list[TensorSpec]:
-        """
-        Metadata about the model's output tensors, as a list of
+        """Metadata about the model's output tensors, as a list of
         :obj:`TensorSpec` objects.
 
         For example, you can print the output tensor names, shapes, and dtypes:
@@ -419,31 +418,25 @@ class Model:
 
     @property
     def devices(self) -> list[Device]:
-        """
-        Returns the device objects used in the Model.
-        """
+        """Returns the device objects used in the Model."""
         return [Device(device) for device in self._impl.devices]
 
     @property
     def input_devices(self) -> List[Device]:
-        """
-        Device of the model's input tensors, as a list of
-        :obj:`Device` objects.
-        """
+        """Device of the model's input tensors, as a list of
+        :obj:`Device` objects."""
         return [Device(device) for device in self._impl.input_devices]
 
     @property
     def output_devices(self) -> List[Device]:
-        """
-        Device of the model's output tensors, as a list of
-        :obj:`Device` objects.
-        """
+        """Device of the model's output tensors, as a list of
+        :obj:`Device` objects."""
         return [Device(device) for device in self._impl.output_devices]
 
 
 class TensorSpec:
-    """
-    Defines the properties of a tensor, including its name, shape and data type.
+    """Defines the properties of a tensor, including its name, shape and
+    data type.
 
     For usage examples, see :obj:`Model.input_metadata`.
     """
@@ -451,6 +444,12 @@ class TensorSpec:
     _impl: _TensorSpec
 
     def __init__(self, shape: InputShape, dtype: DType, name: str):
+        """
+        Args:
+            shape: The tensor shape.
+            dtype: The tensor data type.
+            name: The tensor name.
+        """
         self._impl = _TensorSpec(shape, dtype._to(), name)
 
     @classmethod
@@ -495,12 +494,11 @@ class TensorSpec:
 
 
 class TorchInputSpec:
-    """
-    Specifies valid input specification for a TorchScript model.
+    """Specifies valid input specification for a TorchScript model.
 
     Before you load a TorchScript model, you must create an instance of this class
     for each input tensor, and pass them to the `input_specs` argument of
-    :meth:`InferenceSession.load`.
+    :meth:`InferenceSession.load`.ss
 
     For example code, see :meth:`InferenceSession.load`.
     """
@@ -508,6 +506,12 @@ class TorchInputSpec:
     _impl: _TorchInputSpec
 
     def __init__(self, shape: InputShape, dtype: DType, device: str = ""):
+        """
+        Args:
+            shape: The input tensor shape.
+            dtype: The input data type.
+            device: The device on which this tensor should be loaded.
+        """
         self._impl = _TorchInputSpec(shape, dtype._to(), device)
 
     @classmethod
@@ -580,8 +584,7 @@ def _is_torch_metadata_module(obj: Any) -> bool:
 
 def _is_torchscript_module(obj: Any) -> bool:
     """Checks if an object is a `torch.jit.script.ScriptModule` or a compatible
-    (sub)class thereof.
-    """
+    (sub)class thereof."""
     t = type(obj)
     return t.__name__ in [
         "ScriptModule",
@@ -606,7 +609,6 @@ def _is_torch_mlir_module(obj: Any) -> bool:
 
 def _is_max_graph(obj: Any) -> bool:
     """Checks if an object is `max.graph.Graph`."""
-
     # TODO(MSDK-677): We should use isinstance here once max.graph
     # is available in nightlies.
     object_kind = type(obj)
@@ -668,11 +670,15 @@ def _process_custom_extensions_objects(
 
 
 class SplitKReductionPrecision(IntEnum):
+    """Internal use."""
+
     ACCUM = auto()
     OUTPUT = auto()
 
 
 class AssertLevel(str, Enum):
+    """Internal use."""
+
     NONE = "none"
     WARN = "warn"
     SAFE = "safe"
@@ -680,6 +686,8 @@ class AssertLevel(str, Enum):
 
 
 class LogLevel(str, Enum):
+    """Internal use."""
+
     NOTSET = "notset"
     DEBUG = "debug"
     INFO = "info"
@@ -699,10 +707,6 @@ class InferenceSession:
         session = engine.InferenceSession()
         model_path = Path('bert-base-uncased')
         model = session.load(model_path)
-
-    Args:
-        num_threads: Number of threads to use for the inference session. This
-          defaults to the number of physical cores on your machine.
     """
 
     _impl: _InferenceSession
@@ -714,6 +718,19 @@ class InferenceSession:
         *,
         custom_extensions: CustomExtensionsType | None = None,
     ):
+        """
+        Args:
+            num_threads: Number of threads to use for the inference session.
+              This defaults to the number of physical cores on your machine.
+            devices: A list of devices on which to run inference. Default is
+              the host CPU only.
+            custom_extensions: The extensions to load for the model.
+              Supports paths to `.mojopkg` custom ops, `.so` custom op libraries
+              for PyTorch and `.pt` torchscript files for torch metadata
+              libraries. Supports :obj:`TorchMetadata` and
+              :obj:`torch.jit.ScriptModule` objects for
+              torch metadata libraries without serialization.
+        """
         config: dict[str, Any] = {}
         self.num_threads = num_threads
         if num_threads:
@@ -800,7 +817,6 @@ class InferenceSession:
         Raises:
             RuntimeError: If the path provided is invalid.
         """
-
         options_dict: dict[str, Any] = {}
 
         if custom_extensions is not None:
@@ -986,8 +1002,7 @@ class InferenceSession:
 
     @property
     def stats_report(self) -> Dict[str, Any]:
-        """
-        Metadata about model compilation (PyTorch only).
+        """Metadata about model compilation (PyTorch only).
 
         Prints a list of "fallback ops", which are ops that could not be lowered
         to our internal dialect MO. Fallback ops have to be executed using the
@@ -997,17 +1012,17 @@ class InferenceSession:
         return json.loads(self._impl.stats_report)
 
     def reset_stats_report(self) -> None:
-        """
-        Clears all entries in `stats_report`.
-        """
+        """Clears all entries in `stats_report`."""
         self._impl.reset_stats_report()
 
     @property
     def devices(self) -> List[Device]:
+        """A list of available devices."""
         return [Device(device) for device in self._impl.devices]
 
 
 def remove_annotations(cls: Type) -> Type:
+    """Internal use."""
     del cls.__annotations__
     return cls
 
