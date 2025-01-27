@@ -14,7 +14,7 @@
 
 #include "AsyncRT/Runtime/CompactRuntimePtr.h"
 #include "AsyncRT/Runtime/Globals/Globals.h"
-#include "Support/SymbolExport.h"
+#include "Support/BinaryID.h"
 
 #include <atomic>
 
@@ -50,4 +50,11 @@ MODULAR_CXX_EXPORT void TCMallocGlobals::tc_delete(void *ptr) {
 #else
   return TCMallocInternalDelete(ptr);
 #endif
+}
+
+MODULAR_CXX_EXPORT std::string M::AsyncRT::getRuntimeGlobalsBinaryID() {
+  // M::getBinaryID() returns the binary ID of the shared library that contains
+  // it. For the purposes of MEF cache invalidation, we need to know when
+  // there's been a change in these shared libraries.
+  return M::getBinaryID();
 }

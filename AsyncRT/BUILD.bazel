@@ -177,6 +177,7 @@ modular_shared_library(
     output_name = "AsyncRTRuntimeGlobals",
     deps = [
         ":Runtime.headers",
+        "//Support:BinaryID",
         "//Support:SymbolExport",
         "//bazel/third-party:tcmalloc",
         "@llvm-project//llvm:Support",

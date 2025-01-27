@@ -11,6 +11,7 @@
 
 #include <atomic>
 #include <functional>
+#include <string>
 
 namespace M::AsyncRT {
 class Runtime;
@@ -50,6 +51,9 @@ struct TCMallocGlobals {
   static MODULAR_CXX_EXPORT void *tc_new(size_t size, size_t alignment);
   static MODULAR_CXX_EXPORT void tc_delete(void *ptr);
 };
+
+MODULAR_CXX_EXPORT std::string getRuntimeGlobalsBinaryID();
+
 } // namespace M::AsyncRT
 
 #endif // ASYNCRT_RUNTIME_GLOBALS_H
