@@ -53,6 +53,17 @@ fn is_defined[name: StringLiteral]() -> Bool:
     return __mlir_attr[`#kgen.param.expr<get_env, `, name.value, `> : i1`]
 
 
+fn _is_bool_like(val: String) -> Bool:
+    return val.lower() in (
+        String("true"),
+        String("1"),
+        String("on"),
+        String("false"),
+        String("0"),
+        String("off"),
+    )
+
+
 fn env_get_bool[name: StringLiteral]() -> Bool:
     """Try to get an boolean-valued define. Compilation fails if the
     name is not defined or the value is neither `True` or `False`.
@@ -65,16 +76,8 @@ fn env_get_bool[name: StringLiteral]() -> Bool:
     """
     alias val = StringLiteral.get[env_get_string[name]().lower()]()
 
-    @parameter
-    if val in ("true", "1", "on"):
-        return True
-
-    @parameter
-    if val in ("false", "0", "off"):
-        return False
-
     constrained[
-        False,
+        _is_bool_like(val),
         String(
             "the boolean environment value of `",
             name,
@@ -83,7 +86,8 @@ fn env_get_bool[name: StringLiteral]() -> Bool:
             "` is not recognized",
         ),
     ]()
-    return False
+
+    return val in ("true", "1", "on")
 
 
 fn env_get_bool[name: StringLiteral, default: Bool]() -> Bool:
