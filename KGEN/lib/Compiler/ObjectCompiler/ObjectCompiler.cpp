@@ -1594,13 +1594,19 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
           }
 
           for (auto [idx, result] : llvm::enumerate(values)) {
+            if (result.isError())
+              return std::move(resultBufs).setToError(result.takeDiagnostic());
             kernelResults.insert({emissionKinds[idx], result.get<BufferRef>()});
           }
           std::move(resultBufs).emplace(kernelResults);
         });
     await(kernelBufs);
 
-    std::move(resultBufs).emplace(kernelBufs.get());
+    if (kernelBufs.isError())
+      std::move(resultBufs).setToError(kernelBufs.takeDiagnostic());
+    else
+      std::move(resultBufs).emplace(kernelBufs.get());
+
     std::move(resultKernelId).emplace(*kernelIdOr);
   });
 
