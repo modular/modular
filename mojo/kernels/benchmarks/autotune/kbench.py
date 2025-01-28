@@ -111,6 +111,36 @@ def flatten(value: Union[int, object, Iterable]) -> List[Any]:
     return result
 
 
+def _run(cmd, dryrun: bool = False):
+    """Runs a shell command using the arguments provided (wrapper around run_shell_command).
+
+    Args:
+        cmd: shell command to run (list).
+        dryrun: just print the arguments as a single-line.
+
+    Returns:
+        A ProcessOutput object.
+    """
+    try:
+        if dryrun:
+            print(list2cmdline(cmd))
+        else:
+            # TODO: needs better error handling and error messages.
+            logging.debug(list2cmdline(cmd))
+            output = run_shell_command(cmd, check=False, capture_output=True)
+            # TODO: replace with subprocess.CompletedProcess object.
+            return ProcessOutput(
+                output.stdout.decode("utf-8"), output.stderr.decode("utf-8")
+            )
+        # TODO: replace with subprocess.CompletedProcess object.
+        return ProcessOutput(None, None)
+
+    except Exception as exc:
+        raise CLIException(
+            f"Unable to run the command {list2cmdline(cmd)}"
+        ) from exc
+
+
 @dataclass(repr=True)
 class ParamSpace:
     name: str
@@ -137,6 +167,69 @@ class KBENCH_MODE(Enum):
     RUN = 0x1
     TUNE = 0x2
     BUILD = 0x4
+
+
+class KbenchCache:
+    """KBench Object Cache
+
+    Keeps a list of compiled binaries for each set of input parameters.
+    Note that this does NOT check the changes in the source code.
+
+    Attributes:
+        path        The path to store pkl file.
+        data        The dictionary of <params, path> for each set of params.
+        is_active   Used to enable/disable the cache.
+    """
+
+    path: Path
+    data: dict = {}
+    is_active: bool = False
+
+    def __init__(self, path: Path = Path("kbench_cache.pkl")):
+        self.path = path
+
+    def clear(self):
+        """Clear cache pkl file, if exists."""
+
+        if os.path.exists(self.path):
+            logging.debug(f"Removing kbench-cache: {self.path}")
+            run_shell_command(["rm", self.path])
+
+    def load(self):
+        """Load cache from pkl file and set is_active=True"""
+        if os.path.exists(self.path):
+            self.data = load_pickle(self.path)
+        self.is_active = True
+
+    def dump(self):
+        """dump cache to pkl file."""
+        store_pickle(self.path, self.data)
+
+    def query(self, key: str):
+        """Query the cache for given set of parameters
+
+        Returns:
+            The path of object if it it exists on disk, else None.
+        """
+        obj_path = str(self.data.get(key))
+        if os.path.exists(obj_path):
+            return obj_path
+        else:
+            return None
+
+    def store(self, key: str, obj_path: Path, tmp_dir: Path):
+        """Store cache contents in a pkl file."""
+        obj_cache_path = tmp_dir / "kbench_cache"
+        os.makedirs(obj_cache_path, exist_ok=True)
+        obj_path_in_cache = obj_cache_path / Path(obj_path).stem
+
+        self.data[key] = obj_path_in_cache
+        cmd = ["mv", str(obj_path), str(obj_path_in_cache)]
+        out = _run(cmd)
+        if out.stdout or out.stderr:
+            return None
+        else:
+            return obj_path_in_cache
 
 
 @dataclass(frozen=True, repr=True)
@@ -167,8 +260,7 @@ class SpecInstance:
         mode: KBENCH_MODE,
         dryrun: bool = False,
         verbose: bool = False,
-        check_kbench_cache: bool = False,
-        KBENCH_CACHE: dict = {},
+        obj_cache: KbenchCache = None,
     ) -> ProcessOutput:
         if not output_file:
             output_file = Path(tempfile.gettempdir()) / Path(
@@ -194,7 +286,40 @@ class SpecInstance:
         defines = list(np.array(defines).flatten())
         vars = list(np.array(vars).flatten())
 
-        if not check_kbench_cache:
+        if obj_cache.is_active:
+            defines_str = str(defines)
+            obj_path_in_cache = obj_cache.query(defines_str)
+            print(
+                f"binary: {defines_str} found in cache: {bool(obj_path_in_cache)}"
+            )
+            print(f"vars  : {vars}")
+
+            if not obj_path_in_cache:
+                obj_path = file_abs_path.with_suffix("")
+                cmd = self.get_executor() + [
+                    "build",
+                    *defines,
+                    str(file_abs_path),
+                    "-o",
+                    str(obj_path),
+                ]
+                # TODO: how to handle the return from failing here?
+                if verbose:
+                    logging.info(f"[output_file: {output_file}]")
+                out = _run(cmd, dryrun)
+                if out.stderr:
+                    print(out.stderr)
+                    return out
+                # store the binary in tmp-dir of kbench-cache
+                obj_path_in_cache = obj_cache.store(
+                    key=defines_str,
+                    obj_path=obj_path,
+                    tmp_dir=output_file.parent.absolute(),
+                )
+
+            # The path to built object is stored in the cache as `obj_path_in_cache`
+            cmd = [obj_path_in_cache, "-o", str(output_file), *vars]
+        else:
             cmd = self.get_executor()
             if build_opts:
                 cmd.extend(build_opts)
@@ -207,42 +332,9 @@ class SpecInstance:
             if not mode == KBENCH_MODE.BUILD:
                 cmd.extend(["-o", str(output_file), *vars])
 
-        if check_kbench_cache:
-            cmd = []
-            KBENCH_CACHE_PATH = output_file.parent.absolute() / "kbench_cache"
-            os.makedirs(KBENCH_CACHE_PATH, exist_ok=True)
-
-            defines_str = str(defines)
-
-            found_in_cache = (
-                defines_str in KBENCH_CACHE.keys()
-                and os.path.exists(KBENCH_CACHE.get(defines_str))
-            )
-            print(f"binary: {defines_str} found in cache: {found_in_cache}")
-            print(f"vars  : {vars}")
-
-            if not found_in_cache:
-                obj_path = str(file_abs_path.with_suffix(""))
-                binary_path = KBENCH_CACHE_PATH / file_abs_path.stem
-                KBENCH_CACHE[defines_str] = binary_path
-                cmd = self.get_executor()
-                cmd.extend(
-                    ["build", *defines, str(file_abs_path), "-o", obj_path]
-                )
-                # TODO: how to handle the return from failing here?
-                out = self._run(cmd, output_file, verbose, dryrun)
-                if out.stderr:
-                    print(out.stderr)
-                    return out
-                # move the binary to kbench_cache directory.
-                cmd = ["mv", str(obj_path), str(binary_path)]
-                self._run(cmd, output_file, verbose, dryrun)
-
-            # at this point the previous build is in the cache, a binary of the same name (without the extension) is created:
-            binary_name = KBENCH_CACHE[defines_str]
-            cmd = [binary_name, "-o", str(output_file), *vars]
-
-        return self._run(cmd, output_file, verbose, dryrun)
+        if verbose:
+            logging.info(f"[output_file: {output_file}]")
+        return _run(cmd, dryrun)
         # if mode == KBENCH_MODE.BUILD:
         # TODO: refactor the following into a separate function call, or invoke alias directly.
         # mojo-clear-cache
@@ -253,30 +345,6 @@ class SpecInstance:
         #     ),
         #     shell=True,
         # )
-
-    def _run(self, cmd, output_file, verbose, dryrun):
-        if verbose:
-            logging.info(f"[output_file: {output_file}]")
-        try:
-            if dryrun:
-                if verbose:
-                    print(list2cmdline(cmd))
-            else:
-                # TODO: needs better error handling and error messages.
-                logging.debug(list2cmdline(cmd))
-                output = run_shell_command(
-                    cmd, check=False, capture_output=True
-                )
-                return ProcessOutput(
-                    output.stdout.decode("utf-8"), output.stderr.decode("utf-8")
-                )
-
-        except Exception as exc:
-            raise CLIException(
-                f"Unable to run the command {list2cmdline(cmd)}"
-            ) from exc
-
-        return ProcessOutput(None, None)
 
     def to_obj(self) -> dict[str, object]:
         obj = {}
@@ -588,8 +656,7 @@ def run(
     debug_level=None,
     optimization_level=None,
     dryrun=False,
-    cached=False,
-    KBENCH_CACHE={},
+    obj_cache: KbenchCache = None,
     verbose=False,
     tmp_path=None,
 ):
@@ -659,13 +726,13 @@ def run(
                     mode=mode,
                     dryrun=dryrun,
                     verbose=verbose,
-                    check_kbench_cache=cached,
-                    KBENCH_CACHE=KBENCH_CACHE,
+                    obj_cache=obj_cache,
                 )
                 elapsed_time_list[i] = (time() - t_start_item) * 1e3
                 spec_list[i] = s
                 output_path_list[i] = output_file
                 output_msg_list[i] = output_msg
+                print(LINE)
 
             except Exception as e:
                 if e == KeyboardInterrupt:
@@ -936,15 +1003,13 @@ def cli(
 
     check_gpu_clock()
 
+    obj_cache = KbenchCache()
     # check kbench_cache and load it if exists:
-    KBENCH_CACHE_PATH = "kbench_cache.pickle"
-    if clear_cache and os.path.exists(KBENCH_CACHE_PATH):
-        logging.debug(f"Removing kbench-cache: {KBENCH_CACHE_PATH}")
-        run_shell_command(["rm", KBENCH_CACHE_PATH])
+    if clear_cache:
+        obj_cache.clear()
 
-    KBENCH_CACHE = {}
-    if cached and os.path.exists(KBENCH_CACHE_PATH):
-        KBENCH_CACHE = load_pickle(KBENCH_CACHE_PATH)
+    if cached:
+        obj_cache.load()
 
     if files:
         run(
@@ -956,13 +1021,11 @@ def cli(
             debug_level=debug_level,
             optimization_level=optimization_level,
             dryrun=dryrun,
-            cached=cached,
-            KBENCH_CACHE=KBENCH_CACHE,
+            obj_cache=obj_cache,
             verbose=verbose,
         )
-
-    if cached:
-        store_pickle(KBENCH_CACHE_PATH, KBENCH_CACHE)
+        if obj_cache.is_active:
+            obj_cache.dump()
 
     return True
 
