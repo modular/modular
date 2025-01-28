@@ -13,7 +13,8 @@ from buffer.dimlist import Dim, DimList
 from builtin.simd import _pow
 from collections import Optional, OptionalReg
 from collections.vector import InlinedFixedVector
-from gpu.host import DeviceContext
+from gpu.all_reduce import MAX_GPUS, Signal, all_reduce
+from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host.info import is_gpu, is_cpu, is_valid_target
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -7867,6 +7868,118 @@ struct DistributedAllReduceSum:
         print(
             "Hello! You should not run this kernel: `DistributedAllReduceSum`"
         )
+
+
+@compiler.register("mo.distributed.allreduce.2gpu.sum")
+struct DistributedAllReduceSum2Devices:
+    alias num_devices = 2
+
+    @staticmethod
+    @always_inline
+    fn execute[
+        type: DType,
+        rank: Int,
+        target: StringLiteral = "cpu",
+    ](
+        outputs: StaticTuple[
+            ManagedTensorSlice[type, rank], size = Self.num_devices
+        ],
+        inputs: StaticTuple[
+            ManagedTensorSlice[type, rank], size = Self.num_devices
+        ],
+        dev_ctx0: DeviceContextPtr,
+        dev_ctx1: DeviceContextPtr,
+        ctx: MojoCallContextPtr,
+    ) raises:
+        dev_ctxs = List[DeviceContext](dev_ctx0[], dev_ctx1[])
+
+        var out_bufs = StaticTuple[NDBuffer[type, rank], outputs.size]()
+
+        @parameter
+        for i in range(outputs.size):
+            out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
+
+        var in_bufs = StaticTuple[NDBuffer[type, rank], inputs.size]()
+
+        @parameter
+        for i in range(inputs.size):
+            in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
+
+        var rank_sigs = StaticTuple[UnsafePointer[Signal], MAX_GPUS]()
+        var sig_bufs = List[DeviceBuffer[DType.uint8]](
+            capacity=Self.num_devices
+        )
+
+        @parameter
+        for i in range(Self.num_devices):
+            sig_bufs.append(
+                dev_ctxs[i].enqueue_create_buffer[DType.uint8](sizeof[Signal]())
+            )
+            dev_ctxs[i].enqueue_memset[DType.uint8](sig_bufs[i], 0)
+            rank_sigs[i] = sig_bufs[i].ptr.bitcast[Signal]()
+
+        all_reduce[ngpus = Self.num_devices](
+            dev_ctxs, in_bufs, out_bufs, rank_sigs
+        )
+        _ = sig_bufs^
+
+
+@compiler.register("mo.distributed.allreduce.4gpu.sum")
+struct DistributedAllReduceSum4Devices:
+    alias num_devices = 4
+
+    @staticmethod
+    @always_inline
+    fn execute[
+        type: DType,
+        rank: Int,
+        target: StringLiteral = "cpu",
+    ](
+        outputs: StaticTuple[
+            ManagedTensorSlice[type, rank], size = Self.num_devices
+        ],
+        inputs: StaticTuple[
+            ManagedTensorSlice[type, rank], size = Self.num_devices
+        ],
+        dev_ctx0: DeviceContextPtr,
+        dev_ctx1: DeviceContextPtr,
+        dev_ctx2: DeviceContextPtr,
+        dev_ctx3: DeviceContextPtr,
+        ctx: MojoCallContextPtr,
+    ) raises:
+        dev_ctxs = List[DeviceContext](
+            dev_ctx0[], dev_ctx1[], dev_ctx2[], dev_ctx3[]
+        )
+
+        var out_bufs = StaticTuple[NDBuffer[type, rank], outputs.size]()
+
+        @parameter
+        for i in range(outputs.size):
+            out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
+
+        var in_bufs = StaticTuple[NDBuffer[type, rank], inputs.size]()
+
+        @parameter
+        for i in range(inputs.size):
+            in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
+
+        var rank_sigs = StaticTuple[UnsafePointer[Signal], MAX_GPUS]()
+        var sig_bufs = List[DeviceBuffer[DType.uint8]](
+            capacity=Self.num_devices
+        )
+
+        @parameter
+        for i in range(Self.num_devices):
+            sig_bufs.append(
+                dev_ctxs[i].enqueue_create_buffer[DType.uint8](sizeof[Signal]())
+            )
+            dev_ctxs[i].enqueue_memset[DType.uint8](sig_bufs[i], 0)
+            rank_sigs[i] = sig_bufs[i].ptr.bitcast[Signal]()
+
+        all_reduce[ngpus = Self.num_devices](
+            dev_ctxs, in_bufs, out_bufs, rank_sigs
+        )
+        _ = sig_bufs^
 
 
 # Note: this is not a "real" index_tensor op that covers all cases, but rather
