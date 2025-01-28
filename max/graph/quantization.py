@@ -24,6 +24,7 @@ class QuantizationEncoding(enum.Enum):
     Q4_K = "Q4_K"
     Q5_K = "Q5_K"
     Q6_K = "Q6_K"
+    GPTQ = "GPTQ"
 
     @property
     def block_parameters(self) -> BlockParameters:
