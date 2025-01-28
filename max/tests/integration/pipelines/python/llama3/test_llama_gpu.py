@@ -77,7 +77,7 @@ async def test_llama_ragged(
     stored_logits: dict[str, list[TextContext]] = {"A": [], "B": [], "C": []}
 
     test_model = SupportedTestModels.get(model, encoding)
-    config = test_model.build_config(max_cache_batch_size=4)
+    config = test_model.build_config(max_cache_batch_size=4, max_length=512)
     tokenizer, pipeline = pipeline_registry.retrieve(config)
 
     def request(prompt: str, idx: int) -> TokenGeneratorRequest:

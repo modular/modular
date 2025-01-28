@@ -27,6 +27,7 @@ from max.pipelines import (
     SupportedEncoding,
     TextTokenizer,
     WeightsFormat,
+    upper_bounded_default,
 )
 from max.pipelines.context import InputContext
 from max.pipelines.kv_cache import (
@@ -80,6 +81,10 @@ class DummyPipelineModel(PipelineModel):
         """Runs the graph."""
         model_inputs = cast(DummyModelInputs, model_inputs)
         return ModelOutputs(next_token_logits=model_inputs.input1)
+
+    @classmethod
+    def calculate_max_seq_len(cls, pipeline_config: PipelineConfig) -> int:
+        raise NotImplementedError("calculate_max_seq_len is not implemented")
 
     def prepare_initial_token_inputs(
         self, context_batch: Sequence[InputContext]
@@ -184,7 +189,7 @@ class DummyPipelineModel(PipelineModel):
         return load_kv_manager(
             params=self.get_kv_params(self.pipeline_config),
             max_cache_batch_size=self.pipeline_config.max_cache_batch_size,
-            max_seq_len=self.pipeline_config.huggingface_config.max_seq_len,
+            max_seq_len=self.calculate_max_seq_len(self.pipeline_config),
             num_layers=num_layers,
             devices=self.pipeline_config.devices,
             available_cache_memory=available_cache_memory,
@@ -204,7 +209,7 @@ class DummyPipelineModel(PipelineModel):
         return estimate_kv_cache_size(
             params=cls.get_kv_params(pipeline_config),
             max_cache_batch_size=pipeline_config.max_cache_batch_size,
-            max_seq_len=pipeline_config.huggingface_config.max_seq_len,
+            max_seq_len=cls.calculate_max_seq_len(pipeline_config),
             num_layers=num_layers,
             available_cache_memory=available_cache_memory,
             devices=devices,
@@ -228,6 +233,42 @@ class DummyPipelineModel(PipelineModel):
             return session.load(graph)
 
 
+class DummyLlamaPipelineModel(DummyPipelineModel):
+    @classmethod
+    def calculate_max_seq_len(cls, pipeline_config: PipelineConfig) -> int:
+        try:
+            return upper_bounded_default(
+                upper_bound=pipeline_config.huggingface_config.max_position_embeddings,
+                default=pipeline_config.max_length,
+            )
+        except ValueError as e:
+            msg = (
+                "Unable to infer max_length for DummyModel, the provided "
+                f"max_length ({pipeline_config.max_length}) exceeds the "
+                f"model's max_position_embeddings "
+                f"({pipeline_config.huggingface_config.max_position_embeddings})."
+            )
+            raise ValueError(msg) from e
+
+
+class DummyReplitPipelineModel(DummyPipelineModel):
+    @classmethod
+    def calculate_max_seq_len(cls, pipeline_config: PipelineConfig) -> int:
+        try:
+            return upper_bounded_default(
+                upper_bound=pipeline_config.huggingface_config.max_seq_len,
+                default=pipeline_config.max_length,
+            )
+        except ValueError as e:
+            msg = (
+                "Unable to infer max_length for DummyModel, the provided "
+                f"max_length ({pipeline_config.max_length}) exceeds the "
+                f"model's max_seq_len "
+                f"({pipeline_config.huggingface_config.max_seq_len})."
+            )
+            raise ValueError(msg) from e
+
+
 DUMMY_ARCH = SupportedArchitecture(
     name="LlamaForCausalLM",
     example_repo_ids=["modularai/llama-3.1"],
@@ -237,7 +278,7 @@ DUMMY_ARCH = SupportedArchitecture(
         SupportedEncoding.bfloat16: [KVCacheStrategy.CONTINUOUS],
         SupportedEncoding.q6_k: [KVCacheStrategy.CONTINUOUS],
     },
-    pipeline_model=DummyPipelineModel,
+    pipeline_model=DummyLlamaPipelineModel,
     tokenizer=TextTokenizer,
     default_weights_format=WeightsFormat.gguf,
     weight_converters={WeightsFormat.safetensors: None},  # type: ignore
@@ -251,7 +292,7 @@ REPLIT_ARCH = SupportedArchitecture(
         SupportedEncoding.float32: [KVCacheStrategy.CONTINUOUS],
         SupportedEncoding.bfloat16: [KVCacheStrategy.CONTINUOUS],
     },
-    pipeline_model=DummyPipelineModel,
+    pipeline_model=DummyReplitPipelineModel,
     tokenizer=TextTokenizer,
     default_weights_format=WeightsFormat.gguf,
     weight_converters={WeightsFormat.pytorch: None},  # type: ignore
@@ -277,6 +318,8 @@ def test_registry__test_retrieve_with_unknown_architecture_max_engine():
         huggingface_repo_id="modularai/llama-3.1",
         # This forces it to fail if we dont have it.
         engine=PipelineEngine.MAX,
+        max_cache_batch_size=1,
+        max_length=512,
     )
 
     with pytest.raises(ValueError):
@@ -290,6 +333,8 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine():
     config = PipelineConfig(
         architecture="not_registered",
         huggingface_repo_id="modularai/llama-3.1",
+        max_cache_batch_size=1,
+        max_length=512,
     )
 
     config = PIPELINE_REGISTRY.validate_pipeline_config(config)
@@ -303,6 +348,8 @@ def test_registry__test_retrieve_factory_with_known_architecture():
     config = PipelineConfig(
         architecture="LlamaForCausalLM",
         huggingface_repo_id="modularai/llama-3.1",
+        max_cache_batch_size=1,
+        max_length=512,
     )
 
     _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
@@ -315,6 +362,8 @@ def test_registry__test_retrieve_factory_with_unsupported_huggingface_repo_id():
     config = PipelineConfig(
         huggingface_repo_id="modularai/replit-code-1.5",
         trust_remote_code=True,
+        max_cache_batch_size=1,
+        max_length=512,
     )
 
     config = PIPELINE_REGISTRY.validate_pipeline_config(
@@ -331,6 +380,8 @@ def test_registry__test_load_factory_with_known_architecture_and_hf_repo_id():
 
     config = PipelineConfig(
         huggingface_repo_id="modularai/llama-3.1",
+        max_cache_batch_size=1,
+        max_length=512,
     )
 
     _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
@@ -345,6 +396,8 @@ def test_registry__test_incompatible_quantization_encoding():
         huggingface_repo_id="modularai/llama-3.1",
         quantization_encoding=SupportedEncoding.q4_k,
         weight_path=[Path("llama-3.1-8b-instruct-bf16.gguf")],
+        max_cache_batch_size=1,
+        max_length=512,
     )
 
     with pytest.raises(ValueError):
@@ -355,6 +408,8 @@ def test_registry__test_incompatible_quantization_encoding():
         huggingface_repo_id="modularai/llama-3.1",
         quantization_encoding=SupportedEncoding.bfloat16,
         weight_path=[Path("llama-3.1-8b-instruct-bf16.gguf")],
+        max_cache_batch_size=1,
+        max_length=512,
     )
 
     PIPELINE_REGISTRY.validate_pipeline_config(config)
@@ -367,6 +422,8 @@ def test_registry__update_cache_strategy():
     config = PipelineConfig(
         huggingface_repo_id="modularai/llama-3.1",
         cache_strategy=KVCacheStrategy.NAIVE,
+        max_cache_batch_size=1,
+        max_length=512,
     )
 
     # Naive is not shown as supported in architecture, as
@@ -394,6 +451,8 @@ def test_registry__update_weight_paths():
         config = PipelineConfig(
             huggingface_repo_id="modularai/llama-3.1",
             quantization_encoding=SupportedEncoding.float32,
+            max_cache_batch_size=1,
+            max_length=512,
         )
 
         config = PIPELINE_REGISTRY.validate_pipeline_config(config)
@@ -405,6 +464,8 @@ def test_registry__update_weight_paths():
         config = PipelineConfig(
             huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
             quantization_encoding=SupportedEncoding.float32,
+            max_cache_batch_size=1,
+            max_length=512,
         )
 
         config = PIPELINE_REGISTRY.validate_pipeline_config(config)
@@ -430,6 +491,8 @@ def test_registry__update_weight_paths():
         config = PipelineConfig(
             huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
             quantization_encoding=SupportedEncoding.bfloat16,
+            max_cache_batch_size=1,
+            max_length=512,
         )
 
         # This should pass, since the float16 weights will be used for bfloat16.
@@ -442,6 +505,8 @@ def test_registry__update_weight_paths():
             huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
             quantization_encoding=SupportedEncoding.q4_k,
             engine=PipelineEngine.MAX,
+            max_cache_batch_size=1,
+            max_length=512,
         )
 
         with pytest.raises(ValueError):
@@ -452,6 +517,8 @@ def test_registry__update_weight_paths():
         config = PipelineConfig(
             huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
             quantization_encoding=SupportedEncoding.q4_k,
+            max_cache_batch_size=1,
+            max_length=512,
         )
 
         config = PIPELINE_REGISTRY.validate_pipeline_config(config)
@@ -462,6 +529,8 @@ def test_registry__update_weight_paths():
             huggingface_repo_id="replit/replit-code-v1_5-3b",
             quantization_encoding=SupportedEncoding.bfloat16,
             trust_remote_code=True,
+            max_cache_batch_size=1,
+            max_length=512,
         )
 
         config = PIPELINE_REGISTRY.validate_pipeline_config(config)
@@ -471,6 +540,8 @@ def test_registry__update_weight_paths():
         # Test a partially complete huggingface_repo
         config = PipelineConfig(
             huggingface_repo_id="neubla/tiny-random-LlamaForCausalLM",
+            max_cache_batch_size=1,
+            max_length=512,
         )
         config = PIPELINE_REGISTRY.validate_pipeline_config(config)
         assert config.quantization_encoding == SupportedEncoding.float32
@@ -485,6 +556,8 @@ def test_registry__update_weight_paths():
             weight_path=[
                 Path("modularai/replit-code-1.5/replit-code-v1_5-3b-f32.gguf")
             ],
+            max_cache_batch_size=1,
+            max_length=512,
         )
 
         config = PIPELINE_REGISTRY.validate_pipeline_config(config)

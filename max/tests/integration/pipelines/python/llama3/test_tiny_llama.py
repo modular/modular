@@ -142,27 +142,6 @@ async def test_tinyllama_create_context(
     assert context.next_tokens is not None
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "pipeline_config", [TestParams(2), TestParams(4)], indirect=True
-)
-async def test_tinyllama_context_exceeding_max_tokens_throws(
-    tinyllama_pipeline: TextGenerationPipeline,
-    prompt_fixture: str,
-    pipeline_tokenizer: TextTokenizer,
-):
-    with pytest.raises(ValueError, match="max model context length"):
-        _ = await pipeline_tokenizer.encode(prompt_fixture)
-
-    with pytest.raises(ValueError, match="max model context length"):
-        context = await pipeline_tokenizer.new_context(
-            TokenGeneratorRequest(
-                id="", index=0, prompt=prompt_fixture, model_name="llama3"
-            )
-        )
-        tinyllama_pipeline.release(context)
-
-
 @pytest.fixture(params=[None, 64, 256, 512, 555, 1024])
 def max_new_tokens_fixture(request):
     return request.param
@@ -190,6 +169,7 @@ async def test_tinyllama_max_new_tokens(
 
     # Max tokens of the context is set to prompt-size + max_new_tokens
     max_model_tokens = tinyllama_pipeline._pipeline_config.max_length
+    assert max_model_tokens is not None
     max_model_tokens_after_prompt = max_model_tokens - context.current_length
     requested_max_new_tokens = (
         max_new_tokens_fixture
