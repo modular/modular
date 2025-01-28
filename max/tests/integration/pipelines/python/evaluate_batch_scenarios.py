@@ -472,7 +472,7 @@ def main(
         "Loaded model %s, %s on %s",
         config.huggingface_repo_id,
         config.quantization_encoding,
-        config.device,
+        config.devices[0],
     )
     logger.info(
         "- Using weights %s",
