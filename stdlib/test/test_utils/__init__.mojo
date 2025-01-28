@@ -20,4 +20,7 @@ from .types import (
     MoveOnly,
     ObservableDel,
     ValueDestructorRecorder,
+    DtorCounter,
+    g_dtor_count,
+    CopyCountedStruct,
 )

@@ -308,3 +308,41 @@ trait BoolableKeyElement(Boolable, KeyElement):
     """
 
     pass
+
+
+trait EqualityComparableWritableCollectionElement(
+    WritableCollectionElement, EqualityComparable
+):
+    """A trait that combines the CollectionElement, Writable and
+    EqualityComparable traits.
+
+    This trait requires types to implement CollectionElement, Writable and
+    EqualityComparable interfaces, allowing them to be used in collections,
+    compared, and written to output.
+    """
+
+    pass
+
+
+trait WritableCollectionElementNew(CollectionElementNew, Writable):
+    """A trait that combines the CollectionElement and Writable traits.
+
+    This trait requires types to implement both CollectionElement and Writable
+    interfaces, allowing them to be used in collections and written to output.
+    """
+
+    pass
+
+
+trait EqualityComparableWritableCollectionElementNew(
+    WritableCollectionElementNew, EqualityComparable
+):
+    """A trait that combines the CollectionElement, Writable and
+    EqualityComparable traits.
+
+    This trait requires types to implement CollectionElement, Writable and
+    EqualityComparable interfaces, allowing them to be used in collections,
+    compared, and written to output.
+    """
+
+    pass

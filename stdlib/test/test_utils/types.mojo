@@ -88,7 +88,7 @@ struct ImplicitCopyOnly(Copyable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct CopyCounter(CollectionElement, ExplicitlyCopyable):
+struct CopyCounter(CollectionElement, ExplicitlyCopyable, Writable):
     """Counts the number of copies performed on a value."""
 
     var copy_count: Int
@@ -107,6 +107,11 @@ struct CopyCounter(CollectionElement, ExplicitlyCopyable):
 
     fn copy(self) -> Self:
         return self
+
+    fn write_to[W: Writer](self, mut writer: W):
+        writer.write("CopyCounter(")
+        writer.write(String(self.copy_count))
+        writer.write(")")
 
 
 # ===----------------------------------------------------------------------=== #
@@ -148,12 +153,12 @@ struct MoveCounter[T: CollectionElementNew](
     # TODO: This type should not be Copyable, but has to be to satisfy
     #       CollectionElement at the moment.
     fn __copyinit__(out self, existing: Self):
-        # print("ERROR: _MoveCounter copy constructor called unexpectedly!")
         self.value = existing.value.copy()
         self.move_count = existing.move_count
 
-    fn copy(self) -> Self:
-        return self
+    fn copy(self, out existing: Self):
+        existing = Self(self.value.copy())
+        existing.move_count = self.move_count
 
 
 # ===----------------------------------------------------------------------=== #
@@ -191,3 +196,56 @@ struct ObservableDel(CollectionElement):
 
     fn __del__(owned self):
         self.target.init_pointee_move(True)
+
+
+# ===----------------------------------------------------------------------=== #
+# DtorCounter
+# ===----------------------------------------------------------------------=== #
+
+var g_dtor_count: Int = 0
+
+
+struct DtorCounter(CollectionElement, Writable):
+    # NOTE: payload is required because LinkedList does not support zero sized structs.
+    var payload: Int
+
+    fn __init__(out self):
+        self.payload = 0
+
+    fn __init__(out self, *, other: Self):
+        self.payload = other.payload
+
+    fn __copyinit__(out self, existing: Self, /):
+        self.payload = existing.payload
+
+    fn __moveinit__(out self, owned existing: Self, /):
+        self.payload = existing.payload
+        existing.payload = 0
+
+    fn __del__(owned self):
+        g_dtor_count += 1
+
+    fn write_to[W: Writer](self, mut writer: W):
+        writer.write("DtorCounter(")
+        writer.write(String(g_dtor_count))
+        writer.write(")")
+
+
+# ===----------------------------------------------------------------------=== #
+# CopyCountedStruct
+# ===----------------------------------------------------------------------=== #
+
+
+@value
+struct CopyCountedStruct(CollectionElement):
+    var counter: CopyCounter
+    var value: String
+
+    fn __init__(out self, *, other: Self):
+        self.counter = other.counter.copy()
+        self.value = other.value.copy()
+
+    @implicit
+    fn __init__(out self, value: String):
+        self.counter = CopyCounter()
+        self.value = value

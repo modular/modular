@@ -16,7 +16,13 @@ from collections import List
 from sys.info import sizeof
 
 from memory import UnsafePointer, Span
-from test_utils import CopyCounter, MoveCounter
+from test_utils import (
+    CopyCounter,
+    MoveCounter,
+    DtorCounter,
+    g_dtor_count,
+    CopyCountedStruct,
+)
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
@@ -548,21 +554,6 @@ def test_list_explicit_copy():
         assert_equal(l2[i], l2_copy[i])
 
 
-@value
-struct CopyCountedStruct(CollectionElement):
-    var counter: CopyCounter
-    var value: String
-
-    fn __init__(out self, *, other: Self):
-        self.counter = other.counter.copy()
-        self.value = other.value.copy()
-
-    @implicit
-    fn __init__(out self, value: String):
-        self.counter = CopyCounter()
-        self.value = value
-
-
 def test_no_extra_copies_with_sugared_set_by_field():
     var list = List[List[CopyCountedStruct]](capacity=1)
     var child_list = List[CopyCountedStruct](capacity=2)
@@ -872,31 +863,6 @@ def test_indexing():
 # ===-------------------------------------------------------------------===#
 # List dtor tests
 # ===-------------------------------------------------------------------===#
-var g_dtor_count: Int = 0
-
-
-struct DtorCounter(CollectionElement):
-    # NOTE: payload is required because List does not support zero sized structs.
-    var payload: Int
-
-    fn __init__(out self):
-        self.payload = 0
-
-    fn __init__(out self, *, other: Self):
-        self.payload = other.payload
-
-    fn __copyinit__(out self, existing: Self, /):
-        self.payload = existing.payload
-
-    fn copy(self) -> Self:
-        return self
-
-    fn __moveinit__(out self, owned existing: Self, /):
-        self.payload = existing.payload
-        existing.payload = 0
-
-    fn __del__(owned self):
-        g_dtor_count += 1
 
 
 def inner_test_list_dtor():
