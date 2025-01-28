@@ -753,6 +753,8 @@ fn scatter_nd_generator[
             type: DType, width: Int
         ] (SIMD[type, width], SIMD[type, width]) capturing -> SIMD[type, width]
     ] = None,
+    *,
+    trace_description: StringLiteral = "scatter_nd",
 ](
     data: NDBuffer[output_type, data_rank],
     indices: NDBuffer[indices_type, indices_rank],
@@ -775,6 +777,7 @@ fn scatter_nd_generator[
         target: Target cpu or cuda.
         reduce_fn: Reduction function to apply: none (default), add, mul, max,
                    min.
+        trace_description: A description of the function, used for profiling and tracing.
 
     Args:
         data: Tensor of rank data_rank >= 1.
@@ -785,149 +788,162 @@ fn scatter_nd_generator[
         output: Tensor of rank data_rank, shaped the same as data tensor.
         context: Pointer to DeviceContext.
     """
-    if data.get_shape() != output.get_shape():
-        raise Error("Input and output shapes in scatter_nd must be the same.")
-
-    if (
-        len(updates.get_shape())
-        != data_rank + indices_rank - indices.get_shape()[indices_rank - 1] - 1
-    ):
-        raise Error(
-            "updates rank must be: data_rank + indices_rank -"
-            " indices_shape[-1] - 1"
-        )
-
-    var output_flat = output.flatten()
-    var data_flat = data.flatten()
-    var updates_flat = updates.flatten()
-
-    var data_shape = data.get_shape()
-    var indices_shape = indices.get_shape()
-    var last_shape_of_indices = indices_shape[indices_rank - 1]
-
-    # Depending on r_minus_m = data_rank - last_shape_of_indices,
-    # we will be copying (gather):
-    #   element (r_minus_m = 0),
-    #   row (r_minus_m = 1),
-    #   sheet (r_minus_m = 2),
-    #   cuboid (r_minus_m = 3), etc.
-    var r_minus_m = data_rank - last_shape_of_indices
-
-    @parameter
-    if is_gpu[target]():
-        # TODO: Does it matter if output.data or output_flat.data (and data)?
-        var ctx = context.get_device_context()
-        # TODO: Owning = True or False?
-        var outp = DeviceBuffer(
-            ctx,
-            output.data,
-            data.num_elements(),
-            owning=False,
-        )
-        var inp = DeviceBuffer(
-            ctx, data.data, data.num_elements(), owning=False
-        )
-        ctx.enqueue_copy_device_to_device(
-            outp,
-            inp,
-        )
-
-    @parameter
-    if is_cpu[target]():
-        memcpy(output_flat.data, data_flat.data, len(output_flat))
-
-    @__copy_capture(
-        r_minus_m, data_shape, last_shape_of_indices, output_flat, updates_flat
-    )
-    @parameter
-    fn update_func[
-        simd_width: Int, _rank: Int
-    ](_indices_coords: IndexList[_rank]):
-        # Calculate how many elements to copy (this is from the innermost
-        # dimensions, and is continuous memory locations).
-        var count_copy = 1
-        for i in range(r_minus_m):
-            count_copy = count_copy * data_shape[data_rank - 1 - i]
-        var indices_coords = rebind[IndexList[_rank]](_indices_coords)
-
-        # Stores the full index on output, where to copy updates to.
-        # Zeroing here to avoid doing it selectively within the nested loop below.
-        var output_index_tensor = IndexList[data_rank](0)
-
-        # Stores the full index on updates, where to copy from.
-        # Zeroing here to avoid doing it selectively within the nested loop below.
-        var updates_index_tensor = IndexList[updates_rank](0)
-
-        # Construct the full index on updates tensor, i.e., where to copy from.
-        for dim in range(_rank):
-            updates_index_tensor[dim] = indices_coords[dim]
-
-        # Construct the output_index_tensor whose elements contain the indices
-        # for each dimension of the output, i.e., where to copy updates to.
-        # As part of that we need to construct the indices_index, which is the
-        # index to the indices tensor, where we get the elements for the
-        # output_index_tensor from.
-        var indices_index = IndexList[indices_rank]()
-        for dim in range(last_shape_of_indices):
-            # Size of current dimension on data.
-            # Used to compare to index on this dimension (idx_on_axis).
-            var input_ax_dim = data_shape[dim]
-
-            for i in range(_rank):
-                indices_index[i] = indices_coords[i]
-            indices_index[indices_rank - 1] = dim
-
-            var idx_on_axis = indices[indices_index]
-            var pos_idx_on_axis = Int(
-                normalize_neg_index(idx_on_axis, input_ax_dim)
-            )
-            output_index_tensor[dim] = pos_idx_on_axis
-
-        # Calculate the updates_offset from where to copy the updates.
-        var updates_offset = 0
-
-        for i in range(updates_rank):
-            updates_offset = (
-                updates_offset + updates.stride(i) * updates_index_tensor[i]
+    with Trace[TraceLevel.OP, target=target](trace_description):
+        if data.get_shape() != output.get_shape():
+            raise Error(
+                "Input and output shapes in scatter_nd must be the same."
             )
 
-        # Calculate the output_offset to where to copy the updates.
-        var output_offset = 0
-
-        for i in range(data_rank):
-            output_offset = (
-                output_offset + output.stride(i) * output_index_tensor[i]
+        if (
+            len(updates.get_shape())
+            != data_rank
+            + indices_rank
+            - indices.get_shape()[indices_rank - 1]
+            - 1
+        ):
+            raise Error(
+                "updates rank must be: data_rank + indices_rank -"
+                " indices_shape[-1] - 1"
             )
 
-        # Perform the actual copy of element/slice/sheet/cuboid/etc.
-        # Also handling any reduction operation reduce_fn.
+        var output_flat = output.flatten()
+        var data_flat = data.flatten()
+        var updates_flat = updates.flatten()
+
+        var data_shape = data.get_shape()
+        var indices_shape = indices.get_shape()
+        var last_shape_of_indices = indices_shape[indices_rank - 1]
+
+        # Depending on r_minus_m = data_rank - last_shape_of_indices,
+        # we will be copying (gather):
+        #   element (r_minus_m = 0),
+        #   row (r_minus_m = 1),
+        #   sheet (r_minus_m = 2),
+        #   cuboid (r_minus_m = 3), etc.
+        var r_minus_m = data_rank - last_shape_of_indices
+
         @parameter
-        if reduce_fn:
-            alias reduction_fn = reduce_fn.value()
+        if is_gpu[target]():
+            # TODO: Does it matter if output.data or output_flat.data (and data)?
+            var ctx = context.get_device_context()
+            # TODO: Owning = True or False?
+            var outp = DeviceBuffer(
+                ctx,
+                output.data,
+                data.num_elements(),
+                owning=False,
+            )
+            var inp = DeviceBuffer(
+                ctx, data.data, data.num_elements(), owning=False
+            )
+            ctx.enqueue_copy_device_to_device(
+                outp,
+                inp,
+            )
 
-            for i in range(count_copy):
-                output_flat[output_offset + i] = reduction_fn[output_type, 1](
-                    output_flat[output_offset + i],
-                    updates_flat[updates_offset + i],
+        @parameter
+        if is_cpu[target]():
+            memcpy(output_flat.data, data_flat.data, len(output_flat))
+
+        @__copy_capture(
+            r_minus_m,
+            data_shape,
+            last_shape_of_indices,
+            output_flat,
+            updates_flat,
+        )
+        @parameter
+        fn update_func[
+            simd_width: Int, _rank: Int
+        ](_indices_coords: IndexList[_rank]):
+            # Calculate how many elements to copy (this is from the innermost
+            # dimensions, and is continuous memory locations).
+            var count_copy = 1
+            for i in range(r_minus_m):
+                count_copy = count_copy * data_shape[data_rank - 1 - i]
+            var indices_coords = rebind[IndexList[_rank]](_indices_coords)
+
+            # Stores the full index on output, where to copy updates to.
+            # Zeroing here to avoid doing it selectively within the nested loop below.
+            var output_index_tensor = IndexList[data_rank](0)
+
+            # Stores the full index on updates, where to copy from.
+            # Zeroing here to avoid doing it selectively within the nested loop below.
+            var updates_index_tensor = IndexList[updates_rank](0)
+
+            # Construct the full index on updates tensor, i.e., where to copy from.
+            for dim in range(_rank):
+                updates_index_tensor[dim] = indices_coords[dim]
+
+            # Construct the output_index_tensor whose elements contain the indices
+            # for each dimension of the output, i.e., where to copy updates to.
+            # As part of that we need to construct the indices_index, which is the
+            # index to the indices tensor, where we get the elements for the
+            # output_index_tensor from.
+            var indices_index = IndexList[indices_rank]()
+            for dim in range(last_shape_of_indices):
+                # Size of current dimension on data.
+                # Used to compare to index on this dimension (idx_on_axis).
+                var input_ax_dim = data_shape[dim]
+
+                for i in range(_rank):
+                    indices_index[i] = indices_coords[i]
+                indices_index[indices_rank - 1] = dim
+
+                var idx_on_axis = indices[indices_index]
+                var pos_idx_on_axis = Int(
+                    normalize_neg_index(idx_on_axis, input_ax_dim)
+                )
+                output_index_tensor[dim] = pos_idx_on_axis
+
+            # Calculate the updates_offset from where to copy the updates.
+            var updates_offset = 0
+
+            for i in range(updates_rank):
+                updates_offset = (
+                    updates_offset + updates.stride(i) * updates_index_tensor[i]
                 )
 
-        else:
-            for i in range(count_copy):
-                output_flat[output_offset + i] = updates_flat[
-                    updates_offset + i
-                ]
+            # Calculate the output_offset to where to copy the updates.
+            var output_offset = 0
 
-    # TODO: SEE: simd_width > 1
-    var iter_shape = IndexList[indices_rank - 1]()
-    for i in range(len(indices.get_shape()) - 1):
-        iter_shape[i] = indices.get_shape()[i]
+            for i in range(data_rank):
+                output_offset = (
+                    output_offset + output.stride(i) * output_index_tensor[i]
+                )
 
-    elementwise[
-        update_func,
-        simd_width=1,
-        use_blocking_impl=single_thread_blocking_override,
-        target=target,
-    ](iter_shape, context)
+            # Perform the actual copy of element/slice/sheet/cuboid/etc.
+            # Also handling any reduction operation reduce_fn.
+            @parameter
+            if reduce_fn:
+                alias reduction_fn = reduce_fn.value()
+
+                for i in range(count_copy):
+                    output_flat[output_offset + i] = reduction_fn[
+                        output_type, 1
+                    ](
+                        output_flat[output_offset + i],
+                        updates_flat[updates_offset + i],
+                    )
+
+            else:
+                for i in range(count_copy):
+                    output_flat[output_offset + i] = updates_flat[
+                        updates_offset + i
+                    ]
+
+        # TODO: SEE: simd_width > 1
+        var iter_shape = IndexList[indices_rank - 1]()
+        for i in range(len(indices.get_shape()) - 1):
+            iter_shape[i] = indices.get_shape()[i]
+
+        elementwise[
+            update_func,
+            simd_width=1,
+            use_blocking_impl=single_thread_blocking_override,
+            target=target,
+            trace_description = "elementwise_impl_" + trace_description,
+        ](iter_shape, context)
 
 
 @always_inline
@@ -947,7 +963,6 @@ fn scatter_nd[
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
     """Scatter_nd operation without any reduction."""
-
     scatter_nd_generator[
         output_type,
         indices_type,
