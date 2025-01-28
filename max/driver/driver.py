@@ -117,9 +117,9 @@ class Device:
         return self._device.id
 
     @property
-    def is_compatible_with_max(self) -> bool:
+    def is_compatible(self) -> bool:
         """Returns whether this device is compatible with MAX."""
-        return self._device.is_compatible_with_max
+        return self._device.is_compatible
 
     @classmethod
     def cpu(cls, id: int = -1) -> Device:
