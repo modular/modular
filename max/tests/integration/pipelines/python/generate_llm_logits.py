@@ -463,6 +463,7 @@ class MistralPipelineOracle(PipelineOracle):
             device_specs=device_specs,
             huggingface_repo_id="mistralai/Mistral-Nemo-Instruct-2407",
             quantization_encoding=pipelines.SupportedEncoding[encoding],
+            max_length=512,
             weight_path=[
                 pipelines.HuggingFaceFile(
                     "mistralai/Mistral-Nemo-Instruct-2407", f
