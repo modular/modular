@@ -27,6 +27,9 @@ modular_py_test(
         "MODULAR_PATH": ".",
         "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
     },
+    env_inherit = [
+        "HF_TOKEN",
+    ],
     mojo_deps = [
         "//SDK/integration-test:test_user_op",
         "//PyTorch/test/utils/custom_ops",

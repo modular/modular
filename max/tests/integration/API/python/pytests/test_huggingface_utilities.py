@@ -117,6 +117,12 @@ def test_huggingface_repo__get_files_for_encoding():
         Path("model-00017-of-00017.safetensors"),
     ]
 
+    # Test a Safetensors repo, with both shared files and consolidated safetensors
+    hf_repo = HuggingFaceRepo(repo_id="mistralai/Mistral-Nemo-Instruct-2407")
+    files = hf_repo.files_for_encoding(SupportedEncoding.bfloat16)
+    assert len(files[WeightsFormat.safetensors]) == 5
+    assert Path("consolidated.safetensors") not in files
+
     # Test a Safetensors repo, with the wrong encoding requested.
     hf_repo = HuggingFaceRepo(repo_id="Qwen/QwQ-32B-Preview")
     files = hf_repo.files_for_encoding(SupportedEncoding.float32)
