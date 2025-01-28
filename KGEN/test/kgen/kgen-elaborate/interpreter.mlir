@@ -676,7 +676,7 @@ kgen.generator export @call_result_slot() {
 
 // COM: Load/Store IndexTypes
 
-module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arch = "sm_80", features = "+ptx81", data_layout = "e-p32:64:64-i64:64-i128:128-v16:16-v32:32-n16:32:64", simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{OPTIMIZATION_LEVEL = 0 : index}>} {
+module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arch = "sm_80", features = "+ptx81", data_layout = "e-p32:64:64-i64:64-i128:128-v16:16-v32:32-n16:32:64", simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{__OPTIMIZATION_LEVEL = 0 : index}>} {
   kgen.generator @writeIndexType(%arg0: index) -> !kgen.pointer<index> {
     %index1 = kgen.param.constant = <1>
     %2 = index.sub %arg0, %index1
