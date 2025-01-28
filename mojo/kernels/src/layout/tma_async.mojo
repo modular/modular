@@ -100,7 +100,7 @@ struct TMABarrier(CollectionElement):
         mbarrier_arrive_expect_tx_shared(self.mbar, bytes)
 
     @always_inline
-    fn wait(self, phase: Int32 = 0):
+    fn wait(self, phase: UInt32 = 0):
         # Based on cutlass
         # https://github.com/NVIDIA/cutlass/blob/b78588d1630aa6643bf021613717bafb705df4ef/include/cute/arch/copy_sm90_desc.hpp#L92-L110
         alias asm = """{
