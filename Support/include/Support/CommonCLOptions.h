@@ -172,6 +172,10 @@ public:
 
   bool saveTemps{false};
 
+  // Whether to use local scope when printing MLIR dumps.
+  // Local scope prevents accesses and printing to global module resources.
+  bool printTempsLocalScope{false};
+
   std::string tempsDir{""};
 
   /// Determine an intermediate file with extension `ext` and open it.
