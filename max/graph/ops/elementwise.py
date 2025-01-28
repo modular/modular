@@ -762,6 +762,32 @@ def silu(x: TensorValue):
     return mul(x, sigmoid(x))
 
 
+def gelu_quick(x: TensorValue):
+    """
+    Computes the elementwise quick gelu of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise quick gelu of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    ``quick gelu`` is defined as ``gelu_quick(x) = sigmoid(1.702 * x) * x``.
+
+    See github.com/hendrycks/GELUs/blob/master/README.md.
+
+    Args:
+        value: The symbolic tensor to use as the input to the quick gelu
+            computation.
+
+    Returns:
+        A new symbolic tensor value representing the output of the absolute
+            value computation.
+
+    Raises:
+        Error: If the symbol doesn't represent a tensor value.
+    """
+    QUICK_GELU_SCALING_FACTOR = 1.702
+    return x * sigmoid(QUICK_GELU_SCALING_FACTOR * x)
+
+
 softmax = _elementwise_unary(rmo.mo_softmax)
 """
 Computes the elementwise softmax of a symbolic tensor.
