@@ -4078,7 +4078,7 @@ struct BottomK:
     fn execute[
         type: DType,
         rank: Int,
-        target: StringLiteral = "cpu",
+        target: StringLiteral,
     ](
         values: ManagedTensorSlice[type=type, rank=rank],
         indices: ManagedTensorSlice[type = DType.int64, rank=rank],
@@ -4132,7 +4132,7 @@ struct TopK:
     fn execute[
         type: DType,
         rank: Int,
-        target: StringLiteral = "cpu",
+        target: StringLiteral,
     ](
         values: ManagedTensorSlice[type=type, rank=rank],
         indices: ManagedTensorSlice[type = DType.int64, rank=rank],
@@ -4258,7 +4258,7 @@ struct Matmul:
         packed_b: Bool,
         lambdas_have_fusion: Bool,
         synchronous: Bool,
-        target: StringLiteral = "cpu",
+        target: StringLiteral,
     ](
         c: ManagedTensorSlice[rank=2],
         a: ManagedTensorSlice[rank=2],
@@ -4317,7 +4317,7 @@ struct BatchMatmul:
         rank: Int,
         transpose_b: Bool,
         synchronous: Bool,
-        target: StringLiteral = "cpu",
+        target: StringLiteral,
     ](
         c: ManagedTensorSlice[rank=rank],
         a: ManagedTensorSlice[rank=rank],
@@ -5209,7 +5209,7 @@ struct Conv:
         static_strides: DimList,
         static_dilations: DimList,
         static_padding: DimList,
-        target: StringLiteral = "cpu",
+        target: StringLiteral,
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[rank = output.rank],
@@ -6468,7 +6468,7 @@ struct Struct_fused_qkv_matmul_padded_continuous_batching:
 @always_inline
 fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
     type: DType,
-    target: StringLiteral = "cpu",
+    target: StringLiteral,
 ](
     hidden_state: ManagedTensorSlice[type, 2],
     input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
@@ -7032,7 +7032,7 @@ struct Struct_mha_ragged_continuous_batching_causal_mask_alibi_pos:
 @always_inline
 fn generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
     type: DType,
-    target: StringLiteral = "cpu",
+    target: StringLiteral,
 ](
     q: ManagedTensorSlice[type, 3],
     input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
@@ -7790,7 +7790,7 @@ struct Struct_topk_fused_sampling:
         type: DType,
         rank: Int,
         out_idx_type: DType,
-        target: StringLiteral = "cpu",
+        target: StringLiteral,
     ](
         out_idxs: ManagedTensorSlice[out_idx_type, rank],
         K: Scalar,
@@ -7825,7 +7825,7 @@ struct Struct_swishGLU:
     @staticmethod
     @always_inline
     fn execute[
-        target: StringLiteral = "cpu",
+        target: StringLiteral,
     ](
         c: ManagedTensorSlice[rank=2],
         a: ManagedTensorSlice[rank=2],
@@ -7857,7 +7857,7 @@ struct DistributedAllReduceSum:
     fn execute[
         type: DType,
         rank: Int,
-        target: StringLiteral = "cpu",
+        target: StringLiteral,
     ](
         outputs: StaticTuple[ManagedTensorSlice[type, rank], *_],
         inputs: StaticTuple[ManagedTensorSlice[type, rank], *_],
@@ -7879,7 +7879,7 @@ struct DistributedAllReduceSum2Devices:
     fn execute[
         type: DType,
         rank: Int,
-        target: StringLiteral = "cpu",
+        target: StringLiteral,
     ](
         outputs: StaticTuple[
             ManagedTensorSlice[type, rank], size = Self.num_devices
@@ -7933,7 +7933,7 @@ struct DistributedAllReduceSum4Devices:
     fn execute[
         type: DType,
         rank: Int,
-        target: StringLiteral = "cpu",
+        target: StringLiteral,
     ](
         outputs: StaticTuple[
             ManagedTensorSlice[type, rank], size = Self.num_devices
@@ -7994,7 +7994,7 @@ struct IndexTensor:
         indices_rank: Int,
         output_rank: Int,
         batch_dims: Int,
-        target: StringLiteral = "cpu",
+        target: StringLiteral,
     ](
         output: ManagedTensorSlice[type, output_rank],
         data: ManagedTensorSlice[type, data_rank],
