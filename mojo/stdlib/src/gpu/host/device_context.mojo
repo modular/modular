@@ -1424,10 +1424,10 @@ struct DeviceContext:
 
     @always_inline
     fn is_compatible(self) raises:
-        # const char * AsyncRT_DeviceContext_isCompatibleWithMAX(const DeviceContext *ctx)
+        # const char * AsyncRT_DeviceContext_isCompatible(const DeviceContext *ctx)
         _checked(
             external_call[
-                "AsyncRT_DeviceContext_isCompatibleWithMAX",
+                "AsyncRT_DeviceContext_isCompatible",
                 _CharPtr,
                 _DeviceContextPtr,
             ](
