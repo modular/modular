@@ -1474,32 +1474,64 @@ lowerLLVMModuleToObject(llvm::Module &inputModule, Location loc,
 
         std::move(output).emplace(buf.copy());
       } else {
-
         auto codeBuf = WriteableBuffer::get();
-        if (failed(runLlcPasses(
-                module, options, tm, *codeBuf, machineModuleInfo, mcContext,
-                llvm::CodeGenFileType::ObjectFile,
-                /*stopBeforeAsmPrint=*/false, 0, nullptr,
-                runtime.context->get<M::Telemetry::TelemetryContext>()))) {
-          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-              "llc failed to codegen LLVM IR to object code", loc));
+        if (isNVPTXBackend(options)) {
+          // Compile to PTX first.
+          if (failed(runLlcPasses(
+                  module, options, tm, *codeBuf, machineModuleInfo, mcContext,
+                  llvm::CodeGenFileType::AssemblyFile,
+                  /*stopBeforeAsmPrint=*/false, 0, nullptr,
+                  runtime.context->get<M::Telemetry::TelemetryContext>()))) {
+            return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+                "llc failed to codegen LLVM IR to object code", loc));
+          }
+
+          ErrorOr<AsyncRT::DeviceContextRef> errCtx =
+              AsyncRT::DeviceContext::create(AsyncRT::Device::cudaAPI);
+          if (errCtx.isError()) {
+            return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+                "failed to create cuda device context to compile to cubin",
+                loc));
+          }
+
+          AsyncRT::DeviceContextRef ctx = *errCtx;
+          StringRef ptx(codeBuf->getBufferStart(), codeBuf->getBufferSize());
+
+          // Compile to CUBIN.
+          ErrorOr<BufferRef> cubinOr = ctx->compileFunction(
+              ptx, options.getDebugLevelString(), options.optimizationLevel);
+
+          if (cubinOr.isError()) {
+            return std::move(output).setToError(
+                AsyncRT::getMLIRDiagnostic(cubinOr.takeError(), loc));
+          }
+          (*buf) << (*cubinOr)->getBuffer();
+        } else {
+          // This is mostly for AMD GPU codegen, but works for CPU as well
+          // (mostly for testing).
+          if (failed(runLlcPasses(
+                  module, options, tm, *codeBuf, machineModuleInfo, mcContext,
+                  llvm::CodeGenFileType::ObjectFile,
+                  /*stopBeforeAsmPrint=*/false, 0, nullptr,
+                  runtime.context->get<M::Telemetry::TelemetryContext>()))) {
+            return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+                "llc failed to codegen LLVM IR to object code", loc));
+          }
+          StringRef name = "mojo-sharedobj";
+          if (auto moduleLoc = loc->findInstanceOf<FileLineColLoc>())
+            name = llvm::sys::path::filename(moduleLoc.getFilename());
+          std::string moduleName = (name + Twine(moduleIdx)).str();
+
+          // Emitting as a shared object
+          ErrorOr<BufferRef> bufOr = createSharedObject(
+              BufferRef::create(codeBuf->Buffer::getBuffer()), options,
+              moduleName);
+          if (bufOr.isError()) {
+            return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+                "failed to create shared object file", loc));
+          }
+          (*buf) << (*bufOr)->getBuffer();
         }
-
-        StringRef name = "mojo-sharedobj";
-        if (auto moduleLoc = loc->findInstanceOf<FileLineColLoc>())
-          name = llvm::sys::path::filename(moduleLoc.getFilename());
-        std::string moduleName = (name + Twine(moduleIdx)).str();
-
-        // Emitting as a shared object
-        ErrorOr<BufferRef> bufOr =
-            createSharedObject(BufferRef::create(codeBuf->Buffer::getBuffer()),
-                               options, moduleName);
-        if (bufOr.isError()) {
-          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-              "failed to create shared object file", loc));
-        }
-
-        (*buf) << (*bufOr)->getBuffer();
 
         std::move(output).emplace(buf.copy());
       }

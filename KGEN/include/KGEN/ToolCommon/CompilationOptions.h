@@ -83,6 +83,9 @@ public:
   ErrorOr<EnvAttr> parseDefinesWithDefaults(MLIRContext *ctx,
                                             ArrayRef<std::string> defines);
 
+  /// Get debugLevel as a string that matches how EnvAttr is being set.
+  StringRef getDebugLevelString();
+
   /// Save temporary files to a file with the given prefix.
   void setSaveTemps(std::string prefix) { saveTempsPrefix = prefix; }
 
