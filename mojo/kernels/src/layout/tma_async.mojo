@@ -120,6 +120,47 @@ struct TMABarrier(CollectionElement):
         return mbarrier_arrive(self.mbar)
 
 
+# PipelineState keeps track of the current state of a barrier using circular indexing
+#
+@value
+@register_passable("trivial")
+struct PipelineState[num_stages: Int]:
+    # The current index of the pipeline.
+    var _index: Int
+    # The current phase of the pipeline, it switch between 1 and 0
+    var _phase: UInt32
+    # The current count of the increments.
+    var _count: UInt32
+
+    @always_inline
+    fn __init__(out self):
+        self._index = 0
+        self._phase = 0
+        self._count = 0
+
+    @always_inline
+    fn index(self) -> Int:
+        return self._index
+
+    @always_inline
+    fn phase(self) -> UInt32:
+        return self._phase
+
+    @always_inline
+    fn step(mut self):
+        """This function increase the index and count. Index will circle back to
+        0 when it equals to the num_stage.
+        """
+
+        @parameter
+        if num_stages > 0:
+            self._index += 1
+            self._count += 1
+            if self._index == num_stages:
+                self._index = 0
+                self._phase ^= 1
+
+
 # TMATensorTile is created on the host with specific memory and tile sizes.
 # Each TMATensorTile provides an asynchronous load of a specific tile at specified tile coordinates.
 #
