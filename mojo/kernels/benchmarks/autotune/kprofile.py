@@ -4,11 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+
 import pickle
+import sys
 
 import click
 import numpy as np
 import pandas as pd
+import yaml
 
 LINE = 80 * "-"
 
@@ -16,6 +19,14 @@ LINE = 80 * "-"
 def load_pickle(path):
     with open(path, "rb") as handle:
         return pickle.load(handle)
+
+
+def dump_yaml(obj, out_path):
+    with open(out_path, "w") as f:
+        yaml.dump(obj, f, sort_keys=False)
+
+    # TODO: add this as a separate option, probably dict->yaml-str
+    yaml.dump(obj, sys.stdout, sort_keys=False)
 
 
 def parse_params(spec):
@@ -72,28 +83,80 @@ def find_common_params(subset):
 
 
 def profile_results(
-    pickle_path, snippet_path, output_path="output.mojo", top_percentage=0.0
+    pickle_path,
+    snippet_path,
+    output_path="output.mojo",
+    top_percentage=0.0,
+    ratio=False,
+    head=-1,
+    tail=-1,
+    verbose=False,
 ):
-    f = read_kbench_pickle(pickle_path)
-
-    merged_df = f["merged_df"]
+    kernel_data = read_kbench_pickle(pickle_path)
+    merged_df = kernel_data["merged_df"]
     met_col = merged_df.columns[2]
     tune_df = merged_df.sort_values([met_col], ascending=True)
+    top_spec = tune_df.iloc[0]
+    tune_df["met_ratio"] = tune_df["met (ms)"].div(top_spec["met (ms)"])
+    print(f"- num entries: {len(merged_df)}")
 
     if top_percentage:
         idx = top_idx(tune_df["met (ms)"], top_percentage=top_percentage)
         subset = merged_df.iloc[idx]
-        print(subset.to_string())
+        if verbose:
+            print(f"common subset in [{top_percentage}]%")
+            print(subset.to_string(index=False))
         print(LINE)
 
         # form a spec with most frequent values among top percentage of picks
         spec = find_common_params(subset)
     else:
         # get the spec from the first pick
+        print(f"- best idx: {tune_df.iloc[0]['mesh_idx']}")
+        print(f"- worst_met (ms): {tune_df.iloc[-1]['met (ms)']}")
+        print(f"-  best_met (ms): {tune_df.iloc[0]['met (ms)']}")
+        print(
+            f"- met_worst/met_best ratio: {tune_df.iloc[-1]['met_ratio']:.4f}"
+        )
         spec = parse_params(tune_df.iloc[0]["spec"])
+        print(LINE)
 
-    print(f"selected spec [top={top_percentage}]:\n{spec}")
+    if ratio:
+        print(
+            tune_df[["mesh_idx", "met (ms)", "met_ratio"]].to_string(
+                index=False
+            )
+        )
+        print(LINE)
+
+    if head > 0:
+        print(tune_df[:head].to_string(index=False))
+        print(LINE)
+
+    if tail > 0:
+        print(tune_df[-1 * tail :].to_string(index=False))
+        print(LINE)
+
+    if verbose:
+        print(merged_df[:].to_string(index=False))
+        print(LINE)
+        # TODO: install in pip and install_python_deps
+        # from datascroller import scroll
+        #     scroll(tune_df)
+
+    print("[Best Spec]\n")
+
+    out_yaml_path = "result.yaml"
+    dump_yaml(
+        {
+            "name": kernel_data.get("name", None),
+            "file": kernel_data.get("file", None),
+            "params": [spec],
+        },
+        out_yaml_path,
+    )
     print(LINE)
+    print(f"wrote best pick to [{out_yaml_path}]")
 
     if snippet_path:
         replace_vals_snippet(spec, snippet_path, output_path)
@@ -123,7 +186,30 @@ help_str = "Profile kbench output pickle"
     multiple=False,
 )
 @click.option(
-    "--verbose", "-v", is_flag=True, default=False, help="Verbose printing."
+    "--ratio",
+    "-r",
+    is_flag=True,
+    default=False,
+    help="Print the running time ratio of each entry to the best entry.",
+)
+@click.option(
+    "--head",
+    default=-1,
+    help="The number of elements at head to print (sorted by running time).",
+    multiple=False,
+)
+@click.option(
+    "--tail",
+    default=-1,
+    help="The number of elements at tail to print (sorted by running time).",
+    multiple=False,
+)
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    default=False,
+    help="Print all the (unsorted) entries from pkl.",
 )
 @click.argument("files", nargs=-1, type=click.UNPROCESSED)
 def cli(
@@ -131,12 +217,15 @@ def cli(
     output_path,
     top,
     snippet_path,
+    ratio,
+    head,
+    tail,
     verbose,
 ) -> bool:
     assert files
     pickle_path = files[0]
 
-    print(f"pick_path: [{pickle_path}]")
+    print(f"pickle_path: [{pickle_path}]")
     print(f"top_percentage: [{top}]")
     print(f"snippet_path: [{snippet_path}]")
     print(LINE)
@@ -147,6 +236,10 @@ def cli(
         snippet_path=snippet_path,
         output_path="output.mojo",
         top_percentage=top_percentage,
+        ratio=ratio,
+        head=head,
+        tail=tail,
+        verbose=verbose,
     )
     return True
 
