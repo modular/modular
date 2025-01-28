@@ -35,7 +35,7 @@ from utils import IndexList
 from register import register_internal_override
 from ._indexing import _dot_prod, _row_major_strides, _slice_to_tuple
 from .tensor_like import TensorLike
-
+from runtime.tracing import Trace, TraceLevel
 
 # ===----------------------------------------------------------------------=== #
 # Load / Store Helper primitives
@@ -853,6 +853,7 @@ fn view_copy_impl[
     type: DType,
     rank: Int,
     view_strides: DimList = DimList.create_unknown[rank](),
+    trace_name: StringLiteral = "foreach",
 ](
     z: ManagedTensorSlice[type, rank],
     x: ManagedTensorSlice[type, rank],
@@ -865,4 +866,5 @@ fn view_copy_impl[
             simd_width=width, static_strides=view_strides
         ](x, idx)
 
-    foreach[func, synchronous, target](z, ctx)
+    with Trace[TraceLevel.OP, target=target](trace_name):
+        foreach[func, synchronous, target](z, ctx)
