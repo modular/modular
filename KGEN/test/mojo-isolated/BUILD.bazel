@@ -9,6 +9,8 @@ _DATA = [
     "**/test_bad_package/**",
     "**/test_package.foo",
     "**/test_package/**",
+    "**/target/**",
+    "**/test_dependency/**",
     "**/test_package_user/**/*.mojo",
 ]
 
@@ -30,5 +32,6 @@ lit_tests(
     tools = [
         "//KGEN/tools/kgen-opt",
         "//KGEN/tools/kgen-translate",
+        "//KGEN/tools/mojo",
     ],
 )
