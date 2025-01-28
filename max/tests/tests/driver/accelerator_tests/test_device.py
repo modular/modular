@@ -16,7 +16,7 @@ def test_accelerator_device():
 
 def test_accelerator_is_compatible():
     accelerator = Accelerator()
-    assert accelerator.is_compatible_with_max
+    assert accelerator.is_compatible
 
 
 def test_accelerator_device_label_id():
