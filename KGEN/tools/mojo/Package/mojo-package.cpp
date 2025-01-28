@@ -166,6 +166,9 @@ struct PackageArgs {
   /// The path to the Mojo package source directory to parse and output as a
   /// package.
   std::string inputPath;
+  /// The output should be a serialized kgen module run until before
+  /// elaboration.
+  bool exportKgenModule;
   /// The path to which to output a `.mojopkg` file.
   std::string outputPath;
   /// Compilation options common to all Mojo builds.
@@ -212,7 +215,8 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
     return Error("'" + pkgArgs.inputPath +
                  "' does not correspond to a Mojo package");
   }
-
+  pkgArgs.exportKgenModule = args.hasArg(options::OPT_kgenModule);
+  std::string extension = pkgArgs.exportKgenModule ? ".mlirbc" : ".mojopkg";
   // Use the output path the user specified, or if none was specified, output
   // "input-directory-name.mojopkg".
   std::string inputDirName =
@@ -233,18 +237,20 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
       if (isDirectoryOr.isError())
         return isDirectoryOr.takeError();
       if (*isDirectoryOr) {
-        outputPath = outputPath / (inputDirName + ".mojopkg");
+        outputPath = outputPath / (inputDirName + extension);
         pkgArgs.outputPath = outputPath;
       }
 
-      if (outputPath.extension() != ".mojopkg" &&
-          outputPath.extension() != ".📦")
+      if (!pkgArgs.exportKgenModule && (outputPath.extension() != ".mojopkg" &&
+                                        outputPath.extension() != ".📦"))
         return Error("output path must have a '.mojopkg' or '.📦' extension");
+      if (pkgArgs.exportKgenModule && outputPath.extension() != ".mlirbc")
+        return Error("output path must have a '.mlirbc' extension.");
 
       pkgArgs.name = outputPath.stem().string();
     }
   } else {
-    pkgArgs.outputPath = inputDirName + ".mojopkg";
+    pkgArgs.outputPath = inputDirName + extension;
     pkgArgs.name = inputDirName;
   }
 
@@ -304,7 +310,6 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
   KGENCompiler compiler(*theModule.getContext(), packageArgs.compileOptions);
   if (failed(compiler.runCheckLITPipeline(theModule)))
     return Error("errors occurred during compilation");
-
   return std::move(packageModule);
 }
 
@@ -395,6 +400,20 @@ static int package(const State &subcommandState) {
       });
   if (failed(module))
     return state.reportError(module.getError());
+  if (packageArgs.exportKgenModule) {
+    KGENCompiler compiler(*(*module)->getContext(), packageArgs.compileOptions);
+    if (failed(compiler.runGenerateLibraryPipeline(**module)))
+      return state.reportError("compilation failed");
+
+    if (failed(mlir::writeBytecodeToFile(**module, out->os())))
+      return state.reportError("serialization failed");
+    out->keep();
+
+    // Assert that we've parsed all command line arguments.
+    state.assertNoUnusedArguments(args);
+
+    return EXIT_SUCCESS;
+  }
 
   // Build a new package op based off of the parsed package op. This new op is
   // suitable for serialization as MLIR bytecode.
