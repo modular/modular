@@ -1735,6 +1735,7 @@ struct ScatterNDAdd:
             synchronous,
             target,
             reduce_fn=reduce_fn,
+            trace_description="scatter_nd.add",
         ](
             input_ndbuffer,
             indices_ndbuffer,
@@ -1807,6 +1808,7 @@ struct ScatterNDMul:
             synchronous,
             target,
             reduce_fn=reduce_fn,
+            trace_description="scatter_nd.mul",
         ](
             input_ndbuffer,
             indices_ndbuffer,
@@ -1879,6 +1881,7 @@ struct ScatterNDMin:
             synchronous,
             target,
             reduce_fn=reduce_fn,
+            trace_description="scatter_nd.min",
         ](
             input_ndbuffer,
             indices_ndbuffer,
@@ -1951,6 +1954,7 @@ struct ScatterNDMax:
             synchronous,
             target,
             reduce_fn=reduce_fn,
+            trace_description="scatter_nd.max",
         ](
             input_ndbuffer,
             indices_ndbuffer,
@@ -2514,9 +2518,12 @@ struct StaticBroadcastTo:
         )
 
         var x_view = Self.build_view(x, output_shape)
-        view_copy_impl[synchronous, target, view_strides=view_strides](
-            z, x_view, ctx
-        )
+        view_copy_impl[
+            synchronous,
+            target,
+            view_strides=view_strides,
+            trace_name="static.broadcast_to",
+        ](z, x_view, ctx)
 
 
 @compiler.register("mo.static.reshape")
@@ -2569,6 +2576,7 @@ struct StaticReshape:
             synchronous,
             target,
             view_strides=view_strides,
+            trace_name="static.reshape",
         ](output, view_tensor, ctx)
 
 
@@ -2660,9 +2668,12 @@ struct Transpose:
             input_strides
         )
 
-        view_copy_impl[synchronous, target, view_strides=view_strides](
-            output, Self.transpose_in_place(input, permutations), ctx
-        )
+        view_copy_impl[
+            synchronous,
+            target,
+            view_strides=view_strides,
+            trace_name="transpose",
+        ](output, Self.transpose_in_place(input, permutations), ctx)
 
     # TODO(GEX-1033) Make it possible to have multiple raises.
     @no_inline
@@ -2756,9 +2767,12 @@ struct Slice:
         alias view_strides = Self.get_view_strides[rank](
             input_strides, static_steps
         )
-        view_copy_impl[synchronous, target, view_strides=view_strides](
-            output, view_tensor, ctx
-        )
+        view_copy_impl[
+            synchronous,
+            target,
+            view_strides=view_strides,
+            trace_name="slice",
+        ](output, view_tensor, ctx)
 
     @staticmethod
     fn shape(
@@ -2876,9 +2890,12 @@ struct SliceDim:
         alias view_strides = Self.get_view_strides[rank, axis](
             input_strides, static_step.at[0]()
         )
-        view_copy_impl[synchronous, target, view_strides=view_strides](
-            output, view_tensor, ctx
-        )
+        view_copy_impl[
+            synchronous,
+            target,
+            view_strides=view_strides,
+            trace_name="slice_dim",
+        ](output, view_tensor, ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -3104,13 +3121,14 @@ struct ReduceAdd:
 
         var axis_val = Int(axis)
 
-        sum[
-            output.type,
-            input_fn,
-            output_fn,
-            single_thread_blocking_override=synchronous,
-            target=target,
-        ](input.shape(), axis_val, ctx)
+        with Trace[TraceLevel.OP, target=target]("mo.reduce.add"):
+            sum[
+                output.type,
+                input_fn,
+                output_fn,
+                single_thread_blocking_override=synchronous,
+                target=target,
+            ](input.shape(), axis_val, ctx)
 
     @staticmethod
     fn shape[
@@ -3156,13 +3174,14 @@ struct ReduceMul:
 
         var axis_val = Int(axis)
 
-        product[
-            output.type,
-            input_fn,
-            output_fn,
-            single_thread_blocking_override=synchronous,
-            target=target,
-        ](input.shape(), axis_val, ctx)
+        with Trace[TraceLevel.OP, target=target]("mo.reduce.mul"):
+            product[
+                output.type,
+                input_fn,
+                output_fn,
+                single_thread_blocking_override=synchronous,
+                target=target,
+            ](input.shape(), axis_val, ctx)
 
     @staticmethod
     fn shape[
@@ -3208,13 +3227,14 @@ struct ReduceMax:
 
         var axis_val = Int(axis)
 
-        reduce_max[
-            output.type,
-            input_fn,
-            output_fn,
-            single_thread_blocking_override=synchronous,
-            target=target,
-        ](input.shape(), axis_val, ctx)
+        with Trace[TraceLevel.OP, target=target]("mo.reduce.max"):
+            reduce_max[
+                output.type,
+                input_fn,
+                output_fn,
+                single_thread_blocking_override=synchronous,
+                target=target,
+            ](input.shape(), axis_val, ctx)
 
     @staticmethod
     fn shape[
@@ -3260,13 +3280,14 @@ struct ReduceMin:
 
         var axis_val = Int(axis)
 
-        reduce_min[
-            output.type,
-            input_fn,
-            output_fn,
-            single_thread_blocking_override=synchronous,
-            target=target,
-        ](input.shape(), axis_val, ctx)
+        with Trace[TraceLevel.OP, target=target]("mo.reduce.min"):
+            reduce_min[
+                output.type,
+                input_fn,
+                output_fn,
+                single_thread_blocking_override=synchronous,
+                target=target,
+            ](input.shape(), axis_val, ctx)
 
     @staticmethod
     fn shape[
@@ -3816,9 +3837,10 @@ struct GatherND:
             compiler.specsof[indices.type, indices.rank]("indices")
         ](indices)
 
-        gather_nd[batch_dims=batchDims, target=target](
-            data_ndbuffer, indices_ndbuffer, output_ndbuffer, ctx
-        )
+        with Trace[TraceLevel.OP, target=target]("mo.gather_nd"):
+            gather_nd[batch_dims=batchDims, target=target](
+                data_ndbuffer, indices_ndbuffer, output_ndbuffer, ctx
+            )
 
     @staticmethod
     fn shape[
@@ -3883,21 +3905,22 @@ struct Gather:
                 rebind[SIMD[output.type, width]](val),
             )
 
-        gather[
-            type = output.type,
-            indices_type = indices.type,
-            input_fn=input_fn,
-            indices_fn=indices_fn,
-            output_fn=output_fn,
-            target=target,
-            single_thread_blocking_override=synchronous,
-        ](
-            Axis(axis, input.rank),
-            input.shape(),
-            indices.shape(),
-            output.shape(),
-            context=ctx,
-        )
+        with Trace[TraceLevel.OP, target=target]("mo.gather"):
+            gather[
+                type = output.type,
+                indices_type = indices.type,
+                input_fn=input_fn,
+                indices_fn=indices_fn,
+                output_fn=output_fn,
+                target=target,
+                single_thread_blocking_override=synchronous,
+            ](
+                Axis(axis, input.rank),
+                input.shape(),
+                indices.shape(),
+                output.shape(),
+                context=ctx,
+            )
 
     @staticmethod
     fn shape[
