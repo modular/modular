@@ -929,6 +929,7 @@ modular_shared_library(
         "//Runtime",
         "//Runtime:Tensor",
         "//Support:Base",
+        "//Support:BinaryID",
         "//Support:Configuration",
         "//Support:Filesystem",
         "//Support:Globals",
