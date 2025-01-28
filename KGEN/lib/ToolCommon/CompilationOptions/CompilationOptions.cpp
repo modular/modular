@@ -70,6 +70,17 @@ CompilationOptions::parseDefinesWithDefaults(MLIRContext *ctx,
   return EnvAttr::parseDefines(ctx, definesWithDefaults);
 }
 
+StringRef CompilationOptions::getDebugLevelString() {
+  switch (debugLevel) {
+  case kFullDebugInfo:
+    return "full";
+  case kLineTablesOnly:
+    return "line-tables";
+  default:
+    return "";
+  }
+}
+
 void CompilationOptions::print(raw_ostream &os) const {
   os << "CompilationOptions { optimizationLevel: " << optimizationLevel;
   if (debugLevel != kNoDebug) {
