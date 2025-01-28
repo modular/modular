@@ -21,6 +21,7 @@
 
 namespace llvm {
 class SourceMgr;
+class SMDiagnostic;
 class SMFixIt;
 } // namespace llvm
 
@@ -85,6 +86,10 @@ public:
   class SourceMgrLocationMapper;
   std::unique_ptr<SourceMgrLocationMapper> sourceMgrMapper;
 
+  /// Adjust the filename in `diag` using `getCanonicalFilename`, and either
+  /// invokes the saved diag handler, or prints it out.
+  void diagHandler(const llvm::SMDiagnostic &diag);
+
   /// Specify a function used to adjust the end-point of a token given a pointer
   /// to the start of the token.
   void setTokenEndPointAdjustmentFn(std::function<void(SMLoc &)> fn) {
@@ -99,6 +104,15 @@ public:
   const bool useMLIRDiagnostics;
 
 private:
+  /// Keep track of previous diag handler.
+  using DiagHandlerTy = void (*)(const llvm::SMDiagnostic &, void *Context);
+  DiagHandlerTy prevDiagHandler = nullptr;
+  void *prevDiagContext = nullptr;
+  /// A set of diagnostic handler routines that adjusts locations using
+  /// `getCanonicalFilename`.
+  void printIncludeStack(SMLoc IncludeLoc, raw_ostream &OS) const;
+  void emitDiagnostic(const llvm::SMDiagnostic &diag) const;
+
   friend class InflightDiag;
   Diags(const Diags &) = delete;
 
