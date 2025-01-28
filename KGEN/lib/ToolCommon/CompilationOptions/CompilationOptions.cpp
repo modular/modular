@@ -55,15 +55,15 @@ CompilationOptions::parseDefinesWithDefaults(MLIRContext *ctx,
   SmallVector<std::string> definesWithDefaults;
   switch (debugLevel) {
   case kFullDebugInfo:
-    definesWithDefaults.push_back("DEBUG_LEVEL=full");
+    definesWithDefaults.push_back("__DEBUG_LEVEL=full");
     break;
   case kLineTablesOnly:
-    definesWithDefaults.push_back("DEBUG_LEVEL=line-tables");
+    definesWithDefaults.push_back("__DEBUG_LEVEL=line-tables");
     break;
   default:
     break;
   }
-  definesWithDefaults.push_back("OPTIMIZATION_LEVEL=" +
+  definesWithDefaults.push_back("__OPTIMIZATION_LEVEL=" +
                                 Twine(optimizationLevel).str());
   for (std::string define : defines)
     definesWithDefaults.push_back(define);
