@@ -96,7 +96,7 @@ fn test_tma_multiple_loads_kernel[
     if thread_idx.x == 0:
         mbar.init()
 
-    var phase: Int32 = 0
+    var phase: UInt32 = 0
 
     for i in range(num_iters):
         if thread_idx.x == 0:
@@ -507,7 +507,7 @@ fn test_tma_loads_two_buffers_kernel[
     if thread_idx.x == 0:
         mbar.init()
 
-    var phase: Int32 = 0
+    var phase: UInt32 = 0
 
     for i in range(num_iters):
         if thread_idx.x == 0:
@@ -654,7 +654,7 @@ fn test_tma_loads_and_store_two_buffers_kernel[
     if thread_idx.x == 0:
         mbar.init()
 
-    var phase: Int32 = 0
+    var phase: UInt32 = 0
 
     for i in range(num_iters):
         if thread_idx.x == 0:
