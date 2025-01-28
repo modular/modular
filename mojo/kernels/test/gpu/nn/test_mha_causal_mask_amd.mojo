@@ -5,8 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 # FIXME: KERN-1448
 # FIXME: KERN-1437
+# FIXME: KERN-1429
 # UNSUPPORTED: H100-GPU
-# RUN: %mojo-no-debug -D FLASH_ATTENTION_HW_SUPPORTED=True %s
+# RUN: %mojo-no-debug -D FLASH_ATTENTION_HW_SUPPORTED=False %s
 # REQUIRES: AMD-GPU
 
 from math import ceildiv, isclose, isqrt
