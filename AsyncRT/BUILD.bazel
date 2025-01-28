@@ -33,6 +33,7 @@ modular_cc_library(
     deps = [
         "//Support:Base",
         "//Support:Buffer",
+        "//Support:Configuration",
     ],
 )
 
@@ -128,7 +129,6 @@ modular_cc_library(
     deps = [
         ":DeviceBufferCache",
         ":DeviceContext.headers",
-        "//Support:Configuration",
     ],
 )
 
