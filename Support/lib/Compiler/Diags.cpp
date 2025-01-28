@@ -187,6 +187,13 @@ std::string Diags::SourceMgrLocationMapper::getCanonicalFilename(
 // Diags implementation
 //===----------------------------------------------------------------------===//
 
+/// Diag Handler that expects a `Diags` object via `context`, and invokes the
+/// `prefixStrippingDiagHandler` on the `Diags` object.
+static void prefixStrippingDiagHandler(const llvm::SMDiagnostic &diagnostic,
+                                       void *context) {
+  ((Diags *)context)->diagHandler(diagnostic);
+}
+
 Diags::Diags(SourceMgr &sourceMgr, MLIRContext *context,
              bool useMLIRDiagnostics, int maxNotesPerDiagnostic,
              StringRef stripFilenamePrefix, void *extraContext)
@@ -194,7 +201,14 @@ Diags::Diags(SourceMgr &sourceMgr, MLIRContext *context,
       sourceMgrMapper(std::make_unique<SourceMgrLocationMapper>(
           context, stripFilenamePrefix)),
       useMLIRDiagnostics(useMLIRDiagnostics),
-      maxNotesPerDiagnostic(maxNotesPerDiagnostic) {}
+      maxNotesPerDiagnostic(maxNotesPerDiagnostic) {
+  // Install a prefix-stripping diag handler if necessary.
+  if (!stripFilenamePrefix.empty()) {
+    prevDiagHandler = sourceMgr.getDiagHandler();
+    prevDiagContext = sourceMgr.getDiagContext();
+    sourceMgr.setDiagHandler(::prefixStrippingDiagHandler, this);
+  }
+}
 
 Diags::~Diags() {}
 
@@ -259,6 +273,53 @@ llvm::SMRange Diags::convertToSMRange(SourceRange range) const {
       byteLevelRange.End.isValid())
     tokenEndPointAdjustmentFn(byteLevelRange.End);
   return byteLevelRange;
+}
+
+void Diags::printIncludeStack(SMLoc includeLoc, raw_ostream &OS) const {
+  if (includeLoc == SMLoc())
+    return; // Top of stack.
+
+  unsigned bufferID = sourceMgr.FindBufferContainingLoc(includeLoc);
+  assert(bufferID && "Invalid or unspecified location!");
+  printIncludeStack(sourceMgr.getBufferInfo(bufferID).IncludeLoc, OS);
+
+  StringAttr bufferName =
+      sourceMgrMapper->getFilenameFromBufferId(sourceMgr, bufferID);
+  auto lineAndColumn = sourceMgr.getLineAndColumn(includeLoc, bufferID);
+  OS << "Included from " << bufferName << ":" << lineAndColumn.first << ":\n";
+}
+
+void Diags::emitDiagnostic(const llvm::SMDiagnostic &diag) const {
+  if (prevDiagHandler) {
+    prevDiagHandler(diag, prevDiagContext);
+    return;
+  }
+
+  if (diag.getLoc().isValid()) {
+    SMLoc loc = diag.getLoc();
+    unsigned bufferID = sourceMgr.FindBufferContainingLoc(loc);
+    assert(bufferID && "Invalid or unspecified location!");
+    printIncludeStack(sourceMgr.getBufferInfo(bufferID).IncludeLoc,
+                      llvm::errs());
+  }
+
+  diag.print(nullptr, llvm::errs());
+}
+
+void Diags::diagHandler(const llvm::SMDiagnostic &diag) {
+  StringRef origFilename = diag.getFilename();
+  if (origFilename.empty() || origFilename == "-" ||
+      origFilename == sourceMgrMapper->kUnnamedFileSigil) {
+    emitDiagnostic(diag);
+    return;
+  }
+
+  std::string filename = getCanonicalFilename(origFilename);
+  llvm::SMDiagnostic newDiag(
+      *diag.getSourceMgr(), diag.getLoc(), filename, diag.getLineNo(),
+      diag.getColumnNo(), diag.getKind(), diag.getMessage(),
+      diag.getLineContents(), diag.getRanges(), diag.getFixIts());
+  emitDiagnostic(newDiag);
 }
 
 //===----------------------------------------------------------------------===//

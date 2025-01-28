@@ -4,11 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: not %parse-mojo-isolated %S/inputs/strip_file_prefix_error_input.mojo -strip-file-prefix=%S -use-mlir-diagnostics 2>&1 | FileCheck %s -check-prefix=PARENT
+# RUN: not %parse-mojo-isolated %S/inputs/strip_file_prefix_error_input.mojo -strip-file-prefix=%S 2>&1 | FileCheck %s -check-prefix=PARENT
 # PARENT: {{^}}inputs/strip_file_prefix_error_input.mojo:8:5: error
 
-# RUN: not %parse-mojo-isolated %S/inputs/strip_file_prefix_error_input.mojo -strip-file-prefix=%S/inputs -use-mlir-diagnostics 2>&1 | FileCheck %s -check-prefix=DIRECT
+# RUN: not %parse-mojo-isolated %S/inputs/strip_file_prefix_error_input.mojo -strip-file-prefix=%S/inputs 2>&1 | FileCheck %s -check-prefix=DIRECT
 # DIRECT: {{^}}strip_file_prefix_error_input.mojo:8:5: error
 
-# RUN: not %parse-mojo-isolated %S/inputs/strip_file_prefix_error_input.mojo -strip-file-prefix=%S/foo -use-mlir-diagnostics 2>&1 | FileCheck %s -check-prefix=NON-PARENT
+# RUN: not %parse-mojo-isolated %S/inputs/strip_file_prefix_error_input.mojo -strip-file-prefix=%S/foo 2>&1 | FileCheck %s -check-prefix=NON-PARENT
 # NON-PARENT: {{^}}/{{.+}}/inputs/strip_file_prefix_error_input.mojo:8:5: error
