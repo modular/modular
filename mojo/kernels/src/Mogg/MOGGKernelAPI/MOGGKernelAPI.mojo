@@ -6171,7 +6171,7 @@ struct QMatmulGPU_b4_g128:
         b: ManagedTensorSlice[DType.uint8, 2],
         ctx: MojoCallContextPtr,
     ) raises:
-        constrained["cuda" in target, "only valid on CUDA GPUs"]()
+        constrained[is_gpu[target](), "only valid on GPUs"]()
 
         with Trace[TraceLevel.OP, target=target]("qmatmul_b4_g128"):
             matmul_gpu_qint4[128, target](
@@ -6207,7 +6207,7 @@ struct QMatmulGPURepackGGUF:
         b: ManagedTensorSlice[DType.uint8, 2],
         ctx: MojoCallContextPtr,
     ) raises:
-        constrained["cuda" in target, "only valid on CUDA GPUs"]()
+        constrained[is_gpu[target](), "only valid on GPUs"]()
 
         with Trace[TraceLevel.OP, target=target]("GGUF_gpu_repack_q4_0"):
             gpu_qint4_repack_Q4_0[target](
@@ -6239,7 +6239,7 @@ struct QMatmulGPURepackGPTQ_b4_g128:
         b: ManagedTensorSlice[DType.uint8, 2],
         ctx: MojoCallContextPtr,
     ) raises:
-        constrained["cuda" in target, "only valid on CUDA GPUs"]()
+        constrained[is_gpu[target](), "only valid on GPUs"]()
 
         with Trace[TraceLevel.OP, target=target]("GPTQ_gpu_repack_b4_g128"):
             gpu_qint4_repack_GPTQ[128, target](
@@ -6272,7 +6272,7 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
         perm_idx: ManagedTensorSlice[DType.int32, 1],
         ctx: MojoCallContextPtr,
     ) raises:
-        constrained["cuda" in target, "only valid on CUDA GPUs"]()
+        constrained[is_gpu[target](), "only valid on GPUs"]()
 
         with Trace[TraceLevel.OP, target=target](
             "GPTQ_gpu_repack_b4_g128_desc_act"
