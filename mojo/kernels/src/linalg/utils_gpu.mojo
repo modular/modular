@@ -302,6 +302,7 @@ struct MatmulKernels[
         ),
         num_pipeline_stages=env_get_int["TUNE_NUM_STAGES", 4](),
         num_k_partitions=env_get_int["TUNE_NUM_K_PARTITIONS", 1](),
+        num_warp_k_partitions=env_get_int["TUNE_NUM_WARP_K_PARTITIONS", 1](),
     )
 
 
