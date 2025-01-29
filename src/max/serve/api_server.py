@@ -14,6 +14,7 @@ configureLogging()
 
 import argparse
 import logging
+import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
@@ -104,7 +105,11 @@ def fastapi_app(
 
 
 def fastapi_config(app: FastAPI) -> Config:
-    config = Config(app=app, host="0.0.0.0", log_config=None, loop="uvloop")
+    host = os.getenv("MAX_SERVE_HOST", "0.0.0.0")
+    port = int(os.getenv("MAX_SERVE_PORT", "8000"))
+    config = Config(
+        app=app, host=host, port=port, log_config=None, loop="uvloop"
+    )
     for route in app.routes:
         logger.info("Route enabled : %s", route)
     return config
