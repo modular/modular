@@ -61,7 +61,7 @@ what we publish.
         fn main():
             OverloadedKwArgs(1)        # val=1
             OverloadedKwArgs(double=1) # val=2
-            OverloadedKwArgs(triple=2) # val=3
+            OverloadedKwArgs(triple=2) # val=6
   ```
 
   This also works with indexing operations:
