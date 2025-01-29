@@ -123,6 +123,9 @@ modular_py_binary(
     ],
     env = {
         "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/gpu-query)",
+        "PIPELINES_TESTDATA": (
+            "SDK/integration-test/pipelines/python/llama3/testdata"
+        ),
     },
     imports = ["."],
     main = "generate_llm_logits.py",
