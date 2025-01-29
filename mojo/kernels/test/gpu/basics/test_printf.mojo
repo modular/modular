@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 # FIXME: KERN-1377
-# UNSUPPORTED: AMD-GPU
 # RUN: %mojo-no-debug-no-assert %s | FileCheck %s
 
 from builtin._location import __source_location
