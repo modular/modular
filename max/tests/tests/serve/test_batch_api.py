@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import asyncio
+import multiprocessing
 
 import pytest
 from max.serve.pipelines.echo_gen import (
@@ -15,6 +16,7 @@ from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorPipelineConfig,
 )
+from max.serve.scheduler.process_control import ProcessControl
 from max.serve.scheduler.queues import EngineQueue
 
 
@@ -31,8 +33,10 @@ async def test_batched_requests_pipeline(num_requests):
     # Submit num_requests to the pipeline which will batch and execute them.
     # Verify results afterwards.
     # This matches vLLM's benchmark_throughput method
+    ctx = multiprocessing.get_context("spawn")
+    pc = ProcessControl(ctx, "test")
     async with TokenGeneratorPipeline(
-        "echo", EchoPipelineTokenizer(), EngineQueue()
+        "echo", EchoPipelineTokenizer(), EngineQueue(ctx, pc)
     ) as pipeline:
         request_params = []
         request_tasks = []
