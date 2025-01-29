@@ -59,7 +59,7 @@ def test_exp_libm[type: DType]():
     for i in range(N):
         var x = randn_float64(0, 9.0).cast[type]()
         assert_almost_equal(
-            exp(x), exp_libm(x), msg=String("for the input ", x)
+            exp(x), exp_libm(x), msg="for the input " + String(x)
         )
 
 
