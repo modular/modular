@@ -6,11 +6,14 @@
 
 import asyncio
 import ctypes
+import logging
 import math
 import multiprocessing
 import time
 from dataclasses import dataclass
 from typing import Callable, Iterable, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class ProcessControl:
@@ -66,12 +69,14 @@ class ProcessControl:
         name: str,
         health_fail_s: float = 10,
     ):
+        self.ctx = ctx
         self.name = name
         self._started = ctx.Event()
         self._completed = ctx.Event()
         self._canceled = ctx.Event()
 
         self._last_beat = ctx.Value(ctypes.c_int64)
+        self._last_beat.value = 0  # make sure this initializes to 0
         self.health_fail_ns: int = int(health_fail_s * 1e9)
 
     def beat(self) -> None:
@@ -112,20 +117,28 @@ def forever() -> Iterable:
 class ProcessMonitor:
     """Utility functions for observing & stopping processes
 
-    ProcessMonitor can wait for a process to enter a "started", "completed",
-    "dead", or "unhealthy" state. It is expected that awaiting "started",
-    "completed" and "dead" are happeing as part of program startup or shutdown
-    and will have finite duration. As such, these share poll & max time
-    configuration.  Health checks are expected to last the duration of the
-    program execution and have dedicated polling & max time configuration.
+    ProcessMonitor can wait for a process to enter a number of states. For
+    startup/shutdown operations, we expect the process to enter these states
+    within a finite, reasonable amount of time.  Awaiting these states are
+    governed by `poll_s` & `max_time_s`. These states are:
+        - until_started
+        - until_completed
+        - until_dead
+        - until_health
+
+    Other states are expected to happen in exceptional circumstances & required
+    indefinite polling. Awaiting these states is governed by `unhealthy_poll_s`
+    and `unhealthy_max_time_s`. These states are:
+        - until_unhealthy
+
     """
 
     pc: ProcessControl
     proc: multiprocessing.process.BaseProcess
 
-    poll_s: float = 10e-3
-    max_time_s: Optional[float] = 100e-3
-    unhealthy_poll_s: float = 100e-3
+    poll_s: float = 200e-3
+    max_time_s: Optional[float] = 10.0
+    unhealthy_poll_s: float = 200e-3
     unhealthy_max_time_s: Optional[float] = None
 
     async def until_started(self) -> bool:
@@ -142,6 +155,13 @@ class ProcessMonitor:
         is_dead = lambda: not self.proc.is_alive()
         return await _until_true(is_dead, self.poll_s, self.max_time_s)
 
+    async def until_healthy(self) -> bool:
+        return await _until_true(
+            self.pc.is_healthy,
+            self.poll_s,
+            self.max_time_s,
+        )
+
     async def until_unhealthy(self) -> bool:
         return await _until_true(
             self.pc.is_unhealthy,
@@ -150,11 +170,37 @@ class ProcessMonitor:
         )
 
     async def shutdown(self):
+        logger.info("Shutting down")
+        logger.info("Canceling worker")
         self.pc.set_canceled()
-        await self.until_completed()
+        logger.info("Waiting for worker to complete")
+        completed = await self.until_completed()
+        logger.info(f"Completed {completed}")
         if self.proc.is_alive():
+            logger.info("Process is still alive.  Killing")
             self.proc.kill()
-            await self.until_dead()
+            logger.info("Waiting to die")
+            dead = await self.until_dead()
+            logger.info(f"Dead? {dead}")
+        logger.info("Shut down")
+
+    async def shutdown_if_unhealthy(
+        self, cb: Optional[Callable[[], None]] = None
+    ):
+        try:
+            await self.until_unhealthy()
+        except:
+            logger.exception(
+                f"Error while checking process health: {self.pc.name}"
+            )
+        finally:
+            logger.info(f"Exiting health check task: {self.pc.name}")
+            if cb is not None:
+                try:
+                    cb()
+                except:
+                    pass
+            await self.shutdown()
 
 
 async def _until_true(

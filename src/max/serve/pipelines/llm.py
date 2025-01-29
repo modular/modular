@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from functools import partial
 from typing import AsyncGenerator, Callable, Generic, Optional, TypeVar
 
-import psutil
 from max.pipelines.config import PipelineConfig
 from max.pipelines.interfaces import PipelineTokenizer, TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
@@ -235,18 +234,15 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
     async def __aenter__(self):
         self.logger.info("%s: Starting workers:", self.model_name)
         assert not self._background_tasks
-        # TODO arekay - replace with better signalling
-        if not psutil.pid_exists(self.engine_queue.pid):
-            raise RuntimeError(
-                f"Worker process {self.engine_queue.pid} not running"
-            )
+        if not self.engine_queue.pc.is_healthy():
+            raise RuntimeError("Worker process not healthy not starting worker")
 
         # Add global fanout worker.
         self.create_background_task(self.engine_queue.response_worker)
 
-        if not psutil.pid_exists(self.engine_queue.pid):
+        if not self.engine_queue.pc.is_healthy():
             raise RuntimeError(
-                f"Worker process {self.engine_queue.pid} not running"
+                "Worker process not healthy after running background task"
             )
 
         self.logger.info(

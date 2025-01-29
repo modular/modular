@@ -14,7 +14,6 @@ from typing import Callable
 
 import grpc
 import max.serve.grpc_serve.grpc_predict_v2_pb2 as pb2
-import psutil
 from cli import TextGenerationMetrics
 from grpc_reflection.v1alpha import reflection
 from max.pipelines import PipelineConfig, PipelineTokenizer, TextTokenizer
@@ -365,8 +364,8 @@ async def grpc_serve(
                 model_name, tokenizer, worker_queue
             ) as pipeline,
         ):
-            if not psutil.pid_exists(worker_queue.pid):
-                logging.error("Process %d does not exist!", worker_queue.pid)
+            if not worker_queue.pc.is_healthy():
+                logging.error("Worker process not healthy")
                 exit(-1)
             pipelines = {}
             pipelines[model_name] = pipeline

@@ -9,11 +9,11 @@ import queue
 import time
 from dataclasses import dataclass
 from multiprocessing import Queue
-from multiprocessing.synchronize import Event
 from typing import Any, Mapping, Optional, TypeVar
 
 from max.pipelines import TokenGenerator
 from max.profiler import traced
+from max.serve.scheduler.process_control import ProcessControl
 from max.serve.scheduler.queues import STOP_STREAM
 
 logger = logging.getLogger(__name__)
@@ -48,18 +48,16 @@ class SchedulerConfig:
 class SchedulerV2:
     def __init__(
         self,
+        process_control: ProcessControl,
         scheduler_config: SchedulerConfig,
         pipeline: TokenGenerator,
         queues: Mapping[str, Queue],
-        events: Mapping[str, Event],
     ):
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
 
         # Multiprocessing resources.
-        self.started = events["STARTED"]
-        self.stopped = events["STOPPED"]
-        self.shutdown = events["SHUTDOWN"]
+        self.pc = process_control
 
         self.request_q = queues["REQUEST"]
         self.response_q = queues["RESPONSE"]
@@ -164,7 +162,8 @@ class SchedulerV2:
     def run(self):
         """The Scheduler loop that creates batches and schedules them on GPU"""
         i = 0
-        while i % 10 or not self.shutdown.is_set():
+        while i % 10 or not self.pc.is_canceled():
+            self.pc.beat()
             i += 1
             try:
                 batch_to_execute, is_ce = self._create_batch_to_execute()

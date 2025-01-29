@@ -14,11 +14,10 @@ import queue
 from dataclasses import dataclass
 from enum import Enum
 from multiprocessing import Queue
-from multiprocessing.context import SpawnProcess
 from typing import AsyncGenerator, Generator, Generic, Optional, TypeVar
 
-import psutil
 import sentinel
+from max.serve.scheduler.process_control import ProcessControl
 
 ReqId = TypeVar("ReqId")
 ReqInput = TypeVar("ReqInput")
@@ -61,17 +60,17 @@ class BatchQueueConfig:
 
 
 class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
-    def __init__(self, context=None):
+    def __init__(
+        self, context: multiprocessing.context.BaseContext, pc: ProcessControl
+    ):
         super().__init__()
-        self.context = context or multiprocessing.get_context("spawn")
+        self.context = context
         self.logger = logging.getLogger(self.__class__.__name__)
         self.request_q: Queue = self.context.Queue()
         self.response_q: Queue = self.context.Queue()
         self.cancel_q: Queue = self.context.Queue()
-        self.health_q: Queue = self.context.Queue()
         self.pending_out_queues: dict[ReqId, asyncio.Queue] = {}
-        self.pid: int = -1
-        self.process: Optional[SpawnProcess] = None
+        self.pc = pc
 
     @contextlib.contextmanager
     def open_channel(
@@ -87,7 +86,6 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
                 "REQ": self.request_q,
                 "RESP": self.response_q,
                 "CANC": self.cancel_q,
-                "HEALTH": self.health_q,
             }.items():
                 logging.critical(
                     "FULL[%s]@ size: %d",
@@ -109,16 +107,14 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         try:
             while True:
                 try:
-                    if not psutil.pid_exists(self.pid):
-                        raise Exception("Worker failed!")
                     while self.response_q.empty():
                         # If the worker dies this loop will keep running,
                         # so we have to check the worker status.
-                        if not psutil.pid_exists(self.pid):
+                        if not self.pc.is_healthy():
                             self.logger.error(
-                                "Process failed with error code %d",
-                                self.process.exitcode if self.process else "",
+                                "Model worker process is not healthy"
                             )
+                            self.pc.set_canceled()
                             raise Exception("Worker failed!")
                         await asyncio.sleep(0)
 
@@ -141,7 +137,6 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
             raise
         finally:
             self.logger.info(
-                "Terminating response worker [work=%s, self=%s]",
-                self.pid,
+                "Terminating response worker [self=%s]",
                 os.getpid(),
             )
