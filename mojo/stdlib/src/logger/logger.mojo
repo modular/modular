@@ -112,7 +112,7 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
 
     @always_inline
     @staticmethod
-    fn _is_active[target_level: Level]() -> Bool:
+    fn _is_disabled[target_level: Level]() -> Bool:
         if level == Level.NOTSET:
             return False
         return level > target_level
@@ -121,7 +121,7 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
         alias target_level = Level.DEBUG
 
         @parameter
-        if Self._is_active[target_level]():
+        if Self._is_disabled[target_level]():
             return
 
         var writer = self._fd
@@ -133,7 +133,7 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
         alias target_level = Level.INFO
 
         @parameter
-        if Self._is_active[target_level]():
+        if Self._is_disabled[target_level]():
             return
 
         var writer = self._fd
@@ -145,7 +145,7 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
         alias target_level = Level.WARNING
 
         @parameter
-        if Self._is_active[target_level]():
+        if Self._is_disabled[target_level]():
             return
 
         var writer = self._fd
@@ -157,7 +157,7 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
         alias target_level = Level.CRITICAL
 
         @parameter
-        if Self._is_active[target_level]():
+        if Self._is_disabled[target_level]():
             return
 
         var writer = self._fd
@@ -169,7 +169,7 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
         alias target_level = Level.CRITICAL
 
         @parameter
-        if Self._is_active[target_level]():
+        if Self._is_disabled[target_level]():
             return
 
         var writer = self._fd
