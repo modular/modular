@@ -1532,7 +1532,7 @@ KGEN::EnvAttr KGEN::getModularEnvAttr(MLIRContext *ctx,
               envAttrs.set(k, BoolAttr::get(ctx, v));
             } else if constexpr (std::is_same_v<T, int>) {
               envAttrs.set(k, IntegerAttr::get(IndexType::get(ctx), v));
-            } else if constexpr (std::is_same_v<T, llvm::StringRef>) {
+            } else if constexpr (std::is_same_v<T, std::string>) {
               envAttrs.set(k, StringAttr::get(v, KGEN::StringType::get(ctx)));
             } else {
               // NOTE: This should be a static_assert, but that breaks in torch
