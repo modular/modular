@@ -85,7 +85,7 @@ alias _EMISSION_KIND_OBJECT = 3
 
 fn _get_emission_kind_id[emission_kind: StringLiteral]() -> IntLiteral:
     constrained[
-        emission_kind in ("elab-mlir", "llvm", "llvm-opt", "object", "asm"),
+        emission_kind in ("llvm", "llvm-opt", "object", "asm"),
         "invalid emission kind '" + emission_kind + "'",
     ]()
 
