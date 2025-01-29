@@ -25,13 +25,14 @@ def test_weight(session) -> None:
             dtype=DType.int64,
             shape=weight_shape,
         )
-        graph.output(graph.add_weight(w))
+        out = w * 2
+        graph.output(graph.add_weight(w), out)
         compiled = session.load(
             graph, weights_registry={"random_weight": weight}
         )
         output = compiled.execute_legacy()
-
         np.testing.assert_array_equal(weight, output["output0"])
+        np.testing.assert_array_equal(weight * 2, output["output1"])
 
 
 def test_weight_offset(session) -> None:

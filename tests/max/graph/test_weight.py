@@ -77,3 +77,16 @@ def test_weight_is_value_like() -> None:
         assert re.search(
             r"mo.constant.external.*!mo.tensor<\[\], f32", gen_mlir
         )
+
+
+def test_weight_outside_graph_error() -> None:
+    w = Weight(
+        "w",
+        dtype=DType.float32,
+        shape=[],
+    )
+    with pytest.raises(ValueError, match="no parent graph"):
+        _ = w * 5
+
+    with pytest.raises(ValueError, match="no parent graph"):
+        _ = ops.cast(w, DType.float64)

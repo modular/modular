@@ -224,7 +224,7 @@ class GGUFWeights(Weights):
         dtype_match = True
         if shape is not None:
             expected_shape = tuple(shape)
-            weight_unpacked_shape = tuple(dim for dim in weight.shape)
+            weight_unpacked_shape = tuple(int(dim) for dim in weight.shape)
             if weight.quantization_encoding:
                 # Get the unpacked weight.
                 ggml_dtype = _TO_QUANTIZED_GGML_DTYPES[
