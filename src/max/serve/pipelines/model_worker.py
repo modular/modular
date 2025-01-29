@@ -6,6 +6,7 @@
 
 import asyncio
 import logging
+import math
 import multiprocessing
 import os
 import queue
@@ -22,7 +23,7 @@ from max.pipelines import PipelinesFactory, TokenGenerator
 from max.profiler import Tracer, traced
 from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
 from max.serve.pipelines.scheduler import Scheduler
-from max.serve.pipelines.scheduler_v2 import SchedulerV2
+from max.serve.pipelines.scheduler_v2 import SchedulerConfig, SchedulerV2
 from max.serve.scheduler.queues import STOP_STREAM, EngineQueue
 from max.serve.telemetry.metrics import METRICS, configure_metrics
 from max.serve.telemetry.stopwatch import record_ms
@@ -295,12 +296,44 @@ async def model_worker_run_v3(
     pid = os.getpid()
     logger.info("Starting model worker on process %d!", pid)
 
-    # TODO introduce SchedulerConfig
-    # TODO Initialize model here in ModelWorker and pass it to SchedulerV2
+    # Initialize token generator.
+    with record_ms(METRICS.model_load_time), Tracer("model_factory"):
+        token_generator_or_embedding = model_factory()
+        assert isinstance(token_generator_or_embedding, TokenGenerator)
+        pipeline: TokenGenerator = token_generator_or_embedding
+    logger.info("Token generators loaded!")
+
+    config = pipeline_config
+    max_batch_size_tg = config.token_generation.size
+    max_forward_steps_tg = config.token_generation.max_forward_steps
+    target_tokens_per_batch_tg = config.token_generation.target_sum_seq_len
+    if config.context_encoding:
+        max_batch_size_ce = config.context_encoding.size
+        max_forward_steps_ce = config.context_encoding.max_forward_steps
+        target_tokens_per_batch_ce = config.context_encoding.target_sum_seq_len
+        if math.isclose(config.context_encoding.timeout, 0.0):
+            batch_timeout = None
+        else:
+            batch_timeout = config.context_encoding.timeout
+    else:
+        max_batch_size_ce = max_batch_size_tg
+        max_forward_steps_ce = max_forward_steps_tg
+        target_tokens_per_batch_ce = target_tokens_per_batch_tg
+        batch_timeout = None
+
+    scheduler_config = SchedulerConfig(
+        max_batch_size_tg=max_batch_size_tg,
+        max_forward_steps_tg=max_forward_steps_tg,
+        target_tokens_per_batch_tg=target_tokens_per_batch_tg,
+        max_batch_size_ce=max_batch_size_ce,
+        max_forward_steps_ce=max_forward_steps_ce,
+        target_tokens_per_batch_ce=target_tokens_per_batch_ce,
+        batch_timeout=batch_timeout,
+    )
 
     scheduler = SchedulerV2(
-        model_factory=model_factory,
-        pipeline_config=pipeline_config,
+        scheduler_config=scheduler_config,
+        pipeline=pipeline,
         queues=queues,
         events=events,
     )

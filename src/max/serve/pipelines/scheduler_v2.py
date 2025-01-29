@@ -5,19 +5,16 @@
 # ===----------------------------------------------------------------------=== #
 
 import logging
-import math
 import queue
 import time
+from dataclasses import dataclass
 from multiprocessing import Queue
 from multiprocessing.synchronize import Event
 from typing import Any, Mapping, Optional, TypeVar
 
-from max.pipelines import PipelinesFactory, TokenGenerator
-from max.profiler import Tracer, traced
-from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
+from max.pipelines import TokenGenerator
+from max.profiler import traced
 from max.serve.scheduler.queues import STOP_STREAM
-from max.serve.telemetry.metrics import METRICS
-from max.serve.telemetry.stopwatch import record_ms
 
 logger = logging.getLogger(__name__)
 
@@ -26,14 +23,39 @@ BatchReqInput = TypeVar("BatchReqInput")
 BatchInputs = dict[BatchReqId, BatchReqInput]
 
 
+@dataclass
+class SchedulerConfig:
+    """Scheduler configuration."""
+
+    # The maximum number of requests that can be in the token generation batch.
+    max_batch_size_tg: int
+    # The number of tokens to generate for each request in the token generation iteration.
+    max_forward_steps_tg: int
+    # The target total number of tokens to generate in the token generation batch.
+    target_tokens_per_batch_tg: Optional[int]
+
+    # The maximum number of requests that can be in the context encoding batch.
+    max_batch_size_ce: int
+    # The number of tokens to encode for each request in the context encoding iteration.
+    max_forward_steps_ce: int
+    # The target total number of tokens to encode in the context encoding batch.
+    target_tokens_per_batch_ce: Optional[int]
+
+    # The maximum amount of time to wait before creating a context encoding batch.
+    batch_timeout: Optional[float]
+
+
 class SchedulerV2:
     def __init__(
         self,
-        model_factory: PipelinesFactory,
-        pipeline_config: TokenGeneratorPipelineConfig,
+        scheduler_config: SchedulerConfig,
+        pipeline: TokenGenerator,
         queues: Mapping[str, Queue],
         events: Mapping[str, Event],
     ):
+        self.scheduler_config = scheduler_config
+        self.pipeline = pipeline
+
         # Multiprocessing resources.
         self.started = events["STARTED"]
         self.stopped = events["STOPPED"]
@@ -43,39 +65,11 @@ class SchedulerV2:
         self.response_q = queues["RESPONSE"]
         self.cancel_q = queues["CANCEL"]
 
-        # Initialize token generator.
-        with record_ms(METRICS.model_load_time), Tracer("model_factory"):
-            model = model_factory()
-            assert isinstance(model, TokenGenerator)
-            self.model: TokenGenerator = model
-        config = pipeline_config
-        self.max_batch_size_tg = config.token_generation.size
-        self.max_forward_steps_tg = config.token_generation.max_forward_steps
-        self.target_tokens_per_batch_tg = (
-            config.token_generation.target_sum_seq_len
-        )
-        if config.context_encoding:
-            self.max_batch_size_ce = config.context_encoding.size
-            self.max_forward_steps_ce = (
-                config.context_encoding.max_forward_steps
-            )
-            self.target_tokens_per_batch_ce = (
-                config.context_encoding.target_sum_seq_len
-            )
-            if math.isclose(config.context_encoding.timeout, 0.0):
-                self.batch_timeout = None
-            else:
-                self.batch_timeout = config.context_encoding.timeout
-        else:
-            self.max_batch_size_ce = self.max_batch_size_tg
-            self.max_forward_steps_ce = self.max_forward_steps_tg
-            self.target_tokens_per_batch_ce = self.target_tokens_per_batch_tg
-            self.batch_timeout = None
-        logger.info("Token generators loaded!")
-
         # Initialize Scheduler state.
         self.active_batch: BatchInputs = {}
-        self.available_cache_indices = set(range(self.max_batch_size_tg))
+        self.available_cache_indices = set(
+            range(self.scheduler_config.max_batch_size_tg)
+        )
         self.ce_batch_start_time: Optional[float] = None
 
         # TODO health check
@@ -91,7 +85,7 @@ class SchedulerV2:
             self.ce_batch_start_time = time.monotonic()
 
         # If TG batch is full then no reason to schedule CE
-        if len(self.active_batch) >= self.max_batch_size_tg:
+        if len(self.active_batch) >= self.scheduler_config.max_batch_size_tg:
             return False
 
         # If TG batch is empty then schedule CE
@@ -99,12 +93,13 @@ class SchedulerV2:
             return True
 
         # If batch timeout is set
-        if self.batch_timeout:
+        if self.scheduler_config.batch_timeout:
             # If batch timeout is reached then schedule CE
             if (
                 self.ce_batch_start_time is not None
                 and time.monotonic()
-                >= self.ce_batch_start_time + self.batch_timeout
+                >= self.ce_batch_start_time
+                + self.scheduler_config.batch_timeout
             ):
                 return True
             else:
@@ -131,8 +126,9 @@ class SchedulerV2:
         # if we should schedule CE then create a CE batch
         if self._should_schedule_ce():
             max_batch_size_to_create = min(
-                self.max_batch_size_ce,
-                self.max_batch_size_tg - len(self.active_batch),
+                self.scheduler_config.max_batch_size_ce,
+                self.scheduler_config.max_batch_size_tg
+                - len(self.active_batch),
             )
             ce_batch = self._create_ce_batch(max_batch_size_to_create)
             return ce_batch, True
@@ -153,8 +149,9 @@ class SchedulerV2:
                 # if the batch has hit the target token budget, break early
                 sum_seq_len += getattr(data, "seq_len", 0)
                 if (
-                    self.target_tokens_per_batch_ce is not None
-                    and sum_seq_len > self.target_tokens_per_batch_ce
+                    self.scheduler_config.target_tokens_per_batch_ce is not None
+                    and sum_seq_len
+                    > self.scheduler_config.target_tokens_per_batch_ce
                 ):
                     break
 
@@ -205,7 +202,7 @@ class SchedulerV2:
                 if req_id in already_terminated:
                     continue
 
-                self.model.release(batch_executed[req_id])
+                self.pipeline.release(batch_executed[req_id])
                 cache_id = batch_executed[req_id].cache_seq_id
                 self.available_cache_indices.add(cache_id)
                 del batch_executed[req_id]
@@ -221,7 +218,7 @@ class SchedulerV2:
                     if req_id not in self.active_batch:
                         continue
 
-                    self.model.release(self.active_batch[req_id])
+                    self.pipeline.release(self.active_batch[req_id])
                     self.available_cache_indices.add(
                         self.active_batch[req_id].cache_seq_id
                     )
@@ -243,9 +240,9 @@ class SchedulerV2:
         self.ce_batch_start_time = None
 
         # execute the batch
-        batch_responses = self.model.next_token(
+        batch_responses = self.pipeline.next_token(
             batch_to_execute,
-            num_steps=self.max_forward_steps_ce,
+            num_steps=self.scheduler_config.max_forward_steps_ce,
         )
         # remove terminated requests from the batch
         self._handle_terminated_responses(batch_to_execute, batch_responses)
@@ -259,9 +256,9 @@ class SchedulerV2:
     def _schedule_tg(self, batch_to_execute):
         logger.debug("Scheduling TG with BS: %d", len(batch_to_execute))
         # execute the batch
-        batch_responses = self.model.next_token(
+        batch_responses = self.pipeline.next_token(
             batch_to_execute,
-            num_steps=self.max_forward_steps_tg,
+            num_steps=self.scheduler_config.max_forward_steps_tg,
         )
         # remove terminated requests from the batch
         self._handle_terminated_responses(batch_to_execute, batch_responses)
