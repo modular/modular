@@ -53,3 +53,24 @@ def diagnose_missing_doc_strings : Flag<["--", "-"],
 def validate_doc_strings : Flag<["--", "-"],
   "validate-doc-strings">, Group<ValidationOptionGroup>, Index<1>,
   HelpText<"Emits errors for invalid doc strings instead of warnings.">;
+
+//===----------------------------------------------------------------------===//
+// Diagnostic Options
+//===----------------------------------------------------------------------===//
+
+def DiagnosticOptionGroup : OptionGroup<"Compilation diagnostic options">,
+  Index<3>,
+  HelpText<"Controls how the Mojo compiler outputs diagnostics related to "
+           "compiling and running Mojo source code.">;
+
+defm max_notes : CommandOption<["--", "-"], "max-notes-per-diagnostic",
+  DiagnosticOptionGroup, Index<3>, MetaVarName<"INTEGER">,
+  HelpText<"When the Mojo compiler emits diagnostics, it sometimes also prints "
+           "notes with additional information. This option sets an upper "
+           "threshold on the number of notes that can be printed with a "
+           "diagnostic. If not specified, the default maximum is 10.">>;
+
+defm strip_file_prefix : CommandOptionHidden<["-"], "strip-file-prefix",
+  DiagnosticOptionGroup, Index<4>, MetaVarName<"PATH">,
+  HelpText<
+    "Strip this prefix from filenames used for diagnostics & debugging.">>;
