@@ -253,67 +253,30 @@ fn is_mojo_profiling_disabled[level: TraceLevel]() -> Bool:
     return is_profiling_disabled[TraceCategory.MAX, level]()
 
 
-@value
-struct TraceArg[rank: Int, unsigned: Bool](Writable):
-    """Allows the argument to write itself."""
-
-    var name: StringLiteral
-    var shape: IndexList[rank, unsigned=unsigned]
-    var dtype: Optional[DType]
-
-    fn write_to[W: Writer](self, mut writer: W):
-        writer.write(self.name, "=")
-        for i in range(len(self.shape)):
-            if i != 0:
-                writer.write("x")
-            writer.write(self.shape[i])
-        if self.dtype:
-            writer.write("x", self.dtype.value())
-
-
-struct TraceArgValue[origin: Origin, T: Writable](Writable):
-    """Allows the value to write itself."""
-
-    var name: StringLiteral
-    var value: Pointer[T, origin]
-
-    fn __init__(out self, name: StringLiteral, ref [origin]value: T):
-        self.name = name
-        self.value = Pointer.address_of(value)
-
-    fn write_to[W: Writer](self, mut writer: W):
-        writer.write(self.name, "=", self.value[])
+@always_inline
+fn trace_arg(name: String, shape: IndexList) -> String:
+    """Helper to stringify the type and shape of a kernel argument for tracing.
+    """
+    var s = name + "="
+    for i in range(len(shape)):
+        if i != 0:
+            s += "x"
+        s += String(shape[i])
+    return s
 
 
 @always_inline
-fn trace_arg[
-    rank: Int,
-    unsigned: Bool,
-](
-    name: StringLiteral,
-    shape: IndexList[rank, unsigned=unsigned],
-    dtype: Optional[DType] = None,
-) -> TraceArg[rank, unsigned]:
-    """Helper to write the type and shape of a kernel argument for tracing."""
-    return TraceArg[rank](name, shape, dtype)
+fn trace_arg(name: String, shape: IndexList, dtype: DType) -> String:
+    """Helper to stringify the type and shape of a kernel argument for tracing.
+    """
+    return trace_arg(name, shape) + "x" + String(dtype)
 
 
 @always_inline
-fn trace_arg[
-    size: Int, dtype: DType
-](name: StringLiteral, buf: NDBuffer[dtype, size]) -> TraceArg[
-    size, unsigned=True
-]:
-    """Helper to write the type and shape of a kernel argument for tracing."""
-    return trace_arg[size](name, buf.dynamic_shape, dtype)
-
-
-@always_inline
-fn trace_arg[
-    is_mutable: Bool, origin: Origin[is_mutable], T: Writable, //
-](name: StringLiteral, ref [origin]value: T) -> TraceArgValue[origin, T]:
-    """Helper to write a name and value for kernel tracing."""
-    return TraceArgValue(name, value)
+fn trace_arg(name: String, buf: NDBuffer) -> String:
+    """Helper to stringify the type and shape of a kernel argument for tracing.
+    """
+    return trace_arg(name, buf.dynamic_shape, buf.type)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -371,9 +334,9 @@ struct Trace[
 
             @parameter
             if target:
-                self.detail.write(
-                    ";" if self.detail else "", "target=", target.value()
-                )
+                if self.detail:
+                    self.detail += ";"
+                self.detail += "target=" + String(target.value())
             self.int_payload = None
         else:
             self.name = ""
@@ -418,9 +381,9 @@ struct Trace[
 
             @parameter
             if target:
-                self.detail.write(
-                    ";" if self.detail else "", "target=", target.value()
-                )
+                if self.detail:
+                    self.detail += ";"
+                self.detail += "target=" + String(target.value())
             self.int_payload = task_id
         else:
             self.name = ""
