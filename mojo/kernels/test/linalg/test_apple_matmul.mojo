@@ -196,20 +196,18 @@ def test_matmul[
                 assert_almost_equal(
                     c[i, j],
                     golden[i, j],
-                    msg=String(
-                        "values do not agree for ",
-                        m,
-                        "x",
-                        n,
-                        "x",
-                        k,
-                        " using the dtype=",
-                        a_type,
-                        ",",
-                        b_type,
-                        ",",
-                        c_type,
-                    ),
+                    msg="values do not agree for "
+                    + String(m)
+                    + "x"
+                    + String(n)
+                    + "x"
+                    + String(k)
+                    + " using the dtype="
+                    + String(a_type)
+                    + ","
+                    + String(b_type)
+                    + ","
+                    + String(c_type),
                 )
 
     c1_ptr.free()
@@ -576,18 +574,16 @@ def test_batched_matmul[
 
     assert_true(
         errors == 0,
-        String(
-            "num of errors must be 0, but got ",
-            errors,
-            " for dimensions Batch=",
-            batches,
-            " M=",
-            m,
-            ", N=",
-            n,
-            ", K=",
-            k,
-        ),
+        "num of errors must be 0, but got "
+        + String(errors)
+        + " for dimensions Batch="
+        + String(batches)
+        + " M="
+        + String(m)
+        + ", N="
+        + String(n)
+        + ", K="
+        + String(k),
     )
 
     golden_ptr.free()
