@@ -127,7 +127,7 @@ struct TensorMapInterleave:
 
 @value
 @register_passable("trivial")
-struct TensorMapSwizzle:
+struct TensorMapSwizzle(Stringable, Writable):
     var _value: Int32
 
     alias SWIZZLE_NONE = Self(0)
@@ -142,6 +142,23 @@ struct TensorMapSwizzle:
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
+
+    @always_inline
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @always_inline
+    fn write_to[W: Writer](self, mut writer: W):
+        if self._value == 1:
+            writer.write("32B swizzle")
+        elif self._value == 2:
+            writer.write("64B swizzle")
+        elif self._value == 3:
+            writer.write("128B swizzle")
+        elif self._value == 0:
+            writer.write("no swizzle")
+        else:
+            writer.write("invalid swizzle")
 
 
 @value
