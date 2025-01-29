@@ -25,6 +25,7 @@ from max.pipelines import (
     TokenGeneratorRequestFunction,
     TokenGeneratorRequestMessage,
     TokenGeneratorRequestTool,
+    TokenGeneratorResponseFormat,
 )
 from max.serve.pipelines.llm import TokenGeneratorOutput, TokenGeneratorPipeline
 from max.serve.schemas.openai import (  # type: ignore
@@ -48,6 +49,9 @@ from max.serve.schemas.openai import (  # type: ignore
     Logprobs,
     Logprobs2,
     PromptItem,
+    ResponseFormatJsonObject,
+    ResponseFormatJsonSchema,
+    ResponseFormatText,
 )
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch
@@ -418,6 +422,10 @@ async def openai_create_chat_completion(
             completion_request.tools
         )
 
+        response_format = _create_response_format(
+            completion_request.response_format
+        )
+
         response_generator = OpenAIChatResponseGenerator(pipeline)
         token_request = TokenGeneratorRequest(
             id=request_id,
@@ -429,6 +437,7 @@ async def openai_create_chat_completion(
             max_new_tokens=completion_request.max_tokens,
             timestamp_ns=request.state.request_timer.start_ns,
             request_path=request.url.path,
+            response_format=response_format,
         )
 
         if completion_request.stream:
@@ -487,6 +496,36 @@ def _convert_chat_completion_tools_to_token_generator_tools(
         token_generator_tools.append(token_generator_tool)
 
     return token_generator_tools
+
+
+def _create_response_format(
+    response_format: Optional[
+        Union[
+            ResponseFormatText,
+            ResponseFormatJsonObject,
+            ResponseFormatJsonSchema,
+        ]
+    ],
+) -> Optional[TokenGeneratorResponseFormat]:
+    """Convert OpenAI response format to TokenGeneratorResponseFormat."""
+    if not response_format:
+        return None
+
+    response_type = response_format.type
+    # We don't have XGrammar grammar for generic JSON output.
+    # Only json_schema is supported for structured output.
+    if response_type == "json_object":
+        raise ValueError(
+            "'json_object' response format is not supported. Use 'json_schema' instead for structured output."
+        )
+
+    json_schema = {}
+    if response_type == "json_schema":
+        json_schema = response_format.json_schema.schema_.model_dump()
+
+    return TokenGeneratorResponseFormat(
+        type=response_type, json_schema=json_schema
+    )
 
 
 class CompletionResponseStreamChoice(BaseModel):
