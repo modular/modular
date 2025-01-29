@@ -20,9 +20,9 @@ jobs:
         shell: bash
 
     steps:
-    - name: Fail if not targeting nightly branch
-      if: ${{ github.base_ref != 'nightly' }}
+    - name: Fail if not targeting main branch
+      if: ${{ github.base_ref != 'main' }}
       run: |
-        echo "PRs must be targeted to merge to the nightly branch!"
+        echo "PRs must be targeted to merge to the main branch!"
         echo "PR is currently targeting: \"${{ github.base_ref }}\""
         exit 1
