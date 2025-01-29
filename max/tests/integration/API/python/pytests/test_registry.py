@@ -37,7 +37,6 @@ from max.pipelines.kv_cache import (
     estimate_kv_cache_size,
     load_kv_manager,
 )
-from max.pipelines.kv_cache.cache_params import VALID_KV_KERNELS
 
 
 def prepare_registry(func):
@@ -438,13 +437,30 @@ def test_registry__update_weight_paths():
     PIPELINE_REGISTRY.register(REPLIT_ARCH)
 
     temp_valid_kernels = [
-        ("f32", 4, 4),
-        ("bf16", 4, 4),
+        ("bf16", 1, 16),
         ("bf16", 24, 128),
+        ("bf16", 3, 64),  # SmolLM
+        ("bf16", 32, 128),
+        ("bf16", 4, 4),
+        ("bf16", 8, 128),
+        ("bf16", 8, 32),
+        ("bf16", 8, 512),
+        ("bf16", 8, 64),
+        ("bf16", 8, 80),
+        ("f32", 1, 16),
+        ("f32", 2, 2),
         ("f32", 24, 128),
-    ] + VALID_KV_KERNELS
+        ("f32", 3, 64),  # SmolLM
+        ("f32", 32, 128),
+        ("f32", 4, 4),
+        ("f32", 8, 128),
+        ("f32", 8, 32),
+        ("f32", 8, 512),
+        ("f32", 8, 64),
+        ("f32", 8, 80),
+    ]
     with patch(
-        "max.pipelines.kv_cache.cache_params.VALID_KV_KERNELS",
+        "max.pipelines.kv_cache.cache_params",
         temp_valid_kernels,
     ):
         # This first example, is requesting float32 from a gguf repository.
