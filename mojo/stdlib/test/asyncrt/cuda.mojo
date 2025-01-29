@@ -13,25 +13,30 @@ from gpu.host._nvidia_cuda import CUDA, CUcontext
 
 
 fn _run_cuda_context(ctx: DeviceContext) raises:
-    print("-\n_run_cuda_context()")
+    print("-")
+    print("_run_cuda_context()")
+
     var cuda_ctx: CUcontext = CUDA(ctx)
-    print("CUcontext:", cuda_ctx)
+    print("CUcontext: " + String(cuda_ctx))
 
 
 fn _run_cuda_stream(ctx: DeviceContext) raises:
-    print("-\n_run_cuda_stream()\nGetting the stream.")
-    var stream = ctx.stream()
+    print("-")
+    print("_run_cuda_stream()")
 
+    print("Getting the stream.")
+    var stream = ctx.stream()
     print("Synchronizing on `stream`.")
     stream.synchronize()
     var cuda_stream = CUDA(stream)
-    print("CUstream: ", cuda_stream)
+    print("CUstream: " + String(cuda_stream))
 
 
 fn main() raises:
     var ctx = create_test_device_context()
+    print("-------")
+    print("Running test_smoke(" + ctx.name() + "):")
 
-    print("-------\nRunning test_smoke(", ctx.name(), "):")
     _run_cuda_context(ctx)
     _run_cuda_stream(ctx)
 

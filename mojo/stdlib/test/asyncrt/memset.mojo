@@ -14,7 +14,8 @@ from gpu.host import DeviceBuffer, DeviceContext
 fn _run_memset[
     type: DType
 ](ctx: DeviceContext, length: Int, val: Scalar[type]) raises:
-    print("-\n_run_memset(", length, ", ", val, ")")
+    print("-")
+    print("_run_memset(" + String(length) + ", " + String(val) + ")")
 
     var in_host = ctx.malloc_host[Scalar[type]](length)
     var out_host = ctx.malloc_host[Scalar[type]](length)
@@ -34,7 +35,9 @@ fn _run_memset[
         if i < 10:
             print("at index", i, "the value is", out_host[i])
         expect_eq(
-            out_host[i], val, "at index ", i, " the value is ", out_host[i]
+            out_host[i],
+            val,
+            "at index " + String(i) + " the value is " + String(out_host[i]),
         )
 
     ctx.free_host(out_host)
@@ -44,7 +47,8 @@ fn _run_memset[
 fn _run_memset_async[
     type: DType
 ](ctx: DeviceContext, length: Int, val: Scalar[type]) raises:
-    print("-\n_run_memset_async(", length, ", ", val, ")")
+    print("-")
+    print("_run_memset_async(" + String(length) + ", " + String(val) + ")")
 
     var in_host = ctx.malloc_host[Scalar[type]](length)
     var out_host = ctx.malloc_host[Scalar[type]](length)
@@ -67,7 +71,9 @@ fn _run_memset_async[
         if i < 10:
             print("at index", i, "the value is", out_host[i])
         expect_eq(
-            out_host[i], val, "at index ", i, " the value is ", out_host[i]
+            out_host[i],
+            val,
+            "at index " + String(i) + " the value is " + String(out_host[i]),
         )
 
     ctx.free_host(out_host)

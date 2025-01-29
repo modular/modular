@@ -10,17 +10,15 @@ from gpu.host import DeviceContext
 
 
 fn expect_eq[
-    type: DType, size: Int, *Ts: Writable
-](val: SIMD[type, size], expected: SIMD[type, size], *messages: *Ts) raises:
+    type: DType, size: Int
+](val: SIMD[type, size], expected: SIMD[type, size], msg: String = "") raises:
     if val != expected:
-        var message = String(messages)
-        raise Error("expect_eq failed: ", message)
+        raise Error("expect_eq failed: " + msg)
 
 
-fn expect_eq[*Ts: Writable](val: Bool, expected: Bool, *messages: *Ts) raises:
+fn expect_eq(val: Bool, expected: Bool, msg: String = "") raises:
     if val != expected:
-        var message = String(messages)
-        raise Error("expect_eq failed: ", message)
+        raise Error("expect_eq failed: " + msg)
 
 
 fn api() -> String:

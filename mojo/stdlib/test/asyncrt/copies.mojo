@@ -13,7 +13,8 @@ from memory import UnsafePointer
 
 
 fn _run_memcpy(ctx: DeviceContext, length: Int) raises:
-    print("-\n_run_memcpy(", length, ")")
+    print("-")
+    print("_run_memcpy(" + String(length) + ")")
 
     var in_host = ctx.malloc_host[Float32](length)
     var out_host = UnsafePointer[Float32].alloc(length)
@@ -33,14 +34,19 @@ fn _run_memcpy(ctx: DeviceContext, length: Int) raises:
     for i in range(length):
         if i < 10:
             print("at index", i, "the value is", out_host[i])
-        expect_eq(out_host[i], i, "at index ", i, " the value is ", out_host[i])
+        expect_eq(
+            out_host[i],
+            i,
+            "at index " + String(i) + " the value is " + String(out_host[i]),
+        )
 
     out_host.free()
     ctx.free_host(in_host)
 
 
 fn _run_memcpy_async(ctx: DeviceContext, length: Int, use_context: Bool) raises:
-    print("-\n_run_memcpy_async(", length, ")")
+    print("-")
+    print("_run_memcpy_async(" + String(length) + ")")
 
     var in_host = ctx.malloc_host[Float32](length)
     var out_host = ctx.malloc_host[Float32](length)
@@ -66,14 +72,19 @@ fn _run_memcpy_async(ctx: DeviceContext, length: Int, use_context: Bool) raises:
     for i in range(length):
         if i < 10:
             print("at index", i, "the value is", out_host[i])
-        expect_eq(out_host[i], i, "at index ", i, " the value is ", out_host[i])
+        expect_eq(
+            out_host[i],
+            i,
+            "at index " + String(i) + " the value is " + String(out_host[i]),
+        )
 
     ctx.free_host(out_host)
     ctx.free_host(in_host)
 
 
 fn _run_sub_memcpy_async(ctx: DeviceContext, length: Int) raises:
-    print("-\n_run_sub_memcpy_async(", length, ")")
+    print("-")
+    print("_run_sub_memcpy_async(" + String(length) + ")")
 
     var half_length = length // 2
 
@@ -111,7 +122,9 @@ fn _run_sub_memcpy_async(ctx: DeviceContext, length: Int) raises:
         if i < 10:
             print("at index", i, "the value is", out_host[i])
         expect_eq(
-            out_host[i], expected, "at index ", i, " the value is ", out_host[i]
+            out_host[i],
+            expected,
+            "at index " + String(i) + " the value is " + String(out_host[i]),
         )
 
     ctx.free_host(out_host)
@@ -121,8 +134,13 @@ fn _run_sub_memcpy_async(ctx: DeviceContext, length: Int) raises:
 fn _run_fake_memcpy_async(
     ctx: DeviceContext, length: Int, use_take_ptr: Bool
 ) raises:
+    print("-")
     print(
-        "-\n_run_fake_memcpy_async(", length, ", take_ptr = ", use_take_ptr, ")"
+        "_run_fake_memcpy_async("
+        + String(length)
+        + ", take_ptr = "
+        + String(use_take_ptr)
+        + ")"
     )
 
     var half_length = length // 2
@@ -171,7 +189,9 @@ fn _run_fake_memcpy_async(
         if i < 10:
             print("at index", i, "the value is", out_host[i])
         expect_eq(
-            out_host[i], expected, "at index ", i, " the value is ", out_host[i]
+            out_host[i],
+            expected,
+            "at index " + String(i) + " the value is " + String(out_host[i]),
         )
 
     ctx.free_host(out_host)

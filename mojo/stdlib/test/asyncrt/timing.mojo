@@ -35,7 +35,9 @@ fn _timed_iter_func(context: DeviceContext, iter: Int) raises:
 
     for i in range(length):
         expect_eq(
-            out_host[i], i + iter, "at index ", i, " the value is ", out_host[i]
+            out_host[i],
+            i + iter,
+            "at index " + String(i) + " the value is " + String(out_host[i]),
         )
 
     context.free_host(out_host)
@@ -53,7 +55,11 @@ fn main() raises:
 
     # Measure the time to run the function 100 times.
     var elapsed_time = ctx.execution_time[_timed_func](100)
-    print("Elapsed time for _timed_func: ", elapsed_time / 1e9, "s")
+    print("Elapsed time for _timed_func: " + String(elapsed_time / 1e9) + "s")
 
     elapsed_time = ctx.execution_time_iter[_timed_iter_func](100)
-    print("Elapsed time for _timed_iter_func: ", elapsed_time / 1e9, "s\nDone.")
+    print(
+        "Elapsed time for _timed_iter_func: " + String(elapsed_time / 1e9) + "s"
+    )
+
+    print("Done.")
