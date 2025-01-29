@@ -9,7 +9,7 @@ from __future__ import annotations
 from functools import wraps
 from pathlib import Path
 from typing import Any, Sequence, cast
-from unittest.mock import patch
+from unittest.mock import PropertyMock, patch
 
 import pytest
 from max.driver import Device, Tensor
@@ -37,6 +37,7 @@ from max.pipelines.kv_cache import (
     estimate_kv_cache_size,
     load_kv_manager,
 )
+from max.pipelines.pipeline import KVCacheMixin
 
 
 def prepare_registry(func):
@@ -69,7 +70,7 @@ class DummyModelInputs(ModelInputs):
         self.input4 = input4
 
 
-class DummyPipelineModel(PipelineModel):
+class DummyPipelineModel(PipelineModel, KVCacheMixin):
     """A pipeline model with setup, input preparation and execution methods."""
 
     def execute(
@@ -180,9 +181,10 @@ class DummyPipelineModel(PipelineModel):
     def load_kv_manager(
         self,
         session: InferenceSession,
-        available_cache_memory: int,
+        available_cache_memory: int | None,
     ) -> KVCacheManager:
         """Provided a PipelineConfig and InferenceSession, load the kv manager."""
+        assert available_cache_memory is not None
         num_layers = self.get_num_layers(self.pipeline_config)
 
         return load_kv_manager(
@@ -199,16 +201,18 @@ class DummyPipelineModel(PipelineModel):
     def estimate_kv_cache_size(
         cls,
         pipeline_config: PipelineConfig,
-        available_cache_memory: int,
+        available_cache_memory: int | None,
         devices: list[Device],
     ) -> int:
         """Estimates the size of the kv cache in bytes."""
+        assert available_cache_memory is not None
+        assert pipeline_config.max_length is not None
         num_layers = cls.get_num_layers(pipeline_config)
 
         return estimate_kv_cache_size(
             params=cls.get_kv_params(pipeline_config),
             max_cache_batch_size=pipeline_config.max_cache_batch_size,
-            max_seq_len=cls.calculate_max_seq_len(pipeline_config),
+            max_seq_len=pipeline_config.max_length,
             num_layers=num_layers,
             available_cache_memory=available_cache_memory,
             devices=devices,
@@ -580,3 +584,164 @@ def test_registry__update_weight_paths():
         assert config.engine == PipelineEngine.MAX
         assert config.weight_path == [Path("replit-code-v1_5-3b-f32.gguf")]
         assert config._weights_repo_id == "modularai/replit-code-1.5"
+
+
+@prepare_registry
+def test_registry__raise_oom_error_weights_size_exceeds_available_memory():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    config = PipelineConfig(
+        huggingface_repo_id="modularai/llama-3.1",
+    )
+
+    config.max_cache_batch_size = None
+    config.max_length = None
+    with (
+        patch.object(
+            DummyLlamaPipelineModel,
+            "calculate_max_seq_len",
+            return_value=100000,
+        ),
+        patch(
+            "max.driver.Device.stats", new_callable=PropertyMock
+        ) as device_mock,
+    ):
+        device_mock.return_value = {"free_memory": 5 * 1024 * 1024}
+        with pytest.raises(
+            RuntimeError, match="Weights size exceeds available memory"
+        ):
+            PIPELINE_REGISTRY.validate_pipeline_config(config)
+
+
+@prepare_registry
+def test_registry__raise_oom_error_all_defaults_no_valid_solution():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    config = PipelineConfig(
+        huggingface_repo_id="modularai/llama-3.1",
+    )
+
+    config.max_cache_batch_size = None
+    config.max_length = None
+    with (
+        patch.object(
+            DummyLlamaPipelineModel, "calculate_max_seq_len", return_value=10000
+        ),
+        patch(
+            "max.driver.Device.stats", new_callable=PropertyMock
+        ) as device_mock,
+    ):
+        device_mock.return_value = {"free_memory": 30641 * 1024 * 1024}
+        with pytest.raises(
+            RuntimeError,
+            match="Try reducing --max-length or --max-cache-batch-size",
+        ):
+            PIPELINE_REGISTRY.validate_pipeline_config(config)
+
+
+@prepare_registry
+def test_registry__raise_oom_error_all_defaults():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    config = PipelineConfig(
+        huggingface_repo_id="modularai/llama-3.1",
+    )
+
+    config.max_cache_batch_size = None
+    config.max_length = None
+    with (
+        patch.object(
+            DummyLlamaPipelineModel,
+            "calculate_max_seq_len",
+            return_value=100000,
+        ),
+        patch(
+            "max.driver.Device.stats", new_callable=PropertyMock
+        ) as device_mock,
+    ):
+        device_mock.return_value = {"free_memory": 40000 * 1024 * 1024}
+        with pytest.raises(
+            RuntimeError,
+            match=r"Try setting --max-length to \d+ and --max-cache-batch-size to",
+        ):
+            PIPELINE_REGISTRY.validate_pipeline_config(config)
+
+
+@prepare_registry
+def test_registry__raise_oom_error_max_length_set():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    config = PipelineConfig(
+        huggingface_repo_id="modularai/llama-3.1",
+    )
+
+    config.max_cache_batch_size = None
+    config.max_length = 100000
+    with (
+        patch.object(
+            DummyLlamaPipelineModel,
+            "calculate_max_seq_len",
+            return_value=9999999999999,
+        ),
+        patch(
+            "max.driver.Device.stats", new_callable=PropertyMock
+        ) as device_mock,
+    ):
+        device_mock.return_value = {"free_memory": 40000 * 1024 * 1024}
+        with pytest.raises(
+            RuntimeError,
+            match=r"Try reducing --max-length to \d+ .*supports batch size of",
+        ):
+            PIPELINE_REGISTRY.validate_pipeline_config(config)
+
+
+@prepare_registry
+def test_registry__raise_oom_error_max_cache_batch_size_set():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    config = PipelineConfig(
+        huggingface_repo_id="modularai/llama-3.1",
+    )
+
+    config.max_cache_batch_size = 100000
+    config.max_length = None
+    with (
+        patch.object(
+            DummyLlamaPipelineModel, "calculate_max_seq_len", return_value=4096
+        ),
+        patch(
+            "max.driver.Device.stats", new_callable=PropertyMock
+        ) as device_mock,
+    ):
+        device_mock.return_value = {"free_memory": 40000 * 1024 * 1024}
+        with pytest.raises(
+            RuntimeError, match="Try reducing --max-cache-batch-size to"
+        ):
+            PIPELINE_REGISTRY.validate_pipeline_config(config)
+
+
+@prepare_registry
+def test_registry__raise_oom_error_max_cache_batch_size_set_and_max_length_set():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    config = PipelineConfig(
+        huggingface_repo_id="modularai/llama-3.1",
+    )
+
+    config.max_cache_batch_size = 100000
+    config.max_length = 4096
+    with (
+        patch.object(
+            DummyLlamaPipelineModel,
+            "calculate_max_seq_len",
+            return_value=9999999999999,
+        ),
+        patch(
+            "max.driver.Device.stats", new_callable=PropertyMock
+        ) as device_mock,
+    ):
+        device_mock.return_value = {"free_memory": 40000 * 1024 * 1024}
+        with pytest.raises(
+            RuntimeError, match="Try reducing --max-cache-batch-size to"
+        ):
+            PIPELINE_REGISTRY.validate_pipeline_config(config)
