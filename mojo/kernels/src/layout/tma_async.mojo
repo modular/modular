@@ -67,6 +67,10 @@ fn _tma_desc_tile_layout[
         if swizzle_mode == TensorMapSwizzle.SWIZZLE_NONE:
             return Layout.row_major(dim0, _CM_K_BYTES // sizeof[type]())
 
+        # TMA copies BM x 128B each time.
+        elif swizzle_mode == TensorMapSwizzle.SWIZZLE_128B:
+            return Layout.row_major(dim0, 128 // sizeof[type]())
+
     return layout
 
 
@@ -322,9 +326,9 @@ def create_tma_tile[
     type: DType,
     rank: Int,
     tile_shape: IndexList[rank],
+    /,
     is_k_major: Bool = True,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-    /,
     *,
     __tile_layout: Layout = Layout.row_major(tile_shape[0], tile_shape[1]),
     __desc_layout: Layout = _tma_desc_tile_layout[
@@ -336,10 +340,22 @@ def create_tma_tile[
     # Current impl limitations
     constrained[rank == 2, "Only suppot 2D TMA"]()
     constrained[is_k_major, "Only K major layout supported in TMA"]()
-    constrained[
-        swizzle_mode == TensorMapSwizzle.SWIZZLE_NONE,
-        "Swizzle is not yet supported in TMA",
-    ]()
+
+    # constrained[
+    #     swizzle_mode in (TensorMapSwizzle.SWIZZLE_NONE, TensorMapSwizzle.SWIZZLE_128B),
+    #     "Swizzle is not yet supported in TMA",
+    # ]()
+    @parameter
+    if swizzle_mode == TensorMapSwizzle.SWIZZLE_128B:
+        constrained[
+            (tile_shape[1] * sizeof[type]()) % 128 == 0,
+            "128B swizzle requires K dim multiple of 128B",
+        ]()
+    else:
+        constrained[
+            swizzle_mode == TensorMapSwizzle.SWIZZLE_NONE,
+            "Only support 128B and no swizzle",
+        ]()
 
     return create_tma_descriptor[type, 2, swizzle_mode](
         DeviceBuffer(

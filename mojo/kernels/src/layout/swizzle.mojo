@@ -8,6 +8,7 @@ from collections import OptionalReg
 from sys import simdwidthof, sizeof
 
 from bit import log2_floor
+from gpu.host._nvidia_cuda import TensorMapSwizzle
 
 from .int_tuple import flatten
 from .layout import LayoutTrait
@@ -355,6 +356,29 @@ fn make_swizzle[num_rows: Int, row_size: Int, access_size: Int]() -> Swizzle:
     ]()
 
     return Swizzle(bits, base, shifts)
+
+
+@always_inline
+fn make_swizzle[type: DType, mode: TensorMapSwizzle]() -> Swizzle:
+    """Return swizzle functor based on input swizzle mode.
+
+    The supported modes are 32B, 64B, 128B, or none.
+    Note that the swizzle swaps 16B vectors. We need to convert that
+    into number of elements based on data type.
+    """
+
+    @parameter
+    if mode == TensorMapSwizzle.SWIZZLE_128B:
+        return Swizzle(3, log2_floor(16 // sizeof[type]()), 3)
+    elif mode == TensorMapSwizzle.SWIZZLE_64B:
+        return Swizzle(2, log2_floor(16 // sizeof[type]()), 3)
+    elif mode == TensorMapSwizzle.SWIZZLE_32B:
+        return Swizzle(1, log2_floor(16 // sizeof[type]()), 3)
+    elif mode == TensorMapSwizzle.SWIZZLE_NONE:
+        return Swizzle(0, log2_floor(16 // sizeof[type]()), 3)
+    else:
+        constrained[True, "Only support 32B, 64B, 128B, or no swizzle"]()
+        return Swizzle(0, log2_floor(16 // sizeof[type]()), 3)
 
 
 # ===-----------------------------------------------------------------------===#
