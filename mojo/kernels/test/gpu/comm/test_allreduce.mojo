@@ -138,8 +138,13 @@ fn all_reduce_test[
 
 
 fn _get_test_str(type: DType, ngpus: Int, length: Int) -> String:
-    return String(
-        "====allreduce-", type, "-", ngpus, "-", _human_memory(length)
+    return (
+        "====allreduce-"
+        + String(type)
+        + "-"
+        + String(ngpus)
+        + "-"
+        + _human_memory(length)
     )
 
 

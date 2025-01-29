@@ -52,11 +52,11 @@ def execute_flash_attention[
     ]
     debug_assert(
         batch_size < num_blocks,
-        "batch_size passed to unit test (",
-        batch_size,
-        ") is larger than configured num_blocks (",
-        num_blocks,
-        ")",
+        "batch_size passed to unit test ("
+        + String(batch_size)
+        + ") is larger than configured num_blocks ("
+        + String(num_blocks)
+        + ")",
     )
 
     var max_cache_valid_length = Int(
