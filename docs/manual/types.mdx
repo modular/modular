@@ -304,6 +304,57 @@ Min/max finite values for float32
 There are several other data types in the standard library that also use
 the `DType` abstraction.
 
+### Numeric type conversion
+
+[Constructors and implicit conversion](/mojo/manual/lifecycle/life/#constructors-and-implicit-conversion)
+documents the circumstances in which Mojo automatically converts a value from
+one type to another. Importantly, numeric [operators](/mojo/manual/operators)
+**don't** automatically narrow or widen operands to a common type.
+
+You can explicitly convert a `SIMD` value to a different `SIMD` type either
+by invoking its [`cast()`](/mojo/stdlib/builtin/simd/SIMD#cast) method or by
+passing it as an argument to the constructor of the target type. For example:
+
+```mojo
+simd1 = SIMD[DType.float32, 4](2.2, 3.3, 4.4, 5.5)
+simd2 = SIMD[DType.int16, 4](-1, 2, -3, 4)
+simd3 = simd1 * simd2.cast[DType.float32]()  # Convert with cast() method
+print("simd3:", simd3)
+simd4 = simd2 + SIMD[DType.int16, 4](simd1)  # Convert with SIMD constructor
+print("simd4:", simd4)
+```
+
+```output
+simd3: [-2.2, 6.6, -13.200001, 22.0]
+simd4: [1, 5, 1, 9]
+```
+
+You can convert a `Scalar` value by passing it as an argument to the constructor
+of the target type. For example:
+
+```mojo
+var my_int: Int16 = 12                 # SIMD[DType.int16, 1]
+var my_float: Float32 = 0.75           # SIMD[DType.float32, 1]
+result = Float32(my_int) * my_float    # Result is SIMD[DType.float32, 1]
+print("Result:", result)
+```
+
+```output
+Result: 9.0
+```
+
+You can convert a scalar value of any numeric type to `Int` by passing the value
+to the [`Int()`](/mojo/stdlib/builtin/int/Int#__init__) constructor method.
+Additionally, you can pass an instance of any struct that implements the
+[`Intable`](/mojo/stdlib/builtin/int/Intable) trait or
+[`IntableRaising`](/mojo/stdlib/builtin/int/IntableRaising) trait to the `Int()`
+constructor to convert that instance to an `Int`.
+
+You can convert an `Int` or `IntLiteral` value to the `UInt` type by passing the
+value to the [`UInt()`](/mojo/stdlib/builtin/uint/UInt#__init__) constructor.
+You can't convert other numeric types to `UInt` directly, though you can first
+convert them to `Int` and then to `UInt`.
+
 ## Strings
 
 Mojo's `String` type represents a mutable string. (For Python programmers, note

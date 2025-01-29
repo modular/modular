@@ -1,6 +1,7 @@
 ---
 title: Operators, expressions, and dunder methods
 sidebar_label: Operators and expressions
+github_url: https://github.com/modular/mojo/tree/main/examples/operators
 ---
 
 Mojo includes a variety of operators for manipulating values of different types.
@@ -217,19 +218,22 @@ error: invalid call to '__mul__': could not deduce parameter 'type' of parent st
 ```
 
 If you need to perform an arithmetic or bitwise operator on two `SIMD` values of
-different types, you can explicitly
-[`cast()`](/mojo/stdlib/builtin/simd/SIMD#cast) a `SIMD` so that they have the
-same type.
+different types, you can explicitly convert a value to the desired type either
+by invoking its [`cast()`](/mojo/stdlib/builtin/simd/SIMD#cast) method or by
+passing it as an argument to the constructor of the target type.
 
 ```mojo
 simd1 = SIMD[DType.float32, 4](2.2, 3.3, 4.4, 5.5)
 simd2 = SIMD[DType.int16, 4](-1, 2, -3, 4)
-simd3 = simd1 * simd2.cast[DType.float32]()  # Result is SIMD[DType.float32, 4]
-print(simd3)
+simd3 = simd1 * simd2.cast[DType.float32]()  # Convert with cast() method
+print("simd3:", simd3)
+simd4 = simd2 + SIMD[DType.int16, 4](simd1)  # Convert with SIMD constructor
+print("simd4:", simd4)
 ```
 
 ```output
-[-2.2000000476837158, 6.5999999046325684, -13.200000762939453, 22.0]
+simd3: [-2.2, 6.6, -13.200001, 22.0]
+simd4: [1, 5, 1, 9]
 ```
 
 One exception is that the exponentiation operator, `**`, is overloaded so that
@@ -270,7 +274,7 @@ There are three operators related to division:
     ```
 
     ```output
-    True float16 division: [1.400390625, -1.400390625, -1.400390625, 1.400390625]
+    True float16 division: [1.4003906, -1.4003906, -1.4003906, 1.4003906]
     True int32 division: [2, -2, -1, 1]
     ```
 
@@ -380,9 +384,10 @@ compared.
   `Int` or `UInt` do standard numerical comparison with a `Bool` result.
 - Two `SIMD` values can be compared only if they are the same `DType` and size.
   (If you need to compare two `SIMD` values of different types, you can
-  explicitly [`cast()`](/mojo/stdlib/builtin/simd/SIMD#cast) a `SIMD` so that
-  they have the same type.) Mojo performs elementwise comparison with a
-  `SIMD[DType.bool]` result. For example:
+  explicitly convert a value so that they have the same type either by invoking
+  its [`cast()`](/mojo/stdlib/builtin/simd/SIMD#cast) method or by passing it as
+  an argument to the constructor of the target type.) Mojo performs elementwise
+  comparison with a `SIMD[DType.bool]` result. For example:
 
     ```mojo
     simd1 = SIMD[DType.int16, 4](-1, 2, -3, 4)
@@ -428,12 +433,13 @@ compared.
 - `Scalar` values are simply aliases for single-element `SIMD` vectors.
   Therefore, the same restrictions apply against comparing different types. In
   other words, you can't compare a `Float16` value to a `Float32` value unless
-  you cast the values to the same type. For example:
+  you convert the values to the same type. You can convert a `Scalar` value by
+  passing it as an argument to the constructor of the target type:
 
     ```mojo
-    var float1: Float16 = 12.345  # SIMD[DType.float16, 1]
-    var float2: Float32 = 0.5     # SIMD[DType.float32, 1]
-    result = float1.cast[DType.float32]() > float2  # SIMD[DType.bool, 1]
+    var float1: Float16 = 12.345         # SIMD[DType.float16, 1]
+    var float2: Float32 = 0.5            # SIMD[DType.float32, 1]
+    result = Float32(float1) > float2    # Result is SIMD[DType.bool, 1]
     print(result)
     ```
 
