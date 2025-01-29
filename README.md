@@ -25,11 +25,11 @@ This repo includes source code for:
 
 This repo has two primary branches:
 
-- The [`stable`](https://github.com/modularml/mojo/tree/stable) branch, which
-is in sync with the last stable released version of Mojo. Use the examples
-here if you’re using a [release build of Mojo](#latest-released).
+- The [`main`](https://github.com/modularml/mojo/tree/main) branch, which is in
+sync with the last stable released version of Mojo. Use the examples here if you’re
+using a [release build of Mojo](#latest-released).
 
-- The [`main`](https://github.com/modularml/mojo/tree/main) branch, which
+- The [`nightly`](https://github.com/modularml/mojo/tree/nightly) branch, which
 is in sync with the Mojo nightly build and subject to breakage. Use this branch
 for [contributions](./CONTRIBUTING.md), or if you're using the latest
 [nightly build of Mojo](#latest-nightly).
@@ -74,15 +74,16 @@ platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
 max = "*"
 ```
 
-When you clone this repo, you'll be on the `main` branch by default,
-which includes code matching the latest nightly build:
+And when you clone this repo, switch to the `nightly` branch because the `main`
+branch might not be compatible with nightly builds:
 
 ```bash
 git clone https://github.com/modularml/mojo.git
 ```
 
-If you want to instead see the source from the most recent stable
-release, then you can switch to the `stable` branch.
+```bash
+git checkout nightly
+```
 
 ## Contributing
 
@@ -91,7 +92,7 @@ issue here](https://github.com/modularml/mojo/issues).
 See [here](./CONTRIBUTING.md) for guidelines on filing good bugs.
 
 We welcome contributions to this repo on the
-[`main`](https://github.com/modularml/mojo/tree/main)
+[`nightly`](https://github.com/modularml/mojo/tree/nightly)
 branch. If you’d like to contribute to Mojo, please first read our [Contributor
 Guide](https://github.com/modularml/mojo/blob/main/CONTRIBUTING.md).
 

@@ -447,13 +447,13 @@ struct Dog(Stringable, Representable, Writable):
 
     # Alternative full representation when calling `repr`
     fn __repr__(self) -> String:
-        return String("Dog(name=", repr(self.name)", age=", repr(self.age), ")")
+        return String("Dog(name=", repr(self.name), ", age=", repr(self.age), ")")
 
 var dog = Dog("Rex", 5)
 print(repr(dog))
 print(dog)
 
-var dog_info = String("String: {!s}\nRepresentation: {!r}").format(dog, dog)
+var dog_info = "String: {!s}\nRepresentation: {!r}".format(dog, dog)
 print(dog_info)
 ```
 

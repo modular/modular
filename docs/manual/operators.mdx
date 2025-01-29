@@ -1069,7 +1069,7 @@ real and imaginary fields.
 
 ```mojo
 c1 = Complex(-1.2, 6.5)
-print(String("c1: Real: {}; Imaginary: {}").format(c1.re, c1.im))
+print("c1: Real: {}; Imaginary: {}".format(c1.re, c1.im))
 ```
 
 ```output
@@ -1094,7 +1094,7 @@ Now we can create a `Complex` instance and provide just a real component.
 
 ```mojo
 c2 = Complex(3.14159)
-print(String("c2: Real: {}; Imaginary: {}").format(c2.re, c2.im))
+print("c2: Real: {}; Imaginary: {}".format(c2.re, c2.im))
 ```
 
 ```output
@@ -1190,7 +1190,7 @@ Now let's try getting and setting the real and imaginary components of a
 
 ```mojo
 c2 = Complex(3.14159)
-print(String("c2[0]: {}; c2[1]: {}").format(c2[0], c2[1]))
+print("c2[0]: {}; c2[1]: {}".format(c2[0], c2[1]))
 c2[0] = 2.71828
 c2[1] = 42
 print("c2[0] = 2.71828; c2[1] = 42; c2:", c2)
