@@ -189,6 +189,7 @@ class BufferValue(Value):
     # (which will throw an exception).
     @property
     def dtype(self) -> DType:
+        """Returns the tensor data type."""
         t = self._mlir_value.type
         if not _graph.type_is_buffer(t):
             raise TypeError(f"Expected BufferType, got: {t}")
@@ -238,7 +239,7 @@ class BufferValue(Value):
 
 
 class TensorValue(Value):
-    """Represents a value semantic tensor within a `Graph`."""
+    """Represents a value semantic tensor within a :obj:`Graph`."""
 
     # Disallow special methods that would fall back to __getitem__ and hang.
     __contains__ = None
@@ -268,10 +269,12 @@ class TensorValue(Value):
 
     @staticmethod
     def from_dim(dim: DimLike) -> TensorValue:
+        """Creates a new tensor based on provided MLIR dimension type."""
         return ops.shape_to_tensor([dim]).reshape(())
 
     @staticmethod
     def from_shape(shape: ShapeLike) -> TensorValue:
+        """Creates a new tensor with the specified shape."""
         return ops.shape_to_tensor(shape)
 
     def __repr__(self):
@@ -300,6 +303,7 @@ class TensorValue(Value):
     # This also avoids accidentally loading algebraic expression dimensions (which will throw an exception).
     @property
     def dtype(self) -> DType:
+        """Returns the tensor data type."""
         t = self._mlir_value.type
         if not _graph.type_is_tensor(t):
             raise TypeError(f"Expected TensorType, got: {t}")
@@ -308,6 +312,7 @@ class TensorValue(Value):
 
     @property
     def rank(self) -> int:
+        """Returns the rank (number of dims) of the buffer."""
         t = self._mlir_value.type
         if not _graph.type_is_tensor(t):
             raise TypeError(f"Expected TensorType, got: {t}")
@@ -315,34 +320,48 @@ class TensorValue(Value):
         return _graph.tensor_type_get_rank(t)
 
     def print(self, label: str = "debug_tensor"):
+        """Prints detailed information about the tensor."""
         ops.print(self, label=label)
 
     def reshape(self, shape: ShapeLike) -> TensorValue:
+        """Creates a new tensor with the same data but reshaped."""
         return ops.reshape(self, shape)
 
     def flatten(self, start_dim: int = 0, end_dim: int = -1) -> TensorValue:
+        """Flattens the specified dims of a symbolic tensor.
+
+        The number and order of the elements in the tensor is unchanged.
+        All dimensions from start_dim to end_dim (inclusive) are merged into a single output dim.
+        """
         return ops.flatten(self, start_dim, end_dim)
 
     def broadcast_to(self, shape: ShapeLike) -> TensorValue:
+        """Broadcasts the tensor to a new shape."""
         return ops.broadcast_to(self, shape)
 
     def cast(self, dtype: DType) -> TensorValue:
+        """Casts a symbolic tensor to a different data type."""
         return ops.cast(self, dtype)
 
     def rebind(self, shape: ShapeLike, message: str = "") -> TensorValue:
+        """Rebinds the tensor to a new shape with error handling."""
         return ops.rebind(self, shape, message)
 
     def permute(self, dims: list[int]) -> TensorValue:
+        """Permutes the tensor's dimensions based on provided indices."""
         return ops.permute(self, dims)
 
     def transpose(self, dim_1: int, dim_2: int) -> TensorValue:
+        """Transposes the tensor based on provided dimensions."""
         return ops.transpose(self, dim_1, dim_2)
 
     def to(self, device: DeviceRef) -> TensorValue:
+        """Transfers the tensor to a specified device without mutation."""
         return ops.transfer_to(self, device)
 
     @property
     def T(self) -> TensorValue:
+        """Returns the transposed tensor."""
         return self.transpose(-1, -2)
 
     def __getitem__(self, index: Any) -> TensorValue:
