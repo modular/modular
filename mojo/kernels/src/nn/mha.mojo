@@ -4770,10 +4770,37 @@ fn _bmm0_bs[
     if x < cur_cache_len and y < cur_query_len:
         var k_ptr = k.block_paged_ptr[1](batch, x, kv_head, 0)
 
-        for d in range(depth):
-            var q_val = q[y * num_heads * depth + d]
-            var k_val = k_ptr[d]
-            accum += (q_val.cast[k_type]() * k_val).cast[p_type]()
+        # TODO: The AMD-specific path is to handle Llama shapes, similar
+        #       to how things were before #53433. Once flash attention is
+        #       supported on AMD, this stopgap AMD path should be eliminated to
+        #       function as a generic fall-back (i.e., without vectorization).
+        #       REL: KERN-1343.
+        @parameter
+        if is_amd_gpu():
+            var accum_vec = SIMD[p_type, simdwidthof[p_type]()](0)
+
+            @parameter
+            fn accum_fn[width: Int](offset: Int):
+                alias alignment = alignof[SIMD[p_type, width]]()
+                var q_val = q.load[width=width, alignment=alignment](
+                    y * num_heads * depth + offset
+                ).cast[k_type]()
+                var k_val = k_ptr.load[width=width, alignment=alignment](offset)
+                var qk_val = (q_val * k_val).cast[p_type]()
+
+                @parameter
+                if width == 1:
+                    accum += rebind[__type_of(accum)](qk_val)
+                else:
+                    accum_vec += rebind[__type_of(accum_vec)](qk_val)
+
+            vectorize[accum_fn, simdwidthof[p_type]()](depth)
+            accum += accum_vec.reduce_add()
+        else:
+            for d in range(depth):
+                var q_val = q[y * num_heads * depth + d]
+                var k_val = k_ptr[d]
+                accum += (q_val.cast[k_type]() * k_val).cast[p_type]()
 
     @parameter
     if use_mask_tensor:
@@ -4782,8 +4809,6 @@ fn _bmm0_bs[
             + mask[y * padded_num_keys + x].cast[p_type]()
         )
 
-        if x >= cur_cache_len or y >= cur_query_len:
-            p[y * padded_num_keys + x] = min_or_neg_inf[p_type]()
     else:
         var score_row = y + cur_cache_len - cur_query_len
         var score_col = x
