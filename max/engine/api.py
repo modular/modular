@@ -963,7 +963,7 @@ class InferenceSession:
                 msg = f"Invalid log level ({level}). Please use one of: {[x.name for x in LogLevel]}"
                 raise TypeError(msg)
 
-        self._set_mojo_define("LOG_LEVEL", level)
+        self._set_mojo_define("LOGGING_LEVEL", level)
 
     def set_mojo_assert_level(self, level: str | AssertLevel):
         """Sets which mojo asserts are kept in the compiled model."""
