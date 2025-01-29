@@ -112,6 +112,7 @@ modular_cc_library(
         "lib/DeviceContext/BufferCache.h",
     ],
     deps = [
+        ":DeviceContext.headers",
         ":RuntimeGlobals",
     ],
 )
