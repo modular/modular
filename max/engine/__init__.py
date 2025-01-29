@@ -9,6 +9,7 @@ from max._engine.core import __version__
 
 from .api import (
     InferenceSession,
+    LogLevel,
     Model,
     MojoValue,
     TensorSpec,
