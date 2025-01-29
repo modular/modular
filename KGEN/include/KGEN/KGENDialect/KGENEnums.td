@@ -375,7 +375,7 @@ def EmitAs : I32EnumAttr<"EmitAs", "compile_assembly emission kind", [
   I32EnumAttrCase<"ASM",  0, "asm">,
   I32EnumAttrCase<"LLVM", 1, "llvm">,
   I32EnumAttrCase<"LLVM_OPT", 2, "llvm-opt">,
-  I32EnumAttrCase<"SHARED_OBJ", 3, "sharedobj">
+  I32EnumAttrCase<"OBJECT", 3, "object">
 ]> {
   let cppNamespace = "M::KGEN";
   let genSpecializedAttr = 0;

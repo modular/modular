@@ -24,7 +24,7 @@ def main():
     alias myCompiledFn = compiled_fn[DType.uint32]
     # compile myCompileFn into a shared object binary
     var myShared: String = _internal_compile_code[
-        myCompiledFn, emission_kind="shared-obj"
+        myCompiledFn, emission_kind="object"
     ]()
 
     idx = 0

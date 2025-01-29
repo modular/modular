@@ -75,13 +75,13 @@ bool EmitAsAttr::classof(Attribute attr) {
   return ::isa<IndexType>(intAttr.getType()) &&
          contains_if(
              ArrayRef{EmitAs::ASM, EmitAs::LLVM, EmitAs::LLVM_OPT,
-                      EmitAs::SHARED_OBJ},
+                      EmitAs::OBJECT},
              [&](EmitAs kind) { return (int)kind == intAttr.getInt(); });
 #else
   return ::isa<IndexType>(intAttr.getType()) &&
          contains_if(
              ArrayRef{EmitAs::ASM, EmitAs::LLVM, EmitAs::LLVM_OPT,
-                      EmitAs::SHARED_OBJ},
+                      EmitAs::OBJECT},
              [&](EmitAs kind) { return (int)kind == intAttr.getInt(); });
 #endif
 }
@@ -1378,16 +1378,9 @@ LogicalResult ParamOperatorAttr::verify(
              << "'compile_assembly' second operand should have index type";
     if (auto emissionIntAttr = ::dyn_cast<IntegerAttr>(operands[1])) {
       if (!::isa<EmitAsAttr>(emissionIntAttr)) {
-
-#ifndef MODULAR_PRODUCTION
         return emitError() << "'compile_assembly' second operand should "
                               "evaluate to either 'asm', 'llvm', 'llvm-opt', "
-                              "or 'sharedobj'";
-#else
-        return emitError() << "'compile_assembly' second operand should "
-                              "evaluate to either 'asm', 'llvm', 'llvm-opt', "
-                              "or 'sharedobj'";
-#endif
+                              "or 'object'";
       }
     }
     if (!operands[3].getType().isInteger(1))
