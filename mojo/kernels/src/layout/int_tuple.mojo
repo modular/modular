@@ -423,23 +423,19 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         # Avoid making gratuitous copies
         return self
 
-    @always_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn __str__(self) -> String:
         if self.is_value():
-            return writer.write(self.value())
-        writer.write("(")
+            return String(self.value())
+        var s = String("(")
         var len = len(self)
         for i in range(len):
             if self.is_value(i):
-                writer.write(self.value(i))
+                s += String(self.value(i))
             else:
-                writer.write(String(self[i]))
+                s += String(self[i])
             if i < len - 1:
-                writer.write(", ")
-        writer.write(")")
-
-    fn __str__(self) -> String:
-        return String.write(self)
+                s += ", "
+        return s + ")"
 
     @staticmethod
     fn is_equal(a: IntTuple, b: IntTuple) -> Bool:
@@ -465,6 +461,10 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
     @always_inline
     fn __repr__(self) -> String:
         return self.__str__()
+
+    @always_inline
+    fn write_to[W: Writer](self, mut writer: W):
+        writer.write(self.__str__())
 
 
 @always_inline

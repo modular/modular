@@ -27,7 +27,14 @@ struct Dim(Stringable):
 
     @no_inline
     fn __str__(self) -> String:
-        return String("m: ", self.m, ", n: ", self.n, ", k: ", self.k)
+        return (
+            "m: "
+            + String(self.m)
+            + ", n: "
+            + String(self.n)
+            + ", k: "
+            + String(self.k)
+        )
 
 
 trait TiledOp:
