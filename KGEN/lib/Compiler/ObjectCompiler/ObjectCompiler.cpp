@@ -1303,7 +1303,7 @@ ErrorOrSuccess ObjectCompiler::emitSharedObject(OwningOpRef<ModuleOp> module,
 
   CompilerTimeTraceScope traceScope("emitSharedObj");
 
-  StringRef moduleName = "mojo-sharedobj";
+  StringRef moduleName = "mojo-object";
   if (auto moduleLoc = module->getLoc()->findInstanceOf<FileLineColLoc>())
     moduleName = llvm::sys::path::filename(moduleLoc.getFilename());
 
@@ -1517,7 +1517,7 @@ lowerLLVMModuleToObject(llvm::Module &inputModule, Location loc,
             return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
                 "llc failed to codegen LLVM IR to object code", loc));
           }
-          StringRef name = "mojo-sharedobj";
+          StringRef name = "mojo-object";
           if (auto moduleLoc = loc->findInstanceOf<FileLineColLoc>())
             name = llvm::sys::path::filename(moduleLoc.getFilename());
           std::string moduleName = (name + Twine(moduleIdx)).str();
@@ -1590,7 +1590,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
     llvm::SmallSet<EmitAs, 4> &kinds = kernelEmissionKinds[*kernelIdOr];
     bool shouldDeserialize = kinds.size() > 1;
     bool shouldRunExtraAsm = !options.saveTempsPrefix.empty() &&
-                             kinds.contains(EmitAs::SHARED_OBJ) &&
+                             kinds.contains(EmitAs::OBJECT) &&
                              !kinds.contains(EmitAs::ASM);
     shouldDeserialize |= shouldRunExtraAsm;
 

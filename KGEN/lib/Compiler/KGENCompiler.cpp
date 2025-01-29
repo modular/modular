@@ -314,7 +314,7 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
       return err.takeError();
     break;
 
-  case EmitAs::SHARED_OBJ:
+  case EmitAs::OBJECT:
     if (ErrorOrSuccess err = compiler->emitSharedObject(std::move(module), os))
       return err.takeError();
     break;

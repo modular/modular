@@ -879,8 +879,8 @@ kgen.generator @compile_assembly<emission_kind: !kgen.int_literal>() {
   // CHECK: constant: string = <compile_assembly(nvptx, =llvm, "option1=value1,option2=value2", 1, :() -> () @kernel)>
   kgen.param.constant: string = <compile_assembly(nvptx, =llvm, "option1=value1,option2=value2", 1, :() -> () @kernel)>
 
-  // CHECK: constant: string = <compile_assembly(amd, =sharedobj, "", 1, :() -> () @kernel)>
-  kgen.param.constant: string = <compile_assembly(amd, =sharedobj, "", 1, :() -> () @kernel)>
+  // CHECK: constant: string = <compile_assembly(amd, =object, "", 1, :() -> () @kernel)>
+  kgen.param.constant: string = <compile_assembly(amd, =object, "", 1, :() -> () @kernel)>
   // CHECK: constant: string = <compile_assembly(nvptx, apply(:(!kgen.int_literal) -> index @get_emission_kind, emission_kind), "", 1, :() -> () @kernel)>
   kgen.param.constant: string = <compile_assembly(nvptx, apply(:(!kgen.int_literal) -> index @get_emission_kind, emission_kind), "", 1, :() -> () @kernel)>
 
