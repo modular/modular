@@ -154,7 +154,7 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
         write_args(writer, values, sep=" ", end="\n")
 
     fn error[*Ts: Writable](self, *values: *Ts):
-        alias target_level = Level.CRITICAL
+        alias target_level = Level.ERROR
 
         @parameter
         if Self._is_disabled[target_level]():
