@@ -200,7 +200,7 @@ Library, Mojo examples, or Mojo documentation. This page gives an overview of
 the process. For a more detailed walkthrough, see
 [How to contribute to the Mojo standard library: a step-by-step guide](https://www.modular.com/blog/how-to-contribute-to-mojo-standard-library-a-step-by-step-guide).
 
-**Note:** Pull requests should be submitted against the `nightly` branch,
+**Note:** Pull requests should be submitted against the `main` branch,
 which represents the most recent nightly build.
 
 ### Pull request process
@@ -243,10 +243,10 @@ git fetch upstream
 
 #### Branching off nightly
 
-Make sure to branch off `nightly` to work on your PR:
+Make sure to branch off `main` to work on your PR:
 
 ```bash
-git checkout upstream/nightly
+git checkout upstream/main
 git checkout -b my-fix-pr
 ```
 
@@ -255,20 +255,20 @@ before raising a PR:
 
 ```bash
 git fetch upstream
-git rebase upstream/nightly
+git rebase upstream/main
 ```
 
 #### Getting the nightly Mojo compiler
 
-Now that you're on the nightly branch, you need to install the latest nightly
+Now that you're on the main branch, you need to install the latest nightly
 build.
 
-If you're using [`magic`](https://docs.modular.com/magic), create a new
-project environment with the `max-nightly` channel like this:
+If you're using [`magic`](https://docs.modular.com/magic) (version 0.6.4 or
+higher), create a new project environment like this and it will install the
+latest nightly version of `max` by default:
 
 ```bash
-magic init mojo-nightly --format mojoproject \
-  -c conda-forge -c https://conda.modular.com/max-nightly
+magic init mojo-nightly --format mojoproject
 ```
 
 If you're [using conda](https://docs.modular.com/magic/conda), add the
@@ -299,7 +299,7 @@ when using the stable release!
 
 If your change is one of the improvements described above or it has been
 discussed and agreed upon by the project maintainers, please create a pull
-request into the `nightly` branch.
+request into the `main` branch.
 
 First push your changes:
 
@@ -314,7 +314,7 @@ remote: Create a pull request for 'my-fix-pr' on GitHub by visiting:
 remote:      https://github.com/jackos/mojo/pull/new/my-fix-pr
 ```
 
-Make sure you point it to the `nightly` branch:
+Make sure you point it to the `main` branch:
 
 ![Base Branch](stdlib/docs/images/base-branch.png)
 

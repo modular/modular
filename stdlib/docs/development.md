@@ -9,7 +9,7 @@ If this is your first time contributing, first read everything in
 you need to do the following:
 
 1. [Fork and clone the repo](../../CONTRIBUTING.md#fork-and-clone-the-repo)
-2. [Branch off nightly](../../CONTRIBUTING.md#branching-off-nightly)
+2. [Branch off main](../../CONTRIBUTING.md#branching-off-nightly)
 3. [Install the nightly Mojo compiler](../../CONTRIBUTING.md#getting-the-nightly-mojo-compiler)
 
 And if you're using VS Code:
@@ -104,7 +104,7 @@ You can do the same for a directory with
 ./stdlib/scripts/run-tests.sh ./stdlib/test/utils
 ```
 
-All the tests should pass on the `nightly` branch with the nightly Mojo
+All the tests should pass on the `main` branch with the nightly Mojo
 compiler. If you've pulled the latest changes and they're still failing please
 [open a GitHub
 issue](https://github.com/modularml/mojo/issues/new?assignees=&labels=bug%2Cmojo&projects=&template=mojo_bug_report.yaml&title=%5BBUG%5D).

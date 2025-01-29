@@ -11,6 +11,6 @@ WE FIND IT CONVENIENT TO DO SO WITHOUT WARNING OR NOTICE**.
 
 This directory contains internal documentation for the implementation details
 of the Mojo compiler, runtime, and stdlib. You must always reference the
-current version of this documentation on the branch nightly before using the
+current version of this documentation on the branch main before using the
 operations or behavior documented within. Any new files should contain the
 above warning.
