@@ -367,8 +367,8 @@ KGEN_CompilerRT_CreateAsyncDeviceBufferRef(
       AnyAsyncValueRef::createReady<DeviceBufferRef>(runtime, std::move(buf));
 
   // Finally, wrap the pointer and the AsyncValue wrapper in a TensorBufferRef.
-  auto tensorBufferRef = ::M::TensorBufferRef::create(
-      data, size, std::move(asyncDeviceBufferRef), std::optional<size_t>{});
+  auto tensorBufferRef =
+      ::M::TensorBufferRef::create(data, size, std::move(asyncDeviceBufferRef));
 
   if (value.getPointer() && value.getPointer()->isIndirect()) {
     value.copy().emplaceIndirect<TensorBufferRef>(std::move(tensorBufferRef));
@@ -397,8 +397,8 @@ KGEN_CompilerRT_CreateAsyncBufferWithBorrow(
     assert(borroweeType == kTensor);
     handle = handleOrTensor.get<Tensor>().getBufferRef().getMemStorageHandle();
   }
-  TensorBufferRef buf = ::M::TensorBufferRef::create(
-      data, size, std::move(handle), std::optional<size_t>{});
+  TensorBufferRef buf =
+      ::M::TensorBufferRef::create(data, size, std::move(handle));
 
   // Emplace into the async value.
   if (outVal.getPointer() && outVal.getPointer()->isIndirect()) {
@@ -429,8 +429,8 @@ KGEN_CompilerRT_CreateAsyncTensorWithBorrow(
     assert(borroweeType == kTensor);
     handle = handleOrTensor.get<Tensor>().getBufferRef().getMemStorageHandle();
   }
-  TensorBufferRef buf = ::M::TensorBufferRef::create(
-      data, byteCount, std::move(handle), std::optional<size_t>{});
+  TensorBufferRef buf =
+      ::M::TensorBufferRef::create(data, byteCount, std::move(handle));
 
   // Pack buffer and spec into tensor.
   TensorSpec spec(ArrayRef<size_t>(dims, rank), DType(type));
