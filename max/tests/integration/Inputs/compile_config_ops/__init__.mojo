@@ -9,8 +9,8 @@ from tensor import ManagedTensorSlice
 from sys import env_get_int
 
 
-@compiler.register("expose_env")
-struct ExposeEnv:
+@compiler.register("use_splitk_reduction_scheme")
+struct UseSplitkReductionScheme:
     @staticmethod
     fn execute(
         out: ManagedTensorSlice[DType.int32, 1],
