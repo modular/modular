@@ -107,6 +107,7 @@ modular_py_test(
         "//SDK/integration-test:test_user_op",
         "//PyTorch/test/utils/custom_ops",
         "//Kernels/mojo/buffer",
+        "//Kernels/mojo/logger",
         "//Kernels/mojo/algorithm",
         "//Kernels/mojo/register",
         "//Kernels/mojo/runtime",

@@ -36,6 +36,7 @@ mojo_library(
     visibility = [":__subpackages__"],
     deps = [
         "//Kernels/mojo/buffer",
+        "//Kernels/mojo/logger",
         "//Kernels/mojo/register",
         "//SDK/lib/API/mojo/max/compiler",
         "//SDK/lib/API/mojo/max/tensor",
