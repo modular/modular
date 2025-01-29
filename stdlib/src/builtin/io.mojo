@@ -27,11 +27,13 @@ from sys import (
     stdout,
 )
 from sys._libc import dup, fclose, fdopen, fflush
-from sys.ffi import OpaquePointer, c_char
+from sys.ffi import OpaquePointer, c_char, OpaquePointer
+from sys._amdgpu import printf_begin, printf_append_args, printf_append_string_n
+from sys.intrinsics import _type_is_eq
 
 from builtin.dtype import _get_dtype_printf_format
 from builtin.file_descriptor import FileDescriptor
-from memory import UnsafePointer, memcpy
+from memory import UnsafePointer, memcpy, bitcast
 
 from utils import (
     StaticString,
@@ -187,7 +189,74 @@ fn _printf[
             fmt.unsafe_cstr_ptr(), Pointer.address_of(loaded_pack)
         )
     elif is_amd_gpu():
-        pass
+        # This is adapted from Triton's third party method for lowering
+        # AMD printf calls:
+        # https://github.com/triton-lang/triton/blob/1c28e08971a0d70c4331432994338ee05d31e633/third_party/amd/lib/TritonAMDGPUToLLVM/TargetInfo.cpp#L321
+        fn _to_uint64[T: AnyType, //](value: T) -> UInt64:
+            @parameter
+            if _type_is_eq[T, UInt64]():
+                return rebind[UInt64](value)
+            elif _type_is_eq[T, UInt32]():
+                return UInt64(rebind[UInt32](value))
+            elif _type_is_eq[T, UInt16]():
+                return UInt64(rebind[UInt16](value))
+            elif _type_is_eq[T, UInt8]():
+                return UInt64(rebind[UInt8](value))
+            elif _type_is_eq[T, Int64]():
+                return UInt64(rebind[Int64](value))
+            elif _type_is_eq[T, Int32]():
+                return UInt64(rebind[Int32](value))
+            elif _type_is_eq[T, Int16]():
+                return UInt64(rebind[Int16](value))
+            elif _type_is_eq[T, Int8]():
+                return UInt64(rebind[Int8](value))
+            elif _type_is_eq[T, Float16]():
+                return bitcast[DType.uint64](Float64(rebind[Float16](value)))
+            elif _type_is_eq[T, Float32]():
+                return bitcast[DType.uint64](Float64(rebind[Float32](value)))
+            elif _type_is_eq[T, Float64]():
+                return bitcast[DType.uint64](rebind[Float64](value))
+            elif _type_is_eq[T, Int]():
+                return UInt64(rebind[Int](value))
+            elif _type_is_eq[T, UInt]():
+                return UInt64(rebind[UInt](value))
+            elif _type_is_eq[UnsafePointer[UInt8], UInt]():
+                return UInt64(Int(rebind[UnsafePointer[UInt8]](value)))
+            elif _type_is_eq[UnsafePointer[Int8], UInt]():
+                return UInt64(Int(rebind[UnsafePointer[Int8]](value)))
+            elif _type_is_eq[OpaquePointer, UInt]():
+                return UInt64(Int(rebind[OpaquePointer](value)))
+            return 0
+
+        alias args_len = len(VariadicList(types))
+
+        var message = printf_begin()
+        message = printf_append_string_n(message, fmt.as_bytes(), args_len == 0)
+        alias k_args_per_group = 7
+
+        @parameter
+        for group in range(0, args_len, k_args_per_group):
+            alias bound = min(group + k_args_per_group, args_len)
+            alias num_args = bound - group
+
+            var arguments = InlineArray[UInt64, k_args_per_group](fill=0)
+
+            @parameter
+            for i in range(num_args):
+                arguments[i] = _to_uint64(args[i])
+            message = printf_append_args(
+                message,
+                num_args,
+                arguments[0],
+                arguments[1],
+                arguments[2],
+                arguments[3],
+                arguments[4],
+                arguments[5],
+                arguments[6],
+                Int32(Int(bound == args_len)),
+            )
+
     else:
         with _fdopen(file) as fd:
             # FIXME: external_call should handle this
