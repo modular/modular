@@ -80,12 +80,12 @@ struct Info[func_type: AnyTrivialRegType, func: func_type]:
 alias _EMISSION_KIND_ASM = 0
 alias _EMISSION_KIND_LLVM = 1
 alias _EMISSION_KIND_LLVM_OPT = 2
-alias _EMISSION_KIND_SHARED_OBJ = 3
+alias _EMISSION_KIND_OBJECT = 3
 
 
 fn _get_emission_kind_id[emission_kind: StringLiteral]() -> IntLiteral:
     constrained[
-        emission_kind in ("elab-mlir", "llvm", "llvm-opt", "shared-obj", "asm"),
+        emission_kind in ("elab-mlir", "llvm", "llvm-opt", "object", "asm"),
         "invalid emission kind '" + emission_kind + "'",
     ]()
 
@@ -94,8 +94,8 @@ fn _get_emission_kind_id[emission_kind: StringLiteral]() -> IntLiteral:
         return _EMISSION_KIND_LLVM
     elif emission_kind == "llvm-opt":
         return _EMISSION_KIND_LLVM_OPT
-    elif emission_kind == "shared-obj":
-        return _EMISSION_KIND_SHARED_OBJ
+    elif emission_kind == "object":
+        return _EMISSION_KIND_OBJECT
     else:
         return _EMISSION_KIND_ASM
 
