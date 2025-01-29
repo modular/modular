@@ -408,7 +408,7 @@ struct DeviceFunction[
     target: __mlir_type.`!kgen.target` = _get_gpu_target(),
     _ptxas_info_verbose: Bool = False,
 ]:
-    alias _emission_kind = "shared-obj" if _is_amd_gpu[target]() else "asm"
+    alias _emission_kind = "object" if _is_amd_gpu[target]() else "asm"
     var _handle: _DeviceFunctionPtr
     var _func_impl: Info[func_type, func]
 
