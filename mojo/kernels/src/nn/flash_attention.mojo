@@ -1007,14 +1007,13 @@ fn flash_attention_split_kv[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return String(
+        return String(";").join(
             trace_arg("q", q),
             trace_arg("k", k_shape),
             trace_arg("v", v_shape),
             trace_arg("k_cache", k_cache_shape),
             trace_arg("v_cache", v_cache_shape),
             trace_arg("output", output),
-            sep=";",
         )
 
     with Trace[TraceLevel.OP, target="cpu"](
@@ -1180,13 +1179,11 @@ fn _flash_attention_kv_cache[
 
     constrained[
         cache_type == type,
-        String(
-            "Expected cache type (",
-            cache_type,
-            ") to match input type (",
-            type,
-            ")",
-        ),
+        "Expected cache type ("
+        + String(cache_type)
+        + ") to match input type ("
+        + String(type)
+        + ")",
     ]()
 
     @parameter

@@ -150,11 +150,11 @@ fn copy_to_slice[
 
     if expected_shape != in_slice.get_shape():
         raise Error(
-            "Shape mismatch for mo.mutable.store.slice: expected 'slice'",
-            " operand to have shape: ",
-            expected_shape,
-            " but got: ",
-            in_slice.get_shape(),
+            "Shape mismatch for mo.mutable.store.slice: expected 'slice'"
+            " operand to have shape: "
+            + String(expected_shape)
+            + " but got: "
+            + String(in_slice.get_shape())
         )
 
     var buffer_slice_view = slice_as_view(buffer, start, end, step)
