@@ -16,7 +16,7 @@ namespace M::KGEN {
 /// Represents kernel compilation options that is used to set mojo parameters
 /// during JITing.
 struct CompilationContext {
-  llvm::DenseMap<llvm::StringRef, std::variant<bool, int, llvm::StringRef>>
+  llvm::DenseMap<llvm::StringRef, std::variant<bool, int, std::string>>
       mojoDefines;
 
   /// Print the compilation config to the output stream.

@@ -22,7 +22,7 @@ void CompilationContext::print(llvm::raw_ostream &os) const {
             os << v;
           } else if constexpr (std::is_same_v<T, int>) {
             os << v;
-          } else if constexpr (std::is_same_v<T, llvm::StringRef>) {
+          } else if constexpr (std::is_same_v<T, std::string>) {
             os << v;
           } else {
             // NOTE: This should be a static_assert, but that breaks in torch
