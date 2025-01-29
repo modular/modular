@@ -116,6 +116,11 @@ static int doc(const State &subcommandState) {
       args.hasArg(options::OPT_diagnose_missing_doc_strings);
   parserConfig.errorOnInvalidDocStrings =
       args.hasArg(options::OPT_validate_doc_strings);
+  int maxNotes = 0;
+  if (!args.getLastArgValue(options::OPT_max_notes).getAsInteger(10, maxNotes))
+    parserConfig.maxNotesPerDiagnostic = maxNotes;
+  parserConfig.stripFilePrefix =
+      args.getLastArgValue(options::OPT_strip_file_prefix);
 
   // We also don't allow users to configure the time profiler.
   mlir::DefaultTimingManager timingManager;
