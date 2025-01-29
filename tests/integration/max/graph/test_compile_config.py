@@ -18,12 +18,14 @@ def compile_config_ops_path() -> Path:
     return Path(os.environ["MODULAR_COMPILE_CONFIG_OPS_PATH"])
 
 
-def test_compile_config(
+def test_compile_config_split_k_reduction_scheme(
     session: InferenceSession, compile_config_ops_path: Path
 ):
     tensor_type = TensorType(dtype=DType.int32, shape=[1])
-    with Graph("compile_config", input_types=[]) as graph:
-        graph.output(ops.custom("expose_env", [], [tensor_type])[0])
+    with Graph("graph", input_types=[]) as graph:
+        graph.output(
+            ops.custom("use_splitk_reduction_scheme", [], [tensor_type])[0]
+        )
 
     session.set_split_k_reduction_precision("ACCUM")
     model = session.load(graph, custom_extensions=compile_config_ops_path)
