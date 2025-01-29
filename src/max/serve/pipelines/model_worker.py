@@ -22,6 +22,7 @@ from max.pipelines import PipelinesFactory, TokenGenerator
 from max.profiler import Tracer, traced
 from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
 from max.serve.pipelines.scheduler import Scheduler
+from max.serve.pipelines.scheduler_v2 import SchedulerV2
 from max.serve.scheduler.queues import STOP_STREAM, EngineQueue
 from max.serve.telemetry.metrics import METRICS, configure_metrics
 from max.serve.telemetry.stopwatch import record_ms
@@ -48,7 +49,7 @@ def _model_worker_process_fn(
 ):
     try:
         uvloop.run(
-            model_worker_run_v2(
+            model_worker_run_v3(
                 model_factory, batch_config, worker_config, queues, events
             )
         )
@@ -278,6 +279,40 @@ async def model_worker_run_v2(
     finally:
         stopped.set()
         logger.info("Stopped model worker at process %d!", pid)
+
+
+@traced
+async def model_worker_run_v3(
+    model_factory: PipelinesFactory,
+    pipeline_config: TokenGeneratorPipelineConfig,
+    worker_config: ModelWorkerConfig,
+    queues: Mapping[str, Queue],
+    events: Mapping[str, Event],
+):
+    configure_metrics()
+    await METRICS.configure()
+
+    pid = os.getpid()
+    logger.info("Starting model worker on process %d!", pid)
+
+    # TODO introduce SchedulerConfig
+    # TODO Initialize model here in ModelWorker and pass it to SchedulerV2
+
+    scheduler = SchedulerV2(
+        model_factory=model_factory,
+        pipeline_config=pipeline_config,
+        queues=queues,
+        events=events,
+    )
+    logger.info("Token generators loaded!")
+
+    scheduler.started.set()
+    logger.info("Started model worker!")
+
+    scheduler.run()
+
+    scheduler.stopped.set()
+    logger.info("Stopped model worker!")
 
 
 @traced
