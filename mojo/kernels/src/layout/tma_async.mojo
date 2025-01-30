@@ -15,6 +15,7 @@ from gpu.host._nvidia_cuda import (
 from gpu.memory import (
     AddressSpace,
     cp_async_bulk_tensor_shared_cluster_global,
+    cp_async_bulk_tensor_shared_cluster_global_multicast,
     cp_async_bulk_tensor_global_shared_cta,
     cp_async_bulk_tensor_reduce,
 )
@@ -226,6 +227,32 @@ struct TMATensorTile[
                     mem_barrier.mbar,
                     Index(coords[0] + j * copy_dim1, coords[1] + i * copy_dim0),
                 )
+
+    # Schedules an asynchronous copy into the destination tile at the given coordinates.
+    #
+    @always_inline
+    fn async_multicast_load(
+        self,
+        dst: LayoutTensor[
+            dtype, _, address_space = AddressSpace.SHARED, *_, **_
+        ],
+        mem_barrier: TMABarrier,
+        coords: Tuple[UInt, UInt],
+        multicast_mask: UInt16,
+    ):
+        # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
+        constrained[
+            __type_of(dst).alignment % 128 == 0,
+            "TMA requires 128B alignment in shared memory",
+        ]()
+
+        cp_async_bulk_tensor_shared_cluster_global_multicast(
+            dst.ptr,
+            UnsafePointer.address_of(self.descriptor).bitcast[NoneType](),
+            mem_barrier.mbar,
+            Index(coords[0], coords[1]),
+            multicast_mask,
+        )
 
     # Schedules an asynchronous store into the global memory
     @always_inline
