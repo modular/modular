@@ -57,59 +57,6 @@ fn register_internal_shape_func(name: StringLiteral):
     return
 
 
-fn mogg_elementwise():
-    """
-    This decorator marks a kernel as being elementwise. This implies the
-    kernel represents a lambda to be executed in the inner loop of an
-    elementwise function.
-    """
-    return
-
-
-fn mogg_view_op():
-    """
-    This decorator marks a kernel as being a view operation. These are expected
-    to return an NDBuffer with only the offset, strides, and/or shape changed.
-    """
-    return
-
-
-fn mogg_takes_indices():
-    """
-    Tells the compiler that this kernel takes elementwise indices as its last
-    argument.
-    """
-    return
-
-
-fn mogg_enable_fusion():
-    """
-    Marks this function as the trigger which enables fusion.
-    """
-    return
-
-
-fn mogg_input_fusion_hook():
-    """
-    A hint that this is the template to look at to create the fusion lambda.
-    """
-    return
-
-
-fn mogg_output_fusion_hook():
-    """
-    A hint that this is the template to look at to create the fusion lambda.
-    """
-    return
-
-
-fn mogg_elementwise_hook():
-    """
-    A hint that this is the elementwise function.
-    """
-    return
-
-
 fn __mogg_intrinsic_attr(intrin: StringLiteral):
     """
     Attaches the given intrinsic annotation onto the function.
