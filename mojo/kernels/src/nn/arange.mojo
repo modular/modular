@@ -17,8 +17,6 @@ from utils.index import IndexList
 
 
 @register_internal("mo.range")
-@mogg_elementwise
-@mogg_takes_indices()
 @always_inline
 fn arange[
     type: DType, simd_width: Int

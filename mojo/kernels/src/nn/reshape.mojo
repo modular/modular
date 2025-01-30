@@ -7,7 +7,6 @@
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from register import (
-    mogg_view_op,
     register_internal,
     register_internal_shape_func,
 )
@@ -19,7 +18,6 @@ from utils.loop import unroll
 # Reshape assumes inputs are contiguous. It should always be fused last and
 # a non-contiguous tensor cannot be fused *into* this as input.
 @register_internal("mo.static.reshape")
-@mogg_view_op
 @always_inline
 fn reshape[
     rank: Int,
@@ -47,7 +45,6 @@ fn reshape[
 
 
 @register_internal("ndbuffer_reshape")
-@mogg_view_op
 @always_inline
 fn ndbuffer_reshape[
     rank: Int,
