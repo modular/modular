@@ -12,7 +12,7 @@ This script runs a grid-search of all the parameters for a mojo benchmark.
   - [`kbench` YAML format](#kbench-yaml-format)
   - [Expanding spec's to get instances](#expanding-specs-to-get-instances)
   - [`kbench` loop: Enumerating over instances](#kbench-loop-enumerating-over-instances)
-  - [`kbench` loop: Enumerating over instances with a superset](#kbench-loop-enumerating-over-instances-with-a-superset)
+  - [`kbench` loop: Enumerating over instances with shapes](#kbench-loop-enumerating-over-instances-with-shapes)
 - [Output pickle `.pkl` files](#output-pickle-pkl-files)
 - [Compile-time Parameters vs. Runtime Variables](#compile-time-parameters-vs-runtime-variables)
 - [`kbench` Object Cache](#kbench-object-cache)
@@ -232,7 +232,7 @@ For example:
 kbench tuning_params.yaml
 ```
 
-### `kbench` loop: Enumerating over instances with a superset
+### `kbench` loop: Enumerating over instances with shapes
 
 In certain use cases, we need to have two levels of parameters that should be
 expanded separately. For example, when running a kernel with input shapes in
@@ -241,19 +241,19 @@ parameters and tuning parameters all at once, i.e., `expansion(SxT)`.
 Instead, we are interested in `expansion(S) x expansion(T)`, writing the
 results of each tuning step to `#S` separate output file
 
-The following loop nest shows how `kbench` enumerates over instances:
+The following loop nest shows how `kbench` enumerates over shapes and instances:
 
 ```python
-for superset_inst in superset_instances:
+for shape in shapes:
     for bench_inst in benchmarking_instances:
-        compile_and_run_kernel(superset_inst + bench_inst)
-    dump_results_for(superset_inst)
+        compile_and_run_kernel(shape + bench_inst)
+    dump_results_for(shape)
 ```
 
 For example:
 
 ```bash
-kbench tuning_params.yaml --superset input_shapes.yaml
+kbench tuning_params.yaml --shapes input_shapes.yaml
 ```
 
 ## Output pickle `.pkl` files
@@ -324,5 +324,5 @@ kbench --clear-cache
 kbench -cc
 ```
 
-- ToDo: add details about object-cache dump at the end of superset loop
+- ToDo: add details about object-cache dump at the end of shapes loop
 - ToDo: links to kplot and kprofile
