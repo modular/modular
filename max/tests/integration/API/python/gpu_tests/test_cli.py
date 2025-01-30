@@ -132,9 +132,9 @@ def test_cli__option_is_flag():
     for config_field in fields(TestConfig):
         if not config_field.name.startswith("_"):
             flag = is_flag(field_types[config_field.name])
-            assert (
-                flag == VALID_RESULTS[config_field.name].flag
-            ), f"failed test_is_flag for {config_field.name}"
+            assert flag == VALID_RESULTS[config_field.name].flag, (
+                f"failed test_is_flag for {config_field.name}"
+            )
 
 
 def test_cli__option_is_multiple():

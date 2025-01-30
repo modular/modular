@@ -115,9 +115,9 @@ def test_collate_batch__no_items(pad_value: int):
 def test_collate_mask__tokens_and_mask_shapes_match(
     start_pos: list[int], tokens: list[np.ndarray]
 ) -> None:
-    assert len(start_pos) == len(
-        tokens
-    ), "start_pos and tokens must have the same length"
+    assert len(start_pos) == len(tokens), (
+        "start_pos and tokens must have the same length"
+    )
 
     for pad_to_multiple_of in PAD_MULTIPLES:
         batched_tokens, unpadded_last_token_index, attention_mask = (
@@ -126,12 +126,12 @@ def test_collate_mask__tokens_and_mask_shapes_match(
             )
         )
 
-        assert batched_tokens.shape[0] == len(
-            tokens
-        ), "Batch size of tokens does not match"
-        assert len(unpadded_last_token_index) == len(
-            tokens
-        ), "Length of unpadded last tokens do not match"
-        assert (
-            attention_mask.shape[:2] == batched_tokens.shape
-        ), "Attention mask shape mismatch"
+        assert batched_tokens.shape[0] == len(tokens), (
+            "Batch size of tokens does not match"
+        )
+        assert len(unpadded_last_token_index) == len(tokens), (
+            "Length of unpadded last tokens do not match"
+        )
+        assert attention_mask.shape[:2] == batched_tokens.shape, (
+            "Attention mask shape mismatch"
+        )
