@@ -143,7 +143,7 @@ def parse_and_plot(
             ratio = (
                 t.iloc[:, target_col_idx] / tables[0].iloc[:, target_col_idx]
             )
-            name = f"{target_col_name} [{name_list[i+1]}/{name_list[0]}]"
+            name = f"{target_col_name} [{name_list[i + 1]}/{name_list[0]}]"
             ratio_df.insert(len(ratio_df.columns), name, ratio)
             y_list.append(ratio)
             y_names.append(name)

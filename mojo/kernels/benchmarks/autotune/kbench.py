@@ -317,9 +317,9 @@ class SpecInstance:
                     tmp_dir=output_file.parent.absolute(),
                 )
                 # TODO: There is an issue in running '--dryrun' with '-c' on empty cache.
-                assert (
-                    obj_path_in_cache
-                ), "Running empty cache with --dryrun is not supported!"
+                assert obj_path_in_cache, (
+                    "Running empty cache with --dryrun is not supported!"
+                )
 
             # The path to built object is stored in the cache as `obj_path_in_cache`
             cmd = [obj_path_in_cache, "-o", str(output_file), *vars]
@@ -652,9 +652,9 @@ class Spec:
         return self
 
     def __next__(self) -> "SpecInstance":
-        assert (
-            self.mesh != None
-        ), "Should call self.init_mesh after loading or in postinit."
+        assert self.mesh != None, (
+            "Should call self.init_mesh after loading or in postinit."
+        )
 
         # Stop condition
         if self.iter_offset == len(self.mesh):
@@ -1064,9 +1064,9 @@ def cli(
         [sh.to_path() for sh in shape_list] if shapes else [output_path]
     )
 
-    assert len(shape_path_list) == len(
-        shape_list
-    ), "Number of shapes doesn't equal number of paths."
+    assert len(shape_path_list) == len(shape_list), (
+        "Number of shapes doesn't equal number of paths."
+    )
 
     if files:
         for i, shape in enumerate(shape_list):
