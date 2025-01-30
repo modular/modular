@@ -57,5 +57,6 @@ fn test_range_symbol() raises:
 
 
 def main():
-    test_range()
+    # TODO(GEX-1784): MEF deserialization causes a segfault
+    # test_range()
     test_range_symbol()
