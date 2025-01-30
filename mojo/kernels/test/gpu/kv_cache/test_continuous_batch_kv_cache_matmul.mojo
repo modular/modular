@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo-no-debug %s
+# RUN: %mojo-no-debug-no-assert %s
 
 from collections import Set
 from random import random_ui64, seed

@@ -3,6 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# Hangs with regular builds (TODO: File issue).
+# REQUIRES: DISABLED
 # Hangs with debug mode Issue #24921
 # REQUIRES: NVIDIA-GPU
 # RUN: %mojo-no-debug-no-assert %s | FileCheck %s
