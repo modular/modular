@@ -30,7 +30,8 @@ ErrorOrSuccess M::parseCompilationOptions(
     MLIRContext &ctx, llvm::opt::OptSpecifier includeDirsId,
     llvm::opt::OptSpecifier optimizationLevelId,
     llvm::opt::OptSpecifier debugLevelId, llvm::opt::OptSpecifier sanitizeId,
-    llvm::opt::OptSpecifier debugInfoLanguageId) {
+    llvm::opt::OptSpecifier debugInfoLanguageId,
+    llvm::opt::OptSpecifier stdLibPath) {
   // Process the sanitizers.
   if (sanitizeId.isValid()) {
     StringRef sanitizer = args.getLastArgValue(sanitizeId);
@@ -46,6 +47,13 @@ ErrorOrSuccess M::parseCompilationOptions(
       else if (sanitizer == "thread")
         compilationOptions.sanitizers.enable(Sanitizers::kThread);
     }
+  }
+
+  // Enable overwritting of the auto-imported paths, which is where the compiler
+  // first looks for builtins.
+  if (stdLibPath.isValid()) {
+    StringRef value = args.getLastArgValue(stdLibPath);
+    compilationOptions.searchPaths = value;
   }
 
   // Process the debug info language.
@@ -241,7 +249,7 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
     llvm::opt::OptSpecifier docErrorOnInvalidDocId,
     llvm::opt::OptSpecifier maxNotesId, llvm::opt::OptSpecifier definesId,
     llvm::opt::OptSpecifier stripFilePrefixId,
-    llvm::opt::OptSpecifier disableBuiltins,
+    llvm::opt::OptSpecifier disableBuiltins, llvm::opt::OptSpecifier stdLibPath,
     function_ref<OwningOpRef<ModuleOp>(ParserConfig &, mlir::TimingScope &)>
         parseFn) {
   // We don't allow users to configure the time profiler.
@@ -251,7 +259,10 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
   DialectRegistry registry;
   registerAllKGENDialects(registry);
   ctx->appendDialectRegistry(registry);
-
+  if (stdLibPath.isValid()) {
+    StringRef value = args.getLastArgValue(stdLibPath);
+    compilationOptions.searchPaths = value;
+  }
   // Parse the input Mojo file into an MLIR module.
   ParserConfig parseConfig(ctx, compilationOptions);
   parseConfig.diagnoseMissingDocStrings = args.hasArg(docDiagnoseMissingId);

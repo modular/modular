@@ -389,7 +389,7 @@ static int package(const State &subcommandState) {
       options::OPT_diagnose_missing_doc_strings,
       options::OPT_validate_doc_strings, options::OPT_max_notes,
       /*definesId=*/llvm::opt::OptSpecifier(), options::OPT_strip_file_prefix,
-      options::OPT_disable_builtins,
+      options::OPT_disable_builtins, options::OPT_mojo_search_paths,
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
         parserConfig.exportKgenModule = args.hasArg(options::OPT_kgenModule);
         OwningOpRef<ModuleOp> moduleOp;
