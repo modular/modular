@@ -44,6 +44,5 @@ body:
       label: System information
       description: What version of Mojo are you using?
       value: |
-        - What OS did you install Mojo on?
-        - Provide version information for Mojo by pasting the output of `mojo -v`.
-        - Provide the Modular CLI version by pasting the output of `modular -v`.
+        - Provide the system information by running `magic info`.
+        - Provide version information for MAX (includes Mojo) by pasting the output of `magic list max`.
