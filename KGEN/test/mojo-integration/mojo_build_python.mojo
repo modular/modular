@@ -18,4 +18,4 @@ def main():
 
     # CHECK: This was built inside of python
     var py_string = Python.evaluate("'This was built' + ' inside of python'")
-    print(python.__str__(py_string.__str__()))
+    print(python.as_string_slice(py_string.__str__()))
