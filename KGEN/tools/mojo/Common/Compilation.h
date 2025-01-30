@@ -48,7 +48,8 @@ parseCompilationOptions(const State &state, const llvm::opt::InputArgList &args,
                         llvm::opt::OptSpecifier optimizationLevelId = {},
                         llvm::opt::OptSpecifier debugLevelId = {},
                         llvm::opt::OptSpecifier sanitizeId = {},
-                        llvm::opt::OptSpecifier debugInfoLanguageId = {});
+                        llvm::opt::OptSpecifier debugInfoLanguageId = {},
+                        llvm::opt::OptSpecifier stdLibPath = {});
 
 /// Warn users when doing debug builds with a compiler in debug mode.
 void warnBuildingForDebugWithDebugBuiltCompiler(
@@ -78,7 +79,7 @@ ErrorOr<OwningOpRef<ModuleOp>> invokeMojoParser(
     llvm::opt::OptSpecifier docErrorOnInvalidDocId,
     llvm::opt::OptSpecifier maxNotesId, llvm::opt::OptSpecifier definesId,
     llvm::opt::OptSpecifier stripFilePrefixId,
-    llvm::opt::OptSpecifier disableBuiltins,
+    llvm::opt::OptSpecifier disableBuiltins, llvm::opt::OptSpecifier stdlibPath,
     function_ref<OwningOpRef<ModuleOp>(KGEN::LIT::ParserConfig &,
                                        mlir::TimingScope &)>
         parseFn);

@@ -47,4 +47,10 @@ def disable_builtins : Flag<["--", "-"],
   "disable-builtins">, Group<DiagnosticOptionGroup>, Index<5>,
   HelpText<"Do not use builtins when create package.">;
 
+def mojo_search_paths : JoinedOrSeparate<["-"], "mojo-search-paths">,
+    Group<DiagnosticOptionGroup>, Index<6>,
+    MetaVarName<"PATH">,
+    HelpText<"Specify additional search paths for Mojo modules.">,
+    Flags<[HelpHidden]>;
+
 #endif // KGEN_TOOLS_MOJO_COMMON_DIAGNOSTICOPTIONS_TD
