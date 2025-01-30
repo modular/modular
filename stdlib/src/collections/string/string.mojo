@@ -828,7 +828,10 @@ struct String(
             buff: The buffer. This should have an existing terminator.
         """
 
-        return String(ptr=buff, length=len(StringRef(ptr=buff)) + 1)
+        return String(
+            ptr=buff,
+            length=len(StringSlice[buff.origin](unsafe_from_utf8_ptr=buff)) + 1,
+        )
 
     @staticmethod
     fn _from_bytes(owned buff: Self._buffer_type) -> String:

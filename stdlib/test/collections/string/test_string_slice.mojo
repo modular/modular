@@ -857,6 +857,28 @@ def test_chars_iter():
     assert_equal(s3_iter.__has_next__(), False)
 
 
+def test_string_slice_from_pointer():
+    var a = StringSlice("AAA")
+    var b = StringSlice[StaticConstantOrigin](
+        unsafe_from_utf8_ptr=a.unsafe_ptr()
+    )
+    assert_equal(3, len(a))
+    assert_equal(3, len(b))
+    var c = String("ABCD")
+    var d = StringSlice[__origin_of(c)](
+        unsafe_from_utf8_cstr_ptr=c.unsafe_cstr_ptr()
+    )
+    var e = StringSlice[__origin_of(c)](unsafe_from_utf8_ptr=c.unsafe_ptr())
+    assert_equal(4, len(c))
+    assert_equal(4, len(d))
+    assert_equal(4, len(e))
+    assert_true("A", d[0])
+    assert_true("B", d[1])
+    assert_true("C", d[2])
+    assert_true("D", d[3])
+    assert_true("D", d[-1])
+
+
 def main():
     test_string_slice_layout()
     test_string_literal_byte_span()
@@ -886,3 +908,4 @@ def main():
     test_startswith()
     test_endswith()
     test_chars_iter()
+    test_string_slice_from_pointer()

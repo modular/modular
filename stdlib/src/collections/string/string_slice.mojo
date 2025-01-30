@@ -29,6 +29,7 @@ from memory import UnsafePointer, memcmp, memcpy, Span
 from memory.memory import _memcmp_impl_unconstrained
 from sys import bitwidthof, simdwidthof
 from sys.intrinsics import unlikely, likely
+from sys.ffi import c_char
 from utils.stringref import StringRef, _memmem
 from os import PathLike
 
@@ -422,6 +423,45 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         )
 
         self = Self(unsafe_from_utf8=byte_slice)
+
+    fn __init__(out self, *, unsafe_from_utf8_ptr: UnsafePointer[Byte]):
+        """Construct a new StringSlice from a `UnsafePointer[Byte]` pointing to null-terminated UTF-8
+        encoded bytes.
+
+        Args:
+            unsafe_from_utf8_ptr: An `UnsafePointer[Byte]` of null-terminated bytes encoded in UTF-8.
+
+        Safety:
+            - `unsafe_from_utf8_ptr` MUST point to data that is valid for
+                `origin`.
+            - `unsafe_from_utf8_ptr` MUST be valid UTF-8 encoded data.
+            - `unsafe_from_utf8_ptr` MUST be null terminated.
+        """
+
+        var count = _unsafe_strlen(unsafe_from_utf8_ptr)
+
+        var byte_slice = Span[Byte, origin](
+            ptr=unsafe_from_utf8_ptr,
+            length=count,
+        )
+
+        self = Self(unsafe_from_utf8=byte_slice)
+
+    fn __init__(out self, *, unsafe_from_utf8_cstr_ptr: UnsafePointer[c_char]):
+        """Construct a new StringSlice from a `UnsafePointer[c_char]` pointing to null-terminated UTF-8
+        encoded bytes.
+
+        Args:
+            unsafe_from_utf8_cstr_ptr: An `UnsafePointer[c_char]` of null-terminated bytes encoded in UTF-8.
+
+        Safety:
+            - `unsafe_from_utf8_ptr` MUST point to data that is valid for
+                `origin`.
+            - `unsafe_from_utf8_ptr` MUST be valid UTF-8 encoded data.
+            - `unsafe_from_utf8_ptr` MUST be null terminated.
+        """
+        var ptr = unsafe_from_utf8_cstr_ptr.bitcast[Byte]()
+        self = Self(unsafe_from_utf8_ptr=ptr)
 
     @always_inline
     fn __init__(out self, *, ptr: UnsafePointer[Byte], length: UInt):
@@ -1584,3 +1624,21 @@ fn _is_newline_char[
         var b2 = p[eol_start + 2]
         return b0 == 0xE2 and b1 == 0x80 and (b2 == 0xA8 or b2 == 0xA9)
     return False
+
+
+@always_inline
+fn _unsafe_strlen(owned ptr: UnsafePointer[Byte]) -> Int:
+    """
+    Get the length of a null-terminated string from a pointer.
+    Note: the length does NOT include the null terminator.
+
+    Args:
+        ptr: The null-terminated pointer to the string.
+
+    Returns:
+        The length of the null terminated string without the null terminator.
+    """
+    var len = 0
+    while ptr.load(len):
+        len += 1
+    return len
