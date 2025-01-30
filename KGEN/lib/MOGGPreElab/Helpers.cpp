@@ -67,13 +67,6 @@ bool stripDecorators(LIT::FnOp func) {
   // We will replace each decorator with a new attribute.
   SmallVector<NamedAttribute> newAttrs;
 
-  // Decorators we should replace with a trivial unit attribute.
-  constexpr std::array<MOGGDecorator, 8> identityDecorators{
-      Decorators::ELEM_HOOK,     Decorators::ELEMENTWISE,
-      Decorators::VIEW,          Decorators::TAKES_INDICES,
-      Decorators::ENABLE_FUSION, Decorators::INPUT_FUSION,
-      Decorators::OUTPUT_FUSION, Decorators::ELEMENTWISE_PUBLIC};
-
   // Each kernel can implement multiple operations. We will canonicalize these
   // into one attribute.
   SmallVector<Attribute> kernelRegistrations, shapeFunctionReg;
@@ -126,15 +119,6 @@ bool stripDecorators(LIT::FnOp func) {
 
     if (decoratorName.empty())
       continue;
-
-    for (MOGGDecorator target : identityDecorators) {
-      if (decoratorName.starts_with(target.decorator)) {
-        newAttrs.push_back(NamedAttribute{builder.getStringAttr(target.attr),
-                                          builder.getUnitAttr()});
-        decoratorsToCopy.pop_back();
-        break;
-      }
-    }
 
     // All the other decorators below are expected to be in the form of taking
     // arguments. I.E an apply expression.

@@ -116,24 +116,6 @@ constexpr StringLiteral REGISTER_SHAPE_FUNC = "register_internal_shape_func";
 // Allow new attrs to be added without needing explicit decorator.
 constexpr StringLiteral REGISTER_MOGG_INTRINSIC = "__mogg_intrinsic_attr";
 
-// MOGG API V1 hooks.
-constexpr MOGGDecorator ELEMENTWISE{"mogg_elementwise", "mogg.elementwise"};
-constexpr MOGGDecorator ELEMENTWISE_PUBLIC{"elementwise", "mogg.elementwise"};
-constexpr MOGGDecorator VIEW{"mogg_view_op", IS_VIEW_ATTR};
-constexpr MOGGDecorator TAKES_INDICES{"mogg_takes_indices",
-                                      "mogg.takes_indices"};
-
-// Tensor API hooks.
-
-constexpr MOGGDecorator ELEM_HOOK{"mogg_elementwise_hook", "mogg.elem_hook"};
-
-constexpr MOGGDecorator ENABLE_FUSION{"mogg_enable_fusion",
-                                      "mogg.enable_fusion"};
-constexpr MOGGDecorator INPUT_FUSION{"mogg_input_fusion_hook",
-                                     "mogg.input_fusion_hook"};
-constexpr MOGGDecorator OUTPUT_FUSION{"mogg_output_fusion_hook",
-                                      "mogg.output_fusion_hook"};
-
 } // namespace Decorators
 
 //===----------------------------------------------------------------------===//
