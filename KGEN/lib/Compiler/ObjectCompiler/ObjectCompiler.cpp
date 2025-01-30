@@ -315,9 +315,10 @@ writeBytesToTempWithHash(const std::string &saveTempsPrefix,
   return success();
 }
 
+template <typename ModuleT>
 static LogicalResult writeTempModule(const std::string &saveTempsPrefix,
-                                     const std::string &phase,
-                                     llvm::Module &module) {
+                                     const std::string &phase, ModuleT &module,
+                                     const std::string &fileExt = ".ll") {
   if (saveTempsPrefix.empty())
     return success();
 
@@ -325,7 +326,7 @@ static LogicalResult writeTempModule(const std::string &saveTempsPrefix,
   std::string str;
   llvm::raw_string_ostream ss(str);
   ss << module;
-  return writeBytesToTempWithHash(finalSavePrefix, ".ll", str);
+  return writeBytesToTempWithHash(finalSavePrefix, fileExt, str);
 }
 
 /// Compile optimized llvm::Module module to object through the llc pipeline
@@ -688,8 +689,17 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
 
   buildLowerToLLVMPipeline(mgr, llvmOptions);
 
+  if (failed(writeTempModule(options.saveTempsPrefix, ".pre-llvm-dialect",
+                             module, ".mlir")))
+    return Error(
+        "writing module to file before converting to LLVM Dialect failed");
+
   if (failed(mgr.run(module)))
     return Error("run LowerToLLVMPipeline failed");
+
+  if (failed(writeTempModule(options.saveTempsPrefix, ".pre-llvm-ir", module,
+                             ".mlir")))
+    return Error("writing module to file before converting to LLVM IR failed");
 
   // Translate the operation into an LLVM module.
   std::unique_ptr<llvm::Module> llvmModule =
