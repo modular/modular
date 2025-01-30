@@ -8,10 +8,10 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from max.driver import CPU
+from max.driver import CPU, Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph
+from max.graph import DeviceRef, Graph
 from max.graph.weights import SafetensorWeights
 
 
@@ -45,10 +45,17 @@ def test_load_safetensors(
         [graph_testdata / f"example_data_{i}.safetensors" for i in range(1, 3)]
     )
     with Graph("graph_with_pt_weights") as graph:
-        loaded = {k: graph.add_weight(w.allocate()) for k, w in weights.items()}
-        graph.output(*[loaded[k] for k in flat_keys])
+        loaded = {
+            k: graph.add_weight(w.allocate(), device=DeviceRef.CPU())
+            for k, w in weights.items()
+        }
+        graph.output(*[loaded[k].to(DeviceRef.GPU()) for k in flat_keys])
         compiled = gpu_session.load(
-            graph, weights_registry=weights.allocated_weights
+            graph,
+            weights_registry={
+                k: Tensor.from_numpy(v).to(Accelerator())
+                for k, v in weights.allocated_weights.items()
+            },
         )
 
         output = compiled.execute()
