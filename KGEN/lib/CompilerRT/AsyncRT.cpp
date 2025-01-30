@@ -568,10 +568,17 @@ KGEN_CompilerRT_GetContextAndSizeFromAsync(
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_DestructAsyncRefs(size_t size, void **storageRefPtr) {
+KGEN_CompilerRT_DestructAsyncRefs(size_t size, void **storageRefPtr,
+                                  bool directRef) {
   for (size_t i = 0; i < size; i++) {
-    void *ref_addr = storageRefPtr[i];
-    std::destroy_at(reinterpret_cast<AnyAsyncValueRef *>(ref_addr));
+    AnyAsyncValueRef *refAddr =
+        directRef ? reinterpret_cast<AnyAsyncValueRef *>(&storageRefPtr[i])
+                  : reinterpret_cast<AnyAsyncValueRef *>(storageRefPtr[i]);
+    // The refAddr could be nullptr here since compiled model tries to destruct
+    // all async values upon failure and some of them might not have been
+    // initialized.
+    if (refAddr && refAddr->getPointer())
+      refAddr->reset();
   }
 }
 
