@@ -111,7 +111,7 @@ def flatten(value: Union[int, object, Iterable]) -> List[Any]:
     return result
 
 
-def _run(cmd, dryrun: bool = False):
+def _run_cmdline(cmd, dryrun: bool = False):
     """Runs a shell command using the arguments provided (wrapper around run_shell_command).
 
     Args:
@@ -225,7 +225,7 @@ class KbenchCache:
 
         self.data[key] = obj_path_in_cache
         cmd = ["mv", str(obj_path), str(obj_path_in_cache)]
-        out = _run(cmd)
+        out = _run_cmdline(cmd)
         if out.stdout or out.stderr:
             return None
         else:
@@ -306,7 +306,7 @@ class SpecInstance:
                 # TODO: how to handle the return from failing here?
                 if verbose:
                     logging.info(f"[output_file: {output_file}]")
-                out = _run(cmd, dryrun)
+                out = _run_cmdline(cmd, dryrun)
                 if out.stderr:
                     print(out.stderr)
                     return out
@@ -316,6 +316,10 @@ class SpecInstance:
                     obj_path=obj_path,
                     tmp_dir=output_file.parent.absolute(),
                 )
+                # TODO: There is an issue in running '--dryrun' with '-c' on empty cache.
+                assert (
+                    obj_path_in_cache
+                ), "Running empty cache with --dryrun is not supported!"
 
             # The path to built object is stored in the cache as `obj_path_in_cache`
             cmd = [obj_path_in_cache, "-o", str(output_file), *vars]
@@ -334,7 +338,7 @@ class SpecInstance:
 
         if verbose:
             logging.info(f"[output_file: {output_file}]")
-        return _run(cmd, dryrun)
+        return _run_cmdline(cmd, dryrun)
         # if mode == KBENCH_MODE.BUILD:
         # TODO: refactor the following into a separate function call, or invoke alias directly.
         # mojo-clear-cache
@@ -358,12 +362,21 @@ class SpecInstance:
             tokens.append(f"{param.name}={param.value}")
         return "/".join(tokens)
 
+    def to_path(self) -> str:
+        tokens = [self.name]
+        for param in self.params:
+            name = param.name.replace("$", "")
+            tokens.append(f"{name}{param.value}")
+        return "_".join(tokens)
+
 
 class GridSearchStrategy:
-    def __init__(self, name, file, params):
-        self.instances = []
+    instances: list[SpecInstance] = field(default_factory=list)
 
-        # params
+    def __init__(self, name, file, params):
+        self.instances: list[SpecInstance] = []
+
+        # Expand the product of all the param:value-set's per each group of parameters
         for cfg in params:
             name_list = [p.name for p in cfg]
             param_list = [p.value_set for p in cfg]
@@ -405,11 +418,10 @@ class GridSearchStrategy:
 
 @dataclass(repr=True)
 class Spec:
-    name: str
-    file: Path
-    params: list[object] = field(default_factory=list)
+    name: str = ""
+    file: Path = Path("")
+    params: List[List[ParamSpace]] = field(default_factory=list)
     mesh_idx: int = 0
-    mesh_size: int = 0
     mesh: List[SpecInstance] = field(default_factory=list)
 
     @staticmethod
@@ -428,6 +440,7 @@ class Spec:
                 f'Unable to find the spec file at "{file}".'
             )
         try:
+            logging.info(f"Loading yaml [{file}]")
             return Spec.loads(file.read_text())
         except Exception:
             raise ValueError(f"Could not load spec from {file}")
@@ -444,7 +457,7 @@ class Spec:
         return spec
 
     @staticmethod
-    def parse_params(param_list: list[str]):
+    def parse_params(param_list: List[str]):
         """
         Parse the parameters as (key,value) dictionary.
         The parameters can be defined as follows:
@@ -501,6 +514,19 @@ class Spec:
 
         self.setup_mesh()
 
+    def extend_shape_params(self, param_set: List[Param]):
+        # TODO: check for collisions in param-names
+
+        extra_params: List[ParamSpace] = []
+        for ps in param_set:
+            extra_params.append(ParamSpace(ps.name, ps.value))
+
+        # add extended set of parameter to each bundle of parameters:
+        for p in self.params:
+            p.extend(extra_params)
+
+        self.setup_mesh()
+
     def dump_yaml(self, out_path: Path):
         assert self.mesh, "There are no instances to write to YAML!"
         obj = {
@@ -525,10 +551,15 @@ class Spec:
         """
         obj = YAML(typ="safe").load(yaml_str)
 
-        params = []
+        if "name" not in obj.keys():
+            logging.warning("Field [name] is not set in YAML")
+        if "file" not in obj.keys():
+            logging.warning("Field [file] is not set in YAML")
+
+        params: List[List[ParamSpace]] = []
         if "params" in obj.keys():
             for cfg in obj["params"]:
-                e = []
+                e: List[ParamSpace] = []
                 for k, v in cfg.items():
                     if k == "metadata":
                         continue
@@ -536,17 +567,21 @@ class Spec:
                 params.append(e)
 
         return Spec(
-            name=obj["name"],
-            file=obj["file"],
+            name=obj.get("name", ""),
+            file=obj.get("file", ""),
             params=params,
         )
 
     def __len__(self):
         assert self.mesh
-        return self.mesh_size
+        return len(self.mesh)
 
     def __post_init__(self):
-        self.setup_mesh()
+        if self.params:
+            self.setup_mesh()
+        else:
+            # default values for empty mesh
+            self.mesh = [SpecInstance("", Path("./"))]
 
     def setup_mesh(self):
         """
@@ -569,16 +604,14 @@ class Spec:
         Return the total size of mesh.
         """
         self.mesh = GridSearchStrategy(self.name, self.file, self.params)
-
         return len(self.mesh)
 
     def join(self, other: "Spec"):
         assert self.name == other.name
         assert self.file == other.file
-        assert other.mesh_size > 0
+        assert len(other.mesh) > 0
 
         self.mesh_idx = 0
-        self.mesh_size += other.mesh_size
         self.params.extend(other.params)
         self.mesh.extend(other.mesh)
 
@@ -613,7 +646,6 @@ class Spec:
 
         self.mesh.instances = filtered_insts[:]
         self.mesh_idx = 0
-        self.mesh_size = len(self.mesh)
 
     def __iter__(self):
         self.iter_offset = 0
@@ -652,6 +684,7 @@ def run(
     output_path=None,
     mode=KBENCH_MODE.RUN,
     param_list=None,
+    shape=None,
     filter_list=None,
     debug_level=None,
     optimization_level=None,
@@ -667,6 +700,8 @@ def run(
     # Expand with CLI params
     if param_list:
         spec.extend_params(param_list)
+    if shape:
+        spec.extend_shape_params(shape)
 
     # Apply the filters, if any.
     if filter_list:
@@ -703,7 +738,7 @@ def run(
     ) as progress:
         bench_progress = progress.add_task(
             spec.name,
-            total=spec.mesh_size,
+            total=len(spec.mesh),
         )
 
         for i, s in enumerate(spec):
@@ -735,10 +770,11 @@ def run(
                 print(LINE)
 
             except Exception as e:
-                if e == KeyboardInterrupt:
-                    sys.exit(0)
-                else:
-                    raise e
+                raise e
+            except KeyboardInterrupt:
+                if obj_cache.is_active:
+                    obj_cache.dump()
+                sys.exit(0)
 
             # When a benchmark is completed for one combination of parameters
             # we advance progress by 1
@@ -824,6 +860,8 @@ def run(
     print(output_str)
 
     if output_path:
+        output_dict["name"] = spec.name
+        output_dict["file"] = spec.file
         store_pickle(f"{output_path}.pkl", output_dict)
 
         # KBENCH_MODE.RUN overrides everything else and just dumps the running results.
@@ -841,6 +879,7 @@ def run(
                 f.write(output_str + "\n")
 
         logging.info(f"wrote results to [{output_path}]")
+    print(LINE + "\n\n")
 
 
 @functools.cache
@@ -972,6 +1011,12 @@ help_str = (
 @click.option(
     "--verbose", "-v", is_flag=True, default=False, help="Verbose printing."
 )
+@click.option(
+    "--shapes",
+    default=(),
+    help="Set of shapes passed as extra params.",
+    multiple=True,
+)
 @click.argument("files", nargs=-1, type=click.UNPROCESSED)
 def cli(
     files: click.UNPROCESSED,
@@ -987,6 +1032,7 @@ def cli(
     clear_cache,
     dryrun,
     verbose,
+    shapes,
 ) -> bool:
     configure_logging(verbose=verbose)
 
@@ -1004,6 +1050,7 @@ def cli(
     check_gpu_clock()
 
     obj_cache = KbenchCache()
+
     # check kbench_cache and load it if exists:
     if clear_cache:
         obj_cache.clear()
@@ -1011,22 +1058,34 @@ def cli(
     if cached:
         obj_cache.load()
 
-    if files:
-        run(
-            yaml_path_list=FileGlobArg(files),
-            output_path=output_path,
-            mode=mode,
-            param_list=param,
-            filter_list=filter,
-            debug_level=debug_level,
-            optimization_level=optimization_level,
-            dryrun=dryrun,
-            obj_cache=obj_cache,
-            verbose=verbose,
-        )
-        if obj_cache.is_active:
-            obj_cache.dump()
+    # If `shapes` is not specified, pick an empty Spec and '-o output_path'.
+    shape_list = list(Spec.load_yaml_list(shapes)) if shapes else Spec()
+    shape_path_list = (
+        [sh.to_path() for sh in shape_list] if shapes else [output_path]
+    )
 
+    assert len(shape_path_list) == len(
+        shape_list
+    ), "Number of shapes doesn't equal number of paths."
+
+    if files:
+        for i, shape in enumerate(shape_list):
+            run(
+                yaml_path_list=FileGlobArg(files),
+                output_path=shape_path_list[i],
+                mode=mode,
+                param_list=param,
+                shape=shape.params,
+                filter_list=filter,
+                debug_level=debug_level,
+                optimization_level=optimization_level,
+                dryrun=dryrun,
+                obj_cache=obj_cache,
+                verbose=verbose,
+            )
+            if obj_cache.is_active:
+                obj_cache.dump()
+        logging.info(f"Number of shapes: {len(shape_list)}")
     return True
 
 
