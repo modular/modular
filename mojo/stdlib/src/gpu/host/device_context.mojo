@@ -582,6 +582,13 @@ struct DeviceFunction[
             .replace("\t;;#ASMEND\n", "")
         )
 
+    fn _expand_path(self, path: Path) -> Path:
+        """If the path contains a `%` character, it is replaced with the module
+        name. This allows one to dump multiple kernels which are disambiguated
+        by the module name.
+        """
+        return String(path).replace("%", self._func_impl.module_name)
+
     @no_inline
     fn dump_rep[
         dump_asm: Variant[Bool, Path, fn () capturing -> Path] = False,
@@ -619,7 +626,9 @@ struct DeviceFunction[
                 ]()
                 dump_asm_fn().write_text(asm)
             elif dump_asm_val.isa[Path]():
-                dump_asm_val.unsafe_get[Path]().write_text(asm)
+                self._expand_path(dump_asm_val.unsafe_get[Path]()).write_text(
+                    asm
+                )
             else:
                 print(asm)
 
@@ -639,7 +648,9 @@ struct DeviceFunction[
                 ]()
                 _dump_sass_fn().write_text(sass)
             elif dump_sass_val.isa[Path]():
-                dump_sass_val.unsafe_get[Path]().write_text(sass)
+                self._expand_path(dump_sass_val.unsafe_get[Path]()).write_text(
+                    sass
+                )
             else:
                 print(sass)
 
@@ -662,7 +673,9 @@ struct DeviceFunction[
                 ]()
                 dump_llvm_fn().write_text(llvm)
             elif dump_llvm_val.isa[Path]():
-                dump_llvm_val.unsafe_get[Path]().write_text(llvm)
+                self._expand_path(dump_llvm_val.unsafe_get[Path]()).write_text(
+                    llvm
+                )
             else:
                 print(llvm)
 
