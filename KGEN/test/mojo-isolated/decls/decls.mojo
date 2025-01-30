@@ -333,6 +333,25 @@ fn orvalueInferType():
 fn kernel[x: Int]():
     pass
 
+# CHECK-LABEL: lit.fn @"kernel1{{.*}}"<x:
+# CHECK-SAME: LLVMMetadata = {nvvm.maxntid = {{.*}}#pop.array<x> : !pop.array<
+alias mname= "nvvm.maxntid"
+
+@__llvm_metadata(
+    mname=__mlir_attr[`#pop.array<`, x, `> : !pop.array<1, `, Int, `>`]
+)
+fn kernel1[x: Int]():
+    pass
+
+# CHECK-LABEL: lit.fn @"kernel2{{.*}}"<x:
+# CHECK-SAME: LLVMMetadata = {nvvm.maxntid = {{.*}}#pop.array<x> : !pop.array<
+
+@__llvm_metadata(
+    `mname`=__mlir_attr[`#pop.array<`, x, `> : !pop.array<1, `, Int, `>`]
+)
+fn kernel2[x: Int]():
+    pass
+
 
 # https://github.com/modularml/mojo/issues/1152
 # Allow mutable self argument when overloading operators using dunder methods

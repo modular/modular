@@ -1091,3 +1091,15 @@ top_level_func_param[a]()
 var y = 7
 # expected-error @below {{TODO: expressions are not yet supported at the file scope level}}
 y += 1
+
+##===----------------------------------------------------------------------===##
+# Invalid alias in metadata
+##===----------------------------------------------------------------------===##
+
+alias mname=128
+# expected-error @+2 {{LLVM metadata's name must be a trivial string}}
+@__llvm_metadata(
+    mname=__mlir_attr[`#pop.array<`, x, `> : !pop.array<1, `, Int, `>`]
+)
+fn kernel1[x: Int]():
+    pass

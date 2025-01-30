@@ -166,6 +166,12 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
     // Treat `llvm.*` metadata attributes as passthrough function attributes.
     Attribute value = attr.getValue();
     Dialect *nameDialect = attr.getNameDialect();
+    if (!nameDialect) {
+      return mlir::emitError(
+                 func.getLoc(),
+                 "dialect not loaded for LLVM passthrough attribute: ")
+             << attr.getName() << '=' << value;
+    }
     if (isa<LLVM::LLVMDialect>(nameDialect)) {
       StringAttr name = b.getStringAttr(
           attr.getName().strref().drop_front(StringRef("llvm.").size()));
