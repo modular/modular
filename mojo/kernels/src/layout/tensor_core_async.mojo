@@ -243,7 +243,9 @@ struct TensorCoreAsync[
         b_smem_tile: LayoutTensor[
             b_type, _, address_space = AddressSpace.SHARED, *_, **_
         ],
-        mut c_reg: SIMD[c_type, *_],
+        c_reg_tile: LayoutTensor[
+            c_type, _, address_space = AddressSpace.LOCAL, *_, **_
+        ],
     ):
         a_desc = _lhs_descriptor[mma_shape](a_smem_tile)
         b_desc = _rhs_descriptor[mma_shape, transpose_b](b_smem_tile)
@@ -255,29 +257,39 @@ struct TensorCoreAsync[
         alias num_n_mmas = b_smem_layout[0].size() // mma_shape[1]
         alias num_k_mmas = a_smem_layout[1].size() // mma_shape[2]
 
-        alias a_wgmma_size = mma_shape[0] * mma_shape[2] * sizeof[a_type]()
-        alias b_wgmma_size = mma_shape[1] * mma_shape[2] * sizeof[b_type]()
+        # Vectorize each wgmma's fragment size.
+        alias c_frag_size = mma_shape[0] * mma_shape[1] // 128
+        c_frags = c_reg_tile.vectorize[1, c_frag_size]()
+        constrained[
+            __type_of(c_frags).layout.size() == num_m_mmas * num_n_mmas,
+            "C fragments' size doesn't match the total number of wgmma.",
+        ]()
+
+        alias a_wgmma_bytes = mma_shape[0] * mma_shape[2] * sizeof[a_type]()
+        alias b_wgmma_bytes = mma_shape[1] * mma_shape[2] * sizeof[b_type]()
 
         @parameter
         for m_mma in range(num_m_mmas):
-            a_desc_m = a_desc + m_mma * num_k_mmas * a_wgmma_size
+            a_desc_m = a_desc + m_mma * num_k_mmas * a_wgmma_bytes
 
             @parameter
             for n_mma in range(num_n_mmas):
-                b_desc_n = b_desc + n_mma * num_k_mmas * b_wgmma_size
+                b_desc_n = b_desc + n_mma * num_k_mmas * b_wgmma_bytes
+
+                alias mma_id = n_mma * num_m_mmas + m_mma
 
                 @parameter
                 for k_mma in range(num_k_mmas):
-                    c_reg = wgmma_async[
+                    c_frags[mma_id, 0] = wgmma_async[
                         mma_shape[0],
                         mma_shape[1],
                         mma_shape[2],
                         a_type = _dtype(a_type),
                         b_type = _dtype(b_type),
-                    ](a_desc_m, b_desc_n, c_reg)
+                    ](a_desc_m, b_desc_n, c_frags[mma_id, 0])
 
-                    a_desc_m += a_wgmma_size
-                    b_desc_n += b_wgmma_size
+                    a_desc_m += a_wgmma_bytes
+                    b_desc_n += b_wgmma_bytes
 
     @staticmethod
     @always_inline

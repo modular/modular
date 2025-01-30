@@ -2059,7 +2059,10 @@ struct LayoutTensor[
 
         constrained[
             dst_size == src_size,
-            "copy_from should move data of the same size",
+            "copy_from should move data of the same size, getting dst size "
+            + String(dst_size)
+            + " and src size "
+            + String(src_size),
         ]()
 
         constrained[
@@ -2757,10 +2760,6 @@ fn copy_sram_to_local[
 fn copy_local_to_dram[
     dst_thread_layout: Layout,
 ](dst: LayoutTensor, src: LayoutTensor):
-    constrained[
-        dst.dtype == src.dtype, "dst dtype must be the same as src dtype."
-    ]()
-
     constrained[
         src.address_space == _GPUAddressSpace.LOCAL,
         "src address space must be LOCAL.",
