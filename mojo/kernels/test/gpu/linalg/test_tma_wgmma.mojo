@@ -6,7 +6,7 @@
 # REQUIRES: H100-GPU
 # RUN: %mojo-no-debug-no-assert %s | FileCheck %s
 
-from gpu import barrier
+from gpu import barrier, WARP_SIZE
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.id import block_idx, thread_idx
@@ -24,12 +24,14 @@ from layout._utils import ManagedLayoutTensor
 from layout.fillers import arange
 from layout.int_tuple import to_int
 from layout.layout import print_layout
+from layout.layout_tensor import copy_local_to_dram
 from layout.tensor_core_async import (
     tile_layout_k_major,
     TensorCoreAsync,
     _lhs_descriptor,
     _rhs_descriptor,
 )
+from layout.tensor_core import get_accum_type
 from layout.tma_async import TMATensorTile, create_tma_tile, TMABarrier
 from memory import bitcast
 from utils.index import Index, IndexList
@@ -74,12 +76,23 @@ fn tma_wgmma_kernel[
         alignment=128,
     ].stack_allocation()
 
+    alias accum_type = get_accum_type[a_type]()
     wgmma_op = TensorCoreAsync[
-        DType.float32, a_type, b_type, wgmma_shape, transpose_b
+        accum_type, a_type, b_type, wgmma_shape, transpose_b
     ]()
 
+    alias BM = block_tile_shape[0]
+    alias BN = block_tile_shape[1]
+    alias BK = block_tile_shape[1]
+    alias num_m_mmas = BM // wgmma_shape[0]
+    alias num_n_mmas = BN // wgmma_shape[1]
+
     alias c_frag_size = wgmma_shape[0] * wgmma_shape[1] // 128
-    var c_frag = SIMD[DType.float32, c_frag_size](0)
+    var c_reg_tile = LayoutTensor[
+        accum_type,
+        Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
 
     alias expected_bytes = a_smem_layout.size() * sizeof[
         a_type
@@ -99,18 +112,10 @@ fn tma_wgmma_kernel[
             a_tma_op.async_copy(
                 a_smem_tile,
                 mbar,
-                (
-                    UInt(i) * block_tile_shape[2],
-                    block_idx.y * block_tile_shape[0],
-                ),
+                (UInt(i) * BK, block_idx.y * BM),
             )
             b_tma_op.async_copy(
-                b_smem_tile,
-                mbar,
-                (
-                    UInt(i) * block_tile_shape[2],
-                    block_idx.x * block_tile_shape[1],
-                ),
+                b_smem_tile, mbar, (UInt(i) * BK, block_idx.x * BN)
             )
 
         # Ensure all threads sees initialized mbarrier
@@ -120,21 +125,37 @@ fn tma_wgmma_kernel[
         phase ^= 1
 
         wgmma_op.arrive()
-        wgmma_op.wgmma(a_smem_tile, b_smem_tile, c_frag)
+        wgmma_op.wgmma(a_smem_tile, b_smem_tile, c_reg_tile)
         wgmma_op.commit_group()
         wgmma_op.wait_for_all()
 
         barrier()
 
-    var warp_id = thread_idx.x // 32
-    var lan_id = thread_idx.x % 32
-    var th_local_res = c.tile[16, 8](warp_id, 0).vectorize[1, 2]().distribute[
-        Layout.row_major(8, 4)
-    ](lan_id)
-    th_local_res[0][0] = c_frag[0].cast[c_type]()
-    th_local_res[0][1] = c_frag[1].cast[c_type]()
-    th_local_res[1][0] = c_frag[2].cast[c_type]()
-    th_local_res[1][1] = c_frag[3].cast[c_type]()
+    c_gmem_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
+    warp_id = thread_idx.x // WARP_SIZE
+
+    @parameter
+    for m_mma in range(num_m_mmas):
+
+        @parameter
+        for n_mma in range(num_n_mmas):
+            alias mma_id = n_mma * num_m_mmas + m_mma
+
+            # (m_mma, n_mma) is coordinates for a warp group's tile.
+            # A warp group is 4x1 warps.
+            warp_tile = c_gmem_tile.tile[wgmma_shape[0] // 4, wgmma_shape[1]](
+                m_mma * 4 + warp_id, n_mma
+            )
+
+            # Tile at (mma_id, 0) is a long vector containing all fragments
+            # for this warp.
+            c_frag = c_reg_tile.tile[1, c_frag_size](mma_id, 0)
+
+            # A warp is organized as row_major(8, 4) and each thread owns 2 contiguous
+            # elementwise. This pattern repeates to fill the warp tile.
+            copy_local_to_dram[Layout.row_major(8, 4)](
+                warp_tile.vectorize[1, 2](), c_frag.vectorize[1, 2]()
+            )
 
 
 # CHECK-LABEL: wgmma_bf16_bf16_f32_64x8x16_transb_64x8x32
