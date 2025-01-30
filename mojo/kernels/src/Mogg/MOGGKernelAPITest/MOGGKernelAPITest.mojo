@@ -320,8 +320,8 @@ struct PrintTensorSpecViewOp:
 
 
 @compiler.register("print_tensor_spec_fused")
+@compiler.elementwise
 struct PrintTensorSpecFusedOp:
-    @compiler.elementwise
     @staticmethod
     fn execute[
         synchronous: Bool,
