@@ -18,7 +18,7 @@ from memory.unsafe import bitcast
 
 from utils import IndexList, StaticTuple
 
-from ._utils import to_i32, to_i64, to_llvm_ptr, to_llvm_shared_mem_ptr
+from ._utils import to_i16, to_i32, to_i64, to_llvm_ptr, to_llvm_shared_mem_ptr
 
 # ===-----------------------------------------------------------------------===#
 # AddressSpace
@@ -335,6 +335,12 @@ fn tma_store_fence():
 
 
 @always_inline
+fn fence_mbarrier_init():
+    """Fence that applies on the prior mbarrier.init."""
+    __mlir_op.`nvvm.fence.mbarrier.init`[_type=None]()
+
+
+@always_inline
 fn cp_async_bulk_tensor_shared_cluster_global[
     dst_type: AnyType, mbr_type: AnyType, rank: Int
 ](
@@ -373,6 +379,52 @@ fn cp_async_bulk_tensor_shared_cluster_global[
             to_llvm_ptr(tma_descriptor),
             to_i32(coords[0]),
             to_llvm_shared_mem_ptr(mem_bar),
+        )
+
+
+@always_inline
+fn cp_async_bulk_tensor_shared_cluster_global_multicast[
+    dst_type: AnyType, mbr_type: AnyType, rank: Int
+](
+    dst_mem: UnsafePointer[dst_type, address_space = GPUAddressSpace.SHARED],
+    tma_descriptor: UnsafePointer[NoneType],
+    mem_bar: UnsafePointer[mbr_type, address_space = GPUAddressSpace.SHARED],
+    coords: IndexList[rank],
+    multicast_mask: UInt16,
+):
+    """Initiates an asynchronous multicast load operation on the tensor data from global
+    memory to shared memories of the cluster.
+
+    Args:
+        dst_mem: Pointer to destination shared memory.
+        tma_descriptor: Pointer to tensor map descriptor.
+        mem_bar: A pointer to shared memory barrier.
+        coords: Tile coordinates.
+        multicast_mask: An uint16 bitmask to the copy operation to specify which CTAs in a cluster will participate in the TMA multicast load.
+    """
+    constrained[rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"]()
+
+    @parameter
+    if rank == 2:
+        __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
+            _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,2,1,0,1,0,0>}`
+        ](
+            to_llvm_shared_mem_ptr(dst_mem),
+            to_llvm_ptr(tma_descriptor),
+            to_i32(coords[0]),
+            to_i32(coords[1]),
+            to_llvm_shared_mem_ptr(mem_bar),
+            to_i16(multicast_mask),
+        )
+    else:
+        __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
+            _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0,1,0,0>}`
+        ](
+            to_llvm_shared_mem_ptr(dst_mem),
+            to_llvm_ptr(tma_descriptor),
+            to_i32(coords[0]),
+            to_llvm_shared_mem_ptr(mem_bar),
+            to_i16(multicast_mask),
         )
 
 

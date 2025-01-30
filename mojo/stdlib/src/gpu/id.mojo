@@ -50,8 +50,14 @@ fn sm_id() -> UInt:
 #  1D ctaid in a cluster
 # ===-----------------------------------------------------------------------===#
 @always_inline
-fn block_rank_in_cluster() -> UInt32:
+fn block_rank_in_cluster() -> UInt:
     """Get 1D ctaid in a cluster."""
-    return llvm_intrinsic[
-        "llvm.nvvm.read.ptx.sreg.cluster.ctarank", UInt32, has_side_effect=False
-    ]()
+    return UInt(
+        Int(
+            llvm_intrinsic[
+                "llvm.nvvm.read.ptx.sreg.cluster.ctarank",
+                UInt32,
+                has_side_effect=False,
+            ]()
+        )
+    )

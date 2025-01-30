@@ -8,7 +8,7 @@
 from os import abort
 from sys import llvm_intrinsic, is_nvidia_gpu, is_amd_gpu
 from sys.param_env import env_get_bool
-
+from sys.info import _is_sm_9x
 from memory import UnsafePointer
 from memory.pointer import AddressSpace
 
@@ -49,6 +49,36 @@ fn barrier():
             syncscope = "workgroup".value,
             ordering = __mlir_attr.`#pop<atomic_ordering acquire>`,
         ]()
+
+
+@always_inline("nodebug")
+fn cluster_arrive():
+    constrained[
+        is_nvidia_gpu() and _is_sm_9x(),
+        "cluster arrive is only supported by NVIDIA SM90+ GPUs",
+    ]()
+    __mlir_op.`nvvm.cluster.arrive`[
+        _type=None,
+        aligned = __mlir_attr.unit,
+    ]()
+
+
+@always_inline("nodebug")
+fn cluster_wait():
+    constrained[
+        is_nvidia_gpu() and _is_sm_9x(),
+        "cluster wait is only supported by NVIDIA SM90+ GPUs",
+    ]()
+    __mlir_op.`nvvm.cluster.wait`[
+        _type=None,
+        aligned = __mlir_attr.unit,
+    ]()
+
+
+@always_inline("nodebug")
+fn cluster_sync():
+    cluster_arrive()
+    cluster_wait()
 
 
 # ===-----------------------------------------------------------------------===#
