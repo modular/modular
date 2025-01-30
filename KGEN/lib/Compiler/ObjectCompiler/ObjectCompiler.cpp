@@ -1337,7 +1337,8 @@ ErrorOrSuccess ObjectCompiler::emitSharedObject(OwningOpRef<ModuleOp> module,
   return success();
 }
 
-static ErrorOr<uint64_t> getKernelIDFromLLVMModule(llvm::Module &module) {
+static ErrorOr<std::pair<uint64_t, llvm::Function *>>
+getKernelIDFromLLVMModule(llvm::Module &module) {
   for (llvm::Function &func : module) {
     if (func.isDeclaration())
       continue;
@@ -1358,13 +1359,20 @@ static ErrorOr<uint64_t> getKernelIDFromLLVMModule(llvm::Module &module) {
               attr.getKindAsString());
 
           func.setAttributes(newList);
-          return kernelId;
+          return std::make_pair(kernelId, &func);
         }
       }
     }
   }
 
   return Error("Can't find kgen.offload.kernelid from the llvm split.");
+}
+
+static void attachGPUCodeGenAttributes(llvm::Function *kernelEntry) {
+  // Recursion is not supported for kernel entry functions.
+  // This is that same as what clang does:
+  // https://github.com/llvm/llvm-project/blob/c1ec5beb4ab36c2c4d99ed6d735d217e74364771/clang/lib/CodeGen/CodeGenFunction.cpp#L1086
+  kernelEntry->addFnAttr(llvm::Attribute::NoRecurse);
 }
 
 static AnyAsyncValueRef
@@ -1586,18 +1594,24 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
     // Materialize the module.
     LLVMModuleAndContext module = produceModule();
 
-    ErrorOr<uint64_t> kernelIdOr = getKernelIDFromLLVMModule(*module);
-    if (kernelIdOr) {
+    ErrorOr<std::pair<uint64_t, llvm::Function *>> kernelIdFuncOr =
+        getKernelIDFromLLVMModule(*module);
+    if (kernelIdFuncOr) {
       std::move(resultBufs)
           .setToError(AsyncRT::getMLIRDiagnostic("Can't find kernelId", loc));
       std::move(resultKernelId)
-          .setToError(AsyncRT::getMLIRDiagnostic(kernelIdOr.takeError(), loc));
+          .setToError(
+              AsyncRT::getMLIRDiagnostic(kernelIdFuncOr.takeError(), loc));
       return;
     }
 
+    uint64_t kernelId = (*kernelIdFuncOr).first;
+    llvm::Function *kernelEntry = (*kernelIdFuncOr).second;
+    attachGPUCodeGenAttributes(kernelEntry);
+
     SmallVector<EmitAs> emissionKinds;
     SmallVector<AsyncRT::AnyAsyncValueRef> emissionResults;
-    llvm::SmallSet<EmitAs, 4> &kinds = kernelEmissionKinds[*kernelIdOr];
+    llvm::SmallSet<EmitAs, 4> &kinds = kernelEmissionKinds[kernelId];
     bool shouldDeserialize = kinds.size() > 1;
     bool shouldRunExtraAsm = !options.saveTempsPrefix.empty() &&
                              kinds.contains(EmitAs::OBJECT) &&
@@ -1607,7 +1621,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
     for (EmitAs kind : kinds) {
       emissionKinds.push_back(kind);
       emissionResults.push_back(lowerLLVMModuleToObject(
-          *module, loc, transformCache, *kernelIdOr, runtime, options, isJIT,
+          *module, loc, transformCache, kernelId, runtime, options, isJIT,
           shouldDeserialize, kind));
     }
 
@@ -1617,7 +1631,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
       // we cannot reuse the same llvm module for assembly and object file, we
       // have to run the llvm lowering separately for each codegen result.
       emissionResults.push_back(lowerLLVMModuleToObject(
-          *module, loc, transformCache, *kernelIdOr, runtime, options, isJIT,
+          *module, loc, transformCache, kernelId, runtime, options, isJIT,
           shouldDeserialize, EmitAs::ASM));
     }
 
@@ -1649,7 +1663,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
     else
       std::move(resultBufs).emplace(kernelBufs.get());
 
-    std::move(resultKernelId).emplace(*kernelIdOr);
+    std::move(resultKernelId).emplace(kernelId);
   });
 
   return std::make_pair(std::move(resultBufs), std::move(resultKernelId));
