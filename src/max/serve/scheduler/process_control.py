@@ -189,6 +189,10 @@ class ProcessMonitor:
     ):
         try:
             await self.until_unhealthy()
+        except asyncio.CancelledError:
+            # Cancellation happens when winding down a completed program
+            # Nothing interesting to see here.
+            pass
         except:
             logger.exception(
                 f"Error while checking process health: {self.pc.name}"
