@@ -6,3 +6,4 @@
 
 batch_size=100
 max_length=512
+evaluator=mteb
