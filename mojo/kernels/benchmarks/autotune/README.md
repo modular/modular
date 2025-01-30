@@ -1,16 +1,46 @@
-# Find the optimal kernel parameters using `kbench.py`
+# Find the optimal kernel parameters using `kbench`
 
-This script runs a grid-search of all the parameters for a mojo benchmark and
-picks the top config (with the lowest measured elapsed time).
+This script runs a grid-search of all the parameters for a mojo benchmark.
+
+## Table of Contents
+
+- [Why the tuning driver is written in Python?](#why-the-tuning-driver-is-written-in-python)
+- [Setup for tuning](#setup-for-tuning)
+- [Usage](#usage)
+  - [Example](#example)
+- [Design](#design)
+  - [`kbench` YAML format](#kbench-yaml-format)
+  - [Expanding spec's to get instances](#expanding-specs-to-get-instances)
+  - [`kbench` loop: Enumerating over instances](#kbench-loop-enumerating-over-instances)
+  - [`kbench` loop: Enumerating over instances with a superset](#kbench-loop-enumerating-over-instances-with-a-superset)
+- [Output pickle `.pkl` files](#output-pickle-pkl-files)
+- [Compile-time Parameters vs. Runtime Variables](#compile-time-parameters-vs-runtime-variables)
+- [`kbench` Object Cache](#kbench-object-cache)
+  - [Enable object cache](#enable-object-cache)
+  - [Clear object cache](#clear-object-cache)
 
 ## Why the tuning driver is written in Python?
 
-The issue is that we cannot have the autotuning driver to be in the same
-process as the thing to be autotuned.  A simple reason is that not all
-params used for autotuning are valid and may cause the process to crash. A
-crash will bring down the driver, so we need to have separation there. We
-could invent and build a fancy system, but that’s not solving the
-autotuning problem, so let’s just lean into building something simple.
+In other words, why the driver cannot be in the same process as the entity that
+is autotuned?
+
+- Not all parameters used for autotuning are valid. Invalid parameters may
+cause the process to crash which brings down the driver, so we need to have
+separation there.
+- Abundance of utilities and libraries (Pandas, Plotly, Rich progress bar/console)
+
+We could invent and build a fancy system, however, that’s not solving the
+autotuning problem, so just leaned into building something simple.
+
+## Setup for tuning
+
+Compile using `--config=production`:
+
+```bash
+bb //... --config=production
+br //:install --config=production
+setup-gpu-benchmarking
+```
 
 ## Usage
 
@@ -73,7 +103,7 @@ autotuning problem, so let’s just lean into building something simple.
     $MODULAR_PYTHON kbench.py YAML_FILE --output OUTPUT_PATH --tune
     ```
 
-5. Avoid recompilation by enabling `kbench` compilation cache:
+5. Avoid recompilation by enabling `kbench` object cache:
     Simply add `--cached` or `-c` to the of command.
 
     Note:
@@ -81,7 +111,7 @@ autotuning problem, so let’s just lean into building something simple.
     - Caching is persistent for follow-up calls unless `kbench --clear-cache`
         or `kbench -cc` is invoked.
 
-## Example
+### Example
 
 Just running [`sample.mojo`](sample.mojo) with parameters in [`test.yaml`](test.yaml):
 
@@ -125,3 +155,174 @@ Best Measured Time:
 Elapsed tuning time: 13.9 (s)
 wrote results to [output.csv]
 ```
+
+## Design
+
+![`kbench` toolkit](data/kbench_toolkit.png)
+
+### `kbench` YAML format
+
+`kbench` compatible YAMLs should have the following structure:
+
+```YAML
+name: placeholder
+file: path-to-mojo source
+params: 
+    - spec #spec refers to a group of parameters, each with their own values.
+        param_name: value-set|single-value #Each parameter can have 1+ values.
+```
+
+### Expanding spec's to get instances
+
+```python
+instance_list = product(<params, values>) for all specs in yaml
+```
+
+For example, consider the following YAML:
+
+```yaml
+name: multistage_gemm
+file: sample.mojo
+params:
+
+- dtype: DType.float16
+    shape: [1024x512x256, 32x32x32]
+    stages: [4,8]
+
+- dtype: DType.float32
+    shape: 64x64x64
+    stages: 2
+```
+
+The first `spec` will be expanded into 4 separate instances, the last one
+remains as it is:
+
+```YAML
+- dtype: DType.float16
+  shape: 1024x512x256
+  stages: 4
+
+- dtype: DType.float16
+  shape: 1024x512x256
+  stages: 8
+  
+- dtype: DType.float16
+  shape: 32x32x32
+  stages: 4
+
+- dtype: DType.float16
+  shape: 32x32x32
+  stages: 8
+
+- dtype: DType.float32
+  shape: 64x64x64
+  stages: 2
+```
+
+### `kbench` loop: Enumerating over instances
+
+```python
+for inst in instance_list:
+    compile_and_run_kernel(inst)
+```
+
+For example:
+
+```bash
+kbench tuning_params.yaml
+```
+
+### `kbench` loop: Enumerating over instances with a superset
+
+In certain use cases, we need to have two levels of parameters that should be
+expanded separately. For example, when running a kernel with input shapes in
+set `S` over a set of tuning parameters `T`, would like to avoid mixing shape
+parameters and tuning parameters all at once, i.e., `expansion(SxT)`.
+Instead, we are interested in `expansion(S) x expansion(T)`, writing the
+results of each tuning step to `#S` separate output file
+
+The following loop nest shows how `kbench` enumerates over instances:
+
+```python
+for superset_inst in superset_instances:
+    for bench_inst in benchmarking_instances:
+        compile_and_run_kernel(superset_inst + bench_inst)
+    dump_results_for(superset_inst)
+```
+
+For example:
+
+```bash
+kbench tuning_params.yaml --superset input_shapes.yaml
+```
+
+## Output pickle `.pkl` files
+
+For simply running all the configs in the YAML file:
+
+```bash
+kbench YAML_FILE -o/--output OUTPUT_PATH
+```
+
+This will automatically store the intermediate output in `OUTPUT_PATH.pkl`.
+Please refer to [README_kprofile.md](README_kprofile.md) for details on how to
+analyze the data in `.pkl` files.
+
+## Compile-time Parameters vs. Runtime Variables
+
+Building with various compile-time parameters does NOT hit mojo-cache and
+increases compilation time. Therefore, it is essential to minimize the number
+of parameters, or simply replace them with runtime variables to reduce the time
+spent in (re)compilation.
+
+Following example shows how to define a runtime variable in mojo using
+`arg_parse` utility function. Note that the name in YAML is now prefixed with
+`$`:
+
+```mojo
+from internal_utils import arg_parse
+fn main():
+var runtime_x = arg_parse("x", 0)
+```
+
+```bash
+> mojo sample.mojo
+> ./sample --x=123
+```
+
+```yaml
+name: demo_sample
+file: sample.mojo
+params:
+- dtype: DType.float16
+  shape: [1024x512x256, 32x32x32]
+  stages: [4,8]
+  $x: [0,1,2,3]
+```
+
+## `kbench` Object Cache
+
+Recompiling with same set of parameters and hitting the mojo-cache requires
+parsing The baseline cost of parsing is not quite negligible. Still, an
+unnecessary price. What if we keep track of the compiled binaries between
+various launches of kbench? To that end, we have implemented `kbench`
+object-cache available via `kbench --cached` or `kbench -c`.
+
+NOTE: This doesn't check the changes in the source.
+
+### Enable object cache
+
+```bash
+kbench --cached test.yaml
+kbench -c test.yaml
+```
+
+### Clear object cache
+
+```bash
+kbench --clear-cache
+kbench -cc
+```
+
+- ToDo: add details about object-cache dump at the end of superset loop
+- ToDo: links to kplot and kprofile
