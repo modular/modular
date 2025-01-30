@@ -20,12 +20,12 @@ from os import listdir
 """
 
 from collections import InlineArray, List
+from collections.string import StringSlice
 from sys import external_call, is_gpu, os_is_linux, os_is_windows
 from sys.ffi import OpaquePointer, c_char
 
 from memory import UnsafePointer
 
-from utils import StringRef
 
 from .path import isdir, split
 from .pathlike import PathLike
@@ -149,8 +149,9 @@ struct _DirHandle:
                 break
             var name = ep.take_pointee().name
             var name_ptr = name.unsafe_ptr()
-            var name_str = StringRef(
-                name_ptr, _strnlen(name_ptr, _dirent_linux.MAX_NAME_SIZE)
+            var name_str = StringSlice[__origin_of(name)](
+                ptr=name_ptr.bitcast[UInt8](),
+                length=_strnlen(name_ptr, _dirent_linux.MAX_NAME_SIZE),
             )
             if name_str == "." or name_str == "..":
                 continue
@@ -175,8 +176,9 @@ struct _DirHandle:
                 break
             var name = ep.take_pointee().name
             var name_ptr = name.unsafe_ptr()
-            var name_str = StringRef(
-                name_ptr, _strnlen(name_ptr, _dirent_macos.MAX_NAME_SIZE)
+            var name_str = StringSlice[__origin_of(name)](
+                ptr=name_ptr.bitcast[UInt8](),
+                length=_strnlen(name_ptr, _dirent_macos.MAX_NAME_SIZE),
             )
             if name_str == "." or name_str == "..":
                 continue

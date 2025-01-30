@@ -37,7 +37,6 @@ from memory import UnsafePointer, memcpy, bitcast
 
 from utils import (
     StaticString,
-    StringRef,
     write_args,
     write_buffered,
 )
@@ -152,7 +151,9 @@ struct _fdopen[mode: StringLiteral = "a"]:
             # TODO: check errno to ensure we haven't encountered EINVAL or ENOMEM instead
             raise Error("EOF")
         # Copy the buffer (excluding the delimiter itself) into a Mojo String.
-        var s = String(StringRef(buffer, bytes_read - 1))
+        var s = String(
+            StringSlice[buffer.origin](ptr=buffer, length=bytes_read - 1)
+        )
         # Explicitly free the buffer using free() instead of the Mojo allocator.
         libc.free(buffer.bitcast[NoneType]())
         return s

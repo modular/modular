@@ -22,9 +22,9 @@ from os import setenv
 from sys import external_call, os_is_linux, os_is_macos, os_is_windows
 from sys.ffi import c_int
 
-from memory import UnsafePointer
+from collections.string import StringSlice
 
-from utils import StringRef
+from memory import UnsafePointer
 
 
 fn setenv(name: String, value: String, overwrite: Bool = True) -> Bool:
@@ -96,4 +96,4 @@ fn getenv(name: String, default: String = "") -> String:
     )
     if not ptr:
         return default
-    return String(StringRef(ptr=ptr))
+    return String(StringSlice[ptr.origin](unsafe_from_utf8_ptr=ptr))

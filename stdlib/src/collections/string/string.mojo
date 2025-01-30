@@ -28,8 +28,6 @@ from python import PythonObject
 
 from utils import (
     IndexList,
-    StaticString,
-    StringRef,
     Variant,
     Writable,
     Writer,
@@ -44,6 +42,7 @@ from collections.string._unicode import (
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string.string_slice import (
     StringSlice,
+    StaticString,
     _StringSliceIter,
     _to_string_list,
     _utf8_byte_type,
@@ -466,9 +465,9 @@ fn atof(str_slice: StringSlice) raises -> Float64:
         start += 1
         sign = -1
     if (str_len - start) >= 3:
-        if StringRef(buff + start, 3) == "nan":
+        if StringSlice[buff.origin](ptr=buff + start, length=3) == "nan":
             return FloatLiteral.nan
-        if StringRef(buff + start, 3) == "inf":
+        if StringSlice[buff.origin](ptr=buff + start, length=3) == "inf":
             return FloatLiteral.infinity * sign
     # read before dot
     for pos in range(start, str_len):
@@ -890,7 +889,11 @@ struct String(
         start, end, step = span.indices(self.byte_length())
         var r = range(start, end, step)
         if step == 1:
-            return String(StringRef(self._buffer.data + start, len(r)))
+            return String(
+                StringSlice[__origin_of(self._buffer)](
+                    ptr=self._buffer.data + start, length=len(r)
+                )
+            )
 
         var buffer = Self._buffer_type()
         var result_len = len(r)

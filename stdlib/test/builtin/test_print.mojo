@@ -16,10 +16,12 @@
 import sys
 from tempfile import NamedTemporaryFile
 
+from collections.string import StaticString
+
 from builtin._location import __call_location, _SourceLocation
 from testing import assert_equal
 
-from utils import IndexList, StringRef
+from utils import IndexList
 
 
 @always_inline
@@ -95,7 +97,7 @@ def test_print():
         print("World", flush=True, file=checker.stream())
         checker.check_line("World")
 
-        var hello: StringRef = "Hello,"
+        var hello: StaticString = "Hello,"
         var world: String = "world!"
         var f: Bool = False
         print(">", hello, world, 42, True, f, file=checker.stream())

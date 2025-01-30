@@ -36,8 +36,6 @@ from memory import UnsafePointer
 
 from collections.string import StringSlice
 
-from utils import StringRef
-
 
 # TODO: When we have global variables, this should be a global list.
 fn argv() -> VariadicList[StringSlice[StaticConstantOrigin]]:

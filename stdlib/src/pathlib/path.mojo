@@ -24,8 +24,6 @@ from sys.ffi import c_char
 from builtin._location import __call_location, _SourceLocation
 from memory import UnsafePointer, stack_allocation
 
-from utils import StringRef
-
 alias DIR_SEPARATOR = "\\" if os_is_windows() else "/"
 
 
@@ -46,7 +44,7 @@ fn cwd() raises -> Path:
     if res == UnsafePointer[c_char]():
         raise Error("unable to query the current directory")
 
-    return String(StringRef(ptr=buf))
+    return String(StringSlice[buf.origin](unsafe_from_utf8_cstr_ptr=buf))
 
 
 @always_inline

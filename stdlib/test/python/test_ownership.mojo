@@ -14,13 +14,13 @@
 # RUN: %mojo  %s
 
 from python import Python, PythonObject
-from testing import assert_equal
+from testing import assert_equal, assert_true
 
 
 fn test_import(mut python: Python) raises:
     var my_module: PythonObject = Python.import_module("my_module")
     var py_string = my_module.my_function("Hello")
-    var str = String(python.__str__(py_string))
+    var str = String(python.as_string_slice(py_string))
     assert_equal(str, "Formatting the string from Lit with Python: Hello")
 
 
@@ -41,23 +41,23 @@ fn test_tuple(mut python: Python) raises:
 fn test_call_ownership(mut python: Python) raises:
     var obj: PythonObject = [1, "5"]
     var py_string = String(obj)
-    var string = python.__str__(py_string)
-    assert_equal(string, "[1, '5']")
+    var string = python.as_string_slice(py_string)
+    assert_true(string == "[1, '5']")
 
 
 fn test_getitem_ownership(mut python: Python) raises:
     var obj: PythonObject = [1, "5"]
     var py_string = String(obj[1])
-    var string = python.__str__(py_string)
-    assert_equal(string, "5")
+    var string = python.as_string_slice(py_string)
+    assert_true(string == "5")
 
 
 fn test_getattr_ownership(mut python: Python) raises:
     var my_module: PythonObject = Python.import_module("my_module")
     var obj = my_module.Foo(4)
     var py_string = String(obj.bar)
-    var string = python.__str__(py_string)
-    assert_equal(string, "4")
+    var string = python.as_string_slice(py_string)
+    assert_true(string == "4")
 
 
 def main():

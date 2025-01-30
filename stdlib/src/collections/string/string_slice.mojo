@@ -31,6 +31,7 @@ from sys import bitwidthof, simdwidthof
 from sys.intrinsics import unlikely, likely
 from sys.ffi import c_char
 from utils.stringref import StringRef, _memmem
+from hashlib._hasher import _HashableWithHasher, _Hasher
 from os import PathLike
 
 alias StaticString = StringSlice[StaticConstantOrigin]
@@ -658,6 +659,17 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             builtin documentation for more details.
         """
         return hash(self._slice._data, self._slice._len)
+
+    fn __hash__[H: _Hasher](self, mut hasher: H):
+        """Updates hasher with the underlying bytes.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        hasher._update_with_bytes(self.unsafe_ptr(), len(self))
 
     fn __fspath__(self) -> String:
         """Return the file system path representation of this string.

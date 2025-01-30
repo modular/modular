@@ -20,7 +20,7 @@ from collections.string import StringSlice
 from memory import UnsafePointer, memcpy, Span
 from os import abort
 from sys import sizeof
-from utils import Variant, StringRef
+from utils import Variant
 
 
 # ===-----------------------------------------------------------------------===#

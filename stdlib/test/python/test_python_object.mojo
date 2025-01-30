@@ -18,8 +18,6 @@ from collections import Dict
 from python import Python, PythonObject
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
-from utils import StringRef
-
 
 def test_dunder_methods(mut python: Python):
     var a = PythonObject(34)
@@ -268,8 +266,8 @@ fn test_string_conversions() raises -> None:
             var py_str = PythonObject(mojo_str)
             var py_capitalized = py_str.capitalize()
             var py = Python()
-            var mojo_capitalized = py.__str__(py_capitalized)
-            assert_equal(mojo_capitalized, "Mojo")
+            var mojo_capitalized = py.as_string_slice(py_capitalized)
+            assert_true(mojo_capitalized == "Mojo")
         except e:
             print("Error occurred")
 
@@ -281,8 +279,8 @@ fn test_string_conversions() raises -> None:
             var py_str = PythonObject(mojo_str)
             var py_capitalized = py_str.capitalize()
             var py = Python()
-            var mojo_capitalized = py.__str__(py_capitalized)
-            assert_equal(mojo_capitalized, "Mojo")
+            var mojo_capitalized = py.as_string_slice(py_capitalized)
+            assert_true(mojo_capitalized == "Mojo")
         except e:
             print("Error occurred")
 

@@ -27,7 +27,6 @@ from collections.string.string import (
 )
 from memory import UnsafePointer
 from python import Python
-from utils import StringRef
 
 
 @value
@@ -39,7 +38,7 @@ struct AString(Stringable):
 def test_stringable():
     assert_equal("hello", String("hello"))
     assert_equal("0", String(0))
-    assert_equal("AAA", String(StringRef("AAA")))
+    assert_equal("AAA", String(StringSlice("AAA")))
     assert_equal("a string", String(AString()))
 
 

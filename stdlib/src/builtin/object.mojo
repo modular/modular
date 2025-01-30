@@ -16,12 +16,13 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from collections import Dict, List
+from collections.string import StringSlice
 from sys.ffi import OpaquePointer
 from sys.intrinsics import _type_is_eq
 
 from memory import ArcPointer, UnsafePointer, memcmp, memcpy
 
-from utils import StringRef, Variant
+from utils import Variant
 
 # ===----------------------------------------------------------------------=== #
 # _ObjectImpl
@@ -578,7 +579,13 @@ struct _ObjectImpl(
             return
         if self.is_str():
             var string = self.get_as_string()
-            writer.write("'", StringRef(string.data, string.length), "'")
+            writer.write(
+                "'",
+                StringSlice[__origin_of(string)](
+                    ptr=string.data, length=string.length
+                ),
+                "'",
+            )
             return
         if self.is_func():
             writer.write(
@@ -799,24 +806,20 @@ struct object(
         Args:
             value: The string value.
         """
-        self = object(StringRef(value))
+        self = object(StringSlice(value))
 
     @always_inline
     @implicit
-    fn __init__(out self, value: StringRef):
+    fn __init__(out self, value: StringSlice):
         """Initializes the object from a string reference.
 
         Args:
             value: The string value.
         """
         var impl = _ImmutableString(
-            UnsafePointer[UInt8].alloc(value.length), value.length
+            UnsafePointer[UInt8].alloc(len(value)), len(value)
         )
-        memcpy(
-            dest=impl.data,
-            src=value.unsafe_ptr(),
-            count=value.length,
-        )
+        memcpy(dest=impl.data, src=value.unsafe_ptr(), count=len(value))
         self._value = impl
 
     @always_inline
@@ -845,8 +848,6 @@ struct object(
                 self._append(value.get[i, Float64]())
             elif _type_is_eq[T, Bool]():
                 self._append(value.get[i, Bool]())
-            elif _type_is_eq[T, StringRef]():
-                self._append(value.get[i, StringRef]())
             elif _type_is_eq[T, StringLiteral]():
                 self._append(value.get[i, StringLiteral]())
             else:

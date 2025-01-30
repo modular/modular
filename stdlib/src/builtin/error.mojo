@@ -22,7 +22,6 @@ from memory import UnsafePointer, memcpy
 from memory.memory import _free
 from collections.string import StringSlice
 
-from utils import StringRef
 from utils.write import write_buffered
 
 # ===-----------------------------------------------------------------------===#
@@ -96,7 +95,7 @@ struct Error(
         self.loaded_length = -length
 
     @implicit
-    fn __init__(out self, src: StringRef):
+    fn __init__(out self, src: StringSlice):
         """Construct an Error object with a given string ref.
 
         Args:
@@ -196,7 +195,11 @@ struct Error(
         """
         if not self:
             return
-        writer.write(StringRef(self.unsafe_cstr_ptr()))
+        writer.write(
+            StringSlice[__origin_of(self)](
+                unsafe_from_utf8_cstr_ptr=self.unsafe_cstr_ptr()
+            )
+        )
 
     @no_inline
     fn __repr__(self) -> String:
@@ -206,7 +209,15 @@ struct Error(
             A printable representation of the error message.
         """
         return String(
-            "Error(", repr(String(StringRef(self.unsafe_cstr_ptr()))), ")"
+            "Error(",
+            repr(
+                String(
+                    StringSlice[__origin_of(self)](
+                        unsafe_from_utf8_cstr_ptr=self.unsafe_cstr_ptr()
+                    )
+                )
+            ),
+            ")",
         )
 
     # ===-------------------------------------------------------------------===#
