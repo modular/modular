@@ -408,7 +408,7 @@ struct DeviceFunction[
     target: __mlir_type.`!kgen.target` = _get_gpu_target(),
     _ptxas_info_verbose: Bool = False,
 ]:
-    alias _emission_kind = "object" if _is_amd_gpu[target]() else "asm"
+    alias _emission_kind = "object"
     var _handle: _DeviceFunctionPtr
     var _func_impl: Info[func_type, func]
 
@@ -595,10 +595,19 @@ struct DeviceFunction[
         dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
         _dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
     ](self) raises:
+        fn get_asm() -> StringLiteral:
+            @parameter
+            if Self._emission_kind == "asm":
+                return self._func_impl.asm
+            return _compile_code_asm[
+                func,
+                emission_kind="asm",
+                target=target,
+            ]()
+
         @parameter
         if _ptxas_info_verbose:
-            var ptx = self._func_impl.asm
-            print(_ptxas_compile[target](ptx, options="-v"))
+            print(_ptxas_compile[target](get_asm(), options="-v"))
 
         alias dump_asm_tup = Self._dump_q["asm", dump_asm]()
         alias do_dump_asm = dump_asm_tup[0]
@@ -606,17 +615,6 @@ struct DeviceFunction[
 
         @parameter
         if do_dump_asm:
-
-            fn get_asm() -> StringLiteral:
-                @parameter
-                if Self._emission_kind == "asm":
-                    return self._func_impl.asm
-                return _compile_code_asm[
-                    func,
-                    emission_kind="asm",
-                    target=target,
-                ]()
-
             var asm = self._cleanup_asm(get_asm())
 
             @parameter
