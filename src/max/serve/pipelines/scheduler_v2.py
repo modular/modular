@@ -213,15 +213,14 @@ class SchedulerV2:
         try:
             while not self.cancel_q.empty():
                 try:
-                    req_id = self.cancel_q.get_nowait()
-                    if req_id not in self.active_batch:
-                        continue
-
-                    self.pipeline.release(self.active_batch[req_id])
-                    self.available_cache_indices.add(
-                        self.active_batch[req_id].cache_seq_id
-                    )
-                    del self.active_batch[req_id]
+                    for req_id in self.cancel_q.get_nowait():
+                        if req_id not in self.active_batch:
+                            continue
+                        self.pipeline.release(self.active_batch[req_id])
+                        self.available_cache_indices.add(
+                            self.active_batch[req_id].cache_seq_id
+                        )
+                        del self.active_batch[req_id]
                 except queue.Empty:
                     break
         except Exception:
