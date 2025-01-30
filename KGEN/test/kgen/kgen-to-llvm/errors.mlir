@@ -55,3 +55,17 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     kgen.return %fileName : !kgen.string
   }
 }
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=64>} {
+  // expected-error @below {{dialect not loaded for LLVM passthrough attribute: "unknown_attribute"=#pop.array<256, 1, 4> : !pop.array<3, i32>}}
+  // expected-error @below {{failed to legalize operation 'kgen.func' that was explicitly marked illegal}}
+  kgen.func export @llvm_metadata() attributes {
+    LLVMMetadata = {
+      unknown_attribute = #pop.array<256, 1, 4> : !pop.array<3, i32>
+    }
+  } {
+    kgen.return
+  }
+}
