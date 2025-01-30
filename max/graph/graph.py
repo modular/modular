@@ -405,13 +405,17 @@ class Graph:
                     # module body block.
                     self._mlir_op = self._module.body.operations[0]
 
-    def add_weight(self, weight: Weight) -> TensorValue:
+    def add_weight(
+        self, weight: Weight, device: DeviceRef | None = None
+    ) -> TensorValue:
         """Adds a weight to the graph.
 
         If the weight is in the graph already, return the existing value.
 
         Args:
             weight: The weight to add to the graph.
+            device: The device that the weight is placed on before passing the
+                weight to the graph.
 
         Returns:
             A :obj:`TensorValue` that contains this weight.
@@ -427,7 +431,9 @@ class Graph:
                     f"Weight '{weight.name}' already exists in Graph {self}"
                 )
 
-        tensor_type = TensorType(weight.dtype, weight.shape).to_mlir()
+        tensor_type = TensorType(
+            weight.dtype, weight.shape, device=device
+        ).to_mlir()
         weight_tensor = Graph.current._add_op(
             mo.constant_external,
             result=tensor_type,
@@ -439,12 +445,13 @@ class Graph:
             ),
         )[0]
 
-        # Set the constant external op's device explicitly to CPU.
+        # Set the constant external op's device explicitly to the passed device.
         # This is needed to prevent AssignDevices from automatically assigning
-        # mo.constant.external to the default device, which could be GPU.
+        # mo.constant.external to the default device, which could differ from
+        # the passed device (for example default is GPU, passed weights on CPU).
         const_external_op = weight_tensor._mlir_value.owner
-        const_external_op.attributes["device"] = DeviceRef(
-            DeviceKind.CPU, 0
+        const_external_op.attributes["device"] = (
+            device if device is not None else DeviceRef(DeviceKind.CPU, 0)
         ).to_mlir()
 
         self._weights[weight.name] = _GraphWeight(weight, weight_tensor)

@@ -7,7 +7,7 @@
 
 import pytest
 from max.dtype import DType
-from max.graph import Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import PytorchWeights
 
 
@@ -16,7 +16,7 @@ def test_load_pytorch(testdata_directory):
     weights = PytorchWeights(testdata_directory / "example_data.pt")
     with Graph("test_load_pytorch") as graph:
         data = {
-            key: graph.add_weight(weight.allocate())
+            key: graph.add_weight(weight.allocate(), DeviceRef.CPU())
             for key, weight in weights.items()
         }
         assert len(data) == 5
@@ -30,15 +30,15 @@ def test_load_pytorch(testdata_directory):
 def test_load_using_prefix(testdata_directory) -> None:
     weights = PytorchWeights(testdata_directory / "example_data.pt")
     with Graph("test_load_pytorch_by_prefix") as graph:
-        a = graph.add_weight(weights.a.allocate())
+        a = graph.add_weight(weights.a.allocate(), DeviceRef.CPU())
         assert a.type == TensorType(DType.int32, [5, 2])
-        b = graph.add_weight(weights["b"].allocate())
+        b = graph.add_weight(weights["b"].allocate(), DeviceRef.CPU())
         assert b.type == TensorType(DType.float64, [1, 2, 3])
 
 
 def test_load_same_weight(testdata_directory) -> None:
     weights = PytorchWeights(testdata_directory / "example_data.pt")
     with Graph("test_load_pytorch_same_weight") as graph:
-        a = graph.add_weight(weights.a.allocate())
+        graph.add_weight(weights.a.allocate(), DeviceRef.CPU())
         with pytest.raises(ValueError, match="already exists"):
-            a2 = graph.add_weight(weights["a"].allocate())
+            graph.add_weight(weights["a"].allocate(), DeviceRef.CPU())

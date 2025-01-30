@@ -11,7 +11,7 @@ from max.dtype import DType
 
 from . import graph
 from .quantization import QuantizationEncoding
-from .type import Shape, ShapeLike
+from .type import DeviceRef, Shape, ShapeLike
 from .value import TensorValue, Value
 
 
@@ -26,6 +26,7 @@ class Weight(TensorValue):
     _name: str
     _dtype: DType
     _shape: ShapeLike
+    _device: Optional[DeviceRef]
     quantization_encoding: Optional[QuantizationEncoding]
     align: Optional[int]
     __mlir_value: Optional[mlir.Value]
@@ -41,12 +42,14 @@ class Weight(TensorValue):
         name: str,
         dtype: DType,
         shape: ShapeLike,
+        device: Optional[DeviceRef] = None,
         quantization_encoding: Optional[QuantizationEncoding] = None,
         align: Optional[int] = None,
     ):
         self.name = name
         self._dtype = dtype
         self._shape = shape
+        self._device = device
         self.quantization_encoding = quantization_encoding
         self.align = align
         self.__mlir_value = None
@@ -64,7 +67,7 @@ class Weight(TensorValue):
         if not self.__mlir_value:
             try:
                 self.__mlir_value = graph.Graph.current.add_weight(
-                    self
+                    self, self._device
                 )._mlir_value
             except LookupError:
                 raise ValueError(

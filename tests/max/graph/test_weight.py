@@ -10,7 +10,7 @@ import re
 import numpy as np
 import pytest
 from max.dtype import DType
-from max.graph import Graph, Weight, ops
+from max.graph import DeviceRef, Graph, Weight, ops
 
 
 def test_add_weight() -> None:
@@ -28,7 +28,10 @@ def test_add_weight() -> None:
             shape=[1],
         )
 
-        graph.output(graph.add_weight(w), graph.add_weight(w2))
+        graph.output(
+            graph.add_weight(w, DeviceRef.CPU()),
+            graph.add_weight(w2, DeviceRef.CPU()),
+        )
         gen_mlir = str(graph._mlir_op)
         assert re.search(
             r"mo.constant.external.*!mo.tensor<\[5, 10\], si64", gen_mlir
@@ -46,11 +49,11 @@ def test_add_same_weight() -> None:
             dtype=DType.float32,
             shape=[],
         )
-        value = graph.add_weight(w)
+        value = graph.add_weight(w, DeviceRef.CPU())
 
         # Adding the same Weight is fine, and should return the previously
         # created Value.
-        value2 = graph.add_weight(w)
+        value2 = graph.add_weight(w, DeviceRef.CPU())
         assert value is value2
 
         # Test that adding a different Weight with the same name fails.
@@ -61,7 +64,7 @@ def test_add_same_weight() -> None:
         )
 
         with pytest.raises(ValueError, match="already exists"):
-            graph.add_weight(w2)
+            graph.add_weight(w2, DeviceRef.CPU())
 
 
 def test_weight_is_value_like() -> None:

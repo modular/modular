@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 import torch
 from max.dtype import DType
-from max.graph import Graph, Weight
+from max.graph import DeviceRef, Graph, Weight
 from max.graph.weights import GGUFWeights, PytorchWeights, SafetensorWeights
 
 
@@ -26,7 +26,7 @@ def test_weight(session) -> None:
             shape=weight_shape,
         )
         out = w * 2
-        graph.output(graph.add_weight(w), out)
+        graph.output(graph.add_weight(w, DeviceRef.CPU()), out)
         compiled = session.load(
             graph, weights_registry={"random_weight": weight}
         )
@@ -45,7 +45,7 @@ def test_weight_offset(session) -> None:
             dtype=DType.int64,
             shape=weight_shape,
         )
-        graph.output(graph.add_weight(w))
+        graph.output(graph.add_weight(w, DeviceRef.CPU()))
         compiled = session.load(
             graph, weights_registry={"random_weight": weight}
         )
@@ -77,7 +77,10 @@ def test_load_pytorch(session, graph_testdata) -> None:
 
     weights = PytorchWeights(graph_testdata / "example_data.pt")
     with Graph("graph_with_pt_weights") as graph:
-        loaded = {k: graph.add_weight(w.allocate()) for k, w in weights.items()}
+        loaded = {
+            k: graph.add_weight(w.allocate(), DeviceRef.CPU())
+            for k, w in weights.items()
+        }
         graph.output(*[loaded[k] for k in flat_keys])
         compiled = session.load(
             graph, weights_registry=weights.allocated_weights
@@ -108,7 +111,10 @@ def test_load_gguf(session, graph_testdata) -> None:
 
     weights = GGUFWeights(graph_testdata / "example_data.gguf")
     with Graph("graph_with_gguf_weights") as graph:
-        loaded = {k: graph.add_weight(w.allocate()) for k, w in weights.items()}
+        loaded = {
+            k: graph.add_weight(w.allocate(), DeviceRef.CPU())
+            for k, w in weights.items()
+        }
         graph.output(*[loaded[k] for k in flat_keys])
         compiled = session.load(
             graph, weights_registry=weights.allocated_weights
@@ -142,7 +148,10 @@ def test_load_safetensors(session, graph_testdata) -> None:
         [graph_testdata / f"example_data_{i}.safetensors" for i in range(1, 3)]
     )
     with Graph("graph_with_pt_weights") as graph:
-        loaded = {k: graph.add_weight(w.allocate()) for k, w in weights.items()}
+        loaded = {
+            k: graph.add_weight(w.allocate(), DeviceRef.CPU())
+            for k, w in weights.items()
+        }
         graph.output(*[loaded[k] for k in flat_keys])
         compiled = session.load(
             graph, weights_registry=weights.allocated_weights
