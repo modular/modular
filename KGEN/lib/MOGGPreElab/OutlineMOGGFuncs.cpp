@@ -73,23 +73,16 @@ private:
 
   void outlineFunction(GeneratorOp gen,
                        SmallVector<KGEN::ParamDeclareRegionOp> &lambdas,
-                       CallOp elementwiseOp, SymbolTable &symTab,
-                       bool isLegacyMOGGElementwise) {
-    // We are either outlining the full function or just the inner
-    // elementwise.
+                       CallOp elementwiseOp, SymbolTable &symTab) {
+    // We are either outlining the full function or just the inner elementwise.
     SmallVector<Operation *> opsToClone;
     ArrayRef<Type> returnTypes;
 
     // If this is elementwise outline just the elementwise.
     if (elementwiseOp) {
-      TypedAttr elemwiseLambda;
-      if (isLegacyMOGGElementwise) {
-        elemwiseLambda = elementwiseOp.getParamValues().back();
-      } else {
-        // For DPS it's not the last argument since an extra StaticTensorSpec
-        // parameter is added.
-        elemwiseLambda = elementwiseOp.getParamValues()[2];
-      }
+      // For DPS it's not the last argument since an extra StaticTensorSpec
+      // parameter is added.
+      TypedAttr elemwiseLambda = elementwiseOp.getParamValues()[2];
       ParamDeclRefAttr asParam = cast<ParamDeclRefAttr>(elemwiseLambda);
 
       // Look for the lambda.
@@ -384,7 +377,6 @@ public:
       // If this is an elementwise kernel we are expecting to see a call to
       // the elementwise generator.
       KGEN::CallOp elementwiseOp = nullptr;
-      bool isLegacyMOGGElementwise = false;
 
       // Views should never be marked as elementwise even if they called it.
       if (!kernel->hasAttr("_view")) {
@@ -397,11 +389,9 @@ public:
           if (!func)
             continue;
 
-          if (func->hasAttr(Decorators::ELEM_HOOK.attr) ||
-              func->hasAttr(MOGG_INTRINSIC_FOR_EACH)) {
+          if (func->hasAttr(MOGG_INTRINSIC_FOR_EACH)) {
 
             func->setAttr(outlinedAttrName, builder.getUnitAttr());
-            isLegacyMOGGElementwise = func->hasAttr(Decorators::ELEM_HOOK.attr);
             elementwiseOp = call;
           }
         }
@@ -413,20 +403,13 @@ public:
       // Outline the actual work of the function.
       // 1. If it is elementwise, outline the body of the elementwise lambda
       // 2. Otherwise outline everything other than the lambdas.
-      outlineFunction(kernel, addedLambdas, elementwiseOp, symTab,
-                      isLegacyMOGGElementwise);
+      outlineFunction(kernel, addedLambdas, elementwiseOp, symTab);
 
       // Tell MOGG this thing is elementwise.
       if (elementwiseOp) {
-        TypedAttr elemwiseLambda;
-        if (isLegacyMOGGElementwise) {
-          // Last parameter is known to be the lambda...
-          elemwiseLambda = elementwiseOp.getParamValues().back();
-        } else {
-          // For DPS it's not the last argument since an extra
-          // StaticTensorSpec parameter is added.
-          elemwiseLambda = elementwiseOp.getParamValues()[2];
-        }
+        // For DPS it's not the last argument since an extra StaticTensorSpec
+        // parameter is added.
+        TypedAttr elemwiseLambda = elementwiseOp.getParamValues()[2];
         ParamDeclRefAttr asParam = cast<ParamDeclRefAttr>(elemwiseLambda);
 
         // The new attributes on the generator.

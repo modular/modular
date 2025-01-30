@@ -207,13 +207,6 @@ LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
       "lldb_formatter_wrapping_type",
 
       "__mogg_intrinsic_attr",
-      "mogg_elementwise",
-      "mogg_view_op",
-      "mogg_takes_indices",
-      "mogg_elementwise_hook",
-      "mogg_enable_fusion",
-      "mogg_input_fusion_hook",
-      "mogg_output_fusion_hook",
       "register_internal",
       "register_internal_override",
       "register_internal_custom",
