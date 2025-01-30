@@ -9,7 +9,6 @@ import logging
 import math
 import multiprocessing
 import os
-import queue
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -20,10 +19,9 @@ import uvloop
 from max.pipelines import PipelinesFactory, TokenGenerator
 from max.profiler import Tracer, traced
 from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
-from max.serve.pipelines.scheduler import Scheduler
 from max.serve.pipelines.scheduler_v2 import SchedulerConfig, SchedulerV2
 from max.serve.scheduler.process_control import ProcessControl, ProcessMonitor
-from max.serve.scheduler.queues import STOP_STREAM, EngineQueue
+from max.serve.scheduler.queues import EngineQueue
 from max.serve.telemetry.metrics import METRICS, configure_metrics
 from max.serve.telemetry.stopwatch import record_ms
 
@@ -178,74 +176,6 @@ async def start_model_worker(
 
 
 @traced
-async def model_worker_run_v2(
-    pc: ProcessControl,
-    model_factory: PipelinesFactory,
-    batch_config: TokenGeneratorPipelineConfig,
-    worker_config: ModelWorkerConfig,
-    queues: Mapping[str, Queue],
-):
-    pc.set_started()
-    configure_metrics()
-    await METRICS.configure()
-    try:
-        tracer = Tracer()  # provides MojoTrace (NVTX spans
-        pid = os.getpid()
-        logger.info("Starting model worker on process %d!", pid)
-
-        request_q = queues["REQUEST"]
-        response_q = queues["RESPONSE"]
-        cancel_q = queues["CANCEL"]
-
-        logger.info("Worker Queues: %s", queues)
-
-        # Initialize all token generators.
-        with record_ms(METRICS.model_load_time), Tracer("model_factory"):
-            model = model_factory()
-            assert isinstance(model, TokenGenerator)
-
-        scheduler = Scheduler(request_q, batch_config)
-        logger.info("Token generators loaded!")
-
-        logger.info("Started model worker!")
-
-        i = 0
-        # if cancelled allow some extra iterations to drain the queue
-        # TODO: add a more structured drain-the-queue mechanism
-        while i % 100 or not pc.is_canceled():
-            pc.beat()
-            i += 1
-
-            prepared_batch = schedule(scheduler)
-
-            if not prepared_batch.requests:
-                await asyncio.sleep(0)
-                continue
-
-            batch_responses = next_token(model, prepared_batch, scheduler)
-
-            handle_terminated_responses(
-                prepared_batch.requests, batch_responses, model, scheduler
-            )
-
-            submit_responses(response_q, batch_responses)
-
-            # Occasionally clear out contexts cancelled out API worker side.
-            if i % 20 == 0 and not cancel_q.empty():
-                handle_cancelled_requests(cancel_q, scheduler, model)
-
-            await asyncio.sleep(0)
-
-    except Exception as e:
-        logger.exception("Failed worker process %d", pid)
-        raise e
-
-    finally:
-        pc.set_completed()
-        logger.info("Stopped model worker at process %d!", pid)
-
-
-@traced
 async def model_worker_run_v3(
     pc: ProcessControl,
     model_factory: PipelinesFactory,
@@ -309,57 +239,3 @@ async def model_worker_run_v3(
 
     scheduler.pc.set_completed()
     logger.info("Stopped model worker!")
-
-
-@traced
-def schedule(scheduler):
-    return scheduler.schedule()
-
-
-@traced
-def next_token(model, prepared_batch, scheduler):
-    output = model.next_token(
-        prepared_batch.requests, num_steps=prepared_batch.num_steps
-    )
-    scheduler.step(prepared_batch.requests)
-    return output
-
-
-@traced
-def submit_responses(response_q, batch_responses):
-    response_q.put_nowait(batch_responses)
-
-
-@traced
-def handle_cancelled_requests(cancel_q, scheduler, model):
-    try:
-        for req_id in cancel_q.get_nowait():
-            if not scheduler.contains(req_id):
-                continue
-
-            model.release(scheduler.get_request(req_id))
-            scheduler.release(req_id)
-    except queue.Empty:
-        pass
-
-
-@traced
-def handle_terminated_responses(
-    batch_executed, batch_responses, model, scheduler
-):
-    already_terminated = set()
-    not_terminated = set(batch_executed.keys())
-
-    for batch_response in batch_responses:
-        terminated = not_terminated - batch_response.keys()
-        for req_id in terminated:
-            if req_id in already_terminated:
-                continue
-
-            model.release(batch_executed[req_id])
-
-            batch_response[req_id] = STOP_STREAM
-            already_terminated.add(req_id)
-            not_terminated.remove(req_id)
-
-    scheduler.release(already_terminated)
