@@ -795,11 +795,13 @@ fn mgp_buffer_get_size(buf: NDBuffer[DType.uint8, 1]) -> Int:
 
 @register_internal("destruct_async_refs")
 @no_inline
-fn destruct_async_refs[
-    size: Int
-](storage_ref_addr: StaticTuple[UnsafePointer[UnsafePointer[NoneType]], size]):
+fn destruct_async_refs(
+    storage_ref_addr: UnsafePointer[UnsafePointer[NoneType]],
+    size: Int,
+    direct_ref: Bool,
+):
     external_call["KGEN_CompilerRT_DestructAsyncRefs", NoneType](
-        size, UnsafePointer.address_of(storage_ref_addr.array).address
+        size, storage_ref_addr, direct_ref
     )
 
 
