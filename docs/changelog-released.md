@@ -3189,7 +3189,7 @@ This release doesn't include any changes to Mojo.
 ### 🔥 Legendary
 
 - The Mojo standard library is now open source! Check out the
-  [README](https://github.com/modular/mojo/blob/nightly/stdlib/README.md)
+  [README](https://github.com/modular/mojo/blob/main/stdlib/README.md)
   for everything you need to get started.
 
 - Structs and other nominal types are now allowed to implicitly conform to
