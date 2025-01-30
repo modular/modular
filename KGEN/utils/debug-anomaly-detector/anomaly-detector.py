@@ -36,9 +36,9 @@ def debug_main_fn(source: MojoSource):
             assert target.IsValid()
 
             bp = target.BreakpointCreateByLocation(str(source.path), main_line)
-            assert (
-                bp.GetNumLocations() == 1
-            ), f"Couldn't set a breakpoint at {str(source.path)}:{main_line}"
+            assert bp.GetNumLocations() == 1, (
+                f"Couldn't set a breakpoint at {str(source.path)}:{main_line}"
+            )
 
             ctx = run_target(target)
 
