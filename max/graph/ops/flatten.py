@@ -25,12 +25,12 @@ def flatten(
 
     if not (-rank <= start_dim < rank):
         raise IndexError(
-            f"start_dim must be be between {-rank} and {rank-1} (inclusive),"
+            f"start_dim must be be between {-rank} and {rank - 1} (inclusive),"
             f" but was {start_dim}"
         )
     if not (-rank <= end_dim < rank):
         raise IndexError(
-            f"end_dim must be be between {-rank} and {rank-1} (inclusive), but"
+            f"end_dim must be be between {-rank} and {rank - 1} (inclusive), but"
             f" was {end_dim}"
         )
 

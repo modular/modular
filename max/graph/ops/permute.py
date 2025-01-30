@@ -39,7 +39,7 @@ def permute(x: TensorValueLike, dims: list[int]) -> TensorValue:
         if not -rank <= d < rank:
             raise IndexError(
                 f"All dimensions in the ordering must be be between {-rank} and"
-                f" {rank-1} (inclusive), but was {d}"
+                f" {rank - 1} (inclusive), but was {d}"
             )
 
     dims = [d + rank if d < 0 else d for d in dims]
