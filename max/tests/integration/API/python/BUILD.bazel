@@ -179,6 +179,8 @@ modular_py_test(
         requirement("numpy"),
         requirement("safetensors"),
         requirement("torch"),
+        requirement("xgrammar"),
+        requirement("setuptools"),
     ],
 )
 
