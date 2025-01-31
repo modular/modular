@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# Hangs with regular builds (TODO: File issue).
+# Todo: KERN-1531 this hangs with regular builds after cubin compilation.
 # REQUIRES: DISABLED
 # Hangs with debug mode Issue #24921
 # REQUIRES: NVIDIA-GPU
