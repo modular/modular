@@ -38,25 +38,6 @@ fn register_internal_override(name: StringLiteral, priority: Int):
     return
 
 
-fn register_internal_shape_func(name: StringLiteral):
-    """
-    This decorator registers a given mojo function as being an implementation
-    of a shape function for a mo op or a `mo.custom` op.
-
-    @register_internal_custom("tf.Something")
-    fn something_impl[...](...):
-        pass
-
-    @register_internal_custom_shape("tf.Something")
-    fn something_shape_impl[...](...):
-        pass
-
-    Args:
-      name: The name of the op to register.
-    """
-    return
-
-
 fn __mogg_intrinsic_attr(intrin: StringLiteral):
     """
     Attaches the given intrinsic annotation onto the function.
