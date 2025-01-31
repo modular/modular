@@ -362,25 +362,6 @@ fn env_get_shape[name: StringLiteral, default: StringLiteral]() -> List[Int]:
     return shape
 
 
-fn env_get_dtype[name: StringLiteral, default: DType]() -> DType:
-    """Try to get an DType-valued define. If the name is not defined, return
-    a default value instead.
-
-    Parameters:
-        name: The name of the define.
-        default: The default value to use.
-
-    Returns:
-        An DType parameter value.
-    """
-
-    @parameter
-    if is_defined[name]():
-        return DType._from_str(env_get_string[name]())
-    else:
-        return default
-
-
 fn int_list_to_tuple[x: List[Int]]() -> IndexList[len(x)]:
     var t = IndexList[len(x)]()
 

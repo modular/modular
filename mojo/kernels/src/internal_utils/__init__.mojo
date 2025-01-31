@@ -17,7 +17,6 @@ from ._utils import (
     TestTensor,
     arg_parse,
     bench_compile_time,
-    env_get_dtype,
     env_get_shape,
     fill,
     int_list_to_tuple,
