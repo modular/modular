@@ -20,7 +20,7 @@ from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run
 from bit import count_trailing_zeros
 from builtin.dtype import _uint_type_of_width
 
-from utils.stringref import _align_down, _memchr, _memmem
+from collections.string.string_slice import _memchr, _memmem
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data

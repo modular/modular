@@ -21,113 +21,20 @@ from collections.string import StringSlice
 ```
 """
 
-from bit import count_leading_zeros
+from bit import count_leading_zeros, count_trailing_zeros
 from collections import List, Optional
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string._utf8_validation import _is_valid_utf8
-from memory import UnsafePointer, memcmp, memcpy, Span
+from memory import UnsafePointer, memcmp, memcpy, Span, pack_bits
 from memory.memory import _memcmp_impl_unconstrained
 from sys import bitwidthof, simdwidthof
 from sys.intrinsics import unlikely, likely
 from sys.ffi import c_char
-from utils.stringref import StringRef, _memmem
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from os import PathLike
 
 alias StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice."""
-
-
-fn _count_utf8_continuation_bytes(str_slice: StringSlice) -> Int:
-    alias sizes = (256, 128, 64, 32, 16, 8)
-    var ptr = str_slice.unsafe_ptr()
-    var num_bytes = str_slice.byte_length()
-    var amnt: Int = 0
-    var processed = 0
-
-    @parameter
-    for i in range(len(sizes)):
-        alias s = sizes[i]
-
-        @parameter
-        if simdwidthof[DType.uint8]() >= s:
-            var rest = num_bytes - processed
-            for _ in range(rest // s):
-                var vec = (ptr + processed).load[width=s]()
-                var comp = (vec & 0b1100_0000) == 0b1000_0000
-                amnt += Int(comp.cast[DType.uint8]().reduce_add())
-                processed += s
-
-    for i in range(num_bytes - processed):
-        amnt += Int((ptr[processed + i] & 0b1100_0000) == 0b1000_0000)
-
-    return amnt
-
-
-@always_inline
-fn _utf8_first_byte_sequence_length(b: Byte) -> Int:
-    """Get the length of the sequence starting with given byte. Do note that
-    this does not work correctly if given a continuation byte."""
-
-    debug_assert(
-        (b & 0b1100_0000) != 0b1000_0000,
-        "Function does not work correctly if given a continuation byte.",
-    )
-    return Int(count_leading_zeros(~b)) + Int(b < 0b1000_0000)
-
-
-fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> __type_of(b):
-    """UTF-8 byte type.
-
-    Returns:
-        The byte type.
-
-    Notes:
-
-        - 0 -> ASCII byte.
-        - 1 -> continuation byte.
-        - 2 -> start of 2 byte long sequence.
-        - 3 -> start of 3 byte long sequence.
-        - 4 -> start of 4 byte long sequence.
-    """
-    return count_leading_zeros(~(b & UInt8(0b1111_0000)))
-
-
-@always_inline
-fn _memrchr[
-    type: DType
-](
-    source: UnsafePointer[Scalar[type]], char: Scalar[type], len: Int
-) -> UnsafePointer[Scalar[type]]:
-    if not len:
-        return UnsafePointer[Scalar[type]]()
-    for i in reversed(range(len)):
-        if source[i] == char:
-            return source + i
-    return UnsafePointer[Scalar[type]]()
-
-
-@always_inline
-fn _memrmem[
-    type: DType
-](
-    haystack: UnsafePointer[Scalar[type]],
-    haystack_len: Int,
-    needle: UnsafePointer[Scalar[type]],
-    needle_len: Int,
-) -> UnsafePointer[Scalar[type]]:
-    if not needle_len:
-        return haystack
-    if needle_len > haystack_len:
-        return UnsafePointer[Scalar[type]]()
-    if needle_len == 1:
-        return _memrchr[type](haystack, needle[0], haystack_len)
-    for i in reversed(range(haystack_len - needle_len + 1)):
-        if haystack[i] != needle[0]:
-            continue
-        if memcmp(haystack + i + 1, needle + 1, needle_len - 1) == 0:
-            return haystack + i
-    return UnsafePointer[Scalar[type]]()
 
 
 @value
@@ -402,28 +309,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         #     _is_valid_utf8(value.as_bytes()), "value is not valid utf8"
         # )
         self._slice = unsafe_from_utf8
-
-    fn __init__(out self, *, unsafe_from_utf8_strref: StringRef):
-        """Construct a new StringSlice from a `StringRef` pointing to UTF-8
-        encoded bytes.
-
-        Args:
-            unsafe_from_utf8_strref: A `StringRef` of bytes encoded in UTF-8.
-
-        Safety:
-            - `unsafe_from_utf8_strref` MUST point to data that is valid for
-              `origin`.
-            - `unsafe_from_utf8_strref` MUST be valid UTF-8 encoded data.
-        """
-
-        var strref = unsafe_from_utf8_strref
-
-        var byte_slice = Span[Byte, origin](
-            ptr=strref.unsafe_ptr(),
-            length=len(strref),
-        )
-
-        self = Self(unsafe_from_utf8=byte_slice)
 
     fn __init__(out self, *, unsafe_from_utf8_ptr: UnsafePointer[Byte]):
         """Construct a new StringSlice from a `UnsafePointer[Byte]` pointing to null-terminated UTF-8
@@ -1654,3 +1539,178 @@ fn _unsafe_strlen(owned ptr: UnsafePointer[Byte]) -> Int:
     while ptr.load(len):
         len += 1
     return len
+
+
+@always_inline
+fn _align_down(value: Int, alignment: Int) -> Int:
+    return value._positive_div(alignment) * alignment
+
+
+@always_inline
+fn _memchr[
+    type: DType
+](
+    source: UnsafePointer[Scalar[type]], char: Scalar[type], len: Int
+) -> UnsafePointer[Scalar[type]]:
+    if not len:
+        return UnsafePointer[Scalar[type]]()
+    alias bool_mask_width = simdwidthof[DType.bool]()
+    var first_needle = SIMD[type, bool_mask_width](char)
+    var vectorized_end = _align_down(len, bool_mask_width)
+
+    for i in range(0, vectorized_end, bool_mask_width):
+        var bool_mask = source.load[width=bool_mask_width](i) == first_needle
+        var mask = pack_bits(bool_mask)
+        if mask:
+            return source + Int(i + count_trailing_zeros(mask))
+
+    for i in range(vectorized_end, len):
+        if source[i] == char:
+            return source + i
+    return UnsafePointer[Scalar[type]]()
+
+
+@always_inline
+fn _memmem[
+    type: DType
+](
+    haystack: UnsafePointer[Scalar[type]],
+    haystack_len: Int,
+    needle: UnsafePointer[Scalar[type]],
+    needle_len: Int,
+) -> UnsafePointer[Scalar[type]]:
+    if not needle_len:
+        return haystack
+    if needle_len > haystack_len:
+        return UnsafePointer[Scalar[type]]()
+    if needle_len == 1:
+        return _memchr[type](haystack, needle[0], haystack_len)
+
+    alias bool_mask_width = simdwidthof[DType.bool]()
+    var vectorized_end = _align_down(
+        haystack_len - needle_len + 1, bool_mask_width
+    )
+
+    var first_needle = SIMD[type, bool_mask_width](needle[0])
+    var last_needle = SIMD[type, bool_mask_width](needle[needle_len - 1])
+
+    for i in range(0, vectorized_end, bool_mask_width):
+        var first_block = haystack.load[width=bool_mask_width](i)
+        var last_block = haystack.load[width=bool_mask_width](
+            i + needle_len - 1
+        )
+
+        var eq_first = first_needle == first_block
+        var eq_last = last_needle == last_block
+
+        var bool_mask = eq_first & eq_last
+        var mask = pack_bits(bool_mask)
+
+        while mask:
+            var offset = Int(i + count_trailing_zeros(mask))
+            if memcmp(haystack + offset + 1, needle + 1, needle_len - 1) == 0:
+                return haystack + offset
+            mask = mask & (mask - 1)
+
+    # remaining partial block compare using byte-by-byte
+    #
+    for i in range(vectorized_end, haystack_len - needle_len + 1):
+        if haystack[i] != needle[0]:
+            continue
+
+        if memcmp(haystack + i + 1, needle + 1, needle_len - 1) == 0:
+            return haystack + i
+
+    return UnsafePointer[Scalar[type]]()
+
+
+fn _count_utf8_continuation_bytes(str_slice: StringSlice) -> Int:
+    alias sizes = (256, 128, 64, 32, 16, 8)
+    var ptr = str_slice.unsafe_ptr()
+    var num_bytes = str_slice.byte_length()
+    var amnt: Int = 0
+    var processed = 0
+
+    @parameter
+    for i in range(len(sizes)):
+        alias s = sizes[i]
+
+        @parameter
+        if simdwidthof[DType.uint8]() >= s:
+            var rest = num_bytes - processed
+            for _ in range(rest // s):
+                var vec = (ptr + processed).load[width=s]()
+                var comp = (vec & 0b1100_0000) == 0b1000_0000
+                amnt += Int(comp.cast[DType.uint8]().reduce_add())
+                processed += s
+
+    for i in range(num_bytes - processed):
+        amnt += Int((ptr[processed + i] & 0b1100_0000) == 0b1000_0000)
+
+    return amnt
+
+
+@always_inline
+fn _utf8_first_byte_sequence_length(b: Byte) -> Int:
+    """Get the length of the sequence starting with given byte. Do note that
+    this does not work correctly if given a continuation byte."""
+
+    debug_assert(
+        (b & 0b1100_0000) != 0b1000_0000,
+        "Function does not work correctly if given a continuation byte.",
+    )
+    return Int(count_leading_zeros(~b)) + Int(b < 0b1000_0000)
+
+
+fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> __type_of(b):
+    """UTF-8 byte type.
+
+    Returns:
+        The byte type.
+
+    Notes:
+
+        - 0 -> ASCII byte.
+        - 1 -> continuation byte.
+        - 2 -> start of 2 byte long sequence.
+        - 3 -> start of 3 byte long sequence.
+        - 4 -> start of 4 byte long sequence.
+    """
+    return count_leading_zeros(~(b & UInt8(0b1111_0000)))
+
+
+@always_inline
+fn _memrchr[
+    type: DType
+](
+    source: UnsafePointer[Scalar[type]], char: Scalar[type], len: Int
+) -> UnsafePointer[Scalar[type]]:
+    if not len:
+        return UnsafePointer[Scalar[type]]()
+    for i in reversed(range(len)):
+        if source[i] == char:
+            return source + i
+    return UnsafePointer[Scalar[type]]()
+
+
+@always_inline
+fn _memrmem[
+    type: DType
+](
+    haystack: UnsafePointer[Scalar[type]],
+    haystack_len: Int,
+    needle: UnsafePointer[Scalar[type]],
+    needle_len: Int,
+) -> UnsafePointer[Scalar[type]]:
+    if not needle_len:
+        return haystack
+    if needle_len > haystack_len:
+        return UnsafePointer[Scalar[type]]()
+    if needle_len == 1:
+        return _memrchr[type](haystack, needle[0], haystack_len)
+    for i in reversed(range(haystack_len - needle_len + 1)):
+        if haystack[i] != needle[0]:
+            continue
+        if memcmp(haystack + i + 1, needle + 1, needle_len - 1) == 0:
+            return haystack + i
+    return UnsafePointer[Scalar[type]]()

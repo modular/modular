@@ -21,7 +21,7 @@ from bit import count_trailing_zeros
 from builtin.dtype import _uint_type_of_width
 from memory import UnsafePointer, bitcast, memcmp, pack_bits
 
-from utils.stringref import _align_down, _memchr, _memmem
+from collections.string.string_slice import _align_down, _memchr, _memmem
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data

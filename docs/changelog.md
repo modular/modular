@@ -100,6 +100,11 @@ what we publish.
 
 ### Standard library changes
 
+- `StringRef` has been removed in favor of `StringSlice`.
+  The two types are ABI compatible, and for the exact same
+  behavior one can use `StaticString`, which is an alias
+  to `StringSlice[StaticConstantOrigin]`.
+
 - Add a new `validate` parameter to the `b64decode()` function.
 
 - The free floating functions for constructing different types have been
