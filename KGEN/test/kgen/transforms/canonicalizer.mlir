@@ -36,6 +36,87 @@ kgen.func @if_to_select_multiple(%arg0: i1, %arg1: f32, %arg2: i32,
   kgen.return %0#0, %0#1 : f32, i32
 }
 
+// CHECK-LABEL: @fold_if_single_add_then
+kgen.func @fold_if_single_add_then(%cond: i1, %arg0 : index, %arg1: index) -> index {
+  // CHECK-NOT: hlcf.if
+  // CHECK:      %[[ADD:.*]] = index.add
+  // CHECK-NEXT: %[[IF_RES:.*]] = pop.select {{.*}}, %[[ADD]], {{.*}}
+  // CHECK-NEXT: kgen.return %[[IF_RES]]
+  %if_res = hlcf.if %cond -> index {
+    %add = index.add %arg1, %arg0
+    hlcf.yield %add: index
+  } else {
+    hlcf.yield %arg1: index
+  }
+  kgen.return %if_res: index
+}
+
+// CHECK-LABEL: @negative_fold_if_single_div_then
+kgen.func @negative_fold_if_single_div_then(%cond: i1, %arg0 : index, %arg1: index) -> index {
+  // CHECK: %0 = hlcf.if %arg0 -> index {
+  // CHECK:   %1 = index.divs %arg2, %arg1
+  // CHECK:   hlcf.yield %1 : index
+  // CHECK: } else {
+  // CHECK:   hlcf.yield %arg2 : index
+  // CHECK: }
+  %if_res = hlcf.if %cond -> index {
+    %add = index.divs %arg1, %arg0
+    hlcf.yield %add: index
+  } else {
+    hlcf.yield %arg1: index
+  }
+  kgen.return %if_res: index
+}
+
+// CHECK-LABEL: @negative_fold_if_single_div_then_pop_type
+kgen.func @negative_fold_if_single_div_then_pop_type(%cond: i1, %arg0 : !pop.scalar<index>, %arg1: !pop.scalar<index>) -> !pop.scalar<index> {
+  // CHECK: %0 = hlcf.if %arg0 -> !pop.scalar<index> {
+  // CHECK:   %1 = pop.div %arg2, %arg1 : !pop.scalar<index>
+  // CHECK:   hlcf.yield %1 : !pop.scalar<index>
+  // CHECK: } else {
+  // CHECK:   hlcf.yield %arg2 : !pop.scalar<index>
+  // CHECK: }
+  %if_res = hlcf.if %cond -> !pop.scalar<index> {
+    %add = pop.div %arg1, %arg0 : !pop.scalar<index>
+    hlcf.yield %add: !pop.scalar<index>
+  } else {
+    hlcf.yield %arg1: !pop.scalar<index>
+  }
+  kgen.return %if_res: !pop.scalar<index>
+}
+
+// CHECK-LABEL: @fold_if_single_add_else
+kgen.func @fold_if_single_add_else(%cond: i1, %arg0 : index, %arg1: index) -> index {
+  // CHECK-NOT: hlcf.if
+  // CHECK:      %[[ADD:.*]] = index.add
+  // CHECK-NEXT: %[[IF_RES:.*]] = pop.select {{.*}}, {{.*}}, %[[ADD]]
+  // CHECK-NEXT: kgen.return %[[IF_RES]]
+  %if_res = hlcf.if %cond -> index {
+    hlcf.yield %arg0: index
+  } else {
+    %add = index.add %arg1, %arg0
+    hlcf.yield %add: index
+  }
+  kgen.return %if_res: index
+}
+
+// CHECK-LABEL: @fold_if_single_add_then_sub_else
+kgen.func @fold_if_single_add_then_sub_else(%cond: i1, %arg0 : index, %arg1: index) -> index {
+  // CHECK-NOT: hlcf.if
+  // CHECK:      %[[ADD:.*]] = index.add
+  // CHECK-NEXT: %[[SUB:.*]] = index.sub
+  // CHECK-NEXT: %[[IF_RES:.*]] = pop.select {{.*}}, %[[ADD]], %[[SUB]]
+  // CHECK-NEXT: kgen.return %[[IF_RES]]
+  %if_res = hlcf.if %cond -> index {
+    %add = index.add %arg1, %arg0
+    hlcf.yield %add: index
+  } else {
+    %sub = index.sub %arg1, %arg0
+    hlcf.yield %sub: index
+  }
+  kgen.return %if_res: index
+}
+
 // CHECK-LABEL: @indexify_comparison
 kgen.func @indexify_comparison(%arg0: index) -> i1 {
   // CHECK: %0 = index.cmp sgt(%arg0, %idx1)
