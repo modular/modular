@@ -208,7 +208,6 @@ LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
 
       "__mogg_intrinsic_attr",
       "register_internal",
-      "register_internal_override",
       "uses_opaque",
 
       "register",
@@ -676,10 +675,7 @@ static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
   if (spelling.empty())
     return;
 
-  if (!llvm::is_contained({REGISTER_INTERNAL_FUNCTION,
-                           REGISTER_INTERNAL_FUNCTION_OVERRIDE,
-                           REGISTER_PUBLIC_OVERRIDE, USES_OPAQUE},
-                          spelling))
+  if (!llvm::is_contained({REGISTER_INTERNAL_FUNCTION, USES_OPAQUE}, spelling))
     return;
 
   // For each argument and result type, generate the set of explicit trait
