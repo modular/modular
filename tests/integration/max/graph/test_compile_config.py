@@ -5,9 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
+import tempfile
 from pathlib import Path
 
+import numpy as np
 import pytest
+from max.driver import Accelerator, Tensor, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession, LogLevel
 from max.graph import Graph, TensorType, ops
@@ -56,3 +59,46 @@ def test_compile_config_use_logger(
     # We need to capture the output and check that it matches.
     captured = capfd.readouterr()
     assert captured.out == "ERROR::: I'm a custom Mojo function!\n"
+
+
+@pytest.mark.skipif(
+    accelerator_api() != "cuda",
+    reason="This test is checking if the PTX output is correct, it will be the "
+    "same logic for HIP but we need to generalize the asserts.",
+)
+def test_compile_config_dump_asm(
+    gpu_session: InferenceSession, compile_config_ops_path: Path
+):
+    rows = 5
+    columns = 10
+    dtype = DType.float32
+
+    graph = Graph(
+        "addition",
+        forward=lambda x: ops.custom(
+            name="add_one_custom",
+            values=[x],
+            out_types=[TensorType(dtype=x.dtype, shape=x.tensor.shape)],
+        )[0].tensor,
+        input_types=[
+            TensorType(dtype, shape=[rows, columns]),
+        ],
+    )
+
+    temp_dir = tempfile.TemporaryDirectory()
+    output_path = Path(temp_dir.name) / "kernel.ptx"
+    gpu_session._dump_gpu_asm(output_path)
+
+    model = gpu_session.load(graph, custom_extensions=compile_config_ops_path)
+
+    x_values = np.random.uniform(size=(rows, columns)).astype(np.float32)
+
+    x = Tensor.from_numpy(x_values).to(Accelerator())
+
+    result = model.execute(x)[0]
+
+    assert (result.to_numpy() == x_values + np.ones_like(x_values)).all()
+    assert output_path.exists()
+    assert "algorithm_functional" in output_path.read_text()
+
+    temp_dir.cleanup()
