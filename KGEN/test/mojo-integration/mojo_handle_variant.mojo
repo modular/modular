@@ -6,7 +6,7 @@
 
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from utils import StringRef
+from collections.string import StringSlice
 
 
 struct S:
@@ -38,7 +38,7 @@ fn foo(c: Bool):
         pass
 
 
-fn fail(str: StringRef) raises -> S:
+fn fail(str: StringSlice) raises -> S:
     if len(str) > 5:
         raise Error(str)
     return S(len(str))
