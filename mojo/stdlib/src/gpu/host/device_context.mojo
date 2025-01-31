@@ -13,7 +13,7 @@ from sys import env_get_int, is_defined, env_get_string, external_call, sizeof
 from sys.param_env import _is_bool_like
 from sys.info import _get_arch, is_triple, has_nvidia_gpu_accelerator
 from builtin._location import __call_location, _SourceLocation
-
+from sys.compile import DebugLevel, OptimizationLevel
 from gpu.host._compile import (
     _compile_code,
     _compile_code_asm,
@@ -435,9 +435,6 @@ struct DeviceFunction[
         *,
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
-        alias debug_level = env_get_string["__DEBUG_LEVEL", "none"]()
-        alias optimization_level = env_get_int["__OPTIMIZATION_LEVEL", 4]()
-
         var max_dynamic_shared_size_bytes: Int32 = -1
         if func_attribute:
             if (
@@ -487,8 +484,8 @@ struct DeviceFunction[
                 self._func_impl.function_name.unsafe_ptr(),
                 self._func_impl.asm.unsafe_ptr(),
                 max_dynamic_shared_size_bytes,
-                debug_level.unsafe_cstr_ptr().bitcast[UInt8](),
-                optimization_level,
+                String(DebugLevel).unsafe_cstr_ptr().bitcast[UInt8](),
+                int(OptimizationLevel),
             )
         )
         self._handle = result
