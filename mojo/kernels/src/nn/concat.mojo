@@ -22,7 +22,7 @@ from gpu import block_idx, thread_idx
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host.info import is_valid_target, is_cpu
 from memory import UnsafePointer, memcpy
-from register import register_internal, register_internal_shape_func
+from register import register_internal
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel
 
@@ -518,7 +518,6 @@ fn _concat_cpu[
         _concat_parallel[epilogue_fn=epilogue_fn](output, axis, inputs)
 
 
-@register_internal_shape_func("mo.concat_from_list")
 @always_inline
 fn concat_shape[
     input_rank: Int,

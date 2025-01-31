@@ -29,7 +29,6 @@ fn arange[
     return start_buf[0] + (iota[type, simd_width](index[0]) * step_buf[0])
 
 
-@register_internal_shape_func("mo.range")
 @always_inline
 fn arange_shape[
     type: DType,

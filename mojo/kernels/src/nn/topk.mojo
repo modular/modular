@@ -36,7 +36,6 @@ from memory import UnsafePointer, Span, stack_allocation
 from nn.gather_scatter import normalize_neg_index
 from nn.reshape import reshape
 from random import random_float64
-from register import register_internal_shape_func
 from runtime.asyncrt import MojoCallContextPtr
 from sys import alignof, simdwidthof, sizeof
 from utils import IndexList
@@ -87,7 +86,6 @@ fn top_k_shape_impl[
     return shape
 
 
-@register_internal_shape_func("mo.top_k")
 @always_inline
 fn top_k_shape[
     type: DType,
@@ -104,7 +102,6 @@ fn top_k_shape[
     ](input, k_buf, axis_buf)
 
 
-@register_internal_shape_func("mo.bottom_k")
 @always_inline
 fn bottom_k_shape[
     type: DType,

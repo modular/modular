@@ -8,7 +8,7 @@ from algorithm import sync_parallelize
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from register import register_internal, register_internal_shape_func
+from register import register_internal
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import IndexList
@@ -61,7 +61,6 @@ fn arg_nonzero[
 
 
 # Where has the shape 2D shape [NumNonZeros, InputRank]
-@register_internal_shape_func("mo.arg_nonzero")
 @always_inline
 fn arg_nonzero_shape[
     type: DType,

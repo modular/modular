@@ -19,7 +19,7 @@ from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.host.info import is_gpu, is_cpu
 from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
-from register import register_internal, register_internal_shape_func
+from register import register_internal
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel
 from tensor_internal import ManagedTensorSlice
@@ -975,11 +975,6 @@ fn scatter_nd[
     ](data, indices, updates, output, context)
 
 
-@register_internal_shape_func("mo.scatter_nd")
-@register_internal_shape_func("mo.scatter_nd.add")
-@register_internal_shape_func("mo.scatter_nd.mul")
-@register_internal_shape_func("mo.scatter_nd.min")
-@register_internal_shape_func("mo.scatter_nd.max")
 @always_inline
 fn scatter_nd_shape[
     input_rank: Int,
@@ -1053,7 +1048,6 @@ fn scatter_nd_shape[
 # ===-----------------------------------------------------------------------===#
 
 
-@register_internal_shape_func("mo.gather")
 @always_inline
 fn gather_shape[
     output_rank: Int,
@@ -1195,11 +1189,6 @@ fn scatter_elements[
     elementwise[update_func, 1](indices.shape())
 
 
-@register_internal_shape_func("mo.scatter.max")
-@register_internal_shape_func("mo.scatter.min")
-@register_internal_shape_func("mo.scatter.mul")
-@register_internal_shape_func("mo.scatter.add")
-@register_internal_shape_func("mo.scatter")
 @always_inline
 fn scatter_elements_shape[
     rank: Int,
@@ -1321,7 +1310,6 @@ fn gather_elements[
 # ===-----------------------------------------------------------------------===#
 
 
-@register_internal_shape_func("mo.gather_nd")
 @always_inline
 fn gather_nd_shape[
     input_rank: Int,

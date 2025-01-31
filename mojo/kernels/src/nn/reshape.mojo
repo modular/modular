@@ -8,7 +8,6 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from register import (
     register_internal,
-    register_internal_shape_func,
 )
 
 from utils.index import IndexList
@@ -63,7 +62,6 @@ fn ndbuffer_reshape[
     ](input, new_shape)
 
 
-@register_internal_shape_func("mo.reshape")
 @always_inline
 fn reshape_shape[
     input_rank: Int,

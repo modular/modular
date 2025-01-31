@@ -17,13 +17,11 @@ from gpu.host.info import is_cpu
 from gpu.host._compile import _get_gpu_target
 from memory import UnsafePointer, memcpy, memset_zero
 from nn.gather_scatter import normalize_neg_index
-from register import register_internal_shape_func
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 
 from utils import Index, IndexList
 
 
-@register_internal_shape_func("index_tensor")
 @always_inline
 fn index_tensor_shape[
     input_rank: Int,

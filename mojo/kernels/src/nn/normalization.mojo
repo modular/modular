@@ -37,7 +37,7 @@ from gpu.shuffle import (
     lane_group_sum,
 )
 from memory import stack_allocation
-from register import register_internal, register_internal_shape_func
+from register import register_internal
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -668,7 +668,6 @@ fn layer_norm[
             constrained[False, "unsupported target " + target]()
 
 
-@register_internal_shape_func("mo.layer_norm")
 @always_inline
 fn layer_norm_shape[
     type: DType,
@@ -1069,7 +1068,6 @@ fn rms_norm[
         ](shape, gamma, epsilon, ctx)
 
 
-@register_internal_shape_func("rms_norm_shape")
 @always_inline
 fn rms_norm_shape[
     type: DType,

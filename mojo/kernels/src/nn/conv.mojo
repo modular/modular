@@ -53,7 +53,6 @@ from gpu.id import block_dim, block_idx, thread_idx
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from memory import UnsafePointer, stack_allocation
-from register import register_internal_shape_func
 from runtime.asyncrt import parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -2761,7 +2760,6 @@ fn pack_filter[
                 packed_filter_ptr = packed_filter_ptr + simd_size
 
 
-@register_internal_shape_func("mo.conv")
 @always_inline
 fn conv_shape[
     input_rank: Int,

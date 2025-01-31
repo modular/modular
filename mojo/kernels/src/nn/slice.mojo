@@ -8,7 +8,6 @@ from math import clamp
 
 from algorithm import elementwise
 from buffer import NDBuffer
-from register import register_internal_shape_func
 from runtime.asyncrt import MojoCallContextPtr
 
 from utils._select import _select_register_value as select
@@ -208,7 +207,6 @@ fn slice_as_copy[
 # ===-----------------------------------------------------------------------===#
 
 
-@register_internal_shape_func("mo.slice")
 @always_inline
 fn slice_shape[
     input_rank: Int,

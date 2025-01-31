@@ -19,7 +19,7 @@ from buffer.dimlist import Dim, DimList
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from memory import UnsafePointer
-from register import register_internal, register_internal_shape_func
+from register import register_internal
 from runtime.asyncrt import parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -149,7 +149,6 @@ fn conv_transpose_naive[
                             accumulate_output_point(n, d, h, w, c, f)
 
 
-@register_internal_shape_func("mo.conv_transpose")
 @always_inline
 fn conv_transpose_shape[
     input_rank: Int,

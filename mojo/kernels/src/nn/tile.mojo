@@ -6,7 +6,7 @@
 
 from buffer import NDBuffer
 from memory import memcpy
-from register import register_internal, register_internal_shape_func
+from register import register_internal
 
 from utils import IndexList
 
@@ -200,7 +200,6 @@ fn tile[
             memcpy(dst_ptr, src_ptr, count)
 
 
-@register_internal_shape_func("mo.tile")
 @always_inline
 fn tile_shape[
     input_rank: Int,
