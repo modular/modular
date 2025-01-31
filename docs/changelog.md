@@ -100,6 +100,8 @@ what we publish.
 
 ### Standard library changes
 
+- Add a new `validate` parameter to the `b64decode()` function.
+
 - The free floating functions for constructing different types have been
   deprecated for actual constructors:
 
