@@ -375,16 +375,6 @@ fn _is_amd_gpu[target: __mlir_type.`!kgen.target`]() -> Bool:
     return is_triple["amdgcn-amd-amdhsa", target]()
 
 
-fn _get_optimization_level() -> Int:
-    """This function returns the optimization level to use for the current
-    target. If the target is an NVIDIA GPU, it returns 4 if the specified
-    Mojo optimization level 3, otherwise it returns the value of the
-    __OPTIMIZATION_LEVEL environment variable.
-    """
-    alias level = env_get_int["__OPTIMIZATION_LEVEL", 4]()
-    return 4 if level == 3 and has_nvidia_gpu_accelerator() else level
-
-
 fn _is_path_like(val: String) -> Bool:
     # Ideally we want to use `val.start_with` but we hit a compiler bug if we do
     # that. So, instead we implement the function inline, since we only care
@@ -446,7 +436,7 @@ struct DeviceFunction[
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
         alias debug_level = env_get_string["__DEBUG_LEVEL", "none"]()
-        alias optimization_level = _get_optimization_level()
+        alias optimization_level = env_get_int["__OPTIMIZATION_LEVEL", 4]()
 
         var max_dynamic_shared_size_bytes: Int32 = -1
         if func_attribute:
