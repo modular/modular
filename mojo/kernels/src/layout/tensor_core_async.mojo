@@ -63,6 +63,11 @@ from utils import Index, IndexList
 alias supported_mma_shape = (
     Index(64, 8, 8),
     Index(64, 8, 16),
+    Index(64, 16, 16),
+    Index(64, 32, 16),
+    Index(64, 64, 16),
+    Index(64, 128, 16),
+    Index(64, 256, 16),
 )
 
 # Core matrix dimensions
