@@ -39,6 +39,7 @@ mojo_library(
         "//Kernels/mojo/logger",
         "//Kernels/mojo/register",
         "//SDK/lib/API/mojo/max/compiler",
+        "//SDK/lib/API/mojo/max/max",
         "//SDK/lib/API/mojo/max/tensor",
         "//open-source/mojo/stdlib/stdlib",
     ],

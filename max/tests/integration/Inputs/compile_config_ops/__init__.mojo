@@ -5,9 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 
 import compiler
-from tensor import ManagedTensorSlice
 from sys import env_get_int
 from logger import Logger
+from max.tensor import ManagedTensorSlice, foreach
+from utils.index import IndexList
+from runtime.asyncrt import MojoCallContextPtr
 
 alias logger = Logger()
 
@@ -32,3 +34,26 @@ struct UseLogger:
     ):
         logger.error("I'm a custom Mojo function!")
         out[0] = Int(logger.level._value)
+
+
+@compiler.register("add_one_custom", num_dps_outputs=1)
+struct AddOneCustom:
+    @staticmethod
+    fn execute[
+        target: StringLiteral
+    ](
+        out: ManagedTensorSlice,
+        x: ManagedTensorSlice[out.type, out.rank],
+        ctx: MojoCallContextPtr,
+    ):
+        @parameter
+        fn add_one[width: Int](idx: IndexList[x.rank]) -> SIMD[x.type, width]:
+            return x.load[width](idx) + 1
+
+        foreach[add_one, target=target](out, ctx)
+
+    @staticmethod
+    fn shape(
+        x: ManagedTensorSlice,
+    ) raises -> IndexList[x.rank]:
+        raise "NotImplemented"
