@@ -7,6 +7,7 @@
 # Implementation of the C++ backed DeviceContext in Mojo
 
 from collections import List, Optional
+from collections.string import StaticString
 from compile.compile import Info
 from pathlib import Path
 from sys import env_get_int, is_defined, env_get_string, external_call, sizeof
@@ -23,7 +24,7 @@ from gpu.host._compile import (
 )
 from memory import stack_allocation
 
-from utils import StringRef, Variant
+from utils import Variant
 
 from .info import DEFAULT_GPU
 
@@ -83,7 +84,7 @@ fn _checked(
 fn _raise_checked_impl(
     err_msg: _CharPtr, msg: String, location: _SourceLocation
 ) raises:
-    var err = String(StringRef(ptr=err_msg))
+    var err = String(StaticString(unsafe_from_utf8_ptr=err_msg))
     # void AsyncRT_DeviceContext_strfree(const char* ptr)
     external_call["AsyncRT_DeviceContext_strfree", NoneType, _CharPtr](err_msg)
     raise Error(location.prefix(err + ((" " + msg) if msg else "")))
@@ -909,7 +910,7 @@ struct DeviceContext:
         ](
             self._handle,
         )
-        result = String(StringRef(ptr=name_ptr))
+        result = String(StaticString(unsafe_from_utf8_ptr=name_ptr))
         # void AsyncRT_DeviceContext_strfree(const char* ptr)
         external_call["AsyncRT_DeviceContext_strfree", NoneType, _CharPtr](
             name_ptr
@@ -918,11 +919,11 @@ struct DeviceContext:
 
     fn api(self) -> String:
         # void AsyncRT_DeviceContext_deviceApi(llvm::StringRef *result, const DeviceContext *ctx)
-        var api_ptr = StringRef()
+        var api_ptr = StaticString(ptr=UnsafePointer[Byte](), length=0)
         external_call[
             "AsyncRT_DeviceContext_deviceApi",
             NoneType,
-            UnsafePointer[StringRef],
+            UnsafePointer[StaticString],
             _DeviceContextPtr,
         ](
             UnsafePointer.address_of(api_ptr),
