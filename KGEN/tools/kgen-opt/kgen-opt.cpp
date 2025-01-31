@@ -15,6 +15,7 @@
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/ForceLinkMLIRC.h"
 #include "KGEN/ToolCommon/CLOptions.h"
+#include "KGEN/ToolCommon/Debug.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/Context.h"
@@ -112,11 +113,15 @@ int main(int argc, char **argv) {
       llvm::cl::init(0)};
 
   KGEN::registerKGENCommandLineOptions();
+  KGEN::initializeDebugOptions();
 
   // Register and parse command line options.
   std::string inputFilename, outputFilename;
   std::tie(inputFilename, outputFilename) =
       registerAndParseCLIOptions(argc, argv, "kgen optimizer driver", registry);
+  if (KGEN::debugFlag)
+    llvm::errs() << "WARNING: `kgen-debug-only` may work incorrectly with "
+                    "multithreading enabled\n";
 
   KGEN::TraceProfiler tracer(timeTrace, timeTraceGranularity);
 
