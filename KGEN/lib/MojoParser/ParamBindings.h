@@ -119,6 +119,8 @@ public:
     std::function<void(ArrayRef<StringAttr>)> emitRedundantKeywords;
     /// Emit diagnostics for positional-only parameters specified by keyword.
     std::function<void(ArrayRef<StringAttr>)> emitPosOnlyPassedByKw;
+    /// Emit diagnostics for out-of-order explicitly-specified inferred keyword.
+    std::function<void(ArrayRef<StringAttr>)> emitOutOfOrderInferredKw;
     /// Emit diagnostics for failure to deduce a parameter.
     std::function<void(size_t)> emitDeductionFailure;
     /// Emit diagnostics when an unbound (i.e. `_`) is passed to a variadic.

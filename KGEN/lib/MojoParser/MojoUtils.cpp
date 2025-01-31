@@ -152,6 +152,13 @@ void LIT::emitPosOnlyPassedByKw(InflightDiag &diag, ArrayRef<StringAttr> names,
   emitNames(diag, names);
 }
 
+void LIT::emitOutOfOrderInferredKw(InflightDiag &diag,
+                                   ArrayRef<StringAttr> names) {
+  size_t numNames = names.size();
+  diag << "inferred parameter" << plural(numNames) << " passed out of order: ";
+  emitNames(diag, names);
+}
+
 void LIT::emitMissing(InflightDiag &diag, ArrayRef<StringAttr> names,
                       const Twine &kindStr) {
   size_t numNames = names.size();
