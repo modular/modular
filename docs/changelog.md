@@ -386,6 +386,9 @@ what we publish.
   generator, and in the symbol outline and hover markdown via the Mojo Language
   Server.
 
+- The `env_get_dtype` function has been added to the `sys` module. This allows
+  you to get the value of a `DType` from the param environment.
+
 ### ❌ Removed
 
 - `StringRef` is being deprecated. Use `StringSlice` instead.
