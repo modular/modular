@@ -135,11 +135,6 @@ bool stripDecorators(LIT::FnOp func) {
       kernelRegistrations.push_back(apply.getOperand(2));
       decoratorsToCopy.pop_back();
       areAnyKernels = true;
-    } else if (decoratorName.starts_with(Decorators::REGISTER_SHAPE_FUNC)) {
-      // Register V1 shape functions.
-      shapeFunctionReg.push_back(apply.getOperand(1));
-      decoratorsToCopy.pop_back();
-      areAnyKernels = true;
     } else if (decoratorName.starts_with(
                    Decorators::REGISTER_INTERNAL_FUNCTION)) {
       // Register kernels without explict override parameter.

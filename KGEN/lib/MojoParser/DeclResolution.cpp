@@ -209,9 +209,6 @@ LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
       "__mogg_intrinsic_attr",
       "register_internal",
       "register_internal_override",
-      "register_internal_custom",
-      "register_internal_custom_shape",
-      "register_internal_shape_func",
       "uses_opaque",
 
       "register",
