@@ -173,7 +173,7 @@ from quantization.qmatmul_k import (
     matmul_Q6_K,
     matmul_Q6_K_pack_b,
 )
-from register import register_internal_override, uses_opaque, register_internal
+from register import uses_opaque, register_internal
 from runtime.asyncrt import DeviceContextPtr, MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
 from tensor_internal import ManagedTensorSlice, foreach, view_copy_impl
@@ -189,99 +189,99 @@ from utils.loop import unroll
 # ===-----------------------------------------------------------------------===#
 
 
-@register_internal_override("bfloat16", 1)
+@register_internal("bfloat16")
 fn DTypeBFloat16TypeDef(ty: DType.type) -> DType.type:
     return DType.bfloat16.value
 
 
-@register_internal_override("float16", 1)
+@register_internal("float16")
 fn DTypeFloat16TypeDef(ty: DType.type) -> DType.type:
     return DType.float16.value
 
 
-@register_internal_override("float32", 1)
+@register_internal("float32")
 fn DTypeFloat32TypeDef(ty: DType.type) -> DType.type:
     return DType.float32.value
 
 
-@register_internal_override("float64", 1)
+@register_internal("float64")
 fn DTypeFloat64TypeDef(ty: DType.type) -> DType.type:
     return DType.float64.value
 
 
-@register_internal_override("int8", 1)
+@register_internal("int8")
 fn DTypeInt8TypeDef(ty: DType.type) -> DType.type:
     return DType.int8.value
 
 
-@register_internal_override("int16", 1)
+@register_internal("int16")
 fn DTypeInt16TypeDef(ty: DType.type) -> DType.type:
     return DType.int16.value
 
 
-@register_internal_override("int32", 1)
+@register_internal("int32")
 fn DTypeInt32TypeDef(ty: DType.type) -> DType.type:
     return DType.int32.value
 
 
-@register_internal_override("uint32", 1)
+@register_internal("uint32")
 fn DTypeUInt32TypeDef(ty: DType.type) -> DType.type:
     return DType.uint32.value
 
 
-@register_internal_override("uint64", 1)
+@register_internal("uint64")
 fn DTypeUInt64TypeDef(ty: DType.type) -> DType.type:
     return DType.uint64.value
 
 
-@register_internal_override("int64", 1)
+@register_internal("int64")
 fn DTypeInt64TypeDef(ty: DType.type) -> DType.type:
     return DType.int64.value
 
 
-@register_internal_override("uint8", 1)
+@register_internal("uint8")
 fn DTypeUInt8TypeDef(ty: DType.type) -> DType.type:
     return DType.uint8.value
 
 
-@register_internal_override("uint16", 1)
+@register_internal("uint16")
 fn DTypeUInt16TypeDef(ty: DType.type) -> DType.type:
     return DType.uint16.value
 
 
-@register_internal_override("bool", 1)
+@register_internal("bool")
 fn DTypeBoolTypeDef(ty: DType.type) -> DType.type:
     return DType.bool.value
 
 
-@register_internal_override("index", 1)
+@register_internal("index")
 fn IndexTypeDef(ty: Int) -> Int:
     return ty
 
 
-@register_internal_override("mojoCallContext", 1)
+@register_internal("mojoCallContext")
 fn MojoCallContextDef(ty: MojoCallContextPtr):
     pass
 
 
-@register_internal_override("deviceContext", 1)
+@register_internal("deviceContext")
 fn DeviceContextDef(ty: DeviceContextPtr):
     pass
 
 
-@register_internal_override("simd", 1)
+@register_internal("simd")
 fn SimdTypeDef[
     type: DType, width: Int
 ](ty: SIMD[type, width]) -> SIMD[type, width]:
     return ty
 
 
-@register_internal_override("indices", 1)
+@register_internal("indices")
 fn TensorIndicesTypeDef[rank: Int](ty: IndexList[rank]) -> IndexList[rank]:
     return ty
 
 
-@register_internal_override("dim_type", 1)
+@register_internal("dim_type")
 fn DimTypeDef(ty: Dim) -> Dim:
     return ty
 
@@ -291,17 +291,17 @@ fn DimTypeDef(ty: Dim) -> Dim:
 # ===-----------------------------------------------------------------------===#
 
 
-@register_internal_override("create_unknown_dim", 1)
+@register_internal("create_unknown_dim")
 fn create_unknown_dim() -> Dim:
     return Dim()
 
 
-@register_internal_override("create_known_dim", 1)
+@register_internal("create_known_dim")
 fn create_known_dim[known_val: Int]() -> Dim:
     return Dim(known_val)
 
 
-@register_internal_override("reshape_contiguous_managed_tensor_slice", 1)
+@register_internal("reshape_contiguous_managed_tensor_slice")
 @always_inline
 fn reshape_contiguous_buffer[
     type: DType, old_rank: Int, new_rank: Int
@@ -316,13 +316,13 @@ fn reshape_contiguous_buffer[
 # ===-----------------------------------------------------------------------===#
 
 
-@register_internal_override("get_address_space", 1)
+@register_internal("get_address_space")
 fn get_address_space() -> AddressSpace:
     return AddressSpace.GENERIC
 
 
 # Build the StaticTensorSpec parameter for the DPS kernels
-@register_internal_override("build_static_tensor_specs", 1)
+@register_internal("build_static_tensor_specs")
 fn build_static_tensor_specs[
     type: DType,
     rank: Int,
@@ -347,7 +347,7 @@ fn build_static_tensor_specs[
 
 
 # Rebuild the StaticTensorSpec parameter for the DPS kernels with different lambdas
-@register_internal_override("rebuild_static_tensor_specs_with_lambdas", 1)
+@register_internal("rebuild_static_tensor_specs_with_lambdas")
 fn rebuild_static_tensor_specs_with_lambdas[
     type: DType,
     rank: Int,
@@ -370,7 +370,7 @@ fn rebuild_static_tensor_specs_with_lambdas[
 
 
 # Rebuild the StaticTensorSpec parameter for the DPS kernels with different strides
-@register_internal_override("rebuild_static_tensor_specs_with_strides", 1)
+@register_internal("rebuild_static_tensor_specs_with_strides")
 fn rebuild_static_tensor_specs_with_strides[
     type: DType,
     rank: Int,
@@ -394,7 +394,7 @@ fn rebuild_static_tensor_specs_with_strides[
 
 
 # Used by the graph compiler to construct tensors from MGP repr. of tensor
-@register_internal_override("to_managed_tensor_slice", 1)
+@register_internal("to_managed_tensor_slice")
 @always_inline
 fn to_managed_tensor_slice[
     type: DType, rank: Int
@@ -438,7 +438,7 @@ fn _to_managed_tensor_slice_index_list_shape[
 
 
 # Extract a value from a shape.
-@register_internal_override("get_scalar_from_ndbuffer", 1)
+@register_internal("get_scalar_from_ndbuffer")
 @always_inline
 fn get_scalar_from_ndbuffer[
     dtype: DType
@@ -448,7 +448,7 @@ fn get_scalar_from_ndbuffer[
 
 
 # Extract a value from a managed tensor slice.
-@register_internal_override("get_scalar_from_managed_tensor_slice", 1)
+@register_internal("get_scalar_from_managed_tensor_slice")
 @always_inline
 fn get_scalar_from_managed_tensor_slice[
     dtype: DType
@@ -459,7 +459,7 @@ fn get_scalar_from_managed_tensor_slice[
     return tensor._ptr[0]
 
 
-@register_internal_override("get_int_from_shape", 1)
+@register_internal("get_int_from_shape")
 @always_inline
 fn get_int_from_shape[
     param_index: Int, rank: Int
@@ -476,7 +476,7 @@ alias ScalarTensor = ManagedTensorSlice[rank=1]
 
 
 # Used by the graph compiler -- which right now does not support static spec
-@register_internal_override("managed_tensor_slice_to_ndbuffer", 1)
+@register_internal("managed_tensor_slice_to_ndbuffer")
 @always_inline
 fn managed_tensor_slice_to_ndbuffer_primitive[
     type: DType,
@@ -583,7 +583,7 @@ fn reduce_shape[
 # ===----------------------------------------------------------------------===#
 
 
-@register_internal_override("split_dim_indices", 1)
+@register_internal("split_dim_indices")
 @always_inline
 fn split_dim_indices[
     rank: Int, axis: Int
@@ -613,7 +613,7 @@ fn split_dim_indices[
     return out
 
 
-@register_internal_override("merge_dim_indices", 1)
+@register_internal("merge_dim_indices")
 @always_inline
 fn merge_dim_indices[
     rank: Int, axis: Int
@@ -641,7 +641,7 @@ fn merge_dim_indices[
     return out
 
 
-@register_internal_override("insert_index", 1)
+@register_internal("insert_index")
 @always_inline
 fn insert_index[
     rank: Int, axis: Int, value: Int
@@ -4993,7 +4993,7 @@ struct Concat:
 
 
 # Helper method used by compiler to reconcile MGP list with type Mojo expects.
-@register_internal_override("to_managed_tensor_slice_list", 1)
+@register_internal("to_managed_tensor_slice_list")
 @always_inline
 fn to_managed_tensor_slice_list[
     type: DType, rank: Int
