@@ -111,8 +111,6 @@ constexpr StringLiteral REGISTER_PUBLIC_OVERRIDE = "op";
 // TODO(GEX-1145): Remove the need for this.
 constexpr StringLiteral USES_OPAQUE = "uses_opaque";
 
-constexpr StringLiteral REGISTER_SHAPE_FUNC = "register_internal_shape_func";
-
 // Allow new attrs to be added without needing explicit decorator.
 constexpr StringLiteral REGISTER_MOGG_INTRINSIC = "__mogg_intrinsic_attr";
 
