@@ -141,7 +141,7 @@ class Tensor(DLPackArray):
         return tensor_copy
 
     def __repr__(self) -> str:
-        return f"max.driver.Tensor({self.dtype}, {self.shape})"
+        return f"max.driver.Tensor({self.dtype}, {self.shape}, {self.device.api}[{self.device.id}])"
 
     def __setitem__(self, idx: IndexType, value: Any) -> None:
         """Sets an item in the tensor."""
