@@ -94,6 +94,8 @@ fn tma_wgmma_kernel[
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
+    _ = c_reg_tile.fill(0.0)
+
     alias expected_bytes = a_smem_layout.size() * sizeof[
         a_type
     ]() + b_smem_layout.size() * sizeof[b_type]()
