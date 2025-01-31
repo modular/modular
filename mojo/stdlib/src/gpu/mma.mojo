@@ -13,6 +13,7 @@ from gpu.memory import AddressSpace
 from memory import UnsafePointer, bitcast
 
 from utils import StaticTuple
+from utils.index import Index
 
 
 @always_inline
@@ -607,6 +608,7 @@ fn wgmma_async[
     *,
     a_type: DType,
     b_type: DType,
+    accum_type: DType = c_dtype,
     layout_a: StringLiteral = "row",
     layout_b: StringLiteral = "col",
 ](
@@ -618,11 +620,11 @@ fn wgmma_async[
     """
 
     constrained[
-        m * n // 128 == width,
+        (m * n // 128) * sizeof[accum_type]() == width * sizeof[c_dtype](),
         "Number of output registers "
         + String(width)
         + " don't match the instruction shape "
-        + String(m * n),
+        + String(Index(m, n, k)),
     ]()
 
     var desc_a_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
