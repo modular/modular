@@ -485,7 +485,7 @@ struct DeviceFunction[
                 self._func_impl.asm.unsafe_ptr(),
                 max_dynamic_shared_size_bytes,
                 String(DebugLevel).unsafe_cstr_ptr().bitcast[UInt8](),
-                int(OptimizationLevel),
+                Int(OptimizationLevel),
             )
         )
         self._handle = result
