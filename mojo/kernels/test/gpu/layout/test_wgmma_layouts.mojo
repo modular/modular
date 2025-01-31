@@ -1008,6 +1008,7 @@ fn wgmma_f16_f16_f16_kernel[
             WMMA_K,
             a_type = DType.float16,
             b_type = DType.float16,
+            accum_type = DType.float16,
         ](mat_a_desc, mat_b_desc, c_reg)
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()
