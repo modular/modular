@@ -12,7 +12,6 @@
 #include "AsyncRT/Runtime/WorkQueue.h"
 #include "AsyncRT/Support/TimerHeap.h"
 #include "AsyncRT/Support/UnknownLocationDecoder.h"
-#include "Runtime/MojoCallContext.h"
 #include "Runtime/MojoValue.h"
 #include "Runtime/Tensor/StateContext.h"
 #include "Runtime/Tensor/Tensor.h"
@@ -22,7 +21,6 @@
 #include "Support/ML/TensorSpec.h"
 #include "Support/SymbolExport.h"
 #include "llvm/ADT/StringRef.h"
-
 #include <memory>
 
 using namespace M;
@@ -48,7 +46,6 @@ AsyncRTWrapper<T> wrap(T *ptr) {
 }
 
 using AsyncRTRuntimeRef = AsyncRTWrapper<Runtime>;
-using AsyncRTMojoCallContextRef = AsyncRTWrapper<MojoCallContext>;
 using AsyncRTAsyncChainRef = AsyncRTWrapper<AsyncValueRef<Chain>>;
 using AsyncRTSpinWaiterRef = AsyncRTWrapper<SpinWaiter<true>>;
 
@@ -226,19 +223,6 @@ KGEN_CompilerRT_AsyncRT_ParallelismLevel(AsyncRTRuntimeRef rt) {
 }
 
 //===----------------------------------------------------------------------===//
-// MojoCallContext
-//===----------------------------------------------------------------------===//
-
-/// Get accelerator device context.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
-KGEN_CompilerRT_AsyncRT_MojoCallContext_GetDeviceContext(
-    AsyncRTMojoCallContextRef callContext) {
-  // This is an RCRef, we extract and return it as a pointer for FFI.
-  auto deviceContextRef = unwrap(callContext).deviceContext;
-  return const_cast<AsyncRT::DeviceContext *>(deviceContextRef.getPointer());
-}
-
-//===----------------------------------------------------------------------===//
 // Packing functions for creating async values
 //===----------------------------------------------------------------------===//
 
@@ -353,10 +337,9 @@ KGEN_CompilerRT_CreateAsyncNonTrackedBufferRef(
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsyncDeviceBufferRef(
     void *data, size_t size, AsyncRTWrapper<AnyAsyncValueRef> async,
-    AsyncRTWrapper<Runtime> runtimePtr, AsyncRTMojoCallContextRef contextPtr) {
+    AsyncRTWrapper<Runtime> runtimePtr, AsyncRT::DeviceContext *devCtx) {
   Runtime &runtime = unwrap(runtimePtr);
   AnyAsyncValueRef &value = unwrap(async);
-  auto devCtx = unwrap(contextPtr).deviceContext;
 
   // Wrap the raw pointer in an owning DeviceBuffer.
   // This will be freed by the DeviceContext when the refcount drops to 0.
@@ -511,11 +494,17 @@ KGEN_CompilerRT_MojoValueFreeBuffer(void *ptr) {
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
 KGEN_CompilerRT_GetValueFromAsync(AsyncRTWrapper<AnyAsyncValueRef> async) {
   AnyAsyncValueRef &value = unwrap(async);
-  assert(value.isReady());
   if (value.getPointer() && value.getPointer()->isIndirect())
     return value.getPointer()->getUnderlyingPtr();
   else
     return value.getPointerToData();
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
+KGEN_CompilerRT_UnpackDeviceContext(AsyncRTWrapper<AnyAsyncValueRef> async) {
+  AnyAsyncValueRef &value = unwrap(async);
+  auto deviceContextRef = value.get<AsyncRT::DeviceContextRef>();
+  return const_cast<AsyncRT::DeviceContext *>(deviceContextRef.getPointer());
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
