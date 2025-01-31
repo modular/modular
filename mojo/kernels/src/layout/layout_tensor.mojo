@@ -2807,18 +2807,14 @@ fn copy_local_to_dram[
                 dst_idx = dst_fragments.runtime_layout(i)
 
             if dst_idx < dst_idx_bound:
-                var src_element = Element[dst.dtype, src.element_layout].load(
-                    rebind[
-                        UnsafePointer[
-                            Scalar[dst.dtype], address_space = src.address_space
-                        ]
-                    ](src.ptr).offset(src_idx),
+                var src_element = Element[src.dtype, src.element_layout].load(
+                    src.ptr.offset(src_idx),
                     src.runtime_element_layout,
                 )
                 alias dst_element_type = Element[dst.dtype, dst.element_layout]
                 dst_element_type(
                     rebind[dst_element_type.element_data_type](
-                        src_element.element_data
+                        src_element.element_data.cast[dst.dtype]()
                     )
                 ).store(dst_fragments.ptr.offset(dst_idx))
 
