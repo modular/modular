@@ -58,7 +58,6 @@ gentbl_mlir_dialect(
 gentbl_cc_library(
     name = "CODialectBytecodeIncGen",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             [
@@ -116,7 +115,6 @@ gentbl_mlir_dialect(
 gentbl_cc_library(
     name = "HLCFAttrsIncGen",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             ["-gen-attrdef-decls"],
@@ -138,7 +136,6 @@ gentbl_cc_library(
 gentbl_cc_library(
     name = "HLCFEnumsIncGen",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             ["-gen-enum-decls"],
@@ -160,7 +157,6 @@ gentbl_cc_library(
 gentbl_cc_library(
     name = "HLCFInterfacesIncGen",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             ["-gen-op-interface-decls"],
@@ -228,7 +224,6 @@ gentbl_mlir_dialect(
 gentbl_cc_library(
     name = "KGENAttrInterfacesIncGen",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             ["-gen-attr-interface-decls"],
@@ -250,7 +245,6 @@ gentbl_cc_library(
 gentbl_cc_library(
     name = "KGENAttrsIncGen",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             ["-gen-attrdef-decls"],
@@ -272,7 +266,6 @@ gentbl_cc_library(
 gentbl_cc_library(
     name = "KGENDialectBytecodeIncGen",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             [
@@ -293,7 +286,6 @@ gentbl_cc_library(
 gentbl_cc_library(
     name = "KGENEnumsIncGen",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             ["-gen-enum-decls"],
@@ -314,7 +306,6 @@ gentbl_cc_library(
 gentbl_cc_library(
     name = "KGENInterfacesIncGen",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             ["-gen-op-interface-decls"],
@@ -336,7 +327,6 @@ gentbl_cc_library(
 gentbl_cc_library(
     name = "KGENTypeInterfacesIncGen",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             ["-gen-type-interface-decls"],
@@ -376,7 +366,6 @@ gentbl_mlir_dialect(
 gentbl_cc_library(
     name = "InterpreterAttrsIncGen",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             ["-gen-attrdef-decls"],
@@ -398,7 +387,6 @@ gentbl_cc_library(
 gentbl_cc_library(
     name = "InterpreterDialectBytecodeIncGen",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             [
@@ -420,7 +408,6 @@ gentbl_cc_library(
 gentbl_cc_library(
     name = "InterpreterOpInterfaceIncGen",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             ["-gen-op-interface-decls"],
@@ -442,7 +429,6 @@ gentbl_cc_library(
 gentbl_cc_library(
     name = "MemoryableTypeInterfaceIncGen",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             ["-gen-type-interface-decls"],
@@ -572,7 +558,6 @@ gentbl_mlir_dialect(
 gentbl_cc_library(
     name = "LITDialectBytecodeIncGen",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             [
@@ -594,7 +579,6 @@ gentbl_cc_library(
 gentbl_cc_library(
     name = "LITAttrsIncGen",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             [
@@ -624,7 +608,6 @@ gentbl_cc_library(
 gentbl_cc_library(
     name = "LITEnumsIncGen",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             ["-gen-enum-decls"],
@@ -646,7 +629,6 @@ gentbl_cc_library(
 gentbl_cc_library(
     name = "LITInterfacesIncGen",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             ["-gen-op-interface-decls"],
@@ -722,7 +704,6 @@ gentbl_mlir_dialect(
 gentbl_cc_library(
     name = "POPAttrsIncGen",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             [
@@ -750,7 +731,6 @@ gentbl_cc_library(
 gentbl_cc_library(
     name = "POPDialectBytecodeIncGen",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             [
@@ -771,7 +751,6 @@ gentbl_cc_library(
 gentbl_cc_library(
     name = "POPEnumsIncGen",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             ["-gen-enum-decls"],
@@ -1253,10 +1232,10 @@ modular_shared_library(
         "-fvisibility=default",
         "-iquoteexternal/",
     ],
+    includes = [],
     local_defines = [
         "MODULAR_BUILDING_LIBRARY",
     ],
-    strip_include_prefix = None,
     deps = [
         ":ExecutionEngine",
         ":KGENDialect",

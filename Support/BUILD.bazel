@@ -539,7 +539,6 @@ gentbl_mlir_dialect(
 gentbl_cc_library(
     name = "MAttrs",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             [
@@ -562,7 +561,6 @@ gentbl_cc_library(
 gentbl_cc_library(
     name = "MTypeInterfaces",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             [
@@ -585,7 +583,6 @@ gentbl_cc_library(
 gentbl_cc_library(
     name = "MAttrInterfaces",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             [
@@ -608,7 +605,6 @@ gentbl_cc_library(
 gentbl_cc_library(
     name = "MDialectByteCode",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             [
@@ -688,7 +684,6 @@ gentbl_mlir_dialect(
 gentbl_cc_library(
     name = "DebugInfoTypeInterfaces",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             [
@@ -742,7 +737,6 @@ modular_cc_library(
 gentbl_cc_library(
     name = "DebugInfoExprAttrInterfaces",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             [
@@ -769,7 +763,6 @@ gentbl_cc_library(
 gentbl_cc_library(
     name = "DebugInfoDialectAttrs",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             [
@@ -812,7 +805,6 @@ gentbl_cc_library(
 gentbl_cc_library(
     name = "DebugInfoDialectBytecode",
     includes = ["include"],
-    strip_include_prefix = "include",
     tbl_outs = [
         (
             [

@@ -4,7 +4,7 @@ modular_shared_library(
     name = "binary_id_shared_library",
     srcs = ["binary_id_shared_library.cpp"],
     hdrs = ["binary_id_shared_library.h"],
-    strip_include_prefix = None,
+    includes = [],
     deps = [
         "//Support:BinaryID",
         "//Support:SymbolExport",
