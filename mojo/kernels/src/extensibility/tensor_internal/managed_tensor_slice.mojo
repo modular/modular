@@ -32,7 +32,7 @@ from tensor_internal import RuntimeTensorSpec, TensorSpec
 from buffer import NDBuffer, DimList
 from buffer.dimlist import _make_partially_static_index_list
 from utils import IndexList
-from register import register_internal_override
+from register import register_internal
 from ._indexing import _dot_prod, _row_major_strides, _slice_to_tuple
 from .tensor_like import TensorLike
 from runtime.tracing import Trace, TraceLevel
@@ -62,7 +62,7 @@ fn _gcd_pow2[a: Int, b: Int]() -> Int:
 #
 # They are set to be inlined further down graph compiler stack.
 @doc_private
-@register_internal_override("simd_store_into_managed_tensor_slice", 1)
+@register_internal("simd_store_into_managed_tensor_slice")
 @no_inline
 fn simd_store_into_managed_tensor_slice[
     type: DType,
@@ -136,7 +136,7 @@ fn simd_store_into_managed_tensor_slice[
 
 
 @doc_private
-@register_internal_override("simd_load_from_managed_tensor_slice", 1)
+@register_internal("simd_load_from_managed_tensor_slice")
 @no_inline
 fn simd_load_from_managed_tensor_slice[
     type: DType,
