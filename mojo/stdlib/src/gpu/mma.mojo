@@ -569,15 +569,11 @@ struct WGMMADescriptor[dtype: DType]:
 
     @always_inline
     fn __iadd__(mut self, offset: Int):
-        # current address
-        address = self.desc & 0x3FFF
-        self.desc = self._insert_bit[0](address + (offset >> 4))
+        self.desc += (offset & 0x3FFFF) >> 4
 
     @always_inline
     fn __add__(self, offset: Int) -> Self:
-        # current address
-        address = self.desc & 0x3FFF
-        return self._insert_bit[0](address + (offset >> 4))
+        return self.desc + ((offset & 0x3FFFF) >> 4)
 
 
 @always_inline
