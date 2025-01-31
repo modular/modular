@@ -103,9 +103,6 @@ namespace Decorators {
 // The decorators we will look for on the generator to identify it as a MO
 // kernel.
 constexpr StringLiteral REGISTER_INTERNAL_FUNCTION = "register_internal";
-constexpr StringLiteral REGISTER_INTERNAL_FUNCTION_OVERRIDE =
-    "register_internal_override";
-constexpr StringLiteral REGISTER_PUBLIC_OVERRIDE = "op";
 
 // Decorator to indicate opaque use and we should generate conformances
 // TODO(GEX-1145): Remove the need for this.
