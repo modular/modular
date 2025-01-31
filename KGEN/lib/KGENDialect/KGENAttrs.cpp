@@ -323,7 +323,8 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
   // folding the parameter values into it directly (this will be cleaned up once
   // we remove param bindings from SymbolConstantAttr).
   if (auto symbolConstant = ::dyn_cast<SymbolConstantAttr>(generator)) {
-    bool hasUnboundParameters = symbolConstant.getParamValues().empty();
+    [[maybe_unused]] bool hasUnboundParameters =
+        symbolConstant.getParamValues().empty();
     hasUnboundParameters |=
         llvm::any_of(symbolConstant.getParamValues(),
                      [](TypedAttr value) { return ::isa<UnboundAttr>(value); });
