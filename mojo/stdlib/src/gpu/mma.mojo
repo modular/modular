@@ -616,6 +616,15 @@ fn wgmma_async[
 ) -> __type_of(c_reg):
     """Performs warp group async Matrix-multiply and accumulate(WGMMA) operation.
     """
+
+    constrained[
+        m * n // 128 == width,
+        "Number of output registers "
+        + String(width)
+        + " don't match the instruction shape "
+        + String(m * n),
+    ]()
+
     var desc_a_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
         mat_a_desc.desc.value
     )
