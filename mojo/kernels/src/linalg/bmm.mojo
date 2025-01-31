@@ -22,7 +22,7 @@ from gpu import block_dim, block_idx, thread_idx, global_idx
 from gpu.host import DeviceContext
 from gpu.host.info import is_valid_target, is_cpu
 from memory import UnsafePointer, memset_zero
-from register import register_internal, register_internal_shape_func
+from register import register_internal
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -613,7 +613,6 @@ fn batched_matmul[
         ](c_buf, a_buf, b_buf, context.get_device_context())
 
 
-@register_internal_shape_func("mo.batch_matmul")
 @always_inline
 fn batched_matmul_shape[
     rank: Int,

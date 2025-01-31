@@ -7,7 +7,6 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from register import register_internal_shape_func
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import Index, IndexList
@@ -128,7 +127,6 @@ fn matrix_solve[
             matrix_solve_tiny[type, 3, 2, 3](x_view, a_view, b_view)
 
 
-@register_internal_shape_func("mo.linalg.solve")
 @always_inline
 fn matrix_solve_shape[
     rank: Int,
