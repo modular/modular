@@ -15,8 +15,6 @@ from builtin.coroutine import AnyCoroutine, _coro_resume_fn, _suspend_async
 from gpu.host import DeviceContext
 from memory import UnsafePointer
 
-from utils import StringRef
-
 from .tracing import TraceLevel, is_mojo_profiling_disabled
 
 # ===-----------------------------------------------------------------------===#
