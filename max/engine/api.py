@@ -988,13 +988,25 @@ class InferenceSession:
         self._set_mojo_define("KERNEL_E2E_GPU_PROFILING", False)
         self._set_mojo_define("KERNEL_E2E_GPU_PROFILING_DETAILED", False)
 
-    def _dump_gpu_asm(self):
-        """Enables dumping of gpu asm."""
-        self._set_mojo_define("DUMP_GPU_ASM", True)
+    def _dump_gpu_asm(self, option: bool | str | Path = True):
+        """Enables dumping of gpu asm.
 
-    def _dump_gpu_llvm(self):
-        """Enables dumping of gpu llvm."""
-        self._set_mojo_define("DUMP_GPU_LLVM", True)
+        Specifying a True would print the kernel output to screen, specifying a
+        string or Path would write the kernel output to the specified path. If
+        a path contains '%' it is replaced with a unique identifier for the
+        kernel.
+        """
+        self._set_mojo_define("DUMP_GPU_ASM", str(option))
+
+    def _dump_gpu_llvm(self, option: bool | str | Path = True):
+        """Enables dumping of gpu llvm.
+
+        Specifying a True would print the kernel output to screen, specifying a
+        string or Path would write the kernel output to the specified path. If
+        a path contains '%' it is replaced with a unique identifier for the
+        kernel.
+        """
+        self._set_mojo_define("DUMP_GPU_LLVM", str(option))
 
     def _set_mojo_define(self, key: str, value: bool | int | str):
         """Enables overwriting of any mojo config directly."""
