@@ -50,7 +50,7 @@ namespace {
 
 /// Canonicalize ifs with no bodies an N results to N selects. This also removes
 /// trivially dead ifs.
-struct IfToSelect : public OpRewritePattern<HLCF::IfOp> {
+struct EmptyIfToSelect : public OpRewritePattern<HLCF::IfOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(HLCF::IfOp op,
@@ -71,6 +71,73 @@ struct IfToSelect : public OpRewritePattern<HLCF::IfOp> {
     }
 
     b.replaceOp(op, replacements);
+    return success();
+  }
+};
+
+/// Canonicalize ifs with a single operation in either then or else blocks into
+/// a select of the yields. The canonicalization hoists out the operation(s)
+/// therefore they're performed unconditionally.
+struct IfToSelect : public OpRewritePattern<HLCF::IfOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(HLCF::IfOp op,
+                                PatternRewriter &rewriter) const override {
+    if (op.getNumResults() != 1)
+      return failure();
+
+    auto thenYield = dyn_cast<HLCF::YieldOp>(op.getThenTerminator());
+    auto elseYield = dyn_cast<HLCF::YieldOp>(op.getElseTerminator());
+    if (!thenYield || !elseYield)
+      return failure();
+
+    if (op.getThenBlock().getOperations().size() > 2 ||
+        op.getElseBlock().getOperations().size() > 2)
+      return failure();
+
+    auto getNonYieldOp = [&](Block &block) -> Operation * {
+      Operation *op = &block.getOperations().front();
+      if (isa<HLCF::YieldOp>(op))
+        return nullptr;
+      return op;
+    };
+
+    Operation *thenOp = getNonYieldOp(op.getThenBlock());
+    Operation *elseOp = getNonYieldOp(op.getElseBlock());
+
+    auto canOpBeHoisted = [](Operation *op, HLCF::YieldOp yield) -> bool {
+      // TODO: We can relax the constaraint on pure by expecting operations can
+      // be executed speculatively.
+      if (!op || !mlir::isPure(op) || op->getNumResults() != 1 ||
+          yield.getOperand(0) != op->getResult(0))
+        return false;
+
+      // TODO: Revisit this limitation when VariantGetOp can be interpreted as
+      // there are few tests failing in interpreter if canonicalization is
+      // applied
+      if (isa<KGEN::VariantGetOp>(op))
+        return false;
+      return true;
+    };
+
+    // We can only canonicalize the if-statement if operations have no
+    // side-effects.
+    if ((thenOp && !canOpBeHoisted(thenOp, thenYield)) ||
+        (elseOp && !canOpBeHoisted(elseOp, elseYield)))
+      return failure();
+
+    auto moveOperation = [&](Operation *opToMove) {
+      if (opToMove)
+        rewriter.moveOpBefore(opToMove, op);
+    };
+
+    moveOperation(thenOp);
+    moveOperation(elseOp);
+
+    rewriter.replaceOpWithNewOp<KGEN::POP::SelectOp>(
+        op, op.getCond(),
+        thenOp ? thenOp->getResult(0) : thenYield.getOperand(0),
+        elseOp ? elseOp->getResult(0) : elseYield.getOperand(0));
     return success();
   }
 };
@@ -408,9 +475,17 @@ void Canonicalizer::addNonCustomCanonicalizationPatterns(
   for (mlir::RegisteredOperationName op : context->getRegisteredOperations())
     op.getCanonicalizationPatterns(patterns, context);
 
-  patterns
-      .insert<IfToSelect, IfYieldSelect, IndexifyComparison, InvertComparison,
-              SimplifyCompareSelect, ConditionPropagation>(context);
+  // clang-format off
+  patterns.insert<
+    EmptyIfToSelect,
+    IfToSelect,
+    IfYieldSelect,
+    IndexifyComparison,
+    InvertComparison,
+    SimplifyCompareSelect,
+    ConditionPropagation
+   >(context);
+  // clang-format on
 }
 
 } // namespace
