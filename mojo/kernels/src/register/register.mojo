@@ -23,21 +23,6 @@ fn register_internal(name: StringLiteral):
     return
 
 
-fn register_internal_override(name: StringLiteral, priority: Int):
-    """
-    This decorator registers a given mojo function as being an implementation
-    of a mo op or a `mo.custom` op with an override priority.
-
-    @register_internal("mo.add", 1)
-    fn my_op[...](...):
-
-    Args:
-      name: The name of the op to register.
-      priority: The priority of the op.
-    """
-    return
-
-
 fn __mogg_intrinsic_attr(intrin: StringLiteral):
     """
     Attaches the given intrinsic annotation onto the function.
