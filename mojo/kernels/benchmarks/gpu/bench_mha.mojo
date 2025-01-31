@@ -7,7 +7,7 @@
 
 from math import ceildiv, isqrt, isclose
 from random import rand
-from sys import env_get_int, env_get_string, is_defined
+from sys import env_get_int, env_get_string, is_defined, env_get_dtype
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
@@ -31,7 +31,7 @@ from testing import assert_almost_equal
 
 from gpu.host import DeviceContext
 from gpu.host.info import DEFAULT_GPU_ARCH
-from internal_utils import bench_compile_time, env_get_dtype, arg_parse
+from internal_utils import bench_compile_time, arg_parse
 
 
 fn run_mha[

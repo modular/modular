@@ -4,8 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-build-no-debug-no-assert %s
+from sys import env_get_dtype
 from internal_utils import (
-    env_get_dtype,
     DeviceNDBuffer,
     HostNDBuffer,
     random,

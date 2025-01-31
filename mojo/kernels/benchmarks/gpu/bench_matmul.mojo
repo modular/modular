@@ -11,7 +11,7 @@ from buffer import Dim, DimList, NDBuffer
 from buffer.dimlist import _make_tuple
 from gpu.host import DeviceBuffer, DeviceContext
 from linalg.matmul_gpu import _matmul_gpu
-from internal_utils import DeviceNDBuffer, env_get_dtype, arg_parse
+from internal_utils import DeviceNDBuffer, arg_parse
 from internal_utils._utils import static, dynamic, ValOrDim
 from utils import IndexList
 from sys import env_get_int, sizeof, env_get_bool
@@ -23,6 +23,7 @@ from gpu._cublas.cublas import (
     cublasCreate,
     cublasDestroy,
 )
+from sys import env_get_dtype
 import linalg.vendor_blas
 from gpu.host.info import DEFAULT_GPU_ARCH
 

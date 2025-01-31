@@ -10,7 +10,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from utils import IndexList
 from utils.numerics import min_or_neg_inf
-from internal_utils import env_get_dtype
+from sys import env_get_dtype
 from gpu.host import DeviceContext
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from testing import assert_almost_equal

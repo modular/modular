@@ -13,13 +13,12 @@ from gpu.host import DeviceContext
 from internal_utils import (
     DeviceNDBuffer,
     env_get_shape,
-    env_get_dtype,
     int_list_to_tuple,
 )
 from buffer import NDBuffer
 from memory import UnsafePointer
 from utils.index import StaticTuple, IndexList, Index
-from sys import env_get_int
+from sys import env_get_int, env_get_dtype
 
 
 fn bench_layer_norm_gpu[
