@@ -417,13 +417,7 @@ struct MojoCallContextPtr:
     @always_inline
     fn get_device_context(self) -> ref [ImmutableAnyOrigin] DeviceContext:
         """Get the device context held by the MojoCallContext."""
-        var ctx_ptr = external_call[
-            "KGEN_CompilerRT_AsyncRT_MojoCallContext_GetDeviceContext",
-            DeviceContextPtr,
-        ](
-            self.ptr,
-        )
-        return ctx_ptr[]
+        return self.ptr
 
 
 # ===-----------------------------------------------------------------------===#
