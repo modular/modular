@@ -117,3 +117,15 @@ def test_load_allocate_as_bytes(testdata_directory) -> None:
         assert data["1.float8_e5m2"].type == TensorType(
             DType.uint8, [2]
         )  # originally float8_e5m2
+
+
+def test_load_invalid_tensor(testdata_directory) -> None:
+    weights = SafetensorWeights(
+        [testdata_directory / "example_data_1.safetensors"]
+    )
+    with pytest.raises(
+        KeyError,
+        match="'0.a' is not a weight in the Safetensor ckpt. Did you mean '1.a'?",
+    ):
+        print(weights._tensors_to_file_idx)
+        _ = weights["0"].a.allocate()

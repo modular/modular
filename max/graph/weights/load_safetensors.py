@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import difflib
 from collections.abc import Mapping, Sequence, Set
 from os import PathLike
 from typing import Any, Optional
@@ -131,9 +132,13 @@ class SafetensorWeights(Weights):
             return self._st_weight_map[self._prefix]
 
         if self.name not in self._tensors_to_file_idx:
-            raise KeyError(
-                f"'{self.name}' is not a weight in the Safetensor ckpt. "
-            )
+            msg = f"'{self.name}' is not a weight in the Safetensor ckpt."
+            if possible_match := difflib.get_close_matches(
+                self.name, self._tensors_to_file_idx.keys(), n=1
+            ):
+                msg += f" Did you mean '{possible_match[0]}'?"
+            raise KeyError(msg)
+
         filepath = self._filepaths[self._tensors_to_file_idx[self.name]]
         with safe_open(filepath, framework="pt") as f:
             tensor = f.get_tensor(self.name)
