@@ -18,6 +18,7 @@
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/Configuration.h"
 #include "KGEN/ToolCommon/CLOptions.h"
+#include "KGEN/ToolCommon/Debug.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/include/KGEN/Support/ForceLinkMLIRC.h"
 #include "Support/CommonCLOptions.h"
@@ -179,7 +180,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   DialectRegistry registry;
   TraceProfiler tracer(clOptions.timeTrace, clOptions.timeTraceGranularity);
 
-  if (clOptions.enableMLIRCrashReproducer) {
+  if (clOptions.enableMLIRCrashReproducer || KGEN::debugFlag) {
     // If the reproducer is enable, turn off all threading.
     ctx->disableMultithreading();
     clOptions.useSingleThreadedWorkqueue();
@@ -616,6 +617,7 @@ int main(int argc, char **argv) {
   registerDefaultTimingManagerCLOptions();
   KGEN::registerDefaultKGENPasses();
   registerPassManagerCLOptions();
+  KGEN::initializeDebugOptions();
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
   // Set up the input file(s).
