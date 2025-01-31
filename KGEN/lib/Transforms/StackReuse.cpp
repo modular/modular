@@ -8,10 +8,13 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/Support/CompilerProfiling.h"
+#include "KGEN/ToolCommon/Debug.h"
 #include "KGEN/TransformUtils/ControlFlowUtils.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Pass/Pass.h"
+
+#define KGEN_DEBUG_TYPE "stack-reuse"
 
 using namespace M;
 using namespace KGEN;
@@ -191,8 +194,16 @@ runAnalysis(Region &top, PassInfo &pass,
         if (auto store = dyn_cast<StoreOp>(user)) {
           // If the pointer is the argument of a store or the store leaves the
           // CFG, then it escapes.
-          if (store.getArg() == ptr || userCrossesFunctionCFG(op, user))
+          if (store.getArg() == ptr || userCrossesFunctionCFG(op, user)) {
+            KGEN_DEBUG(0, {
+              llvm::dbgs() << KGEN_DEBUG_TYPE << ": ";
+              alloc.print(llvm::dbgs());
+              llvm::dbgs() << ": escapes at ";
+              user->print(llvm::dbgs());
+              llvm::dbgs() << '\n';
+            });
             return WalkResult::advance();
+          }
           // Indicate that this stack allocation was modified in this parent
           // operation.
           touchedParents.insert(user->getParentOp());
@@ -201,8 +212,16 @@ runAnalysis(Region &top, PassInfo &pass,
         }
         if (isa<LoadOp>(user)) {
           // If the load leaves the CFG, then it escapes.
-          if (userCrossesFunctionCFG(op, user))
+          if (userCrossesFunctionCFG(op, user)) {
+            KGEN_DEBUG(0, {
+              llvm::dbgs() << KGEN_DEBUG_TYPE << ": ";
+              alloc.print(llvm::dbgs());
+              llvm::dbgs() << ": escapes at ";
+              user->print(llvm::dbgs());
+              llvm::dbgs() << '\n';
+            });
             return WalkResult::advance();
+          }
           // Loads are terminals.
           continue;
         }
@@ -211,12 +230,24 @@ runAnalysis(Region &top, PassInfo &pass,
           toCheck.push_back(user);
           continue;
         }
+        KGEN_DEBUG(0, {
+          llvm::dbgs() << KGEN_DEBUG_TYPE << ": ";
+          alloc.print(llvm::dbgs());
+          llvm::dbgs() << ": escapes at ";
+          user->print(llvm::dbgs());
+          llvm::dbgs() << '\n';
+        });
         // Any other using operation conservatively is an escape.
         // TODO: Properly handle lifetime markers in this pass. They change how
         // liveness is defined for stack allocations.
         return WalkResult::advance();
       }
     }
+    KGEN_DEBUG(0, {
+      llvm::dbgs() << KGEN_DEBUG_TYPE << ": ";
+      alloc.print(llvm::dbgs());
+      llvm::dbgs() << " doesn't escape\n";
+    });
     // The projection of the pointer does not escape.
     allocs.push_back(alloc);
 
