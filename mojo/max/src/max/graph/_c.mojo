@@ -14,7 +14,7 @@ from sys.ffi import (
 )
 from os import abort
 from pathlib import Path
-from utils import StringRef, StringSlice
+from collections.string import StringSlice, StaticString
 from runtime.asyncrt import _get_current_runtime
 
 import _mlir
@@ -30,7 +30,7 @@ alias MOF_LIB = _Global["MOF_LIB", _OwnedDLHandle, _init_dylib]
 fn _init_dylib() -> _OwnedDLHandle:
     var mof_lib_path_str_ptr = external_call[
         "KGEN_CompilerRT_getMAXConfigValue", UnsafePointer[UInt8]
-    ](StringRef(".graph_lib"))
+    ](StringSlice(".graph_lib"))
 
     if not mof_lib_path_str_ptr:
         abort("cannot get graph library location from modular.cfg")
@@ -81,12 +81,10 @@ fn graph_new(
         fn (
             _mlir.Module.cType,
             _mlir.Location.cType,
-            StringRef,
+            StringSlice[__origin_of(name)],
             _mlir.Type.cType,
         ) -> _mlir.Operation.cType,
-    ]()(
-        module.c, loc.c, StringRef(ptr=name.unsafe_ptr()), signature.to_mlir().c
-    )
+    ]()(module.c, loc.c, name, signature.to_mlir().c)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -105,19 +103,13 @@ fn attr_new_tensor[
     return cfunc[
         "MAXG_attrNewTensor",
         fn (
-            StringRef,
+            StringSlice[__origin_of(name)],
             UnsafePointer[T],
             _mlir.Type.cType,
             Bool,
             UnsafePointer[NoneType],
         ) -> _mlir.NamedAttribute.cType,
-    ]()(
-        StringRef(ptr=name.unsafe_ptr()),
-        data.data,
-        type.c,
-        is_owned,
-        _get_current_runtime(),
-    )
+    ]()(name, data.data, type.c, is_owned, _get_current_runtime())
 
 
 fn attr_new_tensor(
@@ -129,19 +121,13 @@ fn attr_new_tensor(
     return cfunc[
         "MAXG_attrNewTensor",
         fn (
-            StringRef,
+            StringSlice[__origin_of(name)],
             UnsafePointer[NoneType],
             _mlir.Type.cType,
             Bool,
             UnsafePointer[NoneType],
         ) -> _mlir.NamedAttribute.cType,
-    ]()(
-        StringRef(ptr=name.unsafe_ptr()),
-        data,
-        type.c,
-        is_owned,
-        _get_current_runtime(),
-    )
+    ]()(name, data, type.c, is_owned, _get_current_runtime())
 
 
 fn attr_new_tensor_from_file(
@@ -150,14 +136,12 @@ fn attr_new_tensor_from_file(
     return cfunc[
         "MAXG_attrNewTensorFromFile",
         fn (
-            StringRef, StringRef, _mlir.Type.cType, UnsafePointer[NoneType]
+            StringSlice[__origin_of(name)],
+            StringSlice[__origin_of(file_name)],
+            _mlir.Type.cType,
+            UnsafePointer[NoneType],
         ) -> _mlir.NamedAttribute.cType,
-    ]()(
-        StringRef(ptr=name.unsafe_ptr()),
-        StringRef(ptr=file_name.unsafe_ptr()),
-        type.c,
-        _get_current_runtime(),
-    )
+    ]()(name, file_name, type.c, _get_current_runtime())
 
 
 fn attr_new_dim_param_decl(
@@ -166,11 +150,10 @@ fn attr_new_dim_param_decl(
 ) -> _mlir.Attribute:
     var result = cfunc[
         "MAXG_attrNewDimParamDecl",
-        fn (_mlir.Context.cType, StringRef) -> _mlir.Attribute.cType,
-    ]()(
-        ctx.c,
-        StringRef(ptr=name.unsafe_ptr()),
-    )
+        fn (
+            _mlir.Context.cType, StringSlice[__origin_of(name)]
+        ) -> _mlir.Attribute.cType,
+    ]()(ctx.c, name)
     return result
 
 
@@ -301,8 +284,10 @@ fn dim_new_static(ctx: _mlir.Context, dim: Int64) -> _mlir.Attribute:
 fn dim_new_symbolic(ctx: _mlir.Context, name: String) -> _mlir.Attribute:
     return cfunc[
         "MAXG_dimNewSymbolic",
-        fn (_mlir.Context.cType, StringRef) -> _mlir.Attribute.cType,
-    ]()(ctx.c, StringRef(ptr=name.unsafe_ptr()))
+        fn (
+            _mlir.Context.cType, StringSlice[__origin_of(name)]
+        ) -> _mlir.Attribute.cType,
+    ]()(ctx.c, name)
 
 
 fn dim_is_dynamic(a: _mlir.Attribute) -> Bool:
@@ -366,11 +351,13 @@ fn type_is_opaque(t: _mlir.Type) -> Bool:
 fn opaque_type_new(ctx: _mlir.Context, name: String) -> _mlir.Type:
     return cfunc[
         "MAXG_opaqueTypeNew",
-        fn (_mlir.Context.cType, StringRef) -> _mlir.Type.cType,
-    ]()(ctx.c, StringRef(ptr=name.unsafe_ptr()))
+        fn (
+            _mlir.Context.cType, StringSlice[__origin_of(name)]
+        ) -> _mlir.Type.cType,
+    ]()(ctx.c, name)
 
 
-fn opaque_type_name(t: _mlir.Type) -> StringRef:
-    return cfunc["MAXG_opaqueTypeName", fn (_mlir.Type.cType) -> StringRef]()(
-        t.c
-    )
+fn opaque_type_name(t: _mlir.Type) -> StaticString:
+    return cfunc[
+        "MAXG_opaqueTypeName", fn (_mlir.Type.cType) -> StaticString
+    ]()(t.c)

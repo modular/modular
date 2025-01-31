@@ -5,12 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Optional
+from collections.string import StringSlice
 from memory import UnsafePointer, OwnedPointer
 from sys.ffi import DLHandle, c_char
 from sys import external_call
 from collections import List
 from pathlib import Path
-from utils import StringRef
 from max._utils import call_dylib_func, exchange, OwningVector
 
 from .session import InferenceSession
@@ -243,7 +243,7 @@ struct CompileConfig:
         # can lazy load it here.
         var torch_ext_lib_path_str_ptr = external_call[
             "KGEN_CompilerRT_getMAXConfigValue", UnsafePointer[UInt8]
-        ](StringRef(".torch_ext_lib"))
+        ](StringSlice(".torch_ext_lib"))
 
         if not torch_ext_lib_path_str_ptr:
             return None

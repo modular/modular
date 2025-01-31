@@ -15,7 +15,7 @@
 
 from memory import UnsafePointer
 
-from utils import StringRef
+from collections.string import StaticString
 
 from .ffi import MLIR_func
 
@@ -72,7 +72,9 @@ struct MlirTypeIDAllocator:
 
 # A pointer to a sized fragment of a string, not necessarily null-terminated.
 # Does not own the underlying string. This is equivalent to llvm::StringRef.
-alias MlirStringRef = StringRef
+# Note that since `StringSlice` has the same ABI as `llvm::StringRef`,
+# then `StringSlice[StaticConstantOrigin]` is morally equivalent.
+alias MlirStringRef = StaticString
 
 #  Constructs a string reference from the pointer and length. The pointer need
 #  not reference to a null-terminated string.

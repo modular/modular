@@ -15,8 +15,6 @@
 
 from memory import UnsafePointer
 
-from utils import StringRef
-
 from .ffi import MLIR_func
 from .IR import *
 

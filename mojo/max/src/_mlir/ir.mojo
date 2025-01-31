@@ -6,10 +6,11 @@
 
 
 from collections.optional import Optional
+from collections.string import StaticString
 
 from memory import UnsafePointer
 
-from utils import StringRef, Variant
+from utils import Variant
 
 import ._c
 import ._c.IR
@@ -90,7 +91,7 @@ struct Dialect(CollectionElement):
     fn __eq__(self, other: Self) -> Bool:
         return _c.IR.mlirDialectEqual(self.c, other.c)
 
-    fn namespace(self) -> StringRef:
+    fn namespace(self) -> StaticString:
         return _c.IR.mlirDialectGetNamespace(self.c)
 
 
@@ -100,7 +101,7 @@ struct DialectHandle(CollectionElement):
     alias cType = _c.IR.MlirDialectHandle
     var c: Self.cType
 
-    fn namespace(self) -> StringRef:
+    fn namespace(self) -> StaticString:
         return _c.IR.mlirDialectHandleGetNamespace(self.c)
 
 
@@ -169,7 +170,10 @@ struct Context:
 
     fn get_or_load_dialect(self, dialect_name: String) -> Optional[Dialect]:
         var result = _c.IR.mlirContextGetOrLoadDialect(
-            self.c, StringRef(ptr=dialect_name.unsafe_ptr())
+            self.c,
+            StaticString(
+                ptr=dialect_name.unsafe_ptr(), length=len(dialect_name)
+            ),
         )
         return Optional(Dialect(result)) if result.ptr else None
 
@@ -181,7 +185,7 @@ struct Context:
 
     fn is_registered_operation(self, opname: String) -> Bool:
         var result = _c.IR.mlirContextIsRegisteredOperation(
-            self.c, StringRef(ptr=opname.unsafe_ptr())
+            self.c, StaticString(ptr=opname.unsafe_ptr(), length=len(opname))
         )
         return result
 
@@ -216,7 +220,10 @@ struct Location(CollectionElement, Stringable):
 
     fn __init__(mut self, ctx: Context, filename: String, line: Int, col: Int):
         self.c = _c.IR.mlirLocationFileLineColGet(
-            ctx.c, StringRef(ptr=filename.unsafe_ptr()), line, col
+            ctx.c,
+            StaticString(ptr=filename.unsafe_ptr(), length=len(filename)),
+            line,
+            col,
         )
 
     @staticmethod
@@ -273,7 +280,7 @@ struct Module(Stringable, Writable):
     fn parse(ctx: Context, module: String) -> Self:
         # TODO: how can this fail?
         var c = _c.IR.mlirModuleCreateParse(
-            ctx.c, StringRef(ptr=module.unsafe_ptr())
+            ctx.c, StaticString(ptr=module.unsafe_ptr(), length=len(module))
         )
         return Self(c)
 
@@ -374,7 +381,7 @@ struct Operation(CollectionElement, Stringable, Writable):
         successors: _OpBuilderList[Block] = [],
     ):
         var state = _c.IR.mlirOperationStateGet(
-            StringRef(ptr=name.unsafe_ptr()), location.c
+            StaticString(ptr=name.unsafe_ptr(), length=len(name)), location.c
         )
         Self._init_op_state(
             state,
@@ -399,7 +406,7 @@ struct Operation(CollectionElement, Stringable, Writable):
         successors: _OpBuilderList[Block] = [],
     ) raises:
         var state = _c.IR.mlirOperationStateGet(
-            StringRef(ptr=name.unsafe_ptr()), location.c
+            StaticString(ptr=name.unsafe_ptr(), length=len(name)), location.c
         )
         Self._init_op_state(
             state,
@@ -469,8 +476,8 @@ struct Operation(CollectionElement, Stringable, Writable):
     fn parse(ctx: Context, source: String, source_name: String) raises -> Self:
         var result = _c.IR.mlirOperationCreateParse(
             ctx.c,
-            StringRef(ptr=source.unsafe_ptr()),
-            StringRef(ptr=source_name.unsafe_ptr()),
+            StaticString(ptr=source.unsafe_ptr(), length=len(source)),
+            StaticString(ptr=source_name.unsafe_ptr(), length=len(source_name)),
         )
         if not result.ptr:
             raise "Operation.parse failed"
@@ -570,23 +577,27 @@ struct Operation(CollectionElement, Stringable, Writable):
 
     fn set_inherent_attr(mut self, name: String, attr: Attribute):
         _c.IR.mlirOperationSetInherentAttributeByName(
-            self.c, StringRef(ptr=name.unsafe_ptr()), attr.c
+            self.c,
+            StaticString(ptr=name.unsafe_ptr(), length=len(name)),
+            attr.c,
         )
 
     fn get_inherent_attr(self, name: String) -> Attribute:
         var result = _c.IR.mlirOperationGetInherentAttributeByName(
-            self.c, StringRef(ptr=name.unsafe_ptr())
+            self.c, StaticString(ptr=name.unsafe_ptr(), length=len(name))
         )
         return result
 
     fn set_discardable_attr(mut self, name: String, attr: Attribute):
         _c.IR.mlirOperationSetDiscardableAttributeByName(
-            self.c, StringRef(ptr=name.unsafe_ptr()), attr.c
+            self.c,
+            StaticString(ptr=name.unsafe_ptr(), length=len(name)),
+            attr.c,
         )
 
     fn get_discardable_attr(self, name: String) -> Attribute:
         var result = _c.IR.mlirOperationGetDiscardableAttributeByName(
-            self.c, StringRef(ptr=name.unsafe_ptr())
+            self.c, StaticString(ptr=name.unsafe_ptr(), length=len(name))
         )
         return result
 
@@ -620,7 +631,8 @@ struct Identifier(CollectionElement, Stringable):
 
     fn __init__(out self, ctx: Context, identifier: String):
         self.c = _c.IR.mlirIdentifierGet(
-            ctx.c, StringRef(ptr=identifier.unsafe_ptr())
+            ctx.c,
+            StaticString(ptr=identifier.unsafe_ptr(), length=len(identifier)),
         )
 
     fn __str__(self) -> String:
@@ -644,7 +656,7 @@ struct Type(CollectionElement, Stringable, Writable):
     @staticmethod
     fn parse(ctx: Context, s: String) raises -> Self:
         var result = _c.IR.mlirTypeParseGet(
-            ctx.c, StringRef(ptr=s.unsafe_ptr())
+            ctx.c, StaticString(ptr=s.unsafe_ptr(), length=len(s))
         )
         if not result.ptr:
             raise "Failed to parse type: " + s
@@ -734,7 +746,7 @@ struct Attribute(CollectionElement, Stringable):
     @staticmethod
     fn parse(ctx: Context, attr: String) raises -> Self:
         var result = _c.IR.mlirAttributeParseGet(
-            ctx.c, StringRef(ptr=attr.unsafe_ptr())
+            ctx.c, StaticString(ptr=attr.unsafe_ptr(), length=len(attr))
         )
         if not result.ptr:
             raise "Failed to parse attribute:" + attr

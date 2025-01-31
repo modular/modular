@@ -6,7 +6,7 @@
 """ShapeElement API.  See ShapeElement struct definition for details."""
 
 from os import abort
-from utils import StringRef
+from collections.string import StringSlice
 
 
 @value
@@ -100,7 +100,7 @@ struct ShapeElement(CollectionElement, EqualityComparable):
         self._name = name^
 
     @implicit
-    fn __init__(out self, name: StringRef):
+    fn __init__(out self, name: StringSlice):
         """Create a dynamic shape element with the given name.
 
         Args:

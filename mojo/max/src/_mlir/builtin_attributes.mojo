@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import List
+from collections.string import StaticString
 
-from utils import StringRef
 
 import ._c
 import ._c.BuiltinAttributes
@@ -59,7 +59,9 @@ struct StringAttr(DialectAttribute):
     fn to_mlir(self) -> Attribute:
         var result = _c.BuiltinAttributes.mlirStringAttrGet(
             self.ctx.c,
-            StringRef(self.value.unsafe_ptr(), self.value.byte_length()),
+            StaticString(
+                ptr=self.value.unsafe_ptr(), length=self.value.byte_length()
+            ),
         )
         return result
 

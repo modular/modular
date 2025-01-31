@@ -10,7 +10,7 @@ from sys.ffi import c_char, DLHandle, external_call
 
 from memory.unsafe_pointer import *
 
-from utils import StringRef
+from collections.string import StringSlice, StaticString
 
 
 @value
@@ -30,18 +30,18 @@ struct CString:
         """
         self.ptr = ptr.bitcast[c_char]()
 
-    fn get_as_string_ref(self) -> StringRef:
+    fn get_as_string_ref(self) -> StaticString:
         """
         Get the `CString` as `StringRef`. Origin is tied to C API.
         For owning version use `__str__()`.
         """
-        return StringRef(self.ptr)
+        return StaticString(unsafe_from_utf8_cstr_ptr=self.ptr)
 
     fn __str__(self) -> String:
         """
         Get `CString` as a owning `String`.
         """
-        return String(StringRef(self.ptr))
+        return String(StaticString(unsafe_from_utf8_cstr_ptr=self.ptr))
 
 
 @always_inline("nodebug")
@@ -65,7 +65,7 @@ fn exchange[T: AnyTrivialRegType](mut old_var: T, owned new_value: T) -> T:
 fn handle_from_config(name: String, param: String) -> DLHandle:
     var lib_path_str_ptr = external_call[
         "KGEN_CompilerRT_getMAXConfigValue", UnsafePointer[UInt8]
-    ](StringRef(param.unsafe_ptr(), param.byte_length()))
+    ](StaticString(ptr=param.unsafe_ptr(), length=param.byte_length()))
 
     if not lib_path_str_ptr:
         abort("cannot get " + name + " library location from modular.cfg")
@@ -84,7 +84,7 @@ fn handle_from_config(name: String, param: String) -> DLHandle:
 fn call_dylib_func[
     ReturnType: AnyTrivialRegType = NoneType._mlir_type,
     *Args: AnyType,
-](lib: DLHandle, name: StringRef, *args: *Args) -> ReturnType:
+](lib: DLHandle, name: StringSlice, *args: *Args) -> ReturnType:
     var args_pack = args.get_loaded_kgen_pack()
 
     var func_ptr = lib.get_function[fn (__type_of(args_pack)) -> ReturnType](
@@ -147,7 +147,7 @@ struct OwningVector[T: Movable](Sized):
 
 
 fn get_lib_path_from_cfg(
-    name: StringRef, err_name: StringLiteral
+    name: StringSlice, err_name: StringLiteral
 ) raises -> String:
     var lib_path_str_ptr = external_call[
         "KGEN_CompilerRT_getMAXConfigValue", UnsafePointer[UInt8]

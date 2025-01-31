@@ -18,10 +18,10 @@ def main():
 
 
 from collections import Optional
+from collections.string import StaticString
 from max._utils import call_dylib_func, get_lib_path_from_cfg
 from memory import UnsafePointer
 from pathlib import Path
-from utils import StringRef
 from max.tensor import TensorSpec
 from ._driver_library import DriverLibrary
 from .device_memory import DeviceMemory, DeviceTensor
@@ -169,7 +169,11 @@ struct Device(Stringable):
             writer: The object to write to.
         """
         writer.write(
-            StringRef(ptr=self._lib.value().get_device_desc_fn(self._cdev._ptr))
+            StaticString(
+                unsafe_from_utf8_ptr=self._lib.value().get_device_desc_fn(
+                    self._cdev._ptr
+                )
+            )
         )
 
     fn __del__(owned self):

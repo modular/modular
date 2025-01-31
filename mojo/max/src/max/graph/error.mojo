@@ -8,10 +8,10 @@
 from builtin._location import __call_location, _SourceLocation
 from builtin.breakpoint import breakpoint
 from collections import Optional
+from collections.string import StaticString
 from memory import stack_allocation, UnsafePointer
 from sys.ffi import external_call, c_char
 from sys import param_env
-from utils import StringRef
 from utils.write import _WriteBufferStack, write_args
 
 
@@ -149,7 +149,11 @@ def format_system_stack[MAX_STACK_SIZE: Int = 128]() -> String:
     var buffer = _WriteBufferStack(formatted)
     buffer.write("System stack:\n")
     for i in range(frames):
-        formatted.write("\t", StringRef(frame_strs[i]), "\n")
+        formatted.write(
+            "\t",
+            StaticString(unsafe_from_utf8_cstr_ptr=frame_strs[i]),
+            "\n",
+        )
 
     buffer.flush()
     return formatted

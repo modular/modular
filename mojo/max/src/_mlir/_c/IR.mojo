@@ -14,8 +14,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from memory import UnsafePointer
+from collections.string import StaticString
 
-from utils import StringRef
 from utils.write import _WriteBufferStack
 
 from .ffi import MLIR_func
@@ -160,7 +160,7 @@ struct MlirNamedAttribute:
 #  - a pointer to a buffer for any mutable `Writer` type.
 fn write_buffered_callback[
     W: Writer
-](chunk: StringRef, data: UnsafePointer[NoneType]):
+](chunk: StaticString, data: UnsafePointer[NoneType]):
     var buffer = data.bitcast[_WriteBufferStack[origin=MutableAnyOrigin, W=W]]()
     buffer[].write(chunk)
 

@@ -15,7 +15,6 @@
 
 from memory import UnsafePointer
 
-from utils import StringRef
 from utils.write import _WriteBufferStack
 
 from .ffi import MLIR_func
