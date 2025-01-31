@@ -160,6 +160,104 @@ fn tma_wgmma_kernel[
             )
 
 
+def test_tma_wgmma[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    prob_shape: IndexList[3],
+    block_tile_shape: IndexList[3],
+    wgmma_shape: IndexList[3],
+    transpose_b: Bool = True,
+](ctx: DeviceContext):
+    alias BM = block_tile_shape[0]
+    alias BN = block_tile_shape[1]
+    alias BK = block_tile_shape[2]
+
+    alias WGMMA_M = wgmma_shape[0]
+    alias WGMMA_N = wgmma_shape[1]
+    alias WGMMA_K = wgmma_shape[2]
+
+    print(
+        "== wgmma_bf16_bf16_f32_"
+        + String(BM)
+        + "x"
+        + String(BN)
+        + "x"
+        + String(BK)
+        + "_transb_"
+        + String(WGMMA_M)
+        + "x"
+        + String(WGMMA_N)
+        + "x"
+        + String(WGMMA_K)
+    )
+
+    constrained[transpose_b, "Only support transpose_b for now"]()
+
+    alias M = prob_shape[0]
+    alias N = prob_shape[1]
+    alias K = prob_shape[2]
+
+    var a = ManagedLayoutTensor[
+        a_type,
+        Layout.row_major(M, K),
+    ](ctx)
+    arange(a.tensor())
+    var b = ManagedLayoutTensor[
+        b_type,
+        Layout.row_major(N, K),
+    ](ctx)
+    arange(b.tensor())
+
+    var c = ManagedLayoutTensor[
+        c_type,
+        Layout.row_major(M, N),
+    ](ctx)
+
+    # Shared memory tile layouts
+    alias a_smem_layout = tile_layout_k_major[a_type, BM, BK]()
+    alias b_smem_layout = tile_layout_k_major[b_type, BN, BK]()
+
+    a_tma_op = create_tma_tile[a_type, 2, Index(BM, BK)](ctx, a.device_tensor())
+    b_tma_op = create_tma_tile[b_type, 2, Index(BN, BK)](ctx, b.device_tensor())
+
+    alias kernel = tma_wgmma_kernel[
+        a_type,
+        b_type,
+        c_type,
+        Layout.row_major(BM, BK),
+        Layout.row_major(BN, BK),
+        Layout.row_major(M, N),
+        __type_of(a_tma_op).desc_layout,
+        __type_of(b_tma_op).desc_layout,
+        block_tile_shape,
+        wgmma_shape,
+        a_smem_layout,
+        b_smem_layout,
+        transpose_b=True,
+    ]
+    var func = ctx.compile_function[
+        kernel,
+        _target = _get_gpu_target["sm_90"](),
+    ]()
+
+    ctx.enqueue_function(
+        func,
+        a_tma_op,
+        b_tma_op,
+        c.device_tensor(),
+        K // BK,
+        grid_dim=(1, 1),
+        block_dim=(128),
+    )
+    ctx.synchronize()
+
+    print(c.tensor())
+    _ = a^
+    _ = b^
+    _ = c^
+
+
 # CHECK-LABEL: wgmma_bf16_bf16_f32_64x8x16_transb_64x8x32
 # CHECK: 10432.0 26240.0 42240.0 58112.0 73728.0 89600.0 105472.0 121344.0
 # CHECK: 26240.0 74752.0 123392.0 172032.0 221184.0 270336.0 317440.0 366592.0
@@ -225,93 +323,91 @@ fn tma_wgmma_kernel[
 # CHECK: 978944.0 2998272.0 5013504.0 7012352.0 9043968.0 11075584.0 13041664.0 15073280.0
 # CHECK: 995328.0 3047424.0 5079040.0 7143424.0 9175040.0 11206656.0 13303808.0 15335424.0
 # CHECK: 1011712.0 3096576.0 5177344.0 7241728.0 9306112.0 11403264.0 13500416.0 15597568.0
-def test_tma_wgmma[
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    prob_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
-    wgmma_shape: IndexList[3],
-    transpose_b: Bool = True,
-](ctx: DeviceContext):
-    print("== wgmma_bf16_bf16_f32_64x8x16_transb_64x8x32")
+alias test_tma_wgmma_64x8x32 = test_tma_wgmma[
+    DType.bfloat16,
+    DType.bfloat16,
+    DType.bfloat16,
+    Index(64, 8, 32),
+    Index(64, 8, 32),
+    Index(64, 8, 16),
+]
 
-    constrained[transpose_b, "Only support transpose_b for now"]()
-
-    alias M = prob_shape[0]
-    alias N = prob_shape[1]
-    alias K = prob_shape[2]
-
-    var a = ManagedLayoutTensor[
-        a_type,
-        Layout.row_major(M, K),
-    ](ctx)
-    arange(a.tensor())
-    var b = ManagedLayoutTensor[
-        b_type,
-        Layout.row_major(N, K),
-    ](ctx)
-    arange(b.tensor())
-
-    var c = ManagedLayoutTensor[
-        c_type,
-        Layout.row_major(M, N),
-    ](ctx)
-
-    # Shared memory tile layouts
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
-    alias a_smem_layout = tile_layout_k_major[a_type, BM, BK]()
-    alias b_smem_layout = tile_layout_k_major[b_type, BN, BK]()
-
-    a_tma_op = create_tma_tile[a_type, 2, Index(BM, BK)](ctx, a.device_tensor())
-    b_tma_op = create_tma_tile[b_type, 2, Index(BN, BK)](ctx, b.device_tensor())
-
-    alias kernel = tma_wgmma_kernel[
-        a_type,
-        b_type,
-        c_type,
-        Layout.row_major(BM, BK),
-        Layout.row_major(BN, BK),
-        Layout.row_major(M, N),
-        __type_of(a_tma_op).desc_layout,
-        __type_of(b_tma_op).desc_layout,
-        block_tile_shape,
-        wgmma_shape,
-        a_smem_layout,
-        b_smem_layout,
-        transpose_b=True,
-    ]
-    var func = ctx.compile_function[
-        kernel,
-        _target = _get_gpu_target["sm_90"](),
-    ]()
-
-    ctx.enqueue_function(
-        func,
-        a_tma_op,
-        b_tma_op,
-        c.device_tensor(),
-        K // BK,
-        grid_dim=(1, 1),
-        block_dim=(128),
-    )
-    ctx.synchronize()
-
-    print(c.tensor())
-    _ = a^
-    _ = b^
-    _ = c^
+# CHECK-LABEL: == wgmma_bf16_bf16_f32_64x8x64_transb_64x8x16
+# CHECK: 85504.0 214016.0 344064.0 473088.0 602112.0 729088.0 860160.0 987136.0
+# CHECK: 214016.0 606208.0 995328.0 1384448.0 1777664.0 2162688.0 2555904.0 2949120.0
+# CHECK: 344064.0 995328.0 1646592.0 2310144.0 2949120.0 3604480.0 4259840.0 4915200.0
+# CHECK: 473088.0 1384448.0 2310144.0 3211264.0 4128768.0 5046272.0 5963776.0 6881280.0
+# CHECK: 602112.0 1777664.0 2949120.0 4128768.0 5308416.0 6488064.0 7667712.0 8847360.0
+# CHECK: 729088.0 2162688.0 3604480.0 5046272.0 6488064.0 7929856.0 9371648.0 10813440.0
+# CHECK: 860160.0 2555904.0 4259840.0 5963776.0 7667712.0 9371648.0 11075584.0 12779520.0
+# CHECK: 987136.0 2949120.0 4915200.0 6881280.0 8847360.0 10813440.0 12779520.0 14745600.0
+# CHECK: 1114112.0 3342336.0 5570560.0 7798784.0 10027008.0 12255232.0 14483456.0 16711680.0
+# CHECK: 1245184.0 3735552.0 6225920.0 8716288.0 11206656.0 13697024.0 16187392.0 18612224.0
+# CHECK: 1376256.0 4128768.0 6881280.0 9633792.0 12386304.0 15138816.0 17825792.0 20578304.0
+# CHECK: 1507328.0 4521984.0 7536640.0 10551296.0 13565952.0 16580608.0 19529728.0 22544384.0
+# CHECK: 1630208.0 4915200.0 8192000.0 11468800.0 14745600.0 17956864.0 21233664.0 24510464.0
+# CHECK: 1761280.0 5308416.0 8847360.0 12386304.0 15925248.0 19398656.0 22937600.0 26476544.0
+# CHECK: 1892352.0 5701632.0 9502720.0 13303808.0 17039360.0 20840448.0 24641536.0 28442624.0
+# CHECK: 2023424.0 6094848.0 10158080.0 14221312.0 18219008.0 22282240.0 26345472.0 30408704.0
+# CHECK: 2146304.0 6488064.0 10813440.0 15138816.0 19398656.0 23724032.0 28049408.0 32374784.0
+# CHECK: 2277376.0 6848512.0 11468800.0 16056320.0 20578304.0 25165824.0 29753344.0 34340864.0
+# CHECK: 2408448.0 7241728.0 12124160.0 16908288.0 21757952.0 26607616.0 31457280.0 36438016.0
+# CHECK: 2539520.0 7634944.0 12779520.0 17825792.0 22937600.0 28049408.0 33161216.0 38273024.0
+# CHECK: 2670592.0 8028160.0 13434880.0 18743296.0 24117248.0 29491200.0 34865150.0 40370176.0
+# CHECK: 2801664.0 8454144.0 14090240.0 19660800.0 25296896.0 30932992.0 36700160.0 42205184.0
+# CHECK: 2916352.0 8847360.0 14745600.0 20578304.0 26476544.0 32374784.0 38273024.0 44302336.0
+# CHECK: 3047424.0 9240576.0 15400960.0 21495808.0 27656192.0 33816576.0 40108032.0 46137344.0
+# CHECK: 3178496.0 9633792.0 15990784.0 22413312.0 28835840.0 35389440.0 41680896.0 48234496.0
+# CHECK: 3309568.0 9961472.0 16646144.0 23330816.0 30015488.0 36700160.0 43515904.0 50069504.0
+# CHECK: 3440640.0 10354688.0 17301504.0 24248320.0 31195136.0 38273024.0 45088770.0 52166656.0
+# CHECK: 3571712.0 10747904.0 17956864.0 25165824.0 32374784.0 39583744.0 46923776.0 54001664.0
+# CHECK: 3702784.0 11141120.0 18612224.0 26083328.0 33554432.0 41156610.0 48496640.0 56098816.0
+# CHECK: 3833856.0 11534336.0 19267584.0 27000832.0 34865150.0 42467330.0 50331650.0 57933824.0
+# CHECK: 3948544.0 11927552.0 19922944.0 27918336.0 35913730.0 44040190.0 51904512.0 60030976.0
+# CHECK: 4079616.0 12320768.0 20578304.0 28835840.0 37224450.0 45350910.0 53739520.0 61865984.0
+# CHECK: 4227072.0 12713984.0 21233664.0 29753344.0 38273024.0 46923776.0 55312384.0 63963136.0
+# CHECK: 4358144.0 13107200.0 21889024.0 30670848.0 39583744.0 48234496.0 57147392.0 65798144.0
+# CHECK: 4489216.0 13500416.0 22544384.0 31588352.0 40632320.0 49807360.0 58720256.0 67633150.0
+# CHECK: 4587520.0 13893632.0 23199744.0 32505856.0 41943040.0 51118080.0 60555264.0 69730300.0
+# CHECK: 4718592.0 14286848.0 23855104.0 33423360.0 42991616.0 52690944.0 62128130.0 71827460.0
+# CHECK: 4849664.0 14680064.0 24510464.0 34340864.0 44302336.0 54001664.0 63700990.0 73400320.0
+# CHECK: 4980736.0 15073280.0 25165824.0 35389440.0 45350910.0 55312384.0 65536000.0 75497470.0
+# CHECK: 5111808.0 15466496.0 25821184.0 36175870.0 46399490.0 56885250.0 67108864.0 77594624.0
+# CHECK: 5242880.0 15859712.0 26476544.0 36962304.0 47710210.0 58195970.0 68681730.0 79691780.0
+# CHECK: 5373952.0 16252928.0 27131904.0 38010880.0 48758784.0 59768832.0 70778880.0 81264640.0
+# CHECK: 5505024.0 16646144.0 27787264.0 38797310.0 50069504.0 61079552.0 72351740.0 83361790.0
+# CHECK: 5636096.0 17039360.0 28442624.0 39845890.0 51118080.0 62652416.0 73924610.0 85458944.0
+# CHECK: 5767168.0 17432576.0 29097984.0 40632320.0 52428800.0 63963136.0 75497470.0 87556100.0
+# CHECK: 5898240.0 17825792.0 29753344.0 41680896.0 53477376.0 65536000.0 77594624.0 89128960.0
+# CHECK: 6029312.0 18219008.0 30408704.0 42467330.0 54788096.0 66846720.0 79167490.0 91226110.0
+# CHECK: 6160384.0 18612224.0 31064064.0 43515904.0 55836670.0 68157440.0 80740350.0 93323264.0
+# CHECK: 6291456.0 19005440.0 31719424.0 44302336.0 57147392.0 69730300.0 82313220.0 95420420.0
+# CHECK: 6422528.0 19398656.0 32374784.0 45350910.0 58195970.0 71303170.0 84410370.0 96993280.0
+# CHECK: 6553600.0 19791872.0 33030144.0 46137344.0 59506690.0 72876030.0 85983230.0 99090430.0
+# CHECK: 6651904.0 20185088.0 33554432.0 47185920.0 60555264.0 73924610.0 87556100.0 101187584.0
+# CHECK: 6782976.0 20578304.0 34340864.0 47972352.0 61865984.0 75497470.0 89128960.0 103284740.0
+# CHECK: 6914048.0 20971520.0 34865150.0 49020930.0 62914560.0 77070340.0 91226110.0 104857600.0
+# CHECK: 7045120.0 21364736.0 35651584.0 49807360.0 64225280.0 78643200.0 92798980.0 106954750.0
+# CHECK: 7176192.0 21757952.0 36175870.0 50855936.0 65273856.0 79691780.0 94371840.0 109051900.0
+# CHECK: 7307264.0 22151168.0 36962304.0 51642370.0 66584576.0 81264640.0 95944700.0 111149060.0
+# CHECK: 7438336.0 22544384.0 37486590.0 52690944.0 67633150.0 82837504.0 98041860.0 112721920.0
+# CHECK: 7569408.0 22937600.0 38273024.0 53477376.0 68681730.0 84410370.0 99614720.0 114819070.0
+# CHECK: 7700480.0 23330816.0 38797310.0 54525950.0 70254590.0 85458944.0 101187584.0 116916220.0
+# CHECK: 7831552.0 23724032.0 39583744.0 55312384.0 71303170.0 87031810.0 102760450.0 119013380.0
+# CHECK: 7962624.0 24117248.0 40108032.0 56360960.0 72351740.0 88604670.0 104857600.0 120586240.0
+# CHECK: 8093696.0 24510464.0 40894464.0 57147392.0 73400320.0 90177540.0 106430460.0 122683390.0
+# CHECK: 8224768.0 24903680.0 41418752.0 58195970.0 74973184.0 91226110.0 108003330.0 124780540.0
+alias test_tma_wgmma_64x8x64 = test_tma_wgmma[
+    DType.bfloat16,
+    DType.bfloat16,
+    DType.bfloat16,
+    Index(64, 8, 64),
+    Index(64, 8, 64),
+    Index(64, 8, 16),
+]
 
 
 def main():
     with DeviceContext() as ctx:
-        test_tma_wgmma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(64, 8, 32),
-            Index(64, 8, 32),
-            Index(64, 8, 16),
-        ](ctx)
+        test_tma_wgmma_64x8x32(ctx)
+        test_tma_wgmma_64x8x64(ctx)
