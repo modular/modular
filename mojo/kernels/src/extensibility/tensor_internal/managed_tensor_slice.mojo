@@ -582,10 +582,9 @@ struct ManagedTensorSlice[
     fn unsafe_ptr[__type: DType = type](self) -> UnsafePointer[Scalar[__type]]:
         """Get the pointer stored in this tensor slice.
 
-        Danger: This method obtains the pointer stored in this tensor slice.
-        In general, it should not be used, as it can modify the invariants of
-        this tensor slice and lead to unexpected behavior. Custom operations
-        should avoid using this method.
+        Since this method obtains the pointer stored in this tensor slice, it
+        can modify the invariants of this tensor slice and lead to unexpected
+        behavior. It should be used with caution.
 
         Parameters:
             __type: The type of the `UnsafePointer` in this tensor slice.
@@ -602,9 +601,6 @@ struct ManagedTensorSlice[
         _rank: Int,
     ](self, index: IndexList[_rank]) -> SIMD[type, width]:
         """Gets data from this tensor slice as a `SIMD`.
-
-        Danger: This method separates the data of this tensor slice from the
-        tensor slice itself. Custom operations should avoid using this method.
 
         Parameters:
             width: The width of the `SIMD` value. This must be large enough to contain the data from this tensor slice.
@@ -706,9 +702,6 @@ struct ManagedTensorSlice[
         element_alignment: Int = 1,
     ](self, index: IndexList[_rank], val: SIMD[type, width]):
         """Sets data in this tensor slice from a `SIMD`.
-
-        Danger: This method changes the data in this tensor slice without any
-        safety guarantees. Custom operations should avoid using this method.
 
         Parameters:
             width: The width of the `SIMD` value.
