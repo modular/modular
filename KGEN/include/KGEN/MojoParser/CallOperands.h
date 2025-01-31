@@ -119,6 +119,7 @@ public:
   enum class KwDiagResult {
     kValid,
     kMissingKwOnly,
+    kOutOfOrderInferredKw,
     kPosOnlyPassedByKw,
     kUnknownKeywords
   };

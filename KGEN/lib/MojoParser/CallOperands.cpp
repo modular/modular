@@ -14,6 +14,7 @@
 
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITUtils.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 using namespace M;
 using namespace KGEN;
@@ -49,6 +50,7 @@ CallOperands::diagnoseKeywordOperands(PogListAttr pogListAttr,
   // First, we collect any (named) pos-only args/params passed by keyword
   // operand, and missing kw-only args/params. We also collect all arg/param
   // names that might be specified by keyword.
+  llvm::SetVector<StringAttr> inferredNames;
   SmallPtrSet<StringAttr, 4> kwPassableNames;
   SmallVector<StringAttr> posOnlyPassedByKw;
   SmallVector<StringAttr> missingKwOnly;
@@ -59,6 +61,10 @@ CallOperands::diagnoseKeywordOperands(PogListAttr pogListAttr,
     if (name.empty())
       continue;
     PassingKind passingKind = pogAttr.getPassingKind();
+    if (passingKind == PassingKind::Inferred) {
+      inferredNames.insert(name);
+      continue;
+    }
     // Implicit parameter cannot be passed by the user. They must be
     // inferred from values bound to parameters or arguments, so we don't have
     // to verify them here.  Inferred parameters can be bound by name.
@@ -87,9 +93,23 @@ CallOperands::diagnoseKeywordOperands(PogListAttr pogListAttr,
     return {KwDiagResult::kPosOnlyPassedByKw, std::move(posOnlyPassedByKw)};
 
   // Collect all the keyword operands with unknown names.
-  for (auto &operand : values)
+  auto inferredNameIter = inferredNames.begin();
+  for (auto &operand : values) {
+    // Scan through inferred names. These must be specified in order.
+    while (inferredNameIter != inferredNames.end() &&
+           *inferredNameIter != operand.keyword)
+      ++inferredNameIter;
+
+    // Found a matching explicitly-specified inferred param.
+    if (inferredNameIter != inferredNames.end())
+      continue;
+
+    if (inferredNames.contains(operand.keyword))
+      return {KwDiagResult::kOutOfOrderInferredKw, {operand.keyword}};
+
     if (operand.keyword && !kwPassableNames.contains(operand.keyword))
       variadicKwOperands.push_back(operand);
+  }
 
   // If the function doesn't accept variadic kwargs, this is an error.
   if (!pogListAttr.hasKwVariadics() && !variadicKwOperands.empty()) {
@@ -112,7 +132,8 @@ CallOperands::diagnosePosOperands(PogListAttr pogListAttr,
   SmallVector<StringAttr> byPosAndKw;
 
   size_t numOperands = values.size();
-  size_t numPosMaximum = countNumPositional(pogListAttr);
+  size_t numPosMinimum = countNumInferredKinds(pogListAttr);
+  size_t numPosMaximum = numPosMinimum + countNumPositional(pogListAttr);
   bool hasVariadicOrPack = false;
 
   size_t nextPosOperand = 0;
@@ -121,7 +142,7 @@ CallOperands::diagnosePosOperands(PogListAttr pogListAttr,
 
   // This loop is walking 'idx' in order of posListAttr, checking just the
   // positional arguments, not walking the operands list.
-  for (size_t idx = 0; idx != numPosMaximum; ++idx) {
+  for (size_t idx = numPosMinimum; idx != numPosMaximum; ++idx) {
     if (pogListAttr.isPosVariadic(idx) || pogListAttr.isPack(idx)) {
       // Positional variadics and packs don't require any operands. But we
       // remember this because it lifts the limit on the maximum number.

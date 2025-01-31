@@ -253,6 +253,10 @@ ParamBindings::verifyBindingsImpl(
       if (diagEmitter)
         diagEmitter->emitMissing(kwDiagNames, "keyword-only");
       break;
+    case CallOperands::KwDiagResult::kOutOfOrderInferredKw:
+      if (diagEmitter)
+        diagEmitter->emitOutOfOrderInferredKw(kwDiagNames);
+      break;
     case CallOperands::KwDiagResult::kPosOnlyPassedByKw:
       if (diagEmitter)
         diagEmitter->emitPosOnlyPassedByKw(kwDiagNames);
@@ -303,6 +307,7 @@ ParamBindings::verifyBindingsImpl(
   // context.
   ExprEmitter emitter(declScope, EC_ParameterList);
 
+  // The next positional (or explicitly-specified inferred) binding index.
   size_t posBindingIdx = 0;
   size_t numBindings = operands.size();
 
@@ -382,7 +387,78 @@ ParamBindings::verifyBindingsImpl(
       if (auto varType = dyn_cast<VariadicType>(expectedType))
         expectedType = ASTType(varType.getElementType());
 
-    // Find the next positional binding.
+    // Inferred params precede positional params, and if explicitly specified,
+    // must be specified in order (skipping is allowed).
+    if (pog.getPassingKind() == PassingKind::Inferred) {
+      // Internally synthesized bindings may specify inferred parameters
+      // positionally. Handle them here first.
+      if (posBindingIdx < numBindings && !operands[posBindingIdx].keyword) {
+        // First check if we are dealing with an UnboundAttr we have to deduce.
+        ASTExprAnd<AnyValue> binding = operands[posBindingIdx];
+        PValue bindingVal = binding.ir.getIfPValue();
+        assert(bindingVal && "Parameters are always PValues");
+        if (!partial && isa<UnboundAttr>(bindingVal.get())) {
+          if (PValue value =
+                  fulfillValue(requestedType, PassingKind::Inferred)) {
+            setParamValue(value);
+            ++posBindingIdx;
+            continue;
+          }
+          // We tried but couldn't infer an unbound parameter, we must error.
+          if (diagEmitter)
+            diagEmitter->emitDeductionFailure(idx);
+          return {{}, fitness};
+        }
+
+        // Otherwise if it's prechecked, consume directly.
+        if (posBindingIdx < numPreTypeChecked) {
+          setParamValue(bindingVal);
+          ++posBindingIdx;
+          continue;
+        }
+      }
+
+      // Otherwise, they are user-provided inferred params, which must be
+      // specified by keyword. If we see a non-keyword operand, the operand must
+      // not be for this inferred parameter. Even if the operand is specified by
+      // keyword, it may be for a later parameter (inferred or regular keyword)
+      // instead of this one. In either case, it means this inferred param was
+      // not explicitly specified. Use the inference hook for this inferred
+      // param and continue.
+      if (posBindingIdx >= numBindings || !operands[posBindingIdx].keyword ||
+          operands[posBindingIdx].keyword != pog.getName()) {
+        if (PValue value = inferParameter(requestedType)) {
+          setParamValue(value);
+          continue;
+        }
+        // If this context allows partial binding, leave the value as unbound.
+        if (partial) {
+          setParamValue(UnboundAttr::get(requestedType));
+          continue;
+        }
+        // Otherwise, emit an inference failure.
+        if (diagEmitter)
+          diagEmitter->emitInferOnlyFailure(idx);
+        return {{}, fitness};
+      }
+
+      // The param name matches this operand. Consume this operand.
+      OperandValue &binding = operands[posBindingIdx];
+      PValue pValue = emitSingleParameterValue(binding, expectedType,
+                                               fitness.numImplicitConversions,
+                                               emitter, evaluator);
+      if (!pValue) {
+        if (diagEmitter)
+          diagEmitter->emitKwType(pog.getName(), binding, expectedType);
+        return {{}, fitness};
+      }
+      setParamValue(pValue);
+      ++posBindingIdx;
+      continue;
+    }
+
+    // At this point, all inferred pogs have been processed.
+    // Find the next positional operand.
     while (posBindingIdx < numBindings && operands[posBindingIdx].keyword)
       ++posBindingIdx;
 
@@ -475,24 +551,6 @@ ParamBindings::verifyBindingsImpl(
         diagEmitter->emitParamCount(operands.getNumPositional(),
                                     passingKind == PassingKind::PosOnly);
       }
-      return {{}, fitness};
-    }
-
-    // Otherwise, if this is an inferred parameter, a value could not have been
-    // explicitly provided and we must have an inference hook.
-    if (passingKind == PassingKind::Inferred) {
-      if (PValue value = inferParameter(requestedType)) {
-        setParamValue(value);
-        continue;
-      }
-      // If this context allows partial binding, leave the value as unbound.
-      if (partial) {
-        setParamValue(UnboundAttr::get(requestedType));
-        continue;
-      }
-      // Otherwise, emit an inference failure.
-      if (diagEmitter)
-        diagEmitter->emitInferOnlyFailure(idx);
       return {{}, fitness};
     }
 
@@ -713,6 +771,13 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       [&](ArrayRef<StringAttr> names) {
         diag = shared.emitError(exprLoc);
         emitPosOnlyPassedByKw(*diag, names, "parameter");
+        if (opLoc)
+          diag->attachNote(*opLoc) << baseName << " declared here";
+      },
+      /*emitOutOfOrderInferredKw=*/
+      [&](ArrayRef<StringAttr> names) {
+        diag = shared.emitError(exprLoc);
+        emitOutOfOrderInferredKw(*diag, names);
         if (opLoc)
           diag->attachNote(*opLoc) << baseName << " declared here";
       },

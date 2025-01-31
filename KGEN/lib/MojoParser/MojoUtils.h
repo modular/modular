@@ -92,6 +92,10 @@ void emitUnknownKeywords(InflightDiag &diag,
 void emitPosOnlyPassedByKw(InflightDiag &diag, ArrayRef<StringAttr> names,
                            StringRef argOrParam);
 
+/// Helper to emit an error message for explicitly-specified inferred parameters
+/// passed out of order.
+void emitOutOfOrderInferredKw(InflightDiag &diag, ArrayRef<StringAttr> names);
+
 /// Helper to emit an error message for missing operands.
 void emitMissing(InflightDiag &diag, ArrayRef<StringAttr> names,
                  const Twine &kindStr);

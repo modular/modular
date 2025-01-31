@@ -42,7 +42,7 @@ fn test_pos_after_kw_param[x: Index]():
     takes_pos_or_kw_param[
         j=x,
         x,  # expected-error {{positional parameter follows keyword parameter}}
-    ]
+    ]()
 
 
 fn invalid_with():

@@ -371,7 +371,7 @@ fn test_struct_kw_params():
 
 fn test_struct_kw_params2():
     # expected-error @below {{positional parameter follows keyword parameter}}
-    _ = KwParamStruct[a=42, 1]()
+    _ = KwParamStruct[b=42, 1]()
 
 
 fn test_struct_kw_params3():
@@ -479,12 +479,21 @@ struct InferredParam[p: Int, //, T: AnyTrivialRegType, use: ParamType[p]]:
     pass
 
 
+# expected-note @below {{declared here}}
+struct MultiInferred[p: Int, q: Int, //, uP: ParamType[p], uQ: ParamType[q]]:
+    pass
+
+
 struct BindStructField:
     # expected-error @below {{failed to infer parameter 'p'}}
     # expected-note @below {{parameter isn't used in any argument}}
     var value: InferredParam[Int]
     # expected-error @below {{'InferredParam' missing required parameter 'T'}}
     var infer_keyword: InferredParam[p=1]
+    # expected-error @below {{inferred parameter passed out of order: 'p'}}
+    var multi_infer_ooo: MultiInferred[q=1, p=2]
+    # expected-error @below {{inferred parameter passed out of order: 'q'}}
+    var multi_infer_ooo2: MultiInferred[p=1, uP=ParamType[1](), q=2]
 
 
 fn invalid_params[f: fn (ParamType) -> None]():

@@ -727,6 +727,8 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   switch (kwDiagRes) {
   case CallOperands::KwDiagResult::kMissingKwOnly:
     return emitDiagFor.missingArgs(kwDiagNames, "keyword-only");
+  case CallOperands::KwDiagResult::kOutOfOrderInferredKw:
+    llvm_unreachable("no inferred arguments");
   case CallOperands::KwDiagResult::kPosOnlyPassedByKw:
     return emitDiagFor.posOnlyPassedByKw(kwDiagNames);
   case CallOperands::KwDiagResult::kUnknownKeywords:
@@ -798,6 +800,10 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
       /*emitPosOnlyPassedByKw=*/
       [&](ArrayRef<StringAttr> names) {
         emitPosOnlyPassedByKw(diag, names, "parameter");
+      },
+      /*emitOutOfOrderInferredKw=*/
+      [&](ArrayRef<StringAttr> names) {
+        emitOutOfOrderInferredKw(diag, names);
       },
       /*emitDeductionFailure=*/
       [&](size_t paramIdx) {

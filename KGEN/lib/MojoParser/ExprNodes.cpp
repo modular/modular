@@ -762,7 +762,7 @@ public:
   InProgressBindings(ArrayRef<Type> paramTypes, PogListAttr paramList,
                      unsigned numPosBindings = 0)
       : paramTypes(paramTypes), paramList(paramList), posIdx(numPosBindings),
-        numInferred(countNumInferredKinds(paramList)) {}
+        seenKeyword(false), numInferred(countNumInferredKinds(paramList)) {}
 
   /// Given the current set of bindings and the next operand to bind, determine
   /// the next expected parameter type according to the current in-progress
@@ -777,8 +777,10 @@ private:
   PogListAttr paramList;
   /// The number of positionally-bound parameters processed so far.
   unsigned posIdx;
+  /// If any non-inferred keyword parameters have been processed so far.
+  bool seenKeyword;
   /// The number of inferred parameters in the list.
-  unsigned numInferred;
+  const unsigned numInferred;
 };
 } // namespace
 
@@ -797,6 +799,12 @@ ASTType InProgressBindings::getNextParamType(const Operand &operand,
   ASTType nextType;
   unsigned paramIdx;
   if (operand.isPositional()) {
+    if (seenKeyword) {
+      emitter.emitError(operand.getLoc(),
+                        "positional parameter follows keyword parameter");
+      return {};
+    }
+
     // This parameter is lexically passed positionally. Skip over the inferred
     // parameters to find its type.
     paramIdx = numInferred + posIdx;
@@ -821,6 +829,10 @@ ASTType InProgressBindings::getNextParamType(const Operand &operand,
     // Failed to find a matching keyword parameter.
     if (!nextType)
       return {};
+    // Remember that we've seen a non-inferred keyword operand for error
+    // checking.
+    if (paramList.getPassingKind(paramIdx) != PassingKind::Inferred)
+      seenKeyword = true;
   }
 
   // Attempt to apply the current binding set to the parameter list.

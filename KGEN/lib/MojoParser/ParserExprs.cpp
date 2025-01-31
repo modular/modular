@@ -901,7 +901,11 @@ ParseResult ExprParser::checkOperands(ArrayRef<Operand> operands,
     hasUnpackedKw |= operand.isUnpackedKeyword();
 
     if (operand.isPositional()) {
-      if (!kwOperandMap.empty()) {
+      if (isArgument && !kwOperandMap.empty()) {
+        // Parameter operands allow keywords before positional operands because
+        // inferred parameters can be passed with keyword syntax before
+        // positional operands. Avoid checking parameter operand ordering here.
+        // It will be checked later when verifying bindings.
         return emitError(loc, "positional ")
                << argOrParam << " follows keyword " << argOrParam;
       }

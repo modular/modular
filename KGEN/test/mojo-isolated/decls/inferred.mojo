@@ -85,6 +85,8 @@ fn test_inferred_params[x: Index, y: ParamType[x], z: DependentParam[x, y]]():
     inferred_with_default[y, `2`]()
     # CHECK: inferred_dependent_param{{.*}}<x, :[[PARAMTYPE]]<x> y, :{{@.*DependentParam}}<x, :[[PARAMTYPE]]<x> y> z>
     inferred_dependent_param[z]()
+    # CHECK: inferred_dependent_param{{.*}}<x, :[[PARAMTYPE]]<x> y, :{{@.*DependentParam}}<x, :[[PARAMTYPE]]<x> y> z>
+    inferred_dependent_param[x=x, z]()
 
     # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: !lit.generator<<"x": index, +>("z": !lit.struct<#ParamType <*(0,0)>>)
     alias partially_bound = inferred_partial[`1`]
@@ -100,6 +102,8 @@ fn test_inferred_params[x: Index, y: ParamType[x], z: DependentParam[x, y]]():
     # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: meta<!lit.struct<#InferredStruct <?, 1, :[[PARAMTYPE]]<?> ?>,
     # CHECK-SAME: <"x": index, +, "z": [[PARAMTYPE]]<*(0,0)>>>> = <{{.*}}@InferredStruct<?, 1, :[[PARAMTYPE]]<?> ?>>
     alias partially_bound_type = InferredStruct[`1`]
+    # CHECK-NEXT: partially_bound_explicit_inferred{{.*}} = <@inferred::@InferredStruct<1, 2, :@inferred::@ParamType<1> ?>>
+    alias partially_bound_explicit_inferred = InferredStruct[x=`1`, `2`]
     # CHECK-NEXT: fully_bound_type{{.*}}<@inferred::@InferredStruct<x, 1, :@inferred::@ParamType<x> y>>
     alias fully_bound_type = partially_bound_type[y]
 
