@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from utils import StringRef
+from collections.string import StaticString
 
 
 fn getFloat() -> Float32:
@@ -79,7 +79,7 @@ fn main():
 
     var p_struct_int = ParamStruct[Int](8)
 
-    var p_struct_stringref = ParamStruct[StringRef]("hello")
+    var p_struct_string_slice = ParamStruct(StaticString("hello"))
 
     var an_int: Int = 123
 
@@ -120,7 +120,7 @@ fn main():
         a_register_passable_struct,
         a_struct,
         p_struct_int,
-        p_struct_stringref,
+        p_struct_string_slice,
         an_int,
         a_literal_float,
         a_float,

@@ -189,8 +189,8 @@ TEST(PrimitiveTypesTest, testBuiltinTypes) {
       ctx.runCommand("v p_struct_int").output,
       R"((ParamStruct[_"stdlib::builtin::int::Int"]) p_struct_int = (t = 8)
 )");
-  EXPECT_TRUE(RE::PartialMatch(ctx.runCommand("v p_struct_stringref").output,
-                               "length = 5"));
+  EXPECT_TRUE(RE::PartialMatch(ctx.runCommand("v p_struct_string_slice").output,
+                               "len = 5"));
   EXPECT_EQ(ctx.runCommand("v an_int").output, "(index) an_int = 123\n");
   EXPECT_EQ(ctx.runCommand("v a_literal_float").output,
             "(scalar<f64>) a_literal_float = ([0] = 3.125)\n");
