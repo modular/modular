@@ -190,11 +190,7 @@ fn create_buffer_ref_async[
     call_ctx: MojoCallContextPtr,
 ):
     external_call["KGEN_CompilerRT_CreateAsyncDeviceBufferRef", NoneType](
-        buffer.data,
-        len(buffer),
-        async_ptr,
-        runtime,
-        call_ctx,
+        buffer.data, len(buffer), async_ptr, runtime, call_ctx.ptr
     )
 
 
@@ -358,6 +354,19 @@ fn unpack_async(
         "KGEN_CompilerRT_GetValueFromAsync",
         UnsafePointer[NoneType],
     ](async_ptr)
+
+
+@register_internal("builtin.unpack_device_ctx")
+@no_inline
+fn unpack_device_ctx(
+    async_ptr: UnsafePointer[NoneType],
+) -> MojoCallContextPtr:
+    var ptr = external_call[
+        "KGEN_CompilerRT_UnpackDeviceContext",
+        UnsafePointer[NoneType],
+    ](async_ptr)
+
+    return MojoCallContextPtr(ptr)
 
 
 @register_internal("builtin.unpack_buffer_ref")
@@ -531,7 +540,7 @@ fn mgp_tensor_extract_buffer[
 @register_internal("mgp.buffer.alloc")
 @no_inline
 fn mgp_buffer_alloc[
-    bRawAlign: UInt64,
+    bRawAlign: UInt64
 ](byte_size: Int, dev_context: DeviceContextPtr) raises -> NDBuffer[
     DType.int8, 1
 ]:
