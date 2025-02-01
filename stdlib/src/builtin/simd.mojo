@@ -208,11 +208,11 @@ fn _unchecked_zero[type: DType, size: Int]() -> SIMD[type, size]:
             value = __mlir_attr[`#pop.simd<0> : !pop.scalar<index>`],
         ]()
     )
-    return SIMD[type, size] {
-        value: __mlir_op.`pop.simd.splat`[
+    return SIMD[type, size](
+        __mlir_op.`pop.simd.splat`[
             _type = __mlir_type[`!pop.simd<`, size.value, `, `, type.value, `>`]
         ](zero)
-    }
+    )
 
 
 @always_inline("nodebug")

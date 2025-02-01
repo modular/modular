@@ -33,8 +33,11 @@ from utils import Variant
 struct _NoneMarker(CollectionElementNew):
     """This is a trivial class to indicate that an object is `None`."""
 
+    fn __init__(out self):
+        pass
+
     fn copy(self) -> Self:
-        return _NoneMarker {}
+        return _NoneMarker()
 
 
 @register_passable("trivial")
@@ -96,9 +99,13 @@ struct _RefCountedListRef(CollectionElement, CollectionElementNew):
         self.lst = ptr.bitcast[NoneType]()
 
     @always_inline
+    fn __init__(out self, *, lst: OpaquePointer):
+        self.lst = lst
+
+    @always_inline
     fn copy(self) -> Self:
         _ = self.lst.bitcast[_RefCountedList]()[].impl
-        return Self {lst: self.lst}
+        return Self(lst=self.lst)
 
     fn release(self):
         var ptr = self.lst.bitcast[_RefCountedList]()[].impl
@@ -186,9 +193,13 @@ struct _RefCountedAttrsDictRef(CollectionElement, CollectionElementNew):
         self.attrs = ptr.bitcast[Int8]()
 
     @always_inline
+    fn __init__(out self, *, attrs: UnsafePointer[Int8]):
+        self.attrs = attrs
+
+    @always_inline
     fn copy(self) -> Self:
         _ = self.attrs.bitcast[_RefCountedAttrsDict]()[].impl
-        return Self {attrs: self.attrs}
+        return Self(attrs=self.attrs)
 
     fn release(self):
         var ptr = self.attrs.bitcast[_RefCountedAttrsDict]()[].impl
@@ -305,7 +316,7 @@ struct _ObjectImpl(
 
     @always_inline
     fn __init__(out self):
-        self.value = Self.type(_NoneMarker {})
+        self.value = Self.type(_NoneMarker())
 
     @always_inline
     @implicit

@@ -54,15 +54,13 @@ struct _OwnedStringRef(Boolable):
             self.data.free()
 
     fn consume_as_error(owned self) -> Error:
-        var data = self.data
+        result = Error()
+        result.data = self.data
+        result.loaded_length = -self.length
 
         # Don't free self.data in our dtor.
         self.data = UnsafePointer[UInt8]()
-
-        return Error {
-            data: data,
-            loaded_length: -self.length,
-        }
+        return result
 
     fn __bool__(self) -> Bool:
         return self.length != 0
