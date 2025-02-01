@@ -29,6 +29,9 @@ from .intrinsics import _mlirtype_is_eq
 alias c_char = Int8
 """C `char` type."""
 
+alias c_uchar = UInt8
+"""C `unsigned char` type."""
+
 alias c_int = Int32
 """C `int` type.
 
@@ -38,6 +41,12 @@ today.
 
 alias c_uint = UInt32
 """C `unsigned int` type."""
+
+alias c_short = Int16
+"""C `short` type."""
+
+alias c_ushort = UInt16
+"""C `unsigned short` type."""
 
 alias c_long = Scalar[_c_long_dtype()]
 """C `long` type.
@@ -56,6 +65,12 @@ alias c_size_t = UInt
 
 alias c_ssize_t = Int
 """C `ssize_t` type."""
+
+alias c_float = Float32
+"""C `float` type."""
+
+alias c_double = Float64
+"""C `double` type."""
 
 alias OpaquePointer = UnsafePointer[NoneType]
 """An opaque pointer, equivalent to the C `void*` type."""

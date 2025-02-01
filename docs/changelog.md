@@ -111,6 +111,8 @@ what we publish.
   to a list of scalars and vice versa, accepting the endianess as an argument. Similar
   to Python `int.from_bytes()` and `int.to_bytes()` functions.
 
+- Added more aliases in `sys.ffi` to round out the usual needs for FFI bindings.
+
 - The free floating functions for constructing different types have been
   deprecated for actual constructors:
 
