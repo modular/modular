@@ -20,4 +20,4 @@ struct VeryUniqueStruct:
     # FileCheck matching easier.
     @staticmethod
     fn very_unique_func(`C-3PO`: __mlir_type.index) -> VeryUniqueStruct:
-        return Self {very_unique_field: `C-3PO`}
+        return Self(`C-3PO`)

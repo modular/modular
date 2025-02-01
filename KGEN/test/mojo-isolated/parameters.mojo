@@ -189,11 +189,6 @@ fn useParameterizedField[x: Pair[DType.float32]]():
   alias y : SIMD[DType.float32, 42] = x.a
 
 
-# CHECK-LABEL: lit.fn @"makePair
-fn makePair(a: SIMD[DType.float32, 42], b: Int) -> Pair[DType.float32]:
-  # CHECK:  = lit.struct.create(a=%a, b=%b)
-  return Pair[DType.float32]{a: a, b: b}
-
 # CHECK-LABEL: lit.struct.decl @TypeParameter
 # CHECK-SAME: <[[TYPE:.*]]: type>
 struct TypeParameter[T: __mlir_type.`!kgen.type`]:
@@ -669,9 +664,6 @@ struct MyDType:
   alias ui8 = MyDType(Int(1).value)
   alias float32 = MyDType(Int(2).value)
   alias float64 = MyDType(Int(3).value)
-
-  # CHECK: lit.alias.decl *"ui16{{.*}}": !MyDType = <{state = 7}>
-  alias ui16 = MyDType{state: Int(7).value}
 
 struct MyVector[size: Int, dtype: MyDType]:
     pass

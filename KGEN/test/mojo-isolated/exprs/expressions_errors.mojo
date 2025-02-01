@@ -436,7 +436,6 @@ fn dict_expression(a: Int):
   _ = MyIntPair{a: 4}
   # expected-error @+1 {{cannot implicitly convert 'FloatLiteral' value to 'Int'}}
   _ = MyIntPair{a: 4.0, b: 4}
-  _ = MyIntPair{a: 4, b: 4}
 
 fn dict_parse_errors(a: Int):
   # expected-error @+1 {{dictionary comprehension must start with single key:value pair}}
