@@ -3631,8 +3631,9 @@ class CreateEmbeddingResponse(BaseModel):
     object: Literal['list'] = Field(
         ..., description='The object type, which is always "list".'
     )
-    usage: Usage1 = Field(
-        ..., description='The usage information for the request.'
+    usage: Optional[Usage1] = Field(
+        None,
+        description='The usage information for the request.'
     )
 
 

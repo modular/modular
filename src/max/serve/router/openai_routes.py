@@ -16,6 +16,7 @@ from json.decoder import JSONDecodeError
 from time import perf_counter_ns
 from typing import Any, AsyncGenerator, List, Literal, Optional, Sequence, Union
 
+import numpy as np
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from httpx import AsyncClient
@@ -27,7 +28,11 @@ from max.pipelines import (
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
 )
-from max.serve.pipelines.llm import TokenGeneratorOutput, TokenGeneratorPipeline
+from max.serve.pipelines.llm import (
+    EmbeddingsGeneratorOutput,
+    TokenGeneratorOutput,
+    TokenGeneratorPipeline,
+)
 from max.serve.schemas.openai import (  # type: ignore
     ChatCompletionMessageToolCall,
     ChatCompletionMessageToolCalls,
@@ -43,6 +48,9 @@ from max.serve.schemas.openai import (  # type: ignore
     CreateChatCompletionStreamResponse,
     CreateCompletionRequest,
     CreateCompletionResponse,
+    CreateEmbeddingRequest,
+    CreateEmbeddingResponse,
+    Embedding,
     Error,
     ErrorResponse,
     Function1,
@@ -320,6 +328,64 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
             tool_calls.append(tool_call)
 
 
+class OpenAIEmbeddingsResponseGenerator:
+    def __init__(
+        self,
+        pipeline: TokenGeneratorPipeline,
+    ):
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.pipeline = pipeline
+
+    async def encode(
+        self, requests: List[TokenGeneratorRequest]
+    ) -> CreateEmbeddingResponse:
+        if len(requests) == 0:
+            raise ValueError("No requests provided.")
+
+        record_request_start()
+        metrics_req = requests[0]
+        request_timer = StopWatch(start_ns=metrics_req.timestamp_ns)
+        status_code = 200
+
+        try:
+            embedding_outputs = await asyncio.gather(
+                *[self.pipeline.encode(req) for req in requests]
+            )
+
+            embeddings_data = [
+                Embedding(
+                    object="embedding",
+                    index=idx,
+                    embedding=_create_pooled_embedding(output),
+                )
+                for idx, output in enumerate(embedding_outputs)
+                if output is not None
+            ]
+
+            response = CreateEmbeddingResponse(
+                data=embeddings_data,
+                model=self.pipeline.model_name,
+                object="list",
+            )
+            return response
+        finally:
+            record_request_end(
+                status_code,
+                metrics_req.request_path,
+                request_timer.elapsed_ms,
+                0,
+            )
+
+
+def _create_pooled_embedding(
+    embeddings: Optional[EmbeddingsGeneratorOutput],
+) -> List[float]:
+    if not embeddings:
+        return []
+    # TODO: This is temporary until this logic is moved to the pipeline.
+    return np.sum(embeddings.embeddings, 0) / embeddings.embeddings.shape[0]
+
+
 def openai_parse_chat_completion_request(
     completion_request: CreateChatCompletionRequest,
     wrap_content: bool,
@@ -526,6 +592,67 @@ def _create_response_format(
     return TokenGeneratorResponseFormat(
         type=response_type, json_schema=json_schema
     )
+
+
+@router.post("/embeddings", response_model=None)
+async def openai_create_embeddings(
+    request: Request,
+) -> CreateEmbeddingResponse:
+    request_id = request.state.request_id
+
+    try:
+        request_json = await request.json()
+        embeddings_request = CreateEmbeddingRequest.model_validate(request_json)
+        pipeline = get_pipeline(request, embeddings_request.model)
+
+        logger.info(
+            "Processing path, %s, req-id, %s, for model, %s.",
+            request.url.path,
+            request_id,
+            embeddings_request.model,
+        )
+
+        # We can support other types of inputs but it will require few more changes
+        # to TokenGeneratorRequest and tokenizer encode. Hence, only supporting
+        # string and list of strings for now.
+        if not isinstance(embeddings_request.input, (str, list)):
+            raise ValueError(
+                "Input of type string or list of strings are only supported."
+            )
+
+        response_generator = OpenAIEmbeddingsResponseGenerator(pipeline)
+        embedding_inputs = (
+            embeddings_request.input
+            if isinstance(embeddings_request.input, list)
+            else [embeddings_request.input]
+        )
+
+        embedding_requests = [
+            TokenGeneratorRequest(
+                id=f"{request_id}_{idx}",
+                index=idx,
+                model_name=embeddings_request.model,
+                prompt=input_text,
+                timestamp_ns=request.state.request_timer.start_ns,
+                request_path=request.url.path,
+            )
+            for idx, input_text in enumerate(embedding_inputs)
+        ]
+
+        response = await response_generator.encode(embedding_requests)
+        return response
+    except JSONDecodeError as e:
+        logger.exception("JSONDecodeError in request %s", request_id)
+        raise HTTPException(status_code=400, detail="Missing JSON.") from e
+    except (TypeError, ValidationError) as e:
+        logger.exception("TypeError in request %s", request_id)
+        raise HTTPException(status_code=400, detail="Invalid JSON.") from e
+    except ValueError as e:
+        logger.exception("ValueError in request %s", request_id)
+        # NOTE(SI-722): These errors need to return more helpful details,
+        # but we don't necessarily want to expose the full error description
+        # to the user. There are many different ValueErrors that can be raised.
+        raise HTTPException(status_code=400, detail="Value error.") from e
 
 
 class CompletionResponseStreamChoice(BaseModel):
