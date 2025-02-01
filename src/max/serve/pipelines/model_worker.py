@@ -16,10 +16,18 @@ from multiprocessing import Queue
 from typing import AsyncGenerator, Mapping
 
 import uvloop
-from max.pipelines import PipelinesFactory, TokenGenerator
+from max.pipelines import EmbeddingsGenerator, PipelinesFactory, TokenGenerator
 from max.profiler import Tracer, traced
-from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
-from max.serve.pipelines.scheduler_v2 import SchedulerConfig, SchedulerV2
+from max.serve.pipelines.llm import (
+    TokenGeneratorPipelineConfig,
+)
+from max.serve.pipelines.scheduler_v2 import (
+    EmbeddingsScheduler,
+    EmbeddingsSchedulerConfig,
+    Scheduler,
+    TokenGenerationSchedulerConfig,
+    TokenGenerationSchedulerV2,
+)
 from max.serve.scheduler.process_control import ProcessControl, ProcessMonitor
 from max.serve.scheduler.queues import EngineQueue
 from max.serve.telemetry.metrics import METRICS, configure_metrics
@@ -191,11 +199,38 @@ async def model_worker_run_v3(
 
     # Initialize token generator.
     with record_ms(METRICS.model_load_time), Tracer("model_factory"):
-        token_generator_or_embedding = model_factory()
-        assert isinstance(token_generator_or_embedding, TokenGenerator)
-        pipeline: TokenGenerator = token_generator_or_embedding
+        pipeline = model_factory()
     logger.info("Token generators loaded!")
 
+    scheduler: Scheduler
+    if isinstance(pipeline, TokenGenerator):
+        scheduler = _create_token_generation_scheduler(
+            pipeline, pc, pipeline_config, queues
+        )
+    elif isinstance(pipeline, EmbeddingsGenerator):
+        scheduler = _create_embeddings_scheduler(
+            pipeline, pc, pipeline_config, queues
+        )
+    else:
+        raise ValueError(f"Invalid pipeline type: {type(pipeline)}")
+
+    logger.info("Scheduler created with pipeline type: %s", type(pipeline))
+
+    pc.set_started()
+    logger.info("Started model worker!")
+
+    scheduler.run()
+
+    pc.set_completed()
+    logger.info("Stopped model worker!")
+
+
+def _create_token_generation_scheduler(
+    pipeline: TokenGenerator,
+    pc: ProcessControl,
+    pipeline_config: TokenGeneratorPipelineConfig,
+    queues: Mapping[str, Queue],
+) -> TokenGenerationSchedulerV2:
     config = pipeline_config
     max_batch_size_tg = config.token_generation.size
     max_forward_steps_tg = config.token_generation.max_forward_steps
@@ -214,7 +249,7 @@ async def model_worker_run_v3(
         target_tokens_per_batch_ce = target_tokens_per_batch_tg
         batch_timeout = None
 
-    scheduler_config = SchedulerConfig(
+    scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size_tg=max_batch_size_tg,
         max_forward_steps_tg=max_forward_steps_tg,
         target_tokens_per_batch_tg=target_tokens_per_batch_tg,
@@ -223,19 +258,29 @@ async def model_worker_run_v3(
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
         batch_timeout=batch_timeout,
     )
-
-    scheduler = SchedulerV2(
+    return TokenGenerationSchedulerV2(
         process_control=pc,
         scheduler_config=scheduler_config,
         pipeline=pipeline,
         queues=queues,
     )
-    logger.info("Token generators loaded!")
 
-    scheduler.pc.set_started()
-    logger.info("Started model worker!")
 
-    scheduler.run()
+def _create_embeddings_scheduler(
+    pipeline: EmbeddingsGenerator,
+    pc: ProcessControl,
+    pipeline_config: TokenGeneratorPipelineConfig,
+    queues: Mapping[str, Queue],
+) -> EmbeddingsScheduler:
+    config = pipeline_config
+    max_batch_size = config.token_generation.size
 
-    scheduler.pc.set_completed()
-    logger.info("Stopped model worker!")
+    scheduler_config = EmbeddingsSchedulerConfig(
+        max_batch_size=max_batch_size,
+    )
+    return EmbeddingsScheduler(
+        process_control=pc,
+        scheduler_config=scheduler_config,
+        pipeline=pipeline,
+        queues=queues,
+    )

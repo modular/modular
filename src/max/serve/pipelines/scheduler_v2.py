@@ -7,11 +7,12 @@
 import logging
 import queue
 import time
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from multiprocessing import Queue
 from typing import Any, Mapping, Optional, TypeVar
 
-from max.pipelines import TokenGenerator
+from max.pipelines import EmbeddingsGenerator, TokenGenerator
 from max.profiler import traced
 from max.serve.scheduler.process_control import ProcessControl
 from max.serve.scheduler.queues import STOP_STREAM
@@ -23,8 +24,23 @@ BatchReqInput = TypeVar("BatchReqInput")
 BatchInputs = dict[BatchReqId, BatchReqInput]
 
 
+class Scheduler(ABC):
+    """Abstract base class defining the interface for schedulers."""
+
+    @abstractmethod
+    def run(self):
+        """The main scheduler loop that creates and executes batches.
+
+        This method should implement the core scheduling logic including:
+        - Batch creation and management
+        - Request scheduling
+        - Error handling
+        """
+        pass
+
+
 @dataclass
-class SchedulerConfig:
+class TokenGenerationSchedulerConfig:
     """Scheduler configuration."""
 
     # The maximum number of requests that can be in the token generation batch.
@@ -45,11 +61,11 @@ class SchedulerConfig:
     batch_timeout: Optional[float]
 
 
-class SchedulerV2:
+class TokenGenerationSchedulerV2(Scheduler):
     def __init__(
         self,
         process_control: ProcessControl,
-        scheduler_config: SchedulerConfig,
+        scheduler_config: TokenGenerationSchedulerConfig,
         pipeline: TokenGenerator,
         queues: Mapping[str, Queue],
     ):
@@ -262,3 +278,88 @@ class SchedulerV2:
         self._handle_terminated_responses(batch_to_execute, batch_responses)
         # send the responses to the API process
         self.response_q.put_nowait(batch_responses)
+
+
+@dataclass
+class EmbeddingsSchedulerConfig:
+    """Embeddings Scheduler configuration."""
+
+    # The maximum number of requests that can be in the encode batch.
+    max_batch_size: int
+
+
+class EmbeddingsScheduler(Scheduler):
+    def __init__(
+        self,
+        process_control: ProcessControl,
+        scheduler_config: EmbeddingsSchedulerConfig,
+        pipeline: EmbeddingsGenerator,
+        queues: Mapping[str, Queue],
+    ):
+        self.scheduler_config = scheduler_config
+        self.pipeline = pipeline
+
+        # Multiprocessing resources.
+        self.pc = process_control
+
+        self.request_q = queues["REQUEST"]
+        self.response_q = queues["RESPONSE"]
+        self.cancel_q = queues["CANCEL"]
+
+    @traced
+    def _create_batch_to_execute(self):
+        max_batch_size_to_create = self.scheduler_config.max_batch_size
+
+        batch = {}
+        try:
+            while max_batch_size_to_create > 0:
+                req_id, data = self.request_q.get_nowait()
+                batch[req_id] = data
+                max_batch_size_to_create -= 1
+        except queue.Empty:
+            pass
+
+        return batch
+
+    def run(self):
+        """The Scheduler loop that creates batches and schedules them on GPU"""
+        i = 0
+        while i % 10 or not self.pc.is_canceled():
+            self.pc.beat()
+            i += 1
+            try:
+                batch_to_execute = self._create_batch_to_execute()
+                if len(batch_to_execute) == 0:
+                    continue
+
+                self._schedule_encode(batch_to_execute)
+            except Exception as e:
+                logger.exception("An error occurred during scheduling ")
+                # TODO try to recover
+                raise e
+
+    @traced
+    def _handle_terminated_responses(
+        self,
+        batch_executed: dict[str, Any],
+        batch_response: dict[str, Any],
+    ):
+        """Task that handles responses"""
+        already_terminated = set()
+        terminated = batch_executed.keys() - batch_response.keys()
+        for req_id in terminated:
+            if req_id in already_terminated:
+                continue
+            del batch_executed[req_id]
+            batch_response[req_id] = STOP_STREAM
+            already_terminated.add(req_id)
+
+    @traced
+    def _schedule_encode(self, batch_to_execute):
+        logger.debug("Scheduling encode with BS: %d", len(batch_to_execute))
+        # execute the batch
+        batch_responses = self.pipeline.encode(batch_to_execute)
+        # remove terminated requests from the batch
+        self._handle_terminated_responses(batch_to_execute, batch_responses)
+        # send the responses to the API process
+        self.response_q.put_nowait([batch_responses])

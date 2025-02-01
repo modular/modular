@@ -14,7 +14,8 @@ from dataclasses import dataclass
 from functools import partial
 from typing import AsyncGenerator, Callable, Generic, Optional, TypeVar
 
-from max.pipelines.config import PipelineConfig
+import numpy as np
+from max.pipelines import PipelineConfig, PipelineTask
 from max.pipelines.interfaces import PipelineTokenizer, TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
 from max.serve.scheduler.queues import (
@@ -33,6 +34,11 @@ class TokenGeneratorOutput:
     decoded_token: str
     token_log_probabilities: Optional[list[float]] = None
     top_log_probabilities: Optional[list[dict[str, float]]] = None
+
+
+@dataclass(frozen=True)
+class EmbeddingsGeneratorOutput:
+    embeddings: np.ndarray
 
 
 @dataclass(frozen=True)
@@ -58,6 +64,19 @@ class TokenGeneratorPipelineConfig:
 
     token_generation: BatchQueueConfig
     context_encoding: Optional[BatchQueueConfig] = None
+
+    @classmethod
+    def no_cache(cls, batch_size: int) -> TokenGeneratorPipelineConfig:
+        """The no-cache config uses a single queue with no cache.
+        Requests are dequeued into a batch and the entire batch is
+        executed until all requests are completed.
+        """
+        token_generation_config = BatchQueueConfig(
+            strategy=BatchingStrategy.CONTINUOUS,
+            size=batch_size,
+        )
+        config = cls(token_generation=token_generation_config)
+        return config
 
     @classmethod
     def dynamic_homogenous(
@@ -231,6 +250,39 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
         """Generates all tokens for the provided request."""
         return [token async for token in self.next_token(request)]
 
+    async def encode(
+        self, request: TokenGeneratorRequest
+    ) -> Optional[EmbeddingsGeneratorOutput]:
+        """Generates embedded outputs for the provided request."""
+        total_sw = StopWatch()
+        self.logger.debug(
+            "%s [%d]: Started: Elapsed: %0.2f ms",
+            request.id,
+            request.index,
+            total_sw.elapsed_ms,
+        )
+
+        try:
+            with record_ms(METRICS.input_time):
+                context = await self.tokenizer.new_context(request)
+
+            with record_ms(METRICS.output_time):
+                async for response in self.engine_queue.stream(
+                    request.id, context
+                ):
+                    return EmbeddingsGeneratorOutput(
+                        embeddings=response.embeddings
+                    )
+        finally:
+            if self.debug_logging:
+                self.logger.debug(
+                    "%s [%d]: Completed: Elapsed: %0.2f ms",
+                    request.id,
+                    request.index,
+                    total_sw.elapsed_ms,
+                )
+        return None
+
     async def __aenter__(self):
         self.logger.info("%s: Starting workers:", self.model_name)
         assert not self._background_tasks
@@ -304,10 +356,21 @@ def get_target_ce_batch_tokens(pipeline_config: PipelineConfig) -> int:
 
 
 def batch_config_from_pipeline_config(
-    pipeline_config: PipelineConfig, batch_timeout: float = 0.0
+    pipeline_config: PipelineConfig,
+    pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION,
+    batch_timeout: float = 0.0,
 ) -> TokenGeneratorPipelineConfig:
-    target_ce_batch_tokens = get_target_ce_batch_tokens(pipeline_config)
     assert pipeline_config.max_cache_batch_size is not None
+    if pipeline_task == PipelineTask.EMBEDDINGS_GENERATION:
+        logger.info(
+            "Server configured with no cache and batch size %s",
+            pipeline_config.max_cache_batch_size,
+        )
+        return TokenGeneratorPipelineConfig.no_cache(
+            batch_size=pipeline_config.max_cache_batch_size
+        )
+
+    target_ce_batch_tokens = get_target_ce_batch_tokens(pipeline_config)
     assert pipeline_config.max_ce_batch_size is not None
     if pipeline_config.cache_strategy == KVCacheStrategy.CONTINUOUS:
         batch_config = TokenGeneratorPipelineConfig.continuous_heterogenous(
