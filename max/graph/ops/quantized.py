@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Optimized quantized operations."""
 
-from typing import Callable, Dict
+from typing import Callable, Dict, Literal, Tuple, Union
 
 from max.dtype import DType
 
@@ -15,43 +15,65 @@ from ..value import TensorValue
 from .custom import custom
 
 
-def _repack_quantized_weights(op_name: str, rhs: TensorValue) -> TensorValue:
-    rhs_type = rhs.type
+def _repack_quantized_weights(
+    op_name: str,
+    rhs: Tuple[TensorValue, ...],
+    mode: Literal["gptq", "vroom"],
+) -> TensorValue:
+    rhs_type = rhs[0].type
     return custom(
         op_name,
-        [rhs],
+        list(rhs),
         out_types=[
-            TensorType(DType.uint8, (rhs_type.shape[0], rhs_type.shape[1]))
+            TensorType(
+                DType.uint8,
+                (
+                    (rhs_type.shape[1], rhs_type.shape[0])
+                    if mode == "gptq"
+                    else (rhs_type.shape[0], rhs_type.shape[1])
+                ),
+            )
         ],
     )[0].tensor
 
 
+MODE_TO_DTYPE = {"gptq": DType.bfloat16, "vroom": DType.float32}
+
+
 def _packed_qmatmul(
-    op_name: str, lhs_matrix: TensorValue, rhs_repack: TensorValue
+    op_name: str,
+    lhs_matrix: TensorValue,
+    rhs_repack: TensorValue,
+    mode: Literal["gptq", "vroom"],
 ) -> TensorValue:
     return custom(
         op_name,
         [lhs_matrix, rhs_repack],
         out_types=[
             TensorType(
-                DType.float32, (lhs_matrix.shape[0], rhs_repack.shape[0])
+                MODE_TO_DTYPE[mode], (lhs_matrix.shape[0], rhs_repack.shape[0])
             ),
         ],
     )[0].tensor
 
 
 def _repack_then_matmul(
-    repack_op_name: str, matmul_op_name: str
-) -> Callable[[TensorValue, TensorValue], TensorValue]:
-    def impl(lhs: TensorValue, rhs: TensorValue) -> TensorValue:
+    repack_op_name: str,
+    matmul_op_name: str,
+    mode: Literal["gptq", "vroom"],
+) -> Callable[[TensorValue, Tuple[TensorValue, ...]], TensorValue]:
+    def impl(lhs: TensorValue, rhs: Tuple[TensorValue, ...]) -> TensorValue:
         # Quantized matmul for supported quantized encoding types.
         # rhs is uint8 and in a packed format such as Q4_0, Q4_K, or Q6_K.
-        if rhs.dtype is not DType.uint8:
+        if rhs[0].dtype is not DType.uint8:
             raise TypeError(f"Right-hand side must be uint8, but got {rhs=}")
-        if lhs.dtype is not DType.float32:
-            raise TypeError(f"Left-hand side must be float32, but got {lhs=}")
+        dtype = MODE_TO_DTYPE[mode]
+        if lhs.dtype is not dtype:
+            raise TypeError(
+                f"Left-hand side must be {dtype.name}, but got {lhs=}"
+            )
 
-        if len(rhs.shape) != 2:
+        if len(rhs[0].shape) != 2:
             raise TypeError(f"Right-hand side must be a matrix, but got {rhs=}")
 
         # Reshape LHS to a matrix, which is expected by the q4_0 matmul op.
@@ -62,13 +84,20 @@ def _repack_then_matmul(
         # lhs_matrix = lhs_matrix.rebind((prod_dim, lhs.shape[-1]))
 
         # Prepack weights.
-        rhs_repack = _repack_quantized_weights(repack_op_name, rhs)
+        rhs_repack = _repack_quantized_weights(repack_op_name, rhs, mode)
 
         # Perform quantized matmul.
-        qmatmul_out = _packed_qmatmul(matmul_op_name, lhs_matrix, rhs_repack)
+        qmatmul_out = _packed_qmatmul(
+            matmul_op_name, lhs_matrix, rhs_repack, mode
+        )
 
-        # Reshape matmul output to restore the original rank(lhs) - 1 dimensions.
-        return qmatmul_out.reshape((*lhs.shape[:-1], rhs.shape[0]))
+        if mode == "vroom":
+            # Reshape matmul output to restore the original rank(lhs) - 1 dimensions.
+            return qmatmul_out.reshape((*lhs.shape[:-1], rhs[0].shape[0]))
+        elif mode == "gptq":
+            return qmatmul_out.reshape((*lhs.shape[:-1], rhs_repack.shape[0]))
+        else:
+            assert False
 
     return impl
 
@@ -78,22 +107,41 @@ def _repack_then_matmul(
 # support future alternative schemes while continuing to support the current
 # scheme.
 _QMATMUL_STRATEGIES: Dict[
-    QuantizationEncoding, Callable[[TensorValue, TensorValue], TensorValue]
+    Union[QuantizationEncoding, str],
+    Callable[[TensorValue, Tuple[TensorValue, ...]], TensorValue],
 ] = {
+    "gptq_b4_g128_aTrue": _repack_then_matmul(
+        "GPTQ_gpu_repack_b4_g128_desc_act",
+        "qmatmul_b4_g128",
+        "gptq",
+    ),
+    "gptq_b4_g128_aFalse": _repack_then_matmul(
+        "GPTQ_gpu_repack_b4_g128",
+        "qmatmul_b4_g128",
+        "gptq",
+    ),
     QuantizationEncoding.Q4_0: _repack_then_matmul(
-        "vroom_q4_0_repack_weights", "vroom_q4_0_matmul"
+        "vroom_q4_0_repack_weights",
+        "vroom_q4_0_matmul",
+        "vroom",
     ),
     QuantizationEncoding.Q4_K: _repack_then_matmul(
-        "vroom_q4_k_repack_weights", "vroom_q4_k_matmul"
+        "vroom_q4_k_repack_weights",
+        "vroom_q4_k_matmul",
+        "vroom",
     ),
     QuantizationEncoding.Q6_K: _repack_then_matmul(
-        "vroom_q6_k_repack_weights", "vroom_q6_k_matmul"
+        "vroom_q6_k_repack_weights",
+        "vroom_q6_k_matmul",
+        "vroom",
     ),
 }
 
 
 def qmatmul(
-    encoding: QuantizationEncoding, lhs: TensorValue, rhs: TensorValue
+    encoding: QuantizationEncoding,
+    lhs: TensorValue,
+    *rhs: TensorValue,
 ) -> TensorValue:
     """Performs matrix multiplication between floating point and quantized
     tensors.
@@ -118,14 +166,20 @@ def qmatmul(
     Args:
         encoding: The quantization encoding to use.
         lhs: The non-quantized, left-hand-side of the matmul.
-        rhs: The transposed and quantized right-hand-side of the matmul.
-             Must be rank 2 (a 2D tensor/matrix) and in a supported
-             [quantization encoding](/max/api/mojo/graph/quantization/).
+        *rhs: The transposed and quantized right-hand-side of the matmul and
+              auxiliary tensor (if has). Must be rank 2 and in a supported
+              [quantization encoding] (/max/api/mojo/graph/quantization/).
 
     Returns:
         The dequantized result (a floating point tensor).
     """
-    strategy = _QMATMUL_STRATEGIES.get(encoding)
+    if encoding == QuantizationEncoding.GPTQ:
+        # config gets added on to the enum value in pipelines/config.py
+        config = encoding.config  # type: ignore[attr-defined]
+        encoding_str = f"{config['quant_method']}_b{config['bits']}_g{config['group_size']}_a{config['desc_act']}"
+        strategy = _QMATMUL_STRATEGIES.get(encoding_str)
+    else:
+        strategy = _QMATMUL_STRATEGIES.get(encoding)
     if strategy is None:
         raise ValueError(f"unsupported quantization encoding {encoding}")
     return strategy(lhs, rhs)
