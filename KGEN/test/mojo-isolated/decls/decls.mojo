@@ -714,11 +714,11 @@ fn raisesReturnsVariant() -> __mlir_type[`!kgen.variant<`, Error, `, index>`]:
 # CHECK-LABEL: lit.fn @"raise_and_return{{.*}} throws -> i1
 fn raise_and_return(a: Error) raises -> Error:
     # COM: True result indicates an error.
-    # CHECK: [[ERR:%.*]] = kgen.param.materialize: !Error
+    # CHECK: [[ERR:%.*]] = lit.call {{.*}}Error::@"__init__
     # CHECK-NEXT: lit.ref.store [[ERR]], %__result__
     # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
     # CHECK-NEXT: lit.return [[FALSE]]
-    return Error {}
+    return Error()
 
 
 @value

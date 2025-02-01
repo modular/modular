@@ -20,6 +20,6 @@
 
 fn makes_escaping_closure(m: Int) raises:
     fn two_effects(n: Int) escaping raises -> Int:
-        raise Error {}
+        raise Error()
 
     _ = two_effects(m)

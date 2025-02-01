@@ -367,7 +367,7 @@ struct ThunkAmbiguityRP(ThunkAmbiguity):
 
     @staticmethod
     fn mismatched_ret() -> Self:
-        return Self {}
+        pass
 
     fn __init__(out self):
         pass
