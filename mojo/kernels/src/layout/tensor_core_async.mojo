@@ -11,6 +11,7 @@ from layout.layout import is_row_major
 
 from gpu import WARP_SIZE
 from gpu.memory import AddressSpace
+from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import thread_idx
 from gpu.mma import (
     WGMMADescriptor,
@@ -100,8 +101,31 @@ fn _lhs_layout[mma_shape: IndexList[3]]() -> Layout:
     return Layout()
 
 
-fn tile_layout_k_major[type: DType, BM: Int, BK: Int]() -> Layout:
+fn tile_layout_k_major[
+    type: DType,
+    BM: Int,
+    BK: Int,
+    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+]() -> Layout:
     alias _CM_K = _CM_K_BYTES // sizeof[type]()
+
+    @parameter
+    if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
+        alias k_bytes = BK * sizeof[type]()
+        constrained[
+            k_bytes == swizzle_mode.bytes(),
+            "K dim "
+            + String(k_bytes)
+            + " doesn't match "
+            + String(swizzle_mode),
+        ]()
+
+        return Layout(
+            IntTuple(
+                IntTuple(_CM_M, BM // _CM_M), IntTuple(_CM_K, BK // _CM_K)
+            ),
+            IntTuple(IntTuple(BK, _CM_M * BK), IntTuple(1, _CM_K)),
+        )
 
     return Layout(
         IntTuple(IntTuple(_CM_M, BM // _CM_M), IntTuple(_CM_K, BK // _CM_K)),
@@ -125,7 +149,8 @@ fn _rhs_layout[mma_shape: IndexList[3]]() -> Layout:
 
 
 fn _lhs_descriptor[
-    mma_shape: IndexList[3]
+    mma_shape: IndexList[3],
+    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](
     tensor: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
 ) -> WGMMADescriptor[tensor.dtype]:
@@ -140,24 +165,41 @@ fn _lhs_descriptor[
         "shared memory tile layout should have structure (rank-2, rank-2).",
     ]()
 
+    alias shape00 = layout[0].shape[0].value()
+    alias shape11 = layout[1].shape[1].value()
+
+    # General constraints for all swizzle types.
     constrained[
-        layout[0].shape[0].value() == 8 and layout[1].shape[1].value() % 2 == 0,
-        (
-            "shared memory tile layout should have shape ((8, _), (_, multiple"
-            " of 2))."
-        ),
+        shape00 == 8 and shape11 % 2 == 0,
+        "Tile shape must be ((8, _), (_, multiple of 2)).",
     ]()
 
-    # Ingore 4 LSB.
-    alias T = __type_of(tensor).dtype
-    alias SBO = (layout[0].stride[1].value() * sizeof[T]()) >> 4
-    alias LBO = (layout[1].stride[1].value() * sizeof[T]()) >> 4
+    alias type = __type_of(tensor).dtype
+    alias stride10 = layout[1].stride[0].value()
 
-    return WGMMADescriptor.create[SBO, LBO](tensor.ptr)
+    # Constraints for swizzle
+    @parameter
+    if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
+        alias stride_bytes = stride10 * sizeof[type]()
+        constrained[
+            stride_bytes != swizzle_mode.bytes(),
+            "Stride dim bytes "
+            + String(stride_bytes)
+            + " doesn't match "
+            + String(swizzle_mode),
+        ]()
+
+    # Ingore 4 LSB.
+    alias SBO = (layout[0].stride[1].value() * sizeof[type]()) >> 4
+    alias LBO = (layout[1].stride[1].value() * sizeof[type]()) >> 4
+
+    return WGMMADescriptor.create[SBO, LBO, swizzle_mode](tensor.ptr)
 
 
 fn _rhs_descriptor[
-    mma_shape: IndexList[3], transposed: Bool = False
+    mma_shape: IndexList[3],
+    transposed: Bool = False,
+    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](
     tensor: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
 ) -> WGMMADescriptor[tensor.dtype]:
@@ -169,7 +211,7 @@ fn _rhs_descriptor[
     # Transposed case is same to K-major A matrix.
     @parameter
     if transposed:
-        return _lhs_descriptor[mma_shape](tensor)
+        return _lhs_descriptor[mma_shape, swizzle_mode](tensor)
 
     return WGMMADescriptor.create[1, 8](tensor.ptr)
 
@@ -194,6 +236,9 @@ struct TensorCoreAsync[
     a_type: DType,
     b_type: DType,
     mma_shape: IndexList[3],
+    /,
+    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     transpose_b: Bool = False,
 ]:
     alias lhs_operand_type = LayoutTensor[
@@ -252,11 +297,17 @@ struct TensorCoreAsync[
             c_type, _, address_space = AddressSpace.LOCAL, *_, **_
         ],
     ):
-        a_desc = _lhs_descriptor[mma_shape](a_smem_tile)
-        b_desc = _rhs_descriptor[mma_shape, transpose_b](b_smem_tile)
+        a_desc = _lhs_descriptor[mma_shape, a_swizzle](a_smem_tile)
+        b_desc = _rhs_descriptor[mma_shape, transpose_b, b_swizzle](b_smem_tile)
 
         alias a_smem_layout = a_smem_tile.layout
         alias b_smem_layout = b_smem_tile.layout
+
+        # TODO: consider move SBO, LBO computation entirely into descriptor
+        alias a_sbo = a_smem_layout[0].stride[1].value() * sizeof[a_type]()
+        alias a_lbo = a_smem_layout[1].stride[1].value() * sizeof[a_type]()
+        alias b_sbo = b_smem_layout[0].stride[1].value() * sizeof[b_type]()
+        alias b_lbo = b_smem_layout[1].stride[1].value() * sizeof[b_type]()
 
         alias num_m_mmas = a_smem_layout[0].size() // mma_shape[0]
         alias num_n_mmas = b_smem_layout[0].size() // mma_shape[1]
@@ -270,16 +321,17 @@ struct TensorCoreAsync[
             "C fragments' size doesn't match the total number of wgmma.",
         ]()
 
-        alias a_wgmma_bytes = mma_shape[0] * mma_shape[2] * sizeof[a_type]()
-        alias b_wgmma_bytes = mma_shape[1] * mma_shape[2] * sizeof[b_type]()
+        # Number of core matrices in stride dim
+        alias a_num_CMs_stride_dim = mma_shape[0] // _CM_M
+        alias b_num_CMs_stride_dim = mma_shape[1] // _CM_N
 
         @parameter
         for m_mma in range(num_m_mmas):
-            a_desc_m = a_desc + m_mma * num_k_mmas * a_wgmma_bytes
+            a_desc_m = a_desc + m_mma * a_sbo * a_num_CMs_stride_dim
 
             @parameter
             for n_mma in range(num_n_mmas):
-                b_desc_n = b_desc + n_mma * num_k_mmas * b_wgmma_bytes
+                b_desc_n = b_desc + n_mma * b_sbo * b_num_CMs_stride_dim
 
                 alias mma_id = n_mma * num_m_mmas + m_mma
 
@@ -293,8 +345,8 @@ struct TensorCoreAsync[
                         b_type = _dtype(b_type),
                     ](a_desc_m, b_desc_n, c_frags[mma_id, 0])
 
-                    a_desc_m += a_wgmma_bytes
-                    b_desc_n += b_wgmma_bytes
+                    a_desc_m += a_lbo * 2
+                    b_desc_n += b_lbo * 2
 
     @staticmethod
     @always_inline

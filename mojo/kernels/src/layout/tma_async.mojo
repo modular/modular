@@ -368,10 +368,6 @@ def create_tma_tile[
     constrained[rank == 2, "Only suppot 2D TMA"]()
     constrained[is_k_major, "Only K major layout supported in TMA"]()
 
-    # constrained[
-    #     swizzle_mode in (TensorMapSwizzle.SWIZZLE_NONE, TensorMapSwizzle.SWIZZLE_128B),
-    #     "Swizzle is not yet supported in TMA",
-    # ]()
     @parameter
     if swizzle_mode == TensorMapSwizzle.SWIZZLE_128B:
         constrained[

@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: disabled
 
+from buffer import NDBuffer
 from os import abort
 from sys import bitwidthof
 from layout import *
@@ -13,6 +14,7 @@ from memory import UnsafePointer
 from collections import Optional
 from gpu.host import DeviceBuffer, DeviceContext
 from .int_tuple import product
+from utils.index import Index
 
 
 struct ManagedLayoutTensor[
@@ -83,6 +85,18 @@ struct ManagedLayoutTensor[
                 self.runtime_layout,
             )
 
+    fn device_buffer[update: Bool = True](self) raises -> NDBuffer[dtype, 2]:
+        @parameter
+        if update:
+            self._update_device()
+
+        constrained[layout.rank() == 2, "Only support exporting 2D NDBuffer."]()
+
+        M = self.runtime_layout.dim(0)
+        N = self.runtime_layout.dim(1)
+
+        return NDBuffer[dtype, 2](self.device_data.value().ptr, (M, N))
+
     fn tensor[update: Bool = True](self) raises -> LayoutTensor[dtype, layout]:
         @parameter
         if update:
@@ -98,6 +112,18 @@ struct ManagedLayoutTensor[
                 self.host_data,
                 self.runtime_layout,
             )
+
+    fn buffer[update: Bool = True](self) raises -> NDBuffer[dtype, 2]:
+        @parameter
+        if update:
+            self._update_host()
+
+        constrained[layout.rank() == 2, "Only support exporting 2D NDBuffer."]()
+
+        M = self.runtime_layout.dim(0)
+        N = self.runtime_layout.dim(1)
+
+        return NDBuffer[dtype, 2](self.host_data, (M, N))
 
     fn _update_device(self) raises:
         if self.ctx:
