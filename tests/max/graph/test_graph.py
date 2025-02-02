@@ -210,7 +210,7 @@ def test_invalid_operand() -> None:
         ],
     ) as graph:
         input_tensor = graph.inputs[0]
-        with pytest.raises(AssertionError):
+        with pytest.raises(ValueError):
             Graph.current._add_op(rmo.add, [2, 5], input_tensor)
         graph.output(input_tensor)
 
