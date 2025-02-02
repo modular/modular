@@ -140,6 +140,7 @@ struct MlirValue:
     var ptr: UnsafePointer[NoneType]
 
 
+@value
 @register_passable("trivial")
 struct MlirNamedAttribute:
     """Named MLIR attribute.
@@ -1155,6 +1156,7 @@ fn mlirOperationMoveBefore(op: MlirOperation, other: MlirOperation) -> None:
     return MLIR_func["mlirOperationMoveBefore", NoneType._mlir_type](op, other)
 
 
+@value
 @register_passable("trivial")
 struct MlirWalkResult:
     """Operation walk result."""
@@ -1162,11 +1164,12 @@ struct MlirWalkResult:
     var value: Int8
 
 
-alias MlirWalkResultAdvance = MlirWalkResult {value: 0}
-alias MlirWalkResultInterrupt = MlirWalkResult {value: 1}
-alias MlirWalkResultSkip = MlirWalkResult {value: 2}
+alias MlirWalkResultAdvance = MlirWalkResult(0)
+alias MlirWalkResultInterrupt = MlirWalkResult(1)
+alias MlirWalkResultSkip = MlirWalkResult(2)
 
 
+@value
 @register_passable("trivial")
 struct MlirWalkOrder:
     """Traversal order for operation walk."""
@@ -1174,8 +1177,8 @@ struct MlirWalkOrder:
     var value: Int8
 
 
-alias MlirWalkPreOrder = MlirWalkOrder {value: 0}
-alias MlirWalkPostOrder = MlirWalkOrder {value: 1}
+alias MlirWalkPreOrder = MlirWalkOrder(0)
+alias MlirWalkPostOrder = MlirWalkOrder(1)
 
 # Operation walker type. The handler is passed an (opaque) reference to an
 # operation and a pointer to a `userData`.

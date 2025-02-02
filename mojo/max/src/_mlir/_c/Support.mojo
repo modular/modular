@@ -98,6 +98,7 @@ fn mlirStringRefEqual(string: MlirStringRef, other: MlirStringRef) -> Bool:
 # ===----------------------------------------------------------------------===//
 
 
+@value
 @register_passable("trivial")
 struct MlirLogicalResult:
     """A logical result value, essentially a boolean with named states. LLVM

@@ -98,7 +98,7 @@ struct DiagnosticHandler[handler: fn (Diagnostic) -> Bool]:
         diagnostic: Diagnostic.cType, user_data: UnsafePointer[NoneType]
     ) -> _c.Support.MlirLogicalResult:
         var result = handler(diagnostic)
-        return MlirLogicalResult {value: 1 if result else 0}
+        return MlirLogicalResult(1 if result else 0)
 
 
 @value
@@ -143,7 +143,7 @@ struct DiagnosticHandlerWithData[
     ) -> _c.Support.MlirLogicalResult:
         var ptr = user_data.bitcast[UserDataType]()
         var result = handler(diagnostic, ptr[])
-        return MlirLogicalResult {value: 1 if result else 0}
+        return MlirLogicalResult(1 if result else 0)
 
 
 struct ErrorCapturingDiagnosticHandler:

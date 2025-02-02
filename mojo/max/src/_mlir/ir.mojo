@@ -347,7 +347,7 @@ struct NamedAttribute(CollectionElement):
         self.attr = Attribute(attr.attribute)
 
     fn c(self) -> Self.cType:
-        return Self.cType {name: self.name.c, attribute: self.attr.c}
+        return Self.cType(self.name.c, self.attr.c)
 
     # TODO: tuple init so we can write these a bit less verbosely.
 

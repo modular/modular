@@ -43,6 +43,7 @@ struct MlirDiagnostic:
     var ptr: UnsafePointer[NoneType]
 
 
+@value
 @register_passable("trivial")
 struct MlirDiagnosticSeverity:
     """Severity of a diagnostic."""
@@ -50,10 +51,10 @@ struct MlirDiagnosticSeverity:
     var value: Int8
 
 
-alias MlirDiagnosticError = MlirDiagnosticSeverity {value: 0}
-alias MlirDiagnosticWarning = MlirDiagnosticSeverity {value: 1}
-alias MlirDiagnosticNote = MlirDiagnosticSeverity {value: 2}
-alias MlirDiagnosticRemark = MlirDiagnosticSeverity {value: 3}
+alias MlirDiagnosticError = MlirDiagnosticSeverity(0)
+alias MlirDiagnosticWarning = MlirDiagnosticSeverity(1)
+alias MlirDiagnosticNote = MlirDiagnosticSeverity(2)
+alias MlirDiagnosticRemark = MlirDiagnosticSeverity(3)
 
 # Diagnostic handler type. Accepts a reference to a diagnostic, which is only
 # guaranteed to be live during the call. The handler is passed the `userData`
