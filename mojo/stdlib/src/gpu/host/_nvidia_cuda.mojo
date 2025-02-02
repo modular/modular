@@ -144,6 +144,14 @@ struct TensorMapSwizzle(Stringable, Writable):
         return self._value == other._value
 
     @always_inline
+    fn __ne__(self, other: Self) -> Bool:
+        return self._value != other._value
+
+    @always_inline
+    fn bytes(self) -> Int:
+        return Int((2**self._value) * 16)
+
+    @always_inline
     fn __str__(self) -> String:
         return String.write(self)
 

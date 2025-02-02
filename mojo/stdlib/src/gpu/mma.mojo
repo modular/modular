@@ -9,6 +9,7 @@ warp-matrix-matrix-multiplication (wmma) instructions."""
 from sys import _RegisterPackType, llvm_intrinsic, sizeof
 from sys._assembly import inlined_assembly
 
+from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.memory import AddressSpace
 from memory import UnsafePointer, bitcast
 
@@ -534,13 +535,25 @@ struct WGMMADescriptor[dtype: DType]:
 
     @staticmethod
     fn create[
-        stride_byte_offset: Int, leading_byte_offset: Int, swizzle_mode: Int = 0
+        stride_byte_offset: Int,
+        leading_byte_offset: Int,
+        swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     ](
         smem_ptr: UnsafePointer[
             Scalar[dtype], address_space = AddressSpace.SHARED
         ],
     ) -> Self:
-        var swizzle = Int64(swizzle_mode)
+        # TMA enumerates no swizzle, 32, 64, 128B as 0, 1, 2, 3.
+        # WGMMA enumerates these as 0, 3, 2, 1.
+        @parameter
+        fn _convert_swizzle_enum[mode: Int32]() -> Int64:
+            @parameter
+            if mode == 0:
+                return mode.cast[DType.int64]()
+            else:
+                return (4 - mode).cast[DType.int64]()
+
+        alias swizzle = _convert_swizzle_enum[swizzle_mode._value]()
         var offset = Int64(0)
         var stride_dim = Int64(stride_byte_offset)
         var lead_dim = Int64(leading_byte_offset)
