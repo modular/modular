@@ -66,7 +66,7 @@ def _repack_then_matmul(
         # Quantized matmul for supported quantized encoding types.
         # rhs is uint8 and in a packed format such as Q4_0, Q4_K, or Q6_K.
         if rhs[0].dtype is not DType.uint8:
-            raise TypeError(f"Right-hand side must be uint8, but got {rhs=}")
+            raise TypeError(f"Right-hand side must be uint8, but got {rhs[0]=}")
         dtype = MODE_TO_DTYPE[mode]
         if lhs.dtype is not dtype:
             raise TypeError(
@@ -74,7 +74,9 @@ def _repack_then_matmul(
             )
 
         if len(rhs[0].shape) != 2:
-            raise TypeError(f"Right-hand side must be a matrix, but got {rhs=}")
+            raise TypeError(
+                f"Right-hand side must be a matrix, but got {rhs[0]=}"
+            )
 
         # Reshape LHS to a matrix, which is expected by the q4_0 matmul op.
         lhs_matrix = lhs.reshape((-1, lhs.shape[-1]))
