@@ -21,6 +21,7 @@ fn call_me() -> Float32:
     return 1.0
 
 
+@value
 @register_passable("trivial")
 struct RegIntPair:
     var first: Int
@@ -36,7 +37,7 @@ fn first_reg(pair: RegIntPair) -> Int:
 # CHECK: extern void make_reg_pair(ssize_t, ssize_t, ssize_t *, ssize_t *);
 @export(ABI="C")
 fn make_reg_pair(first: Int, second: Int) -> RegIntPair:
-    return RegIntPair {first: first, second: second}
+    return RegIntPair(first, second)
 
 
 # This is a memory only type.
