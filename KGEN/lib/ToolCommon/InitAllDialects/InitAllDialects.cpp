@@ -27,6 +27,7 @@
 #include "mlir/Dialect/LLVMIR/NVVMDialect.h"
 #include "mlir/Dialect/LLVMIR/ROCDLDialect.h"
 #include "mlir/Dialect/LLVMIR/Transforms/InlinerInterfaceImpl.h"
+#include "mlir/Dialect/UB/IR/UBOps.h"
 #include "mlir/IR/DialectRegistry.h"
 
 using namespace M;
@@ -256,7 +257,8 @@ void M::registerAllKGENDialects(mlir::DialectRegistry &registry) {
       mlir::index::IndexDialect,
       mlir::LLVM::LLVMDialect,
       mlir::NVVM::NVVMDialect,
-      mlir::ROCDL::ROCDLDialect
+      mlir::ROCDL::ROCDLDialect,
+      mlir::ub::UBDialect
       // clang-format on
       >();
 
@@ -279,7 +281,8 @@ void M::preloadAllKGENDialects(MLIRContext *ctx) {
       mlir::index::IndexDialect,
       mlir::LLVM::LLVMDialect,
       mlir::NVVM::NVVMDialect,
-      mlir::ROCDL::ROCDLDialect
+      mlir::ROCDL::ROCDLDialect,
+      mlir::ub::UBDialect
       // clang-format on
       >();
 }

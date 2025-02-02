@@ -32,16 +32,16 @@ fn noalias(a0: UnsafePointer[Float32], b: UnsafePointer[Float32]) -> Float32:
 
 # MOCO-914: potentially mutable references are non-aliasing.
 # CHECK-LABEL: @any_life(
-# CHECK-SAME: ptr noalias nocapture noundef nonnull readnone %0,
-# CHECK-SAME: ptr noalias nocapture noundef nonnull readnone %1)
+# CHECK-SAME: ptr noalias noundef nonnull readnone captures(none) %0,
+# CHECK-SAME: ptr noalias noundef nonnull readnone captures(none) %1)
 @export
 fn any_life[life: MutableOrigin](ref [life]r: Int, mut x: Int):
     pass
 
 
 # CHECK-LABEL: @imm_life(
-# CHECK-SAME: ptr nocapture noundef nonnull readnone %0,
-# CHECK-SAME: ptr noalias nocapture noundef nonnull readnone %1)
+# CHECK-SAME: ptr noundef nonnull readnone captures(none) %0,
+# CHECK-SAME: ptr noalias noundef nonnull readnone captures(none) %1)
 @export
 fn imm_life[life: ImmutableOrigin](ref [life]r: Int, mut x: Int):
     pass

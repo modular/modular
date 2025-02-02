@@ -12,6 +12,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/UB/IR/UBOps.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "mlir/Transforms/Passes.h"
 
@@ -19,9 +20,9 @@ using namespace M;
 
 int main(int argc, char **argv) {
   DialectRegistry registry;
-  registry
-      .insert<mlir::func::FuncDialect, mlir::index::IndexDialect,
-              mlir::LLVM::LLVMDialect, DebugInfo::DebugInfoDialect, MDialect>();
+  registry.insert<mlir::func::FuncDialect, mlir::index::IndexDialect,
+                  mlir::LLVM::LLVMDialect, DebugInfo::DebugInfoDialect,
+                  MDialect, mlir::ub::UBDialect>();
   mlir::registerCanonicalizer();
   DebugInfo::registerDebugInfoToLLVMPass();
   DebugInfo::registerTransformsPasses();

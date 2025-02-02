@@ -793,6 +793,7 @@ modular_cc_library(
         "//Support:MDialect",
         "//Support:Threading",
         "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:CopyOpInterface",
         "@llvm-project//mlir:IR",
     ],
 )
@@ -1009,6 +1010,7 @@ modular_cc_library(
         "@llvm-project//mlir:CAPIIRHeaders",
         "@llvm-project//mlir:CAPITransformsHeaders",
         "@llvm-project//mlir:IndexDialect",
+        "@llvm-project//mlir:NVVMDialect",
         "@llvm-project//mlir:ROCDLDialect",
         "@llvm-project//mlir:TransformUtils",
     ],
@@ -1027,6 +1029,7 @@ modular_cc_library(
         "//AsyncRT:CompilerSupport",
         "//Cache",
         "@llvm-project//mlir:IndexDialect",
+        "@llvm-project//mlir:NVVMDialect",
         "@llvm-project//mlir:ROCDLDialect",
     ],
 )
@@ -1186,6 +1189,7 @@ modular_cc_library(
         "@llvm-project//mlir:BytecodeWriter",
         "@llvm-project//mlir:ConversionPasses",
         "@llvm-project//mlir:IndexDialect",
+        "@llvm-project//mlir:LLVMIRTransforms",
         "@llvm-project//mlir:LLVMToLLVMIRTranslation",
         "@llvm-project//mlir:NVVMToLLVMIRTranslation",
         "@llvm-project//mlir:ROCDLToLLVMIRTranslation",
@@ -1250,7 +1254,7 @@ modular_shared_library(
         "//Support:CrashReporting",
         "//Support:Globals",
         "@llvm-project//lldb:liblldb.wrapper",
-        "@llvm-project//lldb:lldb20.0.0git",
+        "@llvm-project//lldb:lldb21.0.0git",
         "@llvm-project//llvm:ExecutionEngine",
         "@llvm-project//llvm:MCJIT",
     ],
@@ -1313,6 +1317,6 @@ modular_shared_library(
         ":MojoLLDBPublicHeaders",
         ":MojoTooling",
         "@llvm-project//lldb:liblldb.wrapper",
-        "@llvm-project//lldb:lldb20.0.0git",
+        "@llvm-project//lldb:lldb21.0.0git",
     ],
 )
