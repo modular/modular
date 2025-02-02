@@ -22,20 +22,20 @@ fn test_partition():
     alias micro_kernel_f_size = micro_kernel_width * simd_size
     alias num_threads = 8
 
-    var conv_shape = ConvShape[2] {
-        n: 1,
-        input_dims: Index(56, 56),
-        output_dims: Index(56, 56),
-        filter_dims: Index(3, 3),
-        c: 64,
-        f: 64,
-        stride: Index(1, 1),
-        dilation: Index(1, 1),
-        pad_d: Index(0, 0),
-        pad_h: Index(1, 1),
-        pad_w: Index(1, 1),
-        num_groups: 1,
-    }
+    var conv_shape = ConvShape[2](
+        n=1,
+        input_dims=Index(56, 56),
+        output_dims=Index(56, 56),
+        filter_dims=Index(3, 3),
+        c=64,
+        f=64,
+        stride=Index(1, 1),
+        dilation=Index(1, 1),
+        pad_d=Index(0, 0),
+        pad_h=Index(1, 1),
+        pad_w=Index(1, 1),
+        num_groups=1,
+    )
 
     # Matmul dimensions
     var num_partitions = get_conv_num_partitions[

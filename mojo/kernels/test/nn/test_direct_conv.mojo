@@ -57,20 +57,20 @@ fn test[
     var WO = (W + pad_w[0] + pad_w[1] - dilation[1] * (S - 1) - 1) // stride[1] + 1
     # fmt: on
 
-    var conv_shape = ConvShape[2] {
-        n: N,
-        input_dims: Index(H, W),
-        output_dims: Index(HO, WO),
-        filter_dims: Index(R, S),
-        c: C,
-        f: F,
-        stride: stride,
-        dilation: dilation,
-        pad_d: Index(0, 0),
-        pad_h: pad_h,
-        pad_w: pad_w,
-        num_groups: num_groups,
-    }
+    var conv_shape = ConvShape[2](
+        n=N,
+        input_dims=Index(H, W),
+        output_dims=Index(HO, WO),
+        filter_dims=Index(R, S),
+        c=C,
+        f=F,
+        stride=stride,
+        dilation=dilation,
+        pad_d=Index(0, 0),
+        pad_h=pad_h,
+        pad_w=pad_w,
+        num_groups=num_groups,
+    )
 
     var input_ptr = UnsafePointer[Scalar[type]].alloc(N * H * W * C)
     var filter_ptr = UnsafePointer[Scalar[type]].alloc(R * S * C * F)

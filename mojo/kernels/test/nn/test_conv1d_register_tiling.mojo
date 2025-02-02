@@ -59,20 +59,20 @@ fn conv1d_register_tiling(
     f_tile_size: Int,
     wo: Int,
 ):
-    var conv_shape = ConvShape[2] {
-        n: N,
-        input_dims: Index(H, W),
-        output_dims: Index(HO, WO),
-        filter_dims: Index(R, S),
-        c: C,
-        f: F,
-        stride: Index(stride_h, stride_w),
-        dilation: Index(dilation_h, dilation_w),
-        pad_d: Index(0, 0),
-        pad_h: Index(pad_bottom, pad_top),
-        pad_w: Index(pad_left, pad_right),
-        num_groups: 1,
-    }
+    var conv_shape = ConvShape[2](
+        n=N,
+        input_dims=Index(H, W),
+        output_dims=Index(HO, WO),
+        filter_dims=Index(R, S),
+        c=C,
+        f=F,
+        stride=Index(stride_h, stride_w),
+        dilation=Index(dilation_h, dilation_w),
+        pad_d=Index(0, 0),
+        pad_h=Index(pad_bottom, pad_top),
+        pad_w=Index(pad_left, pad_right),
+        num_groups=1,
+    )
 
     conv1d_update_wo_tile[
         micro_kernel_height,

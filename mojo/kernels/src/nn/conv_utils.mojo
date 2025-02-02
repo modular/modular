@@ -41,6 +41,7 @@ alias elementwise_epilogue_type = fn[rank: Int] (
 # ===----------------------------------------------------------------------=== #
 
 
+@value
 @register_passable("trivial")
 struct ConvShape[rank: Int]:
     """A shape struct describing the convolution dimensions."""
@@ -291,20 +292,20 @@ fn get_conv_shape[
         else:
             filter_dims[i] = filter.dim[i]()
 
-    return ConvShape[rank] {
-        n: input.dim[0](),
-        input_dims: input_dims,
-        output_dims: output_dims,
-        filter_dims: filter_dims,
-        c: input.dim[rank + 1](),
-        f: output.dim[rank + 1](),
-        stride: stride,
-        dilation: dilation,
-        pad_d: pad_d,
-        pad_h: pad_h,
-        pad_w: pad_w,
-        num_groups: num_groups,
-    }
+    return ConvShape[rank](
+        n=input.dim[0](),
+        input_dims=input_dims,
+        output_dims=output_dims,
+        filter_dims=filter_dims,
+        c=input.dim[rank + 1](),
+        f=output.dim[rank + 1](),
+        stride=stride,
+        dilation=dilation,
+        pad_d=pad_d,
+        pad_h=pad_h,
+        pad_w=pad_w,
+        num_groups=num_groups,
+    )
 
 
 fn get_conv2d_shape[
@@ -330,20 +331,20 @@ fn get_conv2d_shape[
         "only support NHWC and RSCF layout for conv2D.",
     ]()
 
-    return ConvShape[2] {
-        n: input.dim[0](),
-        input_dims: Index(input.dim[1](), input.dim[2]()),
-        output_dims: Index(output.dim[1](), output.dim[2]()),
-        filter_dims: Index(filter.dim[0](), filter.dim[1]()),
-        c: input.dim[3](),
-        f: output.dim[3](),
-        stride: stride,
-        dilation: dilation,
-        pad_d: Index(0, 0),
-        pad_h: pad_h,
-        pad_w: pad_w,
-        num_groups: num_groups,
-    }
+    return ConvShape[2](
+        n=input.dim[0](),
+        input_dims=Index(input.dim[1](), input.dim[2]()),
+        output_dims=Index(output.dim[1](), output.dim[2]()),
+        filter_dims=Index(filter.dim[0](), filter.dim[1]()),
+        c=input.dim[3](),
+        f=output.dim[3](),
+        stride=stride,
+        dilation=dilation,
+        pad_d=Index(0, 0),
+        pad_h=pad_h,
+        pad_w=pad_w,
+        num_groups=num_groups,
+    )
 
 
 fn get_conv2d_shape[
@@ -378,20 +379,20 @@ fn get_conv2d_shape[
     else:
         filter_dims = Index(filter.dim[1](), filter.dim[2]())
 
-    return ConvShape[2] {
-        n: input.dim[0](),
-        input_dims: Index(input.dim[1](), input.dim[2]()),
-        output_dims: Index(output.dim[1](), output.dim[2]()),
-        filter_dims: filter_dims,
-        c: input.dim[3](),
-        f: output.dim[3](),
-        stride: stride,
-        dilation: dilation,
-        pad_d: Index(0, 0),
-        pad_h: pad_h,
-        pad_w: pad_w,
-        num_groups: num_groups,
-    }
+    return ConvShape[2](
+        n=input.dim[0](),
+        input_dims=Index(input.dim[1](), input.dim[2]()),
+        output_dims=Index(output.dim[1](), output.dim[2]()),
+        filter_dims=filter_dims,
+        c=input.dim[3](),
+        f=output.dim[3](),
+        stride=stride,
+        dilation=dilation,
+        pad_d=Index(0, 0),
+        pad_h=pad_h,
+        pad_w=pad_w,
+        num_groups=num_groups,
+    )
 
 
 @always_inline
@@ -873,16 +874,16 @@ fn get_partition(
         task_id_howo, num_partitions[3], work_load, work_unit
     )
 
-    return ConvPartition {
-        ng_offset: ng_range[0],
-        ng_size: ng_range[1],
-        f_offset: f_range[0],
-        f_size: f_range[1],
-        ho_or_howo_offset: howo_range[0],
-        ho_or_howo_size: howo_range[1],
-        c_offset: c_range[0],
-        c_size: c_range[1],
-    }
+    return ConvPartition(
+        ng_offset=ng_range[0],
+        ng_size=ng_range[1],
+        f_offset=f_range[0],
+        f_size=f_range[1],
+        ho_or_howo_offset=howo_range[0],
+        ho_or_howo_size=howo_range[1],
+        c_offset=c_range[0],
+        c_size=c_range[1],
+    )
 
 
 # ===-----------------------------------------------------------------------===#

@@ -68,20 +68,20 @@ fn static_conv(
         DimList(num_micro_tile, R, S, C, micro_kernel_f_size),
     ],
 ):
-    var conv_shape = ConvShape[2] {
-        n: N,
-        input_dims: Index(H, W),
-        output_dims: Index(HO, WO),
-        filter_dims: Index(R, S),
-        c: C,
-        f: F,
-        stride: Index(stride_h, stride_w),
-        dilation: Index(dilation_h, dilation_w),
-        pad_d: Index(0, 0),
-        pad_h: Index(pad_bottom, pad_top),
-        pad_w: Index(pad_left, pad_right),
-        num_groups: num_groups,
-    }
+    var conv_shape = ConvShape[2](
+        n=N,
+        input_dims=Index(H, W),
+        output_dims=Index(HO, WO),
+        filter_dims=Index(R, S),
+        c=C,
+        f=F,
+        stride=Index(stride_h, stride_w),
+        dilation=Index(dilation_h, dilation_w),
+        pad_d=Index(0, 0),
+        pad_h=Index(pad_bottom, pad_top),
+        pad_w=Index(pad_left, pad_right),
+        num_groups=num_groups,
+    )
 
     var tile_size = get_conv_tile_shape[value_type](
         C, R * S, micro_kernel_shape[1]

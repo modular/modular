@@ -131,20 +131,20 @@ fn test_conv_transposed[
         pad_h = Index(pad[2], pad[3])
         pad_w = Index(pad[4], pad[5])
 
-    var conv_shape = ConvShape[rank] {
-        n: N,
-        input_dims: input_dims,
-        output_dims: output_dims,
-        filter_dims: filter_dims,
-        c: C,
-        f: F,
-        stride: stride,
-        dilation: dilation,
-        pad_d: pad_d,
-        pad_h: pad_h,
-        pad_w: pad_w,
-        num_groups: num_groups,
-    }
+    var conv_shape = ConvShape[rank](
+        n=N,
+        input_dims=input_dims,
+        output_dims=output_dims,
+        filter_dims=filter_dims,
+        c=C,
+        f=F,
+        stride=stride,
+        dilation=dilation,
+        pad_d=pad_d,
+        pad_h=pad_h,
+        pad_w=pad_w,
+        num_groups=num_groups,
+    )
 
     var C_per_group = C // num_groups
 

@@ -51,20 +51,20 @@ fn test[
     alias H = 1
     alias R = 1
 
-    var conv_shape = ConvShape[1] {
-        n: N,
-        input_dims: Index(W),
-        output_dims: Index(WO),
-        filter_dims: Index(S),
-        c: C,
-        f: F,
-        stride: stride,
-        dilation: dilation,
-        pad_d: Index(0, 0),
-        pad_h: Index(0, 0),
-        pad_w: pad_w,
-        num_groups: num_groups,
-    }
+    var conv_shape = ConvShape[1](
+        n=N,
+        input_dims=Index(W),
+        output_dims=Index(WO),
+        filter_dims=Index(S),
+        c=C,
+        f=F,
+        stride=stride,
+        dilation=dilation,
+        pad_d=Index(0, 0),
+        pad_h=Index(0, 0),
+        pad_w=pad_w,
+        num_groups=num_groups,
+    )
 
     var C_per_group = C // num_groups
 

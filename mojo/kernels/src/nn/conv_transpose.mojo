@@ -329,16 +329,16 @@ fn get_partition(
         task_id_howo, num_partitions[3], conv_shape.h(), 1
     )
 
-    return ConvPartition {
-        ng_offset: ng_range[0],
-        ng_size: ng_range[1],
-        f_offset: f_range[0],
-        f_size: f_range[1],
-        ho_or_howo_offset: howo_range[0],
-        ho_or_howo_size: howo_range[1],
-        c_offset: c_range[0],
-        c_size: c_range[1],
-    }
+    return ConvPartition(
+        ng_offset=ng_range[0],
+        ng_size=ng_range[1],
+        f_offset=f_range[0],
+        f_size=f_range[1],
+        ho_or_howo_offset=howo_range[0],
+        ho_or_howo_size=howo_range[1],
+        c_offset=c_range[0],
+        c_size=c_range[1],
+    )
 
 
 # ===----------------------------------------------------------------------=== #

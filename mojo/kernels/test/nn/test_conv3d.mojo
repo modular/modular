@@ -62,20 +62,20 @@ fn test[
     var WO = (W + pad_w[0] + pad_w[1] - dilation[2] * (S - 1) - 1) // stride[2] + 1
     # fmt: on
 
-    var conv_shape = ConvShape[3] {
-        n: N,
-        input_dims: DHW,
-        output_dims: Index(DO, HO, WO),
-        filter_dims: QRS,
-        c: C,
-        f: F,
-        stride: stride,
-        dilation: dilation,
-        pad_d: pad_d,
-        pad_h: pad_h,
-        pad_w: pad_w,
-        num_groups: num_groups,
-    }
+    var conv_shape = ConvShape[3](
+        n=N,
+        input_dims=DHW,
+        output_dims=Index(DO, HO, WO),
+        filter_dims=QRS,
+        c=C,
+        f=F,
+        stride=stride,
+        dilation=dilation,
+        pad_d=pad_d,
+        pad_h=pad_h,
+        pad_w=pad_w,
+        num_groups=num_groups,
+    )
 
     var C_per_group = C // num_groups
 

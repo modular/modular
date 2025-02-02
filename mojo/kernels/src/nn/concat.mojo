@@ -114,10 +114,7 @@ struct _Span:
 
     @always_inline("nodebug")
     fn intersect(self, other: Self) -> Self:
-        return Self {
-            start: max(self.start, other.start),
-            end: min(self.end, other.end),
-        }
+        return Self(max(self.start, other.start), min(self.end, other.end))
 
 
 @value
