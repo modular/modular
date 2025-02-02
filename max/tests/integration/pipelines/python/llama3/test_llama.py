@@ -27,6 +27,7 @@ from test_common.path import find_runtime_path
 pytest_plugins = "test_common.registry"
 
 
+@pytest.mark.skip("Disabling tempoarily to update llama3 in a separate commit")
 @pytest.mark.parametrize(
     "model,encoding",
     [

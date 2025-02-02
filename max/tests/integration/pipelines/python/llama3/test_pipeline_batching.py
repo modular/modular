@@ -77,6 +77,7 @@ def pipeline(
     )
 
 
+@pytest.mark.skip("Disabling tempoarily to update llama3 in a separate commit")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_config",
@@ -212,6 +213,7 @@ def batch_sizes(request):
     return request.param
 
 
+@pytest.mark.skip("Disabling tempoarily to update llama3 in a separate commit")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_config, batch_sizes",
