@@ -133,14 +133,14 @@ fn _compile_info_non_failable_impl[
         _type=_Info,
     ]()
 
-    var result = Info[func_type, func] {
-        asm: offload.asm,
-        function_name: get_linkage_name[target, func](),
-        module_name: _hash_module_name(offload.asm),
-        num_captures: offload.num_captures,
-        error_msg: "",
-        is_error: False,
-    }
+    var result = Info[func_type, func](
+        offload.asm,
+        get_linkage_name[target, func](),
+        _hash_module_name(offload.asm),
+        offload.num_captures,
+        "",
+        False,
+    )
     return result
 
 
