@@ -271,6 +271,7 @@ struct Task[type: AnyType, origins: OriginSet]:
 # ===-----------------------------------------------------------------------===#
 
 
+@value
 @register_passable("trivial")
 struct TaskGroupContext:
     alias tg_callback_fn_type = fn (mut TaskGroup) -> None
@@ -363,10 +364,10 @@ struct TaskGroup:
         # TODO(MOCO-771): Enforce that `task.origins` is a subset of
         # `Self.origins`.
         self.counter += 1
-        task._get_ctx[TaskGroupContext]()[] = TaskGroupContext {
-            callback: Self._task_complete_callback,
-            task_group: UnsafePointer[Self].address_of(self),
-        }
+        task._get_ctx[TaskGroupContext]()[] = TaskGroupContext(
+            Self._task_complete_callback,
+            UnsafePointer[Self].address_of(self),
+        )
         _async_execute[task.type](task._handle, desired_worker_id)
         self.tasks.append(_TaskGroupBox(task^))
 
