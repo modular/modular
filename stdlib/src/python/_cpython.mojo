@@ -449,7 +449,7 @@ struct PyType_Slot:
 
     @staticmethod
     fn null() -> Self:
-        return PyType_Slot {slot: 0, pfunc: OpaquePointer()}
+        return PyType_Slot(0, OpaquePointer())
 
 
 @value
@@ -1055,12 +1055,12 @@ struct CPython:
         )
 
         _ = v
-        return PyKeysValuePair {
-            key: key,
-            value: value,
-            position: position.take_pointee(),
-            success: result == 1,
-        }
+        return PyKeysValuePair(
+            key,
+            value,
+            position.take_pointee(),
+            result == 1,
+        )
 
     # ===-------------------------------------------------------------------===#
     # Python Module operations

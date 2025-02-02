@@ -107,15 +107,15 @@ fn python_type_object[
     # Zeroed item terminator
     slots.append(PyType_Slot.null())
 
-    var type_spec = PyType_Spec {
+    var type_spec = PyType_Spec(
         # FIXME(MOCO-1306): This should be `T.__name__`.
-        name: type_name.unsafe_cstr_ptr(),
-        basicsize: sizeof[PyMojoObject[T]](),
-        itemsize: 0,
-        flags: Py_TPFLAGS_DEFAULT,
+        type_name.unsafe_cstr_ptr(),
+        sizeof[PyMojoObject[T]](),
+        0,
+        Py_TPFLAGS_DEFAULT,
         # Note: This pointer is only "read-only" by PyType_FromSpec.
-        slots: slots.unsafe_ptr(),
-    }
+        slots.unsafe_ptr(),
+    )
 
     # Construct a Python 'type' object from our type spec.
     var type_obj = cpython.PyType_FromSpec(UnsafePointer.address_of(type_spec))
