@@ -261,11 +261,9 @@ struct TiledMatmul[
             if elementwise_epilogue_enabled and last_k_tile:
                 self.elementwise_epilogue_fn(
                     global_offset + GemmShape(row_offset, 0, 0),
-                    GemmShape {
-                        M: tile_kernel_rows,
-                        N: sub_tile_n_k[0],
-                        K: sub_tile_n_k[1],
-                    },
+                    GemmShape(
+                        tile_kernel_rows, sub_tile_n_k[0], sub_tile_n_k[1]
+                    ),
                 )
 
         @parameter
