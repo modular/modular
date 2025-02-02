@@ -132,7 +132,7 @@ struct ComplexSIMD[type: DType, size: Int](Stringable, Writable):
         Returns:
             A sum of this and RHS complex values.
         """
-        return Self {re: self.re + rhs.re, im: self.im + rhs.im}
+        return Self(self.re + rhs.re, self.im + rhs.im)
 
     @always_inline
     fn __mul__(self, rhs: Self) -> Self:
