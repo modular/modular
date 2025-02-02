@@ -375,7 +375,7 @@ struct _RepOutOfLine(Writable, EqualityComparable):
         constrained[
             is_little_endian(),
             (
-                "the out of line representation is only implemetned on little"
+                "the out of line representation is only implemented on little"
                 " endian systems"
             ),
         ]()
@@ -465,18 +465,15 @@ struct _RepOutOfLine(Writable, EqualityComparable):
         Returns:
           A new copy of the representation.
         """
-        var dims_copy = UnsafePointer[Scalar[DType.index]].alloc(
-            self.get_rank()
-        )
-        memcpy(dims_copy, self.dims, self.get_rank())
+        var result = Self()
+        result.dims = UnsafePointer[Scalar[DType.index]].alloc(self.get_rank())
+        memcpy(result.dims, self.dims, self.get_rank())
 
-        return Self {
-            dims: dims_copy,
-            _padding: self._padding,
-            rep_kind: self.rep_kind,
-            rank: self.rank,
-            auxillary: self.auxillary,
-        }
+        result._padding = self._padding
+        result.rep_kind = self.rep_kind
+        result.rank = self.rank
+        result.auxillary = self.auxillary
+        return result^
 
     @always_inline
     fn __repr__(self) -> String:
