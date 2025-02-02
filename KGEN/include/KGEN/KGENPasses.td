@@ -41,6 +41,7 @@ def Canonicalizer : Pass<"canonicalizer"> {
     "mlir::NVVM::NVVMDialect",
     "mlir::ROCDL::ROCDLDialect",
     "mlir::index::IndexDialect",
+    "mlir::ub::UBDialect",
   ];
 }
 
@@ -184,6 +185,7 @@ def LowerAsyncFunctions : Pass<"lower-async-functions", "ModuleOp"> {
     "POPDialect",
     "KGENDialect",
     "mlir::index::IndexDialect",
+    "mlir::ub::UBDialect",
   ];
 }
 
@@ -245,6 +247,7 @@ def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "ModuleOp"> {
     "mlir::NVVM::NVVMDialect",
     "mlir::ROCDL::ROCDLDialect",
     "mlir::index::IndexDialect",
+    "mlir::ub::UBDialect",
     "DebugInfo::DebugInfoDialect"
   ];
 
@@ -348,6 +351,7 @@ def ElaborateGenerators : Pass<"elaborate-generators", "ModuleOp"> {
     "mlir::NVVM::NVVMDialect",
     "mlir::ROCDL::ROCDLDialect",
     "mlir::index::IndexDialect",
+    "mlir::ub::UBDialect",
   ];
 
   let options = [
@@ -418,6 +422,7 @@ def ResolveCompilerPromises : Pass<"resolve-compiler-promises", "ModuleOp"> {
   let dependentDialects = [
     "MDialect",
     "mlir::index::IndexDialect",
+    "mlir::ub::UBDialect",
   ];
 }
 

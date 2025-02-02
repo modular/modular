@@ -701,6 +701,7 @@ Function *MojoDWARFParser::ParseFunctionFromDWARF(CompileUnit &comp_unit,
       func = std::make_shared<Function>(&comp_unit,
                                         funcUID, // UserID is the DIE offset
                                         funcUID, funcName, funcType,
+                                        funcRange.front().GetBaseAddress(),
                                         funcRange); // first address range
 
       if (func.get() != nullptr) {
