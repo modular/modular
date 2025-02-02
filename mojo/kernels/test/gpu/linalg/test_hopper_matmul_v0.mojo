@@ -115,7 +115,7 @@ fn test_hopper_matmul0_tma_wgmma_kernel[
     _ = c_reg_tile.fill(0.0)
 
     wgmma_op = TensorCoreAsync[
-        accum_type, a_type, b_type, wgmma_shape, transpose_b
+        accum_type, a_type, b_type, wgmma_shape, transpose_b=transpose_b
     ]()
 
     alias a_expected_bytes = a_smem_layout.size() * sizeof[a_type]()
