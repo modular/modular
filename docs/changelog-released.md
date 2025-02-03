@@ -11,15 +11,6 @@ To check your current version, run `mojo --version`. To update the version of
 Mojo for your project with the `magic` package manager, follow the instructions
 in [Update a package](/magic#update-a-package) to update the `max` package.
 
-:::caution Switch to Magic
-
-The `modular` command-line tool is deprecated (see [how to uninstall
-it](/max/faq#if-you-installed-with-modular-deprecated-1)). We recommend that
-you now [manage your packages with `magic`](/magic), but you can also [use
-conda](/magic/conda).
-
-:::
-
 ## v24.6 (2024-12-17)
 
 ### ✨ Highlights
