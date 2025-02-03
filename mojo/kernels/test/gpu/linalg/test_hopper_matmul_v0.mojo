@@ -184,6 +184,7 @@ fn test_hopper_matmul0_tma_wgmma_kernel[
 
 
 def test_hopper_matmul0_tma_wgmma[
+    wgmma_n: Int,
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -193,7 +194,7 @@ def test_hopper_matmul0_tma_wgmma[
     var N = n.value
     var K = k.value
 
-    print(M, "x", N, "x", K)
+    print("wgmma_n", wgmma_n, " : ", M, "x", N, "x", K)
 
     alias static_a_shape = DimList(m.dim, k.dim)
     alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
@@ -242,8 +243,8 @@ def test_hopper_matmul0_tma_wgmma[
     var b = from_ndbuffer_row_major(b_device.tensor)
     var c = from_ndbuffer_row_major(c_device.tensor)
 
-    alias block_tile_shape = Index(64, 8, 32)
-    alias wgmma_shape = Index(64, 8, 16)
+    alias block_tile_shape = Index(64, wgmma_n, 32)
+    alias wgmma_shape = Index(64, wgmma_n, 16)
 
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
@@ -330,29 +331,34 @@ def test_hopper_matmul0_tma_wgmma[
 def main():
     with DeviceContext() as ctx:
         test_hopper_matmul0_tma_wgmma[
-            DType.bfloat16, DType.bfloat16, DType.bfloat16
+            128, DType.bfloat16, DType.bfloat16, DType.bfloat16
         ](ctx, static[128](), static[128](), static[128]())
 
         test_hopper_matmul0_tma_wgmma[
-            DType.bfloat16, DType.bfloat16, DType.bfloat16
+            64, DType.bfloat16, DType.bfloat16, DType.bfloat16
         ](ctx, static[128](), static[64](), static[64]())
 
-        test_hopper_matmul0_tma_wgmma[
-            DType.bfloat16, DType.bfloat16, DType.bfloat16
-        ](ctx, static[1024](), static[512](), static[128]())
+        alias wgmma_n = List[Int](8, 32, 64, 128, 256)
+        alias num_ins = 5
 
-        test_hopper_matmul0_tma_wgmma[
-            DType.bfloat16, DType.bfloat16, DType.bfloat16
-        ](ctx, dynamic(1024), static[512](), static[128]())
+        @parameter
+        for i in range(num_ins):
+            test_hopper_matmul0_tma_wgmma[
+                wgmma_n[i], DType.bfloat16, DType.bfloat16, DType.bfloat16
+            ](ctx, static[1024](), static[512](), static[128]())
 
-        test_hopper_matmul0_tma_wgmma[
-            DType.bfloat16, DType.bfloat16, DType.bfloat16
-        ](ctx, dynamic(99), static[1024](), static[1024]())
+            test_hopper_matmul0_tma_wgmma[
+                wgmma_n[i], DType.bfloat16, DType.bfloat16, DType.bfloat16
+            ](ctx, dynamic(1024), static[512](), static[128]())
 
-        test_hopper_matmul0_tma_wgmma[
-            DType.bfloat16, DType.bfloat16, DType.bfloat16
-        ](ctx, dynamic(100), static[512](), static[256]())
+            test_hopper_matmul0_tma_wgmma[
+                wgmma_n[i], DType.bfloat16, DType.bfloat16, DType.bfloat16
+            ](ctx, dynamic(99), static[1024](), static[1024]())
 
-        test_hopper_matmul0_tma_wgmma[
-            DType.bfloat16, DType.bfloat16, DType.bfloat16
-        ](ctx, dynamic(201), static[2048](), static[256]())
+            test_hopper_matmul0_tma_wgmma[
+                wgmma_n[i], DType.bfloat16, DType.bfloat16, DType.bfloat16
+            ](ctx, dynamic(100), static[512](), static[256]())
+
+            test_hopper_matmul0_tma_wgmma[
+                wgmma_n[i], DType.bfloat16, DType.bfloat16, DType.bfloat16
+            ](ctx, dynamic(201), static[2048](), static[256]())
