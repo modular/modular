@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Modular engine provides methods to load and execute AI models."""
 
-from max._engine.core import __version__
+from max._engine import __version__
 
 from .api import (
     InferenceSession,
