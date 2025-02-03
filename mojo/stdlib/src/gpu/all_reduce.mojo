@@ -8,16 +8,15 @@ from math import ceildiv
 
 from buffer import Buffer, NDBuffer
 from gpu import block_dim, block_idx, grid_dim, thread_idx, barrier
-from gpu.host import DeviceBuffer, DeviceContext, Dim
+from gpu.host import DeviceBuffer, DeviceContext
 from gpu.intrinsics import (
-    Scope,
     load_acquire,
     load_volatile,
     store_release,
     store_volatile,
 )
 
-from utils.index import IndexList, StaticTuple
+from utils.index import StaticTuple
 
 # Comments from the original implementation:
 # Block and grid default configs are results after careful grid search. Using
@@ -132,35 +131,36 @@ fn all_reduce_naive[
     Used as fallback when P2P access is not available.
     """
     var num_elements = list_of_in_bufs[0].num_elements()
+
+    var device_buffer_list = List[DeviceBuffer[type]](capacity=ngpus)
+    # Assemble input buffer structures from all devices
+    for i in range(ngpus):
+        device_buffer_list.append(
+            DeviceBuffer(
+                ctxs[i], list_of_in_bufs[i].data, num_elements, owning=False
+            )
+        )
+
     # Iterate over each device (GPU)
     for device_idx in range(ngpus):
         var curr_ctx = ctxs[device_idx]
         var curr_out_buf = list_of_out_bufs[device_idx]
 
-        var device_buffer_list = List[DeviceBuffer[type]](capacity=ngpus)
-        # Assemble input buffer structures from all devices
-        for i in range(ngpus):
-            device_buffer_list.append(
-                DeviceBuffer[type](
-                    ctxs[i], list_of_in_bufs[i].data, num_elements, owning=False
-                )
-            )
-
         # Create temporary buffers on the current device to store data from other devices
         var tmp_buffer_list = List[DeviceBuffer[type]](capacity=ngpus)
         for i in range(ngpus):
-            var temp_buffer = curr_ctx.create_buffer_sync[type](num_elements)
-            tmp_buffer_list.append(temp_buffer)
+            # Skip allocating a copy for the current device
+            if i != device_idx:
+                var tmp_buffer = curr_ctx.enqueue_create_buffer[type](
+                    num_elements
+                )
+                tmp_buffer_list.append(tmp_buffer)
 
-            # Copy data from other devices to the temporary buffer on the current device
-            curr_ctx.enqueue_copy_device_to_device(
-                tmp_buffer_list[i],
-                device_buffer_list[i],  # Source buffer from GPU i
-            )
-
-        # Synchronize to ensure copies are complete
-        for i in range(ngpus):
-            ctxs[i].synchronize()
+                # Copy data from other devices to the temporary buffer on the current device
+                curr_ctx.enqueue_copy_device_to_device(
+                    tmp_buffer,
+                    device_buffer_list[i],  # Source buffer from GPU i
+                )
 
         # Compile reduction kernel for the current device
         var reduction_kernel = curr_ctx.compile_function[
@@ -173,17 +173,27 @@ fn all_reduce_naive[
 
         src_index = 0
         for i in range(ngpus):
-            var src_buffer_ptr = tmp_buffer_list[src_index].ptr
+            var src_buffer_ptr: UnsafePointer[Scalar[type]]
+            if i == device_idx:
+                src_buffer_ptr = device_buffer_list[i].ptr
+            else:
+                src_buffer_ptr = tmp_buffer_list[src_index].ptr
+                src_index += 1
 
-            curr_ctx.enqueue_function(
-                reduction_kernel,
-                curr_out_buf.data,
-                src_buffer_ptr,
-                num_elements,
-                grid_dim=grid_size,
-                block_dim=BLOCK_SIZE,
-            )
-            src_index += 1
+            if i == 0:
+                # Initialize the output buffer with the first buffer
+                curr_ctx.enqueue_copy_device_to_device(
+                    curr_out_buf.data, src_buffer_ptr, num_elements
+                )
+            else:
+                curr_ctx.enqueue_function(
+                    reduction_kernel,
+                    curr_out_buf.data,
+                    src_buffer_ptr,
+                    num_elements,
+                    grid_dim=grid_size,
+                    block_dim=BLOCK_SIZE,
+                )
 
 
 @always_inline
