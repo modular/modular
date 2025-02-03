@@ -48,6 +48,7 @@ parseCompilationOptions(const State &state, const llvm::opt::InputArgList &args,
                         llvm::opt::OptSpecifier optimizationLevelId = {},
                         llvm::opt::OptSpecifier debugLevelId = {},
                         llvm::opt::OptSpecifier sanitizeId = {},
+                        llvm::opt::OptSpecifier sharedLibasan = {},
                         llvm::opt::OptSpecifier debugInfoLanguageId = {},
                         llvm::opt::OptSpecifier stdLibPath = {});
 

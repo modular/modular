@@ -30,6 +30,7 @@ ErrorOrSuccess M::parseCompilationOptions(
     MLIRContext &ctx, llvm::opt::OptSpecifier includeDirsId,
     llvm::opt::OptSpecifier optimizationLevelId,
     llvm::opt::OptSpecifier debugLevelId, llvm::opt::OptSpecifier sanitizeId,
+    llvm::opt::OptSpecifier sharedLibasan,
     llvm::opt::OptSpecifier debugInfoLanguageId,
     llvm::opt::OptSpecifier stdLibPath) {
   // Process the sanitizers.
@@ -47,6 +48,13 @@ ErrorOrSuccess M::parseCompilationOptions(
       else if (sanitizer == "thread")
         compilationOptions.sanitizers.enable(Sanitizers::kThread);
     }
+  }
+
+  if (sharedLibasan.isValid() && args.hasArg(sharedLibasan)) {
+    if (!compilationOptions.sanitizers.has(Sanitizers::kAddress))
+      return Error(
+          "cannot enable --shared-libasan without enabling --sanitize=address");
+    compilationOptions.sharedLibasan = true;
   }
 
   // Enable overwritting of the auto-imported paths, which is where the compiler
