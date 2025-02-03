@@ -75,7 +75,7 @@ Runtime::~Runtime() {
 
   // We're done with profiling.
   if (profiler) {
-    if (auto E = profiler->write("-"))
+    if (auto e = profiler->write("-"))
       llvm::report_fatal_error("unable to write time trace profile");
   }
 }
