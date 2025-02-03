@@ -30,7 +30,8 @@ from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 
 from .apple_accelerate import apple_batched_matmul, use_apple_accelerate_lib
-from .matmul import _submatmul_sequential_sync
+from .matmul import _submatmul_sequential_sync, matmul
+from .matmul_gpu import _matmul_gpu
 from .utils import elementwise_epilogue_type as matmul_elementwise_epilogue_type
 from .utils import (
     get_kernel_config,
@@ -93,6 +94,27 @@ fn _reshape_nd_buffer_with_batch_to_3d(
     )
 
     return NDBuffer[buffer.type, 3, address_space = buffer.address_space](
+        buffer.data.bitcast[Scalar[buffer.type]](), matrix_shape
+    )
+
+
+# A utility to reshape NDBuffer with rank > 2 to rank-2.
+@always_inline
+fn _reshape_nd_buffer_with_batch_to_2d(
+    buffer: NDBuffer,
+) -> NDBuffer[buffer.type, 2, address_space = buffer.address_space]:
+    alias rank = buffer.rank
+    constrained[rank >= 2, "expecting at least rank-2 NDBuffer"]()
+
+    var batch_size = 1
+
+    @parameter
+    for i in range(rank - 1):
+        batch_size *= buffer.dim[i]()
+
+    var matrix_shape = IndexList[2](batch_size, buffer.dim[rank - 1]())
+
+    return NDBuffer[buffer.type, 2, address_space = buffer.address_space](
         buffer.data.bitcast[Scalar[buffer.type]](), matrix_shape
     )
 
@@ -538,14 +560,57 @@ fn _batched_matmul_gpu[
     ctx: DeviceContext,
 ) raises:
     constrained[not transpose_b, "transpose_b not supported on GPU yet"]()
+
     var a_buf_reshaped = _reshape_nd_buffer_with_batch_to_3d(a_buf)
     var b_buf_reshaped = _reshape_nd_buffer_with_batch_to_3d(b_buf)
     var c_buf_reshaped = _reshape_nd_buffer_with_batch_to_3d(c_buf)
 
+    var batch_size = a_buf_reshaped.dim[0]()
+
+    if batch_size == 1:
+        with Trace[TraceLevel.OP]("batched_matmul_via_matmul"):
+            # If the batch size is 1, then this is just a matmul and we can use the
+            # matmul kernel directly.
+            @parameter
+            if elementwise_epilogue_fn:
+                alias elementwise_epilogue = elementwise_epilogue_fn.value()
+
+                @parameter
+                @__copy_capture(c_buf)
+                fn elementwise_epilogue_fn_wrapper[
+                    type: DType, width: Int, *, alignment: Int = 1
+                ](
+                    out_coords: IndexList[2], val: SIMD[type, width]
+                ) capturing -> None:
+                    var batch_coords = IndexList[rank](0)
+
+                    batch_coords[rank - 1] = out_coords[1]
+                    batch_coords[rank - 2] = out_coords[0]
+
+                    elementwise_epilogue(batch_coords, val)
+
+                _matmul_gpu[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_epilogue_fn_wrapper,
+                ](
+                    _reshape_nd_buffer_with_batch_to_2d(c_buf_reshaped),
+                    _reshape_nd_buffer_with_batch_to_2d(a_buf_reshaped),
+                    _reshape_nd_buffer_with_batch_to_2d(b_buf_reshaped),
+                    ctx=ctx,
+                )
+            else:
+                _matmul_gpu[transpose_b=transpose_b](
+                    _reshape_nd_buffer_with_batch_to_2d(c_buf_reshaped),
+                    _reshape_nd_buffer_with_batch_to_2d(a_buf_reshaped),
+                    _reshape_nd_buffer_with_batch_to_2d(b_buf_reshaped),
+                    ctx=ctx,
+                )
+
+            return
+
     alias BLOCK_DIM = 16
     alias unkown_shape = DimList.create_unknown[3]()
 
-    var batch_size = a_buf_reshaped.dim[0]()
     var m = a_buf_reshaped.dim[1]()
     var n = b_buf_reshaped.dim[2]()
 
