@@ -383,7 +383,7 @@ LITLowerer::lowerLITFunc(FnOp func, Block::iterator symTableIt,
   GeneratorOp::build(b, state, func.getSymNameAttr(), sigAttr,
                      func.getFunctionTypeAttr(), inputParamsArr,
                      func.getDecoratorsAttr(), func.getInlineLevelAttr(),
-                     func.getExportKindAttr(), func.getLLVMMetadata());
+                     func.getExportKindAttr(), func.getLLVMMetadataArray());
 
   for (const NamedAttribute &attr : func->getDialectAttrs())
     state.attributes.push_back(attr);
@@ -417,7 +417,7 @@ void LITLowerer::lowerNestedFunction(FnOp func) {
 
   auto region = b.create<ParamDeclareRegionOp>(
       decl, func.getFuncTypeGenerator(), func.getFunctionType(), inputParams,
-      func.getInlineLevel(), func.getLLVMMetadata());
+      func.getInlineLevel(), func.getLLVMMetadataArray());
   region.getBodyRegion().takeBody(func.getBodyRegion());
   func.erase();
 }

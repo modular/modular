@@ -164,7 +164,11 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     KGEN_DecoratorsAttr:$decorators,
     KGEN_InlineLevelAttr:$inlineLevel,
     KGEN_ExportKindAttr:$exportKind,
-    DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata
+    // To be able to store pre-elaborated names of the `llvm_metadata`,
+    // decompose LLVM metadata into array of attributes of even size.
+    // Each even attribute corresponds to the name of in `llvm_metadata`,
+    // each odd corresponds to its value (zero index based)
+    DefaultValuedAttr<ArrayAttr, "std::nullopt">:$LLVMMetadataArray
   );
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
@@ -187,12 +191,12 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
                    "FunctionType":$functionType,
                    "ArrayRef<ParamDeclAttr>":$inputParams,
                    CArg<"InlineLevel", "InlineLevel::Automatic">:$inlineLevel,
-                   CArg<"DictionaryAttr", "{}">:$llvmMetadata), [{
-      if (!llvmMetadata)
-        llvmMetadata = DictionaryAttr::get(name.getContext());
+                   CArg<"ArrayAttr", "{}">:$llvmMetadataArray), [{
+      if (!llvmMetadataArray)
+        llvmMetadataArray = ArrayAttr::get(name.getContext(), {});
       build($_builder, $_state, name, type, functionType, inputParams,
             /*decorators=*/{}, inlineLevel, ExportKind::NotExported,
-            llvmMetadata);
+            llvmMetadataArray);
     }]>,
     OpBuilder<(ins "StringAttr":$name, "FuncTypeGeneratorType":$type), [{
       build($_builder, $_state, name, type, type.getBody().getValues(), {}, {});
@@ -639,7 +643,11 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$inputParams,
     KGEN_InlineLevelAttr:$inlineLevel,
-    DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata,
+    // To be able to store pre-elaborated names of the `llvm_metadata`,
+    // decompose LLVM metadata into array of attributes of even size.
+    // Each even attribute corresponds to the name of in `llvm_metadata`,
+    // each odd corresponds to its value (zero index based)
+    DefaultValuedAttr<ArrayAttr, "std::nullopt">:$LLVMMetadataArray,
     UnitAttr:$isolated
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
@@ -669,7 +677,7 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
                    CArg<"InlineLevel", "InlineLevel::Automatic">:$inlineLevel), [{
       build($_builder, $_state, paramDecl, funcTypeGenerator, functionType,
             inputParams, inlineLevel,
-            /*llvmMetadata=*/DictionaryAttr::get(paramDecl.getContext()),
+            /*llvmMetadata=*/ArrayAttr::get(paramDecl.getContext(), {}),
             /*isolated=*/false);
     }]>,
   ];

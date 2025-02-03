@@ -36,6 +36,13 @@ using namespace M;
 using namespace KGEN;
 using namespace AsyncRT;
 
+/// Short living attribute that is needed to set on KGEN::FuncOp or
+/// KGEN::DeclareRegeionOp. This attribute will be converted to LLVMetadata
+/// after concretization and will be removed from the operation, therefore won't
+/// survive Elaborator.
+static constexpr StringRef kLLVMMetadataArrayAttrName =
+    "kgen.elaborator.llvm_metadata_array";
+
 //===----------------------------------------------------------------------===//
 // InterpreterCache
 //===----------------------------------------------------------------------===//
@@ -295,6 +302,24 @@ static ElaborationState processGenericOp(ImplNode *parent, Operation *op) {
   }
   if (changedAttrs)
     op->setAttrs(newAttrs);
+
+  if (auto func = dyn_cast<FuncOp>(op)) {
+    if (auto LLVMMetadataArray = dyn_cast_or_null<ArrayAttr>(
+            func->getAttr(kLLVMMetadataArrayAttrName))) {
+      NamedAttrList llvmMetadata;
+      for (int i = 0, e = LLVMMetadataArray.size(); i < e; i += 2) {
+        auto name = dyn_cast<StringAttr>(LLVMMetadataArray[i]);
+        if (!name) {
+          parent->setToError(ErrorTree(
+              op->getLoc(), "cannot concretize name in 'llvm_metadata'"));
+          return ElaborationState::error();
+        }
+        llvmMetadata.append(name, LLVMMetadataArray[i + 1]);
+      }
+      func.setLLVMMetadataAttr(llvmMetadata.getDictionary(func.getContext()));
+      func->removeAttr(kLLVMMetadataArrayAttrName);
+    }
+  }
 
   // Check the types of results to find any parameters embedded in their
   // types.  We don't have to check operands because they are always checked
@@ -1393,8 +1418,14 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
             generatorOp.getFuncTypeGenerator().getBody().getArgConventions(),
             generatorOp.getFuncTypeGenerator().getBody().getFnEffects()),
         generatorOp.getInlineLevel(), generatorOp.getExportKind(),
-        generatorOp.getDecorators(), generatorOp.getLLVMMetadata()));
-
+        generatorOp.getDecorators(), DictionaryAttr::get(b.getContext())));
+    // Process LLVM metadata recorded in the generator by fusing names and
+    // values from the LLVMetadataName and LLVMMetadataValue dictionaries.o
+    auto newFunc = cast<FuncOp>(*instance);
+    if (!generatorOp.getLLVMMetadataArray().empty()) {
+      newFunc->setAttr(kLLVMMetadataArrayAttrName,
+                       generatorOp.getLLVMMetadataArray());
+    }
   } else {
     auto structGenOp = dyn_cast<StructGeneratorOp>(*gen);
     instance = cast<InstantiatedOpInterface>(*b.create<StructInstanceOp>(

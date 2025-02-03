@@ -440,13 +440,13 @@ lit.file_module @module {
 }
 
 // CHECK: kgen.generator @metadata
-// CHECK-SAME: LLVMMetadata = {llvm.someattr = 3 : index}
-lit.fn @metadata() attributes {LLVMMetadata = {llvm.someattr = 3 : index}} {
+// CHECK-SAME: LLVMMetadataArray = ["llvm.someattr",  3 : index]
+lit.fn @metadata() attributes {LLVMMetadataArray = ["llvm.someattr", 3 : index]} {
   // CHECK: kgen.param.declare.region metadataNested
-  lit.fn metadataNested() attributes {LLVMMetadata = {llvm.someattr = 4 : index}} {
+  lit.fn metadataNested() attributes {LLVMMetadataArray = ["llvm.someattr",  4 : index]} {
     // CHECK-NEXT: kgen.return
     kgen.return
-  // CHECK-NEXT: }{{.*}}LLVMMetadata = {llvm.someattr = 4 : index}
+  // CHECK-NEXT: }{{.*}}LLVMMetadataArray = ["llvm.someattr", 4 : index]
   }
   kgen.return
 }

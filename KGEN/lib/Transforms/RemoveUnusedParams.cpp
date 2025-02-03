@@ -164,7 +164,7 @@ private:
       // Don't scan the input parameters on the function since they obviously
       // will include a hit.
       if (op == oldFunction) {
-        walker.walk(oldFunction.getLLVMMetadata());
+        walker.walk(oldFunction.getLLVMMetadataArray());
 
         // Most function attrs will only contain false positives, types on the
         // arguments / results are the real source of truth.

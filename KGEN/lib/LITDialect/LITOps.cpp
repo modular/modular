@@ -795,8 +795,8 @@ void FnOp::print(OpAsmPrinter &p) {
   // Don't print the following in lit.fn.
   SmallVector<StringRef> ignoredAttrNames(
       (ArrayRef<StringRef>(disallowedAttrNames)));
-  if (getLLVMMetadata().empty())
-    ignoredAttrNames.push_back(getLLVMMetadataAttrName());
+  if (getLLVMMetadataArray().empty())
+    ignoredAttrNames.push_back(getLLVMMetadataArrayAttrName());
 
   p.printOptionalAttrDictWithKeyword(getOperation()->getAttrs(),
                                      ignoredAttrNames);
@@ -817,6 +817,8 @@ void FnOp::getAsmBlockArgumentNames(
 }
 
 LogicalResult FnOp::verify() {
+  if ((getLLVMMetadataArray().size() & 1) != 0)
+    return emitOpError("expected an even number elements in LLVMMetadataArray");
   // Check that the number of argument labels matches the number of argument
   // types.
   if (getFuncTypeGenerator().getBody().getMetadata().getNumArgs() !=
@@ -918,8 +920,8 @@ void FnOp::build(OpBuilder &builder, OperationState &result) {
                       builder.getI8IntegerAttr(0));
   result.addAttribute(getInlineLevelAttrName(result.name),
                       InlineLevelAttr::get(ctx, InlineLevel::Automatic));
-  result.addAttribute(getLLVMMetadataAttrName(result.name),
-                      DictionaryAttr::get(ctx));
+  result.addAttribute(getLLVMMetadataArrayAttrName(result.name),
+                      ArrayAttr::get(ctx, {}));
 
   result.addRegion()->push_back(new Block());
 }
@@ -944,7 +946,7 @@ void FnOp::build(OpBuilder &b, OperationState &state, StringAttr declName,
         ExportKindAttr::get(ctx, ExportKind::NotExported),
         InlineLevelAttr::get(ctx, inlineLevel), b.getI8IntegerAttr(0),
         FlatSymbolRefAttr(), StringAttr(), b.getStringAttr(sourceName),
-        StringAttr(), DocStringAttr(), StringAttr(), DictionaryAttr::get(ctx),
+        StringAttr(), DocStringAttr(), StringAttr(), ArrayAttr::get(ctx, {}),
         Attribute());
   state.regions[0]->push_back(new Block());
 }
@@ -965,7 +967,7 @@ void FnOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
         InlineLevelAttr::get(ctx, InlineLevel::Automatic),
         builder.getI8IntegerAttr(uint8_t(specialFnKind)), FlatSymbolRefAttr(),
         StringAttr(), sourceName, StringAttr(), DocStringAttr(), StringAttr(),
-        DictionaryAttr::get(ctx), Attribute());
+        ArrayAttr::get(ctx, {}), Attribute());
   result.regions[0]->push_back(new Block());
 }
 

@@ -324,7 +324,7 @@ fn orvalueInferType():
 
 
 # CHECK-LABEL: lit.fn @"kernel{{.*}}"<x:
-# CHECK-SAME: LLVMMetadata = {nvvm.maxntid = {{.*}}#pop.array<x> : !pop.array<
+# CHECK-SAME: LLVMMetadataArray = ["nvvm.maxntid", {{.*}}#pop.array<x> : !pop.array<
 
 
 @__llvm_metadata(
@@ -334,7 +334,7 @@ fn kernel[x: Int]():
     pass
 
 # CHECK-LABEL: lit.fn @"kernel1{{.*}}"<x:
-# CHECK-SAME: LLVMMetadata = {nvvm.maxntid = {{.*}}#pop.array<x> : !pop.array<
+# CHECK-SAME: LLVMMetadataArray = [#lit.struct<{value: string = "nvvm.maxntid"}> : !StringLiteral, {{.*}}#pop.array<x> : !pop.array<
 alias mname= "nvvm.maxntid"
 
 @__llvm_metadata(
@@ -344,7 +344,7 @@ fn kernel1[x: Int]():
     pass
 
 # CHECK-LABEL: lit.fn @"kernel2{{.*}}"<x:
-# CHECK-SAME: LLVMMetadata = {nvvm.maxntid = {{.*}}#pop.array<x> : !pop.array<
+# CHECK-SAME: LLVMMetadataArray = [#lit.struct<{value: string = "nvvm.maxntid"}> : !StringLiteral, {{.*}}#pop.array<x> : !pop.array<
 
 @__llvm_metadata(
     `mname`=__mlir_attr[`#pop.array<`, x, `> : !pop.array<1, `, Int, `>`]
@@ -352,6 +352,23 @@ fn kernel1[x: Int]():
 fn kernel2[x: Int]():
     pass
 
+fn alias_parametric_fn() -> StringLiteral:
+    @parameter
+    if True:
+        return "nvvm.maxntid"
+    else:
+        return "amdgpu-flat-work-group-size"
+
+alias mname1 = alias_parametric_fn().value
+
+# CHECK-LABEL: lit.fn @"kernel3{{.*}}"<x:
+# CHECK-SAME: LLVMMetadataArray = [#lit.struct.extract<:!StringLiteral apply(:!lit.generator<() -> !StringLiteral> @decls::@"alias_parametric_fn()"), "value"> : !kgen.string, #lit.struct<{value: !kgen.int_literal = 128}> : !IntLiteral]
+
+@__llvm_metadata(
+    mname1=128
+)
+fn kernel3[x: Int]():
+    pass
 
 # https://github.com/modularml/mojo/issues/1152
 # Allow mutable self argument when overloading operators using dunder methods

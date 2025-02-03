@@ -599,60 +599,42 @@ void FnSigDecorators::applyCopyOrMoveCapture(const CallNode &node, bool isMove,
   }
 }
 
-// Try to resolve the name of a LLVM metadata attribute using aliases in the
-// FileModule. If there is an alias with the same name, expect it to be a simple
-// string, otherwise emit an error.
-static std::optional<StringAttr>
-resolveLLVMMetadataName(SharedState &shared, ASTDecl &funcDecl, Operand value) {
+/// Return AliasDeclOp that corresponds to the value's name by looking at all
+/// aliases in FileModule. Return nullopt if not found.
+static std::optional<AliasDeclOp> getLLVMMetadataNameAlias(SharedState &shared,
+                                                           ASTDecl &funcDecl,
+                                                           Operand value) {
   ASTDecl *parent = funcDecl.getParentDecl();
   if (!parent || !isa<FileModuleOp>(parent))
     return {};
 
   ArrayRef<ASTDecl *> nameDecls = parent->lookupInCurrentScope(value.name);
-  if (nameDecls.size() != 1)
+  if (nameDecls.empty())
     return {};
-
-  auto aliasDecl = dyn_cast<AliasDeclOp>(nameDecls[0]);
-  if (!aliasDecl)
-    return {};
-
-  std::optional<TypedAttr> aliasDeclValue = aliasDecl.getValue();
-  if (!aliasDeclValue || !isa<LITStructAttr>(*aliasDeclValue)) {
-    shared.emitError(value.getLoc(),
-                     "LLVM metadata's name must be a trivial string");
-    return {};
-  }
-
-  auto structAttr = cast<LITStructAttr>(*aliasDeclValue);
-  auto stringValue =
-      dyn_cast<StringAttr>(std::get<1>(structAttr.getValues().front()));
-  if (structAttr.getValues().size() != 1 || !stringValue) {
-    shared.emitError(value.getLoc(),
-                     "LLVM metadata's name must be a trivial string");
-    return {};
-  }
-
-  return stringValue;
+  if (auto aliasOp = dyn_cast<AliasDeclOp>(nameDecls.back()))
+    return aliasOp;
+  return {};
 }
 
 void FnSigDecorators::applyLLVMMetadata(const CallNode &node) {
-  NamedAttrList attrs;
+  SmallVector<Attribute> metadata;
   ExprEmitter emitter(sigDecl, EC_Decorator);
   for (Operand value : node.operands) {
     if (!value.name) {
       emitError(value.getLoc(), "LLVM metadata requires a name");
       continue;
     }
-    StringAttr valueName = value.name;
     // It might be possible that name comes from alias, therefore need to
     // analyze all module's aliases to see if alias's value needs to be used.
-    if (auto name = resolveLLVMMetadataName(shared, sigDecl, value))
-      valueName = *name;
+    if (auto aliasOp = getLLVMMetadataNameAlias(shared, sigDecl, value))
+      metadata.push_back(*aliasOp->getValue());
+    else
+      metadata.push_back(value.name);
 
     if (PValue attr = emitter.emitExprPValue(value.expr, EC_Decorator))
-      attrs.append(valueName, attr);
+      metadata.push_back(attr);
   }
-  funcOp.setLLVMMetadataAttr(attrs.getDictionary(getContext()));
+  funcOp.setLLVMMetadataArrayAttr(ArrayAttr::get(getContext(), metadata));
 }
 
 /// Process an extensibility decorator by generating additional trait binding
