@@ -193,7 +193,7 @@ def POP_RemOp : POP_ArithmeticBinaryOp<"rem", [NoMemoryEffect,
 // MaxOp
 //===----------------------------------------------------------------------===//
 
-def POP_MaxOp : POP_ArithmeticBinaryOp<"max", [Commutative, Pure]> {
+def POP_MaxOp : POPOp<"max", [Commutative, Pure, SameOperandsAndResultType]> {
   let summary = "max";
   let description = [{
     The `pop.max` operation takes two `!pop.simd` values and returns their
@@ -209,13 +209,19 @@ def POP_MaxOp : POP_ArithmeticBinaryOp<"max", [Commutative, Pure]> {
     %c = pop.max %a, %b : !pop.simd<size, type>
     ```
   }];
+  let arguments = (ins UnboundOrBoolOrIndexOrArithmeticSIMD:$lhs,
+                       UnboundOrBoolOrIndexOrArithmeticSIMD:$rhs);
+  let results = (outs UnboundOrBoolOrIndexOrArithmeticSIMD:$result);
+
+  let assemblyFormat = "$lhs `,` $rhs attr-dict `:` qualified(type($result))";
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
 // MinOp
 //===----------------------------------------------------------------------===//
 
-def POP_MinOp : POP_ArithmeticBinaryOp<"min", [Commutative, Pure]> {
+def POP_MinOp : POPOp<"min", [Commutative, Pure, SameOperandsAndResultType]> {
   let summary = "min";
   let description = [{
     The `pop.min` operation takes two `!pop.simd` values and returns their
@@ -231,6 +237,12 @@ def POP_MinOp : POP_ArithmeticBinaryOp<"min", [Commutative, Pure]> {
     %c = pop.min %a, %b : !pop.simd<size, type>
     ```
   }];
+  let arguments = (ins UnboundOrBoolOrIndexOrArithmeticSIMD:$lhs,
+                       UnboundOrBoolOrIndexOrArithmeticSIMD:$rhs);
+  let results = (outs UnboundOrBoolOrIndexOrArithmeticSIMD:$result);
+
+  let assemblyFormat = "$lhs `,` $rhs attr-dict `:` qualified(type($result))";
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//

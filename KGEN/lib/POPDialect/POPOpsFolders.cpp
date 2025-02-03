@@ -322,15 +322,21 @@ OpFoldResult RemOp::fold(FoldAdaptor adaptor) {
 OpFoldResult MaxOp::fold(FoldAdaptor adaptor) {
   return foldSIMDOp(
       adaptor.getOperands(),
-      [](APSInt lhs, APSInt rhs) { return lhs > rhs ? lhs : rhs; },
-      [](APFloat lhs, APFloat rhs) { return llvm::maxnum(lhs, rhs); });
+      [](APSInt lhs, APSInt rhs) -> APSInt { return lhs > rhs ? lhs : rhs; },
+      [](APFloat lhs, APFloat rhs) -> APFloat {
+        return llvm::maxnum(lhs, rhs);
+      },
+      [](bool lhs, bool rhs) -> bool { return lhs | rhs; });
 }
 
 OpFoldResult MinOp::fold(FoldAdaptor adaptor) {
   return foldSIMDOp(
       adaptor.getOperands(),
-      [](APSInt lhs, APSInt rhs) { return lhs < rhs ? lhs : rhs; },
-      [](APFloat lhs, APFloat rhs) { return llvm::minnum(lhs, rhs); });
+      [](APSInt lhs, APSInt rhs) -> APSInt { return lhs < rhs ? lhs : rhs; },
+      [](APFloat lhs, APFloat rhs) -> APFloat {
+        return llvm::minnum(lhs, rhs);
+      },
+      [](bool lhs, bool rhs) -> bool { return lhs & rhs; });
 }
 
 OpFoldResult ShlOp::fold(FoldAdaptor adaptor) {
