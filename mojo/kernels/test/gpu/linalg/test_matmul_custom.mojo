@@ -574,8 +574,8 @@ fn run_batched_matmul(
         rank: Int,
         *,
         alignment: Int = 1,
-    ](idx: IndexList[rank], val: SIMD[c_type, width],) -> None:
-        c_buf[idx[0], idx[1], idx[2]] = rebind[BFloat16](val) + BFloat16(2.0)
+    ](idx: IndexList[rank], val: SIMD[c_type, width]) -> None:
+        c_buf.store(Index(idx[0], idx[1], idx[2]), val.cast[c_buf.type]() + 2)
 
     _batched_matmul_gpu[elementwise_epilogue_fn=elementwise_epilogue_fn1](
         c_buf, a_buf, b_buf, ctx
@@ -595,8 +595,10 @@ fn run_batched_matmul(
         rank: Int,
         *,
         alignment: Int = 1,
-    ](idx: IndexList[rank], val: SIMD[c_type, width],) -> None:
-        c_buf_n[idx[0], idx[1], idx[2]] = rebind[Float32](val) + 2.0
+    ](idx: IndexList[rank], val: SIMD[c_type, width]) -> None:
+        c_buf_n.store(
+            Index(idx[0], idx[1], idx[2]), val.cast[c_buf_n.type]() + 2
+        )
 
     _batched_matmul_gpu[elementwise_epilogue_fn=elementwise_epilogue_fn2](
         c_buf_n, a_buf_n, b_buf_n, ctx
@@ -673,4 +675,5 @@ def main():
         run_matmul[DType.float16, 1024, 1, 1024](ctx, 1e-03, rng_width=10.0)
         run_matmul[DType.float16, 1, 1024, 1024](ctx, 1e-01, rng_width=10.0)
 
+        run_batched_matmul(ctx, 1, 32, 32, 32)
         run_batched_matmul(ctx, 3, 32, 32, 32)
