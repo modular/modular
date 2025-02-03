@@ -56,7 +56,7 @@ struct OneToOneFloatOrIntConversion : public ConvertPOPToLLVMPattern<Op> {
     KGENDType dtype = *op.getType().getResolvedDType();
     Type type = this->convertType(op.getType());
 
-    if (dtype.isInt() || dtype.isIndex()) {
+    if (dtype.isBool() || dtype.isInt() || dtype.isIndex()) {
       if (std::is_same_v<SIntOp, UIntOp> || dtype.isSInt() || dtype.isIndex())
         rewriter.replaceOpWithNewOp<SIntOp>(op, type, adaptor.getLhs(),
                                             adaptor.getRhs());
