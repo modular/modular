@@ -72,7 +72,7 @@ def run_elementwise[do_bfloat_exp: Bool](exponent: Int, ctx: DeviceContext):
         else:
             expected_value = in_host[i] ** exponent
 
-        assert_almost_equal[type, 1](
+        assert_almost_equal(
             out_host[i],
             expected_value,
             msg="values did not match at position " + String(i),

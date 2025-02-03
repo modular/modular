@@ -61,7 +61,7 @@ def run_elementwise[
 
         alias atol = 1e-07 if type == DType.float32 else 1e-4
         alias rtol = 2e-07 if type == DType.float32 else 2e-2
-        assert_almost_equal[type, 1](
+        assert_almost_equal(
             out_host[i],
             expected_value,
             msg="values did not match at position " + String(i),
