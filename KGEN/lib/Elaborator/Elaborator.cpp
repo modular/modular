@@ -1999,7 +1999,7 @@ Elaborator::run(ModuleOp theModule,
         // Now filling in the actual body of the populate closure which is
         // generated while compiling all the offload functions.
         func.getBodyRegion().takeBody(
-            cast<FuncOp>(kernel.func.release()).getBodyRegion());
+            cast<FuncOp>(*kernel.func).getBodyRegion());
       }
     }
   }
