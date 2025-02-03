@@ -9,11 +9,24 @@ import ctypes
 import logging
 import math
 import multiprocessing
+import multiprocessing.synchronize
+import threading
 import time
 from dataclasses import dataclass
-from typing import Callable, Iterable, Optional
+from typing import Callable, Iterable, Optional, Protocol, Union
 
 logger = logging.getLogger(__name__)
+
+
+class EventCreator(Protocol):
+    """Event Creator is intended to be compatible with
+    multiprocessing.get_context() and the threading module.
+    """
+
+    def Event(
+        self,
+    ) -> Union[threading.Event, multiprocessing.synchronize.Event]:
+        pass
 
 
 class ProcessControl:
@@ -61,21 +74,32 @@ class ProcessControl:
         Y N Y - should never happen
         Y Y N - process is actively working
         Y Y Y - process has completed, is still alive, but *ought* exit soon
+
+    Basic process monitoring can be accomplished by polling is_started() and
+    is_canceled().  It can also be accomplished by waiting on started_event and
+    canceled_event directly. `pc.started_event.wait()`
     """
 
     def __init__(
         self,
-        ctx: multiprocessing.context.BaseContext,
+        ctx: EventCreator,
         name: str,
         health_fail_s: float = 10,
     ):
-        self.ctx = ctx
         self.name = name
-        self._started = ctx.Event()
-        self._completed = ctx.Event()
-        self._canceled = ctx.Event()
+        self.started_event = ctx.Event()
+        self.completed_event = ctx.Event()
+        self.canceled_event = ctx.Event()
 
-        self._last_beat = ctx.Value(ctypes.c_int64)
+        self._last_beat: Union[
+            multiprocessing.sharedctypes.Synchronized[int], ctypes.c_int64
+        ]
+        # Support both threading and multiprocessing contexts
+        if hasattr(ctx, "Value"):
+            self._last_beat = ctx.Value(ctypes.c_int64)
+        else:
+            self._last_beat = ctypes.c_int64()
+
         self._last_beat.value = 0  # make sure this initializes to 0
         self.health_fail_ns: int = int(health_fail_s * 1e9)
 
@@ -90,22 +114,22 @@ class ProcessControl:
         return not self.is_healthy()
 
     def set_canceled(self) -> None:
-        self._canceled.set()
+        self.canceled_event.set()
 
     def is_canceled(self) -> bool:
-        return self._canceled.is_set()
+        return self.canceled_event.is_set()
 
     def set_started(self) -> None:
-        self._started.set()
+        self.started_event.set()
 
     def is_started(self) -> bool:
-        return self._started.is_set()
+        return self.started_event.is_set()
 
     def set_completed(self) -> None:
-        self._completed.set()
+        self.completed_event.set()
 
     def is_completed(self) -> bool:
-        return self._completed.is_set()
+        return self.completed_event.is_set()
 
 
 def forever() -> Iterable:
