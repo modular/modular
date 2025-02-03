@@ -9,10 +9,14 @@ import queue
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from enum import Enum
 from multiprocessing import Queue
-from typing import Any, Mapping, Optional, TypeVar
+from typing import Any, Mapping, Optional, Tuple, TypeVar
 
-from max.pipelines import EmbeddingsGenerator, TokenGenerator
+import numpy as np
+from max.pipelines import TokenGenerator
+from max.pipelines.interfaces import EmbeddingsGenerator
+from max.pipelines.kv_cache.paged_cache import PagedKVCacheManager
 from max.profiler import traced
 from max.serve.scheduler.process_control import ProcessControl
 from max.serve.scheduler.queues import STOP_STREAM
@@ -22,6 +26,32 @@ logger = logging.getLogger(__name__)
 BatchReqId = TypeVar("BatchReqId")
 BatchReqInput = TypeVar("BatchReqInput")
 BatchInputs = dict[BatchReqId, BatchReqInput]
+
+
+class BatchType(Enum):
+    ContextEncoding = 1
+    TokenGeneration = 2
+
+
+class RequestDeque:
+    """A wrapper around the multiprocessing queue that allows us to add
+    requests to the front of the queue.
+    """
+
+    def __init__(self, queue: Queue):
+        self.queue = queue
+        self.evicted: list[BatchInputs] = []
+
+    def empty(self):
+        return self.queue.empty() and len(self.evicted) == 0
+
+    def get_nowait(self):
+        if self.evicted:
+            return self.evicted.pop()
+        return self.queue.get_nowait()
+
+    def put_front_nowait(self, item):
+        self.evicted.append(item)
 
 
 class Scheduler(ABC):
@@ -68,6 +98,7 @@ class TokenGenerationSchedulerV2(Scheduler):
         scheduler_config: TokenGenerationSchedulerConfig,
         pipeline: TokenGenerator,
         queues: Mapping[str, Queue],
+        paged_manager: Optional[PagedKVCacheManager] = None,
     ):
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -75,7 +106,7 @@ class TokenGenerationSchedulerV2(Scheduler):
         # Multiprocessing resources.
         self.pc = process_control
 
-        self.request_q = queues["REQUEST"]
+        self.request_q = RequestDeque(queues["REQUEST"])
         self.response_q = queues["RESPONSE"]
         self.cancel_q = queues["CANCEL"]
 
@@ -86,10 +117,15 @@ class TokenGenerationSchedulerV2(Scheduler):
         )
         self.ce_batch_start_time: Optional[float] = None
 
+        # Optional reference to the paged kv cache manager.
+        # Note that the paged manager is shared with the model worker thread.
+        # Care must be taken to ensure no race conditions.
+        self.paged_manager = paged_manager
+
         # TODO health check
 
     @traced
-    def _should_schedule_ce(self):
+    def _should_schedule_ce(self) -> bool:
         # No CE to schedule if queue is empty
         if self.request_q.empty():
             return False
@@ -134,46 +170,138 @@ class TokenGenerationSchedulerV2(Scheduler):
         return True
 
     @traced
-    def _create_batch_to_execute(self):
-        """Creates a batch to execute"""
-
-        # if we should schedule CE then create a CE batch
-        if self._should_schedule_ce():
-            max_batch_size_to_create = min(
-                self.scheduler_config.max_batch_size_ce,
-                self.scheduler_config.max_batch_size_tg
-                - len(self.active_batch),
-            )
-            ce_batch = self._create_ce_batch(max_batch_size_to_create)
-            return ce_batch, True
-
-        # if we execute TG then return the continuous batch
-        return self.active_batch, False
+    def _construct_fetch_input(self, batch) -> dict[int, np.ndarray]:
+        """Construct input to the `fetch` method of paged manager"""
+        seq_ids_and_prompts = {}
+        counter = -1
+        for data in batch.values():
+            seq_id = data.cache_seq_id
+            # we want to assign a unique unused id for seqs not in cache
+            if seq_id is None:
+                seq_id = counter
+                counter -= 1
+            seq_ids_and_prompts[seq_id] = data.next_tokens
+        return seq_ids_and_prompts
 
     @traced
-    def _create_ce_batch(self, max_batch_size_to_create: int):
-        batch = {}
-        sum_seq_len = 0
-        try:
-            while max_batch_size_to_create > 0:
+    def _try_create_ce_batch(self) -> BatchInputs:
+        """Try to create a context encoding batch"""
+        max_batch_size_to_create = min(
+            self.scheduler_config.max_batch_size_ce,
+            self.scheduler_config.max_batch_size_tg - len(self.active_batch),
+        )
+
+        ce_batch: BatchInputs = {}
+        total_seq_len = 0
+        for _ in range(max_batch_size_to_create):
+            try:
                 req_id, data = self.request_q.get_nowait()
-                data.cache_seq_id = self.available_cache_indices.pop()
-                batch[req_id] = data
+                data.cache_seq_id = None
+            except queue.Empty:
+                break
 
-                # if the batch has hit the target token budget, break early
-                sum_seq_len += getattr(data, "seq_len", 0)
-                if (
-                    self.scheduler_config.target_tokens_per_batch_ce is not None
-                    and sum_seq_len
-                    > self.scheduler_config.target_tokens_per_batch_ce
-                ):
-                    break
+            exceeds_seq_len = (
+                self.scheduler_config.target_tokens_per_batch_ce
+                and total_seq_len
+                > self.scheduler_config.target_tokens_per_batch_ce
+            )
 
-                max_batch_size_to_create -= 1
-        except queue.Empty:
-            pass
+            has_insufficient_kv_blocks = False
+            if self.paged_manager:
+                seq_ids_and_prompts = self._construct_fetch_input(
+                    self.active_batch | ce_batch | {req_id: data}
+                )
+                # This hardcoded value was chosen empirically to prevent
+                # excessive preemption on sharegpt.
+                # TODO: we should look at what vLLM does and decide a more
+                # intelligent policy for this.
+                headroom_for_num_tg_iterations = 5
+                num_steps = (
+                    self.scheduler_config.max_forward_steps_ce
+                    + headroom_for_num_tg_iterations
+                    * self.scheduler_config.max_forward_steps_tg
+                )
+                # Add this additional request to the ce batch if it leaves
+                # sufficient kv blocks to run several token gen steps without
+                # causing evictions.
+                has_insufficient_kv_blocks = not self.paged_manager.can_fetch(
+                    seq_ids_and_prompts, num_steps=num_steps
+                )
 
-        return batch
+            if exceeds_seq_len or has_insufficient_kv_blocks:
+                # we cannot schedule this request so return it to the head of
+                # the request queue
+                self.request_q.put_front_nowait((req_id, data))
+                break
+
+            seq_len = data.seq_len
+            total_seq_len += seq_len
+            data.cache_seq_id = self.available_cache_indices.pop()
+            ce_batch[req_id] = data
+
+        return ce_batch
+
+    @traced
+    def _preempt_request(self):
+        """Preempts the most recently received request from active batch"""
+        assert self.active_batch
+        # dicts in python pop the last inserted item
+        # this corresponds to the most recently received request
+        req_id, data = self.active_batch.popitem()
+        self.available_cache_indices.add(data.cache_seq_id)
+        self.pipeline.release(data)
+        data.reset()
+        self.request_q.put_front_nowait((req_id, data))
+        logger.warning(
+            f"Preempted a request due to lack of KV pages. Request id: {req_id}"
+        )
+
+    @traced
+    def _create_tg_batch(self) -> BatchInputs:
+        """Creates a non empty token generation batch"""
+        assert self.active_batch
+
+        # If we are not using paged attention, we can always schedule the active
+        # batch since we reserved blocks for all active requests previously
+        if self.paged_manager is None:
+            return self.active_batch
+
+        # Keep preempting requests until we can schedule the entire active batch
+        initial_active_batch_size = len(self.active_batch)
+        while self.active_batch:
+            seq_ids_and_prompts = self._construct_fetch_input(self.active_batch)
+            if self.paged_manager.can_fetch(
+                seq_ids_and_prompts,
+                num_steps=self.scheduler_config.max_forward_steps_tg,
+            ):
+                return self.active_batch
+            self._preempt_request()
+
+        # We failed to construct a TG batch.
+        # This should literally never happen unless the user sets an absurdly
+        # large max seq len or the KV cache is so small.
+        raise RuntimeError(
+            f"Insufficient KV pages to run token generation with batch size "
+            f"of one even after preempting {initial_active_batch_size - 1} requests."
+            f"You must restart your process and set a lower max seq len to prevent "
+            f"a single request from using the entire KV cache."
+        )
+
+    @traced
+    def _create_batch_to_execute(self) -> Tuple[BatchInputs, BatchType]:
+        """Creates a batch to execute"""
+        if self._should_schedule_ce():
+            ce_batch = self._try_create_ce_batch()
+            if ce_batch:
+                return ce_batch, BatchType.ContextEncoding
+            # failed to create a CE batch, try to create a TG batch instead
+
+        # if there are no active requests, we can't create a TG batch
+        if not self.active_batch:
+            return {}, BatchType.TokenGeneration
+
+        tg_batch = self._create_tg_batch()
+        return tg_batch, BatchType.TokenGeneration
 
     def run(self):
         """The Scheduler loop that creates batches and schedules them on GPU"""
@@ -182,13 +310,25 @@ class TokenGenerationSchedulerV2(Scheduler):
             self.pc.beat()
             i += 1
             try:
-                batch_to_execute, is_ce = self._create_batch_to_execute()
+                batch_to_execute, batch_type = self._create_batch_to_execute()
                 if len(batch_to_execute) == 0:
                     continue
 
-                if is_ce:
+                if self.paged_manager is not None:
+                    free_blocks = self.paged_manager.get_num_free_blocks()
+                    total_blocks = self.paged_manager.total_num_pages
+                    logger.debug(
+                        f"Scheduling {batch_type} batch with BS: {len(batch_to_execute)}, KVCache: {free_blocks}/{total_blocks} pages available"
+                    )
+                else:
+                    logger.debug(
+                        f"Scheduling {batch_type} batch with BS: {len(batch_to_execute)}"
+                    )
+
+                if batch_type == BatchType.ContextEncoding:
                     self._schedule_ce(batch_to_execute)
                 else:
+                    assert batch_type == BatchType.TokenGeneration
                     self._schedule_tg(batch_to_execute)
 
                 # occasionally handle cancelled requests
@@ -223,6 +363,8 @@ class TokenGenerationSchedulerV2(Scheduler):
                 del batch_executed[req_id]
                 batch_response[req_id] = STOP_STREAM
                 already_terminated.add(req_id)
+                if req_id in self.active_batch:
+                    del self.active_batch[req_id]
 
     @traced
     def _handle_cancelled_requests(self):
@@ -246,10 +388,6 @@ class TokenGenerationSchedulerV2(Scheduler):
 
     @traced
     def _schedule_ce(self, batch_to_execute):
-        logger.debug(
-            "Scheduling CE batch with BS: %d",
-            len(batch_to_execute),
-        )
         # we about to execute the batch, reset the CE batch timer
         self.ce_batch_start_time = None
 
@@ -268,7 +406,6 @@ class TokenGenerationSchedulerV2(Scheduler):
 
     @traced
     def _schedule_tg(self, batch_to_execute):
-        logger.debug("Scheduling TG with BS: %d", len(batch_to_execute))
         # execute the batch
         batch_responses = self.pipeline.next_token(
             batch_to_execute,
@@ -356,7 +493,6 @@ class EmbeddingsScheduler(Scheduler):
 
     @traced
     def _schedule_encode(self, batch_to_execute):
-        logger.debug("Scheduling encode with BS: %d", len(batch_to_execute))
         # execute the batch
         batch_responses = self.pipeline.encode(batch_to_execute)
         # remove terminated requests from the batch

@@ -17,6 +17,8 @@ from typing import AsyncGenerator, Mapping
 
 import uvloop
 from max.pipelines import EmbeddingsGenerator, PipelinesFactory, TokenGenerator
+from max.pipelines.kv_cache.paged_cache import PagedKVCacheManager
+from max.pipelines.pipeline import KVCacheMixin, TextGenerationPipeline
 from max.profiler import Tracer, traced
 from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
 from max.serve.pipelines.scheduler_v2 import (
@@ -256,11 +258,22 @@ def _create_token_generation_scheduler(
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
         batch_timeout=batch_timeout,
     )
+
+    # Get the paged kv cache manager if we are using one
+    paged_manager = None
+    if (
+        isinstance(pipeline, TextGenerationPipeline)
+        and isinstance(pipeline._pipeline_model, KVCacheMixin)
+        and isinstance(pipeline._pipeline_model.kv_manager, PagedKVCacheManager)
+    ):
+        paged_manager = pipeline._pipeline_model.kv_manager
+
     return TokenGenerationSchedulerV2(
         process_control=pc,
         scheduler_config=scheduler_config,
         pipeline=pipeline,
         queues=queues,
+        paged_manager=paged_manager,
     )
 
 
