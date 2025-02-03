@@ -548,8 +548,8 @@ OpFoldResult CmpOp::fold(FoldAdaptor adaptor) {
       return rhs ? getLhs() : getRhs();
   }
 
-  // Fold `ge(unsigned_val, 0), le(0, unsigned_val)` into true and false
-  // otherwise.
+  // Fold `ge(unsigned_val, some_val), le(some_val, unsigned_val)` into true
+  // and false otherwise. Where `some_val` is a constant >= 0.
   if (operandTy && operandTy->isUInt() &&
       llvm::is_contained({CmpPredicate::LE, CmpPredicate::GE}, getPred())) {
 
@@ -566,9 +566,12 @@ OpFoldResult CmpOp::fold(FoldAdaptor adaptor) {
       std::swap(lhs, rhs);
     }
 
-    // If the `rhs` is constant and zero, then we can simplify the comparison.
-    if (rhs && llvm::all_equal(rhs.getValues()) &&
-        rhs.getValues()[0].getData().isZero()) {
+    // If the `rhs` is constant and all elements are non-negative (>=0), then we
+    // can simplify the comparison.
+    if (rhs &&
+        llvm::all_of(rhs.getValues(), [](const DTypeValue &value) -> bool {
+          return value.getData().isNonPositive();
+        })) {
 
       bool cond = getPred() == CmpPredicate::GE;
       if (isSwapped)
