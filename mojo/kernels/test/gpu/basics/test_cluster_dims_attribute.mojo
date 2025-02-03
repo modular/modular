@@ -1,0 +1,103 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+# REQUIRES: H100-GPU
+# RUN: %mojo-no-debug-no-assert %s | FileCheck %s
+
+from gpu.host import DeviceContext, Dim, FuncAttribute
+from gpu.id import block_idx, cluster_idx, block_rank_in_cluster, cluster_dim
+from gpu.host._compile import _get_gpu_target
+from utils.static_tuple import StaticTuple
+
+
+@__llvm_metadata(`nvvm.cluster_dim`=cluster_dims)
+fn test_cluster_dims_attribute_kernel_with_param[
+    cluster_dims: StaticTuple[Int32, 3]
+]():
+    print(
+        "CLUSTER DIMS(",
+        cluster_dim.x,
+        cluster_dim.y,
+        cluster_dim.z,
+        ")",
+        "BLOCK(",
+        block_idx.x,
+        block_idx.y,
+        block_idx.z,
+        ")",
+        "CLUSTER(",
+        cluster_idx.x,
+        cluster_idx.y,
+        cluster_idx.z,
+        ")",
+    )
+
+
+@__llvm_metadata(`nvvm.cluster_dim`=StaticTuple[Int32, 3](2, 1, 1))
+fn test_cluster_dims_attribute_kernel():
+    print(
+        "CLUSTER DIMS(",
+        cluster_dim.x,
+        cluster_dim.y,
+        cluster_dim.z,
+        ")",
+        "BLOCK(",
+        block_idx.x,
+        block_idx.y,
+        block_idx.z,
+        ")",
+        "CLUSTER(",
+        cluster_idx.x,
+        cluster_idx.y,
+        cluster_idx.z,
+        ")",
+    )
+
+
+# CHECK-LABEL: test_cluster_dims_attribute
+# CHECK-DAG: CLUSTER DIMS( 2 1 1 ) BLOCK( 0 0 0 ) CLUSTER( 0 0 0 )
+# CHECK-DAG: CLUSTER DIMS( 2 1 1 ) BLOCK( 1 0 0 ) CLUSTER( 0 0 0 )
+# CHECK-DAG: CLUSTER DIMS( 2 1 1 ) BLOCK( 1 1 0 ) CLUSTER( 0 1 0 )
+# CHECK-DAG: CLUSTER DIMS( 2 1 1 ) BLOCK( 0 1 0 ) CLUSTER( 0 1 0 )
+fn test_cluster_dims_attribute(ctx: DeviceContext) raises:
+    print("== test_cluster_dims_attribute")
+    var kernel = ctx.compile_function[
+        test_cluster_dims_attribute_kernel,
+        _target = _get_gpu_target["sm_90"](),
+    ]()
+
+    ctx.enqueue_function(
+        kernel,
+        grid_dim=(2, 2, 1),
+        block_dim=(1),
+    )
+    ctx.synchronize()
+
+
+# CHECK-LABEL: test_cluster_dims_attribute_with_param
+# CHECK-DAG: CLUSTER DIMS( 1 2 1 ) BLOCK( 0 1 0 ) CLUSTER( 0 0 0 )
+# CHECK-DAG: CLUSTER DIMS( 1 2 1 ) BLOCK( 0 0 0 ) CLUSTER( 0 0 0 )
+# CHECK-DAG: CLUSTER DIMS( 1 2 1 ) BLOCK( 1 0 0 ) CLUSTER( 1 0 0 )
+# CHECK-DAG: CLUSTER DIMS( 1 2 1 ) BLOCK( 1 1 0 ) CLUSTER( 1 0 0 )
+fn test_cluster_dims_attribute_with_param(ctx: DeviceContext) raises:
+    print("== test_cluster_dims_attribute_with_param")
+    alias x = StaticTuple[Int32, 3](1, 2, 1)
+    var kernel = ctx.compile_function[
+        test_cluster_dims_attribute_kernel_with_param[x],
+        _target = _get_gpu_target["sm_90"](),
+    ]()
+
+    ctx.enqueue_function(
+        kernel,
+        grid_dim=(2, 2, 1),
+        block_dim=(1),
+    )
+    ctx.synchronize()
+
+
+def main():
+    with DeviceContext() as ctx:
+        test_cluster_dims_attribute(ctx)
+        test_cluster_dims_attribute_with_param(ctx)
