@@ -360,23 +360,23 @@ def batch_config_from_pipeline_config(
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION,
     batch_timeout: float = 0.0,
 ) -> TokenGeneratorPipelineConfig:
-    assert pipeline_config.max_cache_batch_size is not None
+    assert pipeline_config.max_batch_size is not None
     if pipeline_task == PipelineTask.EMBEDDINGS_GENERATION:
         logger.info(
             "Server configured with no cache and batch size %s",
-            pipeline_config.max_cache_batch_size,
+            pipeline_config.max_batch_size,
         )
         return TokenGeneratorPipelineConfig.no_cache(
-            batch_size=pipeline_config.max_cache_batch_size
+            batch_size=pipeline_config.max_batch_size
         )
 
     target_ce_batch_tokens = get_target_ce_batch_tokens(pipeline_config)
     assert pipeline_config.max_ce_batch_size is not None
     if pipeline_config.cache_strategy == KVCacheStrategy.CONTINUOUS:
         batch_config = TokenGeneratorPipelineConfig.continuous_heterogenous(
-            tg_batch_size=pipeline_config.max_cache_batch_size,
+            tg_batch_size=pipeline_config.max_batch_size,
             ce_batch_size=min(
-                pipeline_config.max_cache_batch_size,
+                pipeline_config.max_batch_size,
                 pipeline_config.max_ce_batch_size,
             ),
             ce_batch_timeout=batch_timeout,
@@ -385,15 +385,15 @@ def batch_config_from_pipeline_config(
         )
     elif pipeline_config.cache_strategy == KVCacheStrategy.NAIVE:
         batch_config = TokenGeneratorPipelineConfig.dynamic_homogenous(
-            batch_size=pipeline_config.max_cache_batch_size,
+            batch_size=pipeline_config.max_batch_size,
             batch_timeout=batch_timeout,
             max_forward_steps=pipeline_config.max_num_steps,
         )
     elif pipeline_config.cache_strategy == KVCacheStrategy.PAGED:
         batch_config = TokenGeneratorPipelineConfig.paged(
-            tg_batch_size=pipeline_config.max_cache_batch_size,
+            tg_batch_size=pipeline_config.max_batch_size,
             ce_batch_size=min(
-                pipeline_config.max_cache_batch_size,
+                pipeline_config.max_batch_size,
                 pipeline_config.max_ce_batch_size,
             ),
             ce_batch_timeout=batch_timeout,
@@ -409,7 +409,7 @@ def batch_config_from_pipeline_config(
     logger.info(
         "Server configured with %s caching with batch size %s",
         pipeline_config.cache_strategy,
-        pipeline_config.max_cache_batch_size,
+        pipeline_config.max_batch_size,
     )
 
     return batch_config

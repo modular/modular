@@ -151,7 +151,7 @@ def serve(
                 )
                 exit(-1)
 
-            pipeline_config.max_cache_batch_size = max_batch_size
+            pipeline_config.max_batch_size = max_batch_size
             # Retrieve tokenizer and pipeline.
             pipeline_config = PIPELINE_REGISTRY.validate_pipeline_config(
                 pipeline_config
@@ -196,7 +196,7 @@ def serve(
             # Works!
             model_name = "meta-llama/Meta-Llama-3.1-8B-Instruct"
             pipeline_config = get_default_llama31_config(use_cpu)
-            pipeline_config.max_cache_batch_size = max_batch_size
+            pipeline_config.max_batch_size = max_batch_size
             llama_tokenizer, llama_pipeline = PIPELINE_REGISTRY.retrieve(
                 pipeline_config
             )
@@ -210,7 +210,7 @@ def serve(
         elif model == "replit":
             model_name = "replit/replit-code-v1_5-3b"
             pipeline_config = get_default_replit_config(use_cpu)
-            pipeline_config.max_cache_batch_size = max_batch_size
+            pipeline_config.max_batch_size = max_batch_size
             replit_tokenizer, replit_pipeline_factory = (
                 PIPELINE_REGISTRY.retrieve_factory(
                     pipeline_config,
