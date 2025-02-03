@@ -135,6 +135,12 @@ kgen.func @max_f32(%arg0: !pop.scalar<f32>, %arg1: !pop.scalar<f32>) -> !pop.sca
   kgen.return %0 : !pop.scalar<f32>
 }
 
+// CHECK-LABEL: @max_bool
+kgen.func @max_bool(%arg0: !pop.scalar<bool>, %arg1: !pop.scalar<bool>) -> !pop.scalar<bool> {
+  // CHECK: llvm.intr.umax
+  %0 = pop.max %arg0, %arg1 : !pop.scalar<bool>
+  kgen.return %0 : !pop.scalar<bool>
+}
 
 // CHECK-LABEL: @min_si32
 kgen.func @min_si32(%arg0: !pop.scalar<si32>, %arg1: !pop.scalar<si32>) -> !pop.scalar<si32> {
@@ -157,6 +163,13 @@ kgen.func @min_f32(%arg0: !pop.scalar<f32>, %arg1: !pop.scalar<f32>) -> !pop.sca
   // CHECK: llvm.intr.minnum([[ARG0]], [[ARG1]]) {fastmathFlags = #llvm.fastmath<contract>}
   %0 = pop.min %arg0, %arg1 : !pop.scalar<f32>
   kgen.return %0 : !pop.scalar<f32>
+}
+
+// CHECK-LABEL: @min_bool
+kgen.func @min_bool(%arg0: !pop.scalar<bool>, %arg1: !pop.scalar<bool>) -> !pop.scalar<bool> {
+  // CHECK: llvm.intr.umin
+  %0 = pop.min %arg0, %arg1 : !pop.scalar<bool>
+  kgen.return %0 : !pop.scalar<bool>
 }
 
 kgen.func @div(%arg0: !pop.scalar<si32>,
