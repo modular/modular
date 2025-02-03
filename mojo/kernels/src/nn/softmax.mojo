@@ -1131,6 +1131,11 @@ fn _online_softmax_iter_for_mma_output[
                         frag[col if is_nvidia_gpu() else row],
                     )
 
+        @parameter
+        if warp_split_k:
+            # HACK: this makes a test failure go away for some reason
+            barrier()
+
         # Every four threads have elements on the same row.
         # Reduce max for T0-T3, T4-T7, etc for nvidia
         #                T0-T15, T16-T31, etc for amd
@@ -1388,6 +1393,7 @@ fn _online_softmax_iter_for_mma_output[
 #
 # Note that the `for k` loops are across warps (k is the index into
 # the `num_warps_n` rowwise warps).
+@always_inline
 fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     output_layout: Layout, //,
     type: DType,
@@ -1408,6 +1414,9 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     warp_scratch: LayoutTensor[
         type, *_, address_space = AddressSpace.SHARED, **_
     ],
+    o_smem_ptr_base: UnsafePointer[
+        Scalar[type], address_space = AddressSpace.SHARED, **_
+    ],
     rowmax: UnsafePointer[Scalar[type], **_],
     rowsum: UnsafePointer[Scalar[type], **_],
 ):
@@ -1418,6 +1427,10 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     alias num_warps_n = block_layout_by_warp.shape[1].value()
     alias num_lanes_m = UInt32(warp_layout.shape[0].value())
     alias num_lanes_n = UInt32(warp_layout.shape[1].value())
+
+    @parameter
+    if num_warps_n == 1:
+        return
     # Note that MHA cut the frag size in half:
     # var output_reg_vecs = output_reg_tile.tile[
     #     num_warps_n * num_m_mmas * num_n_mmas, p_frag_size // 2
@@ -1440,8 +1453,6 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     ) if is_nvidia_gpu() else Layout.row_major(4, 1)
     alias frag_num_rows = fragment_layout.shape[0].value()
 
-    # if tid == 0 and block_idx.x == 0:
-    #     print("output_reg_tile[0,0] =", output_reg_tile[0, 0])
     # Write output reg to smem
     # Each warp has `num_warps_n` output register tiles
     # P(A @ B) @ C
@@ -1473,9 +1484,9 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     alias warp_tile_size = WM * WN  # ((WM*WN)//frag_size) x frag_size
     alias row_warp_tile_size = (num_warps_n - 1) * warp_tile_size
     # Makes sure arithmetic is optimized away when `num_warps_m == 1`.
-    var o_smem_ptr = warp_scratch.ptr + warp_y * (
+    var o_smem_ptr = o_smem_ptr_base + warp_y * (
         num_warps_n - 1
-    ) * row_warp_tile_size if num_warps_m > 1 else warp_scratch.ptr
+    ) * row_warp_tile_size if num_warps_m > 1 else o_smem_ptr_base
 
     # NOTE: we must ensure that `output_reg_tile` is only ever indexed by constants.
     var out_reg_tile = output_reg_tile.tile[num_m_mmas * num_n_mmas, 1](0, 0)
@@ -1484,6 +1495,177 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
         WM * WN // (2 * frag_size), frag_size
     )
 
+    var interwarp_frag_rowmax = tb[type]().row_major[
+        num_m_mmas, frag_num_rows
+    ]().local().alloc()
+    var interwarp_frag_rowsum = tb[type]().row_major[
+        num_m_mmas, frag_num_rows
+    ]().local().alloc()
+    var correction = tb[type]().row_major[
+        num_m_mmas, frag_num_rows
+    ]().local().alloc()
+    var rowmax_tensor = tb[type]().row_major[num_m_mmas, frag_num_rows]().view(
+        rowmax
+    )
+    var rowsum_tensor = tb[type]().row_major[num_m_mmas, frag_num_rows]().view(
+        rowsum
+    )
+    # corrections across warps
+    # Write per warp rowmax to shared memory.
+    if lane % num_lanes_n == 0:
+
+        @parameter
+        for col_tile in range(num_m_mmas):
+
+            @parameter
+            for row in range(frag_num_rows):
+                var score_row_idx = col_tile * num_lanes_m + (
+                    lane // num_lanes_n
+                ) * frag_num_rows + row
+                # warp scratch has layout row_major(num_warps, num_rows). The
+                # "score_row_idx" is the idx-th row in the score matrix.
+                warp_scratch[
+                    Int(warp_x) + num_warps_n, Int(score_row_idx)
+                ] = rowmax_tensor[col_tile, row][0]
+
+    barrier()
+
+    # Reduce the warpwise rowmax.
+    if lane % num_lanes_n == 0:
+
+        @parameter
+        for col_tile in range(num_m_mmas):
+
+            @parameter
+            for row in range(frag_num_rows):
+                var score_row_idx = col_tile * num_lanes_m + (
+                    lane // num_lanes_n
+                ) * frag_num_rows + row
+
+                interwarp_frag_rowmax[col_tile, row] = rebind[Scalar[type]](
+                    warp_scratch[num_warps_n, Int(score_row_idx)]
+                )
+
+                @parameter
+                for row_warp in range(1, num_warps_n):
+                    interwarp_frag_rowmax[col_tile, row] = max(
+                        rebind[Scalar[type]](
+                            interwarp_frag_rowmax[col_tile, row]
+                        ),
+                        rebind[Scalar[type]](
+                            warp_scratch[
+                                row_warp + num_warps_n, Int(score_row_idx)
+                            ]
+                        ),
+                    )
+
+    alias exp_function = exp2 if use_exp2 else exp
+
+    @parameter
+    for col_tile in range(num_m_mmas):
+        # Broadcast to 4 threads in the same row.
+        @parameter
+        if num_warps_n > 1:
+
+            @parameter
+            for row in range(frag_num_rows):
+                interwarp_frag_rowmax[
+                    col_tile, row
+                ] = lane_group_max_and_broadcast[Int(num_lanes_n)](
+                    interwarp_frag_rowmax[col_tile, row]
+                )
+
+        # Corrention since previous max may be updated.
+        @parameter
+        for row in range(frag_num_rows):
+            correction[col_tile, row] = exp_function(
+                rowmax_tensor[col_tile, row]
+                - interwarp_frag_rowmax[col_tile, row]
+            )
+
+    if lane % num_lanes_n == 0:
+
+        @parameter
+        for col_tile in range(num_m_mmas):
+
+            @parameter
+            for row in range(frag_num_rows):
+                var score_row_idx = col_tile * num_lanes_m + (
+                    lane // num_lanes_n
+                ) * frag_num_rows + row
+                var c = rebind[Scalar[type]](correction[col_tile, row])
+                warp_scratch[Int(warp_x), Int(score_row_idx)] = (
+                    0.0 if c == 0.0 else rowsum_tensor[col_tile, row][0] * c
+                )
+
+    barrier()
+
+    # Reduce the warpwise rowsum.
+    if lane % num_lanes_n == 0:
+
+        @parameter
+        for col_tile in range(num_m_mmas):
+
+            @parameter
+            for row in range(frag_num_rows):
+                var score_row_idx = col_tile * num_lanes_m + (
+                    lane // num_lanes_n
+                ) * frag_num_rows + row
+                interwarp_frag_rowsum[col_tile, row] = rebind[Scalar[type]](
+                    warp_scratch[0, Int(score_row_idx)]
+                )
+
+                # Reduce rowmax. Warps in the same row do the same reduction.
+                @parameter
+                for row_warp in range(1, num_warps_n):
+                    interwarp_frag_rowsum[col_tile, row] += rebind[
+                        Scalar[type]
+                    ](warp_scratch[row_warp, Int(score_row_idx)])
+
+        # Broadcast to 4 threads in the same row e.g. T0 -> T0-T3.
+
+    @parameter
+    for col_tile in range(num_m_mmas):
+
+        @parameter
+        for row in range(frag_num_rows):
+            # Broadcast to 4 threads in the same row.
+            interwarp_frag_rowsum[col_tile, row] = lane_group_max_and_broadcast[
+                # interwarp_frag_rowsum[col_tile, row] = lane_group_sum_and_broadcast[
+                Int(num_lanes_n)
+            ](interwarp_frag_rowsum[col_tile, row])
+
+    var output = output_reg_tile.split[num_warps_n, axis=0]()
+
+    @parameter
+    for col_tile in range(num_m_mmas):
+
+        @parameter
+        for row in range(frag_num_rows):
+            # correction[col_tile, row] /= interwarp_frag_rowsum[col_tile, row]
+            rowsum_tensor[col_tile, row] = interwarp_frag_rowsum[col_tile, row]
+
+    # var ort00 = output_reg_tile[0,0]
+    # scale output reg
+    @parameter
+    for col_tile in range(num_m_mmas):
+
+        @parameter
+        for row_tile in range(num_n_mmas):
+            alias tile_id = col_tile + row_tile * num_m_mmas
+            alias output_frag_type = __type_of(output_reg_tile).element_type
+
+            @parameter
+            for row in range(frag_num_rows):
+                var c = correction[col_tile, row][0]
+
+                @parameter
+                for warp_tile in range(num_warps_n):
+                    output[warp_tile][tile_id, 0] = (
+                        0.0 if c == 0.0 else output[warp_tile][tile_id, 0] * c
+                    )
+
+    # reduce
     @parameter
     for warp_n in range(num_warps_n):
         var reg_tile = output_reg_tile.tile[num_m_mmas * num_n_mmas, 1](

@@ -3744,8 +3744,7 @@ fn mha_decoding_single_batch[
             Layout.row_major(num_m_mmas, num_n_mmas),
             Layout.row_major(num_warps_m, num_warps_n),
             Layout.row_major(8, 4),
-            warp_split_k=False,
-            # warp_split_k=decoding_warp_split_k,
+            warp_split_k=decoding_warp_split_k,
         ](
             output_reg_vecs,
             p_reg_vecs,
@@ -3877,11 +3876,14 @@ fn mha_decoding_single_batch[
         var output_reg_vecs = output_reg_tile.tile[
             num_warps_n * num_m_mmas * num_n_mmas, p_frag_size // 2
         ](0, 0).vectorize[1, p_frag_size // 2]()
+        # offset on the pointer is to avoid possible races
+        # with `accum_smem_warp_tile`.
+        var o_smem_ptr = q_smem.bitcast[Scalar[accum_type]]()
         var scratch = LayoutTensor[
             accum_type,
             Layout.row_major(2 * num_warps_n, BM),
             address_space = AddressSpace.SHARED,
-        ](q_smem.bitcast[Scalar[accum_type]]())
+        ](o_smem_ptr + num_warps_n * (num_warps_n - 1) * WM * WN)
 
         _online_softmax_iter_for_mma_output_split_warp_reduce[
             accum_type,
@@ -3893,6 +3895,7 @@ fn mha_decoding_single_batch[
         ](
             output_reg_vecs,
             scratch.tile[2 * num_warps_n, WM](0, Int(warp_y)),
+            o_smem_ptr,
             rowmax,
             rowsum,
         )
@@ -3916,11 +3919,20 @@ fn mha_decoding_single_batch[
             qk_max_ptr[q_head_idx] = row_max
 
     # Pack resutls in shared memory for wider simd width.
+    var accum_smem_warp_ptr = q_smem.bitcast[
+        Scalar[output_type]
+    ]() + warp_id * WM * WN
+
+    @parameter
+    if decoding_warp_split_k:
+        accum_smem_warp_ptr += (
+            (num_warps_n * (num_warps_n - 1)) * WM * WN * sizeof[accum_type]()
+        ) // sizeof[output_type]()
     var accum_smem_warp_tile = LayoutTensor[
         output_type,
         Layout.row_major(WM, WN),
         address_space = AddressSpace.SHARED,
-    ](q_smem.bitcast[Scalar[output_type]]() + warp_id * WM * WN)
+    ](accum_smem_warp_ptr)
 
     alias swizzle = make_swizzle[
         num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
