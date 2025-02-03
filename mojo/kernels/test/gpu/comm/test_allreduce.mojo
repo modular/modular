@@ -66,8 +66,8 @@ fn all_reduce_test[
     @parameter
     for i in range(ngpus):
         # Create and store device buffers
-        in_bufs_list.append(list_of_ctx[i].create_buffer_sync[type](length))
-        out_bufs_list.append(list_of_ctx[i].create_buffer_sync[type](length))
+        in_bufs_list.append(list_of_ctx[i].enqueue_create_buffer[type](length))
+        out_bufs_list.append(list_of_ctx[i].enqueue_create_buffer[type](length))
 
         # Create and initialize host buffers
         var host_buffer = UnsafePointer[Scalar[type]].alloc(length)
