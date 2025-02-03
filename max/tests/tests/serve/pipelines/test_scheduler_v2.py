@@ -97,12 +97,12 @@ def test_should_schedule_ce_timeout_not_reached(scheduler):
     assert not scheduler._should_schedule_ce()
 
 
-def test_create_ce_batch(scheduler):
+def test_try_create_ce_batch(scheduler):
     mock_data = MagicMock()
     mock_data.seq_len = 10
     scheduler.request_q.put(("req1", mock_data))
 
-    batch = scheduler._create_ce_batch(1)
+    batch = scheduler._try_create_ce_batch()
     assert len(batch) == 1
     assert "req1" in batch
     assert batch["req1"].cache_seq_id not in scheduler.available_cache_indices
