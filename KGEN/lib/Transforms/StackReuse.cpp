@@ -230,6 +230,13 @@ runAnalysis(Region &top, PassInfo &pass,
           toCheck.push_back(user);
           continue;
         }
+        if (isa<StackAllocLifetimeStartOp, StackAllocLifetimeEndOp>(user)) {
+          // Both operations don't make the pointer escape and the proper
+          // handling of validity of the next optimizations should be done
+          // later.
+          continue;
+        }
+        // Any other using operation conservatively is an escape.
         KGEN_DEBUG(0, {
           llvm::dbgs() << KGEN_DEBUG_TYPE << ": ";
           alloc.print(llvm::dbgs());
@@ -237,9 +244,6 @@ runAnalysis(Region &top, PassInfo &pass,
           user->print(llvm::dbgs());
           llvm::dbgs() << '\n';
         });
-        // Any other using operation conservatively is an escape.
-        // TODO: Properly handle lifetime markers in this pass. They change how
-        // liveness is defined for stack allocations.
         return WalkResult::advance();
       }
     }
@@ -275,9 +279,19 @@ static StackAllocationOp
 mostDominatingAlloc(mlir::DominanceInfo &domInfo, StackAllocationOp alloc,
                     const DenseSet<StackAllocationOp> &others) {
   VerboseCompilerTimeTraceScope traceScope("mostDominatingAlloc");
-  for (StackAllocationOp other : others)
-    if (domInfo.properlyDominates(&*other, alloc))
+  for (StackAllocationOp other : others) {
+    if (domInfo.properlyDominates(&*other, alloc)) {
+      auto lifetimeEnd = find_if(other->getUsers(), [&](Operation *user) {
+        return isa<StackAllocLifetimeEndOp>(user);
+      });
+      // if the scope of the 'other' allocation ends before 'alloc' scope
+      // starts, then 'other' is assumed to be non-dominating.
+      if (lifetimeEnd != other->user_end() &&
+          domInfo.properlyDominates(*lifetimeEnd, alloc))
+        continue;
       alloc = other;
+    }
+  }
   return alloc;
 }
 
@@ -332,7 +346,8 @@ static void scanRegion(
       PotentialValue value = pvIt->second;
       StackAllocationOp maybeReuse =
           mostDominatingAlloc(domInfo, alloc, rmap.at(value));
-      if (maybeReuse == alloc)
+      // Alloc could previously be removed from the set
+      if (maybeReuse == alloc || !canElide.contains(alloc))
         canElide.erase(alloc);
       else
         canElide.find(alloc)->second.insert(maybeReuse);

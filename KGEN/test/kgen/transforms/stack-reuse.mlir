@@ -57,6 +57,49 @@ kgen.func @control_flow_if(%arg0: index, %arg1: index, %arg2: i1) -> index {
   kgen.return %1 : index
 }
 
+// CHECK-LABEL: @control_flow_if_lifetime
+kgen.func @control_flow_if_lifetime(%arg0: index, %arg1: index, %arg2: i1) -> index {
+  // CHECK-NEXT: %[[S0:.*]] = pop.stack_allocation
+  // CHECK-NEXT: pop.stack_alloc.lifetime.start(%[[S0]])
+  // CHECK-NOT: pop.stack_allocation
+  %s0 = pop.stack_allocation 1 x index marked
+  pop.stack_alloc.lifetime.start(%s0) : !kgen.pointer<index>
+  %s1 = pop.stack_allocation 1 x index marked
+  pop.stack_alloc.lifetime.start(%s1) : !kgen.pointer<index>
+
+  pop.store %arg0, %s0 : !kgen.pointer<index>
+  // CHECK: hlcf.if
+  %if = hlcf.if %arg2 -> index {
+    // CHECK-NEXT: pop.load
+    %0 = pop.load %s0 : !kgen.pointer<index>
+    pop.store %0, %s1 : !kgen.pointer<index>
+    // CHECK-NEXT: %[[V:.*]] = pop.load %[[S0]]
+    %1 = pop.load %s1 : !kgen.pointer<index>
+    // CHECK-NEXT: yield %[[V]]
+    hlcf.yield %1 : index
+  // CHECK: else
+  } else {
+    // CHECK-NEXT: pop.load
+    %0 = pop.load %s0 : !kgen.pointer<index>
+    pop.store %0, %s1 : !kgen.pointer<index>
+    // CHECK-NEXT: %[[V:.*]] = pop.load %[[S0]]
+    %1 = pop.load %s1 : !kgen.pointer<index>
+    // CHECK-NEXT: yield %[[V]]
+    hlcf.yield %1 : index
+  }
+  // CHECK: pop.load
+  %0 = pop.load %s0 : !kgen.pointer<index>
+  pop.store %0, %s1 : !kgen.pointer<index>
+  // CHECK-NEXT: %[[V:.*]] = pop.load %[[S0]]
+  %1 = pop.load %s1 : !kgen.pointer<index>
+  // CHECK-NEXT: pop.stack_alloc.lifetime.end(%[[S0]])
+  // CHECK-NOT: pop.stack_alloc.lifetime.end(%[[S1]])
+  pop.stack_alloc.lifetime.end(%s0) : !kgen.pointer<index>
+  pop.stack_alloc.lifetime.end(%s1) : !kgen.pointer<index>
+  // CHECK-NEXT: return %[[V]]
+  kgen.return %1 : index
+}
+
 // CHECK-LABEL: @loop_and_gep
 kgen.func @loop_and_gep(%arg0: !pop.array<2, index>, %arg1: index) {
   // CHECK-NEXT: %[[S0:.*]] = pop.stack_allocation
@@ -112,6 +155,74 @@ kgen.func @gep_reconstruct(%arg0: !pop.array<2, index>, %arg1: !pop.array<2, ind
   %r1 = pop.load %gep : !kgen.pointer<index>
 
   // CHECK-NEXT: return %[[R0]], %[[R1]]
+  kgen.return %r0, %r1 : index, index
+}
+
+// CHECK-LABEL: @gep_reconstruct_lifetime(
+kgen.func @gep_reconstruct_lifetime(%arg0: !pop.array<2, index>, %arg1: !pop.array<2, index>) -> (index, index) {
+  %idx0 = index.constant 0
+
+  // CHECK: %[[S0:.*]] = pop.stack_allocation
+  // CHECK-NEXT: %[[S1:.*]] = pop.stack_allocation
+  // CHECK-NEXT: pop.stack_alloc.lifetime.start(%[[S1]])
+  // CHECK-NEXT: pop.stack_alloc.lifetime.start(%[[S0]])
+  // CHECK-NEXT: pop.store %arg0, %[[S0]]
+  // CHECK-NEXT: pop.store %arg1, %[[S1]]
+  // CHECK-NEXT: %[[GEP0:.*]] = pop.array.gep %[[S0]][%idx0]
+  // CHECK-NEXT: %[[R0:.*]] = pop.load %[[GEP0]]
+  // CHECK-NEXT: %[[GEP1:.*]] = pop.array.gep %[[S1]][%idx0]
+  // CHECK-NEXT: %[[R1:.*]] = pop.load %[[GEP1]]
+  // CHECK-NEXT: pop.stack_alloc.lifetime.end(%[[S1]])
+  // CHECK-NEXT: pop.stack_alloc.lifetime.end(%[[S0]])
+  // CHECK-NEXT: return %[[R0]], %[[R1]]
+  %s0 = pop.stack_allocation 1 x !pop.array<2, index> marked
+  %s1 = pop.stack_allocation 1 x !pop.array<2, index> marked
+  pop.stack_alloc.lifetime.start(%s1) : !kgen.pointer<array<2, index>>
+  pop.stack_alloc.lifetime.start(%s0) : !kgen.pointer<array<2, index>>
+  pop.store %arg0, %s0 : !kgen.pointer<array<2, index>>
+  pop.store %arg1, %s1 : !kgen.pointer<array<2, index>>
+  %s2 = pop.stack_allocation 1 x !pop.array<2, index>
+  %gep = pop.array.gep %s2[%idx0] : <array<2, index>>
+  pop.store %arg0, %s2 : !kgen.pointer<array<2, index>>
+  %r0 = pop.load %gep : !kgen.pointer<index>
+  pop.store %arg1, %s2 : !kgen.pointer<array<2, index>>
+  %r1 = pop.load %gep : !kgen.pointer<index>
+  pop.stack_alloc.lifetime.end(%s1) : !kgen.pointer<array<2, index>>
+  pop.stack_alloc.lifetime.end(%s0) : !kgen.pointer<array<2, index>>
+  kgen.return %r0, %r1 : index, index
+}
+
+// CHECK-LABEL: @gep_reconstruct_lifetime_fullymixed(
+kgen.func @gep_reconstruct_lifetime_fullymixed(%arg0: !pop.array<2, index>, %arg1: !pop.array<2, index>) -> (index, index) {
+  %idx0 = index.constant 0
+
+  // CHECK: %[[S0:.*]] = pop.stack_allocation
+  // CHECK: %[[S1:.*]] = pop.stack_allocation
+  // CHECK-NEXT: pop.stack_alloc.lifetime.start(%[[S1]])
+  // CHECK-NEXT: pop.stack_alloc.lifetime.start(%[[S0]])
+  // CHECK-NEXT: pop.store %arg0, %[[S0]]
+  // CHECK-NEXT: pop.store %arg1, %[[S1]]
+  // CHECK-NEXT: %[[GEP:.*]] = pop.array.gep %[[S0]][%idx0]
+  // CHECK-NEXT: %[[R0:.*]] = pop.load %[[GEP]]
+  // CHECK-NEXT: %[[GEP:.*]] = pop.array.gep %[[S1]][%idx0]
+  // CHECK-NEXT: %[[R1:.*]] = pop.load %[[GEP]]
+  // CHECK-NEXT: pop.stack_alloc.lifetime.end(%[[S1]])
+  // CHECK-NEXT: pop.stack_alloc.lifetime.end(%[[S0]])
+  // CHECK-NEXT: return %[[R0]], %[[R1]]
+  %s0 = pop.stack_allocation 1 x !pop.array<2, index> marked
+  %s1 = pop.stack_allocation 1 x !pop.array<2, index> marked
+  %s2 = pop.stack_allocation 1 x !pop.array<2, index>
+  pop.stack_alloc.lifetime.start(%s1) : !kgen.pointer<array<2, index>>
+  pop.stack_alloc.lifetime.start(%s0) : !kgen.pointer<array<2, index>>
+  pop.store %arg0, %s0 : !kgen.pointer<array<2, index>>
+  pop.store %arg1, %s1 : !kgen.pointer<array<2, index>>
+  %gep = pop.array.gep %s2[%idx0] : <array<2, index>>
+  pop.store %arg0, %s2 : !kgen.pointer<array<2, index>>
+  %r0 = pop.load %gep : !kgen.pointer<index>
+  pop.store %arg1, %s2 : !kgen.pointer<array<2, index>>
+  %r1 = pop.load %gep : !kgen.pointer<index>
+  pop.stack_alloc.lifetime.end(%s1) : !kgen.pointer<array<2, index>>
+  pop.stack_alloc.lifetime.end(%s0) : !kgen.pointer<array<2, index>>
   kgen.return %r0, %r1 : index, index
 }
 
