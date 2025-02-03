@@ -3,7 +3,10 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 modular_py_test(
     name = "tests",
     srcs = glob(
-        ["*.py"],
+        [
+            "*.py",
+            "pipelines/*.py",
+        ],
     ),
     data = [
         "//SDK/lib/API/python/tests/serve/testdata",
@@ -15,6 +18,7 @@ modular_py_test(
     deps = [
         "//SDK/lib/API/python/max/serve",
         "//SDK/lib/API/python/max/serve/grpc_serve",
+        "//SDK/lib/API/python/max/serve/pipelines",
         "//SDK/lib/API/python/max/serve/router",
         "//SDK/lib/API/python/max/serve/scheduler",
         requirement("async-asgi-testclient"),
