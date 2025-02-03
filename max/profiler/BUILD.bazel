@@ -6,6 +6,6 @@ modular_py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
-        "//SDK/lib/API/python/max/_profiler",
+        "//SDK/lib/API/python/max:_profiler",
     ],
 )

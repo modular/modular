@@ -6,7 +6,7 @@ modular_py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
-        "//SDK/lib/API/python/max/_dtype",
+        "//SDK/lib/API/python/max:_dtype",
         requirement("numpy"),
     ],
 )
