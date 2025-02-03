@@ -27,7 +27,7 @@ async def test_step():
 
     kv_manager = load_kv_manager(
         params=params,
-        max_cache_batch_size=16,
+        max_batch_size=16,
         max_seq_len=100,
         num_layers=10,
         devices=[device],
@@ -70,7 +70,7 @@ async def test_claim_and_release():
 
     kv_manager = load_kv_manager(
         params=params,
-        max_cache_batch_size=16,
+        max_batch_size=16,
         max_seq_len=100,
         num_layers=10,
         devices=[device],
@@ -112,7 +112,7 @@ async def test_fetch_continuous():
 
     kv_manager = load_kv_manager(
         params=params,
-        max_cache_batch_size=16,
+        max_batch_size=16,
         max_seq_len=100,
         num_layers=10,
         devices=[device],

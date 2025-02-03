@@ -33,7 +33,7 @@ MAX_READ_SIZE = 10 * 1024
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,
             cache_strategy=KVCacheStrategy.CONTINUOUS,
-            max_cache_batch_size=16,
+            max_batch_size=16,
             engine=PipelineEngine.MAX,
         )
     ],

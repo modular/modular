@@ -39,7 +39,7 @@ async def _test_kv_cache_gpu():
         )
         kv_manager: KVCacheManager = load_kv_manager(
             params=kv_params,
-            max_cache_batch_size=1,
+            max_batch_size=1,
             max_seq_len=512,
             num_layers=32,
             devices=list_of_devices,

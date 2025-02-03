@@ -110,8 +110,8 @@ class SupportedTestModels:
                 else [DeviceSpec.cpu()]
             )
 
-        if "max_cache_batch_size" not in kwargs:
-            kwargs["max_cache_batch_size"] = 1
+        if "max_batch_size" not in kwargs:
+            kwargs["max_batch_size"] = 1
 
         if "cache_strategy" not in kwargs:
             kwargs["cache_strategy"] = (

@@ -98,7 +98,7 @@ def _attention_layer(
     )
     kv_manager = load_kv_manager(
         params=kv_params,
-        max_cache_batch_size=BATCH_SIZE,  # verify this.
+        max_batch_size=BATCH_SIZE,  # verify this.
         max_seq_len=config.max_position_embeddings,
         num_layers=config.num_hidden_layers,
         session=session,

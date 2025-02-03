@@ -59,7 +59,7 @@ def create_paged_manager(num_blocks: int, page_size: int = 1) -> KVCacheManager:
     )
     kv_manager = load_kv_manager(
         params=kv_params,
-        max_cache_batch_size=99999,
+        max_batch_size=99999,
         max_seq_len=99999,
         num_layers=NUM_LAYERS,
         devices=[CPU()],
@@ -239,7 +239,7 @@ async def test_prefix_caching_with_random_prompts(page_size, num_steps) -> None:
 
     # Try to assign and release more than 128 blocks.
     num_seqs = 100
-    assert num_seqs < kv_manager.max_cache_batch_size
+    assert num_seqs < kv_manager.max_batch_size
     for seq_id in range(num_seqs):
         kv_manager.external_claim([seq_id])
         slots_used = 0

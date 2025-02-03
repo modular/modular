@@ -89,7 +89,7 @@ def test_print_kv_cache(dtype: DType) -> None:
 
     kv_manager = ContinuousBatchingKVCacheManager(
         kv_params,
-        max_cache_batch_size=1,
+        max_batch_size=1,
         max_seq_len=1,
         num_layers=1,
         devices=[CPU()],

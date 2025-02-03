@@ -56,7 +56,7 @@ def pipeline_config(testdata_directory, request):
         testdata_directory=testdata_directory,
         max_length=model_params.max_length,
         max_new_tokens=model_params.max_new_tokens,
-        max_cache_batch_size=model_params.max_batch_size,
+        max_batch_size=model_params.max_batch_size,
         cache_strategy=cache_strategy,
     )
 
@@ -100,7 +100,7 @@ async def test_pipeline_static_batch_same_prompt_same_output(
 
     """
     prompt = "Repeat this sentence forever and forever."
-    batch_size = pipeline._pipeline_config.max_cache_batch_size
+    batch_size = pipeline._pipeline_config.max_batch_size
     context_batch = {}
     for i in range(batch_size):
         context = await pipeline_tokenizer.new_context(
@@ -153,7 +153,7 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
     encodings we should expect this test to run with is tinyllama/fp32.
     """
     prompt = "Repeat this sentence forever and forever."
-    batch_size = pipeline._pipeline_config.max_cache_batch_size
+    batch_size = pipeline._pipeline_config.max_batch_size
 
     print(batch_size)
     context_batch = {}
@@ -241,7 +241,7 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
     batching.
     """
     prompt = "Repeat this sentence forever and forever."
-    max_batch_size = pipeline._pipeline_config.max_cache_batch_size
+    max_batch_size = pipeline._pipeline_config.max_batch_size
     print(f"MaxBatchSize: {max_batch_size}")
 
     for batch_size in batch_sizes:

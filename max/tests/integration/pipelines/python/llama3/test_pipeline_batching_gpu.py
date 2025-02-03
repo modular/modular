@@ -63,7 +63,7 @@ def pipeline_config(testdata_directory, request) -> PipelineConfig:
         testdata_directory=testdata_directory,
         max_length=model_params.max_length,
         max_new_tokens=model_params.max_new_tokens,
-        max_cache_batch_size=model_params.max_batch_size,
+        max_batch_size=model_params.max_batch_size,
         cache_strategy=cache_strategy,
         pad_to_multiple_of=2,
     )

@@ -40,7 +40,7 @@ MAX_READ_SIZE = 10 * 1024
             device_specs=[DeviceSpec.accelerator()],
             quantization_encoding=SupportedEncoding.bfloat16,
             cache_strategy=KVCacheStrategy.CONTINUOUS,
-            max_cache_batch_size=16,
+            max_batch_size=16,
             engine=PipelineEngine.MAX,
         )
     ],
@@ -89,7 +89,7 @@ async def test_smollm_serve_gpu(app):
             device_specs=[DeviceSpec.accelerator()],
             quantization_encoding=SupportedEncoding.bfloat16,
             cache_strategy=KVCacheStrategy.CONTINUOUS,
-            max_cache_batch_size=16,
+            max_batch_size=16,
             engine=PipelineEngine.MAX,
         )
     ],
@@ -121,7 +121,7 @@ async def test_smollm_serve_gpu_nonchat_completions(app, prompt):
             device_specs=[DeviceSpec.accelerator()],
             quantization_encoding=SupportedEncoding.bfloat16,
             cache_strategy=KVCacheStrategy.CONTINUOUS,
-            max_cache_batch_size=16,
+            max_batch_size=16,
             engine=PipelineEngine.MAX,
         )
     ],

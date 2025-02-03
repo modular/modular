@@ -72,7 +72,7 @@ def _attention_layer(
 
     kv_manager = load_kv_manager(
         params=kv_params,
-        max_cache_batch_size=16,
+        max_batch_size=16,
         max_seq_len=MAX_SEQ_LEN,
         num_layers=NUM_LAYERS,
         devices=[device],
@@ -264,7 +264,7 @@ def test_kv_cache_ragged_attention(session, cache_strategy):
     input_row_offsets_type = TensorType(DType.uint32, ["input_row_offsets_len"])
 
     manager_kwargs = {
-        "max_cache_batch_size": 2,
+        "max_batch_size": 2,
         "max_seq_len": 100,
         "num_layers": 1,
         "devices": [CPU()],

@@ -49,7 +49,7 @@ async def test_kv_collection_constructor(cache_strategy, fetch_cls) -> None:
     available_cache_memory = 100 * 2**20
     kv_manager = load_kv_manager(
         params=kv_params,
-        max_cache_batch_size=1,
+        max_batch_size=1,
         max_seq_len=512,
         num_layers=32,
         devices=[CPU()],

@@ -163,7 +163,7 @@ def _attention_layer(
 
     kv_manager = load_kv_manager(
         params=kv_params,
-        max_cache_batch_size=16,
+        max_batch_size=16,
         max_seq_len=MAX_SEQ_LEN,
         num_layers=NUM_LAYERS,
         devices=devices,

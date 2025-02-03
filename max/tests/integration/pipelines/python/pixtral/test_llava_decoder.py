@@ -278,7 +278,7 @@ def test_llava_mistral_decoder(pytorch_mistral_and_config):
 
     kv_manager = load_kv_manager(
         params=kv_params,
-        max_cache_batch_size=batch_size,  # verify this.
+        max_batch_size=batch_size,  # verify this.
         max_seq_len=pytorch_config.max_position_embeddings,  # verify this.
         num_layers=pytorch_config.num_hidden_layers,
         session=session,

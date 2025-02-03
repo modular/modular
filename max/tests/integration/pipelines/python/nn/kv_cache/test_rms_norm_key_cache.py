@@ -77,7 +77,7 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     )
     kv_manager = ContinuousBatchingKVCacheManager(
         kv_params,
-        max_cache_batch_size=batch_size,
+        max_batch_size=batch_size,
         max_seq_len=max_seq_len,
         num_layers=1,
         devices=[CPU()],

@@ -71,7 +71,7 @@ def _attention_layer(
 
     kv_manager = load_kv_manager(
         params=kv_params,
-        max_cache_batch_size=16,
+        max_batch_size=16,
         max_seq_len=MAX_SEQ_LEN,
         num_layers=NUM_LAYERS,
         devices=[device],
@@ -392,7 +392,7 @@ def test_cross_attention_gpu(hidden_seq_lens: list[int]) -> None:
     )
     kv_manager = load_kv_manager(
         params=kv_params,
-        max_cache_batch_size=batch_size,
+        max_batch_size=batch_size,
         max_seq_len=config.max_position_embeddings,
         num_layers=config.num_hidden_layers,
         session=session,

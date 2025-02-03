@@ -189,7 +189,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
 
         return load_kv_manager(
             params=self.get_kv_params(self.pipeline_config),
-            max_cache_batch_size=self.pipeline_config.max_cache_batch_size,
+            max_batch_size=self.pipeline_config.max_batch_size,
             max_seq_len=self.calculate_max_seq_len(self.pipeline_config),
             num_layers=num_layers,
             devices=self.pipeline_config.devices,
@@ -211,7 +211,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
 
         return estimate_kv_cache_size(
             params=cls.get_kv_params(pipeline_config),
-            max_cache_batch_size=pipeline_config.max_cache_batch_size,
+            max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=pipeline_config.max_length,
             num_layers=num_layers,
             available_cache_memory=available_cache_memory,
@@ -321,7 +321,7 @@ def test_registry__test_retrieve_with_unknown_architecture_max_engine():
         huggingface_repo_id="modularai/llama-3.1",
         # This forces it to fail if we dont have it.
         engine=PipelineEngine.MAX,
-        max_cache_batch_size=1,
+        max_batch_size=1,
         max_length=512,
     )
 
@@ -336,7 +336,7 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine():
     config = PipelineConfig(
         architecture="not_registered",
         huggingface_repo_id="modularai/llama-3.1",
-        max_cache_batch_size=1,
+        max_batch_size=1,
         max_length=512,
     )
 
@@ -351,7 +351,7 @@ def test_registry__test_retrieve_factory_with_known_architecture():
     config = PipelineConfig(
         architecture="LlamaForCausalLM",
         huggingface_repo_id="modularai/llama-3.1",
-        max_cache_batch_size=1,
+        max_batch_size=1,
         max_length=512,
     )
 
@@ -365,7 +365,7 @@ def test_registry__test_retrieve_factory_with_unsupported_huggingface_repo_id():
     config = PipelineConfig(
         huggingface_repo_id="modularai/replit-code-1.5",
         trust_remote_code=True,
-        max_cache_batch_size=1,
+        max_batch_size=1,
         max_length=512,
     )
 
@@ -383,7 +383,7 @@ def test_registry__test_load_factory_with_known_architecture_and_hf_repo_id():
 
     config = PipelineConfig(
         huggingface_repo_id="modularai/llama-3.1",
-        max_cache_batch_size=1,
+        max_batch_size=1,
         max_length=512,
     )
 
@@ -399,7 +399,7 @@ def test_registry__test_incompatible_quantization_encoding():
         huggingface_repo_id="modularai/llama-3.1",
         quantization_encoding=SupportedEncoding.q4_k,
         weight_path=[Path("llama-3.1-8b-instruct-bf16.gguf")],
-        max_cache_batch_size=1,
+        max_batch_size=1,
         max_length=512,
     )
 
@@ -411,7 +411,7 @@ def test_registry__test_incompatible_quantization_encoding():
         huggingface_repo_id="modularai/llama-3.1",
         quantization_encoding=SupportedEncoding.bfloat16,
         weight_path=[Path("llama-3.1-8b-instruct-bf16.gguf")],
-        max_cache_batch_size=1,
+        max_batch_size=1,
         max_length=512,
     )
 
@@ -425,7 +425,7 @@ def test_registry__update_cache_strategy():
     config = PipelineConfig(
         huggingface_repo_id="modularai/llama-3.1",
         cache_strategy=KVCacheStrategy.NAIVE,
-        max_cache_batch_size=1,
+        max_batch_size=1,
         max_length=512,
     )
 
@@ -471,7 +471,7 @@ def test_registry__update_weight_paths():
         config = PipelineConfig(
             huggingface_repo_id="modularai/llama-3.1",
             quantization_encoding=SupportedEncoding.float32,
-            max_cache_batch_size=1,
+            max_batch_size=1,
             max_length=512,
         )
 
@@ -484,7 +484,7 @@ def test_registry__update_weight_paths():
         config = PipelineConfig(
             huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
             quantization_encoding=SupportedEncoding.float32,
-            max_cache_batch_size=1,
+            max_batch_size=1,
             max_length=512,
         )
 
@@ -511,7 +511,7 @@ def test_registry__update_weight_paths():
         config = PipelineConfig(
             huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
             quantization_encoding=SupportedEncoding.bfloat16,
-            max_cache_batch_size=1,
+            max_batch_size=1,
             max_length=512,
         )
 
@@ -525,7 +525,7 @@ def test_registry__update_weight_paths():
             huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
             quantization_encoding=SupportedEncoding.q4_k,
             engine=PipelineEngine.MAX,
-            max_cache_batch_size=1,
+            max_batch_size=1,
             max_length=512,
         )
 
@@ -537,7 +537,7 @@ def test_registry__update_weight_paths():
         config = PipelineConfig(
             huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
             quantization_encoding=SupportedEncoding.q4_k,
-            max_cache_batch_size=1,
+            max_batch_size=1,
             max_length=512,
         )
 
@@ -549,7 +549,7 @@ def test_registry__update_weight_paths():
             huggingface_repo_id="replit/replit-code-v1_5-3b",
             quantization_encoding=SupportedEncoding.bfloat16,
             trust_remote_code=True,
-            max_cache_batch_size=1,
+            max_batch_size=1,
             max_length=512,
         )
 
@@ -560,7 +560,7 @@ def test_registry__update_weight_paths():
         # Test a partially complete huggingface_repo
         config = PipelineConfig(
             huggingface_repo_id="neubla/tiny-random-LlamaForCausalLM",
-            max_cache_batch_size=1,
+            max_batch_size=1,
             max_length=512,
         )
         config = PIPELINE_REGISTRY.validate_pipeline_config(config)
@@ -576,7 +576,7 @@ def test_registry__update_weight_paths():
             weight_path=[
                 Path("modularai/replit-code-1.5/replit-code-v1_5-3b-f32.gguf")
             ],
-            max_cache_batch_size=1,
+            max_batch_size=1,
             max_length=512,
         )
 
@@ -594,7 +594,7 @@ def test_registry__raise_oom_error_weights_size_exceeds_available_memory():
         huggingface_repo_id="modularai/llama-3.1",
     )
 
-    config.max_cache_batch_size = None
+    config.max_batch_size = None
     config.max_length = None
     with (
         patch.object(
@@ -621,7 +621,7 @@ def test_registry__raise_oom_error_all_defaults_no_valid_solution():
         huggingface_repo_id="modularai/llama-3.1",
     )
 
-    config.max_cache_batch_size = None
+    config.max_batch_size = None
     config.max_length = None
     with (
         patch.object(
@@ -634,7 +634,7 @@ def test_registry__raise_oom_error_all_defaults_no_valid_solution():
         device_mock.return_value = {"free_memory": 30641 * 1024 * 1024}
         with pytest.raises(
             RuntimeError,
-            match="Try reducing --max-length or --max-cache-batch-size",
+            match="Try reducing --max-length or --max-batch-size",
         ):
             PIPELINE_REGISTRY.validate_pipeline_config(config)
 
@@ -647,7 +647,7 @@ def test_registry__raise_oom_error_all_defaults():
         huggingface_repo_id="modularai/llama-3.1",
     )
 
-    config.max_cache_batch_size = None
+    config.max_batch_size = None
     config.max_length = None
     with (
         patch.object(
@@ -662,7 +662,7 @@ def test_registry__raise_oom_error_all_defaults():
         device_mock.return_value = {"free_memory": 40000 * 1024 * 1024}
         with pytest.raises(
             RuntimeError,
-            match=r"Try setting --max-length to \d+ and --max-cache-batch-size to",
+            match=r"Try setting --max-length to \d+ and --max-batch-size to",
         ):
             PIPELINE_REGISTRY.validate_pipeline_config(config)
 
@@ -675,7 +675,7 @@ def test_registry__raise_oom_error_max_length_set():
         huggingface_repo_id="modularai/llama-3.1",
     )
 
-    config.max_cache_batch_size = None
+    config.max_batch_size = None
     config.max_length = 100000
     with (
         patch.object(
@@ -696,14 +696,14 @@ def test_registry__raise_oom_error_max_length_set():
 
 
 @prepare_registry
-def test_registry__raise_oom_error_max_cache_batch_size_set():
+def test_registry__raise_oom_error_max_batch_size_set():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(
         huggingface_repo_id="modularai/llama-3.1",
     )
 
-    config.max_cache_batch_size = 100000
+    config.max_batch_size = 100000
     config.max_length = None
     with (
         patch.object(
@@ -715,20 +715,20 @@ def test_registry__raise_oom_error_max_cache_batch_size_set():
     ):
         device_mock.return_value = {"free_memory": 40000 * 1024 * 1024}
         with pytest.raises(
-            RuntimeError, match="Try reducing --max-cache-batch-size to"
+            RuntimeError, match="Try reducing --max-batch-size to"
         ):
             PIPELINE_REGISTRY.validate_pipeline_config(config)
 
 
 @prepare_registry
-def test_registry__raise_oom_error_max_cache_batch_size_set_and_max_length_set():
+def test_registry__raise_oom_error_max_batch_size_set_and_max_length_set():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(
         huggingface_repo_id="modularai/llama-3.1",
     )
 
-    config.max_cache_batch_size = 100000
+    config.max_batch_size = 100000
     config.max_length = 4096
     with (
         patch.object(
@@ -742,6 +742,6 @@ def test_registry__raise_oom_error_max_cache_batch_size_set_and_max_length_set()
     ):
         device_mock.return_value = {"free_memory": 40000 * 1024 * 1024}
         with pytest.raises(
-            RuntimeError, match="Try reducing --max-cache-batch-size to"
+            RuntimeError, match="Try reducing --max-batch-size to"
         ):
             PIPELINE_REGISTRY.validate_pipeline_config(config)

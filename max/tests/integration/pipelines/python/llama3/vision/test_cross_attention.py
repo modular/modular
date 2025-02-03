@@ -173,7 +173,7 @@ def test_cross_attention(
     )
     kv_manager = load_kv_manager(
         params=kv_params,
-        max_cache_batch_size=batch_size,
+        max_batch_size=batch_size,
         max_seq_len=config.max_position_embeddings,
         num_layers=config.num_hidden_layers,
         session=session,

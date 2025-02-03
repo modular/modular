@@ -486,7 +486,7 @@ def main(
     logger.info(
         "- KVCache %s, MaxSize %d",
         config.cache_strategy,
-        config.max_cache_batch_size,
+        config.max_batch_size,
     )
 
     logger.info("Starting batch demo")
@@ -501,7 +501,7 @@ def main(
     else:
         raise ValueError("Invalid scenario specified")
 
-    assert config.max_cache_batch_size is not None
+    assert config.max_batch_size is not None
     asyncio.run(
         run_batch_scenario(
             pipeline=pipeline,
@@ -509,7 +509,7 @@ def main(
             model_name=model_name,
             prompts=prompt,
             batch_mode=batch_mode,
-            batch_max_size=config.max_cache_batch_size,
+            batch_max_size=config.max_batch_size,
             output_path=output_path,
             request_list=requests,
         )
@@ -521,15 +521,15 @@ if __name__ == "__main__":
     ** Dynamic Batching Simulation **
     CPU
         Produces valid outputs until the first request in the batch completes - then garbage.
-        bazelw run //SDK/integration-test/pipelines/python:evaluate_batch_scenarios -- --batch-mode dynamic --max-cache-batch-size 4 --model-name llama3 --quantization-encoding q4_k
+        bazelw run //SDK/integration-test/pipelines/python:evaluate_batch_scenarios -- --batch-mode dynamic --max-batch-size 4 --model-name llama3 --quantization-encoding q4_k
     GPU
         Produces valid outputs until the first request in the batch completes - then garbage.
-        bazelw run //SDK/integration-test/pipelines/python:evaluate_batch_scenarios -- --batch-mode dynamic --max-cache-batch-size 4 --model-name llama3
+        bazelw run //SDK/integration-test/pipelines/python:evaluate_batch_scenarios -- --batch-mode dynamic --max-batch-size 4 --model-name llama3
 
     ** Continuous Batching Simulation **
     CPU
-        bazelw run //SDK/integration-test/pipelines/python:evaluate_batch_scenarios -- --batch-mode continuous --max-cache-batch-size 4 --model-name llama3 --quantization-encoding float32 --cache-strategy continuous
+        bazelw run //SDK/integration-test/pipelines/python:evaluate_batch_scenarios -- --batch-mode continuous --max-batch-size 4 --model-name llama3 --quantization-encoding float32 --cache-strategy continuous
     GPU
-        bazelw run //SDK/integration-test/pipelines/python:evaluate_batch_scenarios -- --batch-mode continuous --max-cache-batch-size 4 --model-name llama3 --cache-strategy continuous
+        bazelw run //SDK/integration-test/pipelines/python:evaluate_batch_scenarios -- --batch-mode continuous --max-batch-size 4 --model-name llama3 --cache-strategy continuous
     """
     main()

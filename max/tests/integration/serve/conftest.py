@@ -35,7 +35,7 @@ def app(pipeline_config):
 
     pipeline_batch_config = (
         TokenGeneratorPipelineConfig.continuous_heterogenous(
-            tg_batch_size=pipeline_config.max_cache_batch_size,
+            tg_batch_size=pipeline_config.max_batch_size,
             ce_batch_size=1,
         )
     )
