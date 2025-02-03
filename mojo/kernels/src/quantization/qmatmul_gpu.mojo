@@ -1103,7 +1103,7 @@ fn repack_GPTQ_for_sm8x[
 ](
     in_tensor: LayoutTensor[DType.uint8, in_layout],
     out_tensor: LayoutTensor[DType.uint8, out_layout],
-    perm_idx: OptionalReg[LayoutTensor[DType.int32, perm_layout]] = None,
+    perm_idx: LayoutTensor[DType.int32, perm_layout],
 ):
     alias raw_scales_type = DType.float16
     alias weights_bytes_per_group = group_size // 2
@@ -1251,7 +1251,6 @@ fn repack_GPTQ_for_sm8x[
 
                 @parameter
                 if has_perm:
-                    var perm_idx = perm_idx.value()
                     var p_block_idx = perm_idx.tile[BK](block_idx[1])
                     var p_group_idx = p_block_idx.tile[group_size](
                         2 * i + warp_y
@@ -2008,6 +2007,7 @@ fn gpu_qint4_repack_GPTQ[
             repack_func,
             tensor_b,
             tensor_packed_b,
+            UnsafePointer[Scalar[DType.int32]](),
             grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
             block_dim=(128, 1, 1),
             shared_mem_bytes=smem_usage,
