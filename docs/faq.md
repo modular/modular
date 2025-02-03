@@ -13,12 +13,14 @@ channels](https://www.modular.com/community).
 ### Why did you build Mojo?
 
 We built Mojo to solve an internal challenge at Modular, and we are using it
-extensively in our systems such as our [AI
-Engine](/engine). As a result, we are extremely committed to
+extensively in our systems such as our [MAX Platform](https://www.modular.com/max).
+As a result, we are extremely committed to
 its long term success and are investing heavily in it. Our overall mission is
 to unify AI software and we can’t do that without a unified language that can
-scale across the AI infrastructure stack. That said, we don’t plan to stop at
-AI—the north star is for Mojo to support the whole gamut of general-purpose
+scale across the AI infrastructure stack. Our current focus is to unify
+CPU+GPU programming with blazing-fast execution on the
+[MAX Platform](https://www.modular.com/max). That said, the north star
+is for Mojo to support the whole gamut of general-purpose
 programming over time. For a longer answer, read [Why
 Mojo](/mojo/why-mojo).
 
@@ -138,9 +140,12 @@ direct programming support for the MLIR intermediate representations.
 
 ### Is Mojo only for AI or can it be used for other stuff?
 
-Mojo is a general purpose programming language. We use Mojo at Modular to
-develop AI algorithms, but as we grow Mojo into a superset of Python, you can
-use it for other things like HPC, data transformations, writing pre/post
+Mojo's initial focus is to solve AI programmability challenges. See
+[here](https://github.com/modular/max/tree/main/examples/custom_ops) for examples
+of how to write custom GPU operations. That being said,
+the goal is to grow Mojo into a general purpose programming language. We use Mojo
+at Modular to develop AI algorithms, but
+you can use it for other things like HPC, data transformations, writing pre/post
 processing operations, and much more. For examples of how Mojo can be used for
 other general programming tasks, see our [Mojo
 examples](https://github.com/modular/mojo/tree/main/examples).
@@ -163,22 +168,21 @@ languages (EDSLs) like Triton, read the “Embedded DSLs in Python” section of
 [Why
 Mojo](/mojo/why-mojo#embedded-dsls-in-python).
 
-### How does Mojo help with PyTorch and TensorFlow acceleration?
+### How does Mojo help with PyTorch acceleration?
 
-Mojo is a general purpose programming language, so it has no specific
-implementations for ML training or serving, although we use Mojo as part of the
-overall Modular AI stack. The [Modular AI
-Engine](/engine), for example, supports deployment of PyTorch
-and TensorFlow models, while Mojo is the language we use to write the engine’s
-in-house kernels.
+We use Mojo as part of the overall Modular AI stack,
+[MAX](https://www.modular.com/max) which accelerates PyTorch models.
+Mojo is the language we use to write the MAX’s high-performance CPU and GPU graph
+operations.
 
 ### Does Mojo support distributed execution?
 
-Not alone. You will need to leverage the [Modular AI
-Engine](/engine) for that. Mojo is one component of the
-Modular stack that makes it easier for you to author highly performant,
-portable kernels, but you’ll also need a runtime (or “OS”) that supports graph
-level transformations and heterogeneous compute.
+Not alone. You will need to leverage the
+[MAX Platform](https://www.modular.com/max)
+for that. Mojo is one component of the Modular stack that makes it easier
+for you to author highly performant, portable CPU and GPU graph operations,
+but you’ll also need a runtime (or “OS”) that supports graph level
+transformations and heterogeneous compute, which is provided by MAX.
 
 ### Will Mojo support web deployment (such as Wasm or WebGPU)?
 
@@ -229,11 +233,11 @@ For lots more information, check out our 3-part blog post series about
 [how Mojo gets a 35,000x speedup over
 Python](https://www.modular.com/blog/how-mojo-gets-a-35-000x-speedup-over-python-part-1).
 
-By the way, all the kernels that power the [Modular AI
-Engine](/engine) are written in Mojo. We also compared our
-matrix multiplication implementation to other state-of-the-art implementations
-that are usually written in assembly. To see the results, see [our blog post
-about unified matrix
+By the way, all the CPU and GPU graph operations that power Modular's
+[MAX Platfrom](https://www.modular.com/max) are written in Mojo.
+We also compared our matrix multiplication implementation to other
+state-of-the-art implementations that are usually written in assembly.
+To see the results, see [our blog post about unified matrix
 multiplication](https://www.modular.com/blog/the-worlds-fastest-unified-matrix-multiplication).
 
 ## Performance
@@ -242,13 +246,12 @@ multiplication](https://www.modular.com/blog/the-worlds-fastest-unified-matrix-m
 
 It’s important to remember that Mojo is a general-purpose programming language,
 and any AI-related benchmarks will rely heavily upon other framework
-components. For example, our in-house kernels for the [Modular AI
-Engine](/engine) are all written in Mojo and you can learn more
-about our kernel performance in our [matrix multiplication blog
+components. For example, our in-house CPU and GPU graph operations that power
+Modular's [MAX](https://www.modular.com/max) are all written in
+Mojo and you can learn more about performance in our [matrix multiplication blog
 post](https://www.modular.com/blog/the-worlds-fastest-unified-matrix-multiplication).
-For details about our end-to-end model performance relative to the latest
-releases of TensorFlow and PyTorch, check out our [performance
-dashboard](https://www.modular.com/max/performance).
+For details about our end-to-end model performance, read about how we measure
+performance at Modular [here](https://www.modular.com/blog/max-gpu-state-of-the-art-throughput-on-a-new-genai-platform).
 
 ## Mojo SDK
 
@@ -365,7 +368,7 @@ for more coarse-grain updates.
 
 ### Will Mojo be open-sourced?
 
-We expect to open-source Mojo progressively over time as it continues to mature.
+We have commited to open-sourcing Mojo in 2026.
 Mojo is still young, so we will continue to incubate it within Modular until
 more of its internal architecture is fleshed out.
 
