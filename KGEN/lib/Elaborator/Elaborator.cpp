@@ -1420,7 +1420,7 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
         generatorOp.getInlineLevel(), generatorOp.getExportKind(),
         generatorOp.getDecorators(), DictionaryAttr::get(b.getContext())));
     // Process LLVM metadata recorded in the generator by fusing names and
-    // values from the LLVMetadataName and LLVMMetadataValue dictionaries.o
+    // values from the LLVMetadataName and LLVMMetadataValue dictionaries.
     auto newFunc = cast<FuncOp>(*instance);
     if (!generatorOp.getLLVMMetadataArray().empty()) {
       newFunc->setAttr(kLLVMMetadataArrayAttrName,

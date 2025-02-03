@@ -626,7 +626,8 @@ void FnSigDecorators::applyLLVMMetadata(const CallNode &node) {
     }
     // It might be possible that name comes from alias, therefore need to
     // analyze all module's aliases to see if alias's value needs to be used.
-    if (auto aliasOp = getLLVMMetadataNameAlias(shared, sigDecl, value))
+    if (std::optional<AliasDeclOp> aliasOp =
+            getLLVMMetadataNameAlias(shared, sigDecl, value))
       metadata.push_back(*aliasOp->getValue());
     else
       metadata.push_back(value.name);
