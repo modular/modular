@@ -71,8 +71,15 @@ defm sanitize : CommandOption<["--", "-"], "sanitize",
     "(detects memory issues), and `thread` (detects multi-threading issues)."
   >>;
 
+def shared_libasan : Flag<["--", "-"], "shared-libasan">,
+  Group<ExperimentalCompilationOptionGroup>, Index<2>,
+  HelpText<
+    "Dynamically link the address sanitizer runtime. Requires address "
+    "sanitization turned on with `--sanitize` option."
+  >;
+
 defm debug_info_language : CommandOption<["--", "-"], "debug-info-language",
-  ExperimentalCompilationOptionGroup, Index<2>, MetaVarName<"LANGUAGE">,
+  ExperimentalCompilationOptionGroup, Index<3>, MetaVarName<"LANGUAGE">,
   HelpText<
     "Sets the language to emit as part of the debug info. The supported "
     "languages are: `Mojo`, and `C`. `C` is the default, and is useful to "

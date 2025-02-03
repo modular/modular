@@ -93,6 +93,7 @@ public:
   DebugInfoLevel debugLevel = kNoDebug;
   std::optional<DebugAtLevel> debugAtLevel;
   Sanitizers sanitizers = Sanitizers();
+  bool sharedLibasan = false;
   std::string targetTriple = llvm::sys::getDefaultTargetTriple();
   std::string targetCpu = llvm::sys::getHostCPUName().str();
   std::string targetFeatures = getHostCPUFeatures();
