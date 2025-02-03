@@ -53,6 +53,9 @@ class RequestDeque:
     def put_front_nowait(self, item):
         self.evicted.append(item)
 
+    def put(self, item):
+        self.queue.put(item)
+
 
 class Scheduler(ABC):
     """Abstract base class defining the interface for schedulers."""
