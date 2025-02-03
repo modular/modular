@@ -31,7 +31,7 @@ async def test_kv_cache_radix_trie_insert() -> None:
 
     trie.insert(
         ["i", "like", "to", "dance"],
-        ["BLOCK 0", "BLOCK 1", "BLOCK 6", "BLOCK 7"],
+        ["BLOCK 0", "BLOCK 1", "BLOCK 2", "BLOCK 6"],
     )
     assert trie.pretty_format() == [
         "['i', 'like', 'to']",
@@ -43,7 +43,7 @@ async def test_kv_cache_radix_trie_insert() -> None:
 
     trie.insert(
         ["we", "like", "to", "dance"],
-        ["BLOCK 8", "BLOCK 8", "BLOCK 9", "BLOCK 10"],
+        ["BLOCK 7", "BLOCK 8", "BLOCK 9", "BLOCK 10"],
     )
     assert trie.pretty_format() == [
         "['i', 'like', 'to']",
@@ -56,7 +56,7 @@ async def test_kv_cache_radix_trie_insert() -> None:
 
     trie.insert(
         ["we", "like", "to", "frolic"],
-        ["BLOCK 8", "BLOCK 8", "BLOCK 9", "BLOCK 11"],
+        ["BLOCK 7", "BLOCK 8", "BLOCK 9", "BLOCK 11"],
     )
     assert trie.pretty_format() == [
         "['i', 'like', 'to']",
@@ -72,7 +72,7 @@ async def test_kv_cache_radix_trie_insert() -> None:
     # no change when inserting same sequence
     trie.insert(
         ["we", "like", "to", "frolic"],
-        ["BLOCK 8", "BLOCK 8", "BLOCK 9", "BLOCK 11"],
+        ["BLOCK 7", "BLOCK 8", "BLOCK 9", "BLOCK 12"],
     )
     assert trie.pretty_format() == [
         "['i', 'like', 'to']",
@@ -84,6 +84,9 @@ async def test_kv_cache_radix_trie_insert() -> None:
         "--['dance']",
         "--['frolic']",
     ]
+
+    assert len(trie.get_all_blocks()) == 12
+    assert len(trie.get_evictable_blocks()) == 12
 
 
 @pytest.mark.asyncio
@@ -104,6 +107,9 @@ async def test_kv_cache_radix_trie_match_prefix_simple() -> None:
     _, blocks = trie.match_prefix(["we"])
     assert blocks == []
 
+    assert len(trie.get_all_blocks()) == 5
+    assert len(trie.get_evictable_blocks()) == 5
+
 
 @pytest.mark.asyncio
 async def test_kv_cache_radix_trie_match_prefix_complex() -> None:
@@ -118,24 +124,27 @@ async def test_kv_cache_radix_trie_match_prefix_complex() -> None:
     )
     trie.insert(
         ["i", "like", "to", "dance"],
-        ["BLOCK 0", "BLOCK 1", "BLOCK 6", "BLOCK 7"],
+        ["BLOCK 0", "BLOCK 1", "BLOCK 2", "BLOCK 6"],
     )
     trie.insert(
         ["we", "like", "to", "dance"],
-        ["BLOCK 8", "BLOCK 8", "BLOCK 9", "BLOCK 10"],
+        ["BLOCK 7", "BLOCK 8", "BLOCK 9", "BLOCK 10"],
     )
     trie.insert(
         ["we", "like", "to", "frolic"],
-        ["BLOCK 8", "BLOCK 8", "BLOCK 9", "BLOCK 11"],
+        ["BLOCK 7", "BLOCK 8", "BLOCK 9", "BLOCK 11"],
     )
     _, blocks = trie.match_prefix(["i", "like", "to", "eat", "dominos"])
     assert blocks == ["BLOCK 0", "BLOCK 1", "BLOCK 2", "BLOCK 3"]
     _, blocks = trie.match_prefix(["we"])
-    assert blocks == ["BLOCK 8"]
+    assert blocks == ["BLOCK 7"]
     _, blocks = trie.match_prefix(["we", "love", "chicken", "nuggets"])
-    assert blocks == ["BLOCK 8"]
+    assert blocks == ["BLOCK 7"]
     _, blocks = trie.match_prefix(["we", "like", "to", "dance", "daily"])
-    assert blocks == ["BLOCK 8", "BLOCK 8", "BLOCK 9", "BLOCK 10"]
+    assert blocks == ["BLOCK 7", "BLOCK 8", "BLOCK 9", "BLOCK 10"]
+
+    assert len(trie.get_all_blocks()) == 12
+    assert len(trie.get_evictable_blocks()) == 12
 
 
 @pytest.mark.asyncio
@@ -179,6 +188,9 @@ async def test_kv_cache_radix_trie_insert_at_node() -> None:
         "--['cheese', 'burgers']",
     ]
 
+    assert len(trie.get_all_blocks()) == 11
+    assert len(trie.get_evictable_blocks()) == 11
+
 
 @pytest.mark.asyncio
 async def test_kv_cache_radix_trie_insert_at_split_node() -> None:
@@ -209,6 +221,9 @@ async def test_kv_cache_radix_trie_insert_at_split_node() -> None:
         "--['dancing', 'all', 'night']",
     ]
 
+    assert len(trie.get_all_blocks()) == 9
+    assert len(trie.get_evictable_blocks()) == 9
+
 
 @pytest.mark.asyncio
 async def test_kv_cache_radix_trie_eviction() -> None:
@@ -218,28 +233,28 @@ async def test_kv_cache_radix_trie_eviction() -> None:
     seq1 = 1
 
     node0 = trie.insert(
-        [
-            "i",
-            "like",
-            "to",
-        ],
+        ["i", "like", "to"],
         ["BLOCK 0", "BLOCK 1", "BLOCK 2"],
     )
+
+    assert len(trie.get_all_blocks()) == 3
+    assert len(trie.get_evictable_blocks()) == 3
     trie.mark_in_use_by(node0, seq0)
+    assert len(trie.get_all_blocks()) == 3
+    assert len(trie.get_evictable_blocks()) == 0
+
     node0 = trie.insert(["eat"], ["BLOCK 3"], node=node0)
+
+    assert len(trie.get_all_blocks()) == 4
+    assert len(trie.get_evictable_blocks()) == 1
     trie.mark_in_use_by(node0, seq0)
+    assert len(trie.get_all_blocks()) == 4
+    assert len(trie.get_evictable_blocks()) == 0
     node0 = trie.insert(["pie"], ["BLOCK 4"], node=node0)
     trie.mark_in_use_by(node0, seq0)
 
     node1 = trie.insert(
-        [
-            "i",
-            "like",
-            "to",
-            "dance",
-            "all",
-            "night",
-        ],
+        ["i", "like", "to", "dance", "all", "night"],
         ["BLOCK 0", "BLOCK 1", "BLOCK 2", "BLOCK 5", "BLOCK 6", "BLOCK 7"],
     )
     trie.mark_in_use_by(node1, seq1)
@@ -263,7 +278,11 @@ async def test_kv_cache_radix_trie_eviction() -> None:
         "--['dance', 'all']",
     ]
 
+    assert len(trie.get_all_blocks()) == 7
+    assert len(trie.get_evictable_blocks()) == 2
     evicted_blocks = trie.evict_blocks(desired_num_evicted=999)
+    assert len(trie.get_all_blocks()) == 5
+    assert len(trie.get_evictable_blocks()) == 0
     assert set(evicted_blocks) == set(["BLOCK 6", "BLOCK 5"])
     assert trie.pretty_format() == [
         "['i', 'like', 'to']",
@@ -283,6 +302,9 @@ async def test_kv_cache_radix_trie_eviction() -> None:
     evicted_blocks = trie.evict_blocks(desired_num_evicted=999)
     assert len(evicted_blocks) == 5
     assert trie.pretty_format() == []
+
+    assert len(trie.get_all_blocks()) == 0
+    assert len(trie.get_evictable_blocks()) == 0
 
 
 @pytest.mark.asyncio
