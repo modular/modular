@@ -94,3 +94,23 @@ def test_context__update_beyond_chunk_size():
     # 128, is the CHUNK_SIZE defined in context
     for i in range(128):
         context.update(i)
+
+
+def test_context__reset():
+    context = TextContext(
+        cache_seq_id=0,
+        prompt="this is a test prompt",
+        max_length=10,
+        tokens=np.array([0, 1, 2, 3]),
+    )
+    assert context.seq_len == 4
+    assert context.next_tokens.tolist() == [0, 1, 2, 3]
+    context.update(4)
+    assert context.seq_len == 1
+    assert context.next_tokens.tolist() == [4]
+    context.reset()
+    assert context.seq_len == 5
+    assert context.next_tokens.tolist() == [0, 1, 2, 3, 4]
+    context.update(5)
+    assert context.seq_len == 1
+    assert context.next_tokens.tolist() == [5]
