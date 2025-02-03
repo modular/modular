@@ -18,9 +18,7 @@ from typing import AsyncGenerator, Mapping
 import uvloop
 from max.pipelines import EmbeddingsGenerator, PipelinesFactory, TokenGenerator
 from max.profiler import Tracer, traced
-from max.serve.pipelines.llm import (
-    TokenGeneratorPipelineConfig,
-)
+from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
 from max.serve.pipelines.scheduler_v2 import (
     EmbeddingsScheduler,
     EmbeddingsSchedulerConfig,
