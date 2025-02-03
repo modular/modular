@@ -77,7 +77,11 @@ def LIT_FnOp : LITOp<"fn", [
     OptionalAttr<StrAttr>:$namedResult,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<StrAttr>:$deprecationWarning,
-    DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata,
+    // To be able to store pre-elaborated names of the `llvm_metadata`,
+    // decompose LLVM metadata into array of attributes of even size.
+    // Each even attribute corresponds to the name of in `llvm_metadata`,
+    // each odd corresponds to its value (zero index based)
+    DefaultValuedAttr<ArrayAttr, "std::nullopt">:$LLVMMetadataArray,
     OptionalAttr<AnyAttr>:$thunkKey
   );
   let regions = (region SizedRegion<1>:$bodyRegion);

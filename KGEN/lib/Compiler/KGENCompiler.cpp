@@ -100,13 +100,15 @@ generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
   }
   auto wrapper = b.create<GeneratorOp>(name, sigGen);
   wrapper.setExported();
-  NamedAttrList newAttrs = sliced.getLLVMMetadataAttr();
+  SmallVector<Attribute> metadataArray =
+      llvm::to_vector(sliced.getLLVMMetadataArrayAttr().getValue());
   if (kernelId) {
-    newAttrs.append(NamedAttribute{
-        StringAttr::get(sliced->getContext(), "kgen.offload.kernelid"),
-        b.getIndexAttr(*kernelId)});
+    metadataArray.push_back(
+        StringAttr::get(sliced->getContext(), "kgen.offload.kernelid"));
+    metadataArray.push_back(b.getIndexAttr(*kernelId));
   }
-  wrapper.setLLVMMetadataAttr(newAttrs.getDictionary(sliced.getContext()));
+  wrapper.setLLVMMetadataArrayAttr(
+      ArrayAttr::get(sliced.getContext(), metadataArray));
   Block *entry =
       b.createBlock(&wrapper.getBodyRegion(), {}, sigBase.getArguments(),
                     llvm::map_to_vector(sliced.getArguments(),
@@ -361,12 +363,13 @@ static ElaboratorCompileOffloadRetType compileOffloads(
           // Set kernelId
           GeneratorOp sliced = cast<GeneratorOp>(mapping.lookup(func));
           ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(sliced));
-          NamedAttrList newAttrs = sliced.getLLVMMetadataAttr();
-          newAttrs.append(NamedAttribute{
-              StringAttr::get(sliced->getContext(), "kgen.offload.kernelid"),
-              b.getIndexAttr(kernelInfo.kernelId)});
-          sliced.setLLVMMetadataAttr(
-              newAttrs.getDictionary(sliced.getContext()));
+          SmallVector<Attribute> metadataArray =
+              llvm::to_vector(sliced.getLLVMMetadataArrayAttr().getValue());
+          metadataArray.push_back(
+              StringAttr::get(sliced->getContext(), "kgen.offload.kernelid"));
+          metadataArray.push_back(b.getIndexAttr(kernelInfo.kernelId));
+          sliced.setLLVMMetadataArrayAttr(
+              ArrayAttr::get(sliced.getContext(), metadataArray));
         }
       }
     }

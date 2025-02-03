@@ -233,3 +233,19 @@ kgen.generator export @gen_structs() {
   kgen.call @use_type<:type #weird_struct>() : () -> ()
   kgen.return
 }
+
+// -----
+
+// expected-note @below {{function instantiation failed}}
+// expected-note @below {{cannot concretize name in 'llvm_metadata'}}
+kgen.generator export @metadata<x>() attributes {LLVMMetadataArray = [
+  #pop.array<x> : !pop.array<1, index>,  #pop.array<x> : !pop.array<1, index>
+]}{
+  kgen.return
+}
+
+kgen.generator @metadata_caller() {
+  // expected-error @below {{call expansion failed}}
+  kgen.call @metadata<2>() : () -> ()
+  kgen.return
+}

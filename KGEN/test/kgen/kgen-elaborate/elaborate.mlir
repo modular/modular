@@ -1417,9 +1417,9 @@ kgen.generator @elaborate() {
 
 // CHECK-LABEL: kgen.func @"metadata,x=16,y=16,z=8"
 // CHECK-SAME: LLVMMetadata = {nvvm.maxntid = #pop.array<16, 16, 8>
-kgen.generator @metadata<x: i32, y: i32, z: i32>() attributes {LLVMMetadata = {
-  nvvm.maxntid = #pop.array<x, y, z> : !pop.array<3, i32>
-}}{
+kgen.generator @metadata<x: i32, y: i32, z: i32>() attributes {LLVMMetadataArray = [
+  "nvvm.maxntid",  #pop.array<x, y, z> : !pop.array<3, i32>
+]}{
   kgen.return
 }
 

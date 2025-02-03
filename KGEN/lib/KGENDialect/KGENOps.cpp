@@ -390,9 +390,9 @@ static void printGeneratorOp(OpAsmPrinter &p, Operation *op,
       gen.getFuncTypeGeneratorAttrName(), gen.getFunctionTypeAttrName(),
       gen.getInputParamsAttrName(),       gen.getInlineLevelAttrName(),
       gen.getDecoratorsAttrName()};
-  if (attrs.get(gen.getLLVMMetadataAttrName()) ==
-      DictionaryAttr::get(op->getContext()))
-    elidedAttrs.push_back(gen.getLLVMMetadataAttrName());
+  if (attrs.get(gen.getLLVMMetadataArrayAttrName()) ==
+      ArrayAttr::get(op->getContext(), {}))
+    elidedAttrs.push_back(gen.getLLVMMetadataArrayAttrName());
   p.printOptionalAttrDictWithKeyword(attrs.getValue(), elidedAttrs);
 
   p << ' ';
