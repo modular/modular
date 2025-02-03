@@ -473,7 +473,7 @@ struct _RepOutOfLine(Writable, EqualityComparable):
         result.rep_kind = self.rep_kind
         result.rank = self.rank
         result.auxillary = self.auxillary
-        return result^
+        return result
 
     @always_inline
     fn __repr__(self) -> String:
