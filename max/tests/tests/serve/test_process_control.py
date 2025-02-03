@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 import contextlib
 import multiprocessing
+import threading
 import time
 
 import pytest
@@ -87,6 +88,19 @@ def run_process(p: multiprocessing.process.BaseProcess):
         yield p
     finally:
         p.kill()
+
+
+def test_process_lifecycle_explicit_wait():
+    ctx = multiprocessing.get_context("spawn")
+    pc = process_control.ProcessControl(ctx, "test")
+
+    p = ctx.Process(target=run_a_bit, args=(pc, 10e-3))
+    mon = process_control.ProcessMonitor(pc, p, poll_s=1e-3, max_time_s=3500e-3)
+    with run_process(p) as p:
+        # Explicitly wait on the started/completed events.
+        pc.started_event.wait()
+        pc.set_canceled()
+        pc.completed_event.wait()
 
 
 @pytest.mark.asyncio
@@ -172,3 +186,32 @@ async def test_crashed_process():
         assert pc.is_completed() == False
         # we never canceleed it, but it is dead all the same
         assert pc.is_canceled() == False
+
+
+def test_threading_health_check():
+    pc = process_control.ProcessControl(threading, "test")
+    pc.beat()
+    assert pc.is_healthy()
+
+
+@pytest.mark.asyncio
+async def test_thread_lifecycle():
+    pc = process_control.ProcessControl(threading, "test")
+
+    t = threading.Thread(target=run_a_bit, args=(pc, 10e-3))
+    t.start()
+
+    assert t.is_alive()
+    pc.started_event.wait(100e-3)
+    assert pc.is_started()
+    assert t.is_alive()
+    assert pc.is_canceled() == False
+    assert pc.is_completed() == False
+
+    # cancel and wait for it to complete, but hit timeout
+    pc.set_canceled()
+    pc.completed_event.wait(100e-3)
+    assert pc.is_completed() == True
+    t.join()
+
+    assert t.is_alive() == False
