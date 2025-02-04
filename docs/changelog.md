@@ -412,6 +412,10 @@ what we publish.
 - `StringableCollectionElement` is deprecated, use `WritableCollectionElement`
   instead which still allows you to construct a `String`, but can avoid
   intermediary allocations.
+- The `Type{field1: 42, field2: 17}` syntax for direct initializing register
+  passable types has been removed.  This was legacy syntax - to upgrade
+  your code, add the @value decorator to your struct to get a memberwise
+  initializer and use `Type(field1=42, field2 = 17)` instead.
 
 ### 🛠️ Fixed
 
