@@ -14,17 +14,19 @@ from max.engine import InferenceSession
 from max.graph import Graph, TensorType, Weight
 from max.pipelines.nn import Conv2D, Linear
 from max.pipelines.nn.norm import RMSNorm
-from pixtral.vision_encoder.attention import Attention
-from pixtral.vision_encoder.attention_utils import (
+from max.pipelines.pixtral.vision_encoder.attention import Attention
+from max.pipelines.pixtral.vision_encoder.attention_utils import (
     causal_attention_mask_2d_from_imgs,
 )
-from pixtral.vision_encoder.rotary_embedding_2d import RotaryEmbedding2D
-from pixtral.vision_encoder.transformer import (
+from max.pipelines.pixtral.vision_encoder.rotary_embedding_2d import (
+    RotaryEmbedding2D,
+)
+from max.pipelines.pixtral.vision_encoder.transformer import (
     MLP,
     Transformer,
     TransformerBlock,
 )
-from pixtral.vision_encoder.vision_encoder import VisionEncoder
+from max.pipelines.pixtral.vision_encoder.vision_encoder import VisionEncoder
 from torch import nn
 from transformers import PixtralVisionConfig, PixtralVisionModel
 from transformers.models.pixtral.modeling_pixtral import (

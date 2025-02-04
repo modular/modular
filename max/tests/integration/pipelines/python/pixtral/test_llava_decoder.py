@@ -26,7 +26,9 @@ from max.pipelines.nn import (
     RMSNorm,
     TransformerBlock,
 )
-from pixtral.llava.llava_decoder import Transformer as LLavaTransformer
+from max.pipelines.pixtral.llava.llava_decoder import (
+    Transformer as LLavaTransformer,
+)
 from transformers import (
     LlavaForConditionalGeneration,
     MistralConfig,
