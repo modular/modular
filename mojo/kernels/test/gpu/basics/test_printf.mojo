@@ -25,6 +25,10 @@ fn test_gpu_printf() raises:
     fn do_print(x: Int, y: Float64):
         # CHECK: printf printed 98 123.456!
         _printf["printf printed %ld %g!\n"](x, y)
+        # CHECK: printf printed more 0 1 2 3 4 5 6 7 8 9
+        _printf[
+            "printf printed more %ld %ld %ld %ld %ld %ld %ld %ld %ld %ld\n"
+        ](0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
 
     with DeviceContext() as ctx:
         var func = ctx.compile_function[do_print]()
