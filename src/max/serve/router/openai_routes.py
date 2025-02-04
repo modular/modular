@@ -484,9 +484,14 @@ async def openai_create_chat_completion(
             ]
             request_images = await asyncio.gather(*resolve_image_tasks)
 
-        tools = _convert_chat_completion_tools_to_token_generator_tools(
-            completion_request.tools
-        )
+        tools = None
+        if (
+            completion_request.tool_choice is None
+            or completion_request.tool_choice.root != "none"
+        ):
+            tools = _convert_chat_completion_tools_to_token_generator_tools(
+                completion_request.tools
+            )
 
         response_format = _create_response_format(
             completion_request.response_format
