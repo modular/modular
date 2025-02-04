@@ -29,7 +29,7 @@ For an example of launching a GPU kernel from a MAX custom operation, see the
 in the MAX repo.
 """
 
-from .globals import WARP_SIZE, MAX_THREADS_PER_BLOCK_METADATA
+from .globals import *
 from .id import *
 from .memory import *
 from .semaphore import Semaphore
