@@ -324,7 +324,7 @@ TEST(Telemetry, Timer) {
                     EntitlementStore::alwaysOpen(llvm::errs()));
   TelemetryContext ctx(settings);
 
-  auto lambda_test = [&]() {
+  auto lambdaTest = [&]() {
     std::string value = "ATTRIBUTE";
     llvm::StringMap<MetricAttributeValue> attrs = {{"TELEMETRY", value}};
     auto timer = ctx.createUInt64Timer<std::chrono::milliseconds>(
@@ -333,7 +333,7 @@ TEST(Telemetry, Timer) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   };
 
-  lambda_test();
+  lambdaTest();
   ctx.flush();
 
   auto err = readFileUnderLock(

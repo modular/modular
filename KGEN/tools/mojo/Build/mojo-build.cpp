@@ -475,10 +475,10 @@ static int build(const State &subcommandState) {
     // This feature is experimental and not intended for general usage yet.
     // To discourage use, gate this behind an additional undocumented
     // environment variable.
-    std::optional<std::string> env_value =
+    std::optional<std::string> envValue =
         llvm::sys::Process::GetEnv("MODULAR_MOJO_PYBIND");
 
-    if (env_value.value_or("") != "enabled") {
+    if (envValue.value_or("") != "enabled") {
       // Error message is intentionally vague about how to enable support for
       //`--gen-py`.
       return state.reportError("Mojo pybind is not supported yet.");

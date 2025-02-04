@@ -263,9 +263,9 @@ ErrorOr<CPUSystemInfo> M::Detail::getLinuxX86CPUSystemInfoImpl(
   SmallVector<Entry> entries;
   Entry currEntry;
   for (StringRef line : strs) {
-    std::pair<StringRef, StringRef> Data = line.split(':');
-    StringRef name = Data.first.trim();
-    StringRef val = Data.second.trim();
+    std::pair<StringRef, StringRef> data = line.split(':');
+    StringRef name = data.first.trim();
+    StringRef val = data.second.trim();
     // These fields are available if the kernel is configured with CONFIG_SMP.
     if (name == "processor") {
       if (val.getAsInteger(10, currEntry.processor))

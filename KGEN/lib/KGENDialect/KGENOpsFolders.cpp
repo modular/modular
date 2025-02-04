@@ -576,11 +576,11 @@ OpFoldResult IntLiteralBinop::fold(FoldAdaptor adaptor) {
     // value is the same as: sign((abs(r) - (abs(l) % abs(r))) % abs(r)).
     {
       bool signMatch = (l >= zero) == (r >= zero);
-      IPInt L = l.abs();
-      IPInt R = r.abs();
-      result = (L % R).abs();
+      IPInt lAbs = l.abs();
+      IPInt rAbs = r.abs();
+      result = (lAbs % rAbs).abs();
       if (!signMatch && result != zero)
-        result = R - result;
+        result = rAbs - result;
       if (r < zero)
         result = zero - result;
     }

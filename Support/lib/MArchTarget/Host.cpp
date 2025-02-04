@@ -423,22 +423,22 @@ M::ErrorOr<std::string> M::getHostTotalMemoryKB() {
 
 M::ErrorOr<std::string> M::getHostOSVersion() {
 #if defined(__APPLE__)
-  std::string OSVersion;
+  std::string osVersion;
   auto procTriple = llvm::Triple(llvm::sys::getProcessTriple());
   llvm::VersionTuple adjustedVersion;
   if (!procTriple.getMacOSXVersion(adjustedVersion))
     return Error("Failed to getMacOSXVersion");
-  OSVersion = adjustedVersion.getAsString();
+  osVersion = adjustedVersion.getAsString();
   // Deal with LLVM sometimes missing minor version
   if (!adjustedVersion.getMinor().has_value() &&
       procTriple.getOSVersion().getMinor().has_value()) {
     llvm::VersionTuple fullVersion(
         adjustedVersion.getMajor(),
         procTriple.getOSVersion().getMinor().value());
-    OSVersion = fullVersion.getAsString();
+    osVersion = fullVersion.getAsString();
   }
 
-  return OSVersion;
+  return osVersion;
 #elif defined(__linux__)
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> errOrBuf =
       llvm::MemoryBuffer::getFileAsStream("/etc/os-release");

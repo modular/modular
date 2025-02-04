@@ -25,12 +25,12 @@ void addInstanceFields(const MeteringContext::InstanceInfo &info,
   if (info.type.empty())
     return;
 
-  StringRef instance_type(info.type);
-  attrs[MeteringContext::kInstanceTypeKey] = instance_type;
+  StringRef instanceType(info.type);
+  attrs[MeteringContext::kInstanceTypeKey] = instanceType;
 
-  auto dot_found = info.type.find(".");
+  auto dotFound = info.type.find(".");
   attrs[MeteringContext::kInstanceClassKey] =
-      dot_found != std::string::npos ? instance_type.take_front(dot_found) : "";
+      dotFound != std::string::npos ? instanceType.take_front(dotFound) : "";
 }
 
 constexpr StringLiteral kCloudAws = "aws";

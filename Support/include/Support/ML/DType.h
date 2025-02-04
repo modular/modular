@@ -428,7 +428,7 @@ public:
     using CXXType = typename CXXTypeForDType<CaseValue>::CXXType;
     // Check to see if any of the types apply to 'value'.
     if (!result && this->value.getValue() == CaseValue) {
-      CallableReturnType callable_res = std::apply(
+      CallableReturnType callableRes = std::apply(
           [&](ParamPtrTypes... args) {
             return invokeWithDefaultResultType<EmptyReturnType>(
                 std::forward<CallableT>(caseFn),
@@ -436,7 +436,7 @@ public:
                     std::forward<ParamPtrTypes>(args))...);
           },
           paramPtrs);
-      result = std::move(callable_res);
+      result = std::move(callableRes);
     }
     return *this;
   }
@@ -472,10 +472,10 @@ public:
   template <typename CallableT>
   DTypeSwitch &otherwise(CallableT &&defaultFn) {
     if (!result) {
-      CallableReturnType callable_res =
+      CallableReturnType callableRes =
           invokeWithDefaultResultType<EmptyReturnType>(
               std::forward<CallableT>(defaultFn));
-      result = std::move(callable_res);
+      result = std::move(callableRes);
     }
     return *this;
   }

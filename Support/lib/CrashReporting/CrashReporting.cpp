@@ -103,10 +103,10 @@ static ErrorOrSuccess tryInitCrashpad(StringRef program, Settings *settings) {
   if (!url.empty()) {
     auto database =
         crashpad::CrashReportDatabase::Initialize(base::FilePath(databasePath));
-    bool uploads_enabled = false;
+    bool uploadsEnabled = false;
     if (database != nullptr && database->GetSettings() != nullptr &&
-        (!database->GetSettings()->GetUploadsEnabled(&uploads_enabled) ||
-         !uploads_enabled))
+        (!database->GetSettings()->GetUploadsEnabled(&uploadsEnabled) ||
+         !uploadsEnabled))
       database->GetSettings()->SetUploadsEnabled(true);
   }
 

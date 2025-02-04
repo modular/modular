@@ -138,15 +138,15 @@ static int doc(const State &subcommandState) {
   if (!moduleDecl || parserContext.wasErrorEmitted())
     return state.reportError("could not generate documentation");
 
-  std::unique_ptr<PublicDecl> PublicDecl = moduleDecl.getDecl();
-  if (!PublicDecl)
+  std::unique_ptr<PublicDecl> publicDecl = moduleDecl.getDecl();
+  if (!publicDecl)
     return state.reportError("could not generate documentation");
 
   llvm::json::OStream jsonOS(out->os(), /*IndentSize=*/2);
 
   ModularVersion version = getModularVersion();
   jsonOS.value(llvm::json::Object({
-      {"decl", PublicDecl->toJSON(parserContext)},
+      {"decl", publicDecl->toJSON(parserContext)},
       {"version", llvm::formatv("{0}.{1}.{2}{3}", version.major, version.minor,
                                 version.patch, version.label)
                       .str()},

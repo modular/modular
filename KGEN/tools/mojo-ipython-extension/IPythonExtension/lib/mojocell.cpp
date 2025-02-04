@@ -81,9 +81,9 @@ iPythonMagicMojoCellExecute(PyObject *opts) {
   // Don't build if there are errors
   doBuild = doBuild && errors.empty();
 
-  [[maybe_unused]] int result_code = 0;
+  [[maybe_unused]] int resultCode = 0;
   if (doBuild) {
-    result_code = build(cell, inputName);
+    resultCode = build(cell, inputName);
   }
 
   // Populate the return dict w/ build info
@@ -94,7 +94,7 @@ iPythonMagicMojoCellExecute(PyObject *opts) {
   setDictKeyValueString(result, "cell", cell);
 
   setDictKeyValueBool(result, "built", doBuild);
-  setDictKeyValueLong(result, "result_code", result_code);
+  setDictKeyValueLong(result, "result_code", resultCode);
 
   if (!errors.empty())
     setDictKeyValueString(result, "error_msg",

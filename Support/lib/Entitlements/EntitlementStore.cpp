@@ -342,14 +342,14 @@ ErrorOr<Detail::CertSubject> Detail::CertificateChain::getSubject() const {
     return Error("CN missing from cert");
   }
 
-  auto CN = StringRef{(const char *)commonName->val.p, commonName->val.len};
+  auto cn = StringRef{(const char *)commonName->val.p, commonName->val.len};
 
   // Look for OU
   auto ouOr = ASN1::ObjectID::fromString("2.5.4.11");
   if (ouOr.isError()) {
     // Error resolving OID. Should never happen since 2.5.4.11 is a legit OID.
     // If it does fail for some reason, return a valid-enough Subject with OU=CN
-    return Detail::CertSubject{CN.str(), CN.str()};
+    return Detail::CertSubject{cn.str(), cn.str()};
   }
   SmallVector<uint8_t> encodedOU = ouOr->getEncoded();
 
@@ -358,10 +358,10 @@ ErrorOr<Detail::CertSubject> Detail::CertificateChain::getSubject() const {
                                           encodedOU.size());
   if (ou == nullptr) {
     // If OU is not defined, backfill OU=CommonName
-    return Detail::CertSubject{CN.str(), CN.str()};
+    return Detail::CertSubject{cn.str(), cn.str()};
   }
-  auto OU = StringRef{(const char *)ou->val.p, ou->val.len};
-  return Detail::CertSubject{CN.str(), OU.str()};
+  auto ouString = StringRef{(const char *)ou->val.p, ou->val.len};
+  return Detail::CertSubject{cn.str(), ouString.str()};
 }
 
 //===----------------------------------------------------------------------===//

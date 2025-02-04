@@ -21,8 +21,8 @@ using namespace M::KGEN::LIT;
 using namespace mlir::lsp;
 
 int main(int argc, char **argv) {
-  llvm::InitLLVM IL(argc, argv, /*InstallPipeSignalExitHandler=*/false);
-  llvm::PrettyStackTraceProgram X(argc, argv);
+  llvm::InitLLVM il(argc, argv, /*InstallPipeSignalExitHandler=*/false);
+  llvm::PrettyStackTraceProgram x(argc, argv);
   llvm::setBugReportMsg(
       "Please submit a bug report to https://github.com/modularml/mojo/issues "
       "and include the crash backtrace along with all the relevant source "

@@ -161,21 +161,21 @@ struct ProgressWrapper {
     // It's possible that the total will change over time (if e.g. no length is
     // provided and we have a chunked encoding), so we need to use the grow
     // call appropriately here.
-    size_t cur_total =
+    size_t curTotal =
         static_cast<size_t>(dltotal) + static_cast<size_t>(ultotal);
-    if (cur_total > total && progress->getExpectedWork() < cur_total) {
-      progress->setExpectedWork(cur_total);
-      total = cur_total;
+    if (curTotal > total && progress->getExpectedWork() < curTotal) {
+      progress->setExpectedWork(curTotal);
+      total = curTotal;
     }
-    size_t new_finished =
+    size_t newFinished =
         static_cast<size_t>(dlnow) + static_cast<size_t>(ulnow);
-    if (new_finished > finished) {
-      if (new_finished > total && progress->getExpectedWork() < new_finished) {
-        progress->setExpectedWork(new_finished);
-        total = new_finished;
+    if (newFinished > finished) {
+      if (newFinished > total && progress->getExpectedWork() < newFinished) {
+        progress->setExpectedWork(newFinished);
+        total = newFinished;
       }
-      progress->addProgress(new_finished - finished);
-      finished = new_finished;
+      progress->addProgress(newFinished - finished);
+      finished = newFinished;
     }
   }
 };

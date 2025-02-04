@@ -61,16 +61,16 @@ M::getFeaturesFromClang(std::shared_ptr<clang::TargetOptions> opts,
   // them and add them here manually.
   if (std::optional<llvm::AArch64::CpuInfo> cpuInfo =
           llvm::AArch64::parseCpu(cpu)) {
-    std::vector<std::string> UpdatedFeaturesVec;
+    std::vector<std::string> updatedFeaturesVec;
     auto exts = cpuInfo->getImpliedExtensions();
     std::vector<StringRef> cpuFeats;
     llvm::AArch64::getExtensionFeatures(exts, cpuFeats);
     for (StringRef f : cpuFeats) {
       assert((f[0] == '+' || f[0] == '-') && "Expected +/- in target feature!");
-      UpdatedFeaturesVec.push_back(f.str());
+      updatedFeaturesVec.push_back(f.str());
     }
     llvm::StringMap<bool> featureMap;
-    targetInfo->initFeatureMap(featureMap, diags, cpu, UpdatedFeaturesVec);
+    targetInfo->initFeatureMap(featureMap, diags, cpu, updatedFeaturesVec);
     for (const auto &f : featureMap)
       opts->Features.push_back((f.getValue() ? "+" : "-") + f.getKey().str());
   }
@@ -145,8 +145,12 @@ ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef march, StringRef mcpu,
 
   auto tryParseX86 = [&](StringRef cpuName) {
     // Check for a 64-bit one first.
+    // x86_64 is a well-known name for the architecture, so it is not subject to
+    // our coding standard for variable names.
+    // NOLINTBEGIN
     if (X86::CPUKind x86_64Cpu = X86::parseArchX86(cpuName, /*Only64Bit=*/true);
         x86_64Cpu != X86::CK_None) {
+      // NOLINTEND
       triple.setArch(Triple::x86_64);
       opts->CPU = cpuName;
       return true;

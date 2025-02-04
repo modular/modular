@@ -808,7 +808,7 @@ ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
   SMLoc rparenLoc;
   if (!consumeIf(Token::r_paren, &rparenLoc)) {
     // Expressions continue maximally because we are within ()'s.
-    llvm::SaveAndRestore<std::optional<size_t>> X(stmtIndent, std::nullopt);
+    llvm::SaveAndRestore<std::optional<size_t>> x(stmtIndent, std::nullopt);
 
     // Parse an argument.
     auto parseCallOperand = [&]() -> ParseResult {
@@ -941,7 +941,7 @@ ParseResult ExprParser::checkOperands(ArrayRef<Operand> operands,
 ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
                                              SMLoc lsquareLoc) {
   // Expressions continue maximally because we are within []'s.
-  llvm::SaveAndRestore<std::optional<size_t>> X(stmtIndent, std::nullopt);
+  llvm::SaveAndRestore<std::optional<size_t>> x(stmtIndent, std::nullopt);
 
   // If we have an empty parameter list, we return immediately.
   SMLoc rsquareLoc;

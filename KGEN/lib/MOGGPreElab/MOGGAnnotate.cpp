@@ -605,13 +605,13 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
           });
 
       if (argIt == argSrcNamesAttr.getValue().end()) {
-        StringRef decorator_name =
+        StringRef decoratorName =
             enableFusionOperand ? "enable_fusion_for" : "mutable";
 
         emitError(func->getLoc(),
                   llvm::formatv("{0} decorator: '{1}' does not name any of the "
                                 "arguments of {2}::{3}",
-                                decorator_name, argName,
+                                decoratorName, argName,
                                 structDeclOp.getDeclName(),
                                 func.getDeclName()));
         return false;

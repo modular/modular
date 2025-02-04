@@ -56,8 +56,8 @@ TEST(LifetimesTest, testFullEagerDestruction) {
 
   // `text_moved` should be alive when breaking on the call.
   ctx.resume();
-  SBValue text_moved = ctx.frame.FindVariable("text_moved");
-  EXPECT_STREQ(text_moved.GetSummary(), R"("hello")");
+  SBValue textMoved = ctx.frame.FindVariable("text_moved");
+  EXPECT_STREQ(textMoved.GetSummary(), R"("hello")");
 
   // This breakpoint is inside `take_string`.  `s` should be alive when breaking
   // on the print call.
@@ -69,8 +69,8 @@ TEST(LifetimesTest, testFullEagerDestruction) {
   // `text_copied` should be alive when breaking on the call.
   ctx.resume();
   assertVarNotAvailable(ctx, "text_moved");
-  SBValue text_copied = ctx.frame.FindVariable("text_copied");
-  EXPECT_STREQ(text_copied.GetSummary(), R"("hello")");
+  SBValue textCopied = ctx.frame.FindVariable("text_copied");
+  EXPECT_STREQ(textCopied.GetSummary(), R"("hello")");
 
   // This breakpoint is inside `take_string`. `s` should be alive when breaking
   // on the print call.
@@ -82,8 +82,8 @@ TEST(LifetimesTest, testFullEagerDestruction) {
   ctx.resume();
 
   assertVarNotAvailable(ctx, "text_before");
-  SBValue text_after = ctx.frame.FindVariable("text_after");
-  EXPECT_STREQ(text_after.GetSummary(), R"("hello")");
+  SBValue textAfter = ctx.frame.FindVariable("text_after");
+  EXPECT_STREQ(textAfter.GetSummary(), R"("hello")");
 
   // `text_after` should be dead now.
   // `number2` should be alive when breaking on the call.
