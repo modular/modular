@@ -11,7 +11,6 @@ import os
 
 import click
 import max.serve.grpc_serve.grpc_serve as max_grpc
-from architectures import register_all_models
 from max.driver import DeviceSpec
 from max.pipelines import (
     PIPELINE_REGISTRY,
@@ -20,6 +19,7 @@ from max.pipelines import (
     TextGenerationPipeline,
     TextTokenizer,
 )
+from max.pipelines.architectures import register_all_models
 from max.pipelines.kv_cache import KVCacheStrategy
 from max.serve.pipelines.performance_fake import (
     PerformanceFakingPipelineTokenizer,
