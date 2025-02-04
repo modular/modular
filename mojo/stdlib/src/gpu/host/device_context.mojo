@@ -18,6 +18,7 @@ from sys.compile import DebugLevel, OptimizationLevel
 from gpu.host._compile import (
     _compile_code,
     _compile_code_asm,
+    _cross_compilation,
     _get_gpu_target,
     _ptxas_compile,
     _to_sass,
@@ -372,8 +373,8 @@ struct DeviceStream:
         )
 
 
-fn _is_amd_gpu[target: __mlir_type.`!kgen.target`]() -> Bool:
-    return is_triple["amdgcn-amd-amdhsa", target]()
+fn _is_nvidia_gpu[target: __mlir_type.`!kgen.target`]() -> Bool:
+    return is_triple["nvptx64-nvidia-cuda", target]()
 
 
 fn _is_path_like(val: String) -> Bool:
@@ -399,7 +400,10 @@ struct DeviceFunction[
     target: __mlir_type.`!kgen.target` = _get_gpu_target(),
     _ptxas_info_verbose: Bool = False,
 ]:
-    alias _emission_kind = "object"
+    # emit asm if cross compiling for nvidia gpus.
+    alias _emission_kind = "asm" if (
+        _cross_compilation() and _is_nvidia_gpu[target]()
+    ) else "object"
     var _handle: _DeviceFunctionPtr
     var _func_impl: Info[func_type, func]
 

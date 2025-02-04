@@ -37,6 +37,11 @@ fn _get_gpu_target[
 # ===-----------------------------------------------------------------------===#
 
 
+@always_inline("nodebug")
+fn _cross_compilation() -> Bool:
+    return __mlir_attr.`#kgen.param.expr<cross_compilation> : i1`
+
+
 @always_inline
 fn _compile_code[
     func_type: AnyTrivialRegType, //,
