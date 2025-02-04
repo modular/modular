@@ -5,7 +5,7 @@
   "uri":"test:///foo.mojo",
   "languageId":"mojo",
   "version":1,
-  "text":"from builtin.int import Int\nfn foo():\n Int  {value: Int(42).value}\n"
+  "text":"from builtin.int import Int\nfn foo():\n Int()\n"
 }}}
 // -----
 {"jsonrpc":"2.0","id":1,"method":"textDocument/codeAction","params":{
@@ -17,7 +17,7 @@
   },
   "context":{
     "diagnostics":[{
-      "range":{"start":{"line":2,"character":1}, "end":{"line":2,"character":28}},
+      "range":{"start":{"line":2,"character":1}, "end":{"line":2,"character":6}},
       "message":"'Int' value is unused",
       "severity":2,
       "source":"mojo"
@@ -35,7 +35,7 @@
 // CHECK-NEXT:          "message": "'Int' value is unused",
 // CHECK-NEXT:          "range": {
 // CHECK-NEXT:            "end": {
-// CHECK-NEXT:              "character": 28,
+// CHECK-NEXT:              "character": 6,
 // CHECK-NEXT:              "line": 2
 // CHECK-NEXT:            },
 // CHECK-NEXT:            "start": {
