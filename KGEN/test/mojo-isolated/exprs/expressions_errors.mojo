@@ -421,21 +421,8 @@ fn dict_expression(a: Int):
   # expected-error @+1 {{cannot use a dynamic value in type}}
   _ = a{1: 2, **dict}
 
-
-  # expected-error @+1 {{MLIR types may not be initialized with this syntax}}
-  _ = __mlir_type.index{value: 4}
-
-  # expected-error @+1 {{type initializer requires keys to be bare field names}}
+  # expected-error @+1 {{TODO: cannot emit dictionary literals yet}}
   _ = MyIntPair{"a": 4}
-
-  # expected-error @+1 {{field 'a' specified multiple times}}
-  _ = MyIntPair{a: 4, a: 4}
-  # expected-error @+1 {{cannot expand into initializer list}}
-  _ = MyIntPair{a: a, **a}
-  # expected-error @+1 {{no value for field 'b' specified}}
-  _ = MyIntPair{a: 4}
-  # expected-error @+1 {{cannot implicitly convert 'FloatLiteral' value to 'Int'}}
-  _ = MyIntPair{a: 4.0, b: 4}
 
 fn dict_parse_errors(a: Int):
   # expected-error @+1 {{dictionary comprehension must start with single key:value pair}}

@@ -140,13 +140,13 @@ fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: lifetime.end %someInt
   _ = someInt^
 
+  # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}@RegExample::@"__init__{{.*}}()
   # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous*"
-  # CHECK-NEXT: [[REG:%.*]] = kgen.param.materialize: !RegExample
   # CHECK-NEXT: lit.var.lifetime.start [[ANON]]
-  # CHECK-NEXT: lit.ref.store [[REG]], [[ANON]]
+  # CHECK-NEXT: lit.ref.store [[TMP]], [[ANON]]
   # CHECK-NEXT: [[IMM:%.*]] = lit.ref.immut [[ANON]]
   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMM]])
-  RegExample{}.noop()
+  RegExample().noop()
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[ANON]])
   # CHECK-NEXT: lit.var.lifetime.end [[ANON]]
 
@@ -155,21 +155,6 @@ fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: lifetime.start %localReg
   # CHECK-NEXT: lit.ref.store [[TMP]], %localReg
   var localReg = RegExample()
-
-  # CHECK-NEXT: [[REG:%.*]] = lit.ref.immut %localReg
-  # CHECK-NEXT: [[REG2C:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[REG]])
-  # CHECK-NEXT: [[REG:%.*]] = lit.load.consume %localReg
-  # CHECK-NEXT: lit.var.lifetime.end %localReg
-
-
-  # CHECK-NEXT: [[BIGREG:%.*]] = lit.struct.create(a=[[REG2C]], b=[[REG]])
-
-  # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl "__dtor_tmp__0"
-  # CHECK-NEXT: lit.var.lifetime.start [[DTORTMP]]
-  # CHECK-NEXT: lit.ref.store [[BIGREG]], [[DTORTMP]]
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[DTORTMP]])
-  # CHECK-NEXT: lifetime.end [[DTORTMP]]
-  _ = BigRegExample{a: localReg, b: localReg }
 
 # CHECK-LABEL: lit.fn @"indirect_call
 fn indirect_call[detail_fn: fn() -> MemExample]():
