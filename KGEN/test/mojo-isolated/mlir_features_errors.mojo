@@ -73,9 +73,6 @@ struct Int:
 
 # Issue #7307: Error message can be improved when a user accidentally uses = instead of :
 fn equal_instead_of_colon():
-  # expected-error @+1 {{expected ':' after dictionary key, not '='}}
-  _ = Int{value = `42`}
-
   var someInt : Int
   # expected-error @+1 {{unable to infer result type from MLIR operation 'pop.array.gep'}}
   var ptr = __mlir_op.`pop.array.gep`((((someInt))), `42`)

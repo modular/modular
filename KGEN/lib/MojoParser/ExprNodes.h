@@ -437,6 +437,7 @@ struct DictionaryNode final : public ExprNode {
 };
 
 /// This represents `expr{x:y, **unpack}` using DictionaryNode as the storage.
+/// TODO: Just merge with DictionaryNode having it use 'base' as null.
 struct DictSubscriptNode final : public ExprNode {
   DictSubscriptNode(ExprNode *base, DictionaryNode *indices)
       : ExprNode(kDictSubscript), base(base), indices(indices) {}
@@ -454,8 +455,6 @@ struct DictSubscriptNode final : public ExprNode {
 
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
-  AnyValue emitTypeSubscriptIR(ASTType initType, ValueDest &dest,
-                               ExprEmitter &emitter) const;
 };
 
 // trueExpr 'if' condition 'else' falseExpr

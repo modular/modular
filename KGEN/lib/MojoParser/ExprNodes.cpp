@@ -2061,167 +2061,18 @@ AnyValue DictionaryNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   return {};
 }
 
-/// Emit a DictSubscriptNode when the base is a Type expression.
-AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
-                                                ValueDest &dest,
-                                                ExprEmitter &emitter) const {
-  auto *decl = initType.getDecl(emitter.shared);
-  if (!decl) {
-    emitter.emitError(getLoc(),
-                      "MLIR types may not be initialized with this syntax")
-        << base->getRange();
-    return {};
-  }
-
-  // The type must be fully parsed to understand what fields it contains.
-  if (failed(emitter.getDeclResolver().resolveFully(*decl, base->getLoc())))
-    return {};
-
-  auto structOp = dyn_cast<StructDeclOp>(decl);
-  if (!structOp) {
-    emitter.emitError(getLoc(),
-                      "can only initialize struct types with this syntax")
-        << base->getRange();
-    return {};
-  }
-
-  // While we use general dictionary syntax, the keys are syntactically
-  // limited to being keywords.  The values may be arbitrary RValues
-  // though, and are emitted in lexical order.
-
-  // Perform parameter substitution if there are parameters.
-  ParserParamEvaluator paramEvaluator(emitter.getDeclResolver(),
-                                      structOp.getParams(),
-                                      initType.getParamBindings());
-
-  // Build a mapping of field names to field decls for fast lookup.
-  SmallDenseMap<StringAttr, StructFieldOp> fieldNameMap;
-  for (StructFieldOp field : structOp.getFieldDecls())
-    fieldNameMap[field.getNameAttr()] = field;
-
-  // If this is a memory-only struct, initialize the fields into the result
-  // buffer.
-  if (!structOp.isRegisterPassable()) {
-    emitter.emitError(getLoc(),
-                      "this initializer syntax may only be used with "
-                      "'@register_passable' values; use '__init__' instead")
-        << getRange();
-    return {};
-  }
-
-  DenseMap<StringAttr, ASTExprAnd<AnyValue>> fieldMapping;
-  bool allInitializersPValues = true;
-  for (auto &[key, valueExpr] : indices->values) {
-    // We don't support `**dict` syntax.
-    if (!key) {
-      emitter.emitError(valueExpr->getLoc(),
-                        "cannot expand into initializer list")
-          << valueExpr->getRange();
-      return {};
-    }
-
-    auto fieldName = dyn_cast<DeclRefNode>(key);
-    if (!fieldName) {
-      emitter.emitError(key->getLoc(),
-                        "type initializer requires keys to be bare field names")
-          << key->getRange() << base->getRange();
-      return {};
-    }
-    StringAttr fieldNameAttr =
-        StringAttr::get(emitter.getContext(), fieldName->spelling);
-    auto fieldNameDecls = emitter.shared.lookupAndResolveDecl(
-        fieldNameAttr, valueExpr->getLoc(), *decl,
-        /*searchParentScopes=*/false);
-    if (!fieldNameDecls.isSuccess()) {
-      if (!fieldNameDecls.isErroneous())
-        emitter.emitError(key->getLoc())
-            << initType << " has no field named " << fieldNameAttr
-            << key->getRange() << base->getRange();
-      return {};
-    }
-
-    auto field = fieldNameMap[fieldNameAttr];
-    if (!field) {
-      emitter.emitError(key->getLoc(), "")
-          << initType << " has no field named " << fieldNameAttr
-          << valueExpr->getRange();
-      return {};
-    }
-
-    // For register values, make sure we convert to the right dest field type.
-    auto fieldType = paramEvaluator.getReboundType(field.getType());
-    AnyValue value = emitter.emitExpr(valueExpr, EC_FieldInitValue, fieldType);
-    if (!value)
-      return {};
-
-    // Keep track of whether everything is a PValue.
-    if (allInitializersPValues && !value.getIfPValue())
-      allInitializersPValues = false;
-
-    auto mapResult = fieldMapping.insert({fieldNameAttr, {value, valueExpr}});
-    if (!mapResult.second) {
-      emitter.emitError(key->getLoc(), "field ")
-          << fieldNameAttr << " specified multiple times" << key->getRange()
-          << base->getRange() << mapResult.first->second.expr->getRange();
-      return {};
-    }
-  }
-
-  // If it is register-passable, we build a list of field values+names.  For
-  // memory-only, we just check that each value got emitted.
-  SmallVector<StringAttr> fieldNames;
-  SmallVector<Value> fieldSRValues;
-  SmallVector<std::tuple<StringAttr, TypedAttr>> fieldParamValues;
-  for (StructFieldOp field : structOp.getFieldDecls()) {
-    ASTExprAnd<AnyValue> fieldVal = fieldMapping[field.getNameAttr()];
-    if (!fieldVal) {
-      emitter.emitError(indices->rbraceLoc, "no value for field ")
-          << field.getNameAttr() << " specified";
-      return {};
-    }
-
-    // If all the initializers are PValues, we can emit this as a LITStructAttr.
-    if (allInitializersPValues) {
-      fieldParamValues.push_back(
-          {field.getNameAttr(), fieldVal.ir.getIfPValue()});
-      continue;
-    }
-
-    // If the any initializers required emitting a load sequence, emit the rest
-    auto srValue = emitter.emitSRValue(fieldVal, EC_FieldInitValue);
-    if (!srValue)
-      return {};
-    fieldNames.push_back(field.getNameAttr());
-    fieldSRValues.push_back(srValue);
-  }
-
-  // If all the fields are PValues, form a new PValue.
-  if (allInitializersPValues) {
-    auto result = LITStructAttr::get(fieldParamValues,
-                                     cast<StructType>(initType.mlirType));
-    return emitter.emitResult(result, this, dest);
-  }
-
-  // Now that we have all the values, generate the initializers for
-  // StructCreate.
-  if (!emitter.builder)
-    return emitter.emitErrorForDynamicValueInParameter(this);
-
-  // For register-passable types, bundle all the values up and return them.
-  auto result = SRValue(emitter.builder->create<StructCreateOp>(
-      getLocation(emitter), initType.mlirType, fieldSRValues,
-      StringArrayAttr::get(emitter.getContext(), fieldNames)));
-  return emitter.emitResult(result, this, dest);
-}
-
 AnyValue DictSubscriptNode::emitIR(ValueDest &dest,
                                    ExprEmitter &emitter) const {
-  // Subscripting a type constructs it with lit.struct.create.
+  // TODO: T{...} is a Mojo extension for typed dictionary literals.  This is
+  // speculative.  If it isn't the right thing, then remove the parsing and
+  // ExprNode entirely.
   ASTType typeValue = emitter.emitExprType(base);
   if (!typeValue)
     return {};
 
-  return emitTypeSubscriptIR(typeValue, dest, emitter);
+  emitter.emitError(getLoc(), "TODO: cannot emit dictionary literals yet")
+      << getRange();
+  return {};
 }
 
 /// Given an operator, return the SpecialFunctionInfo that implements it.
