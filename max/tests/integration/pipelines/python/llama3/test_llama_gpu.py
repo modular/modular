@@ -7,13 +7,22 @@
 golden values.
 """
 
+import asyncio
+import json
 from functools import partial
 from pathlib import Path
 
 import pytest
 from evaluate_llama import SupportedTestModels
-from max.pipelines import TextContext
-from max.pipelines.interfaces import TokenGeneratorRequest
+from max.driver import DeviceSpec
+from max.pipelines import (
+    PipelineConfig,
+    SupportedEncoding,
+    TextContext,
+    TokenGeneratorRequest,
+    TokenGeneratorRequestMessage,
+    TokenGeneratorResponseFormat,
+)
 from test_common.distance_metrics import kl_divergence_verifier
 from test_common.evaluate import (
     PROMPTS,
@@ -100,3 +109,84 @@ async def test_llama_ragged(
         {"A": context_a, "B": context_b},
         stored_logits,
     )
+
+
+def test_smollm_with_constrained_decoding(pipeline_registry):
+    pipeline_config = PipelineConfig(
+        huggingface_repo_id="HuggingFaceTB/SmolLM2-135M-Instruct",
+        enable_constrained_decoding=True,
+        quantization_encoding=SupportedEncoding.bfloat16,
+        device_specs=[DeviceSpec.accelerator()],
+    )
+
+    tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
+        pipeline_config
+    )
+
+    prompt = """
+    Please provide a json response, with the person's name and age extracted from the excerpt.
+    For example, provided an excerpt 'Bob Dylan is 83 years old.' return with {"badnamey": "Bob Dylan", "badagey": 83}.
+
+    Please extract the person's name and age from the following excerpt:
+    'John Mayer is 47 years old.'
+
+    """
+
+    request_id = "request_0"
+    request = TokenGeneratorRequest(
+        model_name=pipeline_config.huggingface_repo_id,
+        id=request_id,
+        index=0,
+        messages=[
+            TokenGeneratorRequestMessage(
+                role="user",
+                content=prompt,
+            )
+        ],
+        max_new_tokens=50,
+        response_format=TokenGeneratorResponseFormat(
+            type="json_schema",
+            json_schema={
+                "title": "Person",
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                    },
+                    "age": {
+                        "type": "integer",
+                    },
+                },
+                "required": ["name", "age"],
+            },
+        ),
+    )
+
+    # Get Context
+    context: TextContext = asyncio.run(tokenizer.new_context(request))
+
+    print("\nRaw Prompt:")
+    print(context.prompt)
+    print("Initializing Pipeline...")
+    pipeline = pipeline_factory()
+
+    print("Generating tokens...")
+
+    tokens = []
+    while True:
+        next_token = pipeline.next_token({request_id: context}, num_steps=1)
+        if request_id not in next_token[0]:
+            break
+
+        tokens.append(next_token[0][request_id].next_token)
+
+    print("Final Response: ")
+    response_content = asyncio.run(
+        tokenizer.decode(context, tokens, skip_special_tokens=True)
+    )
+    print(response_content)
+
+    result = json.loads(response_content)
+
+    assert result["name"] == "John Mayer"
+    assert result["age"] == 47

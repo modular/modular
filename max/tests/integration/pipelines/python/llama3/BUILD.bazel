@@ -196,5 +196,7 @@ modular_py_test(
         requirement("pytest-asyncio"),
         requirement("torch"),
         requirement("transformers"),
+        requirement("xgrammar"),
+        requirement("setuptools"),
     ],
 )
