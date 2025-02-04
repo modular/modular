@@ -96,7 +96,6 @@ modular_py_binary(
         },
         tags = [
             "huggingface",
-            "no-remote-exec",
             "no-sandbox",
             "requires-network",
         ],

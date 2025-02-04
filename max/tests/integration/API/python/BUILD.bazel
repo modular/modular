@@ -41,7 +41,6 @@ modular_py_test(
     ],
     tags = [
         "huggingface",
-        "no-remote-exec",
         "no-sandbox",
         "requires-network",
     ],

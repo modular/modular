@@ -75,7 +75,6 @@ modular_py_test(
     ],
     tags = [
         "huggingface",
-        "no-remote-exec",
         "no-sandbox",
         "requires-network",
     ],
@@ -236,7 +235,6 @@ modular_py_test(
     ignore_collisions = True,  # duplicate examples/__init__.py from deps
     tags = [
         "huggingface",
-        "no-remote-exec",
         "no-sandbox",
         "requires-network",
     ],
