@@ -18,7 +18,13 @@ from sys import bitwidthof, is_nvidia_gpu, num_physical_cores, simdwidthof
 
 from bit import is_power_of_two
 from buffer import NDBuffer
-from gpu import block_dim, block_idx, grid_dim, thread_idx
+from gpu import (
+    block_dim,
+    block_idx,
+    grid_dim,
+    thread_idx,
+    MAX_THREADS_PER_BLOCK_METADATA,
+)
 from gpu.host import DeviceContext
 from gpu.host.info import Info, is_gpu, is_cpu, is_valid_target
 from runtime import tracing
@@ -1652,7 +1658,9 @@ fn _elementwise_impl_gpu[
         num_packed_elems, unpacked_tail_length, packed_region_length
     )
     @parameter
-    @__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](block_size))
+    @__llvm_metadata(
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](block_size)
+    )
     fn _elementwise_gpu_kernel[*, block_size: UInt, handle_uneven_simd: Bool]():
         # process the packed region
         var tid = thread_idx.x + block_size * block_idx.x
