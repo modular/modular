@@ -13,15 +13,7 @@ from sys._assembly import inlined_assembly
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from gpu import (
-    WARP_SIZE,
-    MAX_THREADS_PER_BLOCK_METADATA,
-    block_idx,
-    grid_dim,
-    thread_idx,
-    barrier,
-    lane_id,
-)
+from gpu import WARP_SIZE, block_idx, grid_dim, thread_idx, barrier, lane_id
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.info import DEFAULT_GPU_ARCH, is_gpu
 from gpu.intrinsics import lop
@@ -919,7 +911,7 @@ fn unpack_4bit_int(val: SIMD[DType.uint32, _], idx: Int) -> Scalar[DType.uint8]:
     return (u32_val >> (idx * 4)).cast[DType.uint8]() & 0x0F
 
 
-@__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](128))
+@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](128))
 fn repack_Q4_0_for_sm8x[
     q_layout: Layout,
     repack_layout: Layout,
@@ -1099,7 +1091,7 @@ fn repack_Q4_0_for_sm8x[
 # will be a uint32 matrix of shape [K // 8, N], and scales will be of shape
 # [K_groups, N]. The input is a uint8 tensor of shape
 # [K_groups * group_bytes, N].
-@__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](128))
+@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](128))
 fn repack_GPTQ_for_sm8x[
     in_layout: Layout,
     out_layout: Layout,
