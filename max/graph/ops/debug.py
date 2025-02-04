@@ -47,10 +47,7 @@ def print(value: str | TensorValue, label: str = "debug_tensor"):
     Args:
         value: The value to print. Can be either a string or a TensorValue.
         label: A label to identify the printed value. Defaults to
-        ``debug_tensor``.
-
-    Returns:
-        None. The function prints the value as a side effect.
+          ``debug_tensor``.
     """
     in_chain = Graph.current._current_chain
 
