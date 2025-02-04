@@ -160,3 +160,45 @@ def main():
             tile_shape = Index(8, 128),
             swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
         ](ctx)
+
+        test_tma_swizzle[
+            DType.bfloat16,
+            shape = Index(8, 32),
+            tile_shape = Index(8, 32),
+            swizzle_mode = TensorMapSwizzle.SWIZZLE_64B,
+        ](ctx)
+
+        test_tma_swizzle[
+            DType.bfloat16,
+            shape = Index(8, 64),
+            tile_shape = Index(8, 64),
+            swizzle_mode = TensorMapSwizzle.SWIZZLE_64B,
+        ](ctx)
+
+        test_tma_swizzle[
+            DType.bfloat16,
+            shape = Index(8, 16),
+            tile_shape = Index(8, 16),
+            swizzle_mode = TensorMapSwizzle.SWIZZLE_32B,
+        ](ctx)
+
+        test_tma_swizzle[
+            DType.bfloat16,
+            shape = Index(8, 32),
+            tile_shape = Index(8, 32),
+            swizzle_mode = TensorMapSwizzle.SWIZZLE_32B,
+        ](ctx)
+
+        test_tma_swizzle[
+            DType.bfloat16,
+            shape = Index(8, 16),
+            tile_shape = Index(8, 16),
+            swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
+        ](ctx)
+
+        test_tma_swizzle[
+            DType.bfloat16,
+            shape = Index(8, 32),
+            tile_shape = Index(8, 32),
+            swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
+        ](ctx)
