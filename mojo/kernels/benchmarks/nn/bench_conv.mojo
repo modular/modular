@@ -114,20 +114,20 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
         pad_h = Index(spec.pad[2], spec.pad[3])
         pad_w = Index(spec.pad[4], spec.pad[5])
 
-    var conv_shape = ConvShape[spec.static_info.rank] {
-        n: spec.n,
-        input_dims: spec.input_dims,
-        output_dims: output_dims,
-        filter_dims: spec.filter_dims,
-        c: spec.c,
-        f: spec.f,
-        stride: spec.stride,
-        dilation: spec.dilation,
-        pad_d: pad_d,
-        pad_h: pad_h,
-        pad_w: pad_w,
-        num_groups: spec.num_groups,
-    }
+    var conv_shape = ConvShape[spec.static_info.rank](
+        n=spec.n,
+        input_dims=spec.input_dims,
+        output_dims=output_dims,
+        filter_dims=spec.filter_dims,
+        c=spec.c,
+        f=spec.f,
+        stride=spec.stride,
+        dilation=spec.dilation,
+        pad_d=pad_d,
+        pad_h=pad_h,
+        pad_w=pad_w,
+        num_groups=spec.num_groups,
+    )
 
     @parameter
     @always_inline
