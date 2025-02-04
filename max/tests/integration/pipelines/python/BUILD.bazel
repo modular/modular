@@ -22,9 +22,9 @@ modular_py_binary(
         "//SDK/lib/API/python/max/pipelines",
         "//SDK/lib/API/python/max/pipelines/architectures",
         "//SDK/lib/API/python/max/pipelines/cli",
+        "//SDK/lib/API/python/max/pipelines/llama3",
         "//SDK/lib/API/python/max/pipelines/pixtral",
         "//SDK/lib/API/python/max/serve",
-        "//SDK/public/max-repo/pipelines/python/llama3",
         requirement("click"),
         requirement("huggingface-hub"),
     ],
@@ -132,7 +132,7 @@ modular_py_binary(
     deps = [
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/pipelines/architectures",
-        "//SDK/public/max-repo/pipelines/python/llama3",
+        "//SDK/lib/API/python/max/pipelines/llama3",
         "//SDK/public/max-repo/pipelines/python/mistral",
         requirement("click"),
         requirement("einops"),  # Req'd by replit

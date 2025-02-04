@@ -10,7 +10,6 @@ from typing import Any, Literal
 
 import pytest
 from evaluate_llama import SupportedTestModels
-from llama3.model import Llama3Model
 from max.pipelines import (
     PipelineConfig,
     SupportedEncoding,
@@ -19,6 +18,7 @@ from max.pipelines import (
 )
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
+from max.pipelines.llama3.model import Llama3Model
 from test_common.evaluate import PROMPTS, next_token_with_logits
 
 

@@ -17,7 +17,6 @@ from typing import Any, Mapping, Optional, Sequence, Union
 # 3rd-party
 import click
 import huggingface_hub
-import llama3.config
 
 # Tests
 import replit_compat
@@ -29,6 +28,7 @@ from max import driver, pipelines
 from max.pipelines import interfaces
 from max.pipelines.architectures import register_all_models
 from max.pipelines.kv_cache import KVCacheStrategy
+from max.pipelines.llama3.config import get_llama_huggingface_file
 from test_common import (
     evaluate,
     evaluate_embeddings,
@@ -186,7 +186,7 @@ class LlamaPipelineOracle(PipelineOracle):
 
     def _weight_path_for(self, version: str, encoding: str) -> Path:
         return Path(
-            llama3.config.get_llama_huggingface_file(
+            get_llama_huggingface_file(
                 self._map_to_internal_version(version),
                 pipelines.SupportedEncoding[encoding],
             ).download()

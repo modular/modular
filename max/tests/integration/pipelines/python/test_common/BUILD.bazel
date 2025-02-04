@@ -80,7 +80,7 @@ modular_py_library(
     srcs = ["path.py"],
     imports = [".."],
     deps = [
-        "//SDK/public/max-repo/pipelines/python/llama3",
+        "//SDK/lib/API/python/max/pipelines/llama3",
         "@rules_python//python/runfiles",
     ],
 )
