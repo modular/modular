@@ -10,7 +10,7 @@ from builtin.io import _printf
 from gpu.host import DeviceContext, Dim
 from gpu.host._compile import _get_gpu_target
 from gpu.id import block_idx, thread_idx, cluster_idx, block_rank_in_cluster
-from gpu import barrier, MAX_THREADS_PER_BLOCK_METADATA
+from gpu import barrier
 from layout import Layout, LayoutTensor
 from layout.tma_async import TMATensorTile, create_tma_tile, TMABarrier
 from layout._utils import ManagedLayoutTensor
