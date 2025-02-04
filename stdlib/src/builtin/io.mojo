@@ -244,7 +244,7 @@ fn _printf[
 
             @parameter
             for i in range(num_args):
-                arguments[i] = _to_uint64(args[i])
+                arguments[i] = _to_uint64(args[group + i])
             message = printf_append_args(
                 message,
                 num_args,
