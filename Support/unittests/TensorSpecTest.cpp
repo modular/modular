@@ -38,10 +38,10 @@ ErrorOr<T> ok(T v) {
 
 bool tensorSpecRoundTrips(const std::vector<std::int64_t> &vec, DType dtype) {
   TensorSpec spec(TensorShape(vec), dtype);
-  std::vector<std::int64_t> round_tripped;
+  std::vector<std::int64_t> roundTripped;
   for (auto dim : spec.getDimsCopy())
-    round_tripped.push_back(dim);
-  return vec == round_tripped && spec.getEltType() == dtype;
+    roundTripped.push_back(dim);
+  return vec == roundTripped && spec.getEltType() == dtype;
 }
 
 } // namespace

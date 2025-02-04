@@ -304,17 +304,17 @@ static ElaborationState processGenericOp(ImplNode *parent, Operation *op) {
     op->setAttrs(newAttrs);
 
   if (auto func = dyn_cast<FuncOp>(op)) {
-    if (auto LLVMMetadataArray = dyn_cast_or_null<ArrayAttr>(
+    if (auto llvmMetadataArray = dyn_cast_or_null<ArrayAttr>(
             func->getAttr(kLLVMMetadataArrayAttrName))) {
       NamedAttrList llvmMetadata;
-      for (int i = 0, e = LLVMMetadataArray.size(); i < e; i += 2) {
-        auto name = dyn_cast<StringAttr>(LLVMMetadataArray[i]);
+      for (int i = 0, e = llvmMetadataArray.size(); i < e; i += 2) {
+        auto name = dyn_cast<StringAttr>(llvmMetadataArray[i]);
         if (!name) {
           parent->setToError(ErrorTree(
               op->getLoc(), "cannot concretize name in 'llvm_metadata'"));
           return ElaborationState::error();
         }
-        llvmMetadata.append(name, LLVMMetadataArray[i + 1]);
+        llvmMetadata.append(name, llvmMetadataArray[i + 1]);
       }
       func.setLLVMMetadataAttr(llvmMetadata.getDictionary(func.getContext()));
       func->removeAttr(kLLVMMetadataArrayAttrName);

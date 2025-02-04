@@ -84,18 +84,18 @@ M::unpackToken(llvm::StringRef b64token) {
 std::string M::packToken(const EntitlementToken &token) {
   std::string jsonstr;
   llvm::raw_string_ostream os(jsonstr);
-  llvm::json::OStream J(os);
+  llvm::json::OStream j(os);
 
-  J.object([&] {
-    J.attributeArray("cert_chain", [&] {
+  j.object([&] {
+    j.attributeArray("cert_chain", [&] {
       for (auto &pem : token.certChain) {
-        J.value(pem);
+        j.value(pem);
       }
     });
-    J.attribute("key", token.key);
+    j.attribute("key", token.key);
   });
 
-  J.flush();
+  j.flush();
 
   // copy jsonstr to a vector<uint_8> to acommodate zlib::compress
   std::vector<uint8_t> uncompressed;

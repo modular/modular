@@ -347,11 +347,11 @@ TelemetryContext::TelemetryContext(
 
   // Extend the histogram buckets for our timers. The default's max bucket is
   // 10000 ms.
-  auto instrument_selector =
+  auto instrumentSelector =
       std::make_unique<opentelemetry::sdk::metrics::InstrumentSelector>(
           opentelemetry::sdk::metrics::InstrumentType::kHistogram, ".*\\.time$",
           "ms");
-  auto meter_selector =
+  auto meterSelector =
       std::make_unique<opentelemetry::sdk::metrics::MeterSelector>("", "", "");
   auto histConfig = std::make_shared<
       opentelemetry::sdk::metrics::HistogramAggregationConfig>();
@@ -362,7 +362,7 @@ TelemetryContext::TelemetryContext(
       "", "", "", opentelemetry::sdk::metrics::AggregationType::kHistogram,
       histConfig);
 
-  provider->AddView(std::move(instrument_selector), std::move(meter_selector),
+  provider->AddView(std::move(instrumentSelector), std::move(meterSelector),
                     std::move(view));
 
   // Get metrics exporter config.

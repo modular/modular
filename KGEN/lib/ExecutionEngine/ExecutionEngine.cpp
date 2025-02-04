@@ -429,8 +429,8 @@ ExecutionEngine::~ExecutionEngine() {
     shutdown->invoke<OrcRTCWrapperFunctionResult, char *, size_t>(nullptr, 0);
   }
 
-  if (auto Err = executionSession->endSession())
-    executionSession->reportError(std::move(Err));
+  if (auto err = executionSession->endSession())
+    executionSession->reportError(std::move(err));
 }
 
 ErrorOr<CompiledFunc> ExecutionEngine::lookup(StringRef symbol) {

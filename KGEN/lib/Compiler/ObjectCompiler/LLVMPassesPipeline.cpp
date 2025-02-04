@@ -118,11 +118,11 @@ static void addSanitizers(ModulePassManager &modulePassManager,
   }
 
   if (options.sanitizers.has(M::Sanitizers::kAddress)) {
-    AddressSanitizerOptions Opts;
+    AddressSanitizerOptions opts;
     bool moduleUseAfterScope = false;
     bool useOdrIndicator = false;
     modulePassManager.addPass(
-        AddressSanitizerPass(Opts, moduleUseAfterScope, useOdrIndicator));
+        AddressSanitizerPass(opts, moduleUseAfterScope, useOdrIndicator));
   }
 }
 
@@ -130,40 +130,40 @@ static FunctionPassManager
 buildFunctionSimplificationPipeline(PassBuilder passBuilder,
                                     const CompilationOptions &options) {
   OptimizationLevel level = getOptimizationLevel(options.optimizationLevel);
-  FunctionPassManager FPM;
+  FunctionPassManager fpm;
   // Form SSA out of local memory accesses after breaking apart aggregates into
   // scalars.
-  FPM.addPass(SROAPass(SROAOptions::ModifyCFG));
+  fpm.addPass(SROAPass(SROAOptions::ModifyCFG));
 
   // Catch trivial redundancies
-  FPM.addPass(EarlyCSEPass(true /* Enable mem-ssa. */));
+  fpm.addPass(EarlyCSEPass(true /* Enable mem-ssa. */));
 
   // Speculative execution if the target has divergent branches; otherwise nop.
-  FPM.addPass(SpeculativeExecutionPass(/* OnlyIfDivergentTarget =*/true));
+  fpm.addPass(SpeculativeExecutionPass(/* OnlyIfDivergentTarget =*/true));
 
   // Optimize based on known information about branches, and cleanup afterward.
-  FPM.addPass(JumpThreadingPass());
-  FPM.addPass(CorrelatedValuePropagationPass());
+  fpm.addPass(JumpThreadingPass());
+  fpm.addPass(CorrelatedValuePropagationPass());
 
   SimplifyCFGOptions simplifyCFGOptions = adjustSimplifyCFGOptions(
       SimplifyCFGOptions().convertSwitchRangeToICmp(true), options);
 
-  FPM.addPass(SimplifyCFGPass(simplifyCFGOptions));
-  FPM.addPass(InstCombinePass());
-  FPM.addPass(AggressiveInstCombinePass());
-  passBuilder.invokePeepholeEPCallbacks(FPM, level);
+  fpm.addPass(SimplifyCFGPass(simplifyCFGOptions));
+  fpm.addPass(InstCombinePass());
+  fpm.addPass(AggressiveInstCombinePass());
+  passBuilder.invokePeepholeEPCallbacks(fpm, level);
 
-  FPM.addPass(ConstraintEliminationPass());
+  fpm.addPass(ConstraintEliminationPass());
 
-  FPM.addPass(LibCallsShrinkWrapPass());
+  fpm.addPass(LibCallsShrinkWrapPass());
 
-  FPM.addPass(TailCallElimPass());
-  FPM.addPass(SimplifyCFGPass(simplifyCFGOptions));
+  fpm.addPass(TailCallElimPass());
+  fpm.addPass(SimplifyCFGPass(simplifyCFGOptions));
 
   // Form canonically associated expression trees, and simplify the trees using
   // basic mathematical properties. For example, this will form (nearly)
   // minimal multiplication trees.
-  FPM.addPass(ReassociatePass());
+  fpm.addPass(ReassociatePass());
 
   // Add the primary loop simplification pipeline.
   // FIXME: Currently this is split into two loop pass pipelines because we run
@@ -174,13 +174,13 @@ buildFunctionSimplificationPipeline(PassBuilder passBuilder,
   // used. We have `LoopSimplifyCFGPass` which isn't yet powerful enough yet to
   // fully replace `SimplifyCFGPass`, and the closest to the other we have is
   // `LoopInstSimplify`.
-  LoopPassManager LPM1, LPM2;
+  LoopPassManager lpm1, lpm2;
 
   // Simplify the loop body. We do this initially to clean up after other loop
   // passes run, either when iterating on a loop or on inner loops with
   // implications on the outer loop.
-  LPM1.addPass(LoopInstSimplifyPass());
-  LPM1.addPass(LoopSimplifyCFGPass());
+  lpm1.addPass(LoopInstSimplifyPass());
+  lpm1.addPass(LoopSimplifyCFGPass());
 
   // Try to remove as much code from the loop header as possible,
   // to reduce amount of IR that will have to be duplicated. However,
@@ -188,94 +188,94 @@ buildFunctionSimplificationPipeline(PassBuilder passBuilder,
   // will destroy metadata that may not need to be destroyed if run
   // after loop rotation.
   // TODO: Investigate promotion cap for O1.
-  LPM1.addPass(LICMPass(/*LicmMssaOptCap*/ 100,
+  lpm1.addPass(LICMPass(/*LicmMssaOptCap*/ 100,
                         /*LicmMssaNoAccForPromotionCap*/ 250,
                         /*AllowSpeculation=*/false));
 
   // Disable header duplication in loop rotation at -Oz.
-  LPM1.addPass(LoopRotatePass(/*EnableHeaderDuplication*/ true, false));
+  lpm1.addPass(LoopRotatePass(/*EnableHeaderDuplication*/ true, false));
   // TODO: Investigate promotion cap for O1.
-  LPM1.addPass(LICMPass(/*LicmMssaOptCap*/ 100,
+  lpm1.addPass(LICMPass(/*LicmMssaOptCap*/ 100,
                         /*LicmMssaNoAccForPromotionCap*/ 250,
                         /*AllowSpeculation=*/true));
-  LPM1.addPass(SimpleLoopUnswitchPass(/* NonTrivial */ true));
+  lpm1.addPass(SimpleLoopUnswitchPass(/* NonTrivial */ true));
 
-  LPM2.addPass(LoopIdiomRecognizePass());
-  LPM2.addPass(IndVarSimplifyPass());
+  lpm2.addPass(LoopIdiomRecognizePass());
+  lpm2.addPass(IndVarSimplifyPass());
 
-  LPM2.addPass(LoopDeletionPass());
+  lpm2.addPass(LoopDeletionPass());
 
-  FPM.addPass(createFunctionToLoopPassAdaptor(std::move(LPM1),
+  fpm.addPass(createFunctionToLoopPassAdaptor(std::move(lpm1),
                                               /*UseMemorySSA=*/true,
                                               /*UseBlockFrequencyInfo=*/true));
 
-  FPM.addPass(SimplifyCFGPass(simplifyCFGOptions));
-  FPM.addPass(InstCombinePass());
+  fpm.addPass(SimplifyCFGPass(simplifyCFGOptions));
+  fpm.addPass(InstCombinePass());
   // The loop passes in LPM2 (LoopIdiomRecognizePass, IndVarSimplifyPass,
   // LoopDeletionPass and LoopFullUnrollPass) do not preserve MemorySSA.
   // *All* loop passes must preserve it, in order to be able to use it.
-  FPM.addPass(createFunctionToLoopPassAdaptor(std::move(LPM2),
+  fpm.addPass(createFunctionToLoopPassAdaptor(std::move(lpm2),
                                               /*UseMemorySSA=*/false,
                                               /*UseBlockFrequencyInfo=*/false));
 
   // Delete small array after loop unroll.
-  FPM.addPass(SROAPass(SROAOptions::ModifyCFG));
+  fpm.addPass(SROAPass(SROAOptions::ModifyCFG));
 
   // Try vectorization/scalarization transforms that are both improvements
   // themselves and can allow further folds with GVN and InstCombine.
-  FPM.addPass(VectorCombinePass(/*TryEarlyFoldsOnly=*/true));
+  fpm.addPass(VectorCombinePass(/*TryEarlyFoldsOnly=*/true));
 
   // Eliminate redundancies.
-  FPM.addPass(MergedLoadStoreMotionPass());
-  FPM.addPass(GVNPass());
+  fpm.addPass(MergedLoadStoreMotionPass());
+  fpm.addPass(GVNPass());
 
   // Sparse conditional constant propagation.
   // FIXME: It isn't clear why we do this *after* loop passes rather than
   // before...
-  FPM.addPass(SCCPPass());
+  fpm.addPass(SCCPPass());
 
   // Delete dead bit computations (instcombine runs after to fold away the dead
   // computations, and then ADCE will run later to exploit any new DCE
   // opportunities that creates).
-  FPM.addPass(BDCEPass());
+  fpm.addPass(BDCEPass());
 
   // Run instcombine after redundancy and dead bit elimination to exploit
   // opportunities opened up by them.
-  FPM.addPass(InstCombinePass());
-  passBuilder.invokePeepholeEPCallbacks(FPM, level);
+  fpm.addPass(InstCombinePass());
+  passBuilder.invokePeepholeEPCallbacks(fpm, level);
 
-  FPM.addPass(JumpThreadingPass());
-  FPM.addPass(CorrelatedValuePropagationPass());
+  fpm.addPass(JumpThreadingPass());
+  fpm.addPass(CorrelatedValuePropagationPass());
 
   // Finally, do an expensive DCE pass to catch all the dead code exposed by
   // the simplifications and basic cleanup after all the simplifications.
   // TODO: Investigate if this is too expensive.
-  FPM.addPass(ADCEPass());
+  fpm.addPass(ADCEPass());
 
   // Specially optimize memory movement as it doesn't look like dataflow in SSA.
-  FPM.addPass(MemCpyOptPass());
+  fpm.addPass(MemCpyOptPass());
 
-  FPM.addPass(DSEPass());
-  FPM.addPass(createFunctionToLoopPassAdaptor(
+  fpm.addPass(DSEPass());
+  fpm.addPass(createFunctionToLoopPassAdaptor(
       LICMPass(/*LicmMssaOptCap*/ 100, /*LicmMssaNoAccForPromotionCap*/ 250,
                /*AllowSpeculation=*/true),
       /*UseMemorySSA=*/true, /*UseBlockFrequencyInfo=*/true));
 
-  FPM.addPass(SimplifyCFGPass(
+  fpm.addPass(SimplifyCFGPass(
       adjustSimplifyCFGOptions(SimplifyCFGOptions()
                                    .convertSwitchRangeToICmp(true)
                                    .hoistCommonInsts(true)
                                    .sinkCommonInsts(true),
                                options)));
-  FPM.addPass(InstCombinePass());
-  passBuilder.invokePeepholeEPCallbacks(FPM, level);
+  fpm.addPass(InstCombinePass());
+  passBuilder.invokePeepholeEPCallbacks(fpm, level);
 
-  return FPM;
+  return fpm;
 }
 
 static void addInlinerPasses(PassBuilder passBuilder, ModulePassManager &MPM,
                              const CompilationOptions &options) {
-  ModuleInlinerWrapperPass MIWP(
+  ModuleInlinerWrapperPass miwp(
       getInlineParams(/*speed*/ 3, /*size*/ 0),
       /*PerformMandatoryInliningsFirst*/ true,
       InlineContext{ThinOrFullLTOPhase::None, InlinePass::CGSCCInliner},
@@ -284,20 +284,20 @@ static void addInlinerPasses(PassBuilder passBuilder, ModulePassManager &MPM,
 
   // Require the GlobalsAA analysis for the module so we can query it within
   // the CGSCC pipeline.
-  MIWP.addModulePass(RequireAnalysisPass<GlobalsAA, Module>());
+  miwp.addModulePass(RequireAnalysisPass<GlobalsAA, Module>());
   // Invalidate AAManager so it can be recreated and pick up the newly
   // available GlobalsAA.
-  MIWP.addModulePass(
+  miwp.addModulePass(
       createModuleToFunctionPassAdaptor(InvalidateAnalysisPass<AAManager>()));
 
   // Require the ProfileSummaryAnalysis for the module so we can query it
   // within the inliner pass.
-  MIWP.addModulePass(RequireAnalysisPass<ProfileSummaryAnalysis, Module>());
+  miwp.addModulePass(RequireAnalysisPass<ProfileSummaryAnalysis, Module>());
   // Now begin the main postorder CGSCC pipeline.
   // FIXME: The current CGSCC pipeline has its origins in the legacy pass
   // manager and trying to emulate its precise behavior. Much of this doesn't
   // make a lot of sense and we should revisit the core CGSCC structure.
-  CGSCCPassManager &MainCGPipeline = MIWP.getPM();
+  CGSCCPassManager &mainCgPipeline = miwp.getPM();
 
   // Note: historically, the PruneEH pass was run first to deduce nounwind and
   // generally clean up exception handling overhead. It isn't clear this is
@@ -305,16 +305,16 @@ static void addInlinerPasses(PassBuilder passBuilder, ModulePassManager &MPM,
   // invoke or a call.
 
   // Now deduce any function attributes based in the current code.
-  MainCGPipeline.addPass(PostOrderFunctionAttrsPass());
+  mainCgPipeline.addPass(PostOrderFunctionAttrsPass());
 
   // Lastly, add the core function simplification pipeline nested inside the
   // CGSCC walk.
-  MainCGPipeline.addPass(createCGSCCToFunctionPassAdaptor(
+  mainCgPipeline.addPass(createCGSCCToFunctionPassAdaptor(
       buildFunctionSimplificationPipeline(passBuilder, options),
       /*EagerlyInvalidateAnalyses*/ true,
       /*EnableNoRerunSimplificationPipeline*/ true));
 
-  MPM.addPass(std::move(MIWP));
+  MPM.addPass(std::move(miwp));
 }
 
 static void addVectorPasses(FunctionPassManager &FPM,
@@ -373,66 +373,66 @@ static void addVectorPasses(FunctionPassManager &FPM,
 static ModulePassManager buildO3Pipeline(PassBuilder &passBuilder,
                                          const CompilationOptions &options) {
   OptimizationLevel level = OptimizationLevel::O3;
-  ModulePassManager MPM;
+  ModulePassManager mpm;
 
   // Do basic inference of function attributes from known properties of system
   // libraries and other oracles.
-  MPM.addPass(InferFunctionAttrsPass());
+  mpm.addPass(InferFunctionAttrsPass());
 
-  passBuilder.invokePipelineStartEPCallbacks(MPM, OptimizationLevel::O3);
+  passBuilder.invokePipelineStartEPCallbacks(mpm, OptimizationLevel::O3);
 
   // Create an early function pass manager to cleanup the output of the
   // frontend.
-  FunctionPassManager EarlyFPM;
+  FunctionPassManager earlyFpm;
   // Lower llvm.expect to metadata before attempting transforms.
   // Compare/branch metadata may alter the behavior of passes like SimplifyCFG.
-  EarlyFPM.addPass(LowerExpectIntrinsicPass());
-  EarlyFPM.addPass(SimplifyCFGPass());
-  EarlyFPM.addPass(SROAPass(SROAOptions::ModifyCFG));
-  EarlyFPM.addPass(EarlyCSEPass());
-  EarlyFPM.addPass(CallSiteSplittingPass());
+  earlyFpm.addPass(LowerExpectIntrinsicPass());
+  earlyFpm.addPass(SimplifyCFGPass());
+  earlyFpm.addPass(SROAPass(SROAOptions::ModifyCFG));
+  earlyFpm.addPass(EarlyCSEPass());
+  earlyFpm.addPass(CallSiteSplittingPass());
 
-  MPM.addPass(
-      createModuleToFunctionPassAdaptor(std::move(EarlyFPM),
+  mpm.addPass(
+      createModuleToFunctionPassAdaptor(std::move(earlyFpm),
                                         /*EagerlyInvalidateAnalyses*/ true));
 
   passBuilder.invokePipelineEarlySimplificationEPCallbacks(
-      MPM, OptimizationLevel::O3, ThinOrFullLTOPhase::None);
+      mpm, OptimizationLevel::O3, ThinOrFullLTOPhase::None);
 
   // Promote any localized globals to SSA registers.
   // FIXME: Should this instead by a run of SROA?
   // FIXME: We should probably run instcombine and simplifycfg afterward to
   // delete control flows that are dead once globals have been folded to
   // constants.
-  MPM.addPass(createModuleToFunctionPassAdaptor(PromotePass()));
+  mpm.addPass(createModuleToFunctionPassAdaptor(PromotePass()));
 
   // Create a small function pass pipeline to cleanup after all the global
   // optimizations.
-  FunctionPassManager GlobalCleanupPM;
-  GlobalCleanupPM.addPass(InstCombinePass());
-  passBuilder.invokePeepholeEPCallbacks(GlobalCleanupPM, OptimizationLevel::O3);
+  FunctionPassManager globalCleanupPm;
+  globalCleanupPm.addPass(InstCombinePass());
+  passBuilder.invokePeepholeEPCallbacks(globalCleanupPm, OptimizationLevel::O3);
 
   SimplifyCFGOptions simplifyCFGOptions = adjustSimplifyCFGOptions(
       SimplifyCFGOptions().convertSwitchRangeToICmp(true), options);
 
-  GlobalCleanupPM.addPass(SimplifyCFGPass(simplifyCFGOptions));
-  MPM.addPass(
-      createModuleToFunctionPassAdaptor(std::move(GlobalCleanupPM),
+  globalCleanupPm.addPass(SimplifyCFGPass(simplifyCFGOptions));
+  mpm.addPass(
+      createModuleToFunctionPassAdaptor(std::move(globalCleanupPm),
                                         /*EagerlyInvalidateAnalyses*/ true));
 
-  addInlinerPasses(passBuilder, MPM, options);
+  addInlinerPasses(passBuilder, mpm, options);
 
   // Optimize globals now that the module is fully simplified.
-  MPM.addPass(GlobalDCEPass());
+  mpm.addPass(GlobalDCEPass());
 
-  CGSCCPassManager CGPM;
-  passBuilder.invokeCGSCCOptimizerLateEPCallbacks(CGPM, level);
-  MPM.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(CGPM)));
+  CGSCCPassManager cgpm;
+  passBuilder.invokeCGSCCOptimizerLateEPCallbacks(cgpm, level);
+  mpm.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(cgpm)));
 
   // Do RPO function attribute inference across the module to forward-propagate
   // attributes where applicable.
   // FIXME: Is this really an optimization rather than a canonicalization?
-  MPM.addPass(ReversePostOrderFunctionAttrsPass());
+  mpm.addPass(ReversePostOrderFunctionAttrsPass());
 
   // Re-compute GlobalsAA here prior to function passes. This is particularly
   // useful as the above will have inlined, DCE'ed, and function-attr
@@ -441,11 +441,11 @@ static ModulePassManager buildO3Pipeline(PassBuilder &passBuilder,
   // information for all local globals here, the late loop passes and notably
   // the vectorizer will be able to use them to help recognize vectorizable
   // memory operations.
-  MPM.addPass(RecomputeGlobalsAAPass());
+  mpm.addPass(RecomputeGlobalsAAPass());
 
-  FunctionPassManager OptimizePM;
-  OptimizePM.addPass(Float2IntPass());
-  OptimizePM.addPass(LowerConstantIntrinsicsPass());
+  FunctionPassManager optimizePm;
+  optimizePm.addPass(Float2IntPass());
+  optimizePm.addPass(LowerConstantIntrinsicsPass());
 
   // FIXME: We need to run some loop optimizations to re-rotate loops after
   // simplifycfg and others undo their rotation.
@@ -454,114 +454,114 @@ static ModulePassManager buildO3Pipeline(PassBuilder &passBuilder,
   // rather than on each loop in an inside-out manner, and so they are actually
   // function passes.
 
-  LoopPassManager LPM;
+  LoopPassManager lpm;
   // First rotate loops that may have been un-rotated by prior passes.
   // Disable header duplication at -Oz.
-  LPM.addPass(
+  lpm.addPass(
       LoopRotatePass(/*EnableHeaderDuplication*/ true, /*LTOPreLink*/ false));
   // Some loops may have become dead by now. Try to delete them.
   // FIXME: see discussion in https://reviews.llvm.org/D112851,
   //        this may need to be revisited once we run GVN before loop deletion
   //        in the simplification pipeline.
-  LPM.addPass(LoopDeletionPass());
-  OptimizePM.addPass(createFunctionToLoopPassAdaptor(
-      std::move(LPM), /*UseMemorySSA=*/false, /*UseBlockFrequencyInfo=*/false));
+  lpm.addPass(LoopDeletionPass());
+  optimizePm.addPass(createFunctionToLoopPassAdaptor(
+      std::move(lpm), /*UseMemorySSA=*/false, /*UseBlockFrequencyInfo=*/false));
 
   // Distribute loops to allow partial vectorization.  I.e. isolate dependencies
   // into separate loop that would otherwise inhibit vectorization.  This is
   // currently only performed for loops marked with the metadata
   // llvm.loop.distribute=true or when -enable-loop-distribute is specified.
-  OptimizePM.addPass(LoopDistributePass());
+  optimizePm.addPass(LoopDistributePass());
 
   // Populates the VFABI attribute with the scalar-to-vector mappings
   // from the TargetLibraryInfo.
-  OptimizePM.addPass(InjectTLIMappings());
+  optimizePm.addPass(InjectTLIMappings());
 
-  addVectorPasses(OptimizePM, options);
+  addVectorPasses(optimizePm, options);
 
   // LoopSink pass sinks instructions hoisted by LICM, which serves as a
   // canonicalization pass that enables other optimizations. As a result,
   // LoopSink pass needs to be a very late IR pass to avoid undoing LICM
   // result too early.
-  OptimizePM.addPass(LoopSinkPass());
+  optimizePm.addPass(LoopSinkPass());
 
   // And finally clean up LCSSA form before generating code.
-  OptimizePM.addPass(InstSimplifyPass());
+  optimizePm.addPass(InstSimplifyPass());
 
   // This hoists/decomposes div/rem ops. It should run after other sink/hoist
   // passes to avoid re-sinking, but before SimplifyCFG because it can allow
   // flattening of blocks.
-  OptimizePM.addPass(DivRemPairsPass());
+  optimizePm.addPass(DivRemPairsPass());
 
   // Try to annotate calls that were created during optimization.
-  OptimizePM.addPass(TailCallElimPass());
+  optimizePm.addPass(TailCallElimPass());
 
   // LoopSink (and other loop passes since the last simplifyCFG) might have
   // resulted in single-entry-single-exit or empty blocks. Clean up the CFG.
 
-  OptimizePM.addPass(SimplifyCFGPass(simplifyCFGOptions));
+  optimizePm.addPass(SimplifyCFGPass(simplifyCFGOptions));
 
   // Add the core optimizing pipeline.
-  MPM.addPass(
-      createModuleToFunctionPassAdaptor(std::move(OptimizePM),
+  mpm.addPass(
+      createModuleToFunctionPassAdaptor(std::move(optimizePm),
                                         /*EagerlyInvalidateAnalyses*/ true));
 
-  passBuilder.invokeOptimizerLastEPCallbacks(MPM, level,
+  passBuilder.invokeOptimizerLastEPCallbacks(mpm, level,
                                              ThinOrFullLTOPhase::None);
   // FIXME: We don't officially have full-lto, therefore no passes from
   // invokeFullLinkTimeOptimizationEarlyEPCallbacks are added here.
 
   // Add any relevant sanitizers.
-  addSanitizers(MPM, options);
+  addSanitizers(mpm, options);
 
   // Now we need to do some global optimization transforms.
   // FIXME: It would seem like these should come first in the optimization
   // pipeline and maybe be the bottom of the canonicalization pipeline? Weird
   // ordering here.
-  MPM.addPass(GlobalDCEPass());
-  MPM.addPass(ConstantMergePass());
+  mpm.addPass(GlobalDCEPass());
+  mpm.addPass(ConstantMergePass());
 
-  MPM.addPass(CGProfilePass(false));
+  mpm.addPass(CGProfilePass(false));
 
   // TODO: Relative look table converter pass caused an issue when full lto is
   // enabled. See https://reviews.llvm.org/D94355 for more details.
   // Until the issue fixed, disable this pass during pre-linking phase.
-  MPM.addPass(RelLookupTableConverterPass());
+  mpm.addPass(RelLookupTableConverterPass());
 
   // Emit annotation remarks.
-  MPM.addPass(createModuleToFunctionPassAdaptor(AnnotationRemarksPass()));
+  mpm.addPass(createModuleToFunctionPassAdaptor(AnnotationRemarksPass()));
 
-  return MPM;
+  return mpm;
 }
 
 static ModulePassManager buildO0Pipeline(PassBuilder &passBuilder,
                                          const CompilationOptions &options) {
   OptimizationLevel level = getOptimizationLevel(options.optimizationLevel);
-  ModulePassManager MPM;
-  passBuilder.invokePipelineStartEPCallbacks(MPM, OptimizationLevel::O0);
+  ModulePassManager mpm;
+  passBuilder.invokePipelineStartEPCallbacks(mpm, OptimizationLevel::O0);
 
   passBuilder.invokePipelineEarlySimplificationEPCallbacks(
-      MPM, OptimizationLevel::O0, ThinOrFullLTOPhase::None);
+      mpm, OptimizationLevel::O0, ThinOrFullLTOPhase::None);
 
   // Build a minimal pipeline based on the semantics required by LLVM,
   // which is just that always inlining occurs. Further, disable generating
   // lifetime intrinsics to avoid enabling further optimizations during
   // code generation.
-  MPM.addPass(AlwaysInlinerPass(
+  mpm.addPass(AlwaysInlinerPass(
       /*InsertLifetimeIntrinsics=*/false));
-  CGSCCPassManager CGPM;
-  passBuilder.invokeCGSCCOptimizerLateEPCallbacks(CGPM, level);
-  MPM.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(CGPM)));
+  CGSCCPassManager cgpm;
+  passBuilder.invokeCGSCCOptimizerLateEPCallbacks(cgpm, level);
+  mpm.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(cgpm)));
 
-  passBuilder.invokeOptimizerLastEPCallbacks(MPM, level,
+  passBuilder.invokeOptimizerLastEPCallbacks(mpm, level,
                                              ThinOrFullLTOPhase::None);
 
   // Add any relevant sanitizers.
-  addSanitizers(MPM, options);
+  addSanitizers(mpm, options);
 
-  MPM.addPass(createModuleToFunctionPassAdaptor(AnnotationRemarksPass()));
+  mpm.addPass(createModuleToFunctionPassAdaptor(AnnotationRemarksPass()));
 
-  return MPM;
+  return mpm;
 }
 
 ModulePassManager

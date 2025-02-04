@@ -448,7 +448,9 @@ TEST(HoverTest, testHoverImport) {
   lsp::Range rangeBuiltin = *doc.findFirstRange("builtin");
   lsp::Range rangeString = *doc.findFirstRange("string");
   lsp::Range rangeSimd = *doc.findFirstRange("simd");
-  lsp::Range range_Simd = *doc.findFirstRange("_simd");
+  // This local is based on the name _simd so it should contain an underscore
+  // and not be subject to our normal naming conventions for local variables.
+  lsp::Range range_Simd = *doc.findFirstRange("_simd"); // NOLINT
   lsp::Range rangeAliases = *doc.findFirstRange("aliases");
   lsp::Range rangeFunction = *doc.findFirstRange("function");
   lsp::Range rangeStructWithAlias = *doc.findFirstRange("StructWithAlias");

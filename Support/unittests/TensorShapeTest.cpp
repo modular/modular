@@ -38,10 +38,10 @@ ErrorOr<T> ok(T v) {
 
 bool tensorShapeRoundTrips(const std::vector<std::int64_t> &vec) {
   TensorShape shape(vec);
-  std::vector<std::int64_t> round_tripped;
+  std::vector<std::int64_t> roundTripped;
   for (auto dim : shape)
-    round_tripped.push_back(dim);
-  return vec == round_tripped;
+    roundTripped.push_back(dim);
+  return vec == roundTripped;
 }
 
 struct ShapeHolder {

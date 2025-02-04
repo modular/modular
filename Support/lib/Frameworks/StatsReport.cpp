@@ -210,13 +210,13 @@ std::string M::Frameworks::StatsReport::getJSON() {
   std::string s;
   llvm::raw_string_ostream os(s);
 
-  llvm::json::OStream J(os, 2);
-  J.object([&] {
-    J.attributeObject("fallbacks", [&] {
+  llvm::json::OStream j(os, 2);
+  j.object([&] {
+    j.attributeObject("fallbacks", [&] {
       for (const auto &entry : fallbackHistogram)
-        J.attribute(entry.getKey(), entry.getValue());
+        j.attribute(entry.getKey(), entry.getValue());
     });
-    J.attribute("total_op_count",
+    j.attribute("total_op_count",
                 numFailedOps + numFallbackOps + numLoweredOps);
   });
 

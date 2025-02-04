@@ -19,13 +19,13 @@ using namespace M::KGEN;
 using namespace mlir::lsp;
 
 int main(int argc, char **argv) {
-  llvm::InitLLVM IL(argc, argv, /*InstallPipeSignalExitHandler=*/false);
+  llvm::InitLLVM il(argc, argv, /*InstallPipeSignalExitHandler=*/false);
   llvm::InitializeAllTargets();
   llvm::InitializeAllTargetMCs();
   llvm::InitializeAllAsmParsers();
   llvm::InitializeAllAsmPrinters();
 
-  llvm::PrettyStackTraceProgram X(argc, argv);
+  llvm::PrettyStackTraceProgram x(argc, argv);
   llvm::setBugReportMsg(
       "Compilation server has encountered an internal error. "
       "Please submit a Modular internal bug report "

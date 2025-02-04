@@ -46,18 +46,18 @@ void M::computeBatchIndices(int64_t outputBatchSize, ArrayRef<int64_t> reshape,
   //  - Broadcast to the output shape.
   //  - Reshape back to a flat 1D vector.
   out_indices.resize(outputBatchSize);
-  int64_t num_output_elements = 1;
-  int64_t num_input_elements = 1;
+  int64_t numOutputElements = 1;
+  int64_t numInputElements = 1;
   for (int64_t i = reshape.size() - 1; i >= 0; --i) {
     // Replicate the already populated mapping an additional (dim - 1) times. If
     // we are broadcasting, just copy the existing mapping. Otherwise, add
     // another dimension from the input shape.
     const int64_t dim = std::max(reshape[i], bcast[i]);
-    const int64_t incr = bcast[i] > 1 ? 0 : num_input_elements;
-    for (int64_t k = 0; k < (dim - 1) * num_output_elements; ++k)
-      out_indices[num_output_elements + k] = out_indices[k] + incr;
-    num_output_elements *= dim;
-    num_input_elements *= reshape[i];
+    const int64_t incr = bcast[i] > 1 ? 0 : numInputElements;
+    for (int64_t k = 0; k < (dim - 1) * numOutputElements; ++k)
+      out_indices[numOutputElements + k] = out_indices[k] + incr;
+    numOutputElements *= dim;
+    numInputElements *= reshape[i];
   }
 }
 
@@ -70,16 +70,16 @@ M::BCastList<N>::BCastList(ArrayRef<ArrayRef<int64_t>> x,
     bcast.emplace_back(Vec());
     batch_indices_.emplace_back(SmallVector<int64_t>());
   }
-  bool all_equal = true;
-  size_t largest_rank = 0;
+  bool allEqual = true;
+  size_t largestRank = 0;
   outputBatchSize = 1;
   for (int i = 0; i < N; ++i) {
-    all_equal = all_equal && x[i] == x[0];
-    largest_rank = std::max(largest_rank, x[i].size());
+    allEqual = allEqual && x[i] == x[0];
+    largestRank = std::max(largestRank, x[i].size());
   }
-  if (all_equal)
+  if (allEqual)
     broadcastingRequired = false;
-  if (all_equal && fewerDimsOptimization) {
+  if (allEqual && fewerDimsOptimization) {
     // Fast path for common case of identical shapes.
     int64_t elements = 1;
     const int rank = x[0].size();
@@ -108,45 +108,45 @@ M::BCastList<N>::BCastList(ArrayRef<ArrayRef<int64_t>> x,
 
   // 1-extend and align all vectors.
   for (int i = 0; i < N; ++i)
-    if (copy[i].size() < largest_rank)
-      copy[i].resize(largest_rank, 1);
+    if (copy[i].size() < largestRank)
+      copy[i].resize(largestRank, 1);
 
   // Going through each dimension starting from the inner-most
   // dimension, compares dimension of x and y. They are compatible if
   // they are equal or either is 1.
 
   // indices of j-th component of each input.
-  bool prev_is_one[N];
-  bool current_is_one[N];
+  bool prevIsOne[N];
+  bool currentIsOne[N];
   for (int i = 0; i < N; ++i) {
-    prev_is_one[i] = false;
-    current_is_one[i] = false;
+    prevIsOne[i] = false;
+    currentIsOne[i] = false;
   }
-  bool output_dim_set = false;
-  bool set_one = false;
-  for (size_t j = 0; j < largest_rank; ++j) {
-    int64_t output_dim = kDynamicSize;
-    output_dim_set = false;
+  bool outputDimSet = false;
+  bool setOne = false;
+  for (size_t j = 0; j < largestRank; ++j) {
+    int64_t outputDim = kDynamicSize;
+    outputDimSet = false;
     // Find which indices are 1.
     for (int i = 0; i < N; ++i) {
       // Keep track of which indices are 1.
       if (copy[i][j] == 1) {
-        current_is_one[i] = true;
+        currentIsOne[i] = true;
       } else {
-        current_is_one[i] = false;
-        if (!output_dim_set || copy[i][j] == output_dim) {
-          output_dim = copy[i][j];
-          output_dim_set = true;
+        currentIsOne[i] = false;
+        if (!outputDimSet || copy[i][j] == outputDim) {
+          outputDim = copy[i][j];
+          outputDimSet = true;
         } else {
           valid = false;
           return;
         }
       }
     }
-    output.push_back(output_dim_set ? output_dim : 1);
+    output.push_back(outputDimSet ? outputDim : 1);
     outputBatchSize = multiplySymDims(outputBatchSize, output.back());
     // All dimensions are 1.
-    if (!output_dim_set) {
+    if (!outputDimSet) {
       if (!fewerDimsOptimization) {
         for (int i = 0; i < N; ++i) {
           bcast[i].push_back(1);
@@ -172,27 +172,27 @@ M::BCastList<N>::BCastList(ArrayRef<ArrayRef<int64_t>> x,
 
       continue;
     } else if (fewerDimsOptimization &&
-               std::equal(current_is_one, current_is_one + N, prev_is_one) &&
-               set_one) {
+               std::equal(currentIsOne, currentIsOne + N, prevIsOne) &&
+               setOne) {
       // It is a run of the same broadcasting case as last time.
       // We can reshape the input so that fewer dimensions
       // are involved in the intermediate computation.
-      result.back() = multiplySymDims(result.back(), output_dim);
+      result.back() = multiplySymDims(result.back(), outputDim);
       for (int i = 0; i < N; ++i) {
         reshape[i].back() = multiplySymDims(reshape[i].back(), copy[i][j]);
-        bcast[i].back() = multiplySymDims(bcast[i].back(),
-                                          current_is_one[i] ? output_dim : 1);
+        bcast[i].back() =
+            multiplySymDims(bcast[i].back(), currentIsOne[i] ? outputDim : 1);
       }
     } else {
-      result.push_back(output_dim);
+      result.push_back(outputDim);
       for (int i = 0; i < N; ++i) {
         reshape[i].push_back(copy[i][j]);
-        bcast[i].push_back(current_is_one[i] ? output_dim : 1);
+        bcast[i].push_back(currentIsOne[i] ? outputDim : 1);
       }
     }
-    set_one = true;
+    setOne = true;
     for (int i = 0; i < N; ++i)
-      prev_is_one[i] = current_is_one[i];
+      prevIsOne[i] = currentIsOne[i];
   }
   if (result.empty()) {
     result.push_back(1);

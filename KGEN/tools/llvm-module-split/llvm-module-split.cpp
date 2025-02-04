@@ -80,11 +80,11 @@ private:
 /// and null is returned.
 static std::unique_ptr<Module> readModule(LLVMContext &Context,
                                           StringRef Name) {
-  SMDiagnostic Diag;
-  std::unique_ptr<Module> M = parseIRFile(Name, Diag, Context);
-  if (!M)
-    Diag.print("llvm-module-split", errs());
-  return M;
+  SMDiagnostic diag;
+  std::unique_ptr<Module> m = parseIRFile(Name, diag, Context);
+  if (!m)
+    diag.print("llvm-module-split", errs());
+  return m;
 }
 
 int main(int argc, char **argv) {

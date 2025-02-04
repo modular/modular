@@ -406,10 +406,10 @@ struct FilesystemBackend : public BlobCacheBackend {
     if (!exists)
       return false;
 
-    bool is_dir = std::filesystem::is_directory(*absOr, ec);
+    bool isDir = std::filesystem::is_directory(*absOr, ec);
     if (ec)
       return Error(ec.message());
-    return !is_dir;
+    return !isDir;
   }
 
   ErrorOr<std::optional<BufferRef>> findSyncImpl(StringRef keyHash) override {

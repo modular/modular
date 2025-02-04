@@ -12,8 +12,8 @@ using namespace M;
 namespace lsp = mlir::lsp;
 
 int main(int argc, char **argv) {
-  llvm::InitLLVM IL(argc, argv, /*InstallPipeSignalExitHandler=*/false);
-  llvm::PrettyStackTraceProgram X(argc, argv);
+  llvm::InitLLVM il(argc, argv, /*InstallPipeSignalExitHandler=*/false);
+  llvm::PrettyStackTraceProgram x(argc, argv);
 
   llvm::cl::opt<bool> attachDebugger{
       "attach-debugger",

@@ -257,9 +257,9 @@ DeadArgumentElimination::surveyUse(OpOperand &inputUse, CallGraphNode *node,
     if (auto ret = dyn_cast<ReturnOp>(use.getOwner())) {
       DeadArgumentElimination::Liveness result = MaybeLive;
       for (unsigned i = 0, e = ret->getNumOperands(); i < e; ++i) {
-        RetOrArg Use = createRet(node->func, i);
+        RetOrArg ret = createRet(node->func, i);
         DeadArgumentElimination::Liveness subResult =
-            markIfNotLive(Use, maybeLiveUses);
+            markIfNotLive(ret, maybeLiveUses);
         if (result != Live)
           result = subResult;
       }
@@ -279,8 +279,8 @@ DeadArgumentElimination::surveyUse(OpOperand &inputUse, CallGraphNode *node,
 
       // Value passed to a normal call. It's only live when the corresponding
       // argument to the called function turns out live.
-      RetOrArg Use = createArg(calleeNode->func, use.getOperandNumber());
-      Liveness result = markIfNotLive(Use, maybeLiveUses);
+      RetOrArg arg = createArg(calleeNode->func, use.getOperandNumber());
+      Liveness result = markIfNotLive(arg, maybeLiveUses);
       if (worklist.empty())
         return result;
     }
@@ -448,15 +448,15 @@ void DeadArgumentElimination::propagateLiveness(const RetOrArg &retOrArg) {
   // We don't use upper_bound (or equal_range) here, because our recursive call
   // to ourselves is likely to cause the upper_bound (which is the first value
   // not belonging to RA) to become erased and the iterator invalidated.
-  auto Begin = uses.lower_bound(retOrArg);
-  auto E = uses.end();
-  UseMap::iterator I;
-  for (I = Begin; I != E && I->first == retOrArg; ++I)
-    markLive(I->second);
+  auto begin = uses.lower_bound(retOrArg);
+  auto e = uses.end();
+  UseMap::iterator i;
+  for (i = begin; i != e && i->first == retOrArg; ++i)
+    markLive(i->second);
 
   // Erase RA from the Uses map (from the lower bound to wherever we ended up
   // after the loop).
-  uses.erase(Begin, I);
+  uses.erase(begin, i);
 }
 
 static void getOpsToErase(BlockArgument arg,

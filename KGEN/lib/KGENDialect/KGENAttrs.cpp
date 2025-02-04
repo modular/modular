@@ -2494,12 +2494,12 @@ static TypedAttr simplifyCond(ArrayRef<TypedAttr> operands) {
     // If in form cond(A == 5, f(A, ...), ...)
     // Substitute all occurrences of A in the then branch with '5' up to
     // `MAX_RECURSION_DEPTH`
-    const static size_t MAX_RECURSION_DEPTH = 3;
+    const static size_t maxRecursionDepth = 3;
     if (rhsEqAsIntegral && !lhsEqAsIntegral) {
       DenseMap<TypedAttr, IntegerAttr> substitutions = {
           {lhsEq, rhsEqAsIntegral}};
       TypedAttr newThenAttr = cloneOperandsWithSubstitution(
-          thenAttr, substitutions, MAX_RECURSION_DEPTH);
+          thenAttr, substitutions, maxRecursionDepth);
       if (newThenAttr != thenAttr)
         return ParamOperatorAttr::get(POC::Cond,
                                       {condAttr, newThenAttr, elseAttr});

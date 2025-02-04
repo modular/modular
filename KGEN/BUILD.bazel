@@ -1241,6 +1241,8 @@ modular_shared_library(
     local_defines = [
         "MODULAR_BUILDING_LIBRARY",
     ],
+    # These files are copied from LLDB, so ignore our checks.
+    tags = ["no-clang-tidy"],
     deps = [
         ":ExecutionEngine",
         ":KGENDialect",

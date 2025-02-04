@@ -30,9 +30,12 @@ static std::string prettyBytes(size_t bytes) {
       return std::string("0") + std::to_string(value);
     return std::to_string(value);
   };
-  constexpr size_t KiB = 1024;
-  constexpr size_t MiB = 1024 * 1024;
-  constexpr size_t GiB = 1024 * 1024 * 1024;
+
+  // These are well-known abbreviations that are not subject to our normal
+  // variable naming style.
+  constexpr size_t KiB = 1024;               // NOLINT
+  constexpr size_t MiB = 1024 * 1024;        // NOLINT
+  constexpr size_t GiB = 1024 * 1024 * 1024; // NOLINT
   if (bytes < KiB)
     return std::to_string(bytes) + "B";
   if (bytes < MiB)
