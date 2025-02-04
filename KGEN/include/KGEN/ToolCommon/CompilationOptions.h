@@ -103,6 +103,8 @@ public:
 
   std::string targetAccelerator =
       M::AsyncRT::Device::getAcceleratorArchOrEmpty();
+  bool isCrossCompilation = false;
+
   llvm::Reloc::Model relocModel = llvm::Reloc::Model::PIC_;
   DebugInfoLanguage debugInfoLanguage = kLangMojo;
 

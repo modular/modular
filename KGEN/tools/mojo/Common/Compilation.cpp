@@ -198,8 +198,10 @@ ErrorOrSuccess M::parseTargetOptions(
     compilationOptions.targetCpu = targetCpu.str();
   if (!targetFeatures.empty())
     compilationOptions.targetFeatures = targetFeatures.str();
-  if (!targetAccelerator.empty())
+  if (!targetAccelerator.empty()) {
     compilationOptions.targetAccelerator = targetAccelerator.str();
+    compilationOptions.isCrossCompilation = true;
+  }
 
   if (!mcmodel.empty()) {
     if (!llvm::is_contained({"small", "medium", "large"}, mcmodel)) {

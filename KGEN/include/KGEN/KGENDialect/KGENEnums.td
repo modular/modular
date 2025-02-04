@@ -50,13 +50,14 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   I32EnumAttrCase<"TargetHasFeature", 18, "target_has_feature">,
   I32EnumAttrCase<"TargetGetField", 19, "target_get_field">,
   I32EnumAttrCase<"AcceleratorArch", 20, "accelerator_arch">,
+  I32EnumAttrCase<"CrossCompilation", 21, "cross_compilation">,
 
   // Environment variables.
-  I32EnumAttrCase<"GetEnv", 21, "get_env">,
+  I32EnumAttrCase<"GetEnv", 22, "get_env">,
 
   // Unary type expressions.
-  I32EnumAttrCase<"GetSizeOf", 22, "get_sizeof">,
-  I32EnumAttrCase<"GetAlignOf", 23, "get_alignof">,
+  I32EnumAttrCase<"GetSizeOf", 23, "get_sizeof">,
+  I32EnumAttrCase<"GetAlignOf", 24, "get_alignof">,
 
   // Signature processing.
   I32EnumAttrCase<"Apply", 25, "apply">,

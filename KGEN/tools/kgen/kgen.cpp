@@ -259,6 +259,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   pmOptions.crashReproducerOptions.enableLocalMLIRReproducer =
       clOptions.enableLocalMLIRReproducer;
 
+  options.isCrossCompilation = !clOptions.targetAccelerator.empty();
+
   KGENCompiler compiler(*ctx, options, std::move(pmOptions));
 
   // The set of files included during processing, used to generate the
