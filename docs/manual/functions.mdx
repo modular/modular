@@ -638,10 +638,13 @@ def get_name_tag(owned name: String, out name_tag: NameTag):
 
 The `out` argument convention identifies an uninitialized variable that the
 function must initialize. (This is the same as the `out` convention used in
-[struct constructors](/mojo/manual/lifecycle/life#constructor).) A function can
-have only one `out` argument. The `out` argument for a named result can appear
-anywhere in the argument list, but by convention, it should be the last argument
-in the list.
+[struct constructors](/mojo/manual/lifecycle/life#constructor).) The `out`
+argument for a named result can appear anywhere in the argument list, but by
+convention, it should be the last argument in the list.
+
+A function can declare only one return value, whether it's declared using an
+`out` argument or using the standard <code><strong>-></strong>
+<var>type</var></code> syntax.
 
 A function with a named result argument doesn't need to include an explicit
 `return` statement, as shown above. If the function terminates without a `return`,
