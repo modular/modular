@@ -20,7 +20,6 @@ from gpu import (
     global_idx,
     barrier,
     lane_id,
-    MAX_THREADS_PER_BLOCK_METADATA,
 )
 from gpu.host import (
     DeviceAttribute,
@@ -210,9 +209,7 @@ fn gemv_kernel_vector[
             )
 
 
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
-)
+@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](num_threads))
 fn gemv_split_k[
     c_type: DType,
     c_shape: DimList,

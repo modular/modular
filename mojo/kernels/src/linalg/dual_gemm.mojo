@@ -20,7 +20,6 @@ from gpu import (
     lane_id,
     warp_broadcast,
     warp_sum,
-    MAX_THREADS_PER_BLOCK_METADATA,
 )
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.info import A100, is_gpu
@@ -408,9 +407,7 @@ alias binary_fn_type = fn[type: DType, width: Int] (
 ) -> SIMD[type, width]
 
 
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](config.num_threads())
-)
+@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](config.num_threads()))
 fn multistage_dual_gemm_kernel[
     c_type: DType,
     c_layout: Layout,
@@ -1099,9 +1096,7 @@ fn dual_gemm[
 # ---------------------------------------------------------------------------- #
 
 
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
-)
+@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](num_threads))
 fn dual_gemv_kernel[
     c_type: DType,
     c_shape: DimList,
