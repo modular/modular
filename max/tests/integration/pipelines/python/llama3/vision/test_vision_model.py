@@ -10,18 +10,18 @@ package reference implementation.
 import numpy as np
 import pytest
 import torch
-from llama_vision.attention import Attention
-from llama_vision.encoder import VisionEncoder, VisionEncoderLayer
-from llama_vision.mlp import MLP
-from llama_vision.positional_embedding import (
-    PrecomputedAspectRatioEmbedding,
-    PrecomputedPositionEmbedding,
-)
-from llama_vision.vision_model import VisionConv2D, VisionModel
 from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, TensorValue, Weight
+from max.pipelines.llama_vision.attention import Attention
+from max.pipelines.llama_vision.encoder import VisionEncoder, VisionEncoderLayer
+from max.pipelines.llama_vision.mlp import MLP
+from max.pipelines.llama_vision.positional_embedding import (
+    PrecomputedAspectRatioEmbedding,
+    PrecomputedPositionEmbedding,
+)
+from max.pipelines.llama_vision.vision_model import VisionConv2D, VisionModel
 from max.pipelines.nn import Embedding, Linear, LPLayerNorm
 from test_common.distance_metrics import is_euclidean_distance_close
 from transformers.models.mllama.configuration_mllama import MllamaVisionConfig

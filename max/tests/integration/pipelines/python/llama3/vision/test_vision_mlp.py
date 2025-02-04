@@ -8,10 +8,10 @@ package reference implementation.
 """
 
 import pytest
-from llama_vision.mlp import MLP
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType
+from max.pipelines.llama_vision.mlp import MLP
 from max.pipelines.nn import Linear
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 from test_common.distance_metrics import is_euclidean_distance_close

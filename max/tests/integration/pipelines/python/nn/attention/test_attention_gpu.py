@@ -8,7 +8,6 @@
 import numpy as np
 import pytest
 import torch
-from llama_vision.cross_attention_decoder import CrossSdpaAttention
 from max.driver import CPU, Accelerator, Device, Tensor, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -19,6 +18,9 @@ from max.pipelines.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     load_kv_manager,
+)
+from max.pipelines.llama_vision.cross_attention_decoder import (
+    CrossSdpaAttention,
 )
 from max.pipelines.nn import Linear, RMSNorm
 from max.pipelines.nn.attention import Attention
