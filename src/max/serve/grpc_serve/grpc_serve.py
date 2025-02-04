@@ -14,9 +14,9 @@ from typing import Callable
 
 import grpc
 import max.serve.grpc_serve.grpc_predict_v2_pb2 as pb2
-from cli import TextGenerationMetrics
 from grpc_reflection.v1alpha import reflection
 from max.pipelines import PipelineConfig, PipelineTokenizer, TextTokenizer
+from max.pipelines.cli import TextGenerationMetrics
 from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
 from max.serve.grpc_serve.grpc_predict_v2_pb2_grpc import (
     GRPCInferenceServiceServicer,
