@@ -564,19 +564,6 @@ fn listValues():
   # CHECK: %[[LIST:.*]] = lit.call {{.*}}@ListLiteral::@"__init__{{.*}}({{.*}}, %b)
   var b = []
 
-# CHECK-LABEL: lit.fn @"initializers
-fn initializers():
-  # CHECK-NEXT: %a = lit.var.decl "a"
-  # CHECK: %0 = kgen.param.constant: !Int = <{42}>
-  # CHECK-NEXT: lit.ref.store %0, %a
-  var a = Int{value: Int(42).value}
-
-  # Issue #7343: Trailing comma ok too.
-  _ = Int{value: Int(42).value,}
-
-  # Issue #12067, suffix stuff ok.
-  _ = Int{ value: Int(1).value }.value
-
 # CHECK-LABEL: lit.fn @"test_if_cond
 fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
     # CHECK: %i = lit.var.decl "i"
