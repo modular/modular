@@ -20,8 +20,11 @@ from max.pipelines.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
 )
+from max.pipelines.nn.kernels import (
+    fused_qkv_ragged_matmul,
+    matmul_kv_cache_ragged,
+)
 from modular_graph_test import are_all_tensor_values, modular_graph_test
-from nn.kernels import fused_qkv_ragged_matmul, matmul_kv_cache_ragged
 
 FAKE_TOKEN = 999
 

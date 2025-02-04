@@ -20,9 +20,9 @@ from max.pipelines.kv_cache import (
     KVCacheStrategy,
     load_kv_manager,
 )
+from max.pipelines.nn import Linear, RMSNorm
+from max.pipelines.nn.attention import Attention
 from modular_graph_test import are_all_tensor_values
-from nn import Linear, RMSNorm
-from nn.attention import Attention
 from test_common.distance_metrics import is_euclidean_distance_close
 from transformers.models.mllama.configuration_mllama import MllamaTextConfig
 from transformers.models.mllama.modeling_mllama import (

@@ -7,7 +7,7 @@
 import pytest
 from max.dtype import DType
 from max.graph import Graph, TensorType, ops
-from nn.layer import Layer, add_layer_hook, clear_hooks
+from max.pipelines.nn.layer import Layer, add_layer_hook, clear_hooks
 
 
 @pytest.fixture(autouse=True)

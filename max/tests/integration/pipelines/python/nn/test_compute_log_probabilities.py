@@ -6,7 +6,7 @@
 
 import numpy as np
 from max.pipelines import LogProbabilities
-from nn.compute_log_probabilities import compute_log_probabilities
+from max.pipelines.nn.compute_log_probabilities import compute_log_probabilities
 from scipy.special import log_softmax
 
 

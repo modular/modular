@@ -18,7 +18,7 @@ from max.pipelines.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
 )
-from nn.kernels import rms_norm_key_cache
+from max.pipelines.nn.kernels import rms_norm_key_cache
 
 FAKE_TOKEN = 999
 

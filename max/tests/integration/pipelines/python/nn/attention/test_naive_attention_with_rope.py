@@ -18,8 +18,8 @@ from max.graph import (
     ops,
 )
 from max.pipelines.kv_cache import KVCacheParams, KVCacheStrategy
+from max.pipelines.nn import Linear, NaiveAttentionWithRope, RotaryEmbedding
 from modular_graph_test import modular_graph_test
-from nn import Linear, NaiveAttentionWithRope, RotaryEmbedding
 from torch import nn
 from transformers import StaticCache
 from transformers.models.llama.configuration_llama import LlamaConfig

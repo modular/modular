@@ -19,8 +19,12 @@ from max.pipelines.kv_cache import (
     KVCacheParams,
     load_kv_manager,
 )
+from max.pipelines.nn import (
+    AttentionWithRopeQKV,
+    Linear,
+    OptimizedRotaryEmbedding,
+)
 from modular_graph_test import are_all_tensor_values, modular_graph_test
-from nn import AttentionWithRopeQKV, Linear, OptimizedRotaryEmbedding
 from torch import nn
 from transformers import DynamicCache
 from transformers.models.mllama.configuration_mllama import MllamaTextConfig

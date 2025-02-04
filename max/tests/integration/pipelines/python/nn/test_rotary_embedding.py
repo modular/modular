@@ -19,9 +19,9 @@ from max.pipelines.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
 )
+from max.pipelines.nn import RotaryEmbedding
+from max.pipelines.nn.kernels import fused_qk_ragged_rope
 from modular_graph_test import are_all_tensor_values, modular_graph_test
-from nn import RotaryEmbedding
-from nn.kernels import fused_qk_ragged_rope
 
 MAX_SEQ_LEN = 2**16
 ACCURACY_RTOL = 1e-2

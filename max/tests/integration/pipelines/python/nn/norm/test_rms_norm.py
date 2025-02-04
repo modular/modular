@@ -9,8 +9,8 @@ import pytest
 import torch
 from max.dtype import DType
 from max.graph import Graph, TensorType
+from max.pipelines.nn import RMSNorm
 from modular_graph_test import are_all_tensor_values, modular_graph_test
-from nn import RMSNorm
 
 
 def torch_rms_norm(x, weight, eps=1e-6):

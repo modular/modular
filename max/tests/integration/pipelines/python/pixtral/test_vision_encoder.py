@@ -12,8 +12,8 @@ from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, Weight
-from nn import Conv2D, Linear
-from nn.norm import RMSNorm
+from max.pipelines.nn import Conv2D, Linear
+from max.pipelines.nn.norm import RMSNorm
 from pixtral.vision_encoder.attention import Attention
 from pixtral.vision_encoder.attention_utils import (
     causal_attention_mask_2d_from_imgs,

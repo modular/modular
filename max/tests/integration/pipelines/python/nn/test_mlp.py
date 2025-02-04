@@ -9,8 +9,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from max.dtype import DType
 from max.graph import Graph, TensorType
+from max.pipelines.nn import MLP, Linear
 from modular_graph_test import are_all_tensor_values, modular_graph_test
-from nn import MLP, Linear
 
 
 def torch_linear(weight, **kwargs):

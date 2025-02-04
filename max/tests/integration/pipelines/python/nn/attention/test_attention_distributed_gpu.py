@@ -20,8 +20,8 @@ from max.pipelines.kv_cache import (
     KVCacheStrategy,
     load_kv_manager,
 )
-from nn import Linear
-from nn.attention import Attention
+from max.pipelines.nn import Linear
+from max.pipelines.nn.attention import Attention
 
 ACCURACY_RTOL = 1e-2
 ACCURACY_ATOL = 1e-2

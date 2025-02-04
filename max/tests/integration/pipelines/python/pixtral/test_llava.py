@@ -16,8 +16,8 @@ from max.pipelines.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,
 )
-from nn import MLP as nnMLP
-from nn import (
+from max.pipelines.nn import MLP as nnMLP
+from max.pipelines.nn import (
     AttentionWithRope,
     Conv2D,
     Embedding,
@@ -25,7 +25,7 @@ from nn import (
     OptimizedRotaryEmbedding,
     RMSNorm,
 )
-from nn import TransformerBlock as nnTransformerBlock
+from max.pipelines.nn import TransformerBlock as nnTransformerBlock
 from pixtral.llava.llava import LlavaConditionalGeneration
 from pixtral.llava.llava_decoder import Transformer as LLavaTransformer
 from pixtral.llava.llava_projector import LlavaMultiModalConnector

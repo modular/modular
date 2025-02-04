@@ -21,10 +21,10 @@ from max.pipelines.kv_cache import (
     PagedKVCacheManager,
     load_kv_manager,
 )
+from max.pipelines.nn import Linear
+from max.pipelines.nn.attention import Attention
+from max.pipelines.nn.kernels import MHAMaskVariant, flash_attention_ragged
 from modular_graph_test import are_all_tensor_values, modular_graph_test
-from nn import Linear
-from nn.attention import Attention
-from nn.kernels import MHAMaskVariant, flash_attention_ragged
 
 ACCURACY_RTOL = 1e-2
 ACCURACY_ATOL = 1e-2
