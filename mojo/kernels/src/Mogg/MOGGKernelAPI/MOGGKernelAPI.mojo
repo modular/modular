@@ -181,7 +181,7 @@ from tensor_internal import ManagedTensorSlice, foreach, view_copy_impl
 from utils import IndexList, StaticTuple
 from utils.index import Index
 from utils.numerics import isinf, isnan
-from utils.static_tuple import _set_array_elem
+from utils.static_tuple import _create_array, _set_array_elem
 from utils.loop import unroll
 
 # ===-----------------------------------------------------------------------===#
@@ -4894,6 +4894,16 @@ fn statictuple_setitem__[
     static_tuple[index] = val
 
 
+fn create_static_tuple[
+    element_type: AnyTrivialRegType, //,
+    size: Int,
+    value: element_type,
+]() -> StaticTuple[element_type, size]:
+    return StaticTuple[element_type, size](
+        _create_array[size, element_type](value)
+    )
+
+
 fn get_inputs_lambdas[
     type: DType,
     _rank: Int,
@@ -4906,7 +4916,15 @@ fn get_inputs_lambdas[
         ] (IndexList[rank]) capturing -> SIMD[type, width], size
     ]
 ):
-    var res = __type_of(result)()
+    # This serves purely as an initial value for the result tuple.
+    # It should never be called.
+    @parameter
+    fn initializer[
+        width: Int, rank: Int
+    ](indices: IndexList[rank]) capturing -> SIMD[type, width]:
+        return SIMD[type, width]()
+
+    var res = create_static_tuple[size, initializer]()
 
     @parameter
     for i in range(size):
@@ -4921,7 +4939,7 @@ fn get_inputs_lambdas[
             )
 
         statictuple_setitem__[res.element_type, res.size, i, input_wrapper](res)
-    return res
+    return rebind[__type_of(result)](res)
 
 
 @compiler.register("mo.concat")
