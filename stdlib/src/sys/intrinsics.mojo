@@ -1286,7 +1286,7 @@ struct _ClusterIdx:
         return "llvm.nvvm.read.ptx.sreg.clusterid." + dim
 
     @always_inline("nodebug")
-    fn __getattr__[dim: StringLiteral](self) -> UInt32:
+    fn __getattr__[dim: StringLiteral](self) -> UInt:
         """Gets the `x`, `y`, or `z` coordinates of a cluster within a grid.
 
         Returns:
@@ -1300,7 +1300,9 @@ struct _ClusterIdx:
             dim in ("x", "y", "z"), "the accessor must be either x, y, or z"
         ]()
         alias intrinsic_name = Self._get_intrinsic_name[dim]()
-        return llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
+        return UInt(
+            Int(llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]())
+        )
 
 
 alias cluster_idx = _ClusterIdx()
