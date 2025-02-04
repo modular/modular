@@ -1287,6 +1287,12 @@ LogicalResult ParamOperatorAttr::verify(
     if (!llvm::isa<StringType>(operands[1].getType()))
       return emitError() << "target_get_field operand 1 must be a string type";
     break;
+  case POC::CrossCompilation:
+    if (!operands.empty())
+      return emitError() << "'cross_compilation' expected no operands";
+    if (!type.isInteger(1))
+      return emitError() << "cross_compilation return i1";
+    break;
   case POC::AcceleratorArch:
     if (!operands.empty())
       return emitError() << "'accelerator_arch' expected no operands";
@@ -2748,6 +2754,9 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
     break;
   case POC::TargetGetField:
     result = simplifyTargetGetField(operands, resultType);
+    break;
+  case POC::CrossCompilation:
+    resultType = IntegerType::get(ctx, 1);
     break;
   case POC::AcceleratorArch:
   case POC::DataToStr:

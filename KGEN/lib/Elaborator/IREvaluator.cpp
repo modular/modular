@@ -121,6 +121,9 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
   case POC::AcceleratorArch:
     return {StringAttr::get(elaborator->options.targetAccelerator,
                             StringType::get(op.getContext()))};
+  case POC::CrossCompilation:
+    return {
+        BoolAttr::get(op.getContext(), elaborator->options.isCrossCompilation)};
   case POC::GetEnv:
     return evaluateGetEnv(op);
   case POC::Apply:
