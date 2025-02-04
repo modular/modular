@@ -20,8 +20,8 @@ modular_py_binary(
     visibility = ["//visibility:public"],
     deps = [
         "//SDK/lib/API/python/max/pipelines",
+        "//SDK/lib/API/python/max/pipelines/architectures",
         "//SDK/lib/API/python/max/serve",
-        "//SDK/public/max-repo/pipelines/python/architectures",
         "//SDK/public/max-repo/pipelines/python/cli",
         "//SDK/public/max-repo/pipelines/python/llama3",
         "//SDK/public/max-repo/pipelines/python/pixtral",
@@ -132,7 +132,7 @@ modular_py_binary(
     visibility = ["//visibility:public"],
     deps = [
         "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/public/max-repo/pipelines/python/architectures",
+        "//SDK/lib/API/python/max/pipelines/architectures",
         "//SDK/public/max-repo/pipelines/python/llama3",
         "//SDK/public/max-repo/pipelines/python/mistral",
         requirement("click"),
@@ -262,7 +262,7 @@ modular_py_binary(
     ],
     ignore_collisions = True,  # duplicate scripts/__init__.py from deps
     deps = [
-        "//SDK/public/max-repo/pipelines/python/architectures",
+        "//SDK/lib/API/python/max/pipelines/architectures",
         "//SDK/public/max-repo/pipelines/python/cli",
         "//SDK/public/max-repo/pipelines/python/dataprocessing",
         requirement("click"),

@@ -29,7 +29,6 @@ import mteb
 import numpy as np
 
 # Pipelines
-from architectures import register_all_models
 from cli import pipeline_config_options
 from max.pipelines import (
     PIPELINE_REGISTRY,
@@ -37,6 +36,7 @@ from max.pipelines import (
     PipelineConfig,
     PipelineEngine,
 )
+from max.pipelines.architectures import register_all_models
 from max.pipelines.interfaces import (
     PipelineTask,
     PipelineTokenizer,

@@ -92,7 +92,7 @@ modular_py_library(
     deps = [
         requirement("pytest"),
         "//SDK/lib/API/python/max/pipelines",
-        "//SDK/public/max-repo/pipelines/python/architectures",
+        "//SDK/lib/API/python/max/pipelines/architectures",
         "@rules_python//python/runfiles",
     ],
 )

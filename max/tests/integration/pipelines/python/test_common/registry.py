@@ -6,8 +6,8 @@
 """Utilities for loading and ensuring registry works in test suite."""
 
 import pytest
-from architectures import register_all_models
 from max.pipelines import PIPELINE_REGISTRY
+from max.pipelines.architectures import register_all_models
 
 
 @pytest.fixture(scope="session")

@@ -24,12 +24,10 @@ import replit_compat
 import torch
 import transformers
 
-# Pipelines
-from architectures import register_all_models
-
 # MAX
 from max import driver, pipelines
 from max.pipelines import interfaces
+from max.pipelines.architectures import register_all_models
 from max.pipelines.kv_cache import KVCacheStrategy
 from test_common import (
     evaluate,

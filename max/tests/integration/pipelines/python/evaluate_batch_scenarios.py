@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any, List, Optional, TextIO
 
 import click
-from architectures import register_all_models
 from cli import DevicesOptionType, config_to_flag
 from max.driver import DeviceSpec
 from max.pipelines import (
@@ -25,6 +24,7 @@ from max.pipelines import (
     TokenGeneratorContext,
     TokenGeneratorRequest,
 )
+from max.pipelines.architectures import register_all_models
 from max.serve.pipelines.echo_gen import (
     EchoPipelineTokenizer,
     EchoTokenGenerator,

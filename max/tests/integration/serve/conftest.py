@@ -6,8 +6,8 @@
 """The fixtures for all tests in this directory."""
 
 import pytest
-from architectures import register_all_models
 from max.pipelines import PIPELINE_REGISTRY
+from max.pipelines.architectures import register_all_models
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.debug import DebugSettings

@@ -4,18 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# ===----------------------------------------------------------------------=== #
-#
-# This file is Modular Inc proprietary.
-#
-# ===----------------------------------------------------------------------=== #
-
-
 from dataclasses import dataclass
 from typing import Any, Literal
 
 import pytest
-from architectures import register_all_models
 from evaluate_llama import SupportedTestModels
 from max.pipelines import (
     PIPELINE_REGISTRY,
@@ -24,6 +16,7 @@ from max.pipelines import (
     TextGenerationPipeline,
     TextTokenizer,
 )
+from max.pipelines.architectures import register_all_models
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
 from test_common.evaluate import PROMPTS, next_token_with_logits
