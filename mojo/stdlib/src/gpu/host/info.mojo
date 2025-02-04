@@ -759,16 +759,18 @@ fn _get_info_from_compute_capability(compute_capability: Int) raises -> Info:
 
 
 @always_inline
-fn _get_info_from_target[target_arch: StringLiteral]() -> Info:
+fn _get_info_from_target[target_arch0: StringLiteral]() -> Info:
+    alias target_arch = target_arch0.replace("sm_", "")
+
     constrained[
         target_arch
         in (
             "cuda",
-            "sm_80",
-            "sm_86",
-            "sm_89",
-            "sm_90",
-            "sm_90a",
+            "80",
+            "86",
+            "89",
+            "90",
+            "90a",
             "nvidia:80",
             "nvidia:86",
             "nvidia:89",
@@ -782,13 +784,13 @@ fn _get_info_from_target[target_arch: StringLiteral]() -> Info:
     ]()
 
     @parameter
-    if target_arch in ("sm_80", "nvidia:80"):
+    if target_arch in ("80", "nvidia:80"):
         return A100
-    elif target_arch in ("sm_86", "nvidia:86"):
+    elif target_arch in ("86", "nvidia:86"):
         return A10
-    elif target_arch in ("sm_89", "nvidia:89"):
+    elif target_arch in ("89", "nvidia:89"):
         return L4
-    elif target_arch in ("sm_90", "sm_90a", "nvidia:90"):
+    elif target_arch in ("90", "90a", "nvidia:90"):
         return H100
     elif target_arch in ("gfx942", "mi300x", "amdgpu:94"):
         return MI300X
@@ -800,15 +802,17 @@ fn _get_info_from_target[target_arch: StringLiteral]() -> Info:
 
 @always_inline("nodebug")
 fn _get_compute(target_arch: String) -> Float32:
-    if target_arch in ("sm_80", "nvidia:80"):
+    var normalized_target_arch = target_arch.replace("sm_", "")
+
+    if normalized_target_arch in ("80", "nvidia:80"):
         return A100.compute
-    elif target_arch in ("sm_86", "nvidia:86"):
+    elif normalized_target_arch in ("86", "nvidia:86"):
         return A10.compute
-    elif target_arch in ("sm_89", "nvidia:89"):
+    elif normalized_target_arch in ("89", "nvidia:89"):
         return L4.compute
-    elif target_arch in ("sm_90", "sm_90a", "nvidia:90"):
+    elif normalized_target_arch in ("90", "90a", "nvidia:90"):
         return H100.compute
-    elif target_arch in ("gfx942", "mi300x", "amdgpu:94"):
+    elif normalized_target_arch in ("gfx942", "mi300x", "amdgpu:94"):
         return MI300X.compute
     elif DEFAULT_GPU_ARCH == "":
         return NoGPU.compute
