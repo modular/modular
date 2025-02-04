@@ -7,9 +7,9 @@
 import math
 
 import numpy as np
-from dataprocessing import causal_attention_mask_with_alibi
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from max.pipelines.dataprocessing import causal_attention_mask_with_alibi
 
 ALIBI_BIAS_MAX = 8
 N_HEADS = 4

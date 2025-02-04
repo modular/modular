@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from dataprocessing import max_tokens_to_generate
+from max.pipelines.dataprocessing import max_tokens_to_generate
 
 
 def test_max_tokens_to_generate():

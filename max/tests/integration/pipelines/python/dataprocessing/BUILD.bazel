@@ -23,7 +23,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
-        "//SDK/public/max-repo/pipelines/python/dataprocessing",
+        "//SDK/lib/API/python/max/pipelines/dataprocessing",
         requirement("hypothesis"),
         requirement("numpy"),
     ],

@@ -8,13 +8,13 @@ import math
 
 import numpy as np
 import pytest
-from dataprocessing import (
+from hypothesis import assume, given
+from hypothesis import strategies as st
+from max.pipelines.dataprocessing import (
     PaddingDirection,
     batch_padded_tokens_and_mask,
     collate_batch,
 )
-from hypothesis import assume, given
-from hypothesis import strategies as st
 
 # Shared batch size between start_pos and tokens.
 batch_size_strategy = st.shared(

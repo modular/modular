@@ -263,8 +263,8 @@ modular_py_binary(
     ignore_collisions = True,  # duplicate scripts/__init__.py from deps
     deps = [
         "//SDK/lib/API/python/max/pipelines/architectures",
+        "//SDK/lib/API/python/max/pipelines/dataprocessing",
         "//SDK/public/max-repo/pipelines/python/cli",
-        "//SDK/public/max-repo/pipelines/python/dataprocessing",
         requirement("click"),
         requirement("mteb"),
     ],

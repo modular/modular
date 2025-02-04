@@ -5,9 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 
 import pytest
-from dataprocessing.tokenizer import tokenizer_from_gguf
 from hypothesis import HealthCheck, given, settings
 from hypothesis.strategies import text
+from max.pipelines.dataprocessing.tokenizer import tokenizer_from_gguf
 from transformers import AutoTokenizer
 
 

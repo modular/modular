@@ -7,9 +7,9 @@
 import math
 
 import numpy as np
-from dataprocessing import causal_attention_mask
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from max.pipelines.dataprocessing import causal_attention_mask
 
 MAX_BATCH_SIZE = 32
 MAX_SEQUENCE_LENGTH = 1024
