@@ -17,7 +17,6 @@ from gpu import (
     lane_id,
     shuffle_down,
     warp_reduce,
-    MAX_THREADS_PER_BLOCK_METADATA,
 )
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
@@ -266,9 +265,7 @@ fn row_reduce[
     return scalar_accum
 
 
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
-)
+@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](BLOCK_SIZE))
 fn reduce_kernel[
     rank: Int,
     num_reductions: Int,
