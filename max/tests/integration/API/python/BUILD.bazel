@@ -54,7 +54,7 @@ modular_py_test(
     deps = [
         ":modular_graph_test",
         "//SDK/lib/API/python/max/engine",
-        "//SDK/public/max-repo/pipelines/python/cli",
+        "//SDK/lib/API/python/max/pipelines/cli",
         "//SDK/public/max-repo/pipelines/python/llama3",
         "//SDK/public/max-repo/pipelines/python/mistral",
         "//SDK/public/max-repo/pipelines/python/nn",
@@ -119,7 +119,7 @@ modular_py_test(
     }),
     deps = [
         "//SDK/lib/API/python/max/engine",
-        "//SDK/public/max-repo/pipelines/python/cli",
+        "//SDK/lib/API/python/max/pipelines/cli",
         "//SDK/public/max-repo/pipelines/python/llama3",
         "//SDK/public/max-repo/pipelines/python/nn",
         requirement("torch"),
@@ -169,7 +169,7 @@ modular_py_test(
     }),
     deps = [
         "//SDK/lib/API/python/max/engine",
-        "//SDK/public/max-repo/pipelines/python/cli",
+        "//SDK/lib/API/python/max/pipelines/cli",
         requirement("click"),
         requirement("numpy"),
         requirement("safetensors"),

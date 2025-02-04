@@ -11,7 +11,10 @@ from typing import Any, Optional, get_type_hints
 
 import click
 import pytest
-from cli.config import (
+from click.testing import CliRunner
+from max.driver import DeviceSpec
+from max.pipelines import PipelineConfig, PipelineEngine
+from max.pipelines.cli import (
     get_default,
     get_field_type,
     is_flag,
@@ -20,9 +23,6 @@ from cli.config import (
     pipeline_config_options,
     validate_field_type,
 )
-from click.testing import CliRunner
-from max.driver import DeviceSpec
-from max.pipelines import PipelineConfig, PipelineEngine
 from max.pipelines.kv_cache import KVCacheStrategy
 
 

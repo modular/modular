@@ -37,8 +37,8 @@ modular_py_test(
     ),
     deps = [
         "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/pipelines/cli",
         "//SDK/lib/API/python/max/serve",
-        "//SDK/public/max-repo/pipelines/python/cli",
         "//SDK/public/max-repo/pipelines/python/nn",
         "//SDK/public/max-repo/pipelines/python/pixtral",
         "//Support/python:support",

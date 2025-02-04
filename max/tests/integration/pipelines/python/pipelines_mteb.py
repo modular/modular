@@ -27,9 +27,6 @@ from typing import Optional, Sequence
 import click
 import mteb
 import numpy as np
-
-# Pipelines
-from cli import pipeline_config_options
 from max.pipelines import (
     PIPELINE_REGISTRY,
     EmbeddingsPipeline,
@@ -37,6 +34,9 @@ from max.pipelines import (
     PipelineEngine,
 )
 from max.pipelines.architectures import register_all_models
+
+# Pipelines
+from max.pipelines.cli import pipeline_config_options
 from max.pipelines.interfaces import (
     PipelineTask,
     PipelineTokenizer,
