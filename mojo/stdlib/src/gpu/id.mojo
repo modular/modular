@@ -110,12 +110,8 @@ fn block_rank_in_cluster() -> UInt32:
     """Gets the unique identifier for the current thread block (CTA) in the
     cluster across all dimensions. Equivalent to `%cluster_ctarank` in CUDA."""
 
-    return UInt(
-        Int(
-            llvm_intrinsic[
-                "llvm.nvvm.read.ptx.sreg.cluster.ctarank",
-                UInt32,
-                has_side_effect=False,
-            ]()
-        )
-    )
+    return llvm_intrinsic[
+        "llvm.nvvm.read.ptx.sreg.cluster.ctarank",
+        UInt32,
+        has_side_effect=False,
+    ]()
