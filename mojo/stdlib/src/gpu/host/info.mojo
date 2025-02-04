@@ -800,26 +800,6 @@ fn _get_info_from_target[target_arch0: StringLiteral]() -> Info:
     return _get_info_from_target[DEFAULT_GPU_ARCH]()
 
 
-@always_inline("nodebug")
-fn _get_compute(target_arch: String) -> Float32:
-    var normalized_target_arch = target_arch.replace("sm_", "")
-
-    if normalized_target_arch in ("80", "nvidia:80"):
-        return A100.compute
-    elif normalized_target_arch in ("86", "nvidia:86"):
-        return A10.compute
-    elif normalized_target_arch in ("89", "nvidia:89"):
-        return L4.compute
-    elif normalized_target_arch in ("90", "90a", "nvidia:90"):
-        return H100.compute
-    elif normalized_target_arch in ("gfx942", "mi300x", "amdgpu:94"):
-        return MI300X.compute
-    elif DEFAULT_GPU_ARCH == "":
-        return NoGPU.compute
-
-    return _get_info_from_target[DEFAULT_GPU_ARCH]().compute
-
-
 # ===-----------------------------------------------------------------------===#
 # Utilities
 # ===-----------------------------------------------------------------------===#
