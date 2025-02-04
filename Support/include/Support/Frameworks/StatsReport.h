@@ -32,12 +32,26 @@ struct StatsReport {
 
   StatsReport(llvm::StringRef framework) : StatsReport(framework, "") {}
 
+  // NB: All `count_{Lowering, Fallback, Failure}` functions that take an
+  // Operation as input will get a string representation of the op using
+  // `StatsReport.cpp::getOpSignature`. To record a customized op representation
+  // (e.g. one with more shape/dtype information), pass the string as input
+  // instead.
+
   /// Record one instance of an input op lowered to MO.
   void countLowering(mlir::Operation &op);
   /// Record one instance of an op that was sent to fallback.
   void countFallback(mlir::Operation &op);
   /// Record one instance of an op lowering+fallback failure.
   void countFailure(mlir::Operation &op);
+
+  /// Record one instance of an input op lowered to MO.
+  void countLowering(std::string reconstructedType);
+  /// Record one instance of an op that was sent to fallback.
+  void countFallback(std::string reconstructedType);
+  /// Record one instance of an op lowering+fallback failure.
+  void countFailure(std::string reconstructedType);
+
   /// Write the statistics to file.
   void writeToFile();
 

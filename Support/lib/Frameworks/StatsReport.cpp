@@ -86,6 +86,21 @@ void M::Frameworks::StatsReport::countFailure(mlir::Operation &op) {
   ++failureHistogram[getOpSignature(op)];
 }
 
+void M::Frameworks::StatsReport::countLowering(std::string reconstructedType) {
+  ++numLoweredOps;
+  ++loweredHistogram[reconstructedType];
+}
+
+void M::Frameworks::StatsReport::countFallback(std::string reconstructedType) {
+  ++numFallbackOps;
+  ++fallbackHistogram[reconstructedType];
+}
+
+void M::Frameworks::StatsReport::countFailure(std::string reconstructedType) {
+  ++numFailedOps;
+  ++failureHistogram[reconstructedType];
+}
+
 void M::Frameworks::StatsReport::writeToFile() {
   std::error_code ec{};
   // TODO: Unify with the crash reporting var?
