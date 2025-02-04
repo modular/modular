@@ -63,14 +63,8 @@ fn _tma_desc_tile_layout[
 
     @parameter
     if is_k_major:
-        # TMA copies BM x core_matrix_num_columns each time.
-        @parameter
-        if swizzle_mode == TensorMapSwizzle.SWIZZLE_NONE:
-            return Layout.row_major(dim0, _CM_K_BYTES // sizeof[type]())
-
-        # TMA copies BM x 128B each time.
-        elif swizzle_mode == TensorMapSwizzle.SWIZZLE_128B:
-            return Layout.row_major(dim0, 128 // sizeof[type]())
+        # TMA copies BM x `swizzle_mode.bytes()` Bytes each time.
+        return Layout.row_major(dim0, swizzle_mode.bytes() // sizeof[type]())
 
     return layout
 
@@ -246,13 +240,28 @@ struct TMATensorTile[
             "TMA requires 128B alignment in shared memory",
         ]()
 
-        cp_async_bulk_tensor_shared_cluster_global_multicast(
-            dst.ptr,
-            UnsafePointer.address_of(self.descriptor).bitcast[NoneType](),
-            mem_barrier.mbar,
-            Index(coords[0], coords[1]),
-            multicast_mask,
-        )
+        alias copy_dim0 = desc_layout.shape[0].value()
+        alias copy_dim1 = desc_layout.shape[1].value()
+        alias copy_size = desc_layout.size()
+        alias num_copies_dim0 = layout.shape[0].value() // copy_dim0
+        alias num_copies_dim1 = layout.shape[1].value() // copy_dim1
+
+        @parameter
+        for i in range(num_copies_dim0):
+
+            @parameter
+            for j in range(num_copies_dim1):
+                alias copy_offset = (i * num_copies_dim1 + j) * copy_size
+
+                cp_async_bulk_tensor_shared_cluster_global_multicast(
+                    dst.ptr + copy_offset,
+                    UnsafePointer.address_of(self.descriptor).bitcast[
+                        NoneType
+                    ](),
+                    mem_barrier.mbar,
+                    Index(coords[0] + j * copy_dim1, coords[1] + i * copy_dim0),
+                    multicast_mask,
+                )
 
     # Schedules an asynchronous store into the global memory
     @always_inline
@@ -369,15 +378,13 @@ def create_tma_tile[
     constrained[is_k_major, "Only K major layout supported in TMA"]()
 
     @parameter
-    if swizzle_mode == TensorMapSwizzle.SWIZZLE_128B:
+    if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
         constrained[
-            (tile_shape[1] * sizeof[type]()) % 128 == 0,
-            "128B swizzle requires K dim multiple of 128B",
-        ]()
-    else:
-        constrained[
-            swizzle_mode == TensorMapSwizzle.SWIZZLE_NONE,
-            "Only support 128B and no swizzle",
+            (tile_shape[1] * sizeof[type]()) % swizzle_mode.bytes() == 0,
+            String(swizzle_mode)
+            + " mode requires K dim multiple of "
+            + String(swizzle_mode.bytes())
+            + "B",
         ]()
 
     return create_tma_descriptor[type, 2, swizzle_mode](
