@@ -19,6 +19,8 @@ modular_py_test(
         "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/llama3/testdata",
     },
     tags = [
+        "huggingface",
+        "no-sandbox",
         "requires-network",
     ],
     deps = [
@@ -55,6 +57,8 @@ modular_py_test(
     gpu_constraints = ["//:has_gpu"],
     tags = [
         "gpu",
+        "huggingface",
+        "no-sandbox",
         "requires-network",
     ],
     deps = [
