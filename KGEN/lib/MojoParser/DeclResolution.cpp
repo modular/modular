@@ -600,19 +600,41 @@ void FnSigDecorators::applyCopyOrMoveCapture(const CallNode &node, bool isMove,
 }
 
 /// Return AliasDeclOp that corresponds to the value's name by looking at all
-/// aliases in FileModule. Return nullopt if not found.
+/// aliases within parent scopes up to FileModule. Return nullopt if not found.
+/// Emit error if cannot resolve import op or declaration with the value.name is
+/// not an alias.
 static std::optional<AliasDeclOp> getLLVMMetadataNameAlias(SharedState &shared,
                                                            ASTDecl &funcDecl,
                                                            Operand value) {
-  ASTDecl *parent = funcDecl.getParentDecl();
-  if (!parent || !isa<FileModuleOp>(parent))
-    return {};
+  ASTDecl *parent = &funcDecl;
+  // Analyze all parent scopes of the function in order to find closed
+  // declaration with the value.name. Fully resolve that declaration if needed.
+  do {
+    parent = parent->getParentDecl();
+    if (!parent)
+      return {};
 
-  ArrayRef<ASTDecl *> nameDecls = parent->lookupInCurrentScope(value.name);
-  if (nameDecls.empty())
+    ArrayRef<ASTDecl *> nameDecls = parent->lookupInCurrentScope(value.name);
+    // Not interesting scope. Keep looking up for the declaration with
+    // value.name.
+    if (nameDecls.empty())
+      continue;
+
+    if (isa<UnresolvedImportOp>(nameDecls.back())) {
+      if (failed(shared.getDeclResolver().resolveFully(*nameDecls.back(),
+                                                       funcDecl.getLoc()))) {
+        shared.emitError(funcDecl.getLoc(), "cannot resolve alias '")
+            << value.name << "' used in '@__llvm_metadata'";
+        return {};
+      }
+    }
+    if (auto aliasOp = dyn_cast<AliasDeclOp>(nameDecls.back()))
+      return aliasOp;
+
+    shared.emitError(funcDecl.getLoc(), "name '")
+        << value.name << "' cannot be used in '@__llvm_metadata'";
     return {};
-  if (auto aliasOp = dyn_cast<AliasDeclOp>(nameDecls.back()))
-    return aliasOp;
+  } while (!isa<FileModuleOp>(parent));
   return {};
 }
 
