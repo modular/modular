@@ -35,6 +35,7 @@ from gpu import (
     barrier,
     lane_id,
     warp_reduce,
+    MAX_THREADS_PER_BLOCK_METADATA,
 )
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.info import _get_info_from_target, A100
@@ -1144,7 +1145,9 @@ fn _copy_frag_to_smem_amd[
                 tile_BMxBK.ptr.store(offset_BMxBK, vec)
 
 
-@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](config.num_threads()))
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](config.num_threads())
+)
 fn mha[
     mask_rank: Int,
     q_type: DType,
@@ -1320,7 +1323,9 @@ fn mha[
         )
 
 
-@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](config.num_threads()))
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](config.num_threads())
+)
 fn mha_single_batch[
     mask_rank: Int,
     q_type: DType,
@@ -2051,7 +2056,9 @@ fn mha_single_batch[
         )
 
 
-@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](config.num_threads()))
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](config.num_threads())
+)
 fn mha_single_batch_pipelined[
     mask_rank: Int,
     q_type: DType,
@@ -2867,7 +2874,9 @@ fn _kernel_mask[
 
 
 # Entry point for mha_decoding with batch_size > 1.
-@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](num_threads))
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+)
 fn mha_decoding[
     mask_rank: Int,
     q_type: DType,
