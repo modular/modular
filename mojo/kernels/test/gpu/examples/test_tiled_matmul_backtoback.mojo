@@ -17,7 +17,15 @@ import layout.runtime_tuple
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from builtin.io import _printf
-from gpu import WARP_SIZE, block_idx, grid_dim, thread_idx, barrier, lane_id
+from gpu import (
+    WARP_SIZE,
+    MAX_THREADS_PER_BLOCK_METADATA,
+    block_idx,
+    grid_dim,
+    thread_idx,
+    barrier,
+    lane_id,
+)
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.memory import (
     AddressSpace,
@@ -137,7 +145,9 @@ struct BackToBackMatmulConfig[
 #
 # We parallelize blocks across rows of A/D and columns of C/D
 # One invocation evaluates `(A[block_x, :] * B) * C[:, block_y]`
-@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](config.num_threads()))
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](config.num_threads())
+)
 fn b2b_gemm[
     d_type: DType,
     in_type: DType,

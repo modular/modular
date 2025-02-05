@@ -14,7 +14,15 @@ from sys.info import alignof
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, block_dim, block_idx, thread_idx, global_idx, barrier
+from gpu import (
+    WARP_SIZE,
+    MAX_THREADS_PER_BLOCK_METADATA,
+    block_dim,
+    block_idx,
+    thread_idx,
+    global_idx,
+    barrier,
+)
 from gpu.host import DeviceContext
 from gpu.intrinsics import ldg
 from gpu.memory import AddressSpace
@@ -37,7 +45,9 @@ alias BLOCK_DIM = 8
 # WNITER: The number of subwarp tiling steps in N dimension.
 # TM: The per-thread tile size for M dimension.
 # TN: The per-thread tile size for N dimension.
-@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](NUM_THREADS))
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](NUM_THREADS)
+)
 fn sgemm_warp_tiling_kernel[
     c_type: DType,
     c_shape: DimList,
