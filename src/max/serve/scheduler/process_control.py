@@ -84,7 +84,8 @@ class ProcessControl:
         self,
         ctx: EventCreator,
         name: str,
-        health_fail_s: float = 10,
+        # TODO: we temporarily set it to 1 minute to handle long context input
+        health_fail_s: float = 60.0,
     ):
         self.name = name
         self.started_event = ctx.Event()

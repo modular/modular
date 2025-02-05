@@ -44,7 +44,8 @@ class ModelWorkerConfig:
     timeout_secs: float = 20 * 60.0
     # Maximum time to wait for a heartbeat & remain "healthy"
     # This should be longer than ITL
-    health_fail_s: float = 5.0
+    # TODO: we temporarily set it to 1 minute to handle long context input
+    health_fail_s: float = 60.0
 
 
 def _model_worker_process_fn(
