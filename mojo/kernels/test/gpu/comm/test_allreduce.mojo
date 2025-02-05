@@ -59,7 +59,7 @@ fn all_reduce_test[
     var host_buffers = List[UnsafePointer[Scalar[type]]](capacity=ngpus)
 
     # Create signal buffers for synchronization
-    var sig_bufs = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var rank_sigs = StaticTuple[UnsafePointer[Signal], MAX_GPUS]()
 
     # Initialize buffers for each GPU
@@ -78,11 +78,11 @@ fn all_reduce_test[
         host_nd_buf.fill(Scalar[type](i + 1))
 
         # Create and initialize signal buffers
-        sig_bufs.append(
+        signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[DType.uint8](sizeof[Signal]())
         )
-        list_of_ctx[i].memset_sync[DType.uint8](sig_bufs[i], 0)
-        rank_sigs[i] = sig_bufs[i].ptr.bitcast[Signal]()
+        list_of_ctx[i].memset_sync[DType.uint8](signal_buffers[i], 0)
+        rank_sigs[i] = signal_buffers[i].ptr.bitcast[Signal]()
 
         # Copy data to device
         list_of_ctx[i].enqueue_copy_to_device(in_bufs_list[i], host_buffers[i])
@@ -134,7 +134,7 @@ fn all_reduce_test[
     # Cleanup
     for i in range(ngpus):
         host_buffers[i].free()
-    _ = sig_bufs^
+    _ = signal_buffers^
 
 
 fn _get_test_str(type: DType, ngpus: Int, length: Int) -> String:
