@@ -124,6 +124,8 @@ class TokenGenerationSchedulerV2(Scheduler):
         # Note that the paged manager is shared with the model worker thread.
         # Care must be taken to ensure no race conditions.
         self.paged_manager = paged_manager
+        self.total_preemption_count = 0
+        self.last_preemption_logging_time: float = 0.0
 
         # TODO health check
 
@@ -255,9 +257,15 @@ class TokenGenerationSchedulerV2(Scheduler):
         self.pipeline.release(data)
         data.reset()
         self.request_q.put_front_nowait((req_id, data))
-        logger.warning(
-            f"Preempted a request due to lack of KV pages. Request id: {req_id}"
-        )
+
+        # Limit logging about preemptions to at most once per second
+        current_time = time.monotonic()
+        self.total_preemption_count += 1
+        if current_time - self.last_preemption_logging_time > 1:
+            self.last_preemption_logging_time = current_time
+            logger.info(
+                f"Preempted a request due to lack of KV pages. This can affect the end-to-end performance. Consider increasing device-memory-utilization to provide more KV cache memory. Total preemption count: {self.total_preemption_count}."
+            )
 
     @traced
     def _create_tg_batch(self) -> BatchInputs:
