@@ -14,17 +14,15 @@ template <typename ScalarFunc>
 static void checkBitsAsAPFloatIsVal(const llvm::fltSemantics &semantic,
                                     const DType &dtype, double target,
                                     ScalarFunc func) {
-  uint64_t bits;
+  uint64_t bits = 0;
   ErrorOrSuccess result = func(&bits, dtype);
   ASSERT_FALSE(result.isError());
   APFloat flt = llvm::APFloat(
       semantic, llvm::APInt(llvm::APFloat::getSizeInBits(semantic), bits));
   EXPECT_DOUBLE_EQ(target, flt.convertToDouble());
 }
-// TODO(KERN-1196):
-//  Reenable this test after accounting for new assertions in LLVM that is
-//  causing it to fail.
-TEST(Fill, DISABLED_getScalarZeros) {
+
+TEST(Fill, getScalarZeros) {
   checkBitsAsAPFloatIsVal(llvm::APFloat::BFloat(), DType::bf16, 1,
                           M::getScalarOne);
   checkBitsAsAPFloatIsVal(llvm::APFloat::IEEEhalf(), DType::f16, 1,
