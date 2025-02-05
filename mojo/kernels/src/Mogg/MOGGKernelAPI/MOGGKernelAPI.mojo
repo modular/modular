@@ -7911,6 +7911,18 @@ struct DistributedAllReduceSum:
         )
 
 
+fn _check_signal_buffer_size(
+    signal_buffer: ManagedTensorSlice[DType.uint8, rank=1]
+) raises:
+    if signal_buffer.size() < sizeof[Signal]():
+        raise Error(
+            "expected signal buffer to be at least ",
+            sizeof[Signal](),
+            " bytes, but got ",
+            signal_buffer.size(),
+        )
+
+
 @compiler.register("mo.distributed.allreduce.2gpu.sum")
 struct DistributedAllReduceSum2Devices:
     alias num_devices = 2
@@ -7925,6 +7937,8 @@ struct DistributedAllReduceSum2Devices:
         outputs: StaticTuple[
             ManagedTensorSlice[type, rank], size = Self.num_devices
         ],
+        signal_buffer0: ManagedTensorSlice[DType.uint8, rank=1],
+        signal_buffer1: ManagedTensorSlice[DType.uint8, rank=1],
         inputs: StaticTuple[
             ManagedTensorSlice[type, rank], size = Self.num_devices
         ],
@@ -7932,6 +7946,9 @@ struct DistributedAllReduceSum2Devices:
         dev_ctx1: DeviceContextPtr,
         ctx: MojoCallContextPtr,
     ) raises:
+        _check_signal_buffer_size(signal_buffer0)
+        _check_signal_buffer_size(signal_buffer1)
+
         dev_ctxs = List[DeviceContext](dev_ctx0[], dev_ctx1[])
 
         var out_bufs = StaticTuple[NDBuffer[type, rank], outputs.size]()
@@ -7947,22 +7964,12 @@ struct DistributedAllReduceSum2Devices:
             in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
 
         var rank_sigs = StaticTuple[UnsafePointer[Signal], MAX_GPUS]()
-        var sig_bufs = List[DeviceBuffer[DType.uint8]](
-            capacity=Self.num_devices
-        )
-
-        @parameter
-        for i in range(Self.num_devices):
-            sig_bufs.append(
-                dev_ctxs[i].enqueue_create_buffer[DType.uint8](sizeof[Signal]())
-            )
-            dev_ctxs[i].enqueue_memset[DType.uint8](sig_bufs[i], 0)
-            rank_sigs[i] = sig_bufs[i].ptr.bitcast[Signal]()
+        rank_sigs[0] = signal_buffer0._ptr.bitcast[Signal]()
+        rank_sigs[1] = signal_buffer1._ptr.bitcast[Signal]()
 
         all_reduce[ngpus = Self.num_devices](
             dev_ctxs, in_bufs, out_bufs, rank_sigs
         )
-        _ = sig_bufs^
 
 
 @compiler.register("mo.distributed.allreduce.4gpu.sum")
@@ -7979,6 +7986,10 @@ struct DistributedAllReduceSum4Devices:
         outputs: StaticTuple[
             ManagedTensorSlice[type, rank], size = Self.num_devices
         ],
+        signal_buffer0: ManagedTensorSlice[DType.uint8, rank=1],
+        signal_buffer1: ManagedTensorSlice[DType.uint8, rank=1],
+        signal_buffer2: ManagedTensorSlice[DType.uint8, rank=1],
+        signal_buffer3: ManagedTensorSlice[DType.uint8, rank=1],
         inputs: StaticTuple[
             ManagedTensorSlice[type, rank], size = Self.num_devices
         ],
@@ -7988,6 +7999,11 @@ struct DistributedAllReduceSum4Devices:
         dev_ctx3: DeviceContextPtr,
         ctx: MojoCallContextPtr,
     ) raises:
+        _check_signal_buffer_size(signal_buffer0)
+        _check_signal_buffer_size(signal_buffer1)
+        _check_signal_buffer_size(signal_buffer2)
+        _check_signal_buffer_size(signal_buffer3)
+
         dev_ctxs = List[DeviceContext](
             dev_ctx0[], dev_ctx1[], dev_ctx2[], dev_ctx3[]
         )
@@ -8005,22 +8021,14 @@ struct DistributedAllReduceSum4Devices:
             in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
 
         var rank_sigs = StaticTuple[UnsafePointer[Signal], MAX_GPUS]()
-        var sig_bufs = List[DeviceBuffer[DType.uint8]](
-            capacity=Self.num_devices
-        )
-
-        @parameter
-        for i in range(Self.num_devices):
-            sig_bufs.append(
-                dev_ctxs[i].enqueue_create_buffer[DType.uint8](sizeof[Signal]())
-            )
-            dev_ctxs[i].enqueue_memset[DType.uint8](sig_bufs[i], 0)
-            rank_sigs[i] = sig_bufs[i].ptr.bitcast[Signal]()
+        rank_sigs[0] = signal_buffer0._ptr.bitcast[Signal]()
+        rank_sigs[1] = signal_buffer1._ptr.bitcast[Signal]()
+        rank_sigs[2] = signal_buffer2._ptr.bitcast[Signal]()
+        rank_sigs[3] = signal_buffer3._ptr.bitcast[Signal]()
 
         all_reduce[ngpus = Self.num_devices](
             dev_ctxs, in_bufs, out_bufs, rank_sigs
         )
-        _ = sig_bufs^
 
 
 # Note: this is not a "real" index_tensor op that covers all cases, but rather
