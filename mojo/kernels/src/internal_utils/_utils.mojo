@@ -29,6 +29,8 @@ from testing import assert_almost_equal, assert_equal, assert_true
 from utils import Index, IndexList
 from utils.index import product
 
+from stdlib.builtin.io import _snprintf
+
 
 struct ValOrDim[dim: Dim = Dim()]:
     var value: Int
@@ -409,3 +411,74 @@ fn arg_parse(handle: String, default: String) raises -> String:
             var name_val = String(args[i]).split("=")
             return String(name_val[1])
     return default
+
+
+@always_inline
+fn _str_fmt_width[max_width: Int = 256](str: String, str_width: Int) -> String:
+    """Formats string with a given width.
+
+    Returns:
+        sprintf("%-*s", str_width, str)
+    """
+    debug_assert(str_width > 0, "Should have str_width>0")
+
+    var x = String._buffer_type()
+    x.reserve(max_width)
+    x.size += _snprintf["%-*s"](x.data, max_width, str_width, str.unsafe_ptr())
+    debug_assert(
+        x.size < max_width, "Attempted to access outside array bounds!"
+    )
+    x.size += 1
+    return String(x)
+
+
+fn ndbuffer_to_str[
+    rank: Int,
+    axis: Int = 0,
+](
+    x: NDBuffer[_, rank],
+    prev: IndexList[rank] = IndexList[rank](),
+    width: Int = 8,
+    space_in: String = "",
+) -> String:
+    """Pretty print a rank-dimensional NDBuffer.
+
+    Returns:
+        String(NDBuffer[rank]).
+    """
+    var cur = prev
+
+    space = space_in
+    for _ in range(axis):
+        space += " "
+    var s = String()
+
+    for i in range(axis):
+        s += String(prev[i]) + ","
+    s = space + String("(") + s + String(")")
+
+    var out_str = s + String(":[\n") + space
+    for i in range(x.dynamic_shape[axis]):
+        cur[axis] = i
+
+        @parameter
+        if axis == rank - 1:
+            out_str += _str_fmt_width(String(x[cur]), width)
+        else:
+            out_str += ndbuffer_to_str[rank, axis + 1](x, cur, width, space)
+    out_str += "]\n"
+    return out_str
+
+
+fn array_equal[
+    type: DType,
+    rank: Int,
+](x_array: NDBuffer[type, rank], y_array: NDBuffer[type, rank],) raises:
+    """Assert two ndbuffers have identical type, rank, length, and values."""
+
+    assert_true(
+        x_array.dynamic_shape.flattened_length()
+        == y_array.dynamic_shape.flattened_length()
+    )
+    for i in range(x_array.dynamic_shape.flattened_length()):
+        assert_equal(x_array.data[i], y_array.data[i])

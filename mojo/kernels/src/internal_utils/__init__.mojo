@@ -24,4 +24,6 @@ from ._utils import (
     parse_shape,
     random,
     zero,
+    ndbuffer_to_str,
+    array_equal,
 )
