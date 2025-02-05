@@ -119,6 +119,7 @@ from nn.kv_cache_ragged import (
     generic_fused_qk_rope_bshd_continous_batch_ragged,
     generic_fused_qkv_matmul_kv_cache_cont_batch_ragged,
     generic_fused_qkv_matmul_kv_cache_paged_ragged,
+    generic_fused_qkv_matmul_kv_cache_paged_ragged_bias,
     generic_flash_attention_kv_cache_causal_mask_paged_ragged,
     generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged,
     generic_flash_attention_kv_cache_null_mask_cont_batch_ragged,
@@ -6545,6 +6546,49 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
     )
 
 
+@always_inline
+fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
+    type: DType,
+    target: StringLiteral,
+](
+    hidden_state: ManagedTensorSlice[type, 2],
+    input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+    weight: ManagedTensorSlice[type, 2],
+    kv_collection: PagedKVCacheCollection[
+        type,
+        *_,
+    ],
+    layer_idx: Scalar[DType.uint32],
+    output: ManagedTensorSlice[type, 2],
+    bias: ManagedTensorSlice[type, 1],
+    ctx: MojoCallContextPtr,
+) raises:
+    generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[target=target](
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[hidden_state.type, hidden_state.rank](
+                "hidden_state"
+            )
+        ](hidden_state),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input_row_offsets.type, input_row_offsets.rank](
+                "input_row_offsets"
+            )
+        ](input_row_offsets),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[weight.type, weight.rank]("weight")
+        ](weight),
+        kv_collection,
+        layer_idx,
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
+        ](output),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[bias.type, bias.rank]("bias")
+        ](bias),
+        ctx,
+    )
+
+
 @compiler.register("mo.fused_qkv_matmul.ragged.paged")
 struct Struct_fused_qkv_matmul_padded_ragged:
     @uses_opaque
@@ -6578,6 +6622,45 @@ struct Struct_fused_qkv_matmul_padded_ragged:
             kv_collection,
             layer_idx,
             output,
+            ctx,
+        )
+
+
+@compiler.register("mo.fused_qkv_matmul.ragged.paged.bias")
+struct Struct_fused_qkv_matmul_padded_ragged_bias:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int, //,
+        target: StringLiteral,
+    ](
+        output: ManagedTensorSlice[type, 2],
+        hidden_state: ManagedTensorSlice[type, 2],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        weight: ManagedTensorSlice[type, 2],
+        kv_collection: PagedKVCacheCollection[
+            type,
+            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
+        ],
+        layer_idx: Scalar[DType.uint32],
+        bias: ManagedTensorSlice[type, 1],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
+            target=target
+        ](
+            hidden_state,
+            input_row_offsets,
+            weight,
+            kv_collection,
+            layer_idx,
+            output,
+            bias,
             ctx,
         )
 
