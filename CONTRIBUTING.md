@@ -237,16 +237,16 @@ cd mojo
 Add the upstream remote and fetch it:
 
 ```bash
-git remote add upstream git@github.com:modularml/mojo.git
+git remote add upstream git@github.com:modular/mojo.git
 git fetch upstream
 ```
 
-#### Branching off nightly
+#### Branching off main
 
 Make sure to branch off `main` to work on your PR:
 
 ```bash
-git checkout upstream/main
+git checkout main
 git checkout -b my-fix-pr
 ```
 
@@ -311,12 +311,11 @@ You'll see a link to create a PR:
 
 ```plaintext
 remote: Create a pull request for 'my-fix-pr' on GitHub by visiting:
-remote:      https://github.com/jackos/mojo/pull/new/my-fix-pr
+remote:      https://github.com/[your-username]/mojo/pull/new/my-fix-pr
 ```
 
-Make sure you point it to the `main` branch:
-
-![Base Branch](stdlib/docs/images/base-branch.png)
+It should automatically set the base branch to the upstream `modular/mojo/main`,
+but if it doesn't, you can set it manually.
 
 Now fill out the details:
 
