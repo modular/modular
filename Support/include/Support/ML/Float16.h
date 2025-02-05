@@ -56,7 +56,7 @@ constexpr bool is_little_endian =
 
 } // namespace
 
-namespace Bfloat {
+namespace BFloat {
 
 struct bfloat16_t {
   // https://en.wikipedia.org/wiki/Bfloat16_floating-point_format
@@ -87,7 +87,7 @@ private:
   uint16_t bits;
 };
 
-} // namespace Bfloat
+} // namespace BFloat
 
 namespace Float16 {
 struct float16_t {

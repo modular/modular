@@ -46,25 +46,24 @@ ssize_t DType::getSizeInBytes(size_t numElements) const {
     break;
   }
 
-    // Handle other types.
-  case DType::f8e5m2:
-  case DType::f8e5m2fnuz:
-  case DType::f8e4m3:
-  case DType::f8e4m3fnuz:
-  case DType::f8e3m4:
+  // Handle floating point types.
+#define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, CXX_TYPE, BITCOUNT, ...)          \
+  case DType::SHORT_NAME: {                                                    \
+    constexpr ssize_t BYTECOUNT = BITCOUNT / CHAR_BIT;                         \
+    ssize_t result = numElements * BYTECOUNT;                                  \
+    if (result / BYTECOUNT != ssize_t(numElements))                            \
+      return -1;                                                               \
+    return result;                                                             \
+  };
+#include "Support/ML/FloatTypes.def"
+#undef DECLARE_FLOAT
+
+  // Handle other types.
   case DType::kBool:
     widthShift = 0;
     break;
-  case DType::f16:
-  case DType::bf16:
-    widthShift = 1;
-    break;
-  case DType::f32:
   case DType::tf32: // tf32 has 19bits, store as 4 bytes.
     widthShift = 2;
-    break;
-  case DType::f64:
-    widthShift = 3;
     break;
   }
 
@@ -89,22 +88,11 @@ FailureOr<DType> DType::getFromString(StringRef str) {
     return failure();
   switch (str[0]) {
   case 'f':
-    if (str == "f32")
-      return DType(f32);
-    if (str == "f64")
-      return DType(f64);
-    if (str == "f16")
-      return DType(f16);
-    if (str == "f8e5m2")
-      return DType(f8e5m2);
-    if (str == "f8e5m2fnuz")
-      return DType(f8e5m2fnuz);
-    if (str == "f8e4m3")
-      return DType(f8e4m3);
-    if (str == "f8e4m3fnuz")
-      return DType(f8e4m3fnuz);
-    if (str == "f8e3m4")
-      return DType(f8e3m4);
+#define DECLARE_FLOAT(SHORT_NAME, ...)                                         \
+  if (str == #SHORT_NAME)                                                      \
+    return DType(DType::SHORT_NAME);
+#include "Support/ML/FloatTypes.def"
+#undef DECLARE_FLOAT
     return failure();
   case 'u':
   case 's':
@@ -119,6 +107,8 @@ FailureOr<DType> DType::getFromString(StringRef str) {
   case 'b':
     if (str == "bool")
       return DType(kBool);
+    // Handle the bf16 special case, since it's a floating point type which does
+    // not start with the letter 'f'.
     if (str == "bf16")
       return DType(bf16);
     return failure();
@@ -155,24 +145,11 @@ std::string DType::getAsString() const {
     return "si" + llvm::utostr(getIntegerWidthInBits());
 
   switch (getValue()) {
-  case f8e5m2:
-    return "f8e5m2";
-  case f8e5m2fnuz:
-    return "f8e5m2fnuz";
-  case f8e4m3:
-    return "f8e4m3";
-  case f8e4m3fnuz:
-    return "f8e4m3fnuz";
-  case f8e3m4:
-    return "f8e3m4";
-  case f16:
-    return "f16";
-  case f32:
-    return "f32";
-  case f64:
-    return "f64";
-  case bf16:
-    return "bf16";
+#define DECLARE_FLOAT(SHORT_NAME, ...)                                         \
+  case DType::SHORT_NAME:                                                      \
+    return #SHORT_NAME;
+#include "Support/ML/FloatTypes.def"
+#undef DECLARE_FLOAT
   case tf32:
     return "tf32";
   case kBool:

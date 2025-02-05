@@ -278,23 +278,19 @@ inline constexpr ssize_t DType::getWidthInBits() const {
   switch (getValue()) {
   default:
     return isInt() ? getIntegerWidthInBits() : -1;
+
+    // Handle floating point types.
+#define DECLARE_FLOAT(SHORT_NAME, _1, _2, BITCOUNT, ...)                       \
+  case DType::SHORT_NAME:                                                      \
+    return BITCOUNT;
+#include "Support/ML/FloatTypes.def"
+#undef DECLARE_FLOAT
+
     // Handle other types.
-  case DType::f8e5m2:
-  case DType::f8e4m3:
-  case DType::f8e3m4:
-  case DType::f8e5m2fnuz:
-  case DType::f8e4m3fnuz:
   case DType::kBool:
     return 8;
-  case DType::f16:
-  case DType::bf16:
-    return 16;
-  case DType::f32:
-    return 32;
   case DType::tf32:
     return 19;
-  case DType::f64:
-    return 64;
   }
 }
 
@@ -305,29 +301,20 @@ inline constexpr ssize_t DType::getWidthInBits() const {
 /// in our stack.
 inline constexpr std::optional<ssize_t>
 DType::getSignificandPrecisionInBits() const {
-  // For all but f80, this is the number of significand bits + 1.
-  // f80 is special and does not have an implicit leading bit.
+  // For floating point types, this is the number of significand bits + 1.
   // The addition of the leading bit is written out explicitly for clarity.
   switch (getValue()) {
   default:
     return std::nullopt;
-  case DType::f8e5m2:
-  case DType::f8e5m2fnuz:
-    return 2 + 1;
-  case DType::f8e4m3:
-  case DType::f8e4m3fnuz:
-    return 3 + 1;
-  case DType::f8e3m4:
-    return 4 + 1;
-  case DType::bf16:
-    return 7 + 1;
-  case DType::f16:
-  case DType::tf32:
-    return 10 + 1;
-  case DType::f32:
-    return 23 + 1;
-  case DType::f64:
-    return 52 + 1;
+
+#define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, CXX_TYPE, BITCOUNT, APFLOAT_TYPE, \
+                      LLVM_SEMANTICS, SIGNIFICAND_PRECISION, ...)              \
+  case DType::SHORT_NAME:                                                      \
+    return SIGNIFICAND_PRECISION + 1;
+
+#include "Support/ML/FloatTypes.def"
+
+#undef DECLARE_FLOAT
   }
 }
 
@@ -368,14 +355,14 @@ DECLARE_TYPE_MAPPING(si32, int32_t);
 DECLARE_TYPE_MAPPING(ui32, uint32_t);
 DECLARE_TYPE_MAPPING(si64, int64_t);
 DECLARE_TYPE_MAPPING(ui64, uint64_t);
-DECLARE_TYPE_MAPPING(f8e4m3, M::Float8::float8_e4m3_t);
-DECLARE_TYPE_MAPPING(f8e4m3fnuz, M::Float8::float8_e4m3fnuz_t);
-DECLARE_TYPE_MAPPING(f8e5m2, M::Float8::float8_e5m2_t);
-DECLARE_TYPE_MAPPING(f8e5m2fnuz, M::Float8::float8_e5m2fnuz_t);
-DECLARE_TYPE_MAPPING(bf16, M::Bfloat::bfloat16_t);
-DECLARE_TYPE_MAPPING(f16, M::Float16::float16_t);
-DECLARE_TYPE_MAPPING(f32, float);
-DECLARE_TYPE_MAPPING(f64, double);
+
+#define DECLARE_FLOAT(SHORT_NAME, _, CXX_TYPE, ...)                            \
+  DECLARE_TYPE_MAPPING(SHORT_NAME, CXX_TYPE);
+
+#include "Support/ML/FloatTypes.def"
+
+#undef DECLARE_FLOAT
+
 /// TODO: Add long double when sizeof(long double) != sizeof(double).
 #undef DECLARE_TYPE_MAPPING
 

@@ -363,7 +363,10 @@ modular_cc_library(
 modular_cc_library(
     name = "ML",
     srcs = glob(["lib/ML/*.cpp"]),
-    hdrs = glob(["include/Support/ML/*.h"]),
+    hdrs = glob([
+        "include/Support/ML/*.h",
+        "include/Support/ML/*.def",
+    ]),
     deps = [
         ":Base",
     ],

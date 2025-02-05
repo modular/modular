@@ -53,6 +53,10 @@ private:
 };
 } // namespace Detail
 
+struct float8_e3m4_t : Detail::float8_generic_t<llvm::APFloat::S_Float8E3M4> {
+  explicit float8_e3m4_t(uint8_t rawBits)
+      : float8_generic_t<llvm::APFloat::S_Float8E3M4>(rawBits) {}
+};
 struct float8_e4m3_t : Detail::float8_generic_t<llvm::APFloat::S_Float8E4M3> {
   explicit float8_e4m3_t(uint8_t rawBits)
       : float8_generic_t<llvm::APFloat::S_Float8E4M3>(rawBits) {}
