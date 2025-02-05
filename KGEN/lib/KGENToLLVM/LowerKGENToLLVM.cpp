@@ -109,33 +109,39 @@ static ErrorOrSuccess addArrayAttrToDict(Builder builder, NamedAttrList &attrs,
   return Error("non-integral dtypes are not supported");
 }
 
+/// Flat work group size attribute expects min and max values to be specified.
+/// If given attr contains just one element, return "1, N"
 template <typename AttrT>
 static ErrorOrSuccess addFlatWorkGroupSizeAttr(Builder builder,
                                                NamedAttrList &attrs,
                                                StringRef name, AttrT attr) {
-  std::string value;
+  SmallVector<int64_t> values;
   if constexpr (std::is_same_v<POP::ArrayAttr, AttrT>) {
-    if (attr.getValues().size() != 1)
-      return Error("ArrayAttr must contain exactly one value");
+    if (attr.getValues().size() != 1 && attr.getValues().size() != 2)
+      return Error("ArrayAttr must contain exactly one or two values");
 
     Attribute element = attr.getValues()[0];
-
-    if (auto integerAttr = ::dyn_cast<IntegerAttr>(element)) {
-      value = std::to_string(integerAttr.getInt());
-    } else {
-      value = std::to_string(static_cast<int64_t>(::cast<POP::SIMDAttr>(element)
-                                                      .getValues()
-                                                      .front()
-                                                      .getIntVal()
-                                                      .getSExtValue()));
-    }
+    values =
+        llvm::map_to_vector(attr.getValues(), [](Attribute attr) -> int64_t {
+          if (auto integerAttr = ::dyn_cast<IntegerAttr>(attr))
+            return static_cast<int64_t>(integerAttr.getInt());
+          return static_cast<int64_t>(::cast<POP::SIMDAttr>(attr)
+                                          .getValues()
+                                          .front()
+                                          .getIntVal()
+                                          .getSExtValue());
+        });
   } else if constexpr (std::is_same_v<IntegerAttr, AttrT>) {
-    value = std::to_string(static_cast<int64_t>(attr.getInt()));
+    values.push_back(static_cast<int64_t>(attr.getInt()));
   } else {
     llvm_unreachable(
         "must be either an ArrayAttr of 1 elementor an IntegerAttr");
   }
-  attrs.append(name, builder.getStringAttr(value));
+  if (values.size() == 1)
+    values.insert(values.begin(), 1);
+  std::string flatBufferStringValue =
+      std::to_string(values[0]) + ", " + std::to_string(values[1]);
+  attrs.append(name, builder.getStringAttr(flatBufferStringValue));
   return success();
 }
 
