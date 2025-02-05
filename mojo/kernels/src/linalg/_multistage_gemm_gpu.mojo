@@ -20,6 +20,7 @@ from gpu import (
     barrier,
     lane_id,
     warp_broadcast,
+    MAX_THREADS_PER_BLOCK_METADATA,
 )
 from gpu.host import FuncAttribute
 from gpu.memory import (
@@ -1031,7 +1032,9 @@ fn multistage_gemm_kernel[
                 )
 
 
-@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](config.num_threads()))
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](config.num_threads())
+)
 fn multistage_gemm_split_k_kernel[
     c_type: DType,
     c_layout: Layout,
