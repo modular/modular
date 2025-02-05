@@ -171,7 +171,7 @@ for c in data:
 
 # Once we have Char developed enough
 for c in iter(data).chars[encoding.UTF8]():
-  ... # Char type instances
+  ... # Char type instances (UTF8 packed in a UInt32 ?)
 for c in iter(data).chars[encoding.UTF32]():
   ... # Char type instances
 
