@@ -121,8 +121,8 @@ async def test_process_lifecycle():
         # cancel and wait for it to complete, but hit timeout
         pc.set_canceled()
         completed = await mon.until_completed()
-        assert completed == True
-        assert pc.is_completed() == True
+        assert completed
+        assert pc.is_completed()
         assert p.is_alive()
 
         await mon.shutdown()
@@ -154,6 +154,30 @@ async def test_stop_wedged_process():
 
         unhealthy = await mon.until_unhealthy()
         assert unhealthy
+        await mon.shutdown()
+        assert p.is_alive() == False
+
+
+@pytest.mark.asyncio
+async def test_shutdown_dead_process():
+    ctx = multiprocessing.get_context("spawn")
+    pc = process_control.ProcessControl(ctx, "test", health_fail_s=100e-3)
+
+    p = ctx.Process(target=run_wedged, args=(pc,))
+    mon = process_control.ProcessMonitor(pc, p, poll_s=1e-3, max_time_s=3500e-3)
+    with run_process(p) as p:
+        started = await mon.until_started()
+        assert p.is_alive()
+        assert started
+        assert p.is_alive()
+        assert pc.is_healthy()
+        assert pc.is_canceled() == False
+        assert pc.is_completed() == False
+
+        p.kill()
+        dead = await mon.until_dead()
+        assert dead
+
         await mon.shutdown()
         assert p.is_alive() == False
 
