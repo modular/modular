@@ -57,6 +57,11 @@ struct float8_e4m3_t : Detail::float8_generic_t<llvm::APFloat::S_Float8E4M3> {
   explicit float8_e4m3_t(uint8_t rawBits)
       : float8_generic_t<llvm::APFloat::S_Float8E4M3>(rawBits) {}
 };
+struct float8_e4m3fn_t
+    : Detail::float8_generic_t<llvm::APFloat::S_Float8E4M3FN> {
+  explicit float8_e4m3fn_t(uint8_t rawBits)
+      : float8_generic_t<llvm::APFloat::S_Float8E4M3FN>(rawBits) {}
+};
 struct float8_e4m3fnuz_t
     : Detail::float8_generic_t<llvm::APFloat::S_Float8E4M3FNUZ> {
   explicit float8_e4m3fnuz_t(uint8_t rawBits)
