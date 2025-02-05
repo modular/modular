@@ -4,8 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import max.pipelines.max_pipelines as pipelines
 import pytest
+from max.entrypoints import pipelines
 
 
 def test_pipelines_cli__smollm_float32(capsys):

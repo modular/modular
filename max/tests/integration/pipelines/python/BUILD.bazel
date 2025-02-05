@@ -84,7 +84,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
-        "//SDK/lib/API/python/max/pipelines:max_pipelines",
+        "//SDK/lib/API/python/max/entrypoints:pipelines",
         requirement("transformers"),
         requirement("gguf"),
     ],
@@ -100,7 +100,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
-        "//SDK/lib/API/python/max/pipelines:max_pipelines",
+        "//SDK/lib/API/python/max/entrypoints:pipelines",
         requirement("transformers"),
         requirement("gguf"),
     ],
@@ -207,7 +207,7 @@ modular_py_binary(
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
         "//SDK/integration-test/pipelines/python/eval_tasks",
-        "//SDK/lib/API/python/max/pipelines:max_pipelines",
+        "//SDK/lib/API/python/max/entrypoints:pipelines",
         "@llvm-project//compiler-rt:orc_rt",
         "@mistral-evals//:evaluate",
     ],
@@ -255,7 +255,7 @@ modular_py_binary(
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
-        "//SDK/lib/API/python/max/pipelines:max_pipelines",
+        "//SDK/lib/API/python/max/entrypoints:pipelines",
         "@llvm-project//compiler-rt:orc_rt",
     ],
     ignore_collisions = True,  # duplicate scripts/__init__.py from deps
