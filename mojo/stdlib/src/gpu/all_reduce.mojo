@@ -17,6 +17,7 @@ from gpu.intrinsics import (
 )
 
 from utils.index import StaticTuple
+from utils.numerics import get_accum_type
 
 # Comments from the original implementation:
 # Block and grid default configs are results after careful grid search. Using
@@ -327,10 +328,15 @@ fn all_reduce_p2p_kernel[
 
     multi_gpu_barrier[ngpus, True](rank_sigs, my_sig, my_rank)
     for i in range(global_tid, num_elements, stride):
+        # Accumulate in a local variable since `result` may be uninitialized.
+        alias accum_type = get_accum_type[type]()
+        var accum = src_bufs[0].data[i].cast[accum_type]()
 
         @parameter
-        for _id in range(ngpus):
-            result[i] += src_bufs[_id].data[i]
+        for _id in range(1, ngpus):
+            accum += src_bufs[_id].data[i].cast[accum_type]()
+
+        result[i] = accum.cast[type]()
 
     multi_gpu_barrier[ngpus, False](rank_sigs, my_sig, my_rank)
 
