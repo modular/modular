@@ -37,10 +37,7 @@ static std::vector<DType> getAllKnownDTypes() {
       DType(DType::f16),
       DType(DType::f32),
       DType(DType::f64),
-      DType(DType::f128),
       DType(DType::bf16),
-      DType(DType::f24),
-      DType(DType::f80),
       DType(DType::tf32),
       DType(DType::kBool),
       DType::getComplex(DType::si8),
@@ -61,10 +58,7 @@ static std::vector<DType> getAllKnownDTypes() {
       DType::getComplex(DType::f16),
       DType::getComplex(DType::f32),
       DType::getComplex(DType::f64),
-      DType::getComplex(DType::f128),
       DType::getComplex(DType::bf16),
-      DType::getComplex(DType::f24),
-      DType::getComplex(DType::f80),
       DType::getComplex(DType::tf32),
       DType::getComplex(DType::kBool),
   };
@@ -96,10 +90,7 @@ TEST(DType, getWidthInBits) {
   EXPECT_EQ(16, DType(DType::f16).getWidthInBits());
   EXPECT_EQ(32, DType(DType::f32).getWidthInBits());
   EXPECT_EQ(64, DType(DType::f64).getWidthInBits());
-  EXPECT_EQ(128, DType(DType::f128).getWidthInBits());
   EXPECT_EQ(16, DType(DType::bf16).getWidthInBits());
-  EXPECT_EQ(24, DType(DType::f24).getWidthInBits());
-  EXPECT_EQ(80, DType(DType::f80).getWidthInBits());
   EXPECT_EQ(19, DType(DType::tf32).getWidthInBits());
   EXPECT_EQ(8, DType(DType::kBool).getWidthInBits());
   EXPECT_EQ(-1, DType(DType::mIsComplex).getWidthInBits());
@@ -119,10 +110,7 @@ TEST(DType, getWidthInBits) {
   EXPECT_EQ(32, DType::getComplex(DType::f16).getWidthInBits());
   EXPECT_EQ(64, DType::getComplex(DType::f32).getWidthInBits());
   EXPECT_EQ(128, DType::getComplex(DType::f64).getWidthInBits());
-  EXPECT_EQ(256, DType::getComplex(DType::f128).getWidthInBits());
   EXPECT_EQ(32, DType::getComplex(DType::bf16).getWidthInBits());
-  EXPECT_EQ(48, DType::getComplex(DType::f24).getWidthInBits());
-  EXPECT_EQ(160, DType::getComplex(DType::f80).getWidthInBits());
   EXPECT_EQ(38, DType::getComplex(DType::tf32).getWidthInBits());
   EXPECT_EQ(16, DType::getComplex(DType::kBool).getWidthInBits());
 }
@@ -171,10 +159,7 @@ TEST(DType, getAsString) {
   EXPECT_EQ("f16", DType(DType::f16).getAsString());
   EXPECT_EQ("f32", DType(DType::f32).getAsString());
   EXPECT_EQ("f64", DType(DType::f64).getAsString());
-  EXPECT_EQ("f128", DType(DType::f128).getAsString());
   EXPECT_EQ("bf16", DType(DType::bf16).getAsString());
-  EXPECT_EQ("f24", DType(DType::f24).getAsString());
-  EXPECT_EQ("f80", DType(DType::f80).getAsString());
   EXPECT_EQ("tf32", DType(DType::tf32).getAsString());
   EXPECT_EQ("bool", DType(DType::kBool).getAsString());
   EXPECT_EQ("complex<si8>", DType::getComplex(DType::si8).getAsString());
@@ -197,10 +182,7 @@ TEST(DType, getAsString) {
   EXPECT_EQ("complex<f16>", DType::getComplex(DType::f16).getAsString());
   EXPECT_EQ("complex<f32>", DType::getComplex(DType::f32).getAsString());
   EXPECT_EQ("complex<f64>", DType::getComplex(DType::f64).getAsString());
-  EXPECT_EQ("complex<f128>", DType::getComplex(DType::f128).getAsString());
   EXPECT_EQ("complex<bf16>", DType::getComplex(DType::bf16).getAsString());
-  EXPECT_EQ("complex<f24>", DType::getComplex(DType::f24).getAsString());
-  EXPECT_EQ("complex<f80>", DType::getComplex(DType::f80).getAsString());
   EXPECT_EQ("complex<tf32>", DType::getComplex(DType::tf32).getAsString());
   EXPECT_EQ("complex<bool>", DType::getComplex(DType::kBool).getAsString());
 }
@@ -231,10 +213,7 @@ TEST(DType, getFromString) {
   EXPECT_EQ(DType(DType::f16), DType::getFromString("f16"));
   EXPECT_EQ(DType(DType::f32), DType::getFromString("f32"));
   EXPECT_EQ(DType(DType::f64), DType::getFromString("f64"));
-  EXPECT_EQ(DType(DType::f128), DType::getFromString("f128"));
   EXPECT_EQ(DType(DType::bf16), DType::getFromString("bf16"));
-  EXPECT_EQ(DType(DType::f24), DType::getFromString("f24"));
-  EXPECT_EQ(DType(DType::f80), DType::getFromString("f80"));
   EXPECT_EQ(DType(DType::tf32), DType::getFromString("tf32"));
   EXPECT_EQ(DType(DType::kBool), DType::getFromString("bool"));
   EXPECT_EQ(DType::getComplex(DType::si8),
@@ -273,14 +252,8 @@ TEST(DType, getFromString) {
             DType::getFromString("complex<f32>"));
   EXPECT_EQ(DType::getComplex(DType::f64),
             DType::getFromString("complex<f64>"));
-  EXPECT_EQ(DType::getComplex(DType::f128),
-            DType::getFromString("complex<f128>"));
   EXPECT_EQ(DType::getComplex(DType::bf16),
             DType::getFromString("complex<bf16>"));
-  EXPECT_EQ(DType::getComplex(DType::f24),
-            DType::getFromString("complex<f24>"));
-  EXPECT_EQ(DType::getComplex(DType::f80),
-            DType::getFromString("complex<f80>"));
   EXPECT_EQ(DType::getComplex(DType::tf32),
             DType::getFromString("complex<tf32>"));
   EXPECT_EQ(DType::getComplex(DType::kBool),

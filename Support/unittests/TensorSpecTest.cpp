@@ -75,9 +75,7 @@ TEST(TensorSpec, representations) {
   EXPECT_TRUE(tensorSpecRoundTrips({2, 2, 2, 2, 2}, DType::si32));
   EXPECT_TRUE(tensorSpecRoundTrips({100000}, DType::si64));
   EXPECT_TRUE(tensorSpecRoundTrips({1, 2, 3, 4, 5}, DType::ui16));
-  EXPECT_TRUE(tensorSpecRoundTrips({10000000000}, DType::f24));
   EXPECT_TRUE(tensorSpecRoundTrips({1, 2, 3, 4, 5, 6}, DType::f32));
-  EXPECT_TRUE(tensorSpecRoundTrips({kDynamic}, DType::f128));
   EXPECT_TRUE(tensorSpecRoundTrips({1, 1, 1, 1, kDynamic}, DType::ui8));
 }
 
@@ -106,8 +104,6 @@ TEST(TensorSpec, parsing) {
             TensorSpec::parseFromString("?x10x20xsi32"));
   EXPECT_EQ(ok(spec({5, kDynamic, 20}, DType::f64)),
             TensorSpec::parseFromString("5x?x20xf64"));
-  EXPECT_EQ(ok(spec({5, 10, kDynamic}, DType::f128)),
-            TensorSpec::parseFromString("5x10x?xf128"));
   EXPECT_EQ(ok(spec({kDynamic}, DType::si64)),
             TensorSpec::parseFromString("?xsi64"));
   EXPECT_EQ(ok(spec({5}, DType::getComplex(DType::f32))),

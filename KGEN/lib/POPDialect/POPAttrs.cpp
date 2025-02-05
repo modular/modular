@@ -51,7 +51,7 @@ LogicalResult UnionAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 //===----------------------------------------------------------------------===//
 
 bool DTypeValue::isValidFloatDType(KGENDType dtype) {
-  return dtype.isFloat() && !(dtype == DType::f24 || dtype == DType::tf32);
+  return dtype.isFloat() && dtype != DType::tf32;
 }
 
 const llvm::fltSemantics &DTypeValue::getFloatSemantics(KGENDType dtype) {
@@ -76,12 +76,6 @@ const llvm::fltSemantics &DTypeValue::getFloatSemantics(KGENDType dtype) {
     return APFloat::IEEEsingle();
   case DType::f64:
     return APFloat::IEEEdouble();
-  case DType::f128:
-    return APFloat::IEEEquad();
-  case DType::f80:
-    return APFloat::x87DoubleExtended();
-
-  case DType::f24:
   default:
     llvm_unreachable("unknown float dtype");
   }

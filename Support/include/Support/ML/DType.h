@@ -104,11 +104,8 @@ public:
     bf16 = 6 | mIsFloat,
     f32 = 7 | mIsFloat,
     f64 = 8 | mIsFloat,
-    f128 = 9 | mIsFloat,
 
-    f24 = 10 | mIsFloat,
-    f80 = 11 | mIsFloat,
-    tf32 = 12 | mIsFloat,
+    tf32 = 9 | mIsFloat,
 
     //===--- Encodings for other types ------------------------------------===//
 
@@ -292,18 +289,12 @@ inline constexpr ssize_t DType::getWidthInBits() const {
   case DType::f16:
   case DType::bf16:
     return 16;
-  case DType::f24:
-    return 24;
   case DType::f32:
     return 32;
   case DType::tf32:
     return 19;
   case DType::f64:
     return 64;
-  case DType::f80:
-    return 80;
-  case DType::f128:
-    return 128;
   }
 }
 
@@ -319,8 +310,6 @@ DType::getSignificandPrecisionInBits() const {
   // The addition of the leading bit is written out explicitly for clarity.
   switch (getValue()) {
   default:
-  case DType::f24:
-    // f24 has an unclear format and is not supported in our stack.
     return std::nullopt;
   case DType::f8e5m2:
   case DType::f8e5m2fnuz:
@@ -339,10 +328,6 @@ DType::getSignificandPrecisionInBits() const {
     return 23 + 1;
   case DType::f64:
     return 52 + 1;
-  case DType::f80:
-    return 64;
-  case DType::f128:
-    return 112 + 1;
   }
 }
 
@@ -404,7 +389,7 @@ DECLARE_TYPE_MAPPING(f64, double);
 /// types ignoring sign" etc.  This should be used like:
 ///
 ///   someDType.dispatch<>(paramPtrs...)  // pass in void* / const void*
-///      .when<DType::f24>([](void *... buf) { ... invoked when f24 ...
+///      .when<DType::f32>([](void *... buf) { ... invoked when f32 ...
 ///      }) .when([](bool *... bufPtr) { ... invoked when kBool ... })
 ///      .whenCXXFP([](auto *... bufPtr) { ... invoked with correct pointer type
 ///      ... .otherwise([]() { ... invoked otherwise ... });

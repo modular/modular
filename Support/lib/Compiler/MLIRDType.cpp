@@ -30,10 +30,6 @@ bool M::areEquivalentFloatTypes(DType dtype, FloatType fpType) {
     return llvm::isa<Float32Type>(fpType);
   case DType::f64:
     return llvm::isa<Float64Type>(fpType);
-  case DType::f80:
-    return llvm::isa<Float80Type>(fpType);
-  case DType::f128:
-    return llvm::isa<Float128Type>(fpType);
   default:
     return false;
   }
@@ -61,10 +57,6 @@ FloatType M::getEquivalentFloatType(MLIRContext *ctx, DType dtype) {
     return FloatTF32Type::get(ctx);
   case DType::f64:
     return Float64Type::get(ctx);
-  case DType::f80:
-    return Float80Type::get(ctx);
-  case DType::f128:
-    return Float128Type::get(ctx);
   default:
     return {}; // null denotes failure
   }
@@ -81,8 +73,6 @@ bool M::hasEquivalentFloatType(DType dtype) {
   case DType::bf16:
   case DType::f32:
   case DType::f64:
-  case DType::f80:
-  case DType::f128:
     return true;
   default:
     return false;
@@ -122,10 +112,6 @@ DType M::getEquivalentDType(FloatType fpType) {
     return DType::f32;
   if (fpType.isF64())
     return DType::f64;
-  if (fpType.isF80())
-    return DType::f80;
-  if (fpType.isF128())
-    return DType::f128;
   return {}; // invalid denotes failure
 }
 
