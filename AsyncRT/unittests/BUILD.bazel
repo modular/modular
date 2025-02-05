@@ -56,7 +56,7 @@ modular_cc_test(
     srcs = ["DeviceContextTest.cpp"],
     deps = [
         ":TestUtils",
-        "//AsyncRT:DeviceContext",
+        "//AsyncRT:DeviceContextImpl",
     ],
 )
 
@@ -71,8 +71,7 @@ modular_cc_test(
     ],
     deps = [
         ":TestUtils",
-        "//AsyncRT:CUDADeviceContext",
-        "//AsyncRT:DeviceContext",
+        "//AsyncRT:DeviceContextImpl",
     ],
 )
 
@@ -85,10 +84,7 @@ modular_cc_test(
         "A100",
         "gpu",
     ],
-    deps = [
-        "//AsyncRT:CUDADeviceContext",
-        "//AsyncRT:DeviceContext",
-    ],
+    deps = ["//AsyncRT:DeviceContextImpl"],
 )
 
 modular_cc_test(
