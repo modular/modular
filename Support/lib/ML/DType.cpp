@@ -59,27 +59,12 @@ ssize_t DType::getSizeInBytes(size_t numElements) const {
   case DType::bf16:
     widthShift = 1;
     break;
-  case DType::f24: {
-    ssize_t result = numElements * 3;
-    if (result / 3 != ssize_t(numElements))
-      return -1;
-    return result;
-  }
   case DType::f32:
   case DType::tf32: // tf32 has 19bits, store as 4 bytes.
     widthShift = 2;
     break;
   case DType::f64:
     widthShift = 3;
-    break;
-  case DType::f80: {
-    ssize_t result = numElements * 10;
-    if (result / 10 != ssize_t(numElements))
-      return -1;
-    return result;
-  }
-  case DType::f128:
-    widthShift = 4;
     break;
   }
 
@@ -110,10 +95,6 @@ FailureOr<DType> DType::getFromString(StringRef str) {
       return DType(f64);
     if (str == "f16")
       return DType(f16);
-    if (str == "f80")
-      return DType(f80);
-    if (str == "f24")
-      return DType(f24);
     if (str == "f8e5m2")
       return DType(f8e5m2);
     if (str == "f8e5m2fnuz")
@@ -124,8 +105,6 @@ FailureOr<DType> DType::getFromString(StringRef str) {
       return DType(f8e4m3fnuz);
     if (str == "f8e3m4")
       return DType(f8e3m4);
-    if (str == "f128")
-      return DType(f128);
     return failure();
   case 'u':
   case 's':
@@ -192,14 +171,8 @@ std::string DType::getAsString() const {
     return "f32";
   case f64:
     return "f64";
-  case f128:
-    return "f128";
   case bf16:
     return "bf16";
-  case f24:
-    return "f24";
-  case f80:
-    return "f80";
   case tf32:
     return "tf32";
   case kBool:

@@ -32,14 +32,6 @@ kgen.generator @simd_constant<size>() {
 
 // -----
 
-kgen.generator @simd_constant<size>() {
-  // expected-error @below {{only integer, float, bool, and index dtype constants can be parsed}}
-  %0 = kgen.param.constant: scalar<f24> = <<0>>
-  kgen.return
-}
-
-// -----
-
 kgen.generator @array_constant<size>() {
   // expected-error @below {{array attribute expected a concrete size}}
   %0 = kgen.param.constant: array<size, index> = <#pop.array<0>>
