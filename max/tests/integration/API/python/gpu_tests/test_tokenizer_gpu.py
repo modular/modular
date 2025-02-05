@@ -63,5 +63,5 @@ def test_text_tokenizer_with_constrained_decoding():
 
     context = asyncio.run(tokenizer.new_context(request))
 
-    assert context.matcher
+    assert context.json_schema
     assert isinstance(context.prompt, str)
