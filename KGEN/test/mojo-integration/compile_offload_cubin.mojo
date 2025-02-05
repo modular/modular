@@ -46,7 +46,7 @@ fn _compile_info[
         _type=_Info,
     ]()
 
-    return Info {kernel: info.kernel, num_captures: info.num_captures}
+    return Info(kernel=info.kernel, num_captures=info.num_captures)
 
 
 fn hello():
