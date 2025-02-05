@@ -45,7 +45,7 @@ ROUTES = {
     APIType.OPENAI: openai_routes,
 }
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.serve")
 
 
 @dataclass(frozen=True)
@@ -77,7 +77,7 @@ async def lifespan(
     except Exception as e:
         logger.exception("Error occurred in model worker. %s", e)
     finally:
-        logger.critical("start_model_worker has completed")
+        logger.debug("start_model_worker has completed")
         await METRICS.shutdown()
 
 
@@ -111,7 +111,7 @@ def fastapi_config(app: FastAPI) -> Config:
         app=app, host=host, port=port, log_config=None, loop="uvloop"
     )
     for route in app.routes:
-        logger.info("Route enabled : %s", route)
+        logger.debug("Route enabled : %s", route)
     return config
 
 

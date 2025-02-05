@@ -100,6 +100,8 @@ class MaxDirectInferenceService(GRPCInferenceServiceServicer):
         max_batch_size: int,
     ):
         self.logger = logging.getLogger(self.__class__.__name__)
+        # This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
+        self.logger.propagate = False
         self.model_name = model_name
         self.pipeline = pipeline
         self.tokenizer = tokenizer
@@ -226,6 +228,8 @@ class MaxServeInferenceService(GRPCInferenceServiceServicer):
 
     def __init__(self, pipeline: TokenGeneratorPipeline, max_batch_size: int):
         self.logger = logging.getLogger(self.__class__.__name__)
+        # This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
+        self.logger.propagate = False
         self.pipeline = pipeline
         self.logger.info("Starting server handler")
 

@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from typing import Callable, Iterable, Optional, Protocol, Union
 
 logger = logging.getLogger(__name__)
+# This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
+logger.propagate = False
 
 
 class EventCreator(Protocol):

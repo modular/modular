@@ -25,7 +25,7 @@ from opentelemetry.sdk.metrics.export import (
     PeriodicExportingMetricReader,
 )
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.serve")
 
 
 class _NoOpMetric:

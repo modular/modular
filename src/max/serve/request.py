@@ -12,7 +12,7 @@ from typing import Callable
 from fastapi import FastAPI, HTTPException, Request, Response
 from max.serve.telemetry.stopwatch import StopWatch
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.serve")
 
 
 def register_request(app: FastAPI):

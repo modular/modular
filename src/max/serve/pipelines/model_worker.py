@@ -34,6 +34,8 @@ from max.serve.telemetry.metrics import METRICS, configure_metrics
 from max.serve.telemetry.stopwatch import record_ms
 
 logger = logging.getLogger(__name__)
+# This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
+logger.propagate = False
 
 
 @dataclass(frozen=True)

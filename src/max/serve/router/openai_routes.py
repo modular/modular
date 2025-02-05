@@ -68,7 +68,7 @@ from sse_starlette.sse import EventSourceResponse
 from starlette.datastructures import State
 
 router = APIRouter(prefix="/v1")
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.serve")
 
 
 def record_request_start():
@@ -90,6 +90,8 @@ class OpenAIResponseGenerator(ABC):
         pipeline: TokenGeneratorPipeline,
     ):
         self.logger = logging.getLogger(self.__class__.__name__)
+        # This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
+        self.logger.propagate = False
         self.pipeline = pipeline
 
     @abstractmethod
@@ -333,7 +335,6 @@ class OpenAIEmbeddingsResponseGenerator:
         self,
         pipeline: TokenGeneratorPipeline,
     ):
-        self.logger = logging.getLogger(self.__class__.__name__)
         self.pipeline = pipeline
 
     async def encode(
@@ -462,7 +463,7 @@ async def openai_create_chat_completion(
         )
         pipeline = get_pipeline(request, completion_request.model)
 
-        logger.info(
+        logger.debug(
             "Processing path, %s, req-id,%s%s, for model, %s.",
             request.url.path,
             request_id,
@@ -610,7 +611,7 @@ async def openai_create_embeddings(
         embeddings_request = CreateEmbeddingRequest.model_validate(request_json)
         pipeline = get_pipeline(request, embeddings_request.model)
 
-        logger.info(
+        logger.debug(
             "Processing path, %s, req-id, %s, for model, %s.",
             request.url.path,
             request_id,
@@ -873,7 +874,7 @@ async def openai_create_completion(
             ) / 1e6
 
         pipeline = get_pipeline(request, completion_request.model)
-        logger.info(
+        logger.debug(
             "Path: %s, Request: %s%s, Model: %s%s",
             request.url.path,
             request_id,

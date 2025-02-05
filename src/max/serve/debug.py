@@ -23,7 +23,7 @@ from pyinstrument.renderers.html import HTMLRenderer
 from pyinstrument.renderers.jsonrenderer import JSONRenderer
 from pyinstrument.renderers.speedscope import SpeedscopeRenderer
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.serve")
 
 
 class DebugSettings(BaseSettings):

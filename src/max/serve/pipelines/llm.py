@@ -26,7 +26,7 @@ from max.serve.scheduler.queues import (
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.serve")
 
 
 @dataclass(frozen=True)
@@ -169,6 +169,8 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
         engine_queue: EngineQueue,
     ):
         self.logger = logging.getLogger(self.__class__.__name__)
+        # This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
+        self.logger.propagate = False
         self.logger.info("%s: Constructed", model_name)
         self.debug_logging = self.logger.isEnabledFor(logging.DEBUG)
 

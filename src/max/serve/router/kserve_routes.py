@@ -5,13 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 
 
-import logging
-
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 
 router = APIRouter(prefix="/v2")
-logger = logging.getLogger(__name__)
 
 
 @router.get("/health/live")

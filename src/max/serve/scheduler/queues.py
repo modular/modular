@@ -19,6 +19,8 @@ from typing import AsyncGenerator, Generator, Generic, Optional, TypeVar
 import sentinel
 from max.serve.scheduler.process_control import ProcessControl
 
+logger = logging.getLogger("max.serve")
+
 ReqId = TypeVar("ReqId")
 ReqInput = TypeVar("ReqInput")
 ReqOutput = TypeVar("ReqOutput")
@@ -65,7 +67,6 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
     ):
         super().__init__()
         self.context = context
-        self.logger = logging.getLogger(self.__class__.__name__)
         self.request_q: Queue = self.context.Queue()
         self.response_q: Queue = self.context.Queue()
         self.cancel_q: Queue = self.context.Queue()
@@ -111,9 +112,7 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
                         # If the worker dies this loop will keep running,
                         # so we have to check the worker status.
                         if not self.pc.is_healthy():
-                            self.logger.error(
-                                "Model worker process is not healthy"
-                            )
+                            logger.error("Model worker process is not healthy")
                             self.pc.set_canceled()
                             raise Exception("Worker failed!")
                         await asyncio.sleep(0)
@@ -136,7 +135,7 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         except asyncio.CancelledError:
             raise
         finally:
-            self.logger.info(
+            logger.debug(
                 "Terminating response worker [self=%s]",
                 os.getpid(),
             )

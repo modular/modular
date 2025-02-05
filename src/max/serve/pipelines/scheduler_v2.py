@@ -21,7 +21,7 @@ from max.profiler import traced
 from max.serve.scheduler.process_control import ProcessControl
 from max.serve.scheduler.queues import STOP_STREAM
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.serve")
 
 BatchReqId = TypeVar("BatchReqId")
 BatchReqInput = TypeVar("BatchReqInput")
