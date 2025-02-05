@@ -26,10 +26,9 @@ with supporting only ASCII is that other encodings can get corrupted.
 #### When slicing by unicode codepoint e.g. "🔥🔥🔥" (\U0001f525\U0001f525\U0001f525)
 
 - UTF-8: 12 bytes long. The first byte of each fire can be used to know the
-length, but for slicing it's faster to jump and count the continuation
-bytes before the indices, then shift the index access to the right by that
-amount. There are several other approaches to do achieve the same result, they
-can be explored with benchmarking later on.
+length, and the next bytes are what is known as a continuation byte. There are
+several approaches to achieve the slicing, they can be explored with
+benchmarking later on.
 - UTF-16: 6 bytes long. It's very similar in procedure to UTF-8.
 - UTF-32: It is fastest since it's direct index access. This is not the case
 when supporting graphemes.
