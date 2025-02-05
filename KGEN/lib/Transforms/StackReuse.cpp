@@ -10,15 +10,33 @@
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/Debug.h"
 #include "KGEN/TransformUtils/ControlFlowUtils.h"
+#include "KGEN/TransformUtils/Transforms.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Pass/Pass.h"
+#include "llvm/ADT/SetVector.h"
+#include "llvm/Support/ManagedStatic.h"
 
 #define KGEN_DEBUG_TYPE "stack-reuse"
 
 using namespace M;
 using namespace KGEN;
 using namespace POP;
+
+struct StackReuseOptions {
+#if !MODULAR_PRODUCTION
+  llvm::cl::opt<size_t> promoteToGlobalThreshold{
+      "kgen-stack-reuse-promote-to-global-threshold",
+      llvm::cl::desc("Threshold in byte above which a read-only stack "
+                     "allocations are promoted to global"),
+      llvm::cl::init(1024)};
+#else
+  size_t promoteToGlobalThreshold = 1024; // in bytes
+#endif // MODULAR_PRODUCTION
+};
+static llvm::ManagedStatic<StackReuseOptions> clOptions;
+
+void M::KGEN::registerStackReuseCommandLineOptions() { *clOptions; }
 
 //===----------------------------------------------------------------------===//
 // Pass Definition
@@ -135,8 +153,10 @@ struct DenseMapInfo<PotentialValue> {
 namespace {
 struct PassInfo {
   mlir::DominanceInfo &domInfo;
+  TargetInfoAttr target;
   unsigned numErasedOps = 0;
   unsigned numElidedVars = 0;
+  unsigned numOptimizedConstants = 0;
 };
 } // namespace
 
@@ -531,6 +551,141 @@ static void processRegion(
   }
 }
 
+// Extra peephole optimization to promote read-only stack allocations (with a
+// single write from a KGEN::ParamConstantOp) to a global constant
+//
+// TODO: Even though LLVM has StackColoring that combines many same stack
+// allocations into single one, it makes sense to move it here to reduce code
+// size sent to LLVM.
+//
+// TODO: We can also have just one stack allocation:
+//  - If stack allocations are not read-only, but execution can only reach
+//    one region
+//  - If stack allocations are not read-only, but store into the same index
+//  - If all, but post-dominate stack allocation are read-only
+static void optimizeReadOnlyMemory(Region &funcBody, PassInfo &pass) {
+  // Since now we use target to get size of a constant, exit Early if it cannot
+  // be identified.
+  if (!pass.target)
+    return;
+
+  DenseMap<Value, StackAllocationOp> aliases;
+  DenseMap<Operation *, std::vector<StackAllocationOp>> regionVariants;
+  std::vector<StackAllocationOp> allocs =
+      runAnalysis(funcBody, pass, aliases, regionVariants);
+  DenseMap<KGEN::ParamConstantOp, llvm::SetVector<StackAllocationOp>>
+      candidates;
+
+  // Collect all constants that can be optimized
+  funcBody.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+    auto constant = dyn_cast<KGEN::ParamConstantOp>(op);
+    if (!constant)
+      return WalkResult::advance();
+
+    auto popArrayType = dyn_cast<POP::ArrayType>(constant.getType());
+    if (!popArrayType)
+      return WalkResult::advance();
+
+    std::optional<int64_t> constantSize = popArrayType.getTypeSize(pass.target);
+    // Don't try to optimize the memory if constant's size is smaller than
+    // expected threshold.
+    if (!constantSize || constantSize < clOptions->promoteToGlobalThreshold) {
+      KGEN_DEBUG(0, {
+        llvm::dbgs() << KGEN_DEBUG_TYPE << ": ";
+        constant.print(llvm::dbgs());
+        llvm::dbgs()
+            << " constant is too small to be optimized to global constant\n";
+      });
+      return WalkResult::advance();
+    }
+
+    for (Operation *user : constant->getUsers()) {
+      if (auto store = dyn_cast<StoreOp>(user)) {
+        assert(store.getArg() == constant &&
+               "Unexpected use of a constant in StoreOp");
+        auto alloc = store.getPtr().getDefiningOp<StackAllocationOp>();
+        // Store must be done into a non-escaping stack allocation.
+        if (!alloc || !aliases.contains(alloc->getResult(0))) {
+          KGEN_DEBUG(
+              0, {
+                llvm::dbgs() << KGEN_DEBUG_TYPE << ": ";
+                constant.print(llvm::dbgs());
+                llvm::dbgs()
+                    << " constant is stored into escaping stack allocation ";
+                alloc.print(llvm::dbgs());
+                llvm::dbgs() << '\n';
+              });
+          return WalkResult::advance();
+        }
+
+        // No other store should be performed into that stack allocation, except
+        // for the store of the constant.
+        if (any_of(alloc->getUsers(), [&](Operation *user) {
+              return isa<StoreOp>(user) && user != store;
+            })) {
+          KGEN_DEBUG(0, {
+            llvm::dbgs() << KGEN_DEBUG_TYPE << ": ";
+            constant.print(llvm::dbgs());
+            llvm::dbgs() << " constant is stored into stack allocation with "
+                            "other stores: ";
+            alloc.print(llvm::dbgs());
+            llvm::dbgs() << '\n';
+          });
+          return WalkResult::advance();
+        }
+
+        KGEN_DEBUG(0, {
+          llvm::dbgs() << KGEN_DEBUG_TYPE << ": ";
+          constant.print(llvm::dbgs());
+          llvm::dbgs() << " constant can be optimized to global constant\n";
+        });
+        candidates[constant].insert(cast<StackAllocationOp>(alloc));
+      }
+    }
+    return WalkResult::advance();
+  });
+
+  DenseSet<Operation *> toErase;
+  // Optimize all found constants:
+  //  - replace the constant with the global constant followed by the load from
+  //    it
+  //  - remove all stack allocation lifemarks, stores and replace uses of the
+  //    stack allocation with the load.
+  for (auto &[constant, allocs] : candidates) {
+    pass.numOptimizedConstants += allocs.size();
+
+    ImplicitLocOpBuilder b(constant.getLoc(), OpBuilder(constant));
+    b.setInsertionPointAfter(constant);
+    auto ptr = b.create<GlobalConstantOp>(
+        KGEN::PointerType::get(constant.getType(), 0), constant.getValue());
+
+    for (StackAllocationOp alloc : allocs) {
+      for (Operation *user : alloc->getUsers()) {
+        // Need to drop lifetime markers as they are no longer relevant.
+        if (isa<StackAllocLifetimeStartOp, StackAllocLifetimeEndOp>(user)) {
+          toErase.insert(user);
+          continue;
+        }
+        // Store of the constant can be dropped as it's done after new
+        // allocation.
+        if (auto store = dyn_cast<StoreOp>(user);
+            store && store.getArg() == constant) {
+          toErase.insert(user);
+          continue;
+        }
+      }
+      alloc->replaceAllUsesWith(ptr);
+      toErase.insert(alloc);
+    }
+    toErase.insert(constant);
+  }
+
+  for (Operation *op : toErase) {
+    op->dropAllUses();
+    op->erase();
+  }
+}
+
 static void runStackReuseOnRegion(Region &funcBody, PassInfo &pass) {
   VerboseCompilerTimeTraceScope traceScope("runStackReuseOnRegion");
 
@@ -616,13 +771,16 @@ static void runStackReuseOnRegion(Region &funcBody, PassInfo &pass) {
     ++numErasedOps;
   }
   pass.numErasedOps += numErasedOps;
+
+  optimizeReadOnlyMemory(funcBody, pass);
 }
 
 void StackReuse::runOnOperation() {
   VerboseCompilerTimeTraceScope traceScope("StackReuse::runOnOperation");
 
+  FuncOp func = getOperation();
   auto &domInfo = getAnalysis<mlir::DominanceInfo>();
-  PassInfo info{domInfo};
+  PassInfo info{domInfo, lookupTargetInfo(func)};
 
-  runStackReuseOnRegion(getOperation().getBodyRegion(), info);
+  runStackReuseOnRegion(func.getBodyRegion(), info);
 }

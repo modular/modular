@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -stack-reuse | FileCheck %s
+// RUN: kgen-opt %s -stack-reuse -split-input-file --kgen-stack-reuse-promote-to-global-threshold=16 | FileCheck %s
 
 // CHECK-LABEL: @two_overlapping
 kgen.func @two_overlapping(%arg0: index, %arg1: index) -> (index, index) {
@@ -312,4 +312,24 @@ kgen.func @function_boundary(%arg0: index) -> index {
   %2 = pop.load %1 : !kgen.pointer<index>
   // CHECK-NEXT: return [[R0]]
   kgen.return %2 : index
+}
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="">} {
+  // CHECK-LABEL: @large_constant_promotion
+  kgen.func @large_constant_promotion(%arg0: index) -> () {
+      // CHECK-NEXT: %0 = pop.global_constant: array<2, struct<(scalar<ui64>, scalar<ui64>)>> = <[{ 0, 1 }, { 2, 3 }]>
+      // CHECK-NEXT: %1 = pop.array.gep %0[%arg0] : <array<2, struct<(scalar<ui64>, scalar<ui64>)>>>
+      // CHECK-NEXT: %2 = pop.load %1 : !kgen.pointer<struct<(scalar<ui64>, scalar<ui64>)>>
+      // CHECK-NEXT: kgen.return
+      %array = kgen.param.constant: array<2, struct<(scalar<ui64>, scalar<ui64>)>> = <[{ 0, 1 }, { 2, 3 }]>
+      %21 = pop.stack_allocation 1 x array<2, struct<(scalar<ui64>, scalar<ui64>)>> marked
+      pop.stack_alloc.lifetime.start(%21) : !kgen.pointer<array<2, struct<(scalar<ui64>, scalar<ui64>)>>>
+      pop.store %array, %21 : !kgen.pointer<array<2, struct<(scalar<ui64>, scalar<ui64>)>>>
+      %23 = pop.array.gep %21[%arg0] : <array<2, struct<(scalar<ui64>, scalar<ui64>)>>>
+      %24 = pop.load %23 : !kgen.pointer<struct<(scalar<ui64>, scalar<ui64>)>>
+      pop.stack_alloc.lifetime.end(%21) : !kgen.pointer<array<2, struct<(scalar<ui64>, scalar<ui64>)>>>
+      kgen.return
+  }
 }
