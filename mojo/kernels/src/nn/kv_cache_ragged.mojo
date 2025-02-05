@@ -162,6 +162,70 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged[
 
 
 @always_inline
+fn generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
+    type: DType,
+    target: StringLiteral = "cpu",
+](
+    hidden_state: NDBuffer[type, 2, _],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    weight: NDBuffer[type, 2, _],
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: UInt32,
+    output: NDBuffer[type, 2, _],
+    bias: NDBuffer[type, 1],
+    ctx: MojoCallContextPtr,
+) raises:
+    """Performs a fused QKV matmul. Q outputs are written to the output argument
+    while K and V outputs are written in-place into k_cache and v_cache.
+
+    Args:
+        hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
+        input_row_offsets: Tensor with shape (batch_size + 1,).
+            The value at each index is the start_idx of the corresponding batch in hidden_state.
+        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
+        kv_collection: The object storing the KVCache for this layer.
+        layer_idx: The current layer, used to retrieve the KVCache object from kv_collection.
+        output: The pre-allocated output buffer for Q projections. K and V
+            projections are written in-place to k_cache and v_cache.
+            Shape: (sum(seq_lens), num_heads * head_size).
+        bias: Bias to be added to the QKV Tensor. Tensor is concatenated q + k + v. Rank 1.
+        ctx: The call context pointer, passed by the graph compiler.
+    """
+
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            trace_arg("output", output),
+            trace_arg("hidden_state", hidden_state),
+            trace_arg("weight", weight),
+            "layer_idx=" + String(layer_idx),
+            "num_heads=" + String(kv_collection.kv_params.num_heads),
+            "head_size=" + String(kv_collection.kv_params.head_size),
+        )
+
+    alias name = "mo.fused_qkv_matmul.ragged.paged.bias.nhead_" + String(
+        kv_collection.kv_params.num_heads
+    ) + ".hdim_" + String(kv_collection.kv_params.head_size)
+    with Trace[TraceLevel.OP, target=target](
+        name,
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+        return _fused_qkv_matmul_kv_cache_ragged_bias[
+            kv_collection.CacheType, target=target
+        ](
+            hidden_state,
+            input_row_offsets,
+            weight,
+            kv_collection,
+            layer_idx,
+            output,
+            bias,
+            ctx,
+        )
+
+
+@always_inline
 fn _fused_qkv_matmul_kv_cache_ragged[
     type: DType,
     collection_t: KVCollectionT, //,
@@ -207,6 +271,59 @@ fn _fused_qkv_matmul_kv_cache_ragged[
         k_cache,
         v_cache,
         output,
+        cuda_ctx,
+    )
+
+
+@always_inline
+fn _fused_qkv_matmul_kv_cache_ragged_bias[
+    type: DType,
+    collection_t: KVCollectionT, //,
+    cache_t: KVCacheT,
+    *,
+    target: StringLiteral,
+](
+    hidden_state: NDBuffer[type, 2, _],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    weight: NDBuffer[type, 2, _],
+    kv_collection: collection_t,
+    layer_idx: UInt32,
+    output: NDBuffer[type, 2, _],
+    bias: NDBuffer[type, 1],
+    context: MojoCallContextPtr,
+) raises:
+    """Performs a fused QKV matmul. Q outputs are written to the output argument
+    while K and V outputs are written in-place into k_cache and v_cache.
+
+    Args:
+        hidden_state: Tensor with shape (batch_size, seq_len, num_heads * head_size).
+        input_row_offsets: Tensor with shape (batch_size + 1,).
+            The value at each index is the start_idx of the corresponding batch in hidden_state.
+        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
+        kv_collection: The object storing the KVCache for this layer.
+        layer_idx: The current layer, used to retrieve the KVCache object from kv_collection.
+        output: The pre-allocated output buffer for Q projections. K and V
+            projections are written in-place to k_cache and v_cache.
+        bias: Bias to be added to the QKV Tensor. Tensor is concatenated q + k + v. Rank 1.
+        context: The call context pointer, passed by the graph compiler.
+    """
+    var cuda_ctx: Optional[DeviceContext] = None
+    var layer_idx_cast = Int(layer_idx)
+    var k_cache = kv_collection.get_key_cache(layer_idx_cast)
+    var v_cache = kv_collection.get_value_cache(layer_idx_cast)
+
+    @parameter
+    if is_gpu[target]():
+        cuda_ctx = context.get_device_context()
+
+    return _fused_qkv_matmul_kv_cache_ragged_impl_bias[target=target](
+        hidden_state,
+        input_row_offsets,
+        weight,
+        k_cache,
+        v_cache,
+        output,
+        bias,
         cuda_ctx,
     )
 
@@ -279,6 +396,103 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
         var hd_idx: UInt
         var cache: cache_t
         var output_val = val
+        if idx[1] < qk_offset:
+            cache = k_cache
+            h_idx, hd_idx = divmod(UInt(idx[1]) - q_dim, kv_params.head_size)
+        else:
+            cache = v_cache
+            h_idx, hd_idx = divmod(
+                UInt(idx[1]) - qk_offset, kv_params.head_size
+            )
+
+        var cache_length = cache.cache_length(batch_idx)
+        var cache_token_idx = token_idx + cache_length
+        cache.store(
+            batch_idx,
+            h_idx,
+            cache_token_idx,
+            hd_idx,
+            rebind[SIMD[kv_type, width]](output_val),
+        )
+
+    _matmul_common[target=target, elementwise_lambda_fn=write_to_cache](
+        hidden_state, weight, context
+    )
+
+
+@always_inline
+fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
+    type: DType,
+    cache_t: KVCacheT, //,
+    *,
+    target: StringLiteral,
+](
+    hidden_state: NDBuffer[type, 2, _],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    weight: NDBuffer[type, 2, _],
+    k_cache: cache_t,
+    v_cache: cache_t,
+    output: NDBuffer[type, 2, *_],
+    bias: NDBuffer[type, 1],
+    context: Optional[DeviceContext],
+) raises:
+    """Performs a fused QKV matmul on ragged tensors. Q outputs are written to the output argument
+    while K and V outputs are written in-place into k_cache and v_cache.
+
+    Args:
+        hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
+        input_row_offsets: Tensor with shape (batch_size + 1,)
+            denoting the start of each sequence along the seq_len dimension.
+        weight: Tensor with shape (num_heads * head_size, (num_heads + 2 * num_kv_heads) * head_size).
+        k_cache: The historical KVCacheT for keys, with logical shape:
+            (batch_size, max_seq_len, num_kv_heads, head_size).
+        v_cache: The historical KVCacheT for values, with logical shape:
+            (batch_size, max_seq_len, num_kv_heads, head_size).
+        output: The pre-allocated output buffer for Q projections. K and V
+            projections are written in-place to k_cache and v_cache.
+            Shape is (sum(seq_lens), num_heads * head_size)
+        bias: Bias to be added to the QKV Tensor. Tensor is concatenated q + k + v. Rank 1.
+        context: The DeviceContext. This is unused if is_cpu[target]().
+    """
+    alias kv_type = cache_t.type
+    alias kv_params = cache_t.kv_params
+    alias N = weight.shape.get[0]()
+    alias K = weight.shape.get[1]()
+
+    constrained[kv_type == type, "Mismatch in type between Q and KV tensors"]()
+
+    var q_dim = output.dim[1]()
+    var k_dim = kv_params.head_size * kv_params.num_heads
+    var qk_offset = q_dim + k_dim
+    var batch_size = input_row_offsets.dim[0]() - 1
+
+    @parameter
+    @__copy_capture(q_dim, qk_offset, batch_size)
+    fn write_to_cache[
+        type_: DType, width: Int, *, alignment: Int = 1
+    ](idx: IndexList[2], val: SIMD[type_, width]):
+        var output_val = val
+        output_val = val + rebind[SIMD[type_, width]](
+            bias.load[width=width](idx[1])
+        )
+        if idx[1] < q_dim:
+            output.store[width=width, alignment=alignment](
+                idx,
+                rebind[SIMD[type, width]](output_val),
+            )
+            return
+
+        global_token_idx = idx[0]
+
+        var batch_idx: Int = get_batch_from_row_offsets(
+            input_row_offsets, global_token_idx
+        )
+
+        token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
+
+        var h_idx: UInt
+        var hd_idx: UInt
+        var cache: cache_t
         if idx[1] < qk_offset:
             cache = k_cache
             h_idx, hd_idx = divmod(UInt(idx[1]) - q_dim, kv_params.head_size)
