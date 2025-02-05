@@ -23,11 +23,11 @@ with supporting only ASCII is that other encodings can get corrupted.
 - UTF-16 is 1-2 sets of 16 bits long
 - UTF-32 is 1 set of 32 bits long
 
-#### When slicing by unicode codepoint e.g. "🔥🔥🔥" (\U0001f525\U0001f525\U0001f525)
+### When slicing by unicode codepoint e.g. "🔥🔥🔥" (\U0001f525\U0001f525\U0001f525)
 
-- UTF-8: 12 sets (12 bytes) long. The first byte of each fire can be used to know the
-length, and the next bytes are what is known as a continuation byte. There are
-several approaches to achieve the slicing, they can be explored with
+- UTF-8: 12 sets (12 bytes) long. The first byte of each fire can be used to
+know the length, and the next bytes are what is known as a continuation byte.
+There are several approaches to achieve the slicing, they can be explored with
 benchmarking later on.
 - UTF-16: 6 sets long. It's very similar in procedure to UTF-8.
 - UTF-32: It is fastest since it's direct index access. This is not the case
@@ -47,11 +47,11 @@ to see if it's an extended cluster *.
 exists the posibility of implementing only a subset, but that defeats the
 purpose of going through the hassle of supporting it in the first place.
 
-# Context
+## Context
 
 C, C++, and Rust use UTF-8 with no default support for graphemes.
 
-## Swift
+### Swift
 
 Swift is an interesting case study. For compatibility with Objective-C they went
 for UTF-16. They decided to support grapheme clusters by default. They recently
@@ -60,7 +60,7 @@ that I think inspired our current `Char` type, it is a generic representation of
 a Character in any encoding, that can be from one codepoint up to any grapheme
 cluster.
 
-## Python
+### Python
 
 Python currently uses UTF-32 for its string type. So the slicing and indexing
 is simple and fast (but consumes a lot of memory, they have some tricks to
@@ -68,12 +68,12 @@ reduce it). They do not support graphemes by default. Pypi is implementing a
 UTF-8 version of Python strings, which keeps the length state every x
 characters.
 
-## Mojo
+### Mojo
 
 Mojo aims to be close to Python yet be faster and customizable, taking advantage
 of heterogeneous hardware and modern type system features.
 
-# Value vs. Reference
+## Value vs. Reference
 
 Our current `Char` type uses a u32 as storage, every time an iterator that
 yields `Char`is used, an instance is parsed from the internal UTF-8 encoded
@@ -83,7 +83,9 @@ The default iterator for `String` returns a `StringSlice` which is a view into
 the character in the UTF-8 encoded `StringSlice`. This is much more efficient
 and does not add any complexity into the type system nor developer headspace.
 
-# Now, onto the Proposal
+## Now, onto the Proposal
+
+### Goals
 
 #### Hold off on developing Char further and remove it from stdlib.builtin
 
@@ -108,11 +110,11 @@ which have mostly ASCII characters but still keep full unicode support.
 #### Grapheme support
 Grapheme support should exist but be opt-in due to their high compute cost.
 
-## One concrete (tentative) way forward
+### One concrete (tentative) way forward
 
 With a clear goal in mind, this is a concrete (tentative) way forward.
 
-### Add parameters to String and StringSlice
+#### Add parameters to String and StringSlice
 
 ```mojo
 struct Encoding:
@@ -155,7 +157,7 @@ indexing-agnostic)**.
 
 The implementations can be added with time making liberal use of `constrained`.
 
-### Adapt StringSliceIter
+#### Adapt StringSliceIter
 
 The default iterator should iterate in the way in which the `String` is
 parametrized. The iterator could then have functions which return the other
