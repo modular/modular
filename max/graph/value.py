@@ -134,7 +134,7 @@ class _ChainValue(Value):
 
     @property
     def type(self) -> _ChainType:
-        """Returns the type of the BufferValue as a BufferType."""
+        """Returns the type of the :obj:`BufferValue` as a :obj`BufferType`."""
         return _ChainType.from_mlir(self._mlir_value.type)
 
 
@@ -169,7 +169,7 @@ class BufferValue(Value):
 
     @property
     def type(self) -> BufferType:
-        """Returns the type of the BufferValue as a BufferType."""
+        """Returns the type of the :obj:`BufferValue` as a :obj:`BufferType`."""
         return BufferType.from_mlir(self._mlir_value.type)
 
     @property
@@ -239,7 +239,30 @@ class BufferValue(Value):
 
 
 class TensorValue(Value):
-    """Represents a value semantic tensor within a :obj:`Graph`."""
+    """
+    Represents a value semantic tensor within a :obj:`Graph`. It provides
+    various methods and properties to manipulate and query tensor attributes
+    such as :obj:`shape`, data type (:obj:`dtype`), device placement (:obj:`device`), and more.
+
+    For example:
+
+    .. code-block:: python
+
+        import numpy as np
+        from max.dtype import DType
+        from max.graph import Graph, ops
+
+        # Create a sample matrix
+        matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
+
+        # Create a Graph context to work with tensors
+        with Graph("tensor_demo") as graph:
+            # Create a constant tensor from the matrix
+            tensor = ops.constant(matrix, dtype=DType.float32)
+
+            # Perform a simple operation: transpose the tensor
+            transposed_tensor = tensor.T  # Output: Tensor representing [[1, 3], [2, 4]]
+    """
 
     # Disallow special methods that would fall back to __getitem__ and hang.
     __contains__ = None
@@ -269,12 +292,26 @@ class TensorValue(Value):
 
     @staticmethod
     def from_dim(dim: DimLike) -> TensorValue:
-        """Creates a new tensor based on provided MLIR dimension type."""
+        """Creates a new tensor based on provided MLIR dimension type.
+
+        Args:
+            dim: The dimension value.
+
+        Returns:
+            A new :obj:`TensorValue`.
+        """
         return ops.shape_to_tensor([dim]).reshape(())
 
     @staticmethod
     def from_shape(shape: ShapeLike) -> TensorValue:
-        """Creates a new tensor with the specified shape."""
+        """Creates a new tensor with the specified shape.
+
+        Args:
+            shape: An iterable of integers or symbolic dimensions.
+
+        Returns:
+            A new :obj:`TensorValue`.
+        """
         return ops.shape_to_tensor(shape)
 
     def __repr__(self):
@@ -285,12 +322,25 @@ class TensorValue(Value):
 
     @property
     def type(self) -> TensorType:
-        """Returns the type of the TensorValue as a TensorType."""
+        """Returns the type of the :obj:`TensorValue` as a :obj:`TensorType`."""
         return TensorType.from_mlir(self._mlir_value.type)
 
     @property
     def shape(self) -> Shape:
-        """Returns the shape of the TensorValue."""
+        """Returns the shape of the :obj:`TensorValue`.
+
+        .. code-block:: python
+
+            matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
+
+            # Create a Graph context to work with tensors
+            with Graph("shape_demo") as graph:
+                # Create a constant tensor from the matrix
+                tensor = ops.constant(matrix, dtype=DType.float32)
+
+                # Access tensor properties
+                print(f"Shape: {tensor.shape}")  # Output: Shape: (2, 2)
+        """
         return self.type.shape
 
     @property
@@ -303,7 +353,18 @@ class TensorValue(Value):
     # This also avoids accidentally loading algebraic expression dimensions (which will throw an exception).
     @property
     def dtype(self) -> DType:
-        """Returns the tensor data type."""
+        """Returns the tensor data type.
+
+        .. code-block:: python
+
+            matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
+
+            # Create a Graph context to work with tensors
+            with Graph("dtype_demo") as graph:
+                # Create a constant tensor from the matrix
+                tensor = ops.constant(matrix, dtype=DType.float32)
+                print(f"Data type: {tensor.dtype}")  # Output: Data type: DType.float32
+        """
         t = self._mlir_value.type
         if not _graph.type_is_tensor(t):
             raise TypeError(f"Expected TensorType, got: {t}")
@@ -312,7 +373,18 @@ class TensorValue(Value):
 
     @property
     def rank(self) -> int:
-        """Returns the rank (number of dims) of the buffer."""
+        """Returns the rank (number of dims) of the buffer.
+
+        .. code-block:: python
+
+            matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
+
+            # Create a Graph context to work with tensors
+            with Graph("rank_demo") as graph:
+                # Create a constant tensor from the matrix
+                tensor = ops.constant(matrix, dtype=DType.float32)
+                print(f"Rank (number of dimensions): {tensor.rank}")  # Output: Rank: 2
+        """
         t = self._mlir_value.type
         if not _graph.type_is_tensor(t):
             raise TypeError(f"Expected TensorType, got: {t}")
@@ -320,48 +392,180 @@ class TensorValue(Value):
         return _graph.tensor_type_get_rank(t)
 
     def print(self, label: str = "debug_tensor"):
-        """Prints detailed information about the tensor."""
+        """Prints detailed information about the tensor.
+
+        Args:
+            label: A string label for the printed output. Defaults ``debug_tensor``.
+        """
         ops.print(self, label=label)
 
     def reshape(self, shape: ShapeLike) -> TensorValue:
-        """Creates a new tensor with the same data but reshaped."""
+        """Creates a new tensor with the same data but reshaped.
+
+        .. code-block:: python
+
+            matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
+
+            # Create a Graph context to work with tensors
+            with Graph("reshape_demo") as graph:
+                # Create a constant tensor from the matrix
+                tensor = ops.constant(matrix, dtype=DType.float32)
+
+                reshaped_tensor = tensor.reshape((1, 4)) # Output: Tensor representing [[1, 2, 3, 4]]
+
+        Args:
+            shape: The new shape as an iterable of integers or symbolic dimensions.
+
+        Returns:
+            A new :obj:`TensorValue` with the reshaped dimensions.
+        """
         return ops.reshape(self, shape)
 
     def flatten(self, start_dim: int = 0, end_dim: int = -1) -> TensorValue:
         """Flattens the specified dims of a symbolic tensor.
 
         The number and order of the elements in the tensor is unchanged.
-        All dimensions from start_dim to end_dim (inclusive) are merged into a single output dim.
+        All dimensions from ``start_dim`` to ``end_dim`` (inclusive) are merged into a single output dim.
+
+        .. code-block:: python
+
+            matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
+
+            # Create a Graph context to work with tensors
+            with Graph("flatten_demo") as graph:
+                # Create a constant tensor from the matrix
+                tensor = ops.constant(matrix, dtype=DType.float32)
+                # Flatten the tensor
+                flattened_tensor = tensor.flatten() # Output: Tensor representing [1, 2, 3, 4]
+
+        Args:
+            start_dim: The starting dimension to flatten. Defaults to ``1``.
+            end_dim: The ending dimension to flatten. Defaults to ``-1``.
+
+        Returns:
+            A new :obj:`TensorValue` with the broadcasted shape.
         """
         return ops.flatten(self, start_dim, end_dim)
 
     def broadcast_to(self, shape: ShapeLike) -> TensorValue:
-        """Broadcasts the tensor to a new shape."""
+        """Broadcasts the tensor to a new shape.
+
+        .. code-block:: python
+
+            matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
+
+            # Create a Graph context to work with tensors
+            with Graph("broadcast_to_demo") as graph:
+                # Create a constant tensor from the matrix
+                tensor = ops.constant(matrix, dtype=DType.float32)
+
+                broadcasted_tensor = tensor.broadcast_to((3, 2, 2)) # Output: Tensor with shape (3, 2, 2)
+
+        Args:
+            shape: An iterable of integers or symbolic dimensions.
+
+        Returns:
+            A new :obj:`TensorValue` with the broadcasted shape.
+        """
         return ops.broadcast_to(self, shape)
 
     def cast(self, dtype: DType) -> TensorValue:
-        """Casts a symbolic tensor to a different data type."""
+        """Casts a symbolic tensor to a different data type.
+
+        .. code-block:: python
+
+            matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
+
+            # Create a Graph context to work with tensors
+            with Graph("cast_demo") as graph:
+                # Create a constant tensor from the matrix
+                tensor = ops.constant(matrix, dtype=DType.float32)
+
+                casted_tensor = tensor.cast(DType.int32) # Output: Tensor representing [[1, 2], [3, 4]] with dtype=int32
+
+        Args:
+            dtype: The target data type (e.g., ``DType.int32``, ``DType.float64``).
+
+        Returns:
+            A new :obj:`TensorValue` with the casted data type.
+        """
         return ops.cast(self, dtype)
 
     def rebind(self, shape: ShapeLike, message: str = "") -> TensorValue:
-        """Rebinds the tensor to a new shape with error handling."""
+        """Rebinds the tensor to a new shape with error handling.
+
+        Args:
+            shape: The new shape as an iterable of integers or symbolic dimensions.
+            message: (optional) A message for logging or debugging.
+
+        Returns:
+            A new :obj:`TensorValue` with the updated shape.
+        """
         return ops.rebind(self, shape, message)
 
     def permute(self, dims: list[int]) -> TensorValue:
-        """Permutes the tensor's dimensions based on provided indices."""
+        """Permutes the tensor's dimensions based on provided indices.
+
+        Args:
+            dims: A list of integers specifying the new order of dimensions.
+
+        Returns:
+            A new :obj:`TensorValue` with permuted dimensions.
+        """
         return ops.permute(self, dims)
 
     def transpose(self, dim_1: int, dim_2: int) -> TensorValue:
-        """Transposes the tensor based on provided dimensions."""
+        """Swaps two dimensions of the tensor.
+
+        .. code-block:: python
+
+            import numpy as np
+            from max.dtype import DType
+            from max.graph import Graph, ops
+
+            matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
+            with Graph("transpose_demo") as graph:
+                tensor = ops.constant(matrix, dtype=DType.float32)
+                transposed_tensor = tensor.transpose(dim_1=0, dim_2=1)
+                print(transposed_tensor)
+
+        Args:
+            dim_1: The first dimension to swap.
+            dim_2: The second dimension to swap.
+
+        Returns:
+            A new :obj:`TensorValue` with swapped dimensions.
+        """
         return ops.transpose(self, dim_1, dim_2)
 
     def to(self, device: DeviceRef) -> TensorValue:
-        """Transfers the tensor to a specified device without mutation."""
+        """Transfers the tensor to a specified device without mutation.
+
+        .. code-block:: python
+
+            matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
+
+            with Graph("to_example") as graph:
+                tensor = ops.constant(matrix, dtype=DType.float32)
+                print(tensor.device)
+
+        Args:
+            device: A :obj:`DeviceRef` object specifying the target device.
+
+        Returns:
+            A new :obj:`TensorValue` on the specified device.
+        """
         return ops.transfer_to(self, device)
 
     @property
     def T(self) -> TensorValue:
-        """Returns the transposed tensor."""
+        """Returns the transposed tensor.
+        :obj:`T` is the shorthand notation for transposing.
+        For more information, see :obj:`transpose()`.
+
+        Returns:
+            A new :obj:`TensorValue` with swapped dimensions.
+        """
         return self.transpose(-1, -2)
 
     def __getitem__(self, index: Any) -> TensorValue:

@@ -16,6 +16,7 @@ from .constant import constant
 
 def transpose(x: TensorValueLike, dim_1: int, dim_2: int) -> TensorValue:
     """Transposes two dimensions of a symbolic tensor.
+    For more information, see :obj:`~max.graph.TensorValue.transpose()`.
 
     Args:
         input: The input symbolic tensor to transpose.
