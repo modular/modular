@@ -172,7 +172,7 @@ fn top_k[
             sorted,
         )
     else:
-        var normalized_axis = Int(normalize_neg_index(Scalar(axis), rank))
+        var normalized_axis = Int(normalize_neg_index(Int64(axis), rank))
         if normalized_axis != rank - 1:
             raise Error("axis other than -1 not supported on GPU")
         if not sorted:
