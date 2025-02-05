@@ -39,9 +39,10 @@ conditions is the error message that you provide.
 
 An error interrupts the current execution flow of your program. If you provide
 an error handler (as described in [Handle an error](#handle-an-error)) in the
-current scope or any calling scope, execution resumes with that handler. If
-there is no applicable error handler, your program terminates with a non-zero
-exit code and prints the error message. For example:
+current function, execution resumes with that handler. If the error isn't
+handled in the current function, it propagates to the calling function and so
+on. If an error isn't caught by any error handler, your program terminates with
+a non-zero exit code and prints the error message. For example:
 
 ```output
 Unhandled exception caught during execution: integer overflow
@@ -58,10 +59,27 @@ fn incr(n: Int) raises -> Int:
         return n + 1
 ```
 
-On the other hand, you **cannot** use the `raises` keyword when defining a
-function using the `def` keyword, because `def` already implies that the
-function may raise an error. So the following is equivalent to the function
-defined above:
+If you don't include the `raises` keyword when defining a function with `fn`,
+then the function must explicitly handle any errors that might occur in code
+that it executes. For example:
+
+```mojo
+# This function doesn't compile because of the unhandled error
+fn unhandled_error(n: Int):
+    print(n, "+ 1 =", incr(n))
+
+# This function compiles because it handles the possible error
+fn handled_error(n: Int):
+    try:
+        print(n, "+ 1 =", incr(n))
+    except e:
+        print("Handled an error:", e)
+```
+
+In contrast, you **cannot** use the `raises` keyword when defining a
+function using the `def` keyword, because `def` always implies that the
+function might raise an error. So the following is equivalent to the `incr`
+function defined above with `fn`:
 
 ```mojo
 def incr(n: Int) -> Int:
