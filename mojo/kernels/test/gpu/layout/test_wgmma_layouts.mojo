@@ -29,9 +29,22 @@ from layout.tensor_core_async import (
     _lhs_descriptor,
     _rhs_descriptor,
     tile_layout_k_major,
+    tile_layout_mn_major,
 )
 from memory import bitcast
 from utils.index import Index
+
+
+# We have a hard code 2D path in `arange` and it's row-major.
+# Add the col-major version as a work-around. Generalizing the above
+# may touch too many places.
+fn _arange_2d_col_major_tensor(t: LayoutTensor):
+    alias layout = t.layout
+    alias size = layout.size()
+
+    for i in range(size):
+        idx = layout(i)
+        t.ptr[idx] = Scalar[t.dtype](i)
 
 
 fn wgmma_tf32_tf32_f32_kernel[
@@ -353,7 +366,7 @@ fn wgmma_bf16_bf16_f32_kernel[
     b_smem_layout: Layout,
 ](
     a_gmem: LayoutTensor[DType.bfloat16, Layout.row_major(M, K)],
-    b_gmem: LayoutTensor[DType.bfloat16, Layout.row_major(K, N)],
+    b_gmem: LayoutTensor[DType.bfloat16, Layout.col_major(N, K)],
     result_c: LayoutTensor[DType.float32, Layout.row_major(M, N)],
 ):
     var a_smem_tile = LayoutTensor[
@@ -372,7 +385,7 @@ fn wgmma_bf16_bf16_f32_kernel[
 
     for k_i in range(K // WMMA_K):
         var a_gmem_tile = a_gmem.tile[M, WMMA_K](0, k_i)
-        var b_gmem_tile = b_gmem.tile[WMMA_K, N](k_i, 0)
+        var b_gmem_tile = b_gmem.tile[N, WMMA_K](0, k_i)
 
         if thread_idx.x == 0:
             a_smem_tile.copy_from(a_gmem_tile)
@@ -383,7 +396,9 @@ fn wgmma_bf16_bf16_f32_kernel[
         alias wgmma_shape = Index(WMMA_M, WMMA_N, WMMA_K)
 
         var mat_a_desc = _lhs_descriptor[wgmma_shape](a_smem_tile)
-        var mat_b_desc = WGMMADescriptor.create[1, 8](b_smem_tile.ptr)
+        var mat_b_desc = _rhs_descriptor[wgmma_shape, transposed=False](
+            b_smem_tile
+        )
 
         wgmma_fence_aligned()
 
@@ -393,6 +408,7 @@ fn wgmma_bf16_bf16_f32_kernel[
             WMMA_K,
             a_type = DType.bfloat16,
             b_type = DType.bfloat16,
+            layout_b="row",
         ](mat_a_desc, mat_b_desc, c_reg)
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()
@@ -487,17 +503,15 @@ def wgmma_bf16_bf16_f32_64x8x16(ctx: DeviceContext):
     var lhs = ManagedLayoutTensor[DType.bfloat16, Layout.row_major(M, K)](ctx)
     arange(lhs.tensor())
 
-    var rhs = ManagedLayoutTensor[DType.bfloat16, Layout.row_major(K, N)](ctx)
-    arange(rhs.tensor())
+    var rhs = ManagedLayoutTensor[DType.bfloat16, Layout.col_major(N, K)](ctx)
+    _arange_2d_col_major_tensor(rhs.tensor[update=False]())
 
     var res = ManagedLayoutTensor[DType.float32, Layout.row_major(M, N)](ctx)
 
     alias a_smem_layout = tile_layout_k_major[DType.bfloat16, BM=M, BK=16]()
-
-    # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N16-core-matrices-B.png
-    alias b_smem_layout = Layout(
-        IntTuple(IntTuple(8, 2), 8), IntTuple(IntTuple(1, 64), 8)
-    )
+    alias b_smem_layout = tile_layout_mn_major[
+        DType.bfloat16, mn_dim=N, k_dim=K
+    ]()
 
     alias wgmma_bf16_bf16_f32_kernel_fn = wgmma_bf16_bf16_f32_kernel[
         M,
@@ -600,28 +614,18 @@ def wgmma_bf16_bf16_f32_64x8x16_inst_64x8x32(ctx: DeviceContext):
     alias N = 8
     alias K = 32
 
-    var lhs = ManagedLayoutTensor[
-        DType.bfloat16,
-        Layout.row_major(M, K),
-    ](ctx)
+    var lhs = ManagedLayoutTensor[DType.bfloat16, Layout.row_major(M, K)](ctx)
     arange(lhs.tensor())
-    var rhs = ManagedLayoutTensor[
-        DType.bfloat16,
-        Layout.row_major(K, N),
-    ](ctx)
-    arange(rhs.tensor())
 
-    var res = ManagedLayoutTensor[
-        DType.float32,
-        Layout.row_major(M, N),
-    ](ctx)
+    var rhs = ManagedLayoutTensor[DType.bfloat16, Layout.col_major(N, K)](ctx)
+    _arange_2d_col_major_tensor(rhs.tensor[update=False]())
+
+    var res = ManagedLayoutTensor[DType.float32, Layout.row_major(M, N)](ctx)
 
     alias a_smem_layout = tile_layout_k_major[DType.bfloat16, BM=M, BK=16]()
-
-    # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N16-core-matrices-B.png
-    alias b_smem_layout = Layout(
-        IntTuple(IntTuple(8, 2), 8), IntTuple(IntTuple(1, 64), 8)
-    )
+    alias b_smem_layout = tile_layout_mn_major[
+        DType.bfloat16, mn_dim=N, k_dim=16
+    ]()
 
     alias wgmma_bf16_bf16_f32_kernel_fn = wgmma_bf16_bf16_f32_kernel[
         M,
@@ -664,7 +668,7 @@ fn wgmma_f16_f16_f32_kernel[
     b_smem_layout: Layout,
 ](
     a_gmem: LayoutTensor[DType.float16, Layout.row_major(M, K)],
-    b_gmem: LayoutTensor[DType.float16, Layout.row_major(K, N)],
+    b_gmem: LayoutTensor[DType.float16, Layout.col_major(N, K)],
     result_c: LayoutTensor[DType.float32, Layout.row_major(M, N)],
 ):
     var a_smem_tile = LayoutTensor[
@@ -683,7 +687,7 @@ fn wgmma_f16_f16_f32_kernel[
 
     for k_i in range(K // WMMA_K):
         var a_gmem_tile = a_gmem.tile[M, WMMA_K](0, k_i)
-        var b_gmem_tile = b_gmem.tile[WMMA_K, N](k_i, 0)
+        var b_gmem_tile = b_gmem.tile[N, WMMA_K](0, k_i)
 
         if thread_idx.x == 0:
             a_smem_tile.copy_from(a_gmem_tile)
@@ -694,7 +698,9 @@ fn wgmma_f16_f16_f32_kernel[
         alias wgmma_shape = Index(WMMA_M, WMMA_N, WMMA_K)
 
         var mat_a_desc = _lhs_descriptor[wgmma_shape](a_smem_tile)
-        var mat_b_desc = WGMMADescriptor.create[1, 8](b_smem_tile.ptr)
+        var mat_b_desc = _rhs_descriptor[wgmma_shape, transposed=False](
+            b_smem_tile
+        )
 
         wgmma_fence_aligned()
 
@@ -704,6 +710,7 @@ fn wgmma_f16_f16_f32_kernel[
             WMMA_K,
             a_type = DType.float16,
             b_type = DType.float16,
+            layout_b="row",
         ](mat_a_desc, mat_b_desc, c_reg)
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()
@@ -798,17 +805,15 @@ def wgmma_f16_f16_f32_64x8x16(ctx: DeviceContext):
     var lhs = ManagedLayoutTensor[DType.float16, Layout.row_major(M, K)](ctx)
     arange(lhs.tensor())
 
-    var rhs = ManagedLayoutTensor[DType.float16, Layout.row_major(K, N)](ctx)
-    arange(rhs.tensor())
+    var rhs = ManagedLayoutTensor[DType.float16, Layout.col_major(N, K)](ctx)
+    _arange_2d_col_major_tensor(rhs.tensor[update=False]())
 
     var res = ManagedLayoutTensor[DType.float32, Layout.row_major(M, N)](ctx)
 
     alias a_smem_layout = tile_layout_k_major[DType.float16, BM=64, BK=16]()
-
-    # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N16-core-matrices-B.png
-    alias b_smem_layout = Layout(
-        IntTuple(IntTuple(8, 2), 8), IntTuple(IntTuple(1, 64), 8)
-    )
+    alias b_smem_layout = tile_layout_mn_major[
+        DType.float16, mn_dim=N, k_dim=16
+    ]()
 
     alias wgmma_f16_f16_f32_kernel_fn = wgmma_f16_f16_f32_kernel[
         M,
@@ -914,18 +919,15 @@ def wgmma_f16_f16_f32_64x8x16_inst_64x8x32(ctx: DeviceContext):
     var lhs = ManagedLayoutTensor[DType.float16, Layout.row_major(M, K)](ctx)
     arange(lhs.tensor())
 
-    var rhs = ManagedLayoutTensor[DType.float16, Layout.row_major(K, N)](ctx)
-    arange(rhs.tensor())
+    var rhs = ManagedLayoutTensor[DType.float16, Layout.col_major(N, K)](ctx)
+    _arange_2d_col_major_tensor(rhs.tensor[update=False]())
 
     var res = ManagedLayoutTensor[DType.float32, Layout.row_major(M, N)](ctx)
 
-    # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N16-core-matrices-A.png
     alias a_smem_layout = tile_layout_k_major[DType.float16, BM=64, BK=16]()
-
-    # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N16-core-matrices-B.png
-    alias b_smem_layout = Layout(
-        IntTuple(IntTuple(8, 2), 8), IntTuple(IntTuple(1, 64), 8)
-    )
+    alias b_smem_layout = tile_layout_mn_major[
+        DType.float16, mn_dim=N, k_dim=16
+    ]()
 
     alias wgmma_f16_f16_f32_kernel_fn = wgmma_f16_f16_f32_kernel[
         M,
