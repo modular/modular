@@ -75,6 +75,9 @@ alias supported_mma_shape = (
 alias _CM_M = 8
 alias _CM_N = 8
 alias _CM_K_BYTES = 16
+# TODO: unify by the following
+alias _CM_NUM_ROWS = 8
+alias _CM_ROW_BYTES = 16
 
 alias WGMMA_K_BYTES = 32
 
@@ -130,6 +133,37 @@ fn tile_layout_k_major[
     return Layout(
         IntTuple(IntTuple(_CM_M, BM // _CM_M), IntTuple(_CM_K, BK // _CM_K)),
         IntTuple(IntTuple(_CM_K, _CM_M * _CM_K), IntTuple(1, BM * _CM_K)),
+    )
+
+
+fn tile_layout_mn_major[
+    type: DType,
+    mn_dim: Int,
+    k_dim: Int,
+    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+]() -> Layout:
+    """Return the shared memory layout for mn-major input.
+
+    This is the "unit" layout, the actual shared memory layout can be multiple
+    of this unit.
+    """
+
+    constrained[
+        swizzle_mode == TensorMapSwizzle.SWIZZLE_NONE, "Only support no swizzle"
+    ]()
+
+    # Number of elements per row in core matrix
+    alias _CM_ROW_LEN = _CM_ROW_BYTES // sizeof[type]()
+
+    return Layout(
+        IntTuple(
+            IntTuple(_CM_ROW_LEN, mn_dim // _CM_ROW_LEN),
+            IntTuple(_CM_NUM_ROWS, k_dim // _CM_NUM_ROWS),
+        ),
+        IntTuple(
+            IntTuple(1, _CM_ROW_LEN * k_dim),
+            IntTuple(_CM_ROW_LEN, _CM_NUM_ROWS * _CM_ROW_LEN),
+        ),
     )
 
 
@@ -213,7 +247,20 @@ fn _rhs_descriptor[
     if transposed:
         return _lhs_descriptor[mma_shape, swizzle_mode](tensor)
 
-    return WGMMADescriptor.create[1, 8](tensor.ptr)
+    # Non-Transposed case is MN-major
+    alias layout = tensor.layout
+    alias stride01 = layout[0].stride[1].value()
+    alias stride11 = layout[1].stride[1].value()
+
+    alias type = tensor.dtype
+    alias no_swizzle = swizzle_mode == TensorMapSwizzle.SWIZZLE_NONE
+
+    # Swizzle and non-swizzle modes switch SBO and LBO based on
+    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html?highlight=bar%2520sync#asynchronous-warpgroup-level-majorness-supported-by-strides
+    alias SBO = ((stride01 if no_swizzle else stride11) * sizeof[type]()) >> 4
+    alias LBO = ((stride11 if no_swizzle else stride01) * sizeof[type]()) >> 4
+
+    return WGMMADescriptor.create[SBO, LBO](tensor.ptr)
 
 
 # TODO(KERN-1301): Layouts are calculated for 64x8x8 instruction
