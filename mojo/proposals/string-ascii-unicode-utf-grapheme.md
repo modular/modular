@@ -128,7 +128,7 @@ struct Indexing:
     alias CODEPOINT = 1
     alias GRAPHEME = 2
 
-alias ASCIIString = String[encoding=Encoding.UTF8, indexing=Indexing.DIRECT]
+alias ASCIIString = String[encoding=Encoding.ASCII, indexing=Indexing.DIRECT]
 
 struct String[
     encoding: Encoding = Encoding.UTF8,
