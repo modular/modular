@@ -57,33 +57,34 @@ static std::string getOpSignature(mlir::Operation &op) {
       more = true;
     ss << attr.getName() << "=";
 
+    constexpr size_t kMaxAttrPrintLength = 32;
+    constexpr size_t kAttrTruncateSize = 14;
+
     // Avoid writing excessively large attributes.
     std::string attrVal;
     llvm::raw_string_ostream attrs(attrVal);
     attr.getValue().print(attrs);
-    if (attrVal.size() < 32)
+    if (attrVal.size() < kMaxAttrPrintLength)
       ss << attrVal;
     else
-      ss << attrVal.substr(0, 14) << "..."
-         << attrVal.substr(attrVal.size() - 14, 14);
+      ss << attrVal.substr(0, kAttrTruncateSize) << "..."
+         << attrVal.substr(attrVal.size() - kAttrTruncateSize,
+                           kAttrTruncateSize);
   }
   ss << "}";
   return key;
 }
 
 void M::Frameworks::StatsReport::countLowering(mlir::Operation &op) {
-  ++numLoweredOps;
-  ++loweredHistogram[getOpSignature(op)];
+  countLowering(getOpSignature(op));
 }
 
 void M::Frameworks::StatsReport::countFallback(mlir::Operation &op) {
-  ++numFallbackOps;
-  ++fallbackHistogram[getOpSignature(op)];
+  countFallback(getOpSignature(op));
 }
 
 void M::Frameworks::StatsReport::countFailure(mlir::Operation &op) {
-  ++numFailedOps;
-  ++failureHistogram[getOpSignature(op)];
+  countFailure(getOpSignature(op));
 }
 
 void M::Frameworks::StatsReport::countLowering(std::string reconstructedType) {
