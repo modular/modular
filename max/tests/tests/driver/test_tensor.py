@@ -534,6 +534,21 @@ def test_element_size() -> None:
 
 
 def test_view() -> None:
+    tensor = Tensor((2, 6), DType.int8)
+    for i in range(tensor.shape[0]):
+        for j in range(tensor.shape[1]):
+            tensor[i, j] = i * 10 + j
+    assert tensor[0, 0].item() == 0
+    assert tensor[1, 0].item() == 10
+    assert tensor[1, 3].item() == 13
+    assert tensor[1, 5].item() == 15
+    # Check that the new shape is properly backed by the original
+    tensor_view = tensor.view(DType.int8, (6, 2))
+    assert tensor_view[0, 0].item() == 0
+    assert tensor_view[1, 0].item() == 2
+    assert tensor_view[3, 1].item() == 11
+    assert tensor_view[5, 1].item() == 15
+
     tensor8 = Tensor((2, 4), DType.int8)
     for i, j in product(range(2), range(4)):
         tensor8[i, j] = 1
