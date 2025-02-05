@@ -120,6 +120,7 @@ async def start_model_worker(
         ),
     )
     worker.start()
+    logger.info("Starting model worker task")
     monitor = ProcessMonitor(
         pc,
         worker,
@@ -156,6 +157,9 @@ async def start_model_worker(
 
     # are we in a run-able state?
     if not worker.is_alive():
+        logger.critical(
+            f"Worker ended pre-maturely with exitcode: {worker.exitcode}"
+        )
         # cannot continue if the worker is dead
         await monitor.shutdown()
         if pc.is_healthy():
@@ -171,6 +175,7 @@ async def start_model_worker(
         raise TimeoutError("Worker did not become healthy")
 
     # worker is both alive and healthy!
+    logger.info("Model worker task is alive and healthy")
 
     try:
         worker_task = loop.create_task(monitor.shutdown_if_unhealthy())

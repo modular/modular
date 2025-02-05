@@ -195,17 +195,30 @@ class ProcessMonitor:
 
     async def shutdown(self):
         logger.info("Shutting down")
-        logger.info("Canceling worker")
         self.pc.set_canceled()
-        logger.info("Waiting for worker to complete")
-        completed = await self.until_completed()
-        logger.info(f"Completed {completed}")
+        if not self.proc.is_alive():
+            logger.info(
+                "Early exit. Process was already dead. exitcode:{self.proc.exitcode}"
+            )
+            return
+
+        loop = asyncio.get_running_loop()
+        completed_task = loop.create_task(self.until_completed())
+        dead_task = loop.create_task(self.until_dead())
+
+        completed_tasks, pending_tasks = await asyncio.wait(
+            [completed_task, dead_task],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        # we have waited a polite amount of time.  Time to close things out.
+        completed_task.cancel()
+        dead_task.cancel()
+
         if self.proc.is_alive():
             logger.info("Process is still alive.  Killing")
             self.proc.kill()
-            logger.info("Waiting to die")
             dead = await self.until_dead()
-            logger.info(f"Dead? {dead}")
         logger.info("Shut down")
 
     async def shutdown_if_unhealthy(
