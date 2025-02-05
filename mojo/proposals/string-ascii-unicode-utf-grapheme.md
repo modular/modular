@@ -121,6 +121,7 @@ struct Encoding:
     alias UTF8 = 0
     alias UTF16 = 1
     alias UTF32 = 2
+    alias ASCII = 3
 
 struct Indexing:
     alias DIRECT = 0
@@ -179,9 +180,8 @@ for c in iter(data).chars[encoding.UTF32]():
 
 # We could also have lazy iterators which return StringSlices according to the
 # encoding and indexing parameter.
-# In the case of indexing.DIRECT and Encoding.UTF8 or UTF16 unicode paragraph
-# and line separator (\u2028 and \u2029) can be ignored and thus the processing
-# is much faster.
+# In the case of Encoding.ASCII unicode separators (\x85, \u2028, \u2029) can
+# be ignored and thus the processing is much faster.
 for c in iter(data).split():
   ... # StringSlice lazily split by all whitespace
 for c in iter(data).splitlines():
