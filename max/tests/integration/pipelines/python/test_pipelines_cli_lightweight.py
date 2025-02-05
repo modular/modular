@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import pipelines
+import max.pipelines.max_pipelines as pipelines
 import pytest
 
 

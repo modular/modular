@@ -185,7 +185,7 @@ def main(
         pipelines_program = [
             _must_rlocation_str(
                 runfiles,
-                "_main/SDK/public/max-repo/pipelines/python/pipelines",
+                "_main/SDK/lib/API/python/max/pipelines/max_pipelines",
             )
         ]
     if override_lm_eval is not None:
