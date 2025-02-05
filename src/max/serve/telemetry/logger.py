@@ -104,7 +104,7 @@ def configureLogging() -> None:
 
     # TODO use FastAPIInstrumentor once Motel supports traces.
     # For now, manually configure uvicorn.
-    logging.getLogger("uvicorn").setLevel(console_level)
+    logging.getLogger("uvicorn").setLevel(logging.WARNING)
     # Explicit levels to reduce noise
     logging.getLogger("sse_starlette.sse").setLevel(
         max(logger_level, logging.INFO)

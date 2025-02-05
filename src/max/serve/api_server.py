@@ -107,6 +107,7 @@ def fastapi_app(
 def fastapi_config(app: FastAPI) -> Config:
     host = os.getenv("MAX_SERVE_HOST", "0.0.0.0")
     port = int(os.getenv("MAX_SERVE_PORT", "8000"))
+    logger.info(f"Launching server on http://{host}:{port}")
     config = Config(
         app=app, host=host, port=port, log_config=None, loop="uvloop"
     )
