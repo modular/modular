@@ -96,6 +96,18 @@ class Value:
         return str(self._mlir_value.type)
 
     @property
+    def buffer(self) -> BufferValue:
+        """Returns the Value as a :obj:`BufferValue`.
+
+        Raises an exception if the Value is not a BufferValue.
+        """
+        if isinstance(self, BufferValue):
+            return self
+
+        msg = f"Value is not a BufferValue, was '{type(self).__name__}'"
+        raise TypeError(msg)
+
+    @property
     def tensor(self) -> TensorValue:
         """Returns the Value as a :obj:`TensorValue`.
 
