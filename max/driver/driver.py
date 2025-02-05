@@ -3,6 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""MAX Driver APIs."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -18,9 +20,12 @@ from max._driver import cpu_device as _cpu_device
 
 @dataclass
 class Device:
-    """Device object. Limited to accelerator (e.g. GPU) and CPU devices for now."""
+    """A hardware device abstraction for computation.
 
-    # Note: External users should never initialize these fields themselves.
+    Provides a unified interface for CPU and accelerator (e.g. GPU) devices.
+    """
+
+    # External users should never initialize these fields themselves.
     _device: _Device
 
     def __str__(self) -> str:
@@ -34,8 +39,7 @@ class Device:
 
     @property
     def is_host(self):
-        """
-        Whether this device is the CPU (host) device.
+        """Checks whether this device is the CPU (host) device.
 
         .. code-block:: python
 
@@ -48,8 +52,7 @@ class Device:
 
     @property
     def stats(self) -> Mapping[str, Any]:
-        """
-        Returns utilization data for the device.
+        """Provides real-time utilization data for the device.
 
         .. code-block:: python
 
@@ -64,12 +67,7 @@ class Device:
 
     @property
     def label(self) -> str:
-        """
-        Returns device label.
-
-        Possible values are:
-        - "cpu" for host devices
-        - "gpu" for accelerators
+        """Provides the device type identifier.
 
         .. code-block:: python
 
@@ -82,13 +80,15 @@ class Device:
 
     @property
     def api(self) -> str:
-        """
-        Returns the API used to program the device.
+        """Provides the programming interface used by the device.
 
-        Possible values are:
-        - "cpu" for host devices
-        - "cuda" for NVIDIA GPUs
-        - "hip" for AMD GPUs
+        Returns:
+            The programming interface identifier used by the device.
+            One of:
+
+            - ``cpu`` for host devices.
+            - ``cuda`` for NVIDIA GPUs.
+            - ``hip`` for AMD GPUs.
 
         .. code-block:: python
 
@@ -101,11 +101,12 @@ class Device:
 
     @property
     def id(self) -> int:
-        """
-        Returns a zero-based device id. For a CPU device this is the numa id.
-        For GPU accelerators this is the id of the device relative to this host.
-        Along with the `label`, an id can uniquely identify a device,
-        e.g. "gpu:0", "gpu:1".
+        """Provides the unique identifier for this device.
+
+        For CPU devices, this represents the NUMA node ID.
+        For GPU accelerators, this is the device ID relative to the host.
+        Combined with :obj:`label`, this forms a unique device identifier
+        (e.g., ``gpu:0`` or ``gpu:1``).
 
         .. code-block:: python
 
@@ -123,17 +124,49 @@ class Device:
 
     @classmethod
     def cpu(cls, id: int = -1) -> Device:
-        """Creates a CPU device with the provided numa id."""
+        """Creates a CPU device for the specified NUMA node.
+
+        .. code-block:: python
+
+            from max import driver
+
+            # Create default CPU device
+            device = driver.CPU()
+
+            # Or specify NUMA node id if using NUMA architecture
+            device = driver.CPU(id=0)  # First NUMA node
+            device = driver.CPU(id=1)  # Second NUMA node
+
+            # Get device id
+            device_id = device.id
+        """
         return cls(_cpu_device(id))
 
     @classmethod
     def accelerator(cls, id: int = -1) -> Device:
-        """Creates an accelerator (e.g. GPU) device with the provided id."""
+        """Creates an accelerator device with the specified ID.
+
+        Provides access to GPU or other hardware accelerators in the system.
+
+        .. code-block:: python
+
+            from max import driver
+
+            # Create default accelerator (usually first available GPU)
+            device = driver.Accelerator()
+
+            # Or specify GPU id
+            device = driver.Accelerator(id=0)  # First GPU
+            device = driver.Accelerator(id=1)  # Second GPU
+
+            # Get device id
+            device_id = device.id
+        """
         return cls(_accelerator(id))
 
 
 def CPU(id: int = -1) -> Device:
-    """Creates a CPU device with the provided numa id.
+    """Creates a CPU device for the specified NUMA node.
 
     .. code-block:: python
 
@@ -153,8 +186,9 @@ def CPU(id: int = -1) -> Device:
 
 
 def Accelerator(id: int = -1) -> Device:
-    """
-    Creates an accelerator (e.g. GPU) device with the provided id.
+    """Creates an accelerator device with the specified ID.
+
+    Provides access to GPU or other hardware accelerators in the system.
 
     .. code-block:: python
 
@@ -187,6 +221,12 @@ def accelerator_api() -> str:
 
 @dataclass(frozen=True)
 class DeviceSpec:
+    """Specification for a device, containing its ID and type.
+
+    This class provides a way to specify device parameters like ID and type (CPU/GPU)
+    for creating Device instances.
+    """
+
     id: int
     """Provided id for this device."""
 
@@ -195,8 +235,10 @@ class DeviceSpec:
 
     @staticmethod
     def cpu(id: int = -1):
+        """Creates a CPU device specification."""
         return DeviceSpec(id, "cpu")
 
     @staticmethod
     def accelerator(id: int = -1):
+        """Creates an accelerator (GPU) device specification."""
         return DeviceSpec(id, "gpu")
