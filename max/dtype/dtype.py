@@ -46,17 +46,16 @@ class DType(Enum):
     # si128 = (7 << kIntWidthShift) | mIsInteger | mIsSigned
     # ui128 = (7 << kIntWidthShift) | mIsInteger
 
-    float8_e5m2 = 0 | mIsFloat
+    # float8_e3m4 = 0 | mIsFloat
     float8_e4m3 = 1 | mIsFloat
-    # float8_e3m4 = 2 | mIsFloat
-    float8_e5m2fnuz = 3 | mIsFloat
-    float8_e4m3fnuz = 4 | mIsFloat
-    float16 = 5 | mIsFloat  # Original name: f16
-    bfloat16 = 6 | mIsFloat  # Original name: bf16
-    float32 = 7 | mIsFloat  # Original name: f32
-    float64 = 8 | mIsFloat  # Original name: f64
-
-    # tf32 = 12 | mIsFloat
+    float8_e4m3fn = 2 | mIsFloat
+    float8_e4m3fnuz = 3 | mIsFloat
+    float8_e5m2 = 4 | mIsFloat
+    float8_e5m2fnuz = 5 | mIsFloat
+    float16 = 6 | mIsFloat  # Original name: f16
+    bfloat16 = 7 | mIsFloat  # Original name: bf16
+    float32 = 8 | mIsFloat  # Original name: f32
+    float64 = 9 | mIsFloat  # Original name: f64
 
     bool = 1  # Original name: kBool
 
@@ -198,6 +197,7 @@ _DTYPE_TO_MLIR = {
     DType.uint32: "ui32",
     DType.uint64: "ui64",
     DType.float8_e4m3: "f8e4m3",
+    DType.float8_e4m3fn: "f8e4m3fn",
     DType.float8_e4m3fnuz: "f8e4m3fnuz",
     DType.float8_e5m2: "f8e5m2",
     DType.float8_e5m2fnuz: "f8e5m2fnuz",
