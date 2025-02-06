@@ -474,3 +474,52 @@ var h: String = "hello"
 # or
 print(g or String("hello"))
 ```
+
+### Walrus assignment expression limitations
+
+The Mojo compiler reports an uninitialized value error if an expression uses
+multiple "walrus" [assignment
+expressions](/mojo/manual/operators#assignment-expressions) to declare more than
+one variable. For example:
+
+```mojo
+def A() -> Int: return 42
+
+def B() -> String: return "waffles"
+
+def main():
+    if (a := A()) and (b := B()):
+        print("a =", a)
+        print("b =", b)
+```
+
+```output
+walrus-conditional.mojo:8:14: error: use of uninitialized value 'b'
+        print("b =", b)
+             ^
+walrus-conditional.mojo:6:24: note: 'b' declared here
+    if (a := A()) and (b := B()):
+                       ^
+```
+
+Ideally, the Mojo compiler should compile this code because the second `print()`
+statement executes only if a value is assigned to `b`. To work around this
+limitation you can explicitly initialize `b` before the `if` statement, like
+this:
+
+```mojo
+def A() -> Int: return 42
+
+def B() -> String: return "waffles"
+
+def main():
+    b = String()
+    if (a := A()) and (b := B()):
+        print("a =", a)
+        print("b =", b)
+```
+
+```output
+a = 42
+b = waffles
+```
