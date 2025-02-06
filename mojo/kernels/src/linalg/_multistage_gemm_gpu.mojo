@@ -632,7 +632,7 @@ fn multistage_gemm_kernel[
     constrained[
         (a_type in (DType.float32, DType.bfloat16) and a_type == b_type)
         or (
-            a_type in (DType.float8e4m3, DType.float8e5m2)
+            a_type in (DType.float8_e4m3, DType.float8_e5m2)
             and a_type == b_type
             and c_type is DType.float32
         ),

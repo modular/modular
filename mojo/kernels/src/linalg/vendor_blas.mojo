@@ -518,8 +518,8 @@ fn _cublasLt_matmul(
 
     constrained[
         (
-            a_type in [DType.float8e4m3, DType.float8e5m2]
-            and b_type in [DType.float8e4m3, DType.float8e5m2]
+            a_type in [DType.float8_e4m3, DType.float8_e5m2]
+            and b_type in [DType.float8_e4m3, DType.float8_e5m2]
         ),
         (
             "Only E4M3 and E5M2 input data types are supported. Please extend"
@@ -528,7 +528,7 @@ fn _cublasLt_matmul(
     ]()
 
     constrained[
-        not (a_type == b_type == DType.float8e5m2),
+        not (a_type == b_type == DType.float8_e5m2),
         (
             "E5M2xE5m2 is not supported! Please refer to"
             " `https://docs.nvidia.com/cuda/cublas/#id105`"
