@@ -390,6 +390,19 @@ PIPELINES = {
             # the cosine distance is reasonable we just test one metric.
         ),
     ),
+    "Qwen2.5-7B-Instruct-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        run=lambda device_type: run_llm_verification(
+            device_type=device_type,
+            pipeline="qwen",
+            version="2.5-7B-Instruct",
+            encoding="bfloat16",
+            kl_div_threshold=0.2,
+            cos_dist_threshold=0.01,
+            absolute_tolerance=1.4,
+            relative_tolerance=2.1,
+        ),
+    ),
 }
 
 
