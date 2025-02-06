@@ -49,10 +49,10 @@ dtypes = st.sampled_from(
         if d
         not in (
             DType._unknown,
-            DType.f8e5m2,
-            DType.f8e5m2fnuz,
-            DType.f8e4m3,
-            DType.f8e4m3fnuz,
+            DType.float8_e5m2,
+            DType.float8_e5m2fnuz,
+            DType.float8_e4m3,
+            DType.float8_e4m3fnuz,
         )
     ]
 )

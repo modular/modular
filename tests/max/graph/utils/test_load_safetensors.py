@@ -26,8 +26,10 @@ def test_load_safetensors_one(testdata_directory) -> None:
         assert data["1.c"].type == TensorType(DType.float32, [])
         assert data["1.fancy/name"].type == TensorType(DType.int64, [3])
         assert data["1.bf16"].type == TensorType(DType.bfloat16, [2])
-        assert data["1.float8_e4m3fn"].type == TensorType(DType.f8e4m3, [2])
-        assert data["1.float8_e5m2"].type == TensorType(DType.f8e5m2, [2])
+        assert data["1.float8_e4m3fn"].type == TensorType(
+            DType.float8_e4m3, [2]
+        )
+        assert data["1.float8_e5m2"].type == TensorType(DType.float8_e5m2, [2])
 
 
 def test_load_safetensors_multi(testdata_directory) -> None:
@@ -48,15 +50,19 @@ def test_load_safetensors_multi(testdata_directory) -> None:
         assert data["1.c"].type == TensorType(DType.float32, [])
         assert data["1.fancy/name"].type == TensorType(DType.int64, [3])
         assert data["1.bf16"].type == TensorType(DType.bfloat16, [2])
-        assert data["1.float8_e4m3fn"].type == TensorType(DType.f8e4m3, [2])
-        assert data["1.float8_e5m2"].type == TensorType(DType.f8e5m2, [2])
+        assert data["1.float8_e4m3fn"].type == TensorType(
+            DType.float8_e4m3, [2]
+        )
+        assert data["1.float8_e5m2"].type == TensorType(DType.float8_e5m2, [2])
         assert data["2.a"].type == TensorType(DType.int32, [5, 2])
         assert data["2.b"].type == TensorType(DType.float64, [1, 2, 3])
         assert data["2.c"].type == TensorType(DType.float32, [])
         assert data["2.fancy/name"].type == TensorType(DType.int64, [3])
         assert data["2.bf16"].type == TensorType(DType.bfloat16, [2])
-        assert data["2.float8_e4m3fn"].type == TensorType(DType.f8e4m3, [2])
-        assert data["2.float8_e5m2"].type == TensorType(DType.f8e5m2, [2])
+        assert data["2.float8_e4m3fn"].type == TensorType(
+            DType.float8_e4m3, [2]
+        )
+        assert data["2.float8_e5m2"].type == TensorType(DType.float8_e5m2, [2])
 
 
 def test_load_using_prefix(testdata_directory) -> None:

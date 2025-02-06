@@ -29,8 +29,8 @@ try:
         (DType.float32, torch.float32, "f32"),
         (DType.float64, torch.float64, "f64"),
         (DType.bfloat16, torch.bfloat16, "bf16"),
-        (DType.f8e4m3, torch.float8_e4m3fn, "f8e4m3"),
-        (DType.f8e5m2, torch.float8_e5m2, "f8e5m2"),
+        (DType.float8_e4m3, torch.float8_e4m3fn, "float8_e4m3"),
+        (DType.float8_e5m2, torch.float8_e5m2, "float8_e5m2"),
     ]
 
     _modular_to_torch_type_dict = {k: v for k, v, _ in _DATA_TYPES_LIST}

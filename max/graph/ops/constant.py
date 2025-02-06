@@ -52,10 +52,10 @@ def constant(
         # Generate in f32 and cast to bf16.
         return constant(value, DType.float32).cast(DType.bfloat16)
     elif dtype in (
-        DType.f8e4m3,
-        DType.f8e4m3fnuz,
-        DType.f8e5m2,
-        DType.f8e5m2fnuz,
+        DType.float8_e4m3,
+        DType.float8_e4m3fnuz,
+        DType.float8_e5m2,
+        DType.float8_e5m2fnuz,
     ):
         # Numpy can't natively generate in these types.
         # Generate in f32 and cast to these types.
@@ -92,10 +92,10 @@ _DTYPE_MIN_AND_MAX = {
     DType.uint16: (0, 2**16 - 1),
     DType.uint32: (0, 2**32 - 1),
     DType.uint64: (0, 2**64 - 1),
-    DType.f8e5m2: (float("-inf"), float("inf")),
-    DType.f8e5m2fnuz: (-57344, 57344),
-    DType.f8e4m3: (float("-inf"), float("inf")),
-    DType.f8e4m3fnuz: (-240, 240),
+    DType.float8_e5m2: (float("-inf"), float("inf")),
+    DType.float8_e5m2fnuz: (-57344, 57344),
+    DType.float8_e4m3: (float("-inf"), float("inf")),
+    DType.float8_e4m3fnuz: (-240, 240),
     DType.bfloat16: (float("-inf"), float("inf")),
     DType.float16: (float("-inf"), float("inf")),
     DType.float32: (float("-inf"), float("inf")),
