@@ -387,7 +387,7 @@ explored in this document.
 ## Name Shadowing and Dynamism
 
 A feature request to allow shadowing of `let` bindings within function bodies
-was posted in <https://github.com/modularml/mojo/issues/5>. This begs a larger
+was posted in <https://github.com/modular/mojo/issues/5>. This begs a larger
 question of, given lexically parsed but lazily resolved declarations, whether
 lexical name shadowing should be allowed for anything, even functions and
 structs:

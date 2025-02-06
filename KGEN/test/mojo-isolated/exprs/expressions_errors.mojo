@@ -367,7 +367,7 @@ def tuple_return():
   return 32, 17
 
 
-# Issue https://github.com/modularml/mojo/issues/1917
+# Issue https://github.com/modular/mojo/issues/1917
 # Do not crash in tuple creation if element has syntax error.
 # expected-error @below {{expected '(' for argument list}}
 fn bad_func return fn() -> __mlir_type.index
@@ -554,7 +554,7 @@ struct CopyAndInitMemType:
 
 fn compare_mem_result():
   var x = CopyAndInitMemType()
-  # https://github.com/modularml/mojo/issues/1115
+  # https://github.com/modular/mojo/issues/1115
   # expected-error @+1 {{chained comparison operator does not currently support memory-only return types}}
   x <= x <= x
 
@@ -599,8 +599,8 @@ fn transfer_diags[param: String](borrowed_arg: CopyAndInitMemType, obj: SomeNonT
   # expected-error @+1 {{expression does not designate a value with an origin}}
   _ = vararg[1]^
 
-# Issue #1708: https://github.com/modularml/mojo/issues/1708
-# Issue #1699: https://github.com/modularml/mojo/issues/1699
+# Issue #1708: https://github.com/modular/mojo/issues/1708
+# Issue #1699: https://github.com/modular/mojo/issues/1699
 # Issue #30790: https://github.com/modularml/modular/issues/30790
 struct SomeThing:
     fn overloaded[a: Int](self, b: Int) -> Int: pass
@@ -704,7 +704,7 @@ fn unbound_function_type():
 
 
 # Crash converting mvalue of #lit.any.origin origin to Pointer with specific one.
-# https://github.com/modularml/mojo/issues/1921
+# https://github.com/modular/mojo/issues/1921
 struct SomeStruct:
   fn refBindingToImmortal(mut self, ptr: UnsafePointer[Int])
       -> Pointer[Int, __origin_of(self)]:
@@ -768,7 +768,7 @@ fn bad_union[ao: Origin[True]](ref [ao] a: String, mut b: String) -> ref [a, b] 
     # expected-error @below {{cannot return reference with incompatible origin: 'c' vs '{ao._mlir_origin, b}'}}
     return c
 
-# https://github.com/modularml/mojo/issues/3829
+# https://github.com/modular/mojo/issues/3829
 fn apply_in_memory[o: ImmutableOrigin](f: fn(ref[o] x: SomeNonTrivRegPassable) -> None, x: SomeNonTrivRegPassable):
 # expected-error @below {{argument #0 cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
 # expected-note @below {{operand origin 'x' doesn't match expected origin 'o'}}
@@ -776,7 +776,7 @@ fn apply_in_memory[o: ImmutableOrigin](f: fn(ref[o] x: SomeNonTrivRegPassable) -
 
 
 # Problems binding SRValues to ref arguments.
-# https://github.com/modularml/mojo/issues/3830
+# https://github.com/modular/mojo/issues/3830
 
 fn getSomeNonTrivRegPassable() -> SomeNonTrivRegPassable: pass
 # expected-note @below {{function declared here}}

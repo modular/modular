@@ -64,12 +64,12 @@ fn self_reference():
     var num: Int = fudge_int(num)
 
 # Doesn't reject empty identifier name
-# https://github.com/modularml/mojo/issues/1232
+# https://github.com/modular/mojo/issues/1232
 fn empty_name():
   # expected-error @+1 {{empty backtick identifier isn't allowed}}
   var `` = `42`
 
-# COM: Issue #957 https://github.com/modularml/mojo/issues/957
+# COM: Issue #957 https://github.com/modular/mojo/issues/957
 struct MemoryStruct:
     @implicit
     fn __init__(out self, s: Int): pass

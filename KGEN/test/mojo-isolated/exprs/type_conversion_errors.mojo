@@ -27,7 +27,7 @@ fn takes_instance_arg(a: Foo):
 
 
 # COM: Issue #27654: Parser crash: Assertion failed: Types should match
-# COM: https://github.com/modularml/mojo/issues/1607 Improved error message for this common error
+# COM: https://github.com/modular/mojo/issues/1607 Improved error message for this common error
 fn test_type_instead_of_instance() -> Foo:
     # expected-error @+1 {{cannot implicitly convert 'Foo' type as a value to an instance of 'Foo'; did you mean to instantiate 'Foo'?}}
     take_instance_param[Foo]

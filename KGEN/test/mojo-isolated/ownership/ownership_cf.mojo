@@ -442,7 +442,7 @@ struct TrivialRange:
         return 1
 
 
-# Issue #98: https://github.com/modularml/mojo/issues/98
+# Issue #98: https://github.com/modular/mojo/issues/98
 # CHECK-LABEL: lit.fn @"mojo98
 fn mojo98(n: Int):
     var a = MemExample()
@@ -631,7 +631,7 @@ fn test_elif(cond: Bool, cond2: Bool):
     # CHECK-NEXT: lifetime.end %mem3
     # CHECK-NEXT: hlcf.yield
 
-# https://github.com/modularml/mojo/issues/3710
+# https://github.com/modular/mojo/issues/3710
 # Mojo frees memory while reference to it is still in use
 # CHECK-LABEL: lit.fn @"loop_any_origin
 fn loop_any_origin(owned mem: MemExample, cond: Bool):

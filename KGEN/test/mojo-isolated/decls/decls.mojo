@@ -64,7 +64,7 @@ fn directly_pass_pack(pack: __mlir_type.`!kgen.pack<[index]>`):
 
 
 # Varargs + traits are a thing.
-# https://github.com/modularml/mojo/issues/1443
+# https://github.com/modular/mojo/issues/1443
 fn variadic_trait_elt[T: Copyable](*xs: T):
     pass
 
@@ -370,7 +370,7 @@ alias mname1 = alias_parametric_fn().value
 fn kernel3[x: Int]():
     pass
 
-# https://github.com/modularml/mojo/issues/1152
+# https://github.com/modular/mojo/issues/1152
 # Allow mutable self argument when overloading operators using dunder methods
 struct MutatingAdd:
     fn __add__(mut self, x: MutatingAdd):
@@ -1215,7 +1215,7 @@ fn awaitable() -> Int:
     return await aw
 
 
-# COM: https://github.com/modularml/mojo/issues/951
+# COM: https://github.com/modular/mojo/issues/951
 @always_inline
 async fn inline_async() -> Int:
     return 0

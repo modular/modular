@@ -367,7 +367,7 @@ fn issue15404():
 
 
 # Consumption of struct works only on definition of __del__
-# https://github.com/modularml/mojo/issues/734
+# https://github.com/modular/mojo/issues/734
 struct StructWithNoDel:
     var x: Int
 
@@ -396,7 +396,7 @@ fn inout_restored_at_throw(mut x: MemExample, err: Error) raises:
 
 
 # Invalid error field 'w.x.y' destroyed out of the middle of a value, preventing the overall value from being destroyed
-# https://github.com/modularml/mojo/issues/1535
+# https://github.com/modular/mojo/issues/1535
 @value
 struct NestedInt:
     var y: Int

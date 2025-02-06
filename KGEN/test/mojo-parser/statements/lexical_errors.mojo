@@ -53,11 +53,11 @@ fn test_indentation2(p: Bool):
    nothing() # expected-error {{statement has excess indentation}}
 
 # Decorator processing.
-# https://github.com/modularml/mojo/issues/1655
+# https://github.com/modular/mojo/issues/1655
 @ : # expected-error {{unexpected token in expression}}
     fn a  # expected-error {{expected '(' for argument list}}
 
-# https://github.com/modularml/mojo/issues/1230
+# https://github.com/modular/mojo/issues/1230
 # Parser crashes on incomplete decorator
 @ # expected-error {{missing decorator expression after '@'}}
 fn m # expected-error {{expected '(' for argument list}}

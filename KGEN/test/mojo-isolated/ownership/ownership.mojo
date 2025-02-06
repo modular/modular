@@ -1150,7 +1150,7 @@ fn take_pack[*Ts: AnyType](*values: *Ts): pass
 
 # CHECK-LABEL: lit.fn @"handleAnyLifetime4
 # VariadicPack's need to extend the lifetime in the pack
-# https://github.com/modularml/mojo/issues/3559
+# https://github.com/modular/mojo/issues/3559
 fn handleAnyLifetime4():
   str = String()
   ptr = UnsafePointer.address_of(str)
@@ -1204,7 +1204,7 @@ fn useMemory(a: MemExample): pass
 # CHECK-LABEL: lit.fn @"testConds1
 fn testConds1(cond: __mlir_type.i1, reg: RegExample, i: Int):
   # Implicit conversions.
-  # Mojo Issue #49: https://github.com/modularml/mojo/issues/49
+  # Mojo Issue #49: https://github.com/modular/mojo/issues/49
 
   # CHECK-NEXT: hlcf.if %cond -> !RegExample {
   # CHECK:        [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%reg)
@@ -1336,7 +1336,7 @@ fn my_min2[T: AnyType](ref a: T, ref b: T) -> ref [a, b] T:
     return a
 
 # CHECK-LABEL: lit.fn @"test_min2
-# https://github.com/modularml/mojo/issues/3815
+# https://github.com/modular/mojo/issues/3815
 fn test_min2(a: String):
     # CHECK: lit.call {{.*}}String::@"__init__
     var x = String()

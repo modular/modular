@@ -1310,12 +1310,12 @@ struct ConvertPOPStringConcat : public ConvertPOPToLLVMPattern<StringConcatOp> {
   matchAndRewrite(StringConcatOp op, StringConcatOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     // FIXME: This op should not exist.
-    // See https://github.com/modularml/mojo/issues/3820
+    // See https://github.com/modular/mojo/issues/3820
     auto diag = mlir::emitError(
         op.getLoc(),
         "cannot use StringLiteral append methods at runtime, only in an alias");
     diag.attachNote(op.getLoc())
-        << "see https://github.com/modularml/mojo/issues/3820 for more "
+        << "see https://github.com/modular/mojo/issues/3820 for more "
            "information";
     rewriter.replaceOp(op, adaptor.getOperands().front());
     return failure();

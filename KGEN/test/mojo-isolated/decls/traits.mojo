@@ -976,7 +976,7 @@ trait RGTrivialTrait:
         ...
 
 
-# https://github.com/modularml/mojo/issues/3540: Using the output slot breaks trait conformance
+# https://github.com/modular/mojo/issues/3540: Using the output slot breaks trait conformance
 # CHECK-LABEL: lit.struct.decl @TestNamedResultConformance
 @register_passable("trivial")
 struct TestNamedResultConformance(Trait1):

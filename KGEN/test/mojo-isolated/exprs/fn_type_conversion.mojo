@@ -15,7 +15,7 @@ fn func_with_arg_name(a: Index):
     pass
 
 
-# COM: Issue https://github.com/modularml/mojo/issues/1307
+# COM: Issue https://github.com/modular/mojo/issues/1307
 # COM: Test that functions with defaults can be passed where no defaults are expected
 fn take_func_without_default[f: fn (a: Index) -> None]():
     pass

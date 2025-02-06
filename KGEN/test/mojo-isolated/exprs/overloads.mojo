@@ -102,7 +102,7 @@ fn test_static_overload():
     a.foo()
 
 
-# COM: Issue https://github.com/modularml/mojo/issues/1408
+# COM: Issue https://github.com/modular/mojo/issues/1408
 # COM: Test that the number of implicit conversions is more important than
 # COM: convention mismatches.
 @register_passable("trivial")
