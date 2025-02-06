@@ -857,7 +857,7 @@ world"
     a = 'A\'B'             # CHECK: "A'B"
     a = r"A\zB"            # CHECK: "A\\zB"
 
-    # Issue #201: https://github.com/modularml/mojo/issues/201
+    # Issue #201: https://github.com/modular/mojo/issues/201
     # CHECK: lit.fn *"hello{{.*}} {
     fn hello() -> StringLiteral:
         # CHECK: kgen.param.constant: !StringLiteral = <{:string "123"}>
@@ -1257,7 +1257,7 @@ fn setitemParamToDLValue():
   # CHECK: lit.call {{.*}}IndexList{{.*}}__setitem__{{.*}}[[VAR]]
   coords[1] = -x
 
-# https://github.com/modularml/mojo/issues/734
+# https://github.com/modular/mojo/issues/734
 fn reg_passable_trivial():
   var x : Int = 100
   x = 42

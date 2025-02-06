@@ -955,7 +955,7 @@ fn indirect_call_infer_params[callee: fn[x: Int](y: Abstraction[x])->None]():
     callee(Abstraction[2]())
 
 # COM: test parameter inference through signatureType,
-# COM: from issue https://github.com/modularml/mojo/issues/1362
+# COM: from issue https://github.com/modular/mojo/issues/1362
 fn mapSingle[A: AnyType, B: AnyType, R: AnyType](
   f: fn(x: A, y: B) -> R,
   a: A, b: B
@@ -1440,7 +1440,7 @@ fn test_partial_binding_CTAD(multi: CtadStructWithMultiDefault[5]):
     _ = CtadStructWithMultiDefault[5, _, _, _](multi)
 
 
-# COM: https://github.com/modularml/mojo/issues/1227
+# COM: https://github.com/modular/mojo/issues/1227
 # COM: Ensure default parameters are rebound during CTAD.
 @value
 @register_passable("trivial")

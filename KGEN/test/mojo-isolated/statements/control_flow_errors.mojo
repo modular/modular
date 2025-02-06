@@ -142,7 +142,7 @@ def withUsingImmutableVariable(owned a: ExampleCM):
   with a^ as x:
     pass
 
-# External Issue #529 https://github.com/modularml/mojo/issues/529
+# External Issue #529 https://github.com/modular/mojo/issues/529
 def withWithNoColon(owned a: ExampleCM):
   # expected-error @below {{expected ':' or ',' after 'with' expression}}
   with a^ as b

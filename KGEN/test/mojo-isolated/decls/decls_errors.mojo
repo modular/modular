@@ -106,7 +106,7 @@ struct BadInitResult:
 # Default Arguments, VarArgs, and Packs
 ##===----------------------------------------------------------------------===##
 
-# COM: Issue https://github.com/modularml/mojo/issues/1091
+# COM: Issue https://github.com/modular/mojo/issues/1091
 fn missing_arg_type_or_default(
     a: Int = 9,
     # expected-error @+2 {{required positional argument follows optional positional argument}}
@@ -411,7 +411,7 @@ fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
   # expected-error @+1 {{invalid indirect call: argument #0 cannot be converted from 'ConvertibleFromInt' to 'Int'}}
   localFn(b, b)
 
-# COM: https://github.com/modularml/mojo/issues/1530
+# COM: https://github.com/modular/mojo/issues/1530
 # COM: Do not crash when explicitly unbound parameter cannot be deduced due to missing arguments.
 struct Parametric[a: Int]: pass
 
@@ -889,7 +889,7 @@ struct InheritsTwice(Father, Father):
         pass
 
 
-# https://github.com/modularml/mojo/issues/1399
+# https://github.com/modular/mojo/issues/1399
 # Parser crash when trait implementation parameters don't match the definition
 # expected-note @below {{trait 'TraitWithIntParamOnMethod' declared here}}
 trait TraitWithIntParamOnMethod:
@@ -976,7 +976,7 @@ struct copy_init_raises:
 
 
 # Order of declaration processing.
-# https://github.com/modularml/mojo/issues/235
+# https://github.com/modular/mojo/issues/235
 @value
 struct Inner:
     pass
@@ -992,7 +992,7 @@ struct AnyTypeMember[T: AnyType]:
     var value: T # expected-note {{'value' declared here}}
 
 
-# Issue https://github.com/modularml/mojo/issues/1675
+# Issue https://github.com/modular/mojo/issues/1675
 # Ensure @value fails gracefully in the presence of duplicate field names.
 @value
 struct BadStruct:

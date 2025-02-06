@@ -417,7 +417,7 @@ struct FieldRefPropagation:
 
 
 # Issue #3444 (nightly) Raising init causing use of uninitialized variable
-# https://github.com/modularml/mojo/issues/3444
+# https://github.com/modular/mojo/issues/3444
 struct HasRaisingInit:
   fn __init__(out self) raises: pass
   fn __moveinit__(out self, owned existing: Self): pass
