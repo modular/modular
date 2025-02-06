@@ -47,7 +47,8 @@ ssize_t DType::getSizeInBytes(size_t numElements) const {
   }
 
   // Handle floating point types.
-#define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, CXX_TYPE, BITCOUNT, ...)          \
+#define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, M_TYPE, MLIR_TYPE, CXX_TYPE,      \
+                      BITCOUNT, ...)                                           \
   case DType::SHORT_NAME: {                                                    \
     constexpr ssize_t BYTECOUNT = BITCOUNT / CHAR_BIT;                         \
     ssize_t result = numElements * BYTECOUNT;                                  \

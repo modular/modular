@@ -12,24 +12,11 @@ using namespace M;
 bool M::areEquivalentFloatTypes(DType dtype, FloatType fpType) {
   assert(dtype.isFloat() && "expected a float dtype");
   switch (dtype.getValue()) {
-  case DType::f8e5m2:
-    return llvm::isa<Float8E5M2Type>(fpType);
-  case DType::f8e5m2fnuz:
-    return llvm::isa<Float8E5M2FNUZType>(fpType);
-  case DType::f8e4m3:
-    return llvm::isa<Float8E4M3Type>(fpType);
-  case DType::f8e4m3fnuz:
-    return llvm::isa<Float8E4M3FNUZType>(fpType);
-  case DType::f8e3m4:
-    return llvm::isa<Float8E3M4Type>(fpType);
-  case DType::f16:
-    return llvm::isa<Float16Type>(fpType);
-  case DType::bf16:
-    return llvm::isa<BFloat16Type>(fpType);
-  case DType::f32:
-    return llvm::isa<Float32Type>(fpType);
-  case DType::f64:
-    return llvm::isa<Float64Type>(fpType);
+#define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, M_TYPE, MLIR_TYPE, ...)           \
+  case DType::SHORT_NAME:                                                      \
+    return isa<MLIR_TYPE>(fpType);
+#include "Support/ML/FloatTypes.def"
+#undef DECLARE_FLOAT
   default:
     return false;
   }
@@ -37,26 +24,11 @@ bool M::areEquivalentFloatTypes(DType dtype, FloatType fpType) {
 
 FloatType M::getEquivalentFloatType(MLIRContext *ctx, DType dtype) {
   switch (dtype.getValue()) {
-  case DType::f8e5m2:
-    return Float8E5M2Type::get(ctx);
-  case DType::f8e5m2fnuz:
-    return Float8E5M2FNUZType::get(ctx);
-  case DType::f8e4m3:
-    return Float8E4M3Type::get(ctx);
-  case DType::f8e4m3fnuz:
-    return Float8E4M3FNUZType::get(ctx);
-  case DType::f8e3m4:
-    return Float8E3M4Type::get(ctx);
-  case DType::f16:
-    return Float16Type::get(ctx);
-  case DType::bf16:
-    return BFloat16Type::get(ctx);
-  case DType::f32:
-    return Float32Type::get(ctx);
-  case DType::tf32:
-    return FloatTF32Type::get(ctx);
-  case DType::f64:
-    return Float64Type::get(ctx);
+#define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, M_TYPE, MLIR_TYPE, ...)           \
+  case DType::SHORT_NAME:                                                      \
+    return MLIR_TYPE::get(ctx);
+#include "Support/ML/FloatTypes.def"
+#undef DECLARE_FLOAT
   default:
     return {}; // null denotes failure
   }
@@ -64,15 +36,9 @@ FloatType M::getEquivalentFloatType(MLIRContext *ctx, DType dtype) {
 
 bool M::hasEquivalentFloatType(DType dtype) {
   switch (dtype.getValue()) {
-  case DType::f8e5m2:
-  case DType::f8e5m2fnuz:
-  case DType::f8e4m3:
-  case DType::f8e4m3fnuz:
-  case DType::f8e3m4:
-  case DType::f16:
-  case DType::bf16:
-  case DType::f32:
-  case DType::f64:
+#define DECLARE_FLOAT(SHORT_NAME, ...) case DType::SHORT_NAME:
+#include "Support/ML/FloatTypes.def"
+#undef DECLARE_FLOAT
     return true;
   default:
     return false;
@@ -94,24 +60,12 @@ bool M::hasEquivalentIntegerType(DType dtype) {
 }
 
 DType M::getEquivalentDType(FloatType fpType) {
-  if (isa<Float8E5M2Type>(fpType))
-    return DType::f8e5m2;
-  if (isa<Float8E5M2FNUZType>(fpType))
-    return DType::f8e5m2fnuz;
-  if (isa<Float8E4M3Type>(fpType))
-    return DType::f8e4m3;
-  if (isa<Float8E4M3FNUZType>(fpType))
-    return DType::f8e4m3fnuz;
-  if (isa<Float8E3M4Type>(fpType))
-    return DType::f8e3m4;
-  if (fpType.isF16())
-    return DType::f16;
-  if (fpType.isBF16())
-    return DType::bf16;
-  if (fpType.isF32())
-    return DType::f32;
-  if (fpType.isF64())
-    return DType::f64;
+#define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, M_TYPE, MLIR_TYPE, ...)           \
+  if (llvm::isa<MLIR_TYPE>(fpType))                                            \
+    return DType::SHORT_NAME;
+#include "Support/ML/FloatTypes.def"
+#undef DECLARE_FLOAT
+
   return {}; // invalid denotes failure
 }
 
