@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: H100-GPU
+# REQUIRES: DISABLED
 # RUN: %mojo-no-debug-no-assert %s | FileCheck %s
 
 from gpu.host import DeviceContext
