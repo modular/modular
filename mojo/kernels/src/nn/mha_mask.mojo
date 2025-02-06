@@ -48,6 +48,12 @@ struct TileMaskStatus(Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
+    fn __and__(self, rhs: Self) -> Self:
+        return Self(self.status & rhs.status)
+
+    fn __or__(self, rhs: Self) -> Self:
+        return Self(self.status | rhs.status)
+
     fn write_to[W: Writer](self, mut writer: W):
         if self is Self.NO_MASK:
             return writer.write("not masked")
@@ -230,3 +236,91 @@ struct NullMask(MHAMask):
     ) -> TileMaskStatus:
         # no mask
         return TileMaskStatus(0)
+
+
+# ===-----------------------------------------------------------------------===#
+# AndMask
+# ===-----------------------------------------------------------------------===#
+
+
+@value
+@register_passable("trivial")
+struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](MHAMask):
+    """Mask that's the AND of two masks."""
+
+    @always_inline
+    fn mask[
+        type: DType,
+        width: Int, //,
+        *,
+        element_bitwidth: Int = bitwidthof[UInt32](),
+        unsigned: Bool = False,
+    ](
+        self,
+        coord: IndexList[
+            4, element_bitwidth=element_bitwidth, unsigned=unsigned
+        ],
+        score_vec: SIMD[type, width],
+    ) -> SIMD[type, width]:
+        return self.lhs.mask(coord, score_vec) & self.rhs.mask(coord, score_vec)
+
+    @always_inline
+    fn status[
+        *, element_bitwidth: Int = bitwidthof[UInt32](), unsigned: Bool = False
+    ](
+        self,
+        tile_offset: IndexList[
+            2, element_bitwidth=element_bitwidth, unsigned=unsigned
+        ],
+        tile_size: IndexList[
+            2, element_bitwidth=element_bitwidth, unsigned=unsigned
+        ],
+    ) -> TileMaskStatus:
+        var lhs_status = self.lhs.status(tile_offset, tile_size)
+        var rhs_status = self.rhs.status(tile_offset, tile_size)
+
+        return lhs_status & rhs_status
+
+
+# ===-----------------------------------------------------------------------===#
+# OrMask
+# ===-----------------------------------------------------------------------===#
+
+
+@value
+@register_passable("trivial")
+struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](MHAMask):
+    """Mask that's the OR of two masks."""
+
+    @always_inline
+    fn mask[
+        type: DType,
+        width: Int, //,
+        *,
+        element_bitwidth: Int = bitwidthof[UInt32](),
+        unsigned: Bool = False,
+    ](
+        self,
+        coord: IndexList[
+            4, element_bitwidth=element_bitwidth, unsigned=unsigned
+        ],
+        score_vec: SIMD[type, width],
+    ) -> SIMD[type, width]:
+        return self.lhs.mask(coord, score_vec) | self.rhs.mask(coord, score_vec)
+
+    @always_inline
+    fn status[
+        *, element_bitwidth: Int = bitwidthof[UInt32](), unsigned: Bool = False
+    ](
+        self,
+        tile_offset: IndexList[
+            2, element_bitwidth=element_bitwidth, unsigned=unsigned
+        ],
+        tile_size: IndexList[
+            2, element_bitwidth=element_bitwidth, unsigned=unsigned
+        ],
+    ) -> TileMaskStatus:
+        var lhs_status = self.lhs.status(tile_offset, tile_size)
+        var rhs_status = self.rhs.status(tile_offset, tile_size)
+
+        return lhs_status | rhs_status
