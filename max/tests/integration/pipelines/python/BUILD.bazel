@@ -133,7 +133,6 @@ modular_py_binary(
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/pipelines/architectures",
         "//SDK/lib/API/python/max/pipelines/llama3",
-        "//SDK/lib/API/python/max/pipelines/qwen2",
         requirement("click"),
         requirement("einops"),  # Req'd by replit
         requirement("pillow"),
