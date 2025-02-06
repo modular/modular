@@ -124,8 +124,6 @@ TypedAttr SingletonTypeHelper::getSingletonValueImpl(Type type) {
 
     SmallVector<std::tuple<StringAttr, TypedAttr>> values;
     for (auto [name, type] : it->second) {
-      // TODO: Use evaluator to substitute parameters into types to support
-      // parametrically singleton decls.
       TypedAttr value = getSingletonValue(type);
       if (!value) {
         knownNotAlwaysSingletonStructs.insert(ref);
@@ -170,11 +168,15 @@ static ArrayRef<ParamDeclAttr> extractImplicitOriginParams(FnOp func) {
   return func.getInputParams().drop_back(numImplicitOrigins);
 }
 
+/// The param decl positions that have been dropped.
+using ParamDeclDropMask = llvm::BitVector;
+
 /// Check a list of parameter declarations to see if any of the parameters are
 /// singletons like origin parameters.  If so, remove them from the list.
-static void
+static ParamDeclDropMask
 removeSingletonParamDecls(SingletonTypeHelper &singletonTypeHelper,
                           SmallVectorImpl<ParamDeclAttr> &paramDecls) {
+  ParamDeclDropMask mask(paramDecls.size());
   size_t numRemoved = 0;
   for (auto [idx, paramDecl] : llvm::enumerate(paramDecls)) {
     // If this is a parameter we are supposed to remove, bind it.
@@ -186,6 +188,7 @@ removeSingletonParamDecls(SingletonTypeHelper &singletonTypeHelper,
       // this. That said, we need to remember the index so we can update
       // the signature.
       ++numRemoved;
+      mask.set(idx);
       continue;
     }
 
@@ -196,6 +199,7 @@ removeSingletonParamDecls(SingletonTypeHelper &singletonTypeHelper,
 
   // Drop any removed parameters.
   paramDecls.resize(paramDecls.size() - numRemoved);
+  return mask;
 }
 
 //===----------------------------------------------------------------------===//
@@ -204,6 +208,12 @@ removeSingletonParamDecls(SingletonTypeHelper &singletonTypeHelper,
 
 namespace {
 struct LITLowerer {
+  LITLowerer(SymbolTable &symbolTable,
+             DenseMap<StringAttr, StringAttr> &renamedSymbols,
+             SingletonTypeHelper &singletonTypeHelper)
+      : symbolTable(symbolTable), renamedSymbols(renamedSymbols),
+        singletonTypeHelper(singletonTypeHelper) {}
+
   /// Given a function, check to see if it is a top-level function.  If not,
   /// lower it to a ParamDeclareRegionOp.
   void lowerNestedFunction(FnOp func);
@@ -227,6 +237,8 @@ struct LITLowerer {
   SymbolTable &symbolTable;
   DenseMap<StringAttr, StringAttr> &renamedSymbols;
   SingletonTypeHelper &singletonTypeHelper;
+  /// For each symbol name (post-rename), the param decls that were dropped.
+  DenseMap<StringAttr, ParamDeclDropMask> symbolDroppedParamDecls;
   bool foundAnyPatterns = false;
 };
 } // namespace
@@ -363,16 +375,19 @@ LITLowerer::lowerLITFunc(FnOp func, Block::iterator symTableIt,
   }
   llvm::append_range(inputParams, extractImplicitOriginParams(func));
 
-  // Now that we have the full parameter list, remove any singleton parameters.
-  // This ensures that the elaborator doesn't instantiate the function based on
-  // lifetimes.
-  removeSingletonParamDecls(singletonTypeHelper, inputParams);
-
   // If the function has an alias name, rename it.
   if (StringAttr newName = func.getLinkageNameAttr()) {
     renamedSymbols[func.getSymNameAttr()] = newName;
     func.setSymName(newName);
   }
+
+  // Now that we have the full parameter list, remove any singleton parameters.
+  // This ensures that the elaborator doesn't instantiate the function based on
+  // lifetimes.
+  ParamDeclDropMask droppedParams =
+      removeSingletonParamDecls(singletonTypeHelper, inputParams);
+  if (droppedParams.any())
+    symbolDroppedParamDecls[func.getSymNameAttr()] = droppedParams;
 
   OpBuilder b(func->getContext());
   auto inputParamsArr = ParamDeclArrayAttr::get(b.getContext(), inputParams);
@@ -566,11 +581,12 @@ removeSingletonParams(SingletonTypeHelper &singletonTypeHelper,
     Type adjParamType = evaluator.getReboundType(paramType);
 
     // If this is a parameter we are supposed to keep, leave it unbound.
-    if (TypedAttr singletonValue =
-            singletonTypeHelper.getSingletonValue(adjParamType)) {
+    if (singletonTypeHelper.isSingletonType(paramType)) {
       // Bind the parameter to the expected singleton value of the right
       // type. 'getSpecializedSignature' strips off a level of indexes from
       // the type, so we need to adapt the type to cooperate.
+      TypedAttr singletonValue =
+          singletonTypeHelper.getSingletonValue(adjParamType);
       paramsToBind.push_back(singletonValue);
       evaluator.addInputValue(paramsToBind.back());
       ++numRemoved;
@@ -595,10 +611,10 @@ removeSingletonParams(SingletonTypeHelper &singletonTypeHelper,
   return signature;
 }
 
-static void
-lowerAttributesAndTypes(Operation *op,
-                        const DenseMap<StringAttr, StringAttr> &renamedSymbols,
-                        SingletonTypeHelper &singletonTypeHelper) {
+static void lowerAttributesAndTypes(
+    Operation *op, const DenseMap<StringAttr, StringAttr> &renamedSymbols,
+    SingletonTypeHelper &singletonTypeHelper,
+    DenseMap<StringAttr, ParamDeclDropMask> &symbolDroppedParamDecls) {
   mlir::AttrTypeReplacer replacer;
 
   // Member functions are reference with nested symbol references. After
@@ -631,42 +647,65 @@ lowerAttributesAndTypes(Operation *op,
 
   auto *debugInfoDialect =
       op->getContext()->getLoadedDialect<DebugInfo::DebugInfoDialect>();
-  replacer.addReplacement([&](TypedAttr attr) -> std::optional<TypedAttr> {
-    if (&attr.getDialect() == debugInfoDialect)
-      return std::nullopt;
+  replacer.addReplacement(
+      [&](TypedAttr attr) -> std::optional<std::pair<TypedAttr, WalkResult>> {
+        if (&attr.getDialect() == debugInfoDialect)
+          return std::nullopt;
 
-    // Remove all values of origin type.  This removes all references to
-    // origin parameters that have been dropped.
-    if (TypedAttr value = singletonTypeHelper.getSingletonValue(attr.getType()))
-      return value;
+        // Canonicalize all values of singleton types.
+        if (TypedAttr value =
+                singletonTypeHelper.getSingletonValue(attr.getType()))
+          return std::make_pair(value, WalkResult::advance());
 
-    // Remove singleton parameter values from SymbolConstantAttr.
-    if (auto symCst = dyn_cast<SymbolConstantAttr>(attr)) {
-      SmallVector<TypedAttr> newParams;
-      for (auto param : symCst.getParamValues())
-        if (!singletonTypeHelper.isSingletonType(param.getType()))
-          newParams.push_back(param);
-      if (newParams.size() != symCst.getParamValues().size())
-        return SymbolConstantAttr::get(symCst.getSymbol(), symCst.getType(),
-                                       newParams);
-    }
+        // Remove singleton parameter values from SymbolConstantAttr.
+        if (auto symCst = dyn_cast<SymbolConstantAttr>(attr)) {
+          SymbolRefAttr flatRef =
+              cast<SymbolRefAttr>(replacer.replace(symCst.getSymbol()));
+          // Check the name & the number of params to ensure we don't operate on
+          // SymbolConstantAttrs that have already been processed.
+          if (auto it =
+                  symbolDroppedParamDecls.find(flatRef.getLeafReference());
+              it != symbolDroppedParamDecls.end() &&
+              it->second.size() == symCst.getParamValues().size()) {
+            SmallVector<TypedAttr> remainingParams;
+            for (auto [idx, value] : llvm::enumerate(symCst.getParamValues()))
+              if (!it->second[idx])
+                remainingParams.push_back(
+                    cast<TypedAttr>(replacer.replace(value)));
+            return std::make_pair(
+                SymbolConstantAttr::get(flatRef,
+                                        cast<FuncTypeGeneratorType>(
+                                            replacer.replace(symCst.getType())),
+                                        remainingParams),
+                WalkResult::skip());
+          }
+        }
 
-    // Remove singleton parameter values from BindParamsAttr.
-    if (auto bindParams = dyn_cast<BindParamsAttr>(attr)) {
-      SmallVector<TypedAttr> newOperands;
-      for (auto op : bindParams.getParamValues()) {
-        auto adjusted = cast<TypedAttr>(replacer.replace(op));
-        if (!singletonTypeHelper.isSingletonType(adjusted.getType()))
-          newOperands.push_back(adjusted);
-      }
-      if (newOperands.size() != bindParams.getParamValues().size())
-        return BindParamsAttr::get(
-            cast<TypedAttr>(replacer.replace(bindParams.getGenerator())),
-            newOperands);
-    }
+        // Remove singleton parameter values from BindParamsAttr.
+        if (auto bindParams = dyn_cast<BindParamsAttr>(attr)) {
+          SmallVector<TypedAttr> newOperands;
+          for (auto [declType, param] : llvm::zip(
+                   cast<GeneratorType>(bindParams.getGenerator().getType())
+                       .getInputParamTypes(),
+                   bindParams.getParamValues())) {
+            // Check for singleton type using the declared type on the
+            // signature, instead of the concrete type of the param. This
+            // prevents parametrically-singleton types from getting erased (only
+            // always singleton params can be removed in general).
+            if (!singletonTypeHelper.isSingletonType(
+                    replacer.replace(declType)))
+              newOperands.push_back(cast<TypedAttr>(replacer.replace(param)));
+          }
+          if (newOperands.size() != bindParams.getParamValues().size())
+            return std::make_pair(
+                BindParamsAttr::get(cast<TypedAttr>(replacer.replace(
+                                        bindParams.getGenerator())),
+                                    newOperands),
+                WalkResult::skip());
+        }
 
-    return attr;
-  });
+        return std::nullopt;
+      });
 
   replacer.recursivelyReplaceElementsIn(
       op, /*replaceAttrs=*/true, /*replaceLocs=*/true, /*replaceTypes=*/true);
@@ -854,11 +893,12 @@ struct LowerLITPass : public KGEN::impl::LowerLITBase<LowerLITPass> {
 
       SingletonTypeHelper singletonTypeHelper(symtab.getTopLevelSymbolTable(),
                                               module);
-      LITLowerer lowerer{symtab.getTopLevelSymbolTable(), renamedSymbols,
-                         singletonTypeHelper};
+      LITLowerer lowerer(symtab.getTopLevelSymbolTable(), renamedSymbols,
+                         singletonTypeHelper);
       if (failed(lowerer.lowerModuleDecl(module.getBody())))
         return signalPassFailure();
-      lowerAttributesAndTypes(module, renamedSymbols, singletonTypeHelper);
+      lowerAttributesAndTypes(module, renamedSymbols, singletonTypeHelper,
+                              lowerer.symbolDroppedParamDecls);
     }
 
     // Keep lowering all the operations and types.
