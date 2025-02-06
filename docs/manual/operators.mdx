@@ -528,6 +528,24 @@ Grace Hopper
 Grace Slick
 ```
 
+:::tip
+When concatenating multiple values together to form a `String`, using the
+multi-argument `String()` constructor is more performant than using multiple
+`+` concatenation operators and can improve code readability. For example,
+instead of writing this:
+
+```mojo
+result = "The point at (" + String(x) + ", " + String(y) + ")"
+```
+
+you can write:
+
+```mojo
+result = String("The point at (", x, ", ", y, ")")
+```
+
+:::
+
 #### String replication
 
 The `*` operator replicates a `String` a specified number of times. For example:
@@ -542,8 +560,9 @@ print(str2)
 lalalalala
 ```
 
-`StringLiteral` supports the `*` operator for string replication *only* at
-compile time. So the following examples compile and run successfully:
+`StringLiteral` supports the `*` operator for both compile-time and run-time
+string replication. The following examples perform compile-time string
+replication resulting in `StringLiteral` values:
 
 ```mojo
 alias divider1 = "=" * 40
@@ -552,7 +571,7 @@ alias divider2 = symbol * 40
 
 # You must define the following function using `fn` because an alias
 # initializer cannot call a function that can potentially raise an error.
-fn generate_divider(char: StringLiteral, repeat: Int) -> StringLiteral:
+fn generate_divider(char: StringLiteral, repeat: IntLiteral) -> StringLiteral:
     return char * repeat
 
 alias divider3 = generate_divider("~", 40)  # Evaluated at compile-time
@@ -568,13 +587,19 @@ print(divider3)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ```
 
-However, the following examples fail to compile because the replication
-operators would be evaluated at run-time:
+In contrast, the following examples perform run-time string replication
+resulting in `String` values:
 
 ```mojo
-# Both of these statements would fail to compile
-var div1 = "^" * 40
-print("_" * 40)
+repeat = 40
+div1 = "^" * repeat
+print(div1)
+print("_" * repeat)
+```
+
+```output
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+________________________________________
 ```
 
 #### String comparison
