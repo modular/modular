@@ -18,7 +18,6 @@ from typing import (
     List,
     Mapping,
     Optional,
-    Type,
     Union,
     cast,
 )
@@ -1031,15 +1030,3 @@ class InferenceSession:
     def devices(self) -> List[Device]:
         """A list of available devices."""
         return [Device(device) for device in self._impl.devices]
-
-
-def remove_annotations(cls: Type) -> Type:
-    """Internal use."""
-    del cls.__annotations__
-    return cls
-
-
-remove_annotations(Model)
-remove_annotations(InferenceSession)
-remove_annotations(TensorSpec)
-remove_annotations(TorchInputSpec)
