@@ -373,7 +373,7 @@ async def grpc_serve(
                 model_name, tokenizer, worker_queue
             ) as pipeline,
         ):
-            if not worker_queue.pc.is_healthy():
+            if not worker_queue.is_worker_healthy():
                 logging.error("Worker process not healthy")
                 exit(-1)
             pipelines = {}

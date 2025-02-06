@@ -102,7 +102,7 @@ async def start_model_worker(
         "model-worker",
         health_fail_s=config.health_fail_s,
     )
-    engine_queue: EngineQueue = EngineQueue(mp_context, pc=pc)
+    engine_queue: EngineQueue = EngineQueue(mp_context, worker_pc=pc)
     queue_args = {
         "REQUEST": engine_queue.request_q,
         "RESPONSE": engine_queue.response_q,
@@ -132,10 +132,17 @@ async def start_model_worker(
         unhealthy_poll_s=200e-3,
     )
 
+    use_heartbeat = os.environ.get("MAX_SERVE_USE_HEARTBEAT") == "1"
+    if not use_heartbeat:
+        engine_queue.use_process_healthcheck(worker)
+
     # before progressing, observe the worker process to be healthy or dead
     loop = asyncio.get_running_loop()
-    ht = loop.create_task(monitor.until_healthy())
     dt = loop.create_task(monitor.until_dead())
+    if use_heartbeat:
+        ht = loop.create_task(monitor.until_healthy())
+    else:
+        ht = loop.create_task(monitor.until_started())
 
     completed_tasks, pending_tasks = await asyncio.wait(
         [ht, dt],
@@ -181,7 +188,10 @@ async def start_model_worker(
     logger.info("Model worker task is alive and healthy")
 
     try:
-        worker_task = loop.create_task(monitor.shutdown_if_unhealthy())
+        if use_heartbeat:
+            worker_task = loop.create_task(monitor.shutdown_if_unhealthy())
+        else:
+            worker_task = loop.create_task(monitor.shutdown_if_dead())
         yield engine_queue
     finally:
         worker_task.cancel()

@@ -189,6 +189,14 @@ class ProcessMonitor:
             self.max_time_s,
         )
 
+    async def until_dead_no_timeout(self) -> bool:
+        is_dead = lambda: not self.proc.is_alive()
+        return await _until_true(
+            is_dead,
+            self.unhealthy_poll_s,
+            None,
+        )
+
     async def until_unhealthy(self) -> bool:
         return await _until_true(
             self.pc.is_unhealthy,
@@ -229,6 +237,26 @@ class ProcessMonitor:
     ):
         try:
             await self.until_unhealthy()
+        except asyncio.CancelledError:
+            # Cancellation happens when winding down a completed program
+            # Nothing interesting to see here.
+            pass
+        except:
+            logger.exception(
+                f"Error while checking process health: {self.pc.name}"
+            )
+        finally:
+            logger.info(f"Exiting health check task: {self.pc.name}")
+            if cb is not None:
+                try:
+                    cb()
+                except:
+                    pass
+            await self.shutdown()
+
+    async def shutdown_if_dead(self, cb: Optional[Callable[[], None]] = None):
+        try:
+            await self.until_dead_no_timeout()
         except asyncio.CancelledError:
             # Cancellation happens when winding down a completed program
             # Nothing interesting to see here.

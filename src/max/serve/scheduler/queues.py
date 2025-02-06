@@ -9,6 +9,7 @@ import asyncio
 import contextlib
 import logging
 import multiprocessing
+import multiprocessing.process
 import os
 import queue
 from dataclasses import dataclass
@@ -62,8 +63,17 @@ class BatchQueueConfig:
 
 
 class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
+    """Container for managing interactions between a remote model worker process
+
+    As part of its work, response_worker will verify that the remote process is
+    healthy. By default it will check that the process is producing heartbeats.
+    Alternatively, you can register a Process & check that the process is alive.
+    """
+
     def __init__(
-        self, context: multiprocessing.context.BaseContext, pc: ProcessControl
+        self,
+        context: multiprocessing.context.BaseContext,
+        worker_pc: ProcessControl,
     ):
         super().__init__()
         self.context = context
@@ -71,7 +81,30 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         self.response_q: Queue = self.context.Queue()
         self.cancel_q: Queue = self.context.Queue()
         self.pending_out_queues: dict[ReqId, asyncio.Queue] = {}
-        self.pc = pc
+        self.worker_pc: ProcessControl = worker_pc
+        self._proc: Optional[multiprocessing.process.BaseProcess] = None
+
+    def use_process_healthcheck(
+        self, proc: multiprocessing.process.BaseProcess
+    ):
+        """Register a Process to health check.
+
+        Instead of verifying heartbeats, EngineQueue will verify that the
+        process is alive. Verifying liveness is a more lenient check than
+        verifying heartbeats. Heartbeats prove progress while liveness only
+        proves that the process has not crashed (it could be wedged).
+        """
+        self._proc = proc
+
+    def is_worker_healthy(self):
+        """Is the worker healthy?
+
+        By default, verify health with ProcessControl.is_alive().  If a Process
+        is registered, used Process.is_alive() instead.
+        """
+        if self._proc:
+            return self._proc.is_alive()
+        return self.worker_pc.is_healthy()
 
     @contextlib.contextmanager
     def open_channel(
@@ -111,9 +144,9 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
                     while self.response_q.empty():
                         # If the worker dies this loop will keep running,
                         # so we have to check the worker status.
-                        if not self.pc.is_healthy():
+                        if not self.is_worker_healthy():
                             logger.error("Model worker process is not healthy")
-                            self.pc.set_canceled()
+                            self.worker_pc.set_canceled()
                             raise Exception("Worker failed!")
                         await asyncio.sleep(0)
 

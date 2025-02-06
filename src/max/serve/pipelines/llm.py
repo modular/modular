@@ -288,13 +288,13 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
     async def __aenter__(self):
         self.logger.info("%s: Starting workers:", self.model_name)
         assert not self._background_tasks
-        if not self.engine_queue.pc.is_healthy():
+        if not self.engine_queue.is_worker_healthy():
             raise RuntimeError("Worker process not healthy not starting worker")
 
         # Add global fanout worker.
         self.create_background_task(self.engine_queue.response_worker)
 
-        if not self.engine_queue.pc.is_healthy():
+        if not self.engine_queue.is_worker_healthy():
             raise RuntimeError(
                 "Worker process not healthy after running background task"
             )
