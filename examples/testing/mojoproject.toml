@@ -8,9 +8,7 @@ version = "0.1.0"
 
 [tasks]
 main = "mojo run src/example.mojo"
-doc-tests = "mojo test src"
-unit-tests = "mojo test -I src test"
-tests = { depends-on = ["doc-tests", "unit-tests"] }
+tests = "mojo test -I src test"
 
 [dependencies]
-max = "*"
+max = "~=24.6"

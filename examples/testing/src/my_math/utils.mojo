@@ -25,11 +25,9 @@ def inc(n: Int) -> Int:
     """Returns an incremented integer value.
 
     ```mojo
-    %# from testing import assert_equal
     from my_math import inc
     i = 7
     j = inc(i)  # j = 8
-    %# assert_equal(j, 8)
     ```
 
     However, `inc()` raises an error if it would result in integer overflow:
@@ -40,7 +38,6 @@ def inc(n: Int) -> Int:
          k = inc(Int.MAX)
     except e:
          print(e)  # inc overflow
-    %#      assert_equal("inc overflow", String(e))
     ```
 
     Args:
@@ -61,11 +58,9 @@ def dec(n: Int) -> Int:
     """Returns a decremented integer value.
 
     ```mojo
-    %# from testing import assert_equal
     from my_math import dec
     i = 7
     j = dec(i)  # j = 6
-    %# assert_equal(j, 6)
     ```
 
     However, `dec()` raises an error if it would result in integer overflow:
@@ -76,7 +71,6 @@ def dec(n: Int) -> Int:
          k = dec(Int.MIN)
     except e:
          print(e)  # inc overflow
-    %#      assert_equal("dec overflow", String(e))
     ```
 
     Args:

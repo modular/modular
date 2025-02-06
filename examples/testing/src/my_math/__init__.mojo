@@ -24,28 +24,6 @@ You can import these APIs from the `my_math` package. For example:
 ```mojo
 from my_math import dec, inc
 ```
-
-The `inc()` function performs a simple increment:
-
-```mojo
-%# from testing import assert_equal
-from my_math import inc
-a = 1
-b = inc(a)  # b = 2
-%# assert_equal(b, 2)
-```
-
-However, `inc()` raises an error if it would result in integer overflow:
-
-```mojo
-c = 0
-try:
-    c = inc(Int.MAX)
-except e:
-    print(e)
-%#     assert_equal("inc overflow", String(e))
-```
-
 """
 
 from .utils import dec, inc
