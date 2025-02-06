@@ -580,3 +580,31 @@ lit.fn @ownership_ops[mut lt](%a: !lit.ref<index, mut lt>) {
   lit.ownership.mark_destroyed %a : !lit.ref<index, mut lt>
   kgen.return
 }
+
+//===----------------------------------------------------------------------===//
+// Singleton Struct Types.
+//===----------------------------------------------------------------------===//
+
+lit.struct.decl @EmptyStruct {}
+
+// CHECK-LABEL: kgen.generator @expect_always_empty_struct()
+lit.fn @expect_always_empty_struct<es: !lit.struct<@EmptyStruct>>() {
+  kgen.return
+}
+
+lit.fn @expect_parametric_empty_struct<t: type, s: !kgen.param<t>>() {
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @call_using_empty_struct<alwaysFn: <index>() -> (), paramFn: <type, *(0,0)>() -> ()>()
+lit.fn @call_using_empty_struct<es: !lit.struct<@EmptyStruct>, alwaysFn: <index, @EmptyStruct>() -> (), paramFn: <type, *(0,0)>() -> ()>() {
+  // CHECK-NEXT: kgen.call @expect_always_empty_struct() : () -> ()
+  lit.call @expect_always_empty_struct<:!lit.struct<@EmptyStruct> es>() : !lit.generator<() -> ()>
+  // CHECK-NEXT: kgen.call @expect_parametric_empty_struct<:type {{.*}}, :struct<() memoryOnly> {  }>()
+  lit.call @expect_parametric_empty_struct<:type #kgen.type<!lit.struct<@EmptyStruct>>, :!lit.struct<@EmptyStruct> es>() : !lit.generator<() -> ()>
+  // CHECK-NEXT: <bind_params(:<index>() -> () alwaysFn, 1)>
+  kgen.param.declare alwaysFn2: !lit.generator<() -> ()> = <bind_params(:<index, @EmptyStruct>() -> () alwaysFn, 1, es)>
+  // CHECK-NEXT: <bind_params(:<type, *(0,0)>() -> () paramFn, {{.*}}, {  })>
+  kgen.param.declare paramFn2: !lit.generator<() -> ()> = <bind_params(:<type, *(0,0)>() -> () paramFn, #kgen.type<!lit.struct<@EmptyStruct>>, es)>
+  kgen.return
+}
