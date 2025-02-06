@@ -16,7 +16,6 @@ from json.decoder import JSONDecodeError
 from time import perf_counter_ns
 from typing import Any, AsyncGenerator, List, Literal, Optional, Sequence, Union
 
-import numpy as np
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from httpx import AsyncClient
@@ -29,7 +28,6 @@ from max.pipelines import (
     TokenGeneratorResponseFormat,
 )
 from max.serve.pipelines.llm import (
-    EmbeddingsGeneratorOutput,
     TokenGeneratorOutput,
     TokenGeneratorPipeline,
 )
@@ -357,7 +355,7 @@ class OpenAIEmbeddingsResponseGenerator:
                 Embedding(
                     object="embedding",
                     index=idx,
-                    embedding=_create_pooled_embedding(output),
+                    embedding=output,
                 )
                 for idx, output in enumerate(embedding_outputs)
                 if output is not None
@@ -376,15 +374,6 @@ class OpenAIEmbeddingsResponseGenerator:
                 request_timer.elapsed_ms,
                 0,
             )
-
-
-def _create_pooled_embedding(
-    embeddings: Optional[EmbeddingsGeneratorOutput],
-) -> List[float]:
-    if not embeddings:
-        return []
-    # TODO: This is temporary until this logic is moved to the pipeline.
-    return np.sum(embeddings.embeddings, 0) / embeddings.embeddings.shape[0]
 
 
 def openai_parse_chat_completion_request(
