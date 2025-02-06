@@ -11,12 +11,8 @@ import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.pipelines.kv_cache import (
-    KVCacheManager,
-    KVCacheParams,
-    KVCacheStrategy,
-    load_kv_manager,
-)
+from max.pipelines.kv_cache import KVCacheParams, KVCacheStrategy
+from max.pipelines.kv_cache.paged_cache import PagedKVCacheManager
 
 FAKE_TOKEN = 999
 
@@ -31,13 +27,14 @@ def get_uncommitted_and_committed_block_counts(
     return kv_tuple[3].to_numpy().tolist()
 
 
-def create_paged_manager(num_blocks: int, page_size: int = 1) -> KVCacheManager:
+def create_paged_manager(
+    num_blocks: int, page_size: int = 1
+) -> PagedKVCacheManager:
     # Setting kv_heads, head_dim, and num_layers to 1 so it is easy to compute
     # memory usage. Now we know each block is 1 byte.
     NUM_KV_HEADS = 1
     HEAD_DIM = 1
     NUM_LAYERS = 1
-    MIN_PAGE_SIZE = 128
 
     kv_params = KVCacheParams(
         dtype=DType.float32,
@@ -45,46 +42,39 @@ def create_paged_manager(num_blocks: int, page_size: int = 1) -> KVCacheManager:
         head_dim=HEAD_DIM,
         cache_strategy=KVCacheStrategy.PAGED,
         enable_prefix_caching=True,
-        page_size=MIN_PAGE_SIZE,
+        page_size=page_size,
     )
 
     session = InferenceSession()
 
-    available_cache_memory = (
+    cache_memory = (
         2
         * NUM_LAYERS
         * NUM_KV_HEADS
         * HEAD_DIM
-        * MIN_PAGE_SIZE
+        * page_size
         * num_blocks
         * kv_params.dtype.size_in_bytes
     )
-    kv_manager = load_kv_manager(
+    kv_manager = PagedKVCacheManager(
         params=kv_params,
         max_batch_size=128,
         max_seq_len=1024,
         num_layers=NUM_LAYERS,
         devices=[CPU()],
         session=session,
-        available_cache_memory=available_cache_memory,
-        page_size=MIN_PAGE_SIZE,
+        cache_memory=cache_memory,
+        page_size=page_size,
     )
 
-    assert len(kv_manager.available_blocks) == num_blocks  # type: ignore
-
-    # TODO(KERN-1308) remove this hack as we generalize page_size
-    #
-    # We circumvent the page size check in the KV cache manager.
-    # That check does not matter for these tests since we don't run the kernels.
-    kv_manager.page_size = page_size  # type: ignore
-    kv_manager.radix_trie.page_size = page_size  # type: ignore
-
+    assert len(kv_manager.available_blocks) == num_blocks
     return kv_manager
 
 
 @pytest.mark.asyncio
 async def test_prefix_caching() -> None:
     kv_manager = create_paged_manager(num_blocks=128)
+    assert kv_manager.radix_trie is not None
 
     # Reserve a slot in the KV cache manager.
     seq_id_1 = 1
@@ -151,7 +141,7 @@ async def test_prefix_caching() -> None:
         kv_manager.step(seq_ids_and_new_tokens)
 
     # Validate final trie
-    assert kv_manager.radix_trie.pretty_format() == [  # type: ignore
+    assert kv_manager.radix_trie.pretty_format() == [
         "[10, 11, 12]",
         "--[13]",
         "----[14]",
@@ -188,7 +178,7 @@ async def test_prefix_caching_with_repeating_prompt() -> None:
         else:
             # During later fetches, we get a cache hit so we use 1 block.
             available_blocks -= 1
-        assert len(kv_manager.available_blocks) == available_blocks  # type: ignore
+        assert len(kv_manager.available_blocks) == available_blocks
 
         seq_ids_and_new_tokens = {seq_id: np.array([FAKE_TOKEN])}
         kv_manager.step(seq_ids_and_new_tokens)
@@ -197,7 +187,7 @@ async def test_prefix_caching_with_repeating_prompt() -> None:
             # During later fetches, we will just release the block we wrote to
             # since a different block already exists for the same token.
             available_blocks += 1
-        assert len(kv_manager.available_blocks) == available_blocks  # type: ignore
+        assert len(kv_manager.available_blocks) == available_blocks
 
         kv_manager.release(seq_id)
 
@@ -286,9 +276,9 @@ async def test_prefix_caching_with_random_prompts(page_size, num_steps) -> None:
         kv_manager.release(seq_id)
 
     # Evict all blocks from the trie.
-    kv_manager.evict_blocks()  # type: ignore
+    kv_manager.evict_blocks()
     # Check that all blocks are either in the trie or available.
-    assert len(kv_manager.available_blocks) == kv_manager.total_num_pages  # type: ignore
+    assert len(kv_manager.available_blocks) == kv_manager.total_num_pages
 
 
 @pytest.mark.asyncio
@@ -400,3 +390,102 @@ async def test_prefix_caching_with_page_size_gt_1_and_num_steps_gt_1() -> None:
 
     seq_ids_and_new_tokens = {seq_id_1: np.array([18, 19])}
     kv_manager.step(seq_ids_and_new_tokens)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "batch_size, num_steps, shared_prefix_len, page_size",
+    [
+        (1, 1, 0, 1),
+        (3, 3, 33, 3),
+        (4, 5, 29, 3),
+        (5, 1, 33, 5),
+        (6, 2, 29, 5),
+        (7, 3, 33, 6),
+        (8, 9, 29, 13),
+    ],
+)
+async def test_prefix_caching_grouped_prefixes(
+    batch_size: int, num_steps: int, shared_prefix_len: int, page_size: int
+) -> None:
+    """
+    Test e2e prefix caching, ensuring that we do not leak memory.
+    """
+    np.random.seed(12345)
+
+    # generate a binary string
+    def gen_prompt(length: int) -> np.ndarray:
+        return np.random.randint(0, 2, size=length)
+
+    # evictions are unlikely to happen with 10000 blocks
+    kv_manager = create_paged_manager(num_blocks=10000, page_size=page_size)
+
+    # generate a number of grouped prefixes:
+    shared_prefix = gen_prompt(shared_prefix_len)
+    group_prefixes: list[np.ndarray] = []
+    num_prompts = 20
+    for _ in range(num_prompts):
+        random_len = np.random.randint(0, 100)
+        group_prefix = np.concatenate([shared_prefix, gen_prompt(random_len)])
+        group_prefixes.append(group_prefix)
+
+    # run CE on 15 batches of batch_size requests each
+    num_batches = 15
+    requests = batch_size * num_batches
+    seq_ids_and_new_tokens: dict[int, np.ndarray] = {}
+    for b in range(num_batches):
+        seq_ids_and_prompts: dict[int, np.ndarray] = {}
+        seq_ids_and_new_tokens_batch: dict[int, np.ndarray] = {}
+        for r in range(batch_size):
+            seq_id = b * batch_size + r
+            kv_manager.external_claim([seq_id])
+            group_prefix = group_prefixes[seq_id % len(group_prefixes)]
+            random_len = np.random.randint(0, 10)
+            prompt = np.concatenate([group_prefix, gen_prompt(random_len)])
+            seq_ids_and_prompts[seq_id] = prompt
+            new_tok = gen_prompt(1)
+            seq_ids_and_new_tokens_batch[seq_id] = new_tok
+            seq_ids_and_new_tokens |= seq_ids_and_new_tokens_batch
+
+        _ = kv_manager.fetch(seq_ids_and_prompts, num_steps=1)
+        assert kv_manager._count_all_pages() == kv_manager.total_num_pages
+        kv_manager.step(seq_ids_and_new_tokens_batch)
+        assert kv_manager._count_all_pages() == kv_manager.total_num_pages
+
+    # Since our prompts have large grouped prefixes, we should have a high cache
+    # hit rate.
+    cache_hit_rate = kv_manager.ce_cache_hit_tokens / kv_manager.ce_all_tokens
+    if shared_prefix_len > 0:
+        assert cache_hit_rate > 0.5
+
+    # run TG on all requests for num_tg_steps steps
+    # we terminate requests with probability 10% each iteration
+    num_tg_steps = 10
+    for _ in range(num_tg_steps):
+        seq_ids_and_prompts = seq_ids_and_new_tokens
+        for seq_id in range(requests):
+            seq_ids_and_new_tokens = {}
+            if seq_id in seq_ids_and_prompts:
+                seq_ids_and_new_tokens[seq_id] = gen_prompt(num_steps)
+
+        for seq_id in seq_ids_and_prompts:
+            seq_ids_and_prompts[seq_id] = seq_ids_and_prompts[seq_id][-1:]
+            assert len(seq_ids_and_prompts[seq_id]) == 1
+
+        _ = kv_manager.fetch(seq_ids_and_prompts, num_steps=num_steps)
+        assert kv_manager._count_all_pages() == kv_manager.total_num_pages
+        kv_manager.step(seq_ids_and_new_tokens)
+        assert kv_manager._count_all_pages() == kv_manager.total_num_pages
+
+        terminated_seq_ids = []
+        for seq_id in list(seq_ids_and_new_tokens.keys()):
+            # terminate requests with probability 10%
+            if len(seq_ids_and_new_tokens) > 1 and np.random.rand() < 0.1:
+                terminated_seq_ids.append(seq_id)
+                kv_manager.release(seq_id)
+                del seq_ids_and_new_tokens[seq_id]
+
+    for seq_id in seq_ids_and_new_tokens:
+        kv_manager.release(seq_id)
+
+    assert kv_manager._count_all_pages() == kv_manager.total_num_pages
