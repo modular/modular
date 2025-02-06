@@ -675,7 +675,7 @@ public:
       // Is not extensibility struct, but maybe some regular mojo object
       if (!isExtensibilityStruct.takeValue())
         return WalkResult::advance();
-      LIT::FnOp executeOp, shapeOp;
+      LIT::FnOp executeOp;
       for (auto &curOp : structDeclOp.getFields().front()) {
         auto func = dyn_cast<LIT::FnOp>(curOp);
         if (!func)
@@ -692,7 +692,6 @@ public:
                                              func, kMOGGShapeFunctionLabel,
                                              builder)))
             return WalkResult::interrupt();
-          shapeOp = func;
         } else if (func.getSourceName() == kPyTorchFallbackFuncName) {
           if (failed(processStructFuncCommon(
                   structDeclOp, registrationInfo, func,
