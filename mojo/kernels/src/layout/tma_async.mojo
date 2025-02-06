@@ -154,6 +154,12 @@ struct PipelineState[num_stages: Int]:
         self._count = 0
 
     @always_inline
+    fn __init__(out self, index: Int, phase: Int, count: Int):
+        self._index = index
+        self._phase = phase
+        self._count = count
+
+    @always_inline
     fn index(self) -> Int:
         return self._index
 

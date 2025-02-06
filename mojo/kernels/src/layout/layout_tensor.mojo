@@ -3060,7 +3060,11 @@ struct LayoutTensorIter[
     fn get(
         self,
         out result: LayoutTensor[
-            type, layout, address_space=address_space, masked=masked
+            type,
+            layout,
+            address_space=address_space,
+            masked=masked,
+            alignment=alignment,
         ],
     ):
         """Return the layout tensor at current iterator."""
@@ -3076,7 +3080,13 @@ struct LayoutTensorIter[
     @always_inline
     fn __getitem__(
         self,
-    ) -> LayoutTensor[type, layout, address_space=address_space, masked=masked]:
+    ) -> LayoutTensor[
+        type,
+        layout,
+        address_space=address_space,
+        masked=masked,
+        alignment=alignment,
+    ]:
         """Return the layout tensor at current iterator."""
         return self.get()
 
