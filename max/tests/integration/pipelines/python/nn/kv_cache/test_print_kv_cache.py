@@ -69,6 +69,7 @@ class PrintKVCacheModel:
             # Skip types unsupported on CPU.
             DType._unknown,
             DType.float8_e4m3,
+            DType.float8_e4m3fn,
             DType.float8_e4m3fnuz,
             DType.float8_e5m2,
             DType.float8_e5m2fnuz,
