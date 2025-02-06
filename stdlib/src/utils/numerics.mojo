@@ -67,9 +67,9 @@ struct FPUtils[
         """
 
         @parameter
-        if type in (DType.float8e4m3, DType.float8e4m3fnuz):
+        if type in (DType.float8_e4m3, DType.float8_e4m3fnuz):
             return 3
-        elif type in (DType.float8e5m2, DType.float8e5m2fnuz):
+        elif type in (DType.float8_e5m2, DType.float8_e5m2fnuz):
             return 2
         elif type is DType.float16:
             return 10
@@ -94,9 +94,9 @@ struct FPUtils[
         """
 
         @parameter
-        if type in (DType.float8e4m3, DType.float8e4m3fnuz):
+        if type in (DType.float8_e4m3, DType.float8_e4m3fnuz):
             return 8
-        elif type in (DType.float8e5m2, DType.float8e5m2fnuz, DType.float16):
+        elif type in (DType.float8_e5m2, DType.float8_e5m2fnuz, DType.float16):
             return 16
         elif type in (DType.bfloat16, DType.float32):
             return 128
@@ -114,9 +114,9 @@ struct FPUtils[
         """
 
         @parameter
-        if type in (DType.float8e4m3, DType.float8e4m3fnuz):
+        if type in (DType.float8_e4m3, DType.float8_e4m3fnuz):
             return 4
-        elif type in (DType.float8e5m2, DType.float8e5m2fnuz, DType.float16):
+        elif type in (DType.float8_e5m2, DType.float8_e5m2fnuz, DType.float16):
             return 5
         elif type in (DType.float32, DType.bfloat16):
             return 8
@@ -144,7 +144,7 @@ struct FPUtils[
         """
 
         @parameter
-        if type in (DType.float8e4m3fnuz, DType.float8e5m2fnuz):
+        if type in (DType.float8_e4m3fnuz, DType.float8_e5m2fnuz):
             return Self.max_exponent()
         else:
             return Self.max_exponent() - 1
@@ -511,14 +511,14 @@ fn nan[type: DType]() -> Scalar[type]:
     """
 
     @parameter
-    if type is DType.float8e5m2:
+    if type is DType.float8_e5m2:
         return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
             __mlir_op.`kgen.param.constant`[
                 _type = __mlir_type[`!pop.scalar<f8e5m2>`],
                 value = __mlir_attr[`#pop.simd<"nan"> : !pop.scalar<f8e5m2>`],
             ]()
         )
-    elif type is DType.float8e5m2fnuz:
+    elif type is DType.float8_e5m2fnuz:
         return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
             __mlir_op.`kgen.param.constant`[
                 _type = __mlir_type[`!pop.scalar<f8e5m2fnuz>`],
@@ -527,14 +527,14 @@ fn nan[type: DType]() -> Scalar[type]:
                 ],
             ]()
         )
-    elif type is DType.float8e4m3:
+    elif type is DType.float8_e4m3:
         return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
             __mlir_op.`kgen.param.constant`[
                 _type = __mlir_type[`!pop.scalar<f8e4m3>`],
                 value = __mlir_attr[`#pop.simd<"nan"> : !pop.scalar<f8e4m3>`],
             ]()
         )
-    elif type is DType.float8e4m3fnuz:
+    elif type is DType.float8_e4m3fnuz:
         return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
             __mlir_op.`kgen.param.constant`[
                 _type = __mlir_type[`!pop.scalar<f8e4m3fnuz>`],
@@ -600,18 +600,18 @@ fn isnan[
 
     @parameter
     if not type.is_floating_point() or type in (
-        DType.float8e4m3fnuz,
-        DType.float8e5m2fnuz,
+        DType.float8_e4m3fnuz,
+        DType.float8_e5m2fnuz,
     ):
         return False
 
     alias int_dtype = _integral_type_of[type]()
 
     @parameter
-    if type is DType.float8e4m3:
+    if type is DType.float8_e4m3:
         return (bitcast[int_dtype, simd_width](val) & 0x7F) == 0x7F
-    elif type is DType.float8e5m2:
-        # For the float8e5m2 type NaN is limited to 0x7F and 0xFF values.
+    elif type is DType.float8_e5m2:
+        # For the float8_e5m2 type NaN is limited to 0x7F and 0xFF values.
         # 7D, 7E, 7F are positive NaNs; FD, FE, FF are negative NaNs.
         return (bitcast[int_dtype, simd_width](val) & 0x7F) > 0x7C
     elif type is DType.float16:
@@ -649,14 +649,14 @@ fn inf[type: DType]() -> Scalar[type]:
     """
 
     @parameter
-    if type is DType.float8e5m2:
+    if type is DType.float8_e5m2:
         return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
             __mlir_op.`kgen.param.constant`[
                 _type = __mlir_type[`!pop.scalar<f8e5m2>`],
                 value = __mlir_attr[`#pop.simd<"inf"> : !pop.scalar<f8e5m2>`],
             ]()
         )
-    elif type is DType.float8e5m2fnuz:
+    elif type is DType.float8_e5m2fnuz:
         return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
             __mlir_op.`kgen.param.constant`[
                 _type = __mlir_type[`!pop.scalar<f8e5m2fnuz>`],
@@ -665,14 +665,14 @@ fn inf[type: DType]() -> Scalar[type]:
                 ],
             ]()
         )
-    elif type is DType.float8e4m3:
+    elif type is DType.float8_e4m3:
         return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
             __mlir_op.`kgen.param.constant`[
                 _type = __mlir_type[`!pop.scalar<f8e4m3>`],
                 value = __mlir_attr[`#pop.simd<"inf"> : !pop.scalar<f8e4m3>`],
             ]()
         )
-    elif type is DType.float8e4m3fnuz:
+    elif type is DType.float8_e4m3fnuz:
         return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
             __mlir_op.`kgen.param.constant`[
                 _type = __mlir_type[`!pop.scalar<f8e4m3fnuz>`],
@@ -734,14 +734,14 @@ fn neg_inf[type: DType]() -> Scalar[type]:
     """
 
     @parameter
-    if type is DType.float8e5m2:
+    if type is DType.float8_e5m2:
         return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
             __mlir_op.`kgen.param.constant`[
                 _type = __mlir_type[`!pop.scalar<f8e5m2>`],
                 value = __mlir_attr[`#pop.simd<"-inf"> : !pop.scalar<f8e5m2>`],
             ]()
         )
-    elif type is DType.float8e5m2fnuz:
+    elif type is DType.float8_e5m2fnuz:
         return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
             __mlir_op.`kgen.param.constant`[
                 _type = __mlir_type[`!pop.scalar<f8e5m2fnuz>`],
@@ -750,14 +750,14 @@ fn neg_inf[type: DType]() -> Scalar[type]:
                 ],
             ]()
         )
-    elif type is DType.float8e4m3:
+    elif type is DType.float8_e4m3:
         return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
             __mlir_op.`kgen.param.constant`[
                 _type = __mlir_type[`!pop.scalar<f8e4m3>`],
                 value = __mlir_attr[`#pop.simd<"-inf"> : !pop.scalar<f8e4m3>`],
             ]()
         )
-    elif type is DType.float8e4m3fnuz:
+    elif type is DType.float8_e4m3fnuz:
         return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
             __mlir_op.`kgen.param.constant`[
                 _type = __mlir_type[`!pop.scalar<f8e4m3fnuz>`],
@@ -837,11 +837,11 @@ fn max_finite[type: DType]() -> Scalar[type]:
         return 9223372036854775807
     elif type is DType.uint64:
         return 18446744073709551615
-    elif type is DType.float8e4m3:
+    elif type is DType.float8_e4m3:
         return 448
-    elif type is DType.float8e4m3fnuz:
+    elif type is DType.float8_e4m3fnuz:
         return 240
-    elif type in (DType.float8e5m2, DType.float8e5m2fnuz):
+    elif type in (DType.float8_e5m2, DType.float8_e5m2fnuz):
         return 57344
     elif type is DType.float16:
         return 65504
@@ -973,12 +973,12 @@ fn isinf[
 
     @parameter
     if not type.is_floating_point() or type in (
-        DType.float8e4m3fnuz,
-        DType.float8e5m2fnuz,
+        DType.float8_e4m3fnuz,
+        DType.float8_e5m2fnuz,
     ):
         return False
-    elif type is DType.float8e5m2:
-        # For the float8e5m2 both 7C and FC are infinity.
+    elif type is DType.float8_e5m2:
+        # For the float8_e5m2 both 7C and FC are infinity.
         alias int_dtype = _integral_type_of[type]()
         return (bitcast[int_dtype, simd_width](val) & 0x7F) == 0x7C
 
@@ -1044,7 +1044,7 @@ fn get_accum_type[type: DType]() -> DType:
     """
 
     return DType.float32 if (
-        type.is_half_float() or type in (DType.float8e4m3, DType.float8e5m2)
+        type.is_half_float() or type in (DType.float8_e4m3, DType.float8_e5m2)
     ) else type
 
 

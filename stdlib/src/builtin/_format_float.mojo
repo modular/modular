@@ -105,17 +105,21 @@ fn _write_float[W: Writer, type: DType, //](mut writer: W, value: Scalar[type]):
     constrained[type.is_floating_point()]()
 
     @parameter
-    if type is DType.float8e5m2:
-        return writer.write(float8e5m2_to_str[Int(bitcast[DType.uint8](value))])
-    elif type is DType.float8e4m3:
-        return writer.write(float8e4m3_to_str[Int(bitcast[DType.uint8](value))])
-    elif type is DType.float8e5m2fnuz:
+    if type is DType.float8_e5m2:
         return writer.write(
-            float8e5m2fnuz_to_str[Int(bitcast[DType.uint8](value))]
+            float8_e5m2_to_str[Int(bitcast[DType.uint8](value))]
         )
-    elif type is DType.float8e4m3fnuz:
+    elif type is DType.float8_e4m3:
         return writer.write(
-            float8e4m3fnuz_to_str[Int(bitcast[DType.uint8](value))]
+            float8_e4m3_to_str[Int(bitcast[DType.uint8](value))]
+        )
+    elif type is DType.float8_e5m2fnuz:
+        return writer.write(
+            float8_e5m2fnuz_to_str[Int(bitcast[DType.uint8](value))]
+        )
+    elif type is DType.float8_e4m3fnuz:
+        return writer.write(
+            float8_e4m3fnuz_to_str[Int(bitcast[DType.uint8](value))]
         )
     else:
         # Upcast the float16 types to float32
@@ -1424,7 +1428,7 @@ alias cache_f64 = StaticTuple[_UInt128, 619](
     _UInt128(0xF70867153AA2DB38, 0xB8CBEE4FC66D1EA8),
 )
 
-alias float8e5m2_to_str = StaticTuple[StringLiteral, 256](
+alias float8_e5m2_to_str = StaticTuple[StringLiteral, 256](
     "0.0",
     "1.52587890625e-05",
     "3.0517578125e-05",
@@ -1683,7 +1687,7 @@ alias float8e5m2_to_str = StaticTuple[StringLiteral, 256](
     "nan",
 )
 
-alias float8e4m3_to_str = StaticTuple[StringLiteral, 256](
+alias float8_e4m3_to_str = StaticTuple[StringLiteral, 256](
     "0.0",
     "0.001953125",
     "0.00390625",
@@ -1942,7 +1946,7 @@ alias float8e4m3_to_str = StaticTuple[StringLiteral, 256](
     "nan",
 )
 
-alias float8e5m2fnuz_to_str = StaticTuple[StringLiteral, 256](
+alias float8_e5m2fnuz_to_str = StaticTuple[StringLiteral, 256](
     "0.0",
     "7.62939453125e-06",
     "1.52587890625e-05",
@@ -2201,7 +2205,7 @@ alias float8e5m2fnuz_to_str = StaticTuple[StringLiteral, 256](
     "-57344.0",
 )
 
-alias float8e4m3fnuz_to_str = StaticTuple[StringLiteral, 256](
+alias float8_e4m3fnuz_to_str = StaticTuple[StringLiteral, 256](
     "0.0",
     "0.0009765625",
     "0.001953125",
