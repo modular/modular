@@ -52,6 +52,7 @@ dtypes = st.sampled_from(
             DType.float8_e5m2,
             DType.float8_e5m2fnuz,
             DType.float8_e4m3,
+            DType.float8_e4m3fn,
             DType.float8_e4m3fnuz,
         )
     ]

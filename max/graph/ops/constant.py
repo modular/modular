@@ -53,6 +53,7 @@ def constant(
         return constant(value, DType.float32).cast(DType.bfloat16)
     elif dtype in (
         DType.float8_e4m3,
+        DType.float8_e4m3fn,
         DType.float8_e4m3fnuz,
         DType.float8_e5m2,
         DType.float8_e5m2fnuz,

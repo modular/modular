@@ -39,7 +39,7 @@ def _dtype_from_torch(dtype) -> DType:
         # torch.uint16: DType.uint16,  # Pytorch doesn't support these uint dtypes.
         # torch.uint32: DType.uint32,
         # torch.uint64: DType.uint64,
-        torch.float8_e4m3fn: DType.float8_e4m3,
+        torch.float8_e4m3fn: DType.float8_e4m3fn,
         torch.float8_e5m2: DType.float8_e5m2,
         torch.float16: DType.float16,
         torch.float32: DType.float32,
