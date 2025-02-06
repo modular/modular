@@ -29,7 +29,6 @@ class Weight(TensorValue):
     _device: Optional[DeviceRef]
     quantization_encoding: Optional[QuantizationEncoding]
     align: Optional[int]
-    __mlir_value: Optional[mlir.Value]
 
     def __new__(cls, *args, **kwargs):
         # Skip the `Value.__new__` method to avoid staging a `TensorValue`.
@@ -52,7 +51,6 @@ class Weight(TensorValue):
         self._device = device
         self.quantization_encoding = quantization_encoding
         self.align = align
-        self.__mlir_value = None
 
     @property
     def dtype(self) -> DType:
@@ -64,17 +62,17 @@ class Weight(TensorValue):
 
     @property
     def _mlir_value(self) -> mlir.Value:
-        if not self.__mlir_value:
-            try:
-                self.__mlir_value = graph.Graph.current.add_weight(
-                    self, self._device
-                )._mlir_value
-            except LookupError:
-                raise ValueError(
-                    "Cannot operate on a `max.graph.Weight` when there is no parent graph."
-                )
-        assert self.__mlir_value is not None
-        return self.__mlir_value
+        try:
+            current_graph = graph.Graph.current
+        except LookupError:
+            raise ValueError(
+                "Cannot operate on a `max.graph.Weight` when there is no parent graph."
+            )
+
+        # If the weight doesn't exist on the graph, `Graph.add_weight` will
+        # return a new `TensorValue`. Otherwise, this will return the existing
+        # `TensorValue`.
+        return current_graph.add_weight(self, self._device)._mlir_value
 
     @_mlir_value.setter
     def _mlir_value(self, value: mlir.Value) -> None:
