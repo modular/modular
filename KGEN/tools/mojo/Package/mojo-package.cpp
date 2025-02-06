@@ -384,6 +384,13 @@ static int package(const State &subcommandState) {
   LIT::PackageOp packageOp;
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr,
                                                     &packageArgs.ctx);
+  bool isKgenModule = args.hasArg(options::OPT_kgenModule);
+  // TODO: fix debug info for kgen modules.
+  if (isKgenModule) {
+    packageArgs.compileOptions.debugLevel = CompilationOptions::kNoDebug;
+    packageArgs.compileOptions.optimizationLevel = 3;
+  }
+
   ErrorOr<OwningOpRef<ModuleOp>> module = invokeMojoParser(
       state, args, packageArgs.compileOptions, &packageArgs.ctx, runtime,
       options::OPT_diagnose_missing_doc_strings,
@@ -391,7 +398,7 @@ static int package(const State &subcommandState) {
       /*definesId=*/llvm::opt::OptSpecifier(), options::OPT_strip_file_prefix,
       options::OPT_disable_builtins, options::OPT_mojo_search_paths,
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
-        parserConfig.exportKgenModule = args.hasArg(options::OPT_kgenModule);
+        parserConfig.exportKgenModule = isKgenModule;
         OwningOpRef<ModuleOp> moduleOp;
         std::tie(moduleOp, packageOp) = LIT::importMojoPackage(
             runtime, packageArgs.inputPath, packageArgs.name, sourceMgr,
