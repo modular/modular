@@ -197,7 +197,7 @@ class Model:
 
         Raises:
             RuntimeError: If the given input tensors' shape don't match what
-              the model expects.zzz
+              the model expects.
 
             TypeError: If the given input tensors' dtype cannot be cast to what
               the model expects.
