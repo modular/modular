@@ -355,13 +355,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     options.targetAccelerator = clOptions.targetAccelerator;
   }
 
-  // Generate a library file or go all the way through elaboration.
-  if (clOptions.cmd == Command::kGenLibraryFile) {
-    if (failed(compiler.runGenerateLibraryPipeline(*theModule)))
-      return failure(clOptions.reportError("compilation failed"));
-    return emitModuleIR(*theModule, clOptions);
-  }
-
   auto compilerOr = ObjectCompiler::create(".mojo_cache", options,
                                            clOptions.cmd == Command::kExecute,
                                            *ctx, pmOptions);
