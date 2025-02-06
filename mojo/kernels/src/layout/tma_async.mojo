@@ -50,7 +50,8 @@ fn _to_int_tuple[*vals: Int]() -> IntTuple:
 
 fn _tma_desc_tile_layout[
     type: DType,
-    layout: Layout,
+    rank: Int,
+    tile_shape: IndexList[rank],
     is_k_major: Bool = True,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ]() -> Layout:
@@ -58,15 +59,30 @@ fn _tma_desc_tile_layout[
         sizeof[type]() >= 1, "Don't support sub-byte type in TMA yet."
     ]()
 
-    alias dim0 = layout.shape[0].value()
-    alias dim1 = layout.shape[1].value()
+    constrained[rank == 2, "Only support 2D TMA descriptor for now."]()
+
+    alias dim0 = tile_shape[0]
+    alias dim1 = tile_shape[1]
 
     @parameter
     if is_k_major:
         # TMA copies BM x `swizzle_mode.bytes()` Bytes each time.
         return Layout.row_major(dim0, swizzle_mode.bytes() // sizeof[type]())
 
-    return layout
+    constrained[
+        swizzle_mode == TensorMapSwizzle.SWIZZLE_128B,
+        "Only support 128B swizzle for mn-major.",
+    ]()
+
+    # This is inefficient when MN_dim = swizzle_mode.bytes() because we can copy
+    # by MN x BK. The better solution to follow cutlass using `tile_to_shape` and
+    # automatically set the max descriptor layout.
+    # Note that our input is row_major(K, MN) for MN-major, the descriptor tile's
+    # dimensions are also ordered by (K, MN).
+    alias core_matrix_num_rows = 8
+    return Layout.row_major(
+        core_matrix_num_rows, swizzle_mode.bytes() // sizeof[type]()
+    )
 
 
 # A memory barrier with blocking wait.
@@ -197,8 +213,13 @@ struct TMATensorTile[
             "TMA requires 128B alignment in shared memory",
         ]()
 
-        # The layout per copy can be smaller than the shared memory tile shape due to
-        # WGMMA requirement. We may need multiple copies.
+        # The descriptor layout i.e. data per copy can be smaller than the shared memory
+        # tile shape due to WGMMA requirement. E.g. k-major no swizzle WGMMA BM x 16B to be
+        # one continous chunk in shared memory. We need to break down tile shape in K by 16B.
+        #
+        # dim0, dim1 are MN, K for K-major and K, MN for MN-major because our inputs are
+        # row_major(K, MN) for the latter.
+        #
         # TODO: use layout algebra here
         alias copy_dim0 = desc_layout.shape[0].value()
         alias copy_dim1 = desc_layout.shape[1].value()
@@ -368,14 +389,13 @@ def create_tma_tile[
     *,
     __tile_layout: Layout = Layout.row_major(tile_shape[0], tile_shape[1]),
     __desc_layout: Layout = _tma_desc_tile_layout[
-        type, __tile_layout, is_k_major, swizzle_mode
+        type, rank, tile_shape, is_k_major, swizzle_mode
     ](),
 ](ctx: DeviceContext, tensor: LayoutTensor[type, *_, **_]) -> TMATensorTile[
     type, __tile_layout, __desc_layout
 ]:
     # Current impl limitations
     constrained[rank == 2, "Only suppot 2D TMA"]()
-    constrained[is_k_major, "Only K major layout supported in TMA"]()
 
     @parameter
     if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
