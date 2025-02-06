@@ -1,16 +1,4 @@
-load("//bazel:api.bzl", "modular_nanobind_extension", "modular_nanobind_library", "modular_py_library", "requirement")
-
-modular_py_library(
-    name = "max",
-    srcs = glob(["*.py"]),
-    visibility = ["//visibility:public"],
-    deps = [
-        "//SDK/lib/API/python/max/pipelines",
-        "//SDK/lib/API/python/max/serve",
-        requirement("tqdm"),
-        requirement("numpy"),
-    ],
-)
+load("//bazel:api.bzl", "modular_nanobind_extension", "modular_nanobind_library")
 
 modular_nanobind_extension(
     name = "_dtype",
