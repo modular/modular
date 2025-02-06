@@ -1159,7 +1159,9 @@ struct DeviceContext:
     @always_inline
     fn enqueue_copy_to_device[
         type: DType
-    ](self, buf: DeviceBuffer[type], ptr: UnsafePointer[Scalar[type]]) raises:
+    ](
+        self, dst_buf: DeviceBuffer[type], src_ptr: UnsafePointer[Scalar[type]]
+    ) raises:
         # const char * AsyncRT_DeviceContext_HtoD_async(const DeviceContext *ctx, const DeviceBuffer *dst, const void *src)
         _checked(
             external_call[
@@ -1170,15 +1172,17 @@ struct DeviceContext:
                 UnsafePointer[Scalar[type]],
             ](
                 self._handle,
-                buf._handle,
-                ptr,
+                dst_buf._handle,
+                src_ptr,
             )
         )
 
     @always_inline
     fn enqueue_copy_from_device[
         type: DType
-    ](self, ptr: UnsafePointer[Scalar[type]], buf: DeviceBuffer[type]) raises:
+    ](
+        self, dst_ptr: UnsafePointer[Scalar[type]], src_buf: DeviceBuffer[type]
+    ) raises:
         # const char * AsyncRT_DeviceContext_DtoH_async(const DeviceContext *ctx, void *dst, const DeviceBuffer *src)
         _checked(
             external_call[
@@ -1189,8 +1193,8 @@ struct DeviceContext:
                 _DeviceBufferPtr,
             ](
                 self._handle,
-                ptr,
-                buf._handle,
+                dst_ptr,
+                src_buf._handle,
             )
         )
 
@@ -1199,17 +1203,17 @@ struct DeviceContext:
         type: DType
     ](
         self,
-        dst: UnsafePointer[Scalar[type]],
-        src: UnsafePointer[Scalar[type]],
+        dst_ptr: UnsafePointer[Scalar[type]],
+        src_ptr: UnsafePointer[Scalar[type]],
         size: Int,
     ) raises:
-        var src_buf = DeviceBuffer(self, src, size, owning=False)
-        self.enqueue_copy_from_device[type](dst, src_buf)
+        var src_buf = DeviceBuffer(self, src_ptr, size, owning=False)
+        self.enqueue_copy_from_device[type](dst_ptr, src_buf)
 
     @always_inline
     fn enqueue_copy_device_to_device[
         type: DType
-    ](self, dst: DeviceBuffer[type], src: DeviceBuffer[type]) raises:
+    ](self, dst_buf: DeviceBuffer[type], src_buf: DeviceBuffer[type]) raises:
         # const char * AsyncRT_DeviceContext_DtoD_async(const DeviceContext *ctx, const DeviceBuffer *dst, const DeviceBuffer *src)
         _checked(
             external_call[
@@ -1220,8 +1224,8 @@ struct DeviceContext:
                 _DeviceBufferPtr,
             ](
                 self._handle,
-                dst._handle,
-                src._handle,
+                dst_buf._handle,
+                src_buf._handle,
             )
         )
 
@@ -1230,19 +1234,21 @@ struct DeviceContext:
         type: DType
     ](
         self,
-        dst: UnsafePointer[Scalar[type]],
-        src: UnsafePointer[Scalar[type]],
+        dst_ptr: UnsafePointer[Scalar[type]],
+        src_ptr: UnsafePointer[Scalar[type]],
         size: Int,
     ) raises:
         # Not directly implemented on DeviceContext, wrap in buffers first
-        var dst_buf = DeviceBuffer(self, dst, size, owning=False)
-        var src_buf = DeviceBuffer(self, src, size, owning=False)
+        var dst_buf = DeviceBuffer(self, dst_ptr, size, owning=False)
+        var src_buf = DeviceBuffer(self, src_ptr, size, owning=False)
         self.enqueue_copy_device_to_device[type](dst_buf, src_buf)
 
     @always_inline
     fn copy_to_device_sync[
         type: DType
-    ](self, buf: DeviceBuffer[type], ptr: UnsafePointer[Scalar[type]]) raises:
+    ](
+        self, dst_buf: DeviceBuffer[type], src_ptr: UnsafePointer[Scalar[type]]
+    ) raises:
         # const char * AsyncRT_DeviceContext_HtoD_sync(const DeviceContext *ctx, const DeviceBuffer *dst, const void *src)
         _checked(
             external_call[
@@ -1253,15 +1259,17 @@ struct DeviceContext:
                 UnsafePointer[Scalar[type]],
             ](
                 self._handle,
-                buf._handle,
-                ptr,
+                dst_buf._handle,
+                src_ptr,
             )
         )
 
     @always_inline
     fn copy_from_device_sync[
         type: DType
-    ](self, ptr: UnsafePointer[Scalar[type]], buf: DeviceBuffer[type]) raises:
+    ](
+        self, dst_ptr: UnsafePointer[Scalar[type]], src_buf: DeviceBuffer[type]
+    ) raises:
         # const char * AsyncRT_DeviceContext_DtoH_sync(const DeviceContext *ctx, void *dst, const DeviceBuffer *src)
         _checked(
             external_call[
@@ -1272,15 +1280,15 @@ struct DeviceContext:
                 _DeviceBufferPtr,
             ](
                 self._handle,
-                ptr,
-                buf._handle,
+                dst_ptr,
+                src_buf._handle,
             )
         )
 
     @always_inline
     fn copy_device_to_device_sync[
         type: DType
-    ](self, dst: DeviceBuffer[type], src: DeviceBuffer[type]) raises:
+    ](self, dst_buf: DeviceBuffer[type], src_buf: DeviceBuffer[type]) raises:
         # const char * AsyncRT_DeviceContext_DtoD_sync(const DeviceContext *ctx, const DeviceBuffer *dst, const DeviceBuffer *src)
         _checked(
             external_call[
@@ -1291,8 +1299,8 @@ struct DeviceContext:
                 _DeviceBufferPtr,
             ](
                 self._handle,
-                dst._handle,
-                src._handle,
+                dst_buf._handle,
+                src_buf._handle,
             )
         )
 
