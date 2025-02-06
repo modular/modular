@@ -741,7 +741,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         "sentence-transformers/all-mpnet-base-v2",
         "MPNetForMaskedLM",
         # Maximum length accepted by MPNet tokenizer is 512.
-        config_params={"max_length": 512},
+        config_params={"max_length": 512, "pool_embeddings": False},
         prompts=[p[:502] for p in evaluate.PROMPTS],
         auto_model_cls=transformers.AutoModel,
         task=interfaces.PipelineTask.EMBEDDINGS_GENERATION,

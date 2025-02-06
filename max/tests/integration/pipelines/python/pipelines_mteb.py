@@ -7,12 +7,15 @@
 
 ./bazelw run SDK/integration-test/pipelines/python:pipelines_mteb --\
     --huggingface-repo-id=sentence-transformers/all-mpnet-base-v2 \
+    --max-cache-batch-size=1000 \
     --eval-task="STSBenchmark" \
     --eval-output-folder=$PWD/mteb-output
 
 To get results from a reference HuggingFace model, add
-  --engine huggingface
+  --model-library=mteb
 
+You can also use `--engine=huggingface` (instead of `--model-library=mteb`) to
+run a benchmark with huggingface pipeline model
 """
 
 from __future__ import annotations
@@ -32,7 +35,7 @@ import numpy as np
 from max.entrypoints.cli import pipeline_config_options
 from max.pipelines import (
     PIPELINE_REGISTRY,
-    EmbeddingsPipeline,
+    EmbeddingsGenerator,
     PipelineConfig,
     PipelineEngine,
 )
@@ -51,7 +54,7 @@ class EmbeddingModel:
         self,
         pipeline_config: PipelineConfig,
         tokenizer: PipelineTokenizer,
-        pipeline: EmbeddingsPipeline,
+        pipeline: EmbeddingsGenerator,
     ):
         self.pipeline_config = pipeline_config
         self.tokenizer = tokenizer
@@ -59,7 +62,13 @@ class EmbeddingModel:
 
     @cached_property
     def mteb_model_meta(self) -> mteb.ModelMeta:
-        name = f"max_{self.pipeline_config.huggingface_repo_id}"
+        if self.pipeline_config.engine == PipelineEngine.MAX:
+            name = f"max_{self.pipeline_config.huggingface_repo_id}"
+        elif self.pipeline_config.engine == PipelineEngine.HUGGINGFACE:
+            name = f"max_hf_{self.pipeline_config.huggingface_repo_id}"
+        else:
+            name = f"max_{self.pipeline_config.engine}_{self.pipeline_config.huggingface_repo_id}"
+
         if meta := mteb.models.MODEL_REGISTRY.get(
             self.pipeline_config.huggingface_repo_id
         ):
@@ -94,8 +103,14 @@ class EmbeddingModel:
         Returns:
             The encoded sentences.
         """
-        assert self.pipeline_config.max_batch_size is not None
-        batch_size = self.pipeline_config.max_batch_size
+        if self.pipeline_config.max_batch_size is None:
+            logger.warning(
+                "Please set --max-cache-batch-size, otherwise the batch size"
+                " will automatically be set to 1."
+            )
+            batch_size = 1
+        else:
+            batch_size = self.pipeline_config.max_batch_size
         start = 0
         loop = asyncio.get_event_loop()
         results = []
@@ -120,11 +135,7 @@ class EmbeddingModel:
         results = []
         for n in range(len(sentences)):
             embeddings = response[str(n)].embeddings
-
-            # Get the average of all the token embeddings to get the sentence
-            # embedding.
-            pooled_embeddings = np.sum(embeddings, 0) / embeddings.shape[0]
-            results.append(pooled_embeddings)
+            results.append(embeddings)
         return results
 
 
@@ -133,6 +144,19 @@ logger = logging.getLogger("pipelines_mteb")
 
 @click.command()
 @pipeline_config_options
+@click.option(
+    "--model-library",
+    type=click.Choice(["pipeline", "mteb"]),
+    default="pipeline",
+    help=(
+        "Use this to choose how the evaluator loads the model. If 'pipeline' "
+        "is chosen, the model will be chosen from the pipeline model registry. "
+        " If 'mteb' is chosen, the model's huggingface_repo_id will be passed "
+        "to the mteb library. This is separate from the --engine flag, which "
+        "is used with --model-library=pipeline (but can be used to load a "
+        "HuggingFace model)."
+    ),
+)
 @click.option("--eval-benchmark", type=str)
 @click.option("--eval-task", type=str)
 @click.option("--eval-output-folder", type=str)
@@ -146,6 +170,7 @@ logger = logging.getLogger("pipelines_mteb")
 )
 def main(
     *,
+    model_library: str,
     eval_benchmark: Optional[str] = None,
     eval_task: Optional[str] = None,
     eval_output_folder: Optional[str] = None,
@@ -182,16 +207,15 @@ def main(
     pipeline_config = PipelineConfig(**config_kwargs)
 
     model: EmbeddingModel | mteb.encoder_interface.Encoder
-    if pipeline_config.engine == PipelineEngine.HUGGINGFACE:
-        logging.info("Selected model engine: %s", pipeline_config.engine.value)
+    logging.info("Loading model with %s library." % model_library)
+    if model_library == "mteb":
         model = mteb.get_model(pipeline_config.huggingface_repo_id)
     else:
-        logging.info("Selected model engine: %s", PipelineEngine.MAX.value)
         register_all_models()
         tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(
             pipeline_config, task=PipelineTask.EMBEDDINGS_GENERATION
         )
-        assert isinstance(pipeline, EmbeddingsPipeline)
+        assert isinstance(pipeline, EmbeddingsGenerator)
         model = EmbeddingModel(pipeline_config, tokenizer, pipeline)
 
     tasks: mteb.Benchmark | mteb.overview.MTEBTasks
