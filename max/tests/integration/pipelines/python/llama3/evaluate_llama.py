@@ -224,7 +224,12 @@ def main(model, encoding, verbose):
         print(f"encoding: {encoding}")
         try:
             config = model_encoding.build_config(testdata_directory)
-            tokenizer = TextTokenizer(config)
+            tokenizer = TextTokenizer(
+                config.huggingface_repo_id,
+                config.max_length,
+                config.max_new_tokens,
+                config.trust_remote_code,
+            )
 
             session = InferenceSession(devices=config.devices)
             llama3 = Llama3Model(pipeline_config=config, session=session)

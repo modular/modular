@@ -8,7 +8,6 @@ import asyncio
 import pytest
 import requests
 from max.pipelines import (
-    PipelineConfig,
     TextAndVisionContext,
     TextAndVisionTokenizer,
     TextContext,
@@ -47,10 +46,10 @@ def test_text_and_vision_tokenizer():
     img = convert_image_url_to_base64(img_url)
     imgs = [[], [img], [img, img]]
     for repo_id, check_str in VALID_REPOS.items():
-        pipeline_config = PipelineConfig(
-            huggingface_repo_id=repo_id, trust_remote_code=True
+        huggingface_repo_id = repo_id
+        tokenizer = TextAndVisionTokenizer(
+            huggingface_repo_id, trust_remote_code=True
         )
-        tokenizer = TextAndVisionTokenizer(pipeline_config)
         for imgs_list in imgs:
             content = [
                 {"type": "text", "text": "What is in this image?"},
@@ -87,16 +86,13 @@ def test_text_tokenizer_with_tool_use():
     It is written to test out chat templating and input features for tool use with Llama 3.2
     """
 
-    pipeline_config = PipelineConfig(
-        huggingface_repo_id="meta-llama/Llama-3.1-8B-Instruct",
-    )
-
-    tokenizer = TextTokenizer(pipeline_config)
+    huggingface_repo_id = "meta-llama/Llama-3.1-8B-Instruct"
+    tokenizer = TextTokenizer(huggingface_repo_id)
 
     request = TokenGeneratorRequest(
         id="request_with_tools",
         index=0,
-        model_name=pipeline_config.huggingface_repo_id,
+        model_name=huggingface_repo_id,
         messages=[
             TokenGeneratorRequestMessage(
                 role="user",
@@ -132,3 +128,30 @@ def test_text_tokenizer_with_tool_use():
 
     # This is just asserting that the prompt includes function context
     assert '"name": "get_current_weather"' in context.prompt
+
+
+def test_tokenizer__truncates_to_max_length():
+    huggingface_repo_id = "meta-llama/Llama-3.1-8B-Instruct"
+    max_length = 12
+    tokenizer = TextTokenizer(
+        huggingface_repo_id,
+        max_length=max_length,
+    )
+
+    short_request = TokenGeneratorRequest(
+        id="request_with_short_message",
+        index=0,
+        model_name=huggingface_repo_id,
+        prompt="Short message",
+    )
+    context: TextContext = asyncio.run(tokenizer.new_context(short_request))
+    assert context.current_length < 12
+
+    long_request = TokenGeneratorRequest(
+        id="request_with_short_message",
+        index=0,
+        model_name=huggingface_repo_id,
+        prompt="Longer message with lots of text with more words than max length for sure.",
+    )
+    with pytest.raises(ValueError, match="max length"):
+        _ = asyncio.run(tokenizer.new_context(long_request))

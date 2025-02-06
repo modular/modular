@@ -6,23 +6,13 @@
 
 import numpy as np
 import pytest
-from max.pipelines import (
-    PipelineConfig,
-    SupportedEncoding,
-    TextContext,
-    TextTokenizer,
-)
+from max.pipelines import SupportedEncoding, TextContext, TextTokenizer
 
 
 @pytest.mark.asyncio
 async def test_tokenizer__encode_and_decode():
     encoding = SupportedEncoding.q4_k
-    tokenizer = TextTokenizer(
-        PipelineConfig(
-            quantization_encoding=encoding,
-            huggingface_repo_id="modularai/llama-3.1",
-        )
-    )
+    tokenizer = TextTokenizer(huggingface_repo_id="modularai/llama-3.1")
 
     test_string = "hi my name is"
     encoded = await tokenizer.encode(test_string)

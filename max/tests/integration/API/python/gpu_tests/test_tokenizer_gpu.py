@@ -22,7 +22,7 @@ def test_text_tokenizer_with_constrained_decoding():
         enable_structured_output=True,
     )
 
-    tokenizer = TextTokenizer(pipeline_config)
+    tokenizer = TextTokenizer(pipeline_config.huggingface_repo_id)
 
     prompt = """
     Please provide a json response, with the person's name and age extracted from the excerpt.
