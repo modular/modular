@@ -8,7 +8,7 @@
 # RUN: %mojo-no-debug %s
 
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
-from nn.mha_mask import CausalMask, TileMaskStatus
+from nn.mha_mask import CausalMask, NullMask, AndMask, TileMaskStatus
 from testing import assert_equal, assert_true
 
 from utils.index import Index, IndexList
@@ -87,6 +87,44 @@ def test_causal_mask_asm():
     assert_true("setp.lt.s64" not in asm)
 
 
+def test_and_mask():
+    alias type = DType.int32
+
+    print("test_and_mask")
+    # Or-ing a causal mask with a null mask should result in a causal mask.
+    var mask = AndMask[CausalMask(), NullMask()]()
+
+    var masked_vec = mask.mask(Index(0, 0, 4, 3), SIMD[type, 4](0, 1, 2, 3))
+    assert_equal(masked_vec, SIMD[type, 4](0, 1, 0, 0))
+
+    masked_vec = mask.mask(Index(0, 0, 4, 0), SIMD[type, 4](0, 1, 2, 3))
+    assert_equal(masked_vec, SIMD[type, 4](0, 1, 2, 3))
+
+    masked_vec = mask.mask(Index(0, 0, 1, 6), SIMD[type, 4](0, 1, 2, 3))
+    assert_equal(masked_vec, SIMD[type, 4](0))
+
+    # Check tile status.
+    assert_true(mask.status(Index(4, 4), Index(4, 4)) == TileMaskStatus.NO_MASK)
+    assert_true(mask.status(Index(0, 2), Index(2, 2)) == TileMaskStatus.NO_MASK)
+    assert_true(mask.status(Index(2, 0), Index(2, 2)) == TileMaskStatus.NO_MASK)
+
+    var mask2 = AndMask[CausalMask(), CausalMask()]()
+    assert_true(
+        mask2.status(Index(4, 4), Index(4, 4)) == TileMaskStatus.PARTIAL_MASK
+    )
+    assert_true(
+        mask2.status(Index(64, 384), Index(64, 128))
+        == TileMaskStatus.FULL_MASK,
+        msg=String(
+            "lhs = ",
+            mask2.status(Index(0, 0), Index(0, 0)),
+            " rhs = ",
+            TileMaskStatus.FULL_MASK,
+        ),
+    )
+
+
 def main():
     test_causal_mask()
     test_causal_mask_asm()
+    test_and_mask()
