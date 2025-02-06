@@ -604,25 +604,36 @@ ________________________________________
 
 #### String comparison
 
-`String` values can be compared using standard lexicographical ordering,
-producing a `Bool`. (For example, "Zebra" is treated as less than "ant" because
-upper case letters occur before lower case letters in the character encoding.)
-`StringLiteral` values can be directly compared against each other as well.
-However when comparing a `String` to a `StringLiteral` value, the `String` value
-**must** be the left-hand operand to avoid a compilation error. For example:
+`String` and `StringLiteral` values can be compared using standard
+lexicographical ordering, producing a `Bool`. For example, "Zebra" is treated as
+less than "ant" because upper case letters occur before lower case letters in
+the character encoding.
 
 ```mojo
-var str: String = "bird"
-# Compilation error:
-# result = "cat" >= str
-# You could explicitly convert the StringLiteral to a String:
-# result = String("cat") >= str
-result = str < "cat"  # Successful comparison
-print(result)
+var animal: String = "bird"
+
+is_cat_eq = "cat" == animal
+print('Is "cat" equal to "{}"?'.format(animal), is_cat_eq)
+
+is_cat_ne = "cat" != animal
+print('Is "cat" not equal to "{}"?'.format(animal), is_cat_ne)
+
+is_bird_eq = "bird" == animal
+print('Is "bird" equal to "{}"?'.format(animal), is_bird_eq)
+
+is_cat_gt = "CAT" > animal
+print('Is "CAT" greater than "{}"?'.format(animal), is_cat_gt)
+
+is_ge_cat = animal >= "CAT"
+print('Is "{}" greater than or equal to "CAT"?'.format(animal), is_ge_cat)
 ```
 
 ```output
-True
+Is "cat" equal to "bird"? False
+Is "cat" not equal to "bird"? True
+Is "bird" equal to "bird"? True
+Is "CAT" greater than "bird"? False
+Is "bird" greater than or equal to "CAT"? True
 ```
 
 #### Substring testing
