@@ -274,7 +274,7 @@ struct StringLiteral(
 
     @always_inline("nodebug")
     fn __lt__(self, rhs: StringLiteral) -> Bool:
-        """Compare this StringLiteral to the RHS using LT comparison.
+        """Compare this StringLiteral to the RHS using lesser than (LT) comparison.
 
         Args:
             rhs: The other StringLiteral to compare against.
@@ -286,7 +286,7 @@ struct StringLiteral(
 
     @always_inline("nodebug")
     fn __le__(self, rhs: StringLiteral) -> Bool:
-        """Compare this StringLiteral to the RHS using LE comparison.
+        """Compare this StringLiteral to the RHS using lesser than or equal to (LE) comparison.
 
         Args:
             rhs: The other StringLiteral to compare against.
@@ -298,7 +298,7 @@ struct StringLiteral(
 
     @always_inline("nodebug")
     fn __gt__(self, rhs: StringLiteral) -> Bool:
-        """Compare this StringLiteral to the RHS using GT comparison.
+        """Compare this StringLiteral to the RHS using greater than (GT) comparison.
 
         Args:
             rhs: The other StringLiteral to compare against.
@@ -310,7 +310,55 @@ struct StringLiteral(
 
     @always_inline("nodebug")
     fn __ge__(self, rhs: StringLiteral) -> Bool:
-        """Compare this StringLiteral to the RHS using GE comparison.
+        """Compare this StringLiteral to the RHS using greater than or equal to (GE) comparison.
+
+        Args:
+            rhs: The other StringLiteral to compare against.
+
+        Returns:
+            True if this StringLiteral is greater than or equal to the RHS StringLiteral and False otherwise.
+        """
+        return not (self < rhs)
+
+    @always_inline("nodebug")
+    fn __lt__(self, rhs: StringSlice) -> Bool:
+        """Compare this StringLiteral to the RHS using lesser than (LT) comparison.
+
+        Args:
+            rhs: The other StringLiteral to compare against.
+
+        Returns:
+            True if this StringLiteral is strictly less than the RHS StringLiteral and False otherwise.
+        """
+        return self.as_string_slice() < rhs
+
+    @always_inline("nodebug")
+    fn __le__(self, rhs: StringSlice) -> Bool:
+        """Compare this StringLiteral to the RHS using lesser than or equal to (LE) comparison.
+
+        Args:
+            rhs: The other StringLiteral to compare against.
+
+        Returns:
+            True if this StringLiteral is less than or equal to the RHS StringLiteral and False otherwise.
+        """
+        return not (rhs < self)
+
+    @always_inline("nodebug")
+    fn __gt__(self, rhs: StringSlice) -> Bool:
+        """Compare this StringLiteral to the RHS using greater than (GT) comparison.
+
+        Args:
+            rhs: The other StringLiteral to compare against.
+
+        Returns:
+            True if this StringLiteral is strictly greater than the RHS StringLiteral and False otherwise.
+        """
+        return rhs < self
+
+    @always_inline("nodebug")
+    fn __ge__(self, rhs: StringSlice) -> Bool:
+        """Compare this StringLiteral to the RHS using greater than or equal to (GE) comparison.
 
         Args:
             rhs: The other StringLiteral to compare against.
