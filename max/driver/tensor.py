@@ -306,8 +306,8 @@ class Tensor(DLPackArray):
                 msg = str(e)
                 if msg.startswith("Cannot export readonly array"):
                     raise type(e)(
-                        msg + " Consider passing `copy = True` to"
-                        " `Tensor.from_dlpack`."
+                        msg
+                        + " Consider passing `copy = True` to `Tensor.from_dlpack`."
                     )
                 raise e
 
@@ -432,8 +432,7 @@ def load_max_tensor(path: PathLike) -> Tensor:
         bytes_read = 4 + key_size + 2 + 4 * rank + 8
         if bytes_read != metadata_size:
             raise ValueError(
-                "Multiple tensors found in .max file. This is currently not"
-                " supported."
+                "Multiple tensors found in .max file. This is currently not supported."
             )
 
         if dtype == DType.bfloat16:

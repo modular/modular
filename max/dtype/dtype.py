@@ -46,19 +46,16 @@ class DType(Enum):
     # si128 = (7 << kIntWidthShift) | mIsInteger | mIsSigned
     # ui128 = (7 << kIntWidthShift) | mIsInteger
 
-    f8e5m2 = 0 | mIsFloat
-    f8e4m3 = 1 | mIsFloat
-    # f8e3m4 = 2 | mIsFloat
-    f8e5m2fnuz = 3 | mIsFloat
-    f8e4m3fnuz = 4 | mIsFloat
+    float8_e5m2 = 0 | mIsFloat
+    float8_e4m3 = 1 | mIsFloat
+    # float8_e3m4 = 2 | mIsFloat
+    float8_e5m2fnuz = 3 | mIsFloat
+    float8_e4m3fnuz = 4 | mIsFloat
     float16 = 5 | mIsFloat  # Original name: f16
     bfloat16 = 6 | mIsFloat  # Original name: bf16
     float32 = 7 | mIsFloat  # Original name: f32
     float64 = 8 | mIsFloat  # Original name: f64
-    # f128 = 9 | mIsFloat
 
-    # f24 = 10 | mIsFloat
-    # f80 = 11 | mIsFloat
     # tf32 = 12 | mIsFloat
 
     bool = 1  # Original name: kBool
@@ -115,10 +112,10 @@ class DType(Enum):
             DType.uint16: np.dtype(np.uint16),
             DType.uint32: np.dtype(np.uint32),
             DType.uint64: np.dtype(np.uint64),
-            DType.f8e4m3: np.dtype(np.uint8),
-            DType.f8e4m3fnuz: np.dtype(np.uint8),
-            DType.f8e5m2: np.dtype(np.uint8),
-            DType.f8e5m2fnuz: np.dtype(np.uint8),
+            DType.float8_e4m3: np.dtype(np.uint8),
+            DType.float8_e4m3fnuz: np.dtype(np.uint8),
+            DType.float8_e5m2: np.dtype(np.uint8),
+            DType.float8_e5m2fnuz: np.dtype(np.uint8),
             DType.float16: np.dtype(np.float16),
             DType.float32: np.dtype(np.float32),
             DType.float64: np.dtype(np.float64),
@@ -200,10 +197,10 @@ _DTYPE_TO_MLIR = {
     DType.uint16: "ui16",
     DType.uint32: "ui32",
     DType.uint64: "ui64",
-    DType.f8e4m3: "f8e4m3",
-    DType.f8e4m3fnuz: "f8e4m3fnuz",
-    DType.f8e5m2: "f8e5m2",
-    DType.f8e5m2fnuz: "f8e5m2fnuz",
+    DType.float8_e4m3: "f8e4m3",
+    DType.float8_e4m3fnuz: "f8e4m3fnuz",
+    DType.float8_e5m2: "f8e5m2",
+    DType.float8_e5m2fnuz: "f8e5m2fnuz",
     DType.float16: "f16",
     DType.float32: "f32",
     DType.float64: "f64",
