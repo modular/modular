@@ -60,8 +60,8 @@ struct TensorCore[
         shape == shape_16x8x16 if is_nvidia_gpu() else shape == shape_16x16x16
     )
     alias supported_fp8 = in_type in (
-        DType.float8e4m3,
-        DType.float8e5m2,
+        DType.float8_e4m3,
+        DType.float8_e5m2,
     ) and shape == shape_16x8x32
 
     # Operand register types.
@@ -97,7 +97,7 @@ struct TensorCore[
         elif out_type is DType.float32 and in_type is DType.float16:
             return List[IndexList[3]](shape_16x8x8, shape_8x8x4)
         elif out_type is DType.float32 and (
-            in_type is DType.float8e4m3 or in_type is DType.float8e5m2
+            in_type is DType.float8_e4m3 or in_type is DType.float8_e5m2
         ):
             return List[IndexList[3]](shape_16x8x32)
         else:
@@ -168,8 +168,8 @@ struct TensorCore[
                 DType.float32,
                 DType.bfloat16,
                 DType.float16,
-                DType.float8e4m3,
-                DType.float8e5m2,
+                DType.float8_e4m3,
+                DType.float8_e5m2,
             ),
             "No valid type to load matrix fragment a",
         ]()
@@ -192,7 +192,7 @@ struct TensorCore[
                 lane_id()
             )
             a_reg_tile.vectorize[1, 2]().copy_from(a_reg_frags)
-        elif in_type is DType.float8e4m3 or in_type is DType.float8e5m2:
+        elif in_type is DType.float8_e4m3 or in_type is DType.float8_e5m2:
             constrained[
                 _has_native_f8_support(),
                 "float8 formats are only supported in SM90+",
@@ -290,7 +290,7 @@ struct TensorCore[
                     lane_id()
                 )
                 b_reg_tile.vectorize[2, 1]().copy_from(b_ram_frags)
-        elif in_type is DType.float8e4m3 or in_type is DType.float8e5m2:
+        elif in_type is DType.float8_e4m3 or in_type is DType.float8_e5m2:
             constrained[
                 reg_per_thread in (8,),
                 "No valid mma shape to load matrix fragment b",
@@ -1037,8 +1037,8 @@ fn get_mma_shape[
             else:
                 return shape_8x8x4
         elif accum_type is DType.float32 and input_type in (
-            DType.float8e4m3,
-            DType.float8e5m2,
+            DType.float8_e4m3,
+            DType.float8_e5m2,
         ):
             return shape_16x8x32
         else:
@@ -1076,7 +1076,7 @@ fn get_accum_type[
             return preferred_accum_type
         else:
             return DType.float16
-    elif input_type in (DType.float8e4m3, DType.float8e5m2):
+    elif input_type in (DType.float8_e4m3, DType.float8_e5m2):
         return DType.float32
     else:
         constrained[
