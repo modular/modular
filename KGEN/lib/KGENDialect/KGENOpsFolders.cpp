@@ -1365,62 +1365,21 @@ floatLiteralConvertOpHelper(FloatLiteralSpecialValues special,
   unsigned bias = 0;
   llvm::APFloatBase::Semantics semantics = llvm::APFloatBase::S_IEEEhalf;
 
-  if (isa<Float8E5M2Type>(outType)) {
-    totalLength = 8;
-    exponentLength = 5;
-    bias = 15;
-    semantics = llvm::APFloatBase::S_Float8E5M2;
-  } else if (isa<Float8E5M2FNUZType>(outType)) {
-    totalLength = 8;
-    exponentLength = 5;
-    bias = 16;
-    semantics = llvm::APFloatBase::S_Float8E5M2FNUZ;
-  } else if (isa<Float8E4M3Type>(outType)) {
-    totalLength = 8;
-    exponentLength = 4;
-    bias = 7;
-    semantics = llvm::APFloatBase::S_Float8E4M3;
-  } else if (isa<Float8E4M3FNUZType>(outType)) {
-    totalLength = 8;
-    exponentLength = 4;
-    bias = 8;
-    semantics = llvm::APFloatBase::S_Float8E4M3FNUZ;
-  } else if (isa<Float8E3M4Type>(outType)) {
-    totalLength = 8;
-    exponentLength = 3;
-    bias = 3;
-    semantics = llvm::APFloatBase::S_Float8E3M4;
-  } else if (outType.isF16()) {
-    totalLength = 16;
-    exponentLength = 5;
-    bias = 15;
-    semantics = llvm::APFloatBase::S_IEEEhalf;
-  } else if (outType.isBF16()) {
-    totalLength = 16;
-    exponentLength = 8;
-    bias = 127;
-    semantics = llvm::APFloatBase::S_BFloat;
-  } else if (outType.isF32()) {
-    totalLength = 32;
-    exponentLength = 8;
-    bias = 127;
-    semantics = llvm::APFloatBase::S_IEEEsingle;
-  } else if (outType.isF64()) {
-    totalLength = 64;
-    exponentLength = 11;
-    bias = 1023;
-    semantics = llvm::APFloatBase::S_IEEEdouble;
-  } else if (outType.isF80()) {
-    totalLength = 80;
-    exponentLength = 15;
-    bias = 16383;
-    semantics = llvm::APFloatBase::S_x87DoubleExtended;
-  } else if (outType.isF128()) {
-    totalLength = 128;
-    exponentLength = 15;
-    bias = 16383;
-    semantics = llvm::APFloatBase::S_IEEEquad;
-  } else {
+#define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, M_TYPE, MLIR_TYPE, CXX_TYPE,      \
+                      BITCOUNT, APFLOAT_TYPE, LLVM_SEMANTICS,                  \
+                      SIGNIFICAND_PRECISION, EXPONENT_LENGTH, BIAS)            \
+  if (isa<MLIR_TYPE>(outType)) {                                               \
+    totalLength = BITCOUNT;                                                    \
+    exponentLength = EXPONENT_LENGTH;                                          \
+    bias = BIAS;                                                               \
+    semantics = LLVM_SEMANTICS;                                                \
+  }
+
+#include "Support/ML/FloatTypes.def"
+
+#undef DECLARE_FLOAT
+
+  if (bias == 0) {
     return ErrorTree(
         loc, Error("float literal conversion: unsupported output type"));
   }
