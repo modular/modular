@@ -19,9 +19,9 @@ modular_py_binary(
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
+        "//SDK/lib/API/python/max/entrypoints/cli",
         "//SDK/lib/API/python/max/pipelines",
         "//SDK/lib/API/python/max/pipelines/architectures",
-        "//SDK/lib/API/python/max/pipelines/cli",
         "//SDK/lib/API/python/max/pipelines/llama3",
         "//SDK/lib/API/python/max/pipelines/pixtral",
         "//SDK/lib/API/python/max/serve",
@@ -261,8 +261,8 @@ modular_py_binary(
     ],
     ignore_collisions = True,  # duplicate scripts/__init__.py from deps
     deps = [
+        "//SDK/lib/API/python/max/entrypoints/cli",
         "//SDK/lib/API/python/max/pipelines/architectures",
-        "//SDK/lib/API/python/max/pipelines/cli",
         "//SDK/lib/API/python/max/pipelines/dataprocessing",
         requirement("click"),
         requirement("mteb"),

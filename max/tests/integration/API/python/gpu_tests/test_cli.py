@@ -13,8 +13,7 @@ import click
 import pytest
 from click.testing import CliRunner
 from max.driver import DeviceSpec
-from max.pipelines import PipelineConfig
-from max.pipelines.cli import (
+from max.entrypoints.cli import (
     get_default,
     get_field_type,
     is_flag,
@@ -23,6 +22,7 @@ from max.pipelines.cli import (
     pipeline_config_options,
     validate_field_type,
 )
+from max.pipelines import PipelineConfig
 from max.pipelines.kv_cache import KVCacheStrategy
 
 
