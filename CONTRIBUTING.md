@@ -222,7 +222,7 @@ for more details.
 
 #### Fork and clone the repo
 
-Go to the [Mojo repo](https://github.com/modularml/mojo) and click the fork
+Go to the [Mojo repo](https://github.com/modular/mojo) and click the fork
 button:
 
 ![Create Fork](stdlib/docs/images/create-fork.png)
