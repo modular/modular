@@ -269,10 +269,7 @@ struct RuntimeOptions {
   size_t getNumThreads() const { return numThreads; }
 
   /// Create a Runtime based on the CL argument specifications.
-  std::unique_ptr<Runtime> createRuntime(StringRef profileName) const;
-  std::unique_ptr<Runtime> createRuntime() const {
-    return createRuntime(getProfileFilename());
-  }
+  std::unique_ptr<Runtime> createRuntime() const;
 
   RuntimeOptions &forDebug() {
     singleThreaded = true;
