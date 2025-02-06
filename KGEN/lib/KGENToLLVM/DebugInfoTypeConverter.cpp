@@ -128,23 +128,13 @@ static DIType buildDebugTypeFromDType(MLIRContext *ctx,
   case DType::ui128:
     return buildIntFpDebugType<DIBasicUIntType>(ctx, targetInfo, dtype, 128,
                                                 64);
-
-  case DType::f8e5m2:
-  case DType::f8e4m3:
-  case DType::f8e3m4:
-  case DType::f8e5m2fnuz:
-  case DType::f8e4m3fnuz:
-    return buildIntFpDebugType<DIBasicFloatType>(ctx, targetInfo, dtype, 8, 8);
-  case DType::f16:
-  case DType::bf16:
-    return buildIntFpDebugType<DIBasicFloatType>(ctx, targetInfo, dtype, 16,
-                                                 16);
-  case DType::f32:
-    return buildIntFpDebugType<DIBasicFloatType>(ctx, targetInfo, dtype, 32,
-                                                 32);
-  case DType::f64:
-    return buildIntFpDebugType<DIBasicFloatType>(ctx, targetInfo, dtype, 64,
-                                                 64);
+#define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, M_TYPE, MLIR_TYPE, CXX_TYPE,      \
+                      BITCOUNT, ...)                                           \
+  case DType::SHORT_NAME:                                                      \
+    return buildIntFpDebugType<DIBasicFloatType>(ctx, targetInfo, dtype,       \
+                                                 BITCOUNT, BITCOUNT);
+#include "Support/ML/FloatTypes.def"
+#undef DECLARE_FLOAT
   case DType::tf32:
     return buildIntFpDebugType<DIBasicFloatType>(ctx, targetInfo, dtype, 32,
                                                  32);
