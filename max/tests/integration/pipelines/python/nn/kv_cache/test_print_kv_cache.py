@@ -68,10 +68,10 @@ class PrintKVCacheModel:
         not in [
             # Skip types unsupported on CPU.
             DType._unknown,
-            DType.f8e4m3,
-            DType.f8e4m3fnuz,
-            DType.f8e5m2,
-            DType.f8e5m2fnuz,
+            DType.float8_e4m3,
+            DType.float8_e4m3fnuz,
+            DType.float8_e5m2,
+            DType.float8_e5m2fnuz,
             DType.float16,
             # Skip bf16 since ARM CPU doesn't support it.
             DType.bfloat16,
