@@ -68,6 +68,7 @@ def test_tma_swizzle[
     shape: IndexList[2],
     tile_shape: IndexList[2],
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    is_k_major: Bool = True,
 ](ctx: DeviceContext):
     constrained[
         shape == tile_shape, "Only support same shape and tile shape."
@@ -77,10 +78,14 @@ def test_tma_swizzle[
     var src = ManagedLayoutTensor[type, layout](ctx)
     var dst = ManagedLayoutTensor[type, layout](ctx)
 
-    arange(src.tensor(), 0)
-    arange(dst.tensor(), 0)
+    arange(src.tensor[update=False](), 0)
+    arange(dst.tensor[update=False](), 0)
     var tma_tensor = create_tma_tile[
-        type, 2, tile_shape, swizzle_mode=swizzle_mode
+        type,
+        2,
+        tile_shape,
+        swizzle_mode=swizzle_mode,
+        is_k_major=is_k_major,
     ](ctx, src.device_tensor())
 
     # print test info
@@ -89,7 +94,7 @@ def test_tma_swizzle[
     )
     alias test_name = "test " + String(type) + (
         " multiple " if use_multiple_loads else " single "
-    ) + "tma w/ " + String(swizzle_mode)
+    ) + "tma w/ " + String(swizzle_mode) + " k-major " + String(is_k_major)
     print(test_name)
 
     # Descriptor tile is the copy per tma instruction. One load could have multiple tma copies.
@@ -108,7 +113,7 @@ def test_tma_swizzle[
             __type_of(tma_tensor).desc_layout,
         ],
         _target = _get_gpu_target["sm_90"](),
-        # dump_asm = True,
+        dump_asm=True,
     ]()
     ctx.enqueue_function(
         kernel,
@@ -201,4 +206,20 @@ def main():
             shape = Index(8, 32),
             tile_shape = Index(8, 32),
             swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
+        ](ctx)
+
+        test_tma_swizzle[
+            DType.bfloat16,
+            shape = Index(16, 64),
+            tile_shape = Index(16, 64),
+            swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+            is_k_major=False,
+        ](ctx)
+
+        test_tma_swizzle[
+            DType.bfloat16,
+            shape = Index(16, 128),
+            tile_shape = Index(16, 128),
+            swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+            is_k_major=False,
         ](ctx)
