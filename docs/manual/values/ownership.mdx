@@ -390,14 +390,6 @@ def consume_string(owned s: String):
     # s is destroyed here
 ```
 
-:::note
-
-Value lifetimes are not fully implemented for top-level code in
-Mojo's REPL, so the transfer sigil currently works as intended only when
-used inside a function.
-
-:::
-
 ### Transfer implementation details
 
 In Mojo, you shouldn't conflate "ownership transfer" with a "move
