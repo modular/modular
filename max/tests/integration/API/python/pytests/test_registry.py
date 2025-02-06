@@ -159,19 +159,12 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
 
     @classmethod
     def get_kv_params(cls, pipeline_config: PipelineConfig) -> KVCacheParams:
-        cache_dtype = (
-            DType.float32
-            if pipeline_config.quantization_encoding is not None
-            and pipeline_config.quantization_encoding.quantization_encoding
-            is not None
-            else pipeline_config.dtype
-        )
         hf_config = pipeline_config.huggingface_config
         num_kv_heads = cls._get_num_kv_heads(hf_config)
         hidden_size = cls._get_hidden_size(hf_config)
 
         return KVCacheParams(
-            dtype=cache_dtype,
+            dtype=pipeline_config.cache_dtype,
             n_kv_heads=num_kv_heads,
             head_dim=hidden_size // num_kv_heads,
             cache_strategy=pipeline_config.cache_strategy,
