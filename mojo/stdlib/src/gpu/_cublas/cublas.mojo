@@ -67,9 +67,9 @@ fn _convert_to_cublas_datatype[mojo_type: DType]() -> DataType:
         return DataType.R_32F
     elif mojo_type is DType.float16:
         return DataType.R_16F
-    elif mojo_type is DType.float8e4m3:
+    elif mojo_type is DType.float8_e4m3:
         return DataType.R_8F_E4M3
-    elif mojo_type is DType.float8e5m2:
+    elif mojo_type is DType.float8_e5m2:
         return DataType.R_8F_E5M2
     else:
         constrained[
