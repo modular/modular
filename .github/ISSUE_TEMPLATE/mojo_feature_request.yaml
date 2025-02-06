@@ -23,7 +23,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        If the request is out of the published roadmap and priorities, please start an [idea](https://github.com/modularml/mojo/discussions/categories/ideas) in GH Discussions to get feedback from the team.
+        If the request is out of the published roadmap and priorities, please start a [discussion](https://forum.modular.com/) in the Modular Forum to get feedback from the team.
 
   - type: textarea
     id: Request
