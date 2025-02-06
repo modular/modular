@@ -23,6 +23,7 @@ from max.pipelines import (
     PipelineConfig,
     PipelineEngine,
     PipelineModel,
+    PipelineTask,
     SupportedArchitecture,
     SupportedEncoding,
     TextTokenizer,
@@ -274,6 +275,7 @@ class DummyReplitPipelineModel(DummyPipelineModel):
 
 DUMMY_ARCH = SupportedArchitecture(
     name="LlamaForCausalLM",
+    task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["modularai/llama-3.1"],
     default_encoding=SupportedEncoding.float32,
     supported_encodings={
@@ -289,6 +291,7 @@ DUMMY_ARCH = SupportedArchitecture(
 
 REPLIT_ARCH = SupportedArchitecture(
     name="MPTForCausalLM",
+    task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["modularai/replit-code-1.5"],
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
