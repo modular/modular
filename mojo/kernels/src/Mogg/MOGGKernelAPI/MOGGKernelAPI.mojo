@@ -7933,6 +7933,12 @@ struct Struct_topk_fused_sampling:
 
             @parameter
             if is_cpu[target]():
+                # When top_k == 1, argmax is equivalent to our topk_fused_sampling with k == 1
+                # However, switching to just using our topk_fused_sampling leads to a -37% perf
+                # drop in q4_k benchmarking for llama 3.
+                if K == 1:
+                    argmax(input_buf, rank - 1, out_idxs_buf)
+                    return
                 _topk_fused_sampling_cpu(Int(K), input_buf, out_idxs_buf)
             else:
                 var cuda_ctx = ctx.get_device_context()
