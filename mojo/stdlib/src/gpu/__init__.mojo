@@ -4,14 +4,16 @@
 #
 # ===----------------------------------------------------------------------=== #
 """The GPU package provides low-level programming constructs for working with GPUs.
-These low level constructs allow you to write code that runs on the GPU with 
-traditional programming style --- partitioning work across threads that are mapped 
-onto 1-, 2-, or 3-dimensional blocks. The thread blocks can subsequently be 
+These low level constructs allow you to write code that runs on the GPU with
+traditional programming style--partitioning work across threads that are mapped
+onto 1-, 2-, or 3-dimensional blocks. The thread blocks can subsequently be
 grouped into a grid of thread blocks.
 
 A _kernel_ is a function that runs on the GPU in parallel across many threads.
-Currently, the [`DeviceContext`](/mojo/stdlib/gpu/host/device_context/DeviceContext) struct
-provides the interface for compiling and launching GPU kernels.
+Currently, the
+[`DeviceContext`](/mojo/stdlib/gpu/host/device_context/DeviceContext) struct
+provides the interface for compiling and launching GPU kernels inside MAX
+[custom operations](/max/custom-ops/).
 
 The [`gpu.host`](/mojo/stdlib/gpu/host/) package includes APIs to manage
 interaction between the _host_ (that is, the CPU) and _device_ (that is, the GPU

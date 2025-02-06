@@ -111,6 +111,12 @@ struct _DeviceSyncMode:
 
 
 struct DeviceBuffer[type: DType](Sized):
+    """Represents a block of device-resident storage. For GPU devices, a device
+    buffer is allocated in the device's global memory.
+
+    Parameters:
+        type: Data type to be stored in the buffer."""
+
     # _device_ptr must be the first word in the struct to enable passing of
     # DeviceBuffer to kernels. The first word is passed to the kernel and
     # it needs to contain the value registered with the driver.
@@ -124,8 +130,8 @@ struct DeviceBuffer[type: DType](Sized):
         size: Int,
         sync_mode: _DeviceSyncMode,
     ) raises:
-        """This init takes in a constructed DeviceContext and schedules an owned buffer allocation
-        using the stream in the device context.
+        """This init takes in a constructed `DeviceContext` and schedules an
+        owned buffer allocation using the stream in the device context.
         """
         alias elem_size = sizeof[type]()
         var cpp_handle = _DeviceBufferPtr()
@@ -242,7 +248,8 @@ struct DeviceBuffer[type: DType](Sized):
 
     @always_inline
     fn __del__(owned self):
-        """This function schedules an owned buffer free using the stream in the device context.
+        """This function schedules an owned buffer free using the stream in the
+        device context.
         """
         # void AsyncRT_DeviceBuffer_release(const DeviceBuffer *buffer)
         external_call[
@@ -323,6 +330,7 @@ struct DeviceBuffer[type: DType](Sized):
         return UnsafePointer[Scalar[type]]()
 
 
+@doc_private
 struct DeviceStream:
     var _handle: _DeviceStreamPtr
 
@@ -400,6 +408,8 @@ struct DeviceFunction[
     target: __mlir_type.`!kgen.target` = _get_gpu_target(),
     _ptxas_info_verbose: Bool = False,
 ]:
+    """Represents a compiled device function."""
+
     # emit asm if cross compiling for nvidia gpus.
     alias _emission_kind = "asm" if (
         _cross_compilation() and _is_nvidia_gpu[target]()
@@ -824,10 +834,41 @@ struct DeviceFunction[
 
 @register_passable
 struct DeviceContext:
-    """DeviceContext backed by a C++ implementation."""
+    """Represents a single accelerator (GPU), and provides methods
+    for allocating buffers on the device, copying data between host
+    and device, and for compiling and running functions (also known as
+    kernels) on the device.
+
+    The device context can be used as a
+    [context manager](/mojo/manual/errors#use-a-context-manager). For example:
+
+    ```mojo
+    with device_ctx as ctx:
+        alias length = 1024
+        var in_device = ctx.enqueue_create_buffer[DType.float32](length)
+        var out_device = ctx.enqueue_create_buffer[DType.float32](length)
+        ctx.enqueue_copy_to_device(in_device, in_host)
+
+        var gpu_func = ctx.compile_function[vector_func]()
+        var block_dim = 32
+
+        ctx.enqueue_function(
+            gpu_func,
+            out_device,
+            length,
+            grid_dim=(length // block_dim),
+            block_dim=(block_dim),
+        )
+        ctx.enqueue_copy_from_device(out_host, out_device)
+    ```
+    """
 
     alias device_info = DEFAULT_GPU
+    """`gpu.info.Info` object for the default accelerator."""
+
     alias device_api = Self.device_info.api
+    """Device API for the default accelerator (for example, "cuda" or
+    "hip")."""
 
     alias _SYNC = _DeviceSyncMode(True)
     alias _ASYNC = _DeviceSyncMode(False)
@@ -842,6 +883,14 @@ struct DeviceContext:
         api: String = Self.device_api,
         buffer_cache_size: UInt = 0,
     ) raises:
+        """Constructs a `DeviceContext` for the specified device.
+
+        Args:
+            device_id: ID of the accelerator device. If not specified, uses
+                the default accelerator.
+            api: Device API, for example, "cuda" or "hip".
+            buffer_cache_size: Amount of space to pre-allocate for device buffers,
+                in bytes."""
         # const char *AsyncRT_DeviceContext_create(const DeviceContext **result, const char *api, int id)
         var result = _DeviceContextPtr()
         _checked(
@@ -871,6 +920,7 @@ struct DeviceContext:
             _DeviceContextPtr,
         ](self._handle)
 
+    @doc_private
     @implicit
     fn __init__(out self, handle: UnsafePointer[NoneType]):
         """Create a Mojo DeviceContext from a pointer to an existing C++ object.
@@ -879,6 +929,7 @@ struct DeviceContext:
         self._retain()
 
     fn __copyinit__(out self, existing: Self):
+        """Copy the `DeviceContext`."""
         # Increment the reference count before copying the handle.
         existing._retain()
         self._handle = existing._handle
@@ -906,6 +957,11 @@ struct DeviceContext:
         return self^
 
     fn name(self) -> String:
+        """Gets the device name, an ASCII string identifying this device,
+        defined by the native device API.
+
+        Returns:
+            The device name."""
         # const char *AsyncRT_DeviceContext_deviceName(const DeviceContext *ctx)
         var name_ptr = external_call[
             "AsyncRT_DeviceContext_deviceName",
@@ -922,6 +978,18 @@ struct DeviceContext:
         return result
 
     fn api(self) -> String:
+        """Gets the name of the API used to program the device.
+
+        Possible values are:
+
+        - "cpu": Generic host device (CPU).
+        - "gpu": Generic GPU device.
+        - "cuda": NVIDIA GPUs.
+        - "hip": AMD GPUs.
+
+        Returns:
+            The API name.
+        """
         # void AsyncRT_DeviceContext_deviceApi(llvm::StringRef *result, const DeviceContext *ctx)
         var api_ptr = StaticString(ptr=UnsafePointer[Byte](), length=0)
         external_call[
@@ -939,6 +1007,30 @@ struct DeviceContext:
     fn malloc_host[
         type: AnyType
     ](self, size: Int) raises -> UnsafePointer[type]:
+        """Allocates a block of _pinned_ memory on the host.
+
+        Pinned memory is guaranteed to remain resident in the host's RAM, not be
+        paged/swapped out to disk. Memory allocated normally (for example, using
+        [`UnsafePointer.alloc()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#alloc))
+        is pageable—individual pages of memory can be moved to secondary storage
+        (disk/SSD) when main memory fills up.
+
+        Using pinned memory allows devices to make fast transfers
+        between host memory and device memory, because they can use direct
+        memory access (DMA) to transfer data without relying on the CPU.
+
+        Allocating too much pinned memory can cause performance issues, since it
+        reduces the amount of memory available for other processes.
+
+        Parameters:
+            type: The data type to be stored in the allocated memory.
+
+        Args:
+            size: The number of elements of `type` to allocate memory for.
+
+        Returns:
+            A pointer to the newly-allocated memory.
+        """
         # const char *AsyncRT_DeviceContext_mallocHost(void **result, const DeviceContext *ctx, size_t size)
         alias elem_size = sizeof[type]()
         var result = UnsafePointer[type]()
@@ -959,6 +1051,13 @@ struct DeviceContext:
 
     @always_inline
     fn free_host[type: AnyType](self, ptr: UnsafePointer[type]) raises:
+        """Frees a previously-allocated block of pinned memory.
+
+        Parameters:
+            type: The data type stored in the allocated memory.
+
+        Args:
+            ptr: Pointer to the data block to free."""
         # const char * AsyncRT_DeviceContext_freeHost(const DeviceContext *ctx, void *ptr)
         _checked(
             external_call[
@@ -975,17 +1074,82 @@ struct DeviceContext:
     fn enqueue_create_buffer[
         type: DType
     ](self, size: Int) raises -> DeviceBuffer[type]:
-        """Enqueues a buffer creation using the DeviceBuffer constructor."""
+        """Enqueues a buffer creation using the `DeviceBuffer` constructor.
+
+        For GPU devices, the space is allocated in the device's global memory.
+
+        Parameters:
+            type: The data type to be stored in the allocated memory.
+
+        Args:
+            size: The number of elements of `type` to allocate memory for.
+
+        Returns:
+            The allocated buffer.
+        """
         return DeviceBuffer[type](self, size, Self._ASYNC)
 
     fn create_buffer_sync[
         type: DType
     ](self, size: Int) raises -> DeviceBuffer[type]:
-        """Creates a buffer synchronously using the DeviceBuffer constructor."""
+        """Creates a buffer synchronously using the `DeviceBuffer` constructor.
+
+        Parameters:
+            type: The data type to be stored in the allocated memory.
+
+        Args:
+            size: The number of elements of `type` to allocate memory for.
+
+        Returns:
+            The allocated buffer."""
         var result = DeviceBuffer[type](self, size, Self._SYNC)
         self.synchronize()
         return result
 
+    @always_inline
+    fn compile_function[
+        func_type: AnyTrivialRegType, //,
+        func: func_type,
+        *,
+        dump_asm: Variant[Bool, Path, fn () capturing -> Path] = False,
+        dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
+    ](
+        self,
+        *,
+        func_attribute: OptionalReg[FuncAttribute] = None,
+        out result: DeviceFunction[
+            func,
+            target = Self.device_info.target(),
+            _ptxas_info_verbose=False,
+        ],
+    ) raises:
+        """Compiles the provided function for execution on this device.
+
+        Parameters:
+            func_type: Type of the function.
+            func: The function to compile.
+            dump_asm: To dump the compiled assembly, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+
+        Args:
+            func_attribute: An attribute to use when compiling the code (such
+                as maximum shared memory size).
+
+        Returns:
+            The compiled function.
+        """
+        return self.compile_function[
+            func,
+            dump_asm=dump_asm,
+            dump_llvm=dump_asm,
+            _dump_sass=False,
+            _target = Self.device_info.target(),
+            _ptxas_info_verbose=False,
+        ](func_attribute=func_attribute)
+
+    @doc_private
     @always_inline
     fn compile_function[
         func_type: AnyTrivialRegType, //,
@@ -1006,6 +1170,8 @@ struct DeviceContext:
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
     ) raises:
+        """Private version of `compile_function()`, which includes debugging
+        params."""
         debug_assert(
             not func_attribute
             or func_attribute.value().attribute
@@ -1043,6 +1209,23 @@ struct DeviceContext:
             ConstantMemoryMapping
         ](),
     ) raises:
+        """Enqueues a compiled function for execution on this device.
+
+        Parameters:
+            Ts: Argument types.
+
+        Args:
+            f: The compiled function to execute.
+            args: Arguments to pass to the function.
+            grid_dim: Dimensions of the compute grid, made up of thread
+                blocks.
+            block_dim: Dimensions of each thread block in the grid.
+            cluster_dim: Dimensions of clusters (if the thread blocks are
+                grouped into clusters).
+            shared_mem_bytes: Amount of shared memory per thread block.
+            attributes: Launch attributes.
+            constant_memory: Constant memory mapping.
+        """
         self._enqueue_function(
             f,
             args,
@@ -1162,6 +1345,17 @@ struct DeviceContext:
     ](
         self, dst_buf: DeviceBuffer[type], src_ptr: UnsafePointer[Scalar[type]]
     ) raises:
+        """Enqueues an async copy from the host to the provided device
+        buffer. The number of bytes copied is determined by the size of the
+        device buffer.
+
+        Parameters:
+            type: Type of the data being copied.
+
+        Args:
+            dst_buf: Device buffer to copy to.
+            src_ptr: Host pointer to copy from.
+        """
         # const char * AsyncRT_DeviceContext_HtoD_async(const DeviceContext *ctx, const DeviceBuffer *dst, const void *src)
         _checked(
             external_call[
@@ -1183,6 +1377,16 @@ struct DeviceContext:
     ](
         self, dst_ptr: UnsafePointer[Scalar[type]], src_buf: DeviceBuffer[type]
     ) raises:
+        """Enqueues an async copy from the device to the host. The
+        number of bytes copied is determined by the size of the device buffer.
+
+        Parameters:
+            type: Type of the data being copied.
+
+        Args:
+            dst_ptr: Host pointer to copy to.
+            src_buf: Device buffer to copy from.
+        """
         # const char * AsyncRT_DeviceContext_DtoH_async(const DeviceContext *ctx, void *dst, const DeviceBuffer *src)
         _checked(
             external_call[
@@ -1207,6 +1411,17 @@ struct DeviceContext:
         src_ptr: UnsafePointer[Scalar[type]],
         size: Int,
     ) raises:
+        """Enqueues an async copy of `size` elements from the device pointer to
+        the host pointer.
+
+        Parameters:
+            type: Type of the data being copied.
+
+        Args:
+            dst_ptr: Host pointer to copy to.
+            src_ptr: Device pointer to copy from.
+            size: Number of elements (of the specified `DType`) to copy.
+        """
         var src_buf = DeviceBuffer(self, src_ptr, size, owning=False)
         self.enqueue_copy_from_device[type](dst_ptr, src_buf)
 
@@ -1214,6 +1429,16 @@ struct DeviceContext:
     fn enqueue_copy_device_to_device[
         type: DType
     ](self, dst_buf: DeviceBuffer[type], src_buf: DeviceBuffer[type]) raises:
+        """Enqueues an async copy from one device buffer to another. The amount
+        of data transferred is determined by the size of the destination buffer.
+
+        Parameters:
+            type: Type of the data being copied.
+
+        Args:
+            dst_buf: Device buffer to copy to.
+            src_buf: Device buffer to copy from. Must be at least as large as
+                `dst`."""
         # const char * AsyncRT_DeviceContext_DtoD_async(const DeviceContext *ctx, const DeviceBuffer *dst, const DeviceBuffer *src)
         _checked(
             external_call[
@@ -1238,6 +1463,17 @@ struct DeviceContext:
         src_ptr: UnsafePointer[Scalar[type]],
         size: Int,
     ) raises:
+        """Enqueues an async copy of `size` elements from a device pointer to
+        another device pointer.
+
+        Parameters:
+            type: Type of the data being copied.
+
+        Args:
+            dst_ptr: Host pointer to copy to.
+            src_ptr: Device pointer to copy from.
+            size: Number of elements (of the specified `DType`) to copy.
+        """
         # Not directly implemented on DeviceContext, wrap in buffers first
         var dst_buf = DeviceBuffer(self, dst_ptr, size, owning=False)
         var src_buf = DeviceBuffer(self, src_ptr, size, owning=False)
@@ -1249,6 +1485,17 @@ struct DeviceContext:
     ](
         self, dst_buf: DeviceBuffer[type], src_ptr: UnsafePointer[Scalar[type]]
     ) raises:
+        """Copies data from the host to the provided device
+        buffer. The number of bytes copied is determined by the size of the
+        device buffer.
+
+        Parameters:
+            type: Type of the data being copied.
+
+        Args:
+            dst_buf: Device buffer to copy to.
+            src_ptr: Host pointer to copy from.
+        """
         # const char * AsyncRT_DeviceContext_HtoD_sync(const DeviceContext *ctx, const DeviceBuffer *dst, const void *src)
         _checked(
             external_call[
@@ -1270,6 +1517,16 @@ struct DeviceContext:
     ](
         self, dst_ptr: UnsafePointer[Scalar[type]], src_buf: DeviceBuffer[type]
     ) raises:
+        """Copies data from the device to the host. The
+        number of bytes copied is determined by the size of the device buffer.
+
+        Parameters:
+            type: Type of the data being copied.
+
+        Args:
+            dst_ptr: Host pointer to copy to.
+            src_buf: Device buffer to copy from.
+        """
         # const char * AsyncRT_DeviceContext_DtoH_sync(const DeviceContext *ctx, void *dst, const DeviceBuffer *src)
         _checked(
             external_call[
@@ -1289,6 +1546,17 @@ struct DeviceContext:
     fn copy_device_to_device_sync[
         type: DType
     ](self, dst_buf: DeviceBuffer[type], src_buf: DeviceBuffer[type]) raises:
+        """Copies data from one device buffer to another. The amount
+        of data transferred is determined by the size of the destination buffer.
+
+        Parameters:
+            type: Type of the data being copied.
+
+        Args:
+            dst_buf: Device buffer to copy to.
+            src_buf: Device buffer to copy from. Must be at least as large as
+                `dst`.
+        """
         # const char * AsyncRT_DeviceContext_DtoD_sync(const DeviceContext *ctx, const DeviceBuffer *dst, const DeviceBuffer *src)
         _checked(
             external_call[
@@ -1308,6 +1576,16 @@ struct DeviceContext:
     fn enqueue_memset[
         type: DType
     ](self, dst: DeviceBuffer[type], val: Scalar[type]) raises:
+        """Enqueues an async memset operation, setting all of the elements in
+        the destination device buffer to the specified value.
+
+        Parameters:
+            type: Type of the data stored in the buffer.
+
+        Args:
+            dst: Destination buffer.
+            val: Value to set all elements of `dst` to.
+        """
         alias bitwidth = bitwidthof[type]()
         constrained[
             bitwidth == 8 or bitwidth == 16 or bitwidth == 32,
@@ -1344,6 +1622,16 @@ struct DeviceContext:
     fn memset_sync[
         type: DType
     ](self, dst: DeviceBuffer[type], val: Scalar[type]) raises:
+        """Synchronously sets all of the elements in
+        the destination device buffer to the specified value.
+
+        Parameters:
+            type: Type of the data stored in the buffer.
+
+        Args:
+            dst: The destination buffer.
+            val: Value to set all elements of `dst` to.
+        """
         alias bitwidth = bitwidthof[type]()
         constrained[
             bitwidth == 8 or bitwidth == 16 or bitwidth == 32,
@@ -1379,13 +1667,28 @@ struct DeviceContext:
     fn memset[
         type: DType
     ](self, dst: DeviceBuffer[type], val: Scalar[type]) raises:
+        """Enqueues an async memset operation, setting all of the elements in
+        the destination device buffer to the specified value.
+
+        Parameters:
+            type: Type of the data stored in the buffer.
+
+        Args:
+            dst: Destination buffer.
+            val: Value to set all elements of `dst` to.
+        """
         self.enqueue_memset[type](dst, val)
 
+    @doc_private
     fn stream(self) raises -> DeviceStream:
         return DeviceStream(self)
 
     @always_inline
     fn synchronize(self) raises:
+        """Blocks until all asynchronous calls on the stream associated with
+        this device context have completed.
+
+        This should never be necessary when writing a custom operation."""
         # const char * AsyncRT_DeviceContext_synchronize(const DeviceContext *ctx)
         _checked(
             external_call[
@@ -1399,6 +1702,7 @@ struct DeviceContext:
 
     @always_inline
     fn get_driver_version(self) raises -> Int:
+        """Returns the driver version associated with this device."""
         var value: Int32 = 0
         # const char * AsyncRT_DeviceContext_getDriverVersion(int *result, const DeviceContext *ctx)
         _checked(
@@ -1416,6 +1720,14 @@ struct DeviceContext:
 
     @always_inline
     fn get_attribute(self, attr: DeviceAttribute) raises -> Int:
+        """Returns the specified attribute for this device.
+
+        Args:
+            attr: The device attribute to query.
+
+        Returns:
+            The value for `attr` on this device.
+        """
         var value: Int32 = 0
         # const char * AsyncRT_DeviceContext_getAttribute(int *result, const DeviceContext *ctx, int attr)
         _checked(
@@ -1435,6 +1747,7 @@ struct DeviceContext:
 
     @always_inline
     fn is_compatible(self) raises:
+        """Returns True if this device is compatible with MAX."""
         # const char * AsyncRT_DeviceContext_isCompatible(const DeviceContext *ctx)
         _checked(
             external_call[
@@ -1448,11 +1761,13 @@ struct DeviceContext:
 
     @always_inline
     fn id(self) raises -> Int64:
+        """Returns the ID associated with this device."""
         # int64_t AsyncRT_DeviceContext_id(const DeviceContext *ctx)
         return external_call[
             "AsyncRT_DeviceContext_id", Int64, _DeviceContextPtr
         ](self._handle)
 
+    @doc_private
     @always_inline
     fn compute_capability(self) raises -> Int:
         var compute_capability: Int32 = 0
@@ -1469,6 +1784,11 @@ struct DeviceContext:
 
     @always_inline
     fn get_memory_info(self) raises -> (_SizeT, _SizeT):
+        """Returns the free and total memory size for this device.
+
+        Returns:
+            A tuple of (free memory, total memory) in bytes.
+        """
         var free = _SizeT(0)
         var total = _SizeT(0)
         # const char *AsyncRT_DeviceContext_getMemoryInfo(const DeviceContext *ctx, size_t *free, size_t *total)
@@ -1490,6 +1810,14 @@ struct DeviceContext:
 
     @always_inline
     fn can_access(self, peer: DeviceContext) raises -> Bool:
+        """Queries if this device can access the identified peer device.
+
+        Args:
+            peer: The peer device.
+
+        Returns:
+            True if this device can access `peer`.
+        """
         var result: Bool = False
         # const char *AsyncRT_DeviceContext_canAccess(bool *result, const DeviceContext *ctx, const DeviceContext *peer)
         _checked(
@@ -1509,6 +1837,11 @@ struct DeviceContext:
 
     @always_inline
     fn enable_peer_access(self, peer: DeviceContext) raises:
+        """Enables access to the peer device.
+
+        Args:
+            peer: The peer device.
+        """
         # const char *AsyncRT_DeviceContext_enablePeerAccess(const DeviceContext *ctx, const DeviceContext *peer)
         _checked(
             external_call[
@@ -1525,6 +1858,15 @@ struct DeviceContext:
     @staticmethod
     @always_inline
     fn number_of_devices(*, api: String = Self.device_api) -> Int:
+        """Returns the number of devices available that support the specified
+        API.
+
+        Args:
+            api: Requested device API (for example, "cuda" or "hip").
+
+        Returns:
+            The number of devices available.
+        """
         # int32_t *AsyncRT_DeviceContext_numberOfDevices(const char* kind)
         return Int(
             external_call[
