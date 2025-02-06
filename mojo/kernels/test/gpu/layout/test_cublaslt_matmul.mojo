@@ -123,4 +123,4 @@ fn test_cublaslt_64x16x32[input_type: DType](ctx: DeviceContext) raises:
 
 fn main() raises:
     with DeviceContext() as ctx:
-        test_cublaslt_64x16x32[DType.float8e4m3](ctx)
+        test_cublaslt_64x16x32[DType.float8_e4m3](ctx)

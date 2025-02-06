@@ -12,7 +12,7 @@ from collections import InlineArray
 from os import abort
 
 from builtin._format_float import _write_float
-from builtin.simd import Float8e4m3, Float8e5m2
+from builtin.simd import Float8_e4m3, Float8_e5m2
 from gpu.host import DeviceContext
 from memory import memcmp, memcpy, Span
 from testing import assert_true
@@ -55,15 +55,15 @@ fn check_float[type: DType, //, expected: StringLiteral](f8: Scalar[type]):
         abort()
 
 
-fn check_8e5m2[expected: StringLiteral](f8: Float8e5m2):
+fn check_8e5m2[expected: StringLiteral](f8: Float8_e5m2):
     check_float[expected](f8)
 
 
-fn check_8e4m3[expected: StringLiteral](f8: Float8e4m3):
+fn check_8e4m3[expected: StringLiteral](f8: Float8_e4m3):
     check_float[expected](f8)
 
 
-fn test_format_float8e5m2():
+fn test_format_float8_e5m2():
     check_8e5m2["0.0"](0)
     check_8e5m2["0.125"](0.125)
     check_8e5m2["1.25"](1.25)
@@ -76,7 +76,7 @@ fn test_format_float8e5m2():
     check_8e5m2["-0.0"](FloatLiteral.negative_zero)
 
 
-fn test_format_float8e4m3():
+fn test_format_float8_e4m3():
     check_8e4m3["0.0"](0)
     check_8e4m3["0.001953125"](0.001953125)
     check_8e4m3["-0.01953125"](-0.01953125)
@@ -93,12 +93,12 @@ fn test_format_float8e4m3():
 def main():
     # TODO(KERN-1259): Add tests for fnuz types when they're working
     with DeviceContext() as ctx:
-        # CHECK-LABEL: == test_format_float8e5m2
-        print("== test_format_float8e5m2")
-        func_8e5m2 = ctx.compile_function[test_format_float8e5m2]()
+        # CHECK-LABEL: == test_format_float8_e5m2
+        print("== test_format_float8_e5m2")
+        func_8e5m2 = ctx.compile_function[test_format_float8_e5m2]()
         ctx.enqueue_function(func_8e5m2, grid_dim=1, block_dim=1)
 
-        # CHECK-LABEL: == test_format_float8e4m3
-        print("== test_format_float8e4m3")
-        func_8e4m3 = ctx.compile_function[test_format_float8e4m3]()
+        # CHECK-LABEL: == test_format_float8_e4m3
+        print("== test_format_float8_e4m3")
+        func_8e4m3 = ctx.compile_function[test_format_float8_e4m3]()
         ctx.enqueue_function(func_8e4m3, grid_dim=1, block_dim=1)

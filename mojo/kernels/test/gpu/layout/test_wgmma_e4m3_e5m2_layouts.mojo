@@ -254,7 +254,7 @@ def wgmma_e4m3_e4m3_f32_64x8x32(ctx: DeviceContext):
     alias K = 32
 
     var lhs = ManagedLayoutTensor[
-        DType.float8e4m3,
+        DType.float8_e4m3,
         Layout.row_major(M, K),
     ](ctx)
     var lhs_tensor = lhs.tensor()
@@ -267,7 +267,7 @@ def wgmma_e4m3_e4m3_f32_64x8x32(ctx: DeviceContext):
             lhs_tensor[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
-        DType.float8e4m3,
+        DType.float8_e4m3,
         Layout.row_major(K, N),
     ](ctx)
 
@@ -305,8 +305,8 @@ def wgmma_e4m3_e4m3_f32_64x8x32(ctx: DeviceContext):
         32,
         a_smem_layout,
         b_smem_layout,
-        a_type = DType.float8e4m3,
-        b_type = DType.float8e4m3,
+        a_type = DType.float8_e4m3,
+        b_type = DType.float8_e4m3,
     ]
     var func = ctx.compile_function[
         wgmma_e4m3_e4m3_f32_kernel_fn, _target = _get_gpu_target["sm_90"]()
@@ -400,7 +400,7 @@ def wgmma_e5m2_e5m2_f32_64x8x32(ctx: DeviceContext):
     alias K = 32
 
     var lhs = ManagedLayoutTensor[
-        DType.float8e5m2,
+        DType.float8_e5m2,
         Layout.row_major(M, K),
     ](ctx)
 
@@ -414,7 +414,7 @@ def wgmma_e5m2_e5m2_f32_64x8x32(ctx: DeviceContext):
             lhs_tensor[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
-        DType.float8e5m2,
+        DType.float8_e5m2,
         Layout.row_major(K, N),
     ](ctx)
 
@@ -452,8 +452,8 @@ def wgmma_e5m2_e5m2_f32_64x8x32(ctx: DeviceContext):
         32,
         a_smem_layout,
         b_smem_layout,
-        a_type = DType.float8e5m2,
-        b_type = DType.float8e5m2,
+        a_type = DType.float8_e5m2,
+        b_type = DType.float8_e5m2,
     ]
     var func = ctx.compile_function[
         wgmma_e5m2_e5m2_f32_kernel_fn, _target = _get_gpu_target["sm_90"]()
@@ -547,7 +547,7 @@ def wgmma_e4m3_e5m2_f32_64x8x32(ctx: DeviceContext):
     alias K = 32
 
     var lhs = ManagedLayoutTensor[
-        DType.float8e4m3,
+        DType.float8_e4m3,
         Layout.row_major(M, K),
     ](ctx)
 
@@ -561,7 +561,7 @@ def wgmma_e4m3_e5m2_f32_64x8x32(ctx: DeviceContext):
             lhs_tensor[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
-        DType.float8e5m2,
+        DType.float8_e5m2,
         Layout.row_major(K, N),
     ](ctx)
 
@@ -599,8 +599,8 @@ def wgmma_e4m3_e5m2_f32_64x8x32(ctx: DeviceContext):
         32,
         a_smem_layout,
         b_smem_layout,
-        a_type = DType.float8e4m3,
-        b_type = DType.float8e5m2,
+        a_type = DType.float8_e4m3,
+        b_type = DType.float8_e5m2,
     ]
     var func = ctx.compile_function[
         wgmma_e4m3_e5m2_f32_kernel_fn, _target = _get_gpu_target["sm_90"]()
@@ -694,7 +694,7 @@ def wgmma_e5m2_e4m3_f32_64x8x32(ctx: DeviceContext):
     alias K = 32
 
     var lhs = ManagedLayoutTensor[
-        DType.float8e5m2,
+        DType.float8_e5m2,
         Layout.row_major(M, K),
     ](ctx)
 
@@ -708,7 +708,7 @@ def wgmma_e5m2_e4m3_f32_64x8x32(ctx: DeviceContext):
             lhs_tensor[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
-        DType.float8e4m3,
+        DType.float8_e4m3,
         Layout.row_major(K, N),
     ](ctx)
 
@@ -746,8 +746,8 @@ def wgmma_e5m2_e4m3_f32_64x8x32(ctx: DeviceContext):
         32,
         a_smem_layout,
         b_smem_layout,
-        a_type = DType.float8e5m2,
-        b_type = DType.float8e4m3,
+        a_type = DType.float8_e5m2,
+        b_type = DType.float8_e4m3,
     ]
     var func = ctx.compile_function[
         wgmma_e5m2_e4m3_f32_kernel_fn, _target = _get_gpu_target["sm_90"]()
@@ -841,7 +841,7 @@ def wgmma_e4m3_e4m3_f16_64x8x32(ctx: DeviceContext):
     alias K = 32
 
     var lhs = ManagedLayoutTensor[
-        DType.float8e4m3,
+        DType.float8_e4m3,
         Layout.row_major(M, K),
     ](ctx)
 
@@ -855,7 +855,7 @@ def wgmma_e4m3_e4m3_f16_64x8x32(ctx: DeviceContext):
             lhs_tensor[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
-        DType.float8e4m3,
+        DType.float8_e4m3,
         Layout.row_major(K, N),
     ](ctx)
 
@@ -893,8 +893,8 @@ def wgmma_e4m3_e4m3_f16_64x8x32(ctx: DeviceContext):
         32,
         a_smem_layout,
         b_smem_layout,
-        a_type = DType.float8e4m3,
-        b_type = DType.float8e4m3,
+        a_type = DType.float8_e4m3,
+        b_type = DType.float8_e4m3,
     ]
     var func = ctx.compile_function[
         wgmma_e4m3_e4m3_f16_kernel_fn, _target = _get_gpu_target["sm_90"]()
@@ -988,7 +988,7 @@ def wgmma_e5m2_e5m2_f16_64x8x32(ctx: DeviceContext):
     alias K = 32
 
     var lhs = ManagedLayoutTensor[
-        DType.float8e5m2,
+        DType.float8_e5m2,
         Layout.row_major(M, K),
     ](ctx)
 
@@ -1002,7 +1002,7 @@ def wgmma_e5m2_e5m2_f16_64x8x32(ctx: DeviceContext):
             lhs_tensor[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
-        DType.float8e5m2,
+        DType.float8_e5m2,
         Layout.row_major(K, N),
     ](ctx)
 
@@ -1040,8 +1040,8 @@ def wgmma_e5m2_e5m2_f16_64x8x32(ctx: DeviceContext):
         32,
         a_smem_layout,
         b_smem_layout,
-        a_type = DType.float8e5m2,
-        b_type = DType.float8e5m2,
+        a_type = DType.float8_e5m2,
+        b_type = DType.float8_e5m2,
     ]
     var func = ctx.compile_function[
         wgmma_e5m2_e5m2_f16_kernel_fn, _target = _get_gpu_target["sm_90"]()
@@ -1135,7 +1135,7 @@ def wgmma_e4m3_e5m2_f16_64x8x32(ctx: DeviceContext):
     alias K = 32
 
     var lhs = ManagedLayoutTensor[
-        DType.float8e4m3,
+        DType.float8_e4m3,
         Layout.row_major(M, K),
     ](ctx)
 
@@ -1149,7 +1149,7 @@ def wgmma_e4m3_e5m2_f16_64x8x32(ctx: DeviceContext):
             lhs_tensor[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
-        DType.float8e5m2,
+        DType.float8_e5m2,
         Layout.row_major(K, N),
     ](ctx)
 
@@ -1187,8 +1187,8 @@ def wgmma_e4m3_e5m2_f16_64x8x32(ctx: DeviceContext):
         32,
         a_smem_layout,
         b_smem_layout,
-        a_type = DType.float8e4m3,
-        b_type = DType.float8e5m2,
+        a_type = DType.float8_e4m3,
+        b_type = DType.float8_e5m2,
     ]
     var func = ctx.compile_function[
         wgmma_e4m3_e5m2_f16_kernel_fn, _target = _get_gpu_target["sm_90"]()
@@ -1282,7 +1282,7 @@ def wgmma_e5m2_e4m3_f16_64x8x32(ctx: DeviceContext):
     alias K = 32
 
     var lhs = ManagedLayoutTensor[
-        DType.float8e5m2,
+        DType.float8_e5m2,
         Layout.row_major(M, K),
     ](ctx)
 
@@ -1296,7 +1296,7 @@ def wgmma_e5m2_e4m3_f16_64x8x32(ctx: DeviceContext):
             lhs_tensor[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
-        DType.float8e4m3,
+        DType.float8_e4m3,
         Layout.row_major(K, N),
     ](ctx)
 
@@ -1334,8 +1334,8 @@ def wgmma_e5m2_e4m3_f16_64x8x32(ctx: DeviceContext):
         32,
         a_smem_layout,
         b_smem_layout,
-        a_type = DType.float8e5m2,
-        b_type = DType.float8e4m3,
+        a_type = DType.float8_e5m2,
+        b_type = DType.float8_e4m3,
     ]
     var func = ctx.compile_function[
         wgmma_e5m2_e4m3_f16_kernel_fn, _target = _get_gpu_target["sm_90"]()

@@ -227,14 +227,14 @@ def main():
     with DeviceContext() as ctx:
         with vendor_blas.Handle[vendor_blas.Backend.CUBLASLT]() as handle:
             test_fp8_multistage_gemm[
-                DType.float8e4m3, 128, 128, 64, transpose_b=True
+                DType.float8_e4m3, 128, 128, 64, transpose_b=True
             ](ctx, handle)
             test_fp8_multistage_gemm[
-                DType.float8e4m3, 128, 128, 128, transpose_b=True
+                DType.float8_e4m3, 128, 128, 128, transpose_b=True
             ](ctx, handle)
             test_fp8_multistage_gemm[
-                DType.float8e4m3, 128, 128, 64, transpose_b=False
+                DType.float8_e4m3, 128, 128, 64, transpose_b=False
             ](ctx, handle)
             test_fp8_multistage_gemm[
-                DType.float8e4m3, 128, 128, 128, transpose_b=False
+                DType.float8_e4m3, 128, 128, 128, transpose_b=False
             ](ctx, handle)

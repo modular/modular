@@ -39,7 +39,7 @@ fn load_and_mma_16x8x32[
     mat_b: LayoutTensor[in_type, layout_b],
 ):
     constrained[
-        in_type is DType.float8e4m3 or in_type is DType.float8e5m2,
+        in_type is DType.float8_e4m3 or in_type is DType.float8_e5m2,
         "This kernel only supports E4M3 and E5M2 combinations",
     ]()
 
@@ -73,7 +73,7 @@ def test_load_and_mma_e4m3_e4m3_f32_16x8x32(ctx: DeviceContext):
     alias M = 16
     alias N = 8
     alias K = 32
-    alias in_type = DType.float8e4m3
+    alias in_type = DType.float8_e4m3
     alias out_type = DType.float32
     var mat_a = ManagedLayoutTensor[
         in_type,
@@ -141,7 +141,7 @@ def test_load_and_mma_e5m2_e5m2_f32_16x8x32(ctx: DeviceContext):
     alias M = 16
     alias N = 8
     alias K = 32
-    alias in_type = DType.float8e5m2
+    alias in_type = DType.float8_e5m2
     alias out_type = DType.float32
     var mat_a = ManagedLayoutTensor[
         in_type,
