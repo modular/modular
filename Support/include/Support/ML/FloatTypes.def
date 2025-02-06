@@ -12,60 +12,6 @@
 //                         BITCOUNT, APFLOAT_TYPE, LLVM_SEMANTICS,
 //                         SIGNIFICAND_PRECISION, EXPONENT_LENGTH, BIAS)
 
-// The Float32 type.
-
-DECLARE_FLOAT(f32,                         // SHORT_NAME
-              float32,                     // LONG_NAME
-              M_FLOAT32,                   // M_TYPE
-              mlir::Float32Type,           // MLIR_TYPE
-              float,                       // CXX_TYPE
-              32,                          // BITCOUNT
-              APFloat::IEEEsingle,         // APFLOAT_TYPE
-              llvm::APFloat::S_IEEEsingle, // LLVM_SEMANTICS
-              23,                          // SIGNIFICAND_PRECISION
-              8,                           // EXPONENT_LENGTH
-              127)                         // BIAS
-
-// The Float64 type.
-
-DECLARE_FLOAT(f64,                         // SHORT_NAME
-              float64,                     // LONG_NAME
-              M_FLOAT64,                   // M_TYPE
-              mlir::Float64Type,           // MLIR_TYPE
-              double,                      // CXX_TYPE
-              64,                          // BITCOUNT
-              APFloat::IEEEdouble,         // APFLOAT_TYPE
-              llvm::APFloat::S_IEEEdouble, // LLVM_SEMANTICS
-              52,                          // SIGNIFICAND_PRECISION
-              11,                          // EXPONENT_LENGTH
-              1023)                        // BIAS
-
-// The Float16 types.
-
-DECLARE_FLOAT(f16,                       // SHORT_NAME
-              float16,                   // LONG_NAME
-              M_FLOAT16,                 // M_TYPE
-              mlir::Float16Type,         // MLIR_TYPE
-              M::Float16::float16_t,     // CXX_TYPE
-              16,                        // BITCOUNT
-              APFloat::IEEEhalf,         // APFLOAT_TYPE
-              llvm::APFloat::S_IEEEhalf, // LLVM_SEMANTICS
-              10,                        // SIGNIFICAND_PRECISION
-              5,                         // EXPONENT_LENGTH
-              15)                        // BIAS
-
-DECLARE_FLOAT(bf16,                    // SHORT_NAME
-              bfloat16,                // LONG_NAME
-              M_BFLOAT16,              // M_TYPE
-              mlir::BFloat16Type,      // MLIR_TYPE
-              M::BFloat::bfloat16_t,   // CXX_TYPE
-              16,                      // BITCOUNT
-              APFloat::BFloat,         // APFLOAT_TYPE
-              llvm::APFloat::S_BFloat, // LLVM_SEMANTICS
-              7,                       // SIGNIFICAND_PRECISION
-              8,                       // EXPONENT_LENGTH
-              127)                     // BIAS
-
 // The Float8 types.
 
 DECLARE_FLOAT(f8e3m4,                      // SHORT_NAME
@@ -139,3 +85,57 @@ DECLARE_FLOAT(f8e5m2fnuz,                      // SHORT_NAME
               2,                               // SIGNIFICAND_PRECISION
               5,                               // EXPONENT_LENGTH
               16)                              // BIAS
+
+// The Float16 types.
+
+DECLARE_FLOAT(f16,                       // SHORT_NAME
+              float16,                   // LONG_NAME
+              M_FLOAT16,                 // M_TYPE
+              mlir::Float16Type,         // MLIR_TYPE
+              M::Float16::float16_t,     // CXX_TYPE
+              16,                        // BITCOUNT
+              APFloat::IEEEhalf,         // APFLOAT_TYPE
+              llvm::APFloat::S_IEEEhalf, // LLVM_SEMANTICS
+              10,                        // SIGNIFICAND_PRECISION
+              5,                         // EXPONENT_LENGTH
+              15)                        // BIAS
+
+DECLARE_FLOAT(bf16,                    // SHORT_NAME
+              bfloat16,                // LONG_NAME
+              M_BFLOAT16,              // M_TYPE
+              mlir::BFloat16Type,      // MLIR_TYPE
+              M::BFloat::bfloat16_t,   // CXX_TYPE
+              16,                      // BITCOUNT
+              APFloat::BFloat,         // APFLOAT_TYPE
+              llvm::APFloat::S_BFloat, // LLVM_SEMANTICS
+              7,                       // SIGNIFICAND_PRECISION
+              8,                       // EXPONENT_LENGTH
+              127)                     // BIAS
+
+// The Float32 type.
+
+DECLARE_FLOAT(f32,                         // SHORT_NAME
+              float32,                     // LONG_NAME
+              M_FLOAT32,                   // M_TYPE
+              mlir::Float32Type,           // MLIR_TYPE
+              float,                       // CXX_TYPE
+              32,                          // BITCOUNT
+              APFloat::IEEEsingle,         // APFLOAT_TYPE
+              llvm::APFloat::S_IEEEsingle, // LLVM_SEMANTICS
+              23,                          // SIGNIFICAND_PRECISION
+              8,                           // EXPONENT_LENGTH
+              127)                         // BIAS
+
+// The Float64 type.
+
+DECLARE_FLOAT(f64,                         // SHORT_NAME
+              float64,                     // LONG_NAME
+              M_FLOAT64,                   // M_TYPE
+              mlir::Float64Type,           // MLIR_TYPE
+              double,                      // CXX_TYPE
+              64,                          // BITCOUNT
+              APFloat::IEEEdouble,         // APFLOAT_TYPE
+              llvm::APFloat::S_IEEEdouble, // LLVM_SEMANTICS
+              52,                          // SIGNIFICAND_PRECISION
+              11,                          // EXPONENT_LENGTH
+              1023)                        // BIAS
