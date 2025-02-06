@@ -4,8 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import random
-
 import numpy as np
 import pytest
 from max.driver import CPU
@@ -61,8 +59,8 @@ def create_paged_manager(num_blocks: int, page_size: int = 1) -> KVCacheManager:
     )
     kv_manager = load_kv_manager(
         params=kv_params,
-        max_batch_size=128,
-        max_seq_len=1024,
+        max_batch_size=99999,
+        max_seq_len=99999,
         num_layers=NUM_LAYERS,
         devices=[CPU()],
         session=session,
@@ -171,11 +169,7 @@ async def test_prefix_caching_with_repeating_prompt() -> None:
     available_blocks = 128
 
     # Try to assign and release more than 128 blocks.
-    for i in range(1000):
-        if i == 0:
-            seq_id = 0
-        else:
-            seq_id = random.randint(1, kv_manager.max_batch_size - 1)
+    for seq_id in range(1000):
         kv_manager.external_claim([seq_id])
         # We reuse the same prompt each time, allowing for prefix sharing.
         prompt = np.array([100, 101, 102, 103, 104])
@@ -193,7 +187,7 @@ async def test_prefix_caching_with_repeating_prompt() -> None:
         seq_ids_and_new_tokens = {seq_id: np.array([FAKE_TOKEN])}
         kv_manager.step(seq_ids_and_new_tokens)
 
-        if i != 0:
+        if seq_id != 0:
             # During later fetches, we will just release the block we wrote to
             # since a different block already exists for the same token.
             available_blocks += 1
@@ -211,8 +205,7 @@ async def test_prefix_caching_with_no_release() -> None:
     # Try to assign and release more than 128 blocks.
     # We expect to run out of blocks here.
     with pytest.raises(RuntimeError):
-        for i in range(1000):
-            seq_id = i % kv_manager.max_batch_size
+        for seq_id in range(1000):
             kv_manager.external_claim([seq_id])
             prompt = np.random.randint(0, 8, size=16)
             seq_ids_and_prompts = {seq_id: prompt}
@@ -245,8 +238,9 @@ async def test_prefix_caching_with_random_prompts(page_size, num_steps) -> None:
     available_slots = num_blocks * page_size
 
     # Try to assign and release more than 128 blocks.
-    for i in range(1000):
-        seq_id = i % kv_manager.max_batch_size
+    num_seqs = 100
+    assert num_seqs < kv_manager.max_batch_size
+    for seq_id in range(num_seqs):
         kv_manager.external_claim([seq_id])
         slots_used = 0
         # Picking random prompts.

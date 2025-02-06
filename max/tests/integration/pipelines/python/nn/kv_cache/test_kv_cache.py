@@ -45,8 +45,8 @@ async def test_kv_collection_constructor(cache_strategy, fetch_cls) -> None:
 
     session = InferenceSession()
 
-    # let's set an arbitrary 500 Mb allocation
-    available_cache_memory = 500 * 2**20
+    # let's set an arbitrary 100 Mb allocation
+    available_cache_memory = 100 * 2**20
     kv_manager = load_kv_manager(
         params=kv_params,
         max_batch_size=1,
