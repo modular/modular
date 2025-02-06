@@ -135,10 +135,6 @@ bool CommandLineFuncParser::parse(llvm::cl::Option &o, StringRef argName,
 
 bool KGENCLOptionsParser::parse(llvm::cl::Option &o, StringRef argName,
                                 StringRef argValue, Command &val) {
-  if (argName == "gen-lib") {
-    val = Command::kGenLibraryFile;
-    return false;
-  }
   if (argName == "elaborate") {
     val = Command::kElaborate;
     return false;

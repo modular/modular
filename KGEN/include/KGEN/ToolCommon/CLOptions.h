@@ -22,7 +22,6 @@ class ExecutionEngine;
 
 /// What to do with a given KGEN file.
 enum class Command {
-  kGenLibraryFile,
   kElaborate,
   kEmit,
   kEmitAssembly,
@@ -363,8 +362,6 @@ private:
   M::cl::MOpt<Command, true, KGENCLOptionsParser> cmd{
       cl::desc("The command to execute"),
       cl::values(
-          clEnumValN(Command::kGenLibraryFile, "gen-lib",
-                     "Generate a distributable library file."),
           clEnumValN(Command::kElaborate, "elaborate", "Elaborate the input."),
           clEnumValN(Command::kEmitLLVM, "emit-llvm", "Emit funcs as LLVM IR."),
           clEnumValN(Command::kEmitLLVMOpt, "emit-llvm=opt",
