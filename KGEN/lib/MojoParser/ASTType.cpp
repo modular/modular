@@ -467,26 +467,13 @@ static std::string getDTypeAsString(KGENDType dtype) {
     return "int64";
   case KGENDType::ui64:
     return "uint64";
-  case KGENDType::f8e5m2:
-    return "float8_e5m2";
-  case KGENDType::f8e5m2fnuz:
-    return "float8_e5m2fnuz";
-  case KGENDType::f8e4m3:
-    return "float8_e4m3";
-  case KGENDType::f8e4m3fnuz:
-    return "float8_e4m3fnuz";
-  case KGENDType::f8e3m4:
-    return "float8_e3m4";
-  case KGENDType::bf16:
-    return "bfloat16";
-  case KGENDType::f16:
-    return "float16";
-  case KGENDType::f32:
-    return "float32";
   case KGENDType::tf32:
     return "tensor_float32";
-  case KGENDType::f64:
-    return "float64";
+#define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, ...)                              \
+  case KGENDType::SHORT_NAME:                                                  \
+    return #LONG_NAME;
+#include "Support/ML/FloatTypes.def"
+#undef DECLARE_FLOAT
   default:
     return dtype.getAsString();
   }
