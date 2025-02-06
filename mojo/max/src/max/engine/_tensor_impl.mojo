@@ -14,7 +14,6 @@ from max._utils import call_dylib_func, exchange
 
 from .session import InferenceSession
 from .tensor_spec import TensorSpec
-from ._dtypes import EngineDType
 from ._tensor_spec_impl import CTensorSpec
 
 from max.tensor import Tensor
@@ -40,10 +39,8 @@ struct CTensor:
     fn size(self, lib: DLHandle) -> Int:
         return call_dylib_func[Int](lib, Self.GetTensorNumElementsFnName, self)
 
-    fn dtype(self, lib: DLHandle) -> EngineDType:
-        return call_dylib_func[EngineDType](
-            lib, Self.GetTensorDTypeFnName, self
-        )
+    fn dtype(self, lib: DLHandle) -> DType:
+        return call_dylib_func[DType](lib, Self.GetTensorDTypeFnName, self)
 
     fn unsafe_ptr(self, lib: DLHandle) -> UnsafePointer[NoneType]:
         return call_dylib_func[UnsafePointer[NoneType]](
@@ -96,7 +93,7 @@ struct EngineTensor(Sized):
         return ptr.bitcast[Scalar[type]]()
 
     fn dtype(self) -> DType:
-        return self.ptr.dtype(self.lib).to_dtype()
+        return self.ptr.dtype(self.lib)
 
     fn spec(self) raises -> TensorSpec:
         return self.ptr.get_tensor_spec(

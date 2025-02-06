@@ -13,7 +13,6 @@ from collections.optional import Optional
 from sys.ffi import DLHandle
 from max._utils import call_dylib_func
 
-from ._dtypes import EngineDType
 from .session import InferenceSession
 from ._tensor_spec_impl import CTensorSpec
 
@@ -124,7 +123,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
             Self._NewTensorSpecFnName,
             shape.data,
             rank,
-            EngineDType(dtype),
+            dtype,
             name_str,
         )
         _ = name
@@ -212,7 +211,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
                 Self._NewTensorSpecFnName,
                 adjusted_shape.data,
                 rank,
-                EngineDType(dtype),
+                dtype,
                 name_str,
             )
             _ = adjusted_shape^
@@ -222,7 +221,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
                 Self._NewTensorSpecFnName,
                 CTensorSpec.ptr_type(),
                 CTensorSpec.get_dynamic_rank_value(lib),
-                EngineDType(dtype),
+                dtype,
                 name_str,
             )
         _ = name
@@ -287,7 +286,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
         for i in range(rank):
             shape.append(self[i].value())
         var dtype = self._ptr.get_dtype(self._lib)
-        var spec = TensorSpec(dtype.to_dtype(), shape)
+        var spec = TensorSpec(dtype, shape)
         return spec
 
     fn get_name(self) -> String:
@@ -304,7 +303,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
         Returns:
             DType of the Tensor.
         """
-        return self._ptr.get_dtype(self._lib).to_dtype()
+        return self._ptr.get_dtype(self._lib)
 
     fn get_shape(self) -> Optional[List[Optional[Int]]]:
         """Gets the shape of tensor corresponding to spec.

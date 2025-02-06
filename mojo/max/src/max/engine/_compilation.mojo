@@ -17,7 +17,6 @@ from .session import InferenceSession
 from ._model_specs import InputTensorNames, OutputTensorNames
 from ._status import Status
 from ._tensor_spec_impl import CTensorSpec
-from ._dtypes import EngineDType
 
 from max.tensor import TensorSpec
 
@@ -136,7 +135,7 @@ struct TorchInputSpec(Movable):
             self.shape.data,
             UnsafePointer[NoneType](),
             len(self.shape),
-            EngineDType(self.dtype),
+            self.dtype,
             UnsafePointer[NoneType](),
             status.ptr,
         )
@@ -174,7 +173,7 @@ struct TorchInputSpec(Movable):
             self.shape.data,
             converted_dim_names.data,
             len(self.shape),
-            EngineDType(self.dtype),
+            self.dtype,
             UnsafePointer[NoneType](),
             status.ptr,
         )
@@ -200,7 +199,7 @@ struct TorchInputSpec(Movable):
             CTorchInputSpec.ptr_type(),
             UnsafePointer[NoneType](),
             CTensorSpec.get_dynamic_rank_value(engine_lib),
-            EngineDType(self.dtype),
+            self.dtype,
             status.ptr,
         )
         if status:

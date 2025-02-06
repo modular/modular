@@ -7,7 +7,6 @@
 from memory import UnsafePointer
 from sys.ffi import DLHandle
 from max._utils import call_dylib_func, CString
-from ._dtypes import EngineDType
 
 
 @value
@@ -39,8 +38,8 @@ struct CTensorSpec:
         var name = call_dylib_func[CString](lib, Self.GetNameFnName, self)
         return name.__str__()
 
-    fn get_dtype(self, lib: DLHandle) -> EngineDType:
-        return call_dylib_func[EngineDType](lib, Self.GetDTypeFnName, self)
+    fn get_dtype(self, lib: DLHandle) -> DType:
+        return call_dylib_func[DType](lib, Self.GetDTypeFnName, self)
 
     fn is_dynamically_ranked(self, lib: DLHandle) -> Bool:
         var is_dynamic = call_dylib_func[Int](
