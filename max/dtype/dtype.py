@@ -211,24 +211,4 @@ _DTYPE_TO_MLIR = {
     DType._unknown: "invalid",
 }
 
-
-_MLIR_TO_DTYPE = {
-    "bool": DType.bool,
-    "si8": DType.int8,
-    "si16": DType.int16,
-    "si32": DType.int32,
-    "si64": DType.int64,
-    "ui8": DType.uint8,
-    "ui16": DType.uint16,
-    "ui32": DType.uint32,
-    "ui64": DType.uint64,
-    "f16": DType.float16,
-    "f32": DType.float32,
-    "f64": DType.float64,
-    "bf16": DType.bfloat16,
-    "f8e4m3": DType.f8e4m3,
-    "f8e4m3fnuz": DType.f8e4m3fnuz,
-    "f8e5m2": DType.f8e5m2,
-    "f8e5m2fnuz": DType.f8e5m2fnuz,
-    "invalid": DType._unknown,
-}
+_MLIR_TO_DTYPE = {v: k for k, v in _DTYPE_TO_MLIR.items()}
