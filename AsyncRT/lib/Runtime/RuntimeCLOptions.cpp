@@ -9,8 +9,7 @@
 
 using namespace M::AsyncRT;
 
-std::unique_ptr<Runtime>
-RuntimeOptions::createRuntime(StringRef profileName) const {
+std::unique_ptr<Runtime> RuntimeOptions::createRuntime() const {
   RuntimeOptions runtimeOptions; //{*this};
   switch (allocatorType) {
   case RuntimeOptions::AllocatorType::kMalloc:
@@ -53,7 +52,7 @@ RuntimeOptions::createRuntime(StringRef profileName) const {
 #endif
     break;
   }
-  runtimeOptions.profileFilename = profileName;
+  runtimeOptions.profileFilename = getProfileFilename();
   runtimeOptions.profilerDebuginfo = profilerDebuginfo;
   return AsyncRT::createUniqueRuntime(runtimeOptions);
 }
