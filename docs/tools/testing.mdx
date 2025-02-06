@@ -5,13 +5,10 @@ description: Testing Mojo programs.
 github_url: https://github.com/modular/mojo/tree/main/examples/testing
 ---
 
-Mojo includes a framework for developing and executing unit tests. The framework
-also supports testing code examples in the
-[documentation strings](/mojo/manual/basics#code-comments)
-(also known as *docstrings*) of your API references. The Mojo testing framework
-consists of a set of assertions defined as part of the
-[Mojo standard library](/mojo/lib) and the
-[`mojo test`](/mojo/cli/test) command line tool.
+Mojo includes a framework for developing and executing unit tests. The Mojo
+testing framework consists of a set of assertions defined as part of the [Mojo
+standard library](/mojo/lib) and the [`mojo test`](/mojo/cli/test) command line
+tool.
 
 ## Get started
 
@@ -99,14 +96,11 @@ its error message.
   organize them into test files.
 - [The `mojo test` command](#the-mojo-test-command) describes how to execute
   and collect lists of tests.
-- [Writing API documentation tests](#writing-api-documentation-tests)
-  discusses how to use the Mojo testing framework to test code examples in your
-  API documentation.
-- The public [GitHub repo](https://github.com/modular/mojo/tree/main)
-  contains an [example
+- The public [GitHub repo](https://github.com/modular/mojo/tree/main) contains
+  an [example
   project](https://github.com/modular/mojo/tree/main/examples/testing) to
-  demonstrate both unit testing and docstring testing. Several of the examples
-  shown later are based on this project.
+  demonstrate unit testing. Several of the examples shown later are based on
+  this project.
 
 ## The `testing` module
 
@@ -505,165 +499,3 @@ filesystem paths from the output shown):
   "id": "ROOT_DIR/test/my_math"
 }
 ```
-
-## Writing API documentation tests
-
-The Mojo testing framework also supports testing code examples that you include
-in [docstrings](/mojo/manual/basics#code-comments). This helps to ensure that
-the code examples in your API documentation are correct and up to date.
-
-### Identifying executable code
-
-The Mojo testing framework requires you to explicitly identify the code blocks
-that you want it to execute.
-
-In a Mojo docstring, a fenced code block delimited by standard triple-backquotes
-is a *display-only* code block. It appears in the API documentation, but
-`mojo test` does not identify it as a test or attempt to execute any of the code
-in the block.
-
-````
-""" Non-executable code block example.
-
-The generated API documentation includes all lines of the following code block,
-but `mojo test` does not execute any of the code in it.
-
-```
-# mojo test does NOT execute any of this code block
-a = 1
-print(a)
-```
-"""
-````
-
-In contrast, a fenced code block that starts with the line <code>\`\`\`mojo</code>
-not only appears in the API documentation, but `mojo test` treats it as an
-executable test. The test fails if the code raises any error, otherwise it
-passes.
-
-````
-""" Executable code block example.
-
-The generated API documentation includes all lines of the following code block
-*and* `mojo test` executes it as a test.
-
-```mojo
-from testing import assert_equals
-
-b = 2
-assert_equals(b, 2)
-```
-"""
-````
-
-Sometimes you might want to execute a line of code as part of the test but *not*
-display that line in the API documentation. To achieve this, prefix the line of
-code with `%#`. For example, you can use this technique to omit `import`
-statements and assertion functions from the documentation.
-
-````
-""" Executable code block example with some code lines omitted from output.
-
-The generated API documentation includes only the lines of code that do *not*
-start with `%#`. However, `mojo test` executes *all* lines of code.
-
-```mojo
-%# from testing import assert_equal
-c = 3
-print(c)
-%# assert_equal(c, 3)
-```
-"""
-````
-
-### Documentation test suites and scoping
-
-The Mojo testing framework treats each docstring as a separate *test suite*.
-In other words, a single test suite can correspond to the docstring for an
-individual package, module, function, struct, struct method, etc.
-
-Each executable code block within a given docstring is a single test of the same
-test suite. The `mojo test` command executes the tests of a test suite
-sequentially in the order that they appear within the docstring. If a test
-within a particular test suite fails, then all subsequent tests within the same
-test suite are skipped.
-
-All tests within the test suite execute in the same scope, and test execution
-within that scope is stateful. This means, for example, that a variable created
-within one test is then accessible to subsequent tests in the same test suite.
-
-````
-""" Stateful example.
-
-Assign 1 to the variable `a`:
-
-```mojo
-%# from testing import assert_equal
-a = 1
-%# assert_equal(a, 1)
-```
-
-Then increment the value of `a` by 1:
-
-```mojo
-a += 1
-%# assert_equal(a, 2)
-```
-"""
-````
-
-:::note
-
-Test suite scopes do *not* nest. In other words, the test suite scope of a
-module is completely independent of the test suite scope of a function or struct
-defined within that module. For example, this means that if a module's test
-suite creates a variable, that variable is *not* accessible to a function's test
-suite within the same module.
-
-:::
-
-### Documentation test identifiers
-
-The format of a documentation test identifier is `<path>@<test-suite>::<test>`.
-This is best explained by an example. Consider the [example testing
-project](https://github.com/modular/mojo/tree/main/examples/testing)
-directory structure shown in the [Running tests](#running-tests) section. The
-source files in the `src` directory might contain docstrings for the `my_math`
-package, the `utils.mojo` module, and the individual functions within that
-module. You can collect the full list of tests by executing:
-
-```bash
-mojo test --co src
-```
-
-The output shows the hierarchy of directories, test files, and individual tests
-(note that this example elides the full filesystem paths from the output shown):
-
-```output
-<ROOT_DIR/src/my_math>
-  <ROOT_DIR/src/my_math/__init__.mojo>
-    <ROOT_DIR/src/my_math/__init__.mojo@__doc__>
-      <ROOT_DIR/src/my_math/__init__.mojo@__doc__::0>
-      <ROOT_DIR/src/my_math/__init__.mojo@__doc__::1>
-      <ROOT_DIR/src/my_math/__init__.mojo@__doc__::2>
-  <ROOT_DIR/src/my_math/utils.mojo>
-    <ROOT_DIR/src/my_math/utils.mojo@__doc__>
-      <ROOT_DIR/src/my_math/utils.mojo@__doc__::0>
-    <ROOT_DIR/src/my_math/utils.mojo@inc(\3A\3AInt).__doc__>
-      <ROOT_DIR/src/my_math/utils.mojo@inc(\3A\3AInt).__doc__::0>
-      <ROOT_DIR/src/my_math/utils.mojo@inc(\3A\3AInt).__doc__::1>
-    <ROOT_DIR/src/my_math/utils.mojo@dec(\3A\3AInt).__doc__>
-      <ROOT_DIR/src/my_math/utils.mojo@dec(\3A\3AInt).__doc__::0>
-      <ROOT_DIR/src/my_math/utils.mojo@dec(\3A\3AInt).__doc__::1>
-```
-
-Several different test suites appear in this result:
-
-| Test suite scope | File                        | Test suite name          |
-| ---------------- | --------------------------- | ------------------------ |
-| Package          | `src/my_math/__init__.mojo` | `__doc__`                |
-| Module           | `src/my_math/utils.mojo`    | `__doc__`                |
-| Function         | `src/my_math/utils.mojo`    | `inc(\3A\3AInt).__doc__` |
-
-Then within a specific test suite, tests are numbered sequentially in the order
-they appear in the docstring, starting with 0.
