@@ -95,17 +95,18 @@ public:
     //===--- Floating point types -----------------------------------------===//
 
     /// Bits 0 through 3 indicate the kind of FP value.
-    f8e5m2 = 0 | mIsFloat,
+    f8e3m4 = 0 | mIsFloat,
     f8e4m3 = 1 | mIsFloat,
-    f8e3m4 = 2 | mIsFloat,
-    f8e5m2fnuz = 3 | mIsFloat,
-    f8e4m3fnuz = 4 | mIsFloat,
-    f16 = 5 | mIsFloat,
-    bf16 = 6 | mIsFloat,
-    f32 = 7 | mIsFloat,
-    f64 = 8 | mIsFloat,
+    f8e4m3fn = 2 | mIsFloat,
+    f8e4m3fnuz = 3 | mIsFloat,
+    f8e5m2 = 4 | mIsFloat,
+    f8e5m2fnuz = 5 | mIsFloat,
+    f16 = 6 | mIsFloat,
+    bf16 = 7 | mIsFloat,
+    f32 = 8 | mIsFloat,
+    f64 = 9 | mIsFloat,
 
-    tf32 = 9 | mIsFloat,
+    tf32 = 10 | mIsFloat,
 
     //===--- Encodings for other types ------------------------------------===//
 
@@ -280,7 +281,8 @@ inline constexpr ssize_t DType::getWidthInBits() const {
     return isInt() ? getIntegerWidthInBits() : -1;
 
     // Handle floating point types.
-#define DECLARE_FLOAT(SHORT_NAME, _1, _2, BITCOUNT, ...)                       \
+#define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, M_TYPE, MLIR_TYPE, CXX_TYPE,      \
+                      BITCOUNT, ...)                                           \
   case DType::SHORT_NAME:                                                      \
     return BITCOUNT;
 #include "Support/ML/FloatTypes.def"
@@ -307,8 +309,9 @@ DType::getSignificandPrecisionInBits() const {
   default:
     return std::nullopt;
 
-#define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, CXX_TYPE, BITCOUNT, APFLOAT_TYPE, \
-                      LLVM_SEMANTICS, SIGNIFICAND_PRECISION, ...)              \
+#define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, M_TYPE, MLIR_TYPE, CXX_TYPE,      \
+                      BITCOUNT, APFLOAT_TYPE, LLVM_SEMANTICS,                  \
+                      SIGNIFICAND_PRECISION, ...)                              \
   case DType::SHORT_NAME:                                                      \
     return SIGNIFICAND_PRECISION + 1;
 
@@ -356,7 +359,7 @@ DECLARE_TYPE_MAPPING(ui32, uint32_t);
 DECLARE_TYPE_MAPPING(si64, int64_t);
 DECLARE_TYPE_MAPPING(ui64, uint64_t);
 
-#define DECLARE_FLOAT(SHORT_NAME, _, CXX_TYPE, ...)                            \
+#define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, M_TYPE, MLIR_TYPE, CXX_TYPE, ...) \
   DECLARE_TYPE_MAPPING(SHORT_NAME, CXX_TYPE);
 
 #include "Support/ML/FloatTypes.def"
