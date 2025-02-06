@@ -52,7 +52,7 @@ def test_bitmask_sampling_vs_xgrammar():
     graph = token_sampler(
         SamplingParams(
             top_k=5,
-            enable_constrained_decoding=True,
+            enable_structured_output=True,
             in_dtype=DType.float32,
             out_dtype=DType.float32,
         )

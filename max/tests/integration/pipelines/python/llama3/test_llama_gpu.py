@@ -114,7 +114,7 @@ async def test_llama_ragged(
 def test_smollm_with_constrained_decoding(pipeline_registry):
     pipeline_config = PipelineConfig(
         huggingface_repo_id="HuggingFaceTB/SmolLM2-135M-Instruct",
-        enable_constrained_decoding=True,
+        enable_structured_output=True,
         quantization_encoding=SupportedEncoding.bfloat16,
         device_specs=[DeviceSpec.accelerator()],
     )

@@ -19,7 +19,7 @@ def test_text_tokenizer_with_constrained_decoding():
     pipeline_config = PipelineConfig(
         huggingface_repo_id="HuggingFaceTB/SmolLM-135M",
         device_specs=[DeviceSpec.accelerator(id=0)],
-        enable_constrained_decoding=True,
+        enable_structured_output=True,
     )
 
     tokenizer = TextTokenizer(pipeline_config)
