@@ -454,7 +454,7 @@ async def test_prefix_caching_grouped_prefixes(
 
     # Since our prompts have large grouped prefixes, we should have a high cache
     # hit rate.
-    cache_hit_rate = kv_manager.ce_cache_hit_tokens / kv_manager.ce_all_tokens
+    cache_hit_rate = kv_manager.cache_hit_rate()
     if shared_prefix_len > 0:
         assert cache_hit_rate > 0.5
 
