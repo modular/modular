@@ -1014,6 +1014,9 @@ fn matmul_kernel_tc[
     BK: Int,
     WM: Int,
     WN: Int,
+    MMA_M: Int,
+    MMA_N: Int,
+    MMA_K: Int,
 ](
     A: LayoutTensor[dtype, layout_a],
     B: LayoutTensor[dtype, layout_b],
@@ -1033,6 +1036,9 @@ fn matmul_kernel_tc[
         BK: The block size in the K dimension.
         WM: The warp tile size in the M dimension.
         WN: The warp tile size in the N dimension.
+        MMA_M: Tensor core instruction shape in M dimension.
+        MMA_N: Tensor core instruction shape in N dimension.
+        MMA_K: Tensor core instruction shape in K dimension.
 
     Args:
         A: The input tensor A.
@@ -1053,11 +1059,7 @@ fn matmul_kernel_tc[
     alias N = C.shape[1]()  # Number of columns in matrix C
     alias K = A.shape[1]()  # Number of columns in matrix A
 
-    alias MMA_M = 16  # Tensor core instruction shape in M dimension
-    alias MMA_N = 8  # Tensor core instruction shape in N dimension
-    alias MMA_K = 8  # Tensor core instruction shape in K dimension
-
-    var warp_id = thread_idx.x // 32  # Warp ID within the block
+    var warp_id = thread_idx.x // WARP_SIZE  # Warp ID within the block
 
     # Calculate warp tile coordinates within the block
     warp_y = warp_id // (BN // WN)
@@ -1164,6 +1166,9 @@ fn run_gemm_kernel_tc[
     BK: Int,
     WM: Int,
     WN: Int,
+    MMA_M: Int,
+    MMA_N: Int,
+    MMA_K: Int,
 ](
     mut m: Bench,
     ctx: DeviceContext,
@@ -1178,7 +1183,18 @@ fn run_gemm_kernel_tc[
     alias NUM_WARPS = (BM // WM) * (BN // WN)
     var func = ctx.compile_function[
         matmul_kernel_tc[
-            dtype, a.layout, b.layout, c.layout, BM, BN, BK, WM, WN
+            dtype,
+            a.layout,
+            b.layout,
+            c.layout,
+            BM,
+            BN,
+            BK,
+            WM,
+            WN,
+            MMA_M,
+            MMA_N,
+            MMA_K,
         ]
     ]()
 

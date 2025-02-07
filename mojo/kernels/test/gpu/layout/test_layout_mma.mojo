@@ -4,11 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 # FIXME: KERN-1377
-# UNSUPPORTED: AMD-GPU
 # RUN: %mojo-no-debug-no-assert %s
 
 from math import ceildiv, isclose
 from random import random_float64
+from sys import (
+    has_nvidia_gpu_accelerator,
+    has_amd_gpu_accelerator,
+)
 
 from gpu import (
     WARP_SIZE,
@@ -139,7 +142,7 @@ fn test_layout_mma[
         mat_a.device_tensor(),
         mat_b.device_tensor(),
         grid_dim=(1, 1),
-        block_dim=(32),
+        block_dim=(WARP_SIZE),
     )
 
     ctx.synchronize()
@@ -178,20 +181,38 @@ fn test_layout_mma[
 
 
 def main():
-    alias shape_1684 = IndexList[3](16, 8, 4)
-    alias shape_1688 = IndexList[3](16, 8, 8)
-    alias shape_16816 = IndexList[3](16, 8, 16)
-
     with DeviceContext() as ctx:
-        test_layout_mma[DType.float32, DType.float32, shape_1684, 16, 8, 4](
-            ctx, rtol=1e-01
-        )
-        test_layout_mma[DType.float32, DType.float32, shape_1688, 16, 8, 8](
-            ctx, rtol=1e-01
-        )
-        test_layout_mma[DType.float32, DType.bfloat16, shape_1688, 16, 8, 8](
-            ctx, rtol=1e-01
-        )
-        test_layout_mma[DType.float32, DType.float16, shape_1688, 16, 8, 8](
-            ctx, rtol=1e-01
-        )
+
+        @parameter
+        if has_nvidia_gpu_accelerator():
+            alias shape_1684 = IndexList[3](16, 8, 4)
+            alias shape_1688 = IndexList[3](16, 8, 8)
+            alias shape_16816 = IndexList[3](16, 8, 16)
+
+            test_layout_mma[DType.float32, DType.float32, shape_1684, 16, 8, 4](
+                ctx, rtol=1e-01
+            )
+            test_layout_mma[DType.float32, DType.float32, shape_1688, 16, 8, 8](
+                ctx, rtol=1e-01
+            )
+            test_layout_mma[
+                DType.float32, DType.bfloat16, shape_1688, 16, 8, 8
+            ](ctx, rtol=1e-01)
+            test_layout_mma[DType.float32, DType.float16, shape_1688, 16, 8, 8](
+                ctx, rtol=1e-01
+            )
+        elif has_amd_gpu_accelerator():
+            alias shape_161616 = IndexList[3](16, 16, 16)
+            alias shape_16164 = IndexList[3](16, 16, 4)
+
+            test_layout_mma[
+                DType.float32, DType.float16, shape_161616, 16, 16, 16
+            ](ctx, rtol=1e-01)
+            test_layout_mma[
+                DType.float32, DType.bfloat16, shape_161616, 16, 16, 16
+            ](ctx, rtol=1e-01)
+            test_layout_mma[
+                DType.float32, DType.float32, shape_16164, 16, 16, 4
+            ](ctx, rtol=1e-01)
+        else:
+            abort("Unknown GPU Accelerator.")

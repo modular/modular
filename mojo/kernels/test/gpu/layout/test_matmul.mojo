@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 # FIXME: KERN-1377
-# UNSUPPORTED: AMD-GPU
 # RUN: %mojo-no-debug-no-assert %s
 
 import time
@@ -37,6 +36,9 @@ from matmul_kernels import (
     run_gemm_kernel_tc,
 )
 from memory import UnsafePointer
+from sys import (
+    has_nvidia_gpu_accelerator,
+)
 
 alias run_gemm_kernel_type = fn (
     mut m: Bench,
@@ -207,8 +209,23 @@ def main():
             DType.float32, a_layout, b_layout, c_layout, 128, 128, 8, 8, 8
         ]
 
+        alias MMA_M = 16
+        alias MMA_N = 8 if has_nvidia_gpu_accelerator() else 16
+        alias MMA_K = 8 if has_nvidia_gpu_accelerator() else 4
+
         alias k_tc = run_gemm_kernel_tc[
-            DType.float32, a_layout, b_layout, c_layout, 128, 128, 32, 64, 64
+            DType.float32,
+            a_layout,
+            b_layout,
+            c_layout,
+            64,  # BM: The block size in the M dimension
+            64,  # BN: The block size in the N dimension
+            32,  # BK: The block size in the K dimension
+            32,  # WM: The warp tile size in the M dimension
+            32,  # WN: The warp tile size in the N dimension
+            MMA_M,  # MMA_M: Tensor core instruction shape in M dimension
+            MMA_N,  # MMA_N: Tensor core instruction shape in N dimension
+            MMA_K,  # MMA_K: Tensor core instruction shape in K dimension
         ]
 
         test.run_test[k1](m)
