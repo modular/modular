@@ -33,6 +33,7 @@ from max.serve.pipelines.llm import (
     TokenGeneratorPipelineConfig,
 )
 from max.serve.pipelines.model_worker import start_model_worker
+from max.serve.pipelines.telemetry_worker import start_telemetry_worker
 from max.serve.request import register_request
 from max.serve.router import kserve_routes, openai_routes
 from max.serve.telemetry.metrics import METRICS, configure_metrics
@@ -65,10 +66,15 @@ async def lifespan(
     logger.info(f"Launching server on http://{host}:{port}")
     configure_metrics()
     await METRICS.configure()
+
     try:
-        async with start_model_worker(
-            serving_settings.model_factory, serving_settings.pipeline_config
-        ) as engine_queue:
+        async with (
+            start_telemetry_worker() as tel_worker,
+            start_model_worker(
+                serving_settings.model_factory,
+                serving_settings.pipeline_config,
+            ) as engine_queue,
+        ):
             METRICS.pipeline_load(serving_settings.model_name)
             pipeline: TokenGeneratorPipeline = TokenGeneratorPipeline(
                 model_name=serving_settings.model_name,
