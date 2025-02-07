@@ -115,7 +115,6 @@ struct StateContext:
 fn create_error_async_values_and_destruct_error(
     async_ptr: UnsafePointer[UnsafePointer[NoneType]],
     async_len: Int,
-    runtime: UnsafePointer[NoneType],
     owned err: Error,
 ):
     """Indicates to the C++ runtime that the kernel has failed."""
@@ -124,7 +123,6 @@ fn create_error_async_values_and_destruct_error(
     external_call["KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error", NoneType](
         async_ptr,
         async_len,
-        runtime,
         strslice.unsafe_ptr(),
         strslice.byte_length(),
     )
@@ -132,13 +130,9 @@ fn create_error_async_values_and_destruct_error(
 
 @register_internal("builtin.create_index_async")
 @no_inline
-fn create_index_async(
-    value: Int,
-    async_ptr: UnsafePointer[NoneType],
-    runtime: UnsafePointer[NoneType],
-):
+fn create_index_async(value: Int, async_ptr: UnsafePointer[NoneType]):
     external_call["KGEN_CompilerRT_CreateAsync_ssizet", NoneType](
-        value, async_ptr, runtime
+        value, async_ptr
     )
 
 
@@ -146,24 +140,17 @@ fn create_index_async(
 @no_inline
 @export
 fn create_si64_async(
-    value: Scalar[DType.int64],
-    async_ptr: UnsafePointer[NoneType],
-    runtime: UnsafePointer[NoneType],
+    value: Scalar[DType.int64], async_ptr: UnsafePointer[NoneType]
 ):
     external_call["KGEN_CompilerRT_CreateAsync_int64t", NoneType](
-        value, async_ptr, runtime
+        value, async_ptr
     )
 
 
 @register_internal("builtin.create_chain_async")
 @no_inline
-fn create_chain_async(
-    async_ptr: UnsafePointer[NoneType],
-    runtime: UnsafePointer[NoneType],
-):
-    external_call["KGEN_CompilerRT_CreateAsync_chain", NoneType](
-        async_ptr, runtime
-    )
+fn create_chain_async(async_ptr: UnsafePointer[NoneType]):
+    external_call["KGEN_CompilerRT_CreateAsync_chain", NoneType](async_ptr)
 
 
 @register_internal("builtin.create_bool_async")
@@ -172,10 +159,9 @@ fn create_chain_async(
 fn create_i1_async(
     value: Bool,
     async_ptr: UnsafePointer[NoneType],
-    runtime: UnsafePointer[NoneType],
 ):
     external_call["KGEN_CompilerRT_CreateAsync_bool", NoneType](
-        value, async_ptr, runtime
+        value, async_ptr
     )
 
 
@@ -186,11 +172,10 @@ fn create_buffer_ref_async[
 ](
     buffer: NDBuffer[DType.int8, 1],
     async_ptr: UnsafePointer[NoneType],
-    runtime: UnsafePointer[NoneType],
     call_ctx: MojoCallContextPtr,
 ):
     external_call["KGEN_CompilerRT_CreateAsyncDeviceBufferRef", NoneType](
-        buffer.data, len(buffer), async_ptr, runtime, call_ctx.ptr
+        buffer.data, len(buffer), async_ptr, call_ctx.ptr
     )
 
 
@@ -198,13 +183,9 @@ fn create_buffer_ref_async[
 @no_inline
 fn create_non_tracked_buffer_ref_async[
     target: StringLiteral
-](
-    buffer: NDBuffer[DType.int8, 1],
-    async_ptr: UnsafePointer[NoneType],
-    runtime: UnsafePointer[NoneType],
-):
+](buffer: NDBuffer[DType.int8, 1], async_ptr: UnsafePointer[NoneType]):
     external_call["KGEN_CompilerRT_CreateAsyncNonTrackedBufferRef", NoneType](
-        buffer.data, len(buffer), async_ptr, runtime
+        buffer.data, len(buffer), async_ptr
     )
 
 
@@ -216,7 +197,6 @@ fn create_buffer_ref_with_borrow_async[
     buffer: NDBuffer[DType.int8, 1],
     async_to_borrow: UnsafePointer[NoneType],
     output_async: UnsafePointer[NoneType],
-    runtime: UnsafePointer[NoneType],
 ):
     external_call["KGEN_CompilerRT_CreateAsyncBufferWithBorrow", NoneType](
         buffer.data,
@@ -224,7 +204,6 @@ fn create_buffer_ref_with_borrow_async[
         async_to_borrow,
         borrowee_type,
         output_async,
-        runtime,
     )
 
 
@@ -232,11 +211,7 @@ fn create_buffer_ref_with_borrow_async[
 @no_inline
 fn create_tensor_spec_async[
     spec_rank: Int
-](
-    spec: StaticTensorSpec[spec_rank],
-    async_ptr: UnsafePointer[NoneType],
-    runtime: UnsafePointer[NoneType],
-):
+](spec: StaticTensorSpec[spec_rank], async_ptr: UnsafePointer[NoneType],):
     # Mojo impl is bitwise compatible with cpp variant, can construct TensorSpec in mojo
     # and pass it back to C++ -- However, this is an issue for the heap allocated dims.
     # For the benefit of simplicity, allocate the shapes and ptrs and free explicitly after
@@ -244,7 +219,7 @@ fn create_tensor_spec_async[
     for i in range(spec_rank):
         shape_ptr[i] = spec.shape[i]
     external_call["KGEN_CompilerRT_CreateAsyncTensorSpec", NoneType](
-        shape_ptr, spec_rank, spec.type, async_ptr, runtime
+        shape_ptr, spec_rank, spec.type, async_ptr
     )
     shape_ptr.free()
 
@@ -261,7 +236,6 @@ fn create_tensor_async[
     buffer: NDBuffer[type, buffer_rank],
     async_to_borrow: UnsafePointer[NoneType],
     output_async: UnsafePointer[NoneType],
-    runtime: UnsafePointer[NoneType],
 ):
     # Tensor and the underlying buffer must have the same rank, unless it is a
     # scalar tensor stored with a NDBuffer<[1]>
@@ -278,7 +252,6 @@ fn create_tensor_async[
         async_to_borrow,
         borrowee_type,
         output_async,
-        runtime,
     )
     pass
 
@@ -293,7 +266,6 @@ fn empty_destructor(ptr: UnsafePointer[UInt8]):
 fn create_mojo_value_async(
     val_ptr: UnsafePointer[UInt8],
     async_ptr: UnsafePointer[NoneType],
-    runtime: UnsafePointer[NoneType],
     size: Int,
     align: Int,
     destructor_fn: fn (UnsafePointer[UInt8]) -> None,
@@ -305,7 +277,6 @@ fn create_mojo_value_async(
             val_ptr,
             empty_destructor,
             async_ptr,
-            runtime,
         )
         return
     var dst_ptr = external_call[
@@ -317,7 +288,6 @@ fn create_mojo_value_async(
         dst_ptr,
         destructor_fn,
         async_ptr,
-        runtime,
     )
 
 
@@ -326,7 +296,6 @@ fn create_mojo_value_async(
 fn create_python_mojo_value_async(
     val_ptr: UnsafePointer[UInt8],
     async_ptr: UnsafePointer[NoneType],
-    runtime: UnsafePointer[NoneType],
     size: Int,
     align: Int,
     destructor_fn: fn (UnsafePointer[UInt8]) -> None,
@@ -341,7 +310,6 @@ fn create_python_mojo_value_async(
         dst_ptr,
         destructor_fn,
         async_ptr,
-        runtime,
     )
 
 
