@@ -35,6 +35,7 @@ from layout.tma_async import (
     create_tma_tile,
     TMABarrier,
     PipelineState,
+    create_mbarrier_array,
 )
 from buffer.dimlist import Dim, DimList, _make_tuple
 from internal_utils._utils import ValOrDim, dynamic, static
@@ -106,40 +107,34 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
         accum_type, a_type, b_type, wgmma_shape, transpose_b=transpose_b
     ]()
 
-    var a_smem_iter = StaticTuple[
-        LayoutTensor[
-            a_type,
-            a_smem_layout,
-            address_space = AddressSpace.SHARED,
-            alignment=128,
-        ],
-        pipeline_stages,
+    var smem = external_memory[
+        UInt8, address_space = AddressSpace.SHARED, alignment=128
     ]()
 
-    var b_smem_iter = StaticTuple[
-        LayoutTensor[
-            b_type,
-            b_smem_layout,
-            address_space = AddressSpace.SHARED,
-            alignment=128,
-        ],
-        pipeline_stages,
-    ]()
+    alias a_smem_size = a_smem_layout.size() * pipeline_stages
+    alias b_smem_size = b_smem_layout.size() * pipeline_stages
 
-    @parameter
-    for i in range(pipeline_stages):
-        a_smem_iter[i] = LayoutTensor[
-            a_type,
-            a_smem_layout,
-            address_space = AddressSpace.SHARED,
-            alignment=128,
-        ].stack_allocation()
-        b_smem_iter[i] = LayoutTensor[
-            b_type,
-            b_smem_layout,
-            address_space = AddressSpace.SHARED,
-            alignment=128,
-        ].stack_allocation()
+    var a_smem = smem.bitcast[Scalar[a_type]]()
+    var b_smem = (smem + (a_smem_size * sizeof[a_type]())).bitcast[
+        Scalar[b_type]
+    ]()
+    var smem_poll = (smem + a_smem_size + b_smem_size).bitcast[Int64]()
+
+    var a_smem_iter = LayoutTensorIter[
+        a_type,
+        a_smem_layout,
+        address_space = a_smem.address_space,
+        alignment = a_smem.alignment,
+        circular=True,
+    ](a_smem, a_smem_size)
+
+    var b_smem_iter = LayoutTensorIter[
+        b_type,
+        b_smem_layout,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
+        circular=True,
+    ](b_smem, b_smem_size)
 
     var c_reg_tile = LayoutTensor[
         accum_type,
@@ -149,8 +144,10 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
 
     _ = c_reg_tile.fill(0.0)
 
-    var full = StaticTuple[TMABarrier, pipeline_stages]()
-    var empty = StaticTuple[TMABarrier, pipeline_stages]()
+    var a_mbars_ptr = smem_poll.bitcast[Int64]()
+    var b_mbars_ptr = smem_poll.bitcast[Int64]() + pipeline_stages
+    full = create_mbarrier_array[pipeline_stages](a_mbars_ptr)
+    empty = create_mbarrier_array[pipeline_stages](b_mbars_ptr)
 
     var warp_group_idx = thread_idx.x // WARP_GROUP_SIZE
     var warp_group_thread_idx = thread_idx.x % WARP_GROUP_SIZE
@@ -160,10 +157,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
 
         @parameter
         for i in range(pipeline_stages):
-            full[i] = TMABarrier()
             full[i].init(num_consumer * 128 + 1)
-
-            empty[i] = TMABarrier()
             empty[i].init(num_consumer * 128 + 1)
 
     barrier()
@@ -176,15 +170,18 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
                 _ = empty[write_idx].arrive()
                 empty[write_idx].wait(write_pipeline_states.phase())
 
+                var a_smem_tile = a_smem_iter.next(write_idx)[]
+                var b_smem_tile = b_smem_iter.next(write_idx)[]
+
                 full[write_idx].expect_bytes(expected_bytes)
                 a_tma_op.async_copy(
-                    a_smem_iter[write_idx],
+                    a_smem_tile,
                     full[write_idx],
                     (UInt(i) * BK, block_idx.y * BM),
                 )
 
                 b_tma_op.async_copy(
-                    b_smem_iter[write_idx],
+                    b_smem_tile,
                     full[write_idx],
                     (UInt(i) * BK, block_idx.x * BN),
                 )
@@ -202,10 +199,11 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
             _ = full[read_idx].arrive()
             full[read_idx].wait(read_pipeline_states.phase())
 
+            var a_smem_tile = a_smem_iter.next(read_idx)[]
+            var b_smem_tile = b_smem_iter.next(read_idx)[]
+
             wgmma_op.arrive()
-            wgmma_op.wgmma(
-                a_smem_iter[read_idx], b_smem_iter[read_idx], c_reg_tile
-            )
+            wgmma_op.wgmma(a_smem_tile, b_smem_tile, c_reg_tile)
             wgmma_op.commit_group()
             wgmma_op.wait_for_all()
 
@@ -299,7 +297,7 @@ def test_warp_specialize_gemm[
     var b = from_ndbuffer_row_major(b_device.tensor)
     var c = from_ndbuffer_row_major(c_device.tensor)
 
-    alias block_tile_shape = Index(64, wgmma_n, 32)
+    alias block_tile_shape = Index(128, wgmma_n, 64)
     alias wgmma_shape = Index(64, wgmma_n, 16)
 
     alias BM = block_tile_shape[0]
@@ -315,9 +313,13 @@ def test_warp_specialize_gemm[
     # 1 warp group to TMA and 1 warp group to WGMMA
     alias num_wgmma = 1
     alias num_threads = WARP_GROUP_SIZE * num_wgmma + WARP_GROUP_SIZE
-    # FIXME: increasing pipeline stages causes CUDA_ERROR_INVALID_VALUE
-    # when using wider wgmma instruction.
-    alias pipeline_stages = 2
+
+    alias pipeline_stages = 4
+    alias smem_size = pipeline_stages * (
+        a_smem_layout.size() * sizeof[a_type]()
+        + b_smem_layout.size() * sizeof[b_type]()
+        + (sizeof[Int64]() * 2)
+    )
 
     alias kernel = tma_wgmma_warp_specialized_gemm_kernel[
         a_type,
@@ -342,7 +344,7 @@ def test_warp_specialize_gemm[
     var func = ctx.compile_function[
         kernel,
         _target = _get_gpu_target["sm_90"](),
-    ]()
+    ](func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size))
 
     ctx.enqueue_function(
         func,
@@ -351,6 +353,7 @@ def test_warp_specialize_gemm[
         c,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(num_threads),
+        shared_mem_bytes=smem_size,
     )
 
     ctx.synchronize()
@@ -371,7 +374,7 @@ def test_warp_specialize_gemm[
     ctx.enqueue_copy_from_device(c_host.tensor.data, c_device.buffer)
     ctx.enqueue_copy_from_device(c_host_ref.tensor.data, c_device_ref.buffer)
     ctx.synchronize()
-    alias rtol = 1e-2
+    alias rtol = 1e-3
     assert_almost_equal(
         c_host.tensor,
         c_host_ref.tensor,
