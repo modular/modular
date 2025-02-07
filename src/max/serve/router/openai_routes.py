@@ -58,6 +58,7 @@ from max.serve.schemas.openai import (  # type: ignore
     ResponseFormatJsonObject,
     ResponseFormatJsonSchema,
     ResponseFormatText,
+    Usage,
 )
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch
@@ -153,6 +154,13 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                         finish_reason="stop",
                     )
                 ]
+
+                usage = Usage(
+                    prompt_tokens=token.prompt_token_count,
+                    completion_tokens=n_tokens,
+                    total_tokens=n_tokens + (token.prompt_token_count or 0),
+                )
+
                 # Each chunk is expected to have the same id
                 # https://platform.openai.com/docs/api-reference/chat/streaming
                 response = CreateChatCompletionStreamResponse(
@@ -162,7 +170,7 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                     model=self.pipeline.model_name,
                     object="chat.completion.chunk",
                     system_fingerprint=None,
-                    usage=None,
+                    usage=usage,
                     service_tier=None,
                 )
                 n_tokens += 1
@@ -250,6 +258,15 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                 # Handle as regular text response if tool_use is disabled
                 self._handle_text_response(response_message, response_choices)
 
+            usage = None
+            if n_tokens > 0:
+                usage = CompletionUsage(
+                    prompt_tokens=completed_outputs[0].prompt_token_count,
+                    completion_tokens=n_tokens,
+                    total_tokens=n_tokens
+                    + (completed_outputs[0].prompt_token_count or 0),
+                )
+
             response = CreateChatCompletionResponse(
                 id=request.id,
                 choices=response_choices,
@@ -258,6 +275,7 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                 object="chat.completion",
                 system_fingerprint=None,
                 service_tier=None,
+                usage=usage,
             )
             return response
         finally:

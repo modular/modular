@@ -34,6 +34,7 @@ class TokenGeneratorOutput:
     decoded_token: str
     token_log_probabilities: Optional[list[float]] = None
     top_log_probabilities: Optional[list[dict[str, float]]] = None
+    prompt_token_count: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -202,8 +203,10 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                 context = await self.tokenizer.new_context(request)
             # TODO(MAXCORE-137): TokenGeneratorContext currently does not enforce
             # a seq_len property.
+            prompt_token_count = None
             if hasattr(context, "seq_len"):
-                METRICS.input_tokens(context.seq_len)
+                prompt_token_count = context.seq_len
+                METRICS.input_tokens(prompt_token_count)
 
             with record_ms(METRICS.output_time):
                 async for response in self.engine_queue.stream(
@@ -236,6 +239,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                         ),
                         token_log_probabilities=token_log_probabilities,
                         top_log_probabilities=top_log_probabilities,
+                        prompt_token_count=prompt_token_count,
                     )
         finally:
             if self.debug_logging:

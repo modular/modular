@@ -436,7 +436,7 @@ class Usage(BaseModel):
     completion_tokens: int = Field(
         ..., description='Number of tokens in the generated completion.'
     )
-    prompt_tokens: int = Field(
+    prompt_tokens: Optional[int] = Field(
         ..., description='Number of tokens in the prompt.'
     )
     total_tokens: int = Field(
@@ -1325,7 +1325,7 @@ class CompletionUsage(BaseModel):
     completion_tokens: int = Field(
         ..., description='Number of tokens in the generated completion.'
     )
-    prompt_tokens: int = Field(
+    prompt_tokens: Optional[int] = Field(
         ..., description='Number of tokens in the prompt.'
     )
     total_tokens: int = Field(
