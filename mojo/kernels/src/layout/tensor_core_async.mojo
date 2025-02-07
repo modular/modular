@@ -32,7 +32,7 @@ from utils import Index, IndexList
 #
 #
 # -------------------------------
-# M/N x K, K-major, w/o siwzzling
+# M/N x K, K-major, w/o swizzling
 # -------------------------------
 #
 # Consider core matrix cm_M x cm_K, where cm_M = 8 and cm_K = 16 // sizeof[type]()
@@ -350,11 +350,21 @@ struct TensorCoreAsync[
         alias a_smem_layout = a_smem_tile.layout
         alias b_smem_layout = b_smem_tile.layout
 
-        # TODO: consider move SBO, LBO computation entirely into descriptor
-        alias a_sbo = a_smem_layout[0].stride[1].value() * sizeof[a_type]()
-        alias a_lbo = a_smem_layout[1].stride[1].value() * sizeof[a_type]()
-        alias b_sbo = b_smem_layout[0].stride[1].value() * sizeof[b_type]()
-        alias b_lbo = b_smem_layout[1].stride[1].value() * sizeof[b_type]()
+        # Number of core matrices in stride dim
+        alias a_num_CMs_m = mma_shape[0] // _CM_M
+        alias b_num_CMs_n = mma_shape[1] // _CM_N
+
+        # Layout modes are always (MN, K) transpose or not.
+        alias a_stride01 = a_smem_layout[0].stride[1].value()
+        alias a_stride11 = a_smem_layout[1].stride[1].value()
+        alias b_stride01 = b_smem_layout[0].stride[1].value()
+        alias b_stride11 = b_smem_layout[1].stride[1].value()
+        # Strides between WGMMA tiles
+        alias a_m_stride = a_stride01 * a_num_CMs_m * sizeof[a_type]()
+        alias b_n_stride = b_stride01 * b_num_CMs_n * sizeof[b_type]()
+        # K dim is stepped by 2 core matrices.
+        alias a_k_stride = a_stride11 * 2 * sizeof[a_type]()
+        alias b_k_stride = b_stride11 * 2 * sizeof[b_type]()
 
         alias num_m_mmas = a_smem_layout[0].size() // mma_shape[0]
         alias num_n_mmas = b_smem_layout[0].size() // mma_shape[1]
@@ -368,22 +378,18 @@ struct TensorCoreAsync[
             "C fragments' size doesn't match the total number of wgmma.",
         ]()
 
-        # Number of core matrices in stride dim
-        alias a_num_CMs_stride_dim = mma_shape[0] // _CM_M
-        alias b_num_CMs_stride_dim = mma_shape[1] // _CM_N
-
         @parameter
         for m_mma in range(num_m_mmas):
-            a_desc_m = a_desc + m_mma * a_sbo * a_num_CMs_stride_dim
 
             @parameter
             for n_mma in range(num_n_mmas):
-                b_desc_n = b_desc + n_mma * b_sbo * b_num_CMs_stride_dim
-
                 alias mma_id = n_mma * num_m_mmas + m_mma
 
                 @parameter
                 for k_mma in range(num_k_mmas):
+                    a_desc_m = a_desc + m_mma * a_m_stride + k_mma * a_k_stride
+                    b_desc_n = b_desc + n_mma * b_n_stride + k_mma * b_k_stride
+
                     c_frags[mma_id, 0] = wgmma_async[
                         mma_shape[0],
                         mma_shape[1],
@@ -391,9 +397,6 @@ struct TensorCoreAsync[
                         a_type = _dtype(a_type),
                         b_type = _dtype(b_type),
                     ](a_desc_m, b_desc_n, c_frags[mma_id, 0])
-
-                    a_desc_m += a_lbo * 2
-                    b_desc_n += b_lbo * 2
 
     @staticmethod
     @always_inline
