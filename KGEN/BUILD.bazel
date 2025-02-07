@@ -819,7 +819,7 @@ modular_cc_library(
     hdrs = glob(["include/KGEN/KGENDialect/*.h"]),
     local_defines = ASYNCRT_PROFILING_LOCAL_DEFINES + selects.with_or({
         ("//:modular_config_debug_modular", "//:modular_config_debug_everything"): ["BUILD_TYPE=debug"],
-        ("//:modular_config_default", "//:modular_config_asan", "//:modular_config_tsan"): ["BUILD_TYPE=relwithdebinfo"],
+        ("//:modular_config_default", "//:modular_config_asan", "//:modular_config_tsan", "//:modular_config_ubsan"): ["BUILD_TYPE=relwithdebinfo"],
         ("//:modular_config_release", "//:modular_config_production"): ["BUILD_TYPE=release"],
     }) + select({
         "//:kernel_e2e_gpu_profiling_setting": ["KERNEL_E2E_GPU_PROFILING"],
