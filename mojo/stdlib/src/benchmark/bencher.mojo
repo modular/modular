@@ -304,19 +304,30 @@ struct BenchConfig(CollectionElement):
             """Parse cmd line args to define benchmark configuration."""
 
             var args = argv()
-            for i in range(len(args)):
+            var i = 1
+            while i < len(args):
                 if args[i] == "-o":
+                    if i + 1 >= len(args):
+                        raise Error("Missing value for -o option")
                     self.out_file = Path(args[i + 1])
                     i += 2
                 elif args[i] == "-r":
+                    if i + 1 >= len(args):
+                        raise Error("Missing value for -r option")
                     self.num_repetitions = Int(args[i + 1])
+                    i += 2
                 elif args[i] == "--tabular":
                     self.tabular_view = True
+                    i += 1
                 elif args[i] == "--no-progress":
                     self.show_progress = False
+                    i += 1
                 elif args[i] == "--verbose":
                     self.verbose_timing = True
+                    i += 1
                 # TODO: add an arg for bench batchsize
+                else:
+                    i += 1
 
         argparse()
 
