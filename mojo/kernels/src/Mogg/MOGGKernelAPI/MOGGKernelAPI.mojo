@@ -5193,7 +5193,6 @@ struct SplitOutputShapeHelper:
     @staticmethod
     @always_inline
     fn shape[
-        output_idx: Int,
         rank: Int,
         input_type: DType,
         split_size_type: DType,
@@ -5203,6 +5202,7 @@ struct SplitOutputShapeHelper:
         input_buf: ManagedTensorSlice[input_type, rank],
         split_sizes_buf: ManagedTensorSlice[split_size_type, 1],
         split_axis_buf: ManagedTensorSlice[axis_type, 1],
+        output_idx: Int,
     ) raises -> IndexList[rank]:
         # extract relevant hyper parameters
         if output_idx < 0 or split_sizes_buf.size() <= output_idx:
