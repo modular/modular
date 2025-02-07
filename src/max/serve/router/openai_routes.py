@@ -27,10 +27,7 @@ from max.pipelines import (
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
 )
-from max.serve.pipelines.llm import (
-    TokenGeneratorOutput,
-    TokenGeneratorPipeline,
-)
+from max.serve.pipelines.llm import TokenGeneratorOutput, TokenGeneratorPipeline
 from max.serve.schemas.openai import (  # type: ignore
     ChatCompletionMessageToolCall,
     ChatCompletionMessageToolCalls,
@@ -373,7 +370,7 @@ class OpenAIEmbeddingsResponseGenerator:
                 Embedding(
                     object="embedding",
                     index=idx,
-                    embedding=output,
+                    embedding=list(output.embeddings),
                 )
                 for idx, output in enumerate(embedding_outputs)
                 if output is not None
