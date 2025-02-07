@@ -71,7 +71,7 @@ struct AsyncContext:
 
 fn _init_asyncrt_chain(chain: UnsafePointer[Chain]):
     external_call["KGEN_CompilerRT_AsyncRT_InitializeChain", NoneType](
-        _get_current_runtime(), chain.address
+        chain.address
     )
 
 
@@ -89,7 +89,7 @@ fn _async_and_then(hdl: AnyCoroutine, chain: UnsafePointer[Chain]):
 
 fn _async_execute[type: AnyType](handle: AnyCoroutine, desired_worker_id: Int):
     external_call["KGEN_CompilerRT_AsyncRT_Execute", NoneType](
-        _coro_resume_fn, handle, _get_current_runtime(), desired_worker_id
+        _coro_resume_fn, handle, desired_worker_id
     )
 
 
@@ -141,24 +141,13 @@ struct ChainPromise:
 
 
 @always_inline
-fn _get_current_runtime() -> UnsafePointer[NoneType]:
-    """Returns the current runtime. The runtime is either created by the
-    surrounding mojo tool (mojo-repl, mojo-jit, ...) or by the entry main
-    function.
-    """
-    return external_call[
-        "KGEN_CompilerRT_AsyncRT_GetCurrentRuntime", UnsafePointer[NoneType]
-    ]()
-
-
-@always_inline
 fn parallelism_level() -> Int:
     """Gets the parallelism level of the Runtime."""
     return Int(
         external_call[
             "KGEN_CompilerRT_AsyncRT_ParallelismLevel",
             Int32,
-        ](_get_current_runtime())
+        ]()
     )
 
 
