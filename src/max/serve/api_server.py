@@ -86,7 +86,10 @@ def fastapi_app(
     debug_settings: DebugSettings,
     serving_settings: ServingTokenGeneratorSettings,
 ) -> FastAPI:
-    app = FastAPI(lifespan=partial(lifespan, serving_settings=serving_settings))
+    app = FastAPI(
+        title="MAX Serve",
+        lifespan=partial(lifespan, serving_settings=serving_settings),
+    )
 
     app.mount("/metrics", make_metrics_app())
 
