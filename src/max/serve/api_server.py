@@ -69,6 +69,7 @@ async def lifespan(
         async with start_model_worker(
             serving_settings.model_factory, serving_settings.pipeline_config
         ) as engine_queue:
+            METRICS.pipeline_load(serving_settings.model_name)
             pipeline: TokenGeneratorPipeline = TokenGeneratorPipeline(
                 model_name=serving_settings.model_name,
                 tokenizer=serving_settings.tokenizer,

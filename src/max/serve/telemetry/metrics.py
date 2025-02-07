@@ -71,6 +71,7 @@ class _Metrics:
         self._reqs_running: Any = _NoOpMetric()
         self._model_load_time: Any = _NoOpMetric()
         self._itl: Any = _NoOpMetric()
+        self._pipeline_load: Any = _NoOpMetric()
         self._configured = False
 
         # by default, configure _Metrics to public sync
@@ -128,7 +129,11 @@ class _Metrics:
                 description="Time to load a model",
             )
             self._itl = _meter.create_histogram(
-                "maxserve.itl", unit="ms", description="inter token latency"
+                "maxserve.itl", unit="ms", description="Inter token latency"
+            )
+            self._pipeline_load = _meter.create_counter(
+                "maxserve.pipeline_load",
+                description="Count of pipelines loaded for each model",
             )
 
         if self.call_async and not self.started:
@@ -183,6 +188,9 @@ class _Metrics:
 
     def itl(self, ms: float) -> None:
         self._call(self._itl.record, ms)
+
+    def pipeline_load(self, name: str) -> None:
+        self._call(self._pipeline_load.add, 1, {"model": name})
 
 
 METRICS = _Metrics()
