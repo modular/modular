@@ -13,13 +13,8 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 
 
-def allreduce_graph() -> Graph:
-    devices = [
-        DeviceRef.GPU(id=0),
-        DeviceRef.GPU(id=1),
-        DeviceRef.GPU(id=2),
-        DeviceRef.GPU(id=3),
-    ]
+def allreduce_graph(signals: ops.allreduce.Signals) -> Graph:
+    devices = signals.devices
     with Graph(
         "allreduce",
         input_types=[
@@ -35,6 +30,7 @@ def allreduce_graph() -> Graph:
             TensorType(
                 dtype=DType.float32, shape=[30, 1000], device=devices[3]
             ),
+            *signals.input_types(),
         ],
     ) as graph:
         assert isinstance(graph.inputs[0], TensorValue)
@@ -45,7 +41,10 @@ def allreduce_graph() -> Graph:
         add1 = graph.inputs[1] * 2
         add2 = graph.inputs[2] * 3
         add3 = graph.inputs[3] * 4
-        allreduce_outputs = list(ops.allreduce.sum([add0, add1, add2, add3]))
+        allreduce_outputs = ops.allreduce.sum(
+            inputs=[add0, add1, add2, add3],
+            signal_buffers=[inp.buffer for inp in graph.inputs[4:]],
+        )
         graph.output(
             allreduce_outputs[0],
             allreduce_outputs[1],
@@ -57,7 +56,15 @@ def allreduce_graph() -> Graph:
 
 def test_allreduce_execution() -> None:
     """Tests multi-device allreduce execution."""
-    graph = allreduce_graph()
+    signals = ops.allreduce.Signals(
+        devices=[
+            DeviceRef.GPU(id=0),
+            DeviceRef.GPU(id=1),
+            DeviceRef.GPU(id=2),
+            DeviceRef.GPU(id=3),
+        ]
+    )
+    graph = allreduce_graph(signals)
     host = CPU()
     device0 = Accelerator(0)
     device1 = Accelerator(1)
@@ -73,7 +80,22 @@ def test_allreduce_execution() -> None:
     b = Tensor.from_numpy(a_np).to(device1)
     c = Tensor.from_numpy(a_np).to(device2)
     d = Tensor.from_numpy(a_np).to(device3)
-    output = compiled.execute(a, b, c, d)
+
+    signal_buffers = [
+        Tensor.zeros(
+            shape=(ops.allreduce.Signals.NUM_BYTES,),
+            dtype=DType.uint8,
+            device=dev,
+        )
+        for dev in (device0, device1, device2, device3)
+    ]
+
+    # Synchronize devices so that the signal buffers are initialized.
+    for dev in (device0, device1, device2, device3):
+        dev.synchronize()
+
+    output = compiled.execute(a, b, c, d, *signal_buffers)
+
     # Check Executed Graph
     assert isinstance(output[0], Tensor)
     assert output[0].device == device0

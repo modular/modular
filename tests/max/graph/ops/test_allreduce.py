@@ -22,6 +22,8 @@ def test_allreduce_no_device() -> None:
         DeviceRef.GPU(id=2),
         DeviceRef.GPU(id=3),
     ]
+    signals = ops.allreduce.Signals(devices)
+
     with pytest.raises(
         ValueError,
         match="needs to have an explicit device.",
@@ -42,9 +44,13 @@ def test_allreduce_no_device() -> None:
                 TensorType(
                     dtype=DType.float32, shape=[6, 5], device=devices[3]
                 ),
+                *signals.input_types(),
             ],
         ) as graph:
-            allreduce_outputs = ops.allreduce.sum(graph.inputs)
+            allreduce_outputs = ops.allreduce.sum(
+                inputs=(v.tensor for v in graph.inputs[: len(devices)]),
+                signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
+            )
             graph.output(
                 allreduce_outputs[0],
                 allreduce_outputs[1],
@@ -61,10 +67,12 @@ def test_allreduce_rep_device() -> None:
         DeviceRef.GPU(id=2),
         DeviceRef.GPU(id=3),
     ]
+    signals = ops.allreduce.Signals(devices)
+
     with pytest.raises(
         ValueError,
         match=(
-            "allreduce.sum operation must have unique devices across it's input"
+            "allreduce.sum operation must have unique devices across its input"
             " tensors."
         ),
     ):
@@ -83,9 +91,13 @@ def test_allreduce_rep_device() -> None:
                 TensorType(
                     dtype=DType.float32, shape=[6, 5], device=devices[3]
                 ),
+                *signals.input_types(),
             ],
         ) as graph:
-            allreduce_outputs = ops.allreduce.sum(graph.inputs)
+            allreduce_outputs = ops.allreduce.sum(
+                inputs=(v.tensor for v in graph.inputs[: len(devices)]),
+                signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
+            )
             graph.output(
                 allreduce_outputs[0],
                 allreduce_outputs[1],
@@ -102,6 +114,7 @@ def test_allreduce_wrong_shape() -> None:
         DeviceRef.GPU(id=2),
         DeviceRef.GPU(id=3),
     ]
+    signals = ops.allreduce.Signals(devices)
 
     with pytest.raises(
         ValueError,
@@ -125,14 +138,57 @@ def test_allreduce_wrong_shape() -> None:
                 TensorType(
                     dtype=DType.float32, shape=[6, 5], device=devices[3]
                 ),
+                *signals.input_types(),
             ],
         ) as graph:
-            allreduce_outputs = ops.allreduce.sum(graph.inputs)
+            allreduce_outputs = ops.allreduce.sum(
+                inputs=(v.tensor for v in graph.inputs[: len(devices)]),
+                signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
+            )
             graph.output(
                 allreduce_outputs[0],
                 allreduce_outputs[1],
                 allreduce_outputs[2],
                 allreduce_outputs[3],
+            )
+
+
+def test_allreduce_wrong_num_devices() -> None:
+    """Test wrong number of devices error for allreduce."""
+    devices = [
+        DeviceRef.GPU(id=0),
+        DeviceRef.GPU(id=1),
+        DeviceRef.GPU(id=2),
+    ]
+    signals = ops.allreduce.Signals(devices)
+
+    with pytest.raises(
+        ValueError,
+        match=("allreduce sum only supports 2 or 4 devices, but got 3"),
+    ):
+        with Graph(
+            "allreduce",
+            input_types=[
+                TensorType(
+                    dtype=DType.float32, shape=[6, 5], device=devices[0]
+                ),
+                TensorType(
+                    dtype=DType.float32, shape=[6, 5], device=devices[1]
+                ),
+                TensorType(
+                    dtype=DType.float32, shape=[6, 5], device=devices[2]
+                ),
+                *signals.input_types(),
+            ],
+        ) as graph:
+            allreduce_outputs = ops.allreduce.sum(
+                inputs=(v.tensor for v in graph.inputs[: len(devices)]),
+                signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
+            )
+            graph.output(
+                allreduce_outputs[0],
+                allreduce_outputs[1],
+                allreduce_outputs[2],
             )
 
 
@@ -144,6 +200,8 @@ def test_allreduce_basic() -> None:
         DeviceRef.GPU(id=2),
         DeviceRef.GPU(id=3),
     ]
+    signals = ops.allreduce.Signals(devices)
+
     with Graph(
         "allreduce",
         input_types=[
@@ -151,9 +209,13 @@ def test_allreduce_basic() -> None:
             TensorType(dtype=DType.float32, shape=[6, 5], device=devices[1]),
             TensorType(dtype=DType.float32, shape=[6, 5], device=devices[2]),
             TensorType(dtype=DType.float32, shape=[6, 5], device=devices[3]),
+            *signals.input_types(),
         ],
     ) as graph:
-        allreduce_outputs = ops.allreduce.sum(graph.inputs)
+        allreduce_outputs = ops.allreduce.sum(
+            inputs=(v.tensor for v in graph.inputs[: len(devices)]),
+            signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
+        )
         graph.output(
             allreduce_outputs[0],
             allreduce_outputs[1],

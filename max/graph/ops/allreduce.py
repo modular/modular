@@ -9,26 +9,69 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from max.dtype import DType
+from max.mlir.dialects import mo
+
 from ..graph import Graph  # noqa
-from ..value import TensorValue
-from .elementwise import add
-from .transfer_to import transfer_to
+from ..type import DeviceRef
+from ..value import BufferType, BufferValue, TensorValue
 
 
-def sum(inputs: Iterable[TensorValue]) -> Iterable[TensorValue]:
+class Signals:
+    """Signal buffers used for peer-to-peer communication in allreduce.
+
+    Device code uses these buffers by enabling peer-to-peer access.
+    Then thread blocks use the buffers to implement barriers for
+    synchronization.
+    """
+
+    NUM_BYTES = 4096
+    """The size of the signal buffers used for communication in allreduce."""
+    # NOTE: ``NUM_BYTES`` must stay in sync with the size of the ``Signal``
+    # Mojo struct.
+
+    devices: list[DeviceRef]
+    """List of devices that these signals communicate between."""
+
+    def __init__(self, devices: Iterable[DeviceRef]) -> None:
+        """
+        Args:
+            devices: Devices between which these signals communicate.
+        """
+        self.devices = list(devices)
+
+    def input_types(self) -> list[BufferType]:
+        """Gets graph input types corresponding to these signal buffers."""
+        return [
+            BufferType(
+                dtype=DType.uint8, shape=(Signals.NUM_BYTES,), device=dev
+            )
+            for dev in self.devices
+        ]
+
+
+def sum(
+    inputs: Iterable[TensorValue], signal_buffers: Iterable[BufferValue]
+) -> list[TensorValue]:
     """Collective allreduce summation operation.
 
-    This op is a collective op which takes in tensors from different devices and outputs
-    tensors on different devices. In particular, this operation will gather the inputs
-    across different devices and reduce them via a summation operation. The result is
-    then broadcasted back to the same devices that the inputs came from.
+    This op is a collective op which takes in tensors from different devices and
+    outputs tensors on different devices.
+    In particular, this operation will gather the inputs across different
+    devices and reduce them via a summation operation.
+    The result is then broadcasted back to the same devices that the inputs
+    came from.
 
     Args:
-        inputs: The input tensors reduce.
+        inputs: The input tensors to reduce.
+        signal_buffers: Device buffer values used for synchronization.
 
     Returns:
         An iterable outputs which all hold the reduction output.
     """
+    # Convert `inputs` to list since we'll iterate over it twice.
+    inputs = list(inputs)
+
     shape = None
     devices = []
 
@@ -36,35 +79,43 @@ def sum(inputs: Iterable[TensorValue]) -> Iterable[TensorValue]:
         if not shape:
             shape = input.shape
         if input.shape != shape:
-            raise ValueError(
+            msg = (
                 "allreduce.sum operation must have the same shape across all"
                 " input tensors."
             )
+            raise ValueError(msg)
         if not input.device:
-            raise ValueError(
+            msg = (
                 f"allreduce.sum operation input = {input} needs to have an"
                 " explicit device."
             )
+            raise ValueError(msg)
         if input.device in devices:
-            raise ValueError(
-                "allreduce.sum operation must have unique devices across it's"
+            msg = (
+                "allreduce.sum operation must have unique devices across its"
                 " input tensors."
             )
+            raise ValueError(msg)
         devices.append(input.device)
 
-    # Naive Impl
-    # Explicit transfer all to 1 device
-    reduction_device = devices[0]
-    post_transfer_inputs = []
-    for input in inputs:
-        post_transfer_inputs.append(transfer_to(input, reduction_device))
-    # Sum all the inputs
-    cumsum_output = post_transfer_inputs[0]
-    for input in post_transfer_inputs[1:]:
-        cumsum_output = add(cumsum_output, input)
-    # Explicit transfer back to all device
-    transferred_outputs = []
-    for device in devices:
-        transferred_outputs.append(transfer_to(cumsum_output, device))
+    if len(devices) == 1:
+        # Nothing to do.
+        return inputs
 
-    return transferred_outputs
+    if len(devices) not in {2, 4}:
+        msg = f"allreduce sum only supports 2 or 4 devices, but got {len(devices)}"
+        raise ValueError(msg)
+
+    # Map from the number of devices to a fixed-num-devices allreduce kernel.
+    allreduce_op = {
+        2: mo.distributed_allreduce_2gpu_sum,
+        4: mo.distributed_allreduce_4gpu_sum,
+    }[len(devices)]
+
+    results = Graph.current._add_op(
+        allreduce_op,
+        [x.type.to_mlir() for x in inputs],
+        *signal_buffers,
+        inputs,
+    )
+    return [res.tensor for res in results]
