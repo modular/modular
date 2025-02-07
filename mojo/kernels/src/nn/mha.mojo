@@ -1204,7 +1204,6 @@ fn mha[
         if not _is_cache_length_accurate:
             var cache_length = k.cache_length(batch_idx)
             start_pos = cache_length
-            seq_len += cache_length
 
         # this is used for cross attention where we get the num_keys
         # from kv_input_row_offsets. This is when num_keys != seq_len
@@ -1215,7 +1214,7 @@ fn mha[
             cur_kv_len = kv_seq_end - kv_seq_start
             num_keys = cur_kv_len + k.cache_length(batch_idx)
         else:
-            num_keys = seq_len
+            num_keys = seq_len + k.cache_length(batch_idx)
 
         max_seq_len = seq_len_arg
         mask_tensor_col = seq_len_arg
@@ -1238,10 +1237,9 @@ fn mha[
         if not _is_cache_length_accurate:
             var cache_length = k.cache_length(batch_idx)
             start_pos = cache_length
-            seq_len += cache_length
 
         max_seq_len = seq_len_arg
-        num_keys = seq_len
+        num_keys = seq_len + k.cache_length(batch_idx)
         mask_tensor_col = seq_len_arg
         q_batch_offset = (
             config.depth * config.num_heads * max_seq_len * batch_idx
