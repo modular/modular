@@ -28,6 +28,7 @@ from layout.layout import print_layout
 from layout.layout_tensor import copy_local_to_dram
 from layout.tensor_core_async import (
     tile_layout_k_major,
+    tile_layout_mn_major,
     TensorCoreAsync,
     _lhs_descriptor,
     _rhs_descriptor,
@@ -57,15 +58,14 @@ fn tma_wgmma_kernel[
     a_smem_layout: Layout,
     b_smem_layout: Layout,
     transpose_b: Bool = True,
-    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
     c: LayoutTensor[c_type, c_layout],
     num_iters: UInt,
 ):
-    constrained[transpose_b, "Only support transposed B in layout"]()
-
     var a_smem_tile = LayoutTensor[
         a_type,
         a_smem_layout,
@@ -86,8 +86,8 @@ fn tma_wgmma_kernel[
         a_type,
         b_type,
         wgmma_shape,
-        a_swizzle=swizzle_mode,
-        b_swizzle=swizzle_mode,
+        a_swizzle=a_swizzle,
+        b_swizzle=b_swizzle,
         transpose_b=transpose_b,
     ]()
 
@@ -123,7 +123,12 @@ fn tma_wgmma_kernel[
                 a_smem_tile, mbar, (UInt(i) * BK, block_idx.y * BM)
             )
             b_tma_op.async_copy(
-                b_smem_tile, mbar, (UInt(i) * BK, block_idx.x * BN)
+                b_smem_tile,
+                mbar,
+                (UInt(i) * BK, block_idx.x * BN) if transpose_b else (
+                    block_idx.x * BN,
+                    UInt(i) * BK,
+                ),
             )
 
         # Ensure all threads sees initialized mbarrier
@@ -174,7 +179,8 @@ def test_tma_wgmma[
     block_tile_shape: IndexList[3],
     wgmma_shape: IndexList[3],
     transpose_b: Bool = True,
-    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](ctx: DeviceContext):
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
@@ -189,11 +195,11 @@ def test_tma_wgmma[
         + String(block_tile_shape)
         + " transb inst shape "
         + String(wgmma_shape)
-        + " "
-        + String(swizzle_mode)
+        + " A "
+        + String(a_swizzle)
+        + " B "
+        + String(b_swizzle)
     )
-
-    constrained[transpose_b, "Only support transpose_b for now"]()
 
     alias M = prob_shape[0]
     alias N = prob_shape[1]
@@ -203,13 +209,13 @@ def test_tma_wgmma[
         a_type,
         Layout.row_major(M, K),
     ](ctx)
-    arange(a.tensor())
+    arange(a.tensor[update=False]())
 
-    var b = ManagedLayoutTensor[
-        b_type,
-        Layout.row_major(N, K),
-    ](ctx)
-    arange(b.tensor())
+    alias b_layout = Layout.row_major(
+        N, K
+    ) if transpose_b else Layout.row_major(K, N)
+    var b = ManagedLayoutTensor[b_type, b_layout](ctx)
+    arange(b.tensor[update=False]())
 
     var c = ManagedLayoutTensor[
         c_type,
@@ -223,25 +229,31 @@ def test_tma_wgmma[
 
     # Shared memory tile layouts
     alias a_smem_layout = tile_layout_k_major[
-        a_type, BM, BK, swizzle_mode=swizzle_mode
+        a_type, BM, BK, swizzle_mode=a_swizzle
     ]()
     alias b_smem_layout = tile_layout_k_major[
-        b_type, BN, BK, swizzle_mode=swizzle_mode
+        b_type, BN, BK, swizzle_mode=b_swizzle
+    ]() if transpose_b else tile_layout_mn_major[
+        b_type, BN, BK, swizzle_mode=b_swizzle
     ]()
 
     a_tma_op = create_tma_tile[
-        a_type, 2, Index(BM, BK), swizzle_mode=swizzle_mode
+        a_type, 2, Index(BM, BK), swizzle_mode=a_swizzle
     ](ctx, a.device_tensor())
     b_tma_op = create_tma_tile[
-        b_type, 2, Index(BN, BK), swizzle_mode=swizzle_mode
+        b_type,
+        2,
+        Index(BN, BK) if transpose_b else Index(BK, BN),
+        is_k_major=transpose_b,
+        swizzle_mode=b_swizzle,
     ](ctx, b.device_tensor())
 
     alias kernel = tma_wgmma_kernel[
         a_type,
         b_type,
         c_type,
-        Layout.row_major(BM, BK),
-        Layout.row_major(BN, BK),
+        __type_of(a_tma_op).layout,
+        __type_of(b_tma_op).layout,
         Layout.row_major(M, N),
         __type_of(a_tma_op).desc_layout,
         __type_of(b_tma_op).desc_layout,
@@ -249,8 +261,9 @@ def test_tma_wgmma[
         wgmma_shape,
         a_smem_layout,
         b_smem_layout,
-        transpose_b=True,
-        swizzle_mode=swizzle_mode,
+        transpose_b=transpose_b,
+        a_swizzle=a_swizzle,
+        b_swizzle=b_swizzle,
     ]
     var func = ctx.compile_function[
         kernel,
@@ -323,5 +336,18 @@ def main():
             Index(64, 8, 64),
             Index(64, 8, 64),
             Index(64, 8, 16),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+        ](ctx)
+
+        test_tma_wgmma[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(64, 128, 16),
+            Index(64, 128, 16),
+            Index(64, 64, 16),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_NONE,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            transpose_b=False,
         ](ctx)
