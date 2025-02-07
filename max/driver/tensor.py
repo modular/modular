@@ -66,7 +66,7 @@ class Tensor(DLPackArray):
         dtype: DType,
         device: Device = CPU(),
     ) -> None:
-        self._impl = _Tensor(shape, dtype._to(), device._device)
+        self._impl = _Tensor(shape, dtype._to(), device)
 
     @classmethod
     def _from_impl(cls: Type[_T], impl: _Tensor) -> _T:
@@ -116,7 +116,7 @@ class Tensor(DLPackArray):
     @property
     def device(self) -> Device:
         """Device on which tensor is resident."""
-        return Device(self._impl.device)
+        return self._impl.device
 
     @property
     def is_contiguous(self) -> bool:
@@ -191,9 +191,7 @@ class Tensor(DLPackArray):
 
             cpu_copy = cpu_tensor.copy()
         """
-        if device is None:
-            device = self.device
-        return self._from_impl(self._impl.copy_to(device._device))
+        return self._from_impl(self._impl.copy_to(device or self.device))
 
     def to(self, device: Device) -> Tensor:
         """Return a tensor that's guaranteed to be on the given device.
@@ -357,7 +355,7 @@ class MemMapTensor(Tensor):
         # TODO(MSDK-976): Ideally, we could just use DLPack to borrow the
         # underlying memory from numpy. But our numpy version doesn't allow
         # dlpack to be used on read-only arrays (common for memmaped weights).
-        self._impl = _Tensor(arr, CPU()._device)
+        self._impl = _Tensor(arr, CPU())
 
         # numpy does not attempt to free/close the mmap object it uses, so we
         # copy a reference to it, which should keep it alive as long as needed.

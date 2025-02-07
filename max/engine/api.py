@@ -418,19 +418,19 @@ class Model:
     @property
     def devices(self) -> list[Device]:
         """Returns the device objects used in the Model."""
-        return [Device(device) for device in self._impl.devices]
+        return self._impl.devices
 
     @property
     def input_devices(self) -> List[Device]:
         """Device of the model's input tensors, as a list of
         :obj:`Device` objects."""
-        return [Device(device) for device in self._impl.input_devices]
+        return self._impl.input_devices
 
     @property
     def output_devices(self) -> List[Device]:
         """Device of the model's output tensors, as a list of
         :obj:`Device` objects."""
-        return [Device(device) for device in self._impl.output_devices]
+        return self._impl.output_devices
 
 
 class TensorSpec:
@@ -734,7 +734,7 @@ class InferenceSession:
         self.num_threads = num_threads
         if num_threads:
             config["num_threads"] = num_threads
-        config["devices"] = [device._device for device in devices]
+        config["devices"] = devices
         if custom_extensions is not None:
             config["custom_extensions"] = _process_custom_extensions_objects(
                 custom_extensions
@@ -1029,4 +1029,4 @@ class InferenceSession:
     @property
     def devices(self) -> List[Device]:
         """A list of available devices."""
-        return [Device(device) for device in self._impl.devices]
+        return self._impl.devices
