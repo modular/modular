@@ -331,7 +331,7 @@ class TokenGenerationSchedulerV2(Scheduler):
                     free_pct = free_blocks / total_blocks
                     cache_hit_rate = self.paged_manager.cache_hit_rate()
                     logger.debug(
-                        f"Scheduling {batch_type} batch with BS: {len(batch_to_execute)}, KVCache: {free_blocks}/{total_blocks} ({free_pct * 100:.2%}%) pages available, Cache hit rate: {cache_hit_rate * 100:.2f}%, Total preemption count: {self.total_preemption_count}"
+                        f"Scheduling {batch_type} batch with BS: {len(batch_to_execute)}, KVCache: {free_blocks}/{total_blocks} ({free_pct:.2%}) pages available, Cache hit rate: {cache_hit_rate:.2%}, Total preemption count: {self.total_preemption_count}"
                     )
                 else:
                     logger.debug(
