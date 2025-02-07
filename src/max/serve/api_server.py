@@ -60,6 +60,9 @@ class ServingTokenGeneratorSettings:
 async def lifespan(
     app: FastAPI, serving_settings: ServingTokenGeneratorSettings
 ):
+    host = app.extra["host"]
+    port = app.extra["port"]
+    logger.info(f"Launching server on http://{host}:{port}")
     configure_metrics()
     await METRICS.configure()
     try:
@@ -73,6 +76,9 @@ async def lifespan(
             )
             app.state.pipeline = pipeline
             async with pipeline:
+                logger.info(
+                    f"Server ready on http://{host}:{port} (Press CTRL+C to quit)"
+                )
                 yield
     except Exception as e:
         logger.exception("Error occurred in model worker. %s", e)
@@ -86,9 +92,13 @@ def fastapi_app(
     debug_settings: DebugSettings,
     serving_settings: ServingTokenGeneratorSettings,
 ) -> FastAPI:
+    host = os.getenv("MAX_SERVE_HOST", "0.0.0.0")
+    port = int(os.getenv("MAX_SERVE_PORT", "8000"))
     app = FastAPI(
         title="MAX Serve",
         lifespan=partial(lifespan, serving_settings=serving_settings),
+        host=host,
+        port=port,
     )
 
     app.mount("/metrics", make_metrics_app())
@@ -108,11 +118,12 @@ def fastapi_app(
 
 
 def fastapi_config(app: FastAPI) -> Config:
-    host = os.getenv("MAX_SERVE_HOST", "0.0.0.0")
-    port = int(os.getenv("MAX_SERVE_PORT", "8000"))
-    logger.info(f"Launching server on http://{host}:{port}")
     config = Config(
-        app=app, host=host, port=port, log_config=None, loop="uvloop"
+        app=app,
+        host=app.extra["host"],
+        port=app.extra["port"],
+        log_config=None,
+        loop="uvloop",
     )
     for route in app.routes:
         logger.debug("Route enabled : %s", route)
