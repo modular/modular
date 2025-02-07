@@ -60,6 +60,28 @@ from utils import Index, IndexList
 #     (  BM, (cm_K, BK // cm_K))
 #   : (cm_K, (   1, BM  * cm_K))
 #
+# ----------------------------
+# K x M/N, MN-major, siwzzling
+# ----------------------------
+#
+# MN-major layouts are hard to reason. We port cutlass' three canonical
+# layouts with some refactorization:
+#
+# B32   : Swizzle<1,4,3> o smem_ptr o ((T,2,m),(8,k)):((1,T,LBO),(2T,SBO))
+# B64   : Swizzle<2,4,3> o smem_ptr o ((T,4,m),(8,k)):((1,T,LBO),(4T,SBO))
+# B128  : Swizzle<3,4,3> o smem_ptr o ((T,8,m),(8,k)):((1,T,LBO),(8T,SBO))
+#
+# T = 16B // sizeof[type]()
+# m = BM  // (2T or 4T or 8T)
+# k = BK  // 8
+#
+# We simplify them to
+#
+# B32   : Swizzle<1,4,3> o smem_ptr o ((2T,m),(8,k)):((1,LBO),(2T,SBO))
+# B64   : Swizzle<2,4,3> o smem_ptr o ((4T,m),(8,k)):((1,LBO),(4T,SBO))
+# B128  : Swizzle<3,4,3> o smem_ptr o ((8T,m),(8,k)):((1,LBO),(8T,SBO))
+#
+# `2/4/8 * T` is generalized as `swizzle.bytes() // sizeof[type]()`.
 
 alias supported_mma_shape = (
     Index(64, 8, 8),
@@ -147,22 +169,38 @@ fn tile_layout_mn_major[
     This is the "unit" layout, the actual shared memory layout can be multiple
     of this unit.
     """
-
     constrained[
-        swizzle_mode == TensorMapSwizzle.SWIZZLE_NONE, "Only support no swizzle"
+        swizzle_mode
+        in (TensorMapSwizzle.SWIZZLE_NONE, TensorMapSwizzle.SWIZZLE_128B),
+        "Only support 128B and no swizzle",
     ]()
 
+    @parameter
+    if swizzle_mode == TensorMapSwizzle.SWIZZLE_128B:
+        # See comments in file header.
+        alias row_len = swizzle_mode.bytes() // sizeof[type]()
+        return Layout(
+            IntTuple(
+                IntTuple(row_len, mn_dim // row_len),
+                IntTuple(_CM_NUM_ROWS, k_dim // _CM_NUM_ROWS),
+            ),
+            IntTuple(
+                IntTuple(1, _CM_NUM_ROWS * row_len),
+                IntTuple(row_len, _CM_NUM_ROWS * mn_dim),
+            ),
+        )
+
+    # No swizzle
     # Number of elements per row in core matrix
     alias _CM_ROW_LEN = _CM_ROW_BYTES // sizeof[type]()
-
     return Layout(
         IntTuple(
             IntTuple(_CM_ROW_LEN, mn_dim // _CM_ROW_LEN),
             IntTuple(_CM_NUM_ROWS, k_dim // _CM_NUM_ROWS),
         ),
         IntTuple(
-            IntTuple(1, _CM_ROW_LEN * k_dim),
-            IntTuple(_CM_ROW_LEN, _CM_NUM_ROWS * _CM_ROW_LEN),
+            IntTuple(1, _CM_NUM_ROWS * _CM_ROW_LEN),
+            IntTuple(_CM_ROW_LEN, _CM_NUM_ROWS * mn_dim),
         ),
     )
 
@@ -260,7 +298,7 @@ fn _rhs_descriptor[
     alias SBO = ((stride01 if no_swizzle else stride11) * sizeof[type]()) >> 4
     alias LBO = ((stride11 if no_swizzle else stride01) * sizeof[type]()) >> 4
 
-    return WGMMADescriptor.create[SBO, LBO](tensor.ptr)
+    return WGMMADescriptor.create[SBO, LBO, swizzle_mode](tensor.ptr)
 
 
 # TODO(KERN-1301): Layouts are calculated for 64x8x8 instruction
@@ -350,18 +388,20 @@ struct TensorCoreAsync[
         alias a_smem_layout = a_smem_tile.layout
         alias b_smem_layout = b_smem_tile.layout
 
-        # Number of core matrices in stride dim
-        alias a_num_CMs_m = mma_shape[0] // _CM_M
-        alias b_num_CMs_n = mma_shape[1] // _CM_N
-
         # Layout modes are always (MN, K) transpose or not.
+        # Note that shape00 may not equal core matrix dim for MN-major layouts.
+        # TODO: use layout algebra like `tile_to_shape` here.
+        alias a_shape00 = a_smem_layout[0].shape[0].value()
         alias a_stride01 = a_smem_layout[0].stride[1].value()
         alias a_stride11 = a_smem_layout[1].stride[1].value()
+        alias b_shape00 = b_smem_layout[0].shape[0].value()
         alias b_stride01 = b_smem_layout[0].stride[1].value()
         alias b_stride11 = b_smem_layout[1].stride[1].value()
         # Strides between WGMMA tiles
-        alias a_m_stride = a_stride01 * a_num_CMs_m * sizeof[a_type]()
-        alias b_n_stride = b_stride01 * b_num_CMs_n * sizeof[b_type]()
+        # fmt: off
+        alias a_m_stride = a_stride01 * (mma_shape[0] // a_shape00) * sizeof[a_type]()
+        alias b_n_stride = b_stride01 * (mma_shape[1] // b_shape00) * sizeof[b_type]()
+        # fmt: on
         # K dim is stepped by 2 core matrices.
         alias a_k_stride = a_stride11 * 2 * sizeof[a_type]()
         alias b_k_stride = b_stride11 * 2 * sizeof[b_type]()
@@ -396,6 +436,7 @@ struct TensorCoreAsync[
                         mma_shape[2],
                         a_type = _dtype(a_type),
                         b_type = _dtype(b_type),
+                        layout_b= "col" if transpose_b else "row",
                     ](a_desc_m, b_desc_n, c_frags[mma_id, 0])
 
     @staticmethod
