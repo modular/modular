@@ -15,7 +15,6 @@ from sys.ffi import (
 from os import abort
 from pathlib import Path
 from collections.string import StringSlice, StaticString
-from runtime.asyncrt import _get_current_runtime
 
 import _mlir
 
@@ -107,9 +106,8 @@ fn attr_new_tensor[
             UnsafePointer[T],
             _mlir.Type.cType,
             Bool,
-            UnsafePointer[NoneType],
         ) -> _mlir.NamedAttribute.cType,
-    ]()(name, data.data, type.c, is_owned, _get_current_runtime())
+    ]()(name, data.data, type.c, is_owned)
 
 
 fn attr_new_tensor(
@@ -125,9 +123,8 @@ fn attr_new_tensor(
             UnsafePointer[NoneType],
             _mlir.Type.cType,
             Bool,
-            UnsafePointer[NoneType],
         ) -> _mlir.NamedAttribute.cType,
-    ]()(name, data, type.c, is_owned, _get_current_runtime())
+    ]()(name, data, type.c, is_owned)
 
 
 fn attr_new_tensor_from_file(
@@ -139,9 +136,8 @@ fn attr_new_tensor_from_file(
             StringSlice[__origin_of(name)],
             StringSlice[__origin_of(file_name)],
             _mlir.Type.cType,
-            UnsafePointer[NoneType],
         ) -> _mlir.NamedAttribute.cType,
-    ]()(name, file_name, type.c, _get_current_runtime())
+    ]()(name, file_name, type.c)
 
 
 fn attr_new_dim_param_decl(
