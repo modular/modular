@@ -17,8 +17,6 @@ from pathlib import Path
 import lit.formats
 import lit.llvm
 
-config.test_format = lit.formats.ShTest(True)
-
 # name: The name of this test suite.
 config.name = "Mojo Standard Library Benchmarks"
 
@@ -39,6 +37,8 @@ if "_START_MODULAR_INCLUDED" in os.environ:
         config.modular_obj_root, "open-source", "mojo", "stdlib", "benchmarks"
     )
 else:
+    config.test_format = lit.formats.ShTest(True)
+
     # test_source_root: The root path where tests are located.
     config.test_source_root = Path(__file__).parent.resolve()
 
