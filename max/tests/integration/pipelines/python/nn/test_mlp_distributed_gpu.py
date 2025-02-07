@@ -72,10 +72,20 @@ def distributed_mlp_graph(devices: List[Device], model_parameters) -> Graph:
     w2_type: TensorType = TensorType(
         DType.float32, [hidden_dim, intermediate_size], DeviceRef.CPU()
     )
+    signals = ops.allreduce.Signals(
+        devices=(DeviceRef(d.label, d.id) for d in devices)
+    )
     with Graph(
-        "mlp", input_types=[input_type, w1_type, w2_type, w1_type]
+        "mlp",
+        input_types=[
+            input_type,
+            w1_type,
+            w2_type,
+            w1_type,
+            *signals.input_types(),
+        ],
     ) as graph:
-        x_graph, w1_graph, w2_graph, w3_graph = graph.inputs
+        x_graph, w1_graph, w2_graph, w3_graph, *signal_buffers = graph.inputs
 
         # Typical strategy to parallelize MLP
         # Column shard weights on gate/up projections which are on input layers
@@ -92,7 +102,12 @@ def distributed_mlp_graph(devices: List[Device], model_parameters) -> Graph:
             for w1, w2, w3 in zip(w1_devs, w2_devs, w3_devs)
         ]
         mlp_out = [mlp_fn(x) for (x, mlp_fn) in zip(x_devs, mlp_fns)]
-        graph.output(*ops.allreduce.sum(mlp_out))
+        graph.output(
+            *ops.allreduce.sum(
+                inputs=mlp_out,
+                signal_buffers=[v.buffer for v in signal_buffers],
+            )
+        )
         return graph
 
 
@@ -129,6 +144,15 @@ def test_mlp(batch_size, intermediate_size, hidden_dim, n_devices):
     w2 = Tensor.from_numpy(w2_np)
     w3 = Tensor.from_numpy(w3_np)
 
+    signal_buffers = [
+        Tensor.zeros(
+            shape=(ops.allreduce.Signals.NUM_BYTES,),
+            dtype=DType.uint8,
+            device=dev,
+        )
+        for dev in devices
+    ]
+
     # Build/Compile/Execute graph.
     devices_with_host = [host, *devices]
     session = InferenceSession(devices=devices_with_host)
@@ -137,7 +161,7 @@ def test_mlp(batch_size, intermediate_size, hidden_dim, n_devices):
         (batch_size, intermediate_size, hidden_dim),
     )
     compiled = session.load(graph)
-    results = compiled.execute(x, w1, w2, w3)
+    results = compiled.execute(x, w1, w2, w3, *signal_buffers)
 
     # Compare to expected.
     ACCURACY_RTOL = 1e-1
