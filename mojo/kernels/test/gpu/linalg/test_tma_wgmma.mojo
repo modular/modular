@@ -302,8 +302,8 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             DType.bfloat16,
-            Index(64, 8, 32),
-            Index(64, 8, 32),
+            Index(128, 16, 32),
+            Index(128, 16, 32),
             Index(64, 8, 16),
         ](ctx)
 
