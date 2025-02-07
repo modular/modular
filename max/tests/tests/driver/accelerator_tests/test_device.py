@@ -40,7 +40,7 @@ def scoped_device():
 def test_stress_accelerator_device():
     # We should be able to call Accelerator() many times, and get cached outputs.
     devices = [Accelerator() for _ in range(64)]
-    assert len({id(dev._device) for dev in devices}) == 1
+    assert len({id(dev) for dev in devices}) == 1
 
     # TODO(MSDK-1220): move this before the above assert when the context no
     # longer leaks. Until then, this should still test that the default device
@@ -61,6 +61,5 @@ def test_stats():
     # We should be able to query utilization stats for the device.
     accel = Accelerator()
     stats = accel.stats
-    assert "timestamp" in stats
     assert "free_memory" in stats
     assert "total_memory" in stats

@@ -32,7 +32,9 @@ def test_equality():
 def test_stats():
     # We should be able to query utilization stats for the device.
     cpu = CPU()
-    assert "timestamp" in cpu.stats
+    assert "free_memory" in cpu.stats
+    assert "total_memory" in cpu.stats
+    assert cpu.stats["free_memory"] <= cpu.stats["total_memory"]
 
 
 def test_api():
