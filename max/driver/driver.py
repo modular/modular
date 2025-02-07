@@ -122,6 +122,14 @@ class Device:
         """Returns whether this device is compatible with MAX."""
         return self._device.is_compatible
 
+    def synchronize(self) -> None:
+        """Ensures all operations on this device complete before returning.
+
+        Raises:
+            ValueError: If any enqueue'd operations had an internal error.
+        """
+        self._device.synchronize()
+
     @classmethod
     def cpu(cls, id: int = -1) -> Device:
         """Creates a CPU device for the specified NUMA node.
