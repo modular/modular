@@ -17,18 +17,87 @@ class DType(Enum): ...
 class Device:
     def __str__(self) -> str: ...
     @property
-    def stats(self) -> str: ...
+    def stats(self) -> dict[str, Any]:
+        """Returns utilization data for the device.
+
+        .. code-block:: python
+
+            from max import driver
+
+            device = driver.CPU()
+            device.stats
+        """
     @property
-    def label(self) -> str: ...
+    def label(self) -> str:
+        """Returns device label.
+
+        Possible values are:
+        - "cpu" for host devices
+        - "gpu" for accelerators
+
+        .. code-block:: python
+
+            from max import driver
+
+            device = driver.CPU()
+            device.label
+        """
     @property
-    def api(self) -> str: ...
+    def api(self) -> str:
+        """Returns the API used to program the device.
+
+        Possible values are:
+        - "cpu" for host devices
+        - "cuda" for NVIDIA GPUs
+        - "hip" for AMD GPUs
+
+        .. code-block:: python
+
+            from max import driver
+
+            device = driver.CPU()
+            device.api
+        """
     @property
-    def id(self) -> int: ...
+    def id(self) -> int:
+        """Returns a zero-based device id. For a CPU device this is the numa id.
+        For GPU accelerators this is the id of the device relative to this host.
+        Along with the `label`, an id can uniquely identify a device,
+        e.g. "gpu:0", "gpu:1".
+
+        .. code-block:: python
+
+            from max import driver
+
+            device = driver.CPU()
+            device.id
+        """
     @property
-    def is_host(self) -> bool: ...
+    def is_host(self) -> bool:
+        """Whether this device is the CPU (host) device.
+
+        .. code-block:: python
+
+            from max import driver
+
+            device = driver.CPU()
+            device.is_host
+        """
     @property
-    def is_compatible(self) -> bool: ...
-    def synchronize(self) -> None: ...
+    def is_compatible(self) -> bool:
+        """Returns whether this device is compatible with MAX."""
+    def synchronize(self) -> None:
+        """Ensures all operations on this device complete before returning.
+
+        Raises:
+            ValueError: If any enqueue'd operations had an internal error.
+        """
+    @staticmethod
+    def cpu(id: int = -1) -> Device:
+        """Creates a CPU device with the provided numa id."""
+    @staticmethod
+    def accelerator(id: int = -1) -> Device:
+        """Creates an accelerator (e.g. GPU) device with the provided id."""
 
 class Tensor:
     shape: ShapeType
@@ -65,6 +134,7 @@ class Tensor:
 
 def cpu_device(device_id: int) -> Device: ...
 def accelerator(device_id: int) -> Device: ...
-def accelerator_count() -> int: ...
+def accelerator_count() -> int:
+    """Returns number of accelerator devices available."""
 
 __version__: str = ...
