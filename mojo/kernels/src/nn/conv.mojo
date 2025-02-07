@@ -2907,14 +2907,15 @@ fn conv_nhwc_direct[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return String(";").join(
+        return String(
             trace_arg("input", input),
             trace_arg("filter", filter),
             trace_arg("output", output),
-            "group=" + String(num_groups),
-            "stride=" + String("x").join(stride),
-            "padding_h=" + String("x").join(pad_h),
-            "padding_w=" + String("x").join(pad_w),
+            trace_arg("group", num_groups),
+            trace_arg("stride", stride),
+            trace_arg("padding_h", pad_h),
+            trace_arg("padding_w", pad_w),
+            sep=";",
         )
 
     with Trace[TraceLevel.OP, target="cpu"](

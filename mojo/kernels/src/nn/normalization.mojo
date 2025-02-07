@@ -644,7 +644,7 @@ fn layer_norm[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return trace_arg("input", shape, type)
+        return String(trace_arg("input", shape, type))
 
     with Trace[TraceLevel.OP](
         "layer_norm",
@@ -1002,11 +1002,11 @@ fn _rms_norm_impl[
     # Note: we only support reduction along the last dimension
     if gamma.dynamic_shape[0] != shape[rank - 1]:
         raise Error(
-            "Gamma size "
-            + String(gamma.dynamic_shape[0])
-            + " does not match dimension of reduction "
-            + String(shape[rank - 1])
-            + "."
+            "Gamma size ",
+            gamma.dynamic_shape[0],
+            " does not match dimension of reduction ",
+            shape[rank - 1],
+            ".",
         )
 
     if shape.flattened_length() == 0:
@@ -1057,7 +1057,7 @@ fn rms_norm[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return trace_arg("input", shape, type)
+        return String(trace_arg("input", shape, type))
 
     with Trace[TraceLevel.OP](
         "rms_norm",
