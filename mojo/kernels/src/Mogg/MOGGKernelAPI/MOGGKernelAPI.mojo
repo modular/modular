@@ -7991,7 +7991,7 @@ struct DistributedAllReduceSum:
     ](
         outputs: StaticTuple[ManagedTensorSlice[type, rank], *_],
         inputs: StaticTuple[ManagedTensorSlice[type, rank], *_],
-        ctx: MojoCallContextPtr,
+        dev_ctxs: StaticTuple[DeviceContextPtr, *_],
     ) raises:
         # Stub for now
         outputs[0][0] = inputs[0][0]

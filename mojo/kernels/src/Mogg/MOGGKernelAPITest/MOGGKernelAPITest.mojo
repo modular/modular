@@ -932,3 +932,19 @@ struct MultiDeviceContextDedup:
     ) raises:
         dev_ctx0[].synchronize()
         dev_ctx1[].synchronize()
+
+
+@compiler.register("variadic_device_context", num_dps_outputs=1)
+struct VariadicDeviceContext:
+    @staticmethod
+    fn execute[
+        type: DType,
+        rank: Int,
+    ](
+        outputs: StaticTuple[ManagedTensorSlice[type, rank], *_],
+        inputs: StaticTuple[ManagedTensorSlice[type, rank], *_],
+        dev_ctxs: StaticTuple[DeviceContextPtr, *_],
+    ) raises:
+        for i in range(len(dev_ctxs)):
+            print("dev_ctxs[", i, "].id() =", dev_ctxs[i][].id())
+            dev_ctxs[i][].synchronize()
