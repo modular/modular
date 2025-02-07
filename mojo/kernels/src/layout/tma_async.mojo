@@ -31,6 +31,7 @@ from memory import UnsafePointer, stack_allocation
 
 from sys._assembly import inlined_assembly
 from utils.index import Index, IndexList
+from utils.static_tuple import StaticTuple
 
 
 # Returns an IntTuple of variadic Int values.
@@ -107,6 +108,15 @@ struct TMABarrier(CollectionElement):
         ]()
 
     @always_inline
+    fn __init__(
+        out self,
+        addr: UnsafePointer[
+            Scalar[DType.int64], address_space = AddressSpace.SHARED
+        ],
+    ):
+        self.mbar = addr
+
+    @always_inline
     fn init(self, num_threads: Int32 = 1):
         mbarrier_init(self.mbar, num_threads)
 
@@ -133,6 +143,23 @@ struct TMABarrier(CollectionElement):
     @always_inline
     fn arrive(self) -> Int:
         return mbarrier_arrive(self.mbar)
+
+
+@always_inline
+fn create_mbarrier_array[
+    num: Int
+](
+    addr: UnsafePointer[
+        Scalar[DType.int64], address_space = AddressSpace.SHARED
+    ]
+) -> StaticTuple[TMABarrier, num]:
+    mbars = StaticTuple[TMABarrier, num]()
+
+    @parameter
+    for i in range(num):
+        mbars[i] = TMABarrier(addr + i)
+
+    return mbars
 
 
 # PipelineState keeps track of the current state of a barrier using circular indexing
