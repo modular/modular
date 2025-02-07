@@ -61,11 +61,10 @@ enum BorroweeType : size_t {
 
 /// Creates a new AsyncValueRef<Chain> and assigns it to chain.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_AsyncRT_InitializeChain(AsyncRTRuntimeRef rt,
-                                        AsyncRTAsyncChainRef chain) {
-  checkUniqueRuntime(unwrap(rt));
+KGEN_CompilerRT_AsyncRT_InitializeChain(AsyncRTAsyncChainRef chain) {
+  auto rt = Runtime::getCurrentRuntimeOrNull();
   new (&unwrap(chain))
-      AsyncValueRef<Chain>(takeRCRef(AsyncValue::allocate<Chain>(unwrap(rt))));
+      AsyncValueRef<Chain>(takeRCRef(AsyncValue::allocate<Chain>(rt)));
 }
 
 /// Destroys the given chain.
@@ -140,9 +139,9 @@ KGEN_CompilerRT_AsyncRT_Wait_Timeout(AsyncRTAsyncChainRef chain, int64_t ns) {
 /// scheduling overhead and ensure worker's are balanced.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_Execute(void (*resume)(int8_t *), int8_t *hdl,
-                                AsyncRTRuntimeRef rt, ssize_t desiredWorkerId) {
-  checkUniqueRuntime(unwrap(rt));
-  unwrap(rt).getWorkQueue()->addTask(
+                                ssize_t desiredWorkerId) {
+  auto rt = Runtime::getCurrentRuntimeOrNull();
+  rt->getWorkQueue()->addTask(
       [resume, hdl] {
         resume(hdl);
 #if MODULAR_PARANOID
@@ -167,10 +166,10 @@ KGEN_CompilerRT_AsyncRT_AndThen(void (*resume)(int8_t *),
 /// Execute a coroutine and block the current routine until it is complete.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_ExecuteAndWait(void (*resume)(int8_t *), int8_t *hdl,
-                                       AsyncRTRuntimeRef rt,
                                        AsyncRTAsyncChainRef chain) {
-  checkUniqueRuntime(unwrap(rt));
-  unwrap(rt).getWorkQueue()->addTask([resume, hdl] { resume(hdl); });
+  auto rt = Runtime::getCurrentRuntimeOrNull();
+  checkUniqueRuntime(*rt);
+  rt->getWorkQueue()->addTask([resume, hdl] { resume(hdl); });
   await(unwrap(chain));
 }
 
@@ -180,16 +179,22 @@ COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_ExecuteAndResume(void (*resume)(int8_t *),
                                          int8_t *execHdl,
                                          AsyncRTAsyncChainRef chain,
-                                         AsyncRTRuntimeRef rt,
                                          int8_t *resumeHdl) {
-  checkUniqueRuntime(unwrap(rt));
-  unwrap(rt).getWorkQueue()->addTask([resume, execHdl]() { resume(execHdl); });
+  auto rt = Runtime::getCurrentRuntimeOrNull();
+  checkUniqueRuntime(*rt);
+  rt->getWorkQueue()->addTask([resume, execHdl]() { resume(execHdl); });
   unwrap(chain).andThenAsync([resumeHdl, resume]() { resume(resumeHdl); });
 }
 
 //===----------------------------------------------------------------------===//
 // Runtime
 //===----------------------------------------------------------------------===//
+
+/// Given a pointer to an AsyncRT runtime, destroy it.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_AsyncRT_DestroyRuntime(AsyncRTRuntimeRef rt) {
+  delete &unwrap(rt);
+}
 
 /// Returns the pointer to the runtime to which the caller's thread is
 /// associated. Returns null if the caller's thread is not managed by any
@@ -210,16 +215,11 @@ KGEN_CompilerRT_AsyncRT_CreateRuntime(ssize_t numThreads) {
   return wrap(runtime.release());
 }
 
-/// Given a pointer to an AsyncRT runtime, destroy it.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_AsyncRT_DestroyRuntime(AsyncRTRuntimeRef rt) {
-  delete &unwrap(rt);
-}
-
 /// Given a pointer to an AsyncRT runtime, get the number of threads in it.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT uint32_t
-KGEN_CompilerRT_AsyncRT_ParallelismLevel(AsyncRTRuntimeRef rt) {
-  return unwrap(rt).getWorkQueue()->getParallelismLevel();
+KGEN_CompilerRT_AsyncRT_ParallelismLevel() {
+  auto rt = Runtime::getCurrentRuntimeOrNull();
+  return rt->getWorkQueue()->getParallelismLevel();
 }
 
 //===----------------------------------------------------------------------===//
@@ -229,10 +229,9 @@ KGEN_CompilerRT_AsyncRT_ParallelismLevel(AsyncRTRuntimeRef rt) {
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error(
     AsyncRTWrapper<AnyAsyncValueRef> *asyncs, size_t arrayLen,
-    AsyncRTWrapper<Runtime> runtimePtr, const char *messagePtr,
-    size_t messageLen) {
+    const char *messagePtr, size_t messageLen) {
   StringRef errorMsg(messagePtr, messageLen);
-  Runtime &runtime = unwrap(runtimePtr);
+  Runtime &runtime = *Runtime::getCurrentRuntimeOrNull();
   // Set all async value ref to error;
   ArrayRef asyncArray(asyncs, arrayLen);
   for (AsyncRTWrapper<AnyAsyncValueRef> async : asyncArray) {
@@ -249,9 +248,8 @@ KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error(
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsync_bool(bool data,
-                                 AsyncRTWrapper<AnyAsyncValueRef> async,
-                                 AsyncRTWrapper<Runtime> runtimePtr) {
-  Runtime &runtime = unwrap(runtimePtr);
+                                 AsyncRTWrapper<AnyAsyncValueRef> async) {
+  Runtime &runtime = *Runtime::getCurrentRuntimeOrNull();
   AnyAsyncValueRef &value = unwrap(async);
   if (value.getPointer() && value.getPointer()->isIndirect()) {
     value.copy().emplaceIndirect<bool>(data);
@@ -263,9 +261,8 @@ KGEN_CompilerRT_CreateAsync_bool(bool data,
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsync_ssizet(ssize_t data,
-                                   AsyncRTWrapper<AnyAsyncValueRef> async,
-                                   AsyncRTWrapper<Runtime> runtimePtr) {
-  Runtime &runtime = unwrap(runtimePtr);
+                                   AsyncRTWrapper<AnyAsyncValueRef> async) {
+  Runtime &runtime = *Runtime::getCurrentRuntimeOrNull();
   AnyAsyncValueRef &value = unwrap(async);
   if (value.getPointer() && value.getPointer()->isIndirect()) {
     value.copy().emplaceIndirect<size_t>(data);
@@ -277,9 +274,8 @@ KGEN_CompilerRT_CreateAsync_ssizet(ssize_t data,
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsync_int64t(int64_t data,
-                                   AsyncRTWrapper<AnyAsyncValueRef> async,
-                                   AsyncRTWrapper<Runtime> runtimePtr) {
-  Runtime &runtime = unwrap(runtimePtr);
+                                   AsyncRTWrapper<AnyAsyncValueRef> async) {
+  Runtime &runtime = *Runtime::getCurrentRuntimeOrNull();
   AnyAsyncValueRef &value = unwrap(async);
   if (value.getPointer() && value.getPointer()->isIndirect()) {
     value.copy().emplaceIndirect<int64_t>(data);
@@ -291,9 +287,8 @@ KGEN_CompilerRT_CreateAsync_int64t(int64_t data,
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsyncVoidStar(void *data,
-                                    AsyncRTWrapper<AnyAsyncValueRef> async,
-                                    AsyncRTWrapper<Runtime> runtimePtr) {
-  Runtime &runtime = unwrap(runtimePtr);
+                                    AsyncRTWrapper<AnyAsyncValueRef> async) {
+  Runtime &runtime = *Runtime::getCurrentRuntimeOrNull();
   AnyAsyncValueRef &value = unwrap(async);
   if (value.getPointer() && value.getPointer()->isIndirect()) {
     value.copy().emplaceIndirect<void *>(data);
@@ -304,9 +299,8 @@ KGEN_CompilerRT_CreateAsyncVoidStar(void *data,
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_CreateAsync_chain(AsyncRTWrapper<AnyAsyncValueRef> async,
-                                  AsyncRTWrapper<Runtime> runtimePtr) {
-  Runtime &runtime = unwrap(runtimePtr);
+KGEN_CompilerRT_CreateAsync_chain(AsyncRTWrapper<AnyAsyncValueRef> async) {
+  Runtime &runtime = *Runtime::getCurrentRuntimeOrNull();
   AnyAsyncValueRef &value = unwrap(async);
   if (value.getPointer() && value.getPointer()->isIndirect()) {
     value.copy().emplaceIndirect<Chain>();
@@ -318,9 +312,8 @@ KGEN_CompilerRT_CreateAsync_chain(AsyncRTWrapper<AnyAsyncValueRef> async,
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsyncNonTrackedBufferRef(
-    void *data, size_t size, AsyncRTWrapper<AnyAsyncValueRef> async,
-    AsyncRTWrapper<Runtime> runtimePtr) {
-  Runtime &runtime = unwrap(runtimePtr);
+    void *data, size_t size, AsyncRTWrapper<AnyAsyncValueRef> async) {
+  Runtime &runtime = *Runtime::getCurrentRuntimeOrNull();
   AnyAsyncValueRef &value = unwrap(async);
   if (value.getPointer() && value.getPointer()->isIndirect()) {
     value.copy().emplaceIndirect<TensorBufferRef>(
@@ -337,8 +330,8 @@ KGEN_CompilerRT_CreateAsyncNonTrackedBufferRef(
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsyncDeviceBufferRef(
     void *data, size_t size, AsyncRTWrapper<AnyAsyncValueRef> async,
-    AsyncRTWrapper<Runtime> runtimePtr, AsyncRT::DeviceContext *devCtx) {
-  Runtime &runtime = unwrap(runtimePtr);
+    AsyncRT::DeviceContext *devCtx) {
+  Runtime &runtime = *Runtime::getCurrentRuntimeOrNull();
   AnyAsyncValueRef &value = unwrap(async);
 
   // Wrap the raw pointer in an owning DeviceBuffer.
@@ -365,9 +358,8 @@ KGEN_CompilerRT_CreateAsyncDeviceBufferRef(
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsyncBufferWithBorrow(
     void *data, size_t size, AsyncRTWrapper<AnyAsyncValueRef> toBorrowFrom,
-    size_t borroweeType, AsyncRTWrapper<AnyAsyncValueRef> async,
-    AsyncRTWrapper<Runtime> runtimePtr) {
-  Runtime &runtime = unwrap(runtimePtr);
+    size_t borroweeType, AsyncRTWrapper<AnyAsyncValueRef> async) {
+  Runtime &runtime = *Runtime::getCurrentRuntimeOrNull();
   AnyAsyncValueRef &outVal = unwrap(async);
   AnyAsyncValueRef &handleOrTensor = unwrap(toBorrowFrom);
   AnyAsyncValueRef handle;
@@ -395,9 +387,8 @@ COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsyncTensorWithBorrow(
     void *data, size_t byteCount, size_t rank, size_t *dims, int8_t type,
     AsyncRTWrapper<AnyAsyncValueRef> toBorrowFrom, size_t borroweeType,
-    AsyncRTWrapper<AnyAsyncValueRef> async,
-    AsyncRTWrapper<Runtime> runtimePtr) {
-  Runtime &rt = unwrap(runtimePtr);
+    AsyncRTWrapper<AnyAsyncValueRef> async) {
+  Runtime &rt = *Runtime::getCurrentRuntimeOrNull();
   AnyAsyncValueRef &outVal = unwrap(async);
 
   // Create a borrowed buffer ref.
@@ -426,9 +417,8 @@ KGEN_CompilerRT_CreateAsyncTensorWithBorrow(
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsyncTensorSpec(ssize_t *data, ssize_t rank,
                                       int8_t rawDType,
-                                      AsyncRTWrapper<AnyAsyncValueRef> async,
-                                      AsyncRTWrapper<Runtime> runtimePtr) {
-  Runtime &runtime = unwrap(runtimePtr);
+                                      AsyncRTWrapper<AnyAsyncValueRef> async) {
+  Runtime &runtime = *Runtime::getCurrentRuntimeOrNull();
   AnyAsyncValueRef &value = unwrap(async);
   llvm::SmallVector<ssize_t> dims;
   for (int i = 0; i < rank; ++i)
@@ -447,9 +437,8 @@ KGEN_CompilerRT_CreateAsyncTensorSpec(ssize_t *data, ssize_t rank,
 static void
 createAsyncMojoValue(void *data, void (*destructorFn)(void *),
                      AsyncRTWrapper<AnyAsyncValueRef> async,
-                     AsyncRTWrapper<Runtime> runtimePtr,
                      MojoValue::Tag tag = MojoValue::Tag::kDefault) {
-  Runtime &runtime = unwrap(runtimePtr);
+  Runtime &runtime = *Runtime::getCurrentRuntimeOrNull();
   AnyAsyncValueRef &value = unwrap(async);
   if (value.getPointer() && value.getPointer()->isIndirect()) {
     value.copy().emplaceIndirect<MojoValue>(data, destructorFn, tag);
@@ -463,18 +452,15 @@ createAsyncMojoValue(void *data, void (*destructorFn)(void *),
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateOwnedAsyncMojoValue(
     void *data, void (*destructorFn)(void *),
-    AsyncRTWrapper<AnyAsyncValueRef> async,
-    AsyncRTWrapper<Runtime> runtimePtr) {
-  createAsyncMojoValue(data, destructorFn, async, runtimePtr);
+    AsyncRTWrapper<AnyAsyncValueRef> async) {
+  createAsyncMojoValue(data, destructorFn, async);
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateOwnedAsyncPythonMojoValue(
     void *data, void (*destructorFn)(void *),
-    AsyncRTWrapper<AnyAsyncValueRef> async,
-    AsyncRTWrapper<Runtime> runtimePtr) {
-  createAsyncMojoValue(data, destructorFn, async, runtimePtr,
-                       MojoValue::Tag::kPython);
+    AsyncRTWrapper<AnyAsyncValueRef> async) {
+  createAsyncMojoValue(data, destructorFn, async, MojoValue::Tag::kPython);
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
