@@ -257,8 +257,8 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
     walker.walk(attr);
 
   IRMapping mapping;
-  OwningOpRef<ModuleOp> module =
-      produceStandaloneModule(symtab, exportedSymbols, mapping);
+  OwningOpRef<ModuleOp> module = produceStandaloneModule(
+      symtab, exportedSymbols, mapping, isGPUBackend(compilationOptions));
   // Override the target.
   eraseTargetInfo(*module);
   setTargetInfo(*module, target);
@@ -343,14 +343,28 @@ static ElaboratorCompileOffloadRetType compileOffloads(
     DenseMap<uint64_t, OffloadCompilationResult> &targetResult = result[target];
 
     IRMapping mapping;
+
+    // Configure the compilation options given the new target.
+    compilationOptions.targetTriple = target.getTripleStr();
+    compilationOptions.targetCpu = target.getArch();
+    compilationOptions.targetFeatures = target.getFeatures();
+    if (compilationOptions.targetAccelerator.empty()) {
+      compilationOptions.targetAccelerator =
+          AsyncRT::Device::getAcceleratorArchOrEmpty();
+    }
+    compilationOptions.relocModel = target.getRelocationModel();
+    StringRef targetDataLayout = target.getDataLayout().toString();
+    if (!targetDataLayout.empty())
+      compilationOptions.targetDataLayout = targetDataLayout;
+
     OwningOpRef<ModuleOp> module =
-        produceStandaloneModule(symtab, offloadInfo.exportedSymbols, mapping);
+        produceStandaloneModule(symtab, offloadInfo.exportedSymbols, mapping,
+                                isGPUBackend(compilationOptions));
 
     // Override the target.
     eraseTargetInfo(*module);
     setTargetInfo(*module, target);
     SymbolTable slicedSymtab(*module);
-
     for (auto [op, symbolInfo] : offloadInfo.symbols) {
       // If there are input parameters, we have to go generate a stub to root
       // instantiation of the generator. Go find the cloned generator.
@@ -373,19 +387,6 @@ static ElaboratorCompileOffloadRetType compileOffloads(
         }
       }
     }
-
-    // Configure the compilation options given the new target.
-    compilationOptions.targetTriple = target.getTripleStr();
-    compilationOptions.targetCpu = target.getArch();
-    compilationOptions.targetFeatures = target.getFeatures();
-    if (compilationOptions.targetAccelerator.empty()) {
-      compilationOptions.targetAccelerator =
-          AsyncRT::Device::getAcceleratorArchOrEmpty();
-    }
-    compilationOptions.relocModel = target.getRelocationModel();
-    StringRef targetDataLayout = target.getDataLayout().toString();
-    if (!targetDataLayout.empty())
-      compilationOptions.targetDataLayout = targetDataLayout;
 
     // Initialize the object compiler.
     ErrorOr<std::unique_ptr<ObjectCompiler>> compilerOr =
