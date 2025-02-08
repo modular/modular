@@ -167,9 +167,7 @@ fn create_i1_async(
 
 @register_internal("builtin.create_buffer_ref_async")
 @no_inline
-fn create_buffer_ref_async[
-    target: StringLiteral
-](
+fn create_buffer_ref_async(
     buffer: NDBuffer[DType.int8, 1],
     async_ptr: UnsafePointer[NoneType],
     call_ctx: MojoCallContextPtr,
@@ -181,9 +179,9 @@ fn create_buffer_ref_async[
 
 @register_internal("builtin.create_non_tracked_buffer_ref_async")
 @no_inline
-fn create_non_tracked_buffer_ref_async[
-    target: StringLiteral
-](buffer: NDBuffer[DType.int8, 1], async_ptr: UnsafePointer[NoneType]):
+fn create_non_tracked_buffer_ref_async(
+    buffer: NDBuffer[DType.int8, 1], async_ptr: UnsafePointer[NoneType]
+):
     external_call["KGEN_CompilerRT_CreateAsyncNonTrackedBufferRef", NoneType](
         buffer.data, len(buffer), async_ptr
     )
@@ -192,7 +190,7 @@ fn create_non_tracked_buffer_ref_async[
 @register_internal("builtin.create_buffer_ref_with_borrow_async")
 @no_inline
 fn create_buffer_ref_with_borrow_async[
-    borrowee_type: Int, target: StringLiteral
+    borrowee_type: Int,
 ](
     buffer: NDBuffer[DType.int8, 1],
     async_to_borrow: UnsafePointer[NoneType],
@@ -230,7 +228,6 @@ fn create_tensor_async[
     tensor_rank: Int,
     buffer_rank: Int,
     type: DType,
-    target: StringLiteral,
     borrowee_type: Int,
 ](
     buffer: NDBuffer[type, buffer_rank],
@@ -339,9 +336,9 @@ fn unpack_device_ctx(
 
 @register_internal("builtin.unpack_buffer_ref")
 @no_inline
-fn unpack_buffer_ref[
-    target: StringLiteral
-](async_ptr: UnsafePointer[NoneType],) -> NDBuffer[DType.uint8, 1]:
+fn unpack_buffer_ref(
+    async_ptr: UnsafePointer[NoneType],
+) -> NDBuffer[DType.uint8, 1]:
     var size: UInt64 = 0
     var data_ptr = external_call[
         "KGEN_CompilerRT_GetDataFromBuffer",
@@ -357,7 +354,6 @@ fn unpack_tensor[
     buffer_rank: Int,
     tensor_rank: Int,
     type: DType,
-    target: StringLiteral,
 ](tensor_async_ptr: UnsafePointer[NoneType]) -> NDBuffer[type, buffer_rank]:
     # Tensor and the underlying buffer must have the same rank, unless it is a
     # scalar tensor stored with a NDBuffer<[1]>
