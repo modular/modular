@@ -18,20 +18,29 @@ fn test_svg_nvidia_shape() raises:
         Layout.row_major(8, 4)
     ](0)
 
-    var tensor_list = List[
-        LayoutTensor[
-            tensor_dist.dtype,
-            tensor_dist.layout,
-            tensor_dist.layout.rank(),
-            element_layout = tensor_dist.element_layout,
-            masked = tensor_dist.masked,
-        ]
-    ]()
+    var tensor_list = List[__type_of(tensor_dist)]()
     for i in range(32):
         tensor_list.append(
             tensor.vectorize[1, 2]().distribute[Layout.row_major(8, 4)](i)
         )
-    print_svg(tensor, tensor_list)
+
+    fn color_map(t: Int, v: Int) -> String:
+        colors = List(
+            "red",
+            "blue",
+            "green",
+            "yellow",
+            "purple",
+            "orange",
+            "pink",
+            "brown",
+            "gray",
+            "black",
+            "white",
+        )
+        return colors[t // 4]
+
+    print_svg(tensor, tensor_list, color_map)
 
 
 fn test_svg_nvidia_tile() raises:
