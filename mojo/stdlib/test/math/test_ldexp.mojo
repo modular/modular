@@ -57,12 +57,14 @@ def test_ldexp_extensive_float32():
         assert_almost_equal(
             ldexp(frac, exp),
             ldexp_libm(frac, exp),
-            msg="unmatched results for frac="
-            + String(frac)
-            + " and exp="
-            + String(exp)
-            + " at index "
-            + String(i),
+            msg=String(
+                "unmatched results for frac=",
+                frac,
+                " and exp=",
+                exp,
+                " at index ",
+                i,
+            ),
         )
         i += 1007
 
