@@ -684,8 +684,8 @@ struct Range:
     @staticmethod
     fn execute[
         type: DType,
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         output: ManagedTensorSlice[type=type, rank=1],
         start: ManagedTensorSlice[type=type, rank=1],
@@ -751,8 +751,8 @@ struct Copy:
 struct Add:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -774,8 +774,8 @@ struct Add:
 struct Sub:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -797,8 +797,8 @@ struct Sub:
 struct Mul:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -820,8 +820,8 @@ struct Mul:
 struct Div:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -843,8 +843,8 @@ struct Div:
 struct Mod:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -866,8 +866,8 @@ struct Mod:
 struct Equal:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -889,8 +889,8 @@ struct Equal:
 struct Greater:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -912,8 +912,8 @@ struct Greater:
 struct GreaterEqual:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -935,8 +935,8 @@ struct GreaterEqual:
 struct NotEqual:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -958,8 +958,8 @@ struct NotEqual:
 struct And:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -981,8 +981,8 @@ struct And:
 struct Or:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -1004,8 +1004,8 @@ struct Or:
 struct Xor:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -1027,8 +1027,8 @@ struct Xor:
 struct Pow:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -1050,8 +1050,8 @@ struct Pow:
 struct Max:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -1073,8 +1073,8 @@ struct Max:
 struct Min:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -1101,8 +1101,8 @@ struct Min:
 struct Cast:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
@@ -1119,8 +1119,8 @@ struct Cast:
 struct Negative:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
@@ -1135,8 +1135,8 @@ struct Negative:
 struct ReLU:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
@@ -1151,8 +1151,8 @@ struct ReLU:
 struct GeLU:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
@@ -1167,8 +1167,8 @@ struct GeLU:
 struct Ceil:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
@@ -1183,8 +1183,8 @@ struct Ceil:
 struct Floor:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
@@ -1199,8 +1199,8 @@ struct Floor:
 struct Tanh:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
@@ -1215,8 +1215,8 @@ struct Tanh:
 struct Cos:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
@@ -1231,8 +1231,8 @@ struct Cos:
 struct Sin:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
@@ -1247,8 +1247,8 @@ struct Sin:
 struct Erf:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
@@ -1263,8 +1263,8 @@ struct Erf:
 struct Exp:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
@@ -1279,8 +1279,8 @@ struct Exp:
 struct Round:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
@@ -1295,8 +1295,8 @@ struct Round:
 struct RoundEven:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
@@ -1313,8 +1313,8 @@ struct RoundEven:
 struct Sqrt:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
@@ -1329,8 +1329,8 @@ struct Sqrt:
 struct Isqrt:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
@@ -1345,8 +1345,8 @@ struct Isqrt:
 struct Select:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         out: ManagedTensorSlice,
         condition: ManagedTensorSlice,
@@ -1374,8 +1374,8 @@ struct Select:
 struct Trunc:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
@@ -1395,8 +1395,8 @@ struct Trunc:
 struct Log:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
@@ -1411,8 +1411,8 @@ struct Log:
 struct Log1p:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
@@ -1427,8 +1427,8 @@ struct Log1p:
 struct IsNan:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
@@ -1443,8 +1443,8 @@ struct IsNan:
 struct IsInf:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
@@ -1459,8 +1459,8 @@ struct IsInf:
 struct Not:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
@@ -1476,8 +1476,8 @@ struct Not:
 struct Abs:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
@@ -1492,8 +1492,8 @@ struct Abs:
 struct SqueezeShape:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
         type: DType,
         indices_type: DType,
     ](
@@ -1562,8 +1562,8 @@ struct SqueezeShape:
 struct UnsqueezeShape:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
         type: DType,
         indices_type: DType,
     ](
@@ -1634,8 +1634,8 @@ struct UnsqueezeShape:
 struct ScatterND:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[output.type, output.rank],
@@ -1697,8 +1697,8 @@ struct ScatterND:
 struct ScatterNDAdd:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[output.type, output.rank],
@@ -1770,8 +1770,8 @@ struct ScatterNDAdd:
 struct ScatterNDMul:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[output.type, output.rank],
@@ -1843,8 +1843,8 @@ struct ScatterNDMul:
 struct ScatterNDMin:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[output.type, output.rank],
@@ -1916,8 +1916,8 @@ struct ScatterNDMin:
 struct ScatterNDMax:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[output.type, output.rank],
@@ -1994,8 +1994,8 @@ struct ScatterNDMax:
 struct Scatter:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[output.type, output.rank],
@@ -2055,8 +2055,8 @@ struct Scatter:
 struct ScatterAdd:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[output.type, output.rank],
@@ -2116,8 +2116,8 @@ struct ScatterAdd:
 struct ScatterMax:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[output.type, output.rank],
@@ -2177,8 +2177,8 @@ struct ScatterMax:
 struct ScatterMin:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[output.type, output.rank],
@@ -2238,8 +2238,8 @@ struct ScatterMin:
 struct ScatterMul:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[output.type, output.rank],
@@ -2499,8 +2499,8 @@ struct StaticBroadcastTo:
 
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
         type: DType,
         in_rank: Int,
         out_rank: Int,
@@ -2520,10 +2520,10 @@ struct StaticBroadcastTo:
 
         var x_view = Self.build_view(x, output_shape)
         view_copy_impl[
-            _synchronous,
-            target,
             view_strides=view_strides,
             trace_name="static.broadcast_to",
+            target=target,
+            _synchronous=_synchronous,
         ](z, x_view, ctx)
 
 
@@ -2550,8 +2550,8 @@ struct StaticReshape:
 
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
         type: DType,
         output_rank: Int,
     ](
@@ -2574,10 +2574,10 @@ struct StaticReshape:
         ).shape
         alias view_strides = Self.get_view_strides[output.rank](output_shape)
         view_copy_impl[
-            _synchronous,
-            target,
             view_strides=view_strides,
             trace_name="static.reshape",
+            target=target,
+            _synchronous=_synchronous,
         ](output, view_tensor, ctx)
 
 
@@ -2651,8 +2651,8 @@ struct Transpose:
 
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
         static_permutations: DimList,
         type: DType,
         rank: Int,
@@ -2670,10 +2670,10 @@ struct Transpose:
         )
 
         view_copy_impl[
-            _synchronous,
-            target,
             view_strides=view_strides,
             trace_name="transpose",
+            target=target,
+            _synchronous=_synchronous,
         ](output, Self.transpose_in_place(input, permutations), ctx)
 
     # TODO(GEX-1033) Make it possible to have multiple raises.
@@ -2729,8 +2729,8 @@ struct Slice:
 
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
         static_steps: DimList,
         type: DType,
         rank: Int,
@@ -2769,10 +2769,10 @@ struct Slice:
             input_strides, static_steps
         )
         view_copy_impl[
-            _synchronous,
-            target,
             view_strides=view_strides,
             trace_name="slice",
+            target=target,
+            _synchronous=_synchronous,
         ](output, view_tensor, ctx)
 
     @staticmethod
@@ -2802,8 +2802,8 @@ struct Slice:
 struct MutableStoreSlice:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
         type: DType,
         rank: Int,
     ](
@@ -2858,8 +2858,8 @@ struct SliceDim:
 
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
         type: DType,
         rank: Int,
         axis: Int,
@@ -2892,10 +2892,10 @@ struct SliceDim:
             input_strides, static_step.at[0]()
         )
         view_copy_impl[
-            _synchronous,
-            target,
             view_strides=view_strides,
             trace_name="slice_dim",
+            target=target,
+            _synchronous=_synchronous,
         ](output, view_tensor, ctx)
 
 
@@ -3305,8 +3305,8 @@ struct ReduceMin:
 struct ReduceMinMax:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
         type: DType,
         rank: Int,
     ](
@@ -3819,8 +3819,8 @@ struct GatherND:
     @staticmethod
     fn execute[
         batchDims: Int,
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         output: ManagedTensorSlice,
         data: ManagedTensorSlice[output.type, *_],
@@ -3869,8 +3869,8 @@ struct Gather:
     @compiler.enable_fusion_for("input", "output")
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[output.type, *_],
@@ -4281,8 +4281,8 @@ struct Matmul:
         transpose_b: Bool,
         packed_b: Bool,
         lambdas_have_fusion: Bool,
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         c: ManagedTensorSlice[rank=2],
         a: ManagedTensorSlice[rank=2],
@@ -4340,8 +4340,8 @@ struct BatchMatmul:
         lambdas_have_fusion: Bool,
         rank: Int,
         transpose_b: Bool,
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         c: ManagedTensorSlice[rank=rank],
         a: ManagedTensorSlice[rank=rank],
@@ -4447,8 +4447,8 @@ struct LinalgBandPart:
     @compiler.enable_fusion_for("input")
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
         type: DType,
         int_type: DType,
         rank: Int,
@@ -4950,8 +4950,8 @@ struct Concat:
     fn execute[
         type: DType,
         rank: Int,
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         output: ManagedTensorSlice[type=type, rank=rank],
         axis: ManagedTensorSlice[rank=1],
@@ -5106,8 +5106,8 @@ struct ConcatFromList:
     fn execute[
         type: DType,
         rank: Int,
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         output: ManagedTensorSlice[type=type, rank=rank],
         inputs: InlinedFixedVector[ManagedTensorSlice[type, rank]],
@@ -5158,8 +5158,8 @@ struct Split:
     fn execute[
         type: DType,
         rank: Int,
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         output: StaticTuple[ManagedTensorSlice[type, rank], *_],
         input: ManagedTensorSlice[type, rank],

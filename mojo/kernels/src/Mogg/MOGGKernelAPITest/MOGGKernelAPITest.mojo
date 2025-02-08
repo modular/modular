@@ -84,8 +84,8 @@ struct OpaqueAddToTensorSI32Reg:
     @uses_opaque
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         out: ManagedTensorSlice[DType.int32, rank=1],
         x: MyCustomScalarRegSI32,
@@ -99,8 +99,8 @@ struct OpaqueAddToTensorF32:
     @uses_opaque
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         out: ManagedTensorSlice[DType.float32, rank=1],
         x: MyCustomScalarRegF32,
@@ -144,8 +144,8 @@ struct OpaqueAddToTensorSI32:
     @uses_opaque
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         out: ManagedTensorSlice[DType.int32, rank=1],
         x: MyCustomScalarSI32,
@@ -159,8 +159,8 @@ struct OpaqueAddToTensorSI32Raises:
     @uses_opaque
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         out: ManagedTensorSlice[DType.int32, rank=1],
         x: MyCustomScalarSI32,
@@ -178,8 +178,8 @@ struct OpaqueAddToTensorSI32Raises:
 struct Foo:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](z: ManagedTensorSlice, x: ManagedTensorSlice, y: ManagedTensorSlice):
         @parameter
         @always_inline
@@ -210,8 +210,8 @@ fn toNDBuffer[
 struct ImposterMatmul:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         c: ManagedTensorSlice,
         a: ManagedTensorSlice,
@@ -256,8 +256,8 @@ struct ImposterMatmul:
 struct PrintTensorSpecOp:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](out: ManagedTensorSlice, x: ManagedTensorSlice):
         alias x_shape = compiler.specsof[x.type, x.rank]("x").shape
         alias x_strides = compiler.specsof[x.type, x.rank]("x").strides
@@ -290,8 +290,8 @@ struct PrintTensorSpecOp:
 struct PrintTensorSpecViewOp:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](out: ManagedTensorSlice, x: ManagedTensorSlice):
         alias x_shape = compiler.specsof[x.type, x.rank]("x").shape
         alias x_strides = compiler.specsof[x.type, x.rank]("x").strides
@@ -324,8 +324,8 @@ struct PrintTensorSpecViewOp:
 struct PrintTensorSpecFusedOp:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](out: ManagedTensorSlice, x: ManagedTensorSlice):
         alias x_shape = compiler.specsof[x.type, x.rank]("x").shape
         alias x_strides = compiler.specsof[x.type, x.rank]("x").strides
@@ -358,8 +358,8 @@ struct PrintTensorSpecFusedOp:
 struct AddElementwise:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](z: ManagedTensorSlice, x: ManagedTensorSlice, y: ManagedTensorSlice):
         @parameter
         @always_inline
@@ -376,8 +376,8 @@ struct AddFuseLHS:
     @compiler.enable_fusion_for("x")
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](z: ManagedTensorSlice, x: ManagedTensorSlice, y: ManagedTensorSlice):
         @parameter
         @always_inline
@@ -399,8 +399,8 @@ struct AddFuseInputs:
     @compiler.enable_fusion_for("x", "y")
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](z: ManagedTensorSlice, x: ManagedTensorSlice, y: ManagedTensorSlice):
         @parameter
         @always_inline
@@ -423,9 +423,9 @@ struct MatmulFuseOut:
     @compiler.enable_fusion_for("c")
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
         lambdas_have_fusion: Bool,
+        _synchronous: Bool,
     ](
         c: ManagedTensorSlice,
         a: ManagedTensorSlice,
@@ -566,8 +566,8 @@ struct VariadicAdd:
     fn execute[
         type: DType,
         rank: Int,
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](
         output: ManagedTensorSlice[type, rank],
         inputs: StaticTuple[ManagedTensorSlice[type, rank], *_],
@@ -623,8 +623,8 @@ struct Transpose2DOp:
 
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
         type: DType,
     ](
         z: ManagedTensorSlice[type, 2],
@@ -644,8 +644,8 @@ struct Transpose2DOp:
 struct ElementwisePrintShape:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](z: ManagedTensorSlice, x: ManagedTensorSlice):
         @parameter
         @always_inline
@@ -667,8 +667,8 @@ struct ElementwisePrintShape:
 struct CustomOpThatRaises:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StringLiteral,
+        _synchronous: Bool,
     ](z: ManagedTensorSlice, x: ManagedTensorSlice) raises:
         if x.shape()[0] == 10:
             raise ("input_shape[0] == 10")
