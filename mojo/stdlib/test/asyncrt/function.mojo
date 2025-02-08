@@ -64,10 +64,10 @@ fn test_function(ctx: DeviceContext) raises:
             expect_eq(
                 out_host[i],
                 i + 2,
-                "at index "
-                + String(i)
-                + " the value is "
-                + String(out_host[i]),
+                "at index ",
+                i,
+                " the value is ",
+                out_host[i],
             )
 
     print("Done.")
