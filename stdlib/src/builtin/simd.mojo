@@ -122,7 +122,7 @@ The 8 bits are encoded as `seeeeemm`:
 - fn: finite (no inf or -inf encodings)
 - uz: unsigned zero (no -0 encoding)
 """
-alias Float8_e4m3 = Scalar[DType.float8_e4m3fn]
+alias Float8_e4m3fn = Scalar[DType.float8_e4m3fn]
 """Represents a FP8E4M3 floating point format from the [OFP8
 standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1).
 
@@ -565,10 +565,10 @@ struct SIMD[type: DType, size: Int](
                 ](
                     rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
                         __mlir_op.`pop.cast_from_builtin`[
-                            _type = __mlir_type[`!pop.scalar<f8e4m3>`]
+                            _type = __mlir_type[`!pop.scalar<f8e4m3fn>`]
                         ](
                             __mlir_op.`kgen.float_literal.convert`[
-                                _type = __mlir_type.f8E4M3
+                                _type = __mlir_type.f8E4M3FN
                             ](value.value)
                         )
                     )

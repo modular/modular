@@ -90,7 +90,7 @@ from builtin.simd import (
     Byte,
     Float8_e5m2,
     Float8_e5m2fnuz,
-    Float8_e4m3,
+    Float8_e4m3fn,
     Float8_e4m3fnuz,
     Float16,
     Float32,

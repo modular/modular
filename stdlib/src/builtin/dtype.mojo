@@ -95,7 +95,7 @@ struct DType(
     - uz: unsigned zero (no -0 encoding)
     """
     alias float8_e4m3fn = DType(
-        __mlir_attr.`#kgen.dtype.constant<f8e4m3> : !kgen.dtype`
+        __mlir_attr.`#kgen.dtype.constant<f8e4m3fn> : !kgen.dtype`
     )
     """Represents a FP8E4M3 floating point format from the [OFP8
     standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1).
