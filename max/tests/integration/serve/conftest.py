@@ -6,12 +6,12 @@
 """The fixtures for all tests in this directory."""
 
 import pytest
-from max.pipelines import PIPELINE_REGISTRY
+from max.pipelines import PIPELINE_REGISTRY, PipelineTask
 from max.pipelines.architectures import register_all_models
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.debug import DebugSettings
-from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
+from max.serve.pipelines.llm import batch_config_from_pipeline_config
 
 
 @pytest.fixture(scope="session")
@@ -29,15 +29,20 @@ def app(pipeline_config):
     pipeline_config = PIPELINE_REGISTRY.validate_pipeline_config(
         pipeline_config
     )
+
+    pipeline_task = PipelineTask.TEXT_GENERATION
+    if (
+        pipeline_config.huggingface_repo_id
+        == "sentence-transformers/all-mpnet-base-v2"
+    ):
+        pipeline_task = PipelineTask.EMBEDDINGS_GENERATION
+
     tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
-        pipeline_config,
+        pipeline_config, task=pipeline_task
     )
 
-    pipeline_batch_config = (
-        TokenGeneratorPipelineConfig.continuous_heterogenous(
-            tg_batch_size=pipeline_config.max_batch_size,
-            ce_batch_size=1,
-        )
+    pipeline_batch_config = batch_config_from_pipeline_config(
+        pipeline_config, pipeline_task
     )
 
     serving_settings = ServingTokenGeneratorSettings(

@@ -6,8 +6,7 @@ modular_py_test(
     srcs = [
         "__init__.py",
         "conftest.py",
-        "test_tinyllama_serving_cpu.py",
-    ],
+    ] + glob(["*_cpu.py"]),
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
