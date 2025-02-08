@@ -1877,3 +1877,58 @@ struct DeviceContext:
                 api.unsafe_ptr(),
             )
         )
+
+    fn map_to_host[
+        type: DType
+    ](self, buf: DeviceBuffer[type]) raises -> _HostMappedBuffer[type]:
+        """Allows for temporary access to the device buffer by the host
+        from within a `with` statement.
+
+        ```mojo
+        var in_dev = ctx.enqueue_create_buffer[DType.float32](length)
+        var out_dev = ctx.enqueue_create_buffer[DType.float32](length)
+
+        # Initialize the input and output with known values.
+        with ctx.map_to_host(in_dev) as in_host, ctx.map_to_host(out_dev) as out_host:
+            for i in range(length):
+                in_host[i] = i
+                out_host[i] = 255
+        ```
+
+        Values modified inside the `with` statement are updated on the
+        device when the `with` statement exits.
+        """
+        return _HostMappedBuffer[type](self, buf)
+
+
+struct _HostMappedBuffer[type: DType]:
+    var _dev_ctx: DeviceContext
+    var _cpu_ctx: DeviceContext
+    var _dev_buf: DeviceBuffer[type]
+    var _cpu_buf: DeviceBuffer[type]
+
+    fn __init__(mut self, ctx: DeviceContext, buf: DeviceBuffer[type]) raises:
+        var cpu = DeviceContext(api="cpu")
+        var cpu_buf = cpu.enqueue_create_buffer[type](len(buf))
+        self._dev_ctx = ctx
+        self._cpu_ctx = cpu
+        self._dev_buf = buf
+        self._cpu_buf = cpu_buf
+
+    fn __del__(owned self):
+        pass
+
+    fn __enter__(mut self) raises -> UnsafePointer[Scalar[type]]:
+        self._cpu_ctx.synchronize()
+        self._dev_ctx.enqueue_copy_from_device(
+            self._cpu_buf.get_ptr(), self._dev_buf
+        )
+        self._dev_ctx.synchronize()
+        return self._cpu_buf.get_ptr()
+
+    fn __exit__(mut self) raises:
+        self._cpu_ctx.synchronize()
+        self._dev_ctx.enqueue_copy_to_device(
+            self._dev_buf, self._cpu_buf.get_ptr()
+        )
+        self._dev_ctx.synchronize()
