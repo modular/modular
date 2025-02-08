@@ -518,8 +518,8 @@ fn _cublasLt_matmul(
 
     constrained[
         (
-            a_type in [DType.float8_e4m3, DType.float8_e5m2]
-            and b_type in [DType.float8_e4m3, DType.float8_e5m2]
+            a_type in [DType.float8_e4m3fn, DType.float8_e5m2]
+            and b_type in [DType.float8_e4m3fn, DType.float8_e5m2]
         ),
         (
             "Only E4M3 and E5M2 input data types are supported. Please extend"

@@ -225,7 +225,7 @@ struct MatmulConfig[
 # Helper for choosing the base of BK based on type.
 # Actual BK should be multiple of BK_base.
 fn _bk_base[type: DType]() -> Int:
-    if type in (DType.float8_e4m3, DType.float8_e5m2):
+    if type in (DType.float8_e4m3fn, DType.float8_e5m2):
         return 64
     elif type.is_half_float():
         return 32
