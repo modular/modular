@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from max._driver import Device, accelerator_count
+from max._core.driver import Device, accelerator_count
 
 
 def CPU(id: int = -1) -> Device:

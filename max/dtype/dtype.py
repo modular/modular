@@ -9,7 +9,7 @@ from __future__ import annotations
 from enum import Enum
 
 import numpy as np
-from max._dtype import DType as _DType
+from max._core.dtype import DType as _DType
 
 # DType UInt8 values from Support/include/Support/ML/DType.h
 mIsInteger = 1 << 7

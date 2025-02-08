@@ -23,7 +23,7 @@ from typing import (
 )
 
 import numpy as np
-from max._driver import Tensor as _Tensor
+from max._core.driver import Tensor as _Tensor
 from max.dtype import DType
 
 from .driver import CPU, Device

@@ -24,14 +24,14 @@ from typing import (
 
 import numpy as np
 import numpy.typing as npt
-from max._driver import Tensor as _Tensor
-from max._engine import FrameworkFormat as _FrameworkFormat
-from max._engine import InferenceSession as _InferenceSession
-from max._engine import Model as _Model
-from max._engine import MojoValue, PrintStyle
-from max._engine import TensorData as _TensorData
-from max._engine import TensorSpec as _TensorSpec
-from max._engine import TorchInputSpec as _TorchInputSpec
+from max._core.driver import Tensor as _Tensor
+from max._core.engine import FrameworkFormat as _FrameworkFormat
+from max._core.engine import InferenceSession as _InferenceSession
+from max._core.engine import Model as _Model
+from max._core.engine import MojoValue, PrintStyle
+from max._core.engine import TensorData as _TensorData
+from max._core.engine import TensorSpec as _TensorSpec
+from max._core.engine import TorchInputSpec as _TorchInputSpec
 from max.driver import CPU, Device, DLPackArray, Tensor
 from max.dtype import DType
 from max.profiler import Tracer, traced

@@ -13,7 +13,7 @@ import inspect
 from types import TracebackType
 from typing import Callable, TypeVar, overload
 
-from max._profiler import Trace, is_profiling_enabled
+from max._core.profiler import Trace, is_profiling_enabled
 
 _FuncType = TypeVar("_FuncType", bound=Callable)
 

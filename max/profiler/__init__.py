@@ -53,7 +53,7 @@ with Tracer("foo", color="blue") as tracer:
 
 """
 
-from max._profiler import Trace, is_profiling_enabled
+from max._core.profiler import Trace, is_profiling_enabled
 from max.profiler.tracing import Tracer, traced
 
 __all__ = [

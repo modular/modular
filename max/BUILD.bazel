@@ -1,90 +1,10 @@
-load("//bazel:api.bzl", "modular_nanobind_extension", "modular_nanobind_library")
+load("//bazel:api.bzl", "modular_nanobind_extension")
 
 modular_nanobind_extension(
-    name = "_dtype",
-    srcs = ["src/_dtype.cpp"],
-    py_data = ["_dtype.pyi"],
-    deps = [
-        "//GenericML:API.headers",
-        "//GenericML:MaxAPI",
-        "//Support:ML",
-    ],
-)
-
-modular_nanobind_extension(
-    name = "_driver",
-    srcs = ["src/_driver.cpp"],
+    name = "_core",
+    srcs = ["_core.cpp"],
     nanobind_deps = [
-        "//SDK:DriverPython",
-        "//SDK:ProfilerPython",
+        "//SDK/lib/API/python/max/_core:modules",
     ],
-    py_data = ["_driver.pyi"],
-    deps = [
-        "//GenericML:modular-framework-common",
-        "@llvm-project//llvm:Support",
-    ],
-)
-
-modular_nanobind_extension(
-    name = "_engine",
-    srcs = ["src/_engine.cpp"],
-    nanobind_deps = [
-        "//SDK:ModularFrameworkPython",
-        "//SDK:ProfilerPython",
-    ],
-    py_data = ["_engine.pyi"],
-    deps = [
-        "//AsyncRT:Runtime",
-        "//Support:Base",
-    ],
-)
-
-modular_nanobind_library(
-    name = "MODialectNanobind",
-    srcs = [
-        "src/mo.cpp",
-        "//SDK:MODialectNanobindInc",
-    ],
-    nanobind_deps = [
-        "//SDK:GraphPython",
-    ],
-    deps = [
-        "//GenericML:GraphCompiler",
-        "//GenericML:modular-framework-common",
-        "//ModularFramework/tools/mof",
-        "@llvm-project//mlir:IR",
-    ],
-)
-
-modular_nanobind_extension(
-    name = "_graph",
-    srcs = ["src/_graph.cpp"],
-    local_defines = [
-        # Set definition used in Interop.h to prefix the MLIR package.
-        "MLIR_PYTHON_PACKAGE_PREFIX=max._mlir.",
-    ],
-    nanobind_deps = [
-        "//SDK:GraphPython",
-        "//SDK:ProfilerPython",
-        ":MODialectNanobind",
-    ],
-    py_data = ["_graph.pyi"],
-    deps = [
-        "//GenericML:GraphCompiler",
-        "//GenericML:modular-framework-common",
-        "//ModularFramework/tools/mof",
-    ],
-)
-
-modular_nanobind_extension(
-    name = "_profiler",
-    srcs = ["src/_profiler.cpp"],
-    nanobind_deps = [
-        "//SDK:ProfilerPython",
-    ],
-    py_data = ["_profiler.pyi"],
-    deps = [
-        "//GenericML:modular-framework-common",
-        "//Support:Base",
-    ],
+    py_data = ["//SDK/lib/API/python/max/_core:stubs"],
 )
