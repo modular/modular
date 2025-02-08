@@ -94,15 +94,15 @@ void M::sliceDependencies(Operation *op, SymbolTable &sliceSymtab,
 
 OwningOpRef<ModuleOp>
 M::produceStandaloneModule(const SymbolTable &symtab,
-                           const ExportMap &exportedSymbols) {
+                           const ExportMap &exportedSymbols, bool isGPU) {
   IRMapping unused;
-  return produceStandaloneModule(symtab, exportedSymbols, unused);
+  return produceStandaloneModule(symtab, exportedSymbols, unused, isGPU);
 }
 
 OwningOpRef<ModuleOp>
 M::produceStandaloneModule(const SymbolTable &symtab,
-                           const ExportMap &exportedSymbols,
-                           IRMapping &mapping) {
+                           const ExportMap &exportedSymbols, IRMapping &mapping,
+                           bool isGPU) {
   CompilerTimeTraceScope traceScope("produceStandaloneModule");
   auto module = cast<ModuleOp>(symtab.getOp());
   // Create a new module for these funcs. This will go away at the end
@@ -115,6 +115,8 @@ M::produceStandaloneModule(const SymbolTable &symtab,
 
   IRMapping reusedMapping;
   DenseSet<const void *> visited;
+  DenseSet<ExportInterface> exported;
+
   for (auto [sym, exportVal] : exportedSymbols) {
     auto func = symtab.lookup<ExportInterface>(sym);
     assert(func && "Unknown exported symbol");
@@ -134,6 +136,19 @@ M::produceStandaloneModule(const SymbolTable &symtab,
     ExportKind kind = func.getExportKind();
     sliceFn.setExportKind(kind == ExportKind::NotExported ? exportVal.kind
                                                           : kind);
+    exported.insert(sliceFn);
+  }
+
+  if (isGPU) {
+    // GPU kernel should only have kernel entry function as exported.
+    // Mark anyone else to not be exported here.
+    // Some of they may be marked as exported because graph compiler needs
+    // them to be or are needed as CPU functions .
+    singleModule->walk([&](ExportInterface func) {
+      if (!exported.contains(func) &&
+          func.getExportKind() == ExportKind::Exported)
+        func.setExportKind(ExportKind::NotExported);
+    });
   }
 
   return singleModule;

@@ -21,7 +21,8 @@ void sliceDependencies(Operation *op, SymbolTable &sliceSymtab,
 /// provided exported ops.
 OwningOpRef<ModuleOp>
 produceStandaloneModule(const SymbolTable &symtab,
-                        const KGEN::ExportMap &exportedSymbols);
+                        const KGEN::ExportMap &exportedSymbols,
+                        bool isGPU = false);
 
 /// Produce a standalone MLIR module by slicing out the dependencies of the
 /// provided exported ops. An `IRMapping` can be provided to be able to map
@@ -29,7 +30,7 @@ produceStandaloneModule(const SymbolTable &symtab,
 OwningOpRef<ModuleOp>
 produceStandaloneModule(const SymbolTable &symtab,
                         const KGEN::ExportMap &exportedSymbols,
-                        IRMapping &mapping);
+                        IRMapping &mapping, bool isGPU = false);
 } // namespace M
 
 #endif // KGEN_TRANSFORMUTILS_SLICINGUTILS_H
