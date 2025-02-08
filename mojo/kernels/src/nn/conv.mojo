@@ -331,7 +331,7 @@ fn _reduce_output[
                 )
                 epilogue(Index(nhowo[0], nhowo[1], nhowo[2], 0), F)
 
-    # NOTE: synchronous, so use of locally allocated output_ptr is safe.
+    # NOTE: _synchronous, so use of locally allocated output_ptr is safe.
     sync_parallelize[reduce_task](num_threads)
 
 
@@ -2793,7 +2793,7 @@ fn conv_shape[
         paddings_type: Type of the paddings tensor.
         num_groups_type: Type of the num_groups tensor.
         single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
+          ssynchronouslysing a single thread.
 
     Args:
         input_buf: The input tensor.
