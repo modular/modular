@@ -1,0 +1,18 @@
+load("//bazel:api.bzl", "modular_nanobind_library")
+
+modular_nanobind_library(
+    name = "MO",
+    srcs = [
+        "mo.cpp",
+        "//SDK:MODialectNanobindInc",
+    ],
+    nanobind_deps = [
+        "//SDK:GraphPython",
+    ],
+    deps = [
+        "//GenericML:GraphCompiler",
+        "//GenericML:modular-framework-common",
+        "//ModularFramework/tools/mof",
+        "@llvm-project//mlir:IR",
+    ],
+)

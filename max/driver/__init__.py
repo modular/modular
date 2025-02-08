@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from max._driver import __version__
+from max._core.driver import __version__
 
 from .driver import (
     CPU,
