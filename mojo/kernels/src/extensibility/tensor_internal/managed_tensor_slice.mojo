@@ -843,10 +843,11 @@ fn foreach[
 @doc_private
 @no_inline
 fn view_copy_impl[
-    _synchronous: Bool,
-    target: StringLiteral,
     type: DType,
-    rank: Int,
+    rank: Int, //,
+    *,
+    target: StringLiteral,
+    _synchronous: Bool,
     view_strides: DimList = DimList.create_unknown[rank](),
     trace_name: StringLiteral = "foreach",
 ](
