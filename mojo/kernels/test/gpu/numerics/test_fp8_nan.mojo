@@ -25,7 +25,7 @@ fn print_bits[type: DType](val: Scalar[type]):
 fn test():
     # CHECK: float8_e5m2 nan: 127 01111111
     print_bits(Float8_e5m2(FloatLiteral.nan))
-    # CHECK: float8_e4m3 nan: 127 01111111
+    # CHECK: float8_e4m3fn nan: 127 01111111
     print_bits(Float8_e4m3(FloatLiteral.nan))
 
 

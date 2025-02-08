@@ -76,7 +76,7 @@ fn test_format_float8_e5m2():
     check_8e5m2["-0.0"](FloatLiteral.negative_zero)
 
 
-fn test_format_float8_e4m3():
+fn test_format_float8_e4m3fn():
     check_8e4m3["0.0"](0)
     check_8e4m3["0.001953125"](0.001953125)
     check_8e4m3["-0.01953125"](-0.01953125)
@@ -98,7 +98,7 @@ def main():
         func_8e5m2 = ctx.compile_function[test_format_float8_e5m2]()
         ctx.enqueue_function(func_8e5m2, grid_dim=1, block_dim=1)
 
-        # CHECK-LABEL: == test_format_float8_e4m3
-        print("== test_format_float8_e4m3")
-        func_8e4m3 = ctx.compile_function[test_format_float8_e4m3]()
+        # CHECK-LABEL: == test_format_float8_e4m3fn
+        print("== test_format_float8_e4m3fn")
+        func_8e4m3 = ctx.compile_function[test_format_float8_e4m3fn]()
         ctx.enqueue_function(func_8e4m3, grid_dim=1, block_dim=1)

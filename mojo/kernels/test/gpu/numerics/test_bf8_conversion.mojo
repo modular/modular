@@ -27,33 +27,33 @@ fn test_scaler_e4m3_to_f32():
     print("== test_scaler_e4m3_to_f32")
 
     # normal
-    var e4m3_0 = Scalar[DType.float8_e4m3](1.25)
+    var e4m3_0 = Scalar[DType.float8_e4m3fn](1.25)
     print(e4m3_0.cast[DType.float32]())
-    var e4m3_1 = Scalar[DType.float8_e4m3](-1.25)
+    var e4m3_1 = Scalar[DType.float8_e4m3fn](-1.25)
     print(e4m3_1.cast[DType.float32]())
-    var e4m3_7 = Scalar[DType.float8_e4m3](256.0)
+    var e4m3_7 = Scalar[DType.float8_e4m3fn](256.0)
     print(e4m3_7.cast[DType.float32]())
-    var e4m3_8 = Scalar[DType.float8_e4m3](256.1)
+    var e4m3_8 = Scalar[DType.float8_e4m3fn](256.1)
     print(e4m3_8.cast[DType.float32]())
-    var e4m3_9 = Scalar[DType.float8_e4m3](-256.0)
+    var e4m3_9 = Scalar[DType.float8_e4m3fn](-256.0)
     print(e4m3_9.cast[DType.float32]())
-    var e4m3_10 = Scalar[DType.float8_e4m3](-256.3)
+    var e4m3_10 = Scalar[DType.float8_e4m3fn](-256.3)
     print(e4m3_10.cast[DType.float32]())
 
     # nan
-    var e4m3_2 = bitcast[DType.float8_e4m3](Scalar[DType.uint8](127))
+    var e4m3_2 = bitcast[DType.float8_e4m3fn](Scalar[DType.uint8](127))
     print(e4m3_2.cast[DType.float32]())
 
     # exponent = 0 and mantissa subnormal
-    var e4m3_3 = bitcast[DType.float8_e4m3](Scalar[DType.uint8](7))
+    var e4m3_3 = bitcast[DType.float8_e4m3fn](Scalar[DType.uint8](7))
     print(e4m3_3.cast[DType.float32]())
-    var e4m3_4 = bitcast[DType.float8_e4m3](Scalar[DType.uint8](135))
+    var e4m3_4 = bitcast[DType.float8_e4m3fn](Scalar[DType.uint8](135))
     print(e4m3_4.cast[DType.float32]())
 
     # sign-preserving zero
-    var e4m3_5 = bitcast[DType.float8_e4m3](Scalar[DType.uint8](0))
+    var e4m3_5 = bitcast[DType.float8_e4m3fn](Scalar[DType.uint8](0))
     print(e4m3_5.cast[DType.float32]())
-    var e4m3_6 = bitcast[DType.float8_e4m3](Scalar[DType.uint8](128))
+    var e4m3_6 = bitcast[DType.float8_e4m3fn](Scalar[DType.uint8](128))
     print(e4m3_6.cast[DType.float32]())
 
 
@@ -150,10 +150,10 @@ fn test_scaler_e5m2_to_f32():
 fn test_simd_e4m3_to_f32():
     print("== test_simd_e4m3_to_f32")
 
-    var e4m3_simd = SIMD[DType.float8_e4m3, 256](0.0)
+    var e4m3_simd = SIMD[DType.float8_e4m3fn, 256](0.0)
 
     for i in range(256):
-        e4m3_simd[i] = bitcast[DType.float8_e4m3](Scalar[DType.uint8](i))
+        e4m3_simd[i] = bitcast[DType.float8_e4m3fn](Scalar[DType.uint8](i))
 
     e4m3_casted_f32 = e4m3_simd.cast[DType.float32]()
 
@@ -251,10 +251,10 @@ fn test_simd_e5m2_to_f32():
 fn test_simd_e4m3_to_f16():
     print("== test_simd_e4m3_to_f16")
 
-    var e4m3_simd = SIMD[DType.float8_e4m3, 256](0.0)
+    var e4m3_simd = SIMD[DType.float8_e4m3fn, 256](0.0)
 
     for i in range(256):
-        e4m3_simd[i] = bitcast[DType.float8_e4m3](Scalar[DType.uint8](i))
+        e4m3_simd[i] = bitcast[DType.float8_e4m3fn](Scalar[DType.uint8](i))
 
     e4m3_casted_f16 = e4m3_simd.cast[DType.float16]()
 
@@ -352,10 +352,10 @@ fn test_simd_e5m2_to_f16():
 fn test_simd_e4m3_to_bf16():
     print("== test_simd_e4m3_to_bf16")
 
-    var e4m3_simd = SIMD[DType.float8_e4m3, 256](0.0)
+    var e4m3_simd = SIMD[DType.float8_e4m3fn, 256](0.0)
 
     for i in range(256):
-        e4m3_simd[i] = bitcast[DType.float8_e4m3](Scalar[DType.uint8](i))
+        e4m3_simd[i] = bitcast[DType.float8_e4m3fn](Scalar[DType.uint8](i))
 
     e4m3_casted_bf16 = e4m3_simd.cast[DType.bfloat16]()
 
@@ -491,7 +491,7 @@ fn test_simd_f32_to_e4m3():
     for i in range(M):
         f32_simd[i] = i - 256
 
-    f32_casted_e4m3 = f32_simd.cast[DType.float8_e4m3]()
+    f32_casted_e4m3 = f32_simd.cast[DType.float8_e4m3fn]()
 
     for i in range(64):
         for j in range(8):
@@ -633,12 +633,12 @@ fn test_simd_e4m3_to_f16_ptx_path(ctx: DeviceContext) raises:
     print("== test_simd_e4m3_to_f16_ptx_path")
 
     alias M = 256
-    var e4m3_simd = SIMD[DType.float8_e4m3, M](0.0)
+    var e4m3_simd = SIMD[DType.float8_e4m3fn, M](0.0)
     for i in range(M):
-        e4m3_simd[i] = bitcast[DType.float8_e4m3](Scalar[DType.uint8](i))
+        e4m3_simd[i] = bitcast[DType.float8_e4m3fn](Scalar[DType.uint8](i))
 
     alias test_simd_e4m3_to_f16_fn = test_simd_float8[
-        DType.float8_e4m3, M, DType.float16
+        DType.float8_e4m3fn, M, DType.float16
     ]
 
     var compiled_test_simd_e4m3_to_f16_fn = ctx.compile_function[
@@ -741,12 +741,12 @@ fn test_simd_e4m3_to_f32_ptx_path(ctx: DeviceContext) raises:
     print("== test_simd_e4m3_to_f32_ptx_path")
 
     alias M = 256
-    var e4m3_simd = SIMD[DType.float8_e4m3, M](0.0)
+    var e4m3_simd = SIMD[DType.float8_e4m3fn, M](0.0)
     for i in range(M):
-        e4m3_simd[i] = bitcast[DType.float8_e4m3](Scalar[DType.uint8](i))
+        e4m3_simd[i] = bitcast[DType.float8_e4m3fn](Scalar[DType.uint8](i))
 
     alias test_simd_e4m3_to_f32_fn = test_simd_float8[
-        DType.float8_e4m3, M, DType.float32
+        DType.float8_e4m3fn, M, DType.float32
     ]
 
     var compiled_test_simd_e4m3_to_f32_fn = ctx.compile_function[
@@ -899,7 +899,7 @@ fn test_simd_f32_to_e4m3_ptx_path(ctx: DeviceContext) raises:
     for i in range(M):
         f32_simd[i] = i - 256
 
-    alias test_simd_f32_to_e4m3_fn = test_simd_float32[M, DType.float8_e4m3]
+    alias test_simd_f32_to_e4m3_fn = test_simd_float32[M, DType.float8_e4m3fn]
 
     var compiled_test_simd_f32_to_e4m3_fn = ctx.compile_function[
         test_simd_f32_to_e4m3_fn, _target = _get_gpu_target["sm_90"]()
