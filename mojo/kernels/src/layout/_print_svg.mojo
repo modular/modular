@@ -6,6 +6,7 @@
 from layout import Layout
 from collections import Dict
 from sys import sizeof
+from collections import Optional
 
 
 fn print_svg[
@@ -21,6 +22,8 @@ fn print_svg[
             dtype, layout, rank, element_layout=element_layout, masked=masked
         ]
     ],
+    color_map: Optional[fn (Int, Int) -> String] = None,
+    filename: Optional[String] = None,
 ) raises:
     # Given a base layout tensor and a sub tensor print the layouts
     # Verify rank constraint
@@ -54,46 +57,41 @@ fn print_svg[
         tensor_base.layout.shape[0].value() + 2
     ) * cell_size + 2 * margin
 
-    # SVG Header
-    print('<?xml version="1.0" encoding="UTF-8"?>')
-    print(
-        '<svg width="',
-        width,
-        '" height="',
-        height,
-        '" xmlns="http://www.w3.org/2000/svg">',
-        sep="",
+    var svg = String('<?xml version="1.0" encoding="UTF-8"?>\n')
+    svg += (
+        '<svg width="'
+        + String(width)
+        + '" height="'
+        + String(height)
+        + '" xmlns="http://www.w3.org/2000/svg">\n'
     )
 
     # Print layout legends
-    print(
-        '<text x="',
-        margin,
-        '" y="',
-        margin + 20,
-        '" fill="',
-        colors[0],
-        '" opacity="0.4">Layout: ',
-        tensor_base.layout,
-        " ",
-        tensor_base.element_layout,
-        "</text>",
-        sep="",
+    svg += (
+        '<text x="'
+        + String(margin)
+        + '" y="'
+        + String(margin + 20)
+        + '" fill="'
+        + colors[0]
+        + '" opacity="0.4">Layout: '
+        + String(tensor_base.layout)
+        + " "
+        + String(tensor_base.element_layout)
+        + "</text>\n"
     )
-
-    print(
-        '<text x="',
-        margin,
-        '" y="',
-        margin + 40,
-        '" fill="',
-        colors[1],
-        '" opacity="0.4">Layout: ',
-        tensors[0].layout,
-        " ",
-        tensors[0].element_layout,
-        "</text>",
-        sep="",
+    svg += (
+        '<text x="'
+        + String(margin)
+        + '" y="'
+        + String(margin + 40)
+        + '" fill="'
+        + colors[1]
+        + '" opacity="0.4">Layout: '
+        + String(tensors[0].layout)
+        + " "
+        + String(tensors[0].element_layout)
+        + "</text>\n"
     )
 
     var map = Dict[Int, IntTuple]()
@@ -106,29 +104,27 @@ fn print_svg[
             map[idx] = IntTuple(i, j)
             var x = margin + text_margin + j * cell_size
             var y = start_y + i * cell_size
-            print(
-                '<rect x="',
-                x,
-                '" y="',
-                y,
-                '" width="',
-                cell_size,
-                '" height="',
-                cell_size,
-                '" fill="',
-                colors[0],
-                '" opacity="0.2" stroke="black"/>',
-                sep="",
+            svg += (
+                '<rect x="'
+                + String(x)
+                + '" y="'
+                + String(y)
+                + '" width="'
+                + String(cell_size)
+                + '" height="'
+                + String(cell_size)
+                + '" fill="'
+                + colors[0]
+                + '" opacity="0.2" stroke="black"/>\n'
             )
-            print(
-                '<text font-size="small" x="',
-                x + cell_size / 2,
-                '" y="',
-                y + cell_size / 2 + 20,
-                '" dominant-baseline="middle" text-anchor="middle">',
-                idx,
-                "</text>",
-                sep="",
+            svg += (
+                '<text font-size="small" x="'
+                + String(x + cell_size / 2)
+                + '" y="'
+                + String(y + cell_size / 2 + 20)
+                + '" dominant-baseline="middle" text-anchor="middle">'
+                + String(idx)
+                + "</text>\n"
             )
 
     for t in range(len(tensors)):
@@ -156,36 +152,35 @@ fn print_svg[
                                 1
                             ].value() * cell_size
                             var y = start_y + orig_pos[0].value() * cell_size
-
-                            print(
-                                '<rect x="',
-                                x,
-                                '" y="',
-                                y,
-                                '" width="',
-                                cell_size,
-                                '" height="',
-                                cell_size,
-                                '" fill="',
-                                colors[orig_pos[0].value() % 2 + 1],
-                                '" opacity="0.2" stroke="black"/>',
-                                sep="",
+                            var color = color_map.value()(
+                                t, element_idx
+                            ) if color_map else colors[
+                                orig_pos[0].value() % 2 + 1
+                            ]
+                            svg += (
+                                '<rect x="'
+                                + String(x)
+                                + '" y="'
+                                + String(y)
+                                + '" width="'
+                                + String(cell_size)
+                                + '" height="'
+                                + String(cell_size)
+                                + '" fill="'
+                                + color
+                                + '" opacity="0.2" stroke="black"/>\n'
                             )
-                            print(
-                                '<text font-size="large" x="',
-                                x + cell_size / 2,
-                                '" y="',
-                                y + cell_size / 2,
-                                (
-                                    '" dominant-baseline="middle"'
-                                    ' text-anchor="middle">'
-                                ),
-                                "T",
-                                t,
-                                " V",
-                                element_idx,
-                                "</text>",
-                                sep="",
+                            svg += (
+                                '<text font-size="large" x="'
+                                + String(x + cell_size / 2)
+                                + '" y="'
+                                + String(y + cell_size / 2)
+                                + '" dominant-baseline="middle"'
+                                ' text-anchor="middle">T'
+                                + String(t)
+                                + " V"
+                                + String(element_idx)
+                                + "</text>\n"
                             )
                             element_idx += 1
         else:
@@ -201,68 +196,67 @@ fn print_svg[
                         1
                     ].value() * cell_size
                     var y = start_y + orig_pos[0].value() * cell_size
-                    print(
-                        '<rect x="',
-                        x,
-                        '" y="',
-                        y,
-                        '" width="',
-                        cell_size,
-                        '" height="',
-                        cell_size,
-                        '" fill="',
-                        colors[1],
-                        '" opacity="0.2" stroke="black"/>',
-                        sep="",
+                    var color = color_map.value()(
+                        t, element_idx
+                    ) if color_map else colors[orig_pos[0].value() % 2 + 1]
+                    svg += (
+                        '<rect x="'
+                        + String(x)
+                        + '" y="'
+                        + String(y)
+                        + '" width="'
+                        + String(cell_size)
+                        + '" height="'
+                        + String(cell_size)
+                        + '" fill="'
+                        + color
+                        + '" opacity="0.2" stroke="black"/>\n'
                     )
-                    print(
-                        '<text font-size="large" x="',
-                        x + cell_size / 2,
-                        '" y="',
-                        y + cell_size / 2,
-                        '" dominant-baseline="middle" text-anchor="middle">',
-                        "T",
-                        t,
-                        " V",
-                        element_idx,
-                        "</text>",
-                        sep="",
+                    svg += (
+                        '<text font-size="large" x="'
+                        + String(x + cell_size / 2)
+                        + '" y="'
+                        + String(y + cell_size / 2)
+                        + '" dominant-baseline="middle" text-anchor="middle">T'
+                        + String(t)
+                        + " V"
+                        + String(element_idx)
+                        + "</text>\n"
                     )
                     element_idx += 1
 
     # Draw row labels
     for i in range(tensor_base.layout.shape[0].value()):
         var y = start_y + i * cell_size + cell_size / 2
-        print(
-            '<text x="',
-            margin,
-            '" y="',
-            y,
-            (
-                '" dominant-baseline="middle" text-anchor="middle"'
-                ' font-family="monospace" font-size="larger">'
-            ),
-            i,
-            "</text>",
-            sep="",
+        svg += (
+            '<text x="'
+            + String(margin)
+            + '" y="'
+            + String(y)
+            + '" dominant-baseline="middle" text-anchor="middle"'
+            ' font-family="monospace" font-size="larger">'
+            + String(i)
+            + "</text>\n"
         )
 
     # Draw column labels
     for j in range(tensor_base.layout.shape[1].value()):
         var x = margin + text_margin + j * cell_size + cell_size / 2
-        print(
-            '<text x="',
-            x,
-            '" y="',
-            start_y - text_margin / 2,
-            (
-                '" dominant-baseline="middle" text-anchor="middle"'
-                ' font-family="monospace" font-size="larger">'
-            ),
-            j,
-            "</text>",
-            sep="",
+        svg += (
+            '<text x="'
+            + String(x)
+            + '" y="'
+            + String(start_y - text_margin / 2)
+            + '" dominant-baseline="middle" text-anchor="middle"'
+            ' font-family="monospace" font-size="larger">'
+            + String(j)
+            + "</text>\n"
         )
 
     # SVG Footer
-    print("</svg>")
+    svg += "</svg>\n"
+    if filename:
+        with open(filename.value(), "w") as f:
+            f.write(svg)
+    else:
+        print(svg)
