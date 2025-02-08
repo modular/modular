@@ -66,37 +66,29 @@
 #subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !test
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="i64:64:64", simd_bit_width=128>} {
-  kgen.struct.instance @Int : !kgen.type {
-    kgen.struct.info :type [struct_inst<"Int"(value: index)>, index]
-  }
+  kgen.struct.instance @Int = [struct_inst<"Int"(value: index)>, index]
 
-  kgen.struct.instance @Pair : !kgen.type {
-    kgen.struct.info :type [
+  kgen.struct.instance @Pair = [
       struct_inst<"Pair"(
         first: typevalue<#kgen.typeref<@Int>>,
         second: i1
       )>,
       struct<(index, i1)>
     ]
-  }
 
-  kgen.struct.instance @Pointer_ListNode : !kgen.type {
-    kgen.struct.info :type [
+  kgen.struct.instance @Pointer_ListNode = [
       struct_inst<"Pointer"[ty]<:type [typevalue<#kgen.typeref<@ListNode>>, struct<(pointer<none>) memoryOnly>]>(
         address: pointer<typevalue<[typevalue<#kgen.typeref<@ListNode>>, struct<(pointer<none>) memoryOnly>]>>
       )>,
       pointer<none>
     ]
-  }
 
-  kgen.struct.instance @ListNode : !kgen.type {
-    kgen.struct.info : type [
+  kgen.struct.instance @ListNode = [
       struct_inst<"ListNode"(
         next: typevalue<#kgen.typeref<@Pointer_ListNode>>
       ) memoryOnly>,
       struct<(pointer<none>) memoryOnly>
     ]
-  }
 
   kgen.func @foo() {
     kgen.return loc(fused<#subprogram>["foo.mlir":10:10])

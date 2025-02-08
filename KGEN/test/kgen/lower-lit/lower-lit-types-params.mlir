@@ -21,8 +21,7 @@ lit.struct.decl @Bar<size, dt: dtype> register_passable {
   lit.struct.field value: !pop.simd<size, dt>
 }
 
-// CHECK: kgen.struct.generator @[[STRUCT_BAR:.+]]<size, dt: dtype> : type
-// CHECK-NEXT:    kgen.struct.info :type [struct_inst<"Bar"[size, dt]<size, :dtype dt>(value: simd<size, dt>)>, simd<size, dt>]
+// CHECK: kgen.struct.generator @[[STRUCT_BAR:.+]]<size, dt: dtype> = [struct_inst<"Bar"[size, dt]<size, :dtype dt>(value: simd<size, dt>)>, simd<size, dt>]
 
 // CHECK: kgen.generator @anystructs
 kgen.generator @anystructs() {

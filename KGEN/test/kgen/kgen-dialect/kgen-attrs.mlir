@@ -108,15 +108,18 @@ kgen.generator @entry2() -> index {
   d = #kgen<tailkind notail>
 } : () -> ()
 
-kgen.struct.generator @LinkedList<T: type, x: !kgen.param<T>> : type {
-  // CHECK: kgen.struct.info :type struct_inst<
-  // CHECK-SAME: "LinkedList"
-  // CHECK-SAME: [T, x]
-  // CHECK-SAME: <:type T, :!kgen.param<T> x>
-  // CHECK-SAME: (data: typevalue<T>,
-  // CHECK-SAME:  next: typevalue<inst_struct_ref(#kgen.typeref<@LinkedList<:type T, :!kgen.param<T> x>>)>)
-  kgen.struct.info :type struct_inst<"LinkedList"[T, x]<:type T, :!kgen.param<T> x>(data: typevalue<T>, next: typevalue<inst_struct_ref(#kgen.typeref<@LinkedList<:type T, :!kgen.param<T> x>>)>)>
-}
+// CHECK: kgen.struct.generator @LinkedList<T: type, x: !kgen.param<T>> = struct_inst<
+// CHECK-SAME:   "LinkedList"
+// CHECK-SAME:   [T, x]
+// CHECK-SAME:   <:type T, :!kgen.param<T> x>
+// CHECK-SAME:   (data: typevalue<T>,
+// CHECK-SAME:    next: typevalue<inst_struct_ref(#kgen.typeref<@LinkedList<:type T, :!kgen.param<T> x>>)>)
+kgen.struct.generator @LinkedList<T: type, x: !kgen.param<T>> =
+  struct_inst<"LinkedList"[T, x]<:type T, :!kgen.param<T> x>(
+    data: typevalue<T>,
+    next: typevalue<inst_struct_ref(#kgen.typeref<@LinkedList<:type T, :!kgen.param<T> x>>)>
+  )>
+
 
 // CHECK: a = #kgen.typeref<@LinkedList<:type index, 3>>
 "some.op"() {
@@ -126,4 +129,3 @@ kgen.struct.generator @LinkedList<T: type, x: !kgen.param<T>> : type {
 
 // CHECK: kgen.param.assert <rebind(:i53 42)>, "rebind must fold"
 kgen.param.assert <rebind(:i73 rebind(:i53 42))>, "rebind must fold"
-

@@ -254,7 +254,7 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
 //===----------------------------------------------------------------------===//
 
 def KGEN_StructGeneratorOp : KGENOp<"struct.generator", [
-    HasParent<"ModuleOp">, Symbol, DeclInterface, SingleBlock,
+    HasParent<"ModuleOp">, Symbol, DeclInterface, SingleBlock, NoTerminator,
     KGEN_GeneratorOpInterface]> {
   let summary = "Struct generator definition.";
   let description = [{
@@ -267,15 +267,13 @@ def KGEN_StructGeneratorOp : KGENOp<"struct.generator", [
     Example:
 
     ```mlir
-    kgen.struct.generator @struct_SIMD<dt: dtype, size> : type {
-      kgen.struct.info = #type_value : !kgen.type
-    }
+    kgen.struct.generator @struct_SIMD<dt: dtype, size> = #type_value
     ```
   }];
 
   let arguments = (ins SymbolNameAttr:$sym_name,
                        KGEN_ParamDeclArrayAttr:$inputParams,
-                       TypeAttrOf<KGEN_GeneratorType>:$type);
+                       TypedAttrInterface:$typeValue);
   let regions = (region SizedRegion<1>:$body);
 
   let extraClassDeclaration = [{
@@ -283,9 +281,8 @@ def KGEN_StructGeneratorOp : KGENOp<"struct.generator", [
   }];
 
   let assemblyFormat = [{
-    $sym_name `` custom<StructGeneratorSpec>($inputParams, $type)
+    $sym_name `` custom<StructGeneratorSpec>($inputParams, $typeValue, $body)
     attr-dict-with-keyword
-    ($body^)?
   }];
 }
 
@@ -294,7 +291,7 @@ def KGEN_StructGeneratorOp : KGENOp<"struct.generator", [
 //===----------------------------------------------------------------------===//
 
 def KGEN_StructInstanceOp : KGENOp<"struct.instance", [
-    HasParent<"ModuleOp">, Symbol, SingleBlock,
+    HasParent<"ModuleOp">, Symbol, SingleBlock, NoTerminator,
     KGEN_InstantiatedOpInterface]> {
   let summary = "Concretized struct instance.";
   let description = [{
@@ -307,37 +304,18 @@ def KGEN_StructInstanceOp : KGENOp<"struct.instance", [
     Example:
 
     ```mlir
-    kgen.struct.instance @"struct_SIMD,dt=f32,size=4" {
-      kgen.struct.info = #type_value : !kgen.type
-    }
+    kgen.struct.instance @"struct_SIMD,dt=f32,size=4" = #type_value
     ```
   }];
 
   let arguments = (ins SymbolNameAttr:$sym_name,
-                       TypeAttr:$type);
-  let regions = (region MaxSizedRegion<1>:$body);
+                       TypedAttrInterface:$typeValue);
+  let regions = (region SizedRegion<1>:$body);
 
   let assemblyFormat = [{
-    $sym_name `:` $type attr-dict-with-keyword
-    ($body^)?
+    $sym_name `` custom<StructInstanceSpec>($typeValue, $body)
+    attr-dict-with-keyword
   }];
-}
-
-//===----------------------------------------------------------------------===//
-// StructInfoOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_StructInfoOp : KGENOp<"struct.info", [Terminator,
-    ParentOneOf<["StructGeneratorOp", "StructInstanceOp"]>]> {
-  let summary = "Struct type info.";
-  let description = [{
-    The `kgen.struct.info` operation contains the definition of a parameterized
-    type-value.
-  }];
-
-  let arguments = (ins TypedAttrInterface:$typeConstant);
-
-  let assemblyFormat = "custom<ColonTypeParamValue>($typeConstant) attr-dict";
 }
 
 //===----------------------------------------------------------------------===//

@@ -361,28 +361,22 @@ LogicalResult StructDecls::process(ModuleOp module, SymbolTable &symtab) {
       paramValues.push_back(ParamDeclRefAttr::get(decl));
     }
 
-    OpBuilder b(&op);
-    // We lack the ability to represent actual metatypes in KGEN today, so erase
-    // into a TypeType for now.
-    auto metatype = GeneratorType::get(paramTypes, typeType);
-    auto gen = b.create<StructGeneratorOp>(
-        op.getLoc(), StringAttr::get(ctx, structName.getValue()), info.decls,
-        metatype);
-    symtab.remove(&op);
-    info.symRef = SymbolRefAttr::get(symtab.insert(gen));
-
-    Block *entry = b.createBlock(&gen.getRegion());
-    b.setInsertionPointToStart(entry);
-
     auto structInstType =
         StructInstanceType::get(structName, paramNames, paramValues, fieldDecls,
                                 !info.isRegisterPassable);
-    TypedAttr typeConstant = TypeParamAttr::get(
+    TypedAttr typeValue = TypeParamAttr::get(
         structInstType,
         LIT::StructType::get(SymbolRefAttr::get(structName), paramValues,
                              TypeSignatureType::get(ctx)),
         typeType);
-    b.create<KGEN::StructInfoOp>(op.getLoc(), typeConstant);
+
+    OpBuilder b(&op);
+    auto gen = b.create<StructGeneratorOp>(
+        op.getLoc(), StringAttr::get(ctx, structName.getValue()), info.decls,
+        typeValue);
+    symtab.remove(&op);
+    info.symRef = SymbolRefAttr::get(symtab.insert(gen));
+    b.createBlock(&gen.getRegion());
 
     structDecls.try_emplace(structName, std::move(info));
     op.erase();
