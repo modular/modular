@@ -775,9 +775,10 @@ fn foreach[
     type: DType,
     rank: Int, //,
     func: fn[width: Int] (IndexList[rank]) capturing -> SIMD[type, width],
-    synchronous: Bool = False,
+    *,
     target: StringLiteral = "cpu",
     simd_width: Int = get_kernel_simd_width[type, target](),
+    _synchronous: Bool = False,
 ](tensor: ManagedTensorSlice[type, rank]):
     @parameter
     @always_inline
@@ -790,7 +791,7 @@ fn foreach[
     algorithm.functional.elementwise[
         elementwise_fn_wrapper,
         simd_width,
-        use_blocking_impl=synchronous,
+        use_blocking_impl=_synchronous,
         target=target,
     ](tensor.shape())
 
@@ -801,9 +802,10 @@ fn foreach[
     type: DType,
     rank: Int, //,
     func: fn[width: Int] (IndexList[rank]) capturing -> SIMD[type, width],
-    synchronous: Bool = False,
+    *,
     target: StringLiteral = "cpu",
     simd_width: Int = get_kernel_simd_width[type, target](),
+    _synchronous: Bool = False,
 ](tensor: ManagedTensorSlice[type, rank], ctx: MojoCallContextPtr):
     """Apply the function `func` to each element of the tensor slice.
 
@@ -811,9 +813,9 @@ fn foreach[
         type: The data type of the elements in the tensor slice.
         rank: The rank of the tensor slice.
         func: The function to apply to each element of the tensor slice.
-        synchronous: True to run the custom op synchronously in the runtime (defaults to False).
-        target: A `StringLiteral` indicating the type of the target device (e.g. "CPU", "CUDA").
+        target: A `StringLiteral` indicating the type of the target device (e.g. "cpu", "gpu").
         simd_width: The SIMD width for the target (usually leave this as its default value).
+        _synchronous: True to run the custom op synchronously in the runtime (defaults to False).
 
     Args:
         tensor: The output tensor slice which receives the return values from `func`.
@@ -831,7 +833,7 @@ fn foreach[
     algorithm.functional.elementwise[
         elementwise_fn_wrapper,
         simd_width,
-        use_blocking_impl=synchronous,
+        use_blocking_impl=_synchronous,
         target=target,
     ](tensor.shape(), ctx)
 
@@ -841,7 +843,7 @@ fn foreach[
 @doc_private
 @no_inline
 fn view_copy_impl[
-    synchronous: Bool,
+    _synchronous: Bool,
     target: StringLiteral,
     type: DType,
     rank: Int,
@@ -860,4 +862,4 @@ fn view_copy_impl[
         ](x, idx)
 
     with Trace[TraceLevel.OP, target=target](trace_name):
-        foreach[func, synchronous, target](z, ctx)
+        foreach[func, target=target, _synchronous=_synchronous](z, ctx)
