@@ -1536,7 +1536,7 @@ using ConvertPOPPointerToIndex =
 //===----------------------------------------------------------------------===//
 
 static FailureOr<NVVM::WGMMATypesAttr> getMMAType(MLIRContext *ctx, Type type) {
-  if (isa<Float8E4M3Type>(type))
+  if (isa<Float8E4M3Type, Float8E4M3FNType>(type))
     return NVVM::WGMMATypesAttr::get(ctx, NVVM::WGMMATypes::e4m3);
   if (isa<Float8E5M2Type>(type))
     return NVVM::WGMMATypesAttr::get(ctx, NVVM::WGMMATypes::e5m2);
