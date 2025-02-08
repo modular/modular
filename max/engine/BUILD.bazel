@@ -7,7 +7,7 @@ modular_py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
-        "//SDK/lib/API/python/max:_engine",
+        "//SDK/lib/API/python/max:_core",
         "//SDK/lib/API/python/max/driver",
         "//SDK/lib/API/python/max/dtype",
         "//SDK/lib/API/python/max/graph",
