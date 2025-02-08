@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 import numpy as np
 from hypothesis import assume, given
-from max import _graph
+from max._core import graph as _graph
 from max.dtype import DType
 from max.graph import Graph, ops
 

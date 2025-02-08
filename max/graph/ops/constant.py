@@ -8,7 +8,7 @@
 from typing import Union
 
 import numpy as np
-from max import _graph
+from max._core import graph as _graph
 from max.dtype import DType
 from max.mlir.dialects import mo
 

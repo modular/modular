@@ -11,7 +11,8 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import pytest
-from max import _graph, mlir
+from max import mlir
+from max._core import graph as _graph
 from max.dtype import DType
 from max.graph import TensorType
 

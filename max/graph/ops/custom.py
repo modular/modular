@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from max import _graph, mlir
+from max import mlir
+from max._core import graph as _graph
 from max.dtype import DType
 from max.mlir import IndexType, IntegerAttr, StringAttr
 from max.mlir.dialects import mo

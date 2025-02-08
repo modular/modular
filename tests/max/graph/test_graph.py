@@ -12,7 +12,8 @@ from unittest import mock
 import pytest
 from hypothesis import assume, given
 from hypothesis import strategies as st
-from max import _graph, mlir
+from max import mlir
+from max._core import graph as _graph
 from max.dtype import DType
 from max.graph import (
     DeviceRef,

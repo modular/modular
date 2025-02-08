@@ -15,7 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
-from max import _graph, mlir
+from max import mlir
+from max._core import graph as _graph
 from max.mlir.dialects import mo
 
 from .type import (
