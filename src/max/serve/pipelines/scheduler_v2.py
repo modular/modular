@@ -240,6 +240,11 @@ class TokenGenerationSchedulerV2(Scheduler):
                 break
 
             seq_len = data.seq_len
+            if self.paged_manager is not None:
+                cached_tokens = self.paged_manager.get_num_cached_tokens(
+                    data.next_tokens
+                )
+                seq_len -= cached_tokens
             total_seq_len += seq_len
             data.cache_seq_id = self.available_cache_indices.pop()
             ce_batch[req_id] = data
