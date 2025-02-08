@@ -26,7 +26,7 @@ fn test():
     # CHECK: float8_e5m2 nan: 127 01111111
     print_bits(Float8_e5m2(FloatLiteral.nan))
     # CHECK: float8_e4m3fn nan: 127 01111111
-    print_bits(Float8_e4m3(FloatLiteral.nan))
+    print_bits(Float8_e4m3fn(FloatLiteral.nan))
 
 
 def main():

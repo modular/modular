@@ -12,7 +12,7 @@ from collections import InlineArray
 from os import abort
 
 from builtin._format_float import _write_float
-from builtin.simd import Float8_e4m3, Float8_e5m2
+from builtin.simd import Float8_e4m3fn, Float8_e5m2
 from gpu.host import DeviceContext
 from memory import memcmp, memcpy, Span
 from testing import assert_true
@@ -59,7 +59,7 @@ fn check_8e5m2[expected: StringLiteral](f8: Float8_e5m2):
     check_float[expected](f8)
 
 
-fn check_8e4m3[expected: StringLiteral](f8: Float8_e4m3):
+fn check_8e4m3[expected: StringLiteral](f8: Float8_e4m3fn):
     check_float[expected](f8)
 
 
