@@ -177,7 +177,7 @@ fn test_gelu_libm():
     # generate input values and write them to file
     var x32 = UnsafePointer[Scalar[dtype], alignment=alignment].alloc(N)
     randn[dtype](x32, N, 0, 9.0)
-    print("For N=" + String(N) + " randomly generated vals; mean=0.0, var=9.0")
+    print("For N=", N, " randomly generated vals; mean=0.0, var=9.0")
 
     ####################
     # math.erf result
