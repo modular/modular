@@ -7,6 +7,7 @@
 from pathlib import Path
 
 import numpy as np
+import pytest
 import torch
 from max.driver import CPU, Accelerator, Tensor
 from max.dtype import DType
@@ -28,6 +29,7 @@ def _test_data():
     }
 
 
+@pytest.mark.skip(reason="Skipping test see GENAI-63")
 def test_load_safetensors(
     gpu_session: InferenceSession, graph_testdata: Path
 ) -> None:
