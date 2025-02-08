@@ -122,7 +122,7 @@ The 8 bits are encoded as `seeeeemm`:
 - fn: finite (no inf or -inf encodings)
 - uz: unsigned zero (no -0 encoding)
 """
-alias Float8_e4m3 = Scalar[DType.float8_e4m3]
+alias Float8_e4m3 = Scalar[DType.float8_e4m3fn]
 """Represents a FP8E4M3 floating point format from the [OFP8
 standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1).
 
@@ -556,7 +556,7 @@ struct SIMD[type: DType, size: Int](
         # TODO (#36686): This introduces unneeded casts here to work around
         # parameter if issues.
         @parameter
-        if type is DType.float8_e4m3:
+        if type is DType.float8_e4m3fn:
             self = SIMD[type, size](
                 __mlir_op.`pop.simd.splat`[
                     _type = __mlir_type[
@@ -1830,7 +1830,7 @@ struct SIMD[type: DType, size: Int](
                 return self.cast[DType.float32]().cast[target]()
 
         @parameter
-        if target in (DType.float8_e4m3, DType.float8_e5m2):
+        if target in (DType.float8_e4m3fn, DType.float8_e5m2):
             # TODO(KERN-1488): use gpu (H100) instruction to convert from fp16 to fp8
             return rebind[SIMD[target, size]](
                 _convert_f32_to_float8[size=size, target=target](
@@ -1841,7 +1841,7 @@ struct SIMD[type: DType, size: Int](
             )
 
         @parameter
-        if type in (DType.float8_e4m3, DType.float8_e5m2):
+        if type in (DType.float8_e4m3fn, DType.float8_e5m2):
             constrained[
                 target in (DType.float32, DType.float16, DType.bfloat16),
                 (
@@ -3198,7 +3198,7 @@ fn _convert_float8_to_f32_scaler[
 ](x: Scalar[type]) -> Scalar[DType.float32]:
     var kF32_NaN: UInt32 = 0x7FFFFFFF
     var FP8_NUM_BITS = 8
-    var IS_E4M3 = type is DType.float8_e4m3
+    var IS_E4M3 = type is DType.float8_e4m3fn
     var FP8_NUM_MANTISSA_BITS = FPUtils[type].mantissa_width()
     var FP8_NUM_EXPONENT_BITS = FPUtils[type].exponent_width()
     var FP32_NUM_BITS = 32
@@ -3283,7 +3283,7 @@ fn _convert_float8_to_f16[
 ](val: SIMD[type, size],) -> SIMD[DType.float16, size]:
     @parameter
     if is_nvidia_gpu() and _is_sm_9x():
-        alias asm_prefix = "cvt.rn.f16x2.e4m3x2" if type is DType.float8_e4m3 else "cvt.rn.f16x2.e5m2x2"
+        alias asm_prefix = "cvt.rn.f16x2.e4m3x2" if type is DType.float8_e4m3fn else "cvt.rn.f16x2.e5m2x2"
         var val_uint8 = bitcast[DType.uint8](val)
 
         @parameter
@@ -3325,7 +3325,7 @@ fn _convert_f32_to_float8[
 ](val: SIMD[type, size],) -> SIMD[target, size]:
     @parameter
     if is_nvidia_gpu() and _is_sm_9x():
-        alias asm_prefix = "cvt.rn.satfinite.e4m3x2.f32" if target is DType.float8_e4m3 else "cvt.rn.satfinite.e5m2x2.f32"
+        alias asm_prefix = "cvt.rn.satfinite.e4m3x2.f32" if target is DType.float8_e4m3fn else "cvt.rn.satfinite.e5m2x2.f32"
 
         @parameter
         if size > 1:
@@ -3374,7 +3374,7 @@ fn _convert_f32_to_float8_scaler[
 ](x: Scalar[type]) -> Scalar[target]:
     # software implementation rounds toward nearest even
 
-    alias IS_E4M3 = target is DType.float8_e4m3
+    alias IS_E4M3 = target is DType.float8_e4m3fn
     alias FP8_NUM_MANTISSA_BITS = FPUtils[target].mantissa_width()
     alias FP8_NUM_EXPONENT_BITS = FPUtils[target].exponent_width()
     alias FP32_NUM_BITS = bitwidthof[type]()

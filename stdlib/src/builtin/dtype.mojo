@@ -94,7 +94,7 @@ struct DType(
     - fn: finite (no inf or -inf encodings)
     - uz: unsigned zero (no -0 encoding)
     """
-    alias float8_e4m3 = DType(
+    alias float8_e4m3fn = DType(
         __mlir_attr.`#kgen.dtype.constant<f8e4m3> : !kgen.dtype`
     )
     """Represents a FP8E4M3 floating point format from the [OFP8
@@ -199,8 +199,8 @@ struct DType(
             return DType.float8_e5m2
         elif str == "float8_e5m2fnuz":
             return DType.float8_e5m2fnuz
-        elif str == "float8_e4m3":
-            return DType.float8_e4m3
+        elif str == "float8_e4m3fn":
+            return DType.float8_e4m3fn
         elif str == "float8_e4m3fnuz":
             return DType.float8_e4m3fnuz
         elif str == "bfloat16":
@@ -264,8 +264,8 @@ struct DType(
             return writer.write("float8_e5m2")
         if self == DType.float8_e5m2fnuz:
             return writer.write("float8_e5m2fnuz")
-        if self == DType.float8_e4m3:
-            return writer.write("float8_e4m3")
+        if self == DType.float8_e4m3fn:
+            return writer.write("float8_e4m3fn")
         if self == DType.float8_e4m3fnuz:
             return writer.write("float8_e4m3fnuz")
         if self == DType.bfloat16:
@@ -470,7 +470,7 @@ struct DType(
     @always_inline("nodebug")
     fn is_float8(self) -> Bool:
         """Returns True if the type is a 8bit-precision floating point type,
-        e.g. float8_e5m2, float8_e5m2fnuz, float8_e4m3 and float8_e4m3fnuz.
+        e.g. float8_e5m2, float8_e5m2fnuz, float8_e4m3fn and float8_e4m3fnuz.
 
         Returns:
             True if the type is a 8bit-precision float, false otherwise.
@@ -478,7 +478,7 @@ struct DType(
 
         return self in (
             DType.float8_e5m2,
-            DType.float8_e4m3,
+            DType.float8_e4m3fn,
             DType.float8_e5m2fnuz,
             DType.float8_e4m3fnuz,
         )
@@ -539,8 +539,8 @@ struct DType(
             return sizeof[DType.float8_e5m2]()
         if self == DType.float8_e5m2fnuz:
             return sizeof[DType.float8_e5m2fnuz]()
-        if self == DType.float8_e4m3:
-            return sizeof[DType.float8_e4m3]()
+        if self == DType.float8_e4m3fn:
+            return sizeof[DType.float8_e4m3fn]()
         if self == DType.float8_e4m3fnuz:
             return sizeof[DType.float8_e4m3fnuz]()
         if self == DType.bfloat16:

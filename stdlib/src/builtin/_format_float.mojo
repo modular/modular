@@ -109,9 +109,9 @@ fn _write_float[W: Writer, type: DType, //](mut writer: W, value: Scalar[type]):
         return writer.write(
             float8_e5m2_to_str[Int(bitcast[DType.uint8](value))]
         )
-    elif type is DType.float8_e4m3:
+    elif type is DType.float8_e4m3fn:
         return writer.write(
-            float8_e4m3_to_str[Int(bitcast[DType.uint8](value))]
+            float8_e4m3fn_to_str[Int(bitcast[DType.uint8](value))]
         )
     elif type is DType.float8_e5m2fnuz:
         return writer.write(
@@ -1687,7 +1687,7 @@ alias float8_e5m2_to_str = StaticTuple[StringLiteral, 256](
     "nan",
 )
 
-alias float8_e4m3_to_str = StaticTuple[StringLiteral, 256](
+alias float8_e4m3fn_to_str = StaticTuple[StringLiteral, 256](
     "0.0",
     "0.001953125",
     "0.00390625",
