@@ -1969,19 +1969,19 @@ kgen.generator export @load_from_mem() {
 // Test struct generator elaboration.
 
 // CHECK-LABEL: kgen.struct.instance @"LinkedList,T=index"
-// CHECK-NEXT:    kgen.struct.info :type struct_inst<"LinkedList"[T]<:type index>(data: index, next: typevalue<#kgen.typeref<@"LinkedList,T=index">>)>
+// CHECK-SAME:    struct_inst<"LinkedList"[T]<:type index>(data: index, next: typevalue<#kgen.typeref<@"LinkedList,T=index">>)>
 
 // CHECK-LABEL: kgen.struct.instance @"LinkedList,T=none"
-// CHECK-NEXT:    kgen.struct.info :type struct_inst<"LinkedList"[T]<:type none>(data: none, next: typevalue<#kgen.typeref<@"LinkedList,T=none">>)>
-kgen.struct.generator @"LinkedList"<T: type> : type {
-  kgen.struct.info :type struct_inst<"LinkedList"[T]<:type T>(data: typevalue<T>, next: typevalue<inst_struct_ref(:type #kgen.typeref<@LinkedList<:type T>>)>)>
-}
+// CHECK-SAME:    struct_inst<"LinkedList"[T]<:type none>(data: none, next: typevalue<#kgen.typeref<@"LinkedList,T=none">>)>
+kgen.struct.generator @"LinkedList"<T: type> = struct_inst<
+  "LinkedList"[T]<:type T>(
+    data: typevalue<T>,
+    next: typevalue<inst_struct_ref(:type #kgen.typeref<@LinkedList<:type T>>)>
+  )>
 
 // CHECK-LABEL: kgen.struct.instance @NonParametric
-// CHECK-NEXT:    kgen.struct.info :type struct_inst<"NonParametric"(data: index)>
-kgen.struct.generator @NonParametric : type {
-  kgen.struct.info :type struct_inst<"NonParametric"(data: index)>
-}
+// CHECK-SAME:    struct_inst<"NonParametric"(data: index)>
+kgen.struct.generator @NonParametric = struct_inst<"NonParametric"(data: index)>
 
 kgen.generator @use_type<T: type>() {
   kgen.return
@@ -2014,10 +2014,8 @@ kgen.generator @get_array_type<T: type>() -> !kgen.type {
 }
 
 // CHECK: kgen.struct.instance @"WeirdStruct,T=index"
-// CHECK-NEXT: kgen.struct.info :type struct_inst<"WeirdStruct"(data: array<[[SIZEOF]], index>)>
-kgen.struct.generator @WeirdStruct<T: type> : type {
-  kgen.struct.info :type struct_inst<"WeirdStruct"(data: typevalue<apply(:() -> !kgen.type @get_array_type<:type T>)>)>
-}
+// CHECK-SAME: struct_inst<"WeirdStruct"(data: array<[[SIZEOF]], index>)>
+kgen.struct.generator @WeirdStruct<T: type> = struct_inst<"WeirdStruct"(data: typevalue<apply(:() -> !kgen.type @get_array_type<:type T>)>)>
 
 kgen.generator @use_type<T: type>() {
   kgen.return

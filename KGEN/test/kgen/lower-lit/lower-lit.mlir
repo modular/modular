@@ -125,7 +125,7 @@ lit.struct.decl @StructWithNestedFn<a_param> {
   }
 }
 
-// CHECK-LABEL: kgen.struct.generator @StructWithNestedFn<a_param> : type
+// CHECK-LABEL: kgen.struct.generator @StructWithNestedFn<a_param>
 
 // CHECK-LABEL: kgen.generator @topFunc
 lit.fn @topFunc() {
@@ -182,7 +182,7 @@ lit.struct.decl @Adder<size> {
 
 // CHECK-LABEL: kgen.generator @"A::foo"
 
-// CHECK-LABEL: kgen.struct.generator @A : type
+// CHECK-LABEL: kgen.struct.generator @A
 lit.struct.decl @A {
   lit.fn @foo(%self: !lit.struct<@A>) {
     kgen.return
@@ -192,7 +192,7 @@ lit.struct.decl @A {
 // CHECK-LABEL: kgen.generator @"B::foo"
 // CHECK-NEXT: call_param[(!kgen.struct<() memoryOnly>) -> (): @"A::foo"]
 
-// CHECK-LABEL: kgen.struct.generator @B : type
+// CHECK-LABEL: kgen.struct.generator @B
 lit.struct.decl @B {
   lit.fn @foo(%self: !lit.struct<@B>, %a: !lit.struct<@A>) {
     kgen.call_param[!lit.generator<("self": !lit.struct<@A>) -> ()>: @A::@foo](%a)
@@ -213,7 +213,7 @@ lit.fn @main(%a: !lit.struct<@A>, %b: !lit.struct<@B>) {
 
 // CHECK-LABEL: kgen.generator @"A::foo"<N, M>
 
-// CHECK-LABEL: kgen.struct.generator @A<N> : type
+// CHECK-LABEL: kgen.struct.generator @A<N>
 lit.struct.decl @A<N> {
   lit.fn @foo<M>(%self: !lit.struct<@A<N>>) -> index {
     %0 = kgen.param.constant = <add(N, M)>
@@ -409,7 +409,7 @@ lit.file_module @module {
     }
   }
 
-  // CHECK-LABEL: kgen.struct.generator @"module::Adder"<size> : type {
+  // CHECK-LABEL: kgen.struct.generator @"module::Adder"<size>
 }
 
 // CHECK-LABEL: kgen.generator @caller(%arg0: !kgen.struct<() memoryOnly>)

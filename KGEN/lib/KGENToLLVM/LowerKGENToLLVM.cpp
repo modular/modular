@@ -1213,7 +1213,7 @@ void LowerKGENToLLVMPass::runOnOperation() {
   target.addLegalOp<mlir::UnrealizedConversionCastOp>();
   target.addLegalOp<KGEN::CallIndirectOp>();
   target.addLegalOp<KGEN::CreateClosureOp>();
-  target.addLegalOp<KGEN::StructInstanceOp, KGEN::StructInfoOp>();
+  target.addLegalOp<KGEN::StructInstanceOp>();
 
   // Collect C exported symbols. The calling convention will have to be
   // rewritten after the lowering.

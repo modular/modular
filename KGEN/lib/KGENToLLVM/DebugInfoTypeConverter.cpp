@@ -309,9 +309,7 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(TypeConstantRefAttr attr) {
   assert(attr.isConstant() && "illegal non-concrete type-constant reference");
   auto structInst =
       symtab.lookup<StructInstanceOp>(attr.getSymbol().getLeafReference());
-  auto structInfo =
-      cast<StructInfoOp>(structInst.getBody().front().getTerminator());
-  return buildDebugType(cast<TypeParamAttr>(structInfo.getTypeConstant()));
+  return buildDebugType(cast<TypeParamAttr>(structInst.getTypeValue()));
 }
 
 KGEN::DebugInfoTypeConverter::DebugInfoTypeConverter(POPToLLVMTypeConverter &tc,
