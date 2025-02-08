@@ -332,9 +332,9 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     elif (
         d.type is DType.float32
         and d.size == 4
-        and a.type is DType.float8_e4m3
+        and a.type is DType.float8_e4m3fn
         and a.size == 16
-        and b.type is DType.float8_e4m3
+        and b.type is DType.float8_e4m3fn
         and b.size == 8
         and c.type is DType.float32
         and c.size == 4
@@ -693,7 +693,7 @@ fn wgmma_async[
                 layout_b = layout_b.value,
                 _type = __type_of(c_reg.value),
             ](desc_a_value, desc_b_value, c_reg.value)
-    elif a_type is DType.float8_e4m3 and b_type is DType.float8_e4m3:
+    elif a_type is DType.float8_e4m3fn and b_type is DType.float8_e4m3fn:
         if c_dtype is DType.uint32:
             return __mlir_op.`pop.nvvm.wgmma.mma_async`[
                 shape_m = m.value,
@@ -743,7 +743,7 @@ fn wgmma_async[
                 layout_b = layout_b.value,
                 _type = __type_of(c_reg.value),
             ](desc_a_value, desc_b_value, c_reg.value)
-    elif a_type is DType.float8_e4m3 and b_type is DType.float8_e5m2:
+    elif a_type is DType.float8_e4m3fn and b_type is DType.float8_e5m2:
         if c_dtype is DType.uint32:
             return __mlir_op.`pop.nvvm.wgmma.mma_async`[
                 shape_m = m.value,
@@ -768,7 +768,7 @@ fn wgmma_async[
                 layout_b = layout_b.value,
                 _type = __type_of(c_reg.value),
             ](desc_a_value, desc_b_value, c_reg.value)
-    elif a_type is DType.float8_e5m2 and b_type is DType.float8_e4m3:
+    elif a_type is DType.float8_e5m2 and b_type is DType.float8_e4m3fn:
         if c_dtype is DType.uint32:
             return __mlir_op.`pop.nvvm.wgmma.mma_async`[
                 shape_m = m.value,
