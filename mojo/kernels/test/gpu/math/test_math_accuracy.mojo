@@ -59,7 +59,7 @@ def run_elementwise[
         assert_almost_equal(
             out_host[i],
             expected_value,
-            msg="values did not match at position " + String(i),
+            msg=String("values did not match at position ", i),
             atol=atol,
             rtol=rtol,
         )

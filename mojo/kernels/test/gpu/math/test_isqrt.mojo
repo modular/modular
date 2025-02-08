@@ -60,11 +60,8 @@ def run_elementwise[
     ctx.synchronize()
 
     for i in range(length):
-        var msg = (
-            "values did not match at position "
-            + String(i)
-            + " for dtype="
-            + String(type)
+        var msg = String(
+            "values did not match at position ", i, " for dtype=", type
         )
 
         @parameter

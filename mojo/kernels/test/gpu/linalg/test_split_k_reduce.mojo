@@ -52,12 +52,9 @@ fn _create_host_buffer[
 fn _get_test_name[
     type: DType, shape_a: DimList, shape_b: DimList
 ](shape_a_dim: IndexList[2], shape_b_dim: IndexList[2],) -> String:
-    var test_str = String("test-case(")
-    test_str += String(type)
-    test_str += ") : "
-    test_str += "a -> " + String(shape_a_dim) + " and "
-    test_str += "b -> " + String(shape_b_dim)
-    return test_str
+    return String(
+        "test-case(", type, ") : a -> ", shape_a_dim, " and b ->", shape_b_dim
+    )
 
 
 fn _split_k_reduce_verify[
