@@ -319,10 +319,6 @@ struct _OpBuilderList[T: CollectionElement]:
         self.elements = List[T]()
 
     @implicit
-    fn __init__(out self, empty: ListLiteral[]):
-        self.elements = List[T]()
-
-    @implicit
     fn __init__(out self, owned elements: List[T]):
         self.elements = elements^
 
@@ -374,11 +370,13 @@ struct Operation(CollectionElement, Stringable, Writable):
         name: String,
         location: Location,
         *,
-        attributes: _OpBuilderList[NamedAttribute] = [],
-        operands: _OpBuilderList[Value] = [],
-        results: _OpBuilderList[Type] = [],
-        regions: _OpBuilderList[Region] = [],
-        successors: _OpBuilderList[Block] = [],
+        attributes: _OpBuilderList[NamedAttribute] = _OpBuilderList[
+            NamedAttribute
+        ](),
+        operands: _OpBuilderList[Value] = _OpBuilderList[Value](),
+        results: _OpBuilderList[Type] = _OpBuilderList[Type](),
+        regions: _OpBuilderList[Region] = _OpBuilderList[Region](),
+        successors: _OpBuilderList[Block] = _OpBuilderList[Block](),
     ):
         var state = _c.IR.mlirOperationStateGet(
             StaticString(ptr=name.unsafe_ptr(), length=len(name)), location.c
@@ -399,11 +397,13 @@ struct Operation(CollectionElement, Stringable, Writable):
         location: Location,
         *,
         enable_result_type_inference: Bool,
-        attributes: _OpBuilderList[NamedAttribute] = [],
-        operands: _OpBuilderList[Value] = [],
-        results: _OpBuilderList[Type] = [],
-        regions: _OpBuilderList[Region] = [],
-        successors: _OpBuilderList[Block] = [],
+        attributes: _OpBuilderList[NamedAttribute] = _OpBuilderList[
+            NamedAttribute
+        ](),
+        operands: _OpBuilderList[Value] = _OpBuilderList[Value](),
+        results: _OpBuilderList[Type] = _OpBuilderList[Type](),
+        regions: _OpBuilderList[Region] = _OpBuilderList[Region](),
+        successors: _OpBuilderList[Block] = _OpBuilderList[Block](),
     ) raises:
         var state = _c.IR.mlirOperationStateGet(
             StaticString(ptr=name.unsafe_ptr(), length=len(name)), location.c
