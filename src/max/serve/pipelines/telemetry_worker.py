@@ -62,7 +62,7 @@ async def start_telemetry_worker(
     )
     worker.start()
     monitor = ProcessMonitor(
-        pc, worker, poll_s=100e-3, max_time_s=10.0, unhealthy_poll_s=500e-3
+        pc, worker, poll_s=100e-3, max_time_s=60.0, unhealthy_poll_s=500e-3
     )
 
     healthy = await monitor.until_healthy()
