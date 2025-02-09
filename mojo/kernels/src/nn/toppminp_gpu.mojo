@@ -16,13 +16,13 @@ from builtin.dtype import _uint_type_of_width
 from builtin.io import _printf
 from gpu import (
     WARP_SIZE,
+    barrier,
     block_dim,
     block_idx,
     grid_dim,
-    thread_idx,
-    barrier,
     lane_id,
     shuffle_down,
+    thread_idx,
 )
 from gpu.host import DeviceContext
 from gpu.host.dim import Dim
@@ -32,9 +32,9 @@ from memory import UnsafePointer, bitcast, stack_allocation
 from nn.softmax import _softmax_gpu
 from nn.topk import (
     TopK_2,
+    _block_reduce_topk,
     _get_shmem_size_stg_1,
     _topk_dead_val,
-    _block_reduce_topk,
 )
 
 from utils import IndexList

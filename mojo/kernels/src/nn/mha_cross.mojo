@@ -4,6 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from math import ceildiv
+from sys import alignof, simdwidthof
+
 from algorithm.functional import vectorize
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -11,12 +14,11 @@ from gpu import block_idx, global_idx
 from gpu.host import DeviceContext
 from kv_cache.types import KVCacheT
 from layout.tensor_core import get_accum_type
-from math import ceildiv
 from memory import UnsafePointer
-from nn.mha import _kernel_mask, MHAConfig
+from nn.mha import MHAConfig, _kernel_mask
 from nn.mha_mask import MHAMask
 from nn.softmax import _softmax_gpu
-from sys import alignof, simdwidthof
+
 from utils.index import Index, IndexList
 
 

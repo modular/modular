@@ -12,11 +12,11 @@ from gpu.host.info import is_cpu, is_gpu
 from kv_cache.types import (
     ContinuousBatchingKVCache,
     ContinuousBatchingKVCacheCollection,
-    PagedKVCache,
-    PagedKVCacheCollection,
     KVCacheStaticParams,
     KVCacheT,
     KVCollectionT,
+    PagedKVCache,
+    PagedKVCacheCollection,
 )
 from linalg.matmul import elementwise_epilogue_type, matmul
 from memory import UnsafePointer

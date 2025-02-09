@@ -12,40 +12,48 @@ from os import abort
 from sys import (
     alignof,
     bitwidthof,
-    has_nvidia_gpu_accelerator,
+    env_get_bool,
     has_amd_gpu_accelerator,
-    simdwidthof,
-    sizeof,
+    has_nvidia_gpu_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
-    env_get_bool,
+    simdwidthof,
+    sizeof,
 )
 from sys.intrinsics import _type_is_eq
-from bit import next_power_of_two
+
 from algorithm import elementwise
 from algorithm.functional import tile_and_unswitch, unswitch, vectorize
+from bit import next_power_of_two
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
 from gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
+    barrier,
     block_dim,
     block_idx,
-    thread_idx,
     global_idx,
-    barrier,
     lane_id,
+    thread_idx,
     warp_reduce,
-    MAX_THREADS_PER_BLOCK_METADATA,
 )
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.info import _get_info_from_target, A100
+from gpu.host.info import A100, _get_info_from_target
 from gpu.memory import (
     AddressSpace,
-    external_memory,
     async_copy_commit_group,
     async_copy_wait_all,
+    external_memory,
 )
-from gpu.shuffle import warp_broadcast
+from gpu.shuffle import (
+    lane_group_max,
+    lane_group_sum,
+    shuffle_idx,
+    warp_broadcast,
+    warp_max,
+    warp_sum,
+)
 from kv_cache.types import KVCacheStaticParams, KVCacheT, PagedKVCache
 from layout.int_tuple import IntTuple
 from layout.layout import *
@@ -54,19 +62,15 @@ from layout.layout_tensor import (
     LayoutTensorIter,
     copy_dram_to_sram_async,
     copy_local_to_dram,
-    copy_local_to_sram,
     copy_local_to_local,
+    copy_local_to_sram,
     copy_sram_to_dram,
 )
-from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
-from layout.swizzle import make_ldmatrix_swizzle, make_swizzle, Swizzle
-from layout.tensor_builder import LayoutTensorBuild as tb, static
-from layout.tensor_core import (
-    get_accum_type,
-    get_fragment_size,
-    get_mma_shape,
-)
+from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
+from layout.tensor_builder import LayoutTensorBuild as tb
+from layout.tensor_builder import static
+from layout.tensor_core import get_accum_type, get_fragment_size, get_mma_shape
 from linalg._multistage_gemm_gpu import multistage_mma
 from linalg.bmm import batched_matmul
 from linalg.matmul import matmul
@@ -75,7 +79,7 @@ from memory import UnsafePointer, stack_allocation
 from memory.pointer import AddressSpace as _AddressSpace
 from memory.unsafe import bitcast
 from nn.mha_mask import MHAMask, NullMask, TileMaskStatus
-from nn.mha_operand import MHAOperand, NDBufferMHAOperand, KVCacheMHAOperand
+from nn.mha_operand import KVCacheMHAOperand, MHAOperand, NDBufferMHAOperand
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
@@ -84,18 +88,11 @@ from utils.index import Index, IndexList
 from utils.numerics import min_or_neg_inf, neg_inf
 from utils.static_tuple import StaticTuple
 
-from gpu.shuffle import (
-    lane_group_max,
-    lane_group_sum,
-    shuffle_idx,
-    warp_max,
-    warp_sum,
-)
 from .softmax import (
     _online_softmax_iter_for_mma_output,
+    _online_softmax_iter_for_mma_output_split_warp_reduce,
     _softmax_gpu,
     softmax,
-    _online_softmax_iter_for_mma_output_split_warp_reduce,
 )
 
 # ===-----------------------------------------------------------------------===#

@@ -11,15 +11,15 @@ from sys.info import _current_target, simdwidthof
 from algorithm.functional import elementwise
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
-from gpu.host.info import is_gpu, is_cpu
+from gpu.host.info import is_cpu, is_gpu
 from kv_cache.types import (
     ContinuousBatchingKVCache,
     ContinuousBatchingKVCacheCollection,
-    PagedKVCache,
-    PagedKVCacheCollection,
     KVCacheStaticParams,
     KVCacheT,
     KVCollectionT,
+    PagedKVCache,
+    PagedKVCacheCollection,
 )
 from linalg.matmul import elementwise_epilogue_type, matmul
 from memory import UnsafePointer, memcpy

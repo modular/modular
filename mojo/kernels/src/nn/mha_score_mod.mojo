@@ -4,9 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from bit import is_power_of_two, log2_floor
 from math import exp2, iota
 from sys import bitwidthof
+
+from bit import is_power_of_two, log2_floor
 
 from utils.index import IndexList
 

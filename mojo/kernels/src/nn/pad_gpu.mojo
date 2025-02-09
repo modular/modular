@@ -3,11 +3,12 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+from buffer import Buffer, NDBuffer
 from gpu import *
 from gpu.host import DeviceContext, Dim
 from memory import UnsafePointer
+
 from utils.index import IndexList
-from buffer import Buffer, NDBuffer
 
 # ===-----------------------------------------------------------------------===#
 # pad GPU

@@ -7,9 +7,9 @@
 
 from math import isclose
 from random import rand
-from memory import UnsafePointer
-from buffer import NDBuffer, DimList
 
+from buffer import DimList, NDBuffer
+from memory import UnsafePointer
 from nn.conv import Naive2dConvolution
 
 from utils.index import Index, IndexList

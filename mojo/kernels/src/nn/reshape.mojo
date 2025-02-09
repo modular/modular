@@ -6,9 +6,7 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from register import (
-    register_internal,
-)
+from register import register_internal
 
 from utils.index import IndexList
 from utils.loop import unroll

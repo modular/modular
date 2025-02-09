@@ -17,7 +17,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._compile import _get_gpu_target
-from gpu.host.info import is_gpu, is_cpu
+from gpu.host.info import is_cpu, is_gpu
 from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
 from register import register_internal
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level

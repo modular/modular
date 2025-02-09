@@ -7,7 +7,6 @@
 from collections import OptionalReg
 from math import align_down, ceildiv, isqrt
 from sys.info import alignof, simdwidthof
-from bit import log2_floor
 
 from algorithm import map_reduce, mean, variance, vectorize
 from algorithm.functional import (
@@ -15,27 +14,23 @@ from algorithm.functional import (
     sync_parallelize,
 )
 from algorithm.reduction import _simd_sum, _simd_sum_elementwise
+from bit import log2_floor
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
 from gpu import (
     WARP_SIZE,
+    barrier,
     block_dim,
     block_idx,
-    thread_idx,
-    barrier,
     lane_id,
     syncwarp,
+    thread_idx,
 )
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
-from gpu.host.info import is_gpu, is_cpu
+from gpu.host.info import is_cpu, is_gpu
 from gpu.memory import AddressSpace
-from gpu.shuffle import (
-    shuffle_down,
-    warp_broadcast,
-    warp_sum,
-    lane_group_sum,
-)
+from gpu.shuffle import lane_group_sum, shuffle_down, warp_broadcast, warp_sum
 from memory import stack_allocation
 from register import register_internal
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level

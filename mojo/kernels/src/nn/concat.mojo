@@ -20,7 +20,7 @@ from algorithm.functional import (
 from buffer import NDBuffer
 from gpu import block_idx, thread_idx
 from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host.info import is_valid_target, is_cpu
+from gpu.host.info import is_cpu, is_valid_target
 from memory import UnsafePointer, memcpy
 from register import register_internal
 from runtime.asyncrt import MojoCallContextPtr

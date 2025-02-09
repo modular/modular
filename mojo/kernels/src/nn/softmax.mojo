@@ -6,7 +6,7 @@
 
 from math import align_down, align_up, ceildiv, exp, exp2, log
 from os import abort
-from sys import alignof, simdwidthof, is_nvidia_gpu
+from sys import alignof, is_nvidia_gpu, simdwidthof
 
 from algorithm import sync_parallelize, vectorize
 from algorithm._gpu.reduction import block_reduce, row_reduce
@@ -18,21 +18,21 @@ from bit import log2_floor
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
 from builtin.uint import _temp_uint_from_int
-from gpu import WARP_SIZE, block_idx, grid_dim, thread_idx, barrier, lane_id
+from gpu import WARP_SIZE, barrier, block_idx, grid_dim, lane_id, thread_idx
 from gpu.host import DeviceAttribute, DeviceContext
-from gpu.host.info import is_gpu, is_cpu
+from gpu.host.info import is_cpu, is_gpu
 from gpu.memory import AddressSpace
 from gpu.shuffle import (
+    lane_group_max_and_broadcast,
+    lane_group_sum_and_broadcast,
     shuffle_up,
     shuffle_xor,
     warp_broadcast,
-    lane_group_max_and_broadcast,
-    lane_group_sum_and_broadcast,
 )
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
-from layout.tensor_core import get_fragment_size
 from layout.tensor_builder import LayoutTensorBuild as tb
+from layout.tensor_core import get_fragment_size
 from memory import UnsafePointer, stack_allocation
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg

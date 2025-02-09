@@ -4,6 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections import List, OptionalReg
+from math import ceildiv, exp, iota
+from random import random_float64
+from sys import alignof, simdwidthof, sizeof
+
 from algorithm.functional import parallelize_over_rows
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from bit import log2_floor
@@ -11,33 +16,28 @@ from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
 from builtin.io import _printf
 from builtin.sort import _quicksort
-from collections import OptionalReg, List
 from gpu import (
     WARP_SIZE,
+    barrier,
     block_dim,
     block_idx,
     grid_dim,
-    thread_idx,
-    barrier,
     lane_id,
     shuffle_down,
+    thread_idx,
     warp_broadcast,
 )
-
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.dim import Dim
 from gpu.host.info import is_cpu
 from gpu.memory import AddressSpace, external_memory
 from gpu.random import Random
 from gpu.shuffle import warp_reduce
-from math import ceildiv, exp
-from math import exp, iota
-from memory import UnsafePointer, Span, stack_allocation
+from memory import Span, UnsafePointer, stack_allocation
 from nn.gather_scatter import normalize_neg_index
 from nn.reshape import reshape
-from random import random_float64
 from runtime.asyncrt import MojoCallContextPtr
-from sys import alignof, simdwidthof, sizeof
+
 from utils import IndexList
 from utils.numerics import max_or_inf, min_or_neg_inf
 
