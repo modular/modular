@@ -21,17 +21,18 @@ from collections.string import StringSlice
 ```
 """
 
-from bit import count_leading_zeros, count_trailing_zeros
 from collections import List, Optional
-from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string._utf8_validation import _is_valid_utf8
-from memory import UnsafePointer, memcmp, memcpy, Span, pack_bits
-from memory.memory import _memcmp_impl_unconstrained
-from sys import bitwidthof, simdwidthof
-from sys.intrinsics import unlikely, likely
-from sys.ffi import c_char
+from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from os import PathLike
+from sys import bitwidthof, simdwidthof
+from sys.ffi import c_char
+from sys.intrinsics import likely, unlikely
+
+from bit import count_leading_zeros, count_trailing_zeros
+from memory import Span, UnsafePointer, memcmp, memcpy, pack_bits
+from memory.memory import _memcmp_impl_unconstrained
 
 alias StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice."""

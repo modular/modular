@@ -11,18 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import UnsafePointer, Span
-from memory.pointer import _GPUAddressSpace
+from collections import InlineArray
 from os.atomic import Atomic, _compare_exchange_weak_integral_impl
 from sys.intrinsics import (
+    ballot,
+    implicitarg_ptr,
     lane_id,
     readfirstlane,
     sendmsg,
-    implicitarg_ptr,
-    ballot,
 )
 from time import sleep
-from collections import InlineArray
+
+from memory import Span, UnsafePointer
+from memory.pointer import _GPUAddressSpace
 
 # NOTE: MOST OF THE CODE HERE IS ADAPTED FROM
 # AMD'S `device-libs`.

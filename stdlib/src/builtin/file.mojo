@@ -35,7 +35,7 @@ from os import PathLike, abort
 from sys import external_call, sizeof
 from sys.ffi import OpaquePointer
 
-from memory import AddressSpace, UnsafePointer, Span
+from memory import AddressSpace, Span, UnsafePointer
 
 from utils import StringSlice, write_buffered
 

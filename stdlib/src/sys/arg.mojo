@@ -30,11 +30,10 @@ def main():
 ```
 """
 
+from collections.string import StringSlice
 from sys import external_call
 
 from memory import UnsafePointer
-
-from collections.string import StringSlice
 
 
 # TODO: When we have global variables, this should be a global list.

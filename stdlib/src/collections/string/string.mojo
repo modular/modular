@@ -13,26 +13,8 @@
 """Implements basic object methods for working with strings."""
 
 from collections import KeyElement, List, Optional
-from collections.string import CharsIter
 from collections._index_normalization import normalize_index
-from hashlib._hasher import _HashableWithHasher, _Hasher
-from os import abort
-from sys import bitwidthof, llvm_intrinsic
-from sys.ffi import c_char
-from sys.intrinsics import _type_is_eq
-from utils.write import write_buffered, _TotalWritableBytes, _WriteBufferHeap
-
-from bit import count_leading_zeros
-from memory import UnsafePointer, memcmp, memcpy, Span
-from python import PythonObject
-
-from utils import (
-    IndexList,
-    Variant,
-    Writable,
-    Writer,
-    write_args,
-)
+from collections.string import CharsIter
 from collections.string._unicode import (
     is_lowercase,
     is_uppercase,
@@ -41,12 +23,24 @@ from collections.string._unicode import (
 )
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string.string_slice import (
-    StringSlice,
     StaticString,
+    StringSlice,
     _StringSliceIter,
     _to_string_list,
     _utf8_byte_type,
 )
+from hashlib._hasher import _HashableWithHasher, _Hasher
+from os import abort
+from sys import bitwidthof, llvm_intrinsic
+from sys.ffi import c_char
+from sys.intrinsics import _type_is_eq
+
+from bit import count_leading_zeros
+from memory import Span, UnsafePointer, memcmp, memcpy
+from python import PythonObject
+
+from utils import IndexList, Variant, Writable, Writer, write_args
+from utils.write import _TotalWritableBytes, _WriteBufferHeap, write_buffered
 
 # ===----------------------------------------------------------------------=== #
 # ord

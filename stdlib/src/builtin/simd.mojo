@@ -46,19 +46,19 @@ from sys import (
 from sys._assembly import inlined_assembly
 from sys.info import _current_arch, _is_sm_9x
 
-from bit import pop_count, byte_swap
+from bit import byte_swap, pop_count
 from builtin._format_float import _write_float
 from builtin.dtype import _uint_type_of_width
 from builtin.format_int import _try_write_int
 from builtin.io import _snprintf
 from documentation import doc_private
-from memory import UnsafePointer, bitcast, memcpy, Span
+from memory import Span, UnsafePointer, bitcast, memcpy
 
 from utils import IndexList, StaticTuple
 from utils._visualizers import lldb_formatter_wrapping_type
 from utils.numerics import FPUtils
-from utils.numerics import isnan as _isnan
 from utils.numerics import isinf as _isinf
+from utils.numerics import isnan as _isnan
 from utils.numerics import max_finite as _max_finite
 from utils.numerics import max_or_inf as _max_or_inf
 from utils.numerics import min_finite as _min_finite

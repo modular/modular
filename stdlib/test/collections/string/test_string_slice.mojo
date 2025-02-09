@@ -12,16 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from testing import assert_equal, assert_false, assert_true, assert_raises
-
+from collections.string._utf8_validation import _is_valid_utf8
 from collections.string.string_slice import (
     StringSlice,
     _count_utf8_continuation_bytes,
 )
-from collections.string._utf8_validation import _is_valid_utf8
-from memory import Span, UnsafePointer
+from sys.info import alignof, sizeof
 
-from sys.info import sizeof, alignof
+from memory import Span, UnsafePointer
+from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
 fn test_string_slice_layout() raises:

@@ -20,12 +20,13 @@ from sys import PrefetchLocality
 """
 
 import math
+from sys.info import _is_sm_9x
 
 from memory import AddressSpace, UnsafePointer
 from memory.pointer import _GPUAddressSpace
-from sys.info import _is_sm_9x
+
 from ._assembly import inlined_assembly
-from .info import is_nvidia_gpu, is_amd_gpu, sizeof
+from .info import is_amd_gpu, is_nvidia_gpu, sizeof
 
 # ===-----------------------------------------------------------------------===#
 # llvm_intrinsic

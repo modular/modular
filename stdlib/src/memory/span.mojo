@@ -21,9 +21,9 @@ from memory import Span
 """
 
 from collections import InlineArray
+from sys.info import simdwidthof
 
 from memory import Pointer, UnsafePointer
-from sys.info import simdwidthof
 
 
 trait AsBytes:

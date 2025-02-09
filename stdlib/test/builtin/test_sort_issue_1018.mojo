@@ -15,7 +15,7 @@
 
 from random import rand
 
-from memory import UnsafePointer, Span
+from memory import Span, UnsafePointer
 
 
 fn sort_test[D: DType, name: StringLiteral](size: Int, max: Int) raises:

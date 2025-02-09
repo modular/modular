@@ -12,6 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
+from collections.string import StringSlice
+from collections.string.string import (
+    _calc_initial_buffer_size_int32,
+    _calc_initial_buffer_size_int64,
+)
+
+from memory import UnsafePointer
+from python import Python
 from testing import (
     assert_equal,
     assert_false,
@@ -19,14 +27,6 @@ from testing import (
     assert_raises,
     assert_true,
 )
-
-from collections.string import StringSlice
-from collections.string.string import (
-    _calc_initial_buffer_size_int32,
-    _calc_initial_buffer_size_int64,
-)
-from memory import UnsafePointer
-from python import Python
 
 
 @value

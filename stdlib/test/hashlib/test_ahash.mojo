@@ -18,7 +18,7 @@ from hashlib.hash import hash as old_hash
 
 from bit import pop_count
 from builtin._location import __call_location
-from memory import memset_zero, stack_allocation, Span
+from memory import Span, memset_zero, stack_allocation
 from testing import assert_equal, assert_not_equal, assert_true
 
 # Source: https://www.101languages.net/arabic/most-common-arabic-words/

@@ -13,12 +13,11 @@
 # REQUIRES: disabled
 # RUN: %mojo --debug-level full %s
 
+from collections.string import InlineString
+from collections.string.inline_string import _FixedString
 from os import abort
 
 from testing import assert_equal, assert_true
-
-from collections.string import InlineString
-from collections.string.inline_string import _FixedString
 
 
 def main():

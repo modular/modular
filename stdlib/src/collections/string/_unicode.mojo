@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import UnsafePointer, memcpy
-from memory import Span
 from collections.string._unicode_lookups import *
+
+from memory import Span, UnsafePointer, memcpy
 
 
 fn _uppercase_mapping_index(rune: Char) -> Int:

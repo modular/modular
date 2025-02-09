@@ -11,10 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import UnsafePointer
 from collections import Optional
 from collections._index_normalization import normalize_index
 from os import abort
+
+from memory import UnsafePointer
 
 
 @value

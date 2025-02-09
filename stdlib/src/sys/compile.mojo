@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements functions that return compile-time information.
 """
-from .param_env import env_get_string, env_get_int
+from .param_env import env_get_int, env_get_string
 
 # ===----------------------------------------------------------------------=== #
 # OptimizationLevel

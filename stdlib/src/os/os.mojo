@@ -26,7 +26,6 @@ from sys.ffi import OpaquePointer, c_char
 
 from memory import UnsafePointer
 
-
 from .path import isdir, split
 from .pathlike import PathLike
 

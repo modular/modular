@@ -72,9 +72,9 @@ from .intrinsics import (
 )
 from .param_env import (
     env_get_bool,
+    env_get_dtype,
     env_get_int,
     env_get_string,
-    env_get_dtype,
     is_defined,
 )
 from .terminate import exit

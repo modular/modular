@@ -27,7 +27,6 @@ from sys.intrinsics import _type_is_eq
 
 from memory import UnsafePointer
 
-
 from ._cpython import CPython, PyObjectPtr
 from .python import Python, _get_global_python_itf
 

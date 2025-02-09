@@ -28,6 +28,7 @@ from sys.intrinsics import (
     strided_load,
     strided_store,
 )
+
 from bit import is_power_of_two
 from memory.memory import _free, _malloc
 

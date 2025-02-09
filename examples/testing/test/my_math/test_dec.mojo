@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from my_math import dec
-
 from testing import assert_equal, assert_raises
 
 

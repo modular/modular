@@ -13,14 +13,15 @@
 # RUN: %mojo %s
 
 from collections import LinkedList, Optional
-from testing import assert_equal, assert_raises, assert_true, assert_false
+
 from test_utils import (
-    CopyCounter,
-    MoveCounter,
-    DtorCounter,
-    g_dtor_count,
     CopyCountedStruct,
+    CopyCounter,
+    DtorCounter,
+    MoveCounter,
+    g_dtor_count,
 )
+from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
 def test_construction():

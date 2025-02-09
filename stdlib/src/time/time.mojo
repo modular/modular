@@ -24,8 +24,8 @@ from os import abort
 from sys import (
     external_call,
     is_amd_gpu,
-    is_nvidia_gpu,
     is_gpu,
+    is_nvidia_gpu,
     llvm_intrinsic,
     os_is_linux,
     os_is_windows,

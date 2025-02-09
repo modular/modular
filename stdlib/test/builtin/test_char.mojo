@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from testing import assert_true, assert_false, assert_equal, assert_not_equal
+from testing import assert_equal, assert_false, assert_not_equal, assert_true
 
 
 def test_char_validity():

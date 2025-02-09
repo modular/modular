@@ -12,12 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """Implements a foreign functions interface (FFI)."""
 
+from collections.string import StringSlice
 from os import abort
 from sys._libc import dlclose, dlerror, dlopen, dlsym
 
 from memory import UnsafePointer
-
-from collections.string import StringSlice
 
 from .info import is_64bit, os_is_linux, os_is_macos, os_is_windows
 from .intrinsics import _mlirtype_is_eq

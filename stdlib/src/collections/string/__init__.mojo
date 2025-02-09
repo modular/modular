@@ -12,12 +12,5 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the string package."""
 
-from .string import (
-    String,
-    ascii,
-    atof,
-    atol,
-    chr,
-    ord,
-)
-from .string_slice import StringSlice, StaticString, CharsIter
+from .string import String, ascii, atof, atol, chr, ord
+from .string_slice import CharsIter, StaticString, StringSlice

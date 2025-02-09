@@ -13,9 +13,9 @@
 """Establishes the contract between `Writer` and `Writable` types."""
 
 from collections import InlineArray
-from sys.info import is_gpu, is_nvidia_gpu, is_amd_gpu
+from sys.info import is_amd_gpu, is_gpu, is_nvidia_gpu
 
-from memory import UnsafePointer, memcpy, Span
+from memory import Span, UnsafePointer, memcpy
 
 from utils import StaticString
 

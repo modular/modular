@@ -24,7 +24,7 @@ from os import abort
 from sys import sizeof
 from sys.intrinsics import _type_is_eq
 
-from memory import Pointer, UnsafePointer, memcpy, Span
+from memory import Pointer, Span, UnsafePointer, memcpy
 
 from .optional import Optional
 

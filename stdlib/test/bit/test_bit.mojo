@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %bare-mojo %s
 
+from math import floor, log2
+
 from bit import (
-    next_power_of_two,
-    prev_power_of_two,
     bit_not,
     bit_reverse,
     bit_width,
@@ -22,12 +22,13 @@ from bit import (
     count_leading_zeros,
     count_trailing_zeros,
     is_power_of_two,
+    log2_floor,
+    next_power_of_two,
     pop_count,
+    prev_power_of_two,
     rotate_bits_left,
     rotate_bits_right,
-    log2_floor,
 )
-from math import log2, floor
 from testing import assert_equal
 
 

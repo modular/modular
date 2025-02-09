@@ -16,13 +16,12 @@
 
 from collections import Dict, Optional
 from collections.string import String
+from collections.string._utf8_validation import _is_valid_utf8
 from os import abort
 from pathlib import _dir_of_current_file
 from random import random_si64, seed
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run
-
-from collections.string._utf8_validation import _is_valid_utf8
 
 
 # ===-----------------------------------------------------------------------===#

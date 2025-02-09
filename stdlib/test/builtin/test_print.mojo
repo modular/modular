@@ -14,9 +14,8 @@
 
 
 import sys
-from tempfile import NamedTemporaryFile
-
 from collections.string import StaticString
+from tempfile import NamedTemporaryFile
 
 from builtin._location import __call_location, _SourceLocation
 from testing import assert_equal

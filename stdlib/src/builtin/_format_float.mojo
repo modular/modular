@@ -28,7 +28,7 @@ from math import log2
 from sys.info import sizeof
 
 from builtin.io import _printf
-from memory import bitcast, Span
+from memory import Span, bitcast
 
 from utils import StaticTuple
 from utils.numerics import FPUtils, isinf, isnan

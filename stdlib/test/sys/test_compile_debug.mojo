@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %bare-mojo -O0 %s
 
-from sys.compile import OptimizationLevel, DebugLevel
+from sys.compile import DebugLevel, OptimizationLevel
 
 from testing import assert_equal
 

@@ -15,14 +15,7 @@
 """
 
 from collections import KeyElement, List
-from collections.string import (
-    String,
-    ascii,
-    atof,
-    atol,
-    chr,
-    ord,
-)
+from collections.string import String, ascii, atof, atol, chr, ord
 from hashlib.hash import Hashable, hash
 
 from builtin.anytype import AnyType, UnknownDestructibility
@@ -35,14 +28,14 @@ from builtin.builtin_list import (
     VariadicPack,
 )
 from builtin.builtin_slice import Slice, slice
-from builtin.comparable import (
-    LessThanComparable,
-    GreaterThanComparable,
-    LessThanOrEqualComparable,
-    GreaterThanOrEqualComparable,
-    Comparable,
-)
 from builtin.char import Char
+from builtin.comparable import (
+    Comparable,
+    GreaterThanComparable,
+    GreaterThanOrEqualComparable,
+    LessThanComparable,
+    LessThanOrEqualComparable,
+)
 from builtin.constrained import constrained
 from builtin.coroutine import AnyCoroutine, Coroutine, RaisingCoroutine
 from builtin.debug_assert import debug_assert
@@ -56,10 +49,10 @@ from builtin.floatable import Floatable, FloatableRaising, float
 from builtin.format_int import bin, hex, oct
 from builtin.identifiable import Identifiable, StringableIdentifiable
 from builtin.int import (
+    ImplicitlyIntable,
     Indexer,
     Int,
     Intable,
-    ImplicitlyIntable,
     IntableRaising,
     index,
     int,
@@ -88,10 +81,10 @@ from builtin.simd import (
     SIMD,
     BFloat16,
     Byte,
-    Float8_e5m2,
-    Float8_e5m2fnuz,
     Float8_e4m3fn,
     Float8_e4m3fnuz,
+    Float8_e5m2,
+    Float8_e5m2fnuz,
     Float16,
     Float32,
     Float64,
@@ -134,11 +127,11 @@ from builtin.value import (
     ExplicitlyCopyable,
     Movable,
     RepresentableCollectionElement,
-    WritableCollectionElement,
     StringableCollectionElement,
+    WritableCollectionElement,
 )
 from documentation import doc_private
 from memory import AddressSpace, Pointer
-
 from memory.span import AsBytes
+
 from utils import Writable, Writer

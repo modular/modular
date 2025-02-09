@@ -15,13 +15,13 @@
 from collections import List
 from sys.info import sizeof
 
-from memory import UnsafePointer, Span
+from memory import Span, UnsafePointer
 from test_utils import (
-    CopyCounter,
-    MoveCounter,
-    DtorCounter,
-    g_dtor_count,
     CopyCountedStruct,
+    CopyCounter,
+    DtorCounter,
+    MoveCounter,
+    g_dtor_count,
 )
 from testing import assert_equal, assert_false, assert_raises, assert_true
 

@@ -18,6 +18,7 @@ Documentation for these functions can be found online at:
 """
 
 from collections import InlineArray, Optional
+from collections.string import StringSlice
 from os import abort, getenv, setenv
 from os.path import dirname
 from pathlib import Path
@@ -37,8 +38,6 @@ from sys.ffi import (
 from memory import UnsafePointer
 from python._bindings import PyMojoObject, Pythonable, Typed_initproc
 from python.python import _get_global_python_itf
-
-from collections.string import StringSlice
 
 # ===-----------------------------------------------------------------------===#
 # Raw Bindings
