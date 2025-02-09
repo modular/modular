@@ -158,13 +158,16 @@ def execute_kv_cache_ragged_rope[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            fused_qk_rope_ragged[CollectionType.CacheType, target="gpu",](
+            fused_qk_rope_ragged[
+                CollectionType.CacheType,
+                interleaved=False,
+                target="gpu",
+            ](
                 q_device.tensor,
                 input_row_offsets_device.tensor,
                 kv_collection_device,
                 freqs_cis_table_device.tensor,
                 0,
-                False,
                 output_device.tensor,
                 ctx,
             )
