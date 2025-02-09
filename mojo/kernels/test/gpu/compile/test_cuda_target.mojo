@@ -8,21 +8,21 @@
 
 from math import erf
 from sys.info import is_nvidia_gpu, simdwidthof
-from bit import log2_floor
 
 from algorithm.functional import elementwise
+from bit import log2_floor
 from builtin.io import _printf
 from gpu import (
     WARP_SIZE,
+    barrier,
     block_dim,
     block_idx,
-    thread_idx,
     global_idx,
-    barrier,
     lane_id,
     shuffle_down,
     shuffle_up,
     shuffle_xor,
+    thread_idx,
 )
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code_asm, _get_gpu_target

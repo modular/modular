@@ -8,20 +8,17 @@
 
 from math import ceildiv, isclose
 from random import random_float64
-from sys import (
-    has_nvidia_gpu_accelerator,
-    has_amd_gpu_accelerator,
-)
+from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
 from gpu import (
     WARP_SIZE,
+    barrier,
     block_dim,
     block_idx,
-    grid_dim,
-    thread_idx,
     global_idx,
-    barrier,
+    grid_dim,
     lane_id,
+    thread_idx,
 )
 from gpu.host import DeviceContext, Dim
 from layout import *

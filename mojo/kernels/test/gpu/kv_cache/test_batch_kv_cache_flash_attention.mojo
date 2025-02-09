@@ -9,6 +9,7 @@
 
 from collections import OptionalReg
 from math import isqrt
+from sys import has_nvidia_gpu_accelerator
 
 from algorithm import max as tensor_max
 from buffer import Buffer, Dim, DimList, NDBuffer
@@ -21,7 +22,6 @@ from nn.mha import MHAConfig, flash_attention, mha_gpu_naive
 from nn.mha_mask import NullMask
 from nn.mha_score_mod import IdentityScoreMod
 from runtime.asyncrt import MojoCallContextPtr
-from sys import has_nvidia_gpu_accelerator
 from testing import assert_almost_equal, assert_equal
 
 from utils import IndexList

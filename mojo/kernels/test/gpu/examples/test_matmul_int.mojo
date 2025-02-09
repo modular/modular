@@ -10,11 +10,11 @@ from math import ceildiv
 from buffer import DimList, NDBuffer
 from gpu import (
     AddressSpace,
+    barrier,
     block_dim,
     block_idx,
-    thread_idx,
     global_idx,
-    barrier,
+    thread_idx,
 )
 from gpu.host import DeviceContext
 from memory import UnsafePointer, memset_zero, stack_allocation

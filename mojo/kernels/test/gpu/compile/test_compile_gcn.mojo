@@ -8,7 +8,7 @@
 from pathlib import Path
 from sys._assembly import inlined_assembly
 
-from gpu import block_dim, grid_dim, thread_idx, barrier, lane_id
+from gpu import barrier, block_dim, grid_dim, lane_id, thread_idx
 from gpu.globals import WARP_SIZE
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code_asm, _get_gpu_target

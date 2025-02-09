@@ -23,19 +23,18 @@ from gpu.memory import (
 )
 from layout import *
 from layout._utils import ManagedLayoutTensor
-
 from layout.fillers import arange
 from layout.layout_tensor import (
     UNKNOWN_VALUE,
     LayoutTensor,
-    copy_dram_to_sram_async,
+    binary_op_type,
     copy_dram_to_sram,
+    copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_local_to_local,
     copy_local_to_sram,
     copy_sram_to_dram,
     copy_sram_to_local,
-    binary_op_type,
 )
 from memory import UnsafePointer
 from testing import assert_almost_equal

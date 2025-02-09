@@ -6,10 +6,15 @@
 # REQUIRES: H100-GPU
 # RUN: %mojo-no-debug-no-assert %s
 
-from gpu import barrier, WARP_SIZE
+from math import ceildiv
+from sys import sizeof
+
+import linalg.vendor_blas
+from buffer.dimlist import Dim, DimList, _make_tuple
+from gpu import WARP_SIZE, barrier
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
-from gpu.id import block_idx, thread_idx, block_dim
+from gpu.id import block_dim, block_idx, thread_idx
 from gpu.memory import AddressSpace
 from gpu.mma import (
     WGMMADescriptor,
@@ -18,26 +23,6 @@ from gpu.mma import (
     wgmma_fence_aligned,
     wgmma_wait_group_sync,
 )
-from layout import IntTuple, Layout, LayoutTensor
-from layout._utils import ManagedLayoutTensor
-from layout.nd_buffer_stub import from_ndbuffer_row_major
-from layout.layout_tensor import copy_local_to_dram
-from layout.tensor_core import get_accum_type
-from layout.tensor_core_async import (
-    tile_layout_k_major,
-    TensorCoreAsync,
-    _lhs_descriptor,
-    _rhs_descriptor,
-)
-from layout.tma_async import (
-    TMATensorTile,
-    create_tma_tile,
-    TMABarrier,
-    PipelineState,
-)
-from buffer.dimlist import Dim, DimList, _make_tuple
-from internal_utils._utils import ValOrDim, dynamic, static
-from internal_utils._measure import cosine
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
@@ -47,11 +32,28 @@ from internal_utils import (
     random,
     zero,
 )
-import linalg.vendor_blas
+from internal_utils._measure import cosine
+from internal_utils._utils import ValOrDim, dynamic, static
+from layout import IntTuple, Layout, LayoutTensor
+from layout._utils import ManagedLayoutTensor
+from layout.layout_tensor import copy_local_to_dram
+from layout.nd_buffer_stub import from_ndbuffer_row_major
+from layout.tensor_core import get_accum_type
+from layout.tensor_core_async import (
+    TensorCoreAsync,
+    _lhs_descriptor,
+    _rhs_descriptor,
+    tile_layout_k_major,
+)
+from layout.tma_async import (
+    PipelineState,
+    TMABarrier,
+    TMATensorTile,
+    create_tma_tile,
+)
+
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
-from math import ceildiv
-from sys import sizeof
 
 
 @__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 2](0, 1))

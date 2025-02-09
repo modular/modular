@@ -18,13 +18,13 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from builtin.io import _printf
 from gpu import (
-    WARP_SIZE,
     MAX_THREADS_PER_BLOCK_METADATA,
+    WARP_SIZE,
+    barrier,
     block_idx,
     grid_dim,
-    thread_idx,
-    barrier,
     lane_id,
+    thread_idx,
 )
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.memory import (
@@ -59,8 +59,8 @@ from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, block_swizzle
 from testing import assert_almost_equal, assert_false
 
-from utils.index import Index, IndexList
 from utils import StaticTuple
+from utils.index import Index, IndexList
 
 
 @value

@@ -7,11 +7,12 @@ import time
 from math import ceildiv
 from sys.info import simdwidthof
 
+import linalg.vendor_blas
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from builtin.io import _printf
-from gpu import WARP_SIZE, block_dim, block_idx, thread_idx, barrier
+from gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx
 from gpu._cublas.cublas import check_cublas_error, cublasContext
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.memory import async_copy_wait_all
@@ -27,7 +28,6 @@ from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
 from layout.runtime_tuple import RuntimeTuple
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore
-import linalg.vendor_blas
 from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace as AddressSpace
 

@@ -13,7 +13,7 @@ from sys import argv, simdwidthof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, block_idx, thread_idx, barrier, lane_id
+from gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx
 from gpu.host import DeviceContext
 from gpu.memory import async_copy_wait_all
 from layout.int_tuple import IntTuple

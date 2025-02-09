@@ -5,9 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from bit import is_power_of_two, log2_floor
 from math import exp2, iota
 
+from bit import is_power_of_two, log2_floor
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
 from testing import assert_equal
 

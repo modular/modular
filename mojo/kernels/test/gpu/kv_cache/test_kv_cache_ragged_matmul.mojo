@@ -7,8 +7,8 @@
 # RUN: %mojo-no-debug-no-assert %s
 
 from collections import Set
-from random import random_ui64, seed
 from math import ceildiv
+from random import random_ui64, seed
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext

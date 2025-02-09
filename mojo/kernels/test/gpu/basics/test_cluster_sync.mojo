@@ -7,8 +7,8 @@
 # RUN: %mojo-no-debug-no-assert %s
 
 from gpu.host import DeviceContext, Dim
-from gpu.id import block_idx, cluster_idx, block_rank_in_cluster, cluster_dim
 from gpu.host._compile import _get_gpu_target
+from gpu.id import block_idx, block_rank_in_cluster, cluster_dim, cluster_idx
 from gpu.sync import cluster_sync
 
 

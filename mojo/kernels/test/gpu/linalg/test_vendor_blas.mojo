@@ -10,11 +10,11 @@
 from math import ceildiv
 from random import random_float64
 
+import linalg.vendor_blas
 from buffer import DimList, NDBuffer
 from gpu import block_dim, block_idx, thread_idx
 from gpu._cublas.cublas import *
 from gpu.host import DeviceContext
-import linalg.vendor_blas
 from linalg.matmul_gpu import matmul_kernel_naive
 from memory import UnsafePointer
 from testing import assert_almost_equal, assert_equal

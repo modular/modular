@@ -9,6 +9,7 @@
 from gpu import *
 from gpu.host import DeviceContext, Dim
 from memory import UnsafePointer
+
 from utils.numerics import inf, nan, neg_inf
 
 

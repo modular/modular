@@ -6,26 +6,28 @@
 # REQUIRES: H100-GPU
 # RUN: %mojo-no-debug-no-assert %s
 
-from builtin.io import _printf
-from gpu.host import DeviceContext, Dim
-from gpu.host._compile import _get_gpu_target
-from gpu.id import block_idx, thread_idx, cluster_idx, block_rank_in_cluster
-from gpu import barrier, MAX_THREADS_PER_BLOCK_METADATA
-from layout import Layout, LayoutTensor
-from layout.tma_async import TMATensorTile, create_tma_tile, TMABarrier
-from layout._utils import ManagedLayoutTensor
-from layout.fillers import arange
-from layout.layout_tensor import copy_sram_to_dram, copy_dram_to_sram
-from memory.pointer import _GPUAddressSpace
-from gpu.memory import tma_store_fence, fence_mbarrier_init
 from math import align_up, ceildiv
 from sys import sizeof
-from testing import assert_equal, assert_not_equal
+
+from builtin.io import _printf
+from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
+from gpu.host import DeviceContext, Dim
+from gpu.host._compile import _get_gpu_target
+from gpu.id import block_idx, block_rank_in_cluster, cluster_idx, thread_idx
+from gpu.memory import fence_mbarrier_init, tma_store_fence
 from gpu.sync import (
+    cluster_sync,
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
-    cluster_sync,
 )
+from layout import Layout, LayoutTensor
+from layout._utils import ManagedLayoutTensor
+from layout.fillers import arange
+from layout.layout_tensor import copy_dram_to_sram, copy_sram_to_dram
+from layout.tma_async import TMABarrier, TMATensorTile, create_tma_tile
+from memory.pointer import _GPUAddressSpace
+from testing import assert_equal, assert_not_equal
+
 from utils.static_tuple import StaticTuple
 
 

@@ -9,17 +9,16 @@
 # RUN: %mojo-no-debug-no-assert %s | FileCheck %s
 
 from gpu.host import DeviceContext
-
-from utils.index import Index, IndexList
-
 from tensor_core_kernels import (
     mma_load_and_multiply,
+    mma_load_and_print_operands_kernel_ldmatrix,
     mma_write_operand_kernel,
     test_load_and_mma_and_multiply_operands,
-    test_write_res_operand,
-    mma_load_and_print_operands_kernel_ldmatrix,
     test_load_operands_ldmatrix,
+    test_write_res_operand,
 )
+
+from utils.index import Index, IndexList
 
 
 # CHECK-LABEL: == test_load_and_mma_f32_f16_16x16x16

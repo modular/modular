@@ -12,17 +12,18 @@
 # CHECK-NOT: CUDA ERROR
 
 
+from math import exp2, iota, isclose, isqrt
+
 from algorithm import max as tensor_max
 from bit import is_power_of_two, log2_floor
 from buffer import Buffer, Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import ContiguousKVCache, KVCacheStaticParams
-from math import iota, isqrt, isclose, exp2
 from memory import UnsafePointer
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, NullMask
-from nn.mha_score_mod import IdentityScoreMod, AlibiScoreMod
+from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
 from runtime.asyncrt import MojoCallContextPtr
 from testing import assert_almost_equal
 

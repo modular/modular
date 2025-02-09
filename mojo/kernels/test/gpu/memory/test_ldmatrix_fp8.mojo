@@ -8,7 +8,7 @@
 
 from math import ceildiv
 
-from gpu import WARP_SIZE, thread_idx, barrier, lane_id
+from gpu import WARP_SIZE, barrier, lane_id, thread_idx
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.memory import AddressSpace

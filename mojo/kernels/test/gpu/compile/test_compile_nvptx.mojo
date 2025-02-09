@@ -9,7 +9,7 @@
 from pathlib import Path
 from sys._assembly import inlined_assembly
 
-from gpu import thread_idx, barrier
+from gpu import barrier, thread_idx
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code_asm
 from gpu.memory import AddressSpace

@@ -18,13 +18,13 @@ from sys._assembly import inlined_assembly
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import (
-    WARP_SIZE,
     MAX_THREADS_PER_BLOCK_METADATA,
+    WARP_SIZE,
+    barrier,
     block_idx,
     grid_dim,
-    thread_idx,
-    barrier,
     lane_id,
+    thread_idx,
 )
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.info import DEFAULT_GPU_ARCH
@@ -82,13 +82,13 @@ from memory import UnsafePointer
 from memory.unsafe import bitcast
 from quantization import Q4sym
 from quantization.qmatmul_gpu import (
-    pack_Q_tile,
     multistage_gemm_q,
+    pack_Q_tile,
     q_smem_usage,
 )
 
-from utils.index import Index, IndexList
 from utils import StaticTuple
+from utils.index import Index, IndexList
 
 
 fn is_benchmark() -> Bool:

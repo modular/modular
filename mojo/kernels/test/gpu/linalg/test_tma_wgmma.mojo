@@ -6,7 +6,9 @@
 # REQUIRES: H100-GPU
 # RUN: %mojo-no-debug-no-assert %s
 
-from gpu import barrier, WARP_SIZE
+from sys import sizeof
+
+from gpu import WARP_SIZE, barrier
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.host._nvidia_cuda import TensorMapSwizzle
@@ -26,21 +28,21 @@ from layout.fillers import arange
 from layout.int_tuple import to_int
 from layout.layout import print_layout
 from layout.layout_tensor import copy_local_to_dram
+from layout.tensor_core import get_accum_type
 from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
     TensorCoreAsync,
     _lhs_descriptor,
     _rhs_descriptor,
+    tile_layout_k_major,
+    tile_layout_mn_major,
 )
-from layout.tensor_core import get_accum_type
-from layout.tma_async import TMATensorTile, create_tma_tile, TMABarrier
+from layout.tma_async import TMABarrier, TMATensorTile, create_tma_tile
 from linalg import vendor_blas
 from memory import bitcast
+from testing import assert_almost_equal
+
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
-from sys import sizeof
-from testing import assert_almost_equal
 
 
 @__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 2](0, 1))

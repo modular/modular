@@ -11,7 +11,7 @@
 import time
 
 import builtin
-from gpu import AddressSpace, thread_idx, memory, sync
+from gpu import AddressSpace, memory, sync, thread_idx
 from gpu.host import DeviceContext
 from memory import UnsafePointer, stack_allocation
 

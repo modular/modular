@@ -6,26 +6,24 @@
 # REQUIRES: H100-GPU
 # RUN: %mojo-no-debug-no-assert %s
 
+from math import align_up, ceildiv
+from sys import sizeof
+
 from builtin.io import _printf
+from gpu import barrier
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.id import block_idx, thread_idx
-from gpu import barrier
+from gpu.memory import tma_store_fence
+from gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
 from layout import Layout, LayoutTensor
-from layout.tma_async import TMATensorTile, create_tma_tile, TMABarrier
 from layout._utils import ManagedLayoutTensor
 from layout.fillers import arange
-from layout.layout_tensor import copy_sram_to_dram, copy_dram_to_sram
+from layout.layout_tensor import copy_dram_to_sram, copy_sram_to_dram
+from layout.tma_async import TMABarrier, TMATensorTile, create_tma_tile
 from memory.pointer import _GPUAddressSpace
-from gpu.memory import tma_store_fence
-from math import align_up, ceildiv
-from sys import sizeof
 from testing import assert_equal, assert_not_equal
-from gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
-from gpu.sync import (
-    cp_async_bulk_commit_group,
-    cp_async_bulk_wait_group,
-)
+
 from utils.static_tuple import StaticTuple
 
 

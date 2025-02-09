@@ -8,14 +8,14 @@
 from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, assert_almost_equal
-from memory import UnsafePointer, memcpy
-from nn.fused_qk_rope import fused_qk_rope
 from kv_cache.types import (
     ContiguousKVCache,
     ContiguousKVCacheCollection,
     KVCacheStaticParams,
     KVCacheT,
 )
+from memory import UnsafePointer, memcpy
+from nn.fused_qk_rope import fused_qk_rope
 from testdata.fused_qk_rope_goldens import (
     freqs_cis_table_input,
     k_cache_input,

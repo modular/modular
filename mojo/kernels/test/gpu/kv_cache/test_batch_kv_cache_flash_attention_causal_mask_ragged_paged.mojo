@@ -7,30 +7,26 @@
 # UNSUPPORTED: H100-GPU
 # RUN: %mojo-no-debug %s -t
 
-from buffer import Buffer, NDBuffer, Dim, DimList
+from collections import Set
+from math import ceildiv, isclose, isqrt
+from random import random_ui64, seed
+
+from buffer import Buffer, Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
+from internal_utils import DeviceNDBuffer, HostNDBuffer, fill, random
 from kv_cache.types import (
     ContinuousBatchingKVCache,
     KVCacheStaticParams,
     PagedKVCache,
 )
-from math import isqrt, isclose, ceildiv
-from memory import UnsafePointer
+from memory import UnsafePointer, memcpy
 from nn.mha import flash_attention
-from nn.mha_mask import NullMask, CausalMask
+from nn.mha_mask import CausalMask, NullMask
 from nn.mha_score_mod import IdentityScoreMod
-from internal_utils import (
-    HostNDBuffer,
-    DeviceNDBuffer,
-    random,
-    fill,
-)
-from memory import memcpy
 from testing import assert_almost_equal
+
 from utils import IndexList
 from utils.index import Index
-from collections import Set
-from random import random_ui64, seed
 
 alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 alias replit_num_q_heads = 24

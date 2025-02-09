@@ -8,7 +8,7 @@
 # RUN: %mojo-no-debug %s
 
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
-from nn.mha_mask import CausalMask, NullMask, AndMask, TileMaskStatus
+from nn.mha_mask import AndMask, CausalMask, NullMask, TileMaskStatus
 from testing import assert_equal, assert_true
 
 from utils.index import Index, IndexList

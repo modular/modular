@@ -6,6 +6,8 @@
 # REQUIRES: H100-GPU
 # RUN: %mojo-no-debug-no-assert %s
 
+import linalg.vendor_blas
+from buffer import DimList, NDBuffer
 from builtin.io import _printf
 from gpu import barrier
 from gpu.host import DeviceContext
@@ -31,10 +33,9 @@ from layout.tensor_core_async import (
     tile_layout_k_major,
 )
 from memory import bitcast
-from utils.index import Index
-import linalg.vendor_blas
-from buffer import DimList, NDBuffer
 from testing import assert_almost_equal
+
+from utils.index import Index
 
 
 fn wgmma_kernel[

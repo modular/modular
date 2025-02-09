@@ -15,13 +15,13 @@ from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import (
-    WARP_SIZE,
     MAX_THREADS_PER_BLOCK_METADATA,
+    WARP_SIZE,
+    barrier,
     block_dim,
     block_idx,
-    thread_idx,
     global_idx,
-    barrier,
+    thread_idx,
 )
 from gpu.host import DeviceContext
 from gpu.intrinsics import ldg

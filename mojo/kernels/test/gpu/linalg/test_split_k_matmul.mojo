@@ -9,6 +9,7 @@
 
 from random import rand
 
+import linalg.vendor_blas
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu._cublas.cublas import check_cublas_error, cublasContext
@@ -26,7 +27,6 @@ from internal_utils import (
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout.layout import UNKNOWN_VALUE
 from linalg._multistage_gemm_gpu import multistage_gemm_kernel
-import linalg.vendor_blas
 from linalg.utils_gpu import MatmulKernels
 from memory import UnsafePointer
 

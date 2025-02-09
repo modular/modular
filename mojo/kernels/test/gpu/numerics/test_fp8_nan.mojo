@@ -6,9 +6,9 @@
 # REQUIRES: L4-GPU || H100-GPU
 # RUN: %mojo-no-debug-no-assert %s | FileCheck %s
 
+from builtin.simd import *
 from gpu.host import DeviceContext
 from memory import bitcast
-from builtin.simd import *
 
 
 fn print_bits[type: DType](val: Scalar[type]):

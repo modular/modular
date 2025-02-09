@@ -8,7 +8,7 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from builtin.io import _printf
-from gpu import block_idx, grid_dim, thread_idx, barrier
+from gpu import barrier, block_idx, grid_dim, thread_idx
 from gpu.host import DeviceContext
 from gpu.memory import (
     _GPUAddressSpace,

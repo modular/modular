@@ -13,18 +13,19 @@
 
 from math import ceildiv
 from random import random_si64
-from memory import UnsafePointer
-from utils import IndexList
-from utils.index import Index
+
+import linalg.vendor_blas
+from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.matmul_gpu import _matmul_gpu
-import linalg.vendor_blas
+from memory import UnsafePointer
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from utils import IndexList
+from utils.index import Index
 
 
 fn matmul_naive[

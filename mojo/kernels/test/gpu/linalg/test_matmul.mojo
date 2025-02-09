@@ -14,11 +14,12 @@ from collections.optional import Optional, OptionalReg
 from math import ceildiv, exp2
 from sys import alignof, simdwidthof
 
+import linalg.vendor_blas
 from algorithm.functional import elementwise
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList, _make_tuple
 from builtin._location import __source_location
-from gpu import block_dim, block_idx, thread_idx, barrier
+from gpu import barrier, block_dim, block_idx, thread_idx
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.host.info import DEFAULT_GPU_ARCH
@@ -33,7 +34,6 @@ from internal_utils import (
 )
 from internal_utils._measure import cosine
 from internal_utils._utils import ValOrDim, dynamic, static
-import linalg.vendor_blas
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, MatmulKernels

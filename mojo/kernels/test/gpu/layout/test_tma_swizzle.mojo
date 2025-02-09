@@ -6,21 +6,23 @@
 # REQUIRES: H100-GPU
 # RUN: %mojo-no-debug-no-assert %s
 
+from sys import sizeof
+
+from gpu import barrier
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, thread_idx
-from gpu import barrier
 from layout import Layout, LayoutTensor
-from layout.tma_async import TMATensorTile, create_tma_tile, TMABarrier
 from layout._utils import ManagedLayoutTensor
 from layout.fillers import arange
 from layout.swizzle import make_swizzle
+from layout.tma_async import TMABarrier, TMATensorTile, create_tma_tile
 from memory.pointer import _GPUAddressSpace
-from sys import sizeof
 from testing import assert_equal
+
+from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
-from utils.index import IndexList, Index
 
 
 # Test loading a single 2d tile.

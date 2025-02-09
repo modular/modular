@@ -6,26 +6,24 @@
 # REQUIRES: NVIDIA-GPU
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from gpu import *
-from gpu.host import DeviceContext
-
-from buffer import Buffer, NDBuffer
-from memory import UnsafePointer
-
-
-from nn.pad_gpu import pad_constant, get_padding_output_shape
-from internal_utils import (
-    ndbuffer_to_str,
-    array_equal,
-    arg_parse,
-    env_get_shape,
-    int_list_to_tuple,
-)
 from sys import env_get_int
 
-from utils.index import IndexList, product
-from testing import assert_true, assert_equal
+from buffer import Buffer, NDBuffer
+from gpu import *
+from gpu.host import DeviceContext
+from internal_utils import (
+    arg_parse,
+    array_equal,
+    env_get_shape,
+    int_list_to_tuple,
+    ndbuffer_to_str,
+)
+from memory import UnsafePointer
 from nn.pad import pad_constant as pad_cpu
+from nn.pad_gpu import get_padding_output_shape, pad_constant
+from testing import assert_equal, assert_true
+
+from utils.index import IndexList, product
 
 
 @no_inline

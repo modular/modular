@@ -15,6 +15,8 @@ from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext
 from gpu.host.info import DEFAULT_GPU_ARCH
+from internal_utils import assert_with_measure
+from internal_utils._measure import cosine
 from memory import UnsafePointer
 from nn.mha import (
     _naive_attention_with_transpose,
@@ -24,8 +26,6 @@ from nn.mha import (
 from nn.mha_mask import NullMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
-from internal_utils import assert_with_measure
-from internal_utils._measure import cosine
 
 from utils.index import Index
 from utils.numerics import min_or_neg_inf, neg_inf

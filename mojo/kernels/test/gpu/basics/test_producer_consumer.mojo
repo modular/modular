@@ -6,16 +6,13 @@
 # REQUIRES: H100-GPU
 # RUN: %mojo-no-debug-no-assert %s
 
-from memory import UnsafePointer, stack_allocation
-from memory.pointer import _GPUAddressSpace
-from layout.tma_async import TMABarrier, PipelineState
+from gpu import WARP_SIZE, barrier, thread_idx
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
-from gpu import (
-    WARP_SIZE,
-    thread_idx,
-    barrier,
-)
+from layout.tma_async import PipelineState, TMABarrier
+from memory import UnsafePointer, stack_allocation
+from memory.pointer import _GPUAddressSpace
+
 from utils import StaticTuple
 
 

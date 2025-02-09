@@ -5,20 +5,20 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s -t
 
-from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from gpu.host import DeviceContext
-from internal_utils import HostNDBuffer, DeviceNDBuffer, random
-from utils import IndexList
-from buffer import Dim, DimList, NDBuffer
-from memory import memcpy, UnsafePointer
-from math import isqrt, ceildiv
 from collections import Set
+from math import ceildiv, isqrt
 from random import random_ui64
-from testing import assert_almost_equal
+
+from buffer import Dim, DimList, NDBuffer
+from gpu.host import DeviceContext
+from internal_utils import DeviceNDBuffer, HostNDBuffer, random
+from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
+from memory import UnsafePointer, memcpy
 from nn.fused_qk_rope import fused_qk_rope_ragged
-from testdata.fused_qk_rope_goldens import (
-    freqs_cis_table_input,
-)
+from testdata.fused_qk_rope_goldens import freqs_cis_table_input
+from testing import assert_almost_equal
+
+from utils import IndexList
 
 
 def _init_device_ndbuffer_from_goldens[

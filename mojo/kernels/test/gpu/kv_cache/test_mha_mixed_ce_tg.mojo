@@ -6,19 +6,21 @@
 # UNSUPPORTED: H100-GPU
 # RUN: %mojo-no-debug %s -t
 
-from kv_cache.types import KVCacheStaticParams, PagedKVCache
-from nn.mha import flash_attention
-from nn.mha_mask import NullMask, CausalMask
-from nn.mha_score_mod import IdentityScoreMod
-from gpu.host import DeviceContext
-from internal_utils import HostNDBuffer, DeviceNDBuffer, random
-from utils import IndexList
-from buffer import Dim, DimList, NDBuffer
-from memory import memcpy, UnsafePointer
-from math import isqrt, ceildiv
 from collections import Set
+from math import ceildiv, isqrt
 from random import random_ui64
+
+from buffer import Dim, DimList, NDBuffer
+from gpu.host import DeviceContext
+from internal_utils import DeviceNDBuffer, HostNDBuffer, random
+from kv_cache.types import KVCacheStaticParams, PagedKVCache
+from memory import UnsafePointer, memcpy
+from nn.mha import flash_attention
+from nn.mha_mask import CausalMask, NullMask
+from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
+
+from utils import IndexList
 
 
 def execute_ragged_flash_attention(

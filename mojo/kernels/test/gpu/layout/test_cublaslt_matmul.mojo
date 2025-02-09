@@ -9,16 +9,17 @@
 # RUN: %mojo-no-debug-no-assert %s
 
 from math import ceildiv
-from gpu.host import DeviceContext
-from linalg.matmul_gpu import matmul_kernel_naive
+
 from buffer import DimList, NDBuffer
+from gpu.host import DeviceContext
 from internal_utils import (
-    HostNDBuffer,
-    zero,
     DeviceNDBuffer,
+    HostNDBuffer,
     assert_almost_equal,
+    zero,
 )
-from linalg.vendor_blas import Handle, Backend, matmul
+from linalg.matmul_gpu import matmul_kernel_naive
+from linalg.vendor_blas import Backend, Handle, matmul
 
 
 fn test_cublaslt_64x16x32[input_type: DType](ctx: DeviceContext) raises:

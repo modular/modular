@@ -10,6 +10,7 @@
 from collections import Set
 from math import isclose, isqrt
 from random import random_ui64, seed
+from sys import has_nvidia_gpu_accelerator
 
 from buffer import Buffer, Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
@@ -20,7 +21,7 @@ from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, NullMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
-from sys import has_nvidia_gpu_accelerator
+
 from utils import IndexList
 from utils.index import Index
 

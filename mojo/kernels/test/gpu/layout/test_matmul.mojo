@@ -9,6 +9,7 @@
 # RUN: %mojo-no-debug-no-assert %s
 
 import time
+from sys import has_nvidia_gpu_accelerator
 
 from benchmark import Bench
 from buffer.dimlist import DimList
@@ -37,9 +38,6 @@ from matmul_kernels import (
     run_gemm_kernel_tc,
 )
 from memory import UnsafePointer
-from sys import (
-    has_nvidia_gpu_accelerator,
-)
 
 alias run_gemm_kernel_type = fn (
     mut m: Bench,

@@ -6,9 +6,9 @@
 # RUN: %mojo-no-debug-no-assert --target-accelerator=nvidia:80 %s | FileCheck --check-prefix=CHECK-NV80 %s
 # RUN: %mojo-no-debug-no-assert --target-accelerator=nvidia:90 %s | FileCheck --check-prefix=CHECK-NV90 %s
 
-from sys.info import _accelerator_arch
+from sys.info import _accelerator_arch, _is_sm_9x
+
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
-from sys.info import _is_sm_9x
 from testing import *
 
 
