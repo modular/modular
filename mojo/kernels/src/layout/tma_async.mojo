@@ -5,31 +5,31 @@
 # ===----------------------------------------------------------------------=== #
 
 from sys import sizeof
+from sys._assembly import inlined_assembly
 
-from gpu.host import DeviceContext, DeviceBuffer
+from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._nvidia_cuda import (
-    TMADescriptor,
     TensorMapSwizzle,
+    TMADescriptor,
     create_tma_descriptor,
 )
 from gpu.memory import (
     AddressSpace,
-    cp_async_bulk_tensor_shared_cluster_global,
-    cp_async_bulk_tensor_shared_cluster_global_multicast,
     cp_async_bulk_tensor_global_shared_cta,
     cp_async_bulk_tensor_reduce,
+    cp_async_bulk_tensor_shared_cluster_global,
+    cp_async_bulk_tensor_shared_cluster_global_multicast,
 )
 from gpu.sync import (
+    mbarrier_arrive,
     mbarrier_arrive_expect_tx_shared,
     mbarrier_init,
     mbarrier_try_wait_parity_shared,
-    mbarrier_arrive,
 )
 from layout import IntTuple, LayoutTensor
 from layout.tensor_core_async import _CM_K_BYTES
 from memory import UnsafePointer, stack_allocation
 
-from sys._assembly import inlined_assembly
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
 

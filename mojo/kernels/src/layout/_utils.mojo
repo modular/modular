@@ -5,16 +5,19 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: disabled
 
-from buffer import NDBuffer
+from collections import Optional
 from os import abort
 from sys import bitwidthof
+
+from buffer import NDBuffer
+from gpu.host import DeviceBuffer, DeviceContext
 from layout import *
 from layout.layout_tensor import _get_index_type
 from memory import UnsafePointer
-from collections import Optional
-from gpu.host import DeviceBuffer, DeviceContext
-from .int_tuple import product
+
 from utils.index import Index
+
+from .int_tuple import product
 
 
 struct ManagedLayoutTensor[

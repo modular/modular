@@ -4,10 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from builtin.range import _StridedRange
 from collections import InlineArray
-from memory import UnsafePointer
 from os import abort
+
+from builtin.range import _StridedRange
+from memory import UnsafePointer
 
 alias INT_TUPLE_VALIDATION = False
 

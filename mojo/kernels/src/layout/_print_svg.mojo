@@ -3,10 +3,10 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from layout import Layout
-from collections import Dict
+from collections import Dict, Optional
 from sys import sizeof
-from collections import Optional
+
+from layout import Layout
 
 
 fn print_svg[

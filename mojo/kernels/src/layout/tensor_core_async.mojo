@@ -6,13 +6,12 @@
 """This module provides abstractions for using Async Tensor Cores to perform asynchronous
 matrix multiplication operations.
 """
-from layout import IntTuple, Layout, LayoutTensor
-from layout.layout import is_row_major
+from sys import sizeof
 
 from gpu import WARP_SIZE
-from gpu.memory import AddressSpace
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import thread_idx
+from gpu.memory import AddressSpace
 from gpu.mma import (
     WGMMADescriptor,
     wgmma_async,
@@ -20,8 +19,9 @@ from gpu.mma import (
     wgmma_fence_aligned,
     wgmma_wait_group_sync,
 )
+from layout import IntTuple, Layout, LayoutTensor
+from layout.layout import is_row_major
 
-from sys import sizeof
 from utils import Index, IndexList
 
 # ===-----------------------------------------------------------------------===#

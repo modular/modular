@@ -7,8 +7,8 @@
 
 from layout import *
 from layout.layout import (
-    Layout,
     UNKNOWN_VALUE,
+    Layout,
     MakeLayoutList,
     coalesce,
     complement,
@@ -16,6 +16,7 @@ from layout.layout import (
     cosize,
     expand_modes_alike,
     format_layout,
+    is_row_major,
     logical_divide,
     logical_product,
     print_layout,
@@ -23,7 +24,6 @@ from layout.layout import (
     size,
     sublayout,
     zipped_divide,
-    is_row_major,
 )
 from testing import assert_equal, assert_not_equal
 

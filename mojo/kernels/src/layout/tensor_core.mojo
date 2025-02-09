@@ -9,7 +9,8 @@ matrix operations.
 
 from math import align_down
 from sys import has_nvidia_gpu_accelerator, is_nvidia_gpu, simdwidthof, sizeof
-from gpu import WARP_SIZE, block_idx, thread_idx, lane_id
+
+from gpu import WARP_SIZE, block_idx, lane_id, thread_idx
 from gpu.intrinsics import lop
 from gpu.memory import AddressSpace
 from gpu.mma import ld_matrix, mma
