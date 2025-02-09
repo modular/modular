@@ -9,8 +9,6 @@ the underlying data. This type is used to build custom graph operations.
 """
 
 from collections import InlineArray, OptionalReg
-from gpu.host._compile import _get_gpu_target
-from gpu.host.info import is_cpu
 from math import ceil, fma
 from sys import alignof, simdwidthof
 from sys.info import is_nvidia_gpu
@@ -19,23 +17,25 @@ from sys.intrinsics import strided_load, strided_store
 import algorithm
 from bit import is_power_of_two
 from buffer import DimList, NDBuffer
+from buffer.dimlist import _make_partially_static_index_list
 from compiler_internal.directives import (
     StaticTensorSpec,
     __mogg_intrinsic_attr,
     specsof,
 )
+from gpu.host._compile import _get_gpu_target
+from gpu.host.info import is_cpu
 from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace
+from register import register_internal
 from runtime.asyncrt import MojoCallContextPtr
+from runtime.tracing import Trace, TraceLevel
 from tensor_internal import RuntimeTensorSpec, TensorSpec
 
-from buffer import NDBuffer, DimList
-from buffer.dimlist import _make_partially_static_index_list
 from utils import IndexList
-from register import register_internal
+
 from ._indexing import _dot_prod, _row_major_strides, _slice_to_tuple
 from .tensor_like import TensorLike
-from runtime.tracing import Trace, TraceLevel
 
 # ===----------------------------------------------------------------------=== #
 # Load / Store Helper primitives
