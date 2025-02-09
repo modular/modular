@@ -248,26 +248,28 @@ def execute_fused_qk_rope_ragged(
     var freqs_cis = rebind[
         NDBuffer[type, 2, shape = freqs_cis_table_dev.shape]
     ](freqs_cis_table_dev.tensor)
-    fused_qk_rope_ragged[mixed_ce_k_cache_collection.CacheType, target="gpu"](
+    fused_qk_rope_ragged[
+        mixed_ce_k_cache_collection.CacheType, interleaved=False, target="gpu"
+    ](
         true_ce_q_ragged_device.tensor,
         true_ce_row_offsets_device.tensor,
         true_ce_k_cache_collection,
         freqs_cis,
         layer_idx,
-        interleaved=False,
         output=true_ce_output_device.tensor,
         context=ctx,
     )
 
     # "mixed CE" execution
     print("mixed")
-    fused_qk_rope_ragged[mixed_ce_k_cache_collection.CacheType, target="gpu"](
+    fused_qk_rope_ragged[
+        mixed_ce_k_cache_collection.CacheType, interleaved=False, target="gpu"
+    ](
         mixed_ce_q_ragged_device.tensor,
         mixed_ce_row_offsets_device.tensor,
         mixed_ce_k_cache_collection,
         freqs_cis,
         layer_idx,
-        interleaved=False,
         output=mixed_ce_output_device.tensor,
         context=ctx,
     )
