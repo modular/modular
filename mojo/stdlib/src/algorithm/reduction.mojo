@@ -16,17 +16,17 @@ from collections import OptionalReg
 from math import align_down, ceildiv, iota
 from os import abort
 from sys.info import bitwidthof, is_nvidia_gpu, simdwidthof, sizeof
-from bit import log2_floor
 
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_num_workers
+from bit import log2_floor
 from buffer import Buffer, NDBuffer
 from buffer.buffer import prod_dims
 from buffer.dimlist import Dim, DimList
 from builtin.math import max as _max
 from builtin.math import min as _min
 from gpu.host import DeviceContext
-from gpu.host.info import is_valid_target, is_cpu
+from gpu.host.info import is_cpu, is_valid_target
 from memory.unsafe import bitcast
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg

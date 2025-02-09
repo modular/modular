@@ -19,14 +19,14 @@ from sys import bitwidthof, is_nvidia_gpu, num_physical_cores, simdwidthof
 from bit import is_power_of_two
 from buffer import NDBuffer
 from gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
     block_dim,
     block_idx,
     grid_dim,
     thread_idx,
-    MAX_THREADS_PER_BLOCK_METADATA,
 )
 from gpu.host import DeviceContext
-from gpu.host.info import Info, is_gpu, is_cpu, is_valid_target
+from gpu.host.info import Info, is_cpu, is_gpu, is_valid_target
 from runtime import tracing
 from runtime.asyncrt import MojoCallContextPtr, TaskGroup, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg

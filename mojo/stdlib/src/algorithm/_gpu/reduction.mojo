@@ -8,16 +8,16 @@ from math import align_up
 
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
+    barrier,
     block_dim,
     block_idx,
     grid_dim,
-    thread_idx,
-    barrier,
     lane_id,
     shuffle_down,
+    thread_idx,
     warp_reduce,
-    MAX_THREADS_PER_BLOCK_METADATA,
 )
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
