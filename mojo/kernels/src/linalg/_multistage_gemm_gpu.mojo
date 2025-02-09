@@ -6,21 +6,20 @@
 
 from collections import OptionalReg
 from math import ceildiv
-from sys import alignof, simdwidthof, sizeof
-from sys import is_nvidia_gpu
+from sys import alignof, is_nvidia_gpu, simdwidthof, sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
+    barrier,
+    block_dim,
     block_idx,
     grid_dim,
-    block_dim,
-    thread_idx,
-    barrier,
     lane_id,
+    thread_idx,
     warp_broadcast,
-    MAX_THREADS_PER_BLOCK_METADATA,
 )
 from gpu.host import FuncAttribute
 from gpu.memory import (
@@ -38,8 +37,8 @@ from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
     _swizzle_signature,
-    copy_dram_to_sram_async,
     copy_dram_to_sram,
+    copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_local_to_local,
     copy_local_to_sram,
@@ -58,12 +57,12 @@ from layout.tensor_core import (
 from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace as AddressSpace
 
+from utils import StaticTuple
 from utils.index import Index, IndexList
 
 from .matmul_gpu import matmul_kernel_naive
 from .utils import apply_epilogue, elementwise_epilogue_type
 from .utils_gpu import MatmulConfig, MatmulKernels, block_swizzle
-from utils import StaticTuple
 
 
 @always_inline

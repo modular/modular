@@ -12,15 +12,15 @@ from sys import alignof, is_defined, simdwidthof
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
+    barrier,
     block_idx,
     grid_dim,
-    thread_idx,
-    barrier,
     lane_id,
+    thread_idx,
     warp_broadcast,
     warp_sum,
-    MAX_THREADS_PER_BLOCK_METADATA,
 )
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.info import A100, is_gpu
@@ -57,6 +57,7 @@ from register import register_internal
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
+from utils import StaticTuple
 from utils.index import Index, IndexList
 
 from ._multistage_gemm_gpu import multistage_gemm_kernel
@@ -68,7 +69,6 @@ from .utils_gpu import (
     block_swizzle,
     select_config,
 )
-from utils import StaticTuple
 
 
 @always_inline

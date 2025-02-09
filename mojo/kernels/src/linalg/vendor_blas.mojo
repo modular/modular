@@ -3,8 +3,10 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from sys import sizeof, has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
+from os import abort
+from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator, sizeof
 
+import gpu._rocblas
 from buffer import DimList, NDBuffer
 from gpu._cublas.cublas import (
     Algorithm,
@@ -13,10 +15,10 @@ from gpu._cublas.cublas import (
     _convert_to_cublas_transpose,
     check_cublas_error,
     cublasContext,
-    cublasGemmEx,
-    cublasOperation_t,
     cublasCreate,
     cublasDestroy,
+    cublasGemmEx,
+    cublasOperation_t,
 )
 from gpu._cublas.cublaslt import (
     Context,
@@ -48,9 +50,8 @@ from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import CUDA
 from layout import Layout
 from memory import UnsafePointer
+
 from utils.variant import Variant
-import gpu._rocblas
-from os import abort
 
 # ===----------------------------------------------------------------------===#
 # Backend

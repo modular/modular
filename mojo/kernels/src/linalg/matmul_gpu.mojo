@@ -12,8 +12,8 @@ from sys import (
     bitwidthof,
     env_get_bool,
     env_get_int,
-    has_nvidia_gpu_accelerator,
     has_amd_gpu_accelerator,
+    has_nvidia_gpu_accelerator,
     is_defined,
     llvm_intrinsic,
     simdwidthof,
@@ -24,12 +24,12 @@ from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import (
     WARP_SIZE,
+    barrier,
     block_dim,
     block_idx,
-    thread_idx,
     global_idx,
-    barrier,
     lane_id,
+    thread_idx,
 )
 from gpu.host import DeviceContext, FuncAttribute, LaunchAttribute
 from gpu.host._compile import _get_gpu_target
@@ -69,10 +69,9 @@ from .utils_gpu import (
     MatmulConfig,
     MatmulKernels,
     _bk_base,
-    select_config,
     _get_block_warp_tile_shape,
+    select_config,
 )
-
 
 alias tile_shapes_64X64X32 = _get_block_warp_tile_shape[64, 64, 32]()
 alias tile_shapes_64X128X32 = _get_block_warp_tile_shape[64, 128, 32]()

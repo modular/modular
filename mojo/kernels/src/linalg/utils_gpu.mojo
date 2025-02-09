@@ -4,13 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from hashlib._hasher import _Hasher
 from math import ceildiv
 from sys import (
     env_get_bool,
     env_get_int,
     env_get_string,
-    sizeof,
     has_nvidia_gpu_accelerator,
+    sizeof,
 )
 
 from gpu import WARP_SIZE
@@ -24,7 +25,6 @@ from layout.tensor_core import (
 )
 
 from utils.index import Index, IndexList
-from hashlib._hasher import _Hasher
 
 # ===------------------------------------------------------------------===#
 # GPU Matmul Block Swizzling

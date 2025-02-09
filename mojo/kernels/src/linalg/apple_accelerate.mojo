@@ -9,8 +9,8 @@ from math import fma
 from os import abort
 from pathlib import Path
 from sys import os_is_macos, simdwidthof
-from sys.ffi import _OwnedDLHandle, _Global
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
+from sys.ffi import _Global, _OwnedDLHandle
 
 from algorithm import elementwise, vectorize
 from algorithm.functional import (

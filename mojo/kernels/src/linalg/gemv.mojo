@@ -13,14 +13,14 @@ from algorithm.reduction import _reduce_generator
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
+    barrier,
     block_dim,
     block_idx,
-    thread_idx,
     global_idx,
-    barrier,
     lane_id,
-    MAX_THREADS_PER_BLOCK_METADATA,
+    thread_idx,
 )
 from gpu.host import (
     DeviceAttribute,

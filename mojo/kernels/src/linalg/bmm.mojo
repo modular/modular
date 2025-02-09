@@ -18,9 +18,9 @@ from algorithm.functional import (
 from algorithm.reduction import _reduce_generator
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import block_dim, block_idx, thread_idx, global_idx
+from gpu import block_dim, block_idx, global_idx, thread_idx
 from gpu.host import DeviceContext
-from gpu.host.info import is_valid_target, is_cpu
+from gpu.host.info import is_cpu, is_valid_target
 from memory import UnsafePointer, memset_zero
 from register import register_internal
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
