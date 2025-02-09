@@ -9,8 +9,8 @@ from collections import List
 from collections.string import StaticString
 from os import abort
 from pathlib import Path
-from sys.ffi import _OwnedDLHandle, _Global
-from sys.ffi import _get_dylib_function as _ffi_get_dylib_function, c_char
+from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
+from sys.ffi import _Global, _OwnedDLHandle, c_char
 
 from memory import UnsafePointer, stack_allocation
 
