@@ -4,14 +4,16 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import compiler_internal as compiler
-from utils.index import IndexList
-from buffer.dimlist import DimList
-from python.python import _get_global_python_itf
-from python import Python, PythonObject
 from os import abort
+
+import compiler_internal as compiler
+from buffer.dimlist import DimList
+from python import Python, PythonObject
+from python.python import _get_global_python_itf
 from register import register_internal, uses_opaque
 from tensor import ManagedTensorSlice
+
+from utils.index import IndexList
 
 
 struct Counter[stride: Int](Movable):

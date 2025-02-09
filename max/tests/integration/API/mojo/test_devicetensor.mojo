@@ -11,14 +11,14 @@
 # RUN: %mojo-build %s -o %t/engine-device-tensor
 # RUN: %t/engine-device-tensor %S/mo_unnamed.mlir
 
-from sys import argv
-from testing import assert_equal, assert_true
 from pathlib import Path
+from sys import argv
 
+from max.driver import cpu_device
 from max.engine import InferenceSession, SessionOptions
 from max.graph import Graph, Symbol, TensorType, Type
 from max.tensor import TensorSpec
-from max.driver import cpu_device
+from testing import assert_equal, assert_true
 
 
 fn test_model_device_tensor() raises:

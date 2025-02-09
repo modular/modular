@@ -8,12 +8,12 @@
 # RUN: %mojo -debug-level full %s %S/../../Inputs/relu3x100x100.torchscript
 # RUN: rm -f max-engine-telemetry-test-telemetry
 
-from sys import argv
-from testing import assert_true
 from pathlib import Path
+from sys import argv
 
 from max.engine import InferenceSession, InputSpec
 from max.tensor import TensorSpec
+from testing import assert_true
 
 
 fn test_model_execute() raises:

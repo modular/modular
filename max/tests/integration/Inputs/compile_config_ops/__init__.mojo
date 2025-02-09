@@ -4,12 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import compiler
 from sys import env_get_int
+
+import compiler
 from logger import Logger
 from max.tensor import ManagedTensorSlice, foreach
-from utils.index import IndexList
 from runtime.asyncrt import MojoCallContextPtr
+
+from utils.index import IndexList
 
 alias logger = Logger()
 

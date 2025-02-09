@@ -5,17 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s %S/../../Inputs/relu3x100x100.torchscript
 
-from sys import argv
 from collections import Optional
-from testing import assert_equal, assert_raises
 from pathlib import Path
+from sys import argv
 
-from max.engine import (
-    InferenceSession,
-    InputSpec,
-    ShapeElement,
-)
+from max.engine import InferenceSession, InputSpec, ShapeElement
 from max.tensor import Tensor, TensorSpec
+from testing import assert_equal, assert_raises
 
 
 fn test_pytorch_model() raises:

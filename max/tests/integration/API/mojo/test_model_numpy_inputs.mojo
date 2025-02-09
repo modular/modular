@@ -8,14 +8,11 @@
 
 from pathlib import Path
 from sys import argv
-from testing import assert_equal
-from python import Python
 
-from max.engine import (
-    InferenceSession,
-    EngineNumpyView,
-)
+from max.engine import EngineNumpyView, InferenceSession
 from max.tensor import Tensor, TensorShape
+from python import Python
+from testing import assert_equal
 
 
 fn test_model_numpy_input() raises:

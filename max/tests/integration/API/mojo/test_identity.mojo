@@ -5,11 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from max.graph import Graph, TensorType
-from max.driver import Tensor
-from testing import assert_equal
-from max.tensor import TensorShape
 from max import engine
+from max.driver import Tensor
+from max.graph import Graph, TensorType
+from max.tensor import TensorShape
+from testing import assert_equal
 
 
 def main():

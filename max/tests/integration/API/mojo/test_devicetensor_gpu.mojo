@@ -11,15 +11,15 @@
 # RUN: %mojo-build %s -o %t/engine-device-tensor
 # RUN: %t/engine-device-tensor %S/mo_unnamed.mlir
 
-from sys import argv
-from testing import assert_equal, assert_true
 from pathlib import Path
+from sys import argv
 
+from max.driver import Device, DeviceTensor, Tensor, cpu_device
+from max.driver._cuda import cuda_device
 from max.engine import InferenceSession, SessionOptions
 from max.graph import Graph, Symbol, TensorType, Type
-from max.tensor import TensorSpec, TensorShape
-from max.driver import cpu_device, Device, Tensor, DeviceTensor
-from max.driver._cuda import cuda_device
+from max.tensor import TensorShape, TensorSpec
+from testing import assert_equal, assert_true
 
 
 def test_model_device_tensor(

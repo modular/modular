@@ -7,8 +7,8 @@
 # RUN: grep mo.graph $(dirname %t)/temp.mo.mlir
 # RUN: grep mgp.model $(dirname %t)/temp.mgp.mlir
 
-from max.graph import Type, Graph, TensorType
 from max.engine import InferenceSession
+from max.graph import Graph, TensorType, Type
 
 
 fn test_identity_graph() raises:

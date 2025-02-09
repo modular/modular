@@ -7,10 +7,11 @@
 
 import os
 from tempfile import NamedTemporaryFile
+
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, ops
-from max.tensor import Tensor, TensorShape
 from max.graph._testing import assert_tensors_almost_equal
+from max.tensor import Tensor, TensorShape
 
 
 fn test_load(path: String) raises -> Tensor[DType.float32]:

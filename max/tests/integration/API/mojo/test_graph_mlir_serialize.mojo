@@ -7,14 +7,15 @@
 
 import os
 from tempfile import NamedTemporaryFile
+
+import _mlir
+from _mlir.ir import Module, Operation
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, ops
-from max.tensor import Tensor, TensorShape
 from max.graph._testing import assert_tensors_almost_equal
-from _mlir.ir import Module, Operation
-import _mlir
-from max.graph.type import Type
 from max.graph.graph import _OwnedGraph
+from max.graph.type import Type
+from max.tensor import Tensor, TensorShape
 
 
 fn create_graph() raises -> Graph:

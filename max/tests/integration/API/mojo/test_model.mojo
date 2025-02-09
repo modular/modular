@@ -5,14 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s %S/mo.mlir %S/model_different_input_output.mlir %S/model_different_dtypes.mlir
 
-from sys import argv
-from testing import assert_equal
 from collections import List
 from pathlib import Path
-from python import Python
+from sys import argv
 
 from max.engine import InferenceSession, NamedTensor
 from max.tensor import Tensor, TensorShape
+from python import Python
+from testing import assert_equal
 
 
 fn test_model_num_io_and_names() raises:
