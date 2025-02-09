@@ -3,6 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+from __future__ import annotations
+
 import csv
 import functools
 import os
@@ -13,11 +15,11 @@ import sys
 import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum, auto
 from itertools import product
 from pathlib import Path
 from time import time
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Optional, Union
 
 import click
 import numpy as np
@@ -33,25 +35,28 @@ from rich.logging import RichHandler
 from rich.progress import MofNCompleteColumn, Progress
 
 CONSOLE = Console()
-
 CURRENT_FILE = Path(__file__).resolve()
-LINE = 80 * "-"
+LINE = "-" * 80
 
 
-def store_pickle(path, data):
-    with open(path, "wb") as handle:
+def store_pickle(path: Path | str, data: Any) -> None:
+    """Serialize data to a pickle file."""
+    with Path(path).open("wb") as handle:
         pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 
-def load_pickle(path):
-    with open(path, "rb") as handle:
+def load_pickle(path: Path | str) -> Any:
+    """Deserialize data from a pickle file."""
+    with Path(path).open("rb") as handle:
         return pickle.load(handle)
 
 
 def configure_logging(
     quiet: bool = False, verbose: bool = False, pretty_output: bool = True
 ) -> Console:
+    """Configure logging with rich formatting."""
     global CONSOLE
+
     if pretty_output:
         debug_handler = RichHandler(
             show_path=False, show_time=False, console=CONSOLE
@@ -61,232 +66,175 @@ def configure_logging(
         logging.basicConfig(format="%(levelname)s: %(message)s")
         CONSOLE = Console(force_terminal=False, color_system=None)
 
-    if verbose:
-        # Set logging level for this module's logger instance
-        logging.getLogger().setLevel(logging.DEBUG)
+    log_level = (
+        logging.DEBUG if verbose else logging.WARNING if quiet else logging.INFO
+    )
+    logging.getLogger().setLevel(log_level)
 
-        logging.debug("Enabled Verbose logging")
-        if pretty_output:
-            # Add the name of any module that we want to exclude
-            # from traceback. This will reduce noise.
-            traceback.install(suppress=[click, yaml, rich])
-    else:
-        # Set logging level for this module's logger instance
-        level = logging.WARNING if quiet else logging.INFO
-        logging.getLogger().setLevel(level)
-        if pretty_output:
-            sys.excepthook = pretty_exception_handler
+    if verbose and pretty_output:
+        traceback.install(suppress=[click, yaml, rich])
+    elif pretty_output:
+        sys.excepthook = pretty_exception_handler
+
     return CONSOLE
 
 
-@dataclass(repr=True)
+@dataclass
 class Param:
     name: str
-    value: object
+    value: Any
 
     def define(self) -> list[str]:
+        """Generate command line arguments for this parameter."""
         if self.name.startswith("$"):
             var_name = self.name.split("$")[1]
             return [f"--{var_name}={self.value}"]
         return ["-D", f"{self.name}={self.value}"]
 
 
-def flatten(value: Union[int, object, Iterable]) -> List[Any]:
-    """Flattens an iterable into a list.
-
-    Supports nested lists, dictionaries, and tuples.
-
-    Args:
-        value: The iterable to flatten.
-
-    Returns:
-        A list of flattened values.
-    """
+def flatten(value: Union[int, object, Iterable]) -> list[Any]:
+    """Flatten nested iterables into a single list."""
     if not isinstance(value, Iterable) or isinstance(value, str):
         return [value]
+    return [
+        item
+        for sublist in (flatten(item) for item in value)
+        for item in sublist
+    ]
 
-    result = []
-    for item in value:
-        result.extend(flatten(item))
-    return result
 
-
-def _run_cmdline(cmd, dryrun: bool = False):
-    """Runs a shell command using the arguments provided (wrapper around run_shell_command).
-
-    Args:
-        cmd: shell command to run (list).
-        dryrun: just print the arguments as a single-line.
-
-    Returns:
-        A ProcessOutput object.
-    """
+def _run_cmdline(cmd: list[str], dryrun: bool = False) -> ProcessOutput:
+    """Execute a shell command with error handling."""
     try:
         if dryrun:
             print(list2cmdline(cmd))
-        else:
-            # TODO: needs better error handling and error messages.
-            logging.debug(list2cmdline(cmd))
-            output = run_shell_command(cmd, check=False, capture_output=True)
-            # TODO: replace with subprocess.CompletedProcess object.
-            return ProcessOutput(
-                output.stdout.decode("utf-8"), output.stderr.decode("utf-8")
-            )
-        # TODO: replace with subprocess.CompletedProcess object.
-        return ProcessOutput(None, None)
+            return ProcessOutput(None, None)
 
+        logging.debug(list2cmdline(cmd))
+        output = run_shell_command(cmd, check=False, capture_output=True)
+        return ProcessOutput(
+            output.stdout.decode("utf-8"), output.stderr.decode("utf-8")
+        )
     except Exception as exc:
         raise CLIException(
-            f"Unable to run the command {list2cmdline(cmd)}"
+            f"Unable to run command {list2cmdline(cmd)}"
         ) from exc
 
 
-@dataclass(repr=True)
+@dataclass
 class ParamSpace:
     name: str
-    value: object
-    value_set: Set[object] = field(default_factory=set)
+    value: Any
+    value_set: set[Any] = field(default_factory=set)
     length: int = 0
 
-    def __post_init__(self):
-        """Flatten the values in self.value and store them in a List
-        Also, get the length of value list and store it in `length`.
-        """
-        self.value_set = sorted(set(flatten(self.value)), reverse=False)
+    def __post_init__(self) -> None:
+        """Initialize value set from flattened values."""
+        self.value_set = sorted(set(flatten(self.value)))
         self.value = None
         self.length = len(self.value_set)
 
 
-@dataclass(repr=True)
+@dataclass
 class ProcessOutput:
     stdout: Optional[str] = None
     stderr: Optional[str] = None
 
 
 class KBENCH_MODE(Enum):
-    RUN = 0x1
-    TUNE = 0x2
-    BUILD = 0x4
+    RUN = auto()
+    TUNE = auto()
+    BUILD = auto()
 
 
 class KbenchCache:
-    """KBench Object Cache
+    """Cache for compiled binaries."""
 
-    Keeps a list of compiled binaries for each set of input parameters.
-    Note that this does NOT check the changes in the source code.
+    def __init__(self, path: Path | str = "kbench_cache.pkl") -> None:
+        self.path = Path(path)
+        self.data: dict[str, str] = {}
+        self.is_active = False
 
-    Attributes:
-        path        The path to store pkl file.
-        data        The dictionary of <params, path> for each set of params.
-        is_active   Used to enable/disable the cache.
-    """
-
-    path: Path
-    data: dict = {}
-    is_active: bool = False
-
-    def __init__(self, path: Path = Path("kbench_cache.pkl")):
-        self.path = path
-
-    def clear(self):
-        """Clear cache pkl file, if exists."""
-
-        if os.path.exists(self.path):
+    def clear(self) -> None:
+        """Remove cache file if it exists."""
+        if self.path.exists():
             logging.debug(f"Removing kbench-cache: {self.path}")
-            run_shell_command(["rm", self.path])
+            run_shell_command(["rm", str(self.path)])
 
-    def load(self):
-        """Load cache from pkl file and set is_active=True"""
-        if os.path.exists(self.path):
+    def load(self) -> None:
+        """Load cache from file."""
+        if self.path.exists():
             self.data = load_pickle(self.path)
         self.is_active = True
 
-    def dump(self):
-        """dump cache to pkl file."""
+    def dump(self) -> None:
+        """Save cache to file."""
         store_pickle(self.path, self.data)
 
-    def query(self, key: str):
-        """Query the cache for given set of parameters
-
-        Returns:
-            The path of object if it it exists on disk, else None.
-        """
+    def query(self, key: str) -> Optional[str]:
+        """Get cached path for given key if it exists."""
         obj_path = str(self.data.get(key))
-        if os.path.exists(obj_path):
-            return obj_path
-        else:
-            return None
+        return obj_path if Path(obj_path).exists() else None
 
-    def store(self, key: str, obj_path: Path, tmp_dir: Path):
-        """Store cache contents in a pkl file."""
+    def store(self, key: str, obj_path: Path, tmp_dir: Path) -> Optional[Path]:
+        """Store object in cache and return its new path."""
         obj_cache_path = tmp_dir / "kbench_cache"
-        os.makedirs(obj_cache_path, exist_ok=True)
-        obj_path_in_cache = obj_cache_path / Path(obj_path).stem
+        obj_cache_path.mkdir(exist_ok=True)
+        obj_path_in_cache = obj_cache_path / obj_path.stem
 
-        self.data[key] = obj_path_in_cache
-        cmd = ["mv", str(obj_path), str(obj_path_in_cache)]
-        out = _run_cmdline(cmd)
-        if out.stdout or out.stderr:
-            return None
-        else:
-            return obj_path_in_cache
+        self.data[key] = str(obj_path_in_cache)
+        out = _run_cmdline(["mv", str(obj_path), str(obj_path_in_cache)])
+        return obj_path_in_cache if not (out.stdout or out.stderr) else None
 
 
-@dataclass(frozen=True, repr=True)
+@dataclass(frozen=True)
 class SpecInstance:
     name: str
     file: Path
     executor: Optional[str] = None
-    params: List[Param] = field(default_factory=list)
+    params: list[Param] = field(default_factory=list)
 
     @functools.cached_property
     def mojo_binary(self) -> str:
-        mojo = shutil.which("mojo")
-        if not mojo:
-            raise FileNotFoundError("Could not find the `mojo` binary.")
-        return mojo
+        """Find mojo binary in PATH."""
+        if mojo := shutil.which("mojo"):
+            return mojo
+        raise FileNotFoundError("Could not find the `mojo` binary.")
 
     def get_executor(self) -> list[str]:
-        if self.executor:
-            return self.executor.split(" ")
-
-        return [self.mojo_binary]
+        """Get executor command."""
+        return self.executor.split() if self.executor else [self.mojo_binary]
 
     def compile(
         self,
         *,
         output_file: Optional[Path] = None,
-        build_opts: List[str] = [],
+        build_opts: list[str] = None,
         mode: KBENCH_MODE,
         dryrun: bool = False,
         verbose: bool = False,
-        obj_cache: KbenchCache = None,
+        obj_cache: Optional[KbenchCache] = None,
     ) -> ProcessOutput:
-        if not output_file:
-            output_file = Path(tempfile.gettempdir()) / Path(
-                next(tempfile._get_candidate_names())  # type: ignore
-            )
-
-        # substitute env variables in the path
+        """Compile the spec instance."""
+        output_file = output_file or Path(tempfile.gettempdir()) / next(
+            tempfile._get_candidate_names()
+        )
         file_abs_path = Path(
             string.Template(str(self.file)).substitute(os.environ)
         ).absolute()
-
         assert file_abs_path.exists()
 
         defines = []
         vars = []
-
         for param in self.params:
-            if param.name.startswith("$"):
-                vars += [param.define()]
-            else:
-                defines += [param.define()]
+            (vars if param.name.startswith("$") else defines).append(
+                param.define()
+            )
 
-        defines = list(np.array(defines).flatten())
-        vars = list(np.array(vars).flatten())
+        defines = [item for sublist in defines for item in sublist]
+        vars = [item for sublist in vars for item in sublist]
 
-        if obj_cache.is_active:
+        if obj_cache and obj_cache.is_active:
             defines_str = str(defines)
             obj_path_in_cache = obj_cache.query(defines_str)
             print(
@@ -303,37 +251,26 @@ class SpecInstance:
                     "-o",
                     str(obj_path),
                 ]
-                # TODO: how to handle the return from failing here?
                 if verbose:
                     logging.info(f"[output_file: {output_file}]")
                 out = _run_cmdline(cmd, dryrun)
                 if out.stderr:
                     print(out.stderr)
                     return out
-                # store the binary in tmp-dir of kbench-cache
                 obj_path_in_cache = obj_cache.store(
-                    key=defines_str,
-                    obj_path=obj_path,
-                    tmp_dir=output_file.parent.absolute(),
+                    defines_str, obj_path, output_file.parent.absolute()
                 )
-                # TODO: There is an issue in running '--dryrun' with '-c' on empty cache.
                 assert obj_path_in_cache, (
                     "Running empty cache with --dryrun is not supported!"
                 )
 
-            # The path to built object is stored in the cache as `obj_path_in_cache`
             cmd = [obj_path_in_cache, "-o", str(output_file), *vars]
         else:
             cmd = self.get_executor()
             if build_opts:
                 cmd.extend(build_opts)
-            cmd.extend(
-                [
-                    *defines,
-                    str(file_abs_path),
-                ]
-            )
-            if not mode == KBENCH_MODE.BUILD:
+            cmd.extend([*defines, str(file_abs_path)])
+            if mode != KBENCH_MODE.BUILD:
                 cmd.extend(["-o", str(output_file), *vars])
 
         if verbose:
@@ -350,11 +287,8 @@ class SpecInstance:
         #     shell=True,
         # )
 
-    def to_obj(self) -> dict[str, object]:
-        obj = {}
-        for param in self.params:
-            obj[param.name] = param.value
-        return obj
+    def to_obj(self) -> dict[str, Any]:
+        return {param.name: param.value for param in self.params}
 
     def __str__(self) -> str:
         tokens = [self.name]
@@ -420,9 +354,9 @@ class GridSearchStrategy:
 class Spec:
     name: str = ""
     file: Path = Path("")
-    params: List[List[ParamSpace]] = field(default_factory=list)
+    params: list[list[ParamSpace]] = field(default_factory=list)
     mesh_idx: int = 0
-    mesh: List[SpecInstance] = field(default_factory=list)
+    mesh: list[SpecInstance] = field(default_factory=list)
 
     @staticmethod
     def load_yaml(file: Path) -> "Spec":
@@ -446,7 +380,7 @@ class Spec:
             raise ValueError(f"Could not load spec from {file}")
 
     @staticmethod
-    def load_yaml_list(yaml_path_list: List[str]) -> "Spec":
+    def load_yaml_list(yaml_path_list: list[str]) -> "Spec":
         spec: "Spec" = None  # type: ignore
         for i, yaml_path in enumerate(yaml_path_list):
             spec_ld = Spec.load_yaml(Path(yaml_path))
@@ -457,7 +391,7 @@ class Spec:
         return spec
 
     @staticmethod
-    def parse_params(param_list: List[str]):
+    def parse_params(param_list: list[str]):
         """
         Parse the parameters as (key,value) dictionary.
         The parameters can be defined as follows:
@@ -495,7 +429,7 @@ class Spec:
             d[name].extend(vals)
         return d
 
-    def extend_params(self, param_list):
+    def extend_params(self, param_list: list[str]):
         # Expand with CLI params
         extra_params = self.parse_params(param_list)
 
@@ -514,10 +448,10 @@ class Spec:
 
         self.setup_mesh()
 
-    def extend_shape_params(self, param_set: List[Param]):
+    def extend_shape_params(self, param_set: list[Param]):
         # TODO: check for collisions in param-names
 
-        extra_params: List[ParamSpace] = []
+        extra_params: list[ParamSpace] = []
         for ps in param_set:
             extra_params.append(ParamSpace(ps.name, ps.value))
 
@@ -556,10 +490,10 @@ class Spec:
         if "file" not in obj.keys():
             logging.warning("Field [file] is not set in YAML")
 
-        params: List[List[ParamSpace]] = []
+        params: list[list[ParamSpace]] = []
         if "params" in obj.keys():
             for cfg in obj["params"]:
-                e: List[ParamSpace] = []
+                e: list[ParamSpace] = []
                 for k, v in cfg.items():
                     if k == "metadata":
                         continue
@@ -615,7 +549,7 @@ class Spec:
         self.params.extend(other.params)
         self.mesh.extend(other.mesh)
 
-    def filter(self, filter_list: List):
+    def filter(self, filter_list: list[str]):
         filters = {}
         for f in filter_list:
             if "=" in f:
@@ -627,7 +561,7 @@ class Spec:
                 filters[name] = []
             filters[name].append(val)
 
-        filtered_insts: List[SpecInstance] = []
+        filtered_insts: list[SpecInstance] = []
         num_filters = len(filter_list)
 
         # Count the number of valid filters in each instance.
