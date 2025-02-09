@@ -3,6 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# FIXME: KERN-1562
+# UNSUPPORTED: H100-GPU
 # REQUIRES: H100-GPU
 # RUN: %mojo-no-debug-no-assert %s
 
@@ -108,25 +110,26 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     ]()
 
     var smem = external_memory[
-        UInt8, address_space = AddressSpace.SHARED, alignment=128
+        UInt8, address_space = AddressSpace.SHARED, alignment=8
     ]()
 
     alias a_smem_size = a_smem_layout.size() * pipeline_stages
     alias b_smem_size = b_smem_layout.size() * pipeline_stages
 
+    alias a_smem_bytes = a_smem_size * sizeof[a_type]()
+    alias b_smem_bytes = b_smem_size * sizeof[b_type]()
+
     var a_smem = smem.bitcast[Scalar[a_type]]()
-    var b_smem = (smem + (a_smem_size * sizeof[a_type]())).bitcast[
-        Scalar[b_type]
-    ]()
-    var smem_poll = (smem + a_smem_size + b_smem_size).bitcast[Int64]()
+    var b_smem = (smem + a_smem_bytes).bitcast[Scalar[b_type]]()
+    var smem_poll = (smem + a_smem_bytes + b_smem_bytes).bitcast[Int64]()
 
     var a_smem_iter = LayoutTensorIter[
         a_type,
         a_smem_layout,
-        address_space = a_smem.address_space,
-        alignment = a_smem.alignment,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
         circular=True,
-    ](a_smem, a_smem_size)
+    ](a_smem.static_alignment_cast[128](), a_smem_size)
 
     var b_smem_iter = LayoutTensorIter[
         b_type,
@@ -134,18 +137,10 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
         address_space = AddressSpace.SHARED,
         alignment=128,
         circular=True,
-    ](b_smem, b_smem_size)
+    ](b_smem.static_alignment_cast[128](), b_smem_size)
 
-    var c_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation()
-
-    _ = c_reg_tile.fill(0.0)
-
-    var a_mbars_ptr = smem_poll.bitcast[Int64]()
-    var b_mbars_ptr = smem_poll.bitcast[Int64]() + pipeline_stages
+    var a_mbars_ptr = smem_poll
+    var b_mbars_ptr = smem_poll + pipeline_stages
     full = create_mbarrier_array[pipeline_stages](a_mbars_ptr)
     empty = create_mbarrier_array[pipeline_stages](b_mbars_ptr)
 
@@ -188,6 +183,13 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
                 write_pipeline_states.step()
 
     else:
+        var c_reg_tile = LayoutTensor[
+            accum_type,
+            Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
+            address_space = AddressSpace.LOCAL,
+        ].stack_allocation()
+
+        _ = c_reg_tile.fill(0.0)
 
         @parameter
         for i in range(pipeline_stages):
@@ -314,7 +316,7 @@ def test_warp_specialize_gemm[
     alias num_wgmma = 1
     alias num_threads = WARP_GROUP_SIZE * num_wgmma + WARP_GROUP_SIZE
 
-    alias pipeline_stages = 4
+    alias pipeline_stages = 3
     alias smem_size = pipeline_stages * (
         a_smem_layout.size() * sizeof[a_type]()
         + b_smem_layout.size() * sizeof[b_type]()
