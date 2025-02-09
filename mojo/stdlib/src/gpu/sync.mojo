@@ -6,9 +6,10 @@
 """This module includes intrinsics for NVIDIA GPUs sync instructions."""
 
 from os import abort
-from sys import llvm_intrinsic, is_nvidia_gpu, is_amd_gpu
-from sys.param_env import env_get_bool
+from sys import is_amd_gpu, is_nvidia_gpu, llvm_intrinsic
 from sys.info import _is_sm_9x
+from sys.param_env import env_get_bool
+
 from memory import UnsafePointer
 from memory.pointer import AddressSpace
 

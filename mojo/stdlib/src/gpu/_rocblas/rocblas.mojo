@@ -4,20 +4,22 @@
 #
 # ===----------------------------------------------------------------------=== #
 #
-from memory import UnsafePointer
 from os import abort
+
 from complex import ComplexFloat32, ComplexFloat64
+from memory import UnsafePointer
+
 from .types import (
-    Handle,
-    Status,
+    Algorithm,
+    DataType,
     Diagonal,
+    Fill,
+    GEAMExOp,
+    Handle,
+    MallocBase,
     Operation,
     Side,
-    Fill,
-    DataType,
-    GEAMExOp,
-    MallocBase,
-    Algorithm,
+    Status,
 )
 from .utils import _get_dylib_function
 

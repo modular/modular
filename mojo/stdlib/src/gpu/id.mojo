@@ -13,20 +13,18 @@ from gpu import block_idx, block_dim, thread_idx
 ```
 """
 
+from math import fma
 from os import abort
-from sys.intrinsics import (
-    grid_dim as _grid_dim,
-    block_idx as _block_idx,
-    block_dim as _block_dim,
-    thread_idx as _thread_idx,
-    global_idx as _global_idx,
-    cluster_idx as _cluster_idx,
-    cluster_dim as _cluster_dim,
-    lane_id as _lane_id,
-)
+from sys.intrinsics import block_dim as _block_dim
+from sys.intrinsics import block_idx as _block_idx
+from sys.intrinsics import cluster_dim as _cluster_dim
+from sys.intrinsics import cluster_idx as _cluster_idx
+from sys.intrinsics import global_idx as _global_idx
+from sys.intrinsics import grid_dim as _grid_dim
+from sys.intrinsics import lane_id as _lane_id
+from sys.intrinsics import thread_idx as _thread_idx
 
 from gpu import WARP_SIZE
-from math import fma
 
 # ===-----------------------------------------------------------------------===#
 # Aliases

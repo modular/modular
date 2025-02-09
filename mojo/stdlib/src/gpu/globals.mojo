@@ -6,10 +6,10 @@
 """This module includes NVIDIA GPUs global constants."""
 
 from sys.info import (
-    is_amd_gpu,
     has_amd_gpu_accelerator,
-    is_nvidia_gpu,
     has_nvidia_gpu_accelerator,
+    is_amd_gpu,
+    is_nvidia_gpu,
 )
 
 from .host.info import DEFAULT_GPU, DEFAULT_GPU_ARCH

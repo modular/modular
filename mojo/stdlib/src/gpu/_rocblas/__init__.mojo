@@ -4,6 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from .rocblas import rocblas_hgemm, rocblas_sgemm
 from .types import *
-from .rocblas import rocblas_sgemm, rocblas_hgemm
 from .utils import check_error

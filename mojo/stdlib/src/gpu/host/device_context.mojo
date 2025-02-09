@@ -8,13 +8,14 @@
 
 from collections import List, Optional
 from collections.string import StaticString
-from compile.compile import Info
 from pathlib import Path
-from sys import env_get_int, is_defined, env_get_string, external_call, sizeof
-from sys.param_env import _is_bool_like
-from sys.info import _get_arch, is_triple, has_nvidia_gpu_accelerator
-from builtin._location import __call_location, _SourceLocation
+from sys import env_get_int, env_get_string, external_call, is_defined, sizeof
 from sys.compile import DebugLevel, OptimizationLevel
+from sys.info import _get_arch, has_nvidia_gpu_accelerator, is_triple
+from sys.param_env import _is_bool_like
+
+from builtin._location import __call_location, _SourceLocation
+from compile.compile import Info
 from gpu.host._compile import (
     _compile_code,
     _compile_code_asm,

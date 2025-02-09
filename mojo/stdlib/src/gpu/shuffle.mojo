@@ -6,8 +6,8 @@
 """This module includes intrinsics for NVIDIA GPUs shuffle instructions."""
 
 from sys import is_nvidia_gpu, llvm_intrinsic
-from bit import log2_floor
 
+from bit import log2_floor
 from gpu import lane_id
 from memory import bitcast
 

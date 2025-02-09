@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from sys import external_call
+
 from gpu.host import DeviceContext, DeviceStream
 from gpu.host.device_context import (
     _CharPtr,
@@ -12,7 +14,6 @@ from gpu.host.device_context import (
     _DeviceStreamPtr,
 )
 from memory import UnsafePointer
-from sys import external_call
 
 
 struct _ihipCtx_t:

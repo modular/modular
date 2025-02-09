@@ -6,15 +6,15 @@
 """This module includes NVIDIA GPUs intrinsics operations."""
 
 from sys._assembly import inlined_assembly
-from sys.info import alignof, bitwidthof, _current_arch
+from sys.info import _current_arch, alignof, bitwidthof
 from sys.intrinsics import llvm_intrinsic
 
 from builtin.dtype import _int_type_of_width
 from memory import UnsafePointer
 from memory.unsafe import bitcast
 
+from .host.info import H100, Info
 from .memory import AddressSpace, _int_to_str
-from .host.info import Info, H100
 
 # ===-----------------------------------------------------------------------===#
 # ldg

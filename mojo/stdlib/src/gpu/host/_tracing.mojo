@@ -8,16 +8,16 @@ from collections import List, Optional
 from os import abort
 from pathlib import Path
 from sys import (
+    has_accelerator,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
-    has_accelerator,
 )
-from sys.ffi import _OwnedDLHandle, _Global
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import c_char
+from sys.ffi import _Global, _OwnedDLHandle, c_char
 from sys.param_env import env_get_int
 
 from memory import UnsafePointer, stack_allocation
+
 from utils.variant import Variant
 
 # ===-----------------------------------------------------------------------===#

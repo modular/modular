@@ -7,7 +7,7 @@
 from math import ceildiv
 
 from buffer import Buffer, NDBuffer
-from gpu import block_dim, block_idx, grid_dim, thread_idx, barrier
+from gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.intrinsics import (
     load_acquire,
