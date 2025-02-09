@@ -4,10 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
-from layout import Layout
+from layout import Layout, LayoutTensor
 from layout._print_svg import print_svg
 from layout.tensor_builder import LayoutTensorBuild as tb
-from layout import LayoutTensor
 
 
 fn test_svg_nvidia_shape() raises:

@@ -23,13 +23,12 @@ from buffer.dimlist import _make_tuple
 from compile import _internal_compile_code
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import UnsafePointer
+from stdlib.builtin.io import _snprintf
 from tensor_internal import ManagedTensorSlice
 from testing import assert_almost_equal, assert_equal, assert_true
 
 from utils import Index, IndexList
 from utils.index import product
-
-from stdlib.builtin.io import _snprintf
 
 
 struct ValOrDim[dim: Dim = Dim()]:
