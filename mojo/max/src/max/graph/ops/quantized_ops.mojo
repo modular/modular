@@ -7,10 +7,10 @@
 """Optimized quantized operators."""
 
 from max.graph.quantization import (
-    QuantizationEncoding,
     Q4_0Encoding,
     Q4_KEncoding,
     Q6_KEncoding,
+    QuantizationEncoding,
 )
 
 from .custom_ops import custom

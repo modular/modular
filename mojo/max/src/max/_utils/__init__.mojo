@@ -4,13 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections.string import StaticString, StringSlice
 from os import abort
 from pathlib import Path
-from sys.ffi import c_char, DLHandle, external_call
+from sys.ffi import DLHandle, c_char, external_call
 
 from memory.unsafe_pointer import *
-
-from collections.string import StringSlice, StaticString
 
 
 @value

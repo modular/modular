@@ -5,10 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 """Ops commonly used in convolutional networks."""
 
-from ..error import error
 from _mlir import Identifier, NamedAttribute
 from _mlir.builtin_attributes import BoolAttr
 from max.tensor import Tensor, TensorShape
+
+from ..error import error
 
 
 def _padded_dimensions(

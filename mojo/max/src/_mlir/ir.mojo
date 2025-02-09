@@ -11,6 +11,7 @@ from collections.string import StaticString
 from memory import UnsafePointer
 
 from utils import Variant
+from utils.write import _WriteBufferStack
 
 import ._c
 import ._c.IR
@@ -22,7 +23,6 @@ from .diagnostics import (
     DiagnosticSeverity,
     ErrorCapturingDiagnosticHandler,
 )
-from utils.write import _WriteBufferStack
 
 # Ownership:
 #

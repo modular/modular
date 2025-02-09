@@ -13,9 +13,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory import UnsafePointer
-
 from collections.string import StaticString
+
+from memory import UnsafePointer
 
 from .ffi import MLIR_func
 

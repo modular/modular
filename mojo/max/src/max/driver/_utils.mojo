@@ -4,12 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory import memcpy, UnsafePointer
+from max.tensor import Tensor as OldTensor
+from memory import UnsafePointer, memcpy
 
 from .anytensor import AnyTensor
-from max.tensor import Tensor as OldTensor
-from .tensor import Tensor
 from .device import Device, cpu_device
+from .tensor import Tensor
 
 
 fn _steal_device_memory_impl_ptr(

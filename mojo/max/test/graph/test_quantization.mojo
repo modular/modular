@@ -7,30 +7,30 @@
 # RUN: mojo "%s"
 
 import sys
-from sys import sizeof
-from memory import memset_zero
-from testing import assert_equal
 from collections import InlineArray
+from sys import sizeof
 
 from max.graph import Graph, TensorType, Type
+from max.graph._testing import (
+    assert_tensors_almost_equal,
+    assert_tensors_equal,
+    execute_unary,
+)
 from max.graph.quantization import (
-    BlockQ40,
+    BFloat16Encoding,
     BlockQ4K,
     BlockQ5K,
     BlockQ6K,
-    BFloat16Encoding,
+    BlockQ40,
     Q4_0Encoding,
     Q4_KEncoding,
     Q5_KEncoding,
     Q6_KEncoding,
 )
 from max.graph.quantization.encodings import _find_extrema
-from max.graph._testing import (
-    assert_tensors_almost_equal,
-    assert_tensors_equal,
-    execute_unary,
-)
 from max.tensor import Tensor, TensorShape
+from memory import memset_zero
+from testing import assert_equal
 
 
 def test_quantize_bfloat16():

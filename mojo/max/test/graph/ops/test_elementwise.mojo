@@ -5,11 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo "%s"
 
-from testing import assert_raises
-
-from max.graph import _testing, Type, Graph, TensorType, Dim
-from max.graph.ops.elementwise import equal, abs, round
+from max.graph import Dim, Graph, TensorType, Type, _testing
+from max.graph.ops.elementwise import abs, equal, round
 from max.tensor import Tensor, TensorShape
+from testing import assert_raises
 
 
 fn test_basic() raises:

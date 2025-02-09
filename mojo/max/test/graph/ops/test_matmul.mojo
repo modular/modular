@@ -5,10 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo "%s"
 
-from testing import assert_raises
-
-from max.graph import ops, _testing, Type, Graph, TensorType
+from max.graph import Graph, TensorType, Type, _testing, ops
 from max.tensor import Tensor, TensorShape
+from testing import assert_raises
 
 
 fn test_matmul() raises:

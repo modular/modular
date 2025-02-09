@@ -4,12 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory import UnsafePointer
-from max._utils import call_dylib_func
 from sys.ffi import DLHandle
-from .session import InferenceSession
+
+from max._utils import call_dylib_func
+from memory import UnsafePointer
+
 from ._compilation import CCompiledModel
 from ._status import Status
+from .session import InferenceSession
 
 
 @value

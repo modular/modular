@@ -4,17 +4,17 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Ops that modify the shape or data type of a symbolic tensor."""
-from _mlir.ir import NamedAttribute, Identifier
+from collections import Dict, Optional
+
 from _mlir.builtin_attributes import StringAttr
+from _mlir.ir import Identifier, NamedAttribute
 from builtin._location import __call_location, _SourceLocation
-from collections import Optional, Dict
+from max.tensor import Tensor, TensorShape
 from memory import UnsafePointer
 
 from .._attributes import _shape_attr
 from ..error import error
 from ..type import Dim
-
-from max.tensor import Tensor, TensorShape
 
 # TODO: Add checks or extend to unranked support, where static shapes assumed.
 

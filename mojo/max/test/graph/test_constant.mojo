@@ -6,8 +6,7 @@
 # RUN: mojo %s
 
 import testing
-
-from max.graph import Type, Graph
+from max.graph import Graph, Type
 from max.tensor import Tensor, TensorShape
 
 

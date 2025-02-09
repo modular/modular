@@ -17,12 +17,10 @@ lists, tensors, etc.
 """
 
 import _mlir
-
-from .type import TensorType
-import ._c
-
 from max.tensor import Tensor
 
+import ._c
+from .type import TensorType
 
 # ===------------------------------------------------------------------=== #
 # Attribute factories

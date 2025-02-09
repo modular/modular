@@ -5,12 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from pathlib import Path
-from testing import assert_almost_equal, assert_equal
-
-from max.engine import InferenceSession, TensorMap
-from max.tensor import Tensor, TensorShape
 
 from builtin._location import __call_location
+from max.engine import InferenceSession, TensorMap
+from max.tensor import Tensor, TensorShape
+from testing import assert_almost_equal, assert_equal
 
 
 @always_inline

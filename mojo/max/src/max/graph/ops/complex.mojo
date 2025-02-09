@@ -16,7 +16,6 @@ parts respectively.
 from max.graph.type import Dim
 from max.tensor import Tensor, TensorShape
 
-
 # ===----------------------------------------------------------------------=== #
 # Converters
 # ===----------------------------------------------------------------------=== #

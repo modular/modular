@@ -5,14 +5,15 @@
 # ===----------------------------------------------------------------------=== #
 """Ops that perform linear algebra."""
 
-from builtin._location import __call_location, _SourceLocation
 from collections import Optional
 
-from .casting import reshape
-from ..error import error
-from ..type import Dim, TensorType
+from builtin._location import __call_location, _SourceLocation
 from max.graph import Symbol
 from max.tensor import Tensor, TensorShape
+
+from ..error import error
+from ..type import Dim, TensorType
+from .casting import reshape
 
 
 def outer(lhs: Symbol, rhs: Symbol) -> Symbol:

@@ -5,9 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo "%s" | FileCheck %s
 
-from max.graph import _testing, Dim, Graph, TensorType, Symbol
+from max.engine import InferenceSession, PrintStyle, TensorMap
+from max.graph import Dim, Graph, Symbol, TensorType, _testing
 from max.tensor import Tensor, TensorShape
-from max.engine import InferenceSession, TensorMap, PrintStyle
 
 
 fn test_print() raises:

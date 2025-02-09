@@ -11,15 +11,14 @@ You can pass each of the types shown here to
 [`Model.execute()`](/max/api/mojo/engine/model/Model#execute).
 """
 from collections import List
-from memory import UnsafePointer
-from memory.unsafe import bitcast
-from memory import ArcPointer
-from python import Python, PythonObject
-
-from .tensor_spec import TensorSpec
-from ._tensor_impl import _Numpy, CTensor
 
 from max.tensor import Tensor
+from memory import ArcPointer, UnsafePointer
+from memory.unsafe import bitcast
+from python import Python, PythonObject
+
+from ._tensor_impl import CTensor, _Numpy
+from .tensor_spec import TensorSpec
 
 
 struct _OwningPointer(Movable):

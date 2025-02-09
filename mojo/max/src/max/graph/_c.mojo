@@ -4,20 +4,19 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory import UnsafePointer
-from sys.ffi import (
-    RTLD,
-    _OwnedDLHandle,
-    _Global,
-    _get_dylib_function,
-    external_call,
-)
+from collections.string import StaticString, StringSlice
 from os import abort
 from pathlib import Path
-from collections.string import StringSlice, StaticString
+from sys.ffi import (
+    RTLD,
+    _get_dylib_function,
+    _Global,
+    _OwnedDLHandle,
+    external_call,
+)
 
 import _mlir
-
+from memory import UnsafePointer
 
 # ===-----------------------------------------------------------------------===#
 # Library Load

@@ -19,20 +19,19 @@ def main():
 
 """
 
-from .device import Device, DeviceMemory, DeviceTensor
-from .tensor_slice import TensorSlice
-from max.tensor import TensorSpec, TensorShape
+from collections import InlineArray, Optional
+
+from max._tensor_utils import ManagedTensorSlice, TensorLike, _indexing
 from max.tensor import Tensor as OldTensor
-from max._tensor_utils import (
-    ManagedTensorSlice,
-    TensorLike,
-    _indexing,
-)
-from collections import Optional, InlineArray
+from max.tensor import TensorShape, TensorSpec
 from memory import UnsafePointer
+
 from utils import IndexList
 from utils._serialize import _serialize
+
 from ._utils import _convert_from
+from .device import Device, DeviceMemory, DeviceTensor
+from .tensor_slice import TensorSlice
 
 
 struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):

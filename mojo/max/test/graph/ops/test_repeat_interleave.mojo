@@ -5,10 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo "%s"
 
-from max.tensor import Tensor, TensorShape
-
-from max.graph import _testing, Graph, TensorType
+from max.graph import Graph, TensorType, _testing
 from max.graph.ops.repeat_interleave import repeat_interleave
+from max.tensor import Tensor, TensorShape
 
 
 fn test_repeat_interleave() raises:

@@ -4,15 +4,16 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Defines functions to save/load tensors from a checkpoint file."""
-from max.tensor import Tensor, TensorShape, TensorSpec
-from max.engine import TensorMap
-from memory import UnsafePointer
-from pathlib import Path
 from os import PathLike
+from pathlib import Path
 from sys import sizeof
 
+from max.engine import TensorMap
+from max.tensor import Tensor, TensorShape, TensorSpec
+from memory import UnsafePointer
+
+from .metadata import _read_version, _serialization_header, current_version
 from .tensor_dict import TensorDict, _CheckpointTensor
-from .metadata import current_version, _read_version, _serialization_header
 
 
 @always_inline

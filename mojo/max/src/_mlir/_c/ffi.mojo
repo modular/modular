@@ -4,18 +4,18 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections.string import StaticString
 from os import abort, getenv
 from pathlib import Path
 from sys.ffi import (
     RTLD,
     _get_dylib_function,
-    external_call,
-    _OwnedDLHandle,
     _Global,
+    _OwnedDLHandle,
+    external_call,
 )
 from sys.param_env import env_get_string, is_defined
 
-from collections.string import StaticString
 from memory import UnsafePointer
 
 

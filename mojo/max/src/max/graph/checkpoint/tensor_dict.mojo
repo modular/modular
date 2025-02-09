@@ -4,10 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Structs used for maintaining a collection of tensors."""
-from max.tensor import Tensor, TensorSpec
-from collections.dict import _DictKeyIter, _DictEntryIter
-from memory import memcpy, UnsafePointer
 from collections import Dict
+from collections.dict import _DictEntryIter, _DictKeyIter
+
+from max.tensor import Tensor, TensorSpec
+from memory import UnsafePointer, memcpy
 
 
 @value

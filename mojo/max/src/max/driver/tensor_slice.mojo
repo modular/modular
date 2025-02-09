@@ -18,14 +18,15 @@ def main():
 ```
 
 """
-from .tensor import Tensor
-from max.tensor import RuntimeTensorSpec, TensorSpec
-from max._tensor_utils import TensorLike
 from collections import InlineArray
 from math import ceil
-from max.tensor import TensorSpec
 from sys import is_nvidia_gpu
 from sys.intrinsics import strided_load, strided_store
+
+from max._tensor_utils import TensorLike
+from max.tensor import RuntimeTensorSpec, TensorSpec
+
+from .tensor import Tensor
 
 
 @value

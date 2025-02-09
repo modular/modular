@@ -5,15 +5,16 @@
 # ===----------------------------------------------------------------------=== #
 """Symbolic value primitives."""
 
-from builtin._location import __call_location, _SourceLocation
 from collections.optional import Optional
-from utils.variant import Variant
 
 import _mlir
+from builtin._location import __call_location, _SourceLocation
+
+from utils.variant import Variant
 
 from ._attributes import _string_attr
-from .graph import Graph, _GraphRef
 from .error import error, format_error
+from .graph import Graph, _GraphRef
 from .ops import add, div, matmul, mul, pow, reshape, sub, transpose
 
 # TODO: The overloads are incomplete, and make unverified assumptions about

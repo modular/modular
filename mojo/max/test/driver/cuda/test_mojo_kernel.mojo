@@ -12,22 +12,22 @@
 # RUN: %mojo-build %s -o %t/cuda-test-mojo-kernel
 # RUN: %t/cuda-test-mojo-kernel %t2
 
+from pathlib import Path
 from sys import stderr
 
+import max.driver._cuda as cuda
+from gpu.host import Dim
+from gpu.id import block_dim, block_idx, thread_idx
 from max.driver import (
-    cpu_device,
-    Tensor,
-    ManagedTensorSlice,
     Device,
     DeviceTensor,
+    ManagedTensorSlice,
+    Tensor,
+    cpu_device,
 )
 from max.driver._cuda import cuda_device
-import max.driver._cuda as cuda
-from testing import assert_equal
 from max.tensor import TensorShape
-from gpu.id import thread_idx, block_dim, block_idx
-from gpu.host import Dim
-from pathlib import Path
+from testing import assert_equal
 
 
 fn vec_add[

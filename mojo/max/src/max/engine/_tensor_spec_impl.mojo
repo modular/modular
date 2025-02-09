@@ -4,9 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory import UnsafePointer
 from sys.ffi import DLHandle
-from max._utils import call_dylib_func, CString
+
+from max._utils import CString, call_dylib_func
+from memory import UnsafePointer
 
 
 @value

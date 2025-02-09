@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """ShapeElement API.  See ShapeElement struct definition for details."""
 
-from os import abort
 from collections.string import StringSlice
+from os import abort
 
 
 @value

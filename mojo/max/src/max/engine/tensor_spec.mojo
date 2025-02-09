@@ -7,16 +7,16 @@
 Defines `EngineTensorSpec` to define a model's input and output specs.
 """
 
-from os import abort
 from collections import List
 from collections.optional import Optional
+from os import abort
 from sys.ffi import DLHandle
+
 from max._utils import call_dylib_func
-
-from .session import InferenceSession
-from ._tensor_spec_impl import CTensorSpec
-
 from max.tensor import TensorSpec
+
+from ._tensor_spec_impl import CTensorSpec
+from .session import InferenceSession
 
 
 struct EngineTensorSpec(Stringable, CollectionElement):

@@ -5,9 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from max.tensor import TensorShape, TensorSpec
-
 from collections import List
+
+from max.tensor import TensorShape, TensorSpec
 
 
 # CHECK: test_tensor_shape

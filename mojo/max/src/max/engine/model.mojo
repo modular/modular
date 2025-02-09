@@ -7,27 +7,27 @@
 Defines the `Model` type that holds a model ready for execution.
 """
 
+from sys.ffi import DLHandle
+
 from max._utils import call_dylib_func, exchange
 from max.driver import (
     AnyMemory,
-    AnyTensor,
     AnyMojoValue,
+    AnyTensor,
     Device,
     DeviceMemory,
     DeviceTensor,
 )
 from max.driver._utils import _steal_device_memory_impl_ptr
+from max.tensor import Tensor, TensorSpec
 from memory import UnsafePointer
 from python import PythonObject
-from sys.ffi import DLHandle
 
-from ._model_impl import CModel
 from ._compilation import CompiledModel
 from ._context import CRuntimeContext
-from ._status import Status, CStatus
+from ._model_impl import CModel
+from ._status import CStatus, Status
 from .tensor_map import CTensorMap
-
-from max.tensor import Tensor, TensorSpec
 
 
 @value

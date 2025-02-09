@@ -4,19 +4,19 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from sys import sizeof
+from sys.ffi import DLHandle
+
 from buffer import Buffer
+from max._utils import call_dylib_func, exchange
+from max.tensor import Tensor
 from memory import UnsafePointer, memcpy
 from memory.unsafe import bitcast
 from python import Python, PythonObject
-from sys.ffi import DLHandle
-from sys import sizeof
-from max._utils import call_dylib_func, exchange
 
+from ._tensor_spec_impl import CTensorSpec
 from .session import InferenceSession
 from .tensor_spec import TensorSpec
-from ._tensor_spec_impl import CTensorSpec
-
-from max.tensor import Tensor
 
 
 @value

@@ -12,12 +12,13 @@
 # RUN: %mojo-build %s -o %t/cuda-test-device
 # RUN: %t/cuda-test-device
 
-from max.driver import cpu_device, Tensor, AnyTensor
-from max.driver._cuda import cuda_device
-from testing import assert_equal, assert_not_equal, assert_true
-from max.tensor import TensorSpec, TensorShape
-from utils import Index
 from gpu.host import DeviceContext
+from max.driver import AnyTensor, Tensor, cpu_device
+from max.driver._cuda import cuda_device
+from max.tensor import TensorShape, TensorSpec
+from testing import assert_equal, assert_not_equal, assert_true
+
+from utils import Index
 
 
 def _to_device_str(gpu_id: Int, sm_ver: Int) -> String:

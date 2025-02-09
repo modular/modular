@@ -5,12 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 """Ops that slice, index, stack, concat etc."""
 
-from builtin._location import __call_location, _SourceLocation
 from collections.optional import Optional
-from utils.numerics import max_finite
-from utils import IndexList
 
 from _mlir.ir import Attribute, Identifier, NamedAttribute
+from builtin._location import __call_location, _SourceLocation
+
+from utils import IndexList
+from utils.numerics import max_finite
+
 from ..error import error
 from ..symbol import SymbolicSlice
 

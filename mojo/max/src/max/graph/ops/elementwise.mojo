@@ -67,11 +67,11 @@ Given two input tensor shapes, broadcasting works as following:
 3. All other dimensions will be asserted to be equivalent. If they are not, an exception will be raised.
 """
 
-from builtin._location import __call_location, _SourceLocation
 from collections import Optional
 
-from ..error import error
+from builtin._location import __call_location, _SourceLocation
 
+from ..error import error
 
 # ===----------------------------------------------------------------------=== #
 # Binary Ops

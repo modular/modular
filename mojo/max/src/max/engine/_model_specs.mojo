@@ -4,10 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from max._utils import call_dylib_func, exchange, CString
-from memory import UnsafePointer
-from sys.ffi import DLHandle
 from collections.string import StaticString
+from sys.ffi import DLHandle
+
+from max._utils import CString, call_dylib_func, exchange
+from memory import UnsafePointer
 
 from ._compilation import CCompiledModel
 from ._status import Status

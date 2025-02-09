@@ -4,8 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from max.tensor import Tensor, TensorShape
 from collections import Optional
+
+from max.tensor import Tensor, TensorShape
+
 from ..type import StaticDim
 
 

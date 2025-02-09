@@ -19,13 +19,15 @@ def main():
 
 from collections import Optional
 from collections.string import StaticString
-from max._utils import call_dylib_func, get_lib_path_from_cfg
-from memory import UnsafePointer
 from pathlib import Path
+
+from max._utils import call_dylib_func, get_lib_path_from_cfg
 from max.tensor import TensorSpec
+from memory import UnsafePointer
+
 from ._driver_library import DriverLibrary
-from .device_memory import DeviceMemory, DeviceTensor
 from ._status import Status, _CStatus
+from .device_memory import DeviceMemory, DeviceTensor
 
 
 struct _CPUDescriptor:

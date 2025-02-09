@@ -5,9 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo %s
 
-from testing import *
-from max.graph import _testing, ops, Dim, Graph, TensorType, Type
+from max.graph import Dim, Graph, TensorType, Type, _testing, ops
 from max.tensor import Tensor, TensorShape
+from testing import *
 
 
 fn test_vector_index_int() raises:

@@ -6,13 +6,13 @@
 """Library for graph Symbol Types."""
 
 from collections import Optional
-from utils.variant import Variant
 
 import _mlir
+from max.tensor import TensorSpec
+
+from utils.variant import Variant
 
 import ._c
-
-from max.tensor import TensorSpec
 
 
 fn _dyn() -> Int64:

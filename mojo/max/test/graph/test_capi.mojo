@@ -6,7 +6,6 @@
 # RUN: mojo %s | FileCheck %s
 
 import _mlir
-
 from max.graph import _c
 
 

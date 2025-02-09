@@ -12,15 +12,11 @@
 # RUN: %mojo-build -D ENABLE_ASSERTIONS %s -o %t/test-tensor
 # RUN: %t/test-tensor
 
-from max.driver import (
-    cpu_device,
-    Tensor,
-    TensorSlice,
-    ManagedTensorSlice,
-)
-from max.tensor import TensorSpec, TensorShape
+from max.driver import ManagedTensorSlice, Tensor, TensorSlice, cpu_device
 from max.tensor import Tensor as OldTensor
+from max.tensor import TensorShape, TensorSpec
 from testing import assert_equal, assert_raises, assert_true
+
 from utils import Index, IndexList
 
 

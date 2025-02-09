@@ -6,20 +6,21 @@
 """
 Defines the `TensorMap` type that holds input and output tensors for a model.
 """
+from sys.ffi import DLHandle
+
 from buffer import Buffer
+from max._utils import CString, call_dylib_func, exchange
+from max.tensor import Tensor, TensorSpec
 from memory import UnsafePointer
 from memory.unsafe import bitcast
-from sys.ffi import DLHandle
-from max._utils import call_dylib_func, exchange, CString
+
 from utils.write import _WriteBufferStack
 
-from .session import InferenceSession
 from ._context import CRuntimeContext
 from ._tensor_impl import EngineTensor
 from ._tensor_map_impl import CTensorMap
+from .session import InferenceSession
 from .value import Value
-
-from max.tensor import Tensor, TensorSpec
 
 
 struct TensorMap(CollectionElement, SizedRaising, Stringable):

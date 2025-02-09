@@ -6,10 +6,10 @@
 # RUN: %mojo -debug-level full %s
 
 from collections.optional import Optional
-from testing import assert_equal, assert_false, assert_true
 
 from max.engine import InferenceSession
 from max.tensor import TensorSpec
+from testing import assert_equal, assert_false, assert_true
 
 
 fn test_tensor_spec_basic() raises:

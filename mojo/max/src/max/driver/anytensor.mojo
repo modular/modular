@@ -21,17 +21,19 @@ def main():
     container = Container(tensor^)
 ```
 """
-from .device_memory import DeviceMemory
-from .tensor import Tensor
-from .device import Device, cpu_device
-from max.tensor import TensorSpec
-from max._utils import exchange
-
 from collections import Optional
+from sys import alignof, external_call, is_x86, sizeof
+
+from max._utils import exchange
+from max.tensor import TensorSpec
 from memory import UnsafePointer
+
 from utils import Variant
 from utils._serialize import _serialize
-from sys import is_x86, external_call, sizeof, alignof
+
+from .device import Device, cpu_device
+from .device_memory import DeviceMemory
+from .tensor import Tensor
 
 
 struct AnyTensor:

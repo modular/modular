@@ -5,10 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s
 
-from max.engine import (
-    get_version,
-    InferenceSession,
-)
+from max.engine import InferenceSession, get_version
 from testing import assert_true
 
 

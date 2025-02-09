@@ -4,10 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory import UnsafePointer
+from sys import alignof, sizeof
 from sys.ffi import DLHandle, external_call
-from sys import sizeof, alignof
-from max._utils import call_dylib_func, CString
+
+from max._utils import CString, call_dylib_func
+from memory import UnsafePointer
 
 from ._status import Status
 from ._tensor_impl import CTensor

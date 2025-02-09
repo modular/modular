@@ -4,15 +4,16 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from max.tensor import TensorSpec, TensorShape
+from collections import Optional
+
+from max.tensor import TensorShape, TensorSpec
+from memory import UnsafePointer
+
 from ._driver_library import DriverLibrary
+from ._status import Status
+from .anytensor import AnyTensor
 from .device import Device, _CDevice
 from .tensor import Tensor
-from .anytensor import AnyTensor
-
-from collections import Optional
-from memory import UnsafePointer
-from ._status import Status
 
 
 trait DeviceBuffer:

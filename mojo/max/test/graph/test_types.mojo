@@ -5,10 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo %s
 
-import testing
-
 import _mlir
-
+import testing
 from max.graph import Dim, ListType, TensorType
 from max.tensor import TensorSpec
 

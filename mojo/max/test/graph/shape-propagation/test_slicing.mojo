@@ -5,10 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo "%s"
 
-from max.tensor import Tensor, TensorShape
-from max.graph import _testing, Graph, TensorType, Type, Dim, Symbol
+from max.graph import Dim, Graph, Symbol, TensorType, Type, _testing
 from max.graph.ops.slicing import concat
-from testing import assert_true, assert_raises
+from max.tensor import Tensor, TensorShape
+from testing import assert_raises, assert_true
 
 
 fn test_concat() raises:

@@ -5,28 +5,26 @@
 # ===----------------------------------------------------------------------=== #
 """Core graph primitives."""
 
-from builtin._location import __call_location, _SourceLocation
-from collections import Set, Optional
-from memory import ArcPointer
-from sys.info import has_neon
-from utils.write import _WriteBufferStack
+from collections import Optional, Set
 from os import abort
 from pathlib import Path
+from sys.info import has_neon
 
 import _mlir
 from _mlir.builtin_attributes import StringAttr, TypeAttr
 from _mlir.builtin_types import FunctionType
 from _mlir.ir import Module, Operation
+from builtin._location import __call_location, _SourceLocation
+from max.graph.quantization import QuantizationEncoding
+from max.tensor import Tensor, TensorShape
+from memory import ArcPointer
 
+from utils.write import _WriteBufferStack
 
 from ._attributes import _tensor_attr, _vector_attr
 from .error import error
 from .symbol import Symbol
 from .type import Dim, ListType, TensorType, Type
-
-from max.graph.quantization import QuantizationEncoding
-from max.tensor import Tensor, TensorShape
-
 
 # TODO: Add examples throughout.
 

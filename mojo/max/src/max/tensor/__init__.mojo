@@ -8,5 +8,12 @@
 # recognize these re-exported definitions, so it won't pick up an docs here.
 # The docs are generated from the original implementations.
 
-from tensor import Tensor, TensorShape, TensorSpec, RuntimeTensorSpec
-from tensor import ManagedTensorSlice, TensorLike, foreach
+from tensor import (
+    ManagedTensorSlice,
+    RuntimeTensorSpec,
+    Tensor,
+    TensorLike,
+    TensorShape,
+    TensorSpec,
+    foreach,
+)

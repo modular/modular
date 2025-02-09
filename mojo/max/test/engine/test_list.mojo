@@ -5,9 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s
 
-from testing import assert_equal, assert_false, assert_true
-
 from max.engine import InferenceSession
+from testing import assert_equal, assert_false, assert_true
 
 
 fn test_list_value() raises:

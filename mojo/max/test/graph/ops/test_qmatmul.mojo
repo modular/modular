@@ -5,9 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo "%s"
 
-from max.graph import ops, _testing, Type, Graph, TensorType
-from max.tensor import Tensor, TensorShape
+from max.graph import Graph, TensorType, Type, _testing, ops
 from max.graph.quantization import Q4_0Encoding
+from max.tensor import Tensor, TensorShape
 
 
 def test_qmatmul():

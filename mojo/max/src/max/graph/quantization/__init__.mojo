@@ -45,12 +45,7 @@ training, so you must import your model weights, load them as
 [`Tensor`](/mojo/stdlib/tensor/tensor/Tensor) values, and then quantize them.
 """
 
-from .quantization_encoding import QuantizationEncoding
 from .encodings import (
-    _BlockQ40 as BlockQ40,
-    _BlockQ4K as BlockQ4K,
-    _BlockQ5K as BlockQ5K,
-    _BlockQ6K as BlockQ6K,
     BFloat16Encoding,
     Float32Encoding,
     Q4_0Encoding,
@@ -58,3 +53,8 @@ from .encodings import (
     Q5_KEncoding,
     Q6_KEncoding,
 )
+from .encodings import _BlockQ4K as BlockQ4K
+from .encodings import _BlockQ5K as BlockQ5K
+from .encodings import _BlockQ6K as BlockQ6K
+from .encodings import _BlockQ40 as BlockQ40
+from .quantization_encoding import QuantizationEncoding

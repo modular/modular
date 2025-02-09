@@ -5,9 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo "%s"
 
-from max.graph import _testing, Graph, TensorType, Type, Dim
-from testing import assert_raises, assert_true
+from max.graph import Dim, Graph, TensorType, Type, _testing
 from max.tensor import Tensor, TensorShape
+from testing import assert_raises, assert_true
 
 
 fn test_reshape() raises:

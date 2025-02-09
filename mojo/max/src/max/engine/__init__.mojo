@@ -25,12 +25,12 @@ def main():
 ```
 """
 
+from ._context import PrintStyle
 from .info import get_version
 from .model import Model
 from .session import InferenceSession, InputSpec, SessionOptions
-from ._context import PrintStyle
 from .shape_element import ShapeElement
-from .tensor_spec import EngineTensorSpec
+from .tensor import EngineNumpyView, EngineTensorView, NamedTensor
 from .tensor_map import TensorMap
-from .tensor import EngineTensorView, EngineNumpyView, NamedTensor
-from .value import Value, List
+from .tensor_spec import EngineTensorSpec
+from .value import List, Value

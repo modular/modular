@@ -5,9 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from sys.ffi import DLHandle
-from memory import ArcPointer, UnsafePointer
+
 from max._utils import call_dylib_func, get_lib_path_from_cfg
 from max.tensor import TensorSpec
+from memory import ArcPointer, UnsafePointer
+
 from ._status import _CStatus
 
 

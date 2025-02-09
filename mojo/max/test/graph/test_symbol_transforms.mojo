@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo %s
 
-from max.graph import _testing, Type, Graph, TensorType, Symbol
+from max.graph import Graph, Symbol, TensorType, Type, _testing
 from max.tensor import Tensor, TensorShape
 
 

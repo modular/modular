@@ -9,7 +9,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from max.graph import _testing
-from max.graph.checkpoint import save, load, TensorDict
+from max.graph.checkpoint import TensorDict, load, save
 from max.tensor import Tensor, TensorShape
 
 

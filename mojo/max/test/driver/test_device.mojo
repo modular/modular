@@ -12,14 +12,10 @@
 # RUN: %mojo-build %s -o %t/test-device
 # RUN: %t/test-device
 
-from max.driver import (
-    cpu_device,
-    DeviceMemory,
-    DeviceTensor,
-)
+from max.driver import DeviceMemory, DeviceTensor, cpu_device
+from max.tensor import TensorSpec
 from memory import UnsafePointer
 from testing import assert_equal, assert_true
-from max.tensor import TensorSpec
 
 
 def test_device():

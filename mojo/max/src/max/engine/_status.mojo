@@ -3,9 +3,10 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from memory import UnsafePointer
 from sys.ffi import DLHandle
-from max._utils import call_dylib_func, exchange, CString
+
+from max._utils import CString, call_dylib_func, exchange
+from memory import UnsafePointer
 
 
 @value

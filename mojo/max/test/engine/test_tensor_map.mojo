@@ -5,11 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s
 
-from testing import assert_equal
-from utils.index import Index
-
 from max.engine import InferenceSession
 from max.tensor import Tensor, TensorShape
+from testing import assert_equal
+
+from utils.index import Index
 
 
 fn test_tensor_map() raises:

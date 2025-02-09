@@ -47,14 +47,7 @@ Graph](/max/tutorials/get-started-with-max-graph).
 
 """
 
+from .error import error, format_error
 from .graph import Graph
 from .symbol import Symbol
-from .type import (
-    Dim,
-    ListType,
-    _OpaqueType,
-    StaticDim,
-    TensorType,
-    Type,
-)
-from .error import error, format_error
+from .type import Dim, ListType, StaticDim, TensorType, Type, _OpaqueType

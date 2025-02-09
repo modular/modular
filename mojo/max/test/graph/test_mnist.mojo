@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo %s | FileCheck %s
 
-from max.graph import Type, Graph, TensorType, Symbol
+from max.graph import Graph, Symbol, TensorType, Type
 from max.graph._attributes import _tensor_attr
 from max.tensor import Tensor, TensorShape
 

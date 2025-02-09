@@ -15,10 +15,11 @@
 
 from memory import UnsafePointer
 
+from utils.write import _WriteBufferStack
+
 from .AffineMap import MlirAffineMap
 from .ffi import MLIR_func
 from .IR import *
-from utils.write import _WriteBufferStack
 
 # ===-- mlir-c/AffineExpr.h - C API for MLIR Affine Expressions ---*- C -*-===//
 #

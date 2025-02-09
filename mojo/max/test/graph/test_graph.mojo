@@ -6,9 +6,9 @@
 # RUN: mojo %s | FileCheck %s
 
 from pathlib.path import Path
-from testing import *
 
-from max.graph import Type, Graph, TensorType, Symbol
+from max.graph import Graph, Symbol, TensorType, Type
+from testing import *
 
 
 fn test_identity_graph() raises:

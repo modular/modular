@@ -7,7 +7,6 @@
 from collections import List
 from collections.string import StaticString
 
-
 import ._c
 import ._c.BuiltinAttributes
 import ._c.BuiltinTypes

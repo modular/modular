@@ -13,10 +13,13 @@ from collections.optional import Optional
 from os.atomic import Atomic
 from pathlib import Path
 from sys.ffi import _get_global_or_null
-from memory import ArcPointer, UnsafePointer
+
 from max._utils import call_dylib_func
-from max.driver import cpu_device, Device
+from max.driver import Device, cpu_device
 from max.driver._cuda import check_compute_capability
+from max.graph import Graph
+from max.tensor import Tensor, TensorSpec
+from memory import ArcPointer, UnsafePointer
 
 from ._compilation import (
     CCompiledModel,
@@ -25,13 +28,10 @@ from ._compilation import (
     FrameworkFormat,
     ModelSource,
 )
-from ._context import RuntimeConfig, RuntimeContext, PrintStyle
+from ._context import PrintStyle, RuntimeConfig, RuntimeContext
 from ._engine_impl import _EngineImpl, _get_engine_path
 from ._model_impl import CModel
 from ._status import Status
-
-from max.graph import Graph
-from max.tensor import Tensor, TensorSpec
 
 
 struct _InferenceSessionImpl(Movable):

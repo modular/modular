@@ -6,11 +6,11 @@
 # RUN: %mojo %s
 
 from max._tensor_utils import foreach
-from max.driver import cpu_device, ManagedTensorSlice, Tensor
-from utils import Index
-from max.tensor import TensorSpec, TensorShape
+from max.driver import ManagedTensorSlice, Tensor, cpu_device
+from max.tensor import TensorShape, TensorSpec
 from testing import assert_equal
-from utils import IndexList
+
+from utils import Index, IndexList
 
 
 # CHECK-LABEL: == test_foreach

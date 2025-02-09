@@ -5,11 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from compiler_internal import (
-    register,
+    StaticTensorSpec,
     elementwise,
     enable_fusion_for,
-    view_kernel,
     mutable,
+    register,
     specsof,
-    StaticTensorSpec,
+    view_kernel,
 )

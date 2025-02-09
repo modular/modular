@@ -4,23 +4,23 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from .device import Device, _get_driver_path, _CDevice
-from max._utils import call_dylib_func
-from ._driver_library import DriverLibrary
-from gpu.host import (
-    DeviceContext,
-    DeviceFunction as CUDAFunction,
-    Dim,
-    FuncAttribute,
-)
-from memory import UnsafePointer
-from pathlib import Path
 from collections import Optional, OptionalReg
-from utils import Variant
+from os import abort
+from pathlib import Path
+
+from gpu.host import DeviceContext
+from gpu.host import DeviceFunction as CUDAFunction
+from gpu.host import Dim, FuncAttribute
 from gpu.host._compile import _get_gpu_target
-from ._status import Status
+from max._utils import call_dylib_func
+from memory import UnsafePointer
 from runtime.asyncrt import DeviceContextPtr
+
+from utils import Variant
+
+from ._driver_library import DriverLibrary
+from ._status import Status
+from .device import Device, _CDevice, _get_driver_path
 
 
 fn cuda_device(gpu_id: Int = 0) raises -> Device:

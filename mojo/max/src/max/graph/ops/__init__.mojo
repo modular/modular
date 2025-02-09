@@ -20,16 +20,16 @@ methods such as
 [`swapaxes()`](/max/api/mojo/graph/symbol/Symbol#swapaxes). """
 
 from .casting import (
-    shape_of,
+    broadcast_to,
     cast,
-    squeeze,
-    unsqueeze,
     rebind,
     reshape,
     reshape_like,
-    broadcast_to,
-    transpose_matrix,
+    shape_of,
+    squeeze,
     transpose,
+    transpose_matrix,
+    unsqueeze,
 )
 from .complex import as_complex, as_interleaved_complex, as_real, mul_complex
 from .convolution import avg_pool, conv2d, conv3d, max_pool
@@ -72,15 +72,9 @@ from .elementwise import (
     tanh,
     trunc,
 )
-from .linalg import (
-    band_part,
-    layer_norm,
-    matmul,
-    outer,
-    tile,
-)
+from .linalg import band_part, layer_norm, matmul, outer, tile
 from .lists import list
 from .quantized_ops import qmatmul
-from .reduction import mean, arg_max
+from .reduction import arg_max, mean
 from .repeat_interleave import repeat_interleave
-from .slicing import gather, select, slice, split, concat, stack
+from .slicing import concat, gather, select, slice, split, stack

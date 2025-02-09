@@ -6,9 +6,9 @@
 """The root package for the compiler module in MAX."""
 
 from compiler import (
-    register,
+    StaticTensorSpec,
     elementwise,
     enable_fusion_for,
+    register,
     specsof,
-    StaticTensorSpec,
 )

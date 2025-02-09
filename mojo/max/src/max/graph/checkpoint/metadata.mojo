@@ -7,14 +7,13 @@
 all tensors.
 """
 
-from pathlib import Path
-from os import PathLike
-from sys import sizeof
-from max.tensor import Tensor
-from collections import InlineArray
-
 import os
+from collections import InlineArray
+from os import PathLike
+from pathlib import Path
+from sys import sizeof
 
+from max.tensor import Tensor
 
 # 0x93 🔥 + + 0x93
 alias _SERIALIZATION_HEADER = InlineArray[Int8, 8](

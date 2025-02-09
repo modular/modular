@@ -4,21 +4,20 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
+from collections import List, Optional
 from collections.string import StringSlice
-from memory import UnsafePointer, OwnedPointer
-from sys.ffi import DLHandle, c_char
-from sys import external_call
-from collections import List
 from pathlib import Path
-from max._utils import call_dylib_func, exchange, OwningVector
+from sys import external_call
+from sys.ffi import DLHandle, c_char
 
-from .session import InferenceSession
+from max._utils import OwningVector, call_dylib_func, exchange
+from max.tensor import TensorSpec
+from memory import OwnedPointer, UnsafePointer
+
 from ._model_specs import InputTensorNames, OutputTensorNames
 from ._status import Status
 from ._tensor_spec_impl import CTensorSpec
-
-from max.tensor import TensorSpec
+from .session import InferenceSession
 
 
 @value

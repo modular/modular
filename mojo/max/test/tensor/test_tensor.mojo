@@ -7,13 +7,13 @@
 
 from math import iota, sqrt
 from pathlib import Path
-from tempfile import NamedTemporaryFile
-from utils.index import Index, IndexList
 from sys import sizeof
+from tempfile import NamedTemporaryFile
 
 from max.tensor import Tensor, TensorShape, TensorSpec
-
 from testing import assert_almost_equal, assert_equal, assert_false
+
+from utils.index import Index, IndexList
 
 
 # CHECK: test_tensor

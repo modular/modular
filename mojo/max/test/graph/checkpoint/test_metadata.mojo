@@ -5,17 +5,16 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from memory import UnsafePointer
-from tempfile import NamedTemporaryFile
 from sys import sizeof
+from tempfile import NamedTemporaryFile
 
 import testing
-
 from max.graph.checkpoint.metadata import (
-    read_version,
-    _serialization_header,
     VersionInfo,
+    _serialization_header,
+    read_version,
 )
+from memory import UnsafePointer
 
 
 @always_inline

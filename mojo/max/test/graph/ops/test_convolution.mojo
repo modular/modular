@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo "%s"
 
-from max.graph import _testing, Graph, TensorType
+from max.graph import Graph, TensorType, _testing
 from max.graph.ops.convolution import avg_pool, conv2d, conv3d, max_pool
 from max.tensor import Tensor, TensorShape
 
