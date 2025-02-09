@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Provides tracing utilities."""
 
+from collections import Optional
 from collections.optional import OptionalReg
 from sys import external_call
 from sys.param_env import env_get_int, is_defined
@@ -16,7 +17,6 @@ from gpu.host._tracing import _is_enabled as _gpu_is_enabled
 from gpu.host._tracing import _is_enabled_details as _gpu_is_enabled_details
 from gpu.host._tracing import _mark as _mark_gpu
 from gpu.host._tracing import _start_range as _start_gpu_range
-from collections import Optional
 
 from utils import IndexList, Variant
 
