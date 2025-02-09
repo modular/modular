@@ -8,19 +8,19 @@ from collections.optional import OptionalReg
 from math import ceildiv, isclose
 from pathlib import Path
 from random import rand, randint, random_float64, seed
-from sys import alignof, argv, simdwidthof, sizeof, is_nvidia_gpu
+from sys import alignof, argv, is_nvidia_gpu, simdwidthof, sizeof
 from sys._assembly import inlined_assembly
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import (
-    WARP_SIZE,
     MAX_THREADS_PER_BLOCK_METADATA,
+    WARP_SIZE,
+    barrier,
     block_idx,
     grid_dim,
-    thread_idx,
-    barrier,
     lane_id,
+    thread_idx,
 )
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.info import DEFAULT_GPU_ARCH, is_gpu
@@ -56,8 +56,8 @@ from layout.tensor_core import (
     get_fragment_size,
     get_mma_shape,
 )
-from linalg.matmul_gpu import _matmul_gpu
 from linalg._multistage_gemm_gpu import warp_split_k_reduction
+from linalg.matmul_gpu import _matmul_gpu
 from linalg.utils import GemmShape, apply_epilogue, elementwise_epilogue_type
 from linalg.utils_gpu import (
     MatmulConfig,
