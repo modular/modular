@@ -39,16 +39,13 @@ fn get_safetensors_idx(head_dim_idx: Int, head_size: Int) -> (Int, Int):
 
 @always_inline
 fn rope_q_proj[
-    type: DType,
-    rank: Int,
-    width: Int, //,
+    type: DType, rank: Int, width: Int, //, *, interleaved: Bool
 ](
     q_proj: NDBuffer[type, rank, *_],
     output: NDBuffer[type, rank, *_],
     idx: IndexList[rank],
     freq_val: SIMD[type, width],
     head_size: Int,
-    interleaved: Bool,
 ):
     var indices = get_safetensors_idx(idx[rank - 1], head_size)
     var pos_re = idx
@@ -58,6 +55,8 @@ fn rope_q_proj[
     alias width_2 = width // 2
 
     var val: SIMD[type, width]
+
+    @parameter
     if interleaved:
         val = q_proj.load[width=width](idx)
     else:
@@ -69,6 +68,7 @@ fn rope_q_proj[
 
     var res = _rope(val, freq_val)
 
+    @parameter
     if interleaved:
         output.store(idx, res)
     else:
@@ -79,9 +79,7 @@ fn rope_q_proj[
 
 @always_inline
 fn rope_k_cache[
-    type: DType,
-    cache_t: KVCacheT,
-    width: Int, //,
+    type: DType, cache_t: KVCacheT, width: Int, //, *, interleaved: Bool
 ](
     k_cache: cache_t,
     b_idx: Int,
@@ -90,7 +88,6 @@ fn rope_k_cache[
     d_idx: Int,
     freq_val: SIMD[type, width],
     head_size: Int,
-    interleaved: Bool,
 ):
     h_re, h_im = get_safetensors_idx(d_idx, head_size)
     alias width_2 = width // 2
@@ -104,6 +101,8 @@ fn rope_k_cache[
     ]()
 
     var val: SIMD[type, width]
+
+    @parameter
     if interleaved:
         val = rebind[SIMD[type, width]](
             k_cache.load[width=width](b_idx, h_idx, s_idx, d_idx)
@@ -117,6 +116,7 @@ fn rope_k_cache[
 
     var res = _rope(val, freq_val)
 
+    @parameter
     if interleaved:
         k_cache.store(
             b_idx, h_idx, s_idx, d_idx, rebind[SIMD[cache_type, width]](res)
@@ -145,13 +145,13 @@ fn fused_qk_rope[
     collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
     *,
+    interleaved: Bool,
     target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 4, *_],
     kv_collection: collection_t,
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
-    interleaved: Bool,
     output: NDBuffer[type, 4, *_],
     context: Optional[DeviceContext],
 ):
@@ -190,12 +190,12 @@ fn fused_qk_rope[
             var f_c_temp = freqs_cis.load[width=width](f_idx)
 
             if is_q_proj:
-                rope_q_proj(
-                    q_proj, output, idx, f_c_temp, head_size, interleaved
+                rope_q_proj[interleaved=interleaved](
+                    q_proj, output, idx, f_c_temp, head_size
                 )
             else:
                 head_idx -= num_q_heads
-                rope_k_cache(
+                rope_k_cache[interleaved=interleaved](
                     k_cache,
                     bs_idx,
                     head_idx,
@@ -203,7 +203,6 @@ fn fused_qk_rope[
                     head_dim_idx,
                     f_c_temp,
                     head_size,
-                    interleaved,
                 )
 
     var launch_shape = IndexList[4](
@@ -236,6 +235,7 @@ fn fused_qk_rope_ragged[
     collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
     *,
+    interleaved: Bool,
     target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 3, *_],
@@ -243,7 +243,6 @@ fn fused_qk_rope_ragged[
     kv_collection: collection_t,
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
-    interleaved: Bool,
     output: NDBuffer[type, 3, *_],
     context: Optional[DeviceContext],
 ):
@@ -285,12 +284,12 @@ fn fused_qk_rope_ragged[
             var f_c_temp = freqs_cis.load[width=width](f_idx)
 
             if is_q_proj:
-                rope_q_proj(
-                    q_proj, output, idx, f_c_temp, head_size, interleaved
+                rope_q_proj[interleaved=interleaved](
+                    q_proj, output, idx, f_c_temp, head_size
                 )
             else:
                 head_idx -= num_q_heads
-                rope_k_cache(
+                rope_k_cache[interleaved=interleaved](
                     k_cache,
                     batch_idx,
                     head_idx,
@@ -298,7 +297,6 @@ fn fused_qk_rope_ragged[
                     head_dim_idx,
                     f_c_temp,
                     head_size,
-                    interleaved,
                 )
 
     var launch_shape = IndexList[3](

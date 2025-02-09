@@ -297,13 +297,15 @@ fn _matmul_common[
 
 @always_inline
 fn generic_fused_qk_rope_bshd_continuous_batch[
-    target: StringLiteral, type: DType
+    type: DType, //,
+    *,
+    interleaved: Bool,
+    target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 4, *_],
     kv_collection: ContinuousBatchingKVCacheCollection,
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
-    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -346,12 +348,13 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
         ),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
-        fused_qk_rope[kv_collection.CacheType, target=target](
+        fused_qk_rope[
+            kv_collection.CacheType, interleaved=interleaved, target=target
+        ](
             q_proj,
             kv_collection,
             freqs_cis,
             layer_idx,
-            interleaved,
             output,
             dev_ctx,
         )

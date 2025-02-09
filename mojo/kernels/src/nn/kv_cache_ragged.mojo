@@ -786,6 +786,7 @@ fn _matmul_kv_cache_ragged_impl[
 fn generic_fused_qk_rope_bshd_continous_batch_ragged[
     type: DType, //,
     *,
+    interleaved: Bool,
     target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 3, *_],
@@ -793,7 +794,6 @@ fn generic_fused_qk_rope_bshd_continous_batch_ragged[
     kv_collection: ContinuousBatchingKVCacheCollection,
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
-    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
 ):
@@ -825,13 +825,14 @@ fn generic_fused_qk_rope_bshd_continous_batch_ragged[
         ),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
-        fused_qk_rope_ragged[kv_collection.CacheType, target=target](
+        fused_qk_rope_ragged[
+            kv_collection.CacheType, interleaved=interleaved, target=target
+        ](
             q_proj,
             input_row_offsets,
             kv_collection,
             freqs_cis,
             layer_idx,
-            interleaved,
             output,
             dev_ctx,
         )
@@ -839,14 +840,16 @@ fn generic_fused_qk_rope_bshd_continous_batch_ragged[
 
 @always_inline
 fn generic_fused_qk_rope_bshd_paged_ragged[
-    target: StringLiteral, type: DType
+    type: DType, //,
+    *,
+    interleaved: Bool,
+    target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 3, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     kv_collection: PagedKVCacheCollection,
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
-    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -891,13 +894,14 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
         name,
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
-        fused_qk_rope_ragged[kv_collection.CacheType, target=target](
+        fused_qk_rope_ragged[
+            kv_collection.CacheType, interleaved=interleaved, target=target
+        ](
             q_proj,
             input_row_offsets,
             kv_collection,
             freqs_cis,
             layer_idx,
-            interleaved,
             output,
             dev_ctx,
         )

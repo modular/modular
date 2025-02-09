@@ -153,12 +153,13 @@ def test_fused_qk_rope[type: DType]() -> None:
     q_out_buffer = List[Scalar[type]]()
     q_out_buffer.resize(new_size=q_buffer.size, value=0)
     q_out = NDBuffer[type, rank=3](q_out_buffer.data, q.dynamic_shape)
-    fused_qk_rope_ragged[kv_collection.CacheType, target="cpu"](
+    fused_qk_rope_ragged[
+        kv_collection.CacheType, interleaved=True, target="cpu"
+    ](
         q_proj=q,
         input_row_offsets=input_row_offsets.tensor,
         kv_collection=kv_collection,
         freqs_cis=freqs_cis_table,
-        interleaved=True,
         output=q_out,
         layer_idx=UInt32(0),
         context=Optional[DeviceContext](),
