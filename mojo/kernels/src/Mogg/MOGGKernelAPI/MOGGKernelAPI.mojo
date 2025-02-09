@@ -6675,14 +6675,16 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
 
 @always_inline
 fn generic_fused_qk_rope_bshd_continuous_batch_kernel_api[
-    target: StringLiteral, type: DType
+    type: DType, //,
+    *,
+    interleaved: Bool,
+    target: StringLiteral,
 ](
     output: ManagedTensorSlice[type, 4],
     q_proj: ManagedTensorSlice[type, 4],
     kv_collection: ContinuousBatchingKVCacheCollection,
     freqs_cis: ManagedTensorSlice[type, 2],
     layer_idx: Scalar[DType.uint32],
-    interleaved: Scalar[DType.bool],
     ctx: MojoCallContextPtr,
 ):
     """Performs a fused RoPE projection for Q and K projections.
@@ -6696,7 +6698,9 @@ fn generic_fused_qk_rope_bshd_continuous_batch_kernel_api[
     kernels in the graph definition. Here we fuse the RoPE kernel applied to
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
-    generic_fused_qk_rope_bshd_continuous_batch[target](
+    generic_fused_qk_rope_bshd_continuous_batch[
+        interleaved=interleaved, target=target
+    ](
         managed_tensor_slice_to_ndbuffer_with_spec[
             compiler.specsof[q_proj.type, q_proj.rank]("q_proj")
         ](q_proj),
@@ -6705,7 +6709,6 @@ fn generic_fused_qk_rope_bshd_continuous_batch_kernel_api[
             compiler.specsof[freqs_cis.type, freqs_cis.rank]("freqs_cis")
         ](freqs_cis),
         layer_idx,
-        interleaved,
         managed_tensor_slice_to_ndbuffer_with_spec[
             compiler.specsof[output.type, output.rank]("output")
         ](output),
@@ -6714,7 +6717,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_kernel_api[
 
 
 @compiler.register("mo.fused_qk_rope.padded.continuous_batching")
-struct Struct_fused_qk_rope_padded_continuous_batching:
+struct Struct_fused_qk_rope_padded_continuous_batching[interleaved: Bool]:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -6729,16 +6732,16 @@ struct Struct_fused_qk_rope_padded_continuous_batching:
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
         layer_idx: Scalar[DType.uint32],
-        interleaved: Scalar[DType.bool],
         ctx: MojoCallContextPtr,
     ) raises:
-        generic_fused_qk_rope_bshd_continuous_batch_kernel_api[target](
+        generic_fused_qk_rope_bshd_continuous_batch_kernel_api[
+            interleaved=interleaved, target=target
+        ](
             output,
             q_proj,
             kv_collection,
             freqs_cis,
             layer_idx,
-            interleaved,
             ctx,
         )
 
@@ -6750,7 +6753,7 @@ struct Struct_fused_qk_rope_padded_continuous_batching:
 
 @always_inline
 fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
-    type: DType, target: StringLiteral
+    type: DType, //, *, interleaved: Bool, target: StringLiteral
 ](
     output: ManagedTensorSlice[type, 3],
     q_proj: ManagedTensorSlice[type, 3],
@@ -6758,10 +6761,11 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
     kv_collection: ContinuousBatchingKVCacheCollection,
     freqs_cis: ManagedTensorSlice[type, 2],
     layer_idx: Scalar[DType.uint32],
-    interleaved: Scalar[DType.bool],
     ctx: MojoCallContextPtr,
 ):
-    generic_fused_qk_rope_bshd_continous_batch_ragged[target=target](
+    generic_fused_qk_rope_bshd_continous_batch_ragged[
+        interleaved=interleaved, target=target
+    ](
         managed_tensor_slice_to_ndbuffer_with_spec[
             compiler.specsof[q_proj.type, q_proj.rank]("q_proj")
         ](q_proj),
@@ -6775,7 +6779,6 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
             compiler.specsof[freqs_cis.type, freqs_cis.rank]("freqs_cis")
         ](freqs_cis),
         layer_idx,
-        interleaved,
         managed_tensor_slice_to_ndbuffer_with_spec[
             compiler.specsof[output.type, output.rank]("output")
         ](output),
@@ -6784,7 +6787,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
 
 
 @compiler.register("mo.fused_qk_rope.ragged.continuous_batching")
-struct Struct_fused_qk_rope_bshd_continuous_batch_ragged:
+struct Struct_fused_qk_rope_bshd_continuous_batch_ragged[interleaved: Bool]:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -6800,11 +6803,10 @@ struct Struct_fused_qk_rope_bshd_continuous_batch_ragged:
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
         layer_idx: Scalar[DType.uint32],
-        interleaved: Scalar[DType.bool],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
-            target=target
+            interleaved=interleaved, target=target
         ](
             output,
             q_proj,
@@ -6812,14 +6814,15 @@ struct Struct_fused_qk_rope_bshd_continuous_batch_ragged:
             kv_collection,
             freqs_cis,
             layer_idx,
-            interleaved,
             ctx,
         )
 
 
 @always_inline
 fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
-    type: DType,
+    type: DType, //,
+    *,
+    interleaved: Bool,
     target: StringLiteral,
 ](
     q_proj: ManagedTensorSlice[type, 3],
@@ -6830,11 +6833,12 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     ],
     freqs_cis: ManagedTensorSlice[type, 2],
     layer_idx: Scalar[DType.uint32],
-    interleaved: Scalar[DType.bool],
     output: ManagedTensorSlice[type, 3],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
-    generic_fused_qk_rope_bshd_paged_ragged[target=target](
+    generic_fused_qk_rope_bshd_paged_ragged[
+        interleaved=interleaved, target=target
+    ](
         managed_tensor_slice_to_ndbuffer_with_spec[
             compiler.specsof[q_proj.type, q_proj.rank]("q_proj")
         ](q_proj),
@@ -6848,7 +6852,6 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
             compiler.specsof[freqs_cis.type, freqs_cis.rank]("freqs_cis")
         ](freqs_cis),
         layer_idx,
-        interleaved,
         managed_tensor_slice_to_ndbuffer_with_spec[
             compiler.specsof[output.type, output.rank]("output")
         ](output),
@@ -6857,7 +6860,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
 
 
 @compiler.register("mo.fused_qk_rope.ragged.paged")
-struct Struct_fused_qk_rope_ragged_paged:
+struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -6878,16 +6881,16 @@ struct Struct_fused_qk_rope_ragged_paged:
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
         layer_idx: Scalar[DType.uint32],
-        interleaved: Scalar[DType.bool],
         context: MojoCallContextPtr = MojoCallContextPtr(),
     ):
-        generic_fused_qk_rope_bshd_paged_ragged_kernel_api[target=target](
+        generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
+            interleaved=interleaved, target=target
+        ](
             q_proj,
             input_row_offsets,
             kv_collection,
             freqs_cis,
             layer_idx,
-            interleaved,
             output,
             context,
         )
