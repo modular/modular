@@ -16,13 +16,14 @@ from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host.info import is_cpu, is_gpu
 from memory import UnsafePointer, memcpy
 from memory.memory import _malloc as _malloc_cpu
-from .MOGGIntList import IntList
 from nn.concat import concat
 from register import *
-from runtime.asyncrt import MojoCallContextPtr, DeviceContextPtr
+from runtime.asyncrt import DeviceContextPtr, MojoCallContextPtr
 from weights_registry import WeightsRegistry
 
 from utils import Index, IndexList, StaticTuple
+
+from .MOGGIntList import IntList
 
 # ===-----------------------------------------------------------------------===#
 # Helper Structures

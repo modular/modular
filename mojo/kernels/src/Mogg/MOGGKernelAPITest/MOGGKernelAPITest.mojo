@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from sys import external_call
+
 import compiler_internal as compiler
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -11,16 +13,15 @@ from linalg.matmul import matmul as _matmul
 from register import uses_opaque
 from runtime.asyncrt import DeviceContextPtr, MojoCallContextPtr
 from tensor import ManagedTensorSlice, foreach
-from tensor_internal import view_copy_impl
 from tensor_internal import (
-    simd_store_into_managed_tensor_slice,
-    simd_load_from_managed_tensor_slice,
     _input_fusion_hook_impl,
     _output_fusion_hook_impl,
+    simd_load_from_managed_tensor_slice,
+    simd_store_into_managed_tensor_slice,
+    view_copy_impl,
 )
 
 from utils import IndexList, StaticTuple
-from sys import external_call
 
 
 # TODO(MOCO-1413): remove this need to keep imported exported funcs alive.

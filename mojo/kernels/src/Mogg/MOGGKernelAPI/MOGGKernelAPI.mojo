@@ -8,20 +8,8 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
-from builtin.simd import _pow
 from collections import Optional, OptionalReg
 from collections.vector import InlinedFixedVector
-from gpu.all_reduce import MAX_GPUS, Signal, all_reduce
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host.info import is_gpu, is_cpu, is_valid_target
-from kv_cache.types import (
-    ContinuousBatchingKVCacheCollection,
-    PagedKVCacheCollection,
-    KVCacheStaticParams,
-    KVCollectionT,
-)
 from math import (
     ceil,
     cos,
@@ -37,13 +25,11 @@ from math import (
     sqrt,
     tanh,
 )
-from memory import AddressSpace, UnsafePointer
 from random import randn, seed
-from sys import llvm_intrinsic, external_call
+from sys import external_call, llvm_intrinsic
 from sys.info import simdwidthof, sizeof
 
 import compiler_internal as compiler
-from compiler_internal import StaticTensorSpec
 
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
@@ -53,7 +39,19 @@ from algorithm import mean
 from algorithm import min as reduce_min
 from algorithm import product, sum
 from algorithm.reduction import _reduce_generator, _reduce_generator_cpu
-
+from buffer import NDBuffer
+from buffer.dimlist import Dim, DimList
+from builtin.simd import _pow
+from compiler_internal import StaticTensorSpec
+from gpu.all_reduce import MAX_GPUS, Signal, all_reduce
+from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host.info import is_cpu, is_gpu, is_valid_target
+from kv_cache.types import (
+    ContinuousBatchingKVCacheCollection,
+    KVCacheStaticParams,
+    KVCollectionT,
+    PagedKVCacheCollection,
+)
 from linalg.bmm import batched_matmul, batched_matmul_shape
 from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
@@ -66,6 +64,7 @@ from linalg.packing import _pack_b_ndbuffer_impl, pack_matmul_b_shape_func
 from linalg.utils import (
     elementwise_epilogue_type as matmul_elementwise_epilogue_type,
 )
+from memory import AddressSpace, UnsafePointer
 from nn import arg_nonzero
 from nn.activations import gelu, relu
 from nn.arange import arange, arange_shape
@@ -100,11 +99,6 @@ from nn.gather_scatter import (
 )
 from nn.index_tensor import index_tensor
 from nn.kv_cache import (
-    print_kv_cache_cont_batch_generic_gpu,
-    print_kv_cache_cont_batch_generic_cpu,
-    print_kv_cache_paged_generic_cpu,
-    print_kv_cache_paged_generic_gpu,
-    rms_norm_kv_cache_ragged_continuous_batching,
     generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch,
     generic_flash_attention_kv_cache_causal_mask_continuous_batch,
     generic_flash_attention_kv_cache_continuous_batch,
@@ -112,18 +106,23 @@ from nn.kv_cache import (
     generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch,
     generic_get_continuous_cache,
     generic_get_paged_cache,
+    print_kv_cache_cont_batch_generic_cpu,
+    print_kv_cache_cont_batch_generic_gpu,
+    print_kv_cache_paged_generic_cpu,
+    print_kv_cache_paged_generic_gpu,
+    rms_norm_kv_cache_ragged_continuous_batching,
 )
 from nn.kv_cache_ragged import (
+    generic_cross_attention_kv_cache_null_mask_cont_batch_ragged,
+    generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged,
     generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged,
-    generic_fused_qk_rope_bshd_paged_ragged,
+    generic_flash_attention_kv_cache_causal_mask_paged_ragged,
+    generic_flash_attention_kv_cache_null_mask_cont_batch_ragged,
     generic_fused_qk_rope_bshd_continous_batch_ragged,
+    generic_fused_qk_rope_bshd_paged_ragged,
     generic_fused_qkv_matmul_kv_cache_cont_batch_ragged,
     generic_fused_qkv_matmul_kv_cache_paged_ragged,
     generic_fused_qkv_matmul_kv_cache_paged_ragged_bias,
-    generic_flash_attention_kv_cache_causal_mask_paged_ragged,
-    generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged,
-    generic_flash_attention_kv_cache_null_mask_cont_batch_ragged,
-    generic_cross_attention_kv_cache_null_mask_cont_batch_ragged,
     kv_matmul_ragged_continuous_batching,
 )
 from nn.mha import flash_attention
@@ -143,17 +142,10 @@ from nn.slice import (
 from nn.softmax import logsoftmax, softmax
 from nn.split import split
 from nn.tile import tile, tile_shape
-from nn.topk import top_k, top_k_shape_impl
+from nn.topk import top_k
 from nn.topk import top_k_fused_sampling_cpu as _topk_fused_sampling_cpu
+from nn.topk import top_k_shape_impl
 from nn.topk import topk_fused_sampling_gpu as _topk_fused_sampling_gpu
-
-from tensor_internal import (
-    simd_store_into_managed_tensor_slice,
-    simd_load_from_managed_tensor_slice,
-    _input_fusion_hook_impl,
-    _output_fusion_hook_impl,
-)
-
 from quantization import (
     Q4sym,
     block_Q4_K,
@@ -174,16 +166,24 @@ from quantization.qmatmul_k import (
     matmul_Q6_K,
     matmul_Q6_K_pack_b,
 )
-from register import uses_opaque, register_internal
+from register import register_internal, uses_opaque
 from runtime.asyncrt import DeviceContextPtr, MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
-from tensor_internal import ManagedTensorSlice, foreach, view_copy_impl
+from tensor_internal import (
+    ManagedTensorSlice,
+    _input_fusion_hook_impl,
+    _output_fusion_hook_impl,
+    foreach,
+    simd_load_from_managed_tensor_slice,
+    simd_store_into_managed_tensor_slice,
+    view_copy_impl,
+)
 
 from utils import IndexList, StaticTuple
 from utils.index import Index
+from utils.loop import unroll
 from utils.numerics import isinf, isnan
 from utils.static_tuple import _create_array, _set_array_elem
-from utils.loop import unroll
 
 # ===-----------------------------------------------------------------------===#
 # Nop functions to expose different types to the compiler.
