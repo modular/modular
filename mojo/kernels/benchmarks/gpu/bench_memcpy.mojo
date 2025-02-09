@@ -5,14 +5,16 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-build-no-debug-no-assert %s
 
-from sys import sizeof, env_get_int
+from math import floor, iota
 from os import abort
-from math import iota, floor
+from sys import env_get_int, sizeof
+
 from algorithm.functional import parallelize_over_rows
-from memory import UnsafePointer
-from gpu.host import DeviceContext
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from gpu.host import DeviceContext
+from memory import UnsafePointer
 from testing import assert_almost_equal
+
 from utils import IndexList
 
 

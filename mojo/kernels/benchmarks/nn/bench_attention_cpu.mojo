@@ -5,13 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-build-no-debug-no-assert %s
 
-from memory import UnsafePointer
-from random import rand
 from os import abort
+from random import rand
 
 from benchmark import *
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
+from memory import UnsafePointer
 from nn.flash_attention import flash_attention
 
 from utils import IndexList

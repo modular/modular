@@ -6,14 +6,13 @@
 # RUN: %mojo-build-no-debug-no-assert %s
 
 from pathlib import Path
-from builtin._closure import __ownership_keepalive
-
-from gpu import *
-from gpu.host import DeviceContext
+from sys import env_get_int
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from builtin._closure import __ownership_keepalive
+from gpu import *
+from gpu.host import DeviceContext
 from testing import assert_equal
-from sys import env_get_int
 
 
 fn vec_func(

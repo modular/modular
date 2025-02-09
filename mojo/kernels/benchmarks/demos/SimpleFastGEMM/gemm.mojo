@@ -7,8 +7,8 @@
 # Meant to be run on an AVX512 system
 
 from math import align_up
-from sys.intrinsics import PrefetchOptions
 from sys import alignof, simdwidthof
+from sys.intrinsics import PrefetchOptions
 
 import benchmark
 from buffer import Buffer, NDBuffer

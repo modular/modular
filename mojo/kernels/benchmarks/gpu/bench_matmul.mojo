@@ -6,26 +6,27 @@
 # RUN: %mojo-build-no-debug-no-assert %s
 
 
+from math import align_up
+from sys import env_get_bool, env_get_dtype, env_get_int, sizeof
+
+import linalg.vendor_blas
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import Dim, DimList, NDBuffer
 from buffer.dimlist import _make_tuple
-from gpu.host import DeviceBuffer, DeviceContext
-from linalg.matmul_gpu import _matmul_gpu
-from internal_utils import DeviceNDBuffer, arg_parse
-from internal_utils._utils import static, dynamic, ValOrDim
-from utils import IndexList
-from sys import env_get_int, sizeof, env_get_bool
-from math import align_up
-from memory import UnsafePointer
 from gpu._cublas.cublas import (
     check_cublas_error,
     cublasContext,
     cublasCreate,
     cublasDestroy,
 )
-from sys import env_get_dtype
-import linalg.vendor_blas
+from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host.info import DEFAULT_GPU_ARCH
+from internal_utils import DeviceNDBuffer, arg_parse
+from internal_utils._utils import ValOrDim, dynamic, static
+from linalg.matmul_gpu import _matmul_gpu
+from memory import UnsafePointer
+
+from utils import IndexList
 
 
 fn _get_run_name[

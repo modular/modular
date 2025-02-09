@@ -4,25 +4,22 @@
 #
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-build-no-debug-no-assert %s
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    random,
-    arg_parse,
-)
+from collections import Set
 from random import random_ui64, seed
-from sys import env_get_int, sizeof, env_get_bool, env_get_dtype
-from gpu.host import DeviceBuffer, DeviceContext
+from sys import env_get_bool, env_get_dtype, env_get_int, sizeof
+
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import Dim, DimList
-from utils.index import IndexList
+from gpu.host import DeviceBuffer, DeviceContext
+from internal_utils import DeviceNDBuffer, HostNDBuffer, arg_parse, random
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from collections import Set
 from memory import UnsafePointer
 from nn.fused_qk_rope import fused_qk_rope_ragged
+
+from utils.index import IndexList
 
 
 fn _get_run_name[

@@ -6,11 +6,13 @@
 # RUN: %mojo-build-no-debug-no-assert %s
 
 from math import ceildiv
+
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceBuffer, DeviceContext
-from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from internal_utils import DeviceNDBuffer
+from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
+
 from utils import IndexList
 
 

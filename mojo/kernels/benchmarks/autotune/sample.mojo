@@ -5,22 +5,19 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-build-no-debug-no-assert %s
 
-from sys import env_get_string, env_get_int, env_get_bool, env_get_dtype
-from internal_utils import (
-    env_get_shape,
-    int_list_to_tuple,
-    arg_parse,
-)
+from sys import env_get_bool, env_get_dtype, env_get_int, env_get_string
+from time import sleep
+
 from benchmark import (
-    BenchConfig,
     Bench,
+    BenchConfig,
     Bencher,
     BenchId,
     BenchMetric,
     ThroughputMeasure,
     keep,
 )
-from time import sleep
+from internal_utils import arg_parse, env_get_shape, int_list_to_tuple
 
 
 fn bench_func[

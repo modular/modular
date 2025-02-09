@@ -5,30 +5,30 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-build-no-debug-no-assert %s
 
-from math import sqrt, isqrt, log, sin, tanh, exp, erf, fma, ceildiv, align_up
+from math import align_up, ceildiv, erf, exp, fma, isqrt, log, sin, sqrt, tanh
 from sys import (
     alignof,
-    sizeof,
+    env_get_int,
+    env_get_string,
     is_nvidia_gpu,
     simdwidthof,
-    env_get_string,
-    env_get_int,
+    sizeof,
 )
-from internal_utils import parse_shape, arg_parse
+from sys.intrinsics import strided_load
 
 from algorithm.functional import elementwise
-from buffer import DimList, NDBuffer
-from buffer.dimlist import _make_tuple
-from gpu.host import DeviceContext, DeviceBuffer
-from gpu.host._compile import _get_gpu_target
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from internal_utils import DeviceNDBuffer
+from buffer import DimList, NDBuffer
+from buffer.buffer import _compute_ndbuffer_offset
+from buffer.dimlist import _make_tuple
+from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host._compile import _get_gpu_target
+from internal_utils import DeviceNDBuffer, arg_parse, parse_shape
 from memory import UnsafePointer
+from testing import assert_equal
+
 from utils import IndexList
 from utils.index import product
-from sys.intrinsics import strided_load
-from buffer.buffer import _compute_ndbuffer_offset
-from testing import assert_equal
 
 
 fn add_const_fn(x: SIMD) -> __type_of(x):

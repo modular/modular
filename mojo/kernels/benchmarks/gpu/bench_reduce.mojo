@@ -5,21 +5,20 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-build-no-debug-no-assert %s
 
-from sys import alignof, simdwidthof
+from sys import alignof, env_get_int, env_get_string, simdwidthof
 
 from algorithm._gpu.reduction import reduce_launch
+from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
+from buffer.dimlist import DimList, _make_tuple
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
-from testing import assert_equal
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from internal_utils import DeviceNDBuffer
 from memory import UnsafePointer
+from testing import assert_equal
 
 from utils import IndexList, StaticTuple
 from utils.index import product
-from internal_utils import DeviceNDBuffer
-from buffer.dimlist import DimList, _make_tuple
-from sys import env_get_string, env_get_int
 
 
 fn alignof_simd[type: DType, simd_target: __mlir_type.`!kgen.target`]() -> Int:

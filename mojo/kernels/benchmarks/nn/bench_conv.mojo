@@ -6,15 +6,15 @@
 # RUN: %mojo-build-no-debug-no-assert %s
 
 from math import align_up, ceildiv
-from memory import UnsafePointer
 from random import rand
+from sys import simdwidthof, sizeof
 from sys.param_env import env_get_int, env_get_string
-from sys import sizeof, simdwidthof
 
 from benchmark import *
 from benchmark import keep
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from memory import UnsafePointer
 from nn.conv import ConvDirectNHWC, ConvInfoStatic
 from nn.conv_utils import (
     ConvShape,

@@ -6,15 +6,15 @@
 # RUN: %mojo-build-no-debug-no-assert %s
 
 import math
-from sys import alignof, simdwidthof
 from random import rand
+from sys import alignof, simdwidthof
 
 import benchmark
 from algorithm import Static2DTileUnitFunc as Tile2DFunc
 from algorithm import sync_parallelize, vectorize
 from layout import *
 from layout.layout_tensor import LayoutTensor
-from memory import memset_zero, UnsafePointer
+from memory import UnsafePointer, memset_zero
 from python import Python
 
 alias M = 512  # rows of A and C

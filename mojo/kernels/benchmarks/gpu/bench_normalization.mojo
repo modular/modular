@@ -7,18 +7,16 @@
 # RUN: %mojo-build-no-debug-no-assert %s
 
 from random import random_float64
-from nn.normalization import layer_norm_gpu, rms_norm_gpu
+from sys import env_get_dtype, env_get_int
+
 from benchmark import Bench, BenchConfig, Bencher, BenchId
-from gpu.host import DeviceContext
-from internal_utils import (
-    DeviceNDBuffer,
-    env_get_shape,
-    int_list_to_tuple,
-)
 from buffer import NDBuffer
+from gpu.host import DeviceContext
+from internal_utils import DeviceNDBuffer, env_get_shape, int_list_to_tuple
 from memory import UnsafePointer
-from utils.index import StaticTuple, IndexList, Index
-from sys import env_get_int, env_get_dtype
+from nn.normalization import layer_norm_gpu, rms_norm_gpu
+
+from utils.index import Index, IndexList, StaticTuple
 
 
 fn bench_layer_norm_gpu[

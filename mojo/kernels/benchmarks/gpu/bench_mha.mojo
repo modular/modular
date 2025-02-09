@@ -5,33 +5,33 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-build-no-debug-no-assert %s
 
-from math import ceildiv, isqrt, isclose
+from math import ceildiv, isclose, isqrt
 from random import rand
-from sys import env_get_int, env_get_string, is_defined, env_get_dtype
+from sys import env_get_dtype, env_get_int, env_get_string, is_defined
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList, Dim
-from gpu import *
-from memory import UnsafePointer
-from nn.mha import flash_attention, mha_gpu_naive
-from nn.mha_mask import CausalMask
-from nn.mha_score_mod import IdentityScoreMod
 from benchmark import (
     Bench,
+    BenchConfig,
     Bencher,
     BenchId,
     BenchMetric,
     ThroughputMeasure,
     keep,
-    BenchConfig,
 )
-from utils.index import Index
-from utils.numerics import min_or_neg_inf
-from testing import assert_almost_equal
-
+from buffer import NDBuffer
+from buffer.dimlist import Dim, DimList
+from gpu import *
 from gpu.host import DeviceContext
 from gpu.host.info import DEFAULT_GPU_ARCH
-from internal_utils import bench_compile_time, arg_parse
+from internal_utils import arg_parse, bench_compile_time
+from memory import UnsafePointer
+from nn.mha import flash_attention, mha_gpu_naive
+from nn.mha_mask import CausalMask
+from nn.mha_score_mod import IdentityScoreMod
+from testing import assert_almost_equal
+
+from utils.index import Index
+from utils.numerics import min_or_neg_inf
 
 
 fn run_mha[

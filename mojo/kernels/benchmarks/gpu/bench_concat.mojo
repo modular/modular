@@ -5,19 +5,19 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-build-no-debug-no-assert %s
 
-from random import randn
 from os import abort
-from sys import sizeof, env_get_string, env_get_int
+from random import randn
+from sys import env_get_int, env_get_string, sizeof
 
-from builtin._closure import __ownership_keepalive
 from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
-from gpu.host import DeviceContext, DeviceBuffer
+from builtin._closure import __ownership_keepalive
+from gpu.host import DeviceBuffer, DeviceContext
 from memory import UnsafePointer
 from nn.concat import _concat_gpu_elementwise
 
-from utils import StaticTuple, IndexList
+from utils import IndexList, StaticTuple
 
 
 fn bench_concat[

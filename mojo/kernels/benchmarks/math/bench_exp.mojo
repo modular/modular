@@ -8,8 +8,8 @@
 from math import *
 from math.math import _exp_taylor, _ldexp_impl
 from math.polynomial import polynomial_evaluate
+from sys import external_call, llvm_intrinsic, simdwidthof, sizeof
 from sys.arg import argv
-from sys import sizeof, simdwidthof, external_call
 
 from algorithm.functional import vectorize
 from benchmark import (
@@ -25,8 +25,7 @@ from builtin.range import _StridedRange
 from builtin.simd import _simd_apply
 from compile import _internal_compile_code
 from layout import *
-from sys import llvm_intrinsic
-from memory import bitcast, UnsafePointer
+from memory import UnsafePointer, bitcast
 
 
 fn apply[
