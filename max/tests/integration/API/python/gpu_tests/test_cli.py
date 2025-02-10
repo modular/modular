@@ -215,7 +215,7 @@ VALID_COMMANDS = [
             "--weight-path",
             "model3.safetensors",
             "--devices",
-            "gpu-0",
+            "gpu:0",
         ],
         expected={
             "huggingface_repo_id": "modularai/llama-3.1",
