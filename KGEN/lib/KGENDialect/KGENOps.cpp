@@ -532,7 +532,8 @@ static void printExternGenerator(OpAsmPrinter &p, Operation *op,
 
 static ParseResult parseStructGeneratorSpec(OpAsmParser &p,
                                             ParamDeclArrayAttr &inputParams,
-                                            TypedAttr &typeValue,
+                                            TypeAttr &valueDomainTypeAttr,
+                                            TypeAttr &metaTypeAttr,
                                             Region &body) {
   SmallVector<ParamDeclAttr> paramAttrs;
   if (succeeded(p.parseOptionalLess()) &&
@@ -545,9 +546,12 @@ static ParseResult parseStructGeneratorSpec(OpAsmParser &p,
       paramAttrs, [](ParamDeclAttr decl) { return decl.getType(); }));
 
   Type metaType;
+  Type valueDomainType;
   if (parseColonTypeOrDefault(p, metaType, TypeType::get(p.getContext())) ||
-      p.parseEqual() || parseParamValue(p, typeValue, metaType))
+      p.parseEqual() || parseKGENType(p, valueDomainType))
     return failure();
+  valueDomainTypeAttr = TypeAttr::get(valueDomainType);
+  metaTypeAttr = TypeAttr::get(metaType);
 
   auto bodyResult = p.parseOptionalRegion(body);
   if (bodyResult.has_value() && failed(*bodyResult))
@@ -559,17 +563,18 @@ static ParseResult parseStructGeneratorSpec(OpAsmParser &p,
 
 static void printStructGeneratorSpec(OpAsmPrinter &p, Operation *op,
                                      ParamDeclArrayAttr inputParams,
-                                     TypedAttr typeValue, Region &body) {
+                                     TypeAttr valueDomainTypeAttr,
+                                     TypeAttr metaTypeAttr, Region &body) {
   if (inputParams && !inputParams.empty()) {
     p << '<';
     printParamDeclAttrs(p, inputParams);
     p << '>';
   }
 
-  printColonTypeOrDefault(p, typeValue.getType(),
+  printColonTypeOrDefault(p, metaTypeAttr.getValue(),
                           TypeType::get(op->getContext()));
   p << " = ";
-  printParamValue(p, typeValue);
+  printKGENType(p, valueDomainTypeAttr.getValue());
 
   if (!body.empty() && !body.front().empty())
     p.printRegion(body);
@@ -579,11 +584,14 @@ static void printStructGeneratorSpec(OpAsmPrinter &p, Operation *op,
 // StructInstanceOp
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseStructInstanceSpec(OpAsmParser &p, TypedAttr &typeValue,
+static ParseResult parseStructInstanceSpec(OpAsmParser &p,
+                                           TypeAttr &valueDomainTypeAttr,
+                                           TypeAttr &metaTypeAttr,
                                            Region &body) {
   ParamDeclArrayAttr params;
   mlir::SMLoc startLoc = p.getCurrentLocation();
-  if (failed(parseStructGeneratorSpec(p, params, typeValue, body)))
+  if (failed(parseStructGeneratorSpec(p, params, valueDomainTypeAttr,
+                                      metaTypeAttr, body)))
     return failure();
   if (!params.empty())
     return p.emitError(startLoc, "struct.instance cannot be parameterized");
@@ -591,8 +599,9 @@ static ParseResult parseStructInstanceSpec(OpAsmParser &p, TypedAttr &typeValue,
 }
 
 static void printStructInstanceSpec(OpAsmPrinter &p, Operation *op,
-                                    TypedAttr typeValue, Region &body) {
-  printStructGeneratorSpec(p, op, {}, typeValue, body);
+                                    TypeAttr valueDomainTypeAttr,
+                                    TypeAttr metaTypeAttr, Region &body) {
+  printStructGeneratorSpec(p, op, {}, valueDomainTypeAttr, metaTypeAttr, body);
 }
 
 //===----------------------------------------------------------------------===//

@@ -1429,7 +1429,8 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
   } else {
     auto structGenOp = dyn_cast<StructGeneratorOp>(*gen);
     instance = cast<InstantiatedOpInterface>(*b.create<StructInstanceOp>(
-        gen.getLoc(), mangledName, structGenOp.getTypeValue()));
+        gen.getLoc(), mangledName, structGenOp.getValueDomainType(),
+        structGenOp.getMetaType()));
   }
 
   // Insert the newFunc into the symbol table which will then know about it,

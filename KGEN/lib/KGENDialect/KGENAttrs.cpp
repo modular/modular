@@ -442,8 +442,7 @@ TypeConstantRefAttr::verifySymbolUses(Operation *module,
     return failure();
 
   // Check result type. Most likely it's not parameterized.
-  Type specializedType =
-      evaluator.getReboundType(structGen.getTypeValue().getType());
+  Type specializedType = evaluator.getReboundType(structGen.getMetaType());
   if (getType() != specializedType) {
     return emitError(loc) << " result type mismatch. Reference has type "
                           << getType() << ", symbol has specialized type "
