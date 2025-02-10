@@ -478,9 +478,8 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
     fn write_to_cache[
         type_: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[type_, width]):
-        var output_val = val
-        output_val = val + rebind[SIMD[type_, width]](
-            bias.load[width=width](idx[1])
+        var output_val = val + rebind[SIMD[type_, width]](
+            bias.load[width=width, alignment=alignment](idx[1])
         )
         if idx[1] < q_dim:
             output.store[width=width, alignment=alignment](
