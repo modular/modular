@@ -10,7 +10,6 @@ from max.pipelines import PIPELINE_REGISTRY, PipelineTask
 from max.pipelines.architectures import register_all_models
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
-from max.serve.debug import DebugSettings
 from max.serve.pipelines.llm import batch_config_from_pipeline_config
 
 
@@ -50,9 +49,9 @@ def app(pipeline_config):
         model_factory=pipeline_factory,
         pipeline_config=pipeline_batch_config,
         tokenizer=tokenizer,
+        use_heartbeat=True,
     )
 
     settings = Settings(api_types=[APIType.OPENAI])
-    debug_settings = DebugSettings()
-    app = fastapi_app(settings, debug_settings, serving_settings)
+    app = fastapi_app(settings, serving_settings)
     return app
