@@ -107,8 +107,15 @@ struct _DeviceTimer:
 
 
 @value
-struct _DeviceSyncMode:
-    var _is_sync: Bool
+struct _DeviceBufferMode:
+    var _mode: Int
+
+    alias _SYNC = _DeviceBufferMode(0)
+    alias _ASYNC = _DeviceBufferMode(1)
+    alias _HOST = _DeviceBufferMode(2)
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._mode == other._mode
 
 
 struct DeviceBuffer[type: DType](Sized):
@@ -129,7 +136,7 @@ struct DeviceBuffer[type: DType](Sized):
         mut self,
         ctx: DeviceContext,
         size: Int,
-        sync_mode: _DeviceSyncMode,
+        mode: _DeviceBufferMode,
     ) raises:
         """This init takes in a constructed `DeviceContext` and schedules an
         owned buffer allocation using the stream in the device context.
@@ -138,7 +145,7 @@ struct DeviceBuffer[type: DType](Sized):
         var cpp_handle = _DeviceBufferPtr()
         var device_ptr = UnsafePointer[Scalar[type]]()
 
-        if sync_mode._is_sync:
+        if mode == _DeviceBufferMode._SYNC:
             # const char *AsyncRT_DeviceContext_createBuffer_sync(const DeviceBuffer **result, void **device_ptr, const DeviceContext *ctx, size_t len, size_t elem_size)
             _checked(
                 external_call[
@@ -157,11 +164,30 @@ struct DeviceBuffer[type: DType](Sized):
                     elem_size,
                 )
             )
-        else:
+        elif mode == _DeviceBufferMode._ASYNC:
             # const char *AsyncRT_DeviceContext_createBuffer_async(const DeviceBuffer **result, void **device_ptr, const DeviceContext *ctx, size_t len, size_t elem_size)
             _checked(
                 external_call[
                     "AsyncRT_DeviceContext_createBuffer_async",
+                    _CharPtr,
+                    UnsafePointer[_DeviceBufferPtr],
+                    UnsafePointer[UnsafePointer[Scalar[type]]],
+                    _DeviceContextPtr,
+                    _SizeT,
+                    _SizeT,
+                ](
+                    UnsafePointer.address_of(cpp_handle),
+                    UnsafePointer.address_of(device_ptr),
+                    ctx._handle,
+                    size,
+                    elem_size,
+                )
+            )
+        else:
+            # const char *AsyncRT_DeviceContext_createHostBuffer(const DeviceBuffer **result, void **device_ptr, const DeviceContext *ctx, size_t len, size_t elem_size)
+            _checked(
+                external_call[
+                    "AsyncRT_DeviceContext_createHostBuffer",
                     _CharPtr,
                     UnsafePointer[_DeviceBufferPtr],
                     UnsafePointer[UnsafePointer[Scalar[type]]],
@@ -329,6 +355,12 @@ struct DeviceBuffer[type: DType](Sized):
 
         abort("Unsupported attr for DeviceBuffer: " + name)
         return UnsafePointer[Scalar[type]]()
+
+    fn __getitem__(self, idx: Int) -> Scalar[type]:
+        return self._device_ptr[idx]
+
+    fn __setitem__(self, idx: Int, val: Scalar[type]):
+        self._device_ptr[idx] = val
 
 
 @doc_private
@@ -871,9 +903,6 @@ struct DeviceContext:
     """Device API for the default accelerator (for example, "cuda" or
     "hip")."""
 
-    alias _SYNC = _DeviceSyncMode(True)
-    alias _ASYNC = _DeviceSyncMode(False)
-
     var _handle: _DeviceContextPtr
 
     @always_inline
@@ -1088,7 +1117,7 @@ struct DeviceContext:
         Returns:
             The allocated buffer.
         """
-        return DeviceBuffer[type](self, size, Self._ASYNC)
+        return DeviceBuffer[type](self, size, _DeviceBufferMode._ASYNC)
 
     fn create_buffer_sync[
         type: DType
@@ -1103,9 +1132,15 @@ struct DeviceContext:
 
         Returns:
             The allocated buffer."""
-        var result = DeviceBuffer[type](self, size, Self._SYNC)
+        var result = DeviceBuffer[type](self, size, _DeviceBufferMode._SYNC)
         self.synchronize()
         return result
+
+    fn enqueue_create_host_buffer[
+        type: DType
+    ](self, size: Int) raises -> DeviceBuffer[type]:
+        """Enqueues a the creation of a host memory DeviceBuffer."""
+        return DeviceBuffer[type](self, size, _DeviceBufferMode._HOST)
 
     @always_inline
     fn compile_function[
