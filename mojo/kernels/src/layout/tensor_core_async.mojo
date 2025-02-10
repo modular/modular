@@ -104,28 +104,6 @@ alias _CM_ROW_BYTES = 16
 alias WGMMA_K_BYTES = 32
 
 
-# TODO(KERN-1301): Layouts are calculated for 64x8x8 instruction
-fn _lhs_layout[mma_shape: IndexList[3]]() -> Layout:
-    @parameter
-    if mma_shape == Index(64, 8, 8):
-        return Layout(
-            IntTuple(IntTuple(8, 8), IntTuple(4, 2)),
-            IntTuple(IntTuple(4, 32), IntTuple(1, 256)),
-        )
-    elif mma_shape == Index(64, 8, 16):
-        return Layout(
-            IntTuple(IntTuple(8, 8), IntTuple(8, 2)),
-            IntTuple(IntTuple(8, 64), IntTuple(1, 512)),
-        )
-
-    constrained[
-        mma_shape in supported_mma_shape,
-        String("WGMMA operation of shape '", mma_shape, "' is not supported"),
-    ]()
-
-    return Layout()
-
-
 fn tile_layout_k_major[
     type: DType,
     BM: Int,
@@ -203,21 +181,6 @@ fn tile_layout_mn_major[
             IntTuple(_CM_ROW_LEN, _CM_NUM_ROWS * mn_dim),
         ),
     )
-
-
-fn _rhs_layout[mma_shape: IndexList[3]]() -> Layout:
-    @parameter
-    if mma_shape == Index(64, 8, 8):
-        return Layout(IntTuple(IntTuple(4, 2), 8), IntTuple(IntTuple(1, 32), 4))
-    elif mma_shape == Index(64, 8, 16):
-        return Layout(IntTuple(IntTuple(8, 2), 8), IntTuple(IntTuple(1, 64), 8))
-
-    constrained[
-        mma_shape in supported_mma_shape,
-        String("WGMMA operation of shape '", mma_shape, "' is not supported"),
-    ]()
-
-    return Layout()
 
 
 fn _lhs_descriptor[
@@ -310,12 +273,6 @@ fn _output_register_size[mma_shape: IndexList[3]]() -> Int:
     return mma_shape[0] * mma_shape[1] // 128
 
 
-fn _dtype(dtype: DType) -> DType:
-    if dtype is DType.float32:
-        return DType.tensor_float32
-    return dtype
-
-
 struct TensorCoreAsync[
     c_type: DType,
     a_type: DType,
@@ -326,20 +283,6 @@ struct TensorCoreAsync[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     transpose_b: Bool = False,
 ]:
-    alias lhs_operand_type = LayoutTensor[
-        a_type,
-        _lhs_layout[mma_shape](),
-        address_space = AddressSpace.SHARED,
-    ]
-
-    alias rhs_operand_type = LayoutTensor[
-        b_type,
-        _rhs_layout[mma_shape](),
-        address_space = AddressSpace.SHARED,
-    ]
-
-    alias result_operand_type = SIMD[c_type, _output_register_size[mma_shape]()]
-
     @always_inline
     fn __init__(out self):
         constrained[
@@ -348,26 +291,6 @@ struct TensorCoreAsync[
                 "WGMMA operation of shape '", mma_shape, "' is not supported"
             ),
         ]()
-
-    @staticmethod
-    @always_inline
-    fn __call__(
-        lhs: Self.lhs_operand_type,
-        rhs: Self.rhs_operand_type,
-        c_reg: Self.result_operand_type,
-    ) -> Self.result_operand_type:
-        lhs_descriptor = _lhs_descriptor[mma_shape](lhs)
-        rhs_descriptor = _rhs_descriptor[
-            mma_shape, transposed = Self.transpose_b
-        ](rhs)
-        r_reg = wgmma_async[
-            mma_shape[0],
-            mma_shape[1],
-            mma_shape[2],
-            a_type = _dtype(a_type),
-            b_type = _dtype(b_type),
-        ](lhs_descriptor, rhs_descriptor, c_reg)
-        return r_reg
 
     @staticmethod
     @always_inline
@@ -434,8 +357,8 @@ struct TensorCoreAsync[
                         mma_shape[0],
                         mma_shape[1],
                         mma_shape[2],
-                        a_type = _dtype(a_type),
-                        b_type = _dtype(b_type),
+                        a_type=a_type,
+                        b_type=b_type,
                         layout_b= "col" if transpose_b else "row",
                     ](a_desc_m, b_desc_n, c_frags[mma_id, 0])
 
@@ -453,48 +376,3 @@ struct TensorCoreAsync[
     @always_inline
     fn wait_for_all():
         wgmma_wait_group_sync()
-
-    # TODO(KERN-1301): Output layout is calculated for 64x8x8 instruction
-    # Stores the result into the corresponding warp group tile fragment.
-    @staticmethod
-    @always_inline
-    fn store_result(
-        warp_group_tile: LayoutTensor[c_type, _, *_, **_],
-        res_reg_tile: Self.result_operand_type,
-    ):
-        constrained[
-            mma_shape in supported_mma_shape,
-            String(
-                "WGMMA operation of shape '", mma_shape, "' is not supported"
-            ),
-        ]()
-        warp_id, lan_id = divmod(thread_idx.x, UInt(WARP_SIZE))
-        alias warp_row_major_layout = Layout.row_major(8, 4)
-
-        var th_local_res = (
-            warp_group_tile.tile[16, 8](warp_id, 0)
-            .vectorize[1, 2]()
-            .distribute[warp_row_major_layout](lan_id)
-        )
-
-        th_local_res[0][0] = res_reg_tile[0]
-        th_local_res[0][1] = res_reg_tile[1]
-        th_local_res[1][0] = res_reg_tile[2]
-        th_local_res[1][1] = res_reg_tile[3]
-
-    @staticmethod
-    @always_inline
-    fn allocate_lhs() -> Self.lhs_operand_type:
-        return Self.lhs_operand_type.stack_allocation()
-
-    @staticmethod
-    @always_inline
-    fn allocate_rhs() -> Self.rhs_operand_type:
-        return Self.rhs_operand_type.stack_allocation()
-
-    @staticmethod
-    @always_inline
-    fn allocate_result(
-        initial_val: Scalar[c_type],
-    ) -> Self.result_operand_type:
-        return Self.result_operand_type(initial_val)
