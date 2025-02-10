@@ -9,7 +9,7 @@ import enum
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Optional, Union
+from typing import Optional, Union, get_args
 
 from max.serve.config import Settings
 from max.serve.scheduler.async_queue import AsyncCallConsumer  # type: ignore
@@ -46,27 +46,25 @@ _meter = get_meter_provider().get_meter("modular")
 NumberType = Union[float, int]
 OtelAttributes = Optional[dict[str, str]]
 
-# Please keep APIInstruments and SDKInstruments in sync
-# API instruments are the "types" of measurments we make
-# SDK instruments are the "types" that actually get recorded
-# there is a 1:1 correspondance
-APIInstruments = Union[
+# API_PROXIES the "types" of measurments we make from a meter
+# SDK instruments are the "types" that actually do recording
+API_PROXIES = Union[
     api_instrument._ProxyCounter,
     api_instrument._ProxyHistogram,
     api_instrument._ProxyUpDownCounter,
 ]
-
-SDKInstruments = (
+SDK_INSTRUMENTS = Union[
     sdk_instrument._Counter,
     sdk_instrument._Histogram,
     sdk_instrument._UpDownCounter,
-)
+]
+SupportedInstruments = Union[API_PROXIES, SDK_INSTRUMENTS]
 
 
 # Sorry for the type ignores, OTEL goes out of its way to obscure its types.
 # We need to use the fact that these are actually _Proxy{Type} objects  rather
 # than {Type} objects
-SERVE_METRICS: dict[str, APIInstruments] = {
+SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.request_count": _meter.create_counter(
         "maxserve.request_count", description="Http request count"
     ),  # type: ignore
@@ -137,13 +135,19 @@ class MaxMeasurement:
     def commit(self):
         # find the instrument
         try:
-            proxy = SERVE_METRICS[self.instrument_name]
+            instrument = SERVE_METRICS[self.instrument_name]
         except KeyError as e:
             raise UnknownMetric(self.instrument_name) from e
-        instrument = proxy._real_instrument
-        if instrument is None:
-            return
-        if not isinstance(instrument, SDKInstruments):
+
+        # Sometimes the instrument is a proxy.  Unrap it.
+        if isinstance(instrument, get_args(API_PROXIES)):
+            instrument = instrument._real_instrument
+            # bail if there is no underlying instrument
+            if instrument is None:
+                return
+
+        # instrument should be one of the supported sdk types now
+        if not isinstance(instrument, get_args(SDK_INSTRUMENTS)):
             return
 
         # convert to an otel measurement
