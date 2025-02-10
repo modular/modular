@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# UNSUPPORTED: asan
 # RUN: %mojo -debug-level full %s %S/mo.mlir
 
 from pathlib import Path
