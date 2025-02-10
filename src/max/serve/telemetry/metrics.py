@@ -8,6 +8,7 @@
 import logging
 from typing import Any, Optional
 
+from max.serve.config import Settings
 from max.serve.scheduler.async_queue import AsyncCallConsumer  # type: ignore
 from max.serve.telemetry.common import (
     TelemetryConfig,
@@ -42,8 +43,8 @@ def sync(f, *args, **kw):
     return f(*args, **kw)
 
 
-def configure_metrics():
-    default_config = TelemetryConfig.from_env()
+def configure_metrics(server_settings: Settings):
+    default_config = TelemetryConfig.from_config(server_settings)
     metrics_egress_enabled = default_config.metrics_egress_enabled
 
     meterProviders: list[MetricReader] = [PrometheusMetricReader(True)]
@@ -80,8 +81,10 @@ class _Metrics:
         self._call = sync
         self.aq: Optional[AsyncCallConsumer] = None
 
-    async def configure(self, async_metrics: Optional[bool] = None):
-        default_config = TelemetryConfig.from_env()
+    async def configure(
+        self, server_settings: Settings, async_metrics: Optional[bool] = None
+    ):
+        default_config = TelemetryConfig.from_config(server_settings)
         self.call_async = (
             async_metrics
             if async_metrics is not None

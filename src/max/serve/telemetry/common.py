@@ -12,6 +12,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Union
 
+from max.serve.config import Settings
 from opentelemetry.sdk.resources import Resource
 
 otelBaseUrl = "https://telemetry.modular.com:443"
@@ -75,7 +76,7 @@ class TelemetryConfig:
     """Telemetry Configuration"""
 
     console_level: Union[int, str] = logging.INFO
-    file_path: str = ""
+    file_path: Union[str, None] = None
     file_level: Union[int, str, None] = None
     otlp_level: Union[int, str, None] = None
     metrics_egress_enabled: bool = False
@@ -83,34 +84,22 @@ class TelemetryConfig:
     egress_enabled: bool = False
 
     @classmethod
-    def from_env(cls) -> "TelemetryConfig":
+    def from_config(cls, config: Settings) -> "TelemetryConfig":
         """Read the telemetry config from env variables"""
-        console_level: Union[int, str] = logging.INFO
-        file_path: str = ""
-        file_level: Union[int, str, None] = None
-        otlp_level: Union[int, str, None] = None
+        otlp_level: Union[int, str, None] = logging.getLevelName(
+            config.logs_otlp_level
+        )
+
         metrics_egress_enabled = True
-        if "MAX_SERVE_LOGS_CONSOLE_LEVEL" in os.environ:
-            console_level = logging.getLevelName(
-                os.environ["MAX_SERVE_LOGS_CONSOLE_LEVEL"]
-            )
-        if "MAX_SERVE_LOGS_OTLP_LEVEL" in os.environ:
-            otlp_level = logging.getLevelName(
-                os.environ["MAX_SERVE_LOGS_OTLP_LEVEL"]
-            )
-        if "MAX_SERVE_LOGS_FILE_PATH" in os.environ:
-            file_path = os.environ["MAX_SERVE_LOGS_FILE_PATH"]
-            file_level = logging.getLevelName(
-                os.environ.get("MAX_SERVE_LOGS_FILE_LEVEL", "DEBUG")
-            )
-        if "MAX_SERVE_DISABLE_TELEMETRY" in os.environ:
+
+        if config.disable_telemetry:
             otlp_level = None
             metrics_egress_enabled = False
 
         return cls(
-            console_level=console_level,
-            file_path=file_path,
-            file_level=file_level,
+            console_level=config.logs_console_level,
+            file_path=config.logs_file_path,
+            file_level=config.logs_file_level,
             otlp_level=otlp_level,
             metrics_egress_enabled=metrics_egress_enabled,
         )

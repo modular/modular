@@ -8,13 +8,12 @@
 
 from __future__ import annotations
 
+from max.serve.config import Settings
 from max.serve.telemetry.logger import configureLogging
 
-configureLogging()
+configureLogging(Settings())
 
-import argparse
 import logging
-import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
@@ -23,7 +22,6 @@ import uvloop
 from fastapi import FastAPI
 from max.pipelines import PipelinesFactory, PipelineTokenizer
 from max.serve.config import APIType, Settings, api_prefix
-from max.serve.debug import DebugSettings, register_debug
 from max.serve.pipelines.echo_gen import (
     EchoPipelineTokenizer,
     EchoTokenGenerator,
@@ -32,13 +30,15 @@ from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorPipelineConfig,
 )
-from max.serve.pipelines.model_worker import start_model_worker
+from max.serve.pipelines.model_worker import (
+    ModelWorkerConfig,
+    start_model_worker,
+)
 from max.serve.pipelines.telemetry_worker import start_telemetry_worker
 from max.serve.request import register_request
 from max.serve.router import kserve_routes, openai_routes
 from max.serve.telemetry.metrics import METRICS, configure_metrics
 from prometheus_client import disable_created_metrics, make_asgi_app
-from pydantic_settings import CliSettingsSource
 from uvicorn import Config, Server
 
 ROUTES = {
@@ -51,28 +51,40 @@ logger = logging.getLogger("max.serve")
 
 @dataclass(frozen=True)
 class ServingTokenGeneratorSettings:
+    # Pipeline config
     model_name: str
     model_factory: PipelinesFactory
     pipeline_config: TokenGeneratorPipelineConfig
     tokenizer: PipelineTokenizer
 
+    # Model worker config
+    use_heartbeat: bool
+
+    @classmethod
+    def from_config(cls, server_settings, **kwargs):
+        return cls(use_heartbeat=server_settings.use_heartbeat, **kwargs)
+
 
 @asynccontextmanager
 async def lifespan(
-    app: FastAPI, serving_settings: ServingTokenGeneratorSettings
+    app: FastAPI,
+    server_settings: Settings,
+    serving_settings: ServingTokenGeneratorSettings,
 ):
-    host = app.extra["host"]
-    port = app.extra["port"]
-    logger.info(f"Launching server on http://{host}:{port}")
-    configure_metrics()
-    await METRICS.configure()
-
+    configure_metrics(server_settings)
+    await METRICS.configure(server_settings)
+    logger.info(
+        f"Launching server on http://{server_settings.host}:{server_settings.port}"
+    )
     try:
         async with (
-            start_telemetry_worker() as tel_worker,
+            start_telemetry_worker(
+                worker_spawn_timeout=server_settings.telemetry_worker_spawn_timeout
+            ) as tel_worker,
             start_model_worker(
                 serving_settings.model_factory,
                 serving_settings.pipeline_config,
+                ModelWorkerConfig(use_heartbeat=serving_settings.use_heartbeat),
             ) as engine_queue,
         ):
             METRICS.pipeline_load(serving_settings.model_name)
@@ -84,7 +96,7 @@ async def lifespan(
             app.state.pipeline = pipeline
             async with pipeline:
                 logger.info(
-                    f"Server ready on http://{host}:{port} (Press CTRL+C to quit)"
+                    f"Server ready on http://{server_settings.host}:{server_settings.port} (Press CTRL+C to quit)"
                 )
                 yield
     except KeyboardInterrupt as e:
@@ -99,16 +111,16 @@ async def lifespan(
 
 def fastapi_app(
     settings: Settings,
-    debug_settings: DebugSettings,
     serving_settings: ServingTokenGeneratorSettings,
 ) -> FastAPI:
-    host = os.getenv("MAX_SERVE_HOST", "0.0.0.0")
-    port = int(os.getenv("MAX_SERVE_PORT", "8000"))
+    logger.info(f"Settings: {settings}")
     app = FastAPI(
         title="MAX Serve",
-        lifespan=partial(lifespan, serving_settings=serving_settings),
-        host=host,
-        port=port,
+        lifespan=partial(
+            lifespan,
+            server_settings=settings,
+            serving_settings=serving_settings,
+        ),
     )
 
     app.mount("/metrics", make_metrics_app())
@@ -121,33 +133,23 @@ def fastapi_app(
     app.state.settings = settings
     register_request(app)
 
-    app.state.debug_settings = debug_settings
-    register_debug(app, debug_settings)
-
     return app
 
 
-def fastapi_config(app: FastAPI) -> Config:
+def fastapi_config(app: FastAPI, server_settings: Settings) -> Config:
+    host = server_settings.host
+    port = server_settings.port
+
     config = Config(
         app=app,
-        host=app.extra["host"],
-        port=app.extra["port"],
         log_config=None,
         loop="uvloop",
+        host=host,
+        port=port,
     )
     for route in app.routes:
         logger.debug("Route enabled : %s", route)
     return config
-
-
-def parse_settings(parser: argparse.ArgumentParser) -> Settings:
-    cli_settings = CliSettingsSource(Settings, root_parser=parser)  # type: ignore
-    return Settings(_cli_settings_source=cli_settings(args=True))  # type: ignore
-
-
-def parse_debug_settings(parser: argparse.ArgumentParser) -> DebugSettings:
-    cli_settings = CliSettingsSource(DebugSettings, root_parser=parser)  # type: ignore
-    return DebugSettings(_cli_settings_source=cli_settings(args=True))  # type: ignore
 
 
 def make_metrics_app():
@@ -156,19 +158,21 @@ def make_metrics_app():
 
 
 async def main() -> None:
-    parser = argparse.ArgumentParser()
-    serving_settings = ServingTokenGeneratorSettings(
+    server_settings = Settings()
+
+    pipeline_settings = ServingTokenGeneratorSettings(
         model_name="echo",
         model_factory=EchoTokenGenerator,
         pipeline_config=TokenGeneratorPipelineConfig.dynamic_homogenous(
             batch_size=1
         ),
         tokenizer=EchoPipelineTokenizer(),
+        use_heartbeat=server_settings.use_heartbeat,
     )
-    app = fastapi_app(
-        parse_settings(parser), parse_debug_settings(parser), serving_settings
-    )
-    config = fastapi_config(app=app)
+
+    app = fastapi_app(server_settings, pipeline_settings)
+
+    config = fastapi_config(app=app, server_settings=server_settings)
     server = Server(config)
     await server.serve()
 

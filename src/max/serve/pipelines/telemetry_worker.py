@@ -44,7 +44,7 @@ TelemetryFn = Callable[[TelemetryObservation], None]
 
 @asynccontextmanager
 async def start_telemetry_worker(
-    handle_fn: Optional[TelemetryFn] = None,
+    handle_fn: Optional[TelemetryFn] = None, worker_spawn_timeout: float = 10
 ):
     ctx = multiprocessing.get_context("spawn")
     pc = ProcessControl(ctx, "telemetry-worker", health_fail_s=5.0)
@@ -62,7 +62,11 @@ async def start_telemetry_worker(
     )
     worker.start()
     monitor = ProcessMonitor(
-        pc, worker, poll_s=100e-3, max_time_s=60.0, unhealthy_poll_s=500e-3
+        pc,
+        worker,
+        poll_s=100e-3,
+        max_time_s=worker_spawn_timeout,
+        unhealthy_poll_s=500e-3,
     )
 
     healthy = await monitor.until_healthy()

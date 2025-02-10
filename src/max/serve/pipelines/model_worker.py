@@ -20,6 +20,7 @@ from max.pipelines import EmbeddingsGenerator, PipelinesFactory, TokenGenerator
 from max.pipelines.kv_cache.paged_cache import PagedKVCacheManager
 from max.pipelines.pipeline import KVCacheMixin, TextGenerationPipeline
 from max.profiler import Tracer, traced
+from max.serve.config import Settings
 from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
 from max.serve.pipelines.scheduler_v2 import (
     EmbeddingsScheduler,
@@ -49,6 +50,8 @@ class ModelWorkerConfig:
     # TODO: we temporarily set it to 1 minute to handle long context input
     health_fail_s: float = 60.0
 
+    use_heartbeat: bool = False
+
 
 def _model_worker_process_fn(
     pc: ProcessControl,
@@ -56,6 +59,7 @@ def _model_worker_process_fn(
     batch_config: TokenGeneratorPipelineConfig,
     worker_config: ModelWorkerConfig,
     queues: Mapping[str, Queue],
+    env: Mapping[str, str],
 ):
     try:
         uvloop.run(
@@ -65,6 +69,7 @@ def _model_worker_process_fn(
                 batch_config,
                 worker_config,
                 queues,
+                env,
             )
         )
     except KeyboardInterrupt:
@@ -120,6 +125,7 @@ async def start_model_worker(
             batch_config,
             config,
             queue_args,
+            dict(os.environ),
         ),
     )
     worker.start()
@@ -208,9 +214,14 @@ async def model_worker_run_v3(
     pipeline_config: TokenGeneratorPipelineConfig,
     worker_config: ModelWorkerConfig,
     queues: Mapping[str, Queue],
+    env: Mapping[str, str],
 ):
-    configure_metrics()
-    await METRICS.configure()
+    # Anti-pattern? The metrics-specific subset of this could be passed explicitly
+    # ENVs need to be carried over from the parent explicitly since we `spawn`
+    os.environ.update(env)
+    server_settings = Settings()
+    configure_metrics(server_settings)
+    await METRICS.configure(server_settings)
 
     pid = os.getpid()
     logger.info("Starting model worker on process %d!", pid)

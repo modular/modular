@@ -8,6 +8,7 @@
 import logging
 import os
 
+from max.serve.config import Settings
 from max.serve.telemetry.common import (
     TelemetryConfig,
     logs_resource,
@@ -38,8 +39,8 @@ def _getCloudProvider() -> str:
 
 # Configure logging to console and OTEL.  This should be called before any
 # 3rd party imports whose logging you wish to capture.
-def configureLogging() -> None:
-    default_config = TelemetryConfig.from_env()
+def configureLogging(server_settings: Settings) -> None:
+    default_config = TelemetryConfig.from_config(server_settings)
     console_level = default_config.console_level
     file_path = default_config.file_path
     file_level = default_config.file_level
