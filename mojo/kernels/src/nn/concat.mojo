@@ -809,23 +809,21 @@ fn _fused_concat_cpu[
     rank: Int,
     type: DType,
     single_thread_blocking_override: Bool,
-    input_1_fn_tuple: StaticTuple[
-        fn[
-            width: Int, rank: Int
-        ] (IndexList[rank]) capturing -> SIMD[type, width], *_
-    ],
+    input_fn: fn[input_index: Int, width: Int, rank: Int] (
+        IndexList[rank]
+    ) capturing -> SIMD[type, width],
     output_0_fn: elementwise_epilogue_type,
+    size: Int,
 ](
     axis: Int,
-    input_shapes: StaticTuple[IndexList[rank], input_1_fn_tuple.size],
+    input_shapes: StaticTuple[IndexList[rank], size],
     output: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
 ) raises:
     var offset = 0
 
     @parameter
-    for i in range(input_1_fn_tuple.size):
-        alias input_i_fn = input_1_fn_tuple[i]
+    for i in range(input_shapes.size):
         var input_shape = input_shapes[i]
 
         @parameter
@@ -838,7 +836,7 @@ fn _fused_concat_cpu[
 
             # Call the input/output lambda for fused concat kernel.
             output_0_fn[type, rank, width=_width, alignment=1](
-                c, input_i_fn[_width, rank](indices)
+                c, input_fn[i, _width, rank](indices)
             )
 
         # TODO: we can use simd_width > 0 if all inputs are aligned.
@@ -855,17 +853,16 @@ fn _fused_concat_inner_most_single_dim[
     rank: Int,
     type: DType,
     block_size: Int,
-    input_1_fn_tuple: StaticTuple[
-        fn[
-            width: Int, rank: Int
-        ] (IndexList[rank]) capturing -> SIMD[type, width], *_
-    ],
+    input_fn: fn[input_index: Int, width: Int, _rank: Int] (
+        IndexList[_rank]
+    ) capturing -> SIMD[type, width],
     output_0_fn: elementwise_epilogue_type,
+    size: Int,
 ](
-    input_shapes: StaticTuple[IndexList[rank], input_1_fn_tuple.size],
+    input_shapes: StaticTuple[IndexList[rank], size],
     output: NDBuffer[type, rank],
 ):
-    alias num_inputs = input_1_fn_tuple.size
+    alias num_inputs = input_shapes.size
 
     var idx = block_idx.x * block_size + thread_idx.x
     if idx >= product(input_shapes[0], rank):
@@ -877,13 +874,12 @@ fn _fused_concat_inner_most_single_dim[
 
     @parameter
     for i in range(num_inputs):
-        alias input_i_fn = input_1_fn_tuple[i]
         var out_index = index
         out_index[rank - 1] = i
 
         output_0_fn[type, rank, width=1](
             out_index.canonicalize(),
-            input_i_fn[1, rank](index.canonicalize()),
+            input_fn[i, 1, rank](index.canonicalize()),
         )
 
 
@@ -892,18 +888,17 @@ fn _fused_concat_gpu_elementwise[
     axis: Int,
     rank: Int,
     type: DType,
-    input_1_fn_tuple: StaticTuple[
-        fn[
-            width: Int, rank: Int
-        ] (IndexList[rank]) capturing -> SIMD[type, width], *_
-    ],
+    input_fn: fn[input_index: Int, width: Int, _rank: Int] (
+        IndexList[_rank]
+    ) capturing -> SIMD[type, width],
     output_0_fn: elementwise_epilogue_type,
+    size: Int,
 ](
-    input_shapes: StaticTuple[IndexList[rank], input_1_fn_tuple.size],
+    input_shapes: StaticTuple[IndexList[rank], size],
     output: NDBuffer[type, rank],
     ctx: DeviceContext,
 ) raises:
-    alias num_inputs = input_1_fn_tuple.size
+    alias num_inputs = input_shapes.size
 
     @parameter
     @always_inline
@@ -916,12 +911,11 @@ fn _fused_concat_gpu_elementwise[
         @parameter
         for i in range(num_inputs):
             var input_shape = input_shapes[i]
-            alias input_fn = input_1_fn_tuple[i]
 
             if in_index[axis] < input_shape[axis]:
                 output_0_fn[type, _rank, width=simd_width, alignment=1](
                     out_index,
-                    input_fn[simd_width, _rank](in_index),
+                    input_fn[i, simd_width, _rank](in_index),
                 )
                 return
 
@@ -939,19 +933,18 @@ fn _fused_concat_gpu_elementwise[
 fn _fused_concat_gpu[
     rank: Int,
     type: DType,
-    input_1_fn_tuple: StaticTuple[
-        fn[
-            width: Int, rank: Int
-        ] (IndexList[rank]) capturing -> SIMD[type, width], *_
-    ],
+    input_fn: fn[input_index: Int, width: Int, _rank: Int] (
+        IndexList[_rank]
+    ) capturing -> SIMD[type, width],
     output_0_fn: elementwise_epilogue_type,
+    size: Int,
 ](
     axis: Int,
-    input_shapes: StaticTuple[IndexList[rank], input_1_fn_tuple.size],
+    input_shapes: StaticTuple[IndexList[rank], size],
     output: NDBuffer[type, rank],
     ctx: DeviceContext,
 ) raises:
-    alias num_inputs = input_1_fn_tuple.size
+    alias num_inputs = input_shapes.size
 
     if axis == rank - 1:
         var inner_most_unit_dim = True
@@ -970,8 +963,9 @@ fn _fused_concat_gpu[
                     rank,
                     type,
                     block_size,
-                    input_1_fn_tuple,
+                    input_fn,
                     output_0_fn,
+                    size,
                 ]
             ]()
 
@@ -996,26 +990,25 @@ fn _fused_concat_gpu[
                 i,
                 rank,
                 type,
-                input_1_fn_tuple,
+                input_fn,
                 output_0_fn,
+                size,
             ](input_shapes, output, ctx)
 
 
 @always_inline
-fn test_concat_fusion[
+fn fused_concat[
     type: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
-    input_1_fn_tuple: StaticTuple[
-        fn[
-            width: Int, rank: Int
-        ] (IndexList[rank]) capturing -> SIMD[type, width], *_
-    ],
+    input_fn: fn[input_index: Int, width: Int, _rank: Int] (
+        IndexList[_rank]
+    ) capturing -> SIMD[type, width],
     output_0_fn: elementwise_epilogue_type,
     target: StringLiteral = "cpu",
 ](
     axis: Int,
-    input_shapes: StaticTuple[IndexList[rank], input_1_fn_tuple.size],
+    input_shapes: StaticTuple[IndexList[rank], _],
     output: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -1029,10 +1022,10 @@ fn test_concat_fusion[
                 rank,
                 type,
                 single_thread_blocking_override,
-                input_1_fn_tuple,
+                input_fn,
                 output_0_fn,
             ](axis, input_shapes, output, ctx)
         else:
-            return _fused_concat_gpu[rank, type, input_1_fn_tuple, output_0_fn](
+            return _fused_concat_gpu[rank, type, input_fn, output_0_fn](
                 axis, input_shapes, output, ctx.get_device_context()
             )
