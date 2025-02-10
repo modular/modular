@@ -4,9 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# TODO(asan): Timing out in ASAN. Fix.
-# UNSUPPORTED: asan
-
 # RUN: not mojo test -I %S/inputs -D TEST_PASS "%s" | FileCheck %s
 # RUN: not mojo test -I %S/inputs "%s@doc_test_failure_first_cell().__doc__" | FileCheck %s --check-prefix=CHECK-DOC
 # RUN: not mojo test -I %S/inputs "%s@doc_test_failure_first_cell().__doc__::1" | FileCheck %s --check-prefix=CHECK-DOC
@@ -33,7 +30,7 @@ from sys import is_defined
 
 # CHECK: Failure: '{{.*}}test_execution.mojo::test_unit\2Efailure()'
 # CHECK: Unhandled exception caught during execution
-# CHECK: {{.*}}test_execution.mojo:61:16: AssertionError: condition was unexpectedly False
+# CHECK: {{.*}}test_execution.mojo:58:16: AssertionError: condition was unexpectedly False
 
 # CHECK-DOC: Total Discovered Tests: 2
 # CHECK-DOC: Passed : 0
