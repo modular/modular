@@ -12,7 +12,6 @@ import pytest
 from async_asgi_testclient import TestClient
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
-from max.serve.debug import DebugSettings
 from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.pipelines.echo_gen import (
     EchoPipelineTokenizer,
@@ -39,7 +38,6 @@ def decode_and_strip(text: bytes, prefix: str | None):
 @pytest.fixture(scope="function")
 def stream_app():
     settings = Settings(api_types=[APIType.OPENAI])
-    debug_settings = DebugSettings()
     serving_settings = ServingTokenGeneratorSettings(
         model_name="echo",
         model_factory=EchoTokenGenerator,
@@ -47,8 +45,9 @@ def stream_app():
             batch_size=1
         ),
         tokenizer=EchoPipelineTokenizer(),
+        use_heartbeat=False,
     )
-    fast_app = fastapi_app(settings, debug_settings, serving_settings)
+    fast_app = fastapi_app(settings, serving_settings)
     return fast_app
 
 

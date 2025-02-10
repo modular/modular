@@ -18,7 +18,6 @@ from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
 from max.pipelines.tokenizer import IdentityPipelineTokenizer
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
-from max.serve.debug import DebugSettings
 from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
@@ -76,10 +75,10 @@ def app(token_generator):
         model_factory=model_factory,
         pipeline_config=config,
         tokenizer=MockTokenizer(),
+        use_heartbeat=False,
     )
     app = fastapi_app(
         Settings(api_types=[APIType.OPENAI]),
-        DebugSettings(),
         serving_settings,
     )
     yield app

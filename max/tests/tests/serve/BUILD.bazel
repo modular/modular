@@ -12,7 +12,7 @@ modular_py_test(
         "//SDK/lib/API/python/tests/serve/testdata",
     ],
     env = {
-        "MAX_SERVE_DISABLE_TELEMETRY": "-1",
+        "MAX_SERVE_DISABLE_TELEMETRY": "True",
         "MAX_SERVE_TESTDATA": "SDK/lib/API/python/tests/serve/testdata",
     },
     deps = [

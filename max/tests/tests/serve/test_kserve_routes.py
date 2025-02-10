@@ -9,7 +9,6 @@ import pytest
 from fastapi.testclient import TestClient
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
-from max.serve.debug import DebugSettings
 from max.serve.mocks.mock_api_requests import (
     simple_kserve_request,
     simple_kserve_response,
@@ -24,7 +23,6 @@ from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
 @pytest.fixture
 def app():
     settings = Settings(api_types=[APIType.KSERVE])
-    debug_settings = DebugSettings()
     serving_settings = ServingTokenGeneratorSettings(
         model_name="echo",
         model_factory=EchoTokenGenerator,
@@ -32,8 +30,9 @@ def app():
             batch_size=1
         ),
         tokenizer=EchoPipelineTokenizer(),
+        use_heartbeat=False,
     )
-    return fastapi_app(settings, debug_settings, serving_settings)
+    return fastapi_app(settings, serving_settings)
 
 
 @pytest.mark.skip(reason="Implementing infer/ for real is a WIP.")

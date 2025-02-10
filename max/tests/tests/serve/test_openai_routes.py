@@ -15,7 +15,6 @@ from async_asgi_testclient import TestClient as AsyncTestClient
 from fastapi.testclient import TestClient as SyncTestClient
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
-from max.serve.debug import DebugSettings
 from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.pipelines.echo_gen import (
     EchoPipelineTokenizer,
@@ -36,7 +35,6 @@ logger = logging.getLogger(__name__)
 @pytest_asyncio.fixture(scope="function")
 def app(fixture_tokenizer, model_name: str):
     settings = Settings(api_types=[APIType.OPENAI])
-    debug_settings = DebugSettings()
     pipeline_config = TokenGeneratorPipelineConfig.dynamic_homogenous(
         batch_size=1
     )
@@ -55,8 +53,9 @@ def app(fixture_tokenizer, model_name: str):
         model_factory=model_factory,
         pipeline_config=pipeline_config,
         tokenizer=tokenizer,
+        use_heartbeat=False,
     )
-    return fastapi_app(settings, debug_settings, serving_settings)
+    return fastapi_app(settings, serving_settings)
 
 
 # TODO(SI-741): Restore tunable_app OpenAI API tests
