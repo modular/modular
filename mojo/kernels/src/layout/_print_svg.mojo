@@ -7,6 +7,8 @@ from collections import Dict, Optional
 from sys import sizeof
 from layout import Layout, LayoutTensor
 from layout.swizzle import Swizzle
+from utils import Writer
+from pathlib import Path
 
 
 fn print_svg[
@@ -24,7 +26,33 @@ fn print_svg[
         ]
     ],
     color_map: Optional[fn (Int, Int) -> String] = None,
-    filename: Optional[String] = None,
+    file_path: Optional[Path] = None,
+) raises:
+    var s = String()
+    _print_svg_impl[swizzle](tensor_base, tensors, s, color_map)
+    if file_path:
+        file_path.value().write_text(s)
+    else:
+        print(s)
+
+
+fn _print_svg_impl[
+    dtype: DType,
+    layout: Layout,
+    rank: Int,
+    element_layout: Layout,
+    masked: Bool,
+    W: Writer, //,
+    swizzle: Optional[Swizzle] = None,
+](
+    tensor_base: LayoutTensor,
+    tensors: List[
+        LayoutTensor[
+            dtype, layout, rank, element_layout=element_layout, masked=masked
+        ]
+    ],
+    mut writer: W,
+    color_map: Optional[fn (Int, Int) -> String] = None,
 ) raises:
     # Given a base layout tensor and a sub tensor print the layouts
     # Verify rank constraint
@@ -54,42 +82,42 @@ fn print_svg[
     var width = (tensor_base.layout[1].size() + 2) * cell_size + 2 * margin
     var height = (tensor_base.layout[0].size() + 2) * cell_size + 2 * margin
 
-    var svg = String('<?xml version="1.0" encoding="UTF-8"?>\n')
-    svg += (
-        '<svg width="'
-        + String(width)
-        + '" height="'
-        + String(height)
-        + '" xmlns="http://www.w3.org/2000/svg">\n'
+    writer.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+    writer.write(
+        '<svg width="',
+        width,
+        '" height="',
+        height,
+        '" xmlns="http://www.w3.org/2000/svg">\n',
     )
 
     # Print layout legends
-    svg += (
-        '<text x="'
-        + String(margin)
-        + '" y="'
-        + String(margin + 20)
-        + '" fill="'
-        + colors[0]
-        + '" opacity="0.4">Layout: '
-        + String(tensor_base.layout)
-        + " "
-        + String(tensor_base.element_layout)
-        + "</text>\n"
+    writer.write(
+        '<text x="',
+        margin,
+        '" y="',
+        margin + 20,
+        '" fill="',
+        colors[0],
+        '" opacity="0.4">Layout: ',
+        tensor_base.layout,
+        " ",
+        tensor_base.element_layout,
+        "</text>\n",
     )
     if len(tensors) > 0:
-        svg += (
-            '<text x="'
-            + String(margin)
-            + '" y="'
-            + String(margin + 40)
-            + '" fill="'
-            + colors[1]
-            + '" opacity="0.4">Layout: '
-            + String(tensors[0].layout)
-            + " "
-            + String(tensors[0].element_layout)
-            + "</text>\n"
+        writer.write(
+            '<text x="',
+            margin,
+            '" y="',
+            margin + 40,
+            '" fill="',
+            colors[1],
+            '" opacity="0.4">Layout: ',
+            tensors[0].layout,
+            " ",
+            tensors[0].element_layout,
+            "</text>\n",
         )
 
     var map = Dict[Int, IntTuple]()
@@ -108,66 +136,71 @@ fn print_svg[
             map[idx] = IntTuple(i, j)
             var x = margin + text_margin + j * cell_size
             var y = start_y + i * cell_size
-            svg += (
-                '<rect x="'
-                + String(x)
-                + '" y="'
-                + String(y)
-                + '" width="'
-                + String(cell_size)
-                + '" height="'
-                + String(cell_size)
-                + '" fill="'
+            writer.write(
+                '<rect x="',
+                x,
+                '" y="',
+                y,
+                '" width="',
+                cell_size,
+                '" height="',
+                cell_size,
+                '" fill="',
             )
             if color_map and swizzle:
-                svg += color_map.value()(idx, 0)
+                writer.write(color_map.value()(idx, 0))
             else:
-                svg += colors[0]
-            svg += '" opacity="0.2" stroke="black"/>\n'
-            svg += (
-                '<text font-size="small" x="'
-                + String(x + cell_size / 2)
-                + '" y="'
-                + String(y + cell_size / 2 + 20)
-                + '" dominant-baseline="middle" text-anchor="middle">'
-                + String(idx)
-                + "</text>\n"
+                writer.write(colors[0])
+            writer.write('" opacity="0.2" stroke="black"/>\n')
+            writer.write(
+                '<text font-size="small" x="',
+                x + cell_size / 2,
+                '" y="',
+                y + cell_size / 2 + 20,
+                '" dominant-baseline="middle" text-anchor="middle">',
+                idx,
+                "</text>\n",
             )
             if swizzle:
-                svg += (
-                    '<text font-size="x-small" fill="gainsboro" x="'
-                    + String(x + 10)
-                    + '" y="'
-                    + String(y + 15)
-                    + '" dominant-baseline="middle" text-anchor="middle">'
-                    + String(non_swizzled_idx)
-                    + "</text>\n"
+                writer.write(
+                    '<text font-size="x-small" fill="gainsboro" x="',
+                    x + 10,
+                    '" y="',
+                    y + 15,
+                    '" dominant-baseline="middle" text-anchor="middle">',
+                    non_swizzled_idx,
+                    "</text>\n",
                 )
 
     fn draw_element(
-        x: Int, y: Int, color: String, t: Int, element_idx: Int
-    ) -> String:
-        return (
-            '<rect x="'
-            + String(x)
-            + '" y="'
-            + String(y)
-            + '" width="'
-            + String(cell_size)
-            + '" height="'
-            + String(cell_size)
-            + '" fill="'
-            + color
-            + '" opacity="0.2" stroke="black"/>\n'
-            + '<text font-size="large" x="'
-            + String(x + cell_size / 2)
-            + '" y="'
-            + String(y + cell_size / 2)
-            + '" dominant-baseline="middle" text-anchor="middle">T'
-            + String(t)
-            + " V"
-            + String(element_idx)
-            + "</text>\n"
+        x: Int,
+        y: Int,
+        color: String,
+        t: Int,
+        element_idx: Int,
+        mut writer: W,
+    ):
+        writer.write(
+            '<rect x="',
+            x,
+            '" y="',
+            y,
+            '" width="',
+            cell_size,
+            '" height="',
+            cell_size,
+            '" fill="',
+            color,
+            '" opacity="0.2" stroke="black"/>\n'
+            + '<text font-size="large" x="',
+            x + cell_size / 2,
+            '" y="',
+            y + cell_size / 2,
+            '" dominant-baseline="middle" text-anchor="middle">T',
+            t,
+            " V",
+            element_idx,
+            "</text>\n",
         )
 
     for t in range(len(tensors)):
@@ -198,7 +231,7 @@ fn print_svg[
                             ) if color_map else colors[
                                 orig_pos[0].value() % 2 + 1
                             ]
-                            svg += draw_element(x, y, color, t, element_idx)
+                            draw_element(x, y, color, t, element_idx, writer)
                             element_idx += 1
         else:
             var element_idx = 0
@@ -216,41 +249,40 @@ fn print_svg[
                     var color = color_map.value()(
                         t, element_idx
                     ) if color_map else colors[orig_pos[0].value() % 2 + 1]
-                    svg += draw_element(x, y, color, t, element_idx)
+                    draw_element(x, y, color, t, element_idx, writer)
                     element_idx += 1
 
     # Draw row labels
     for i in range(tensor_base.layout[0].size()):
         var y = start_y + i * cell_size + cell_size / 2
-        svg += (
-            '<text x="'
-            + String(margin)
-            + '" y="'
-            + String(y)
-            + '" dominant-baseline="middle" text-anchor="middle"'
-            ' font-family="monospace" font-size="larger">'
-            + String(i)
-            + "</text>\n"
+        writer.write(
+            '<text x="',
+            margin,
+            '" y="',
+            y,
+            (
+                '" dominant-baseline="middle" text-anchor="middle"'
+                ' font-family="monospace" font-size="larger">'
+            ),
+            i,
+            "</text>\n",
         )
 
     # Draw column labels
     for j in range(tensor_base.layout[1].size()):
         var x = margin + text_margin + j * cell_size + cell_size / 2
-        svg += (
-            '<text x="'
-            + String(x)
-            + '" y="'
-            + String(start_y - text_margin / 2)
-            + '" dominant-baseline="middle" text-anchor="middle"'
-            ' font-family="monospace" font-size="larger">'
-            + String(j)
-            + "</text>\n"
+        writer.write(
+            '<text x="',
+            x,
+            '" y="',
+            start_y - text_margin / 2,
+            (
+                '" dominant-baseline="middle" text-anchor="middle"'
+                ' font-family="monospace" font-size="larger">'
+            ),
+            j,
+            "</text>\n",
         )
 
     # SVG Footer
-    svg += "</svg>\n"
-    if filename:
-        with open(filename.value(), "w") as f:
-            f.write(svg)
-    else:
-        print(svg)
+    writer.write("</svg>\n")
