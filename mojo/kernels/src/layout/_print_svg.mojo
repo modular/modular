@@ -118,9 +118,12 @@ fn print_svg[
                 + '" height="'
                 + String(cell_size)
                 + '" fill="'
-                + colors[0]
-                + '" opacity="0.2" stroke="black"/>\n'
             )
+            if color_map and swizzle:
+                svg += color_map.value()(idx, 0)
+            else:
+                svg += colors[0]
+            svg += '" opacity="0.2" stroke="black"/>\n'
             svg += (
                 '<text font-size="small" x="'
                 + String(x + cell_size / 2)
