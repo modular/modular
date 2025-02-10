@@ -3,6 +3,10 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+from max.serve.config import Settings
+from max.serve.telemetry.common import configure_metrics
+
+configure_metrics(Settings())
 
 import asyncio
 import logging
@@ -31,7 +35,7 @@ from max.serve.pipelines.scheduler_v2 import (
 )
 from max.serve.scheduler.process_control import ProcessControl, ProcessMonitor
 from max.serve.scheduler.queues import EngineQueue
-from max.serve.telemetry.metrics import METRICS, configure_metrics
+from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
 
 logger = logging.getLogger(__name__)
@@ -220,7 +224,6 @@ async def model_worker_run_v3(
     # ENVs need to be carried over from the parent explicitly since we `spawn`
     os.environ.update(env)
     server_settings = Settings()
-    configure_metrics(server_settings)
     await METRICS.configure(server_settings)
 
     pid = os.getpid()

@@ -9,9 +9,11 @@
 from __future__ import annotations
 
 from max.serve.config import Settings
-from max.serve.telemetry.logger import configureLogging
+from max.serve.telemetry.common import configure_logging, configure_metrics
 
-configureLogging(Settings())
+settings = Settings()
+configure_logging(settings)
+configure_metrics(settings)
 
 import logging
 from contextlib import asynccontextmanager
@@ -37,7 +39,7 @@ from max.serve.pipelines.model_worker import (
 from max.serve.pipelines.telemetry_worker import start_telemetry_worker
 from max.serve.request import register_request
 from max.serve.router import kserve_routes, openai_routes
-from max.serve.telemetry.metrics import METRICS, configure_metrics
+from max.serve.telemetry.metrics import METRICS
 from prometheus_client import disable_created_metrics, make_asgi_app
 from uvicorn import Config, Server
 
@@ -71,7 +73,6 @@ async def lifespan(
     server_settings: Settings,
     serving_settings: ServingTokenGeneratorSettings,
 ):
-    configure_metrics(server_settings)
     await METRICS.configure(server_settings)
     logger.info(
         f"Launching server on http://{server_settings.host}:{server_settings.port}"

@@ -13,7 +13,22 @@ from dataclasses import dataclass
 from typing import Union
 
 from max.serve.config import Settings
+from opentelemetry._logs import set_logger_provider
+from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
+    OTLPMetricExporter,
+)
+from opentelemetry.exporter.prometheus import PrometheusMetricReader
+from opentelemetry.metrics import set_meter_provider
+from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import (
+    MetricReader,
+    PeriodicExportingMetricReader,
+)
 from opentelemetry.sdk.resources import Resource
+from pythonjsonlogger import jsonlogger
 
 otelBaseUrl = "https://telemetry.modular.com:443"
 
@@ -103,3 +118,98 @@ class TelemetryConfig:
             otlp_level=otlp_level,
             metrics_egress_enabled=metrics_egress_enabled,
         )
+
+
+# Configure logging to console and OTEL.  This should be called before any
+# 3rd party imports whose logging you wish to capture.
+def configure_logging(server_settings: Settings) -> None:
+    default_config = TelemetryConfig.from_config(server_settings)
+    console_level = default_config.console_level
+    file_path = default_config.file_path
+    file_level = default_config.file_level
+    otlp_level = default_config.otlp_level
+
+    logging_handlers: list[logging.Handler] = []
+
+    # Create a console handler
+    console_handler = logging.StreamHandler()
+    console_formatter: logging.Formatter
+    if os.getenv("MODULAR_STRUCTURED_LOGGING") == "1":
+        console_formatter = jsonlogger.JsonFormatter()
+    else:
+        console_formatter = logging.Formatter(
+            (
+                "%(asctime)s.%(msecs)03d %(levelname)s: %(process)d %(threadName)s:"
+                " %(name)s: %(message)s"
+            ),
+            datefmt="%H:%M:%S",
+        )
+    console_handler.setFormatter(console_formatter)
+    console_handler.setLevel(console_level)
+    logging_handlers.append(console_handler)
+
+    if file_level is not None and file_path is not None:
+        # Create a file handler
+        file_handler = logging.FileHandler(file_path)
+        file_formatter: logging.Formatter
+        if os.getenv("MODULAR_STRUCTURED_LOGGING") == "1":
+            file_formatter = jsonlogger.JsonFormatter()
+        else:
+            file_formatter = logging.Formatter(
+                (
+                    "%(asctime)s.%(msecs)03d %(levelname)s: %(process)d %(threadName)s:"
+                    " %(name)s: %(message)s"
+                ),
+                datefmt="%y:%m:%d-%H:%M:%S",
+            )
+        file_handler.setFormatter(file_formatter)
+        file_handler.setLevel(file_level)
+        logging_handlers.append(file_handler)
+
+    if otlp_level is not None:
+        # Create an OTEL handler
+        logger_provider = LoggerProvider(logs_resource)
+        set_logger_provider(logger_provider)
+        exporter = OTLPLogExporter(endpoint=otelBaseUrl + "/v1/logs")
+        logger_provider.add_log_record_processor(
+            BatchLogRecordProcessor(exporter)
+        )
+        otlp_handler = LoggingHandler(
+            level=otlp_level, logger_provider=logger_provider
+        )
+        logging_handlers.append(otlp_handler)
+
+    # Configure root logger level
+    logger_level = min(h.level for h in logging_handlers)
+    logger = logging.getLogger()
+    logger.setLevel(logger_level)
+    for handler in logging_handlers:
+        logger.addHandler(handler)
+
+    # TODO use FastAPIInstrumentor once Motel supports traces.
+    # For now, manually configure uvicorn.
+    logging.getLogger("uvicorn").setLevel(logging.WARNING)
+    # Explicit levels to reduce noise
+    logging.getLogger("sse_starlette.sse").setLevel(
+        max(logger_level, logging.INFO)
+    )
+    logger.info(
+        "Logging initialized: Console: %s, File: %s, Telemetry: %s",
+        console_level,
+        file_level,
+        otlp_level,
+    )
+
+
+def configure_metrics(server_settings: Settings):
+    default_config = TelemetryConfig.from_config(server_settings)
+    metrics_egress_enabled = default_config.metrics_egress_enabled
+
+    meterProviders: list[MetricReader] = [PrometheusMetricReader(True)]
+    if metrics_egress_enabled:
+        meterProviders.append(
+            PeriodicExportingMetricReader(
+                OTLPMetricExporter(endpoint=otelBaseUrl + "/v1/metrics")
+            )
+        )
+    set_meter_provider(MeterProvider(meterProviders, metrics_resource))
