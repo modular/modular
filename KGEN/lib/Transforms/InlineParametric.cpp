@@ -55,14 +55,14 @@ public:
     return mangleRefsInImpl(type, hasRefs);
   }
   Type mangleRefsIn(Type type) {
-    bool unused;
+    bool unused = false;
     return mangleRefsIn(type, unused);
   }
 
   /// Mangle references within an attribute.
   Attribute mangleRefsIn(Attribute attr, bool &hasRefs);
   Attribute mangleRefsIn(Attribute type) {
-    bool unused;
+    bool unused = false;
     return mangleRefsIn(type, unused);
   }
 
