@@ -115,7 +115,6 @@ def test_tma_swizzle[
             __type_of(tma_tensor).desc_layout,
         ],
         _target = _get_gpu_target["sm_90"](),
-        dump_asm=True,
     ]()
     ctx.enqueue_function(
         kernel,
