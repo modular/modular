@@ -42,10 +42,6 @@ DLPackCompatible = Union[DLPackArray, npt.NDArray]
 InputShape = Optional[List[Union[int, str, None]]]
 CustomExtensionType = Union[str, Path, Any]
 CustomExtensionsType = Union[List[CustomExtensionType], CustomExtensionType]
-TensorOrMojoType = Union[Tensor, MojoValue]
-ExecResultType = Union[
-    Dict[str, Union[np.ndarray, dict, list, tuple]], List[TensorOrMojoType]
-]
 # Need to use tuple instead of Union to ensure that Python 3.9 support works.
 ScalarType = (int, float, bool, np.generic)
 InputType = Union[
@@ -161,7 +157,7 @@ class Model:
         *args: InputType,
         copy_inputs_to_device: bool = True,
         output_device: Device | None = None,
-    ) -> list[TensorOrMojoType]:
+    ) -> list[Tensor | MojoValue]:
         """Executes the model with the provided input and returns the outputs.
 
         For example, if the model has one input tensor:
@@ -266,7 +262,7 @@ class Model:
 
     def __call__(
         self, *args: InputType, **kwargs: InputType
-    ) -> list[TensorOrMojoType]:
+    ) -> list[Tensor | MojoValue]:
         """Executes the model with the provided input and returns the outputs.
 
         Models can be called with any mixture of positional and named inputs:
