@@ -267,13 +267,15 @@ def KGEN_StructGeneratorOp : KGENOp<"struct.generator", [
     Example:
 
     ```mlir
-    kgen.struct.generator @struct_SIMD<dt: dtype, size> = #type_value
+    kgen.struct.generator @struct_SIMD<dt: dtype, size> : type
+      = struct_inst<"struct_SIMD"[dt, size]<:dtype dt, size>(data: struct<()>)>
     ```
   }];
 
   let arguments = (ins SymbolNameAttr:$sym_name,
                        KGEN_ParamDeclArrayAttr:$inputParams,
-                       TypedAttrInterface:$typeValue);
+                       TypeAttr:$valueDomainType,
+                       TypeAttr:$metaType);
   let regions = (region SizedRegion<1>:$body);
 
   let extraClassDeclaration = [{
@@ -281,7 +283,9 @@ def KGEN_StructGeneratorOp : KGENOp<"struct.generator", [
   }];
 
   let assemblyFormat = [{
-    $sym_name `` custom<StructGeneratorSpec>($inputParams, $typeValue, $body)
+    $sym_name ``
+    custom<StructGeneratorSpec>(
+      $inputParams, $valueDomainType, $metaType, $body)
     attr-dict-with-keyword
   }];
 }
@@ -304,16 +308,18 @@ def KGEN_StructInstanceOp : KGENOp<"struct.instance", [
     Example:
 
     ```mlir
-    kgen.struct.instance @"struct_SIMD,dt=f32,size=4" = #type_value
+    kgen.struct.instance @"struct_SIMD,dt=f32,size=4" : type
+      = struct_inst<"struct_SIMD"[dt, size]<:dtype f32, 4>(data: struct<()>)>
     ```
   }];
 
   let arguments = (ins SymbolNameAttr:$sym_name,
-                       TypedAttrInterface:$typeValue);
+                       TypeAttr:$valueDomainType,
+                       TypeAttr:$metaType);
   let regions = (region SizedRegion<1>:$body);
 
   let assemblyFormat = [{
-    $sym_name `` custom<StructInstanceSpec>($typeValue, $body)
+    $sym_name `` custom<StructInstanceSpec>($valueDomainType, $metaType, $body)
     attr-dict-with-keyword
   }];
 }

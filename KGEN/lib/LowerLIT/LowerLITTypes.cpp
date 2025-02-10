@@ -364,16 +364,11 @@ LogicalResult StructDecls::process(ModuleOp module, SymbolTable &symtab) {
     auto structInstType =
         StructInstanceType::get(structName, paramNames, paramValues, fieldDecls,
                                 !info.isRegisterPassable);
-    TypedAttr typeValue = TypeParamAttr::get(
-        structInstType,
-        LIT::StructType::get(SymbolRefAttr::get(structName), paramValues,
-                             TypeSignatureType::get(ctx)),
-        typeType);
 
     OpBuilder b(&op);
     auto gen = b.create<StructGeneratorOp>(
         op.getLoc(), StringAttr::get(ctx, structName.getValue()), info.decls,
-        typeValue);
+        structInstType, typeType);
     symtab.remove(&op);
     info.symRef = SymbolRefAttr::get(symtab.insert(gen));
     b.createBlock(&gen.getRegion());
@@ -780,6 +775,17 @@ LogicalResult LIT::lowerLITTypes(ModuleOp module,
     return failure();
 
   module.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+    if (auto structGen = dyn_cast<StructGeneratorOp>(op)) {
+      // Make sure valueDomainType is translated in the value domain.
+      Type valueDomainType =
+          b.replace(structGen.getValueDomainType(), TypeDomain::AsValue);
+      b.replaceElementsIn(structGen, TypeDomain::AsType, /*replaceAttrs=*/true,
+                          /*replaceLocs=*/true,
+                          /*replaceTypes=*/true);
+      structGen.setValueDomainType(valueDomainType);
+      return WalkResult::advance();
+    }
+
     b.replaceElementsIn(op, TypeDomain::AsType, /*replaceAttrs=*/true,
                         /*replaceLocs=*/true,
                         /*replaceTypes=*/true);
