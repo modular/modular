@@ -7,7 +7,7 @@
 from layout import IntTuple, Layout, LayoutTensor
 from layout._print_svg import print_svg
 from layout.tensor_builder import LayoutTensorBuild as tb
-from layout.swizzle import make_swizzle
+from layout.swizzle import Swizzle
 
 
 fn test_svg_nvidia_shape() raises:
@@ -121,9 +121,29 @@ fn test_svg_wgmma_shape() raises:
 
 fn test_svg_swizzle() raises:
     alias layout = Layout.row_major(8, 8)
-    alias swizzle = make_swizzle[8, 8, 1]()
-    var tensor = LayoutTensor[DType.bfloat16, layout].stack_allocation()
-    print_svg[swizzle](tensor, List[__type_of(tensor)]())
+    alias swizzle = Swizzle(3, 0, 3)
+    var tensor = LayoutTensor[DType.float32, layout].stack_allocation()
+
+    # the figure generated here is identical to
+    # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/async-warpgroup-smem-layout-128B-k.png
+    fn color_map(t: Int, v: Int) -> String:
+        var colors = List(
+            "blue",
+            "green",
+            "yellow",
+            "red",
+            "lightblue",
+            "lightgreen",
+            "lightyellow",
+            "salmon",  # lighter variant of red
+        )
+        return colors[t % len(colors)]
+
+    print_svg[swizzle](
+        tensor,
+        List[__type_of(tensor)](),
+        color_map=color_map,
+    )
 
 
 fn main() raises:
