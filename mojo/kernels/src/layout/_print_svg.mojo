@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 from collections import Dict, Optional
 from sys import sizeof
-
-from layout import Layout
+from layout import Layout, LayoutTensor
+from layout.swizzle import Swizzle
 
 
 fn print_svg[
@@ -14,7 +14,8 @@ fn print_svg[
     layout: Layout,
     rank: Int,
     element_layout: Layout,
-    masked: Bool,
+    masked: Bool, //,
+    swizzle: Optional[Swizzle] = None,
 ](
     tensor_base: LayoutTensor,
     tensors: List[
@@ -28,18 +29,18 @@ fn print_svg[
     # Given a base layout tensor and a sub tensor print the layouts
     # Verify rank constraint
     debug_assert(tensor_base.layout.rank() == 2, "Layout rank must be 2")
-    debug_assert(tensors[0].layout.rank() == 2, "Layout rank must be 2")
 
-    debug_assert(
-        tensors[0].layout.shape[0].value()
-        <= tensor_base.layout.shape[0].value(),
-        "Layout 0 should have the largest first dimension",
-    )
-    debug_assert(
-        tensors[0].layout.shape[1].value()
-        <= tensor_base.layout.shape[1].value(),
-        "Layout 0 should have the largest second dimension",
-    )
+    if len(tensors) > 0:
+        debug_assert(tensors[0].layout.rank() == 2, "Layout rank must be 2")
+
+        debug_assert(
+            tensors[0].layout[0].size() <= tensor_base.layout[0].size(),
+            "Layout 0 should have the largest first dimension",
+        )
+        debug_assert(
+            tensors[0].layout[1].size() <= tensor_base.layout[1].size(),
+            "Layout 0 should have the largest second dimension",
+        )
 
     var colors = List(
         "#FFFFFF",
@@ -50,12 +51,8 @@ fn print_svg[
     var cell_size = 80
     var margin = 40
     var text_margin = 30
-    var width = (
-        tensor_base.layout.shape[1].value() + 2
-    ) * cell_size + 2 * margin
-    var height = (
-        tensor_base.layout.shape[0].value() + 2
-    ) * cell_size + 2 * margin
+    var width = (tensor_base.layout[1].size() + 2) * cell_size + 2 * margin
+    var height = (tensor_base.layout[0].size() + 2) * cell_size + 2 * margin
 
     var svg = String('<?xml version="1.0" encoding="UTF-8"?>\n')
     svg += (
@@ -80,27 +77,34 @@ fn print_svg[
         + String(tensor_base.element_layout)
         + "</text>\n"
     )
-    svg += (
-        '<text x="'
-        + String(margin)
-        + '" y="'
-        + String(margin + 40)
-        + '" fill="'
-        + colors[1]
-        + '" opacity="0.4">Layout: '
-        + String(tensors[0].layout)
-        + " "
-        + String(tensors[0].element_layout)
-        + "</text>\n"
-    )
+    if len(tensors) > 0:
+        svg += (
+            '<text x="'
+            + String(margin)
+            + '" y="'
+            + String(margin + 40)
+            + '" fill="'
+            + colors[1]
+            + '" opacity="0.4">Layout: '
+            + String(tensors[0].layout)
+            + " "
+            + String(tensors[0].element_layout)
+            + "</text>\n"
+        )
 
     var map = Dict[Int, IntTuple]()
     var start_y = margin + 60  # Additional space for legends
 
     # Draw base layout
-    for i in range(tensor_base.layout.shape[0].value()):
-        for j in range(tensor_base.layout.shape[1].value()):
+    for i in range(tensor_base.layout[0].size()):
+        for j in range(tensor_base.layout[1].size()):
             var idx = tensor_base.layout(IntTuple(i, j))
+            var non_swizzled_idx = idx
+
+            @parameter
+            if swizzle:
+                idx = swizzle.value()(idx)
+
             map[idx] = IntTuple(i, j)
             var x = margin + text_margin + j * cell_size
             var y = start_y + i * cell_size
@@ -126,18 +130,52 @@ fn print_svg[
                 + String(idx)
                 + "</text>\n"
             )
+            if swizzle:
+                svg += (
+                    '<text font-size="x-small" fill="gainsboro" x="'
+                    + String(x + 10)
+                    + '" y="'
+                    + String(y + 15)
+                    + '" dominant-baseline="middle" text-anchor="middle">'
+                    + String(non_swizzled_idx)
+                    + "</text>\n"
+                )
+
+    fn draw_element(
+        x: Int, y: Int, color: String, t: Int, element_idx: Int
+    ) -> String:
+        return (
+            '<rect x="'
+            + String(x)
+            + '" y="'
+            + String(y)
+            + '" width="'
+            + String(cell_size)
+            + '" height="'
+            + String(cell_size)
+            + '" fill="'
+            + color
+            + '" opacity="0.2" stroke="black"/>\n'
+            + '<text font-size="large" x="'
+            + String(x + cell_size / 2)
+            + '" y="'
+            + String(y + cell_size / 2)
+            + '" dominant-baseline="middle" text-anchor="middle">T'
+            + String(t)
+            + " V"
+            + String(element_idx)
+            + "</text>\n"
+        )
 
     for t in range(len(tensors)):
         var tensor = tensors[t]
         # Draw other layouts
         if tensor.element_layout.rank() == 2:
             var element_idx = 0
-            for i in range(tensor.layout.shape[0].value()):
-                for j in range(tensor.layout.shape[1].value()):
-                    for e_i in range(tensor.element_layout.shape[0].value()):
-                        for e_j in range(
-                            tensor.element_layout.shape[1].value()
-                        ):
+            for i in range(tensor.layout[0].size()):
+                for j in range(tensor.layout[1].size()):
+                    for e_i in range(tensor.element_layout[0].size()):
+                        for e_j in range(tensor.element_layout[1].size()):
                             var offset = (
                                 Int(tensor.ptr) - Int(tensor_base.ptr)
                             ) // sizeof[Scalar[tensor.dtype]]()
@@ -157,36 +195,12 @@ fn print_svg[
                             ) if color_map else colors[
                                 orig_pos[0].value() % 2 + 1
                             ]
-                            svg += (
-                                '<rect x="'
-                                + String(x)
-                                + '" y="'
-                                + String(y)
-                                + '" width="'
-                                + String(cell_size)
-                                + '" height="'
-                                + String(cell_size)
-                                + '" fill="'
-                                + color
-                                + '" opacity="0.2" stroke="black"/>\n'
-                            )
-                            svg += (
-                                '<text font-size="large" x="'
-                                + String(x + cell_size / 2)
-                                + '" y="'
-                                + String(y + cell_size / 2)
-                                + '" dominant-baseline="middle"'
-                                ' text-anchor="middle">T'
-                                + String(t)
-                                + " V"
-                                + String(element_idx)
-                                + "</text>\n"
-                            )
+                            svg += draw_element(x, y, color, t, element_idx)
                             element_idx += 1
         else:
             var element_idx = 0
-            for i in range(tensor.layout.shape[0].value()):
-                for j in range(tensor.layout.shape[1].value()):
+            for i in range(tensor.layout[0].size()):
+                for j in range(tensor.layout[1].size()):
                     var offset = (
                         Int(tensor.ptr) - Int(tensor_base.ptr)
                     ) // sizeof[Scalar[tensor.dtype]]()
@@ -199,34 +213,11 @@ fn print_svg[
                     var color = color_map.value()(
                         t, element_idx
                     ) if color_map else colors[orig_pos[0].value() % 2 + 1]
-                    svg += (
-                        '<rect x="'
-                        + String(x)
-                        + '" y="'
-                        + String(y)
-                        + '" width="'
-                        + String(cell_size)
-                        + '" height="'
-                        + String(cell_size)
-                        + '" fill="'
-                        + color
-                        + '" opacity="0.2" stroke="black"/>\n'
-                    )
-                    svg += (
-                        '<text font-size="large" x="'
-                        + String(x + cell_size / 2)
-                        + '" y="'
-                        + String(y + cell_size / 2)
-                        + '" dominant-baseline="middle" text-anchor="middle">T'
-                        + String(t)
-                        + " V"
-                        + String(element_idx)
-                        + "</text>\n"
-                    )
+                    svg += draw_element(x, y, color, t, element_idx)
                     element_idx += 1
 
     # Draw row labels
-    for i in range(tensor_base.layout.shape[0].value()):
+    for i in range(tensor_base.layout[0].size()):
         var y = start_y + i * cell_size + cell_size / 2
         svg += (
             '<text x="'
@@ -240,7 +231,7 @@ fn print_svg[
         )
 
     # Draw column labels
-    for j in range(tensor_base.layout.shape[1].value()):
+    for j in range(tensor_base.layout[1].size()):
         var x = margin + text_margin + j * cell_size + cell_size / 2
         svg += (
             '<text x="'
