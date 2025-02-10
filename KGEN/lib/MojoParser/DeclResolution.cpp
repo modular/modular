@@ -1126,7 +1126,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   SmallVector<ParamDeclRefAttr> capturedUses;
   for (auto &[_, capture] : shared.getCaptureRangeInScope(decl)) {
     captures.push_back(capture);
-    bool unused;
+    bool unused = false;
     collector.collectUsesFromType(capture.getValue().getType(), capturedUses,
                                   unused);
   }

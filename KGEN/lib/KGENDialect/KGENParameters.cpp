@@ -760,7 +760,7 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
         }
         isDefOrDecl = true;
         (*def)->index = index++;
-        bool unused;
+        bool unused = false;
         for (Attribute expr : value.exprs) {
           VerboseCompilerTimeTraceScope traceScope("collectParameters");
           c.collectUsesFromAttr(expr, (*def)->uses, unused);
