@@ -3,8 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# FIXME(#29771): This test leaks memory.
-# UNSUPPORTED: asan
+
 # RUN: mojo -O0 %s | FileCheck %s
 
 from utils.variant import Variant

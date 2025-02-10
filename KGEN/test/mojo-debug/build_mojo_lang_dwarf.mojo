@@ -6,7 +6,6 @@
 
 # LLDB fails with asan because it's built by default with python support in the
 # CI, and python fails asan.
-# UNSUPPORTED: asan
 
 
 # COM: Using the default language Mojo
