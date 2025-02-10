@@ -46,8 +46,8 @@ fn _run_memset_async[
 ](ctx: DeviceContext, length: Int, val: Scalar[type]) raises:
     print("-\n_run_memset_async(", length, ", ", val, ")")
 
-    var in_host = ctx.malloc_host[Scalar[type]](length)
-    var out_host = ctx.malloc_host[Scalar[type]](length)
+    var in_host = ctx.enqueue_create_host_buffer[type](length)
+    var out_host = ctx.enqueue_create_host_buffer[type](length)
     var on_dev = ctx.enqueue_create_buffer[type](length)
 
     # Initialize the input and outputs with known values.
@@ -56,9 +56,9 @@ fn _run_memset_async[
         out_host[i] = length + i
 
     # Copy to and from device buffers.
-    ctx.enqueue_copy_to_device(on_dev, in_host)
+    in_host.enqueue_copy_to(on_dev)
     ctx.memset(on_dev, val)  # Using old-style name here.
-    ctx.enqueue_copy_from_device(out_host, on_dev)
+    on_dev.enqueue_copy_to(out_host)
 
     # Wait for the copies to be completed.
     ctx.synchronize()
@@ -69,9 +69,6 @@ fn _run_memset_async[
         expect_eq(
             out_host[i], val, "at index ", i, " the value is ", out_host[i]
         )
-
-    ctx.free_host(out_host)
-    ctx.free_host(in_host)
 
 
 fn main() raises:

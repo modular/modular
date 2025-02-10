@@ -32,8 +32,8 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
     alias dim_y = 8
     alias length = dim_x * dim_y
 
-    var in_host = ctx.malloc_host[Scalar[type]](length)
-    var out_host = ctx.malloc_host[Scalar[type]](length)
+    var in_host = ctx.enqueue_create_host_buffer[type](length)
+    var out_host = ctx.enqueue_create_host_buffer[type](length)
     var in_dev = ctx.enqueue_create_buffer[type](length)
     var out_dev = ctx.enqueue_create_buffer[type](length)
 
@@ -43,9 +43,9 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
         out_host[i] = length + i
 
     # Copy to device buffers.
-    ctx.enqueue_copy_to_device(in_dev, in_host)
+    in_host.enqueue_copy_to(in_dev)
     # Write known bad values to out_dev.
-    ctx.enqueue_copy_to_device(out_dev, out_host)
+    out_host.enqueue_copy_to(out_dev)
 
     var in_buffer = NDBuffer[type, 2](in_dev.ptr, Index(dim_x, dim_y))
     var out_buffer = NDBuffer[type, 2](out_dev.ptr, Index(dim_x, dim_y))
@@ -65,7 +65,7 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
         ctx,
     )
 
-    ctx.enqueue_copy_from_device(out_host, out_dev)
+    out_dev.enqueue_copy_to(out_host)
 
     # Wait for the copies to be completed.
     ctx.synchronize()
@@ -76,11 +76,6 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
         expect_eq(
             out_host[i], i + 42, "at index ", i, " the value is ", out_host[i]
         )
-
-    ctx.free_host(out_host)
-    ctx.free_host(in_host)
-
-    print()
 
 
 fn main() raises:

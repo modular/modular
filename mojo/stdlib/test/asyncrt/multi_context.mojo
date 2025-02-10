@@ -31,12 +31,12 @@ fn test_multi_function(ctx1: DeviceContext, ctx2: DeviceContext) raises:
 
     alias length = 1024
 
-    var in0_host1 = ctx1.malloc_host[Float32](length)
-    var in0_host2 = ctx2.malloc_host[Float32](length)
-    var in1_host1 = ctx1.malloc_host[Float32](length)
-    var in1_host2 = ctx2.malloc_host[Float32](length)
-    var out_host1 = ctx1.malloc_host[Float32](length)
-    var out_host2 = ctx2.malloc_host[Float32](length)
+    var in0_host1 = ctx1.enqueue_create_host_buffer[DType.float32](length)
+    var in0_host2 = ctx2.enqueue_create_host_buffer[DType.float32](length)
+    var in1_host1 = ctx1.enqueue_create_host_buffer[DType.float32](length)
+    var in1_host2 = ctx2.enqueue_create_host_buffer[DType.float32](length)
+    var out_host1 = ctx1.enqueue_create_host_buffer[DType.float32](length)
+    var out_host2 = ctx2.enqueue_create_host_buffer[DType.float32](length)
     var in0_dev1 = ctx1.enqueue_create_buffer[DType.float32](length)
     var in0_dev2 = ctx2.enqueue_create_buffer[DType.float32](length)
     var in1_dev1 = ctx1.enqueue_create_buffer[DType.float32](length)
@@ -57,13 +57,13 @@ fn test_multi_function(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         out_host2[i] = length + i
 
     # Copy to device buffers.
-    ctx1.enqueue_copy_to_device(in0_dev1, in0_host1)
-    ctx2.enqueue_copy_to_device(in0_dev2, in0_host2)
-    ctx1.enqueue_copy_to_device(in1_dev1, in1_host1)
-    ctx2.enqueue_copy_to_device(in1_dev2, in1_host2)
+    in0_host1.enqueue_copy_to(in0_dev1)
+    in0_host2.enqueue_copy_to(in0_dev2)
+    in1_host1.enqueue_copy_to(in1_dev1)
+    in1_host2.enqueue_copy_to(in1_dev2)
     # Write known bad values to out_dev.
-    ctx1.enqueue_copy_to_device(out_dev1, out_host1)
-    ctx2.enqueue_copy_to_device(out_dev2, out_host2)
+    out_host1.enqueue_copy_to(out_dev1)
+    out_host2.enqueue_copy_to(out_dev2)
 
     var func1 = ctx1.compile_function[vec_func]()
     var func2 = ctx2.compile_function[vec_func]()
@@ -90,8 +90,8 @@ fn test_multi_function(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         block_dim=(block_dim),
     )
 
-    ctx1.enqueue_copy_from_device(out_host1, out_dev1)
-    ctx2.enqueue_copy_from_device(out_host2, out_dev2)
+    out_dev1.enqueue_copy_to(out_host1)
+    out_dev2.enqueue_copy_to(out_host2)
 
     # Wait for the copies to be completed.
     ctx1.synchronize()
@@ -107,13 +107,6 @@ fn test_multi_function(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         expect_eq(
             out_host2[i], i + 2, "at index ", i, " the value is ", out_host2[i]
         )
-
-    ctx1.free_host(out_host1)
-    ctx2.free_host(out_host2)
-    ctx1.free_host(in1_host1)
-    ctx2.free_host(in1_host2)
-    ctx1.free_host(in0_host1)
-    ctx2.free_host(in0_host2)
 
     print("Done.")
 

@@ -15,8 +15,8 @@ from gpu.host import DeviceContext
 fn _timed_iter_func(context: DeviceContext, iter: Int) raises:
     alias length = 64
 
-    var in_host = context.malloc_host[Float32](length)
-    var out_host = context.malloc_host[Float32](length)
+    var in_host = context.enqueue_create_host_buffer[DType.float32](length)
+    var out_host = context.enqueue_create_host_buffer[DType.float32](length)
     var in_dev = context.enqueue_create_buffer[DType.float32](length)
     var out_dev = context.enqueue_create_buffer[DType.float32](length)
 
@@ -26,9 +26,9 @@ fn _timed_iter_func(context: DeviceContext, iter: Int) raises:
         out_host[i] = length + i
 
     # Copy to and from device buffers.
-    context.enqueue_copy_to_device(in_dev, in_host)
+    in_host.enqueue_copy_to(in_dev)
     context.enqueue_copy_device_to_device(out_dev, in_dev)
-    context.enqueue_copy_from_device(out_host, out_dev)
+    out_dev.enqueue_copy_to(out_host)
 
     # Wait for the copies to be completed.
     context.synchronize()
@@ -37,9 +37,6 @@ fn _timed_iter_func(context: DeviceContext, iter: Int) raises:
         expect_eq(
             out_host[i], i + iter, "at index ", i, " the value is ", out_host[i]
         )
-
-    context.free_host(out_host)
-    context.free_host(in_host)
 
 
 @parameter

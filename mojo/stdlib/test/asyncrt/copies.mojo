@@ -42,8 +42,8 @@ fn _run_memcpy(ctx: DeviceContext, length: Int) raises:
 fn _run_memcpy_async(ctx: DeviceContext, length: Int, use_context: Bool) raises:
     print("-\n_run_memcpy_async(", length, ")")
 
-    var in_host = ctx.malloc_host[Float32](length)
-    var out_host = ctx.malloc_host[Float32](length)
+    var in_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var out_host = ctx.enqueue_create_host_buffer[DType.float32](length)
     var in_dev = ctx.enqueue_create_buffer[DType.float32](length)
     var out_dev = ctx.enqueue_create_buffer[DType.float32](length)
 
@@ -53,12 +53,12 @@ fn _run_memcpy_async(ctx: DeviceContext, length: Int, use_context: Bool) raises:
         out_host[i] = length + i
 
     # Copy to and from device buffers.
-    ctx.enqueue_copy_to_device(in_dev, in_host)
+    ctx.enqueue_copy_to_device(in_dev, in_host.get_ptr())
     if use_context:
         ctx.enqueue_copy_device_to_device(out_dev, in_dev)
     else:
         in_dev.enqueue_copy_to(out_dev)
-    ctx.enqueue_copy_from_device(out_host, out_dev)
+    out_dev.enqueue_copy_to(out_host)
 
     # Wait for the copies to be completed.
     ctx.synchronize()
@@ -68,17 +68,14 @@ fn _run_memcpy_async(ctx: DeviceContext, length: Int, use_context: Bool) raises:
             print("at index", i, "the value is", out_host[i])
         expect_eq(out_host[i], i, "at index ", i, " the value is ", out_host[i])
 
-    ctx.free_host(out_host)
-    ctx.free_host(in_host)
-
 
 fn _run_sub_memcpy_async(ctx: DeviceContext, length: Int) raises:
     print("-\n_run_sub_memcpy_async(", length, ")")
 
     var half_length = length // 2
 
-    var in_host = ctx.malloc_host[Int64](length)
-    var out_host = ctx.malloc_host[Int64](length)
+    var in_host = ctx.enqueue_create_host_buffer[DType.int64](length)
+    var out_host = ctx.enqueue_create_host_buffer[DType.int64](length)
     var in_dev = ctx.enqueue_create_buffer[DType.int64](length)
     var out_dev = ctx.enqueue_create_buffer[DType.int64](length)
     var first_out_dev = out_dev.create_sub_buffer[DType.int64](0, half_length)
@@ -92,12 +89,16 @@ fn _run_sub_memcpy_async(ctx: DeviceContext, length: Int) raises:
         out_host[i] = length + i
 
     # Copy to and from device buffers.
-    ctx.enqueue_copy_to_device(in_dev, in_host)
+    in_host.enqueue_copy_to(in_dev)
     ctx.enqueue_copy_device_to_device(out_dev, in_dev)
 
     # Swap halves on copy back.
-    ctx.enqueue_copy_from_device(out_host, second_out_dev)
-    ctx.enqueue_copy_from_device(out_host.offset(half_length), first_out_dev)
+    # TODO(iposva): Investigate failure with this code:
+    # second_out_dev.enqueue_copy_to(out_host)
+    ctx.enqueue_copy_from_device(out_host.get_ptr(), second_out_dev)
+    ctx.enqueue_copy_from_device(
+        out_host.get_ptr().offset(half_length), first_out_dev
+    )
 
     # Wait for the copies to be completed.
     ctx.synchronize()
@@ -114,9 +115,6 @@ fn _run_sub_memcpy_async(ctx: DeviceContext, length: Int) raises:
             out_host[i], expected, "at index ", i, " the value is ", out_host[i]
         )
 
-    ctx.free_host(out_host)
-    ctx.free_host(in_host)
-
 
 fn _run_fake_memcpy_async(
     ctx: DeviceContext, length: Int, use_take_ptr: Bool
@@ -127,8 +125,8 @@ fn _run_fake_memcpy_async(
 
     var half_length = length // 2
 
-    var in_host = ctx.malloc_host[Int64](length)
-    var out_host = ctx.malloc_host[Int64](length)
+    var in_host = ctx.enqueue_create_host_buffer[DType.int64](length)
+    var out_host = ctx.enqueue_create_host_buffer[DType.int64](length)
     var in_dev = ctx.enqueue_create_buffer[DType.int64](length)
     var out_dev = ctx.enqueue_create_buffer[DType.int64](length)
 
@@ -138,7 +136,7 @@ fn _run_fake_memcpy_async(
         out_host[i] = length + i
 
     # Copy to and from device buffers.
-    ctx.enqueue_copy_to_device(in_dev, in_host)
+    in_host.enqueue_copy_to(in_dev)
     ctx.enqueue_copy_device_to_device(out_dev, in_dev)
 
     var out_ptr: UnsafePointer[Int64]
@@ -156,8 +154,12 @@ fn _run_fake_memcpy_async(
     )
 
     # Swap halves on copy back.
-    ctx.enqueue_copy_from_device(out_host, second_out_dev)
-    ctx.enqueue_copy_from_device(out_host.offset(half_length), first_out_dev)
+    # TODO(iposva): Investigate failure with this code:
+    # second_out_dev.enqueue_copy_to(out_host)
+    ctx.enqueue_copy_from_device(out_host.get_ptr(), second_out_dev)
+    ctx.enqueue_copy_from_device(
+        out_host.get_ptr().offset(half_length), first_out_dev
+    )
 
     # Wait for the copies to be completed.
     ctx.synchronize()
@@ -173,9 +175,6 @@ fn _run_fake_memcpy_async(
         expect_eq(
             out_host[i], expected, "at index ", i, " the value is ", out_host[i]
         )
-
-    ctx.free_host(out_host)
-    ctx.free_host(in_host)
 
 
 fn main() raises:
