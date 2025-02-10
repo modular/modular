@@ -102,6 +102,8 @@ def process_telemetry(
                 handle_fn(obs)
             except:
                 logger.exception("Error processing telemetry")
+    except KeyboardInterrupt:
+        pass
     finally:
         pc.set_completed()
 

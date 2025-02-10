@@ -87,6 +87,9 @@ async def lifespan(
                     f"Server ready on http://{host}:{port} (Press CTRL+C to quit)"
                 )
                 yield
+    except KeyboardInterrupt as e:
+        # Exit gracefully if user used Ctrl+C
+        logger.info("Workers have shut down successfully (keyboard interrupt)")
     except Exception as e:
         logger.exception("Error occurred in model worker. %s", e)
     finally:
