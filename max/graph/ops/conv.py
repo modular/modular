@@ -69,6 +69,7 @@ def conv2d(
     strides, dilations, paddings, and groups.
 
     The op supports 2-D convolution, with the following layout assumptions:
+
     - input has NHWC layout, i.e.,
       (batch_size, height, width, in_channels)
     - filter has layout RSCF, i.e.,
@@ -77,23 +78,23 @@ def conv2d(
     The padding values are expected to take the form (pad_dim1_before,
     pad_dim1_after, pad_dim2_before, pad_dim2_after...) and represent padding
     0's before and after the indicated *spatial* dimensions in `input`. In 2-D
-    convolution, dim1 here repesents H and dim2 represents W. In Python like
+    convolution, dim1 here represents H and dim2 represents W. In Python like
     syntax, padding a 2x3 spatial `input` with [0, 1, 2, 1] would yield:
 
-    ```python
-    input = [
-      [1, 2, 3],
-      [4, 5, 6]
-    ]
-    # Shape is 2x3
+    .. code-block:: python
 
-    padded_input = [
-      [0, 0, 1, 2, 3, 0],
-      [0, 0, 4, 5, 6, 0]
-      [0, 0, 0, 0, 0, 0]
-    ]
-    # Shape is 3x6
-    ```
+        input = [
+          [1, 2, 3],
+          [4, 5, 6]
+        ]
+        # Shape is 2x3
+
+        padded_input = [
+          [0, 0, 1, 2, 3, 0],
+          [0, 0, 4, 5, 6, 0],
+          [0, 0, 0, 0, 0, 0]
+        ]
+        # Shape is 3x6
 
     This op currently only supports strides and padding on the input.
 
