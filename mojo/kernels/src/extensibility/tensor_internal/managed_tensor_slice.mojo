@@ -622,6 +622,30 @@ struct ManagedTensorSlice[
             static_strides = static_specs.strides,
         ](self, ridx)
 
+    @always_inline
+    fn _fused_load_with_spec[
+        width: Int,
+        spec: StaticTensorSpec[type, rank],
+    ](self, index: IndexList[rank]) -> SIMD[type, width]:
+        var ridx = rebind[IndexList[rank]](index)
+
+        alias in_lambda = spec.in_lambda
+        alias alignment = spec.alignment
+        alias address_space = spec.address_space
+        alias strides = spec.strides
+
+        @parameter
+        if in_lambda:
+            alias in_fn = in_lambda.value()
+            return in_fn[width](ridx)
+        else:
+            return simd_load_from_managed_tensor_slice[
+                simd_width=width,
+                alignment=alignment,
+                address_space=address_space,
+                static_strides=strides,
+            ](self, ridx)
+
     @__mogg_intrinsic_attr("mogg.tensor_fused_load")
     @always_inline
     fn _fused_load[
