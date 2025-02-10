@@ -70,7 +70,7 @@ from nn.activations import gelu, relu
 from nn.arange import arange, arange_shape
 from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
-from nn.concat import _concat_cpu, concat, test_concat_fusion
+from nn.concat import _concat_cpu, concat, fused_concat
 from nn.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
 from nn.conv import pack_filter as _pack_conv_filter
 from nn.conv import pack_filter_shape as pack_filter_shape_conv
@@ -4884,65 +4884,6 @@ fn concat_shape_impl[
     return output_shape
 
 
-# TODO(GEX-1263): Cleanup mo.concat code hack to get the tuple of inputs lambdas.
-@always_inline("nodebug")
-fn statictuple_setitem__[
-    element_type: AnyTrivialRegType,
-    size: Int,
-    index: Int,
-    val: element_type,
-](mut static_tuple: StaticTuple[element_type, size]):
-    static_tuple[index] = val
-
-
-fn create_static_tuple[
-    element_type: AnyTrivialRegType, //,
-    size: Int,
-    value: element_type,
-]() -> StaticTuple[element_type, size]:
-    return StaticTuple[element_type, size](
-        _create_array[size, element_type](value)
-    )
-
-
-fn get_inputs_lambdas[
-    type: DType,
-    _rank: Int,
-    size: Int,
-    specs: StaticTuple[StaticTensorSpec[type, _rank, *_], size],
-](
-    out result: StaticTuple[
-        fn[
-            width: Int, rank: Int
-        ] (IndexList[rank]) capturing -> SIMD[type, width], size
-    ]
-):
-    # This serves purely as an initial value for the result tuple.
-    # It should never be called.
-    @parameter
-    fn initializer[
-        width: Int, rank: Int
-    ](indices: IndexList[rank]) capturing -> SIMD[type, width]:
-        return SIMD[type, width]()
-
-    var res = create_static_tuple[size, initializer]()
-
-    @parameter
-    for i in range(size):
-
-        @parameter
-        fn input_wrapper[
-            width: Int, rank: Int
-        ](indices: IndexList[rank]) capturing -> SIMD[type, width]:
-            alias in_lambda = specs[i].in_lambda.value()
-            return in_lambda[simd_width=width](
-                rebind[IndexList[_rank]](indices)
-            )
-
-        statictuple_setitem__[res.element_type, res.size, i, input_wrapper](res)
-    return rebind[__type_of(result)](res)
-
-
 @compiler.register("mo.concat")
 struct Concat:
     @compiler.enable_fusion_for("inputs", "output")
@@ -4962,18 +4903,29 @@ struct Concat:
             compiler.specsof[output.type, output.rank]("output")
         ](output)
         var axis_val = axis._ptr.load(0)
+
         var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
+
+        alias input_specs = compiler.specsof[type, rank, inputs.size]("inputs")
 
         @parameter
         for i in range(inputs.size):
             input_shapes[i] = inputs[i].shape()
 
-        alias inputs_lambdas = get_inputs_lambdas[
-            type,
-            rank,
-            inputs.size,
-            compiler.specsof[type, rank, inputs.size]("inputs"),
-        ]()
+        @always_inline
+        @parameter
+        fn inputs_lambda[
+            input_index: Int,
+            width: Int,
+            _rank: Int,
+        ](indices: IndexList[_rank]) -> SIMD[type, width]:
+            constrained[
+                input_index < inputs.size, "input index out of bounds"
+            ]()
+            alias spec = input_specs[input_index]
+            return inputs[input_index]._fused_load_with_spec[
+                width=width, spec=spec
+            ](rebind[IndexList[rank]](indices))
 
         @always_inline
         @parameter
@@ -4985,11 +4937,11 @@ struct Concat:
                 rebind[SIMD[output.type, width]](value),
             )
 
-        test_concat_fusion[
+        fused_concat[
             type,
             rank,
             _synchronous,
-            inputs_lambdas,
+            inputs_lambda,
             epilogue_wrapper,
             target,
         ](
