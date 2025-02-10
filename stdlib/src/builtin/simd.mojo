@@ -126,9 +126,6 @@ alias Float8_e4m3fn = Scalar[DType.float8_e4m3fn]
 """Represents a FP8E4M3 floating point format from the [OFP8
 standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1).
 
-This type is named `float8_e4m3fn` (the "fn" stands for "finite") in some
-frameworks, as it does not encode -inf or inf.
-
 The 8 bits are encoded as `seeeemmm`:
 - (s)ign: 1 bit
 - (e)xponent: 4 bits
