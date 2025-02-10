@@ -4,9 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
-from layout import Layout, LayoutTensor
+from layout import IntTuple, Layout, LayoutTensor
 from layout._print_svg import print_svg
 from layout.tensor_builder import LayoutTensorBuild as tb
+from layout.swizzle import make_swizzle
 
 
 fn test_svg_nvidia_shape() raises:
@@ -79,9 +80,57 @@ fn test_svg_amd_shape_d() raises:
     print_svg(tensor, List(tensor_dist, tensor_dist2))
 
 
+fn test_svg_wgmma_shape() raises:
+    # CHECK: <?xml version="1.0" encoding="UTF-8"?>
+    # wgmma tensor core a matrix fragment
+    alias layout = Layout(
+        IntTuple(IntTuple(8, 8), IntTuple(8, 2)),
+        IntTuple(IntTuple(8, 64), IntTuple(1, 512)),
+    )
+
+    var tensor = LayoutTensor[DType.float32, layout].stack_allocation()
+    var tensor_dist = tensor.vectorize[1, 1]().distribute[
+        Layout.col_major(8, 4)
+    ](0)
+    var tensor_dist2 = tensor.vectorize[1, 1]().distribute[
+        Layout.col_major(8, 4)
+    ](3)
+
+    fn color_map(t: Int, v: Int) -> String:
+        colors = List(
+            "red",
+            "blue",
+            "green",
+            "yellow",
+            "purple",
+            "orange",
+            "pink",
+            "brown",
+            "gray",
+            "black",
+            "white",
+        )
+        return colors[t]
+
+    print_svg(
+        tensor,
+        List[__type_of(tensor_dist)](tensor_dist, tensor_dist2),
+        color_map,
+    )
+
+
+fn test_svg_swizzle() raises:
+    alias layout = Layout.row_major(8, 8)
+    alias swizzle = make_swizzle[8, 8, 1]()
+    var tensor = LayoutTensor[DType.bfloat16, layout].stack_allocation()
+    print_svg[swizzle](tensor, List[__type_of(tensor)]())
+
+
 fn main() raises:
     test_svg_nvidia_shape()
     test_svg_nvidia_tile()
     test_svg_amd_shape_a()
     test_svg_amd_shape_b()
     test_svg_amd_shape_d()
+    test_svg_wgmma_shape()
+    test_svg_swizzle()
