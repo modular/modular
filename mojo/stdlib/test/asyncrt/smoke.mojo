@@ -28,7 +28,8 @@ fn _ownership_helper_buf[
 
 
 fn _run_ownership_transfer(ctx: DeviceContext) raises:
-    print("-\n_run_ownership_transfer()")
+    print("-")
+    print("_run_ownership_transfer()")
 
     var ctx_copy = _ownership_helper(ctx)
     print("ctx_copy: ", ctx_copy.name())
@@ -43,7 +44,8 @@ fn _run_ownership_transfer(ctx: DeviceContext) raises:
 
 
 fn _run_device_info(ctx: DeviceContext) raises:
-    print("-\n_run_device_info()")
+    print("-")
+    print("_run_device_info()")
 
     (free_before, total_before) = ctx.get_memory_info()
 
@@ -66,30 +68,33 @@ fn _run_device_info(ctx: DeviceContext) raises:
 
 
 fn _run_compute_capability(ctx: DeviceContext) raises:
-    print(
-        "-\n_run_compute_capability()\nCompute capability: ",
-        ctx.compute_capability(),
-    )
+    print("-")
+    print("_run_compute_capability()")
+
+    print("Compute capability: ", ctx.compute_capability())
 
 
 fn _run_get_attribute(ctx: DeviceContext) raises:
-    print(
-        "-\n_run_get_attribute()\nclock_rate: ",
-        ctx.get_attribute(DeviceAttribute.CLOCK_RATE),
-        "\nwarp_size: ",
-        ctx.get_attribute(DeviceAttribute.WARP_SIZE),
-    )
+    print("-")
+    print("_run_get_attribute()")
+    print("clock_rate: ", ctx.get_attribute(DeviceAttribute.CLOCK_RATE))
+    print("warp_size: ", ctx.get_attribute(DeviceAttribute.WARP_SIZE))
 
 
 fn _run_get_stream(ctx: DeviceContext) raises:
-    print("-\n_run_get_stream()\nGetting the stream.")
+    print("-")
+    print("_run_get_stream()")
+
+    print("Getting the stream.")
     var stream = ctx.stream()
     print("Synchronizing on `stream`.")
     stream.synchronize()
 
 
 fn _run_peer_access(ctx: DeviceContext) raises:
-    print("-\n_run_peer_access()")
+    print("-")
+    print("_run_peer_access()")
+
     expect_eq(ctx.can_access(ctx), False, "self access is not enabled")
 
     var num_gpus = DeviceContext.number_of_devices(api=ctx.api())
@@ -106,7 +111,8 @@ fn _run_peer_access(ctx: DeviceContext) raises:
 
 fn main() raises:
     var ctx = create_test_device_context()
-    print("-------\nRunning test_smoke(", ctx.name(), "):")
+    print("-------")
+    print("Running test_smoke(" + ctx.name() + "):")
 
     _run_ownership_transfer(ctx)
     _run_device_info(ctx)

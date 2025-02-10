@@ -14,7 +14,8 @@ from gpu.host import DeviceBuffer, DeviceContext
 fn _run_memset[
     type: DType
 ](ctx: DeviceContext, length: Int, val: Scalar[type]) raises:
-    print("-\n_run_memset(", length, ", ", val, ")")
+    print("-")
+    print("_run_memset(", length, ", ", val, ")")
 
     var in_host = ctx.malloc_host[Scalar[type]](length)
     var out_host = ctx.malloc_host[Scalar[type]](length)
@@ -44,7 +45,8 @@ fn _run_memset[
 fn _run_memset_async[
     type: DType
 ](ctx: DeviceContext, length: Int, val: Scalar[type]) raises:
-    print("-\n_run_memset_async(", length, ", ", val, ")")
+    print("-")
+    print("_run_memset_async(", length, ", ", val, ")")
 
     var in_host = ctx.enqueue_create_host_buffer[type](length)
     var out_host = ctx.enqueue_create_host_buffer[type](length)

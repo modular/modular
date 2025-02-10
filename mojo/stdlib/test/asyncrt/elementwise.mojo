@@ -23,7 +23,8 @@ from utils.index import Index
 
 
 fn run_elementwise[type: DType](ctx: DeviceContext) raises:
-    print("-\nrun_elementwise[", type, "]:")
+    print("-")
+    print("run_elementwise[", type, "]:")
 
     alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
 

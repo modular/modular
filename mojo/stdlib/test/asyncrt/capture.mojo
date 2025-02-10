@@ -29,7 +29,8 @@ fn vec_func[
 
 @no_inline
 fn run_captured_func(ctx: DeviceContext, captured: Float32) raises:
-    print("-\nrun_captured_func(", captured, "):")
+    print("-")
+    print("run_captured_func(", captured, "):")
 
     alias length = 1024
 

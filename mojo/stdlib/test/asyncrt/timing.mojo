@@ -53,4 +53,5 @@ fn main() raises:
     print("Elapsed time for _timed_func: ", elapsed_time / 1e9, "s")
 
     elapsed_time = ctx.execution_time_iter[_timed_iter_func](100)
-    print("Elapsed time for _timed_iter_func: ", elapsed_time / 1e9, "s\nDone.")
+    print("Elapsed time for _timed_iter_func: ", elapsed_time / 1e9, "s")
+    print("Done.")
