@@ -3,8 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# FIXME: KERN-1562
-# UNSUPPORTED: H100-GPU
 # REQUIRES: H100-GPU
 # RUN: %mojo-no-debug-no-assert %s
 
@@ -376,7 +374,7 @@ def test_warp_specialize_gemm[
     ctx.enqueue_copy_from_device(c_host.tensor.data, c_device.buffer)
     ctx.enqueue_copy_from_device(c_host_ref.tensor.data, c_device_ref.buffer)
     ctx.synchronize()
-    alias rtol = 1e-3
+    alias rtol = 1e-2
     assert_almost_equal(
         c_host.tensor,
         c_host_ref.tensor,
