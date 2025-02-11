@@ -162,8 +162,12 @@ fn run_elementwise[
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             # cycle through chunks of N_cache to ensure the tensor is not in the cache each iteration
             var offset = (iteration * stride) % N_cache
-            var in_tensor = NDBuffer[type, rank](in_buffer.ptr + offset, dims)
-            var out_tensor = NDBuffer[type, rank](out_buffer.ptr + offset, dims)
+            var in_tensor = NDBuffer[type, rank](
+                in_buffer.unsafe_pointer() + offset, dims
+            )
+            var out_tensor = NDBuffer[type, rank](
+                out_buffer.unsafe_pointer() + offset, dims
+            )
 
             @always_inline
             @__copy_capture(in_tensor, out_tensor)
