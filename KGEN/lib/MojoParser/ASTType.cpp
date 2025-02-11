@@ -531,11 +531,27 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
   if (auto op = dyn_cast<ParamOperatorAttr>(param)) {
     ArrayRef<TypedAttr> operands = op.getOperands();
 
+    auto printOperands =
+        [&](ArrayRef<TypedAttr> operands, StringRef separator = ", ",
+            StringRef lSeparator = "(", StringRef rSeparator = ")") -> void {
+      os << lSeparator;
+      llvm::interleave(
+          operands, os,
+          [&](TypedAttr value) {
+            // Don't print extracts out of Int.value.
+            if (auto extract = dyn_cast<LIT::StructExtractAttr>(value))
+              value = extract.getStructValue();
+            printDemangledParam(os, value, diagShared);
+          },
+          separator);
+      os << rSeparator;
+    };
+
     // Sugar the parameter operators the parser can generate.
     switch (op.getOpcode()) {
     case POC::Apply:
     case POC::ApplyResultSlot: {
-      auto operandsToPrint = operands.drop_front();
+      ArrayRef<TypedAttr> operandsToPrint = operands.drop_front();
 
       // Check if we're applying a known symbol, in which case we can do some
       // more specialized printing.
@@ -544,6 +560,16 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
         // Don't print conversions of boolean's to i1.
         if (name == "__mlir_i1__" && operands.size() == 2)
           return printDemangledParam(os, operands.back(), diagShared);
+
+        // Print arithmetic functions using their mathematical form rather than
+        // as dunder method calls.
+        static SmallDenseMap<StringRef, StringRef> arithmeticOpNames{
+            {"__add__", " + "},  {"__sub__", " - "}, {"__mul__", " * "},
+            {"__div__", " // "}, {"__mod__", " % "}, {"__truediv__", " / "},
+        };
+        if (auto it = arithmeticOpNames.find(name);
+            it != arithmeticOpNames.end())
+          return printOperands(operandsToPrint, /*separator=*/it->second);
 
         // If we can tell that this is a method call, print the receiver first.
         if (!operandsToPrint.empty() &&
@@ -559,12 +585,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
         printDemangledParam(os, operands.front(), diagShared);
       }
 
-      os << '(';
-      llvm::interleaveComma(operandsToPrint, os, [&](TypedAttr value) {
-        printDemangledParam(os, value, diagShared);
-      });
-      os << ')';
-      return;
+      return printOperands(operandsToPrint);
     }
     case POC::Cond:
       printDemangledParam(os, operands[1], diagShared);
@@ -596,20 +617,8 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
         break;
       }
       // Simple things that show up in integer param expressions.
-      if (binOp) {
-        os << '(';
-        llvm::interleave(
-            operands,
-            [&](TypedAttr attr) {
-              // Don't print extracts out of Int.value.
-              if (auto extract = dyn_cast<LIT::StructExtractAttr>(attr))
-                attr = extract.getStructValue();
-              printDemangledParam(os, attr, diagShared);
-            },
-            [&]() { os << binOp; });
-        os << ')';
-        return;
-      }
+      if (binOp)
+        return printOperands(operands, /*separator=*/binOp);
 
       break;
     }

@@ -746,7 +746,7 @@ struct HasIntParam[p: Int]:
 
 # expected-note @below {{function declared here}}
 fn take_dep_args[width: Int, x: IntLiteral](a: HasIntParam[width], b: HasIntParam[width * 4]):
-  # expected-error @below {{cannot be converted from 'HasIntParam[Int(x.__mul__(4))]' to 'HasIntParam[Int(x).__mul__(4)]'}}
+  # expected-error @below {{cannot be converted from 'HasIntParam[Int((x * 4))]' to 'HasIntParam[(Int(x) * 4)]'}}
   # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
   take_dep_args[x, x](HasIntParam[x](), HasIntParam[x*4]())
 
