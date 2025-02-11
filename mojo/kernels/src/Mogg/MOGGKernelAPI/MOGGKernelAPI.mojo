@@ -177,6 +177,8 @@ from tensor_internal import (
     simd_load_from_managed_tensor_slice,
     simd_store_into_managed_tensor_slice,
     view_copy_impl,
+    IOSpec,
+    IOUnknown,
 )
 
 from utils import IndexList, StaticTuple
@@ -307,9 +309,12 @@ fn create_known_dim[known_val: Int]() -> Dim:
 fn reshape_contiguous_buffer[
     type: DType, old_rank: Int, new_rank: Int
 ](
-    buffer: ManagedTensorSlice[type, old_rank], shape: IndexList[new_rank]
-) -> ManagedTensorSlice[type, new_rank]:
-    return ManagedTensorSlice[type, new_rank](buffer._ptr, shape)
+    buffer: ManagedTensorSlice[type, old_rank, IOUnknown],
+    shape: IndexList[new_rank],
+) -> ManagedTensorSlice[type, new_rank, ioSpec = buffer.ioSpec]:
+    return ManagedTensorSlice[type, new_rank, ioSpec = buffer.ioSpec](
+        buffer._ptr, shape
+    )
 
 
 # ===----------------------------------------------------------------------===#
@@ -394,6 +399,7 @@ fn rebuild_static_tensor_specs_with_strides[
     )
 
 
+# TODO: this should take IOSpec as a param -- will require graph compiler changes
 # Used by the graph compiler to construct tensors from MGP repr. of tensor
 @register_internal("to_managed_tensor_slice")
 @always_inline
@@ -402,7 +408,7 @@ fn to_managed_tensor_slice[
 ](
     data: UnsafePointer[Scalar[type]],
     shape: UnsafePointer[Int],
-) -> ManagedTensorSlice[type, rank]:
+) -> ManagedTensorSlice[type, rank, ioSpec=IOUnknown]:
     var shape_ptr = shape
     var shape_tuple = IndexList[rank]()
 
@@ -416,16 +422,18 @@ fn to_managed_tensor_slice[
         stride_tuple[i] = stride
         stride *= shape_tuple[i]
 
-    return ManagedTensorSlice[type, rank](data, shape_tuple, stride_tuple)
+    return ManagedTensorSlice[type, rank, IOUnknown](
+        data, shape_tuple, stride_tuple
+    )
 
 
 @always_inline
 fn _to_managed_tensor_slice_index_list_shape[
-    type: DType, rank: Int
+    type: DType, rank: Int, ioSpec: IOSpec
 ](
     data: UnsafePointer[Scalar[type]],
     shape_tuple: IndexList[rank],
-) -> ManagedTensorSlice[type, rank]:
+) -> ManagedTensorSlice[type, rank, ioSpec]:
     var stride_tuple = IndexList[rank]()
     var stride: Int = 1
 
@@ -435,7 +443,9 @@ fn _to_managed_tensor_slice_index_list_shape[
         stride_tuple[i] = stride
         stride *= shape_tuple[i]
 
-    return ManagedTensorSlice[type, rank](data, shape_tuple, stride_tuple)
+    return ManagedTensorSlice[type, rank, ioSpec](
+        data, shape_tuple, stride_tuple
+    )
 
 
 # Extract a value from a shape.
@@ -453,7 +463,7 @@ fn get_scalar_from_ndbuffer[
 @always_inline
 fn get_scalar_from_managed_tensor_slice[
     dtype: DType
-](tensor: ManagedTensorSlice[dtype, 1]) -> Scalar[dtype]:
+](tensor: ManagedTensorSlice[dtype, 1, ioSpec=IOUnknown]) -> Scalar[dtype]:
     # Assumes that tensor is on the host!
     # This is used instead of [0] since __getitem__ for `ManagedTesnorSlice`
     # does not work with `register_internal` out of the box.
@@ -491,7 +501,9 @@ fn managed_tensor_slice_to_ndbuffer_primitive[
 @always_inline
 fn managed_tensor_slice_to_ndbuffer_with_spec[
     spec: StaticTensorSpec
-](tensor: ManagedTensorSlice[spec.type, spec.rank]) -> NDBuffer[
+](
+    tensor: ManagedTensorSlice[type = spec.type, rank = spec.rank, *_]
+) -> NDBuffer[
     spec.type,
     spec.rank,
     spec.shape,
@@ -516,14 +528,15 @@ fn managed_tensor_slice_to_ndbuffer_with_spec[
 fn managed_tensor_slice_to_ndbuffer[
     type: DType,
     rank: Int,
+    ioSpec: IOSpec,
     static_shape: DimList = DimList.create_unknown[rank](),
     static_strides: DimList = DimList.create_unknown[rank](),
     alignment: Int = 1,
     address_space: AddressSpace = AddressSpace.GENERIC,
     exclusive: Bool = True,
-](tensor: ManagedTensorSlice[type, rank]) -> NDBuffer[
-    type,
-    rank,
+](tensor: ManagedTensorSlice[type=type, rank=rank, ioSpec=ioSpec]) -> NDBuffer[
+    tensor.type,
+    tensor.rank,
     static_shape,
     static_strides,
     alignment=alignment,
@@ -532,8 +545,8 @@ fn managed_tensor_slice_to_ndbuffer[
 ]:
     var ptr = tensor._ptr.address_space_cast[address_space]()
     return NDBuffer[
-        type,
-        rank,
+        tensor.type,
+        tensor.rank,
         static_shape,
         static_strides,
         alignment=alignment,
@@ -2450,10 +2463,11 @@ struct StaticBroadcastTo:
         type: DType,
         in_rank: Int,
         out_rank: Int,
+        ioSpec: IOSpec,
     ](
-        x: ManagedTensorSlice[type, in_rank],
+        x: ManagedTensorSlice[type, in_rank, ioSpec=ioSpec],
         output_shape: IndexList[out_rank],
-    ) -> ManagedTensorSlice[type, out_rank]:
+    ) -> ManagedTensorSlice[type, out_rank, ioSpec=ioSpec]:
         var new_strides = IndexList[out_rank]()
         alias delta = out_rank - in_rank
 
@@ -2469,7 +2483,7 @@ struct StaticBroadcastTo:
                 else:
                     new_strides[i] = x.stride_length[i - delta]()
 
-        return ManagedTensorSlice[type, out_rank](
+        return ManagedTensorSlice[type, out_rank, ioSpec=ioSpec](
             x._ptr, output_shape, new_strides
         )
 
@@ -2566,9 +2580,9 @@ struct StaticReshape:
             ](input),
             shape,
         )
-        var view_tensor = ManagedTensorSlice[type, output_rank](
-            view_buffer.data, shape, view_buffer.get_strides()
-        )
+        var view_tensor = ManagedTensorSlice[
+            type, output_rank, ioSpec = input.ioSpec
+        ](view_buffer.data, shape, view_buffer.get_strides())
         alias output_shape = compiler.specsof[output.type, output.rank](
             "output"
         ).shape
@@ -2617,7 +2631,9 @@ struct Transpose:
     fn transpose_in_place(
         input: ManagedTensorSlice,
         permutations: ManagedTensorSlice[rank=1],
-    ) -> ManagedTensorSlice[type = input.type, rank = input.rank]:
+    ) -> ManagedTensorSlice[
+        type = input.type, rank = input.rank, ioSpec = input.ioSpec
+    ]:
         var new_shape = IndexList[input.rank]()
         var new_stride = IndexList[input.rank]()
 
@@ -2627,9 +2643,9 @@ struct Transpose:
             new_shape[i] = input.dim_size(dim)
             new_stride[i] = input.stride_length(dim)
 
-        return ManagedTensorSlice[type = input.type, rank = input.rank](
-            input._ptr, new_shape, new_stride
-        )
+        return ManagedTensorSlice[
+            type = input.type, rank = input.rank, ioSpec = input.ioSpec
+        ](input._ptr, new_shape, new_stride)
 
     @staticmethod
     fn get_view_strides[
@@ -2756,7 +2772,7 @@ struct Slice:
                 compiler.specsof[steps.type, steps.rank]("steps")
             ](steps),
         )
-        var view_tensor = ManagedTensorSlice[type, rank](
+        var view_tensor = ManagedTensorSlice[type, rank, ioSpec = input.ioSpec](
             view_buffer.data,
             view_buffer.get_shape(),
             view_buffer.get_strides(),
@@ -2880,7 +2896,7 @@ struct SliceDim:
             Int(stops),
             Int(steps),
         )
-        var view_tensor = ManagedTensorSlice[type, rank](
+        var view_tensor = ManagedTensorSlice[type, rank, ioSpec = input.ioSpec](
             view_buffer.data,
             view_buffer.get_shape(),
             view_buffer.get_strides(),
@@ -4847,10 +4863,10 @@ struct CumSum:
 
 
 fn concat_shape_impl[
-    type: DType, rank: Int, size: Int
+    type: DType, rank: Int, size: Int, ioSpec: IOSpec
 ](
     axis_buf: ManagedTensorSlice[rank=1],
-    inputs: StaticTuple[ManagedTensorSlice[type, rank], size],
+    inputs: StaticTuple[ManagedTensorSlice[type, rank, ioSpec], size],
 ) raises -> IndexList[rank]:
     var axis_val = axis_buf._ptr.load(0)
     var axis = Int(normalize_neg_index(axis_val, rank))
@@ -4896,7 +4912,9 @@ struct Concat:
     ](
         output: ManagedTensorSlice[type=type, rank=rank],
         axis: ManagedTensorSlice[rank=1],
-        inputs: StaticTuple[ManagedTensorSlice[type, rank], *_],
+        inputs: StaticTuple[
+            ManagedTensorSlice[type, rank, ioSpec=IOUnknown], *_
+        ],
         ctx: MojoCallContextPtr,
     ) raises:
         var output_buf = managed_tensor_slice_to_ndbuffer_with_spec[
@@ -4953,17 +4971,17 @@ struct Concat:
 
     @staticmethod
     fn shape[
-        type: DType,
-        rank: Int,
-        _synchronous: Bool,
+        type: DType, rank: Int, _synchronous: Bool, ioSpec: IOSpec
     ](
         axis_buf: ManagedTensorSlice[rank=1],
-        inputs: StaticTuple[ManagedTensorSlice[type, rank], *_],
+        inputs: StaticTuple[ManagedTensorSlice[type, rank, ioSpec], *_],
     ) raises -> IndexList[rank]:
         return concat_shape_impl(axis_buf, inputs)
 
 
 # Helper method used by compiler to reconcile MGP list with type Mojo expects.
+# TODO(GEX-1789): Specialized on just Input tensors atm which is fine since
+# this is only used by an input list of tensor for mo.concat_from_list
 @register_internal("to_managed_tensor_slice_list")
 @always_inline
 fn to_managed_tensor_slice_list[
@@ -4971,7 +4989,7 @@ fn to_managed_tensor_slice_list[
 ](
     raw_list_ptr: UnsafePointer[NoneType],
 ) -> InlinedFixedVector[
-    ManagedTensorSlice[type, rank]
+    ManagedTensorSlice[type, rank, IOUnknown]
 ]:
     var num_elements = external_call["MGP_RT_ListSize", Int64](
         raw_list_ptr
@@ -4988,10 +5006,11 @@ fn to_managed_tensor_slice_list[
         raw_list_ptr, data_ptrs.dynamic_data, dim_values.dynamic_data
     )
 
+    # TODO: revist the use of unknown here
     # Create output list
-    var out_list = InlinedFixedVector[ManagedTensorSlice[type, rank]](
-        num_elements
-    )
+    var out_list = InlinedFixedVector[
+        ManagedTensorSlice[type, rank, IOUnknown]
+    ](num_elements)
 
     # Convert individual elements of the input list into NDBuffer, and
     # accumulate the results to output list.
@@ -5004,9 +5023,9 @@ fn to_managed_tensor_slice_list[
         for dim in range(rank):
             dims[dim] = dim_values[dim + i * rank].__int__()
 
-        var buffer = _to_managed_tensor_slice_index_list_shape[type, rank](
-            data, dims
-        )
+        var buffer = _to_managed_tensor_slice_index_list_shape[
+            type, rank, IOUnknown
+        ](data, dims)
         out_list.append(buffer)
 
     return out_list^
@@ -5017,8 +5036,10 @@ fn to_managed_tensor_slice_list[
 fn concat_from_list_shape_impl[
     type: DType, rank: Int
 ](
-    axis_buf: ManagedTensorSlice[rank=1],
-    inputs: InlinedFixedVector[ManagedTensorSlice[type, rank]],
+    axis_buf: ManagedTensorSlice[rank=1, *_],
+    inputs: InlinedFixedVector[
+        ManagedTensorSlice[type=type, rank=rank, ioSpec=IOUnknown]
+    ],
 ) raises -> IndexList[rank]:
     var axis_val = axis_buf._ptr.load(0)
     var axis = Int(normalize_neg_index(axis_val, rank))
@@ -5061,8 +5082,8 @@ struct ConcatFromList:
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        output: ManagedTensorSlice[type=type, rank=rank],
-        inputs: InlinedFixedVector[ManagedTensorSlice[type, rank]],
+        output: ManagedTensorSlice[type, rank],
+        inputs: InlinedFixedVector[ManagedTensorSlice[type, rank, IOUnknown]],
         axis: ManagedTensorSlice[rank=1],
         ctx: MojoCallContextPtr,
     ) raises:
@@ -5091,7 +5112,7 @@ struct ConcatFromList:
         rank: Int,
         _synchronous: Bool,
     ](
-        inputs: InlinedFixedVector[ManagedTensorSlice[type, rank]],
+        inputs: InlinedFixedVector[ManagedTensorSlice[type, rank, IOUnknown]],
         axis_buf: ManagedTensorSlice[rank=1],
     ) raises -> IndexList[rank]:
         return concat_from_list_shape_impl(axis_buf, inputs)
@@ -5110,10 +5131,13 @@ struct Split:
     fn execute[
         type: DType,
         rank: Int,
-        target: StringLiteral,
         _synchronous: Bool,
+        ioSpec: IOSpec,
+        target: StringLiteral,
     ](
-        output: StaticTuple[ManagedTensorSlice[type, rank], *_],
+        output: StaticTuple[
+            ManagedTensorSlice[type=type, rank=rank, ioSpec=ioSpec], *_
+        ],
         input: ManagedTensorSlice[type, rank],
         split_sizes: ManagedTensorSlice[rank=1],
         axis: ManagedTensorSlice[rank=1],
@@ -7542,9 +7566,7 @@ struct PackConvTransposeFilterShape:
         _synchronous: Bool,
     ](filter_buf: NDBuffer[filter_type, rank]) -> IndexList[rank + 1]:
         return pack_filter_shape_conv_transpose(
-            managed_tensor_slice_to_ndbuffer_with_spec[
-                compiler.specsof[filter_buf.type, filter_buf.rank]("filter_buf")
-            ](filter_buf),
+            filter_buf,
             1,
         )
 
@@ -8054,8 +8076,12 @@ struct DistributedAllReduceSum:
         rank: Int,
         target: StringLiteral,
     ](
-        outputs: StaticTuple[ManagedTensorSlice[type, rank], *_],
-        inputs: StaticTuple[ManagedTensorSlice[type, rank], *_],
+        outputs: StaticTuple[
+            ManagedTensorSlice[type, rank, ioSpec=IOUnknown], *_
+        ],
+        inputs: StaticTuple[
+            ManagedTensorSlice[type, rank, ioSpec=IOUnknown], *_
+        ],
         dev_ctxs: StaticTuple[DeviceContextPtr, *_],
     ) raises:
         # Stub for now
@@ -8089,12 +8115,12 @@ struct DistributedAllReduceSum2Devices:
         target: StringLiteral,
     ](
         outputs: StaticTuple[
-            ManagedTensorSlice[type, rank], size = Self.num_devices
+            ManagedTensorSlice[type, rank, IOUnknown], size = Self.num_devices
         ],
         signal_buffer0: ManagedTensorSlice[DType.uint8, rank=1],
         signal_buffer1: ManagedTensorSlice[DType.uint8, rank=1],
         inputs: StaticTuple[
-            ManagedTensorSlice[type, rank], size = Self.num_devices
+            ManagedTensorSlice[type, rank, IOUnknown], size = Self.num_devices
         ],
         dev_ctx0: DeviceContextPtr,
         dev_ctx1: DeviceContextPtr,
@@ -8138,14 +8164,14 @@ struct DistributedAllReduceSum4Devices:
         target: StringLiteral,
     ](
         outputs: StaticTuple[
-            ManagedTensorSlice[type, rank], size = Self.num_devices
+            ManagedTensorSlice[type, rank, IOUnknown], size = Self.num_devices
         ],
         signal_buffer0: ManagedTensorSlice[DType.uint8, rank=1],
         signal_buffer1: ManagedTensorSlice[DType.uint8, rank=1],
         signal_buffer2: ManagedTensorSlice[DType.uint8, rank=1],
         signal_buffer3: ManagedTensorSlice[DType.uint8, rank=1],
         inputs: StaticTuple[
-            ManagedTensorSlice[type, rank], size = Self.num_devices
+            ManagedTensorSlice[type, rank, IOUnknown], size = Self.num_devices
         ],
         dev_ctx0: DeviceContextPtr,
         dev_ctx1: DeviceContextPtr,

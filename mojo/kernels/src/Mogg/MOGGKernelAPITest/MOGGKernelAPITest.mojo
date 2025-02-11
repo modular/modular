@@ -20,6 +20,7 @@ from tensor_internal import (
     simd_store_into_managed_tensor_slice,
     view_copy_impl,
 )
+from tensor_internal import IOUnknown
 
 from utils import IndexList, StaticTuple
 
@@ -504,9 +505,13 @@ struct VariadicInputToOutput:
         size: Int,
         target: StringLiteral,
     ](
-        output: StaticTuple[ManagedTensorSlice[type, rank=1], size],
-        bias: ManagedTensorSlice[type, rank=1],
-        input: StaticTuple[ManagedTensorSlice[type, rank=1], size],
+        output: StaticTuple[
+            ManagedTensorSlice[type=type, rank=1, ioSpec=IOUnknown], size
+        ],
+        bias: ManagedTensorSlice[type=type, rank=1, *_],
+        input: StaticTuple[
+            ManagedTensorSlice[type=type, rank=1, ioSpec=IOUnknown], size
+        ],
     ):
         @parameter
         for i in range(size):
@@ -571,7 +576,9 @@ struct VariadicAdd:
         _synchronous: Bool,
     ](
         output: ManagedTensorSlice[type, rank],
-        inputs: StaticTuple[ManagedTensorSlice[type, rank], *_],
+        inputs: StaticTuple[
+            ManagedTensorSlice[type, rank, ioSpec=IOUnknown], *_
+        ],
     ):
         alias inputs_specs = compiler.specsof[type, rank, inputs.size]("inputs")
 
@@ -607,7 +614,11 @@ struct Transpose2DOp:
     @staticmethod
     fn build_view[
         type: DType,
-    ](x: ManagedTensorSlice[type, 2],) -> ManagedTensorSlice[type, 2]:
+    ](
+        x: ManagedTensorSlice[type, 2],
+    ) -> ManagedTensorSlice[
+        type, 2, ioSpec = x.ioSpec
+    ]:
         var new_stride = IndexList[2]()
         var new_shape = IndexList[2]()
         new_stride[0] = x._runtime_strides[1]
@@ -615,7 +626,9 @@ struct Transpose2DOp:
         new_shape[0] = x._spec.shape[1]
         new_shape[1] = x._spec.shape[0]
 
-        return ManagedTensorSlice[type, 2](x._ptr, new_shape, new_stride)
+        return ManagedTensorSlice[type, 2, ioSpec = x.ioSpec](
+            x._ptr, new_shape, new_stride
+        )
 
     @staticmethod
     fn get_view_strides(input_strides: DimList) -> DimList:
