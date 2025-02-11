@@ -25,6 +25,7 @@ from gpu.host import DeviceBuffer, DeviceContext
 from memory import UnsafePointer
 from stdlib.builtin.io import _snprintf
 from tensor_internal import ManagedTensorSlice
+from tensor_internal.io_spec import DynamicTensor
 from testing import assert_almost_equal, assert_equal, assert_true
 
 from utils import Index, IndexList
@@ -233,8 +234,8 @@ struct TestTensor[type: DType, rank: Int]:
     fn __del__(owned self):
         self.ndbuffer.data.free()
 
-    fn to_managed_tensor_slice(self) -> ManagedTensorSlice[type, rank]:
-        return ManagedTensorSlice[type, rank](self.ndbuffer)
+    fn to_managed_tensor_slice(self) -> DynamicTensor[type, rank]:
+        return DynamicTensor[type, rank](self.ndbuffer)
 
 
 @parameter
