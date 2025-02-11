@@ -107,6 +107,30 @@ struct Attribute:
     fn __isnot__(self, other: Self) -> Bool:
         return not (self is other)
 
+    fn write_to[W: Writer](self, mut writer: W):
+        if self is Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES:
+            return writer.write("MAX_DYNAMIC_SHARED_SIZE_BYTES")
+        if self is Attribute.PREFERRED_SHARED_MEMORY_CARVEOUT:
+            return writer.write("PREFERRED_SHARED_MEMORY_CARVEOUT")
+        if self is Attribute.CACHE_MODE_CA:
+            return writer.write("CACHE_MODE_CA")
+        if self is Attribute.PTX_VERSION:
+            return writer.write("PTX_VERSION")
+        if self is Attribute.BINARY_VERSION:
+            return writer.write("BINARY_VERSION")
+        if self is Attribute.NON_PORTABLE_CLUSTER_SIZE_ALLOWED:
+            return writer.write("NON_PORTABLE_CLUSTER_SIZE_ALLOWED")
+        if self is Attribute.CLUSTER_SCHEDULING_POLICY_PREFERENCE:
+            return writer.write("CLUSTER_SCHEDULING_POLICY_PREFERENCE")
+        if self is Attribute.CLUSTER_SIZE_MUST_BE_SET:
+            return writer.write("CLUSTER_SIZE_MUST_BE_SET")
+        if self is Attribute.REQUIRED_CLUSTER_WIDTH:
+            return writer.write("REQUIRED_CLUSTER_WIDTH")
+        if self is Attribute.REQUIRED_CLUSTER_HEIGHT:
+            return writer.write("REQUIRED_CLUSTER_HEIGHT")
+        if self is Attribute.REQUIRED_CLUSTER_DEPTH:
+            return writer.write("REQUIRED_CLUSTER_DEPTH")
+
 
 @value
 @register_passable("trivial")

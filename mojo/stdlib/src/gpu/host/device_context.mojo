@@ -65,12 +65,6 @@ alias _SizeT = UInt
 # Define helper methods to call AsyncRT bindings.
 
 
-fn _not_implemented_yet[msg: StringLiteral]():
-    # Uncomment to convert runtime errors into compile-time errors:
-    # constrained[False, msg]()
-    abort(msg)
-
-
 @always_inline
 fn _checked(
     err: _CharPtr,
@@ -491,16 +485,11 @@ struct DeviceFunction[
             ):
                 max_dynamic_shared_size_bytes = func_attribute.value().value
             else:
-                print(
-                    "DeviceFunction.__init__: func_attribute = [",
-                    func_attribute.value().attribute.code,
-                    ", ",
-                    func_attribute.value().value,
-                    "]",
+                raise Error(
+                    "the function attribute '",
+                    func_attribute.value().attribute,
+                    "' is not currently supported",
                 )
-                _not_implemented_yet[
-                    "DeviceFunction.__init__: func_attribute"
-                ]()
 
         # const char *AsyncRT_DeviceContext_loadFunction(
         #     const DeviceFunction **result, const DeviceContext *ctx,
@@ -585,14 +574,14 @@ struct DeviceFunction[
             constrained[
                 False,
                 String(
-                    "the environment variable `",
+                    "the environment variable '",
                     env_var,
                     (
-                        "` is not a valid value. The value should either be"
-                        " a boolean value or a path like value, but got `"
+                        "' is not a valid value. The value should either be"
+                        " a boolean value or a path like value, but got '"
                     ),
                     env_val,
-                    "`",
+                    "'",
                 ),
             ]()
             return False, val
