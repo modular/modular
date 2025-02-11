@@ -22,6 +22,9 @@ what we publish.
 
 ### Standard library changes
 
+- A new `IntervalTree` data structure has been added to the standard library.
+  This is a tree data structure that allows for efficient range queries.
+
 ### Tooling changes
 
 ### ❌ Removed
