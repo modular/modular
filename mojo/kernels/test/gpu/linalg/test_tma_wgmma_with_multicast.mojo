@@ -13,7 +13,7 @@ from gpu import WARP_SIZE, barrier
 from gpu.host import DeviceContext, Dim
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, thread_idx, block_rank_in_cluster
+from gpu.id import block_idx, thread_idx
 from gpu.intrinsics import threadfence
 from gpu.memory import AddressSpace
 from gpu.mma import (
@@ -46,7 +46,7 @@ from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
 
 from gpu.memory import fence_mbarrier_init
-from gpu.sync import cluster_sync
+from gpu.cluster import cluster_sync, block_rank_in_cluster
 
 
 @__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 2](0, 1))

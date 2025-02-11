@@ -14,14 +14,13 @@ from gpu.host._compile import _get_gpu_target
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import (
     block_idx,
-    block_rank_in_cluster,
     cluster_dim,
     cluster_idx,
     thread_idx,
 )
+from gpu.cluster import block_rank_in_cluster, cluster_sync
 from gpu.memory import fence_mbarrier_init, tma_store_fence
 from gpu.sync import (
-    cluster_sync,
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
 )

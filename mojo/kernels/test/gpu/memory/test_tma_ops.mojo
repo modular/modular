@@ -19,6 +19,7 @@ from gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
 from memory import UnsafePointer
 
 from utils.index import Index
+from gpu.cluster import elect_one_sync
 
 
 # CHECK-LABEL: test_async_copy_asm
@@ -176,6 +177,22 @@ fn test_cp_async_bulk_commit_group():
     )
 
 
+# CHECK-LABEL: test_elect_one_sync
+fn test_elect_one_sync():
+    print("== test_elect_one_sync")
+
+    fn test_elect_one_sync_kernel():
+        # CHECK: elect.sync      %r1|%p1, -1;
+        var lane_predicate: Bool = elect_one_sync()
+
+    print(
+        _compile_code_asm[
+            test_elect_one_sync_kernel,
+            target = _get_gpu_target["sm_90"](),
+        ]()
+    )
+
+
 fn main():
     test_async_copy_asm()
     test_async_store_asm()
@@ -183,3 +200,4 @@ fn main():
     test_tma_fence_proxy()
     test_cp_async_bulk_wait_group()
     test_cp_async_bulk_commit_group()
+    test_elect_one_sync()
