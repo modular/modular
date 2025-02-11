@@ -5,11 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 """Optimized quantized operations."""
 
-from typing import Callable, Dict, Literal, Tuple, Union
+from typing import Callable, Dict, Literal, Optional, Tuple, Union
 
 from max.dtype import DType
 
-from ..quantization import QuantizationEncoding
+from ..quantization import QuantizationConfig, QuantizationEncoding
 from ..type import StaticDim, TensorType
 from ..value import TensorValue
 from .custom import custom
@@ -142,6 +142,7 @@ _QMATMUL_STRATEGIES: Dict[
 
 def qmatmul(
     encoding: QuantizationEncoding,
+    config: Optional[QuantizationConfig],
     lhs: TensorValue,
     *rhs: TensorValue,
 ) -> TensorValue:
@@ -176,9 +177,8 @@ def qmatmul(
         The dequantized result (a floating point tensor).
     """
     if encoding == QuantizationEncoding.GPTQ:
-        # config gets added on to the enum value in pipelines/config.py
-        config = encoding.config  # type: ignore[attr-defined]
-        encoding_str = f"{config['quant_method']}_b{config['bits']}_g{config['group_size']}_a{config['desc_act']}"
+        assert config
+        encoding_str = f"{config.quant_method}_b{config.bits}_g{config.group_size}_a{config.desc_act}"
         strategy = _QMATMUL_STRATEGIES.get(encoding_str)
     else:
         strategy = _QMATMUL_STRATEGIES.get(encoding)

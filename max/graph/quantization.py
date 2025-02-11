@@ -17,6 +17,18 @@ class BlockParameters:
     block_size: int
 
 
+# TODO: BlockParameters should be integrated into this class
+@dataclass(frozen=True)
+class QuantizationConfig:
+    """Configuration for specifying quantization parameters that affect inference."""
+
+    quant_method: str
+    bits: int
+    group_size: int
+    desc_act: bool = False
+    sym: bool = False
+
+
 class QuantizationEncoding(enum.Enum):
     """Quantization encodings supported by MAX Graph."""
 

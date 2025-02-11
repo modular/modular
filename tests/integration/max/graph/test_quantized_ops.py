@@ -23,7 +23,9 @@ def test_qmatmul():
     )
 
     with graph:
-        graph.output(ops.qmatmul(QuantizationEncoding.Q4_0, *graph.inputs))
+        graph.output(
+            ops.qmatmul(QuantizationEncoding.Q4_0, None, *graph.inputs)
+        )
 
     session = InferenceSession()
     compiled = session.load(graph)
