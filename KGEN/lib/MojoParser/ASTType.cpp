@@ -611,7 +611,41 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
         binOp = " + ";
         break;
       case POC::Mul:
+      case POC::MulNuw:
         binOp = " * ";
+        break;
+      case POC::Div:
+        binOp = " / ";
+        break;
+      case POC::Mod:
+        binOp = " % ";
+        break;
+      case POC::And:
+        binOp = " & ";
+        break;
+      case POC::Or:
+        binOp = " | ";
+        break;
+      case POC::Xor:
+        binOp = " ^ ";
+        break;
+      case POC::Shl:
+        binOp = " << ";
+        break;
+      case POC::Shr:
+        binOp = " >> ";
+        break;
+      case POC::EQ:
+        binOp = " == ";
+        break;
+      case POC::LT:
+        binOp = " < ";
+        break;
+      case POC::LE:
+        binOp = " <= ";
+        break;
+      case POC::In:
+        binOp = " in ";
         break;
       default:
         break;
