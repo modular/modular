@@ -22,9 +22,11 @@ struct IOSpec[mut: Bool, input: IO]:
     Parameter used to encode whether a particular tensor argument to a DPS kernel
     is an output, input, or mutable input.
 
+    ```mojo
     Input == IOSpec[False, IO.Input]()
     Output == IOSpec[True, IO.Output]()
     MutableInput == IOSpec[True, IO.Input]()
+    ```
     """
 
     ...
