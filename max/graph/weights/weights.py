@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Iterator, Optional, Protocol, TypeVar
+from typing import Any, Iterator, Optional, Protocol, TypeVar, runtime_checkable
 
 import numpy.typing as npt
 from max.dtype import DType
@@ -19,6 +19,7 @@ from ..weight import Weight
 _Self = TypeVar("_Self", bound="Weights")
 
 
+@runtime_checkable
 class Weights(Protocol):
     """Helper for loading weights into a graph.
 

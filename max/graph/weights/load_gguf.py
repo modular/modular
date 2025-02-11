@@ -147,8 +147,6 @@ class GGUFWeights(Weights):
             full_path = f"{self._prefix}.{attr}"
         else:
             full_path = str(attr)
-        if not any(name.startswith(full_path) for name in self._tensors):
-            raise AttributeError(f"No weight {full_path} found")
         return GGUFWeights(
             self._reader,
             self._tensors,
