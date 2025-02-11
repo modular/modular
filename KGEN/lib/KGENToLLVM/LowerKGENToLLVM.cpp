@@ -371,6 +371,7 @@ static void convertInlineLevel(LLVM::LLVMFuncOp func, InlineLevel inlineLevel) {
   switch (inlineLevel) {
   case InlineLevel::Always:
   case InlineLevel::AlwaysNoDebug:
+  case InlineLevel::AlwaysBuiltin:
     attrName = "alwaysinline";
     break;
   case InlineLevel::Never:

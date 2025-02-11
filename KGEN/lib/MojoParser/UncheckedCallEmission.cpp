@@ -26,6 +26,7 @@
 
 #include "Support/Compiler/OperationUtils.h"
 
+#include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/SaveAndRestore.h"
 
@@ -1052,6 +1053,172 @@ static TypedAttr tryOriginInitFold(SymbolRefAttr symbolRef,
   return LITStructAttr::get(field, originStructType);
 }
 
+/// Given a parameter expression call to a function marked
+/// @always_inline("builtin"), scan the function to form an inlined parameter
+/// expression representation of the function given the specified argument
+/// values, then return the resultant expression.  If the function cannot be
+/// handled as a builtin, emit an error (when isError is true) and return null.
+static TypedAttr foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
+                                           Location callLoc,
+                                           const ExprEmitter &emitter,
+                                           bool isError) {
+  // This helper handles emitting an error (or not) as needed.
+  auto emitError = [&](Location loc) -> InflightDiag {
+    auto result = emitter.emitError(loc) << "'@always_inline(\"builtin\")' ";
+    if (!isError) // Only emit an error if requested.
+      result.abandon();
+    return result;
+  };
+
+  // Resolve the callee and check to verify it is a "builtin" call that is
+  // eligible for parameter inlining.
+  auto symCst = dyn_cast<SymbolConstantAttr>(operands.front());
+  if (!symCst) {
+    emitError(callLoc) << "only supports direct calls";
+    return {};
+  }
+  operands = operands.drop_front();
+
+  auto &resolver = emitter.getDeclResolver();
+  ASTDecl *calleeDecl = resolver.getDeclForFuncSymbol(symCst.getSymbol());
+  assert(llvm::isa_and_present<FnOp>(*calleeDecl) && "callee isn't known?");
+  auto fnOp = cast<FnOp>(*calleeDecl);
+  if (fnOp.getInlineLevel() != InlineLevel::AlwaysBuiltin) {
+    emitError(callLoc) << "only supports calls to other "
+                          "'@always_inline(\"builtin\")' functions";
+    return {};
+  }
+  if (failed(resolver.resolveFully(*calleeDecl, calleeDecl->getLoc())) ||
+      // Double check to ensure body resolution's check succeeded.
+      fnOp.getInlineLevel() != InlineLevel::AlwaysBuiltin) {
+    return {}; // Error already diagnosed.
+  }
+
+  // Keep track of the parameter values for each of the live SSA values in the
+  // body, and start by binding the argument values.
+  DenseMap<Value, TypedAttr> boundValues;
+  for (auto [convention, arg, argValue] :
+       llvm::zip(fnOp.getFuncTypeGenerator().getArgConventions(),
+                 fnOp.getBody()->getArguments(), operands)) {
+    if (convention != ArgConvention::ReadReg) {
+      emitError(arg.getLoc()) << "does not support this argument convention";
+      return {};
+    }
+    boundValues[arg] = argValue;
+  }
+
+  // For our virtual memory model, we track entire indirect values like
+  // var-decls in this map.  lit.struct.ref indexes to subfields are not
+  // immediately processed - they are handled by load/store operations, mostly
+  // to handle constructors.
+  SmallDenseMap<Value, TypedAttr> varDeclSoFar;
+
+  // This function handles a very limited set of operations and no control flow.
+  // As such, we can proceed top-down and bail out if we see anything too
+  // complex for our little brain.
+  for (Operation &op : *fnOp.getBody()) {
+    // Lookup a pre-bound value and check for validity.
+    auto findValue = [&](Value v) -> TypedAttr {
+      auto result = boundValues[v];
+      if (!result)
+        emitError(op.getLoc()) << "could not resolve operand value";
+      return result;
+    };
+
+    TypedAttr result;
+    if (auto extract = dyn_cast<LIT::StructExtractOp>(op)) {
+      auto base = findValue(extract.getOperand());
+      if (!base)
+        return {};
+      result = LIT::StructExtractAttr::get(base, extract.getFieldAttr(),
+                                           extract.getType());
+    } else if (auto create = dyn_cast<LIT::StructCreateOp>(op)) {
+      SmallVector<std::tuple<StringAttr, TypedAttr>> elts;
+      for (auto [fieldName, arg] :
+           llvm::zip(create.getFields(), create.getOperands())) {
+        elts.push_back({fieldName, findValue(arg)});
+        if (!std::get<1>(elts.back()))
+          return {};
+      }
+      result = LITStructAttr::get(create.getContext(), elts, create.getType());
+    } else if (auto cst = dyn_cast<mlir::index::ConstantOp>(op)) {
+      result = cst.getValueAttr();
+    } else if (auto add = dyn_cast<mlir::index::AddOp>(op)) {
+      auto lhs = findValue(add.getOperand(0));
+      auto rhs = findValue(add.getOperand(1));
+      if (!lhs || !rhs)
+        return {};
+      result = ParamOperatorAttr::get(POC::Add, lhs, rhs);
+    } else if (auto call = dyn_cast<LIT::CallOp>(op)) {
+      SmallVector<TypedAttr> calleeOperands;
+      calleeOperands.push_back(call.getCallee());
+      for (auto operandVal : call.getOperands()) {
+        calleeOperands.push_back(findValue(operandVal));
+        if (!calleeOperands.back())
+          return {};
+      }
+
+      // Note that the recursive call here always generates an error.  We know
+      // that this was inside of a "builtin" function so we're not being called
+      // speculatively on an arbitrary function.
+      result = foldInlineBuiltinFunction(calleeOperands, op.getLoc(), emitter,
+                                         /*isError=*/true);
+      if (!result)
+        return {};
+    } else if (auto varDecl = dyn_cast<VarDeclOp>(op)) {
+      // Our primary pattern we're trying to handle is:
+      //   %tmp = lit.var.decl Int
+      //   %tmp2 = lit.ref.struct.ger %tmp, value
+      //   lit.ref.store %v, %tmp2
+      //   lit.load.consume %tmp
+      // Which happens in ctors for builtin operations.  Ignore anything more
+      // complex.
+      auto eltType = varDecl.getType().getElementType();
+      ASTDecl *decl = ASTType(eltType).getDecl(emitter.shared);
+      StructDeclOp structOp;
+      if (decl && (structOp = dyn_cast<StructDeclOp>(*decl)) &&
+          structOp.getConvention() == TypeConvention::RegisterPassableTrivial &&
+          std::distance(structOp.field_begin(), structOp.field_end()) == 1) {
+        varDeclSoFar[varDecl] = UnknownAttr::get(eltType);
+        continue;
+      }
+    } else if (auto load = dyn_cast<LoadConsumeOp>(op)) {
+      result = varDeclSoFar[load.getRef()];
+    } else if (auto ger = dyn_cast<RefStructGEROp>(op)) {
+      continue; // handled by user.
+    } else if (auto store = dyn_cast<RefStoreOp>(op)) {
+      TypedAttr value = findValue(store.getValue());
+      auto ger = store.getDest().getDefiningOp<RefStructGEROp>();
+      if (value && ger && varDeclSoFar[ger.getContainer()]) {
+        auto gerBase = ger.getContainer();
+        auto structType =
+            cast<LIT::StructType>(gerBase.getType().getElementType());
+        varDeclSoFar[gerBase] =
+            LITStructAttr::get({{ger.getFieldAttr(), value}}, structType);
+        continue;
+      }
+    }
+
+    // If we found something, remember it and move on to the next op.
+    if (result) {
+      assert(op.getNumResults() == 1 && "expected a single result");
+      boundValues[op.getResult(0)] = result;
+      continue;
+    }
+
+    if (auto ret = dyn_cast<LIT::ReturnOp>(op)) {
+      if (ret.getNumOperands() == 1)
+        return findValue(ret.getOperand(0));
+    }
+
+    // Otherwise we don't know what this is, bail out.
+    emitError(op.getLoc()) << "does not support MLIR operation "
+                           << op.getName().getStringRef();
+    return {};
+  }
+  llvm_unreachable("should have found a block terminator");
+}
+
 TypedAttr CallEmitter::emitCallInParamContext(
     ArrayRef<ASTExprAnd<AnyValue>> argumentValues) {
   assert(!emitter.builder && "not in parameter context");
@@ -1073,6 +1240,8 @@ TypedAttr CallEmitter::emitCallInParamContext(
 
   // If the callee has implicit origins, we need to bind them to immortal
   // references and rebind the callee.
+  // FIXME: Extend apply to handle implicit origins directly, this makes it
+  // super hard to read the generated IR because of redundant signatures.
   FnTypeGeneratorType boundSigType = calleeSig;
   std::optional<DanglingImplicitOriginRefEraser> implicitOriginRefEraser;
   if (calleeSig.getNumImplicitOriginDecls()) {
@@ -1111,6 +1280,16 @@ TypedAttr CallEmitter::emitCallInParamContext(
       arg = ParamOperatorAttr::get(POC::Rebind, arg, calleeArgType);
     operands.push_back(arg);
   }
+
+  // Check to see if this is a call to a @always_inline("builtin") function,
+  // like Int.__add__ etc.  If so, we need to inlined the body instead of making
+  // an apply operator attr. We can only tell the inline level by finding the
+  // lit.fn of the callee.  We require knowing the inline level because we have
+  // to recursively resolve the body of the function, which we don't want to do
+  // unilaterally.
+  if (auto result = foldInlineBuiltinFunction(operands, loc, emitter,
+                                              /*isError*/ false))
+    return result;
 
   // Force fold Origin.__init__, see comment on tryOriginInitFold for rationale.
   if (operands.size() == 2 && isa<OriginType>(operands[1].getType()))
