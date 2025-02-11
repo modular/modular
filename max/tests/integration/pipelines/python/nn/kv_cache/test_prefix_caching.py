@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 import random
+from collections import defaultdict
+from typing import Optional
 
 import numpy as np
 import pytest
@@ -17,6 +19,11 @@ from max.pipelines.kv_cache.paged_cache import PagedKVCacheManager
 FAKE_TOKEN = 999
 
 
+def gen_prompt(length: int) -> np.ndarray:
+    """Generate a random binary string with given length."""
+    return np.random.randint(0, 2, size=length)
+
+
 def get_blocks_from_kv_tuple(kv_tuple) -> list[list[int]]:
     return kv_tuple[2].to_numpy().tolist()
 
@@ -25,6 +32,10 @@ def get_uncommitted_and_committed_block_counts(
     kv_tuple,
 ) -> list[list[int]]:
     return kv_tuple[3].to_numpy().tolist()
+
+
+def get_cache_lengths_from_kv_tuple(kv_tuple) -> list[int]:
+    return kv_tuple[1].to_numpy().tolist()
 
 
 def create_paged_manager(
@@ -204,7 +215,7 @@ async def test_prefix_caching_with_no_release() -> None:
         for i in range(1000):
             seq_id = i % kv_manager.max_batch_size
             kv_manager.external_claim([seq_id])
-            prompt = np.random.randint(0, 8, size=16)
+            prompt = gen_prompt(16)
             seq_ids_and_prompts = {seq_id: prompt}
             _ = kv_manager.fetch(seq_ids_and_prompts)
             seq_ids_and_new_tokens = {seq_id: np.array([FAKE_TOKEN])}
@@ -241,12 +252,11 @@ async def test_prefix_caching_with_random_prompts(page_size, num_steps) -> None:
         slots_used = 0
         # Picking random prompts.
         prompt_len = np.random.randint(1, 64)
-        prompt = np.random.randint(0, 8, size=prompt_len)
-        seq_ids_and_prompts = {seq_id: prompt}
+        prompt = gen_prompt(prompt_len)
         # This fetch can trigger evictions from the tree.
-        _ = kv_manager.fetch(seq_ids_and_prompts, num_steps=num_steps)
-        seq_ids_and_new_tokens = {seq_id: np.array([FAKE_TOKEN] * num_steps)}
-        kv_manager.step(seq_ids_and_new_tokens)
+        _ = kv_manager.fetch({seq_id: prompt}, num_steps=num_steps)
+        new_tokens = gen_prompt(num_steps)
+        kv_manager.step({seq_id: new_tokens})
 
         slots_used_in_curr_iter = prompt_len + num_steps - 1
         slots_used += slots_used_in_curr_iter
@@ -254,6 +264,7 @@ async def test_prefix_caching_with_random_prompts(page_size, num_steps) -> None:
         # Perform some number of token generation steps.
         num_of_tg_steps = np.random.randint(0, 20)
         for _ in range(num_of_tg_steps):
+            last_token = new_tokens[-1]
             prompt_len = np.random.randint(1, 4)
 
             # If this single sequence will exceed the total number of slots,
@@ -262,14 +273,11 @@ async def test_prefix_caching_with_random_prompts(page_size, num_steps) -> None:
             if slots_used + slots_used_in_curr_iter > available_slots:
                 break
 
-            prompt = np.random.randint(0, 8, size=prompt_len)
-            seq_ids_and_prompts = {seq_id: prompt}
+            prompt = np.concatenate([[last_token], gen_prompt(prompt_len - 1)])
             # This fetch can trigger evictions from the tree.
-            _ = kv_manager.fetch(seq_ids_and_prompts, num_steps=num_steps)
-            seq_ids_and_new_tokens = {
-                seq_id: np.array([FAKE_TOKEN] * num_steps)
-            }
-            kv_manager.step(seq_ids_and_new_tokens)
+            _ = kv_manager.fetch({seq_id: prompt}, num_steps=num_steps)
+            new_tokens = gen_prompt(num_steps)
+            kv_manager.step({seq_id: new_tokens})
 
             slots_used += slots_used_in_curr_iter
 
@@ -392,6 +400,96 @@ async def test_prefix_caching_with_page_size_gt_1_and_num_steps_gt_1() -> None:
     kv_manager.step(seq_ids_and_new_tokens)
 
 
+class FakeModel:
+    """Create a fake model that can be used to test prefix caching."""
+
+    def __init__(self, page_size: int, total_num_pages: int):
+        self.page_size = page_size
+        self.total_num_pages = total_num_pages
+        # block_projections maps from block_id -> offset -> prefix tokens
+        self.block_projections: dict[int, dict[int, np.ndarray]] = defaultdict(
+            lambda: defaultdict(lambda: np.array([]))
+        )
+        self.seq_ids_and_all_tokens: dict[int, np.ndarray] = defaultdict(
+            lambda: np.array([])
+        )
+
+    def run(
+        self,
+        seq_ids_and_prompts: dict[int, np.ndarray],
+        fetch_kv_tuple,
+        num_steps: int,
+        seq_ids_and_new_tokens: Optional[dict[int, np.ndarray]] = None,
+    ) -> dict[int, np.ndarray]:
+        """Given a batch and the fetch_kv_tuple, we `run` the model and check that
+        the paged manager gave us valid blocks that contain the appropriate KV
+        projections.
+
+        This function returns the new tokens that were 'generated' by the model.
+        """
+        # generate some new tokens
+        if seq_ids_and_new_tokens is None:
+            seq_ids_and_new_tokens = {}
+            for seq_id in seq_ids_and_prompts:
+                new_toks = gen_prompt(num_steps)
+                seq_ids_and_new_tokens[seq_id] = new_toks
+
+        # update all tokens to contain the tokens which should have a KV
+        # projection in the cache after this forward step
+        for seq_id in seq_ids_and_prompts:
+            self.seq_ids_and_all_tokens[seq_id] = np.concatenate(
+                [
+                    self.seq_ids_and_all_tokens[seq_id],
+                    seq_ids_and_prompts[seq_id],
+                    seq_ids_and_new_tokens[seq_id][:-1],
+                ]
+            )
+
+        # read the blocks and cache lengths returned by the paged manager
+        all_blocks = get_blocks_from_kv_tuple(fetch_kv_tuple[0])
+        cache_lengths = get_cache_lengths_from_kv_tuple(fetch_kv_tuple[0])
+
+        for batch_idx, seq_id in enumerate(seq_ids_and_prompts):
+            blocks = all_blocks[batch_idx]
+            cache_len = cache_lengths[batch_idx]
+            tokens = self.seq_ids_and_all_tokens[seq_id]
+            # count the number of unassigned blocks by checking for blocks with
+            # id equal to self.total_num_pages.
+            num_unassigned_blocks = blocks.count(self.total_num_pages)
+            num_assigned_blocks = len(blocks) - num_unassigned_blocks
+            cache_space = num_assigned_blocks * self.page_size
+            # check that we have enough cache space to store all tokens which
+            # need a KV projection
+            assert len(tokens) <= cache_space
+
+            for idx in range(len(tokens)):
+                prefix = tokens[: idx + 1]
+                block_idx = idx // self.page_size
+                block = blocks[block_idx]
+                block_offset = idx % self.page_size
+
+                if idx < cache_len:
+                    # if the token is cached, ensure that the block + offset
+                    # map to the appropriate prefix tokens
+                    # specifying key otherwise assertion printing of `block_projections` would be too loud
+                    blocks_in_cache = self.block_projections.keys()
+                    assert block in blocks_in_cache
+                    assert block_offset in self.block_projections[block]
+                    actual = self.block_projections[block][block_offset]
+                    expected = prefix
+                    assert (
+                        actual.shape == expected.shape
+                        and (actual == expected).all()
+                    ), (
+                        f"KV projection mismatch for block {block} at offset {block_offset}. Expected {expected}, got {actual}"
+                    )
+                else:
+                    # if the token is not cached, update the block_projections
+                    self.block_projections[block][block_offset] = prefix
+
+        return seq_ids_and_new_tokens
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "batch_size, num_steps, shared_prefix_len, page_size",
@@ -413,12 +511,9 @@ async def test_prefix_caching_grouped_prefixes(
     """
     np.random.seed(12345)
 
-    # generate a binary string
-    def gen_prompt(length: int) -> np.ndarray:
-        return np.random.randint(0, 2, size=length)
-
-    # evictions are unlikely to happen with 10000 blocks
+    # evictions will not happen since we allocate so many blocks
     kv_manager = create_paged_manager(num_blocks=10000, page_size=page_size)
+    model = FakeModel(page_size, kv_manager.total_num_pages)
 
     # generate a number of grouped prefixes:
     shared_prefix = gen_prompt(shared_prefix_len)
@@ -431,11 +526,9 @@ async def test_prefix_caching_grouped_prefixes(
 
     # run CE on 15 batches of batch_size requests each
     num_batches = 15
-    requests = batch_size * num_batches
     seq_ids_and_new_tokens: dict[int, np.ndarray] = {}
     for b in range(num_batches):
         seq_ids_and_prompts: dict[int, np.ndarray] = {}
-        seq_ids_and_new_tokens_batch: dict[int, np.ndarray] = {}
         for r in range(batch_size):
             seq_id = b * batch_size + r
             kv_manager.external_claim([seq_id])
@@ -443,12 +536,16 @@ async def test_prefix_caching_grouped_prefixes(
             random_len = np.random.randint(0, 10)
             prompt = np.concatenate([group_prefix, gen_prompt(random_len)])
             seq_ids_and_prompts[seq_id] = prompt
-            new_tok = gen_prompt(1)
-            seq_ids_and_new_tokens_batch[seq_id] = new_tok
-            seq_ids_and_new_tokens |= seq_ids_and_new_tokens_batch
 
-        _ = kv_manager.fetch(seq_ids_and_prompts, num_steps=1)
+        orig_seq_ids_and_prompts = seq_ids_and_prompts.copy()
+        fetch_kv_tuple = kv_manager.fetch(
+            seq_ids_and_prompts, num_steps=num_steps
+        )
         assert kv_manager._count_all_pages() == kv_manager.total_num_pages
+        seq_ids_and_new_tokens_batch = model.run(
+            orig_seq_ids_and_prompts, fetch_kv_tuple, num_steps=num_steps
+        )
+        seq_ids_and_new_tokens |= seq_ids_and_new_tokens_batch
         kv_manager.step(seq_ids_and_new_tokens_batch)
         assert kv_manager._count_all_pages() == kv_manager.total_num_pages
 
@@ -463,18 +560,21 @@ async def test_prefix_caching_grouped_prefixes(
     num_tg_steps = 10
     for _ in range(num_tg_steps):
         seq_ids_and_prompts = seq_ids_and_new_tokens
-        for seq_id in range(requests):
-            seq_ids_and_new_tokens = {}
-            if seq_id in seq_ids_and_prompts:
-                seq_ids_and_new_tokens[seq_id] = gen_prompt(num_steps)
 
         for seq_id in seq_ids_and_prompts:
             seq_ids_and_prompts[seq_id] = seq_ids_and_prompts[seq_id][-1:]
             assert len(seq_ids_and_prompts[seq_id]) == 1
 
-        _ = kv_manager.fetch(seq_ids_and_prompts, num_steps=num_steps)
+        orig_seq_ids_and_prompts = seq_ids_and_prompts.copy()
+        fetch_kv_tuple = kv_manager.fetch(
+            seq_ids_and_prompts, num_steps=num_steps
+        )
         assert kv_manager._count_all_pages() == kv_manager.total_num_pages
-        kv_manager.step(seq_ids_and_new_tokens)
+        seq_ids_and_new_tokens_subset = model.run(
+            orig_seq_ids_and_prompts, fetch_kv_tuple, num_steps=num_steps
+        )
+
+        kv_manager.step(seq_ids_and_new_tokens_subset)
         assert kv_manager._count_all_pages() == kv_manager.total_num_pages
 
         terminated_seq_ids = []
