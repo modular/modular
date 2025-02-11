@@ -1124,7 +1124,7 @@ class Model(BaseModel):
         ...,
         description='The model identifier, which can be referenced in the API endpoints.',
     )
-    created: int = Field(
+    created: Optional[int] = Field(
         ...,
         description='The Unix timestamp (in seconds) when the model was created.',
     )
@@ -1133,6 +1133,13 @@ class Model(BaseModel):
     )
     owned_by: str = Field(
         ..., description='The organization that owns the model.'
+    )
+
+
+class ModelList(BaseModel):
+    models: List[Model] = Field(
+        ...,
+        description="A list of models",
     )
 
 

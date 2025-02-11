@@ -51,6 +51,8 @@ from max.serve.schemas.openai import (  # type: ignore
     Function1,
     Logprobs,
     Logprobs2,
+    Model,
+    ModelList,
     PromptItem,
     ResponseFormatJsonObject,
     ResponseFormatJsonSchema,
@@ -930,3 +932,39 @@ async def openai_create_completion(
 async def health() -> Response:
     """Health check."""
     return Response(status_code=200)
+
+
+@router.get("/models", response_model=None)
+async def openai_get_models(request: Request) -> ModelList:
+    pipeline: TokenGeneratorPipeline = request.app.state.pipeline
+    return ModelList(
+        models=[
+            Model(
+                id=pipeline.model_name,
+                object="model",
+                created=None,
+                owned_by="",
+            )
+        ]
+    )
+
+
+@router.get("/models/{model_id}", response_model=None)
+async def openai_get_model(model_id: str, request: Request) -> Model:
+    pipeline: TokenGeneratorPipeline = request.app.state.pipeline
+    pipeline_model = Model(
+        id=pipeline.model_name,
+        object="model",
+        created=None,
+        owned_by="",
+    )
+
+    if model_id == pipeline.model_name:
+        return pipeline_model
+
+    # We need to handle the slash in our model names (not an issue for OpenAI)
+    slash_ind = pipeline.model_name.rfind("/")
+    if slash_ind != -1 and model_id == pipeline.model_name[slash_ind + 1 :]:
+        return pipeline_model
+
+    raise HTTPException(status_code=404)
