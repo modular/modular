@@ -116,8 +116,13 @@ struct DeviceBuffer[type: DType](Sized):
     """Represents a block of device-resident storage. For GPU devices, a device
     buffer is allocated in the device's global memory.
 
+    To allocate a `DeviceBuffer`, use one of the methods provided by
+    `DeviceContext`, such as
+    [`enqueue_create_buffer()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#enqueue_create_buffer).
+
     Parameters:
-        type: Data type to be stored in the buffer."""
+        type: Data type to be stored in the buffer.
+    """
 
     # _device_ptr must be the first word in the struct to enable passing of
     # DeviceBuffer to kernels. The first word is passed to the kernel and
@@ -125,6 +130,7 @@ struct DeviceBuffer[type: DType](Sized):
     var _device_ptr: UnsafePointer[Scalar[type]]
     var _handle: _DeviceBufferPtr
 
+    @doc_private
     @always_inline
     fn __init__(
         mut self,
@@ -200,6 +206,7 @@ struct DeviceBuffer[type: DType](Sized):
         self._device_ptr = device_ptr
         self._handle = cpp_handle
 
+    @doc_private
     fn __init__(
         mut self,
         handle: _DeviceBufferPtr,
@@ -208,6 +215,7 @@ struct DeviceBuffer[type: DType](Sized):
         self._device_ptr = device_ptr
         self._handle = handle
 
+    @doc_private
     fn __init__(
         mut self,
         ctx: DeviceContext,
@@ -427,7 +435,13 @@ struct DeviceFunction[
     target: __mlir_type.`!kgen.target` = _get_gpu_target(),
     _ptxas_info_verbose: Bool = False,
 ]:
-    """Represents a compiled device function."""
+    """Represents a compiled device function. From inside a MAX custom
+    operation, use
+    [`DeviceContext.compile_function()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#compile_function)
+    to compile a function and use
+    [`enqueue_function()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#enqueue_function)
+    to launch it on the accelerator.
+    """
 
     # emit asm if cross compiling for nvidia gpus.
     alias _emission_kind = "asm" if (
@@ -462,6 +476,7 @@ struct DeviceFunction[
             _DeviceFunctionPtr,
         ](self._handle)
 
+    @doc_private
     @always_inline
     fn __init__(
         mut self,
@@ -848,16 +863,22 @@ struct DeviceFunction[
 
 @register_passable
 struct DeviceContext:
-    """Represents a single accelerator (GPU), and provides methods
-    for allocating buffers on the device, copying data between host
-    and device, and for compiling and running functions (also known as
-    kernels) on the device.
+
+    """Represents a single stream of execution on a particular accelerator
+    (GPU). A `DeviceContext` serves as the low-level interface to the
+    accelerator inside a MAX [custom operation](/max/custom-ops/) and provides
+    methods for allocating buffers on the device, copying data between host and
+    device, and for compiling and running functions (also known as kernels) on
+    the device.
+
+    A custom operation receives an opaque `MojoCallContextPtr`, which provides
+    a `get_device_context()` method to retrieve the device context.
 
     The device context can be used as a
     [context manager](/mojo/manual/errors#use-a-context-manager). For example:
 
     ```mojo
-    with device_ctx as ctx:
+    with callContextPtr.get_device_context() as ctx:
         alias length = 1024
         var in_device = ctx.enqueue_create_buffer[DType.float32](length)
         var out_device = ctx.enqueue_create_buffer[DType.float32](length)
@@ -868,6 +889,7 @@ struct DeviceContext:
 
         ctx.enqueue_function(
             gpu_func,
+            in_device,
             out_device,
             length,
             grid_dim=(length // block_dim),
@@ -899,9 +921,11 @@ struct DeviceContext:
         Args:
             device_id: ID of the accelerator device. If not specified, uses
                 the default accelerator.
-            api: Device API, for example, "cuda" or "hip".
+            api: Device API, for example, "cuda" for an NVIDIA GPU, or "gpu" for
+                the currently available accelerator.
             buffer_cache_size: Amount of space to pre-allocate for device buffers,
-                in bytes."""
+                in bytes.
+        """
         # const char *AsyncRT_DeviceContext_create(const DeviceContext **result, const char *api, int id)
         var result = _DeviceContextPtr()
         _checked(
@@ -968,11 +992,8 @@ struct DeviceContext:
         return self^
 
     fn name(self) -> String:
-        """Gets the device name, an ASCII string identifying this device,
-        defined by the native device API.
-
-        Returns:
-            The device name."""
+        """Returns the device name, an ASCII string identifying this device,
+        defined by the native device API."""
         # const char *AsyncRT_DeviceContext_deviceName(const DeviceContext *ctx)
         var name_ptr = external_call[
             "AsyncRT_DeviceContext_deviceName",
@@ -989,17 +1010,13 @@ struct DeviceContext:
         return result
 
     fn api(self) -> String:
-        """Gets the name of the API used to program the device.
+        """Returns the name of the API used to program the device.
 
         Possible values are:
 
         - "cpu": Generic host device (CPU).
-        - "gpu": Generic GPU device.
         - "cuda": NVIDIA GPUs.
         - "hip": AMD GPUs.
-
-        Returns:
-            The API name.
         """
         # void AsyncRT_DeviceContext_deviceApi(llvm::StringRef *result, const DeviceContext *ctx)
         var api_ptr = StaticString(ptr=UnsafePointer[Byte](), length=0)
@@ -1068,7 +1085,8 @@ struct DeviceContext:
             type: The data type stored in the allocated memory.
 
         Args:
-            ptr: Pointer to the data block to free."""
+            ptr: Pointer to the data block to free.
+        """
         # const char * AsyncRT_DeviceContext_freeHost(const DeviceContext *ctx, void *ptr)
         _checked(
             external_call[
@@ -1112,7 +1130,8 @@ struct DeviceContext:
             size: The number of elements of `type` to allocate memory for.
 
         Returns:
-            The allocated buffer."""
+            The allocated buffer.
+        """
         var result = DeviceBuffer[type](self, size, _DeviceBufferMode._SYNC)
         self.synchronize()
         return result
@@ -1157,7 +1176,7 @@ struct DeviceContext:
         Returns:
             The compiled function.
         """
-        return self.compile_function[
+        result = self.compile_function[
             func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
@@ -1455,7 +1474,8 @@ struct DeviceContext:
         Args:
             dst_buf: Device buffer to copy to.
             src_buf: Device buffer to copy from. Must be at least as large as
-                `dst`."""
+                `dst`.
+        """
         # const char * AsyncRT_DeviceContext_DtoD_async(const DeviceContext *ctx, const DeviceBuffer *dst, const DeviceBuffer *src)
         _checked(
             external_call[
@@ -1827,13 +1847,10 @@ struct DeviceContext:
 
     @always_inline
     fn can_access(self, peer: DeviceContext) raises -> Bool:
-        """Queries if this device can access the identified peer device.
+        """Returns True if this device can access the identified peer device.
 
         Args:
             peer: The peer device.
-
-        Returns:
-            True if this device can access `peer`.
         """
         var result: Bool = False
         # const char *AsyncRT_DeviceContext_canAccess(bool *result, const DeviceContext *ctx, const DeviceContext *peer)
@@ -1880,9 +1897,6 @@ struct DeviceContext:
 
         Args:
             api: Requested device API (for example, "cuda" or "hip").
-
-        Returns:
-            The number of devices available.
         """
         # int32_t *AsyncRT_DeviceContext_numberOfDevices(const char* kind)
         return Int(
