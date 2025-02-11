@@ -25,6 +25,9 @@ what we publish.
 - A new `IntervalTree` data structure has been added to the standard library.
   This is a tree data structure that allows for efficient range queries.
 
+- `StringSlice` now provides `split()` methods for splitting on a separator
+  character or on whitespace.
+
 ### Tooling changes
 
 ### ❌ Removed

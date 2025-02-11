@@ -60,7 +60,7 @@ fn _dir_of_current_file() raises -> Path:
 @no_inline
 fn _dir_of_current_file_impl(file_name: StringLiteral) raises -> Path:
     var i = String(file_name).rfind(DIR_SEPARATOR)
-    return Path(String(file_name)[0:i])
+    return Path(StringSlice(file_name)[0:i])
 
 
 @value
@@ -92,13 +92,13 @@ struct Path(
         self.path = String(path)
 
     @implicit
-    fn __init__(out self, path: String):
+    fn __init__(out self, owned path: String):
         """Initializes a path with the provided path.
 
         Args:
           path: The file system path.
         """
-        self.path = path
+        self.path = path^
 
     fn copy(self) -> Self:
         """Copy the object.
