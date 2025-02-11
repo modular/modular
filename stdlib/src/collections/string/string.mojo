@@ -15,12 +15,6 @@
 from collections import KeyElement, List, Optional
 from collections._index_normalization import normalize_index
 from collections.string import CharsIter
-from collections.string._unicode import (
-    is_lowercase,
-    is_uppercase,
-    to_lowercase,
-    to_uppercase,
-)
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string.string_slice import (
     StaticString,
@@ -28,6 +22,12 @@ from collections.string.string_slice import (
     _StringSliceIter,
     _to_string_list,
     _utf8_byte_type,
+)
+from collections.string._unicode import (
+    is_lowercase,
+    is_uppercase,
+    to_lowercase,
+    to_uppercase,
 )
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from os import abort
@@ -1692,8 +1692,7 @@ struct String(
             A new string where cased letters have been converted to lowercase.
         """
 
-        # TODO: the _unicode module does not support locale sensitive conversions yet.
-        return to_lowercase(self)
+        return self.as_string_slice().lower()
 
     fn upper(self) -> String:
         """Returns a copy of the string with all cased characters
@@ -1703,8 +1702,7 @@ struct String(
             A new string where cased letters have been converted to uppercase.
         """
 
-        # TODO: the _unicode module does not support locale sensitive conversions yet.
-        return to_uppercase(self)
+        return self.as_string_slice().upper()
 
     fn startswith(
         self, prefix: StringSlice, start: Int = 0, end: Int = -1
@@ -1850,12 +1848,7 @@ struct String(
         Returns:
             True if all characters are digits and it's not empty else False.
         """
-        if not self:
-            return False
-        for char in self.chars():
-            if not char.is_ascii_digit():
-                return False
-        return True
+        return self.as_string_slice().is_ascii_digit()
 
     fn isupper(self) -> Bool:
         """Returns True if all cased characters in the string are uppercase and
@@ -1865,7 +1858,7 @@ struct String(
             True if all cased characters in the string are uppercase and there
             is at least one cased character, False otherwise.
         """
-        return len(self) > 0 and is_uppercase(self)
+        return self.as_string_slice().isupper()
 
     fn islower(self) -> Bool:
         """Returns True if all cased characters in the string are lowercase and
@@ -1875,7 +1868,7 @@ struct String(
             True if all cased characters in the string are lowercase and there
             is at least one cased character, False otherwise.
         """
-        return len(self) > 0 and is_lowercase(self)
+        return self.as_string_slice().islower()
 
     fn isprintable(self) -> Bool:
         """Returns True if all characters in the string are ASCII printable.
@@ -1885,10 +1878,7 @@ struct String(
         Returns:
             True if all characters are printable else False.
         """
-        for char in self.chars():
-            if not char.is_ascii_printable():
-                return False
-        return True
+        return self.as_string_slice().is_ascii_printable()
 
     fn rjust(self, width: Int, fillchar: StringLiteral = " ") -> String:
         """Returns the string right justified in a string of specified width.
@@ -1900,7 +1890,7 @@ struct String(
         Returns:
             Returns right justified string, or self if width is not bigger than self length.
         """
-        return self._justify(width - len(self), width, fillchar)
+        return self.as_string_slice().rjust(width, fillchar)
 
     fn ljust(self, width: Int, fillchar: StringLiteral = " ") -> String:
         """Returns the string left justified in a string of specified width.
@@ -1912,7 +1902,7 @@ struct String(
         Returns:
             Returns left justified string, or self if width is not bigger than self length.
         """
-        return self._justify(0, width, fillchar)
+        return self.as_string_slice().ljust(width, fillchar)
 
     fn center(self, width: Int, fillchar: StringLiteral = " ") -> String:
         """Returns the string center justified in a string of specified width.
@@ -1924,23 +1914,7 @@ struct String(
         Returns:
             Returns center justified string, or self if width is not bigger than self length.
         """
-        return self._justify(width - len(self) >> 1, width, fillchar)
-
-    fn _justify(
-        self, start: Int, width: Int, fillchar: StringLiteral
-    ) -> String:
-        if len(self) >= width:
-            return self
-        debug_assert(
-            len(fillchar) == 1, "fill char needs to be a one byte literal"
-        )
-        var fillbyte = fillchar.as_bytes()[0]
-        var buffer = Self._buffer_type(capacity=width + 1)
-        buffer.resize(width, fillbyte)
-        buffer.append(0)
-        memcpy(buffer.unsafe_ptr().offset(start), self.unsafe_ptr(), len(self))
-        var result = String(buffer)
-        return result^
+        return self.as_string_slice().center(width, fillchar)
 
     fn reserve(mut self, new_capacity: Int):
         """Reserves the requested capacity.

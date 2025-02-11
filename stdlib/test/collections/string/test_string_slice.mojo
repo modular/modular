@@ -920,6 +920,77 @@ def test_endswith():
     assert_true(ab.endswith("ab"))
 
 
+def test_isupper():
+    assert_true(StringSlice("ASDG").isupper())
+    assert_false(StringSlice("AsDG").isupper())
+    assert_true(StringSlice("ABC123").isupper())
+    assert_false(StringSlice("1!").isupper())
+    assert_true(StringSlice("É").isupper())
+    assert_false(StringSlice("é").isupper())
+
+
+def test_islower():
+    assert_true(StringSlice("asdfg").islower())
+    assert_false(StringSlice("asdFDg").islower())
+    assert_true(StringSlice("abc123").islower())
+    assert_false(StringSlice("1!").islower())
+    assert_true(StringSlice("é").islower())
+    assert_false(StringSlice("É").islower())
+
+
+def test_lower():
+    assert_equal(StringSlice("HELLO").lower(), "hello")
+    assert_equal(StringSlice("hello").lower(), "hello")
+    assert_equal(StringSlice("FoOBaR").lower(), "foobar")
+
+    assert_equal(StringSlice("MOJO🔥").lower(), "mojo🔥")
+
+    assert_equal(StringSlice("É").lower(), "é")
+    assert_equal(StringSlice("é").lower(), "é")
+
+
+def test_upper():
+    assert_equal(StringSlice("hello").upper(), "HELLO")
+    assert_equal(StringSlice("HELLO").upper(), "HELLO")
+    assert_equal(StringSlice("FoOBaR").upper(), "FOOBAR")
+
+    assert_equal(StringSlice("mojo🔥").upper(), "MOJO🔥")
+
+    assert_equal(StringSlice("É").upper(), "É")
+    assert_equal(StringSlice("é").upper(), "É")
+
+
+def test_is_ascii_digit():
+    assert_false(StringSlice("").is_ascii_digit())
+    assert_true(StringSlice("123").is_ascii_digit())
+    assert_false(StringSlice("asdg").is_ascii_digit())
+    assert_false(StringSlice("123asdg").is_ascii_digit())
+
+
+def test_is_ascii_printable():
+    assert_true(StringSlice("aasdg").is_ascii_printable())
+    assert_false(StringSlice("aa\nae").is_ascii_printable())
+    assert_false(StringSlice("aa\tae").is_ascii_printable())
+
+
+def test_rjust():
+    assert_equal(StringSlice("hello").rjust(4), "hello")
+    assert_equal(StringSlice("hello").rjust(8), "   hello")
+    assert_equal(StringSlice("hello").rjust(8, "*"), "***hello")
+
+
+def test_ljust():
+    assert_equal(StringSlice("hello").ljust(4), "hello")
+    assert_equal(StringSlice("hello").ljust(8), "hello   ")
+    assert_equal(StringSlice("hello").ljust(8, "*"), "hello***")
+
+
+def test_center():
+    assert_equal(StringSlice("hello").center(4), "hello")
+    assert_equal(StringSlice("hello").center(8), " hello  ")
+    assert_equal(StringSlice("hello").center(8, "*"), "*hello**")
+
+
 def test_count():
     var str = StringSlice("Hello world")
 
@@ -1050,7 +1121,6 @@ def main():
     test_combination_10_good_utf8_sequences()
     test_combination_10_good_10_bad_utf8_sequences()
     test_count_utf8_continuation_bytes()
-    test_count()
     test_split()
     test_splitlines()
     test_rstrip()
@@ -1058,5 +1128,15 @@ def main():
     test_strip()
     test_startswith()
     test_endswith()
+    test_isupper()
+    test_islower()
+    test_lower()
+    test_upper()
+    test_is_ascii_digit()
+    test_is_ascii_printable()
+    test_rjust()
+    test_ljust()
+    test_center()
+    test_count()
     test_chars_iter()
     test_string_slice_from_pointer()

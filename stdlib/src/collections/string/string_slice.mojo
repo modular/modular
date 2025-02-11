@@ -22,8 +22,14 @@ from collections.string import StringSlice
 """
 
 from collections import List, Optional
-from collections.string._utf8_validation import _is_valid_utf8
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
+from collections.string._utf8_validation import _is_valid_utf8
+from collections.string._unicode import (
+    is_lowercase,
+    is_uppercase,
+    to_lowercase,
+    to_uppercase,
+)
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from os import PathLike, abort
 from sys import bitwidthof, simdwidthof
@@ -1561,6 +1567,129 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             offset = pos + substr.byte_length()
 
         return res
+
+    fn is_ascii_digit(self) -> Bool:
+        """A string is a digit string if all characters in the string are digits
+        and there is at least one character in the string.
+
+        Note that this currently only works with ASCII strings.
+
+        Returns:
+            True if all characters are digits and it's not empty else False.
+        """
+        if not self:
+            return False
+        for char in self.chars():
+            if not char.is_ascii_digit():
+                return False
+        return True
+
+    fn isupper(self) -> Bool:
+        """Returns True if all cased characters in the string are uppercase and
+        there is at least one cased character.
+
+        Returns:
+            True if all cased characters in the string are uppercase and there
+            is at least one cased character, False otherwise.
+        """
+        return len(self) > 0 and is_uppercase(self)
+
+    fn islower(self) -> Bool:
+        """Returns True if all cased characters in the string are lowercase and
+        there is at least one cased character.
+
+        Returns:
+            True if all cased characters in the string are lowercase and there
+            is at least one cased character, False otherwise.
+        """
+        return len(self) > 0 and is_lowercase(self)
+
+    fn lower(self) -> String:
+        """Returns a copy of the string with all cased characters
+        converted to lowercase.
+
+        Returns:
+            A new string where cased letters have been converted to lowercase.
+        """
+
+        # TODO: the _unicode module does not support locale sensitive conversions yet.
+        return to_lowercase(self)
+
+    fn upper(self) -> String:
+        """Returns a copy of the string with all cased characters
+        converted to uppercase.
+
+        Returns:
+            A new string where cased letters have been converted to uppercase.
+        """
+
+        # TODO: the _unicode module does not support locale sensitive conversions yet.
+        return to_uppercase(self)
+
+    fn is_ascii_printable(self) -> Bool:
+        """Returns True if all characters in the string are ASCII printable.
+
+        Note that this currently only works with ASCII strings.
+
+        Returns:
+            True if all characters are printable else False.
+        """
+        for char in self.chars():
+            if not char.is_ascii_printable():
+                return False
+        return True
+
+    fn rjust(self, width: Int, fillchar: StringLiteral = " ") -> String:
+        """Returns the string right justified in a string of specified width.
+
+        Args:
+            width: The width of the field containing the string.
+            fillchar: Specifies the padding character.
+
+        Returns:
+            Returns right justified string, or self if width is not bigger than self length.
+        """
+        return self._justify(width - len(self), width, fillchar)
+
+    fn ljust(self, width: Int, fillchar: StringLiteral = " ") -> String:
+        """Returns the string left justified in a string of specified width.
+
+        Args:
+            width: The width of the field containing the string.
+            fillchar: Specifies the padding character.
+
+        Returns:
+            Returns left justified string, or self if width is not bigger than self length.
+        """
+        return self._justify(0, width, fillchar)
+
+    fn center(self, width: Int, fillchar: StringLiteral = " ") -> String:
+        """Returns the string center justified in a string of specified width.
+
+        Args:
+            width: The width of the field containing the string.
+            fillchar: Specifies the padding character.
+
+        Returns:
+            Returns center justified string, or self if width is not bigger than self length.
+        """
+        return self._justify(width - len(self) >> 1, width, fillchar)
+
+    fn _justify(
+        self, start: Int, width: Int, fillchar: StringLiteral
+    ) -> String:
+        if len(self) >= width:
+            return String(self)
+        debug_assert(
+            len(fillchar) == 1, "fill char needs to be a one byte literal"
+        )
+        var fillbyte = fillchar.as_bytes()[0]
+        var buffer = List[Byte](capacity=width + 1)
+        buffer.resize(width, fillbyte)
+        buffer.append(0)
+        memcpy(buffer.unsafe_ptr().offset(start), self.unsafe_ptr(), len(self))
+        var result = String(buffer=buffer)
+        return result^
 
 
 # ===-----------------------------------------------------------------------===#
