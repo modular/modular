@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections.optional import OptionalReg
+from collections import Optional, OptionalReg
 from math import ceildiv, isclose
 from pathlib import Path
 from random import rand, randint, random_float64, seed
@@ -1422,23 +1422,44 @@ fn multistage_gemm_q[
 @always_inline
 fn matmul_gpu_qint4[
     c_type: DType,
-    a_type: DType,
-    b_shape: DimList, //,
+    a_type: DType, //,
     group_size: Int,
     target: StringLiteral,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, _],
     a: NDBuffer[a_type, 2, _],
-    b: NDBuffer[DType.uint8, 2, b_shape],
+    b: NDBuffer[DType.uint8, 2, _],
     ctx: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
-    # constrained[is_gpu[target](), "unsupported target"]()
+    constrained[is_gpu[target](), "unsupported target"]()
     var cuda_ctx = ctx.get_device_context()
+
+    matmul_gpu_qint4_impl[group_size, target, elementwise_lambda_fn](
+        c, a, b, cuda_ctx
+    )
+
+
+@always_inline
+fn matmul_gpu_qint4_impl[
+    c_type: DType,
+    a_type: DType, //,
+    group_size: Int,
+    target: StringLiteral,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    c: NDBuffer[c_type, 2, _],
+    a: NDBuffer[a_type, 2, _],
+    b: NDBuffer[DType.uint8, 2, _],
+    ctx: Optional[DeviceContext],
+) raises:
+    # constrained[is_gpu[target](), "unsupported target"]()
+    var cuda_ctx = ctx.value()
 
     alias pack_factor = 8
 
     alias a_shape = a.shape
+    alias b_shape = b.shape
     alias c_shape = c.shape
     var shape = GemmShape.get[transpose_b=True](c, a, b)
     var m = shape.M
