@@ -37,7 +37,9 @@ fn _create_device_buffer[
     var storage = ctx.enqueue_create_buffer[dtype](_size(dynamic_shape))
     return (
         storage,
-        NDBuffer[dtype, rank, shape](storage.ptr, dynamic_shape=dynamic_shape),
+        NDBuffer[dtype, rank, shape](
+            storage.unsafe_pointer(), dynamic_shape=dynamic_shape
+        ),
     )
 
 

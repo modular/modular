@@ -116,9 +116,9 @@ struct test_matmul[
             self.M,
             self.N,
             self.K,
-            self.a_device_buffer.ptr,
-            self.b_device_buffer.ptr,
-            self.c_device_buffer_ref.ptr,
+            self.a_device_buffer.unsafe_pointer(),
+            self.b_device_buffer.unsafe_pointer(),
+            self.c_device_buffer_ref.unsafe_pointer(),
         )
 
         ctx.enqueue_copy_from_device(
@@ -143,13 +143,13 @@ struct test_matmul[
             return LayoutTensor[dtype, layout](ptr, dynamic_layout)
 
         var a = create_tensor[a_layout](
-            self.M, self.K, self.a_device_buffer.ptr
+            self.M, self.K, self.a_device_buffer.unsafe_pointer()
         )
         var b = create_tensor[b_layout](
-            self.K, self.N, self.b_device_buffer.ptr
+            self.K, self.N, self.b_device_buffer.unsafe_pointer()
         )
         var c = create_tensor[c_layout](
-            self.M, self.N, self.c_device_buffer.ptr
+            self.M, self.N, self.c_device_buffer.unsafe_pointer()
         )
 
         gemm(m, ctx, a, b, c)

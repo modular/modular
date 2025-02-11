@@ -189,22 +189,35 @@ fn test[
     # Contruct device buffers.
     var q_device = NDBuffer[
         qkv_type, 4, DimList(Dim(), Dim(), num_heads, depth)
-    ](q_device_ptr.ptr, Index(batch_size, seq_len, num_heads, depth))
+    ](
+        q_device_ptr.unsafe_pointer(),
+        Index(batch_size, seq_len, num_heads, depth),
+    )
     var k_device = NDBuffer[
         qkv_type, 4, DimList(Dim(), Dim(), kv_num_heads, depth)
-    ](k_device_ptr.ptr, Index(batch_size, num_keys, kv_num_heads, depth))
+    ](
+        k_device_ptr.unsafe_pointer(),
+        Index(batch_size, num_keys, kv_num_heads, depth),
+    )
     var v_device = NDBuffer[
         qkv_type, 4, DimList(Dim(), Dim(), kv_num_heads, depth)
-    ](v_device_ptr.ptr, Index(batch_size, num_keys, kv_num_heads, depth))
+    ](
+        v_device_ptr.unsafe_pointer(),
+        Index(batch_size, num_keys, kv_num_heads, depth),
+    )
     var mask3d = NDBuffer[mask_type, 3, DimList.create_unknown[3]()](
-        mask_device_ptr.ptr, Index(batch_size, seq_len, num_keys)
+        mask_device_ptr.unsafe_pointer(), Index(batch_size, seq_len, num_keys)
     )
     var mask4d = NDBuffer[mask_type, 4, DimList.create_unknown[4]()](
-        mask_device_ptr.ptr, Index(batch_size, num_heads, seq_len, num_keys)
+        mask_device_ptr.unsafe_pointer(),
+        Index(batch_size, num_heads, seq_len, num_keys),
     )
     var output_device = NDBuffer[
         qkv_type, 4, DimList(Dim(), Dim(), num_heads, depth)
-    ](output_device_ptr.ptr, Index(batch_size, seq_len, num_heads, depth))
+    ](
+        output_device_ptr.unsafe_pointer(),
+        Index(batch_size, seq_len, num_heads, depth),
+    )
 
     alias q_tile_num_rows = 32
     alias k_tile_num_rows = 128
@@ -264,7 +277,7 @@ fn test[
         var output_ref_device = NDBuffer[
             qkv_type, 4, DimList(Dim(), Dim(), num_heads, depth)
         ](
-            output_ref_device_ptr.ptr,
+            output_ref_device_ptr.unsafe_pointer(),
             Index(batch_size, seq_len, num_heads, depth),
         )
         ctx.enqueue_copy_to_device(output_ref_device_ptr, output_ptr)

@@ -77,11 +77,15 @@ fn test_stencil_avg_pool(ctx: DeviceContext) raises:
     var d_input_buf = ctx.enqueue_create_buffer[dtype](
         Int(input_shape.product())
     )
-    var d_input = NDBuffer[dtype, rank](d_input_buf.ptr, input_shape)
+    var d_input = NDBuffer[dtype, rank](
+        d_input_buf.unsafe_pointer(), input_shape
+    )
     var d_output_buf = ctx.enqueue_create_buffer[dtype](
         Int(output_shape.product())
     )
-    var d_output = NDBuffer[dtype, rank](d_output_buf.ptr, output_shape)
+    var d_output = NDBuffer[dtype, rank](
+        d_output_buf.unsafe_pointer(), output_shape
+    )
 
     # Copy to device
     ctx.enqueue_copy_to_device(d_input_buf, h_input.data)
@@ -238,11 +242,15 @@ fn test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
     var d_input_buf = ctx.enqueue_create_buffer[dtype](
         Int(input_shape.product())
     )
-    var d_input = NDBuffer[dtype, rank](d_input_buf.ptr, input_shape)
+    var d_input = NDBuffer[dtype, rank](
+        d_input_buf.unsafe_pointer(), input_shape
+    )
     var d_output_buf = ctx.enqueue_create_buffer[dtype](
         Int(output_shape.product())
     )
-    var d_output = NDBuffer[dtype, rank](d_output_buf.ptr, output_shape)
+    var d_output = NDBuffer[dtype, rank](
+        d_output_buf.unsafe_pointer(), output_shape
+    )
 
     # Copy to device
     ctx.enqueue_copy_to_device(d_input_buf, h_input.data)
@@ -400,11 +408,15 @@ fn test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
     var d_input_buf = ctx.enqueue_create_buffer[dtype](
         Int(input_shape.product())
     )
-    var d_input = NDBuffer[dtype, rank](d_input_buf.ptr, input_shape)
+    var d_input = NDBuffer[dtype, rank](
+        d_input_buf.unsafe_pointer(), input_shape
+    )
     var d_output_buf = ctx.enqueue_create_buffer[dtype](
         Int(output_shape.product())
     )
-    var d_output = NDBuffer[dtype, rank](d_output_buf.ptr, output_shape)
+    var d_output = NDBuffer[dtype, rank](
+        d_output_buf.unsafe_pointer(), output_shape
+    )
 
     # Copy to device
     ctx.enqueue_copy_to_device(d_input_buf, h_input.data)
@@ -571,11 +583,15 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     var d_input_buf = ctx.enqueue_create_buffer[dtype](
         Int(input_shape.product())
     )
-    var d_input = NDBuffer[dtype, rank](d_input_buf.ptr, input_shape)
+    var d_input = NDBuffer[dtype, rank](
+        d_input_buf.unsafe_pointer(), input_shape
+    )
     var d_output_buf = ctx.enqueue_create_buffer[dtype](
         Int(output_shape.product())
     )
-    var d_output = NDBuffer[dtype, rank](d_output_buf.ptr, output_shape)
+    var d_output = NDBuffer[dtype, rank](
+        d_output_buf.unsafe_pointer(), output_shape
+    )
 
     # Copy to device
     ctx.enqueue_copy_to_device(d_input_buf, h_input.data)

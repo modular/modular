@@ -535,20 +535,20 @@ fn test_repack_Q4_0_for_sm8x(
     )
 
     var gguf_b_tensor = LayoutTensor[DType.uint8, gguf_b_layout,](
-        gguf_b_device.buffer.ptr,
+        gguf_b_device.buffer.unsafe_pointer(),
         RuntimeLayout[gguf_b_layout].row_major(
             gguf_b_device.tensor.dynamic_shape
         ),
     )
     var repacked_b_tensor = LayoutTensor[DType.uint8, repacked_b_layout,](
-        repacked_b_device.buffer.ptr,
+        repacked_b_device.buffer.unsafe_pointer(),
         RuntimeLayout[repacked_b_layout](),
     )
     var repacked_dequan_tensor = LayoutTensor[
         DType.bfloat16,
         repack_dequan_layout,
     ](
-        repacked_dequan_device.buffer.ptr,
+        repacked_dequan_device.buffer.unsafe_pointer(),
         RuntimeLayout[repack_dequan_layout].row_major(
             repacked_dequan_device.tensor.dynamic_shape
         ),
@@ -699,11 +699,11 @@ fn test_quantized[
     alias b_ref_layout = Layout.row_major[b_device_ref.rank](b_device_ref.shape)
 
     var b_tensor = LayoutTensor[type, b_layout,](
-        b_device.buffer.ptr,
+        b_device.buffer.unsafe_pointer(),
         RuntimeLayout[b_layout].row_major(b_device.tensor.dynamic_shape),
     )
     var b_ref_tensor = LayoutTensor[a_type, b_ref_layout,](
-        b_device_ref.buffer.ptr,
+        b_device_ref.buffer.unsafe_pointer(),
         RuntimeLayout[b_ref_layout].row_major(
             b_device_ref.tensor.dynamic_shape
         ),

@@ -34,8 +34,8 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
 
     ctx.enqueue_copy_to_device(in_device, in_host.data)
 
-    var in_buffer = NDBuffer[type, 2](in_device.ptr, Index(2, 8))
-    var out_buffer = NDBuffer[type, 2](out_device.ptr, Index(2, 8))
+    var in_buffer = NDBuffer[type, 2](in_device.unsafe_pointer(), Index(2, 8))
+    var out_buffer = NDBuffer[type, 2](out_device.unsafe_pointer(), Index(2, 8))
 
     @always_inline
     @__copy_capture(in_buffer, out_buffer)
@@ -100,8 +100,8 @@ fn run_elementwise_uneven_simd[type: DType](ctx: DeviceContext) raises:
 
     ctx.enqueue_copy_to_device(in_device, in_host.data)
 
-    var in_buffer = NDBuffer[type, 2](in_device.ptr, Index(3, 3))
-    var out_buffer = NDBuffer[type, 2](out_device.ptr, Index(3, 3))
+    var in_buffer = NDBuffer[type, 2](in_device.unsafe_pointer(), Index(3, 3))
+    var out_buffer = NDBuffer[type, 2](out_device.unsafe_pointer(), Index(3, 3))
 
     @always_inline
     @__copy_capture(in_buffer, out_buffer)
@@ -152,9 +152,11 @@ fn run_elementwise_transpose_copy[type: DType](ctx: DeviceContext) raises:
     ctx.enqueue_copy_to_device(in_device, in_host.data)
 
     var in_buffer_transposed = NDBuffer[type, 3](
-        in_device.ptr, Index(4, 2, 5), Index(5, 20, 1)
+        in_device.unsafe_pointer(), Index(4, 2, 5), Index(5, 20, 1)
     )
-    var out_buffer = NDBuffer[type, 3](out_device.ptr, Index(4, 2, 5))
+    var out_buffer = NDBuffer[type, 3](
+        out_device.unsafe_pointer(), Index(4, 2, 5)
+    )
 
     @always_inline
     @__copy_capture(in_buffer_transposed, out_buffer)

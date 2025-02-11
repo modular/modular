@@ -48,9 +48,9 @@ fn run_layer_norm_block[
     var data_shape = Index(rows, cols)
     var param_shape = Index(cols)
 
-    var data_buf = NDBuffer[type, 2](data_d.ptr, data_shape)
-    var gamma = NDBuffer[type, 1](gamma_d.ptr, param_shape)
-    var beta = NDBuffer[type, 1](beta_d.ptr, param_shape)
+    var data_buf = NDBuffer[type, 2](data_d.unsafe_pointer(), data_shape)
+    var gamma = NDBuffer[type, 1](gamma_d.unsafe_pointer(), param_shape)
+    var beta = NDBuffer[type, 1](beta_d.unsafe_pointer(), param_shape)
     var epsilon = Scalar[type]()
 
     ctx.enqueue_copy_to_device(data_d, data_h)
@@ -147,9 +147,9 @@ fn run_layer_norm_gpu[
 
     var param_shape = Index(cols)
 
-    var data_buf = NDBuffer[type, rank](data_d.ptr, shape)
-    var gamma = NDBuffer[type, 1](gamma_d.ptr, param_shape)
-    var beta = NDBuffer[type, 1](beta_d.ptr, param_shape)
+    var data_buf = NDBuffer[type, rank](data_d.unsafe_pointer(), shape)
+    var gamma = NDBuffer[type, 1](gamma_d.unsafe_pointer(), param_shape)
+    var beta = NDBuffer[type, 1](beta_d.unsafe_pointer(), param_shape)
     var epsilon = Scalar[type]()
 
     ctx.enqueue_copy_to_device(data_d, data_h)
@@ -225,9 +225,9 @@ fn run_layer_norm_warp_tiling[
     var data_shape = Index(rows, cols)
     var param_shape = Index(cols)
 
-    var data_buf = NDBuffer[type, 2](data_d.ptr, data_shape)
-    var gamma = NDBuffer[type, 1](gamma_d.ptr, param_shape)
-    var beta = NDBuffer[type, 1](beta_d.ptr, param_shape)
+    var data_buf = NDBuffer[type, 2](data_d.unsafe_pointer(), data_shape)
+    var gamma = NDBuffer[type, 1](gamma_d.unsafe_pointer(), param_shape)
+    var beta = NDBuffer[type, 1](beta_d.unsafe_pointer(), param_shape)
     var epsilon = Scalar[type]()
 
     ctx.enqueue_copy_to_device(data_d, data_h)

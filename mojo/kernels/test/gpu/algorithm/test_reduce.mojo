@@ -55,9 +55,15 @@ fn fused_reduce_inner_test[
     var vec_device = ctx.enqueue_create_buffer[type](in_size)
     var res_device0 = ctx.enqueue_create_buffer[type](out_size)
     var res_device1 = ctx.enqueue_create_buffer[type](out_size)
-    var input_buf_device = NDBuffer[type, rank](vec_device.ptr, shape)
-    var output_buf_device0 = NDBuffer[type, rank](res_device0.ptr, out_shape)
-    var output_buf_device1 = NDBuffer[type, rank](res_device1.ptr, out_shape)
+    var input_buf_device = NDBuffer[type, rank](
+        vec_device.unsafe_pointer(), shape
+    )
+    var output_buf_device0 = NDBuffer[type, rank](
+        res_device0.unsafe_pointer(), out_shape
+    )
+    var output_buf_device1 = NDBuffer[type, rank](
+        res_device1.unsafe_pointer(), out_shape
+    )
 
     ctx.enqueue_copy_to_device(vec_device, vec_host)
 
@@ -143,8 +149,12 @@ fn reduce_inner_test[
 
     var vec_device = ctx.enqueue_create_buffer[type](in_size)
     var res_device = ctx.enqueue_create_buffer[type](out_size)
-    var input_buf_device = NDBuffer[type, rank](vec_device.ptr, shape)
-    var output_buf_device = NDBuffer[type, rank](res_device.ptr, out_shape)
+    var input_buf_device = NDBuffer[type, rank](
+        vec_device.unsafe_pointer(), shape
+    )
+    var output_buf_device = NDBuffer[type, rank](
+        res_device.unsafe_pointer(), out_shape
+    )
 
     ctx.enqueue_copy_to_device(vec_device, vec_host)
 

@@ -72,8 +72,8 @@ fn run_vector_reduction[
     var a_device = ctx.enqueue_create_buffer[type](PN)
     var c_device = ctx.enqueue_create_buffer[type](N)
     var lock_dev = ctx.enqueue_create_buffer[type](1)
-    var a_buf = NDBuffer[type, 1](a_device.ptr, Index(PN))
-    var c_buf = NDBuffer[type, 1](c_device.ptr, Index(N))
+    var a_buf = NDBuffer[type, 1](a_device.unsafe_pointer(), Index(PN))
+    var c_buf = NDBuffer[type, 1](c_device.unsafe_pointer(), Index(N))
 
     ctx.enqueue_memset(lock_dev, 0)
     ctx.enqueue_copy_to_device(a_device, a_host)
@@ -88,7 +88,7 @@ fn run_vector_reduction[
         func_red_vec,
         c_buf.data,
         a_buf.data,
-        lock_dev.ptr,
+        lock_dev.unsafe_pointer(),
         grid_dim=num_parts,
         block_dim=N,
     )
@@ -168,8 +168,8 @@ fn run_matrix_reduction[
     var a_device = ctx.enqueue_create_buffer[type](PX)
     var c_device = ctx.enqueue_create_buffer[type](M * N)
     var lock_dev = ctx.enqueue_create_buffer[type](1)
-    var a_buf = NDBuffer[type, 1](a_device.ptr, Index(PX))
-    var c_buf = NDBuffer[type, 1](c_device.ptr, Index(M * N))
+    var a_buf = NDBuffer[type, 1](a_device.unsafe_pointer(), Index(PX))
+    var c_buf = NDBuffer[type, 1](c_device.unsafe_pointer(), Index(M * N))
 
     ctx.enqueue_memset(lock_dev, 0)
     ctx.enqueue_copy_to_device(a_device, a_host)
@@ -185,7 +185,7 @@ fn run_matrix_reduction[
         func_red,
         c_buf.data,
         a_buf.data,
-        lock_dev.ptr,
+        lock_dev.unsafe_pointer(),
         grid_dim=num_parts,
         block_dim=block_size,
     )

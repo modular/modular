@@ -105,9 +105,9 @@ fn test_conv_cudnn[
         filter_type,
         output_type,
     ](
-        input_dev.ptr,
-        filter_dev.ptr,
-        output_ref_dev.ptr,
+        input_dev.unsafe_pointer(),
+        filter_dev.unsafe_pointer(),
+        output_ref_dev.unsafe_pointer(),
         stride_dim,
         dilation_dim,
         pad_dim,
@@ -130,9 +130,9 @@ fn test_conv_cudnn[
         filter_type,
         output_type,
     ](
-        input_dev.ptr,
-        filter_dev.ptr,
-        output_dev.ptr,
+        input_dev.unsafe_pointer(),
+        filter_dev.unsafe_pointer(),
+        output_dev.unsafe_pointer(),
         stride_dim,
         dilation_dim,
         pad_dim,
@@ -231,9 +231,15 @@ fn test_conv_gpu[
     var filter_dev = ctx.enqueue_create_buffer[type](filter_dim_flattened)
     var output_dev = ctx.enqueue_create_buffer[type](output_dim_flattened)
 
-    var input_buf = NDBuffer[type, 4, input_dim](input_dev.ptr, input_dim)
-    var filter_buf = NDBuffer[type, 4, filter_dim](filter_dev.ptr, filter_dim)
-    var output_buf = NDBuffer[type, 4, output_dim](output_dev.ptr, output_dim)
+    var input_buf = NDBuffer[type, 4, input_dim](
+        input_dev.unsafe_pointer(), input_dim
+    )
+    var filter_buf = NDBuffer[type, 4, filter_dim](
+        filter_dev.unsafe_pointer(), filter_dim
+    )
+    var output_buf = NDBuffer[type, 4, output_dim](
+        output_dev.unsafe_pointer(), output_dim
+    )
 
     # Reference: naive conv
     Naive2dConvolution[

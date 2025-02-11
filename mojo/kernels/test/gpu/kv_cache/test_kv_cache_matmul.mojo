@@ -71,7 +71,7 @@ def execute_fused_qkv_matmul[
         hidden_state_device.buffer, hidden_state_host.tensor.data
     )
     hidden_state_device_2d = NDBuffer[type, 2, DimList(Dim(), hidden_size)](
-        hidden_state_device.buffer.ptr,
+        hidden_state_device.buffer.unsafe_pointer(),
         IndexList[2](batch_size * prompt_len, hidden_size),
     )
 
@@ -148,7 +148,7 @@ def execute_fused_qkv_matmul[
         valid_lengths_host_ptr, Index(batch_size)
     )
     var valid_lengths = NDBuffer[DType.uint32, 1](
-        valid_lengths_dev.ptr, Index(batch_size)
+        valid_lengths_dev.unsafe_pointer(), Index(batch_size)
     )
 
     k_block_host = HostNDBuffer[type, 5,](

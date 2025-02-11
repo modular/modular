@@ -75,16 +75,16 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     var input_3_device = ctx.enqueue_create_buffer[dtype](total_size_inp)
 
     var input_0_device_ref = NDBuffer[dtype, rank](
-        input_0_device.ptr, input_shape
+        input_0_device.unsafe_pointer(), input_shape
     )
     var input_1_device_ref = NDBuffer[dtype, rank](
-        input_1_device.ptr, input_shape
+        input_1_device.unsafe_pointer(), input_shape
     )
     var input_2_device_ref = NDBuffer[dtype, rank](
-        input_2_device.ptr, input_shape
+        input_2_device.unsafe_pointer(), input_shape
     )
     var input_3_device_ref = NDBuffer[dtype, rank](
-        input_3_device.ptr, input_shape
+        input_3_device.unsafe_pointer(), input_shape
     )
 
     ctx.enqueue_copy_to_device(input_0_device, input_0_host.data)
@@ -95,7 +95,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     var total_size_outp: Int = output_shape.product[rank]().get()
     var output_device = ctx.enqueue_create_buffer[dtype](total_size_outp)
     var output_device_ref = NDBuffer[dtype, rank](
-        output_device.ptr, output_shape
+        output_device.unsafe_pointer(), output_shape
     )
 
     alias B_SIZE = 32

@@ -74,9 +74,9 @@ fn test_pad_constant_gpu[
     var constant = Scalar[type](5)
 
     pad_constant(
-        out_device.ptr,
+        out_device.unsafe_pointer(),
         output_shape,
-        in_device.ptr,
+        in_device.unsafe_pointer(),
         input_shape,
         paddings.data,
         constant,
