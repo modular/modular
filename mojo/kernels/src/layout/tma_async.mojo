@@ -142,6 +142,17 @@ struct TMABarrier(CollectionElement):
         )
 
     @always_inline
+    fn arrive_cluster(self, cta_id: UInt32, count: UInt32 = 1):
+        alias asm = """{
+            .reg .b32 remAddr32;
+            mapa.shared::cluster.u32  remAddr32, $0, $1;
+            mbarrier.arrive.shared::cluster.b64  _, [remAddr32], $2;
+        }"""
+        inlined_assembly[asm, NoneType, constraints="r,r,r"](
+            Int32(Int(self.mbar)), cta_id, count
+        )
+
+    @always_inline
     fn arrive(self) -> Int:
         return mbarrier_arrive(self.mbar)
 
