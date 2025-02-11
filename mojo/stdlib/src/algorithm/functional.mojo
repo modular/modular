@@ -793,14 +793,10 @@ fn unswitch[
           path.
     """
 
-    @parameter
-    fn raising_func[sw: Bool]() raises:
-        switched_func[sw]()
-
-    try:
-        return unswitch[raising_func](dynamic_switch)
-    except err:
-        return abort(err)
+    if dynamic_switch:
+        switched_func[True]()
+    else:
+        switched_func[False]()
 
 
 @always_inline
