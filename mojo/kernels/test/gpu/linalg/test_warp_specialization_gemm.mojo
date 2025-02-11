@@ -13,6 +13,7 @@ import linalg.vendor_blas
 from buffer.dimlist import Dim, DimList, _make_tuple
 from gpu import WARP_SIZE, barrier
 from gpu.host import DeviceContext, FuncAttribute
+from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.id import block_dim, block_idx, thread_idx
 from gpu.memory import AddressSpace, external_memory
@@ -43,6 +44,7 @@ from layout.tensor_core_async import (
     _lhs_descriptor,
     _rhs_descriptor,
     tile_layout_k_major,
+    tile_layout_mn_major,
 )
 from layout.tma_async import (
     PipelineState,
@@ -76,6 +78,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     b_desc_layout: Layout,
     a_smem_layout: Layout,
     b_smem_layout: Layout,
+    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     transpose_b: Bool = True,
     num_threads: Int = 128,
     pipeline_stages: Int = 7,
@@ -84,8 +88,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
     c: LayoutTensor[c_type, c_layout],
 ):
-    constrained[transpose_b, "Only support transposed B in layout"]()
-
     alias K = b_layout.shape[1].value()
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
@@ -104,7 +106,13 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     alias num_consumer = (num_threads // 128) - 1
 
     wgmma_op = TensorCoreAsync[
-        accum_type, a_type, b_type, wgmma_shape, transpose_b=transpose_b
+        accum_type,
+        a_type,
+        b_type,
+        wgmma_shape,
+        a_swizzle=a_swizzle,
+        b_swizzle=b_swizzle,
+        transpose_b=transpose_b,
     ]()
 
     var smem = external_memory[
@@ -303,12 +311,26 @@ def test_warp_specialize_gemm[
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
+    alias a_swizzle = TensorMapSwizzle.SWIZZLE_128B
+    alias b_swizzle = TensorMapSwizzle.SWIZZLE_128B
 
-    alias a_smem_layout = tile_layout_k_major[a_type, BM, BK]()
-    alias b_smem_layout = tile_layout_k_major[b_type, BN, BK]()
+    alias a_smem_layout = tile_layout_k_major[a_type, BM, BK, a_swizzle]()
+    alias b_smem_layout = tile_layout_k_major[
+        b_type, BN, BK, swizzle_mode=b_swizzle
+    ]() if transpose_b else tile_layout_mn_major[
+        b_type, BN, BK, swizzle_mode=b_swizzle
+    ]()
 
-    a_tma_op = create_tma_tile[a_type, 2, Index(BM, BK)](ctx, a)
-    b_tma_op = create_tma_tile[b_type, 2, Index(BN, BK)](ctx, b)
+    a_tma_op = create_tma_tile[
+        a_type, 2, Index(BM, BK), swizzle_mode=a_swizzle
+    ](ctx, a)
+    b_tma_op = create_tma_tile[
+        b_type,
+        2,
+        Index(BN, BK) if transpose_b else Index(BK, BN),
+        is_k_major=transpose_b,
+        swizzle_mode=b_swizzle,
+    ](ctx, b)
 
     # 1 warp group to TMA and 1 warp group to WGMMA
     alias num_wgmma = 1
@@ -336,7 +358,9 @@ def test_warp_specialize_gemm[
         __type_of(b_tma_op).desc_layout,
         a_smem_layout,
         b_smem_layout,
-        transpose_b=True,
+        a_swizzle=a_swizzle,
+        b_swizzle=b_swizzle,
+        transpose_b=transpose_b,
         num_threads=num_threads,
         pipeline_stages=pipeline_stages,
     ]
