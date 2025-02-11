@@ -3,6 +3,9 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+
+# UNSUPPORTED: asan
+
 # RUN: %mojo-no-debug-no-assert %s -t | FileCheck %s
 # CHECK: Benchmark results
 
