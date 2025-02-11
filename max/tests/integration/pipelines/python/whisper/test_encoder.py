@@ -13,12 +13,15 @@ from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, Weight, ops
-from max.pipelines.nn import Conv1D
+from max.pipelines.nn import Conv1D, Embedding, Linear, LPLayerNorm, Sequential
+from max.pipelines.whisper.encoder import (
+    WhisperEncoder,
+    WhisperEncoderLayer,
+    WhisperSdpaAttention,
+)
 from transformers import (
     AutoModelForSpeechSeq2Seq,
     AutoProcessor,
-    WhisperForConditionalGeneration,
-    WhisperProcessor,
 )
 
 ACCURACY_RTOL = 1e-4
@@ -26,8 +29,13 @@ ACCURACY_ATOL = 1e-6
 
 
 @pytest.fixture
-def audio() -> tuple[list[np.ndarray], int]:
-    """Returns 2 audio files in a tensor of shape = (batch_size=2, )"""
+def model_id():
+    return "openai/whisper-large-v3"
+
+
+@pytest.fixture
+def torch_inputs(model_id):
+    """Returns 2 audio files in a tensor of shape = (batch_size=2, n_features=128, seq_length=3000)"""
     ds = load_dataset(
         "hf-internal-testing/librispeech_asr_dummy", "clean", split="validation"
     )
@@ -35,125 +43,309 @@ def audio() -> tuple[list[np.ndarray], int]:
         ds[0]["audio"]["array"],  # type: ignore
         ds[1]["audio"]["array"],  # type: ignore
     ]
-    print(ds[0]["audio"]["sampling_rate"])  # type: ignore
-    print(ds[1]["audio"]["sampling_rate"])  # type: ignore
-    # assert ds[0]["audio"]["sampling_rate"] == ds[1]["audio"]["sampling_rate"] # type: ignore
-    return audio_samples, ds[0]["audio"]["sampling_rate"]  # type: ignore
-
-
-@pytest.fixture
-def model_and_processor() -> tuple[
-    WhisperForConditionalGeneration, WhisperProcessor
-]:
-    model_id = "openai/whisper-large-v3"
+    print("sampling_rate 1 ", ds[0]["audio"]["sampling_rate"])  # type: ignore
+    print("sampling_rate 2 ", ds[1]["audio"]["sampling_rate"])  # type: ignore
 
     processor = AutoProcessor.from_pretrained(model_id)
-    model = AutoModelForSpeechSeq2Seq.from_pretrained(model_id)
-    return model, processor
-
-
-@pytest.fixture
-def graph_api_whisper_encoder(weights_registry):
-    conv1 = Conv1D(
-        filter=Weight(
-            "conv1",
-            DType.from_numpy(weights_registry["conv1"].numpy().dtype),
-            shape=weights_registry["conv1"].shape,
-        ),
-        stride=1,
-        padding=1,
-    )
-    conv2 = Conv1D(
-        filter=Weight(
-            "conv2",
-            DType.from_numpy(weights_registry["conv2"].numpy().dtype),
-            shape=weights_registry["conv2"].shape,
-        ),
-        stride=2,
-        padding=1,
-    )
-
-
-@pytest.mark.skip(
-    reason="Initial test components are added but the layers are not implemented yet."
-)
-def test_whisper_encoder(audio, model_and_processor):
-    audio_samples, sampling_rate = audio
-
-    torch_model, processor = model_and_processor
-
-    # (batch_size, feature_size, sequence_length) [2, 128, 3000]
-    torch_input_features = processor(
-        audio_samples, sampling_rate=sampling_rate, return_tensors="pt"
-    ).input_features
-
-    # [2, 128, 3000]
-    torch_input_features = torch_model.model._mask_input_features(
-        torch_input_features, attention_mask=None
-    )
-
-    # encoder output shape = torch.Size([1, 1500, 1280])
-
-
-@pytest.mark.skip(
-    reason="Initial test components are added but the layers are not implemented yet."
-)
-def test_encoder_stem():
-    model_id = "openai/whisper-large-v3"
-
-    processor = AutoProcessor.from_pretrained(model_id)
-    model = AutoModelForSpeechSeq2Seq.from_pretrained(model_id)
-
-    sampling_rate = processor.feature_extractor.sampling_rate
-    inputs = np.load("/home/ubuntu/modular/whisper_sample2.npy")
-
     inputs = processor(
-        inputs,
+        audio_samples,
         return_attention_mask=True,
-        sampling_rate=sampling_rate,
+        sampling_rate=ds[0]["audio"]["sampling_rate"],  # type: ignore
         return_tensors="pt",
     )
+
     input_features = inputs["input_features"]
+    attention_mask = inputs["attention_mask"]
+    return input_features
 
-    inputs_embeds = torch.nn.functional.gelu(
-        model.model.encoder.conv1(input_features)
-    )
-    inputs_embeds = torch.nn.functional.gelu(
-        model.model.encoder.conv2(inputs_embeds)
-    )
 
-    inputs_embeds = torch.permute(inputs_embeds, (0, 2, 1))
+@pytest.fixture
+def graph_api_inputs(torch_inputs):
+    """Returns 2 audio files in a tensor of shape = (batch_size=2, seq_length=3000, n_features=128)"""
+    return torch.permute(torch_inputs, (0, 2, 1)).contiguous()
 
-    # graph_api
-    graph_api_input_features = torch.permute(
-        input_features, (0, 2, 1)
-    ).contiguous()
 
-    weights_registry = {}
-    weights_registry["conv1"] = torch.permute(
-        model.model.encoder.conv1.weight.data, (2, 1, 0)
-    ).contiguous()  # [kernel_size, in_channels, out_channels]
-    weights_registry["conv2"] = torch.permute(
-        model.model.encoder.conv2.weight.data, (2, 1, 0)
-    ).contiguous()  # [kernel_size, in_channels, out_channels]
-
+def graph_api_whisper_encoder(weights_registry, model):
     graph_api_conv1 = Conv1D(
         filter=Weight(
-            "conv1",
-            DType.from_numpy(weights_registry["conv1"].numpy().dtype),
-            shape=weights_registry["conv1"].shape,
+            "conv1_weight",
+            DType.from_numpy(weights_registry["conv1_weight"].numpy().dtype),
+            shape=weights_registry["conv1_weight"].shape,
         ),
         stride=1,
         padding=1,
     )
     graph_api_conv2 = Conv1D(
         filter=Weight(
-            "conv2",
-            DType.from_numpy(weights_registry["conv2"].numpy().dtype),
-            shape=weights_registry["conv2"].shape,
+            "conv2_weight",
+            DType.from_numpy(weights_registry["conv2_weight"].numpy().dtype),
+            shape=weights_registry["conv2_weight"].shape,
         ),
         stride=2,
         padding=1,
+    )
+    graph_api_embed_positions = Embedding(
+        Weight(
+            "embed_positions",
+            DType.from_numpy(weights_registry["embed_positions"].numpy().dtype),
+            shape=weights_registry["embed_positions"].shape,
+        ),
+    )
+    layers = [
+        WhisperEncoderLayer(
+            attention=WhisperSdpaAttention(
+                n_heads=model.model.encoder.layers[i].self_attn.num_heads,
+                head_dim=model.model.encoder.layers[i].self_attn.head_dim,
+                wq=Linear(
+                    Weight(
+                        "layer{i}_aelf_att_wq",
+                        DType.from_numpy(
+                            weights_registry["layer{i}_aelf_att_wq"]
+                            .numpy()
+                            .dtype
+                        ),
+                        shape=weights_registry["layer{i}_aelf_att_wq"].shape,
+                    ),
+                    bias=Weight(
+                        "layer{i}_aelf_att_wq_bias",
+                        DType.from_numpy(
+                            weights_registry["layer{i}_aelf_att_wq_bias"]
+                            .numpy()
+                            .dtype
+                        ),
+                        shape=weights_registry[
+                            "layer{i}_aelf_att_wq_bias"
+                        ].shape,
+                    ),
+                ),
+                wk=Linear(
+                    Weight(
+                        "layer{i}_aelf_att_wk",
+                        DType.from_numpy(
+                            weights_registry["layer{i}_aelf_att_wk"]
+                            .numpy()
+                            .dtype
+                        ),
+                        shape=weights_registry["layer{i}_aelf_att_wk"].shape,
+                    )
+                ),
+                wv=Linear(
+                    Weight(
+                        "layer{i}_aelf_att_wv",
+                        DType.from_numpy(
+                            weights_registry["layer{i}_aelf_att_wv"]
+                            .numpy()
+                            .dtype
+                        ),
+                        shape=weights_registry["layer{i}_aelf_att_wv"].shape,
+                    ),
+                    bias=Weight(
+                        "layer{i}_aelf_att_wv_bias",
+                        DType.from_numpy(
+                            weights_registry["layer{i}_aelf_att_wv_bias"]
+                            .numpy()
+                            .dtype
+                        ),
+                        shape=weights_registry[
+                            "layer{i}_aelf_att_wv_bias"
+                        ].shape,
+                    ),
+                ),
+                wo=Linear(
+                    Weight(
+                        "layer{i}_aelf_att_wo",
+                        DType.from_numpy(
+                            weights_registry["layer{i}_aelf_att_wo"]
+                            .numpy()
+                            .dtype
+                        ),
+                        shape=weights_registry["layer{i}_aelf_att_wo"].shape,
+                    ),
+                    bias=Weight(
+                        "layer{i}_aelf_att_wo_bias",
+                        DType.from_numpy(
+                            weights_registry["layer{i}_aelf_att_wo_bias"]
+                            .numpy()
+                            .dtype
+                        ),
+                        shape=weights_registry[
+                            "layer{i}_aelf_att_wo_bias"
+                        ].shape,
+                    ),
+                ),
+            ),
+            mlp=Sequential(
+                layers=[
+                    Linear(
+                        Weight(
+                            "layer{i}_fc1",
+                            DType.from_numpy(
+                                weights_registry["layer{i}_fc1"].numpy().dtype
+                            ),
+                            shape=weights_registry["layer{i}_fc1"].shape,
+                        ),
+                        bias=Weight(
+                            "layer{i}_fc1_bias",
+                            DType.from_numpy(
+                                weights_registry["layer{i}_fc1_bias"]
+                                .numpy()
+                                .dtype
+                            ),
+                            shape=weights_registry["layer{i}_fc1_bias"].shape,
+                        ),
+                    ),
+                    ops.gelu,
+                    Linear(
+                        Weight(
+                            "layer{i}_fc2",
+                            DType.from_numpy(
+                                weights_registry["layer{i}_fc2"].numpy().dtype
+                            ),
+                            shape=weights_registry["layer{i}_fc2"].shape,
+                        ),
+                        bias=Weight(
+                            "layer{i}_fc1_bias",
+                            DType.from_numpy(
+                                weights_registry["layer{i}_fc2_bias"]
+                                .numpy()
+                                .dtype
+                            ),
+                            shape=weights_registry["layer{i}_fc2_bias"].shape,
+                        ),
+                    ),
+                ]
+            ),
+            attention_norm=LPLayerNorm(
+                weight=Weight(
+                    "layer{i}_attention_norm",
+                    DType.from_numpy(
+                        weights_registry["layer{i}_attention_norm"]
+                        .numpy()
+                        .dtype
+                    ),
+                    shape=weights_registry["layer{i}_attention_norm"].shape,
+                ),
+                eps=1e-5,
+                bias=Weight(
+                    "layer{i}_attention_norm_bias",
+                    DType.from_numpy(
+                        weights_registry["layer{i}_attention_norm_bias"]
+                        .numpy()
+                        .dtype
+                    ),
+                    shape=weights_registry[
+                        "layer{i}_attention_norm_bias"
+                    ].shape,
+                ),
+            ),
+            mlp_norm=LPLayerNorm(
+                weight=Weight(
+                    "layer{i}_mlp_norm",
+                    DType.from_numpy(
+                        weights_registry["layer{i}_mlp_norm"].numpy().dtype
+                    ),
+                    shape=weights_registry["layer{i}_mlp_norm"].shape,
+                ),
+                eps=1e-5,
+                bias=Weight(
+                    "layer{i}_mlp_norm_bias",
+                    DType.from_numpy(
+                        weights_registry["layer{i}_mlp_norm_bias"].numpy().dtype
+                    ),
+                    shape=weights_registry["layer{i}_mlp_norm_bias"].shape,
+                ),
+            ),
+        )
+        for i in range(len(model.model.encoder.layers))
+    ]
+    norm = LPLayerNorm(
+        weight=Weight(
+            "final_norm",
+            DType.from_numpy(weights_registry["final_norm"].numpy().dtype),
+            shape=weights_registry["final_norm"].shape,
+        ),
+        eps=1e-5,
+        bias=Weight(
+            "final_norm_bias",
+            DType.from_numpy(weights_registry["final_norm_bias"].numpy().dtype),
+            shape=weights_registry["final_norm_bias"].shape,
+        ),
+    )
+    return WhisperEncoder(
+        graph_api_conv1,
+        graph_api_conv2,
+        graph_api_embed_positions,
+        layers,
+        norm,
+    )
+
+
+@pytest.mark.skip(
+    reason="Initial test components are added but the layers are not implemented yet."
+)
+def test_encoder_stem(torch_inputs, graph_api_inputs, model_id):
+    model = AutoModelForSpeechSeq2Seq.from_pretrained(model_id)
+
+    # inputs = np.load("/home/ubuntu/modular/whisper_sample2.npy")
+
+    inputs_embeds = torch.nn.functional.gelu(
+        model.model.encoder.conv1(torch_inputs)
+    )
+    inputs_embeds = torch.nn.functional.gelu(
+        model.model.encoder.conv2(inputs_embeds)
+    )
+
+    torch_inputs_embeds = torch.permute(inputs_embeds, (0, 2, 1))
+    embed_pos = (
+        model.model.encoder.embed_positions.weight
+    )  # shape = [1500, 1280]
+    torch_hidden_states = (
+        torch_inputs_embeds + embed_pos
+    )  # shape = [2, 1500, 1280]
+
+    # graph_api weights
+    weights_registry = {}
+    weights_registry["conv1_weight"] = torch.permute(
+        model.model.encoder.conv1.weight.data, (2, 1, 0)
+    ).contiguous()  # [kernel_size, in_channels, out_channels]
+    weights_registry["conv2_weight"] = torch.permute(
+        model.model.encoder.conv2.weight.data, (2, 1, 0)
+    ).contiguous()  # [kernel_size, in_channels, out_channels]
+    weights_registry["conv1_bias"] = (
+        model.model.encoder.conv1.bias.data.contiguous()
+    )  # [out_channels]
+    weights_registry["conv2_bias"] = (
+        model.model.encoder.conv2.bias.data.contiguous()
+    )  # [out_channels]
+    weights_registry["embed_positions"] = (
+        model.model.encoder.embed_positions.weight.data
+    )  # [out_channels]
+
+    graph_api_conv1 = Conv1D(
+        filter=Weight(
+            "conv1_weight",
+            DType.from_numpy(weights_registry["conv1_weight"].numpy().dtype),
+            shape=weights_registry["conv1_weight"].shape,
+        ),
+        stride=1,
+        padding=1,
+    )
+    graph_api_conv2 = Conv1D(
+        filter=Weight(
+            "conv2_weight",
+            DType.from_numpy(weights_registry["conv2_weight"].numpy().dtype),
+            shape=weights_registry["conv2_weight"].shape,
+        ),
+        stride=2,
+        padding=1,
+    )
+
+    graph_api_embed_positions = Embedding(
+        Weight(
+            "embed_positions",
+            DType.from_numpy(weights_registry["embed_positions"].numpy().dtype),
+            shape=weights_registry["embed_positions"].shape,
+        ),
     )
 
     session = InferenceSession()
@@ -161,8 +353,8 @@ def test_encoder_stem():
         name="stem",
         input_types=(
             TensorType(
-                DType.from_numpy(graph_api_input_features.numpy().dtype),
-                graph_api_input_features.shape,
+                DType.from_numpy(graph_api_inputs.numpy().dtype),
+                graph_api_inputs.shape,
             ),
         ),
     ) as graph:
@@ -172,17 +364,103 @@ def test_encoder_stem():
         graph_api_inputs_embeds = ops.gelu(
             graph_api_conv2(graph_api_inputs_embeds)
         )
-        graph.output(graph_api_inputs_embeds)
+        graph_api_hidden_states = (
+            graph_api_inputs_embeds + graph_api_embed_positions.weights
+        )
+        graph.output(graph_api_hidden_states)
 
     compiled = session.load(graph, weights_registry=weights_registry)
 
-    graph_api_outputs = compiled.execute(graph_api_input_features)[0]
-    assert isinstance(graph_api_outputs, Tensor)
+    graph_api_hidden_states = compiled.execute(graph_api_inputs)[0]
+    assert isinstance(graph_api_hidden_states, Tensor)
 
     np.testing.assert_allclose(
-        graph_api_outputs.to_numpy(),
-        inputs_embeds.detach().numpy(),
+        graph_api_hidden_states.to_numpy(),
+        torch_hidden_states.detach().numpy(),
         equal_nan=True,
         rtol=ACCURACY_RTOL,
         atol=ACCURACY_ATOL,
     )
+
+
+def test_whisper_encoder(torch_inputs, graph_api_inputs, model_id):
+    model = AutoModelForSpeechSeq2Seq.from_pretrained(model_id)
+    # graph_api weights
+    weights_registry = {}
+    weights_registry["conv1_weight"] = torch.permute(
+        model.model.encoder.conv1.weight.data, (2, 1, 0)
+    ).contiguous()  # [kernel_size, in_channels, out_channels]
+    weights_registry["conv2_weight"] = torch.permute(
+        model.model.encoder.conv2.weight.data, (2, 1, 0)
+    ).contiguous()  # [kernel_size, in_channels, out_channels]
+    weights_registry["conv1_bias"] = (
+        model.model.encoder.conv1.bias.data.contiguous()
+    )  # [out_channels]
+    weights_registry["conv2_bias"] = (
+        model.model.encoder.conv2.bias.data.contiguous()
+    )  # [out_channels]
+    weights_registry["embed_positions"] = (
+        model.model.encoder.embed_positions.weight.data
+    )  # [out_channels]
+    weights_registry["embed_positions"] = (
+        model.model.encoder.embed_positions.weight.data
+    )
+    weights_registry["final_norm"] = model.model.encoder.layer_norm.weight.data
+    weights_registry["final_norm_bias"] = (
+        model.model.encoder.layer_norm.weight.data
+    )
+    for i in range(len(model.model.encoder.layers)):
+        weights_registry["layer{i}_mlp_norm"] = model.model.encoder.layers[
+            i
+        ].final_layer_norm.weight.data
+        weights_registry["layer{i}_mlp_norm_bias"] = model.model.encoder.layers[
+            i
+        ].final_layer_norm.bias.data
+        weights_registry["layer{i}_attention_norm"] = (
+            model.model.encoder.layers[i].self_attn_layer_norm.weight.data
+        )
+        weights_registry["layer{i}_attention_norm_bias"] = (
+            model.model.encoder.layers[i].self_attn_layer_norm.bias.data
+        )
+        weights_registry["layer{i}_fc1"] = model.model.encoder.layers[
+            i
+        ].fc1.weight.data
+        weights_registry["layer{i}_fc1_bias"] = model.model.encoder.layers[
+            i
+        ].fc1.bias.data
+        weights_registry["layer{i}_fc2"] = model.model.encoder.layers[
+            i
+        ].fc2.weight.data
+        weights_registry["layer{i}_fc2_bias"] = model.model.encoder.layers[
+            i
+        ].fc2.bias.data
+        weights_registry["layer{i}_aelf_att_wo"] = model.model.encoder.layers[
+            i
+        ].self_attn.out_proj.weight.data
+        weights_registry["layer{i}_aelf_att_wo_bias"] = (
+            model.model.encoder.layers[i].self_attn.out_proj.bias.data
+        )
+        weights_registry["layer{i}_aelf_att_wq"] = model.model.encoder.layers[
+            i
+        ].self_attn.q_proj.weight.data
+        weights_registry["layer{i}_aelf_att_wq_bias"] = (
+            model.model.encoder.layers[i].self_attn.q_proj.bias.data
+        )
+        weights_registry["layer{i}_aelf_att_wk"] = model.model.encoder.layers[
+            i
+        ].self_attn.k_proj.weight.data
+        weights_registry["layer{i}_aelf_att_wv"] = model.model.encoder.layers[
+            i
+        ].self_attn.v_proj.weight.data
+        weights_registry["layer{i}_aelf_att_wv_bias"] = (
+            model.model.encoder.layers[i].self_attn.v_proj.bias.data
+        )
+
+    graph_api_model = graph_api_whisper_encoder(weights_registry, model)
+
+
+@pytest.mark.skip(
+    reason="Initial test components are added but the layers are not implemented yet."
+)
+def test_whisper_attention(audio, model_and_processor):
+    pass

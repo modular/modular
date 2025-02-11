@@ -45,5 +45,6 @@ modular_py_test(
         requirement("torch"),
         requirement("transformers"),
         requirement("datasets"),
+        requirement("librosa"),
     ],
 )
