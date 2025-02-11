@@ -30,10 +30,6 @@ def lsp_test(name, pattern):
         tags = [
             "no-sandbox",  # The LSP server currently has issues with symlinks and non-canonical paths
         ],
-        target_compatible_with = select({
-            "//:asan": ["@platforms//:incompatible"],
-            "//conditions:default": [],
-        }),
         deps = [
             ":Support",
             "//Support:Globals",
