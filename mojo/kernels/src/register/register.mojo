@@ -39,3 +39,11 @@ fn uses_opaque():
     TODO(GEX-1145): Remove the need for this.
     """
     return
+
+
+fn enforce_io_param():
+    """
+    Decorator meant to ease the transition fo MangedTensorSlice needing to
+    specialize on the ioSpec param in kernel struct execute calls.
+    """
+    return
