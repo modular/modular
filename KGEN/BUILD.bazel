@@ -883,8 +883,6 @@ modular_cc_library(
         "//AsyncRT:CompilerSupport",
         "//Support:DebugInfoTransforms",
         "//Support:Telemetry",
-        "@llvm-project//lld:lld",
-        "@llvm-project//lld:lld-lib",
         "@llvm-project//llvm:OrcJIT",
     ],
 )
