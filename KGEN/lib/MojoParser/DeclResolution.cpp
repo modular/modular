@@ -209,6 +209,7 @@ LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
       "__mogg_intrinsic_attr",
       "register_internal",
       "uses_opaque",
+      "enforce_io_param",
 
       "register",
       "elementwise",
