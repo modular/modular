@@ -14,8 +14,13 @@
 from pathlib import Path
 from sys import argv
 
-from max.driver import Device, DeviceTensor, Tensor, cpu_device
-from max.driver._cuda import cuda_device
+from max.driver import (
+    Device,
+    DeviceTensor,
+    Tensor,
+    accelerator_device,
+    cpu_device,
+)
 from max.engine import InferenceSession, SessionOptions
 from max.graph import Graph, Symbol, TensorType, Type
 from max.tensor import TensorShape, TensorSpec
@@ -24,7 +29,7 @@ from testing import assert_equal, assert_true
 
 def test_model_device_tensor(
     cpu_dev: Device,
-    cuda_dev: Device,
+    gpu_dev: Device,
     session: InferenceSession,
     inputs_on_device: Bool,
 ):
@@ -35,7 +40,7 @@ def test_model_device_tensor(
     model = session.load(Path(model_path))
 
     # We have to first allocate the input tensor on CPU and fill it there.
-    # Attempting to read or write to a CUDA tensor will cause a segfault.
+    # Attempting to read or write to a GPU tensor will cause a segfault.
     cpu_input_tensor = Tensor[DType.float32, 1](
         TensorShape(
             5,
@@ -44,18 +49,18 @@ def test_model_device_tensor(
     for i in range(5):
         cpu_input_tensor[i] = 1.0
 
-    # We now copy the populated CPU tensor to the CUDA device.
+    # We now copy the populated CPU tensor to the GPU device.
     input = cpu_input_tensor^.to_device_tensor()
     if inputs_on_device:
-        input = input^.copy_to(cuda_dev)
+        input = input^.copy_to(gpu_dev)
 
     outputs = model.execute(input)
     assert_equal(len(outputs), 1)
 
-    # In order to examine the output tensor, we need to copy it from the CUDA
+    # In order to examine the output tensor, we need to copy it from the GPU
     # device to the CPU.
-    cuda_output_dt = outputs[0].take().to_device_tensor()
-    cpu_output_tensor = cuda_output_dt.copy_to(cpu_dev).to_tensor[
+    gpu_output_dt = outputs[0].take().to_device_tensor()
+    cpu_output_tensor = gpu_output_dt.copy_to(cpu_dev).to_tensor[
         DType.float32, 1
     ]()
 
@@ -68,7 +73,7 @@ def test_model_device_tensor(
 
 def test_device_graph(
     cpu_dev: Device,
-    cuda_dev: Device,
+    gpu_dev: Device,
     session: InferenceSession,
     inputs_on_device: Bool,
 ):
@@ -89,13 +94,13 @@ def test_device_graph(
 
     input = cpu_input_tensor^.to_device_tensor()
     if inputs_on_device:
-        input = input^.copy_to(cuda_dev)
+        input = input^.copy_to(gpu_dev)
 
     outputs = model.execute(input)
     assert_equal(len(outputs), 1)
 
-    cuda_output_dt = outputs[0].take().to_device_tensor()
-    cpu_output_tensor = cuda_output_dt.copy_to(cpu_dev).to_tensor[
+    gpu_output_dt = outputs[0].take().to_device_tensor()
+    cpu_output_tensor = gpu_output_dt.copy_to(cpu_dev).to_tensor[
         DType.float32, 1
     ]()
     assert_equal(cpu_output_tensor[0], 2.0)
@@ -103,12 +108,12 @@ def test_device_graph(
 
 def main():
     cpu_dev = cpu_device()
-    cuda_dev = cuda_device()
+    gpu_dev = accelerator_device()
     options = SessionOptions()
-    options._set_device(cuda_dev)
+    options._set_device(gpu_dev)
     session = InferenceSession(options)
 
-    test_model_device_tensor(cpu_dev, cuda_dev, session, inputs_on_device=True)
-    test_model_device_tensor(cpu_dev, cuda_dev, session, inputs_on_device=False)
-    test_device_graph(cpu_dev, cuda_dev, session, inputs_on_device=True)
-    test_device_graph(cpu_dev, cuda_dev, session, inputs_on_device=False)
+    test_model_device_tensor(cpu_dev, gpu_dev, session, inputs_on_device=True)
+    test_model_device_tensor(cpu_dev, gpu_dev, session, inputs_on_device=False)
+    test_device_graph(cpu_dev, gpu_dev, session, inputs_on_device=True)
+    test_device_graph(cpu_dev, gpu_dev, session, inputs_on_device=False)
