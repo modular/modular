@@ -563,12 +563,20 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
 
         // Print arithmetic functions using their mathematical form rather than
         // as dunder method calls.
-        static SmallDenseMap<StringRef, StringRef> arithmeticOpNames{
-            {"__add__", " + "},  {"__sub__", " - "}, {"__mul__", " * "},
-            {"__div__", " // "}, {"__mod__", " % "}, {"__truediv__", " / "},
+        static SmallDenseMap<StringRef, StringRef> binaryOpNames{
+            {"__add__", " + "},     {"__sub__", " - "},
+            {"__mul__", " * "},     {"__mod__", " % "},
+            {"__truediv__", " / "}, {"__floordiv__", " // "},
+            {"__xor__", " ^ "},     {"__and__", " & "},
+            {"__or__", " | "},      {"__lshift__", " << "},
+            {"__rshift__", " >> "}, {"__eq__", " == "},
+            {"__lt__", " < "},      {"__le__", " <= "},
+            {"__in__", " in "},     {"__ne__", " != "},
+            {"__gt__", " > "},      {"__ge__", " >= "},
+            {"__matmul__", " @ "},  {"__pow__", " ** "},
+            {"__is__", " is "},     {"__isnot__", " isnot "},
         };
-        if (auto it = arithmeticOpNames.find(name);
-            it != arithmeticOpNames.end())
+        if (auto it = binaryOpNames.find(name); it != binaryOpNames.end())
           return printOperands(operandsToPrint, /*separator=*/it->second);
 
         // If we can tell that this is a method call, print the receiver first.
