@@ -704,7 +704,9 @@ fn _topp_minp_sampling_gpu[
     var probs_buf = ctx.enqueue_create_buffer[type](
         input_shape.flattened_length()
     )
-    var input_probs = NDBuffer[type, rank](probs_buf.ptr, input_shape)
+    var input_probs = NDBuffer[type, rank](
+        probs_buf.unsafe_pointer(), input_shape
+    )
 
     _softmax_gpu[
         type, 1, rank, DimList.create_unknown[rank](), apply_temperature
@@ -717,11 +719,11 @@ fn _topp_minp_sampling_gpu[
     # materialize a vals buffer
     var max_vals_cache_buf = ctx.enqueue_create_buffer[type](Int(batch_size))
     var max_vals = NDBuffer[type, rank](
-        max_vals_cache_buf.ptr, DimList(batch_size)
+        max_vals_cache_buf.unsafe_pointer(), DimList(batch_size)
     )
     var skip_sort_buf = ctx.enqueue_create_buffer[DType.bool](Int(batch_size))
     var skip_sort = NDBuffer[DType.bool, rank](
-        skip_sort_buf.ptr, DimList(batch_size)
+        skip_sort_buf.unsafe_pointer(), DimList(batch_size)
     )
 
     var gpu_fn_top1 = ctx.compile_function[
@@ -751,19 +753,19 @@ fn _topp_minp_sampling_gpu[
         batch_size * vocab_size
     )
     var sorted_probs = NDBuffer[type, rank](
-        sorted_probs_buf.ptr, DimList(batch_size, vocab_size)
+        sorted_probs_buf.unsafe_pointer(), DimList(batch_size, vocab_size)
     )
     var input_ids_buf = ctx.enqueue_create_buffer[out_idx_type](
         batch_size * vocab_size
     )
     var input_ids = NDBuffer[out_idx_type, rank](
-        input_ids_buf.ptr, DimList(batch_size, vocab_size)
+        input_ids_buf.unsafe_pointer(), DimList(batch_size, vocab_size)
     )
     var sorted_ids_buf = ctx.enqueue_create_buffer[out_idx_type](
         batch_size * vocab_size
     )
     var sorted_ids = NDBuffer[out_idx_type, rank](
-        sorted_ids_buf.ptr, DimList(batch_size, vocab_size)
+        sorted_ids_buf.unsafe_pointer(), DimList(batch_size, vocab_size)
     )
 
     run_radix_sort_pairs_gpu[BLOCK_SIZE=BLOCK_SIZE](

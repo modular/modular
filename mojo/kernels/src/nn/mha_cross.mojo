@@ -277,7 +277,7 @@ fn mha_cross_gpu_naive[
     )
 
     # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-    var p_ptr = p_device.ptr
+    var p_ptr = p_device.unsafe_pointer()
     var p_buffer = NDBuffer[p_type, 3](
         p_ptr, Index(batch_size * num_heads, q_max_seq_len, num_keys)
     )

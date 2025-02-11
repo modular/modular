@@ -44,7 +44,9 @@ fn argmaxmin_gpu[
     var out_vals_buf = ctx.enqueue_create_buffer[type](
         out_vals_shape.flattened_length()
     )
-    var out_vals = NDBuffer[type, rank](out_vals_buf.ptr, out_vals_shape)
+    var out_vals = NDBuffer[type, rank](
+        out_vals_buf.unsafe_pointer(), out_vals_shape
+    )
 
     topk_gpu[sampling=False, largest=largest](
         ctx,
