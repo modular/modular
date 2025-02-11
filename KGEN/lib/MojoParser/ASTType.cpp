@@ -584,6 +584,33 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
       os << ']';
       return;
     default:
+      const char *binOp = nullptr;
+      switch (op.getOpcode()) {
+      case POC::Add:
+        binOp = " + ";
+        break;
+      case POC::Mul:
+        binOp = " * ";
+        break;
+      default:
+        break;
+      }
+      // Simple things that show up in integer param expressions.
+      if (binOp) {
+        os << '(';
+        llvm::interleave(
+            operands,
+            [&](TypedAttr attr) {
+              // Don't print extracts out of Int.value.
+              if (auto extract = dyn_cast<LIT::StructExtractAttr>(attr))
+                attr = extract.getStructValue();
+              printDemangledParam(os, attr, diagShared);
+            },
+            [&]() { os << binOp; });
+        os << ')';
+        return;
+      }
+
       break;
     }
   }
