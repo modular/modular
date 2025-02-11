@@ -340,7 +340,7 @@ struct Int(
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __init__(out self):
         """Default constructor that produces zero."""
         self.value = __mlir_op.`index.constant`[value = __mlir_attr.`0:index`]()
@@ -354,7 +354,7 @@ struct Int(
         return self
 
     @doc_private
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: __mlir_type.index):
         """Construct Int from the given index value.
@@ -592,7 +592,7 @@ struct Int(
         """
         return self ^ -1
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __add__(self, rhs: Int) -> Int:
         """Return `self + rhs`.
 
