@@ -28,14 +28,15 @@ from max.driver import (
 )
 from max.tensor import TensorShape
 from testing import assert_equal
+from tensor_internal.io_spec import DynamicTensor
 
 
 fn vec_add[
     type: DType, rank: Int
 ](
-    in0: ManagedTensorSlice[type, rank],
-    in1: ManagedTensorSlice[type, rank],
-    out: ManagedTensorSlice[type, rank],
+    in0: DynamicTensor[type, rank],
+    in1: DynamicTensor[type, rank],
+    out: DynamicTensor[type, rank],
 ):
     var row = thread_idx.x
     var col = thread_idx.y

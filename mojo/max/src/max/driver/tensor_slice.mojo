@@ -22,6 +22,7 @@ from collections import InlineArray
 from math import ceil
 from sys import is_nvidia_gpu
 from sys.intrinsics import strided_load, strided_store
+from tensor_internal.io_spec import DynamicTensor
 
 from max._tensor_utils import TensorLike
 from max.tensor import RuntimeTensorSpec, TensorSpec
@@ -43,7 +44,7 @@ struct TensorSlice[
     """
 
     var _ref: Pointer[Tensor[type, rank], origin]
-    var _unsafe_slice: ManagedTensorSlice[type, rank]
+    var _unsafe_slice: DynamicTensor[type, rank]
 
     @doc_private
     fn __init__(
@@ -53,7 +54,7 @@ struct TensorSlice[
     ):
         self = Self(
             Pointer.address_of(tensor),
-            ManagedTensorSlice[type, rank](tensor._ptr, slices, tensor._spec),
+            DynamicTensor[type, rank](tensor._ptr, slices, tensor._spec),
         )
 
     fn runtime_spec(self) -> RuntimeTensorSpec[type, rank]:

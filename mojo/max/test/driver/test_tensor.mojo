@@ -18,6 +18,7 @@ from max.tensor import TensorShape, TensorSpec
 from testing import assert_equal, assert_raises, assert_true
 
 from utils import Index, IndexList
+from tensor_internal.io_spec import DynamicTensor
 
 
 def test_tensor():
@@ -259,7 +260,7 @@ def test_unsafe_slice():
 
     assert_equal(tensor[1, 0], 3)
 
-    var unsafe_slice = ManagedTensorSlice[DType.float32, 2](
+    var unsafe_slice = DynamicTensor[DType.float32, 2](
         tensor.unsafe_ptr(), shape
     )
 

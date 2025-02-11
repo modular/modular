@@ -33,6 +33,8 @@ from ._utils import _convert_from
 from .device import Device, DeviceMemory, DeviceTensor
 from .tensor_slice import TensorSlice
 
+from tensor_internal.io_spec import DynamicTensor
+
 
 struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
     """An owned, indexible buffer type."""
@@ -207,7 +209,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
     fn unsafe_slice(
         self,
         *slices: Slice,
-    ) raises -> ManagedTensorSlice[type, rank]:
+    ) raises -> DynamicTensor[type, rank]:
         """Returns a view of the tensor conforming to given slices. If given
         a single slice `:` the view would point to the entire tensor. The caller
         is responsible to make sure tensor outlives the returned slice.
@@ -220,7 +222,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         """
         if len(slices) > rank:
             raise "len(slices) exceeds rank"
-        return ManagedTensorSlice[type, rank](
+        return DynamicTensor[type, rank](
             self.unsafe_ptr(),
             self._canonicalize_slices(slices),
             self._spec,
