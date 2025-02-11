@@ -72,11 +72,13 @@ public:
     return false;
   }
 
-  bool GetDynamicTypeAndAddress(
-      lldb_private::ValueObject &in_value, lldb::DynamicValueType use_dynamic,
-      lldb_private::TypeAndOrName &class_type_or_name,
-      lldb_private::Address &address,
-      lldb_private::Value::ValueType &value_type) override {
+  bool
+  GetDynamicTypeAndAddress(lldb_private::ValueObject &in_value,
+                           lldb::DynamicValueType use_dynamic,
+                           lldb_private::TypeAndOrName &class_type_or_name,
+                           lldb_private::Address &address,
+                           lldb_private::Value::ValueType &value_type,
+                           llvm::ArrayRef<uint8_t> &local_buffer) override {
     return false;
   }
 

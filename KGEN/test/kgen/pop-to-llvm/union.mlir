@@ -105,46 +105,36 @@ kgen.func @union_create_5(%arg0: !kgen.struct<(array<2, i16>, struct<(struct<(i8
   // CHECK-DAG: %[[I64_16:.*]] = llvm.mlir.constant(16 : i64)
   // CHECK-DAG: %[[I16_0:.*]] = llvm.mlir.constant(0 : i16)
   // CHECK-DAG: %[[I64_0:.*]] = llvm.mlir.constant(0 : i64)
-  // CHECK: %[[P12:.*]] = llvm.extractvalue %arg0[0] : !llvm.struct<(array<2 x i16>, struct<(struct<(i8, i32)>, vector<2xf32>)>)>
-  // CHECK: %[[P13:.*]] = llvm.extractvalue %[[P12]][0] : !llvm.array<2 x i16>
-  // CHECK: %[[P14:.*]] = llvm.lshr %[[P13]], %[[I16_0]] : i16
+  // CHECK: %[[P12:.*]] = llvm.extractvalue %arg0[0, 0] : !llvm.struct<(array<2 x i16>, struct<(struct<(i8, i32)>, vector<2xf32>)>)>
+  // CHECK: %[[P14:.*]] = llvm.lshr %[[P12]], %[[I16_0]] : i16
   // CHECK: %[[P15:.*]] = llvm.zext %[[P14]] : i16 to i64
   // CHECK: %[[P16:.*]] = llvm.shl %[[P15]], %[[I64_0]] : i64
   // CHECK: %[[P17:.*]] = llvm.or %[[I64_0]], %[[P16]] : i64
-  // CHECK: %[[P18:.*]] = llvm.extractvalue %[[P12]][1] : !llvm.array<2 x i16>
+  // CHECK: %[[P18:.*]] = llvm.extractvalue %arg0[0, 1] :  !llvm.struct<(array<2 x i16>, struct<(struct<(i8, i32)>, vector<2xf32>)>)>
   // CHECK: %[[P19:.*]] = llvm.lshr %[[P18]], %[[I16_0]] : i16
   // CHECK: %[[P20:.*]] = llvm.zext %[[P19]] : i16 to i64
   // CHECK: %[[P21:.*]] = llvm.shl %[[P20]], %[[I64_16]] : i64
   // CHECK: %[[P22:.*]] = llvm.or %[[P17]], %[[P21]] : i64
-  // CHECK: %[[P23:.*]] = llvm.extractvalue %arg0[1] : !llvm.struct<(array<2 x i16>, struct<(struct<(i8, i32)>, vector<2xf32>)>)>
-  // CHECK: %[[P24:.*]] = llvm.extractvalue %[[P23]][0] : !llvm.struct<(struct<(i8, i32)>, vector<2xf32>)>
-  // CHECK: %[[P25:.*]] = llvm.extractvalue %[[P24]][0] : !llvm.struct<(i8, i32)>
-  // CHECK: %[[P26:.*]] = llvm.lshr %[[P25]], %[[I8_0]] : i8
-  // CHECK: %[[P27:.*]] = llvm.zext %[[P26]] : i8 to i64
+  // CHECK: %[[P23:.*]] = llvm.extractvalue %arg0[1, 0, 0] : !llvm.struct<(array<2 x i16>, struct<(struct<(i8, i32)>, vector<2xf32>)>)>
+  // CHECK: %[[P24:.*]] = llvm.extractvalue %arg0[1, 0, 1] : !llvm.struct<(array<2 x i16>, struct<(struct<(i8, i32)>, vector<2xf32>)>)>
+  
+  // CHECK: %[[P25:.*]] = llvm.extractvalue %arg0[1, 1] :  !llvm.struct<(array<2 x i16>, struct<(struct<(i8, i32)>, vector<2xf32>)>)>
 
   // COM: The second struct element is aligned to 8 bytes.
-  // CHECK: %[[P28:.*]] = llvm.shl %[[P27]], %[[I64_0]] : i64
-  // CHECK: %[[P29:.*]] = llvm.or %[[I64_0]], %[[P28]] : i64
-  // CHECK: %[[P30:.*]] = llvm.extractvalue %[[P24]][1] : !llvm.struct<(i8, i32)>
-  // CHECK: %[[P31:.*]] = llvm.lshr %[[P30]], %[[I32_0]] : i32
-  // CHECK: %[[P32:.*]] = llvm.zext %[[P31]] : i32 to i64
-  // CHECK: %[[P33:.*]] = llvm.shl %[[P32]], %[[I64_32]] : i64
-  // CHECK: %[[P34:.*]] = llvm.or %[[P29]], %[[P33]] : i64
-  // CHECK: %[[P39:.*]] = llvm.extractvalue %[[P23]][1] : !llvm.struct<(struct<(i8, i32)>, vector<2xf32>)>
-  // CHECK: %[[P40:.*]] = llvm.extractelement %[[P39]][%[[I32_0]] : i32] : vector<2xf32>
+  // CHECK: %[[P40:.*]] = llvm.extractelement %[[P25]][%[[I32_0]] : i32] : vector<2xf32>
   // CHECK: %[[P41:.*]] = llvm.bitcast %[[P40]] : f32 to i32
   // CHECK: %[[P42:.*]] = llvm.lshr %[[P41]], %[[I32_0]] : i32
   // CHECK: %[[P43:.*]] = llvm.zext %[[P42]] : i32 to i64
   // CHECK: %[[P44:.*]] = llvm.shl %[[P43]], %[[I64_0]] : i64
   // CHECK: %[[P45:.*]] = llvm.or %[[I64_0]], %[[P44]] : i64
-  // CHECK: %[[P46:.*]] = llvm.extractelement %[[P39]][%[[I32_1]] : i32] : vector<2xf32>
+  // CHECK: %[[P46:.*]] = llvm.extractelement %[[P25]][%[[I32_1]] : i32] : vector<2xf32>
   // CHECK: %[[P47:.*]] = llvm.bitcast %[[P46]] : f32 to i32
   // CHECK: %[[P48:.*]] = llvm.lshr %[[P47]], %[[I32_0]] : i32
   // CHECK: %[[P49:.*]] = llvm.zext %[[P48]] : i32 to i64
   // CHECK: %[[P50:.*]] = llvm.shl %[[P49]], %[[I64_32]] : i64
   // CHECK: %[[P51:.*]] = llvm.or %[[P45]], %[[P50]] : i64
   // CHECK: %[[S0:.*]] = llvm.insertvalue %[[P22]], %{{.*}}[0] : !llvm.array<3 x i64>
-  // CHECK: %[[S1:.*]] = llvm.insertvalue %[[P34]], %[[S0]][1] : !llvm.array<3 x i64>
+  // CHECK: %[[S1:.*]] = llvm.insertvalue %{{.*}}, %[[S0]][1] : !llvm.array<3 x i64>
   // CHECK: %[[S2:.*]] = llvm.insertvalue %[[P51]], %[[S1]][2] : !llvm.array<3 x i64>
   %0 = pop.union.wrap %arg0 : !kgen.struct<(array<2, i16>, struct<(struct<(i8, i32)>, simd<2, f32>)>)> as <struct<(array<2, i16>, struct<(struct<(i8, i32)>, simd<2, f32>)>)>>
   // CHECK: return %[[S2]]

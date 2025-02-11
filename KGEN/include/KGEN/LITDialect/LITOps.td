@@ -132,6 +132,21 @@ def LIT_FnOp : LITOp<"fn", [
 
     /// Return true if this was defined as a 'def', not a 'fn'.
     bool isDef() { return getIsDef(); }
+
+
+
+
+    mlir::ArrayAttr getArgAttrsAttr() { return nullptr; }
+
+    mlir::ArrayAttr getResAttrsAttr() { return nullptr; }
+
+    void setArgAttrsAttr(mlir::ArrayAttr attrs){}
+
+    void setResAttrsAttr(mlir::ArrayAttr attrs){}
+
+    mlir::Attribute removeArgAttrsAttr() { return nullptr; }
+
+    mlir::Attribute removeResAttrsAttr() { return nullptr; }
   }];
 
   let builders = [
