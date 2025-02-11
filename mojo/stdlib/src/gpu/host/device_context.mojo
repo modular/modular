@@ -339,16 +339,8 @@ struct DeviceBuffer[type: DType](Sized):
         self._device_ptr = UnsafePointer[Scalar[type]]()
         return result
 
-    fn get_ptr(self) -> UnsafePointer[Scalar[type]]:
+    fn unsafe_pointer(self) -> UnsafePointer[Scalar[type]]:
         return self._device_ptr
-
-    fn __getattr__[name: StringLiteral](self) -> UnsafePointer[Scalar[type]]:
-        @parameter
-        if name == "ptr":
-            return self.get_ptr()
-
-        abort("Unsupported attr for DeviceBuffer: " + name)
-        return UnsafePointer[Scalar[type]]()
 
     fn __getitem__(self, idx: Int) -> Scalar[type]:
         return self._device_ptr[idx]
@@ -1946,14 +1938,14 @@ struct _HostMappedBuffer[type: DType]:
     fn __enter__(mut self) raises -> UnsafePointer[Scalar[type]]:
         self._cpu_ctx.synchronize()
         self._dev_ctx.enqueue_copy_from_device(
-            self._cpu_buf.get_ptr(), self._dev_buf
+            self._cpu_buf.unsafe_pointer(), self._dev_buf
         )
         self._dev_ctx.synchronize()
-        return self._cpu_buf.get_ptr()
+        return self._cpu_buf.unsafe_pointer()
 
     fn __exit__(mut self) raises:
         self._cpu_ctx.synchronize()
         self._dev_ctx.enqueue_copy_to_device(
-            self._dev_buf, self._cpu_buf.get_ptr()
+            self._dev_buf, self._cpu_buf.unsafe_pointer()
         )
         self._dev_ctx.synchronize()
