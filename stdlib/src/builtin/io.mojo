@@ -385,3 +385,9 @@ fn input(prompt: String = "") raises -> String:
     if prompt != "":
         print(prompt, end="")
     return _fdopen["r"](0).readline()
+
+
+fn _get_stdout_stream() -> OpaquePointer:
+    return external_call[
+        "KGEN_CompilerRT_IO_get_stdout_stream", OpaquePointer
+    ]()

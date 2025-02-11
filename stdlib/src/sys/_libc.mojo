@@ -18,7 +18,7 @@ functionality in the rest of the Mojo standard library.
 """
 
 from sys import os_is_windows
-from sys.ffi import OpaquePointer, c_char, c_int
+from sys.ffi import OpaquePointer, c_char, c_int, c_size_t
 
 from memory import UnsafePointer
 
@@ -72,6 +72,26 @@ fn popen(
 @always_inline
 fn pclose(stream: FILE_ptr) -> c_int:
     return external_call["pclose", c_int](stream)
+
+
+@always_inline
+fn setvbuf(
+    stream: FILE_ptr, buffer: UnsafePointer[c_char], mode: c_int, size: c_size_t
+) -> c_int:
+    return external_call["setvbuf", c_int](stream, buffer)
+
+
+struct BufferMode:
+    """
+    Modes for use in `setvbuf` to control buffer output.
+    """
+
+    alias buffered = 0
+    """Equivalent to `_IOFBF`."""
+    alias line_buffered = 1
+    """Equivalent to `_IOLBF`."""
+    alias unbuffered = 2
+    """Equivalent to `_IONBF`."""
 
 
 # ===-----------------------------------------------------------------------===#
