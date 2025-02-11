@@ -3,8 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# FIXME: KERN-1377, MSTDL-1155
-# UNSUPPORTED: AMD-GPU
+# FIXME: KERN-1377
 # UNSUPPORTED: NVIDIA-GPU
 # RUN: %mojo-no-debug-no-assert %s | FileCheck %s
 
@@ -19,6 +18,11 @@ from tensor_core_kernels import (
 )
 
 from utils.index import Index, IndexList
+
+from builtin.io import _get_stdout_stream
+from sys.ffi import c_char, OpaquePointer
+from sys._libc import setvbuf, BufferMode
+from memory import UnsafePointer
 
 
 # CHECK-LABEL: == test_load_and_mma_f32_f16_16x16x16
@@ -522,6 +526,14 @@ def test_load_f32_f32_16x16x4_ldmatrix(ctx: DeviceContext):
 
 
 def main():
+    var stdout_stream = _get_stdout_stream()
+    if (
+        setvbuf(
+            stdout_stream, UnsafePointer[c_char](), BufferMode.line_buffered, 0
+        )
+        != 0
+    ):
+        raise Error("failed to set line buffering")
     with DeviceContext() as ctx:
         test_load_and_mma_f32_f16_16x16x16(ctx)
         test_load_and_mma_f32_bf16_16x16x16(ctx)
