@@ -527,8 +527,7 @@ fn callDefaultArgument(x: Int) -> Int:
 
 
 # CHECK-LABEL: lit.fn @"defaultArgumentReferencesParameter
-# CHECK-SAME: (%a: !Int = apply(:!lit.generator<("lhs": !Int, "rhs": !Int)
-# CHECK-SAME: -> !Int> {{.*}}Int::@"__add__({{.*}}Int,{{.*}}Int)", {{.*}}p, {87}))
+# CHECK-SAME: (%a: !Int = {value = add(#lit.struct.extract<:!Int p, "value">, 87)})
 fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
     return a
 

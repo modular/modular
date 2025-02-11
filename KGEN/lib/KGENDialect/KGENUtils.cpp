@@ -1917,6 +1917,8 @@ ParseResult KGEN::parseOptionalInline(OpAsmParser &parser,
     inlineLevel = InlineLevel::Always;
   else if (succeeded(parser.parseOptionalKeyword("always_inline_no_debug")))
     inlineLevel = InlineLevel::AlwaysNoDebug;
+  else if (succeeded(parser.parseOptionalKeyword("always_inline_builtin")))
+    inlineLevel = InlineLevel::AlwaysBuiltin;
   else if (succeeded(parser.parseOptionalKeyword("no_inline")))
     inlineLevel = InlineLevel::Never;
   else
@@ -1926,12 +1928,22 @@ ParseResult KGEN::parseOptionalInline(OpAsmParser &parser,
 }
 
 void KGEN::printOptionalInline(AsmPrinter &p, InlineLevel level) {
-  if (level == InlineLevel::Always)
+  switch (level) {
+  case InlineLevel::Automatic:
+    break;
+  case InlineLevel::Always:
     p << " always_inline";
-  else if (level == InlineLevel::AlwaysNoDebug)
+    break;
+  case InlineLevel::AlwaysNoDebug:
     p << " always_inline_no_debug";
-  else if (level == InlineLevel::Never)
+    break;
+  case InlineLevel::AlwaysBuiltin:
+    p << " always_inline_builtin";
+    break;
+  case InlineLevel::Never:
     p << " no_inline";
+    break;
+  }
 }
 
 ParseResult KGEN::parseSymbolExport(AsmParser &p, ExportKindAttr &exportKind) {

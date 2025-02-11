@@ -149,7 +149,8 @@ void SharedState::setLocationDebugScope(FnOp funcOp) {
   // want to generate debug info and step into them. The same applies to
   // no-debug functions.
   if (funcOp.isSynthetic() ||
-      funcOp.getInlineLevel() == InlineLevel::AlwaysNoDebug) {
+      funcOp.getInlineLevel() == InlineLevel::AlwaysNoDebug ||
+      funcOp.getInlineLevel() == InlineLevel::AlwaysBuiltin) {
     funcOp->setLoc(fileLineCol);
     return;
   }

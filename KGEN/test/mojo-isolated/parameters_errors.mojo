@@ -535,8 +535,8 @@ fn has_expr_for_elaborator[width: Int](x: HasSize[width + 4]):
     pass
 
 fn use_take_args[width: Int]():
-    # expected-error @below {{cannot be converted}}
-    # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
+    # TODO: xpected-error @below {{argument #0 cannot be converted from 'HasSize[(width+5)]' to 'HasSize[(width+4)]'}}
+    # expected-error @below {{cannot be converted from 'HasSize[add(#lit.struct.extract<:_stdlib::_builtin::_stubs::_Int width, "value">, 5)]' to 'HasSize[add(#lit.struct.extract<:_stdlib::_builtin::_stubs::_Int width, "value">, 4)]'}}
     _ = has_expr_for_elaborator[width](HasSize[size=width + 5]())
 
 

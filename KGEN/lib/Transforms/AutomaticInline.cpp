@@ -36,6 +36,7 @@ using namespace KGEN;
 
 static bool isAlwaysInlineFunction(FuncOp func) {
   return func.getInlineLevel() == InlineLevel::AlwaysNoDebug ||
+         func.getInlineLevel() == InlineLevel::AlwaysBuiltin ||
          func.getInlineLevel() == InlineLevel::Always;
 }
 
@@ -279,8 +280,7 @@ LogicalResult AlwaysInlineGraph::diagnoseCycle(ModuleOp module,
 
 bool CallGraphNode::canInlineCallee(CallGraphNode *callee) {
   // Always inlines.
-  if (callee->func.getInlineLevel() == InlineLevel::Always ||
-      callee->func.getInlineLevel() == InlineLevel::AlwaysNoDebug)
+  if (isAlwaysInlineFunction(callee->func))
     return true;
 
   // Try to inline callee if it is not in the same SCC as the current node
@@ -291,8 +291,7 @@ bool CallGraphNode::canInlineCallee(CallGraphNode *callee) {
 bool CallGraphNode::shouldInlineCallee(CallGraphNode *callee,
                                        uint64_t threshold) {
   // Should always inline `always_inline` ones.
-  if (callee->func.getInlineLevel() == InlineLevel::Always ||
-      callee->func.getInlineLevel() == InlineLevel::AlwaysNoDebug)
+  if (isAlwaysInlineFunction(callee->func))
     return true;
 
   // Don't handle functions that are not annotated as automatic.

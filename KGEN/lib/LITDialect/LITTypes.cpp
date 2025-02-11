@@ -226,7 +226,10 @@ LogicalResult LIT::StructType::printValue(AsmPrinter &p,
   ArrayRef<std::tuple<StringAttr, TypedAttr>> values = attr.getValues();
 
   p << '{';
-  if (values.size() == 1 && std::get<0>(values.front()) == "value") {
+  if (values.size() == 1 && std::get<0>(values.front()) == "value" &&
+      // Don't print 'add(x, y)' as the value, because the parser will think
+      // that is a field name.
+      !::isa<ParamOperatorAttr>(std::get<1>(values.front()))) {
     printColonTypeParamValue(p, std::get<1>(values.front()));
   } else {
     llvm::interleaveComma(values, p, [&](const auto &element) {

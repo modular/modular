@@ -93,16 +93,16 @@ fn call_generic[dt: DType]():
 @register_passable("trivial")
 struct TestParamStruct[A: Int]:
 
-  # CHECK: lit.fn @"method{{.*}}"<B: !Int>(%self: !lit.struct<#TestParamStruct <:!Int [[A]]>{{.*}}>,
-  # CHECK-SAME: %other: {{.*}}#TestParamStruct <:!Int apply({{.*}}__add__{{.*}}, [[A]], B)>{{.*}}>)
+  # CHECK: lit.fn @"method{{.*}}"<B: !Int>(%self: !lit.struct<#TestParamStruct <:!Int [[A]]>
+  # CHECK-SAME: %other: {{.*}}#TestParamStruct <:!Int {value = add(#lit.struct.extract<:!Int [[A]], "value">, #lit.struct.extract<:!Int B, "value">)}>>
   fn method[B: Int](self: TestParamStruct[A], other: TestParamStruct[A+B]):
     pass
 
   # CHECK-LABEL: lit.fn @"aliases{{.*}}%x: {{.*}}#TestParamStruct <
   fn aliases(self, x: TestParamStruct[TestParamStruct[A].TypeLevelAlias]):
-    # CHECK: lit.alias.decl [[B:.*]]: !Int = <apply({{.*}}__add__{{.*}}, apply({{.*}}__add__{{.*}}, [[A]], [[A]]), {{.*}}1{{.*}})>
+    # CHECK: lit.alias.decl [[B:.*]]: !Int = <{value = add(mul(#lit.struct.extract<:!Int *"A`", "value">, 2), 1)}>
     alias B = A+A+1
-    # CHECK: lit.alias.decl *"C{{.*}}: !Int = <apply({{.*}}__add__{{.*}},
+    # CHECK: lit.alias.decl *"C{{.*}}: !Int = <{value = add(mul(#lit.struct.extract<:!Int *"A`", "value">, 3), 1)}> 
     alias C = B+A
     # CHECK: lit.alias.decl [[D:.*]]: {{.*}}@TestParamStruct<:!Int {{.*}}1{{.*}}> =
     # CHECK-SAME: <apply_result_slot(:!lit.generator<{{.*}}TestParamStruct<:!Int {1}>, {{.*}}__init__({{.*}}"<:!Int {{.*}}1
@@ -113,10 +113,10 @@ struct TestParamStruct[A: Int]:
     # CHECK: lit.alias.decl *"intVal{{.*}}": !Int = <{42}>
     alias intVal : Int = 42
 
-    # CHECK: %temp2 = lit.var.decl {{.*}} : {{.*}}@TestParamStruct<:!Int apply({{.*}}__add__{{.*}}, [[A]], [[A]])
+    # CHECK: %temp2 = lit.var.decl {{.*}} : {{.*}}@TestParamStruct<:!Int {value = mul(#lit.struct.extract<:!Int [[A]], "value">, 2)}>
     var temp2: TestParamStruct[TestParamStruct[A].TypeLevelAlias]
 
-  # CHECK: lit.alias.decl *"TypeLevelAlias{{.*}}": !Int = <apply({{.*}}__add__{{.*}}, [[A]], [[A]])
+  # CHECK: lit.alias.decl *"TypeLevelAlias{{.*}}": !Int = <{value = mul(#lit.struct.extract<:!Int *"A`", "value">, 2)}>
   alias TypeLevelAlias = A+A
 
 # Test that we support partially bound parameters.
@@ -126,7 +126,7 @@ fn testTestParamStruct(a: TestParamStruct[4]):
   var arg11 = TestParamStruct[11]()
 
   # CHECK: %1 = lit.ref.load %arg11
-  # CHECK: lit.call {{.*}}@TestParamStruct::@"method{{.*}}<{{.*}}4{{.*}}7{{.*}}>(%a, %2)
+  # CHECK: lit.call {{.*}}@TestParamStruct::@"method{{.*}}<:!Int {4}, :!Int {7}>(%a, %1)
   a.method[7](arg11)
 
 # CHECK-LABEL: lit.fn @"testSIMD(
@@ -637,7 +637,7 @@ alias FOURTY_TWO = 42
 # CHECK-LABEL: lit.struct.decl @A
 # CHECK-SAME: <v: !Int>
 struct A[v: Int]:
-  # CHECK: lit.alias.decl *"member{{.*}}": !Int = <apply({{.*}}__add__{{.*}}, v, {{.*}}42
+  # CHECK: lit.alias.decl *"member{{.*}}": !Int = <{value = add(#lit.struct.extract<:!Int v, "value">, 42)}>
   alias member = v + FOURTY_TWO
 
 # CHECK-LABEL: lit.fn @"testUseOfAliases
@@ -675,10 +675,10 @@ fn testMyDType[dt: MyDType](a: MyVector[4, MyDType.float32],
 # Issue #6828: Unqualified name lookup into structs doesn't work
 # CHECK-LABEL: lit.struct.decl @UnqualAliasLookup<param: !Int>
 struct UnqualAliasLookup[param: Int]:
-  # CHECK: lit.alias.decl *"member{{.*}}": !Int = <apply({{.*}}__add__{{.*}}, param, {{.*}}1{{.*}})>
+  # CHECK: lit.alias.decl *"member{{.*}}": !Int = <{value = add(#lit.struct.extract<:!Int param, "value">, 1)}>
   alias member = param+1
   fn get(self) -> Int:
-    # CHECK: %0 = kgen.param.constant: !Int = <apply({{.*}}__add__{{.*}}, param, {{.*}}1{{.*}})>
+    # CHECK: %0 = kgen.param.constant: !Int = <{value = add(#lit.struct.extract<:!Int param, "value">, 1)}>
     return Self.member
 
 ##===----------------------------------------------------------------------===##
@@ -836,7 +836,7 @@ fn testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
   callee1(a)
   # CHECK-NEXT: lit.call @{{.*}}callee1{{.*}}<:!Int size>(%b)
   callee1(b)
-  # CHECK-NEXT: lit.call @{{.*}}callee1{{.*}}<:!Int apply({{.*}}__add__{{.*}}, size, {{.*}}2{{.*}})>(%b2)
+  # CHECK-NEXT: lit.call @{{.*}}callee1{{.*}}<:!Int {value = add(#lit.struct.extract<:!Int size, "value">, 2)}>(%b2)
   callee1(b2)
   # CHECK-NEXT: lit.call @{{.*}}callee2{{.*}}<:type @parameters::@StaticVec<:!Int size>{{.*}}>(%b)
   callee2(b)
@@ -882,12 +882,10 @@ fn testParameterEvaluator():
   alias x = Abstraction[1].val
   # CHECK-NEXT: %y = lit.var.decl "y"
   # CHECK-NEXT: %0 = lit.call @parameters::@Abstraction::@"push{{.*}}"<:!Int {1}, :!Int {2}>
-  # CHECK-NEXT: %1 = kgen.rebind %0 : {{.*}} to {{.*}}#Abstraction <:!Int {3}>
-  # CHECK-NEXT: lit.ref.store %1, %y
+  # CHECK-NEXT: lit.ref.store %0, %y
   var y : Abstraction[3] = Abstraction[1].push[2]()
-  # CHECK-NEXT: [[Y:%.*]] = lit.ref.load %y
-  # CHECK-NEXT: [[RB:%.*]] = kgen.rebind [[Y]] : {{.*}}#Abstraction <:!Int {3}
-  # CHECK-NEXT: lit.call {{.*}}@Abstraction::@"pull{{.*}}"<{{.*}}>([[RB]])
+  # CHECK-NEXT: [[Y:%.*]] = lit.ref.load %y : {{.*}}@Abstraction<:!Int {3}>,
+  # CHECK-NEXT: lit.call {{.*}}@Abstraction::@"pull{{.*}}"<{{.*}}>([[Y]])
   Abstraction[1].pull[2](y)
   # CHECK-NEXT: lit.call {{.*}}@"testDependentType{{.*}}"<:!Int {1}, :array<1, index> [0]>
   testDependentType[1, __mlir_attr.`#pop.array<0> : !pop.array<1, index>`]()
@@ -912,9 +910,7 @@ struct AnotherAbstraction[a: Int]:
 # CHECK-LABEL: lit.fn @"testDependentField()"
 fn testDependentField():
     var lvalue = AnotherAbstraction[1]()
-    # CHECK: [[VALUE_PTR:%.*]] = lit.ref.struct.ger %lvalue[value]
-    # CHECK-NEXT: kgen.rebind [[VALUE_PTR]] {{.*}} to
-    # CHECK-SAME: !lit.ref<{{.*}}@Abstraction<:!Int {2}>
+    # CHECK: [[VALUE_PTR:%.*]] = lit.ref.struct.ger %lvalue[value] {{.*}}@AnotherAbstraction<:!Int {1}>,{{.*}}@Abstraction<:!Int {2}>
     takeAbstraction2(lvalue.value)
 
 struct LeafToRootEval[a: Int, b: Int]:

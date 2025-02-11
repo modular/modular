@@ -119,7 +119,8 @@ def KGEN_InlineLevelAttr : I32EnumAttr<"InlineLevel",
   I32EnumAttrCase<"Automatic", 0, "automatic">,
   I32EnumAttrCase<"Always", 1, "always">,
   I32EnumAttrCase<"AlwaysNoDebug", 2, "always_nodebug">,
-  I32EnumAttrCase<"Never", 3, "never">,
+  I32EnumAttrCase<"AlwaysBuiltin", 3, "always_builtin">,
+  I32EnumAttrCase<"Never", 4, "never">,
 ]> {
   let cppNamespace = "M::KGEN";
 }

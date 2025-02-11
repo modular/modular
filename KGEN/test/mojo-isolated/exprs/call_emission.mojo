@@ -412,8 +412,8 @@ fn complex_ref_box_emission[p: Int](a: Int):
 
     # RValues infer as immutable, just like you can't pass them to mut.
     _ = test_int_ref(Int())
-    # CHECK: [[REGVAL:%.*]] = lit.call {{.*}}__init__{{.*}}()
-    # CHECK-NEXT: [[VAR:%.*]] = lit.var.decl {{.*}}!lit.ref<!Int,
+    # CHECK: [[VAR:%.*]] = lit.var.decl {{.*}}!lit.ref<!Int,
+    # CHECK-NEXT: [[REGVAL:%.*]] = kgen.param.constant: !Int = <{0}> 
     # CHECK-NEXT: lit.ref.store [[REGVAL]], [[VAR]]
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut [[VAR]]
     # CHECK-NEXT: lit.call {{.*}}test_int_ref{{.*}}([[TMP]])

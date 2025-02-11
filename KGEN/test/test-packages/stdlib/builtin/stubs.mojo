@@ -224,10 +224,11 @@ struct FloatDyn:
 struct Int(Copyable):
     var value: Index
 
+    @always_inline("builtin")
     fn __init__(out self):
         self.value = __mlir_op.`index.constant`[value = __mlir_attr.`0:index`]()
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: Index):
         self.value = value
@@ -239,7 +240,7 @@ struct Int(Copyable):
             _type = __mlir_type.index
         ](value.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __add__(lhs, rhs: Int) -> Int:
         return __mlir_op.`index.add`(lhs.value, rhs.value)
 

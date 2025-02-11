@@ -432,6 +432,10 @@ LogicalResult FnSigDecorators::apply(ExprNode *decorator) {
           callNode->operands.size() == 1 &&
           callNode->operands[0].isPositionalStringLiteral("nodebug"))
         funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
+      else if (declRef->spelling == "always_inline" &&
+               callNode->operands.size() == 1 &&
+               callNode->operands[0].isPositionalStringLiteral("builtin"))
+        funcOp.setInlineLevel(InlineLevel::AlwaysBuiltin);
       else if (declRef->spelling == "export")
         applyExport(decorator->getLoc(), decl, baseName, *callNode, funcOp);
       else if (declRef->spelling == "__move_capture")

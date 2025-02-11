@@ -567,18 +567,18 @@ public:
   }
 
   /// Emit an error.
-  InflightDiag emitError(Location loc, const Twine &message = {}) {
+  InflightDiag emitError(Location loc, const Twine &message = {}) const {
     return shared.emitError(loc, message);
   }
-  InflightDiag emitError(llvm::SMLoc loc, const Twine &message = {}) {
+  InflightDiag emitError(llvm::SMLoc loc, const Twine &message = {}) const {
     return shared.emitError(loc, message);
   }
 
   /// Emit a warning.
-  InflightDiag emitWarning(Location loc, const Twine &message = {}) {
+  InflightDiag emitWarning(Location loc, const Twine &message = {}) const {
     return shared.emitWarning(loc, message);
   }
-  InflightDiag emitWarning(llvm::SMLoc loc, const Twine &message = {}) {
+  InflightDiag emitWarning(llvm::SMLoc loc, const Twine &message = {}) const {
     return shared.emitWarning(loc, message);
   }
 };
