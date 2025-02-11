@@ -18,6 +18,7 @@ import numpy as np
 from max.pipelines import PipelineConfig, PipelineTask
 from max.pipelines.interfaces import PipelineTokenizer, TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
+from max.serve.pipelines.stop_detection import StopDetector
 from max.serve.scheduler.queues import (
     BatchingStrategy,
     BatchQueueConfig,
@@ -35,6 +36,7 @@ class TokenGeneratorOutput:
     token_log_probabilities: Optional[list[float]] = None
     top_log_probabilities: Optional[list[dict[str, float]]] = None
     prompt_token_count: Optional[int] = None
+    stop_sequence: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -182,6 +184,23 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
 
         self._background_tasks: set[asyncio.Task] = set()
 
+    async def _collect_log_probs(self, log_prob, context, skip_special_tokens):
+        token_log_probabilities = log_prob.token_log_probabilities
+        top_log_probabilities = []
+        for top_log_probs in log_prob.top_log_probabilities:
+            decoded_log_probs = {}
+            for token_id, value in top_log_probs.items():
+                decoded_log_probs[
+                    await self.tokenizer.decode(
+                        context,
+                        token_id,
+                        skip_special_tokens=skip_special_tokens,
+                    )
+                ] = value
+            top_log_probabilities.append(decoded_log_probs)
+
+        return (token_log_probabilities, top_log_probabilities)
+
     async def next_token(
         self, request: TokenGeneratorRequest
     ) -> AsyncGenerator[TokenGeneratorOutput, None]:
@@ -209,38 +228,53 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                 METRICS.input_tokens(prompt_token_count)
 
             with record_ms(METRICS.output_time):
+                # stop detector is stateful, so new it up here for
+                # use in the response stream
+                stop_detector = StopDetector(stop=request.stop)
+
                 async for response in self.engine_queue.stream(
                     request.id, context
                 ):
+                    decoded_token = await self.tokenizer.decode(
+                        context,
+                        response.next_token,
+                        skip_special_tokens=skip_special_tokens,
+                    )
+
+                    # Detect custom stop phrases
+                    stop_sequence_match = None
+                    if len(stop_detector.stop) > 0:
+                        if stop_sequence_match := stop_detector.step(
+                            decoded_token
+                        ):
+                            # Tell the scheduler to stop generating this request
+                            self.engine_queue.cancel_q.put_nowait([request.id])
+
+                            logger.debug(
+                                f"Cancelling {request.id} because stop sequence ({stop_sequence_match}) detected in {stop_detector.continuation_tail}"
+                            )
+
                     token_log_probabilities = None
                     top_log_probabilities = None
                     if log_prob := response.log_probabilities:
-                        token_log_probabilities = (
-                            log_prob.token_log_probabilities
-                        )
-                        top_log_probabilities = []
-                        for top_log_probs in log_prob.top_log_probabilities:
-                            decoded_log_probs = {}
-                            for token_id, value in top_log_probs.items():
-                                decoded_log_probs[
-                                    await self.tokenizer.decode(
-                                        context,
-                                        token_id,
-                                        skip_special_tokens=skip_special_tokens,
-                                    )
-                                ] = value
-                            top_log_probabilities.append(decoded_log_probs)
-
-                    yield TokenGeneratorOutput(
-                        decoded_token=await self.tokenizer.decode(
+                        (
+                            token_log_probabilities,
+                            top_log_probabilities,
+                        ) = await self._collect_log_probs(
+                            log_prob,
                             context,
-                            response.next_token,
-                            skip_special_tokens=skip_special_tokens,
-                        ),
+                            skip_special_tokens,
+                        )
+
+                    output = TokenGeneratorOutput(
+                        decoded_token=decoded_token,
                         token_log_probabilities=token_log_probabilities,
                         top_log_probabilities=top_log_probabilities,
                         prompt_token_count=prompt_token_count,
+                        stop_sequence=stop_sequence_match,
                     )
+
+                    yield output
         finally:
             if self.debug_logging:
                 self.logger.debug(

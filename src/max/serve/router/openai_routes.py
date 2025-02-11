@@ -137,6 +137,7 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                     n_tokens,
                     token.decoded_token,
                 )
+
                 # We support N = 1 at the moment and will generate a single choice.
                 # The choice index is set to 0.
                 # https://platform.openai.com/docs/api-reference/chat/object
@@ -219,10 +220,21 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
 
         try:
             completed_outputs = await self.pipeline.all_tokens(request)
+
             n_tokens = len(completed_outputs)
+
             response_message = "".join(
                 output.decoded_token for output in completed_outputs
             )
+
+            stop_sequence = [
+                token.stop_sequence
+                for token in completed_outputs
+                if token.stop_sequence is not None
+            ]
+            if len(stop_sequence) > 0:
+                idx = response_message.find(stop_sequence[0])
+                response_message = response_message[:idx]
 
             response_choices: List[Choice1] = []
             if tool_use:
@@ -516,6 +528,7 @@ async def openai_create_chat_completion(
             timestamp_ns=request.state.request_timer.start_ns,
             request_path=request.url.path,
             response_format=response_format,
+            stop=completion_request.stop,
         )
 
         if completion_request.stream:

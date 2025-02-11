@@ -397,6 +397,8 @@ class TokenGenerationSchedulerV2(Scheduler):
                             self.active_batch[req_id].cache_seq_id
                         )
                         del self.active_batch[req_id]
+
+                        self.response_q.put_nowait([{req_id: STOP_STREAM}])
                 except queue.Empty:
                     break
         except Exception:
