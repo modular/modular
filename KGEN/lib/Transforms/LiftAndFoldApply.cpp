@@ -87,7 +87,7 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
     // declaring operations to determine the highest scope into which we could
     // lift this operator.
     SmallVector<ParamDeclRefAttr> uses;
-    bool hasConstExpr;
+    bool hasConstExpr = false;
     {
       VerboseCompilerTimeTraceScope traceScope("collectParameters");
       collector.collectUsesFromAttr(op, uses, hasConstExpr);
