@@ -36,6 +36,8 @@ from testing import assert_equal
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
 
+from gpu.memory import fence_mbarrier_init
+
 
 # Test loading a single 2d tile.
 @__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 1](1))
@@ -100,6 +102,10 @@ fn tma_swizzle_multicast_load_kernel[
     barrier()
 
     mbar.wait()
+
+    # we use another cluster_sync() to ensure that none of CTAs in the cluster doesn’t exit prematurely while the other is still waiting for the multicast load to complete.
+    cluster_sync()
+    fence_mbarrier_init()
 
     if block_rank == 0 and thread_idx.x == 0:
         dst_tile = dst.tile[cluster_tileM, cluster_tileN](

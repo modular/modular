@@ -7,12 +7,13 @@
 # RUN: %mojo-no-debug-no-assert %s
 
 from sys import sizeof
+from math import ceildiv
 
 from gpu import WARP_SIZE, barrier
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, Dim
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, thread_idx
+from gpu.id import block_idx, thread_idx, block_rank_in_cluster
 from gpu.intrinsics import threadfence
 from gpu.memory import AddressSpace
 from gpu.mma import (
@@ -44,9 +45,12 @@ from testing import assert_almost_equal
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
 
+from gpu.memory import fence_mbarrier_init
+from gpu.sync import cluster_sync
+
 
 @__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 2](0, 1))
-fn tma_wgmma_kernel[
+fn multicast_tma_wgmma_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -59,6 +63,7 @@ fn tma_wgmma_kernel[
     wgmma_shape: IndexList[3],
     a_smem_layout: Layout,
     b_smem_layout: Layout,
+    cluster_shape: IndexList[3],
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
@@ -93,6 +98,9 @@ fn tma_wgmma_kernel[
         transpose_b=transpose_b,
     ]()
 
+    alias CLUSTER_M = cluster_shape[0]
+    alias CLUSTER_N = cluster_shape[1]
+
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
@@ -112,26 +120,69 @@ fn tma_wgmma_kernel[
     alias b_expected_bytes = b_smem_layout.size() * sizeof[b_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
+    alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
+
+    var block_rank = block_rank_in_cluster()
+    var rank_m = block_rank / CLUSTER_N
+    var rank_n = block_rank % CLUSTER_N
+
     mbar = TMABarrier()
     if thread_idx.x == 0:
         mbar.init()
 
     var phase: UInt32 = 0
 
+    cluster_sync()
+    fence_mbarrier_init()
+
     for i in range(num_iters):
         if thread_idx.x == 0:
             mbar.expect_bytes(expected_bytes)
-            a_tma_op.async_copy(
-                a_smem_tile, mbar, (UInt(i) * BK, block_idx.y * BM)
-            )
-            b_tma_op.async_copy(
-                b_smem_tile,
-                mbar,
-                (UInt(i) * BK, block_idx.x * BN) if transpose_b else (
-                    block_idx.x * BN,
-                    UInt(i) * BK,
-                ),
-            )
+
+            @parameter
+            if CLUSTER_N > 1:
+                var multicast_mask = ((1 << CLUSTER_N) - 1) << (
+                    rank_m * CLUSTER_N
+                )
+                if rank_n == 0:
+                    a_tma_op.async_multicast_load(
+                        a_smem_tile,
+                        mbar,
+                        (UInt(i) * BK, block_idx.y * BM),
+                        multicast_mask.cast[DType.uint16](),
+                    )
+
+            else:
+                a_tma_op.async_copy(
+                    a_smem_tile, mbar, (UInt(i) * BK, block_idx.y * BM)
+                )
+
+            @parameter
+            if CLUSTER_M > 1:
+                if rank_m == 0:
+                    var multicast_mask = 0
+                    for i in range(CLUSTER_M):
+                        multicast_mask |= 1 << (i * CLUSTER_N)
+
+                    b_tma_op.async_multicast_load(
+                        b_smem_tile,
+                        mbar,
+                        (UInt(i) * BK, block_idx.x * BN) if transpose_b else (
+                            block_idx.x * BN,
+                            UInt(i) * BK,
+                        ),
+                        (multicast_mask << rank_n).cast[DType.uint16](),
+                    )
+
+            else:
+                b_tma_op.async_copy(
+                    b_smem_tile,
+                    mbar,
+                    (UInt(i) * BK, block_idx.x * BN) if transpose_b else (
+                        block_idx.x * BN,
+                        UInt(i) * BK,
+                    ),
+                )
 
         # Ensure all threads sees initialized mbarrier
         barrier()
@@ -172,14 +223,17 @@ fn tma_wgmma_kernel[
                 warp_tile.vectorize[1, 2](), c_frag.vectorize[1, 2]()
             )
 
+    cluster_sync()
 
-def test_tma_wgmma[
+
+def test_multicast_tma_wgmma[
     a_type: DType,
     b_type: DType,
     c_type: DType,
     prob_shape: IndexList[3],
     block_tile_shape: IndexList[3],
     wgmma_shape: IndexList[3],
+    cluster_shape: IndexList[3],
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
@@ -193,7 +247,9 @@ def test_tma_wgmma[
     alias WGMMA_K = wgmma_shape[2]
 
     print(
-        "wgmma_bf16_bf16_f32 block tile "
+        "wgmma_bf16_bf16_f32 cluster shape "
+        + String(cluster_shape)
+        + " block tile "
         + String(block_tile_shape)
         + " transb inst shape "
         + String(wgmma_shape)
@@ -206,6 +262,9 @@ def test_tma_wgmma[
     alias M = prob_shape[0]
     alias N = prob_shape[1]
     alias K = prob_shape[2]
+
+    alias CLUSTER_M = cluster_shape[0]
+    alias CLUSTER_N = cluster_shape[1]
 
     var a = ManagedLayoutTensor[
         a_type,
@@ -250,7 +309,7 @@ def test_tma_wgmma[
         swizzle_mode=b_swizzle,
     ](ctx, b.device_tensor())
 
-    alias kernel = tma_wgmma_kernel[
+    alias kernel = multicast_tma_wgmma_kernel[
         a_type,
         b_type,
         c_type,
@@ -263,6 +322,7 @@ def test_tma_wgmma[
         wgmma_shape,
         a_smem_layout,
         b_smem_layout,
+        cluster_shape=cluster_shape,
         transpose_b=transpose_b,
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
@@ -278,8 +338,9 @@ def test_tma_wgmma[
         b_tma_op,
         c.device_tensor(),
         K // BK,
-        grid_dim=(1, 1),
+        grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(128),
+        cluster_dim=Dim(CLUSTER_N, CLUSTER_M, 1),
     )
 
     with vendor_blas.Handle() as handle:
@@ -313,65 +374,155 @@ def test_tma_wgmma[
 
 def main():
     with DeviceContext() as ctx:
-        test_tma_wgmma[
+        # 2x1 cluster tests
+        test_multicast_tma_wgmma[
             DType.bfloat16,
             DType.bfloat16,
             DType.bfloat16,
-            Index(128, 16, 32),
-            Index(128, 16, 32),
+            Index(128, 16, 128),
+            Index(64, 16, 64),
             Index(64, 8, 16),
+            Index(2, 1, 1),
+            transpose_b=True,
         ](ctx)
 
-        test_tma_wgmma[
+        test_multicast_tma_wgmma[
             DType.bfloat16,
             DType.bfloat16,
             DType.bfloat16,
-            Index(64, 8, 64),
-            Index(64, 8, 64),
+            Index(128, 16, 128),
+            Index(64, 16, 64),
             Index(64, 8, 16),
-        ](ctx)
-
-        test_tma_wgmma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(64, 8, 64),
-            Index(64, 8, 64),
-            Index(64, 8, 16),
+            Index(2, 1, 1),
             a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
             b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            transpose_b=True,
         ](ctx)
 
-        test_tma_wgmma[
+        test_multicast_tma_wgmma[
             DType.bfloat16,
             DType.bfloat16,
             DType.bfloat16,
-            Index(128, 16, 32),
-            Index(128, 16, 32),
+            Index(128, 16, 64),
+            Index(64, 16, 32),
             Index(64, 8, 16),
+            Index(2, 1, 1),
             a_swizzle = TensorMapSwizzle.SWIZZLE_64B,
             b_swizzle = TensorMapSwizzle.SWIZZLE_64B,
+            transpose_b=True,
         ](ctx)
 
-        test_tma_wgmma[
+        test_multicast_tma_wgmma[
             DType.bfloat16,
             DType.bfloat16,
             DType.bfloat16,
-            Index(128, 16, 16),
-            Index(128, 16, 16),
+            Index(128, 16, 32),
+            Index(64, 16, 16),
             Index(64, 8, 16),
+            Index(2, 1, 1),
             a_swizzle = TensorMapSwizzle.SWIZZLE_32B,
             b_swizzle = TensorMapSwizzle.SWIZZLE_32B,
+            transpose_b=True,
         ](ctx)
 
-        test_tma_wgmma[
+        # 2x2 cluster tests
+        test_multicast_tma_wgmma[
             DType.bfloat16,
             DType.bfloat16,
             DType.bfloat16,
-            Index(64, 128, 16),
-            Index(64, 128, 16),
-            Index(64, 64, 16),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_NONE,
+            Index(128, 16, 128),
+            Index(64, 8, 64),
+            Index(64, 8, 16),
+            Index(2, 2, 1),
+            transpose_b=True,
+        ](ctx)
+
+        test_multicast_tma_wgmma[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(128, 32, 128),
+            Index(64, 16, 64),
+            Index(64, 8, 16),
+            Index(2, 2, 1),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
             b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            transpose_b=False,
+            transpose_b=True,
+        ](ctx)
+
+        test_multicast_tma_wgmma[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(128, 32, 64),
+            Index(64, 16, 32),
+            Index(64, 8, 16),
+            Index(2, 2, 1),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_64B,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_64B,
+            transpose_b=True,
+        ](ctx)
+
+        test_multicast_tma_wgmma[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(128, 32, 32),
+            Index(64, 16, 16),
+            Index(64, 8, 16),
+            Index(2, 2, 1),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_32B,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_32B,
+            transpose_b=True,
+        ](ctx)
+
+        # 1x2 cluster tests
+        test_multicast_tma_wgmma[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(64, 16, 128),
+            Index(64, 8, 64),
+            Index(64, 8, 16),
+            Index(1, 2, 1),
+            transpose_b=True,
+        ](ctx)
+
+        test_multicast_tma_wgmma[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(64, 32, 128),
+            Index(64, 16, 64),
+            Index(64, 8, 16),
+            Index(1, 2, 1),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            transpose_b=True,
+        ](ctx)
+
+        test_multicast_tma_wgmma[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(64, 32, 64),
+            Index(64, 16, 32),
+            Index(64, 8, 16),
+            Index(1, 2, 1),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_64B,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_64B,
+            transpose_b=True,
+        ](ctx)
+
+        test_multicast_tma_wgmma[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(64, 32, 32),
+            Index(64, 16, 16),
+            Index(64, 8, 16),
+            Index(1, 2, 1),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_32B,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_32B,
+            transpose_b=True,
         ](ctx)
