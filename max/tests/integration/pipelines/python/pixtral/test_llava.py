@@ -12,6 +12,29 @@ from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, Weight, ops
+from max.pipelines.architectures.pixtral.llava.llava import (
+    LlavaConditionalGeneration,
+)
+from max.pipelines.architectures.pixtral.llava.llava_decoder import (
+    Transformer as LLavaTransformer,
+)
+from max.pipelines.architectures.pixtral.llava.llava_projector import (
+    LlavaMultiModalConnector,
+)
+from max.pipelines.architectures.pixtral.vision_encoder.attention import (
+    Attention,
+)
+from max.pipelines.architectures.pixtral.vision_encoder.rotary_embedding_2d import (
+    RotaryEmbedding2D,
+)
+from max.pipelines.architectures.pixtral.vision_encoder.transformer import (
+    MLP,
+    Transformer,
+    TransformerBlock,
+)
+from max.pipelines.architectures.pixtral.vision_encoder.vision_encoder import (
+    VisionEncoder,
+)
 from max.pipelines.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,
@@ -26,21 +49,6 @@ from max.pipelines.nn import (
     RMSNorm,
 )
 from max.pipelines.nn import TransformerBlock as nnTransformerBlock
-from max.pipelines.pixtral.llava.llava import LlavaConditionalGeneration
-from max.pipelines.pixtral.llava.llava_decoder import (
-    Transformer as LLavaTransformer,
-)
-from max.pipelines.pixtral.llava.llava_projector import LlavaMultiModalConnector
-from max.pipelines.pixtral.vision_encoder.attention import Attention
-from max.pipelines.pixtral.vision_encoder.rotary_embedding_2d import (
-    RotaryEmbedding2D,
-)
-from max.pipelines.pixtral.vision_encoder.transformer import (
-    MLP,
-    Transformer,
-    TransformerBlock,
-)
-from max.pipelines.pixtral.vision_encoder.vision_encoder import VisionEncoder
 from transformers import (
     AutoProcessor,
     LlavaConfig,
