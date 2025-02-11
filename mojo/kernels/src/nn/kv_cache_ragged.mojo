@@ -19,6 +19,7 @@ from kv_cache.types import (
     PagedKVCacheCollection,
 )
 from linalg.matmul import elementwise_epilogue_type, matmul
+from quantization.qmatmul_gpu import matmul_gpu_qint4_impl
 from memory import UnsafePointer
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.flash_attention import (
@@ -106,11 +107,14 @@ fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged[
 @always_inline
 fn generic_fused_qkv_matmul_kv_cache_paged_ragged[
     type: DType,
+    weight_type: DType,
     target: StringLiteral = "cpu",
+    group_size: OptionalReg[Int] = None,
+    has_zp: OptionalReg[Bool] = None,
 ](
     hidden_state: NDBuffer[type, 2, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    weight: NDBuffer[type, 2, _],
+    weight: NDBuffer[weight_type, 2, _],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
     output: NDBuffer[type, 2, _],
@@ -156,7 +160,10 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         return _fused_qkv_matmul_kv_cache_ragged[
-            kv_collection.CacheType, target=target
+            kv_collection.CacheType,
+            target=target,
+            group_size=group_size,
+            has_zp=has_zp,
         ](
             hidden_state,
             input_row_offsets,
@@ -171,11 +178,14 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged[
 @always_inline
 fn generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
     type: DType,
+    weight_type: DType,
     target: StringLiteral = "cpu",
+    group_size: OptionalReg[Int] = None,
+    has_zp: OptionalReg[Bool] = None,
 ](
     hidden_state: NDBuffer[type, 2, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    weight: NDBuffer[type, 2, _],
+    weight: NDBuffer[weight_type, 2, _],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
     output: NDBuffer[type, 2, _],
@@ -219,7 +229,10 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         return _fused_qkv_matmul_kv_cache_ragged_bias[
-            kv_collection.CacheType, target=target
+            kv_collection.CacheType,
+            target=target,
+            group_size=group_size,
+            has_zp=has_zp,
         ](
             hidden_state,
             input_row_offsets,
@@ -235,14 +248,17 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
 @always_inline
 fn _fused_qkv_matmul_kv_cache_ragged[
     type: DType,
+    weight_type: DType,
     collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
     *,
     target: StringLiteral,
+    group_size: OptionalReg[Int] = None,
+    has_zp: OptionalReg[Bool] = None,
 ](
     hidden_state: NDBuffer[type, 2, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    weight: NDBuffer[type, 2, _],
+    weight: NDBuffer[weight_type, 2, _],
     kv_collection: collection_t,
     layer_idx: UInt32,
     output: NDBuffer[type, 2, _],
@@ -271,7 +287,11 @@ fn _fused_qkv_matmul_kv_cache_ragged[
     if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
-    return _fused_qkv_matmul_kv_cache_ragged_impl[target=target](
+    return _fused_qkv_matmul_kv_cache_ragged_impl[
+        target=target,
+        group_size=group_size,
+        has_zp=has_zp,
+    ](
         hidden_state,
         input_row_offsets,
         weight,
@@ -285,14 +305,17 @@ fn _fused_qkv_matmul_kv_cache_ragged[
 @always_inline
 fn _fused_qkv_matmul_kv_cache_ragged_bias[
     type: DType,
+    weight_type: DType,
     collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
     *,
     target: StringLiteral,
+    group_size: OptionalReg[Int] = None,
+    has_zp: OptionalReg[Bool] = None,
 ](
     hidden_state: NDBuffer[type, 2, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    weight: NDBuffer[type, 2, _],
+    weight: NDBuffer[weight_type, 2, _],
     kv_collection: collection_t,
     layer_idx: UInt32,
     output: NDBuffer[type, 2, _],
@@ -323,7 +346,11 @@ fn _fused_qkv_matmul_kv_cache_ragged_bias[
     if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
-    return _fused_qkv_matmul_kv_cache_ragged_impl_bias[target=target](
+    return _fused_qkv_matmul_kv_cache_ragged_impl_bias[
+        target=target,
+        group_size=group_size,
+        has_zp=has_zp,
+    ](
         hidden_state,
         input_row_offsets,
         weight,
@@ -338,13 +365,16 @@ fn _fused_qkv_matmul_kv_cache_ragged_bias[
 @always_inline
 fn _fused_qkv_matmul_kv_cache_ragged_impl[
     type: DType,
+    weight_type: DType,
     cache_t: KVCacheT, //,
     *,
     target: StringLiteral,
+    group_size: OptionalReg[Int] = None,
+    has_zp: OptionalReg[Bool] = None,
 ](
     hidden_state: NDBuffer[type, 2, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    weight: NDBuffer[type, 2, _],
+    weight: NDBuffer[weight_type, 2, _],
     k_cache: cache_t,
     v_cache: cache_t,
     output: NDBuffer[type, 2, *_],
@@ -422,21 +452,52 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
             rebind[SIMD[kv_type, width]](output_val),
         )
 
-    _matmul_common[target=target, elementwise_lambda_fn=write_to_cache](
-        hidden_state, weight, context
-    )
+    @parameter
+    if group_size:
+        constrained[
+            not has_zp.value(), "Zero point is not supported for quantization."
+        ]()
+        constrained[
+            weight_type == DType.uint8,
+            "Expect GPTQ weights in an uint8 tensor.",
+        ]()
+        var new_weight = rebind[
+            NDBuffer[DType.uint8, weight.rank, weight.shape, weight.strides]
+        ](weight)
+
+        _qmatmul_common[
+            group_size = group_size.value(),
+            target=target,
+            elementwise_lambda_fn=write_to_cache,
+        ](hidden_state, new_weight, context)
+
+    else:
+        constrained[
+            weight_type == type,
+            "Mismatch in type between weight and QKV tensors",
+        ]()
+        var new_weight = rebind[
+            NDBuffer[type, weight.rank, weight.shape, weight.strides]
+        ](weight)
+
+        _matmul_common[target=target, elementwise_lambda_fn=write_to_cache](
+            hidden_state, new_weight, context
+        )
 
 
 @always_inline
 fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
     type: DType,
+    weight_type: DType,
     cache_t: KVCacheT, //,
     *,
     target: StringLiteral,
+    group_size: OptionalReg[Int] = None,
+    has_zp: OptionalReg[Bool] = None,
 ](
     hidden_state: NDBuffer[type, 2, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    weight: NDBuffer[type, 2, _],
+    weight: NDBuffer[weight_type, 2, _],
     k_cache: cache_t,
     v_cache: cache_t,
     output: NDBuffer[type, 2, *_],
@@ -518,9 +579,37 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
             rebind[SIMD[kv_type, width]](output_val),
         )
 
-    _matmul_common[target=target, elementwise_lambda_fn=write_to_cache](
-        hidden_state, weight, context
-    )
+    @parameter
+    if group_size:
+        constrained[
+            not has_zp.value(), "Zero point is not supported for quantization."
+        ]()
+        constrained[
+            weight_type == DType.uint8,
+            "Expect GPTQ weights to be a 'uint8' tensor.",
+        ]()
+        var new_weight = rebind[
+            NDBuffer[DType.uint8, weight.rank, weight.shape, weight.strides]
+        ](weight)
+
+        _qmatmul_common[
+            group_size = group_size.value(),
+            target=target,
+            elementwise_lambda_fn=write_to_cache,
+        ](hidden_state, new_weight, context)
+
+    else:
+        constrained[
+            weight_type == type,
+            "Mismatch in type between weight and QKV tensors",
+        ]()
+        var new_weight = rebind[
+            NDBuffer[type, weight.rank, weight.shape, weight.strides]
+        ](weight)
+
+        _matmul_common[target=target, elementwise_lambda_fn=write_to_cache](
+            hidden_state, new_weight, context
+        )
 
 
 @always_inline
@@ -565,6 +654,36 @@ fn _matmul_common[
     @parameter
     if is_cpu[target]():
         c_nd.data.free()
+
+
+@always_inline
+fn _qmatmul_common[
+    type: DType, //,
+    *,
+    group_size: Int,
+    target: StringLiteral,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    hidden_state: NDBuffer[type, 2, _],
+    weight: NDBuffer[DType.uint8, 2, _],
+    context: Optional[DeviceContext],
+) raises:
+    constrained[is_gpu[target](), "GPTQ quantization only works on GPU."]()
+
+    var TOTAL_SEQ_LEN = hidden_state.dim[0]()
+    alias N = weight.shape.get[0]()
+    var c_nd: NDBuffer[type, 2, DimList(Dim(), N)]
+
+    c_nd = __type_of(c_nd)(
+        UnsafePointer[Scalar[type]](),
+        IndexList[2](TOTAL_SEQ_LEN, N),
+    )
+
+    matmul_gpu_qint4_impl[
+        target=target,
+        group_size=group_size,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+    ](c_nd, hidden_state, weight, context)
 
 
 # ===-----------------------------------------------------------------------===#
