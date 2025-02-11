@@ -80,11 +80,11 @@ struct ManagedLayoutTensor[
         @parameter
         if layout.all_dims_known():
             return LayoutTensor[dtype, layout](
-                self.device_data.value().ptr,
+                self.device_data.value().unsafe_pointer(),
             )
         else:
             return LayoutTensor[dtype, layout](
-                self.device_data.value().ptr,
+                self.device_data.value().unsafe_pointer(),
                 self.runtime_layout,
             )
 
@@ -98,7 +98,9 @@ struct ManagedLayoutTensor[
         M = self.runtime_layout.dim(0)
         N = self.runtime_layout.dim(1)
 
-        return NDBuffer[dtype, 2](self.device_data.value().ptr, (M, N))
+        return NDBuffer[dtype, 2](
+            self.device_data.value().unsafe_pointer(), (M, N)
+        )
 
     fn tensor[update: Bool = True](self) raises -> LayoutTensor[dtype, layout]:
         @parameter
