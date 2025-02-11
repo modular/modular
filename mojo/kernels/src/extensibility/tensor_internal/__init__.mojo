@@ -18,3 +18,13 @@ from .tensor import Tensor
 from .tensor_like import TensorLike
 from .tensor_shape import TensorShape
 from .tensor_spec import RuntimeTensorSpec, TensorSpec
+from .io_spec import (
+    IOSpec,
+    IOUnknown,
+    InputTensor,
+    OutputTensor,
+    MutableInputTensor,
+    Input,
+    Output,
+    MutableInput,
+)

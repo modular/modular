@@ -25,6 +25,7 @@ from compiler_internal.directives import (
 )
 from gpu.host._compile import _get_gpu_target
 from gpu.host.info import is_cpu
+from .io_spec import IOSpec, IO
 from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace
 from register import register_internal
@@ -248,8 +249,11 @@ fn _extract_output_lambda[
 @__mogg_intrinsic_attr("mogg.dps_input_fusion_hook")
 @no_inline
 fn _input_fusion_hook_impl[
-    type: DType, rank: Int
-](tensor: ManagedTensorSlice[type, rank]):
+    mut: Bool, //,
+    type: DType,
+    rank: Int,
+    ioSpec: IOSpec[mut],
+](tensor: ManagedTensorSlice[type=type, rank=rank, ioSpec=ioSpec]):
     @always_inline
     @parameter
     fn _input_lambda[_w: Int](i: IndexList[rank]) -> SIMD[type, _w]:
@@ -273,14 +277,19 @@ fn _input_fusion_hook_impl[
 @__mogg_intrinsic_attr("mogg.dps_output_fusion_hook")
 @no_inline
 fn _output_fusion_hook_impl[
-    type: DType, rank: Int
-](tensor: ManagedTensorSlice[type, rank]):
+    mut: Bool, //,
+    type: DType,
+    rank: Int,
+    ioSpec: IOSpec[mut],
+](tensor: ManagedTensorSlice[type=type, rank=rank, ioSpec=ioSpec]):
     @always_inline
     @parameter
     fn _output_lambda[
         _w: Int, _elem_align: Int = 1
-    ](i: IndexList[rank], v: SIMD[type, _w]):
-        alias static_specs = _get_tensor_specs_without_lambdas[type, rank]()
+    ](i: IndexList[tensor.rank], v: SIMD[tensor.type, _w]):
+        alias static_specs = _get_tensor_specs_without_lambdas[
+            tensor.type, tensor.rank
+        ]()
 
         # We use these methods to help with fusion passes which manipulates
         # calls. It is helpful to have a registered function.
@@ -290,9 +299,9 @@ fn _output_fusion_hook_impl[
             address_space = static_specs.address_space,
             static_strides = static_specs.strides,
             element_alignment=_elem_align,
-        ](tensor, i, rebind[SIMD[type, _w]](v))
+        ](tensor, i, rebind[SIMD[tensor.type, _w]](v))
 
-    _extract_output_lambda[type, rank, _output_lambda]()
+    _extract_output_lambda[tensor.type, tensor.rank, _output_lambda]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -303,8 +312,11 @@ fn _output_fusion_hook_impl[
 @value
 @register_passable("trivial")
 struct ManagedTensorSlice[
+    mut: Bool,
+    input: IO, //,
     type: DType,
     rank: Int,
+    ioSpec: IOSpec[mut, input],
 ](CollectionElement, TensorLike):
     """A view of a tensor that does not own the underlying allocated pointer.
     When the object lifetime ends it does not free the underlying pointer.
