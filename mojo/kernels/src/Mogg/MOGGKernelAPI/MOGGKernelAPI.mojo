@@ -6462,11 +6462,14 @@ struct Struct_fused_qkv_matmul_padded_continuous_batching:
 @always_inline
 fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
     type: DType,
+    weight_type: DType,
     target: StringLiteral,
+    group_size: OptionalReg[Int] = None,
+    has_zp: OptionalReg[Bool] = None,
 ](
     hidden_state: ManagedTensorSlice[type, 2],
     input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
-    weight: ManagedTensorSlice[type, 2],
+    weight: ManagedTensorSlice[weight_type, 2],
     kv_collection: PagedKVCacheCollection[
         type,
         *_,
@@ -6475,7 +6478,11 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
     output: ManagedTensorSlice[type, 2],
     ctx: MojoCallContextPtr,
 ) raises:
-    generic_fused_qkv_matmul_kv_cache_paged_ragged[target=target](
+    generic_fused_qkv_matmul_kv_cache_paged_ragged[
+        target=target,
+        group_size=group_size,
+        has_zp=has_zp,
+    ](
         managed_tensor_slice_to_ndbuffer_with_spec[
             compiler.specsof[hidden_state.type, hidden_state.rank](
                 "hidden_state"
@@ -6501,11 +6508,14 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
 @always_inline
 fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
     type: DType,
+    weight_type: DType,
     target: StringLiteral,
+    group_size: OptionalReg[Int] = None,
+    has_zp: OptionalReg[Bool] = None,
 ](
     hidden_state: ManagedTensorSlice[type, 2],
     input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
-    weight: ManagedTensorSlice[type, 2],
+    weight: ManagedTensorSlice[weight_type, 2],
     kv_collection: PagedKVCacheCollection[
         type,
         *_,
@@ -6515,7 +6525,11 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
     bias: ManagedTensorSlice[type, 1],
     ctx: MojoCallContextPtr,
 ) raises:
-    generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[target=target](
+    generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
+        target=target,
+        group_size=group_size,
+        has_zp=has_zp,
+    ](
         managed_tensor_slice_to_ndbuffer_with_spec[
             compiler.specsof[hidden_state.type, hidden_state.rank](
                 "hidden_state"
@@ -6578,6 +6592,53 @@ struct Struct_fused_qkv_matmul_padded_ragged:
         )
 
 
+@compiler.register("mo.fused_qkv_matmul.ragged.paged.quantized")
+struct Struct_fused_qkv_matmul_padded_ragged_quantized:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        weight_type: DType,
+        num_heads: Int,
+        head_dim: Int,
+        group_size: Int,
+        has_zp_int: Int,
+        page_size: Int, //,
+        target: StringLiteral,
+    ](
+        output: ManagedTensorSlice[type, 2],
+        hidden_state: ManagedTensorSlice[type, 2],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        weight: ManagedTensorSlice[weight_type, 2],
+        kv_collection: PagedKVCacheCollection[
+            type,
+            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
+        ],
+        layer_idx: Scalar[DType.uint32],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        # In the group-wise quantization scheme, every `group_size` quantized weights
+        # share the same scale. If `has_zp_int` is non-zero, there is also a group-wise
+        # zero point that need to be substracted from the quantized weights.
+        alias has_zp = True if has_zp_int == 1 else False
+
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
+            target=target,
+            group_size=group_size,
+            has_zp=has_zp,
+        ](
+            hidden_state,
+            input_row_offsets,
+            weight,
+            kv_collection,
+            layer_idx,
+            output,
+            ctx,
+        )
+
+
 @compiler.register("mo.fused_qkv_matmul.ragged.paged.bias")
 struct Struct_fused_qkv_matmul_padded_ragged_bias:
     @uses_opaque
@@ -6605,6 +6666,55 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
     ) raises:
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
             target=target
+        ](
+            hidden_state,
+            input_row_offsets,
+            weight,
+            kv_collection,
+            layer_idx,
+            output,
+            bias,
+            ctx,
+        )
+
+
+@compiler.register("mo.fused_qkv_matmul.ragged.paged.bias.quantized")
+struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        weight_type: DType,
+        num_heads: Int,
+        head_dim: Int,
+        group_size: Int,
+        has_zp_int: Int,
+        page_size: Int, //,
+        target: StringLiteral,
+    ](
+        output: ManagedTensorSlice[type, 2],
+        hidden_state: ManagedTensorSlice[type, 2],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        weight: ManagedTensorSlice[weight_type, 2],
+        kv_collection: PagedKVCacheCollection[
+            type,
+            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
+        ],
+        layer_idx: Scalar[DType.uint32],
+        bias: ManagedTensorSlice[type, 1],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        # In the group-wise quantization scheme, every `group_size` quantized weights
+        # share the same scale. If `has_zp_int` is non-zero, there is also a group-wise
+        # zero point that need to be substracted from the quantized weights.
+        alias has_zp = True if has_zp_int == 1 else False
+
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
+            target=target,
+            group_size=group_size,
+            has_zp=has_zp,
         ](
             hidden_state,
             input_row_offsets,
