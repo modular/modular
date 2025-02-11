@@ -20,12 +20,6 @@ modular_py_test(
         "no-sandbox",
         "requires-network",
     ],
-    target_compatible_with = select({
-        # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
-        "//:asan": ["@platforms//:incompatible"],
-        "//:tsan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         "//SDK/integration-test/API/python:modular_graph_test",
         "//SDK/lib/API/python/max/engine",
@@ -64,12 +58,6 @@ modular_py_test(
         "//Support/tools/system-info",
         "@llvm-project//compiler-rt:orc_rt",
     ],
-    target_compatible_with = select({
-        # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
-        "//:asan": ["@platforms//:incompatible"],
-        "//:tsan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         "//SDK/integration-test/API/python:modular_graph_test",
         "//SDK/integration-test/pipelines/python/test_common",
@@ -112,12 +100,6 @@ modular_py_test(
     tags = [
         "gpu",
     ],
-    target_compatible_with = select({
-        # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
-        "//:asan": ["@platforms//:incompatible"],
-        "//:tsan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         "//SDK/integration-test/API/python:modular_graph_test",
         "//SDK/integration-test/pipelines/python/test_common",
@@ -152,12 +134,6 @@ modular_py_test(
         "multi-gpu",
         "no-mypy",  # TODO: Fix and remove
     ],
-    target_compatible_with = select({
-        # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
-        "//:asan": ["@platforms//:incompatible"],
-        "//:tsan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         "//SDK/integration-test/API/python:modular_graph_test",
         "//SDK/lib/API/python/max/engine",
@@ -197,12 +173,6 @@ modular_py_test(
         # FIXME: KERN-1469
         "H100-DISABLE",
     ],
-    target_compatible_with = select({
-        # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
-        "//:asan": ["@platforms//:incompatible"],
-        "//:tsan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         "//SDK/integration-test/API/python:modular_graph_test",
         "//SDK/integration-test/pipelines/python/test_common",

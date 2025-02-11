@@ -69,10 +69,6 @@ lit_tests(
     tags = [
         "no-sandbox",  # These tests use openmp which validates only 1 shared library is loaded at the same time, the libraries in the sandbox appear different so running them in parallel fails otherwise.
     ],
-    target_compatible_with = select({
-        "//:asan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     tools = [
         "//SDK/tools/max",
     ],

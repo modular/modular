@@ -44,12 +44,6 @@ modular_py_test(
         "no-sandbox",
         "requires-network",
     ],
-    target_compatible_with = select({
-        # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
-        "//:asan": ["@platforms//:incompatible"],
-        "//:tsan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         ":modular_graph_test",
         "//SDK/lib/API/python/max/engine",
@@ -109,12 +103,6 @@ modular_py_test(
         "//open-source/mojo/stdlib/stdlib",
     ],
     tags = ["no-mypy"],  # TODO: fix and remove
-    target_compatible_with = select({
-        # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
-        "//:asan": ["@platforms//:incompatible"],
-        "//:tsan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/entrypoints/cli",
@@ -159,12 +147,6 @@ modular_py_test(
         "no-mypy",  # TODO: fix and remove
         "requires-network",
     ],
-    target_compatible_with = select({
-        # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
-        "//:asan": ["@platforms//:incompatible"],
-        "//:tsan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/entrypoints/cli",
@@ -202,12 +184,6 @@ modular_py_test(
     },
     gpu_constraints = ["//:has_multi_gpu"],
     tags = ["multi-gpu"],
-    target_compatible_with = select({
-        # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
-        "//:asan": ["@platforms//:incompatible"],
-        "//:tsan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         "//SDK/lib/API/python/max/engine",
         requirement("numpy"),

@@ -99,14 +99,6 @@ modular_py_binary(
             "no-sandbox",
             "requires-network",
         ],
-        target_compatible_with = select(
-            {
-                # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
-                "//:asan": ["@platforms//:incompatible"],
-                "//:tsan": ["@platforms//:incompatible"],
-                "//conditions:default": [],
-            },
-        ),
         deps = [
             ":evaluate_llama",
             "//SDK/integration-test/API/python:modular_graph_test",
@@ -173,14 +165,6 @@ modular_py_test(
         "no-sandbox",
         "requires-network",
     ],
-    target_compatible_with = select(
-        {
-            # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
-            "//:asan": ["@platforms//:incompatible"],
-            "//:tsan": ["@platforms//:incompatible"],
-            "//conditions:default": [],
-        },
-    ),
     deps = [
         ":evaluate_llama",
         "//SDK/integration-test/pipelines/python/test_common",
