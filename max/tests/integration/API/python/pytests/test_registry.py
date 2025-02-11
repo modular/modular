@@ -12,7 +12,7 @@ from typing import Any, Sequence, cast
 from unittest.mock import PropertyMock, patch
 
 import pytest
-from max.driver import Device, Tensor
+from max.driver import Device, DeviceSpec, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph, TensorType
@@ -407,6 +407,7 @@ def test_registry__test_incompatible_quantization_encoding():
         huggingface_repo_id="modularai/llama-3.1",
         quantization_encoding=SupportedEncoding.bfloat16,
         weight_path=[Path("llama-3.1-8b-instruct-bf16.gguf")],
+        device_specs=[DeviceSpec.accelerator()],
         max_batch_size=1,
         max_length=512,
     )
@@ -494,6 +495,7 @@ def test_registry__update_weight_paths():
         config = PipelineConfig(
             huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
             quantization_encoding=SupportedEncoding.q6_k,
+            device_specs=[DeviceSpec.cpu()],
         )
 
         # This should raise, as this repository, does not have q6_k weights.
@@ -507,6 +509,7 @@ def test_registry__update_weight_paths():
         config = PipelineConfig(
             huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
             quantization_encoding=SupportedEncoding.bfloat16,
+            device_specs=[DeviceSpec.accelerator()],
             max_batch_size=1,
             max_length=512,
         )
@@ -544,6 +547,7 @@ def test_registry__update_weight_paths():
         config = PipelineConfig(
             huggingface_repo_id="replit/replit-code-v1_5-3b",
             quantization_encoding=SupportedEncoding.bfloat16,
+            device_specs=[DeviceSpec.accelerator()],
             trust_remote_code=True,
             max_batch_size=1,
             max_length=512,
@@ -741,3 +745,44 @@ def test_registry__raise_oom_error_max_batch_size_set_and_max_length_set():
             RuntimeError, match="Try reducing --max-batch-size to"
         ):
             PIPELINE_REGISTRY.validate_pipeline_config(config)
+
+
+@prepare_registry
+def test_registry__validates_supported_device():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    # Valid device/encoding combinations.
+    config = PipelineConfig(
+        huggingface_repo_id="modularai/llama-3.1",
+        device_specs=[DeviceSpec.cpu()],
+        quantization_encoding=SupportedEncoding.float32,
+        max_length=1,
+    )
+    PIPELINE_REGISTRY.validate_pipeline_config(config)
+
+    config = PipelineConfig(
+        huggingface_repo_id="modularai/llama-3.1",
+        device_specs=[DeviceSpec.accelerator()],
+        quantization_encoding=SupportedEncoding.bfloat16,
+        max_length=1,
+    )
+    PIPELINE_REGISTRY.validate_pipeline_config(config)
+
+    # Invalid device/encoding combinations.
+    config = PipelineConfig(
+        huggingface_repo_id="modularai/llama-3.1",
+        device_specs=[DeviceSpec.cpu()],
+        quantization_encoding=SupportedEncoding.bfloat16,
+        max_length=1,
+    )
+    with pytest.raises(ValueError, match="not supported on cpu"):
+        PIPELINE_REGISTRY.validate_pipeline_config(config)
+
+    config = PipelineConfig(
+        huggingface_repo_id="modularai/llama-3.1",
+        device_specs=[DeviceSpec.accelerator()],
+        quantization_encoding=SupportedEncoding.q6_k,
+        max_length=1,
+    )
+    with pytest.raises(ValueError, match="not supported on gpu"):
+        PIPELINE_REGISTRY.validate_pipeline_config(config)
