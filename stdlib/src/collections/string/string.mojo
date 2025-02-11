@@ -1441,6 +1441,7 @@ struct String(
         """
         return self.as_string_slice().isspace()
 
+    # TODO(MSTDL-590): String.split() should return `StringSlice`s.
     fn split(self, sep: StringSlice, maxsplit: Int = -1) raises -> List[String]:
         """Split the string by a separator.
 
@@ -1467,36 +1468,9 @@ struct String(
         ```
         .
         """
-        var output = List[String]()
-
-        var str_byte_len = self.byte_length() - 1
-        var lhs = 0
-        var rhs = 0
-        var items = 0
-        var sep_len = sep.byte_length()
-        if sep_len == 0:
-            raise Error("Separator cannot be empty.")
-        if str_byte_len < 0:
-            output.append("")
-
-        while lhs <= str_byte_len:
-            rhs = self.find(sep, lhs)
-            if rhs == -1:
-                output.append(self[lhs:])
-                break
-
-            if maxsplit > -1:
-                if items == maxsplit:
-                    output.append(self[lhs:])
-                    break
-                items += 1
-
-            output.append(self[lhs:rhs])
-            lhs = rhs + sep_len
-
-        if self.endswith(sep) and (len(output) <= maxsplit or maxsplit == -1):
-            output.append("")
-        return output
+        return self.as_string_slice().split[sep.mut, sep.origin](
+            sep, maxsplit=maxsplit
+        )
 
     fn split(self, sep: NoneType = None, maxsplit: Int = -1) -> List[String]:
         """Split the string by every Whitespace separator.
@@ -1526,49 +1500,18 @@ struct String(
         .
         """
 
-        fn num_bytes(b: UInt8) -> Int:
-            var flipped = ~b
-            return Int(count_leading_zeros(flipped) + (flipped >> 7))
+        # TODO(MSTDL-590): Avoid the need to loop to convert `StringSlice` to
+        #   `String` by making `String.split()` return `StringSlice`s.
+        var str_slices = self.as_string_slice()._split_whitespace(
+            maxsplit=maxsplit
+        )
 
-        var output = List[String]()
-        var str_byte_len = self.byte_length() - 1
-        var lhs = 0
-        var rhs = 0
-        var items = 0
-        while lhs <= str_byte_len:
-            # Python adds all "whitespace chars" as one separator
-            # if no separator was specified
-            for s in self[lhs:].char_slices():
-                if not s.isspace():
-                    break
-                lhs += s.byte_length()
-            # if it went until the end of the String, then
-            # it should be sliced up until the original
-            # start of the whitespace which was already appended
-            if lhs - 1 == str_byte_len:
-                break
-            elif lhs == str_byte_len:
-                # if the last char is not whitespace
-                output.append(self[str_byte_len])
-                break
-            rhs = lhs + num_bytes(self.unsafe_ptr()[lhs])
-            for s in self[
-                lhs + num_bytes(self.unsafe_ptr()[lhs]) :
-            ].char_slices():
-                if s.isspace():
-                    break
-                rhs += s.byte_length()
+        var output = List[String](capacity=len(str_slices))
 
-            if maxsplit > -1:
-                if items == maxsplit:
-                    output.append(self[lhs:])
-                    break
-                items += 1
+        for str_slice in str_slices:
+            output.append(String(str_slice[]))
 
-            output.append(self[lhs:rhs])
-            lhs = rhs
-
-        return output
+        return output^
 
     fn splitlines(self, keepends: Bool = False) -> List[String]:
         """Split the string at line boundaries. This corresponds to Python's

@@ -569,6 +569,157 @@ def test_count_utf8_continuation_bytes():
     _test(3, List[UInt8](b2, c, b3, c, c))
 
 
+def test_split():
+    # empty separators default to whitespace
+    var d0 = StringSlice("hello world").split()
+    assert_true(len(d0) == 2)
+    assert_true(d0[0] == "hello")
+    assert_true(d0[1] == "world")
+    var d = StringSlice("hello \t\n\n\v\fworld").split(sep="\n")
+    assert_true(len(d) == 3)
+    assert_true(d[0] == "hello \t" and d[1] == "" and d[2] == "\v\fworld")
+
+    # Should add all whitespace-like chars as one
+    # test all unicode separators
+    # 0 is to build a String with null terminator
+    alias next_line = List[UInt8](0xC2, 0x85, 0)
+    """TODO: \\x85"""
+    alias unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8, 0)
+    """TODO: \\u2028"""
+    alias unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9, 0)
+    """TODO: \\u2029"""
+    # TODO add line and paragraph separator as StringLiteral once unicode
+    # escape secuences are accepted
+    var univ_sep_var = (
+        String(
+            " ",
+            "\t",
+            "\n",
+            "\r",
+            "\v",
+            "\f",
+            "\x1c",
+            "\x1d",
+            "\x1e",
+            String(buffer=next_line),
+            String(buffer=unicode_line_sep),
+            String(buffer=unicode_paragraph_sep),
+        )
+    )
+    var s = univ_sep_var + "hello" + univ_sep_var + "world" + univ_sep_var
+    var ds1 = StringSlice(s).split()
+    assert_true(len(ds1) == 2)
+    assert_true(ds1[0] == "hello" and ds1[1] == "world")
+
+    # should split into empty strings between separators
+    d = StringSlice("1,,,3").split(",")
+    assert_true(len(d) == 4)
+    assert_true(d[0] == "1" and d[1] == "" and d[2] == "" and d[3] == "3")
+    d = StringSlice(",,,").split(",")
+    assert_true(len(d) == 4)
+    assert_true(d[0] == "" and d[1] == "" and d[2] == "" and d[3] == "")
+    d = StringSlice(" a b ").split(" ")
+    assert_true(len(d) == 4)
+    assert_true(d[0] == "" and d[1] == "a" and d[2] == "b" and d[3] == "")
+    d = StringSlice("abababaaba").split("aba")
+    assert_true(len(d) == 4)
+    assert_true(d[0] == "" and d[1] == "b" and d[2] == "" and d[3] == "")
+
+    # should split into maxsplit + 1 items
+    d = StringSlice("1,2,3").split(",", 0)
+    assert_true(len(d) == 1)
+    assert_true(d[0] == "1,2,3")
+    d = StringSlice("1,2,3").split(",", 1)
+    assert_true(len(d) == 2)
+    assert_true(d[0] == "1" and d[1] == "2,3")
+
+    assert_true(len(StringSlice("").split()) == 0)
+    assert_true(len(StringSlice(" ").split()) == 0)
+    assert_true(len(StringSlice("").split(" ")) == 1)
+    assert_true(len(StringSlice(" ").split(" ")) == 2)
+    assert_true(len(StringSlice("  ").split(" ")) == 3)
+    assert_true(len(StringSlice("   ").split(" ")) == 4)
+
+    with assert_raises():
+        _ = StringSlice("").split("")
+
+    # Split in middle
+    var d1 = StringSlice("n")
+    var in1 = StringSlice("faang")
+    var res1 = in1.split(d1)
+    assert_equal(len(res1), 2)
+    assert_equal(res1[0], "faa")
+    assert_equal(res1[1], "g")
+
+    # Matches should be properly split in multiple case
+    var d2 = StringSlice(" ")
+    var in2 = StringSlice("modcon is coming soon")
+    var res2 = in2.split(d2)
+    assert_equal(len(res2), 4)
+    assert_equal(res2[0], "modcon")
+    assert_equal(res2[1], "is")
+    assert_equal(res2[2], "coming")
+    assert_equal(res2[3], "soon")
+
+    # No match from the delimiter
+    var d3 = StringSlice("x")
+    var in3 = StringSlice("hello world")
+    var res3 = in3.split(d3)
+    assert_equal(len(res3), 1)
+    assert_equal(res3[0], "hello world")
+
+    # Multiple character delimiter
+    var d4 = StringSlice("ll")
+    var in4 = StringSlice("hello")
+    var res4 = in4.split(d4)
+    assert_equal(len(res4), 2)
+    assert_equal(res4[0], "he")
+    assert_equal(res4[1], "o")
+
+    # related to #2879
+    # TODO: replace string comparison when __eq__ is implemented for List
+    assert_equal(
+        StringSlice("abbaaaabbba").split("a").__str__(),
+        "['', 'bb', '', '', '', 'bbb', '']",
+    )
+    assert_equal(
+        StringSlice("abbaaaabbba").split("a", 8).__str__(),
+        "['', 'bb', '', '', '', 'bbb', '']",
+    )
+    assert_equal(
+        StringSlice("abbaaaabbba").split("a", 5).__str__(),
+        "['', 'bb', '', '', '', 'bbba']",
+    )
+    assert_equal(StringSlice("aaa").split("a", 0).__str__(), "['aaa']")
+    assert_equal(StringSlice("a").split("a").__str__(), "['', '']")
+    assert_equal(StringSlice("1,2,3").split("3", 0).__str__(), "['1,2,3']")
+    assert_equal(StringSlice("1,2,3").split("3", 1).__str__(), "['1,2,', '']")
+    assert_equal(
+        StringSlice("1,2,3,3").split("3", 2).__str__(), "['1,2,', ',', '']"
+    )
+    assert_equal(
+        StringSlice("1,2,3,3,3").split("3", 2).__str__(), "['1,2,', ',', ',3']"
+    )
+
+    var in5 = StringSlice("Hello 🔥!")
+    var res5 = in5.split()
+    assert_equal(len(res5), 2)
+    assert_equal(res5[0], "Hello")
+    assert_equal(res5[1], "🔥!")
+
+    var in6 = StringSlice("Лорем ипсум долор сит амет")
+    var res6 = in6.split(" ")
+    assert_equal(len(res6), 5)
+    assert_equal(res6[0], "Лорем")
+    assert_equal(res6[1], "ипсум")
+    assert_equal(res6[2], "долор")
+    assert_equal(res6[3], "сит")
+    assert_equal(res6[4], "амет")
+
+    with assert_raises(contains="Separator cannot be empty."):
+        _ = StringSlice("1, 2, 3").split("")
+
+
 def test_splitlines():
     alias S = StringSlice[StaticConstantOrigin]
     alias L = List[StringSlice[StaticConstantOrigin]]
@@ -900,6 +1051,7 @@ def main():
     test_combination_10_good_10_bad_utf8_sequences()
     test_count_utf8_continuation_bytes()
     test_count()
+    test_split()
     test_splitlines()
     test_rstrip()
     test_lstrip()
