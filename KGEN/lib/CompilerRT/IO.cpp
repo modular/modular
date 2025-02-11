@@ -305,3 +305,22 @@ KGEN_CompilerRT_IO_FileWrite(FileHandleWrapper file, const char *data,
                              uint64_t size, llvm::StringRef *errMsg) {
   unwrap(file)->write(llvm::StringRef(data, size), errMsg);
 }
+
+//
+// Get the stdout stream associated with the program.
+// Necessary for flushing AMD `stdout`.
+//
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT FILE *
+KGEN_CompilerRT_IO_get_stdout_stream() {
+  return stdout;
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT FILE *
+KGEN_CompilerRT_IO_get_stdin_stream() {
+  return stdin;
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT FILE *
+KGEN_CompilerRT_IO_get_stderr_stream() {
+  return stderr;
+}
