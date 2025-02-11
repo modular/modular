@@ -11,7 +11,7 @@ the underlying data. This type is used to build custom graph operations.
 from collections import InlineArray, OptionalReg
 from math import ceil, fma
 from sys import alignof, simdwidthof
-from sys.info import is_nvidia_gpu
+from sys.info import is_gpu
 from sys.intrinsics import strided_load, strided_store
 
 import algorithm
@@ -684,7 +684,7 @@ struct ManagedTensorSlice[
         # Special case for NVidia GPU on shared memory.
         # We can do the offset computation in int32 instead.
         @parameter
-        if is_nvidia_gpu() and address_space in (
+        if is_gpu() and address_space in (
             _GPUAddressSpace.SHARED,
             _GPUAddressSpace.LOCAL,
             _GPUAddressSpace.CONSTANT,
