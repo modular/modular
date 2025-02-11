@@ -279,6 +279,7 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
             }
             with open(self.batch_info_output_fname, "w") as f:
                 json.dump(output, f, indent=2)
+                f.flush()  # Refer to MAXSERV-893
 
 
 def get_performance_fake(
