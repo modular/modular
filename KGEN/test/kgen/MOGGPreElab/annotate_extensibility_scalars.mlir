@@ -22,7 +22,7 @@ lit.struct.decl @just_execute_with_scalar(trait<@stdlib::@builtin::@anytype::@An
 
   // CHECK: lit.fn export @execute
   // CHECK-SAME: mogg.arg_type_names = ["test1::test1", "stdlib::SIMD", "stdlib::SIMD"]
-  // CHECK-SAME: mogg.tensor_arg_params = [unit, [#lit.struct<{value: dtype = si8}> : !DType, #lit.struct<{value = 1}> : !Int], [#kgen.param.decl.ref<"type`2x2"> : !DType, #lit.struct<{value = 1}> : !Int]]
+  // CHECK-SAME: mogg.tensor_arg_params = [unit, {input = #lit.struct<{value = 1}> : !Int, mut = #lit.struct<{value: dtype = si8}> : !DType}, {input = #lit.struct<{value = 1}> : !Int, mut = #kgen.param.decl.ref<"type`2x2"> : !DType}],
   // CHECK-SAME: mogg.value_params = [unit, {}, {dtype = #kgen.param.decl.ref<"type`2x2"> : !DType}]
   lit.fn export @"execute"(%z: !lit.struct<@test1>, %y : !MyScalar, %x : !MyScalarWithUnbound) -> !kgen.none
     attributes {

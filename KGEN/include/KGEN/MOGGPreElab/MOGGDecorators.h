@@ -108,6 +108,11 @@ constexpr StringLiteral REGISTER_INTERNAL_FUNCTION = "register_internal";
 // TODO(GEX-1145): Remove the need for this.
 constexpr StringLiteral USES_OPAQUE = "uses_opaque";
 
+// Decorator to enforce ManagedTensorSlice specializing on the IO param,
+// this allows us to transition to the new ManagedTensorSlice definition in a
+// piecemeal fashion.
+static constexpr StringLiteral ENFORCE_IO_PARAM = "enforce_io_param";
+
 // Allow new attrs to be added without needing explicit decorator.
 constexpr StringLiteral REGISTER_MOGG_INTRINSIC = "__mogg_intrinsic_attr";
 
@@ -230,8 +235,11 @@ constexpr StringLiteral MOJO_EXTENSIBILITY_API_DEVICE_CONTEXT_PTR_TYPE_NAME =
 //===----------------------------------------------------------------------===//
 
 // Names of common params. We use these strings as the key to a parameter ref.
+static constexpr llvm::StringLiteral kParameterMut = "mut";
+static constexpr llvm::StringLiteral kParameterInput = "input";
 static constexpr llvm::StringLiteral kParameterDType = "dtype";
 static constexpr llvm::StringLiteral kParameterRank = "rank";
+static constexpr llvm::StringLiteral kParameterIOSpec = "ioSpec";
 
 // Used in variadics/tuple/SIMD types.
 static constexpr llvm::StringLiteral kParameterSize = "size";

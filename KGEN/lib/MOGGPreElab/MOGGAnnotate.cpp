@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/ADT/StringSet.h"
+#include <KGEN/LITDialect/LITUtils.h>
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
@@ -14,6 +15,7 @@
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "KGEN/include/KGEN/MOGGPreElab/MOGGDecorators.h"
 #include "Support/AssertStream.h"
 #include "mlir/Pass/Pass.h"
 
@@ -33,6 +35,9 @@ static constexpr llvm::StringLiteral kShapeFuncName = "shape";
 static constexpr llvm::StringLiteral kPyTorchFallbackFuncName =
     "pytorch_fallback";
 
+static constexpr std::array<StringLiteral, 3> kIOSpec = {"tensor_internal",
+                                                         "io_spec", "IOSpec"};
+
 static constexpr std::array<StringLiteral, 3> kMaxManagedTensorSlice = {
     "tensor_internal", "managed_tensor_slice", "ManagedTensorSlice"};
 static constexpr std::array<StringLiteral, 4> kMaxSIMD = {"stdlib", "builtin",
@@ -41,6 +46,18 @@ static constexpr std::array<StringLiteral, 4> kMaxStaticTuple = {
     "stdlib", "utils", "static_tuple", "StaticTuple"};
 static constexpr std::array<StringLiteral, 4> kMaxList = {
     "stdlib", "collections", "vector", "InlinedFixedVector"};
+
+// Define the ordered parameter info - pairs of (name, uses_inferred_params)
+// TODO(GEX-1822): Should be able to query this information from
+// ManagedTensorSlice's lit.struct.decl op directly.
+static constexpr std::array<std::pair<StringLiteral, bool>, 5>
+    kManagedTensorSliceParams = {{
+        {"mut", false},
+        {"input", false},
+        {"type", false},
+        {"rank", false},
+        {"ioSpec", true} // Only ioSpec uses inferred parameters
+    }};
 
 // Check if the decorator correspond to a function call:
 // eg @foo(arg)
@@ -70,6 +87,18 @@ getDecoratorLambdaArgument(ModuleOp mod, TypedAttr decorator,
     answer.push_back(apply.getOperand(i));
   }
   return answer;
+}
+
+static bool hasEnforceIODecorator(LIT::FnOp func) {
+  auto isEnforceIO = [](TypedAttr attr) {
+    auto sym = dyn_cast<SymbolConstantAttr>(attr);
+    if (!sym)
+      return false;
+    return sym.getSymbol().getLeafReference().strref().starts_with(
+        M::KGEN::MOGGPreElab::Decorators::ENFORCE_IO_PARAM);
+  };
+
+  return llvm::any_of(func.getDecorators(), isEnforceIO);
 }
 
 /// Look through ref types to get underlaying decl ref type if needed.
@@ -203,11 +232,15 @@ litTypeToParams(LIT::StructType structType) {
 /// tensor type struct
 static SmallVector<NamedAttribute>
 getUnboundParametersForTensor(LIT::StructType &structType, OpBuilder &builder) {
-  static constexpr unsigned kDTypeIndex = 0;
-  static constexpr unsigned kRankIndex = 1;
+  static constexpr unsigned kMutIndex = 0;
+  static constexpr unsigned kInputIndex = 1;
+  static constexpr unsigned kDTypeIndex = 2;
+  static constexpr unsigned kRankIndex = 3;
   auto allParameters = litTypeToParams(structType);
   ASSERT_STREAM(allParameters.size() >= 2,
                 << "Expected at least two parameters on the tensor type");
+  auto mut = allParameters[kMutIndex];
+  auto input = allParameters[kInputIndex];
   auto dtype = allParameters[kDTypeIndex];
   auto rank = allParameters[kRankIndex];
 
@@ -220,6 +253,15 @@ getUnboundParametersForTensor(LIT::StructType &structType, OpBuilder &builder) {
   if (rank)
     tensorSpecNamedAttrs.push_back(
         NamedAttribute{builder.getStringAttr(kParameterRank), rank});
+
+  if (mut) {
+    tensorSpecNamedAttrs.push_back(
+        NamedAttribute{builder.getStringAttr(kParameterMut), mut});
+  }
+  if (input) {
+    tensorSpecNamedAttrs.push_back(
+        NamedAttribute{builder.getStringAttr(kParameterInput), input});
+  }
 
   return tensorSpecNamedAttrs;
 }
@@ -248,14 +290,28 @@ getUnboundParametersForSIMD(LIT::StructType &structType, OpBuilder &builder) {
   return tensorSpecNamedAttrs;
 }
 
-// Returns an array of attributes containing all parameters for simple types
+// Returns a dictionary attribute containing all parameters for simple types
 // (i.e: tensor or SIMD).
-static ArrayAttr getParametersForSimpleType(LIT::StructType &structType,
-                                            OpBuilder &builder) {
-  SmallVector<Attribute> attrs;
-  for (TypedAttr attr : structType.getParamValues())
-    attrs.push_back(attr);
-  return builder.getArrayAttr(attrs);
+static DictionaryAttr getParametersForSimpleType(LIT::StructType &structType,
+                                                 OpBuilder &builder) {
+  SmallVector<NamedAttribute> attrs;
+  auto paramValues = structType.getParamValues();
+
+  // Add non-inferred parameters to the dictionary
+  for (auto [param, paramInfo] :
+       llvm::zip(paramValues, kManagedTensorSliceParams)) {
+    auto [paramName, usesInferred] = paramInfo;
+    // Skip parameters that use inferred values
+    // This is because slice-mogg-funcs uses the values gathered here to
+    // parameterize lambda fusion hooks, but the KGEN drops any
+    // parameters composed of inferred parameters.
+    if (usesInferred)
+      continue;
+
+    attrs.push_back(NamedAttribute{builder.getStringAttr(paramName), param});
+  }
+
+  return builder.getDictionaryAttr(attrs);
 }
 
 /// Return a set of named attributes mapping all unbound parameters in the tuple
@@ -298,8 +354,9 @@ getUnboundParametersForTensorTuple(LIT::StructType &structType,
 }
 
 // Returns an array of attributes containing all parameters for the tensor type.
-static ArrayAttr getTensorParametersForTensorTuple(LIT::StructType &structType,
-                                                   OpBuilder &builder) {
+static DictionaryAttr
+getTensorParametersForTensorTuple(LIT::StructType &structType,
+                                  OpBuilder &builder) {
   ASSERT_STREAM(structType.getParamValues().size() >= 1,
                 "Expected the tuple of tensor to have at least 1 parameter");
   auto elementTypeAttr =
@@ -524,6 +581,149 @@ LogicalResult processStructFuncCommon(
   return success();
 }
 
+enum class IOSpec {
+  Input,       // Input tensor, read-only
+  Output,      // Output tensor, write-only
+  MutableInput // Input tensor that can be modified
+};
+
+std::optional<IOSpec> parseTensorIOSpec(LIT::StructType tensorStruct,
+                                        Location loc, StringRef argName) {
+  // Get the parameter values
+  auto params = tensorStruct.getParamValues();
+  if (params.size() != 2) {
+    emitError(loc, "Error for argument '" + argName + "': " + kIOSpec.back() +
+                       " must have exactly 2 parameters");
+    return std::nullopt;
+  }
+
+  // First parameter should be a bool struct for mut
+  auto mutParam = dyn_cast<LIT::LITStructAttr>(params[0]);
+  if (!mutParam) {
+    emitError(loc, "Error for argument '" + argName +
+                       "': 'mut' inferred parameter must be set");
+    return std::nullopt;
+  }
+
+  auto [_, mutValueAttr] = mutParam.getValues().front();
+  auto mutIntAttr = dyn_cast<IntegerAttr>(mutValueAttr);
+  if (!mutIntAttr) {
+    emitError(loc, "Error for argument '" + argName +
+                       "': Expected integer attribute for mut parameter value");
+    return std::nullopt;
+  }
+  bool isMut = mutIntAttr.getValue().getBoolValue();
+
+  // Second parameter should be an IO struct with an Int value
+  auto inputParam = dyn_cast<LIT::LITStructAttr>(params[1]);
+  if (!inputParam) {
+    emitError(loc, "Error for argument '" + argName +
+                       "': 'input' inferred parameter must be set");
+    return std::nullopt;
+  }
+
+  auto [__, inputValueAttr] = inputParam.getValues().front();
+  // The input value is now wrapped in another struct
+  auto inputStructAttr = dyn_cast<LIT::LITStructAttr>(inputValueAttr);
+  if (!inputStructAttr || inputStructAttr.getValues().empty()) {
+    emitError(
+        loc, "Error for argument '" + argName +
+                 "': Expected struct attribute with value for input parameter");
+    return std::nullopt;
+  }
+
+  auto [___, inputIntValueAttr] = inputStructAttr.getValues().front();
+  auto inputIntAttr = dyn_cast<IntegerAttr>(inputIntValueAttr);
+  if (!inputIntAttr) {
+    emitError(loc,
+              "Error for argument '" + argName +
+                  "': Expected integer attribute for input parameter value");
+    return std::nullopt;
+  }
+  auto inputVal = inputIntAttr.getValue().getSExtValue();
+
+  if (isMut && inputVal == 0)
+    return IOSpec::Output;
+  else if (!isMut && inputVal == 1)
+    return IOSpec::Input;
+  else if (isMut && inputVal == 1)
+    return IOSpec::MutableInput;
+
+  emitError(loc, "Error for argument '" + argName + "': Invalid " +
+                     kIOSpec.back() +
+                     " param. Valid configs are: [False,True]=Input, "
+                     "[True,False]=Output, [True,True]=MutableInput");
+  return std::nullopt;
+}
+
+std::optional<IOSpec> findIOSpec(LIT::StructType tensorStruct, Location loc,
+                                 StringRef argName) {
+  for (auto param : tensorStruct.getParamValues()) {
+    auto declRef = dyn_cast<KGEN::ParamDeclRefAttr>(param);
+
+    if (declRef &&
+        LIT::demangleParameterName(declRef.getName()) != kParameterIOSpec)
+      continue;
+
+    auto maybeStructType = declRef ? declRef.getType() : param.getType();
+
+    auto structType = dyn_cast<LIT::StructType>(maybeStructType);
+    if (!structType)
+      continue;
+
+    if (!symbolMatches(structType.getSymbol(), kIOSpec))
+      continue;
+
+    return parseTensorIOSpec(structType, loc, argName);
+  }
+
+  emitError(loc, "Error for argument '" + argName + "': No valid " +
+                     kIOSpec.back() + " found for tensor");
+  return std::nullopt;
+}
+
+static std::optional<SmallVector<std::pair<size_t, IOSpec>>>
+processIOSpecs(LIT::FnOp func) {
+  SmallVector<std::pair<size_t, IOSpec>> specs;
+
+  bool error = false;
+  bool foundNonOutputTensor = false;
+
+  for (auto &&[argIdx, argType] : llvm::enumerate(func.getArgumentTypes())) {
+    auto structType = getAsDeclRefOrNull(argType);
+
+    if (!structType || !isDPSTensor(structType)) {
+      foundNonOutputTensor = true;
+      continue;
+    }
+
+    auto argName = func.getFuncTypeGenerator().getArgName(argIdx);
+    auto loc = func.getBodyRegion().getArgument(argIdx).getLoc();
+    auto ioSpec = findIOSpec(structType, loc, argName);
+    if (!ioSpec) {
+      error = true;
+      continue;
+    }
+
+    if (*ioSpec != IOSpec::Output)
+      foundNonOutputTensor = true;
+
+    if (*ioSpec == IOSpec::Output && foundNonOutputTensor) {
+      emitError(loc, "Output tensor argument '" + argName.strref() +
+                         "' must come before other non-output tensor "
+                         "arguments");
+      continue;
+    }
+
+    specs.push_back({argIdx, *ioSpec});
+  }
+
+  if (error)
+    return std::nullopt;
+
+  return specs;
+}
+
 // Run checks and mutations on an execute function. emits an
 // error and returns false if an issue was present.
 //
@@ -561,7 +761,38 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
     func->setAttr(kMOGGElementFunction, UnitAttr::get(func->getContext()));
   if (registrationInfo.isViewKernel)
     func->setAttr(kMOGGViewKernel, UnitAttr::get(func->getContext()));
-  func->setDiscardableAttr(kMOGGNumDPSOutputs, registrationInfo.numDPSOperands);
+
+  bool enforceIOParamUsage = hasEnforceIODecorator(func);
+  SmallVector<std::pair<size_t, IOSpec>> ioSpecs;
+  if (enforceIOParamUsage) {
+    auto result = processIOSpecs(func);
+    if (!result)
+      return false;
+    ioSpecs = std::move(*result);
+  }
+
+  if (enforceIOParamUsage) {
+    // Set mogg.num_dps_outputs
+    auto numOutputs = llvm::count_if(
+        ioSpecs, [](auto &&elem) { return elem.second == IOSpec::Output; });
+    // TODO: should we emit an error if numDPSOperands on the register decorator
+    // was set to something other than the default?
+    func->setDiscardableAttr(kMOGGNumDPSOutputs,
+                             builder.getIndexAttr(numOutputs));
+
+    // Set mogg.buffer_args
+    SmallVector<Attribute> mutableIdxs;
+    for (auto [idx, spec] : ioSpecs) {
+      if (spec == IOSpec::MutableInput) {
+        mutableIdxs.push_back(builder.getIndexAttr(idx - numOutputs));
+      }
+    }
+    if (!mutableIdxs.empty())
+      func->setAttr(kMOGGBufferArgs, builder.getArrayAttr(mutableIdxs));
+  } else {
+    func->setDiscardableAttr(kMOGGNumDPSOutputs,
+                             registrationInfo.numDPSOperands);
+  }
 
   // Iterate over the decorators to find enable_fusion_for/mutable
   for (auto decorator : func.getDecorators()) {
@@ -573,6 +804,13 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
         getDecoratorLambdaArgument(moduleOp, decorator,
                                    MOGG_INTRINSIC_ENABLE_FUSION_FOR,
                                    SmallVector<size_t>{1});
+
+    if (mutableOperands.has_value() && enforceIOParamUsage) {
+      emitError(func->getLoc(),
+                "Using the mutable decorator and enforce_io_param decorator at "
+                "the same time is not permitted");
+      return false;
+    }
 
     if (!enableFusionOperand.has_value() && !mutableOperands.has_value())
       continue;

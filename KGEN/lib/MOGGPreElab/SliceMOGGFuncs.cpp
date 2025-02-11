@@ -8,6 +8,7 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MOGGPreElab/MOGGDecorators.h"
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/POPDialect/POPAttrs.h"
@@ -163,19 +164,37 @@ private:
       }
 
       SmallVector<TypedAttr> remappedLambdaParams;
-      for (auto attr : cast<ArrayAttr>(argsParams[idx]).getValue())
-        remappedLambdaParams.push_back(cast<TypedAttr>(attr));
-      ASSERT_STREAM(remappedLambdaParams.size() ==
-                        lambda->templateOp.getInputParams().size(),
-                    << "parameters count mismatch");
+      auto argsParamsDict = cast<DictionaryAttr>(argsParams[idx]);
+
+      // Get all input parameters from the template
+      auto inputParams = lambda->templateOp.getInputParams();
+
+      // For each input parameter, find its matching value in the dictionary
+      for (auto paramDecl : inputParams) {
+        auto paramName = paramDecl.getName();
+        ASSERT_STREAM(paramName, "Parameter must have a name");
+
+        StringRef demangledName =
+            LIT::demangleParameterName(paramName.getValue());
+
+        auto paramValue = argsParamsDict.get(demangledName);
+        ASSERT_STREAM(paramValue, "Missing parameter '"
+                                      << demangledName
+                                      << "' in arguments dictionary");
+
+        auto typedValue = dyn_cast<TypedAttr>(paramValue);
+        ASSERT_STREAM(typedValue, "Parameter value must be a TypedAttr");
+
+        remappedLambdaParams.push_back(typedValue);
+      }
 
       // Rebind the parameters of the lambda from the `self` argument in the
       // method onto the specific parameters of the tensor being used at the
       // callsite.
       ParameterEvaluator evaluator;
 
-      for (auto [localParamRef, methodParamDecl] : llvm::zip(
-               remappedLambdaParams, lambda->templateOp.getInputParams())) {
+      for (auto [localParamRef, methodParamDecl] :
+           llvm::zip(remappedLambdaParams, inputParams)) {
         auto methodDeclRef = ParamDeclRefAttr::get(methodParamDecl.getName(),
                                                    methodParamDecl.getType());
         evaluator.setParameterValue(methodDeclRef.getName(), localParamRef);
