@@ -44,8 +44,10 @@ struct DriverLibrary:
     alias create_cpu_device_fn_sig = fn (Int, _CStatus) -> Self.device_type
     var create_cpu_device_fn: Self.create_cpu_device_fn_sig
 
-    alias create_cuda_device_fn_sig = fn (Int, _CStatus) -> Self.device_type
-    var create_cuda_device_fn: Self.create_cuda_device_fn_sig
+    alias create_accelerator_device_fn_sig = fn (
+        Int, _CStatus
+    ) -> Self.device_type
+    var create_accelerator_device_fn: Self.create_accelerator_device_fn_sig
 
     alias copy_device_fn_sig = fn (Self.device_type) -> Self.device_type
     var copy_device_fn: Self.copy_device_fn_sig
@@ -82,8 +84,8 @@ struct DriverLibrary:
         self.create_cpu_device_fn = lib.get_function[
             Self.create_cpu_device_fn_sig
         ]("M_createCPUDevice")
-        self.create_cuda_device_fn = lib.get_function[
-            Self.create_cuda_device_fn_sig
+        self.create_accelerator_device_fn = lib.get_function[
+            Self.create_accelerator_device_fn_sig
         ]("M_createAcceleratorDevice")
         self.copy_device_fn = lib.get_function[Self.copy_device_fn_sig](
             "M_copyDevice"

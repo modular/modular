@@ -34,6 +34,7 @@ def main():
 from max._tensor_utils import ManagedTensorSlice
 from max.tensor import RuntimeTensorSpec
 
+from .accelerator import accelerator_device
 from .anytensor import AnyMemory, AnyMojoValue, AnyTensor
 from .device import Device, cpu_device
 from .device_memory import DeviceMemory, DeviceTensor

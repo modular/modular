@@ -79,7 +79,7 @@ struct Device(Stringable):
         for deletion. Can be used to represent a 'moved from' state.
 
 
-        Use cpu_device() or cuda_device() to create a CPU or GPU Device.
+        Use cpu_device() or accelerator_device() to create a CPU or GPU Device.
         """
 
         self._lib = None

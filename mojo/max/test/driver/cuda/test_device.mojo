@@ -13,8 +13,7 @@
 # RUN: %t/cuda-test-device
 
 from gpu.host import DeviceContext
-from max.driver import AnyTensor, Tensor, cpu_device
-from max.driver._cuda import cuda_device
+from max.driver import AnyTensor, Tensor, accelerator_device, cpu_device
 from max.tensor import TensorShape, TensorSpec
 from testing import assert_equal, assert_not_equal, assert_true
 
@@ -29,8 +28,8 @@ def _to_device_str(gpu_id: Int, sm_ver: Int) -> String:
     )
 
 
-def test_cuda_device():
-    gpu = cuda_device(gpu_id=0)
+def test_accelerator_device():
+    gpu = accelerator_device(gpu_id=0)
     assert_equal(
         String(gpu),
         _to_device_str(0, DeviceContext(0).compute_capability()),
@@ -39,7 +38,7 @@ def test_cuda_device():
 
 def test_copy_d2h():
     cpu = cpu_device()
-    gpu = cuda_device()
+    gpu = accelerator_device()
 
     input = Tensor[DType.float32, 2](TensorShape(10, 2))
 
@@ -63,7 +62,7 @@ def test_copy_d2h():
 
 def test_copy_empty():
     cpu = cpu_device()
-    gpu = cuda_device()
+    gpu = accelerator_device()
 
     input_cpu = cpu.allocate(
         TensorSpec(DType.float32, 0, 2),
@@ -77,7 +76,7 @@ def test_copy_empty():
 
 def test_copy_d2d():
     cpu = cpu_device()
-    gpu = cuda_device()
+    gpu = accelerator_device()
 
     input = Tensor[DType.float32, 2](TensorShape(10, 2))
 
@@ -103,7 +102,7 @@ def test_copy_d2d():
 
 def test_move():
     cpu = cpu_device()
-    gpu = cuda_device()
+    gpu = accelerator_device()
 
     tensor = cpu.allocate(TensorSpec(DType.float32, (2, 2)))
     addr = tensor.unsafe_ptr()
@@ -117,7 +116,7 @@ def test_move():
 
 
 def test_print():
-    gpu = cuda_device()
+    gpu = accelerator_device()
 
     input = Tensor[DType.float32, 2](TensorShape(10, 2))
 
@@ -148,7 +147,7 @@ def test_print():
 
 
 def main():
-    test_cuda_device()
+    test_accelerator_device()
     test_copy_d2h()
     test_copy_empty()
     test_copy_d2d()

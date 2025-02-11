@@ -15,7 +15,7 @@
 from pathlib import Path
 from sys import stderr
 
-import max.driver._cuda as cuda
+import max.driver.accelerator as accelerator
 from gpu.host import Dim
 from gpu.id import block_dim, block_idx, thread_idx
 from max.driver import (
@@ -23,9 +23,9 @@ from max.driver import (
     DeviceTensor,
     ManagedTensorSlice,
     Tensor,
+    accelerator_device,
     cpu_device,
 )
-from max.driver._cuda import cuda_device
 from max.tensor import TensorShape
 from testing import assert_equal
 
@@ -42,26 +42,26 @@ fn vec_add[
     out[row, col] = in0[row, col] + in1[row, col]
 
 
-def fill(cuda_dev: Device, shape: TensorShape, val: Float32) -> DeviceTensor:
+def fill(gpu_dev: Device, shape: TensorShape, val: Float32) -> DeviceTensor:
     var host = Tensor[DType.float32, 2](shape)
     for i in range(shape[0]):
         for j in range(shape[1]):
             host[i, j] = val
-    return host^.to_device_tensor().copy_to(cuda_dev)
+    return host^.to_device_tensor().copy_to(gpu_dev)
 
 
 def test_vec_add():
-    cuda_dev = cuda_device()
+    gpu_dev = accelerator_device()
     cpu_dev = cpu_device()
     shape = TensorShape(10, 10)
     alias type = DType.float32
-    in0 = fill(cuda_dev, shape, 1).to_tensor[type, 2]()
-    in1 = fill(cuda_dev, shape, 2).to_tensor[type, 2]()
-    out = fill(cuda_dev, shape, 0).to_tensor[type, 2]()
+    in0 = fill(gpu_dev, shape, 1).to_tensor[type, 2]()
+    in1 = fill(gpu_dev, shape, 2).to_tensor[type, 2]()
+    out = fill(gpu_dev, shape, 0).to_tensor[type, 2]()
 
-    kernel = cuda.compile[vec_add[type, 2]](cuda_dev)
+    kernel = accelerator.compile[vec_add[type, 2]](gpu_dev)
     kernel(
-        cuda_dev,
+        gpu_dev,
         in0.unsafe_slice(),
         in1.unsafe_slice(),
         out.unsafe_slice(),

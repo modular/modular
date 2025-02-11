@@ -16,7 +16,7 @@ from sys.ffi import _get_global_or_null
 
 from max._utils import call_dylib_func
 from max.driver import Device, cpu_device
-from max.driver._cuda import check_compute_capability
+from max.driver.accelerator import check_compute_capability
 from max.graph import Graph
 from max.tensor import Tensor, TensorSpec
 from memory import ArcPointer, UnsafePointer

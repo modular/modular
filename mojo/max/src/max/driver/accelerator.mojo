@@ -9,7 +9,7 @@ from os import abort
 from pathlib import Path
 
 from gpu.host import DeviceContext
-from gpu.host import DeviceFunction as CUDAFunction
+from gpu.host import DeviceFunction as AcceleratorFunction
 from gpu.host import Dim, FuncAttribute
 from gpu.host._compile import _get_gpu_target
 from max._utils import call_dylib_func
@@ -23,17 +23,17 @@ from ._status import Status
 from .device import Device, _CDevice, _get_driver_path
 
 
-fn cuda_device(gpu_id: Int = 0) raises -> Device:
+fn accelerator_device(gpu_id: Int = 0) raises -> Device:
     var lib = DriverLibrary()
     var status = Status(lib)
-    var device = lib.create_cuda_device_fn(gpu_id, status.impl)
+    var device = lib.create_accelerator_device_fn(gpu_id, status.impl)
     if status:
         raise String(status)
-    var cuda_dev = Device(
+    var accelerator_dev = Device(
         lib,
         owned_ptr=device,
     )
-    return cuda_dev
+    return accelerator_dev
 
 
 fn check_compute_capability(device: Device) raises:
@@ -48,7 +48,7 @@ fn check_compute_capability(device: Device) raises:
 # TODO: Make this polymorphic on Device type.
 @value
 struct CompiledDeviceKernel[func_type: AnyTrivialRegType, //, func: func_type]:
-    var _compiled_func: CUDAFunction[func, target = _get_gpu_target()]
+    var _compiled_func: AcceleratorFunction[func, target = _get_gpu_target()]
     alias LaunchArg = Variant[Dim, Int]
 
     @parameter
@@ -113,7 +113,7 @@ fn compile[
         device._lib.value().get_handle(), "M_getDeviceContext", device._cdev
     )
 
-    var cuda_func = device_context[].compile_function[
+    var accelerator_func = device_context[].compile_function[
         func, _target = _get_gpu_target()
     ]()
-    return CompiledDeviceKernel(cuda_func)
+    return CompiledDeviceKernel(accelerator_func)
