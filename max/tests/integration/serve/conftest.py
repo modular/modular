@@ -5,12 +5,56 @@
 # ===----------------------------------------------------------------------=== #
 """The fixtures for all tests in this directory."""
 
+import time
+from typing import Any
+
 import pytest
 from max.pipelines import PIPELINE_REGISTRY, PipelineTask
 from max.pipelines.architectures import register_all_models
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
-from max.serve.config import APIType, Settings
-from max.serve.pipelines.llm import batch_config_from_pipeline_config
+from max.serve.config import Settings
+from max.serve.pipelines.echo_gen import (
+    EchoPipelineTokenizer,
+    EchoTokenGenerator,
+    EchoTokenGeneratorContext,
+)
+from max.serve.pipelines.llm import (
+    TokenGeneratorPipelineConfig,
+    batch_config_from_pipeline_config,
+)
+
+
+class SleepyEchoTokenGenerator(EchoTokenGenerator):
+    def next_token(
+        self, batch: dict[str, EchoTokenGeneratorContext], num_steps: int = 1
+    ) -> list[dict[str, Any]]:
+        # Sleep for 1 ms - otherwise, the echo token generator
+        # can break some separation of timescale assumptions
+        time.sleep(1e-3)
+        return super().next_token(batch, num_steps)
+
+
+# This has to be picklable and lambdas are not picklable
+def echo_factory():
+    return SleepyEchoTokenGenerator()
+
+
+@pytest.fixture()
+def echo_app():
+    pipeline_config = TokenGeneratorPipelineConfig.no_cache(batch_size=1)
+    tokenizer = EchoPipelineTokenizer()
+
+    serving_settings = ServingTokenGeneratorSettings(
+        model_name="echo",
+        model_factory=echo_factory,
+        pipeline_config=pipeline_config,
+        tokenizer=tokenizer,
+        use_heartbeat=True,
+    )
+
+    settings = Settings()
+    app = fastapi_app(settings, serving_settings)
+    return app
 
 
 @pytest.fixture(scope="session")
@@ -52,6 +96,6 @@ def app(pipeline_config):
         use_heartbeat=True,
     )
 
-    settings = Settings(api_types=[APIType.OPENAI])
+    settings = Settings()
     app = fastapi_app(settings, serving_settings)
     return app
