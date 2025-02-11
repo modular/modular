@@ -37,3 +37,4 @@ from .memory import *
 from .semaphore import Semaphore
 from .shuffle import *
 from .sync import *
+from .cluster import *

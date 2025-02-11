@@ -96,20 +96,3 @@ fn sm_id() -> UInt:
     else:
         constrained[False, "The sm_id function is not supported by AMD GPUs."]()
         return abort[Int]("function not available")
-
-
-# ===-----------------------------------------------------------------------===#
-#  1D ctaid in a cluster
-# ===-----------------------------------------------------------------------===#
-
-
-@always_inline
-fn block_rank_in_cluster() -> UInt32:
-    """Gets the unique identifier for the current thread block (CTA) in the
-    cluster across all dimensions. Equivalent to `%cluster_ctarank` in CUDA."""
-
-    return llvm_intrinsic[
-        "llvm.nvvm.read.ptx.sreg.cluster.ctarank",
-        UInt32,
-        has_side_effect=False,
-    ]()
