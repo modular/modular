@@ -32,6 +32,6 @@ lit_tests(
     tools = [
         "//KGEN/tools/kgen-opt",
         "//KGEN/tools/kgen-translate",
-        "//KGEN/tools/mojo",
+        "//KGEN/tools/mojo:mojo-compiler-only",
     ],
 )
