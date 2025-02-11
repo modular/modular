@@ -3,10 +3,6 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 modular_py_test(
     name = "tests",
     srcs = glob(["*.py"]),
-    target_compatible_with = select({
-        "//:asan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         "//SDK/lib/API/python/max/engine",
         requirement("hypothesis"),
@@ -20,10 +16,6 @@ modular_py_test(
     srcs = glob(["accelerator_tests/*.py"]),
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
-    target_compatible_with = select({
-        "//:asan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         "//SDK/lib/API/python/max/engine",
         requirement("numpy"),
