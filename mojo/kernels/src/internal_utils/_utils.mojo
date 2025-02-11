@@ -385,8 +385,8 @@ fn arg_parse(handle: String, default: Int) raises -> Int:
     # TODO: add constraints on dtype of return value
     var args = argv()
     for i in range(len(args)):
-        if String(args[i]).startswith("--" + handle):
-            var name_val = String(args[i]).split("=")
+        if args[i].startswith("--" + handle):
+            var name_val = args[i].split("=")
             return Int(name_val[1])
     return default
 
@@ -394,8 +394,8 @@ fn arg_parse(handle: String, default: Int) raises -> Int:
 fn arg_parse(handle: String, default: Bool) raises -> Bool:
     var args = argv()
     for i in range(len(args)):
-        if String(args[i]).startswith("--" + handle):
-            var name_val = String(args[i]).split("=")
+        if args[i].startswith("--" + handle):
+            var name_val = args[i].split("=")
             if name_val[1] == "True":
                 return True
             elif name_val[1] == "False":
@@ -407,8 +407,8 @@ fn arg_parse(handle: String, default: String) raises -> String:
     # TODO: add constraints on dtype of return value
     var args = argv()
     for i in range(len(args)):
-        if String(args[i]).startswith("--" + handle):
-            var name_val = String(args[i]).split("=")
+        if args[i].startswith("--" + handle):
+            var name_val = args[i].split("=")
             return String(name_val[1])
     return default
 
