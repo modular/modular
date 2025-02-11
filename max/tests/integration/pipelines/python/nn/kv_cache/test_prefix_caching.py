@@ -563,7 +563,10 @@ async def test_prefix_caching_grouped_prefixes(
 
         for seq_id in seq_ids_and_prompts:
             seq_ids_and_prompts[seq_id] = seq_ids_and_prompts[seq_id][-1:]
-            assert len(seq_ids_and_prompts[seq_id]) == 1
+            extended = gen_prompt(np.random.randint(0, 10))
+            seq_ids_and_prompts[seq_id] = np.concatenate(
+                [seq_ids_and_prompts[seq_id], extended]
+            )
 
         orig_seq_ids_and_prompts = seq_ids_and_prompts.copy()
         fetch_kv_tuple = kv_manager.fetch(
@@ -589,3 +592,63 @@ async def test_prefix_caching_grouped_prefixes(
         kv_manager.release(seq_id)
 
     assert kv_manager._count_all_pages() == kv_manager.total_num_pages
+
+
+@pytest.mark.asyncio
+async def test_prefix_caching_chunked_prefill() -> None:
+    kv_manager = create_paged_manager(num_blocks=128, page_size=3)
+    model = FakeModel(kv_manager.page_size, kv_manager.total_num_pages)
+    assert kv_manager.radix_trie is not None
+
+    seq_id_1 = 1
+    seq_id_2 = 2
+    kv_manager.external_claim([seq_id_1, seq_id_2])
+
+    prompt_1_part_1 = np.array([10, 11, 12, 13, 14, 15, 16, 17])
+    prompt_1_part_2 = np.array([18, 19, 20, 21, 22])
+
+    prompt_2_part_1 = np.array([10, 11, 12, 13, 14, 15, 16, 17])
+    prompt_2_part_2 = np.array([16, 17, 18, 998, 999])
+
+    def run_forward(seq_id: int, prompt: np.ndarray, next_tok: int) -> None:
+        seq_ids_and_prompts = {seq_id: prompt}
+        orig_seq_ids_and_prompts = seq_ids_and_prompts.copy()
+        fetch_kv_tuple = kv_manager.fetch(seq_ids_and_prompts, num_steps=1)
+        new_toks = {seq_id: np.array([next_tok])}
+        _ = model.run(
+            orig_seq_ids_and_prompts,
+            fetch_kv_tuple,
+            num_steps=1,
+            seq_ids_and_new_tokens=new_toks,
+        )
+        kv_manager.step(new_toks)
+
+    run_forward(seq_id_1, prompt_1_part_1, prompt_1_part_2[0])
+    run_forward(seq_id_2, prompt_2_part_1, prompt_2_part_2[0])
+    assert kv_manager.active_requests[
+        seq_id_2
+    ].previous_uncommitted_tokens.tolist() == [16, 17]
+
+    run_forward(seq_id_1, prompt_1_part_2, FAKE_TOKEN)
+
+    assert kv_manager._count_all_pages() == kv_manager.total_num_pages
+    assert kv_manager.radix_trie.pretty_format(print_blocks=True) == [
+        "[10, 11, 12, 13, 14, 15] : [0, 1]",
+        "--[16, 17, 18, 19, 20, 21] : [2, 4]",
+    ]
+
+    # Make sure that we don't return block 2 for seq_id_2 since its last KV
+    # projection differs.
+    # block 2 holds projections for [..., 16, 17, 18]
+    # seq_id_2 needs projections for [..., 16, 17, 16]
+    run_forward(seq_id_2, prompt_2_part_2, FAKE_TOKEN)
+    metadata = kv_manager.active_requests[seq_id_2]
+    assert 2 not in metadata.all_assigned_blocks
+    assert 3 in metadata.all_assigned_blocks
+
+    assert kv_manager._count_all_pages() == kv_manager.total_num_pages
+    assert kv_manager.radix_trie.pretty_format(print_blocks=True) == [
+        "[10, 11, 12, 13, 14, 15] : [0, 1]",
+        "--[16, 17, 18, 19, 20, 21] : [2, 4]",
+        "--[16, 17, 16, 17, 18, 998] : [3, 6]",
+    ]
