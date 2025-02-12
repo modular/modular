@@ -14,7 +14,16 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from json.decoder import JSONDecodeError
 from time import perf_counter_ns
-from typing import Any, AsyncGenerator, List, Literal, Optional, Sequence, Union
+from typing import (
+    Any,
+    AsyncGenerator,
+    List,
+    Literal,
+    Optional,
+    Sequence,
+    Union,
+    cast,
+)
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
@@ -99,7 +108,7 @@ class OpenAIResponseGenerator(ABC):
         pass
 
     @abstractmethod
-    async def complete(self, request: TokenGeneratorRequest) -> str:
+    async def complete(self, requests: list[TokenGeneratorRequest]) -> str:
         pass
 
 
@@ -210,8 +219,13 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
             )
 
     async def complete(
-        self, request: TokenGeneratorRequest
+        self, requests: list[TokenGeneratorRequest]
     ) -> CreateChatCompletionResponse:
+        if len(requests) != 1:
+            raise NotImplementedError(
+                "chat completions does not support multiple prompts"
+            )
+        request = requests[0]
         record_request_start()
         n_tokens = 0
         request_timer = StopWatch(start_ns=request.timestamp_ns)
@@ -545,7 +559,7 @@ async def openai_create_chat_completion(
                 response_generator.stream(token_request), ping=100000
             )
 
-        response = await response_generator.complete(token_request)
+        response = await response_generator.complete([token_request])
         return response
     except JSONDecodeError as e:
         logger.exception("JSONDecodeError in request %s", request_id)
@@ -795,30 +809,40 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
             )
 
     async def complete(
-        self, request: TokenGeneratorRequest
+        self, requests: list[TokenGeneratorRequest]
     ) -> CreateCompletionResponse:
+        # we assume that all entries in `requests` came from the same http
+        # request and timestamp, request id, path should all be the same.
         record_request_start()
         n_tokens = 0
-        request_timer = StopWatch(start_ns=request.timestamp_ns)
+        request_timer = StopWatch(start_ns=requests[0].timestamp_ns)
         status_code = 200
-        try:
-            completed_outputs = await self.pipeline.all_tokens(request)
-            n_tokens = len(completed_outputs)
 
-            log_probs = _process_log_probabilities(completed_outputs)
-            response_message = "".join(
-                output.decoded_token for output in completed_outputs
+        try:
+            req_output_list = await asyncio.gather(
+                *[self.pipeline.all_tokens(request) for request in requests]
             )
-            response_choices = [
-                Choice(
-                    index=0,
-                    text=response_message,
-                    finish_reason="stop",
-                    logprobs=log_probs,
+            response_choices = []
+            for i, req_outputs in enumerate(req_output_list):
+                n_tokens += len(req_outputs)
+
+                log_probs = _process_log_probabilities(req_outputs)
+                response_message = "".join(
+                    output.decoded_token for output in req_outputs
                 )
-            ]
+                response_choices.append(
+                    Choice(
+                        index=i,
+                        text=response_message,
+                        finish_reason="stop",
+                        logprobs=log_probs,
+                    )
+                )
             response = CreateCompletionResponse(
-                id=request.id,
+                # CreateCompletionResponse.id refers to the http request, while
+                # request.id refers to the prompt. We don't have access to the
+                # http request id in this context, so use requests[0].id
+                id=requests[0].id,
                 choices=response_choices,
                 created=int(datetime.now().timestamp()),
                 model=self.pipeline.model_name,
@@ -832,33 +856,37 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
         finally:
             record_request_end(
                 status_code,
-                request.request_path,
+                requests[0].request_path,
                 request_timer.elapsed_ms,
                 n_tokens,
             )
 
 
-def openai_get_prompt_from_completion_request(
+# Prompts can be encoded 2 ways: as a string or as a sequence of integers.
+StringPrompt = str
+IntPrompt = Sequence[int]
+
+
+def openai_get_prompts_from_completion_request(
     request: CreateCompletionRequest,
-) -> Union[str, Sequence[int]]:
+) -> Union[Sequence[StringPrompt], Sequence[IntPrompt]]:
+    """Extract the prompts from a CreateCompletionRequest
+
+    Prompts can encoded as str or list-of-int. Within a given requests, there
+    can be only one encoding.
+    """
     prompt = request.prompt
     if isinstance(prompt, str):
-        return prompt
+        return [prompt]
     if len(prompt) == 0:
         return []
     if isinstance(prompt[0], str):
-        if len(prompt) != 1:
-            raise NotImplementedError("Batched requests are not supported")
-        return prompt[0]
+        return prompt
     if isinstance(prompt[0], PromptItem):
-        if len(prompt) != 1:
-            raise NotImplementedError("Batched requests are not supported")
-        return prompt[0].root
-    tokens: List[int] = []
-    for token in prompt:
-        assert isinstance(token, int)
-        tokens.append(token)
-    return tokens
+        return [p.root for p in prompt]
+    if isinstance(prompt[0], int):
+        return [prompt]
+    raise Exception("unknown element type {type(prompt[0])}")
 
 
 @router.post("/completions", response_model=None)
@@ -871,7 +899,7 @@ async def openai_create_completion(
     Public benchmarking such as vLLM use this endpoint.
     """
     request_handler_ns = perf_counter_ns()
-    request_id = request.state.request_id
+    http_req_id = request.state.request_id
     try:
         request_json = await request.json()
         request_json_ns = perf_counter_ns()
@@ -896,45 +924,55 @@ async def openai_create_completion(
         logger.debug(
             "Path: %s, Request: %s%s, Model: %s%s",
             request.url.path,
-            request_id,
+            http_req_id,
             " (streaming) " if completion_request.stream else "",
             completion_request.model,
             ", Timers: {0}".format(request_timers) if request_timers else "",
         )
 
         response_generator = OpenAICompletionResponseGenerator(pipeline)
-        request_content = openai_get_prompt_from_completion_request(
-            completion_request
-        )
-        token_request = TokenGeneratorRequest(
-            id=request_id,
-            index=0,
-            model_name=completion_request.model,
-            prompt=request_content,
-            max_new_tokens=completion_request.max_tokens,
-            timestamp_ns=request.state.request_timer.start_ns,
-            request_path=request.url.path,
-            logprobs=completion_request.logprobs,
-            echo=completion_request.echo,
-        )
+        prompts = openai_get_prompts_from_completion_request(completion_request)
+        token_requests = []
+        for i, prompt in enumerate(prompts):
+            prompt = cast(Union[str, Sequence[int]], prompt)
+            tgr = TokenGeneratorRequest(
+                # Generate a unique id for each prompt in the request
+                id=f"{http_req_id}_{i}",
+                index=i,
+                model_name=completion_request.model,
+                prompt=prompt,
+                max_new_tokens=completion_request.max_tokens,
+                timestamp_ns=request.state.request_timer.start_ns,
+                request_path=request.url.path,
+                logprobs=completion_request.logprobs,
+                echo=completion_request.echo,
+            )
+            token_requests.append(tgr)
 
         if completion_request.stream:
+            if len(token_requests) != 1:
+                raise NotImplementedError(
+                    "Streaming responses for multiple prompts is not supported"
+                )
             # We set a large timeout for ping otherwise benchmarking scripts
             # such as sglang will fail in parsing the ping message.
             return EventSourceResponse(
-                response_generator.stream(token_request), ping=100000
+                response_generator.stream(token_requests[0]), ping=100000
             )
 
-        response = await response_generator.complete(token_request)
-        return response
+        resp = await response_generator.complete(token_requests)
+        # ICK: The token generator doesn't know about http requests, so sets
+        # the wrong id.  Overwrite with the http id.
+        resp.id = http_req_id
+        return resp
     except JSONDecodeError as e:
-        logger.exception("JSONDecodeError for request %s", request_id)
+        logger.exception("JSONDecodeError for request %s", http_req_id)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e
     except (TypeError, ValidationError) as e:
-        logger.exception("Validation error for request %s", request_id)
+        logger.exception("Validation error for request %s", http_req_id)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except ValueError as e:
-        logger.exception("ValueError for request %s", request_id)
+        logger.exception("ValueError for request %s", http_req_id)
         # NOTE(SI-722): These errors need to return more helpful details,
         # but we don't necessarily want to expose the full error description
         # to the user. There are many different ValueErrors that can be raised.
