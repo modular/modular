@@ -55,7 +55,7 @@ fn _run_memcpy_async(ctx: DeviceContext, length: Int, use_context: Bool) raises:
         out_host[i] = length + i
 
     # Copy to and from device buffers.
-    ctx.enqueue_copy_to_device(in_dev, in_host.unsafe_pointer())
+    ctx.enqueue_copy_to_device(in_dev, in_host.unsafe_ptr())
     if use_context:
         ctx.enqueue_copy_device_to_device(out_dev, in_dev)
     else:
@@ -98,9 +98,9 @@ fn _run_sub_memcpy_async(ctx: DeviceContext, length: Int) raises:
     # Swap halves on copy back.
     # TODO(iposva): Investigate failure with this code:
     # second_out_dev.enqueue_copy_to(out_host)
-    ctx.enqueue_copy_from_device(out_host.unsafe_pointer(), second_out_dev)
+    ctx.enqueue_copy_from_device(out_host.unsafe_ptr(), second_out_dev)
     ctx.enqueue_copy_from_device(
-        out_host.unsafe_pointer().offset(half_length), first_out_dev
+        out_host.unsafe_ptr().offset(half_length), first_out_dev
     )
 
     # Wait for the copies to be completed.
@@ -145,7 +145,7 @@ fn _run_fake_memcpy_async(
     if use_take_ptr:
         out_ptr = out_dev.take_ptr()
     else:
-        out_ptr = out_dev.unsafe_pointer()
+        out_ptr = out_dev.unsafe_ptr()
 
     var first_out_dev = DeviceBuffer[DType.int64](
         ctx, out_ptr, half_length, owning=use_take_ptr
@@ -158,9 +158,9 @@ fn _run_fake_memcpy_async(
     # Swap halves on copy back.
     # TODO(iposva): Investigate failure with this code:
     # second_out_dev.enqueue_copy_to(out_host)
-    ctx.enqueue_copy_from_device(out_host.unsafe_pointer(), second_out_dev)
+    ctx.enqueue_copy_from_device(out_host.unsafe_ptr(), second_out_dev)
     ctx.enqueue_copy_from_device(
-        out_host.unsafe_pointer().offset(half_length), first_out_dev
+        out_host.unsafe_ptr().offset(half_length), first_out_dev
     )
 
     # Wait for the copies to be completed.

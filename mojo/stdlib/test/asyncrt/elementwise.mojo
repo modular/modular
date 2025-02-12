@@ -48,11 +48,9 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
     # Write known bad values to out_dev.
     out_host.enqueue_copy_to(out_dev)
 
-    var in_buffer = NDBuffer[type, 2](
-        in_dev.unsafe_pointer(), Index(dim_x, dim_y)
-    )
+    var in_buffer = NDBuffer[type, 2](in_dev.unsafe_ptr(), Index(dim_x, dim_y))
     var out_buffer = NDBuffer[type, 2](
-        out_dev.unsafe_pointer(), Index(dim_x, dim_y)
+        out_dev.unsafe_ptr(), Index(dim_x, dim_y)
     )
 
     @always_inline
