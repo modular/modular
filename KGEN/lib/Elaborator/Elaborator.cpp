@@ -1016,7 +1016,9 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
         op->getLoc(), "parameter for unrolling loop more than " +
                           Twine(options.loopUnrollingWarnThreshold) +
                           " times may cause long "
-                          "compilation time and large code size");
+                          "compilation time and large code size. (use "
+                          "'--loop-unrolling-warn-threshold' to increase the "
+                          "threshold or set to `0` to disable this warning)");
   }
 
   // Now generate the loop bodies and set up their elaboration at the same time.
