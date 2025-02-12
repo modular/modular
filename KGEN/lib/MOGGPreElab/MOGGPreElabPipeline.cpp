@@ -10,8 +10,6 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 
-#include "Helpers.h"
-
 using namespace M;
 using namespace KGEN;
 using namespace MOGGPreElab;
@@ -42,7 +40,7 @@ public:
 
     if (hasKernels && !debugBuild) {
       mlir::OpPassManager pm(ModuleOp::getOperationName());
-      pm.addPass(MOGGPreElab::createMOGGAutospecialize());
+      // pm.addPass(MOGGPreElab::createMOGGAutospecialize());
       pm.addPass(MOGGPreElab::createSliceMOGGFuncs());
       pm.addPass(MOGGPreElab::createOutlineMOGGFuncs());
 

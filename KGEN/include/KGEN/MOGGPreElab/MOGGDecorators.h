@@ -218,7 +218,8 @@ constexpr StringLiteral MOJO_INTERNAL_DPS_TENSOR_TYPE_NAME =
 constexpr StringLiteral MOJO_INTERNAL_DPS_SIMD_TYPE_NAME = "stdlib::SIMD";
 
 // We support tuples of DPS tensors for operations with variadic input/outputs
-constexpr StringLiteral MOJO_STATIC_INT_TUPLE_NAME = "stdlib::StaticTuple";
+constexpr StringLiteral MOJO_VARIADIC_TENSORS_NAME =
+    "tensor_internal::VariadicTensors";
 
 // We support lists of DPS tensors for a few operations
 constexpr StringLiteral MOJO_TENSOR_LIST_NAME = "stdlib::InlinedFixedVector";
@@ -240,9 +241,11 @@ static constexpr llvm::StringLiteral kParameterInput = "input";
 static constexpr llvm::StringLiteral kParameterDType = "dtype";
 static constexpr llvm::StringLiteral kParameterRank = "rank";
 static constexpr llvm::StringLiteral kParameterIOSpec = "ioSpec";
+static constexpr llvm::StringLiteral kStaticSpec = "static_spec";
 
 // Used in variadics/tuple/SIMD types.
 static constexpr llvm::StringLiteral kParameterSize = "size";
+static constexpr llvm::StringLiteral kStaticSpecs = "static_specs";
 
 } // namespace M::KGEN::MOGGPreElab
 
