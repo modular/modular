@@ -64,9 +64,9 @@ class Tensor(DLPackArray):
         self,
         shape: ShapeType,
         dtype: DType,
-        device: Device = CPU(),
+        device: Optional[Device] = None,
     ) -> None:
-        self._impl = _Tensor(shape, dtype._to(), device)
+        self._impl = _Tensor(shape, dtype._to(), device or CPU())
 
     @classmethod
     def _from_impl(cls: Type[_T], impl: _Tensor) -> _T:
@@ -81,22 +81,24 @@ class Tensor(DLPackArray):
 
     @classmethod
     def zeros(
-        cls, shape: ShapeType, dtype: DType, device: Device = CPU()
+        cls, shape: ShapeType, dtype: DType, device: Optional[Device] = None
     ) -> Tensor:
         """Allocates an tensor with all elements initialized to zero."""
-        tensor = cls(shape, dtype, device)
+        tensor = cls(shape, dtype, device or CPU())
         tensor._impl.zeros()
         return tensor
 
     @classmethod
-    def scalar(cls, value: Any, dtype: DType, device: Device = CPU()) -> Tensor:
+    def scalar(
+        cls, value: Any, dtype: DType, device: Optional[Device] = None
+    ) -> Tensor:
         """Create a scalar value of a given dtype and value."""
         tensor = cls((), dtype, CPU())
         tensor[0] = value
 
         # We can't directly set GPU memory, so we just have to copy
         # the tensor over.
-        return tensor.to(device)
+        return tensor.to(device or CPU())
 
     @property
     def dtype(self) -> DType:
