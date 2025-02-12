@@ -1840,8 +1840,8 @@ def POP_VariadicSplatOp : POPOp<"variadic.splat", [Pure,
 // VariadicGetOp
 //===----------------------------------------------------------------------===//
 
-def POP_VariadicGetOp : POPOp<"variadic.get", [Pure,
-    VariadicElementType<"variadic", "result">]> {
+def POP_VariadicGetOp : POPOp<"variadic.get",
+    [VariadicElementType<"variadic", "result">]> {
   let summary = "returns the element at the given index in a variadic sequence";
   let description = [{
     The `pop.variadic.get` operation takes a `!kgen.variadic` sequence and an
