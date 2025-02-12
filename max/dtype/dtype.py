@@ -112,6 +112,7 @@ class DType(Enum):
             DType.uint32: np.dtype(np.uint32),
             DType.uint64: np.dtype(np.uint64),
             DType.float8_e4m3: np.dtype(np.uint8),
+            DType.float8_e4m3fn: np.dtype(np.uint8),
             DType.float8_e4m3fnuz: np.dtype(np.uint8),
             DType.float8_e5m2: np.dtype(np.uint8),
             DType.float8_e5m2fnuz: np.dtype(np.uint8),
