@@ -248,6 +248,16 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     options.largeDataThreshold = value;
   }
 
+  if (!clOptions.loopUnrollingWarnThreshold.empty()) {
+    uint64_t value;
+    if (!llvm::to_integer(clOptions.loopUnrollingWarnThreshold, value)) {
+      return Error("invalid loop-unrolling-warn-threshold'" +
+                   clOptions.loopUnrollingWarnThreshold +
+                   "', expected an integer number");
+    }
+    options.loopUnrollingWarnThreshold = value;
+  }
+
   TimingScope timing = timingManager->getRootScope();
 
   PassManagerConfigOptions pmOptions;

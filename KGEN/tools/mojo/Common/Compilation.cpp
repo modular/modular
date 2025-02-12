@@ -150,7 +150,8 @@ ErrorOrSuccess M::parseTargetOptions(
     llvm::opt::OptSpecifier mtuneId,
     llvm::opt::OptSpecifier targetAcceleratorId,
     llvm::opt::OptSpecifier mcmodelId,
-    llvm::opt::OptSpecifier largeDataThresholdId) {
+    llvm::opt::OptSpecifier largeDataThresholdId,
+    llvm::opt::OptSpecifier loopUnrollingWarnThresholdId) {
   StringRef targetTriple = args.getLastArgValue(tripleId);
   if (args.hasMultipleArgs(tripleId))
     return Error("too many specified target triples, expected exactly one");
@@ -190,6 +191,12 @@ ErrorOrSuccess M::parseTargetOptions(
     return Error(
         "too many specified large data threshold, expected exactly one");
 
+  StringRef loopUnrollingWarnThreshold =
+      args.getLastArgValue(loopUnrollingWarnThresholdId);
+  if (args.hasMultipleArgs(loopUnrollingWarnThresholdId))
+    return Error("too many specified loop unroll factor threshold, expected "
+                 "exactly one");
+
   // If the user specified the triple, the target CPU, or the target feature
   // set, use those to override the defaults.
   if (!targetTriple.empty())
@@ -223,6 +230,16 @@ ErrorOrSuccess M::parseTargetOptions(
                    "', expected a positive integer number");
     }
     compilationOptions.largeDataThreshold = value;
+  }
+
+  if (!loopUnrollingWarnThreshold.empty()) {
+    uint64_t value;
+    if (!llvm::to_integer(loopUnrollingWarnThreshold, value)) {
+      return Error("invalid loop-unrolling-warn-threshold'" +
+                   loopUnrollingWarnThreshold +
+                   "', expected an integer number");
+    }
+    compilationOptions.loopUnrollingWarnThreshold = value;
   }
 
   // Initialize targets first - we rely on this for getTargetInfo as well as for
