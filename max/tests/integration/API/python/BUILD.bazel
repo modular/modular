@@ -47,7 +47,7 @@ modular_py_test(
     deps = [
         ":modular_graph_test",
         "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/entrypoints/cli",
+        "//SDK/lib/API/python/max/entrypoints",
         "//SDK/lib/API/python/max/pipelines/llama3",
         "//SDK/lib/API/python/max/pipelines/nn",
         requirement("click"),
@@ -105,7 +105,7 @@ modular_py_test(
     tags = ["no-mypy"],  # TODO: fix and remove
     deps = [
         "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/entrypoints/cli",
+        "//SDK/lib/API/python/max/entrypoints",
         "//SDK/lib/API/python/max/pipelines/llama3",
         "//SDK/lib/API/python/max/pipelines/nn",
         requirement("torch"),
@@ -149,7 +149,7 @@ modular_py_test(
     ],
     deps = [
         "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/entrypoints/cli",
+        "//SDK/lib/API/python/max/entrypoints",
         requirement("click"),
         requirement("numpy"),
         requirement("safetensors"),
