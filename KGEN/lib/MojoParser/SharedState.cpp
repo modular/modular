@@ -1751,7 +1751,12 @@ static size_t getTokenLength(SharedState &shared, SMLoc loc) {
   if (*curPtr == '\0')
     return 0;
 
-  Lexer lexer(shared.diags, StringRef(curPtr, ~0ULL), curPtr);
+  // Use ~0U to indicate the end of the buffer, that should be fine as we don't
+  // expect tokens to be >= 2^32 charachetrs long.
+  // NOTE: We cannot use ~0ULL as it leads to integer overflow when computing
+  // end of the StringRef.
+  Lexer lexer(shared.diags,
+              StringRef(curPtr, std::numeric_limits<uint32_t>::max()), curPtr);
   return lexer.getToken().getSpelling().size();
 }
 
