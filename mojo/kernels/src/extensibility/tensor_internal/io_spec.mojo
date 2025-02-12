@@ -37,11 +37,3 @@ alias IOUnknown = IOSpec[False, IO.Unknown]()
 alias Input = IOSpec[False, IO.Input]()
 alias Output = IOSpec[True, IO.Output]()
 alias MutableInput = IOSpec[True, IO.Input]()
-
-alias OutputTensor = ManagedTensorSlice[ioSpec=Output, *_]
-alias InputTensor = ManagedTensorSlice[ioSpec=Input, *_]
-alias MutableInputTensor = ManagedTensorSlice[ioSpec=MutableInput, *_]
-
-# Temp alias, meant to make potential conflicts with Spenser's changes less
-# onerous
-alias DynamicTensor = ManagedTensorSlice[ioSpec=IOUnknown, *_]

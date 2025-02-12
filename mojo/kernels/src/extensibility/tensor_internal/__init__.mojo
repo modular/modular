@@ -6,7 +6,13 @@
 """Implements the MAX tensor package."""
 
 from .managed_tensor_slice import (
+    DynamicTensor,
+    IODynamicTensor,
+    InputTensor,
     ManagedTensorSlice,
+    MutableInputTensor,
+    OutputTensor,
+    VariadicTensors,
     _input_fusion_hook_impl,
     _output_fusion_hook_impl,
     foreach,
@@ -21,9 +27,6 @@ from .tensor_spec import RuntimeTensorSpec, TensorSpec
 from .io_spec import (
     IOSpec,
     IOUnknown,
-    InputTensor,
-    OutputTensor,
-    MutableInputTensor,
     Input,
     Output,
     MutableInput,
