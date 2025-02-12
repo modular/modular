@@ -110,7 +110,6 @@ def _run_cmdline(cmd: list[str], dryrun: bool = False) -> ProcessOutput:
             print(list2cmdline(cmd))
             return ProcessOutput(None, None)
 
-        logging.debug(list2cmdline(cmd))
         output = run_shell_command(cmd, check=False, capture_output=True)
         return ProcessOutput(
             output.stdout.decode("utf-8"), output.stderr.decode("utf-8")
@@ -701,6 +700,11 @@ def run(
                 spec_list[i] = s
                 output_path_list[i] = output_file
                 output_msg_list[i] = output_msg
+                if verbose:
+                    if output_msg.stdout:
+                        logging.debug(output_msg.stdout)
+                    if output_msg.stderr:
+                        logging.error(output_msg.stderr)
                 print(LINE)
 
             except Exception as e:
