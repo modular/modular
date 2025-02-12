@@ -543,6 +543,14 @@ KGEN_CompilerRT_GetContextAndSizeFromAsync(
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_TransferAsyncRef(AsyncRTWrapper<AnyAsyncValueRef> from,
+                                 AsyncRTWrapper<AnyAsyncValueRef> to) {
+  assert(unwrap(to).getPointer() == nullptr);
+  AnyAsyncValueRef &toMove = unwrap(from);
+  new (&unwrap(to)) AnyAsyncValueRef(std::move(toMove));
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_DestructAsyncRefs(size_t size, void **storageRefPtr,
                                   bool directRef) {
   for (size_t i = 0; i < size; i++) {
