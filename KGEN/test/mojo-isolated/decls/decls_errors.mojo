@@ -289,6 +289,27 @@ struct TestPackErrorMessage[*Ts: AnyType]:
 fn badAnyRegPack[*Ts: AnyTrivialRegType](*args: *Ts):
   pass
 
+# always_inline("builtin")
+
+# expected-error @+2 {{'@always_inline("builtin")' does not support this argument convention}}
+@always_inline("builtin")
+async fn always_inline_builtin_1(): pass
+
+# expected-error @+2 {{'@always_inline("builtin")' does not support this argument convention}}
+@always_inline("builtin")
+fn always_inline_builtin_2(a: MemType): pass
+
+# expected-error @+2 {{'@always_inline("builtin")' does not support this argument convention}}
+@always_inline("builtin")
+fn always_inline_builtin_3() raises: pass
+
+@always_inline("builtin")
+fn always_inline_builtin_4(a: Bool):
+  # expected-error @+1 {{'@always_inline("builtin")' does not support MLIR operation hlcf.elif}}
+  if a:
+     pass
+
+
 ##===----------------------------------------------------------------------===##
 # Function Overloading
 ##===----------------------------------------------------------------------===##

@@ -633,7 +633,7 @@ fn callInParam[callable: fn[x: Int](Int) -> Int]() -> Int:
 # CHECK-LABEL: lit.fn @"parameterExprs{{.*}}()"
 # CHECK-SAME: <a: !Int, a2: !Int>
 fn parameterExprs[a: Int, a2: Int]():
-  # CHECK: lit.alias.decl *"b{{.*}}": !Int = <apply({{.*}}__sub__{{.*}}, a, a)>
+  # CHECK: lit.alias.decl *"b{{.*}}": !Int = <{0}>
   alias b = a-a
   # CHECK: lit.alias.decl *"c{{.*}}": !Int = <{value = add(#lit.struct.extract<:!Int a, "value">, 42)}>
   alias c = a+42

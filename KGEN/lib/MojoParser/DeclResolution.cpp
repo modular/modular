@@ -70,16 +70,13 @@ rejectDecorators(ArrayRef<std::pair<ExprNode *, LexerCursor>> decoratorExprs,
 }
 
 namespace {
-/// Decorators attached to a declaration may be "signature" decorators, "body"
-/// decorators, compiler decorators, or dynamic decorators.
+/// Decorators attached to a declaration may be "signature" decorators or "body"
+/// decorators.
 ///
 /// - Signature decorators are applied during the resolution of the signature of
 ///   a declaration before it is name bound.
 /// - Body decorators are applied after the body of the declaration is fully
 ///   resolved.
-/// - Compiler decorators (TODO) are applied at some stage in the Mojo
-///   compilation pipeline.
-/// - Dynamic decorators (TODO) are applied at the object at runtime.
 ///
 /// This is the base class for handling decorators on declarations. Signature
 /// decorators are processed first and then leftover decorators are persisted
@@ -387,6 +384,9 @@ struct FnSigDecorators : public SharedStateUser {
   /// Apply a function signature decorator.
   LogicalResult apply(ExprNode *decorator);
 
+  static LogicalResult checkAlwaysInlineBuiltin(FnOp funcBody,
+                                                SharedState &shared);
+
 private:
   void applyStaticMethod(const DeclRefNode &node);
   void applyImplicitDecorator(const DeclRefNode &node);
@@ -401,6 +401,22 @@ private:
   TypeCheckedFnSignature &tcSignature;
 };
 } // namespace
+
+/// This function verifies @always_inline("builtin") functions after the body of
+/// the function has been parsed.
+LogicalResult FnSigDecorators::checkAlwaysInlineBuiltin(FnOp funcOp,
+                                                        SharedState &shared) {
+  // To see if this is foldable, synthesize a bunch of argument values that we
+  // can cram into the function and see if it balks.
+  SmallVector<TypedAttr> operands;
+  operands.push_back(funcOp.getBoundReference()); // callee.
+  for (auto arg : funcOp.getBody()->getArguments())
+    operands.push_back(UnknownAttr::get(arg.getType()));
+
+  if (shared.foldInlineBuiltinFunction(operands, funcOp.getLoc(), true))
+    return success();
+  return failure();
+}
 
 LogicalResult FnSigDecorators::apply(ExprNode *decorator) {
   // Process all the decorators we know about.
@@ -1101,7 +1117,6 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
 
   // Generate a debug subprogram for this function.
   shared.setLocationDebugScope(funcOp);
-
   for (auto [parsedArg, bbArg] :
        llvm::zip(fnSignature.parsedArgs, funcOp.getBody()->getArguments()))
     bbArg.setLoc(shared.diags.translateLocation(parsedArg.loc));
@@ -1355,7 +1370,6 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
 
   // Emit a default "return None" if the function returns nothing, and add an
   // endop terminator.
-
   if (emptyBody && isa<TraitDeclOp>(*decl.getParentDecl())) {
     // Wipe out the body which may already contain some compiler generated
     // operations for handling argLValueVarSlot.
@@ -1421,6 +1435,13 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
     processExtensibilityDecorator(shared, decl, decorator);
     return failure();
   });
+
+  // If this function is @always_inline("builtin"), check that its body obeys
+  // the right invariants.
+  if (funcOp.getInlineLevel() == InlineLevel::AlwaysBuiltin) {
+    if (failed(FnSigDecorators::checkAlwaysInlineBuiltin(funcOp, shared)))
+      funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
+  }
 
   return success();
 }

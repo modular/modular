@@ -2196,12 +2196,20 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
       if (!lhs || !rhs)
         return {};
       result = ParamOperatorAttr::get(POC::Add, lhs, rhs);
+    } else if (auto paramCst = dyn_cast<ParamConstantOp>(op)) {
+      result = paramCst.getValue();
     } else if (auto add = dyn_cast<mlir::index::MulOp>(op)) {
       auto lhs = findValue(add.getOperand(0));
       auto rhs = findValue(add.getOperand(1));
       if (!lhs || !rhs)
         return {};
       result = ParamOperatorAttr::get(POC::Mul, lhs, rhs);
+    } else if (auto add = dyn_cast<mlir::index::SubOp>(op)) {
+      auto lhs = findValue(add.getOperand(0));
+      auto rhs = findValue(add.getOperand(1));
+      if (!lhs || !rhs)
+        return {};
+      result = ParamOperatorAttr::getSub(lhs, rhs);
     } else if (auto call = dyn_cast<LIT::CallOp>(op)) {
       SmallVector<TypedAttr> calleeOperands;
       calleeOperands.push_back(call.getCallee());
