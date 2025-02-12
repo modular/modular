@@ -158,11 +158,11 @@ struct IntLiteral:
     alias type = __mlir_type.`!kgen.int_literal`
     var value: Self.type
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __init__(out self):
         self.value = __mlir_attr.`#kgen.int_literal<0> : !kgen.int_literal`
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: Self.type):
         self.value = value
@@ -248,7 +248,7 @@ struct Int(Copyable):
     fn __sub__(lhs, rhs: Int) -> Int:
         return __mlir_op.`index.sub`(lhs.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __mul__(lhs, rhs: Int) -> Int:
         return __mlir_op.`index.mul`(lhs.value, rhs.value)
 
