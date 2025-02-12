@@ -713,7 +713,7 @@ fn flash_attention_dispatch[
                 ](num_heads * depth * batch_size * num_partitions_value)
 
                 var output_intermediate = NDBuffer[output.type, 4](
-                    output_intermediate_data.unsafe_pointer(),
+                    output_intermediate_data.unsafe_ptr(),
                     Index(
                         num_partitions_value,
                         batch_size,
@@ -727,7 +727,7 @@ fn flash_attention_dispatch[
                 )
 
                 var exp_sum = NDBuffer[accum_type, 3](
-                    exp_sum_data.unsafe_pointer(),
+                    exp_sum_data.unsafe_ptr(),
                     Index(
                         num_partitions_value,
                         batch_size,
@@ -740,7 +740,7 @@ fn flash_attention_dispatch[
                 )
 
                 var qk_max = NDBuffer[accum_type, 3](
-                    qk_max_data.unsafe_pointer(),
+                    qk_max_data.unsafe_ptr(),
                     Index(num_partitions_value, batch_size, Int(num_heads)),
                 )
 
@@ -4610,7 +4610,7 @@ fn mha_gpu_naive[
         batch_size * num_heads * max_prompt_len * num_keys
     )
     # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-    var p_ptr = p_device.unsafe_pointer()
+    var p_ptr = p_device.unsafe_ptr()
     var p_buffer = NDBuffer[p_type, 3](
         p_ptr, Index(batch_size * num_heads, max_prompt_len, num_keys)
     )
