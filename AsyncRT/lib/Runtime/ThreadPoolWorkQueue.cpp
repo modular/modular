@@ -15,6 +15,7 @@
 #include "AsyncRT/Support/LockFreeRingBuffer.h"
 #include "AsyncRT/Support/Semaphore.h"
 #include "AsyncRT/Support/ThreadAffinity.h"
+#include "Support/AlignedAlloc.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Profiling/TimeProfiler.h"
 #include "Support/Threading/Atomics.h"
@@ -896,7 +897,7 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(
   // Initialize each thread with its required state.
   // Note that we're constructing the array manually since WorkQueueThreads have
   // non-moveable atomics.
-  workers = static_cast<WorkQueueThread *>(aligned_alloc(
+  workers = static_cast<WorkQueueThread *>(M::alignedAlloc(
       alignof(WorkQueueThread), sizeof(WorkQueueThread) * numWorkers));
   assert(workers && "Allocation of workers failed");
   for (size_t workerID = 0; workerID < numWorkers; ++workerID)
