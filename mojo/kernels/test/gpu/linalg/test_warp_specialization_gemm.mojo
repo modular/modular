@@ -88,13 +88,15 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
     c: LayoutTensor[c_type, c_layout],
 ):
+    constrained[transpose_b, "Only support transposed B in layout"]()
+
     alias K = b_layout.shape[1].value()
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
-
-    alias num_m_mmas = BM // wgmma_shape[0]
-    alias num_n_mmas = BN // wgmma_shape[1]
+    alias WGMMA_M = wgmma_shape[0]
+    alias WGMMA_N = wgmma_shape[1]
+    alias WGMMA_K = wgmma_shape[2]
 
     alias accum_type = get_accum_type[a_type]()
     alias c_frag_size = wgmma_shape[0] * wgmma_shape[1] // 128
@@ -104,6 +106,9 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
     alias num_consumer = (num_threads // 128) - 1
+
+    alias num_m_mmas = BM // WGMMA_M // num_consumer
+    alias num_n_mmas = BN // WGMMA_N
 
     wgmma_op = TensorCoreAsync[
         accum_type,
@@ -189,6 +194,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
                 write_pipeline_states.step()
 
     else:
+        var local_warp_group_idx = warp_group_idx - 1
+
         var c_reg_tile = LayoutTensor[
             accum_type,
             Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
@@ -211,7 +218,12 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
             var b_smem_tile = b_smem_iter.next(read_idx)[]
 
             wgmma_op.arrive()
-            wgmma_op.wgmma(a_smem_tile, b_smem_tile, c_reg_tile)
+            wgmma_op.wgmma[num_consumer](
+                a_smem_tile,
+                b_smem_tile,
+                c_reg_tile,
+                local_warp_group_idx,
+            )
             wgmma_op.commit_group()
             wgmma_op.wait_for_all()
 
@@ -219,6 +231,9 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
             read_pipeline_states.step()
 
         var c_gmem_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
+        var c_gmem_split = c_gmem_tile.tile[BM // num_consumer, BN](
+            local_warp_group_idx, 0
+        )
         var warp_id = warp_group_thread_idx // WARP_SIZE
 
         @parameter
@@ -230,9 +245,9 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
 
                 # (m_mma, n_mma) is coordinates for a warp group's tile.
                 # A warp group is 4x1 warps.
-                warp_tile = c_gmem_tile.tile[
-                    wgmma_shape[0] // 4, wgmma_shape[1]
-                ](m_mma * 4 + warp_id, n_mma)
+                warp_tile = c_gmem_split.tile[WGMMA_M // 4, WGMMA_N](
+                    m_mma * 4 + warp_id, n_mma
+                )
 
                 # Tile at (mma_id, 0) is a long vector containing all fragments
                 # for this warp.
@@ -250,13 +265,25 @@ def test_warp_specialize_gemm[
     a_type: DType,
     b_type: DType,
     c_type: DType,
+    num_consumer: Int = 1,
     transpose_b: Bool = True,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,):
     var M = m.value
     var N = n.value
     var K = k.value
 
-    print("wgmma_n", wgmma_n, " : ", M, "x", N, "x", K)
+    print(
+        "wgmma_n",
+        wgmma_n,
+        " : ",
+        M,
+        "x",
+        N,
+        "x",
+        K,
+        " with num_consumer -> ",
+        num_consumer,
+    )
 
     alias static_a_shape = DimList(m.dim, k.dim)
     alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
@@ -331,12 +358,12 @@ def test_warp_specialize_gemm[
         is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
     ](ctx, b)
+    alias a_tile_layout = __type_of(a_tma_op).layout
+    alias b_tile_layout = __type_of(b_tma_op).layout
 
-    # 1 warp group to TMA and 1 warp group to WGMMA
-    alias num_wgmma = 1
-    alias num_threads = WARP_GROUP_SIZE * num_wgmma + WARP_GROUP_SIZE
+    alias num_threads = WARP_GROUP_SIZE * num_consumer + WARP_GROUP_SIZE
 
-    alias pipeline_stages = 3
+    alias pipeline_stages = 4
     alias smem_size = pipeline_stages * (
         a_smem_layout.size() * sizeof[a_type]()
         + b_smem_layout.size() * sizeof[b_type]()
@@ -349,8 +376,8 @@ def test_warp_specialize_gemm[
         c_type,
         __type_of(a).layout,
         __type_of(b).layout,
-        Layout.row_major(BM, BK),
-        Layout.row_major(BN, BK),
+        a_tile_layout,
+        b_tile_layout,
         __type_of(c).layout,
         block_tile_shape,
         wgmma_shape,
@@ -368,6 +395,7 @@ def test_warp_specialize_gemm[
     var func = ctx.compile_function[
         kernel,
         _target = _get_gpu_target["sm_90"](),
+        # dump_asm = Path("./gemm.ptx"),
     ](func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size))
 
     ctx.enqueue_function(
@@ -423,7 +451,19 @@ def test_warp_specialize_gemm[
 def main():
     with DeviceContext() as ctx:
         test_warp_specialize_gemm[
-            128, DType.bfloat16, DType.bfloat16, DType.bfloat16
+            128,
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            num_consumer=1,
+        ](ctx, static[128](), static[128](), static[128]())
+
+        test_warp_specialize_gemm[
+            128,
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            num_consumer=2,
         ](ctx, static[128](), static[128](), static[128]())
 
         test_warp_specialize_gemm[
@@ -436,21 +476,65 @@ def main():
         @parameter
         for i in range(num_ins):
             test_warp_specialize_gemm[
-                wgmma_n[i], DType.bfloat16, DType.bfloat16, DType.bfloat16
+                wgmma_n[i],
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                num_consumer=1,
             ](ctx, static[1024](), static[512](), static[128]())
 
             test_warp_specialize_gemm[
-                wgmma_n[i], DType.bfloat16, DType.bfloat16, DType.bfloat16
-            ](ctx, dynamic(1024), static[512](), static[128]())
+                wgmma_n[i],
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                num_consumer=2,
+            ](ctx, static[1024](), static[512](), static[128]())
 
             test_warp_specialize_gemm[
-                wgmma_n[i], DType.bfloat16, DType.bfloat16, DType.bfloat16
+                wgmma_n[i],
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                num_consumer=1,
             ](ctx, dynamic(99), static[1024](), static[1024]())
 
             test_warp_specialize_gemm[
-                wgmma_n[i], DType.bfloat16, DType.bfloat16, DType.bfloat16
+                wgmma_n[i],
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                num_consumer=2,
+            ](ctx, dynamic(99), static[1024](), static[1024]())
+
+            test_warp_specialize_gemm[
+                wgmma_n[i],
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                num_consumer=1,
             ](ctx, dynamic(100), static[512](), static[256]())
 
             test_warp_specialize_gemm[
-                wgmma_n[i], DType.bfloat16, DType.bfloat16, DType.bfloat16
+                wgmma_n[i],
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                num_consumer=2,
+            ](ctx, dynamic(100), static[512](), static[256]())
+
+            test_warp_specialize_gemm[
+                wgmma_n[i],
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                num_consumer=1,
+            ](ctx, dynamic(201), static[2048](), static[256]())
+
+            test_warp_specialize_gemm[
+                wgmma_n[i],
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                num_consumer=2,
             ](ctx, dynamic(201), static[2048](), static[256]())
