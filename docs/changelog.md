@@ -42,6 +42,13 @@ what we publish.
 
 ### Tooling changes
 
+#### Mojo Compiler
+
+Mojo compiler now warns about parameter for with large loop unrolling factor
+(>1024 by default) which can lead to long compilation time and large generated
+code size. Set `--loop-unrolling-warn-threshold` to change default value to
+a different threshold or to `0` to disable the warning.
+
 ### ❌ Removed
 
 ### 🛠️ Fixed
