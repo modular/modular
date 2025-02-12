@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from bit import log2_floor
 from collections import Optional, OptionalReg
 from math import ceildiv, isclose
 from pathlib import Path
@@ -22,8 +23,8 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.info import DEFAULT_GPU_ARCH, is_gpu
+from gpu.host import DeviceContext, FuncAttribute, DeviceAttribute
+from gpu.host.info import A100, DEFAULT_GPU_ARCH, is_gpu
 from gpu.intrinsics import lop
 from gpu.memory import (
     AddressSpace,
@@ -1386,7 +1387,72 @@ fn multistage_gemm_q[
     var tensor_a = from_ndbuffer_row_major(a)
     var tensor_b = from_ndbuffer_row_major(b)
 
-    var smem_usage = q_smem_usage[config, group_size]()
+    alias smem_usage = q_smem_usage[config, group_size]()
+    alias max_smem = ctx.device_info.shared_memory_per_multiprocessor
+
+    @parameter
+    if smem_usage > max_smem:
+        # Strategy:
+        # 1. First attempt: Reduce pipeline stages until minimum of 3
+        # 2. If still insufficient: Halve the number of warp partitions
+        # and retry pipeline stages reduction
+        @parameter
+        for partition_reduction in range(
+            log2_floor(config.num_warp_k_partitions) + 1
+        ):
+
+            @parameter
+            for num_stages in range(config.num_pipeline_stages, 2, -1):
+                alias adjusted_config = MatmulConfig[
+                    a_type, b_type, c_type, True
+                ](
+                    block_tile_shape=config.block_tile_shape,
+                    warp_tile_shape=config.warp_tile_shape,
+                    num_pipeline_stages=num_stages,
+                    num_k_partitions=config.num_k_partitions,
+                    num_warp_k_partitions=config.num_warp_k_partitions
+                    // (
+                        2**partition_reduction
+                    ),  # Reduce warp partitions by powers of 2
+                )
+
+                alias adjusted_smem = q_smem_usage[
+                    adjusted_config, group_size
+                ]()
+
+                @parameter
+                if adjusted_smem < max_smem:
+                    alias gemm_kernel_type = multistage_qgemm_kernel[
+                        c_type,  # c_type
+                        tensor_c.layout,
+                        a_type,  # a_type
+                        tensor_a.layout,
+                        b_type,  # b_type
+                        tensor_b.layout,
+                        group_size,
+                        pack_factor,
+                        True,
+                        adjusted_config,
+                        elementwise_lambda_fn,
+                    ]
+
+                    var gemm_kernel = ctx.compile_function[gemm_kernel_type](
+                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                            adjusted_smem,
+                        ),
+                    )
+
+                    ctx.enqueue_function(
+                        gemm_kernel,
+                        tensor_c,
+                        tensor_a,
+                        tensor_b,
+                        grid_dim=adjusted_config.grid_dim(M, N),
+                        block_dim=adjusted_config.block_dim(),
+                        shared_mem_bytes=adjusted_smem,
+                    )
+
+                    return
 
     alias gemm_kernel_type = multistage_qgemm_kernel[
         c_type,  # c_type
