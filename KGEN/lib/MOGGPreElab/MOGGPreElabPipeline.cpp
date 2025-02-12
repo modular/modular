@@ -40,7 +40,6 @@ public:
 
     if (hasKernels && !debugBuild) {
       mlir::OpPassManager pm(ModuleOp::getOperationName());
-      // pm.addPass(MOGGPreElab::createMOGGAutospecialize());
       pm.addPass(MOGGPreElab::createSliceMOGGFuncs());
       pm.addPass(MOGGPreElab::createOutlineMOGGFuncs());
 

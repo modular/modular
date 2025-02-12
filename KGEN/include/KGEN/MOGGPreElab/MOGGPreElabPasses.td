@@ -105,38 +105,3 @@ def MOGGPreElabPipeline : Pass<"mogg-pre-elab-pipeline", "ModuleOp"> {
   ];
 }
 
-def MOGGAutospecialize : Pass<"mogg-autospecialize", "ModuleOp"> {
-  let summary = "Add a spec parameter to each tensor on kernels and propagate them";
-  let description = [{
-    Tensors are often times associated with static values like shape which the
-    code can then specialize on and generate the most efficient kernels.
-    However, in the context of graph compilation, it only makes sense to
-    specialize on shape if you actually have a model with associated activation
-    shape information. Finally, including static values as parameters in the
-    kernel itself can become cumbersome. If a kernel takes in 5 tensors and each
-    of has 5 static fields, then we have 25 parameters to potentially include!
-
-    Instead the user writes code using an unspecialized tensor, and this code
-    is then replaced with a specialized version. The call graph is then fixed
-    up to call the specialized function.
-
-    E.g.
-
-    fn foo[type: DType, rank: Int](input: ManagedTensorSlice[type, rank]):
-      alias static_shape = specsof[type, rank]("input").shape
-      ...
-
-    Will become something analogous to:
-
-    # Note the parameterization on `static_spec_input` which is associated with
-    # `input`.
-    fn foo_1[static_spec_input: StaticTensorSpec, type: DType, rank: Int](
-      input: ManagedTensorSlice[type, rank]
-    ):
-      alias static_spec_input = static_spec.shape
-      ...
-
-    Old calls to `foo` will be properly replaced to calls to `foo_1` *if* it is
-    on a call graph from rooted from a registered Extensibility API kernel.
-  }];
-}
