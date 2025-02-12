@@ -578,10 +578,7 @@ struct Int(
         Returns:
             The -self value.
         """
-        return __mlir_op.`index.mul`(
-            self.value,
-            __mlir_op.`index.constant`[value = __mlir_attr.`-1:index`](),
-        )
+        return self * -1
 
     @always_inline("nodebug")
     fn __invert__(self) -> Int:
@@ -604,7 +601,7 @@ struct Int(
         """
         return __mlir_op.`index.add`(self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __sub__(self, rhs: Int) -> Int:
         """Return `self - rhs`.
 
