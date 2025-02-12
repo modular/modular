@@ -27,7 +27,7 @@ def test_load_safetensors_one(testdata_directory) -> None:
         assert data["1.fancy/name"].type == TensorType(DType.int64, [3])
         assert data["1.bf16"].type == TensorType(DType.bfloat16, [2])
         assert data["1.float8_e4m3fn"].type == TensorType(
-            DType.float8_e4m3, [2]
+            DType.float8_e4m3fn, [2]
         )
         assert data["1.float8_e5m2"].type == TensorType(DType.float8_e5m2, [2])
 
@@ -51,7 +51,7 @@ def test_load_safetensors_multi(testdata_directory) -> None:
         assert data["1.fancy/name"].type == TensorType(DType.int64, [3])
         assert data["1.bf16"].type == TensorType(DType.bfloat16, [2])
         assert data["1.float8_e4m3fn"].type == TensorType(
-            DType.float8_e4m3, [2]
+            DType.float8_e4m3fn, [2]
         )
         assert data["1.float8_e5m2"].type == TensorType(DType.float8_e5m2, [2])
         assert data["2.a"].type == TensorType(DType.int32, [5, 2])
@@ -60,7 +60,7 @@ def test_load_safetensors_multi(testdata_directory) -> None:
         assert data["2.fancy/name"].type == TensorType(DType.int64, [3])
         assert data["2.bf16"].type == TensorType(DType.bfloat16, [2])
         assert data["2.float8_e4m3fn"].type == TensorType(
-            DType.float8_e4m3, [2]
+            DType.float8_e4m3fn, [2]
         )
         assert data["2.float8_e5m2"].type == TensorType(DType.float8_e5m2, [2])
 

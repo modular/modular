@@ -187,7 +187,7 @@ class SafetensorWeights(Weights):
             weight_dtype = DType.bfloat16
         elif tensor.dtype == torch.float8_e4m3fn:
             np_tensor = tensor.view(torch.uint8).numpy()
-            weight_dtype = DType.float8_e4m3
+            weight_dtype = DType.float8_e4m3fn
         elif tensor.dtype == torch.float8_e5m2:
             np_tensor = tensor.view(torch.uint8).numpy()
             weight_dtype = DType.float8_e5m2
