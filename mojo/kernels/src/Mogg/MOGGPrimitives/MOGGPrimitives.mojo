@@ -311,6 +311,18 @@ fn create_python_mojo_value_async(
     )
 
 
+@register_internal("builtin.transfer_async")
+@no_inline
+fn transfer_async(
+    async_src: UnsafePointer[NoneType],
+    async_dst: UnsafePointer[NoneType],
+):
+    external_call[
+        "KGEN_CompilerRT_TransferAsyncRef",
+        NoneType,
+    ](async_src, async_dst)
+
+
 @register_internal("builtin.unpack_async")
 @no_inline
 fn unpack_async(
