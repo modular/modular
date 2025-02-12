@@ -31,6 +31,7 @@ from sys import (
     simdwidthof,
     sizeof,
 )
+from math import iota
 
 from memory.pointer import AddressSpace, _GPUAddressSpace
 
@@ -66,12 +67,6 @@ fn _memcmp_impl_unconstrained[
                 return 1 if s1i > s2i else -1
         return 0
 
-    var iota = llvm_intrinsic[
-        "llvm.stepvector",
-        SIMD[DType.uint8, simd_width],
-        has_side_effect=False,
-    ]()
-
     var last = count - simd_width
 
     for i in range(0, last, simd_width):
@@ -81,7 +76,8 @@ fn _memcmp_impl_unconstrained[
         if any(diff):
             var index = Int(
                 diff.select(
-                    iota, SIMD[DType.uint8, simd_width](255)
+                    iota[DType.uint8, simd_width](),
+                    SIMD[DType.uint8, simd_width](255),
                 ).reduce_min()
             )
             return -1 if s1i[index] < s2i[index] else 1
@@ -91,7 +87,10 @@ fn _memcmp_impl_unconstrained[
     var diff = s1i != s2i
     if any(diff):
         var index = Int(
-            diff.select(iota, SIMD[DType.uint8, simd_width](255)).reduce_min()
+            diff.select(
+                iota[DType.uint8, simd_width](),
+                SIMD[DType.uint8, simd_width](255),
+            ).reduce_min()
         )
         return -1 if s1i[index] < s2i[index] else 1
     return 0
