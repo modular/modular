@@ -23,7 +23,7 @@ from modular_graph_test import modular_graph_test
 from torch import nn
 from transformers import StaticCache
 from transformers.models.llama.configuration_llama import LlamaConfig
-from transformers.models.llama.modeling_llama import LlamaSdpaAttention
+from transformers.models.llama.modeling_llama import LlamaAttention
 
 ACCURACY_RTOL = 1e-2
 ACCURACY_ATOL = 1e-2
@@ -33,7 +33,7 @@ class TorchAttention(nn.Module):
     def __init__(self, config, start_pos, seq_len):
         super().__init__()
         self.config = config
-        self.attention = LlamaSdpaAttention(self.config, layer_idx=0)
+        self.attention = LlamaAttention(self.config, layer_idx=0)
         self.start_pos = start_pos
         self.seq_len = seq_len
 

@@ -36,10 +36,10 @@ def test_conv1d() -> None:
         kernel_size=kernel_size,
         stride=stride,
         padding=padding,
-        bias=False,
     )
 
     conv.weight.data = nn.Parameter(torch.rand(size=conv.weight.data.shape))
+    conv.bias.data = nn.Parameter(torch.rand(size=conv.bias.data.shape))
 
     # out_length = ((length + 2 * padding - (kernel_size - 1) - 1) / stride) + 1
     # out_length = ((3000 + 2 * 1 - (3 - 1) - 1) / 1) + 1 = 3000
@@ -54,11 +54,17 @@ def test_conv1d() -> None:
     weights_registry["conv1d_weight"] = torch.permute(
         conv.weight.data, (2, 1, 0)
     ).contiguous()
+    weights_registry["conv1d_bias"] = conv.bias.data.contiguous()
 
     graph_api_filters = Weight(
         name="conv1d_weight",
         dtype=DType.from_numpy(weights_registry["conv1d_weight"].numpy().dtype),
         shape=weights_registry["conv1d_weight"].shape,
+    )
+    graph_api_bias = Weight(
+        name="conv1d_bias",
+        dtype=DType.from_numpy(weights_registry["conv1d_bias"].numpy().dtype),
+        shape=weights_registry["conv1d_bias"].shape,
     )
 
     # out_channels=hidden_size and kernel_size=kernel_size are inferred from kernel.
@@ -67,9 +73,9 @@ def test_conv1d() -> None:
         "conv1d",
         Conv1D(
             graph_api_filters,
+            bias=graph_api_bias,
             stride=stride,
             padding=padding,
-            bias=False,
         ),
         input_types=(
             TensorType(DType.float32, (batch_size, length, in_channels)),

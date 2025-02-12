@@ -161,7 +161,7 @@ class WrappedVisionModel:
             ),
             stride=patch_size,
             padding=(0, 0, 0, 0),
-            bias=False,
+            bias=None,
         )
 
         class_embedding = Weight(
