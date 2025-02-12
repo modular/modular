@@ -163,10 +163,10 @@ fn run_elementwise[
             # cycle through chunks of N_cache to ensure the tensor is not in the cache each iteration
             var offset = (iteration * stride) % N_cache
             var in_tensor = NDBuffer[type, rank](
-                in_buffer.unsafe_pointer() + offset, dims
+                in_buffer.unsafe_ptr() + offset, dims
             )
             var out_tensor = NDBuffer[type, rank](
-                out_buffer.unsafe_pointer() + offset, dims
+                out_buffer.unsafe_ptr() + offset, dims
             )
 
             @always_inline

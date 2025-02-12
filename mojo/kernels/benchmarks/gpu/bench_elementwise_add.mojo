@@ -36,9 +36,9 @@ fn bench_add[
     ctx.enqueue_copy_to_device(input1_ptr, input1_ptr_host)
     ctx.enqueue_copy_to_device(output_ptr, output_ptr_host)
 
-    var input0 = NDBuffer[type, rank](input0_ptr.unsafe_pointer(), shape)
-    var input1 = NDBuffer[type, rank](input1_ptr.unsafe_pointer(), shape)
-    var output = NDBuffer[type, rank](output_ptr.unsafe_pointer(), shape)
+    var input0 = NDBuffer[type, rank](input0_ptr.unsafe_ptr(), shape)
+    var input1 = NDBuffer[type, rank](input1_ptr.unsafe_ptr(), shape)
+    var output = NDBuffer[type, rank](output_ptr.unsafe_ptr(), shape)
 
     @parameter
     @always_inline
