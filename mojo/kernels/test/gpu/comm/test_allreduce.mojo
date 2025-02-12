@@ -82,7 +82,7 @@ fn all_reduce_test[
             list_of_ctx[i].create_buffer_sync[DType.uint8](sizeof[Signal]())
         )
         list_of_ctx[i].memset_sync[DType.uint8](signal_buffers[i], 0)
-        rank_sigs[i] = signal_buffers[i].unsafe_pointer().bitcast[Signal]()
+        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
 
         # Copy data to device
         list_of_ctx[i].enqueue_copy_to_device(in_bufs_list[i], host_buffers[i])
@@ -93,10 +93,10 @@ fn all_reduce_test[
 
     for i in range(ngpus):
         in_bufs[i] = NDBuffer[type, rank](
-            in_bufs_list[i].unsafe_pointer(), DimList(length)
+            in_bufs_list[i].unsafe_ptr(), DimList(length)
         )
         out_bufs[i] = NDBuffer[type, rank](
-            out_bufs_list[i].unsafe_pointer(), DimList(length)
+            out_bufs_list[i].unsafe_ptr(), DimList(length)
         )
 
     # Perform all_reduce

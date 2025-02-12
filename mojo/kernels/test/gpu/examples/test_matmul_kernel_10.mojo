@@ -426,13 +426,13 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     ctx.enqueue_copy_to_device(b_device, b_host)
 
     var c_buffer = NDBuffer[DType.float32, 2, DimList(M, N)](
-        c_device.unsafe_pointer()
+        c_device.unsafe_ptr()
     )
     var a_buffer = NDBuffer[DType.float32, 2, DimList(M, K)](
-        a_device.unsafe_pointer()
+        a_device.unsafe_ptr()
     )
     var b_buffer = NDBuffer[DType.float32, 2, DimList(K, N)](
-        b_device.unsafe_pointer()
+        b_device.unsafe_ptr()
     )
 
     alias sgemm_type = sgemm_warp_tiling_kernel[

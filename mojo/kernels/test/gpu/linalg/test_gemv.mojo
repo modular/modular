@@ -228,7 +228,7 @@ fn test_gevm_with_epilogue_fn[
     var c_device = ctx.enqueue_create_buffer[DType.float32](M * N * c_stride)
 
     var c_device_nd = NDBuffer[DType.float32, 2](
-        c_device.unsafe_pointer(), Index(M, N), Index(N * c_stride, c_stride)
+        c_device.unsafe_ptr(), Index(M, N), Index(N * c_stride, c_stride)
     )
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)

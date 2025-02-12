@@ -135,29 +135,29 @@ fn test[
     var q_device = NDBuffer[
         qkv_type, 4, DimList(Dim(), Dim(), num_heads, depth)
     ](
-        q_device_ptr.unsafe_pointer(),
+        q_device_ptr.unsafe_ptr(),
         Index(batch_size, seq_len, num_heads, depth),
     )
     var k_device = NDBuffer[
         qkv_type, 4, DimList(Dim(), Dim(), kv_num_heads, depth)
     ](
-        k_device_ptr.unsafe_pointer(),
+        k_device_ptr.unsafe_ptr(),
         Index(batch_size, num_keys, kv_num_heads, depth),
     )
     var v_device = NDBuffer[
         qkv_type, 4, DimList(Dim(), Dim(), kv_num_heads, depth)
     ](
-        v_device_ptr.unsafe_pointer(),
+        v_device_ptr.unsafe_ptr(),
         Index(batch_size, num_keys, kv_num_heads, depth),
     )
     var mask4d = NDBuffer[mask_type, 4, DimList.create_unknown[4]()](
-        mask_device_ptr.unsafe_pointer(),
+        mask_device_ptr.unsafe_ptr(),
         Index(batch_size, num_heads, seq_len, num_keys),
     )
     var output_device = NDBuffer[
         qkv_type, 4, DimList(Dim(), Dim(), num_heads, depth)
     ](
-        output_device_ptr.unsafe_pointer(),
+        output_device_ptr.unsafe_ptr(),
         Index(batch_size, seq_len, num_heads, depth),
     )
 
@@ -200,7 +200,7 @@ fn test[
     var output_device_ref = NDBuffer[
         qkv_type, 4, DimList(Dim(), Dim(), num_heads, depth)
     ](
-        output_ref_device_ptr.unsafe_pointer(),
+        output_ref_device_ptr.unsafe_ptr(),
         Index(batch_size, seq_len, num_heads, depth),
     )
 

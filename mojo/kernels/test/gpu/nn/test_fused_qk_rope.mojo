@@ -146,7 +146,7 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
     ctx.copy_to_device_sync(cache_lengths.buffer, start_positions.data)
 
     k_cache_block = NDBuffer[type, 5](
-        k_cache_block_dev.buffer.unsafe_pointer(), block_shape
+        k_cache_block_dev.buffer.unsafe_ptr(), block_shape
     )
     kv_collection = ContiguousKVCacheCollection[type, kv_params](
         key_cache=k_cache_block,

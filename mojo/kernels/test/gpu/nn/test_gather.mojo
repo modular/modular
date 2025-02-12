@@ -43,7 +43,7 @@ fn test_gather(ctx: DeviceContext) raises:
             DType.float32,
             2,
             DimList(num_rows, row_size),
-        ](input_device_ptr.unsafe_pointer())
+        ](input_device_ptr.unsafe_ptr())
 
         alias num_indices = 16
         var indices_host_ptr = UnsafePointer[Scalar[indices_type]].alloc(
@@ -61,7 +61,7 @@ fn test_gather(ctx: DeviceContext) raises:
             indices_type,
             1,
             DimList(num_indices),
-        ](indices_device_ptr.unsafe_pointer())
+        ](indices_device_ptr.unsafe_ptr())
 
         for i in range(num_indices):
             indices_host[Index(i)] = i // 2
@@ -86,7 +86,7 @@ fn test_gather(ctx: DeviceContext) raises:
             DType.float32,
             2,
             DimList(num_indices, row_size),
-        ](output_device_ptr.unsafe_pointer())
+        ](output_device_ptr.unsafe_ptr())
 
         gather[axis=0, target="gpu"](
             output_device.make_dims_unknown(),

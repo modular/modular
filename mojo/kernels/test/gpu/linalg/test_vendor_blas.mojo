@@ -51,10 +51,10 @@ fn test_cublas(ctx: DeviceContext) raises:
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var a = NDBuffer[type, 2, DimList(M, K)](a_device.unsafe_pointer())
-    var b = NDBuffer[type, 2, DimList(K, N)](b_device.unsafe_pointer())
-    var c = NDBuffer[type, 2, DimList(M, N)](c_device.unsafe_pointer())
-    var c_ref = NDBuffer[type, 2, DimList(M, N)](c_device_ref.unsafe_pointer())
+    var a = NDBuffer[type, 2, DimList(M, K)](a_device.unsafe_ptr())
+    var b = NDBuffer[type, 2, DimList(K, N)](b_device.unsafe_ptr())
+    var c = NDBuffer[type, 2, DimList(M, N)](c_device.unsafe_ptr())
+    var c_ref = NDBuffer[type, 2, DimList(M, N)](c_device_ref.unsafe_ptr())
 
     with vendor_blas.Handle() as handle:
         vendor_blas.matmul(ctx, handle, c, a, b, c_row_major=True)

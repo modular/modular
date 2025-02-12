@@ -105,9 +105,9 @@ fn test_conv_cudnn[
         filter_type,
         output_type,
     ](
-        input_dev.unsafe_pointer(),
-        filter_dev.unsafe_pointer(),
-        output_ref_dev.unsafe_pointer(),
+        input_dev.unsafe_ptr(),
+        filter_dev.unsafe_ptr(),
+        output_ref_dev.unsafe_ptr(),
         stride_dim,
         dilation_dim,
         pad_dim,
@@ -130,9 +130,9 @@ fn test_conv_cudnn[
         filter_type,
         output_type,
     ](
-        input_dev.unsafe_pointer(),
-        filter_dev.unsafe_pointer(),
-        output_dev.unsafe_pointer(),
+        input_dev.unsafe_ptr(),
+        filter_dev.unsafe_ptr(),
+        output_dev.unsafe_ptr(),
         stride_dim,
         dilation_dim,
         pad_dim,
@@ -232,13 +232,13 @@ fn test_conv_gpu[
     var output_dev = ctx.enqueue_create_buffer[type](output_dim_flattened)
 
     var input_buf = NDBuffer[type, 4, input_dim](
-        input_dev.unsafe_pointer(), input_dim
+        input_dev.unsafe_ptr(), input_dim
     )
     var filter_buf = NDBuffer[type, 4, filter_dim](
-        filter_dev.unsafe_pointer(), filter_dim
+        filter_dev.unsafe_ptr(), filter_dim
     )
     var output_buf = NDBuffer[type, 4, output_dim](
-        output_dev.unsafe_pointer(), output_dim
+        output_dev.unsafe_ptr(), output_dim
     )
 
     # Reference: naive conv

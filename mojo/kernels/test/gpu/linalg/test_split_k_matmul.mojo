@@ -140,13 +140,13 @@ fn test_split_k_multistage_gemm[
     var c_device_ref = ctx.enqueue_create_buffer[type](M * N)
 
     var a_tensor = LayoutTensor[type, a_layout](
-        a_device.unsafe_pointer(), a_runtime_layout
+        a_device.unsafe_ptr(), a_runtime_layout
     )
     var b_tensor = LayoutTensor[type, b_layout](
-        b_device.unsafe_pointer(), b_runtime_layout
+        b_device.unsafe_ptr(), b_runtime_layout
     )
     var c_tensor = LayoutTensor[type, c_layout](
-        c_device.unsafe_pointer(), c_runtime_layout
+        c_device.unsafe_ptr(), c_runtime_layout
     )
 
     alias kernels = MatmulKernels[type, type, type, transpose_b]()

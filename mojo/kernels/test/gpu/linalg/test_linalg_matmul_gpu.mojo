@@ -38,7 +38,7 @@ fn _create_device_buffer[
     return (
         storage,
         NDBuffer[dtype, rank, shape](
-            storage.unsafe_pointer(), dynamic_shape=dynamic_shape
+            storage.unsafe_ptr(), dynamic_shape=dynamic_shape
         ),
     )
 

@@ -52,8 +52,8 @@ fn run_rms_norm_gpu[
 
     var param_shape = Index(cols)
 
-    var data_buf = NDBuffer[type, rank](data_d.unsafe_pointer(), shape)
-    var gamma = NDBuffer[type, 1](gamma_d.unsafe_pointer(), param_shape)
+    var data_buf = NDBuffer[type, rank](data_d.unsafe_ptr(), shape)
+    var gamma = NDBuffer[type, 1](gamma_d.unsafe_ptr(), param_shape)
     var epsilon = Scalar[type](0.001)
 
     ctx.enqueue_copy_to_device(data_d, data_h)

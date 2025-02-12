@@ -39,8 +39,8 @@ fn launch_p2p_copy_kernel(
     # Launch the kernel on both devices
     ctx1.enqueue_function(
         kernel1,
-        dst_buf.unsafe_pointer(),
-        src_buf.unsafe_pointer(),
+        dst_buf.unsafe_ptr(),
+        src_buf.unsafe_ptr(),
         num_elements,
         grid_dim=grid_size,
         block_dim=BLOCK_SIZE,

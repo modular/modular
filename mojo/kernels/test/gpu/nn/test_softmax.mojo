@@ -35,7 +35,7 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
         shape.flattened_length()
     )
     var in_host = NDBuffer[type, rank](in_host_ptr, shape)
-    var in_device = NDBuffer[type, rank](in_device_ptr.unsafe_pointer(), shape)
+    var in_device = NDBuffer[type, rank](in_device_ptr.unsafe_ptr(), shape)
     var out_host_ptr = UnsafePointer[Scalar[type]].alloc(
         shape.flattened_length()
     )
@@ -47,9 +47,7 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
     )
     var out_host = NDBuffer[type, rank](out_host_ptr, shape)
     var out_ref = NDBuffer[type, rank](out_ref_ptr, shape)
-    var out_device = NDBuffer[type, rank](
-        out_device_ptr.unsafe_pointer(), shape
-    )
+    var out_device = NDBuffer[type, rank](out_device_ptr.unsafe_ptr(), shape)
 
     rand[type](in_host_ptr, shape.flattened_length())
     ctx.enqueue_copy_to_device(in_device_ptr, in_host_ptr)
@@ -122,10 +120,10 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext):
     var in_host_test_ptr = UnsafePointer[Scalar[test_type]].alloc(length)
     var in_device_test_ptr = ctx.enqueue_create_buffer[test_type](length)
     var in_device_ref = NDBuffer[ref_type, rank](
-        in_device_ref_ptr.unsafe_pointer(), shape
+        in_device_ref_ptr.unsafe_ptr(), shape
     )
     var in_device_test = NDBuffer[test_type, rank](
-        in_device_test_ptr.unsafe_pointer(), shape
+        in_device_test_ptr.unsafe_ptr(), shape
     )
 
     var out_host_ref_ptr = UnsafePointer[Scalar[ref_type]].alloc(length)
@@ -134,10 +132,10 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext):
     var out_device_test_ptr = ctx.enqueue_create_buffer[test_type](length)
 
     var out_device_ref = NDBuffer[ref_type, rank](
-        out_device_ref_ptr.unsafe_pointer(), shape
+        out_device_ref_ptr.unsafe_ptr(), shape
     )
     var out_device_test = NDBuffer[test_type, rank](
-        out_device_test_ptr.unsafe_pointer(), shape
+        out_device_test_ptr.unsafe_ptr(), shape
     )
 
     # first fill BF16 pointer with random values, then cast to FP32 to
@@ -232,10 +230,10 @@ fn test_gpu_online_softmax[WM: Int, WN: Int](ctx: DeviceContext) raises:
     )
 
     var in_device = LayoutTensor[type, Layout.row_major(shape[1], shape[2])](
-        in_device_ptr.unsafe_pointer()
+        in_device_ptr.unsafe_ptr()
     )
     var out_device = LayoutTensor[type, Layout.row_major(shape[1], shape[2])](
-        out_device_ptr.unsafe_pointer()
+        out_device_ptr.unsafe_ptr()
     )
 
     rand[type](in_host_ptr, shape.flattened_length())
