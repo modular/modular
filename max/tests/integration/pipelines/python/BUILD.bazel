@@ -140,14 +140,11 @@ modular_py_test(
         "//KGEN:CompilerRT",
         "@llvm-project//compiler-rt:orc_rt",
     ],
-    exec_properties = {
-        # Ensure the test has at least 24GB of GPU memory available.
-        "resources:gpu-memory": "24",
-    },
     gpu_constraints = ["//:has_gpu"],
     tags = [
         "gpu",
         "huggingface",
+        "no-remote-exec",
         "no-sandbox",
         "requires-network",
     ],

@@ -156,15 +156,12 @@ modular_py_test(
             "SDK/integration-test/pipelines/python/llama3/testdata"
         ),
     },
-    exec_properties = {
-        # Ensure the test has at least 24GB of GPU memory available.
-        "resources:gpu-memory": "24",
-    },
     gpu_constraints = ["//:has_gpu"],
     tags = [
         "A100",
         "gpu",
         "huggingface",
+        "no-remote-exec",
         "no-sandbox",
         "requires-network",
     ],
