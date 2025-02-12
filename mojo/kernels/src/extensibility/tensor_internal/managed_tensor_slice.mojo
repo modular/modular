@@ -21,7 +21,6 @@ from buffer.dimlist import _make_partially_static_index_list
 from compiler_internal.directives import (
     StaticTensorSpec,
     __mogg_intrinsic_attr,
-    specsof,
 )
 from gpu.host._compile import _get_gpu_target
 from gpu.host.info import is_cpu

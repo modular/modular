@@ -10,6 +10,5 @@ from .directives import (
     enable_fusion_for,
     mutable,
     register,
-    specsof,
     view_kernel,
 )

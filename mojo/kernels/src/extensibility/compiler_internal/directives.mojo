@@ -97,30 +97,3 @@ struct StaticTensorSpec[
             OptionalReg[Self.in_lambda_t](None),
             OptionalReg[Self.out_lambda_t](None),
         )
-
-
-fn create_none_spec[type: DType, rank: Int]() -> StaticTensorSpec[type, rank]:
-    return StaticTensorSpec[type, rank]()
-
-
-# Returns the compile time informations of a DPS kernel I/O.
-# fn foo(x: UnsafeTensorSlice):
-#   alias specs = specsof[x.type, x.rank]("x")
-@__mogg_intrinsic_attr("mogg.intrinsic_tensor_spec_hook")
-fn specsof[
-    type: DType, rank: Int
-](name: StringLiteral) -> StaticTensorSpec[type, rank]:
-    alias TENSOR_SPEC_NONE = create_none_spec[type, rank]()
-    return TENSOR_SPEC_NONE
-
-
-@__mogg_intrinsic_attr("mogg.intrinsic_tensor_spec_tuple_hook")
-fn specsof[
-    type: DType,
-    rank: Int,
-    tensors_count: Int,
-](name: StringLiteral) -> StaticTuple[
-    StaticTensorSpec[type, rank], tensors_count
-]:
-    alias TENSOR_SPEC_NONE = create_none_spec[type, rank]()
-    return TENSOR_SPEC_NONE
