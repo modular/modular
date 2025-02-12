@@ -119,3 +119,27 @@ kgen.func @hoist_nested_funcs(%arg0: index) {
   }
   kgen.return
 }
+
+// CHECK-LABEL: @no_variadic_get_hoisting
+kgen.func @no_variadic_get_hoisting() {
+  %index0 = kgen.param.constant = <0>
+  %index99 = kgen.param.constant = <99>
+  %0 = kgen.param.constant: i1 = <0>
+  %1 = kgen.call @"stdlib::sys::arg::argv()"() : () -> !kgen.variadic<struct<(pointer<none>, index)>>
+  %2 = pop.variadic.size %1 : !kgen.variadic<struct<(pointer<none>, index)>>
+  %3 = index.cmp sgt(%2, %index0)
+  // CHECK: hlcf.if
+  hlcf.if %3 {
+    // CHECK: pop.variadic.get
+    %4 = pop.variadic.get %1[%index99] : !kgen.variadic<struct<(pointer<none>, index)>>
+    %5 = pop.stack_allocation 1 x struct<(pointer<none>, index)> marked
+    pop.stack_alloc.lifetime.start(%5) : !kgen.pointer<struct<(pointer<none>, index)>>
+    pop.store %4, %5 : !kgen.pointer<struct<(pointer<none>, index)>>
+    %6 = kgen.struct.create(%5) : !kgen.struct<(pointer<struct<(pointer<none>, index)>>)>
+    pop.stack_alloc.lifetime.end(%5) : !kgen.pointer<struct<(pointer<none>, index)>>
+    hlcf.yield
+  } else {
+    hlcf.yield
+  }
+  kgen.return
+}
