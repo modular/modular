@@ -244,7 +244,7 @@ struct Int(Copyable):
     fn __add__(lhs, rhs: Int) -> Int:
         return __mlir_op.`index.add`(lhs.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __sub__(lhs, rhs: Int) -> Int:
         return __mlir_op.`index.sub`(lhs.value, rhs.value)
 
