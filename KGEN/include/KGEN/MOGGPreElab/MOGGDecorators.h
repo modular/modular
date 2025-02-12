@@ -52,12 +52,6 @@ constexpr StringLiteral MOGG_RESULT_CONFORMANCES = "mogg.result_conformances";
 /// MOGG Intrinsic for the register kernel decorator.
 constexpr StringLiteral MOGG_INTRINSIC_REGISTER = "mogg.intrinsic_register";
 
-/// MOGG Intrinsic for the specsof function.
-constexpr StringLiteral MOGG_INTRINSIC_TENSOR_SPEC_HOOK =
-    "mogg.intrinsic_tensor_spec_hook";
-constexpr StringLiteral MOGG_INTRINSIC_TENSOR_SPEC_TUPLE_HOOK =
-    "mogg.intrinsic_tensor_spec_tuple_hook";
-
 /// MOGG Intrinsic for the elementwise kernel decorator.
 constexpr StringLiteral MOGG_INTRINSIC_ELEMENTWISE = "mogg.elementwise";
 
