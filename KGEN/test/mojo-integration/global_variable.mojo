@@ -5,7 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: %bare-mojo -debug-level full %s | FileCheck %s
-# RUN: %bare-mojo build %s -o %t
+# COM: This test fails with lld, force gnu-ld instead
+# RUN: MODULAR_MOJO_MAX_SYSTEM_LIBS=$MODULAR_MOJO_MAX_SYSTEM_LIBS,-fuse-ld=ld %bare-mojo build %s -o %t
 # RUN: %t | FileCheck %s
 
 
