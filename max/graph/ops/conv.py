@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for conv2d."""
 
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 from max.dtype import DType
@@ -64,16 +64,18 @@ def conv2d(
     dilation: Tuple[int, int] = (1, 1),
     padding: Tuple[int, int, int, int] = (0, 0, 0, 0),
     groups: int = 1,
+    bias: Optional[TensorValueLike] = None,
 ) -> TensorValue:
-    """Computes the 2-D convolution product of the input with the given filter,
+    """Computes the 2-D convolution product of the input with the given filter, bias,
     strides, dilations, paddings, and groups.
 
     The op supports 2-D convolution, with the following layout assumptions:
 
-    - input has NHWC layout, i.e.,
+    - input `x` has NHWC layout, i.e.,
       (batch_size, height, width, in_channels)
     - filter has layout RSCF, i.e.,
       (height, width, in_channels / num_groups, out_channels)
+    - bias has shape (out_channels,)
 
     The padding values are expected to take the form (pad_dim1_before,
     pad_dim1_after, pad_dim2_before, pad_dim2_after...) and represent padding
@@ -113,6 +115,17 @@ def conv2d(
         A symbolic tensor value with the convolution applied.
     """
     x, filter = dtype_promotion._promote_weak_dtypes(x, filter)
+    if bias is not None:
+        x, bias = dtype_promotion._promote_weak_dtypes(x, bias)
+        if x.dtype != bias.dtype:
+            raise ValueError(
+                "input and bias must resolve to the same strong dtype. input is"
+                f" {x.dtype}. bias is {bias.dtype}."
+            )
+        if bias.rank != 1:
+            raise ValueError(
+                "bias for a 2-D convolution must be rank 1 with shape (out_channels,)"
+            )
     if x.dtype != filter.dtype:
         raise ValueError(
             "input and filter must resolve to the same strong dtype. input is"
@@ -154,7 +167,7 @@ def conv2d(
     )
     output_shape[3] = filter.shape[3]  # out_channels
 
-    return Graph.current._add_op(
+    conv_output = Graph.current._add_op(
         rmo.mo_conv,
         TensorType(x.dtype, output_shape, x.device).to_mlir(),
         x,
@@ -164,3 +177,7 @@ def conv2d(
         padding_constant,
         groups_constant,
     )[0].tensor
+
+    if bias is not None:
+        return Graph.current._add_op(rmo.add, conv_output, bias)[0].tensor
+    return conv_output
