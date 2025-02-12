@@ -294,7 +294,9 @@ struct TensorCoreAsync[
 
     @staticmethod
     @always_inline
-    fn wgmma(
+    fn wgmma[
+        num_warp_groups: Int = 1
+    ](
         a_smem_tile: LayoutTensor[
             a_type, _, address_space = AddressSpace.SHARED, *_, **_
         ],
@@ -304,10 +306,8 @@ struct TensorCoreAsync[
         c_reg_tile: LayoutTensor[
             c_type, _, address_space = AddressSpace.LOCAL, *_, **_
         ],
+        wg_idx: Int = 0,
     ):
-        a_desc = _lhs_descriptor[mma_shape, a_swizzle](a_smem_tile)
-        b_desc = _rhs_descriptor[mma_shape, transpose_b, b_swizzle](b_smem_tile)
-
         alias a_smem_layout = a_smem_tile.layout
         alias b_smem_layout = b_smem_tile.layout
 
@@ -329,7 +329,9 @@ struct TensorCoreAsync[
         alias a_k_stride = a_stride11 * 2 * sizeof[a_type]()
         alias b_k_stride = b_stride11 * 2 * sizeof[b_type]()
 
-        alias num_m_mmas = a_smem_layout[0].size() // mma_shape[0]
+        alias num_m_mmas = a_smem_layout[0].size() // mma_shape[
+            0
+        ] // num_warp_groups
         alias num_n_mmas = b_smem_layout[0].size() // mma_shape[1]
         alias num_k_mmas = a_smem_layout[1].size() // mma_shape[2]
 
@@ -338,8 +340,21 @@ struct TensorCoreAsync[
         c_frags = c_reg_tile.vectorize[1, c_frag_size]()
         constrained[
             __type_of(c_frags).layout.size() == num_m_mmas * num_n_mmas,
-            "C fragments' size doesn't match the total number of wgmma.",
+            String(
+                "C fragments' size: ",
+                __type_of(c_frags).layout.size(),
+                " doesn't match the total number of wgmma: ",
+                num_m_mmas * num_n_mmas,
+                ".",
+            ),
         ]()
+
+        a_desc = _lhs_descriptor[mma_shape, a_swizzle](a_smem_tile)
+        b_desc = _rhs_descriptor[mma_shape, transpose_b, b_swizzle](b_smem_tile)
+
+        @parameter
+        if num_warp_groups > 1:
+            a_desc += a_m_stride * num_m_mmas * wg_idx
 
         @parameter
         for m_mma in range(num_m_mmas):

@@ -1372,6 +1372,7 @@ struct LayoutTensor[
                 ]()[0],
                 address_space=address_space,
                 element_layout=element_layout,
+                alignment=alignment,
             ],
             count,
         ],
@@ -1411,6 +1412,7 @@ struct LayoutTensor[
                 ]()[0],
                 address_space=address_space,
                 element_layout=element_layout,
+                alignment=alignment,
             ](self.ptr.offset(i * tile_size * stride))
 
         return tiles
