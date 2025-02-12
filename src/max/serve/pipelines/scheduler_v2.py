@@ -93,6 +93,24 @@ class TokenGenerationSchedulerConfig:
     # The maximum amount of time to wait before creating a context encoding batch.
     batch_timeout: Optional[float]
 
+    # Enables chunked prefill, where the scheduler splits requests into chunks to
+    # ensure each batch contains exactly `target_tokens_per_batch_ce` tokens.
+    enable_chunked_prefill: bool = False
+
+    def __post_init__(self) -> None:
+        if (
+            self.enable_chunked_prefill
+            and self.target_tokens_per_batch_ce is None
+        ):
+            msg = "Need set `target_tokens_per_batch_ce` for the scheduler to enable chunked prefill."
+            raise ValueError(msg)
+
+        if self.enable_chunked_prefill and self.max_forward_steps_ce > 1:
+            self.max_forward_steps_ce = 1
+            logger.info(
+                "Chunked prefill does not support multistep inference, overriding max_forward_steps_ce to 1."
+            )
+
 
 class TokenGenerationSchedulerV2(Scheduler):
     def __init__(
@@ -201,15 +219,12 @@ class TokenGenerationSchedulerV2(Scheduler):
         for _ in range(max_batch_size_to_create):
             try:
                 req_id, data = self.request_q.get_nowait()
-                data.cache_seq_id = None
+                # This is a partly encoded request if the start_idx !=0.
+                # In this scenario, we already allocated a cache slot to it.
+                if data.start_idx == 0:
+                    data.cache_seq_id = None
             except queue.Empty:
                 break
-
-            exceeds_seq_len = (
-                self.scheduler_config.target_tokens_per_batch_ce
-                and total_seq_len
-                > self.scheduler_config.target_tokens_per_batch_ce
-            )
 
             has_insufficient_kv_blocks = False
             if self.paged_manager:
@@ -233,10 +248,44 @@ class TokenGenerationSchedulerV2(Scheduler):
                     seq_ids_and_prompts, num_steps=num_steps
                 )
 
-            if exceeds_seq_len or has_insufficient_kv_blocks:
+            if has_insufficient_kv_blocks:
                 # we cannot schedule this request so return it to the head of
                 # the request queue
                 self.request_q.put_front_nowait((req_id, data))
+                break
+
+            if self._exceeds_batch_token_limit(total_seq_len, data.seq_len):
+                if self.scheduler_config.enable_chunked_prefill:
+                    # We can only schedule part of the prompt.
+                    # We achieve this by setting the active_idx of the context class.
+                    assert (
+                        self.scheduler_config.target_tokens_per_batch_ce
+                        is not None
+                    )
+                    token_num_diff = (
+                        total_seq_len
+                        + data.seq_len
+                        - self.scheduler_config.target_tokens_per_batch_ce
+                    )
+                    data.active_idx -= token_num_diff
+                    data.active_length -= token_num_diff
+
+                    if data.cache_seq_id is None:
+                        data.cache_seq_id = self.available_cache_indices.pop()
+                        logger.debug(
+                            f"Request {req_id} is chunked to len {data.seq_len}."
+                        )
+                    else:
+                        logger.debug(
+                            f"Request {req_id} is chunked again to len {data.seq_len}."
+                        )
+                    ce_batch[req_id] = data
+
+                else:
+                    # we cannot schedule this request so return it to the head of
+                    # the request queue
+                    self.request_q.put_front_nowait((req_id, data))
+
                 break
 
             seq_len = data.seq_len
@@ -246,7 +295,13 @@ class TokenGenerationSchedulerV2(Scheduler):
                 )
                 seq_len -= cached_tokens
             total_seq_len += seq_len
-            data.cache_seq_id = self.available_cache_indices.pop()
+            # We will allocate cache if this is a new request
+            if data.cache_seq_id is None:
+                data.cache_seq_id = self.available_cache_indices.pop()
+            else:
+                logger.debug(
+                    f"Chunked request {req_id} with len {seq_len} is already allocated to cache slot #{data.cache_seq_id}"
+                )
             ce_batch[req_id] = data
 
         return ce_batch
@@ -385,6 +440,41 @@ class TokenGenerationSchedulerV2(Scheduler):
                     del self.active_batch[req_id]
 
     @traced
+    def _exceeds_batch_token_limit(
+        self, total_seq_len: int, new_seq_len: int
+    ) -> bool:
+        """Check if adding a new sequence would exceed the target tokens per batch limit.
+
+        Args:
+            total_seq_len: Current total sequence length in the batch
+            new_seq_len: Length of the new sequence to be added
+        """
+        if not self.scheduler_config.target_tokens_per_batch_ce:
+            return False
+
+        return (
+            total_seq_len + new_seq_len
+        ) > self.scheduler_config.target_tokens_per_batch_ce
+
+    @traced
+    def _handle_chunked_requests(
+        self,
+        batch_executed: dict[str, Any],
+        batch_responses: list[dict[str, Any]],
+    ):
+        """Handle chunked resquests"""
+
+        # Only the last request in a batch could be chunked. We discard its response
+        # and put it back into the request quene if it is chunked.
+        last_req = list(batch_executed.values())[-1]
+        if last_req.active_idx - last_req.start_idx > 1:
+            req_id, data = batch_executed.popitem()
+            self.request_q.put_front_nowait((req_id, data))
+
+            for batch_response in batch_responses:
+                batch_response.pop(req_id, None)
+
+    @traced
     def _handle_cancelled_requests(self):
         try:
             while not self.cancel_q.empty():
@@ -416,13 +506,16 @@ class TokenGenerationSchedulerV2(Scheduler):
             batch_to_execute,
             num_steps=self.scheduler_config.max_forward_steps_ce,
         )
+        # put the unfinished request back into the quene, and delete its responses
+        self._handle_chunked_requests(batch_to_execute, batch_responses)
         # remove terminated requests from the batch
         self._handle_terminated_responses(batch_to_execute, batch_responses)
         # add the encoded requests to the continuous batch
         for req_id in batch_to_execute:
             self.active_batch[req_id] = batch_to_execute[req_id]
         # send the responses to the API process
-        self.response_q.put_nowait(batch_responses)
+        if any(batch_responses):
+            self.response_q.put_nowait(batch_responses)
 
     @traced
     def _schedule_tg(self, batch_to_execute):

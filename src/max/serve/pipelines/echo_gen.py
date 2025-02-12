@@ -24,6 +24,11 @@ class EchoTokenGeneratorContext:
     seq_len: int
     tokens: str = ""
 
+    # Scheduler_V2 use them to determine if a context has been chunked.
+    start_idx: int = 0
+    active_idx: int = 0
+    cache_seq_id: int = 0
+
 
 @dataclass
 class EchoPipelineTokenizer(

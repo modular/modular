@@ -32,6 +32,11 @@ class PerformanceFakingContext:
     prompt: Union[str, Sequence[int]]
     encoded_prompt: np.ndarray
 
+    # Scheduler_V2 use them to determine if a context has been chunked.
+    start_idx: int = 0
+    active_idx: int = 0
+    cache_seq_id: int = 0
+
 
 @dataclasses.dataclass
 class BatchInfo:
