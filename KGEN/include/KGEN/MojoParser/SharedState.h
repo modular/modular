@@ -216,6 +216,15 @@ public:
   LookupResult lookupAndResolveDecl(StringRef name, llvm::SMLoc loc,
                                     ASTType scope, bool searchParentScopes);
 
+  /// Given a parameter expression call to a function marked
+  /// @always_inline("builtin"), scan the function to form an inlined parameter
+  /// expression representation of the function given the specified argument
+  /// values, then return the resultant expression.  If the function cannot be
+  /// handled as a builtin, emit an error (when isError is true) and return
+  /// null.
+  TypedAttr foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
+                                      Location callLoc, bool isError);
+
   //===--------------------------------------------------------------------===//
   // Module Resolution
 
