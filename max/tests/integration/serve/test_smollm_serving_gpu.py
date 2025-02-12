@@ -96,7 +96,14 @@ async def test_smollm_serve_gpu(app):
     indirect=True,
 )
 @pytest.mark.parametrize(
-    "prompt", ["Hello world", ["Hello world"], [1, 2, 3], [[1, 2, 3]]]
+    "prompt",
+    [
+        "Hello world",
+        ["Hello world"],
+        ["Hello world", "Why hello"],
+        [1, 2, 3],
+        [[1, 2, 3]],
+    ],
 )
 async def test_smollm_serve_gpu_nonchat_completions(app, prompt):
     async with TestClient(app, timeout=90.0) as client:

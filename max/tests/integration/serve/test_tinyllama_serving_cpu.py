@@ -59,8 +59,15 @@ async def test_tinyllama_serve_cpu(app):
         assert response.choices[0].finish_reason == "stop"
 
         # Test a few prompts, in different formats
-        prompts = ["Hello world", ["Hello world"], [1, 2, 3], [[1, 2, 3]]]
-        for prompt in prompts:
+        prompt_num = [
+            ("Hello world", 1),
+            (["Hello world"], 1),
+            (["Hello world", "hello there"], 2),
+            ([1, 2, 3], 1),
+            ([[1, 2, 3]], 1),
+            ([[1, 2, 3], [4, 5, 6]], 2),
+        ]
+        for prompt, n_prompts in prompt_num:
             # Completions endpoint instead of chat completions
             raw_response = await client.post(
                 "/v1/completions",
@@ -72,7 +79,7 @@ async def test_tinyllama_serve_cpu(app):
             response = CreateCompletionResponse.model_validate(
                 raw_response.json()
             )
-            assert len(response.choices) == 1
+            assert len(response.choices) == n_prompts
             assert response.choices[0].finish_reason == "stop"
 
     def openai_completion_request(content):
