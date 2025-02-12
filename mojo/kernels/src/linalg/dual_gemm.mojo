@@ -739,48 +739,43 @@ fn multistage_dual_gemm[
     b0: LayoutTensor[b_type, b_layout],
     b1: LayoutTensor[b_type, b_layout],
     ctx: DeviceContext,
-):
+) raises:
     var M = c.dim(0)
     var N = c.dim(1)
 
-    try:
-        alias smem_usage = config.shared_mem_usage()
-        constrained[
-            smem_usage <= ctx.device_info.shared_memory_per_multiprocessor,
-            "using too much shared memory",
-        ]()
-        alias gemm_kernel_type = multistage_dual_gemm_kernel[
-            c_type,
-            c_layout,
-            a_type,
-            a_layout,
-            b_type,
-            b_layout,
-            transpose_b,
-            config,
-            binary_lambda_fn=binary_lambda_fn,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ]
+    alias smem_usage = config.shared_mem_usage()
+    constrained[
+        smem_usage <= ctx.device_info.shared_memory_per_multiprocessor,
+        "using too much shared memory",
+    ]()
+    alias gemm_kernel_type = multistage_dual_gemm_kernel[
+        c_type,
+        c_layout,
+        a_type,
+        a_layout,
+        b_type,
+        b_layout,
+        transpose_b,
+        config,
+        binary_lambda_fn=binary_lambda_fn,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+    ]
 
-        var gemm_kernel = ctx.compile_function[gemm_kernel_type](
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                smem_usage
-            ),
-        )
+    var gemm_kernel = ctx.compile_function[gemm_kernel_type](
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_usage),
+    )
 
-        ctx.enqueue_function(
-            gemm_kernel,
-            c,
-            a,
-            b0,
-            b1,
-            grid_dim=config.grid_dim(M, 2 * N),
-            block_dim=config.block_dim(),
-            shared_mem_bytes=smem_usage,
-        )
-        ctx.synchronize()
-    except e:
-        abort(e)
+    ctx.enqueue_function(
+        gemm_kernel,
+        c,
+        a,
+        b0,
+        b1,
+        grid_dim=config.grid_dim(M, 2 * N),
+        block_dim=config.block_dim(),
+        shared_mem_bytes=smem_usage,
+    )
+    ctx.synchronize()
 
 
 fn multistage_dual_gemm[
@@ -802,7 +797,7 @@ fn multistage_dual_gemm[
     b0: NDBuffer[b_type, 2, b_shape],
     b1: NDBuffer[b_type, 2, b_shape],
     ctx: DeviceContext,
-):
+) raises:
     var tensor_c = from_ndbuffer_row_major(c)
     var tensor_a = from_ndbuffer_row_major(a)
     var tensor_b0 = from_ndbuffer_row_major(b0)
@@ -1090,8 +1085,7 @@ fn dual_gemm[
         )
         return
 
-    print("M,N,K =", M, N, K)
-    abort("dual gemm size unsupported.")
+    raise "dual gemm size unsupported."
 
 
 # ---------------------------------------------------------------------------- #
