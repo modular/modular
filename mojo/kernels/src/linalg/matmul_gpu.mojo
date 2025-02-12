@@ -1769,7 +1769,7 @@ fn multistage_gemm[
                 tensor_b,
                 work_space,
                 runtime_config.num_k_partitions,
-                locks_data.unsafe_pointer(),
+                locks_data.unsafe_ptr(),
                 grid_dim=runtime_config.grid_dim(M, N),
                 block_dim=runtime_config.block_dim(),
                 shared_mem_bytes=runtime_config.shared_mem_usage(),
@@ -1784,7 +1784,7 @@ fn multistage_gemm[
                 runtime_config.num_k_partitions * M * N
             )
             var work_space = NDBuffer[work_space_type, 3](
-                work_space_data.unsafe_pointer(),
+                work_space_data.unsafe_ptr(),
                 Index(Int(runtime_config.num_k_partitions), M, N),
             )
 
