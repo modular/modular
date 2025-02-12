@@ -33,7 +33,7 @@ def SliceMOGGFuncs : Pass<"slice-mogg-funcs", "ModuleOp"> {
     ```
     fn foo_COMPUTE[spec: StaticTensorSpec](x: ManagedTensorSlice):
       @parameter
-      fn input_lambda[width](idx): return x.load[with](idx)
+      fn input_lambda[width](idx): return x.load[width](idx)
       alias new_spec = StaticTensorSpec(spec.shape, spec.strides,
                                         input_lambda, output_lambda=None)
 

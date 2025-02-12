@@ -72,7 +72,7 @@ private:
   }
 
   void outlineFunction(GeneratorOp gen,
-                       SmallVector<KGEN::ParamDeclareRegionOp> &lambdas,
+                       ArrayRef<KGEN::ParamDeclareRegionOp> lambdas,
                        CallOp elementwiseOp, SymbolTable &symTab) {
     // We are either outlining the full function or just the inner elementwise.
     SmallVector<Operation *> opsToClone;
@@ -105,10 +105,9 @@ private:
       for (Operation &op : gen.getOps()) {
         // Don't include the input / output lambdas in the cloning. These are
         // the input interfaces on the kernel we will clone into MOGG.
-        if (std::any_of(lambdas.begin(), lambdas.end(),
-                        [&](KGEN::ParamDeclareRegionOp lambda) {
-                          return &op == lambda;
-                        }))
+        if (llvm::any_of(lambdas, [&](KGEN::ParamDeclareRegionOp lambda) {
+              return &op == lambda;
+            }))
           continue;
         opsToClone.push_back(&op);
       }

@@ -11,8 +11,6 @@
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MOGGPreElab/MOGGDecorators.h"
 #include "KGEN/MOGGPreElab/Passes.h"
-#include "KGEN/POPDialect/POPAttrs.h"
-#include "KGEN/POPDialect/POPOps.h"
 #include "Support/DebugInfoDialect/Transforms/StripDebugInfo.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/AttrTypeSubElements.h"
@@ -20,12 +18,271 @@
 #include "mlir/IR/Verifier.h"
 #include "mlir/Pass/Pass.h"
 
-#include "Helpers.h"
 #include "Support/AssertStream.h"
 
 using namespace M;
 using namespace KGEN;
 using namespace MOGGPreElab;
+
+namespace {
+struct SpliceResult {
+  TypedAttr getNewTensorSpec() { return newTensorSpec; }
+
+  KGEN::ParamDeclRefAttr getNewLambdaRef() {
+    auto declAttr = newLambda.getParamDecl();
+    return KGEN::ParamDeclRefAttr::get(declAttr);
+  }
+
+  bool contains(Operation *op) { return op == newLambda; }
+
+  ParamDeclareRegionOp newLambda;
+  TypedAttr newTensorSpec;
+};
+
+/// We have a special mojo hook which show us what the canonical lambda
+/// looks like and a call which tells us the resulting type with the lambda
+/// applied.
+struct LambdaTemplate {
+  LambdaTemplate() = default;
+
+  /// Scan the hook for the properties that we know exist.
+  LambdaTemplate(GeneratorOp hook) : templateOp(hook) {
+    auto regions = hook.getOps<ParamDeclareRegionOp>();
+    ASSERT_STREAM(
+        llvm::hasSingleElement(regions),
+        << "There must be exactly one region in the I/O lambda intrinsic");
+    canonicalLambda = *regions.begin();
+
+    auto calls = hook.getOps<CallOp>();
+    ASSERT_STREAM(
+        llvm::hasSingleElement(calls),
+        << "There must be exactly one call op in the I/O lambda intrinsic");
+    extractTensorSpecCall = *calls.begin();
+  }
+
+  /// Splice the template into the location pointed to by the given builder.
+  /// The newly spliced input/output lambda will be named newLambdaName.
+  ///
+  /// The return value is the new tensor spec attribute with any parameter
+  /// references remapped.
+  SpliceResult splice(OpBuilder &builder, ValueRange operands,
+                      DictionaryAttr params, StringRef newLambdaName);
+
+  /// The op we are pulling this info from.
+  GeneratorOp templateOp;
+
+  /// This the the template lambda we will clone as the input or output
+  /// lambda.
+  ParamDeclareRegionOp canonicalLambda;
+
+  /// The call operation which will hold the updated StaticTensorSpec
+  /// with a new input or output lambda.
+  CallOp extractTensorSpecCall;
+};
+
+class SafeRenamer {
+public:
+  SafeRenamer() = default;
+
+  SafeRenamer(ArrayRef<ParamDeclAttr> oldNames, ArrayRef<TypedAttr> newValues) {
+    for (auto [name, value] : llvm::zip(oldNames, newValues))
+      setParameterValue(name.getName(), value);
+  }
+
+  void setParameterValue(StringAttr name, Attribute attr) {
+    mlir::AttrTypeWalker walker;
+    walker.addWalk([&](ParamDeclRefAttr attr) {
+      if (forwardRenaming.contains(attr.getName()))
+        return;
+
+      // Use the pointer address as the new unique name for each decl ref
+      // TODO(GEX-1832): This should be turned into a more robust
+      // capture-avoiding substitution procedure.
+      auto newName = std::to_string((uintptr_t)attr.getAsOpaquePointer());
+      auto newAttr = ParamDeclRefAttr::get(newName, attr.getType());
+      forwardRenaming.insert({attr.getName(), newAttr});
+      inverseRenaming.insert({newAttr.getName(), attr});
+    });
+
+    walker.walk(attr);
+
+    renaming.insert({name, doReplace(attr, forwardRenaming)});
+  }
+
+  Type doReplace(Type attrOrType, const DenseMap<StringAttr, Attribute> &map) {
+    mlir::AttrTypeReplacer replacer;
+    replacer.addReplacement([&](ParamDeclRefAttr attr) -> Attribute {
+      if (auto it = map.find(attr.getName()); it != map.end())
+        return it->second;
+      return attr;
+    });
+    return replacer.replace(attrOrType);
+  }
+
+  Attribute doReplace(Attribute attrOrType,
+                      const DenseMap<StringAttr, Attribute> &map) {
+    mlir::AttrTypeReplacer replacer;
+    replacer.addReplacement([&](ParamDeclRefAttr attr) -> Attribute {
+      if (auto it = map.find(attr.getName()); it != map.end())
+        return it->second;
+      return attr;
+    });
+    return replacer.replace(attrOrType);
+  }
+
+  Type replace(Type attrOrType) {
+    return doReplace(doReplace(attrOrType, renaming), inverseRenaming);
+  }
+
+  Attribute replace(Attribute attrOrType) {
+    return doReplace(doReplace(attrOrType, renaming), inverseRenaming);
+  }
+
+  void replaceElementsIn(Operation *op, bool replaceAttrs, bool replaceLocs,
+                         bool replaceTypes) {
+    // Functor that replaces the given element if the new value is different,
+    // otherwise returns nullptr.
+    auto replaceIfDifferent = [&](auto element) {
+      auto replacement = replace(element);
+      return (replacement && replacement != element) ? replacement : nullptr;
+    };
+
+    // Update the attribute dictionary.
+    if (replaceAttrs) {
+      if (auto newAttrs = replaceIfDifferent(op->getAttrDictionary()))
+        op->setAttrs(cast<DictionaryAttr>(newAttrs));
+    }
+
+    // If we aren't updating locations or types, we're done.
+    if (!replaceTypes && !replaceLocs)
+      return;
+
+    // Update the location.
+    if (replaceLocs) {
+      if (Attribute newLoc = replaceIfDifferent(op->getLoc()))
+        op->setLoc(cast<LocationAttr>(newLoc));
+    }
+
+    // Update the result types.
+    if (replaceTypes) {
+      for (OpResult result : op->getResults())
+        if (Type newType = replaceIfDifferent(result.getType()))
+          result.setType(newType);
+    }
+
+    // Update any nested block arguments.
+    for (Region &region : op->getRegions()) {
+      for (Block &block : region) {
+        for (BlockArgument &arg : block.getArguments()) {
+          if (replaceLocs) {
+            if (Attribute newLoc = replaceIfDifferent(arg.getLoc()))
+              arg.setLoc(cast<LocationAttr>(newLoc));
+          }
+
+          if (replaceTypes) {
+            if (Type newType = replaceIfDifferent(arg.getType()))
+              arg.setType(newType);
+          }
+        }
+      }
+    }
+  }
+
+  void recursivelyReplaceElementsIn(Operation *op, bool replaceAttrs,
+                                    bool replaceLocs, bool replaceTypes) {
+    op->walk([&](Operation *nestedOp) {
+      replaceElementsIn(nestedOp, replaceAttrs, replaceLocs, replaceTypes);
+    });
+  }
+
+private:
+  DenseMap<StringAttr, Attribute> forwardRenaming;
+  DenseMap<StringAttr, Attribute> inverseRenaming;
+  DenseMap<StringAttr, Attribute> renaming;
+};
+
+/// Given the input parameters to the hook function, create the array of
+/// remapped parameters using the captured parameter args dictionary.
+static SmallVector<TypedAttr>
+getRemappedParameters(DictionaryAttr argsParamsDict,
+                      ArrayRef<ParamDeclAttr> inputParams) {
+  SmallVector<TypedAttr> result;
+  result.reserve(inputParams.size());
+
+  for (ParamDeclAttr paramDecl : inputParams) {
+    auto paramName = paramDecl.getName();
+    ASSERT_STREAM(paramName, "Parameter must have a name");
+
+    StringRef demangledName = LIT::demangleParameterName(paramName.getValue());
+
+    auto paramValue = argsParamsDict.get(demangledName);
+    ASSERT_STREAM(paramValue, "Missing parameter '"
+                                  << demangledName
+                                  << "' in arguments dictionary");
+
+    auto typedValue = dyn_cast<TypedAttr>(paramValue);
+    ASSERT_STREAM(typedValue, "Parameter value must be a TypedAttr");
+
+    result.push_back(typedValue);
+  }
+
+  return result;
+}
+
+SpliceResult LambdaTemplate::splice(OpBuilder &builder, ValueRange operands,
+                                    DictionaryAttr params,
+                                    StringRef newLambdaName) {
+  ASSERT_STREAM(templateOp != nullptr, "missing lambda");
+
+  // Instead of referring to the `self` argument of the wrapper function
+  // which contains the canonical lambda we remap onto the argument of
+  // this function which invoked the enable fusion method.
+  IRMapping mapper;
+  mapper.map(templateOp.getArguments(), operands);
+
+  // Copy the param region into the body.
+  auto newLambda =
+      cast<ParamDeclareRegionOp>(builder.clone(*canonicalLambda, mapper));
+
+  auto remappedParams =
+      getRemappedParameters(params, templateOp.getInputParams());
+
+  // Rebind the parameters of the lambda from the `self` argument in the
+  // method onto the specific parameters of the tensor being used at the
+  // callsite.
+  SafeRenamer safeRenamer(templateOp.getInputParams(), remappedParams);
+
+  safeRenamer.recursivelyReplaceElementsIn(newLambda, /*replaceAttrs=*/true,
+                                           /*replaceLocs=*/false,
+                                           /*replaceTypes=*/true);
+
+  newLambda.setParamDeclAttr(
+      ParamDeclAttr::get(newLambdaName, newLambda.getParamDecl().getType()));
+
+  // Remap the name of the canonical lambda to newLambda.
+  auto lambdaRef = ParamDeclRefAttr::get(newLambda.getParamDecl());
+  safeRenamer.setParameterValue(this->canonicalLambda.getParamDecl().getName(),
+                                lambdaRef);
+
+  OwningOpRef<CallOp> newTensorSpecCall = extractTensorSpecCall.clone();
+  safeRenamer.recursivelyReplaceElementsIn(*newTensorSpecCall,
+                                           /*replaceAttrs=*/true,
+                                           /*replaceLocs=*/false,
+                                           /*replaceTypes=*/true);
+
+  TypedAttr newTensorSpecAttr = newTensorSpecCall->getParamValues().back();
+  return {newLambda, newTensorSpecAttr};
+}
+
+/// Given the array of parameters for an argument from
+/// MOGG_TENSOR_ARG_PARAMS, return the parameter ref which corresponds to
+/// the static tensor spec parameter. This is tightly coupled on the exact
+/// order of parameter to the tensor type.
+static ParamDeclRefAttr getTensorSpecParamRef(DictionaryAttr argParams) {
+  return cast<ParamDeclRefAttr>(argParams.get(MOGGPreElab::kStaticSpec));
+}
+
+} // end namespace
 
 namespace M::KGEN::MOGGPreElab {
 #define GEN_PASS_DEF_SLICEMOGGFUNCS
@@ -36,33 +293,6 @@ namespace {
 class SliceMOGGFuncsPass
     : public MOGGPreElab::impl::SliceMOGGFuncsBase<SliceMOGGFuncsPass> {
 private:
-  /// We have a special mojo hook which show us what the canonical lambda
-  /// looks like and a call which tells us the resulting type with the lambda
-  /// applied.
-  struct LambdaTemplate {
-    LambdaTemplate() = default;
-
-    /// Scan the hook for the properties that we know exist.
-    LambdaTemplate(GeneratorOp hook) : templateOp(hook) {
-      for (auto region : hook.getOps<ParamDeclareRegionOp>()) {
-        ASSERT_STREAM(
-            canonicalLambda == nullptr,
-            "there must be only one region in the I/O lambda intrinsic");
-        canonicalLambda = region;
-      }
-      ASSERT_STREAM(canonicalLambda != nullptr,
-                    "missing region in the I/O lambda intrinsic");
-    }
-    /// The op we are pulling this info from.
-    GeneratorOp templateOp;
-
-    /// This the the template lambda we will clone as the input or output
-    /// lambda.
-    ParamDeclareRegionOp canonicalLambda;
-  };
-
-  MLIRContext *ctx;
-
   /// The reference input and output lambdas we should use for materializing the
   /// input/output fusion.
   LambdaTemplate inLambdaTemplate, outLambdaTemplate;
@@ -76,7 +306,7 @@ private:
     // Add all the old attributes.
     llvm::append_range(newAttrs, gen->getAttrs());
 
-    Builder b{ctx};
+    Builder b{&getContext()};
 
     // Mark this as a sliced function so MOGG lowering can identify it.
     newAttrs.push_back(
@@ -108,21 +338,37 @@ private:
     ArrayAttr argumentTypeNames =
         cast<ArrayAttr>(gen->getAttr(MOGG_ARG_TYPE_NAMES));
 
-    ArrayAttr argsParams =
-        dyn_cast_or_null<ArrayAttr>(gen->getAttr(MOGG_TENSOR_ARG_PARAMS));
+    auto argsParams = gen->getAttrOfType<ArrayAttr>(MOGG_TENSOR_ARG_PARAMS);
+
     if (!argsParams)
       return;
 
     for (unsigned idx : fusedOperands) {
-      Value tensorFusionEnabledOn = gen.getBody()->getArgument(idx);
+      BlockArgument tensorFusionEnabledOn = gen.getBody()->getArgument(idx);
+      DictionaryAttr paramsForTensor = cast<DictionaryAttr>(argsParams[idx]);
 
-      bool isInput = idx > 0;
       auto typeNameAttr =
           dyn_cast<StringAttr>(argumentTypeNames.getValue()[idx]);
       bool isVariadic =
-          typeNameAttr && typeNameAttr.getValue() == MOJO_STATIC_INT_TUPLE_NAME;
+          typeNameAttr && typeNameAttr.getValue() == MOJO_VARIADIC_TENSORS_NAME;
+
+      // TODO(GEX-1591): Re-enable fusion support for variadic kernels
+      if (isVariadic) {
+        gen.emitWarning() << "Fusion requested on variadic argument " << idx
+                          << " but variadic fusion is not supported";
+        continue;
+      }
+
+      auto argTensorSpecRef = getTensorSpecParamRef(paramsForTensor);
+      if (!argTensorSpecRef) {
+        gen.emitWarning() << "Fusion requested on argument " << idx
+                          << " but tensor spec parameter cannot be found";
+        continue;
+      }
+
       ASSERT_STREAM(inLambdaTemplate.templateOp && outLambdaTemplate.templateOp,
                     "intrinsic I/O fusion hooks not found");
+      bool isInput = idx > 0;
       LambdaTemplate *lambda = isInput ? &inLambdaTemplate : &outLambdaTemplate;
       std::string newLambdaName =
           isInput ? "input_" + std::to_string(idx) + "_fn" : "output_0_fn";
@@ -131,92 +377,31 @@ private:
       else
         outputLambdaNames[0] = newLambdaName;
 
-      // Instead of referring to the `self` argument of the wrapper function
-      // which contains the canonical lambda we remap onto the argument of
-      // this function which invoked the enable fusion method.
-      IRMapping mapper;
-      ASSERT_STREAM(lambda->templateOp != nullptr, "missing lambda");
-
       OpBuilder builder{computeBlock, computeBlock->begin()};
+      SpliceResult spliceResult = lambda->splice(
+          builder, {tensorFusionEnabledOn}, paramsForTensor, newLambdaName);
 
-      if (isVariadic) {
-        // The fused argument is a StaticTuple (array) of tensors.
-        // We load the tensor at index 0 here (In MoToMOGG 0 will be replaced
-        // with the right index for each input lambda). We insert the load
-        // outside of the lambda first, then move it inside later (to ensure
-        // mapper works correctly).
-        tensorFusionEnabledOn = builder.create<KGEN::POP::ArrayGetOp>(
-            tensorFusionEnabledOn.getLoc(), tensorFusionEnabledOn, 0);
+      ASSERT_STREAM(
+          argTensorSpecRef.getType() == spliceResult.newTensorSpec.getType(),
+          << "invalid type of new tensor spec");
+
+      SafeRenamer renamer;
+      renamer.setParameterValue(argTensorSpecRef.getName(),
+                                spliceResult.getNewTensorSpec());
+
+      for (Operation &op : gen.getBody()->getOperations()) {
+        if (!spliceResult.contains(&op)) {
+          renamer.recursivelyReplaceElementsIn(&op, /*replaceAttrs=*/true,
+                                               /*replaceLocs=*/false,
+                                               /*replaceTypes=*/true);
+        }
       }
-
-      mapper.map(lambda->templateOp.getBody()->getArgument(0),
-                 tensorFusionEnabledOn);
-
-      // Copy the param region into the body.
-      auto newLambda = cast<ParamDeclareRegionOp>(
-          builder.clone(*lambda->canonicalLambda, mapper));
-
-      if (isVariadic) {
-        // Move the ArrayGetOp at the beginning of the block.
-        Operation *getTensorOp = tensorFusionEnabledOn.getDefiningOp();
-        getTensorOp->moveBefore(&newLambda.getBodyRegion().front(),
-                                newLambda.getBodyRegion().front().begin());
-      }
-
-      SmallVector<TypedAttr> remappedLambdaParams;
-      auto argsParamsDict = cast<DictionaryAttr>(argsParams[idx]);
-
-      // Get all input parameters from the template
-      auto inputParams = lambda->templateOp.getInputParams();
-
-      // For each input parameter, find its matching value in the dictionary
-      for (auto paramDecl : inputParams) {
-        auto paramName = paramDecl.getName();
-        ASSERT_STREAM(paramName, "Parameter must have a name");
-
-        StringRef demangledName =
-            LIT::demangleParameterName(paramName.getValue());
-
-        auto paramValue = argsParamsDict.get(demangledName);
-        ASSERT_STREAM(paramValue, "Missing parameter '"
-                                      << demangledName
-                                      << "' in arguments dictionary");
-
-        auto typedValue = dyn_cast<TypedAttr>(paramValue);
-        ASSERT_STREAM(typedValue, "Parameter value must be a TypedAttr");
-
-        remappedLambdaParams.push_back(typedValue);
-      }
-
-      // Rebind the parameters of the lambda from the `self` argument in the
-      // method onto the specific parameters of the tensor being used at the
-      // callsite.
-      ParameterEvaluator evaluator;
-
-      for (auto [localParamRef, methodParamDecl] :
-           llvm::zip(remappedLambdaParams, inputParams)) {
-        auto methodDeclRef = ParamDeclRefAttr::get(methodParamDecl.getName(),
-                                                   methodParamDecl.getType());
-        evaluator.setParameterValue(methodDeclRef.getName(), localParamRef);
-      }
-
-      // Update the parameter attributes.
-      mlir::AttrTypeReplacer walker;
-      walker.addReplacement([&](ParamDeclRefAttr attr) {
-        return evaluator.getReboundAttribute(attr);
-      });
-      walker.recursivelyReplaceElementsIn(newLambda, /*replaceAttrs=*/true,
-                                          /*replaceLocs=*/false,
-                                          /*replaceTypes=*/true);
-      newLambda.setParamDeclAttr(ParamDeclAttr::get(
-          newLambdaName, newLambda.getParamDecl().getType()));
     }
   }
 
 public:
   void runOnOperation() override {
     ModuleOp mod = getOperation();
-    ctx = mod.getContext();
     auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
     SymbolTable &symTab = analysis.getTopLevelSymbolTable();
 
@@ -229,7 +414,6 @@ public:
         outLambdaTemplate = LambdaTemplate{func};
     }
 
-    DenseSet<GeneratorOp> seenFuncs;
     for (GeneratorOp userKernel :
          llvm::make_early_inc_range(mod.getOps<GeneratorOp>())) {
       // Only look at the DPS execute functions.
@@ -242,8 +426,8 @@ public:
 
       // Dummy execute function without operands (mo.reshape).
       /// TODO: this should not be allowed for users.
-      ArrayAttr argumentTypeNames =
-          dyn_cast_or_null<ArrayAttr>(userKernel->getAttr(MOGG_ARG_TYPE_NAMES));
+      auto argumentTypeNames =
+          userKernel->getAttrOfType<ArrayAttr>(MOGG_ARG_TYPE_NAMES);
       if (!argumentTypeNames)
         continue;
 
@@ -264,7 +448,7 @@ public:
         auto nameAttr = dyn_cast<StringAttr>(argumentTypeNames.getValue()[i]);
         if (nameAttr &&
             (nameAttr.getValue() == MOJO_INTERNAL_DPS_TENSOR_TYPE_NAME ||
-             nameAttr.getValue() == MOJO_STATIC_INT_TUPLE_NAME)) {
+             nameAttr.getValue() == MOJO_VARIADIC_TENSORS_NAME)) {
           ++kernelInputsCount;
         }
       }
