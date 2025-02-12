@@ -10,5 +10,4 @@ from compiler import (
     elementwise,
     enable_fusion_for,
     register,
-    specsof,
 )
