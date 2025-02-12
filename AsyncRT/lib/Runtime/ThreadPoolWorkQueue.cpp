@@ -896,9 +896,9 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(
   // Initialize each thread with its required state.
   // Note that we're constructing the array manually since WorkQueueThreads have
   // non-moveable atomics.
-  workers = static_cast<WorkQueueThread *>(
-      malloc(sizeof(WorkQueueThread) * numWorkers));
-  assert(workers && "malloc of workers failed");
+  workers = static_cast<WorkQueueThread *>(aligned_alloc(
+      alignof(WorkQueueThread), sizeof(WorkQueueThread) * numWorkers));
+  assert(workers && "Allocation of workers failed");
   for (size_t workerID = 0; workerID < numWorkers; ++workerID)
     new (workers + workerID) WorkQueueThread(
         sharedState, taskList, overflowMutex, overflowTaskList, workerID,
