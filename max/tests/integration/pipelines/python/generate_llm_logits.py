@@ -25,6 +25,7 @@ import transformers
 
 # MAX
 from max import driver, pipelines
+from max.entrypoints.cli import DevicesOptionType
 from max.pipelines import interfaces
 from max.pipelines.architectures import register_all_models
 from max.pipelines.kv_cache import KVCacheStrategy
@@ -753,7 +754,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
 @click.option(
     "--device",
     "device_type",
-    type=click.Choice(["cpu", "gpu"]),
+    type=DevicesOptionType(),
     required=True,
     help="Type of device to run pipeline with",
 )
@@ -832,13 +833,7 @@ def main(
             f"{pipeline_oracle.supported_encodings}"
         )
 
-    device_specs: list[driver.DeviceSpec]
-    if device_type == "cpu":
-        device_specs = [driver.DeviceSpec.cpu()]
-    elif device_type == "gpu":
-        device_specs = [driver.DeviceSpec.accelerator()]
-    else:
-        raise ValueError(f"Unknown device type {device_type!r}")
+    device_specs = DevicesOptionType.device_specs(device_type)
     for device_spec in device_specs:
         if not pipeline_oracle.is_supported(
             version=version_name,
