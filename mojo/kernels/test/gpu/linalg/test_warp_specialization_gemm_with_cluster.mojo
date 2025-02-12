@@ -11,6 +11,7 @@ from gpu.host import DeviceContext, FuncAttribute
 from gpu.host import Dim as ClusterDim
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.id import block_idx, thread_idx, block_dim
+from gpu.intrinsics import warpgroup_reg_dealloc, warpgroup_reg_alloc
 from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
 from memory import stack_allocation
 from gpu.mma import (
@@ -97,6 +98,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
 ):
     constrained[transpose_b, "Only support transposed B in layout"]()
 
+    alias num_consumer = (num_threads // 128) - 1
+
     alias CLUSTER_N = UInt(Int(cluster_shape[0]))
     alias CLUSTER_M = UInt(Int(cluster_shape[1]))
     alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
@@ -106,7 +109,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
 
-    alias num_m_mmas = BM // wgmma_shape[0]
+    alias num_m_mmas = BM // wgmma_shape[0] // num_consumer
     alias num_n_mmas = BN // wgmma_shape[1]
 
     alias accum_type = get_accum_type[a_type]()
@@ -115,8 +118,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     alias a_expected_bytes = a_smem_layout.size() * sizeof[a_type]()
     alias b_expected_bytes = b_smem_layout.size() * sizeof[b_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes
-
-    alias num_consumer = (num_threads // 128) - 1
 
     wgmma_op = TensorCoreAsync[
         accum_type, a_type, b_type, wgmma_shape, transpose_b=transpose_b
@@ -182,9 +183,13 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     fence_mbarrier_init()
 
     if warp_group_idx == 0:
+        alias num_regs = 24 if num_consumer <= 2 else 32
+        warpgroup_reg_dealloc[num_regs]()
         if warp_group_thread_idx == 0 and lane_predicate:
             var multicast_column_mask = 0
-            for i in range(CLUSTER_M):
+
+            @parameter
+            for i in range(Int(CLUSTER_M)):
                 multicast_column_mask |= 1 << (i * CLUSTER_N)
 
             var multicast_row_mask = ((1 << CLUSTER_N) - 1) << (
@@ -236,6 +241,16 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
                 write_pipeline_states.step()
 
     else:
+
+        @parameter
+        if num_consumer == 1 or num_consumer == 2:
+            alias num_regs = 256 if num_consumer == 1 else 240
+            warpgroup_reg_alloc[num_regs]()
+        else:
+            warpgroup_reg_alloc[160]()
+
+        var local_warp_group_idx = warp_group_idx - 1
+
         var c_reg_tile = LayoutTensor[
             accum_type,
             Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
@@ -259,7 +274,12 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
             var b_smem_tile = b_smem_iter.next(read_idx)[]
 
             wgmma_op.arrive()
-            wgmma_op.wgmma(a_smem_tile, b_smem_tile, c_reg_tile)
+            wgmma_op.wgmma[num_consumer](
+                a_smem_tile,
+                b_smem_tile,
+                c_reg_tile,
+                local_warp_group_idx,
+            )
             wgmma_op.commit_group()
             wgmma_op.wait_for_all()
 
@@ -268,6 +288,9 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
             read_pipeline_states.step()
 
         var c_gmem_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
+        var c_gmem_split = c_gmem_tile.tile[BM // num_consumer, BN](
+            local_warp_group_idx, 0
+        )
         var warp_id = warp_group_thread_idx // WARP_SIZE
 
         @parameter
@@ -279,7 +302,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
 
                 # (m_mma, n_mma) is coordinates for a warp group's tile.
                 # A warp group is 4x1 warps.
-                warp_tile = c_gmem_tile.tile[
+                warp_tile = c_gmem_split.tile[
                     wgmma_shape[0] // 4, wgmma_shape[1]
                 ](m_mma * 4 + warp_id, n_mma)
 
@@ -302,6 +325,7 @@ def test_warp_specialize_gemm_with_multicasting[
     b_type: DType,
     c_type: DType,
     cluster_shape: StaticTuple[Int32, 3],
+    num_consumer: Int = 1,
     transpose_b: Bool = True,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,):
     var M = m.value
@@ -386,7 +410,8 @@ def test_warp_specialize_gemm_with_multicasting[
         CLUSTER_M,
         "x",
         CLUSTER_N,
-        ")",
+        ") NUM CONSUMERS: ",
+        num_consumer,
     )
 
     alias a_smem_layout = tile_layout_k_major[a_type, BM, BK]()
@@ -417,9 +442,7 @@ def test_warp_specialize_gemm_with_multicasting[
         ),
     )
 
-    # 1 warp group to TMA and 1 warp group to WGMMA
-    alias num_wgmma = 1
-    alias num_threads = WARP_GROUP_SIZE * num_wgmma + WARP_GROUP_SIZE
+    alias num_threads = WARP_GROUP_SIZE * num_consumer + WARP_GROUP_SIZE
 
     alias pipeline_stages = 3
     alias smem_size = pipeline_stages * (
@@ -514,6 +537,7 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             StaticTuple[Int32, 3](1, 2, 1),
+            num_consumer=2,
         ](ctx, static[256](), static[256](), static[128]())
 
         test_warp_specialize_gemm_with_multicasting[
@@ -530,6 +554,7 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             StaticTuple[Int32, 3](2, 1, 1),
+            num_consumer=2,
         ](ctx, static[128](), static[512](), static[128]())
 
         test_warp_specialize_gemm_with_multicasting[
@@ -554,6 +579,7 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             StaticTuple[Int32, 3](2, 2, 1),
+            num_consumer=2,
         ](ctx, static[256](), static[128](), static[128]())
 
         alias wgmma_n = List[Int](8, 32, 64, 128, 256)
@@ -577,6 +603,7 @@ def main():
                 DType.bfloat16,
                 DType.bfloat16,
                 StaticTuple[Int32, 3](1, 2, 1),
+                num_consumer=2,
             ](ctx, dynamic(1024), static[512](), static[128]())
 
             test_warp_specialize_gemm_with_multicasting[
@@ -601,6 +628,7 @@ def main():
                 DType.bfloat16,
                 DType.bfloat16,
                 StaticTuple[Int32, 3](1, 2, 1),
+                num_consumer=2,
             ](ctx, dynamic(201), static[2048](), static[256]())
 
         print("# 1x2 warp specialized gemm with multicasting tests")
@@ -613,6 +641,7 @@ def main():
                 DType.bfloat16,
                 DType.bfloat16,
                 StaticTuple[Int32, 3](2, 1, 1),
+                num_consumer=2,
             ](ctx, static[1024](), static[512](), static[128]())
 
             test_warp_specialize_gemm_with_multicasting[
@@ -629,6 +658,7 @@ def main():
                 DType.bfloat16,
                 DType.bfloat16,
                 StaticTuple[Int32, 3](2, 1, 1),
+                num_consumer=2,
             ](ctx, dynamic(99), static[1024](), static[1024]())
 
             test_warp_specialize_gemm_with_multicasting[
@@ -645,6 +675,7 @@ def main():
                 DType.bfloat16,
                 DType.bfloat16,
                 StaticTuple[Int32, 3](2, 1, 1),
+                num_consumer=2,
             ](ctx, dynamic(201), static[2048](), static[256]())
 
         print("# 2x2 warp specialized gemm with multicasting tests")
@@ -657,6 +688,7 @@ def main():
                 DType.bfloat16,
                 DType.bfloat16,
                 StaticTuple[Int32, 3](2, 2, 1),
+                num_consumer=2,
             ](ctx, static[1024](), static[512](), static[128]())
 
             test_warp_specialize_gemm_with_multicasting[
@@ -673,6 +705,7 @@ def main():
                 DType.bfloat16,
                 DType.bfloat16,
                 StaticTuple[Int32, 3](2, 2, 1),
+                num_consumer=2,
             ](ctx, dynamic(199), static[1024](), static[1024]())
 
             test_warp_specialize_gemm_with_multicasting[
@@ -689,4 +722,5 @@ def main():
                 DType.bfloat16,
                 DType.bfloat16,
                 StaticTuple[Int32, 3](2, 2, 1),
+                num_consumer=2,
             ](ctx, dynamic(201), static[2048](), static[256]())
