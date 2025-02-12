@@ -983,6 +983,10 @@ class InferenceSession:
         self._set_mojo_define("KERNEL_E2E_GPU_PROFILING", False)
         self._set_mojo_define("KERNEL_E2E_GPU_PROFILING_DETAILED", False)
 
+    def _use_experimental_kernels(self):
+        """Enables experimental kernels."""
+        self._set_mojo_define("USE_EXPERIMENTAL_KERNELS", True)
+
     def _dump_gpu_asm(self, option: bool | str | Path = True):
         """Enables dumping of gpu asm.
 
