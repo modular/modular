@@ -31,7 +31,7 @@ def main():
 ```
 """
 
-from max._tensor_utils import ManagedTensorSlice
+from max._tensor_utils import DynamicTensor, ManagedTensorSlice
 from max.tensor import RuntimeTensorSpec
 
 from .accelerator import accelerator_device

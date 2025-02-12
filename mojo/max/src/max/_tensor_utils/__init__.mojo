@@ -5,4 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 """Tensor utilities for working with tensor-like objects"""
 
-from tensor import ManagedTensorSlice, TensorLike, _indexing, foreach
+from tensor import (
+    DynamicTensor,
+    ManagedTensorSlice,
+    IODynamicTensor,
+    TensorLike,
+    _indexing,
+    foreach,
+)

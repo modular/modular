@@ -21,7 +21,13 @@ def main():
 
 from collections import InlineArray, Optional
 
-from max._tensor_utils import ManagedTensorSlice, TensorLike, _indexing
+from max._tensor_utils import (
+    DynamicTensor,
+    IODynamicTensor,
+    ManagedTensorSlice,
+    TensorLike,
+    _indexing,
+)
 from max.tensor import Tensor as OldTensor
 from max.tensor import TensorShape, TensorSpec
 from memory import UnsafePointer
@@ -32,8 +38,6 @@ from utils._serialize import _serialize
 from ._utils import _convert_from
 from .device import Device, DeviceMemory, DeviceTensor
 from .tensor_slice import TensorSlice
-
-from tensor_internal.io_spec import DynamicTensor
 
 
 struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
@@ -209,7 +213,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
     fn unsafe_slice(
         self,
         *slices: Slice,
-    ) raises -> DynamicTensor[type, rank]:
+    ) raises -> DynamicTensor[type, rank].Type:
         """Returns a view of the tensor conforming to given slices. If given
         a single slice `:` the view would point to the entire tensor. The caller
         is responsible to make sure tensor outlives the returned slice.
@@ -222,7 +226,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         """
         if len(slices) > rank:
             raise "len(slices) exceeds rank"
-        return DynamicTensor[type, rank](
+        return DynamicTensor[type, rank].Type(
             self.unsafe_ptr(),
             self._canonicalize_slices(slices),
             self._spec,

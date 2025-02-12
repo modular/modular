@@ -6,12 +6,11 @@
 # RUN: %mojo %s
 
 from max._tensor_utils import foreach
-from max.driver import ManagedTensorSlice, Tensor, cpu_device
+from max.driver import DynamicTensor, ManagedTensorSlice, Tensor, cpu_device
 from max.tensor import TensorShape, TensorSpec
 from testing import assert_equal
 
 from utils import Index, IndexList
-from tensor_internal.io_spec import DynamicTensor
 
 
 # CHECK-LABEL: == test_foreach
@@ -20,12 +19,12 @@ fn test_foreach() raises:
     var shape = (10, 2)
 
     var tensor1 = Tensor[DType.float32, 2](TensorShape(shape))
-    var unsafe_slice1 = DynamicTensor[DType.float32, 2](
+    var unsafe_slice1 = DynamicTensor[DType.float32, 2].Type(
         tensor1.unsafe_ptr(), shape
     )
 
     var tensor2 = Tensor[DType.float32, 2](TensorShape(shape))
-    var unsafe_slice2 = DynamicTensor[DType.float32, 2](
+    var unsafe_slice2 = DynamicTensor[DType.float32, 2].Type(
         tensor2.unsafe_ptr(), shape
     )
 

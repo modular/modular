@@ -21,6 +21,7 @@ from gpu.id import block_dim, block_idx, thread_idx
 from max.driver import (
     Device,
     DeviceTensor,
+    DynamicTensor,
     ManagedTensorSlice,
     Tensor,
     accelerator_device,
@@ -28,15 +29,14 @@ from max.driver import (
 )
 from max.tensor import TensorShape
 from testing import assert_equal
-from tensor_internal.io_spec import DynamicTensor
 
 
 fn vec_add[
     type: DType, rank: Int
 ](
-    in0: DynamicTensor[type, rank],
-    in1: DynamicTensor[type, rank],
-    out: DynamicTensor[type, rank],
+    in0: DynamicTensor[type, rank].Type,
+    in1: DynamicTensor[type, rank].Type,
+    out: DynamicTensor[type, rank].Type,
 ):
     var row = thread_idx.x
     var col = thread_idx.y
