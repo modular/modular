@@ -116,6 +116,8 @@ public:
 
   std::string largeDataThreshold;
 
+  std::string loopUnrollingWarnThreshold;
+
   /// Get the include directories that exist on the file system.
   std::vector<std::string> getIncludePaths() const {
     std::vector<std::string> result;
@@ -295,6 +297,13 @@ private:
       "large-data-threshold",
       cl::desc("Choose large data threshold for x86_64 medium code model."),
       llvm::cl::location(options.largeDataThreshold),
+      llvm::cl::cat(KGENOptionsCategory), llvm::cl::Hidden};
+
+  M::cl::MOpt<std::string, true> loopUnrollingWarnThreshold{
+      "loop-unrolling-warn-threshold",
+      cl::desc("Threshold to warn if a loop is unrolled for too many times, "
+               "default value is 1024, set to 0 to disable the warning."),
+      llvm::cl::location(options.loopUnrollingWarnThreshold),
       llvm::cl::cat(KGENOptionsCategory), llvm::cl::Hidden};
 
 private:

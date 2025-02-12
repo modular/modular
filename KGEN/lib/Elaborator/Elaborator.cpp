@@ -18,6 +18,7 @@
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/Support/CompilerProfiling.h"
+#include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/ManglingUtils.h"
 #include "Support/Compiler/DiagnosticHandler.h"
@@ -985,6 +986,7 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
   // Generate the series of values.
   auto iterator = cast<TypedAttr>(initial);
   SmallVector<TypedAttr> values;
+  int64_t loopUnrollCount = 0;
   while (true) {
     iterator =
         StoreToMemAttr::get(iterator, PointerType::get(iterator.getType()));
@@ -1005,6 +1007,16 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
       break;
     values.push_back(structAttr.getValues()[1]);
     iterator = structAttr.getValues()[0];
+    loopUnrollCount++;
+  }
+
+  if (options.loopUnrollingWarnThreshold > 0 &&
+      loopUnrollCount > options.loopUnrollingWarnThreshold) {
+    InFlightDiagnostic diag = mlir::emitWarning(
+        op->getLoc(), "parameter for unrolling loop more than " +
+                          Twine(options.loopUnrollingWarnThreshold) +
+                          " times may cause long "
+                          "compilation time and large code size");
   }
 
   // Now generate the loop bodies and set up their elaboration at the same time.

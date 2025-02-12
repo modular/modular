@@ -51,5 +51,10 @@ defm large_data_threshold: CommandOptionHidden<["--", "-"], "large-data-threshol
   TargetOptionGroup, Index<9>, MetaVarName<"LDT">,
   HelpText<"Choose large data threshold for x86_64 medium code model.">>;
 
+defm loop_unrolling_warn_threshold: CommandOptionHidden<["--", "-"], "loop-unrolling-warn-threshold",
+  TargetOptionGroup, Index<10>, MetaVarName<"LUWT">,
+  HelpText<"Sets loop unrolling factor warning threshold, default is 1024, set to 0 to disable the warning.">>;
+
+
 
 #endif // KGEN_TOOLS_MOJO_COMMON_TARGETOPTIONS_TD
