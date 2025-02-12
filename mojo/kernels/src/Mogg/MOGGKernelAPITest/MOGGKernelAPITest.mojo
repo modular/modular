@@ -9,10 +9,15 @@ from sys import external_call
 import compiler_internal as compiler
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from compiler_internal import StaticTensorSpec
 from linalg.matmul import matmul as _matmul
 from register import uses_opaque
 from runtime.asyncrt import DeviceContextPtr, MojoCallContextPtr
-from tensor import ManagedTensorSlice, foreach
+from tensor import (
+    ManagedTensorSlice,
+    VariadicTensors,
+    foreach,
+)
 from tensor_internal import (
     _input_fusion_hook_impl,
     _output_fusion_hook_impl,
@@ -261,19 +266,11 @@ struct PrintTensorSpecOp:
         target: StringLiteral,
         _synchronous: Bool,
     ](out: ManagedTensorSlice, x: ManagedTensorSlice):
-        alias x_shape = compiler.specsof[x.type, x.rank]("x").shape
-        alias x_strides = compiler.specsof[x.type, x.rank]("x").strides
-        alias x_alignment = compiler.specsof[x.type, x.rank]("x").alignment
-        alias x_address_space = compiler.specsof[x.type, x.rank](
-            "x"
-        ).address_space
-        alias x_exclusive = compiler.specsof[x.type, x.rank]("x").exclusive
-
-        print("x.shape =", x_shape)
-        print("x.strides =", x_strides)
-        print("x.alignment =", x_alignment)
-        print("x.address_space =", x_address_space)
-        print("x.exclusive =", x_exclusive)
+        print("x.shape =", x._static_shape)
+        print("x.strides =", x._static_strides)
+        print("x.alignment =", x.alignment)
+        print("x.address_space =", x.address_space)
+        print("x.exclusive =", x.exclusive)
 
         @parameter
         @always_inline
@@ -295,19 +292,11 @@ struct PrintTensorSpecViewOp:
         target: StringLiteral,
         _synchronous: Bool,
     ](out: ManagedTensorSlice, x: ManagedTensorSlice):
-        alias x_shape = compiler.specsof[x.type, x.rank]("x").shape
-        alias x_strides = compiler.specsof[x.type, x.rank]("x").strides
-        alias x_alignment = compiler.specsof[x.type, x.rank]("x").alignment
-        alias x_address_space = compiler.specsof[x.type, x.rank](
-            "x"
-        ).address_space
-        alias x_exclusive = compiler.specsof[x.type, x.rank]("x").exclusive
-
-        print("x.shape =", x_shape)
-        print("x.strides =", x_strides)
-        print("x.alignment =", x_alignment)
-        print("x.address_space =", x_address_space)
-        print("x.exclusive =", x_exclusive)
+        print("x.shape =", x._static_shape)
+        print("x.strides =", x._static_strides)
+        print("x.alignment =", x.alignment)
+        print("x.address_space =", x.address_space)
+        print("x.exclusive =", x.exclusive)
 
         @parameter
         @always_inline
@@ -329,19 +318,11 @@ struct PrintTensorSpecFusedOp:
         target: StringLiteral,
         _synchronous: Bool,
     ](out: ManagedTensorSlice, x: ManagedTensorSlice):
-        alias x_shape = compiler.specsof[x.type, x.rank]("x").shape
-        alias x_strides = compiler.specsof[x.type, x.rank]("x").strides
-        alias x_alignment = compiler.specsof[x.type, x.rank]("x").alignment
-        alias x_address_space = compiler.specsof[x.type, x.rank](
-            "x"
-        ).address_space
-        alias x_exclusive = compiler.specsof[x.type, x.rank]("x").exclusive
-
-        print("x.shape =", x_shape)
-        print("x.strides =", x_strides)
-        print("x.alignment =", x_alignment)
-        print("x.address_space =", x_address_space)
-        print("x.exclusive =", x_exclusive)
+        print("x.shape =", x._static_shape)
+        print("x.strides =", x._static_strides)
+        print("x.alignment =", x.alignment)
+        print("x.address_space =", x.address_space)
+        print("x.exclusive =", x.exclusive)
 
         @parameter
         @always_inline
@@ -505,13 +486,9 @@ struct VariadicInputToOutput:
         size: Int,
         target: StringLiteral,
     ](
-        output: StaticTuple[
-            ManagedTensorSlice[type=type, rank=1, ioSpec=IOUnknown], size
-        ],
-        bias: ManagedTensorSlice[type=type, rank=1, *_],
-        input: StaticTuple[
-            ManagedTensorSlice[type=type, rank=1, ioSpec=IOUnknown], size
-        ],
+        output: VariadicTensors[type, rank=1, size=size, ioSpec=IOUnknown],
+        bias: ManagedTensorSlice[type, rank=1],
+        input: VariadicTensors[type, rank=1, size=size, ioSpec=IOUnknown],
     ):
         @parameter
         for i in range(size):
@@ -567,7 +544,8 @@ struct BasicInplaceRaises:
 
 @compiler.register("variadic_add")
 struct VariadicAdd:
-    @compiler.enable_fusion_for("inputs")
+    # TODO(GEX-1591): Re-enable fusion of variadic operands
+    # @compiler.enable_fusion_for("inputs")
     @staticmethod
     fn execute[
         type: DType,
@@ -576,12 +554,8 @@ struct VariadicAdd:
         _synchronous: Bool,
     ](
         output: ManagedTensorSlice[type, rank],
-        inputs: StaticTuple[
-            ManagedTensorSlice[type, rank, ioSpec=IOUnknown], *_
-        ],
+        inputs: VariadicTensors[type, rank, ioSpec=IOUnknown, *_],
     ):
-        alias inputs_specs = compiler.specsof[type, rank, inputs.size]("inputs")
-
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[rank]) -> SIMD[type, width]:
@@ -589,14 +563,7 @@ struct VariadicAdd:
 
             @parameter
             for i in range(inputs.size):
-                alias in_lambda = inputs_specs[i].in_lambda
-
-                @parameter
-                if in_lambda:
-                    alias in_fn = in_lambda.value()
-                    acc += in_fn[width](idx)
-                else:
-                    acc += inputs[i].load[width](idx)
+                acc += inputs[i]._fused_load[width](idx)
 
             return acc
 
@@ -614,10 +581,8 @@ struct Transpose2DOp:
     @staticmethod
     fn build_view[
         type: DType,
-    ](
-        x: ManagedTensorSlice[type, 2],
-    ) -> ManagedTensorSlice[
-        type, 2, ioSpec = x.ioSpec
+    ](x: ManagedTensorSlice[type, 2]) -> ManagedTensorSlice[
+        type, 2, ioSpec = x.ioSpec, static_spec = StaticTensorSpec[type, 2]()
     ]:
         var new_stride = IndexList[2]()
         var new_shape = IndexList[2]()
@@ -626,9 +591,12 @@ struct Transpose2DOp:
         new_shape[0] = x._spec.shape[1]
         new_shape[1] = x._spec.shape[0]
 
-        return ManagedTensorSlice[type, 2, ioSpec = x.ioSpec](
-            x._ptr, new_shape, new_stride
-        )
+        return ManagedTensorSlice[
+            type,
+            2,
+            ioSpec = x.ioSpec,
+            static_spec = StaticTensorSpec[type, 2](),
+        ](x._ptr, new_shape, new_stride)
 
     @staticmethod
     fn get_view_strides(input_strides: DimList) -> DimList:
@@ -645,8 +613,7 @@ struct Transpose2DOp:
         x: ManagedTensorSlice[type, 2],
         ctx: MojoCallContextPtr,
     ):
-        alias x_strides = compiler.specsof[x.type, x.rank]("x").strides
-        alias view_strides = Self.get_view_strides(x_strides)
+        alias view_strides = Self.get_view_strides(x._static_strides)
         var x_view = Self.build_view(x)
         view_copy_impl[
             target=target, _synchronous=_synchronous, view_strides=view_strides
@@ -955,8 +922,8 @@ struct VariadicDeviceContext:
         type: DType,
         rank: Int,
     ](
-        outputs: StaticTuple[ManagedTensorSlice[type, rank], *_],
-        inputs: StaticTuple[ManagedTensorSlice[type, rank], *_],
+        outputs: VariadicTensors[type, rank, *_],
+        inputs: VariadicTensors[type, rank, *_],
         dev_ctxs: StaticTuple[DeviceContextPtr, *_],
     ) raises:
         for i in range(len(dev_ctxs)):
