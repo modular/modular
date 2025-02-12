@@ -21,6 +21,7 @@ modular_py_test(
         "//SDK/lib/API/python/max/serve/pipelines",
         "//SDK/lib/API/python/max/serve/router",
         "//SDK/lib/API/python/max/serve/scheduler",
+        "//SDK/lib/API/python/max/serve/schemas",
         requirement("async-asgi-testclient"),
         requirement("fastapi"),
         requirement("gguf"),
