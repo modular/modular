@@ -347,7 +347,7 @@ struct DeviceBuffer[type: DType](Sized):
         self._device_ptr = UnsafePointer[Scalar[type]]()
         return result
 
-    fn unsafe_pointer(self) -> UnsafePointer[Scalar[type]]:
+    fn unsafe_ptr(self) -> UnsafePointer[Scalar[type]]:
         return self._device_ptr
 
     fn __getitem__(self, idx: Int) -> Scalar[type]:
@@ -1039,7 +1039,7 @@ struct DeviceContext:
 
         Pinned memory is guaranteed to remain resident in the host's RAM, not be
         paged/swapped out to disk. Memory allocated normally (for example, using
-        [`UnsafePointer.alloc()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#alloc))
+        [`UnsafePointer.alloc()`](/mojo/stdlib/memory/unsafe_ptr/UnsafePointer#alloc))
         is pageable—individual pages of memory can be moved to secondary storage
         (disk/SSD) when main memory fills up.
 
@@ -1952,14 +1952,14 @@ struct _HostMappedBuffer[type: DType]:
     fn __enter__(mut self) raises -> UnsafePointer[Scalar[type]]:
         self._cpu_ctx.synchronize()
         self._dev_ctx.enqueue_copy_from_device(
-            self._cpu_buf.unsafe_pointer(), self._dev_buf
+            self._cpu_buf.unsafe_ptr(), self._dev_buf
         )
         self._dev_ctx.synchronize()
-        return self._cpu_buf.unsafe_pointer()
+        return self._cpu_buf.unsafe_ptr()
 
     fn __exit__(mut self) raises:
         self._cpu_ctx.synchronize()
         self._dev_ctx.enqueue_copy_to_device(
-            self._dev_buf, self._cpu_buf.unsafe_pointer()
+            self._dev_buf, self._cpu_buf.unsafe_ptr()
         )
         self._dev_ctx.synchronize()

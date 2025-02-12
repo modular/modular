@@ -176,9 +176,9 @@ fn all_reduce_naive[
         for i in range(ngpus):
             var src_buffer_ptr: UnsafePointer[Scalar[type]]
             if i == device_idx:
-                src_buffer_ptr = device_buffer_list[i].unsafe_pointer()
+                src_buffer_ptr = device_buffer_list[i].unsafe_ptr()
             else:
-                src_buffer_ptr = tmp_buffer_list[src_index].unsafe_pointer()
+                src_buffer_ptr = tmp_buffer_list[src_index].unsafe_ptr()
                 src_index += 1
 
             if i == 0:
