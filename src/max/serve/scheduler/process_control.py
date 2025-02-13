@@ -6,7 +6,6 @@
 
 import asyncio
 import ctypes
-import logging
 import math
 import multiprocessing
 import multiprocessing.synchronize
@@ -15,9 +14,9 @@ import time
 from dataclasses import dataclass
 from typing import Callable, Iterable, Optional, Protocol, Union
 
-logger = logging.getLogger(__name__)
-# This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
-logger.propagate = False
+from max.loggers import get_logger
+
+logger = get_logger(__name__)
 
 
 class EventCreator(Protocol):

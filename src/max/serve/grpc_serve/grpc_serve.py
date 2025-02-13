@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import logging
 import queue
 import traceback
 import uuid
@@ -16,6 +15,7 @@ import grpc
 import max.serve.grpc_serve.grpc_predict_v2_pb2 as pb2
 from grpc_reflection.v1alpha import reflection
 from max.entrypoints.cli import TextGenerationMetrics
+from max.loggers import get_logger
 from max.pipelines import PipelineConfig, PipelineTokenizer, TextTokenizer
 from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
 from max.serve.grpc_serve.grpc_predict_v2_pb2_grpc import (
@@ -28,6 +28,8 @@ from max.serve.pipelines.llm import (
 )
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.telemetry.stopwatch import StopWatch
+
+logger = get_logger(__name__)
 
 DEFAULT_MAX_TOKENS = 100
 
@@ -99,9 +101,9 @@ class MaxDirectInferenceService(GRPCInferenceServiceServicer):
         tokenizer: PipelineTokenizer,
         max_batch_size: int,
     ):
-        self.logger = logging.getLogger(self.__class__.__name__)
-        # This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
-        self.logger.propagate = False
+        self.logger = get_logger(
+            f"{self.__class__.__module__}.{self.__class__.__name__}"
+        )
         self.model_name = model_name
         self.pipeline = pipeline
         self.tokenizer = tokenizer
@@ -227,9 +229,9 @@ class MaxServeInferenceService(GRPCInferenceServiceServicer):
     """Utilizes the max-serve infrastructure to run a pipeline."""
 
     def __init__(self, pipeline: TokenGeneratorPipeline, max_batch_size: int):
-        self.logger = logging.getLogger(self.__class__.__name__)
-        # This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
-        self.logger.propagate = False
+        self.logger = get_logger(
+            f"{self.__class__.__module__}.{self.__class__.__name__}"
+        )
         self.pipeline = pipeline
         self.logger.info("Starting server handler")
 
@@ -334,14 +336,12 @@ async def grpc_serve(
     # TODO arekay - this would be very useful in making the server robust.
     # See https://grpc-interceptor.readthedocs.io/en/latest/
     # interceptors = [ExceptionToStatusInterceptor()]
-    # logger = logging.getLogger("ServerStartup")
-    # logger.setLevel(logging.INFO)
     server = grpc.aio.server(
         futures.ThreadPoolExecutor(
             max_workers=10
         ),  # , interceptors=interceptors
     )
-    logging.info(
+    logger.info(
         "Services available ::"
         f" {[k for k in pb2.DESCRIPTOR.services_by_name.keys()]}"
     )
@@ -374,7 +374,7 @@ async def grpc_serve(
             ) as pipeline,
         ):
             if not worker_queue.is_worker_healthy():
-                logging.error("Worker process not healthy")
+                logger.error("Worker process not healthy")
                 exit(-1)
             pipelines = {}
             pipelines[model_name] = pipeline
@@ -386,13 +386,13 @@ async def grpc_serve(
             )
             server.add_insecure_port(f"[::]:{server_config.port}")
             await server.start()
-            logging.info("Started server (via serve API)...")
+            logger.info("Started server (via serve API)...")
             await server.wait_for_termination()
     except Exception as ex:
-        logging.exception("Exception in grpc_serve %s", ex)
+        logger.exception("Exception in grpc_serve %s", ex)
     finally:
         await server.stop(None)
-        logging.info("Shutting down!")
+        logger.info("Shutting down!")
 
 
 async def grpc_serve_direct(
@@ -401,7 +401,6 @@ async def grpc_serve_direct(
     tokenizer: PipelineTokenizer,
     pipeline: TokenGenerator,
 ):
-    # logger = logging.getLogger("ServerStartup")
     # TODO arekay - this would be very useful in making the server robust.
     # See https://grpc-interceptor.readthedocs.io/en/latest/
     # interceptors = [ExceptionToStatusInterceptor()]
@@ -410,7 +409,7 @@ async def grpc_serve_direct(
             max_workers=server_config.num_workers
         )  # , interceptors=interceptors
     )
-    logging.info(
+    logger.info(
         "Services available ::"
         f" {[k for k in pb2.DESCRIPTOR.services_by_name.keys()]}"
     )
@@ -433,10 +432,10 @@ async def grpc_serve_direct(
             )
             server.add_insecure_port(f"[::]:{server_config.port}")
             await server.start()
-            logging.info("Started server (direct)...")
+            logger.info("Started server (direct)...")
             await server.wait_for_termination()
     except Exception as ex:
-        logging.error("Exception encountered ", ex)
+        logger.error("Exception encountered ", ex)
     finally:
-        logging.info("Terminating....")
+        logger.info("Terminating....")
         await server.stop(None)

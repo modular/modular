@@ -14,6 +14,7 @@ from time import sleep, time
 from typing import Any, Iterable, List, Literal, Optional, Sequence, Union
 
 import numpy as np
+from max.loggers import get_logger
 from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
 from max.pipelines.response import TextResponse
 from max.pipelines.tokenizer import PreTrainedPipelineTokenizer
@@ -59,7 +60,9 @@ class PerformanceFakingPipelineTokenizer(
         self, delegate: Union[PreTrainedTokenizer, PreTrainedTokenizerFast]
     ) -> None:
         super().__init__(delegate)
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_logger(
+            f"{self.__class__.__module__}.{self.__class__.__name__}"
+        )
         # amount of time spent in the tokenizer
         self.tokenizer_secs = 0.0
 
@@ -155,7 +158,7 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
             "MAX_BATCH_INFO_FILENAME"
         )
 
-        self.logger: logging.Logger = logging.getLogger(__name__)
+        self.logger: logging.Logger = get_logger(__name__)
 
         # lock to prevent concurrent usage of the fake GPU
         self.wait_lock = threading.Lock()

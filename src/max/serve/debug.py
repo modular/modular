@@ -6,7 +6,6 @@
 
 
 import functools
-import logging
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from enum import Enum
@@ -14,6 +13,7 @@ from functools import lru_cache
 from typing import Callable, ClassVar, Type, Union
 
 from fastapi import FastAPI, Request
+from max.loggers import get_logger
 from pydantic import Field
 from pydantic_settings import BaseSettings
 from pyinstrument import Profiler
@@ -23,7 +23,7 @@ from pyinstrument.renderers.html import HTMLRenderer
 from pyinstrument.renderers.jsonrenderer import JSONRenderer
 from pyinstrument.renderers.speedscope import SpeedscopeRenderer
 
-logger = logging.getLogger("max.serve")
+logger = get_logger(__name__)
 
 
 class DebugSettings(BaseSettings):

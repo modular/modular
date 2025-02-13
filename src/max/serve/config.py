@@ -55,8 +55,13 @@ class Settings(BaseSettings):
                 raise ValueError(f"port {port} is already in use") from e
 
     # Telemetry and logging configuration
-    logs_console_level: str = Field(
+    logs_high_priority_level: str = Field(
         default="INFO",
+        description="Sets the logging level for a few special loggers seen as high priority",
+        alias="MAX_SERVE_LOGS_HIGH_PRIORITY_LEVEL",
+    )
+    logs_console_level: str = Field(
+        default="WARNING",
         description="Logging level",
         alias="MAX_SERVE_LOGS_CONSOLE_LEVEL",
     )

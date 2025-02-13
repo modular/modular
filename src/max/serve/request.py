@@ -5,14 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
-import logging
 import uuid
 from typing import Callable
 
 from fastapi import FastAPI, HTTPException, Request, Response
+from max.loggers import get_logger
 from max.serve.telemetry.stopwatch import StopWatch
 
-logger = logging.getLogger("max.serve")
+logger = get_logger(__name__)
 
 
 def register_request(app: FastAPI):
