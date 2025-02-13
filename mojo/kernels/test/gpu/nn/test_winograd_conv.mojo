@@ -302,24 +302,21 @@ fn winograd_conv2d_gpu_launcher[
         input_dim.get[3]() == 1, "Multiple input channels not implemented"
     )
 
-    var compiled_conv_kernel = ctx.compile_function[
-        winograd_conv2d_gpu_nhwc[
-            input_dim,
-            filter_dim,
-            output_dim,
-            input_type,
-            filter_type,
-            output_type,
-            block_size,
-        ]
-    ]()
-
     var grid_dim_x = ceildiv(output_dim.get[2](), 2 * block_size)
     var grid_dim_y = ceildiv(output_dim.get[1](), 2 * block_size)
     var grid_dim_z = input_dim.get[0]()
 
-    ctx.enqueue_function(
-        compiled_conv_kernel,
+    alias kernel = winograd_conv2d_gpu_nhwc[
+        input_dim,
+        filter_dim,
+        output_dim,
+        input_type,
+        filter_type,
+        output_type,
+        block_size,
+    ]
+
+    ctx.enqueue_function[kernel](
         input,
         filter,
         output,

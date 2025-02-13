@@ -33,12 +33,8 @@ fn launch_p2p_copy_kernel(
     alias BLOCK_SIZE = 256
     var grid_size = ceildiv(num_elements, BLOCK_SIZE)
 
-    # Compile the kernel for both devices
-    var kernel1 = ctx1.compile_function[p2p_copy_kernel]()
-
     # Launch the kernel on both devices
-    ctx1.enqueue_function(
-        kernel1,
+    ctx1.enqueue_function[p2p_copy_kernel](
         dst_buf.unsafe_ptr(),
         src_buf.unsafe_ptr(),
         num_elements,

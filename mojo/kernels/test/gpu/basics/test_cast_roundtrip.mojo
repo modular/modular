@@ -47,12 +47,9 @@ fn run_vec_add(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy_to_device(in_device, in_host)
 
-    var func = ctx.compile_function[id]()
-
     var block_dim = 32
 
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[id](
         in_device,
         out_device,
         length,
@@ -82,8 +79,6 @@ fn run_vec_add(ctx: DeviceContext) raises:
 
     in_host.free()
     out_host.free()
-
-    _ = func^
 
 
 def main():

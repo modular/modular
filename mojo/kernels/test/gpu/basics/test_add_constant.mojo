@@ -36,14 +36,11 @@ def run_add_constant(ctx: DeviceContext):
 
     ctx.enqueue_copy_to_device(in_device, in_host)
 
-    var func = ctx.compile_function[add_constant_fn]()
-
     var block_dim = 32
     # FIXME: why did this have FloatLiteral here?
     alias constant = Float32(33)
 
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[add_constant_fn](
         out_device,
         in_device,
         constant,
@@ -64,8 +61,6 @@ def run_add_constant(ctx: DeviceContext):
 
     in_host.free()
     out_host.free()
-
-    _ = func^
 
 
 def main():

@@ -320,8 +320,6 @@ fn test(ctx: DeviceContext) raises:
         TN,
         NUM_THREADS,
     ]
-    var func = ctx.compile_function[gemm]()
-
     if is_benchmark():
         alias nrun = 200
         alias nwarmup = 2
@@ -329,8 +327,7 @@ fn test(ctx: DeviceContext) raises:
         @always_inline
         @parameter
         fn run_func(ctx: DeviceContext) raises:
-            ctx.enqueue_function(
-                func,
+            ctx.enqueue_function[gemm](
                 c_tensor,
                 a_tensor,
                 b_tensor,
@@ -347,8 +344,7 @@ fn test(ctx: DeviceContext) raises:
         var TFlop = 2.0 * M * N * K * 1e-12
         print(nrun, "runs avg(s)", sectime, "TFlops/s", TFlop / sectime)
 
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[gemm](
         c_tensor,
         a_tensor,
         b_tensor,
@@ -363,12 +359,10 @@ fn test(ctx: DeviceContext) raises:
     alias gemm_naive = matmul_kernel_naive[
         DType.float32, DType.float32, DType.float32, BLOCK_DIM
     ]
-    var func_naive = ctx.compile_function[gemm_naive]()
     var c_buffer_ref = NDBuffer[DType.float32, 2, DimList(M, N)](
         c_device_ref.unsafe_ptr()
     )
-    ctx.enqueue_function(
-        func_naive,
+    ctx.enqueue_function[gemm_naive](
         c_buffer_ref,
         a_buffer,
         b_buffer,
@@ -397,9 +391,6 @@ fn test(ctx: DeviceContext) raises:
     c_host_ref.free()
     a_host.free()
     b_host.free()
-
-    _ = func^
-    _ = func_naive^
 
 
 def main():

@@ -199,7 +199,7 @@ def wgmma_s8_s8_s32_64x8x32(ctx: DeviceContext):
     )
     # print_layout(b_smem_layout)
 
-    alias wgmma_kernel_fn = wgmma_kernel[
+    alias kernel = wgmma_kernel[
         M,
         N,
         K,
@@ -211,12 +211,7 @@ def wgmma_s8_s8_s32_64x8x32(ctx: DeviceContext):
         a_type=a_type,
         b_type=b_type,
     ]
-    var func = ctx.compile_function[
-        wgmma_kernel_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
-
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -325,7 +320,7 @@ def wgmma_u8_u8_s32_64x8x32(ctx: DeviceContext):
     )
     # print_layout(b_smem_layout)
 
-    alias wgmma_kernel_fn = wgmma_kernel[
+    alias kernel = wgmma_kernel[
         M,
         N,
         K,
@@ -337,12 +332,7 @@ def wgmma_u8_u8_s32_64x8x32(ctx: DeviceContext):
         a_type=a_type,
         b_type=b_type,
     ]
-    var func = ctx.compile_function[
-        wgmma_kernel_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
-
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -453,7 +443,7 @@ def wgmma_s8_u8_s32_64x8x32(ctx: DeviceContext):
     )
     # print_layout(b_smem_layout)
 
-    alias wgmma_kernel_fn = wgmma_kernel[
+    alias kernel = wgmma_kernel[
         M,
         N,
         K,
@@ -465,12 +455,7 @@ def wgmma_s8_u8_s32_64x8x32(ctx: DeviceContext):
         a_type=a_type,
         b_type=b_type,
     ]
-    var func = ctx.compile_function[
-        wgmma_kernel_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
-
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -581,7 +566,7 @@ def wgmma_u8_s8_s32_64x8x32(ctx: DeviceContext):
     )
     # print_layout(b_smem_layout)
 
-    alias wgmma_kernel_fn = wgmma_kernel[
+    alias kernel = wgmma_kernel[
         M,
         N,
         K,
@@ -593,12 +578,7 @@ def wgmma_u8_s8_s32_64x8x32(ctx: DeviceContext):
         a_type=a_type,
         b_type=b_type,
     ]
-    var func = ctx.compile_function[
-        wgmma_kernel_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
-
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),

@@ -144,20 +144,16 @@ def test_tma_multicast_swizzle[
     ) + "tma w/ " + String(swizzle_mode) + " multicast"
     print(test_name)
 
-    var kernel = ctx.compile_function[
-        tma_swizzle_multicast_load_kernel[
-            dtype = __type_of(tma_tensor).dtype,
-            layout=layout,
-            cluster_tile_layout = Layout.row_major(tileM, tileN),
-            subcluster_tile_layout = __type_of(tma_tensor).layout,
-            desc_layout = __type_of(tma_tensor).desc_layout,
-            CLUSTER_M=CLUSTER_M,
-            CLUSTER_N=CLUSTER_N,
-        ],
-        _target = _get_gpu_target["sm_90"](),
-    ]()
-    ctx.enqueue_function(
-        kernel,
+    alias kernel = tma_swizzle_multicast_load_kernel[
+        dtype = __type_of(tma_tensor).dtype,
+        layout=layout,
+        cluster_tile_layout = Layout.row_major(tileM, tileN),
+        subcluster_tile_layout = __type_of(tma_tensor).layout,
+        desc_layout = __type_of(tma_tensor).desc_layout,
+        CLUSTER_M=CLUSTER_M,
+        CLUSTER_N=CLUSTER_N,
+    ]
+    ctx.enqueue_function[kernel](
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(

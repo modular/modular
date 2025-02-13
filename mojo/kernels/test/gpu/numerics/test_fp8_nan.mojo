@@ -31,5 +31,4 @@ fn test():
 
 def main():
     with DeviceContext() as ctx:
-        var func_8e4m3 = ctx.compile_function[test]()
-        ctx.enqueue_function(func_8e4m3, grid_dim=1, block_dim=1)
+        ctx.enqueue_function[test](grid_dim=1, block_dim=1)

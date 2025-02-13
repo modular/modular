@@ -21,10 +21,7 @@ def main():
             # CHECK-NOT: won't print this due to assert failure
             print("won't print this due to assert failure")
 
-        var fail_assert_launch = ctx.compile_function[fail_assert]()
-
-        ctx.enqueue_function(
-            fail_assert_launch,
+        ctx.enqueue_function[fail_assert](
             grid_dim=(2, 1, 1),
             block_dim=(2, 1, 1),
         )

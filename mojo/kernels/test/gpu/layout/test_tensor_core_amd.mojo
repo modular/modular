@@ -168,67 +168,33 @@ def test_load_and_mma_and_multiply_operands[
     ctx.enqueue_copy_to_device(b_device, b_host_ptr)
     ctx.enqueue_copy_to_device(c_device, c_host_ptr)
 
-    var func_load_a = ctx.compile_function[
-        test_load_a[
-            dst_dtype,
-            dtype,
-            a_dev.layout,
-            shape,
-        ],
-    ]()
-
-    ctx.enqueue_function(
-        func_load_a, a_dev, a_lane_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
+    ctx.enqueue_function[test_load_a[dst_dtype, dtype, a_dev.layout, shape]](
+        a_dev, a_lane_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
     )
 
-    var func_load_b = ctx.compile_function[
-        test_load_b[dst_dtype, dtype, b_dev.layout, shape, transpose_b],
-    ]()
+    ctx.enqueue_function[
+        test_load_b[dst_dtype, dtype, b_dev.layout, shape, transpose_b]
+    ](b_dev, b_lane_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE))
 
-    ctx.enqueue_function(
-        func_load_b, b_dev, b_lane_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
+    ctx.enqueue_function[test_load_c[dst_dtype, dtype, c_dev.layout, shape]](
+        c_dev, c_lane_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
     )
 
-    var func_load_c = ctx.compile_function[
-        test_load_c[
-            dst_dtype,
-            dtype,
-            c_dev.layout,
-            shape,
-        ],
-    ]()
-
-    ctx.enqueue_function(
-        func_load_c, c_dev, c_lane_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
+    ctx.enqueue_function[test_store_d[dst_dtype, dtype, c_dev.layout, shape]](
+        d_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
     )
 
-    var func_store_d = ctx.compile_function[
-        test_store_d[
-            dst_dtype,
-            dtype,
-            c_dev.layout,
-            shape,
-        ],
-    ]()
+    alias kernel = test_mma_op[
+        dst_dtype,
+        dtype,
+        a_dev.layout,
+        b_dev.layout,
+        c_dev.layout,
+        shape,
+        transpose_b,
+    ]
 
-    ctx.enqueue_function(
-        func_store_d, d_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
-    )
-
-    var func_mma_op = ctx.compile_function[
-        test_mma_op[
-            dst_dtype,
-            dtype,
-            a_dev.layout,
-            b_dev.layout,
-            c_dev.layout,
-            shape,
-            transpose_b,
-        ],
-    ]()
-
-    ctx.enqueue_function(
-        func_mma_op,
+    ctx.enqueue_function[kernel](
         a_dev,
         b_dev,
         c_dev,

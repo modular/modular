@@ -53,11 +53,8 @@ fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
     fn add(lhs: Float32, rhs: Float32) -> Float32:
         return capture + lhs + rhs
 
-    var func = ctx.compile_function[vec_func[add]]()
-
     var block_dim = 32
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[vec_func[add]](
         in0_device,
         in1_device,
         out_device,
@@ -66,7 +63,10 @@ fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
         block_dim=(block_dim),
     )
     # CHECK: number of captures: 1
-    print("number of captures:", func._func_impl.num_captures)
+    print(
+        "number of captures:",
+        ctx.compile_function[vec_func[add]]()._func_impl.num_captures,
+    )
     ctx.synchronize()
 
     ctx.enqueue_copy_from_device(out_host, out_device)
@@ -93,8 +93,6 @@ fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
     in0_host.free()
     in1_host.free()
     out_host.free()
-
-    _ = func^
 
 
 def main():

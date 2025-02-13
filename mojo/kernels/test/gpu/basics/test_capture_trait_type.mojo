@@ -41,8 +41,7 @@ def trait_repro_sub[
         var idx = thread_idx.x
         print(Float32(thing.get_val(idx)) * 2)
 
-    cuda_fn = ctx.compile_function[kernel_fn]()
-    ctx.enqueue_function(cuda_fn, grid_dim=(1,), block_dim=(size))
+    ctx.enqueue_function[kernel_fn](grid_dim=(1,), block_dim=(size))
 
 
 def trait_repro(ctx: DeviceContext):

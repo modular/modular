@@ -60,20 +60,15 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     ctx.enqueue_copy_to_device(b_device, b_host)
 
     alias BLOCK_DIM = 16
-    var func_gemm_bf16 = ctx.compile_function[
-        matmul_kernel_naive[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            BLOCK_DIM,
-        ]
-    ]()
 
     @always_inline
     @parameter
     fn run_func_bf16() raises:
-        ctx.enqueue_function(
-            func_gemm_bf16,
+        ctx.enqueue_function[
+            matmul_kernel_naive[
+                DType.bfloat16, DType.bfloat16, DType.bfloat16, BLOCK_DIM
+            ]
+        ](
             c_device,
             a_device,
             b_device,
@@ -92,20 +87,14 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     ctx.enqueue_copy_to_device(a_device_n, a_host_n)
     ctx.enqueue_copy_to_device(b_device_n, b_host_n)
 
-    var func_gemm_fp32 = ctx.compile_function[
-        matmul_kernel_naive[
-            DType.float32,
-            DType.float32,
-            DType.float32,
-            BLOCK_DIM,
-        ]
-    ]()
-
     @always_inline
     @parameter
     fn run_func_fp32() raises:
-        ctx.enqueue_function(
-            func_gemm_fp32,
+        ctx.enqueue_function[
+            matmul_kernel_naive[
+                DType.float32, DType.float32, DType.float32, BLOCK_DIM
+            ]
+        ](
             c_device_n,
             a_device_n,
             b_device_n,
@@ -141,9 +130,6 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     _ = a_host_n
     _ = b_host_n
     _ = c_host_n
-
-    _ = func_gemm_bf16^
-    _ = func_gemm_fp32^
 
 
 fn run_matmul[
@@ -211,20 +197,11 @@ fn run_matmul[
     ctx.enqueue_copy_to_device(b_device_n, b_host_n)
 
     alias BLOCK_DIM = 16
-    var func_gemm_naive = ctx.compile_function[
-        matmul_kernel_naive[
-            type,
-            type,
-            type,
-            BLOCK_DIM,
-        ]
-    ]()
 
     @always_inline
     @parameter
     fn run_func_naive() raises:
-        ctx.enqueue_function(
-            func_gemm_naive,
+        ctx.enqueue_function[matmul_kernel_naive[type, type, type, BLOCK_DIM]](
             c_device_n,
             a_device_n,
             b_device_n,
@@ -348,17 +325,8 @@ fn run_matmul_split_k[
     ctx.enqueue_copy_to_device(b_device_n, b_host)
 
     alias BLOCK_DIM = 16
-    var func_gemm_naive = ctx.compile_function[
-        matmul_kernel_naive[
-            type,
-            type,
-            type,
-            BLOCK_DIM,
-        ]
-    ]()
 
-    ctx.enqueue_function(
-        func_gemm_naive,
+    ctx.enqueue_function[matmul_kernel_naive[type, type, type, BLOCK_DIM]](
         c_device_n,
         a_device_n,
         b_device_n,
@@ -462,21 +430,13 @@ fn run_matmul_transpose[
     ctx.enqueue_copy_to_device(b_device_n, b_host_n)
 
     alias BLOCK_DIM = 16
-    var func_gemm_naive = ctx.compile_function[
-        matmul_kernel_naive[
-            type,
-            type,
-            type,
-            BLOCK_DIM,
-            transpose_b,
-        ]
-    ]()
 
     @always_inline
     @parameter
     fn run_func_naive() raises:
-        ctx.enqueue_function(
-            func_gemm_naive,
+        ctx.enqueue_function[
+            matmul_kernel_naive[type, type, type, BLOCK_DIM, transpose_b]
+        ](
             c_device_n,
             a_device_n,
             b_device_n,
@@ -515,8 +475,6 @@ fn run_matmul_transpose[
     _ = a_host_n
     _ = b_host_n
     _ = c_host_n
-
-    _ = func_gemm_naive^
 
 
 fn run_batched_matmul(

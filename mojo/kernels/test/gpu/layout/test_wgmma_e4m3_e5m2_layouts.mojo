@@ -308,12 +308,7 @@ def wgmma_e4m3_e4m3_f32_64x8x32(ctx: DeviceContext):
         a_type = DType.float8_e4m3fn,
         b_type = DType.float8_e4m3fn,
     ]
-    var func = ctx.compile_function[
-        wgmma_e4m3_e4m3_f32_kernel_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
-
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[wgmma_e4m3_e4m3_f32_kernel_fn](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -443,7 +438,7 @@ def wgmma_e5m2_e5m2_f32_64x8x32(ctx: DeviceContext):
         IntTuple(IntTuple(16, 2), 8), IntTuple(IntTuple(1, 128), 16)
     )
 
-    alias wgmma_e5m2_e5m2_f32_kernel_fn = wgmma_f32_kernel[
+    alias kernel = wgmma_f32_kernel[
         M,
         N,
         K,
@@ -455,12 +450,7 @@ def wgmma_e5m2_e5m2_f32_64x8x32(ctx: DeviceContext):
         a_type = DType.float8_e5m2,
         b_type = DType.float8_e5m2,
     ]
-    var func = ctx.compile_function[
-        wgmma_e5m2_e5m2_f32_kernel_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
-
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -590,7 +580,7 @@ def wgmma_e4m3_e5m2_f32_64x8x32(ctx: DeviceContext):
         IntTuple(IntTuple(16, 2), 8), IntTuple(IntTuple(1, 128), 16)
     )
 
-    alias wgmma_e4m3_e5m2_f32_kernel_fn = wgmma_f32_kernel[
+    alias kernel = wgmma_f32_kernel[
         M,
         N,
         K,
@@ -602,12 +592,7 @@ def wgmma_e4m3_e5m2_f32_64x8x32(ctx: DeviceContext):
         a_type = DType.float8_e4m3fn,
         b_type = DType.float8_e5m2,
     ]
-    var func = ctx.compile_function[
-        wgmma_e4m3_e5m2_f32_kernel_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
-
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -737,7 +722,7 @@ def wgmma_e5m2_e4m3_f32_64x8x32(ctx: DeviceContext):
         IntTuple(IntTuple(16, 2), 8), IntTuple(IntTuple(1, 128), 16)
     )
 
-    alias wgmma_e5m2_e4m3_f32_kernel_fn = wgmma_f32_kernel[
+    alias kernel = wgmma_f32_kernel[
         M,
         N,
         K,
@@ -749,12 +734,7 @@ def wgmma_e5m2_e4m3_f32_64x8x32(ctx: DeviceContext):
         a_type = DType.float8_e5m2,
         b_type = DType.float8_e4m3fn,
     ]
-    var func = ctx.compile_function[
-        wgmma_e5m2_e4m3_f32_kernel_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
-
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -884,7 +864,7 @@ def wgmma_e4m3_e4m3_f16_64x8x32(ctx: DeviceContext):
         IntTuple(IntTuple(16, 2), 8), IntTuple(IntTuple(1, 128), 16)
     )
 
-    alias wgmma_e4m3_e4m3_f16_kernel_fn = wgmma_f16_kernel[
+    alias kernel = wgmma_f16_kernel[
         M,
         N,
         K,
@@ -896,12 +876,7 @@ def wgmma_e4m3_e4m3_f16_64x8x32(ctx: DeviceContext):
         a_type = DType.float8_e4m3fn,
         b_type = DType.float8_e4m3fn,
     ]
-    var func = ctx.compile_function[
-        wgmma_e4m3_e4m3_f16_kernel_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
-
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -1031,7 +1006,7 @@ def wgmma_e5m2_e5m2_f16_64x8x32(ctx: DeviceContext):
         IntTuple(IntTuple(16, 2), 8), IntTuple(IntTuple(1, 128), 16)
     )
 
-    alias wgmma_e5m2_e5m2_f16_kernel_fn = wgmma_f16_kernel[
+    alias kernel = wgmma_f16_kernel[
         M,
         N,
         K,
@@ -1043,12 +1018,8 @@ def wgmma_e5m2_e5m2_f16_64x8x32(ctx: DeviceContext):
         a_type = DType.float8_e5m2,
         b_type = DType.float8_e5m2,
     ]
-    var func = ctx.compile_function[
-        wgmma_e5m2_e5m2_f16_kernel_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
 
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -1178,7 +1149,7 @@ def wgmma_e4m3_e5m2_f16_64x8x32(ctx: DeviceContext):
         IntTuple(IntTuple(16, 2), 8), IntTuple(IntTuple(1, 128), 16)
     )
 
-    alias wgmma_e4m3_e5m2_f16_kernel_fn = wgmma_f16_kernel[
+    alias kernel = wgmma_f16_kernel[
         M,
         N,
         K,
@@ -1190,12 +1161,8 @@ def wgmma_e4m3_e5m2_f16_64x8x32(ctx: DeviceContext):
         a_type = DType.float8_e4m3fn,
         b_type = DType.float8_e5m2,
     ]
-    var func = ctx.compile_function[
-        wgmma_e4m3_e5m2_f16_kernel_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
 
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -1325,7 +1292,7 @@ def wgmma_e5m2_e4m3_f16_64x8x32(ctx: DeviceContext):
         IntTuple(IntTuple(16, 2), 8), IntTuple(IntTuple(1, 128), 16)
     )
 
-    alias wgmma_e5m2_e4m3_f16_kernel_fn = wgmma_f16_kernel[
+    alias kernel = wgmma_f16_kernel[
         M,
         N,
         K,
@@ -1337,12 +1304,8 @@ def wgmma_e5m2_e4m3_f16_64x8x32(ctx: DeviceContext):
         a_type = DType.float8_e5m2,
         b_type = DType.float8_e4m3fn,
     ]
-    var func = ctx.compile_function[
-        wgmma_e5m2_e4m3_f16_kernel_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
 
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),

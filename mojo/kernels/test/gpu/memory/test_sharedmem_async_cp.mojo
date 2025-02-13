@@ -63,10 +63,7 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
     ctx.enqueue_copy_to_device(in_device, in_data)
     ctx.enqueue_copy_to_device(out_device, out_data)
 
-    var copy_via_shared_gpu = ctx.compile_function[copy_via_shared]()
-
-    ctx.enqueue_function(
-        copy_via_shared_gpu,
+    ctx.enqueue_function[copy_via_shared](
         in_device,
         out_device,
         grid_dim=(1,),

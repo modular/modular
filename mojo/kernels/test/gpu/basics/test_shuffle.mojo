@@ -44,12 +44,8 @@ fn _kernel_launch_helper[
     var device_ptr = ctx.enqueue_create_buffer[type](buffer_size)
     ctx.enqueue_copy_to_device(device_ptr, host_ptr)
 
-    var gpu_func = ctx.compile_function[
-        kernel_wrapper[type, simd_width, kernel_fn]
-    ]()
-
-    ctx.enqueue_function(
-        gpu_func, device_ptr, simd_width, grid_dim=1, block_dim=block_size
+    ctx.enqueue_function[kernel_wrapper[type, simd_width, kernel_fn]](
+        device_ptr, simd_width, grid_dim=1, block_dim=block_size
     )
 
     ctx.enqueue_copy_from_device(host_ptr, device_ptr)

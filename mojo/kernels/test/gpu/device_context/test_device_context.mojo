@@ -46,16 +46,12 @@ fn test(ctx: DeviceContext) raises:
     ctx.enqueue_copy_to_device(in0_device, in0_host)
     ctx.enqueue_copy_to_device(in1_device, in1_host)
 
-    # Compile the kernel for the device
-    var func = ctx.compile_function[vec_func]()
-
     var block_dim = 32
     var supplement = 5
 
     # Execute the kernel on the device.
     #  - notice the simple function call like invocation
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[vec_func](
         in0_device,
         in1_device,
         out_device,

@@ -100,12 +100,7 @@ def test_load_and_mma_e4m3_e4m3_f32_16x8x32(ctx: DeviceContext):
         mat_b.layout,
     ]
 
-    var func = ctx.compile_function[
-        load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn,
-        _target = _get_gpu_target["sm_90"](),
-    ]()
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn](
         mat_c.device_tensor(),
         mat_a.device_tensor(),
         mat_b.device_tensor(),
@@ -168,12 +163,7 @@ def test_load_and_mma_e5m2_e5m2_f32_16x8x32(ctx: DeviceContext):
         mat_b.layout,
     ]
 
-    var func = ctx.compile_function[
-        load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn,
-        _target = _get_gpu_target["sm_90"](),
-    ]()
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn](
         mat_c.device_tensor(),
         mat_a.device_tensor(),
         mat_b.device_tensor(),

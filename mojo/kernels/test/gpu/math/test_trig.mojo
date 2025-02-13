@@ -30,9 +30,7 @@ fn run_func[
         var result = kernel_fn(lhs)
         out_dev[0] = result
 
-    var func = ctx.compile_function[kernel]()
-
-    ctx.enqueue_function(func, out, val, grid_dim=1, block_dim=1)
+    ctx.enqueue_function[kernel](out, val, grid_dim=1, block_dim=1)
     var out_h = UnsafePointer[Scalar[type]].alloc(1)
     ctx.enqueue_copy_from_device(out_h, out)
     ctx.synchronize()
@@ -43,7 +41,6 @@ fn run_func[
         atol=Scalar[type](1e-2) if type.is_half_float() else Scalar[type](1e-8),
     )
     _ = out
-    _ = func^
 
 
 def main():

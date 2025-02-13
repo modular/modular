@@ -124,7 +124,7 @@ def test_tma_multicast_load_row_major[
     var tma_tensor = create_tma_tile[tileM, tileN](ctx, src.device_tensor())
     ctx.synchronize()
 
-    var kernel = ctx.compile_function[
+    ctx.enqueue_function[
         test_tma_mcast_load_kernel[
             __type_of(tma_tensor).dtype,
             dst_layout,  # dst layout
@@ -132,12 +132,8 @@ def test_tma_multicast_load_row_major[
             __type_of(tma_tensor).layout,  # thread layout
             CLUSTER_M,
             CLUSTER_N,
-        ],
-        _target = _get_gpu_target["sm_90"](),
-    ]()
-
-    ctx.enqueue_function(
-        kernel,
+        ]
+    ](
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(dst_N // tileN, dst_M // tileM),
@@ -261,21 +257,17 @@ def test_tma_sliced_multicast_load_row_major[
     )
     ctx.synchronize()
 
-    var kernel = ctx.compile_function[
-        test_tma_sliced_multicast_load_kernel[
-            __type_of(tma_tensor).dtype,
-            dst_layout,  # dst layout
-            Layout.row_major(tileM, tileN),
-            Layout.row_major(tileM, tileN),
-            CLUSTER_M,
-            CLUSTER_N,
-            __type_of(tma_tensor).layout,  # smem layout
-        ],
-        _target = _get_gpu_target["sm_90"](),
-    ]()
+    alias kernel = test_tma_sliced_multicast_load_kernel[
+        __type_of(tma_tensor).dtype,
+        dst_layout,  # dst layout
+        Layout.row_major(tileM, tileN),
+        Layout.row_major(tileM, tileN),
+        CLUSTER_M,
+        CLUSTER_N,
+        __type_of(tma_tensor).layout,  # smem layout
+    ]
 
-    ctx.enqueue_function(
-        kernel,
+    ctx.enqueue_function[kernel](
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(dst_N // tileN, dst_M // tileM),

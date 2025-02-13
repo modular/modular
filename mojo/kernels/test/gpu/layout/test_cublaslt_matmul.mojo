@@ -77,7 +77,7 @@ fn test_cublaslt_64x16x32[input_type: DType](ctx: DeviceContext) raises:
 
     # Run naive matmul.
     alias BLOCK_DIM = 16
-    var func_naive = ctx.compile_function[
+    ctx.enqueue_function[
         matmul_kernel_naive[
             DType.float32,
             input_type,
@@ -85,9 +85,7 @@ fn test_cublaslt_64x16x32[input_type: DType](ctx: DeviceContext) raises:
             BLOCK_DIM,
             transpose_b=True,
         ]
-    ]()
-    ctx.enqueue_function(
-        func_naive,
+    ](
         c_device_ref.buffer,
         a_device.buffer,
         b_device.buffer,

@@ -36,13 +36,7 @@ fn producer_consumer_kernel[NUM_THREADS: Int]():
 
 
 def test_producer_consumer_kernel(ctx: DeviceContext):
-    var kernel = ctx.compile_function[
-        producer_consumer_kernel[64],
-        _target = _get_gpu_target["sm_90"](),
-    ]()
-
-    ctx.enqueue_function(
-        kernel,
+    ctx.enqueue_function[producer_consumer_kernel[64]](
         grid_dim=(1),
         block_dim=(64),
     )
@@ -106,13 +100,7 @@ fn producer_consumer_pipeline_kernel[Q_SIZE: Int](num_iters: Int):
 
 
 def test_producer_consumer_pipeline_kernel(ctx: DeviceContext):
-    var kernel = ctx.compile_function[
-        producer_consumer_pipeline_kernel[4],
-        _target = _get_gpu_target["sm_90"](),
-    ]()
-
-    ctx.enqueue_function(
-        kernel,
+    ctx.enqueue_function[producer_consumer_pipeline_kernel[4]](
         4,
         grid_dim=(1),
         block_dim=(128),

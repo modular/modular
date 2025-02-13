@@ -24,11 +24,6 @@ fn test_external_shared_mem(ctx: DeviceContext) raises:
         barrier()
         data[thread_idx.x] = dynamic_sram[thread_idx.x]
 
-    # The default limitation is < 48KB for sm_80, 86, 89.
-    var func = ctx.compile_function[dynamic_smem_kernel](
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(64 * 1024),
-    )
-
     var res_host_ptr = UnsafePointer[Float32].alloc(16)
     var res_device = ctx.enqueue_create_buffer[DType.float32](16)
 
@@ -37,12 +32,12 @@ fn test_external_shared_mem(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy_to_device(res_device, res_host_ptr)
 
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[dynamic_smem_kernel](
         res_device,
         grid_dim=1,
         block_dim=16,
         shared_mem_bytes=64 * 1024,
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(64 * 1024),
     )
 
     ctx.enqueue_copy_from_device(res_host_ptr, res_device)

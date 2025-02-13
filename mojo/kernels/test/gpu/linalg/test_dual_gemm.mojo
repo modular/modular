@@ -61,7 +61,7 @@ fn multistage_gemm_simple[
     var N = c.dim(1)
 
     # Dispatch w/o split K
-    alias gemm_kernel_type = multistage_gemm_kernel[
+    alias kernel = multistage_gemm_kernel[
         c_type,
         c_layout,
         a_type,
@@ -73,14 +73,7 @@ fn multistage_gemm_simple[
         elementwise_lambda_fn,
     ]
 
-    var gemm_kernel = ctx.compile_function[gemm_kernel_type](
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            config.shared_mem_usage()
-        ),
-    )
-
-    ctx.enqueue_function(
-        gemm_kernel,
+    ctx.enqueue_function[kernel](
         c,
         a,
         b,
@@ -88,6 +81,9 @@ fn multistage_gemm_simple[
         grid_dim=config.grid_dim(M, N),
         block_dim=config.block_dim(),
         shared_mem_bytes=config.shared_mem_usage(),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            config.shared_mem_usage()
+        ),
     )
 
 

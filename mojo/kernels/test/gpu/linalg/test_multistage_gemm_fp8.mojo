@@ -124,7 +124,7 @@ fn test_fp8_multistage_gemm[
     alias kernels = MatmulKernels[type, type, DType.float32, transpose_b]()
     alias config = kernels.hopper_128x128_4
 
-    alias multistage_gemm_kernel_fn = multistage_gemm_kernel[
+    alias kernel = multistage_gemm_kernel[
         DType.float32,  # c_type
         c_tensor.layout,
         type,  # a_type
@@ -135,22 +135,10 @@ fn test_fp8_multistage_gemm[
         config,
     ]
 
-    var multistage_gemm_kernel_compiled = ctx.compile_function[
-        multistage_gemm_kernel_fn,
-        _target = _get_gpu_target["sm_90"](),
-        # dump_llvm=Path("./pipeline-gemm.ir"),
-        # dump_asm=Path("./pipeline-gemm.ptx"),
-    ](
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            config.shared_mem_usage()
-        ),
-    )
-
     alias BM = config.block_tile_shape[0]
     alias BN = config.block_tile_shape[1]
 
-    ctx.enqueue_function(
-        multistage_gemm_kernel_compiled,
+    ctx.enqueue_function[kernel](
         c_tensor,
         a_tensor,
         b_tensor,
@@ -158,6 +146,9 @@ fn test_fp8_multistage_gemm[
         grid_dim=config.grid_dim(M, N),
         block_dim=config.block_dim(),
         shared_mem_bytes=config.shared_mem_usage(),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            config.shared_mem_usage()
+        ),
     )
 
     ctx.enqueue_copy_from_device(c_host.tensor.data, c_device.buffer)

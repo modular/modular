@@ -31,11 +31,7 @@ fn mma_sync_16x8x32_E4M3():
 
 def test_mma_sync_16x8x32_E4M3(ctx: DeviceContext):
     print("== test_mma_sync_16x8x32_E4M3")
-    var func = ctx.compile_function[
-        mma_sync_16x8x32_E4M3, _target = _get_gpu_target["sm_90"]()
-    ]()
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[mma_sync_16x8x32_E4M3](
         grid_dim=(1),
         block_dim=(32),
     )
@@ -60,11 +56,7 @@ fn mma_sync_16x8x32_E4M2():
 
 def test_mma_sync_16x8x32_E5M2(ctx: DeviceContext):
     print("== test_mma_sync_16x8x32_E5M2")
-    var func = ctx.compile_function[
-        mma_sync_16x8x32_E4M2, _target = _get_gpu_target["sm_90"]()
-    ]()
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[mma_sync_16x8x32_E4M2](
         grid_dim=(1),
         block_dim=(32),
     )

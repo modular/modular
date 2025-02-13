@@ -92,9 +92,8 @@ fn test_gpu_print_formattable() raises:
         print("layout from GPU: ", layout_str)
 
     with DeviceContext() as ctx:
-        var func = ctx.compile_function[do_print]()
-        ctx.enqueue_function(
-            func, Int(42), Float64(7.2), grid_dim=1, block_dim=1
+        ctx.enqueue_function[do_print](
+            Int(42), Float64(7.2), grid_dim=1, block_dim=1
         )
         # Ensure queued function finished before proceeding.
         ctx.synchronize()

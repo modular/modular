@@ -85,13 +85,10 @@ fn run_mandelbrot(ctx: DeviceContext) raises:
 
     var out_device = ctx.enqueue_create_buffer[int_type](width * height)
 
-    var func = ctx.compile_function[mandelbrot]()
-
     @always_inline
     @parameter
     fn run_mandelbrot(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
-            func,
+        ctx.enqueue_function[mandelbrot](
             out_device,
             grid_dim=(ceildiv(height, BLOCK_SIZE),),
             block_dim=(BLOCK_SIZE,),
@@ -116,8 +113,6 @@ fn run_mandelbrot(ctx: DeviceContext) raises:
     _ = out_device
 
     _ = out_host
-
-    _ = func^
 
 
 # CHECK-NOT: CUDA_ERROR

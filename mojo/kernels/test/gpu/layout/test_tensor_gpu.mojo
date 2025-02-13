@@ -55,12 +55,7 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext):
                 if sram_tensor[r, c] != r * 16 + col_offset + c:
                     flag[] = False
 
-    var copy_to_sram_test_launch = ctx.compile_function[
-        copy_to_sram_test_kernel[tensor_layout]
-    ]()
-
-    ctx.enqueue_function(
-        copy_to_sram_test_launch,
+    ctx.enqueue_function[copy_to_sram_test_kernel[tensor_layout]](
         tensor.device_tensor(),
         UnsafePointer.address_of(check_state),
         grid_dim=(4),

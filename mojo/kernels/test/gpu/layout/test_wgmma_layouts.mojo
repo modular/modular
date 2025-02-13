@@ -205,7 +205,7 @@ def wgmma_tf32_tf32_f32_64x8x8(ctx: DeviceContext):
     alias b_smem_layout = Layout(
         IntTuple(IntTuple(4, 2), 8), IntTuple(IntTuple(1, 32), 4)
     )
-    alias wgmma_tf32_tf32_f32_kernel_fn = wgmma_tf32_tf32_f32_kernel[
+    alias kernel = wgmma_tf32_tf32_f32_kernel[
         M,
         N,
         K,
@@ -215,12 +215,8 @@ def wgmma_tf32_tf32_f32_64x8x8(ctx: DeviceContext):
         a_smem_layout,
         b_smem_layout,
     ]
-    var func = ctx.compile_function[
-        wgmma_tf32_tf32_f32_kernel_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
 
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -326,7 +322,7 @@ def wgmma_tf32_tf32_f32_64x8x8_inst_64x8x16(ctx: DeviceContext):
     alias b_smem_layout = Layout(
         IntTuple(IntTuple(4, 2), 8), IntTuple(IntTuple(1, 32), 4)
     )
-    alias wgmma_tf32_tf32_f32_kernel_fn = wgmma_tf32_tf32_f32_kernel[
+    alias kernel = wgmma_tf32_tf32_f32_kernel[
         M,
         N,
         K,
@@ -336,12 +332,7 @@ def wgmma_tf32_tf32_f32_64x8x8_inst_64x8x16(ctx: DeviceContext):
         a_smem_layout,
         b_smem_layout,
     ]
-    var func = ctx.compile_function[
-        wgmma_tf32_tf32_f32_kernel_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
-
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -514,7 +505,7 @@ def wgmma_bf16_bf16_f32_64x8x16(ctx: DeviceContext):
         DType.bfloat16, mn_dim=N, k_dim=K
     ]()
 
-    alias wgmma_bf16_bf16_f32_kernel_fn = wgmma_bf16_bf16_f32_kernel[
+    alias kernel = wgmma_bf16_bf16_f32_kernel[
         M,
         N,
         K,
@@ -524,12 +515,8 @@ def wgmma_bf16_bf16_f32_64x8x16(ctx: DeviceContext):
         a_smem_layout,
         b_smem_layout,
     ]
-    var func = ctx.compile_function[
-        wgmma_bf16_bf16_f32_kernel_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
 
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -628,7 +615,7 @@ def wgmma_bf16_bf16_f32_64x8x16_inst_64x8x32(ctx: DeviceContext):
         DType.bfloat16, mn_dim=N, k_dim=16
     ]()
 
-    alias wgmma_bf16_bf16_f32_kernel_fn = wgmma_bf16_bf16_f32_kernel[
+    alias kernel = wgmma_bf16_bf16_f32_kernel[
         M,
         N,
         K,
@@ -638,12 +625,8 @@ def wgmma_bf16_bf16_f32_64x8x16_inst_64x8x32(ctx: DeviceContext):
         a_smem_layout,
         b_smem_layout,
     ]
-    var func = ctx.compile_function[
-        wgmma_bf16_bf16_f32_kernel_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
 
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -816,7 +799,7 @@ def wgmma_f16_f16_f32_64x8x16(ctx: DeviceContext):
         DType.float16, mn_dim=N, k_dim=16
     ]()
 
-    alias wgmma_f16_f16_f32_kernel_fn = wgmma_f16_f16_f32_kernel[
+    alias kernel = wgmma_f16_f16_f32_kernel[
         M,
         N,
         K,
@@ -826,12 +809,8 @@ def wgmma_f16_f16_f32_64x8x16(ctx: DeviceContext):
         a_smem_layout,
         b_smem_layout,
     ]
-    var func = ctx.compile_function[
-        wgmma_f16_f16_f32_kernel_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
 
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -930,7 +909,7 @@ def wgmma_f16_f16_f32_64x8x16_inst_64x8x32(ctx: DeviceContext):
         DType.float16, mn_dim=N, k_dim=16
     ]()
 
-    alias wgmma_f16_f16_f32_kernel_fn = wgmma_f16_f16_f32_kernel[
+    alias kernel = wgmma_f16_f16_f32_kernel[
         M,
         N,
         K,
@@ -940,12 +919,8 @@ def wgmma_f16_f16_f32_64x8x16_inst_64x8x32(ctx: DeviceContext):
         a_smem_layout,
         b_smem_layout,
     ]
-    var func = ctx.compile_function[
-        wgmma_f16_f16_f32_kernel_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
 
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -1119,7 +1094,7 @@ def wgmma_f16_f16_f16_64x8x16(ctx: DeviceContext):
         IntTuple(IntTuple(8, 2), 8), IntTuple(IntTuple(1, 64), 8)
     )
 
-    alias wgmma_f16_f16_f16_kernel_fn = wgmma_f16_f16_f16_kernel[
+    alias kernel = wgmma_f16_f16_f16_kernel[
         M,
         N,
         K,
@@ -1129,12 +1104,8 @@ def wgmma_f16_f16_f16_64x8x16(ctx: DeviceContext):
         a_smem_layout,
         b_smem_layout,
     ]
-    var func = ctx.compile_function[
-        wgmma_f16_f16_f16_kernel_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
 
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -1235,7 +1206,7 @@ def wgmma_f16_f16_f16_64x8x16_inst_64x8x32(ctx: DeviceContext):
         IntTuple(IntTuple(8, 2), 8), IntTuple(IntTuple(1, 64), 8)
     )
 
-    alias wgmma_f16_f16_f16_kernel_fn = wgmma_f16_f16_f16_kernel[
+    alias kernel = wgmma_f16_f16_f16_kernel[
         M,
         N,
         K,
@@ -1245,12 +1216,7 @@ def wgmma_f16_f16_f16_64x8x16_inst_64x8x32(ctx: DeviceContext):
         a_smem_layout,
         b_smem_layout,
     ]
-    var func = ctx.compile_function[
-        wgmma_f16_f16_f16_kernel_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
-
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -1453,12 +1419,7 @@ def wgmma_bf16_bf16_f32_64x8x16_transb_64x8x32(ctx: DeviceContext):
         b_smem_layout,
         transpose_b=True,
     ]
-    var func = ctx.compile_function[
-        kernel, _target = _get_gpu_target["sm_90"]()
-    ]()
-
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),

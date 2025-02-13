@@ -562,7 +562,12 @@ fn test_repack_Q4_0_for_sm8x(
         DType.bfloat16,
     ]
 
-    var repack_func = ctx.compile_function[repack](
+    ctx.enqueue_function[repack](
+        gguf_b_tensor,
+        repacked_b_tensor,
+        grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
+        block_dim=(128, 1, 1),
+        shared_mem_bytes=smem_usage,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_usage),
     )
 
@@ -575,23 +580,13 @@ fn test_repack_Q4_0_for_sm8x(
         pack_factor,
     ]
 
-    var dequan_func = ctx.compile_function[dequan]()
-
-    ctx.enqueue_function(
-        repack_func,
-        gguf_b_tensor,
-        repacked_b_tensor,
-        grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
-        block_dim=(128, 1, 1),
-        shared_mem_bytes=smem_usage,
-    )
-
-    ctx.enqueue_function(
-        dequan_func,
+    ctx.enqueue_function[dequan](
         repacked_b_tensor,
         repacked_dequan_tensor,
         grid_dim=(ceildiv(N, 128), ceildiv(K, 32), 1),
         block_dim=(128, 1, 1),
+        shared_mem_bytes=smem_usage,
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_usage),
     )
 
     ctx.enqueue_copy_from_device(
@@ -715,22 +710,6 @@ fn test_quantized[
 
     alias kernels = MatmulKernels[a_type, type, a_type, True]()
     alias config = kernels.ampere_128x128_4
-
-    alias dequan = create_ref_b[
-        type,
-        a_type,
-        b_tensor.layout,
-        b_ref_tensor.layout,
-        group_size,
-        pack_factor,
-    ]
-
-    var func_dequan = ctx.compile_function[
-        dequan,
-        # dump_llvm=Path("./pipeline-gemm.ir"),
-        # dump_asm=Path("./pipeline-gemm-2.ptx"),
-    ]()
-
     alias BM = config.block_tile_shape[0]
     alias BN = config.block_tile_shape[1]
 
@@ -768,12 +747,22 @@ fn test_quantized[
         group_size=group_size, pack_factor=pack_factor, config=config
     ](c_device.tensor, a_device.tensor, b_device.tensor, config, ctx)
 
-    ctx.enqueue_function(
-        func_dequan,
+    alias dequan = create_ref_b[
+        type,
+        a_type,
+        b_tensor.layout,
+        b_ref_tensor.layout,
+        group_size,
+        pack_factor,
+    ]
+
+    ctx.enqueue_function[dequan](
         b_tensor,
         b_ref_tensor,
         grid_dim=(ceildiv(N, 128), ceildiv(K, 32), 1),
         block_dim=(128, 1, 1),
+        # dump_llvm=Path("./pipeline-gemm.ir"),
+        # dump_asm=Path("./pipeline-gemm-2.ptx"),
     )
 
     ctx.enqueue_copy_from_device(c_host.tensor.data, c_device.buffer)
@@ -809,8 +798,6 @@ fn test_quantized[
     _ = b_device
 
     _ = b_tensor
-
-    _ = func_dequan^
 
 
 def main():

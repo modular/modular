@@ -247,8 +247,6 @@ fn run_mma_fp32_tf32(
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var func_mma = ctx.compile_function[mma_kernel_fp32_tf32]()
-
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
     alias MMA_N = 8
@@ -257,8 +255,7 @@ fn run_mma_fp32_tf32(
     @always_inline
     @parameter
     fn run_func_mma(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
-            func_mma,
+        ctx.enqueue_function[mma_kernel_fp32_tf32](
             c_device,
             a_device,
             b_device,
@@ -285,17 +282,15 @@ fn run_mma_fp32_tf32(
     ctx.enqueue_copy_to_device(b_device_ref, b_host_ref)
 
     alias BLOCK_DIM = 16
-    var func_naive = ctx.compile_function[
-        matmul_kernel_naive[
-            DType.float32, DType.float32, DType.float32, BLOCK_DIM
-        ]
-    ]()
 
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
-            func_naive,
+        ctx.enqueue_function[
+            matmul_kernel_naive[
+                DType.float32, DType.float32, DType.float32, BLOCK_DIM
+            ]
+        ](
             c_device_ref,
             a_device_ref,
             b_device_ref,
@@ -352,9 +347,6 @@ fn run_mma_fp32_tf32(
     _ = a_host_ref
     _ = c_host_ref
 
-    _ = func_mma^
-    _ = func_naive^
-
 
 fn run_mma_fp32_bf16(
     M: Int,
@@ -399,8 +391,6 @@ fn run_mma_fp32_bf16(
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var func_mma = ctx.compile_function[mma_kernel_fp32_bf16]()
-
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
     alias MMA_N = 8
@@ -409,8 +399,7 @@ fn run_mma_fp32_bf16(
     @always_inline
     @parameter
     fn run_func_mma(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
-            func_mma,
+        ctx.enqueue_function[mma_kernel_fp32_bf16](
             c_device,
             a_device,
             b_device,
@@ -437,17 +426,15 @@ fn run_mma_fp32_bf16(
     ctx.enqueue_copy_to_device(b_device_ref, b_host_ref)
 
     alias BLOCK_DIM = 16
-    var func_naive = ctx.compile_function[
-        matmul_kernel_naive[
-            DType.float32, DType.float32, DType.float32, BLOCK_DIM
-        ]
-    ]()
 
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
-            func_naive,
+        ctx.enqueue_function[
+            matmul_kernel_naive[
+                DType.float32, DType.float32, DType.float32, BLOCK_DIM
+            ]
+        ](
             c_device_ref,
             a_device_ref,
             b_device_ref,
@@ -501,9 +488,6 @@ fn run_mma_fp32_bf16(
     _ = a_host_ref
     _ = a_host_ref
     _ = c_host_ref
-
-    _ = func_mma^
-    _ = func_naive^
 
 
 fn run_mma_fp32_bf16_2(
@@ -549,8 +533,6 @@ fn run_mma_fp32_bf16_2(
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var func_mma = ctx.compile_function[mma_kernel_fp32_bf16_2]()
-
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
     alias MMA_N = 8
@@ -559,8 +541,7 @@ fn run_mma_fp32_bf16_2(
     @always_inline
     @parameter
     fn run_func_mma(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
-            func_mma,
+        ctx.enqueue_function[mma_kernel_fp32_bf16_2](
             c_device,
             a_device,
             b_device,
@@ -587,17 +568,15 @@ fn run_mma_fp32_bf16_2(
     ctx.enqueue_copy_to_device(b_device_ref, b_host_ref)
 
     alias BLOCK_DIM = 16
-    var func_naive = ctx.compile_function[
-        matmul_kernel_naive[
-            DType.float32, DType.float32, DType.float32, BLOCK_DIM
-        ]
-    ]()
 
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
-            func_naive,
+        ctx.enqueue_function[
+            matmul_kernel_naive[
+                DType.float32, DType.float32, DType.float32, BLOCK_DIM
+            ]
+        ](
             c_device_ref,
             a_device_ref,
             b_device_ref,
@@ -651,9 +630,6 @@ fn run_mma_fp32_bf16_2(
     _ = a_host_ref
     _ = a_host_ref
     _ = c_host_ref
-
-    _ = func_mma^
-    _ = func_naive^
 
 
 fn run_mma_fp32_fp16(
@@ -699,8 +675,6 @@ fn run_mma_fp32_fp16(
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var func_mma = ctx.compile_function[mma_kernel_fp32_fp16]()
-
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
     alias MMA_N = 8
@@ -709,8 +683,7 @@ fn run_mma_fp32_fp16(
     @always_inline
     @parameter
     fn run_func_mma(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
-            func_mma,
+        ctx.enqueue_function[mma_kernel_fp32_fp16](
             c_device,
             a_device,
             b_device,
@@ -738,17 +711,15 @@ fn run_mma_fp32_fp16(
     ctx.enqueue_copy_to_device(b_device_ref, b_host_ref)
 
     alias BLOCK_DIM = 16
-    var func_naive = ctx.compile_function[
-        matmul_kernel_naive[
-            DType.float32, DType.float32, DType.float32, BLOCK_DIM
-        ]
-    ]()
 
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
-            func_naive,
+        ctx.enqueue_function[
+            matmul_kernel_naive[
+                DType.float32, DType.float32, DType.float32, BLOCK_DIM
+            ]
+        ](
             c_device_ref,
             a_device_ref,
             b_device_ref,
@@ -803,9 +774,6 @@ fn run_mma_fp32_fp16(
     _ = a_host_ref
     _ = c_host_ref
 
-    _ = func_mma^
-    _ = func_naive^
-
 
 fn run_mma_fp16_fp16(
     M: Int,
@@ -850,8 +818,6 @@ fn run_mma_fp16_fp16(
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var func_mma = ctx.compile_function[mma_kernel_fp16_fp16]()
-
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
     alias MMA_N = 8
@@ -860,8 +826,7 @@ fn run_mma_fp16_fp16(
     @always_inline
     @parameter
     fn run_func_mma(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
-            func_mma,
+        ctx.enqueue_function[mma_kernel_fp16_fp16](
             c_device,
             a_device,
             b_device,
@@ -888,17 +853,15 @@ fn run_mma_fp16_fp16(
     ctx.enqueue_copy_to_device(b_device_ref, b_host_ref)
 
     alias BLOCK_DIM = 16
-    var func_naive = ctx.compile_function[
-        matmul_kernel_naive[
-            DType.float32, DType.float32, DType.float32, BLOCK_DIM
-        ]
-    ]()
 
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
-            func_naive,
+        ctx.enqueue_function[
+            matmul_kernel_naive[
+                DType.float32, DType.float32, DType.float32, BLOCK_DIM
+            ]
+        ](
             c_device_ref,
             a_device_ref,
             b_device_ref,
@@ -953,9 +916,6 @@ fn run_mma_fp16_fp16(
     _ = a_host_ref
     _ = a_host_ref
     _ = c_host_ref
-
-    _ = func_mma^
-    _ = func_naive^
 
 
 def main():

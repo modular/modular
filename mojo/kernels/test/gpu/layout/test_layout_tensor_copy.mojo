@@ -88,15 +88,8 @@ fn test_async_copy[
 
     arange(input.tensor())
 
-    alias kernel_type = async_copy_kernel[layout, BM, BN]
-
-    var kernel = ctx.compile_function[kernel_type]()
-
-    ctx.enqueue_function(
-        kernel,
-        input.device_tensor(),
-        grid_dim=(M // BM, N // BN),
-        block_dim=(BM, BN),
+    ctx.enqueue_function[async_copy_kernel[layout, BM, BN]](
+        input.device_tensor(), grid_dim=(M // BM, N // BN), block_dim=(BM, BN)
     )
 
     ctx.synchronize()
@@ -211,10 +204,7 @@ fn test_dynamic_async_copy[
         num_rows,
     ]
 
-    var kernel = ctx.compile_function[kernel_type]()
-
-    ctx.enqueue_function(
-        kernel,
+    ctx.enqueue_function[kernel_type](
         input.device_tensor(),
         output.device_tensor(),
         grid_dim=(ceildiv(M, BM), ceildiv(M, BN)),
@@ -323,10 +313,8 @@ fn test_swizzle_copy[
         BK,
         num_threads,
     ]
-    var func = ctx.compile_function[copy]()
 
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[copy](
         a_tensor.device_tensor(),
         b_tensor.device_tensor(),
         grid_dim=(ceildiv(M, BM), 1, 1),
@@ -465,13 +453,9 @@ fn test_masked_async_copy[
 
     arange(input.tensor())
 
-    alias kernel_type = masked_async_copy_kernel[
-        Layout.row_major(M, N), M - skew_rows
-    ]
-    var kernel = ctx.compile_function[kernel_type]()
-
-    ctx.enqueue_function(
-        kernel,
+    ctx.enqueue_function[
+        masked_async_copy_kernel[Layout.row_major(M, N), M - skew_rows]
+    ](
         input.device_tensor(),
         grid_dim=(1,),
         block_dim=(8,),
@@ -570,13 +554,8 @@ fn test_masked_copy[
     alias kernel_type = masked_copy_kernel[
         Layout.row_major(M, N), M - skew_rows
     ]
-    var kernel = ctx.compile_function[kernel_type]()
-
-    ctx.enqueue_function(
-        kernel,
-        input.device_tensor(),
-        grid_dim=(1,),
-        block_dim=(8,),
+    ctx.enqueue_function[kernel_type](
+        input.device_tensor(), grid_dim=(1,), block_dim=(8,)
     )
 
     ctx.synchronize()
@@ -667,13 +646,8 @@ fn test_partial_copy_dram_to_sram_async[
         thread_layout,
         num_threads,
     ]
-    var kernel = ctx.compile_function[kernel_type]()
-
-    ctx.enqueue_function(
-        kernel,
-        input.device_tensor(),
-        grid_dim=(1,),
-        block_dim=(num_threads,),
+    ctx.enqueue_function[kernel_type](
+        input.device_tensor(), grid_dim=(1,), block_dim=(num_threads,)
     )
 
     ctx.synchronize()
@@ -749,13 +723,8 @@ fn test_copy_sram_to_dram[
     alias kernel_type = copy_sram_to_dram_kernel[
         type, tile_layout, M, N, binary_op
     ]
-    var kernel = ctx.compile_function[kernel_type]()
-
-    ctx.enqueue_function(
-        kernel,
-        tile_tensor,
-        grid_dim=(1,),
-        block_dim=(8,),
+    ctx.enqueue_function[kernel_type](
+        tile_tensor, grid_dim=(1,), block_dim=(8,)
     )
 
     ctx.synchronize()
@@ -856,13 +825,8 @@ fn test_copy_local_to_local[
     alias kernel_type = copy_local_to_local_kernel[
         type, layout, WM, WN, MMA_M, MMA_N
     ]
-    var kernel = ctx.compile_function[kernel_type]()
-
-    ctx.enqueue_function(
-        kernel,
-        output.device_tensor(),
-        grid_dim=(1, 1),
-        block_dim=(8, 1),
+    ctx.enqueue_function[kernel_type](
+        output.device_tensor(), grid_dim=(1, 1), block_dim=(8, 1)
     )
 
     ctx.synchronize()
@@ -966,13 +930,8 @@ fn test_copy_local_to_sram[
     alias kernel_type = copy_local_to_sram_kernel[
         type, layout, WM, WN, MMA_M, MMA_N, simd_size_row, simd_size_col
     ]
-    var kernel = ctx.compile_function[kernel_type]()
-
-    ctx.enqueue_function(
-        kernel,
-        output.device_tensor(),
-        grid_dim=(1, 1),
-        block_dim=(8, 1),
+    ctx.enqueue_function[kernel_type](
+        output.device_tensor(), grid_dim=(1, 1), block_dim=(8, 1)
     )
 
     ctx.synchronize()

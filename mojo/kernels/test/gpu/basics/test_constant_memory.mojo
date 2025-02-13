@@ -53,8 +53,6 @@ def test_constant_mem(ctx: DeviceContext):
         alias val = _fill_impl[n]()
         data[thread_idx.x] = val[thread_idx.x]
 
-    var func = ctx.compile_function[static_constant_kernel[16]]()
-
     var res_host_ptr = UnsafePointer[Float32].alloc(16)
     var res_device = ctx.enqueue_create_buffer[DType.float32](16)
 
@@ -63,7 +61,9 @@ def test_constant_mem(ctx: DeviceContext):
 
     ctx.enqueue_copy_to_device(res_device, res_host_ptr)
 
-    ctx.enqueue_function(func, res_device, grid_dim=1, block_dim=16)
+    ctx.enqueue_function[static_constant_kernel[16]](
+        res_device, grid_dim=1, block_dim=16
+    )
 
     ctx.enqueue_copy_from_device(res_host_ptr, res_device)
 
@@ -99,8 +99,6 @@ def test_constant_mem_via_func(ctx: DeviceContext):
         alias val = get_constant_memory()
         data[thread_idx.x] = val[thread_idx.x]
 
-    var func = ctx.compile_function[static_constant_kernel[_fill_impl[20]]]()
-
     var res_host_ptr = UnsafePointer[Float32].alloc(16)
     var res_device = ctx.enqueue_create_buffer[DType.float32](16)
 
@@ -109,7 +107,9 @@ def test_constant_mem_via_func(ctx: DeviceContext):
 
     ctx.enqueue_copy_to_device(res_device, res_host_ptr)
 
-    ctx.enqueue_function(func, res_device, grid_dim=1, block_dim=16)
+    ctx.enqueue_function[static_constant_kernel[_fill_impl[20]]](
+        res_device, grid_dim=1, block_dim=16
+    )
 
     ctx.enqueue_copy_from_device(res_host_ptr, res_device)
 
@@ -137,8 +137,6 @@ def test_external_constant_mem(ctx: DeviceContext):
         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
     )
 
-    var func = ctx.compile_function[static_constant_kernel]()
-
     var res_host_ptr = UnsafePointer[Float32].alloc(16)
     var res_device = ctx.enqueue_create_buffer[DType.float32](16)
 
@@ -147,8 +145,7 @@ def test_external_constant_mem(ctx: DeviceContext):
 
     ctx.enqueue_copy_to_device(res_device, res_host_ptr)
 
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[static_constant_kernel](
         res_device,
         grid_dim=1,
         block_dim=16,

@@ -79,13 +79,7 @@ fn run_vector_reduction[
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(c_device, c_host)
 
-    var func_red_vec = ctx.compile_function[
-        semaphore_vector_reduce[type, N, num_parts],
-        dump_asm=False,
-    ]()
-
-    ctx.enqueue_function(
-        func_red_vec,
+    ctx.enqueue_function[semaphore_vector_reduce[type, N, num_parts]](
         c_buf.data,
         a_buf.data,
         lock_dev.unsafe_ptr(),
@@ -110,7 +104,6 @@ fn run_vector_reduction[
     a_host.free()
     c_host.free()
     c_host_ref.free()
-    _ = func_red_vec^
 
 
 fn semaphore_matrix_reduce[
@@ -175,14 +168,9 @@ fn run_matrix_reduction[
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(c_device, c_host)
 
-    var func_red = ctx.compile_function[
-        semaphore_matrix_reduce[type, M, N, num_parts],
-    ]()
-
     var block_size = 1024
 
-    ctx.enqueue_function(
-        func_red,
+    ctx.enqueue_function[semaphore_matrix_reduce[type, M, N, num_parts]](
         c_buf.data,
         a_buf.data,
         lock_dev.unsafe_ptr(),
@@ -210,7 +198,6 @@ fn run_matrix_reduction[
     a_host.free()
     c_host.free()
     c_host_ref.free()
-    _ = func_red^
 
 
 def main():

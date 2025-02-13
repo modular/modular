@@ -167,13 +167,7 @@ fn test_split_k_multistage_gemm[
 
     print("copied to device")
 
-    var multistage_func = ctx.compile_function[mgemm](
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            config.shared_mem_usage()
-        ),
-    )
-    ctx.enqueue_function(
-        multistage_func,
+    ctx.enqueue_function[mgemm](
         c_tensor,
         a_tensor,
         b_tensor,
@@ -181,6 +175,9 @@ fn test_split_k_multistage_gemm[
         grid_dim=config.grid_dim(M, N),
         block_dim=config.block_dim(),
         shared_mem_bytes=config.shared_mem_usage(),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            config.shared_mem_usage()
+        ),
     )
 
     ctx.enqueue_copy_from_device(c_host.tensor.data, c_device)

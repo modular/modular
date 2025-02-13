@@ -155,12 +155,7 @@ fn wgmma_bf16_bf16_f32[
         b_smem_layout,
         transpose_b=transpose_b,
     ]
-    var func = ctx.compile_function[
-        kernel, _target = _get_gpu_target["sm_90"]()
-    ]()
-
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         a.device_tensor(),
         b.device_tensor(),
         c.device_tensor(),

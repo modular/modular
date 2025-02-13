@@ -472,20 +472,14 @@ def test_warp_specialize_gemm_with_multicasting[
         pipeline_stages=pipeline_stages,
     ]
 
-    var func = ctx.compile_function[
-        kernel,
-        _target = _get_gpu_target["sm_90"](),
-        # dump_asm = True,
-    ](func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size))
-
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(num_threads),
         shared_mem_bytes=smem_size,
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size),
     )
 
     ctx.synchronize()

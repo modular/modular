@@ -61,10 +61,7 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
     ctx.enqueue_copy_to_device(in_data_device, in_data)
     ctx.enqueue_copy_to_device(out_data_device, out_data)
 
-    var copy_via_shared_gpu = ctx.compile_function[copy_via_shared]()
-
-    ctx.enqueue_function(
-        copy_via_shared_gpu,
+    ctx.enqueue_function[copy_via_shared](
         in_data_device,
         out_data_device,
         grid_dim=(1,),
@@ -82,7 +79,6 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
     _ = out_data_device
     in_data.free()
     out_data.free()
-    _ = copy_via_shared_gpu^
 
 
 fn copy_with_src_size(
@@ -155,12 +151,9 @@ fn test_copy_with_src_size(ctx: DeviceContext) raises:
     ctx.enqueue_copy_to_device(a_device, a_host)
 
     alias kernel = copy_with_src_size
-    var func = ctx.compile_function[kernel]()
-
     alias src_size = 3 * sizeof[DType.float32]()
 
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         a_device,
         b_device,
         src_size,
@@ -186,8 +179,6 @@ fn test_copy_with_src_size(ctx: DeviceContext) raises:
     a_host.free()
     b_host.free()
 
-    _ = func^
-
 
 fn test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
     alias size = 8
@@ -208,12 +199,10 @@ fn test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
     ctx.enqueue_copy_to_device(a_device, a_host)
 
     alias kernel = copy_with_non_zero_fill[2 * size]
-    var func = ctx.compile_function[kernel]()
 
     alias src_size = 3 * sizeof[DType.bfloat16]()
 
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         a_device,
         b_device,
         src_size,
@@ -246,8 +235,6 @@ fn test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
     _ = b_device
     a_host.free()
     b_host.free()
-
-    _ = func^
 
 
 def main():

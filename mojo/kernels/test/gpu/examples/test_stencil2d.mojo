@@ -145,11 +145,8 @@ fn run_stencil2d[smem: Bool](ctx: DeviceContext) raises:
 
     alias func_select = stencil2d_smem if smem == True else stencil2d
 
-    var func = ctx.compile_function[func_select]()
-
     for i in range(iterations):
-        ctx.enqueue_function(
-            func,
+        ctx.enqueue_function[func_select](
             a_device,
             b_device,
             m,
@@ -190,8 +187,6 @@ fn run_stencil2d[smem: Bool](ctx: DeviceContext) raises:
 
     _ = a_host
     _ = b_host
-
-    _ = func^
 
 
 def main():

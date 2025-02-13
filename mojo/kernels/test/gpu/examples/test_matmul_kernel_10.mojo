@@ -453,7 +453,6 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         TN=K10_TN,
         NUM_THREADS=K10_NUM_THREADS,
     ]
-    var func = ctx.compile_function[sgemm_type]()
 
     @parameter
     @always_inline
@@ -461,8 +460,7 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         @parameter
         @always_inline
         fn run_func(ctx: DeviceContext) raises:
-            ctx.enqueue_function(
-                func,
+            ctx.enqueue_function[sgemm_type](
                 c_buffer,
                 a_buffer,
                 b_buffer,
@@ -489,16 +487,13 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var func_naive = ctx.compile_function[matmul_naive]()
-
     @parameter
     @always_inline
     fn bench_naive(mut b: Bencher):
         @parameter
         @always_inline
         fn run_func_naive(ctx: DeviceContext) raises:
-            ctx.enqueue_function(
-                func_naive,
+            ctx.enqueue_function[matmul_naive](
                 a_device,
                 b_device,
                 c_device,
@@ -538,9 +533,6 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     _ = b_host
     _ = c_host
     _ = c_host_naive
-
-    _ = func^
-    _ = func_naive^
 
 
 def main():

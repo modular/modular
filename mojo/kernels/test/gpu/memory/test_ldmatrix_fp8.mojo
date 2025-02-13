@@ -116,13 +116,7 @@ fn check_ldmatrix_fp8[
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var func = ctx.compile_function[
-        test_ldmatrix_fp8[input_type],
-        _target = _get_gpu_target["sm_90"](),
-    ]()
-
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[test_ldmatrix_fp8[input_type]](
         c_device,
         a_device,
         b_device,
@@ -134,13 +128,11 @@ fn check_ldmatrix_fp8[
 
     # Run naive matmul.
     alias BLOCK_DIM = 16
-    var func_naive = ctx.compile_function[
+    ctx.enqueue_function[
         matmul_kernel_naive[
             DType.float32, input_type, input_type, BLOCK_DIM, transpose_b=True
         ]
-    ]()
-    ctx.enqueue_function(
-        func_naive,
+    ](
         c_device_ref,
         a_device,
         b_device,
@@ -169,9 +161,6 @@ fn check_ldmatrix_fp8[
     _ = b_host
     _ = c_host
     _ = c_host_ref
-
-    _ = func^
-    _ = func_naive^
 
 
 def main():

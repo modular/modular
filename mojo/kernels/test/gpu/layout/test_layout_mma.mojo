@@ -127,14 +127,9 @@ fn test_layout_mma[
             mat_c_tensor[i, j] = val.cast[out_type]()
             mat_c_n_tensor[i, j] = mat_c_tensor[i, j]
 
-    alias mma_func = mma_layout_tc[
-        out_type, in_type, shape, layout_c, layout_a, layout_b
-    ]
-
-    var mma_kernel = ctx.compile_function[mma_func]()
-
-    ctx.enqueue_function(
-        mma_kernel,
+    ctx.enqueue_function[
+        mma_layout_tc[out_type, in_type, shape, layout_c, layout_a, layout_b]
+    ](
         mat_c.device_tensor(),
         mat_a.device_tensor(),
         mat_b.device_tensor(),
@@ -148,9 +143,7 @@ fn test_layout_mma[
     alias naive_func = matmul_naive[
         out_type, in_type, layout_c, layout_a, layout_b
     ]
-    var naive_kernel = ctx.compile_function[naive_func]()
-    ctx.enqueue_function(
-        naive_kernel,
+    ctx.enqueue_function[naive_func](
         mat_c_n.device_tensor(),
         mat_a_n.device_tensor(),
         mat_b_n.device_tensor(),

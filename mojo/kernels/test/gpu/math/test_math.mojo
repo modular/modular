@@ -24,10 +24,8 @@ fn run_func[
     fn kernel(out: UnsafePointer[Scalar[type]], input: Scalar[type]):
         out[0] = kernel_fn(input)
 
-    var func = ctx.compile_function[kernel]()
-
     var out = ctx.enqueue_create_buffer[type](1)
-    ctx.enqueue_function(func, out, val, grid_dim=1, block_dim=1)
+    ctx.enqueue_function[kernel](out, val, grid_dim=1, block_dim=1)
     ctx.synchronize()
 
     _ = out

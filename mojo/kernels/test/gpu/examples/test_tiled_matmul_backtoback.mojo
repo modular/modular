@@ -611,13 +611,7 @@ fn multistage_b2b_gemm[
         ]
         var smem_use: Int = config.shared_mem_usage(size(A.layout.shape[1]))
         print("smem_use =", smem_use)
-        var kernel = ctx.compile_function[b2b_fn](
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                smem_use
-            ),
-        )
-        ctx.enqueue_function(
-            kernel,
+        ctx.enqueue_function[b2b_fn](
             D,
             A,
             B,
@@ -627,6 +621,9 @@ fn multistage_b2b_gemm[
             ),
             block_dim=config.block_dim(),
             shared_mem_bytes=smem_use,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                smem_use
+            ),
         )
     except e:
         abort(e)

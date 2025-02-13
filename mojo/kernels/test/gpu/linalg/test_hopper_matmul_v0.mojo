@@ -276,13 +276,7 @@ def test_hopper_matmul0_tma_wgmma[
         transpose_b=True,
     ]
 
-    var func = ctx.compile_function[
-        kernel,
-        _target = _get_gpu_target["sm_90"](),
-    ]()
-
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c,

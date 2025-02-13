@@ -31,9 +31,8 @@ fn test_gpu_printf() raises:
         ](0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
 
     with DeviceContext() as ctx:
-        var func = ctx.compile_function[do_print]()
-        ctx.enqueue_function(
-            func, Int(98), Float64(123.456), grid_dim=1, block_dim=1
+        ctx.enqueue_function[do_print](
+            Int(98), Float64(123.456), grid_dim=1, block_dim=1
         )
         # Ensure queued function finished before proceeding.
         ctx.synchronize()

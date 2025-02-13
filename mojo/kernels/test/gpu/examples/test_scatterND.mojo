@@ -224,12 +224,7 @@ fn scatter_nd[
 
     var num_updates_elements = count_copy
 
-    var func = ctx.compile_function[
-        scatter_nd_gpu[type=type, indices_type=indices_type],
-    ]()
-
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[scatter_nd_gpu[type=type, indices_type=indices_type]](
         output_device,
         indices_device,
         element_counts_and_input_dims_device,

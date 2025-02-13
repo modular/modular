@@ -134,34 +134,26 @@ def test_tma_load_row_major[
 
     @parameter
     if load_along_last_dim:
-        var kernel = ctx.compile_function[
-            test_tma_multiple_loads_kernel[
-                __type_of(tma_tensor).dtype,
-                Layout.row_major(M_roundup, N_roundup),  # dst layout
-                __type_of(tma_tensor).layout,  # smem layout
-                __type_of(tma_tensor).layout,  # thread layout
-            ],
-            _target = _get_gpu_target["sm_90"](),
-        ]()
-        ctx.enqueue_function(
-            kernel,
+        alias kernel = test_tma_multiple_loads_kernel[
+            __type_of(tma_tensor).dtype,
+            Layout.row_major(M_roundup, N_roundup),  # dst layout
+            __type_of(tma_tensor).layout,  # smem layout
+            __type_of(tma_tensor).layout,  # thread layout
+        ]
+        ctx.enqueue_function[kernel](
             dst.device_tensor(),
             tma_tensor,
             grid_dim=(1, M_roundup // tileM),
             block_dim=(tileM * tileN),
         )
     else:
-        var kernel = ctx.compile_function[
-            test_tma_load_kernel[
-                __type_of(tma_tensor).dtype,
-                Layout.row_major(M_roundup, N_roundup),  # dst layout
-                __type_of(tma_tensor).layout,  # smem layout
-                __type_of(tma_tensor).layout,  # thread layout
-            ],
-            _target = _get_gpu_target["sm_90"](),
-        ]()
-        ctx.enqueue_function(
-            kernel,
+        alias kernel = test_tma_load_kernel[
+            __type_of(tma_tensor).dtype,
+            Layout.row_major(M_roundup, N_roundup),  # dst layout
+            __type_of(tma_tensor).layout,  # smem layout
+            __type_of(tma_tensor).layout,  # thread layout
+        ]
+        ctx.enqueue_function[kernel](
             dst.device_tensor(),
             tma_tensor,
             grid_dim=(N_roundup // tileN, M_roundup // tileM),
@@ -272,34 +264,26 @@ def test_tma_async_store[
 
     @parameter
     if load_along_last_dim:
-        var kernel_multiple_store_async = ctx.compile_function[
-            test_tma_async_multiple_store_kernel[
-                __type_of(tma_tensor).dtype,
-                __type_of(tma_tensor).layout,
-                __type_of(tma_tensor).layout,
-                src_layout,
-            ],
-            _target = _get_gpu_target["sm_90"](),
-        ]()
-        ctx.enqueue_function(
-            kernel_multiple_store_async,
+        alias kernel = test_tma_async_multiple_store_kernel[
+            __type_of(tma_tensor).dtype,
+            __type_of(tma_tensor).layout,
+            __type_of(tma_tensor).layout,
+            src_layout,
+        ]
+        ctx.enqueue_function[kernel](
             tma_tensor,
             src.device_tensor(),
             grid_dim=(1, src_M // tileM),
             block_dim=(tileM * tileN),
         )
     else:
-        var kernel_store_async = ctx.compile_function[
-            test_tma_async_store_kernel[
-                __type_of(tma_tensor).dtype,
-                __type_of(tma_tensor).layout,
-                __type_of(tma_tensor).layout,
-                src_layout,
-            ],
-            _target = _get_gpu_target["sm_90"](),
-        ]()
-        ctx.enqueue_function(
-            kernel_store_async,
+        alias kernel = test_tma_async_store_kernel[
+            __type_of(tma_tensor).dtype,
+            __type_of(tma_tensor).layout,
+            __type_of(tma_tensor).layout,
+            src_layout,
+        ]
+        ctx.enqueue_function[kernel](
             tma_tensor,
             src.device_tensor(),
             grid_dim=(src_N // tileN, src_M // tileM),
@@ -412,34 +396,26 @@ def test_tma_async_reduce[
 
     @parameter
     if load_along_last_dim:
-        var kernel_multiple_reduce_async = ctx.compile_function[
-            test_tma_async_multiple_reduce_kernel[
-                __type_of(tma_tensor).dtype,
-                __type_of(tma_tensor).layout,
-                __type_of(tma_tensor).layout,
-                src_layout,
-            ],
-            _target = _get_gpu_target["sm_90"](),
-        ]()
-        ctx.enqueue_function(
-            kernel_multiple_reduce_async,
+        alias kernel = test_tma_async_multiple_reduce_kernel[
+            __type_of(tma_tensor).dtype,
+            __type_of(tma_tensor).layout,
+            __type_of(tma_tensor).layout,
+            src_layout,
+        ]
+        ctx.enqueue_function[kernel](
             tma_tensor,
             src.device_tensor(),
             grid_dim=(1, src_M // tileM),
             block_dim=(tileM * tileN),
         )
     else:
-        var kernel_reduce_async = ctx.compile_function[
-            test_tma_async_reduce_kernel[
-                __type_of(tma_tensor).dtype,
-                __type_of(tma_tensor).layout,
-                __type_of(tma_tensor).layout,
-                src_layout,
-            ],
-            _target = _get_gpu_target["sm_90"](),
-        ]()
-        ctx.enqueue_function(
-            kernel_reduce_async,
+        alias kernel = test_tma_async_reduce_kernel[
+            __type_of(tma_tensor).dtype,
+            __type_of(tma_tensor).layout,
+            __type_of(tma_tensor).layout,
+            src_layout,
+        ]
+        ctx.enqueue_function[kernel](
             tma_tensor,
             src.device_tensor(),
             grid_dim=(src_N // tileN, src_M // tileM),
@@ -556,20 +532,16 @@ def test_tma_load_two_buffers_row_major[
     var b_tma_tensor = create_tma_tile[tileM, tileN](ctx, b_src.device_tensor())
     ctx.synchronize()
 
-    var kernel = ctx.compile_function[
-        test_tma_loads_two_buffers_kernel[
-            __type_of(a_tma_tensor).dtype,
-            Layout.row_major(M_roundup, N_roundup),  # dst layout
-            Layout.row_major(M_roundup, N_roundup),  # dst layout
-            __type_of(a_tma_tensor).layout,  # smem layout
-            __type_of(b_tma_tensor).layout,  # smem layout
-            __type_of(a_tma_tensor).layout,  # thread layout
-            __type_of(b_tma_tensor).layout,  # thread layout
-        ],
-        _target = _get_gpu_target["sm_90"](),
-    ]()
-    ctx.enqueue_function(
-        kernel,
+    alias kernel = test_tma_loads_two_buffers_kernel[
+        __type_of(a_tma_tensor).dtype,
+        Layout.row_major(M_roundup, N_roundup),  # dst layout
+        Layout.row_major(M_roundup, N_roundup),  # dst layout
+        __type_of(a_tma_tensor).layout,  # smem layout
+        __type_of(b_tma_tensor).layout,  # smem layout
+        __type_of(a_tma_tensor).layout,  # thread layout
+        __type_of(b_tma_tensor).layout,  # thread layout
+    ]
+    ctx.enqueue_function[kernel](
         a_dst.device_tensor(),
         b_dst.device_tensor(),
         a_tma_tensor,
@@ -715,18 +687,14 @@ def test_tma_load_and_store_two_buffers_row_major[
     )
     ctx.synchronize()
 
-    var kernel = ctx.compile_function[
-        test_tma_loads_and_store_two_buffers_kernel[
-            __type_of(a_tma_src_tensor).dtype,
-            __type_of(a_tma_src_tensor).layout,  # smem layout
-            __type_of(a_tma_src_tensor).layout,  # smem layout
-            a_layout=dst_layout,  # dst layout
-            b_layout=dst_layout,  # dst layout
-        ],
-        _target = _get_gpu_target["sm_90"](),
-    ]()
-    ctx.enqueue_function(
-        kernel,
+    alias kernel = test_tma_loads_and_store_two_buffers_kernel[
+        __type_of(a_tma_src_tensor).dtype,
+        __type_of(a_tma_src_tensor).layout,  # smem layout
+        __type_of(a_tma_src_tensor).layout,  # smem layout
+        a_layout=dst_layout,  # dst layout
+        b_layout=dst_layout,  # dst layout
+    ]
+    ctx.enqueue_function[kernel](
         a_tma_dst_tensor,
         b_tma_dst_tensor,
         a_tma_src_tensor,

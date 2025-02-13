@@ -267,13 +267,8 @@ def test_tma_wgmma[
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
     ]
-    var func = ctx.compile_function[
-        kernel,
-        _target = _get_gpu_target["sm_90"](),
-    ]()
 
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c.device_tensor(),

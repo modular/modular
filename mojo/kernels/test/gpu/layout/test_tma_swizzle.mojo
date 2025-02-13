@@ -107,17 +107,13 @@ def test_tma_swizzle[
         type, __type_of(tma_tensor).desc_layout
     ].stack_allocation()
 
-    var kernel = ctx.compile_function[
-        tma_swizzle_load_kernel[
-            __type_of(tma_tensor).dtype,
-            layout,
-            __type_of(tma_tensor).layout,
-            __type_of(tma_tensor).desc_layout,
-        ],
-        _target = _get_gpu_target["sm_90"](),
-    ]()
-    ctx.enqueue_function(
-        kernel,
+    alias kernel = tma_swizzle_load_kernel[
+        __type_of(tma_tensor).dtype,
+        layout,
+        __type_of(tma_tensor).layout,
+        __type_of(tma_tensor).desc_layout,
+    ]
+    ctx.enqueue_function[kernel](
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(shape[1] // tile_shape[1], shape[0] // tile_shape[0]),

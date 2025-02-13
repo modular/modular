@@ -111,17 +111,15 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
             rebind[SIMD[dtype, width]](val + 1),
         )
 
-    var func = ctx.compile_function[
-        _concat_inner_most_single_dim[
-            rank=rank,
-            type=dtype,
-            num_inputs=4,
-            block_size=B_SIZE,
-            epilogue_fn = OptionalReg[elementwise_epilogue_type](
-                epilogue_plus_one
-            ) if test_epilogue else None,
-        ]
-    ]()
+    alias kernel = _concat_inner_most_single_dim[
+        rank=rank,
+        type=dtype,
+        num_inputs=4,
+        block_size=B_SIZE,
+        epilogue_fn = OptionalReg[elementwise_epilogue_type](
+            epilogue_plus_one
+        ) if test_epilogue else None,
+    ]
 
     @always_inline
     @__copy_capture(
@@ -133,8 +131,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     )
     @parameter
     fn run_concat_inner_most_single_dim(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
-            func,
+        ctx.enqueue_function[kernel](
             output_device_ref,
             StaticTuple[NDBuffer[dtype, rank], 4](
                 input_0_device_ref,
@@ -147,7 +144,6 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
         )
 
     var nstime_kernel = ctx.execution_time[run_concat_inner_most_single_dim](1)
-    _ = func^
     print("concat_inner_most_single_dim time = ", nstime_kernel * 1e-6, " ms")
     print(
         "transfer rate = ",

@@ -88,15 +88,10 @@ def test_tma_tile_copy(ctx: DeviceContext):
         gmem_dev, (8, 8), (8, 1), (4, 4), (1, 1)
     )
 
-    var kernel_copy_async = ctx.compile_function[
-        kernel_copy_async_tma,
-        _target = _get_gpu_target["sm_90"](),
-    ]()
-    ctx.enqueue_function(
-        kernel_copy_async, descriptor, grid_dim=(2, 2), block_dim=(1)
+    ctx.enqueue_function[kernel_copy_async_tma](
+        descriptor, grid_dim=(2, 2), block_dim=(1)
     )
     ctx.synchronize()
-    _ = kernel_copy_async^
     gmem_host.free()
 
 

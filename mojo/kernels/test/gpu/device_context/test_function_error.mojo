@@ -20,8 +20,7 @@ def test_function_error(ctx: DeviceContext):
     print("== test_function_error")
     try:
         var res_host = UnsafePointer[UInt32].alloc(1)
-        var func = ctx.compile_function[kernel]()
-        ctx.enqueue_function(func, res_host, block_dim=(1), grid_dim=(1))
+        ctx.enqueue_function[kernel](res_host, block_dim=(1), grid_dim=(1))
         ctx.synchronize()
         res_host.free()
     except e:

@@ -239,13 +239,11 @@ fn test_gpu_online_softmax[WM: Int, WN: Int](ctx: DeviceContext) raises:
     rand[type](in_host_ptr, shape.flattened_length())
     ctx.enqueue_copy_to_device(in_device_ptr, in_host_ptr)
 
-    var online_softmax_gpu = ctx.compile_function[
+    ctx.enqueue_function[
         _online_softmax_kernel[
             WM, WN, DType.float32, Layout.row_major(shape[1], shape[2])
         ]
-    ]()
-    ctx.enqueue_function(
-        online_softmax_gpu,
+    ](
         in_device,
         out_device,
         grid_dim=1,

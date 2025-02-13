@@ -131,10 +131,7 @@ fn run_matmul(ctx: DeviceContext) raises:
     ctx.enqueue_copy_to_device(a_device, a_host_ptr)
     ctx.enqueue_copy_to_device(b_device, b_host_ptr)
 
-    var func = ctx.compile_function[matmul]()
-
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[matmul](
         a_device,
         b_device,
         c_device,
@@ -159,8 +156,6 @@ fn run_matmul(ctx: DeviceContext) raises:
     _ = a_host
     _ = b_host
     _ = c_host
-
-    _ = func^
 
 
 def main():

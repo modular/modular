@@ -637,16 +637,9 @@ fn test_simd_e4m3_to_f16_ptx_path(ctx: DeviceContext) raises:
     for i in range(M):
         e4m3_simd[i] = bitcast[DType.float8_e4m3fn](Scalar[DType.uint8](i))
 
-    alias test_simd_e4m3_to_f16_fn = test_simd_float8[
-        DType.float8_e4m3fn, M, DType.float16
-    ]
-
-    var compiled_test_simd_e4m3_to_f16_fn = ctx.compile_function[
-        test_simd_e4m3_to_f16_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
-    ctx.enqueue_function(
-        compiled_test_simd_e4m3_to_f16_fn, e4m3_simd, grid_dim=1, block_dim=1
-    )
+    ctx.enqueue_function[
+        test_simd_float8[DType.float8_e4m3fn, M, DType.float16]
+    ](e4m3_simd, grid_dim=1, block_dim=1)
     ctx.synchronize()
 
 
@@ -691,15 +684,8 @@ fn test_simd_e5m2_to_f16_ptx_path(ctx: DeviceContext) raises:
     for i in range(M):
         e5m2_simd[i] = bitcast[DType.float8_e5m2](Scalar[DType.uint8](i))
 
-    alias test_simd_e5m2_to_f16_fn = test_simd_float8[
-        DType.float8_e5m2, M, DType.float16
-    ]
-
-    var compiled_test_simd_e5m2_to_f16_fn = ctx.compile_function[
-        test_simd_e5m2_to_f16_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
-    ctx.enqueue_function(
-        compiled_test_simd_e5m2_to_f16_fn, e5m2_simd, grid_dim=1, block_dim=1
+    ctx.enqueue_function[test_simd_float8[DType.float8_e5m2, M, DType.float16]](
+        e5m2_simd, grid_dim=1, block_dim=1
     )
     ctx.synchronize()
 
@@ -745,16 +731,9 @@ fn test_simd_e4m3_to_f32_ptx_path(ctx: DeviceContext) raises:
     for i in range(M):
         e4m3_simd[i] = bitcast[DType.float8_e4m3fn](Scalar[DType.uint8](i))
 
-    alias test_simd_e4m3_to_f32_fn = test_simd_float8[
-        DType.float8_e4m3fn, M, DType.float32
-    ]
-
-    var compiled_test_simd_e4m3_to_f32_fn = ctx.compile_function[
-        test_simd_e4m3_to_f32_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
-    ctx.enqueue_function(
-        compiled_test_simd_e4m3_to_f32_fn, e4m3_simd, grid_dim=1, block_dim=1
-    )
+    ctx.enqueue_function[
+        test_simd_float8[DType.float8_e4m3fn, M, DType.float32]
+    ](e4m3_simd, grid_dim=1, block_dim=1)
     ctx.synchronize()
 
 
@@ -799,15 +778,8 @@ fn test_simd_e5m2_to_f32_ptx_path(ctx: DeviceContext) raises:
     for i in range(M):
         e5m2_simd[i] = bitcast[DType.float8_e5m2](Scalar[DType.uint8](i))
 
-    alias test_simd_e5m2_to_f32_fn = test_simd_float8[
-        DType.float8_e5m2, M, DType.float32
-    ]
-
-    var compiled_test_simd_e5m2_to_f32_fn = ctx.compile_function[
-        test_simd_e5m2_to_f32_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
-    ctx.enqueue_function(
-        compiled_test_simd_e5m2_to_f32_fn, e5m2_simd, grid_dim=1, block_dim=1
+    ctx.enqueue_function[test_simd_float8[DType.float8_e5m2, M, DType.float32]](
+        e5m2_simd, grid_dim=1, block_dim=1
     )
     ctx.synchronize()
 
@@ -899,13 +871,8 @@ fn test_simd_f32_to_e4m3_ptx_path(ctx: DeviceContext) raises:
     for i in range(M):
         f32_simd[i] = i - 256
 
-    alias test_simd_f32_to_e4m3_fn = test_simd_float32[M, DType.float8_e4m3fn]
-
-    var compiled_test_simd_f32_to_e4m3_fn = ctx.compile_function[
-        test_simd_f32_to_e4m3_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
-    ctx.enqueue_function(
-        compiled_test_simd_f32_to_e4m3_fn, f32_simd, grid_dim=1, block_dim=1
+    ctx.enqueue_function[test_simd_float32[M, DType.float8_e4m3fn]](
+        f32_simd, grid_dim=1, block_dim=1
     )
     ctx.synchronize()
 
@@ -983,13 +950,8 @@ fn test_simd_f32_to_e5m2_ptx_path(ctx: DeviceContext) raises:
     for i in range(M):
         f32_simd[i] = i - 256
 
-    alias test_simd_f32_to_e5m2_fn = test_simd_float32[M, DType.float8_e5m2]
-
-    var compiled_test_simd_f32_to_e5m2_fn = ctx.compile_function[
-        test_simd_f32_to_e5m2_fn, _target = _get_gpu_target["sm_90"]()
-    ]()
-    ctx.enqueue_function(
-        compiled_test_simd_f32_to_e5m2_fn, f32_simd, grid_dim=1, block_dim=1
+    ctx.enqueue_function[test_simd_float32[M, DType.float8_e5m2]](
+        f32_simd, grid_dim=1, block_dim=1
     )
     ctx.synchronize()
 

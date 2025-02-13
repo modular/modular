@@ -46,9 +46,7 @@ def main():
         ctx.enqueue_copy_to_device(vec_b_dev, vec_b_ptr)
         ctx.enqueue_copy_to_device(vec_c_dev, vec_c_ptr)
 
-        var kernel = ctx.compile_function[gpu_kernel]()
-        ctx.enqueue_function(
-            kernel,
+        ctx.enqueue_function[gpu_kernel](
             vec_c_dev,
             vec_a_dev,
             vec_b_dev,

@@ -71,18 +71,15 @@ fn run_layer_norm_block[
     ](idx: IndexList[rank]) -> SIMD[type, width]:
         return gamma.load[width=width](idx[0])
 
-    var func_ln = ctx.compile_function[
-        layer_norm_gpu_block[simd_width, input_fn, gamma_fn]
-    ]()
-
     var max_warps_per_block = ctx.device_info.max_thread_block_size // WARP_SIZE
 
     @always_inline
     @parameter
     @__copy_capture(data_buf, gamma, beta, epsilon)
     fn run_func_ln() raises:
-        ctx.enqueue_function(
-            func_ln,
+        ctx.enqueue_function[
+            layer_norm_gpu_block[simd_width, input_fn, gamma_fn]
+        ](
             data_buf,
             beta,
             epsilon,
@@ -112,7 +109,6 @@ fn run_layer_norm_block[
     _ = data_d
     _ = gamma_d
     _ = beta_d
-    _ = func_ln^
 
     data_h.free()
     res.free()
@@ -248,18 +244,15 @@ fn run_layer_norm_warp_tiling[
     ](idx: IndexList[rank]) -> SIMD[type, width]:
         return gamma.load[width=width](idx[0])
 
-    var func_ln = ctx.compile_function[
-        layer_norm_gpu_warp_tiling[simd_width, input_fn, gamma_fn]
-    ]()
-
     var max_warps_per_block = ctx.device_info.max_thread_block_size // WARP_SIZE
 
     @always_inline
     @parameter
     @__copy_capture(data_buf, gamma, beta, epsilon)
     fn run_func_ln() raises:
-        ctx.enqueue_function(
-            func_ln,
+        ctx.enqueue_function[
+            layer_norm_gpu_warp_tiling[simd_width, input_fn, gamma_fn]
+        ](
             data_buf,
             beta,
             epsilon,
@@ -289,7 +282,6 @@ fn run_layer_norm_warp_tiling[
     _ = data_d
     _ = gamma_d
     _ = beta_d
-    _ = func_ln^
 
     data_h.free()
     res.free()

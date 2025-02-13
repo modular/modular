@@ -162,12 +162,7 @@ fn check_ldmatrix_transposed_bf16[
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var func = ctx.compile_function[
-        test_ldmatrix_transposed[input_type, output_type]
-    ]()
-
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[test_ldmatrix_transposed[input_type, output_type]](
         c_device,
         a_device,
         b_device,
@@ -179,11 +174,9 @@ fn check_ldmatrix_transposed_bf16[
 
     # Run naive matmul.
     alias BLOCK_DIM = 16
-    var func_naive = ctx.compile_function[
+    ctx.enqueue_function[
         matmul_kernel_naive[output_type, input_type, input_type, BLOCK_DIM]
-    ]()
-    ctx.enqueue_function(
-        func_naive,
+    ](
         c_device_ref,
         a_device,
         b_device,
@@ -212,9 +205,6 @@ fn check_ldmatrix_transposed_bf16[
     _ = b_host
     _ = c_host
     _ = c_host_ref
-
-    _ = func^
-    _ = func_naive^
 
 
 fn check_ldmatrix(
@@ -247,15 +237,12 @@ fn check_ldmatrix(
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var func_ldmatrix = ctx.compile_function[test_ldmatrix_fp32]()
-
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
     alias MMA_N = 8
     alias MMA_K = 8
 
-    ctx.enqueue_function(
-        func_ldmatrix,
+    ctx.enqueue_function[test_ldmatrix_fp32](
         c_device,
         a_device,
         b_device,
@@ -272,14 +259,12 @@ fn check_ldmatrix(
 
     # Run naive matmul.
     alias BLOCK_DIM = 16
-    var func_naive = ctx.compile_function[
+
+    ctx.enqueue_function[
         matmul_kernel_naive[
             DType.float32, DType.float32, DType.float32, BLOCK_DIM
         ]
-    ]()
-
-    ctx.enqueue_function(
-        func_naive,
+    ](
         c_device_ref,
         a_device,
         b_device,
@@ -307,9 +292,6 @@ fn check_ldmatrix(
     _ = b_host
     _ = c_host
     _ = c_host_ref
-
-    _ = func_ldmatrix^
-    _ = func_naive^
 
 
 # CHECK-NOT: CUDA_ERROR

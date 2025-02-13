@@ -161,7 +161,20 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
     var c_device_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
 
-    alias gemm_kernel_func_t = gemm_kernel[
+    ctx.enqueue_copy_to_device(a_device, a_host)
+    ctx.enqueue_copy_to_device(b_device, b_host)
+
+    var mat_a = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
+        a_device.unsafe_ptr(), dynamic_shape=Index(M, K)
+    )
+    var mat_b = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
+        b_device.unsafe_ptr(), dynamic_shape=Index(K, M)
+    )
+    var mat_c = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
+        c_device.unsafe_ptr(), dynamic_shape=Index(N, M)
+    )
+
+    alias kernel = gemm_kernel[
         DType.float32,
         DimList.create_unknown[2](),
         DType.float32,
@@ -178,23 +191,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         TN,
     ]
 
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_host)
-
-    var gemm_kernel_func = ctx.compile_function[gemm_kernel_func_t]()
-
-    var mat_a = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
-        a_device.unsafe_ptr(), dynamic_shape=Index(M, K)
-    )
-    var mat_b = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
-        b_device.unsafe_ptr(), dynamic_shape=Index(K, M)
-    )
-    var mat_c = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
-        c_device.unsafe_ptr(), dynamic_shape=Index(N, M)
-    )
-
-    ctx.enqueue_function(
-        gemm_kernel_func,
+    ctx.enqueue_function[kernel](
         mat_c,
         mat_a,
         mat_b,
@@ -209,12 +206,10 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     alias gemm_naive = matmul_kernel_naive[
         DType.float32, DType.float32, DType.float32, BLOCK_DIM
     ]
-    var func_naive = ctx.compile_function[gemm_naive]()
     var c_buffer_ref = NDBuffer[DType.float32, 2, DimList(M, N)](
         c_device_ref.unsafe_ptr()
     )
-    ctx.enqueue_function(
-        func_naive,
+    ctx.enqueue_function[gemm_naive](
         c_buffer_ref,
         mat_a,
         mat_b,
@@ -239,8 +234,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         @always_inline
         @parameter
         fn run_func(ctx: DeviceContext) raises:
-            ctx.enqueue_function(
-                gemm_kernel_func,
+            ctx.enqueue_function[kernel](
                 mat_c,
                 mat_a,
                 mat_b,
@@ -250,8 +244,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
         # Warmup
         for i in range(nwarmup):
-            ctx.enqueue_function(
-                gemm_kernel_func,
+            ctx.enqueue_function[kernel](
                 mat_c,
                 mat_a,
                 mat_b,
@@ -272,9 +265,6 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     c_host_ref.free()
     a_host.free()
     b_host.free()
-
-    _ = gemm_kernel_func^
-    _ = func_naive^
 
 
 def main():

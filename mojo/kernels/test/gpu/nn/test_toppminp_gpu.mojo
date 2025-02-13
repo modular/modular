@@ -344,7 +344,6 @@ fn test_case_sampling[
             device_token_ids.tensor,
             temperature=temperature,
         )
-
     # Copy results back
     ctx.enqueue_copy_from_device(token_ids.data, device_token_ids.buffer)
     ctx.enqueue_copy_from_device(
@@ -380,7 +379,6 @@ fn test_case_sampling[
     @parameter
     if DEBUG_BENCH:
         m.dump_report()
-
     _ = device_token_ids.buffer^
     _ = device_in.buffer^
     _ = device_p_thresholds.buffer^

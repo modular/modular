@@ -56,20 +56,17 @@ fn run_matvec[
     ctx.enqueue_copy_to_device(b_device, b_host)
 
     alias WARPS_PER_BLOCK = 32
-    var func_gemv = ctx.compile_function[
-        gemv_kernel[
-            DType.float32,
-            DType.bfloat16,
-            DType.bfloat16,
-            reduction_method=reduction_method,
-        ]
-    ]()
+    alias kernel = gemv_kernel[
+        DType.float32,
+        DType.bfloat16,
+        DType.bfloat16,
+        reduction_method=reduction_method,
+    ]
 
     @always_inline
     @parameter
     fn run_func_gemv(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
-            func_gemv,
+        ctx.enqueue_function[kernel](
             c_device,
             a_device,
             b_device,
@@ -97,20 +94,18 @@ fn run_matvec[
     ctx.enqueue_copy_to_device(b_device_n, b_host_n)
 
     alias BLOCK_DIM = 16
-    var func_naive = ctx.compile_function[
-        matmul_kernel_naive[
-            DType.float32,
-            DType.float32,
-            DType.float32,
-            BLOCK_DIM,
-        ]
-    ]()
 
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
-            func_naive,
+        ctx.enqueue_function[
+            matmul_kernel_naive[
+                DType.float32,
+                DType.float32,
+                DType.float32,
+                BLOCK_DIM,
+            ]
+        ](
             c_device_n,
             a_device_n,
             b_device_n,
@@ -168,9 +163,6 @@ fn run_matvec[
     _ = a_host_n
     _ = b_host_n
     _ = c_host_n
-
-    _ = func_gemv^
-    _ = func_naive^
 
 
 def main():

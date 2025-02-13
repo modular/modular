@@ -53,29 +53,18 @@ def run_matvec[
     ctx.enqueue_copy_to_device(b_device, b_host)
 
     alias WARPS_PER_BLOCK = 32
-    var func_gemv = ctx.compile_function[
-        gemv_kernel[
-            DType.float32,
-            DType.float32,
-            DType.float32,
-            reduction_method=reduction_method,
-        ]
-    ]()
-
-    var func_gevm = ctx.compile_function[
-        gevm_kernel[
-            DType.float32,
-            DType.float32,
-            DType.float32,
-            tile_size = WARP_SIZE * WARPS_PER_BLOCK,
-        ]
-    ]()
 
     @always_inline
     @parameter
     fn run_func_gemv(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
-            func_gemv,
+        ctx.enqueue_function[
+            gemv_kernel[
+                DType.float32,
+                DType.float32,
+                DType.float32,
+                reduction_method=reduction_method,
+            ]
+        ](
             c_device,
             a_device,
             b_device,
@@ -89,8 +78,14 @@ def run_matvec[
     @always_inline
     @parameter
     fn run_func_gevm(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
-            func_gevm,
+        ctx.enqueue_function[
+            gevm_kernel[
+                DType.float32,
+                DType.float32,
+                DType.float32,
+                tile_size = WARP_SIZE * WARPS_PER_BLOCK,
+            ]
+        ](
             c_device,
             a_device,
             b_device,
@@ -126,20 +121,18 @@ def run_matvec[
     ctx.enqueue_copy_to_device(b_device, b_host)
 
     alias BLOCK_DIM = 16
-    var func_naive = ctx.compile_function[
-        matmul_kernel[
-            DType.float32,
-            DType.float32,
-            DType.float32,
-            BLOCK_DIM,
-        ]
-    ]()
 
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
-            func_naive,
+        ctx.enqueue_function[
+            matmul_kernel[
+                DType.float32,
+                DType.float32,
+                DType.float32,
+                BLOCK_DIM,
+            ]
+        ](
             c_device,
             a_device,
             b_device,
@@ -192,10 +185,6 @@ def run_matvec[
     _ = c_host
     _ = c_host_naive
 
-    _ = func_gemv^
-    _ = func_gevm^
-    _ = func_naive^
-
 
 fn test_gevm_with_epilogue_fn[
     reduction_method: ReductionMethod
@@ -244,31 +233,19 @@ fn test_gevm_with_epilogue_fn[
         )
 
     alias WARPS_PER_BLOCK = 32
-    var func_gemv = ctx.compile_function[
-        gemv_kernel[
-            DType.float32,
-            DType.float32,
-            DType.float32,
-            reduction_method=reduction_method,
-            elementwise_lambda_fn=epilogue_fn,
-        ]
-    ]()
-
-    var func_gevm = ctx.compile_function[
-        gevm_kernel[
-            DType.float32,
-            DType.float32,
-            DType.float32,
-            tile_size = WARP_SIZE * WARPS_PER_BLOCK,
-            elementwise_lambda_fn=epilogue_fn,
-        ]
-    ]()
 
     @always_inline
     @parameter
     fn run_func_gemv(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
-            func_gemv,
+        ctx.enqueue_function[
+            gemv_kernel[
+                DType.float32,
+                DType.float32,
+                DType.float32,
+                reduction_method=reduction_method,
+                elementwise_lambda_fn=epilogue_fn,
+            ]
+        ](
             c_device,
             a_device,
             b_device,
@@ -282,8 +259,15 @@ fn test_gevm_with_epilogue_fn[
     @always_inline
     @parameter
     fn run_func_gevm(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
-            func_gevm,
+        ctx.enqueue_function[
+            gevm_kernel[
+                DType.float32,
+                DType.float32,
+                DType.float32,
+                tile_size = WARP_SIZE * WARPS_PER_BLOCK,
+                elementwise_lambda_fn=epilogue_fn,
+            ]
+        ](
             c_device,
             a_device,
             b_device,
@@ -323,21 +307,19 @@ fn test_gevm_with_epilogue_fn[
     ctx.enqueue_copy_to_device(b_device, b_host)
 
     alias BLOCK_DIM = 16
-    var func_naive = ctx.compile_function[
-        matmul_kernel_naive[
-            DType.float32,
-            DType.float32,
-            DType.float32,
-            BLOCK_DIM,
-            elementwise_lambda_fn=epilogue_fn,
-        ]
-    ]()
 
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
-            func_naive,
+        ctx.enqueue_function[
+            matmul_kernel_naive[
+                DType.float32,
+                DType.float32,
+                DType.float32,
+                BLOCK_DIM,
+                elementwise_lambda_fn=epilogue_fn,
+            ]
+        ](
             c_device,
             a_device,
             b_device,
@@ -390,10 +372,6 @@ fn test_gevm_with_epilogue_fn[
     _ = b_host
     _ = c_host
     _ = c_host_naive
-
-    _ = func_gevm^
-    _ = func_gemv^
-    _ = func_naive^
 
 
 def main():
