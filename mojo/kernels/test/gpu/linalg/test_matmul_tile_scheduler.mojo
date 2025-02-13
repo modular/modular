@@ -44,10 +44,7 @@ fn test_kernel():
 def test(ctx: DeviceContext):
     alias kernel = test_kernel
 
-    var func = ctx.compile_function[kernel]()
-
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[kernel](
         grid_dim=(4),
         block_dim=(1),
     )
