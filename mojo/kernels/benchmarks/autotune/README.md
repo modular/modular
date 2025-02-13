@@ -111,6 +111,20 @@ setup-gpu-benchmarking
     - Caching is persistent for follow-up calls unless `kbench --clear-cache`
         or `kbench -cc` is invoked.
 
+6. To include parameters from CLI without adding them to YAML files use `--param`:
+
+    ```bash
+    kbench --param NAME:VALUE # single value
+    kbench --param NAME:[VALUE0, VALUE1] # Pythonic list of values
+    ```
+
+7. To filter out certain values without removing them from YAML files use
+`--filter` in CLI:
+
+    ```bash
+    kbench --filter NAME=VALUE # only show the instances where parameter NAME=VALUE.
+    ```
+
 ### Example
 
 Just running [`sample.mojo`](sample.mojo) with parameters in [`test.yaml`](test.yaml):
