@@ -12,6 +12,7 @@ from gpu.host._nvidia_cuda import (
     TensorMapSwizzle,
     TMADescriptor,
     create_tma_descriptor,
+    prefetch_tma_descriptor,
 )
 from gpu.memory import (
     AddressSpace,
@@ -242,6 +243,13 @@ struct TMATensorTile[
     @always_inline
     fn __copyinit__(mut self, other: Self):
         self.descriptor = other.descriptor
+
+    @always_inline
+    fn prefetch_descriptor(self):
+        var desc_ptr = UnsafePointer.address_of(self.descriptor).bitcast[
+            NoneType
+        ]()
+        prefetch_tma_descriptor(desc_ptr)
 
     # Schedules an asynchronous copy into the destination tile at the given coordinates.
     #
