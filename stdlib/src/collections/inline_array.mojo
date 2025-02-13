@@ -233,15 +233,8 @@ struct InlineArray[
         Returns:
             A reference to the item at the given index.
         """
-
-        @parameter
-        if _type_is_eq[I, UInt]():
-            return self.unsafe_get(idx)
-        else:
-            var normalized_index = normalize_index["InlineArray"](
-                Int(idx), self
-            )
-            return self.unsafe_get(normalized_index)
+        var normalized_index = normalize_index["InlineArray"](idx, len(self))
+        return self.unsafe_get(normalized_index)
 
     @always_inline
     fn __getitem__[
@@ -257,18 +250,8 @@ struct InlineArray[
             A reference to the item at the given index.
         """
         constrained[-size <= Int(idx) < size, "Index must be within bounds."]()
-
-        @parameter
-        if _type_is_eq[I, UInt]():
-            return self.unsafe_get(idx)
-        else:
-            var normalized_idx = Int(idx)
-
-            @parameter
-            if Int(idx) < 0:
-                normalized_idx += size
-
-            return self.unsafe_get(normalized_idx)
+        alias normalized_index = normalize_index["InlineArray"](idx, size)
+        return self.unsafe_get(normalized_index)
 
     # ===------------------------------------------------------------------=== #
     # Trait implementations
