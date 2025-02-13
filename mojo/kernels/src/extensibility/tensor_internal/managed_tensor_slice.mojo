@@ -273,13 +273,13 @@ fn _input_fusion_hook_impl[
     mut: Bool, //,
     type: DType,
     rank: Int,
-    ioSpec: IOSpec[mut],
+    io_spec: IOSpec[mut],
     static_spec: StaticTensorSpec[type, rank],
 ](
     tensor: ManagedTensorSlice[
         type=type,
         rank=rank,
-        ioSpec=ioSpec,
+        io_spec=io_spec,
         static_spec=static_spec,
     ]
 ):
@@ -312,11 +312,11 @@ fn _output_fusion_hook_impl[
     mut: Bool, //,
     type: DType,
     rank: Int,
-    ioSpec: IOSpec[mut],
+    io_spec: IOSpec[mut],
     static_spec: StaticTensorSpec[type, rank],
 ](
     tensor: ManagedTensorSlice[
-        type=type, rank=rank, ioSpec=ioSpec, static_spec=static_spec
+        type=type, rank=rank, io_spec=io_spec, static_spec=static_spec
     ]
 ):
     @always_inline
@@ -346,25 +346,25 @@ fn _output_fusion_hook_impl[
 # ManagedTensorSlice class
 # ===----------------------------------------------------------------------=== #
 
-alias OutputTensor = ManagedTensorSlice[ioSpec=Output, *_]
-alias InputTensor = ManagedTensorSlice[ioSpec=Input, *_]
-alias MutableInputTensor = ManagedTensorSlice[ioSpec=MutableInput, *_]
+alias OutputTensor = ManagedTensorSlice[io_spec=Output, *_]
+alias InputTensor = ManagedTensorSlice[io_spec=Input, *_]
+alias MutableInputTensor = ManagedTensorSlice[io_spec=MutableInput, *_]
 
 
 struct IODynamicTensor[
     type: DType,
     rank: Int,
-    ioSpec: IOSpec,
+    io_spec: IOSpec,
 ]:
     alias Type = ManagedTensorSlice[
         type,
         rank,
-        ioSpec=IOUnknown,
+        io_spec=IOUnknown,
         static_spec = StaticTensorSpec[type, rank](),
     ]
 
 
-alias DynamicTensor = IODynamicTensor[ioSpec=IOUnknown, *_, **_]
+alias DynamicTensor = IODynamicTensor[io_spec=IOUnknown, *_, **_]
 
 
 @value
@@ -374,7 +374,7 @@ struct ManagedTensorSlice[
     input: IO, //,
     type: DType,
     rank: Int,
-    ioSpec: IOSpec[mut, input],
+    io_spec: IOSpec[mut, input],
     *,
     static_spec: StaticTensorSpec[type, rank],
 ](CollectionElement, TensorLike):
@@ -842,7 +842,7 @@ struct VariadicTensors[
     type: DType,
     rank: Int,
     size: Int,
-    ioSpec: IOSpec[mut, input],
+    io_spec: IOSpec[mut, input],
     *,
     static_specs: StaticTuple[StaticTensorSpec[type, rank], size],
 ](Sized):
@@ -856,7 +856,7 @@ struct VariadicTensors[
     ](
         self,
         out result: ManagedTensorSlice[
-            type, rank, ioSpec=ioSpec, static_spec = static_specs[i]
+            type, rank, io_spec=io_spec, static_spec = static_specs[i]
         ],
     ):
         var tensor = self.tensors[i]
