@@ -15,21 +15,67 @@ in [Update a package](/magic#update-a-package) to update the `max` package.
 
 ### ✨ Highlights
 
-### Language changes
+- Mojo now supports low-level programming constructs for working with GPUs! The
+  new [`gpu` package](/mojo/stdlib/gpu/) provides APIs allowing you to manage
+  interaction between the CPU host and GPU device, manage memory between
+  devices, synchronize threads, and more. The new [`layout`
+  package](/mojo/stdlib/layout/) includes APIs for working with _layouts_, which
+  describe the organization of a tensor. See the [GPU
+  programming](#25-1-gpu-programming) section of the changelog for more
+  information.
+
+- The legacy `borrowed`/`inout` keywords and `-> T as foo` syntax are deprecated
+  and now generate a compiler warning. Please move to `read`/`mut`/`out`
+  argument syntax instead. See
+  [Argument conventions](/mojo/manual/values/ownership#argument-conventions)
+  in the Mojo Manual for more information.
+
+- The `bool()`, `float()`, `int()`, and `str()` functions are deprecated and
+  generate compiler warnings. Please use the `Bool()`, `Float64()`, `Int()`, and
+  `String()` constructors instead. See [Standard library
+  changes](#25-1-standard-library-changes) for more details.
+
+- The standard library has many changes related to strings. The new
+  [`Char`](/mojo/stdlib/builtin/char/Char/) struct represents a single Unicode
+  character, and includes several methods for categorizing character types. When
+  iterating over the characters of a `String` with a `for` loop, you now should
+  use the
+  [`String.chars()`](/mojo/stdlib/collections/string/string/String#chars) method
+  to provide an iterator of `Char` values or the
+  [`String.char_slices()`](/mojo/stdlib/collections/string/string/String#char_slices)
+  method to provide an iterator of [`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice/)
+  instances for each character.
+  `StringRef` has been removed in favor of
+  [`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice/).
+  And various functionality has moved from `String` and `StringLiteral` to the
+  more general `StringSlice` type. See [Standard library
+  changes](#25-1-standard-library-changes) for more details.
+
+- You can now use [`SIMD`](/mojo/stdlib/builtin/simd/SIMD) constructors to cast
+  existing `SIMD` values (including `Scalar` values) to a different type, though
+  you can still use the [`SIMD.cast()`](/mojo/stdlib/builtin/simd/SIMD#cast)
+  method to infer the size of the new vector. See [Standard library
+  changes](#25-1-standard-library-changes) for more details.
+
+### Language changes {#25-1-language-changes}
+
+- The legacy `borrowed`/`inout` keywords and `-> T as foo` syntax now generate
+  a warning. Please move to `read`/`mut`/`out` argument syntax instead. See
+  [Argument conventions](/mojo/manual/values/ownership#argument-conventions)
+  in the Mojo Manual for more information.
 
 - Initializers are now treated as static methods that return an instance of
   `Self`.  This means the `out` argument of an initializer is now treated the
-  same as a any other function result or `out` argument. This is generally
+  same as any other function result or `out` argument. This is generally
   invisible, except that patterns like `instance.__init__()` and
   `x.__copyinit__(y)` no longer work.  Simply replace them with `instance = T()`
   and `x = y` respectively.
 
-- The legacy `borrowed`/`inout` keywords and `-> T as foo` syntax now generate
-  a warning.  Please move to `read`/`mut`/`out` argument syntax instead.
-
-- The `@value` decorator now additionally derives an implementation of the
-  `ExplicitlyCopyable` trait. This will ease the transition to explicit
-  copyablility requirements by default in the Mojo collection types.
+- The [`@value`](/mojo/manual/decorators/value) decorator now additionally
+  derives an implementation of the
+  [`ExplicitlyCopyable`](/mojo/stdlib/builtin/value/ExplicitlyCopyable/) trait.
+  This will ease the transition to explicit copyability requirements by default
+  in the Mojo collection types.
 
 - Indexing into a homogenous tuple now produces the consistent element type
   without needing a rebind:
@@ -95,32 +141,60 @@ in [Update a package](/magic#update-a-package) to update the `max` package.
       print(x[idx2=1])  # 84
   ```
 
-### Standard library changes
+- The `__disable_del x` operation has been tightened up to treat all fields of
+  `x` as consumed by the point of the deletion, so it should be used after all
+  the subfields are transferred or otherwise consumed (for example, at the end
+  of the function), not before uses of the fields.
 
-- `StringRef` has been removed in favor of `StringSlice`.
-  The two types are ABI compatible, and for the exact same
-  behavior one can use `StaticString`, which is an alias
-  to `StringSlice[StaticConstantOrigin]`.
+### GPU programming {#25-1-gpu-programming}
 
-- Add a new `validate` parameter to the `b64decode()` function.
+- The new [`gpu` package](/mojo/stdlib/gpu/) provides low-level programming
+  constructs for working with GPUs. The Mojo `gpu` APIs allow you to manually
+  manage interaction between the CPU host and GPU device, manage memory between
+  devices, synchronize threads, and more. Currently the best way to use these
+  APIs is from inside a [MAX custom operation](/max/custom-ops/).
 
-- New `SIMD.from_bytes()` and `SIMD.as_bytes()` functions to convert a list of bytes
-  to a list of scalars and vice versa, accepting the endianess as an argument. Similar
-  to Python `int.from_bytes()` and `int.to_bytes()` functions.
+  The following code example shows a GPU kernel written in Mojo:
 
-- Added more aliases in `sys.ffi` to round out the usual needs for FFI bindings.
+  ```mojo
+  from max.tensor import ManagedTensorSlice
+  from gpu import thread_idx, block_dim, block_idx
 
-- The free floating functions for constructing different types have been
+  fn gpu_add_kernel(out: ManagedTensorSlice, x: ManagedTensorSlice[out.type, out.rank]):
+      tid_x = thread_idx.x + block_dim.x * block_idx.x
+      tid_y = thread_idx.y + block_dim.y * block_dim.y
+      if tid_x < x.dim_size(0) and tid_y < x.dim_size(1):
+          out[tid_x, tid_y] = x[tid_x, tid_y] + 1
+  ```
+
+  The example above includes only the actual kernel code that’s run on the GPU,
+  not the code to define a custom operation or launch the kernel. For more
+  complete examples, see
+  [`vector_addition.mojo`](https://github.com/modular/max/blob/main/examples/custom_ops/kernels/vector_addition.mojo)
+  and
+  [`top_k.mojo`](https://github.com/modular/max/blob/main/examples/custom_ops/kernels/top_k.mojo).
+
+- The [`layout` package](/mojo/stdlib/layout/) includes APIs for working with
+  _layouts_, which describe the organization of a tensor (for example, row-major
+  or column-major layout), and the
+  [`LayoutTensor`](/mojo/stdlib/layout/layout_tensor/LayoutTensor) type, which
+  represents a tensor with a specified layout. The `layout` package can be used
+  to build efficient tensor operations that run on a GPU.
+
+  We’ll continue adding code examples and documentation for the `gpu` and
+  `layout` packages in future releases.
+
+### Standard library changes {#25-1-standard-library-changes}
+
+- The builtin functions for converting values to different types have been
   deprecated for actual constructors:
 
-  ```plaintext
-  before   after
-  ------------------
-  int()    Int()
-  str()    String()
-  bool()   Bool()
-  float()  Float64()
-  ```
+  | **Before** | **After**   |
+  | ---------- | ----------- |
+  | `bool()`   | `Bool()`    |
+  | `float()`  | `Float64()` |
+  | `int()`    | `Int()`     |
+  | `str()`    | `String()`  |
 
   These functions were a workaround before Mojo had a way to distinguish between
   implicit and explicit constructors. For this release you'll get a deprecation
@@ -128,20 +202,205 @@ in [Update a package](/magic#update-a-package) to update the `max` package.
   quickly update your code by doing a `Match Case` and `Match Whole Word`
   search and replace for `int(` to `Int(` etc.
 
-- `UnsafePointer`'s `bitcast` method has now been split into `bitcast`
-  for changing the type, `origin_cast` for changing mutability,
-  `static_alignment_cast` for changing alignment,
-  and `address_space_cast` for changing the address space.
+- [`String`](/mojo/stdlib/collections/string/String) and friends:
 
-- `UnsafePointer` is now parameterized on mutability. Previously,
-  `UnsafePointer` could only represent mutable pointers.
+  - Added [`Char`](/mojo/stdlib/builtin/char/Char/) for representing and
+    storing single Unicode characters.
 
-  The new `mut` parameter can be used to restrict an `UnsafePointer` to a
-  specific mutability: `UnsafePointer[T, mut=False]` represents a pointer to
-  an immutable `T` value. This is analogous to a `const *` pointer in C++.
+    - `Char` implements
+      [`CollectionElement`](/mojo/stdlib/builtin/value/CollectionElement/),
+      [`EqualityComparable`](/mojo/stdlib/builtin/equality_comparable/EqualityComparable/),
+      [`Intable`](/mojo/stdlib/builtin/int/Intable/), and
+      [`Stringable`](/mojo/stdlib/builtin/str/Stringable/).
 
-  - `UnsafePointer.address_of()` will now infer the origin and mutability
-    of the resulting pointer from the argument. For example:
+    - `Char` provides methods for categorizing character types, including:
+      [`Char.is_ascii()`](/mojo/stdlib/builtin/char/Char/#is_ascii),
+      [`Char.is_ascii_digit()`](/mojo/stdlib/builtin/char/Char/#is_ascii_digit),
+      [`Char.is_ascii_upper()`](/mojo/stdlib/builtin/char/Char/#is_ascii_upper),
+      [`Char.is_ascii_lower()`](/mojo/stdlib/builtin/char/Char/#is_ascii_lower),
+      [`Char.is_ascii_printable()`](/mojo/stdlib/builtin/char/Char/#is_ascii_printable),
+      [`Char.is_posix_space()`](/mojo/stdlib/builtin/char/Char/#is_posix_space),
+      [`Char.is_python_space()`](/mojo/stdlib/builtin/char/Char/#is_python_space).
+
+    - Added a `String()` constructor from `Char`.
+
+    - `Char` can be converted to `UInt32` via
+      [`Char.to_u32()`](/mojo/stdlib/builtin/char/Char/#to_u32).
+
+    - [`chr()`](/mojo/stdlib/collections/string/string/chr/) will now abort if
+      given a codepoint value that is not a valid `Char`.
+
+  - `StringRef` has been removed in favor of
+    [`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice/).
+    The two types are ABI compatible, and for the exact same behavior one can
+    use `StaticString`, which is an alias to
+    `StringSlice[StaticConstantOrigin]`.
+
+  - Various functionality has moved from `String` and `StringLiteral` to the
+    more general `StringSlice` type.
+
+  - Added
+    [`StringSlice.from_utf8()`](/mojo/stdlib/collections/string/string_slice/StringSlice/#from_utf8)
+    factory method, for validated construction of a `StringSlice` from a buffer
+    containing UTF-8 encoded data. This method will raise if the buffer contents
+    are not valid UTF-8.
+
+  - Added
+    [`StringSlice.chars()`](/mojo/stdlib/collections/string/string_slice/StringSlice/#chars)
+    which returns an iterator over `Char`s. This is a compliant UTF-8 decoder
+    that returns each Unicode codepoint encoded in the string.
+
+  - Added
+    [`StringSlice.__getitem__(Slice)`](/mojo/stdlib/collections/string/string_slice/StringSlice/#__getitem__)
+    which returns a substring. Only step sizes of 1 are supported.
+
+  - Several standard library functions have been changed to take `StringSlice`
+    instead of `String`. This generalizes them to be used for any appropriately
+    encoded string in memory, without requiring that the string be heap
+    allocated. This includes:
+    [`ascii()`](/mojo/stdlib/collections/string/string/ascii),
+    [`atol()`](/mojo/stdlib/collections/string/string/atol),
+    [`atof()`](/mojo/stdlib/collections/string/string/atof),
+    [`b16decode()`](/mojo/stdlib/base64/base64/b16decode),
+    [`b16encode()`](/mojo/stdlib/base64/base64/b16encode),
+    [`b64decode()`](/mojo/stdlib/base64/base64/b64decode),
+    [`b64encode()`](/mojo/stdlib/base64/base64/b64encode), and
+    [`ord()`](/mojo/stdlib/collections/string/string/ord).
+
+  - Added new
+    [`String.chars()`](/mojo/stdlib/collections/string/string/String/#chars) and
+    [`String.char_slices()`](/mojo/stdlib/collections/string/string/String/#char_slices)
+    iterator methods, and deprecated the existing `String.__iter__()` method.
+
+    Different use-cases may prefer iterating over the `Char`s encoded in a
+    string, or iterating over subslices containing single characters. Neither
+    iteration semantics is an obvious default, so the existing `__iter__()`
+    method has been deprecated in favor of writing explicit iteration methods
+    for the time being.
+
+    Code of the form:
+
+    ```mojo
+    var s: String  = ...
+    for c in s:
+        # ...
+    ```
+
+    can be migrated to using the `.char_slices()` method:
+
+    ```mojo
+    var s: String = ...
+    for c in s.char_slices():
+        # ...
+    ```
+
+  - Added
+    [`StringSlice.char_length()`](/mojo/stdlib/collections/string/string_slice/StringSlice/#char_length)
+    method, to pair with the existing
+    [`StringSlice.byte_length()`](/mojo/stdlib/collections/string/string_slice/StringSlice/#byte_length)
+    method.
+
+  - The
+    [`String.__len__()`](/mojo/stdlib/collections/string/string/String/#__len__)
+    and
+    [`StringSlice.__len__()`](/mojo/stdlib/collections/string/string_slice/StringSlice/#__len__)
+    methods now return the length of the string in bytes.
+
+    Previously, these methods were documented to note that they would eventually
+    return a length in Unicode codepoints. They have been changed to guarantee
+    a length in bytes, since the length in bytes is how they are most often used
+    today (for example, as bounds to low-level memory manipulation logic).
+    Additionally, length in codepoints is a more specialized notion of string
+    length that is rarely the correct metric.
+
+    Users that know they need the length in codepoints can use the
+    `str.char_length()` method, or `len(str.chars())`.
+
+  - `StringSlice` now implements
+    [`Representable`](/mojo/stdlib/builtin/repr/Representable/), and that
+    implementation is now used by `String.__repr__()` and
+    `StringLiteral.__repr__()`.
+
+  - `StringSlice` now implements
+    [`EqualityComparable`](/mojo/stdlib/builtin/equality_comparable/EqualityComparable/).
+
+    Up until now, `StringSlice` has implemented a more general `__eq__()` and
+    `__ne__()` comparison with `StringSlice` types that had arbitrary other
+    origins. However, to satisfy `EqualityComparable`, `StringSlice` now also
+    has narrower comparison methods that support comparing only with another
+    `StringSlice` with the exact same origin.
+
+  - The `String.write()` static method has moved to a `String()` constructor,
+    and is now buffered. Instead of doing:
+
+    ```mojo
+    var msg = "my message " + String(x) + " " + String(y) + " " + String(z)
+    ```
+
+    Which reallocates the `String` you should do:
+
+    ```mojo
+    var msg = String("my message", x, y, z, sep=" ")
+    ```
+
+    Which is cleaner, and buffers to the stack so the `String` is allocated only
+    once.
+
+  - You can now pass any [`Writer`](/mojo/stdlib/utils/write/Writer/) to
+    [`write_buffered()`](/mojo/stdlib/utils/write/write_buffered/):
+
+    ```mojo
+    from utils.write import write_buffered
+
+    var string = String("existing string")
+    write_buffered(string, 42, 42.4, True, sep=" ")
+    ```
+
+    This writes to a buffer on the stack before reallocating the `String`.
+
+- Collections:
+
+  - A new [`LinkedList`](/mojo/stdlib/collections/linked_list/LinkedList/) type
+    has been added to the standard library.
+
+  - Added [`Optional.copied()`](/mojo/stdlib/collections/optional/Optional#copied)
+    for constructing an owned `Optional[T]` from an `Optional[Pointer[T]]` by
+    copying the pointee value.
+
+  - Added [`Dict.get_ptr()`](/mojo/stdlib/collections/dict/Dict#get_ptr) which
+    returns an `Optional[Pointer[V]]`. If the given key is present in the
+    dictionary, the optional will hold a pointer to the value. Otherwise, an
+    empty optional is returned.
+
+  - Added new [`List.extend()`](/mojo/stdlib/collections/list/List#extend)
+    overloads taking [`SIMD`](/mojo/stdlib/builtin/simd/SIMD) and
+    [`Span`](/mojo/stdlib/memory/span/Span/). These enable growing a
+    `List[Scalar[..]]` by copying the elements of a `SIMD` vector or
+    `Span[Scalar[..]]`, simplifying the writing of some optimized SIMD-aware
+    functionality.
+
+- [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer/) changes:
+
+  - `UnsafePointer`'s `bitcast()` method has now been split into
+    [`bitcast()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#bitcast) for
+    changing the type,
+    [`origin_cast()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#origin_cast)
+    for changing mutability,
+    [`static_alignment_cast()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#static_alignment_cast)
+    for changing alignment, and
+    [`address_space_cast()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#address_space_cast)
+    for changing the address space.
+
+  - `UnsafePointer` is now parameterized on mutability. Previously,
+    `UnsafePointer` could only represent mutable pointers.
+
+    The new `mut` parameter can be used to restrict an `UnsafePointer` to a
+    specific mutability: `UnsafePointer[T, mut=False]` represents a pointer to
+    an immutable `T` value. This is analogous to a `const *` pointer in C++.
+
+  - [`UnsafePointer.address_of()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#address_of)
+    will now infer the origin and mutability of the resulting pointer from the
+    argument. For example:
 
     ```mojo
     var local = 10
@@ -159,10 +418,10 @@ in [Update a package](/magic#update-a-package) to update the `max` package.
     ```
 
   - The `unsafe_ptr()` method on several standard library collection types have
-    been updated to use parametric mutability: they will return an `UnsafePointer`
-    whose mutability is inherited from the mutability of the `ref self` of the
-    receiver at the call site. For example, `ptr1` will be immutable, while
-    `ptr2` will be mutable:
+    been updated to use parametric mutability: they will return an
+    `UnsafePointer` whose mutability is inherited from the mutability of the
+    `ref self` of the receiver at the call site. For example, `ptr1` will be
+    immutable, while `ptr2` will be mutable:
 
     ```mojo
     fn take_lists(read list1: List[Int], mut list2: List[Int]):
@@ -173,158 +432,37 @@ in [Update a package](/magic#update-a-package) to update the `max` package.
         var ptr2 = list2.unsafe_ptr()
     ```
 
-- Added `Optional.copied()` for constructing an owned `Optional[T]` from an
-  `Optional[Pointer[T]]` by copying the pointee value.
+- New and updated traits:
 
-- Added `Dict.get_ptr()` which returns an `Optional[Pointer[V]]`. If the given
-  key is present in the dictionary, the optional will hold a pointer to the
-  value. Otherwise, an empty optional is returned.
+  - The [`ExplicitlyCopyable`](/mojo/stdlib/builtin/value/ExplicitlyCopyable/)
+    trait has changed to require a `fn copy(self) -> Self` method. Previously,
+    an initializer with the signature `fn __init__(out self, *, other: Self)`
+    had been required by `ExplicitlyCopyable`.
 
-- Added new `List.extend()` overloads taking `SIMD` and `Span`. These enable
-  growing a `List[Scalar[..]]` by copying the elements of a `SIMD` vector or
-  `Span[Scalar[..]]`, simplifying the writing of some optimized SIMD-aware
-  functionality.
+    This improves the "greppability" and at-a-glance readability when a
+    programmer is looking for places in their code that may be performing
+    copies.
 
-- Added `Char`, for representing and storing single Unicode characters.
-  - `Char` implements `CollectionElement`, `EqualityComparable`, `Intable`, and
-    `Stringable`.
-  - Added `String` constructor from `Char`
-  - `Char` can be converted to `UInt32` via `Char.to_u32()`.
-  - `Char` provides methods for categorizing character types, including:
-    `Char.is_ascii()`, `Char.is_posix_space()`, `Char.is_python_space()`,
-    `Char.is_ascii_digit()`, `Char.is_ascii_upper()`, `Char.is_ascii_lower()`,
-    `Char.is_ascii_printable()`.
+  - The `IntLike` trait has been removed and its functionality incorporated into
+    the [`Indexer`](/mojo/stdlib/builtin/int/Indexer/) trait. This enables
+    `SIMD` scalar integer types and `UInt` to be used for indexing into all of
+    the collection types, as well as optimizing away normalization checks for
+    `UInt` indexing.
 
-- `chr(Int)` will now abort if given a codepoint value that is not a valid
-  `Char`.
+  - The [`ImplicitlyIntable`](/mojo/stdlib/builtin/int/ImplicitlyIntable/) trait
+    has been added, allowing types to be implicitly converted to an `Int` by
+    implementing the `__as_int__()` method:
 
-- Added `StringSlice.from_utf()` factor method, for validated construction of
-  a `StringSlice` from a buffer containing UTF-8 encoded data. This method will
-  raise if the buffer contents are not valid UTF-8.
+    ```mojo
+    @value
+    struct Foo(ImplicitlyIntable):
+        var i: Int
 
-- Added `StringSlice.chars()` which returns an iterator over `Char`s. This is a
-  compliant UTF-8 decoder that returns each Unicode codepoint encoded in the
-  string.
+        fn __as_int__(self) -> Int:
+            return self.i
+    ```
 
-- Added `StringSlice.__getitem__(Slice)` which returns a substring.
-  Only step sizes of 1 are supported.
-
-- Several standard library functions have been changed to take `StringSlice`
-  instead of `String`. This generalizes them to be used for any appropriately
-  encoded string in memory, without requiring that the string be heap allocated.
-
-  - `atol()`
-  - `atof()`
-  - `ord()`
-  - `ascii()`
-  - `b64encode()`
-    - Additionally, the `b64encode()` overload that previously took `List` has
-      been changed to
-      take a `Span`.
-  - `b64decode()`
-  - `b16encode()`
-  - `b16decode()`
-
-- Added new `String.chars()` and `String.char_slices()` iterator methods, and
-  deprecated the existing `String.__iter__()` method.
-
-  Different use-cases may prefer iterating over the `Char`s encoded in a string,
-  or iterating over subslices containing single characters. Neither iteration
-  semantics is an obvious default, so the existing `__iter__()` method has been
-  deprecated in favor of writing explicit iteration methods for the time being.
-
-  Code of the form:
-
-  ```mojo
-  var s: String  = ...
-  for c in s:
-      # ...
-  ```
-
-  can be migrated to using the `.char_slices()` method:
-
-  ```mojo
-  var s: String = ...
-  for c in s.char_slices():
-      # ...
-  ```
-
-- The `String.__len__()` and `StringSlice.__len__()` methods now return the
-  length of the string in bytes.
-
-  Previously, these methods were documented to note that they would eventually
-  return a length in Unicode codepoints. They have been changed to guarantee
-  a length in bytes, since the length in bytes is how they are most often used
-  today (for example, as bounds to low-level memory manipulation logic).
-  Additionally, length in codepoints is a more specialized notion of string
-  length that is rarely the correct metric.
-
-  Users that know they need the length in codepoints can use the
-  `str.char_length()` method, or `len(str.chars())`.
-
-- Various functionality has moved from `String` and `StringRef` to the more
-  general `StringSlice` type.
-
-  - `StringSlice` now implements `Representable`, and that implementation is now
-    used by `String.__repr__()` and `StringRef.__repr__()`.
-
-- `StringSlice` now implements `EqualityComparable`.
-
-  Up until now, `StringSlice` has implemented a more general `__eq__` and
-  `__ne__` comparision with `StringSlice` types that had arbitrary other
-  origins. However, to satisfy `EqualityComparable`, `StringSlice` now also
-  has narrower comparison methods that support comparing only with
-  `StringSlice`'s with the exact same origin.
-
-- Added `StringSlice.char_length()` method, to pair with the existing
-  `StringSlice.byte_length()` method.
-
-  In a future version of Mojo, `StringSlice.__len__()` may be changed to return
-  the length in bytes, matching the convention of string length methods in
-  languages like C++ and Rust. Callers that know they need the length in
-  Unicode codepoints should update to calling `StringSlice.char_length()`
-  instead.
-
-- Removed `@implicit` decorator from some standard library initializer methods
-  that perform allocation. This reduces places where Mojo code could implicitly
-  allocate where the user may not be aware.
-
-  Remove `@implicit` from:
-
-  - `String.__init__(out self, StringRef)`
-  - `String.__init__(out self, StringSlice)`
-  - `List.__init__(out self, owned *values: T)`
-  - `List.__init__(out self, span: Span[T])`
-
-- The `ExplicitlyCopyable` trait has changed to require a
-  `fn copy(self) -> Self` method. Previously, an initializer with the signature
-  `fn __init__(out self, *, other: Self)` had been required by
-  `ExplicitlyCopyable`.
-
-  This improves the "greppability" and at-a-glance readability when a programmer
-  is looking for places in their code that may be performing copies
-
-- `bit_ceil` has been renamed to `next_power_of_two`, and `bit_floor` to
-  `prev_power_of_two`. This is to improve readability and clarity in their use.
-
-- The `Indexer` and `IntLike` traits which were previously both used for
-  indexing have been combined. This enables SIMD scalar integer types and UInt
-  to be used for indexing into all of the collection types, as well as
-  optimizing away normalization checks for UInt indexing.
-
-- The `ImplicitlyIntable` trait has been added, allowing types to be implicitly
-  converted to an `Int` by implementing the `__as_int__` method:
-
-  ```mojo
-  @value
-  struct Foo(ImplicitlyIntable):
-      var i: Int
-
-      fn __as_int__(self) -> Int:
-          return self.i
-  ```
-
-- You can now cast SIMD types using constructors:
+- You can now cast `SIMD` types using constructors:
 
   ```mojo
   var val = Int8(42)
@@ -337,82 +475,95 @@ in [Update a package](/magic#update-a-package) to update the `max` package.
   var vector = SIMD[DType.int64, 4](cast) # [42, 42, 42, 42]
   ```
 
-  For values other than scalars the size of the SIMD vector needs to be equal:
+  For values other than scalars the size of the `SIMD` vector needs to be equal:
 
   ```mojo
   var float_vector = SIMD[DType.float64, 4](vector)
   ```
 
-  `SIMD.cast` still exists to infer the size of new vector:
+  [`SIMD.cast()`](/mojo/stdlib/builtin/simd/SIMD#cast) still exists to infer the
+  size of new vector:
 
   ```mojo
   var inferred_size = float_vector.cast[DType.uint64]() # [42, 42, 42, 42]
   ```
 
-- You can now use `max()` and `min()` with variadic number of arguments.
+- Added [`SIMD.from_bytes()`](/mojo/stdlib/builtin/simd/SIMD/#from_bytes) and
+  [`SIMD.as_bytes()`](/mojo/stdlib/builtin/simd/SIMD/#as_bytes) to convert a
+  list of bytes to a list of scalars and vice versa, accepting the endianess as
+  an argument. Similar to Python `int.from_bytes()` and `int.to_bytes()`
+  functions.
 
-- A new `LinkedList` type has been added to the standard library.
+- You can now use [`max()`](/mojo/stdlib/builtin/math/max) and
+  [`min()`](/mojo/stdlib/builtin/math/min) with variadic number of arguments.
 
-- The `String.write` static method has moved to a `String` constructor, and
-  is now buffered. Instead of doing:
+- `bit_ceil()` has been renamed to
+  [`next_power_of_two()`](/mojo/stdlib/bit/bit/next_power_of_two), and
+  `bit_floor()` to
+  [`prev_power_of_two()`](/mojo/stdlib/bit/bit/prev_power_of_two). This is to
+  improve readability and clarity in their use.
 
-  ```mojo
-  var msg = "my message " + String(x) + " " + String(y) + " " + String(z)
-  ```
+- Added a new boolean `validate` parameter to
+  [`b64decode()`](/mojo/stdlib/base64/base64/b64decode).
 
-  Which reallocates the `String` you should do:
+- The [`b64encode()`](/mojo/stdlib/base64/base64/b64encode) overload that
+  previously took a `List` has been changed to take a
+  [`Span`](/mojo/stdlib/memory/span/Span/).
 
-  ```mojo
-  var msg = String("my message", x, y, z, sep=" ")
-  ```
+- Removed the `@implicit` decorator from some standard library initializer
+  methods that perform allocation. This reduces places where Mojo code could
+  implicitly allocate where the user may not be aware.
 
-  Which is cleaner, and buffers to the stack so the `String` is allocated only
-  once.
+  Removed `@implicit` from:
 
-- You can now pass any `Writer` to `write_buffered`:
+  - `String.__init__(out self, StringSlice)`
+  - `List.__init__(out self, owned *values: T)`
+  - `List.__init__(out self, span: Span[T])`
 
-  ```mojo
-  from utils.write import write_buffered
+- Added more aliases in [`sys.ffi`](/mojo/stdlib/sys/ffi/) to round out the
+  usual needs for FFI bindings.
 
-  var string = String("existing string")
-  write_buffered(string, 42, 42.4, True, sep=" ")
-  ```
+### Tooling changes {#25-1-tooling-changes}
 
-  This writes to a buffer on the stack before reallocating the `String`.
-
-- The `__disable_del x` operation has been tightened up to treat all fields of
-  'x' as consumed by the point of the del, so it should be used after all the
-  subfields are transferred or otherwise consumed (e.g. at the end of the
-  function) not before uses of the fields.
-
-### Tooling changes
-
-- mblack (aka `mojo format`) no longer formats non-mojo files. This prevents
-  unexpected formatting of python files.
+- `mblack` (aka [`mojo format`](/mojo/cli/format)) no longer formats non-Mojo
+  files. This prevents unexpected formatting of Python files.
 
 - Full struct signature information is now exposed in the documentation
   generator, and in the symbol outline and hover markdown via the Mojo Language
   Server.
 
-- The `env_get_dtype` function has been added to the `sys` module. This allows
-  you to get the value of a `DType` from the param environment.
+- The [`env_get_dtype()`](/mojo/stdlib/sys/param_env/env_get_dtype) function has
+  been added to the [`sys.param_env`](/mojo/stdlib/sys/param_env/) module. This
+  allows you to get the value of a `DType` from the param environment.
 
 ### ❌ Removed
 
-- `StringRef` is being deprecated. Use `StringSlice` instead.
-  - Changed `sys.argv()` to return list of `StringSlice`.
-  - Added `Path` explicit constructor from `StringSlice`.
-  - removed `StringRef.startswith()` and `StringRef.endswith()`
-  - removed `StringRef.strip()`
+- `StringRef` has been removed. Use
+  [`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice/)
+  instead.
+
+  - Changed [`sys.argv()`](/mojo/stdlib/sys/arg/argv) to return list of
+    `StringSlice`.
+
+  - Added explicit [`Path()`](/mojo/stdlib/pathlib/path/Path/#__init__)
+    constructor from `StringSlice`.
+
 - The `Tuple.get[i, T]()` method has been removed. Please use `tup[i]` or
   `rebind[T](tup[i])` as needed instead.
-- `StringableCollectionElement` is deprecated, use `WritableCollectionElement`
-  instead which still allows you to construct a `String`, but can avoid
-  intermediary allocations.
+
+- `StringableCollectionElement` is deprecated. Use
+  [`WritableCollectionElement`](/mojo/stdlib/builtin/value/WritableCollectionElement/)
+  instead, which still allows you to construct a `String`, but can avoid
+  intermediate allocations.
+
+- The `IntLike` trait has been removed and its functionality incorporated into
+  the [`Indexer`](/mojo/stdlib/builtin/int/Indexer/) trait.
+
 - The `Type{field1: 42, field2: 17}` syntax for direct initializing register
-  passable types has been removed.  This was legacy syntax - to upgrade
-  your code, add the @value decorator to your struct to get a memberwise
-  initializer and use `Type(field1=42, field2 = 17)` instead.
+  passable types has been removed. This was legacy syntax - to upgrade your
+  code, add the [`@value`](/mojo/manual/decorators/value) decorator to your
+  struct to get a memberwise initializer and use `Type(field1=42, field2 = 17)`
+  instead.
 
 ### 🛠️ Fixed
 
@@ -422,7 +573,7 @@ in [Update a package](/magic#update-a-package) to update the `max` package.
   properly.
 
 - [Issue #3796](https://github.com/modular/mojo/issues/3796) - Compiler crash
-  handling for-else statement.
+  handling `for`-`else` statement.
 
 - [Issue #3540](https://github.com/modular/mojo/issues/3540) - Using named
   output slot breaks trait conformance
@@ -430,16 +581,17 @@ in [Update a package](/magic#update-a-package) to update the `max` package.
 - [Issue #3617](https://github.com/modular/mojo/issues/3617) - Can't generate
   the constructors for a type wrapping `!lit.ref`
 
-- The Mojo Language Server doesn't crash anymore on empty **init**.mojo files.
+- The Mojo Language Server doesn't crash anymore on empty `__init__.mojo` files.
   [Issue #3826](https://github.com/modular/mojo/issues/3826).
 
 - [Issue #3935](https://github.com/modular/mojo/issues/3935) - Confusing OOM
-   error when using Tuple.get incorrectly.
+   error when using `Tuple.get()` incorrectly.
 
 - [Issue #3955](https://github.com/modular/mojo/issues/3955) - Unexpected
-  copy behaviour with `def` arguments in loops
+  copy behavior with `def` arguments in loops
 
-- [Issue #3960](https://github.com/modular/mojo/issues/3960) - Infinite for loop
+- [Issue #3960](https://github.com/modular/mojo/issues/3960) - Infinite `for`
+  loop
 
 ## v24.6 (2024-12-17)
 
@@ -478,7 +630,7 @@ detailed information in the following sections:
   [`Deque`](/mojo/stdlib/collections/deque/Deque) (a double-ended queue) and
   [`OwnedPointer`](/mojo/stdlib/memory/owned_pointer/OwnedPointer) (safe,
   single-owner, non-nullable smart pointer). See
-  [Standard library changes](#standard-library-changes-24-6-standard-library-changes)
+  [Standard library changes](#24-6-standard-library-changes)
   for details.
 
 - The VS Code extension now supports setting data breakpoints and function
