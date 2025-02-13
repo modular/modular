@@ -613,7 +613,7 @@ struct Int(
         """
         return __mlir_op.`index.sub`(self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __mul__(self, rhs: Int) -> Int:
         """Return `self * rhs`.
 
@@ -907,7 +907,7 @@ struct Int(
     # Reversed operations
     # ===-------------------------------------------------------------------===#
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __radd__(self, value: Int) -> Int:
         """Return `value + self`.
 
@@ -931,7 +931,7 @@ struct Int(
         """
         return value - self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rmul__(self, value: Int) -> Int:
         """Return `value * self`.
 
