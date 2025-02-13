@@ -163,11 +163,6 @@ fn all_reduce_naive[
                     device_buffer_list[i],  # Source buffer from GPU i
                 )
 
-        # Compile reduction kernel for the current device
-        var reduction_kernel = curr_ctx.compile_function[
-            naive_reduce_kernel[type]
-        ]()
-
         # Launch reduction kernels
         alias BLOCK_SIZE = 256
         var grid_size = min(MAX_BLOCK, ceildiv(num_elements, BLOCK_SIZE))
@@ -187,8 +182,7 @@ fn all_reduce_naive[
                     curr_out_buf.data, src_buffer_ptr, num_elements
                 )
             else:
-                curr_ctx.enqueue_function(
-                    reduction_kernel,
+                curr_ctx.enqueue_function[naive_reduce_kernel[type]](
                     curr_out_buf.data,
                     src_buffer_ptr,
                     num_elements,
@@ -376,12 +370,7 @@ fn all_reduce_p2p[
         alias BLOCK_SIZE = 256
         var grid_size = min(MAX_BLOCK, ceildiv(num_elements, BLOCK_SIZE))
 
-        var gpu_fn = curr_ctx.compile_function[
-            all_reduce_p2p_kernel[type, rank, ngpus], dump_asm=False
-        ]()
-
-        curr_ctx.enqueue_function(
-            gpu_fn,
+        curr_ctx.enqueue_function[all_reduce_p2p_kernel[type, rank, ngpus]](
             curr_out_buf.data,
             list_of_in_bufs,
             rank_sigs,
