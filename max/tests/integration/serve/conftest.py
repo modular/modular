@@ -49,10 +49,9 @@ def echo_app():
         model_factory=echo_factory,
         pipeline_config=pipeline_config,
         tokenizer=tokenizer,
-        use_heartbeat=True,
     )
 
-    settings = Settings()
+    settings = Settings(MAX_SERVE_USE_HEARTBEAT=True)
     app = fastapi_app(settings, serving_settings)
     return app
 
@@ -93,9 +92,8 @@ def app(pipeline_config):
         model_factory=pipeline_factory,
         pipeline_config=pipeline_batch_config,
         tokenizer=tokenizer,
-        use_heartbeat=True,
     )
 
-    settings = Settings()
+    settings = Settings(MAX_SERVE_USE_HEARTBEAT=True)
     app = fastapi_app(settings, serving_settings)
     return app
