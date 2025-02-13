@@ -13,7 +13,7 @@ from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, Weight, ops
-from max.pipelines.nn import Conv1D, Embedding, Linear, LPLayerNorm, Sequential
+from max.pipelines.nn import Conv1D, Embedding, LayerNorm, Linear, Sequential
 from max.pipelines.whisper.encoder import (
     WhisperEncoder,
     WhisperEncoderLayer,
@@ -215,7 +215,7 @@ def graph_api_whisper_encoder(weights_registry, model):
                     ),
                 ]
             ),
-            attention_norm=LPLayerNorm(
+            attention_norm=LayerNorm(
                 weight=Weight(
                     "layer{i}_attention_norm",
                     DType.from_numpy(
@@ -238,7 +238,7 @@ def graph_api_whisper_encoder(weights_registry, model):
                     ].shape,
                 ),
             ),
-            mlp_norm=LPLayerNorm(
+            mlp_norm=LayerNorm(
                 weight=Weight(
                     "layer{i}_mlp_norm",
                     DType.from_numpy(
@@ -258,7 +258,7 @@ def graph_api_whisper_encoder(weights_registry, model):
         )
         for i in range(len(model.model.encoder.layers))
     ]
-    norm = LPLayerNorm(
+    norm = LayerNorm(
         weight=Weight(
             "final_norm",
             DType.from_numpy(weights_registry["final_norm"].numpy().dtype),

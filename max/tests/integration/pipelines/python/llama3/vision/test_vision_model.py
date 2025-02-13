@@ -28,7 +28,7 @@ from max.pipelines.architectures.llama_vision.vision_model import (
     VisionConv2D,
     VisionModel,
 )
-from max.pipelines.nn import Embedding, Linear, LPLayerNorm
+from max.pipelines.nn import Embedding, LayerNorm, Linear
 from test_common.distance_metrics import is_euclidean_distance_close
 from transformers.models.mllama.configuration_mllama import MllamaVisionConfig
 from transformers.models.mllama.modeling_mllama import MllamaVisionModel
@@ -176,7 +176,7 @@ class WrappedVisionModel:
             shape=torch_vision_model.class_embedding.shape,
         )
 
-        layernorm_pre = LPLayerNorm(
+        layernorm_pre = LayerNorm(
             Weight(
                 name="layernorm_pre",
                 dtype=dtype,
@@ -185,7 +185,7 @@ class WrappedVisionModel:
             eps=norm_eps,
         )
 
-        layernorm_post = LPLayerNorm(
+        layernorm_post = LayerNorm(
             Weight(
                 name="layernorm_post",
                 dtype=dtype,
@@ -220,7 +220,7 @@ class WrappedVisionModel:
                             bias=None,
                         ),
                     ),
-                    input_layernorm=LPLayerNorm(
+                    input_layernorm=LayerNorm(
                         Weight(
                             name=f"transformer.{index}.input_layernorm",
                             dtype=dtype,
@@ -228,7 +228,7 @@ class WrappedVisionModel:
                         ),
                         eps=norm_eps,
                     ),
-                    post_attention_layernorm=LPLayerNorm(
+                    post_attention_layernorm=LayerNorm(
                         Weight(
                             name=f"transformer.{index}.post_attention_layernorm",
                             dtype=dtype,
@@ -300,7 +300,7 @@ class WrappedVisionModel:
                             bias=None,
                         ),
                     ),
-                    input_layernorm=LPLayerNorm(
+                    input_layernorm=LayerNorm(
                         Weight(
                             name=f"global_transformer.{index}.input_layernorm",
                             dtype=dtype,
@@ -308,7 +308,7 @@ class WrappedVisionModel:
                         ),
                         eps=norm_eps,
                     ),
-                    post_attention_layernorm=LPLayerNorm(
+                    post_attention_layernorm=LayerNorm(
                         Weight(
                             name=f"global_transformer.{index}.post_attention_layernorm",
                             dtype=dtype,
