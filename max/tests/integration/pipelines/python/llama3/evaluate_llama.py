@@ -19,9 +19,9 @@ from huggingface_hub import hf_hub_download
 from max.driver import DeviceSpec
 from max.engine import InferenceSession
 from max.pipelines import PipelineConfig, SupportedEncoding, TextTokenizer
+from max.pipelines.architectures.llama3.config import get_llama_huggingface_file
+from max.pipelines.architectures.llama3.model import Llama3Model
 from max.pipelines.kv_cache import KVCacheStrategy
-from max.pipelines.llama3 import Llama3Model
-from max.pipelines.llama3.config import get_llama_huggingface_file
 from test_common.evaluate import PROMPTS, run_model
 from test_common.numpy_encoder import NumpyEncoder
 from test_common.path import golden_data_fname

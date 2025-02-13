@@ -22,7 +22,6 @@ modular_py_binary(
         "//SDK/lib/API/python/max/entrypoints",
         "//SDK/lib/API/python/max/pipelines",
         "//SDK/lib/API/python/max/pipelines/architectures",
-        "//SDK/lib/API/python/max/pipelines/llama3",
         "//SDK/lib/API/python/max/serve",
         requirement("click"),
         requirement("huggingface-hub"),
@@ -122,7 +121,6 @@ modular_py_binary(
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/entrypoints",
         "//SDK/lib/API/python/max/pipelines/architectures",
-        "//SDK/lib/API/python/max/pipelines/llama3",
         requirement("click"),
         requirement("einops"),  # Req'd by replit
         requirement("pillow"),

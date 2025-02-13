@@ -34,7 +34,6 @@ modular_py_binary(
     deps = [
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/pipelines/architectures",
-        "//SDK/lib/API/python/max/pipelines/llama3",
         requirement("click"),
         requirement("huggingface-hub"),
         requirement("py-cpuinfo"),
@@ -105,7 +104,6 @@ modular_py_binary(
             "//SDK/lib/API/python/max/engine",
             "//SDK/lib/API/python/max/entrypoints",
             "//SDK/lib/API/python/max/pipelines/architectures",
-            "//SDK/lib/API/python/max/pipelines/llama3",
             "//SDK/lib/API/python/max/pipelines/nn",
             "//SDK/lib/API/python/max/serve",
             "//Support/python:support",
@@ -169,7 +167,6 @@ modular_py_test(
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/pipelines/architectures",
         "//SDK/lib/API/python/max/pipelines/dataprocessing",
-        "//SDK/lib/API/python/max/pipelines/llama3",
         "//Support/python:support",
         requirement("hypothesis"),
         requirement("py-cpuinfo"),

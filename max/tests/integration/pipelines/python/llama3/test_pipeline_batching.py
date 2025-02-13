@@ -16,9 +16,9 @@ from max.pipelines import (
     TextGenerationPipeline,
     TextTokenizer,
 )
+from max.pipelines.architectures.llama3.model import Llama3Model
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
-from max.pipelines.llama3.model import Llama3Model
 from test_common.evaluate import PROMPTS, next_token_with_logits
 
 
