@@ -92,7 +92,7 @@ class Settings(BaseSettings):
     )
 
     disable_telemetry: bool = Field(
-        default=False,
+        default=True,
         description="Disable remote telemetry",
         alias="MAX_SERVE_DISABLE_TELEMETRY",
     )
