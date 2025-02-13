@@ -376,13 +376,13 @@ struct _RangePop:
 fn _is_enabled_details() -> Bool:
     return (
         has_accelerator()
-        and env_get_int["KERNEL_E2E_GPU_PROFILING_DETAILED", 0]() == 1
+        and env_get_int["MODULAR_ENABLE_GPU_PROFILING_DETAILED", 0]() == 1
     )
 
 
 fn _is_enabled() -> Bool:
     return has_accelerator() and (
-        env_get_int["KERNEL_E2E_GPU_PROFILING", 0]() == 1
+        env_get_int["MODULAR_ENABLE_GPU_PROFILING", 0]() == 1
         or _is_enabled_details()
     )
 
