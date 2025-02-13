@@ -207,6 +207,12 @@ struct TMADescriptor:
         self.data = other.data
 
 
+fn prefetch_tma_descriptor(desc_ptr: UnsafePointer[NoneType]):
+    __mlir_op.`nvvm.prefetch.tensormap`(
+        to_llvm_ptr(desc_ptr),
+    )
+
+
 @always_inline
 fn create_tma_descriptor[
     dtype: DType,
