@@ -33,7 +33,7 @@ from gpu import (
 )
 from gpu.host import DeviceContext, FuncAttribute, LaunchAttribute
 from gpu.host._compile import _get_gpu_target
-from gpu.host.info import A100, DEFAULT_GPU_ARCH
+from gpu.host.info import A100, H100, DEFAULT_GPU_ARCH
 from gpu.memory import AddressSpace, CacheOperation, load
 from gpu.mma import ld_matrix, mma
 from layout.int_tuple import IntTuple
@@ -63,6 +63,7 @@ from ._multistage_gemm_gpu import (
     multistage_gemm_kernel,
     multistage_gemm_split_k_kernel,
 )
+from .matmul_sm90 import hopper_matmul_tma_wgmma
 from .gemv import gemv_gpu
 from .utils import GemmShape, apply_epilogue, elementwise_epilogue_type
 from .utils_gpu import (
@@ -380,6 +381,27 @@ fn _matmul_gpu[
                     rebind[NDBuffer[a_type, 2, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b_shape]](b),
                     config.value(),
+                    ctx,
+                )
+                return
+
+            alias h100_env = env_get_bool["h100_exp", 0]()
+
+            @parameter
+            if (
+                a_type == b_type
+                and a_type.is_half_float()
+                and ctx.device_info is H100
+                and transpose_b
+                and h100_env
+            ):
+                hopper_matmul_tma_wgmma[transpose_b=transpose_b,](
+                    rebind[NDBuffer[c_type, 2, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b_shape]](b),
+                    m,
+                    n,
+                    k,
                     ctx,
                 )
                 return
