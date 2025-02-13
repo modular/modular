@@ -1273,7 +1273,7 @@ struct DeviceContext:
         var gpu_kernel = self.compile_function[
             func,
             dump_asm=dump_asm,
-            dump_llvm=dump_asm,
+            dump_llvm=dump_llvm,
             _dump_sass=False,
             _target = self.device_info.target(),
             _ptxas_info_verbose=False,
