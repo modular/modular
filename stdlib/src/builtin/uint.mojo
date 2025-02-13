@@ -394,6 +394,15 @@ struct UInt(Indexer, _HashableWithHasher):
         """
         return __mlir_op.`index.or`(self.value, rhs.value)
 
+    @always_inline("nodebug")
+    fn __invert__(self) -> UInt:
+        """Return ~self.
+
+        Returns:
+            The ~self value.
+        """
+        return self ^ Self.MAX
+
     @always_inline
     fn __ceildiv__(self, denominator: Self) -> Self:
         """Return the rounded-up result of dividing self by denominator.
