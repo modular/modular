@@ -22,7 +22,9 @@ from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
 
 @pytest.fixture
 def app():
-    settings = Settings(api_types=[APIType.KSERVE])
+    settings = Settings(
+        api_types=[APIType.KSERVE], MAX_SERVE_USE_HEARTBEAT=False
+    )
     serving_settings = ServingTokenGeneratorSettings(
         model_name="echo",
         model_factory=EchoTokenGenerator,
@@ -30,7 +32,6 @@ def app():
             batch_size=1
         ),
         tokenizer=EchoPipelineTokenizer(),
-        use_heartbeat=False,
     )
     return fastapi_app(settings, serving_settings)
 

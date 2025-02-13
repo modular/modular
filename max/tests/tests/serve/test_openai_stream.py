@@ -37,7 +37,9 @@ def decode_and_strip(text: bytes, prefix: str | None):
 
 @pytest.fixture(scope="function")
 def stream_app():
-    settings = Settings(api_types=[APIType.OPENAI])
+    settings = Settings(
+        api_types=[APIType.OPENAI], MAX_SERVE_USE_HEARTBEAT=False
+    )
     serving_settings = ServingTokenGeneratorSettings(
         model_name="echo",
         model_factory=EchoTokenGenerator,
@@ -45,7 +47,6 @@ def stream_app():
             batch_size=1
         ),
         tokenizer=EchoPipelineTokenizer(),
-        use_heartbeat=False,
     )
     fast_app = fastapi_app(settings, serving_settings)
     return fast_app

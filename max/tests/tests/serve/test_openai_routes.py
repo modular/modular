@@ -34,7 +34,9 @@ logger = logging.getLogger(__name__)
 
 @pytest_asyncio.fixture(scope="function")
 def app(fixture_tokenizer, model_name: str):
-    settings = Settings(api_types=[APIType.OPENAI])
+    settings = Settings(
+        api_types=[APIType.OPENAI], MAX_SERVE_USE_HEARTBEAT=False
+    )
     pipeline_config = TokenGeneratorPipelineConfig.dynamic_homogenous(
         batch_size=1
     )
@@ -53,7 +55,6 @@ def app(fixture_tokenizer, model_name: str):
         model_factory=model_factory,
         pipeline_config=pipeline_config,
         tokenizer=tokenizer,
-        use_heartbeat=False,
     )
     return fastapi_app(settings, serving_settings)
 

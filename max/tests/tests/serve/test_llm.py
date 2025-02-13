@@ -75,10 +75,10 @@ def app(token_generator):
         model_factory=model_factory,
         pipeline_config=config,
         tokenizer=MockTokenizer(),
-        use_heartbeat=False,
     )
     app = fastapi_app(
-        Settings(api_types=[APIType.OPENAI]),
+        # TODO
+        Settings(api_types=[APIType.OPENAI], MAX_SERVE_USE_HEARTBEAT=False),
         serving_settings,
     )
     yield app
