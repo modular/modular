@@ -482,7 +482,13 @@ def test_case_split_kv[
     ](cfg.prev_seq_len(), cfg.depth_dim)
 
     flash_attention_split_kv[
-        input_k_fn, input_v_fn, input_k_cache_fn, input_v_cache_fn, mask_fn
+        type=type,
+        rank = batch_rank + 2,
+        input_k_fn,
+        input_v_fn,
+        input_k_cache_fn,
+        input_v_cache_fn,
+        mask_fn,
     ](
         q,
         kv_present_shape,
