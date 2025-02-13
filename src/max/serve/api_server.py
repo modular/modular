@@ -8,13 +8,20 @@
 
 from __future__ import annotations
 
+from max.serve.config import Settings
+from max.serve.telemetry.common import configure_logging, configure_metrics
+
+settings = Settings()
+configure_logging(settings)
+configure_metrics(settings)
+
+import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
 
 import uvloop
 from fastapi import FastAPI
-from max.loggers import get_logger
 from max.pipelines import PipelinesFactory, PipelineTokenizer
 from max.serve.config import (
     APIType,
@@ -42,7 +49,7 @@ ROUTES = {
     APIType.OPENAI: openai_routes,
 }
 
-logger = get_logger(__name__)
+logger = logging.getLogger("max.serve")
 
 
 @dataclass(frozen=True)

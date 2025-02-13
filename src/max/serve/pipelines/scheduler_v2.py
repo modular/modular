@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import logging
 import queue
 import time
 from abc import ABC, abstractmethod
@@ -13,7 +14,6 @@ from multiprocessing import Queue
 from typing import Any, Mapping, Optional, Tuple, TypeVar
 
 import numpy as np
-from max.loggers import get_logger
 from max.pipelines import TokenGenerator
 from max.pipelines.interfaces import EmbeddingsGenerator
 from max.pipelines.kv_cache.paged_cache import PagedKVCacheManager
@@ -21,7 +21,7 @@ from max.profiler import traced
 from max.serve.scheduler.process_control import ProcessControl
 from max.serve.scheduler.queues import STOP_STREAM
 
-logger = get_logger(__name__)
+logger = logging.getLogger("max.serve")
 
 BatchReqId = TypeVar("BatchReqId")
 BatchReqInput = TypeVar("BatchReqInput")

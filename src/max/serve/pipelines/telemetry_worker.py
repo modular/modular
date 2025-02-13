@@ -5,16 +5,16 @@
 # ===----------------------------------------------------------------------=== #
 
 import asyncio
+import logging
 import multiprocessing
 import multiprocessing.queues
 import queue
 from contextlib import asynccontextmanager
 from typing import Callable, NamedTuple, Optional
 
-from max.loggers import get_logger
 from max.serve.scheduler.process_control import ProcessControl, ProcessMonitor
 
-logger = get_logger(__name__)
+logger = logging.getLogger("max.serve")
 
 
 # Unused class so taht SHUTDOWNS is not empty

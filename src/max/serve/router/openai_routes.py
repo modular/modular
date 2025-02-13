@@ -7,6 +7,7 @@
 import asyncio
 import base64
 import json
+import logging
 import queue
 import uuid
 from abc import ABC, abstractmethod
@@ -27,7 +28,6 @@ from typing import (
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from httpx import AsyncClient
-from max.loggers import get_logger
 from max.pipelines import (
     PipelineTokenizer,
     TokenGeneratorRequest,
@@ -74,9 +74,8 @@ from pydantic import AnyUrl, BaseModel, Field, ValidationError
 from sse_starlette.sse import EventSourceResponse
 from starlette.datastructures import State
 
-logger = get_logger(__name__)
-
 router = APIRouter(prefix="/v1")
+logger = logging.getLogger("max.serve")
 
 
 def record_request_start():
@@ -97,9 +96,9 @@ class OpenAIResponseGenerator(ABC):
         self,
         pipeline: TokenGeneratorPipeline,
     ):
-        self.logger = get_logger(
-            f"{self.__class__.__module__}.{self.__class__.__name__}"
-        )
+        self.logger = logging.getLogger(self.__class__.__name__)
+        # This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
+        self.logger.propagate = False
         self.pipeline = pipeline
 
     @abstractmethod
@@ -496,7 +495,7 @@ async def openai_create_chat_completion(
         )
         pipeline = get_pipeline(request, completion_request.model)
 
-        logger.info(
+        logger.debug(
             "Processing path, %s, req-id,%s%s, for model, %s.",
             request.url.path,
             request_id,
@@ -645,7 +644,7 @@ async def openai_create_embeddings(
         embeddings_request = CreateEmbeddingRequest.model_validate(request_json)
         pipeline = get_pipeline(request, embeddings_request.model)
 
-        logger.info(
+        logger.debug(
             "Processing path, %s, req-id, %s, for model, %s.",
             request.url.path,
             request_id,
@@ -922,7 +921,7 @@ async def openai_create_completion(
             ) / 1e6
 
         pipeline = get_pipeline(request, completion_request.model)
-        logger.info(
+        logger.debug(
             "Path: %s, Request: %s%s, Model: %s%s",
             request.url.path,
             http_req_id,

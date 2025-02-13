@@ -90,8 +90,7 @@ metrics_resource = Resource.create(
 class TelemetryConfig:
     """Telemetry Configuration"""
 
-    high_priority_level: Union[int, str] = logging.INFO
-    console_level: Union[int, str] = logging.ERROR
+    console_level: Union[int, str] = logging.INFO
     file_path: Union[str, None] = None
     file_level: Union[int, str, None] = None
     otlp_level: Union[int, str, None] = None
@@ -113,7 +112,6 @@ class TelemetryConfig:
             metrics_egress_enabled = False
 
         return cls(
-            high_priority_level=config.logs_high_priority_level,
             console_level=config.logs_console_level,
             file_path=config.logs_file_path,
             file_level=config.logs_file_level,
@@ -122,11 +120,14 @@ class TelemetryConfig:
         )
 
 
-def create_handlers(config: TelemetryConfig) -> list[logging.Handler]:
-    console_level = config.console_level
-    file_path = config.file_path
-    file_level = config.file_level
-    otlp_level = config.otlp_level
+# Configure logging to console and OTEL.  This should be called before any
+# 3rd party imports whose logging you wish to capture.
+def configure_logging(server_settings: Settings) -> None:
+    default_config = TelemetryConfig.from_config(server_settings)
+    console_level = default_config.console_level
+    file_path = default_config.file_path
+    file_level = default_config.file_level
+    otlp_level = default_config.otlp_level
 
     logging_handlers: list[logging.Handler] = []
 
@@ -178,48 +179,10 @@ def create_handlers(config: TelemetryConfig) -> list[logging.Handler]:
         )
         logging_handlers.append(otlp_handler)
 
-    return logging_handlers
-
-
-# Configure logging to console and OTEL. This should be called before any
-# 3rd party imports whose logging you wish to capture.
-def configure_logging(server_settings: Settings) -> None:
-    config = TelemetryConfig.from_config(server_settings)
-    high_priority_level = config.high_priority_level
-    console_level = config.console_level
-    file_path = config.file_path
-    file_level = config.file_level
-    otlp_level = config.otlp_level
-
-    # First setup the high priority loggers that are scoped to very limited paths
-    high_priority_logging_handlers = create_handlers(config)
-    high_priority_loggers = [
-        logging.getLogger(name)
-        for name in [
-            # pipelines logger is low verbosity and has import information about configuration and slow steps (like downloading and compiling).
-            "max.pipelines",
-            # api_server has important server lifetime information.
-            "max.serve.api_server",
-        ]
-    ]
-    # Block propagation in the high priority loggers so they don't double log with root logging.
-    for logger in high_priority_loggers:
-        logger.propagate = False
-    for handler in high_priority_logging_handlers:
-        handler.setLevel(high_priority_level)
-        for logger in high_priority_loggers:
-            logger.addHandler(handler)
-
-    # Next setup general max logger.
-    logging_handlers = create_handlers(config)
-
+    # Configure root logger level
     logger_level = min(h.level for h in logging_handlers)
-
-    # Configure max logger level
-    logger = logging.getLogger("max")
+    logger = logging.getLogger()
     logger.setLevel(logger_level)
-    # We still disable propagation on the max logger cause we setup our own handlers.
-    logger.propagate = False
     for handler in logging_handlers:
         logger.addHandler(handler)
 

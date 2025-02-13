@@ -18,10 +18,9 @@ from multiprocessing import Queue
 from typing import AsyncGenerator, Generator, Generic, Optional, TypeVar
 
 import sentinel
-from max.loggers import get_logger
 from max.serve.scheduler.process_control import ProcessControl
 
-logger = get_logger(__name__)
+logger = logging.getLogger("max.serve")
 
 ReqId = TypeVar("ReqId")
 ReqInput = TypeVar("ReqInput")

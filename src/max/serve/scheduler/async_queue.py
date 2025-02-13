@@ -5,12 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 
 import asyncio
+import logging
 import sys
 from typing import Any, Callable, Mapping, NamedTuple, Optional, Sequence
 
-from max.loggers import get_logger
-
-logger = get_logger(__name__)
+logger = logging.getLogger("max.serve")
 
 
 class Call(NamedTuple):
@@ -77,7 +76,7 @@ class AsyncCallConsumer:
             except QueueShutDown:
                 break
             except asyncio.CancelledError:
-                logger.info("AsyncCallConsumer cancelled")
+                logger.debug("AsyncCallConsumer cancelled")
                 break
 
             try:
@@ -85,7 +84,7 @@ class AsyncCallConsumer:
             except:
                 logger.exception("Failed to record telemetry")
 
-        logger.info("AsyncCallConsumer consumer shut down")
+        logger.debug("AsyncCallConsumer consumer shut down")
 
     async def __aenter__(self):
         self.start()

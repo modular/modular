@@ -3,7 +3,13 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+from max.serve.config import Settings
+from max.serve.telemetry.common import configure_metrics
+
+configure_metrics(Settings())
+
 import asyncio
+import logging
 import math
 import multiprocessing
 import os
@@ -13,7 +19,6 @@ from multiprocessing import Queue
 from typing import AsyncGenerator, Mapping
 
 import uvloop
-from max.loggers import get_logger
 from max.pipelines import EmbeddingsGenerator, PipelinesFactory, TokenGenerator
 from max.pipelines.kv_cache.paged_cache import PagedKVCacheManager
 from max.pipelines.pipeline import KVCacheMixin, TextGenerationPipeline
@@ -32,7 +37,9 @@ from max.serve.scheduler.queues import EngineQueue
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
+# This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
+logger.propagate = False
 
 
 def _model_worker_process_fn(

@@ -39,9 +39,7 @@ Lets unpack:
 3. `._measurement_consuemr` The _real_ instrument doesn't expose a way to set the time of the observation, so you have to directly talk to the consumer.
 4. `Measurement(...)` now we can create a measurement with a timestamp & pass it down.
 """
-# Note: this can not use max.loggers.get_logger due to being in telemetry.
-# max.loggers.get_logger configures telemetry.
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.serve")
 _meter = get_meter_provider().get_meter("modular")
 
 
