@@ -1690,23 +1690,17 @@ fn _elementwise_impl_gpu[
 
     try:
         if shape[rank - 1] % simd_width == 0:
-            var gpu_func = ctx.compile_function[
+            ctx.enqueue_function[
                 _elementwise_gpu_kernel[
                     block_size=block_size, handle_uneven_simd=False
                 ]
-            ]()
-            ctx.enqueue_function(
-                gpu_func, grid_dim=Int(num_blocks), block_dim=Int(block_size)
-            )
+            ](grid_dim=Int(num_blocks), block_dim=Int(block_size))
         else:
-            var gpu_func = ctx.compile_function[
+            ctx.enqueue_function[
                 _elementwise_gpu_kernel[
                     block_size=block_size, handle_uneven_simd=True
                 ]
-            ]()
-            ctx.enqueue_function(
-                gpu_func, grid_dim=Int(num_blocks), block_dim=Int(block_size)
-            )
+            ](grid_dim=Int(num_blocks), block_dim=Int(block_size))
 
     except e:
         abort(e)
@@ -2042,5 +2036,4 @@ fn _stencil_impl_gpu[
     )
 
     # Compile and launch kernel
-    var kernel = ctx.compile_function[stencil_kernel]()
-    ctx.enqueue_function(kernel, grid_dim=grid_dim, block_dim=block_dim)
+    ctx.enqueue_function[stencil_kernel](grid_dim=grid_dim, block_dim=block_dim)

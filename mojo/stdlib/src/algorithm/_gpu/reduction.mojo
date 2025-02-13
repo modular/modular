@@ -347,7 +347,11 @@ fn reduce_launch[
 
     alias packing_factor = 1
 
-    var func = ctx.compile_function[
+    var num_rows = shape.flattened_length() // shape[axis] // packing_factor
+    alias sm_overprovision_factor = 32  # tunable
+    var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
+
+    ctx.enqueue_function[
         reduce_kernel[
             rank,
             num_reductions,
@@ -358,14 +362,7 @@ fn reduce_launch[
             type,
             packing_factor,
         ]
-    ]()
-
-    var num_rows = shape.flattened_length() // shape[axis] // packing_factor
-    alias sm_overprovision_factor = 32  # tunable
-    var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
-
-    ctx.enqueue_function(
-        func,
+    ](
         shape,
         axis,
         init,
