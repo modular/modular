@@ -23,7 +23,11 @@ from functools import partial
 import uvloop
 from fastapi import FastAPI
 from max.pipelines import PipelinesFactory, PipelineTokenizer
-from max.serve.config import APIType, Settings, api_prefix
+from max.serve.config import (
+    APIType,
+    Settings,
+    api_prefix,
+)
 from max.serve.pipelines.echo_gen import (
     EchoPipelineTokenizer,
     EchoTokenGenerator,
@@ -138,16 +142,14 @@ def fastapi_app(
 
 
 def fastapi_config(app: FastAPI, server_settings: Settings) -> Config:
-    host = server_settings.host
-    port = server_settings.port
-
     config = Config(
         app=app,
         log_config=None,
         loop="uvloop",
-        host=host,
-        port=port,
+        host=server_settings.host,
+        port=server_settings.port,
     )
+
     for route in app.routes:
         logger.debug("Route enabled : %s", route)
     return config

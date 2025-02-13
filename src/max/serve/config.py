@@ -8,10 +8,11 @@
 Placeholder file for any configs (runtime, models, pipelines, etc)
 """
 
+import socket
 from enum import Enum
 from typing import Union
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -42,6 +43,16 @@ class Settings(BaseSettings):
     port: int = Field(
         description="Port to use", default=8000, alias="MAX_SERVE_PORT"
     )
+
+    @field_validator("port")
+    def validate_port(cls, port: int):
+        # check if port is already in use
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            try:
+                sock.bind(("", port))
+                return port
+            except socket.error as e:
+                raise ValueError(f"port {port} is already in use") from e
 
     # Telemetry and logging configuration
     logs_console_level: str = Field(
