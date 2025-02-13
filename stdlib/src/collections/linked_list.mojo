@@ -420,11 +420,14 @@ struct LinkedList[
             curr = curr[].next
         return new^
 
-    fn insert(mut self, owned idx: Int, owned elem: ElementType) raises:
+    fn insert[I: Indexer](mut self, idx: I, owned elem: ElementType) raises:
         """
         Insert an element `elem` into the list at index `idx`.
 
         Time Complexity: O(1)
+
+        Parameters:
+            I: The type of index to use.
 
         Raises:
             When given an out of bounds index.
@@ -433,7 +436,7 @@ struct LinkedList[
             idx: The index to insert `elem` at. `-len(self) <= idx <= len(self)`.
             elem: The item to insert into the list.
         """
-        var i = max(0, index(idx) if idx >= 0 else index(idx) + len(self))
+        var i = max(0, index(idx) if Int(idx) >= 0 else index(idx) + len(self))
 
         if i == 0:
             var node = Self._NodePointer.alloc(1)
@@ -478,7 +481,7 @@ struct LinkedList[
                 self._head = node
             self._size += 1
         else:
-            raise String("Index {} out of bounds").format(idx)
+            raise String("Index {} out of bounds").format(i)
 
     fn extend(mut self, owned other: Self):
         """
@@ -610,7 +613,9 @@ struct LinkedList[
         """
         return not (self == other)
 
-    fn _get_node_ptr(ref self, index: Int) -> UnsafePointer[Node[ElementType]]:
+    fn _get_node_ptr[
+        I: Indexer
+    ](ref self, index: I) -> UnsafePointer[Node[ElementType]]:
         """
         Get a pointer to the node at the specified index.
 
@@ -619,6 +624,9 @@ struct LinkedList[
 
         Time Complexity: O(n) in len(self)
 
+        Parameters:
+            I: The type of index to use.
+
         Args:
             index: The index of the node to get.
 
@@ -626,7 +634,7 @@ struct LinkedList[
             A pointer to the node at the specified index.
         """
         var l = len(self)
-        var i = normalize_index[container_name="LinkedList"](index, self)
+        var i = normalize_index[container_name="LinkedList"](Int(index), self)
         debug_assert(0 <= i < l, "index out of bounds")
         var mid = l // 2
         if i <= mid:
@@ -640,11 +648,14 @@ struct LinkedList[
                 curr = curr[].prev
             return curr
 
-    fn __getitem__(ref self, index: Int) -> ref [self] ElementType:
+    fn __getitem__[I: Indexer](ref self, index: I) -> ref [self] ElementType:
         """
         Get the element at the specified index.
 
         Time Complexity: O(n) in len(self)
+
+        Parameters:
+            I: The type of index to use.
 
         Args:
             index: The index of the element to get.
@@ -655,11 +666,14 @@ struct LinkedList[
         debug_assert(len(self) > 0, "unable to get item from empty list")
         return self._get_node_ptr(index)[].value
 
-    fn __setitem__(mut self, index: Int, owned value: ElementType):
+    fn __setitem__[I: Indexer](mut self, index: I, owned value: ElementType):
         """
         Set the element at the specified index.
 
         Time Complexity: O(n) in len(self)
+
+        Parameters:
+            I: The type of index to use.
 
         Args:
             index: The index of the element to set.
