@@ -863,7 +863,6 @@ struct DeviceFunction[
 
 @register_passable
 struct DeviceContext:
-
     """Represents a single stream of execution on a particular accelerator
     (GPU). A `DeviceContext` serves as the low-level interface to the
     accelerator inside a MAX [custom operation](/max/custom-ops/) and provides
@@ -871,31 +870,34 @@ struct DeviceContext:
     device, and for compiling and running functions (also known as kernels) on
     the device.
 
-    A custom operation receives an opaque `MojoCallContextPtr`, which provides
-    a `get_device_context()` method to retrieve the device context.
-
     The device context can be used as a
     [context manager](/mojo/manual/errors#use-a-context-manager). For example:
 
     ```mojo
-    with callContextPtr.get_device_context() as ctx:
-        alias length = 1024
-        var in_device = ctx.enqueue_create_buffer[DType.float32](length)
-        var out_device = ctx.enqueue_create_buffer[DType.float32](length)
-        ctx.enqueue_copy_to_device(in_device, in_host)
+    from gpu.host import DeviceContext
+    from gpu import thread_idx
 
-        var gpu_func = ctx.compile_function[vector_func]()
-        var block_dim = 32
+    fn kernel():
+        print("hello from thread:", thread_idx.x, thread_idx.y, thread_idx.z)
 
-        ctx.enqueue_function(
-            gpu_func,
-            in_device,
-            out_device,
-            length,
-            grid_dim=(length // block_dim),
-            block_dim=(block_dim),
-        )
-        ctx.enqueue_copy_from_device(out_host, out_device)
+    with DeviceContext() as ctx:
+        ctx.enqueue_function[kernel](grid_dim=1, block_dim=(2, 2, 2))
+        ctx.synchronize()
+    ```
+
+    A custom operation receives an opaque `MojoCallContextPtr`, which provides
+    a `get_device_context()` method to retrieve the device context:
+
+    ```mojo
+    from runtime.asyncrt import MojoCallContextPtr
+
+    @register("custom_op")
+    struct CustomOp:
+        @staticmethod
+        fn execute(ctx_ptr: MojoCallContextPtr) raises:
+            var ctx = ctx_ptr.get_device_context()
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=(2, 2, 2))
+            ctx.synchronize()
     ```
     """
 
@@ -1227,6 +1229,66 @@ struct DeviceContext:
             dump_llvm=dump_llvm,
             _dump_sass=_dump_sass,
         ]()
+
+    @parameter
+    @always_inline
+    fn enqueue_function[
+        func_type: AnyTrivialRegType, //,
+        func: func_type,
+        *Ts: AnyType,
+        dump_asm: Variant[Bool, Path, fn () capturing -> Path] = False,
+        dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
+    ](
+        self,
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
+        owned constant_memory: List[ConstantMemoryMapping] = List[
+            ConstantMemoryMapping
+        ](),
+        func_attribute: OptionalReg[FuncAttribute] = None,
+    ) raises:
+        """Compiles and enqueues a kernel for execution on this device.
+
+        Parameters:
+            func_type: The type of the function to launch.
+            func: The function to launch.
+            Ts: The types of the arguments being passed to the function.
+            dump_asm: Pass `True` or a `Path` to dump the assembly.
+            dump_llvm: Pass `True` or a `Path` to dump the LLVM IR.
+        Args:
+            args: Variadic arguments which are passed to the `func`.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            cluster_dim: The cluster dimensions.
+            shared_mem_bytes: Per-block memory shared between blocks.
+            attributes: A `List` of launch attributes.
+            constant_memory: A `List` of constant memory mappings.
+            func_attribute: `CUfunction_attribute` enum.
+        """
+
+        var gpu_kernel = self.compile_function[
+            func,
+            dump_asm=dump_asm,
+            dump_llvm=dump_asm,
+            _dump_sass=False,
+            _target = self.device_info.target(),
+            _ptxas_info_verbose=False,
+        ](func_attribute=func_attribute)
+
+        self._enqueue_function(
+            gpu_kernel,
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+        )
 
     @parameter
     @always_inline
