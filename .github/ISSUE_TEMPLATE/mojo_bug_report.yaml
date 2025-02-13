@@ -1,0 +1,61 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: Mojo bug report
+description: Create a bug report to help us improve Mojo
+title: "[BUG]"
+labels:
+  - "bug,mojo"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out a bug report!
+
+        Please provide a descriptive title above and fill in the following fields.
+
+  - type: textarea
+    id: Description
+    attributes:
+      label: Bug description
+      description: Describe the bug you encountered and what you expected to happen.
+      value: |
+        ### Actual behavior
+        <!-- Add a clear and concise description of what actually happened. -->
+
+        ### Expected behavior
+        <!-- Add a clear and concise description of what you expected to happen. -->
+    validations:
+      required: true
+
+  - type: textarea
+    id: Steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide the specific steps to reproduce the issue.
+      value: |
+        - Provide a relevant code snippet or a link to the code that did not work as expected.
+        - If applicable, add screenshots to help explain the problem.
+        - If using the Playground, name the pre-existing notebook that failed and the steps that led to failure.
+        - Include anything else that might help us debug the issue.
+    validations:
+      required: true
+
+  - type: textarea
+    id: Context
+    attributes:
+      label: System information
+      description: What version of Mojo are you using?
+      value: |
+        - Provide the system information by running `magic info`.
+        - Provide version information for MAX (includes Mojo) by pasting the output of `magic list max`.

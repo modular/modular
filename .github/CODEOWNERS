@@ -1,0 +1,14 @@
+# Code owners for the Mojo repository
+
+# Standard Library Sources
+/stdlib/       @modular/stdlib
+
+# Documentation
+/docs/         @modular/mojo-docs
+
+/docs/changelog.md @modular/stdlib
+
+/stdlib/docs/  @modular/mojo-docs @modular/stdlib
+
+# Examples
+/examples/     @jackos
