@@ -5,11 +5,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/ADT/StringSet.h"
-#include <KGEN/LITDialect/LITUtils.h>
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/LITDialect/LITTypes.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MOGGPreElab/MOGGDecorators.h"
 #include "KGEN/MOGGPreElab/MOGGUtils.h"
 #include "KGEN/MOGGPreElab/Passes.h"
@@ -42,7 +42,7 @@ static constexpr std::array<StringLiteral, 3> kMaxManagedTensorSlice = {
     "tensor_internal", "managed_tensor_slice", "ManagedTensorSlice"};
 static constexpr std::array<StringLiteral, 4> kMaxSIMD = {"stdlib", "builtin",
                                                           "simd", "SIMD"};
-static constexpr std::array<StringLiteral, 3> kMaxStaticTuple = {
+static constexpr std::array<StringLiteral, 3> kMaxVariadicTensors = {
     "tensor_internal", "managed_tensor_slice", "VariadicTensors"};
 static constexpr std::array<StringLiteral, 4> kMaxList = {
     "stdlib", "collections", "vector", "InlinedFixedVector"};
@@ -314,6 +314,7 @@ static DictionaryAttr getParametersForSimpleType(LIT::StructType structType,
   for (auto [param, paramInfo] :
        llvm::zip(paramValues, kManagedTensorSliceParams)) {
     auto [paramName, usesInferred] = paramInfo;
+
     // Skip parameters that use inferred values
     // This is because slice-mogg-funcs uses the values gathered here to
     // parameterize lambda fusion hooks, but the KGEN drops any
@@ -462,7 +463,7 @@ static void labelTensorParamsInKernel(LIT::FnOp funcOp) {
           DictionaryAttr::get(funcOp.getContext(), tensorSpecNamedAttrs));
       tensorArgsParams.push_back(
           getParametersForSimpleType(asStructType, builder));
-    } else if (symbolMatches(asStructType.getSymbol(), kMaxStaticTuple)) {
+    } else if (symbolMatches(asStructType.getSymbol(), kMaxVariadicTensors)) {
       auto tensorSpecNamedAttrs =
           getUnboundParametersForVariadicTensors(asStructType, builder);
       tensorSpecs.push_back(
