@@ -1436,20 +1436,16 @@ fn multistage_gemm_q[
                         elementwise_lambda_fn,
                     ]
 
-                    var gemm_kernel = ctx.compile_function[gemm_kernel_type](
-                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                            adjusted_smem,
-                        ),
-                    )
-
-                    ctx.enqueue_function(
-                        gemm_kernel,
+                    ctx.enqueue_function[gemm_kernel_type](
                         tensor_c,
                         tensor_a,
                         tensor_b,
                         grid_dim=adjusted_config.grid_dim(M, N),
                         block_dim=adjusted_config.block_dim(),
                         shared_mem_bytes=adjusted_smem,
+                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                            adjusted_smem,
+                        ),
                     )
 
                     return
@@ -1468,20 +1464,16 @@ fn multistage_gemm_q[
         elementwise_lambda_fn,
     ]
 
-    var gemm_kernel = ctx.compile_function[gemm_kernel_type](
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            smem_usage,
-        ),
-    )
-
-    ctx.enqueue_function(
-        gemm_kernel,
+    ctx.enqueue_function[gemm_kernel_type](
         tensor_c,
         tensor_a,
         tensor_b,
         grid_dim=runtime_config.grid_dim(M, N),
         block_dim=runtime_config.block_dim(),
         shared_mem_bytes=smem_usage,
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            smem_usage,
+        ),
     )
 
 
@@ -2002,17 +1994,13 @@ fn gpu_qint4_repack_Q4_0[
         tensor_b.layout, tensor_packed_b.layout, DType.bfloat16
     ]
 
-    var repack_func = cuda_ctx.compile_function[repack](
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_usage),
-    )
-
-    cuda_ctx.enqueue_function(
-        repack_func,
+    cuda_ctx.enqueue_function[repack](
         tensor_b,
         tensor_packed_b,
         grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
         block_dim=(128, 1, 1),
         shared_mem_bytes=smem_usage,
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_usage),
     )
 
 
@@ -2072,10 +2060,7 @@ fn gpu_qint4_repack_GPTQ[
             perm_layout = tensor_perm.layout,
         ]
 
-        var repack_func = cuda_ctx.compile_function[repack]()
-
-        cuda_ctx.enqueue_function(
-            repack_func,
+        cuda_ctx.enqueue_function[repack](
             tensor_b,
             tensor_packed_b,
             tensor_perm,
@@ -2092,18 +2077,14 @@ fn gpu_qint4_repack_GPTQ[
             False,
         ]
 
-        var repack_func = cuda_ctx.compile_function[repack](
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                smem_usage
-            ),
-        )
-
-        cuda_ctx.enqueue_function(
-            repack_func,
+        cuda_ctx.enqueue_function[repack](
             tensor_b,
             tensor_packed_b,
             UnsafePointer[Scalar[DType.int32]](),
             grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
             block_dim=(128, 1, 1),
             shared_mem_bytes=smem_usage,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                smem_usage
+            ),
         )
