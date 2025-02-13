@@ -14,13 +14,13 @@ from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, TensorValue, Weight
+from max.pipelines.architectures.llama_vision.cross_attention_decoder import (
+    CrossSdpaAttention,
+)
 from max.pipelines.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,
     load_kv_manager,
-)
-from max.pipelines.llama_vision.cross_attention_decoder import (
-    CrossSdpaAttention,
 )
 from max.pipelines.nn import Linear, RMSNorm
 from test_common.distance_metrics import is_euclidean_distance_close

@@ -12,15 +12,15 @@ from max.driver import CPU, Accelerator, Device, Tensor, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, TensorValue, Weight, ops
+from max.pipelines.architectures.llama_vision.cross_attention_decoder import (
+    CrossSdpaAttention,
+)
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
     load_kv_manager,
-)
-from max.pipelines.llama_vision.cross_attention_decoder import (
-    CrossSdpaAttention,
 )
 from max.pipelines.nn import Linear, RMSNorm
 from max.pipelines.nn.attention import Attention

@@ -13,7 +13,7 @@ from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, TensorValue, Weight
-from max.pipelines.llama_vision.positional_embedding import (
+from max.pipelines.architectures.llama_vision.positional_embedding import (
     PrecomputedAspectRatioEmbedding,
     PrecomputedPositionEmbedding,
 )
