@@ -837,7 +837,8 @@ MojoParserContext::ParsedREPLExpr MojoParserContext::parseREPLExpression(
   ASTDecl &moduleDecl =
       buildAndResolveREPLModule(sourceBuf, replModuleName, impl->sharedState,
                                 prevReplExpr, replVariables);
-  impl->prevReplModuleDecls.insert({&moduleDecl, &*prevReplExpr});
+  if (prevReplExpr)
+    impl->prevReplModuleDecls.insert({&moduleDecl, &*prevReplExpr});
 
   // Clear up the error state so that we are still able to parse future cells,
   // we'll handle diagnostic checks below.
