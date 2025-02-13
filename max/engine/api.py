@@ -977,9 +977,9 @@ class InferenceSession:
             return
 
         self._set_mojo_define("MODULAR_ENABLE_PROFILING", True)
-        self._set_mojo_define("KERNEL_E2E_GPU_PROFILING", True)
+        self._set_mojo_define("MODULAR_ENABLE_GPU_PROFILING", True)
         if mode.lower() == "detailed":
-            self._set_mojo_define("KERNEL_E2E_GPU_PROFILING_DETAILED", True)
+            self._set_mojo_define("MODULAR_ENABLE_GPU_PROFILING_DETAILED", True)
 
     def _use_experimental_kernels(self):
         """Enables experimental kernels."""
