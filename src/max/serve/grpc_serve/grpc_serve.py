@@ -363,11 +363,13 @@ async def grpc_serve(
         tg_batch_size=server_config.max_batch_size,
         ce_batch_size=1,
     )
+    server_settings = Settings()
     try:
         async with (
             start_model_worker(
                 model_factory=model_factory,
                 batch_config=cont_batching,
+                settings=server_settings,
             ) as worker_queue,
             TokenGeneratorPipeline(
                 model_name, tokenizer, worker_queue

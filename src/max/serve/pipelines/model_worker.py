@@ -9,7 +9,6 @@ import multiprocessing
 import os
 import uuid
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
 from multiprocessing import Queue
 from typing import AsyncGenerator, Mapping
 
@@ -36,27 +35,12 @@ from max.serve.telemetry.stopwatch import record_ms
 logger = get_logger(__name__)
 
 
-@dataclass(frozen=True)
-class ModelWorkerConfig:
-    worker_name: str = field(
-        default_factory=lambda: str("MODEL_" + str(uuid.uuid4()))
-    )
-    timeout_secs: float = 20 * 60.0
-    # Maximum time to wait for a heartbeat & remain "healthy"
-    # This should be longer than ITL
-    # TODO: we temporarily set it to 1 minute to handle long context input
-    health_fail_s: float = 60.0
-
-    use_heartbeat: bool = False
-
-
 def _model_worker_process_fn(
     pc: ProcessControl,
     model_factory: PipelinesFactory,
     batch_config: TokenGeneratorPipelineConfig,
-    worker_config: ModelWorkerConfig,
     queues: Mapping[str, Queue],
-    env: Mapping[str, str],
+    settings: Settings,
 ):
     try:
         uvloop.run(
@@ -64,9 +48,8 @@ def _model_worker_process_fn(
                 pc,
                 model_factory,
                 batch_config,
-                worker_config,
                 queues,
-                env,
+                settings,
             )
         )
     except KeyboardInterrupt:
@@ -83,7 +66,7 @@ def _model_worker_process_fn(
 async def start_model_worker(
     model_factory: PipelinesFactory,
     batch_config: TokenGeneratorPipelineConfig,
-    config: ModelWorkerConfig = ModelWorkerConfig(),
+    settings: Settings,
 ) -> AsyncGenerator[EngineQueue, None]:
     """Starts a model worker and associated process.
 
@@ -97,12 +80,13 @@ async def start_model_worker(
     Yields:
         Iterator[AsyncIterator[Worker]]: _description_
     """
+    worker_name = "MODEL_" + str(uuid.uuid4())
 
     mp_context = multiprocessing.get_context("spawn")
     pc = ProcessControl(
         mp_context,
         "model-worker",
-        health_fail_s=config.health_fail_s,
+        health_fail_s=settings.mw_health_fail_s,
     )
     engine_queue: EngineQueue = EngineQueue(mp_context, worker_pc=pc)
     queue_args = {
@@ -111,18 +95,17 @@ async def start_model_worker(
         "CANCEL": engine_queue.cancel_q,
     }
 
-    logger.info("Starting worker: %s", config.worker_name)
+    logger.info("Starting worker: %s", worker_name)
     worker = mp_context.Process(
-        name=config.worker_name,
+        name=worker_name,
         target=_model_worker_process_fn,
         daemon=True,
         args=(
             pc,
             model_factory,
             batch_config,
-            config,
             queue_args,
-            dict(os.environ),
+            settings,
         ),
     )
     worker.start()
@@ -131,11 +114,11 @@ async def start_model_worker(
         pc,
         worker,
         poll_s=10e-3,
-        max_time_s=config.timeout_secs,
+        max_time_s=settings.mw_timeout_s,
         unhealthy_poll_s=200e-3,
     )
 
-    use_heartbeat = os.environ.get("MAX_SERVE_USE_HEARTBEAT") == "1"
+    use_heartbeat = settings.use_heartbeat
     if not use_heartbeat:
         engine_queue.use_process_healthcheck(worker)
 
@@ -150,7 +133,7 @@ async def start_model_worker(
     completed_tasks, pending_tasks = await asyncio.wait(
         [ht, dt],
         # Set a timeout longer than either task. This shouldn't be necessary, but being paranoid
-        timeout=config.timeout_secs * 2,
+        timeout=settings.mw_timeout_s * 2,
         return_when=asyncio.FIRST_COMPLETED,
     )
 
@@ -209,14 +192,9 @@ async def model_worker_run_v3(
     pc: ProcessControl,
     model_factory: PipelinesFactory,
     pipeline_config: TokenGeneratorPipelineConfig,
-    worker_config: ModelWorkerConfig,
     queues: Mapping[str, Queue],
-    env: Mapping[str, str],
+    server_settings: Settings,
 ):
-    # Anti-pattern? The metrics-specific subset of this could be passed explicitly
-    # ENVs need to be carried over from the parent explicitly since we `spawn`
-    os.environ.update(env)
-    server_settings = Settings()
     await METRICS.configure(server_settings)
 
     pid = os.getpid()

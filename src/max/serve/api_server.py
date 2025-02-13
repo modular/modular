@@ -29,10 +29,7 @@ from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorPipelineConfig,
 )
-from max.serve.pipelines.model_worker import (
-    ModelWorkerConfig,
-    start_model_worker,
-)
+from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_worker
 from max.serve.request import register_request
 from max.serve.router import kserve_routes, openai_routes
@@ -56,13 +53,6 @@ class ServingTokenGeneratorSettings:
     pipeline_config: TokenGeneratorPipelineConfig
     tokenizer: PipelineTokenizer
 
-    # Model worker config
-    use_heartbeat: bool
-
-    @classmethod
-    def from_config(cls, server_settings, **kwargs):
-        return cls(use_heartbeat=server_settings.use_heartbeat, **kwargs)
-
 
 @asynccontextmanager
 async def lifespan(
@@ -82,7 +72,7 @@ async def lifespan(
             start_model_worker(
                 serving_settings.model_factory,
                 serving_settings.pipeline_config,
-                ModelWorkerConfig(use_heartbeat=serving_settings.use_heartbeat),
+                settings=server_settings,
             ) as engine_queue,
         ):
             METRICS.pipeline_load(serving_settings.model_name)
@@ -163,7 +153,6 @@ async def main() -> None:
             batch_size=1
         ),
         tokenizer=EchoPipelineTokenizer(),
-        use_heartbeat=server_settings.use_heartbeat,
     )
 
     app = fastapi_app(server_settings, pipeline_settings)
