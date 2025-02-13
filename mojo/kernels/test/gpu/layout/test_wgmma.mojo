@@ -8,37 +8,25 @@
 
 import linalg.vendor_blas
 from buffer import DimList, NDBuffer
-from builtin.io import _printf
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
 from gpu.id import thread_idx
-from gpu.intrinsics import threadfence
 from gpu.memory import AddressSpace
 from gpu.mma import (
-    WGMMADescriptor,
     wgmma_async,
     wgmma_commit_group_sync,
     wgmma_fence_aligned,
     wgmma_wait_group_sync,
 )
-from layout import IntTuple, Layout, LayoutTensor
+from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from layout.fillers import arange
-from layout.int_tuple import to_int
-from layout.layout import print_layout
 from layout.tensor_core_async import (
     _lhs_descriptor,
     _rhs_descriptor,
     tile_layout_k_major,
 )
-from memory import bitcast
 from testing import assert_almost_equal
-from sys._assembly import inlined_assembly
-from sys import _RegisterPackType
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
-from pathlib import Path
-from builtin.io import _printf
 
 from utils.index import Index
 
