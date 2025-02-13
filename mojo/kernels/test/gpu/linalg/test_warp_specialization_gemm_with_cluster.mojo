@@ -68,6 +68,16 @@ alias WARP_GROUP_SIZE = 128
 alias NumWarpPerWarpGroup = 4
 
 
+@always_inline
+fn cluster_size[cluster_shape: StaticTuple[Int32, 3]]() -> Int32:
+    var size: Int32 = 1
+
+    @parameter
+    for i in range(3):
+        size *= cluster_shape[i]
+    return size
+
+
 @__llvm_metadata(
     `nvvm.grid_constant`=StaticTuple[Int, 2](0, 1),
     `nvvm.cluster_dim`=cluster_shape,
@@ -169,18 +179,22 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
 
     var lane_predicate = elect_one_sync()
     if thread_idx.x == 0:
+        a_tma_op.prefetch_descriptor()
+        b_tma_op.prefetch_descriptor()
 
         @parameter
         for i in range(pipeline_stages):
             full[i].init(1)
             empty[i].init(num_consumer * CLUSTER_SIZE)
 
-    barrier()
-
     # We need this to guarantee that the Pipeline init is visible
     # To all producers and consumer blocks in the cluster
-    cluster_sync_relaxed()
-    fence_mbarrier_init()
+    @parameter
+    if cluster_size[cluster_shape]() > 1:
+        fence_mbarrier_init()
+        cluster_sync_relaxed()
+    else:
+        barrier()
 
     if warp_group_idx == 0:
         alias num_regs = 24 if num_consumer <= 2 else 32
@@ -315,8 +329,11 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
                 copy_local_to_dram[Layout.row_major(8, 4)](
                     warp_tile.vectorize[1, 2](), c_frag.vectorize[1, 2]()
                 )
+
     # TO ensure SEMEM destruction doesn't happen
-    cluster_sync()
+    @parameter
+    if cluster_size[cluster_shape]() > 1:
+        cluster_sync()
 
 
 def test_warp_specialize_gemm_with_multicasting[
