@@ -324,3 +324,4 @@ def main():
         wgmma_bf16_bf16_f32[64, 32, 16, True, a_reg=True](ctx)
         wgmma_bf16_bf16_f32[64, 64, 16, True, a_reg=True](ctx)
         wgmma_bf16_bf16_f32[64, 128, 16, True, a_reg=True](ctx)
+        wgmma_bf16_bf16_f32[64, 256, 16, True, a_reg=True](ctx)
