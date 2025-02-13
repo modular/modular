@@ -4,8 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/ADT/StringSet.h"
-
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/LITDialect/LITTypes.h"
@@ -305,7 +303,7 @@ getUnboundParametersForSIMD(LIT::StructType structType, Builder &builder) {
 
 // Returns a dictionary attribute containing all parameters for simple types
 // (i.e: tensor or SIMD).
-static DictionaryAttr getParametersForSimpleType(LIT::StructType structType,
+static DictionaryAttr getParametersForTensorType(LIT::StructType structType,
                                                  Builder &builder) {
   SmallVector<NamedAttribute> attrs;
   auto paramValues = structType.getParamValues();
@@ -455,14 +453,14 @@ static void labelTensorParamsInKernel(LIT::FnOp funcOp) {
       tensorSpecs.push_back(
           DictionaryAttr::get(funcOp.getContext(), tensorSpecNamedAttrs));
       tensorArgsParams.push_back(
-          getParametersForSimpleType(asStructType, builder));
+          getParametersForTensorType(asStructType, builder));
     } else if (symbolMatches(asStructType.getSymbol(), kMaxSIMD)) {
       SmallVector<NamedAttribute> tensorSpecNamedAttrs =
           getUnboundParametersForSIMD(asStructType, builder);
       tensorSpecs.push_back(
           DictionaryAttr::get(funcOp.getContext(), tensorSpecNamedAttrs));
       tensorArgsParams.push_back(
-          getParametersForSimpleType(asStructType, builder));
+          getParametersForTensorType(asStructType, builder));
     } else if (symbolMatches(asStructType.getSymbol(), kMaxVariadicTensors)) {
       auto tensorSpecNamedAttrs =
           getUnboundParametersForVariadicTensors(asStructType, builder);
