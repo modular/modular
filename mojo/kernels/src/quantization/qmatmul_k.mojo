@@ -590,9 +590,9 @@ def matmul_Q6_K_pack_b(
 
 @always_inline
 fn _matmul_group_stream_x86[
+    tile_k: Int,
     tile_m: Int,
     tile_n: Int,
-    tile_k: Int,
     simd_width: Int, //,
     group_size: Int,
     stream_b_vals_fn: fn (
@@ -638,9 +638,9 @@ fn _matmul_group_stream_x86[
 
 @always_inline
 fn _matmul_group_stream_neon_dotprod[
+    tile_k: Int,
     tile_m: Int,
     tile_n: Int,
-    tile_k: Int,
     simd_width: Int, //,
     group_size: Int,
     stream_b_vals_fn: fn (
@@ -685,16 +685,17 @@ fn _matmul_group_stream_neon_dotprod[
 
 @always_inline
 fn _matmul_group_stream[
+    tile_k: Int,
     tile_m: Int,
     tile_n: Int,
-    tile_k: Int,
-    simd_width: Int, //,
+    simd_width: Int,
+    origins: OriginSet, //,
     group_size: Int,
     stream_b_vals_fn: fn (
         mut b_vals: InlineArray[
             SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
         ]
-    ) capturing [_] -> None,
+    ) capturing [origins] -> None,
 ](
     a_q_bits_ptr: UnsafePointer[Int8],
     mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
@@ -738,7 +739,14 @@ fn _matmul_group_unpacked[
             b_vals[col] = b_q_bits_ptr.load[width = simd_width * 4]()
             b_q_bits_ptr += simd_width * 4
 
-    _matmul_group_stream[group_size, stream_b_vals](a_q_bits_ptr, c_int32_group)
+    _matmul_group_stream[
+        tile_k=1,
+        tile_m=tile_m,
+        tile_n=tile_n,
+        simd_width=simd_width,
+        group_size,
+        stream_b_vals,
+    ](a_q_bits_ptr, c_int32_group)
 
 
 @always_inline
@@ -952,7 +960,14 @@ fn _matmul_group_packed_Q4_K[
                 var bytes = (packed_bits >> (i * 4)) & 15
                 b_vals[col * tile_k + i] = bytes
 
-    _matmul_group_stream[group_size, stream_b_vals](a_q_bits_ptr, c_int32_group)
+    _matmul_group_stream[
+        tile_k=tile_k,
+        tile_m=tile_m,
+        tile_n=tile_n,
+        simd_width=simd_width,
+        group_size,
+        stream_b_vals,
+    ](a_q_bits_ptr, c_int32_group)
 
 
 @always_inline
@@ -1146,7 +1161,14 @@ fn _matmul_group_packed_Q6_K[
 
             b_vals[col * tile_k + 3] = hi_bytes - zero_point
 
-    _matmul_group_stream[group_size, stream_b_vals](a_q_bits_ptr, c_int32_group)
+    _matmul_group_stream[
+        tile_k=4,
+        tile_m=tile_m,
+        tile_n=tile_n,
+        simd_width=simd_width,
+        group_size,
+        stream_b_vals,
+    ](a_q_bits_ptr, c_int32_group)
 
 
 @always_inline
