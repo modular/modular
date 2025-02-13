@@ -47,13 +47,10 @@ fn bench_vec_add(
     context.enqueue_copy_to_device(in0_device, in0_host)
     context.enqueue_copy_to_device(in1_device, in1_host)
 
-    var func = context.compile_function[vec_func]()
-
     @always_inline
     @parameter
     fn run_func() raises:
-        context.enqueue_function(
-            func,
+        context.enqueue_function[vec_func](
             in0_device,
             in1_device,
             out_device,
@@ -82,7 +79,7 @@ fn bench_vec_add(
     for i in range(length):
         assert_equal(i + 2, out_host[i])
 
-    __ownership_keepalive(in0_device, in1_device, out_device, func)
+    __ownership_keepalive(in0_device, in1_device, out_device)
 
     in0_host.free()
     in1_host.free()

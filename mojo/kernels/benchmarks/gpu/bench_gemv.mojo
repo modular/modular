@@ -154,14 +154,6 @@ fn bench_matmul_naive[
 
     alias BLOCK_DIM = 16
     alias WARPS_PER_BLOCK = 32
-    var func_gemv = ctx.compile_function[
-        matmul_kernel_naive[
-            dtype,
-            dtype,
-            dtype,
-            BLOCK_DIM,
-        ]
-    ]()
 
     @always_inline
     @__copy_capture(M, N, K)
@@ -170,8 +162,9 @@ fn bench_matmul_naive[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            ctx.enqueue_function(
-                func_gemv,
+            ctx.enqueue_function[
+                matmul_kernel_naive[dtype, dtype, dtype, BLOCK_DIM]
+            ](
                 mat_c.tensor.data,
                 mat_a.tensor.data,
                 mat_b.tensor.data,
@@ -202,7 +195,6 @@ fn bench_matmul_naive[
     _ = mat_c^
     _ = mat_a^
     _ = mat_b^
-    _ = func_gemv^
 
 
 struct ValOrDim[dim: Dim = Dim()]:

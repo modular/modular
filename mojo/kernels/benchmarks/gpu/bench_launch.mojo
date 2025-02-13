@@ -29,20 +29,19 @@ fn empty_kernel_many_params[
 
 
 fn bench_empty_launch_caller(mut m: Bench, ctx: DeviceContext) raises:
-    var func = ctx.compile_function[empty_kernel]()
-
     @parameter
     @always_inline
     fn bench_empty_launch(mut b: Bencher) raises:
         @parameter
         @always_inline
         fn launch(ctx: DeviceContext) raises:
-            ctx.enqueue_function(func, grid_dim=Dim(1), block_dim=Dim(1))
+            ctx.enqueue_function[empty_kernel](
+                grid_dim=Dim(1), block_dim=Dim(1)
+            )
 
         b.iter_custom[launch](ctx)
 
     m.bench_function[bench_empty_launch](BenchId("bench_empty_launch"))
-    _ = func^
 
 
 fn bench_empty_launch_many_params_caller(
@@ -59,14 +58,13 @@ fn bench_empty_launch_many_params_caller(
         Layout(IntTuple(1, 2), IntTuple(3, 3)),
         Layout(IntTuple(1, 2), IntTuple(3, 3)),
     ]
-    var func = ctx.compile_function[func_alias]()
 
     @parameter
     @always_inline
     fn bench_empty_launch_many_params(mut b: Bencher) raises:
         @parameter
         fn launch() raises:
-            ctx.enqueue_function(func, grid_dim=Dim(1), block_dim=Dim(1))
+            ctx.enqueue_function[func_alias](grid_dim=Dim(1), block_dim=Dim(1))
 
         b.iter[launch]()
         ctx.synchronize()
@@ -74,8 +72,6 @@ fn bench_empty_launch_many_params_caller(
     m.bench_function[bench_empty_launch_many_params](
         BenchId("bench_empty_launch_many_params")
     )
-
-    _ = func^
 
 
 def main():
