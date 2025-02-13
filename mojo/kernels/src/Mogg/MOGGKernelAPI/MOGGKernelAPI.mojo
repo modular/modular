@@ -166,7 +166,7 @@ from quantization.qmatmul_k import (
     matmul_Q6_K,
     matmul_Q6_K_pack_b,
 )
-from register import register_internal, uses_opaque
+from register import register_internal
 from runtime.asyncrt import DeviceContextPtr, MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
 from tensor_internal import (
@@ -5732,7 +5732,6 @@ fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[
 
 @compiler.register("mo.fused_qkv_matmul.ragged.continuous_batching")
 struct Struct_fused_qkv_matmul_ragged_continuous_batching:
-    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -5798,7 +5797,6 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
 
 @compiler.register("mo.fused_qkv_matmul.padded.continuous_batching")
 struct Struct_fused_qkv_matmul_padded_continuous_batching:
-    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -5891,7 +5889,6 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
 
 @compiler.register("mo.fused_qkv_matmul.ragged.paged")
 struct Struct_fused_qkv_matmul_padded_ragged:
-    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -5928,7 +5925,6 @@ struct Struct_fused_qkv_matmul_padded_ragged:
 
 @compiler.register("mo.fused_qkv_matmul.ragged.paged.quantized")
 struct Struct_fused_qkv_matmul_padded_ragged_quantized:
-    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -5975,7 +5971,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_quantized:
 
 @compiler.register("mo.fused_qkv_matmul.ragged.paged.bias")
 struct Struct_fused_qkv_matmul_padded_ragged_bias:
-    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -6014,7 +6009,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
 
 @compiler.register("mo.fused_qkv_matmul.ragged.paged.bias.quantized")
 struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
-    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -6108,7 +6102,6 @@ fn generic_fused_qk_rope_bshd_continuous_batch_kernel_api[
 
 @compiler.register("mo.fused_qk_rope.padded.continuous_batching")
 struct Struct_fused_qk_rope_padded_continuous_batching[interleaved: Bool]:
-    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -6168,7 +6161,6 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
 
 @compiler.register("mo.fused_qk_rope.ragged.continuous_batching")
 struct Struct_fused_qk_rope_bshd_continuous_batch_ragged[interleaved: Bool]:
-    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -6231,7 +6223,6 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
 
 @compiler.register("mo.fused_qk_rope.ragged.paged")
 struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
-    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -6301,7 +6292,6 @@ fn generic_flash_attention_kv_cache_continuous_batch_kernel_api[
 
 @compiler.register("mo.mha.padded.continuous_batching.tensor_mask.no_pos")
 struct Struct_mha_padded_continuous_batching_tensor_mask_no_pos:
-    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -6356,7 +6346,6 @@ fn generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
 
 @compiler.register("mo.mha.padded.continuous_batching.causal_mask.no_pos")
 struct Struct_mha_padded_continuous_batching_causal_mask_no_pos:
-    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -6430,7 +6419,6 @@ fn generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged_kernel_api[
 
 @compiler.register("mo.mha.ragged.continuous_batching.causal_mask.no_pos")
 struct Struct_mha_ragged_continuous_batching_causal_mask_no_pos:
-    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -6462,7 +6450,6 @@ struct Struct_mha_ragged_continuous_batching_causal_mask_no_pos:
 
 @compiler.register("mo.mha.ragged.continuous_batching.causal_mask.alibi_pos")
 struct Struct_mha_ragged_continuous_batching_causal_mask_alibi_pos:
-    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -6518,7 +6505,6 @@ fn generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
 
 @compiler.register("mo.mha.ragged.paged.causal_mask.no_pos")
 struct Struct_mha_ragged_paged_causal_mask_no_pos:
-    @uses_opaque
     @staticmethod
     @always_inline
     fn execute[
@@ -6592,7 +6578,6 @@ fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged_kernel_api[
     "mo.cross_attention.ragged.continuous_batching.null_mask.no_pos"
 )
 struct Struct_cross_attention_ragged_continuous_batching_null_mask_no_pos:
-    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -6658,7 +6643,6 @@ fn generic_get_continuous_cache_kernel_api[
     "mo.kv_collection_ctor.continuous_batching", num_dps_outputs=0
 )
 struct Struct_kv_collection_ctor_continuous_batching:
-    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -6971,7 +6955,6 @@ struct PackMatmulBShapeFunc:
     num_dps_outputs=0,
 )
 struct Struct_rms_norm_kv_cache_ragged_continuous_batching:
-    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -7066,7 +7049,6 @@ fn print_kv_cache_paged_generic_kernel_api[
 
 @compiler.register("mo.print_kv_cache.paged", num_dps_outputs=0)
 struct Struct_print_kv_cache_paged:
-    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -7097,7 +7079,6 @@ struct Struct_print_kv_cache_paged:
 
 @compiler.register("mo.print_kv_cache.continuous_batching", num_dps_outputs=0)
 struct Struct_print_kv_cache_continuous_batching:
-    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -7131,7 +7112,6 @@ struct Struct_print_kv_cache_continuous_batching:
 
 @compiler.register("mo.kv_collection_ctor.paged", num_dps_outputs=0)
 struct Struct_kv_collection_ctor_paged:
-    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -7172,7 +7152,6 @@ struct Struct_kv_collection_ctor_paged:
     num_dps_outputs=0,
 )
 struct Struct_kv_matmul_ragged_continuous_batching:
-    @uses_opaque
     @staticmethod
     @always_inline
     fn execute[

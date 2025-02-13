@@ -11,7 +11,6 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from compiler_internal import StaticTensorSpec
 from linalg.matmul import matmul as _matmul
-from register import uses_opaque
 from runtime.asyncrt import DeviceContextPtr, MojoCallContextPtr
 from tensor import (
     ManagedTensorSlice,
@@ -76,7 +75,6 @@ struct MyCustomScalarRegF32:
 
 @compiler.register("tensor_to_custom_scalar_si32_reg", num_dps_outputs=0)
 struct OpaqueToCustomScalarSI32Reg:
-    @uses_opaque
     @staticmethod
     fn execute(
         x: ManagedTensorSlice[DType.int32, rank=1]
@@ -88,7 +86,6 @@ struct OpaqueToCustomScalarSI32Reg:
 # to a tensor
 @compiler.register("opaque_add_to_tensor_si32_reg")
 struct OpaqueAddToTensorSI32Reg:
-    @uses_opaque
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -103,7 +100,6 @@ struct OpaqueAddToTensorSI32Reg:
 
 @compiler.register("opaque_add_to_tensor_f32_reg")
 struct OpaqueAddToTensorF32:
-    @uses_opaque
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -136,7 +132,6 @@ struct MyCustomScalarSI32:
 
 @compiler.register("tensor_to_custom_scalar_si32", num_dps_outputs=0)
 struct OpaqueToCustomScalarSI32:
-    @uses_opaque
     @staticmethod
     fn execute(
         x: ManagedTensorSlice[DType.int32, rank=1]
@@ -148,7 +143,6 @@ struct OpaqueToCustomScalarSI32:
 # to a tensor
 @compiler.register("opaque_add_to_tensor_si32")
 struct OpaqueAddToTensorSI32:
-    @uses_opaque
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -163,7 +157,6 @@ struct OpaqueAddToTensorSI32:
 
 @compiler.register("opaque_add_to_tensor_si32_raises")
 struct OpaqueAddToTensorSI32Raises:
-    @uses_opaque
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -819,7 +812,6 @@ struct MyCustomScalarReg[type: DType]:
 
 @compiler.register("buff_to_my_custom_scalar_reg", num_dps_outputs=0)
 struct BuffToMyCustomScalarReg:
-    @uses_opaque
     @staticmethod
     fn execute[
         target: StringLiteral
@@ -829,7 +821,6 @@ struct BuffToMyCustomScalarReg:
 
 @compiler.register("my_custom_scalar_reg_to_buff")
 struct CustomScalarRegToBuff:
-    @uses_opaque
     @staticmethod
     fn execute[
         target: StringLiteral
