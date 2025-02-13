@@ -48,7 +48,7 @@ public:
 
   /// Consolidate the thread-local caches back into the main cache instance, if
   /// desired.
-  void consolidate(function_ref<void(CacheT &, const CacheT &)> unionFn) {
+  void consolidate(llvm::function_ref<void(CacheT &, const CacheT &)> unionFn) {
     for (const CacheT &cache : llvm::make_second_range(threadCaches))
       unionFn(original, cache);
   }
@@ -57,7 +57,7 @@ private:
   /// The original cache to make copies from.
   CacheT &original;
   /// Thread-local instances of the cache.
-  DenseMap<uint64_t, CacheT> threadCaches;
+  llvm::DenseMap<uint64_t, CacheT> threadCaches;
   /// The mutex guarding the thread-local cache instances.
   llvm::sys::SmartRWMutex<true> mutex;
 };

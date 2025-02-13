@@ -376,7 +376,6 @@ modular_cc_library(
     name = "Threading",
     srcs = glob(["lib/Threading/*.cpp"]),
     hdrs = glob(["include/Support/Threading/*.h"]),
-    tags = ["no-clang-tidy-headers"],
     deps = [":Base"],
 )
 
