@@ -328,7 +328,7 @@ def test_multicast_tma_wgmma[
         b_swizzle=b_swizzle,
     ]
 
-    ctx.enqueue_function[func](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c.device_tensor(),
