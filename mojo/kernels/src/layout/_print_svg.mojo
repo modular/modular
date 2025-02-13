@@ -18,6 +18,7 @@ fn print_svg[
     element_layout: Layout,
     masked: Bool, //,
     swizzle: Optional[Swizzle] = None,
+    memory_bank: Optional[Tuple[Int, Int]] = None,
 ](
     tensor_base: LayoutTensor,
     tensors: List[
@@ -29,7 +30,7 @@ fn print_svg[
     file_path: Optional[Path] = None,
 ) raises:
     var s = String()
-    _print_svg_impl[swizzle](tensor_base, tensors, s, color_map)
+    _print_svg_impl[swizzle, memory_bank](tensor_base, tensors, s, color_map)
     if file_path:
         file_path.value().write_text(s)
     else:
@@ -44,6 +45,7 @@ fn _print_svg_impl[
     masked: Bool,
     W: Writer, //,
     swizzle: Optional[Swizzle] = None,
+    memory_bank: Optional[Tuple[Int, Int]] = None,
 ](
     tensor_base: LayoutTensor,
     tensors: List[
@@ -159,8 +161,19 @@ fn _print_svg_impl[
                 y + cell_size / 2 + 20,
                 '" dominant-baseline="middle" text-anchor="middle">',
                 idx,
-                "</text>\n",
             )
+
+            @parameter
+            if memory_bank:
+                writer.write(
+                    " b=",
+                    (
+                        (idx * sizeof[tensor_base.dtype]())
+                        // memory_bank.value()[0]
+                    )
+                    % memory_bank.value()[1],
+                )
+            writer.write("</text>\n")
             if swizzle:
                 writer.write(
                     '<text font-size="x-small" fill="gainsboro" x="',
