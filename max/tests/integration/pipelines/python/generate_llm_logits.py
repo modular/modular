@@ -678,10 +678,17 @@ class Llama3_3_70BInstructPipelineOracle(PipelineOracle):
         model = transformers.AutoModelForCausalLM.from_pretrained(
             hf_repo_id,
             config=config,
-            device_map=device,
+            # Set device map to auto and just hope for enough GPU VRAM.
+            device_map="auto",
             torch_dtype=torch.bfloat16,
         )
         return TorchModelAndDataProcessor(model=model, data_processor=tokenizer)
+
+    @property
+    def prompts(self) -> Sequence[str]:
+        # TODO(AITLIB-194): Drop first prompt for now due to divergence -- fix
+        # once we bisect Llama 3.3 70B correctness.
+        return evaluate.PROMPTS[1:]
 
 
 class GenericOracle(PipelineOracle):
@@ -939,12 +946,11 @@ def main(
         torch_device: torch.device
         if device_type == "cpu":
             torch_device = torch.device("cpu")
-        elif device_type == "gpu":
+        elif device_type == "gpu" or isinstance(device_type, list):
+            # Set device to device 0 even for multi-GPU: model parallelism is
+            # handled at model construction time in `create_torch_pipeline`.
             torch_device = torch.device("cuda:0")
-        else:
-            raise ValueError(
-                f"Device type {device_type!r} not supported for Torch"
-            )
+
         torch_pipeline_and_tokenizer = pipeline_oracle.create_torch_pipeline(
             version=version_name, encoding=encoding_name, device=torch_device
         )

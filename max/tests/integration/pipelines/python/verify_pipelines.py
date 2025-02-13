@@ -113,7 +113,7 @@ class TagFilterParamType(click.ParamType):
 def generate_llm_logits(
     *,
     framework: str,
-    device: DeviceKind,
+    device: str,
     pipeline: str,
     version: str,
     encoding: str,
@@ -124,7 +124,7 @@ def generate_llm_logits(
         [
             os.environ["GENERATE_LLM_LOGITS_BIN"],
             f"--framework={framework}",
-            f"--device={device.value}",
+            f"--device={device}",
             f"--pipeline={pipeline}",
             f"--version={version}",
             f"--encoding={encoding}",
@@ -138,6 +138,7 @@ def generate_llm_logits(
 def run_llm_verification(
     *,
     device_type: DeviceKind,
+    devices: str,
     pipeline: str,
     version: str,
     encoding: str,
@@ -161,7 +162,7 @@ def run_llm_verification(
     )
     generate_llm_logits(
         framework="max",
-        device=device_type,
+        device=devices,
         pipeline=pipeline,
         version=version,
         encoding=encoding,
@@ -180,7 +181,7 @@ def run_llm_verification(
         )
         generate_llm_logits(
             framework="torch",
-            device=device_type,
+            device=devices,
             pipeline=pipeline,
             version=version,
             encoding=encoding,
@@ -232,12 +233,14 @@ class PipelineDef:
     """
 
     compatible_with: Sequence[DeviceKind]
-    run: Callable[[DeviceKind], VerificationVerdict]
+    run: Callable[[DeviceKind, str], VerificationVerdict]
     tags: Sequence[str] = field(default_factory=list)
 
-    def run_protected(self, device_type: DeviceKind) -> VerificationVerdict:
+    def run_protected(
+        self, device_type: DeviceKind, devices: str
+    ) -> VerificationVerdict:
         try:
-            return self.run(device_type)
+            return self.run(device_type, devices)
         except Exception:
             traceback.print_exc()
             return VerificationVerdict.ERROR
@@ -246,8 +249,9 @@ class PipelineDef:
 PIPELINES = {
     "llama3_1-q4_k": PipelineDef(
         compatible_with=[DeviceKind.CPU],
-        run=lambda device_type: run_llm_verification(
+        run=lambda device_type, devices: run_llm_verification(
             device_type=device_type,
+            devices=devices,
             pipeline="llama",
             version="llama3_1",
             encoding="q4_k",
@@ -263,8 +267,9 @@ PIPELINES = {
     ),
     "llama3_1-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU],
-        run=lambda device_type: run_llm_verification(
+        run=lambda device_type, devices: run_llm_verification(
             device_type=device_type,
+            devices=devices,
             pipeline="llama",
             version="llama3_1",
             encoding="float32",
@@ -278,8 +283,9 @@ PIPELINES = {
     ),
     "llama3_1-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        run=lambda device_type: run_llm_verification(
+        run=lambda device_type, devices: run_llm_verification(
             device_type=device_type,
+            devices=devices,
             pipeline="llama",
             version="llama3_1",
             encoding="bfloat16",
@@ -294,10 +300,27 @@ PIPELINES = {
             relative_tolerance=2.1,
         ),
     ),
+    "Llama-3.3-70B-Instruct-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["h100-multi"],
+        run=lambda device_type, devices: run_llm_verification(
+            device_type=device_type,
+            devices=devices,
+            pipeline="llama3.3-70b",
+            version="Llama-3.3-70B-Instruct",
+            encoding="bfloat16",
+            # TODO(AITLIB-194): Reduce thresholds after fixing correctness.
+            kl_div_threshold=0.5,
+            cos_dist_threshold=0.002,
+            absolute_tolerance=0.8,
+            relative_tolerance=2.1,
+        ),
+    ),
     "replit-code-v1_5-3b-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        run=lambda device_type: run_llm_verification(
+        run=lambda device_type, devices: run_llm_verification(
             device_type=device_type,
+            devices=devices,
             pipeline="replit",
             version="replit-code-v1_5-3b",
             encoding="bfloat16",
@@ -316,8 +339,9 @@ PIPELINES = {
     "mistral-nemo-instruct-2407-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big"],
-        run=lambda device_type: run_llm_verification(
+        run=lambda device_type, devices: run_llm_verification(
             device_type=device_type,
+            devices=devices,
             pipeline="mistral",
             version="nemo-instruct-2407",
             encoding="bfloat16",
@@ -332,8 +356,9 @@ PIPELINES = {
     "llama3-vision-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big"],
-        run=lambda device_type: run_llm_verification(
+        run=lambda device_type, devices: run_llm_verification(
             device_type=device_type,
+            devices=devices,
             pipeline="llama3-vision",
             version="llama3_2",
             encoding="bfloat16",
@@ -352,8 +377,9 @@ PIPELINES = {
     "pixtral-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big"],
-        run=lambda device_type: run_llm_verification(
+        run=lambda device_type, devices: run_llm_verification(
             device_type=device_type,
+            devices=devices,
             pipeline="pixtral",
             version="pixtral12b",
             encoding="bfloat16",
@@ -366,8 +392,9 @@ PIPELINES = {
     ),
     "mpnet-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU],
-        run=lambda device_type: run_llm_verification(
+        run=lambda device_type, devices: run_llm_verification(
             device_type=device_type,
+            devices=devices,
             pipeline="mpnet",
             version="general",
             encoding="float32",
@@ -379,8 +406,9 @@ PIPELINES = {
     ),
     "mpnet-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        run=lambda device_type: run_llm_verification(
+        run=lambda device_type, devices: run_llm_verification(
             device_type=device_type,
+            devices=devices,
             pipeline="mpnet",
             version="general",
             encoding="bfloat16",
@@ -392,8 +420,9 @@ PIPELINES = {
     ),
     "Qwen2.5-7B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        run=lambda device_type: run_llm_verification(
+        run=lambda device_type, devices: run_llm_verification(
             device_type=device_type,
+            devices=devices,
             pipeline="qwen",
             version="2.5-7B-Instruct",
             encoding="bfloat16",
@@ -429,14 +458,14 @@ def main(
 ) -> None:
     """Run logit-level comparisons of a Modular pipeline against a reference."""
 
-    if devices_str is not None and "," in devices_str:
-        raise NotImplementedError(
-            "Only one device at a time currently supported"
-        )
-    if devices_str is None:
-        device_type = DeviceKind.CPU
-    else:
-        device_type = DeviceKind(devices_str)
+    # Let generate_llm_logits.py validate the `--devices` CLI arg and just pass
+    # it through as a string (but use it here to figure out cpu vs. gpu).
+    device_type = (
+        DeviceKind.CPU
+        if isinstance(devices_str, str) and "cpu" in devices_str
+        else DeviceKind.GPU
+    )
+    devices_str = "cpu" if devices_str is None else devices_str
 
     verdicts: dict[str, VerificationVerdict] = {}
     if pipeline is None:
@@ -446,7 +475,9 @@ def main(
             if not tag_filter.satisfied_by(pipeline_def.tags):
                 continue
             print(f"Running {pipeline_name}...", flush=True)
-            verdicts[pipeline_name] = pipeline_def.run_protected(device_type)
+            verdicts[pipeline_name] = pipeline_def.run_protected(
+                device_type, devices_str
+            )
     else:
         if pipeline not in PIPELINES:
             raise click.ClickException(f"Unknown pipeline {pipeline!r}")
@@ -459,7 +490,9 @@ def main(
             raise click.ClickException(
                 f"Pipeline {pipeline!r} doesn't match tag filter {tag_filter}"
             )
-        verdicts[pipeline] = pipeline_def.run_protected(device_type)
+        verdicts[pipeline] = pipeline_def.run_protected(
+            device_type, devices_str
+        )
 
     if report:
         dump_results(verdicts, to=report)
