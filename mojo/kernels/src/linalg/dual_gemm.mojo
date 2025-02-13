@@ -761,12 +761,7 @@ fn multistage_dual_gemm[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    var gemm_kernel = ctx.compile_function[gemm_kernel_type](
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_usage),
-    )
-
-    ctx.enqueue_function(
-        gemm_kernel,
+    ctx.enqueue_function[gemm_kernel_type](
         c,
         a,
         b0,
@@ -774,6 +769,7 @@ fn multistage_dual_gemm[
         grid_dim=config.grid_dim(M, 2 * N),
         block_dim=config.block_dim(),
         shared_mem_bytes=smem_usage,
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_usage),
     )
     ctx.synchronize()
 
@@ -1277,10 +1273,7 @@ fn dual_gemv[
         elementwise_lambda_fn,
     ]
 
-    var kernel = ctx.compile_function[kernel_type]()
-
-    ctx.enqueue_function(
-        kernel,
+    ctx.enqueue_function[kernel_type](
         c,
         a,
         b0,

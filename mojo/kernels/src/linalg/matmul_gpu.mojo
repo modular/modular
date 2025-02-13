@@ -1625,7 +1625,7 @@ fn _matmul_gpu[
             return
 
     alias BLOCK_DIM = 16
-    var gpu_func = ctx.compile_function[
+    ctx.enqueue_function[
         matmul_kernel_naive[
             c_type,
             a_type,
@@ -1634,9 +1634,7 @@ fn _matmul_gpu[
             transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
-    ]()
-    ctx.enqueue_function(
-        gpu_func,
+    ](
         c.data,
         a.data,
         b.data,
@@ -1756,14 +1754,7 @@ fn multistage_gemm[
                 serial_reduction,
             ]
 
-            var gemm_kernel = ctx.compile_function[gemm_kernel_type](
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    config.shared_mem_usage()
-                ),
-            )
-
-            ctx.enqueue_function(
-                gemm_kernel,
+            ctx.enqueue_function[gemm_kernel_type](
                 tensor_c,
                 tensor_a,
                 tensor_b,
@@ -1773,6 +1764,9 @@ fn multistage_gemm[
                 grid_dim=runtime_config.grid_dim(M, N),
                 block_dim=runtime_config.block_dim(),
                 shared_mem_bytes=runtime_config.shared_mem_usage(),
+                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                    config.shared_mem_usage()
+                ),
             )
 
             _ = locks_data^
@@ -1802,14 +1796,7 @@ fn multistage_gemm[
                 False,
             ]
 
-            var gemm_kernel = ctx.compile_function[gemm_kernel_type](
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    config.shared_mem_usage()
-                ),
-            )
-
-            ctx.enqueue_function(
-                gemm_kernel,
+            ctx.enqueue_function[gemm_kernel_type](
                 tensor_c,
                 tensor_a,
                 tensor_b,
@@ -1819,6 +1806,9 @@ fn multistage_gemm[
                 grid_dim=runtime_config.grid_dim(M, N),
                 block_dim=runtime_config.block_dim(),
                 shared_mem_bytes=runtime_config.shared_mem_usage(),
+                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                    config.shared_mem_usage()
+                ),
             )
 
             split_k_reduce[
@@ -1845,14 +1835,7 @@ fn multistage_gemm[
         elementwise_lambda_fn,
     ]
 
-    var gemm_kernel = ctx.compile_function[gemm_kernel_type](
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            config.shared_mem_usage()
-        ),
-    )
-
-    ctx.enqueue_function(
-        gemm_kernel,
+    ctx.enqueue_function[gemm_kernel_type](
         tensor_c,
         tensor_a,
         tensor_b,
@@ -1860,4 +1843,7 @@ fn multistage_gemm[
         grid_dim=runtime_config.grid_dim(M, N),
         block_dim=runtime_config.block_dim(),
         shared_mem_bytes=runtime_config.shared_mem_usage(),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            config.shared_mem_usage()
+        ),
     )

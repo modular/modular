@@ -626,9 +626,7 @@ fn _batched_matmul_gpu[
         unkown_shape,
         elementwise_epilogue_fn,
     ]
-    var gpu_func = ctx.compile_function[bmm]()
-    ctx.enqueue_function(
-        gpu_func,
+    ctx.enqueue_function[bmm](
         c_buf_reshaped,
         a_buf_reshaped,
         b_buf_reshaped,
