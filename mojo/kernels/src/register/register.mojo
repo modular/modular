@@ -44,6 +44,6 @@ fn uses_opaque():
 fn enforce_io_param():
     """
     Decorator meant to ease the transition fo MangedTensorSlice needing to
-    specialize on the ioSpec param in kernel struct execute calls.
+    specialize on the io_spec param in kernel struct execute calls.
     """
     return
