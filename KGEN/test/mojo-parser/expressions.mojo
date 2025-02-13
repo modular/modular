@@ -637,7 +637,7 @@ fn parameterExprs[a: Int, a2: Int]():
   alias b = a-a
   # CHECK: lit.alias.decl *"c{{.*}}": !Int = <{value = add(#lit.struct.extract<:!Int a, "value">, 42)}>
   alias c = a+42
-  # CHECK: lit.alias.decl *"d{{.*}}": !Int = <apply(:!lit.generator<("self": !Int, "rhs": !Int) -> !Int> @stdlib::@builtin::@int::@Int::@"__mul__(::Int,::Int)", a, a2)>
+  # CHECK: lit.alias.decl *"d{{.*}}": !Int = <{value = mul(#lit.struct.extract<:!Int a, "value">, #lit.struct.extract<:!Int a2, "value">)}>
   alias d = a*a2
 
 ##===----------------------------------------------------------------------===##

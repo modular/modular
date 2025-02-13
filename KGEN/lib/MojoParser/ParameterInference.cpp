@@ -436,6 +436,24 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
     }
   }
 
+  // Check struct values fieldwise.
+  if (auto actualStruct = dyn_cast<LITStructAttr>(actualAttr)) {
+    if (auto expectedStruct = dyn_cast<LITStructAttr>(expectedAttr)) {
+      if (actualStruct.getType() == expectedStruct.getType()) {
+        assert(actualStruct.getValues().size() ==
+                   expectedStruct.getValues().size() &&
+               "struct of same types disagree on fields");
+        for (auto [act, exp] :
+             llvm::zip(actualStruct.getValues(), expectedStruct.getValues())) {
+          assert(std::get<0>(act) == std::get<0>(exp) && "field name mismatch");
+          if (failed(matchParams(std::get<1>(act), std::get<1>(exp))))
+            return failure();
+        }
+        return success();
+      }
+    }
+  }
+
   LLVM_DEBUG(llvm::errs() << "CANNOT INFER UNKNOWN ATTRS:\n"; actualAttr.dump();
              expectedAttr.dump(); llvm::errs() << "\n");
   return failure();

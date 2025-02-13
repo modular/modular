@@ -6,10 +6,7 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
-##===----------------------------------------------------------------------===##
-# inferred Parameters
-##===----------------------------------------------------------------------===##
-
+struct TakesIntParam[a: Int]: pass
 
 trait SomeTrait:
     pass
@@ -19,6 +16,9 @@ trait SomeTrait:
 struct ParamType[x: Index](SomeTrait):
     pass
 
+##===----------------------------------------------------------------------===##
+# inferred Parameters
+##===----------------------------------------------------------------------===##
 
 @register_passable("trivial")
 struct DependentParam[x: Index, y: ParamType[x]]:
@@ -109,6 +109,12 @@ fn test_inferred_params[x: Index, y: ParamType[x], z: DependentParam[x, y]]():
 
     # CHECK-NEXT: InferredStructConversion<x, :type !Int, :[[PARAMTYPE]]<x> y>
     var inferred_type: InferredStructConversion[Int, y]
+
+
+# Multiply should work even though it is @always_inline("builtin")
+fn mul2_caller[n: Int, t: TakesIntParam[n * 2]](): return mul2_callee[t]()
+fn mul2_callee[n: Int, //, some_t: TakesIntParam[n * 2]]():
+    pass
 
 ##===----------------------------------------------------------------------===##
 # Inferred Self parameters
