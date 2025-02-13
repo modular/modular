@@ -234,7 +234,7 @@ static constexpr llvm::StringLiteral kParameterMut = "mut";
 static constexpr llvm::StringLiteral kParameterInput = "input";
 static constexpr llvm::StringLiteral kParameterDType = "dtype";
 static constexpr llvm::StringLiteral kParameterRank = "rank";
-static constexpr llvm::StringLiteral kParameterIOSpec = "ioSpec";
+static constexpr llvm::StringLiteral kParameterIOSpec = "io_spec";
 static constexpr llvm::StringLiteral kStaticSpec = "static_spec";
 
 // Used in variadics/tuple/SIMD types.

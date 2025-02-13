@@ -56,7 +56,7 @@ static constexpr std::array<std::pair<StringLiteral, bool>, 6>
         {"input", false},
         {"type", false},
         {"rank", false},
-        {"ioSpec", true}, // Only ioSpec uses inferred parameters
+        {"io_spec", true}, // Only ioSpec uses inferred parameters
         {"static_spec", false},
     }};
 
