@@ -1498,15 +1498,15 @@ KGEN::EnvAttr KGEN::getModularEnvAttr(MLIRContext *ctx,
   envAttrs.set("MODULAR_PARANOID", IntegerAttr::get(IndexType::get(ctx), 1));
 #endif // MODULAR_PARANOID
 
-#ifdef KERNEL_E2E_GPU_PROFILING
-  envAttrs.set("KERNEL_E2E_GPU_PROFILING",
+#ifdef MODULAR_ENABLE_GPU_PROFILING
+  envAttrs.set("MODULAR_ENABLE_GPU_PROFILING",
                IntegerAttr::get(IndexType::get(ctx), 1));
-#endif // KERNEL_E2E_GPU_PROFILING
+#endif // MODULAR_ENABLE_GPU_PROFILING
 
-#ifdef KERNEL_E2E_GPU_PROFILING_DETAILED
-  envAttrs.set("KERNEL_E2E_GPU_PROFILING_DETAILED",
+#ifdef MODULAR_ENABLE_GPU_PROFILING_DETAILED
+  envAttrs.set("MODULAR_ENABLE_GPU_PROFILING_DETAILED",
                IntegerAttr::get(IndexType::get(ctx), 1));
-#endif // KERNEL_E2E_GPU_PROFILING_DETAILED
+#endif // MODULAR_ENABLE_GPU_PROFILING_DETAILED
 
   envAttrs.set("BUILD_TYPE", StringAttr::get(STRINGIFY(BUILD_TYPE),
                                              KGEN::StringType::get(ctx)));

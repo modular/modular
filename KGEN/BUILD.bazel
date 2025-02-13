@@ -822,8 +822,8 @@ modular_cc_library(
         ("//:modular_config_default", "//:modular_config_asan", "//:modular_config_tsan", "//:modular_config_ubsan"): ["BUILD_TYPE=relwithdebinfo"],
         ("//:modular_config_release", "//:modular_config_production"): ["BUILD_TYPE=release"],
     }) + select({
-        "//:kernel_e2e_gpu_profiling_setting": ["KERNEL_E2E_GPU_PROFILING"],
-        "//:kernel_e2e_gpu_profiling_detailed_setting": ["KERNEL_E2E_GPU_PROFILING_DETAILED"],
+        "//:kernel_e2e_gpu_profiling_setting": ["MODULAR_ENABLE_GPU_PROFILING"],
+        "//:kernel_e2e_gpu_profiling_detailed_setting": ["MODULAR_ENABLE_GPU_PROFILING_DETAILED"],
         "//conditions:default": [],
     }),
     deps = [
