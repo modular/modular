@@ -51,6 +51,14 @@ fn test_svg_nvidia_tile() raises:
     print_svg(tensor, List(tensor_dist))
 
 
+fn test_svg_nvidia_tile_memory_bank() raises:
+    # CHECK: <?xml version="1.0" encoding="UTF-8"?>
+    # nvidia tensor core a matrix fragment
+    var tensor = tb[DType.float32]().row_major[16, 16]().alloc()
+    var tensor_dist = tensor.vectorize[2, 2]().tile[4, 4](0, 1)
+    print_svg[memory_bank= (4, 32)](tensor, List(tensor_dist))
+
+
 fn test_svg_amd_shape_a() raises:
     # CHECK: <?xml version="1.0" encoding="UTF-8"?>
     # amd tensor core a matrix fragment
@@ -149,6 +157,7 @@ fn test_svg_swizzle() raises:
 fn main() raises:
     test_svg_nvidia_shape()
     test_svg_nvidia_tile()
+    test_svg_nvidia_tile_memory_bank()
     test_svg_amd_shape_a()
     test_svg_amd_shape_b()
     test_svg_amd_shape_d()
