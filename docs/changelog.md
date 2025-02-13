@@ -40,6 +40,30 @@ what we publish.
   - `ljust()`
   - `center()`
 
+### GPU changes
+
+- `ctx.enqueue_function(compiled_func, ...)` is deprecated:
+
+```mojo
+  from gpu import thread_idx
+  from gpu.host import DeviceContext
+
+  fn func():
+      print("Hello from GPU thread:", thread_idx.x)
+
+  with DeviceContext() as ctx:
+      var compiled_func = ctx.compile_function[func]()
+      ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=4)
+```
+
+You should now pass the function directly to
+`DeviceContext.enqueue_function[func](...)`:
+
+```mojo
+  with DeviceContext() as ctx:
+      ctx.enqueue_function[func](grid_dim=1, block_dim=4)
+```
+
 ### Tooling changes
 
 #### Mojo Compiler
