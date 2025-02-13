@@ -486,9 +486,9 @@ struct VariadicInputToOutput:
         size: Int,
         target: StringLiteral,
     ](
-        output: VariadicTensors[type, rank=1, size=size, ioSpec=IOUnknown],
+        output: VariadicTensors[type, rank=1, size=size, io_spec=IOUnknown],
         bias: ManagedTensorSlice[type, rank=1],
-        input: VariadicTensors[type, rank=1, size=size, ioSpec=IOUnknown],
+        input: VariadicTensors[type, rank=1, size=size, io_spec=IOUnknown],
     ):
         @parameter
         for i in range(size):
@@ -554,7 +554,7 @@ struct VariadicAdd:
         _synchronous: Bool,
     ](
         output: ManagedTensorSlice[type, rank],
-        inputs: VariadicTensors[type, rank, ioSpec=IOUnknown, *_],
+        inputs: VariadicTensors[type, rank, io_spec=IOUnknown, *_],
     ):
         @parameter
         @always_inline
@@ -582,7 +582,7 @@ struct Transpose2DOp:
     fn build_view[
         type: DType,
     ](x: ManagedTensorSlice[type, 2]) -> ManagedTensorSlice[
-        type, 2, ioSpec = x.ioSpec, static_spec = StaticTensorSpec[type, 2]()
+        type, 2, io_spec = x.io_spec, static_spec = StaticTensorSpec[type, 2]()
     ]:
         var new_stride = IndexList[2]()
         var new_shape = IndexList[2]()
@@ -594,7 +594,7 @@ struct Transpose2DOp:
         return ManagedTensorSlice[
             type,
             2,
-            ioSpec = x.ioSpec,
+            io_spec = x.io_spec,
             static_spec = StaticTensorSpec[type, 2](),
         ](x._ptr, new_shape, new_stride)
 

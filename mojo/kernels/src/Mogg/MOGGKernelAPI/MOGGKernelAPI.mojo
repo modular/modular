@@ -315,7 +315,7 @@ fn reshape_contiguous_buffer[
     buffer: ManagedTensorSlice[
         type,
         old_rank,
-        ioSpec=IOUnknown,
+        io_spec=IOUnknown,
         static_spec = StaticTensorSpec[type, old_rank](),
     ],
     shape: IndexList[new_rank],
@@ -457,7 +457,7 @@ fn get_scalar_from_managed_tensor_slice[
     dtype: DType,
 ](
     tensor: ManagedTensorSlice[
-        dtype, 1, ioSpec=IOUnknown, static_spec = StaticTensorSpec[dtype, 1]()
+        dtype, 1, io_spec=IOUnknown, static_spec = StaticTensorSpec[dtype, 1]()
     ]
 ) -> Scalar[dtype]:
     # Assumes that tensor is on the host!
@@ -524,13 +524,15 @@ fn managed_tensor_slice_to_ndbuffer_with_spec[
 fn managed_tensor_slice_to_ndbuffer[
     type: DType,
     rank: Int,
-    ioSpec: IOSpec,
+    io_spec: IOSpec,
     static_shape: DimList = DimList.create_unknown[rank](),
     static_strides: DimList = DimList.create_unknown[rank](),
     alignment: Int = 1,
     address_space: AddressSpace = AddressSpace.GENERIC,
     exclusive: Bool = True,
-](tensor: ManagedTensorSlice[type=type, rank=rank, ioSpec=ioSpec]) -> NDBuffer[
+](
+    tensor: ManagedTensorSlice[type=type, rank=rank, io_spec=io_spec]
+) -> NDBuffer[
     tensor.type,
     tensor.rank,
     static_shape,
@@ -2373,11 +2375,11 @@ struct StaticBroadcastTo:
         type: DType,
         in_rank: Int,
         out_rank: Int,
-        ioSpec: IOSpec,
+        io_spec: IOSpec,
     ](
-        x: ManagedTensorSlice[type, in_rank, ioSpec=ioSpec],
+        x: ManagedTensorSlice[type, in_rank, io_spec=io_spec],
         output_shape: IndexList[out_rank],
-    ) -> IODynamicTensor[type, out_rank, ioSpec=ioSpec].Type:
+    ) -> IODynamicTensor[type, out_rank, io_spec=io_spec].Type:
         var new_strides = IndexList[out_rank]()
         alias delta = out_rank - in_rank
 
@@ -2393,7 +2395,7 @@ struct StaticBroadcastTo:
                 else:
                     new_strides[i] = x.stride_length[i - delta]()
 
-        return IODynamicTensor[type, out_rank, ioSpec].Type(
+        return IODynamicTensor[type, out_rank, io_spec].Type(
             x._ptr, output_shape, new_strides
         )
 
@@ -2487,9 +2489,9 @@ struct StaticReshape:
             managed_tensor_slice_to_ndbuffer_with_spec(input),
             shape,
         )
-        var view_tensor = IODynamicTensor[type, output_rank, input.ioSpec].Type(
-            view_buffer.data, shape, view_buffer.get_strides()
-        )
+        var view_tensor = IODynamicTensor[
+            type, output_rank, input.io_spec
+        ].Type(view_buffer.data, shape, view_buffer.get_strides())
         alias view_strides = Self.get_view_strides[output.rank](
             output._static_shape
         )
@@ -2534,7 +2536,7 @@ struct Transpose:
         input: ManagedTensorSlice,
         permutations: ManagedTensorSlice[rank=1],
         out result: IODynamicTensor[
-            type = input.type, rank = input.rank, ioSpec = input.ioSpec
+            type = input.type, rank = input.rank, io_spec = input.io_spec
         ].Type,
     ):
         var new_shape = IndexList[input.rank]()
@@ -2663,7 +2665,7 @@ struct Slice:
             managed_tensor_slice_to_ndbuffer_with_spec(steps),
         )
         var view_tensor = IODynamicTensor[
-            type, rank, ioSpec = input.ioSpec
+            type, rank, io_spec = input.io_spec
         ].Type(
             view_buffer.data,
             view_buffer.get_shape(),
@@ -2766,7 +2768,7 @@ struct SliceDim:
             Int(steps),
         )
         var view_tensor = IODynamicTensor[
-            type, rank, ioSpec = input.ioSpec
+            type, rank, io_spec = input.io_spec
         ].Type(
             view_buffer.data,
             view_buffer.get_shape(),
@@ -4479,10 +4481,10 @@ struct CumSum:
 
 
 fn concat_shape_impl[
-    type: DType, rank: Int, size: Int, ioSpec: IOSpec
+    type: DType, rank: Int, size: Int, io_spec: IOSpec
 ](
     axis_buf: ManagedTensorSlice[rank=1],
-    inputs: VariadicTensors[type, rank, size, ioSpec=ioSpec],
+    inputs: VariadicTensors[type, rank, size, io_spec=io_spec],
 ) raises -> IndexList[rank]:
     var axis_val = axis_buf._ptr.load(0)
     var axis = Int(normalize_neg_index(axis_val, rank))
@@ -4531,7 +4533,7 @@ struct Concat:
     ](
         output: ManagedTensorSlice[type=type, rank=rank],
         axis: ManagedTensorSlice[rank=1],
-        inputs: VariadicTensors[type, rank, ioSpec=IOUnknown, *_],
+        inputs: VariadicTensors[type, rank, io_spec=IOUnknown, *_],
         ctx: MojoCallContextPtr,
     ) raises:
         var output_buf = managed_tensor_slice_to_ndbuffer_with_spec(output)
@@ -7373,8 +7375,8 @@ struct DistributedAllReduceSum:
         rank: Int,
         target: StringLiteral,
     ](
-        outputs: VariadicTensors[type, rank, ioSpec=IOUnknown, *_],
-        inputs: VariadicTensors[type, rank, ioSpec=IOUnknown, *_],
+        outputs: VariadicTensors[type, rank, io_spec=IOUnknown, *_],
+        inputs: VariadicTensors[type, rank, io_spec=IOUnknown, *_],
         dev_ctxs: StaticTuple[DeviceContextPtr, *_],
     ) raises:
         # Stub for now
@@ -7408,12 +7410,12 @@ struct DistributedAllReduceSum2Devices:
         target: StringLiteral,
     ](
         outputs: VariadicTensors[
-            type, rank, size = Self.num_devices, ioSpec=IOUnknown
+            type, rank, size = Self.num_devices, io_spec=IOUnknown
         ],
         signal_buffer0: ManagedTensorSlice[DType.uint8, rank=1],
         signal_buffer1: ManagedTensorSlice[DType.uint8, rank=1],
         inputs: VariadicTensors[
-            type, rank, size = Self.num_devices, ioSpec=IOUnknown
+            type, rank, size = Self.num_devices, io_spec=IOUnknown
         ],
         dev_ctx0: DeviceContextPtr,
         dev_ctx1: DeviceContextPtr,
@@ -7457,14 +7459,14 @@ struct DistributedAllReduceSum4Devices:
         target: StringLiteral,
     ](
         outputs: VariadicTensors[
-            type, rank, size = Self.num_devices, ioSpec=IOUnknown
+            type, rank, size = Self.num_devices, io_spec=IOUnknown
         ],
         signal_buffer0: ManagedTensorSlice[DType.uint8, rank=1],
         signal_buffer1: ManagedTensorSlice[DType.uint8, rank=1],
         signal_buffer2: ManagedTensorSlice[DType.uint8, rank=1],
         signal_buffer3: ManagedTensorSlice[DType.uint8, rank=1],
         inputs: VariadicTensors[
-            type, rank, size = Self.num_devices, ioSpec=IOUnknown
+            type, rank, size = Self.num_devices, io_spec=IOUnknown
         ],
         dev_ctx0: DeviceContextPtr,
         dev_ctx1: DeviceContextPtr,
