@@ -65,13 +65,9 @@ fn test_multi_function(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     out_host1.enqueue_copy_to(out_dev1)
     out_host2.enqueue_copy_to(out_dev2)
 
-    var func1 = ctx1.compile_function[vec_func]()
-    var func2 = ctx2.compile_function[vec_func]()
-
     var block_dim = 32
 
-    ctx1.enqueue_function(
-        func1,
+    ctx1.enqueue_function[vec_func](
         in0_dev1,
         in1_dev1,
         out_dev1,
@@ -80,8 +76,7 @@ fn test_multi_function(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         block_dim=(block_dim),
     )
     print("4")
-    ctx2.enqueue_function(
-        func2,
+    ctx2.enqueue_function[vec_func](
         in0_dev2,
         in1_dev2,
         out_dev2,

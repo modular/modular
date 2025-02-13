@@ -57,12 +57,9 @@ fn run_captured_func(ctx: DeviceContext, captured: Float32) raises:
     fn add_with_captured(left: Float32, right: Float32) -> Float32:
         return left + right + captured
 
-    var func = ctx.compile_function[vec_func[add_with_captured]]()
-
     var block_dim = 32
 
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[vec_func[add_with_captured]](
         in0_dev,
         in1_dev,
         out_dev,

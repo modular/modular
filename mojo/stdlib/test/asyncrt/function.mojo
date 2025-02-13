@@ -45,10 +45,7 @@ fn test_function(ctx: DeviceContext) raises:
             in1_host[i] = 2
             out_host[i] = length + i
 
-    var func = ctx.compile_function[vec_func]()
-
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[vec_func](
         in0_dev,
         in1_dev,
         out_dev,
