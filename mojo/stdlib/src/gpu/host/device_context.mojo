@@ -1290,6 +1290,10 @@ struct DeviceContext:
             constant_memory=constant_memory^,
         )
 
+    @deprecated(
+        "Don't compile the function first, pass it directly with:"
+        " `ctx.enqueue_function[function](...)`"
+    )
     @parameter
     @always_inline
     fn enqueue_function[
