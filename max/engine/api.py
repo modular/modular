@@ -971,17 +971,15 @@ class InferenceSession:
 
         self._set_mojo_define("ASSERT", level)
 
-    def enable_gpu_profiling(self, detailed: bool = False):
+    def gpu_profiling(self, mode: str):
         """Enables end to end gpu profiling configuration."""
+        if mode.lower() in ("false", "off", "no", "0"):
+            return
+
         self._set_mojo_define("MODULAR_ENABLE_PROFILING", True)
         self._set_mojo_define("KERNEL_E2E_GPU_PROFILING", True)
-        self._set_mojo_define("KERNEL_E2E_GPU_PROFILING_DETAILED", detailed)
-
-    def disable_gpu_profiling(self):
-        """Disables end to end gpu profiling configuration."""
-        self._set_mojo_define("MODULAR_ENABLE_PROFILING", False)
-        self._set_mojo_define("KERNEL_E2E_GPU_PROFILING", False)
-        self._set_mojo_define("KERNEL_E2E_GPU_PROFILING_DETAILED", False)
+        if mode.lower() == "detailed":
+            self._set_mojo_define("KERNEL_E2E_GPU_PROFILING_DETAILED", True)
 
     def _use_experimental_kernels(self):
         """Enables experimental kernels."""
