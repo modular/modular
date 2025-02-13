@@ -243,14 +243,14 @@ value that has a more specific bound on one or more of its parameters.
 For example, the following code defines a `Container` type that holds an
 instance of `CollectionElement`. It also defines a `__str__()` method that can
 only be called if the stored `ElementType` conforms to
-`StringableCollectionElement`:
+`WritableCollectionElement`:
 
 ```mojo
 @value
 struct Container[ElementType: CollectionElement]:
     var element: ElementType
 
-    def __str__[StrElementType: StringableCollectionElement, //](
+    def __str__[StrElementType: WritableCollectionElement, //](
             self: Container[StrElementType]) -> String:
         return String(self.element)
 
@@ -270,15 +270,15 @@ Hello
 
 Note the signature of the `__str__()` method, which declares the `self` argument
 with a more specific type. Specifically, it declares that it takes a `Container`
-with an `ElementType` that conforms to the `StringableCollectionElement` trait.
+with an `ElementType` that conforms to the `WritableCollectionElement` trait.
 
 ```mojo
-def __str__[StrElementType: StringableCollectionElement, //](
+def __str__[StrElementType: WritableCollectionElement, //](
         self: Container[StrElementType]) -> String:
 ```
 
 This trait must be a superset of `ElementType`'s original trait: for example,
-`StringableCollectionElement` inherits from `CollectionElement`, so it includes
+`WritableCollectionElement` inherits from `CollectionElement`, so it includes
 all of requirements of the original trait.
 
 Note that the `use_container()` function calls the `__str__()` method directly,
@@ -520,7 +520,7 @@ For example, consider the following struct:
 
 ```mojo
 @value
-struct One[Type: StringableCollectionElement]:
+struct One[Type: WritableCollectionElement]:
     var value: Type
 
     fn __init__(out self, value: Type):
@@ -538,7 +538,7 @@ You can also infer parameters from a parameterized type passed to a constructor
 or static method:
 
 ```mojo
-struct Two[Type: StringableCollectionElement]:
+struct Two[Type: WritableCollectionElement]:
     var val1: Type
     var val2: Type
 
