@@ -28,6 +28,15 @@ inline bool isDPSTensor(LIT::StructType maybeTensor) {
          maybeTensor.getSymbol().getLeafReference() == "ManagedTensorSlice";
 }
 
+inline bool isMojoCallContextPtr(LIT::StructType maybeCallContextPtr) {
+  return isXType(maybeCallContextPtr, "runtime", "MojoCallContextPtr");
+}
+
+inline bool fnNeedsConformances(LIT::FnOp fnOp) {
+  return fnOp.getSourceName() == "execute" ||
+         fnOp.getSourceName() == "pytorch_fallback";
+}
+
 inline bool isCustomType(LIT::StructType maybeCustom) {
   return !isExtensibilityTensor(maybeCustom);
 }

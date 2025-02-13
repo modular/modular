@@ -11,6 +11,7 @@
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
 #include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/lib/MOGGPreElab/Helpers.h"
 #include "MojoUtils.h"
 #include "ParserBase.h"
 #include "Signatures.h"
@@ -198,6 +199,29 @@ void Decorators::applySignatureDecorators(
   decl.setBodyDecorators(bodyDecorators);
 }
 
+// Helper function to extract symbol name from a TypedAttr
+static std::optional<StringRef> extractDecoratorName(TypedAttr attr) {
+  // Helper lambda to extract name from a symbol reference
+  auto extractFromSymbolRef = [](SymbolRefAttr ref) -> StringRef {
+    StringRef name = ref.getLeafReference().getValue();
+    return name.substr(0, name.find_first_of('('));
+  };
+
+  if (auto cst = dyn_cast<SymbolConstantAttr>(attr))
+    return extractFromSymbolRef(cst.getSymbol());
+
+  if (auto call = dyn_cast<ParamOperatorAttr>(attr)) {
+    // Only process if it's an Apply operator with at least one operand
+    if (call.getOpcode() != POC::Apply || call.getOperands().empty())
+      return std::nullopt;
+
+    if (auto firstOp = dyn_cast<SymbolConstantAttr>(call.getOperands().front()))
+      return extractFromSymbolRef(firstOp.getSymbol());
+  }
+
+  return std::nullopt;
+}
+
 LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
   constexpr StringRef plainDre[] = {
       "doc_private",
@@ -214,15 +238,7 @@ LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
       "mutable",
       "enable_fusion_for",
   };
-  auto validateSymbol = [&](TypedAttr callee) {
-    auto cst = dyn_cast<SymbolConstantAttr>(callee);
-    if (!cst)
-      return false;
-    SymbolRefAttr ref = cst.getSymbol();
-    StringRef name = ref.getLeafReference().getValue();
-    name = name.substr(0, name.find_first_of('('));
-    return llvm::is_contained(plainDre, name);
-  };
+
   std::function<bool(TypedAttr)> validateOperand = [&](TypedAttr attr) {
     if (auto var = dyn_cast<VariadicAttr>(attr))
       return llvm::all_of(var.getValues(), validateOperand);
@@ -234,16 +250,19 @@ LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
       return llvm::Regex("^[a-z0-9A-Z\\._:]*$").match(str.getValue());
     return isa<IntegerAttr>(attr);
   };
-  if (auto cst = dyn_cast<SymbolConstantAttr>(attr))
-    return success(validateSymbol(cst));
+
+  auto symbolName = extractDecoratorName(attr);
+  if (!symbolName)
+    return failure();
+
   if (auto call = dyn_cast<ParamOperatorAttr>(attr)) {
     return success(
-        call.getOpcode() == POC::Apply &&
-        validateSymbol(call.getOperands().front()) &&
+        llvm::is_contained(plainDre, *symbolName) &&
         call.getOperands().size() <= 3 &&
         llvm::all_of(call.getOperands().drop_front(), validateOperand));
   }
-  return failure();
+
+  return success(llvm::is_contained(plainDre, *symbolName));
 }
 
 void Decorators::applyBodyDecorators(
@@ -681,39 +700,8 @@ void FnSigDecorators::applyLLVMMetadata(const CallNode &node) {
   funcOp.setLLVMMetadataArrayAttr(ArrayAttr::get(getContext(), metadata));
 }
 
-/// Process an extensibility decorator by generating additional trait binding
-/// information about each argument and result type.
-static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
-                                          const ExprNode *decorator) {
-  using namespace MOGGPreElab::Decorators;
-  StringRef spelling;
-  if (auto callNode = dyn_cast<CallNode>(decorator))
-    if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee))
-      spelling = declRef->spelling;
-  if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
-    spelling = declRef->spelling;
-
-    // Decl Refs are only used by opaque type conformance hints
-    if (spelling != USES_OPAQUE)
-      return;
-  }
-
-  if (spelling.empty())
-    return;
-
-  if (!llvm::is_contained({REGISTER_INTERNAL_FUNCTION, USES_OPAQUE}, spelling))
-    return;
-
-  // For each argument and result type, generate the set of explicit trait
-  // conformances and witness tables. We need to dig out the declared argument
-  // and result types.
-  auto func = cast<FnOp>(decl);
-  if (!(isa<FileModuleOp>(func->getParentOp()) || func.getIsStatic())) {
-    shared.emitError(decl.getLoc(), "@")
-        << spelling << " is only supported on top-level or static functions";
-    return;
-  }
-
+static void processFunctionConformances(FnOp func, SharedState &shared,
+                                        ASTDecl &decl) {
   FnTypeGeneratorType sig = func.getFullSignature();
   ArrayRef<Type> sigArgTypes = func.getFunctionType().getInputs();
   ASTType resultType = func.getUserResultType();
@@ -751,6 +739,19 @@ static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
       type = ASTType(type).getReferenceElementType();
     argTypes.push_back(type);
   }
+
+  bool allVanillaKernelArgs = llvm::all_of(argTypes, [](ASTType astType) {
+    if (auto structTy = dyn_cast<LIT::StructType>(astType.mlirType)) {
+      return MOGGPreElab::isDPSTensor(structTy) ||
+             MOGGPreElab::isMojoCallContextPtr(structTy);
+    }
+    return false;
+  });
+
+  // We don't need to attach the conformance attrs if we have a kernel working
+  // purely with tensors
+  if (allVanillaKernelArgs && resultType.isNoneType())
+    return;
 
   ExprEmitter emitter(decl, EC_Type);
   auto generateConformancesImpl = [&](ASTType type, Location loc) {
@@ -806,6 +807,39 @@ static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
             ArrayAttr::get(shared.getContext(), argConformances));
   attrs.set(MOGGPreElab::MOGG_RESULT_CONFORMANCES, resConformances);
   func->setAttrs(attrs.getDictionary(shared.getContext()));
+}
+
+/// Process an extensibility decorator by generating additional trait binding
+/// information about each argument and result type.
+static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
+                                          const ExprNode *decorator) {
+  using namespace MOGGPreElab::Decorators;
+  StringRef spelling;
+  if (auto callNode = dyn_cast<CallNode>(decorator))
+    if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee))
+      spelling = declRef->spelling;
+  if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
+    spelling = declRef->spelling;
+
+    // Decl Refs are only used by opaque type conformance hints
+    if (spelling != USES_OPAQUE)
+      return;
+  }
+
+  if (spelling.empty())
+    return;
+
+  if (!llvm::is_contained({REGISTER_INTERNAL_FUNCTION, USES_OPAQUE}, spelling))
+    return;
+
+  auto func = cast<FnOp>(decl);
+  if (!(isa<FileModuleOp>(func->getParentOp()) || func.getIsStatic())) {
+    shared.emitError(decl.getLoc(), "@")
+        << spelling << " is only supported on top-level or static functions";
+    return;
+  }
+
+  processFunctionConformances(func, shared, decl);
 }
 
 /// Given the lexical context of a function, return true if the default bit
@@ -1441,6 +1475,16 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
   if (funcOp.getInlineLevel() == InlineLevel::AlwaysBuiltin) {
     if (failed(FnSigDecorators::checkAlwaysInlineBuiltin(funcOp, shared)))
       funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
+  }
+
+  auto declOp = dyn_cast<LIT::StructDeclOp>(funcOp->getParentOp());
+  if (!declOp)
+    return success();
+
+  for (auto decorator : declOp.getDecorators()) {
+    if (extractDecoratorName(decorator) == "register" &&
+        MOGGPreElab::fnNeedsConformances(funcOp))
+      processFunctionConformances(funcOp, shared, decl);
   }
 
   return success();
