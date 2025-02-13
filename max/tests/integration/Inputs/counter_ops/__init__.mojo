@@ -10,7 +10,7 @@ import compiler_internal as compiler
 from buffer.dimlist import DimList
 from python import Python, PythonObject
 from python.python import _get_global_python_itf
-from register import register_internal, uses_opaque
+from register import register_internal
 from tensor import ManagedTensorSlice
 
 from utils.index import IndexList
@@ -45,7 +45,6 @@ struct Counter[stride: Int](Movable):
 
 @compiler.register("make_counter_from_tensor", num_dps_outputs=0)
 struct MakeCounterFromTensor:
-    @uses_opaque
     @staticmethod
     fn execute[
         stride: Int,
@@ -56,7 +55,6 @@ struct MakeCounterFromTensor:
 
 @compiler.register("make_counter")
 struct MakeCounter:
-    @uses_opaque
     @staticmethod
     fn execute[stride: Int]() -> Counter[stride]:
         print("making")
@@ -65,7 +63,6 @@ struct MakeCounter:
 
 @compiler.register("bump_counter", num_dps_outputs=0)
 struct BumpCounter:
-    @uses_opaque
     @staticmethod
     fn execute[
         stride: Int,
@@ -76,7 +73,6 @@ struct BumpCounter:
 
 @compiler.register("read_counter")
 struct ReadCounter:
-    @uses_opaque
     @staticmethod
     fn execute[
         stride: Int
@@ -87,7 +83,6 @@ struct ReadCounter:
 
 @compiler.register("bump_python_counter", num_dps_outputs=0)
 struct BumpPythonCounter:
-    @uses_opaque
     @staticmethod
     fn execute[stride: Int](counter: PythonObject) -> PythonObject:
         var cpython = _get_global_python_itf().cpython()
