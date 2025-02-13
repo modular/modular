@@ -232,7 +232,7 @@ constexpr StringLiteral MOJO_EXTENSIBILITY_API_DEVICE_CONTEXT_PTR_TYPE_NAME =
 // Names of common params. We use these strings as the key to a parameter ref.
 static constexpr llvm::StringLiteral kParameterMut = "mut";
 static constexpr llvm::StringLiteral kParameterInput = "input";
-static constexpr llvm::StringLiteral kParameterDType = "dtype";
+static constexpr llvm::StringLiteral kParameterDType = "type";
 static constexpr llvm::StringLiteral kParameterRank = "rank";
 static constexpr llvm::StringLiteral kParameterIOSpec = "io_spec";
 static constexpr llvm::StringLiteral kStaticSpec = "static_spec";
