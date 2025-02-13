@@ -626,6 +626,64 @@ class QwenPipelineOracle(PipelineOracle):
         return TorchModelAndDataProcessor(model=model, data_processor=tokenizer)
 
 
+class Llama3_3_70BInstructPipelineOracle(PipelineOracle):
+    @property
+    def supported_versions(self) -> Sequence[str]:
+        return ["Llama-3.3-70B-Instruct"]
+
+    @property
+    def supported_encodings(self) -> Sequence[str]:
+        return ["bfloat16"]
+
+    def is_supported(
+        self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
+    ) -> bool:
+        assert version in self.supported_versions
+        assert encoding in self.supported_encodings
+        return device_spec.device_type == "gpu"
+
+    def create_max_pipeline(
+        self,
+        *,
+        version: str,
+        encoding: str,
+        device_specs: list[driver.DeviceSpec],
+    ) -> MaxPipelineAndTokenizer:
+        for device_spec in device_specs:
+            assert self.is_supported(
+                version=version, encoding=encoding, device_spec=device_spec
+            )
+        config = pipelines.PipelineConfig(
+            architecture="LlamaForCausalLM",
+            device_specs=device_specs,
+            huggingface_repo_id="meta-llama/Llama-3.3-70B-Instruct",
+            quantization_encoding=pipelines.SupportedEncoding[encoding],
+            max_length=512,
+        )
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+
+        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        return MaxPipelineAndTokenizer(
+            model=pipeline._pipeline_model,
+            generator=pipeline,
+            tokenizer=tokenizer,
+        )
+
+    def create_torch_pipeline(
+        self, *, version: str, encoding: str, device: torch.device
+    ) -> TorchModelAndDataProcessor:
+        hf_repo_id = "meta-llama/Llama-3.3-70B-Instruct"
+        tokenizer = transformers.AutoTokenizer.from_pretrained(hf_repo_id)
+        config = transformers.AutoConfig.from_pretrained(hf_repo_id)
+        model = transformers.AutoModelForCausalLM.from_pretrained(
+            hf_repo_id,
+            config=config,
+            device_map=device,
+            torch_dtype=torch.bfloat16,
+        )
+        return TorchModelAndDataProcessor(model=model, data_processor=tokenizer)
+
+
 class GenericOracle(PipelineOracle):
     def __init__(
         self,
@@ -724,6 +782,7 @@ class GenericOracle(PipelineOracle):
 
 PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "llama": LlamaPipelineOracle(),
+    "llama3.3-70b": Llama3_3_70BInstructPipelineOracle(),
     "replit": ReplitPipelineOracle(),
     "mistral": MistralPipelineOracle(),
     "llama3-vision": LlamaVisionPipelineOracle(),
