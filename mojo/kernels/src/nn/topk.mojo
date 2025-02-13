@@ -911,17 +911,12 @@ fn _topk_gpu[
 
     var shared_mem_bytes_1 = _get_shmem_size_stg_1[type](block_size)
 
-    # Compile the kernels
-    var gpu_fn_stage1 = ctx.compile_function[
-        _topk_stage1[type, out_idx_type, largest], dump_asm=False
-    ]()
     # Define grid and block dimensions for stage 1
     var grid_dim_stage1 = Dim(num_blocks_per_input_ * batch_size)
     var block_dim_stage1 = Dim(block_size)
 
     # Enqueue the first kernel (stage 1)
-    ctx.enqueue_function(
-        gpu_fn_stage1,
+    ctx.enqueue_function[_topk_stage1[type, out_idx_type, largest]](
         K,
         N,
         num_blocks_per_input_,
@@ -946,10 +941,6 @@ fn _topk_gpu[
         ceildiv(shared_mem_bytes_2, WARP_SIZE) * WARP_SIZE
     )  # align to warp size
 
-    var gpu_fn_stage2 = ctx.compile_function[
-        _topk_stage2[type, out_idx_type, sampling, largest], dump_asm=False
-    ]()
-
     # Define grid and block dimensions for stage 2
     var grid_dim_stage2 = Dim(
         batch_size
@@ -957,8 +948,7 @@ fn _topk_gpu[
     var block_dim_stage2 = Dim(block_size)
 
     # Enqueue the second kernel (stage 2)
-    ctx.enqueue_function(
-        gpu_fn_stage2,
+    ctx.enqueue_function[_topk_stage2[type, out_idx_type, sampling, largest]](
         K,
         num_blocks_per_input_,
         device_local_topk_vals.data,

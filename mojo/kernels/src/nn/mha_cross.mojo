@@ -282,11 +282,7 @@ fn mha_cross_gpu_naive[
         p_ptr, Index(batch_size * num_heads, q_max_seq_len, num_keys)
     )
 
-    var bmm0_func = ctx.compile_function[
-        _bmm0_bs[__type_of(k), mask_t, q_type, p_type]
-    ]()
-    ctx.enqueue_function(
-        bmm0_func,
+    ctx.enqueue_function[_bmm0_bs[__type_of(k), mask_t, q_type, p_type]](
         p_ptr,
         q.data,
         k,
@@ -320,12 +316,7 @@ fn mha_cross_gpu_naive[
         Index(batch_size * num_heads, q_max_seq_len, num_keys), p_buffer, 2, ctx
     )
 
-    var bmm1_func = ctx.compile_function[
-        _bmm1_bs[__type_of(v), p_type, output.type]
-    ]()
-
-    ctx.enqueue_function(
-        bmm1_func,
+    ctx.enqueue_function[_bmm1_bs[__type_of(v), p_type, output.type]](
         output.data,
         p_ptr,
         v,

@@ -794,22 +794,14 @@ fn _softmax_gpu[
         return rebind[SIMD[_type, width]](input_fn[width, rank](idx))
 
     alias BLOCK_SIZE = 128
-    var func = ctx.compile_function[
-        softmax_kernel[
-            BLOCK_SIZE,
-            input_fn_wrapper,
-            type,
-            rank,
-        ]
-    ]()
-
     var num_rows = shape.flattened_length() // shape[axis]
     var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
     alias sm_overprovision_factor = 32  # tunable
     var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
 
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[
+        softmax_kernel[BLOCK_SIZE, input_fn_wrapper, type, rank]
+    ](
         shape,
         output,
         axis,

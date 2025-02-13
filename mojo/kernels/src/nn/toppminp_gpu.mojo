@@ -488,14 +488,11 @@ fn run_radix_sort_pairs_gpu[
 
     @parameter
     for current_bit in range(0, bitwidthof[type](), NUM_BITS_PER_PASS):
-        var sort_some_bits = ctx.compile_function[
-            radix_sort_pairs_kernel[
-                type, out_idx_type, current_bit, ascending, BLOCK_SIZE
-            ],
-        ]()
+        alias kernel = radix_sort_pairs_kernel[
+            type, out_idx_type, current_bit, ascending, BLOCK_SIZE
+        ]
 
-        ctx.enqueue_function(
-            sort_some_bits,
+        ctx.enqueue_function[kernel](
             input_keys.data,
             output_keys.data,
             input_key_ids.data,
@@ -505,7 +502,6 @@ fn run_radix_sort_pairs_gpu[
             grid_dim=Dim(batch_size),
             block_dim=Dim(BLOCK_SIZE),
         )
-
         input_keys.data, output_keys.data = output_keys.data, input_keys.data
 
         var temp_key_ids = input_key_ids.data
@@ -724,14 +720,11 @@ fn _topp_minp_sampling_gpu[
         skip_sort_buf.unsafe_ptr(), DimList(batch_size)
     )
 
-    var gpu_fn_top1 = ctx.compile_function[
-        topk_wrapper[type, out_idx_type, is_top_p, _test_sort=_test_sort]
-    ]()
-
     alias K = 1
     alias num_blocks_per_input = 1
-    ctx.enqueue_function(
-        gpu_fn_top1,
+    ctx.enqueue_function[
+        topk_wrapper[type, out_idx_type, is_top_p, _test_sort=_test_sort]
+    ](
         K,
         vocab_size,
         num_blocks_per_input,
@@ -784,12 +777,9 @@ fn _topp_minp_sampling_gpu[
         )
 
     # Step 4: Sample from the sorted probabilities by cumsumming
-    gpu_fn_topp_minp = ctx.compile_function[
+    ctx.enqueue_function[
         topp_minp_sampling_kernel[type, out_idx_type, is_top_p]
-    ]()
-
-    ctx.enqueue_function(
-        gpu_fn_topp_minp,
+    ](
         p_thresholds.data,
         sorted_probs.data,
         sorted_ids.data,
@@ -799,7 +789,6 @@ fn _topp_minp_sampling_gpu[
         grid_dim=Dim(batch_size),
         block_dim=Dim(BLOCK_SIZE),
     )
-
     _ = sorted_ids_buf^
     _ = sorted_probs_buf^
     _ = input_ids_buf^

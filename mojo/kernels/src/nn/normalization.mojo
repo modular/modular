@@ -432,11 +432,9 @@ fn layer_norm_gpu[
         # registers we do warp tiling which is a single pass to do mean/var
         # computation and normalization.
         if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
-            var gpu_func = ctx.compile_function[
+            ctx.enqueue_function[
                 layer_norm_gpu_warp_tiling[simd_width, input_fn_2d, gamma_fn]
-            ]()
-            ctx.enqueue_function(
-                gpu_func,
+            ](
                 output_rs,
                 beta,
                 epsilon,
@@ -444,11 +442,9 @@ fn layer_norm_gpu[
                 block_dim=block_dim,
             )
         else:
-            var gpu_func = ctx.compile_function[
+            ctx.enqueue_function[
                 layer_norm_gpu_block[simd_width, input_fn_2d, gamma_fn]
-            ]()
-            ctx.enqueue_function(
-                gpu_func,
+            ](
                 output_rs,
                 beta,
                 epsilon,
@@ -456,11 +452,7 @@ fn layer_norm_gpu[
                 block_dim=block_dim,
             )
     else:
-        var gpu_func = ctx.compile_function[
-            layer_norm_gpu_block[1, input_fn_2d, gamma_fn]
-        ]()
-        ctx.enqueue_function(
-            gpu_func,
+        ctx.enqueue_function[layer_norm_gpu_block[1, input_fn_2d, gamma_fn]](
             output_rs,
             beta,
             epsilon,
@@ -841,13 +833,11 @@ fn rms_norm_gpu[
         # registers we do warp tiling which is a single pass to do mean/var
         # computation and normalization.
         if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
-            var gpu_func = ctx.compile_function[
+            ctx.enqueue_function[
                 rms_norm_gpu_warp_tiling[
                     simd_width, max_warps_per_block, input_fn_2d, output_fn_2d
                 ]
-            ]()
-            ctx.enqueue_function(
-                gpu_func,
+            ](
                 gamma,
                 epsilon,
                 cols,
@@ -855,13 +845,11 @@ fn rms_norm_gpu[
                 block_dim=block_dim,
             )
         else:
-            var gpu_func = ctx.compile_function[
+            ctx.enqueue_function[
                 rms_norm_gpu_block[
                     simd_width, max_warps_per_block, input_fn_2d, output_fn_2d
                 ]
-            ]()
-            ctx.enqueue_function(
-                gpu_func,
+            ](
                 gamma,
                 epsilon,
                 cols,
@@ -869,13 +857,11 @@ fn rms_norm_gpu[
                 block_dim=block_dim,
             )
     else:
-        var gpu_func = ctx.compile_function[
+        ctx.enqueue_function[
             rms_norm_gpu_block[
                 1, max_warps_per_block, input_fn_2d, output_fn_2d
             ]
-        ]()
-        ctx.enqueue_function(
-            gpu_func,
+        ](
             gamma,
             epsilon,
             cols,

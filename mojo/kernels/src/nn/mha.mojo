@@ -552,33 +552,26 @@ fn flash_attention_dispatch[
             alias smem_use = config.shared_mem_elements[
                 is_shared_kv
             ]() * sizeof[config.type]()
-            var func = ctx.compile_function[
-                mha[
-                    mask.rank,
-                    config.type,
-                    k_t,
-                    v_t,
-                    mask.type,
-                    output.type,
-                    mask_t,
-                    score_mod_t,
-                    config,
-                    group=group,
-                    use_mask_tensor=add_attn_mask,
-                    use_score_mod=use_score_mod,
-                    ragged=ragged,
-                    is_shared_kv=is_shared_kv,
-                    _use_valid_length=_use_valid_length,
-                    _is_cache_length_accurate=_is_cache_length_accurate,
-                ]
-            ](
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    smem_use
-                )
-            )
+            alias kernel = mha[
+                mask.rank,
+                config.type,
+                k_t,
+                v_t,
+                mask.type,
+                output.type,
+                mask_t,
+                score_mod_t,
+                config,
+                group=group,
+                use_mask_tensor=add_attn_mask,
+                use_score_mod=use_score_mod,
+                ragged=ragged,
+                is_shared_kv=is_shared_kv,
+                _use_valid_length=_use_valid_length,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+            ]
 
-            ctx.enqueue_function(
-                func,
+            ctx.enqueue_function[kernel](
                 q.data,
                 k,
                 v,
@@ -599,6 +592,9 @@ fn flash_attention_dispatch[
                 ),
                 block_dim=(Int(config.num_threads()), 1, 1),
                 shared_mem_bytes=Int(smem_use),
+                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                    smem_use
+                ),
             )
 
         # Decoding impl only support half precision.
@@ -634,39 +630,33 @@ fn flash_attention_dispatch[
             )
             alias num_blocks_y = num_heads // group
 
-            var func = ctx.compile_function[
-                mha_decoding[
-                    mask.rank,
-                    q.type,
-                    k_t,
-                    v_t,
-                    mask.type,
-                    output.type,
-                    mask_t,
-                    score_mod_t,
-                    BM=BM,
-                    BN=BN,
-                    BK=BK,
-                    WM=WM,
-                    WN=WN,
-                    depth=depth,
-                    num_heads=num_heads,
-                    num_threads=num_threads,
-                    num_pipeline_stages=num_pipeline_stages,
-                    group=group,
-                    use_mask_tensor=add_attn_mask,
-                    use_score_mod=use_score_mod,
-                    ragged=ragged,
-                    is_shared_kv=is_shared_kv,
-                    _use_valid_length=_use_valid_length,
-                    _is_cache_length_accurate=_is_cache_length_accurate,
-                    decoding_warp_split_k=decoding_warp_split_k,
-                ]
-            ](
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    ctx.device_info.shared_memory_per_multiprocessor - 4096
-                ),
-            )
+            alias kernel = mha_decoding[
+                mask.rank,
+                q.type,
+                k_t,
+                v_t,
+                mask.type,
+                output.type,
+                mask_t,
+                score_mod_t,
+                BM=BM,
+                BN=BN,
+                BK=BK,
+                WM=WM,
+                WN=WN,
+                depth=depth,
+                num_heads=num_heads,
+                num_threads=num_threads,
+                num_pipeline_stages=num_pipeline_stages,
+                group=group,
+                use_mask_tensor=add_attn_mask,
+                use_score_mod=use_score_mod,
+                ragged=ragged,
+                is_shared_kv=is_shared_kv,
+                _use_valid_length=_use_valid_length,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+                decoding_warp_split_k=decoding_warp_split_k,
+            ]
 
             alias nullptr = UnsafePointer[Scalar[accum_type]]()
 
@@ -684,8 +674,7 @@ fn flash_attention_dispatch[
                 )
 
             if num_partitions_value == 1:
-                ctx.enqueue_function(
-                    func,
+                ctx.enqueue_function[kernel](
                     q.data,
                     k,
                     v,
@@ -703,6 +692,9 @@ fn flash_attention_dispatch[
                     grid_dim=(1, Int(num_blocks_y), Int(batch_size)),
                     block_dim=(num_threads, 1, 1),
                     shared_mem_bytes=shared_mem_bytes,
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        ctx.device_info.shared_memory_per_multiprocessor - 4096
+                    ),
                 )
             else:
                 # allocate memory for intermediate results
@@ -744,8 +736,7 @@ fn flash_attention_dispatch[
                     Index(num_partitions_value, batch_size, Int(num_heads)),
                 )
 
-                ctx.enqueue_function(
-                    func,
+                ctx.enqueue_function[kernel](
                     q.data,
                     k,
                     v,
@@ -767,20 +758,20 @@ fn flash_attention_dispatch[
                     ),
                     block_dim=(num_threads, 1, 1),
                     shared_mem_bytes=shared_mem_bytes,
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        ctx.device_info.shared_memory_per_multiprocessor - 4096
+                    ),
                 )
 
-                var func_reduce = ctx.compile_function[
-                    mha_splitk_reduce[
-                        output.type,
-                        depth=depth,
-                        num_heads=num_heads,
-                        num_threads=WARP_SIZE,
-                        group=group,
-                    ]
-                ]()
+                alias kernel_reduce = mha_splitk_reduce[
+                    output.type,
+                    depth=depth,
+                    num_heads=num_heads,
+                    num_threads=WARP_SIZE,
+                    group=group,
+                ]
 
-                ctx.enqueue_function(
-                    func_reduce,
+                ctx.enqueue_function[kernel_reduce](
                     output_intermediate.data,
                     output.data,
                     exp_sum.data,
@@ -4617,22 +4608,19 @@ fn mha_gpu_naive[
 
     var q_ptr = q.data
 
-    var bmm0_func = ctx.compile_function[
-        _bmm0_bs[
-            q_type,
-            mask_type,
-            k_t,
-            mask_t,
-            p_type,
-            mask_rank,
-            use_mask_tensor=use_mask_tensor,
-            ragged=ragged,
-            _use_valid_length=_use_valid_length,
-        ]
-    ]()
+    alias kernel = _bmm0_bs[
+        q_type,
+        mask_type,
+        k_t,
+        mask_t,
+        p_type,
+        mask_rank,
+        use_mask_tensor=use_mask_tensor,
+        ragged=ragged,
+        _use_valid_length=_use_valid_length,
+    ]
 
-    ctx.enqueue_function(
-        bmm0_func,
+    ctx.enqueue_function[kernel](
         p_ptr,
         q_ptr,
         k,
@@ -4668,7 +4656,7 @@ fn mha_gpu_naive[
         ctx,
     )
 
-    var bmm1_func = ctx.compile_function[
+    ctx.enqueue_function[
         _bmm1_bs[
             output_type,
             p_type,
@@ -4676,10 +4664,7 @@ fn mha_gpu_naive[
             ragged=ragged,
             _use_valid_length=_use_valid_length,
         ]
-    ]()
-
-    ctx.enqueue_function(
-        bmm1_func,
+    ](
         output.data,
         p_ptr,
         v,

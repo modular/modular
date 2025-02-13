@@ -64,11 +64,8 @@ fn _fill_gpu[
     count: Int,
     ctx: DeviceContext,
 ) raises:
-    var func = ctx.compile_function[_fill_gpu_kernel[type]]()
-
     alias block_dim = 256
-    ctx.enqueue_function(
-        func,
+    ctx.enqueue_function[_fill_gpu_kernel[type]](
         ptr,
         value,
         count,
@@ -85,10 +82,8 @@ fn _memcpy_gpu[
     count: Int,
     ctx: DeviceContext,
 ) raises:
-    var copy_func = ctx.compile_function[_copy_gpu_kernel[type]]()
     alias block_dim = 256
-    ctx.enqueue_function(
-        copy_func,
+    ctx.enqueue_function[_copy_gpu_kernel[type]](
         dst,
         src,
         count,

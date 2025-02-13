@@ -787,14 +787,11 @@ fn _concat_gpu[
 
         if inner_most_unit_dim:
             alias block_size = 32
-            var func = ctx.compile_function[
-                _concat_inner_most_single_dim[
-                    rank, type, num_inputs, block_size, epilogue_fn
-                ]
-            ]()
+            alias kernel = _concat_inner_most_single_dim[
+                rank, type, num_inputs, block_size, epilogue_fn
+            ]
 
-            return ctx.enqueue_function(
-                func,
+            return ctx.enqueue_function[kernel](
                 output,
                 inputs,
                 grid_dim=(inputs[0].num_elements() // block_size),
@@ -958,19 +955,16 @@ fn _fused_concat_gpu[
 
         if inner_most_unit_dim:
             alias block_size = 32
-            var func = ctx.compile_function[
-                _fused_concat_inner_most_single_dim[
-                    rank,
-                    type,
-                    block_size,
-                    input_fn,
-                    output_0_fn,
-                    size,
-                ]
-            ]()
+            alias kernel = _fused_concat_inner_most_single_dim[
+                rank,
+                type,
+                block_size,
+                input_fn,
+                output_0_fn,
+                size,
+            ]
 
-            return ctx.enqueue_function(
-                func,
+            return ctx.enqueue_function[kernel](
                 input_shapes,
                 output,
                 grid_dim=(

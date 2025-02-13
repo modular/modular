@@ -3182,24 +3182,21 @@ fn conv_gpu[
 ) raises:
     alias block_size = 16
 
-    var conv_gpu_n = ctx.compile_function[
-        conv2d_gpu_naive_nhwc_rscf[
-            input_dim,
-            filter_dim,
-            output_dim,
-            input_type,
-            filter_type,
-            output_type,
-            block_size,
-        ]
-    ]()
+    alias conv_gpu_n = conv2d_gpu_naive_nhwc_rscf[
+        input_dim,
+        filter_dim,
+        output_dim,
+        input_type,
+        filter_type,
+        output_type,
+        block_size,
+    ]
 
     var grid_dim_x = ceildiv(output.dim[2](), block_size)
     var grid_dim_y = ceildiv(output.dim[1](), block_size)
     var grid_dim_z = input.dim[0]()
 
-    ctx.enqueue_function(
-        conv_gpu_n,
+    ctx.enqueue_function[conv_gpu_n](
         input,
         filter,
         output,
