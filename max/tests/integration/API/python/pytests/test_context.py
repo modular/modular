@@ -18,8 +18,10 @@ def test_context__current_length():
     )
 
     assert context.current_length == 4
+    assert context.is_initial_prompt == True
 
     context.update(4)
+    assert context.is_initial_prompt == False
     assert context.current_length == 5
 
     # Currently, there are 5 tokens, we are saying
@@ -103,14 +105,18 @@ def test_context__reset():
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
     )
+    assert context.is_initial_prompt == True
     assert context.seq_len == 4
     assert context.next_tokens.tolist() == [0, 1, 2, 3]
     context.update(4)
+    assert context.is_initial_prompt == False
     assert context.seq_len == 1
     assert context.next_tokens.tolist() == [4]
     context.reset()
+    assert context.is_initial_prompt == True
     assert context.seq_len == 5
     assert context.next_tokens.tolist() == [0, 1, 2, 3, 4]
     context.update(5)
+    assert context.is_initial_prompt == False
     assert context.seq_len == 1
     assert context.next_tokens.tolist() == [5]
