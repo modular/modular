@@ -100,7 +100,7 @@ public:
   std::string targetDataLayout = "";
   std::optional<llvm::CodeModel::Model> mcmodel = {};
   std::optional<uint64_t> largeDataThreshold = {};
-  int64_t loopUnrollingWarnThreshold = 1024;
+  int64_t loopUnrollingWarnThreshold = 65536;
 
   std::string targetAccelerator =
       M::AsyncRT::Device::getAcceleratorArchOrEmpty();

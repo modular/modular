@@ -302,7 +302,7 @@ private:
   M::cl::MOpt<std::string, true> loopUnrollingWarnThreshold{
       "loop-unrolling-warn-threshold",
       cl::desc("Threshold to warn if a loop is unrolled for too many times, "
-               "default value is 1024, set to 0 to disable the warning."),
+               "default value is 65536, set to 0 to disable the warning."),
       llvm::cl::location(options.loopUnrollingWarnThreshold),
       llvm::cl::cat(KGENOptionsCategory), llvm::cl::Hidden};
 
