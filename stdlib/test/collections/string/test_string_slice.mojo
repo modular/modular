@@ -434,6 +434,28 @@ def test_find():
     )
 
 
+def test_is_codepoint_boundary():
+    var abc = StringSlice("abc")
+    assert_equal(len(abc), 3)
+    assert_true(abc.is_codepoint_boundary(0))
+    assert_true(abc.is_codepoint_boundary(1))
+    assert_true(abc.is_codepoint_boundary(2))
+    assert_true(abc.is_codepoint_boundary(3))
+
+    var thumb = StringSlice("👍")
+    assert_equal(len(thumb), 4)
+    assert_true(thumb.is_codepoint_boundary(0))
+    assert_false(thumb.is_codepoint_boundary(1))
+    assert_false(thumb.is_codepoint_boundary(2))
+    assert_false(thumb.is_codepoint_boundary(3))
+
+    var empty = StringSlice("")
+    assert_equal(len(empty), 0)
+    assert_true(empty.is_codepoint_boundary(0))
+    # Also tests that positions greater then the length don't raise/abort.
+    assert_false(empty.is_codepoint_boundary(1))
+
+
 alias GOOD_SEQUENCES = List[String](
     "a",
     "\xc3\xb1",
@@ -1112,6 +1134,7 @@ def main():
     test_slice_repr()
     test_utf8_validation()
     test_find()
+    test_is_codepoint_boundary()
     test_good_utf8_sequences()
     test_bad_utf8_sequences()
     test_stringslice_from_utf8()

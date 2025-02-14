@@ -40,6 +40,9 @@ what we publish.
   - `ljust()`
   - `center()`
 
+- Added a `StringSlice.is_codepoint_boundary()` method for querying if a given
+  byte index is a boundary between encoded UTF-8 codepoints.
+
 ### GPU changes
 
 - `ctx.enqueue_function(compiled_func, ...)` is deprecated:

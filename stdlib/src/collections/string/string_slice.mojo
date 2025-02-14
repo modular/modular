@@ -1216,6 +1216,103 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         var continuation_count = _count_utf8_continuation_bytes(self)
         return self.byte_length() - continuation_count
 
+    fn is_codepoint_boundary(self, index: UInt) -> Bool:
+        """Returns True if `index` is the position of the first byte in a UTF-8
+        codepoint sequence, or is at the end of the string.
+
+        A byte position is considered a codepoint boundary if a valid subslice
+        of the string would end (noninclusive) at `index`.
+
+        Positions `0` and `len(self)` are considered to be codepoint boundaries.
+
+        Positions beyond the length of the string slice will return False.
+
+        Args:
+            index: An index into the underlying byte representation of the
+                string.
+
+        Returns:
+            A boolean indicating if `index` gives the position of the first
+            byte in a UTF-8 codepoint sequence, or is at the end of the string.
+
+        # Examples
+
+        Check if particular byte positions are codepoint boundaries:
+
+        ```mojo
+        from collections.string import StringSlice
+        from testing import assert_equal, assert_true
+        var abc = StringSlice("abc")
+        assert_equal(len(abc), 3)
+        assert_true(abc.is_codepoint_boundary(0))
+        assert_true(abc.is_codepoint_boundary(1))
+        assert_true(abc.is_codepoint_boundary(2))
+        assert_true(abc.is_codepoint_boundary(3))
+        ```
+
+        Only the index of the first byte in a multi-byte codepoint sequence is
+        considered a codepoint boundary:
+
+        ```mojo
+        var thumb = StringSlice("👍")
+        assert_equal(len(thumb), 4)
+        assert_true(thumb.is_codepoint_boundary(0))
+        assert_false(thumb.is_codepoint_boundary(1))
+        assert_false(thumb.is_codepoint_boundary(2))
+        assert_false(thumb.is_codepoint_boundary(3))
+        ```
+
+        Visualization showing which bytes are considered codepoint boundaries,
+        within a piece of text that includes codepoints whose UTF-8
+        representation requires, respectively, 1, 2, 3, and 4-bytes. The
+        codepoint boundary byte indices are indicated by a vertical arrow (↑).
+
+        For example, this diagram shows that a slice of bytes formed by the
+        half-open range starting at byte 3 and extending up to but not including
+        byte 6 (`[3, 6)`) is a valid UTF-8 sequence.
+
+        ```text
+        ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+        ┃                a©➇𝄞                  ┃ String
+        ┣━━┳━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━┫
+        ┃97┃  169  ┃   10119   ┃    119070     ┃ Unicode Codepoints
+        ┣━━╋━━━┳━━━╋━━━┳━━━┳━━━╋━━━┳━━━┳━━━┳━━━┫
+        ┃97┃194┃169┃226┃158┃135┃240┃157┃132┃158┃ UTF-8 Bytes
+        ┗━━┻━━━┻━━━┻━━━┻━━━┻━━━┻━━━┻━━━┻━━━┻━━━┛
+        0  1   2   3   4   5   6   7   8   9  10
+        ↑  ↑       ↑           ↑               ↑
+        ```
+
+        The following program verifies the above diagram:
+
+        ```mojo
+        from collections.string import StringSlice
+        from testing import assert_true, assert_false
+
+        var text = StringSlice("a©➇𝄞")
+        assert_true(text.is_codepoint_boundary(0))
+        assert_true(text.is_codepoint_boundary(1))
+        assert_false(text.is_codepoint_boundary(2))
+        assert_true(text.is_codepoint_boundary(3))
+        assert_false(text.is_codepoint_boundary(4))
+        assert_false(text.is_codepoint_boundary(5))
+        assert_true(text.is_codepoint_boundary(6))
+        assert_false(text.is_codepoint_boundary(7))
+        assert_false(text.is_codepoint_boundary(8))
+        assert_false(text.is_codepoint_boundary(9))
+        assert_true(text.is_codepoint_boundary(10))
+        ```
+        .
+        """
+        # TODO: Example: Print the byte indices that are codepoints boundaries:
+
+        if index >= len(self):
+            return index == len(self)
+
+        var byte = self.as_bytes()[index]
+        # If this is not a continuation byte, then it must be a start byte.
+        return _utf8_byte_type(byte) != 1
+
     fn get_immutable(
         self,
     ) -> StringSlice[ImmutableOrigin.cast_from[origin].result]:
@@ -1236,10 +1333,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """Verify if the `StringSlice` starts with the specified prefix between
         start and end positions.
 
+        The `start` and `end` positions must be offsets given in bytes, and
+        must be codepoint boundaries.
+
         Args:
             prefix: The prefix to check.
-            start: The start offset from which to check.
-            end: The end offset from which to check.
+            start: The start offset in bytes from which to check.
+            end: The end offset in bytes from which to check.
 
         Returns:
             True if the `self[start:end]` is prefixed by the input prefix.
@@ -1257,10 +1357,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """Verify if the `StringSlice` end with the specified suffix between
         start and end positions.
 
+        The `start` and `end` positions must be offsets given in bytes, and
+        must be codepoint boundaries.
+
         Args:
             suffix: The suffix to check.
-            start: The start offset from which to check.
-            end: The end offset from which to check.
+            start: The start offset in bytes from which to check.
+            end: The end offset in bytes from which to check.
 
         Returns:
             True if the `self[start:end]` is suffixed by the input suffix.
@@ -1276,11 +1379,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
     fn _from_start(self, start: Int) -> Self:
         """Gets the `StringSlice` pointing to the substring after the specified
-        slice start position. If start is negative, it is interpreted as the
-        number of characters from the end of the string to start at.
+        slice start position in bytes. If start is negative, it is interpreted
+        as the number of characters from the end of the string to start at.
 
         Args:
-            start: Starting index of the slice.
+            start: Starting index of the slice in bytes. Must be a codepoint
+                boundary.
 
         Returns:
             A `StringSlice` borrowed from the current string containing the
@@ -1309,6 +1413,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             abs_start <= self_len,
             "strref absolute start must be less than source String len",
         )
+
+        # TODO(MSTDL-1161): Assert that `self.is_codepoint_boundary(abs_start)`.
 
         # TODO: We assumes the StringSlice only has ASCII.
         # When we support utf-8 slicing, we should drop self._slice[abs_start:]
@@ -1342,15 +1448,17 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         return _FormatCurlyEntry.format(self, args)
 
     fn find(ref self, substr: StringSlice, start: Int = 0) -> Int:
-        """Finds the offset of the first occurrence of `substr` starting at
-        `start`. If not found, returns `-1`.
+        """Finds the offset in bytes of the first occurrence of `substr`
+        starting at `start`. If not found, returns `-1`.
 
         Args:
             substr: The substring to find.
-            start: The offset from which to find.
+            start: The offset in bytes from which to find. Must be a codepoint
+                boundary.
 
         Returns:
-            The offset of `substr` relative to the beginning of the string.
+            The offset in bytes of `substr` relative to the beginning of the
+            string.
         """
         if not substr:
             return 0
@@ -1375,15 +1483,17 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         return Int(loc) - Int(self.unsafe_ptr())
 
     fn rfind(self, substr: StringSlice, start: Int = 0) -> Int:
-        """Finds the offset of the last occurrence of `substr` starting at
+        """Finds the offset in bytes of the last occurrence of `substr` starting at
         `start`. If not found, returns `-1`.
 
         Args:
             substr: The substring to find.
-            start: The offset from which to find.
+            start: The offset in bytes from which to find. Must be a valid
+                codepoint boundary.
 
         Returns:
-            The offset of `substr` relative to the beginning of the string.
+            The offset in bytes of `substr` relative to the beginning of the
+            string.
         """
         if not substr:
             return len(self)
