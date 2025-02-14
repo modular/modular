@@ -42,7 +42,7 @@ if [[ "$OSTYPE" == darwin* ]]; then
     exit 1
   fi
 else
-  readobj=../+_repo_rules5+llvm-project/llvm/llvm-readobj
+  readobj=../+llvm_configure+llvm-project/llvm/llvm-readobj
   real_binary_id=$("$readobj" -n "$binary")
   if ! echo "$real_binary_id" | grep -q "Build ID: $binary_id"; then
     echo "error: binary id '$binary_id' does not match real id: '$real_binary_id'" >&2
