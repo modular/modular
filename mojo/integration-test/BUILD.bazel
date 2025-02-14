@@ -9,7 +9,6 @@ lit_tests(
     data = glob(["**/*.mojo"]) + [
         "//KGEN:CompilerRT",
     ],
-    env = {},
     generate_litcfg = False,
     mojo_deps = [
         "//open-source/mojo/stdlib/stdlib",
@@ -18,6 +17,7 @@ lit_tests(
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],
         "//:tsan": ["@platforms//:incompatible"],
+        "//:ubsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     tools = [
