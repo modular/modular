@@ -229,7 +229,6 @@ LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
 
       "__mogg_intrinsic_attr",
       "register_internal",
-      "uses_opaque",
       "enforce_io_param",
 
       "register",
@@ -813,23 +812,15 @@ static void processFunctionConformances(FnOp func, SharedState &shared,
 /// information about each argument and result type.
 static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
                                           const ExprNode *decorator) {
-  using namespace MOGGPreElab::Decorators;
   StringRef spelling;
   if (auto callNode = dyn_cast<CallNode>(decorator))
     if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee))
       spelling = declRef->spelling;
-  if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
-    spelling = declRef->spelling;
-
-    // Decl Refs are only used by opaque type conformance hints
-    if (spelling != USES_OPAQUE)
-      return;
-  }
 
   if (spelling.empty())
     return;
 
-  if (!llvm::is_contained({REGISTER_INTERNAL_FUNCTION, USES_OPAQUE}, spelling))
+  if (spelling != MOGGPreElab::Decorators::REGISTER_INTERNAL_FUNCTION)
     return;
 
   auto func = cast<FnOp>(decl);
