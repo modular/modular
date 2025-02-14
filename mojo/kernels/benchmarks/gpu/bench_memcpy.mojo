@@ -13,9 +13,10 @@ from algorithm.functional import parallelize_over_rows
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from gpu.host import DeviceContext
 from memory import UnsafePointer
-from testing import assert_almost_equal
+from testing import assert_almost_equal, assert_true
 
 from utils import IndexList
+from internal_utils import arg_parse
 
 
 fn _pretty_print_float(val: Float64) -> String:
@@ -52,16 +53,48 @@ struct Config:
     alias DToH = 0
     alias HToD = 1
     alias DToD = 2
+    alias P2P = 3
     # Different possible configurations.
     alias DEVICE_TO_HOST = Self(Self.DToH, False)
     alias DEVICE_TO_HOST_PINNED = Self(Self.DToH, True)
     alias HOST_TO_DEVICE = Self(Self.HToD, False)
     alias HOST_PINNED_TO_DEVICE = Self(Self.HToD, True)
     alias DEVICE_TO_DEVICE = Self(Self.DToD, False)
+    alias PEER_TO_PEER = Self(Self.P2P, False)
+    alias UNDEFINED = Self(-1, False)
 
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)
+
+    fn __eq__(self, other: Self) -> Bool:
+        return (
+            self.direction == other.direction
+            and self.pinned_memory == other.pinned_memory
+        )
+
+    @staticmethod
+    fn get(handle: String) -> Self:
+        if handle == "host_to_device":
+            return Self.HOST_TO_DEVICE
+        elif handle == "host_pinned_to_device":
+            return Self.HOST_PINNED_TO_DEVICE
+        elif handle == "device_to_host":
+            return Self.DEVICE_TO_HOST
+        elif handle == "device_to_host_pinned":
+            return Self.DEVICE_TO_HOST_PINNED
+        elif handle == "device_to_device":
+            return Self.DEVICE_TO_DEVICE
+        elif handle == "peer_to_peer":
+            return Self.PEER_TO_PEER
+        else:
+            print("UNDEFINED")
+            print(
+                "options: host_to_device, host_pinned_to_device,"
+                " device_to_host, device_to_host_pinned, device_to_device,"
+                " peer_to_peer"
+            )
+            return Self.UNDEFINED
 
     fn write_to[W: Writer](self, mut writer: W):
         if self.direction == Self.DToD:
@@ -81,9 +114,9 @@ struct Config:
 
 
 @no_inline
-fn bench_memcpy[
-    config: Config
-](mut b: Bench, *, length: Int, context: DeviceContext) raises:
+fn bench_memcpy(
+    mut b: Bench, *, length: Int, config: Config, context: DeviceContext
+) raises:
     alias dtype = DType.float32
     var mem_host = context.malloc_host[Scalar[dtype]](
         length
@@ -98,7 +131,6 @@ fn bench_memcpy[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            @parameter
             if config.direction == Config.DToH:
                 context.enqueue_copy_from_device(mem_host, mem_device)
             elif config.direction == Config.HToD:
@@ -200,31 +232,28 @@ fn bench_p2p(
 
 
 def main():
-    alias log2_length = env_get_int["log2_length", 20]()
-    constrained[log2_length > 0]()
     var m = Bench()
-    with DeviceContext() as ctx:
-        var length = 1 << log2_length
-        bench_memcpy[Config.DEVICE_TO_HOST](m, length=length, context=ctx)
-        bench_memcpy[Config.DEVICE_TO_HOST_PINNED](
-            m, length=length, context=ctx
-        )
-        bench_memcpy[Config.HOST_TO_DEVICE](m, length=length, context=ctx)
-        bench_memcpy[Config.HOST_PINNED_TO_DEVICE](
-            m, length=length, context=ctx
-        )
-        bench_memcpy[Config.DEVICE_TO_DEVICE](m, length=length, context=ctx)
 
-    var num_devices = DeviceContext.number_of_devices()
-    if num_devices > 1:
-        # Create contexts for both same-device and peer device transfers
-        var ctx1 = DeviceContext(device_id=0)
-        var ctx2 = DeviceContext(device_id=1)
+    var log2_length = arg_parse("log2_length", 20)
+    var mode = arg_parse("mode", "host_to_device")
+    assert_true(log2_length > 0)
+    var length = 1 << log2_length
+    var config = Config.get(mode)
 
-        var length = 1 << log2_length
-        # Benchmark peer context D2D
-        bench_p2p(m, length=length, ctx1=ctx1, ctx2=ctx2)
-    else:
-        print("Only one device found, skipping peer-to-peer benchmarks")
+    if not (config == Config.UNDEFINED) and not (config == Config.PEER_TO_PEER):
+        with DeviceContext() as ctx:
+            bench_memcpy(m, length=length, config=config, context=ctx)
+
+    elif config.direction == Config.P2P:
+        var num_devices = DeviceContext.number_of_devices()
+        if num_devices > 1:
+            # Create contexts for both same-device and peer device transfers
+            var ctx1 = DeviceContext(device_id=0)
+            var ctx2 = DeviceContext(device_id=1)
+
+            # Benchmark peer context D2D
+            bench_p2p(m, length=length, ctx1=ctx1, ctx2=ctx2)
+        else:
+            print("Only one device found, skipping peer-to-peer benchmarks")
 
     m.dump_report()
