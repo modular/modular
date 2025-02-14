@@ -399,8 +399,8 @@ fn _matmul_gpu[
             ):
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
-                    cluster_shape = StaticTuple[Int32, 3](1, 2, 1),
-                    wgmma_n=128,
+                    cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
+                    wgmma_n=256,
                     num_consumer=2,
                 ](
                     rebind[NDBuffer[c_type, 2, c_shape]](c),

@@ -10,8 +10,9 @@ import linalg.vendor_blas
 from buffer.dimlist import Dim, DimList, _make_tuple
 from gpu import WARP_SIZE, barrier
 from gpu.host import DeviceContext, FuncAttribute
+from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
-from gpu.id import block_dim, block_idx, thread_idx
+from gpu.id import block_dim, block_idx, thread_idx, grid_dim
 from gpu.memory import AddressSpace
 from gpu.mma import (
     WGMMADescriptor,
@@ -52,6 +53,9 @@ from gpu.cluster import (
 )
 from gpu.intrinsics import warpgroup_reg_dealloc, warpgroup_reg_alloc
 from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
+from pathlib import Path
+
+from .utils_gpu import block_swizzle
 
 
 alias WARP_GROUP_SIZE = 128
@@ -88,6 +92,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     a_smem_layout: Layout,
     b_smem_layout: Layout,
     cluster_shape: StaticTuple[Int32, 3],
+    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = True,
     num_threads: Int = 128,
     pipeline_stages: Int = 7,
@@ -119,8 +125,23 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     alias b_expected_bytes = b_smem_layout.size() * sizeof[b_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
+    alias use_cluster = cluster_size[cluster_shape]() > 1
+
+    var block_idx_swizzle = block_swizzle(
+        Index[element_bitwidth=32, unsigned=True](block_idx.x, block_idx.y),
+        Index[element_bitwidth=32, unsigned=True](grid_dim.x, grid_dim.y),
+    ) if not use_cluster else Index[element_bitwidth=32, unsigned=True](
+        block_idx.x, block_idx.y
+    )
+
     wgmma_op = TensorCoreAsync[
-        accum_type, a_type, b_type, wgmma_shape, transpose_b=transpose_b
+        accum_type,
+        a_type,
+        b_type,
+        wgmma_shape,
+        a_swizzle=a_swizzle,
+        b_swizzle=b_swizzle,
+        transpose_b=transpose_b,
     ]()
 
     var smem = external_memory[
@@ -204,26 +225,29 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
             for i in range(num_k_iters):
                 var write_idx = write_pipeline_states.index()
 
-                empty[write_idx].wait(write_pipeline_states.phase())
+                # empty[write_idx].wait(write_pipeline_states.phase())
+                TMABarrier(b_mbars_ptr + write_idx).wait(
+                    write_pipeline_states.phase()
+                )
                 var a_smem_tile = a_smem_iter.next(write_idx)[]
                 var b_smem_tile = b_smem_iter.next(write_idx)[]
 
-                full[write_idx].expect_bytes(expected_bytes)
+                TMABarrier(a_mbars_ptr + write_idx).expect_bytes(expected_bytes)
 
                 @parameter
                 if CLUSTER_N > 1:
                     if rank_n == 0:
                         a_tma_op.async_multicast_load(
                             a_smem_tile,
-                            full[write_idx],
+                            TMABarrier(a_mbars_ptr + write_idx),
                             (UInt(i) * BK, block_idx.y * BM),
                             UInt16(multicast_row_mask),
                         )
                 else:
                     a_tma_op.async_copy(
                         a_smem_tile,
-                        full[write_idx],
-                        (UInt(i) * BK, block_idx.y * BM),
+                        TMABarrier(a_mbars_ptr + write_idx),
+                        (UInt(i) * BK, UInt(block_idx_swizzle[1]) * BM),
                     )
 
                 @parameter
@@ -231,15 +255,16 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
                     if rank_m == 0:
                         b_tma_op.async_multicast_load(
                             b_smem_tile,
-                            full[write_idx],
+                            TMABarrier(a_mbars_ptr + write_idx),
                             (UInt(i) * BK, block_idx.x * BN),
                             UInt16(multicast_column_mask << rank_n),
                         )
                 else:
                     b_tma_op.async_copy(
                         b_smem_tile,
-                        full[write_idx],
-                        (UInt(i) * BK, block_idx.x * BN),
+                        TMABarrier(a_mbars_ptr + write_idx),
+                        # (UInt(i) * BK, block_idx.x * BN),
+                        (UInt(i) * BK, UInt(block_idx_swizzle[0]) * BN),
                     )
 
                 write_pipeline_states.step()
@@ -265,15 +290,24 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
 
         @parameter
         for i in range(pipeline_stages):
-            if warp_group_thread_idx < CLUSTER_SIZE:
-                _ = empty[i].arrive_cluster(warp_group_thread_idx)
+
+            @parameter
+            if cluster_size[cluster_shape]() > 1:
+                if warp_group_thread_idx < CLUSTER_SIZE:
+                    _ = empty[i].arrive_cluster(warp_group_thread_idx)
+            else:
+                if warp_group_thread_idx == 0:
+                    _ = empty[i].arrive()
 
         var read_pipeline_states = PipelineState[pipeline_stages]()
 
         for i in range(num_k_iters):
             var read_idx = read_pipeline_states.index()
 
-            full[read_idx].wait(read_pipeline_states.phase())
+            # full[read_idx].wait(read_pipeline_states.phase())
+            TMABarrier(a_mbars_ptr + read_idx).wait(
+                read_pipeline_states.phase()
+            )
             var a_smem_tile = a_smem_iter.next(read_idx)[]
             var b_smem_tile = b_smem_iter.next(read_idx)[]
 
@@ -287,11 +321,22 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
             wgmma_op.commit_group()
             wgmma_op.wait_for_all()
 
-            if warp_group_thread_idx < CLUSTER_SIZE:
-                _ = empty[read_idx].arrive_cluster(warp_group_thread_idx)
+            @parameter
+            if cluster_size[cluster_shape]() > 1:
+                if warp_group_thread_idx < CLUSTER_SIZE:
+                    _ = TMABarrier(b_mbars_ptr + read_idx).arrive_cluster(
+                        warp_group_thread_idx
+                    )
+            else:
+                if warp_group_thread_idx == 0:
+                    _ = TMABarrier(b_mbars_ptr + read_idx).arrive()
+
             read_pipeline_states.step()
 
-        var c_gmem_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
+        # var c_gmem_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
+        var c_gmem_tile = c.tile[BM, BN](
+            block_idx_swizzle[1], block_idx_swizzle[0]
+        )
         var c_gmem_split = c_gmem_tile.tile[BM // num_consumer, BN](
             local_warp_group_idx, 0
         )
@@ -542,22 +587,29 @@ fn warp_specialize_gemm_with_multicasting[
     var b = from_ndbuffer_row_major(b_device)
     var c = from_ndbuffer_row_major(c_device)
 
-    alias block_tile_shape = Index(128, wgmma_n, 32)
+    alias block_tile_shape = Index(128, wgmma_n, 64)
     alias wgmma_shape = Index(64, wgmma_n, 16)
 
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
 
-    alias a_smem_layout = tile_layout_k_major[a_type, BM, BK]()
-    alias b_smem_layout = tile_layout_k_major[b_type, BN, BK]()
+    alias a_swizzle = TensorMapSwizzle.SWIZZLE_128B
+    alias b_swizzle = TensorMapSwizzle.SWIZZLE_128B
 
-    a_tma_op = create_tma_tile[a_type, 2, Index(BM, BK)](ctx, a)
-    b_tma_op = create_tma_tile[b_type, 2, Index(BN, BK)](ctx, b)
+    alias a_smem_layout = tile_layout_k_major[a_type, BM, BK, a_swizzle]()
+    alias b_smem_layout = tile_layout_k_major[b_type, BN, BK, b_swizzle]()
+
+    a_tma_op = create_tma_tile[
+        a_type, 2, Index(BM, BK), swizzle_mode=a_swizzle
+    ](ctx, a)
+    b_tma_op = create_tma_tile[
+        b_type, 2, Index(BN, BK), swizzle_mode=b_swizzle
+    ](ctx, b)
 
     alias num_threads = WARP_GROUP_SIZE * num_consumer + WARP_GROUP_SIZE
 
-    alias pipeline_stages = 3
+    alias pipeline_stages = 4
     alias smem_size = pipeline_stages * (
         a_smem_layout.size() * sizeof[a_type]()
         + b_smem_layout.size() * sizeof[b_type]()
