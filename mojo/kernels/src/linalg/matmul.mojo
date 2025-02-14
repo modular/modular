@@ -796,10 +796,6 @@ fn matmul[
             trace_arg("transpose_a", transpose_a),
             trace_arg("transpose_b", transpose_b),
             trace_arg("b_packed", b_packed),
-            trace_arg(
-                "single_thread_blocking_override",
-                single_thread_blocking_override,
-            ),
             sep=";",
         )
 

@@ -283,10 +283,6 @@ fn batched_matmul[
             trace_arg("C", c_buf),
             trace_arg("transpose_a", transpose_a),
             trace_arg("transpose_b", transpose_b),
-            trace_arg(
-                "single_thread_blocking_override",
-                single_thread_blocking_override,
-            ),
             sep=";",
         )
 
