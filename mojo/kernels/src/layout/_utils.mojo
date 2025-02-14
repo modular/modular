@@ -3,10 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: disabled
 
 from collections import Optional
-from os import abort
 from sys import bitwidthof
 
 from buffer import NDBuffer
