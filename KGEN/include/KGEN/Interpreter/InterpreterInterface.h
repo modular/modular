@@ -23,6 +23,11 @@ struct OpBytecodeGenerator {
   uint32_t payloadSize;
   GenBytecodeHook genBytecode;
   InterpretHook interpret;
+  // The alignment of the payload. Has to be a maximum of allowed alignment of
+  // all Payloads in KGEN Dialect.
+  // Ideally we want to use `alignof(KGEN*::Payload)` here, but that will
+  // introduce extra dependency to intepreter.
+  static constexpr uint64_t payloadAlignment = 8;
 };
 } // namespace M
 
@@ -77,11 +82,19 @@ struct BytecodeDelegateOpInterfaceTraits
       using Payload = typename ConcreteOp::Payload;
       return {sizeof(Payload),
               +[](Operation *op, void *payload, TargetInfoAttr target) {
+                assert(llvm::isAddrAligned(
+                           llvm::Align(OpBytecodeGenerator::payloadAlignment),
+                           payload) &&
+                       "payload is not properly aligned");
                 return cast<ConcreteOp>(op).compile(*(Payload *)payload,
                                                     target);
               },
               +[](Operation *op, ArrayRef<Attribute> operands,
                   const void *payload, InterpreterState &state) {
+                assert(llvm::isAddrAligned(
+                           llvm::Align(OpBytecodeGenerator::payloadAlignment),
+                           payload) &&
+                       "payload is not properly aligned");
                 return cast<ConcreteOp>(op).interpret(
                     operands, *(const Payload *)payload, state);
               }};
