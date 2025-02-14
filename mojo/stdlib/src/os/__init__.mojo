@@ -19,6 +19,7 @@ from .os import (
     SEEK_CUR,
     SEEK_END,
     SEEK_SET,
+    Process,
     abort,
     getuid,
     listdir,

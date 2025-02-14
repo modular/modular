@@ -21,8 +21,15 @@ from os import listdir
 
 from collections import InlineArray, List
 from collections.string import StringSlice
-from sys import external_call, is_gpu, os_is_linux, os_is_windows
-from sys.ffi import OpaquePointer, c_char
+from sys import (
+    external_call,
+    is_gpu,
+    os_is_linux,
+    os_is_macos,
+    os_is_windows,
+)
+from sys._libc import fork, execvp, kill, SignalCodes
+from sys.ffi import OpaquePointer, c_char, c_int, c_str_ptr
 
 from memory import UnsafePointer
 
@@ -415,3 +422,84 @@ def removedirs[PathLike: os.PathLike](path: PathLike) -> None:
         except:
             break
         head, tail = os.path.split(head)
+
+
+# ===----------------------------------------------------------------------=== #
+# Process execution
+# ===----------------------------------------------------------------------=== #
+
+
+struct Process:
+    """Create and manage child processes from file executables.
+    TODO: Add windows support.
+    """
+
+    var child_pid: c_int
+
+    fn __init__(mut self, child_pid: c_int):
+        self.child_pid = child_pid
+
+    fn _kill(self, signal: Int):
+        kill(self.child_pid, signal)
+
+    fn hangup(self):
+        self._kill(SignalCodes.HUP)
+
+    fn interrupt(self):
+        self._kill(SignalCodes.INT)
+
+    fn kill(self):
+        self._kill(SignalCodes.KILL)
+
+    @staticmethod
+    fn run(path: String, argv: List[String]) raises -> Process:
+        """Spawn new process from file executable.
+
+        Args:
+          path: The path to the file.
+          argv: A list of string arguments to be passed to executable.
+
+        Returns:
+          An instance of `Process` struct.
+        """
+
+        @parameter
+        if os_is_linux() or os_is_macos():
+            var file_name = path.split(sep)[-1]
+            var pid = fork()
+            if pid == 0:
+                var arg_count = len(argv)
+                var argv_array_ptr_cstr_ptr = UnsafePointer[c_str_ptr].alloc(
+                    arg_count + 2
+                )
+                var offset = 0
+                # Arg 0 in `argv` ptr array should be the file name
+                argv_array_ptr_cstr_ptr[offset] = file_name.unsafe_cstr_ptr()
+                offset += 1
+
+                for arg in argv:
+                    argv_array_ptr_cstr_ptr[offset] = arg[].unsafe_cstr_ptr()
+                    offset += 1
+
+                # `argv` ptr array terminates with NULL PTR
+                argv_array_ptr_cstr_ptr[offset] = c_str_ptr()
+
+                _ = execvp(path.unsafe_cstr_ptr(), argv_array_ptr_cstr_ptr)
+
+                # This will only get reached if exec call fails to replace currently executing code
+                argv_array_ptr_cstr_ptr.free()
+                raise Error("Failed to execute " + path)
+            elif pid < 0:
+                raise Error("Unable to fork parent")
+
+            return Process(child_pid=pid)
+        elif os_is_windows():
+            constrained[
+                False, "Windows process execution currently not implemented"
+            ]()
+            return abort[Process]()
+        else:
+            constrained[
+                False, "Unknown platform process execution not implemented"
+            ]()
+            return abort[Process]()
