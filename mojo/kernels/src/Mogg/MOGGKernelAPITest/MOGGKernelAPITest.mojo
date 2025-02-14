@@ -575,7 +575,10 @@ struct Transpose2DOp:
     fn build_view[
         type: DType,
     ](x: ManagedTensorSlice[type, 2]) -> ManagedTensorSlice[
-        type, 2, io_spec = x.io_spec, static_spec = StaticTensorSpec[type, 2]()
+        type,
+        2,
+        io_spec = x.io_spec,
+        static_spec = StaticTensorSpec[type, 2].create_unknown(),
     ]:
         var new_stride = IndexList[2]()
         var new_shape = IndexList[2]()
@@ -588,7 +591,7 @@ struct Transpose2DOp:
             type,
             2,
             io_spec = x.io_spec,
-            static_spec = StaticTensorSpec[type, 2](),
+            static_spec = StaticTensorSpec[type, 2].create_unknown(),
         ](x._ptr, new_shape, new_stride)
 
     @staticmethod

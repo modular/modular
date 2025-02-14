@@ -316,7 +316,7 @@ fn reshape_contiguous_buffer[
         type,
         old_rank,
         io_spec=IOUnknown,
-        static_spec = StaticTensorSpec[type, old_rank](),
+        static_spec = StaticTensorSpec[type, old_rank].create_unknown(),
     ],
     shape: IndexList[new_rank],
 ) -> DynamicTensor[type, new_rank].Type:
@@ -457,7 +457,10 @@ fn get_scalar_from_managed_tensor_slice[
     dtype: DType,
 ](
     tensor: ManagedTensorSlice[
-        dtype, 1, io_spec=IOUnknown, static_spec = StaticTensorSpec[dtype, 1]()
+        dtype,
+        1,
+        io_spec=IOUnknown,
+        static_spec = StaticTensorSpec[dtype, 1].create_unknown(),
     ]
 ) -> Scalar[dtype]:
     # Assumes that tensor is on the host!
