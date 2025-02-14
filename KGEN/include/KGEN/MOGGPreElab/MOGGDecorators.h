@@ -98,10 +98,6 @@ namespace Decorators {
 // kernel.
 constexpr StringLiteral REGISTER_INTERNAL_FUNCTION = "register_internal";
 
-// Decorator to indicate opaque use and we should generate conformances
-// TODO(GEX-1145): Remove the need for this.
-constexpr StringLiteral USES_OPAQUE = "uses_opaque";
-
 // Decorator to enforce ManagedTensorSlice specializing on the IO param,
 // this allows us to transition to the new ManagedTensorSlice definition in a
 // piecemeal fashion.
