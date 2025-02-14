@@ -282,6 +282,16 @@ class TokenGenerationSchedulerV2(Scheduler):
                     ce_batch[req_id] = data
 
                 else:
+                    if (
+                        data.seq_len
+                        > self.scheduler_config.target_tokens_per_batch_ce
+                    ):
+                        # we need to schedule this request even it exceeds the
+                        # `target_tokens_per_batch_ce` limit; otherwise, it will
+                        # never be scheduled.
+                        data.cache_seq_id = self.available_cache_indices.pop()
+                        ce_batch[req_id] = data
+
                     # we cannot schedule this request so return it to the head of
                     # the request queue
                     self.request_q.put_front_nowait((req_id, data))
