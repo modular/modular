@@ -49,12 +49,12 @@ def custom(
 ) -> list[Value]:
     """Creates a node to execute a custom graph operation in the graph.
 
-    The custom op should be registered by annotating a function with
-    the [`max.register.op`](/max/api/mojo/register/register/op)
+    The custom op should be registered by annotating a function with the
+    [`@compiler.register`](/max/api/mojo-decorators/compiler-register/)
     decorator.
 
     Args:
-        name: The op name provided to ``max.register.op``.
+        name: The op name provided to ``@compiler.register``.
         values: The op function's arguments.
         out_types: The list of op function's return type.
         parameters: Dictionary of extra parameters expected by the kernel.
@@ -94,12 +94,12 @@ def inplace_custom(
 ) -> list[Value]:
     """Creates a node to execute an in-place custom graph operation in the graph.
 
-    The custom op should be registered by annotating a function with
-    the [`max.register.op`](/max/api/mojo/register/register/op)
+    The custom op should be registered by annotating a function with the
+    [`@compiler.register`](/max/api/mojo-decorators/compiler-register/)
     decorator.
 
     Args:
-        name: The op name provided to ``max.register.op``.
+        name: The op name provided to ``@compiler.register``.
         values: The op function's arguments.
         parameters: Dictionary of extra parameters expected by the kernel.
     """
