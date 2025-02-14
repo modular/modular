@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 from collections import InlineArray, Optional, OptionalReg
 from math import gcd, isqrt
-from os import abort
 from sys.info import _current_target, simdwidthof
 
 from algorithm.functional import elementwise

@@ -7,7 +7,6 @@
 from collections import OptionalReg
 from collections.vector import InlinedFixedVector
 from math import align_down, align_up, ceildiv
-from os import abort
 from sys._build import is_debug_build
 from sys.info import bitwidthof, simdwidthof, sizeof
 

@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_down, align_up, ceildiv, exp, exp2, log
-from os import abort
 from sys import alignof, is_nvidia_gpu, simdwidthof
 
 from algorithm import sync_parallelize, vectorize

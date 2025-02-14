@@ -8,7 +8,6 @@
 from collections import OptionalReg
 from math import align_down, align_up, ceildiv, exp, recip
 from math.constants import log2e
-from os import abort
 from sys import (
     alignof,
     bitwidthof,
