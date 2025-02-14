@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
 from sys.intrinsics import _type_is_eq
 
 from buffer import Dim, DimList, NDBuffer
