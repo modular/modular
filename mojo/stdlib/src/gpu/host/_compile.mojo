@@ -8,7 +8,6 @@
 import subprocess
 import tempfile
 from collections import Optional
-from os import abort
 from pathlib import Path
 from sys.info import _get_arch
 
