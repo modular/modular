@@ -3,8 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# FIXME: KERN-1377
-# UNSUPPORTED: AMD-GPU
 # RUN: %mojo-no-debug --debug-level full %s | FileCheck %s
 
 from collections import OptionalReg
@@ -89,7 +87,7 @@ fn test_async_copy[
     arange(input.tensor())
 
     ctx.enqueue_function[async_copy_kernel[layout, BM, BN]](
-        input.device_tensor(), grid_dim=(M // BM, N // BN), block_dim=(BM, BN)
+        input.device_tensor(), grid_dim=(N // BN, M // BM), block_dim=(BM, BN)
     )
 
     ctx.synchronize()
@@ -104,8 +102,8 @@ def run_async_copy_tests(ctx: DeviceContext):
     # CHECK: 6.0   8.0   10.0   9.0   11.0   13.0
     # CHECK: 12.0   14.0   16.0   15.0   17.0   19.0
     # CHECK: 18.0   20.0   22.0   21.0   23.0   25.0
-    # CHECK: 24.0   26.0   28.0   27.0   28.0   29.0
-    # CHECK: 30.0   31.0   32.0   33.0   34.0   35.0
+    # CHECK: 24.0   26.0   28.0   27.0   29.0   31.0
+    # CHECK: 30.0   32.0   34.0   33.0   35.0   37.0
     test_async_copy[
         Layout.row_major(6, 6),
         M=6,
@@ -119,8 +117,8 @@ def run_async_copy_tests(ctx: DeviceContext):
     # CHECK: 6.0   8.0   10.0   9.0   11.0   13.0
     # CHECK: 12.0   14.0   16.0   15.0   17.0   19.0
     # CHECK: 18.0   20.0   22.0   21.0   23.0   25.0
-    # CHECK: 24.0   26.0   28.0   27.0   28.0   29.0
-    # CHECK: 30.0   31.0   32.0   33.0   34.0   35.0
+    # CHECK: 24.0   26.0   28.0   27.0   29.0   31.0
+    # CHECK: 30.0   32.0   34.0   33.0   35.0   37.0
     test_async_copy[
         Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
         M=6,
