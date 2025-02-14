@@ -72,7 +72,7 @@ MojoBinary::MojoBinary(const std::shared_ptr<MojoSource> &source,
       /*Env=*/std::nullopt, redirects);
   if (ec)
     llvm::report_fatal_error(
-        llvm::formatv("`mojo build -g -O0 '{0}'` failed with exit code {2}. "
+        llvm::formatv("`mojo build -g -O0 '{0}'` failed with exit code {1}. "
                       "This test won't run unless you fix this.",
                       source->getPath(), std::to_string(ec)));
 }
