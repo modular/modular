@@ -87,8 +87,13 @@ struct StaticTensorSpec[
         self.in_lambda = in_lambda
         self.out_lambda = out_lambda
 
-    fn __init__(out self):
-        self = Self(
+    @staticmethod
+    fn create_unknown() -> Self:
+        """
+        Returns a StaticTensorSpec with the specified type and rank with all
+        fields dynamic or defaulted.
+        """
+        return Self(
             DimList.create_unknown[rank](),
             DimList.create_unknown[rank](),
             1,

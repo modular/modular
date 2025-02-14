@@ -360,7 +360,7 @@ struct IODynamicTensor[
         type,
         rank,
         io_spec=IOUnknown,
-        static_spec = StaticTensorSpec[type, rank](),
+        static_spec = StaticTensorSpec[type, rank].create_unknown(),
     ]
 
 
