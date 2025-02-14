@@ -28,3 +28,10 @@ def graph_testdata() -> Path:
     path = os.getenv("GRAPH_TESTDATA")
     assert path is not None
     return Path(path)
+
+
+@pytest.fixture
+def counter_mojopkg() -> Path:
+    path = os.getenv("MODULAR_COUNTER_OPS_PATH")
+    assert path is not None, "Test couldn't find `MODULAR_COUNTER_OPS_PATH` env"
+    return Path(path)

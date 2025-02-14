@@ -34,6 +34,23 @@ from .weight import Weight
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
 
 
+class KernelLibrary:
+    def __init__(self, context: mlir.Context, path: Path):
+        self._analysis = _graph.Analysis(context, [path])
+        self._kernels = set(self._analysis.symbol_names)
+
+    def __getitem__(self, kernel: str):
+        if kernel not in self._kernels:
+            raise KeyError(kernel)
+        return self._analysis.kernel(kernel)
+
+    def __contains__(self, kernel: str):
+        return kernel in self._kernels
+
+    def __iter__(self):
+        yield from sorted(self._kernels)
+
+
 # From https://stackoverflow.com/a/76301341
 class _classproperty:
     def __init__(self, func):
@@ -496,3 +513,6 @@ class Graph:
             return mlir.Location.unknown()
 
         return _graph.frame_loc(mlir.Context.current, tb)
+
+    def import_kernels(self, path: Path) -> KernelLibrary:
+        return KernelLibrary(self._context, path)
