@@ -103,7 +103,17 @@ struct StaticTensorSpec[
             OptionalReg[Self.out_lambda_t](None),
         )
 
-    fn with_strides(self, strides: DimList) -> Self:
-        var result = self
-        result.strides = strides
-        return result
+    fn with_layout[
+        new_rank: Int
+    ](self, new_shape: DimList, new_strides: DimList) -> StaticTensorSpec[
+        type, new_rank
+    ]:
+        return StaticTensorSpec[type, new_rank](
+            new_shape,
+            new_strides,
+            self.alignment,
+            self.address_space,
+            self.exclusive,
+            None,
+            None,
+        )

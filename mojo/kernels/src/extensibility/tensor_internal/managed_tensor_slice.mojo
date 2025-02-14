@@ -800,16 +800,35 @@ struct ManagedTensorSlice[
             ](self, ridx, val)
 
     @always_inline
-    fn with_strides[
-        new_strides: DimList
+    fn with_layout[
+        new_rank: Int, //,
+        new_static_shape: DimList,
+        new_static_strides: DimList,
     ](
         self,
+        new_runtime_shape: IndexList[new_rank],
+        new_runtime_strides: IndexList[new_rank],
+        offset_ptr: OptionalReg[UnsafePointer[Scalar[type]]] = None,
         out result: ManagedTensorSlice[
+            rank=new_rank,
             io_spec=io_spec,
-            static_spec = static_spec.with_strides(new_strides),
+            static_spec = static_spec.with_layout[new_rank](
+                new_static_shape, new_static_strides
+            ),
         ],
     ):
-        return __type_of(result)(self._ptr, self._spec, self._runtime_strides)
+        constrained[
+            len(new_static_shape) == new_rank, "static shape has incorrect rank"
+        ]()
+        constrained[
+            len(new_static_strides) == new_rank,
+            "static strides has incorrect rank",
+        ]()
+        return __type_of(result)(
+            offset_ptr.or_else(self._ptr),
+            new_runtime_shape,
+            new_runtime_strides,
+        )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -956,24 +975,21 @@ fn foreach[
 @no_inline
 fn view_copy_impl[
     type: DType,
-    rank: Int, //,
+    rank: Int,
+    spec: StaticTensorSpec[type, rank], //,
     *,
     target: StringLiteral,
     _synchronous: Bool,
-    view_strides: DimList = DimList.create_unknown[rank](),
     trace_name: StringLiteral = "foreach",
 ](
     z: ManagedTensorSlice[type=type, rank=rank],
-    x: ManagedTensorSlice[type=type, rank=rank],
+    x: ManagedTensorSlice[static_spec=spec],
     ctx: MojoCallContextPtr,
 ):
     @parameter
     @always_inline
     fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
-        var new_layout = x.with_strides[view_strides]()
-        return simd_load_from_managed_tensor_slice[simd_width=width](
-            new_layout, idx
-        )
+        return simd_load_from_managed_tensor_slice[simd_width=width](x, idx)
 
     with Trace[TraceLevel.OP, target=target](trace_name):
         foreach[func, target=target, _synchronous=_synchronous](z, ctx)
