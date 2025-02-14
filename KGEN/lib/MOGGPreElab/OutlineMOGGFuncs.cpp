@@ -354,15 +354,15 @@ public:
 
       // Pull the lambda names off the kernel so we can find their decl in the
       // implementation to avoid outlining them.
-      llvm::StringSet<> lambdas;
+      llvm::DenseSet<StringAttr> lambdas;
       if (auto inLambdaAttr =
               kernel->getAttrOfType<ArrayAttr>(kMOGGInputLambdas)) {
-        for (StringRef name : inLambdaAttr.getAsValueRange<StringAttr>())
+        for (StringAttr name : inLambdaAttr.getAsRange<StringAttr>())
           lambdas.insert(name);
       }
       if (auto outLambdaAttr =
               kernel->getAttrOfType<ArrayAttr>(kMOGGOutputLambdas)) {
-        for (StringRef name : outLambdaAttr.getAsValueRange<StringAttr>())
+        for (StringAttr name : outLambdaAttr.getAsRange<StringAttr>())
           lambdas.insert(name);
       }
 
