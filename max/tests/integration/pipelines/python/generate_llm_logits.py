@@ -210,8 +210,16 @@ class LlamaPipelineOracle(PipelineOracle):
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             # Normally we do not override batch size, preferring to test the
             # defaults, but the default is known to be broken on A10.  Product
-            # has requested that we work around rather than fix for now.
-            max_batch_size=32,
+            # has requested that we work around rather than fix for now.  Do
+            # NOT override, and instead leave as default, for CPU.
+            max_batch_size=(
+                32
+                if any(
+                    device_spec.device_type == "gpu"
+                    for device_spec in device_specs
+                )
+                else None
+            ),
             max_new_tokens=10,
             huggingface_repo_id=f"modularai/llama-{internal_version}",
             weight_path=[
