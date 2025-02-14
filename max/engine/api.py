@@ -32,6 +32,7 @@ from max._core.engine import MojoValue, PrintStyle
 from max._core.engine import TensorData as _TensorData
 from max._core.engine import TensorSpec as _TensorSpec
 from max._core.engine import TorchInputSpec as _TorchInputSpec
+from max._core.profiler import set_gpu_profiling_state
 from max.driver import CPU, Device, DLPackArray, Tensor
 from max.dtype import DType
 from max.profiler import Tracer, traced
@@ -454,10 +455,7 @@ class TensorSpec:
         return tensor_spec
 
     def __repr__(self) -> str:
-        return (
-            f"TensorSpec(shape={self.shape}, dtype={self.dtype},"
-            f" name={self.name})"
-        )
+        return f"TensorSpec(shape={self.shape}, dtype={self.dtype}, name={self.name})"
 
     def __str__(self) -> str:
         if self.shape is not None:
@@ -739,10 +737,7 @@ class InferenceSession:
 
     def __repr__(self) -> str:
         if self.num_threads:
-            return (
-                "<modular engine"
-                f" InferenceSession(num_threads={self.num_threads})>"
-            )
+            return f"<modular engine InferenceSession(num_threads={self.num_threads})>"
         else:
             return "<modular engine InferenceSession>"
 
@@ -973,13 +968,16 @@ class InferenceSession:
 
     def gpu_profiling(self, mode: str):
         """Enables end to end gpu profiling configuration."""
-        if mode.lower() in ("false", "off", "no", "0"):
+        state = mode.lower()
+        if state in ("false", "off", "no", "0"):
             return
 
         self._set_mojo_define("MODULAR_ENABLE_PROFILING", True)
         self._set_mojo_define("MODULAR_ENABLE_GPU_PROFILING", True)
-        if mode.lower() == "detailed":
+        if state == "detailed":
             self._set_mojo_define("MODULAR_ENABLE_GPU_PROFILING_DETAILED", True)
+
+        set_gpu_profiling_state(state)
 
     def _use_experimental_kernels(self, mode: str):
         """Enables experimental kernels."""

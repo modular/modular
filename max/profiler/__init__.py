@@ -53,12 +53,17 @@ with Tracer("foo", color="blue") as tracer:
 
 """
 
-from max._core.profiler import Trace, is_profiling_enabled
+from max._core.profiler import (
+    Trace,
+    is_profiling_enabled,
+    set_gpu_profiling_state,
+)
 from max.profiler.tracing import Tracer, traced
 
 __all__ = [
     "Trace",
     "Tracer",
     "is_profiling_enabled",
+    "set_gpu_profiling_state",
     "traced",
 ]
