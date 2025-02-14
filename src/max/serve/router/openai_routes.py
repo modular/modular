@@ -58,10 +58,10 @@ from max.serve.schemas.openai import (  # type: ignore
     Error,
     ErrorResponse,
     Function1,
+    ListModelsResponse,
     Logprobs,
     Logprobs2,
     Model,
-    ModelList,
     PromptItem,
     ResponseFormatJsonObject,
     ResponseFormatJsonSchema,
@@ -986,18 +986,18 @@ async def health() -> Response:
 
 
 @router.get("/models", response_model=None)
-async def openai_get_models(request: Request) -> ModelList:
+async def openai_get_models(request: Request) -> ListModelsResponse:
     pipeline: TokenGeneratorPipeline = request.app.state.pipeline
-    return ModelList(
-        models=[
-            Model(
-                id=pipeline.model_name,
-                object="model",
-                created=None,
-                owned_by="",
-            )
-        ]
-    )
+    model_list = [
+        Model(
+            id=pipeline.model_name,
+            object="model",
+            created=None,
+            owned_by="",
+        )
+    ]
+
+    return ListModelsResponse(object="list", data=model_list)
 
 
 @router.get("/models/{model_id}", response_model=None)
