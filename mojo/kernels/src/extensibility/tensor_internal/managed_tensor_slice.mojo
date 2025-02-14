@@ -73,7 +73,7 @@ fn simd_store_into_managed_tensor_slice[
     static_spec: StaticTensorSpec[type, rank],
     element_alignment: Int = 1,
 ](
-    tensor: ManagedTensorSlice[type, rank, static_spec=static_spec],
+    tensor: ManagedTensorSlice[static_spec=static_spec],
     indices: IndexList[rank],
     value: SIMD[type, simd_width],
 ):
@@ -142,7 +142,7 @@ fn simd_load_from_managed_tensor_slice[
     simd_width: Int,
     static_spec: StaticTensorSpec[type, rank],
 ](
-    tensor: ManagedTensorSlice[type, rank, static_spec=static_spec],
+    tensor: ManagedTensorSlice[static_spec=static_spec],
     indices: IndexList[rank],
 ) -> SIMD[type, simd_width]:
     var flat_index = tensor._compute_offset(indices)
@@ -331,9 +331,9 @@ fn _output_fusion_hook_impl[
 # ManagedTensorSlice class
 # ===----------------------------------------------------------------------=== #
 
-alias OutputTensor = ManagedTensorSlice[io_spec=Output, *_]
-alias InputTensor = ManagedTensorSlice[io_spec=Input, *_]
-alias MutableInputTensor = ManagedTensorSlice[io_spec=MutableInput, *_]
+alias OutputTensor = ManagedTensorSlice[io_spec=Output]
+alias InputTensor = ManagedTensorSlice[io_spec=Input]
+alias MutableInputTensor = ManagedTensorSlice[io_spec=MutableInput]
 
 
 struct IODynamicTensor[
@@ -342,8 +342,6 @@ struct IODynamicTensor[
     io_spec: IOSpec,
 ]:
     alias Type = ManagedTensorSlice[
-        type,
-        rank,
         io_spec=IOUnknown,
         static_spec = StaticTensorSpec[type, rank].create_unknown(),
     ]
@@ -356,9 +354,9 @@ alias DynamicTensor = IODynamicTensor[io_spec=IOUnknown, *_, **_]
 @register_passable("trivial")
 struct ManagedTensorSlice[
     mut: Bool,
-    input: IO, //,
+    input: IO,
     type: DType,
-    rank: Int,
+    rank: Int, //,
     io_spec: IOSpec[mut, input],
     *,
     static_spec: StaticTensorSpec[type, rank],
@@ -807,8 +805,6 @@ struct ManagedTensorSlice[
     ](
         self,
         out result: ManagedTensorSlice[
-            type,
-            rank,
             io_spec=io_spec,
             static_spec = static_spec.with_strides(new_strides),
         ],
@@ -851,7 +847,7 @@ struct VariadicTensors[
     ](
         self,
         out result: ManagedTensorSlice[
-            type, rank, io_spec=io_spec, static_spec = static_specs[index]
+            io_spec=io_spec, static_spec = static_specs[index]
         ],
     ):
         """Returns the tensor at the given position in the variadic argument
@@ -895,7 +891,7 @@ fn foreach[
     target: StringLiteral = "cpu",
     simd_width: Int = get_kernel_simd_width[type, target](),
     _synchronous: Bool = False,
-](tensor: ManagedTensorSlice[type, rank]):
+](tensor: ManagedTensorSlice[type=type, rank=rank]):
     @parameter
     @always_inline
     fn elementwise_fn_wrapper[
@@ -922,7 +918,7 @@ fn foreach[
     target: StringLiteral = "cpu",
     simd_width: Int = get_kernel_simd_width[type, target](),
     _synchronous: Bool = False,
-](tensor: ManagedTensorSlice[type, rank], ctx: MojoCallContextPtr):
+](tensor: ManagedTensorSlice[type=type, rank=rank], ctx: MojoCallContextPtr):
     """Apply the function `func` to each element of the tensor slice.
 
     Parameters:
@@ -967,8 +963,8 @@ fn view_copy_impl[
     view_strides: DimList = DimList.create_unknown[rank](),
     trace_name: StringLiteral = "foreach",
 ](
-    z: ManagedTensorSlice[type, rank],
-    x: ManagedTensorSlice[type, rank],
+    z: ManagedTensorSlice[type=type, rank=rank],
+    x: ManagedTensorSlice[type=type, rank=rank],
     ctx: MojoCallContextPtr,
 ):
     @parameter
