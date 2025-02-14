@@ -140,8 +140,8 @@ modular_py_test(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     exec_properties = {
-        # Ensure the test has at least 23GB of GPU memory available.
-        "resources:gpu-memory": "23",
+        # Ensure the test has at least 24GB of GPU memory available.
+        "resources:gpu-memory": "24",
     },
     gpu_constraints = ["//:has_gpu"],
     tags = [
