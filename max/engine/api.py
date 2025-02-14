@@ -981,9 +981,12 @@ class InferenceSession:
         if mode.lower() == "detailed":
             self._set_mojo_define("MODULAR_ENABLE_GPU_PROFILING_DETAILED", True)
 
-    def _use_experimental_kernels(self):
+    def _use_experimental_kernels(self, mode: str):
         """Enables experimental kernels."""
-        self._set_mojo_define("USE_EXPERIMENTAL_KERNELS", True)
+        if mode.lower() in ("false", "off", "no", "0"):
+            return
+
+        self._set_mojo_define("USE_EXPERIMENTAL_KERNELS", 1)
 
     def _dump_gpu_asm(self, option: bool | str | Path = True):
         """Enables dumping of gpu asm.
