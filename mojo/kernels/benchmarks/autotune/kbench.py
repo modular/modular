@@ -743,9 +743,12 @@ def run(
     for i in spec_list.keys():
         try:
             df = pd.read_csv(output_path_list[i], index_col=None, header=0)
-            df.insert(0, "mesh_idx", i)
-            df.insert(len(df.columns), "spec", str(spec.mesh[i]))
-            valid_specs.append(df)
+            if not df.empty:
+                df.insert(0, "mesh_idx", i)
+                df.insert(len(df.columns), "spec", str(spec.mesh[i]))
+                valid_specs.append(df)
+            else:
+                invalid_specs.append([i, output_msg_list[i]])
 
         except:
             invalid_specs.append([i, output_msg_list[i]])
