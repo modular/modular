@@ -72,7 +72,6 @@ modular_py_test(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     tags = [
-        "huggingface",
         "no-sandbox",
         "requires-network",
     ],
@@ -151,7 +150,6 @@ modular_py_test(
     gpu_constraints = ["//:has_gpu"],
     tags = [
         "gpu",
-        "huggingface",
         "no-sandbox",
         "requires-network",
     ],
@@ -224,7 +222,6 @@ modular_py_test(
     ],
     ignore_collisions = True,  # duplicate examples/__init__.py from deps
     tags = [
-        "huggingface",
         "no-sandbox",
         "requires-network",
     ],

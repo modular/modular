@@ -20,7 +20,6 @@ modular_py_test(
     ],
     ignore_collisions = True,
     tags = [
-        "huggingface",
         "no-sandbox",
         "requires-network",
     ],

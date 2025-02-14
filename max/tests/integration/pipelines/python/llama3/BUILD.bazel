@@ -93,7 +93,6 @@ modular_py_binary(
             ),
         },
         tags = [
-            "huggingface",
             "no-sandbox",
             "requires-network",
         ],
@@ -160,7 +159,6 @@ modular_py_test(
     tags = [
         "A100",
         "gpu",
-        "huggingface",
         "no-sandbox",
         "requires-network",
     ],

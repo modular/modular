@@ -40,7 +40,6 @@ modular_py_test(
         "//open-source/mojo/stdlib/stdlib",
     ],
     tags = [
-        "huggingface",
         "no-sandbox",
         "requires-network",
     ],

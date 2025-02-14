@@ -22,7 +22,6 @@ modular_py_test(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     tags = [
-        "huggingface",
         "no-sandbox",
         "requires-network",
     ],

@@ -18,7 +18,6 @@ modular_py_test(
         "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/llama3/testdata",
     },
     tags = [
-        "huggingface",
         "no-sandbox",
         "requires-network",
     ],
@@ -60,7 +59,6 @@ modular_py_test(
     gpu_constraints = ["//:has_gpu"],
     tags = [
         "gpu",
-        "huggingface",
         "manual",  # TODO(MAXSERV-910): Re-enable once tests aren't all skipped
         "no-sandbox",
         "requires-network",
