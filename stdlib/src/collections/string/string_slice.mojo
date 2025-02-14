@@ -110,9 +110,9 @@ struct _StringSliceIter[
 
 
 @value
-struct CharsIter[mut: Bool, //, origin: Origin[mut]]:
-    """Iterator over the `Char`s in a string slice, constructed by
-    `StringSlice.chars()`.
+struct CodepointsIter[mut: Bool, //, origin: Origin[mut]]:
+    """Iterator over the `Codepoint`s in a string slice, constructed by
+    `StringSlice.codepoints()`.
 
     Parameters:
         mut: Mutability of the underlying string data.
@@ -128,8 +128,8 @@ struct CharsIter[mut: Bool, //, origin: Origin[mut]]:
     """
 
     # Note:
-    #   Marked private since `StringSlice.chars()` is the intended public way to
-    #   construct this type.
+    #   Marked private since `StringSlice.codepoints()` is the intended public
+    #   way to construct this type.
     @doc_private
     fn __init__(out self, str_slice: StringSlice[origin]):
         self._slice = str_slice
@@ -142,10 +142,10 @@ struct CharsIter[mut: Bool, //, origin: Origin[mut]]:
     fn __iter__(self) -> Self:
         return self
 
-    fn __next__(mut self) -> Char:
-        """Get the next character in the underlying string slice.
+    fn __next__(mut self) -> Codepoint:
+        """Get the next codepoint in the underlying string slice.
 
-        This returns the next `Char` encoded in the underlying string, and
+        This returns the next `Codepoint` encoded in the underlying string, and
         advances the iterator state.
 
         This function will abort if this iterator has been exhausted.
@@ -167,7 +167,7 @@ struct CharsIter[mut: Bool, //, origin: Origin[mut]]:
 
     @always_inline
     fn __len__(self) -> Int:
-        """Returns the remaining length of this iterator in `Char`s.
+        """Returns the remaining length of this iterator in `Codepoint`s.
 
         The value returned from this method indicates the number of subsequent
         calls to `next()` that will return a value.
@@ -181,8 +181,8 @@ struct CharsIter[mut: Bool, //, origin: Origin[mut]]:
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn peek_next(self) -> Optional[Char]:
-        """Check what the next character in this iterator is, without advancing
+    fn peek_next(self) -> Optional[Codepoint]:
+        """Check what the next codepoint in this iterator is, without advancing
         the iterator state.
 
         Repeated calls to this method will return the same value.
@@ -197,44 +197,46 @@ struct CharsIter[mut: Bool, //, origin: Origin[mut]]:
         return the same value:
 
         ```mojo
-        from collections.string import StringSlice
+        from collections.string import StringSlice, Codepoint
         from testing import assert_equal
 
         var input = StringSlice("123")
-        var iter = input.chars()
+        var iter = input.codepoints()
 
-        assert_equal(iter.peek_next().value(), Char.ord("1"))
-        assert_equal(iter.peek_next().value(), Char.ord("1"))
-        assert_equal(iter.peek_next().value(), Char.ord("1"))
+        assert_equal(iter.peek_next().value(), Codepoint.ord("1"))
+        assert_equal(iter.peek_next().value(), Codepoint.ord("1"))
+        assert_equal(iter.peek_next().value(), Codepoint.ord("1"))
 
         # A call to `next()` return the same value as `peek_next()` had,
         # but also advance the iterator.
-        assert_equal(iter.next().value(), Char.ord("1"))
+        assert_equal(iter.next().value(), Codepoint.ord("1"))
 
         # Later `peek_next()` calls will return the _new_ next character:
-        assert_equal(iter.peek_next().value(), Char.ord("2"))
+        assert_equal(iter.peek_next().value(), Codepoint.ord("2"))
         ```
         .
         """
         if len(self._slice) > 0:
             # SAFETY: Will not read out of bounds because `_slice` is guaranteed
             #   to contain valid UTF-8.
-            char, _ = Char.unsafe_decode_utf8_char(self._slice.unsafe_ptr())
-            return char
+            codepoint, _ = Codepoint.unsafe_decode_utf8_codepoint(
+                self._slice.unsafe_ptr()
+            )
+            return codepoint
         else:
             return None
 
-    fn next(mut self) -> Optional[Char]:
-        """Get the next character in the underlying string slice, or None if
+    fn next(mut self) -> Optional[Codepoint]:
+        """Get the next codepoint in the underlying string slice, or None if
         the iterator is empty.
 
-        This returns the next `Char` encoded in the underlying string, and
+        This returns the next `Codepoint` encoded in the underlying string, and
         advances the iterator state.
 
         Returns:
             A character if the string is not empty, otherwise None.
         """
-        var result: Optional[Char] = self.peek_next()
+        var result: Optional[Codepoint] = self.peek_next()
 
         if result:
             # SAFETY: We just checked that `result` holds a value
@@ -453,7 +455,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         var result = String()
         var use_dquote = False
-        for s in self.char_slices():
+        for s in self.codepoint_slices():
             use_dquote = use_dquote or (s == "'")
 
             if s == "\\":
@@ -465,7 +467,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             elif s == "\r":
                 result += r"\r"
             else:
-                var codepoint = Char.ord(s)
+                var codepoint = Codepoint.ord(s)
                 if codepoint.is_ascii_printable():
                     result += s
                 elif codepoint.to_u32() < 0x10:
@@ -488,7 +490,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         representation of the string.
 
         To get the number of Unicode codepoints in a string, use
-        `len(str.chars())`.
+        `len(str.codepoints())`.
 
         Returns:
             The string length in bytes.
@@ -504,7 +506,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         var s = StringSlice("ನಮಸ್ಕಾರ")
 
         assert_equal(len(s), 21)
-        assert_equal(len(s.chars()), 7)
+        assert_equal(len(s.codepoints()), 7)
         ```
 
         Strings containing only ASCII characters have the same byte and
@@ -517,7 +519,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         var s = StringSlice("abc")
 
         assert_equal(len(s), 3)
-        assert_equal(len(s.chars()), 3)
+        assert_equal(len(s.codepoints()), 3)
         ```
         .
         """
@@ -682,14 +684,14 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             self.unsafe_ptr(), rhs.unsafe_ptr(), min(len1, len2)
         )
 
-    @deprecated("Use `str.chars()` or `str.char_slices()` instead.")
+    @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
     fn __iter__(self) -> _StringSliceIter[origin]:
         """Iterate over the string, returning immutable references.
 
         Returns:
             An iterator of references to the string elements.
         """
-        return self.char_slices()
+        return self.codepoint_slices()
 
     fn __reversed__(self) -> _StringSliceIter[origin, False]:
         """Iterate backwards over the string, returning immutable references.
@@ -891,7 +893,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             try:
                 # Python adds all "whitespace chars" as one separator
                 # if no separator was specified
-                for s in self[lhs:].char_slices():
+                for s in self[lhs:].codepoint_slices():
                     if not s.isspace():
                         break
                     lhs += s.byte_length()
@@ -907,7 +909,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
                 rhs = lhs + num_bytes(self.unsafe_ptr()[lhs])
                 for s in self[
                     lhs + num_bytes(self.unsafe_ptr()[lhs]) :
-                ].char_slices():
+                ].codepoint_slices():
                     if s.isspace():
                         break
                     rhs += s.byte_length()
@@ -1012,7 +1014,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         #     if not s.isspace():
         #         break
         #     r_idx -= 1
-        while r_idx > 0 and Char(self.as_bytes()[r_idx - 1]).is_posix_space():
+        while (
+            r_idx > 0 and Codepoint(self.as_bytes()[r_idx - 1]).is_posix_space()
+        ):
             r_idx -= 1
         return Self(unsafe_from_utf8=self.as_bytes()[:r_idx])
 
@@ -1064,17 +1068,17 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         #     l_idx += 1
         while (
             l_idx < self.byte_length()
-            and Char(self.as_bytes()[l_idx]).is_posix_space()
+            and Codepoint(self.as_bytes()[l_idx]).is_posix_space()
         ):
             l_idx += 1
         return Self(unsafe_from_utf8=self.as_bytes()[l_idx:])
 
     @always_inline
-    fn chars(self) -> CharsIter[origin]:
-        """Returns an iterator over the `Char`s encoded in this string slice.
+    fn codepoints(self) -> CodepointsIter[origin]:
+        """Returns an iterator over the `Codepoint`s encoded in this string slice.
 
         Returns:
-            An iterator type that returns successive `Char` values stored in
+            An iterator type that returns successive `Codepoint` values stored in
             this string slice.
 
         # Examples
@@ -1086,14 +1090,14 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         from testing import assert_equal
 
         var s = StringSlice("abc")
-        var iter = s.chars()
-        assert_equal(iter.__next__(), Char.ord("a"))
-        assert_equal(iter.__next__(), Char.ord("b"))
-        assert_equal(iter.__next__(), Char.ord("c"))
+        var iter = s.codepoints()
+        assert_equal(iter.__next__(), Codepoint.ord("a"))
+        assert_equal(iter.__next__(), Codepoint.ord("b"))
+        assert_equal(iter.__next__(), Codepoint.ord("c"))
         assert_equal(iter.__has_next__(), False)
         ```
 
-        `chars()` iterates over Unicode codepoints, and supports multibyte
+        `codepoints()` iterates over Unicode codepoints, and supports multibyte
         codepoints:
 
         ```mojo
@@ -1104,17 +1108,17 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         var s = StringSlice("á")
         assert_equal(s.byte_length(), 3)
 
-        var iter = s.chars()
-        assert_equal(iter.__next__(), Char.ord("a"))
+        var iter = s.codepoints()
+        assert_equal(iter.__next__(), Codepoint.ord("a"))
          # U+0301 Combining Acute Accent
         assert_equal(iter.__next__().to_u32(), 0x0301)
         assert_equal(iter.__has_next__(), False)
         ```
         .
         """
-        return CharsIter(self)
+        return CodepointsIter(self)
 
-    fn char_slices(self) -> _StringSliceIter[origin]:
+    fn codepoint_slices(self) -> _StringSliceIter[origin]:
         """Iterate over the string, returning immutable references.
 
         Returns:
@@ -1157,7 +1161,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     fn char_length(self) -> UInt:
         """Returns the length in Unicode codepoints.
 
-        This returns the number of `Char` codepoint values encoded in the UTF-8
+        This returns the number of `Codepoint` codepoint values encoded in the UTF-8
         representation of this string.
 
         Note: To get the length in bytes, use `StringSlice.byte_length()`.
@@ -1552,7 +1556,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         if self.byte_length() == 0:
             return False
 
-        for s in self.chars():
+        for s in self.codepoints():
             if not s.is_python_space():
                 return False
 
@@ -1584,7 +1588,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             )
         else:
             var offset = 0
-            for s in self.char_slices():
+            for s in self.codepoint_slices():
                 var b_len = s.byte_length()
                 if not _is_newline_char(ptr, offset, ptr[offset], b_len):
                     return False
@@ -1689,7 +1693,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         if not self:
             return False
-        for char in self.chars():
+        for char in self.codepoints():
             if not char.is_ascii_digit():
                 return False
         return True
@@ -1744,7 +1748,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
             True if all characters are printable else False.
         """
-        for char in self.chars():
+        for char in self.codepoints():
             if not char.is_ascii_printable():
                 return False
         return True

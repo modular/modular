@@ -15,7 +15,7 @@
 """
 
 from collections import KeyElement, List
-from collections.string import String, ascii, atof, atol, chr, ord
+from collections.string import Codepoint, String, ascii, atof, atol, chr, ord
 from hashlib.hash import Hashable, hash
 
 from builtin.anytype import AnyType, UnknownDestructibility
@@ -28,7 +28,6 @@ from builtin.builtin_list import (
     VariadicPack,
 )
 from builtin.builtin_slice import Slice, slice
-from builtin.char import Char
 from builtin.comparable import (
     Comparable,
     GreaterThanComparable,

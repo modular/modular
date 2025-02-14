@@ -25,6 +25,15 @@ what we publish.
 - A new `IntervalTree` data structure has been added to the standard library.
   This is a tree data structure that allows for efficient range queries.
 
+- The `Char` type has been renamed to `Codepoint`, to better capture its
+  intended purpose of storing a single Unicode codepoint. Additionally, related
+  method and type names have been updated as well, including:
+
+  - `StringSlice.chars()` to `.codepoints()` (ditto for `String`)
+  - `StringSlice.char_slices()` to `.codepoint_slices()` (ditto for `String`)
+  - `CharsIter` to `CodepointsIter`
+  - `unsafe_decode_utf8_char()` to `unsafe_decode_utf8_codepoint()`
+
 - `StringSlice` now supports several additional methods moved from `String`.
   The existing `String` methods have been updated to instead call the
   corresponding new `StringSlice` methods:

@@ -14,7 +14,7 @@
 
 from collections import KeyElement, List, Optional
 from collections._index_normalization import normalize_index
-from collections.string import CharsIter
+from collections.string import CodepointsIter
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string.string_slice import (
     StaticString,
@@ -48,19 +48,20 @@ from utils.write import _TotalWritableBytes, _WriteBufferHeap, write_buffered
 
 
 fn ord(s: StringSlice) -> Int:
-    """Returns an integer that represents the given one-character string.
+    """Returns an integer that represents the codepoint of a single-character
+    string.
 
-    Given a string representing one character, return an integer
-    representing the code point of that character. For example, `ord("a")`
+    Given a string containing a single character `Codepoint`, return an integer
+    representing the codepoint of that character. For example, `ord("a")`
     returns the integer `97`. This is the inverse of the `chr()` function.
 
     Args:
-        s: The input string, which must contain only a single character.
+        s: The input string, which must contain only a single- character.
 
     Returns:
         An integer representing the code point of the given character.
     """
-    return Int(Char.ord(s))
+    return Int(Codepoint.ord(s))
 
 
 # ===----------------------------------------------------------------------=== #
@@ -89,7 +90,7 @@ fn chr(c: Int) -> String:
     if c < 0b1000_0000:  # 1 byte ASCII char
         return String(String._buffer_type(c, 0))
 
-    var char_opt = Char.from_u32(c)
+    var char_opt = Codepoint.from_u32(c)
     if not char_opt:
         # TODO: Raise ValueError instead.
         return abort[String](
@@ -135,7 +136,7 @@ fn _repr_ascii(c: UInt8) -> String:
 
     if c == ord_back_slash:
         return r"\\"
-    elif Char(c).is_ascii_printable():
+    elif Codepoint(c).is_ascii_printable():
         return _chr_ascii(c)
     elif c == ord_tab:
         return r"\t"
@@ -284,13 +285,13 @@ fn atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
         elif ord_letter_min[1] <= ord_current <= ord_letter_max[1]:
             result += ord_current - ord_letter_min[1] + 10
             found_valid_chars_after_start = True
-        elif Char(UInt8(ord_current)).is_posix_space():
+        elif Codepoint(UInt8(ord_current)).is_posix_space():
             has_space_after_number = True
             start = pos + 1
             break
         else:
             raise Error(_str_to_base_error(base, str_slice))
-        if pos + 1 < str_len and not Char(buff[pos + 1]).is_posix_space():
+        if pos + 1 < str_len and not Codepoint(buff[pos + 1]).is_posix_space():
             var nextresult = result * real_base
             if nextresult < result:
                 raise Error(
@@ -304,7 +305,7 @@ fn atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
 
     if has_space_after_number:
         for pos in range(start, str_len):
-            if not Char(buff[pos]).is_posix_space():
+            if not Codepoint(buff[pos]).is_posix_space():
                 raise Error(_str_to_base_error(base, str_slice))
     if is_negative:
         result = -result
@@ -326,7 +327,7 @@ fn _trim_and_handle_sign(str_slice: StringSlice, str_len: Int) -> (Int, Bool):
     """
     var buff = str_slice.unsafe_ptr()
     var start: Int = 0
-    while start < str_len and Char(buff[start]).is_posix_space():
+    while start < str_len and Codepoint(buff[start]).is_posix_space():
         start += 1
     var p: Bool = buff[start] == ord("+")
     var n: Bool = buff[start] == ord("-")
@@ -1057,14 +1058,14 @@ struct String(
         """
         self._iadd[False](other.as_bytes())
 
-    @deprecated("Use `str.chars()` or `str.char_slices()` instead.")
+    @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
     fn __iter__(self) -> _StringSliceIter[__origin_of(self)]:
         """Iterate over the string, returning immutable references.
 
         Returns:
             An iterator of references to the string elements.
         """
-        return self.char_slices()
+        return self.codepoint_slices()
 
     fn __reversed__(self) -> _StringSliceIter[__origin_of(self), False]:
         """Iterate backwards over the string, returning immutable references.
@@ -1097,7 +1098,7 @@ struct String(
         representation of the string.
 
         To get the number of Unicode codepoints in a string, use
-        `len(str.chars())`.
+        `len(str.codepoints())`.
 
         Returns:
             The string length in bytes.
@@ -1112,7 +1113,7 @@ struct String(
         var s = String("ನಮಸ್ಕಾರ")
 
         assert_equal(len(s), 21)
-        assert_equal(len(s.chars()), 7)
+        assert_equal(len(s.codepoints()), 7)
         ```
 
         Strings containing only ASCII characters have the same byte and
@@ -1124,7 +1125,7 @@ struct String(
         var s = String("abc")
 
         assert_equal(len(s), 3)
-        assert_equal(len(s.chars()), 3)
+        assert_equal(len(s.codepoints()), 3)
         ```
         .
         """
@@ -1227,11 +1228,11 @@ struct String(
             return string
 
     @always_inline
-    fn chars(self) -> CharsIter[__origin_of(self)]:
-        """Returns an iterator over the `Char`s encoded in this string slice.
+    fn codepoints(self) -> CodepointsIter[__origin_of(self)]:
+        """Returns an iterator over the `Codepoint`s encoded in this string slice.
 
         Returns:
-            An iterator type that returns successive `Char` values stored in
+            An iterator type that returns successive `Codepoint` values stored in
             this string slice.
 
         # Examples
@@ -1242,14 +1243,14 @@ struct String(
         from testing import assert_equal
 
         var s = String("abc")
-        var iter = s.chars()
-        assert_equal(iter.__next__(), Char.ord("a"))
-        assert_equal(iter.__next__(), Char.ord("b"))
-        assert_equal(iter.__next__(), Char.ord("c"))
+        var iter = s.codepoints()
+        assert_equal(iter.__next__(), Codepoint.ord("a"))
+        assert_equal(iter.__next__(), Codepoint.ord("b"))
+        assert_equal(iter.__next__(), Codepoint.ord("c"))
         assert_equal(iter.__has_next__(), False)
         ```
 
-        `chars()` iterates over Unicode codepoints, and supports multibyte
+        `codepoints()` iterates over Unicode codepoints, and supports multibyte
         codepoints:
 
         ```mojo
@@ -1259,17 +1260,17 @@ struct String(
         var s = String("á")
         assert_equal(s.byte_length(), 3)
 
-        var iter = s.chars()
-        assert_equal(iter.__next__(), Char.ord("a"))
+        var iter = s.codepoints()
+        assert_equal(iter.__next__(), Codepoint.ord("a"))
          # U+0301 Combining Acute Accent
         assert_equal(iter.__next__().to_u32(), 0x0301)
         assert_equal(iter.__has_next__(), False)
         ```
         .
         """
-        return self.as_string_slice().chars()
+        return self.as_string_slice().codepoints()
 
-    fn char_slices(self) -> _StringSliceIter[__origin_of(self)]:
+    fn codepoint_slices(self) -> _StringSliceIter[__origin_of(self)]:
         """Returns an iterator over single-character slices of this string.
 
         Each returned slice points to a single Unicode codepoint encoded in the
@@ -1286,7 +1287,7 @@ struct String(
         from testing import assert_equal, assert_true
 
         var s = String("abc")
-        var iter = s.char_slices()
+        var iter = s.codepoint_slices()
         assert_true(iter.__next__() == "a")
         assert_true(iter.__next__() == "b")
         assert_true(iter.__next__() == "c")
@@ -1294,7 +1295,7 @@ struct String(
         ```
         .
         """
-        return self.as_string_slice().char_slices()
+        return self.as_string_slice().codepoint_slices()
 
     fn unsafe_ptr(
         ref self,

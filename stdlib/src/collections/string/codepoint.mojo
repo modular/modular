@@ -10,7 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the `Char` type for representing single characters."""
+"""Implements the `Codepoint` type for representing single Unicode scalar
+values."""
 
 from collections import Optional
 from collections.string import StringSlice
@@ -35,18 +36,38 @@ fn _is_unicode_scalar_value(codepoint: UInt32) -> Bool:
 
 
 @value
-struct Char(CollectionElement, EqualityComparable, Intable, Stringable):
-    """A single textual character.
+struct Codepoint(CollectionElement, EqualityComparable, Intable, Stringable):
+    """A Unicode codepoint, typically a single user-recognizable character;
+    restricted to valid Unicode scalar values.
 
-    This type represents a single textual character. Specifically, this type
-    stores a single Unicode [*scalar value*][1], typically encoding a single
-    user-recognizable character.
+    This type is restricted to store a single Unicode [*scalar value*][1],
+    typically encoding a single user-recognizable character.
 
     All valid Unicode scalar values are in the range(s) 0 to 0xD7FF and
     0xE000 to 0x10FFFF, inclusive. This type guarantees that the stored integer
     value falls in these ranges.
 
     [1]: https://www.unicode.org/glossary/#unicode_scalar_value
+
+    # Codepoints vs Scalar Values
+
+    Formally, Unicode defines a codespace of values in the range 0 to
+    0x10FFFF inclusive, and a
+    [Unicode codepoint](https://www.unicode.org/glossary/#code_point) is any
+    integer falling within that range. However, due to historical reasons,
+    it became necessary to "carve out" a subset of the codespace, excluding
+    codepoints in the range 0xD7FF–0xE000. That subset of codepoints excluding
+    that range are known as [Unicode scalar values][1]. The codepoints in the
+    range 0xD7FF-0xE000 are known as "surrogate" codepoints. The surrogate
+    codepoints will never be assigned a semantic meaning, and can only
+    validly appear in UTF-16 encoded text.
+
+    The difference between codepoints and scalar values is a technical
+    distiction related to the backwards-compatible workaround chosen to enable
+    UTF-16 to encode the full range of the Unicode codespace. For simplicities
+    sake, and to avoid a confusing clash with the Mojo `Scalar` type, this type
+    is pragmatically named `Codepoint`, even though it is restricted to valid
+    scalar values.
     """
 
     var _scalar_value: UInt32
@@ -58,7 +79,7 @@ struct Char(CollectionElement, EqualityComparable, Intable, Stringable):
 
     @always_inline
     fn __init__(out self, *, unsafe_unchecked_codepoint: UInt32):
-        """Construct a `Char` from a code point value without checking that it
+        """Construct a `Codepoint` from a code point value without checking that it
         falls in the valid range.
 
         Safety:
@@ -79,13 +100,13 @@ struct Char(CollectionElement, EqualityComparable, Intable, Stringable):
 
     @always_inline
     fn __init__(out self, codepoint: UInt8):
-        """Construct a `Char` from a single byte value.
+        """Construct a `Codepoint` from a single byte value.
 
         This constructor cannot fail because non-negative 8-bit integers are
         valid Unicode scalar values.
 
         Args:
-            codepoint: The 8-bit codepoint value to convert to a `Char`.
+            codepoint: The 8-bit codepoint value to convert to a `Codepoint`.
         """
         self._scalar_value = UInt32(Int(codepoint))
 
@@ -95,44 +116,48 @@ struct Char(CollectionElement, EqualityComparable, Intable, Stringable):
 
     @staticmethod
     fn from_u32(codepoint: UInt32) -> Optional[Self]:
-        """Construct a `Char` from a code point value. Returns None if the
+        """Construct a `Codepoint` from a code point value. Returns None if the
         provided `codepoint` is not in the valid range.
 
         Args:
             codepoint: An integer representing a Unicode scalar value.
 
         Returns:
-            A `Char` if `codepoint` falls in the valid range for Unicode scalar
-            values, otherwise None.
+            A `Codepoint` if `codepoint` falls in the valid range for Unicode
+            scalar values, otherwise None.
         """
 
         if _is_unicode_scalar_value(codepoint):
-            return Char(unsafe_unchecked_codepoint=codepoint)
+            return Codepoint(unsafe_unchecked_codepoint=codepoint)
         else:
             return None
 
     @staticmethod
-    fn ord(string: StringSlice) -> Char:
-        """Returns the `Char` that represents the given one-character string.
+    fn ord(string: StringSlice) -> Codepoint:
+        """Returns the `Codepoint` that represents the given single-character
+        string.
 
-        Given a string representing one character, return a `Char`
-        representing the codepoint of that character. For example, `Char.ord("a")`
-        returns the codepoint `97`. This is the inverse of the `chr()` function.
+        Given a string containing one character, return a `Codepoint`
+        representing the codepoint of that character. For example,
+        `Codepoint.ord("a")` returns the codepoint `97`. This is the inverse of
+        the `chr()` function.
 
         This function is similar to the `ord()` free function, except that it
-        returns a `Char` instead of an `Int`.
+        returns a `Codepoint` instead of an `Int`.
 
         Args:
             string: The input string, which must contain only a single character.
 
         Returns:
-            A `Char` representing the codepoint of the given character.
+            A `Codepoint` representing the codepoint of the given character.
         """
 
         # SAFETY:
         #   This is safe because `StringSlice` is guaranteed to point to valid
         #   UTF-8.
-        char, num_bytes = Char.unsafe_decode_utf8_char(string.unsafe_ptr())
+        char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
+            string.unsafe_ptr()
+        )
 
         debug_assert(
             string.byte_length() == Int(num_bytes),
@@ -142,9 +167,11 @@ struct Char(CollectionElement, EqualityComparable, Intable, Stringable):
         return char
 
     @staticmethod
-    fn unsafe_decode_utf8_char(_ptr: UnsafePointer[Byte]) -> (Char, Int):
-        """Decodes a single `Char` and number of bytes read from a given UTF-8
-        string pointer.
+    fn unsafe_decode_utf8_codepoint(
+        _ptr: UnsafePointer[Byte],
+    ) -> (Codepoint, Int):
+        """Decodes a single `Codepoint` and number of bytes read from a given
+        UTF-8 string pointer.
 
         Safety:
             `_ptr` MUST point to the first byte in a **known-valid** UTF-8
@@ -156,7 +183,8 @@ struct Char(CollectionElement, EqualityComparable, Intable, Stringable):
                 encoded codepoint.
 
         Returns:
-            The decoded codepoint `Char`, as well as the number of bytes read.
+            The decoded codepoint `Codepoint`, as well as the number of bytes
+            read.
 
         """
         # UTF-8 to Unicode conversion:              (represented as UInt32 BE)
@@ -168,7 +196,7 @@ struct Char(CollectionElement, EqualityComparable, Intable, Stringable):
 
         var b1 = ptr[]
         if (b1 >> 7) == 0:  # This is 1 byte ASCII char
-            return Char(b1), 1
+            return Codepoint(b1), 1
 
         # TODO: Use _utf8_first_byte_sequence_length() here instead for
         #   consistency.
@@ -200,7 +228,7 @@ struct Char(CollectionElement, EqualityComparable, Intable, Stringable):
         #   UTF-8 encoding algorithms that do not properly exclude surrogate
         #   pair code points are actually relatively common (as I understand
         #   it); the algorithm above does not check for that.
-        var char = Char(unsafe_unchecked_codepoint=result)
+        var char = Codepoint(unsafe_unchecked_codepoint=result)
 
         return char, Int(num_bytes)
 
@@ -248,7 +276,7 @@ struct Char(CollectionElement, EqualityComparable, Intable, Stringable):
 
     @always_inline
     fn __str__(self) -> String:
-        """Formats this `Char` as a single-character string.
+        """Formats this `Codepoint` as a single-character string.
 
         Returns:
             A string containing this single character.
@@ -266,13 +294,13 @@ struct Char(CollectionElement, EqualityComparable, Intable, Stringable):
 
     @always_inline
     fn is_ascii(self) -> Bool:
-        """Returns True if this `Char` is an ASCII character.
+        """Returns True if this `Codepoint` is an ASCII character.
 
         All ASCII characters are less than or equal to codepoint value 127, and
         take exactly 1 byte to encode in UTF-8.
 
         Returns:
-            A boolean indicating if this `Char` is an ASCII character.
+            A boolean indicating if this `Codepoint` is an ASCII character.
         """
         return self._scalar_value <= 0b0111_1111
 
@@ -342,21 +370,21 @@ struct Char(CollectionElement, EqualityComparable, Intable, Stringable):
         from testing import assert_true, assert_false
 
         # ASCII space characters
-        assert_true(Char.ord(" ").is_python_space())
-        assert_true(Char.ord("\t").is_python_space())
+        assert_true(Codepoint.ord(" ").is_python_space())
+        assert_true(Codepoint.ord("\t").is_python_space())
 
         # Unicode paragraph separator:
-        assert_true(Char.from_u32(0x2029).value().is_python_space())
+        assert_true(Codepoint.from_u32(0x2029).value().is_python_space())
 
         # Letters are not space characters
-        assert_fales(Char.ord("a").is_python_space())
+        assert_fales(Codepoint.ord("a").is_python_space())
         ```
         .
         """
 
-        alias next_line = Char.from_u32(0x85).value()
-        alias unicode_line_sep = Char.from_u32(0x2028).value()
-        alias unicode_paragraph_sep = Char.from_u32(0x2029).value()
+        alias next_line = Codepoint.from_u32(0x85).value()
+        alias unicode_line_sep = Codepoint.from_u32(0x2028).value()
+        alias unicode_paragraph_sep = Codepoint.from_u32(0x2029).value()
 
         return self.is_posix_space() or self in (
             next_line,
@@ -365,7 +393,7 @@ struct Char(CollectionElement, EqualityComparable, Intable, Stringable):
         )
 
     fn is_posix_space(self) -> Bool:
-        """Returns True if this `Char` is a **space** character according to the
+        """Returns True if this `Codepoint` is a **space** character according to the
         [POSIX locale][1].
 
         The POSIX locale is also known as the C locale.

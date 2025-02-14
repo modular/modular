@@ -957,7 +957,7 @@ struct IntervalTree[T: IntervalElement, U: IntervalPayload]:
                 0, pos_x - len(node_str) // 2
             )  # Center the node text
             var i = 0
-            for char in node_str.chars():
+            for char in node_str.codepoints():
                 grid[pos_y][start_pos + i] = String(char)
                 i += 1
 
