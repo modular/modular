@@ -48,7 +48,7 @@ struct MakeCounterFromTensor:
     @staticmethod
     fn execute[
         stride: Int,
-    ](init: ManagedTensorSlice[DType.int32, 1]) -> Counter[stride]:
+    ](init: ManagedTensorSlice[type = DType.int32, rank=1]) -> Counter[stride]:
         print("making. init:", init[0], init[1])
         return Counter[stride](Int(init[0]), Int(init[1]))
 
@@ -76,7 +76,10 @@ struct ReadCounter:
     @staticmethod
     fn execute[
         stride: Int
-    ](output: ManagedTensorSlice[DType.int32, 1], c: Counter[stride]):
+    ](
+        output: ManagedTensorSlice[type = DType.int32, rank=1],
+        c: Counter[stride],
+    ):
         output[0] = c.a
         output[1] = c.b
 

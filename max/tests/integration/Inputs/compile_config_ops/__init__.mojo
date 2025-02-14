@@ -20,7 +20,7 @@ alias logger = Logger()
 struct UseSplitkReductionScheme:
     @staticmethod
     fn execute(
-        out: ManagedTensorSlice[DType.int32, 1],
+        out: ManagedTensorSlice[type = DType.int32, rank=1],
     ):
         alias split_k_reduction_scheme = env_get_int[
             "SPLITK_REDUCTION_SCHEME", 2
@@ -32,7 +32,7 @@ struct UseSplitkReductionScheme:
 struct UseLogger:
     @staticmethod
     fn execute(
-        out: ManagedTensorSlice[DType.int32, 1],
+        out: ManagedTensorSlice[type = DType.int32, rank=1],
     ):
         logger.error("I'm a custom Mojo function!")
         out[0] = Int(logger.level._value)
@@ -45,7 +45,7 @@ struct AddOneCustom:
         target: StringLiteral
     ](
         out: ManagedTensorSlice,
-        x: ManagedTensorSlice[out.type, out.rank],
+        x: ManagedTensorSlice[type = out.type, rank = out.rank],
         ctx: MojoCallContextPtr,
     ):
         @parameter
