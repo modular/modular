@@ -833,20 +833,38 @@ struct VariadicTensors[
     *,
     static_specs: StaticTuple[StaticTensorSpec[type, rank], size],
 ](Sized):
-    var tensors: StaticTuple[DynamicTensor[type, rank].Type, size]
+    """A tuple-like container of tensors representing variadic arguments from
+    the graph compiler."""
+
+    var _tensors: StaticTuple[DynamicTensor[type, rank].Type, size]
 
     fn __len__(self) -> Int:
+        """Returns the number of variadic arguments in the pack.
+
+        Returns:
+            The number of variadic arguments.
+        """
         return size
 
     fn __getitem__[
-        i: Int
+        index: Int
     ](
         self,
         out result: ManagedTensorSlice[
-            type, rank, io_spec=io_spec, static_spec = static_specs[i]
+            type, rank, io_spec=io_spec, static_spec = static_specs[index]
         ],
     ):
-        var tensor = self.tensors[i]
+        """Returns the tensor at the given position in the variadic argument
+        argument pack.
+
+        Parameters:
+            index: The index into the variadic tensor arguments.
+
+        Returns:
+            The tensor at the specified index.
+        """
+        constrained[index < size]()
+        var tensor = self._tensors[index]
         return __type_of(result)(
             tensor._ptr, tensor._spec, tensor._runtime_strides
         )
