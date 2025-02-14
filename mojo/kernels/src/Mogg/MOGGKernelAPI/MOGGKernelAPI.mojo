@@ -313,8 +313,6 @@ fn reshape_contiguous_buffer[
     type: DType, old_rank: Int, new_rank: Int
 ](
     buffer: ManagedTensorSlice[
-        type,
-        old_rank,
         io_spec=IOUnknown,
         static_spec = StaticTensorSpec[type, old_rank].create_unknown(),
     ],
@@ -457,8 +455,6 @@ fn get_scalar_from_managed_tensor_slice[
     dtype: DType,
 ](
     tensor: ManagedTensorSlice[
-        dtype,
-        1,
         io_spec=IOUnknown,
         static_spec = StaticTensorSpec[dtype, 1].create_unknown(),
     ]
@@ -491,7 +487,7 @@ alias ScalarTensor = ManagedTensorSlice[rank=1]
 fn managed_tensor_slice_to_ndbuffer_primitive[
     type: DType,
     rank: Int,
-](tensor: ManagedTensorSlice[type, rank]) -> NDBuffer[type, rank]:
+](tensor: ManagedTensorSlice[type=type, rank=rank]) -> NDBuffer[type, rank]:
     return NDBuffer[type, rank](
         tensor._ptr, tensor._spec.shape, tensor._runtime_strides
     )
@@ -500,9 +496,7 @@ fn managed_tensor_slice_to_ndbuffer_primitive[
 @always_inline
 fn managed_tensor_slice_to_ndbuffer[
     spec: StaticTensorSpec
-](
-    tensor: ManagedTensorSlice[spec.type, spec.rank, static_spec=spec, *_]
-) -> NDBuffer[
+](tensor: ManagedTensorSlice[static_spec=spec]) -> NDBuffer[
     spec.type,
     spec.rank,
     spec.shape,
@@ -528,7 +522,7 @@ fn reduce_shape[
     input_rank: Int,
     input_type: DType,
 ](
-    input_buf: ManagedTensorSlice[input_type, input_rank],
+    input_buf: ManagedTensorSlice[type=input_type, rank=input_rank],
     axis0: Scalar,
 ) raises -> IndexList[input_rank]:
     """
@@ -709,8 +703,8 @@ struct Copy:
     fn execute[
         type: DType, rank: Int
     ](
-        output: ManagedTensorSlice[type, rank],
-        input: ManagedTensorSlice[type, rank],
+        output: ManagedTensorSlice[type=type, rank=rank],
+        input: ManagedTensorSlice[type=type, rank=rank],
         ctx: MojoCallContextPtr,
     ):
         @parameter
@@ -1472,9 +1466,9 @@ struct SqueezeShape:
         type: DType,
         indices_type: DType,
     ](
-        output_shape: ManagedTensorSlice[type, 1],
-        input_shape: ManagedTensorSlice[type, 1],
-        remove_indices: ManagedTensorSlice[indices_type, 1],
+        output_shape: ManagedTensorSlice[type=type, rank=1],
+        input_shape: ManagedTensorSlice[type=type, rank=1],
+        remove_indices: ManagedTensorSlice[type=indices_type, rank=1],
     ):
         # remove_indices may not be sorted so our strategy is to use -1 to
         # represent removed dimensions in a copied version of our input shape buffer
@@ -1518,8 +1512,8 @@ struct SqueezeShape:
     fn shape[
         type: DType, indices_type: DType
     ](
-        input_shape: ManagedTensorSlice[type, 1],
-        remove_indices: ManagedTensorSlice[indices_type, 1],
+        input_shape: ManagedTensorSlice[type=type, rank=1],
+        remove_indices: ManagedTensorSlice[type=indices_type, rank=1],
     ) raises -> IndexList[1]:
         var out_dim = input_shape.dim_size[0]() - remove_indices.dim_size[0]()
 
@@ -1542,9 +1536,9 @@ struct UnsqueezeShape:
         type: DType,
         indices_type: DType,
     ](
-        output_shape: ManagedTensorSlice[type, 1],
-        input_shape: ManagedTensorSlice[type, 1],
-        padding_indices: ManagedTensorSlice[indices_type, 1],
+        output_shape: ManagedTensorSlice[type=type, rank=1],
+        input_shape: ManagedTensorSlice[type=type, rank=1],
+        padding_indices: ManagedTensorSlice[type=indices_type, rank=1],
     ):
         # represent uninitialized dimensions, add the padding dimensions, and copy
         # over the remaining dimensions later.
@@ -1593,8 +1587,8 @@ struct UnsqueezeShape:
     fn shape[
         type: DType, indices_type: DType
     ](
-        input_shape: ManagedTensorSlice[type, 1],
-        remove_indices: ManagedTensorSlice[indices_type, 1],
+        input_shape: ManagedTensorSlice[type=type, rank=1],
+        remove_indices: ManagedTensorSlice[type=indices_type, rank=1],
     ) -> IndexList[1]:
         var out_dim = input_shape.dim_size[0]() + remove_indices.dim_size[0]()
         return IndexList[1](out_dim)
@@ -1613,8 +1607,8 @@ struct ScatterND:
         _synchronous: Bool,
     ](
         output: ManagedTensorSlice,
-        input: ManagedTensorSlice[output.type, output.rank],
-        updates: ManagedTensorSlice[output.type, *_],
+        input: ManagedTensorSlice[type = output.type, rank = output.rank],
+        updates: ManagedTensorSlice[type = output.type, *_],
         indices: ManagedTensorSlice,
         ctx: MojoCallContextPtr,
     ) raises:
@@ -1644,7 +1638,7 @@ struct ScatterND:
         _synchronous: Bool,
     ](
         input: ManagedTensorSlice,
-        updates: ManagedTensorSlice[input.type, *_],
+        updates: ManagedTensorSlice[type = input.type, *_],
         indices: ManagedTensorSlice,
     ) raises -> IndexList[input.rank]:
         return scatter_nd_shape[single_thread_blocking_override=_synchronous](
@@ -1662,8 +1656,8 @@ struct ScatterNDAdd:
         _synchronous: Bool,
     ](
         output: ManagedTensorSlice,
-        input: ManagedTensorSlice[output.type, output.rank],
-        updates: ManagedTensorSlice[output.type, *_],
+        input: ManagedTensorSlice[type = output.type, rank = output.rank],
+        updates: ManagedTensorSlice[type = output.type, *_],
         indices: ManagedTensorSlice,
         ctx: MojoCallContextPtr,
     ) raises:
@@ -1703,7 +1697,7 @@ struct ScatterNDAdd:
         _synchronous: Bool,
     ](
         input: ManagedTensorSlice,
-        updates: ManagedTensorSlice[input.type, *_],
+        updates: ManagedTensorSlice[type = input.type, *_],
         indices: ManagedTensorSlice,
     ) raises -> IndexList[input.rank]:
         return scatter_nd_shape[single_thread_blocking_override=_synchronous](
@@ -1721,8 +1715,8 @@ struct ScatterNDMul:
         _synchronous: Bool,
     ](
         output: ManagedTensorSlice,
-        input: ManagedTensorSlice[output.type, output.rank],
-        updates: ManagedTensorSlice[output.type, *_],
+        input: ManagedTensorSlice[type = output.type, rank = output.rank],
+        updates: ManagedTensorSlice[type = output.type, *_],
         indices: ManagedTensorSlice,
         ctx: MojoCallContextPtr,
     ) raises:
@@ -1762,7 +1756,7 @@ struct ScatterNDMul:
         _synchronous: Bool,
     ](
         input: ManagedTensorSlice,
-        updates: ManagedTensorSlice[input.type, *_],
+        updates: ManagedTensorSlice[type = input.type, *_],
         indices: ManagedTensorSlice,
     ) raises -> IndexList[input.rank]:
         return scatter_nd_shape[single_thread_blocking_override=_synchronous](
@@ -1780,8 +1774,8 @@ struct ScatterNDMin:
         _synchronous: Bool,
     ](
         output: ManagedTensorSlice,
-        input: ManagedTensorSlice[output.type, output.rank],
-        updates: ManagedTensorSlice[output.type, *_],
+        input: ManagedTensorSlice[type = output.type, rank = output.rank],
+        updates: ManagedTensorSlice[type = output.type, *_],
         indices: ManagedTensorSlice,
         ctx: MojoCallContextPtr,
     ) raises:
@@ -1821,7 +1815,7 @@ struct ScatterNDMin:
         _synchronous: Bool,
     ](
         input: ManagedTensorSlice,
-        updates: ManagedTensorSlice[input.type, *_],
+        updates: ManagedTensorSlice[type = input.type, *_],
         indices: ManagedTensorSlice,
     ) raises -> IndexList[input.rank]:
         return scatter_nd_shape[single_thread_blocking_override=_synchronous](
@@ -1839,8 +1833,8 @@ struct ScatterNDMax:
         _synchronous: Bool,
     ](
         output: ManagedTensorSlice,
-        input: ManagedTensorSlice[output.type, output.rank],
-        updates: ManagedTensorSlice[output.type, *_],
+        input: ManagedTensorSlice[type = output.type, rank = output.rank],
+        updates: ManagedTensorSlice[type = output.type, *_],
         indices: ManagedTensorSlice,
         ctx: MojoCallContextPtr,
     ) raises:
@@ -1880,7 +1874,7 @@ struct ScatterNDMax:
         _synchronous: Bool,
     ](
         input: ManagedTensorSlice,
-        updates: ManagedTensorSlice[input.type, *_],
+        updates: ManagedTensorSlice[type = input.type, *_],
         indices: ManagedTensorSlice,
     ) raises -> IndexList[input.rank]:
         return scatter_nd_shape[single_thread_blocking_override=_synchronous](
@@ -1903,8 +1897,8 @@ struct Scatter:
         _synchronous: Bool,
     ](
         output: ManagedTensorSlice,
-        input: ManagedTensorSlice[output.type, output.rank],
-        updates: ManagedTensorSlice[output.type, output.rank],
+        input: ManagedTensorSlice[type = output.type, rank = output.rank],
+        updates: ManagedTensorSlice[type = output.type, rank = output.rank],
         indices: ManagedTensorSlice[rank = output.rank],
         axis: ManagedTensorSlice[rank=1],
         ctx: MojoCallContextPtr,
@@ -1929,7 +1923,7 @@ struct Scatter:
     @staticmethod
     fn shape(
         input: ManagedTensorSlice,
-        updates: ManagedTensorSlice[input.type, input.rank],
+        updates: ManagedTensorSlice[type = input.type, rank = input.rank],
         indices: ManagedTensorSlice[rank = input.rank],
         axis: ManagedTensorSlice[rank=1],
     ) raises -> IndexList[input.rank]:
@@ -1954,8 +1948,8 @@ struct ScatterAdd:
         _synchronous: Bool,
     ](
         output: ManagedTensorSlice,
-        input: ManagedTensorSlice[output.type, output.rank],
-        updates: ManagedTensorSlice[output.type, output.rank],
+        input: ManagedTensorSlice[type = output.type, rank = output.rank],
+        updates: ManagedTensorSlice[type = output.type, rank = output.rank],
         indices: ManagedTensorSlice[rank = output.rank],
         axis: ManagedTensorSlice[rank=1],
         ctx: MojoCallContextPtr,
@@ -1980,7 +1974,7 @@ struct ScatterAdd:
     @staticmethod
     fn shape(
         input: ManagedTensorSlice,
-        updates: ManagedTensorSlice[input.type, input.rank],
+        updates: ManagedTensorSlice[type = input.type, rank = input.rank],
         indices: ManagedTensorSlice[rank = input.rank],
         axis: ManagedTensorSlice[rank=1],
     ) raises -> IndexList[input.rank]:
@@ -2005,8 +1999,8 @@ struct ScatterMax:
         _synchronous: Bool,
     ](
         output: ManagedTensorSlice,
-        input: ManagedTensorSlice[output.type, output.rank],
-        updates: ManagedTensorSlice[output.type, output.rank],
+        input: ManagedTensorSlice[type = output.type, rank = output.rank],
+        updates: ManagedTensorSlice[type = output.type, rank = output.rank],
         indices: ManagedTensorSlice[rank = output.rank],
         axis: ManagedTensorSlice[rank=1],
         ctx: MojoCallContextPtr,
@@ -2031,7 +2025,7 @@ struct ScatterMax:
     @staticmethod
     fn shape(
         input: ManagedTensorSlice,
-        updates: ManagedTensorSlice[input.type, input.rank],
+        updates: ManagedTensorSlice[type = input.type, rank = input.rank],
         indices: ManagedTensorSlice[rank = input.rank],
         axis: ManagedTensorSlice[rank=1],
     ) raises -> IndexList[input.rank]:
@@ -2056,8 +2050,8 @@ struct ScatterMin:
         _synchronous: Bool,
     ](
         output: ManagedTensorSlice,
-        input: ManagedTensorSlice[output.type, output.rank],
-        updates: ManagedTensorSlice[output.type, output.rank],
+        input: ManagedTensorSlice[type = output.type, rank = output.rank],
+        updates: ManagedTensorSlice[type = output.type, rank = output.rank],
         indices: ManagedTensorSlice[rank = output.rank],
         axis: ManagedTensorSlice[rank=1],
         ctx: MojoCallContextPtr,
@@ -2082,7 +2076,7 @@ struct ScatterMin:
     @staticmethod
     fn shape(
         input: ManagedTensorSlice,
-        updates: ManagedTensorSlice[input.type, input.rank],
+        updates: ManagedTensorSlice[type = input.type, rank = input.rank],
         indices: ManagedTensorSlice[rank = input.rank],
         axis: ManagedTensorSlice[rank=1],
     ) raises -> IndexList[input.rank]:
@@ -2107,8 +2101,8 @@ struct ScatterMul:
         _synchronous: Bool,
     ](
         output: ManagedTensorSlice,
-        input: ManagedTensorSlice[output.type, output.rank],
-        updates: ManagedTensorSlice[output.type, output.rank],
+        input: ManagedTensorSlice[type = output.type, rank = output.rank],
+        updates: ManagedTensorSlice[type = output.type, rank = output.rank],
         indices: ManagedTensorSlice[rank = output.rank],
         axis: ManagedTensorSlice[rank=1],
         ctx: MojoCallContextPtr,
@@ -2134,7 +2128,7 @@ struct ScatterMul:
     @staticmethod
     fn shape(
         input: ManagedTensorSlice,
-        updates: ManagedTensorSlice[input.type, input.rank],
+        updates: ManagedTensorSlice[type = input.type, rank = input.rank],
         indices: ManagedTensorSlice[rank = input.rank],
         axis: ManagedTensorSlice[rank=1],
     ) raises -> IndexList[input.rank]:
@@ -2307,7 +2301,7 @@ struct StaticBroadcastTo:
         out_rank: Int,
         io_spec: IOSpec,
     ](
-        x: ManagedTensorSlice[type, in_rank, io_spec=io_spec],
+        x: ManagedTensorSlice[type=type, rank=in_rank, io_spec=io_spec],
         output_shape: IndexList[out_rank],
     ) -> IODynamicTensor[type, out_rank, io_spec=io_spec].Type:
         var new_strides = IndexList[out_rank]()
@@ -2361,8 +2355,8 @@ struct StaticBroadcastTo:
         in_rank: Int,
         out_rank: Int,
     ](
-        z: ManagedTensorSlice[type, out_rank],
-        x: ManagedTensorSlice[type, in_rank],
+        z: ManagedTensorSlice[type=type, rank=out_rank],
+        x: ManagedTensorSlice[type=type, rank=in_rank],
         output_shape: IndexList[out_rank],
         ctx: MojoCallContextPtr,
     ):
@@ -2861,7 +2855,7 @@ struct Mean:
         input_rank: Int,
         input_type: DType,
     ](
-        input: ManagedTensorSlice[input_type, input_rank],
+        input: ManagedTensorSlice[type=input_type, rank=input_rank],
         axis: Scalar,
     ) raises -> IndexList[input_rank]:
         return reduce_shape[input_rank, input_type](input, axis)
@@ -2914,7 +2908,7 @@ struct ReduceAdd:
         input_rank: Int,
         input_type: DType,
     ](
-        input: ManagedTensorSlice[input_type, input_rank],
+        input: ManagedTensorSlice[type=input_type, rank=input_rank],
         axis: Scalar,
     ) raises -> IndexList[input_rank]:
         return reduce_shape[input_rank, input_type](input, axis)
@@ -2967,7 +2961,7 @@ struct ReduceMul:
         input_rank: Int,
         input_type: DType,
     ](
-        input: ManagedTensorSlice[input_type, input_rank],
+        input: ManagedTensorSlice[type=input_type, rank=input_rank],
         axis: Scalar,
     ) raises -> IndexList[input_rank]:
         return reduce_shape[input_rank, input_type](input, axis)
@@ -3020,7 +3014,7 @@ struct ReduceMax:
         input_rank: Int,
         input_type: DType,
     ](
-        input: ManagedTensorSlice[input_type, input_rank],
+        input: ManagedTensorSlice[type=input_type, rank=input_rank],
         axis: Scalar,
     ) raises -> IndexList[input_rank]:
         return reduce_shape[input_rank, input_type](input, axis)
@@ -3073,7 +3067,7 @@ struct ReduceMin:
         input_rank: Int,
         input_type: DType,
     ](
-        input: ManagedTensorSlice[input_type, input_rank],
+        input: ManagedTensorSlice[type=input_type, rank=input_rank],
         axis: Scalar,
     ) raises -> IndexList[input_rank]:
         return reduce_shape[input_rank, input_type](input, axis)
@@ -3207,12 +3201,12 @@ struct AvgPool:
         type: DType,
         int_type: DType,
     ](
-        output: ManagedTensorSlice[type, 4],
-        input: ManagedTensorSlice[type, 4],
-        filter: ManagedTensorSlice[int_type, 1],
-        strides: ManagedTensorSlice[int_type, 1],
-        dilations: ManagedTensorSlice[int_type, 1],
-        paddings: ManagedTensorSlice[int_type, 1],
+        output: ManagedTensorSlice[type=type, rank=4],
+        input: ManagedTensorSlice[type=type, rank=4],
+        filter: ManagedTensorSlice[type=int_type, rank=1],
+        strides: ManagedTensorSlice[type=int_type, rank=1],
+        dilations: ManagedTensorSlice[type=int_type, rank=1],
+        paddings: ManagedTensorSlice[type=int_type, rank=1],
     ):
         avg_pool[count_boundary=count_boundary](
             managed_tensor_slice_to_ndbuffer(input),
@@ -3229,11 +3223,11 @@ struct AvgPool:
         type: DType,
         int_type: DType,
     ](
-        input: ManagedTensorSlice[type, 4],
-        filter: ManagedTensorSlice[int_type, 1],
-        strides: ManagedTensorSlice[int_type, 1],
-        dilations: ManagedTensorSlice[int_type, 1],
-        paddings: ManagedTensorSlice[int_type, 1],
+        input: ManagedTensorSlice[type=type, rank=4],
+        filter: ManagedTensorSlice[type=int_type, rank=1],
+        strides: ManagedTensorSlice[type=int_type, rank=1],
+        dilations: ManagedTensorSlice[type=int_type, rank=1],
+        paddings: ManagedTensorSlice[type=int_type, rank=1],
     ) raises -> IndexList[input.rank]:
         return pool_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
@@ -3252,12 +3246,12 @@ struct AvgPoolCeilModeTrue:
         type: DType,
         int_type: DType,
     ](
-        output: ManagedTensorSlice[type, 4],
-        input: ManagedTensorSlice[type, 4],
-        filter: ManagedTensorSlice[int_type, 1],
-        strides: ManagedTensorSlice[int_type, 1],
-        dilations: ManagedTensorSlice[int_type, 1],
-        paddings: ManagedTensorSlice[int_type, 1],
+        output: ManagedTensorSlice[type=type, rank=4],
+        input: ManagedTensorSlice[type=type, rank=4],
+        filter: ManagedTensorSlice[type=int_type, rank=1],
+        strides: ManagedTensorSlice[type=int_type, rank=1],
+        dilations: ManagedTensorSlice[type=int_type, rank=1],
+        paddings: ManagedTensorSlice[type=int_type, rank=1],
     ):
         avg_pool[count_boundary=count_boundary](
             managed_tensor_slice_to_ndbuffer(input),
@@ -3274,11 +3268,11 @@ struct AvgPoolCeilModeTrue:
         type: DType,
         int_type: DType,
     ](
-        input: ManagedTensorSlice[type, 4],
-        filter: ManagedTensorSlice[int_type, 1],
-        strides: ManagedTensorSlice[int_type, 1],
-        dilations: ManagedTensorSlice[int_type, 1],
-        paddings: ManagedTensorSlice[int_type, 1],
+        input: ManagedTensorSlice[type=type, rank=4],
+        filter: ManagedTensorSlice[type=int_type, rank=1],
+        strides: ManagedTensorSlice[type=int_type, rank=1],
+        dilations: ManagedTensorSlice[type=int_type, rank=1],
+        paddings: ManagedTensorSlice[type=int_type, rank=1],
         ctx: MojoCallContextPtr,
     ) raises -> IndexList[input.rank]:
         return pool_shape_ceil[single_thread_blocking_override=True](
@@ -3297,12 +3291,12 @@ struct MaxPool:
         type: DType,
         int_type: DType,
     ](
-        output: ManagedTensorSlice[type, 4],
-        input: ManagedTensorSlice[type, 4],
-        filter: ManagedTensorSlice[int_type, 1],
-        strides: ManagedTensorSlice[int_type, 1],
-        dilations: ManagedTensorSlice[int_type, 1],
-        paddings: ManagedTensorSlice[int_type, 1],
+        output: ManagedTensorSlice[type=type, rank=4],
+        input: ManagedTensorSlice[type=type, rank=4],
+        filter: ManagedTensorSlice[type=int_type, rank=1],
+        strides: ManagedTensorSlice[type=int_type, rank=1],
+        dilations: ManagedTensorSlice[type=int_type, rank=1],
+        paddings: ManagedTensorSlice[type=int_type, rank=1],
     ):
         max_pool(
             managed_tensor_slice_to_ndbuffer(input),
@@ -3319,11 +3313,11 @@ struct MaxPool:
         type: DType,
         int_type: DType,
     ](
-        input: ManagedTensorSlice[type, 4],
-        filter: ManagedTensorSlice[int_type, 1],
-        strides: ManagedTensorSlice[int_type, 1],
-        dilations: ManagedTensorSlice[int_type, 1],
-        paddings: ManagedTensorSlice[int_type, 1],
+        input: ManagedTensorSlice[type=type, rank=4],
+        filter: ManagedTensorSlice[type=int_type, rank=1],
+        strides: ManagedTensorSlice[type=int_type, rank=1],
+        dilations: ManagedTensorSlice[type=int_type, rank=1],
+        paddings: ManagedTensorSlice[type=int_type, rank=1],
     ) raises -> IndexList[input.rank]:
         return pool_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
@@ -3341,12 +3335,12 @@ struct MaxPoolCeilModeTrue:
         type: DType,
         int_type: DType,
     ](
-        output: ManagedTensorSlice[type, 4],
-        input: ManagedTensorSlice[type, 4],
-        filter: ManagedTensorSlice[int_type, 1],
-        strides: ManagedTensorSlice[int_type, 1],
-        dilations: ManagedTensorSlice[int_type, 1],
-        paddings: ManagedTensorSlice[int_type, 1],
+        output: ManagedTensorSlice[type=type, rank=4],
+        input: ManagedTensorSlice[type=type, rank=4],
+        filter: ManagedTensorSlice[type=int_type, rank=1],
+        strides: ManagedTensorSlice[type=int_type, rank=1],
+        dilations: ManagedTensorSlice[type=int_type, rank=1],
+        paddings: ManagedTensorSlice[type=int_type, rank=1],
     ):
         max_pool(
             managed_tensor_slice_to_ndbuffer(input),
@@ -3363,11 +3357,11 @@ struct MaxPoolCeilModeTrue:
         type: DType,
         int_type: DType,
     ](
-        input: ManagedTensorSlice[type, 4],
-        filter: ManagedTensorSlice[int_type, 1],
-        strides: ManagedTensorSlice[int_type, 1],
-        dilations: ManagedTensorSlice[int_type, 1],
-        paddings: ManagedTensorSlice[int_type, 1],
+        input: ManagedTensorSlice[type=type, rank=4],
+        filter: ManagedTensorSlice[type=int_type, rank=1],
+        strides: ManagedTensorSlice[type=int_type, rank=1],
+        dilations: ManagedTensorSlice[type=int_type, rank=1],
+        paddings: ManagedTensorSlice[type=int_type, rank=1],
     ) raises -> IndexList[input.rank]:
         return pool_shape_ceil[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
@@ -3489,7 +3483,7 @@ struct GatherND:
         _synchronous: Bool,
     ](
         output: ManagedTensorSlice,
-        data: ManagedTensorSlice[output.type, *_],
+        data: ManagedTensorSlice[type = output.type, *_],
         indices: ManagedTensorSlice,
         ctx: MojoCallContextPtr,
     ) raises:
@@ -3529,7 +3523,7 @@ struct Gather:
         _synchronous: Bool,
     ](
         output: ManagedTensorSlice,
-        input: ManagedTensorSlice[output.type, *_],
+        input: ManagedTensorSlice[type = output.type, *_],
         indices: ManagedTensorSlice,
         axis: Scalar,
         ctx: MojoCallContextPtr,
@@ -3602,8 +3596,8 @@ struct GatherSum:
     @staticmethod
     fn execute(
         output: ManagedTensorSlice,
-        input: ManagedTensorSlice[output.type, *_],
-        indices: ManagedTensorSlice[DType.int32, *_],
+        input: ManagedTensorSlice[type = output.type, *_],
+        indices: ManagedTensorSlice[type = DType.int32, *_],
     ) raises:
         # Existing implementations do not require static shape information
         var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
@@ -3763,8 +3757,8 @@ struct BottomK:
         axis_type: DType
     ](
         input: ManagedTensorSlice,
-        k: ScalarTensor[axis_type],
-        axis: ScalarTensor[axis_type],
+        k: ScalarTensor[type=axis_type],
+        axis: ScalarTensor[type=axis_type],
         sorted: ScalarTensor[type = DType.bool],
     ) raises -> IndexList[input.rank]:
         return top_k_shape_impl[single_thread_blocking_override=True](
@@ -3805,8 +3799,8 @@ struct TopK:
         axis_type: DType
     ](
         input: ManagedTensorSlice,
-        k: ScalarTensor[axis_type],
-        axis: ScalarTensor[axis_type],
+        k: ScalarTensor[type=axis_type],
+        axis: ScalarTensor[type=axis_type],
         sorted: ScalarTensor[type = DType.bool],
     ) raises -> IndexList[input.rank]:
         return top_k_shape_impl[single_thread_blocking_override=True](
@@ -3829,7 +3823,7 @@ struct NonMaximumSupression:
     ](
         output: ManagedTensorSlice[type = DType.int64, rank=2],
         boxes: ManagedTensorSlice[type=type, rank=3],
-        scores: ManagedTensorSlice[type, rank=3],
+        scores: ManagedTensorSlice[type=type, rank=3],
         max_output_boxes_per_class: Scalar[DType.int64],
         iou_threshold: Scalar[DType.float32],
         score_threshold: Scalar[DType.float32],
@@ -3977,8 +3971,8 @@ struct BatchMatmul:
         a_type: DType,
         b_type: DType,
     ](
-        a: ManagedTensorSlice[a_type, rank],
-        b: ManagedTensorSlice[b_type, rank],
+        a: ManagedTensorSlice[type=a_type, rank=rank],
+        b: ManagedTensorSlice[type=b_type, rank=rank],
     ) raises -> IndexList[rank]:
         var a_buffer = managed_tensor_slice_to_ndbuffer(a)
         var b_buffer = managed_tensor_slice_to_ndbuffer(b)
@@ -4287,7 +4281,7 @@ struct Softmax:
         target: StringLiteral
     ](
         output: ManagedTensorSlice,
-        input: ManagedTensorSlice[output.type, output.rank],
+        input: ManagedTensorSlice[type = output.type, rank = output.rank],
         ctx: MojoCallContextPtr,
     ) raises:
         # shape should be the same between the two inputs
@@ -4326,7 +4320,7 @@ struct LogSoftmax:
         target: StringLiteral
     ](
         output: ManagedTensorSlice,
-        input: ManagedTensorSlice[output.type, output.rank],
+        input: ManagedTensorSlice[type = output.type, rank = output.rank],
     ) raises:
         # shape should be the same between the two inputs
         var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
@@ -4649,7 +4643,7 @@ struct Split:
         target: StringLiteral,
     ](
         output: VariadicTensors[type, rank, *_],
-        input: ManagedTensorSlice[type, rank],
+        input: ManagedTensorSlice[type=type, rank=rank],
         split_sizes: ManagedTensorSlice[rank=1],
         axis: ManagedTensorSlice[rank=1],
         ctx: MojoCallContextPtr,
@@ -4684,9 +4678,9 @@ struct SplitOutputShapeHelper:
         axis_type: DType,
         _synchronous: Bool,
     ](
-        input_buf: ManagedTensorSlice[input_type, rank],
-        split_sizes_buf: ManagedTensorSlice[split_size_type, 1],
-        split_axis_buf: ManagedTensorSlice[axis_type, 1],
+        input_buf: ManagedTensorSlice[type=input_type, rank=rank],
+        split_sizes_buf: ManagedTensorSlice[type=split_size_type, rank=1],
+        split_axis_buf: ManagedTensorSlice[type=axis_type, rank=1],
         output_idx: Int,
     ) raises -> IndexList[rank]:
         # extract relevant hyper parameters
@@ -5000,8 +4994,8 @@ struct ConvTranspose:
     fn shape[
         type: DType
     ](
-        input: ManagedTensorSlice[type],
-        filter: ManagedTensorSlice[type],
+        input: ManagedTensorSlice[type=type],
+        filter: ManagedTensorSlice[type=type],
         strides: ManagedTensorSlice[rank=1],
         dilations: ManagedTensorSlice[rank=1],
         paddings: ManagedTensorSlice[rank=1],
@@ -5286,8 +5280,8 @@ struct GGMLQ40Dequantize:
     @staticmethod
     @always_inline
     fn execute(
-        output: ManagedTensorSlice[DType.float32, 2],
-        input: ManagedTensorSlice[DType.uint8, 2],
+        output: ManagedTensorSlice[type = DType.float32, rank=2],
+        input: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"]("ggml_q4_0_dequantize"):
             Q4sym[group_size=32].dequantize_and_write_to_tensor(
@@ -5298,7 +5292,9 @@ struct GGMLQ40Dequantize:
 
     @staticmethod
     @always_inline
-    fn shape(input: ManagedTensorSlice[DType.uint8, 2]) -> IndexList[2]:
+    fn shape(
+        input: ManagedTensorSlice[type = DType.uint8, rank=2]
+    ) -> IndexList[2]:
         alias block_nbytes = sizeof[Q4sym[group_size=32]]()
         alias quants_per_block = 32
         var num_block_per_batch = (
@@ -5312,9 +5308,9 @@ struct VroomQ40Matmul:
     @staticmethod
     @always_inline
     fn execute(
-        c: ManagedTensorSlice[DType.float32, 2],
-        a: ManagedTensorSlice[DType.float32, 2],
-        b: ManagedTensorSlice[DType.uint8, 2],
+        c: ManagedTensorSlice[type = DType.float32, rank=2],
+        a: ManagedTensorSlice[type = DType.float32, rank=2],
+        b: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"]("vroom_q4_0_matmul"):
             matmul_qint4[32](
@@ -5326,8 +5322,8 @@ struct VroomQ40Matmul:
     @staticmethod
     @always_inline
     fn shape(
-        a: ManagedTensorSlice[DType.float32, 2],
-        b: ManagedTensorSlice[DType.uint8, 2],
+        a: ManagedTensorSlice[type = DType.float32, rank=2],
+        b: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) -> IndexList[2]:
         return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
@@ -5337,8 +5333,8 @@ struct VroomQ40RepackWeights:
     @staticmethod
     @always_inline
     fn execute(
-        b_packed: ManagedTensorSlice[DType.uint8, 2],
-        b: ManagedTensorSlice[DType.uint8, 2],
+        b_packed: ManagedTensorSlice[type = DType.uint8, rank=2],
+        b: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"]("vroom_q4_0_matmul"):
             matmul_qint4_pack_b[32](
@@ -5349,8 +5345,8 @@ struct VroomQ40RepackWeights:
     @staticmethod
     @always_inline
     fn shape(
-        a: ManagedTensorSlice[DType.float32, 2],
-        b: ManagedTensorSlice[DType.uint8, 2],
+        a: ManagedTensorSlice[type = DType.float32, rank=2],
+        b: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) -> IndexList[2]:
         return b.shape()
 
@@ -5365,8 +5361,8 @@ struct GGMLQ4KDequantize:
     @staticmethod
     @always_inline
     fn execute(
-        output: ManagedTensorSlice[DType.float32, 2],
-        input: ManagedTensorSlice[DType.uint8, 2],
+        output: ManagedTensorSlice[type = DType.float32, rank=2],
+        input: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"]("ggml_q4_k_dequantize"):
             q4_k_dequantize_impl(
@@ -5376,7 +5372,9 @@ struct GGMLQ4KDequantize:
 
     @staticmethod
     @always_inline
-    fn shape(input: ManagedTensorSlice[DType.uint8, 2]) -> IndexList[2]:
+    fn shape(
+        input: ManagedTensorSlice[type = DType.uint8, rank=2]
+    ) -> IndexList[2]:
         alias block_nbytes = sizeof[block_Q4_K]()
         alias elements_per_block = block_QK_K.quantized_k
 
@@ -5395,9 +5393,9 @@ struct VroomQ4KMatmul:
     @staticmethod
     @always_inline
     fn execute(
-        c: ManagedTensorSlice[DType.float32, 2],
-        a: ManagedTensorSlice[DType.float32, 2],
-        b: ManagedTensorSlice[DType.uint8, 2],
+        c: ManagedTensorSlice[type = DType.float32, rank=2],
+        a: ManagedTensorSlice[type = DType.float32, rank=2],
+        b: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"]("vroom_q4_k_matmul"):
             matmul_Q4_K(
@@ -5409,8 +5407,8 @@ struct VroomQ4KMatmul:
     @staticmethod
     @always_inline
     fn shape(
-        a: ManagedTensorSlice[DType.float32, 2],
-        b: ManagedTensorSlice[DType.uint8, 2],
+        a: ManagedTensorSlice[type = DType.float32, rank=2],
+        b: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) -> IndexList[2]:
         return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
@@ -5420,8 +5418,8 @@ struct VroomQ4KRepackWeights:
     @staticmethod
     @always_inline
     fn execute(
-        b_packed: ManagedTensorSlice[DType.uint8, 2],
-        b: ManagedTensorSlice[DType.uint8, 2],
+        b_packed: ManagedTensorSlice[type = DType.uint8, rank=2],
+        b: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"]("vroom_q4_k_repack_weights"):
             matmul_Q4_K_pack_b(
@@ -5432,8 +5430,8 @@ struct VroomQ4KRepackWeights:
     @staticmethod
     @always_inline
     fn shape(
-        a: ManagedTensorSlice[DType.float32, 2],
-        b: ManagedTensorSlice[DType.uint8, 2],
+        a: ManagedTensorSlice[type = DType.float32, rank=2],
+        b: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) -> IndexList[2]:
         return b.shape()
 
@@ -5448,8 +5446,8 @@ struct GGMLQ6KDequantize:
     @staticmethod
     @always_inline
     fn execute(
-        output: ManagedTensorSlice[DType.float32, 2],
-        input: ManagedTensorSlice[DType.uint8, 2],
+        output: ManagedTensorSlice[type = DType.float32, rank=2],
+        input: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"]("ggml_q6_k_dequantize"):
             q6_k_dequantize_impl(
@@ -5460,7 +5458,9 @@ struct GGMLQ6KDequantize:
 
     @staticmethod
     @always_inline
-    fn shape(input: ManagedTensorSlice[DType.uint8, 2]) -> IndexList[2]:
+    fn shape(
+        input: ManagedTensorSlice[type = DType.uint8, rank=2]
+    ) -> IndexList[2]:
         alias block_nbytes = sizeof[block_Q6_K]()
         alias elements_per_block = block_QK_K.quantized_k
 
@@ -5479,9 +5479,9 @@ struct VroomQ6KMatmul:
     @staticmethod
     @always_inline
     fn execute(
-        c: ManagedTensorSlice[DType.float32, 2],
-        a: ManagedTensorSlice[DType.float32, 2],
-        b: ManagedTensorSlice[DType.uint8, 2],
+        c: ManagedTensorSlice[type = DType.float32, rank=2],
+        a: ManagedTensorSlice[type = DType.float32, rank=2],
+        b: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"]("vroom_q6_k_matmul"):
             matmul_Q6_K(
@@ -5493,8 +5493,8 @@ struct VroomQ6KMatmul:
     @staticmethod
     @always_inline
     fn shape(
-        a: ManagedTensorSlice[DType.float32, 2],
-        b: ManagedTensorSlice[DType.uint8, 2],
+        a: ManagedTensorSlice[type = DType.float32, rank=2],
+        b: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) -> IndexList[2]:
         return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
@@ -5504,8 +5504,8 @@ struct VroomQ6KRepackWeights:
     @staticmethod
     @always_inline
     fn execute(
-        b_packed: ManagedTensorSlice[DType.uint8, 2],
-        b: ManagedTensorSlice[DType.uint8, 2],
+        b_packed: ManagedTensorSlice[type = DType.uint8, rank=2],
+        b: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"]("vroom_q6_k_repack_weights"):
             matmul_Q6_K_pack_b(
@@ -5516,8 +5516,8 @@ struct VroomQ6KRepackWeights:
     @staticmethod
     @always_inline
     fn shape(
-        a: ManagedTensorSlice[DType.float32, 2],
-        b: ManagedTensorSlice[DType.uint8, 2],
+        a: ManagedTensorSlice[type = DType.float32, rank=2],
+        b: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) -> IndexList[2]:
         return b.shape()
 
@@ -5534,9 +5534,9 @@ struct QMatmulGPU_b4_g32:
     fn execute[
         target: StringLiteral,
     ](
-        c: ManagedTensorSlice[DType.bfloat16, 2],
-        a: ManagedTensorSlice[DType.bfloat16, 2],
-        b: ManagedTensorSlice[DType.uint8, 2],
+        c: ManagedTensorSlice[type = DType.bfloat16, rank=2],
+        a: ManagedTensorSlice[type = DType.bfloat16, rank=2],
+        b: ManagedTensorSlice[type = DType.uint8, rank=2],
         ctx: MojoCallContextPtr,
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
@@ -5552,8 +5552,8 @@ struct QMatmulGPU_b4_g32:
     @staticmethod
     @always_inline
     fn shape(
-        a: ManagedTensorSlice[DType.float32, 2],
-        b: ManagedTensorSlice[DType.uint8, 2],
+        a: ManagedTensorSlice[type = DType.float32, rank=2],
+        b: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) -> IndexList[2]:
         return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
@@ -5565,9 +5565,9 @@ struct QMatmulGPU_b4_g128:
     fn execute[
         target: StringLiteral,
     ](
-        c: ManagedTensorSlice[DType.bfloat16, 2],
-        a: ManagedTensorSlice[DType.bfloat16, 2],
-        b: ManagedTensorSlice[DType.uint8, 2],
+        c: ManagedTensorSlice[type = DType.bfloat16, rank=2],
+        a: ManagedTensorSlice[type = DType.bfloat16, rank=2],
+        b: ManagedTensorSlice[type = DType.uint8, rank=2],
         ctx: MojoCallContextPtr,
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
@@ -5583,8 +5583,8 @@ struct QMatmulGPU_b4_g128:
     @staticmethod
     @always_inline
     fn shape(
-        a: ManagedTensorSlice[DType.float32, 2],
-        b: ManagedTensorSlice[DType.uint8, 2],
+        a: ManagedTensorSlice[type = DType.float32, rank=2],
+        b: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) -> IndexList[2]:
         return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
@@ -5596,8 +5596,8 @@ struct QMatmulGPURepackGGUF:
     fn execute[
         target: StringLiteral,
     ](
-        b_packed: ManagedTensorSlice[DType.uint8, 2],
-        b: ManagedTensorSlice[DType.uint8, 2],
+        b_packed: ManagedTensorSlice[type = DType.uint8, rank=2],
+        b: ManagedTensorSlice[type = DType.uint8, rank=2],
         ctx: MojoCallContextPtr,
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
@@ -5612,7 +5612,7 @@ struct QMatmulGPURepackGGUF:
     @staticmethod
     @always_inline
     fn shape(
-        b: ManagedTensorSlice[DType.uint8, 2],
+        b: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) -> IndexList[2]:
         return b.shape()
 
@@ -5624,8 +5624,8 @@ struct QMatmulGPURepackGPTQ_b4_g128:
     fn execute[
         target: StringLiteral,
     ](
-        b_packed: ManagedTensorSlice[DType.uint8, 2],
-        b: ManagedTensorSlice[DType.uint8, 2],
+        b_packed: ManagedTensorSlice[type = DType.uint8, rank=2],
+        b: ManagedTensorSlice[type = DType.uint8, rank=2],
         ctx: MojoCallContextPtr,
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
@@ -5640,7 +5640,7 @@ struct QMatmulGPURepackGPTQ_b4_g128:
     @staticmethod
     @always_inline
     fn shape(
-        b: ManagedTensorSlice[DType.uint8, 2],
+        b: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) -> IndexList[2]:
         return IndexList[2](b.dim_size[1](), b.dim_size[0]())
 
@@ -5652,9 +5652,9 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
     fn execute[
         target: StringLiteral,
     ](
-        b_packed: ManagedTensorSlice[DType.uint8, 2],
-        b: ManagedTensorSlice[DType.uint8, 2],
-        perm_idx: ManagedTensorSlice[DType.int32, 1],
+        b_packed: ManagedTensorSlice[type = DType.uint8, rank=2],
+        b: ManagedTensorSlice[type = DType.uint8, rank=2],
+        perm_idx: ManagedTensorSlice[type = DType.int32, rank=1],
         ctx: MojoCallContextPtr,
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
@@ -5674,8 +5674,8 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
     @staticmethod
     @always_inline
     fn shape(
-        b: ManagedTensorSlice[DType.uint8, 2],
-        perm_idx: ManagedTensorSlice[DType.int32, 1],
+        b: ManagedTensorSlice[type = DType.uint8, rank=2],
+        perm_idx: ManagedTensorSlice[type = DType.int32, rank=1],
     ) -> IndexList[2]:
         return IndexList[2](b.dim_size(1), b.dim_size(0))
 
@@ -5698,10 +5698,10 @@ fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[
     target: StringLiteral,
     type: DType,
 ](
-    output: ManagedTensorSlice[type, 2],
-    hidden_state: ManagedTensorSlice[type, 2],
-    input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
-    weight: ManagedTensorSlice[type, 2],
+    output: ManagedTensorSlice[type=type, rank=2],
+    hidden_state: ManagedTensorSlice[type=type, rank=2],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+    weight: ManagedTensorSlice[type=type, rank=2],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: Scalar[DType.uint32],
     ctx: MojoCallContextPtr,
@@ -5740,10 +5740,10 @@ struct Struct_fused_qkv_matmul_ragged_continuous_batching:
     fn execute[
         type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
     ](
-        output: ManagedTensorSlice[type, 2],
-        hidden_state: ManagedTensorSlice[type, 2],
-        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
-        weight: ManagedTensorSlice[type, 2],
+        output: ManagedTensorSlice[type=type, rank=2],
+        hidden_state: ManagedTensorSlice[type=type, rank=2],
+        input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+        weight: ManagedTensorSlice[type=type, rank=2],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
@@ -5767,9 +5767,9 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
     target: StringLiteral,
     type: DType,
 ](
-    output: ManagedTensorSlice[type, 3],
-    hidden_state: ManagedTensorSlice[type, 3],
-    weight: ManagedTensorSlice[type, 2],
+    output: ManagedTensorSlice[type=type, rank=3],
+    hidden_state: ManagedTensorSlice[type=type, rank=3],
+    weight: ManagedTensorSlice[type=type, rank=2],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: Scalar[DType.uint32],
     ctx: MojoCallContextPtr,
@@ -5805,9 +5805,9 @@ struct Struct_fused_qkv_matmul_padded_continuous_batching:
     fn execute[
         type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
     ](
-        output: ManagedTensorSlice[type, 3],
-        hidden_state: ManagedTensorSlice[type, 3],
-        weight: ManagedTensorSlice[type, 2],
+        output: ManagedTensorSlice[type=type, rank=3],
+        hidden_state: ManagedTensorSlice[type=type, rank=3],
+        weight: ManagedTensorSlice[type=type, rank=2],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
@@ -5828,15 +5828,15 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
     group_size: OptionalReg[Int] = None,
     has_zp: OptionalReg[Bool] = None,
 ](
-    hidden_state: ManagedTensorSlice[type, 2],
-    input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
-    weight: ManagedTensorSlice[weight_type, 2],
+    hidden_state: ManagedTensorSlice[type=type, rank=2],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+    weight: ManagedTensorSlice[type=weight_type, rank=2],
     kv_collection: PagedKVCacheCollection[
         type,
         *_,
     ],
     layer_idx: Scalar[DType.uint32],
-    output: ManagedTensorSlice[type, 2],
+    output: ManagedTensorSlice[type=type, rank=2],
     ctx: MojoCallContextPtr,
 ) raises:
     generic_fused_qkv_matmul_kv_cache_paged_ragged[
@@ -5862,16 +5862,16 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
     group_size: OptionalReg[Int] = None,
     has_zp: OptionalReg[Bool] = None,
 ](
-    hidden_state: ManagedTensorSlice[type, 2],
-    input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
-    weight: ManagedTensorSlice[weight_type, 2],
+    hidden_state: ManagedTensorSlice[type=type, rank=2],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+    weight: ManagedTensorSlice[type=weight_type, rank=2],
     kv_collection: PagedKVCacheCollection[
         type,
         *_,
     ],
     layer_idx: Scalar[DType.uint32],
-    output: ManagedTensorSlice[type, 2],
-    bias: ManagedTensorSlice[type, 1],
+    output: ManagedTensorSlice[type=type, rank=2],
+    bias: ManagedTensorSlice[type=type, rank=1],
     ctx: MojoCallContextPtr,
 ) raises:
     generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
@@ -5901,10 +5901,10 @@ struct Struct_fused_qkv_matmul_padded_ragged:
         page_size: Int, //,
         target: StringLiteral,
     ](
-        output: ManagedTensorSlice[type, 2],
-        hidden_state: ManagedTensorSlice[type, 2],
-        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
-        weight: ManagedTensorSlice[type, 2],
+        output: ManagedTensorSlice[type=type, rank=2],
+        hidden_state: ManagedTensorSlice[type=type, rank=2],
+        input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+        weight: ManagedTensorSlice[type=type, rank=2],
         kv_collection: PagedKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
@@ -5940,10 +5940,10 @@ struct Struct_fused_qkv_matmul_padded_ragged_quantized:
         page_size: Int, //,
         target: StringLiteral,
     ](
-        output: ManagedTensorSlice[type, 2],
-        hidden_state: ManagedTensorSlice[type, 2],
-        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
-        weight: ManagedTensorSlice[weight_type, 2],
+        output: ManagedTensorSlice[type=type, rank=2],
+        hidden_state: ManagedTensorSlice[type=type, rank=2],
+        input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+        weight: ManagedTensorSlice[type=weight_type, rank=2],
         kv_collection: PagedKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
@@ -5983,17 +5983,17 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
         page_size: Int, //,
         target: StringLiteral,
     ](
-        output: ManagedTensorSlice[type, 2],
-        hidden_state: ManagedTensorSlice[type, 2],
-        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
-        weight: ManagedTensorSlice[type, 2],
+        output: ManagedTensorSlice[type=type, rank=2],
+        hidden_state: ManagedTensorSlice[type=type, rank=2],
+        input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+        weight: ManagedTensorSlice[type=type, rank=2],
         kv_collection: PagedKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
             page_size,
         ],
         layer_idx: Scalar[DType.uint32],
-        bias: ManagedTensorSlice[type, 1],
+        bias: ManagedTensorSlice[type=type, rank=1],
         ctx: MojoCallContextPtr,
     ) raises:
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
@@ -6024,17 +6024,17 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
         page_size: Int, //,
         target: StringLiteral,
     ](
-        output: ManagedTensorSlice[type, 2],
-        hidden_state: ManagedTensorSlice[type, 2],
-        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
-        weight: ManagedTensorSlice[weight_type, 2],
+        output: ManagedTensorSlice[type=type, rank=2],
+        hidden_state: ManagedTensorSlice[type=type, rank=2],
+        input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+        weight: ManagedTensorSlice[type=weight_type, rank=2],
         kv_collection: PagedKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
             page_size,
         ],
         layer_idx: Scalar[DType.uint32],
-        bias: ManagedTensorSlice[type, 1],
+        bias: ManagedTensorSlice[type=type, rank=1],
         ctx: MojoCallContextPtr,
     ) raises:
         # In the group-wise quantization scheme, every `group_size` quantized weights
@@ -6073,10 +6073,10 @@ fn generic_fused_qk_rope_bshd_continuous_batch_kernel_api[
     interleaved: Bool,
     target: StringLiteral,
 ](
-    output: ManagedTensorSlice[type, 4],
-    q_proj: ManagedTensorSlice[type, 4],
+    output: ManagedTensorSlice[type=type, rank=4],
+    q_proj: ManagedTensorSlice[type=type, rank=4],
     kv_collection: ContinuousBatchingKVCacheCollection,
-    freqs_cis: ManagedTensorSlice[type, 2],
+    freqs_cis: ManagedTensorSlice[type=type, rank=2],
     layer_idx: Scalar[DType.uint32],
     ctx: MojoCallContextPtr,
 ):
@@ -6110,13 +6110,13 @@ struct Struct_fused_qk_rope_padded_continuous_batching[interleaved: Bool]:
     fn execute[
         type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
     ](
-        output: ManagedTensorSlice[type, 4],
-        q_proj: ManagedTensorSlice[type, 4],
+        output: ManagedTensorSlice[type=type, rank=4],
+        q_proj: ManagedTensorSlice[type=type, rank=4],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
-        freqs_cis: ManagedTensorSlice[type, 2],
+        freqs_cis: ManagedTensorSlice[type=type, rank=2],
         layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
@@ -6141,11 +6141,11 @@ struct Struct_fused_qk_rope_padded_continuous_batching[interleaved: Bool]:
 fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
     type: DType, //, *, interleaved: Bool, target: StringLiteral
 ](
-    output: ManagedTensorSlice[type, 3],
-    q_proj: ManagedTensorSlice[type, 3],
-    input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+    output: ManagedTensorSlice[type=type, rank=3],
+    q_proj: ManagedTensorSlice[type=type, rank=3],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: ContinuousBatchingKVCacheCollection,
-    freqs_cis: ManagedTensorSlice[type, 2],
+    freqs_cis: ManagedTensorSlice[type=type, rank=2],
     layer_idx: Scalar[DType.uint32],
     ctx: MojoCallContextPtr,
 ):
@@ -6169,14 +6169,14 @@ struct Struct_fused_qk_rope_bshd_continuous_batch_ragged[interleaved: Bool]:
     fn execute[
         type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
     ](
-        output: ManagedTensorSlice[type, 3],
-        q_proj: ManagedTensorSlice[type, 3],
-        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        output: ManagedTensorSlice[type=type, rank=3],
+        q_proj: ManagedTensorSlice[type=type, rank=3],
+        input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
-        freqs_cis: ManagedTensorSlice[type, 2],
+        freqs_cis: ManagedTensorSlice[type=type, rank=2],
         layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
@@ -6200,15 +6200,15 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     interleaved: Bool,
     target: StringLiteral,
 ](
-    q_proj: ManagedTensorSlice[type, 3],
-    input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+    q_proj: ManagedTensorSlice[type=type, rank=3],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: PagedKVCacheCollection[
         type,
         *_,
     ],
-    freqs_cis: ManagedTensorSlice[type, 2],
+    freqs_cis: ManagedTensorSlice[type=type, rank=2],
     layer_idx: Scalar[DType.uint32],
-    output: ManagedTensorSlice[type, 3],
+    output: ManagedTensorSlice[type=type, rank=3],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
     generic_fused_qk_rope_bshd_paged_ragged[
@@ -6235,15 +6235,15 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
         page_size: Int, //,
         target: StringLiteral,
     ](
-        output: ManagedTensorSlice[type, 3],
-        q_proj: ManagedTensorSlice[type, 3],
-        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        output: ManagedTensorSlice[type=type, rank=3],
+        q_proj: ManagedTensorSlice[type=type, rank=3],
+        input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
         kv_collection: PagedKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
             page_size,
         ],
-        freqs_cis: ManagedTensorSlice[type, 2],
+        freqs_cis: ManagedTensorSlice[type=type, rank=2],
         layer_idx: Scalar[DType.uint32],
         context: MojoCallContextPtr = MojoCallContextPtr(),
     ):
@@ -6272,12 +6272,12 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
 fn generic_flash_attention_kv_cache_continuous_batch_kernel_api[
     target: StringLiteral, type: DType
 ](
-    output: ManagedTensorSlice[type, 4],
-    q: ManagedTensorSlice[type, 4],
+    output: ManagedTensorSlice[type=type, rank=4],
+    q: ManagedTensorSlice[type=type, rank=4],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: Scalar[DType.uint32],
-    mask: ManagedTensorSlice[type],
-    valid_lengths: ManagedTensorSlice[DType.uint32, 1],
+    mask: ManagedTensorSlice[type=type],
+    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
     scale: Scalar[DType.float32],
     context: MojoCallContextPtr,
 ) raises:
@@ -6300,15 +6300,15 @@ struct Struct_mha_padded_continuous_batching_tensor_mask_no_pos:
     fn execute[
         type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
     ](
-        output: ManagedTensorSlice[type, 4],
-        q: ManagedTensorSlice[type, 4],
+        output: ManagedTensorSlice[type=type, rank=4],
+        q: ManagedTensorSlice[type=type, rank=4],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
         layer_idx: Scalar[DType.uint32],
-        mask: ManagedTensorSlice[type],
-        valid_lengths: ManagedTensorSlice[DType.uint32, 1],
+        mask: ManagedTensorSlice[type=type],
+        valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
         scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
@@ -6328,11 +6328,11 @@ struct Struct_mha_padded_continuous_batching_tensor_mask_no_pos:
 fn generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
     target: StringLiteral, type: DType
 ](
-    output: ManagedTensorSlice[type, 4],
-    q: ManagedTensorSlice[type, 4],
+    output: ManagedTensorSlice[type=type, rank=4],
+    q: ManagedTensorSlice[type=type, rank=4],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: Scalar[DType.uint32],
-    valid_lengths: ManagedTensorSlice[DType.uint32, 1],
+    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
     scale: Scalar[DType.float32],
     context: MojoCallContextPtr,
 ) raises:
@@ -6354,14 +6354,14 @@ struct Struct_mha_padded_continuous_batching_causal_mask_no_pos:
     fn execute[
         type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
     ](
-        output: ManagedTensorSlice[type, 4],
-        q: ManagedTensorSlice[type, 4],
+        output: ManagedTensorSlice[type=type, rank=4],
+        q: ManagedTensorSlice[type=type, rank=4],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
         layer_idx: Scalar[DType.uint32],
-        valid_lengths: ManagedTensorSlice[DType.uint32, 1],
+        valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
         scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
@@ -6377,12 +6377,12 @@ fn generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged_kernel_api[
     type: DType, //,
     target: StringLiteral,
 ](
-    q: ManagedTensorSlice[type, 3],
-    input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+    q: ManagedTensorSlice[type=type, rank=3],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: Scalar[DType.uint32],
     scale: Scalar[DType.float32],
-    output: ManagedTensorSlice[type, 3],
+    output: ManagedTensorSlice[type=type, rank=3],
     context: MojoCallContextPtr,
 ) raises:
     generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged[target](
@@ -6401,12 +6401,12 @@ fn generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged_kernel_api[
     type: DType, //,
     target: StringLiteral,
 ](
-    q: ManagedTensorSlice[type, 3],
-    input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+    q: ManagedTensorSlice[type=type, rank=3],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: Scalar[DType.uint32],
     scale: Scalar[DType.float32],
-    output: ManagedTensorSlice[type, 3],
+    output: ManagedTensorSlice[type=type, rank=3],
     context: MojoCallContextPtr,
 ) raises:
     generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged[target](
@@ -6427,9 +6427,9 @@ struct Struct_mha_ragged_continuous_batching_causal_mask_no_pos:
     fn execute[
         type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
     ](
-        output: ManagedTensorSlice[type, 3],
-        q: ManagedTensorSlice[type, 3],
-        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        output: ManagedTensorSlice[type=type, rank=3],
+        q: ManagedTensorSlice[type=type, rank=3],
+        input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
@@ -6458,9 +6458,9 @@ struct Struct_mha_ragged_continuous_batching_causal_mask_alibi_pos:
     fn execute[
         type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
     ](
-        output: ManagedTensorSlice[type, 3],
-        q: ManagedTensorSlice[type, 3],
-        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        output: ManagedTensorSlice[type=type, rank=3],
+        q: ManagedTensorSlice[type=type, rank=3],
+        input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
@@ -6487,12 +6487,12 @@ fn generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
     type: DType,
     target: StringLiteral,
 ](
-    q: ManagedTensorSlice[type, 3],
-    input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+    q: ManagedTensorSlice[type=type, rank=3],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: PagedKVCacheCollection[type, *_],
     layer_idx: Scalar[DType.uint32],
     scale: Scalar[DType.float32],
-    output: ManagedTensorSlice[type, 3],
+    output: ManagedTensorSlice[type=type, rank=3],
     context: MojoCallContextPtr,
 ) raises:
     generic_flash_attention_kv_cache_causal_mask_paged_ragged[target=target](
@@ -6517,9 +6517,9 @@ struct Struct_mha_ragged_paged_causal_mask_no_pos:
         page_size: Int, //,
         target: StringLiteral,
     ](
-        output: ManagedTensorSlice[type, 3],
-        q: ManagedTensorSlice[type, 3],
-        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        output: ManagedTensorSlice[type=type, rank=3],
+        q: ManagedTensorSlice[type=type, rank=3],
+        input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
         kv_collection: PagedKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
@@ -6554,11 +6554,11 @@ struct Struct_mha_ragged_paged_causal_mask_no_pos:
 fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged_kernel_api[
     type: DType, //, target: StringLiteral
 ](
-    output: ManagedTensorSlice[type, 3],
-    q: ManagedTensorSlice[type, 3],
-    q_input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
-    q_max_seq_len: ManagedTensorSlice[DType.uint32, 1],
-    kv_input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+    output: ManagedTensorSlice[type=type, rank=3],
+    q: ManagedTensorSlice[type=type, rank=3],
+    q_input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+    q_max_seq_len: ManagedTensorSlice[type = DType.uint32, rank=1],
+    kv_input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
     scale: Float32,
@@ -6586,11 +6586,11 @@ struct Struct_cross_attention_ragged_continuous_batching_null_mask_no_pos:
     fn execute[
         type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
     ](
-        output: ManagedTensorSlice[type, 3],
-        q: ManagedTensorSlice[type, 3],
-        q_input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
-        q_max_seq_len: ManagedTensorSlice[DType.uint32, 1],
-        kv_input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        output: ManagedTensorSlice[type=type, rank=3],
+        q: ManagedTensorSlice[type=type, rank=3],
+        q_input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+        q_max_seq_len: ManagedTensorSlice[type = DType.uint32, rank=1],
+        kv_input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type, KVCacheStaticParams(num_heads=num_heads, head_size=head_dim)
         ],
@@ -6626,10 +6626,10 @@ fn generic_get_continuous_cache_kernel_api[
     type: DType,
     kv_params: KVCacheStaticParams,
 ](
-    blocks: ManagedTensorSlice[type, 6],
-    cache_lengths: ManagedTensorSlice[DType.uint32, 1],
-    lookup_table: ManagedTensorSlice[DType.uint32, 1],
-    max_lengths: ManagedTensorSlice[DType.uint32, 2],
+    blocks: ManagedTensorSlice[type=type, rank=6],
+    cache_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
+    lookup_table: ManagedTensorSlice[type = DType.uint32, rank=1],
+    max_lengths: ManagedTensorSlice[type = DType.uint32, rank=2],
 ) -> ContinuousBatchingKVCacheCollection[
     type,
     kv_params,
@@ -6651,10 +6651,10 @@ struct Struct_kv_collection_ctor_continuous_batching:
     fn execute[
         type: DType, num_heads: Int, head_dim: Int, target: StringLiteral
     ](
-        blocks: ManagedTensorSlice[type, 6],
-        cache_lengths: ManagedTensorSlice[DType.uint32, 1],
-        lookup_table: ManagedTensorSlice[DType.uint32, 1],
-        max_lengths: ManagedTensorSlice[DType.uint32, 2],
+        blocks: ManagedTensorSlice[type=type, rank=6],
+        cache_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
+        lookup_table: ManagedTensorSlice[type = DType.uint32, rank=1],
+        max_lengths: ManagedTensorSlice[type = DType.uint32, rank=2],
     ) -> ContinuousBatchingKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads, head_dim),
@@ -6680,8 +6680,8 @@ fn layout_transform_conv_transpose_filter_common[
     filter_rank: Int,
     packed_filter_rank: Int,
 ](
-    packed_filter: ManagedTensorSlice[type, packed_filter_rank],
-    filter: ManagedTensorSlice[type, filter_rank],
+    packed_filter: ManagedTensorSlice[type=type, rank=packed_filter_rank],
+    filter: ManagedTensorSlice[type=type, rank=filter_rank],
 ):
     constrained[filter_rank + 1 == packed_filter_rank]()
     # last param is num_groups which is currently not an available
@@ -6700,8 +6700,8 @@ struct LayoutTransformRSFC2FRSCf:
     fn execute[
         type: DType, filter_rank: Int, packed_filter_rank: Int
     ](
-        packed_filter: ManagedTensorSlice[type, packed_filter_rank],
-        filter: ManagedTensorSlice[type, filter_rank],
+        packed_filter: ManagedTensorSlice[type=type, rank=packed_filter_rank],
+        filter: ManagedTensorSlice[type=type, rank=filter_rank],
     ):
         layout_transform_conv_transpose_filter_common(packed_filter, filter)
 
@@ -6713,8 +6713,8 @@ struct LayoutTransformQRSFC2FQRSCf:
     fn execute[
         type: DType, filter_rank: Int, packed_filter_rank: Int
     ](
-        packed_filter: ManagedTensorSlice[type, packed_filter_rank],
-        filter: ManagedTensorSlice[type, filter_rank],
+        packed_filter: ManagedTensorSlice[type=type, rank=packed_filter_rank],
+        filter: ManagedTensorSlice[type=type, rank=filter_rank],
     ):
         layout_transform_conv_transpose_filter_common(packed_filter, filter)
 
@@ -6739,7 +6739,9 @@ struct PackConvFilterShape:
         paddings: DimList,
         num_groups: Int,
         _synchronous: Bool,
-    ](filter_buf: ManagedTensorSlice[filter_type, rank]) -> IndexList[rank + 1]:
+    ](filter_buf: ManagedTensorSlice[type=filter_type, rank=rank]) -> IndexList[
+        rank + 1
+    ]:
         """
         Compute the output shape of convolution filter packing.
 
@@ -6798,8 +6800,8 @@ struct PackConvTransposeFilterShape:
 fn layout_transform_conv_filter_common[
     type: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
 ](
-    packed_filter: ManagedTensorSlice[type, packed_rank],
-    filter: ManagedTensorSlice[type, filter_rank],
+    packed_filter: ManagedTensorSlice[type=type, rank=packed_rank],
+    filter: ManagedTensorSlice[type=type, rank=filter_rank],
 ):
     constrained[packed_rank == filter_rank + 1]()
 
@@ -6819,8 +6821,8 @@ struct LayoutTransformQRSCF2FQRSCf:
     fn execute[
         type: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
     ](
-        packed_filter: ManagedTensorSlice[type, packed_rank],
-        filter: ManagedTensorSlice[type, filter_rank],
+        packed_filter: ManagedTensorSlice[type=type, rank=packed_rank],
+        filter: ManagedTensorSlice[type=type, rank=filter_rank],
     ):
         layout_transform_conv_filter_common[num_groups=num_groups](
             packed_filter, filter
@@ -6834,8 +6836,8 @@ struct LayoutTransformRSCF2FRSCf:
     fn execute[
         type: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
     ](
-        packed_filter: ManagedTensorSlice[type, packed_rank],
-        filter: ManagedTensorSlice[type, filter_rank],
+        packed_filter: ManagedTensorSlice[type=type, rank=packed_rank],
+        filter: ManagedTensorSlice[type=type, rank=filter_rank],
     ):
         layout_transform_conv_filter_common[num_groups=num_groups](
             packed_filter, filter
@@ -6854,8 +6856,8 @@ struct LayoutTransformMatmulKN2KNkni:
         c_type: DType,
         c_shape: DimList,
     ](
-        output_buffer: ManagedTensorSlice[b_type, 2],
-        b_input: ManagedTensorSlice[b_type, 2],
+        output_buffer: ManagedTensorSlice[type=b_type, rank=2],
+        b_input: ManagedTensorSlice[type=b_type, rank=2],
     ) raises:
         # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
         var kernel_type_m = 0
@@ -6890,8 +6892,8 @@ struct LayoutTransformMatmulNK2KNkni:
         c_type: DType,
         c_shape: DimList,
     ](
-        output_buffer: ManagedTensorSlice[b_type, 2],
-        b_input: ManagedTensorSlice[b_type, 2],
+        output_buffer: ManagedTensorSlice[type=b_type, rank=2],
+        b_input: ManagedTensorSlice[type=b_type, rank=2],
     ) raises:
         # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
         var kernel_type_m = 0
@@ -6932,7 +6934,7 @@ struct PackMatmulBShapeFunc:
         c_shape: DimList,
         transpose_in_0: Bool,
         _synchronous: Bool,
-    ](b_input: ManagedTensorSlice[b_type, 2]) -> IndexList[2]:
+    ](b_input: ManagedTensorSlice[type=b_type, rank=2]) -> IndexList[2]:
         return pack_matmul_b_shape_func[
             a_type,
             a_shape,
@@ -6967,11 +6969,11 @@ struct Struct_rms_norm_kv_cache_ragged_continuous_batching:
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
-        gamma: ManagedTensorSlice[type, 1],
+        gamma: ManagedTensorSlice[type=type, rank=1],
         epsilon: Scalar[type],
         layer_idx: Scalar[DType.uint32],
         total_seq_len: Scalar[DType.uint32],
-        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
         context: MojoCallContextPtr,
     ) raises:
         rms_norm_kv_cache_ragged_continuous_batching[target=target](
@@ -6996,10 +6998,10 @@ struct Struct_rms_norm_kv_cache_ragged_continuous_batching:
 fn print_kv_cache_cont_batch_generic_kernel_api[
     type: DType, //, target: StringLiteral
 ](
-    valid_lengths: ManagedTensorSlice[DType.uint32, 1],
+    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: ContinuousBatchingKVCacheCollection[type, _],
     layer_idx: Scalar[DType.uint32],
-    is_print_compact: ManagedTensorSlice[DType.bool, 1],
+    is_print_compact: ManagedTensorSlice[type = DType.bool, rank=1],
     context: MojoCallContextPtr,
 ) raises:
     @parameter
@@ -7025,10 +7027,10 @@ fn print_kv_cache_paged_generic_kernel_api[
     type: DType, //,
     target: StringLiteral,
 ](
-    valid_lengths: ManagedTensorSlice[DType.uint32, 1],
+    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: PagedKVCacheCollection[type, *_],
     layer_idx: Scalar[DType.uint32],
-    is_print_compact: ManagedTensorSlice[DType.bool, 1],
+    is_print_compact: ManagedTensorSlice[type = DType.bool, rank=1],
     context: MojoCallContextPtr,
 ) raises:
     @parameter
@@ -7061,14 +7063,14 @@ struct Struct_print_kv_cache_paged:
         page_size: Int, //,
         target: StringLiteral,
     ](
-        valid_lengths: ManagedTensorSlice[DType.uint32, 1],
+        valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
         kv_collection: PagedKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
             page_size,
         ],
         layer_idx: Scalar[DType.uint32],
-        is_print_compact: ManagedTensorSlice[DType.bool, 1],
+        is_print_compact: ManagedTensorSlice[type = DType.bool, rank=1],
         context: MojoCallContextPtr,
     ) raises:
         print_kv_cache_paged_generic_kernel_api[target](
@@ -7087,13 +7089,13 @@ struct Struct_print_kv_cache_continuous_batching:
     fn execute[
         type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
     ](
-        valid_lengths: ManagedTensorSlice[DType.uint32, 1],
+        valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
         layer_idx: Scalar[DType.uint32],
-        is_print_compact: ManagedTensorSlice[DType.bool, 1],
+        is_print_compact: ManagedTensorSlice[type = DType.bool, rank=1],
         context: MojoCallContextPtr,
     ) raises:
         print_kv_cache_cont_batch_generic_kernel_api[target](
@@ -7124,10 +7126,10 @@ struct Struct_kv_collection_ctor_paged:
         page_size: Int,
         target: StringLiteral,
     ](
-        blocks: ManagedTensorSlice[type, 6],
-        cache_lengths: ManagedTensorSlice[DType.uint32, 1],
-        lookup_table: ManagedTensorSlice[DType.uint32, 2],
-        max_lengths: ManagedTensorSlice[DType.uint32, 2],
+        blocks: ManagedTensorSlice[type=type, rank=6],
+        cache_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
+        lookup_table: ManagedTensorSlice[type = DType.uint32, rank=2],
+        max_lengths: ManagedTensorSlice[type = DType.uint32, rank=2],
     ) -> PagedKVCacheCollection[
         type, KVCacheStaticParams(num_heads, head_dim), page_size
     ]:
@@ -7160,9 +7162,9 @@ struct Struct_kv_matmul_ragged_continuous_batching:
     fn execute[
         type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
     ](
-        hidden_state: ManagedTensorSlice[type, 2],
-        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
-        weight: ManagedTensorSlice[type, 2],
+        hidden_state: ManagedTensorSlice[type=type, rank=2],
+        input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+        weight: ManagedTensorSlice[type=type, rank=2],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
@@ -7195,9 +7197,9 @@ struct Struct_topk_fused_sampling:
         out_idx_type: DType,
         target: StringLiteral,
     ](
-        out_idxs: ManagedTensorSlice[out_idx_type, rank],
+        out_idxs: ManagedTensorSlice[type=out_idx_type, rank=rank],
         K: Scalar,
-        input: ManagedTensorSlice[type, rank],
+        input: ManagedTensorSlice[type=type, rank=rank],
         ctx: MojoCallContextPtr,
     ) raises:
         constrained[is_valid_target[target](), "not a valid target"]()
@@ -7235,7 +7237,7 @@ struct Struct_swishGLU:
         c: ManagedTensorSlice[rank=2],
         a: ManagedTensorSlice[rank=2],
         b0: ManagedTensorSlice[rank=2],
-        b1: ManagedTensorSlice[b0.type, 2],
+        b1: ManagedTensorSlice[type = b0.type, rank=2],
         ctx: MojoCallContextPtr,
     ) raises:
         swishGLU[target=target](
@@ -7268,7 +7270,7 @@ struct DistributedAllReduceSum:
 
 
 fn _check_signal_buffer_size(
-    signal_buffer: ManagedTensorSlice[DType.uint8, rank=1]
+    signal_buffer: ManagedTensorSlice[type = DType.uint8, rank=1]
 ) raises:
     if signal_buffer.size() < sizeof[Signal]():
         raise Error(
@@ -7293,8 +7295,8 @@ struct DistributedAllReduceSum2Devices:
         outputs: VariadicTensors[
             type, rank, size = Self.num_devices, io_spec=IOUnknown
         ],
-        signal_buffer0: ManagedTensorSlice[DType.uint8, rank=1],
-        signal_buffer1: ManagedTensorSlice[DType.uint8, rank=1],
+        signal_buffer0: ManagedTensorSlice[type = DType.uint8, rank=1],
+        signal_buffer1: ManagedTensorSlice[type = DType.uint8, rank=1],
         inputs: VariadicTensors[
             type, rank, size = Self.num_devices, io_spec=IOUnknown
         ],
@@ -7342,10 +7344,10 @@ struct DistributedAllReduceSum4Devices:
         outputs: VariadicTensors[
             type, rank, size = Self.num_devices, io_spec=IOUnknown
         ],
-        signal_buffer0: ManagedTensorSlice[DType.uint8, rank=1],
-        signal_buffer1: ManagedTensorSlice[DType.uint8, rank=1],
-        signal_buffer2: ManagedTensorSlice[DType.uint8, rank=1],
-        signal_buffer3: ManagedTensorSlice[DType.uint8, rank=1],
+        signal_buffer0: ManagedTensorSlice[type = DType.uint8, rank=1],
+        signal_buffer1: ManagedTensorSlice[type = DType.uint8, rank=1],
+        signal_buffer2: ManagedTensorSlice[type = DType.uint8, rank=1],
+        signal_buffer3: ManagedTensorSlice[type = DType.uint8, rank=1],
         inputs: VariadicTensors[
             type, rank, size = Self.num_devices, io_spec=IOUnknown
         ],
@@ -7401,9 +7403,9 @@ struct IndexTensor:
         batch_dims: Int,
         target: StringLiteral,
     ](
-        output: ManagedTensorSlice[type, output_rank],
-        data: ManagedTensorSlice[type, data_rank],
-        indices: ManagedTensorSlice[indices_type, indices_rank],
+        output: ManagedTensorSlice[type=type, rank=output_rank],
+        data: ManagedTensorSlice[type=type, rank=data_rank],
+        indices: ManagedTensorSlice[type=indices_type, rank=indices_rank],
         ctx: MojoCallContextPtr,
     ):
         index_tensor[

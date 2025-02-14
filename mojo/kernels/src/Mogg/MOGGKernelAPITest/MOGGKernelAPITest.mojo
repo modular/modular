@@ -77,7 +77,7 @@ struct MyCustomScalarRegF32:
 struct OpaqueToCustomScalarSI32Reg:
     @staticmethod
     fn execute(
-        x: ManagedTensorSlice[DType.int32, rank=1]
+        x: ManagedTensorSlice[type = DType.int32, rank=1]
     ) -> MyCustomScalarRegSI32:
         return MyCustomScalarRegSI32(x[0])
 
@@ -91,7 +91,7 @@ struct OpaqueAddToTensorSI32Reg:
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        out: ManagedTensorSlice[DType.int32, rank=1],
+        out: ManagedTensorSlice[type = DType.int32, rank=1],
         x: MyCustomScalarRegSI32,
         y: MyCustomScalarRegSI32,
     ):
@@ -105,7 +105,7 @@ struct OpaqueAddToTensorF32:
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        out: ManagedTensorSlice[DType.float32, rank=1],
+        out: ManagedTensorSlice[type = DType.float32, rank=1],
         x: MyCustomScalarRegF32,
         y: MyCustomScalarRegF32,
     ):
@@ -134,7 +134,7 @@ struct MyCustomScalarSI32:
 struct OpaqueToCustomScalarSI32:
     @staticmethod
     fn execute(
-        x: ManagedTensorSlice[DType.int32, rank=1]
+        x: ManagedTensorSlice[type = DType.int32, rank=1]
     ) -> MyCustomScalarSI32:
         return MyCustomScalarSI32(x[0])
 
@@ -148,7 +148,7 @@ struct OpaqueAddToTensorSI32:
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        out: ManagedTensorSlice[DType.int32, rank=1],
+        out: ManagedTensorSlice[type = DType.int32, rank=1],
         x: MyCustomScalarSI32,
         y: MyCustomScalarSI32,
     ):
@@ -162,7 +162,7 @@ struct OpaqueAddToTensorSI32Raises:
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        out: ManagedTensorSlice[DType.int32, rank=1],
+        out: ManagedTensorSlice[type = DType.int32, rank=1],
         x: MyCustomScalarSI32,
         y: MyCustomScalarSI32,
     ) raises:
@@ -480,7 +480,7 @@ struct VariadicInputToOutput:
         target: StringLiteral,
     ](
         output: VariadicTensors[type, rank=1, size=size, io_spec=IOUnknown],
-        bias: ManagedTensorSlice[type, rank=1],
+        bias: ManagedTensorSlice[type=type, rank=1],
         input: VariadicTensors[type, rank=1, size=size, io_spec=IOUnknown],
     ):
         @parameter
@@ -500,11 +500,11 @@ struct AddBiasToDouble:
         type: DType,
         _synchronous: Bool,
     ](
-        output1: ManagedTensorSlice[type, rank],
-        output2: ManagedTensorSlice[type, rank],
-        input1: ManagedTensorSlice[type, rank],
-        input2: ManagedTensorSlice[type, rank],
-        bias: ManagedTensorSlice[type, rank],
+        output1: ManagedTensorSlice[type=type, rank=rank],
+        output2: ManagedTensorSlice[type=type, rank=rank],
+        input1: ManagedTensorSlice[type=type, rank=rank],
+        input2: ManagedTensorSlice[type=type, rank=rank],
+        bias: ManagedTensorSlice[type=type, rank=rank],
     ):
         output1[0] = input1[0] + bias[0]
         output2[0] = input2[0] + bias[0]
@@ -516,7 +516,7 @@ struct BasicInplace:
     @staticmethod
     fn execute[
         type: DType,
-    ](input: ManagedTensorSlice[type, rank=2]):
+    ](input: ManagedTensorSlice[type=type, rank=2]):
         x = input[0, 0]
         x += 1
         input[0, 0] = x
@@ -529,7 +529,7 @@ struct BasicInplaceRaises:
     @staticmethod
     fn execute[
         type: DType,
-    ](input: ManagedTensorSlice[type, rank=2]) raises:
+    ](input: ManagedTensorSlice[type=type, rank=2]) raises:
         x = input[0, 0]
         x += 1
         input[0, 0] = x
@@ -546,7 +546,7 @@ struct VariadicAdd:
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        output: ManagedTensorSlice[type, rank],
+        output: ManagedTensorSlice[type=type, rank=rank],
         inputs: VariadicTensors[type, rank, io_spec=IOUnknown, *_],
     ):
         @parameter
@@ -574,9 +574,7 @@ struct Transpose2DOp:
     @staticmethod
     fn build_view[
         type: DType,
-    ](x: ManagedTensorSlice[type, 2]) -> ManagedTensorSlice[
-        type,
-        2,
+    ](x: ManagedTensorSlice[type=type, rank=2]) -> ManagedTensorSlice[
         io_spec = x.io_spec,
         static_spec = StaticTensorSpec[type, 2].create_unknown(),
     ]:
@@ -588,8 +586,6 @@ struct Transpose2DOp:
         new_shape[1] = x._spec.shape[0]
 
         return ManagedTensorSlice[
-            type,
-            2,
             io_spec = x.io_spec,
             static_spec = StaticTensorSpec[type, 2].create_unknown(),
         ](x._ptr, new_shape, new_stride)
@@ -605,8 +601,8 @@ struct Transpose2DOp:
         _synchronous: Bool,
         type: DType,
     ](
-        z: ManagedTensorSlice[type, 2],
-        x: ManagedTensorSlice[type, 2],
+        z: ManagedTensorSlice[type=type, rank=2],
+        x: ManagedTensorSlice[type=type, rank=2],
         ctx: MojoCallContextPtr,
     ):
         alias view_strides = Self.get_view_strides(x._static_strides)
@@ -672,8 +668,8 @@ struct OpThatAlwaysFailsConstraint:
     fn execute[
         type: DType, rank: Int
     ](
-        out_tensor: ManagedTensorSlice[type, rank],
-        in_tensor: ManagedTensorSlice[type, rank],
+        out_tensor: ManagedTensorSlice[type=type, rank=rank],
+        in_tensor: ManagedTensorSlice[type=type, rank=rank],
     ):
         constrained[
             1 == 2,
@@ -687,8 +683,8 @@ struct OpThatAlwaysRaises:
     fn execute[
         type: DType, rank: Int
     ](
-        out_tensor: ManagedTensorSlice[type, rank],
-        in_tensor: ManagedTensorSlice[type, rank],
+        out_tensor: ManagedTensorSlice[type=type, rank=rank],
+        in_tensor: ManagedTensorSlice[type=type, rank=rank],
     ) raises:
         out_tensor[0] = in_tensor[0]
         raise Error("This is an error")
@@ -700,8 +696,8 @@ struct MONNXAbsOverload:
     fn execute[
         type: DType, rank: Int
     ](
-        out_tensor: ManagedTensorSlice[type, rank],
-        in_tensor: ManagedTensorSlice[type, rank],
+        out_tensor: ManagedTensorSlice[type=type, rank=rank],
+        in_tensor: ManagedTensorSlice[type=type, rank=rank],
     ) raises:
         @parameter
         @always_inline
@@ -718,8 +714,8 @@ struct MTorchAbsOverload:
     fn execute[
         type: DType, rank: Int
     ](
-        out_tensor: ManagedTensorSlice[type, rank],
-        in_tensor: ManagedTensorSlice[type, rank],
+        out_tensor: ManagedTensorSlice[type=type, rank=rank],
+        in_tensor: ManagedTensorSlice[type=type, rank=rank],
     ) raises:
         @parameter
         @always_inline
@@ -740,8 +736,8 @@ struct OpWithCustomParams:
         custom_str: StringLiteral,
         custom_dtype: DType,
     ](
-        out_tensor: ManagedTensorSlice[type, rank],
-        in_tensor: ManagedTensorSlice[type, rank],
+        out_tensor: ManagedTensorSlice[type=type, rank=rank],
+        in_tensor: ManagedTensorSlice[type=type, rank=rank],
     ) raises:
         out_tensor[0] = in_tensor[0]
         print("custom_int =", custom_int)
@@ -770,8 +766,8 @@ struct SupportsScalarKernel:
     fn execute[
         type: DType
     ](
-        out: ManagedTensorSlice[type, 1],
-        x: ManagedTensorSlice[type, 1],
+        out: ManagedTensorSlice[type=type, rank=1],
+        x: ManagedTensorSlice[type=type, rank=1],
         y: Scalar[type],
     ) raises:
         print("datatype is", type)
@@ -783,7 +779,8 @@ struct KernelWithNoTarget:
     fn execute[
         type: DType
     ](
-        out: ManagedTensorSlice[type, *_], x: ManagedTensorSlice[type, *_]
+        out: ManagedTensorSlice[type=type, *_],
+        x: ManagedTensorSlice[type=type, *_],
     ) raises:
         print("hello from kernel with no target")
 
@@ -794,7 +791,8 @@ struct BasicTarget:
     fn execute[
         type: DType, target: StringLiteral
     ](
-        out: ManagedTensorSlice[type, *_], x: ManagedTensorSlice[type, *_]
+        out: ManagedTensorSlice[type=type, *_],
+        x: ManagedTensorSlice[type=type, *_],
     ) raises:
         print("hello from kernel on", target)
 
@@ -818,7 +816,9 @@ struct BuffToMyCustomScalarReg:
     @staticmethod
     fn execute[
         target: StringLiteral
-    ](x: ManagedTensorSlice[DType.int32, 1]) -> MyCustomScalarReg[DType.int32]:
+    ](x: ManagedTensorSlice[type = DType.int32, rank=1]) -> MyCustomScalarReg[
+        DType.int32
+    ]:
         return MyCustomScalarReg(x[0])
 
 
@@ -828,7 +828,7 @@ struct CustomScalarRegToBuff:
     fn execute[
         target: StringLiteral
     ](
-        input: ManagedTensorSlice[DType.int32, 1],
+        input: ManagedTensorSlice[type = DType.int32, rank=1],
         x: MyCustomScalarReg[DType.int32],
     ):
         input[0] = x.val
@@ -840,15 +840,15 @@ struct TestCustomOp:
     fn execute[
         target: StringLiteral, type: DType, rank: Int
     ](
-        out: ManagedTensorSlice[type, rank],
-        input: ManagedTensorSlice[type, rank],
+        out: ManagedTensorSlice[type=type, rank=rank],
+        input: ManagedTensorSlice[type=type, rank=rank],
     ):
         print("World!")
 
     @staticmethod
     fn shape[
         type: DType, rank: Int
-    ](input: ManagedTensorSlice[type, rank]) -> IndexList[rank]:
+    ](input: ManagedTensorSlice[type=type, rank=rank]) -> IndexList[rank]:
         print("Hello")
         return input.shape()
 
@@ -868,8 +868,8 @@ struct SingleDeviceContext:
     fn execute[
         type: DType
     ](
-        out: ManagedTensorSlice[type, *_],
-        x: ManagedTensorSlice[type, *_],
+        out: ManagedTensorSlice[type=type, *_],
+        x: ManagedTensorSlice[type=type, *_],
         dev_ctx: DeviceContextPtr,
     ) raises:
         dev_ctx[].synchronize()
@@ -881,8 +881,8 @@ struct MultiDeviceContext:
     fn execute[
         type: DType
     ](
-        out: ManagedTensorSlice[type, *_],
-        x: ManagedTensorSlice[type, *_],
+        out: ManagedTensorSlice[type=type, *_],
+        x: ManagedTensorSlice[type=type, *_],
         dev_ctx0: DeviceContextPtr,
         dev_ctx1: DeviceContextPtr,
         ctx: MojoCallContextPtr,
@@ -899,9 +899,9 @@ struct MultiDeviceContextDedup:
     fn execute[
         type: DType
     ](
-        out: ManagedTensorSlice[type, *_],
-        x: ManagedTensorSlice[type, *_],
-        y: ManagedTensorSlice[type, *_],
+        out: ManagedTensorSlice[type=type, *_],
+        x: ManagedTensorSlice[type=type, *_],
+        y: ManagedTensorSlice[type=type, *_],
         dev_ctx0: DeviceContextPtr,
         dev_ctx1: DeviceContextPtr,
     ) raises:
