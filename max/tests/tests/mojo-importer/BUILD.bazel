@@ -20,6 +20,7 @@ modular_py_test(
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],
         "//:tsan": ["@platforms//:incompatible"],
+        "//:ubsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = [
