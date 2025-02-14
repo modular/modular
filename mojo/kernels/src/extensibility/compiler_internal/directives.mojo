@@ -102,3 +102,8 @@ struct StaticTensorSpec[
             OptionalReg[Self.in_lambda_t](None),
             OptionalReg[Self.out_lambda_t](None),
         )
+
+    fn with_strides(self, strides: DimList) -> Self:
+        var result = self
+        result.strides = strides
+        return result

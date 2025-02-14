@@ -70,25 +70,21 @@ fn simd_store_into_managed_tensor_slice[
     type: DType,
     rank: Int,
     simd_width: Int,
-    buffer_alignment: Int = 1,
-    address_space: AddressSpace = AddressSpace.GENERIC,
-    static_strides: DimList = DimList.create_unknown[rank](),
+    static_spec: StaticTensorSpec[type, rank],
     element_alignment: Int = 1,
 ](
-    tensor: ManagedTensorSlice[type, rank],
+    tensor: ManagedTensorSlice[type, rank, static_spec=static_spec],
     indices: IndexList[rank],
     value: SIMD[type, simd_width],
 ):
-    var flat_index = tensor._compute_offset[address_space, static_strides](
-        indices
-    )
+    var flat_index = tensor._compute_offset(indices)
 
     # Store alignment cannot exceed the data type's alignment.
     alias max_alignment = _gcd_pow2[
-        buffer_alignment, element_alignment * alignof[type]()
+        tensor.alignment, element_alignment * alignof[type]()
     ]()
 
-    alias static_stride = static_strides.at[rank - 1]()
+    alias static_stride = tensor._static_strides.at[rank - 1]()
 
     # Stride = 1
     @parameter
@@ -144,19 +140,16 @@ fn simd_load_from_managed_tensor_slice[
     type: DType,
     rank: Int,
     simd_width: Int,
-    alignment: Int = 1,
-    address_space: AddressSpace = AddressSpace.GENERIC,
-    static_strides: DimList = DimList.create_unknown[rank](),
-](tensor: ManagedTensorSlice[type, rank], indices: IndexList[rank]) -> SIMD[
-    type, simd_width
-]:
-    var flat_index = tensor._compute_offset[address_space, static_strides](
-        indices
-    )
-    alias static_stride = static_strides.at[rank - 1]()
+    static_spec: StaticTensorSpec[type, rank],
+](
+    tensor: ManagedTensorSlice[type, rank, static_spec=static_spec],
+    indices: IndexList[rank],
+) -> SIMD[type, simd_width]:
+    var flat_index = tensor._compute_offset(indices)
+    alias static_stride = tensor._static_strides.at[rank - 1]()
 
     # Load alignment cannot exceed the data type's alignment.
-    alias max_alignment = _gcd_pow2[alignment, alignof[type]()]()
+    alias max_alignment = _gcd_pow2[tensor.alignment, alignof[type]()]()
 
     # Stride = 1
     @parameter
@@ -289,12 +282,7 @@ fn _input_fusion_hook_impl[
         # We use these methods to help with fusion passes which manipulates
         # calls. It is helpful to have a registered function.
         return rebind[SIMD[type, _w]](
-            simd_load_from_managed_tensor_slice[
-                simd_width=_w,
-                alignment = static_spec.alignment,
-                address_space = static_spec.address_space,
-                static_strides = static_spec.strides,
-            ](tensor, i)
+            simd_load_from_managed_tensor_slice[simd_width=_w,](tensor, i)
         )
 
     _extract_tensor_spec[
@@ -328,9 +316,6 @@ fn _output_fusion_hook_impl[
         # calls. It is helpful to have a registered function.
         simd_store_into_managed_tensor_slice[
             simd_width=_w,
-            buffer_alignment = static_spec.alignment,
-            address_space = static_spec.address_space,
-            static_strides = static_spec.strides,
             element_alignment=_elem_align,
         ](tensor, i, rebind[SIMD[type, _w]](v))
 
@@ -691,12 +676,9 @@ struct ManagedTensorSlice[
         """
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
-        return simd_load_from_managed_tensor_slice[
-            simd_width=width,
-            alignment = static_spec.alignment,
-            address_space = static_spec.address_space,
-            static_strides = static_spec.strides,
-        ](self, ridx)
+        return simd_load_from_managed_tensor_slice[simd_width=width,](
+            self, ridx
+        )
 
     @__mogg_intrinsic_attr("mogg.tensor_fused_load")
     @always_inline
@@ -718,17 +700,12 @@ struct ManagedTensorSlice[
             alias in_fn = in_lambda.value()
             return in_fn[width](ridx)
         else:
-            return simd_load_from_managed_tensor_slice[
-                simd_width=width,
-                alignment=alignment,
-                address_space=address_space,
-                static_strides=strides,
-            ](self, ridx)
+            return simd_load_from_managed_tensor_slice[simd_width=width,](
+                self, ridx
+            )
 
     @always_inline
-    fn _compute_offset[
-        address_space: AddressSpace, static_strides: DimList
-    ](self, index: IndexList[rank]) -> Int:
+    fn _compute_offset(self, index: IndexList[rank]) -> Int:
         @parameter
         if rank == 0:
             return 0
@@ -736,7 +713,7 @@ struct ManagedTensorSlice[
         # Special case for NVidia GPU on shared memory.
         # We can do the offset computation in int32 instead.
         @parameter
-        if is_gpu() and address_space in (
+        if is_gpu() and Self.address_space in (
             _GPUAddressSpace.SHARED,
             _GPUAddressSpace.LOCAL,
             _GPUAddressSpace.CONSTANT,
@@ -747,13 +724,15 @@ struct ManagedTensorSlice[
             for i in range(rank):
 
                 @parameter
-                if static_strides.at[i]().is_dynamic():
+                if Self._static_strides.at[i]().is_dynamic():
                     offset = fma(
                         Int32(index[i]), Int32(self._runtime_strides[i]), offset
                     )
                 else:
                     offset = fma(
-                        Int32(index[i]), Int32(static_strides.get[i]()), offset
+                        Int32(index[i]),
+                        Int32(Self._static_strides.get[i]()),
+                        offset,
                     )
             return Int(offset)
 
@@ -763,10 +742,10 @@ struct ManagedTensorSlice[
         for i in range(rank):
 
             @parameter
-            if static_strides.at[i]().is_dynamic():
+            if Self._static_strides.at[i]().is_dynamic():
                 offset = fma(index[i], self._runtime_strides[i], offset)
             else:
-                offset = fma(index[i], static_strides.get[i](), offset)
+                offset = fma(index[i], Self._static_strides.get[i](), offset)
 
         return offset
 
@@ -793,9 +772,6 @@ struct ManagedTensorSlice[
 
         simd_store_into_managed_tensor_slice[
             simd_width=width,
-            buffer_alignment = static_spec.alignment,
-            address_space = static_spec.address_space,
-            static_strides = static_spec.strides,
             element_alignment=element_alignment,
         ](self, ridx, val)
 
@@ -822,11 +798,22 @@ struct ManagedTensorSlice[
         else:
             simd_store_into_managed_tensor_slice[
                 simd_width=width,
-                buffer_alignment=alignment,
-                address_space=address_space,
-                static_strides=strides,
                 element_alignment=element_alignment,
             ](self, ridx, val)
+
+    @always_inline
+    fn with_strides[
+        new_strides: DimList
+    ](
+        self,
+        out result: ManagedTensorSlice[
+            type,
+            rank,
+            io_spec=io_spec,
+            static_spec = static_spec.with_strides(new_strides),
+        ],
+    ):
+        return __type_of(result)(self._ptr, self._spec, self._runtime_strides)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -969,9 +956,10 @@ fn view_copy_impl[
     @parameter
     @always_inline
     fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
-        return simd_load_from_managed_tensor_slice[
-            simd_width=width, static_strides=view_strides
-        ](x, idx)
+        var new_layout = x.with_strides[view_strides]()
+        return simd_load_from_managed_tensor_slice[simd_width=width](
+            new_layout, idx
+        )
 
     with Trace[TraceLevel.OP, target=target](trace_name):
         foreach[func, target=target, _synchronous=_synchronous](z, ctx)
