@@ -377,27 +377,24 @@ public:
       // the elementwise generator.
       KGEN::CallOp elementwiseOp = nullptr;
 
-      // Views should never be marked as elementwise even if they called it.
-      if (!kernel->hasAttr("_view")) {
-        // Search for the elementwise kernel.
-        for (auto call : kernel.getOps<KGEN::CallOp>()) {
-          auto func = dyn_cast_or_null<KGEN::GeneratorOp>(symTab.lookup(
-              cast<FlatSymbolRefAttr>(call.getCalleeSymbol()).getValue()));
+      // Search for the elementwise kernel.
+      for (auto call : kernel.getOps<KGEN::CallOp>()) {
+        auto func = dyn_cast_or_null<KGEN::GeneratorOp>(symTab.lookup(
+            cast<FlatSymbolRefAttr>(call.getCalleeSymbol()).getValue()));
 
-          // Allowed to fail as it could be a call to an ExternalGenerator
-          if (!func)
-            continue;
+        // Allowed to fail as it could be a call to an ExternalGenerator
+        if (!func)
+          continue;
 
-          if (func->hasAttr(MOGG_INTRINSIC_FOR_EACH)) {
+        if (func->hasAttr(MOGG_INTRINSIC_FOR_EACH)) {
 
-            func->setAttr(outlinedAttrName, builder.getUnitAttr());
-            elementwiseOp = call;
-          }
+          func->setAttr(outlinedAttrName, builder.getUnitAttr());
+          elementwiseOp = call;
         }
-
-        // Ensure elementwise kernels are actually elementwise.
-        elementwiseOp = checkKernelIsPureElementwise(elementwiseOp, kernel);
       }
+
+      // Ensure elementwise kernels are actually elementwise.
+      elementwiseOp = checkKernelIsPureElementwise(elementwiseOp, kernel);
 
       // Outline the actual work of the function.
       // 1. If it is elementwise, outline the body of the elementwise lambda
