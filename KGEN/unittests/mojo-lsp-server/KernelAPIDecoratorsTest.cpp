@@ -20,7 +20,7 @@ struct Mutable:
     @staticmethod
     fn execute[
         type: DType,
-    ](input: ManagedTensorSlice[type, rank=2]):
+    ](input: ManagedTensorSlice[type=type, rank=2]):
         x = input[0, 0]
         x += 1
         input[0, 0] = x
