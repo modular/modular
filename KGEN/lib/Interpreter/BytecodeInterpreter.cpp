@@ -231,6 +231,9 @@ ErrorTreeOrSuccess BytecodeBuilder::writeOperation(Operation *op) {
   if (auto itf = dyn_cast<BytecodeInterpreterOpInterface>(op))
     generator = itf.getBytecodeGenerator();
 
+  if (generator.genBytecode)
+    totalSize = llvm::alignTo(totalSize, generator.payloadAlignment);
+
   // Create the operation first. This saves the computed properties of the
   // operation required by the interpreter.
   auto [bc, bcIdx] =

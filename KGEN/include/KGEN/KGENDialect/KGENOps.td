@@ -534,7 +534,7 @@ def KGEN_ParamConstantOp : KGENOp<"param.constant", [Pure, ConstantLike,
   let hasVerifier = 1;
 
   let extraClassDeclaration = [{
-    struct Payload { bool containsPtr; Attribute value; };
+    struct alignas(8) Payload { bool containsPtr; Attribute value; };
     ErrorOrSuccess compile(Payload &payload, TargetInfoAttr target);
     ErrorTreeOrSuccess interpret(ArrayRef<Attribute> operands,
       const Payload &payload, InterpreterState &state);
@@ -579,7 +579,7 @@ def KGEN_ParamMaterializeOp : KGENOp<"param.materialize", [
   let hasCanonicalizeMethod = 1;
 
   let extraClassDeclaration = [{
-    struct Payload { bool containsPtr; Attribute value; };
+    struct alignas(8) Payload { bool containsPtr; Attribute value; };
     ErrorOrSuccess compile(Payload &payload, TargetInfoAttr target);
     ErrorTreeOrSuccess interpret(ArrayRef<Attribute> operands,
       const Payload &payload, InterpreterState &state);
