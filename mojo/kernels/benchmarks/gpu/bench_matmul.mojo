@@ -43,26 +43,35 @@ fn _get_run_name[
     shape_a_dim: IndexList[2],
     shape_b_dim: IndexList[2],
 ) -> String:
+    var vendor_str = String("vendor_matmul" if use_vendor_blas else "matmul")
+    var type_str = String("(", type, ") : ")
+    # M
+    var m_str = String(shape_c_dim[0], "_dynamic")
+    # N
+    var n_str = String(
+        shape_c_dim[1], "_dynamic" if shape_c.at[1]().is_dynamic() else ""
+    )
+    # K
+    var k_str = String(
+        shape_a_dim[1], "_dynamic" if shape_a.at[1]().is_dynamic() else ""
+    )
+
+    var transpose_b_str = String(
+        "/transpose_b=", "True" if transpose_b else "False"
+    )
+    var cache_busting_str = String(
+        "/cache_busting=", "True" if cache_busting else "False"
+    )
     return String(
-        "vendor_matmul" if use_vendor_blas else "matmul",
-        "(",
-        type,
-        ") : ",
-        # M
-        shape_c_dim[0],
-        # N
-        "_dynamic",
+        vendor_str,
+        type_str,
+        m_str,
         " x ",
-        String(shape_c_dim[1]) if shape_c.at[0]().is_dynamic() else " x ",
-        shape_c_dim[1],
-        # K
-        "_dynamic",
+        n_str,
         " x ",
-        String(shape_a_dim[1]) if shape_c.at[1]().is_dynamic() else " x ",
-        shape_a_dim[1],
-        "_dynamic" if shape_a.at[1]().is_dynamic() else "",
-        " transpose_b" if transpose_b else "",
-        " cache_busting" if cache_busting else "",
+        k_str,
+        transpose_b_str,
+        cache_busting_str,
     )
 
 

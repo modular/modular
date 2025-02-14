@@ -8,7 +8,7 @@ name: bench_matmul
 file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_matmul.mojo
 
 batch_size: &batch_size
-    M: [1, 2, 4, 8, 16, 128]
+    $M: [1, 2, 4, 8, 16, 128]
 
 params:
 - <<: *batch_size
