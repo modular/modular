@@ -63,7 +63,10 @@ from ._multistage_gemm_gpu import (
     multistage_gemm_kernel,
     multistage_gemm_split_k_kernel,
 )
-from .matmul_sm90 import hopper_matmul_tma_wgmma
+from .matmul_sm90 import (
+    hopper_matmul_tma_wgmma,
+    warp_specialize_gemm_with_multicasting,
+)
 from .gemv import gemv_gpu
 from .utils import GemmShape, apply_epilogue, elementwise_epilogue_type
 from .utils_gpu import (
@@ -395,7 +398,12 @@ fn _matmul_gpu[
                 and transpose_b
                 and h100_env
             ):
-                hopper_matmul_tma_wgmma[transpose_b=transpose_b,](
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    cluster_shape = StaticTuple[Int32, 3](1, 2, 1),
+                    wgmma_n=128,
+                    num_consumer=2,
+                ](
                     rebind[NDBuffer[c_type, 2, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b_shape]](b),
