@@ -1383,7 +1383,6 @@ fn elementwise[
         return String(
             trace_arg("shape", shape),
             trace_arg("vector_width", simd_width),
-            trace_arg("single_thread_blocking_override", use_blocking_impl),
             sep=";",
         )
 
