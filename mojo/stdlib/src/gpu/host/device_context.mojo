@@ -566,7 +566,7 @@ struct DeviceFunction[
             alias env_val = env_get_string[env_var]()
 
             @parameter
-            if _is_bool_like(env_val):
+            if _is_bool_like[env_val]():
                 alias env_bool_val = env_get_bool[env_var]()
                 return env_bool_val, Variant[
                     Bool, Path, fn () capturing -> Path
