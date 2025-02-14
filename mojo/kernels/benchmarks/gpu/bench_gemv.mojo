@@ -10,7 +10,7 @@ from math import ceildiv
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceBuffer, DeviceContext
-from internal_utils import DeviceNDBuffer
+from internal_utils import DeviceNDBuffer, arg_parse
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 
 from utils import IndexList
@@ -212,10 +212,6 @@ struct ValOrDim[dim: Dim = Dim()]:
         self.value = v
 
 
-fn static[d: Int]() -> ValOrDim[d]:
-    return ValOrDim[d]()
-
-
 fn dynamic(d: Int) -> ValOrDim:
     return ValOrDim(d)
 
@@ -223,79 +219,56 @@ fn dynamic(d: Int) -> ValOrDim:
 fn create_matmul_bench[
     dtype: DType
 ](
-    ctx: DeviceContext, mut h: Bench, m: ValOrDim, n: ValOrDim, k: ValOrDim
+    ctx: DeviceContext,
+    mut h: Bench,
+    m: ValOrDim,
+    n: ValOrDim,
+    k: ValOrDim,
+    mode: String = "default",
 ) raises:
-    bench_matmul[
-        dtype,
-        DimList(m.dim, n.dim),
-        DimList(m.dim, k.dim),
-        DimList(k.dim, n.dim),
-    ](ctx, h, (m.value, n.value), (m.value, k.value), (k.value, n.value))
+    if mode == "default":
+        bench_matmul[
+            dtype,
+            DimList(m.dim, n.dim),
+            DimList(m.dim, k.dim),
+            DimList(k.dim, n.dim),
+        ](ctx, h, (m.value, n.value), (m.value, k.value), (k.value, n.value))
 
-
-fn create_matmul_bench_t[
-    dtype: DType
-](
-    ctx: DeviceContext, mut h: Bench, m: ValOrDim, n: ValOrDim, k: ValOrDim
-) raises:
-    bench_matmul_transpose[
-        dtype,
-        DimList(m.dim, n.dim),
-        DimList(m.dim, k.dim),
-        DimList(n.dim, k.dim),
-    ](ctx, h, (m.value, n.value), (m.value, k.value), (n.value, k.value))
-
-
-fn create_matmul_bench_n[
-    dtype: DType
-](
-    ctx: DeviceContext, mut h: Bench, m: ValOrDim, n: ValOrDim, k: ValOrDim
-) raises:
-    bench_matmul_naive[
-        dtype,
-        DimList(m.dim, n.dim),
-        DimList(m.dim, k.dim),
-        DimList(k.dim, n.dim),
-    ](ctx, h, (m.value, n.value), (m.value, k.value), (k.value, n.value))
+    elif mode == "transpose":
+        bench_matmul_transpose[
+            dtype,
+            DimList(m.dim, n.dim),
+            DimList(m.dim, k.dim),
+            DimList(n.dim, k.dim),
+        ](ctx, h, (m.value, n.value), (m.value, k.value), (n.value, k.value))
+    elif mode == "naive":
+        bench_matmul_naive[
+            dtype,
+            DimList(m.dim, n.dim),
+            DimList(m.dim, k.dim),
+            DimList(k.dim, n.dim),
+        ](ctx, h, (m.value, n.value), (m.value, k.value), (k.value, n.value))
 
 
 fn main() raises:
     var h = Bench()
-    with DeviceContext() as ctx:
-        var shape_list = List[IndexList[3]](
-            IndexList[3](1, 5120, 3072),
-            IndexList[3](1, 3072, 5120),
-            IndexList[3](1, 3072, 12288),
-            IndexList[3](1, 12288, 3072),
-            IndexList[3](1, 3072, 3072),
-            IndexList[3](1, 3072, 32768),
-            IndexList[3](1, 32768, 3072),
-            IndexList[3](1, 5120, 5120),
-            IndexList[3](1, 32000, 4096),
-            IndexList[3](1, 4096, 32000),
-        )
 
-        for s in range(len(shape_list)):
-            create_matmul_bench[DType.bfloat16](
-                ctx,
-                h,
-                dynamic(shape_list[s][0]),
-                dynamic(shape_list[s][1]),
-                dynamic(shape_list[s][2]),
-            )
-            create_matmul_bench_t[DType.bfloat16](
-                ctx,
-                h,
-                dynamic(shape_list[s][0]),
-                dynamic(shape_list[s][1]),
-                dynamic(shape_list[s][2]),
-            )
-            create_matmul_bench_n[DType.bfloat16](
-                ctx,
-                h,
-                dynamic(shape_list[s][0]),
-                dynamic(shape_list[s][1]),
-                dynamic(shape_list[s][2]),
-            )
+    alias dtype = DType.bfloat16
+    alias M = 1
+
+    var N = arg_parse("N", 1)
+    var K = arg_parse("K", 1)
+    var mode = arg_parse("mode", "default")  # [default, naive, transpose]
+    var shape = IndexList[3](M, N, K)
+
+    with DeviceContext() as ctx:
+        create_matmul_bench[dtype](
+            ctx,
+            h,
+            dynamic(shape[0]),
+            dynamic(shape[1]),
+            dynamic(shape[2]),
+            mode,
+        )
 
     h.dump_report()

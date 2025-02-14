@@ -1,0 +1,39 @@
+##===----------------------------------------------------------------------===##
+#
+# This file is Modular Inc proprietary.
+#
+##===----------------------------------------------------------------------===##
+
+name: bench_gemv
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_gemv.mojo
+
+
+gemv-commons: &gemv-commons
+  $M: 1
+  $mode: ["default", "transpose", "naive"]
+
+params:
+
+- <<: *gemv-commons
+  $N: 3072
+  $K: [3072, 5120, 12288, 32768]
+
+- <<: *gemv-commons
+  $N: 4096
+  $K: 32000
+
+- <<: *gemv-commons
+  $N: 5120
+  $K: [3072, 5120]
+
+- <<: *gemv-commons
+  $N: 12288
+  $K: 3072
+
+- <<: *gemv-commons
+  $N: 32000
+  $K: 4096
+
+- <<: *gemv-commons
+  $N: 32768
+  $K: 3072
