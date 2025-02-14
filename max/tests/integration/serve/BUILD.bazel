@@ -53,10 +53,15 @@ modular_py_test(
         "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/llama3/testdata",
         "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/gpu-query)",
     },
+    exec_properties = {
+        # Ensure the test has at least 23GB of GPU memory available.
+        "resources:gpu-memory": "23",
+    },
     gpu_constraints = ["//:has_gpu"],
     tags = [
         "gpu",
         "huggingface",
+        "manual",  # TODO(MAXSERV-910): Re-enable once tests aren't all skipped
         "no-sandbox",
         "requires-network",
     ],
