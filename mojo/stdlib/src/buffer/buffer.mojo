@@ -159,7 +159,7 @@ struct Buffer[
         """
         return self.load[width=1](idx)
 
-    @always_inline
+    @always_inline("nodebug")
     fn load[
         *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
     ](self, idx: Int) -> SIMD[type, width]:
@@ -202,7 +202,7 @@ struct Buffer[
         """
         self.store[width=1](idx, val)
 
-    @always_inline
+    @always_inline("nodebug")
     fn store[
         *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
     ](self, idx: Int, val: SIMD[type, width]):
@@ -980,7 +980,7 @@ struct NDBuffer[
         )
         return tile
 
-    @always_inline
+    @always_inline("nodebug")
     fn load[
         *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
     ](self, *idx: Int) -> SIMD[type, width]:
@@ -1002,7 +1002,7 @@ struct NDBuffer[
         """
         return self.load[width=width, alignment=alignment](idx)
 
-    @always_inline
+    @always_inline("nodebug")
     fn load[
         *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
     ](self, idx: VariadicList[Int]) -> SIMD[type, width]:
@@ -1028,7 +1028,7 @@ struct NDBuffer[
         )
         return self._offset(idx).load[width=width, alignment=alignment]()
 
-    @always_inline
+    @always_inline("nodebug")
     fn load[
         *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
     ](self, idx: IndexList) -> SIMD[type, width]:
@@ -1059,7 +1059,7 @@ struct NDBuffer[
             ](idx).as_tuple()
         )
 
-    @always_inline
+    @always_inline("nodebug")
     fn load[
         *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
     ](self, idx: StaticTuple[Int, rank]) -> SIMD[type, width]:
@@ -1105,7 +1105,7 @@ struct NDBuffer[
         """
         self.store[width=1](IndexList[rank](idx), val)
 
-    @always_inline
+    @always_inline("nodebug")
     fn store[
         *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
     ](self, idx: IndexList[rank, **_], val: SIMD[type, width]):
@@ -1124,7 +1124,7 @@ struct NDBuffer[
         """
         self.store[width=width, alignment=alignment](idx.as_tuple(), val)
 
-    @always_inline
+    @always_inline("nodebug")
     fn store[
         *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
     ](self, idx: StaticTuple[Int, rank], val: SIMD[type, width]):
