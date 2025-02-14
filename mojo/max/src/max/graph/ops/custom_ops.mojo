@@ -14,12 +14,12 @@ from max.graph.type import Type
 def custom[name: StringLiteral](value: Symbol, out_type: Type) -> Symbol:
     """Creates a node to execute a custom graph operation in the graph.
 
-    The custom op should be registered by annotating a function with
-    the [`max.register.op`](/max/api/mojo/register/register/op)
+    The custom op should be registered by annotating a function with the
+    [`@compiler.register`](/max/api/mojo-decorators/compiler-register/)
     decorator.
 
     Parameters:
-        name: The op name provided to `max.register.op`.
+        name: The op name provided to `@compiler.register`.
 
     Args:
         value: The op function's argument.
@@ -34,12 +34,12 @@ def custom[name: StringLiteral](value: Symbol, out_type: Type) -> Symbol:
 def custom[name: StringLiteral](values: List[Symbol], out_type: Type) -> Symbol:
     """Creates a node to execute a custom graph operation in the graph.
 
-    The custom op should be registered by annotating a function with
-    the [`max.register.op`](/max/api/mojo/register/register/op)
+    The custom op should be registered by annotating a function with the
+    [`@compiler.register`](/max/api/mojo-decorators/compiler-register/)
     decorator.
 
     Parameters:
-        name: The op name provided to `max.register.op`.
+        name: The op name provided to `@compiler.register`.
 
     Args:
         values: The op function's arguments.
@@ -56,12 +56,12 @@ def custom[
 ](values: List[Symbol], out_types: List[Type]) -> List[Symbol]:
     """Creates a node to execute a custom graph operation in the graph.
 
-    The custom op should be registered by annotating a function with
-    the [`max.register.op`](/max/api/mojo/register/register/op)
+    The custom op should be registered by annotating a function with the
+    [`@compiler.register`](/max/api/mojo-decorators/compiler-register/)
     decorator.
 
     Parameters:
-        name: The op name provided to `max.register.op`.
+        name: The op name provided to `@compiler.register`.
 
     Args:
         values: The op function's arguments.
