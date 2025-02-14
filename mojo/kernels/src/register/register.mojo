@@ -30,17 +30,6 @@ fn __mogg_intrinsic_attr(intrin: StringLiteral):
     return
 
 
-fn uses_opaque():
-    """
-    Indicates the function may use opaque types. As a result, additional
-    information about the funciton may be needed to lower things in the graph
-    compiler.
-
-    TODO(GEX-1145): Remove the need for this.
-    """
-    return
-
-
 fn enforce_io_param():
     """
     Decorator meant to ease the transition fo MangedTensorSlice needing to
