@@ -208,6 +208,10 @@ class LlamaPipelineOracle(PipelineOracle):
         config = pipelines.PipelineConfig(
             architecture="LlamaForCausalLM",
             quantization_encoding=pipelines.SupportedEncoding[encoding],
+            # Normally we do not override batch size, preferring to test the
+            # defaults, but the default is known to be broken on A10.  Product
+            # has requested that we work around rather than fix for now.
+            max_batch_size=32,
             max_new_tokens=10,
             huggingface_repo_id=f"modularai/llama-{internal_version}",
             weight_path=[
