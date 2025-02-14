@@ -85,12 +85,17 @@ modular_py_test(
 
 modular_py_test(
     name = "test_pipelines_cli_lightweight",
-    size = "medium",
     srcs = ["test_pipelines_cli_lightweight.py"],
     deps = [
         "//SDK/lib/API/python/max/entrypoints:pipelines",
-        requirement("transformers"),
-        requirement("gguf"),
+    ],
+)
+
+modular_py_test(
+    name = "test_pipelines_cli_json_lightweight",
+    srcs = ["test_pipelines_cli_json_lightweight.py"],
+    deps = [
+        "//SDK/lib/API/python/max/entrypoints:pipelines",
     ],
 )
 
