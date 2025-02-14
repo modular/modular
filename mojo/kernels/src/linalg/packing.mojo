@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 from math import align_down, align_up, ceildiv
-from os import abort
 from sys import alignof, has_neon, simdwidthof
 from sys.intrinsics import PrefetchOptions
 

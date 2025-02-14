@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 from collections import InlineArray, OptionalReg
 from math import align_down, align_up, ceildiv
-from os import abort
 from pathlib import Path
 from sys import (
     alignof,

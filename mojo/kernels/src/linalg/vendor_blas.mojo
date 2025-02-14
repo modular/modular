@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from os import abort
 from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator, sizeof
 
 import gpu._rocblas

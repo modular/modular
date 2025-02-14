@@ -6,7 +6,6 @@
 
 from collections import OptionalReg
 from math import align_down, align_up, ceildiv
-from os import abort
 from sys import alignof, bitwidthof, llvm_intrinsic, simdwidthof
 
 from algorithm.reduction import _reduce_generator

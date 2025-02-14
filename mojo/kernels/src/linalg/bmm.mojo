@@ -6,7 +6,6 @@
 
 from collections import OptionalReg
 from math import align_up, ceildiv, gcd
-from os import abort
 from sys import alignof
 from sys.info import bitwidthof, simdwidthof
 
