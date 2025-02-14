@@ -190,6 +190,7 @@ from utils.loop import unroll
 from utils.numerics import isinf, isnan
 from utils.static_tuple import _create_array, _set_array_elem
 
+
 # ===-----------------------------------------------------------------------===#
 # Nop functions to expose different types to the compiler.
 # ===-----------------------------------------------------------------------===#
@@ -367,30 +368,6 @@ fn build_static_tensor_specs_tuple[
     out result: StaticTuple[StaticTensorSpec[type, rank], size],
 ):
     return __type_of(result)(array_of_specs)
-
-
-# Rebuild the StaticTensorSpec parameter for the DPS kernels with different strides
-@register_internal("rebuild_static_tensor_specs_with_strides")
-fn rebuild_static_tensor_specs_with_strides[
-    type: DType,
-    rank: Int,
-](
-    spec: StaticTensorSpec[type, rank],
-    strides: DimList,
-) -> StaticTensorSpec[
-    type, rank
-]:
-    alias SpecType = StaticTensorSpec[type, rank]
-
-    return SpecType(
-        spec.shape,
-        strides,
-        spec.alignment,
-        spec.address_space,
-        spec.exclusive,
-        spec.in_lambda,
-        spec.out_lambda,
-    )
 
 
 # TODO: this should take IOSpec as a param -- will require graph compiler changes
@@ -2296,16 +2273,10 @@ struct StaticBroadcastTo:
     @always_inline
     @staticmethod
     fn build_view[
-        type: DType,
-        in_rank: Int,
         out_rank: Int,
-        io_spec: IOSpec,
-    ](
-        x: ManagedTensorSlice[type=type, rank=in_rank, io_spec=io_spec],
-        output_shape: IndexList[out_rank],
-    ) -> IODynamicTensor[type, out_rank, io_spec=io_spec].Type:
+    ](x: ManagedTensorSlice,) -> IndexList[out_rank]:
         var new_strides = IndexList[out_rank]()
-        alias delta = out_rank - in_rank
+        alias delta = out_rank - x.rank
 
         @parameter
         for i in range(out_rank):
@@ -2319,9 +2290,7 @@ struct StaticBroadcastTo:
                 else:
                     new_strides[i] = x.stride_length[i - delta]()
 
-        return IODynamicTensor[type, out_rank, io_spec].Type(
-            x._ptr, output_shape, new_strides
-        )
+        return new_strides
 
     @staticmethod
     fn get_view_strides[
@@ -2367,9 +2336,14 @@ struct StaticBroadcastTo:
             x._static_shape, x._static_strides
         )
 
-        var x_view = Self.build_view(x, output_shape)
+        var x_runtime_strides = Self.build_view[z.rank](x)
+
+        var x_view = x.with_layout[
+            new_static_shape = z._static_shape,
+            new_static_strides=view_strides,
+        ](output_shape, x_runtime_strides)
+
         view_copy_impl[
-            view_strides=view_strides,
             trace_name="static.broadcast_to",
             target=target,
             _synchronous=_synchronous,
@@ -2413,14 +2387,16 @@ struct StaticReshape:
             managed_tensor_slice_to_ndbuffer(input),
             shape,
         )
-        var view_tensor = IODynamicTensor[
-            type, output_rank, input.io_spec
-        ].Type(view_buffer.data, shape, view_buffer.get_strides())
         alias view_strides = Self.get_view_strides[output.rank](
             output._static_shape
         )
+
+        view_tensor = input.with_layout[
+            new_static_shape = output._static_shape,
+            new_static_strides=view_strides,
+        ](view_buffer.get_shape(), view_buffer.get_strides())
+
         view_copy_impl[
-            view_strides=view_strides,
             trace_name="static.reshape",
             target=target,
             _synchronous=_synchronous,
@@ -2459,9 +2435,7 @@ struct Transpose:
     fn transpose_in_place(
         input: ManagedTensorSlice,
         permutations: ManagedTensorSlice[rank=1],
-        out result: IODynamicTensor[
-            type = input.type, rank = input.rank, io_spec = input.io_spec
-        ].Type,
+        out result: (IndexList[input.rank], IndexList[input.rank]),
     ):
         var new_shape = IndexList[input.rank]()
         var new_stride = IndexList[input.rank]()
@@ -2472,7 +2446,7 @@ struct Transpose:
             new_shape[i] = input.dim_size(dim)
             new_stride[i] = input.stride_length(dim)
 
-        return __type_of(result)(input._ptr, new_shape, new_stride)
+        return __type_of(result)(new_shape, new_stride)
 
     @staticmethod
     fn get_view_strides[
@@ -2509,12 +2483,18 @@ struct Transpose:
             input._static_strides
         )
 
+        shape, strides = Self.transpose_in_place(input, permutations)
+
+        var view = input.with_layout[
+            new_static_shape = output._static_shape,
+            new_static_strides=view_strides,
+        ](shape, strides)
+
         view_copy_impl[
-            view_strides=view_strides,
             trace_name="transpose",
             target=target,
             _synchronous=_synchronous,
-        ](output, Self.transpose_in_place(input, permutations), ctx)
+        ](output, view, ctx)
 
     # TODO(GEX-1033) Make it possible to have multiple raises.
     @no_inline
@@ -2535,12 +2515,12 @@ struct Transpose:
                     " rank)"
                 )
 
-        var view_tensor = Self.transpose_in_place(input, permutations)
+        shape, strides = Self.transpose_in_place(input, permutations)
         var out = IndexList[input.rank]()
 
         @parameter
         for i in range(input.rank):
-            out[i] = view_tensor.dim_size[i]()
+            out[i] = shape[i]
 
         return out
 
@@ -2588,19 +2568,21 @@ struct Slice:
             managed_tensor_slice_to_ndbuffer(stops),
             managed_tensor_slice_to_ndbuffer(steps),
         )
-        var view_tensor = IODynamicTensor[
-            type, rank, io_spec = input.io_spec
-        ].Type(
-            view_buffer.data,
-            view_buffer.get_shape(),
-            view_buffer.get_strides(),
-        )
 
         alias view_strides = Self.get_view_strides[rank](
             input._static_strides, static_steps
         )
+
+        var view_tensor = input.with_layout[
+            new_static_shape = output._static_shape,
+            new_static_strides=view_strides,
+        ](
+            view_buffer.get_shape(),
+            view_buffer.get_strides(),
+            offset_ptr=view_buffer.data,
+        )
+
         view_copy_impl[
-            view_strides=view_strides,
             trace_name="slice",
             target=target,
             _synchronous=_synchronous,
@@ -2691,18 +2673,21 @@ struct SliceDim:
             Int(stops),
             Int(steps),
         )
-        var view_tensor = IODynamicTensor[
-            type, rank, io_spec = input.io_spec
-        ].Type(
-            view_buffer.data,
-            view_buffer.get_shape(),
-            view_buffer.get_strides(),
-        )
+
         alias view_strides = Self.get_view_strides[rank, axis](
             input._static_strides, static_step.at[0]()
         )
+
+        var view_tensor = input.with_layout[
+            new_static_shape = output._static_shape,
+            new_static_strides=view_strides,
+        ](
+            view_buffer.get_shape(),
+            view_buffer.get_strides(),
+            offset_ptr=view_buffer.data,
+        )
+
         view_copy_impl[
-            view_strides=view_strides,
             trace_name="slice_dim",
             target=target,
             _synchronous=_synchronous,

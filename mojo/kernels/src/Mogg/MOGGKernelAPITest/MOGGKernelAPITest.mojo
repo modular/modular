@@ -574,10 +574,7 @@ struct Transpose2DOp:
     @staticmethod
     fn build_view[
         type: DType,
-    ](x: ManagedTensorSlice[type=type, rank=2]) -> ManagedTensorSlice[
-        io_spec = x.io_spec,
-        static_spec = StaticTensorSpec[type, 2].create_unknown(),
-    ]:
+    ](x: ManagedTensorSlice[type=type, rank=2]) -> StaticTuple[IndexList[2], 2]:
         var new_stride = IndexList[2]()
         var new_shape = IndexList[2]()
         new_stride[0] = x._runtime_strides[1]
@@ -585,10 +582,7 @@ struct Transpose2DOp:
         new_shape[0] = x._spec.shape[1]
         new_shape[1] = x._spec.shape[0]
 
-        return ManagedTensorSlice[
-            io_spec = x.io_spec,
-            static_spec = StaticTensorSpec[type, 2].create_unknown(),
-        ](x._ptr, new_shape, new_stride)
+        return StaticTuple[IndexList[2], 2](new_shape, new_stride)
 
     @staticmethod
     fn get_view_strides(input_strides: DimList) -> DimList:
@@ -606,10 +600,14 @@ struct Transpose2DOp:
         ctx: MojoCallContextPtr,
     ):
         alias view_strides = Self.get_view_strides(x._static_strides)
-        var x_view = Self.build_view(x)
-        view_copy_impl[
-            target=target, _synchronous=_synchronous, view_strides=view_strides
-        ](z, x_view, ctx)
+        var shape_and_strides = Self.build_view(x)
+
+        var x_view = x.with_layout[
+            new_static_shape = z._static_shape,
+            new_static_strides=view_strides,
+        ](shape_and_strides[0], shape_and_strides[1])
+
+        view_copy_impl[target=target, _synchronous=_synchronous](z, x_view, ctx)
 
 
 @compiler.register("elementwise_print_shape")
