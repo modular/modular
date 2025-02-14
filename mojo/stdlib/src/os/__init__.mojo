@@ -19,7 +19,6 @@ from .os import (
     SEEK_CUR,
     SEEK_END,
     SEEK_SET,
-    Process,
     abort,
     getuid,
     listdir,
@@ -32,3 +31,4 @@ from .os import (
     unlink,
 )
 from .pathlike import PathLike
+from .process import Process
