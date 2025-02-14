@@ -972,10 +972,10 @@ class InferenceSession:
         if state in ("false", "off", "no", "0"):
             return
 
-        self._set_mojo_define("MODULAR_ENABLE_PROFILING", True)
-        self._set_mojo_define("MODULAR_ENABLE_GPU_PROFILING", True)
+        self._set_mojo_define("MODULAR_ENABLE_PROFILING", 1)
+        self._set_mojo_define("MODULAR_ENABLE_GPU_PROFILING", 1)
         if state == "detailed":
-            self._set_mojo_define("MODULAR_ENABLE_GPU_PROFILING_DETAILED", True)
+            self._set_mojo_define("MODULAR_ENABLE_GPU_PROFILING_DETAILED", 1)
 
         set_gpu_profiling_state(state)
 
