@@ -96,27 +96,16 @@ class TelemetryConfig:
     otlp_level: Union[int, str, None] = None
     metrics_egress_enabled: bool = False
     async_metrics: bool = True
-    egress_enabled: bool = False
 
     @classmethod
     def from_config(cls, config: Settings) -> "TelemetryConfig":
         """Read the telemetry config from env variables"""
-        otlp_level: Union[int, str, None] = logging.getLevelName(
-            config.logs_otlp_level
-        )
-
-        metrics_egress_enabled = True
-
-        if config.disable_telemetry:
-            otlp_level = None
-            metrics_egress_enabled = False
-
         return cls(
             console_level=config.logs_console_level,
             file_path=config.logs_file_path,
             file_level=config.logs_file_level,
-            otlp_level=otlp_level,
-            metrics_egress_enabled=metrics_egress_enabled,
+            otlp_level=config.logs_otlp_level,
+            metrics_egress_enabled=not config.disable_telemetry,
         )
 
 
@@ -128,6 +117,7 @@ def configure_logging(server_settings: Settings) -> None:
     file_path = default_config.file_path
     file_level = default_config.file_level
     otlp_level = default_config.otlp_level
+    egress_enabled = default_config.metrics_egress_enabled
 
     logging_handlers: list[logging.Handler] = []
 
@@ -166,7 +156,7 @@ def configure_logging(server_settings: Settings) -> None:
         file_handler.setLevel(file_level)
         logging_handlers.append(file_handler)
 
-    if otlp_level is not None:
+    if egress_enabled and otlp_level is not None:
         # Create an OTEL handler
         logger_provider = LoggerProvider(logs_resource)
         set_logger_provider(logger_provider)
@@ -175,7 +165,8 @@ def configure_logging(server_settings: Settings) -> None:
             BatchLogRecordProcessor(exporter)
         )
         otlp_handler = LoggingHandler(
-            level=otlp_level, logger_provider=logger_provider
+            level=logging.getLevelName(otlp_level),
+            logger_provider=logger_provider,
         )
         logging_handlers.append(otlp_handler)
 
@@ -197,7 +188,7 @@ def configure_logging(server_settings: Settings) -> None:
         "Logging initialized: Console: %s, File: %s, Telemetry: %s",
         console_level,
         file_level,
-        otlp_level,
+        egress_enabled and otlp_level,
     )
 
 

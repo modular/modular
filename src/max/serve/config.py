@@ -75,8 +75,8 @@ class Settings(BaseSettings):
         description="Logging level",
         alias="MAX_SERVE_LOGS_CONSOLE_LEVEL",
     )
-    logs_otlp_level: str = Field(
-        default="INFO",
+    logs_otlp_level: Union[str, None] = Field(
+        default=None,
         description="OTLP log level",
         alias="MAX_SERVE_LOGS_OTLP_LEVEL",
     )
@@ -92,7 +92,7 @@ class Settings(BaseSettings):
     )
 
     disable_telemetry: bool = Field(
-        default=True,
+        default=False,
         description="Disable remote telemetry",
         alias="MAX_SERVE_DISABLE_TELEMETRY",
     )
