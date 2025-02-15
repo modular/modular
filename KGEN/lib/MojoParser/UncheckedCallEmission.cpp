@@ -1005,53 +1005,6 @@ struct DanglingImplicitOriginRefEraser
 };
 } // namespace
 
-/// As a special hack, we "really" want to force inline the Origin.__init__
-/// constructor into a StructAttr, regardless of what its element is.  This
-/// initializer cannot be inlined through other mechanisms because Origin type
-/// is parametric (not supported by the parsers inliner) but also because the
-/// origins being referenced are often parameter references. We want to be able
-/// to see through this rather than getting param calls of the initializer.
-static TypedAttr tryOriginInitFold(SymbolRefAttr symbolRef,
-                                   ArrayRef<TypedAttr> operands,
-                                   FnTypeGeneratorType sigType,
-                                   SharedState &shared) {
-  auto nestedRefs = symbolRef.getNestedReferences();
-  auto numNested = nestedRefs.size();
-  // Check for Origin.__init__(stuff) for paranoia.
-  if (numNested < 2 || nestedRefs[numNested - 2].getValue() != "Origin" ||
-      !nestedRefs.back().getValue().starts_with("__init__"))
-    return {};
-
-  // Okay, we know we want to fold this.
-  assert(sigType.getNumArguments() == 1 &&
-         sigType.getArgConvention(0) == ArgConvention::ReadReg);
-  auto originStructType = cast<LIT::StructType>(sigType.getUserResultType());
-
-  // Figure out what the struct field is so we can form a StructAttr.  We know
-  // the "self" type has been bound to any parameters, so it will be the actual
-  // struct type.
-  StringAttr fieldName =
-      StringAttr::get(shared.getContext(), ORIGIN_FIELD_NAME);
-
-  // When in debug mode, verify that Origin matches what we think it does.
-#ifndef NDEBUG
-  auto &declResolver = shared.getDeclResolver();
-  ASTDecl &originDecl =
-      declResolver.getDeclForTypeSymbol(originStructType.getSymbol());
-  if (failed(declResolver.resolveFully(originDecl, SMLoc())))
-    return {};
-  auto originDeclOp = cast<StructDeclOp>(originDecl);
-  // There must only be one field and its name must match fieldName.
-  for (auto fields : originDeclOp.getFieldDecls()) {
-    assert(fields.getNameAttr() == fieldName &&
-           "Origin declaration changed structure");
-  }
-#endif
-
-  std::tuple<StringAttr, TypedAttr> field = {fieldName, operands[1]};
-  return LITStructAttr::get(field, originStructType);
-}
-
 TypedAttr CallEmitter::emitCallInParamContext(
     ArrayRef<ASTExprAnd<AnyValue>> argumentValues) {
   assert(!emitter.builder && "not in parameter context");
@@ -1123,15 +1076,6 @@ TypedAttr CallEmitter::emitCallInParamContext(
   if (auto result = emitter.shared.foldInlineBuiltinFunction(operands, loc,
                                                              /*isError*/ false))
     return result;
-
-  // Force fold Origin.__init__, see comment on tryOriginInitFold for rationale.
-  if (operands.size() == 2 && isa<OriginType>(operands[1].getType()))
-    if (auto symCst =
-            dyn_cast<SymbolConstantAttr>(callee.getIfPValue().get())) {
-      if (TypedAttr result = tryOriginInitFold(symCst.getSymbol(), operands,
-                                               calleeSig, emitter.shared))
-        return result;
-    }
 
   TypedAttr result;
   if (!boundSigType.hasMemoryOnlyResult()) {

@@ -456,12 +456,12 @@ fn memoryParam[value: MemoryType]():
 struct InitSelfCtor:
     var x: Int
 
-    @always_inline
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, x: Int):
         self.x = x
 
-    @always_inline
+    @always_inline("builtin")
     fn __add__(self, rhs: Self) -> Self:
         return self.x + rhs.x
 
