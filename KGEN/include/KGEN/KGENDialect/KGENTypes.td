@@ -230,9 +230,6 @@ def KGEN_GeneratorType : KGENType<"Generator", "generator", [
       assert(isFullyBound() && "cannot instantiate parameterized body");
       return getBody();
     }
-
-    /// TODO: Remove result parameters entirely.
-    ArrayRef<Type> getResultParamTypes() { return {}; }
   }];
 }
 

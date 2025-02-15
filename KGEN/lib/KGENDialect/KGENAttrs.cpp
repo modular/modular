@@ -194,8 +194,8 @@ std::optional<bool> ParamIndexRefAttr::isLessThan(Attribute rhs) const {
   auto ref = ::dyn_cast<ParamIndexRefAttr>(rhs);
   if (!ref)
     return false;
-  return std::make_tuple(getDepth(), getIndex(), getIsResult()) <
-         std::make_tuple(ref.getDepth(), ref.getIndex(), ref.getIsResult());
+  return std::make_tuple(getDepth(), getIndex()) <
+         std::make_tuple(ref.getDepth(), ref.getIndex());
 }
 
 //===----------------------------------------------------------------------===//
@@ -695,8 +695,7 @@ SymbolConstantAttr::verifySymbolUses(Operation *module,
       llvm::append_range(paramDecls,
                          ::cast<DeclInterface>(op).getInputParams());
 
-    IndexRefRemapper remapper(paramDecls, /*resultParams=*/{},
-                              paramDecls.size());
+    IndexRefRemapper remapper(paramDecls, paramDecls.size());
     FuncTypeGeneratorType baseSigGen = func.getFuncTypeGenerator();
     FuncType baseSig = baseSigGen.getBody();
     SmallVector<Type> inputParamTypes;

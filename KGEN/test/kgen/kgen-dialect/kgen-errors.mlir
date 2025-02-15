@@ -109,7 +109,7 @@ kgen.generator @dtype_params() {
 
 // -----
 
-// expected-error @below {{type of index reference #kgen.param.index.ref<0, false, 0> : index does not match parameter type 'ui32'}}
+// expected-error @below {{type of index reference #kgen.param.index.ref<0, 0> : index does not match parameter type 'ui32'}}
 // expected-error @below {{'kgen.generator' op reference to parameter "n" with incorrect type 'index'}}
 // expected-note @below {{parameter defined with type 'ui32'}}
 kgen.generator @scalar_params_verbose<n : ui32>(%x : !pop.array<n, scalar<invalid>>) {
@@ -561,7 +561,7 @@ kgen.generator @bad_index_ref<fn: <index>(!pop.array<*(0,1), i32>) -> ()>() {
 
 // -----
 
-// expected-error @below {{type of index reference #kgen.param.index.ref<0, false, 0> : index does not match parameter type 'i32'}}
+// expected-error @below {{type of index reference #kgen.param.index.ref<0, 0> : index does not match parameter type 'i32'}}
 kgen.generator @bad_index_ref<fn: <i32, !pop.array<*(0,0), i32>>() -> ()>() {
   kgen.return
 }

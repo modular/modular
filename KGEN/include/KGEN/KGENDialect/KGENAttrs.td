@@ -232,37 +232,35 @@ def KGEN_ParamDeclRefAttr : KGEN_ExprAttr<"ParamDeclRef", "param.decl.ref",
 
 def KGEN_ParamIndexRefAttr : KGEN_ExprAttr<"ParamIndexRef", "param.index.ref",
     [DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>]> {
-  let summary = "A reference to a signature input or result parameter.";
+  let summary = "A reference to a signature parameter.";
   let description = [{
-    The `#kgen.param.index.ref` attribute is a reference to an input or result
+    The `#kgen.param.index.ref` attribute is a reference to an input
     parameter of an enclosing signature. This attribute can only be used inside
-    a `GeneratorType`. This attribute contains three fields: the depth of the
+    a `GeneratorType`. This attribute contains two fields: the depth of the
     referenced signature relative to the nearest signature (non-negative
-    integer), a flag indicating input or result parameter, and the index of the
-    parameter (non-negative integer).
+    integer), and the index of the parameter (non-negative integer).
 
     Example:
 
     ```mlir
     // Second input parameter of the nearest signature.
-    #kgen.param.index.ref<0, false, 1> : index
-    // First result parameter of next enclosing signature.
-    #kgen.param.index.ref<1, true, 0> : !lit.struct<@Int>
+    #kgen.param.index.ref<0, 1> : index
+    // First input parameter of next enclosing signature.
+    #kgen.param.index.ref<1, 0> : !lit.struct<@Int>
     ```
   }];
 
-  let parameters = (ins "size_t":$depth, "bool":$isResult, "size_t":$index,
+  let parameters = (ins "size_t":$depth,"size_t":$index,
                         AttributeSelfTypeParameter<"">:$type);
-  let assemblyFormat = "`<` $depth `,` $isResult `,` $index `>`";
+  let assemblyFormat = "`<` $depth `,` $index `>`";
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "size_t":$depth, "bool":$isResult,
-                                        "size_t":$index, "Type":$type), [{
-      return $_get(type.getContext(), depth, isResult, index, type);
+    AttrBuilderWithInferredContext<(ins "size_t":$depth, "size_t":$index,
+                                        "Type":$type), [{
+      return $_get(type.getContext(), depth, index, type);
     }]>,
     AttrBuilderWithInferredContext<(ins "size_t":$index, "Type":$type), [{
-      return $_get(type.getContext(), /*depth=*/0, /*isResult=*/false, index,
-                   type);
+      return $_get(type.getContext(), /*depth=*/0, index, type);
     }]>
   ];
 }

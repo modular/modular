@@ -600,8 +600,7 @@ ParameterInferenceState::inferSelfFromInitResult(Type returnedType) {
 
     // Otherwise, this is a more specialized parameter bound on Self for this
     // method.  Form the parameter that we need to infer.
-    auto toInfer = ParamIndexRefAttr::get(/*depth*/ 0, /*isResult*/ false, idx,
-                                          param.getType());
+    auto toInfer = ParamIndexRefAttr::get(/*depth*/ 0, idx, param.getType());
     // Try to infer this parameter from the expected (declared) type.
     if (failed(matchParams(param, toInfer)))
       return failure();

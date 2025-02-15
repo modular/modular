@@ -488,8 +488,7 @@ OptionalParseResult OriginType::parseValue(AsmParser &p,
       if (p.parseInteger(depth) || p.parseComma() || p.parseInteger(index) ||
           p.parseRParen())
         return failure();
-      bool isResult = succeeded(p.parseOptionalStar());
-      result = ParamIndexRefAttr::get(depth, isResult, index, *this);
+      result = ParamIndexRefAttr::get(depth, index, *this);
       return processPostFix();
     }
 
@@ -546,8 +545,7 @@ OptionalParseResult OriginType::parseValue(AsmParser &p,
       if (p.parseInteger(depth) || p.parseComma() || p.parseInteger(index) ||
           p.parseRParen())
         return failure();
-      bool isResult = succeeded(p.parseOptionalStar());
-      result = ParamIndexRefAttr::get(depth, isResult, index, *this);
+      result = ParamIndexRefAttr::get(depth, index, *this);
     } else {
       std::string name;
       if (failed(p.parseString(&name)))
@@ -1367,8 +1365,7 @@ FnTypeGeneratorType
 FnTypeGeneratorType::prependParams(FnTypeGeneratorType sigGen,
                                    ArrayRef<ParamDeclAttr> parentParams,
                                    ArrayRef<bool> parentVariadicMask) {
-  IndexRefRemapper remapper(parentParams, /*resultParams=*/{},
-                            parentParams.size());
+  IndexRefRemapper remapper(parentParams, parentParams.size());
   SmallVector<Type> inputParamTypes;
   for (ParamDeclAttr param : parentParams)
     inputParamTypes.push_back(remapper.replace(param.getType()));

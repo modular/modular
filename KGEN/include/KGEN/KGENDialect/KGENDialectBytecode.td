@@ -143,7 +143,6 @@ def ParamDeclRefAttr : DialectAttribute<(attr
 
 def ParamIndexRefAttr : DialectAttribute<(attr
   VarInt:$depth,
-  Bool:$isResult,
   VarInt:$index,
   Type:$type
 )>;

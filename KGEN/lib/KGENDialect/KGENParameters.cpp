@@ -31,38 +31,27 @@ using namespace M::KGEN;
 
 Attribute IndexRefRemapper::tryReplace(Attribute attr, size_t depth) {
   if (auto ref = dyn_cast<ParamDeclRefAttr>(attr)) {
-    if (auto it = mapping.find(ref.getName()); it != mapping.end()) {
-      auto [idx, isResult] = it->second;
-      return ParamIndexRefAttr::get(depth, isResult, idx,
+    if (auto it = mapping.find(ref.getName()); it != mapping.end())
+      return ParamIndexRefAttr::get(depth, it->second,
                                     replaceImpl(ref.getType(), depth));
-    }
   }
   if (offset != 0) {
     if (auto ref = dyn_cast<ParamIndexRefAttr>(attr)) {
-      if (ref.getDepth() == depth) {
-        return ParamIndexRefAttr::get(depth, ref.getIsResult(),
-                                      ref.getIndex() + offset,
+      if (ref.getDepth() == depth)
+        return ParamIndexRefAttr::get(depth, ref.getIndex() + offset,
                                       replaceImpl(ref.getType(), depth));
-      }
     }
   }
   return nullptr;
 }
 
-void IndexRefRemapper::populate(ArrayRef<ParamDeclAttr> params, bool isResult,
-                                bool addOffset) {
-  if (addOffset)
-    offset += params.size();
-  for (auto [idx, param] : llvm::enumerate(params))
-    mapping.try_emplace(param.getName(), std::make_pair(idx, isResult));
-}
-
 IndexRefRemapper::IndexRefRemapper(ArrayRef<ParamDeclAttr> inputParams,
-                                   ArrayRef<ParamDeclAttr> resultParams,
                                    size_t offset)
     : offset(offset) {
-  populate(inputParams, /*isResult=*/false);
-  populate(resultParams, /*isResult=*/true);
+
+  /// Populate the remapper with the given named input parameters.
+  for (auto [idx, param] : llvm::enumerate(inputParams))
+    mapping.try_emplace(param.getName(), idx);
 }
 
 //===----------------------------------------------------------------------===//
@@ -73,8 +62,7 @@ Attribute IndexDepthAdjuster::tryReplace(Attribute attr, size_t depth) {
   if (auto ref = dyn_cast<ParamIndexRefAttr>(attr)) {
     if (ref.getDepth() < depth)
       return ref;
-    return ParamIndexRefAttr::get(ref.getDepth() + adjustDepth,
-                                  ref.getIsResult(), ref.getIndex(),
+    return ParamIndexRefAttr::get(ref.getDepth() + adjustDepth, ref.getIndex(),
                                   replaceImpl(ref.getType(), depth));
   }
   if (auto itf = dyn_cast<IndexRefAttrInterface>(attr)) {
@@ -132,15 +120,12 @@ void ParameterCollector::collectUsesFromAttr(
           }
           ParameterScopeTypeInterface sig =
               signatures[signatures.size() - 1 - indexRef.getDepth()];
-          ArrayRef<Type> types = indexRef.getIsResult()
-                                     ? sig.getResultParamTypes()
-                                     : sig.getInputParamTypes();
+          ArrayRef<Type> types = sig.getInputParamTypes();
           if (indexRef.getIndex() >= types.size()) {
-            return emitError() << "index reference " << indexRef.getIndex()
-                               << " is out of bounds: referenced signature "
-                               << sig << " has " << types.size() << ' '
-                               << (indexRef.getIsResult() ? "result" : "input")
-                               << " parameters";
+            return emitError()
+                   << "index reference " << indexRef.getIndex()
+                   << " is out of bounds: referenced signature " << sig
+                   << " has " << types.size() << ' ' << "input parameters";
           }
           // The index parameter reference can exist in a different scope than
           // the one in which the referenced parameter was declared. This means
