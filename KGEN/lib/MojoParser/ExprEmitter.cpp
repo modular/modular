@@ -746,14 +746,6 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
       attr = BindParamsAttr::get(attr, bindingAttr);
     }
 
-    // Reject unbound result parameters.
-    if (!signature.getResultParamTypes().empty()) {
-      emitError(expr->getLoc(),
-                "cannot use parameterized function with result parameters ")
-          << ASTType(attr.getType()) << expr->getRange();
-      return {};
-    }
-
     // Materialize signatures as closures.
     if (signature.isCapturing()) {
       emitError(

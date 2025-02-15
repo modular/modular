@@ -50,8 +50,7 @@ prependParams(FuncTypeGeneratorType sigGen,
               ArrayRef<ParamDeclAttr> parentParams) {
   assert(!sigGen.getMetadata() && "unlowered lit signature");
 
-  IndexRefRemapper remapper(parentParams, /*resultParams=*/{},
-                            parentParams.size());
+  IndexRefRemapper remapper(parentParams, parentParams.size());
   SmallVector<Type> inputParamTypes;
   for (ParamDeclAttr param : parentParams)
     inputParamTypes.push_back(remapper.replace(param.getType()));

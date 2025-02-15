@@ -400,8 +400,7 @@ struct Test::TestDiscovery {
     auto fnSignature = fn.getFuncTypeGenerator();
 
     // Validate that the test has the expected signature.
-    if (!fnSignature.getInputParamTypes().empty() ||
-        !fnSignature.getResultParamTypes().empty())
+    if (!fnSignature.getInputParamTypes().empty())
       return false;
     ASTType resultType(fn.getUserResultType());
     ArrayRef<Type> argTypes = fnSignature.getArguments();

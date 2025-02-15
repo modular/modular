@@ -365,8 +365,7 @@ GeneratorType GeneratorType::getSpecializedGenerator(
       // correctly when referenced.
       auto adjustedParamType = minusOneAdjuster.replace(remappedDeclType);
       auto value = ParamIndexRefAttr::get(
-          /*depth=*/-1, /*isResult=*/false, unboundParamTypes.size(),
-          adjustedParamType);
+          /*depth=*/-1, unboundParamTypes.size(), adjustedParamType);
       unboundParamTypes.push_back(remappedDeclType);
       evaluator.addInputValue(value);
     } else {

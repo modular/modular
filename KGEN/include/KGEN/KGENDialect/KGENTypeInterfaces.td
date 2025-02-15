@@ -66,9 +66,6 @@ def ParameterScopeTypeInterface : TypeInterface<"ParameterScopeTypeInterface"> {
     InterfaceMethod<[{
       Return the types of the nested input parameter declarations.
     }], "ArrayRef<Type>", "getInputParamTypes">,
-    InterfaceMethod<[{
-      Return the types of the nested result parameter declarations.
-    }], "ArrayRef<Type>", "getResultParamTypes">
   ];
 }
 

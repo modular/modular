@@ -668,7 +668,7 @@ struct TraitSelfBinder : public IndexParameterReplacer<TraitSelfBinder> {
   Attribute tryReplace(Attribute attr, size_t depth) {
     // Replace a reference to $(0,0) with the new selfValue.
     auto paramRef = dyn_cast<ParamIndexRefAttr>(attr);
-    if (!paramRef || paramRef.getIsResult() || paramRef.getIndex() != 0 ||
+    if (!paramRef || paramRef.getIndex() != 0 ||
         paramRef.getDepth() + 1 != depth)
       return {};
     return selfValue;

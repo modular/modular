@@ -16,8 +16,8 @@ kgen.generator @return_one() -> index {
   b = #kgen.type<array<apply(:() -> index @return_one), i1>> : !kgen.type
 } : () -> ()
 
-// CHECK: #kgen.param.index.ref<0, false, 0> : index
-"some.op"() {ref = #kgen.param.index.ref<0, false, 0> : index} : () -> ()
+// CHECK: #kgen.param.index.ref<0, 0> : index
+"some.op"() {ref = #kgen.param.index.ref<0, 0> : index} : () -> ()
 
 // CHECK: #kgen.int_literal<5> : !kgen.int_literal
 "some.op"() {data = #kgen.int_literal<5> : !kgen.int_literal} : () -> ()

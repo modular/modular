@@ -30,14 +30,7 @@ namespace M::KGEN {
 class IndexRefRemapper : public IndexParameterReplacer<IndexRefRemapper> {
 public:
   /// Populate the remapper with named input and result parameters.
-  IndexRefRemapper(ArrayRef<ParamDeclAttr> inputParams,
-                   ArrayRef<ParamDeclAttr> resultParams, size_t offset = 0);
-
-  /// Populate the remapper with the given named input parameters. If
-  /// 'addOffset' is true, the underlying offset of references to root
-  /// parameters will be incremented by the size of 'params'
-  void populate(ArrayRef<ParamDeclAttr> params, bool isResult,
-                bool addOffset = false);
+  IndexRefRemapper(ArrayRef<ParamDeclAttr> inputParams, size_t offset = 0);
 
 private:
   // CRTP methods.
@@ -45,8 +38,8 @@ private:
   Type tryReplace(Type, size_t) { return {}; }
   friend class IndexParameterReplacer<IndexRefRemapper>;
 
-  /// Mapping from parameter reference to an index and `isResult` flag.
-  DenseMap<StringAttr, std::pair<size_t, bool>> mapping;
+  /// Mapping from parameter reference to an index.
+  DenseMap<StringAttr, size_t> mapping;
   /// The index offset of references to root input parameters.
   size_t offset;
 };

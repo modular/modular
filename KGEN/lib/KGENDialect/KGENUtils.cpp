@@ -1039,8 +1039,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
       if (p.parseInteger(depth) || p.parseComma() || p.parseInteger(index) ||
           p.parseRParen())
         return failure();
-      bool isResult = succeeded(p.parseOptionalStar());
-      value = ParamIndexRefAttr::get(depth, isResult, index, type);
+      value = ParamIndexRefAttr::get(depth, index, type);
       return success();
     }
 
@@ -1398,8 +1397,6 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type,
   }
   if (auto indexRef = dyn_cast<ParamIndexRefAttr>(value)) {
     p << "*(" << indexRef.getDepth() << ',' << indexRef.getIndex() << ")";
-    if (indexRef.getIsResult())
-      p << '*';
     return;
   }
 

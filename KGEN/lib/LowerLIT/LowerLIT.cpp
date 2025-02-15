@@ -594,8 +594,8 @@ removeSingletonParams(SingletonTypeHelper &singletonTypeHelper,
       // Any uses of this parameter in later replaced lifetimes needs to refer
       // to the appropriate index of the resultant parameter number, e.g. the
       // bool in a origin may shift to a new index.
-      auto idxValue = ParamIndexRefAttr::get(/*depth*/ -1, /*isResult*/ false,
-                                             idx - numRemoved, adjParamType);
+      auto idxValue =
+          ParamIndexRefAttr::get(/*depth*/ -1, idx - numRemoved, adjParamType);
       evaluator.addInputValue(idxValue);
 
       // We tell getSpecializedSignature not to touch this though.

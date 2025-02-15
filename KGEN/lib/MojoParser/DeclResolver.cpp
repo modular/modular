@@ -734,8 +734,7 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   MainKind mainKind = kNonRaisingNoneMain;
 
   // Validate that main has the expected signature.
-  if (!userMainSignature.getInputParamTypes().empty() ||
-      !userMainSignature.getResultParamTypes().empty()) {
+  if (!userMainSignature.getInputParamTypes().empty()) {
     shared.emitError(loc, "expected 'main' function to have no parameters");
     return;
   }
