@@ -307,7 +307,7 @@ public:
   /// or do other non-trivial conversions.
   ///
   /// This produces an error and returns null on an invalid conversion.
-  AnyValue rebindValue(ASTExprAnd<CValue> value, Type destType);
+  CValue rebindValue(ASTExprAnd<CValue> value, Type destType);
 
   /// Returns true if a value of the specified type can be coerced to the other
   /// type with a zero-cost conversion like a rebind.  This means that values of

@@ -643,10 +643,7 @@ CValue ExprEmitter::emitZeroCostConvert(ASTExprAnd<CValue> value,
     toType = value.ir.getMValueType().getWithElement(toType);
 
   // Rebind the value if we can.
-  auto result = rebindValue(value, toType);
-  assert((!result || result.getIfCValue()) &&
-         "rebindValue doesn't change types");
-  return result.getIfCValue();
+  return rebindValue(value, toType);
 }
 
 //===----------------------------------------------------------------------===//

@@ -932,7 +932,7 @@ Value ExprEmitter::emitRefValue(ASTExprAnd<AnyValue> value,
 /// or do other non-trivial conversions.
 ///
 /// This produces an error and returns null on an invalid conversion.
-AnyValue ExprEmitter::rebindValue(ASTExprAnd<CValue> value, Type destType) {
+CValue ExprEmitter::rebindValue(ASTExprAnd<CValue> value, Type destType) {
   // Materialize a parameter rebind.
   if (auto pvalue = value.ir.getIfPValue())
     return ParamOperatorAttr::get(POC::Rebind, pvalue.get(), destType);
@@ -979,25 +979,6 @@ AnyValue ExprEmitter::rebindValue(ASTExprAnd<CValue> value, Type destType) {
   return SRValue(rebind(srValue));
 }
 
-/// When emitting a result value, attempt to "refine" the value type by
-/// evaluating 'apply' expressions in its type. Rebind the value if the type can
-/// be further specialized.
-static AnyValue refineResultValue(AnyValue value, const ExprNode *expr,
-                                  ExprEmitter &emitter) {
-  // Only CValues can be specialized. OverloadSetUValues don't have a type.
-  auto cValue = value.getIfCValue();
-  if (!cValue)
-    return value;
-
-  ParserParamEvaluator evaluator(emitter.getDeclResolver());
-  Type valueType = cValue.getType();
-  Type refinedType = evaluator.refine(valueType);
-  if (refinedType == valueType)
-    return value;
-
-  return emitter.rebindValue({cValue, expr}, refinedType);
-}
-
 /// Emit the specified value into the current destination if present.  This
 /// accepts (and silently propagates) null values.
 ///
@@ -1011,9 +992,6 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
     return {};
   }
   ExprContext context = dest.getContext();
-
-  // Attempt to further specialize the result value.
-  value = refineResultValue(value, expr, *this);
 
   // If no destination is specified or it is just a contextual type hint, then
   // we can propagate the value directly.
