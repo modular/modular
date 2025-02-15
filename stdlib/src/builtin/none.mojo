@@ -32,12 +32,12 @@ struct NoneType(
 
     var _value: Self._mlir_type
 
-    @always_inline
+    @always_inline("builtin")
     fn __init__(out self):
         """Construct an instance of the `None` type."""
         self._value = None
 
-    @always_inline
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: Self._mlir_type):
         """Construct an instance of the `None` type.

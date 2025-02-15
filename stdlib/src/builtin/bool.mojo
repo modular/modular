@@ -116,7 +116,7 @@ struct Bool(
     var value: __mlir_type.i1
     """The underlying storage of the boolean value."""
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __init__(out self):
         """Construct a default, `False` Bool."""
         self = False
@@ -131,7 +131,7 @@ struct Bool(
         return self
 
     @doc_private
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: __mlir_type.i1):
         """Construct a Bool value given a __mlir_type.i1 value.
