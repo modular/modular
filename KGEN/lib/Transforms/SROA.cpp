@@ -237,7 +237,7 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
       SmallVector<Value> loadedVals(newAllocas.size());
 
       // Get the load for the given index in the aggregate or create a load to
-      // the equivelent scalar.
+      // the equivalent scalar.
       auto getOrCreateLoad = [&](uint64_t index) {
         Value newVal = loadedVals[index];
         if (!newVal) {
@@ -395,7 +395,7 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
       SmallVector<Value> loadedVals(newAllocas.size());
 
       // Get the load for the given index in the aggregate or create a load to
-      // the equivelent scalar.
+      // the equivalent scalar.
       auto getOrCreateLoad = [&](uint64_t index) {
         Value newVal = loadedVals[index];
         if (!newVal) {
