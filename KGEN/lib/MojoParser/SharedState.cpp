@@ -2191,6 +2191,8 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
           return {};
       }
       result = LITStructAttr::get(create.getContext(), elts, create.getType());
+    } else if (auto paramCst = dyn_cast<ParamConstantOp>(op)) {
+      result = paramCst.getValue();
     } else if (auto cst = dyn_cast<mlir::index::ConstantOp>(op)) {
       result = cst.getValueAttr();
     } else if (auto add = dyn_cast<mlir::index::AddOp>(op)) {
@@ -2199,8 +2201,6 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
       if (!lhs || !rhs)
         return {};
       result = ParamOperatorAttr::get(POC::Add, lhs, rhs);
-    } else if (auto paramCst = dyn_cast<ParamConstantOp>(op)) {
-      result = paramCst.getValue();
     } else if (auto add = dyn_cast<mlir::index::MulOp>(op)) {
       auto lhs = findValue(add.getOperand(0));
       auto rhs = findValue(add.getOperand(1));
@@ -2213,6 +2213,36 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
       if (!lhs || !rhs)
         return {};
       result = ParamOperatorAttr::getSub(lhs, rhs);
+    } else if (auto cmp = dyn_cast<mlir::index::CmpOp>(op)) {
+      auto lhs = findValue(cmp.getOperand(0));
+      auto rhs = findValue(cmp.getOperand(1));
+      if (!lhs || !rhs)
+        return {};
+      switch (cmp.getPred()) {
+      default:
+        // TODO: we don't handle unsigned comparisons in ParamOperatorAttr yet,
+        // it can do it, but we don't have a way to pass the unsigned flag
+        // through easily.
+        break;
+      case mlir::index::IndexCmpPredicate::EQ:
+        result = ParamOperatorAttr::get(POC::EQ, lhs, rhs);
+        break;
+      case mlir::index::IndexCmpPredicate::NE:
+        result = ParamOperatorAttr::getNE(lhs, rhs);
+        break;
+      case mlir::index::IndexCmpPredicate::SLT:
+        result = ParamOperatorAttr::get(POC::LT, lhs, rhs);
+        break;
+      case mlir::index::IndexCmpPredicate::SLE:
+        result = ParamOperatorAttr::get(POC::LE, lhs, rhs);
+        break;
+      case mlir::index::IndexCmpPredicate::SGT:
+        result = ParamOperatorAttr::get(POC::LT, rhs, lhs);
+        break;
+      case mlir::index::IndexCmpPredicate::SGE:
+        result = ParamOperatorAttr::get(POC::LE, rhs, lhs);
+        break;
+      }
     } else if (auto call = dyn_cast<LIT::CallOp>(op)) {
       SmallVector<TypedAttr> calleeOperands;
       calleeOperands.push_back(call.getCallee());
@@ -2253,7 +2283,12 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
     } else if (auto store = dyn_cast<RefStoreOp>(op)) {
       TypedAttr value = findValue(store.getValue());
       auto ger = store.getDest().getDefiningOp<RefStructGEROp>();
-      if (value && ger && varDeclSoFar[ger.getContainer()]) {
+      if (value && varDeclSoFar[store.getDest()]) {
+        // Store of the whole value.
+        varDeclSoFar[store.getDest()] = value;
+        continue;
+      } else if (value && ger && varDeclSoFar[ger.getContainer()]) {
+        // Store to a subfield.
         auto gerBase = ger.getContainer();
         auto structType =
             cast<LIT::StructType>(gerBase.getType().getElementType());
@@ -2261,11 +2296,15 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
             LITStructAttr::get({{ger.getFieldAttr(), value}}, structType);
         continue;
       }
+    } else if (auto variant = dyn_cast<VariantCreateOp>(op)) {
+      if (TypedAttr value = findValue(variant.getOperand()))
+        result = VariantAttr::get(value, variant.getIndex(), variant.getType());
     }
 
     // If we found something, remember it and move on to the next op.
     if (result) {
       assert(op.getNumResults() == 1 && "expected a single result");
+      assert(op.getResult(0).getType() == result.getType() && "incorrect fold");
       boundValues[op.getResult(0)] = result;
       continue;
     }
@@ -2274,6 +2313,8 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
       if (ret.getNumOperands() == 1)
         return findValue(ret.getOperand(0));
     }
+
+    fnOp.dump();
 
     // Otherwise we don't know what this is, bail out.
     emitError(op.getLoc()) << "does not support MLIR operation "

@@ -116,7 +116,7 @@ fn param_if[a: __mlir_type.i1, b: Bool]():
         # CHECK: lit.var.decl "inside_1" var
         var inside_1: Int
     # CHECK: } else {
-    # CHECK:     kgen.param.if <apply{{.*}}{{.*}}Bool::@"__mlir_i1__{{.*}}b)> {
+    # CHECK:     kgen.param.if <#lit.struct.extract<:!Bool b, "value">> {
     elif b:
         # CHECK:     lit.var.decl "inside_2" var
         var inside_2: Int
@@ -143,9 +143,7 @@ fn param_if_andor_i1[a: __mlir_type.i1, b: __mlir_type.i1]():
 
 # CHECK-LABEL: lit.fn @"param_if_and{{.*}}"<a: !Bool, b: !Bool>()
 fn param_if_and[a: Bool, b: Bool]():
-    # CHECK: kgen.param.if <apply(
-    # CHECK-SAME: !lit.generator<("self": !Bool) -> i1> {{.*}}@Bool::@"__mlir_i1__({{.*}}Bool)", cond(
-    # CHECK-SAME: apply({{.*}}@Bool::@"__mlir_i1__({{.*}}Bool)", a), b, a))> {
+    # CHECK: kgen.param.if <#lit.struct.extract<:!Bool cond(#lit.struct.extract<:!Bool a, "value">, b, a), "value">>
     @parameter
     if a and b:
         # CHECK:   lit.var.decl "v" var
