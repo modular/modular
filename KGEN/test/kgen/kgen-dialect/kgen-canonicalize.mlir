@@ -523,6 +523,30 @@ kgen.generator @param_if_break(%arg0: !kgen.pointer<index>, %arg1: index) {
   kgen.return
 }
 
+// CHECK-LABEL: @param_if_break2
+kgen.generator @param_if_break2(%arg0: !kgen.pointer<index>, %arg1: index) -> index {
+  // CHECK-NEXT: kgen.param.constant = <0>
+  // CHECK-NEXT: hlcf.loop
+  // CHECK-NEXT: pop.store
+  // CHECK-NEXT: hlcf.break
+  hlcf.loop {
+    pop.store %arg1, %arg0 : !kgen.pointer<index>
+    kgen.param.if <0> {
+      kgen.param.yield
+    } else {
+      hlcf.break
+    }
+
+    // These operations get killed, but need to be removed bottom-up.
+    %tmp = kgen.param.constant: index = <4>
+    %abc = index.add %tmp, %arg1 
+    kgen.return %abc : index
+  }
+
+  %tmp2 = kgen.param.constant: index = <0>
+  kgen.return %tmp2 : index
+}
+
 // CHECK-LABEL: @param_if_unreachable
 kgen.generator @param_if_unreachable(%arg0: !kgen.pointer<index>, %arg1: index) {
   // CHECK-NEXT: unreachable
