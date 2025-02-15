@@ -595,13 +595,18 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
 
       return printOperands(operandsToPrint);
     }
-    case POC::Cond:
+    case POC::Cond: {
       printDemangledParam(os, operands[1], diagShared);
       os << " if ";
-      printDemangledParam(os, operands[0], diagShared);
+      auto cond = operands[0];
+      // Don't print extracts of Bool.value.
+      if (auto extract = dyn_cast<LIT::StructExtractAttr>(cond))
+        cond = extract.getStructValue();
+      printDemangledParam(os, cond, diagShared);
       os << " else ";
       printDemangledParam(os, operands[2], diagShared);
       return;
+    }
     case POC::Rebind:
       // Just omit the types.
       printDemangledParam(os, operands.front(), diagShared);
