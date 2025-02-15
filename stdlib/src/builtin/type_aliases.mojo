@@ -96,7 +96,7 @@ struct Origin[is_mutable: Bool]:
     #   `__origin_of(..)` can implicilty convert to `Origin` in use cases like:
     #       Span[Byte, __origin_of(self)]
     @implicit
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __init__(out self, mlir_origin: Self._mlir_type):
         """Initialize an Origin from a raw MLIR `!lit.origin` value.
 

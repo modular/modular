@@ -455,10 +455,12 @@ struct OptionalReg[T: AnyTrivialRegType](Boolable):
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
+    @always_inline("builtin")
     fn __init__(out self):
         """Create an optional with a value of None."""
         self = Self(None)
 
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: T):
         """Create an optional with a value.
@@ -474,6 +476,7 @@ struct OptionalReg[T: AnyTrivialRegType](Boolable):
     #   This initializer should not be necessary, we should need
     #   only the initilaizer from a `NoneType`.
     @doc_private
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: NoneType._mlir_type):
         """Construct an empty Optional.
@@ -483,6 +486,7 @@ struct OptionalReg[T: AnyTrivialRegType](Boolable):
         """
         self = Self(value=NoneType(value))
 
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: NoneType):
         """Create an optional without a value from a None literal.
