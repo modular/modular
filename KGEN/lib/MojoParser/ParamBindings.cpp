@@ -369,8 +369,8 @@ ParamBindings::verifyBindingsImpl(
 
     size_t defaultStartIdx = numCtadParams - defaults.size();
     if (normalizedIdx < numCtadParams && normalizedIdx >= defaultStartIdx) {
-      return cast<TypedAttr>(evaluator.getReboundAttribute(
-          defaults[normalizedIdx - defaultStartIdx]));
+      return evaluator.getReboundAttribute(
+          defaults[normalizedIdx - defaultStartIdx]);
     }
 
     return {};

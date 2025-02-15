@@ -2140,6 +2140,16 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
     return {}; // Error already diagnosed.
   }
 
+  // The function being called may be a generic function - if so, we need to
+  // remap any values and types in the body with parameter values substituted.
+  ParameterEvaluator evaluator;
+
+  // Fill evaluator with parameter bindings from the symbol constant
+  for (auto [decl, value] :
+       llvm::zip(fnOp.collectAllParams(/*implOrigins*/ false),
+                 symCst.getParamValues()))
+    evaluator.setParameterValue(decl, value);
+
   // Keep track of the parameter values for each of the live SSA values in the
   // body, and start by binding the argument values.
   DenseMap<Value, TypedAttr> boundValues;
@@ -2150,7 +2160,7 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
       emitError(arg.getLoc()) << "does not support this argument convention";
       return {};
     }
-    if (arg.getType() != argValue.getType()) {
+    if (evaluator.getReboundType(arg.getType()) != argValue.getType()) {
       emitError(arg.getLoc()) << "argument type mismatch";
       return {};
     }
@@ -2180,8 +2190,9 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
       auto base = findValue(extract.getOperand());
       if (!base)
         return {};
-      result = LIT::StructExtractAttr::get(base, extract.getFieldAttr(),
-                                           extract.getType());
+      result = LIT::StructExtractAttr::get(
+          base, extract.getFieldAttr(),
+          evaluator.getReboundType(extract.getType()));
     } else if (auto create = dyn_cast<LIT::StructCreateOp>(op)) {
       SmallVector<std::tuple<StringAttr, TypedAttr>> elts;
       for (auto [fieldName, arg] :
@@ -2190,9 +2201,11 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
         if (!std::get<1>(elts.back()))
           return {};
       }
-      result = LITStructAttr::get(create.getContext(), elts, create.getType());
+      result = LITStructAttr::get(
+          create.getContext(), elts,
+          cast<LIT::StructType>(evaluator.getReboundType(create.getType())));
     } else if (auto paramCst = dyn_cast<ParamConstantOp>(op)) {
-      result = paramCst.getValue();
+      result = evaluator.getReboundAttribute(paramCst.getValue());
     } else if (auto cst = dyn_cast<mlir::index::ConstantOp>(op)) {
       result = cst.getValueAttr();
     } else if (auto add = dyn_cast<mlir::index::AddOp>(op)) {
@@ -2245,7 +2258,7 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
       }
     } else if (auto call = dyn_cast<LIT::CallOp>(op)) {
       SmallVector<TypedAttr> calleeOperands;
-      calleeOperands.push_back(call.getCallee());
+      calleeOperands.push_back(evaluator.getReboundAttribute(call.getCallee()));
       for (auto operandVal : call.getOperands()) {
         calleeOperands.push_back(findValue(operandVal));
         if (!calleeOperands.back())
@@ -2267,7 +2280,8 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
       //   lit.load.consume %tmp
       // Which happens in ctors for builtin operations.  Ignore anything more
       // complex.
-      auto eltType = varDecl.getType().getElementType();
+      auto eltType =
+          evaluator.getReboundType(varDecl.getType().getElementType());
       ASTDecl *decl = ASTType(eltType).getDecl(*this);
       StructDeclOp structOp;
       if (decl && (structOp = dyn_cast<StructDeclOp>(*decl)) &&
@@ -2290,31 +2304,35 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
       } else if (value && ger && varDeclSoFar[ger.getContainer()]) {
         // Store to a subfield.
         auto gerBase = ger.getContainer();
-        auto structType =
-            cast<LIT::StructType>(gerBase.getType().getElementType());
+        auto structType = cast<LIT::StructType>(
+            evaluator.getReboundType(gerBase.getType().getElementType()));
         varDeclSoFar[gerBase] =
             LITStructAttr::get({{ger.getFieldAttr(), value}}, structType);
         continue;
       }
     } else if (auto variant = dyn_cast<VariantCreateOp>(op)) {
-      if (TypedAttr value = findValue(variant.getOperand()))
-        result = VariantAttr::get(value, variant.getIndex(), variant.getType());
+      if (TypedAttr value = findValue(variant.getOperand())) {
+        auto resType =
+            cast<VariantType>(evaluator.getReboundType(variant.getType()));
+        result = VariantAttr::get(value, variant.getIndex(), resType);
+      }
     }
 
     // If we found something, remember it and move on to the next op.
     if (result) {
       assert(op.getNumResults() == 1 && "expected a single result");
-      assert(op.getResult(0).getType() == result.getType() && "incorrect fold");
+      assert(evaluator.getReboundType(op.getResult(0).getType()) ==
+                 result.getType() &&
+             "incorrect fold");
       boundValues[op.getResult(0)] = result;
       continue;
     }
 
+    // Handle the final return.
     if (auto ret = dyn_cast<LIT::ReturnOp>(op)) {
       if (ret.getNumOperands() == 1)
         return findValue(ret.getOperand(0));
     }
-
-    fnOp.dump();
 
     // Otherwise we don't know what this is, bail out.
     emitError(op.getLoc()) << "does not support MLIR operation "

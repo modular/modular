@@ -20,6 +20,7 @@
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MOGGPreElab/MOGGDecorators.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -422,16 +423,29 @@ private:
 
 /// This function verifies @always_inline("builtin") functions after the body of
 /// the function has been parsed.
-LogicalResult FnSigDecorators::checkAlwaysInlineBuiltin(FnOp funcOp,
+LogicalResult FnSigDecorators::checkAlwaysInlineBuiltin(FnOp fnOp,
                                                         SharedState &shared) {
   // To see if this is foldable, synthesize a bunch of argument values that we
   // can cram into the function and see if it balks.
   SmallVector<TypedAttr> operands;
-  operands.push_back(funcOp.getBoundReference()); // callee.
-  for (auto arg : funcOp.getBody()->getArguments())
-    operands.push_back(UnknownAttr::get(arg.getType()));
 
-  if (shared.foldInlineBuiltinFunction(operands, funcOp.getLoc(), true))
+  // Figure out the callee.  We synthesize a bound reference to the callee
+  // making up nonsense parameter bindings.
+  ParameterEvaluator evaluator;
+  SmallVector<TypedAttr> params;
+  for (auto paramDecl : fnOp.collectAllParams(/*implOrigins*/ false)) {
+    params.push_back(
+        UnknownAttr::get(evaluator.getReboundType(paramDecl.getType())));
+    evaluator.setParameterValue(paramDecl, params.back());
+  }
+  auto paramValueArray = ParameterExprArrayAttr::get(fnOp.getContext(), params);
+  operands.push_back(fnOp.getBoundReference(paramValueArray));
+
+  for (auto arg : fnOp.getBody()->getArguments())
+    operands.push_back(
+        UnknownAttr::get(evaluator.getReboundType(arg.getType())));
+
+  if (shared.foldInlineBuiltinFunction(operands, fnOp.getLoc(), true))
     return success();
   return failure();
 }

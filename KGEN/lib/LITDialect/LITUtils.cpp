@@ -367,8 +367,7 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
 
     if (TypedAttr defaultOr = defaultHandler.getDefault(idx)) {
       p << " = ";
-      printParamValue(
-          p, cast<TypedAttr>(evaluator.getReboundAttribute(defaultOr)));
+      printParamValue(p, evaluator.getReboundAttribute(defaultOr));
     }
 
     // Check if we are at the end; if so, we might still have to print a '/'.

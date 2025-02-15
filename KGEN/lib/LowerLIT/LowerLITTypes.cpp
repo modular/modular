@@ -525,8 +525,8 @@ LITTypeLowerer::LITTypeLowerer(MLIRContext *ctx, StructDecls &structDecls)
              llvm::enumerate(llvm::make_second_range(decl.fields))) {
           if (auto ptrType = dyn_cast<PointerType>(type)) {
             fieldTypes.push_back(PointerType::get(
-                noneType, cast<TypedAttr>(evaluator.getReboundAttribute(
-                              ptrType.getAddressSpace()))));
+                noneType,
+                evaluator.getReboundAttribute(ptrType.getAddressSpace())));
           } else {
             fieldTypes.push_back(evaluator.getReboundType(type));
           }

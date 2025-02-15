@@ -90,6 +90,10 @@ public:
   /// rewritten.
   Attribute getReboundAttribute(Attribute attr) { return replace(attr); }
 
+  /// Get the specified attribute with any nested parameter expressions
+  /// rewritten.
+  TypedAttr getReboundAttribute(TypedAttr attr) { return replace(attr); }
+
   /// Evaluate a potentially symbolic expression. This hook should be overridden
   /// to process symbol expressions using some global state, including a symbol
   /// table.
