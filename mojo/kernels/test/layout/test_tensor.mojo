@@ -9,7 +9,7 @@ from math import ceildiv
 from sys import alignof
 
 from buffer import NDBuffer
-from buffer.dimlist import DimList
+from buffer.dimlist import DimList, Dim
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import product
 from layout.layout import Layout

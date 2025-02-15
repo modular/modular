@@ -10,6 +10,8 @@ from os import abort
 from builtin.range import _StridedRange
 from memory import UnsafePointer
 
+from buffer import DimList
+
 alias INT_TUPLE_VALIDATION = False
 
 
@@ -182,6 +184,24 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         for i in rng:
             storage = self.__insert(pos, storage, existing[i])
             pos += 1
+
+        @parameter
+        if INT_TUPLE_VALIDATION:
+            self.validate_structure()
+
+    @always_inline
+    fn __init__(out self, dimlist: DimList):
+        var size = len(dimlist) + 1
+        self._store = IntArray(size)
+        self._store[0] = len(dimlist)
+
+        var i = 0
+        for dim in dimlist.value:
+            var value = dim.get() if dim else UNKNOWN_VALUE
+            if value < Self.MinimumValue:
+                abort("Only integers greater than MinimumValue are supported")
+            self._store[i + 1] = value
+            i += 1
 
         @parameter
         if INT_TUPLE_VALIDATION:

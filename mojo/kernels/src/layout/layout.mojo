@@ -15,7 +15,9 @@ from utils import Writable, Writer
 
 from .int_tuple import (
     UNKNOWN_VALUE,
+    INT_TUPLE_VALIDATION,
     IntTuple,
+    IntArray,
     abs,
     crd2idx,
     flatten,
