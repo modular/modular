@@ -387,7 +387,7 @@ struct Int(
         """
         self = value.__int__()
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: UInt):
         """Construct Int from the given UInt value.
@@ -476,7 +476,7 @@ struct Int(
     # Operator dunders
     # ===------------------------------------------------------------------=== #
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __lt__(self, rhs: Int) -> Bool:
         """Compare this Int to the RHS using LT comparison.
 
@@ -490,7 +490,7 @@ struct Int(
             pred = __mlir_attr.`#index<cmp_predicate slt>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __le__(self, rhs: Int) -> Bool:
         """Compare this Int to the RHS using LE comparison.
 
@@ -505,7 +505,7 @@ struct Int(
             pred = __mlir_attr.`#index<cmp_predicate sle>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __eq__(self, rhs: Int) -> Bool:
         """Compare this Int to the RHS using EQ comparison.
 
@@ -519,7 +519,7 @@ struct Int(
             pred = __mlir_attr.`#index<cmp_predicate eq>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __ne__(self, rhs: Int) -> Bool:
         """Compare this Int to the RHS using NE comparison.
 
@@ -533,7 +533,7 @@ struct Int(
             pred = __mlir_attr.`#index<cmp_predicate ne>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __gt__(self, rhs: Int) -> Bool:
         """Compare this Int to the RHS using GT comparison.
 
@@ -547,7 +547,7 @@ struct Int(
             pred = __mlir_attr.`#index<cmp_predicate sgt>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __ge__(self, rhs: Int) -> Bool:
         """Compare this Int to the RHS using GE comparison.
 
@@ -571,7 +571,7 @@ struct Int(
         """
         return self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __neg__(self) -> Int:
         """Return -self.
 
