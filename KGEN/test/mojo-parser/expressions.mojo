@@ -517,14 +517,14 @@ fn paramAndOr[a: Boolish, b: Boolish]():
   # Short circuiting AND returns second operand when the first is false-y, first
   # otherwise.
 
-  # CHECK: lit.alias.decl *"c{{.*}}": !Boolish = <cond(apply({{.*}}@Bool::@"__mlir_i1__{{.*}}",
-  # CHECK-SAME: apply({{.*}}Boolish::@"__bool__{{.*}}"), store_to_mem(a))), b, a)>
+  # CHECK: lit.alias.decl *"c{{.*}}": !Boolish = <cond(
+  # CHECK-SAME: apply({{.*}}Boolish::@"__bool__{{.*}}"), store_to_mem(a)), "value">, b, a)>
   alias c = a and b
 
   # Short circuiting OR returns first operand when it is true-y, second
   # otherwise.
 
-  # CHECK: lit.alias.decl *"d{{.*}}": !Boolish = <cond(apply({{.*}}@Bool::@"__mlir_i1__{{.*}}", apply({{.*}}Boolish::@"__bool__{{.*}}"), store_to_mem(a))), a, b)>
+  # CHECK: lit.alias.decl *"d{{.*}}": !Boolish = <cond({{.*}}apply({{.*}}Boolish::@"__bool__{{.*}}"), store_to_mem(a)), "value">, a, b)> 
   alias d = a or b
 
 # CHECK-LABEL: lit.fn @"do_math
@@ -588,10 +588,10 @@ fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
 
 # CHECK-LABEL: lit.fn @"test_param_if_cond{{.*}}"<cond: !Bool>
 fn test_param_if_cond[cond: Bool]() -> Int:
-  # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !IntLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", cond), {:!kgen.int_literal 2}, {:!kgen.int_literal 3})>
+  # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !IntLiteral = <cond(#lit.struct.extract<:!Bool cond, "value">, {:!kgen.int_literal 2}, {:!kgen.int_literal 3})> 
   alias i = 2 if cond else 3
 
-  # CHECK-NEXT: lit.alias.decl *"j{{.*}}": !FloatLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", cond), {:!kgen.float_literal #kgen.float_literal<2|1>}, {:!kgen.float_literal #kgen.float_literal<3|1>})>
+  # CHECK-NEXT: lit.alias.decl *"j{{.*}}": !FloatLiteral = <cond(#lit.struct.extract<:!Bool cond, "value">, {:!kgen.float_literal #kgen.float_literal<2|1>}, {:!kgen.float_literal #kgen.float_literal<3|1>})> 
   alias j = 2.0 if cond else 3
 
   # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = {{.*}}IntLiteral
