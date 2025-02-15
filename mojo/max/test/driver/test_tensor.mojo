@@ -23,6 +23,14 @@ from max.tensor import Tensor as OldTensor
 from max.tensor import TensorShape, TensorSpec
 from testing import assert_equal, assert_raises, assert_true
 
+from buffer import Dim, NDBuffer
+from memory import stack_allocation
+
+from tensor_internal import IOUnknown
+from tensor_internal.managed_tensor_slice import StaticTensorSpec
+
+from layout.int_tuple import UNKNOWN_VALUE
+
 from utils import Index, IndexList
 
 
@@ -445,6 +453,101 @@ def test_copy_error():
 
     with assert_raises(contains="do not match"):
         src_dev_tensor.copy_into(dst_dev_tensor)
+
+
+fn test_construction_from_managed_tensor_slice() raises:
+    alias dtype = DType.float32
+    alias rank = 2
+    alias rows = 2
+    alias cols = 10
+    alias row_stride = 1
+    alias col_stride = 2
+
+    var static_buffer = NDBuffer[dtype, rank, (rows, cols)]().stack_allocation()
+    var static_tensor_slice = ManagedTensorSlice[
+        IOUnknown,
+        static_spec = StaticTensorSpec[dtype, rank]
+        .create_unknown()
+        .with_layout[rank]((rows, cols), (row_stride, col_stride)),
+    ](static_buffer)
+    var static_layout_tensor = static_tensor_slice.to_layout_tensor()
+
+    # Assert that the layout really is static
+    # RuntimeTuple stores the static value in the `S` parameter
+    assert_equal(static_layout_tensor.runtime_layout.shape[0].S.value(), rows)
+    assert_equal(static_layout_tensor.runtime_layout.shape[1].S.value(), cols)
+    assert_equal(
+        static_layout_tensor.runtime_layout.stride[0].S.value(), row_stride
+    )
+    assert_equal(
+        static_layout_tensor.runtime_layout.stride[1].S.value(), col_stride
+    )
+
+    var stack_ptr = stack_allocation[rows * cols, dtype]()
+    var dynamic_tensor_slice = ManagedTensorSlice[
+        IOUnknown,
+        static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
+    ](stack_ptr, (rows, cols), (row_stride, col_stride))
+    var dynamic_layout_tensor = dynamic_tensor_slice.to_layout_tensor()
+
+    # Assert that the static layout is unknown
+    assert_equal(
+        dynamic_layout_tensor.runtime_layout.shape[0].S.value(), UNKNOWN_VALUE
+    )
+    assert_equal(
+        dynamic_layout_tensor.runtime_layout.shape[1].S.value(), UNKNOWN_VALUE
+    )
+    assert_equal(
+        dynamic_layout_tensor.runtime_layout.stride[0].S.value(),
+        UNKNOWN_VALUE,
+    )
+    assert_equal(
+        dynamic_layout_tensor.runtime_layout.stride[1].S.value(),
+        UNKNOWN_VALUE,
+    )
+
+    # Assert that the dynamic layout is expected
+    assert_equal(dynamic_layout_tensor.runtime_layout.shape[0].get_int(), rows)
+    assert_equal(dynamic_layout_tensor.runtime_layout.shape[1].get_int(), cols)
+    assert_equal(
+        dynamic_layout_tensor.runtime_layout.stride[0].get_int(), row_stride
+    )
+    assert_equal(
+        dynamic_layout_tensor.runtime_layout.stride[1].get_int(), col_stride
+    )
+    var partially_dynamic_tensor_slice = ManagedTensorSlice[
+        IOUnknown,
+        static_spec = StaticTensorSpec[dtype, rank]
+        .create_unknown()
+        .with_layout[rank]((Dim(), cols), (Dim(), col_stride)),
+    ](stack_ptr, (rows, cols), (row_stride, col_stride))
+    var partially_dynamic_layout_tensor = partially_dynamic_tensor_slice.to_layout_tensor()
+
+    # cols are static, but rows are dynamic
+    assert_equal(
+        partially_dynamic_layout_tensor.runtime_layout.shape[0].S.value(),
+        UNKNOWN_VALUE,
+    )
+    assert_equal(
+        partially_dynamic_layout_tensor.runtime_layout.shape[1].S.value(),
+        cols,
+    )
+    assert_equal(
+        partially_dynamic_layout_tensor.runtime_layout.stride[0].S.value(),
+        UNKNOWN_VALUE,
+    )
+    assert_equal(
+        partially_dynamic_layout_tensor.runtime_layout.stride[1].S.value(),
+        col_stride,
+    )
+    # Test the dynamic parts
+    assert_equal(
+        partially_dynamic_layout_tensor.runtime_layout.shape[0].get_int(), rows
+    )
+    assert_equal(
+        partially_dynamic_layout_tensor.runtime_layout.stride[0].get_int(),
+        row_stride,
+    )
 
 
 def main():
