@@ -64,7 +64,7 @@ struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable):
         """
         self = Dim(index(value))
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: __mlir_type.index):
         """Creates a statically-known dimension.
@@ -74,7 +74,7 @@ struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable):
         """
         self._value_or_missing = Int(value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: Int):
         """Creates a statically-known dimension.
@@ -84,12 +84,12 @@ struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable):
         """
         self._value_or_missing = value
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __init__(out self):
         """Creates a dynamic dimension with no static value."""
         self._value_or_missing = Self._sentinel
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __bool__(self) -> Bool:
         """Returns True if the dimension has a static value.
 
@@ -98,7 +98,7 @@ struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable):
         """
         return self._value_or_missing != Self._sentinel
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __as_bool__(self) -> Bool:
         """Returns True if the dimension has a static value.
 
