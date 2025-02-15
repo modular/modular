@@ -692,8 +692,7 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
 
     if (TypedAttr defaultOr = defaultHandler.getDefault(i)) {
       p << " = ";
-      printParamValue(
-          p, cast<TypedAttr>(evaluator.getReboundAttribute(defaultOr)));
+      printParamValue(p, evaluator.getReboundAttribute(defaultOr));
     }
 
     // Check if we are at the end; if so, we might still have to print a '/'.

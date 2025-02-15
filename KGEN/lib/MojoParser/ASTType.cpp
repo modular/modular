@@ -843,7 +843,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
           // handle things like:
           //   struct UnsafePointer[type: AnyType,
           //                        align: Int = _default_alignment[type]()]:
-          def = cast<TypedAttr>(evaluator.getReboundAttribute(def));
+          def = evaluator.getReboundAttribute(def);
           if (paramValue == def && passingKind != PassingKind::PosOnly) {
             // If we skip a posOrKw then include keyword names for any other
             // posOrKw's that come after it.

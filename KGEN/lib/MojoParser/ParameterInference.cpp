@@ -1243,7 +1243,7 @@ LogicalResult ParameterInferenceState::infer(
     for (unsigned idx : selfResultParams) {
       if (idx < inferredParams.size()) {
         TypedAttr &param = inferredParams[idx];
-        param = cast<TypedAttr>(evaluator.getReboundAttribute(param));
+        param = evaluator.getReboundAttribute(param);
       }
     }
   }

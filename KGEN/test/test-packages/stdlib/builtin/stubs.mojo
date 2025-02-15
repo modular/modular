@@ -46,8 +46,8 @@ struct Origin[is_mutable: Bool]:
 
     alias cast_from = _lit_mut_cast[result_mutable=is_mutable]
 
+    @always_inline("builtin")
     @implicit
-    @always_inline("nodebug")
     fn __init__(out self, mlir_origin: Self._mlir_type):
         """Initialize an Origin from a raw MLIR `!lit.origin` value.
 
