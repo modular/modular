@@ -27,7 +27,7 @@ alias _USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM = env_get_bool[
 
 @always_inline("nodebug")
 fn barrier():
-    """Performs a synchronization barrier on block (equivelent to `__syncthreads`
+    """Performs a synchronization barrier on block (equivalent to `__syncthreads`
     in CUDA).
     """
 
