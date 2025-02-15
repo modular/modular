@@ -198,7 +198,7 @@ struct Bool(
         """
         self = value.__bool__()
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __bool__(self) -> Bool:
         """Convert to Bool.
 
@@ -207,7 +207,7 @@ struct Bool(
         """
         return self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __as_bool__(self) -> Bool:
         """Convert to Bool.
 
@@ -216,7 +216,7 @@ struct Bool(
         """
         return self.__bool__()
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __mlir_i1__(self) -> __mlir_type.i1:
         """Convert this Bool to __mlir_type.i1.
 
