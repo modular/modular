@@ -173,61 +173,52 @@ LogicalResult ParamIfOp::canonicalize(ParamIfOp op, PatternRewriter &b) {
   // We can't fold away the op entirely, because it defines a parameter scope
   // and this could create param decl conflicts. Instead, purge the dead region
   // and insert a `kgen.unreachable`.
-  Block &liveBlock = op->getRegion(!condAttr.getValue()).front();
   Block &deadBlock = op->getRegion(condAttr.getValue()).front();
 
   // Don't match again if the dead block is already purged.
   if (isa<UnreachableOp>(deadBlock.front()))
     return b.notifyMatchFailure(op.getLoc(), "dead block already purged");
 
-  // We can still hoist all the non parameter defining ops out of the live
-  // region.
-  for (Operation &subOp : llvm::make_early_inc_range(liveBlock)) {
+  // Hoist all the non parameter defining ops out of the live region.
+  Block &liveBlock = op->getRegion(!condAttr.getValue()).front();
+  while (!liveBlock.front().hasTrait<OpTrait::IsTerminator>()) {
     // Stop if we hit an operation defining a parameter. We don't hoist these as
     // the parameter regions could conflict.
-    if (auto paramOp = dyn_cast<ParamOpInterface>(subOp)) {
+    if (auto paramOp = dyn_cast<ParamOpInterface>(liveBlock.front())) {
       bool hasParam = false;
       paramOp.walkDeclarations([&](ParamDeclAttr attr) { hasParam = true; });
       if (hasParam)
         break;
     }
 
-    // If we reach the terminator we can kill the block.
-    if (liveBlock.getTerminator() == &subOp) {
-      // If the live block is now trivial, we can actually remove the whole
-      // operation. Replace the results with the operands to the yield.
-      if (auto yield = dyn_cast<ParamYieldOp>(subOp)) {
-        b.replaceOp(op, yield.getOperands());
-        return success();
-      }
-
-      // If we are ending control flow we can hoist it out but we have to delete
-      // all following ops to retain legality (In principle this should be a
-      // kgen.unreachable).
-      if (isa<KGEN::UnreachableOp, HLCF::BreakOp, HLCF::ContinueOp>(subOp)) {
-        mlir::Block *block = op->getBlock();
-
-        // Delete all trailing ops.
-        bool afterOp = false;
-        for (Operation &o : llvm::make_early_inc_range(*block)) {
-          if (afterOp)
-            b.eraseOp(&o);
-          else if (&o == op)
-            afterOp = true;
-        }
-        b.moveOpBefore(&subOp, op);
-        b.eraseOp(op);
-        return success();
-      }
-
-      // Otherwise we are an unknown form of control flow, just leave it in.
-      break;
-    }
-
-    // Otherwise just move as normal.
-    b.moveOpBefore(&subOp, op);
+    // Otherwise, hoist the operation above the 'if'.
+    b.moveOpBefore(&liveBlock.front(), op);
   }
 
+  // If we got down to a terminator that we can handle, eliminate the 'if'.
+  Operation &liveFront = liveBlock.front();
+  // If the live block is now trivial, we can remove the whole
+  // operation. Replace the results with the operands to the yield.
+  if (auto yield = dyn_cast<ParamYieldOp>(liveFront)) {
+    b.replaceOp(op, yield.getOperands());
+    return success();
+  }
+
+  // If we are ending control flow we can hoist it out but we have to delete
+  // all following ops to retain legality.
+  if (isa<KGEN::UnreachableOp, HLCF::BreakOp, HLCF::ContinueOp>(liveFront)) {
+    Block *block = op->getBlock();
+    // Delete things bottom-up so we delete uses before defs.
+    while (&block->back() != op)
+      b.eraseOp(&block->back());
+    // Move the terminator out of the 'if' and remove the 'if'.
+    b.moveOpBefore(&liveFront, op);
+    b.eraseOp(op);
+    return success();
+  }
+
+  // Otherwise, we have a parameter defining op (which we need the scope for)
+  // or control flow we don't know about.
   for (Operation &subOp : llvm::make_early_inc_range(llvm::reverse(deadBlock)))
     b.eraseOp(&subOp);
   b.setInsertionPointToStart(&deadBlock);
