@@ -7,6 +7,7 @@
 from collections import OptionalReg
 
 from buffer.dimlist import DimList
+from layout import Layout, IntTuple
 
 from utils import IndexList, StaticTuple
 
@@ -117,3 +118,12 @@ struct StaticTensorSpec[
             None,
             None,
         )
+
+    fn with_strides(self, strides: DimList) -> Self:
+        var result = self
+        result.strides = strides
+        return result
+
+    @always_inline
+    fn to_layout(self) -> Layout:
+        return Layout(IntTuple(self.shape), IntTuple(self.strides))

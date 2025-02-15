@@ -31,6 +31,8 @@ from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel
 from tensor_internal import RuntimeTensorSpec, TensorSpec
 
+from layout import LayoutTensor, RuntimeLayout, Layout
+
 from utils import IndexList, StaticTuple
 
 from ._indexing import _dot_prod, _row_major_strides, _slice_to_tuple
@@ -828,6 +830,16 @@ struct ManagedTensorSlice[
             offset_ptr.or_else(self._ptr),
             new_runtime_shape,
             new_runtime_strides,
+        )
+
+    @always_inline
+    fn to_layout_tensor(
+        self,
+    ) -> LayoutTensor[type, static_spec.to_layout()]:
+        alias layout = static_spec.to_layout()
+        return LayoutTensor[type, layout](
+            self.unsafe_ptr(),
+            RuntimeLayout[layout](self.shape(), self.strides()),
         )
 
 
