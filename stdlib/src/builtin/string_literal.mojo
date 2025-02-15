@@ -20,7 +20,7 @@ from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string.string_slice import (
     StaticString,
     StringSlice,
-    _StringSliceIter,
+    CodepointSliceIter,
     _to_string_list,
 )
 from hashlib._hasher import _HashableWithHasher, _Hasher
@@ -488,24 +488,22 @@ struct StringLiteral(
         """
         return self.__str__()
 
-    fn __iter__(ref self) -> _StringSliceIter[StaticConstantOrigin]:
+    fn __iter__(ref self) -> CodepointSliceIter[StaticConstantOrigin]:
         """Return an iterator over the string literal.
 
         Returns:
             An iterator over the string.
         """
-        return _StringSliceIter[StaticConstantOrigin](
-            ptr=self.unsafe_ptr(), length=self.byte_length()
-        )
+        return CodepointSliceIter(self.as_string_slice())
 
-    fn __reversed__(self) -> _StringSliceIter[StaticConstantOrigin, False]:
+    fn __reversed__(self) -> CodepointSliceIter[StaticConstantOrigin, False]:
         """Iterate backwards over the string, returning immutable references.
 
         Returns:
             A reversed iterator over the string.
         """
-        return _StringSliceIter[StaticConstantOrigin, False](
-            ptr=self.unsafe_ptr(), length=self.byte_length()
+        return CodepointSliceIter[StaticConstantOrigin, False](
+            self.as_string_slice()
         )
 
     fn __getitem__[IndexerType: Indexer](self, idx: IndexerType) -> String:

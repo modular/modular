@@ -19,7 +19,7 @@ from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string.string_slice import (
     StaticString,
     StringSlice,
-    _StringSliceIter,
+    CodepointSliceIter,
     _to_string_list,
     _utf8_byte_type,
 )
@@ -1059,7 +1059,7 @@ struct String(
         self._iadd[False](other.as_bytes())
 
     @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
-    fn __iter__(self) -> _StringSliceIter[__origin_of(self)]:
+    fn __iter__(self) -> CodepointSliceIter[__origin_of(self)]:
         """Iterate over the string, returning immutable references.
 
         Returns:
@@ -1067,15 +1067,13 @@ struct String(
         """
         return self.codepoint_slices()
 
-    fn __reversed__(self) -> _StringSliceIter[__origin_of(self), False]:
+    fn __reversed__(self) -> CodepointSliceIter[__origin_of(self), False]:
         """Iterate backwards over the string, returning immutable references.
 
         Returns:
             A reversed iterator of references to the string elements.
         """
-        return _StringSliceIter[__origin_of(self), forward=False](
-            ptr=self.unsafe_ptr(), length=self.byte_length()
-        )
+        return CodepointSliceIter[__origin_of(self), forward=False](self)
 
     # ===------------------------------------------------------------------=== #
     # Trait implementations
@@ -1270,7 +1268,7 @@ struct String(
         """
         return self.as_string_slice().codepoints()
 
-    fn codepoint_slices(self) -> _StringSliceIter[__origin_of(self)]:
+    fn codepoint_slices(self) -> CodepointSliceIter[__origin_of(self)]:
         """Returns an iterator over single-character slices of this string.
 
         Each returned slice points to a single Unicode codepoint encoded in the

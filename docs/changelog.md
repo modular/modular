@@ -34,6 +34,9 @@ what we publish.
   - `CharsIter` to `CodepointsIter`
   - `unsafe_decode_utf8_char()` to `unsafe_decode_utf8_codepoint()`
 
+  - Make the iterator type returned by the string `codepoint_slices()` methods
+    public as `CodepointSliceIter`.
+
 - `StringSlice` now supports several additional methods moved from `String`.
   The existing `String` methods have been updated to instead call the
   corresponding new `StringSlice` methods:

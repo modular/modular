@@ -45,68 +45,229 @@ alias StaticString = StringSlice[StaticConstantOrigin]
 
 
 @value
-struct _StringSliceIter[
+struct CodepointSliceIter[
     mut: Bool, //,
     origin: Origin[mut],
     forward: Bool = True,
 ]:
-    """Iterator for `StringSlice` over unicode characters.
+    """Iterator for `StringSlice` over substring slices containing a single
+    Unicode codepoint.
 
     Parameters:
         mut: Whether the slice is mutable.
         origin: The origin of the underlying string data.
         forward: The iteration direction. `False` is backwards.
+
+    The `forward` parameter only controls the behavior of the `__next__()`
+    method used for normal iteration. Calls to `next()` will always take an
+    element from the front of the iterator, and calls to `next_back()` will
+    always take an element from the end.
     """
 
-    var index: Int
-    var ptr: UnsafePointer[Byte]
-    var length: Int
+    var _slice: StringSlice[origin]
 
-    fn __init__(out self, *, ptr: UnsafePointer[Byte], length: UInt):
-        self.index = 0 if forward else length
-        self.ptr = ptr
-        self.length = length
+    # Note:
+    #   Marked private since `StringSlice.codepoints()` is the intended public
+    #   way to construct this type.
+    @doc_private
+    fn __init__(out self, str_slice: StringSlice[origin]):
+        self._slice = str_slice
 
+    # ===-------------------------------------------------------------------===#
+    # Trait implementations
+    # ===-------------------------------------------------------------------===#
+
+    @doc_private
     fn __iter__(self) -> Self:
         return self
 
     fn __next__(mut self) -> StringSlice[origin]:
+        """Get the next codepoint in the underlying string slice.
+
+        This returns the next single-codepoint substring slice encoded in the
+        underlying string, and advances the iterator state.
+
+        If `forward` is set to `False`, this will return the next codepoint
+        from the end of the string.
+
+        This function will abort if this iterator has been exhausted.
+
+        Returns:
+            The next character in the string.
+        """
+
         @parameter
         if forward:
-            byte_len = _utf8_first_byte_sequence_length(self.ptr[self.index])
-            i = self.index
-            self.index += byte_len
-            return StringSlice[origin](ptr=self.ptr + i, length=byte_len)
+            return self.next().value()
         else:
-            byte_len = 1
-            while _utf8_byte_type(self.ptr[self.index - byte_len]) == 1:
-                byte_len += 1
-            self.index -= byte_len
-            return StringSlice[origin](
-                ptr=self.ptr + self.index, length=byte_len
-            )
+            return self.next_back().value()
 
     @always_inline
     fn __has_next__(self) -> Bool:
-        @parameter
-        if forward:
-            return self.index < self.length
-        else:
-            return self.index > 0
+        """Returns True if there are still elements in this iterator.
 
+        Returns:
+            A boolean indicating if there are still elements in this iterator.
+        """
+        # NOTE:
+        #   This intentionally check if the length _in bytes_ is greater
+        #   than zero, because checking the codepoint length requires a linear
+        #   scan of the string, which is needlessly expensive for this purpose.
+        return len(self._slice) > 0
+
+    @always_inline
     fn __len__(self) -> Int:
-        @parameter
-        if forward:
-            var remaining = self.length - self.index
-            var span = Span[Byte, ImmutableAnyOrigin](
-                ptr=self.ptr + self.index, length=remaining
-            )
-            return StringSlice(unsafe_from_utf8=span).char_length()
+        """Returns the remaining length of this iterator in `Codepoint`s.
+
+        The value returned from this method indicates the number of subsequent
+        calls to `next()` that will return a value.
+
+        Returns:
+            Number of codepoints remaining in this iterator.
+        """
+        return self._slice.char_length()
+
+    # ===-------------------------------------------------------------------===#
+    # Methods
+    # ===-------------------------------------------------------------------===#
+
+    fn peek_next(self) -> Optional[StringSlice[origin]]:
+        """Check what the next single-codepoint slice in this iterator is,
+        without advancing the iterator state.
+
+        Repeated calls to this method will return the same value.
+
+        Returns:
+            The next codepoint slice in the underlying string, or None if the
+            string is empty.
+
+        # Examples
+
+        `peek_next()` does not advance the iterator, so repeated calls will
+        return the same value:
+
+        ```mojo
+        from collections.string import StringSlice, Codepoint
+        from testing import assert_equal
+
+        var input = StringSlice("123")
+        var iter = input.codepoint_slices()
+
+        assert_equal(iter.peek_next().value(), "1")
+        assert_equal(iter.peek_next().value(), "1")
+        assert_equal(iter.peek_next().value(), "1")
+
+        # A call to `next()` return the same value as `peek_next()` had,
+        # but also advance the iterator.
+        assert_equal(iter.next().value(), "1")
+
+        # Later `peek_next()` calls will return the _new_ next character:
+        assert_equal(iter.peek_next().value(), "2")
+        ```
+        .
+        """
+        if len(self._slice) > 0:
+            # SAFETY: Will not read out of bounds because `_slice` is guaranteed
+            #   to contain valid UTF-8.
+            var curr_ptr = self._slice.unsafe_ptr()
+            var byte_len = _utf8_first_byte_sequence_length(curr_ptr[])
+            return StringSlice[origin](ptr=curr_ptr, length=byte_len)
         else:
-            var span = Span[Byte, ImmutableAnyOrigin](
-                ptr=self.ptr, length=self.index
-            )
-            return StringSlice(unsafe_from_utf8=span).char_length()
+            return None
+
+    fn peek_back(mut self) -> Optional[StringSlice[origin]]:
+        """Check what the last single-codepoint slice in this iterator is,
+        without advancing the iterator state.
+
+        Repeated calls to this method will return the same value.
+
+        Returns:
+            The last codepoint slice in the underlying string, or None if the
+            string is empty.
+
+        # Examples
+
+        `peek_back()` does not advance the iterator, so repeated calls will
+        return the same value:
+
+        ```mojo
+        from collections.string import StringSlice, Codepoint
+        from testing import assert_equal
+
+        var input = StringSlice("123")
+        var iter = input.codepoint_slices()
+
+        # Repeated calls to `peek_back()` return the same value.
+        assert_equal(iter.peek_back().value(), "3")
+        assert_equal(iter.peek_back().value(), "3")
+        assert_equal(iter.peek_back().value(), "3")
+
+        # A call to `next_back()` return the same value as `peek_back()` had,
+        # but also advance the iterator.
+        assert_equal(iter.next_back().value(), "3")
+
+        # Later `peek_back()` calls will return the _new_ next character:
+        assert_equal(iter.peek_back().value(), "2")
+        ```
+        .
+        """
+        if len(self._slice) > 0:
+            var byte_len = 1
+            var back_ptr = self._slice.unsafe_ptr() + len(self._slice) - 1
+            # SAFETY:
+            #   Guaranteed not to go out of bounds because UTF-8
+            #   guarantees there is always a "start" byte eventually before any
+            #   continuation bytes.
+            while _utf8_byte_type(back_ptr[]) == 1:
+                byte_len += 1
+                back_ptr -= 1
+
+            return StringSlice[origin](ptr=back_ptr, length=byte_len)
+        else:
+            return None
+
+    fn next(mut self) -> Optional[StringSlice[origin]]:
+        """Get the next codepoint slice in the underlying string slice, or None
+        if the iterator is empty.
+
+        This returns the next single-codepoint substring encoded in the
+        underlying string, and advances the iterator state.
+
+        Returns:
+            A character if the string is not empty, otherwise None.
+        """
+        var result: Optional[StringSlice[origin]] = self.peek_next()
+
+        if result:
+            # SAFETY: We just checked that `result` holds a value
+            var slice_len = len(result.unsafe_value())
+            # Advance the pointer in _slice.
+            self._slice._slice._data += slice_len
+            # Decrement the byte-length of _slice.
+            self._slice._slice._len -= slice_len
+
+        return result
+
+    fn next_back(mut self) -> Optional[StringSlice[origin]]:
+        """Get the last single-codepoint slice in this iterator is, or None
+        if the iterator is empty.
+
+        This returns the last codepoint slice in this iterator, and advances
+        the iterator state.
+
+        Returns:
+            The last codepoint slice in the underlying string, or None if the
+            string is empty.
+        """
+        var result: Optional[StringSlice[origin]] = self.peek_back()
+
+        if result:
+            # SAFETY: We just checked that `result` holds a value
+            var slice_len = len(result.unsafe_value())
+            # Decrement the byte-length of _slice.
+            self._slice._slice._len -= slice_len
+
+        return result
 
 
 @value
@@ -685,7 +846,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         )
 
     @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
-    fn __iter__(self) -> _StringSliceIter[origin]:
+    fn __iter__(self) -> CodepointSliceIter[origin]:
         """Iterate over the string, returning immutable references.
 
         Returns:
@@ -693,15 +854,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return self.codepoint_slices()
 
-    fn __reversed__(self) -> _StringSliceIter[origin, False]:
+    fn __reversed__(self) -> CodepointSliceIter[origin, False]:
         """Iterate backwards over the string, returning immutable references.
 
         Returns:
             A reversed iterator of references to the string elements.
         """
-        return _StringSliceIter[origin, forward=False](
-            ptr=self.unsafe_ptr(), length=self.byte_length()
-        )
+        return CodepointSliceIter[origin, forward=False](self)
 
     fn __getitem__[I: Indexer](self, idx: I) -> String:
         """Gets the character at the specified position.
@@ -1118,15 +1277,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return CodepointsIter(self)
 
-    fn codepoint_slices(self) -> _StringSliceIter[origin]:
+    fn codepoint_slices(self) -> CodepointSliceIter[origin]:
         """Iterate over the string, returning immutable references.
 
         Returns:
             An iterator of references to the string elements.
         """
-        return _StringSliceIter[origin](
-            ptr=self.unsafe_ptr(), length=self.byte_length()
-        )
+        return CodepointSliceIter[origin](self)
 
     @always_inline
     fn as_bytes(self) -> Span[Byte, origin]:
