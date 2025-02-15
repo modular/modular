@@ -145,10 +145,16 @@ struct object:
 
 @register_passable("trivial")
 struct NoneType:
+    alias _mlir_type = __mlir_type.`!kgen.none`
+    """Raw MLIR type of the `None` value."""
+
+    var _value: Self._mlir_type
+
     # FIXME: Fix representation of None literal to remove this.
+    @always_inline("builtin")
     @implicit
-    fn __init__(out self, x: __mlir_type.`!kgen.none`):
-        pass
+    fn __init__(out self, value: __mlir_type.`!kgen.none`):
+        self._value = value
 
 
 @value
@@ -256,29 +262,29 @@ struct Int(Copyable):
     fn __iadd__(mut self, rhs: Int):
         self = self + rhs
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __eq__(lhs, rhs: Int) -> Bool:
         return __mlir_op.`index.cmp`[
             pred = __mlir_attr.`#index<cmp_predicate eq>`
         ](lhs.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __lt__(lhs, rhs: Int) -> Bool:
         return __mlir_op.`index.cmp`[
             pred = __mlir_attr.`#index<cmp_predicate sgt>`
         ](rhs.value, lhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __gt__(lhs, rhs: Int) -> Bool:
         return __mlir_op.`index.cmp`[
             pred = __mlir_attr.`#index<cmp_predicate sgt>`
         ](lhs.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __bool__(self) -> Bool:
         return not (self == 0)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __index__(self) -> __mlir_type.index:
         return self.value
 
@@ -341,24 +347,24 @@ struct String(KeyElement):
 struct Bool(AnyType):
     var value: __mlir_type.i1
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __init__(out self):
         self.value = __mlir_attr.`0 : i1`
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: __mlir_type.i1):
         self.value = value
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __mlir_i1__(self) -> __mlir_type.i1:
         return self.value
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __bool__(self) -> Bool:
         return self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __invert__(self) -> Bool:
         return self  # Incorrect impl
 

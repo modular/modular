@@ -48,7 +48,7 @@ struct StructWithIntParam[size: Int]:
 
 # CHECK-LABEL: lit.fn @"paramArith{{.*}}"<x: !Int>() -> !kgen.none
 fn paramArith[x: Int]():
-    # CHECK: lit.alias.decl {{.*}} = <{{.*}}apply({{.*}}__eq__{{.*}}, x, {99})>
+    # CHECK: lit.alias.decl *"y`": !Bool = <{value: i1 = eq(#lit.struct.extract<:!Int x, "value">, 99)}>
     alias y = x == 98 + 1
 
 fn take_3index(a: Int, b: Int, c: Int) -> Int:
@@ -242,7 +242,7 @@ fn signature_capture[a: Int, f: fn[b: Int]() -> TwoParams[a, b]]():
 
 # CHECK-LABEL: lit.fn @"my_constrained{{.*}}"<cond: !Bool, message: !StringLiteral>
 fn my_constrained[cond: Bool, message: StringLiteral]():
-    # CHECK: kgen.param.assert <apply({{.*}}__mlir_i1__{{.*}}, cond)>, #lit.struct.extract<{{.*}} message, "value">
+    # CHECK: kgen.param.assert <#lit.struct.extract<:!Bool cond, "value">>, #lit.struct.extract<:!StringLiteral message, "value">
     __mlir_op.`kgen.param.assert`[cond=cond.__mlir_i1__(), message=message.value]()
     return
 
