@@ -99,16 +99,28 @@ fn all_reduce_test[
             out_bufs_list[i].unsafe_ptr(), DimList(length)
         )
 
-    # Perform all_reduce
-    start_t = time.perf_counter_ns()
+    # Warm up.
     all_reduce(list_of_ctx, in_bufs, out_bufs, rank_sigs)
 
-    # Synchronize all devices
+    # Synchronize all devices.
     @parameter
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
+
+    # Perform a benchmarked allreduce.
+    start_t = time.perf_counter_ns()
+
+    all_reduce(list_of_ctx, in_bufs, out_bufs, rank_sigs)
+
+    # Synchronize all devices.
+    @parameter
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
     end_t = time.perf_counter_ns()
-    # Quick and dirty benchmark since benchmark module doesn't support multi-device contexts
+
+    # Quick and dirty benchmark since benchmark module doesn't support
+    # multi-device contexts.
     print("Time taken (ms):", (end_t - start_t) / 1_000_000)
 
     # Copy results back and verify
@@ -139,15 +151,21 @@ fn all_reduce_test[
     _ = signal_buffers^
 
 
-fn _get_test_str(type: DType, ngpus: Int, length: Int) -> String:
+fn _get_test_str[type: DType](ngpus: Int, length: Int) -> String:
     return String(
-        "====allreduce-", type, "-", ngpus, "-", _human_memory(length)
+        "====allreduce-",
+        type,
+        "-",
+        ngpus,
+        "-",
+        _human_memory(sizeof[type]() * length),
     )
 
 
 def main():
-    # Test configurations
-    alias length = 256 * 1024
+    # Test configurations.
+    alias latency_bound_length = 8 * 1024
+    alias bandwidth_bound_length = 16 * 1024 * 1024
     alias rank = 1
 
     # Test with 2 GPUs
@@ -156,28 +174,43 @@ def main():
         var ctx2 = List[DeviceContext](
             DeviceContext(device_id=0), DeviceContext(device_id=1)
         )
-        print(_get_test_str(DType.bfloat16, 2, length))
-        all_reduce_test[DType.bfloat16, rank, 2](ctx2, length)
-        print(_get_test_str(DType.float32, 2, length))
-        all_reduce_test[DType.float32, rank, 2](ctx2, length)
 
-    # Test with 4 GPUs if available
+        # Latency bound tests (hits 1-stage codepath).
+        print(_get_test_str[DType.bfloat16](2, latency_bound_length))
+        all_reduce_test[DType.bfloat16, rank, 2](ctx2, latency_bound_length)
+        print(_get_test_str[DType.float32](2, latency_bound_length))
+        all_reduce_test[DType.float32, rank, 2](ctx2, latency_bound_length)
+
+        # Bandwidth bound tests (hits 2-stage codepath).
+        print(_get_test_str[DType.bfloat16](2, bandwidth_bound_length))
+        all_reduce_test[DType.bfloat16, rank, 2](ctx2, bandwidth_bound_length)
+        print(_get_test_str[DType.float32](2, bandwidth_bound_length))
+        all_reduce_test[DType.float32, rank, 2](ctx2, bandwidth_bound_length)
+
+    # Test with 4 GPUs if available.
     if device_count >= 4:
         var ctx4 = List[DeviceContext]()
         for i in range(4):
             ctx4.append(DeviceContext(device_id=i))
 
-        print(_get_test_str(DType.bfloat16, 4, length))
-        all_reduce_test[DType.bfloat16, rank, 4](ctx4, length)
-        print(_get_test_str(DType.float32, 4, length))
-        all_reduce_test[DType.float32, rank, 4](ctx4, length)
+        # Latency bound tests (hits 1-stage codepath).
+        print(_get_test_str[DType.bfloat16](4, latency_bound_length))
+        all_reduce_test[DType.bfloat16, rank, 4](ctx4, latency_bound_length)
+        print(_get_test_str[DType.float32](4, latency_bound_length))
+        all_reduce_test[DType.float32, rank, 4](ctx4, latency_bound_length)
 
-    # Test with 8 GPUs if available
+        # Bandwidth bound tests (hits 2-stage codepath).
+        print(_get_test_str[DType.bfloat16](4, bandwidth_bound_length))
+        all_reduce_test[DType.bfloat16, rank, 4](ctx4, bandwidth_bound_length)
+        print(_get_test_str[DType.float32](4, bandwidth_bound_length))
+        all_reduce_test[DType.float32, rank, 4](ctx4, bandwidth_bound_length)
+
+    # Test with 8 GPUs if available.
     if device_count >= 8:
         var ctx8 = List[DeviceContext]()
         for i in range(8):
             ctx8.append(DeviceContext(device_id=i))
-        print(_get_test_str(DType.bfloat16, 8, length))
-        all_reduce_test[DType.bfloat16, rank, 8](ctx8, length)
-        print(_get_test_str(DType.float32, 8, length))
-        all_reduce_test[DType.float32, rank, 8](ctx8, length)
+        print(_get_test_str[DType.bfloat16](8, latency_bound_length))
+        all_reduce_test[DType.bfloat16, rank, 8](ctx8, latency_bound_length)
+        print(_get_test_str[DType.float32](8, latency_bound_length))
+        all_reduce_test[DType.float32, rank, 8](ctx8, latency_bound_length)
