@@ -183,6 +183,12 @@ def IntLiteralAttr : DialectAttribute<(attr
   Custom<"IPInt">:$value
 )>;
 
+def IntLiteralConvertAttr : DialectAttribute<(attr
+  Type:$type,
+  TypedAttr:$input,
+  ConcreteAttribute<"UnitAttr">:$treatIndexAsUnsigned
+)>;
+
 def IntLiteralCmpPredAttr : DialectAttribute<(attr
   EnumAttr<"IntLiteralCmpPred">:$value
 )>;

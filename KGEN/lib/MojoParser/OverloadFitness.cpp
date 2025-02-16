@@ -179,8 +179,10 @@ static bool isEqualModuloExpressions(ASTType lhsType, ASTType rhsType,
          "Type with the same decl should have consistent number of params");
 
   bool hadMismatchedParamExpr = false;
-  for (auto [lhs, rhs] :
+  for (auto [lhsV, rhsV] :
        llvm::zip(lhsType.getParamBindings(), rhsType.getParamBindings())) {
+    auto lhs = lhsV;
+    auto rhs = rhsV;
     // If any hard known differences exist, then unfolded exprs are not the
     // problem.
     if (lhs == rhs)

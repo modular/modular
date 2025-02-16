@@ -580,6 +580,46 @@ def KGEN_IntLiteralAttr : KGEN_ExprAttr<"IntLiteral", "int_literal"> {
 }
 
 //===----------------------------------------------------------------------===//
+// IntLiteralConvertAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_IntLiteralConvertAttr : KGEN_ExprAttr<"IntLiteralConvert",
+                                               "int_literal_convert", [
+    DeclareAttrInterfaceMethods<ParameterAttrInterface,
+                                ["validateForElaborator"]>]
+  > {
+  let summary = "Convert an integer literal to a different type.";
+  let description = [{
+    The `#kgen.int_literal_convert` attribute is used to convert an integer
+    literal to a different type.  It is the parameter domain form of
+    the `kgen.int_literal.convert` operation.
+  }];
+
+  let parameters = (ins
+    AttributeSelfTypeParameter<"", "Type">:$type,
+    "TypedAttr":$input,
+    "bool":$treatIndexAsUnsigned
+  );
+
+  let assemblyFormat = "`<` custom<ColonTypeParamValue>($input) `,` $treatIndexAsUnsigned `>`";
+  
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return an IntLiteralConvertAttr.
+    AttrBuilderWithInferredContext<(ins
+       "Type":$type, "TypedAttr":$input, "bool":$treatIndexAsUnsigned), "",
+       "TypedAttr">,
+
+    // Verbose form with MLIRContext, needed for ODS constructors.
+    AttrBuilder<(ins "Type":$type, "TypedAttr":$input,
+                     "bool":$treatIndexAsUnsigned), [{
+      return get(type, input, treatIndexAsUnsigned);
+    }], "TypedAttr">,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // FloatLiteralAttr
 //===----------------------------------------------------------------------===//
 

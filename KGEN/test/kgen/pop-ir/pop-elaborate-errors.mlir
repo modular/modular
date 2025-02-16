@@ -81,36 +81,28 @@ kgen.generator @call_it() {
 
 // -----
 
-// expected-note @below {{failed to interpret function @int_literal_convert}}
 kgen.generator @int_literal_convert() -> si64 {
-
   %0 = kgen.param.constant: !kgen.int_literal = <36893488147419103232>
-  // expected-note @below {{failed to interpret operation kgen.int_literal.convert(#kgen.int_literal<36893488147419103232> : !kgen.int_literal)}}
-  // expected-note @below {{integer value 36893488147419103232 requires 67 bits to store, but the destination bit width is only 64 bits wide}}
   %1 = kgen.int_literal.convert %0 : to si64
   kgen.return %1 : si64
 }
 
 kgen.generator @call_convert() {
-  // expected-error @below {{failed to compile-time evaluate function call}}
+  // expected-error @below {{integer value 36893488147419103232 requires 67 bits to store, but the destination bit width is only 64 bits wide}}
   kgen.param.constant: si64 = <apply(:() -> si64 @int_literal_convert)>
   kgen.return
 }
 
 // -----
 
-// expected-note @below {{failed to interpret function @int_literal_convert_unsigned}}
 kgen.generator @int_literal_convert_unsigned() -> ui64 {
-
   %0 = kgen.param.constant: !kgen.int_literal = <-1>
-  // expected-note @below {{failed to interpret operation kgen.int_literal.convert(#kgen.int_literal<-1> : !kgen.int_literal)}}
-  // expected-note @below {{integer value -1 is negative, but is being converted to an unsigned type.}}
   %1 = kgen.int_literal.convert %0 : to ui64
   kgen.return %1 : ui64
 }
 
 kgen.generator @call_convert_unsigned() {
-  // expected-error @below {{failed to compile-time evaluate function call}}
+  // expected-error @below {{integer value -1 is negative, but is being converted to an unsigned type}}
   kgen.param.constant: ui64 = <apply(:() -> ui64 @int_literal_convert_unsigned)>
   kgen.return
 }

@@ -1445,6 +1445,7 @@ def PackageLinkOp : KGENOp<"package.link", [Symbol]> {
 // IntLiteralCmp
 //===----------------------------------------------------------------------===//
 
+// FIXME(MOCO-1628): This shouldn't be an operation.
 def KGEN_IntLiteralCmp : KGENOp<"int_literal.cmp", [Pure]> {
   let summary = "Comparison operator for int_literals.";
   let description = [{
@@ -1467,6 +1468,7 @@ def KGEN_IntLiteralCmp : KGENOp<"int_literal.cmp", [Pure]> {
 // IntLiteralBinop
 //===----------------------------------------------------------------------===//
 
+// FIXME(MOCO-1628): This shouldn't be an operation.
 def KGEN_IntLiteralBinop : KGENOp<"int_literal.binop", [Pure]> {
   let summary = "Binary operations for int_literals";
   let description = [{
@@ -1488,8 +1490,8 @@ def KGEN_IntLiteralBinop : KGENOp<"int_literal.binop", [Pure]> {
 // IntLiteralConvertOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_IntLiteralConvertOp : KGENOp<"int_literal.convert",
-    [DeclareOpInterfaceMethods<InterpreterOpInterface>, Pure]> {
+// FIXME(MOCO-1628): This shouldn't be an operation.
+def KGEN_IntLiteralConvertOp : KGENOp<"int_literal.convert", [Pure]> {
   let summary = "Convert integer literal to int type usable at runtime.";
   let description = [{
     The `kgen.int_literal.convert` operator casts an infinite precision integer
@@ -1510,6 +1512,7 @@ def KGEN_IntLiteralConvertOp : KGENOp<"int_literal.convert",
 // IntLiteralBitWidthOp
 //===----------------------------------------------------------------------===//
 
+// FIXME(MOCO-1628): This shouldn't be an operation.
 def KGEN_IntLiteralBitWidthOp : KGENOp<"int_literal.bit_width", [Pure]> {
   let summary = "Return the number of bits needed to represent int.";
   let description = [{
@@ -1534,6 +1537,7 @@ def KGEN_IntLiteralBitWidthOp : KGENOp<"int_literal.bit_width", [Pure]> {
 // IntLiteralToFloatLiteralOp
 //===----------------------------------------------------------------------===//
 
+// FIXME(MOCO-1628): This shouldn't be an operation.
 def KGEN_IntLiteralToFloatLiteralOp : KGENOp<"int_literal.to_float_literal",
     [DeclareOpInterfaceMethods<InterpreterOpInterface>, Pure]> {
   let summary = "Convert int_literal to float_literal type.";
