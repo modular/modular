@@ -377,7 +377,7 @@ struct Int(
             value
         )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: IntLiteral):
         """Construct Int from the given IntLiteral value.

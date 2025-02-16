@@ -592,7 +592,7 @@ struct IntLiteral(
         """
         return self.__bool__()
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __int__(self) -> Int:
         """Convert from IntLiteral to Int.
 
@@ -610,7 +610,7 @@ struct IntLiteral(
         """
         return self.__int__()
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __uint__(self) -> UInt:
         """Convert from IntLiteral to UInt.
 
@@ -729,7 +729,7 @@ struct IntLiteral(
         """
         return __mlir_op.`kgen.int_literal.bit_width`(self.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __index__(self) -> __mlir_type.index:
         """Convert from IntLiteral to index.
 
