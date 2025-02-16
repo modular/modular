@@ -8,6 +8,7 @@
 #include "KGEN/CODialect/COOps.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -894,10 +895,11 @@ void KGEN::replaceCallWithLLVMCall(mlir::RewriterBase &b, Operation *op,
   b.replaceOp(op, results);
 }
 
-Value KGEN::convertParameterToLLVM(
+ErrorOr<Value> KGEN::convertParameterToLLVM(
     ImplicitLocOpBuilder &b, const POPToLLVMTypeConverter &tc,
     InterpreterMemoryConverter *imc,
     InterpreterMemoryConverter::MaterializationScope *scope, TypedAttr attr) {
+
   //===--------------------------------------------------------------------===//
   // builtin
 
@@ -905,7 +907,7 @@ Value KGEN::convertParameterToLLVM(
   if (isa<UnknownAttr>(attr) || isa<UninitMemAttr>(attr)) {
     Type type = tc.convertType(attr.getType());
     if (!type)
-      return {};
+      return Error("unknown type lowering uninitialized memory");
     return b.create<LLVM::UndefOp>(type);
   }
 
@@ -955,9 +957,11 @@ Value KGEN::convertParameterToLLVM(
   // We can lower `StoreToMemAttr` by writing the underlying value into a
   // stack allocation.
   if (auto store = dyn_cast<StoreToMemAttr>(attr)) {
-    Value value = convertParameterToLLVM(b, tc, imc, scope, store.getValue());
-    if (!value)
-      return {};
+    ErrorOr<Value> loweredValue =
+        convertParameterToLLVM(b, tc, imc, scope, store.getValue());
+    if (loweredValue.isError())
+      return loweredValue;
+    auto value = loweredValue.get();
     unsigned align = tc.getTypeABIAlign(value.getType());
     Value ptr = b.create<LLVM::AllocaOp>(
         tc.convertType(attr.getType()), value.getType(),
@@ -975,16 +979,14 @@ Value KGEN::convertParameterToLLVM(
   // !llvm.struct<(ptr<i8>, index).
   if (auto strAttr = dyn_cast<StringAttr>(attr)) {
     if (!imc)
-      return {};
+      return Error("cannot lower string constant without target memory model");
     return lowerStringToGlobalConstant(strAttr, b, tc, *imc);
   }
 
   if (auto cst = dyn_cast<SymbolConstantAttr>(attr)) {
-    if (cst.getType().getBody().isCapturing()) {
-      b.emitError("TODO: capturing closures cannot be materialized as runtime "
-                  "values");
-      return {};
-    }
+    if (cst.getType().getBody().isCapturing())
+      return Error("TODO: capturing closures cannot be materialized as runtime "
+                   "values");
     return b.create<LLVM::AddressOfOp>(
         tc.convertType(cst.getType()),
         cast<FlatSymbolRefAttr>(cst.getSymbol()));
@@ -1001,7 +1003,7 @@ Value KGEN::convertParameterToLLVM(
   if (isa<POP::ArrayAttr, StructAttr>(attr)) {
     Type type = tc.convertType(attr.getType());
     if (!type)
-      return {};
+      return Error("cannot lower array or struct constant with unknown type");
     Value aggregate = b.create<LLVM::UndefOp>(type);
     ArrayRef<TypedAttr> values =
         TypeSwitch<Attribute, ArrayRef<TypedAttr>>(attr)
@@ -1009,25 +1011,27 @@ Value KGEN::convertParameterToLLVM(
                 [](auto attr) { return attr.getValues(); });
 
     for (auto [idx, value] : llvm::enumerate(values)) {
-      Value element = convertParameterToLLVM(b, tc, imc, scope, value);
-      if (!element)
-        return {};
-      aggregate = b.create<LLVM::InsertValueOp>(aggregate, element, idx);
+      auto loweredValue = convertParameterToLLVM(b, tc, imc, scope, value);
+      if (loweredValue.isError())
+        return loweredValue;
+      aggregate =
+          b.create<LLVM::InsertValueOp>(aggregate, loweredValue.get(), idx);
     }
     return aggregate;
   }
 
   // Bitpack union constants.
   if (auto unionAttr = dyn_cast<POP::UnionAttr>(attr)) {
-    Value value =
+    auto loweredValue =
         convertParameterToLLVM(b, tc, imc, scope, unionAttr.getValue());
-    if (!value)
-      return {};
+    if (loweredValue.isError())
+      return loweredValue;
+    auto value = loweredValue.get();
 
     auto contentType =
         cast_or_null<LLVM::LLVMArrayType>(tc.convertType(unionAttr.getType()));
     if (!contentType)
-      return {};
+      return Error("cannot lower union constant with unknown type");
     VariantHelper helper(b, b.getLoc(), tc);
     return helper.materializeLLVMUnion(contentType, value);
   }
@@ -1037,7 +1041,7 @@ Value KGEN::convertParameterToLLVM(
     // 1. Allocate space for an array of elements.
     Type elementType = tc.convertType(variadic.getType().getElementType());
     if (!elementType)
-      return {};
+      return Error("cannot lower variadic sequence constant with unknown type");
 
     Value size = b.create<LLVM::ConstantOp>(
         b.getI64IntegerAttr(variadic.getValues().size()));
@@ -1046,25 +1050,43 @@ Value KGEN::convertParameterToLLVM(
 
     // 2. Store elements of the sequence into the allocated space.
     for (auto [idx, value] : llvm::enumerate(variadic.getValues())) {
-      Value element = convertParameterToLLVM(b, tc, imc, scope, value);
-      if (!element)
-        return {};
+      auto element = convertParameterToLLVM(b, tc, imc, scope, value);
+      if (element.isError())
+        return element;
 
       auto destination = b.create<LLVM::GEPOp>(
           LLVM::LLVMPointerType::get(b.getContext()), elementType, ptr,
           ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(idx)});
-      b.create<LLVM::StoreOp>(element, destination);
+      b.create<LLVM::StoreOp>(element.get(), destination);
     }
 
     // 3. Create a struct with a pointer to the allocation & the sequence size.
     auto variadicType = llvm::cast_if_present<LLVM::LLVMStructType>(
         tc.convertType(variadic.getType()));
     if (!variadicType)
-      return {};
+      return Error("cannot lower variadic sequence constant with unknown type");
 
     return materializeLLVMStruct(b, variadicType, ValueRange{ptr, size});
   }
 
+  // Otherwise we have a failure, try to report a useful error message.
+
+  // If this is an param attribute that refused to fold, see if we're able to
+  // get a custom error message from it to explain what is going on.
+  if (auto itf = ::dyn_cast<ParameterAttr>(attr)) {
+    auto errorMessage = itf.validateForElaborator();
+    if (errorMessage.isError())
+      return errorMessage.takeError();
+  }
+
+  // If this is an IntLiteral or FloatLiteral attribute, we can't materialize
+  // them in a dynamic context.
+  if (isa<IntLiteralType>(attr.getType()))
+    return Error("can't materialize IntLiteral in dynamic context");
+  if (isa<FloatLiteralType>(attr.getType()))
+    return Error("can't materialize FloatLiteral in dynamic context");
+
   // Unknown attribute to convert.
-  return {};
+  return Error("cannot lower unknown attribute to LLVM" +
+               getParamAsString(attr));
 }

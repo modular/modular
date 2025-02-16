@@ -46,7 +46,7 @@ def ParameterAttrInterface : AttrInterface<"ParameterAttr"> {
       there are no errors. This allows parameter attributes to implement their
       own validation logic and error reporting, producing better elaborator
       error messages when they cannot be simplified then.
-    }], "ErrorTreeOrSuccess", "validateForElaborator", (ins "Location":$loc), [{}], [{
+    }], "ErrorOrSuccess", "validateForElaborator", (ins), [{}], [{
       return success();
     }]>,
   ];

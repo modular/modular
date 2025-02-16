@@ -544,9 +544,9 @@ ErrorTreeOr<Attribute> IREvaluator::concretizeParameterExpr(ImplNode *parent,
         // what is going on.
         if (allSimple) {
           if (auto itf = ::dyn_cast<ParameterAttr>(attr)) {
-            auto errorMessage = itf.validateForElaborator(loc);
+            auto errorMessage = itf.validateForElaborator();
             if (errorMessage.isError()) {
-              emitError(errorMessage.takeError());
+              emitError(ErrorTree(loc, errorMessage.takeError()));
               return WalkResult::interrupt();
             }
           }
