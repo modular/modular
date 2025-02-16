@@ -665,8 +665,8 @@ Elaborator::processGeneratorUser(GeneratorUserOpInterface user,
   auto [result, concrete] = instantiateGeneratorReference(
       parent, user, calleeSymbol, inputParamKey, gen, [&](ParamNode *genNode) {
         calleeNode = genNode;
-        return isBlocking = !genNode->gen.getResultParams().empty() ||
-                            isa<ParamApplyOp>(user);
+        assert(genNode->gen.getResultParams().empty());
+        return isBlocking = isa<ParamApplyOp>(user);
       });
   if (result.isError() || (result.shouldSkipNode() && isBlocking))
     return result;

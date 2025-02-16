@@ -106,17 +106,12 @@ def KGEN_FuncOp : KGENOp<"func", [
     }
     Region *getCallableRegion() { return &getBodyRegion(); }
 
-    mlir::ArrayAttr getArgAttrsAttr() { return nullptr; }
-
-    mlir::ArrayAttr getResAttrsAttr() { return nullptr; }
-
-    void setArgAttrsAttr(mlir::ArrayAttr attrs){}
-
-    void setResAttrsAttr(mlir::ArrayAttr attrs){}
-
-    mlir::Attribute removeArgAttrsAttr() { return nullptr; }
-
-    mlir::Attribute removeResAttrsAttr() { return nullptr; }
+    ArrayAttr getArgAttrsAttr() { return nullptr; }
+    ArrayAttr getResAttrsAttr() { return nullptr; }
+    void setArgAttrsAttr(ArrayAttr attrs) {}
+    void setResAttrsAttr(ArrayAttr attrs) {}
+    Attribute removeArgAttrsAttr() { return nullptr; }
+    Attribute removeResAttrsAttr() { return nullptr; }
   }];
 
   let builders = [
@@ -197,17 +192,12 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     // TODO: Remove this when result parameters are gone.
     ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
 
-    mlir::ArrayAttr getArgAttrsAttr() { return nullptr; }
-
-    mlir::ArrayAttr getResAttrsAttr() { return nullptr; }
-
-    void setArgAttrsAttr(mlir::ArrayAttr attrs){}
-
-    void setResAttrsAttr(mlir::ArrayAttr attrs){}
-
-    mlir::Attribute removeArgAttrsAttr() { return nullptr; }
-
-    mlir::Attribute removeResAttrsAttr() { return nullptr; }
+    ArrayAttr getArgAttrsAttr() { return nullptr; }
+    ArrayAttr getResAttrsAttr() { return nullptr; }
+    void setArgAttrsAttr(ArrayAttr attrs) {}
+    void setResAttrsAttr(ArrayAttr attrs) {}
+    Attribute removeArgAttrsAttr() { return nullptr; }
+    Attribute removeResAttrsAttr() { return nullptr; }
   }];
 
   let builders = [
@@ -265,17 +255,12 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
     Region *getCallableRegion() { return &getBody(); }
     ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
 
-    mlir::ArrayAttr getArgAttrsAttr() { return nullptr; }
-
-    mlir::ArrayAttr getResAttrsAttr() { return nullptr; }
-
-    void setArgAttrsAttr(mlir::ArrayAttr attrs){}
-
-    void setResAttrsAttr(mlir::ArrayAttr attrs){}
-
-    mlir::Attribute removeArgAttrsAttr() { return nullptr; }
-
-    mlir::Attribute removeResAttrsAttr() { return nullptr; }
+    ArrayAttr getArgAttrsAttr() { return nullptr; }
+    ArrayAttr getResAttrsAttr() { return nullptr; }
+    void setArgAttrsAttr(ArrayAttr attrs) {}
+    void setResAttrsAttr(ArrayAttr attrs) {}
+    Attribute removeArgAttrsAttr() { return nullptr; }
+    Attribute removeResAttrsAttr() { return nullptr; }
   }];
 
   let assemblyFormat = [{
@@ -688,18 +673,12 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
 
     ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
 
-
-    mlir::ArrayAttr getArgAttrsAttr() { return nullptr; }
-
-    mlir::ArrayAttr getResAttrsAttr() { return nullptr; }
-
-    void setArgAttrsAttr(mlir::ArrayAttr attrs){}
-
-    void setResAttrsAttr(mlir::ArrayAttr attrs){}
-
-    mlir::Attribute removeArgAttrsAttr() { return nullptr; }
-
-    mlir::Attribute removeResAttrsAttr() { return nullptr; }
+    ArrayAttr getArgAttrsAttr() { return nullptr; }
+    ArrayAttr getResAttrsAttr() { return nullptr; }
+    void setArgAttrsAttr(ArrayAttr attrs) {}
+    void setResAttrsAttr(ArrayAttr attrs) {}
+    Attribute removeArgAttrsAttr() { return nullptr; }
+    Attribute removeResAttrsAttr() { return nullptr; }
   }];
 
   let builders = [
