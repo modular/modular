@@ -20,7 +20,7 @@ from .host.info import DEFAULT_GPU, DEFAULT_GPU_ARCH
 
 
 alias WARP_SIZE = _resolve_warp_size()
-"""The warp size of the NVIDIA hardware."""
+"""The warp size of the GPU."""
 
 
 fn _resolve_warp_size() -> Int:
