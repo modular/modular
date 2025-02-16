@@ -961,7 +961,8 @@ def KGEN_EnvAttr : KGENAttr<"Env", "env"> {
 // associative operations are take arbitrary arity, also to make
 // canonicalization simpler.
 def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
-    DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>
+    DeclareAttrInterfaceMethods<ParameterAttrInterface,
+                                ["isLessThan", "validateForElaborator"]>
   ]> {
   let summary = "Parameter expression";
   let parameters = (ins "POC":$opcode,

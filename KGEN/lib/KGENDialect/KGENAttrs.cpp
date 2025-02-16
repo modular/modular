@@ -2924,6 +2924,14 @@ std::optional<bool> ParamOperatorAttr::isLessThan(Attribute rhs) const {
   return std::nullopt;
 }
 
+ErrorTreeOrSuccess
+ParamOperatorAttr::validateForElaborator(Location loc) const {
+  // If this operator didn't fold, then it's a problem.
+  // TODO: we could diagnose WHY it isn't folding more nicely now.
+  return ErrorTree(loc,
+                   "could not simplify operator " + getParamAsString(*this));
+}
+
 //===----------------------------------------------------------------------===//
 // MLIROpAttr
 //===----------------------------------------------------------------------===//

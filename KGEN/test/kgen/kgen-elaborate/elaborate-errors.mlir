@@ -32,6 +32,20 @@ kgen.generator @unfoldableIndex() {
 }
 
 
+
+// -----
+
+kgen.generator @unfoldableIndex() {
+  kgen.param.declare x = <4>
+
+  // Index type parameter expressions can only fold when they are known the
+  // same on 32-bit and 64-bit systems or if target-specific information is
+  // known.
+  // expected-error @+1 {{could not simplify operator div(8000000000, 4)}}
+  %1 = kgen.param.constant = <add(1, div(8000000000, x))> // 8B/4 differs on 32-bit.
+  kgen.return
+}
+
 // -----
 
 #target = #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target
