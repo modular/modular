@@ -2316,6 +2316,13 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
             cast<VariantType>(evaluator.getReboundType(variant.getType()));
         result = VariantAttr::get(value, variant.getIndex(), resType);
       }
+    } else if (auto convert = dyn_cast<IntLiteralConvertOp>(op)) {
+      // FIXME(MOCO-1628): This shouldn't be an operation.
+      if (auto input = findValue(convert.getInput())) {
+        result = IntLiteralConvertAttr::get(
+            evaluator.getReboundType(convert.getType()), input,
+            convert.getTreatIndexAsUnsigned());
+      }
     }
 
     // If we found something, remember it and move on to the next op.

@@ -311,6 +311,74 @@ TypedAttr UpcastAttr::get(Type type, TypedAttr inputTypeValue,
 bool UpcastAttr::isConstant() const { return false; }
 
 //===----------------------------------------------------------------------===//
+// IntLiteralConvertAttr
+//===----------------------------------------------------------------------===//
+
+static ErrorOr<IntegerAttr> foldIntLiteralConvert(TypedAttr input, Type outType,
+                                                  bool treatIndexAsUnsigned) {
+  auto literal = ::dyn_cast<IntLiteralAttr>(input);
+  if (!literal)
+    return Error("input must be IntLiteralAttr");
+
+  const IPInt &invalIP = literal.getValue();
+  const APInt &invalAP = invalIP.getAPInt();
+  unsigned outWidth = 64;
+  bool isUnsigned = treatIndexAsUnsigned;
+  if (!outType.isIndex()) {
+    outWidth = outType.getIntOrFloatBitWidth();
+    isUnsigned = outType.isUnsignedInteger();
+  }
+  if (invalIP < 0 && isUnsigned) {
+    std::string msg;
+    llvm::raw_string_ostream msgStream(msg);
+    msgStream << "integer value " << invalIP
+              << " is negative, but is being converted to an unsigned type";
+    return Error(msgStream.str());
+  }
+  uint64_t effectiveInputWidth = invalAP.getBitWidth();
+  // Positive IPInts are stored with an extra leading zero.  If converting to an
+  // unsigned type, we can strip the leading zero.
+  if (isUnsigned)
+    effectiveInputWidth -= 1;
+  if (effectiveInputWidth > outWidth) {
+    std::string msg;
+    llvm::raw_string_ostream msgStream(msg);
+    msgStream << "integer value " << invalIP << " requires "
+              << effectiveInputWidth
+              << " bits to store, but the destination bit width is only "
+              << outWidth << " bits wide";
+    return Error(msgStream.str());
+  }
+
+  APInt result;
+  if (isUnsigned)
+    result = invalAP.zextOrTrunc(outWidth);
+  else
+    result = invalAP.sextOrTrunc(outWidth);
+  return IntegerAttr::get(outType, result);
+}
+
+TypedAttr IntLiteralConvertAttr::get(Type type, TypedAttr input,
+                                     bool treatIndexAsUnsigned) {
+  // If this is a literal constant coming in, we can fold this.  If not, stage
+  // it until elaboration or something else simplifies things.
+  auto result = foldIntLiteralConvert(input, type, treatIndexAsUnsigned);
+  if (!result.isError())
+    return result.get();
+
+  return Base::get(type.getContext(), type, input, treatIndexAsUnsigned);
+}
+
+bool IntLiteralConvertAttr::isConstant() const { return false; }
+
+ErrorOrSuccess IntLiteralConvertAttr::validateForElaborator() const {
+  auto result =
+      foldIntLiteralConvert(getInput(), getType(), getTreatIndexAsUnsigned());
+  assert(result.isError() && "Should be folded if present");
+  return result.takeError();
+}
+
+//===----------------------------------------------------------------------===//
 // BindParamsAttr
 //===----------------------------------------------------------------------===//
 

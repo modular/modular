@@ -497,8 +497,19 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
   if (auto structAttr = dyn_cast<LITStructAttr>(param)) {
     // If the struct has a single element, elide the braces.
     if (diagShared && structAttr.getValues().size() == 1) {
+#if 1
       printDemangledParam(os, std::get<1>(structAttr.getValues().front()),
                           diagShared);
+#else
+      TypedAttr elt = std::get<1>(structAttr.getValues().front());
+
+      if (auto extract = dyn_cast<LIT::StructExtractAttr>(elt))
+        elt = extract.getStructValue();
+      ASTType(structAttr.getType()).print(os, diagShared);
+      os << '(';
+      printDemangledParam(os, elt, diagShared);
+      os << ')';
+#endif
     } else {
       os << '{';
       llvm::interleaveComma(structAttr.getValues(), os, [&](auto value) {
@@ -768,6 +779,15 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     os << '"';
     printAsMojoStringLiteral(strAttr, os);
     os << '"';
+    return;
+  }
+
+  if (auto convert = dyn_cast<IntLiteralConvertAttr>(param)) {
+    // Don't print extracts of IntLiteral.value.
+    // if (auto extract = dyn_cast<LIT::StructExtractAttr>(convert.getInput()))
+    //  printDemangledParam(os, extract.getStructValue(), diagShared);
+    // else
+    printDemangledParam(os, convert.getInput(), diagShared);
     return;
   }
 

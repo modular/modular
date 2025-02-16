@@ -239,7 +239,7 @@ struct Int(Copyable):
     fn __init__(out self, value: Index):
         self.value = value
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: IntLiteral):
         self.value = __mlir_op.`kgen.int_literal.convert`[

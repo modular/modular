@@ -600,74 +600,11 @@ OpFoldResult IntLiteralBinop::fold(FoldAdaptor adaptor) {
 // IntLiteralConvertOp
 //===----------------------------------------------------------------------===//
 
-static ErrorTreeOrSuccess intLiteralConvertOpHelper(IPInt invalIP, Type outType,
-                                                    bool treatIndexAsUnsigned,
-                                                    IntegerAttr &attrResult,
-                                                    Location loc) {
-  APInt invalAP = invalIP.getAPInt();
-  unsigned outWidth = 64;
-  bool isUnsigned = treatIndexAsUnsigned;
-  APInt result;
-  if (!outType.isIndex()) {
-    outWidth = outType.getIntOrFloatBitWidth();
-    isUnsigned = outType.isUnsignedInteger();
-  }
-  if ((invalIP < 0) && isUnsigned) {
-    std::string msg;
-    llvm::raw_string_ostream msgStream(msg);
-    msgStream << "integer value " << invalIP
-              << " is negative, but is being converted to an unsigned type.";
-    return ErrorTree(loc, Error(msgStream.str()));
-  }
-  uint64_t effectiveInputWidth = invalAP.getBitWidth();
-  // Positive IPInts are stored with an extra leading zero.  If converting to an
-  // unsgned type, we can strip the leading zero.
-  if (isUnsigned)
-    effectiveInputWidth -= 1;
-  if (effectiveInputWidth > outWidth) {
-    std::string msg;
-    llvm::raw_string_ostream msgStream(msg);
-    msgStream << "integer value " << invalIP << " requires "
-              << effectiveInputWidth
-              << " bits to store, but the destination bit width is only "
-              << outWidth << " bits wide";
-    return ErrorTree(loc, Error(msgStream.str()));
-  }
-  if (isUnsigned)
-    result = invalAP.zextOrTrunc(outWidth);
-  else
-    result = invalAP.sextOrTrunc(outWidth);
-  attrResult = IntegerAttr::get(outType, result);
-  return success();
-}
-
-ErrorTreeOrSuccess IntLiteralConvertOp::interpret(ArrayRef<Attribute> operands,
-                                                  InterpreterState &state) {
-  assert(!operands.empty() && "IntLiteralConvertOp must have an operand");
-  auto inval = ::dyn_cast<IntLiteralAttr>(operands[0]);
-  if (!inval)
-    return ErrorTree(getLoc(), Error("input must be IntLiteralAttr"));
-  IntegerAttr attrResult;
-  ErrorTreeOrSuccess errOrSuccess = intLiteralConvertOpHelper(
-      inval.getValue(), getType(), getTreatIndexAsUnsigned(), attrResult,
-      getLoc());
-  if (errOrSuccess.isError())
-    return errOrSuccess;
-  state.mapResults(attrResult);
-  return success();
-}
-
 OpFoldResult IntLiteralConvertOp::fold(FoldAdaptor adaptor) {
-  auto in = dyn_cast_if_present<IntLiteralAttr>(adaptor.getInput());
-  if (!in)
-    return {};
-  IntegerAttr attrResult;
-  ErrorTreeOrSuccess errOrSuccess = intLiteralConvertOpHelper(
-      in.getValue(), getType(), adaptor.getTreatIndexAsUnsigned(), attrResult,
-      getLoc());
-  if (errOrSuccess.isError())
-    return {};
-  return attrResult;
+  if (auto inAttr = dyn_cast_if_present<TypedAttr>(adaptor.getInput()))
+    return IntLiteralConvertAttr::get(getType(), inAttr,
+                                      getTreatIndexAsUnsigned());
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
