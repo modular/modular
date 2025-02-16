@@ -2184,12 +2184,14 @@ public:
       global.getBodyRegion().push_back(new Block);
       ImplicitLocOpBuilder b(op.getLoc(), op.getContext());
       b.setInsertionPointToStart(global.getBody());
-      Value value =
+      ErrorOr<Value> value =
           convertParameterToLLVM(b, *getTypeConverter(), /*imc=*/nullptr,
                                  /*scope=*/nullptr, op.getValue());
-      if (!value)
+      if (value.isError()) {
+        b.emitError(value.getError());
         return failure();
-      b.create<LLVM::ReturnOp>(value);
+      }
+      b.create<LLVM::ReturnOp>(value.get());
 
       // Insert the global into the module.
       symtab.insert(it->second = global);

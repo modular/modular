@@ -297,7 +297,7 @@ void replaceCallWithLLVMCall(mlir::RewriterBase &b, Operation *op,
 
 /// Generate the LLVM IR to materialize a constant of the given value. This is
 /// used to convert attribute values in `kgen.param.constant`.
-Value convertParameterToLLVM(
+ErrorOr<Value> convertParameterToLLVM(
     ImplicitLocOpBuilder &b, const POPToLLVMTypeConverter &tc,
     InterpreterMemoryConverter *imc,
     InterpreterMemoryConverter::MaterializationScope *scope, TypedAttr attr);
