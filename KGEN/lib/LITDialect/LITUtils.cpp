@@ -420,12 +420,9 @@ LIT::parseOptionalParamSignature(AsmParser &p,
     return success();
   };
 
-  SmallVector<Type> resultParamTypes;
-  if (failed(KGEN::parseOptionalParamSignature(
-          p, inputParamTypes, resultParamTypes, parseInputParam)))
+  if (failed(KGEN::parseOptionalParamSignature(p, inputParamTypes,
+                                               parseInputParam)))
     return failure();
-  if (!resultParamTypes.empty())
-    return p.emitError(startLoc, "expected no result parameters");
 
   passingKindParser.populatePassingKinds(paramPassingKinds);
 
@@ -464,8 +461,7 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
     passingKindPrinter.printOptionalTrailingSlash(idx++);
   };
 
-  KGEN::printOptionalParamSignature(p, inputParamTypes, /*resultParamTypes=*/{},
-                                    printWithDefault);
+  KGEN::printOptionalParamSignature(p, inputParamTypes, printWithDefault);
 }
 
 ParseResult LIT::parseOptionalName(AsmParser &p, StringAttr &name) {

@@ -1723,7 +1723,6 @@ void KGEN::printFunctionFuncTypeGenerator(OpAsmPrinter &p, Region *region,
 
 ParseResult KGEN::parseOptionalParamSignature(
     AsmParser &p, SmallVectorImpl<Type> &inputParamTypes,
-    SmallVectorImpl<Type> &resultParamTypes,
     function_ref<ParseResult(SmallVectorImpl<Type> &)> parseInputTy) {
   if (failed(p.parseOptionalLess()) || succeeded(p.parseOptionalGreater()))
     return success();
@@ -1736,18 +1735,7 @@ ParseResult KGEN::parseOptionalParamSignature(
 
   // Parse the input parameter types.
   auto parseIn = [&]() { return parseInputTy(inputParamTypes); };
-  if (succeeded(p.parseOptionalLSquare())) {
-    if (p.parseRSquare())
-      return failure();
-  } else if (p.parseCommaSeparatedList(parseIn)) {
-    return failure();
-  }
-
-  // Parse the result parameter types.
-  auto parseRes = [&]() {
-    return parseKGENType(p, resultParamTypes.emplace_back());
-  };
-  if (succeeded(p.parseOptionalArrow()) && p.parseCommaSeparatedList(parseRes))
+  if (p.parseCommaSeparatedList(parseIn))
     return failure();
 
   if (p.parseGreater())
@@ -1757,9 +1745,8 @@ ParseResult KGEN::parseOptionalParamSignature(
 
 void KGEN::printOptionalParamSignature(AsmPrinter &p,
                                        ArrayRef<Type> inputParamTypes,
-                                       ArrayRef<Type> resultParamTypes,
                                        function_ref<void(Type)> printInputTy) {
-  if (inputParamTypes.empty() && resultParamTypes.empty())
+  if (inputParamTypes.empty())
     return;
 
   auto defaultPrintInputTy = [&](Type type) { printKGENType(p, type); };
@@ -1767,14 +1754,7 @@ void KGEN::printOptionalParamSignature(AsmPrinter &p,
     printInputTy = defaultPrintInputTy;
 
   p << '<';
-  if (inputParamTypes.empty())
-    p << "[]";
   llvm::interleaveComma(inputParamTypes, p, printInputTy);
-  if (!resultParamTypes.empty()) {
-    p << " -> ";
-    llvm::interleaveComma(resultParamTypes, p,
-                          [&](Type type) { printKGENType(p, type); });
-  }
   p << '>';
 }
 
@@ -2145,34 +2125,6 @@ KGEN::verifyParamDeclsMatch(StringRef paramKind, StringRef originatorName,
   return verifyMatchingLists(
       map_range(paramValues, getType), map_range(decls, getType),
       originatorName, originatorLoc, targetName, targetLoc, paramKind, "type");
-}
-
-LogicalResult KGEN::checkResultParameterTypes(Operation *op,
-                                              ArrayRef<TypedAttr> resultParams,
-                                              DeclInterface decl) {
-  // Check the parameters match up.
-  ArrayRef<ParamDeclAttr> paramResults = decl.getResultParams();
-  if (resultParams.size() != paramResults.size())
-    return op->emitOpError("expected ")
-           << paramResults.size() << " parameters for enclosing op";
-
-  for (size_t i = 0, e = paramResults.size(); i != e; ++i) {
-    Type expectedTy = paramResults[i].getType();
-    Type actualTy = cast<TypedAttr>(resultParams[i]).getType();
-    if (actualTy != expectedTy)
-      return op->emitOpError("parameter #") << i << " has type " << actualTy
-                                            << " but should be " << expectedTy;
-  }
-  return success();
-}
-
-LogicalResult KGEN::checkResultArgumentTypes(Operation *op,
-                                             ArrayRef<TypedAttr> resultParams,
-                                             FuncInterface func) {
-  if (failed(checkResultParameterTypes(
-          op, resultParams, cast<DeclInterface>(func.getOperation()))))
-    return failure();
-  return checkOperandTypes(op, func.getResultTypes());
 }
 
 LogicalResult KGEN::verifyCallOperands(Operation *op, ValueRange args,

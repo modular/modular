@@ -302,7 +302,6 @@ void printArgConvention(AsmPrinter &p, ArgConvention convention);
 /// parser for each element of the inputs, and is responsible for printing the
 /// type.
 void printOptionalParamSignature(AsmPrinter &p, ArrayRef<Type> inputParamTypes,
-                                 ArrayRef<Type> resultParamTypes,
                                  function_ref<void(Type)> printInputTy = {});
 
 /// Parse a parameter signature (input/result types) if present. If the input
@@ -311,7 +310,6 @@ void printOptionalParamSignature(AsmPrinter &p, ArrayRef<Type> inputParamTypes,
 /// it in the provided array.
 ParseResult parseOptionalParamSignature(
     AsmParser &p, SmallVectorImpl<Type> &inputParamTypes,
-    SmallVectorImpl<Type> &resultParamTypes,
     function_ref<ParseResult(SmallVectorImpl<Type> &)> parseInputTy = {});
 
 ParseResult parseSignature(AsmParser &p, TypeAttr &signature);
@@ -423,16 +421,6 @@ verifyParamDeclsMatch(StringRef paramKind, StringRef originatorName,
                       ArrayRef<TypedAttr> paramValues, Location originatorLoc,
                       StringRef targetName, ArrayRef<ParamDeclAttr> decls,
                       Location targetLoc);
-
-/// Check the parameter result types.
-LogicalResult checkResultParameterTypes(Operation *op,
-                                        ArrayRef<TypedAttr> resultParams,
-                                        DeclInterface decl);
-
-/// Check the value and parameter result types.
-LogicalResult checkResultArgumentTypes(Operation *op,
-                                       ArrayRef<TypedAttr> resultParams,
-                                       FuncInterface func);
 
 /// Verify that the types of operands passed as arguments to a call match the
 /// expected types on the callee signature.
