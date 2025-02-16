@@ -217,6 +217,4 @@ void ParameterEvaluator::dump() const {
     os << "  " << name << " = " << value << "\n";
   for (auto [idx, value] : llvm::enumerate(inputParamValues))
     os << "  *(0," << idx << ") = " << value << "\n";
-  for (auto [idx, value] : llvm::enumerate(resultParamValues))
-    os << "  *(0," << idx << ")* = " << value << "\n";
 }

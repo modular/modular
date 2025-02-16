@@ -34,54 +34,53 @@ class VarDeclOp;
 /// diagnostics more specific.  Each comment gives an example where the
 /// expression is named "x".
 enum ExprContext {
-  EC_InvalidContext,        // Not a valid context, will abort.
-  EC_VarInit,               // var thing = x
-  EC_Assignment,            // y = x
-  EC_Type,                  // var v : x         (and many other places)
-  EC_AttributeRefBase,      // x.field
-  EC_AliasValue,            // alias something = x
-  EC_CallArgValue,          // foo(x)
-  EC_CallRefArgValue,       // foo(x) where x is passed by 'ref'.
-  EC_CallCalleeValue,       // x()
-  EC_TypeParamValue,        // Vector[x]
-  EC_CallParamValue,        // f[x]()
-  EC_OperatorOperandValue,  // x + y
-  EC_InplaceBinOpDest,      // x += 42
-  EC_FieldInitValue,        // SomeType{value: x}
-  EC_DefaultArgument,       // def f(arg = x):
-  EC_OwnedRegArgShadow,     // def f(x: Int):    -> var shadow slot.
-  EC_VarArgArgument,        // fn f(x: *Int):    -> creation of VariadicList.
-  EC_PackArgument,          // fn f[..](*x: *Ts) -> creation of VariadicPack
-  EC_KWArgsArgument,        // fn f(x: **Int):   -> creation of KWArgs dict
-  EC_DefaultParam,          // fn f[p: Int = x]():
-  EC_BoolCondition,         // if x  /  while x  /  x and y  /  a if x else b
-  EC_CondExpr,              // x if a else y
-  EC_BoolParamCondition,    // @parameter if x
-  EC_ForParamSeq,           // @parameter for y in x
-  EC_ForIterator,           // for x internal details
-  EC_WithContextMgr,        // with x:
-  EC_WithExitResult,        // with (result of __exit__ call)
-  EC_RaiseValue,            // raise x
-  EC_ReturnResultParamList, // return[x] y
-  EC_ReturnValue,           // return x;
-  EC_MLIRMagic,             // __mlir_type[x] / __mlir_attr[x]
-  EC_TopLevelStmt,          // x
-  EC_ListField,             // [x, y]
-  EC_TupleElement,          // (x, y)
-  EC_SubscriptBase,         // x[y]
-  EC_Subscript,             // y[x]
-  EC_SliceIndex,            // y[:x:]
-  EC_ParameterList,         // something[x]
-  EC_Destructor,            // Looking up T's destructor for `var x : T`
-  EC_Capture,               // def f(): var x = 4; def nested(): use(x)
-  EC_Decorator,             // @x
-  EC_AutoDeref,             // dereference Reference x
-  EC_Trait,                 // trait conformance checking for `T`
-  EC_Closure,               // closure formation
-  EC_Origin,                // origin specifier
-  EC_TypeOf,                // __type_of(x)
-  EC_PyBindGen,             // within Python binding generation
-  EC_DisableDel,            // within Python binding generation
+  EC_InvalidContext,       // Not a valid context, will abort.
+  EC_VarInit,              // var thing = x
+  EC_Assignment,           // y = x
+  EC_Type,                 // var v : x         (and many other places)
+  EC_AttributeRefBase,     // x.field
+  EC_AliasValue,           // alias something = x
+  EC_CallArgValue,         // foo(x)
+  EC_CallRefArgValue,      // foo(x) where x is passed by 'ref'.
+  EC_CallCalleeValue,      // x()
+  EC_TypeParamValue,       // Vector[x]
+  EC_CallParamValue,       // f[x]()
+  EC_OperatorOperandValue, // x + y
+  EC_InplaceBinOpDest,     // x += 42
+  EC_FieldInitValue,       // SomeType{value: x}
+  EC_DefaultArgument,      // def f(arg = x):
+  EC_OwnedRegArgShadow,    // def f(x: Int):    -> var shadow slot.
+  EC_VarArgArgument,       // fn f(x: *Int):    -> creation of VariadicList.
+  EC_PackArgument,         // fn f[..](*x: *Ts) -> creation of VariadicPack
+  EC_KWArgsArgument,       // fn f(x: **Int):   -> creation of KWArgs dict
+  EC_DefaultParam,         // fn f[p: Int = x]():
+  EC_BoolCondition,        // if x  /  while x  /  x and y  /  a if x else b
+  EC_CondExpr,             // x if a else y
+  EC_BoolParamCondition,   // @parameter if x
+  EC_ForParamSeq,          // @parameter for y in x
+  EC_ForIterator,          // for x internal details
+  EC_WithContextMgr,       // with x:
+  EC_WithExitResult,       // with (result of __exit__ call)
+  EC_RaiseValue,           // raise x
+  EC_ReturnValue,          // return x;
+  EC_MLIRMagic,            // __mlir_type[x] / __mlir_attr[x]
+  EC_TopLevelStmt,         // x
+  EC_ListField,            // [x, y]
+  EC_TupleElement,         // (x, y)
+  EC_SubscriptBase,        // x[y]
+  EC_Subscript,            // y[x]
+  EC_SliceIndex,           // y[:x:]
+  EC_ParameterList,        // something[x]
+  EC_Destructor,           // Looking up T's destructor for `var x : T`
+  EC_Capture,              // def f(): var x = 4; def nested(): use(x)
+  EC_Decorator,            // @x
+  EC_AutoDeref,            // dereference Reference x
+  EC_Trait,                // trait conformance checking for `T`
+  EC_Closure,              // closure formation
+  EC_Origin,               // origin specifier
+  EC_TypeOf,               // __type_of(x)
+  EC_PyBindGen,            // within Python binding generation
+  EC_DisableDel,           // within Python binding generation
 };
 const char *getContextMessage(ExprContext context);
 

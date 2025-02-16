@@ -104,8 +104,6 @@ public:
 
   /// Add an input parameter binding.
   void addInputValue(TypedAttr value) { inputParamValues.push_back(value); }
-  /// Add a result parameter binding.
-  void addResultValue(TypedAttr value) { resultParamValues.push_back(value); }
   /// Set the relative input depth.
   void setInputDepth(size_t depth) { inputDepth = depth; }
 
@@ -133,9 +131,6 @@ private:
   /// These are the top-level input parameters to use when rebinding a
   /// signature.
   SmallVector<TypedAttr> inputParamValues;
-  /// These are the top-level result parameters to use when rebinding a
-  /// signature.
-  SmallVector<TypedAttr> resultParamValues;
   /// The relative depth from the signature where the input parameters are from.
   /// This is zero for most applications, but should be set accordingly when
   /// substituting attributes or types inside a signature.

@@ -96,8 +96,6 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in 'with' call to '__exit__' on context manager";
   case EC_RaiseValue:
     return " in raised value";
-  case EC_ReturnResultParamList:
-    return " in return parameter";
   case EC_ReturnValue:
     return " in return value";
   case EC_MLIRMagic:
