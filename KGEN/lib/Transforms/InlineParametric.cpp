@@ -743,8 +743,7 @@ void ParametricInliningGraphNode::calculateParams(
   calleeParamGraph.calculate(paramCache);
   func.walk([&](Operation *op) {
     if (auto decl = dyn_cast<DeclInterface>(op)) {
-      for (ParamDeclAttr decl : llvm::concat<const ParamDeclAttr>(
-               decl.getInputParams(), decl.getResultParams()))
+      for (ParamDeclAttr decl : decl.getInputParams())
         allDecls.insert(decl.getName());
     }
     if (auto paramOp = dyn_cast<ParamOpInterface>(op)) {
