@@ -1600,7 +1600,7 @@ kgen.generator @self_ref_apply<param>(%arg0: !pop.array<apply(:()->index @sizeof
 // CHECK-LABEL: kgen.func export @param_alias
 // CHECK-SAME: %arg0: !pop.array<16, i8>
 kgen.generator export @param_alias(%arg0: !pop.array<apply(:()->index @sizeof<:type array<2, index>>), i8>) {
-  kgen.param.declare fn: <index>(!pop.array<apply(:()->index @sizeof<:type array<*(0,0), index>>), i8>) -> () = <@self_ref_apply>
+  kgen.param.declare fn: <index>(!pop.array<apply(:()->index @sizeof<:type array<4, index>>), i8>) -> () = <@self_ref_apply>
   // CHECK: call @"self_ref_apply,param=2"(%arg0)
   kgen.call_param[(!pop.array<apply(:()->index @sizeof<:type array<2, index>>), i8>) -> (): bind_params(:<index>(!pop.array<apply(:()->index @sizeof<:type array<*(0,0), index>>), i8>) -> () fn, 2)](%arg0)
   kgen.return

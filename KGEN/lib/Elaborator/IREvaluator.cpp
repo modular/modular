@@ -521,11 +521,42 @@ ErrorTreeOr<Attribute> IREvaluator::concretizeParameterExpr(ImplNode *parent,
   if (ParameterAttr::isSimpleConstant(result))
     return result;
 
-  // If this was an unfoldable operator expression, error.  This can happen for
-  // things like 'index' arithmetic that has target-specific results.
-  if (auto oper = dyn_cast<ParamOperatorAttr>(result))
-    return ErrorTree(loc,
-                     "could not simplify operator " + getParamAsString(result));
+  // Otherwise we had an error folding the expression tree or we just have a
+  // some foreign attribute that doesn't participate in the parameter system.
+  // Walk the attribute tree postorder - if we see any attribute that has
+  // all-simple-constant leaves, then we check to see if it is errorneous so we
+  // can report the error.  We do this in postorder because you could have:
+  //    add(4, div(8000000000, 4))
+  // and the problem is that div isn't target invariant.  The problem isn't the
+  // add outside it.
+  result.walk<mlir::WalkOrder::PostOrder>(
+      [&](Attribute attr) -> mlir::WalkResult {
+        bool allSimple = true;
+        attr.walkImmediateSubElements(
+            [&](Attribute sub) {
+              if (allSimple)
+                allSimple = ParameterAttr::isSimpleConstant(sub);
+            },
+            [&](Type T) {});
+
+        // If this is an attribute with simple operands that refused to fold,
+        // see if we're able to get a custom error message from it to explain
+        // what is going on.
+        if (allSimple) {
+          if (auto itf = ::dyn_cast<ParameterAttr>(attr)) {
+            auto errorMessage = itf.validateForElaborator(loc);
+            if (errorMessage.isError()) {
+              emitError(errorMessage.takeError());
+              return WalkResult::interrupt();
+            }
+          }
+        }
+        return WalkResult::advance();
+      });
+
+  if (error)
+    return std::move(*error);
+
   return result;
 }
 

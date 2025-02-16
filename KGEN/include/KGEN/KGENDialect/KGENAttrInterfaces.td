@@ -26,6 +26,7 @@ def ParameterAttrInterface : AttrInterface<"ParameterAttr"> {
     InterfaceMethod<[{
       Returns whether the attribute can be considered a simple constant.
     }], "bool", "isConstant">,
+
     InterfaceMethod<[{
       Compare this parameter attribute with another attribute that may not be of
       the same kind, returning true if this parameter should be considered
@@ -38,6 +39,15 @@ def ParameterAttrInterface : AttrInterface<"ParameterAttr"> {
       `rhs` won't be either.
     }], "std::optional<bool>", "isLessThan", (ins "Attribute":$rhs), [{}], [{
       return std::nullopt;
+    }]>,
+
+    InterfaceMethod<[{
+      Returns a custom error message for this parameter attribute, or success if
+      there are no errors. This allows parameter attributes to implement their
+      own validation logic and error reporting, producing better elaborator
+      error messages when they cannot be simplified then.
+    }], "ErrorTreeOrSuccess", "validateForElaborator", (ins "Location":$loc), [{}], [{
+      return success();
     }]>,
   ];
 
