@@ -7,4 +7,7 @@ modular_nanobind_extension(
         "//SDK/lib/API/python/max/_core:modules",
     ],
     py_data = ["//SDK/lib/API/python/max/_core:stubs"],
+    deps = [
+        "@llvm-project//llvm:Support",
+    ],
 )
