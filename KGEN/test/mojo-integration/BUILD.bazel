@@ -1,13 +1,18 @@
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files")
 load("//bazel:api.bzl", "lit_tests")
 
+_DATA = [
+    "inputs/**",
+]
+
 lit_tests(
     name = "test",
     srcs = glob(
         [
             "*.mlir",
-            "*.mojo",
+            "**/*.mojo",
         ],
+        exclude = _DATA,
     ),
     data = glob(["inputs/**/*.mojo"]) + [
         "//KGEN:CompilerRT",

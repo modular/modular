@@ -8,6 +8,7 @@
 
 from test_dependency import *
 
+
 @export
 fn anchor() -> int:
     return use_me()
