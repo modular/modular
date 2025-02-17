@@ -20,26 +20,24 @@ from os import Process
 from testing import assert_false, assert_raises
 
 
-# CHECK-LABEL: TEST
+# CHECK-LABEL: TEST_ECHO
 def test_process_run():
-    _ = Process.run("echo", List[String]("== TEST"))
+    _ = Process.run("echo", List[String]("== TEST_ECHO"))
 
 
-# def test_process_run_missing():
-#     # assert_raises does not work with exception raised in child process
-#     # crashes with thread error
-#     missing_executable_file = "ThIsFiLeCoUlDNoTPoSsIbLlYExIsT.NoTAnExTeNsIoN"
-#
-#     # verify that the test file does not exist before starting the test
-#     assert_false(
-#         exists(missing_executable_file),
-#         "Unexpected file '" + missing_executable_file + "' it should not exist",
-#     )
-#
-#     # Forking appears to break asserts
-#     with assert_raises():
-#         _ = Process.run(missing_executable_file, List[String]())
+def test_process_run_missing():
+    missing_executable_file = "ThIsFiLeCoUlDNoTPoSsIbLlYExIsT.NoTAnExTeNsIoN"
+
+    # verify that the test file does not exist before starting the test
+    assert_false(
+        exists(missing_executable_file),
+        "Unexpected file '" + missing_executable_file + "' it should not exist",
+    )
+
+    with assert_raises():
+        _ = Process.run(missing_executable_file, List[String]())
 
 
 def main():
     test_process_run()
+    test_process_run_missing()
