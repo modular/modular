@@ -334,6 +334,70 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
 
+class ExaonePipelineOracle(PipelineOracle):
+    @property
+    def supported_versions(self) -> Sequence[str]:
+        return ["3.5-2.4B-Instruct"]
+
+    @property
+    def supported_encodings(self) -> Sequence[str]:
+        return ["float32"]
+
+    def is_supported(
+        self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
+    ) -> bool:
+        assert version in self.supported_versions
+        assert encoding in self.supported_encodings
+        return True
+
+    def create_max_pipeline(
+        self,
+        *,
+        version: str,
+        encoding: str,
+        device_specs: list[driver.DeviceSpec],
+    ) -> MaxPipelineAndTokenizer:
+        for device_spec in device_specs:
+            assert self.is_supported(
+                version=version, encoding=encoding, device_spec=device_spec
+            )
+        config = pipelines.PipelineConfig(
+            architecture="ExaoneForCausalLM",
+            device_specs=device_specs,
+            huggingface_repo_id="LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct",
+            quantization_encoding=pipelines.SupportedEncoding[encoding],
+            max_length=1024,
+            # TODO(E2EOPT-48): Remove batch size override.
+            max_batch_size=128,
+            trust_remote_code=True,
+        )
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+
+        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        return MaxPipelineAndTokenizer(
+            model=pipeline._pipeline_model,
+            generator=pipeline,
+            tokenizer=tokenizer,
+        )
+
+    def create_torch_pipeline(
+        self, *, version: str, encoding: str, device: torch.device
+    ) -> TorchModelAndDataProcessor:
+        hf_repo_id = "LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct"
+        tokenizer = transformers.AutoTokenizer.from_pretrained(hf_repo_id)
+        config = transformers.AutoConfig.from_pretrained(
+            hf_repo_id, trust_remote_code=True
+        )
+        model = transformers.AutoModelForCausalLM.from_pretrained(
+            hf_repo_id,
+            config=config,
+            device_map=device,
+            torch_dtype=torch.bfloat16,
+            trust_remote_code=True,
+        )
+        return TorchModelAndDataProcessor(model=model, data_processor=tokenizer)
+
+
 class ReplitPipelineOracle(PipelineOracle):
     @property
     def supported_versions(self) -> Sequence[str]:
@@ -800,6 +864,7 @@ class GenericOracle(PipelineOracle):
 
 
 PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
+    "exaone": ExaonePipelineOracle(),
     "llama": LlamaPipelineOracle(),
     "llama3.3-70b": Llama3_3_70BInstructPipelineOracle(),
     "replit": ReplitPipelineOracle(),

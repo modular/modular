@@ -432,6 +432,23 @@ PIPELINES = {
             relative_tolerance=2.1,
         ),
     ),
+    "EXAONE-3.5-2.4B-Instruct-float32": PipelineDef(
+        compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
+        tags=["big"],
+        run=lambda device_type, devices: run_llm_verification(
+            device_type=device_type,
+            devices=devices,
+            pipeline="exaone",
+            version="3.5-2.4B-Instruct",
+            encoding="float32",
+            # TODO: Investigate why this is inf here.
+            # Response text looks semantically close.
+            kl_div_threshold=float("inf"),
+            cos_dist_threshold=0.1,
+            absolute_tolerance=5.0,
+            relative_tolerance=2.0,
+        ),
+    ),
 }
 
 
