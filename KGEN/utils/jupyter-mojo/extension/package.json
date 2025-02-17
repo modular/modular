@@ -51,7 +51,7 @@
     "@jupyterlab/ui-components": ">=3.4.8"
   },
   "devDependencies": {
-    "@jupyterlab/builder": ">=3.4.8",
+    "@jupyterlab/builder": ">=4.3.5",
     "@types/codemirror": "^5.60.7",
     "@typescript-eslint/eslint-plugin": "^4.8.1",
     "@typescript-eslint/parser": "^4.8.1",
