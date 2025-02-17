@@ -22,13 +22,13 @@ class Signals:
 
     Device code uses these buffers by enabling peer-to-peer access.
     Then thread blocks use the buffers to implement barriers for
-    synchronization.
+    synchronization, and to hold intermediate communication results.
     """
 
-    NUM_BYTES = 4096
+    NUM_BYTES = 128 * 1024 * 1024
     """The size of the signal buffers used for communication in allreduce."""
     # NOTE: ``NUM_BYTES`` must stay in sync with the size of the ``Signal``
-    # Mojo struct.
+    # Mojo struct + the size of the intermediate buffer for communication.
 
     devices: list[DeviceRef]
     """List of devices that these signals communicate between."""
