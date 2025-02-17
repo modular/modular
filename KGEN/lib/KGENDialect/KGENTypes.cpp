@@ -374,7 +374,8 @@ GeneratorType GeneratorType::getSpecializedGenerator(
       // increased when substituted into this signature.
       Type reboundType = plusOneAdjuster.replace(value.getType());
       if (reboundType != remappedDeclType) {
-        assert(emitErrorFn && "unexpected invalid signature");
+        if (!emitErrorFn)
+          return {};
         emitErrorFn() << "caller input parameter #" << paramNo << " has type "
                       << reboundType << " but callee expected type "
                       << remappedDeclType;
