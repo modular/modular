@@ -7254,13 +7254,17 @@ struct DistributedAllReduceSum:
         )
 
 
+@always_inline
 fn _check_signal_buffer_size(
-    signal_buffer: ManagedTensorSlice[type = DType.uint8, rank=1]
+    signal_buffer: ManagedTensorSlice[type = DType.uint8, rank=1],
+    input_size_bytes: Int,
 ) raises:
-    if signal_buffer.size() < sizeof[Signal]():
+    # The signal buffer has to be large enough to hold the entire input buffer.
+    var min_signal_buffer_size = sizeof[Signal]() + input_size_bytes
+    if signal_buffer.size() < min_signal_buffer_size:
         raise Error(
             "expected signal buffer to be at least ",
-            sizeof[Signal](),
+            min_signal_buffer_size,
             " bytes, but got ",
             signal_buffer.size(),
         )
@@ -7289,8 +7293,9 @@ struct DistributedAllReduceSum2Devices:
         dev_ctx1: DeviceContextPtr,
         ctx: MojoCallContextPtr,
     ) raises:
-        _check_signal_buffer_size(signal_buffer0)
-        _check_signal_buffer_size(signal_buffer1)
+        var input_size_bytes = inputs[0].size() * sizeof[type]()
+        _check_signal_buffer_size(signal_buffer0, input_size_bytes)
+        _check_signal_buffer_size(signal_buffer1, input_size_bytes)
 
         dev_ctxs = List[DeviceContext](dev_ctx0[], dev_ctx1[])
 
@@ -7342,12 +7347,13 @@ struct DistributedAllReduceSum4Devices:
         dev_ctx3: DeviceContextPtr,
         ctx: MojoCallContextPtr,
     ) raises:
-        _check_signal_buffer_size(signal_buffer0)
-        _check_signal_buffer_size(signal_buffer1)
-        _check_signal_buffer_size(signal_buffer2)
-        _check_signal_buffer_size(signal_buffer3)
+        var input_size_bytes = inputs[0].size() * sizeof[type]()
+        _check_signal_buffer_size(signal_buffer0, input_size_bytes)
+        _check_signal_buffer_size(signal_buffer1, input_size_bytes)
+        _check_signal_buffer_size(signal_buffer2, input_size_bytes)
+        _check_signal_buffer_size(signal_buffer3, input_size_bytes)
 
-        dev_ctxs = List[DeviceContext](
+        var dev_ctxs = List[DeviceContext](
             dev_ctx0[], dev_ctx1[], dev_ctx2[], dev_ctx3[]
         )
 
