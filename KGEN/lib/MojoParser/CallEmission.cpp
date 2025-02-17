@@ -613,6 +613,9 @@ PValue OverloadSet::filterOverloadSetForValueType(
     if (!newBindings.empty())
       candidateType = candidateType.getSpecializedGenerator(newBindings);
 
+    if (!candidateType)
+      return {};
+
     // This candidate is valid if it can be implicitly converted to the required
     // function type.
     if (ExprEmitter::canImplicitlyConvertToType(
