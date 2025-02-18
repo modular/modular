@@ -327,18 +327,14 @@ alias InputTensor = ManagedTensorSlice[io_spec=Input]
 alias MutableInputTensor = ManagedTensorSlice[io_spec=MutableInput]
 
 
-struct IODynamicTensor[
+struct DynamicTensor[
     type: DType,
     rank: Int,
-    io_spec: IOSpec,
 ]:
     alias Type = ManagedTensorSlice[
         io_spec=IOUnknown,
         static_spec = StaticTensorSpec[type, rank].create_unknown(),
     ]
-
-
-alias DynamicTensor = IODynamicTensor[io_spec=IOUnknown, *_, **_]
 
 
 @value

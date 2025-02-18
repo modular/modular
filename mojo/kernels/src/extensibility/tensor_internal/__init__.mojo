@@ -7,7 +7,6 @@
 
 from .managed_tensor_slice import (
     DynamicTensor,
-    IODynamicTensor,
     InputTensor,
     ManagedTensorSlice,
     MutableInputTensor,
