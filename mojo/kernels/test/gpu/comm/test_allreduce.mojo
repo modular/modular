@@ -62,6 +62,9 @@ fn all_reduce_test[
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var rank_sigs = StaticTuple[UnsafePointer[Signal], MAX_GPUS]()
 
+    # Set up temp buffers for GPUs to reduce-scatter into / all-gather from.
+    var temp_buffer_num_bytes = ngpus * sizeof[type]() * length
+
     # Initialize buffers for each GPU
     @parameter
     for i in range(ngpus):
@@ -79,7 +82,9 @@ fn all_reduce_test[
 
         # Create and initialize signal buffers
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](sizeof[Signal]())
+            list_of_ctx[i].create_buffer_sync[DType.uint8](
+                sizeof[Signal]() + temp_buffer_num_bytes
+            )
         )
         list_of_ctx[i].memset_sync[DType.uint8](signal_buffers[i], 0)
         rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
@@ -166,6 +171,8 @@ def main():
     # Test configurations.
     alias latency_bound_length = 8 * 1024
     alias bandwidth_bound_length = 16 * 1024 * 1024
+
+    # Rank of the tensor to transfer.
     alias rank = 1
 
     # Test with 2 GPUs
