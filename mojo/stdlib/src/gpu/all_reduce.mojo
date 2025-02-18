@@ -449,24 +449,45 @@ fn allreduce_1stage_kernel[
     Uses P2P access to directly read from other GPU buffers and perform reduction.
     Synchronizes using multi_gpu_barrier before and after reduction.
     """
-    var tid = thread_idx.x
-    var global_tid = block_idx.x * block_dim.x + tid
+    alias accum_type = get_accum_type[type]()
+    alias simd_width = simdwidthof[type]()
+
+    var global_tid = global_idx.x
     var stride = grid_dim.x * block_dim.x
     var my_sig: UnsafePointer[Signal] = rank_sigs[my_rank]
+    var num_simd_vectors = num_elements // simd_width
 
-    multi_gpu_barrier[ngpus, True](rank_sigs, my_sig, my_rank)
-    for i in range(global_tid, num_elements, stride):
-        # Accumulate in a local variable since `result` may be uninitialized.
-        alias accum_type = get_accum_type[type]()
-        var accum = src_bufs[0].data[i].cast[accum_type]()
+    # Round-robin access pattern to balance NVLink traffic across GPUs.
+    var ptrs = stack_allocation[
+        ngpus,
+        UnsafePointer[Scalar[type]],
+        address_space = _GPUAddressSpace.LOCAL,
+    ]()
+
+    @parameter
+    for i in range(ngpus):
+        # Round-robin pattern, for 8 GPUs for example:
+        # Rank 0 accesses: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7.
+        # Rank 1 accesses: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 0.
+        var target = (my_rank + i) % ngpus
+        ptrs[i] = src_bufs[target].data
+
+    multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
+
+    # Vectorized grid-strided loop with SIMD loads.
+    for idx in range(global_tid, num_simd_vectors, stride):
+        var elem_idx = idx * simd_width
+        var accum = ptrs[0].load[width=simd_width](elem_idx).cast[accum_type]()
 
         @parameter
         for _id in range(1, ngpus):
-            accum += src_bufs[_id].data[i].cast[accum_type]()
+            accum += (
+                ptrs[_id].load[width=simd_width](elem_idx).cast[accum_type]()
+            )
 
-        result[i] = accum.cast[type]()
+        result.store(elem_idx, accum.cast[type]())
 
-    multi_gpu_barrier[ngpus, False](rank_sigs, my_sig, my_rank)
+    multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
 
 
 @always_inline
@@ -497,6 +518,12 @@ fn all_reduce_p2p[
     Launches P2P reduction kernel on each GPU to perform direct reduction.
     """
     var num_elements = list_of_in_bufs[0].num_elements()
+    if num_elements % simdwidthof[type]() != 0:
+        raise Error(
+            "non SIMD-width multiple number of elements unsupported by"
+            " allreduce"
+        )
+
     for i in range(ngpus):
         var curr_ctx = ctxs[i]
         var curr_out_buf = list_of_out_bufs[i]
