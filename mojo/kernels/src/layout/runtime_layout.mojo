@@ -9,7 +9,7 @@ from sys import bitwidthof
 from utils import IndexList
 
 from . import IntTuple, Layout
-from .int_tuple import UNKNOWN_VALUE, flatten, to_int
+from .int_tuple import UNKNOWN_VALUE, flatten
 from .layout import coalesce as coalesce_layout
 from .layout import composition as composition_layout
 from .layout import is_tuple
@@ -68,7 +68,7 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
     fn bound_check_required(self) -> Bool:
         @parameter
         for i in range(layout.rank()):
-            alias dim_i = to_int(layout.shape[i])
+            alias dim_i = Int(layout.shape[i])
             if self.shape.value[i] != dim_i:
                 return True
         return False
@@ -179,8 +179,8 @@ fn coalesce[
 
     @parameter
     for i in range(len(flatten(l.shape))):
-        alias shape = to_int(l.shape[i])
-        alias stride = to_int(l.stride[i])
+        alias shape = Int(l.shape[i])
+        alias stride = Int(l.stride[i])
 
         # If dynamic, append new mode
         if UNKNOWN_VALUE in (shape, stride):

@@ -12,7 +12,7 @@ from buffer.dimlist import Dim, DimList
 from gpu.id import thread_idx
 from gpu.memory import CacheEviction, Fill, async_copy
 from layout import Layout, LayoutTensor
-from layout.int_tuple import depth, to_int
+from layout.int_tuple import depth
 from layout.layout import make_layout
 from memory.pointer import AddressSpace, _GPUAddressSpace
 
@@ -146,7 +146,7 @@ fn __get_shape_as_tuple[
 
     @parameter
     for i in range(rank):
-        res[i] = to_int(thread_layout.shape[i])
+        res[i] = Int(thread_layout.shape[i])
 
     return res
 
@@ -172,8 +172,8 @@ fn _distribute_mask[
 
     @parameter
     for i in range(rank):
-        alias shape_i = to_int(thread_layout.shape[i])
-        alias stride_i = to_int(thread_layout.stride[i])
+        alias shape_i = Int(thread_layout.shape[i])
+        alias stride_i = Int(thread_layout.stride[i])
         var thread_coord_i = (thread_id // stride_i) % shape_i
         res.offset[i] += thread_coord_i
 
@@ -196,7 +196,7 @@ fn __distribute_shape[thread_layout: Layout](shape: DimList) -> DimList:
         if shape.at[i]().is_dynamic():
             res[i] = Dim()
         else:
-            res[i] = shape.at[i]() // to_int(thread_layout.shape[i])
+            res[i] = shape.at[i]() // Int(thread_layout.shape[i])
 
     if thread_layout.rank() == 1:
         return DimList(res[0])
@@ -231,7 +231,7 @@ fn distribute[
 
     @parameter
     for i in range(rank):
-        alias thread_shape_i = to_int(thread_layout.shape[i])
+        alias thread_shape_i = Int(thread_layout.shape[i])
         res_shape[i] = buff.dim[i]() // thread_shape_i
         res_strides[i] = buff.stride[i]() * thread_shape_i
 
@@ -239,8 +239,8 @@ fn distribute[
 
     @parameter
     for i in range(rank):
-        alias shape_i = to_int(thread_layout.shape[i])
-        alias stride_i = to_int(thread_layout.stride[i])
+        alias shape_i = Int(thread_layout.shape[i])
+        alias stride_i = Int(thread_layout.stride[i])
         var thread_coords_i = (thread_id // stride_i) % shape_i
         thread_offset += thread_coords_i * buff.stride[i]()
 
@@ -496,7 +496,7 @@ fn _copy_nd_buffer_to_layout_tensor[
         ]()
         constrained[buff_element_layout_shape[0] == 1, "Expecting row vector"]()
 
-        alias vec_size = to_int(tensor_element_layout.shape[0])
+        alias vec_size = Int(tensor_element_layout.shape[0])
         alias alignment = alignof[dst.element_type]()
 
         @parameter
@@ -650,7 +650,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
         ]()
         constrained[buff_element_layout_shape[0] == 1, "Expecting row vector"]()
 
-        alias vec_size = to_int(tensor_element_layout.shape[0])
+        alias vec_size = Int(tensor_element_layout.shape[0])
         alias alignment = alignof[dst.element_type]()
 
         @parameter
@@ -735,7 +735,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
             var src_idx = _get_element_idx(i, src, buff_element_layout)
 
             # Evaluate the mask, skip OOB element copies
-            alias dim_0_shape = to_int(dst.layout.shape[0])
+            alias dim_0_shape = Int(dst.layout.shape[0])
             var dim_0 = i % dim_0_shape
             var dim_1 = i // dim_0_shape
             var mask_val = tile_mask.access_mask((dim_0, dim_1))
@@ -795,7 +795,7 @@ fn _copy_layout_tensor_to_nd_buffer[
         ]()
         constrained[buff_element_layout_shape[0] == 1, "Expecting row vector"]()
 
-        alias vec_size = to_int(tensor_element_layout.shape[0])
+        alias vec_size = Int(tensor_element_layout.shape[0])
         alias alignment = alignof[src.element_type]()
 
         @parameter
@@ -905,7 +905,7 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
         ]()
         constrained[buff_element_layout_shape[0] == 1, "Expecting row vector"]()
 
-        alias vec_size = to_int(tensor_element_layout.shape[0])
+        alias vec_size = Int(tensor_element_layout.shape[0])
         alias alignment = alignof[src.element_type]()
 
         @parameter
@@ -959,7 +959,7 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
         @parameter
         for i in range(num_elements * src.element_size):
             # Evaluate the mask, skip OOB element copies
-            alias dim_0_shape = to_int(src.layout.shape[0])
+            alias dim_0_shape = Int(src.layout.shape[0])
             var dim_0 = i % dim_0_shape
             var dim_1 = i // dim_0_shape
             var mask_val = tile_mask.access_mask((dim_0, dim_1))
@@ -1014,12 +1014,10 @@ fn copy_from_nd_buffer[
 
     @parameter
     if dst_element_layout.rank() == 1:
-        var src_vectorized = vectorize[1, to_int(dst_element_layout.shape[0])](
-            src
-        )
+        var src_vectorized = vectorize[1, Int(dst_element_layout.shape[0])](src)
         var src_vectorized_buffer = src_vectorized[0]
         var src_element_layout = src_vectorized[1]
-        alias element_size = to_int(dst_element_layout.shape[0])
+        alias element_size = Int(dst_element_layout.shape[0])
         var src_thread_local = distribute[
             thread_layout=thread_layout,
             swizzle=swizzle,
@@ -1030,12 +1028,12 @@ fn copy_from_nd_buffer[
         )
     elif dst_element_layout.rank() == 2:
         var src_vectorized = vectorize[
-            to_int(dst_element_layout.shape[0]),
-            to_int(dst_element_layout.shape[1]),
+            Int(dst_element_layout.shape[0]),
+            Int(dst_element_layout.shape[1]),
         ](src)
         var src_vectorized_buffer = src_vectorized[0]
         var src_element_layout = src_vectorized[1]
-        alias element_size = to_int(dst_element_layout.shape[1])
+        alias element_size = Int(dst_element_layout.shape[1])
         var src_thread_local = distribute[
             thread_layout=thread_layout,
             swizzle=swizzle,
@@ -1092,15 +1090,13 @@ fn copy_from_nd_buffer_masked[
 
     @parameter
     if dst_element_layout.rank() == 1:
-        var src_vectorized = vectorize[1, to_int(dst_element_layout.shape[0])](
-            src
-        )
+        var src_vectorized = vectorize[1, Int(dst_element_layout.shape[0])](src)
         var vec_mask = _vectorize_mask[
-            sizes = (1, to_int(dst_element_layout.shape[0]))
+            sizes = (1, Int(dst_element_layout.shape[0]))
         ](tile_mask)
         var src_vectorized_buffer = src_vectorized[0]
         var src_element_layout = src_vectorized[1]
-        alias element_size = to_int(dst_element_layout.shape[0])
+        alias element_size = Int(dst_element_layout.shape[0])
         var src_thread_local = distribute[
             thread_layout=thread_layout,
             swizzle=swizzle,
@@ -1118,18 +1114,18 @@ fn copy_from_nd_buffer_masked[
         )
     elif dst_element_layout.rank() == 2:
         var src_vectorized = vectorize[
-            to_int(dst_element_layout.shape[0]),
-            to_int(dst_element_layout.shape[1]),
+            Int(dst_element_layout.shape[0]),
+            Int(dst_element_layout.shape[1]),
         ](src)
         var vec_mask = _vectorize_mask[
             sizes = (
-                to_int(dst_element_layout.shape[0]),
-                to_int(dst_element_layout.shape[1]),
+                Int(dst_element_layout.shape[0]),
+                Int(dst_element_layout.shape[1]),
             )
         ](tile_mask)
         var src_vectorized_buffer = src_vectorized[0]
         var src_element_layout = src_vectorized[1]
-        alias element_size = to_int(dst_element_layout.shape[1])
+        alias element_size = Int(dst_element_layout.shape[1])
         var src_thread_local = distribute[
             thread_layout=thread_layout,
             swizzle=swizzle,
@@ -1189,9 +1185,7 @@ fn copy_to_nd_buffer[
 
     @parameter
     if src_element_layout.rank() == 1:
-        var dst_vectorized = vectorize[1, to_int(src_element_layout.shape[0])](
-            dst
-        )
+        var dst_vectorized = vectorize[1, Int(src_element_layout.shape[0])](dst)
         var dst_vectorized_buffer = dst_vectorized[0]
         var dst_element_layout = dst_vectorized[1]
         var dst_thread_local = distribute[thread_layout=thread_layout](
@@ -1202,8 +1196,8 @@ fn copy_to_nd_buffer[
         )
     else:
         var dst_vectorized = vectorize[
-            to_int(src_element_layout.shape[0]),
-            to_int(src_element_layout.shape[1]),
+            Int(src_element_layout.shape[0]),
+            Int(src_element_layout.shape[1]),
         ](dst)
         var dst_vectorized_buffer = dst_vectorized[0]
         var dst_element_layout = dst_vectorized[1]
@@ -1256,11 +1250,9 @@ fn copy_to_nd_buffer_masked[
 
     @parameter
     if src_element_layout.rank() == 1:
-        var dst_vectorized = vectorize[1, to_int(src_element_layout.shape[0])](
-            dst
-        )
+        var dst_vectorized = vectorize[1, Int(src_element_layout.shape[0])](dst)
         var vectorize_mask = _vectorize_mask[
-            sizes = (1, to_int(src_element_layout.shape[0]))
+            sizes = (1, Int(src_element_layout.shape[0]))
         ](tile_mask)
         var dst_vectorized_buffer = dst_vectorized[0]
         var dst_element_layout = dst_vectorized[1]
@@ -1278,13 +1270,13 @@ fn copy_to_nd_buffer_masked[
         )
     else:
         var dst_vectorized = vectorize[
-            to_int(src_element_layout.shape[0]),
-            to_int(src_element_layout.shape[1]),
+            Int(src_element_layout.shape[0]),
+            Int(src_element_layout.shape[1]),
         ](dst)
         var vectorize_mask = _vectorize_mask[
             sizes = (
-                to_int(src_element_layout.shape[0]),
-                to_int(src_element_layout.shape[0]),
+                Int(src_element_layout.shape[0]),
+                Int(src_element_layout.shape[1]),
             )
         ](tile_mask)
         var dst_vectorized_buffer = dst_vectorized[0]

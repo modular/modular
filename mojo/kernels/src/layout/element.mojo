@@ -12,7 +12,6 @@ from utils import IndexList
 
 from . import Layout, RuntimeLayout
 from .int_tuple import UNKNOWN_VALUE
-from .layout import to_int
 
 
 @always_inline
@@ -117,8 +116,8 @@ struct Element[
 
         @parameter
         if layout.stride[0] == 1:
-            alias size = to_int(layout.shape[0])
-            alias elements = to_int(layout.shape[1])
+            alias size = Int(layout.shape[0])
+            alias elements = Int(layout.shape[1])
             alias vec_type = SIMD[dtype, size]
             alias alignment = alignof[vec_type]()
 
@@ -131,8 +130,8 @@ struct Element[
             return Element(element_data, runtime_layout)
 
         elif layout.stride[1] == 1:
-            alias size = to_int(layout.shape[1])
-            alias elements = to_int(layout.shape[0])
+            alias size = Int(layout.shape[1])
+            alias elements = Int(layout.shape[0])
             alias vec_type = SIMD[dtype, size]
             alias alignment = alignof[vec_type]()
 
@@ -144,8 +143,8 @@ struct Element[
                 element_data = element_data.insert[offset = i * size](vec_i)
             return Element(element_data, runtime_layout)
 
-        alias dim_0 = to_int(layout.shape[0])
-        alias dim_1 = to_int(layout.shape[1])
+        alias dim_0 = Int(layout.shape[0])
+        alias dim_1 = Int(layout.shape[1])
 
         @parameter
         for i in range(dim_0):
@@ -199,14 +198,14 @@ struct Element[
         # rank-2 element.
         @parameter
         if layout.stride[0] == 1:
-            alias size = to_int(layout.shape[0])
-            alias elements = to_int(layout.shape[1])
+            alias size = Int(layout.shape[0])
+            alias elements = Int(layout.shape[1])
             alias vec_type = SIMD[dtype, size]
             alias alignment = alignof[vec_type]
             var element_data = Self.element_data_type()
             if runtime_layout.dim(0) < size:
-                alias dim_0 = to_int(layout.shape[0])
-                alias dim_1 = to_int(layout.shape[1])
+                alias dim_0 = Int(layout.shape[0])
+                alias dim_1 = Int(layout.shape[1])
 
                 @parameter
                 for i in range(dim_0):
@@ -233,14 +232,14 @@ struct Element[
             return Element(element_data, runtime_layout)
 
         elif layout.stride[1] == 1:
-            alias size = to_int(layout.shape[1])
-            alias elements = to_int(layout.shape[0])
+            alias size = Int(layout.shape[1])
+            alias elements = Int(layout.shape[0])
             alias vec_type = SIMD[dtype, size]
             alias alignment = alignof[vec_type]
             var element_data = Self.element_data_type()
             if runtime_layout.dim(1) < size:
-                alias dim_0 = to_int(layout.shape[0])
-                alias dim_1 = to_int(layout.shape[1])
+                alias dim_0 = Int(layout.shape[0])
+                alias dim_1 = Int(layout.shape[1])
 
                 @parameter
                 for i in range(dim_0):
@@ -266,8 +265,8 @@ struct Element[
                 element_data = element_data.insert[offset = i * size](vec_i)
             return Element(element_data, runtime_layout)
 
-        alias dim_0 = to_int(layout.shape[0])
-        alias dim_1 = to_int(layout.shape[1])
+        alias dim_0 = Int(layout.shape[0])
+        alias dim_1 = Int(layout.shape[1])
 
         @parameter
         for i in range(dim_0):
@@ -304,8 +303,8 @@ struct Element[
 
         @parameter
         if layout.stride[0] == 1:
-            alias size = to_int(layout.shape[0])
-            alias elements = to_int(layout.shape[1])
+            alias size = Int(layout.shape[0])
+            alias elements = Int(layout.shape[1])
             alias vec_type = SIMD[dtype, size]
             alias alignment = alignof[vec_type]()
 
@@ -318,8 +317,8 @@ struct Element[
             return
 
         elif layout.stride[1] == 1:
-            alias size = to_int(layout.shape[1])
-            alias elements = to_int(layout.shape[0])
+            alias size = Int(layout.shape[1])
+            alias elements = Int(layout.shape[0])
             alias vec_type = SIMD[dtype, size]
             alias alignment = alignof[vec_type]()
 
@@ -331,8 +330,8 @@ struct Element[
                 )
             return
 
-        alias dim_0 = to_int(layout.shape[0])
-        alias dim_1 = to_int(layout.shape[1])
+        alias dim_0 = Int(layout.shape[0])
+        alias dim_1 = Int(layout.shape[1])
 
         @parameter
         for i in range(dim_0):
@@ -377,13 +376,13 @@ struct Element[
 
         @parameter
         if layout.stride[0] == 1:
-            alias size = to_int(layout.shape[0])
-            alias elements = to_int(layout.shape[1])
+            alias size = Int(layout.shape[0])
+            alias elements = Int(layout.shape[1])
             alias vec_type = SIMD[dtype, size]
             alias alignment = alignof[vec_type]()
             if self.runtime_layout.dim(1) < size:
-                alias dim_0 = to_int(layout.shape[0])
-                alias dim_1 = to_int(layout.shape[1])
+                alias dim_0 = Int(layout.shape[0])
+                alias dim_1 = Int(layout.shape[1])
 
                 @parameter
                 for i in range(dim_0):
@@ -409,13 +408,13 @@ struct Element[
             return
 
         elif layout.stride[1] == 1:
-            alias size = to_int(layout.shape[1])
-            alias elements = to_int(layout.shape[0])
+            alias size = Int(layout.shape[1])
+            alias elements = Int(layout.shape[0])
             alias vec_type = SIMD[dtype, size]
             alias alignment = alignof[vec_type]()
             if self.runtime_layout.dim(1) < size:
-                alias dim_0 = to_int(layout.shape[0])
-                alias dim_1 = to_int(layout.shape[1])
+                alias dim_0 = Int(layout.shape[0])
+                alias dim_1 = Int(layout.shape[1])
 
                 @parameter
                 for i in range(dim_0):
@@ -442,8 +441,8 @@ struct Element[
                 )
             return
 
-        alias dim_0 = to_int(layout.shape[0])
-        alias dim_1 = to_int(layout.shape[1])
+        alias dim_0 = Int(layout.shape[0])
+        alias dim_1 = Int(layout.shape[1])
 
         @parameter
         for i in range(dim_0):

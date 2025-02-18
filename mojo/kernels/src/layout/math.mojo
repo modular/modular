@@ -8,7 +8,6 @@ import math
 
 from builtin.math import max as b_max
 from layout import LayoutTensor
-from layout.int_tuple import to_int
 
 from utils.numerics import min_or_neg_inf
 
@@ -150,9 +149,9 @@ fn max[axis: Int](inp: LayoutTensor, out: LayoutTensor):
 fn _reduce_res_row_major_shape(axis: Int, in_layout: Layout) -> Layout:
     var res_shape = IntTuple()
     for dim in range(0, axis):
-        res_shape.append(to_int(in_layout.shape[dim]))
+        res_shape.append(Int(in_layout.shape[dim]))
     for dim in range(axis + 1, in_layout.rank()):
-        res_shape.append(to_int(in_layout.shape[dim]))
+        res_shape.append(Int(in_layout.shape[dim]))
     return Layout.row_major(res_shape)
 
 

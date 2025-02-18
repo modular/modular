@@ -214,6 +214,11 @@ struct RuntimeTuple[
     ):
         return __type_of(result)(self.value.cast[type]())
 
+    @always_inline
+    fn __int__(self) -> Int:
+        constrained[S.is_value(), "tuple must be a single int value"]()
+        return self.value[0]
+
 
 fn is_tuple[t: IntTuple](tuple: RuntimeTuple[t, **_]) -> Bool:
     return t.is_tuple()
@@ -221,21 +226,6 @@ fn is_tuple[t: IntTuple](tuple: RuntimeTuple[t, **_]) -> Bool:
 
 fn is_int[t: IntTuple](tuple: RuntimeTuple[t, **_]) -> Bool:
     return t.is_value()
-
-
-@always_inline
-fn to_int[
-    t: IntTuple,
-    element_bitwidth: Int,
-    unsigned: Bool,
-    /,
-    *,
-    int_type: DType = _get_returned_type[element_bitwidth, unsigned](),
-](
-    tuple: RuntimeTuple[t, element_bitwidth=element_bitwidth, unsigned=unsigned]
-) -> Scalar[int_type]:
-    constrained[t.is_value(), "tuple must be a single int value"]()
-    return tuple.value[0]
 
 
 @always_inline
@@ -278,7 +268,7 @@ fn idx2crd[
     var res = __type_of(result)()
     constrained[idx_t.is_value(), "Only scalar index is supported"]()
     for i in range(res.scalar_length):
-        res.value[i] = (Int(to_int(idx)) // stride.value[i]) % shape.value[i]
+        res.value[i] = (Int(idx) // stride.value[i]) % shape.value[i]
     return res
 
 
@@ -320,7 +310,7 @@ fn crd2idx[
             r += crd2idx(crd[i], shape[i], stride[i])
         return r
     else:
-        var int_crd: Int = 0 if len(crd) == 0 else Int(to_int(crd))
+        var int_crd: Int = 0 if len(crd) == 0 else Int(crd)
 
         @parameter
         if shape_t.is_tuple():  # "int" tuple tuple
@@ -342,7 +332,7 @@ fn crd2idx[
                 int_crd, shape[last_elem_idx], stride[last_elem_idx]
             )
         else:  # "int" "int" "int"
-            return int_crd * Int(to_int(stride))
+            return int_crd * Int(stride)
 
 
 # TODO: This isn't necessarily needed. We need to revisit and simplify
@@ -380,7 +370,7 @@ fn shape_div[
             var res = RuntimeTuple[shape_div_int_tuple(a_t, b_t)]()
             # FIXME: this used to be simpler
             # var vb = Int(to_int(b))
-            var vb = RuntimeTuple[IntTuple(UNKNOWN_VALUE)](Int(to_int(b)))
+            var vb = RuntimeTuple[IntTuple(UNKNOWN_VALUE)](Int(b))
 
             @parameter
             for i in range(len(a_t)):
@@ -393,13 +383,9 @@ fn shape_div[
                 # FIXME: this used to be simpler
                 # vb = Int(to_int(shape_div(vb, product(a[i]))))
                 vb = Int(
-                    to_int(
-                        shape_div(
-                            vb,
-                            RuntimeTuple[IntTuple(UNKNOWN_VALUE)](
-                                product(a[i])
-                            ),
-                        )
+                    shape_div(
+                        vb,
+                        RuntimeTuple[IntTuple(UNKNOWN_VALUE)](product(a[i])),
                     )
                 )
             return res
@@ -409,8 +395,8 @@ fn shape_div[
         if b_t.is_tuple():
             return shape_div(a, b)
         else:
-            var va = Int(to_int(a))
-            var vb = Int(to_int(b))
+            var va = Int(a)
+            var vb = Int(b)
 
             if not (va % vb == 0 or vb % va == 0):
                 abort("Incompatible shape values: ", va, " ", vb)

@@ -28,7 +28,7 @@ from utils import IndexList, StaticTuple
 from utils.numerics import max_finite
 
 from .fillers import arange
-from .int_tuple import depth, fill_like, flatten, idx2crd, product, to_int
+from .int_tuple import depth, fill_like, flatten, idx2crd, product
 from .layout import *
 from .runtime_layout import RuntimeLayout
 from .runtime_layout import coalesce as runtime_coalesce
@@ -122,7 +122,7 @@ fn __get_len[*var_int: Int]() -> Int:
 fn _get_slice_size(layout: Layout, slc: Slice, dim: Int) -> Int:
     var start: Int
     var end: Int
-    start, end, _ = slc.indices(to_int(layout.shape[dim]))
+    start, end, _ = slc.indices(Int(layout.shape[dim]))
     return end - start
 
 
@@ -171,8 +171,8 @@ fn _distribute_is_masked[
 
     @parameter
     for i in range(layout.rank()):
-        alias layout_dim = to_int(layout.shape[i])
-        alias thread_dim = to_int(threads_layout.shape[i])
+        alias layout_dim = Int(layout.shape[i])
+        alias thread_dim = Int(threads_layout.shape[i])
 
         @parameter
         if layout_dim % thread_dim != 0:
@@ -998,7 +998,7 @@ struct LayoutTensor[
 
         @parameter
         for i in range(len(t)):
-            st[i] = to_int(t[i])
+            st[i] = Int(t[i])
         return st
 
     @staticmethod
@@ -1179,7 +1179,7 @@ struct LayoutTensor[
 
             @parameter
             for i in range(num_tiles):
-                alias stride = to_int(__tiled_layout[1].stride[i])
+                alias stride = Int(__tiled_layout[1].stride[i])
                 offset += tile_coords[i] * stride
 
             var runtime_layout = RuntimeLayout(runtime_shape, runtime_stride)
@@ -1276,7 +1276,7 @@ struct LayoutTensor[
 
             @parameter
             for i in range(tiles_rank):
-                alias stride = to_int(__tiled_layout[1].stride[i])
+                alias stride = Int(__tiled_layout[1].stride[i])
                 ptr_offset += tile_coords[i] * stride
 
             # fmt: off
@@ -1498,8 +1498,8 @@ struct LayoutTensor[
         # to support thread layout such as Layout((2, 2), 2)
         @parameter
         for i in range(rank):
-            alias thread_stride_i = to_int(thread_stride[i])
-            alias thread_shape_i = to_int(thread_shape[i])
+            alias thread_stride_i = Int(thread_stride[i])
+            alias thread_shape_i = Int(thread_shape[i])
             var tile_idx = (thread_id // thread_stride_i) % thread_shape_i
             var tile_shape_i = ceildiv(self.dim(i), thread_shape_i)
             var bound_i = Int((tile_shape_i - 1) * thread_shape_i + tile_idx)
@@ -1588,11 +1588,11 @@ struct LayoutTensor[
 
             @parameter
             for i in range(len(fragments_layout_stride)):
-                alias fragments_stride_i: UInt = to_int(
+                alias fragments_stride_i: UInt = Int(
                     fragments_layout_stride[i]
                 ).value
-                alias shape_i: UInt = to_int(thread_projected_shape[i])
-                alias stride_i: UInt = to_int(thread_projected_stride[i])
+                alias shape_i: UInt = Int(thread_projected_shape[i])
+                alias stride_i: UInt = Int(thread_projected_stride[i])
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
                 offset += thread_coord_i * fragments_stride_i
 
@@ -1653,8 +1653,8 @@ struct LayoutTensor[
             @parameter
             for i in range(len(flatten(Self.layout.stride))):
                 var fragments_stride_i = self.runtime_layout.stride.value[i]
-                alias shape_i: UInt = to_int(thread_projected_shape[i]).value
-                alias stride_i: UInt = to_int(thread_projected_stride[i]).value
+                alias shape_i: UInt = Int(thread_projected_shape[i]).value
+                alias stride_i: UInt = Int(thread_projected_stride[i]).value
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
                 offset += thread_coord_i * fragments_stride_i
 
@@ -1702,7 +1702,7 @@ struct LayoutTensor[
         fn __check_vector_shape[*vec_shape: Int]():
             @parameter
             for i in range(__get_len[*vec_shape]()):
-                alias shape_i = to_int(self.layout.shape[i])
+                alias shape_i = Int(self.layout.shape[i])
 
                 @parameter
                 if shape_i == UNKNOWN_VALUE:
@@ -1843,8 +1843,8 @@ struct LayoutTensor[
             d0_slice.step.or_else(1) == 1 and d1_slice.step.or_else(1) == 1,
             "Slice should have no gaps",
         ]()
-        alias stride_m = to_int(result.layout.stride[0])
-        alias stride_n = to_int(result.layout.stride[1])
+        alias stride_m = Int(result.layout.stride[0])
+        alias stride_n = Int(result.layout.stride[1])
 
         alias d0_slice_start = d0_slice.start.or_else(0)
         alias d1_slice_start = d1_slice.start.or_else(0)
@@ -1879,8 +1879,8 @@ struct LayoutTensor[
             slice_indices[0] < slice_indices[1],
             "Slice indices should be ordered",
         ]()
-        alias stride_0 = to_int(result.layout.stride[0])
-        alias stride_1 = to_int(result.layout.stride[1])
+        alias stride_0 = Int(result.layout.stride[0])
+        alias stride_1 = Int(result.layout.stride[1])
 
         alias d0_slice_start = d0_slice.start.or_else(0)
         alias d1_slice_start = d1_slice.start.or_else(0)
@@ -1891,7 +1891,7 @@ struct LayoutTensor[
 
         @parameter
         for i in range(Self.rank):
-            alias stride_i = to_int(Self.layout.stride[i])
+            alias stride_i = Int(Self.layout.stride[i])
 
             alias offset_index = _not_in_tuple[i, 2, slice_indices]()
 
@@ -1924,7 +1924,7 @@ struct LayoutTensor[
             "Slice should have no gaps",
         ]()
 
-        alias stride_0 = to_int(result.layout.stride[0])
+        alias stride_0 = Int(result.layout.stride[0])
 
         alias d0_slice_start = d0_slice.start.or_else(0)
 
@@ -1934,7 +1934,7 @@ struct LayoutTensor[
 
         @parameter
         for i in range(Self.rank):
-            alias stride_i = to_int(Self.layout.stride[i])
+            alias stride_i = Int(Self.layout.stride[i])
 
             alias offset_index = _not_in_tuple[i, 1, slice_indices]()
 

@@ -487,15 +487,14 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
     fn __repr__(self) -> String:
         return self.__str__()
 
+    @always_inline
+    fn __int__(self) -> Int:
+        return self.value()
+
 
 @always_inline
 fn signum(a: Int) -> Int:
     return 1 if (a > 0) else (-1 if (a < 0) else 0)
-
-
-@always_inline
-fn to_int(v: IntTuple) -> Int:
-    return v.value()
 
 
 @always_inline
@@ -678,9 +677,9 @@ fn to_unknown(t: IntTuple) -> IntTuple:
 @always_inline
 fn lt(a: IntTuple, b: IntTuple) -> Bool:
     for z in zip(a, b):
-        if to_int(z[0]) == to_int(z[1]):
+        if Int(z[0]) == Int(z[1]):
             continue
-        elif to_int(z[0]) < to_int(z[1]):
+        elif Int(z[0]) < Int(z[1]):
             return True
         else:
             return False
@@ -724,7 +723,7 @@ fn sum(t: IntTuple) -> Int:
     @parameter
     fn reducer(a: Int, b: IntTuple) -> Int:
         return UNKNOWN_VALUE if a == UNKNOWN_VALUE else a + (
-            to_int(b) if is_int(b) else sum(b)
+            Int(b) if is_int(b) else sum(b)
         )
 
     return reduce[Int, reducer](t, 0)
@@ -736,7 +735,7 @@ fn product(t: IntTuple) -> Int:
     @parameter
     fn reducer(a: Int, b: IntTuple) -> Int:
         return UNKNOWN_VALUE if a == UNKNOWN_VALUE else a * (
-            to_int(b) if is_int(b) else product(b)
+            Int(b) if is_int(b) else product(b)
         )
 
     return reduce[Int, reducer](t, 1)
@@ -749,7 +748,7 @@ fn tuple_max(t: IntTuple) -> Int:
     @always_inline
     @parameter
     fn reducer(a: Int, b: IntTuple) -> Int:
-        return max(a, to_int(b) if is_int(b) else tuple_max(b))
+        return max(a, Int(b) if is_int(b) else tuple_max(b))
 
     alias int_min_val = 0
     return reduce[Int, reducer](t, int_min_val)
@@ -757,7 +756,7 @@ fn tuple_max(t: IntTuple) -> Int:
 
 fn apply[func: fn (Int) capturing [_] -> Int](t: IntTuple) -> IntTuple:
     if is_int(t):
-        return func(to_int(t))
+        return func(Int(t))
     var res = IntTuple()
     for e in t:
         res.append(apply[func](e))
@@ -804,9 +803,9 @@ fn tuple_min(a: IntTuple, b: IntTuple) -> IntTuple:
     if len(a) != len(b):
         abort("Tuple sizes don't match: ", len(a), " != ", len(b))
     if is_int(a):
-        if UNKNOWN_VALUE in (to_int(a), to_int(b)):
+        if UNKNOWN_VALUE in (Int(a), Int(b)):
             return UNKNOWN_VALUE
-        return min(to_int(a), to_int(b))
+        return min(Int(a), Int(b))
     return apply_zip[tuple_min](a, b)
 
 
@@ -814,7 +813,7 @@ fn inner_product(a: IntTuple, b: IntTuple) -> Int:
     if len(a) != len(b):
         abort("Tuple sizes don't match: ", len(a), " != ", len(b))
     if is_int(a):
-        return to_int(a) * to_int(b)
+        return Int(a) * Int(b)
     var r: Int = 0
     for z in zip(a, b):
         r += inner_product(z[0], z[1])
@@ -833,7 +832,7 @@ fn abs(t: IntTuple) -> IntTuple:
 #
 fn mul(lhs: IntTuple, rhs: Int) -> IntTuple:
     if is_int(lhs):
-        if UNKNOWN_VALUE in (to_int(lhs), rhs):
+        if UNKNOWN_VALUE in (Int(lhs), rhs):
             return UNKNOWN_VALUE
         return lhs.value() * rhs
 
@@ -896,7 +895,7 @@ fn weakly_congruent(a: IntTuple, b: IntTuple) -> Bool:
 #
 fn compatible(a: IntTuple, b: IntTuple) -> Bool:
     fn predicate(a: IntTuple, b: IntTuple) -> Bool:
-        return to_int(a) == size(b)
+        return Int(a) == size(b)
 
     return apply_predicate[predicate](a, b)
 
@@ -908,7 +907,7 @@ fn compatible(a: IntTuple, b: IntTuple) -> Bool:
 @always_inline
 fn weakly_compatible(a: IntTuple, b: IntTuple) -> Bool:
     fn predicate(a: IntTuple, b: IntTuple) -> Bool:
-        return size(b) % to_int(a) == 0
+        return size(b) % Int(a) == 0
 
     return apply_predicate[predicate](a, b)
 
@@ -932,7 +931,7 @@ fn prefix_product2(a: IntTuple, init: IntTuple) -> IntTuple:
                 abort("len(a) != len(init)")
             return apply_zip[prefix_product2](a, init)
         else:  # tuple "int"
-            var v_init = to_int(init)
+            var v_init = Int(init)
             var r = IntTuple()
             for v in a:
                 r.append(prefix_product2(v, v_init))
@@ -968,18 +967,18 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
                 abort("Tuple sizes don't match: ", len(a), " != ", len(b))
             return apply_zip[shape_div](a, b)
         else:  # tuple "int"
-            var vb = to_int(b)
+            var vb = Int(b)
             var r = IntTuple()
             for v in a:
                 r.append(shape_div(v, vb))
-                vb = to_int(shape_div(vb, product(v)))
+                vb = Int(shape_div(vb, product(v)))
             return r
     else:
         if is_tuple(b):  # "int" tuple
             return shape_div(a, product(b))
         else:  # "int" "int"
-            var va = to_int(a)
-            var vb = to_int(b)
+            var va = Int(a)
+            var vb = Int(b)
 
             if va == UNKNOWN_VALUE or vb == UNKNOWN_VALUE:
                 return UNKNOWN_VALUE
@@ -1041,10 +1040,10 @@ fn idx2crd2(
             return apply_zip[idx2crd2](shape, stride)
         else:  # "int" "int" "int"
             return UNKNOWN_VALUE if (
-                to_int(idx) == UNKNOWN_VALUE
-                or to_int(stride) == UNKNOWN_VALUE
-                or to_int(shape) == UNKNOWN_VALUE
-            ) else (to_int(idx) // to_int(stride)) % to_int(shape)
+                Int(idx) == UNKNOWN_VALUE
+                or Int(stride) == UNKNOWN_VALUE
+                or Int(shape) == UNKNOWN_VALUE
+            ) else (Int(idx) // Int(stride)) % Int(shape)
 
 
 # Map a logical coordinate to a linear index
@@ -1078,7 +1077,7 @@ fn crd2idx(
             abort("Illegal input types")
             return 0
     else:
-        var int_crd: Int = 0 if len(crd) == 0 else to_int(crd)
+        var int_crd: Int = 0 if len(crd) == 0 else Int(crd)
 
         if is_tuple(shape):  # "int" tuple tuple
             if len(shape) != len(stride):
@@ -1093,7 +1092,7 @@ fn crd2idx(
                 int_crd = int_crd // product(shape[i])
             return result + crd2idx(int_crd, shape[-1], stride[-1])
         else:  # "int" "int" "int"
-            return int_crd * to_int(stride)
+            return int_crd * Int(stride)
 
 
 # Returns an IntTuple with same strcture as src filled with val.

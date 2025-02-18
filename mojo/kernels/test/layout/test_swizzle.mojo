@@ -9,7 +9,7 @@ from collections import OptionalReg
 from sys import is_x86, sizeof
 
 from layout.element import Element
-from layout.int_tuple import IntTuple, size, to_int
+from layout.int_tuple import IntTuple, size
 from layout.layout import (
     Layout,
     LayoutList,
@@ -165,7 +165,7 @@ fn count_wavefronts[
     # layout[2]: individual memory accesses
     #
     alias coalesced_element = coalesce(layout[0])
-    constrained[to_int(coalesced_element.stride) == 1]()
+    constrained[Int(coalesced_element.stride) == 1]()
     constrained[coalesced_element.rank() == 1]()
     alias element_bytes = coalesced_element.size() * type_bytes
     alias bytes_per_op = element_bytes if element_bytes < max_memop_bytes else max_memop_bytes
