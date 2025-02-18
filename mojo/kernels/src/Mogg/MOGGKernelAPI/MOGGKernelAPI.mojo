@@ -182,6 +182,7 @@ from tensor_internal import (
     IOSpec,
     IOUnknown,
 )
+from tensor_internal.managed_tensor_slice import get_kernel_simd_width
 
 from utils import IndexList, StaticTuple
 from utils.index import Index
@@ -7126,6 +7127,78 @@ struct Struct_kv_collection_ctor_paged:
             managed_tensor_slice_to_ndbuffer(lookup_table),
             managed_tensor_slice_to_ndbuffer(max_lengths),
         )
+
+
+@compiler.register(
+    "mo.kv_collection_cow_strided_memcpy.paged", num_dps_outputs=0
+)
+struct Struct_kv_collection_cow_strided_memcpy_paged:
+    @staticmethod
+    @always_inline
+    fn execute[
+        target: StringLiteral,
+        _synchronous: Bool,
+        type: DType,
+    ](
+        blocks: ManagedTensorSlice[type=type, rank=6],
+        block_dst_idx: Scalar,
+        block_src_idx: Scalar,
+        num_tokens: Scalar,
+    ):
+        var shape = blocks.shape()
+        var num_layers = shape[0]
+        var kv_dim = shape[1]
+        var total_num_pages = shape[2]
+        var page_size = shape[3]
+        var n_kv_heads_per_device = shape[4]
+        var head_dim = shape[5]
+
+        var strided_memcpy_shape = IndexList[5](
+            Int(num_layers),
+            Int(kv_dim),
+            Int(num_tokens),
+            Int(n_kv_heads_per_device),
+            Int(head_dim),
+        )
+
+        @parameter
+        @always_inline
+        fn elementwise_fn_wrapper[
+            width: Int,
+            rank: Int = 5,
+        ](index: IndexList[rank]) capturing:
+            var num_layers_idx = index[0]
+            var kv_dim_idx = index[1]
+            var num_tokens_idx = index[2]
+            var n_kv_heads_per_device_idx = index[3]
+            var head_dim_idx = index[4]
+
+            var src_idx_list = IndexList[6](
+                num_layers_idx,
+                kv_dim_idx,
+                Int(block_src_idx),
+                num_tokens_idx,
+                n_kv_heads_per_device_idx,
+                head_dim_idx,
+            )
+            var dst_idx_list = IndexList[6](
+                num_layers_idx,
+                kv_dim_idx,
+                Int(block_dst_idx),
+                num_tokens_idx,
+                n_kv_heads_per_device_idx,
+                head_dim_idx,
+            )
+            var val = blocks._fused_load[width](src_idx_list)
+            blocks._fused_store(dst_idx_list, val)
+
+        alias simd_width = get_kernel_simd_width[type, target]()
+        algorithm.functional.elementwise[
+            elementwise_fn_wrapper,
+            simd_width,
+            use_blocking_impl=_synchronous,
+            target=target,
+        ](strided_memcpy_shape)
 
 
 # ===-----------------------------------------------------------------------===#
