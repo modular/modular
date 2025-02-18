@@ -48,6 +48,20 @@ OpFoldResult ParamConstantOp::fold(FoldAdaptor adaptor) {
   return getValueAttr();
 }
 
+ErrorOrSuccess ParamConstantOp::compile(Payload &payload,
+                                        TargetInfoAttr target) {
+  return populateContainsPtrPayload(getValue(), payload);
+}
+
+ErrorTreeOrSuccess ParamConstantOp::interpret(ArrayRef<Attribute> operands,
+                                              const Payload &payload,
+                                              InterpreterState &state) {
+  if (ErrorOrSuccess err = interpretIfContainsPtr(payload, state);
+      err.isError())
+    return ErrorTree(getLoc(), err.takeError());
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // ParamMaterializeOp
 //===----------------------------------------------------------------------===//
@@ -1673,23 +1687,5 @@ ErrorTreeOrSuccess StructGEPOp::interpret(ArrayRef<Attribute> operands,
       offset,
       *cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget()));
   state.mapResults(PointerAttr::get(ptr.getAddr() + offset, getType()));
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
-// ParamConstantOp
-//===----------------------------------------------------------------------===//
-
-ErrorOrSuccess ParamConstantOp::compile(Payload &payload,
-                                        TargetInfoAttr target) {
-  return populateContainsPtrPayload(getValue(), payload);
-}
-
-ErrorTreeOrSuccess ParamConstantOp::interpret(ArrayRef<Attribute> operands,
-                                              const Payload &payload,
-                                              InterpreterState &state) {
-  if (ErrorOrSuccess err = interpretIfContainsPtr(payload, state);
-      err.isError())
-    return ErrorTree(getLoc(), err.takeError());
   return success();
 }
