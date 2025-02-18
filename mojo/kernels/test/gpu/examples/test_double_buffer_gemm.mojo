@@ -3,8 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# FIXME: KERN-1377
-# UNSUPPORTED: AMD-GPU
 # RUN: %mojo-no-debug-no-assert %s
 
 from collections import InlineArray
@@ -29,6 +27,10 @@ from layout.tensor_builder import LayoutTensorBuild as tb
 from linalg.matmul_gpu import matmul_kernel_naive
 from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace as AddressSpace
+from sys.info import (
+    has_nvidia_gpu_accelerator,
+    is_nvidia_gpu,
+)
 from testing import assert_almost_equal
 
 from utils import unroll
@@ -162,6 +164,8 @@ fn sgemm_double_buffer[
     # 17 19 21 23 25 27 29 31
     alias thread_layout = Layout(
         IntTuple(IntTuple(2, 2), 8), IntTuple(IntTuple(1, 16), 2)
+    ) if is_nvidia_gpu() else Layout(
+        IntTuple(IntTuple(2, 2), 16), IntTuple(IntTuple(1, 32), 2)
     )
 
     # Load A fragments to the first buffer.
@@ -262,7 +266,7 @@ fn test(ctx: DeviceContext) raises:
     alias BN = 128
     alias BK = 16
     alias WM = 32
-    alias WN = 64
+    alias WN = 64 if has_nvidia_gpu_accelerator() else 128
     alias TM = 8
     alias TN = 8
 
