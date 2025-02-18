@@ -1509,31 +1509,6 @@ def KGEN_IntLiteralConvertOp : KGENOp<"int_literal.convert", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
-// IntLiteralBitWidthOp
-//===----------------------------------------------------------------------===//
-
-// FIXME(MOCO-1628): This shouldn't be an operation.
-def KGEN_IntLiteralBitWidthOp : KGENOp<"int_literal.bit_width", [Pure]> {
-  let summary = "Return the number of bits needed to represent int.";
-  let description = [{
-    The `kgen.int_literal.bit_width` returns the number of bits needed to
-    represent the given int_literal.  It is returned as another int_literal.
-
-    Example:
-
-    ```mlir
-    %0 = kgen.int_literal.bit_width %arg0
-    ```
-  }];
-
-  let arguments = (ins KGEN_IntLiteralType:$input);
-  let results = (outs KGEN_IntLiteralType:$output);
-
-  let assemblyFormat = "$input attr-dict";
-  let hasFolder = 1;
-}
-
-//===----------------------------------------------------------------------===//
 // IntLiteralToFloatLiteralOp
 //===----------------------------------------------------------------------===//
 

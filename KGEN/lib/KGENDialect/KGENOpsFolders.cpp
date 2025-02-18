@@ -622,18 +622,6 @@ OpFoldResult IntLiteralConvertOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
-// IntLiteralBitWidth
-//===----------------------------------------------------------------------===//
-
-OpFoldResult IntLiteralBitWidthOp::fold(FoldAdaptor adaptor) {
-  auto in = dyn_cast_if_present<IntLiteralAttr>(adaptor.getInput());
-  if (!in)
-    return {};
-  unsigned bits = in.getValue().getAPInt().getBitWidth();
-  return IntLiteralAttr::get(in.getContext(), IPInt(bits));
-}
-
-//===----------------------------------------------------------------------===//
 // IntLiteralToFloatLiteral
 //===----------------------------------------------------------------------===//
 
