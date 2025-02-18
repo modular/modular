@@ -372,22 +372,34 @@ async def test_kv_cache_radix_trie_with_page_size_gt_1() -> None:
     _, blocks = trie.match_prefix(["i", "like"])
     assert blocks == ["BLOCK 0"]
 
-    # AIPIPE-323: We should also return first token of BLOCK 1 in future
-    _, blocks = trie.match_prefix(["i", "like", "tasty"])
+    node, blocks = trie.match_prefix(["i", "like", "tasty"])
     assert blocks == ["BLOCK 0"]
+    res = node.find_block_with_largest_common_prefix(["tasty"])
+    assert res is not None
+    block_id, prefix_len = res
+    assert block_id == "BLOCK 1"
+    assert prefix_len == 1
 
     _, blocks = trie.match_prefix(["i", "like", "tasty", "food"])
     assert blocks == ["BLOCK 0", "BLOCK 1"]
 
-    # AIPIPE-323: We should also return first token of BLOCK 1 in future
-    _, blocks = trie.match_prefix(["i", "like", "tasty", "pizza"])
+    node, blocks = trie.match_prefix(["i", "like", "tasty", "pizza"])
     assert blocks == ["BLOCK 0"]
+    res = node.find_block_with_largest_common_prefix(["tasty", "pizza"])
+    assert res is not None
+    block_id, prefix_len = res
+    assert block_id == "BLOCK 1"
+    assert prefix_len == 1
 
     _, blocks = trie.match_prefix(["we", "like", "tasty", "food"])
     assert blocks == []
+    res = node.find_block_with_largest_common_prefix(["we"])
+    assert res is None
 
     _, blocks = trie.match_prefix(["i", "like", "yummy", "food"])
     assert blocks == ["BLOCK 0"]
+    res = node.find_block_with_largest_common_prefix(["yummy"])
+    assert res is None
 
     node = trie.insert(
         ["i", "like", "tasty", "oranges"], ["BLOCK 0", "BLOCK 2"]
