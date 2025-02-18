@@ -172,7 +172,6 @@ from runtime.tracing import Trace, TraceLevel, trace_arg
 from tensor_internal import (
     DynamicTensor,
     ManagedTensorSlice,
-    IODynamicTensor,
     VariadicTensors,
     _input_fusion_hook_impl,
     _output_fusion_hook_impl,
