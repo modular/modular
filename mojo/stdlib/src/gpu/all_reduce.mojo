@@ -5,6 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
+from memory import stack_allocation
+from memory.pointer import _GPUAddressSpace
+from sys import simdwidthof
 
 from buffer import Buffer, NDBuffer
 from gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
@@ -15,7 +18,6 @@ from gpu.intrinsics import (
     store_release,
     store_volatile,
 )
-
 from utils.index import StaticTuple
 from utils.numerics import get_accum_type
 
@@ -235,7 +237,7 @@ fn multi_gpu_barrier[
         # to avoid functional issues that arise with increased register pressure when
         # dealing with static tuples
         var my_gpu = thread_idx.x
-        # Each thread increments it's own counter
+        # Each thread increments its own counter
         # Technically we only need one counter, but we use
         # multiple per block to eliminate the need to share the counter via smem.
         var internal_counter_ptr = self_sg.bitcast[
@@ -288,7 +290,139 @@ fn multi_gpu_barrier[
         barrier()
 
 
-fn all_reduce_p2p_kernel[
+fn allreduce_2stage_kernel[
+    type: DType, rank: Int, ngpus: Int
+](
+    result: UnsafePointer[Scalar[type]],
+    src_bufs: StaticTuple[NDBuffer[type, rank], ngpus],
+    rank_sigs: StaticTuple[UnsafePointer[Signal], MAX_GPUS],
+    my_rank: Int,
+    num_elements: Int,
+):
+    """2-stage allreduce algorithm for bandwidth-bound transfers.
+
+    This kernel implements a reduce-scatter + all-gather algorithm that is
+    bandwidth optimal.
+
+    Parameters:
+        type: Data type of tensor elements.
+        rank: Number of dimensions in tensors.
+            Note that `rank` is overloaded here to mean both device id and
+            number of dimensions.
+        ngpus: Number of GPUs participating.
+
+    Arguments:
+        result: Output buffer for reduced values.
+        src_bufs: Input buffers from all GPUs.
+        rank_sigs: Signal pointers for synchronization.
+            IMPORTANT: the signal pointers have trailing buffers for
+            communication, which must be at least `ngpus * sizeof(payload)`.
+            | -- sizeof(Signal) -- | ------ a few MB ----- |
+        my_rank: Current GPU rank.
+        num_elements: Number of elements to reduce.
+    """
+    alias accum_type = get_accum_type[type]()
+    alias simd_width = simdwidthof[type]()
+
+    # --- Thread Indexing and Vector Setup ---
+    var global_tid = global_idx.x
+
+    # Stride equals total threads in grid dimension for grid-strided loops.
+    var stride = grid_dim.x * block_dim.x
+    var my_sig: UnsafePointer[Signal] = rank_sigs[my_rank]
+
+    # --- Data Partitioning ---
+    # Block cyclic distribution using 128-bit packed vectors.
+    # Divide workload into `ngpus` partitions with last rank handling
+    # remainder.
+    # NOTE: `part`, `start`, and `end` are in units of SIMD widths.
+    var num_simd_vectors = num_elements // simd_width
+    var part = num_simd_vectors // ngpus
+    var start = my_rank * part
+    var end = num_simd_vectors if my_rank == ngpus - 1 else start + part
+    var largest_part = part + (num_simd_vectors % ngpus)
+
+    # --- Memory Pointer Configuration ---
+    # Round-robin access pattern to balance NVLink traffic across GPUs.
+    var ptrs = stack_allocation[
+        ngpus,
+        UnsafePointer[Scalar[type]],
+        address_space = _GPUAddressSpace.LOCAL,
+    ]()
+    var tmps = stack_allocation[
+        ngpus,
+        UnsafePointer[Scalar[type]],
+        address_space = _GPUAddressSpace.LOCAL,
+    ]()
+
+    @parameter
+    for i in range(ngpus):
+        # Round-robin pattern, for 8 GPUs for example:
+        # Rank 0 accesses: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7.
+        # Rank 1 accesses: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 0.
+        var target = (my_rank + i) % ngpus
+        ptrs[i] = src_bufs[target].data
+
+        # Skip Signal header.
+        tmps[i] = (rank_sigs[target] + 1).bitcast[Scalar[type]]()
+
+    # Current rank's output buffer.
+    var tmp_out = tmps[0]
+
+    # --- Stage 1: Reduce-Scatter Phase ---
+    # Uses two-phase synchronization protocol with release-acquire semantics:
+    # 1. Initial barrier establishes happens-before relationship.
+    # 2. Memory fence ensures visibility of partial reductions.
+    multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
+
+    # Grid-strided loop with vectorized reduction:
+    # - Each thread processes partition elements using 128-bit accesses.
+    # - Accumulates in higher precision (float32) for numerical stability.
+    for idx in range(start + global_tid, end, stride):
+        # float32 accumulator for numerical stability.
+        var elem_idx = idx * simd_width
+        var accum = ptrs[0].load[width=simd_width](elem_idx).cast[accum_type]()
+
+        @parameter
+        for gpu_idx in range(1, ngpus):
+            accum += (
+                ptrs[gpu_idx]
+                .load[width=simd_width](elem_idx)
+                .cast[accum_type]()
+            )
+
+        # Convert back to the element index before storing.
+        var elem_start = start * simd_width
+        tmp_out.store(elem_idx - elem_start, accum.cast[type]())
+
+    # Second barrier with memory ordering guarantees.
+    multi_gpu_barrier[ngpus, is_start=False, need_fence=True](
+        rank_sigs, my_sig, my_rank
+    )
+
+    # --- Stage 2: All-Gather Phase ---
+    # Maintains thread index consistency to satisfy memory model:
+    # The same tid guarantees visibility of prior writes.
+    # So if thread `idx` computes the sum of `start + idx` in the first stage,
+    # then thread `idx` also gathers `start + idx` from all ranks.
+    for idx in range(global_tid, largest_part, stride):
+        var elem_idx = idx * simd_width
+
+        @parameter
+        for gpu_idx in range(ngpus):
+            var gather_from_rank = (my_rank + gpu_idx) % ngpus
+
+            # Handle edge cases for non-uniform partitions, where
+            # the final rank may have larger partition size.
+            if (gather_from_rank == (ngpus - 1)) or idx < part:
+                var dst_idx = (gather_from_rank * part) + idx
+                var elem_dst_idx = dst_idx * simd_width
+                result.store(
+                    elem_dst_idx, tmps[gpu_idx].load[width=simd_width](elem_idx)
+                )
+
+
+fn allreduce_1stage_kernel[
     type: DType, rank: Int, ngpus: Int
 ](
     result: UnsafePointer[Scalar[type]],
@@ -370,15 +504,37 @@ fn all_reduce_p2p[
         alias BLOCK_SIZE = 256
         var grid_size = min(MAX_BLOCK, ceildiv(num_elements, BLOCK_SIZE))
 
-        curr_ctx.enqueue_function[all_reduce_p2p_kernel[type, rank, ngpus]](
-            curr_out_buf.data,
-            list_of_in_bufs,
-            rank_sigs,
-            i,
-            num_elements,
-            grid_dim=grid_size,
-            block_dim=BLOCK_SIZE,
-        )
+        alias rank_4_byte_threshold = 512 * 1024
+        alias rank_8_byte_threshold = 256 * 1024
+        var payload_bytecount = list_of_in_bufs[0].bytecount()
+        if (rank <= 4 and (payload_bytecount < rank_4_byte_threshold)) or (
+            rank <= 8 and (payload_bytecount < rank_8_byte_threshold)
+        ):
+            # Use the 1-stage allreduce when transfer is latency bound.
+            curr_ctx.enqueue_function[
+                allreduce_1stage_kernel[type, rank, ngpus]
+            ](
+                curr_out_buf.data,
+                list_of_in_bufs,
+                rank_sigs,
+                i,
+                num_elements,
+                grid_dim=grid_size,
+                block_dim=BLOCK_SIZE,
+            )
+        else:
+            # Otherwise, use 2-stage allreduce for the bandwidth bound regime.
+            curr_ctx.enqueue_function[
+                allreduce_2stage_kernel[type, rank, ngpus]
+            ](
+                curr_out_buf.data,
+                list_of_in_bufs,
+                rank_sigs,
+                i,
+                num_elements,
+                grid_dim=grid_size,
+                block_dim=BLOCK_SIZE,
+            )
 
 
 fn all_reduce[
