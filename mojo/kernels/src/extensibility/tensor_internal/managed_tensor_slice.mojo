@@ -270,14 +270,7 @@ fn _input_fusion_hook_impl[
     rank: Int,
     io_spec: IOSpec[mut],
     static_spec: StaticTensorSpec[type, rank],
-](
-    tensor: ManagedTensorSlice[
-        type=type,
-        rank=rank,
-        io_spec=io_spec,
-        static_spec=static_spec,
-    ]
-):
+](tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec,]):
     @always_inline
     @parameter
     fn _input_lambda[_w: Int](i: IndexList[rank]) -> SIMD[type, _w]:
@@ -304,11 +297,7 @@ fn _output_fusion_hook_impl[
     rank: Int,
     io_spec: IOSpec[mut],
     static_spec: StaticTensorSpec[type, rank],
-](
-    tensor: ManagedTensorSlice[
-        type=type, rank=rank, io_spec=io_spec, static_spec=static_spec
-    ]
-):
+](tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]):
     @always_inline
     @parameter
     fn _output_lambda[
