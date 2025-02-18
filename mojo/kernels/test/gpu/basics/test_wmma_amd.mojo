@@ -3,8 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# FIXME: KERN-1377
-# UNSUPPORTED: AMD-GPU
 # REQUIRES: AMD-GPU
 # RUN: %mojo-no-debug-no-assert %s | FileCheck %s
 
@@ -107,9 +105,7 @@ fn mma_kernel_fp32_fp16(
 
     var c_tile_row = block_idx.x * mma_m
     var c_tile_col = block_idx.y * mma_n
-    store_matrix_d[DType.float32, mma_m, mma_n, mma_k](
-        c_ptr, d_reg, c_tile_row, c_tile_col, n
-    )
+    store_matrix_d[mma_m, mma_n, mma_k](c_ptr, d_reg, c_tile_row, c_tile_col, n)
 
 
 fn mma_kernel_fp32_bf16(
@@ -143,9 +139,7 @@ fn mma_kernel_fp32_bf16(
 
     var c_tile_row = block_idx.x * mma_m
     var c_tile_col = block_idx.y * mma_n
-    store_matrix_d[DType.float32, mma_m, mma_n, mma_k](
-        c_ptr, d_reg, c_tile_row, c_tile_col, n
-    )
+    store_matrix_d[mma_m, mma_n, mma_k](c_ptr, d_reg, c_tile_row, c_tile_col, n)
 
 
 fn run_mma_fp32_fp32(
@@ -215,7 +209,6 @@ fn run_mma_fp32_fp32(
     _ = b_host
     _ = c_host
     _ = c_host_ref
-    _ = func_mma^
     a_host.free()
     b_host.free()
     c_host.free()
@@ -295,7 +288,6 @@ fn run_mma_fp32_fp16(
     _ = b_host
     _ = c_host
     _ = c_host_ref
-    _ = func_mma^
     a_host.free()
     b_host.free()
     c_host.free()
@@ -375,7 +367,6 @@ fn run_mma_fp32_bf16(
     _ = b_host
     _ = c_host
     _ = c_host_ref
-    _ = func_mma^
     a_host.free()
     b_host.free()
     c_host.free()
