@@ -158,7 +158,7 @@ struct IntLiteral(
             pred = __mlir_attr.`#kgen<int_literal.cmp_pred ge>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __pos__(self) -> Self:
         """Return +self.
 
@@ -167,7 +167,7 @@ struct IntLiteral(
         """
         return self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __neg__(self) -> Self:
         """Return -self.
 
@@ -190,7 +190,7 @@ struct IntLiteral(
         var remainder: Self = self - (quotient * rhs)
         return quotient, remainder
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __invert__(self) -> Self:
         """Return ~self.
 
@@ -199,7 +199,7 @@ struct IntLiteral(
         """
         return self ^ (Self() - Self._one)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __add__(self, rhs: Self) -> Self:
         """Return `self + rhs`.
 
@@ -215,7 +215,7 @@ struct IntLiteral(
             ](self.value, rhs.value)
         )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __sub__(self, rhs: Self) -> Self:
         """Return `self - rhs`.
 
@@ -231,7 +231,7 @@ struct IntLiteral(
             ](self.value, rhs.value)
         )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __mul__(self, rhs: Self) -> Self:
         """Return `self * rhs`.
 
@@ -325,7 +325,7 @@ struct IntLiteral(
             ](self.value, rhs.value)
         )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __and__(self, rhs: Self) -> Self:
         """Return `self & rhs`.
 
@@ -341,7 +341,7 @@ struct IntLiteral(
             ](self.value, rhs.value)
         )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __xor__(self, rhs: Self) -> Self:
         """Return `self ^ rhs`.
 
@@ -357,7 +357,7 @@ struct IntLiteral(
             ](self.value, rhs.value)
         )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __or__(self, rhs: Self) -> Self:
         """Return `self | rhs`.
 
@@ -459,118 +459,6 @@ struct IntLiteral(
         self = self | rhs
 
     # ===-------------------------------------------------------------------===#
-    # Reversed operations
-    # ===-------------------------------------------------------------------===#
-
-    @always_inline("nodebug")
-    fn __radd__(self, value: Self) -> Self:
-        """Return `value + self`.
-
-        Args:
-            value: The other value.
-
-        Returns:
-            `value + self`.
-        """
-        return self + value
-
-    @always_inline("nodebug")
-    fn __rsub__(self, value: Self) -> Self:
-        """Return `value - self`.
-
-        Args:
-            value: The other value.
-
-        Returns:
-            `value - self`.
-        """
-        return value - self
-
-    @always_inline("nodebug")
-    fn __rmul__(self, value: Self) -> Self:
-        """Return `value * self`.
-
-        Args:
-            value: The other value.
-
-        Returns:
-            `value * self`.
-        """
-        return self * value
-
-    @always_inline("nodebug")
-    fn __rfloordiv__(self, value: Self) -> Self:
-        """Return `value // self`.
-
-        Args:
-            value: The other value.
-
-        Returns:
-            `value // self`.
-        """
-        return value // self
-
-    @always_inline("nodebug")
-    fn __rlshift__(self, value: Self) -> Self:
-        """Return `value << self`.
-
-        Args:
-            value: The other value.
-
-        Returns:
-            `value << self`.
-        """
-        return value << self
-
-    @always_inline("nodebug")
-    fn __rrshift__(self, value: Self) -> Self:
-        """Return `value >> self`.
-
-        Args:
-            value: The other value.
-
-        Returns:
-            `value >> self`.
-        """
-        return value >> self
-
-    @always_inline("nodebug")
-    fn __rand__(self, value: Self) -> Self:
-        """Return `value & self`.
-
-        Args:
-            value: The other value.
-
-        Returns:
-            `value & self`.
-        """
-        return value & self
-
-    @always_inline("nodebug")
-    fn __ror__(self, value: Self) -> Self:
-        """Return `value | self`.
-
-        Args:
-            value: The other value.
-
-        Returns:
-            `value | self`.
-        """
-        return value | self
-
-    @always_inline("nodebug")
-    fn __rxor__(self, value: Self) -> Self:
-        """Return `value ^ self`.
-
-        Args:
-            value: The other value.
-
-        Returns:
-            `value ^ self`.
-        """
-        return value ^ self
-
-    # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
@@ -601,7 +489,7 @@ struct IntLiteral(
         """
         return self.__index__()
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __as_int__(self) -> Int:
         """Implicitly convert to an Int.
 
@@ -641,7 +529,7 @@ struct IntLiteral(
         """
         return self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __floor__(self) -> Self:
         """Return the floor of the IntLiteral value, which is itself.
 
@@ -650,7 +538,7 @@ struct IntLiteral(
         """
         return self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __round__(self) -> Self:
         """Return the rounded value of the IntLiteral value, which is itself.
 
@@ -659,7 +547,7 @@ struct IntLiteral(
         """
         return self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __trunc__(self) -> Self:
         """Return the truncated of the IntLiteral value, which is itself.
 
