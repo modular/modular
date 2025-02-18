@@ -45,19 +45,6 @@ static constexpr std::array<StringLiteral, 3> kMaxVariadicTensors = {
 static constexpr std::array<StringLiteral, 4> kMaxList = {
     "stdlib", "collections", "vector", "InlinedFixedVector"};
 
-// Define the ordered parameter info - pairs of (name, uses_inferred_params)
-// TODO(GEX-1822): Should be able to query this information from
-// ManagedTensorSlice's lit.struct.decl op directly.
-static constexpr std::array<std::pair<StringLiteral, bool>, 6>
-    kManagedTensorSliceParams = {{
-        {"mut", false},
-        {"input", false},
-        {"type", false},
-        {"rank", false},
-        {"io_spec", true}, // Only ioSpec uses inferred parameters
-        {"static_spec", false},
-    }};
-
 // Check if the decorator correspond to a function call:
 // eg @foo(arg)
 //
@@ -214,21 +201,11 @@ static LogicalResult annotateTypes(LIT::FnOp func) {
   return success();
 }
 
-// Extract the used parameters from the lit type. Returns null for fields which
-// are unbound or already populated.
-static SmallVector<KGEN::ParamDeclRefAttr>
-litTypeToParams(LIT::StructType structType) {
-  SmallVector<KGEN::ParamDeclRefAttr> attrs;
-  for (TypedAttr param : structType.getParamValues()) {
-    auto declRefAttr = dyn_cast<KGEN::ParamDeclRefAttr>(param);
-    attrs.push_back(declRefAttr);
-  }
-
-  return attrs;
-};
-
 /// Return a set of named attributes mapping all unbound parameters in the
 /// tensor type struct
+///
+/// TODO(GEX-1822): Should be able to query this information from
+/// ManagedTensorSlice's lit.struct.decl op directly.
 static SmallVector<NamedAttribute>
 getUnboundParametersForTensor(LIT::StructType &structType, Builder &builder) {
   enum ParameterIndexes {
@@ -241,7 +218,7 @@ getUnboundParametersForTensor(LIT::StructType &structType, Builder &builder) {
     kNumParameters
   };
 
-  auto allParameters = litTypeToParams(structType);
+  auto allParameters = structType.getParamValues();
   ASSERT_STREAM(allParameters.size() >= kNumParameters,
                 << "Expected at least " << kNumParameters
                 << " parameters on the tensor type");
@@ -264,7 +241,8 @@ getUnboundParametersForTensor(LIT::StructType &structType, Builder &builder) {
                                       rank);
 
   if (spec)
-    tensorSpecNamedAttrs.emplace_back(builder.getStringAttr(kStaticSpec), spec);
+    tensorSpecNamedAttrs.emplace_back(
+        builder.getStringAttr(kParameterStaticSpec), spec);
 
   if (mut)
     tensorSpecNamedAttrs.emplace_back(builder.getStringAttr(kParameterMut),
@@ -281,7 +259,7 @@ static SmallVector<NamedAttribute>
 getUnboundParametersForSIMD(LIT::StructType structType, Builder &builder) {
   static constexpr unsigned kDTypeIndex = 0;
   static constexpr unsigned kSizeIndex = 1;
-  auto allParameters = litTypeToParams(structType);
+  auto allParameters = structType.getParamValues();
 
   ASSERT_STREAM(allParameters.size() >= 2,
                 << "Expected at least two parameters on the SIMD type");
@@ -299,31 +277,6 @@ getUnboundParametersForSIMD(LIT::StructType structType, Builder &builder) {
         NamedAttribute{builder.getStringAttr(kParameterSize), size});
 
   return tensorSpecNamedAttrs;
-}
-
-// Returns a dictionary attribute containing all parameters for simple types
-// (i.e: tensor or SIMD).
-static DictionaryAttr getParametersForTensorType(LIT::StructType structType,
-                                                 Builder &builder) {
-  SmallVector<NamedAttribute> attrs;
-  auto paramValues = structType.getParamValues();
-
-  // Add non-inferred parameters to the dictionary
-  for (auto [param, paramInfo] :
-       llvm::zip(paramValues, kManagedTensorSliceParams)) {
-    auto [paramName, usesInferred] = paramInfo;
-
-    // Skip parameters that use inferred values
-    // This is because slice-mogg-funcs uses the values gathered here to
-    // parameterize lambda fusion hooks, but the KGEN drops any
-    // parameters composed of inferred parameters.
-    if (usesInferred)
-      continue;
-
-    attrs.push_back(NamedAttribute{builder.getStringAttr(paramName), param});
-  }
-
-  return builder.getDictionaryAttr(attrs);
 }
 
 /// Return a set of named attributes mapping all unbound parameters in the tuple
@@ -351,8 +304,7 @@ getUnboundParametersForVariadicTensors(LIT::StructType structType,
     kNumParameters
   };
 
-  SmallVector<KGEN::ParamDeclRefAttr> allParameters =
-      litTypeToParams(structType);
+  auto allParameters = structType.getParamValues();
 
   ASSERT_STREAM(allParameters.size() >= kNumParameters,
                 << "Expected at least " << kNumParameters
@@ -382,7 +334,7 @@ getUnboundParametersForVariadicTensors(LIT::StructType structType,
     namedAttrs.emplace_back(builder.getStringAttr(kParameterSize), size);
 
   if (spec)
-    namedAttrs.emplace_back(builder.getStringAttr(kStaticSpecs), spec);
+    namedAttrs.emplace_back(builder.getStringAttr(kParameterStaticSpecs), spec);
 
   return namedAttrs;
 }
@@ -390,23 +342,20 @@ getUnboundParametersForVariadicTensors(LIT::StructType structType,
 /// Return a set of named attributes mapping all unbound parameters in the list
 /// of tensor struct
 static std::optional<SmallVector<NamedAttribute>>
-getUnboundParametersForTensorList(LIT::StructType &structType,
+getUnboundParametersForTensorList(LIT::StructType structType,
                                   Builder &builder) {
   // TODO(GEX-1126): consider a tuple which only contains tensors to
   // simplify this
   static constexpr unsigned kElementType = 0;
-  auto allParameters = litTypeToParams(structType);
+  auto allParameters = structType.getParamValues();
 
   ASSERT_STREAM(
       allParameters.size() >= 2,
       << "Expected at least two parameters on the list-of-tensor type");
-  [[maybe_unused]] auto elementType = allParameters[kElementType];
-  ASSERT_STREAM(!elementType,
-                << "Element type must be defined and be equal to tensor");
   SmallVector<NamedAttribute> listNamedAttrs;
 
   auto elementTypeAttr =
-      cast<KGEN::TypeParamAttr>(structType.getParamValues()[0]);
+      cast<KGEN::TypeParamAttr>(structType.getParamValues()[kElementType]);
   auto elementTypeStruct =
       cast<LIT::StructType>(elementTypeAttr.getTypeValue());
 
@@ -435,7 +384,6 @@ static void labelTensorParamsInKernel(LIT::FnOp funcOp) {
   };
 
   SmallVector<Attribute> tensorSpecs;
-  SmallVector<Attribute> tensorArgsParams;
   Attribute emptyAttr = builder.getUnitAttr();
 
   for (auto [i, litType] : llvm::enumerate(funcOp.getArgumentTypes())) {
@@ -443,51 +391,36 @@ static void labelTensorParamsInKernel(LIT::FnOp funcOp) {
 
     if (!asStructType) {
       tensorSpecs.push_back(emptyAttr);
-      tensorArgsParams.push_back(emptyAttr);
       continue;
     }
 
     if (symbolMatches(asStructType.getSymbol(), kMaxManagedTensorSlice)) {
       SmallVector<NamedAttribute> tensorSpecNamedAttrs =
           getUnboundParametersForTensor(asStructType, builder);
-      tensorSpecs.push_back(
-          DictionaryAttr::get(funcOp.getContext(), tensorSpecNamedAttrs));
-      tensorArgsParams.push_back(
-          getParametersForTensorType(asStructType, builder));
+      tensorSpecs.push_back(builder.getDictionaryAttr(tensorSpecNamedAttrs));
     } else if (symbolMatches(asStructType.getSymbol(), kMaxSIMD)) {
       SmallVector<NamedAttribute> tensorSpecNamedAttrs =
           getUnboundParametersForSIMD(asStructType, builder);
-      tensorSpecs.push_back(
-          DictionaryAttr::get(funcOp.getContext(), tensorSpecNamedAttrs));
-      tensorArgsParams.push_back(
-          getParametersForTensorType(asStructType, builder));
+      tensorSpecs.push_back(builder.getDictionaryAttr(tensorSpecNamedAttrs));
     } else if (symbolMatches(asStructType.getSymbol(), kMaxVariadicTensors)) {
       auto tensorSpecNamedAttrs =
           getUnboundParametersForVariadicTensors(asStructType, builder);
-      tensorSpecs.push_back(
-          DictionaryAttr::get(funcOp.getContext(), tensorSpecNamedAttrs));
-      tensorArgsParams.push_back(tensorSpecs.back());
+      tensorSpecs.push_back(builder.getDictionaryAttr(tensorSpecNamedAttrs));
     } else if (symbolMatches(asStructType.getSymbol(), kMaxList)) {
       auto tensorSpecNamedAttrs =
           getUnboundParametersForTensorList(asStructType, builder);
       if (!tensorSpecNamedAttrs) {
         tensorSpecs.push_back(emptyAttr);
-        tensorArgsParams.push_back(emptyAttr);
       } else {
-        tensorSpecs.push_back(
-            DictionaryAttr::get(funcOp.getContext(), *tensorSpecNamedAttrs));
-        tensorArgsParams.push_back(emptyAttr);
+        tensorSpecs.push_back(builder.getDictionaryAttr(*tensorSpecNamedAttrs));
       }
     } else {
       // Unsupported type, can ignore
       tensorSpecs.push_back(emptyAttr);
-      tensorArgsParams.push_back(emptyAttr);
     }
   }
   funcOp->setDiscardableAttr(kKernelValueParameterAttrName,
                              builder.getArrayAttr(tensorSpecs));
-  funcOp->setDiscardableAttr(MOGG_TENSOR_ARG_PARAMS,
-                             builder.getArrayAttr(tensorArgsParams));
 }
 
 namespace {

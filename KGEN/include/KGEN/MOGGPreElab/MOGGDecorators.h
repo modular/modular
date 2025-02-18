@@ -40,7 +40,6 @@ constexpr StringLiteral MOGG_ARG_PARAMS = "mogg.arg_params";
 constexpr StringLiteral MOGG_RESULT_PARAMS = "mogg.result_params";
 constexpr StringLiteral MOGG_ARG_TYPE_NAMES = "mogg.arg_type_names";
 constexpr StringLiteral MOGG_RESULT_TYPE_NAME = "mogg.result_type_name";
-constexpr StringLiteral MOGG_TENSOR_ARG_PARAMS = "mogg.tensor_arg_params";
 
 // The names as they appear in the lit source.
 constexpr StringLiteral MOGG_ARG_SRC_NAMES = "mogg.arg_src_names";
@@ -231,11 +230,11 @@ static constexpr llvm::StringLiteral kParameterInput = "input";
 static constexpr llvm::StringLiteral kParameterDType = "type";
 static constexpr llvm::StringLiteral kParameterRank = "rank";
 static constexpr llvm::StringLiteral kParameterIOSpec = "io_spec";
-static constexpr llvm::StringLiteral kStaticSpec = "static_spec";
+static constexpr llvm::StringLiteral kParameterStaticSpec = "static_spec";
 
 // Used in variadics/tuple/SIMD types.
 static constexpr llvm::StringLiteral kParameterSize = "size";
-static constexpr llvm::StringLiteral kStaticSpecs = "static_specs";
+static constexpr llvm::StringLiteral kParameterStaticSpecs = "static_specs";
 
 } // namespace M::KGEN::MOGGPreElab
 
