@@ -613,12 +613,54 @@ struct ConvertKGENUnreachable : public ConvertPOPToLLVMPattern<UnreachableOp> {
 // ConvertKGENParamConstant
 //===----------------------------------------------------------------------===//
 
+/// Handle errors when lowering constants to LLVM.  Return failure if this is
+/// unrecoverable.
+static LogicalResult handleConstantLoweringError(
+    ErrorOr<Value> &value, Operation *op, ConversionPatternRewriter &rewriter,
+    bool &passFailed, const mlir::TypeConverter &typeConverter) {
+  // If not an error, do nothing.
+  if (!value.isError())
+    return success();
+  auto loc = op->getLoc();
+
+  // MLIR is very lossy with respect to constants; FoldUtils massively kills
+  // them, which is really bad for QoI.  To try to recover SOMETHING, walk
+  // the use chain of the constant and grab the first thing with a relevant
+  // location.
+  if (isa<UnknownLoc>(loc)) {
+    for (auto user : op->getResult(0).getUsers()) {
+      if (!isa<UnknownLoc>(user->getLoc())) {
+        loc = user->getLoc();
+        break;
+      }
+    }
+  }
+
+  // Report a nice error to the user instead of a generic "failed to
+  // legalize operation" error that the lowering machinery would produce for
+  // us. To do this, we emit the error, but return success (so we don't get
+  // the generic error)then signal a pass failure so that
+  // the pass manager stops executing passes.
+  mlir::emitError(loc, value.getError());
+  passFailed = true;
+
+  // FIXME: the pattern rewrite infra really sucks, we should move off it.
+  auto type = typeConverter.convertType(op->getResult(0).getType());
+  // Type lowering can fail with things like !kgen.intliteral which should never
+  // have been a runtime type in the first place (MOCO-1628)
+  if (!type)
+    return failure();
+
+  value = rewriter.create<LLVM::UndefOp>(loc, type);
+  return success();
+}
+
 class ConvertKGENParamConstant
     : public ConvertPOPToLLVMPattern<ParamConstantOp> {
 public:
   ConvertKGENParamConstant(mlir::LLVMTypeConverter &tc,
-                           InterpreterMemoryConverter &imc)
-      : ConvertPOPToLLVMPattern(tc), imc(imc) {}
+                           InterpreterMemoryConverter &imc, bool &passFailed)
+      : ConvertPOPToLLVMPattern(tc), imc(imc), passFailed(passFailed) {}
 
   LogicalResult
   matchAndRewrite(ParamConstantOp op, ParamConstantOpAdaptor adaptor,
@@ -627,10 +669,9 @@ public:
     InterpreterMemoryConverter::MaterializationScope scope = imc.createScope();
     ErrorOr<Value> value = convertParameterToLLVM(b, *getTypeConverter(), &imc,
                                                   &scope, op.getValue());
-    if (value.isError()) {
-      b.emitError(value.getError());
+    if (failed(handleConstantLoweringError(value, op, rewriter, passFailed,
+                                           *getTypeConverter())))
       return failure();
-    }
 
     rewriter.replaceOp(op, value.get());
     return success();
@@ -639,6 +680,7 @@ public:
 private:
   /// Convert for global memory references.
   InterpreterMemoryConverter &imc;
+  bool &passFailed;
 };
 
 //===----------------------------------------------------------------------===//
@@ -649,8 +691,8 @@ class ConvertKGENParamMaterialize
     : public ConvertPOPToLLVMPattern<ParamMaterializeOp> {
 public:
   ConvertKGENParamMaterialize(mlir::LLVMTypeConverter &tc,
-                              InterpreterMemoryConverter &imc)
-      : ConvertPOPToLLVMPattern(tc), imc(imc) {}
+                              InterpreterMemoryConverter &imc, bool &passFailed)
+      : ConvertPOPToLLVMPattern(tc), imc(imc), passFailed(passFailed) {}
 
   LogicalResult
   matchAndRewrite(ParamMaterializeOp op, ParamMaterializeOpAdaptor adaptor,
@@ -659,10 +701,10 @@ public:
     InterpreterMemoryConverter::MaterializationScope scope = imc.createScope();
     ErrorOr<Value> value = convertParameterToLLVM(b, *getTypeConverter(), &imc,
                                                   &scope, op.getValue());
-    if (value.isError()) {
-      b.emitError(value.getError());
+    if (failed(handleConstantLoweringError(value, op, rewriter, passFailed,
+                                           *getTypeConverter())))
       return failure();
-    }
+
     rewriter.replaceOp(op, value.get());
     return success();
   }
@@ -670,6 +712,7 @@ public:
 private:
   /// Convert for interpreter memory references.
   InterpreterMemoryConverter &imc;
+  bool &passFailed;
 };
 
 //===----------------------------------------------------------------------===//
@@ -832,6 +875,7 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
                                        mlir::RewritePatternSet &patterns,
                                        SymbolTable &symtab,
                                        InterpreterMemoryConverter &imc,
+                                       bool &passFailed,
                                        const AttributeIdentifiers &ids) {
   patterns.insert<
       // clang-format off
@@ -849,7 +893,7 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       >(typeConverter);
   patterns.insert<ConvertKGENFunc>(typeConverter, symtab, ids);
   patterns.insert<ConvertKGENParamConstant, ConvertKGENParamMaterialize>(
-      typeConverter, imc);
+      typeConverter, imc, passFailed);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1277,7 +1321,9 @@ void LowerKGENToLLVMPass::runOnOperation() {
   auto &symtabAnalysis = getAnalysis<mlir::SymbolTableAnalysis>();
   SymbolTable &symtab = symtabAnalysis.getTopLevelSymbolTable();
   InterpreterMemoryConverter imc(symtab, typeConverter);
-  populateKGENToLLVMPatterns(typeConverter, patterns, symtab, imc, ids);
+  bool passFailed = false;
+  populateKGENToLLVMPatterns(typeConverter, patterns, symtab, imc, passFailed,
+                             ids);
 
   DebugInfoTypeConverter debugTypeConverter(typeConverter, targetInfo, symtab);
   DebugInfo::populateTypeConversionPatterns(patterns, debugTypeConverter,
@@ -1303,4 +1349,7 @@ void LowerKGENToLLVMPass::runOnOperation() {
   for (auto structInstance :
        llvm::make_early_inc_range(theModule.getOps<StructInstanceOp>()))
     structInstance.erase();
+
+  if (passFailed)
+    signalPassFailure();
 }
