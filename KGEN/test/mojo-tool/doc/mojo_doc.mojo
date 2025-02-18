@@ -33,7 +33,7 @@ alias alias_Type = Int
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_Value",
 # CHECK:  "summary": "An example alias of a Value",
-# CHECK:  "value": "10"
+# CHECK:  "value": "IntLiteral(10)"
 alias alias_Value = 10
 """An example alias of a Value"""
 
@@ -46,7 +46,7 @@ alias alias_construct = IntTuple(0, 1, 2, 3, 4)
 
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_cond",
-# CHECK:  "value": "2 if is_nvidia_gpu() else 1"
+# CHECK:  "value": "IntLiteral(2) if is_nvidia_gpu() else IntLiteral(1)"
 alias alias_cond = 2 if is_nvidia_gpu() else 1
 
 # CHECK:  "kind": "alias",
@@ -580,7 +580,7 @@ fn optional_default_arg_none(input: Optional[Int64] = None):
     pass
 
 
-# CHECK: "signature": "optional_default_arg_13(input: Optional[SIMD[int64, 1]] = Optional(SIMD(13)))"
+# CHECK: "signature": "optional_default_arg_13(input: Optional[SIMD[int64, 1]] = Optional(SIMD(IntLiteral(13))))"
 fn optional_default_arg_13(input: Optional[Int64] = Int64(13)):
     pass
 
@@ -614,7 +614,7 @@ struct HMyUnsafePointer[
         pass
 
 
-# CHECK:  "signature": "struct HMyUnsafePointer[T: AnyType, address_space: AddressSpace = 0]",
+# CHECK:  "signature": "struct HMyUnsafePointer[T: AnyType, address_space: AddressSpace = AddressSpace(0)]",
 
 
 struct HList[T: CollectionElement, hint_trivial_type: Bool = False]:

@@ -494,31 +494,6 @@ static bool isKnownNonStaticMethod(SharedState *diagShared,
 /// Pretty print a parameter value.
 static void printDemangledParam(raw_ostream &os, TypedAttr param,
                                 SharedState *diagShared) {
-  if (auto structAttr = dyn_cast<LITStructAttr>(param)) {
-    // If the struct has a single element, elide the braces.
-    if (diagShared && structAttr.getValues().size() == 1) {
-#if 1
-      printDemangledParam(os, std::get<1>(structAttr.getValues().front()),
-                          diagShared);
-#else
-      TypedAttr elt = std::get<1>(structAttr.getValues().front());
-
-      if (auto extract = dyn_cast<LIT::StructExtractAttr>(elt))
-        elt = extract.getStructValue();
-      ASTType(structAttr.getType()).print(os, diagShared);
-      os << '(';
-      printDemangledParam(os, elt, diagShared);
-      os << ')';
-#endif
-    } else {
-      os << '{';
-      llvm::interleaveComma(structAttr.getValues(), os, [&](auto value) {
-        printDemangledParam(os, std::get<1>(value), diagShared);
-      });
-      os << '}';
-    }
-    return;
-  }
   if (auto bindParams = dyn_cast<BindParamsAttr>(param)) {
     printDemangledParam(os, bindParams.getGenerator(), diagShared);
     os << '[';
@@ -779,6 +754,38 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     os << '"';
     printAsMojoStringLiteral(strAttr, os);
     os << '"';
+    return;
+  }
+  /// A StructAttr is due to an inline @always_inline("builtin") initializer.
+  /// Elide it if we have the default type with a literal so we don't print
+  /// Int(42), but print it if it is something weird like IntLiteral(42)
+  if (auto structAttr = dyn_cast<LITStructAttr>(param)) {
+    // If the struct has a single element, elide the braces.
+    if (diagShared && structAttr.getValues().size() == 1) {
+      ASTDecl *decl = ASTType(structAttr.getType()).getDecl(*diagShared);
+      StringRef typeName;
+      if (isa<LIT::StructDeclOp>(*decl))
+        typeName = cast<LIT::StructDeclOp>(*decl).getDeclName().strref();
+      TypedAttr elt = std::get<1>(structAttr.getValues().front());
+      if (typeName == "Int" || typeName == "Bool" || typeName == "Origin" ||
+          typeName == "DType" || typeName == "StringLiteral") {
+        if (auto extract = dyn_cast<LIT::StructExtractAttr>(elt))
+          elt = extract.getStructValue();
+        printDemangledParam(os, elt, diagShared);
+        return;
+      }
+    }
+
+    ASTType(structAttr.getType()).print(os, diagShared);
+    os << '(';
+    // TODO: Could print keywords for the labels if there is a reason someday.
+    llvm::interleaveComma(structAttr.getValues(), os, [&](auto elt) {
+      TypedAttr value = std::get<1>(elt);
+      if (auto extract = dyn_cast<LIT::StructExtractAttr>(value))
+        value = extract.getStructValue();
+      printDemangledParam(os, value, diagShared);
+    });
+    os << ')';
     return;
   }
 
