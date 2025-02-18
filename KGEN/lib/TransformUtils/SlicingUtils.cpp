@@ -94,15 +94,17 @@ void M::sliceDependencies(Operation *op, SymbolTable &sliceSymtab,
 
 OwningOpRef<ModuleOp>
 M::produceStandaloneModule(const SymbolTable &symtab,
-                           const ExportMap &exportedSymbols, bool isGPU) {
+                           const ExportMap &exportedSymbols,
+                           bool overrideExported) {
   IRMapping unused;
-  return produceStandaloneModule(symtab, exportedSymbols, unused, isGPU);
+  return produceStandaloneModule(symtab, exportedSymbols, unused,
+                                 overrideExported);
 }
 
 OwningOpRef<ModuleOp>
 M::produceStandaloneModule(const SymbolTable &symtab,
                            const ExportMap &exportedSymbols, IRMapping &mapping,
-                           bool isGPU) {
+                           bool overrideExported) {
   CompilerTimeTraceScope traceScope("produceStandaloneModule");
   auto module = cast<ModuleOp>(symtab.getOp());
   // Create a new module for these funcs. This will go away at the end
@@ -139,7 +141,9 @@ M::produceStandaloneModule(const SymbolTable &symtab,
     exported.insert(sliceFn);
   }
 
-  if (isGPU) {
+  if (overrideExported) {
+    // Override exported info here for some cases.
+    // For example:
     // GPU kernel should only have kernel entry function as exported.
     // Mark anyone else to not be exported here.
     // Some of they may be marked as exported because graph compiler needs

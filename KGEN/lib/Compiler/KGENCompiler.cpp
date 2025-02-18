@@ -258,7 +258,8 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
 
   IRMapping mapping;
   OwningOpRef<ModuleOp> module = produceStandaloneModule(
-      symtab, exportedSymbols, mapping, isGPUBackend(compilationOptions));
+      symtab, exportedSymbols, mapping,
+      /*overrideExported*/ isGPUBackend(compilationOptions));
   // Override the target.
   eraseTargetInfo(*module);
   setTargetInfo(*module, target);
@@ -357,9 +358,9 @@ static ElaboratorCompileOffloadRetType compileOffloads(
     if (!targetDataLayout.empty())
       compilationOptions.targetDataLayout = targetDataLayout;
 
-    OwningOpRef<ModuleOp> module =
-        produceStandaloneModule(symtab, offloadInfo.exportedSymbols, mapping,
-                                isGPUBackend(compilationOptions));
+    OwningOpRef<ModuleOp> module = produceStandaloneModule(
+        symtab, offloadInfo.exportedSymbols, mapping,
+        /*overrideExported*/ isGPUBackend(compilationOptions));
 
     // Override the target.
     eraseTargetInfo(*module);
