@@ -153,7 +153,7 @@ struct DType(
         """
         return self
 
-    @always_inline
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: Self.type):
         """Construct a DType from MLIR dtype.

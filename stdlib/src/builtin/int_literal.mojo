@@ -72,7 +72,7 @@ struct IntLiteral(
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __lt__(self, rhs: Self) -> Bool:
         """Compare this IntLiteral to the RHS using LT comparison.
 
@@ -86,7 +86,7 @@ struct IntLiteral(
             pred = __mlir_attr.`#kgen<int_literal.cmp_pred lt>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __le__(self, rhs: Self) -> Bool:
         """Compare this IntLiteral to the RHS using LE comparison.
 
@@ -101,7 +101,7 @@ struct IntLiteral(
             pred = __mlir_attr.`#kgen<int_literal.cmp_pred le>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __eq__(self, rhs: Self) -> Bool:
         """Compare this IntLiteral to the RHS using EQ comparison.
 
@@ -115,7 +115,7 @@ struct IntLiteral(
             pred = __mlir_attr.`#kgen<int_literal.cmp_pred eq>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __ne__(self, rhs: Self) -> Bool:
         """Compare this IntLiteral to the RHS using NE comparison.
 
@@ -129,7 +129,7 @@ struct IntLiteral(
             pred = __mlir_attr.`#kgen<int_literal.cmp_pred ne>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __gt__(self, rhs: Self) -> Bool:
         """Compare this IntLiteral to the RHS using GT comparison.
 
@@ -143,7 +143,7 @@ struct IntLiteral(
             pred = __mlir_attr.`#kgen<int_literal.cmp_pred gt>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __ge__(self, rhs: Self) -> Bool:
         """Compare this IntLiteral to the RHS using GE comparison.
 
@@ -462,7 +462,7 @@ struct IntLiteral(
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __bool__(self) -> Bool:
         """Convert this IntLiteral to Bool.
 
@@ -471,7 +471,7 @@ struct IntLiteral(
         """
         return self != Self()
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __as_bool__(self) -> Bool:
         """Convert this IntLiteral to Bool.
 
@@ -520,7 +520,7 @@ struct IntLiteral(
             return self
         return -self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __ceil__(self) -> Self:
         """Return the ceiling of the IntLiteral value, which is itself.
 
