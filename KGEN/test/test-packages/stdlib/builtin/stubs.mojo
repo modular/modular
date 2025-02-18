@@ -173,13 +173,13 @@ struct IntLiteral:
     fn __init__(out self, value: Self.type):
         self.value = value
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __ne__(self, rhs: Self) -> Bool:
         return __mlir_op.`kgen.int_literal.cmp`[
             pred = __mlir_attr.`#kgen<int_literal.cmp_pred ne>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __bool__(self) -> Bool:
         return self != Self()
 

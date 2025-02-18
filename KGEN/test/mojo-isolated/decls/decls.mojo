@@ -261,8 +261,8 @@ fn testNoInline():
     pass
 
 
-# CHECK-LABEL: lit.fn @"math{{.*}} always_inline_no_debug
-@always_inline("nodebug")
+# CHECK-LABEL: lit.fn @"math{{.*}} always_inline_builtin
+@always_inline("builtin")
 fn math(a: __mlir_type.index, b: __mlir_type.index) -> __mlir_type.index:
     return __mlir_op.`index.add`(a, b)
 

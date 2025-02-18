@@ -21,7 +21,7 @@ struct DType:
     alias float32 = __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`
     alias int32 = __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: Self.type):
         self.value = value
