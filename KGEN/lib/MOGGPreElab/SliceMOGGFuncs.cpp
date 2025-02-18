@@ -6,7 +6,6 @@
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
-#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MOGGPreElab/MOGGDecorators.h"
@@ -25,6 +24,53 @@ using namespace KGEN;
 using namespace MOGGPreElab;
 
 namespace {
+struct NameUniquer {
+public:
+  NameUniquer(MLIRContext *ctx) : ctx{ctx} {}
+
+  void collectReservedNames(Operation *op);
+
+  template <typename AttrOrType>
+  void collectReservedNames(AttrOrType attrOrType);
+
+  StringAttr newName();
+
+private:
+  MLIRContext *ctx;
+  DenseSet<StringAttr> reservedNames;
+  unsigned counter = 0;
+};
+
+template <typename AttrOrType>
+void NameUniquer::collectReservedNames(AttrOrType type) {
+  mlir::AttrTypeWalker walker;
+  walker.addWalk(
+      [&](ParamDeclRefAttr attr) { reservedNames.insert(attr.getName()); });
+
+  walker.addWalk(
+      [&](ParamDeclAttr attr) { reservedNames.insert(attr.getName()); });
+}
+
+void NameUniquer::collectReservedNames(Operation *op) {
+  op->walk([&](Operation *op) {
+    collectReservedNames(op->getAttrDictionary());
+    for (Type type : op->getResultTypes())
+      collectReservedNames(type);
+    for (Region &region : op->getRegions())
+      for (Type type : region.getArgumentTypes())
+        collectReservedNames(type);
+  });
+}
+
+StringAttr NameUniquer::newName() {
+  while (true) {
+    auto name = StringAttr::get(ctx, Twine("P") + Twine(counter++));
+
+    if (!reservedNames.contains(name))
+      return name;
+  }
+}
+
 struct SpliceResult {
   TypedAttr getNewTensorSpec() { return newTensorSpec; }
 
@@ -65,8 +111,9 @@ struct LambdaTemplate {
   ///
   /// The return value is the new tensor spec attribute with any parameter
   /// references remapped.
-  SpliceResult splice(OpBuilder &builder, ValueRange operands,
-                      DictionaryAttr params, StringRef newLambdaName);
+  SpliceResult splice(OpBuilder &builder, NameUniquer &uniquer,
+                      ValueRange operands, DictionaryAttr params,
+                      StringRef newLambdaName);
 
   /// The op we are pulling this info from.
   GeneratorOp templateOp;
@@ -80,11 +127,28 @@ struct LambdaTemplate {
   CallOp extractTensorSpecCall;
 };
 
+/// What is going on here. We need tooling to do the following.
+/// We have the set of parameters from a ManagedTensorSlice:
+///
+///     ManagedTensorSlice[
+///         type,
+///         rank + 1,
+///         static_spec = StaticTensorSpec[type, rank]()
+///     ]
+///
+/// And we need to replace each parameter of the input hook function with
+/// these parameters in a consistent way.
+///
+/// fn _input_hook_fn[type, rank, static_spec]():
+///     use[type, rank, static_spec]()
+///
 class SafeRenamer {
 public:
-  SafeRenamer() = default;
+  SafeRenamer(NameUniquer &uniquer) : uniquer{uniquer} {}
 
-  SafeRenamer(ArrayRef<ParamDeclAttr> oldNames, ArrayRef<TypedAttr> newValues) {
+  SafeRenamer(NameUniquer &uniquer, ArrayRef<ParamDeclAttr> oldNames,
+              ArrayRef<TypedAttr> newValues)
+      : uniquer{uniquer} {
     for (auto [name, value] : llvm::zip(oldNames, newValues))
       setParameterValue(name.getName(), value);
   }
@@ -95,10 +159,7 @@ public:
       if (forwardRenaming.contains(attr.getName()))
         return;
 
-      // Use the pointer address as the new unique name for each decl ref
-      // TODO(GEX-1832): This should be turned into a more robust
-      // capture-avoiding substitution procedure.
-      auto newName = std::to_string((uintptr_t)attr.getAsOpaquePointer());
+      auto newName = uniquer.newName();
       auto newAttr = ParamDeclRefAttr::get(newName, attr.getType());
       forwardRenaming.insert({attr.getName(), newAttr});
       inverseRenaming.insert({newAttr.getName(), attr});
@@ -196,6 +257,8 @@ public:
   }
 
 private:
+  NameUniquer &uniquer;
+
   DenseMap<StringAttr, Attribute> forwardRenaming;
   DenseMap<StringAttr, Attribute> inverseRenaming;
   DenseMap<StringAttr, Attribute> renaming;
@@ -229,8 +292,8 @@ getRemappedParameters(DictionaryAttr argsParamsDict,
   return result;
 }
 
-SpliceResult LambdaTemplate::splice(OpBuilder &builder, ValueRange operands,
-                                    DictionaryAttr params,
+SpliceResult LambdaTemplate::splice(OpBuilder &builder, NameUniquer &uniquer,
+                                    ValueRange operands, DictionaryAttr params,
                                     StringRef newLambdaName) {
   ASSERT_STREAM(templateOp != nullptr, "missing lambda");
 
@@ -250,7 +313,7 @@ SpliceResult LambdaTemplate::splice(OpBuilder &builder, ValueRange operands,
   // Rebind the parameters of the lambda from the `self` argument in the
   // method onto the specific parameters of the tensor being used at the
   // callsite.
-  SafeRenamer safeRenamer(templateOp.getInputParams(), remappedParams);
+  SafeRenamer safeRenamer(uniquer, templateOp.getInputParams(), remappedParams);
 
   safeRenamer.recursivelyReplaceElementsIn(newLambda, /*replaceAttrs=*/true,
                                            /*replaceLocs=*/false,
@@ -343,6 +406,12 @@ private:
     if (!argsParams)
       return;
 
+    NameUniquer uniquer(gen.getContext());
+
+    uniquer.collectReservedNames(gen);
+    uniquer.collectReservedNames(inLambdaTemplate.templateOp);
+    uniquer.collectReservedNames(outLambdaTemplate.templateOp);
+
     for (unsigned idx : fusedOperands) {
       BlockArgument tensorFusionEnabledOn = gen.getBody()->getArgument(idx);
       DictionaryAttr paramsForTensor = cast<DictionaryAttr>(argsParams[idx]);
@@ -378,14 +447,15 @@ private:
         outputLambdaNames[0] = newLambdaName;
 
       OpBuilder builder{computeBlock, computeBlock->begin()};
-      SpliceResult spliceResult = lambda->splice(
-          builder, {tensorFusionEnabledOn}, paramsForTensor, newLambdaName);
+      SpliceResult spliceResult =
+          lambda->splice(builder, uniquer, {tensorFusionEnabledOn},
+                         paramsForTensor, newLambdaName);
 
       ASSERT_STREAM(
           argTensorSpecRef.getType() == spliceResult.newTensorSpec.getType(),
           << "invalid type of new tensor spec");
 
-      SafeRenamer renamer;
+      SafeRenamer renamer(uniquer);
       renamer.setParameterValue(argTensorSpecRef.getName(),
                                 spliceResult.getNewTensorSpec());
 
