@@ -34,7 +34,7 @@ from gpu.memory import (
 )
 from gpu.mma import ld_matrix, mma
 from layout import RuntimeLayout
-from layout.int_tuple import IntTuple, to_int
+from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,
@@ -473,8 +473,8 @@ fn multistage_qgemm_kernel[
     alias group_bytes = group_size // 2 + 2
 
     var M: UInt = c.dim(0)
-    alias N = to_int(b_layout.shape[0])
-    alias K = to_int(b_layout.shape[1]) // group_bytes * group_size
+    alias N = Int(b_layout.shape[0])
+    alias K = Int(b_layout.shape[1]) // group_bytes * group_size
 
     alias BM = config.block_tile_shape[0]
     alias BN = config.block_tile_shape[1]
@@ -945,8 +945,8 @@ fn repack_Q4_0_for_sm8x[
     var lane_id: Int = tid % WARP_SIZE
     var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
 
-    alias N = to_int(q_layout.shape[0])
-    alias K = to_int(q_layout.shape[1]) // group_bytes * group_size
+    alias N = Int(q_layout.shape[0])
+    alias K = Int(q_layout.shape[1]) // group_bytes * group_size
 
     alias K_groups = K // group_size
     alias BK_groups = BK // group_size
@@ -1130,8 +1130,8 @@ fn repack_GPTQ_for_sm8x[
     var lane_id: Int = tid % WARP_SIZE
     var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
 
-    alias N = to_int(in_layout.shape[1])
-    alias K = to_int(in_layout.shape[0]) // group_bytes * group_size
+    alias N = Int(in_layout.shape[1])
+    alias K = Int(in_layout.shape[0]) // group_bytes * group_size
 
     alias K_groups = K // group_size
     alias BK_groups = BK // group_size
