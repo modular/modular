@@ -189,6 +189,13 @@ def IntLiteralConvertAttr : DialectAttribute<(attr
   ConcreteAttribute<"UnitAttr">:$treatIndexAsUnsigned
 )>;
 
+def IntLiteralBinOpAttr : DialectAttribute<(attr
+  Type:$type,
+  TypedAttr:$lhs, TypedAttr:$rhs,
+  ConcreteAttribute<"IntLiteralBinopKindAttr">:$kind
+)>;
+
+
 def IntLiteralCmpPredAttr : DialectAttribute<(attr
   EnumAttr<"IntLiteralCmpPred">:$value
 )>;

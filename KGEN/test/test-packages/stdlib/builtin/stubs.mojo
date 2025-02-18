@@ -183,7 +183,7 @@ struct IntLiteral:
     fn __bool__(self) -> Bool:
         return self != Self()
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __mul__(self, rhs: Self) -> Self:
         return Self(
             __mlir_op.`kgen.int_literal.binop`[
