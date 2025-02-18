@@ -12,4 +12,4 @@ fn main():
     for i in range(10):
         # CHECK: error: can't materialize IntLiteral in dynamic context
         # CHECK: error: failed to legalize operation 'kgen.param.constant' that was explicitly marked illegal
-        n += 1
+        n = n + 1
