@@ -78,13 +78,6 @@ def test_mod():
     assert_equal(IntLiteral.__mod__(-3, 2), 1)
 
 
-def test_bit_width():
-    assert_equal((0)._bit_width(), 1)
-    assert_equal((-1)._bit_width(), 1)
-    assert_equal((255)._bit_width(), 9)
-    assert_equal((-256)._bit_width(), 9)
-
-
 def test_abs():
     assert_equal(IntLiteral.__abs__(-5), 5)
     assert_equal(IntLiteral.__abs__(2), 2)
@@ -165,7 +158,6 @@ def main():
     test_floordiv()
     test_mod()
     test_divmod()
-    test_bit_width()
     test_abs()
     test_indexer()
     test_bool()

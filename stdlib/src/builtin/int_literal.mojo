@@ -720,15 +720,6 @@ struct IntLiteral(
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    @always_inline("nodebug")
-    fn _bit_width(self) -> IntLiteral:
-        """Get the (signed) bit width of the IntLiteral.
-
-        Returns:
-            The bit width.
-        """
-        return __mlir_op.`kgen.int_literal.bit_width`(self.value)
-
     @always_inline("builtin")
     fn __index__(self) -> __mlir_type.index:
         """Convert from IntLiteral to index.
