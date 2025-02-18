@@ -279,6 +279,9 @@ getRemappedParameters(DictionaryAttr argsParamsDict,
     StringRef demangledName = LIT::demangleParameterName(paramName.getValue());
 
     auto paramValue = argsParamsDict.get(demangledName);
+    if (!paramValue)
+      continue;
+
     ASSERT_STREAM(paramValue, "Missing parameter '"
                                   << demangledName
                                   << "' in arguments dictionary");
@@ -338,11 +341,12 @@ SpliceResult LambdaTemplate::splice(OpBuilder &builder, NameUniquer &uniquer,
 }
 
 /// Given the array of parameters for an argument from
-/// MOGG_TENSOR_ARG_PARAMS, return the parameter ref which corresponds to
+/// kKernelValueParameterAttrName, return the parameter ref which corresponds to
 /// the static tensor spec parameter. This is tightly coupled on the exact
 /// order of parameter to the tensor type.
 static ParamDeclRefAttr getTensorSpecParamRef(DictionaryAttr argParams) {
-  return cast<ParamDeclRefAttr>(argParams.get(MOGGPreElab::kStaticSpec));
+  return cast<ParamDeclRefAttr>(
+      argParams.get(MOGGPreElab::kParameterStaticSpec));
 }
 
 } // end namespace
@@ -401,7 +405,8 @@ private:
     ArrayAttr argumentTypeNames =
         cast<ArrayAttr>(gen->getAttr(MOGG_ARG_TYPE_NAMES));
 
-    auto argsParams = gen->getAttrOfType<ArrayAttr>(MOGG_TENSOR_ARG_PARAMS);
+    auto argsParams =
+        gen->getAttrOfType<ArrayAttr>(kKernelValueParameterAttrName);
 
     if (!argsParams)
       return;
