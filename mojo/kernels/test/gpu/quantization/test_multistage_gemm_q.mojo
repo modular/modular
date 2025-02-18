@@ -48,7 +48,7 @@ from internal_utils import (
 )
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout import RuntimeLayout
-from layout.int_tuple import IntTuple, to_int
+from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,
@@ -131,8 +131,8 @@ fn repack_Q4_0_for_sm8x[
     var lane_id: Int = tid % WARP_SIZE
     var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
 
-    alias N = to_int(q_layout.shape[0])
-    alias K = to_int(q_layout.shape[1]) // group_bytes * group_size
+    alias N = Int(q_layout.shape[0])
+    alias K = Int(q_layout.shape[1]) // group_bytes * group_size
 
     alias K_groups = K // group_size
     alias BK_groups = BK // group_size
@@ -316,8 +316,8 @@ fn create_ref_b[
     var warp_y: UInt = warp_id % num_k_warps
 
     alias group_bytes = group_size // 2 + 2
-    alias N = to_int(b_q_layout.shape[0])
-    alias K = to_int(b_q_layout.shape[1]) // group_bytes * group_size
+    alias N = Int(b_q_layout.shape[0])
+    alias K = Int(b_q_layout.shape[1]) // group_bytes * group_size
 
     # Unpack quantized weights
     alias scales_type = DType.bfloat16

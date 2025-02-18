@@ -23,7 +23,6 @@ from gpu.host import DeviceContext
 from gpu.id import block_dim, block_idx, thread_idx
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from layout import Layout, LayoutTensor
-from layout.int_tuple import to_int
 from layout.nd_buffer_stub import from_ndbuffer_row_major
 from memory import UnsafePointer
 from nn.conv import conv_gpu
@@ -85,9 +84,9 @@ fn matmul[
     A: LayoutTensor[a_type, a_layout],
     B: LayoutTensor[b_type, b_layout],
 ):
-    alias M = to_int(c_layout.shape[0])
-    alias N = to_int(c_layout.shape[1])
-    alias K = to_int(a_layout.shape[1])
+    alias M = Int(c_layout.shape[0])
+    alias N = Int(c_layout.shape[1])
+    alias K = Int(a_layout.shape[1])
 
     @parameter
     if transpose_b:

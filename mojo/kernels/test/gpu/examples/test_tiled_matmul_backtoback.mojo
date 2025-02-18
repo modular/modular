@@ -37,7 +37,7 @@ from gpu.memory import (
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from layout.fillers import arange
-from layout.int_tuple import UNKNOWN_VALUE, to_int
+from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import size
 from layout.layout_tensor import (
     LayoutTensorIter,
@@ -171,7 +171,7 @@ fn b2b_gemm[
         "B2B gemm only supports tf32 or BF16 mma",
     ]()
     constrained[
-        to_int(a_layout.shape[1]) != UNKNOWN_VALUE,
+        Int(a_layout.shape[1]) != UNKNOWN_VALUE,
         "The number of columns of `A` must be known.",
     ]()
 
@@ -186,8 +186,8 @@ fn b2b_gemm[
     # var K: UInt = B.dim(1) if transpose_b else B.dim(0)
     # TODO: allow dynamic `K`, so long as it still
     # fits in shared memory, we shouldn't require static.
-    alias K: UInt = to_int(A.layout.shape[1])
-    alias N: UInt = to_int(D.layout.shape[1])
+    alias K: UInt = Int(A.layout.shape[1])
+    alias N: UInt = Int(D.layout.shape[1])
 
     alias BM = config.block_tile_shape[0]
     alias BN = config.block_tile_shape[1]
@@ -616,9 +616,7 @@ fn multistage_b2b_gemm[
             A,
             B,
             C,
-            grid_dim=config.grid_dim(
-                Int(runtime_tuple.to_int(D.runtime_layout.shape[0]))
-            ),
+            grid_dim=config.grid_dim(Int(D.runtime_layout.shape[0])),
             block_dim=config.block_dim(),
             shared_mem_bytes=smem_use,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
