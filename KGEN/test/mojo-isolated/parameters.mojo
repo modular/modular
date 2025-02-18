@@ -69,7 +69,7 @@ fn fancy_signature[dt: DType, size: Int](
   # CHECK: lit.ref.store %[[RES]], %local
   var local = take_3index(size, size, size)
 
-  # CHECK: %[[TMP:.*]] = lit.call {{.*}}__add__
+  # CHECK: %[[TMP:.*]] = kgen.param.constant: !Int = <{value = add(#lit.struct.extract<:!Int size, "value">, 42)}>
   # CHECK: lit.return %[[TMP]]
   return size+42
 

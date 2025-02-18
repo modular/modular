@@ -79,10 +79,6 @@ ParserParamEvaluator::ParserParamEvaluator(DeclResolver &resolver,
                                            ArrayRef<TypedAttr> paramValues)
     : ParameterEvaluator(paramValues), resolver(resolver) {}
 
-SymbolConstantAttr ParserParamEvaluator::findDirectCallee(TypedAttr callee) {
-  return dyn_cast<SymbolConstantAttr>(ParamOperatorAttr::stripRebind(callee));
-}
-
 FailureOr<TypedAttr>
 ParserParamEvaluator::evaluateFunctionCall(SymbolRefAttr symbol,
                                            ArrayRef<Attribute> arguments) {
@@ -157,7 +153,8 @@ ParserParamEvaluator::evaluateExpression(ParamOperatorAttr op) {
     return failure();
 
   // We can only fold direct calls.
-  SymbolConstantAttr ref = findDirectCallee(op.getOperands().front());
+  SymbolConstantAttr ref = dyn_cast<SymbolConstantAttr>(
+      ParamOperatorAttr::stripRebind(op.getOperands().front()));
   if (!ref)
     return failure();
 

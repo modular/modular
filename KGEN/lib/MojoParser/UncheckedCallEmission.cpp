@@ -943,9 +943,19 @@ FailureOr<CValue> CallEmitter::inlineFunctionCallIntoPValueIfPossible(
   auto calleePR = callee.getIfPValue();
   if (!calleePR)
     return failure();
-  auto calleeSymbolCst = evaluator.findDirectCallee(calleePR.get());
+  auto calleeSymbolCst = dyn_cast<SymbolConstantAttr>(
+      ParamOperatorAttr::stripRebind(calleePR.get()));
   if (!calleeSymbolCst)
     return failure();
+
+  // TODO(remove this whole thing): this allows the existing logic for
+  // @always_inline("builtin") functions to kick in so we can better understand
+  // how much left is required to convert.
+  if (ASTDecl *calleeDecl = emitter.getDeclResolver().getDeclForFuncSymbol(
+          calleeSymbolCst.getSymbol())) {
+    if (cast<FnOp>(*calleeDecl).getInlineLevel() == InlineLevel::AlwaysBuiltin)
+      return failure();
+  }
 
   // When emitting a call in a dynamic context to function with a `byref_result`
   // argument, the caller sets up an MLValue destination or may pass in a
@@ -1494,17 +1504,38 @@ void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
 /// know the type lacks a runtime representation and that it must be
 /// interpretable. If all other arguments are PValues, we can safely emit the
 /// call in a parameter context.
-static bool
-shouldEmitParameterCall(FnTypeGeneratorType calleeSig,
-                        ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
-                        SharedState &shared) {
-  argumentValues = dropResultSlots(argumentValues, calleeSig);
+static bool shouldEmitParameterCall(RValue callee,
+                                    ArrayRef<ASTExprAnd<AnyValue>> argValues,
+                                    SharedState &shared) {
+  auto calleeSig = cast<FnTypeGeneratorType>(callee.getRValueType());
+  argValues = dropResultSlots(argValues, calleeSig);
+
+  // We cannot inline this if any of the arguments are dynamic.
   auto isPValue = [](ASTExprAnd<AnyValue> arg) { return arg.ir.getIfPValue(); };
+  if (!callee.getIfPValue() || !llvm::all_of(argValues, isPValue))
+    return false;
+
+  // If this is an @always_inline("builtin") function, we must emit its body
+  // inline.
+  if (auto calleeSymbolCst = dyn_cast<SymbolConstantAttr>(
+          ParamOperatorAttr::stripRebind(callee.getIfPValue()))) {
+    if (ASTDecl *calleeDecl = shared.getDeclResolver().getDeclForFuncSymbol(
+            calleeSymbolCst.getSymbol())) {
+      if (cast<FnOp>(*calleeDecl).getInlineLevel() ==
+          InlineLevel::AlwaysBuiltin)
+        return true;
+    }
+  }
+
+  // Otherwise, if this involves any non-materializable operations, keep in in
+  // the parameter domain.
+  // TODO: Why aren't we aggressively folding towards pvalues?  We would lose
+  // some location info (which seems fixable) but this would keep things
+  // consistent and canonical.  This seems arbitrary.
   auto isNonMaterializable = [&](ASTExprAnd<AnyValue> arg) {
     return arg.ir.getIfPValue().getType().getNonmaterializableTarget(shared);
   };
-  return llvm::all_of(argumentValues, isPValue) &&
-         (llvm::any_of(argumentValues, isNonMaterializable) ||
+  return (llvm::any_of(argValues, isNonMaterializable) ||
           ASTType(calleeSig.getUserResultType())
               .getNonmaterializableTarget(shared));
 }
@@ -1549,7 +1580,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
       succeeded(resCValue))
     return *resCValue;
 
-  if (!builder || shouldEmitParameterCall(calleeSig, argumentValues, shared)) {
+  if (!builder || shouldEmitParameterCall(callee, argumentValues, shared)) {
     TypedAttr paramCallResult;
     {
       llvm::SaveAndRestore savedBuilder(builder, {});
