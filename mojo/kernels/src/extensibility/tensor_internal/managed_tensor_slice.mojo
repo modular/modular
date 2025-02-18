@@ -815,6 +815,11 @@ struct ManagedTensorSlice[
             len(new_static_strides) == new_rank,
             "static strides has incorrect rank",
         ]()
+        debug_assert(
+            _is_consistent[new_static_shape](new_runtime_shape)
+            and _is_consistent[new_static_strides](new_runtime_strides)
+        )
+
         return __type_of(result)(
             offset_ptr.or_else(self._ptr),
             new_runtime_shape,
@@ -830,6 +835,24 @@ struct ManagedTensorSlice[
             self.unsafe_ptr(),
             RuntimeLayout[layout](self.shape(), self.strides()),
         )
+
+
+fn _is_consistent[static_info: DimList](runtime_info: IndexList) -> Bool:
+    @parameter
+    if len(static_info) != runtime_info.size:
+        return False
+
+    @parameter
+    for i in range(runtime_info.size):
+
+        @parameter
+        if static_info.has_value[i]():
+            continue
+
+        if static_info.at[i]() != runtime_info[i]:
+            return False
+
+    return True
 
 
 # ===----------------------------------------------------------------------=== #

@@ -104,6 +104,7 @@ struct StaticTensorSpec[
             OptionalReg[Self.out_lambda_t](None),
         )
 
+    @always_inline
     fn with_layout[
         new_rank: Int
     ](self, new_shape: DimList, new_strides: DimList) -> StaticTensorSpec[
@@ -118,11 +119,6 @@ struct StaticTensorSpec[
             None,
             None,
         )
-
-    fn with_strides(self, strides: DimList) -> Self:
-        var result = self
-        result.strides = strides
-        return result
 
     @always_inline
     fn to_layout(self) -> Layout:
