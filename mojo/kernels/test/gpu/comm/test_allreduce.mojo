@@ -52,6 +52,7 @@ fn all_reduce_test[
     type: DType, rank: Int, ngpus: Int
 ](list_of_ctx: List[DeviceContext], length: Int) raises:
     constrained[ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"]()
+    constrained[rank == 1, "this test code currently assumes rank 1"]()
 
     # Create device buffers for all GPUs
     var in_bufs_list = List[DeviceBuffer[type]](capacity=ngpus)
@@ -168,56 +169,42 @@ fn _get_test_str[type: DType](ngpus: Int, length: Int) -> String:
 
 
 def main():
-    # Test configurations.
-    alias latency_bound_length = 8 * 1024
-    alias bandwidth_bound_length = 16 * 1024 * 1024
+    # Test configurations covering edge cases
+    # fmt: off
+    alias test_lengths = (
+        8 * 1024,           # Small latency bound.
+        128 * 1024,         # Larger latency bound.
+        16 * 1024 * 1024,   # Bandwidth bound.
+    )
+    # fmt: on
 
-    # Rank of the tensor to transfer.
-    alias rank = 1
+    # Test hyperparameters.
+    alias test_dtypes = (DType.bfloat16, DType.float32)
+    alias test_gpu_counts = (2, 4, 8)
 
-    # Test with 2 GPUs
-    var device_count = DeviceContext.number_of_devices()
-    if device_count >= 2:
-        var ctx2 = List[DeviceContext](
-            DeviceContext(device_id=0), DeviceContext(device_id=1)
-        )
+    # Run tests for each configuration.
+    @parameter
+    for gpu_idx in range(len(test_gpu_counts)):
+        alias num_gpus = test_gpu_counts[gpu_idx]
+        if DeviceContext.number_of_devices() < num_gpus:
+            break
 
-        # Latency bound tests (hits 1-stage codepath).
-        print(_get_test_str[DType.bfloat16](2, latency_bound_length))
-        all_reduce_test[DType.bfloat16, rank, 2](ctx2, latency_bound_length)
-        print(_get_test_str[DType.float32](2, latency_bound_length))
-        all_reduce_test[DType.float32, rank, 2](ctx2, latency_bound_length)
+        # Create GPU context.
+        var ctx = List[DeviceContext]()
+        for i in range(num_gpus):
+            ctx.append(DeviceContext(device_id=i))
 
-        # Bandwidth bound tests (hits 2-stage codepath).
-        print(_get_test_str[DType.bfloat16](2, bandwidth_bound_length))
-        all_reduce_test[DType.bfloat16, rank, 2](ctx2, bandwidth_bound_length)
-        print(_get_test_str[DType.float32](2, bandwidth_bound_length))
-        all_reduce_test[DType.float32, rank, 2](ctx2, bandwidth_bound_length)
+        # Test all cases for this test configuration.
+        @parameter
+        for dtype_idx in range(len(test_dtypes)):
+            alias dtype = test_dtypes[dtype_idx]
 
-    # Test with 4 GPUs if available.
-    if device_count >= 4:
-        var ctx4 = List[DeviceContext]()
-        for i in range(4):
-            ctx4.append(DeviceContext(device_id=i))
+            @parameter
+            for length_idx in range(len(test_lengths)):
+                alias length = test_lengths[length_idx]
 
-        # Latency bound tests (hits 1-stage codepath).
-        print(_get_test_str[DType.bfloat16](4, latency_bound_length))
-        all_reduce_test[DType.bfloat16, rank, 4](ctx4, latency_bound_length)
-        print(_get_test_str[DType.float32](4, latency_bound_length))
-        all_reduce_test[DType.float32, rank, 4](ctx4, latency_bound_length)
+                # Generate descriptive test name.
+                print(_get_test_str[dtype](num_gpus, length))
 
-        # Bandwidth bound tests (hits 2-stage codepath).
-        print(_get_test_str[DType.bfloat16](4, bandwidth_bound_length))
-        all_reduce_test[DType.bfloat16, rank, 4](ctx4, bandwidth_bound_length)
-        print(_get_test_str[DType.float32](4, bandwidth_bound_length))
-        all_reduce_test[DType.float32, rank, 4](ctx4, bandwidth_bound_length)
-
-    # Test with 8 GPUs if available.
-    if device_count >= 8:
-        var ctx8 = List[DeviceContext]()
-        for i in range(8):
-            ctx8.append(DeviceContext(device_id=i))
-        print(_get_test_str[DType.bfloat16](8, latency_bound_length))
-        all_reduce_test[DType.bfloat16, rank, 8](ctx8, latency_bound_length)
-        print(_get_test_str[DType.float32](8, latency_bound_length))
-        all_reduce_test[DType.float32, rank, 8](ctx8, latency_bound_length)
+                # Execute test.
+                all_reduce_test[type=dtype, rank=1, ngpus=num_gpus](ctx, length)
