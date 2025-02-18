@@ -587,6 +587,10 @@ fn _run_impl(opts: _RunOptions) raises -> Report:
         var time_elapsed: Int = 0
         while time_elapsed < min_warmup_time_ns:
             prev_dur = opts.timing_fn(1)
+            # If the function is too fast, we need to make sure we don't have a
+            # duration of 0 which will cause an endless loop.
+            if prev_dur == 0:
+                prev_dur = 1_000
             time_elapsed += prev_dur
         prev_iters = 1
         report.warmup_duration = prev_dur
