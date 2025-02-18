@@ -379,6 +379,80 @@ ErrorOrSuccess IntLiteralConvertAttr::validateForElaborator() const {
 }
 
 //===----------------------------------------------------------------------===//
+// IntLiteralBinAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr IntLiteralBinAttr::get(MLIRContext *ctx, Type type, TypedAttr lhs,
+                                 TypedAttr rhs, IntLiteralBinopKindAttr oper) {
+  // If this is a literal constant coming in, we can fold this.  If not, stage
+  // it until elaboration or something else simplifies things.
+  IntLiteralAttr lAttr = ::dyn_cast_or_null<IntLiteralAttr>(lhs);
+  IntLiteralAttr rAttr = ::dyn_cast_or_null<IntLiteralAttr>(rhs);
+  if (!lAttr || !rAttr)
+    return Base::get(ctx, type, lhs, rhs, oper);
+
+  IPInt l = lAttr.getValue();
+  IPInt r = rAttr.getValue();
+
+  IPInt result;
+  switch (oper.getValue()) {
+  case IntLiteralBinopKind::Add:
+    result = l + r;
+    break;
+  case IntLiteralBinopKind::Sub:
+    result = l - r;
+    break;
+  case IntLiteralBinopKind::Mul:
+    result = l * r;
+    break;
+  case IntLiteralBinopKind::FloorDiv: {
+    IPInt zero(0);
+    if ((l >= zero) == (r >= zero) || l % r == zero)
+      result = l / r;
+    else
+      result = (l / r) - IPInt(1);
+    break;
+  }
+  case IntLiteralBinopKind::Mod: {
+    // Python's mod:
+    // The result sign matches the RHS sign.
+    // If the signs match, the value is the same as: sign(abs(l) % abs(r)),
+    // where sign is determined by the RHS sign. If the signs don't match, the
+    // value is the same as: sign((abs(r) - (abs(l) % abs(r))) % abs(r)).
+    IPInt zero(0);
+    bool signMatch = (l >= zero) == (r >= zero);
+    IPInt lAbs = l.abs();
+    IPInt rAbs = r.abs();
+    result = (lAbs % rAbs).abs();
+    if (!signMatch && result != zero)
+      result = rAbs - result;
+    if (r < zero)
+      result = zero - result;
+    break;
+  }
+  case IntLiteralBinopKind::Lshift:
+    result = l << r;
+    break;
+  case IntLiteralBinopKind::Rshift:
+    result = l >> r;
+    break;
+  case IntLiteralBinopKind::And:
+    result = l & r;
+    break;
+  case IntLiteralBinopKind::Or:
+    result = l | r;
+    break;
+  case IntLiteralBinopKind::Xor:
+    result = l ^ r;
+    break;
+  }
+
+  return IntLiteralAttr::get(lAttr.getContext(), IPInt(result));
+}
+
+bool IntLiteralBinAttr::isConstant() const { return false; }
+
+//===----------------------------------------------------------------------===//
 // BindParamsAttr
 //===----------------------------------------------------------------------===//
 

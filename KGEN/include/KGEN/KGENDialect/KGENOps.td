@@ -1469,7 +1469,7 @@ def KGEN_IntLiteralCmp : KGENOp<"int_literal.cmp", [Pure]> {
 //===----------------------------------------------------------------------===//
 
 // FIXME(MOCO-1628): This shouldn't be an operation.
-def KGEN_IntLiteralBinop : KGENOp<"int_literal.binop", [Pure]> {
+def KGEN_IntLiteralBinOp : KGENOp<"int_literal.binop", [Pure]> {
   let summary = "Binary operations for int_literals";
   let description = [{
     The `kgen.int_literal.binop` operator does standard arithmetic binary
@@ -1477,9 +1477,9 @@ def KGEN_IntLiteralBinop : KGENOp<"int_literal.binop", [Pure]> {
   }];
 
   let arguments = (ins
-    KGEN_IntLiteralBinopKindAttr:$oper,
     KGEN_IntLiteralType:$lhs,
-    KGEN_IntLiteralType:$rhs);
+    KGEN_IntLiteralType:$rhs,
+    KGEN_IntLiteralBinopKindAttr:$oper);
   let results = (outs KGEN_IntLiteralType:$result);
 
   let assemblyFormat = "$oper `(` $lhs `,` $rhs `)` attr-dict";

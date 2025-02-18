@@ -746,7 +746,8 @@ struct HasIntParam[p: Int]:
 
 # expected-note @below {{function declared here}}
 fn take_dep_args[width: Int, x: IntLiteral](a: HasIntParam[width], b: HasIntParam[width * 4]):
-  # expected-error @below {{cannot be converted from 'HasIntParam[(x * 4).value]' to 'HasIntParam[(x.value * 4)]'}}
+  # TODO: Fix message working with IntLiteral directly.
+  # expected-error @below {{cannot be converted from 'HasIntParam[#kgen.int_literal_bin<#lit.struct.extract<:_stdlib::_builtin::_stubs::_IntLiteral x, "value"> : !kgen.int_literal, #kgen.int_literal<4> : !kgen.int_literal,  mul>]' to 'HasIntParam[(x.value * 4)]'}}
   take_dep_args[x, x](HasIntParam[x](), HasIntParam[x*4]())
 
 fn test_signature():

@@ -2323,6 +2323,14 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
             evaluator.getReboundType(convert.getType()), input,
             convert.getTreatIndexAsUnsigned());
       }
+    } else if (auto bin = dyn_cast<IntLiteralBinOp>(op)) {
+      // FIXME(MOCO-1628): This shouldn't be an operation.
+      auto lhs = findValue(bin.getLhs());
+      auto rhs = findValue(bin.getRhs());
+      if (lhs && rhs) {
+        result = IntLiteralBinAttr::get(lhs.getContext(), lhs.getType(), lhs,
+                                        rhs, bin.getOperAttr());
+      }
     }
 
     // If we found something, remember it and move on to the next op.

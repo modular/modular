@@ -518,7 +518,7 @@ ErrorTreeOrSuccess ReturnOp::interpret(ArrayRef<Attribute> operands,
 OpFoldResult IntLiteralCmp::fold(FoldAdaptor adaptor) {
   IntLiteralAttr lAttr = dyn_cast_or_null<IntLiteralAttr>(adaptor.getLhs());
   IntLiteralAttr rAttr = dyn_cast_or_null<IntLiteralAttr>(adaptor.getRhs());
-  IntLiteralCmpPred pred = adaptor.getPred();
+  IntLiteralCmpPred pred = getPred();
   if (!lAttr || !rAttr)
     return {};
   IPInt l = lAttr.getValue();
@@ -545,69 +545,12 @@ OpFoldResult IntLiteralCmp::fold(FoldAdaptor adaptor) {
 // IntLiteralBinop
 //===----------------------------------------------------------------------===//
 
-OpFoldResult IntLiteralBinop::fold(FoldAdaptor adaptor) {
-  IntLiteralAttr lAttr = dyn_cast_or_null<IntLiteralAttr>(adaptor.getLhs());
-  IntLiteralAttr rAttr = dyn_cast_or_null<IntLiteralAttr>(adaptor.getRhs());
-  IntLiteralBinopKind o = adaptor.getOper();
-  if (!lAttr || !rAttr)
-    return {};
-  IPInt l = lAttr.getValue();
-  IPInt r = rAttr.getValue();
-  IPInt zero(0);
-  IPInt one(1);
-
-  IPInt result;
-  switch (o) {
-  case IntLiteralBinopKind::Add:
-    result = l + r;
-    break;
-  case IntLiteralBinopKind::Sub:
-    result = l - r;
-    break;
-  case IntLiteralBinopKind::Mul:
-    result = l * r;
-    break;
-  case IntLiteralBinopKind::FloorDiv:
-    if ((l >= zero) == (r >= zero) || l % r == zero)
-      result = l / r;
-    else
-      result = (l / r) - one;
-    break;
-  case IntLiteralBinopKind::Mod:
-    // Python's mod:
-    // The result sign matches the RHS sign.
-    // If the signs match, the value is the same as: sign(abs(l) % abs(r)),
-    // where sign is determined by the RHS sign. If the signs don't match, the
-    // value is the same as: sign((abs(r) - (abs(l) % abs(r))) % abs(r)).
-    {
-      bool signMatch = (l >= zero) == (r >= zero);
-      IPInt lAbs = l.abs();
-      IPInt rAbs = r.abs();
-      result = (lAbs % rAbs).abs();
-      if (!signMatch && result != zero)
-        result = rAbs - result;
-      if (r < zero)
-        result = zero - result;
-    }
-    break;
-  case IntLiteralBinopKind::Lshift:
-    result = l << r;
-    break;
-  case IntLiteralBinopKind::Rshift:
-    result = l >> r;
-    break;
-  case IntLiteralBinopKind::And:
-    result = l & r;
-    break;
-  case IntLiteralBinopKind::Or:
-    result = l | r;
-    break;
-  case IntLiteralBinopKind::Xor:
-    result = l ^ r;
-    break;
-  }
-
-  return IntLiteralAttr::get(lAttr.getContext(), IPInt(result));
+OpFoldResult IntLiteralBinOp::fold(FoldAdaptor adaptor) {
+  if (auto lhs = dyn_cast_or_null<TypedAttr>(adaptor.getLhs()))
+    if (auto rhs = dyn_cast_or_null<TypedAttr>(adaptor.getRhs()))
+      return IntLiteralBinAttr::get(lhs.getContext(), lhs.getType(), lhs, rhs,
+                                    getOperAttr());
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
