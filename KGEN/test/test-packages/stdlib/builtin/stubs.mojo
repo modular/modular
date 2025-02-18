@@ -302,7 +302,7 @@ struct StringLiteral:
     alias type = __mlir_type.`!kgen.string`
     var value: Self.type
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: Self.type):
         self.value = value
