@@ -511,7 +511,76 @@ struct Mode:
 
 
 struct Bench:
-    """Defines the main Benchmark struct which executes a Benchmark and print result.
+    """Constructs a Benchmark object, used for running multiple benchmarks
+    and comparing the results.
+
+    Example:
+
+    ```mojo
+    from benchmark import (
+        Bench,
+        BenchConfig,
+        Bencher,
+        BenchId,
+        ThroughputMeasure,
+        BenchMetric,
+        Format,
+    )
+    from utils import IndexList
+    from gpu.host import DeviceContext
+    from pathlib import Path
+
+    fn example_kernel():
+        print("example_kernel")
+
+    var shape = IndexList[2](1024, 1024)
+    var bench = Bench(BenchConfig(max_iters=100))
+
+    @parameter
+    @always_inline
+    fn example(mut b: Bencher, shape: IndexList[2]) capturing raises:
+        @parameter
+        @always_inline
+        fn kernel_launch(ctx: DeviceContext) raises:
+            ctx.enqueue_function[example_kernel](
+                grid_dim=shape[0], block_dim=shape[1]
+            )
+
+        var bench_ctx = DeviceContext()
+        b.iter_custom[kernel_launch](bench_ctx)
+
+    bench.bench_with_input[IndexList[2], example](
+        BenchId("top_k_custom", "gpu"),
+        shape,
+        ThroughputMeasure(
+            BenchMetric.elements, shape.flattened_length()
+        ),
+        ThroughputMeasure(
+            BenchMetric.flops, shape.flattened_length() * 3 # number of ops
+        ),
+    )
+    # Add more benchmarks like above to compare results
+
+    # Pretty print in table format
+    print(bench)
+
+    # Dump report to csv file
+    bench.config.out_file = Path("out.csv")
+    bench.dump_report()
+
+    # Print in tabular csv format
+    bench.config.format = Format.tabular
+    print(bench)
+    ```
+
+    You can pass arguments when running a program that makes use of `Bench`:
+
+    ```sh
+    mojo benchmark.mojo -o out.csv -r 10
+    ```
+
+    This will repeat the benchmarks 10 times and write the output to `out.csv`
+    in csv format.
     """
 
     var config: BenchConfig
@@ -519,7 +588,7 @@ struct Bench:
     var mode: Mode
     """Benchmark mode object representing benchmark or test mode."""
     var info_vec: List[BenchmarkInfo]
-    """A list containing the bencmark info."""
+    """A list containing the benchmark info."""
 
     fn __init__(
         mut self,
