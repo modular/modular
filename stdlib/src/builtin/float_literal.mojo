@@ -48,7 +48,7 @@ struct FloatLiteral(
     # Constructors
     # ===------------------------------------------------------------------===#
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: Self.fp_type):
         """Create a FloatLiteral value from a kgen.float_literal value.

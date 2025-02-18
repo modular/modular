@@ -70,7 +70,7 @@ struct StringLiteral(
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: Self.type):
         """Create a string literal from a builtin string type.
