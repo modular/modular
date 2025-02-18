@@ -212,7 +212,7 @@ class Graph:
                     ()
                     if result is None
                     else (result,)
-                    if not isinstance(result, tuple)
+                    if not isinstance(result, Iterable)
                     else result
                 )
                 self.output(*outputs)
