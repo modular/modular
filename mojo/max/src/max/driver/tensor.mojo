@@ -23,7 +23,6 @@ from collections import InlineArray, Optional
 
 from max._tensor_utils import (
     DynamicTensor,
-    IODynamicTensor,
     ManagedTensorSlice,
     TensorLike,
     _indexing,
