@@ -27,7 +27,6 @@ struct IntLiteral(
     ImplicitlyBoolable,
     ImplicitlyIntable,
     Indexer,
-    Roundable,
     Stringable,
     Truncable,
 ):
@@ -374,91 +373,6 @@ struct IntLiteral(
         )
 
     # ===-------------------------------------------------------------------===#
-    # In place operations.
-    # ===-------------------------------------------------------------------===#
-
-    @always_inline("nodebug")
-    fn __iadd__(mut self, rhs: Self):
-        """Compute `self + rhs` and save the result in self.
-
-        Args:
-            rhs: The RHS value.
-        """
-        self = self + rhs
-
-    @always_inline("nodebug")
-    fn __isub__(mut self, rhs: Self):
-        """Compute `self - rhs` and save the result in self.
-
-        Args:
-            rhs: The RHS value.
-        """
-        self = self - rhs
-
-    @always_inline("nodebug")
-    fn __imul__(mut self, rhs: Self):
-        """Compute self*rhs and save the result in self.
-
-        Args:
-            rhs: The RHS value.
-        """
-        self = self * rhs
-
-    @always_inline("nodebug")
-    fn __ifloordiv__(mut self, rhs: Self):
-        """Compute self//rhs and save the result in self.
-
-        Args:
-            rhs: The RHS value.
-        """
-        self = self // rhs
-
-    @always_inline("nodebug")
-    fn __ilshift__(mut self, rhs: Self):
-        """Compute `self << rhs` and save the result in self.
-
-        Args:
-            rhs: The RHS value.
-        """
-        self = self << rhs
-
-    @always_inline("nodebug")
-    fn __irshift__(mut self, rhs: Self):
-        """Compute `self >> rhs` and save the result in self.
-
-        Args:
-            rhs: The RHS value.
-        """
-        self = self >> rhs
-
-    @always_inline("nodebug")
-    fn __iand__(mut self, rhs: Self):
-        """Compute `self & rhs` and save the result in self.
-
-        Args:
-            rhs: The RHS value.
-        """
-        self = self & rhs
-
-    @always_inline("nodebug")
-    fn __ixor__(mut self, rhs: Self):
-        """Compute `self ^ rhs` and save the result in self.
-
-        Args:
-            rhs: The RHS value.
-        """
-        self = self ^ rhs
-
-    @always_inline("nodebug")
-    fn __ior__(mut self, rhs: Self):
-        """Compute self|rhs and save the result in self.
-
-        Args:
-            rhs: The RHS value.
-        """
-        self = self | rhs
-
-    # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
@@ -539,15 +453,6 @@ struct IntLiteral(
         return self
 
     @always_inline("builtin")
-    fn __round__(self) -> Self:
-        """Return the rounded value of the IntLiteral value, which is itself.
-
-        Returns:
-            The IntLiteral value itself.
-        """
-        return self
-
-    @always_inline("builtin")
     fn __trunc__(self) -> Self:
         """Return the truncated of the IntLiteral value, which is itself.
 
@@ -555,32 +460,6 @@ struct IntLiteral(
             The IntLiteral value itself.
         """
         return self
-
-    @always_inline("nodebug")
-    fn __round__(self, ndigits: Int) -> Self:
-        """Return the rounded value of the IntLiteral value, which is itself.
-
-        Args:
-            ndigits: The number of digits to round to.
-
-        Returns:
-            The IntLiteral value itself if ndigits >= 0 else the rounded value.
-        """
-        if ndigits >= 0:
-            return self
-        alias one = __mlir_attr.`#kgen.int_literal<1> : !kgen.int_literal`
-        alias ten = __mlir_attr.`#kgen.int_literal<10> : !kgen.int_literal`
-        var multiplier = one
-        # TODO: Use IntLiteral.__pow__() when it's implemented.
-        for _ in range(-ndigits):
-            multiplier = __mlir_op.`kgen.int_literal.binop`[
-                oper = __mlir_attr.`#kgen<int_literal.binop_kind mul>`
-            ](multiplier, ten)
-        alias Pair = Tuple[Self, Self]
-        var mod: IntLiteral = self % Self(multiplier)
-        if mod * 2 >= multiplier:
-            mod -= multiplier
-        return self - mod
 
     @no_inline
     fn __str__(self) -> String:

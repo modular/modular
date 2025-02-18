@@ -43,16 +43,6 @@ def test_floor():
     assert_equal(IntLiteral.__floor__(-5), -5)
 
 
-def test_round():
-    assert_equal(IntLiteral.__round__(5), 5)
-    assert_equal(IntLiteral.__round__(0), 0)
-    assert_equal(IntLiteral.__round__(-5), -5)
-    assert_equal(IntLiteral.__round__(5, 1), 5)
-    assert_equal(IntLiteral.__round__(0, 1), 0)
-    assert_equal(IntLiteral.__round__(-5, 1), -5)
-    assert_equal(IntLiteral.__round__(100, -2), 100)
-
-
 def test_trunc():
     assert_equal(IntLiteral.__trunc__(5), 5)
     assert_equal(IntLiteral.__trunc__(0), 0)
@@ -153,7 +143,6 @@ def main():
     test_sub()
     test_ceil()
     test_floor()
-    test_round()
     test_trunc()
     test_floordiv()
     test_mod()

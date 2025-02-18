@@ -68,54 +68,6 @@ def test_trunc():
     assert_equal(FloatLiteral.__trunc__(neg_inf), neg_inf)
 
 
-def test_round():
-    assert_equal(FloatLiteral.__round__(1.5), 2.0)
-    assert_equal(FloatLiteral.__round__(1.6), 2.0)
-    assert_equal(FloatLiteral.__round__(-1.5), -2.0)
-    assert_equal(FloatLiteral.__round__(-3.6), -4.0)
-    assert_equal(FloatLiteral.__round__(3.0), 3.0)
-    assert_equal(FloatLiteral.__round__(0.0), 0.0)
-
-    assert_true(FloatLiteral.__round__(nan).is_nan())
-    assert_true(FloatLiteral.__round__(neg_zero).is_neg_zero())
-    assert_equal(FloatLiteral.__round__(inf), inf)
-    assert_equal(FloatLiteral.__round__(neg_inf), neg_inf)
-
-    assert_equal(FloatLiteral.__round__(1.6, 0), 2.0)
-
-    assert_equal(FloatLiteral.__round__(1.5, 1), 1.5)
-    assert_equal(FloatLiteral.__round__(1.123, 1), 1.1)
-    assert_equal(FloatLiteral.__round__(1.198, 2), 1.2)
-    assert_equal(FloatLiteral.__round__(1.123, 2), 1.12)
-    assert_equal(FloatLiteral.__round__(-1.5, 1), -1.5)
-    assert_equal(FloatLiteral.__round__(-1.123, 1), -1.1)
-    assert_equal(FloatLiteral.__round__(-1.198, 2), -1.2)
-    assert_equal(FloatLiteral.__round__(-1.123, 2), -1.12)
-
-    # Test rounding to nearest even number
-    assert_equal(FloatLiteral.__round__(1.5, 0), 2.0)
-    assert_equal(FloatLiteral.__round__(2.5, 0), 2.0)
-    assert_equal(FloatLiteral.__round__(-2.5, 0), -2.0)
-    assert_equal(FloatLiteral.__round__(-1.5, 0), -2.0)
-
-    # Negative ndigits
-    assert_equal(FloatLiteral.__round__(123.456, -1), 120.0)
-    assert_equal(FloatLiteral.__round__(123.456, -2), 100.0)
-    assert_equal(FloatLiteral.__round__(123.456, -3), 0.0)
-
-
-fn round10(x: FloatLiteral) -> FloatLiteral:
-    return round(x * 10.0) / 10.0
-
-
-def test_round10():
-    assert_equal(round10(FloatLiteral.__mod__(4.4, 0.5)), 0.4)
-    assert_equal(round10(FloatLiteral.__mod__(-4.4, 0.5)), 0.1)
-    assert_equal(round10(FloatLiteral.__mod__(4.4, -0.5)), -0.1)
-    assert_equal(round10(FloatLiteral.__mod__(-4.4, -0.5)), -0.4)
-    assert_equal(round10(FloatLiteral.__mod__(3.1, 1.0)), 0.1)
-
-
 def test_division():
     assert_equal(FloatLiteral.__truediv__(4.4, 0.5), 8.8)
 
@@ -295,8 +247,6 @@ def main():
     test_ceil()
     test_floor()
     test_trunc()
-    test_round()
-    test_round10()
     test_division()
     test_mod()
     test_div_mod()

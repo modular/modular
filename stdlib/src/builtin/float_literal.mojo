@@ -33,7 +33,6 @@ struct FloatLiteral(
     Floorable,
     ImplicitlyBoolable,
     Intable,
-    Roundable,
     Stringable,
     Truncable,
     Floatable,
@@ -261,82 +260,6 @@ struct FloatLiteral(
             return self
         return Self(self.__int_literal__())
 
-    fn __round__(self) -> Self:
-        """Return the rounded value of the FloatLiteral.
-
-        Returns:
-            The rounded value.
-        """
-        # Handle special values first.
-        if not self._is_normal():
-            return self
-
-        alias one = __mlir_attr.`#kgen.int_literal<1> : !kgen.int_literal`
-        alias neg_one = __mlir_attr.`#kgen.int_literal<-1> : !kgen.int_literal`
-        var truncated: IntLiteral = self.__int_literal__()
-        var abs_diff = abs(self - truncated)
-        var plus_one = one if self > 0 else neg_one
-        if abs_diff == 0.5:
-            # Round to the nearest even number.
-            if truncated % 2 == 0:
-                return Self(truncated)
-            else:
-                return Self(truncated + plus_one)
-        elif abs_diff > 0.5:
-            return Self(truncated + plus_one)
-        else:
-            return Self(truncated)
-
-    @always_inline("nodebug")
-    fn __round__(self, ndigits: Int) -> Self:
-        """Return the rounded value of the FloatLiteral.
-
-        Args:
-            ndigits: The number of digits to round to. Defaults to 0.
-
-        Returns:
-            The rounded value.
-        """
-        # Handle special values first.
-        if not self._is_normal():
-            return self
-
-        alias one = __mlir_attr.`#kgen.int_literal<1> : !kgen.int_literal`
-        alias neg_one = __mlir_attr.`#kgen.int_literal<-1> : !kgen.int_literal`
-        alias ten = __mlir_attr.`#kgen.int_literal<10> : !kgen.int_literal`
-        var multiplier = one
-        var target: Self = self
-        # TODO: Use IntLiteral.__pow__() when it's implemented.
-        for _ in range(abs(ndigits)):
-            multiplier = __mlir_op.`kgen.int_literal.binop`[
-                oper = __mlir_attr.`#kgen<int_literal.binop_kind mul>`
-            ](multiplier, ten)
-        if ndigits > 0:
-            target *= Self(multiplier)
-        elif ndigits < 0:
-            target /= Self(multiplier)
-        else:
-            return self.__round__()
-        var truncated: IntLiteral = target.__int_literal__()
-        var result: Self
-        var abs_diff = abs(target - truncated)
-        var plus_one = one if self > 0 else neg_one
-        if abs_diff == 0.5:
-            # Round to the nearest even number.
-            if truncated % 2 == 0:
-                result = Self(truncated)
-            else:
-                result = Self(truncated + plus_one)
-        elif abs_diff <= 0.5:
-            result = Self(truncated)
-        else:
-            result = Self(truncated + plus_one)
-        if ndigits >= 0:
-            result /= Self(multiplier)
-        elif ndigits < 0:
-            result *= Self(multiplier)
-        return result
-
     # ===------------------------------------------------------------------===#
     # Arithmetic Operators
     # ===------------------------------------------------------------------===#
@@ -462,47 +385,7 @@ struct FloatLiteral(
     # TODO - maybe __pow__?
 
     # ===------------------------------------------------------------------===#
-    # In-place Arithmetic Operators
-    # ===------------------------------------------------------------------===#
-
-    @always_inline("nodebug")
-    fn __iadd__(mut self, rhs: FloatLiteral):
-        """In-place addition operator.
-
-        Args:
-            rhs: The value to add.
-        """
-        self = self + rhs
-
-    @always_inline("nodebug")
-    fn __isub__(mut self, rhs: FloatLiteral):
-        """In-place subtraction operator.
-
-        Args:
-            rhs: The value to subtract.
-        """
-        self = self - rhs
-
-    @always_inline("nodebug")
-    fn __imul__(mut self, rhs: FloatLiteral):
-        """In-place multiplication operator.
-
-        Args:
-            rhs: The value to multiply.
-        """
-        self = self * rhs
-
-    @always_inline("nodebug")
-    fn __itruediv__(mut self, rhs: FloatLiteral):
-        """In-place division.
-
-        Args:
-            rhs: The value to divide.
-        """
-        self = self / rhs
-
-    # ===------------------------------------------------------------------===#
-    # Reversed Operators
+    # Reversed Operators, allowing things like "1 / 2.0" to work
     # ===------------------------------------------------------------------===#
 
     @always_inline("nodebug")

@@ -464,20 +464,6 @@ fn round[T: Roundable, //](number: T) -> T:
     return number.__round__()
 
 
-# TODO: remove this when conformance issue for FloatLiteral is fixed.
-@always_inline
-fn round(number: FloatLiteral) -> FloatLiteral:
-    """Get the rounded value of the given FloatLiteral.
-
-    Args:
-        number: The FloatLiteral to get the rounded value of.
-
-    Returns:
-        The rounded value of the object.
-    """
-    return number.__round__()
-
-
 @always_inline
 fn round[T: Roundable, //](number: T, ndigits: Int) -> T:
     """Get the value of this object, rounded to a specified number of
@@ -492,21 +478,5 @@ fn round[T: Roundable, //](number: T, ndigits: Int) -> T:
 
     Returns:
         The rounded value of the object.
-    """
-    return number.__round__(ndigits)
-
-
-# TODO: remove this when conformance issue for FloatLiteral is fixed.
-@always_inline
-fn round(number: FloatLiteral, ndigits: Int) -> FloatLiteral:
-    """Get the  value of this FloatLiteral, rounded to a specified number of
-    digits after the decimal point.
-
-    Args:
-        number: The FloatLiteral to get the rounded value of.
-        ndigits: The number of digits to round to.
-
-    Returns:
-        The rounded value of the object. Positive ndigits to the right of the decimal, negative ndigits to the left.
     """
     return number.__round__(ndigits)
