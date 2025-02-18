@@ -255,7 +255,7 @@ struct MyPair:
         self.first = first
         self.second = second
 
-      fn __copyinit__(out self, existing other):
+    fn __copyinit__(out self, existing other):
         self.first = existing.first
         self.second = existing.second
 
@@ -317,7 +317,7 @@ trait SomeTrait:
 The three dots following the method signature are Mojo syntax indicating that
 the method is not implemented.
 
-Here's a trait that conforms to `SomeTrait`:
+Here's a struct that conforms to `SomeTrait`:
 
 ```mojo
 @value
