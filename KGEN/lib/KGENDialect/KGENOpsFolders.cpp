@@ -515,30 +515,11 @@ ErrorTreeOrSuccess ReturnOp::interpret(ArrayRef<Attribute> operands,
 // IntLiteralCmp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult IntLiteralCmp::fold(FoldAdaptor adaptor) {
-  IntLiteralAttr lAttr = dyn_cast_or_null<IntLiteralAttr>(adaptor.getLhs());
-  IntLiteralAttr rAttr = dyn_cast_or_null<IntLiteralAttr>(adaptor.getRhs());
-  IntLiteralCmpPred pred = getPred();
-  if (!lAttr || !rAttr)
-    return {};
-  IPInt l = lAttr.getValue();
-  IPInt r = rAttr.getValue();
-
-  switch (pred) {
-  case IntLiteralCmpPred::Eq:
-    return BoolAttr::get(lAttr.getContext(), l == r);
-  case IntLiteralCmpPred::Ne:
-    return BoolAttr::get(lAttr.getContext(), l != r);
-  case IntLiteralCmpPred::Lt:
-    return BoolAttr::get(lAttr.getContext(), l < r);
-  case IntLiteralCmpPred::Le:
-    return BoolAttr::get(lAttr.getContext(), l <= r);
-  case IntLiteralCmpPred::Gt:
-    return BoolAttr::get(lAttr.getContext(), l > r);
-  case IntLiteralCmpPred::Ge:
-    return BoolAttr::get(lAttr.getContext(), l >= r);
-  }
-  llvm_unreachable("invalid cmp predicate");
+OpFoldResult IntLiteralCmpOp::fold(FoldAdaptor adaptor) {
+  if (auto lhs = dyn_cast_or_null<TypedAttr>(adaptor.getLhs()))
+    if (auto rhs = dyn_cast_or_null<TypedAttr>(adaptor.getRhs()))
+      return IntLiteralCmpAttr::get(lhs.getContext(), getPredAttr(), lhs, rhs);
+  return {};
 }
 
 //===----------------------------------------------------------------------===//

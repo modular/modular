@@ -2331,8 +2331,15 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
         result = IntLiteralBinAttr::get(lhs.getContext(), lhs.getType(), lhs,
                                         rhs, bin.getOperAttr());
       }
+    } else if (auto cmp = dyn_cast<IntLiteralCmpOp>(op)) {
+      // FIXME(MOCO-1628): This shouldn't be an operation.
+      auto lhs = findValue(cmp.getLhs());
+      auto rhs = findValue(cmp.getRhs());
+      if (lhs && rhs) {
+        result = IntLiteralCmpAttr::get(lhs.getContext(), cmp.getPredAttr(),
+                                        lhs, rhs);
+      }
     }
-
     // If we found something, remember it and move on to the next op.
     if (result) {
       assert(op.getNumResults() == 1 && "expected a single result");

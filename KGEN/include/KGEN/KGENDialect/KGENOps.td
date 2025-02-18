@@ -1442,11 +1442,11 @@ def PackageLinkOp : KGENOp<"package.link", [Symbol]> {
 }
 
 //===----------------------------------------------------------------------===//
-// IntLiteralCmp
+// IntLiteralCmpOp
 //===----------------------------------------------------------------------===//
 
 // FIXME(MOCO-1628): This shouldn't be an operation.
-def KGEN_IntLiteralCmp : KGENOp<"int_literal.cmp", [Pure]> {
+def KGEN_IntLiteralCmpOp : KGENOp<"int_literal.cmp", [Pure]> {
   let summary = "Comparison operator for int_literals.";
   let description = [{
     The `kgen.int_literal.cmp` operator does equality/inequality testing

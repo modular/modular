@@ -453,6 +453,44 @@ TypedAttr IntLiteralBinAttr::get(MLIRContext *ctx, Type type, TypedAttr lhs,
 bool IntLiteralBinAttr::isConstant() const { return false; }
 
 //===----------------------------------------------------------------------===//
+// IntLiteralCmpAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr IntLiteralCmpAttr::get(MLIRContext *ctx, IntLiteralCmpPredAttr pred,
+                                 TypedAttr lhs, TypedAttr rhs) {
+  // If this is a literal constant coming in, we can fold this.  If not, stage
+  // it until elaboration or something else simplifies things.
+  IntLiteralAttr lAttr = ::dyn_cast_or_null<IntLiteralAttr>(lhs);
+  IntLiteralAttr rAttr = ::dyn_cast_or_null<IntLiteralAttr>(rhs);
+  if (!lAttr || !rAttr)
+    return Base::get(ctx, pred, lhs, rhs);
+
+  IPInt l = lAttr.getValue();
+  IPInt r = rAttr.getValue();
+  switch (pred.getValue()) {
+  case IntLiteralCmpPred::Eq:
+    return BoolAttr::get(lAttr.getContext(), l == r);
+  case IntLiteralCmpPred::Ne:
+    return BoolAttr::get(lAttr.getContext(), l != r);
+  case IntLiteralCmpPred::Lt:
+    return BoolAttr::get(lAttr.getContext(), l < r);
+  case IntLiteralCmpPred::Le:
+    return BoolAttr::get(lAttr.getContext(), l <= r);
+  case IntLiteralCmpPred::Gt:
+    return BoolAttr::get(lAttr.getContext(), l > r);
+  case IntLiteralCmpPred::Ge:
+    return BoolAttr::get(lAttr.getContext(), l >= r);
+  }
+  llvm_unreachable("invalid cmp predicate");
+}
+
+bool IntLiteralCmpAttr::isConstant() const { return false; }
+
+Type IntLiteralCmpAttr::getType() const {
+  return IntegerType::get(getContext(), 1);
+}
+
+//===----------------------------------------------------------------------===//
 // BindParamsAttr
 //===----------------------------------------------------------------------===//
 
