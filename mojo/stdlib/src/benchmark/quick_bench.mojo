@@ -20,7 +20,7 @@ struct QuickBench:
         self.m = Bench()
 
     @always_inline
-    fn dump_report(self) raises:
+    fn dump_report(mut self) raises:
         """Prints out the report from a Benchmark execution collected in Bench object.
         """
         self.m.dump_report()

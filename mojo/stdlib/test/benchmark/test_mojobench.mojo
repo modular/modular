@@ -15,6 +15,7 @@ from benchmark import (
     BenchMetric,
     Mode,
     ThroughputMeasure,
+    Format,
 )
 
 
@@ -55,7 +56,16 @@ def main():
             ThroughputMeasure(BenchMetric.flops, len(inputs[i])),
         )
 
-    # CHECK: Benchmark results
+    # Check default print format
+    # CHECK: --------------------
+    # CHECK: | Name     | Iters |
+    # CHECK: --------------------
+    # CHECK: | bench1   | 10000 |
+    # CHECK: | bench2/0 | 10000 |
+    # CHECK: | bench2/1 | 10000 |
+    # CHECK: --------------------
+    print(m)
+
     # CHECK: bench1
     # CHECK-NEXT: bench1
     # CHECK-NEXT: bench2/0
@@ -63,6 +73,7 @@ def main():
     # CHECK-NEXT: bench2/1
     # CHECK-NEXT: bench2/1
     # CHECK-OUT: bench1
+    m.config.format = Format.tabular
     m.dump_report()
 
     # CHECK-TEST-COUNT-1: hello

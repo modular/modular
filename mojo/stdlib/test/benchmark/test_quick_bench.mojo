@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: mojo %s --tabular --no-progress| FileCheck %s
+# RUN: mojo %s --format tabular --no-progress| FileCheck %s
 
 import math
 from random import randint
@@ -318,20 +318,20 @@ fn test_custom() raises:
 
 
 fn main() raises:
-    # CHECK: Benchmark results
-    # CHECK: name, met (ms)    , iters   , DataMovement (GB/s)
-    # CHECKL exp ,
-    # CHECKL tanh,
+    # Width of columns is dynamic based on the longest value as a string, so
+    # only test the first column.
+
+    # CHECK: Name,
+    # CHECK: exp ,
+    # CHECK: tanh,
     test_mojo_math()
 
-    # CHECK: Benchmark results
-    # CHECK: name      , met (ms)    , iters   , Arithmetic (GFLOPS/s)
+    # CHECK: Name      ,
     # CHECK: vec_reduce,
     # CHECK: vec_add   ,
     test_custom()
 
-    # CHECK: Benchmark results
-    # CHECK: name      , met (ms)    , iters    , Arithmetic (GFLOPS/s)
+    # CHECK: Name      ,
     # CHECK: dummy_none,
     # CHECK: dummy_1   ,
     # CHECK: dummy_2   ,

@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import time
-from collections import Optional
+from collections import Optional, Dict
 from collections.string.string import _calc_initial_buffer_size_int32
 from os import abort
 from pathlib import Path
@@ -33,7 +33,7 @@ struct BenchMetric(CollectionElement):
     var unit: String
     """Metric's throughput rate unit (count/second)."""
 
-    alias elements = BenchMetric(0, "throughput", "GElems/s")
+    alias elements = BenchMetric(0, "Throughput", "GElems/s")
     alias bytes = BenchMetric(1, "DataMovement", "GB/s")
     alias flops = BenchMetric(2, "Arithmetic", "GFLOPS/s")
     alias theoretical_flops = BenchMetric(
@@ -59,8 +59,7 @@ struct BenchMetric(CollectionElement):
         return String.write(self)
 
     fn write_to[W: Writer](self, mut writer: W):
-        """
-        Formats this BenchMetric to the provided Writer.
+        """Formats this BenchMetric to the provided Writer.
 
         Parameters:
             W: A type conforming to the Writable trait.
@@ -186,8 +185,7 @@ struct ThroughputMeasure(CollectionElement):
         return String(self.metric)
 
     fn write_to[W: Writer](self, mut writer: W):
-        """
-        Formats this ThroughputMeasure to the provided Writer.
+        """Formats this ThroughputMeasure to the provided Writer.
 
         Parameters:
             W: A type conforming to the Writable trait.
@@ -210,22 +208,84 @@ struct ThroughputMeasure(CollectionElement):
         return (self.value) * 1e-9 / elapsed_sec
 
 
-@always_inline
-fn _str_fmt_width(str: String, str_width: Int) -> String:
-    """Formats string with a given width.
-
-    Returns:
-        sprintf("%-*s", str_width, str)
+@value
+struct Format(Writable, Stringable):
+    """Defines a format for the benchmark output when printing or writing to a
+    file.
     """
-    debug_assert(str_width > 0, "Should have str_width>0")
 
-    alias N = 2048
-    var x = String._buffer_type()
-    x.reserve(N)
-    x.size += _snprintf["%-*s"](x.data, N, str_width, str.unsafe_ptr())
-    debug_assert(x.size < N, "Attempted to access outside array bounds!")
-    x.size += 1
-    return String(x)
+    alias csv = "csv"
+    """Comma separated values with no alignment."""
+    alias tabular = "tabular"
+    """Comma separated values with dynamically aligned columns."""
+    alias table = "table"
+    """Table format with dynamically aligned columns."""
+
+    var value: StringLiteral
+    """The format to print results."""
+
+    @implicit
+    fn __init__(out self, value: StringLiteral):
+        """Constructs a Format object from a string literal.
+
+        Args:
+            value: The format to print results.
+        """
+        self.value = value
+
+    fn __init__(out self, value: String):
+        """Constructs a Format object from a string.
+
+        Args:
+            value: The format to print results.
+        """
+        if value == Format.csv:
+            self.value = Format.csv
+        elif value == Format.tabular:
+            self.value = Format.tabular
+        elif value == Format.table:
+            self.value = Format.table
+        else:
+            self.value = ""
+            var valid_formats = String(
+                " valid formats: ",
+                Format.csv,
+                ", ",
+                Format.tabular,
+                ", ",
+                Format.table,
+            )
+            abort("Invalid format option: ", value, valid_formats)
+
+    fn __str__(self) -> String:
+        """Returns the string representation of the format.
+
+        Returns:
+            The string representation of the format.
+        """
+        return String(self.value)
+
+    fn write_to[W: Writer](self, mut writer: W):
+        """Writes the format to a writer.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
+
+        Args:
+            writer: The writer to write the `Format` to.
+        """
+        writer.write(self.value)
+
+    fn __eq__(self, other: Self) -> Bool:
+        """Checks if two Format objects are equal.
+
+        Args:
+            other: The `Format` to compare with.
+
+        Returns:
+            True if the two `Format` objects are equal, false otherwise.
+        """
+        return self.value == other.value
 
 
 @value
@@ -251,14 +311,17 @@ struct BenchConfig(CollectionElement):
     var flush_denormals: Bool
     """Whether or not the denormal values are flushed."""
     var show_progress: Bool
-    """Whether or not to show the progress of each benchmark."""
-    var tabular_view: Bool
-    """Whether to print results in csv readable/tabular format."""
+    """If True, print progress of each benchmark."""
+    var format: Format
+    """The format to print results. (default: "table")."""
+    var out_file_format: Format
+    """The format to write out the file with `dump_file` (default: "csv")."""
     var verbose_timing: Bool
     """Whether to print verbose timing results."""
-
+    var verbose_metric_names: Bool
+    """If True print the metric name and unit, else print the unit only."""
     alias VERBOSE_TIMING_LABELS = List[String](
-        "min (ms)", "mean (ms)", "max (ms)", "duration (ms)"
+        "Mean (ms)", "Min (ms)", "Max (ms)", "Total (ms)"
     )
     """Labels to print verbose timing results."""
 
@@ -298,9 +361,10 @@ struct BenchConfig(CollectionElement):
         self.num_repetitions = num_repetitions
         self.flush_denormals = flush_denormals
         self.show_progress = True
-        # TODO: set tabular_view=True as default
-        self.tabular_view = False
+        self.format = Format.table
+        self.out_file_format = Format.csv
         self.verbose_timing = False
+        self.verbose_metric_names = True
 
         @parameter
         fn argparse() raises:
@@ -319,9 +383,11 @@ struct BenchConfig(CollectionElement):
                         raise Error("Missing value for -r option")
                     self.num_repetitions = Int(args[i + 1])
                     i += 2
-                elif args[i] == "--tabular":
-                    self.tabular_view = True
-                    i += 1
+                elif args[i] == "--format":
+                    if i + 1 >= len(args):
+                        raise Error("Missing value for --format option")
+                    self.format = Format(String(args[i + 1]))
+                    i += 2
                 elif args[i] == "--no-progress":
                     self.show_progress = False
                     i += 1
@@ -377,7 +443,7 @@ struct BenchId:
 
 
 @value
-struct BenchmarkInfo(CollectionElement, Stringable):
+struct BenchmarkInfo(CollectionElement):
     """Defines a Benchmark Info struct to record execution Statistics."""
 
     var name: String
@@ -419,91 +485,6 @@ struct BenchmarkInfo(CollectionElement, Stringable):
             other: The value to copy.
         """
         self = other
-
-    fn __str__(self) -> String:
-        """Gets a string representation of this `BenchmarkInfo` value.
-
-        Returns:
-            A string representing benchmark statistics.
-        """
-
-        var throughput: String = ""
-        for i in range(len(self.measures)):
-            var rate = self.measures[i].compute(self.result.mean(unit=Unit.s))
-            throughput = String(throughput, ",", rate)
-
-        # add verbose-timing results
-        if self.verbose_timing:
-            var verbose_timing_vals = List[Float64](
-                self.result.min(unit=Unit.ms),
-                self.result.mean(unit=Unit.ms),
-                self.result.max(unit=Unit.ms),
-                self.result.duration(unit=Unit.ms),
-            )
-            for t in verbose_timing_vals:
-                throughput = String(throughput, ",", t[])
-
-        return String(
-            '"',
-            self.name,
-            '"',
-            ",",
-            self.result.mean(unit=Unit.ms),
-            ",",
-            self.result.iters(),
-            throughput,
-        )
-
-    fn _csv_str(self, column_width: VariadicList[Int]) -> String:
-        """Formats Benchmark Statistical Info.
-
-        Returns:
-            A string representing benchmark statistics.
-        """
-
-        var name_width = column_width[0]
-        var time_width = column_width[1]
-        var iters_width = column_width[2]
-        var rate_width = column_width[3]
-
-        debug_assert(column_width[0] > 0, "Name width should be >0")
-        alias N = 2048
-        var x = String._buffer_type()
-        x.reserve(N)
-
-        @always_inline
-        @parameter
-        fn _append[fmt: StringLiteral, type: AnyType](width: Int, s: type):
-            x.size += _snprintf[fmt](x.data + x.size, N, width, s)
-            debug_assert(
-                x.size < N, "Attempted to access outside array bounds!"
-            )
-
-        _append["%-*s, "](name_width, self.name.rstrip())
-        _append["%*.6f, "](time_width, self.result.mean(unit=Unit.ms))
-        _append["%*d"](iters_width, self.result.iters())
-
-        if len(self.measures) > 0:
-            for i in range(len(self.measures)):
-                var rate = self.measures[i].compute(self.result.mean(Unit.s))
-                _append[", %*.6f"](rate_width, rate)
-
-        if self.verbose_timing:
-            # verbose-timing details
-            var verbose_timing_vals = List[Float64](
-                self.result.min(unit=Unit.ms),
-                self.result.mean(unit=Unit.ms),
-                self.result.max(unit=Unit.ms),
-                self.result.duration(unit=Unit.ms),
-            )
-
-            for t in verbose_timing_vals:
-                var detail = t[]
-                _append[", %*.6f"](time_width, detail)
-
-        x.size += 1
-        debug_assert(x.size < N, "Attempted to access outside array bounds!")
-        return String(x)
 
 
 @value
@@ -857,95 +838,223 @@ struct Bench:
             )
         )
 
-        # NOTE: Ensure consistency among throughput measures of all benchmarks.
-        # Only one set of metrics can be used in per bench object/report.
-        if len(self.info_vec) > 0:
-            var ref_measures = self.info_vec[0].measures
-            assert_true(len(ref_measures) == len(measures))
-            for i in range(len(measures)):
-                assert_true(measures[i].metric == ref_measures[i].metric)
-
-    fn dump_report(self) raises:
-        """Prints out the report from a Benchmark execution."""
-        var report = String("")
-        var num_runs = len(self.info_vec)
-
-        if self.config.tabular_view:
-            var NAME_WIDTH = self._get_max_name_width()
-            var ITERS_WIDTH = max(len(", iters "), self._get_max_iters_width())
-
-            alias TIME_WIDTH = 12
-            alias RATE_WIDTH = 18
-
-            report += (
-                _str_fmt_width("name", NAME_WIDTH)
-                + _str_fmt_width(", met (ms) ", TIME_WIDTH + 2)
-                + _str_fmt_width(", iters ", ITERS_WIDTH + 2)
-            )
-            var width_list = VariadicList[Int](
-                NAME_WIDTH,
-                TIME_WIDTH,
-                ITERS_WIDTH,
-                RATE_WIDTH,
-            )
-            if num_runs > 0:
-                for measure in self.info_vec[0].measures:
-                    var measure_name = String(measure[])
-                    report += _str_fmt_width(
-                        ", " + measure_name, RATE_WIDTH + 2
-                    )
-
-                if self.config.verbose_timing:
-                    for t in self.config.VERBOSE_TIMING_LABELS:
-                        var measure_name = t[]
-                        report += _str_fmt_width(
-                            ", " + measure_name, TIME_WIDTH + 2
-                        )
-            report += "\n"
-
-            for i in range(num_runs):
-                var sep = "\n" if i < num_runs - 1 else ""
-                report += (self.info_vec[i]._csv_str(width_list)) + sep
-        else:
-            report += String("name,met (ms),iters")
-            if num_runs > 0:
-                for measure in self.info_vec[0].measures:
-                    report = String(report, ",", measure[])
-
-                if self.config.verbose_timing:
-                    for t in self.config.VERBOSE_TIMING_LABELS:
-                        var measure_name = t[]
-                        report += "," + measure_name
-            report += "\n"
-
-            for i in range(num_runs):
-                var sep = "\n" if i < num_runs - 1 else ""
-                report += String(self.info_vec[i]) + sep
-        print()
-        print(String("-") * 80)
-        print("Benchmark results")
-        print(String("-") * 80)
-        print(report)
+    fn dump_report(mut self) raises:
+        """Prints out the report from a Benchmark execution. If
+        `Bench.config.out_file` is set, it will also write the output in the format
+        set in `out_file_format` to the file defined in `out_file`."""
+        print(self)
 
         if self.config.out_file:
+            var orig_format = self.config.format
+            self.config.format = self.config.out_file_format
             with open(self.config.out_file.value(), "w") as f:
-                f.write(report)
+                f.write(self)
+            self.config.format = orig_format
 
-    fn _get_max_name_width(self) -> Int:
-        var max_val = 0
+    fn pad(self, width: Int, string: String) -> String:
+        """Pads a string to a given width.
+
+        Args:
+            width: The width to pad the string to.
+            string: The string to pad.
+
+        Returns:
+            A string padded to the given width.
+        """
+        if self.config.format == Format.csv:
+            return ""
+        return " " * (width - len(string))
+
+    fn __str__(self) -> String:
+        """Returns a string representation of the benchmark results.
+
+        Returns:
+            A string representing the benchmark results.
+        """
+        return String.write(self)
+
+    fn write_to[W: Writer](self, mut writer: W):
+        """Writes the benchmark results to a writer.
+
+        Parameters:
+            W: A type conforming to the Writer trait.
+
+        Args:
+            writer: The writer to write to.
+        """
+        alias BENCH_LABEL = "Name"
+        alias ITERS_LABEL = "Iters"
+
+        var name_width = self._get_max_name_width(BENCH_LABEL)
+        var iters_width = self._get_max_iters_width(ITERS_LABEL)
+        var timing_widths = self._get_max_timing_widths()
+        var metrics = self._get_metrics()
+
+        # +3 for 2x " | " characters and one for the first "|"
+        var total_width = name_width + iters_width + 7
+
+        # Calculate the total width of the table for line separators
+        # +3 for " | " characters
+        if self.config.format == Format.table and len(self.info_vec) > 0:
+            for metric in metrics:
+                try:
+                    total_width += metrics[metric[]].max_width + 3
+                except e:
+                    abort(e)
+            if self.config.verbose_timing:
+                for timing_width in timing_widths:
+                    total_width += timing_width[] + 3
+            else:
+                total_width += timing_widths[0] + 3
+
+        var sep = " | " if self.config.format == Format.table else ", "
+        var first_sep = "| " if self.config.format == Format.table else ""
+        var line_sep = "-" * total_width
+
+        if self.config.format == Format.table:
+            writer.write(line_sep, "\n")
+
+        writer.write(first_sep, BENCH_LABEL, self.pad(name_width, BENCH_LABEL))
+        writer.write(sep, ITERS_LABEL, self.pad(iters_width, ITERS_LABEL))
+
+        # Return early if no runs were benchmarked
+        if len(self.info_vec) == 0:
+            if self.config.format == Format.table:
+                writer.write(" |\n", line_sep, "\nNo benchmarks recorded...")
+            writer.write("\n")
+            return
+
+        # Write the metrics labels
+        for metric in metrics:
+            name = metric[]
+            writer.write(sep, name)
+            try:
+                writer.write(self.pad(metrics[name].max_width, name))
+            except e:
+                abort(e)
+
+        # Write the timeing labels
+        if self.config.verbose_timing:
+            var labels = self.config.VERBOSE_TIMING_LABELS
+            for i in range(len(labels)):
+                writer.write(sep, labels[i])
+                writer.write(self.pad(timing_widths[i], labels[i]))
+        else:
+            var mean_label = self.config.VERBOSE_TIMING_LABELS[0]
+            writer.write(sep, mean_label)
+            writer.write(self.pad(timing_widths[0], mean_label))
+
+        if self.config.format == Format.table:
+            writer.write(" |\n", line_sep)
+        writer.write("\n")
+
+        # Loop through the runs and write out the table rows
+        var runs = self.info_vec
+        for i in range(len(runs)):
+            var run = runs[i]
+            var result = run.result
+
+            writer.write(first_sep, run.name, self.pad(name_width, run.name))
+            var iters_pad = self.pad(iters_width, String(run.result.iters()))
+            writer.write(sep, run.result.iters(), iters_pad)
+
+            for metric in metrics:
+                var name = metric[]
+                try:
+                    var rates = metrics[name].rates
+                    var max_width = metrics[name].max_width
+                    if i not in rates:
+                        writer.write(sep, "N/A", self.pad(max_width, "N/A"))
+                    else:
+                        var rate = rates[i]
+                        writer.write(
+                            sep, rate, self.pad(max_width, String(rate))
+                        )
+                except e:
+                    abort(e)
+
+            var mean = result.mean(unit=Unit.ms)
+            writer.write(sep, mean, self.pad(timing_widths[0], String(mean)))
+
+            if self.config.verbose_timing:
+                var min = result.min(unit=Unit.ms)
+                var max = result.max(unit=Unit.ms)
+                var dur = result.duration(unit=Unit.ms)
+                writer.write(sep, min, self.pad(timing_widths[1], String(min)))
+                writer.write(sep, max, self.pad(timing_widths[2], String(max)))
+                writer.write(sep, dur, self.pad(timing_widths[3], String(dur)))
+
+            if self.config.format == Format.table:
+                writer.write(" |")
+
+            writer.write("\n")
+
+        if self.config.format == Format.table:
+            writer.write(line_sep, "\n")
+
+    fn _get_max_name_width(self, label: StringLiteral) -> Int:
+        var max_val = len(label)
         for i in range(len(self.info_vec)):
-            var namelen = len(self.info_vec[i].name)
-            if namelen > max_val:
-                max_val = namelen
+            var namelen = len(String(self.info_vec[i].name))
+            max_val = max(max_val, namelen)
         return max_val
 
-    fn _get_max_iters_width(self) -> Int:
-        var max_val = 0
+    fn _get_max_iters_width(self, label: StringLiteral) -> Int:
+        var max_val = len(label)
         for i in range(len(self.info_vec)):
-            var iter = self.info_vec[i].result.iters()
-            if iter > max_val:
-                max_val = iter
-        return _calc_initial_buffer_size_int32(max_val)
+            var iters = self.info_vec[i].result.iters()
+            max_val = max(max_val, len(String(iters)))
+        return max_val
+
+    fn _get_metrics(self) -> Dict[String, _Metric]:
+        var metrics = Dict[String, _Metric]()
+        var runs = len(self.info_vec)
+        for i in range(runs):
+            var run = self.info_vec[i]
+            for j in range(len(run.measures)):
+                var measure = run.measures[j]
+                var rate = measure.compute(run.result.mean(unit=Unit.s))
+                var width = len(String(rate))
+                var name = measure.metric.unit
+                if self.config.verbose_metric_names:
+                    name = String(measure.metric)
+                if name not in metrics:
+                    metrics[name] = _Metric(
+                        max(width, len(name)), Dict[Int, Float64]()
+                    )
+                    try:
+                        metrics[name].rates[i] = rate
+                    except e:
+                        abort(e)
+                else:
+                    try:
+                        metrics[name].max_width = max(
+                            width, metrics[name].max_width
+                        )
+                        metrics[name].rates[i] = rate
+                    except e:
+                        abort(e)
+        return metrics
+
+    fn _get_max_timing_widths(self) -> List[Int]:
+        # If label is larger than any value, will pad to the label length
+        var max_mean = len(self.config.VERBOSE_TIMING_LABELS[0])
+        var max_min = len(self.config.VERBOSE_TIMING_LABELS[1])
+        var max_max = len(self.config.VERBOSE_TIMING_LABELS[2])
+        var max_dur = len(self.config.VERBOSE_TIMING_LABELS[3])
+        for i in range(len(self.info_vec)):
+            var result = self.info_vec[i].result
+            max_mean = max(max_mean, len(String(result.mean(unit=Unit.ms))))
+            max_min = max(max_min, len(String(result.min(unit=Unit.ms))))
+            max_max = max(max_max, len(String(result.max(unit=Unit.ms))))
+            max_dur = max(max_dur, len(String(result.duration(unit=Unit.ms))))
+        return List[Int](max_mean, max_min, max_max, max_dur)
+
+
+@value
+struct _Metric:
+    var max_width: Int
+    var rates: Dict[Int, Float64]
 
 
 @value
