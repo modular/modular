@@ -17,17 +17,42 @@ using namespace M;
 using namespace KGEN;
 using namespace POP;
 
+static llvm::Type *convertDTypeToLLVM(KGENDType dtype,
+                                      llvm::LLVMContext &llvmCtx) {
+  if (dtype.isInt())
+    return llvm::IntegerType::get(llvmCtx, dtype.getIntegerWidthInBits());
+
+  switch (dtype.getValue()) {
+  case DType::f32:
+    return llvm::Type::getFloatTy(llvmCtx);
+  case DType::f64:
+    return llvm::Type::getDoubleTy(llvmCtx);
+  default:
+    return {};
+  }
+}
+
 // This attempts to lower the specified MLIR type into an LLVM IR rep.
-static llvm::Type *convertToLLVM(Type type, llvm::LLVMContext &llvmCtx,
-                                 TargetInfoAttr target) {
+static llvm::Type *convertTypeToLLVM(Type type, llvm::LLVMContext &llvmCtx,
+                                     TargetInfoAttr target) {
   if (auto intType = dyn_cast<IntegerType>(type))
     return llvm::Type::getIntNTy(llvmCtx, intType.getWidth());
 
   // Use target info to lower 'index' to the right LLVM bitwidth if available.
-  if (isa<IndexType>(type)) {
-    if (!target || !target.getIndexBitWidth().has_value())
-      return {};
+  if (isa<IndexType>(type) && target && target.getIndexBitWidth().has_value())
     return llvm::Type::getIntNTy(llvmCtx, *target.getIndexBitWidth());
+
+  // Lower SIMD types to LLVM vectors.
+  if (auto simd = dyn_cast<SIMDType>(type)) {
+    auto optDType = simd.getResolvedDType();
+    auto optSize = simd.getResolvedSize();
+    if (optDType && optSize) {
+      if (auto dtypeType = convertDTypeToLLVM(*optDType, llvmCtx)) {
+        if (*optSize == 1) // simd<1> is a scalar.
+          return dtypeType;
+        return llvm::VectorType::get(dtypeType, *optSize, /*scalable*/ false);
+      }
+    }
   }
 
   return {};
@@ -35,17 +60,78 @@ static llvm::Type *convertToLLVM(Type type, llvm::LLVMContext &llvmCtx,
 
 // This attempts to lower the specified operand value into an LLVM IR
 // representation that can be passed to a llvm::CallInst.
-static llvm::Value *convertToLLVM(TypedAttr attr, llvm::LLVMContext &llvmCtx,
-                                  TargetInfoAttr target) {
+static llvm::Constant *convertAttrToLLVM(TypedAttr attr,
+                                         llvm::LLVMContext &llvmCtx,
+                                         TargetInfoAttr target) {
   if (auto intAttr = dyn_cast<IntegerAttr>(attr)) {
-    llvm::Type *type = convertToLLVM(attr.getType(), llvmCtx, target);
+    llvm::Type *type = convertTypeToLLVM(attr.getType(), llvmCtx, target);
     if (!type)
       return {};
 
     return llvm::ConstantInt::get(type, intAttr.getValue());
   }
 
+  // Convert SIMD values.
+  if (auto simdAttr = dyn_cast<SIMDAttr>(attr)) {
+    SmallVector<llvm::Constant *> elts;
+    for (auto elt : simdAttr.getValues()) {
+      llvm::Constant *value = nullptr;
+      if (elt.getDType().isBool())
+        value = llvm::ConstantInt::getBool(llvmCtx, elt.getBoolVal());
+      else if (elt.getDType().isInt())
+        value = llvm::ConstantInt::get(llvmCtx, elt.getIntVal());
+      else if (elt.getDType().isFloat())
+        value = llvm::ConstantFP::get(llvmCtx, elt.getFloatVal());
+
+      if (!value)
+        return {};
+      elts.push_back(value);
+    }
+
+    // Handle SIMD<1> as a scalar.
+    if (elts.size() == 1)
+      return elts[0];
+    return llvm::ConstantVector::get(elts);
+  }
+
   // Otherwise we don't know what it is.
+  return {};
+}
+
+/// Given the result of constant folding a function call to some LLVM value, see
+/// if we can convert it back into a MLIR attribute with the specified MLIR
+/// type.  If not, return null.
+static TypedAttr convertLLVMToAttr(llvm::Constant *value, Type type) {
+  // Scalar integer result type.
+  if (isa<IntegerType, IndexType>(type))
+    if (auto ci = dyn_cast<llvm::ConstantInt>(value))
+      return IntegerAttr::get(type, ci->getValue());
+
+  // Expecting a pop.simd result type, which could be a scalar or a vector.
+  if (auto simdType = dyn_cast<SIMDType>(type)) {
+    auto dtype = simdType.getResolvedDType();
+    if (!dtype)
+      return {};
+
+    // Scalar float result type.
+    if (auto cf = dyn_cast<llvm::ConstantFP>(value))
+      return SIMDAttr::get(DTypeValue(cf->getValue(), *dtype), simdType);
+
+    if (auto simdValue = dyn_cast<llvm::ConstantVector>(value)) {
+      SmallVector<DTypeValue> values;
+      for (auto i = simdValue->op_begin(), e = simdValue->op_end(); i != e;
+           ++i) {
+        if (auto ci = dyn_cast<llvm::ConstantInt>(*i))
+          values.push_back(DTypeValue(ci->getValue(), *dtype));
+        else if (auto cf = dyn_cast<llvm::ConstantFP>(*i))
+          values.push_back(DTypeValue(cf->getValue(), *dtype));
+        else
+          return {};
+      }
+      return SIMDAttr::get(values, simdType);
+    }
+  }
+
   return {};
 }
 
@@ -116,18 +202,20 @@ ErrorTreeOrSuccess CallLLVMIntrinsicOp::interpret(ArrayRef<Attribute> operands,
 
   // Figure out the LLVM representation for all the operands.
   SmallVector<llvm::Value *> loweredOperands;
+  SmallVector<llvm::Constant *> loweredOperandsCst;
   for (auto v : expandOperands(operands)) {
     // Try to understand what this value is.
     auto typedOp = ::dyn_cast<TypedAttr>(v);
     if (!typedOp)
       return ErrorTree(getLoc(), "LLVM intrinsic call has unknown operand: " +
                                      stringize(v));
-    llvm::Value *loweredValue =
-        convertToLLVM(typedOp, llvmContext, state.getTarget());
+    llvm::Constant *loweredValue =
+        convertAttrToLLVM(typedOp, llvmContext, state.getTarget());
     if (!loweredValue)
       return ErrorTree(getLoc(), "LLVM intrinsic operand has unknown value: " +
                                      stringize(typedOp));
     loweredOperands.push_back(loweredValue);
+    loweredOperandsCst.push_back(loweredValue);
   }
 
   // Compute the LLVM result type.
@@ -139,7 +227,7 @@ ErrorTreeOrSuccess CallLLVMIntrinsicOp::interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "LLVM intrinsic operand has multiple results: " +
                                    name.str());
   llvm::Type *resultTy =
-      convertToLLVM(getResult(0).getType(), llvmContext, state.getTarget());
+      convertTypeToLLVM(getResult(0).getType(), llvmContext, state.getTarget());
   if (!resultTy)
     return ErrorTree(getLoc(), "LLVM intrinsic has unknown result type: " +
                                    stringize(getResult(0).getType()));
@@ -148,12 +236,8 @@ ErrorTreeOrSuccess CallLLVMIntrinsicOp::interpret(ArrayRef<Attribute> operands,
   // having to create a bunch of IR.
   llvm::Constant *result = nullptr;
   if (loweredOperands.size() == 2) {
-    auto *lhs = ::dyn_cast<llvm::Constant>(loweredOperands[0]);
-    auto *rhs = ::dyn_cast<llvm::Constant>(loweredOperands[1]);
-    if (!lhs || !rhs)
-      return ErrorTree(getLoc(), "LLVM intrinsic has non-constant operands");
-
-    result = ConstantFoldBinaryIntrinsic(id, lhs, rhs, resultTy,
+    result = ConstantFoldBinaryIntrinsic(id, loweredOperandsCst[0],
+                                         loweredOperandsCst[1], resultTy,
                                          /*FMFSource*/ nullptr);
   }
 
@@ -189,9 +273,10 @@ ErrorTreeOrSuccess CallLLVMIntrinsicOp::interpret(ArrayRef<Attribute> operands,
                                /*name*/ Twine(), block);
 
     // Now that we have a call, we can finally try to constant fold!
-    // TODO: we aren't passing in a TargetLibraryInfo, which makes this super
-    // conservative.
-    result = llvm::ConstantFoldCall(call, fn, {}, /*TLI*/ nullptr);
+    // NOTE: we aren't passing in a TargetLibraryInfo, which prevents folding
+    // random libc functions, but that seems ok.
+    result = llvm::ConstantFoldCall(call, fn, loweredOperandsCst,
+                                    /*TLI*/ nullptr);
   }
 
   if (!result)
@@ -200,11 +285,16 @@ ErrorTreeOrSuccess CallLLVMIntrinsicOp::interpret(ArrayRef<Attribute> operands,
 
   // If we got something back from LLVM, repackage it back up for MLIR to look
   // at.
-  if (auto ci = ::dyn_cast<llvm::ConstantInt>(result)) {
-    state.mapResults(IntegerAttr::get(getResult(0).getType(), ci->getValue()));
-    return success();
-  }
+  auto attr = convertLLVMToAttr(result, getResult(0).getType());
+  if (!attr)
+    return ErrorTree(getLoc(), "could not convert result of intrinsic: " +
+                                   stringize(result));
 
-  return ErrorTree(getLoc(), "could not convert result of intrinsic: " +
-                                 stringize(result));
+  if (attr.getType() != getResult(0).getType())
+    return ErrorTree(getLoc(),
+                     "result type mismatch: " + stringize(attr.getType()) +
+                         " != " + stringize(getResult(0).getType()));
+
+  state.mapResults(attr);
+  return success();
 }
