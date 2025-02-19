@@ -8,7 +8,16 @@
 from pathlib import Path
 from sys._assembly import inlined_assembly
 
-from gpu import barrier, block_dim, grid_dim, lane_id, thread_idx
+from gpu import (
+    barrier,
+    block_dim,
+    grid_dim,
+    lane_id,
+    thread_idx,
+    schedule_barrier,
+    schedule_group_barrier,
+    AMDScheduleBarrierMask,
+)
 from gpu.globals import WARP_SIZE
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
@@ -189,8 +198,68 @@ def test_threadid_compile():
     _ = _compile_code_asm[load_store, target=MI300X_TARGET]()
 
 
+# CHECK-LABEL: test_schedule_barrier_compile
+def test_schedule_barrier_compile():
+    print("== test_schedule_barrier_compile")
+
+    fn schedule_kernel():
+        schedule_barrier(AMDScheduleBarrierMask.NONE)
+        schedule_barrier(AMDScheduleBarrierMask.ALL_ALU)
+        schedule_barrier(AMDScheduleBarrierMask.VALU)
+        schedule_barrier(AMDScheduleBarrierMask.SALU)
+        schedule_barrier(AMDScheduleBarrierMask.MFMA)
+        schedule_barrier(AMDScheduleBarrierMask.ALL_VMEM)
+        schedule_barrier(AMDScheduleBarrierMask.VMEM_READ)
+        schedule_barrier(AMDScheduleBarrierMask.VMEM_WRITE)
+        schedule_barrier(AMDScheduleBarrierMask.ALL_DS)
+        schedule_barrier(AMDScheduleBarrierMask.DS_READ)
+        schedule_barrier(AMDScheduleBarrierMask.DS_WRITE)
+        schedule_barrier(AMDScheduleBarrierMask.TRANS)
+
+    # CHECK: tail call void @llvm.amdgcn.sched.barrier(i32 0)
+    # CHECK: tail call void @llvm.amdgcn.sched.barrier(i32 1)
+    # CHECK: tail call void @llvm.amdgcn.sched.barrier(i32 2)
+    # CHECK: tail call void @llvm.amdgcn.sched.barrier(i32 4)
+    # CHECK: tail call void @llvm.amdgcn.sched.barrier(i32 8)
+    # CHECK: tail call void @llvm.amdgcn.sched.barrier(i32 16)
+    # CHECK: tail call void @llvm.amdgcn.sched.barrier(i32 32)
+    # CHECK: tail call void @llvm.amdgcn.sched.barrier(i32 64)
+    # CHECK: tail call void @llvm.amdgcn.sched.barrier(i32 128)
+    # CHECK: tail call void @llvm.amdgcn.sched.barrier(i32 256)
+    # CHECK: tail call void @llvm.amdgcn.sched.barrier(i32 512)
+    # CHECK: tail call void @llvm.amdgcn.sched.barrier(i32 1024)
+    print(
+        _compile_code_asm[
+            schedule_kernel, target=MI300X_TARGET, emission_kind="llvm-opt"
+        ]()
+    )
+
+
+# CHECK-LABEL: test_schedule_group_barrier_compile
+def test_schedule_group_barrier_compile():
+    print("== test_schedule_group_barrier_compile")
+
+    fn schedule_kernel():
+        schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 10, 0)
+        schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 10, 1)
+        schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 11, 10)
+        schedule_group_barrier(AMDScheduleBarrierMask.TRANS, 11, 10)
+
+    # CHECK: tail call void @llvm.amdgcn.sched.group.barrier(i32 8, i32 10, i32 0)
+    # CHECK: tail call void @llvm.amdgcn.sched.group.barrier(i32 8, i32 10, i32 1)
+    # CHECK: tail call void @llvm.amdgcn.sched.group.barrier(i32 8, i32 11, i32 10)
+    # CHECK: tail call void @llvm.amdgcn.sched.group.barrier(i32 1024, i32 11, i32 10)
+    print(
+        _compile_code_asm[
+            schedule_kernel, target=MI300X_TARGET, emission_kind="llvm-opt"
+        ]()
+    )
+
+
 def main():
     test_shuffle_compile()
     test_laneid_compile()
     test_barrier_compile()
     test_threadid_compile()
+    test_schedule_barrier_compile()
+    test_schedule_group_barrier_compile()
