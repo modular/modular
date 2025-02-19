@@ -270,18 +270,18 @@ fn _input_fusion_hook_impl[
     rank: Int,
     io_spec: IOSpec[mut],
     static_spec: StaticTensorSpec[type, rank],
-](tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec,]):
+](tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]):
     @always_inline
     @parameter
     fn _input_lambda[_w: Int](i: IndexList[rank]) -> SIMD[type, _w]:
         # We use these methods to help with fusion passes which manipulates
         # calls. It is helpful to have a registered function.
         return rebind[SIMD[type, _w]](
-            simd_load_from_managed_tensor_slice[simd_width=_w,](tensor, i)
+            simd_load_from_managed_tensor_slice[simd_width=_w](tensor, i)
         )
 
     _extract_tensor_spec[
-        rebuild_static_tensor_specs_with_input_lambda[type, rank,](
+        rebuild_static_tensor_specs_with_input_lambda[type, rank](
             static_spec,
             _input_lambda,
         )
@@ -311,7 +311,7 @@ fn _output_fusion_hook_impl[
         ](tensor, i, rebind[SIMD[type, _w]](v))
 
     _extract_tensor_spec[
-        rebuild_static_tensor_specs_with_output_lambda[type, rank,](
+        rebuild_static_tensor_specs_with_output_lambda[type, rank](
             static_spec,
             _output_lambda,
         )
@@ -661,9 +661,7 @@ struct ManagedTensorSlice[
         """
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
-        return simd_load_from_managed_tensor_slice[simd_width=width,](
-            self, ridx
-        )
+        return simd_load_from_managed_tensor_slice[simd_width=width](self, ridx)
 
     @__mogg_intrinsic_attr("mogg.tensor_fused_load")
     @always_inline
@@ -685,7 +683,7 @@ struct ManagedTensorSlice[
             alias in_fn = in_lambda.value()
             return in_fn[width](ridx)
         else:
-            return simd_load_from_managed_tensor_slice[simd_width=width,](
+            return simd_load_from_managed_tensor_slice[simd_width=width](
                 self, ridx
             )
 
