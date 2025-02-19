@@ -3641,7 +3641,7 @@ struct LayerNorm:
         var beta_buf = managed_tensor_slice_to_ndbuffer(beta)
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
 
-        layer_norm[type, rank, input_fn, gamma_fn, target=target,](
+        layer_norm[type, rank, input_fn, gamma_fn, target=target](
             input.shape(),
             gamma.shape(),
             beta_buf,
