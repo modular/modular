@@ -268,6 +268,34 @@ def test_schedule_ce_with_chunked_prefill(scheduler):
     assert data.active_length == 10
 
 
+def test_schedule_mixed_ce_tg(scheduler):
+    # Setup scheduler with chunked prefill enabled
+    scheduler.scheduler_config.enable_chunked_prefill = True
+    scheduler.scheduler_config.enable_in_flight_batching = True
+    scheduler.scheduler_config.max_forward_steps_ce = 1
+    scheduler.scheduler_config.target_tokens_per_batch_ce = 20
+
+    mock_request_tg = create_mock_request(cache_seq_id=0, seq_len=10)
+    scheduler.request_q.put(("req1", mock_request_tg))
+    batch_to_execute = scheduler._try_create_ce_batch()
+
+    scheduler._schedule_ce(batch_to_execute)
+    # req1 has been put in `active_batch`
+
+    mock_request_ce = create_mock_request(cache_seq_id=1, seq_len=30)
+    scheduler.request_q.put(("req2", mock_request_ce))
+    batch = scheduler._try_create_ce_batch()
+
+    # `batch_to_execute` should contain 1 token from req1 and 19 tokens from req2
+    assert len(batch) == 2
+    assert "req1" in batch
+    assert "req2" in batch
+    assert batch["req1"].active_idx == 11
+    assert batch["req1"].active_length == 1
+    assert batch["req2"].active_idx == 19
+    assert batch["req2"].active_length == 19
+
+
 def test_schedule_tg(scheduler):
     mock_request = create_mock_request(cache_seq_id=0)
     batch_to_execute = {"req1": mock_request}
