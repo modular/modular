@@ -26,10 +26,10 @@ your issues resolved.
 
 This is largely a historical thing as the library only worked on `AnyTrivialRegType`
 when it was first written. As we introduced the notion of memory-only types and
-traits, `AnyType` was born. Over time, we expect to rewrite nearly
-the entire library to have everything work on `AnyType` and be generalized to
-not just work on `AnyTrivialRegType`. Several things need to happen in tandem with
-the compiler team to make this possible.
+traits, `AnyType` was born. At this point, most of the standard library operates
+on `AnyType` or some other trait-bound type. A few low-level things will always
+need to operate at the `AnyTrivialRegType` type level, such as when interacting
+with MLIR attributes.
 
 ### 2. Are the MLIR dialects private?
 
@@ -68,3 +68,49 @@ set of primitives available to them.
 
 Over time, we hope to move most of the closed-source modules into the
 open-source repo.
+
+### 5. Why do `List` and friends require dereferencing for iterators?
+
+Consider some Mojo code like:
+
+```mojo
+fn use(element: Element): # takes a borrow
+
+fn test(elements: List[Element]):
+  for e in elements:
+    use(e[]) # Passes the referenced value by-borrow without a copy
+```
+
+The equivalent C++ would look something like:
+
+```c++
+void use(const Element &elt) {...}
+void test(const list<Element> &list) {
+  for (Element *e : list) {
+    use(*e);
+  }
+}
+```
+
+which requires the explicit element dereference, but maintains the pointerness
+property.  When we switch the `__next__` method in the `List` iterator type to
+return a `ref`, then we would be getting a copy into the `e` var like this:
+
+```mojo
+for (Element e : list) use(e)
+```
+
+In Mojo, `var x = list.iter.__next__()`  makes a copy into x.  It does not bind
+`x` as a reference to the result.  This what may be referred in other contexts
+as "implicit deref".
+
+The planned approach to handle this in Mojo is with pattern matching and
+allow binding references in patterns.  Note that pattern matching is something
+we need anyways for other things such as supporting `for i, j in thing`.
+
+This would allow for things like
+
+```mojo
+for (ref e) in list:
+  self.append(e) # note no-dereference needed to pattern ref binding above
+```

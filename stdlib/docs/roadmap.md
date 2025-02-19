@@ -20,10 +20,6 @@ mission](https://docs.modular.com/mojo/why-mojo).
 
 ### Core library improvements
 
-- Remove `AnyTrivialRegType` in the standard library in favor of `AnyType`.
-
-- Unify `Pointer` and `AnyPointer`.
-
 - Apply `Reference` types and lifetimes throughout APIs and types.
 
 - Design API conventions and expected behavior for core collection types such
