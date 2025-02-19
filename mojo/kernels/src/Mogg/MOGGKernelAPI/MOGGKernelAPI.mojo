@@ -462,8 +462,7 @@ alias ScalarTensor = ManagedTensorSlice[rank=1]
 @register_internal("managed_tensor_slice_to_ndbuffer")
 @always_inline
 fn managed_tensor_slice_to_ndbuffer_primitive[
-    type: DType,
-    rank: Int,
+    type: DType, rank: Int, //
 ](tensor: ManagedTensorSlice[type=type, rank=rank]) -> NDBuffer[type, rank]:
     return NDBuffer[type, rank](
         tensor._ptr, tensor._spec.shape, tensor._runtime_strides
@@ -472,7 +471,7 @@ fn managed_tensor_slice_to_ndbuffer_primitive[
 
 @always_inline
 fn managed_tensor_slice_to_ndbuffer[
-    spec: StaticTensorSpec
+    spec: StaticTensorSpec, //
 ](tensor: ManagedTensorSlice[static_spec=spec]) -> NDBuffer[
     spec.type,
     spec.rank,
@@ -496,8 +495,7 @@ fn managed_tensor_slice_to_ndbuffer[
 
 @always_inline("nodebug")
 fn reduce_shape[
-    input_rank: Int,
-    input_type: DType,
+    input_rank: Int, input_type: DType, //
 ](
     input_buf: ManagedTensorSlice[type=input_type, rank=input_rank],
     axis0: Scalar,
@@ -2843,7 +2841,7 @@ struct Mean:
         input: ManagedTensorSlice[type=input_type, rank=input_rank],
         axis: Scalar,
     ) raises -> IndexList[input_rank]:
-        return reduce_shape[input_rank, input_type](input, axis)
+        return reduce_shape(input, axis)
 
 
 @compiler.register("mo.reduce.add")
@@ -2896,7 +2894,7 @@ struct ReduceAdd:
         input: ManagedTensorSlice[type=input_type, rank=input_rank],
         axis: Scalar,
     ) raises -> IndexList[input_rank]:
-        return reduce_shape[input_rank, input_type](input, axis)
+        return reduce_shape(input, axis)
 
 
 @compiler.register("mo.reduce.mul")
@@ -2949,7 +2947,7 @@ struct ReduceMul:
         input: ManagedTensorSlice[type=input_type, rank=input_rank],
         axis: Scalar,
     ) raises -> IndexList[input_rank]:
-        return reduce_shape[input_rank, input_type](input, axis)
+        return reduce_shape(input, axis)
 
 
 @compiler.register("mo.reduce.max")
@@ -3002,7 +3000,7 @@ struct ReduceMax:
         input: ManagedTensorSlice[type=input_type, rank=input_rank],
         axis: Scalar,
     ) raises -> IndexList[input_rank]:
-        return reduce_shape[input_rank, input_type](input, axis)
+        return reduce_shape(input, axis)
 
 
 @compiler.register("mo.reduce.min")
@@ -3055,7 +3053,7 @@ struct ReduceMin:
         input: ManagedTensorSlice[type=input_type, rank=input_rank],
         axis: Scalar,
     ) raises -> IndexList[input_rank]:
-        return reduce_shape[input_rank, input_type](input, axis)
+        return reduce_shape(input, axis)
 
 
 @compiler.register("reduce_min_and_max")
