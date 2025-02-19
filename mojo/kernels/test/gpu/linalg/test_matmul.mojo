@@ -3,8 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# FIXME: KERN-1377
-# UNSUPPORTED: AMD-GPU
 # RUN: %mojo-no-debug-no-assert %s
 # COM: use
 # mojo build --debug-level=full --mcmodel=medium --large-data-threshold=1048576
@@ -44,6 +42,7 @@ from testing import assert_equal
 from utils import IndexList
 from utils.index import Index
 from utils.numerics import FPUtils
+from sys import has_nvidia_gpu_accelerator
 
 alias init_fn_type = fn (buff: NDBuffer) capturing -> None
 
@@ -317,38 +316,41 @@ def main():
             ctx, dynamic(1024), static[3072](), static[32768]()
         )
         test[DType.bfloat16](ctx, dynamic(1024), static[3072](), static[3072]())
-        test[
-            DType.bfloat16,
-            transpose_b=True,
-            config = MatmulConfig[
-                DType.bfloat16,
-                DType.bfloat16,
+
+        @parameter
+        if has_nvidia_gpu_accelerator():
+            test[
                 DType.bfloat16,
                 transpose_b=True,
-            ](
-                block_tile_shape=Index(16, 64, 64),
-                warp_tile_shape=Index(16, 64, 32),
-                num_pipeline_stages=3,
-                num_k_partitions=1,
-                num_warp_k_partitions=2,
-            ),
-        ](ctx, dynamic(32), static[4096](), static[4096]())
-        test[
-            DType.bfloat16,
-            transpose_b=True,
-            config = MatmulConfig[
-                DType.bfloat16,
-                DType.bfloat16,
+                config = MatmulConfig[
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    transpose_b=True,
+                ](
+                    block_tile_shape=Index(16, 64, 64),
+                    warp_tile_shape=Index(16, 64, 32),
+                    num_pipeline_stages=3,
+                    num_k_partitions=1,
+                    num_warp_k_partitions=2,
+                ),
+            ](ctx, dynamic(32), static[4096](), static[4096]())
+            test[
                 DType.bfloat16,
                 transpose_b=True,
-            ](
-                block_tile_shape=Index(32, 64, 32),
-                warp_tile_shape=Index(16, 64, 32),
-                num_pipeline_stages=3,
-                num_k_partitions=1,
-                num_warp_k_partitions=4,
-            ),
-        ](ctx, dynamic(32), static[4096](), static[4096]())
+                config = MatmulConfig[
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    transpose_b=True,
+                ](
+                    block_tile_shape=Index(32, 64, 32),
+                    warp_tile_shape=Index(16, 64, 32),
+                    num_pipeline_stages=3,
+                    num_k_partitions=1,
+                    num_warp_k_partitions=4,
+                ),
+            ](ctx, dynamic(32), static[4096](), static[4096]())
 
         print("===> tfloat32-float32 mma with epilogue")
         test[
