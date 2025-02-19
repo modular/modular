@@ -347,7 +347,7 @@ getUnboundParametersForTensorList(LIT::StructType structType,
   // TODO(GEX-1126): consider a tuple which only contains tensors to
   // simplify this
   static constexpr unsigned kElementType = 0;
-  auto allParameters = structType.getParamValues();
+  [[maybe_unused]] auto allParameters = structType.getParamValues();
 
   ASSERT_STREAM(
       allParameters.size() >= 2,
