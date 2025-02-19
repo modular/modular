@@ -13,36 +13,16 @@
 # RUN: %mojo %s
 
 from memory import AddressSpace, UnsafePointer
-from test_utils import ExplicitCopyOnly, MoveCounter
+from test_utils import ExplicitCopyOnly, MoveCounter, ObservableMoveOnly
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
-
-
-struct MoveOnlyType(Movable):
-    # It's a weak reference, we don't want to delete the actions
-    # after the struct is deleted, otherwise we can't observe the __del__.
-    var actions: UnsafePointer[List[String]]
-    var value: Int
-
-    fn __init__(out self, value: Int, actions: UnsafePointer[List[String]]):
-        self.actions = actions
-        self.value = value
-        self.actions[0].append("__init__")
-
-    fn __moveinit__(out self, owned existing: Self):
-        self.actions = existing.actions
-        self.value = existing.value
-        self.actions[0].append("__moveinit__")
-
-    fn __del__(owned self):
-        self.actions[0].append("__del__")
 
 
 def test_unsafepointer_of_move_only_type():
     var actions_ptr = UnsafePointer[List[String]].alloc(1)
     actions_ptr.init_pointee_move(List[String]())
 
-    var ptr = UnsafePointer[MoveOnlyType].alloc(1)
-    ptr.init_pointee_move(MoveOnlyType(42, actions_ptr))
+    var ptr = UnsafePointer[ObservableMoveOnly].alloc(1)
+    ptr.init_pointee_move(ObservableMoveOnly(42, actions_ptr))
     assert_equal(len(actions_ptr[0]), 2)
     assert_equal(actions_ptr[0][0], "__init__")
     assert_equal(actions_ptr[0][1], "__moveinit__", msg="emplace_value")

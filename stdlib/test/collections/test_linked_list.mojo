@@ -17,7 +17,7 @@ from collections import LinkedList, Optional
 from test_utils import (
     CopyCountedStruct,
     CopyCounter,
-    DtorCounter,
+    DelCounter,
     MoveCounter,
     g_dtor_count,
 )
@@ -526,10 +526,10 @@ def inner_test_list_dtor():
     # explicitly reset global counter
     g_dtor_count = 0
 
-    var l = LinkedList[DtorCounter]()
+    var l = LinkedList[DelCounter]()
     assert_equal(g_dtor_count, 0)
 
-    l.append(DtorCounter())
+    l.append(DelCounter())
     assert_equal(g_dtor_count, 0)
 
     l^.__del__()

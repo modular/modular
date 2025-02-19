@@ -15,7 +15,7 @@
 from collections import InlineList, Set
 
 from memory import UnsafePointer
-from test_utils import MoveCounter, ValueDestructorRecorder
+from test_utils import MoveCounter, DelRecorder
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
@@ -63,13 +63,11 @@ def test_destructor():
     """Ensure we delete the right number of elements."""
     var destructor_counter = List[Int]()
     alias capacity = 32
-    var inline_list = InlineList[ValueDestructorRecorder, capacity=capacity]()
+    var inline_list = InlineList[DelRecorder, capacity=capacity]()
 
     for index in range(capacity):
         inline_list.append(
-            ValueDestructorRecorder(
-                index, UnsafePointer.address_of(destructor_counter)
-            )
+            DelRecorder(index, UnsafePointer.address_of(destructor_counter))
         )
 
     # Private api use here:

@@ -15,33 +15,10 @@
 from sys.ffi import _Global
 
 from memory import UnsafePointer
-from test_utils import ObservableDel
+from test_utils import ObservableDel, MoveCopyCounter
 from testing import assert_equal, assert_false, assert_true
 
 from utils import Variant
-
-
-struct TestCounter(CollectionElement):
-    var copied: Int
-    var moved: Int
-
-    fn __init__(out self):
-        self.copied = 0
-        self.moved = 0
-
-    fn __init__(out self, *, other: Self):
-        self = other
-
-    fn __copyinit__(out self, other: Self):
-        self.copied = other.copied + 1
-        self.moved = other.moved
-
-    fn copy(self) -> Self:
-        return self
-
-    fn __moveinit__(out self, owned other: Self):
-        self.copied = other.copied
-        self.moved = other.moved + 1
 
 
 alias TEST_VARIANT_POISON = _Global[
@@ -82,7 +59,7 @@ struct Poison(CollectionElement):
         _poison_ptr().init_pointee_move(True)
 
 
-alias TestVariant = Variant[TestCounter, Poison]
+alias TestVariant = Variant[MoveCopyCounter, Poison]
 
 
 def test_basic():
@@ -110,35 +87,35 @@ def test_basic():
 
 
 def test_copy():
-    var v1 = TestVariant(TestCounter())
+    var v1 = TestVariant(MoveCopyCounter())
     var v2 = v1
     # didn't call copyinit
-    assert_equal(v1[TestCounter].copied, 0)
-    assert_equal(v2[TestCounter].copied, 1)
+    assert_equal(v1[MoveCopyCounter].copied, 0)
+    assert_equal(v2[MoveCopyCounter].copied, 1)
     # test that we didn't call the other copyinit too!
     assert_no_poison()
 
 
 def test_explicit_copy():
-    var v1 = TestVariant(TestCounter())
+    var v1 = TestVariant(MoveCopyCounter())
 
     # Perform explicit copy
     var v2 = v1.copy()
 
     # Test copy counts
-    assert_equal(v1[TestCounter].copied, 0)
-    assert_equal(v2[TestCounter].copied, 1)
+    assert_equal(v1[MoveCopyCounter].copied, 0)
+    assert_equal(v2[MoveCopyCounter].copied, 1)
 
     # test that we didn't call the other copyinit too!
     assert_no_poison()
 
 
 def test_move():
-    var v1 = TestVariant(TestCounter())
+    var v1 = TestVariant(MoveCopyCounter())
     var v2 = v1
     # didn't call moveinit
-    assert_equal(v1[TestCounter].moved, 1)
-    assert_equal(v2[TestCounter].moved, 2)
+    assert_equal(v1[MoveCopyCounter].moved, 1)
+    assert_equal(v2[MoveCopyCounter].moved, 2)
     # test that we didn't call the other moveinit too!
     assert_no_poison()
 

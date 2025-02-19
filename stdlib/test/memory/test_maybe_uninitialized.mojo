@@ -16,7 +16,12 @@ from os import abort
 
 from memory import UnsafePointer
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
-from test_utils import CopyCounter, MoveCounter, ValueDestructorRecorder
+from test_utils import (
+    CopyCounter,
+    MoveCounter,
+    DelRecorder,
+    AbortOnDel,
+)
 from testing import assert_equal
 
 
@@ -24,12 +29,8 @@ def test_maybe_uninitialized():
     # Every time an Int is destroyed, it's going to be recorded here.
     var destructor_counter = List[Int]()
 
-    var a = UnsafeMaybeUninitialized[ValueDestructorRecorder]()
-    a.write(
-        ValueDestructorRecorder(
-            42, UnsafePointer.address_of(destructor_counter)
-        )
-    )
+    var a = UnsafeMaybeUninitialized[DelRecorder]()
+    a.write(DelRecorder(42, UnsafePointer.address_of(destructor_counter)))
 
     assert_equal(a.assume_initialized().value, 42)
     assert_equal(len(destructor_counter), 0)
@@ -47,22 +48,12 @@ def test_maybe_uninitialized():
     assert_equal(len(destructor_counter), 1)
 
 
-@value
-struct ImpossibleToDestroy:
-    var value: Int
-
-    fn __del__(owned self):
-        abort("We should never call the destructor of ImpossibleToDestroy")
-
-
 def test_write_does_not_trigger_destructor():
-    var a = UnsafeMaybeUninitialized[ImpossibleToDestroy]()
-    a.write(ImpossibleToDestroy(42))
+    var a = UnsafeMaybeUninitialized[AbortOnDel]()
+    a.write(AbortOnDel(42))
 
     # Using the initializer should not trigger the destructor too.
-    var b = UnsafeMaybeUninitialized[ImpossibleToDestroy](
-        ImpossibleToDestroy(42)
-    )
+    var b = UnsafeMaybeUninitialized[AbortOnDel](AbortOnDel(42))
 
     # The destructor of a and b have already run at this point, and it shouldn't have
     # caused a crash since we assume uninitialized memory.

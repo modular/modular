@@ -10,7 +10,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Types for testing object lifecycle events.
+
+* `MoveCounter`
+* `CopyCounter`
+* `MoveCopyCounter`
+* `DelCounter`
+* `CopyCountedStruct`
+* `MoveOnly`
+* `ExplicitCopyOnly`
+* `ImplicitCopyOnly`
+* `ObservableMoveOnly`
+* `ObservableDel`
+* `DelRecorder`
+* `AbortOnDel`
+"""
+
 from memory import UnsafePointer
+
+from os import abort
 
 # ===----------------------------------------------------------------------=== #
 # MoveOnly
@@ -43,6 +61,31 @@ struct MoveOnly[T: Movable](Movable):
             other: The other instance that we copying the payload from.
         """
         self.data = other.data^
+
+
+# ===----------------------------------------------------------------------=== #
+# ObservableMoveOnly
+# ===----------------------------------------------------------------------=== #
+
+
+struct ObservableMoveOnly(Movable):
+    # It's a weak reference, we don't want to delete the actions
+    # after the struct is deleted, otherwise we can't observe the __del__.
+    var actions: UnsafePointer[List[String]]
+    var value: Int
+
+    fn __init__(out self, value: Int, actions: UnsafePointer[List[String]]):
+        self.actions = actions
+        self.value = value
+        self.actions[0].append("__init__")
+
+    fn __moveinit__(out self, owned existing: Self):
+        self.actions = existing.actions
+        self.value = existing.value
+        self.actions[0].append("__moveinit__")
+
+    fn __del__(owned self):
+        self.actions[0].append("__del__")
 
 
 # ===----------------------------------------------------------------------=== #
@@ -162,12 +205,37 @@ struct MoveCounter[T: CollectionElementNew](
 
 
 # ===----------------------------------------------------------------------=== #
-# ValueDestructorRecorder
+# MoveCopyCounter
+# ===----------------------------------------------------------------------=== #
+
+
+struct MoveCopyCounter(CollectionElement):
+    var copied: Int
+    var moved: Int
+
+    fn __init__(out self):
+        self.copied = 0
+        self.moved = 0
+
+    fn __copyinit__(out self, other: Self):
+        self.copied = other.copied + 1
+        self.moved = other.moved
+
+    fn copy(self) -> Self:
+        return self
+
+    fn __moveinit__(out self, owned other: Self):
+        self.copied = other.copied
+        self.moved = other.moved + 1
+
+
+# ===----------------------------------------------------------------------=== #
+# DelRecorder
 # ===----------------------------------------------------------------------=== #
 
 
 @value
-struct ValueDestructorRecorder(ExplicitlyCopyable):
+struct DelRecorder(ExplicitlyCopyable):
     var value: Int
     var destructor_counter: UnsafePointer[List[Int]]
 
@@ -199,13 +267,13 @@ struct ObservableDel(CollectionElement):
 
 
 # ===----------------------------------------------------------------------=== #
-# DtorCounter
+# DelCounter
 # ===----------------------------------------------------------------------=== #
 
 var g_dtor_count: Int = 0
 
 
-struct DtorCounter(CollectionElement, Writable):
+struct DelCounter(CollectionElement, Writable):
     # NOTE: payload is required because LinkedList does not support zero sized structs.
     var payload: Int
 
@@ -226,9 +294,22 @@ struct DtorCounter(CollectionElement, Writable):
         g_dtor_count += 1
 
     fn write_to[W: Writer](self, mut writer: W):
-        writer.write("DtorCounter(")
+        writer.write("DelCounter(")
         writer.write(String(g_dtor_count))
         writer.write(")")
+
+
+# ===----------------------------------------------------------------------=== #
+# AbortOnDel
+# ===----------------------------------------------------------------------=== #
+
+
+@value
+struct AbortOnDel:
+    var value: Int
+
+    fn __del__(owned self):
+        abort("We should never call the destructor of AbortOnDel")
 
 
 # ===----------------------------------------------------------------------=== #

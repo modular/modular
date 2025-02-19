@@ -19,7 +19,7 @@ from memory import Span, UnsafePointer
 from test_utils import (
     CopyCountedStruct,
     CopyCounter,
-    DtorCounter,
+    DelCounter,
     MoveCounter,
     g_dtor_count,
 )
@@ -869,10 +869,10 @@ def inner_test_list_dtor():
     # explicitly reset global counter
     g_dtor_count = 0
 
-    var l = List[DtorCounter]()
+    var l = List[DelCounter]()
     assert_equal(g_dtor_count, 0)
 
-    l.append(DtorCounter())
+    l.append(DelCounter())
     assert_equal(g_dtor_count, 0)
 
     l^.__del__()
@@ -892,8 +892,8 @@ def test_destructor_trivial_elements():
     # explicitly reset global counter
     g_dtor_count = 0
 
-    var l = List[DtorCounter, hint_trivial_type=True]()
-    l.append(DtorCounter())
+    var l = List[DelCounter, hint_trivial_type=True]()
+    l.append(DelCounter())
 
     l^.__del__()
 
