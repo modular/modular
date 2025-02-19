@@ -19,8 +19,20 @@ from max.pipelines.config import (
 
 def test_config_init__raises_with_no_huggingface_repo_id():
     # We expect this to fail.
-    with pytest.raises(TypeError):
+    with pytest.raises(ValueError):
         _ = PipelineConfig(weight_path="file.gguf")  # type: ignore
+
+
+def test_config_post_init__with_weight_path_but_no_huggingface_repo_id():
+    config = PipelineConfig(
+        trust_remote_code=True,
+        weight_path=[
+            Path("modularai/replit-code-1.5/replit-code-v1_5-3b-f32.gguf")
+        ],
+    )
+
+    assert config.huggingface_repo_id == "modularai/replit-code-1.5"
+    assert config.weight_path == [Path("replit-code-v1_5-3b-f32.gguf")]
 
 
 def test_config_init__reformats_with_str_weights_path():
@@ -166,7 +178,8 @@ def test_config_post_init__other_repo_weights():
         ],
     )
 
-    assert config._weights_repo_id == "modularai/replit-code-1.5"
+    # The huggingface_repo_id should be set to the local repo_id.
+    assert config.huggingface_repo_id == "modularai/replit-code-1.5"
     assert config.weight_path == [Path("replit-code-v1_5-3b-f32.gguf")]
 
     # This example, should not set the _weights_repo_id.
@@ -180,7 +193,6 @@ def test_config_post_init__other_repo_weights():
         quantization_encoding=SupportedEncoding.float32,
     )
 
-    assert config._weights_repo_id is None
     weights_repo = config.huggingface_weights_repo()
     assert weights_repo.repo_id == "modularai/llama-3.1"
     assert config.weight_path == [

@@ -583,7 +583,7 @@ def test_registry__update_weight_paths():
         config = PIPELINE_REGISTRY.validate_pipeline_config(config)
         assert config.engine == PipelineEngine.MAX
         assert config.weight_path == [Path("replit-code-v1_5-3b-f32.gguf")]
-        assert config._weights_repo_id == "modularai/replit-code-1.5"
+        assert config.huggingface_repo_id == "modularai/replit-code-1.5"
 
 
 @prepare_registry
