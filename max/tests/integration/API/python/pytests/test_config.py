@@ -178,8 +178,7 @@ def test_config_post_init__other_repo_weights():
         ],
     )
 
-    # The huggingface_repo_id should be set to the local repo_id.
-    assert config.huggingface_repo_id == "modularai/replit-code-1.5"
+    assert config._weights_repo_id == "modularai/replit-code-1.5"
     assert config.weight_path == [Path("replit-code-v1_5-3b-f32.gguf")]
 
     # This example, should not set the _weights_repo_id.
@@ -193,6 +192,7 @@ def test_config_post_init__other_repo_weights():
         quantization_encoding=SupportedEncoding.float32,
     )
 
+    assert config._weights_repo_id is None
     weights_repo = config.huggingface_weights_repo()
     assert weights_repo.repo_id == "modularai/llama-3.1"
     assert config.weight_path == [
