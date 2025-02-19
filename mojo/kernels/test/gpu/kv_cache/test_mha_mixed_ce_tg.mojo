@@ -252,7 +252,7 @@ def execute_ragged_flash_attention(
 
     # "mixed CE" execution
     print("mixed")
-    flash_attention[add_attn_mask=False, ragged=True,](
+    flash_attention[add_attn_mask=False, ragged=True](
         mixed_ce_output_device.tensor,
         mixed_ce_q_ragged_device.tensor,
         mixed_ce_k_cache_device,

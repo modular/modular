@@ -127,7 +127,7 @@ fn test_gather_nd_eg1(ctx: DeviceContext) raises:
             1,
         )
     ] = 3
-    execute_gather_nd_test[batch_dims,](data, indices, expected_output, ctx)
+    execute_gather_nd_test[batch_dims](data, indices, expected_output, ctx)
 
 
 fn test_gather_nd_eg2(ctx: DeviceContext) raises:
@@ -177,7 +177,7 @@ fn test_gather_nd_eg2(ctx: DeviceContext) raises:
             1,
         )
     ] = 1
-    execute_gather_nd_test[batch_dims,](data, indices, expected_output, ctx)
+    execute_gather_nd_test[batch_dims](data, indices, expected_output, ctx)
 
 
 fn test_gather_nd_eg3(ctx: DeviceContext) raises:
@@ -234,7 +234,7 @@ fn test_gather_nd_eg3(ctx: DeviceContext) raises:
     ] = 4
     expected_output.tensor[IndexList[output_rank](1, 1)] = 5
 
-    execute_gather_nd_test[batch_dims,](data, indices, expected_output, ctx)
+    execute_gather_nd_test[batch_dims](data, indices, expected_output, ctx)
 
 
 fn test_gather_nd_eg4(ctx: DeviceContext) raises:
@@ -281,7 +281,7 @@ fn test_gather_nd_eg4(ctx: DeviceContext) raises:
     expected_output.tensor[IndexList[output_rank](1, 0, 0)] = 4
     expected_output.tensor[IndexList[output_rank](1, 0, 1)] = 5
 
-    execute_gather_nd_test[batch_dims,](data, indices, expected_output, ctx)
+    execute_gather_nd_test[batch_dims](data, indices, expected_output, ctx)
 
 
 fn test_gather_nd_eg5(ctx: DeviceContext) raises:
@@ -356,7 +356,7 @@ fn test_gather_nd_eg5(ctx: DeviceContext) raises:
         )
     ] = 5
 
-    execute_gather_nd_test[batch_dims,](data, indices, expected_output, ctx)
+    execute_gather_nd_test[batch_dims](data, indices, expected_output, ctx)
 
 
 fn test_gather_nd_eg6(ctx: DeviceContext) raises:
@@ -433,7 +433,7 @@ fn test_gather_nd_eg6(ctx: DeviceContext) raises:
     expected_output.tensor[IndexList[output_rank](1, 1, 0)] = 19
     expected_output.tensor[IndexList[output_rank](1, 2, 0)] = 23
 
-    execute_gather_nd_test[batch_dims,](data, indices, expected_output, ctx)
+    execute_gather_nd_test[batch_dims](data, indices, expected_output, ctx)
 
 
 fn test_gather_nd_eg7(ctx: DeviceContext) raises:
@@ -486,7 +486,7 @@ fn test_gather_nd_eg7(ctx: DeviceContext) raises:
     expected_output.tensor[IndexList[output_rank](1, 0, 1, 0)] = 6
     expected_output.tensor[IndexList[output_rank](1, 0, 1, 1)] = 7
 
-    execute_gather_nd_test[batch_dims,](data, indices, expected_output, ctx)
+    execute_gather_nd_test[batch_dims](data, indices, expected_output, ctx)
 
 
 fn test_gather_nd_eg8(ctx: DeviceContext) raises:
@@ -564,7 +564,7 @@ fn test_gather_nd_eg8(ctx: DeviceContext) raises:
         )
     ] = 2
 
-    execute_gather_nd_test[batch_dims,](data, indices, expected_output, ctx)
+    execute_gather_nd_test[batch_dims](data, indices, expected_output, ctx)
 
 
 def main():

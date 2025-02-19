@@ -101,7 +101,7 @@ fn test_gather_nd_oob(ctx: DeviceContext) raises:
     indices.tensor[IndexList[indices_rank](1, 0)] = 1
     indices.tensor[IndexList[indices_rank](1, 1)] = 100  # wildly out of bounds
 
-    execute_gather_nd_test[batch_dims,](data, indices, ctx)
+    execute_gather_nd_test[batch_dims](data, indices, ctx)
 
 
 def main():

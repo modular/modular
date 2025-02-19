@@ -101,7 +101,7 @@ def execute_fused_qkv_matmul[
     ctx.enqueue_copy_to_device(weight_device.buffer, weight_host.tensor.data)
 
     # initialize reference output
-    ref_output_host = HostNDBuffer[type, 2, DimList(Dim(), fused_hidden_size),](
+    ref_output_host = HostNDBuffer[type, 2, DimList(Dim(), fused_hidden_size)](
         IndexList[2](
             batch_size * prompt_len,
             fused_hidden_size,
@@ -149,7 +149,7 @@ def execute_fused_qkv_matmul[
         cache_lengths_dev.buffer, cache_lengths_host.tensor.data
     )
 
-    kv_block_host = HostNDBuffer[type, 6,](
+    kv_block_host = HostNDBuffer[type, 6](
         IndexList[6](
             num_blocks,
             2,
@@ -159,7 +159,7 @@ def execute_fused_qkv_matmul[
             kv_params.head_size,
         ),
     )
-    kv_block_device = DeviceNDBuffer[type, 6,](
+    kv_block_device = DeviceNDBuffer[type, 6](
         IndexList[6](
             num_blocks,
             2,
@@ -171,13 +171,13 @@ def execute_fused_qkv_matmul[
         ctx=ctx,
     )
 
-    var lookup_table_host = HostNDBuffer[DType.uint32, 1,](
+    var lookup_table_host = HostNDBuffer[DType.uint32, 1](
         IndexList[1](
             batch_size,
         ),
     )
 
-    var lookup_table_device = DeviceNDBuffer[DType.uint32, 1,](
+    var lookup_table_device = DeviceNDBuffer[DType.uint32, 1](
         IndexList[1](
             batch_size,
         ),
@@ -211,7 +211,7 @@ def execute_fused_qkv_matmul[
         lookup_table_host.tensor,
         is_context_encoding,
     )
-    _fused_qkv_matmul_kv_cache_impl[target="gpu",](
+    _fused_qkv_matmul_kv_cache_impl[target="gpu"](
         hidden_state_device.tensor,
         weight_device.tensor,
         kv_collection_device,

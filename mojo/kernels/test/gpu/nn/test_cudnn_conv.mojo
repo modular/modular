@@ -281,7 +281,7 @@ fn test_conv_gpu[
     ctx.enqueue_copy_to_device(input_dev, input_ptr)
     ctx.enqueue_copy_to_device(filter_dev, filter_ptr)
 
-    conv_gpu[4, 4, input_dim, filter_dim, output_dim, type, type, type,](
+    conv_gpu[4, 4, input_dim, filter_dim, output_dim, type, type, type](
         input_buf,
         filter_buf,
         output_buf,

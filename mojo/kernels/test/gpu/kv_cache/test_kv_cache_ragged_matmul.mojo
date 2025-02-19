@@ -506,7 +506,7 @@ def generic_execute_fused_qkv_cache_ragged[
     # initialize reference output
     padded_batch_dim = hidden_state_padded_device.tensor.dim(0)
     max_seq_length_batch = padded_batch_dim // batch_size
-    ref_output_host = HostNDBuffer[type, 2, DimList(Dim(), fused_hidden_size),](
+    ref_output_host = HostNDBuffer[type, 2, DimList(Dim(), fused_hidden_size)](
         IndexList[2](
             padded_batch_dim,
             fused_hidden_size,
@@ -741,7 +741,7 @@ def execute_cont_batch_fused_qkv_matmul[
 
     var cache_sizes_device = cache_sizes_host.copy_to_device(ctx)
 
-    kv_block_host = HostNDBuffer[type, 6,](
+    kv_block_host = HostNDBuffer[type, 6](
         IndexList[6](
             num_blocks,
             2,
@@ -752,7 +752,7 @@ def execute_cont_batch_fused_qkv_matmul[
         ),
     )
     kv_block_device = kv_block_host.copy_to_device(ctx)
-    var lookup_table_host = HostNDBuffer[DType.uint32, 1,](
+    var lookup_table_host = HostNDBuffer[DType.uint32, 1](
         IndexList[1](
             batch_size,
         ),

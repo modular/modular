@@ -160,14 +160,14 @@ fn repack_Q4_0_for_sm8x[
             IntTuple(1, 128),
         ),
     )
-    var repack_weights = LayoutTensor[DType.uint32, repacked_b_layout,](
+    var repack_weights = LayoutTensor[DType.uint32, repacked_b_layout](
         q_packed_weight.ptr.bitcast[Scalar[DType.uint32]](),
         RuntimeLayout[repacked_b_layout](),
     )
 
     alias b_scales_layout = Layout.row_major(K_groups, N)
     var b_scales_ptr = q_packed_weight.ptr + N * K // 2
-    var repack_scales = LayoutTensor[scales_type, b_scales_layout,](
+    var repack_scales = LayoutTensor[scales_type, b_scales_layout](
         b_scales_ptr.bitcast[Scalar[scales_type]](),
         RuntimeLayout[b_scales_layout](),
     )
@@ -212,7 +212,7 @@ fn repack_Q4_0_for_sm8x[
     # frag_1 stores frags of the second,
     for i in range(ceildiv(BK_groups, 2)):
         barrier()
-        copy_dram_to_sram[thread_layout = Layout.row_major(128, 1),](
+        copy_dram_to_sram[thread_layout = Layout.row_major(128, 1)](
             qb_smem.vectorize[1, 4](),
             q_gmem_iter[]
             .bitcast[DType.uint8, address_space = AddressSpace.GENERIC]()
@@ -323,13 +323,13 @@ fn create_ref_b[
     alias scales_type = DType.bfloat16
     alias b_type = DType.uint32
     alias b_weight_layout = Layout.row_major(N // 64, K * 64 // pack_factor)
-    var b_q = LayoutTensor[b_type, b_weight_layout,](
+    var b_q = LayoutTensor[b_type, b_weight_layout](
         b_packed.ptr.bitcast[Scalar[b_type]](),
     )
 
     alias b_scales_layout = Layout.row_major(K // group_size, N)
     var b_scales_ptr = b_packed.ptr + N * K // 2
-    var scales = LayoutTensor[scales_type, b_scales_layout,](
+    var scales = LayoutTensor[scales_type, b_scales_layout](
         b_scales_ptr.bitcast[Scalar[scales_type]](),
     )
 
@@ -534,13 +534,13 @@ fn test_repack_Q4_0_for_sm8x(
         Int(k.dim) * 64 // pack_factor,
     )
 
-    var gguf_b_tensor = LayoutTensor[DType.uint8, gguf_b_layout,](
+    var gguf_b_tensor = LayoutTensor[DType.uint8, gguf_b_layout](
         gguf_b_device.buffer.unsafe_ptr(),
         RuntimeLayout[gguf_b_layout].row_major(
             gguf_b_device.tensor.dynamic_shape
         ),
     )
-    var repacked_b_tensor = LayoutTensor[DType.uint8, repacked_b_layout,](
+    var repacked_b_tensor = LayoutTensor[DType.uint8, repacked_b_layout](
         repacked_b_device.buffer.unsafe_ptr(),
         RuntimeLayout[repacked_b_layout](),
     )
@@ -693,11 +693,11 @@ fn test_quantized[
     alias b_layout = Layout.row_major[c_device.rank](b_device.shape)
     alias b_ref_layout = Layout.row_major[b_device_ref.rank](b_device_ref.shape)
 
-    var b_tensor = LayoutTensor[type, b_layout,](
+    var b_tensor = LayoutTensor[type, b_layout](
         b_device.buffer.unsafe_ptr(),
         RuntimeLayout[b_layout].row_major(b_device.tensor.dynamic_shape),
     )
-    var b_ref_tensor = LayoutTensor[a_type, b_ref_layout,](
+    var b_ref_tensor = LayoutTensor[a_type, b_ref_layout](
         b_device_ref.buffer.unsafe_ptr(),
         RuntimeLayout[b_ref_layout].row_major(
             b_device_ref.tensor.dynamic_shape

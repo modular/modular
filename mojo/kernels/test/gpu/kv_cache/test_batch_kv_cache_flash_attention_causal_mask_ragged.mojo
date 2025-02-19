@@ -144,7 +144,7 @@ def execute_ragged_flash_attention[
     test_output_device = test_output_host.copy_to_device(ctx)
 
     # initialize our KVCache
-    kv_block_host = HostNDBuffer[type, 6,](
+    kv_block_host = HostNDBuffer[type, 6](
         IndexList[6](
             num_blocks,
             2,
@@ -156,7 +156,7 @@ def execute_ragged_flash_attention[
     )
     random(kv_block_host.tensor)
     kv_block_device = kv_block_host.copy_to_device(ctx)
-    var lookup_table_host = HostNDBuffer[DType.uint32, 1,](
+    var lookup_table_host = HostNDBuffer[DType.uint32, 1](
         IndexList[1](
             batch_size,
         ),

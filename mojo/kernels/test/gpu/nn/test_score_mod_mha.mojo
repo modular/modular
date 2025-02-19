@@ -304,7 +304,7 @@ def execute_flash_attention[
     )
     ctx.enqueue_copy_to_device(k_block_device.buffer, k_block_host.tensor.data)
 
-    k_cache_device = ContiguousKVCache[type, kv_params,](
+    k_cache_device = ContiguousKVCache[type, kv_params](
         k_block_device.tensor,
         cache_lengths,
         is_context_encoding,
@@ -341,7 +341,7 @@ def execute_flash_attention[
     )
     ctx.enqueue_copy_to_device(v_block_device.buffer, v_block_host.tensor.data)
 
-    v_cache_device = ContiguousKVCache[type, kv_params,](
+    v_cache_device = ContiguousKVCache[type, kv_params](
         v_block_device.tensor,
         cache_lengths,
         is_context_encoding,

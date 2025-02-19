@@ -94,7 +94,7 @@ def execute_fused_qkv_matmul[
     ctx.enqueue_copy_to_device(weight_device.buffer, weight_host.tensor.data)
 
     # initialize reference output
-    ref_output_host = HostNDBuffer[type, 2, DimList(Dim(), fused_hidden_size),](
+    ref_output_host = HostNDBuffer[type, 2, DimList(Dim(), fused_hidden_size)](
         IndexList[2](
             batch_size * prompt_len,
             fused_hidden_size,
@@ -151,7 +151,7 @@ def execute_fused_qkv_matmul[
         valid_lengths_dev.unsafe_ptr(), Index(batch_size)
     )
 
-    k_block_host = HostNDBuffer[type, 5,](
+    k_block_host = HostNDBuffer[type, 5](
         IndexList[5](
             num_layers,
             batch_size,
@@ -161,7 +161,7 @@ def execute_fused_qkv_matmul[
         ),
     )
     k_block_device = k_block_host.copy_to_device(ctx)
-    v_block_host = HostNDBuffer[type, 5,](
+    v_block_host = HostNDBuffer[type, 5](
         IndexList[5](
             num_layers,
             batch_size,
@@ -172,7 +172,7 @@ def execute_fused_qkv_matmul[
     )
     v_block_device = v_block_host.copy_to_device(ctx)
 
-    var kv_collection_device = ContiguousKVCacheCollection[type, kv_params,](
+    var kv_collection_device = ContiguousKVCacheCollection[type, kv_params](
         k_block_device.tensor,
         v_block_device.tensor,
         valid_lengths,
@@ -182,7 +182,7 @@ def execute_fused_qkv_matmul[
         max_seq_len_in_batch,
         max_cache_len_in_batch,
     )
-    var kv_collection_host = ContiguousKVCacheCollection[type, kv_params,](
+    var kv_collection_host = ContiguousKVCacheCollection[type, kv_params](
         k_block_host.tensor,
         v_block_host.tensor,
         valid_lengths_host,
@@ -193,7 +193,7 @@ def execute_fused_qkv_matmul[
         max_cache_len_in_batch,
     )
 
-    _fused_qkv_matmul_kv_cache_impl[target="gpu",](
+    _fused_qkv_matmul_kv_cache_impl[target="gpu"](
         hidden_state_device.tensor,
         weight_device.tensor,
         kv_collection_device,

@@ -162,7 +162,7 @@ fn test[
     ctx.enqueue_copy_to_device(b_device.buffer, b_host.tensor.data)
     ctx.enqueue_copy_to_device(c_device.buffer, c_host.tensor.data)
 
-    _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b,](
+    _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](
         c_device.tensor,
         a_device.tensor,
         b_device.tensor,
@@ -203,7 +203,7 @@ fn test[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b,](
+            _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](
                 c_device.tensor,
                 a_device.tensor,
                 b_device.tensor,

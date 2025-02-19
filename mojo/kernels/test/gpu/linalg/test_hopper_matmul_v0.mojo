@@ -112,7 +112,7 @@ def test_hopper_matmul0_tma_wgmma[
     ctx.enqueue_copy_to_device(c_device.buffer, c_host.tensor.data)
     ctx.enqueue_copy_to_device(c_device_ref.buffer, c_host_ref.tensor.data)
 
-    hopper_matmul_tma_wgmma[transpose_b=transpose_b, wgmma_n=wgmma_n,](
+    hopper_matmul_tma_wgmma[transpose_b=transpose_b, wgmma_n=wgmma_n](
         c_device.tensor,
         a_device.tensor,
         b_device.tensor,

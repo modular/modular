@@ -258,7 +258,7 @@ fn swizzle_copy[
         num_threads * simd_size // BK, BK // simd_size
     )
 
-    copy_dram_to_sram_async[thread_layout=thread_layout, swizzle=True,](
+    copy_dram_to_sram_async[thread_layout=thread_layout, swizzle=True](
         a_smem_tile.vectorize[1, simd_size](),
         a.tile[BM, BK](block_idx.x, 0).vectorize[1, simd_size](),
     )

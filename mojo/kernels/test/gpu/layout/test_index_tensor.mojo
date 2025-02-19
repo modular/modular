@@ -138,7 +138,7 @@ fn test_index_tensor_DLRM(ctx: DeviceContext) raises:
                     indices.tensor[j, 1].__int__(),
                 )
             ]
-    execute_index_tensor_test[batch_dims,](input, indices, ref_output, ctx)
+    execute_index_tensor_test[batch_dims](input, indices, ref_output, ctx)
 
 
 fn test_index_tensor_DLRM_batch(ctx: DeviceContext) raises:
@@ -201,7 +201,7 @@ fn test_index_tensor_DLRM_batch(ctx: DeviceContext) raises:
                         indices.tensor[k, 1].__int__(),
                     )
                 ]
-    execute_index_tensor_test[batch_dims,](input, indices, ref_output, ctx)
+    execute_index_tensor_test[batch_dims](input, indices, ref_output, ctx)
 
 
 def main():

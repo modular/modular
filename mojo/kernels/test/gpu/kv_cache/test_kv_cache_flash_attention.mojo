@@ -136,7 +136,7 @@ def execute_flash_attention[
     var valid_lengths = NDBuffer[DType.uint32, 1](
         valid_lengths_dev.unsafe_ptr(), Index(batch_size)
     )
-    k_block_host = HostNDBuffer[type, 5,](
+    k_block_host = HostNDBuffer[type, 5](
         Index(
             num_layers,
             batch_size,
@@ -148,7 +148,7 @@ def execute_flash_attention[
     random(k_block_host.tensor)
     k_block_device = k_block_host.copy_to_device(ctx)
 
-    v_block_host = HostNDBuffer[type, 5,](
+    v_block_host = HostNDBuffer[type, 5](
         Index(
             num_layers,
             batch_size,
@@ -160,7 +160,7 @@ def execute_flash_attention[
     random(v_block_host.tensor)
     v_block_device = v_block_host.copy_to_device(ctx)
 
-    kv_cache_device = ContiguousKVCacheCollection[type, kv_params,](
+    kv_cache_device = ContiguousKVCacheCollection[type, kv_params](
         key_cache=k_block_device.tensor,
         value_cache=v_block_device.tensor,
         cache_lengths=valid_lengths,

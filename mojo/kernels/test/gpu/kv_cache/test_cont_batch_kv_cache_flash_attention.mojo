@@ -174,7 +174,7 @@ def execute_flash_attention[
     var cache_lengths_device_nd = NDBuffer[DType.uint32, 1](
         cache_lengths_dev.unsafe_ptr(), Index(batch_size)
     )
-    kv_block_host = HostNDBuffer[type, 6,](
+    kv_block_host = HostNDBuffer[type, 6](
         IndexList[6](
             num_blocks,
             2,
@@ -184,7 +184,7 @@ def execute_flash_attention[
             kv_params.head_size,
         ),
     )
-    kv_block_device = DeviceNDBuffer[type, 6,](
+    kv_block_device = DeviceNDBuffer[type, 6](
         IndexList[6](
             num_blocks,
             2,
@@ -196,13 +196,13 @@ def execute_flash_attention[
         ctx=ctx,
     )
 
-    var lookup_table_host = HostNDBuffer[DType.uint32, 1,](
+    var lookup_table_host = HostNDBuffer[DType.uint32, 1](
         IndexList[1](
             batch_size,
         ),
     )
 
-    var lookup_table_device = DeviceNDBuffer[DType.uint32, 1,](
+    var lookup_table_device = DeviceNDBuffer[DType.uint32, 1](
         IndexList[1](
             batch_size,
         ),
