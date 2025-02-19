@@ -903,7 +903,7 @@ fn wgmma_async[
     alias scale_d = 1
     alias scale_a = 1
     alias scale_b = 1
-    alias trans_b = layout_b == "row"
+    alias trans_b = 1 if layout_b == "row" else 0
 
     @parameter
     if (
