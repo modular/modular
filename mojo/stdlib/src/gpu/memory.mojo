@@ -453,7 +453,7 @@ fn cp_async_bulk_tensor_global_shared_cta[
 
     @parameter
     if rank == 2:
-        llvm_intrinsic["llvm.nvvm.cp.async.bulk.tensor.s2g.tile.2d", NoneType,](
+        llvm_intrinsic["llvm.nvvm.cp.async.bulk.tensor.s2g.tile.2d", NoneType](
             src_mem,
             tma_descriptor,
             Int32(coords[0]),
@@ -462,7 +462,7 @@ fn cp_async_bulk_tensor_global_shared_cta[
             cache_hint,
         )
     else:
-        llvm_intrinsic["llvm.nvvm.cp.async.bulk.tensor.s2g.tile.1d", NoneType,](
+        llvm_intrinsic["llvm.nvvm.cp.async.bulk.tensor.s2g.tile.1d", NoneType](
             src_mem,
             tma_descriptor,
             Int32(coords[0]),
