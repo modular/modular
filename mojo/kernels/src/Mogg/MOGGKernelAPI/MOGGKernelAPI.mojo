@@ -425,7 +425,7 @@ fn get_scalar_from_ndbuffer[
     return tensor[0]
 
 
-# Extract a value from a managed tensor slice.
+# Extract a scalar from a managed tensor slice.
 @register_internal("get_scalar_from_managed_tensor_slice")
 @always_inline
 fn get_scalar_from_managed_tensor_slice[
@@ -440,6 +440,34 @@ fn get_scalar_from_managed_tensor_slice[
     # This is used instead of [0] since __getitem__ for `ManagedTesnorSlice`
     # does not work with `register_internal` out of the box.
     return tensor.load[width=1](IndexList[1](0))
+
+
+# Extract an Int from a managed tensor slice.
+@register_internal("get_int_from_managed_tensor_slice")
+@always_inline
+fn get_int_from_managed_tensor_slice[
+    dtype: DType,
+](
+    tensor: ManagedTensorSlice[
+        io_spec=IOUnknown,
+        static_spec = StaticTensorSpec[dtype, 1].create_unknown(),
+    ]
+) -> Int:
+    return Int(get_scalar_from_managed_tensor_slice(tensor))
+
+
+# Extract a UInt from a managed tensor slice.
+@register_internal("get_uint_from_managed_tensor_slice")
+@always_inline
+fn get_uint_from_managed_tensor_slice[
+    dtype: DType,
+](
+    tensor: ManagedTensorSlice[
+        io_spec=IOUnknown,
+        static_spec = StaticTensorSpec[dtype, 1].create_unknown(),
+    ]
+) -> UInt:
+    return index(get_scalar_from_managed_tensor_slice(tensor))
 
 
 @register_internal("get_int_from_shape")
@@ -3720,15 +3748,15 @@ struct BottomK:
         values: ManagedTensorSlice[type=type, rank=rank],
         indices: ManagedTensorSlice[type = DType.int64, rank=rank],
         input: ManagedTensorSlice[type=type, rank=rank],
-        k: Scalar,
-        axis: Scalar,
+        k: Int,
+        axis: Int,
         sorted: Scalar[type = DType.bool],
         ctx: MojoCallContextPtr,
     ) raises:
         top_k[largest=False, target=target](
             managed_tensor_slice_to_ndbuffer(input),
-            Int(k),
-            Int(axis),
+            k,
+            axis,
             managed_tensor_slice_to_ndbuffer(values),
             managed_tensor_slice_to_ndbuffer(indices),
             sorted,
@@ -3762,15 +3790,15 @@ struct TopK:
         values: ManagedTensorSlice[type=type, rank=rank],
         indices: ManagedTensorSlice[type = DType.int64, rank=rank],
         input: ManagedTensorSlice[type=type, rank=rank],
-        k: Scalar,
-        axis: Scalar,
+        k: Int,
+        axis: Int,
         sorted: Scalar[type = DType.bool],
         ctx: MojoCallContextPtr,
     ) raises:
         top_k[largest=True, target=target](
             managed_tensor_slice_to_ndbuffer(input),
-            Int(k),
-            Int(axis),
+            k,
+            axis,
             managed_tensor_slice_to_ndbuffer(values),
             managed_tensor_slice_to_ndbuffer(indices),
             sorted,
