@@ -75,6 +75,7 @@ from .utils_gpu import (
     _get_block_warp_tile_shape,
     select_config,
 )
+from ._amd_gemm_gpu import gemm_kernel as amd_gemm_kernel
 
 alias tile_shapes_64X64X32 = _get_block_warp_tile_shape[64, 64, 32]()
 alias tile_shapes_64X128X32 = _get_block_warp_tile_shape[64, 128, 32]()
@@ -345,13 +346,13 @@ fn _matmul_gpu[
             if has_amd_gpu_accelerator():
                 multistage_gemm[
                     transpose_b=transpose_b,
-                    config = kernels.mi300x_128x128_2,
+                    config = kernels.mi300x_128x128_1 if transpose_b else kernels.mi300x_128x128_2,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ](
                     rebind[NDBuffer[c_type, 2, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b_shape]](b),
-                    kernels.mi300x_128x128_2,
+                    kernels.mi300x_128x128_1 if transpose_b else kernels.mi300x_128x128_2,
                     ctx,
                 )
                 return
@@ -1852,7 +1853,20 @@ fn multistage_gemm[
             return
 
     # Dispatch w/o split K
-    alias gemm_kernel_type = multistage_gemm_kernel[
+    alias gemm_kernel_type = amd_gemm_kernel[
+        c_type,
+        tensor_c.layout,
+        a_type,
+        tensor_a.layout,
+        b_type,
+        tensor_b.layout,
+        transpose_b,
+        config,
+        elementwise_lambda_fn,
+    ] if (
+        has_amd_gpu_accelerator()
+        and transpose_b  # fallback to multistage_gemm_kernel if transpose_b is false
+    ) else multistage_gemm_kernel[
         c_type,
         tensor_c.layout,
         a_type,

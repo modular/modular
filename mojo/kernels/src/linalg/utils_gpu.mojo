@@ -283,6 +283,12 @@ struct MatmulKernels[
         num_pipeline_stages=3,
     )
 
+    alias mi300x_128x128_1 = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        block_tile_shape=Index(128, 128, 64),
+        warp_tile_shape=Index(64, 64, 64),
+        num_pipeline_stages=1,
+    )
+
     alias mi300x_128x128_2 = MatmulConfig[a_type, b_type, c_type, transpose_b](
         block_tile_shape=Index(128, 128, _bk_base[a_type]()),
         warp_tile_shape=Index(64, 64, _bk_base[a_type]()),
