@@ -52,6 +52,111 @@ fn barrier():
         ]()
 
 
+@value
+@register_passable("trivial")
+struct AMDScheduleBarrierMask:
+    """Represents different instruction scheduling masks for AMDGPU scheduling instructions.
+    These masks control which instructions can be reordered across the barrier.
+    """
+
+    var _value: Int32
+    # Barrier scheduling control flags
+    alias NONE = Self(0)  # No instructions across barrier
+    alias ALL_ALU = Self(1 << 0)  # All non-memory, non-side-effect instructions
+    alias VALU = Self(1 << 1)  # Vector ALU instructions
+    alias SALU = Self(1 << 2)  # Scalar ALU instructions
+    alias MFMA = Self(1 << 3)  # Matrix FMA/WMMA instructions
+    alias ALL_VMEM = Self(1 << 4)  # All vector memory instructions
+    alias VMEM_READ = Self(1 << 5)  # Vector memory read instructions
+    alias VMEM_WRITE = Self(1 << 6)  # Vector memory write instructions
+    alias ALL_DS = Self(1 << 7)  # All LDS instructions
+    alias DS_READ = Self(1 << 8)  # LDS read instructions
+    alias DS_WRITE = Self(1 << 9)  # LDS write instructions
+    alias TRANS = Self(1 << 10)  # Transcendental instructions
+
+    @implicit
+    fn __init__(out self, value: Int):
+        self._value = value
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+    fn __str__(self) -> String:
+        if self == Self.NONE:
+            return "NONE"
+        elif self == Self.ALL_ALU:
+            return "ALL_ALU"
+        elif self == Self.VALU:
+            return "VALU"
+        elif self == Self.SALU:
+            return "SALU"
+        elif self == Self.MFMA:
+            return "MFMA"
+        elif self == Self.ALL_VMEM:
+            return "ALL_VMEM"
+        elif self == Self.VMEM_READ:
+            return "VMEM_READ"
+        elif self == Self.VMEM_WRITE:
+            return "VMEM_WRITE"
+        elif self == Self.ALL_DS:
+            return "ALL_DS"
+        elif self == Self.DS_READ:
+            return "DS_READ"
+        elif self == Self.DS_WRITE:
+            return "DS_WRITE"
+        elif self == Self.TRANS:
+            return "TRANS"
+        else:
+            return abort[String]("invalid AMDScheduleBarrierMask value")
+
+    fn __int__(self) -> Int:
+        return Int(self._value)
+
+
+@always_inline("nodebug")
+fn schedule_barrier(
+    mask: AMDScheduleBarrierMask = AMDScheduleBarrierMask.NONE,
+):
+    """Controls instruction scheduling across the barrier. The mask parameter
+    specifies which instruction types can cross the barrier.
+    Args:
+        mask: Bit mask specifying which instruction types can cross the barrier.
+    """
+
+    @parameter
+    if is_amd_gpu():
+        llvm_intrinsic["llvm.amdgcn.sched.barrier", NoneType](Int32(Int(mask)))
+    else:
+        constrained[False, "schedule_barrier is only supported on AMDGPU."]()
+
+
+@always_inline("nodebug")
+fn schedule_group_barrier(
+    mask: AMDScheduleBarrierMask, size: Int32, sync_id: Int32
+):
+    """Controls instruction scheduling by creating schedule groups with custom sequence.
+    The intrinsic applies to the code that precedes it.
+
+    Args:
+        mask: Instruction mask value, same as schedule_barrier masks.
+        size: Number of times to repeat the instruction.
+        sync_id: Group ID for ordering instructions in sequence within the same group.
+    """
+
+    @parameter
+    if is_amd_gpu():
+        llvm_intrinsic["llvm.amdgcn.sched.group.barrier", NoneType](
+            Int32(Int(mask)), size, sync_id
+        )
+    else:
+        constrained[
+            False, "schedule_group_barrier is only supported on AMDGPU."
+        ]()
+
+
 # ===-----------------------------------------------------------------------===#
 # syncwarp
 # ===-----------------------------------------------------------------------===#
