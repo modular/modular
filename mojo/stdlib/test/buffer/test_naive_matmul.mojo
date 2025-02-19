@@ -108,7 +108,7 @@ fn fill_b[size: Int](buf: NDBuffer[DType.float32, 2, DimList(size, size)]):
 
 fn print_matrix[
     size: Int
-](buf: NDBuffer[DType.float32, 2, DimList(size, size),]):
+](buf: NDBuffer[DType.float32, 2, DimList(size, size)]):
     """Prints each element of the input matrix, element-wise."""
     for i in range(size):
         for j in range(size):
