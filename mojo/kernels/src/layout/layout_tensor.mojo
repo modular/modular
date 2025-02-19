@@ -18,7 +18,7 @@ from sys.intrinsics import PrefetchOptions
 
 from algorithm import vectorize
 from bit import log2_floor
-from gpu.id import block_idx, thread_idx
+from gpu.id import block_idx, thread_idx, lane_id
 from gpu.memory import CacheEviction, Fill, async_copy
 from layout.element import Element, MemoryElement
 from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
@@ -2317,6 +2317,34 @@ fn stack_allocation_like[
     return __type_of(result).stack_allocation()
 
 
+@value
+@register_passable("trivial")
+struct ThreadScope:
+    var _value: Int32
+    alias BLOCK = Self(0)
+    alias WARP = Self(1)
+
+    @implicit
+    fn __init__(out self, value: Int):
+        self._value = value
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+    fn __str__(self) -> String:
+        if self == Self.BLOCK:
+            return "BLOCK"
+        if self == Self.WARP:
+            return "WARP"
+        return abort[String]("invalid ThreadScope entry")
+
+    fn __int__(self) -> Int:
+        return Int(self._value)
+
+
 # Synchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
 #
 @always_inline("nodebug")
@@ -2325,6 +2353,7 @@ fn copy_dram_to_sram[
     dst_thread_layout: Layout = src_thread_layout,
     swizzle: OptionalReg[Swizzle] = None,
     num_threads: Int = src_thread_layout.size(),
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
 ](dst: LayoutTensor, src: LayoutTensor):
     constrained[
         dst.dtype == src.dtype, "src dtype and dst dtype must be the same."
@@ -2341,14 +2370,16 @@ fn copy_dram_to_sram[
     ]()
     alias num_busy_threads = src_thread_layout.size()
 
+    var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+
     @parameter
     if num_threads > num_busy_threads:
-        if thread_idx.x >= num_busy_threads:
+        if worker_idx >= num_busy_threads:
             return
 
-    var src_fragments = src.distribute[src_thread_layout](thread_idx.x)
+    var src_fragments = src.distribute[src_thread_layout](worker_idx)
     var dst_fragments = dst.distribute[dst_thread_layout, swizzle=swizzle](
-        thread_idx.x
+        worker_idx
     )
 
     alias simd_width = simdwidthof[dst.dtype]()
@@ -2370,7 +2401,11 @@ fn copy_dram_to_sram[
     if not src_fragments.masked or is_scalar:
         constrained[
             dst_fragments.layout.size() == src_fragments.layout.size(),
-            "dst fragments size and src fragments size mismatch.",
+            "Fragment size mismatch: dst fragments size ("
+            + String(dst_fragments.layout.size())
+            + ") does not match src fragments size ("
+            + String(src_fragments.layout.size())
+            + ")",
         ]()
 
         dst_fragments.copy_from(src_fragments)
@@ -2418,12 +2453,14 @@ fn copy_dram_to_sram[
     thread_layout: Layout,
     swizzle: OptionalReg[Swizzle] = None,
     num_threads: Int = thread_layout.size(),
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
 ](dst: LayoutTensor, src: LayoutTensor):
     copy_dram_to_sram[
         src_thread_layout=thread_layout,
         dst_thread_layout=thread_layout,
         swizzle=swizzle,
         num_threads=num_threads,
+        thread_scope=thread_scope,
     ](dst, src)
 
 
@@ -2760,6 +2797,7 @@ fn copy_sram_to_local[
 @always_inline("nodebug")
 fn copy_local_to_dram[
     dst_thread_layout: Layout,
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
 ](dst: LayoutTensor, src: LayoutTensor):
     constrained[
         src.address_space == _GPUAddressSpace.LOCAL,
@@ -2771,7 +2809,8 @@ fn copy_local_to_dram[
         "dst address space must be GENERIC.",
     ]()
 
-    var dst_fragments = dst.distribute[dst_thread_layout](thread_idx.x)
+    var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
 
     @parameter
     if not dst_fragments.masked:
