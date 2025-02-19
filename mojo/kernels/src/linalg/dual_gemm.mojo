@@ -1076,7 +1076,7 @@ fn dual_gemm[
 
     # Gemv
     elif M == 1:
-        dual_gemv[elementwise_lambda_fn=elementwise_lambda_fn,](
+        dual_gemv[elementwise_lambda_fn=elementwise_lambda_fn](
             c, a, b0, b1, ctx
         )
         return
