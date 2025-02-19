@@ -2,10 +2,7 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 modular_py_test(
     name = "tests",
-    srcs = glob(
-        ["**/*.py"],
-        exclude = ["testdata/**"],
-    ),
+    srcs = glob(["**/*.py"]),
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
