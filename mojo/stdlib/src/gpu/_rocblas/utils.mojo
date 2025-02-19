@@ -16,7 +16,7 @@ from .types import Status
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias ROCM_ROCBLAS_LIBRARY_PATH = "/opt/rocm/lib/librocblas.so"
+alias ROCM_ROCBLAS_LIBRARY_PATH = "/opt/rocm/lib/librocblas.so.4"
 
 alias ROCM_ROCBLAS_LIBRARY = _Global[
     "ROCM_ROCBLAS_LIBRARY", _OwnedDLHandle, _init_dylib
