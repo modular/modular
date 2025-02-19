@@ -86,6 +86,50 @@ struct Node[
         writer.write(self.value)
 
 
+@value
+struct _LinkedListIter[
+    mut: Bool, //,
+    ElementType: CollectionElement,
+    origin: Origin[mut],
+    forward: Bool = True,
+]:
+    var src: Pointer[LinkedList[ElementType], origin]
+    var curr: UnsafePointer[Node[ElementType]]
+
+    # Used to calculate remaining length of iterator in
+    # _LinkedListIter.__len__()
+    var seen: Int
+
+    fn __init__(out self, src: Pointer[LinkedList[ElementType], origin]):
+        self.src = src
+
+        @parameter
+        if forward:
+            self.curr = self.src[]._head
+        else:
+            self.curr = self.src[]._tail
+        self.seen = 0
+
+    fn __iter__(self) -> Self:
+        return self
+
+    fn __next__(mut self, out p: Pointer[ElementType, origin]):
+        p = Pointer[ElementType, origin].address_of(self.curr[].value)
+
+        @parameter
+        if forward:
+            self.curr = self.curr[].next
+        else:
+            self.curr = self.curr[].prev
+        self.seen += 1
+
+    fn __has_next__(self) -> Bool:
+        return Bool(self.curr)
+
+    fn __len__(self) -> Int:
+        return len(self.src[]) - self.seen
+
+
 struct LinkedList[
     ElementType: CollectionElement,
 ]:
@@ -691,6 +735,34 @@ struct LinkedList[
             The number of elements in the list.
         """
         return self._size
+
+    fn __iter__(self) -> _LinkedListIter[ElementType, __origin_of(self)]:
+        """Iterate over elements of the list, returning immutable references.
+
+        Time Complexity:
+            O(1) for iterator construction.
+            O(n) in len(self) for a complete iteration of the list.
+
+        Returns:
+            An iterator of immutable references to the list elements.
+        """
+        return _LinkedListIter(Pointer.address_of(self))
+
+    fn __reversed__(
+        self,
+    ) -> _LinkedListIter[ElementType, __origin_of(self), forward=False]:
+        """Iterate backwards over the list, returning immutable references.
+
+        Time Complexity:
+            O(1) for iterator construction.
+            O(n) in len(self) for a complete iteration of the list.
+
+        Returns:
+            A reversed iterator of immutable references to the list elements.
+        """
+        return _LinkedListIter[ElementType, __origin_of(self), forward=False](
+            Pointer.address_of(self)
+        )
 
     fn __bool__(self) -> Bool:
         """Check if the list is non-empty.

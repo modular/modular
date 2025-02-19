@@ -59,6 +59,16 @@ what we publish.
 - Added a `StringSlice.is_codepoint_boundary()` method for querying if a given
   byte index is a boundary between encoded UTF-8 codepoints.
 
+- Added an iterator to `LinkedList` ([PR #4005](https://github.com/modular/mojo/pull/4005))
+  - `LinkedList.__iter__()` to create a forward iterator.
+  - `LinkedList.__reversed__()` for a backward iterator.
+
+  ```mojo
+  var ll = LinkedList[Int](1, 2, 3)
+  for element in ll:
+    print(element[])
+  ```
+
 ### GPU changes
 
 - `ctx.enqueue_function(compiled_func, ...)` is deprecated:
