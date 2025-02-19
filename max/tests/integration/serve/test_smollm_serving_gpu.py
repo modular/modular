@@ -34,7 +34,7 @@ MAX_READ_SIZE = 10 * 1024
     "pipeline_config",
     [
         PipelineConfig(
-            huggingface_repo_id="HuggingFaceTB/SmolLM2-135M",
+            model_path="HuggingFaceTB/SmolLM2-135M",
             max_length=512,
             max_new_tokens=10,
             device_specs=[DeviceSpec.accelerator()],
@@ -83,7 +83,7 @@ async def test_smollm_serve_gpu(app):
     "pipeline_config",
     [
         PipelineConfig(
-            huggingface_repo_id="HuggingFaceTB/SmolLM2-135M",
+            model_path="HuggingFaceTB/SmolLM2-135M",
             max_length=512,
             max_new_tokens=10,
             device_specs=[DeviceSpec.accelerator()],
@@ -122,7 +122,7 @@ async def test_smollm_serve_gpu_nonchat_completions(app, prompt):
     "pipeline_config",
     [
         PipelineConfig(
-            huggingface_repo_id="HuggingFaceTB/SmolLM2-135M",
+            model_path="HuggingFaceTB/SmolLM2-135M",
             max_length=512,
             max_new_tokens=10,
             device_specs=[DeviceSpec.accelerator()],

@@ -73,10 +73,7 @@ def app(pipeline_config):
     )
 
     pipeline_task = PipelineTask.TEXT_GENERATION
-    if (
-        pipeline_config.huggingface_repo_id
-        == "sentence-transformers/all-mpnet-base-v2"
-    ):
+    if pipeline_config.model_path == "sentence-transformers/all-mpnet-base-v2":
         pipeline_task = PipelineTask.EMBEDDINGS_GENERATION
 
     tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
@@ -88,7 +85,7 @@ def app(pipeline_config):
     )
 
     serving_settings = ServingTokenGeneratorSettings(
-        model_name=pipeline_config.huggingface_repo_id,
+        model_name=pipeline_config.model_path,
         model_factory=pipeline_factory,
         pipeline_config=pipeline_batch_config,
         tokenizer=tokenizer,

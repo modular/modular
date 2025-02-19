@@ -46,10 +46,8 @@ def test_text_and_vision_tokenizer():
     img = convert_image_url_to_base64(img_url)
     imgs = [[], [img], [img, img]]
     for repo_id, check_str in VALID_REPOS.items():
-        huggingface_repo_id = repo_id
-        tokenizer = TextAndVisionTokenizer(
-            huggingface_repo_id, trust_remote_code=True
-        )
+        model_path = repo_id
+        tokenizer = TextAndVisionTokenizer(model_path, trust_remote_code=True)
         for imgs_list in imgs:
             content = [
                 {"type": "text", "text": "What is in this image?"},
@@ -86,13 +84,13 @@ def test_text_tokenizer_with_tool_use():
     It is written to test out chat templating and input features for tool use with Llama 3.2
     """
 
-    huggingface_repo_id = "meta-llama/Llama-3.1-8B-Instruct"
-    tokenizer = TextTokenizer(huggingface_repo_id)
+    model_path = "meta-llama/Llama-3.1-8B-Instruct"
+    tokenizer = TextTokenizer(model_path)
 
     request = TokenGeneratorRequest(
         id="request_with_tools",
         index=0,
-        model_name=huggingface_repo_id,
+        model_name=model_path,
         messages=[
             TokenGeneratorRequestMessage(
                 role="user",
@@ -131,17 +129,17 @@ def test_text_tokenizer_with_tool_use():
 
 
 def test_tokenizer__truncates_to_max_length():
-    huggingface_repo_id = "meta-llama/Llama-3.1-8B-Instruct"
+    model_path = "meta-llama/Llama-3.1-8B-Instruct"
     max_length = 12
     tokenizer = TextTokenizer(
-        huggingface_repo_id,
+        model_path,
         max_length=max_length,
     )
 
     short_request = TokenGeneratorRequest(
         id="request_with_short_message",
         index=0,
-        model_name=huggingface_repo_id,
+        model_name=model_path,
         prompt="Short message",
     )
     context: TextContext = asyncio.run(tokenizer.new_context(short_request))
@@ -150,7 +148,7 @@ def test_tokenizer__truncates_to_max_length():
     long_request = TokenGeneratorRequest(
         id="request_with_short_message",
         index=0,
-        model_name=huggingface_repo_id,
+        model_name=model_path,
         prompt="Longer message with lots of text with more words than max length for sure.",
     )
     with pytest.raises(ValueError, match="max length"):

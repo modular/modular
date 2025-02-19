@@ -178,21 +178,21 @@ VALID_COMMANDS = [
     ),
     TestCommand(
         args=[
-            "--huggingface-repo-id",
+            "--model-path",
             "modularai/test_modelid",
             "--trust-remote-code",
             "--devices",
             "cpu",
         ],
         expected={
-            "huggingface_repo_id": "modularai/test_modelid",
+            "model_path": "modularai/test_modelid",
             "trust_remote_code": True,
         },
         valid=False,
     ),
     TestCommand(
         args=[
-            "--huggingface-repo-id",
+            "--model-path",
             "modularai/replit-code-1.5",
             "--trust-remote-code",
             "--devices",
@@ -205,7 +205,7 @@ VALID_COMMANDS = [
     ),
     TestCommand(
         args=[
-            "--huggingface-repo-id",
+            "--model-path",
             "modularai/replit-code-1.5",
             "--max-length",
             "10",
@@ -220,7 +220,7 @@ VALID_COMMANDS = [
     ),
     TestCommand(
         args=[
-            "--huggingface-repo-id",
+            "--model-path",
             "modularai/replit-code-1.5",
             "--architecture",
             "LlamaForCausalLM",
@@ -237,7 +237,7 @@ VALID_COMMANDS = [
     ),
     TestCommand(
         args=[
-            "--huggingface-repo-id",
+            "--model-path",
             "modularai/replit-code-1.5",
             "--architecture",
             "LlamaForCausalLM",
@@ -255,7 +255,7 @@ VALID_COMMANDS = [
     ),
     TestCommand(
         args=[
-            "--huggingface-repo-id",
+            "--model-path",
             "modularai/replit-code-1.5",
             "--architecture",
             "LlamaForCausalLM",
@@ -273,7 +273,7 @@ VALID_COMMANDS = [
     ),
     TestCommand(
         args=[
-            "--huggingface-repo-id",
+            "--model-path",
             "modularai/llama-3.1",
             "--weight-path",
             "model1.safetensors",
@@ -285,7 +285,7 @@ VALID_COMMANDS = [
             "cpu",
         ],
         expected={
-            "huggingface_repo_id": "modularai/llama-3.1",
+            "model_path": "modularai/llama-3.1",
             "trust_remote_code": False,
             "cache_strategy": KVCacheStrategy.MODEL_DEFAULT,
             "weight_path": [
@@ -298,7 +298,7 @@ VALID_COMMANDS = [
     ),
     TestCommand(
         args=[
-            "--huggingface-repo-id",
+            "--model-path",
             "modularai/llama-3.1",
             "--weight-path",
             "model1.safetensors",
@@ -310,7 +310,7 @@ VALID_COMMANDS = [
             "cpu",
         ],
         expected={
-            "huggingface_repo_id": "modularai/llama-3.1",
+            "model_path": "modularai/llama-3.1",
             "trust_remote_code": False,
             "cache_strategy": KVCacheStrategy.MODEL_DEFAULT,
             "weight_path": [
@@ -323,7 +323,7 @@ VALID_COMMANDS = [
     ),
     TestCommand(
         args=[
-            "--huggingface-repo-id",
+            "--model-path",
             "modularai/llama-3.1",
             "--engine",
             "max",
@@ -331,7 +331,7 @@ VALID_COMMANDS = [
             "cpu",
         ],
         expected={
-            "huggingface_repo_id": "modularai/llama-3.1",
+            "model_path": "modularai/llama-3.1",
             "engine": PipelineEngine.MAX,
         },
         valid=True,

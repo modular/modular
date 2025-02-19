@@ -59,7 +59,7 @@ def pipeline_config(testdata_directory, request) -> PipelineConfig:
 @pytest.fixture(scope="session")
 def pipeline_tokenizer(pipeline_config: PipelineConfig) -> TextTokenizer:
     return TextTokenizer(
-        pipeline_config.huggingface_repo_id,
+        pipeline_config.model_path,
         pipeline_config.max_length,
         pipeline_config.max_new_tokens,
         pipeline_config.trust_remote_code,

@@ -17,12 +17,12 @@ from max.pipelines import (
 
 def test_text_tokenizer_with_constrained_decoding():
     pipeline_config = PipelineConfig(
-        huggingface_repo_id="HuggingFaceTB/SmolLM-135M",
+        model_path="HuggingFaceTB/SmolLM-135M",
         device_specs=[DeviceSpec.accelerator(id=0)],
         enable_structured_output=True,
     )
 
-    tokenizer = TextTokenizer(pipeline_config.huggingface_repo_id)
+    tokenizer = TextTokenizer(pipeline_config.model_path)
 
     prompt = """
     Please provide a json response, with the person's name and age extracted from the excerpt.
@@ -36,7 +36,7 @@ def test_text_tokenizer_with_constrained_decoding():
     request = TokenGeneratorRequest(
         id="request_with_tools",
         index=0,
-        model_name=pipeline_config.huggingface_repo_id,
+        model_name=pipeline_config.model_path,
         messages=[
             TokenGeneratorRequestMessage(
                 role="user",

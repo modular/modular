@@ -221,7 +221,7 @@ class LlamaPipelineOracle(PipelineOracle):
                 else None
             ),
             max_new_tokens=10,
-            huggingface_repo_id=f"modularai/llama-{internal_version}",
+            model_path=f"modularai/llama-{internal_version}",
             weight_path=[
                 self._weight_path_for(version=version, encoding=encoding)
             ],
@@ -307,7 +307,7 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
             device_specs=device_specs,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             cache_strategy=KVCacheStrategy.CONTINUOUS,
-            huggingface_repo_id=hf_repo_id,
+            model_path=hf_repo_id,
             max_length=num_vision_embeddings,
             trust_remote_code=True,
         )
@@ -364,7 +364,7 @@ class ExaonePipelineOracle(PipelineOracle):
         config = pipelines.PipelineConfig(
             architecture="ExaoneForCausalLM",
             device_specs=device_specs,
-            huggingface_repo_id="LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct",
+            model_path="LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct",
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             max_length=1024,
             # TODO(E2EOPT-48): Remove batch size override.
@@ -437,7 +437,7 @@ class ReplitPipelineOracle(PipelineOracle):
             architecture="MPTForCausalLM",
             device_specs=device_specs,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
-            huggingface_repo_id="modularai/replit-code-1.5",
+            model_path="modularai/replit-code-1.5",
             trust_remote_code=True,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
@@ -536,7 +536,7 @@ class MistralPipelineOracle(PipelineOracle):
         config = pipelines.PipelineConfig(
             architecture="MistralForCausalLM",
             device_specs=device_specs,
-            huggingface_repo_id="mistralai/Mistral-Nemo-Instruct-2407",
+            model_path="mistralai/Mistral-Nemo-Instruct-2407",
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             max_length=512,
             weight_path=[
@@ -618,7 +618,7 @@ class PixtralPipelineOracle(MultiModalPipelineOracle):
         config = pipelines.PipelineConfig(
             device_specs=device_specs,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
-            huggingface_repo_id=hf_repo_id,
+            model_path=hf_repo_id,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
 
@@ -674,7 +674,7 @@ class QwenPipelineOracle(PipelineOracle):
         config = pipelines.PipelineConfig(
             architecture="Qwen2ForCausalLM",
             device_specs=device_specs,
-            huggingface_repo_id="Qwen/Qwen2.5-7B-Instruct",
+            model_path="Qwen/Qwen2.5-7B-Instruct",
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             max_length=512,
         )
@@ -732,7 +732,7 @@ class Llama3_3_70BInstructPipelineOracle(PipelineOracle):
         config = pipelines.PipelineConfig(
             architecture="LlamaForCausalLM",
             device_specs=device_specs,
-            huggingface_repo_id="meta-llama/Llama-3.3-70B-Instruct",
+            model_path="meta-llama/Llama-3.3-70B-Instruct",
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             max_length=512,
         )
@@ -770,7 +770,7 @@ class Llama3_3_70BInstructPipelineOracle(PipelineOracle):
 class GenericOracle(PipelineOracle):
     def __init__(
         self,
-        huggingface_repo_id: str,
+        model_path: str,
         architecture: str,
         config_params: dict[str, Any] = {},
         prompts: list[str] | None = None,
@@ -778,7 +778,7 @@ class GenericOracle(PipelineOracle):
         auto_processor_cls: Any = transformers.AutoTokenizer,
         task: interfaces.PipelineTask = interfaces.PipelineTask.TEXT_GENERATION,
     ) -> None:
-        self.huggingface_repo_id = huggingface_repo_id
+        self.model_path = model_path
         self.architecture = architecture
         self.config_params = config_params
         self._prompts = prompts
@@ -819,7 +819,7 @@ class GenericOracle(PipelineOracle):
             architecture=self.architecture,
             device_specs=device_specs,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
-            huggingface_repo_id=self.huggingface_repo_id,
+            model_path=self.model_path,
             **self.config_params,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
@@ -839,9 +839,7 @@ class GenericOracle(PipelineOracle):
         self, *, version: str, encoding: str, device: torch.device
     ) -> TorchModelAndDataProcessor:
         del version  # Unused.
-        processor = self.auto_processor_cls.from_pretrained(
-            self.huggingface_repo_id
-        )
+        processor = self.auto_processor_cls.from_pretrained(self.model_path)
         torch_dtype: torch.dtype
         if encoding == "float32":
             torch_dtype = torch.float32
@@ -852,7 +850,7 @@ class GenericOracle(PipelineOracle):
                 f"Could not convert encoding {encoding} to a torch dtype."
             )
         model = self.auto_model_cls.from_pretrained(
-            self.huggingface_repo_id,
+            self.model_path,
             device_map=device,
             torch_dtype=torch_dtype,
         )

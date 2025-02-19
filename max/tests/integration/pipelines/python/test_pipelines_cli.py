@@ -13,7 +13,7 @@ def test_pipelines_cli__smollm_float32(capsys):
         pipelines.main(
             [
                 "generate",
-                "--huggingface-repo-id",
+                "--model-path",
                 "HuggingFaceTB/SmolLM-135M",
                 "--prompt",
                 "Why is the sky blue?",

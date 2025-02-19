@@ -58,7 +58,7 @@ def test_llama(pipeline_registry, model, encoding, testdata_directory):
 @pytest.mark.skip("loads llama model, which will download taking a while.")
 def test_llama_eos_token_id(pipeline_registry):
     """This test is primarily written to be run in a bespoke fashion, as it is downloads llama-3.1, which can tax CI unnecessarily."""
-    config = PipelineConfig(huggingface_repo_id="modularai/llama-3.1")
+    config = PipelineConfig(model_path="modularai/llama-3.1")
     _, pipeline = pipeline_registry.retrieve(config)
 
     # The llama3_1 huggingface config has three eos tokens I want to make sure these are grabbed appropriately.
@@ -69,8 +69,8 @@ def test_llama_eos_token_id(pipeline_registry):
 @pytest.mark.skip("requires gated repo access and takes a long time")
 def test_llama_with_tools(pipeline_registry):
     pipeline_config = PipelineConfig(
-        huggingface_repo_id="meta-llama/Llama-3.1-8B-Instruct",
-        # huggingface_repo_id="meta-llama/Llama-3.2-3B-Instruct",
+        model_path="meta-llama/Llama-3.1-8B-Instruct",
+        # model_path="meta-llama/Llama-3.2-3B-Instruct",
         quantization_encoding=SupportedEncoding.float32,
     )
 
@@ -127,7 +127,7 @@ def test_llama_with_tools(pipeline_registry):
 
     request_id = "request_0"
     request = TokenGeneratorRequest(
-        model_name=pipeline_config.huggingface_repo_id,
+        model_name=pipeline_config.model_path,
         id=request_id,
         index=0,
         messages=messages,

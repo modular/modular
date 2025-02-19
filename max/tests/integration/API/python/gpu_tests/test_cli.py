@@ -168,7 +168,7 @@ class TestCommand:
 VALID_COMMANDS = [
     TestCommand(
         args=[
-            "--huggingface-repo-id",
+            "--model-path",
             "modularai/replit-code-1.5",
             "--cache-strategy",
             "naive",
@@ -183,7 +183,7 @@ VALID_COMMANDS = [
     ),
     TestCommand(
         args=[
-            "--huggingface-repo-id",
+            "--model-path",
             "modularai/llama-3.1",
             "--weight-path",
             "model1.safetensors",
@@ -193,7 +193,7 @@ VALID_COMMANDS = [
             "model3.safetensors",
         ],
         expected={
-            "huggingface_repo_id": "modularai/llama-3.1",
+            "model_path": "modularai/llama-3.1",
             "trust_remote_code": False,
             "cache_strategy": KVCacheStrategy.MODEL_DEFAULT,
             "weight_path": [
@@ -206,7 +206,7 @@ VALID_COMMANDS = [
     ),
     TestCommand(
         args=[
-            "--huggingface-repo-id",
+            "--model-path",
             "modularai/llama-3.1",
             "--weight-path",
             "model1.safetensors",
@@ -218,7 +218,7 @@ VALID_COMMANDS = [
             "gpu:0",
         ],
         expected={
-            "huggingface_repo_id": "modularai/llama-3.1",
+            "model_path": "modularai/llama-3.1",
             "trust_remote_code": False,
             "cache_strategy": KVCacheStrategy.MODEL_DEFAULT,
             "weight_path": [

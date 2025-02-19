@@ -101,7 +101,7 @@ class SupportedTestModels:
                     self.version, self.encoding
                 )
                 kwargs["weight_path"] = [hf_file.download()]
-                kwargs["huggingface_repo_id"] = hf_file.repo_id
+                kwargs["model_path"] = hf_file.repo_id
 
         if "device_specs" not in kwargs:
             kwargs["device_specs"] = (
@@ -120,11 +120,11 @@ class SupportedTestModels:
                 else KVCacheStrategy.NAIVE
             )
 
-        if "huggingface_repo_id" not in kwargs:
+        if "model_path" not in kwargs:
             if self.version == "3.1":
-                kwargs["huggingface_repo_id"] = "modularai/llama-3.1"
+                kwargs["model_path"] = "modularai/llama-3.1"
             elif self.version == "3":
-                kwargs["huggingface_repo_id"] = "modularai/llama-3"
+                kwargs["model_path"] = "modularai/llama-3"
             else:
                 raise ValueError(f"version {self.version} not supported.")
 
@@ -225,7 +225,7 @@ def main(model, encoding, verbose):
         try:
             config = model_encoding.build_config(testdata_directory)
             tokenizer = TextTokenizer(
-                config.huggingface_repo_id,
+                config.model_path,
                 config.max_length,
                 config.max_new_tokens,
                 config.trust_remote_code,

@@ -6,7 +6,7 @@
 """Runs evaluations for the Massive Text Embedding Benchmark.
 
 ./bazelw run SDK/integration-test/pipelines/python:pipelines_mteb --\
-    --huggingface-repo-id=sentence-transformers/all-mpnet-base-v2 \
+    --model-path=sentence-transformers/all-mpnet-base-v2 \
     --max-cache-batch-size=1000 \
     --eval-task="STSBenchmark" \
     --eval-output-folder=$PWD/mteb-output
@@ -63,14 +63,14 @@ class EmbeddingModel:
     @cached_property
     def mteb_model_meta(self) -> mteb.ModelMeta:
         if self.pipeline_config.engine == PipelineEngine.MAX:
-            name = f"max_{self.pipeline_config.huggingface_repo_id}"
+            name = f"max_{self.pipeline_config.model_path}"
         elif self.pipeline_config.engine == PipelineEngine.HUGGINGFACE:
-            name = f"max_hf_{self.pipeline_config.huggingface_repo_id}"
+            name = f"max_hf_{self.pipeline_config.model_path}"
         else:
-            name = f"max_{self.pipeline_config.engine}_{self.pipeline_config.huggingface_repo_id}"
+            name = f"max_{self.pipeline_config.engine}_{self.pipeline_config.model_path}"
 
         if meta := mteb.models.MODEL_REGISTRY.get(
-            self.pipeline_config.huggingface_repo_id
+            self.pipeline_config.model_path
         ):
             return meta.model_copy(update={"name": name})
         else:
@@ -128,7 +128,7 @@ class EmbeddingModel:
                     id=str(n),
                     index=n,
                     prompt=sentence,
-                    model_name=self.pipeline_config.huggingface_repo_id,
+                    model_name=self.pipeline_config.model_path,
                 )
             )
         response = self.pipeline.encode(pipeline_request)
@@ -151,7 +151,7 @@ logger = logging.getLogger("pipelines_mteb")
     help=(
         "Use this to choose how the evaluator loads the model. If 'pipeline' "
         "is chosen, the model will be chosen from the pipeline model registry. "
-        " If 'mteb' is chosen, the model's huggingface_repo_id will be passed "
+        " If 'mteb' is chosen, the model's model_path will be passed "
         "to the mteb library. This is separate from the --engine flag, which "
         "is used with --model-library=pipeline (but can be used to load a "
         "HuggingFace model)."
@@ -209,7 +209,7 @@ def main(
     model: EmbeddingModel | mteb.encoder_interface.Encoder
     logging.info("Loading model with %s library." % model_library)
     if model_library == "mteb":
-        model = mteb.get_model(pipeline_config.huggingface_repo_id)
+        model = mteb.get_model(pipeline_config.model_path)
     else:
         register_all_models()
         tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(

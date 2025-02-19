@@ -16,7 +16,7 @@ from max.serve.schemas.openai import CreateEmbeddingResponse  # type: ignore
     "pipeline_config",
     [
         PipelineConfig(
-            huggingface_repo_id="sentence-transformers/all-mpnet-base-v2",
+            model_path="sentence-transformers/all-mpnet-base-v2",
             max_length=256,
             device_specs=[DeviceSpec.cpu()],
         )

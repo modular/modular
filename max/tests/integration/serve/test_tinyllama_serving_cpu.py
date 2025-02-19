@@ -27,7 +27,7 @@ MAX_READ_SIZE = 10 * 1024
     "pipeline_config",
     [
         PipelineConfig(
-            huggingface_repo_id="HuggingFaceTB/SmolLM-135M",
+            model_path="HuggingFaceTB/SmolLM-135M",
             max_length=512,
             max_new_tokens=3,
             device_specs=[DeviceSpec.cpu()],

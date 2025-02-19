@@ -454,8 +454,8 @@ def main(
     if config_kwargs["architecture"] is None:
         config_kwargs["architecture"] = "LlamaForCausalLM"
 
-    if config_kwargs["huggingface_repo_id"] is None:
-        config_kwargs["huggingface_repo_id"] = "modularai/llama-3.1"
+    if config_kwargs["model_path"] is None:
+        config_kwargs["model_path"] = "modularai/llama-3.1"
 
     config = PipelineConfig(**config_kwargs)
 
@@ -470,7 +470,7 @@ def main(
 
     logger.info(
         "Loaded model %s, %s on %s",
-        config.huggingface_repo_id,
+        config.model_path,
         config.quantization_encoding,
         config.devices[0],
     )

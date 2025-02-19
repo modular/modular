@@ -21,7 +21,7 @@ def test_pipelines_lm_eval_smollm(tmp_path: Path):
             "--pipelines-probe-port=8000",
             "--pipelines-probe-timeout=240",
             "--pipelines-arg=serve",
-            "--pipelines-arg=--huggingface-repo-id=HuggingFaceTB/SmolLM2-135M",
+            "--pipelines-arg=--model-path=HuggingFaceTB/SmolLM2-135M",
             "--pipelines-arg=--quantization-encoding=float32",
             "--pipelines-arg=--max-length=512",
             "--pipelines-arg=--max-new-tokens=10",

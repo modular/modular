@@ -314,7 +314,7 @@ def test_registry__test_retrieve_with_unknown_architecture_max_engine():
 
     config = PipelineConfig(
         architecture="not_registered",
-        huggingface_repo_id="modularai/llama-3.1",
+        model_path="modularai/llama-3.1",
         # This forces it to fail if we dont have it.
         engine=PipelineEngine.MAX,
         max_batch_size=1,
@@ -331,7 +331,7 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine():
 
     config = PipelineConfig(
         architecture="not_registered",
-        huggingface_repo_id="modularai/llama-3.1",
+        model_path="modularai/llama-3.1",
         max_batch_size=1,
         max_length=512,
     )
@@ -346,7 +346,7 @@ def test_registry__test_retrieve_factory_with_known_architecture():
 
     config = PipelineConfig(
         architecture="LlamaForCausalLM",
-        huggingface_repo_id="modularai/llama-3.1",
+        model_path="modularai/llama-3.1",
         max_batch_size=1,
         max_length=512,
     )
@@ -355,11 +355,11 @@ def test_registry__test_retrieve_factory_with_known_architecture():
 
 
 @prepare_registry
-def test_registry__test_retrieve_factory_with_unsupported_huggingface_repo_id():
+def test_registry__test_retrieve_factory_with_unsupported_model_path():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(
-        huggingface_repo_id="modularai/replit-code-1.5",
+        model_path="modularai/replit-code-1.5",
         trust_remote_code=True,
         max_batch_size=1,
         max_length=512,
@@ -378,7 +378,7 @@ def test_registry__test_load_factory_with_known_architecture_and_hf_repo_id():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(
-        huggingface_repo_id="modularai/llama-3.1",
+        model_path="modularai/llama-3.1",
         max_batch_size=1,
         max_length=512,
     )
@@ -392,7 +392,7 @@ def test_registry__test_incompatible_quantization_encoding():
 
     # This should raise, as q4_k != bf16.
     config = PipelineConfig(
-        huggingface_repo_id="modularai/llama-3.1",
+        model_path="modularai/llama-3.1",
         quantization_encoding=SupportedEncoding.q4_k,
         weight_path=[Path("llama-3.1-8b-instruct-bf16.gguf")],
         max_batch_size=1,
@@ -404,7 +404,7 @@ def test_registry__test_incompatible_quantization_encoding():
 
     # This should not raise, as bfloat16 == bf16.
     config = PipelineConfig(
-        huggingface_repo_id="modularai/llama-3.1",
+        model_path="modularai/llama-3.1",
         quantization_encoding=SupportedEncoding.bfloat16,
         weight_path=[Path("llama-3.1-8b-instruct-bf16.gguf")],
         device_specs=[DeviceSpec.accelerator()],
@@ -420,7 +420,7 @@ def test_registry__update_cache_strategy():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(
-        huggingface_repo_id="modularai/llama-3.1",
+        model_path="modularai/llama-3.1",
         cache_strategy=KVCacheStrategy.NAIVE,
         max_batch_size=1,
         max_length=512,
@@ -466,7 +466,7 @@ def test_registry__update_weight_paths():
     ):
         # This first example, is requesting float32 from a gguf repository.
         config = PipelineConfig(
-            huggingface_repo_id="modularai/llama-3.1",
+            model_path="modularai/llama-3.1",
             quantization_encoding=SupportedEncoding.float32,
             max_batch_size=1,
             max_length=512,
@@ -479,7 +479,7 @@ def test_registry__update_weight_paths():
 
         # This second example, is requesting float32 from a safetensors repository.
         config = PipelineConfig(
-            huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
+            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
             quantization_encoding=SupportedEncoding.float32,
             max_batch_size=1,
             max_length=512,
@@ -493,7 +493,7 @@ def test_registry__update_weight_paths():
         # This example, should raise, as you are requesting q6_k from a fp32
         # safetensors repo.
         config = PipelineConfig(
-            huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
+            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
             quantization_encoding=SupportedEncoding.q6_k,
             device_specs=[DeviceSpec.cpu()],
         )
@@ -507,7 +507,7 @@ def test_registry__update_weight_paths():
         # This example, should pass, since using fp32 weights for bfloat16 is
         # listed as an alternate encoding for fp32.
         config = PipelineConfig(
-            huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
+            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
             quantization_encoding=SupportedEncoding.bfloat16,
             device_specs=[DeviceSpec.accelerator()],
             max_batch_size=1,
@@ -521,7 +521,7 @@ def test_registry__update_weight_paths():
 
         # This example, should raise as we dont have q4_k listed as supported.
         config = PipelineConfig(
-            huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
+            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
             quantization_encoding=SupportedEncoding.q4_k,
             engine=PipelineEngine.MAX,
             max_batch_size=1,
@@ -534,7 +534,7 @@ def test_registry__update_weight_paths():
         # This example, should raise as we dont have q4_k listed as supported.
         # If we don't pass MAX though, we should not fail and fall back to HuggingFace.
         config = PipelineConfig(
-            huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
+            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
             quantization_encoding=SupportedEncoding.q4_k,
             max_batch_size=1,
             max_length=512,
@@ -545,7 +545,7 @@ def test_registry__update_weight_paths():
 
         # This example, should not raise, as we are showing that we have a weight converter for pytorch for Replit.
         config = PipelineConfig(
-            huggingface_repo_id="replit/replit-code-v1_5-3b",
+            model_path="replit/replit-code-v1_5-3b",
             quantization_encoding=SupportedEncoding.bfloat16,
             device_specs=[DeviceSpec.accelerator()],
             trust_remote_code=True,
@@ -559,7 +559,7 @@ def test_registry__update_weight_paths():
 
         # Test a partially complete huggingface_repo
         config = PipelineConfig(
-            huggingface_repo_id="neubla/tiny-random-LlamaForCausalLM",
+            model_path="neubla/tiny-random-LlamaForCausalLM",
             max_batch_size=1,
             max_length=512,
         )
@@ -570,7 +570,7 @@ def test_registry__update_weight_paths():
 
         # This example, should not raise as we are passing a valid weights path in a different repository.
         config = PipelineConfig(
-            huggingface_repo_id="replit/replit-code-v1_5-3b",
+            model_path="replit/replit-code-v1_5-3b",
             quantization_encoding=SupportedEncoding.float32,
             trust_remote_code=True,
             weight_path=[
@@ -591,7 +591,7 @@ def test_registry__raise_oom_error_weights_size_exceeds_available_memory():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(
-        huggingface_repo_id="modularai/llama-3.1",
+        model_path="modularai/llama-3.1",
     )
 
     config.max_batch_size = None
@@ -618,7 +618,7 @@ def test_registry__raise_oom_error_all_defaults_no_valid_solution():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(
-        huggingface_repo_id="modularai/llama-3.1",
+        model_path="modularai/llama-3.1",
     )
 
     config.max_batch_size = None
@@ -644,7 +644,7 @@ def test_registry__raise_oom_error_all_defaults():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(
-        huggingface_repo_id="modularai/llama-3.1",
+        model_path="modularai/llama-3.1",
     )
 
     config.max_batch_size = None
@@ -672,7 +672,7 @@ def test_registry__raise_oom_error_max_length_set():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(
-        huggingface_repo_id="modularai/llama-3.1",
+        model_path="modularai/llama-3.1",
     )
 
     config.max_batch_size = None
@@ -700,7 +700,7 @@ def test_registry__raise_oom_error_max_batch_size_set():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(
-        huggingface_repo_id="modularai/llama-3.1",
+        model_path="modularai/llama-3.1",
     )
 
     config.max_batch_size = 100000
@@ -725,7 +725,7 @@ def test_registry__raise_oom_error_max_batch_size_set_and_max_length_set():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(
-        huggingface_repo_id="modularai/llama-3.1",
+        model_path="modularai/llama-3.1",
     )
 
     config.max_batch_size = 100000
@@ -753,7 +753,7 @@ def test_registry__validates_supported_device():
 
     # Valid device/encoding combinations.
     config = PipelineConfig(
-        huggingface_repo_id="modularai/llama-3.1",
+        model_path="modularai/llama-3.1",
         device_specs=[DeviceSpec.cpu()],
         quantization_encoding=SupportedEncoding.float32,
         max_length=1,
@@ -761,7 +761,7 @@ def test_registry__validates_supported_device():
     PIPELINE_REGISTRY.validate_pipeline_config(config)
 
     config = PipelineConfig(
-        huggingface_repo_id="modularai/llama-3.1",
+        model_path="modularai/llama-3.1",
         device_specs=[DeviceSpec.accelerator()],
         quantization_encoding=SupportedEncoding.bfloat16,
         max_length=1,
@@ -770,7 +770,7 @@ def test_registry__validates_supported_device():
 
     # Invalid device/encoding combinations.
     config = PipelineConfig(
-        huggingface_repo_id="modularai/llama-3.1",
+        model_path="modularai/llama-3.1",
         device_specs=[DeviceSpec.cpu()],
         quantization_encoding=SupportedEncoding.bfloat16,
         max_length=1,
@@ -779,7 +779,7 @@ def test_registry__validates_supported_device():
         PIPELINE_REGISTRY.validate_pipeline_config(config)
 
     config = PipelineConfig(
-        huggingface_repo_id="modularai/llama-3.1",
+        model_path="modularai/llama-3.1",
         device_specs=[DeviceSpec.accelerator()],
         quantization_encoding=SupportedEncoding.q6_k,
         max_length=1,

@@ -113,7 +113,7 @@ async def test_llama_ragged(
 
 def test_smollm_with_constrained_decoding(pipeline_registry):
     pipeline_config = PipelineConfig(
-        huggingface_repo_id="HuggingFaceTB/SmolLM2-135M-Instruct",
+        model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
         enable_structured_output=True,
         quantization_encoding=SupportedEncoding.bfloat16,
         device_specs=[DeviceSpec.accelerator()],
@@ -134,7 +134,7 @@ def test_smollm_with_constrained_decoding(pipeline_registry):
 
     request_id = "request_0"
     request = TokenGeneratorRequest(
-        model_name=pipeline_config.huggingface_repo_id,
+        model_name=pipeline_config.model_path,
         id=request_id,
         index=0,
         messages=[

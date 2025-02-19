@@ -17,13 +17,13 @@ from max.pipelines.config import (
 )
 
 
-def test_config_init__raises_with_no_huggingface_repo_id():
+def test_config_init__raises_with_no_model_path():
     # We expect this to fail.
     with pytest.raises(ValueError):
         _ = PipelineConfig(weight_path="file.gguf")  # type: ignore
 
 
-def test_config_post_init__with_weight_path_but_no_huggingface_repo_id():
+def test_config_post_init__with_weight_path_but_no_model_path():
     config = PipelineConfig(
         trust_remote_code=True,
         weight_path=[
@@ -31,14 +31,14 @@ def test_config_post_init__with_weight_path_but_no_huggingface_repo_id():
         ],
     )
 
-    assert config.huggingface_repo_id == "modularai/replit-code-1.5"
+    assert config.model_path == "modularai/replit-code-1.5"
     assert config.weight_path == [Path("replit-code-v1_5-3b-f32.gguf")]
 
 
 def test_config_init__reformats_with_str_weights_path():
     # We expect this to convert the string.
     config = PipelineConfig(
-        huggingface_repo_id="modularai/llama-3.1",
+        model_path="modularai/llama-3.1",
         weight_path="file.path",  # type: ignore
     )
 
@@ -48,9 +48,7 @@ def test_config_init__reformats_with_str_weights_path():
 
 
 def test_config_weights_format__raises_with_no_weights_path():
-    config = PipelineConfig(
-        huggingface_repo_id="modularai/llama-3.1", weight_path=[]
-    )
+    config = PipelineConfig(model_path="modularai/llama-3.1", weight_path=[])
 
     with pytest.raises(ValueError):
         config.weights_format
@@ -58,7 +56,7 @@ def test_config_weights_format__raises_with_no_weights_path():
 
 def test_config_weights_format__raises_with_bad_weights_path():
     config = PipelineConfig(
-        huggingface_repo_id="modularai/llama-3.1",
+        model_path="modularai/llama-3.1",
         weight_path=[Path("this_is_a_random_weight_path_without_extension")],
     )
 
@@ -68,7 +66,7 @@ def test_config_weights_format__raises_with_bad_weights_path():
 
 def test_config_weights_format__raises_with_conflicting_weights_path():
     config = PipelineConfig(
-        huggingface_repo_id="modularai/llama-3.1",
+        model_path="modularai/llama-3.1",
         weight_path=[
             Path("this_is_a_random_weight_path_without_extension"),
             Path("this_is_a_gguf_file.gguf"),
@@ -81,7 +79,7 @@ def test_config_weights_format__raises_with_conflicting_weights_path():
 
 def test_config_weights_format__correct_weights_format():
     config = PipelineConfig(
-        huggingface_repo_id="modularai/llama-3.1",
+        model_path="modularai/llama-3.1",
         weight_path=[Path("model_a.gguf")],
     )
 
@@ -94,24 +92,24 @@ def test_config_weights_format__correct_weights_format():
     assert config.weights_format == WeightsFormat.safetensors
 
 
-def test_validate_huggingface_repo_id__correct_repo_id_provided():
+def test_validate_model_path__correct_repo_id_provided():
     config = PipelineConfig(
-        huggingface_repo_id="modularai/llama-3.1",
+        model_path="modularai/llama-3.1",
     )
 
-    assert config.huggingface_repo_id == "modularai/llama-3.1"
+    assert config.model_path == "modularai/llama-3.1"
 
 
-def test_validate_huggingface_repo_id__bad_repo_provided():
+def test_validate_model_path__bad_repo_provided():
     with pytest.raises(Exception):
         _ = PipelineConfig(
-            huggingface_repo_id="bert-base-asdfasdf",
+            model_path="bert-base-asdfasdf",
         )
 
 
 def test_hf_config_retrieval():
     config = PipelineConfig(
-        huggingface_repo_id="modularai/llama-3.1",
+        model_path="modularai/llama-3.1",
     )
 
     assert config.huggingface_config is not None
@@ -131,7 +129,7 @@ class LimitedPickler(pickle.Unpickler):
 
 def test_config_is_picklable(tmp_path):
     config = PipelineConfig(
-        huggingface_repo_id="modularai/llama-3.1",
+        model_path="modularai/llama-3.1",
     )
     assert config.huggingface_config is not None
 
@@ -165,13 +163,13 @@ def test_config__with_local_huggingface_repo():
     # Load pipeline config with downloaded_path.
     # This should not raise, as the path should be available locally.
     _ = PipelineConfig(
-        huggingface_repo_id=downloaded_path,
+        model_path=downloaded_path,
     )
 
 
 def test_config_post_init__other_repo_weights():
     config = PipelineConfig(
-        huggingface_repo_id="replit/replit-code-v1_5-3b",
+        model_path="replit/replit-code-v1_5-3b",
         trust_remote_code=True,
         weight_path=[
             Path("modularai/replit-code-1.5/replit-code-v1_5-3b-f32.gguf")
@@ -183,7 +181,7 @@ def test_config_post_init__other_repo_weights():
 
     # This example, should not set the _weights_repo_id.
     config = PipelineConfig(
-        huggingface_repo_id="modularai/llama-3.1",
+        model_path="modularai/llama-3.1",
         weight_path=[
             Path(
                 "SDK/integration-test/pipelines/python/llama3/testdata/tinyllama_f32.gguf"
