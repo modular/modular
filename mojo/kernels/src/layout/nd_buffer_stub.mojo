@@ -839,7 +839,7 @@ fn _copy_layout_tensor_to_nd_buffer[
                     alignment = alignof[SIMD[dtype, vec_width]](),
                 ](src_idx).cast[dtype]()
 
-                dst.data.store[alignment = alignof[SIMD[dtype, vec_width]](),](
+                dst.data.store[alignment = alignof[SIMD[dtype, vec_width]]()](
                     dst_idx, src_vec
                 )
 
@@ -949,7 +949,7 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
                     alignment = alignof[SIMD[dtype, vec_width]](),
                 ](src_idx).cast[dtype]()
 
-                dst.data.store[alignment = alignof[SIMD[dtype, vec_width]](),](
+                dst.data.store[alignment = alignof[SIMD[dtype, vec_width]]()](
                     dst_idx, src_vec
                 )
 
