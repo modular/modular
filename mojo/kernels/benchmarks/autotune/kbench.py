@@ -616,6 +616,7 @@ def run(
     yaml_path_list,
     output_path=None,
     mode=KBENCH_MODE.RUN,
+    use_experimental_kernels=False,
     param_list=None,
     shape=None,
     filter_list=None,
@@ -635,6 +636,9 @@ def run(
         spec.extend_params(param_list)
     if shape:
         spec.extend_shape_params(shape)
+
+    if use_experimental_kernels:
+        spec.extend_params(["USE_EXPERIMENTAL_KERNELS:1"])
 
     # Apply the filters, if any.
     if filter_list:
@@ -916,6 +920,12 @@ help_str = (
     help="Just measure the build time.",
 )
 @click.option(
+    "--use-experimental-kernels",
+    is_flag=True,
+    default=False,
+    help="If enabled, then experimental kernels are used.",
+)
+@click.option(
     "--param", default=(), help="Set extra params from CLI.", multiple=True
 )
 @click.option(
@@ -965,6 +975,7 @@ def cli(
     output_path,
     tune,
     build,
+    use_experimental_kernels,
     param,
     debug_level,
     optimization_level,
@@ -1015,6 +1026,7 @@ def cli(
                 yaml_path_list=FileGlobArg(files),
                 output_path=shape_path_list[i],
                 mode=mode,
+                use_experimental_kernels=use_experimental_kernels,
                 param_list=param,
                 shape=shape.params,
                 filter_list=filter,
