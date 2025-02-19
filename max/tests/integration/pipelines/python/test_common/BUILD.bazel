@@ -16,6 +16,7 @@ modular_py_library(
         ":distance_metrics",
         ":evaluate",
         ":evaluate_embeddings",
+        ":mocks",
         ":ndarray_from_tensor_type",
         ":numpy_encoder",
         ":path",
@@ -107,5 +108,20 @@ modular_py_library(
         requirement("pillow"),
         requirement("torch"),
         requirement("transformers"),
+    ],
+)
+
+modular_py_library(
+    name = "mocks",
+    srcs = [
+        "mocks/__init__.py",
+        "mocks/tokenizer.py",
+    ],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//SDK/lib/API/python/max/pipelines",
+        requirement("transformers"),
+        requirement("setuptools"),
     ],
 )
