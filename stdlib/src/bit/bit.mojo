@@ -81,7 +81,9 @@ fn count_trailing_zeros(val: Int) -> Int:
     Returns:
         The number of trailing zeros of the input.
     """
-    return llvm_intrinsic["llvm.cttz", Int, has_side_effect=False](val, False)
+    return llvm_intrinsic[
+        "llvm.cttz", __mlir_type.index, has_side_effect=False
+    ](val.value, False.value)
 
 
 @always_inline("nodebug")
@@ -105,9 +107,9 @@ fn count_trailing_zeros[
         trailing zeros at position `i` of the input value.
     """
     constrained[type.is_integral(), "must be integral"]()
-    return llvm_intrinsic["llvm.cttz", __type_of(val), has_side_effect=False](
-        val, False
-    )
+    return llvm_intrinsic[
+        "llvm.cttz", __type_of(val.value), has_side_effect=False
+    ](val.value, False.value)
 
 
 # ===-----------------------------------------------------------------------===#

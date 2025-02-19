@@ -20,6 +20,10 @@ what we publish.
 
 ### Language changes
 
+- The Mojo comptime interpreter can now handle many more LLVM intrinsics,
+   including ones that return floating point values.  This allows functions
+   like `round` to be constant folded when used in a comptime context.
+
 ### Standard library changes
 
 - A new `IntervalTree` data structure has been added to the standard library.
