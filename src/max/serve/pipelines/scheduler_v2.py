@@ -95,7 +95,11 @@ class TokenGenerationSchedulerConfig:
 
     # Enables chunked prefill, where the scheduler splits requests into chunks to
     # ensure each batch contains exactly `target_tokens_per_batch_ce` tokens.
-    enable_chunked_prefill: bool = False
+    enable_chunked_prefill: bool = True
+
+    # When enabled, prioritizes token generation by batching it with context
+    # encoding requests. Requires chunked prefill.
+    enable_in_flight_batching: bool = False
 
     def __post_init__(self) -> None:
         if (
@@ -110,6 +114,10 @@ class TokenGenerationSchedulerConfig:
             logger.info(
                 "Chunked prefill does not support multistep inference, overriding max_forward_steps_ce to 1."
             )
+
+        if self.enable_in_flight_batching and not self.enable_chunked_prefill:
+            msg = " Requires chunked prefill for in-flight batching."
+            raise ValueError(msg)
 
 
 class TokenGenerationSchedulerV2(Scheduler):
@@ -216,6 +224,12 @@ class TokenGenerationSchedulerV2(Scheduler):
 
         ce_batch: BatchInputs = {}
         total_seq_len = 0
+
+        if self.scheduler_config.enable_in_flight_batching:
+            if self.active_batch:
+                ce_batch = self._create_tg_batch()
+                total_seq_len += len(ce_batch)
+
         for _ in range(max_batch_size_to_create):
             try:
                 req_id, data = self.request_q.get_nowait()

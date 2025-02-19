@@ -58,6 +58,12 @@ class BatchQueueConfig:
     max_forward_steps: int = 1
     """Maximum number of forwards steps to schedule at a time."""
 
+    enable_chunked_prefill: bool = True
+    """Enable chunked prefill to splits requests into chunks."""
+
+    enable_in_flight_batching: bool = False
+    """Enable chunked prefill to prioritize token generation requests."""
+
     target_sum_seq_len: Optional[int] = None
     """Target sum of the sequence lengths in the batch."""
 

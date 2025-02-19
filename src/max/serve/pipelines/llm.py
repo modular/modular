@@ -77,6 +77,7 @@ class TokenGeneratorPipelineConfig:
         token_generation_config = BatchQueueConfig(
             strategy=BatchingStrategy.CONTINUOUS,
             size=batch_size,
+            enable_chunked_prefill=False,
         )
         config = cls(token_generation=token_generation_config)
         return config
@@ -94,6 +95,7 @@ class TokenGeneratorPipelineConfig:
             size=batch_size,
             timeout=batch_timeout,
             max_forward_steps=max_forward_steps,
+            enable_chunked_prefill=False,
         )
         config = cls(token_generation=token_generation_config)
         return config
@@ -106,6 +108,8 @@ class TokenGeneratorPipelineConfig:
         ce_batch_timeout=0.1,
         max_forward_steps=1,
         target_ce_batch_tokens=4096,
+        enable_chunked_prefill: bool = True,
+        enable_in_flight_batching: bool = False,
     ) -> TokenGeneratorPipelineConfig:
         """The continuous-hetrogenous config creates 2 queues.
         Context-encoding is done via dynamic batching.
@@ -116,6 +120,8 @@ class TokenGeneratorPipelineConfig:
             size=tg_batch_size,
             timeout=0.0,
             max_forward_steps=max_forward_steps,
+            enable_chunked_prefill=enable_chunked_prefill,
+            enable_in_flight_batching=enable_in_flight_batching,
         )
         context_encoding_config = BatchQueueConfig(
             strategy=BatchingStrategy.DYNAMIC,
@@ -137,6 +143,8 @@ class TokenGeneratorPipelineConfig:
         ce_batch_timeout: float = 0.1,
         max_forward_steps: int = 1,
         target_ce_batch_tokens: int = 4096,
+        enable_chunked_prefill: bool = True,
+        enable_in_flight_batching: bool = False,
     ) -> TokenGeneratorPipelineConfig:
         """The paged config creates 2 queues.
         Context-encoding is done via dynamic batching.
@@ -150,6 +158,8 @@ class TokenGeneratorPipelineConfig:
             ce_batch_timeout=ce_batch_timeout,
             max_forward_steps=max_forward_steps,
             target_ce_batch_tokens=target_ce_batch_tokens,
+            enable_chunked_prefill=enable_chunked_prefill,
+            enable_in_flight_batching=enable_in_flight_batching,
         )
 
 
@@ -422,6 +432,8 @@ def batch_config_from_pipeline_config(
             ce_batch_timeout=batch_timeout,
             max_forward_steps=pipeline_config.max_num_steps,
             target_ce_batch_tokens=target_ce_batch_tokens,
+            enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
+            enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
         )
     elif pipeline_config.cache_strategy == KVCacheStrategy.NAIVE:
         batch_config = TokenGeneratorPipelineConfig.dynamic_homogenous(
@@ -439,6 +451,8 @@ def batch_config_from_pipeline_config(
             ce_batch_timeout=batch_timeout,
             max_forward_steps=pipeline_config.max_num_steps,
             target_ce_batch_tokens=target_ce_batch_tokens,
+            enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
+            enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
         )
     else:
         raise ValueError(

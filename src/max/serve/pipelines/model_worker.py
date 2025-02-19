@@ -245,6 +245,10 @@ def _create_token_generation_scheduler(
     max_batch_size_tg = config.token_generation.size
     max_forward_steps_tg = config.token_generation.max_forward_steps
     target_tokens_per_batch_tg = config.token_generation.target_sum_seq_len
+    enable_chunked_prefill = config.token_generation.enable_chunked_prefill
+    enable_in_flight_batching = (
+        config.token_generation.enable_in_flight_batching
+    )
     if config.context_encoding:
         max_batch_size_ce = config.context_encoding.size
         max_forward_steps_ce = config.context_encoding.max_forward_steps
@@ -267,6 +271,8 @@ def _create_token_generation_scheduler(
         max_forward_steps_ce=max_forward_steps_ce,
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
         batch_timeout=batch_timeout,
+        enable_chunked_prefill=enable_chunked_prefill,
+        enable_in_flight_batching=enable_in_flight_batching,
     )
 
     # Get the paged kv cache manager if we are using one
