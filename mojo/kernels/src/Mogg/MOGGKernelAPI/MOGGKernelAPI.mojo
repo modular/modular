@@ -7144,6 +7144,7 @@ struct Struct_kv_collection_cow_strided_memcpy_paged:
         block_dst_idx: Scalar,
         block_src_idx: Scalar,
         num_tokens: Scalar,
+        ctx: MojoCallContextPtr,
     ):
         var shape = blocks.shape()
         var num_layers = shape[0]
@@ -7152,6 +7153,16 @@ struct Struct_kv_collection_cow_strided_memcpy_paged:
         var page_size = shape[3]
         var n_kv_heads_per_device = shape[4]
         var head_dim = shape[5]
+
+        debug_assert(
+            num_tokens < page_size, "num tokens is greater than page size"
+        )
+        debug_assert(
+            block_src_idx < total_num_pages, "src block index is out of range"
+        )
+        debug_assert(
+            block_dst_idx < total_num_pages, "dst block index is out of range"
+        )
 
         var strided_memcpy_shape = IndexList[5](
             Int(num_layers),
@@ -7198,7 +7209,7 @@ struct Struct_kv_collection_cow_strided_memcpy_paged:
             simd_width,
             use_blocking_impl=_synchronous,
             target=target,
-        ](strided_memcpy_shape)
+        ](strided_memcpy_shape, ctx)
 
 
 # ===-----------------------------------------------------------------------===#
