@@ -379,6 +379,86 @@ struct TensorCoreAsync[
 
     @staticmethod
     @always_inline
+    fn wgmma[
+        num_warp_groups: Int = 1
+    ](
+        a_frag: LayoutTensor[
+            a_type, _, address_space = AddressSpace.LOCAL, *_, **_
+        ],
+        b_smem_tile: LayoutTensor[
+            b_type, _, address_space = AddressSpace.SHARED, *_, **_
+        ],
+        c_reg_tile: LayoutTensor[
+            c_type, _, address_space = AddressSpace.LOCAL, *_, **_
+        ],
+        wg_idx: Int = 0,
+    ):
+        # alias a_smem_layout = a_smem_tile.layout
+        alias b_smem_layout = b_smem_tile.layout
+
+        # Layout modes are always (MN, K) transpose or not.
+        # Note that shape00 may not equal core matrix dim for MN-major layouts.
+        # TODO: use layout algebra like `tile_to_shape` here.
+        alias b_shape00 = b_smem_layout[0].shape[0].value()
+        alias b_stride01 = b_smem_layout[0].stride[1].value()
+        alias b_stride11 = b_smem_layout[1].stride[1].value()
+        # Strides between WGMMA tiles
+        # fmt: off
+        alias b_n_stride = b_stride01 * (mma_shape[1] // b_shape00) * sizeof[b_type]()
+        # fmt: on
+        # K dim is stepped by 2 core matrices.
+        alias b_k_stride = b_stride11 * 2 * sizeof[b_type]()
+
+        alias num_n_mmas = b_smem_layout[0].size() // mma_shape[1]
+        alias num_k_mmas = b_smem_layout[1].size() // mma_shape[2]
+        alias num_m_mmas = a_frag.layout[0].shape[0].value() // num_k_mmas
+
+        # Vectorize each wgmma's fragment size.
+        alias a_frag_size = mma_shape[0] * mma_shape[2] // 128
+        alias c_frag_size = mma_shape[0] * mma_shape[1] // 128
+        a_frags = a_frag.vectorize[1, a_frag_size]()
+        c_frags = c_reg_tile.vectorize[1, c_frag_size]()
+        constrained[
+            __type_of(c_frags).layout.size() == num_m_mmas * num_n_mmas,
+            String(
+                "C fragments' size: ",
+                __type_of(c_frags).layout.size(),
+                " doesn't match the total number of wgmma: ",
+                num_m_mmas * num_n_mmas,
+                ". a_frag.layout[0].shape[0].value() = ",
+                a_frag.layout[0].shape[0].value(),
+            ),
+        ]()
+
+        b_desc = _rhs_descriptor[mma_shape, transpose_b, b_swizzle](b_smem_tile)
+
+        @parameter
+        for m_mma in range(num_m_mmas):
+
+            @parameter
+            for n_mma in range(num_n_mmas):
+                alias mma_id = n_mma * num_m_mmas + m_mma
+
+                @parameter
+                for k_mma in range(num_k_mmas):
+                    # a_desc_m = a_desc + m_mma * a_m_stride + k_mma * a_k_stride
+                    b_desc_n = b_desc + n_mma * b_n_stride + k_mma * b_k_stride
+
+                    c_frags[mma_id, 0] = wgmma_async[
+                        mma_shape[0],
+                        mma_shape[1],
+                        mma_shape[2],
+                        a_type=a_type,
+                        b_type=b_type,
+                        layout_b= "col" if transpose_b else "row",
+                    ](
+                        a_frags[m_mma + k_mma * num_m_mmas, 0],
+                        b_desc_n,
+                        c_frags[mma_id, 0],
+                    )
+
+    @staticmethod
+    @always_inline
     fn arrive():
         wgmma_fence_aligned()
 
