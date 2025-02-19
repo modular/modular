@@ -98,7 +98,7 @@ def execute_kv_cache_ragged_rope[
     var q_device = q_host.copy_to_device(ctx)
     var output_device = q_host.copy_to_device(ctx)
 
-    var kv_block_device = DeviceNDBuffer[dtype, 6,](
+    var kv_block_device = DeviceNDBuffer[dtype, 6](
         IndexList[6](
             num_blocks,
             2,
@@ -110,7 +110,7 @@ def execute_kv_cache_ragged_rope[
         ctx=ctx,
     )
 
-    var lookup_table_host = HostNDBuffer[DType.uint32, 1,](
+    var lookup_table_host = HostNDBuffer[DType.uint32, 1](
         IndexList[1](
             batch_size,
         ),
