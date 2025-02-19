@@ -2360,8 +2360,9 @@ fn copy_dram_to_sram[
     ]()
 
     constrained[
-        src.address_space == _GPUAddressSpace.GENERIC,
-        "src address space must be GENERIC.",
+        src.address_space
+        in (_GPUAddressSpace.GENERIC, _GPUAddressSpace.GLOBAL),
+        "src address space must be GENERIC or GLOBAL.",
     ]()
 
     constrained[
@@ -2476,8 +2477,9 @@ fn copy_dram_to_sram_async[
     num_threads: Int = src_thread_layout.size(),
 ](dst: LayoutTensor, src: LayoutTensor):
     constrained[
-        src.address_space == _GPUAddressSpace.GENERIC,
-        "src address space must be GENERIC.",
+        src.address_space
+        in (_GPUAddressSpace.GENERIC, _GPUAddressSpace.GLOBAL),
+        "src address space must be GENERIC or GLOBAL.",
     ]()
 
     constrained[
@@ -2613,8 +2615,9 @@ fn copy_sram_to_dram[
     binary_op: OptionalReg[binary_op_type] = None,
 ](dst: LayoutTensor, src: LayoutTensor):
     constrained[
-        dst.address_space == _GPUAddressSpace.GENERIC,
-        "dst address space must be GENERIC.",
+        dst.address_space
+        in (_GPUAddressSpace.GENERIC, _GPUAddressSpace.GLOBAL),
+        "dst address space must be GENERIC or GLOBAL.",
     ]()
 
     constrained[
@@ -2805,8 +2808,9 @@ fn copy_local_to_dram[
     ]()
 
     constrained[
-        dst.address_space == _GPUAddressSpace.GENERIC,
-        "dst address space must be GENERIC.",
+        dst.address_space
+        in (_GPUAddressSpace.GENERIC, _GPUAddressSpace.GLOBAL),
+        "dst address space must be GENERIC or GLOBAL.",
     ]()
 
     var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
