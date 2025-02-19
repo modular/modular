@@ -31,7 +31,7 @@ from transformers import AutoTokenizer
 def get_default_replit_config(use_cpu: bool) -> PipelineConfig:
     pipeline_config = PipelineConfig(
         architecture="MPTForCausalLM",
-        huggingface_repo_id="modularai/replit-code-1.5",
+        model_path="modularai/replit-code-1.5",
         trust_remote_code=True,
         device_specs=[
             DeviceSpec(id=0, device_type="cpu")
@@ -49,8 +49,8 @@ def get_default_replit_config(use_cpu: bool) -> PipelineConfig:
 def get_default_llama31_config(use_cpu: bool) -> PipelineConfig:
     return PipelineConfig(
         architecture="LlamaForCausalLM",
-        # huggingface_repo_id="meta-llama/Meta-Llama-3.1-8B-Instruct",
-        huggingface_repo_id="modularai/llama-3.1",
+        # model_path="meta-llama/Meta-Llama-3.1-8B-Instruct",
+        model_path="modularai/llama-3.1",
         device_specs=[
             DeviceSpec(id=0, device_type="cpu")
             if use_cpu
@@ -106,7 +106,7 @@ def serve(
             # Doesn't work!
             model_name = "echo"
             pipeline_config = PipelineConfig(
-                huggingface_repo_id="modularai/llama-3.1",
+                model_path="modularai/llama-3.1",
             )
             fake_model_factory = functools.partial(
                 PerformanceFakingTokenGenerator,

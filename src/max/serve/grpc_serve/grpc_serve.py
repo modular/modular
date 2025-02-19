@@ -352,7 +352,7 @@ async def grpc_serve(
     reflection.enable_server_reflection(SERVICE_NAMES, server)
 
     tokenizer = TextTokenizer(
-        pipeline_config.huggingface_repo_id,
+        pipeline_config.model_path,
         pipeline_config.max_length,
         pipeline_config.max_new_tokens,
         pipeline_config.trust_remote_code,
