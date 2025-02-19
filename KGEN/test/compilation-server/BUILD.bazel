@@ -2,12 +2,7 @@ load("//bazel:api.bzl", "lit_tests")
 
 lit_tests(
     name = "compilation-server",
-    srcs = glob(
-        ["**/*.test"],
-        exclude = [
-            "definition.test",  # TODO: Debug and enable
-        ],
-    ),
+    srcs = glob(["**/*.test"]),
     mojo_deps = [
         "//open-source/mojo/stdlib/stdlib",
     ],
