@@ -180,7 +180,7 @@ fn multistage_mma_q[
     fn _copy_tensor_to_sram[
         thread_layout: Layout, swizzle: Bool
     ](dst: LayoutTensor, src: LayoutTensor,):
-        copy_dram_to_sram_async[thread_layout=thread_layout, swizzle=swizzle,](
+        copy_dram_to_sram_async[thread_layout=thread_layout, swizzle=swizzle](
             dst.vectorize[1, simd_size](),
             src.vectorize[1, simd_size](),
         )
@@ -491,13 +491,13 @@ fn multistage_qgemm_kernel[
     alias scales_type = DType.bfloat16
     alias b_type = DType.uint32
     alias b_weight_layout = Layout.row_major(N // 64, K * 64 // pack_factor)
-    var b = LayoutTensor[b_type, b_weight_layout,](
+    var b = LayoutTensor[b_type, b_weight_layout](
         b_packed.ptr.bitcast[Scalar[b_type]](),
     )
 
     alias b_scales_layout = Layout.row_major(K // group_size, N)
     var b_scales_ptr = b_packed.ptr + N * K // 2
-    var scales = LayoutTensor[scales_type, b_scales_layout,](
+    var scales = LayoutTensor[scales_type, b_scales_layout](
         b_scales_ptr.bitcast[Scalar[scales_type]](),
     )
 
@@ -974,14 +974,14 @@ fn repack_Q4_0_for_sm8x[
             IntTuple(1, 128),
         ),
     )
-    var repack_weights = LayoutTensor[DType.uint32, repacked_b_layout,](
+    var repack_weights = LayoutTensor[DType.uint32, repacked_b_layout](
         q_packed_weight.ptr.bitcast[Scalar[DType.uint32]](),
         RuntimeLayout[repacked_b_layout](),
     )
 
     alias b_scales_layout = Layout.row_major(K_groups, N)
     var b_scales_ptr = q_packed_weight.ptr + N * K // 2
-    var repack_scales = LayoutTensor[scales_type, b_scales_layout,](
+    var repack_scales = LayoutTensor[scales_type, b_scales_layout](
         b_scales_ptr.bitcast[Scalar[scales_type]](),
         RuntimeLayout[b_scales_layout](),
     )
@@ -1026,7 +1026,7 @@ fn repack_Q4_0_for_sm8x[
     # frag_1 stores frags of the second,
     for i in range(ceildiv(BK_groups, 2)):
         barrier()
-        copy_dram_to_sram[thread_layout = Layout.row_major(128, 1),](
+        copy_dram_to_sram[thread_layout = Layout.row_major(128, 1)](
             qb_smem.vectorize[1, 4](),
             q_gmem_iter[]
             .bitcast[DType.uint8, address_space = AddressSpace.GENERIC]()
@@ -1151,13 +1151,13 @@ fn repack_GPTQ_for_sm8x[
 
     # Define 4-bit weights and scales for the raw input
     alias raw_weights_layout = Layout.row_major(uint_K, N)
-    var raw_weights = LayoutTensor[DType.uint32, raw_weights_layout,](
+    var raw_weights = LayoutTensor[DType.uint32, raw_weights_layout](
         in_tensor.ptr.bitcast[Scalar[DType.uint32]](),
         RuntimeLayout[raw_weights_layout](),
     ).transpose()
     alias raw_scales_layout = Layout.row_major(K_groups, N)
     var raw_scales_ptr = in_tensor.ptr + N * K // 2
-    var raw_scales = LayoutTensor[raw_scales_type, raw_scales_layout,](
+    var raw_scales = LayoutTensor[raw_scales_type, raw_scales_layout](
         raw_scales_ptr.bitcast[Scalar[raw_scales_type]](),
         RuntimeLayout[raw_scales_layout](),
     ).transpose()
@@ -1173,13 +1173,13 @@ fn repack_GPTQ_for_sm8x[
             IntTuple(1, 128),
         ),
     )
-    var repack_weights = LayoutTensor[DType.uint32, repacked_weights_layout,](
+    var repack_weights = LayoutTensor[DType.uint32, repacked_weights_layout](
         out_tensor.ptr.bitcast[Scalar[DType.uint32]](),
         RuntimeLayout[repacked_weights_layout](),
     )
     alias repacked_scales_layout = Layout.row_major(K_groups, N)
     var repacked_scales_ptr = out_tensor.ptr + N * K // 2
-    var repack_scales = LayoutTensor[scales_type, repacked_scales_layout,](
+    var repack_scales = LayoutTensor[scales_type, repacked_scales_layout](
         repacked_scales_ptr.bitcast[Scalar[scales_type]](),
         RuntimeLayout[repacked_scales_layout](),
     )
@@ -1241,7 +1241,7 @@ fn repack_GPTQ_for_sm8x[
             pass
         else:
             barrier()
-            copy_dram_to_sram[thread_layout = Layout.row_major(128, 1),](
+            copy_dram_to_sram[thread_layout = Layout.row_major(128, 1)](
                 weights_smem_uint4.vectorize[1, 1](),
                 raw_weights_gmem_iter[].vectorize[1, 1](),
             )
