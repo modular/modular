@@ -5,12 +5,7 @@ load("//bazel:api.bzl", "modular_py_test")
 modular_py_test(
     name = "tests",
     size = "large",
-    srcs = glob(
-        [
-            "**/*.py",
-        ],
-        exclude = ["**/*_gpu.py"],
-    ),
+    srcs = glob(["**/*.py"]),
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",

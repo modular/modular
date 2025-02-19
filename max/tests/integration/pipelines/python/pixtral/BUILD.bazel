@@ -9,12 +9,7 @@ load(
 modular_py_test(
     name = "pixtral",
     size = "large",
-    srcs = glob(
-        ["**/test_*.py"],
-        exclude = [
-            "**/*_gpu.py",
-        ],
-    ),
+    srcs = glob(["**/test_*.py"]),
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
