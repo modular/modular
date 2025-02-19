@@ -20,6 +20,7 @@ from gpu import (
 )
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace, external_memory
+from memory.pointer import AddressSpace as _AddressSpace
 from layout import Layout, LayoutTensor, IntTuple
 from layout.layout_tensor import (
     copy_dram_to_sram,
@@ -53,12 +54,9 @@ fn gemm_kernel[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout],
-    a: LayoutTensor[a_type, a_layout],
-    b: LayoutTensor[b_type, b_layout],
-    locks: UnsafePointer[
-        Scalar[DType.int32]
-    ],  # this is required for compatibility with multistage_gemm
+    c: LayoutTensor[c_type, c_layout, address_space = AddressSpace.GLOBAL],
+    a: LayoutTensor[a_type, a_layout, address_space = AddressSpace.GLOBAL],
+    b: LayoutTensor[b_type, b_layout, address_space = AddressSpace.GLOBAL],
 ):
     constrained[transpose_b, "Transpose b must be true"]()
     constrained[

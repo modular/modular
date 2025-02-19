@@ -1853,40 +1853,53 @@ fn multistage_gemm[
             return
 
     # Dispatch w/o split K
-    alias gemm_kernel_type = amd_gemm_kernel[
-        c_type,
-        tensor_c.layout,
-        a_type,
-        tensor_a.layout,
-        b_type,
-        tensor_b.layout,
-        transpose_b,
-        config,
-        elementwise_lambda_fn,
-    ] if (
-        has_amd_gpu_accelerator()
-        and transpose_b  # fallback to multistage_gemm_kernel if transpose_b is false
-    ) else multistage_gemm_kernel[
-        c_type,
-        tensor_c.layout,
-        a_type,
-        tensor_a.layout,
-        b_type,
-        tensor_b.layout,
-        transpose_b,
-        config,
-        elementwise_lambda_fn,
-    ]
+    @parameter
+    if has_amd_gpu_accelerator() and transpose_b:
+        alias gemm_kernel_type = amd_gemm_kernel[
+            c_type,
+            tensor_c.layout,
+            a_type,
+            tensor_a.layout,
+            b_type,
+            tensor_b.layout,
+            transpose_b,
+            config,
+            elementwise_lambda_fn,
+        ]
+        ctx.enqueue_function[gemm_kernel_type](
+            tensor_c,
+            tensor_a,
+            tensor_b,
+            grid_dim=runtime_config.grid_dim(M, N),
+            block_dim=runtime_config.block_dim(),
+            shared_mem_bytes=runtime_config.shared_mem_usage(),
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                config.shared_mem_usage()
+            ),
+        )
 
-    ctx.enqueue_function[gemm_kernel_type](
-        tensor_c,
-        tensor_a,
-        tensor_b,
-        UnsafePointer[Scalar[DType.int32]](),
-        grid_dim=runtime_config.grid_dim(M, N),
-        block_dim=runtime_config.block_dim(),
-        shared_mem_bytes=runtime_config.shared_mem_usage(),
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            config.shared_mem_usage()
-        ),
-    )
+    else:
+        alias gemm_kernel_type = multistage_gemm_kernel[
+            c_type,
+            tensor_c.layout,
+            a_type,
+            tensor_a.layout,
+            b_type,
+            tensor_b.layout,
+            transpose_b,
+            config,
+            elementwise_lambda_fn,
+        ]
+
+        ctx.enqueue_function[gemm_kernel_type](
+            tensor_c,
+            tensor_a,
+            tensor_b,
+            UnsafePointer[Scalar[DType.int32]](),
+            grid_dim=runtime_config.grid_dim(M, N),
+            block_dim=runtime_config.block_dim(),
+            shared_mem_bytes=runtime_config.shared_mem_usage(),
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                config.shared_mem_usage()
+            ),
+        )

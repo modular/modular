@@ -283,6 +283,7 @@ struct MatmulKernels[
         num_pipeline_stages=3,
     )
 
+    # TODO: These will have to be tuned for various shapes
     alias mi300x_128x128_1 = MatmulConfig[a_type, b_type, c_type, transpose_b](
         block_tile_shape=Index(128, 128, 64),
         warp_tile_shape=Index(64, 64, 64),
