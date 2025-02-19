@@ -440,7 +440,7 @@ struct VariadicListMem[
 
     fn __iter__(
         self,
-    ) -> _VariadicListMemIter[element_type, origin, __origin_of(self),]:
+    ) -> _VariadicListMemIter[element_type, origin, __origin_of(self)]:
         """Iterate over the list.
 
         Returns:
