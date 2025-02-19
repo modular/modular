@@ -558,7 +558,7 @@ fn listValues():
   # CHECK: %[[LIST:.*]] = lit.call {{.*}}@ListLiteral::@"__init__{{.*}}(%a
   var a = [1, 2, 2+1]
   # CHECK: %[[LIST:.*]] = lit.call {{.*}}@ListLiteral::@"__init__{{.*}}(%a
-  a = [1, 2, 2+1,]
+  a = [1, 2, 2+1]
   # CHECK: %[[LIST:.*]] = lit.call {{.*}}@ListLiteral::@"__init__{{.*}}(%a
   a = [1, 2, 2+1]
   # CHECK: %[[LIST:.*]] = lit.call {{.*}}@ListLiteral::@"__init__{{.*}}({{.*}}, %b)
