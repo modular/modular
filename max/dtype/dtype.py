@@ -90,16 +90,13 @@ class DType(Enum):
         return _DTYPE_TO_MLIR[self]
 
     def to_numpy(self) -> np.dtype:
-        """Converts a NumPy dtype to the corresponding DType.
-
-        Args:
-            dtype (np.dtype): The NumPy dtype to convert.
+        """Converts this ``DType`` to the corresponding NumPy dtype.
 
         Returns:
-            DType: The corresponding DType enum value.
+            DType: The corresponding NumPy dtype object.
 
         Raises:
-            ValueError: If the input dtype is not supported.
+            ValueError: If the dtype is not supported.
         """
         dtype_to_numpy: dict[DType, np.dtype] = {
             DType.bool: np.dtype(np.bool_),
