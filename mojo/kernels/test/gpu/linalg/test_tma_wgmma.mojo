@@ -25,7 +25,6 @@ from gpu.mma import (
 from layout import IntTuple, Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from layout.fillers import arange
-from layout.int_tuple import to_int
 from layout.layout import print_layout
 from layout.layout_tensor import copy_local_to_dram
 from layout.tensor_core import get_accum_type
