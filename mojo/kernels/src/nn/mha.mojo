@@ -1432,7 +1432,7 @@ fn mha_single_batch[
     )
     var q_tile_num_rows = min(BM, UInt(seq_len) - q_tile_idx * BM)
     var q_offset = depth * (head_idx + num_heads * q_tile_idx * BM)
-    var q_gmem_block = LayoutTensor[q_type, q_gmem_layout, masked=True,](
+    var q_gmem_block = LayoutTensor[q_type, q_gmem_layout, masked=True](
         q_ptr + Int(q_offset),
         RuntimeLayout(
             RuntimeTuple[q_gmem_layout.shape, unsigned=True](
@@ -2156,7 +2156,7 @@ fn mha_single_batch_pipelined[
     )
     var q_tile_num_rows = min(BM, UInt(seq_len) - q_tile_idx * BM)
     var q_offset = depth * (head_idx + num_heads * q_tile_idx * BM)
-    var q_gmem_block = LayoutTensor[q_type, q_gmem_layout, masked=True,](
+    var q_gmem_block = LayoutTensor[q_type, q_gmem_layout, masked=True](
         q_ptr + Int(q_offset),
         RuntimeLayout(
             RuntimeTuple[q_gmem_layout.shape, unsigned=True](

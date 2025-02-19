@@ -232,7 +232,7 @@ def test_load_store[
     var a = stack_allocation[num_rows * row_size, type]()
 
     # A: [[ 4x0.0, 4x1.0, -1.0],
-    #     [ 4x1.0, 4x2.0, -1.0],]
+    #     [ 4x1.0, 4x2.0, -1.0]]
     @parameter
     for i in range(num_rows):
 
@@ -269,7 +269,7 @@ def test_load_store[
     )
 
     # Update A: [[ 4x1.0, 4x1.0, -1.0],
-    #            [ 4x1.0, 4x1.0, -1.0],]
+    #            [ 4x1.0, 4x1.0, -1.0]]
     tile0[0, 0] = one_vec
     tile0[1, 1] = one_vec
     tile0.store(a, row_size)
@@ -300,7 +300,7 @@ def test_load_store[
     simd_insert(tile1[1, 2], residual_vec1)
 
     # Update A: [[ 4x1.0, 4x1.0, -2.0],
-    #            [ 4x1.0, 4x1.0, -2.0],]
+    #            [ 4x1.0, 4x1.0, -2.0]]
     tile1.store[partial_store=True](a, row_size, residual)
 
     assert_equal(a.load[width=residual](row_size - residual), residual_vec1)

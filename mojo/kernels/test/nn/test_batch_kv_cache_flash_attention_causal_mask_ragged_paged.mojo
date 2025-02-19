@@ -108,7 +108,7 @@ def execute_ragged_flash_attention[
     ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
 
     # initialize our KVCache
-    kv_block_continuous = HostNDBuffer[type, 6,](
+    kv_block_continuous = HostNDBuffer[type, 6](
         IndexList[6](
             num_continuous_blocks,
             2,
@@ -120,7 +120,7 @@ def execute_ragged_flash_attention[
     )
 
     random(kv_block_continuous.tensor)
-    var lookup_table_continuous = HostNDBuffer[DType.uint32, 1,](
+    var lookup_table_continuous = HostNDBuffer[DType.uint32, 1](
         IndexList[1](
             batch_size,
         ),

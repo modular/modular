@@ -61,7 +61,7 @@ fn main():
         var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data, output_shape
         )
-        _gather_nd_impl[batch_dims,](
+        _gather_nd_impl[batch_dims](
             data.make_dims_unknown(),
             indices.make_dims_unknown(),
             output_data_buffer,
@@ -107,7 +107,7 @@ fn main():
         var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data, output_shape
         )
-        _gather_nd_impl[batch_dims,](
+        _gather_nd_impl[batch_dims](
             data.make_dims_unknown(),
             indices.make_dims_unknown(),
             output_data_buffer,
@@ -166,7 +166,7 @@ fn main():
         var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data, output_shape
         )
-        _gather_nd_impl[batch_dims,](
+        _gather_nd_impl[batch_dims](
             data.make_dims_unknown(),
             indices.make_dims_unknown(),
             output_data_buffer,
@@ -225,7 +225,7 @@ fn main():
         var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data, output_shape
         )
-        _gather_nd_impl[batch_dims,](
+        _gather_nd_impl[batch_dims](
             data.make_dims_unknown(),
             indices.make_dims_unknown(),
             output_data_buffer,
@@ -282,7 +282,7 @@ fn main():
         var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data, output_shape
         )
-        _gather_nd_impl[batch_dims,](
+        _gather_nd_impl[batch_dims](
             data.make_dims_unknown(),
             indices.make_dims_unknown(),
             output_data_buffer,
@@ -364,7 +364,7 @@ fn main():
         var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data, output_shape
         )
-        _gather_nd_impl[batch_dims,](
+        _gather_nd_impl[batch_dims](
             data.make_dims_unknown(),
             indices.make_dims_unknown(),
             output_data_buffer,
@@ -425,7 +425,7 @@ fn main():
         var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data, output_shape
         )
-        _gather_nd_impl[batch_dims,](
+        _gather_nd_impl[batch_dims](
             data.make_dims_unknown(),
             indices.make_dims_unknown(),
             output_data_buffer,
@@ -489,7 +489,7 @@ fn main():
         var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data, output_shape
         )
-        _gather_nd_impl[batch_dims,](
+        _gather_nd_impl[batch_dims](
             data.make_dims_unknown(),
             indices.make_dims_unknown(),
             output_data_buffer,

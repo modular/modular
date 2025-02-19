@@ -22,7 +22,7 @@ fn test_case_nearest[
     round_mode: RoundMode,
     type: DType,
 ](input: TestTensor[type, rank], output: TestTensor[type, rank]):
-    resize_nearest_neighbor[coord_transform, round_mode,](
+    resize_nearest_neighbor[coord_transform, round_mode](
         input.ndbuffer,
         output.ndbuffer,
     )

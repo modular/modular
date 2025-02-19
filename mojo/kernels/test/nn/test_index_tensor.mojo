@@ -109,7 +109,7 @@ fn test_index_tensor_DLRM() raises:
         output_data_data, output_shape
     )
 
-    _index_tensor_1d[batch_dims,](
+    _index_tensor_1d[batch_dims](
         input.make_dims_unknown(),
         indices.make_dims_unknown(),
         output_data_buffer,
@@ -220,7 +220,7 @@ fn test_index_tensor_DLRM_batch() raises:
         output_data_data, output_shape
     )
 
-    _index_tensor_impl[batch_dims,](
+    _index_tensor_impl[batch_dims](
         input.make_dims_unknown(),
         indices.make_dims_unknown(),
         output_data_buffer,
