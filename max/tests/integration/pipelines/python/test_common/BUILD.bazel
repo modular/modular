@@ -115,6 +115,7 @@ modular_py_library(
     name = "mocks",
     srcs = [
         "mocks/__init__.py",
+        "mocks/pipeline_model.py",
         "mocks/tokenizer.py",
     ],
     imports = [".."],
