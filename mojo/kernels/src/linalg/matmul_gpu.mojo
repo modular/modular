@@ -108,21 +108,21 @@ fn __nvvm_ldg_f4[type: DType](x: UnsafePointer[Scalar[type]]) -> SIMD[type, 4]:
         return bitcast[type, 4](
             llvm_intrinsic[
                 "llvm.nvvm.ldg.global.f.v4f32.p0v4f32", SIMD[DType.float32, 4]
-            ](x.bitcast[Scalar[DType.float32]](), alignment)
+            ](x.bitcast[Float32](), alignment)
         )
     elif type == DType.bfloat16:
         return bitcast[type, 4](
             llvm_intrinsic[
                 "llvm.nvvm.ldg.global.f.v4bf16.p0v4bf16",
                 SIMD[DType.bfloat16, 4],
-            ](x.bitcast[Scalar[DType.bfloat16]](), alignment)
+            ](x.bitcast[BFloat16](), alignment)
         )
     elif type == DType.float16:
         return bitcast[type, 4](
             llvm_intrinsic[
                 "llvm.nvvm.ldg.global.f.v4f16.p0v4f16",
                 SIMD[DType.float16, 4],
-            ](x.bitcast[Scalar[DType.float16]](), alignment)
+            ](x.bitcast[Float16](), alignment)
         )
     else:
         constrained[False, "Unhandled DType"]()

@@ -303,8 +303,8 @@ fn _cublas_matmul[
     var N = c.dim[1]()
     var K = a.dim[1]() if not transpose_a else a.dim[0]()
 
-    var alpha = Scalar[DType.float32](1.0)
-    var beta = Scalar[DType.float32](0.0)
+    var alpha = Float32(1.0)
+    var beta = Float32(0.0)
 
     var compute_type: ComputeType
 
@@ -411,8 +411,8 @@ fn _rocblas_matmul[
     var N = c.dim[1]()
     var K = a.dim[1]() if not transpose_a else a.dim[0]()
 
-    var alpha = Scalar[DType.float32](1.0)
-    var beta = Scalar[DType.float32](0.0)
+    var alpha = Float32(1.0)
+    var beta = Float32(0.0)
 
     var compute_type = _rocblas.types.DataType(DType.float32)
 
@@ -570,8 +570,8 @@ fn _cublasLt_matmul(
     var transa = cublasOperation_t.CUBLAS_OP_T
     var transb = cublasOperation_t.CUBLAS_OP_N
 
-    var alpha = Scalar[DType.float32](1.0)
-    var beta = Scalar[DType.float32](0.0)
+    var alpha = Float32(1.0)
+    var beta = Float32(0.0)
 
     # create operation desciriptor; see cublasLtMatmulDescAttributes_t for details about defaults;
     var operationDesc = cublasLtMatmulDesc_t()
