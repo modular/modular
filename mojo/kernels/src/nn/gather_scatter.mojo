@@ -29,6 +29,20 @@ from .reshape import reshape
 
 
 @always_inline
+fn normalize_neg_index(idx: Int, dim_size: Int) -> Int:
+    """Indices passed to gather and scatter ops may be negative. This performs
+    a normalization so that they can be used to index into a buffer.
+
+    Returns val + dim if val < 0 else val
+    """
+    debug_assert(
+        -dim_size <= idx < dim_size,
+        "indices must be in range [-dim_size, dim_size)",
+    )
+    return idx + dim_size if idx < 0 else idx
+
+
+@always_inline
 fn normalize_neg_index[
     type: DType, width: Int, out_type: DType = DType.index
 ](idx: SIMD[type, width], dim_size: Int) -> SIMD[out_type, width]:
@@ -1188,14 +1202,14 @@ fn scatter_elements[
 fn scatter_elements_shape[
     rank: Int,
     input_type: DType,
-    indices_type: DType,
-    axis_type: DType,
+    indices_type: DType, //,
+    *,
     single_thread_blocking_override: Bool,
 ](
     input: NDBuffer[input_type, rank],
     updates: NDBuffer[input_type, rank],
     indices: NDBuffer[indices_type, rank],
-    axis: NDBuffer[axis_type, 1],
+    axis: Int,
 ) raises -> IndexList[rank]:
     """
     Compute the output shape of a `scatter_elements` operation, and assert the
@@ -1205,7 +1219,6 @@ fn scatter_elements_shape[
         rank: Rank of the input tensor.
         input_type: Type of the input tensor.
         indices_type: Type of the indices tensor.
-        axis_type: Type of the axis tensor.
         single_thread_blocking_override: If True, then the operation is run
           synchronously using a single thread.
 
@@ -1213,20 +1226,14 @@ fn scatter_elements_shape[
         input: The input tensor.
         updates: The input tensor.
         indices: The indices tensor.
-        axis: The axis tensor.
+        axis: The axis.
 
     Returns:
         The output shape.
     """
 
     # Normalize and check axis
-    var axis_int = Int(axis[0])
-    if axis_int < 0:
-        axis_int += rank
-    if axis_int < 0 or rank <= axis_int:
-        raise Error(
-            "[scatter] normalized axis must be within range [0, input_rank)"
-        )
+    _ = normalize_neg_index(axis, rank)
 
     # Check individual dimensions
     @parameter
