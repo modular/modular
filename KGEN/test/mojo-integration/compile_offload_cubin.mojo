@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # REQUIRES: NVIDIA-GPU
+# UNSUPPORTED: asan
 # RUN: %mojo -O0 %s -o %t.cubin
 # RUN: file /usr/local/cuda/bin/nvdisasm && (/usr/local/cuda/bin/nvdisasm %t.cubin | FileCheck %s)
 

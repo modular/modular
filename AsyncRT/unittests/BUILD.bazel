@@ -69,6 +69,10 @@ modular_cc_test(
         "A100",
         "gpu",
     ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":TestUtils",
         "//AsyncRT:DeviceContextImpl",
