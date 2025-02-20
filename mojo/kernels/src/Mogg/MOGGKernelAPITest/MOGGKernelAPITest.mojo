@@ -10,7 +10,6 @@ import compiler_internal as compiler
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from compiler_internal import StaticTensorSpec
-from linalg.matmul import matmul as _matmul
 from runtime.asyncrt import DeviceContextPtr, MojoCallContextPtr
 from tensor import (
     ManagedTensorSlice,
@@ -27,6 +26,7 @@ from tensor_internal import (
 from tensor_internal import IOUnknown
 
 from utils import IndexList, StaticTuple
+from collections import Optional
 
 
 # TODO(MOCO-1413): remove this need to keep imported exported funcs alive.
@@ -205,6 +205,33 @@ fn toNDBuffer[
     )
 
 
+fn _matmul[
+    elementwise_lambda_fn: Optional[
+        fn[
+            type: DType, width: Int, *, alignment: Int = 1
+        ] (IndexList[2], SIMD[type, width]) capturing -> None
+    ] = None,
+](c: ManagedTensorSlice, a: ManagedTensorSlice, b: ManagedTensorSlice) raises:
+    var m = a.dim_size(0)
+    var n = a.dim_size(1)
+    var k = b.dim_size(1)
+
+    for i in range(m):
+        for j in range(n):
+            var c_val = Scalar[c.type](0)
+            for l in range(k):
+                var a_val = a.load[1](IndexList[2](i, l)).cast[c.type]()
+                var b_val = b.load[1](IndexList[2](l, j)).cast[c.type]()
+                c_val += a_val * b_val
+
+            @parameter
+            if elementwise_lambda_fn:
+                alias func = elementwise_lambda_fn.value()
+                func(IndexList[2](i, j), c_val)
+            else:
+                c.store[1](IndexList[2](i, j), c_val)
+
+
 # c = a @ b, should support CPU and GPU
 @compiler.register("imposter_matmul")
 struct ImposterMatmul:
@@ -218,29 +245,7 @@ struct ImposterMatmul:
         b: ManagedTensorSlice,
         ctx: MojoCallContextPtr,
     ) raises:
-        alias rank = a.rank
-        alias a_dtype = a.type
-        alias b_dtype = b.type
-        alias c_dtype = c.type
-
-        # Convert everything to NDBuffer
-        var c_buffer = toNDBuffer[c_dtype, 2](c)
-        var a_buffer = toNDBuffer[a_dtype, 2](a)
-        var b_buffer = toNDBuffer[b_dtype, 2](b)
-        _matmul[
-            False,
-            False,
-            False,
-            None,
-            saturated_vnni=False,
-            single_thread_blocking_override=_synchronous,
-            target=target,
-        ](
-            c_buffer,
-            a_buffer,
-            b_buffer,
-            ctx,
-        )
+        _matmul(c, a, b)
 
     @staticmethod
     fn shape(
@@ -427,20 +432,7 @@ struct MatmulFuseOut:
 
         print("lambdas_have_fusion =", lambdas_have_fusion)
 
-        _matmul[
-            False,
-            False,
-            False,
-            elementwise_lambda_fn=out_func,
-            saturated_vnni=False,
-            single_thread_blocking_override=_synchronous,
-            target=target,
-        ](
-            c_buffer,
-            a_buffer,
-            b_buffer,
-            ctx,
-        )
+        _matmul[elementwise_lambda_fn=out_func](c, a, b)
 
     @staticmethod
     fn shape(
