@@ -10,8 +10,9 @@
 from math import ceildiv
 
 from gpu import WARP_SIZE
+import gpu.warp as warp
 from gpu.host import DeviceContext
-from linalg.gemv import ReductionMethod, gemv_kernel
+from linalg.gemv import gemv_kernel
 from linalg.matmul_gpu import matmul_kernel_naive
 from memory import UnsafePointer
 
@@ -19,7 +20,7 @@ from utils.numerics import isnan
 
 
 fn run_matvec[
-    reduction_method: ReductionMethod
+    reduction_method: warp.ReductionMethod
 ](M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     print("== run_matvec kernel")
 
@@ -167,9 +168,9 @@ fn run_matvec[
 
 def main():
     with DeviceContext() as ctx:
-        run_matvec[reduction_method = ReductionMethod.WARP](
+        run_matvec[reduction_method = warp.ReductionMethod.WARP](
             4096, 1, 4096, ctx=ctx
         )
-        run_matvec[reduction_method = ReductionMethod.TENSOR_CORE](
+        run_matvec[reduction_method = warp.ReductionMethod.TENSOR_CORE](
             4096, 1, 4096, ctx=ctx
         )

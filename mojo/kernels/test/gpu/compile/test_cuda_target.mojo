@@ -19,11 +19,9 @@ from gpu import (
     block_idx,
     global_idx,
     lane_id,
-    shuffle_down,
-    shuffle_up,
-    shuffle_xor,
     thread_idx,
 )
+import gpu.warp as warp
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.memory import AddressSpace
@@ -360,66 +358,66 @@ def test_gemm_sm90():
 # ===-----------------------------------------------------------------------===#
 
 
-fn test_shuffle_up(val: Float32) -> Float32:
+fn test_warp_shuffle_up(val: Float32) -> Float32:
     var res = val
 
     alias limit = log2_floor(WARP_SIZE)
 
     @parameter
     for mask in reversed(range(limit)):
-        res += shuffle_up(res, 1 << mask)
+        res += warp.shuffle_up(res, 1 << mask)
     return res
 
 
 @always_inline
-fn _verify_shuffle_up(asm: String) raises -> None:
-    assert_true("test_shuffle_" in asm)
+fn _verify_warp_shuffle_up(asm: String) raises -> None:
+    assert_true("test_warp_shuf" in asm)
     assert_true("shfl.sync.up.b32" in asm)
 
 
-def test_shuffle_up_sm80():
+def test_warp_shuffle_up_sm80():
     var asm = _compile_code_asm[
-        test_shuffle_up, target = _get_gpu_target["sm_80"]()
+        test_warp_shuffle_up, target = _get_gpu_target["sm_80"]()
     ]()
-    _verify_shuffle_up(asm)
+    _verify_warp_shuffle_up(asm)
 
 
-def test_shuffle_up_sm90():
+def test_warp_shuffle_up_sm90():
     var asm = _compile_code_asm[
-        test_shuffle_up, target = _get_gpu_target["sm_90"]()
+        test_warp_shuffle_up, target = _get_gpu_target["sm_90"]()
     ]()
-    _verify_shuffle_up(asm)
+    _verify_warp_shuffle_up(asm)
 
 
-fn test_shuffle_down(val: Int32) -> Int32:
+fn test_warp_shuffle_down(val: Int32) -> Int32:
     var res = val
 
     alias limit = log2_floor(WARP_SIZE)
 
     @parameter
     for mask in reversed(range(limit)):
-        res += shuffle_down(res, 1 << mask)
+        res += warp.shuffle_down(res, 1 << mask)
     return res
 
 
 @always_inline
-fn _verify_shuffle_down(asm: String) raises -> None:
-    assert_true("test_shuffle_" in asm)
+fn _verify_warp_shuffle_down(asm: String) raises -> None:
+    assert_true("test_warp_shuf" in asm)
     assert_true("shfl.sync.down.b32" in asm)
 
 
-def test_shuffle_down_sm80():
+def test_warp_shuffle_down_sm80():
     var asm = _compile_code_asm[
-        test_shuffle_down, target = _get_gpu_target["sm_80"]()
+        test_warp_shuffle_down, target = _get_gpu_target["sm_80"]()
     ]()
-    _verify_shuffle_down(asm)
+    _verify_warp_shuffle_down(asm)
 
 
-def test_shuffle_down_sm90():
+def test_warp_shuffle_down_sm90():
     var asm = _compile_code_asm[
-        test_shuffle_down, target = _get_gpu_target["sm_90"]()
+        test_warp_shuffle_down, target = _get_gpu_target["sm_90"]()
     ]()
-    _verify_shuffle_down(asm)
+    _verify_warp_shuffle_down(asm)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -434,7 +432,7 @@ fn warp_sum_reduce(val: Float32) -> Float32:
 
     @parameter
     for mask in reversed(range(limit)):
-        res += shuffle_xor(res, 1 << mask)
+        res += warp.shuffle_xor(res, 1 << mask)
     return res
 
 
@@ -466,7 +464,7 @@ fn block_reduce(val: Float32) -> Float32:
     alias warp_shift = log2_floor(WARP_SIZE)
 
     var lane = lane_id()
-    var warp = thread_idx.x // 32
+    var warp = thread_idx.x // WARP_SIZE
 
     var warp_sum = warp_sum_reduce(val)
 
@@ -476,7 +474,7 @@ fn block_reduce(val: Float32) -> Float32:
     barrier()
 
     return warp_sum_reduce(
-        shared.load(lane) if thread_idx.x < block_dim.x // 32 else 0
+        shared.load(lane) if thread_idx.x < block_dim.x // WARP_SIZE else 0
     )
 
 
@@ -515,10 +513,10 @@ def main():
     test_barrier_sm90()
     test_gemm_sm80()
     test_gemm_sm90()
-    test_shuffle_up_sm80()
-    test_shuffle_up_sm90()
-    test_shuffle_down_sm80()
-    test_shuffle_down_sm90()
+    test_warp_shuffle_up_sm80()
+    test_warp_shuffle_up_sm90()
+    test_warp_shuffle_down_sm80()
+    test_warp_shuffle_down_sm90()
     test_warp_sum_reduce_sm80()
     test_warp_sum_reduce_sm90()
     test_block_reduce_sm80()

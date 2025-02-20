@@ -12,8 +12,9 @@ from random import randn, seed
 
 from buffer import NDBuffer
 from gpu import WARP_SIZE
+import gpu.warp as warp
 from gpu.host import DeviceContext
-from linalg.gemv import ReductionMethod, gemv_kernel, gevm_kernel
+from linalg.gemv import gemv_kernel, gevm_kernel
 from linalg.matmul_gpu import matmul_kernel, matmul_kernel_naive
 from memory import UnsafePointer
 
@@ -23,7 +24,7 @@ from utils.numerics import isnan
 
 
 def run_matvec[
-    reduction_method: ReductionMethod
+    reduction_method: warp.ReductionMethod
 ](M: Int, N: Int, K: Int, *, ctx: DeviceContext):
     print("== run_matvec kernel")
 
@@ -187,7 +188,7 @@ def run_matvec[
 
 
 fn test_gevm_with_epilogue_fn[
-    reduction_method: ReductionMethod
+    reduction_method: warp.ReductionMethod
 ](M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     alias c_stride = 5
     alias seed_val = 42
@@ -379,8 +380,8 @@ def main():
 
         @parameter
         for i in range(2):
-            alias reduction_method = List[ReductionMethod](
-                ReductionMethod.WARP, ReductionMethod.TENSOR_CORE
+            alias reduction_method = List[warp.ReductionMethod](
+                warp.ReductionMethod.WARP, warp.ReductionMethod.TENSOR_CORE
             )[i]
             # gemv for matrix vector multiply and gevm for vector matrix multiply
             run_matvec[reduction_method=reduction_method](

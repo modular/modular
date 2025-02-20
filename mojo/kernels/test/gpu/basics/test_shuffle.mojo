@@ -8,13 +8,13 @@
 from gpu import barrier, thread_idx
 from gpu.globals import WARP_SIZE
 from gpu.host import DeviceContext
-from gpu.shuffle import (
+from gpu.warp import (
     shuffle_down,
     shuffle_idx,
     shuffle_up,
     shuffle_xor,
-    warp_reduce,
 )
+import gpu.warp as warp
 from memory import UnsafePointer
 from testing import assert_equal
 
@@ -287,7 +287,7 @@ fn _warp_reduce_launch_helper[
 
     @parameter
     fn do_warp_reduce(val: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-        return warp_reduce[shuffle_down, reduce_add](val)
+        return warp.reduce[shuffle_down, reduce_add](val)
 
     _kernel_launch_helper[type, simd_width, do_warp_reduce](
         host_ptr, buffer_size, block_size, ctx
