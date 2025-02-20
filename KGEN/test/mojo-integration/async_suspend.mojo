@@ -3,6 +3,9 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+
+# UNSUPPORTED: asan
+
 # RUN: %mojo %s | FileCheck %s
 # RUN: %mojo --no-optimization %s | FileCheck %s
 
