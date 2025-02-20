@@ -59,7 +59,6 @@ def app(fixture_tokenizer, model_name: str):
     return fastapi_app(settings, serving_settings)
 
 
-# TODO(SI-741): Restore tunable_app OpenAI API tests
 @pytest.mark.asyncio
 @pytest.mark.parametrize("model_name", ["perf_fake", "echo"])
 async def test_openai_chat_completion_single(app, model_name):
@@ -83,7 +82,6 @@ async def test_openai_chat_completion_single(app, model_name):
         assert choice.finish_reason == "stop"
 
 
-# TODO(SI-741): Restore tunable_app OpenAI API tests
 @pytest.mark.parametrize("model_name", ["perf_fake", "echo"])
 def test_openai_chat_completion_concurrent(app, model_name):
     request_contents: dict[int, str] = {}
