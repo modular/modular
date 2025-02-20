@@ -38,16 +38,10 @@ lit_tests(
     },
     data = [
         ":inputs",
-        "//GenericML:DeviceDriver",
-        "//GenericML:MGPRT",
-        "//GenericML:modular-framework-common",
-        "//KGEN:CompilerRT",
-        "//ModularFramework/tools/mof",
         "//PyTorch:modular-framework-torch-ext",
         "//PyTorch/test/utils:pytorch-generated-tests",
         "//PyTorch/tools/torch:mtorch",
         "//SDK/integration-test:inputs",
-        "@llvm-project//compiler-rt:orc_rt",
         "@onnx//onnx/backend/test/data/node:test_abs",
     ],
     env = {
@@ -78,15 +72,7 @@ lit_tests(
     name = "gpu-test",
     size = "large",
     srcs = ["mojo/test_devicetensor_gpu.mojo"],
-    data = [
-        ":inputs",
-        "//GenericML:DeviceDriver",
-        "//GenericML:MGPRT",
-        "//GenericML:modular-framework-common",
-        "//KGEN:CompilerRT",
-        "//ModularFramework/tools/mof",
-        "@llvm-project//compiler-rt:orc_rt",
-    ],
+    data = [":inputs"],
     env = {
         "MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false",
     },

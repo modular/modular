@@ -60,11 +60,8 @@ lit_tests(
     ),
     data = glob(["max-cli/benchmark/Inputs/**"]) + [
         ":inputs",
-        "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
         "//PyTorch:TorchRuntimePlugins",
         "//PyTorch/tools/torch:mtorch",
-        "@llvm-project//compiler-rt:orc_rt",
     ],
     tags = [
         "no-sandbox",  # These tests use openmp which validates only 1 shared library is loaded at the same time, the libraries in the sandbox appear different so running them in parallel fails otherwise.
