@@ -1326,9 +1326,7 @@ struct RoundEven:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
-            return rebind[SIMD[y.type, width]](
-                x._fused_load[width](idx).roundeven()
-            )
+            return rebind[SIMD[y.type, width]](round(x._fused_load[width](idx)))
 
         foreach[func, target=target, _synchronous=_synchronous](y, ctx)
 
