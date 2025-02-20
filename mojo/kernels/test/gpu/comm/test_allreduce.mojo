@@ -51,6 +51,9 @@ fn _human_memory(size: Int) -> String:
 fn all_reduce_test[
     type: DType, rank: Int, ngpus: Int
 ](list_of_ctx: List[DeviceContext], length: Int) raises:
+    alias num_warmups = 5
+    alias num_iters = 100
+
     constrained[ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"]()
     constrained[rank == 1, "this test code currently assumes rank 1"]()
 
@@ -106,7 +109,8 @@ fn all_reduce_test[
         )
 
     # Warm up.
-    all_reduce(list_of_ctx, in_bufs, out_bufs, rank_sigs)
+    for _ in range(num_warmups):
+        all_reduce(list_of_ctx, in_bufs, out_bufs, rank_sigs)
 
     # Synchronize all devices.
     @parameter
@@ -116,7 +120,9 @@ fn all_reduce_test[
     # Perform a benchmarked allreduce.
     start_t = time.perf_counter_ns()
 
-    all_reduce(list_of_ctx, in_bufs, out_bufs, rank_sigs)
+    @parameter
+    for _ in range(num_iters):
+        all_reduce(list_of_ctx, in_bufs, out_bufs, rank_sigs)
 
     # Synchronize all devices.
     @parameter
@@ -127,7 +133,7 @@ fn all_reduce_test[
 
     # Quick and dirty benchmark since benchmark module doesn't support
     # multi-device contexts.
-    print("Time taken (ms):", (end_t - start_t) / 1_000_000)
+    print("Time taken (ms):", (end_t - start_t) / (1_000_000 * num_iters))
 
     # Copy results back and verify
     var expected_sum = Scalar[type](0)
