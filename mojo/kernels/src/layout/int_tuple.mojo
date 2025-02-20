@@ -20,32 +20,32 @@ struct IntArray:
     var _data: UnsafePointer[Int]
     var _size: Int
 
-    @always_inline
+    @always_inline("nodebug")
     fn __init__(out self, size: Int = 0):
         self._data = UnsafePointer[Int].alloc(size)
         self._size = size
 
-    @always_inline
+    @always_inline("nodebug")
     fn __init__(out self, *, non_owned: Self, offset: Int = 0):
         self._data = non_owned._data + offset
         self._size = -(non_owned.size() - offset)
 
-    @always_inline
+    @always_inline("nodebug")
     fn __copyinit__(out self, existing: Self):
-        var size = existing.size()
         self._size = existing._size
         if existing.owning():
+            var size = existing.size()
             self._data = UnsafePointer[Int].alloc(size)
             self.copy_from(0, existing, size)
         else:
             self._data = existing._data
 
-    @always_inline
+    @always_inline("nodebug")
     fn __del__(owned self):
         if self.owning() and self._data:
             self._data.free()
 
-    @always_inline
+    @always_inline("nodebug")
     fn __getitem__(self, idx: Int) -> Int:
         @parameter
         if INT_TUPLE_VALIDATION:
@@ -54,7 +54,7 @@ struct IntArray:
 
         return self._data[idx]
 
-    @always_inline
+    @always_inline("nodebug")
     fn __setitem__(mut self, idx: Int, value: Int):
         @parameter
         if INT_TUPLE_VALIDATION:
@@ -63,18 +63,25 @@ struct IntArray:
 
         self._data[idx] = value
 
-    @always_inline
+    @always_inline("nodebug")
     fn owning(self) -> Bool:
         return self._size > 0
 
-    @always_inline
+    @always_inline("nodebug")
     fn size(self) -> Int:
         return math.abs(self._size)
 
-    @always_inline
+    @always_inline("nodebug")
     fn copy_from(mut self, offset: Int, source: Self, size: Int):
         for i in range(size):
             self[i + offset] = source[i]
+
+    @always_inline("nodebug")
+    fn copy_from(
+        mut self, dst_offset: Int, source: Self, src_offset: Int, size: Int
+    ):
+        for i in range(size):
+            self[i + dst_offset] = source[i + src_offset]
 
 
 alias UNKNOWN_VALUE = -1
@@ -85,17 +92,17 @@ struct _IntTupleIter[origin: ImmutableOrigin, tuple_origin: ImmutableOrigin]:
     var src: Pointer[IntTuple[tuple_origin], origin]
     var idx: Int
 
-    @always_inline
+    @always_inline("nodebug")
     fn __next__(mut self) -> IntTuple[origin]:
         var idx = self.idx
         self.idx += 1
         return self.src[][idx]
 
-    @always_inline
+    @always_inline("nodebug")
     fn __has_next__(self) -> Bool:
         return self.__len__() > 0
 
-    @always_inline
+    @always_inline("nodebug")
     fn __len__(self) -> Int:
         return len(self.src[]) - self.idx
 
@@ -115,7 +122,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
     alias MinimumValue = -0xFFFE
 
     @staticmethod
-    @always_inline
+    @always_inline("nodebug")
     fn elements_size[
         origin: ImmutableOrigin
     ](elements: VariadicListMem[IntTuple[origin]]) -> Int:
@@ -125,7 +132,18 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
             size += v[].size() + 1
         return size
 
-    @always_inline
+    @staticmethod
+    @always_inline("nodebug")
+    fn elements_size[
+        origin: ImmutableOrigin, n: Int
+    ](elements: InlineArray[Pointer[IntTuple, origin], n], idx: Int) -> Int:
+        var size = 0
+        for i in range(n):
+            # the size of the sub tuple plus the element
+            size += elements[i][][idx].size() + 1
+        return size
+
+    @always_inline("nodebug")
     fn __init__(out self):
         self._store = IntArray(1)
         self._store[0] = 0
@@ -134,13 +152,22 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         if INT_TUPLE_VALIDATION:
             self.validate_structure()
 
-    @implicit
-    @always_inline
-    fn __init__(out self, *elements: Int):
-        var size = len(elements) + 1
+    @always_inline("nodebug")
+    fn __init__(out self, *, num_elems: Int, size: Int):
         self._store = IntArray(size)
-        self._store[0] = len(elements)
-        for i in range(len(elements)):
+        self._store[0] = num_elems
+
+        @parameter
+        if INT_TUPLE_VALIDATION:
+            self.validate_structure()
+
+    @implicit
+    @always_inline("nodebug")
+    fn __init__(out self, *elements: Int):
+        var size = len(elements)
+        self._store = IntArray(size + 1)
+        self._store[0] = size
+        for i in range(size):
             var value = elements[i]
             if value < Self.MinimumValue:
                 abort("Only integers greater than MinimumValue are supported")
@@ -150,24 +177,25 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         if INT_TUPLE_VALIDATION:
             self.validate_structure()
 
-    @always_inline
+    @always_inline("nodebug")
     fn __init__(out self, *elements: IntTuple):
-        var size = Self.elements_size(elements) + 1
-        self._store = IntArray(size)
-        self._store[0] = len(elements)
-        var storage = self._store[0] + 1
-        for i in range(len(elements)):
+        var size = Self.elements_size(elements)
+        self._store = IntArray(size + 1)
+        var num_elems = len(elements)
+        self._store[0] = num_elems
+        var storage = num_elems + 1
+        for i in range(num_elems):
             storage = self.__insert(i, storage, elements[i])
 
         @parameter
         if INT_TUPLE_VALIDATION:
             self.validate_structure()
 
-    @always_inline
+    @always_inline("nodebug")
     fn __init__(out self, *, non_owned: IntArray):
         self._store = IntArray(non_owned=non_owned)
 
-    @always_inline
+    @always_inline("nodebug")
     fn __init__(out self, existing: Self, rng: _StridedRange):
         var size = 0
         var len = 0
@@ -208,7 +236,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
             self.validate_structure()
 
     @implicit
-    @always_inline
+    @always_inline("nodebug")
     fn __init__(out self, zipper: _zip[_, 2]):
         # FIXME: massively inefficient
         self = Self()
@@ -216,17 +244,17 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
             self.append(z)
 
     # Mojo BUG: __copyinit__ unnecessarily propagates self's origin to the new copy
-    @always_inline
+    @always_inline("nodebug")
     fn __copyinit__(out self, existing: Self):
         var size = existing.size()
         self._store = IntArray(size)
         self._store.copy_from(0, existing._store, size)
 
-    @always_inline
+    @always_inline("nodebug")
     fn __moveinit__(out self, owned existing: Self):
         self._store = existing._store^
 
-    @always_inline
+    @always_inline("nodebug")
     fn owned_copy(self) -> IntTuple:
         var copy = IntTuple(non_owned=IntArray())
         var size = self.size()
@@ -250,6 +278,62 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
                 result.append(value)
         return result
 
+    @always_inline("nodebug")
+    fn replace_entry(mut self, idx: Int, *, int_value: Int):
+        @parameter
+        if INT_TUPLE_VALIDATION:
+            if idx < 0 or idx >= len(self):
+                abort("Index out of bounds")
+
+        self._store[idx + 1] = int_value
+
+    @always_inline
+    fn append_flatten(mut self, t: IntTuple):
+        """Append each element in t instead of t as one element."""
+
+        if not self._store.owning():
+            abort("Can't modify a sub-tuple.")
+
+        var len_t = len(t)
+        if len_t == 0:
+            return
+
+        var old_len = len(self)
+        var old_size = self.size()
+        var new_len = old_len + len_t
+        var new_size = old_size
+
+        for i in range(len_t):
+            new_size += t[i].size() + 1
+
+        var new_store = IntArray(new_size)
+        new_store[0] = new_len
+        var len_delta = new_len - old_len
+
+        # update old offsets
+        for i in range(old_len):
+            if self.is_value(i):
+                new_store[i + 1] = self.value(i)
+            else:
+                new_store[i + 1] = self._store[i + 1] - len_delta
+
+        # copy old data
+        var new_offset = new_len + 1
+        var old_data_size = old_size - old_len - 1
+        new_store.copy_from(new_offset, self._store, old_len + 1, old_data_size)
+
+        var storage = new_len + 1 + old_data_size
+        for i in range(len_t):
+            # append each element in t
+            storage = Self.__insert(new_store, i + old_len, storage, t[i])
+
+        # Update store data
+        self._store = new_store
+
+        @parameter
+        if INT_TUPLE_VALIDATION:
+            self.validate_structure()
+
     @always_inline
     fn append(mut self, *elements: IntTuple):
         if not self._store.owning():
@@ -264,14 +348,22 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         var new_len = old_len + len(elements)
         var new_store = IntArray(new_size)
         new_store[0] = new_len
-        var storage = new_len + 1
+        var len_delta = new_len - old_len
 
+        # update old offsets
         for i in range(old_len):
             if self.is_value(i):
                 new_store[i + 1] = self.value(i)
             else:
-                storage = Self.__insert(new_store, i, storage, self[i])
+                new_store[i + 1] = self._store[i + 1] - len_delta
 
+        # copy old data
+        var new_offset = new_len + 1
+        var old_data_size = old_size - old_len - 1
+        new_store.copy_from(new_offset, self._store, old_len + 1, old_data_size)
+
+        # append elements
+        var storage = new_len + 1 + old_data_size
         for i in range(len(elements)):
             storage = Self.__insert(
                 new_store, i + old_len, storage, elements[i]
@@ -371,11 +463,11 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
                     )
                 )
 
-    @always_inline
+    @always_inline("nodebug")
     fn __len__(self) -> Int:
         return self._store[0]
 
-    @always_inline
+    @always_inline("nodebug")
     fn __iter__(self) -> _IntTupleIter[__origin_of(self), origin]:
         return _IntTupleIter(Pointer.address_of(self), 0)
 
@@ -464,16 +556,26 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
 
     @staticmethod
     fn is_equal(a: IntTuple, b: IntTuple) -> Bool:
-        if len(a) == len(b):
-            for i in range(len(a)):
-                if a.is_value(i) and b.is_value(i):
-                    if a.value(i) != b.value(i):
-                        return False
+        if len(a) != len(b):
+            return False
+
+        for i in range(len(a)):
+            if a.is_value(i) and b.is_value(i):
+                if a.value(i) != b.value(i):
+                    return False
+            else:
+                var value_a = a[i]
+                var value_b = b[i]
                 if a.is_tuple(i) and b.is_tuple(i):
-                    if not Self.is_equal(a[i], b[i]):
+                    if not Self.is_equal(value_a, value_b):
                         return False
-            return True
-        return False
+                elif len(value_a) == 1 and len(value_b) == 1:
+                    if Int(value_a) != Int(value_b):
+                        return False
+                else:
+                    return False
+
+        return True
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
@@ -648,38 +750,38 @@ fn flatten(t: IntTuple) -> IntTuple:
         if b.is_value():
             r.append(b)
         else:
-            for e in flatten(b):
-                r.append(e)
+            r.append_flatten(flatten(b))
         return r
 
     return reduce[reducer](t)
+
+
+fn _to_unknown(mut t: IntTuple):
+    var num_elems = len(t)
+    for i in range(num_elems):
+        if t._store[i + 1] >= IntTuple[].MinimumValue:
+            t._store[i + 1] = UNKNOWN_VALUE
+        else:
+            var sub_tuple = t[i]
+            _to_unknown(sub_tuple)
 
 
 # Create a IntTuple with same structure but filled by UNKNOWN_VALUE.
 @always_inline
 fn to_unknown(t: IntTuple) -> IntTuple:
-    if t.is_value():
-        return UNKNOWN_VALUE
-
-    @always_inline
-    @parameter
-    fn reducer(a: IntTuple, b: IntTuple) -> IntTuple:
-        var r = a.owned_copy()  # Avoid propagating a's origin
-        if b.is_value():
-            r.append(UNKNOWN_VALUE)
-        else:
-            r.append(to_unknown(b))
-        return r
-
-    return reduce[reducer](t)
+    var res = t.owned_copy()
+    _to_unknown(res)
+    return res
 
 
 @always_inline
 fn lt(a: IntTuple, b: IntTuple) -> Bool:
     for z in zip(a, b):
-        if Int(z[0]) == Int(z[1]):
+        var z0 = Int(z[0])
+        var z1 = Int(z[1])
+        if z0 == z1:
             continue
-        elif Int(z[0]) < Int(z[1]):
+        elif z0 < z1:
             return True
         else:
             return False
@@ -829,16 +931,24 @@ fn abs(t: IntTuple) -> IntTuple:
 
 
 # Multiply lhs tuple elements by rhs
-#
-fn mul(lhs: IntTuple, rhs: Int) -> IntTuple:
-    if is_int(lhs):
-        if UNKNOWN_VALUE in (Int(lhs), rhs):
-            return UNKNOWN_VALUE
-        return lhs.value() * rhs
 
-    var res = IntTuple()
-    for e in lhs:
-        res.append(mul(e, rhs))
+
+fn _mul(mut lhs: IntTuple, rhs: Int):
+    var num_elems = len(lhs)
+    for i in range(num_elems):
+        if lhs._store[i + 1] >= IntTuple[].MinimumValue:
+            if UNKNOWN_VALUE in (lhs._store[i + 1], rhs):
+                lhs._store[i + 1] = UNKNOWN_VALUE
+            else:
+                lhs._store[i + 1] *= rhs
+        else:
+            var sub_tuple = lhs[i]
+            _mul(sub_tuple, rhs)
+
+
+fn mul(lhs: IntTuple, rhs: Int) -> IntTuple:
+    var res = lhs.owned_copy()
+    _mul(res, rhs)
     return res
 
 
@@ -858,7 +968,7 @@ fn congruent(a: IntTuple, b: IntTuple) -> Bool:
             if not congruent(z[0], z[1]):
                 return False
         return True
-    if is_int(a) and is_int(b):
+    elif is_int(a) and is_int(b):
         return True
     return False
 

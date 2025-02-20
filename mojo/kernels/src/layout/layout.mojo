@@ -397,12 +397,10 @@ fn coalesce(layout: Layout, keep_rank: Bool = False) -> Layout:
         # replace our shape-1 with anything
         elif result_shape[-1] == 1:
             # result_shape[-1] = shape
-            result_shape = result_shape.replace_entry(
-                len(result_shape) - 1, shape
-            )
+            result_shape.replace_entry(len(result_shape) - 1, int_value=shape)
             # result_stride[-1] = stride
-            result_stride = result_stride.replace_entry(
-                len(result_stride) - 1, stride
+            result_stride.replace_entry(
+                len(result_stride) - 1, int_value=stride
             )
 
         # merge modes if the shape*stride match and computable.
@@ -414,9 +412,10 @@ fn coalesce(layout: Layout, keep_rank: Bool = False) -> Layout:
             Int(result_shape[-1]),
             Int(result_stride[-1]),
         ):
-            # result_shape[-1] = Int(result_shape[-1]) * shape
-            result_shape = result_shape.replace_entry(
-                len(result_shape) - 1, Int(result_shape[-1]) * shape
+            # result_shape[-1] = to_int(result_shape[-1]) * shape
+            result_shape.replace_entry(
+                len(result_shape) - 1,
+                int_value=Int(result_shape[-1]) * shape,
             )
 
         # append a new mode
@@ -478,11 +477,16 @@ fn composition(layout_a: Layout, tiler: LayoutList) -> Layout:
 
 
 fn complement(layout: Layout, size: Int = 1) -> Layout:
-    var result_shape = IntTuple()
-    var result_stride = IntTuple()
     var current_idx = 1
+    var sorted = sorted(zip(flatten(layout.stride), flatten(layout.shape)))
+    var sorted_len = len(sorted)
 
-    for z in sorted(zip(flatten(layout.stride), flatten(layout.shape))):
+    var result_shape = IntTuple(num_elems=sorted_len + 1, size=sorted_len + 2)
+    var result_stride = IntTuple(num_elems=sorted_len + 1, size=sorted_len + 2)
+
+    # for z in sorted(zip(flatten(layout.stride), flatten(layout.shape))):
+    var i = 0
+    for z in sorted:
         var stride = Int(z[0])
         var shape = Int(z[1])
 
@@ -493,12 +497,19 @@ fn complement(layout: Layout, size: Int = 1) -> Layout:
         if not in_bound:
             abort("Complement out of bounds.")
 
-        result_shape.append(stride // current_idx)
-        result_stride.append(current_idx)
+        result_shape.replace_entry(i, int_value=stride // current_idx)
+        result_stride.replace_entry(i, int_value=current_idx)
+        i += 1
         current_idx = shape * stride
 
-    result_shape.append((size + current_idx - 1) // current_idx)  # ceil_div
-    result_stride.append(current_idx)
+    result_shape.replace_entry(
+        i, int_value=(size + current_idx - 1) // current_idx
+    )  # ceil_div
+    result_stride.replace_entry(i, int_value=current_idx)
+    i += 1
+
+    result_shape._store[0] = i
+    result_stride._store[0] = i
 
     return coalesce(Layout(result_shape, result_stride))
 
@@ -544,23 +555,21 @@ fn logical_product(layout_a: Layout, tiler: LayoutList) -> Layout:
 fn hier_unzip[
     splitter: fn (Layout, Layout) -> Layout
 ](layout_a: Layout, tiler: LayoutList) -> Layout:
-    var split = Layout()
-    for i in range(len(tiler)):
-        split.append(hier_unzip[splitter](layout_a[i], tiler[i]))
-
     var res_1 = Layout()
     var res_2 = Layout()
-    for s in split:
-        res_1.append(s[0])
-        res_2.append(s[1])
+
+    for i in range(len(tiler)):
+        var split = hier_unzip[splitter](layout_a[i], tiler[i])
+        res_1.append(split[0])
+        res_2.append(split[1])
 
     # Remainder if tiler is shorter.
     for i in range(len(tiler), len(layout_a)):
         res_2.append(layout_a[i])
 
     var res = Layout()
-    res.append(res_1)
-    res.append(res_2)
+    res.shape.append(res_1.shape, res_2.shape)
+    res.stride.append(res_1.stride, res_2.stride)
     return res
 
 
