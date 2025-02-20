@@ -8,6 +8,7 @@
 # RUN: %mojo-no-debug-no-assert %s
 
 import time
+from collections import InlineArray
 from math import floor
 from sys import sizeof
 
@@ -15,11 +16,8 @@ from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
 from gpu.all_reduce import MAX_GPUS, Signal, all_reduce
 from gpu.host import DeviceBuffer, DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer, TestTensor
 from memory import UnsafePointer
 from testing import assert_almost_equal
-
-from utils.index import IndexList, StaticTuple
 
 
 fn _pretty_print_float(val: Float64) -> String:
@@ -64,7 +62,9 @@ fn all_reduce_test[
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = StaticTuple[UnsafePointer[Signal], MAX_GPUS]()
+    var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
+        UnsafePointer[Signal]()
+    )
 
     # Set up temp buffers for GPUs to reduce-scatter into / all-gather from.
     var temp_buffer_num_bytes = ngpus * sizeof[type]() * length
@@ -96,9 +96,13 @@ fn all_reduce_test[
         # Copy data to device
         list_of_ctx[i].enqueue_copy_to_device(in_bufs_list[i], host_buffers[i])
 
-    # Create StaticTuples for input and output buffers
-    var in_bufs = StaticTuple[NDBuffer[type, rank], ngpus]()
-    var out_bufs = StaticTuple[NDBuffer[type, rank], ngpus]()
+    # Create and initialize input and output buffers.
+    var in_bufs = InlineArray[NDBuffer[type, rank], ngpus](
+        NDBuffer[type, rank]()
+    )
+    var out_bufs = InlineArray[NDBuffer[type, rank], ngpus](
+        NDBuffer[type, rank]()
+    )
 
     for i in range(ngpus):
         in_bufs[i] = NDBuffer[type, rank](
