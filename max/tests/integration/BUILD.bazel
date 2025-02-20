@@ -63,9 +63,6 @@ lit_tests(
         "//PyTorch:TorchRuntimePlugins",
         "//PyTorch/tools/torch:mtorch",
     ],
-    tags = [
-        "no-sandbox",  # These tests use openmp which validates only 1 shared library is loaded at the same time, the libraries in the sandbox appear different so running them in parallel fails otherwise.
-    ],
     tools = [
         "//SDK/tools/max",
     ],
