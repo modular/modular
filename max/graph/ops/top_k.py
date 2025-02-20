@@ -37,6 +37,16 @@ def top_k(
     if axis < 0:
         axis += len(input_shape)  # Handle negative axis
 
+    if axis >= len(input_shape):
+        raise IndexError(
+            f"The value of axis {axis} is out of bounds for input tensor of rank {len(input_shape)}"
+        )
+
+    if k > input_shape.static_dims[axis]:
+        raise IndexError(
+            f"The value of k {k} is out of bounds for the axis {axis} with size {input_shape.static_dims[axis]}"
+        )
+
     output_shape = input_shape.static_dims
     output_shape[axis] = k  # Replace the specified dim with k
 
