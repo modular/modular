@@ -432,7 +432,7 @@ struct InitFieldsDestroyedInThrowingConstructor:
     fn __init__(out self, cond: __mlir_type.`i1`) raises:
         self = InitFieldsDestroyedInThrowingConstructor()
         # CHECK:      hlcf.elif {
-        # CHECK-NEXT:   hlcf.elif.yield %cond : i1
+        # CHECK-NEXT:   hlcf.elif.yield %cond
         # CHECK-NEXT: } then {
         # CHECK-NEXT:   lit.call {{.*}}__del__{{.*}}(%self)
         # CHECK-NEXT:   lit.call @{{.*}}::@Error::@"__init__

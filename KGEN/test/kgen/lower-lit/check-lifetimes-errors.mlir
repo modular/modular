@@ -22,7 +22,7 @@ lit.fn @print(%borrowMe: !lit.ref<@S, mut #lit.any.origin> read_mem) -> !kgen.no
 // expected-note @below {{'__result__' declared here}}
 lit.fn @elifInitError[mut *"__result__`0"](?, %cond: i1, %__result__[__result__]: !lit.ref<@S, mut *"__result__`0"> byref_result) -> !kgen.none {
   hlcf.elif {
-    hlcf.elif.yield %cond : i1
+    hlcf.elif.yield %cond
   } then {
     %0 = lit.call @S::@__init__[mut *"__result__`0"](%__result__) : !lit.generator<[1](!lit.ref<@S, mut *"__result__`0"> byref_result, |) -> !kgen.none>
     hlcf.yield

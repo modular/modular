@@ -327,7 +327,7 @@ fn loop_example(cond1: __mlir_type.i1, cond2: __mlir_type.i1):
         # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%c)
         c = MemExample()
         # CHECK-NEXT: hlcf.elif {
-        # CHECK-NEXT: hlcf.elif.yield %cond2 : i1
+        # CHECK-NEXT: hlcf.elif.yield %cond2
         # CHECK-NEXT: } then {
         if cond2:
             # CHECK-NEXT: lifetime.start %b
