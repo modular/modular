@@ -914,26 +914,26 @@ fn wgmma_async[
     ):
         var a0 = bitcast[DType.uint32, 1](
             SIMD[DType.bfloat16, 2](
-                rebind[Scalar[DType.bfloat16]](mat_a_frag[0]),
-                rebind[Scalar[DType.bfloat16]](mat_a_frag[1]),
+                rebind[BFloat16](mat_a_frag[0]),
+                rebind[BFloat16](mat_a_frag[1]),
             )
         )
         var a1 = bitcast[DType.uint32, 1](
             SIMD[DType.bfloat16, 2](
-                rebind[Scalar[DType.bfloat16]](mat_a_frag[2]),
-                rebind[Scalar[DType.bfloat16]](mat_a_frag[3]),
+                rebind[BFloat16](mat_a_frag[2]),
+                rebind[BFloat16](mat_a_frag[3]),
             )
         )
         var a2 = bitcast[DType.uint32, 1](
             SIMD[DType.bfloat16, 2](
-                rebind[Scalar[DType.bfloat16]](mat_a_frag[4]),
-                rebind[Scalar[DType.bfloat16]](mat_a_frag[5]),
+                rebind[BFloat16](mat_a_frag[4]),
+                rebind[BFloat16](mat_a_frag[5]),
             )
         )
         var a3 = bitcast[DType.uint32, 1](
             SIMD[DType.bfloat16, 2](
-                rebind[Scalar[DType.bfloat16]](mat_a_frag[6]),
-                rebind[Scalar[DType.bfloat16]](mat_a_frag[7]),
+                rebind[BFloat16](mat_a_frag[6]),
+                rebind[BFloat16](mat_a_frag[7]),
             )
         )
 
