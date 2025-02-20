@@ -426,10 +426,8 @@ fn get_scalar_from_ndbuffer[
     return tensor[0]
 
 
-# Extract a scalar from a managed tensor slice.
-@register_internal("get_scalar_from_managed_tensor_slice")
 @always_inline
-fn get_scalar_from_managed_tensor_slice[
+fn _get_scalar_from_managed_tensor_slice[
     dtype: DType,
 ](
     tensor: ManagedTensorSlice[
@@ -443,6 +441,20 @@ fn get_scalar_from_managed_tensor_slice[
     return tensor.load[width=1](IndexList[1](0))
 
 
+# Extract a scalar from a managed tensor slice.
+@register_internal("get_scalar_from_managed_tensor_slice")
+@always_inline
+fn get_scalar_from_managed_tensor_slice[
+    dtype: DType,
+](
+    tensor: ManagedTensorSlice[
+        io_spec=IOUnknown,
+        static_spec = StaticTensorSpec[dtype, 1].create_unknown(),
+    ]
+) -> Scalar[dtype]:
+    return _get_scalar_from_managed_tensor_slice(tensor)
+
+
 # Extract an Int from a managed tensor slice.
 @register_internal("get_int_from_managed_tensor_slice")
 @always_inline
@@ -454,7 +466,18 @@ fn get_int_from_managed_tensor_slice[
         static_spec = StaticTensorSpec[dtype, 1].create_unknown(),
     ]
 ) -> Int:
-    return Int(get_scalar_from_managed_tensor_slice(tensor))
+    constrained[
+        dtype.is_integral(),
+        String(
+            (
+                "get_int_from_managed_tensor_slice expects an integral tensor"
+                " but got a tensor of type '"
+            ),
+            dtype,
+            "'",
+        ),
+    ]()
+    return Int(_get_scalar_from_managed_tensor_slice(tensor))
 
 
 # Extract a UInt from a managed tensor slice.
@@ -468,7 +491,18 @@ fn get_uint_from_managed_tensor_slice[
         static_spec = StaticTensorSpec[dtype, 1].create_unknown(),
     ]
 ) -> UInt:
-    return index(get_scalar_from_managed_tensor_slice(tensor))
+    constrained[
+        dtype.is_integral(),
+        String(
+            (
+                "get_uint_from_managed_tensor_slice expects an integral tensor"
+                " but got a tensor of type '"
+            ),
+            dtype,
+            "'",
+        ),
+    ]()
+    return index(_get_scalar_from_managed_tensor_slice(tensor))
 
 
 # Extract a Bool from a managed tensor slice.
@@ -482,7 +516,18 @@ fn get_bool_from_managed_tensor_slice[
         static_spec = StaticTensorSpec[dtype, 1].create_unknown(),
     ]
 ) -> Bool:
-    return Bool(get_int_from_managed_tensor_slice(tensor))
+    constrained[
+        dtype is DType.bool,
+        String(
+            (
+                "get_bool_from_managed_tensor_slice expects a bool tensor but"
+                " got a tensor of type '"
+            ),
+            dtype,
+            "'",
+        ),
+    ]()
+    return Bool(_get_scalar_from_managed_tensor_slice(tensor))
 
 
 @register_internal("get_int_from_shape")
