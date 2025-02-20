@@ -10,8 +10,10 @@ import os
 import platform
 import uuid
 from dataclasses import dataclass
+from time import time
 from typing import Union
 
+import requests
 from max.serve.config import Settings
 from opentelemetry._logs import set_logger_provider
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
@@ -59,10 +61,20 @@ def _getGPUInfo() -> str:
         return ""
 
 
+def _getWebUserId() -> str:
+    try:
+        idFile = os.path.expanduser("~") + "/.modular/webUserId"
+        with open(idFile) as file:
+            return file.readline().rstrip("\n")
+    except Exception:
+        return ""
+
+
 logs_resource = Resource.create(
     {
         "event.domain": "serve",
         "telemetry.session": uuid.uuid4().hex,
+        "web.user.id": _getWebUserId(),
         "enduser.id": os.environ.get("MODULAR_USER_ID", ""),
         "os.type": platform.system(),
         "os.version": platform.release(),
@@ -204,3 +216,55 @@ def configure_metrics(server_settings: Settings):
             )
         )
     set_meter_provider(MeterProvider(meterProviders, metrics_resource))
+
+
+# Send a simple one-time structured log, avoiding the buggy OTEL SDK
+# (see MAXSERV-904)
+def send_telemetry_log(model_name: str):
+    request_body = f"""{{
+  "resourceLogs": [
+    {{
+      "resource": {{
+        "attributes": [
+          {{"key": "model", "value": {{"stringValue": "{model_name}"}}}},
+          {{"key": "web.user.id", "value": {{"stringValue": "{logs_resource.attributes["web.user.id"]}"}}}},
+          {{"key": "enduser.id", "value": {{"stringValue": "{logs_resource.attributes["enduser.id"]}"}}}},
+          {{"key": "deployment.id", "value": {{"stringValue": "{logs_resource.attributes["deployment.id"]}"}}}},
+          {{"key": "os.type", "value": {{"stringValue": "{logs_resource.attributes["os.type"]}"}}}},
+          {{"key": "os.version", "value": {{"stringValue": "{logs_resource.attributes["os.version"]}"}}}},
+          {{"key": "cpu.description", "value": {{"stringValue": "{logs_resource.attributes["cpu.description"]}"}}}},
+          {{"key": "cpu.arch", "value": {{"stringValue": "{logs_resource.attributes["cpu.arch"]}"}}}},
+          {{"key": "system.cloud", "value": {{"stringValue": "{logs_resource.attributes["system.cloud"]}"}}}},
+          {{"key": "service.name", "value": {{"stringValue": "unknown_service"}}}},
+          {{"key": "telemetry.sdk.language", "value": {{"stringValue": "python"}}}},
+          {{"key": "telemetry.sdk.version", "value": {{"stringValue": "0.0.0"}}}},
+          {{"key": "telemetry.sdk.name", "value": {{"stringValue": "opentelemetry"}}}}
+        ]
+      }},
+      "scopeLogs": [
+        {{
+          "logRecords": [
+            {{
+              "attributes": [
+                {{"key": "event.domain", "value": {{"stringValue": "modular"}}}},
+                {{"key": "event.name", "value": {{"stringValue": "serve.telemetry.log"}}}}
+              ],
+              "body": {{"stringValue": ""}},
+              "observedTimeUnixNano": "{int(time() * 1_000_000_000)}",
+              "severityNumber": 9,
+              "severityText": "INFO"
+            }}
+          ],
+          "scope": {{"name": "modular_logger"}}
+        }}
+      ]
+    }}
+  ]
+}}"""
+
+    requests.post(
+        otelBaseUrl + "/v1/logs",
+        data=request_body,
+        headers={"Content-Type": "application/json"},
+        timeout=2,
+    )

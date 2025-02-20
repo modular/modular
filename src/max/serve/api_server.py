@@ -9,7 +9,11 @@
 from __future__ import annotations
 
 from max.serve.config import Settings
-from max.serve.telemetry.common import configure_logging, configure_metrics
+from max.serve.telemetry.common import (
+    configure_logging,
+    configure_metrics,
+    send_telemetry_log,
+)
 
 settings = Settings()
 configure_logging(settings)
@@ -68,6 +72,13 @@ async def lifespan(
     serving_settings: ServingTokenGeneratorSettings,
 ):
     await METRICS.configure(server_settings)
+
+    try:
+        if not server_settings.disable_telemetry:
+            send_telemetry_log(serving_settings.model_name)
+    except Exception as e:
+        logger.warning("Failed to send telemetry log: %s", e)
+
     logger.info(
         f"Launching server on http://{server_settings.host}:{server_settings.port}"
     )
