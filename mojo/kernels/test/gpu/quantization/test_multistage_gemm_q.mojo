@@ -174,7 +174,7 @@ fn repack_Q4_0_for_sm8x[
 
     # We keep 128x2 Q4_0 GGUF blocks in smem
     var smem = external_memory[
-        Scalar[DType.uint8],
+        UInt8,
         address_space = AddressSpace.SHARED,
         alignment = alignof[SIMD[DType.uint8, 1]](),
     ]()
@@ -182,7 +182,7 @@ fn repack_Q4_0_for_sm8x[
         DType.uint8,
         Layout.row_major(BN, 2 * group_bytes),
         address_space = AddressSpace.SHARED,
-    ](smem.bitcast[Scalar[DType.uint8]]())
+    ](smem.bitcast[UInt8]())
 
     var q_gmem_tile = q_weight.tile[BN, BK_groups * group_bytes](
         block_idx[0], block_idx[1]

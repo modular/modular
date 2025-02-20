@@ -41,19 +41,19 @@ fn test_scaler_e4m3_to_f32():
     print(e4m3_10.cast[DType.float32]())
 
     # nan
-    var e4m3_2 = bitcast[DType.float8_e4m3fn](Scalar[DType.uint8](127))
+    var e4m3_2 = bitcast[DType.float8_e4m3fn](UInt8(127))
     print(e4m3_2.cast[DType.float32]())
 
     # exponent = 0 and mantissa subnormal
-    var e4m3_3 = bitcast[DType.float8_e4m3fn](Scalar[DType.uint8](7))
+    var e4m3_3 = bitcast[DType.float8_e4m3fn](UInt8(7))
     print(e4m3_3.cast[DType.float32]())
-    var e4m3_4 = bitcast[DType.float8_e4m3fn](Scalar[DType.uint8](135))
+    var e4m3_4 = bitcast[DType.float8_e4m3fn](UInt8(135))
     print(e4m3_4.cast[DType.float32]())
 
     # sign-preserving zero
-    var e4m3_5 = bitcast[DType.float8_e4m3fn](Scalar[DType.uint8](0))
+    var e4m3_5 = bitcast[DType.float8_e4m3fn](UInt8(0))
     print(e4m3_5.cast[DType.float32]())
-    var e4m3_6 = bitcast[DType.float8_e4m3fn](Scalar[DType.uint8](128))
+    var e4m3_6 = bitcast[DType.float8_e4m3fn](UInt8(128))
     print(e4m3_6.cast[DType.float32]())
 
 
@@ -90,27 +90,27 @@ fn test_scaler_e5m2_to_f32():
     print(e5m2_5.cast[DType.float32]())
 
     # exponent = 0 and mantissa subnormal
-    var e5m2_6 = bitcast[DType.float8_e5m2](Scalar[DType.uint8](3))
+    var e5m2_6 = bitcast[DType.float8_e5m2](UInt8(3))
     print(e5m2_6.cast[DType.float32]())
-    var e5m2_7 = bitcast[DType.float8_e5m2](Scalar[DType.uint8](131))
+    var e5m2_7 = bitcast[DType.float8_e5m2](UInt8(131))
     print(e5m2_7.cast[DType.float32]())
 
     # sign-preserving zero
-    var e5m2_8 = bitcast[DType.float8_e5m2](Scalar[DType.uint8](0))
+    var e5m2_8 = bitcast[DType.float8_e5m2](UInt8(0))
     print(e5m2_8.cast[DType.float32]())
-    var e5m2_9 = bitcast[DType.float8_e5m2](Scalar[DType.uint8](128))
+    var e5m2_9 = bitcast[DType.float8_e5m2](UInt8(128))
     print(e5m2_9.cast[DType.float32]())
 
     # Sign-preserving infinity
-    var e5m2_10 = bitcast[DType.float8_e5m2](Scalar[DType.uint8](124))
+    var e5m2_10 = bitcast[DType.float8_e5m2](UInt8(124))
     print(e5m2_10.cast[DType.float32]())
-    var e5m2_11 = bitcast[DType.float8_e5m2](Scalar[DType.uint8](252))
+    var e5m2_11 = bitcast[DType.float8_e5m2](UInt8(252))
     print(e5m2_11.cast[DType.float32]())
 
     # Canonical NaN
-    var e5m2_12 = bitcast[DType.float8_e5m2](Scalar[DType.uint8](127))
+    var e5m2_12 = bitcast[DType.float8_e5m2](UInt8(127))
     print(e5m2_12.cast[DType.float32]())
-    var e5m2_13 = bitcast[DType.float8_e5m2](Scalar[DType.uint8](255))
+    var e5m2_13 = bitcast[DType.float8_e5m2](UInt8(255))
     print(e5m2_13.cast[DType.float32]())
 
 
@@ -153,7 +153,7 @@ fn test_simd_e4m3_to_f32():
     var e4m3_simd = SIMD[DType.float8_e4m3fn, 256](0.0)
 
     for i in range(256):
-        e4m3_simd[i] = bitcast[DType.float8_e4m3fn](Scalar[DType.uint8](i))
+        e4m3_simd[i] = bitcast[DType.float8_e4m3fn](UInt8(i))
 
     e4m3_casted_f32 = e4m3_simd.cast[DType.float32]()
 
@@ -203,7 +203,7 @@ fn test_simd_e5m2_to_f32():
 
     var e5m2_simd = SIMD[DType.float8_e5m2, 256](0.0)
     for i in range(256):
-        e5m2_simd[i] = bitcast[DType.float8_e5m2](Scalar[DType.uint8](i))
+        e5m2_simd[i] = bitcast[DType.float8_e5m2](UInt8(i))
 
     e5m2_casted_f32 = e5m2_simd.cast[DType.float32]()
 
@@ -254,7 +254,7 @@ fn test_simd_e4m3_to_f16():
     var e4m3_simd = SIMD[DType.float8_e4m3fn, 256](0.0)
 
     for i in range(256):
-        e4m3_simd[i] = bitcast[DType.float8_e4m3fn](Scalar[DType.uint8](i))
+        e4m3_simd[i] = bitcast[DType.float8_e4m3fn](UInt8(i))
 
     e4m3_casted_f16 = e4m3_simd.cast[DType.float16]()
 
@@ -304,7 +304,7 @@ fn test_simd_e5m2_to_f16():
 
     var e5m2_simd = SIMD[DType.float8_e5m2, 256](0.0)
     for i in range(256):
-        e5m2_simd[i] = bitcast[DType.float8_e5m2](Scalar[DType.uint8](i))
+        e5m2_simd[i] = bitcast[DType.float8_e5m2](UInt8(i))
 
     e5m2_casted_f16 = e5m2_simd.cast[DType.float16]()
 
@@ -355,7 +355,7 @@ fn test_simd_e4m3_to_bf16():
     var e4m3_simd = SIMD[DType.float8_e4m3fn, 256](0.0)
 
     for i in range(256):
-        e4m3_simd[i] = bitcast[DType.float8_e4m3fn](Scalar[DType.uint8](i))
+        e4m3_simd[i] = bitcast[DType.float8_e4m3fn](UInt8(i))
 
     e4m3_casted_bf16 = e4m3_simd.cast[DType.bfloat16]()
 
@@ -405,7 +405,7 @@ fn test_simd_e5m2_to_bf16():
 
     var e5m2_simd = SIMD[DType.float8_e5m2, 256](0.0)
     for i in range(256):
-        e5m2_simd[i] = bitcast[DType.float8_e5m2](Scalar[DType.uint8](i))
+        e5m2_simd[i] = bitcast[DType.float8_e5m2](UInt8(i))
 
     e5m2_casted_bf16 = e5m2_simd.cast[DType.bfloat16]()
 
@@ -635,7 +635,7 @@ fn test_simd_e4m3_to_f16_ptx_path(ctx: DeviceContext) raises:
     alias M = 256
     var e4m3_simd = SIMD[DType.float8_e4m3fn, M](0.0)
     for i in range(M):
-        e4m3_simd[i] = bitcast[DType.float8_e4m3fn](Scalar[DType.uint8](i))
+        e4m3_simd[i] = bitcast[DType.float8_e4m3fn](UInt8(i))
 
     ctx.enqueue_function[
         test_simd_float8[DType.float8_e4m3fn, M, DType.float16]
@@ -682,7 +682,7 @@ fn test_simd_e5m2_to_f16_ptx_path(ctx: DeviceContext) raises:
     alias M = 256
     var e5m2_simd = SIMD[DType.float8_e5m2, M](0.0)
     for i in range(M):
-        e5m2_simd[i] = bitcast[DType.float8_e5m2](Scalar[DType.uint8](i))
+        e5m2_simd[i] = bitcast[DType.float8_e5m2](UInt8(i))
 
     ctx.enqueue_function[test_simd_float8[DType.float8_e5m2, M, DType.float16]](
         e5m2_simd, grid_dim=1, block_dim=1
@@ -729,7 +729,7 @@ fn test_simd_e4m3_to_f32_ptx_path(ctx: DeviceContext) raises:
     alias M = 256
     var e4m3_simd = SIMD[DType.float8_e4m3fn, M](0.0)
     for i in range(M):
-        e4m3_simd[i] = bitcast[DType.float8_e4m3fn](Scalar[DType.uint8](i))
+        e4m3_simd[i] = bitcast[DType.float8_e4m3fn](UInt8(i))
 
     ctx.enqueue_function[
         test_simd_float8[DType.float8_e4m3fn, M, DType.float32]
@@ -776,7 +776,7 @@ fn test_simd_e5m2_to_f32_ptx_path(ctx: DeviceContext) raises:
     alias M = 256
     var e5m2_simd = SIMD[DType.float8_e5m2, M](0.0)
     for i in range(M):
-        e5m2_simd[i] = bitcast[DType.float8_e5m2](Scalar[DType.uint8](i))
+        e5m2_simd[i] = bitcast[DType.float8_e5m2](UInt8(i))
 
     ctx.enqueue_function[test_simd_float8[DType.float8_e5m2, M, DType.float32]](
         e5m2_simd, grid_dim=1, block_dim=1
