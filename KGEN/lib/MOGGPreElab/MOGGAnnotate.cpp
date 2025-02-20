@@ -45,6 +45,40 @@ static constexpr std::array<StringLiteral, 3> kMaxVariadicTensors = {
 static constexpr std::array<StringLiteral, 4> kMaxList = {
     "stdlib", "collections", "vector", "InlinedFixedVector"};
 
+// TODO(GEX-1822): Should be able to query this information from
+// The lit.struct.decl ops for each of these types rather than hard-coding them.
+enum class ManagedTensorSliceParams {
+  kMut,
+  kInput,
+  kDType,
+  kRank,
+  kIOSpec,
+  kStaticSpecs,
+  kNumParams
+};
+
+enum class VariadicTensorsParams {
+  kMut,
+  kInput,
+  kDType,
+  kRank,
+  kSize,
+  kIOSpec,
+  kStaticSpecs,
+  kNumParams
+};
+
+enum class SIMDParams { kDType, kSize, kNumParams };
+
+// Parameter indexes for List struct
+enum class ListParams { kElementType, kNumParams };
+
+// Helper function to convert enum class to underlying index
+template <typename T>
+constexpr int toIndex(T value) {
+  return static_cast<int>(value);
+}
+
 // Check if the decorator correspond to a function call:
 // eg @foo(arg)
 //
@@ -201,37 +235,39 @@ static LogicalResult annotateTypes(LIT::FnOp func) {
   return success();
 }
 
+/// Extract the mut and input fields from a ManagedTensorSlice struct type
+/// Returns a pair of (mut, input) TypedAttrs
+static std::pair<TypedAttr, TypedAttr>
+extractMutInputFromTensorStruct(LIT::StructType structType) {
+  auto allParameters = structType.getParamValues();
+  ASSERT_STREAM(
+      allParameters.size() >= toIndex(ManagedTensorSliceParams::kNumParams),
+      << "Expected at least " << toIndex(ManagedTensorSliceParams::kNumParams)
+      << " parameters on the tensor type");
+
+  auto mut = allParameters[toIndex(ManagedTensorSliceParams::kMut)];
+  auto input = allParameters[toIndex(ManagedTensorSliceParams::kInput)];
+
+  return std::make_pair(mut, input);
+}
+
 /// Return a set of named attributes mapping all unbound parameters in the
 /// tensor type struct
-///
-/// TODO(GEX-1822): Should be able to query this information from
-/// ManagedTensorSlice's lit.struct.decl op directly.
 static SmallVector<NamedAttribute>
 getUnboundParametersForTensor(LIT::StructType &structType, Builder &builder) {
-  enum ParameterIndexes {
-    kMutIndex,
-    kInputIndex,
-    kDTypeIndex,
-    kRankIndex,
-    kIOSpec,
-    kStaticSpecsIndex,
-    kNumParameters
-  };
-
   auto allParameters = structType.getParamValues();
-  ASSERT_STREAM(allParameters.size() >= kNumParameters,
-                << "Expected at least " << kNumParameters
-                << " parameters on the tensor type");
+  ASSERT_STREAM(
+      allParameters.size() >= toIndex(ManagedTensorSliceParams::kNumParams),
+      << "Expected at least " << toIndex(ManagedTensorSliceParams::kNumParams)
+      << " parameters on the tensor type");
 
-  auto mut = allParameters[kMutIndex];
-  auto input = allParameters[kInputIndex];
-  auto dtype = allParameters[kDTypeIndex];
-  auto rank = allParameters[kRankIndex];
-  auto spec = allParameters[kStaticSpecsIndex];
+  auto mut = allParameters[toIndex(ManagedTensorSliceParams::kMut)];
+  auto input = allParameters[toIndex(ManagedTensorSliceParams::kInput)];
+  auto dtype = allParameters[toIndex(ManagedTensorSliceParams::kDType)];
+  auto rank = allParameters[toIndex(ManagedTensorSliceParams::kRank)];
+  auto spec = allParameters[toIndex(ManagedTensorSliceParams::kStaticSpecs)];
 
   SmallVector<NamedAttribute> tensorSpecNamedAttrs;
-  // Sometimes, dtype or ranks are not present because the user expects
-  // specific values for those parameters (ex: dtype=float32 or rank=2).
   if (dtype)
     tensorSpecNamedAttrs.emplace_back(builder.getStringAttr(kParameterDType),
                                       dtype);
@@ -257,18 +293,15 @@ getUnboundParametersForTensor(LIT::StructType &structType, Builder &builder) {
 
 static SmallVector<NamedAttribute>
 getUnboundParametersForSIMD(LIT::StructType structType, Builder &builder) {
-  static constexpr unsigned kDTypeIndex = 0;
-  static constexpr unsigned kSizeIndex = 1;
   auto allParameters = structType.getParamValues();
+  ASSERT_STREAM(allParameters.size() >= toIndex(SIMDParams::kNumParams),
+                << "Expected at least " << toIndex(SIMDParams::kNumParams)
+                << " parameters on the SIMD type");
 
-  ASSERT_STREAM(allParameters.size() >= 2,
-                << "Expected at least two parameters on the SIMD type");
-  auto dtype = allParameters[kDTypeIndex];
-  auto size = allParameters[kSizeIndex];
+  auto dtype = allParameters[toIndex(SIMDParams::kDType)];
+  auto size = allParameters[toIndex(SIMDParams::kSize)];
 
   SmallVector<NamedAttribute> tensorSpecNamedAttrs;
-  // Sometimes, dtype or size are not present because the user expects
-  // specific values for those parameters (ex: dtype=float32 or size=1).
   if (dtype)
     tensorSpecNamedAttrs.push_back(
         NamedAttribute{builder.getStringAttr(kParameterDType), dtype});
@@ -293,29 +326,18 @@ getUnboundParametersForSIMD(LIT::StructType structType, Builder &builder) {
 static SmallVector<NamedAttribute>
 getUnboundParametersForVariadicTensors(LIT::StructType structType,
                                        Builder &builder) {
-  enum ParameterIndexes {
-    kMut,
-    kInput,
-    kDTypeIndex,
-    kRankIndex,
-    kSizeIndex,
-    kIOSpec,
-    kStaticSpecsIndex,
-    kNumParameters
-  };
-
   auto allParameters = structType.getParamValues();
+  ASSERT_STREAM(
+      allParameters.size() >= toIndex(VariadicTensorsParams::kNumParams),
+      << "Expected at least " << toIndex(VariadicTensorsParams::kNumParams)
+      << " parameters on the tuple-of-tensors type");
 
-  ASSERT_STREAM(allParameters.size() >= kNumParameters,
-                << "Expected at least " << kNumParameters
-                << " parameters on the tuple-of-tensors type");
-
-  auto mut = allParameters[kMut];
-  auto input = allParameters[kInput];
-  auto type = allParameters[kDTypeIndex];
-  auto rank = allParameters[kRankIndex];
-  auto size = allParameters[kSizeIndex];
-  auto spec = allParameters[kStaticSpecsIndex];
+  auto mut = allParameters[toIndex(VariadicTensorsParams::kMut)];
+  auto input = allParameters[toIndex(VariadicTensorsParams::kInput)];
+  auto type = allParameters[toIndex(VariadicTensorsParams::kDType)];
+  auto rank = allParameters[toIndex(VariadicTensorsParams::kRank)];
+  auto size = allParameters[toIndex(VariadicTensorsParams::kSize)];
+  auto spec = allParameters[toIndex(VariadicTensorsParams::kStaticSpecs)];
 
   SmallVector<NamedAttribute> namedAttrs;
   if (mut)
@@ -346,16 +368,15 @@ getUnboundParametersForTensorList(LIT::StructType structType,
                                   Builder &builder) {
   // TODO(GEX-1126): consider a tuple which only contains tensors to
   // simplify this
-  static constexpr unsigned kElementType = 0;
-  [[maybe_unused]] auto allParameters = structType.getParamValues();
+  auto allParameters = structType.getParamValues();
 
-  ASSERT_STREAM(
-      allParameters.size() >= 2,
-      << "Expected at least two parameters on the list-of-tensor type");
+  ASSERT_STREAM(allParameters.size() >= toIndex(ListParams::kNumParams),
+                << "Expected at least " << toIndex(ListParams::kNumParams)
+                << " parameters on the list-of-tensor type");
   SmallVector<NamedAttribute> listNamedAttrs;
 
-  auto elementTypeAttr =
-      cast<KGEN::TypeParamAttr>(structType.getParamValues()[kElementType]);
+  auto elementTypeAttr = cast<KGEN::TypeParamAttr>(
+      structType.getParamValues()[toIndex(ListParams::kElementType)]);
   auto elementTypeStruct =
       cast<LIT::StructType>(elementTypeAttr.getTypeValue());
 
@@ -532,98 +553,117 @@ enum class IOSpec {
   MutableInput // Input tensor that can be modified
 };
 
-std::optional<IOSpec> parseTensorIOSpec(LIT::StructType tensorStruct,
-                                        Location loc, StringRef argName) {
-  // Get the parameter values
-  auto params = tensorStruct.getParamValues();
-  if (params.size() != 2) {
-    emitError(loc, "Error for argument '" + argName + "': " + kIOSpec.back() +
-                       " must have exactly 2 parameters");
+/// Extract the mut and input fields from various tensor-related struct types
+/// Returns a pair of (mut, input) TypedAttrs
+static std::pair<TypedAttr, TypedAttr>
+extractIOSpecSubFields(LIT::StructType structType) {
+  // Check if this is a ManagedTensorSlice
+  if (symbolMatches(structType.getSymbol(), kMaxManagedTensorSlice)) {
+    return extractMutInputFromTensorStruct(structType);
+  }
+
+  // Check if this is a VariadicTensors
+  if (symbolMatches(structType.getSymbol(), kMaxVariadicTensors)) {
+    auto allParameters = structType.getParamValues();
+    ASSERT_STREAM(
+        allParameters.size() >= 7,
+        << "Expected at least 7 parameters on the variadic tensors type");
+
+    auto mut = allParameters[toIndex(VariadicTensorsParams::kMut)];
+    auto input = allParameters[toIndex(VariadicTensorsParams::kInput)];
+    return std::make_pair(mut, input);
+  }
+
+  // Check if this is a list of tensors
+  if (symbolMatches(structType.getSymbol(), kMaxList)) {
+    static constexpr unsigned kElementType = 0;
+    auto allParameters = structType.getParamValues();
+
+    ASSERT_STREAM(allParameters.size() >= 2,
+                  << "Expected at least two parameters on the list type");
+
+    auto elementTypeAttr =
+        cast<KGEN::TypeParamAttr>(structType.getParamValues()[kElementType]);
+    auto elementTypeStruct =
+        cast<LIT::StructType>(elementTypeAttr.getTypeValue());
+
+    // Only handle lists of ManagedTensorSlice
+    if (!symbolMatches(elementTypeStruct.getSymbol(), kMaxManagedTensorSlice)) {
+      return std::make_pair(TypedAttr(), TypedAttr());
+    }
+
+    return extractMutInputFromTensorStruct(elementTypeStruct);
+  }
+
+  // Unsupported type
+  return std::make_pair(TypedAttr(), TypedAttr());
+}
+
+static std::optional<IOSpec> maybeGetIOSpec(TypedAttr mutAttr,
+                                            TypedAttr inputAttr, Location loc,
+                                            StringRef argName) {
+  auto processMut = [&]() -> std::optional<bool> {
+    auto mutStruct = dyn_cast<LIT::LITStructAttr>(mutAttr);
+    if (!mutStruct) {
+      emitError(loc, "Error for argument '" + argName +
+                         "': 'mut' inferred parameter must be set");
+      return std::nullopt;
+    }
+
+    auto [_, mutValueAttr] = mutStruct.getValues().front();
+    auto mutIntAttr = dyn_cast<IntegerAttr>(mutValueAttr);
+    ASSERT_STREAM(mutIntAttr,
+                  << "Error for argument '" << argName
+                  << "': Expected integer attribute for mut parameter value");
+    return mutIntAttr.getValue().getBoolValue();
+  };
+
+  auto processInput = [&]() -> std::optional<int64_t> {
+    auto inputStruct = dyn_cast<LIT::LITStructAttr>(inputAttr);
+    if (!inputStruct) {
+      emitError(loc, "Error for argument '" + argName +
+                         "': 'input' inferred parameter must be set");
+      return std::nullopt;
+    }
+
+    auto [_, inputValueAttr] = inputStruct.getValues().front();
+    auto inputStructAttr = dyn_cast<LIT::LITStructAttr>(inputValueAttr);
+    ASSERT_STREAM(
+        inputStructAttr && !inputStructAttr.getValues().empty(),
+        << "Error for argument '" << argName
+        << "': Expected struct attribute with value for input parameter");
+
+    auto [__, inputIntValueAttr] = inputStructAttr.getValues().front();
+    auto inputIntAttr = dyn_cast<IntegerAttr>(inputIntValueAttr);
+    ASSERT_STREAM(inputIntAttr,
+                  << "Error for argument '" << argName
+                  << "': Expected integer attribute for input parameter value");
+
+    return inputIntAttr.getValue().getSExtValue();
+  };
+
+  auto mutValue = processMut();
+  auto inputValue = processInput();
+
+  if (!mutValue || !inputValue) {
     return std::nullopt;
   }
 
-  // First parameter should be a bool struct for mut
-  auto mutParam = dyn_cast<LIT::LITStructAttr>(params[0]);
-  if (!mutParam) {
-    emitError(loc, "Error for argument '" + argName +
-                       "': 'mut' inferred parameter must be set");
-    return std::nullopt;
-  }
+  auto mut = mutValue.value();
+  auto input = inputValue.value();
 
-  auto [_, mutValueAttr] = mutParam.getValues().front();
-  auto mutIntAttr = dyn_cast<IntegerAttr>(mutValueAttr);
-  if (!mutIntAttr) {
-    emitError(loc, "Error for argument '" + argName +
-                       "': Expected integer attribute for mut parameter value");
-    return std::nullopt;
-  }
-  bool isMut = mutIntAttr.getValue().getBoolValue();
-
-  // Second parameter should be an IO struct with an Int value
-  auto inputParam = dyn_cast<LIT::LITStructAttr>(params[1]);
-  if (!inputParam) {
-    emitError(loc, "Error for argument '" + argName +
-                       "': 'input' inferred parameter must be set");
-    return std::nullopt;
-  }
-
-  auto [__, inputValueAttr] = inputParam.getValues().front();
-  // The input value is now wrapped in another struct
-  auto inputStructAttr = dyn_cast<LIT::LITStructAttr>(inputValueAttr);
-  if (!inputStructAttr || inputStructAttr.getValues().empty()) {
-    emitError(
-        loc, "Error for argument '" + argName +
-                 "': Expected struct attribute with value for input parameter");
-    return std::nullopt;
-  }
-
-  auto [___, inputIntValueAttr] = inputStructAttr.getValues().front();
-  auto inputIntAttr = dyn_cast<IntegerAttr>(inputIntValueAttr);
-  if (!inputIntAttr) {
-    emitError(loc,
-              "Error for argument '" + argName +
-                  "': Expected integer attribute for input parameter value");
-    return std::nullopt;
-  }
-  auto inputVal = inputIntAttr.getValue().getSExtValue();
-
-  if (isMut && inputVal == 0)
+  if (mut == 1 && input == 0)
     return IOSpec::Output;
-  else if (!isMut && inputVal == 1)
+  else if (mut == 0 && input == 1)
     return IOSpec::Input;
-  else if (isMut && inputVal == 1)
+  else if (mut == 1 && input == 1)
     return IOSpec::MutableInput;
 
   emitError(loc, "Error for argument '" + argName + "': Invalid " +
                      kIOSpec.back() +
-                     " param. Valid configs are: [False,True]=Input, "
-                     "[True,False]=Output, [True,True]=MutableInput");
-  return std::nullopt;
-}
+                     " param. Valid configs are: [False,IO.Input]=Input, "
+                     "[True,IO.Output]=Output, [True,IO.Input]=MutableInput");
 
-std::optional<IOSpec> findIOSpec(LIT::StructType tensorStruct, Location loc,
-                                 StringRef argName) {
-  for (auto param : tensorStruct.getParamValues()) {
-    auto declRef = dyn_cast<KGEN::ParamDeclRefAttr>(param);
-
-    if (declRef &&
-        LIT::demangleParameterName(declRef.getName()) != kParameterIOSpec)
-      continue;
-
-    auto maybeStructType = declRef ? declRef.getType() : param.getType();
-
-    auto structType = dyn_cast<LIT::StructType>(maybeStructType);
-    if (!structType)
-      continue;
-
-    if (!symbolMatches(structType.getSymbol(), kIOSpec))
-      continue;
-
-    return parseTensorIOSpec(structType, loc, argName);
-  }
-
-  emitError(loc, "Error for argument '" + argName + "': No valid " +
-                     kIOSpec.back() + " found for tensor");
   return std::nullopt;
 }
 
@@ -632,31 +672,34 @@ processIOSpecs(LIT::FnOp func) {
   SmallVector<std::pair<size_t, IOSpec>> specs;
 
   bool error = false;
-  bool foundNonOutputTensor = false;
+  bool foundNonOutputOperand = false;
 
   for (auto &&[argIdx, argType] : llvm::enumerate(func.getArgumentTypes())) {
     auto structType = getAsDeclRefOrNull(argType);
 
-    if (!structType || !isDPSTensor(structType)) {
-      foundNonOutputTensor = true;
+    auto [mut, input] = extractIOSpecSubFields(structType);
+
+    if (!mut && !input)
       continue;
-    }
 
     auto argName = func.getFuncTypeGenerator().getArgName(argIdx);
     auto loc = func.getBodyRegion().getArgument(argIdx).getLoc();
-    auto ioSpec = findIOSpec(structType, loc, argName);
+    auto ioSpec = maybeGetIOSpec(mut, input, loc, argName);
+
     if (!ioSpec) {
       error = true;
       continue;
     }
 
     if (*ioSpec != IOSpec::Output)
-      foundNonOutputTensor = true;
+      foundNonOutputOperand = true;
 
-    if (*ioSpec == IOSpec::Output && foundNonOutputTensor) {
-      emitError(loc, "Output tensor argument '" + argName.strref() +
-                         "' must come before other non-output tensor "
-                         "arguments");
+    if (*ioSpec == IOSpec::Output && foundNonOutputOperand) {
+      emitError(loc,
+                "Output tensor argument '" +
+                    func.getFuncTypeGenerator().getArgName(argIdx).strref() +
+                    "' must come before other non-output tensor "
+                    "arguments");
       continue;
     }
 
