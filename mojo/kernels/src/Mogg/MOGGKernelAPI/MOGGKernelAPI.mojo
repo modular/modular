@@ -8,7 +8,7 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
-from collections import Optional, OptionalReg
+from collections import InlineArray, Optional, OptionalReg
 from collections.vector import InlinedFixedVector
 from math import (
     ceil,
@@ -7398,19 +7398,25 @@ struct DistributedAllReduceSum2Devices:
 
         dev_ctxs = List[DeviceContext](dev_ctx0[], dev_ctx1[])
 
-        var out_bufs = StaticTuple[NDBuffer[type, rank], outputs.size]()
+        var out_bufs = InlineArray[NDBuffer[type, rank], outputs.size](
+            NDBuffer[type, rank]()
+        )
 
         @parameter
         for i in range(outputs.size):
             out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
 
-        var in_bufs = StaticTuple[NDBuffer[type, rank], inputs.size]()
+        var in_bufs = InlineArray[NDBuffer[type, rank], inputs.size](
+            NDBuffer[type, rank]()
+        )
 
         @parameter
         for i in range(inputs.size):
             in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
 
-        var rank_sigs = StaticTuple[UnsafePointer[Signal], MAX_GPUS]()
+        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
+            UnsafePointer[Signal]()
+        )
         rank_sigs[0] = signal_buffer0._ptr.bitcast[Signal]()
         rank_sigs[1] = signal_buffer1._ptr.bitcast[Signal]()
 
@@ -7456,19 +7462,25 @@ struct DistributedAllReduceSum4Devices:
             dev_ctx0[], dev_ctx1[], dev_ctx2[], dev_ctx3[]
         )
 
-        var out_bufs = StaticTuple[NDBuffer[type, rank], outputs.size]()
+        var out_bufs = InlineArray[NDBuffer[type, rank], outputs.size](
+            NDBuffer[type, rank]()
+        )
 
         @parameter
         for i in range(outputs.size):
             out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
 
-        var in_bufs = StaticTuple[NDBuffer[type, rank], inputs.size]()
+        var in_bufs = InlineArray[NDBuffer[type, rank], inputs.size](
+            NDBuffer[type, rank]()
+        )
 
         @parameter
         for i in range(inputs.size):
             in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
 
-        var rank_sigs = StaticTuple[UnsafePointer[Signal], MAX_GPUS]()
+        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
+            UnsafePointer[Signal]()
+        )
         rank_sigs[0] = signal_buffer0._ptr.bitcast[Signal]()
         rank_sigs[1] = signal_buffer1._ptr.bitcast[Signal]()
         rank_sigs[2] = signal_buffer2._ptr.bitcast[Signal]()
