@@ -93,6 +93,16 @@ You should now pass the function directly to
       ctx.enqueue_function[func](grid_dim=1, block_dim=4)
 ```
 
+- The `shuffle` module has been rename to `warp` to better
+  reflect its purpose. To uses now you will have to do
+  
+  ```mojo
+  import gpu.warp as warp
+
+  var val0 = warp.shuffle_down(x, offset)
+  var val1 = warp.broadcast(x)
+  ```
+
 ### Tooling changes
 
 #### Mojo Compiler
