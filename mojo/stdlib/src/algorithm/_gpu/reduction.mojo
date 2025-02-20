@@ -15,10 +15,9 @@ from gpu import (
     block_idx,
     grid_dim,
     lane_id,
-    shuffle_down,
     thread_idx,
-    warp_reduce,
 )
+import gpu.warp as warp
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from memory import stack_allocation
@@ -96,7 +95,7 @@ fn block_reduce[
             ]:
                 return reduce_fn[type, width, i](lhs, rhs)
 
-            result[i] = warp_reduce[shuffle_down, reduce_wrapper](val[i])
+            result[i] = warp.reduce[warp.shuffle_down, reduce_wrapper](val[i])
 
         return result
 
