@@ -262,6 +262,14 @@ class TokenGenerationSchedulerV2(Scheduler):
                     seq_ids_and_prompts, num_steps=num_steps
                 )
 
+            # We will try to schedule at most (max_batch_size_tg - len(self.active_batch))
+            # CE requests, so theoretically, we should always have enough cache indices.
+            # However, when chunked prefill is enabled, a chunked request might already
+            # occupy a cache index but not appear in `active_batch`.
+            has_insufficient_kv_blocks = (
+                has_insufficient_kv_blocks or not self.available_cache_indices
+            )
+
             if has_insufficient_kv_blocks:
                 # we cannot schedule this request so return it to the head of
                 # the request queue
