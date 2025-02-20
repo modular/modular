@@ -436,17 +436,31 @@ fn shuffle_xor[
 
 @always_inline
 fn lane_group_reduce[
+    val_type: DType,
+    simd_width: Int, //,
     shuffle: fn[type: DType, simd_width: Int] (
         val: SIMD[type, simd_width], offset: UInt32
     ) -> SIMD[type, simd_width],
     func: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
     ) capturing -> SIMD[type, width],
-    val_type: DType,
-    simd_width: Int,
     nthreads: Int,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
-    """Takes in an input function to computes warp shuffle based reduction operation.
+    """Takes in an input function to computes warp shuffle based reduction
+    operation.
+
+    Parameters:
+        val_type: The type of the SIMD value.
+        simd_width: The width of the SIMD value.
+        shuffle: The shuffle function to use.
+        func: The function to apply to the SIMD value.
+        nthreads: The number of threads in the warp.
+
+    Args:
+        val: The SIMD value to reduce.
+
+    Returns:
+        A SIMD value with the reduction result.
     """
     var res = val
 
@@ -462,20 +476,31 @@ fn lane_group_reduce[
 
 @always_inline
 fn reduce[
+    val_type: DType,
+    simd_width: Int, //,
     shuffle: fn[type: DType, simd_width: Int] (
         val: SIMD[type, simd_width], offset: UInt32
     ) -> SIMD[type, simd_width],
     func: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
     ) capturing -> SIMD[type, width],
-    val_type: DType,
-    simd_width: Int,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
-    """Takes in an input function to computes warp shuffle based reduction operation.
+    """Takes in an input function to computes warp shuffle based reduction
+    operation.
+
+    Parameters:
+        val_type: The type of the SIMD value.
+        simd_width: The width of the SIMD value.
+        shuffle: The shuffle function to use.
+        func: The function to apply to the SIMD value.
+
+    Args:
+        val: The SIMD value to reduce.
+
+    Returns:
+        A SIMD value with the reduction result.
     """
-    return lane_group_reduce[
-        shuffle, func, val_type, simd_width, nthreads=WARP_SIZE
-    ](val)
+    return lane_group_reduce[shuffle, func, nthreads=WARP_SIZE](val)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -489,6 +514,20 @@ fn lane_group_sum[
     simd_width: Int, //,
     nthreads: Int,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+    """Computes the sum within a lane group.
+
+    Parameters:
+        val_type: The type of the SIMD value.
+        simd_width: The width of the SIMD value.
+        nthreads: The number of threads in the warp.
+
+    Args:
+        val: The SIMD value to sum.
+
+    Returns:
+        A SIMD value with the sum of all lanes.
+    """
+
     @parameter
     fn _reduce_add(x: SIMD, y: __type_of(x)) -> __type_of(x):
         return x + y
@@ -502,6 +541,20 @@ fn lane_group_sum_and_broadcast[
     simd_width: Int, //,
     nthreads: Int,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+    """Computes sum and broadcasts within a lane group.
+
+    Parameters:
+        val_type: The type of the SIMD value.
+        simd_width: The width of the SIMD value.
+        nthreads: The number of threads in the warp.
+
+    Args:
+        val: The SIMD value to sum.
+
+    Returns:
+        A SIMD value with the sum of all lanes.
+    """
+
     @parameter
     fn _reduce_add(x: SIMD, y: __type_of(x)) -> __type_of(x):
         return x + y
@@ -513,26 +566,74 @@ fn lane_group_sum_and_broadcast[
 fn sum[
     val_type: DType, simd_width: Int, //
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+    """Computes the sum across the warp.
+
+    Parameters:
+        val_type: The type of the SIMD value.
+        simd_width: The width of the SIMD value.
+
+    Args:
+        val: The SIMD value to sum.
+
+    Returns:
+        A SIMD value with the sum of all lanes.
+    """
     return lane_group_sum[nthreads=WARP_SIZE](val)
 
 
 @value
 struct ReductionMethod:
+    """Enumerates the supported reduction methods."""
+
     var _value: Int
 
     alias TENSOR_CORE = Self(0)
+    """Use tensor core for reduction."""
     alias WARP = Self(1)
+    """Use warp shuffle for reduction."""
 
     fn __eq__(self, other: Self) -> Bool:
+        """Checks if two ReductionMethod are equal.
+
+        Args:
+            other: The other ReductionMethod to compare.
+
+        Returns:
+            True if the ReductionMethod are equal, false otherwise.
+        """
         return self._value == other._value
 
     fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
+        """Checks if two ReductionMethod are not equal.
+
+        Args:
+            other: The other ReductionMethod to compare.
+
+        Returns:
+            True if the ReductionMethod are not equal, false otherwise.
+        """
+        return self._value != other._value
 
     fn __is__(self, other: Self) -> Bool:
+        """Checks if two ReductionMethod are identical.
+
+        Args:
+            other: The other ReductionMethod to compare.
+
+        Returns:
+            True if the ReductionMethod are identical, false otherwise.
+        """
         return self == other
 
     fn __isnot__(self, other: Self) -> Bool:
+        """Checks if two ReductionMethod are not identical.
+
+        Args:
+            other: The other ReductionMethod to compare.
+
+        Returns:
+            True if the ReductionMethod are not identical, false otherwise.
+        """
         return self != other
 
 
@@ -546,7 +647,19 @@ fn sum[
     """Performs a warp level reduction using either a warp shuffle or tensor
     core operation. If the tensor core method is chosen, then the input value
     is cast to the intermediate type to make the value consumable by the
-    tensor core op."""
+    tensor core op.
+
+    Parameters:
+        intermediate_type: The type of the intermediate value.
+        reduction_method: The method to use for the reduction.
+        output_type: The type of the output value.
+
+    Args:
+        x: The value to reduce.
+
+    Returns:
+        The reduced value.
+    """
 
     @parameter
     if reduction_method is ReductionMethod.WARP:
@@ -573,6 +686,20 @@ fn lane_group_max[
     simd_width: Int, //,
     nthreads: Int,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+    """Reduces a SIMD value to its maximum within a lane group.
+
+    Parameters:
+        val_type: The type of the SIMD value.
+        simd_width: The width of the SIMD value.
+        nthreads: The number of threads in the warp.
+
+    Args:
+        val: The SIMD value to reduce.
+
+    Returns:
+        A SIMD value with the maximum value in all lanes.
+    """
+
     @parameter
     fn _reduce_max(x: SIMD, y: __type_of(x)) -> __type_of(x):
         return _max(x, y)
@@ -585,6 +712,20 @@ fn lane_group_max_and_broadcast[
     simd_width: Int, //,
     nthreads: Int,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+    """Reduces and broadcasts max within a lane group.
+
+    Parameters:
+        val_type: The type of the SIMD value.
+        simd_width: The width of the SIMD value.
+        nthreads: The number of threads in the warp.
+
+    Args:
+        val: The SIMD value to reduce.
+
+    Returns:
+        A SIMD value with the maximum value in all lanes.
+    """
+
     @parameter
     fn _reduce_max(x: SIMD, y: __type_of(x)) -> __type_of(x):
         return _max(x, y)
@@ -594,8 +735,21 @@ fn lane_group_max_and_broadcast[
 
 @always_inline
 fn max[
-    val_type: DType, simd_width: Int, //
+    val_type: DType,
+    simd_width: Int, //,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+    """Computes the maximum value across the warp.
+
+    Parameters:
+        val_type: The type of the SIMD value.
+        simd_width: The width of the SIMD value.
+
+    Args:
+        val: The SIMD value to reduce.
+
+    Returns:
+        A SIMD value with the maximum value in all lanes.
+    """
     return lane_group_max[nthreads=WARP_SIZE](val)
 
 
@@ -610,6 +764,20 @@ fn lane_group_min[
     simd_width: Int, //,
     nthreads: Int,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+    """Reduces a SIMD value to its minimum within a lane group.
+
+    Parameters:
+        val_type: The type of the SIMD value.
+        simd_width: The width of the SIMD value.
+        nthreads: The number of threads in the warp.
+
+    Args:
+        val: The SIMD value to reduce.
+
+    Returns:
+        A SIMD value with the minimum value in all lanes.
+    """
+
     @parameter
     fn _reduce_min(x: SIMD, y: __type_of(x)) -> __type_of(x):
         return _min(x, y)
@@ -621,6 +789,18 @@ fn lane_group_min[
 fn min[
     val_type: DType, simd_width: Int, //
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+    """Computes the minimum value across the warp.
+
+    Parameters:
+        val_type: The type of the SIMD value.
+        simd_width: The width of the SIMD value.
+
+    Args:
+        val: The SIMD value to reduce.
+
+    Returns:
+        A SIMD value with the minimum value in all lanes.
+    """
     return lane_group_min[nthreads=WARP_SIZE](val)
 
 
@@ -629,15 +809,44 @@ fn min[
 # ===-----------------------------------------------------------------------===#
 
 
+@always_inline
 fn broadcast[
     val_type: DType, simd_width: Int, //
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+    """Broadcasts a SIMD value across the warp.
+
+    Parameters:
+        val_type: The type of the SIMD value.
+        simd_width: The width of the SIMD value.
+
+    Args:
+        val: The SIMD value to broadcast.
+
+    Returns:
+        A SIMD value with all lanes equal to the input value.
+    """
     return shuffle_idx(val, 0)
 
 
 fn broadcast(val: Int) -> Int:
-    return Int(shuffle_idx(Scalar[DType.int32](val), 0))
+    """Broadcasts an Int value across the warp.
+
+    Args:
+        val: The Int value to broadcast.
+
+    Returns:
+        An Int value with all lanes equal to the input value.
+    """
+    return Int(shuffle_idx(Int32(val), 0))
 
 
 fn broadcast(val: UInt) -> UInt:
+    """Broadcasts a UInt value across the warp.
+
+    Args:
+        val: The UInt value to broadcast.
+
+    Returns:
+        A UInt value with all lanes equal to the input value.
+    """
     return Int(shuffle_idx(Scalar[DType.int32](val), 0))
