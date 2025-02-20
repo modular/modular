@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
+# TODO: MSTDL-1156
+# UNSUPPORTED: asan
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 
