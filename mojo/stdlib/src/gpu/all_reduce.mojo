@@ -323,6 +323,7 @@ fn allreduce_2stage_kernel[
     """
     alias accum_type = get_accum_type[type]()
     alias simd_width = simdwidthof[type]()
+    alias alignment = alignof[SIMD[type, simd_width]]()
 
     # --- Thread Indexing and Vector Setup ---
     var global_tid = global_idx.x
@@ -381,19 +382,23 @@ fn allreduce_2stage_kernel[
     for idx in range(start + global_tid, end, stride):
         # float32 accumulator for numerical stability.
         var elem_idx = idx * simd_width
-        var accum = ptrs[0].load[width=simd_width](elem_idx).cast[accum_type]()
+        var accum = ptrs[0].load[width=simd_width, alignment=alignment](
+            elem_idx
+        ).cast[accum_type]()
 
         @parameter
         for gpu_idx in range(1, ngpus):
             accum += (
                 ptrs[gpu_idx]
-                .load[width=simd_width](elem_idx)
+                .load[width=simd_width, alignment=alignment](elem_idx)
                 .cast[accum_type]()
             )
 
         # Convert back to the element index before storing.
         var elem_start = start * simd_width
-        tmp_out.store(elem_idx - elem_start, accum.cast[type]())
+        tmp_out.store[alignment=alignment](
+            elem_idx - elem_start, accum.cast[type]()
+        )
 
     # Second barrier with memory ordering guarantees.
     multi_gpu_barrier[ngpus, is_start=False, need_fence=True](
@@ -417,8 +422,11 @@ fn allreduce_2stage_kernel[
             if (gather_from_rank == (ngpus - 1)) or idx < part:
                 var dst_idx = (gather_from_rank * part) + idx
                 var elem_dst_idx = dst_idx * simd_width
-                result.store(
-                    elem_dst_idx, tmps[gpu_idx].load[width=simd_width](elem_idx)
+                result.store[alignment=alignment](
+                    elem_dst_idx,
+                    tmps[gpu_idx].load[width=simd_width, alignment=alignment](
+                        elem_idx
+                    ),
                 )
 
 
@@ -451,6 +459,7 @@ fn allreduce_1stage_kernel[
     """
     alias accum_type = get_accum_type[type]()
     alias simd_width = simdwidthof[type]()
+    alias alignment = alignof[SIMD[type, simd_width]]()
 
     var global_tid = global_idx.x
     var stride = grid_dim.x * block_dim.x
@@ -477,15 +486,19 @@ fn allreduce_1stage_kernel[
     # Vectorized grid-strided loop with SIMD loads.
     for idx in range(global_tid, num_simd_vectors, stride):
         var elem_idx = idx * simd_width
-        var accum = ptrs[0].load[width=simd_width](elem_idx).cast[accum_type]()
+        var accum = ptrs[0].load[width=simd_width, alignment=alignment](
+            elem_idx
+        ).cast[accum_type]()
 
         @parameter
         for _id in range(1, ngpus):
             accum += (
-                ptrs[_id].load[width=simd_width](elem_idx).cast[accum_type]()
+                ptrs[_id]
+                .load[width=simd_width, alignment=alignment](elem_idx)
+                .cast[accum_type]()
             )
 
-        result.store(elem_idx, accum.cast[type]())
+        result.store[alignment=alignment](elem_idx, accum.cast[type]())
 
     multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
 
