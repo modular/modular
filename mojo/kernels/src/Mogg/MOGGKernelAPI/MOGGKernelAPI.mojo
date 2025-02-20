@@ -1903,11 +1903,9 @@ struct Scatter:
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
         updates: ManagedTensorSlice[type = output.type, rank = output.rank],
         indices: ManagedTensorSlice[rank = output.rank],
-        axis: ManagedTensorSlice[rank=1],
+        axis: Int,
         ctx: MojoCallContextPtr,
     ) raises:
-        var scalar_axis = managed_tensor_slice_to_ndbuffer(axis)[0]
-
         @always_inline
         @parameter
         fn reduce_func[
@@ -1919,7 +1917,7 @@ struct Scatter:
             input,
             indices,
             updates,
-            Int(normalize_neg_index(scalar_axis, output.rank)),
+            Int(normalize_neg_index(axis, output.rank)),
             output,
         )
 
@@ -1928,19 +1926,14 @@ struct Scatter:
         input: ManagedTensorSlice,
         updates: ManagedTensorSlice[type = input.type, rank = input.rank],
         indices: ManagedTensorSlice[rank = input.rank],
-        axis: ManagedTensorSlice[rank=1],
+        axis: Int,
     ) raises -> IndexList[input.rank]:
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
         var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        var axis_ndbuffer = managed_tensor_slice_to_ndbuffer(axis)
-        return scatter_elements_shape[
-            input.rank,
-            input.type,
-            indices.type,
-            axis.type,
-            single_thread_blocking_override=True,
-        ](input_ndbuffer, updates_ndbuffer, indices_ndbuffer, axis_ndbuffer)
+        return scatter_elements_shape[single_thread_blocking_override=True,](
+            input_ndbuffer, updates_ndbuffer, indices_ndbuffer, axis
+        )
 
 
 @compiler.register("mo.scatter.add")
@@ -1954,11 +1947,9 @@ struct ScatterAdd:
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
         updates: ManagedTensorSlice[type = output.type, rank = output.rank],
         indices: ManagedTensorSlice[rank = output.rank],
-        axis: ManagedTensorSlice[rank=1],
+        axis: Int,
         ctx: MojoCallContextPtr,
     ) raises:
-        var scalar_axis = managed_tensor_slice_to_ndbuffer(axis)[0]
-
         @always_inline
         @parameter
         fn reduce_func[
@@ -1970,7 +1961,7 @@ struct ScatterAdd:
             input,
             indices,
             updates,
-            Int(normalize_neg_index(scalar_axis, output.rank)),
+            Int(normalize_neg_index(axis, output.rank)),
             output,
         )
 
@@ -1979,19 +1970,14 @@ struct ScatterAdd:
         input: ManagedTensorSlice,
         updates: ManagedTensorSlice[type = input.type, rank = input.rank],
         indices: ManagedTensorSlice[rank = input.rank],
-        axis: ManagedTensorSlice[rank=1],
+        axis: Int,
     ) raises -> IndexList[input.rank]:
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
         var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        var axis_ndbuffer = managed_tensor_slice_to_ndbuffer(axis)
-        return scatter_elements_shape[
-            input.rank,
-            input.type,
-            indices.type,
-            axis.type,
-            single_thread_blocking_override=True,
-        ](input_ndbuffer, updates_ndbuffer, indices_ndbuffer, axis_ndbuffer)
+        return scatter_elements_shape[single_thread_blocking_override=True,](
+            input_ndbuffer, updates_ndbuffer, indices_ndbuffer, axis
+        )
 
 
 @compiler.register("mo.scatter.max")
@@ -2005,11 +1991,9 @@ struct ScatterMax:
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
         updates: ManagedTensorSlice[type = output.type, rank = output.rank],
         indices: ManagedTensorSlice[rank = output.rank],
-        axis: ManagedTensorSlice[rank=1],
+        axis: Int,
         ctx: MojoCallContextPtr,
     ) raises:
-        var scalar_axis = managed_tensor_slice_to_ndbuffer(axis)[0]
-
         @always_inline
         @parameter
         fn reduce_func[
@@ -2021,7 +2005,7 @@ struct ScatterMax:
             input,
             indices,
             updates,
-            Int(normalize_neg_index(scalar_axis, output.rank)),
+            Int(normalize_neg_index(axis, output.rank)),
             output,
         )
 
@@ -2030,19 +2014,14 @@ struct ScatterMax:
         input: ManagedTensorSlice,
         updates: ManagedTensorSlice[type = input.type, rank = input.rank],
         indices: ManagedTensorSlice[rank = input.rank],
-        axis: ManagedTensorSlice[rank=1],
+        axis: Int,
     ) raises -> IndexList[input.rank]:
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
         var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        var axis_ndbuffer = managed_tensor_slice_to_ndbuffer(axis)
-        return scatter_elements_shape[
-            input.rank,
-            input.type,
-            indices.type,
-            axis.type,
-            single_thread_blocking_override=True,
-        ](input_ndbuffer, updates_ndbuffer, indices_ndbuffer, axis_ndbuffer)
+        return scatter_elements_shape[single_thread_blocking_override=True,](
+            input_ndbuffer, updates_ndbuffer, indices_ndbuffer, axis
+        )
 
 
 @compiler.register("mo.scatter.min")
@@ -2056,11 +2035,9 @@ struct ScatterMin:
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
         updates: ManagedTensorSlice[type = output.type, rank = output.rank],
         indices: ManagedTensorSlice[rank = output.rank],
-        axis: ManagedTensorSlice[rank=1],
+        axis: Int,
         ctx: MojoCallContextPtr,
     ) raises:
-        var scalar_axis = managed_tensor_slice_to_ndbuffer(axis)[0]
-
         @always_inline
         @parameter
         fn reduce_func[
@@ -2072,7 +2049,7 @@ struct ScatterMin:
             input,
             indices,
             updates,
-            Int(normalize_neg_index(scalar_axis, output.rank)),
+            Int(normalize_neg_index(axis, output.rank)),
             output,
         )
 
@@ -2081,19 +2058,14 @@ struct ScatterMin:
         input: ManagedTensorSlice,
         updates: ManagedTensorSlice[type = input.type, rank = input.rank],
         indices: ManagedTensorSlice[rank = input.rank],
-        axis: ManagedTensorSlice[rank=1],
+        axis: Int,
     ) raises -> IndexList[input.rank]:
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
         var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        var axis_ndbuffer = managed_tensor_slice_to_ndbuffer(axis)
-        return scatter_elements_shape[
-            input.rank,
-            input.type,
-            indices.type,
-            axis.type,
-            single_thread_blocking_override=True,
-        ](input_ndbuffer, updates_ndbuffer, indices_ndbuffer, axis_ndbuffer)
+        return scatter_elements_shape[single_thread_blocking_override=True,](
+            input_ndbuffer, updates_ndbuffer, indices_ndbuffer, axis
+        )
 
 
 @compiler.register("mo.scatter.mul")
@@ -2107,12 +2079,9 @@ struct ScatterMul:
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
         updates: ManagedTensorSlice[type = output.type, rank = output.rank],
         indices: ManagedTensorSlice[rank = output.rank],
-        axis: ManagedTensorSlice[rank=1],
+        axis: Int,
         ctx: MojoCallContextPtr,
     ) raises:
-        # Existing implementations do not require static shape information
-        var scalar_axis = managed_tensor_slice_to_ndbuffer(axis)[0]
-
         @always_inline
         @parameter
         fn reduce_func[
@@ -2124,7 +2093,7 @@ struct ScatterMul:
             input,
             indices,
             updates,
-            Int(normalize_neg_index(scalar_axis, output.rank)),
+            Int(normalize_neg_index(axis, output.rank)),
             output,
         )
 
@@ -2133,19 +2102,14 @@ struct ScatterMul:
         input: ManagedTensorSlice,
         updates: ManagedTensorSlice[type = input.type, rank = input.rank],
         indices: ManagedTensorSlice[rank = input.rank],
-        axis: ManagedTensorSlice[rank=1],
+        axis: Int,
     ) raises -> IndexList[input.rank]:
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
         var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        var axis_ndbuffer = managed_tensor_slice_to_ndbuffer(axis)
-        return scatter_elements_shape[
-            input.rank,
-            input.type,
-            indices.type,
-            axis.type,
-            single_thread_blocking_override=True,
-        ](input_ndbuffer, updates_ndbuffer, indices_ndbuffer, axis_ndbuffer)
+        return scatter_elements_shape[single_thread_blocking_override=True,](
+            input_ndbuffer, updates_ndbuffer, indices_ndbuffer, axis
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -2733,10 +2697,10 @@ struct ArgMax:
     ](
         output: ManagedTensorSlice[rank=rank],
         input: ManagedTensorSlice[rank=rank],
-        axis: ManagedTensorSlice[rank=1],
+        axis: Int,
         ctx: MojoCallContextPtr,
     ) raises:
-        var axis_val = Int(normalize_neg_index(axis[0], rank))
+        var axis_val = Int(normalize_neg_index(axis, rank))
 
         with Trace[TraceLevel.OP, target=target]("argmax"):
 
@@ -2771,10 +2735,10 @@ struct ArgMin:
     ](
         output: ManagedTensorSlice[rank=rank],
         input: ManagedTensorSlice[rank=rank],
-        axis: ManagedTensorSlice[rank=1],
+        axis: Int,
         ctx: MojoCallContextPtr,
     ) raises:
-        var axis_val = Int(normalize_neg_index(axis[0], rank))
+        var axis_val = Int(normalize_neg_index(axis, rank))
 
         with Trace[TraceLevel.OP, target=target]("argmin"):
 
@@ -4439,12 +4403,11 @@ struct Concat:
         _synchronous: Bool,
     ](
         output: ManagedTensorSlice[type=type, rank=rank],
-        axis: ManagedTensorSlice[rank=1],
+        axis: Int,
         inputs: VariadicTensors[type, rank, io_spec=IOUnknown, *_],
         ctx: MojoCallContextPtr,
     ) raises:
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
-        var axis_val = axis._ptr.load(0)
 
         var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
 
@@ -4484,7 +4447,7 @@ struct Concat:
             epilogue_wrapper,
             target,
         ](
-            Int(normalize_neg_index(axis_val, rank)),
+            Int(normalize_neg_index(axis, rank)),
             input_shapes,
             output_buf,
             ctx,
@@ -4605,7 +4568,7 @@ struct ConcatFromList:
     ](
         output: ManagedTensorSlice[type=type, rank=rank],
         inputs: InlinedFixedVector[DynamicTensor[type, rank].Type],
-        axis: ManagedTensorSlice[rank=1],
+        axis: Int,
         ctx: MojoCallContextPtr,
     ) raises:
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
@@ -4621,7 +4584,7 @@ struct ConcatFromList:
 
         _concat_cpu[rank, type, None, _synchronous](
             output_buf,
-            Int(normalize_neg_index(axis[0], rank)),
+            Int(normalize_neg_index(axis, rank)),
             input_as_ndbuffer,
         )
 
@@ -4656,11 +4619,10 @@ struct Split:
         output: VariadicTensors[type, rank, *_],
         input: ManagedTensorSlice[type=type, rank=rank],
         split_sizes: ManagedTensorSlice[rank=1],
-        axis: ManagedTensorSlice[rank=1],
+        axis: Int,
         ctx: MojoCallContextPtr,
     ) raises:
         var input_buf = managed_tensor_slice_to_ndbuffer(input)
-        var axis_val = axis._ptr.load(0)
         var output_bufs = StaticTuple[NDBuffer[type, rank], output.size]()
 
         @parameter
@@ -4668,7 +4630,7 @@ struct Split:
             output_bufs[i] = managed_tensor_slice_to_ndbuffer(output[i])
 
         split[type, rank](
-            input_buf, Int(normalize_neg_index(axis_val, rank)), output_bufs
+            input_buf, Int(normalize_neg_index(axis, rank)), output_bufs
         )
 
 
