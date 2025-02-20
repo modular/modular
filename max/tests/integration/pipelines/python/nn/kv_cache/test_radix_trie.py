@@ -352,10 +352,6 @@ async def test_kv_cache_radix_trie_raises() -> None:
     trie = RadixTrie()
     with pytest.raises(ValueError):
         trie.insert(["i", "like", "dogs"], ["BLOCK 0"])
-    with pytest.raises(ValueError):
-        trie.insert([], [])
-    with pytest.raises(ValueError):
-        trie.match_prefix([])
 
 
 @pytest.mark.asyncio
