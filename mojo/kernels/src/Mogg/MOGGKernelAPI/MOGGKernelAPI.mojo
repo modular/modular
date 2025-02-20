@@ -471,6 +471,20 @@ fn get_uint_from_managed_tensor_slice[
     return index(get_scalar_from_managed_tensor_slice(tensor))
 
 
+# Extract a Bool from a managed tensor slice.
+@register_internal("get_bool_from_managed_tensor_slice")
+@always_inline
+fn get_bool_from_managed_tensor_slice[
+    dtype: DType,
+](
+    tensor: ManagedTensorSlice[
+        io_spec=IOUnknown,
+        static_spec = StaticTensorSpec[dtype, 1].create_unknown(),
+    ]
+) -> Bool:
+    return Bool(get_int_from_managed_tensor_slice(tensor))
+
+
 @register_internal("get_int_from_shape")
 @always_inline
 fn get_int_from_shape[
@@ -3707,7 +3721,7 @@ struct BottomK:
         input: ManagedTensorSlice[type=type, rank=rank],
         k: Int,
         axis: Int,
-        sorted: Scalar[type = DType.bool],
+        sorted: Bool,
         ctx: MojoCallContextPtr,
     ) raises:
         top_k[largest=False, target=target](
@@ -3725,7 +3739,7 @@ struct BottomK:
         input: ManagedTensorSlice,
         k: Int,
         axis: Int,
-        sorted: ScalarTensor[type = DType.bool],
+        sorted: Bool,
     ) raises -> IndexList[input.rank]:
         return top_k_shape_impl[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input), k, axis
@@ -3745,7 +3759,7 @@ struct TopK:
         input: ManagedTensorSlice[type=type, rank=rank],
         k: Int,
         axis: Int,
-        sorted: Scalar[type = DType.bool],
+        sorted: Bool,
         ctx: MojoCallContextPtr,
     ) raises:
         top_k[largest=True, target=target](
@@ -3763,7 +3777,7 @@ struct TopK:
         input: ManagedTensorSlice,
         k: Int,
         axis: Int,
-        sorted: ScalarTensor[type = DType.bool],
+        sorted: Bool,
     ) raises -> IndexList[input.rank]:
         return top_k_shape_impl[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input), k, axis
