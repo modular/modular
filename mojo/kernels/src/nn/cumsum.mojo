@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import NDBuffer
+from utils.numerics import get_accum_type
 
 
 @always_inline
@@ -33,11 +34,13 @@ fn cumsum[
         axis: The axis on which to perform the cumsum operation.
     """
 
+    alias accum_type = DType.float64 if type == DType.float32 else get_accum_type[
+        type
+    ]()
     debug_assert(
         -rank <= axis < rank,
         "Axis value must be in range [-rank, rank)",
     )
-
     var axis_pos = axis if axis >= 0 else axis + rank
 
     var shape = input.get_shape()
@@ -66,7 +69,7 @@ fn cumsum[
             outer_index_adj = outer_index
 
         for inner_index in range(inner):
-            var accumulator: Scalar[type] = 0
+            var accumulator: Scalar[accum_type] = 0
             var inner_index_adj: Int
 
             @parameter
@@ -88,8 +91,12 @@ fn cumsum[
 
                 @parameter
                 if exclusive:
-                    output_data[index] = accumulator
-                    accumulator = accumulator + input_data[index]
+                    output_data[index] = accumulator.cast[type]()
+                    accumulator = (
+                        accumulator + input_data[index].cast[accum_type]()
+                    )
                 else:
-                    accumulator = accumulator + input_data[index]
-                    output_data[index] = accumulator
+                    accumulator = (
+                        accumulator + input_data[index].cast[accum_type]()
+                    )
+                    output_data[index] = accumulator.cast[type]()

@@ -11,6 +11,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from memory import UnsafePointer
 from nn.cumsum import cumsum
+from math import isclose
 
 
 # CHECK-LABEL: test_cumsum_1d
@@ -39,6 +40,56 @@ fn test_cumsum_1d():
     print()
 
     matrix_data.free()
+
+
+# CHECK-LABEL: test_cumsum_1d_precision
+# CHECK: Passed
+fn test_cumsum_1d_precision():
+    print("== test_cumsum_1d_precision")
+    alias exclusive = False
+    alias reverse = False
+    alias axis = 0
+    alias size = 1024
+
+    var f32_data = UnsafePointer[Float32].alloc(size)
+    var f32_matrix = NDBuffer[DType.float32, 1, DimList(size)](
+        f32_data, DimList(size)
+    )
+    for i in range(size):
+        f32_data[i] = 1.1
+
+    var f64_data = UnsafePointer[Float64].alloc(size)
+    var f64_matrix = NDBuffer[DType.float64, 1, DimList(size)](
+        f64_data, DimList(size)
+    )
+    for i in range(size):
+        f64_data[i] = 1.1
+
+    var cumsum_f32 = NDBuffer[
+        DType.float32, 1, DimList(size)
+    ].stack_allocation()
+    var cumsum_f64 = NDBuffer[
+        DType.float64, 1, DimList(size)
+    ].stack_allocation()
+
+    cumsum[1, DType.float32, exclusive, reverse](
+        cumsum_f32.make_dims_unknown(), f32_matrix.make_dims_unknown(), axis
+    )
+    cumsum[1, DType.float64, exclusive, reverse](
+        cumsum_f64.make_dims_unknown(), f64_matrix.make_dims_unknown(), axis
+    )
+
+    var passed = True
+    for i in range(size):
+        var f64_cast = cumsum_f64[i].cast[DType.float32]()
+        if not isclose(cumsum_f32[i], f64_cast, atol=1e-6, rtol=1e-6):
+            passed = False
+            break
+
+    print("Passed" if passed else "Failed")
+
+    f32_data.free()
+    f64_data.free()
 
 
 # CHECK-LABEL: test_cumsum_1d_exclusive
@@ -232,6 +283,7 @@ fn test_cumsum_2d_negative_axis():
 
 fn main():
     test_cumsum_1d()
+    test_cumsum_1d_precision()
     test_cumsum_1d_exclusive()
     test_cumsum_1d_reverse()
     test_cumsum_1d_reverse_exclusive()
