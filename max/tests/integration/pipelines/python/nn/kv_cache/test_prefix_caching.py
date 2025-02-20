@@ -111,10 +111,7 @@ async def test_prefix_caching() -> None:
         kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
         assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[
             0
-        ] == [
-            1,
-            5 + i,
-        ]
+        ] == [1, 5 + i]
         seq_ids_and_new_tokens = {seq_id_1: np.array([FAKE_TOKEN])}
         kv_manager.step(seq_ids_and_new_tokens)
 
@@ -164,6 +161,13 @@ async def test_prefix_caching() -> None:
         "----------[100]",
     ]
 
+    # first and second ce have 4 + 3 tokens
+    assert kv_manager.ce_all_tokens == 7
+    # second ce gets cache hit on 3 tokens
+    assert kv_manager.ce_cache_hit_tokens == 3
+    # cache hit rate is = 3 / 7
+    assert kv_manager.cache_hit_rate() > 0.42
+
 
 @pytest.mark.asyncio
 async def test_prefix_caching_with_repeating_prompt() -> None:
@@ -202,6 +206,8 @@ async def test_prefix_caching_with_repeating_prompt() -> None:
 
         kv_manager.release(seq_id)
 
+    assert kv_manager.cache_hit_rate() > 0.99
+
 
 @pytest.mark.asyncio
 async def test_prefix_caching_with_no_release() -> None:
@@ -222,6 +228,8 @@ async def test_prefix_caching_with_no_release() -> None:
             kv_manager.step(seq_ids_and_new_tokens)
 
             # We intentionally do not release the sequence here!
+
+    assert kv_manager.cache_hit_rate() > 0.1
 
 
 @pytest.mark.asyncio
@@ -288,6 +296,8 @@ async def test_prefix_caching_with_random_prompts(page_size, num_steps) -> None:
     # Check that all blocks are either in the trie or available.
     assert len(kv_manager.available_blocks) == kv_manager.total_num_pages
 
+    assert kv_manager.cache_hit_rate() > 0.01
+
 
 @pytest.mark.asyncio
 async def test_prefix_caching_with_num_steps_gt_1() -> None:
@@ -320,6 +330,8 @@ async def test_prefix_caching_with_num_steps_gt_1() -> None:
 
     seq_ids_and_new_tokens = {seq_id_1: np.array([18, 19])}
     kv_manager.step(seq_ids_and_new_tokens)
+
+    assert kv_manager.cache_hit_rate() == 0.0
 
 
 @pytest.mark.asyncio
@@ -363,6 +375,8 @@ async def test_prefix_caching_with_page_size_gt_1() -> None:
 
     seq_ids_and_new_tokens = {seq_id_1: np.array([17])}
     kv_manager.step(seq_ids_and_new_tokens)
+
+    assert kv_manager.cache_hit_rate() == 0.0
 
 
 @pytest.mark.asyncio
@@ -652,3 +666,6 @@ async def test_prefix_caching_chunked_prefill() -> None:
         "--[16, 17, 18, 19, 20, 21] : [2, 4]",
         "--[16, 17, 16, 17, 18, 998] : [3, 6]",
     ]
+
+    assert kv_manager.ce_cache_hit_tokens == 6
+    assert kv_manager.cache_hit_rate() > 0.2
