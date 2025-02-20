@@ -34,9 +34,9 @@ fn test_correlation() raises:
     var a = 10
     var b = 10
     var len = a * b
-    var u = UnsafePointer[Scalar[DType.float32]].alloc(len)
-    var v = UnsafePointer[Scalar[DType.float32]].alloc(len)
-    var x = UnsafePointer[Scalar[DType.float32]].alloc(len)
+    var u = UnsafePointer[Float32].alloc(len)
+    var v = UnsafePointer[Float32].alloc(len)
+    var x = UnsafePointer[Float32].alloc(len)
     for i in range(len):
         u.store(i, (0.01 * i).cast[DType.float32]())
         v.store(i, (-0.01 * i).cast[DType.float32]())
