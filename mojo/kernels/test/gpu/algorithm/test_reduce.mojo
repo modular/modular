@@ -262,16 +262,14 @@ def main():
 
         reduce_inner_test[reduce_max](
             IndexList[2](5, 3),
-            Scalar[DType.float32].MIN,
+            Float32.MIN,
             List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
             ctx,
         )
 
         fused_reduce_inner_test[fused_reduce_add_max, 2, DType.float32](
             IndexList[2](5, 3),
-            StaticTuple[Scalar[DType.float32], 2](
-                Scalar[DType.float32].MIN, 0.0
-            ),
+            StaticTuple[Float32, 2](Float32.MIN, 0.0),
             List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
             List[Float32](3.0, 6.0, 9.0, 12.0, 15.0),
             ctx,

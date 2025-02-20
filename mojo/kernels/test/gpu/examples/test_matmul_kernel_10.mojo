@@ -464,8 +464,8 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
                 c_buffer,
                 a_buffer,
                 b_buffer,
-                Scalar[DType.float32](1),
-                Scalar[DType.float32](0),
+                Float32(1),
+                Float32(0),
                 grid_dim=(ceildiv(N, K10_BN), ceildiv(M, K10_BM)),
                 block_dim=(K10_NUM_THREADS,),
             )

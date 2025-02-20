@@ -320,12 +320,12 @@ fn test[
         ctx.enqueue_copy_from_device(output_ptr, output_ref_device_ptr)
         _ = output_ref_device_ptr
 
-    var threshold_1_partition = Scalar[DType.float64](
-        1e-7
-    ) if use_index_input else Scalar[DType.float64](5e-6)
+    var threshold_1_partition = Float64(1e-7) if use_index_input else Float64(
+        5e-6
+    )
 
     # TODO(KERN-1490) tighten this threshold after correctness analysis
-    var threshold_multiple_partitions = Scalar[DType.float64](1e-2)
+    var threshold_multiple_partitions = Float64(1e-2)
     var threshold = threshold_1_partition if num_partitions and num_partitions.value() == 1 else threshold_multiple_partitions
 
     assert_with_measure[cosine](flash_output, output, threshold=threshold)

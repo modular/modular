@@ -63,7 +63,7 @@ def test_causal_mask_asm():
 
     print("== test_causal_mask_asm")
 
-    fn kernel(q_idx: UInt32, k_idx: UInt32) -> Scalar[DType.float32]:
+    fn kernel(q_idx: UInt32, k_idx: UInt32) -> Float32:
         var mask = CausalMask()
         var vec = mask.mask(
             IndexList[4, element_bitwidth=32, unsigned=True](

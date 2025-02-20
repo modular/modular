@@ -114,7 +114,7 @@ fn pool[
     var output_tensor = TestTensor[DType.float32, 4](out_shape)
     fill_tensor(output_tensor.ndbuffer.data, output_tensor.num_elements, 0)
 
-    var h_output_ref_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
+    var h_output_ref_ptr = UnsafePointer[Float32].alloc(
         Int(out_shape.product())
     )
     var h_output_ref = NDBuffer[DType.float32, 4](h_output_ref_ptr, out_shape)
@@ -202,7 +202,7 @@ fn pool_ceil_test[
     var output_tensor = TestTensor[DType.float32, 4](out_shape)
     fill_tensor(output_tensor.ndbuffer.data, output_tensor.num_elements, 0)
 
-    var h_output_ref_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
+    var h_output_ref_ptr = UnsafePointer[Float32].alloc(
         Int(out_shape.product())
     )
     var h_output_ref = NDBuffer[DType.float32, 4](h_output_ref_ptr, out_shape)
@@ -300,7 +300,7 @@ fn test_avg_pool_2d_with_padding_gpu[
     var output_tensor = TestTensor[DType.float32, 4](out_shape)
     fill_tensor(output_tensor.ndbuffer.data, output_tensor.num_elements, 0)
 
-    var h_output_ref_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
+    var h_output_ref_ptr = UnsafePointer[Float32].alloc(
         Int(out_shape.product())
     )
     var h_output_ref = NDBuffer[DType.float32, 4](h_output_ref_ptr, out_shape)
@@ -369,7 +369,7 @@ fn test_max_pool_pad_dilation_2d_gpu(ctx: DeviceContext) raises:
     var output_tensor = TestTensor[DType.float32, 4](out_shape)
     fill_tensor(output_tensor.ndbuffer.data, output_tensor.num_elements, 0)
 
-    var h_output_ref_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
+    var h_output_ref_ptr = UnsafePointer[Float32].alloc(
         Int(out_shape.product())
     )
     var h_output_ref = NDBuffer[DType.float32, 4](h_output_ref_ptr, out_shape)

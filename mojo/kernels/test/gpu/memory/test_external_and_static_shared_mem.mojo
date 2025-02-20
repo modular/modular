@@ -25,7 +25,7 @@ def test_external_shared_mem(ctx: DeviceContext):
         var dynamic_sram = external_memory[
             Float32,
             address_space = AddressSpace.SHARED,
-            alignment = alignof[Scalar[DType.float32]](),
+            alignment = alignof[Float32](),
         ]()
         dynamic_sram[thread_idx.x] = thread_idx.x
         sram[thread_idx.x] = thread_idx.x

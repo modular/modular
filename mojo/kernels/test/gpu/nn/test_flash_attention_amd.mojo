@@ -318,9 +318,7 @@ fn test[
         ctx.enqueue_copy_from_device(output_ptr, output_ref_device_ptr)
         _ = output_ref_device_ptr
 
-    assert_with_measure[cosine](
-        flash_output, output, threshold=Scalar[DType.float64](1e-5)
-    )
+    assert_with_measure[cosine](flash_output, output, threshold=Float64(1e-5))
 
     # This is useful for debugging.
     if False:

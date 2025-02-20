@@ -23,7 +23,7 @@ from testing import assert_almost_equal
 fn test_ldmatrix_fp8[
     input_type: DType,
 ](
-    c_ptr: UnsafePointer[Scalar[DType.float32]],
+    c_ptr: UnsafePointer[Float32],
     a_ptr: UnsafePointer[Scalar[input_type]],
     b_ptr: UnsafePointer[Scalar[input_type]],
 ):
@@ -87,8 +87,8 @@ fn check_ldmatrix_fp8[
 
     var a_host = UnsafePointer[Scalar[input_type]].alloc(M * K)
     var b_host = UnsafePointer[Scalar[input_type]].alloc(K * N)
-    var c_host = UnsafePointer[Scalar[DType.float32]].alloc(M * N)
-    var c_host_ref = UnsafePointer[Scalar[DType.float32]].alloc(M * N)
+    var c_host = UnsafePointer[Float32].alloc(M * N)
+    var c_host_ref = UnsafePointer[Float32].alloc(M * N)
 
     @parameter
     for m in range(M):

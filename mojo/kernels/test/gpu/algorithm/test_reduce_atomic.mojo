@@ -31,8 +31,8 @@ struct FillStrategy:
 
 fn reduce(
     res_add: UnsafePointer[Float32],
-    res_min: UnsafePointer[Scalar[DType.float32]],
-    res_max: UnsafePointer[Scalar[DType.float32]],
+    res_min: UnsafePointer[Float32],
+    res_max: UnsafePointer[Float32],
     vec: UnsafePointer[Float32],
     len: Int,
 ):

@@ -15,8 +15,8 @@ from testing import assert_almost_equal
 
 
 fn p2p_copy_kernel(
-    dst: UnsafePointer[Scalar[DType.float32]],
-    src: UnsafePointer[Scalar[DType.float32]],
+    dst: UnsafePointer[Float32],
+    src: UnsafePointer[Float32],
     num_elements: Int,
 ):
     var tid = global_idx.x
@@ -72,7 +72,7 @@ def main():
     var src_buf = ctx2.create_buffer_sync[DType.float32](length)
 
     # Initialize source data
-    var host_data = UnsafePointer[Scalar[DType.float32]].alloc(length)
+    var host_data = UnsafePointer[Float32].alloc(length)
     for i in range(length):
         host_data[i] = 1.0
 
@@ -83,7 +83,7 @@ def main():
     launch_p2p_copy_kernel(ctx1, dst_buf, src_buf, length)
 
     # Verify the data was copied correctly
-    var host_verify = UnsafePointer[Scalar[DType.float32]].alloc(length)
+    var host_verify = UnsafePointer[Float32].alloc(length)
     ctx1.enqueue_copy_from_device(host_verify, dst_buf)
     ctx1.synchronize()
 
