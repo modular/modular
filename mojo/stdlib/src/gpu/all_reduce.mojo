@@ -299,7 +299,7 @@ fn allreduce_2stage_kernel[
     type: DType, rank: Int, ngpus: Int
 ](
     result: UnsafePointer[Scalar[type]],
-    src_bufs: InlineArray[NDBuffer[type, rank], ngpus],
+    src_ptrs: InlineArray[UnsafePointer[Scalar[type]], ngpus],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     my_rank: Int,
     num_elements: Int,
@@ -318,7 +318,7 @@ fn allreduce_2stage_kernel[
 
     Arguments:
         result: Output buffer for reduced values.
-        src_bufs: Input buffers from all GPUs.
+        src_ptrs: Input buffers from all GPUs.
         rank_sigs: Signal pointers for synchronization.
             IMPORTANT: the signal pointers have trailing buffers for
             communication, which must be at least `ngpus * sizeof(payload)`.
@@ -367,7 +367,7 @@ fn allreduce_2stage_kernel[
         # Rank 0 accesses: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7.
         # Rank 1 accesses: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 0.
         var target = (my_rank + i) % ngpus
-        ptrs[i] = src_bufs[target].data
+        ptrs[i] = src_ptrs[target]
 
         # Skip Signal header.
         tmps[i] = (rank_sigs[target] + 1).bitcast[Scalar[type]]()
@@ -439,7 +439,7 @@ fn allreduce_1stage_kernel[
     type: DType, rank: Int, ngpus: Int
 ](
     result: UnsafePointer[Scalar[type]],
-    src_bufs: InlineArray[NDBuffer[type, rank], ngpus],
+    src_ptrs: InlineArray[UnsafePointer[Scalar[type]], ngpus],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     my_rank: Int,
     num_elements: Int,
@@ -454,7 +454,7 @@ fn allreduce_1stage_kernel[
 
     Arguments:
         result: Output buffer for reduced values
-        src_bufs: Input buffers from all GPUs
+        src_ptrs: Input buffers from all GPUs
         rank_sigs: Signal pointers for synchronization
         my_rank: Current GPU rank
         num_elements: Number of elements to reduce
@@ -484,7 +484,7 @@ fn allreduce_1stage_kernel[
         # Rank 0 accesses: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7.
         # Rank 1 accesses: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 0.
         var target = (my_rank + i) % ngpus
-        ptrs[i] = src_bufs[target].data
+        ptrs[i] = src_ptrs[target]
 
     multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
@@ -542,6 +542,16 @@ fn all_reduce_p2p[
             " allreduce"
         )
 
+    # Pass a stack-allocated array of pointers to the device kernel, which
+    # doesn't need dynamic tensor spec info from NDBuffer.
+    var list_of_in_ptrs = InlineArray[UnsafePointer[Scalar[type]], ngpus](
+        UnsafePointer[Scalar[type]]()
+    )
+
+    @parameter
+    for i in range(ngpus):
+        list_of_in_ptrs[i] = list_of_in_bufs[i].data
+
     for i in range(ngpus):
         var curr_ctx = ctxs[i]
         var curr_out_buf = list_of_out_bufs[i]
@@ -560,7 +570,7 @@ fn all_reduce_p2p[
                 allreduce_1stage_kernel[type, rank, ngpus]
             ](
                 curr_out_buf.data,
-                list_of_in_bufs,
+                list_of_in_ptrs,
                 rank_sigs,
                 i,
                 num_elements,
@@ -573,7 +583,7 @@ fn all_reduce_p2p[
                 allreduce_2stage_kernel[type, rank, ngpus]
             ](
                 curr_out_buf.data,
-                list_of_in_bufs,
+                list_of_in_ptrs,
                 rank_sigs,
                 i,
                 num_elements,
