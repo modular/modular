@@ -210,6 +210,8 @@ constexpr StringLiteral MOJO_INTERNAL_DPS_INT_TYPE_NAME = "stdlib::Int";
 
 constexpr StringLiteral MOJO_INTERNAL_DPS_UINT_TYPE_NAME = "stdlib::UInt";
 
+constexpr StringLiteral MOJO_INTERNAL_DPS_BOOL_TYPE_NAME = "stdlib::Bool";
+
 // We support tuples of DPS tensors for operations with variadic input/outputs
 constexpr StringLiteral MOJO_VARIADIC_TENSORS_NAME =
     "tensor_internal::VariadicTensors";
