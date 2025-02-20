@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections import InlineArray
 from math import ceildiv
 from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
@@ -118,8 +119,8 @@ fn all_reduce_naive[
     ngpus: Int, //,
 ](
     ctxs: List[DeviceContext],
-    list_of_in_bufs: StaticTuple[NDBuffer[type, rank], ngpus],
-    list_of_out_bufs: StaticTuple[NDBuffer[type, rank], ngpus],
+    list_of_in_bufs: InlineArray[NDBuffer[type, rank], ngpus],
+    list_of_out_bufs: InlineArray[NDBuffer[type, rank], ngpus],
 ) raises:
     """
     Performs all-reduce across GPUs without using peer-to-peer access.
@@ -203,7 +204,7 @@ fn multi_gpu_barrier[
     is_start: Bool,
     need_fence: Bool = False,
 ](
-    rank_sigs: StaticTuple[
+    rank_sigs: InlineArray[
         UnsafePointer[Signal], MAX_GPUS
     ],  # all-to-all table of signals
     self_sg: UnsafePointer[Signal],
@@ -298,8 +299,8 @@ fn allreduce_2stage_kernel[
     type: DType, rank: Int, ngpus: Int
 ](
     result: UnsafePointer[Scalar[type]],
-    src_bufs: StaticTuple[NDBuffer[type, rank], ngpus],
-    rank_sigs: StaticTuple[UnsafePointer[Signal], MAX_GPUS],
+    src_bufs: InlineArray[NDBuffer[type, rank], ngpus],
+    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     my_rank: Int,
     num_elements: Int,
 ):
@@ -438,8 +439,8 @@ fn allreduce_1stage_kernel[
     type: DType, rank: Int, ngpus: Int
 ](
     result: UnsafePointer[Scalar[type]],
-    src_bufs: StaticTuple[NDBuffer[type, rank], ngpus],
-    rank_sigs: StaticTuple[UnsafePointer[Signal], MAX_GPUS],
+    src_bufs: InlineArray[NDBuffer[type, rank], ngpus],
+    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     my_rank: Int,
     num_elements: Int,
 ):
@@ -514,9 +515,9 @@ fn all_reduce_p2p[
     ngpus: Int, //,
 ](
     ctxs: List[DeviceContext],
-    list_of_in_bufs: StaticTuple[NDBuffer[type, rank], ngpus],
-    list_of_out_bufs: StaticTuple[NDBuffer[type, rank], ngpus],
-    rank_sigs: StaticTuple[UnsafePointer[Signal], MAX_GPUS],
+    list_of_in_bufs: InlineArray[NDBuffer[type, rank], ngpus],
+    list_of_out_bufs: InlineArray[NDBuffer[type, rank], ngpus],
+    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
 ) raises:
     """
     Performs all-reduce using peer-to-peer access between GPUs.
@@ -587,9 +588,9 @@ fn all_reduce[
     ngpus: Int, //,
 ](
     ctxs: List[DeviceContext],
-    list_of_in_bufs: StaticTuple[NDBuffer[type, rank], ngpus],
-    list_of_out_bufs: StaticTuple[NDBuffer[type, rank], ngpus],
-    rank_sigs: StaticTuple[UnsafePointer[Signal], MAX_GPUS],
+    list_of_in_bufs: InlineArray[NDBuffer[type, rank], ngpus],
+    list_of_out_bufs: InlineArray[NDBuffer[type, rank], ngpus],
+    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
 ) raises:
     """
     Main entry point for performing all-reduce across multiple GPUs.
