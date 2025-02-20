@@ -12,12 +12,10 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from compiler_internal import StaticTensorSpec
 from runtime.asyncrt import DeviceContextPtr, MojoCallContextPtr
-from tensor import (
+from tensor_internal import (
     ManagedTensorSlice,
     VariadicTensors,
     foreach,
-)
-from tensor_internal import (
     _input_fusion_hook_impl,
     _output_fusion_hook_impl,
     simd_load_from_managed_tensor_slice,
