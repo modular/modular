@@ -6,15 +6,12 @@
 
 #include "mojo-format.h"
 
-#include "../../common/Telemetry.h"
-#include "AsyncRT/Runtime/Runtime.h"
 #include "Init/Init.h"
 #include "KGEN/Support/Configuration.h"
 #include "Support/Driver/DriverSupport.h"
 
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
-#include "llvm/Option/Option.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Program.h"
 
