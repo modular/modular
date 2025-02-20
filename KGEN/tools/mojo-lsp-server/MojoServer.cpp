@@ -673,6 +673,12 @@ MojoDocument::MojoDocument(Kind kind, ArrayRef<lsp::URIForFile> uris,
       [doc = MojoDocumentRef::copy(this)] { doc->parseDocument(); });
 }
 
+void MojoDocument::initializeContext() {
+  // Create the context now. This allows us to run completions and signature
+  // help before the main parse finishes.
+  context = std::make_unique<Context>(*this);
+}
+
 void MojoDocument::parseDocument() {
   // If we've already been invalidated, bail out early.
   if (isInvalidated)
@@ -706,7 +712,6 @@ void MojoDocument::parseDocument() {
   };
   DiagHandlerContext handlerCtx(*this);
   sourceMgr.setDiagHandler(handlerFn, &handlerCtx);
-  context = std::make_unique<Context>(*this);
 
   parseDocumentImpl();
 
@@ -1035,15 +1040,29 @@ MojoDocument::getCodeActionsSync(SMRange range,
 void MojoDocument::onCodeCompletion(
     const lsp::URIForFile &uri, const lsp::Position &completePos,
     LSPResponder<lsp::CompletionList> responder) {
-  startTaskAfterParsing([uri, completePos, responder = std::move(responder)](
-                            MojoDocument &doc) mutable {
-    if (doc.isInvalidated)
-      return responder.replyOutdatedRequest();
-    SMLoc completeLoc = doc.getLocFromPos(uri, completePos);
-    if (!completeLoc.isValid())
-      return responder.replyInvalidRequest();
-    responder.reply(doc.onCodeCompletionSync(completeLoc));
-  });
+  // We do not care if this document is parsed globally - we're going to do a
+  // different parse to pick up completion items.
+  auto doc = RCRef<MojoDocument>::copy(this);
+  if (doc->isInvalidated)
+    return responder.replyOutdatedRequest();
+
+  SMLoc completeLoc = doc->getLocFromPos(uri, completePos);
+  if (!completeLoc.isValid())
+    return responder.replyInvalidRequest();
+
+  // Completion within code blocks requires that we know where the code blocks
+  // begin and end.
+  if (doc->isWithinCodeBlock(completeLoc)) {
+    startTaskAfterParsing([responder = std::move(responder),
+                           completeLoc](MojoDocument &doc) mutable {
+      if (doc.isInvalidated)
+        return responder.replyOutdatedRequest();
+
+      responder.reply(doc.onCodeCompletionSync(completeLoc));
+    });
+  } else {
+    responder.reply(doc->onCodeCompletionSync(completeLoc));
+  }
 }
 
 enum class ItemAccessKind { kNormal, kPrivate, kSunder, kDunder, kOther };
@@ -1811,6 +1830,8 @@ MojoTextDocument::MojoTextDocument(const lsp::URIForFile &uri,
   // "main" file.
   getSourceMgr().AddNewSourceBuffer(
       llvm::MemoryBuffer::getMemBuffer(this->contents, uri.file()), SMLoc());
+
+  initializeContext();
 }
 
 void MojoTextDocument::parseDocumentImpl() {
@@ -1829,6 +1850,34 @@ const lsp::URIForFile &MojoTextDocument::getURIFromContainedLoc(SMLoc loc) {
 bool MojoTextDocument::containsLocation(SMLoc loc) {
   return getSourceMgr().FindBufferContainingLoc(loc) ==
          getSourceMgr().getMainFileID();
+}
+
+bool MojoTextDocument::isWithinCodeBlock(SMLoc loc) {
+  auto buffer = getSourceMgr()
+                    .getMemoryBuffer(getSourceMgr().getMainFileID())
+                    ->getBuffer();
+  auto length = buffer.data() + buffer.size() - loc.getPointer();
+  buffer = buffer.drop_back(length);
+
+  // Search backwards from the last line.
+  while (true) {
+    auto [newBuffer, line] = buffer.rsplit('\n');
+
+    if (line.empty())
+      return false;
+
+    // If we encounter ```mojo first, then we are within a code block.
+    if (line.trim() == "```mojo")
+      return true;
+    // If we encounter ```, we are not within a code block and should stop.
+    else if (line.trim() == "```" || line.trim() == "\"\"\"")
+      return false;
+
+    // Otherwise we should keep looking backwards.
+    buffer = newBuffer;
+  }
+
+  return false;
 }
 
 SMLoc MojoTextDocument::translateParserLoc(SMLoc loc) {
@@ -1945,6 +1994,8 @@ MojoNotebookDocument::MojoNotebookDocument(
         SMLoc());
     uriToCell.try_emplace(doc.uri.file(), cells.back().get());
   }
+
+  initializeContext();
 }
 
 void MojoNotebookDocument::parseDocumentImpl() {
@@ -2012,6 +2063,11 @@ bool MojoNotebookDocument::containsLocation(SMLoc loc) {
     return false;
   // Check that the buffer corresponds to one of the cells.
   return locBufferId <= static_cast<int>(cells.size());
+}
+
+bool MojoNotebookDocument::isWithinCodeBlock(SMLoc loc) {
+  // TODO: This should perform an actual search.
+  return true;
 }
 
 SMLoc MojoNotebookDocument::translateParserLoc(SMLoc loc) {
