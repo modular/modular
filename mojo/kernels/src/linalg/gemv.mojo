@@ -30,7 +30,7 @@ from gpu.host import (
 from gpu.host._compile import _get_gpu_target
 from gpu.host.launch_attribute import AccessPolicyWindow, AccessProperty
 from gpu.memory import AddressSpace, CacheOperation, load
-from gpu.shuffle import ReductionMethod, warp_broadcast, warp_sum
+import gpu.warp as warp
 from gpu.tensor_ops import tc_reduce_gevm_4x, tc_reduce_gevm_8x
 from memory import UnsafePointer, bitcast, memset_zero, stack_allocation
 
@@ -82,7 +82,7 @@ fn gemv_kernel[
     a_type: DType,
     b_type: DType,
     *,
-    reduction_method: ReductionMethod,
+    reduction_method: warp.ReductionMethod,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
@@ -95,7 +95,7 @@ fn gemv_kernel[
     k: Int,
 ):
     var tid = global_idx.x
-    var warp_id = warp_broadcast(tid // WARP_SIZE)
+    var warp_id = warp.broadcast(tid // WARP_SIZE)
 
     if warp_id >= m:
         return
@@ -111,7 +111,7 @@ fn gemv_kernel[
                 * b.load(idx).cast[s_type]()
             )
 
-    accum = warp_sum[
+    accum = warp.sum[
         a_type, reduction_method=reduction_method, output_type=s_type
     ](accum)
 
@@ -137,7 +137,7 @@ fn gemv_kernel_vector[
     b_type: DType,
     b_shape: DimList,
     *,
-    reduction_method: ReductionMethod,
+    reduction_method: warp.ReductionMethod,
     simd_width: UInt,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
@@ -153,7 +153,7 @@ fn gemv_kernel_vector[
     alias align_a = alignof[SIMD[a_type, simd_width]]()
     alias align_b = alignof[SIMD[b_type, simd_width]]()
     var tid = global_idx.x
-    var warp_id = warp_broadcast(tid // WARP_SIZE)
+    var warp_id = warp.broadcast(tid // WARP_SIZE)
 
     var a_ptr = (
         a.data + (warp_id * a.dim[1]()) + lane_id() * simd_width
@@ -189,7 +189,7 @@ fn gemv_kernel_vector[
         idx += step
         a_ptr += step
 
-    var accum = warp_sum[
+    var accum = warp.sum[
         a_type, reduction_method=reduction_method, output_type=s_type
     ](local_accum)
 
@@ -295,7 +295,7 @@ fn gemv_split_k[
 
     # Warps are arranged along K.
     alias k_warp_num = num_threads // WARP_SIZE
-    var warp_id = warp_broadcast(tid // WARP_SIZE)
+    var warp_id = warp.broadcast(tid // WARP_SIZE)
     var lane_id = tid % WARP_SIZE
     var shmem = stack_allocation[
         k_warp_num * tile_m * tile_n,
@@ -310,7 +310,7 @@ fn gemv_split_k[
 
         @parameter
         for ni in range(Int(tile_n)):
-            var val = warp_sum(acc[mi * tile_n + ni])
+            var val = warp.sum(acc[mi * tile_n + ni])
             if lane_id == 0:
                 shmem[mi * tile_n + ni + warp_id * tile_m * tile_n] = val
 
@@ -378,7 +378,7 @@ fn gevm_kernel[
     barrier()
 
     var total = x_shared.load(thread_idx.x).cast[s_type]()
-    total = warp_sum(total)
+    total = warp.sum(total)
 
     if lane_id() == 0:
 
@@ -416,7 +416,7 @@ fn gevm_tc_kernel_vector_8x[
     var accum = SIMD[s_type, simd_width]()
     var col = block_idx.x * WARP_SIZE * simd_width + lane_id() * simd_width
     var tid = global_idx.x
-    var global_warp_id = warp_broadcast(tid // WARP_SIZE)
+    var global_warp_id = warp.broadcast(tid // WARP_SIZE)
 
     var x_shared = stack_allocation[
         tile_size,
@@ -491,7 +491,7 @@ fn gevm_tc_kernel_vector_8x[
 @always_inline
 fn gemv_gpu_dispatch[
     transpose_b: Bool = False,
-    reduction_method: ReductionMethod = ReductionMethod.WARP,
+    reduction_method: warp.ReductionMethod = warp.ReductionMethod.WARP,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     kernel_func: GEMVAlgorithm,
@@ -562,7 +562,7 @@ fn gemv_gpu_dispatch[
                 b.type,
                 b.shape,
                 simd_width=simd_width,
-                reduction_method = ReductionMethod.WARP,
+                reduction_method = warp.ReductionMethod.WARP,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ]
             ctx.enqueue_function[kernel](
@@ -610,7 +610,7 @@ fn gemv_gpu_dispatch[
                 c.type,
                 a.type,
                 b.type,
-                reduction_method = ReductionMethod.WARP,
+                reduction_method = warp.ReductionMethod.WARP,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ]
         ](
@@ -630,7 +630,7 @@ fn gemv_gpu_dispatch[
                 c.type,
                 b.type,
                 a.type,
-                reduction_method = ReductionMethod.WARP,
+                reduction_method = warp.ReductionMethod.WARP,
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ]
@@ -775,7 +775,7 @@ fn gemv_gpu[
         kernel_func = GEMVAlgorithm.MATMUL_NAIVE
 
     # default reduction method
-    alias reduction_method = ReductionMethod.WARP
+    alias reduction_method = warp.ReductionMethod.WARP
 
     gemv_gpu_dispatch[
         transpose_b=transpose_b,

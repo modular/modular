@@ -14,10 +14,9 @@ from gpu import (
     thread_idx,
     WARP_SIZE,
     grid_dim,
-    warp_broadcast,
-    warp_sum,
     MAX_THREADS_PER_BLOCK_METADATA,
 )
+import gpu.warp as warp
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace, external_memory
 from memory.pointer import AddressSpace as _AddressSpace

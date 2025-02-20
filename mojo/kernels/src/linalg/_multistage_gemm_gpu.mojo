@@ -19,8 +19,8 @@ from gpu import (
     grid_dim,
     lane_id,
     thread_idx,
-    warp_broadcast,
 )
+import gpu.warp as warp
 from gpu.host import FuncAttribute
 from gpu.memory import (
     CacheEviction,
@@ -189,7 +189,7 @@ fn multistage_mma[
     # in the parameters. This ensures that `tid` represents the relative thread position
     # within each warp_k_part_id groups.
     var tid: UInt32 = thread_idx.x % num_threads
-    var warp_id = warp_broadcast(tid // WARP_SIZE)
+    var warp_id = warp.broadcast(tid // WARP_SIZE)
 
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
@@ -660,7 +660,7 @@ fn multistage_gemm_kernel[
     var tid = thread_idx.x
     var ln_id = lane_id()
     var warp_k_part_id = tid // num_threads_per_warp_k_part if num_warp_k_partitions > 1 else 0
-    var warp_id = warp_broadcast(
+    var warp_id = warp.broadcast(
         (tid % num_threads_per_warp_k_part) // WARP_SIZE
     )
 

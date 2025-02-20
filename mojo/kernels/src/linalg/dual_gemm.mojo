@@ -19,9 +19,8 @@ from gpu import (
     grid_dim,
     lane_id,
     thread_idx,
-    warp_broadcast,
-    warp_sum,
 )
+import gpu.warp as warp
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.info import A100, is_gpu
 from gpu.memory import (
@@ -122,7 +121,7 @@ fn multistage_dual_mma[
     alias simd_size = simdwidthof[a_type]()
 
     var tid: UInt32 = thread_idx.x
-    var warp_id = warp_broadcast(tid // WARP_SIZE)
+    var warp_id = warp.broadcast(tid // WARP_SIZE)
 
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
@@ -455,7 +454,7 @@ fn multistage_dual_gemm_kernel[
 
     var tid = thread_idx.x
     var ln_id = lane_id()
-    var warp_id = warp_broadcast(tid // WARP_SIZE)
+    var warp_id = warp.broadcast(tid // WARP_SIZE)
 
     # Only apply block swizzling for half precision types.
     alias swizzle_block = a_type.is_half_float() and b_type.is_half_float()
@@ -1186,7 +1185,7 @@ fn dual_gemv_kernel[
 
     # Warps are arranged along K.
     alias k_warp_num = num_threads // WARP_SIZE
-    var warp_id = warp_broadcast(tid // WARP_SIZE)
+    var warp_id = warp.broadcast(tid // WARP_SIZE)
     var lane_id = tid % WARP_SIZE
     var shmem = stack_allocation[
         k_warp_num * tile_m * tile_n,
@@ -1201,7 +1200,7 @@ fn dual_gemv_kernel[
 
         @parameter
         for ni in range(Int(tile_n)):
-            var val = warp_sum(acc[mi * tile_n + ni])
+            var val = warp.sum(acc[mi * tile_n + ni])
             if lane_id == 0:
                 shmem[mi * tile_n + ni + warp_id * tile_m * tile_n] = val
 
