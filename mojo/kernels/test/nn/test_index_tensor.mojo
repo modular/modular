@@ -406,22 +406,9 @@ fn test_index_tensor_llama2_mistral() raises:
                     IndexList[input_rank](index_a[i, j].__int__(), k)
                 ]
 
-    alias axis_type = DType.int64
-    var axis_buf = NDBuffer[axis_type, 1, DimList(1)].stack_allocation()
-    axis_buf[0] = 0
-
     var output_shape = gather_shape[
-        output_rank,
-        input_rank,
-        index_rank,
-        input_type,
-        index_type,
-        axis_type,
-    ](
-        input.make_dims_unknown(),
-        index_a.make_dims_unknown(),
-        axis_buf.make_dims_unknown(),
-    )
+        output_rank, input_rank, index_rank, input_type, index_type
+    ](input.make_dims_unknown(), index_a.make_dims_unknown(), 0)
 
     var output_data_data = stack_allocation[
         index_dim_0 * index_dim_1 * dim_1, input_type

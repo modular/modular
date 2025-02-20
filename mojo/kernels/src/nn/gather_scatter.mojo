@@ -29,43 +29,52 @@ from .reshape import reshape
 
 
 @always_inline
-fn normalize_neg_index(idx: Int, dim_size: Int) -> Int:
+fn _unsafe_normalize_neg_index(idx: Int, dim_size: Int) -> Int:
+    return idx + dim_size if idx < 0 else idx
+
+
+@always_inline
+fn _unsafe_normalize_neg_index[
+    type: DType, width: Int, out_type: DType = DType.index
+](idx: SIMD[type, width], dim_size: Int) -> SIMD[out_type, width]:
+    return (idx < 0).select(
+        idx.cast[out_type]() + dim_size, idx.cast[out_type]()
+    )
+
+
+@always_inline
+fn normalize_neg_index(idx: Int, dim_size: Int) raises -> Int:
     """Indices passed to gather and scatter ops may be negative. This performs
     a normalization so that they can be used to index into a buffer.
 
     Returns val + dim if val < 0 else val
     """
-    debug_assert(
-        -dim_size <= idx < dim_size,
-        "indices must be in range [-dim_size, dim_size)",
-    )
-    return idx + dim_size if idx < 0 else idx
+    if -dim_size <= idx < dim_size:
+        return _unsafe_normalize_neg_index(idx, dim_size)
+
+    raise Error("indices must be in range [-dim_size, dim_size)")
 
 
 @always_inline
 fn normalize_neg_index[
     type: DType, width: Int, out_type: DType = DType.index
-](idx: SIMD[type, width], dim_size: Int) -> SIMD[out_type, width]:
+](idx: SIMD[type, width], dim_size: Int) raises -> SIMD[out_type, width]:
     """Indices passed to gather and scatter ops may be negative. This performs
     a normalization so that they can be used to index into a buffer.
 
     Returns val + dim if val < 0 else val
     """
-
-    debug_assert(
-        (
-            all(-SIMD[out_type, width](dim_size) <= idx.cast[out_type]())
-            and all(idx.cast[out_type]() < SIMD[out_type, width](dim_size))
-        ),
-        "indices must be in range [-dim_size, dim_size)",
-    )
     constrained[
         type.is_integral(),
         "normalize_neg_index expects index to be an integral type",
     ]()
-    return (idx < 0).select(
-        idx.cast[out_type]() + dim_size, idx.cast[out_type]()
-    )
+
+    if all(-SIMD[out_type, width](dim_size) <= idx.cast[out_type]()) and all(
+        idx.cast[out_type]() < SIMD[out_type, width](dim_size)
+    ):
+        return _unsafe_normalize_neg_index[out_type=out_type](idx, dim_size)
+
+    raise Error("indices must be in range [-dim_size, dim_size)")
 
 
 @value
@@ -79,10 +88,8 @@ struct Axis(Intable, Indexer):
         self.axis = axis
 
     @always_inline
-    fn __init__[
-        type: DType
-    ](mut self, axis_unnormalized: Scalar[type], rank: Int):
-        self.axis = Int(normalize_neg_index(axis_unnormalized, rank))
+    fn __init__(mut self, axis: Int, rank: Int) raises:
+        self.axis = normalize_neg_index(axis, rank)
 
     @always_inline
     fn __int__(self) -> Int:
@@ -221,7 +228,7 @@ fn gather_reduce[
                     j: Int,
                 ) -> StaticTuple[SIMD[type, simd_width], unroll_factor]:
                     var out = accums
-                    var idxs = normalize_neg_index(
+                    var idxs = _unsafe_normalize_neg_index(
                         indices.load[width=unroll_factor](i, j),
                         gather_axis_size,
                     )
@@ -314,7 +321,7 @@ fn gather[
                 indices_remaining - 1, prefetch_offset
             )
             input_coords[axis] = Int(
-                normalize_neg_index(
+                _unsafe_normalize_neg_index(
                     next_idx_ptr.load(),
                     input.get_shape()[axis],
                 )
@@ -413,7 +420,7 @@ fn gather[
                 indices_remaining - 1, prefetch_offset
             )
             input_coords[axis] = Int(
-                normalize_neg_index(
+                _unsafe_normalize_neg_index(
                     next_idx_ptr.load(),
                     input.get_shape()[axis],
                 )
@@ -554,7 +561,7 @@ fn gather_elementwise_fn_wrapper[
         for i in range(input_shape.size):
             if i == Int(axis):
                 data_indices[i] = Int(
-                    normalize_neg_index(data_index, input_shape[axis])
+                    _unsafe_normalize_neg_index(data_index, input_shape[axis])
                 )
             elif i > Int(axis):
                 # Skip over any extra indices dimensions. These are essentially new dimensions.
@@ -901,7 +908,7 @@ fn scatter_nd_generator[
 
                 var idx_on_axis = indices[indices_index]
                 var pos_idx_on_axis = Int(
-                    normalize_neg_index(idx_on_axis, input_ax_dim)
+                    _unsafe_normalize_neg_index(idx_on_axis, input_ax_dim)
                 )
                 output_index_tensor[dim] = pos_idx_on_axis
 
@@ -943,8 +950,10 @@ fn scatter_nd_generator[
 
         # TODO: SEE: simd_width > 1
         var iter_shape = IndexList[indices_rank - 1]()
-        for i in range(len(indices.get_shape()) - 1):
-            iter_shape[i] = indices.get_shape()[i]
+
+        @parameter
+        for i in range(indices_rank - 1):
+            iter_shape[i] = indices.dim[i]()
 
         elementwise[
             update_func,
@@ -1064,12 +1073,11 @@ fn gather_shape[
     indices_rank: Int,
     input_type: DType,
     indices_type: DType,
-    axis_type: DType,
     single_thread_blocking_override: Bool = False,
 ](
     input_buf: NDBuffer[input_type, input_rank],
     indices_buf: NDBuffer[indices_type, indices_rank],
-    axis_buf: NDBuffer[axis_type, 1],
+    axis: Int,
 ) raises -> IndexList[output_rank]:
     """
     Compute the output shape of a `gather` operation, and assert the inputs are
@@ -1081,14 +1089,13 @@ fn gather_shape[
         indices_rank: Rank of the indices tensor.
         input_type: Type of the input tensor.
         indices_type: Type of the indices tensor.
-        axis_type: Type of the axis tensor.
         single_thread_blocking_override: If True, then the operation is run
           synchronously using a single thread.
 
     Args:
         input_buf: The input tensor.
         indices_buf: The indices tensor.
-        axis_buf: The axis tensor.
+        axis: The axis.
 
     Returns:
         The output shape.
@@ -1099,13 +1106,7 @@ fn gather_shape[
         )
 
     # extract hyper parameter
-    var axis = Int(axis_buf[0])
-    if axis < 0:
-        axis += input_rank
-    if axis < 0 or input_rank <= axis:
-        raise Error(
-            "[gather] normalized axis must be within range [0, input_rank)"
-        )
+    var normalized_axis = normalize_neg_index(axis, input_rank)
 
     # compute and return the output shape
     var output_shape = IndexList[output_rank]()
@@ -1114,14 +1115,13 @@ fn gather_shape[
     var indices_shape = indices_buf.get_shape()
 
     # NOTE it's written this way instead of 3 separate for-loops because
-    # currently KGEN unrolling only works for strictly static bounds, but `axis`
-    # only becomes static after inlining `axis_buf`.
+    # currently KGEN unrolling only works for strictly static bounds.
     @parameter
     for out_dim in range(output_rank):
-        if out_dim < axis:
+        if out_dim < normalized_axis:
             output_shape[out_dim] = input_shape[out_dim]
-        elif out_dim < axis + indices_rank:
-            output_shape[out_dim] = indices_shape[out_dim - axis]
+        elif out_dim < normalized_axis + indices_rank:
+            output_shape[out_dim] = indices_shape[out_dim - normalized_axis]
         else:
             output_shape[out_dim] = input_shape[out_dim - indices_rank + 1]
 
@@ -1187,7 +1187,7 @@ fn scatter_elements[
         var idx_on_axis = indices[indices_coords]
         var output_coords = indices_coords
         output_coords[axis] = Int(
-            normalize_neg_index(idx_on_axis, input_ax_dim)
+            _unsafe_normalize_neg_index(idx_on_axis, input_ax_dim)
         )
         var curr = output[output_coords]
         output[output_coords] = reduce_fn[input_type, 1](
@@ -1288,7 +1288,7 @@ fn gather_elements[
             "axis in gather_elements must be in the range [-rank, rank)"
         )
 
-    var axis = _axis if _axis >= 0 else _axis + rank
+    var axis = normalize_neg_index(_axis, rank)
 
     var input_ax_dim = input.get_shape()[axis]
 
@@ -1300,7 +1300,9 @@ fn gather_elements[
         var output_coords = rebind[IndexList[rank]](_output_coords)
         var idx_on_axis = indices[output_coords]
         var input_coords = output_coords
-        input_coords[axis] = Int(normalize_neg_index(idx_on_axis, input_ax_dim))
+        input_coords[axis] = Int(
+            _unsafe_normalize_neg_index(idx_on_axis, input_ax_dim)
+        )
         output[output_coords] = input[input_coords]
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous

@@ -48,40 +48,30 @@ alias SEED = 0
 fn top_k_shape_impl[
     type: DType,
     rank: Int,
-    axis_type: DType,
     single_thread_blocking_override: Bool,
-](
-    input: NDBuffer[type, rank],
-    k_buf: NDBuffer[axis_type, 1],
-    axis_buf: NDBuffer[axis_type, 1],
-) raises -> IndexList[rank]:
+](input: NDBuffer[type, rank], k: Int, axis: Int) raises -> IndexList[rank]:
     """
     Compute the output shape of a top/bottom k operation.
 
     Parameters:
         type: Data type of the input buffer.
         rank: Rank of the input.
-        axis_type: Type of the axis and K arguments.
         single_thread_blocking_override: If this function can block.
 
     Args:
         input: The input tensor.
-        k_buf: The K value in a tensor.
-        axis_buf: The axis value in a tensor.
+        k: The K value in a tensor.
+        axis: The axis value in a tensor.
 
     Returns:
         The output shape.
     """
-    var axis = Int(axis_buf[0])
-    var k = Int(k_buf[0])
 
-    if axis < 0 or axis >= rank:
-        raise Error("[top/bottom-k] axis must be within [0, rank]")
     if k < 0 or k > input.get_shape()[axis]:
         raise Error("[top/bottom-k] k must be within [0, input_shape[axis]]")
 
     var shape = input.get_shape()
-    shape[axis] = k
+    shape[normalize_neg_index(axis, rank)] = k
 
     return shape
 
@@ -90,32 +80,22 @@ fn top_k_shape_impl[
 fn top_k_shape[
     type: DType,
     rank: Int,
-    axis_type: DType,
     single_thread_blocking_override: Bool,
-](
-    input: NDBuffer[type, rank],
-    k_buf: NDBuffer[axis_type, 1],
-    axis_buf: NDBuffer[axis_type, 1],
-) raises -> IndexList[rank]:
+](input: NDBuffer[type, rank], k: Int, axis: Int) raises -> IndexList[rank]:
     return top_k_shape_impl[
         single_thread_blocking_override=single_thread_blocking_override
-    ](input, k_buf, axis_buf)
+    ](input, k, axis)
 
 
 @always_inline
 fn bottom_k_shape[
     type: DType,
     rank: Int,
-    axis_type: DType,
     single_thread_blocking_override: Bool,
-](
-    input: NDBuffer[type, rank],
-    k_buf: NDBuffer[axis_type, 1],
-    axis_buf: NDBuffer[axis_type, 1],
-) raises -> IndexList[rank]:
+](input: NDBuffer[type, rank], k: Int, axis: Int) raises -> IndexList[rank]:
     return top_k_shape_impl[
         single_thread_blocking_override=single_thread_blocking_override
-    ](input, k_buf, axis_buf)
+    ](input, k, axis)
 
 
 fn top_k[
@@ -172,7 +152,7 @@ fn top_k[
             sorted,
         )
     else:
-        var normalized_axis = Int(normalize_neg_index(Int64(axis), rank))
+        var normalized_axis = normalize_neg_index(Int64(axis), rank)
         if normalized_axis != rank - 1:
             raise Error("axis other than -1 not supported on GPU")
         if not sorted:

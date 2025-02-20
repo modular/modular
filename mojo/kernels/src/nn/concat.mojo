@@ -24,6 +24,7 @@ from memory import UnsafePointer, memcpy
 from register import register_internal
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel
+from .gather_scatter import normalize_neg_index
 
 from utils import IndexList, StaticTuple, product
 
@@ -518,11 +519,10 @@ fn _concat_cpu[
 fn concat_shape[
     input_rank: Int,
     input_type: DType,
-    axis_type: DType,
     single_thread_blocking_override: Bool,
 ](
     input_bufs: InlinedFixedVector[NDBuffer[input_type, input_rank]],
-    axis_buf: NDBuffer[axis_type, 1],
+    axis: Int,
 ) raises -> IndexList[input_rank]:
     """
     Compute the output shape of a `pad` operation, and assert the inputs are
@@ -531,27 +531,19 @@ fn concat_shape[
     Parameters:
         input_rank: Input_rank of the input tensor.
         input_type: Type of the input tensor.
-        axis_type: Type of the axis tensor.
         single_thread_blocking_override: If True, then the operation is run
           synchronously using a single thread.
 
     Args:
         input_bufs: The input tensors list.
-        axis_buf: The axis tensor.
+        axis: The axis.
 
     Returns:
         The output shape.
     """
 
     # extract hyper parameters
-    var axis = Int(axis_buf[0])
-    if axis < 0:
-        axis += input_rank
-    if axis < 0 or input_rank <= axis:
-        raise Error(
-            "[concat_from_list] normalized axis must be within range [0,"
-            " input_rank)"
-        )
+    var normalized_axis = normalize_neg_index(axis, input_rank)
 
     @parameter
     @always_inline
@@ -565,7 +557,7 @@ fn concat_shape[
 
     var concat_axis_dim_sum = 0
     for i in range(len(input_bufs)):
-        concat_axis_dim_sum += input_bufs[i].dim(axis)
+        concat_axis_dim_sum += input_bufs[i].dim(normalized_axis)
         if not shape_equal_ignore_axis(
             input_bufs[0].get_shape(), input_bufs[i].get_shape()
         ):
@@ -576,7 +568,7 @@ fn concat_shape[
 
     # compute and return the output shape
     var output_shape = input_bufs[0].get_shape()
-    output_shape[axis] = concat_axis_dim_sum
+    output_shape[normalized_axis] = concat_axis_dim_sum
     return output_shape
 
 
