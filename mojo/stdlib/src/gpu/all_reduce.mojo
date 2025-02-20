@@ -27,7 +27,11 @@ from utils.numerics import get_accum_type
 # tried: A100, A10, A30, T4, V100. You'll notice that NCCL kernels also only
 # take a small amount of SMs. Not quite sure the underlying reason, but my
 # guess is that too many SMs will cause contention on NVLink bus.
-alias MAX_BLOCK = 36
+
+# NOTE: the above result was true on A100, but on H100 we need more SMs to
+# sature the NVLink in the bandwidth-bound regime.
+# TODO(bduke): Dispatch based on device after completing parameter sweep.
+alias MAX_BLOCK = 128
 alias MAX_GPUS = 8
 # Counter may overflow, but it's fine since unsigned int overflow is
 # well-defined behavior.
@@ -541,7 +545,7 @@ fn all_reduce_p2p[
         var curr_ctx = ctxs[i]
         var curr_out_buf = list_of_out_bufs[i]
 
-        alias BLOCK_SIZE = 256
+        alias BLOCK_SIZE = 512
         var grid_size = min(MAX_BLOCK, ceildiv(num_elements, BLOCK_SIZE))
 
         alias rank_4_byte_threshold = 512 * 1024
