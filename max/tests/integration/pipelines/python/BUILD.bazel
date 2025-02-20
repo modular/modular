@@ -164,26 +164,8 @@ modular_py_binary(
     srcs = ["run_lm_eval.py"],
     ignore_collisions = True,  # duplicate examples/__init__.py from deps
     main = "run_lm_eval.py",
-    # Some of lm-eval's optional deps are not picked up by Bazel for some
-    # reason so we have to include them explicitly here.
     deps = [
-        requirement(r)
-        for r in [
-            "lm-eval",
-            # lm-eval[api] dependencies
-            "requests",
-            "aiohttp",
-            "tenacity",
-            "tqdm",
-            "tiktoken",
-            # lm-eval[ifeval] dependencies
-            "langdetect",
-            "immutabledict",
-            "nltk",
-            # lm-eval[math] dependencies
-            "sympy",
-            "antlr4-python3-runtime",
-        ]
+        requirement("lm-eval"),
     ],
 )
 
