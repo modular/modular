@@ -26,6 +26,7 @@ from functools import partial
 
 import uvloop
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from max.pipelines import PipelinesFactory, PipelineTokenizer
 from max.serve.config import (
     APIType,
@@ -115,6 +116,18 @@ async def lifespan(
         await METRICS.shutdown()
 
 
+def version():
+    """Returns max-serve version information."""
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        package_version = version("max")
+        return JSONResponse({"version": package_version})
+    except PackageNotFoundError:
+        logger.debug("Version could not be reported for max.")
+        return JSONResponse({"version": "unknown"})
+
+
 def fastapi_app(
     settings: Settings,
     serving_settings: ServingTokenGeneratorSettings,
@@ -130,6 +143,7 @@ def fastapi_app(
     )
 
     app.mount("/metrics", make_metrics_app())
+    app.add_api_route("/version", version)
 
     for api_type in settings.api_types:
         app.include_router(
