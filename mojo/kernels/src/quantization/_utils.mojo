@@ -54,4 +54,4 @@ fn roundeven_to_int32[
 
         return x_i32
 
-    return x.roundeven().cast[DType.int32]()
+    return round(x).cast[DType.int32]()

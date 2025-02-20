@@ -56,7 +56,7 @@ fn quantize_a_Q8[
     var max_value = abs(fp_data).reduce_max()
     var multiplier = 127.0 / max_value if max_value != 0.0 else 0.0
     var scale = (max_value / 127.0).cast[DType.float32]()
-    var quant_data = (fp_data * multiplier).roundeven().cast[DType.int8]()
+    var quant_data = round(fp_data * multiplier).cast[DType.int8]()
 
     a_quant.store(quant_data)
     return scale

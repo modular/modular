@@ -90,7 +90,7 @@ fn calculate_symmetric_vector[
     ) else result_range / positive_steps
 
     # TODO: consider clipping values
-    var data_rounded = (data / f32_scale).roundeven().cast[DType.int8]()
+    var data_rounded = round(data / f32_scale).cast[DType.int8]()
 
     # each bit pattern in `data_quantized`
     var data_quantized = (data_rounded + negative_steps).cast[DType.uint8]()
