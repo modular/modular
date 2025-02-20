@@ -226,7 +226,7 @@ def send_telemetry_log(model_name: str):
     {{
       "resource": {{
         "attributes": [
-          {{"key": "model", "value": {{"stringValue": "{model_name}"}}}},
+          {{"key": "deployment.model", "value": {{"stringValue": "{model_name}"}}}},
           {{"key": "web.user.id", "value": {{"stringValue": "{logs_resource.attributes["web.user.id"]}"}}}},
           {{"key": "enduser.id", "value": {{"stringValue": "{logs_resource.attributes["enduser.id"]}"}}}},
           {{"key": "deployment.id", "value": {{"stringValue": "{logs_resource.attributes["deployment.id"]}"}}}},
