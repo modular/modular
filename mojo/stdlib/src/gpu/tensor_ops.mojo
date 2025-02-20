@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.mma import mma
-from gpu.shuffle import shuffle_down
+from gpu.warp import shuffle_down
 
 
 @always_inline

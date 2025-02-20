@@ -35,6 +35,5 @@ from .globals import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE
 from .id import *
 from .memory import *
 from .semaphore import Semaphore
-from .shuffle import *
 from .sync import *
 from .cluster import *

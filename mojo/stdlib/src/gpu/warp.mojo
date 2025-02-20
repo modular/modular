@@ -10,6 +10,7 @@ from sys import is_nvidia_gpu, llvm_intrinsic
 from bit import log2_floor
 from gpu import lane_id
 from memory import bitcast
+from builtin.math import max as _max, min as _min
 
 from .globals import WARP_SIZE
 from .tensor_ops import tc_reduce
@@ -460,7 +461,7 @@ fn lane_group_reduce[
 
 
 @always_inline
-fn warp_reduce[
+fn reduce[
     shuffle: fn[type: DType, simd_width: Int] (
         val: SIMD[type, simd_width], offset: UInt32
     ) -> SIMD[type, simd_width],
@@ -509,7 +510,7 @@ fn lane_group_sum_and_broadcast[
 
 
 @always_inline
-fn warp_sum[
+fn sum[
     val_type: DType, simd_width: Int, //
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     return lane_group_sum[nthreads=WARP_SIZE](val)
@@ -536,10 +537,10 @@ struct ReductionMethod:
 
 
 @always_inline
-fn warp_sum[
+fn sum[
     intermediate_type: DType,
     *,
-    reduction_method: ReductionMethod,
+    reduction_method: warp.ReductionMethod,
     output_type: DType,
 ](x: SIMD) -> Scalar[output_type]:
     """Performs a warp level reduction using either a warp shuffle or tensor
@@ -557,7 +558,7 @@ fn warp_sum[
             ),
         ]()
 
-        return rebind[Scalar[output_type]](warp_sum(x.reduce_add()))
+        return rebind[Scalar[output_type]](sum(x.reduce_add()))
     else:
         return tc_reduce[output_type](x.cast[intermediate_type]())
 
@@ -574,7 +575,7 @@ fn lane_group_max[
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     @parameter
     fn _reduce_max(x: SIMD, y: __type_of(x)) -> __type_of(x):
-        return max(x, y)
+        return _max(x, y)
 
     return lane_group_reduce[shuffle_down, _reduce_max, nthreads=nthreads](val)
 
@@ -586,13 +587,13 @@ fn lane_group_max_and_broadcast[
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     @parameter
     fn _reduce_max(x: SIMD, y: __type_of(x)) -> __type_of(x):
-        return max(x, y)
+        return _max(x, y)
 
     return lane_group_reduce[shuffle_xor, _reduce_max, nthreads=nthreads](val)
 
 
 @always_inline
-fn warp_max[
+fn max[
     val_type: DType, simd_width: Int, //
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     return lane_group_max[nthreads=WARP_SIZE](val)
@@ -611,13 +612,13 @@ fn lane_group_min[
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     @parameter
     fn _reduce_min(x: SIMD, y: __type_of(x)) -> __type_of(x):
-        return min(x, y)
+        return _min(x, y)
 
     return lane_group_reduce[shuffle_down, _reduce_min, nthreads=nthreads](val)
 
 
 @always_inline
-fn warp_min[
+fn min[
     val_type: DType, simd_width: Int, //
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     return lane_group_min[nthreads=WARP_SIZE](val)
@@ -628,15 +629,15 @@ fn warp_min[
 # ===-----------------------------------------------------------------------===#
 
 
-fn warp_broadcast[
+fn broadcast[
     val_type: DType, simd_width: Int, //
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     return shuffle_idx(val, 0)
 
 
-fn warp_broadcast(val: Int) -> Int:
+fn broadcast(val: Int) -> Int:
     return Int(shuffle_idx(Scalar[DType.int32](val), 0))
 
 
-fn warp_broadcast(val: UInt) -> UInt:
+fn broadcast(val: UInt) -> UInt:
     return Int(shuffle_idx(Scalar[DType.int32](val), 0))
