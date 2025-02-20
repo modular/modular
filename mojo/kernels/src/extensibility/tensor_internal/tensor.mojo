@@ -1355,7 +1355,7 @@ fn _serialize_to_file[type: DType](tensor: Tensor[type], path: Path) raises:
     # TODO: Avoid this copy.
     memcpy(
         bytes.unsafe_ptr() + copied,
-        tensor.unsafe_ptr().bitcast[Scalar[DType.uint8]](),
+        tensor.unsafe_ptr().bitcast[UInt8](),
         tensor.num_elements() * sizeof[type](),
     )
     copied += tensor.num_elements() * sizeof[type]()

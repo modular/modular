@@ -95,7 +95,7 @@ fn simd_store_into_managed_tensor_slice[
         @parameter
         if type is DType.bool:
             var v = value.cast[DType.uint8]()
-            tensor._ptr.bitcast[Scalar[DType.uint8]]().store(flat_index, v)
+            tensor._ptr.bitcast[UInt8]().store(flat_index, v)
         else:
             tensor._ptr.store[alignment=max_alignment](flat_index, value)
 
@@ -108,7 +108,7 @@ fn simd_store_into_managed_tensor_slice[
             var v = value.cast[DType.uint8]()
             strided_store(
                 v,
-                tensor._ptr.bitcast[Scalar[DType.uint8]]().offset(flat_index),
+                tensor._ptr.bitcast[UInt8]().offset(flat_index),
                 stride,
             )
         else:
@@ -159,9 +159,9 @@ fn simd_load_from_managed_tensor_slice[
     fn load_stride1() -> SIMD[type, simd_width]:
         @parameter
         if type is DType.bool:
-            var v = tensor._ptr.bitcast[Scalar[DType.uint8]]().load[
-                width=simd_width
-            ](flat_index)
+            var v = tensor._ptr.bitcast[UInt8]().load[width=simd_width](
+                flat_index
+            )
             return v.cast[type]()
         else:
             return tensor._ptr.load[width=simd_width, alignment=max_alignment](
@@ -175,7 +175,7 @@ fn simd_load_from_managed_tensor_slice[
         @parameter
         if type is DType.bool:
             var v = strided_load[simd_width](
-                tensor._ptr.bitcast[Scalar[DType.uint8]]().offset(flat_index),
+                tensor._ptr.bitcast[UInt8]().offset(flat_index),
                 stride,
             )
             return v.cast[type]()
