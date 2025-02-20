@@ -57,8 +57,8 @@ def matmul_qint4_pack_b[
         for nn in range(n_groups):
             var dst_k_ptr = dst_ptr
             for k in range(0, K, group_size):
-                var scale = src_ptr.bitcast[Scalar[DType.float16]]().load()
-                dst_k_ptr.bitcast[Scalar[DType.float16]]().store(nn, scale)
+                var scale = src_ptr.bitcast[Float16]().load()
+                dst_k_ptr.bitcast[Float16]().store(nn, scale)
                 src_ptr += sizeof[DType.float16]()
                 dst_k_ptr += sizeof[DType.float16]() * n_groups
 
@@ -82,10 +82,7 @@ def matmul_qint4_pack_b[
 
 fn _quantize_a_block[
     group_size: Int, aq_type: DType, type: DType
-](a_ptr: UnsafePointer[Scalar[type]]) -> (
-    SIMD[aq_type, group_size],
-    Scalar[DType.float32],
-):
+](a_ptr: UnsafePointer[Scalar[type]]) -> (SIMD[aq_type, group_size], Float32,):
     alias a_zero_point = 128 if aq_type.is_unsigned() else 0
 
     var fp_data = a_ptr.load[width=group_size]()
@@ -142,7 +139,7 @@ fn _quantize_a_buffer[
 
                 for ki in range(0, ko_count, group_size):
                     var quant_data: SIMD[aq_type, group_size]
-                    var scale: Scalar[DType.float32]
+                    var scale: Float32
                     (quant_data, scale) = _quantize_a_block[
                         group_size, aq_type
                     ](am_ptr.offset(ki))
@@ -199,7 +196,7 @@ fn _unpack_weights[
 
         @parameter
         for col in range(tile_n):
-            var b_scale = b_packed_ptr.bitcast[Scalar[DType.float16]]().load[
+            var b_scale = b_packed_ptr.bitcast[Float16]().load[
                 width=simd_width
             ](col * simd_width).cast[DType.float32]()
             b_scale_ptr.store(col * simd_width, b_scale)
@@ -494,7 +491,7 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
         for col in range(tile_n):
             c_int32[0, col] -= b_column_sums[col]
 
-        var b_scale_ptr = b_ptr.bitcast[Scalar[DType.float16]]()
+        var b_scale_ptr = b_ptr.bitcast[Float16]()
 
         _scale_and_accumulate[group_size](
             a_scale_ptr, b_scale_ptr, c_int32, c_float
@@ -658,7 +655,7 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
             ci16 += b_column_sum_i16
             c_int32[0, col] = bitcast[DType.int32, simd_width](ci16)
 
-        var b_scale_ptr = b_ptr.bitcast[Scalar[DType.float16]]()
+        var b_scale_ptr = b_ptr.bitcast[Float16]()
 
         _scale_and_accumulate[group_size](
             a_scale_ptr, b_scale_ptr, c_int32, c_float
@@ -788,7 +785,7 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
                         c_int32[0, col], b_data_i4_hi, a_val
                     )
 
-        var b_scale_ptr = b_ptr.bitcast[Scalar[DType.float16]]()
+        var b_scale_ptr = b_ptr.bitcast[Float16]()
 
         _scale_and_accumulate[group_size](
             a_scale_ptr, b_scale_ptr, c_int32, c_float
