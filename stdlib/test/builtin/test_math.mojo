@@ -96,13 +96,11 @@ def test_round():
     assert_equal(2, round(1.5))
     assert_equal(2, round(2.0))
     assert_equal(1, round(1.4, 0))
-    assert_equal(3, round(2.5))
+    assert_equal(2, round(2.5))
+    assert_equal(-2, round(-2.5))
 
-    # FIXME(MSTDL-1188): SIMD.__round__ completely ignores # digits.
-    # FIXME: Should be: assert_equal(1.5, round(1.5, 1))
-    assert_equal(2, round(1.5, 1))
-    # FIXME: Should be: assert_equal(1.61, round(1.613, 2))
-    assert_equal(2, round(1.613, 2))
+    assert_equal(1.5, round(1.5, 1))
+    assert_equal(1.61, round(1.613, 2))
 
     var lhs = SIMD[DType.float32, 4](1.1, 1.5, 1.9, 2.0)
     var expected = SIMD[DType.float32, 4](1.0, 2.0, 2.0, 2.0)
@@ -112,7 +110,7 @@ def test_round():
     alias r1 = round(2.3)
     assert_equal(r1, 2.0)
     alias r2 = round(2.3324, 2)
-    assert_equal(r2, 2)  # FIXME: ignoring # digits
+    assert_equal(r2, 2.33)
 
 
 def test_pow():

@@ -1712,7 +1712,14 @@ struct SIMD[type: DType, size: Int](
         Returns:
             The elementwise rounded value of this SIMD vector.
         """
-        return llvm_intrinsic["llvm.round", Self, has_side_effect=False](self)
+
+        @parameter
+        if type.is_integral() or type is DType.bool:
+            return self
+
+        return llvm_intrinsic["llvm.roundeven", Self, has_side_effect=False](
+            self
+        )
 
     @always_inline("nodebug")
     fn __round__(self, ndigits: Int) -> Self:
@@ -1726,8 +1733,13 @@ struct SIMD[type: DType, size: Int](
         Returns:
             The elementwise rounded value of this SIMD vector.
         """
-        # TODO: see how can we implement this.
-        return llvm_intrinsic["llvm.round", Self, has_side_effect=False](self)
+
+        @parameter
+        if type.is_integral() or type is DType.bool:
+            return self
+
+        var exp = SIMD[type, size](10) ** ndigits
+        return (self * exp).__round__() / exp
 
     fn __hash__(self) -> UInt:
         """Hash the value using builtin hash.

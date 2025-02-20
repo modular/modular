@@ -69,6 +69,12 @@ what we publish.
     print(element[])
   ```
 
+- The `round` function is now fixed to perform "round half to even" (also known
+  as "bankers' rounding") instead of "round half away from zero".
+
+- The `SIMD.roundeven()` method has been removed from the standard library.
+  This functionality is now handled by the `round()` function.
+
 ### GPU changes
 
 - `ctx.enqueue_function(compiled_func, ...)` is deprecated:

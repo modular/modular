@@ -552,19 +552,12 @@ def test_trunc():
 
 
 def test_round():
-    assert_equal(Float32.__round__(Float32(2.5)), 3.0)
+    assert_equal(Float32.__round__(Float32(2.5)), 2.0)
+    assert_equal(Float32.__round__(Float32(3.5)), 4.0)
     assert_equal(Float32.__round__(Float32(-3.5)), -4.0)
 
     alias F = SIMD[DType.float32, 4]
-    assert_equal(F.__round__(F(1.5, 2.5, -2.5, -3.5)), F(2.0, 3.0, -3.0, -4.0))
-
-
-def test_roundeven():
-    assert_equal(Float32(2.5).roundeven(), 2.0)
-    assert_equal(Float32(-3.5).roundeven(), -4.0)
-
-    alias F = SIMD[DType.float32, 4]
-    assert_equal(F(1.5, 2.5, -2.5, -3.5).roundeven(), F(2.0, 2.0, -2.0, -4.0))
+    assert_equal(F.__round__(F(1.5, 2.5, -2.5, -3.5)), F(2.0, 2.0, -2.0, -4.0))
 
 
 def test_div():
@@ -1953,7 +1946,6 @@ def main():
     test_rmod()
     test_rotate()
     test_round()
-    test_roundeven()
     test_rsub()
     test_shift()
     test_shuffle()
