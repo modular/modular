@@ -97,7 +97,10 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
         var K = a.dim[1]()
 
         var a_local = Buffer[
-            a.type, 4 * kernel_rows, address_space = a.address_space
+            a.type,
+            4 * kernel_rows,
+            address_space = a.address_space,
+            origin = a.origin,
         ].stack_allocation()
         var a_base_ptr = a.data.offset(global_offset.M * K + global_k)
         var a_ptr = a_local.data if (
