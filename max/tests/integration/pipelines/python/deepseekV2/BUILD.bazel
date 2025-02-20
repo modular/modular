@@ -1,0 +1,65 @@
+# DeepseekV2 tests.
+
+load(
+    "//bazel:api.bzl",
+    "modular_py_library",
+    "modular_py_test",
+    "requirement",
+)
+
+modular_py_library(
+    name = "torch_reference",
+    srcs = [
+        "torch_reference/configuration_deepseek.py",
+        "torch_reference/modeling_deepseek.py",
+    ],
+    imports = [
+        ".",
+        "torch_reference",
+    ],  # Ensure imports work as expected
+    tags = ["no-mypy"],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "deepseekV2",
+    size = "large",
+    srcs = glob(
+        ["**/test_*.py"],
+    ),
+    data = [
+        "//GenericML:MGPRT",
+        "//KGEN:CompilerRT",
+        "//ModularFramework/tools/mof",
+        "//SDK/integration-test/pipelines/python/deepseekV2/testdata",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    env = {
+        "PIPELINES_TESTDATA": (
+            "SDK/integration-test/pipelines/python/deepseekV2/testdata"
+        ),
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = [
+        "gpu",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        ":torch_reference",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/entrypoints",
+        "//SDK/lib/API/python/max/pipelines/architectures",
+        "//SDK/lib/API/python/max/pipelines/nn",
+        "//SDK/lib/API/python/max/serve",
+        "//Support/python:support",
+        requirement("huggingface-hub"),
+        requirement("pytest-asyncio"),
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)
