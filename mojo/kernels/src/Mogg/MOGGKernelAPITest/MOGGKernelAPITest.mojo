@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from sys import external_call
+from sys.info import simdwidthof
 
 import compiler_internal as compiler
 from buffer import NDBuffer
@@ -913,3 +914,49 @@ struct VariadicDeviceContext:
         for i in range(len(dev_ctxs)):
             print("dev_ctxs[", i, "].id() =", dev_ctxs[i][].id())
             dev_ctxs[i][].synchronize()
+
+
+@compiler.register("imposter_cast_elementwise")
+@compiler.elementwise
+struct CastElementwise:
+    @staticmethod
+    fn execute[
+        target: StringLiteral,
+        _synchronous: Bool,
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+        @parameter
+        @always_inline
+        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
+            return rebind[SIMD[y.type, width]](
+                x._fused_load[width](idx).cast[y.type]()
+            )
+
+        foreach[func, target=target, _synchronous=_synchronous](y, ctx)
+
+
+@compiler.register("print_vector_size")
+@compiler.elementwise
+struct PrintVectorSize:
+    @staticmethod
+    fn execute[
+        target: StringLiteral,
+        _synchronous: Bool,
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+        @parameter
+        @always_inline
+        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
+            if idx[0] == 0:
+                # Only print once
+                # We can't directly print `width` as it's HW-dependant.
+                # Instead compare it with the width of i8 / f32.
+                print(
+                    "width == simdwidthof[DType.int8]():",
+                    width == simdwidthof[DType.int8](),
+                )
+                print(
+                    "width == simdwidthof[DType.float32]():",
+                    width == simdwidthof[DType.float32](),
+                )
+            return rebind[SIMD[y.type, width]](x._fused_load[width](idx))
+
+        foreach[func, target=target, _synchronous=_synchronous](y, ctx)
