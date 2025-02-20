@@ -30,7 +30,7 @@ from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.host.info import is_cpu, is_gpu
 from gpu.memory import AddressSpace
-from gpu.shuffle import lane_group_sum, shuffle_down, warp_broadcast, warp_sum
+import gpu.warp as warp
 from memory import stack_allocation
 from register import register_internal
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
@@ -62,9 +62,9 @@ fn block_reduce[
 
     barrier()
 
-    var warp_m2 = warp_sum(val)
+    var warp_m2 = warp.sum(val)
 
-    var warp_id = warp_broadcast(tid // WARP_SIZE)
+    var warp_id = warp.broadcast(tid // WARP_SIZE)
     var lane_idx = lane_id()
 
     if lane_idx == 0:
@@ -72,7 +72,7 @@ fn block_reduce[
     barrier()
 
     if warp_id == 0 and lane_idx < max_warps_per_block:
-        var block_m2 = lane_group_sum[nthreads=max_warps_per_block](
+        var block_m2 = warp.lane_group_sum[nthreads=max_warps_per_block](
             m2_shared[lane_idx]
         )
         if lane_idx == 0:
@@ -135,9 +135,9 @@ fn welford_warp_reduce[
 
     @parameter
     for mask in reversed(range(limit)):
-        var mean = shuffle_down(res_mean, 1 << mask)
-        var m2 = shuffle_down(res_m2, 1 << mask)
-        var count = shuffle_down(res_count, 1 << mask)
+        var mean = warp.shuffle_down(res_mean, 1 << mask)
+        var m2 = warp.shuffle_down(res_m2, 1 << mask)
+        var count = warp.shuffle_down(res_count, 1 << mask)
         welford_combine(mean, m2, count, res_mean, res_m2, res_count)
 
 
@@ -155,9 +155,9 @@ fn welford_warp_all_reduce[
         thread_mean, thread_m2, thread_count, res_mean, res_m2, res_count
     )
     # broadcasting res from warp lane_id 0 to all in a warp
-    res_mean = warp_broadcast(res_mean)
-    res_m2 = warp_broadcast(res_m2)
-    res_count = warp_broadcast(res_count)
+    res_mean = warp.broadcast(res_mean)
+    res_m2 = warp.broadcast(res_m2)
+    res_count = warp.broadcast(res_count)
 
 
 fn welford_block_all_reduce[

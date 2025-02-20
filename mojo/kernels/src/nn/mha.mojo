@@ -35,7 +35,6 @@ from gpu import (
     global_idx,
     lane_id,
     thread_idx,
-    warp_reduce,
 )
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.info import A100, _get_info_from_target
@@ -45,14 +44,7 @@ from gpu.memory import (
     async_copy_wait_all,
     external_memory,
 )
-from gpu.shuffle import (
-    lane_group_max,
-    lane_group_sum,
-    shuffle_idx,
-    warp_broadcast,
-    warp_max,
-    warp_sum,
-)
+import gpu.warp as warp
 from kv_cache.types import KVCacheStaticParams, KVCacheT, PagedKVCache
 from layout.int_tuple import IntTuple
 from layout.layout import *
@@ -1371,7 +1363,7 @@ fn mha_single_batch[
     ]()
 
     var tid: UInt32 = thread_idx.x
-    var warp_id: UInt32 = warp_broadcast(tid // WARP_SIZE)
+    var warp_id: UInt32 = warp.broadcast(tid // WARP_SIZE)
     var lane: UInt32 = lane_id()
 
     # Coordinates of the current warp.
@@ -2104,7 +2096,7 @@ fn mha_single_batch_pipelined[
     ]()
 
     var tid: UInt32 = thread_idx.x
-    var warp_id: UInt32 = warp_broadcast(tid // WARP_SIZE)
+    var warp_id: UInt32 = warp.broadcast(tid // WARP_SIZE)
     var lane: UInt32 = lane_id()
 
     # Coordinates of the current warp.
@@ -3441,7 +3433,7 @@ fn mha_decoding_single_batch[
     constrained[group <= 8, "Only support GQA with group <= 8 for Nvidia."]()
 
     var tid = thread_idx.x
-    var warp_id = warp_broadcast(tid // WARP_SIZE)
+    var warp_id = warp.broadcast(tid // WARP_SIZE)
     var lane = lane_id()
 
     # Coordinates of the current warp.
@@ -4031,7 +4023,7 @@ fn mha_decoding_single_batch_pipelined[
     ]()
 
     var tid = thread_idx.x
-    var warp_id = warp_broadcast(tid // WARP_SIZE)
+    var warp_id = warp.broadcast(tid // WARP_SIZE)
     var lane = lane_id()
 
     # Coordinates of the current warp.
@@ -4503,8 +4495,8 @@ fn mha_splitk_reduce[
         var qk_max_offset = num_heads * batch_idx + num_heads * batch_size * partition_idx + q_head_idx
         l = qk_max_ptr[qk_max_offset]
 
-    # TODO: use lane_group_max since partition is going to be much smaller than WARP_SIZE
-    var qk_max = shuffle_idx(warp_max(l), 0)
+    # TODO: use warp.lane_group_max since partition is going to be much smaller than WARP_SIZE
+    var qk_max = warp.shuffle_idx(warp.max(l), 0)
 
     # since num_partions <= WARP_SIZE, allocate buffer using WARP_SIZE
     var exp_sums = tb[accum_type]().layout[WARP_SIZE]().shared().alloc()
@@ -4528,8 +4520,8 @@ fn mha_splitk_reduce[
     # ensure exp_sums is written to before reading
     barrier()
 
-    # TODO: use lane_group_sum since partition is going to be much smaller than WARP_SIZE
-    var exp_sum = shuffle_idx(warp_sum(rescaled_exp_sum), 0)
+    # TODO: use warp.lane_group_sum since partition is going to be much smaller than WARP_SIZE
+    var exp_sum = warp.shuffle_idx(warp.sum(rescaled_exp_sum), 0)
 
     var inv_global_exp_sum = 1.0 / exp_sum
     # TODO: vectorize load and store operations

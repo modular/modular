@@ -23,16 +23,14 @@ from gpu import (
     block_idx,
     grid_dim,
     lane_id,
-    shuffle_down,
     thread_idx,
-    warp_broadcast,
 )
+import gpu.warp as warp
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.dim import Dim
 from gpu.host.info import is_cpu
 from gpu.memory import AddressSpace, external_memory
 from gpu.random import Random
-from gpu.shuffle import warp_reduce
 from memory import Span, UnsafePointer, stack_allocation
 from nn.gather_scatter import normalize_neg_index
 from nn.reshape import reshape
@@ -458,9 +456,9 @@ fn _warp_reduce_topk[
         v: TopK_2[T, largest], offset: Int
     ) -> TopK_2[T, largest]:
         return TopK_2[T, largest](
-            u=shuffle_down(v.u, offset),  # u is the value
+            u=warp.shuffle_down(v.u, offset),  # u is the value
             p=Int(
-                shuffle_down(Scalar[DType.int32](v.p), offset)
+                warp.shuffle_down(Scalar[DType.int32](v.p), offset)
             ),  # p is the index
         )
 
@@ -535,7 +533,7 @@ fn _block_reduce_topk[
     ]()
 
     # Calculate warp id and thread information
-    var warp: UInt = warp_broadcast(thread_idx.x // WARP_SIZE)
+    var warp: UInt = warp.broadcast(thread_idx.x // WARP_SIZE)
     alias num_warps_needed = MAX_BLOCK_SIZE // WARP_SIZE
 
     # Each warp reduces its own TopK_2 value

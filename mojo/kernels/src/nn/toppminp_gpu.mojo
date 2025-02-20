@@ -21,7 +21,6 @@ from gpu import (
     block_idx,
     grid_dim,
     lane_id,
-    shuffle_down,
     thread_idx,
 )
 from gpu.host import DeviceContext
