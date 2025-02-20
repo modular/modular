@@ -811,10 +811,10 @@ private:
       os << "\n    " << name << ": [description].";
   }
   void processArguments(ArrayRef<StringAttr> argNames) {
-    processParamOrArgs("Args", argNames);
+    processParamOrArgs(DocString::kSectionArgs, argNames);
   }
   void processParameters(ArrayRef<StringAttr> params) {
-    processParamOrArgs("Parameters", params);
+    processParamOrArgs(DocString::kSectionParameters, params);
   }
 
   //===--------------------------------------------------------------------===//
@@ -824,9 +824,9 @@ private:
     processParameters(getFunctionParameterNames(funcOp));
     processArguments(getFunctionArgumentNames(funcOp));
     if (doesFunctionHaveResults(funcOp))
-      os << "\n\nReturns:\n    [description].";
+      os << "\n\n" << DocString::kSectionReturns << ":\n    [description].";
     if (funcOp.isThrows())
-      os << "\n\nRaises:\n    [description].";
+      os << "\n\n" << DocString::kSectionRaises << ":\n    [description].";
   }
 
   //===--------------------------------------------------------------------===//
