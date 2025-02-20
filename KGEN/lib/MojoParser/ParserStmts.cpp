@@ -2019,7 +2019,8 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
       return {failure(), {}};
 
     // Terminate the condition region of the current ElifOp.
-    builder.create<HLCF::ElifYieldOp>(loc, condRVal);
+    builder.create<HLCF::ElifYieldOp>(loc, condRVal,
+                                      /*no extra values*/ ValueRange());
 
     std::optional<DeadCodeInfo> deadCodeInfo = {};
     if (knownConditionForWarning.has_value()) {

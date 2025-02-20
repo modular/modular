@@ -13,20 +13,20 @@
 # CHECK-LABEL: lit.fn @"test_elif_chain
 # CHECK-NEXT:    hlcf.elif {
 # CHECK-NEXT:      [[TEST_A:%.*]] = lit.call @{{.*}}::@Bool::@"__mlir_i1__{{.*}}"(%a)
-# CHECK-NEXT:      hlcf.elif.yield [[TEST_A]] : i1
+# CHECK-NEXT:      hlcf.elif.yield [[TEST_A]]
 # CHECK-NEXT:    } then {
 # CHECK-NEXT:      %inside_a = lit.var.decl "inside_a"
 # CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    } {
 # CHECK-NEXT:      [[B_EQ:%.*]] = lit.call @{{.*}}::@"__eq__{{.*}}"(%b, %d) : !lit.generator<("lhs": !Int, "rhs": !Int) -> !Bool>
 # CHECK-NEXT:      [[TEST_B:%.*]] = lit.call @{{.*}}::@"__mlir_i1__{{.*}}"([[B_EQ]]) : !lit.generator<("self": !Bool) -> i1>
-# CHECK-NEXT:      hlcf.elif.yield [[TEST_B]] : i1
+# CHECK-NEXT:      hlcf.elif.yield [[TEST_B]]
 # CHECK-NEXT:    } then {
 # CHECK-NEXT:      %inside_b = lit.var.decl "inside_b"
 # CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    } {
 # CHECK-NEXT:      [[TEST_C:%.*]] = lit.call @{{.*}}::@"__mlir_i1__{{.*}}"(%c)
-# CHECK-NEXT:      hlcf.elif.yield [[TEST_C]] : i1
+# CHECK-NEXT:      hlcf.elif.yield [[TEST_C]]
 # CHECK-NEXT:    } then {
 # CHECK-NEXT:      %inside_c = lit.var.decl "inside_c"
 # CHECK-NEXT:      hlcf.yield
@@ -58,7 +58,7 @@ fn test_constant(a: Bool) -> Bool:
     # CHECK-NEXT: store [[FIVE]], %z
     # CHECK-NEXT: [[BOOL:%.*]] = lit.call {{.*}}__bool__{{.*}}([[FIVE]])
     # CHECK-NEXT: [[I1:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[BOOL]])
-    # CHECK-NEXT: hlcf.elif.yield [[I1]] : i1
+    # CHECK-NEXT: hlcf.elif.yield [[I1]]
     if z := 5:
         return a
 
@@ -69,21 +69,21 @@ fn test_constant(a: Bool) -> Bool:
 fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
     # CHECK-NEXT: hlcf.elif {
     # CHECK-NEXT:   %0 = lit.call @{{.*}}@"__mlir_i1__{{.*}}"(%a)
-    # CHECK-NEXT:   hlcf.elif.yield %0 : i1
+    # CHECK-NEXT:   hlcf.elif.yield %0
     # CHECK-NEXT: } then {
     # CHECK-NEXT:   %inside_a = lit.var.decl "inside_a"
     # CHECK-NEXT:   hlcf.yield
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   hlcf.elif {
     # CHECK-NEXT:     [[TEST_B:%.*]] = lit.call @{{.*}}@"__mlir_i1__{{.*}}"(%b)
-    # CHECK-NEXT:     hlcf.elif.yield [[TEST_B]] : i1
+    # CHECK-NEXT:     hlcf.elif.yield [[TEST_B]]
     # CHECK-NEXT:   } then {
     # CHECK-NEXT:     %inside_b = lit.var.decl "inside_b"  var : !lit.ref<!Int, mut *"inside_b`1">
     # CHECK-NEXT:     hlcf.yield
     # CHECK-NEXT:   } else {
     # CHECK-NEXT:     hlcf.elif {
     # CHECK-NEXT:       [[TEST_C:%.*]] = lit.call @{{.*}}@"__mlir_i1__{{.*}}"(%c)
-    # CHECK-NEXT:       hlcf.elif.yield [[TEST_C]] : i1
+    # CHECK-NEXT:       hlcf.elif.yield [[TEST_C]]
     # CHECK-NEXT:     } then {
     # CHECK-NEXT:       %inside_c = lit.var.decl "inside_c"
     # CHECK-NEXT:       hlcf.yield
@@ -158,7 +158,7 @@ fn param_if_and[a: Bool, b: Bool]():
 fn if_try(p: Bool):
     # CHECK:      hlcf.elif {
     # CHECK-NEXT:   [[TEST_P:%*.]] = lit.call @{{.*}}@"__mlir_i1__{{.*}}"(%p)
-    # CHECK-NEXT:   hlcf.elif.yield [[TEST_P]] : i1
+    # CHECK-NEXT:   hlcf.elif.yield [[TEST_P]]
     # CHECK-NEXT: } then {
     # CHECK-NEXT:   %e = lit.var.decl {{.*}} !lit.ref<!Error,
     # CHECK-NEXT:   lit.try %e : {{.*}} {
@@ -202,7 +202,7 @@ fn testCondAsArg(exit_early: __mlir_type.i1):
 fn constantTrue(cond: Bool, x: Int, y: Int) -> Int:
     # CHECK-NEXT: hlcf.elif {
     # CHECK-NEXT:  %0 = kgen.param.constant: i1 = <1>
-    # CHECK-NEXT:  hlcf.elif.yield %0 : i1
+    # CHECK-NEXT:  hlcf.elif.yield %0
     # CHECK-NEXT: } then {
     # CHECK-NEXT:   lit.return %x : !Int
     # CHECK-NEXT:   hlcf.yield
@@ -217,13 +217,13 @@ fn constantTrue(cond: Bool, x: Int, y: Int) -> Int:
 fn constantFalse(cond: Bool, x: Int, y: Int) -> Int:
     # CHECK:      hlcf.elif {
     # CHECK-NEXT:   %0 = lit.call @{{.*}}@"__mlir_i1__{{.*}}"(%cond)
-    # CHECK-NEXT:   hlcf.elif.yield %0 : i1
+    # CHECK-NEXT:   hlcf.elif.yield %0
     # CHECK-NEXT: } then {
     # CHECK-NEXT:   lit.return %x : !Int
     # CHECK-NEXT:   hlcf.yield
     # CHECK-NEXT: } {
     # CHECK-NEXT:   %0 = kgen.param.constant: i1 = <0>
-    # CHECK-NEXT:   hlcf.elif.yield %0 : i1
+    # CHECK-NEXT:   hlcf.elif.yield %0
     # CHECK-NEXT: } then {
     # CHECK-NEXT:   kgen.unreachable
     # CHECK-NEXT: } else {
@@ -254,7 +254,7 @@ fn constantFalse(cond: Bool, x: Int, y: Int) -> Int:
 # CHECK-NEXT:    lit.ref.store {{.+}}, %inside_a
 # CHECK-NEXT:    hlcf.elif {
 # CHECK-NEXT:      [[TEST_B:%*.]] = lit.call @{{.*}}@"__mlir_i1__{{.*}}"(%b)
-# CHECK-NEXT:      hlcf.elif.yield [[TEST_B]] : i1
+# CHECK-NEXT:      hlcf.elif.yield [[TEST_B]]
 # CHECK-NEXT:    } then {
 # CHECK-NEXT:      kgen.param.constant: !Int = <{1}>
 # CHECK-NEXT:      lit.ref.store

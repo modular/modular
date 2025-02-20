@@ -298,7 +298,7 @@ lit.fn @throwing_func() throws -> !kgen.variant<@Error, none> {
 lit.fn @return_raise_or(%cond: i1, %err: !lit.struct<@Error>) -> !kgen.variant<@Error, none> {
   // CHECK-NEXT: hlcf.if %arg0
   hlcf.elif {
-    hlcf.elif.yield %cond : i1
+    hlcf.elif.yield %cond
   } then {
     // CHECK: %[[ERR:.*]] = kgen.variant.create %arg1
     %0 = kgen.variant.create %err, 0 : <@Error, none>

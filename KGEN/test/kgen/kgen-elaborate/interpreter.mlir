@@ -397,17 +397,17 @@ kgen.generator @elif(%arg0: index, %arg1: index) -> index {
   %idx2 = index.constant 2
   %0 = hlcf.elif -> index {
     %cond0 = index.cmp eq(%arg0, %idx0)
-    hlcf.elif.yield %cond0 : i1
+    hlcf.elif.yield %cond0
   } then {
     hlcf.yield %idx0 : index
   } {
     %cond1 = index.cmp eq(%arg0, %idx1)
-    hlcf.elif.yield %cond1 : i1
+    hlcf.elif.yield %cond1
   } then {
     hlcf.yield %idx1 : index
   } {
     %cond2 = index.cmp eq(%arg0, %idx2)
-    hlcf.elif.yield %cond2 : i1
+    hlcf.elif.yield %cond2
   } then {
     hlcf.yield %idx2 : index
   } else {
@@ -435,7 +435,7 @@ kgen.func @elifWithArgs(%arg0: index) -> index {
   %0:2 = hlcf.elif -> index, index {
     %2 = index.add %arg0, %idx1
     %3 = index.cmp eq(%2, %idx3)
-    hlcf.elif.yield %3, %2 : i1, index
+    hlcf.elif.yield %3, %2 : index
   } then (%arg1 : index) {
     hlcf.yield %arg1, %arg1 : index, index
   } else (%arg1 : index) {
@@ -452,13 +452,13 @@ kgen.func @elifManyRegionsWithArgs(%arg0: index) -> index {
   %0:2 = hlcf.elif -> index, index {
     %2 = index.add %arg0, %idx1
     %3 = index.cmp eq(%2, %idx3)
-    hlcf.elif.yield %3, %2 : i1, index
+    hlcf.elif.yield %3, %2 : index
   } then (%arg1 : index) {
     hlcf.yield %arg1, %arg1 : index, index
   } (%arg1 : index) {
     %4 = index.cmp eq(%arg0, %idx4)
     %5 = index.add %arg1, %idx3
-    hlcf.elif.yield %4, %5 : i1, index
+    hlcf.elif.yield %4, %5 : index
   } then (%arg1 : index) {
     hlcf.yield %arg1, %arg1 : index, index
   } else (%arg1 : index) {

@@ -542,7 +542,7 @@ kgen.func @tryraise(%arg1: index, %arg2 : index) async -> index {
   lit.try {
     hlcf.elif {
       %result = kgen.call @bar(%arg2) : (index) -> i1
-      hlcf.elif.yield %result : i1
+      hlcf.elif.yield %result
     } then {
       // CHECK: } then {
       // CHECK-NEXT: [[V7:%.*]] = kgen.struct.gep %arg0[[[#FRAME10:]]]
@@ -978,7 +978,7 @@ kgen.func @in_frame_cf(%arg1: index, %arg2: index, %arg3: i1) async -> index {
   // CHECK-NEXT: hlcf.elif {
   // CHECK-NEXT:  [[ARG3_SLOT:%.*]] = kgen.struct.gep %arg0[[[#FRAME9:]]]
   // CHECK-NEXT:  [[ARG3:%.*]] = pop.load [[ARG3_SLOT]] : !kgen.pointer<i1>
-  // CHECK-NEXT:  hlcf.elif.yield [[ARG3]] : i1
+  // CHECK-NEXT:  hlcf.elif.yield [[ARG3]]
   // CHECK-NEXT: } then {
   // CHECK-NEXT: [[ARG2_SLOT:%.*]] = kgen.struct.gep %arg0[[[#FRAME9 + 1]]]
   // CHECK-NEXT: [[ARG2:%.*]] = pop.load [[ARG2_SLOT]] : !kgen.pointer<index>
@@ -994,7 +994,7 @@ kgen.func @in_frame_cf(%arg1: index, %arg2: index, %arg3: i1) async -> index {
   // CHECK-NEXT: }
   %0 = pop.stack_allocation 1 x index marked
   hlcf.elif {
-    hlcf.elif.yield %arg3 : i1
+    hlcf.elif.yield %arg3
   } then {
     pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<index>
     pop.store %arg2, %0 : !kgen.pointer<index>
@@ -1019,14 +1019,14 @@ kgen.func @in_frame_cf(%arg1: index, %arg2: index, %arg3: i1) async -> index {
   // CHECK-NEXT: hlcf.elif {
   // CHECK-NEXT:   [[ARG3_SLOT:%.*]] = kgen.struct.gep %arg0[[[#FRAME9]]]
   // CHECK-NEXT:   [[ARG3:%.*]] = pop.load [[ARG3_SLOT]] : !kgen.pointer<i1>
-  // CHECK-NEXT:   hlcf.elif.yield [[ARG3]] : i1
+  // CHECK-NEXT:   hlcf.elif.yield [[ARG3]]
   // CHECK-NEXT: } then {
   // CHECK-NEXT:   hlcf.yield
   // CHECK-NEXT: } else {
   // CHECK-NEXT:   hlcf.yield
   // CHECK-NEXT: }
   hlcf.elif {
-    hlcf.elif.yield %arg3 : i1
+    hlcf.elif.yield %arg3
   } then {
     pop.stack_alloc.lifetime.end(%0) : !kgen.pointer<index>
     hlcf.yield
@@ -1082,7 +1082,7 @@ kgen.func @not_in_frame_cf(%arg1: index, %arg2: index, %arg3: i1) async -> index
       co.suspend.end
     }
     hlcf.elif {
-      hlcf.elif.yield %arg3 : i1
+      hlcf.elif.yield %arg3
     } then {
       hlcf.if %arg3 {
         pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<index>
@@ -2024,9 +2024,9 @@ kgen.func @conditional_suspoint_elif(%arg0: i1,
                      %__result__: !kgen.pointer<index> byref_result) async -> index {
   // CHECK-NEXT: hlcf.elif {
   // CHECK-NEXT: [[V9:%.*]] = kgen.param.constant: i1 = <#interp.uninitmem>
-  // CHECK-NEXT: hlcf.elif.yield [[V9]] : i1
+  // CHECK-NEXT: hlcf.elif.yield [[V9]]
   hlcf.elif {
-    hlcf.elif.yield %arg0 : i1
+    hlcf.elif.yield %arg0
   } then {
     pop.store %arg1, %__result__ : !kgen.pointer<index>
     hlcf.yield

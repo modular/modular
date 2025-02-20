@@ -452,7 +452,7 @@ kgen.func @elif(%arg0 : index, %arg1: index, %arg2: index) -> index {
   // CHECK-NEXT: %0:4 = hlcf.elif -> index, index, index, index {
   // CHECK-NEXT:   [[V3:%*.]] = index.add %arg0, %idx1
   // CHECK-NEXT:   [[V4:%*.]] = index.cmp eq([[V3]], %idx0)
-  // CHECK-NEXT:   hlcf.elif.yield [[V4]], [[V3]], %arg1, %arg2 : i1, index, index, index
+  // CHECK-NEXT:   hlcf.elif.yield [[V4]], [[V3]], %arg1, %arg2 : index, index, index
   // CHECK-NEXT: } then (%arg3: index, %arg4: index, %arg5: index){
   // CHECK-NEXT:   [[W3:%*.]] = index.add %arg4, %idx1
   // CHECK-NEXT:   hlcf.yield [[W3]], %arg3, [[W3]], %arg5 : index, index, index, index
@@ -465,7 +465,7 @@ kgen.func @elif(%arg0 : index, %arg1: index, %arg2: index) -> index {
     %var2 = index.add %1, %idx1
     pop.store %var2, %varCondition : !kgen.pointer<index>
     %c = index.cmp eq(%var2, %idx0)
-    hlcf.elif.yield %c : i1
+    hlcf.elif.yield %c
   } then {
     %4 = pop.load %varThen : !kgen.pointer<index>
     %var5 = index.add %4, %idx1

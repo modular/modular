@@ -579,27 +579,44 @@ def HLCF_ForYieldOp : HLCFTerminatorOp<"for.yield", [
 def HLCF_ElifYieldOp : HLCFTerminatorOp<"elif.yield", [
     ParentOneOf<["ElifOp"]>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
-  let summary = "yield operation for elif operations";
+  let summary = "yield operation for the condition of elif operations";
   let description = [{
-    The `hlcf.lazy.yield` operation is a control-flow terminator that
-    transfers control-flow either to the subsequent region or after the
-     parent `hlcf.elif`.
+    The `hlcf.elif.yield` operation is a control-flow terminator that
+    transfers control-flow either to the subsequent region or to the else block
+    of the parent `hlcf.elif`.
+
+    This op takes at least one i1 value which is the condition, but can take
+    an arbitrary number of other values.  These values are passed into the
+    "then" or "else" block, enabling mem2reg promotion of values stored in the
+    condition block.
 
     Example:
 
     ```mlir
     %0 = hlcf.elif -> index {
-      hlcf.elif.yield %arg1 : i1
+      hlcf.elif.yield %cond
     } then {
       hlcf.yield %arg0 : index
     } else {
       hlcf.yield %arg0 : index
     }
     ```
-  }];
-  let arguments = (ins Variadic<AnyType>:$operands);
 
-  let assemblyFormat = "attr-dict ($operands `:` type($operands)^)?";
+    Example passing values between blocks:
+
+    ```mlir
+    %0 = hlcf.elif -> index {
+      hlcf.elif.yield %cond, %x: i32
+    } then (%xThen: i32) {
+      hlcf.yield %arg0 : index
+    } else (%xElse: i32) {
+      hlcf.yield %arg0 : index
+    }
+    ```
+  }];
+  let arguments = (ins I1:$cond, Variadic<AnyType>:$values);
+
+  let assemblyFormat = "$cond (`,` $values `:` type($values)^)? attr-dict";
 }
 
 //===----------------------------------------------------------------------===//
