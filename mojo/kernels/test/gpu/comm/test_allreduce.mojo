@@ -180,6 +180,7 @@ def main():
     alias test_lengths = (
         8 * 1024,           # Small latency bound.
         128 * 1024,         # Larger latency bound.
+        256 * 1024,         # Smallest bandwidth bound.
         16 * 1024 * 1024,   # Bandwidth bound.
         64 * 1024 * 1024,   # Bandwidth bound: 8192 chunk size at dim = 8192.
     )
