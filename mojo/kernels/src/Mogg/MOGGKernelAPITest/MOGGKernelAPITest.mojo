@@ -61,10 +61,10 @@ struct MyCustomScalarRegSI32:
 @value
 @register_passable
 struct MyCustomScalarRegF32:
-    var val: Scalar[DType.float32]
+    var val: Float32
 
     @implicit
-    fn __init__(out self, val: Scalar[DType.float32]):
+    fn __init__(out self, val: Float32):
         print("MyCustomScalarRegF32.__init__", val)
         self.val = val
 

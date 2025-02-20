@@ -3842,8 +3842,8 @@ struct NonMaximumSupression:
         boxes: ManagedTensorSlice[type=type, rank=3],
         scores: ManagedTensorSlice[type=type, rank=3],
         max_output_boxes_per_class: Scalar[DType.int64],
-        iou_threshold: Scalar[DType.float32],
-        score_threshold: Scalar[DType.float32],
+        iou_threshold: Float32,
+        score_threshold: Float32,
     ):
         var max_output_boxes_int = Int(max_output_boxes_per_class)
         var iou_threshold_float = iou_threshold
@@ -3865,8 +3865,8 @@ struct NonMaximumSupression:
         boxes: ManagedTensorSlice[type=type, rank=3],
         scores: ManagedTensorSlice[type=type, rank=3],
         max_output_boxes_per_class: Scalar[DType.int64],
-        iou_threshold: Scalar[DType.float32],
-        score_threshold: Scalar[DType.float32],
+        iou_threshold: Float32,
+        score_threshold: Float32,
     ) -> IndexList[2]:
         var max_output_boxes_int = Int(max_output_boxes_per_class)
         var iou_threshold_float = iou_threshold
@@ -6279,7 +6279,7 @@ fn generic_flash_attention_kv_cache_continuous_batch_kernel_api[
     layer_idx: Scalar[DType.uint32],
     mask: ManagedTensorSlice[type=type],
     valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
-    scale: Scalar[DType.float32],
+    scale: Float32,
     context: MojoCallContextPtr,
 ) raises:
     generic_flash_attention_kv_cache_continuous_batch[target](
@@ -6310,7 +6310,7 @@ struct Struct_mha_padded_continuous_batching_tensor_mask_no_pos:
         layer_idx: Scalar[DType.uint32],
         mask: ManagedTensorSlice[type=type],
         valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
-        scale: Scalar[DType.float32],
+        scale: Float32,
         context: MojoCallContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_continuous_batch_kernel_api[target](
@@ -6334,7 +6334,7 @@ fn generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: Scalar[DType.uint32],
     valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
-    scale: Scalar[DType.float32],
+    scale: Float32,
     context: MojoCallContextPtr,
 ) raises:
     generic_flash_attention_kv_cache_causal_mask_continuous_batch[target](
@@ -6363,7 +6363,7 @@ struct Struct_mha_padded_continuous_batching_causal_mask_no_pos:
         ],
         layer_idx: Scalar[DType.uint32],
         valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
-        scale: Scalar[DType.float32],
+        scale: Float32,
         context: MojoCallContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
@@ -6382,7 +6382,7 @@ fn generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged_kernel_api[
     input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: Scalar[DType.uint32],
-    scale: Scalar[DType.float32],
+    scale: Float32,
     output: ManagedTensorSlice[type=type, rank=3],
     context: MojoCallContextPtr,
 ) raises:
@@ -6406,7 +6406,7 @@ fn generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged_kernel_api[
     input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: Scalar[DType.uint32],
-    scale: Scalar[DType.float32],
+    scale: Float32,
     output: ManagedTensorSlice[type=type, rank=3],
     context: MojoCallContextPtr,
 ) raises:
@@ -6436,7 +6436,7 @@ struct Struct_mha_ragged_continuous_batching_causal_mask_no_pos:
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
         layer_idx: Scalar[DType.uint32],
-        scale: Scalar[DType.float32],
+        scale: Float32,
         context: MojoCallContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged_kernel_api[
@@ -6467,7 +6467,7 @@ struct Struct_mha_ragged_continuous_batching_causal_mask_alibi_pos:
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
         layer_idx: Scalar[DType.uint32],
-        scale: Scalar[DType.float32],
+        scale: Float32,
         context: MojoCallContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged_kernel_api[
@@ -6492,7 +6492,7 @@ fn generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
     input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: PagedKVCacheCollection[type, *_],
     layer_idx: Scalar[DType.uint32],
-    scale: Scalar[DType.float32],
+    scale: Float32,
     output: ManagedTensorSlice[type=type, rank=3],
     context: MojoCallContextPtr,
 ) raises:
@@ -6527,7 +6527,7 @@ struct Struct_mha_ragged_paged_causal_mask_no_pos:
             page_size,
         ],
         layer_idx: Scalar[DType.uint32],
-        scale: Scalar[DType.float32],
+        scale: Float32,
         context: MojoCallContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
