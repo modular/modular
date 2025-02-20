@@ -53,6 +53,7 @@ from .slice_tensor import slice_tensor
 from .squeeze import squeeze
 from .stack import stack
 from .tile import tile
+from .top_k import top_k
 from .transfer_to import transfer_to
 from .transpose import transpose
 from .unsqueeze import unsqueeze
