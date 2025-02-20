@@ -915,7 +915,7 @@ fn pack_Q_tile(input: SIMD[DType.uint8, 16]) -> SIMD[DType.uint32, 4]:
 
 
 @always_inline
-fn unpack_4bit_int(val: SIMD[DType.uint32, _], idx: Int) -> Scalar[DType.uint8]:
+fn unpack_4bit_int(val: SIMD[DType.uint32, _], idx: Int) -> UInt8:
     var u32_val = rebind[Scalar[DType.uint32]](val)
     return (u32_val >> (idx * 4)).cast[DType.uint8]() & 0x0F
 
@@ -988,7 +988,7 @@ fn repack_Q4_0_for_sm8x[
 
     # We keep 128x2 Q4_0 GGUF blocks in smem
     var smem = external_memory[
-        Scalar[DType.uint8],
+        UInt8,
         address_space = AddressSpace.SHARED,
         alignment = alignof[SIMD[DType.uint8, 1]](),
     ]()
@@ -996,7 +996,7 @@ fn repack_Q4_0_for_sm8x[
         DType.uint8,
         Layout.row_major(BN, 2 * group_bytes),
         address_space = AddressSpace.SHARED,
-    ](smem.bitcast[Scalar[DType.uint8]]())
+    ](smem.bitcast[UInt8]())
 
     var q_gmem_tile = q_weight.tile[BN, BK_groups * group_bytes](
         block_idx[0], block_idx[1]
@@ -1186,7 +1186,7 @@ fn repack_GPTQ_for_sm8x[
 
     # We keep 128x2 GPTQ blocks in smem
     var smem = external_memory[
-        Scalar[DType.uint8],
+        UInt8,
         address_space = AddressSpace.SHARED,
         alignment = alignof[SIMD[DType.uint8, 1]](),
     ]()
@@ -1194,7 +1194,7 @@ fn repack_GPTQ_for_sm8x[
         DType.uint8,
         Layout.row_major(BN, 2 * weights_bytes_per_group),
         address_space = AddressSpace.SHARED,
-    ](smem.bitcast[Scalar[DType.uint8]]())
+    ](smem.bitcast[UInt8]())
     var weights_smem_uint4 = LayoutTensor[
         DType.uint32,
         Layout.row_major(BN, 2 * group_size // pack_factor),
