@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # FIXME: KERN-1377, MSTDL-1155
-# UNSUPPORTED: AMD-GPU
+# UNSUPPORTED: AMD-GPU, asan
 # RUN: %mojo-no-debug-no-assert %s
 
 import time

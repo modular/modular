@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # TODO(#31429): Restore `--debug-level full` here
 # REQUIRES: NVIDIA-GPU
+# UNSUPPORTED: asan
 # RUN: %mojo-no-debug-no-assert %s
 
 from math import ceildiv

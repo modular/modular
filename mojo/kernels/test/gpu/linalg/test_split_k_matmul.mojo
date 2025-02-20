@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # FIXME: KERN-1377
-# UNSUPPORTED: AMD-GPU
+# UNSUPPORTED: AMD-GPU, asan
 # RUN: %mojo-no-debug-no-assert %s
 
 from random import rand
