@@ -153,9 +153,9 @@ fn topk_wrapper[
 
 
 @always_inline
-fn normalize(value: Scalar[DType.bfloat16]) -> Scalar[DType.uint16]:
+fn normalize(value: BFloat16) -> Scalar[DType.uint16]:
     @always_inline
-    fn reinterpret(value: Scalar[DType.bfloat16]) -> Scalar[DType.uint16]:
+    fn reinterpret(value: BFloat16) -> Scalar[DType.uint16]:
         # For unsigned integral types: No conversion needed, return as-is
         return bitcast[DType.uint16, 1](value)
 
@@ -198,9 +198,9 @@ fn normalize(value: Scalar[DType.uint16]) -> Scalar[DType.uint16]:
 
 
 @always_inline
-fn normalize(value: Scalar[DType.float32]) -> Scalar[DType.uint32]:
+fn normalize(value: Float32) -> Scalar[DType.uint32]:
     @always_inline
-    fn reinterpret(value: Scalar[DType.float32]) -> Scalar[DType.uint32]:
+    fn reinterpret(value: Float32) -> Scalar[DType.uint32]:
         # For floating-point types: Reinterpret the bit pattern as an unsigned int
         # This allows for comparison of floating-point values based on their binary
         # representation
@@ -232,22 +232,16 @@ fn normalize(
             result.type
         ]()
     elif type is DType.float32:
-        return normalize(rebind[Scalar[DType.float32]](value)).cast[
-            result.type
-        ]()
+        return normalize(rebind[Float32](value)).cast[result.type]()
     # TODO: These below don't return uint32 so must generalize and fix
     elif type is DType.uint16:
         return normalize(rebind[Scalar[DType.uint16]](value)).cast[
             result.type
         ]()
     elif type is DType.float16:
-        return normalize(rebind[Scalar[DType.float16]](value)).cast[
-            result.type
-        ]()
+        return normalize(rebind[Float16](value)).cast[result.type]()
     elif type is DType.bfloat16:
-        return normalize(rebind[Scalar[DType.bfloat16]](value)).cast[
-            result.type
-        ]()
+        return normalize(rebind[BFloat16](value)).cast[result.type]()
     else:
         constrained[False, "unhandled normalize type"]()
         return 0

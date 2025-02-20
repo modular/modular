@@ -3133,8 +3133,8 @@ fn conv_cudnn[
         )
     )
 
-    var alpha = Scalar[DType.float32](1.0)
-    var beta = Scalar[DType.float32](0.0)
+    var alpha = Float32(1.0)
+    var beta = Float32(0.0)
 
     check_cudnn_error(
         cudnnConvolutionForward(

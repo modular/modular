@@ -63,7 +63,7 @@ fn main() raises:
         print("== test_scatternd")
         var data = TestTensor[DType.float32, 3](
             DimList(4, 4, 4),
-            List[Scalar[DType.float32]](
+            List[Float32](
                 1,
                 2,
                 3,
