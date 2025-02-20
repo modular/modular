@@ -840,7 +840,7 @@ fn _is_consistent[static_info: DimList](runtime_info: IndexList) -> Bool:
     for i in range(runtime_info.size):
 
         @parameter
-        if static_info.has_value[i]():
+        if not static_info.has_value[i]():
             continue
 
         if static_info.at[i]() != runtime_info[i]:
