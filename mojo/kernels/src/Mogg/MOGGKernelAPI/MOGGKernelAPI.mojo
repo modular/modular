@@ -28,6 +28,7 @@ from math import (
 from random import randn, seed
 from sys import external_call, llvm_intrinsic
 from sys.info import simdwidthof, sizeof
+from sys import bitwidthof
 
 import compiler_internal as compiler
 
@@ -455,6 +456,21 @@ fn get_scalar_from_managed_tensor_slice[
     return _get_scalar_from_managed_tensor_slice(tensor)
 
 
+@always_inline("nodebug")
+fn _int_bitwidth_safety_check[simd_dtype: DType]():
+    constrained[
+        bitwidthof[DType.index]() >= bitwidthof[simd_dtype](),
+        String(
+            (
+                "A kernel was specified with an 'Int' but the type of the"
+                " corresponding value in the graph op was '"
+            ),
+            simd_dtype,
+            "' a fixed size integer with a width greater than Int's",
+        ),
+    ]()
+
+
 # Extract an Int from a managed tensor slice.
 @register_internal("get_int_from_managed_tensor_slice")
 @always_inline
@@ -466,6 +482,8 @@ fn get_int_from_managed_tensor_slice[
         static_spec = StaticTensorSpec[dtype, 1].create_unknown(),
     ]
 ) -> Int:
+    _int_bitwidth_safety_check[tensor.type]()
+
     constrained[
         dtype.is_integral(),
         String(
@@ -491,6 +509,8 @@ fn get_uint_from_managed_tensor_slice[
         static_spec = StaticTensorSpec[dtype, 1].create_unknown(),
     ]
 ) -> UInt:
+    _int_bitwidth_safety_check[tensor.type]()
+
     constrained[
         dtype.is_integral(),
         String(
