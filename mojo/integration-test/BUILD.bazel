@@ -6,9 +6,7 @@ lit_tests(
     srcs = glob([
         "python-extension-modules/**/*.py",
     ]),
-    data = glob(["**/*.mojo"]) + [
-        "//KGEN:CompilerRT",
-    ],
+    data = glob(["**/*.mojo"]),
     generate_litcfg = False,
     mojo_deps = [
         "//open-source/mojo/stdlib/stdlib",
