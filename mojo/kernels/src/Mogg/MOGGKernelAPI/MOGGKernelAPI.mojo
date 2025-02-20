@@ -1931,7 +1931,7 @@ struct Scatter:
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
         var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        return scatter_elements_shape[single_thread_blocking_override=True,](
+        return scatter_elements_shape[single_thread_blocking_override=True](
             input_ndbuffer, updates_ndbuffer, indices_ndbuffer, axis
         )
 
@@ -1975,7 +1975,7 @@ struct ScatterAdd:
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
         var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        return scatter_elements_shape[single_thread_blocking_override=True,](
+        return scatter_elements_shape[single_thread_blocking_override=True](
             input_ndbuffer, updates_ndbuffer, indices_ndbuffer, axis
         )
 
@@ -2019,7 +2019,7 @@ struct ScatterMax:
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
         var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        return scatter_elements_shape[single_thread_blocking_override=True,](
+        return scatter_elements_shape[single_thread_blocking_override=True](
             input_ndbuffer, updates_ndbuffer, indices_ndbuffer, axis
         )
 
@@ -2063,7 +2063,7 @@ struct ScatterMin:
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
         var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        return scatter_elements_shape[single_thread_blocking_override=True,](
+        return scatter_elements_shape[single_thread_blocking_override=True](
             input_ndbuffer, updates_ndbuffer, indices_ndbuffer, axis
         )
 
@@ -2107,7 +2107,7 @@ struct ScatterMul:
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
         var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        return scatter_elements_shape[single_thread_blocking_override=True,](
+        return scatter_elements_shape[single_thread_blocking_override=True](
             input_ndbuffer, updates_ndbuffer, indices_ndbuffer, axis
         )
 
