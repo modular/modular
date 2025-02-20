@@ -116,7 +116,11 @@ struct DeviceNDBuffer[
     shape: DimList = DimList.create_unknown[rank](),
 ]:
     var buffer: DeviceBuffer[type]
-    var tensor: NDBuffer[type, rank, shape]
+    var tensor: NDBuffer[
+        type,
+        rank,
+        shape,
+    ]
 
     @always_inline
     fn __init__(
