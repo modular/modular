@@ -17,6 +17,12 @@ from .intrinsics import Scope, load_acquire, store_release
 from .sync import barrier
 
 
+@always_inline
+fn _barrier_and(state: Int32) -> Int32:
+    constrained[is_nvidia_gpu(), "target must be an nvidia GPU"]()
+    return llvm_intrinsic["llvm.nvvm.barrier0.and", Int32](state)
+
+
 @register_passable
 struct Semaphore:
     var _lock: UnsafePointer[Int32]
@@ -41,9 +47,7 @@ struct Semaphore:
 
     @always_inline
     fn wait(mut self, status: Int = 0):
-        while llvm_intrinsic["llvm.nvvm.barrier0.and", Int32](
-            Int32(1) if self._state != status else Int32(0)
-        ):
+        while _barrier_and((self._state == status).select(Int32(0), Int32(1))):
             self.fetch()
         barrier()
 
