@@ -284,7 +284,7 @@ struct Buffer[
             path: Path to the output file.
         """
         with open(path.__str__(), "w") as f:
-            var ptr = self.data.bitcast[Scalar[DType.uint8]]()
+            var ptr = self.data.bitcast[UInt8]()
             f._write(ptr, self.bytecount())
 
     @staticmethod
@@ -1299,7 +1299,7 @@ struct NDBuffer[
             path: Path to the output file.
         """
         with open(path.__str__(), "w") as f:
-            var ptr = self.data.bitcast[Scalar[DType.uint8]]()
+            var ptr = self.data.bitcast[UInt8]()
             f._write(ptr, self.bytecount())
 
     @always_inline
