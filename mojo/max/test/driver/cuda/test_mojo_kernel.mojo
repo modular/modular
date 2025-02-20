@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
+# UNSUPPORTED: asan
 # RUN: %mojo %s %t1
 
 # COM: Test with mojo build
