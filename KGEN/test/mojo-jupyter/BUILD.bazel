@@ -10,9 +10,6 @@ lit_tests(
         "*.ipynb",
         "*.mojo",
     ]) + [
-        "//KGEN:MojoLLDB",
-        "//KGEN:gdb-server",
-        "//KGEN/tools/mojo-repl-entry-point",
         "//open-source/mojo/stdlib/stdlib:stdlib_srcs",
         "//utils:lit-lldb-init.in",
     ],

@@ -3,6 +3,10 @@ load("//bazel:api.bzl", "modular_cc_binary")
 modular_cc_binary(
     name = "mojo-jupyter-executor",
     srcs = ["main.cpp"],
+    data = [
+        "//KGEN:gdb-server",
+        "//KGEN/tools/mojo-repl-entry-point",
+    ],
     deps = [
         "//AsyncRT:RuntimeGlobals",
         "//Init",

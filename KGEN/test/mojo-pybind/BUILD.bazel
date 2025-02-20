@@ -7,11 +7,7 @@ lit_tests(
         "pybind.mojo",
         "test.py",
     ],
-    data = [
-        "module.mojo",
-        "//KGEN:CompilerRT",
-        "@llvm-project//compiler-rt:orc_rt",
-    ],
+    data = ["module.mojo"],
     mojo_deps = [
         "//open-source/mojo/stdlib/stdlib",
     ],

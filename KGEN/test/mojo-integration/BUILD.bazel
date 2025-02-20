@@ -14,10 +14,7 @@ lit_tests(
         ],
         exclude = _DATA,
     ),
-    data = glob(["inputs/**/*.mojo"]) + [
-        "//KGEN:CompilerRT",
-        "@llvm-project//compiler-rt:orc_rt",
-    ],
+    data = glob(["inputs/**/*.mojo"]),
     mojo_deps = [
         "//Kernels/mojo/gpu",
         "//Kernels/mojo/_mlir",
@@ -45,10 +42,8 @@ lit_tests(
     # not require them
     srcs = glob(["*.test"]),
     data = glob(["inputs/**/*.mojo"]) + [
-        "//KGEN:CompilerRT",
         "//Kernels/mojo/_mlir:_mlir_srcs",
         "//open-source/mojo/stdlib/stdlib:stdlib_srcs",
-        "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
         "MODULAR_MOJO_IMPORT_SRCS": "$(locations //Kernels/mojo/_mlir:_mlir_srcs) $(locations //open-source/mojo/stdlib/stdlib:stdlib_srcs)",

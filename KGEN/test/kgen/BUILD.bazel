@@ -6,10 +6,6 @@ lit_tests(
         "**/*.mlir",
         "**/*.ll",
     ]),
-    data = [
-        "//KGEN:CompilerRT",
-        "@llvm-project//compiler-rt:orc_rt",
-    ],
     target_compatible_with = select({
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
