@@ -1004,6 +1004,12 @@ fn view_copy_impl[
     x: ManagedTensorSlice[static_spec=spec],
     ctx: MojoCallContextPtr,
 ):
+    constrained[
+        _compatible_with[x._static_shape, z._static_shape](),
+        "static shapes not compatible",
+    ]()
+    debug_assert(x.shape() == z.shape(), "runtime shapes not compatible")
+
     @parameter
     @always_inline
     fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -1011,3 +1017,16 @@ fn view_copy_impl[
 
     with Trace[TraceLevel.OP, target=target](trace_name):
         foreach[func, target=target, _synchronous=_synchronous](z, ctx)
+
+
+fn _compatible_with[x: DimList, y: DimList]() -> Bool:
+    @parameter
+    if len(x) != len(y):
+        return False
+
+    @parameter
+    for i in range(len(x)):
+        if x.has_value[i]() and y.has_value[i]() and x.at[i]() != y.at[i]():
+            return False
+
+    return True
