@@ -8,10 +8,7 @@ lit_tests(
         "%mojo-lldb": "$(rlocationpath //KGEN:mojo-lldb)",
     },
     data = glob(["Inputs/*.mojo"]) + [
-        "//KGEN:MojoLLDB",
-        "//KGEN:gdb-server",
         "//KGEN:mojo-lldb",
-        "//KGEN/tools/mojo-repl-entry-point",
         "//utils:lit-lldb-init.in",
     ],
     mojo_deps = [
