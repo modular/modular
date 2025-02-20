@@ -496,6 +496,7 @@ struct NDBuffer[
     alignment: Int = 1,
     address_space: AddressSpace = AddressSpace.GENERIC,
     exclusive: Bool = True,
+    origin: Origin[True] = MutableAnyOrigin,
 ](Sized, Stringable, Writable):
     """An N-dimensional Buffer.
 
@@ -511,9 +512,12 @@ struct NDBuffer[
         address_space: The address space of the buffer.
         exclusive: The underlying memory allocation of the tensor is known
             only to be accessible through this pointer.
+        origin: The origin of the memory being addressed.
     """
 
-    var data: UnsafePointer[Scalar[type], address_space=address_space]
+    var data: UnsafePointer[
+        Scalar[type], address_space=address_space, origin=origin
+    ]
     """The underlying data for the buffer. The pointer is not owned by the
     NDBuffer."""
     var dynamic_shape: IndexList[rank, unsigned=True]
@@ -539,7 +543,12 @@ struct NDBuffer[
     @implicit
     fn __init__(
         mut self,
-        ptr: UnsafePointer[Scalar[type], address_space=address_space, **_],
+        ptr: UnsafePointer[
+            Scalar[type],
+            address_space=address_space,
+            origin=origin,
+            mut=True, **_,
+        ],
     ):
         """Constructs an NDBuffer with statically known rank, shapes and
         type.
@@ -604,6 +613,8 @@ struct NDBuffer[
         ptr: UnsafePointer[
             __mlir_type[`!pop.scalar<`, type.value, `>`],
             address_space=address_space,
+            origin=origin,
+            mut=True,
         ],
         dynamic_shape: IndexList[rank, **_],
     ):
@@ -631,7 +642,9 @@ struct NDBuffer[
     @always_inline
     fn __init__(
         mut self,
-        ptr: UnsafePointer[Scalar[type], address_space=address_space],
+        ptr: UnsafePointer[
+            Scalar[type], address_space=address_space, origin=origin, mut=True
+        ],
         dynamic_shape: IndexList[rank, **_],
     ):
         """Constructs an NDBuffer with statically known rank, but dynamic
@@ -658,7 +671,9 @@ struct NDBuffer[
     @always_inline
     fn __init__(
         mut self,
-        ptr: UnsafePointer[Scalar[type], address_space=address_space],
+        ptr: UnsafePointer[
+            Scalar[type], address_space=address_space, origin=origin, mut=True
+        ],
         dynamic_shape: DimList,
     ):
         """Constructs an NDBuffer with statically known rank, but dynamic
@@ -676,7 +691,9 @@ struct NDBuffer[
     @always_inline
     fn __init__(
         mut self,
-        ptr: UnsafePointer[Scalar[type], address_space=address_space],
+        ptr: UnsafePointer[
+            Scalar[type], address_space=address_space, origin=origin, mut=True
+        ],
         dynamic_shape: IndexList[rank, **_],
         dynamic_stride: IndexList[rank, **_],
     ):
@@ -712,7 +729,9 @@ struct NDBuffer[
     @always_inline
     fn __init__(
         mut self,
-        ptr: UnsafePointer[Scalar[type], address_space=address_space],
+        ptr: UnsafePointer[
+            Scalar[type], address_space=address_space, origin=origin, mut=True
+        ],
         dynamic_shape: DimList,
         dynamic_stride: IndexList[rank, **_],
     ):
@@ -862,7 +881,9 @@ struct NDBuffer[
     @always_inline
     fn _offset(
         self, idx: VariadicList[Int]
-    ) -> UnsafePointer[Scalar[type], address_space=address_space, **_]:
+    ) -> UnsafePointer[
+        Scalar[type], address_space=address_space, mut=True, origin=origin, **_
+    ]:
         """Computes the NDBuffer's offset using the index positions provided.
 
         Args:
@@ -877,14 +898,18 @@ struct NDBuffer[
     @always_inline
     fn _offset(
         self, idx: IndexList[rank, **_]
-    ) -> UnsafePointer[Scalar[type], address_space=address_space, **_]:
+    ) -> UnsafePointer[
+        Scalar[type], address_space=address_space, mut=True, origin=origin, **_
+    ]:
         constrained[rank <= _MAX_RANK]()
         return self.data.offset(_compute_ndbuffer_offset(self, idx))
 
     @always_inline
     fn _offset(
         self, idx: StaticTuple[Int, rank]
-    ) -> UnsafePointer[Scalar[type], address_space=address_space, **_]:
+    ) -> UnsafePointer[
+        Scalar[type], address_space=address_space, mut=True, origin=origin, **_
+    ]:
         """Computes the NDBuffer's offset using the index positions provided.
 
         Args:
@@ -924,7 +949,11 @@ struct NDBuffer[
     fn tile[
         *tile_sizes: Dim
     ](self, tile_coords: IndexList[rank, **_]) -> NDBuffer[
-        type, rank, DimList(tile_sizes), address_space=address_space
+        type,
+        rank,
+        DimList(tile_sizes),
+        address_space=address_space,
+        origin=origin,
     ]:
         """Returns an n-d tile "slice" of the buffer of size tile_sizes at
            coords.
@@ -972,7 +1001,11 @@ struct NDBuffer[
         # which tells us the tile has a stride of the original buffer stride and
         # offset = dot(((m * tile_m), (n * tile_n)), stride).
         var tile = NDBuffer[
-            type, rank, DimList(tile_sizes), address_space=address_space
+            type,
+            rank,
+            DimList(tile_sizes),
+            address_space=address_space,
+            origin=origin,
         ](
             self.data.offset(offset),
             dynamic_shape=shape,
@@ -1223,7 +1256,9 @@ struct NDBuffer[
     @always_inline
     fn flatten(
         self,
-        out result: Buffer[type, shape.product(), address_space=address_space],
+        out result: Buffer[
+            type, shape.product(), address_space=address_space, origin=origin
+        ],
     ):
         """Constructs a flattened Buffer counterpart for this NDBuffer.
 
@@ -1240,7 +1275,10 @@ struct NDBuffer[
 
     @always_inline
     fn make_dims_unknown(
-        self, out result: NDBuffer[type, rank, address_space=address_space]
+        self,
+        out result: NDBuffer[
+            type, rank, address_space=address_space, origin=origin
+        ],
     ):
         """Rebinds the NDBuffer to one with unknown shape.
 
