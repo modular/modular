@@ -57,19 +57,6 @@ def traced(
             # The span is named "bar".
             pass
     """
-    if not is_profiling_enabled():
-        if func is not None:
-            if inspect.iscoroutinefunction(func):
-
-                @functools.wraps(func)
-                async def wrapper(*args, **kwargs):
-                    return await func(*args, **kwargs)
-
-                return wrapper
-            else:
-                return func
-        else:
-            return lambda f: f
 
     if func is None:
         return lambda f: traced(f, message=message, color=color)
@@ -81,14 +68,20 @@ def traced(
 
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
-            with Trace(message, color):
+            if is_profiling_enabled():
+                with Trace(message, color):
+                    return await func(*args, **kwargs)
+            else:
                 return await func(*args, **kwargs)
 
     else:
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            with Trace(message, color):
+            if is_profiling_enabled():
+                with Trace(message, color):
+                    return func(*args, **kwargs)
+            else:
                 return func(*args, **kwargs)
 
     return wrapper
