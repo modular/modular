@@ -368,7 +368,7 @@ getUnboundParametersForTensorList(LIT::StructType structType,
                                   Builder &builder) {
   // TODO(GEX-1126): consider a tuple which only contains tensors to
   // simplify this
-  auto allParameters = structType.getParamValues();
+  [[maybe_unused]] auto allParameters = structType.getParamValues();
 
   ASSERT_STREAM(allParameters.size() >= toIndex(ListParams::kNumParams),
                 << "Expected at least " << toIndex(ListParams::kNumParams)
@@ -577,7 +577,7 @@ extractIOSpecSubFields(LIT::StructType structType) {
   // Check if this is a list of tensors
   if (symbolMatches(structType.getSymbol(), kMaxList)) {
     static constexpr unsigned kElementType = 0;
-    auto allParameters = structType.getParamValues();
+    [[maybe_unused]] auto allParameters = structType.getParamValues();
 
     ASSERT_STREAM(allParameters.size() >= 2,
                   << "Expected at least two parameters on the list type");
