@@ -753,7 +753,7 @@ fn _load_impl[
                 cache_policy=cache_policy,
                 eviction_policy=eviction_policy,
                 alignment=alignment,
-            ](ptr.bitcast[Scalar[DType.uint32]]())
+            ](ptr.bitcast[UInt32]())
         )
 
     alias type_mnemonic = "u" + _int_to_str[type_bitwidth]()
