@@ -1,0 +1,22 @@
+##===----------------------------------------------------------------------===##
+#
+# This file is Modular Inc proprietary.
+#
+##===----------------------------------------------------------------------===##
+
+name: bench_allreduce
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_allreduce.mojo
+
+params:
+# Test hyperparameters.
+- dtype: [DType.bfloat16, DType.float32]
+  num_gpus: [1, 2, 4, 8]
+  rank: [1]
+  
+  # Test configurations covering edge cases
+  $length: [(8 * 1024),           # Small latency bound.
+            (128 * 1024),         # Larger latency bound.
+            (16 * 1024 * 1024),   # Bandwidth bound.
+            (64 * 1024 * 1024),   # Bandwidth bound: 8192 chunk size at dim = 8192.
+            ]
+  
