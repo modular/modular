@@ -13,7 +13,7 @@ from random import rand, randn
 from sys import simdwidthof, sizeof
 
 from algorithm.functional import elementwise, vectorize
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import Dim
 from memory import UnsafePointer, bitcast, memcmp, memcpy, memset_zero
 
@@ -1160,8 +1160,8 @@ struct Tensor[type: DType](
         return NDBuffer[type, rank](self._ptr, shape)
 
     @always_inline
-    fn _to_buffer(self) -> Buffer[type]:
-        return Buffer[type](self._ptr, self.num_elements())
+    fn _to_buffer(self) -> NDBuffer[type, 1]:
+        return NDBuffer[type, 1](self._ptr, self.num_elements())
 
     @always_inline
     fn tofile(self, path: Path) raises:
