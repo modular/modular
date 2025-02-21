@@ -1268,6 +1268,32 @@ struct DeviceContext:
             attributes: A `List` of launch attributes.
             constant_memory: A `List` of constant memory mappings.
             func_attribute: `CUfunction_attribute` enum.
+
+        You can pass the function directly to `enqueue_function` without
+        compiling it first:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        fn kernel():
+            print("hello from the GPU")
+
+        with DeviceContext() as ctx:
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+
+        If you are reusing the same function and parameters multiple times, this
+        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile it
+        first to remove the overhead:
+
+        ```mojo
+        with DeviceContext() as ctx:
+            var compile_func = ctx.compile_function[kernel]()
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
         """
 
         var gpu_kernel = self.compile_function[
@@ -1290,10 +1316,6 @@ struct DeviceContext:
             constant_memory=constant_memory^,
         )
 
-    @deprecated(
-        "Don't compile the function first, pass it directly with:"
-        " `ctx.enqueue_function[function](...)`"
-    )
     @parameter
     @always_inline
     fn enqueue_function[
@@ -1327,6 +1349,33 @@ struct DeviceContext:
             shared_mem_bytes: Amount of shared memory per thread block.
             attributes: Launch attributes.
             constant_memory: Constant memory mapping.
+
+        You can pass the function directly to `enqueue_function` without
+        compiling it first:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        fn kernel():
+            print("hello from the GPU")
+
+        with DeviceContext() as ctx:
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+
+        If you are reusing the same function and parameters multiple times, this
+        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile
+        the function first to remove the overhead:
+
+        ```mojo
+        with DeviceContext() as ctx:
+            var compiled_func = ctx.compile_function[kernel]()
+            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+
         """
         self._enqueue_function(
             f,
