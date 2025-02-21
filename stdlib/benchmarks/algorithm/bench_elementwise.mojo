@@ -18,7 +18,7 @@ from sys import simdwidthof
 
 from algorithm import elementwise
 from benchmark import Bench, BenchConfig, Bencher, BenchId
-from buffer import Buffer
+from buffer import NDBuffer
 
 from utils.index import Index, IndexList
 
@@ -28,7 +28,7 @@ from utils.index import Index, IndexList
 # ===-----------------------------------------------------------------------===#
 @parameter
 fn bench_elementwise[n: Int](mut b: Bencher) raises:
-    var vector = Buffer[DType.index, n].stack_allocation()
+    var vector = NDBuffer[DType.index, 1, n].stack_allocation()
 
     for i in range(len(vector)):
         vector[i] = -1

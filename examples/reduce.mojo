@@ -20,7 +20,7 @@ from random import rand
 
 from algorithm import sum
 from benchmark import Unit, benchmark, keep
-from buffer import Buffer
+from buffer import NDBuffer
 from memory import UnsafePointer
 from python import Python
 
@@ -35,10 +35,12 @@ alias scalar = Scalar[type]
 
 # Use the https://en.wikipedia.org/wiki/Kahan_summation_algorithm
 # Simple summation of the array elements
-fn naive_reduce_sum[size: Int](buffer: Buffer[type, size]) raises -> scalar:
+fn naive_reduce_sum[
+    size: Int
+](buffer: NDBuffer[type, 1, size]) raises -> scalar:
     var my_sum: scalar = 0
     var c: scalar = 0
-    for i in range(buffer.size):
+    for i in range(buffer.size()):
         var y = buffer[i] - c
         var t = my_sum + y
         c = (t - my_sum) - y
@@ -46,7 +48,9 @@ fn naive_reduce_sum[size: Int](buffer: Buffer[type, size]) raises -> scalar:
     return my_sum
 
 
-fn stdlib_reduce_sum[size: Int](array: Buffer[type, size]) raises -> scalar:
+fn stdlib_reduce_sum[
+    size: Int
+](array: NDBuffer[type, 1, size]) raises -> scalar:
     var my_sum = sum(array)
     return my_sum
 
@@ -61,10 +65,10 @@ def pretty_print(name: String, elements: Int, time: Float64):
 
 
 fn bench[
-    func: fn[size: Int] (buffer: Buffer[type, size]) raises -> scalar,
+    func: fn[size: Int] (buffer: NDBuffer[type, 1, size]) raises -> scalar,
     size: Int,
     name: String,
-](buffer: Buffer[type, size]) raises:
+](buffer: NDBuffer[type, 1, size]) raises:
     @parameter
     fn runner() raises:
         var result = func[size](buffer)
@@ -86,8 +90,8 @@ fn main() raises:
     rand(ptr_small, size_small)
     rand(ptr_large, size_large)
 
-    var buffer_small = Buffer[type, size_small](ptr_small)
-    var buffer_large = Buffer[type, size_large](ptr_large)
+    var buffer_small = NDBuffer[type, 1, size_small](ptr_small)
+    var buffer_large = NDBuffer[type, 1, size_large](ptr_large)
 
     bench[naive_reduce_sum, size_small, "naive"](buffer_small)
     bench[naive_reduce_sum, size_large, "naive"](buffer_large)
