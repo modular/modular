@@ -407,6 +407,11 @@ TypedAttr IntLiteralBinAttr::get(MLIRContext *ctx, Type type, TypedAttr lhs,
     break;
   case IntLiteralBinopKind::FloorDiv: {
     IPInt zero(0);
+    if (r == zero) { // x // 0 = 0.
+      result = zero;
+      break;
+    }
+
     if ((l >= zero) == (r >= zero) || l % r == zero)
       result = l / r;
     else
@@ -420,6 +425,10 @@ TypedAttr IntLiteralBinAttr::get(MLIRContext *ctx, Type type, TypedAttr lhs,
     // where sign is determined by the RHS sign. If the signs don't match, the
     // value is the same as: sign((abs(r) - (abs(l) % abs(r))) % abs(r)).
     IPInt zero(0);
+    if (r == zero) { // x % 0 = 0.
+      result = zero;
+      break;
+    }
     bool signMatch = (l >= zero) == (r >= zero);
     IPInt lAbs = l.abs();
     IPInt rAbs = r.abs();
@@ -431,10 +440,16 @@ TypedAttr IntLiteralBinAttr::get(MLIRContext *ctx, Type type, TypedAttr lhs,
     break;
   }
   case IntLiteralBinopKind::Lshift:
-    result = l << r;
+    if (r < IPInt(0))
+      result = IPInt(0);
+    else
+      result = l << r;
     break;
   case IntLiteralBinopKind::Rshift:
-    result = l >> r;
+    if (r < IPInt(0))
+      result = IPInt(0);
+    else
+      result = l >> r;
     break;
   case IntLiteralBinopKind::And:
     result = l & r;
