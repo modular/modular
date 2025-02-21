@@ -20,7 +20,6 @@ from kv_cache.types import (
 from memory import UnsafePointer
 from nn.kv_cache import _flash_attention_kv_cache_impl
 from nn.mha import mha_gpu_naive
-from runtime.asyncrt import MojoCallContextPtr
 from testing import assert_almost_equal
 
 from utils import Index, IndexList

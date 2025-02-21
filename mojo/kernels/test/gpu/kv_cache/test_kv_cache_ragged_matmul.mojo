@@ -28,7 +28,6 @@ from nn.kv_cache_ragged import (
     _fused_qkv_matmul_kv_cache_ragged_impl,
     _matmul_kv_cache_ragged_impl,
 )
-from runtime.asyncrt import MojoCallContextPtr
 from testing import assert_almost_equal
 
 from utils import IndexList

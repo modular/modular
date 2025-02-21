@@ -20,7 +20,6 @@ from memory import UnsafePointer
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import NullMask
 from nn.mha_score_mod import IdentityScoreMod
-from runtime.asyncrt import MojoCallContextPtr
 from testing import assert_almost_equal
 
 from utils import IndexList

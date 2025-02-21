@@ -27,7 +27,6 @@ from kv_cache.types import (
 from linalg.matmul_gpu import _matmul_gpu
 from memory import UnsafePointer
 from nn.kv_cache import _fused_qkv_matmul_kv_cache_impl
-from runtime.asyncrt import MojoCallContextPtr
 from testing import assert_almost_equal
 
 from utils import IndexList
