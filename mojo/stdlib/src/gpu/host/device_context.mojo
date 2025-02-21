@@ -885,16 +885,16 @@ struct DeviceContext:
         ctx.synchronize()
     ```
 
-    A custom operation receives an opaque `MojoCallContextPtr`, which provides
+    A custom operation receives an opaque `DeviceContextPtr`, which provides
     a `get_device_context()` method to retrieve the device context:
 
     ```mojo
-    from runtime.asyncrt import MojoCallContextPtr
+    from runtime.asyncrt import DeviceContextPtr
 
     @register("custom_op")
     struct CustomOp:
         @staticmethod
-        fn execute(ctx_ptr: MojoCallContextPtr) raises:
+        fn execute(ctx_ptr: DeviceContextPtr) raises:
             var ctx = ctx_ptr.get_device_context()
             ctx.enqueue_function[kernel](grid_dim=1, block_dim=(2, 2, 2))
             ctx.synchronize()
