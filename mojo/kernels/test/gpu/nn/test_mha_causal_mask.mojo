@@ -9,9 +9,10 @@
 # UNSUPPORTED: H100-GPU
 # RUN: %mojo-no-debug %s
 
+from collections import OptionalReg
 from math import ceildiv, isclose, isqrt
 from random import rand
-from sys import argv
+from sys import argv, sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -19,6 +20,7 @@ from gpu import *
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.info import DEFAULT_GPU_ARCH
 from memory import UnsafePointer
+from nn.mha_utils import MHAConfig
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import CausalMask, NullMask
 from nn.mha_score_mod import IdentityScoreMod
@@ -160,11 +162,19 @@ fn test[
         Index(batch_size, seq_len, num_heads, depth),
     )
 
+    alias config = MHAConfig(
+        qkv_type,
+        num_heads,
+        depth,
+        BK=OptionalReg[UInt](128 // sizeof[qkv_type]()),
+        num_pipeline_stages=2,
+    )
+
     @parameter
     @always_inline
     @__copy_capture(q_device, k_device, v_device, mask4d, output_device)
     fn kernel_launch(ctx: DeviceContext) raises:
-        flash_attention[add_attn_mask=False](
+        flash_attention[add_attn_mask=False, config=config](
             output_device,
             q_device,
             k_device,
