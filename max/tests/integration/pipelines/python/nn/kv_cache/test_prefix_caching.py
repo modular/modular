@@ -76,6 +76,7 @@ def create_paged_manager(
         session=session,
         cache_memory=cache_memory,
         page_size=page_size,
+        enable_runtime_checks=True,
     )
 
     assert len(kv_manager.available_blocks) == num_blocks
