@@ -101,9 +101,9 @@ struct GemmShape:
         been pre-packed.
 
         Args:
-            c: Buffer with allocated output space.
-            a: Buffer containing matrix operand A.
-            b: Buffer containing matrix operand B.
+            c: NDBuffer with allocated output space.
+            a: NDBuffer containing matrix operand A.
+            b: NDBuffer containing matrix operand B.
         """
         return GemmShape(c.dim[0](), c.dim[1](), a.dim[1]())
 

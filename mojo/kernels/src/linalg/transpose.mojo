@@ -10,7 +10,7 @@ from sys.info import simdwidthof
 from sys.intrinsics import strided_load, strided_store
 
 from algorithm import parallel_memcpy, sync_parallelize, tile, vectorize
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import DimList
 from memory import UnsafePointer, memcpy
 from runtime.asyncrt import parallelism_level
@@ -398,14 +398,17 @@ fn _fill_strides[
 
     Note that `buf` is only used for querying its dimensions.
     """
-    _fill_strides(buf, Buffer[DType.index, rank](strides))
+    _fill_strides(buf, NDBuffer[DType.index, 1, rank](strides))
 
 
 fn _fill_strides[
     rank: Int,
     input_shape: DimList,
     type: DType,
-](buf: NDBuffer[type, rank, input_shape], strides: Buffer[DType.index, rank]):
+](
+    buf: NDBuffer[type, rank, input_shape],
+    strides: NDBuffer[DType.index, 1, rank],
+):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming
     `buf` contains contiguous buf.

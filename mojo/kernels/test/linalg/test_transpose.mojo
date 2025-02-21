@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.transpose import (
     _simplify_transpose_perms,
@@ -179,7 +179,7 @@ fn test_transpose_2d_identity() raises:
 
     # Create an identity permutation array of the form
     # [0, 1]
-    var perm = Buffer[DType.index, 2].stack_allocation()
+    var perm = NDBuffer[DType.index, 1, 2].stack_allocation()
     perm[0] = 0
     perm[1] = 1
 
@@ -241,7 +241,7 @@ fn test_transpose_2d() raises:
 
     # Create a permutation array of the form
     # [1, 0]
-    var perm = Buffer[DType.index, 2].stack_allocation()
+    var perm = NDBuffer[DType.index, 1, 2].stack_allocation()
     perm[0] = 1
     perm[1] = 0
 
@@ -307,7 +307,7 @@ fn test_transpose_3d_identity() raises:
 
     # Create an identity permutation array of the form
     # [0, 1, 2]
-    var perm = Buffer[DType.index, 3].stack_allocation()
+    var perm = NDBuffer[DType.index, 1, 3].stack_allocation()
     perm[0] = 0
     perm[1] = 1
     perm[2] = 2
@@ -382,7 +382,7 @@ fn test_transpose_3d() raises:
 
     # Create a identity permutation array of the form
     # [2, 0, 1]
-    var perm = Buffer[DType.index, 3].stack_allocation()
+    var perm = NDBuffer[DType.index, 1, 3].stack_allocation()
     perm[0] = 2
     perm[1] = 0
     perm[2] = 1
@@ -459,7 +459,7 @@ fn test_transpose_si64() raises:
 
     # Create a identity permutation array of the form
     # [2, 1, 0]
-    var perm = Buffer[DType.index, 3].stack_allocation()
+    var perm = NDBuffer[DType.index, 1, 3].stack_allocation()
     perm[0] = 2
     perm[1] = 1
     perm[2] = 0

@@ -8,7 +8,7 @@ from math import align_up, ceildiv
 from sys.info import alignof, has_neon, has_nvidia_gpu_accelerator, simdwidthof
 
 from algorithm import sync_parallelize, tile, unswitch, vectorize
-from buffer.buffer import Buffer, NDBuffer
+from buffer.buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_valid_target
@@ -506,10 +506,16 @@ fn _matmul_cpu_impl[
     var k = shape.K
     # Matrix by vector pattern -> use gemv
     if n == 1:
-        var out = Buffer[c.type](c.data, c.dim[0]())
+        var out = NDBuffer[c.type, 1](c.data, c.dim[0]())
         var lhs = a
-        var rhs = Buffer[b.type](b.data, b.dim[0]())
+        var rhs = NDBuffer[b.type, 1](b.data, b.dim[0]())
         gemv[
+            c_size = out.shape.at[0](),
+            c_type = out.type,
+            a_shape = lhs.shape,
+            a_type = lhs.type,
+            b_size = rhs.shape.at[0](),
+            b_type = rhs.type,
             parallelize=True,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ](out, lhs, rhs)

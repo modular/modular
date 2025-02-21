@@ -10,7 +10,7 @@ from random import rand
 from sys import simdwidthof, sizeof
 
 import benchmark
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import Dim
 from linalg.gemv import gemv, naive_gemv
 from linalg.matmul import matmul
@@ -52,15 +52,15 @@ def test_gemv():
     var lhs = NDBuffer[type, 2](lhs_storage, Index(m, k))
 
     var rhs_storage = UnsafePointer[Scalar[type], alignment=alignment].alloc(k)
-    var rhs = Buffer[type, Dim(k)](rhs_storage)
+    var rhs = NDBuffer[type, 1, Dim(k)](rhs_storage)
 
     var out_storage = UnsafePointer[Scalar[type], alignment=alignment].alloc(m)
-    var out = Buffer[type, Dim(m)](out_storage)
+    var out = NDBuffer[type, 1, Dim(m)](out_storage)
 
     var ref_out_storage = UnsafePointer[
         Scalar[type], alignment=alignment
     ].alloc(m)
-    var ref_out = Buffer[type, Dim(m)](ref_out_storage)
+    var ref_out = NDBuffer[type, 1, Dim(m)](ref_out_storage)
 
     rand[type](lhs_storage, m * k)
     rand[type](rhs_storage, k)

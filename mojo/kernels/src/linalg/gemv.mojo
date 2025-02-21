@@ -9,7 +9,7 @@ from math import align_down, align_up, ceildiv
 from sys import alignof, bitwidthof, llvm_intrinsic, simdwidthof
 
 from algorithm.reduction import _reduce_generator
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -798,9 +798,9 @@ fn gemv[
     b_type: DType,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c_buf: Buffer[c_type, c_size],
+    c_buf: NDBuffer[c_type, 1, c_size],
     a_buf: NDBuffer[a_type, 2, a_shape],
-    b_buf: Buffer[b_type, b_size],
+    b_buf: NDBuffer[b_type, 1, b_size],
 ) raises:
     alias simd_width = simdwidthof[c_type]()
 
@@ -857,9 +857,9 @@ fn naive_gemv[
     b_size: Dim,
     type: DType,
 ](
-    c_buf: Buffer[type, c_size],
+    c_buf: NDBuffer[type, 1, c_size],
     a_buf: NDBuffer[type, 2, a_shape],
-    b_buf: Buffer[type, b_size],
+    b_buf: NDBuffer[type, 1, b_size],
 ):
     var M = a_buf.dim[0]()
     var K = a_buf.dim[1]()
