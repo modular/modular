@@ -425,10 +425,10 @@ def execute_flash_attention[
 
 def execute_flash_attention_suite(ctx: DeviceContext):
     var bs = 2
-    var valid_length_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(bs)
+    var valid_length_ptr = UnsafePointer[UInt32].alloc(bs)
     var valid_length = NDBuffer[DType.uint32, 1](valid_length_ptr, Index(1))
 
-    var cache_valid_length_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(bs)
+    var cache_valid_length_ptr = UnsafePointer[UInt32].alloc(bs)
     var cache_valid_length = NDBuffer[DType.uint32, 1](
         cache_valid_length_ptr, Index(1)
     )

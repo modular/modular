@@ -161,7 +161,7 @@ fn repack_Q4_0_for_sm8x[
         ),
     )
     var repack_weights = LayoutTensor[DType.uint32, repacked_b_layout](
-        q_packed_weight.ptr.bitcast[Scalar[DType.uint32]](),
+        q_packed_weight.ptr.bitcast[UInt32](),
         RuntimeLayout[repacked_b_layout](),
     )
 
@@ -668,7 +668,7 @@ fn test_quantized[
     # elements of b matrix is between [-1, 1]
     random(b_scales_view, 0, 0.125)
     randint(
-        b_host.tensor.data.bitcast[Scalar[DType.uint32]](),
+        b_host.tensor.data.bitcast[UInt32](),
         n.value * (k.value // pack_factor),
         UInt.MIN,
         UInt.MAX,
