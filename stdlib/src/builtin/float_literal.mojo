@@ -264,7 +264,7 @@ struct FloatLiteral(
     # Arithmetic Operators
     # ===------------------------------------------------------------------===#
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __add__(self, rhs: FloatLiteral) -> FloatLiteral:
         """Add two FloatLiterals.
 
@@ -278,7 +278,7 @@ struct FloatLiteral(
             oper = __mlir_attr.`#kgen<float_literal.binop_kind add>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __sub__(self, rhs: FloatLiteral) -> FloatLiteral:
         """Subtract two FloatLiterals.
 
@@ -292,7 +292,7 @@ struct FloatLiteral(
             oper = __mlir_attr.`#kgen<float_literal.binop_kind sub>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __mul__(self, rhs: FloatLiteral) -> FloatLiteral:
         """Multiply two FloatLiterals.
 
@@ -306,7 +306,7 @@ struct FloatLiteral(
             oper = __mlir_attr.`#kgen<float_literal.binop_kind mul>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __truediv__(self, rhs: FloatLiteral) -> FloatLiteral:
         """Divide two FloatLiterals.
 
@@ -370,7 +370,7 @@ struct FloatLiteral(
         """
         return rhs // self
 
-    @always_inline
+    @always_inline("nodebug")
     fn __ceildiv__(self, denominator: Self) -> Self:
         """Return the rounded-up result of dividing self by denominator.
 
@@ -388,7 +388,7 @@ struct FloatLiteral(
     # Reversed Operators, allowing things like "1 / 2.0" to work
     # ===------------------------------------------------------------------===#
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __radd__(self, rhs: FloatLiteral) -> FloatLiteral:
         """Reversed addition operator.
 
@@ -400,7 +400,7 @@ struct FloatLiteral(
         """
         return rhs + self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rsub__(self, rhs: FloatLiteral) -> FloatLiteral:
         """Reversed subtraction operator.
 
@@ -424,7 +424,7 @@ struct FloatLiteral(
         """
         return rhs * self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rtruediv__(self, rhs: FloatLiteral) -> FloatLiteral:
         """Reversed division.
 
