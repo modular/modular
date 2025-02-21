@@ -8,7 +8,7 @@ from math import clamp
 
 from algorithm import elementwise
 from buffer import NDBuffer
-from runtime.asyncrt import MojoCallContextPtr
+from runtime.asyncrt import DeviceContextPtr
 
 from utils._select import _select_register_value as select
 from utils.index import IndexList
@@ -141,7 +141,7 @@ fn copy_to_slice[
     start: NDBuffer[start_type, 1],
     end: NDBuffer[end_type, 1],
     step: NDBuffer[step_type, 1],
-    context: MojoCallContextPtr = MojoCallContextPtr(),
+    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     var expected_shape = slice_shape[single_thread_blocking_override=True](
         buffer, start, end, step

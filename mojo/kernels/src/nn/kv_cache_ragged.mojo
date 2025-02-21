@@ -30,7 +30,7 @@ from nn.mha import flash_attention as gpu_flash_attention
 from nn.mha_mask import CausalMask, MHAMask, NullMask
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
 from register import register_internal
-from runtime.asyncrt import MojoCallContextPtr
+from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList
@@ -51,7 +51,7 @@ fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged[
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
     output: NDBuffer[type, 2, _],
-    ctx: MojoCallContextPtr,
+    ctx: DeviceContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -118,7 +118,7 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged[
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
     output: NDBuffer[type, 2, _],
-    ctx: MojoCallContextPtr,
+    ctx: DeviceContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -190,7 +190,7 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
     layer_idx: UInt32,
     output: NDBuffer[type, 2, _],
     bias: NDBuffer[type, 1],
-    ctx: MojoCallContextPtr,
+    ctx: DeviceContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -262,7 +262,7 @@ fn _fused_qkv_matmul_kv_cache_ragged[
     kv_collection: collection_t,
     layer_idx: UInt32,
     output: NDBuffer[type, 2, _],
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -320,7 +320,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_bias[
     layer_idx: UInt32,
     output: NDBuffer[type, 2, _],
     bias: NDBuffer[type, 1],
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -702,7 +702,7 @@ fn kv_matmul_ragged_continuous_batching[
         KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
     ],
     layer_idx: UInt32,
-    ctx: MojoCallContextPtr,
+    ctx: DeviceContextPtr,
 ) raises:
     """Performs a matmul, writing the output into a mutable ContinuousBatchingKVCacheCollection object.
 
@@ -759,7 +759,7 @@ fn _matmul_kv_cache_ragged[
     weight: NDBuffer[type, 2, _],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     """Helper for performing matmul with custom ContinuousBatchingKVCacheCollection types.
 
@@ -913,7 +913,7 @@ fn generic_fused_qk_rope_bshd_continous_batch_ragged[
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
     output: NDBuffer[type, 3, *_],
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ):
     @always_inline
     @parameter
@@ -969,7 +969,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
     output: NDBuffer[type, 3, *_],
-    context: MojoCallContextPtr = MojoCallContextPtr(),
+    context: DeviceContextPtr = DeviceContextPtr(),
 ):
     """Performs a fused RoPE projection for Q and K projections.
 
@@ -1040,7 +1040,7 @@ fn generic_flash_attention_kv_cache_causal_mask_paged_ragged[
     layer_idx: UInt32,
     scale: Float32,
     output: NDBuffer[type, 3, *_],
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     @always_inline
     @parameter
@@ -1090,7 +1090,7 @@ fn generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged[
     layer_idx: UInt32,
     scale: Float32,
     output: NDBuffer[type, 3, *_],
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     @always_inline
     @parameter
@@ -1139,7 +1139,7 @@ fn generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged[
     layer_idx: UInt32,
     scale: Float32,
     output: NDBuffer[type, 3, *_],
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     @always_inline
     @parameter
@@ -1186,7 +1186,7 @@ fn generic_flash_attention_kv_cache_null_mask_cont_batch_ragged[
     layer_idx: UInt32,
     scale: Float32,
     output: NDBuffer[type, 3, *_],
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     @always_inline
     @parameter
@@ -1239,7 +1239,7 @@ fn _flash_attention_kv_cache_ragged[
     mask: mask_t,
     scale: Float32,
     output: NDBuffer[type, 3, *_],
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom types.
 
@@ -1285,7 +1285,7 @@ fn _flash_attention_kv_cache_alibi_mask_ragged[
     layer_idx: UInt32,
     scale: Float32,
     output: NDBuffer[type, 3, *_],
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom types.
 
@@ -1508,7 +1508,7 @@ fn _cross_attention_kv_cache_ragged[
     mask: mask_t,
     scale: Float32,
     output: NDBuffer[type, 3, *_],
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     """Performs cross attention using k and v caches from KVCacheT custom types.
 
@@ -1575,7 +1575,7 @@ fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged[
     layer_idx: UInt32,
     scale: Float32,
     output: NDBuffer[type, 3, *_],
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     @always_inline
     @parameter

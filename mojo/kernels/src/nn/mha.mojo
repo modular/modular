@@ -72,7 +72,7 @@ from memory.unsafe import bitcast
 from nn.mha_mask import MHAMask, NullMask, TileMaskStatus
 from nn.mha_operand import KVCacheMHAOperand, MHAOperand, NDBufferMHAOperand
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
-from runtime.asyncrt import MojoCallContextPtr
+from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList
@@ -225,7 +225,7 @@ fn flash_attention[
     v: NDBuffer[_, rank, *_],
     mask: NDBuffer,
     scale: Float32,
-    context: MojoCallContextPtr = MojoCallContextPtr(),
+    context: DeviceContextPtr = DeviceContextPtr(),
     num_partitions: OptionalReg[Int] = None,
 ) raises:
     # TODO docstring

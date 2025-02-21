@@ -27,7 +27,7 @@ from layout.layout_tensor import LayoutTensor
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import get_fragment_size
 from memory import UnsafePointer, stack_allocation
-from runtime.asyncrt import MojoCallContextPtr, parallelism_level
+from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils import IndexList, StaticTuple
@@ -816,7 +816,7 @@ fn softmax[
     shape: IndexList[rank],
     output: NDBuffer[type, rank, static_shape],
     axis: Int,
-    context: MojoCallContextPtr = MojoCallContextPtr(),
+    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     @parameter
     fn trace_information() -> String:

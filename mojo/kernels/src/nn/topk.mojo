@@ -34,7 +34,7 @@ from gpu.random import Random
 from memory import Span, UnsafePointer, stack_allocation
 from nn.gather_scatter import normalize_neg_index
 from nn.reshape import reshape
-from runtime.asyncrt import MojoCallContextPtr
+from runtime.asyncrt import DeviceContextPtr
 
 from utils import IndexList
 from utils.numerics import max_or_inf, min_or_neg_inf
@@ -109,7 +109,7 @@ fn top_k[
     out_vals: NDBuffer[type, rank],
     out_idxs: NDBuffer[out_idx_type, rank],
     sorted: Bool,
-    ctx: MojoCallContextPtr,
+    ctx: DeviceContextPtr,
 ) raises:
     """
     Implementation of the Top K algorithm. Returns the top or bottom K elements

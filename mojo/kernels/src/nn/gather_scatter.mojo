@@ -19,7 +19,7 @@ from gpu.host._compile import _get_gpu_target
 from gpu.host.info import is_cpu, is_gpu
 from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
 from register import register_internal
-from runtime.asyncrt import MojoCallContextPtr, parallelism_level
+from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel
 from tensor_internal import ManagedTensorSlice
 
@@ -384,7 +384,7 @@ fn gather[
     input: NDBuffer[type, *_],
     indices: NDBuffer[indices_type, *_],
     *,
-    context: MojoCallContextPtr = MojoCallContextPtr(),
+    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
 
@@ -692,7 +692,7 @@ fn gather[
     indices_shape: IndexList,
     output_shape: IndexList,
     *,
-    context: MojoCallContextPtr = MojoCallContextPtr(),
+    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
 
@@ -776,7 +776,7 @@ fn scatter_nd_generator[
     indices: NDBuffer[indices_type, indices_rank],
     updates: NDBuffer[output_type, updates_rank],
     output: NDBuffer[output_type, data_rank],
-    context: MojoCallContextPtr = MojoCallContextPtr(),
+    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """
     Implements ONNX ScatterND operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#ScatterND.
@@ -978,7 +978,7 @@ fn scatter_nd[
     indices: NDBuffer[indices_type, indices_rank],
     updates: NDBuffer[output_type, updates_rank],
     output: NDBuffer[output_type, data_rank],
-    context: MojoCallContextPtr = MojoCallContextPtr(),
+    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Scatter_nd operation without any reduction."""
     scatter_nd_generator[
@@ -1402,7 +1402,7 @@ fn gather_nd[
     data: NDBuffer[type, data_rank],
     indices: NDBuffer[indices_type, indices_rank],
     output: NDBuffer[type, output_rank],
-    ctx: MojoCallContextPtr,
+    ctx: DeviceContextPtr,
 ):
     """
     GatherND operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#GatherND.
@@ -1426,7 +1426,7 @@ fn gather_nd[
                  to be within bounds [-s, s-1] along axis of size s. It is an
                  error if any of the index values are out of bounds.
         output: Tensor of rank data_rank + indices_rank - indices_shape[-1] - 1 - b.
-        ctx: The MojoCallContextPtr as prepared by the graph compiler.
+        ctx: The DeviceContextPtr as prepared by the graph compiler.
 
     """
 

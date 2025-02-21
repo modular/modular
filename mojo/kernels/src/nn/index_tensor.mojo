@@ -17,7 +17,7 @@ from gpu.host._compile import _get_gpu_target
 from gpu.host.info import is_cpu
 from memory import UnsafePointer, memcpy, memset_zero
 from nn.gather_scatter import normalize_neg_index
-from runtime.asyncrt import MojoCallContextPtr, parallelism_level
+from runtime.asyncrt import DeviceContextPtr, parallelism_level
 
 from utils import Index, IndexList
 
@@ -157,7 +157,7 @@ fn index_tensor[
     data: NDBuffer[type, data_rank],
     indices: NDBuffer[indices_type, indices_rank],
     output: NDBuffer[type, output_rank],
-    ctx: MojoCallContextPtr,
+    ctx: DeviceContextPtr,
 ):
     """
     Index_tensor operation; based on modified implementation of gather_nd.
@@ -180,7 +180,7 @@ fn index_tensor[
                  to be within bounds [-s, s-1] along axis of size s. It is an
                  error if any of the index values are out of bounds.
         output: Tensor of rank data_rank + indices_rank - indices_shape[-1] - 1 - b.
-        ctx: The MojoCallContextPtr as prepared by the graph compiler.
+        ctx: The DeviceContextPtr as prepared by the graph compiler.
 
     """
 

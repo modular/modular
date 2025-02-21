@@ -22,7 +22,7 @@ from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host.info import is_cpu, is_valid_target
 from memory import UnsafePointer, memcpy
 from register import register_internal
-from runtime.asyncrt import MojoCallContextPtr
+from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel
 from .gather_scatter import normalize_neg_index
 
@@ -583,7 +583,7 @@ fn concat[
     output: NDBuffer[type, rank],
     axis: Int,
     inputs: StaticTuple[NDBuffer[type, rank], *_],
-    context: MojoCallContextPtr = MojoCallContextPtr(),
+    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     constrained[is_valid_target[target](), "not a valid target"]()
 
@@ -806,7 +806,7 @@ fn _fused_concat_cpu[
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], size],
     output: NDBuffer[type, rank],
-    ctx: MojoCallContextPtr,
+    ctx: DeviceContextPtr,
 ) raises:
     var offset = 0
 
@@ -995,7 +995,7 @@ fn fused_concat[
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], _],
     output: NDBuffer[type, rank],
-    ctx: MojoCallContextPtr,
+    ctx: DeviceContextPtr,
 ) raises:
     constrained[is_valid_target[target](), "not a valid target"]()
 

@@ -33,7 +33,7 @@ from gpu.memory import AddressSpace
 import gpu.warp as warp
 from memory import stack_allocation
 from register import register_internal
-from runtime.asyncrt import MojoCallContextPtr, parallelism_level
+from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList
@@ -616,7 +616,7 @@ fn layer_norm[
     beta: NDBuffer[type, 1],
     epsilon: Scalar[type],
     output: NDBuffer[type, rank, *_],
-    ctx: MojoCallContextPtr,
+    ctx: DeviceContextPtr,
 ) raises:
     # Note: we only support reduction along the last dimension
     if gamma_shape[0] != shape[rank - 1]:
@@ -978,7 +978,7 @@ fn _rms_norm_impl[
     shape: IndexList[rank],
     gamma: NDBuffer[type, 1],
     epsilon: Scalar[type],
-    ctx: MojoCallContextPtr,
+    ctx: DeviceContextPtr,
 ) raises:
     # Note: we only support reduction along the last dimension
     if gamma.dynamic_shape[0] != shape[rank - 1]:
@@ -1020,7 +1020,7 @@ fn rms_norm[
     gamma: NDBuffer[type, 1],
     epsilon: Scalar[type],
     output: NDBuffer[type, rank],
-    ctx: MojoCallContextPtr,
+    ctx: DeviceContextPtr,
 ) raises:
     if output.dynamic_shape.canonicalize() != shape.canonicalize():
         raise Error("Input and output buffers are not same shape")

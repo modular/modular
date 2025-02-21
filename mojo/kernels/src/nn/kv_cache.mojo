@@ -32,7 +32,7 @@ from nn.mha_mask import CausalMask, NullMask
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
 from nn.normalization import _rms_norm_impl
 from register import register_internal
-from runtime.asyncrt import MojoCallContextPtr
+from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils import Index, IndexList
@@ -52,7 +52,7 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
     output: NDBuffer[type, 3, _],
-    ctx: MojoCallContextPtr,
+    ctx: DeviceContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -109,7 +109,7 @@ fn _fused_qkv_matmul_kv_cache[
     kv_collection: collection_t,
     layer_idx: UInt32,
     output: NDBuffer[type, 3, _],
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -306,7 +306,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
     output: NDBuffer[type, 4, *_],
-    context: MojoCallContextPtr = MojoCallContextPtr(),
+    context: DeviceContextPtr = DeviceContextPtr(),
 ):
     """Performs a fused RoPE projection for Q and K projections.
 
@@ -375,7 +375,7 @@ fn generic_flash_attention_kv_cache_continuous_batch[
     valid_lengths: NDBuffer[DType.uint32, 1],
     scale: Float32,
     output: NDBuffer[type, 4, *_],
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     @always_inline
     @parameter
@@ -428,7 +428,7 @@ fn _flash_attention_kv_cache[
     valid_lengths: NDBuffer[DType.uint32, 1],
     scale: Float32,
     output: NDBuffer[type, 4, *_],
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom types.
 
@@ -514,7 +514,7 @@ fn generic_flash_attention_kv_cache_causal_mask_continuous_batch[
     valid_lengths: NDBuffer[DType.uint32, 1],
     scale: Float32,
     output: NDBuffer[type, 4, *_],
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     @always_inline
     @parameter
@@ -556,7 +556,7 @@ fn _flash_attention_kv_cache_causal_mask[
     valid_lengths: NDBuffer[DType.uint32, 1],
     scale: Float32,
     output: NDBuffer[type, 4, *_],
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom types, with the causal mask materialized inside the kernel.
 
@@ -728,7 +728,7 @@ fn generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch[
     valid_lengths: NDBuffer[DType.uint32, 1],
     scale: Float32,
     output: NDBuffer[type, 4, *_],
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     @always_inline
     @parameter
@@ -768,7 +768,7 @@ fn _flash_attention_kv_cache_causal_alibi_mask[
     valid_lengths: NDBuffer[DType.uint32, 1],
     scale: Float32,
     output: NDBuffer[type, 4, *_],
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT
     custom types, with the causal mask and alibi mask materialized inside the kernel.
@@ -894,7 +894,7 @@ def rms_norm_kv_cache_ragged_continuous_batching[
     layer_idx: UInt32,
     total_seq_len: UInt32,
     input_row_offsets: NDBuffer[DType.uint32, 1],
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ):
     """Performs RMSNorm in place on new entries in the key cache.
 
@@ -1020,7 +1020,7 @@ def print_kv_cache_cont_batch_generic_cpu[
     kv_collection: ContinuousBatchingKVCacheCollection[type, kv_params],
     layer_idx: UInt32,
     is_print_compact: Bool,
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ):
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     var v_cache = kv_collection.get_value_cache(Int(layer_idx))
@@ -1052,7 +1052,7 @@ def print_kv_cache_paged_generic_cpu[
     kv_collection: PagedKVCacheCollection[type, kv_params, page_size],
     layer_idx: UInt32,
     is_print_compact: Bool,
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ):
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     var v_cache = kv_collection.get_value_cache(Int(layer_idx))
@@ -1081,7 +1081,7 @@ def print_kv_cache_cont_batch_generic_gpu[
     kv_collection: ContinuousBatchingKVCacheCollection[type, kv_params],
     layer_idx: UInt32,
     is_print_compact: Bool,
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ):
     var blocks_ptr = UnsafePointer[Scalar[type]].alloc(
         kv_collection.blocks.num_elements()
@@ -1178,7 +1178,7 @@ def print_kv_cache_paged_generic_gpu[
     kv_collection: PagedKVCacheCollection[type, kv_params, page_size],
     layer_idx: UInt32,
     is_print_compact: Bool,
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ):
     var blocks_ptr = UnsafePointer[Scalar[type]].alloc(
         kv_collection.blocks.num_elements()

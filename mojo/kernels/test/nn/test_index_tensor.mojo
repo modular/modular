@@ -16,7 +16,7 @@ from nn.index_tensor import (
     _index_tensor_impl,
     index_tensor_shape,
 )
-from runtime.asyncrt import MojoCallContextPtr
+from runtime.asyncrt import DeviceContextPtr
 
 from utils import IndexList
 from utils.index import Index
@@ -341,7 +341,7 @@ fn test_index_tensor_CLIPVIT() raises:
         input.make_dims_unknown(),
         indices.make_dims_unknown(),
         output_data_buffer,
-        MojoCallContextPtr(),
+        DeviceContextPtr(),
     )
 
     for i in range(dim_0):
