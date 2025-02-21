@@ -231,6 +231,13 @@ class TokenGenerationSchedulerV2(Scheduler):
                 total_seq_len += len(ce_batch)
 
         for _ in range(max_batch_size_to_create):
+            if (
+                self.scheduler_config.target_tokens_per_batch_ce is not None
+                and total_seq_len
+                >= self.scheduler_config.target_tokens_per_batch_ce
+            ):
+                break
+
             try:
                 req_id, data = self.request_q.get_nowait()
                 # This is a partly encoded request if the start_idx !=0.
@@ -262,14 +269,6 @@ class TokenGenerationSchedulerV2(Scheduler):
                     seq_ids_and_prompts, num_steps=num_steps
                 )
 
-            # We will try to schedule at most (max_batch_size_tg - len(self.active_batch))
-            # CE requests, so theoretically, we should always have enough cache indices.
-            # However, when chunked prefill is enabled, a chunked request might already
-            # occupy a cache index but not appear in `active_batch`.
-            has_insufficient_kv_blocks = (
-                has_insufficient_kv_blocks or not self.available_cache_indices
-            )
-
             if has_insufficient_kv_blocks:
                 # we cannot schedule this request so return it to the head of
                 # the request queue
@@ -284,6 +283,7 @@ class TokenGenerationSchedulerV2(Scheduler):
                         self.scheduler_config.target_tokens_per_batch_ce
                         is not None
                     )
+
                     token_num_diff = (
                         total_seq_len
                         + data.seq_len
