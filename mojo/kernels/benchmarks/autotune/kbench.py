@@ -91,6 +91,13 @@ class Param:
             return [f"--{var_name}={self.value}"]
         return ["-D", f"{self.name}={self.value}"]
 
+    def __post_init__(self) -> None:
+        # Try evaluating value as an arithmetic expression:
+        try:
+            self.value = eval(self.value)
+        except:
+            pass
+
 
 def flatten(value: Union[int, object, Iterable]) -> list[Any]:
     """Flatten nested iterables into a single list."""
