@@ -268,11 +268,6 @@ fn IndexTypeDef(ty: Int) -> Int:
     return ty
 
 
-@register_internal("mojoCallContext")
-fn MojoCallContextDef(ty: DeviceContextPtr):
-    pass
-
-
 @register_internal("deviceContext")
 fn DeviceContextDef(ty: DeviceContextPtr):
     pass
