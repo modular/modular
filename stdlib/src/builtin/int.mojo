@@ -724,7 +724,7 @@ struct Int(
             n >>= 1
         return res
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __lshift__(self, rhs: Int) -> Int:
         """Return `self << rhs`.
 
@@ -734,12 +734,11 @@ struct Int(
         Returns:
             `self << rhs`.
         """
-        if rhs < 0:
-            # this should raise an exception.
-            return 0
-        return __mlir_op.`index.shl`(self.value, rhs.value)
+        return 0 if rhs < 0 else Int(
+            __mlir_op.`index.shl`(self.value, rhs.value)
+        )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rshift__(self, rhs: Int) -> Int:
         """Return `self >> rhs`.
 
@@ -749,10 +748,9 @@ struct Int(
         Returns:
             `self >> rhs`.
         """
-        if rhs < 0:
-            # this should raise an exception.
-            return 0
-        return __mlir_op.`index.shrs`(self.value, rhs.value)
+        return 0 if rhs < 0 else Int(
+            __mlir_op.`index.shrs`(self.value, rhs.value)
+        )
 
     @always_inline("builtin")
     fn __and__(self, rhs: Int) -> Int:
