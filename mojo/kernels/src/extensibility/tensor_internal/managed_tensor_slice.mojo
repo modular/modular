@@ -27,7 +27,7 @@ from gpu.host.info import is_cpu
 from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace
 from register import register_internal
-from runtime.asyncrt import MojoCallContextPtr
+from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel
 from tensor_internal import RuntimeTensorSpec, TensorSpec
 
@@ -916,7 +916,7 @@ fn get_kernel_simd_width[type: DType, target: StringLiteral]() -> Int:
 
 
 # This version of the function supports CPU only. For GPU, use the one with the
-# MojoCallContextPtr.
+# DeviceContextPtr.
 @doc_private
 @__mogg_intrinsic_attr("mogg.for_each")
 @no_inline
@@ -955,7 +955,7 @@ fn foreach[
     target: StringLiteral = "cpu",
     simd_width: Int = get_kernel_simd_width[type, target](),
     _synchronous: Bool = False,
-](tensor: ManagedTensorSlice[type=type, rank=rank], ctx: MojoCallContextPtr):
+](tensor: ManagedTensorSlice[type=type, rank=rank], ctx: DeviceContextPtr):
     """Apply the function `func` to each element of the tensor slice.
 
     Parameters:
@@ -1002,7 +1002,7 @@ fn view_copy_impl[
 ](
     z: ManagedTensorSlice[type=type, rank=rank],
     x: ManagedTensorSlice[static_spec=spec],
-    ctx: MojoCallContextPtr,
+    ctx: DeviceContextPtr,
 ):
     constrained[
         _compatible_with[x._static_shape, z._static_shape](),
