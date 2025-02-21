@@ -500,6 +500,57 @@ fn ld_matrix[
 
 
 # ===------------------------------------------------------------------===#
+# STMATRIX Instruction
+# ===------------------------------------------------------------------===#
+
+
+@always_inline
+fn st_matrix[
+    type: DType, //, simd_width: Int, *, transpose: Bool = False
+](
+    ptr: UnsafePointer[Scalar[type], address_space = AddressSpace.SHARED],
+    d: SIMD[type, simd_width],
+):
+    """Performs warp sync copy from registers to shared memory.
+    Loads in a fashion that can be used directly by tensor core MMA instructions.
+    """
+
+    # The register width is fixed at 4 Bytes (32 bits)
+    alias register_btypes = 4
+    alias register_width = register_btypes // sizeof[type]()
+    alias num_registers = simd_width // register_width
+
+    alias base = "stmatrix.sync.aligned"
+
+    @parameter
+    fn get_suffix() -> StringLiteral:
+        alias sfx = ".m8n8"
+        if transpose:
+            return ".trans" + sfx
+        return sfx
+
+    @parameter
+    if num_registers == 1:
+        alias ins = base + get_suffix() + ".x1.shared.b16 [$0], {$1};\n"
+        inlined_assembly[ins, NoneType, constraints="r,r"](ptr, d[0])
+
+    elif num_registers == 2:
+        alias ins = base + get_suffix() + ".x2.shared.b16 [$0], {$1, $2};\n"
+        inlined_assembly[ins, NoneType, constraints="r,r,r"](ptr, d[0], d[1])
+
+    else:
+        constrained[
+            num_registers == 4,
+            "no valid implementation of stmatrix instruction",
+        ]()
+
+        alias ins = base + get_suffix() + ".x4.shared.b16 [$0], {$1, $2, $3, $4};\n"
+        inlined_assembly[ins, NoneType, constraints="r,r,r,r,r"](
+            ptr, d[0], d[1], d[2], d[3]
+        )
+
+
+# ===------------------------------------------------------------------===#
 # Warp group MMA asynchronous compute and synchronization instructions.
 # ===------------------------------------------------------------------===#
 
