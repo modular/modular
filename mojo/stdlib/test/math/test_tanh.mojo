@@ -9,7 +9,7 @@
 from math import tanh
 from random import randn, seed
 
-from buffer import Buffer
+from buffer import NDBuffer
 from internal_utils import compare
 from memory import UnsafePointer
 from test_utils import libm_call
@@ -27,7 +27,7 @@ def test_tanh_tfvals_fp32():
 
     # The following input values for x are taken from
     # https://github.com/modularml/modular/issues/28981#issuecomment-1890182667
-    var x = Buffer[dtype, 4].stack_allocation()
+    var x = NDBuffer[dtype, 1, 4].stack_allocation()
     x.store[width=4](
         0,
         SIMD[dtype, 4](
@@ -38,14 +38,14 @@ def test_tanh_tfvals_fp32():
         ),
     )
 
-    var y = Buffer[dtype, 4].stack_allocation()
+    var y = NDBuffer[dtype, 1, 4].stack_allocation()
     for i in range(4):
         y[i] = tanh(x[i])
 
     #################################################
     # TF results
     # use `tf.print(tf.math.tanh(numpy.float32(x)))`
-    var tfvals_fp32 = Buffer[dtype, 4].stack_allocation()
+    var tfvals_fp32 = NDBuffer[dtype, 1, 4].stack_allocation()
     tfvals_fp32.store[width=4](
         0, SIMD[dtype, 4](-0.850603521, -1, -1, -0.612388909)
     )
@@ -65,7 +65,7 @@ def test_tanh_tfvals_fp64():
 
     # The following input values for x are taken from
     # https://github.com/modularml/modular/issues/28981#issuecomment-1890182667
-    var x = Buffer[dtype, 4].stack_allocation()
+    var x = NDBuffer[dtype, 1, 4].stack_allocation()
     x.store[width=4](
         0,
         SIMD[dtype, 4](
@@ -76,14 +76,14 @@ def test_tanh_tfvals_fp64():
         ),
     )
 
-    var y = Buffer[dtype, 4].stack_allocation()
+    var y = NDBuffer[dtype, 1, 4].stack_allocation()
     for i in range(4):
         y[i] = tanh(x[i])
 
     #################################################
     # TF results
     # use `tf.print(tf.math.tanh(numpy.float64(x)))`
-    var tfvals_fp64 = Buffer[dtype, 4].stack_allocation()
+    var tfvals_fp64 = NDBuffer[dtype, 1, 4].stack_allocation()
     tfvals_fp64.store[width=4](
         0,
         SIMD[dtype, 4](
