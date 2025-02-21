@@ -639,10 +639,6 @@ async def test_prefix_caching_chunked_prefill() -> None:
 
     run_forward(seq_id_1, prompt_1_part_1, prompt_1_part_2[0])
     run_forward(seq_id_2, prompt_2_part_1, prompt_2_part_2[0])
-    assert kv_manager.active_requests[
-        seq_id_2
-    ].previous_uncommitted_tokens.tolist() == [16, 17]
-
     run_forward(seq_id_1, prompt_1_part_2, FAKE_TOKEN)
 
     assert kv_manager._count_all_pages() == kv_manager.total_num_pages
@@ -657,8 +653,8 @@ async def test_prefix_caching_chunked_prefill() -> None:
     # seq_id_2 needs projections for [..., 16, 17, 16]
     run_forward(seq_id_2, prompt_2_part_2, FAKE_TOKEN)
     metadata = kv_manager.active_requests[seq_id_2]
-    assert 2 not in metadata.all_assigned_blocks
-    assert 3 in metadata.all_assigned_blocks
+    assert 2 not in metadata.blocks
+    assert 3 in metadata.blocks
 
     assert kv_manager._count_all_pages() == kv_manager.total_num_pages
     assert kv_manager.radix_trie.pretty_format(print_blocks=True) == [
