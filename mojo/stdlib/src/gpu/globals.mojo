@@ -3,7 +3,16 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""This module includes NVIDIA GPUs global constants."""
+"""This module provides GPU-specific global constants and configuration values.
+
+The module defines hardware-specific constants like warp size and thread block limits
+that are used throughout the GPU programming interface. It handles both NVIDIA and AMD
+GPU architectures, automatically detecting and configuring the appropriate values based
+on the available hardware.
+
+The constants are resolved at compile time based on the target GPU architecture and
+are used to optimize code generation and ensure hardware compatibility.
+"""
 
 from sys.info import (
     has_amd_gpu_accelerator,
@@ -20,7 +29,20 @@ from .host.info import DEFAULT_GPU, DEFAULT_GPU_ARCH
 
 
 alias WARP_SIZE = _resolve_warp_size()
-"""The warp size of the GPU."""
+"""The number of threads that execute in lockstep within a warp on the GPU.
+
+This constant represents the hardware warp size, which is the number of threads that execute
+instructions synchronously as a unit. The value is architecture-dependent:
+- 32 threads per warp on NVIDIA GPUs
+- 64 threads per warp on AMD GPUs
+- 0 if no GPU is detected
+
+The warp size is a fundamental parameter that affects:
+- Thread scheduling and execution
+- Memory access coalescing
+- Synchronization primitives
+- Overall performance optimization
+"""
 
 
 fn _resolve_warp_size() -> Int:
