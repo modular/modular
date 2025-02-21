@@ -1159,6 +1159,118 @@ TypedAttr FloatLiteralBinAttr::get(MLIRContext *ctx, Type type, TypedAttr lhsA,
 bool FloatLiteralBinAttr::isConstant() const { return false; }
 
 //===----------------------------------------------------------------------===//
+// FloatLiteralCmpAttr
+//===----------------------------------------------------------------------===//
+
+/// Helper for float literal comparison.  The lhs/rhs values are only meaningful
+/// when lSpecial/rSpecial are normal.
+static bool floatLiteralCmpHelper(const FloatLiteralCmpPred &pred,
+                                  const FloatLiteralSpecialValues &lSpecial,
+                                  const FloatLiteralSpecialValues &rSpecial,
+                                  const IPRational &lhs,
+                                  const IPRational &rhs) {
+  switch (pred) {
+  case FloatLiteralCmpPred::Eq:
+    if (lSpecial == rSpecial) {
+      if (isNormal(lSpecial))
+        return lhs == rhs;
+      return !isNan(lSpecial);
+    }
+    // Python treats -0 and 0 as equal.
+    if (isNegZero(lSpecial) && isNormal(rSpecial) && rhs == 0)
+      return true;
+    if (isNegZero(rSpecial) && isNormal(lSpecial) && lhs == 0)
+      return true;
+    return false;
+  case FloatLiteralCmpPred::Ne:
+    return !floatLiteralCmpHelper(FloatLiteralCmpPred::Eq, lSpecial, rSpecial,
+                                  lhs, rhs);
+  case FloatLiteralCmpPred::Lt:
+    switch (lSpecial) {
+    case FloatLiteralSpecialValues::Normal:
+      switch (rSpecial) {
+      case FloatLiteralSpecialValues::Normal:
+        return lhs < rhs;
+      case FloatLiteralSpecialValues::Inf:
+        return true;
+      case FloatLiteralSpecialValues::NegZero:
+        return lhs < 0;
+      default:
+        return false;
+      }
+    case FloatLiteralSpecialValues::NegZero:
+      switch (rSpecial) {
+      case FloatLiteralSpecialValues::Normal:
+        // This would be <=, but Python treats -0 as equal to 0, so the RHS
+        // needs to be strictly greater than positive zero.
+        return IPRational(0) < rhs;
+      case FloatLiteralSpecialValues::Inf:
+        return true;
+      default:
+        return false;
+      }
+    case FloatLiteralSpecialValues::Inf:
+    case FloatLiteralSpecialValues::Nan:
+      return false;
+    case FloatLiteralSpecialValues::NegInf:
+      return !isNan(rSpecial) && !isNegInf(rSpecial);
+    }
+    llvm_unreachable("all specials covered");
+  case FloatLiteralCmpPred::Le:
+    return floatLiteralCmpHelper(FloatLiteralCmpPred::Lt, lSpecial, rSpecial,
+                                 lhs, rhs) ||
+           floatLiteralCmpHelper(FloatLiteralCmpPred::Eq, lSpecial, rSpecial,
+                                 lhs, rhs);
+  case FloatLiteralCmpPred::Gt:
+    if (isNan(lSpecial) || isNan(rSpecial))
+      return false;
+    return !floatLiteralCmpHelper(FloatLiteralCmpPred::Le, lSpecial, rSpecial,
+                                  lhs, rhs);
+  case FloatLiteralCmpPred::Ge:
+    return floatLiteralCmpHelper(FloatLiteralCmpPred::Gt, lSpecial, rSpecial,
+                                 lhs, rhs) ||
+           floatLiteralCmpHelper(FloatLiteralCmpPred::Eq, lSpecial, rSpecial,
+                                 lhs, rhs);
+  }
+  llvm_unreachable("invalid cmp predicate");
+}
+
+TypedAttr FloatLiteralCmpAttr::get(MLIRContext *ctx,
+                                   FloatLiteralCmpPredAttr pred, TypedAttr lhsA,
+                                   TypedAttr rhsA) {
+  // If this is a literal constant coming in, we can fold this.  If not, stage
+  // it until elaboration or something else simplifies things.
+  auto lAttr = ::dyn_cast_or_null<FloatLiteralAttr>(lhsA);
+  auto rAttr = ::dyn_cast_or_null<FloatLiteralAttr>(rhsA);
+  if (!lAttr || !rAttr)
+    return Base::get(ctx, pred, lhsA, rhsA);
+
+  FloatLiteralSpecialValues lSpecial = lAttr.getSpecial().getValue();
+  FloatLiteralSpecialValues rSpecial = rAttr.getSpecial().getValue();
+  IPRational lhs;
+  IPRational rhs;
+  if (isNormal(lSpecial)) {
+    assert(lAttr.getRational().has_value() &&
+           "rational does not have a value when special value is normal");
+    lhs = lAttr.getRational().value();
+  }
+  if (isNormal(rSpecial)) {
+    assert(rAttr.getRational().has_value() &&
+           "rational does not have a value when special value is normal");
+    rhs = rAttr.getRational().value();
+  }
+  return BoolAttr::get(
+      lAttr.getContext(),
+      floatLiteralCmpHelper(pred.getValue(), lSpecial, rSpecial, lhs, rhs));
+}
+
+bool FloatLiteralCmpAttr::isConstant() const { return false; }
+
+Type FloatLiteralCmpAttr::getType() const {
+  return IntegerType::get(getContext(), 1);
+}
+
+//===----------------------------------------------------------------------===//
 // FloatLiteralIsaAttr
 //===----------------------------------------------------------------------===//
 

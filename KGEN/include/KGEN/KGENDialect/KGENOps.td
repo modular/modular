@@ -1538,10 +1538,10 @@ def KGEN_FloatLiteralIsa : KGENOp<"float_literal.isa", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
-// FloatLiteralCmp
+// FloatLiteralCmpOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_FloatLiteralCmp : KGENOp<"float_literal.cmp", [Pure]> {
+def KGEN_FloatLiteralCmpOp : KGENOp<"float_literal.cmp", [Pure]> {
   let summary = "Comparison operator for float_literals.";
   let description = [{
     The `kgen.float_literal.cmp` operator does equality/inequality testing
