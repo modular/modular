@@ -22,7 +22,7 @@ from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_valid_target
 from memory import UnsafePointer, memset_zero
 from register import register_internal
-from runtime.asyncrt import MojoCallContextPtr, parallelism_level
+from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList
@@ -269,7 +269,7 @@ fn batched_matmul[
     a_buf: NDBuffer[a_type, rank],
     b_buf: NDBuffer[b_type, rank],
     *,
-    context: MojoCallContextPtr = MojoCallContextPtr(),
+    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     constrained[not transpose_a, "transpose_a not yet supported"]()
 
@@ -651,7 +651,7 @@ fn batched_matmul[
     a_buf: NDBuffer[a_type, rank],
     b_buf: NDBuffer[b_type, rank],
     *,
-    context: MojoCallContextPtr = MojoCallContextPtr(),
+    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     constrained[is_valid_target[target](), "unsupported target"]()
 

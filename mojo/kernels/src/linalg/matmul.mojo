@@ -13,7 +13,7 @@ from buffer.dimlist import Dim, DimList
 from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_valid_target
 from memory import UnsafePointer, memset_zero
-from runtime.asyncrt import MojoCallContextPtr, parallelism_level
+from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList
@@ -743,7 +743,7 @@ fn matmul[
     c: NDBuffer[_, 2, _],
     a: NDBuffer[_, 2, _],
     b: NDBuffer[_, 2, _],
-    ctx: MojoCallContextPtr = MojoCallContextPtr(),
+    ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     var cuda_ctx = Optional[DeviceContext]() if is_cpu[
         target

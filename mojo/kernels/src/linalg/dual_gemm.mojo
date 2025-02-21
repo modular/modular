@@ -53,7 +53,7 @@ from layout.tensor_core import (
 from memory import UnsafePointer, memset_zero, stack_allocation
 from memory.pointer import _GPUAddressSpace as AddressSpace
 from register import register_internal
-from runtime.asyncrt import MojoCallContextPtr
+from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils import StaticTuple
@@ -1303,7 +1303,7 @@ fn swishGLU[
     b0: NDBuffer[b_type, 2, b_shape],
     b1: NDBuffer[b_type, 2, b_shape],
     c: NDBuffer[c_type, 2, c_shape],
-    ctx: MojoCallContextPtr,
+    ctx: DeviceContextPtr,
 ) raises:
     """
     Reference:

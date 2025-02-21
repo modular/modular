@@ -9,7 +9,7 @@ from algorithm.functional import elementwise, unswitch
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from register import register_internal
-from runtime.asyncrt import MojoCallContextPtr
+from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import TraceLevel
 
 from utils.index import Index, IndexList
@@ -34,7 +34,7 @@ fn matrix_band_part[
     num_upper: NDBuffer[int_type, 1],
     exclude_buf: NDBuffer[cond_type, 1],
     output: NDBuffer[type, rank],
-    ctx: MojoCallContextPtr,
+    ctx: DeviceContextPtr,
 ):
     var lower_diagonal_index = Int(num_lower[0])
     var upper_diagonal_index = Int(num_upper[0])
@@ -77,7 +77,7 @@ fn _matrix_band_part_impl[
     lower_diagonal_index: Int,
     upper_diagonal_index: Int,
     output: NDBuffer[type, rank],
-    ctx: MojoCallContextPtr,
+    ctx: DeviceContextPtr,
 ):
     constrained[rank >= 2, "Matrix band only supports rank >=2"]()
 
