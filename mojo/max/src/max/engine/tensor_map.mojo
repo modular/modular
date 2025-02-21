@@ -8,7 +8,7 @@ Defines the `TensorMap` type that holds input and output tensors for a model.
 """
 from sys.ffi import DLHandle
 
-from buffer import Buffer
+from buffer import NDBuffer
 from max._utils import CString, call_dylib_func, exchange
 from max.tensor import Tensor, TensorSpec
 from memory import UnsafePointer
@@ -262,7 +262,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
         var val = self.get_value(key)
         return val._take_mojo_value[T]()
 
-    fn buffer[type: DType](self, key: String) raises -> Buffer[type]:
+    fn buffer[type: DType](self, key: String) raises -> NDBuffer[type, 1]:
         """Gets a buffer to the tensor pointed by the key.
 
         Parameters:

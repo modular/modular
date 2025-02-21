@@ -7,7 +7,7 @@
 from sys import sizeof
 from sys.ffi import DLHandle
 
-from buffer import Buffer
+from buffer import NDBuffer
 from max._utils import call_dylib_func, exchange
 from max.tensor import Tensor
 from memory import UnsafePointer, memcpy
@@ -100,11 +100,11 @@ struct EngineTensor(Sized):
             self.lib, self.session
         ).get_as_tensor_spec()
 
-    fn buffer[type: DType](self) raises -> Buffer[type]:
-        return Buffer[type](self.data[type](), len(self))
+    fn buffer[type: DType](self) raises -> NDBuffer[type, 1]:
+        return NDBuffer[type, 1](self.data[type](), len(self))
 
-    fn buffer(self) -> Buffer[DType.invalid]:
-        return Buffer[DType.invalid](
+    fn buffer(self) -> NDBuffer[DType.invalid, 1]:
+        return NDBuffer[DType.invalid, 1](
             rebind[UnsafePointer[Scalar[DType.invalid]]](self.unsafe_ptr()),
             len(self) * self.dtype().sizeof(),
         )
