@@ -65,7 +65,7 @@ struct FloatLiteral(
         Args:
             value: The IntLiteral value.
         """
-        self.value = __mlir_op.`kgen.int_literal.to_float_literal`(value.value)
+        self.value = __mlir_op.`kgen.int_to_float_literal`(value.value)
 
     alias nan = Self(__mlir_attr.`#kgen.float_literal<nan>`)
     alias infinity = Self(__mlir_attr.`#kgen.float_literal<inf>`)
@@ -134,9 +134,7 @@ struct FloatLiteral(
         Returns:
             The value as an integer.
         """
-        return IntLiteral(
-            __mlir_op.`kgen.float_literal.to_int_literal`(self.value)
-        )
+        return IntLiteral(__mlir_op.`kgen.float_to_int_literal`(self.value))
 
     @always_inline("nodebug")
     fn __int__(self) -> Int:
