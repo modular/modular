@@ -22,6 +22,7 @@
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"
 
+#include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
@@ -2226,6 +2227,37 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
       if (!lhs || !rhs)
         return {};
       result = ParamOperatorAttr::getSub(lhs, rhs);
+    } else if (auto add = dyn_cast<mlir::index::AndOp>(op)) {
+      auto lhs = findValue(add.getOperand(0));
+      auto rhs = findValue(add.getOperand(1));
+      if (!lhs || !rhs)
+        return {};
+      result = ParamOperatorAttr::get(POC::And, lhs, rhs);
+    } else if (auto add = dyn_cast<mlir::index::OrOp>(op)) {
+      auto lhs = findValue(add.getOperand(0));
+      auto rhs = findValue(add.getOperand(1));
+      if (!lhs || !rhs)
+        return {};
+      result = ParamOperatorAttr::get(POC::Or, lhs, rhs);
+    } else if (auto add = dyn_cast<mlir::index::XOrOp>(op)) {
+      auto lhs = findValue(add.getOperand(0));
+      auto rhs = findValue(add.getOperand(1));
+      if (!lhs || !rhs)
+        return {};
+      result = ParamOperatorAttr::get(POC::Xor, lhs, rhs);
+    } else if (auto add = dyn_cast<mlir::index::ShlOp>(op)) {
+      auto lhs = findValue(add.getOperand(0));
+      auto rhs = findValue(add.getOperand(1));
+      if (!lhs || !rhs)
+        return {};
+      result = ParamOperatorAttr::get(POC::Shl, lhs, rhs);
+    } else if (auto add = dyn_cast<mlir::index::ShrSOp>(op)) {
+      auto lhs = findValue(add.getOperand(0));
+      auto rhs = findValue(add.getOperand(1));
+      if (!lhs || !rhs)
+        return {};
+      // ParamOperatorAttr shr on index is treated as signed.
+      result = ParamOperatorAttr::get(POC::Shr, lhs, rhs);
     } else if (auto cmp = dyn_cast<mlir::index::CmpOp>(op)) {
       auto lhs = findValue(cmp.getOperand(0));
       auto rhs = findValue(cmp.getOperand(1));
@@ -2340,6 +2372,7 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
                                         lhs, rhs);
       }
     }
+
     // If we found something, remember it and move on to the next op.
     if (result) {
       assert(op.getNumResults() == 1 && "expected a single result");
