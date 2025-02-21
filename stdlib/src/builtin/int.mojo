@@ -562,7 +562,7 @@ struct Int(
             pred = __mlir_attr.`#index<cmp_predicate sge>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __pos__(self) -> Int:
         """Return +self.
 
@@ -580,7 +580,7 @@ struct Int(
         """
         return self * -1
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __invert__(self) -> Int:
         """Return ~self.
 
@@ -754,7 +754,7 @@ struct Int(
             return 0
         return __mlir_op.`index.shrs`(self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __and__(self, rhs: Int) -> Int:
         """Return `self & rhs`.
 
@@ -766,7 +766,7 @@ struct Int(
         """
         return __mlir_op.`index.and`(self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __xor__(self, rhs: Int) -> Int:
         """Return `self ^ rhs`.
 
@@ -778,7 +778,7 @@ struct Int(
         """
         return __mlir_op.`index.xor`(self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __or__(self, rhs: Int) -> Int:
         """Return `self | rhs`.
 
