@@ -605,17 +605,9 @@ def KGEN_IntLiteralConvertAttr : KGEN_ExprAttr<"IntLiteralConvert",
   
   let skipDefaultBuilders = 1;
   let builders = [
-    // Override the default builder used by the generated parser because this
-    // may not return an IntLiteralConvertAttr.
-    AttrBuilderWithInferredContext<(ins
-       "Type":$type, "TypedAttr":$input, "bool":$treatIndexAsUnsigned), "",
-       "TypedAttr">,
-
-    // Verbose form with MLIRContext, needed for ODS constructors.
+    // Override default builder so we can return a folded attribute.
     AttrBuilder<(ins "Type":$type, "TypedAttr":$input,
-                     "bool":$treatIndexAsUnsigned), [{
-      return get(type, input, treatIndexAsUnsigned);
-    }], "TypedAttr">,
+                     "bool":$treatIndexAsUnsigned), "", "TypedAttr">,
   ];
 }
 
@@ -641,8 +633,7 @@ def KGEN_IntLiteralBinAttr : KGEN_ExprAttr<"IntLiteralBin",
   
   let skipDefaultBuilders = 1;
   let builders = [
-    // Override the default builder used by the generated parser because this
-    // may not return an IntLiteralConvertAttr.
+    // Override default builder so we can return a folded attribute.
     AttrBuilder<(ins "Type":$type, "TypedAttr":$lhs, "TypedAttr":$rhs,
                      "IntLiteralBinopKindAttr":$oper), "", "TypedAttr">,
   ];
@@ -717,6 +708,68 @@ def KGEN_FloatLiteralAttr : KGEN_ExprAttr<"FloatLiteral", "float_literal"> {
   let extraClassDeclaration = [{
     Type getType() const;
   }];
+}
+
+//===----------------------------------------------------------------------===//
+// FloatLiteralIsaAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_FloatLiteralIsaAttr : KGEN_ExprAttr<"FloatLiteralIsa",
+                                               "float_literal_isa"> {
+  let summary = "Check if the float_literal is of the given special value.";
+  let description = [{
+    The `#kgen.float_literal_isa` attribute is used to check if the float
+    literal is of the given special value.  It is the parameter domain form of
+    the `kgen.float_literal.isa` operation.
+  }];
+
+  let parameters = (ins
+    "FloatLiteralSpecialValuesAttr":$kind,
+    "TypedAttr":$input
+  );
+
+  let assemblyFormat = "`<` $kind custom<ColonTypeParamValue>($input) `>`";
+  
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override default builder so we can return a folded attribute.
+    AttrBuilder<(ins "FloatLiteralSpecialValuesAttr":$kind,
+                     "TypedAttr":$input), "", "TypedAttr">,
+  ];
+
+  let extraClassDeclaration = [{
+    Type getType() const;
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// FloatLiteralConvertAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_FloatLiteralConvertAttr : KGEN_ExprAttr<"FloatLiteralConvert",
+                                               "float_literal_convert", [
+    DeclareAttrInterfaceMethods<ParameterAttrInterface,
+                                ["validateForElaborator"]>]
+  > {
+  let summary = "Convert an float literal to a different type.";
+  let description = [{
+    The `#kgen.float_literal_convert` attribute is used to convert an float
+    literal to a different type.  It is the parameter domain form of
+    the `kgen.float_literal.convert` operation.
+  }];
+
+  let parameters = (ins
+    AttributeSelfTypeParameter<"", "Type">:$type,
+    "TypedAttr":$input
+  );
+
+  let assemblyFormat = "`<` custom<ColonTypeParamValue>($input) `>`";
+  
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override default builder so we can return a folded attribute.
+    AttrBuilder<(ins "Type":$type, "TypedAttr":$input), "", "TypedAttr">,
+  ];
 }
 
 //===----------------------------------------------------------------------===//

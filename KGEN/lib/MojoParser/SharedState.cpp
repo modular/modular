@@ -2312,8 +2312,8 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     // FIXME(MOCO-1628): This shouldn't be an operation.
     if (auto input = findValue(convert.getInput()))
       return IntLiteralConvertAttr::get(
-          evaluator.getReboundType(convert.getType()), input,
-          convert.getTreatIndexAsUnsigned());
+          input.getContext(), evaluator.getReboundType(convert.getType()),
+          input, convert.getTreatIndexAsUnsigned());
   }
   if (auto bin = dyn_cast<IntLiteralBinOp>(op)) {
     // FIXME(MOCO-1628): This shouldn't be an operation.
@@ -2334,6 +2334,33 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
       if (auto rhs = findValue(bin.getRhs()))
         return FloatLiteralBinAttr::get(lhs.getContext(), lhs.getType(), lhs,
                                         rhs, bin.getOperAttr());
+  }
+  if (auto convert = dyn_cast<FloatLiteralConvertOp>(op)) {
+    // FIXME(MOCO-1628): This shouldn't be an operation.
+    if (auto input = findValue(convert.getInput()))
+      return FloatLiteralConvertAttr::get(
+          input.getContext(), evaluator.getReboundType(convert.getType()),
+          input);
+  }
+  if (auto convert = dyn_cast<IntToFloatLiteralOp>(op)) {
+    // FIXME(MOCO-1628): This shouldn't be an operation.
+    if (auto input = findValue(convert.getInput()))
+      return IntToFloatLiteralAttr::get(
+          input.getContext(), evaluator.getReboundType(convert.getType()),
+          input);
+  }
+  if (auto convert = dyn_cast<FloatToIntLiteralOp>(op)) {
+    // FIXME(MOCO-1628): This shouldn't be an operation.
+    if (auto input = findValue(convert.getInput()))
+      return FloatToIntLiteralAttr::get(
+          input.getContext(), evaluator.getReboundType(convert.getType()),
+          input);
+  }
+  if (auto convert = dyn_cast<FloatLiteralIsa>(op)) {
+    // FIXME(MOCO-1628): This shouldn't be an operation.
+    if (auto input = findValue(convert.getInput()))
+      return FloatLiteralIsaAttr::get(input.getContext(),
+                                      convert.getSpecialAttr(), input);
   }
 
   // We can fold hlcf.if operations in limited form that end with a yield of
