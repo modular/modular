@@ -7,12 +7,7 @@
 
 from math import exp
 
-from buffer.buffer import (
-    Buffer,
-    NDBuffer,
-    partial_simd_load,
-    partial_simd_store,
-)
+from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
 from buffer.dimlist import DimList
 from memory import stack_allocation
 
@@ -37,13 +32,15 @@ fn test_partial_load_store():
         1,
     ]()
 
-    var read_buffer = Buffer[
+    var read_buffer = NDBuffer[
         DType.index,
+        1,
         total_buffer_size,
     ](read_data)
 
-    var write_buffer = Buffer[
+    var write_buffer = NDBuffer[
         DType.index,
+        1,
         total_buffer_size,
     ](write_data)
 

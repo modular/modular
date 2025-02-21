@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Implements the Buffer class.
+"""Implements the NDBuffer struct.
 
 You can import these APIs from the `memory` package. For example:
 
@@ -31,278 +31,6 @@ alias _MAX_RANK = 8
 """The maximum tensor rank for any tensor shape.
 This value must match kMaxRank in Support/include/Support/ML/TensorShape.h
 """
-
-# ===-----------------------------------------------------------------------===#
-# Buffer
-# ===-----------------------------------------------------------------------===#
-
-
-# This type is "async safe" (see _async_parallelize).
-@value
-@register_passable("trivial")
-struct Buffer[
-    type: DType,
-    /,
-    size: Dim = Dim(),
-    *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
-    origin: Origin[True] = MutableAnyOrigin,
-](Sized):
-    """Defines a Buffer which can be parametrized on a static size and Dtype.
-
-    The Buffer does not own its underlying pointer.
-
-    Parameters:
-      type: The element type of the Buffer.
-      size: The static size (if known) of the Buffer.
-      address_space: The address space of the Buffer.
-      origin: The origin of the memory being addressed.
-    """
-
-    var data: UnsafePointer[
-        Scalar[type], address_space=address_space, origin=origin
-    ]
-    """The underlying data pointer of the data."""
-    var dynamic_size: Int
-    """The dynamic size of the buffer."""
-    var dtype: DType
-    """The dynamic data type of the buffer."""
-
-    @staticmethod
-    fn _default_alignment[width: Int = 1]() -> Int:
-        return alignof[SIMD[type, width]]() if is_nvidia_gpu() else 1
-
-    @always_inline
-    fn __init__(out self):
-        """Default initializer for Buffer. By default the fields are all
-        initialized to 0.
-        """
-
-        self.data = UnsafePointer[Scalar[type], address_space=address_space]()
-        self.dynamic_size = 0
-        self.dtype = type
-
-    @always_inline
-    @implicit
-    fn __init__(
-        out self, ptr: UnsafePointer[Scalar[type], address_space=address_space]
-    ):
-        """Constructs a Buffer with statically known size and type.
-
-        Constraints:
-            The size is known.
-
-        Args:
-            ptr: Pointer to the data.
-        """
-        # Construct a Buffer type with statically known size
-        constrained[size.has_value(), "must have known size"]()
-        self.data = ptr
-        self.dynamic_size = size.get()
-        self.dtype = type
-
-    @always_inline
-    fn __init__(
-        mut self,
-        ptr: UnsafePointer[Scalar[type], address_space=address_space],
-        in_size: Int,
-    ):
-        """Constructs a Buffer with statically known type.
-
-        Constraints:
-            The size is unknown.
-
-        Args:
-            ptr: Pointer to the data.
-            in_size: Dynamic size of the buffer.
-        """
-
-        @parameter
-        if size:
-            debug_assert(
-                in_size == size.get(),
-                "if static size is known, static size must equal dynamic size",
-            )
-        self.data = ptr
-        self.dynamic_size = in_size
-        self.dtype = type
-
-    @always_inline
-    fn __len__(self) -> Int:
-        """Gets the size if it is a known constant, otherwise it gets the
-        dynamic_size.
-
-        This method is used by `Buffer.__len__` to get the size of the buffer.
-        If the Buffer size is a known constant, then the size is returned.
-        Otherwise, the dynamic_size is returned.
-
-        Returns:
-            The size if static otherwise dynamic_size.
-        """
-
-        @parameter
-        if not size:
-            return self.dynamic_size
-
-        return size.get()
-
-    @always_inline
-    fn __getitem__(self, idx: Int) -> Scalar[type]:
-        """Loads a single element (SIMD of size 1) from the buffer at the
-        specified index.
-
-        Args:
-            idx: The index into the Buffer.
-
-        Returns:
-            The value at the `idx` position.
-        """
-        return self.load[width=1](idx)
-
-    @always_inline("nodebug")
-    fn load[
-        *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
-    ](self, idx: Int) -> SIMD[type, width]:
-        """Loads a simd value from the buffer at the specified index.
-
-        Parameters:
-            width: The simd_width of the load.
-            alignment: The alignment value.
-
-        Args:
-            idx: The index into the Buffer.
-
-        Returns:
-            The simd value starting at the `idx` position and ending at
-            `idx+width`.
-        """
-        return self.data.load[width=width, alignment=alignment](idx)
-
-    @always_inline
-    fn __setitem__(
-        self,
-        idx: Int,
-        val: __mlir_type[`!pop.scalar<`, type.value, `>`],
-    ):
-        """Stores a single value into the buffer at the specified index.
-
-        Args:
-            idx: The index into the Buffer.
-            val: The value to store.
-        """
-        self.store[width=1](idx, Scalar[type](val))
-
-    @always_inline
-    fn __setitem__(self, idx: Int, val: Scalar[type]):
-        """Stores a single value into the buffer at the specified index.
-
-        Args:
-            idx: The index into the Buffer.
-            val: The value to store.
-        """
-        self.store[width=1](idx, val)
-
-    @always_inline("nodebug")
-    fn store[
-        *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
-    ](self, idx: Int, val: SIMD[type, width]):
-        """Stores a simd value into the buffer at the specified index.
-
-        Parameters:
-            width: The width of the simd vector.
-            alignment: The alignment value.
-
-        Args:
-            idx: The index into the Buffer.
-            val: The value to store.
-        """
-        self.data.store[alignment=alignment](idx, val)
-
-    @always_inline
-    fn prefetch[params: PrefetchOptions](self, idx: Int):
-        """Prefetches the data at the given index.
-
-        Parameters:
-            params: The prefetch configuration.
-
-        Args:
-            idx: The index of the prefetched location.
-        """
-        prefetch[params](self.data.offset(idx))
-
-    @always_inline
-    fn bytecount(self) -> Int:
-        """Returns the size of the Buffer in bytes.
-
-        Returns:
-            The size of the Buffer in bytes.
-        """
-        return len(self) * sizeof[type]()
-
-    @always_inline
-    fn zero(self):
-        """Sets all bytes of the Buffer to 0."""
-        memset_zero(self.data, len(self))
-
-    @always_inline
-    fn _simd_fill[simd_width: Int](self, val: Scalar[type]):
-        """Assigns val to all elements in chunks of size simd_width.
-
-        Parameters:
-            simd_width: The simd_width of the fill.
-
-        Args:
-            val: The value to store.
-        """
-        if val == 0:
-            self.zero()
-            return
-
-        var vec_end = align_down(len(self), simd_width)
-        for i in range(0, vec_end, simd_width):
-            self.store[width=simd_width](i, val)
-        for i in range(vec_end, len(self)):
-            self.store(i, val)
-
-    @always_inline
-    fn fill(self, val: Scalar[type]):
-        """Assigns val to all elements in the Buffer.
-
-        The fill is performed in chunks of size N, where N is the native SIMD
-        width of type on the system.
-
-        Args:
-            val: The value to store.
-        """
-        self._simd_fill[simdwidthof[type]()](val)
-
-    @always_inline
-    fn tofile(self, path: Path) raises:
-        """Write values to a file.
-
-        Args:
-            path: Path to the output file.
-        """
-        with open(path.__str__(), "w") as f:
-            var ptr = self.data.bitcast[UInt8]()
-            f._write(ptr, self.bytecount())
-
-    @staticmethod
-    @always_inline("nodebug")
-    fn stack_allocation[*, alignment: Int = alignof[type]()]() -> Self:
-        """Constructs a buffer instance backed by stack allocated memory space.
-
-        Parameters:
-            alignment: Address alignment requirement for the allocation.
-
-        Returns:
-            Constructed buffer with the allocated space.
-        """
-        constrained[size.has_value(), "must have known size"]()
-        var data_pointer = stack_allocation[
-            size.get(), type, alignment=alignment, address_space=address_space
-        ]()
-        return Self(data_pointer)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -498,7 +226,7 @@ struct NDBuffer[
     exclusive: Bool = True,
     origin: Origin[True] = MutableAnyOrigin,
 ](Sized, Stringable, Writable):
-    """An N-dimensional Buffer.
+    """An N-dimensional buffer.
 
     NDBuffer can be parametrized on rank, static dimensions and Dtype. It does
     not own its underlying pointer.
@@ -1123,7 +851,7 @@ struct NDBuffer[
         """Stores a single value into the buffer at the specified index.
 
         Args:
-            idx: The index into the Buffer.
+            idx: The index into the buffer.
             val: The value to store.
         """
         self.store[width=1](idx, val)
@@ -1152,7 +880,7 @@ struct NDBuffer[
             alignment: The alignment value.
 
         Args:
-            idx: The index into the Buffer.
+            idx: The index into the buffer.
             val: The value to store.
         """
         self.store[width=width, alignment=alignment](idx.as_tuple(), val)
@@ -1171,7 +899,7 @@ struct NDBuffer[
             alignment: The alignment value.
 
         Args:
-            idx: The index into the Buffer.
+            idx: The index into the buffer.
             val: The value to store.
         """
         debug_assert(
@@ -1260,13 +988,13 @@ struct NDBuffer[
             type, 1, shape.product(), origin=origin, address_space=address_space
         ],
     ):
-        """Constructs a flattened Buffer counterpart for this NDBuffer.
+        """Constructs a flattened buffer counterpart for this NDBuffer.
 
         Constraints:
             The buffer must be contiguous.
 
         Returns:
-            Constructed Buffer object.
+            Constructed buffer object.
         """
         debug_assert(
             self.is_contiguous(), "Function requires contiguous buffer."
@@ -1355,7 +1083,7 @@ struct NDBuffer[
 
     @always_inline
     fn fill(self, val: Scalar[type]):
-        """Assigns val to all elements in the Buffer.
+        """Assigns val to all elements in the buffer.
 
         The fill is performed in chunks of size N, where N is the native SIMD
         width of type on the system.
