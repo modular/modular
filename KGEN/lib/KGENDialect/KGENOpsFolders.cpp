@@ -599,7 +599,7 @@ static bool isNan(FloatLiteralSpecialValues v) {
 static bool isNegZero(FloatLiteralSpecialValues v) {
   return v == FloatLiteralSpecialValues::NegZero;
 }
-static bool isInf(FloatLiteralSpecialValues v) {
+[[maybe_unused]] static bool isInf(FloatLiteralSpecialValues v) {
   return v == FloatLiteralSpecialValues::Inf;
 }
 static bool isNegInf(FloatLiteralSpecialValues v) {
