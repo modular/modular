@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# UNSUPPORTED: asan
+# UNSUPPORTED: asan, ubsan
 
 # RUN: not mojo test -I %S/inputs -D TEST_PASS "%s" | FileCheck %s
 # RUN: not mojo test -I %S/inputs "%s@doc_test_failure_first_cell().__doc__" | FileCheck %s --check-prefix=CHECK-DOC

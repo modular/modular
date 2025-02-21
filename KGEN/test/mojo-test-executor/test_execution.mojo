@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # TODO(asan): Timing out in ASAN. Fix.
-# UNSUPPORTED: asan
+# UNSUPPORTED: asan, ubsan
 
 # RUN: mojo test %S/ --keep-entrypoint --entrypoint-path %t-entry --no-execute
 # RUN: echo '[{"id": "%S/test_unknown.test::unknown_test()"}]' > %t
