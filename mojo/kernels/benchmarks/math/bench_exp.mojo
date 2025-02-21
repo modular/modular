@@ -20,7 +20,7 @@ from benchmark import (
     ThroughputMeasure,
     keep,
 )
-from buffer import Buffer
+from buffer import NDBuffer
 from builtin.range import _StridedRange
 from builtin.simd import _simd_apply
 from compile import _internal_compile_code
@@ -31,7 +31,7 @@ from memory import UnsafePointer, bitcast
 fn apply[
     func: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[type, width],
     type: DType,
-](input: Buffer[type], output: Buffer[type]):
+](input: NDBuffer[type, 1], output: NDBuffer[type, 1]):
     @parameter
     fn _func[width: Int](idx: Int):
         output.store(idx, func(input.load[width=width](idx)))
@@ -67,8 +67,8 @@ def bench_unary[
         @parameter
         fn iter_fn():
             apply[func](
-                Buffer[type](input_ptr, size),
-                Buffer[type](output_ptr, size),
+                NDBuffer[type, 1](input_ptr, size),
+                NDBuffer[type, 1](output_ptr, size),
             )
             keep(output_ptr)
 
@@ -384,7 +384,7 @@ def accuracy_test():
     alias delta_max = 15
     alias delta_range = delta_max - delta_min + 1
 
-    var deltas = Buffer[DType.int32, delta_range].stack_allocation()
+    var deltas = NDBuffer[DType.int32, 1, delta_range].stack_allocation()
     deltas.zero()
 
     for i in range(0x3000_0000, 0x42B0_0000, 1):

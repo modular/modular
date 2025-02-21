@@ -32,11 +32,11 @@ fn gemm_naive[
 ](
     c: NDBuffer[dtype, 2],  # M x N
     a: NDBuffer[dtype, 2],  # M x K
-    b: LayoutTensor[layout_b, dtype],  # N x K
+    b: LayoutTensor[dtype, layout_b],  # N x K
 ):
     var M = c.dim(0)
-    alias N = b.dim[1]()
-    alias K = b.dim[0]()
+    var N = b.dim(1)
+    var K = b.dim(0)
 
     for mm in range(M):
         for kk in range(K):
@@ -49,11 +49,11 @@ fn kernel[
     layout_a: Layout,
     layout_b: Layout,
 ](
-    c: LayoutTensor[layout_c, dtype],  # MR, NR
-    a: LayoutTensor[layout_a, dtype],  # MR, K
-    b_packed: LayoutTensor[layout_b, dtype],  # 1, K * NR
+    c: LayoutTensor[dtype, layout_c],  # MR, NR
+    a: LayoutTensor[dtype, layout_a],  # MR, K
+    b_packed: LayoutTensor[dtype, layout_b],  # 1, K * NR
 ):
-    alias K = a.dim[1]()
+    var K = a.dim(1)
 
     var c_cache = TensorBuilder[MR, NR, dtype].OnStackAligned[alignment]()
 

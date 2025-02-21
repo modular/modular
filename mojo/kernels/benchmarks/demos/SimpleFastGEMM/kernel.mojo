@@ -6,9 +6,10 @@
 
 # Meant to be run on an AVX512 system
 
+from sys import prefetch
 from sys.intrinsics import PrefetchOptions
 
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from memory import UnsafePointer
 
@@ -26,9 +27,9 @@ fn kernel6x4(
     k: Int,
     kc: Int,
 ):
-    var a = Buffer[Dim(), DType.float32](a_ptr, mr * k)
-    var b = Buffer[Dim(), DType.float32](b_ptr, kc * nr)
-    var c = Buffer[Dim(), DType.float32](c_ptr, mr * n)
+    var a = NDBuffer[DType.float32, 1, Dim()](a_ptr, mr * k)
+    var b = NDBuffer[DType.float32, 1, Dim()](b_ptr, kc * nr)
+    var c = NDBuffer[DType.float32, 1, Dim()](c_ptr, mr * n)
 
     var cv0 = c.load[width=simd_size](n * 0 + simd_size * 0)
     var cv1 = c.load[width=simd_size](n * 0 + simd_size * 1)
@@ -143,9 +144,9 @@ fn kernel6x4_naive(
     k: Int,
     kc: Int,
 ):
-    var a = Buffer[Dim(), DType.float32](a_ptr, mr * k)
-    var b = Buffer[Dim(), DType.float32](b_ptr, kc * nr)
-    var c = Buffer[Dim(), DType.float32](c_ptr, mr * n)
+    var a = NDBuffer[DType.float32, 1, Dim()](a_ptr, mr * k)
+    var b = NDBuffer[DType.float32, 1, Dim()](b_ptr, kc * nr)
+    var c = NDBuffer[DType.float32, 1, Dim()](c_ptr, mr * n)
 
     for ir in range(mr):
         for jr in range(nr):

@@ -7,11 +7,11 @@
 # Meant to be run on an AVX512 system
 
 from math import align_up
-from sys import alignof, simdwidthof
+from sys import alignof, simdwidthof, prefetch
 from sys.intrinsics import PrefetchOptions
 
 import benchmark
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from linalg.utils import (
     get_matmul_kernel_shape,
@@ -67,11 +67,11 @@ fn kernel(
     k: Int,
     kc: Int,
 ):
-    var a = Buffer[dtype](a_ptr, MR * k)
-    var b = Buffer[dtype](b_ptr, k * NR)
-    var c = Buffer[dtype](c_ptr, MR * n)
+    var a = NDBuffer[dtype, 1](a_ptr, MR * k)
+    var b = NDBuffer[dtype, 1](b_ptr, k * NR)
+    var c = NDBuffer[dtype, 1](c_ptr, MR * n)
 
-    var c_local = Buffer[dtype, size = MR * NR]().stack_allocation[
+    var c_local = NDBuffer[dtype, 1, MR * NR]().stack_allocation[
         alignment=alignment
     ]()
 
@@ -117,8 +117,8 @@ fn pack_B(
     kc: Int,
     nc: Int,
 ):
-    var b = Buffer[dtype](b_ptr, k * n)
-    var bc = Buffer[dtype](b2_ptr, k * n)
+    var b = NDBuffer[dtype, 1](b_ptr, k * n)
+    var bc = NDBuffer[dtype, 1](b2_ptr, k * n)
     for pr in range(kc):
         for ir in range(nc // NR):
             for v in range(NR):
@@ -164,7 +164,7 @@ fn gemm(
                         )
 
 
-fn main():
+fn main() raises:
     var m = align_up(1024, MR)
     var n = align_up(1024, NR)
     var k: Int = 1024
@@ -189,11 +189,11 @@ fn main():
     var b2_ptr = UnsafePointer[Scalar[dtype], alignment=alignment].alloc(k * n)
     var c_ptr = UnsafePointer[Scalar[dtype], alignment=alignment].alloc(m * n)
     var c2_ptr = UnsafePointer[Scalar[dtype], alignment=alignment].alloc(m * n)
-    var a = Buffer[dtype](a_ptr, m * k)
-    var b = Buffer[dtype](b_ptr, k * n)
-    var b2 = Buffer[dtype](b2_ptr, k * n)
-    var c = Buffer[dtype](c_ptr, m * n)
-    var c2 = Buffer[dtype](c2_ptr, m * n)
+    var a = NDBuffer[dtype, 1](a_ptr, m * k)
+    var b = NDBuffer[dtype, 1](b_ptr, k * n)
+    var b2 = NDBuffer[dtype, 1](b2_ptr, k * n)
+    var c = NDBuffer[dtype, 1](c_ptr, m * n)
+    var c2 = NDBuffer[dtype, 1](c2_ptr, m * n)
 
     var am = NDBuffer[dtype, 2](a_ptr, Index(m, k))
     var bm = NDBuffer[dtype, 2](b_ptr, Index(k, n))
