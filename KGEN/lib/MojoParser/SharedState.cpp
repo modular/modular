@@ -2099,29 +2099,270 @@ void SharedState::cacheImplicitConvertibility(ASTType from, ASTType to,
            "to include more information in the hash key");
 }
 
+namespace {
+/// This struct is used to fold @always_inline("builtin") functions.
+struct BuiltinFunctionFolder {
+  SharedState &shared;
+  ParameterEvaluator evaluator;
+  bool doEmitError;
+
+  // Keep track of the parameter values for each of the live SSA values in the
+  // body, and start by binding the argument values.
+  DenseMap<Value, TypedAttr> boundValues;
+
+  // For our virtual memory model, we track entire indirect values like
+  // var-decls in this map.  lit.struct.ref indexes to subfields are not
+  // immediately processed - they are handled by load/store operations, mostly
+  // to handle constructors.
+  SmallDenseMap<Value, TypedAttr> varDeclSoFar;
+
+  BuiltinFunctionFolder(SharedState &shared, bool doEmitError)
+      : shared(shared), doEmitError(doEmitError) {}
+
+  // This helper handles emitting an error (or not) as needed.
+  // This helper handles emitting an error (or not) as needed.
+  InflightDiag emitError(Location loc) {
+    auto result = shared.emitError(loc) << "'@always_inline(\"builtin\")' ";
+    if (!doEmitError) // Only emit an error if requested.
+      result.abandon();
+    return result;
+  };
+
+  // Lookup a pre-bound value and check for validity.  This emits an error and
+  // returns null if something goes wrong.
+  TypedAttr findValue(Value v) {
+    auto result = boundValues[v];
+    if (!result)
+      emitError(v.getLoc()) << "could not resolve operand value";
+    return result;
+  };
+
+  /// Process the following operation, doing one of three things:
+  /// 1) Fold it to a single TypedAttr, returning it.
+  /// 2) Return a failure to indicate that the operation is not foldable.
+  /// 3) Return a a null TypedAttr to indicate that the operation was processed
+  /// but didn't produce a value (e.g. StoreOps).
+  FailureOr<TypedAttr> fold(Operation &op);
+};
+} // end anonymous namespace
+
+/// Process the following operation, doing one of three things:
+/// 1) Fold it to a single TypedAttr, returning it.
+/// 2) Return a failure to indicate that the operation is not foldable.
+/// 3) Return a a null TypedAttr to indicate that the operation was processed
+/// but didn't produce a value (e.g. StoreOps).
+FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
+  if (auto paramCst = dyn_cast<ParamConstantOp>(op))
+    return evaluator.getReboundAttribute(paramCst.getValue());
+  if (auto cst = dyn_cast<mlir::index::ConstantOp>(op))
+    return TypedAttr(cst.getValueAttr());
+
+  if (auto extract = dyn_cast<LIT::StructExtractOp>(op)) {
+    if (auto base = findValue(extract.getOperand()))
+      return LIT::StructExtractAttr::get(
+          base, extract.getFieldAttr(),
+          evaluator.getReboundType(extract.getType()));
+  }
+
+  if (auto create = dyn_cast<LIT::StructCreateOp>(op)) {
+    SmallVector<std::tuple<StringAttr, TypedAttr>> elts;
+    for (auto [fieldName, arg] :
+         llvm::zip(create.getFields(), create.getOperands())) {
+      elts.push_back({fieldName, findValue(arg)});
+      if (!std::get<1>(elts.back()))
+        return failure();
+    }
+    return LITStructAttr::get(
+        create.getContext(), elts,
+        cast<LIT::StructType>(evaluator.getReboundType(create.getType())));
+  }
+
+  if (auto add = dyn_cast<mlir::index::AddOp>(op)) {
+    if (auto lhs = findValue(add.getOperand(0)))
+      if (auto rhs = findValue(add.getOperand(1)))
+        return ParamOperatorAttr::get(POC::Add, lhs, rhs);
+  }
+
+  if (auto mul = dyn_cast<mlir::index::MulOp>(op)) {
+    if (auto lhs = findValue(mul.getOperand(0)))
+      if (auto rhs = findValue(mul.getOperand(1)))
+        return ParamOperatorAttr::get(POC::Mul, lhs, rhs);
+  }
+
+  if (auto sub = dyn_cast<mlir::index::SubOp>(op)) {
+    if (auto lhs = findValue(sub.getOperand(0)))
+      if (auto rhs = findValue(sub.getOperand(1)))
+        return ParamOperatorAttr::getSub(lhs, rhs);
+  }
+
+  if (auto andOp = dyn_cast<mlir::index::AndOp>(op)) {
+    if (auto lhs = findValue(andOp.getOperand(0)))
+      if (auto rhs = findValue(andOp.getOperand(1)))
+        return ParamOperatorAttr::get(POC::And, lhs, rhs);
+  }
+
+  if (auto orOp = dyn_cast<mlir::index::OrOp>(op)) {
+    if (auto lhs = findValue(orOp.getOperand(0)))
+      if (auto rhs = findValue(orOp.getOperand(1)))
+        return ParamOperatorAttr::get(POC::Or, lhs, rhs);
+  }
+
+  if (auto xorOp = dyn_cast<mlir::index::XOrOp>(op)) {
+    if (auto lhs = findValue(xorOp.getOperand(0)))
+      if (auto rhs = findValue(xorOp.getOperand(1)))
+        return ParamOperatorAttr::get(POC::Xor, lhs, rhs);
+  }
+
+  if (auto shlOp = dyn_cast<mlir::index::ShlOp>(op)) {
+    if (auto lhs = findValue(shlOp.getOperand(0)))
+      if (auto rhs = findValue(shlOp.getOperand(1)))
+        return ParamOperatorAttr::get(POC::Shl, lhs, rhs);
+  }
+
+  if (auto shrOp = dyn_cast<mlir::index::ShrSOp>(op)) {
+    if (auto lhs = findValue(shrOp.getOperand(0)))
+      if (auto rhs = findValue(shrOp.getOperand(1)))
+        return ParamOperatorAttr::get(POC::Shr, lhs, rhs);
+  }
+
+  if (auto cmp = dyn_cast<mlir::index::CmpOp>(op)) {
+    if (auto lhs = findValue(cmp.getOperand(0)))
+      if (auto rhs = findValue(cmp.getOperand(1))) {
+        switch (cmp.getPred()) {
+        default:
+          // TODO: we don't handle unsigned comparisons in ParamOperatorAttr
+          // yet. It can do it, but we don't have a way to pass the unsigned
+          // flag through easily.
+          break;
+        case mlir::index::IndexCmpPredicate::EQ:
+          return ParamOperatorAttr::get(POC::EQ, lhs, rhs);
+        case mlir::index::IndexCmpPredicate::NE:
+          return ParamOperatorAttr::getNE(lhs, rhs);
+        case mlir::index::IndexCmpPredicate::SLT:
+          return ParamOperatorAttr::get(POC::LT, lhs, rhs);
+        case mlir::index::IndexCmpPredicate::SLE:
+          return ParamOperatorAttr::get(POC::LE, lhs, rhs);
+        case mlir::index::IndexCmpPredicate::SGT:
+          return ParamOperatorAttr::get(POC::LT, rhs, lhs);
+        case mlir::index::IndexCmpPredicate::SGE:
+          return ParamOperatorAttr::get(POC::LE, rhs, lhs);
+        }
+      }
+  }
+
+  if (auto call = dyn_cast<LIT::CallOp>(op)) {
+    SmallVector<TypedAttr> calleeOperands;
+    calleeOperands.push_back(evaluator.getReboundAttribute(call.getCallee()));
+    for (auto operandVal : call.getOperands()) {
+      calleeOperands.push_back(findValue(operandVal));
+      if (!calleeOperands.back())
+        return failure();
+    }
+
+    // Note that the recursive call here always generates an error.  We know
+    // that this was inside of a "builtin" function so we're not being
+    // called speculatively on an arbitrary function.
+    return shared.foldInlineBuiltinFunction(calleeOperands, op.getLoc(),
+                                            /*emitError=*/true);
+  }
+
+  if (auto varDecl = dyn_cast<VarDeclOp>(op)) {
+    // Our primary pattern we're trying to handle is:
+    //   %tmp = lit.var.decl Int
+    //   %tmp2 = lit.ref.struct.ger %tmp, value
+    //   lit.ref.store %v, %tmp2
+    //   lit.load.consume %tmp
+    // Which happens in ctors for builtin operations.  Ignore anything more
+    // complex.
+    auto eltType = evaluator.getReboundType(varDecl.getType().getElementType());
+    ASTDecl *decl = ASTType(eltType).getDecl(shared);
+    StructDeclOp structOp;
+    if (decl && (structOp = dyn_cast<StructDeclOp>(*decl)) &&
+        structOp.getConvention() == TypeConvention::RegisterPassableTrivial &&
+        std::distance(structOp.field_begin(), structOp.field_end()) == 1) {
+      varDeclSoFar[varDecl] = UnknownAttr::get(eltType);
+      return TypedAttr();
+    }
+  }
+
+  if (auto load = dyn_cast<LoadConsumeOp>(op))
+    return varDeclSoFar[load.getRef()];
+
+  if (auto ger = dyn_cast<RefStructGEROp>(op))
+    return TypedAttr(); // handled by user.
+
+  if (auto store = dyn_cast<RefStoreOp>(op)) {
+    TypedAttr value = findValue(store.getValue());
+    auto ger = store.getDest().getDefiningOp<RefStructGEROp>();
+    if (value && varDeclSoFar[store.getDest()]) {
+      // Store of the whole value.
+      varDeclSoFar[store.getDest()] = value;
+      return TypedAttr();
+    }
+    if (value && ger && varDeclSoFar[ger.getContainer()]) {
+      // Store to a subfield.
+      auto gerBase = ger.getContainer();
+      auto structType = cast<LIT::StructType>(
+          evaluator.getReboundType(gerBase.getType().getElementType()));
+      varDeclSoFar[gerBase] =
+          LITStructAttr::get({{ger.getFieldAttr(), value}}, structType);
+      return TypedAttr();
+    }
+  }
+
+  if (auto variant = dyn_cast<VariantCreateOp>(op)) {
+    if (TypedAttr value = findValue(variant.getOperand())) {
+      auto resType =
+          cast<VariantType>(evaluator.getReboundType(variant.getType()));
+      return TypedAttr(VariantAttr::get(value, variant.getIndex(), resType));
+    }
+  }
+
+  if (auto convert = dyn_cast<IntLiteralConvertOp>(op)) {
+    // FIXME(MOCO-1628): This shouldn't be an operation.
+    if (auto input = findValue(convert.getInput()))
+      return IntLiteralConvertAttr::get(
+          evaluator.getReboundType(convert.getType()), input,
+          convert.getTreatIndexAsUnsigned());
+  }
+  if (auto bin = dyn_cast<IntLiteralBinOp>(op)) {
+    // FIXME(MOCO-1628): This shouldn't be an operation.
+    if (auto lhs = findValue(bin.getLhs()))
+      if (auto rhs = findValue(bin.getRhs()))
+        return IntLiteralBinAttr::get(lhs.getContext(), lhs.getType(), lhs, rhs,
+                                      bin.getOperAttr());
+  }
+  if (auto cmp = dyn_cast<IntLiteralCmpOp>(op)) {
+    // FIXME(MOCO-1628): This shouldn't be an operation.
+    if (auto lhs = findValue(cmp.getLhs()))
+      if (auto rhs = findValue(cmp.getRhs()))
+        return IntLiteralCmpAttr::get(lhs.getContext(), cmp.getPredAttr(), lhs,
+                                      rhs);
+  }
+
+  // Otherwise we don't know what this is, bail out.
+  emitError(op.getLoc()) << "does not support MLIR operation "
+                         << op.getName().getStringRef();
+  return failure();
+}
+
 /// Given a parameter expression call to a function marked
 /// @always_inline("builtin"), scan the function to form an inlined parameter
 /// expression representation of the function given the specified argument
 /// values, then return the resultant expression.  If the function cannot be
-/// handled as a builtin, emit an error (when isError is true) and return
+/// handled as a builtin, emit an error (when emitError is true) and return
 /// null.
 TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
                                                  Location callLoc,
-                                                 bool isError) {
+                                                 bool emitError) {
 
-  // This helper handles emitting an error (or not) as needed.
-  auto emitError = [&](Location loc) -> InflightDiag {
-    auto result = this->emitError(loc) << "'@always_inline(\"builtin\")' ";
-    if (!isError) // Only emit an error if requested.
-      result.abandon();
-    return result;
-  };
+  BuiltinFunctionFolder folder(*this, emitError);
 
   // Resolve the callee and check to verify it is a "builtin" call that is
   // eligible for parameter inlining.
   auto symCst = dyn_cast<SymbolConstantAttr>(operands.front());
   if (!symCst) {
-    emitError(callLoc) << "only supports direct calls";
+    folder.emitError(callLoc) << "only supports direct calls";
     return {};
   }
   operands = operands.drop_front();
@@ -2131,8 +2372,8 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
   assert(llvm::isa_and_present<FnOp>(*calleeDecl) && "callee isn't known?");
   auto fnOp = cast<FnOp>(*calleeDecl);
   if (fnOp.getInlineLevel() != InlineLevel::AlwaysBuiltin) {
-    emitError(callLoc) << "only supports calls to other "
-                          "'@always_inline(\"builtin\")' functions";
+    folder.emitError(callLoc) << "only supports calls to other "
+                                 "'@always_inline(\"builtin\")' functions";
     return {};
   }
   if (failed(resolver.resolveFully(*calleeDecl, calleeDecl->getLoc())) ||
@@ -2143,256 +2384,51 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
 
   // The function being called may be a generic function - if so, we need to
   // remap any values and types in the body with parameter values substituted.
-  ParameterEvaluator evaluator;
-
-  // Fill evaluator with parameter bindings from the symbol constant
   for (auto [decl, value] :
        llvm::zip(fnOp.collectAllParams(/*implOrigins*/ false),
                  symCst.getParamValues()))
-    evaluator.setParameterValue(decl, value);
+    folder.evaluator.setParameterValue(decl, value);
 
-  // Keep track of the parameter values for each of the live SSA values in the
-  // body, and start by binding the argument values.
-  DenseMap<Value, TypedAttr> boundValues;
+  // Bind the argument values we are provided.
   for (auto [convention, arg, argValue] :
        llvm::zip(fnOp.getFuncTypeGenerator().getArgConventions(),
                  fnOp.getBody()->getArguments(), operands)) {
     if (convention != ArgConvention::ReadReg) {
-      emitError(arg.getLoc()) << "does not support this argument convention";
+      folder.emitError(arg.getLoc())
+          << "does not support this argument convention";
       return {};
     }
-    if (evaluator.getReboundType(arg.getType()) != argValue.getType()) {
-      emitError(arg.getLoc()) << "argument type mismatch";
+    if (folder.evaluator.getReboundType(arg.getType()) != argValue.getType()) {
+      folder.emitError(arg.getLoc()) << "argument type mismatch";
       return {};
     }
-    boundValues[arg] = argValue;
+    folder.boundValues[arg] = argValue;
   }
 
-  // For our virtual memory model, we track entire indirect values like
-  // var-decls in this map.  lit.struct.ref indexes to subfields are not
-  // immediately processed - they are handled by load/store operations, mostly
-  // to handle constructors.
-  SmallDenseMap<Value, TypedAttr> varDeclSoFar;
-
-  // This function handles a very limited set of operations and no control flow.
-  // As such, we can proceed top-down and bail out if we see anything too
-  // complex for our little brain.
+  // This function handles a very limited set of operations and no control
+  // flow. As such, we can proceed top-down and bail out if we see anything
+  // too complex for our little brain.
   for (Operation &op : *fnOp.getBody()) {
-    // Lookup a pre-bound value and check for validity.
-    auto findValue = [&](Value v) -> TypedAttr {
-      auto result = boundValues[v];
-      if (!result)
-        emitError(op.getLoc()) << "could not resolve operand value";
-      return result;
-    };
-
-    TypedAttr result;
-    if (auto extract = dyn_cast<LIT::StructExtractOp>(op)) {
-      auto base = findValue(extract.getOperand());
-      if (!base)
-        return {};
-      result = LIT::StructExtractAttr::get(
-          base, extract.getFieldAttr(),
-          evaluator.getReboundType(extract.getType()));
-    } else if (auto create = dyn_cast<LIT::StructCreateOp>(op)) {
-      SmallVector<std::tuple<StringAttr, TypedAttr>> elts;
-      for (auto [fieldName, arg] :
-           llvm::zip(create.getFields(), create.getOperands())) {
-        elts.push_back({fieldName, findValue(arg)});
-        if (!std::get<1>(elts.back()))
-          return {};
-      }
-      result = LITStructAttr::get(
-          create.getContext(), elts,
-          cast<LIT::StructType>(evaluator.getReboundType(create.getType())));
-    } else if (auto paramCst = dyn_cast<ParamConstantOp>(op)) {
-      result = evaluator.getReboundAttribute(paramCst.getValue());
-    } else if (auto cst = dyn_cast<mlir::index::ConstantOp>(op)) {
-      result = cst.getValueAttr();
-    } else if (auto add = dyn_cast<mlir::index::AddOp>(op)) {
-      auto lhs = findValue(add.getOperand(0));
-      auto rhs = findValue(add.getOperand(1));
-      if (!lhs || !rhs)
-        return {};
-      result = ParamOperatorAttr::get(POC::Add, lhs, rhs);
-    } else if (auto add = dyn_cast<mlir::index::MulOp>(op)) {
-      auto lhs = findValue(add.getOperand(0));
-      auto rhs = findValue(add.getOperand(1));
-      if (!lhs || !rhs)
-        return {};
-      result = ParamOperatorAttr::get(POC::Mul, lhs, rhs);
-    } else if (auto add = dyn_cast<mlir::index::SubOp>(op)) {
-      auto lhs = findValue(add.getOperand(0));
-      auto rhs = findValue(add.getOperand(1));
-      if (!lhs || !rhs)
-        return {};
-      result = ParamOperatorAttr::getSub(lhs, rhs);
-    } else if (auto add = dyn_cast<mlir::index::AndOp>(op)) {
-      auto lhs = findValue(add.getOperand(0));
-      auto rhs = findValue(add.getOperand(1));
-      if (!lhs || !rhs)
-        return {};
-      result = ParamOperatorAttr::get(POC::And, lhs, rhs);
-    } else if (auto add = dyn_cast<mlir::index::OrOp>(op)) {
-      auto lhs = findValue(add.getOperand(0));
-      auto rhs = findValue(add.getOperand(1));
-      if (!lhs || !rhs)
-        return {};
-      result = ParamOperatorAttr::get(POC::Or, lhs, rhs);
-    } else if (auto add = dyn_cast<mlir::index::XOrOp>(op)) {
-      auto lhs = findValue(add.getOperand(0));
-      auto rhs = findValue(add.getOperand(1));
-      if (!lhs || !rhs)
-        return {};
-      result = ParamOperatorAttr::get(POC::Xor, lhs, rhs);
-    } else if (auto add = dyn_cast<mlir::index::ShlOp>(op)) {
-      auto lhs = findValue(add.getOperand(0));
-      auto rhs = findValue(add.getOperand(1));
-      if (!lhs || !rhs)
-        return {};
-      result = ParamOperatorAttr::get(POC::Shl, lhs, rhs);
-    } else if (auto add = dyn_cast<mlir::index::ShrSOp>(op)) {
-      auto lhs = findValue(add.getOperand(0));
-      auto rhs = findValue(add.getOperand(1));
-      if (!lhs || !rhs)
-        return {};
-      // ParamOperatorAttr shr on index is treated as signed.
-      result = ParamOperatorAttr::get(POC::Shr, lhs, rhs);
-    } else if (auto cmp = dyn_cast<mlir::index::CmpOp>(op)) {
-      auto lhs = findValue(cmp.getOperand(0));
-      auto rhs = findValue(cmp.getOperand(1));
-      if (!lhs || !rhs)
-        return {};
-      switch (cmp.getPred()) {
-      default:
-        // TODO: we don't handle unsigned comparisons in ParamOperatorAttr yet,
-        // it can do it, but we don't have a way to pass the unsigned flag
-        // through easily.
-        break;
-      case mlir::index::IndexCmpPredicate::EQ:
-        result = ParamOperatorAttr::get(POC::EQ, lhs, rhs);
-        break;
-      case mlir::index::IndexCmpPredicate::NE:
-        result = ParamOperatorAttr::getNE(lhs, rhs);
-        break;
-      case mlir::index::IndexCmpPredicate::SLT:
-        result = ParamOperatorAttr::get(POC::LT, lhs, rhs);
-        break;
-      case mlir::index::IndexCmpPredicate::SLE:
-        result = ParamOperatorAttr::get(POC::LE, lhs, rhs);
-        break;
-      case mlir::index::IndexCmpPredicate::SGT:
-        result = ParamOperatorAttr::get(POC::LT, rhs, lhs);
-        break;
-      case mlir::index::IndexCmpPredicate::SGE:
-        result = ParamOperatorAttr::get(POC::LE, rhs, lhs);
-        break;
-      }
-    } else if (auto call = dyn_cast<LIT::CallOp>(op)) {
-      SmallVector<TypedAttr> calleeOperands;
-      calleeOperands.push_back(evaluator.getReboundAttribute(call.getCallee()));
-      for (auto operandVal : call.getOperands()) {
-        calleeOperands.push_back(findValue(operandVal));
-        if (!calleeOperands.back())
-          return {};
-      }
-
-      // Note that the recursive call here always generates an error.  We know
-      // that this was inside of a "builtin" function so we're not being called
-      // speculatively on an arbitrary function.
-      result = foldInlineBuiltinFunction(calleeOperands, op.getLoc(),
-                                         /*isError=*/true);
-      if (!result)
-        return {};
-    } else if (auto varDecl = dyn_cast<VarDeclOp>(op)) {
-      // Our primary pattern we're trying to handle is:
-      //   %tmp = lit.var.decl Int
-      //   %tmp2 = lit.ref.struct.ger %tmp, value
-      //   lit.ref.store %v, %tmp2
-      //   lit.load.consume %tmp
-      // Which happens in ctors for builtin operations.  Ignore anything more
-      // complex.
-      auto eltType =
-          evaluator.getReboundType(varDecl.getType().getElementType());
-      ASTDecl *decl = ASTType(eltType).getDecl(*this);
-      StructDeclOp structOp;
-      if (decl && (structOp = dyn_cast<StructDeclOp>(*decl)) &&
-          structOp.getConvention() == TypeConvention::RegisterPassableTrivial &&
-          std::distance(structOp.field_begin(), structOp.field_end()) == 1) {
-        varDeclSoFar[varDecl] = UnknownAttr::get(eltType);
-        continue;
-      }
-    } else if (auto load = dyn_cast<LoadConsumeOp>(op)) {
-      result = varDeclSoFar[load.getRef()];
-    } else if (auto ger = dyn_cast<RefStructGEROp>(op)) {
-      continue; // handled by user.
-    } else if (auto store = dyn_cast<RefStoreOp>(op)) {
-      TypedAttr value = findValue(store.getValue());
-      auto ger = store.getDest().getDefiningOp<RefStructGEROp>();
-      if (value && varDeclSoFar[store.getDest()]) {
-        // Store of the whole value.
-        varDeclSoFar[store.getDest()] = value;
-        continue;
-      } else if (value && ger && varDeclSoFar[ger.getContainer()]) {
-        // Store to a subfield.
-        auto gerBase = ger.getContainer();
-        auto structType = cast<LIT::StructType>(
-            evaluator.getReboundType(gerBase.getType().getElementType()));
-        varDeclSoFar[gerBase] =
-            LITStructAttr::get({{ger.getFieldAttr(), value}}, structType);
-        continue;
-      }
-    } else if (auto variant = dyn_cast<VariantCreateOp>(op)) {
-      if (TypedAttr value = findValue(variant.getOperand())) {
-        auto resType =
-            cast<VariantType>(evaluator.getReboundType(variant.getType()));
-        result = VariantAttr::get(value, variant.getIndex(), resType);
-      }
-    } else if (auto convert = dyn_cast<IntLiteralConvertOp>(op)) {
-      // FIXME(MOCO-1628): This shouldn't be an operation.
-      if (auto input = findValue(convert.getInput())) {
-        result = IntLiteralConvertAttr::get(
-            evaluator.getReboundType(convert.getType()), input,
-            convert.getTreatIndexAsUnsigned());
-      }
-    } else if (auto bin = dyn_cast<IntLiteralBinOp>(op)) {
-      // FIXME(MOCO-1628): This shouldn't be an operation.
-      auto lhs = findValue(bin.getLhs());
-      auto rhs = findValue(bin.getRhs());
-      if (lhs && rhs) {
-        result = IntLiteralBinAttr::get(lhs.getContext(), lhs.getType(), lhs,
-                                        rhs, bin.getOperAttr());
-      }
-    } else if (auto cmp = dyn_cast<IntLiteralCmpOp>(op)) {
-      // FIXME(MOCO-1628): This shouldn't be an operation.
-      auto lhs = findValue(cmp.getLhs());
-      auto rhs = findValue(cmp.getRhs());
-      if (lhs && rhs) {
-        result = IntLiteralCmpAttr::get(lhs.getContext(), cmp.getPredAttr(),
-                                        lhs, rhs);
-      }
-    }
-
-    // If we found something, remember it and move on to the next op.
-    if (result) {
-      assert(op.getNumResults() == 1 && "expected a single result");
-      assert(evaluator.getReboundType(op.getResult(0).getType()) ==
-                 result.getType() &&
-             "incorrect fold");
-      boundValues[op.getResult(0)] = result;
-      continue;
-    }
-
     // Handle the final return.
     if (auto ret = dyn_cast<LIT::ReturnOp>(op)) {
       if (ret.getNumOperands() == 1)
-        return findValue(ret.getOperand(0));
+        return folder.findValue(ret.getOperand(0));
     }
 
-    // Otherwise we don't know what this is, bail out.
-    emitError(op.getLoc()) << "does not support MLIR operation "
-                           << op.getName().getStringRef();
-    return {};
+    // Otherwise it must be an operation that we can fold.
+    FailureOr<TypedAttr> result = folder.fold(op);
+    if (failed(result))
+      return {}; // Error already diagnosed.
+
+    // Otherwise we know this operation. If it returned a value remember it.
+    if (TypedAttr val = *result) {
+      assert(op.getNumResults() == 1 && "expected a single result");
+      assert(folder.evaluator.getReboundType(op.getResult(0).getType()) ==
+                 val.getType() &&
+             "incorrect fold");
+      folder.boundValues[op.getResult(0)] = val;
+    }
   }
+
   llvm_unreachable("should have found a block terminator");
 }
