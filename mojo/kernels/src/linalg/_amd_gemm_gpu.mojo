@@ -32,11 +32,12 @@ from layout.tensor_core import TensorCore
 from linalg.utils import GemmShape
 from math import align_down, ceildiv, align_up
 from memory import UnsafePointer
-from sys import simdwidthof, alignof
+from sys import simdwidthof, alignof, env_get_bool
 from utils import Index, IndexList, StaticTuple
 from utils.numerics import get_accum_type
 from .utils_gpu import MatmulConfig
 from .utils import apply_epilogue, elementwise_epilogue_type
+from layout.swizzle import Swizzle
 
 
 @__llvm_metadata(
@@ -149,8 +150,10 @@ fn gemm_kernel[
     var a_gmem_iter = a_tile.tiled_iterator[BM // 4, BK, axis=1](warp_id, 0)
     var b_gmem_iter = b_tile.tiled_iterator[BN // 4, BK, axis=1](warp_id, 0)
 
-    alias fast_path = False
-
+    # This is a temporary flag to test the performance without checking bounds
+    # as checking of the bounds drops the performance by 20%
+    alias fast_path = env_get_bool["AMD_GEMM_FAST_PATH", False]()
+    alias swizzle = Swizzle(2, 0, 2)
     for _ in range(0, K, BK):
 
         @parameter
@@ -165,14 +168,16 @@ fn gemm_kernel[
                     thread_layout
                 ](lane_id())
                 var dst = smem_warp_tile.vectorize[1, simd_width]().distribute[
-                    thread_layout
+                    thread_layout, swizzle=swizzle
                 ](lane_id())
                 dst.copy_from(src)
             else:
                 # ideally we should be using the following code as it also checks
                 # for bound but this reduces the performance by 15%
                 copy_dram_to_sram[
-                    thread_layout, thread_scope = ThreadScope.WARP
+                    thread_layout,
+                    thread_scope = ThreadScope.WARP,
+                    swizzle=swizzle,
                 ](
                     smem_warp_tile.vectorize[1, simd_width](),
                     gmem_warp_tile.vectorize[1, simd_width](),
@@ -191,7 +196,7 @@ fn gemm_kernel[
         barrier()
 
         @parameter
-        for kk in range(num_k_mmas2):
+        for k_mma in range(num_k_mmas2):
             var a_reg_tile = tb[a_type]().row_major[
                 num_m_mmas, simd_width
             ]().local().alloc()
@@ -200,10 +205,12 @@ fn gemm_kernel[
                 num_n_mmas, simd_width
             ]().local().alloc()
 
-            mma_op.load_a[swizzle=False](
-                a_mma_tile, a_reg_tile.vectorize[1, simd_width](), kk
+            mma_op.load_a[swizzle=True](
+                a_mma_tile, a_reg_tile.vectorize[1, simd_width](), k_mma
             )
-            mma_op.load_b(b_mma_tile, b_reg_tile.vectorize[1, simd_width](), kk)
+            mma_op.load_b[swizzle=swizzle](
+                b_mma_tile, b_reg_tile.vectorize[1, simd_width](), k_mma
+            )
 
             @parameter
             for k in range(k_group_size):
