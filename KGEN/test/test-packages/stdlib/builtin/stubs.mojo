@@ -199,7 +199,7 @@ struct FloatLiteral:
     alias type = __mlir_type.`!kgen.float_literal`
     var value: Self.type
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: Self.type):
         self.value = value
@@ -210,7 +210,7 @@ struct FloatLiteral:
 struct FloatDyn:
     var value: __mlir_type.f64
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: __mlir_type.f64):
         self.value = value
@@ -623,14 +623,14 @@ struct AddressSpace:
 
     var _value: Int
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
     alias GENERIC = AddressSpace(0)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __index__(self) -> __mlir_type.index:
         return self._value.value
 
