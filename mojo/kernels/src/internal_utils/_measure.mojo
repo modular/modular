@@ -10,7 +10,7 @@ from sys import simdwidthof
 
 from algorithm import elementwise, mean, sum, vectorize
 from algorithm.functional import unswitch
-from buffer import Buffer
+from buffer import NDBuffer
 from memory import UnsafePointer
 
 from utils import IndexList
@@ -306,13 +306,13 @@ fn _div[
 fn _sum[
     type: DType, //
 ](src: UnsafePointer[Scalar[type]], len: Int) raises -> Scalar[type]:
-    return sum(Buffer[type, address_space = src.address_space](src, len))
+    return sum(NDBuffer[type, 1, address_space = src.address_space](src, len))
 
 
 fn _mean[
     type: DType, //
 ](src: UnsafePointer[Scalar[type]], len: Int) raises -> Scalar[type]:
-    return mean(Buffer[type, address_space = src.address_space](src, len))
+    return mean(NDBuffer[type, 1, address_space = src.address_space](src, len))
 
 
 fn _dot[
