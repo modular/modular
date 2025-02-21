@@ -3,15 +3,16 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""This module includes grid-related aliases and functions. Most
-of these are generic, a few are specific to NVIDIA GPUs.
 
-You can import these APIs from the `gpu` package. For example:
+"""This module provides GPU thread and block indexing functionality.
 
-```mojo
-from gpu import block_idx, block_dim, thread_idx
-```
-"""
+It defines aliases and functions for accessing GPU grid, block, thread and cluster
+dimensions and indices. These are essential primitives for GPU programming that allow
+code to determine its position and dimensions within the GPU execution hierarchy.
+
+Most functionality is architecture-agnostic, with some NVIDIA-specific features clearly marked.
+The module is designed to work seamlessly across different GPU architectures while providing
+optimal performance through hardware-specific optimizations where applicable."""
 
 from math import fma
 from os import abort
@@ -64,10 +65,14 @@ alias cluster_dim = _cluster_dim
 
 @always_inline("nodebug")
 fn lane_id() -> UInt:
-    """Returns the lane ID of the current thread.
+    """Returns the lane ID of the current thread within its warp.
+
+    The lane ID is a unique identifier for each thread within a warp, ranging from 0 to
+    WARP_SIZE-1. This ID is commonly used for warp-level programming and thread
+    synchronization within a warp.
 
     Returns:
-        The lane ID of the the current thread.
+        The lane ID (0 to WARP_SIZE-1) of the current thread.
     """
     return _lane_id()
 
@@ -80,8 +85,16 @@ fn lane_id() -> UInt:
 @always_inline("nodebug")
 fn sm_id() -> UInt:
     """Returns the Streaming Multiprocessor (SM) ID of the current thread.
+
+    The SM ID uniquely identifies which physical streaming multiprocessor the thread is
+    executing on. This is useful for SM-level optimizations and understanding hardware
+    utilization.
+
+    If called on non-NVIDIA GPUs, this function aborts as this functionality
+    is only supported on NVIDIA hardware.
+
     Returns:
-        The SM ID of the the current thread.
+        The SM ID of the current thread.
     """
 
     @parameter
