@@ -354,6 +354,9 @@ fn _get_pointer_constraint() -> StringLiteral:
 fn store_release[
     type: DType, //, scope: Scope = Scope.SYSTEM, memory: Bool = True
 ](ptr: UnsafePointer[Scalar[type], **_], value: Scalar[type]):
+    constrained[
+        is_nvidia_gpu(), "load_volatile is not currently supported on AMD GPUs"
+    ]()
     alias constraints = _get_register_constraint[
         type
     ]() + "," + _get_pointer_constraint() + (",~{memory}" if memory else "")
@@ -373,6 +376,9 @@ fn store_release[
 fn load_acquire[
     type: DType, //, *, scope: Scope = Scope.SYSTEM, memory: Bool = True
 ](ptr: UnsafePointer[Scalar[type], **_]) -> Scalar[type]:
+    constrained[
+        is_nvidia_gpu(), "load_volatile is not currently supported on AMD GPUs"
+    ]()
     alias constraints = "=" + _get_register_constraint[
         type
     ]() + "," + _get_pointer_constraint() + (",~{memory}" if memory else "")
@@ -392,6 +398,9 @@ fn load_acquire[
 fn store_volatile[
     type: DType, //, memory: Bool = True
 ](ptr: UnsafePointer[Scalar[type], **_], value: Scalar[type]):
+    constrained[
+        is_nvidia_gpu(), "load_volatile is not currently supported on AMD GPUs"
+    ]()
     alias constraints = _get_register_constraint[
         type
     ]() + "," + _get_pointer_constraint() + (",~{memory}" if memory else "")
@@ -406,6 +415,9 @@ fn store_volatile[
 fn load_volatile[
     type: DType, //, memory: Bool = True
 ](ptr: UnsafePointer[Scalar[type], **_]) -> Scalar[type]:
+    constrained[
+        is_nvidia_gpu(), "load_volatile is not currently supported on AMD GPUs"
+    ]()
     alias constraints = "=" + _get_register_constraint[
         type
     ]() + "," + _get_pointer_constraint() + (",~{memory}" if memory else "")
@@ -414,6 +426,11 @@ fn load_volatile[
         Scalar[type],
         constraints=constraints,
     ](ptr.address_space_cast[AddressSpace.GENERIC]())
+
+
+# ===-----------------------------------------------------------------------===#
+# buffer_load_lds
+# ===-----------------------------------------------------------------------===#
 
 
 @always_inline
@@ -542,20 +559,19 @@ fn buffer_load_lds[
         num_records: Reads with gds_offset > num_records return 0.
 
     """
-
-    @parameter
-    if is_amd_gpu():
-        var lds_ptr = lds_ptr_base + lds_offset
-        var src_resource = _make_buffer_resource(gds_ptr, num_records)
-        var global_offset_bytes = Scalar[DType.int32](
-            sizeof[type]() * gds_offset
-        )
-        llvm_amdgcn_raw_buffer_load_lds(
-            src_resource,
-            lds_ptr,
-            sizeof[DType.uint32](),
-            global_offset_bytes,
-            0,
-            0,
-            0,
-        )
+    constrained[
+        is_amd_gpu(),
+        "buffer_load_lds is not currently supported on NVIDIA GPUs",
+    ]()
+    var lds_ptr = lds_ptr_base + lds_offset
+    var src_resource = _make_buffer_resource(gds_ptr, num_records)
+    var global_offset_bytes = Scalar[DType.int32](sizeof[type]() * gds_offset)
+    llvm_amdgcn_raw_buffer_load_lds(
+        src_resource,
+        lds_ptr,
+        sizeof[DType.uint32](),
+        global_offset_bytes,
+        0,
+        0,
+        0,
+    )
