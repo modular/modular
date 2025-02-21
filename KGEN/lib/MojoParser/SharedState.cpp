@@ -2342,6 +2342,13 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
           input.getContext(), evaluator.getReboundType(convert.getType()),
           input);
   }
+  if (auto cmp = dyn_cast<FloatLiteralCmpOp>(op)) {
+    // FIXME(MOCO-1628): This shouldn't be an operation.
+    if (auto lhs = findValue(cmp.getLhs()))
+      if (auto rhs = findValue(cmp.getRhs()))
+        return FloatLiteralCmpAttr::get(cmp.getContext(), cmp.getPredAttr(),
+                                        lhs, rhs);
+  }
   if (auto convert = dyn_cast<IntToFloatLiteralOp>(op)) {
     // FIXME(MOCO-1628): This shouldn't be an operation.
     if (auto input = findValue(convert.getInput()))

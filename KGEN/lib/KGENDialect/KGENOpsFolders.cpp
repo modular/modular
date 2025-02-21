@@ -557,120 +557,15 @@ OpFoldResult FloatLiteralIsa::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
-// FloatLiteralCmp
+// FloatLiteralCmpOp
 //===----------------------------------------------------------------------===//
 
-static bool isNan(FloatLiteralSpecialValues v) {
-  return v == FloatLiteralSpecialValues::Nan;
-}
-static bool isNegZero(FloatLiteralSpecialValues v) {
-  return v == FloatLiteralSpecialValues::NegZero;
-}
-[[maybe_unused]] static bool isInf(FloatLiteralSpecialValues v) {
-  return v == FloatLiteralSpecialValues::Inf;
-}
-static bool isNegInf(FloatLiteralSpecialValues v) {
-  return v == FloatLiteralSpecialValues::NegInf;
-}
-static bool isNormal(FloatLiteralSpecialValues v) {
-  return v == FloatLiteralSpecialValues::Normal;
-}
-
-/// Helper for float literal comparison.  The lhs/rhs values are only meaningful
-/// when lSpecial/rSpecial are normal.
-static bool floatLiteralCmpHelper(const FloatLiteralCmpPred &pred,
-                                  const FloatLiteralSpecialValues &lSpecial,
-                                  const FloatLiteralSpecialValues &rSpecial,
-                                  const IPRational &lhs,
-                                  const IPRational &rhs) {
-  switch (pred) {
-  case FloatLiteralCmpPred::Eq:
-    if (lSpecial == rSpecial) {
-      if (isNormal(lSpecial))
-        return lhs == rhs;
-      return !isNan(lSpecial);
-    }
-    // Python treats -0 and 0 as equal.
-    if (isNegZero(lSpecial) && isNormal(rSpecial) && rhs == 0)
-      return true;
-    if (isNegZero(rSpecial) && isNormal(lSpecial) && lhs == 0)
-      return true;
-    return false;
-  case FloatLiteralCmpPred::Ne:
-    return !floatLiteralCmpHelper(FloatLiteralCmpPred::Eq, lSpecial, rSpecial,
-                                  lhs, rhs);
-  case FloatLiteralCmpPred::Lt:
-    switch (lSpecial) {
-    case FloatLiteralSpecialValues::Normal:
-      switch (rSpecial) {
-      case FloatLiteralSpecialValues::Normal:
-        return lhs < rhs;
-      case FloatLiteralSpecialValues::Inf:
-        return true;
-      case FloatLiteralSpecialValues::NegZero:
-        return lhs < 0;
-      default:
-        return false;
-      }
-    case FloatLiteralSpecialValues::NegZero:
-      switch (rSpecial) {
-      case FloatLiteralSpecialValues::Normal:
-        // This would be <=, but Python treats -0 as equal to 0, so the RHS
-        // needs to be strictly greater than positive zero.
-        return IPRational(0) < rhs;
-      case FloatLiteralSpecialValues::Inf:
-        return true;
-      default:
-        return false;
-      }
-    case FloatLiteralSpecialValues::Inf:
-    case FloatLiteralSpecialValues::Nan:
-      return false;
-    case FloatLiteralSpecialValues::NegInf:
-      return !isNan(rSpecial) && !isNegInf(rSpecial);
-    }
-    llvm_unreachable("all specials covered");
-  case FloatLiteralCmpPred::Le:
-    return floatLiteralCmpHelper(FloatLiteralCmpPred::Lt, lSpecial, rSpecial,
-                                 lhs, rhs) ||
-           floatLiteralCmpHelper(FloatLiteralCmpPred::Eq, lSpecial, rSpecial,
-                                 lhs, rhs);
-  case FloatLiteralCmpPred::Gt:
-    if (isNan(lSpecial) || isNan(rSpecial))
-      return false;
-    return !floatLiteralCmpHelper(FloatLiteralCmpPred::Le, lSpecial, rSpecial,
-                                  lhs, rhs);
-  case FloatLiteralCmpPred::Ge:
-    return floatLiteralCmpHelper(FloatLiteralCmpPred::Gt, lSpecial, rSpecial,
-                                 lhs, rhs) ||
-           floatLiteralCmpHelper(FloatLiteralCmpPred::Eq, lSpecial, rSpecial,
-                                 lhs, rhs);
-  }
-  llvm_unreachable("invalid cmp predicate");
-}
-
-OpFoldResult FloatLiteralCmp::fold(FoldAdaptor adaptor) {
-  auto lAttr = dyn_cast_or_null<FloatLiteralAttr>(adaptor.getLhs());
-  auto rAttr = dyn_cast_or_null<FloatLiteralAttr>(adaptor.getRhs());
-  if (!lAttr || !rAttr)
-    return {};
-  FloatLiteralSpecialValues lSpecial = lAttr.getSpecial().getValue();
-  FloatLiteralSpecialValues rSpecial = rAttr.getSpecial().getValue();
-  IPRational lhs;
-  IPRational rhs;
-  if (isNormal(lSpecial)) {
-    assert(lAttr.getRational().has_value() &&
-           "rational does not have a value when special value is normal");
-    lhs = lAttr.getRational().value();
-  }
-  if (isNormal(rSpecial)) {
-    assert(rAttr.getRational().has_value() &&
-           "rational does not have a value when special value is normal");
-    rhs = rAttr.getRational().value();
-  }
-  return BoolAttr::get(
-      lAttr.getContext(),
-      floatLiteralCmpHelper(adaptor.getPred(), lSpecial, rSpecial, lhs, rhs));
+OpFoldResult FloatLiteralCmpOp::fold(FoldAdaptor adaptor) {
+  if (auto lAttr = dyn_cast_or_null<TypedAttr>(adaptor.getLhs()))
+    if (auto rAttr = dyn_cast_or_null<TypedAttr>(adaptor.getRhs()))
+      return FloatLiteralCmpAttr::get(lAttr.getContext(), adaptor.getPredAttr(),
+                                      lAttr, rAttr);
+  return {};
 }
 
 //===----------------------------------------------------------------------===//

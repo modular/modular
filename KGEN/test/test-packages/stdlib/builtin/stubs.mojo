@@ -215,7 +215,7 @@ struct FloatDyn:
     fn __init__(out self, value: __mlir_type.f64):
         self.value = value
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: FloatLiteral):
         self = Self(

@@ -854,6 +854,40 @@ def KGEN_FloatLiteralBinAttr : KGEN_ExprAttr<"FloatLiteralBin",
   ];
 }
 
+
+//===----------------------------------------------------------------------===//
+// FloatLiteralCmpAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_FloatLiteralCmpAttr : KGEN_ExprAttr<"FloatLiteralCmp",
+                                             "float_literal_cmp"> {
+  let summary = "Convert an float literal to a different type.";
+  let description = [{
+    The `#kgen.float_literal_cmp` attr does comparison testing
+    operations on `!kgen.float_literal` values that return an `i1`.
+  }];
+
+  let parameters = (ins
+    "FloatLiteralCmpPredAttr":$pred,
+    "TypedAttr":$lhs, "TypedAttr":$rhs
+  );
+
+  let assemblyFormat = "`<` $pred $lhs `,` $rhs `>`";
+  
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return an IntLiteralConvertAttr.
+    AttrBuilder<(ins "FloatLiteralCmpPredAttr":$pred, "TypedAttr":$lhs,
+                     "TypedAttr":$rhs), "", "TypedAttr">,
+  ];
+
+  let extraClassDeclaration = [{
+    /// Get the type of the attribute. It is always TargetType.
+    Type getType() const;
+  }];
+}
+
 //===----------------------------------------------------------------------===//
 // SymbolConstantAttr
 //===----------------------------------------------------------------------===//
