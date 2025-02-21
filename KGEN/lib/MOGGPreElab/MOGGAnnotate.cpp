@@ -677,6 +677,11 @@ processIOSpecs(LIT::FnOp func) {
   for (auto &&[argIdx, argType] : llvm::enumerate(func.getArgumentTypes())) {
     auto structType = getAsDeclRefOrNull(argType);
 
+    if (!structType) {
+      foundNonOutputOperand = true;
+      continue;
+    }
+
     auto [mut, input] = extractIOSpecSubFields(structType);
 
     if (!mut && !input)
