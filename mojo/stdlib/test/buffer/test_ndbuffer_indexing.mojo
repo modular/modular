@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import DimList
 from memory import stack_allocation
 
@@ -26,8 +26,9 @@ fn test_ndbuffer_indexing():
 
     # Fill data with increasing order, so that the value of each element in
     #  the test buffer is equal to it's linear index.:
-    var fillBufferView = Buffer[
+    var fillBufferView = NDBuffer[
         DType.index,
+        1,
         total_buffer_size,
     ](_data)
 

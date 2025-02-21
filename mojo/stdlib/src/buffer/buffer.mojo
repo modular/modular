@@ -8,7 +8,7 @@
 You can import these APIs from the `memory` package. For example:
 
 ```mojo
-from buffer import Buffer
+from buffer import NDBuffer
 ```
 """
 
@@ -1256,8 +1256,8 @@ struct NDBuffer[
     @always_inline
     fn flatten(
         self,
-        out result: Buffer[
-            type, shape.product(), address_space=address_space, origin=origin
+        out result: NDBuffer[
+            type, 1, shape.product(), origin=origin, address_space=address_space
         ],
     ):
         """Constructs a flattened Buffer counterpart for this NDBuffer.
@@ -1324,10 +1324,23 @@ struct NDBuffer[
         Args:
             val: The value to store.
         """
-        if val == 0:
-            self.zero()
-            return
-        self.flatten()._simd_fill[simd_width](val)
+
+        @parameter
+        if rank > 1:
+            if val == 0:
+                self.zero()
+                return
+            self.flatten()._simd_fill[simd_width](val)
+        else:
+            if val == 0:
+                self.zero()
+                return
+
+            var vec_end = align_down(len(self), simd_width)
+            for i in range(0, vec_end, simd_width):
+                self.store[width=simd_width](i, val)
+            for i in range(vec_end, len(self)):
+                self.store(i, val)
 
     @always_inline
     fn tofile(self, path: Path) raises:

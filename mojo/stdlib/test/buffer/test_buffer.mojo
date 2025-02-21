@@ -8,7 +8,7 @@
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from buffer import Buffer
+from buffer import NDBuffer
 from buffer.dimlist import Dim
 from memory import UnsafePointer
 
@@ -20,9 +20,9 @@ fn test_buffer():
     alias vec_size = 4
     var data = UnsafePointer[Float32].alloc(vec_size)
 
-    var b1 = Buffer[DType.float32, 4](data)
-    var b2 = Buffer[DType.float32, 4](data, 4)
-    var b3 = Buffer[DType.float32](data, 4)
+    var b1 = NDBuffer[DType.float32, 1, 4](data)
+    var b2 = NDBuffer[DType.float32, 1, 4](data, 4)
+    var b3 = NDBuffer[DType.float32, 1](data, 4)
 
     # CHECK: 4 4 4
     print(len(b1), len(b2), len(b3))
@@ -33,14 +33,14 @@ fn test_buffer():
 # CHECK-LABEL: test_buffer
 def test_buffer_tofile():
     print("== test_buffer")
-    var buf = Buffer[DType.float32, 4].stack_allocation()
+    var buf = NDBuffer[DType.float32, 1, 4].stack_allocation()
     buf.fill(2.0)
     with NamedTemporaryFile(name=String("test_buffer")) as TEMP_FILE:
         buf.tofile(TEMP_FILE.name)
 
         with open(TEMP_FILE.name, "r") as f:
             var str = f.read()
-            var buf_read = Buffer[DType.float32, 4](
+            var buf_read = NDBuffer[DType.float32, 1, 4](
                 str.unsafe_ptr().bitcast[Float32]()
             )
             for i in range(4):

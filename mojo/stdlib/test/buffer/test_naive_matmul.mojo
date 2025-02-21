@@ -76,9 +76,9 @@ fn test_my_naive_matmul[
     """Computes matrix multiplication with a naive algorithm.
 
     Args:
-        c: Buffer with allocated output space.
-        a: Buffer containing matrix operand A.
-        b: Buffer containing matrix operand B.
+        c: NDBuffer with allocated output space.
+        a: NDBuffer containing matrix operand A.
+        b: NDBuffer containing matrix operand B.
     """
     for m in range(c.dim[0]()):
         for n in range(c.dim[1]()):
