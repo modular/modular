@@ -462,7 +462,7 @@ struct IntLiteral(
         """
         return String(Int(self))
 
-    @always_inline
+    @always_inline("builtin")
     fn __ceildiv__(self, denominator: Self) -> Self:
         """Return the rounded-up result of dividing self by denominator.
 

@@ -127,9 +127,9 @@ fn ceildiv[T: CeilDivableRaising, //](numerator: T, denominator: T) raises -> T:
     return numerator.__ceildiv__(denominator)
 
 
-# NOTE: this overload is needed because of overload precedence; without it the
-# Int overload would be preferred, and ceildiv wouldn't work on IntLiteral.
-@always_inline
+# NOTE: this overload is needed because IntLiteral promotes to a runtime type
+# before overload resolution.
+@always_inline("builtin")
 fn ceildiv(numerator: IntLiteral, denominator: IntLiteral) -> IntLiteral:
     """Return the rounded-up result of dividing numerator by denominator.
 

@@ -438,7 +438,7 @@ struct FloatLiteral(
     # Comparison Operators
     # ===------------------------------------------------------------------===#
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __eq__(self, rhs: FloatLiteral) -> Bool:
         """Compare for equality.
 
@@ -452,7 +452,7 @@ struct FloatLiteral(
             pred = __mlir_attr.`#kgen<float_literal.cmp_pred eq>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __ne__(self, rhs: FloatLiteral) -> Bool:
         """Compare for inequality.
 
@@ -466,7 +466,7 @@ struct FloatLiteral(
             pred = __mlir_attr.`#kgen<float_literal.cmp_pred ne>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __lt__(self, rhs: FloatLiteral) -> Bool:
         """Less than comparison.
 
@@ -480,7 +480,7 @@ struct FloatLiteral(
             pred = __mlir_attr.`#kgen<float_literal.cmp_pred lt>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __le__(self, rhs: FloatLiteral) -> Bool:
         """Less than or equal to comparison.
 
@@ -494,7 +494,7 @@ struct FloatLiteral(
             pred = __mlir_attr.`#kgen<float_literal.cmp_pred le>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __gt__(self, rhs: FloatLiteral) -> Bool:
         """Greater than comparison.
 
@@ -508,7 +508,7 @@ struct FloatLiteral(
             pred = __mlir_attr.`#kgen<float_literal.cmp_pred gt>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __ge__(self, rhs: FloatLiteral) -> Bool:
         """Greater than or equal to comparison.
 
