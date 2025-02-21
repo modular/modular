@@ -6,7 +6,7 @@
 """This module includes NVIDIA GPUs intrinsics operations."""
 
 from sys._assembly import inlined_assembly
-from sys.info import _current_arch, alignof, bitwidthof
+from sys.info import _current_arch, alignof, bitwidthof, _is_sm_9x
 from sys.intrinsics import llvm_intrinsic
 
 from builtin.dtype import _int_type_of_width
@@ -55,11 +55,6 @@ fn ldg[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline("nodebug")
-fn _get_sm_name() -> StringLiteral:
-    return _current_arch()
-
-
 fn warpgroup_reg_alloc[count: Int]():
     """Provides a hint to the system to update the maximum number of per-thread
     registers owned by the executing warp to the value specified by the
@@ -80,7 +75,7 @@ fn warpgroup_reg_alloc[count: Int]():
     ]()
 
     @parameter
-    if Info.from_name[_get_sm_name()]() >= H100:
+    if _is_sm_9x():
         inlined_assembly[
             "setmaxnreg.inc.sync.aligned.u32 $0;",
             NoneType,
@@ -108,7 +103,7 @@ fn warpgroup_reg_dealloc[count: Int]():
     ]()
 
     @parameter
-    if Info.from_name[_get_sm_name()]() >= H100:
+    if _is_sm_9x():
         inlined_assembly[
             "setmaxnreg.dec.sync.aligned.u32 $0;",
             NoneType,
@@ -289,7 +284,7 @@ struct Scope:
     fn __isnot__(self, other: Self) -> Bool:
         return not (self is other)
 
-    fn _mnemonic(self) -> StringLiteral:
+    fn mnemonic(self) -> StringLiteral:
         if self in (Self.NONE, Self.THREAD, Self.WARP):
             return ""
         if self is Self.BLOCK:
@@ -311,7 +306,7 @@ fn threadfence[scope: Scope = Scope.GPU]():
         scope in (Scope.GPU, Scope.BLOCK, Scope.SYSTEM),
         "invalid threadfence scope",
     ]()
-    alias suffix = "gl" if scope is Scope.GPU else scope._mnemonic()
+    alias suffix = "gl" if scope is Scope.GPU else scope.mnemonic()
     llvm_intrinsic["llvm.nvvm.membar." + suffix, NoneType]()
 
 
@@ -360,7 +355,7 @@ fn store_release[
     alias constraints = _get_register_constraint[
         type
     ]() + "," + _get_pointer_constraint() + (",~{memory}" if memory else "")
-    alias scope_str = scope._mnemonic()
+    alias scope_str = scope.mnemonic()
     inlined_assembly[
         "st.release."
         + ((scope_str + ".") if scope_str else "")
@@ -382,7 +377,7 @@ fn load_acquire[
     alias constraints = "=" + _get_register_constraint[
         type
     ]() + "," + _get_pointer_constraint() + (",~{memory}" if memory else "")
-    alias scope_str = scope._mnemonic()
+    alias scope_str = scope.mnemonic()
     return inlined_assembly[
         "ld.acquire."
         + ((scope_str + ".") if scope_str else "")

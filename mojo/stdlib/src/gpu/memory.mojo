@@ -9,6 +9,7 @@ from collections import OptionalReg
 from sys import alignof, bitwidthof, is_amd_gpu, is_gpu, is_nvidia_gpu, sizeof
 from sys._assembly import inlined_assembly
 from sys.intrinsics import _RegisterPackType
+from sys.info import _is_sm_9x
 
 from builtin.dtype import _uint_type_of_width
 from memory import UnsafePointer
@@ -17,7 +18,7 @@ from memory.pointer import _GPUAddressSpace
 from memory.unsafe import bitcast
 
 from utils import IndexList, StaticTuple
-
+from .intrinsics import Scope
 from ._utils import to_i16, to_i32, to_i64, to_llvm_ptr, to_llvm_shared_mem_ptr
 
 # ===-----------------------------------------------------------------------===#
@@ -25,6 +26,277 @@ from ._utils import to_i16, to_i32, to_i64, to_llvm_ptr, to_llvm_shared_mem_ptr
 # ===-----------------------------------------------------------------------===#
 
 alias AddressSpace = _GPUAddressSpace
+
+# ===-----------------------------------------------------------------------===#
+# CacheOperation
+# ===-----------------------------------------------------------------------===#
+
+
+@value
+struct CacheOperation:
+    var _value: Int
+
+    alias ALWAYS = Self(0)
+    """Cache at all levels. This will be accessed again."""
+
+    alias GLOBAL = Self(1)
+    """Cache at global level."""
+
+    alias STREAMING = Self(2)
+    """Streaming, this is likely to be accessed once."""
+
+    alias LAST_USE = Self(3)
+    """Indicates the cache line will not be used again."""
+
+    alias VOLATILE = Self(4)
+    """Don't cache, and fetch again."""
+
+    alias WRITE_BACK = Self(5)
+    """Write back at all coherent levels."""
+
+    alias WRITE_THROUGH = Self(6)
+    """Write through to system memory."""
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+    fn __is__(self, other: Self) -> Bool:
+        return self == other
+
+    fn __isnot__(self, other: Self) -> Bool:
+        return self != other
+
+    @always_inline
+    fn mnemonic(self) -> StringLiteral:
+        if self is Self.ALWAYS:
+            return "ca"
+        if self is Self.GLOBAL:
+            return "cg"
+        if self is Self.STREAMING:
+            return "cs"
+        if self is Self.LAST_USE:
+            return "lu"
+        if self is Self.VOLATILE:
+            return "cv"
+        if self is Self.WRITE_BACK:
+            return "wb"
+        if self is Self.WRITE_THROUGH:
+            return "wt"
+
+        return "unknown cache operation"
+
+
+# ===-----------------------------------------------------------------------===#
+# CacheEviction
+# ===-----------------------------------------------------------------------===#
+
+
+@value
+struct CacheEviction:
+    var _value: Int
+
+    alias EVICT_NORMAL = Self(0)
+    """Cache data with normal eviction priority."""
+
+    alias EVICT_FIRST = Self(1)
+    """Data cached with this priority will be first in the eviction priority
+    order and will likely be evicted when cache eviction is required. This
+    priority is suitable for streaming data."""
+
+    alias EVICT_LAST = Self(2)
+    """Data cached with this priority will be last in the eviction priority
+    order and will likely be evicted only after other data with EVICT_NORMAL
+    or EVICT_FIRST eviction priotity is already evicted. This priority is
+    suitable for data that should remain persistent in cache."""
+
+    alias EVICT_UNCHANGED = Self(3)
+    """Do not change eviction priority order as part of this operation."""
+
+    alias NO_ALLOCATE = Self(4)
+    """Do not allocate data to cache. This priority is suitable for streaming
+    data."""
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+    fn __is__(self, other: Self) -> Bool:
+        return self == other
+
+    fn __isnot__(self, other: Self) -> Bool:
+        return self != other
+
+    @always_inline
+    fn mnemonic(self) -> StringLiteral:
+        if self is Self.EVICT_NORMAL:
+            return "evict_normal"
+        if self is Self.EVICT_FIRST:
+            return "evict_first"
+        if self is Self.EVICT_LAST:
+            return "evict_last"
+        if self is Self.EVICT_UNCHANGED:
+            return "evict_unchanged"
+        if self is Self.NO_ALLOCATE:
+            return "no_allocate"
+        return "unknown cache eviction"
+
+
+# ===-----------------------------------------------------------------------===#
+# Fill
+# ===-----------------------------------------------------------------------===#
+
+
+@value
+struct Fill:
+    var _value: Int
+
+    alias NONE = Self(0)
+    """No fill."""
+
+    alias ZERO = Self(1)
+    """Fill with zeros."""
+
+    alias NAN = Self(2)
+    """Fill with NaNs."""
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+    fn __is__(self, other: Self) -> Bool:
+        return self == other
+
+    fn __isnot__(self, other: Self) -> Bool:
+        return self != other
+
+    @always_inline
+    fn __str__(self) -> String:
+        if self is Self.NONE:
+            return "none"
+        if self is Self.ZERO:
+            return "zero"
+        if self is Self.NAN:
+            return "nan"
+        return "unknown fill"
+
+
+# ===-----------------------------------------------------------------------===#
+# Consistency
+# ===-----------------------------------------------------------------------===#
+
+
+@value
+struct Consistency:
+    var _value: Int
+
+    alias WEAK = Self(0)
+    """Weak consistency."""
+
+    alias RELAXED = Self(1)
+    """Relaxed consistency."""
+
+    alias ACQUIRE = Self(2)
+    """Acquire consistency."""
+
+    alias RELEASE = Self(3)
+    """Release consistency."""
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+    fn __is__(self, other: Self) -> Bool:
+        return self == other
+
+    fn __isnot__(self, other: Self) -> Bool:
+        return self != other
+
+    fn __str__(self) -> String:
+        return self.mnemonic()
+
+    @always_inline
+    fn mnemonic(self) -> StringLiteral:
+        if self is Self.WEAK:
+            return "weak"
+        if self is Self.RELAXED:
+            return "relaxed"
+        if self is Self.ACQUIRE:
+            return "acquire"
+        if self is Self.RELEASE:
+            return "release"
+
+        return "unknown consistency"
+
+
+# ===-----------------------------------------------------------------------===#
+# ReduceOp
+# ===-----------------------------------------------------------------------===#
+
+
+@value
+struct ReduceOp:
+    var _value: Int
+
+    alias ADD = Self(0)
+    """Reduce operation: add."""
+
+    alias MIN = Self(1)
+    """Reduce operation: minimum."""
+
+    alias MAX = Self(2)
+    """Reduce operation: maximum."""
+
+    alias AND = Self(3)
+    """Reduce operation: bitwise AND."""
+
+    alias OR = Self(4)
+    """Reduce operation: bitwise OR."""
+
+    alias XOR = Self(5)
+    """Reduce operation: bitwise XOR."""
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+    fn __is__(self, other: Self) -> Bool:
+        return self == other
+
+    fn __isnot__(self, other: Self) -> Bool:
+        return self != other
+
+    @always_inline
+    fn __str__(self) -> String:
+        return self.mnemonic()
+
+    @always_inline
+    fn mnemonic(self) -> StringLiteral:
+        if self is Self.ADD:
+            return "add"
+        if self is Self.MIN:
+            return "min"
+        if self is Self.MAX:
+            return "max"
+        if self is Self.AND:
+            return "and"
+        if self is Self.OR:
+            return "or"
+        if self is Self.XOR:
+            return "xor"
+
+        return "unknown reduce operation"
+
 
 # ===-----------------------------------------------------------------------===#
 # cp.async
@@ -531,166 +803,6 @@ fn cp_async_bulk_tensor_reduce[
 
 
 # ===-----------------------------------------------------------------------===#
-# CacheOperation
-# ===-----------------------------------------------------------------------===#
-
-
-@value
-struct CacheOperation:
-    var _value: Int
-
-    alias ALWAYS = Self(0)
-    """Cache at all levels. This will be accessed again."""
-
-    alias GLOBAL = Self(1)
-    """Cache at global level."""
-
-    alias STREAMING = Self(2)
-    """Streaming, this is likely to be accessed once."""
-
-    alias LAST_USE = Self(3)
-    """Indicates the cache line will not be used again."""
-
-    alias VOLATILE = Self(4)
-    """Don't cache, and fetch again."""
-
-    alias WRITE_BACK = Self(5)
-    """Write back at all coherent levels."""
-
-    alias WRITE_THROUGH = Self(6)
-    """Write through to system memory."""
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
-    fn __is__(self, other: Self) -> Bool:
-        return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
-    @always_inline
-    fn mnemonic(self) -> StringLiteral:
-        if self is Self.ALWAYS:
-            return "ca"
-        if self is Self.GLOBAL:
-            return "cg"
-        if self is Self.STREAMING:
-            return "cs"
-        if self is Self.LAST_USE:
-            return "lu"
-        if self is Self.VOLATILE:
-            return "cv"
-        if self is Self.WRITE_BACK:
-            return "wb"
-        if self is Self.WRITE_THROUGH:
-            return "wt"
-
-        return "unknown cache operation"
-
-
-# ===-----------------------------------------------------------------------===#
-# CacheEviction
-# ===-----------------------------------------------------------------------===#
-
-
-@value
-struct CacheEviction:
-    var _value: Int
-
-    alias EVICT_NORMAL = Self(0)
-    """Cache data with normal eviction priority."""
-
-    alias EVICT_FIRST = Self(1)
-    """Data cached with this priority will be first in the eviction priority
-    order and will likely be evicted when cache eviction is required. This
-    priority is suitable for streaming data."""
-
-    alias EVICT_LAST = Self(2)
-    """Data cached with this priority will be last in the eviction priority
-    order and will likely be evicted only after other data with EVICT_NORMAL
-    or EVICT_FIRST eviction priotity is already evicted. This priority is
-    suitable for data that should remain persistent in cache."""
-
-    alias EVICT_UNCHANGED = Self(3)
-    """Do not change eviction priority order as part of this operation."""
-
-    alias NO_ALLOCATE = Self(4)
-    """Do not allocate data to cache. This priority is suitable for streaming
-    data."""
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
-    fn __is__(self, other: Self) -> Bool:
-        return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
-    @always_inline
-    fn mnemonic(self) -> StringLiteral:
-        if self is Self.EVICT_NORMAL:
-            return "evict_normal"
-        if self is Self.EVICT_FIRST:
-            return "evict_first"
-        if self is Self.EVICT_LAST:
-            return "evict_last"
-        if self is Self.EVICT_UNCHANGED:
-            return "evict_unchanged"
-        if self is Self.NO_ALLOCATE:
-            return "no_allocate"
-        return "unknown cache eviction"
-
-
-# ===-----------------------------------------------------------------------===#
-# Fill
-# ===-----------------------------------------------------------------------===#
-
-
-@value
-struct Fill:
-    var _value: Int
-
-    alias NONE = Self(0)
-    """No fill."""
-
-    alias ZERO = Self(1)
-    """Fill with zeros."""
-
-    alias NAN = Self(2)
-    """Fill with NaNs."""
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
-    fn __is__(self, other: Self) -> Bool:
-        return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
-    @always_inline
-    fn __str__(self) -> String:
-        if self is Self.NONE:
-            return "none"
-        if self is Self.ZERO:
-            return "zero"
-        if self is Self.NAN:
-            return "nan"
-        return "unknown fill"
-
-
-# ===-----------------------------------------------------------------------===#
 # load
 # ===-----------------------------------------------------------------------===#
 
@@ -864,8 +976,110 @@ fn load[
 
 
 # ===-----------------------------------------------------------------------===#
+# MultiMem
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+fn _get_multimem_ld_reduce_asm[
+    type: DType,
+    *,
+    count: Int,
+    reduction: ReduceOp,
+    scope: Scope,
+    consistency: Consistency,
+    output_width: Int = 1,
+]() -> StringLiteral:
+    constrained[_is_sm_9x(), "multimem is only supported on SM90+ GPUs"]()
+    constrained[type.is_floating_point(), "type must be floating point"]()
+    constrained[
+        type in (DType.float32, DType.float16, DType.bfloat16),
+        "type must be float32, float16, or bfloat16",
+    ]()
+
+    alias ss = ".global"
+    alias vec = ".v" + _int_to_str[count]()
+    alias op = "." + reduction.mnemonic()
+    alias type_mnemonic = "." + _get_type_mnemonic[type]() + (
+        "x" + _int_to_str[output_width]() if output_width > 1 else ""
+    )
+    alias asm = "multimem.ld_reduce." + consistency.mnemonic() + "." + scope.mnemonic() + ss + op + vec + type_mnemonic
+
+    return asm
+
+
+@always_inline("nodebug")
+fn multimem_ld_reduce[
+    type: DType,
+    *,
+    count: Int,
+    reduction: ReduceOp,
+    scope: Scope,
+    consistency: Consistency,
+    output_width: Int = 1,
+](
+    addr: UnsafePointer[Scalar[type], address_space = AddressSpace.GLOBAL],
+) -> StaticTuple[SIMD[type, output_width], count]:
+    constrained[count in (2, 4), "count must be 2 or 4"]()
+
+    alias asm = _get_multimem_ld_reduce_asm[
+        type,
+        count=count,
+        reduction=reduction,
+        scope=scope,
+        consistency=consistency,
+        output_width=output_width,
+    ]()
+
+    @parameter
+    if count == 2:
+        var r = inlined_assembly[
+            asm + " {$0,$1}, [$2];",
+            _RegisterPackType[
+                SIMD[type, output_width], SIMD[type, output_width]
+            ],
+            constraints="=r,=r,l,~{memory}",
+            has_side_effect=True,
+        ](addr.bitcast[NoneType]())
+        return StaticTuple[SIMD[type, output_width], count](r[0], r[1])
+
+    @parameter
+    if count == 4:
+        var r = inlined_assembly[
+            asm + " {$0,$1,$2,$3}, [$4];",
+            _RegisterPackType[
+                SIMD[type, output_width],
+                SIMD[type, output_width],
+                SIMD[type, output_width],
+                SIMD[type, output_width],
+            ],
+            constraints="=r,=r,=r,=r,l,~{memory}",
+            has_side_effect=True,
+        ](addr.bitcast[NoneType]())
+
+        return StaticTuple[SIMD[type, output_width], count](
+            r[0], r[1], r[2], r[3]
+        )
+
+    return StaticTuple[SIMD[type, output_width], count]()
+
+
+# ===-----------------------------------------------------------------------===#
 # Utilities
 # ===-----------------------------------------------------------------------===#
+
+
+fn _get_type_mnemonic[type: DType]() -> StringLiteral:
+    if type is DType.float32:
+        return "f32"
+    elif type is DType.float16:
+        return "f16"
+    elif type is DType.bfloat16:
+        return "bf16"
+    if type is DType.float64:
+        return "f64"
+
+    return "unknown type mnemonic"
 
 
 fn _int_to_str[val: Int]() -> StringLiteral:
