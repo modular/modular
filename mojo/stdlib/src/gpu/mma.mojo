@@ -937,6 +937,11 @@ fn wgmma_async[
             )
         )
 
+        alias input_reg_spec = _str_iota[n // 2, prefix="$"]()
+        alias input_constraints_prefix = StringLiteral.get["=f," * (n // 2)]()
+        alias input_constraints_suffix = _str_iota[n // 2, sep=","]()
+        alias constraints = input_constraints_prefix + "r,r,r,r,l,n,n,n,n," + input_constraints_suffix
+
         # fmt: off
         @parameter
         if n == 8:
@@ -944,13 +949,13 @@ fn wgmma_async[
                 """{
                     .reg .pred p;
                     setp.ne.b32 p, $9, 0;
-                    wgmma.mma_async.sync.aligned.m64n8k16.f32.bf16.bf16 
-                    {$0,   $1,   $2,   $3},   
+                    wgmma.mma_async.sync.aligned.m64n8k16.f32.bf16.bf16
+                    {""" + input_reg_spec + """},
                      {$4, $5, $6, $7},
                      $8, p, $10, $11, $12;
-                    }""",
+                }""",
                 _RegisterPackType[Float32, Float32, Float32, Float32],
-                constraints = "=f," * 4 + "r,r,r,r,l,n,n,n,n,0,1,2,3",
+                constraints = constraints,
             ](
                 a0, a1, a2, a3,
                 desc_b_value,
@@ -966,16 +971,16 @@ fn wgmma_async[
                 """{
                     .reg .pred p;
                     setp.ne.b32 p, $13, 0;
-                    wgmma.mma_async.sync.aligned.m64n16k16.f32.bf16.bf16 
-                    {$0,   $1,   $2,   $3,   $4,   $5,   $6,   $7},   
+                    wgmma.mma_async.sync.aligned.m64n16k16.f32.bf16.bf16
+                    {""" + input_reg_spec + """},
                      {$8, $9, $10, $11},
                      $12, p, $14, $15, $16;
-                    }""",
+                }""",
                 _RegisterPackType[
-                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32, 
                     Float32, Float32, Float32, Float32,
                 ],
-                constraints = "=f," * 8 + "r,r,r,r,l,n,n,n,n,0,1,2,3,4,5,6,7",
+                constraints = constraints,
             ](
                 a0, a1, a2, a3,
                 desc_b_value,
@@ -993,32 +998,30 @@ fn wgmma_async[
                 """{
                     .reg .pred p;
                     setp.ne.b32 p, $21, 0;
-                    wgmma.mma_async.sync.aligned.m64n32k16.f32.bf16.bf16 
-                    {$0,   $1,   $2,   $3,   $4,   $5,   $6,   $7,   
-                     $8,   $9,   $10,  $11,  $12,  $13,  $14,  $15},  
+                    wgmma.mma_async.sync.aligned.m64n32k16.f32.bf16.bf16
+                    {""" + input_reg_spec + """},
                      {$16, $17, $18, $19},
                      $20, p, $22, $23, $24;
-                    }""",
+                }""",
                 _RegisterPackType[
+                    Float32, Float32, Float32, Float32, 
                     Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32, 
                     Float32, Float32, Float32, Float32,
                 ],
-                constraints = "=f," * 16
-                + "r,r,r,r,l,n,n,n,n,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+                constraints = constraints,
             ](
                 a0, a1, a2, a3,
                 desc_b_value,
                 scale_d, scale_a, scale_b, trans_b,
-                c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7],
-                c[8], c[9], c[10], c[11], c[12], c[13], c[14], c[15],
+                c[0],  c[1],  c[2],  c[3],  c[4],  c[5],  c[6],  c[7],
+                c[8],  c[9],  c[10], c[11], c[12], c[13], c[14], c[15],
             )
 
             return rebind[__type_of(c)](
                 SIMD[DType.float32, 16](
-                    r[0], r[1],  r[2],  r[3],  r[4],  r[5],  r[6],  r[7],
-                    r[8], r[9], r[10], r[11], r[12], r[13], r[14], r[15],
+                    r[0],  r[1],  r[2],  r[3],  r[4],  r[5],  r[6],  r[7],
+                    r[8],  r[9],  r[10], r[11], r[12], r[13], r[14], r[15],
                 )
             )
         elif n == 64:
@@ -1026,26 +1029,22 @@ fn wgmma_async[
                 """{
                     .reg .pred p;
                     setp.ne.b32 p, $37, 0;
-                    wgmma.mma_async.sync.aligned.m64n64k16.f32.bf16.bf16 
-                    {$0,   $1,   $2,   $3,   $4,   $5,   $6,   $7,   
-                     $8,   $9,   $10,  $11,  $12,  $13,  $14,  $15,  
-                     $16,  $17,  $18,  $19,  $20,  $21,  $22,  $23,  
-                     $24,  $25,  $26,  $27,  $28,  $29,  $30,  $31},  
+                    wgmma.mma_async.sync.aligned.m64n64k16.f32.bf16.bf16
+                    {""" + input_reg_spec + """},
                      {$32, $33, $34, $35},
                      $36, p, $38, $39, $40;
-                    }""",
+                }""",
                 _RegisterPackType[
-                    Float32, Float32, Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, Float32, Float32,
-                    Float32, Float32
+                    Float32, Float32, Float32, Float32, 
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32, 
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32, 
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
                 ],
-                constraints = "=f," * 32
-                + "r,r,r,r,l,n,n,n,n,"
-                + "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,"
-                + "16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31",
+                constraints = constraints,
             ](
                 a0, a1, a2, a3,
                 desc_b_value,
@@ -1058,8 +1057,8 @@ fn wgmma_async[
 
             return rebind[__type_of(c)](
                 SIMD[DType.float32, 32](
-                    r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7],
-                    r[8], r[9], r[10], r[11], r[12], r[13], r[14], r[15],
+                    r[0],  r[1],  r[2],  r[3],  r[4],  r[5],  r[6],  r[7],
+                    r[8],  r[9],  r[10], r[11], r[12], r[13], r[14], r[15],
                     r[16], r[17], r[18], r[19], r[20], r[21], r[22], r[23],
                     r[24], r[25], r[26], r[27], r[28], r[29], r[30], r[31],
                 )
@@ -1069,37 +1068,30 @@ fn wgmma_async[
                 """{
                     .reg .pred p;
                     setp.ne.b32 p, $69, 0;
-                    wgmma.mma_async.sync.aligned.m64n128k16.f32.bf16.bf16 
-                    {$0,   $1,   $2,   $3,   $4,   $5,   $6,   $7,   
-                     $8,   $9,   $10,  $11,  $12,  $13,  $14,  $15,  
-                     $16,  $17,  $18,  $19,  $20,  $21,  $22,  $23,  
-                     $24,  $25,  $26,  $27,  $28,  $29,  $30,  $31,  
-                     $32,  $33,  $34,  $35,  $36,  $37,  $38,  $39,  
-                     $40,  $41,  $42,  $43,  $44,  $45,  $46,  $47,  
-                     $48,  $49,  $50,  $51,  $52,  $53,  $54,  $55,  
-                     $56,  $57,  $58,  $59,  $60,  $61,  $62,  $63},
+                    wgmma.mma_async.sync.aligned.m64n128k16.f32.bf16.bf16
+                    {""" + input_reg_spec + """},
                      {$64, $65, $66, $67},
                      $68, p, $70, $71, $72;
-                    }""",
+                }""",
                 _RegisterPackType[
-                    Float32, Float32, Float32, Float32, Float32, Float32, 
-                    Float32, Float32, Float32, Float32, Float32, Float32, 
-                    Float32, Float32, Float32, Float32, Float32, Float32, 
-                    Float32, Float32, Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, Float32, Float32, 
-                    Float32, Float32, Float32, Float32, Float32, Float32, 
-                    Float32, Float32, Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, Float32, Float32, 
-                    Float32, Float32, Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32, 
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32, 
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
                 ],
-                constraints = "=f," * 64
-                + "r,r,r,r,l,n,n,n,n,"
-                + "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,"
-                + "16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,"
-                + "32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,"
-                + "48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+                constraints = constraints,
             ](
                 a0, a1, a2, a3,
                 desc_b_value,
@@ -1115,88 +1107,75 @@ fn wgmma_async[
             )
             return rebind[__type_of(c)](
                 SIMD[DType.float32, 64](
-                    r[0],  r[1],  r[2],  r[3],  r[4],  r[5],  r[6],  r[7],
-                    r[8],  r[9],  r[10], r[11], r[12], r[13], r[14], r[15],
-                    r[16], r[17], r[18], r[19], r[20], r[21], r[22], r[23],
-                    r[24], r[25], r[26], r[27], r[28], r[29], r[30], r[31],
-                    r[32], r[33], r[34], r[35], r[36], r[37], r[38], r[39],
-                    r[40], r[41], r[42], r[43], r[44], r[45], r[46], r[47],
-                    r[48], r[49], r[50], r[51], r[52], r[53], r[54], r[55],
-                    r[56], r[57], r[58], r[59], r[60], r[61], r[62], r[63],
+                    r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9],
+                    r[10], r[11], r[12], r[13], r[14], r[15], r[16], r[17],
+                    r[18], r[19], r[20], r[21], r[22], r[23], r[24], r[25],
+                    r[26], r[27], r[28], r[29], r[30], r[31], r[32], r[33],
+                    r[34], r[35], r[36], r[37], r[38], r[39], r[40], r[41],
+                    r[42], r[43], r[44], r[45], r[46], r[47], r[48], r[49],
+                    r[50], r[51], r[52], r[53], r[54], r[55], r[56], r[57],
+                    r[58], r[59], r[60], r[61], r[62], r[63],
                 )
             )
         elif n == 256:
             var r = inlined_assembly[
-                """{
+                """
+                {
                     .reg .pred p;
                     setp.ne.b32 p, $133, 0;
-                    wgmma.mma_async.sync.aligned.m64n256k16.f32.bf16.bf16 
-                    {$0,   $1,   $2,   $3,   $4,   $5,   $6,   $7,   
-                     $8,   $9,   $10,  $11,  $12,  $13,  $14,  $15,  
-                     $16,  $17,  $18,  $19,  $20,  $21,  $22,  $23,  
-                     $24,  $25,  $26,  $27,  $28,  $29,  $30,  $31,  
-                     $32,  $33,  $34,  $35,  $36,  $37,  $38,  $39,  
-                     $40,  $41,  $42,  $43,  $44,  $45,  $46,  $47,  
-                     $48,  $49,  $50,  $51,  $52,  $53,  $54,  $55,  
-                     $56,  $57,  $58,  $59,  $60,  $61,  $62,  $63,  
-                     $64,  $65,  $66,  $67,  $68,  $69,  $70,  $71,  
-                     $72,  $73,  $74,  $75,  $76,  $77,  $78,  $79,  
-                     $80,  $81,  $82,  $83,  $84,  $85,  $86,  $87,  
-                     $88,  $89,  $90,  $91,  $92,  $93,  $94,  $95,  
-                     $96,  $97,  $98,  $99,  $100, $101, $102, $103, 
-                     $104, $105, $106, $107, $108, $109, $110, $111, 
-                     $112, $113, $114, $115, $116, $117, $118, $119, 
-                     $120, $121, $122, $123, $124, $125, $126, $127}, 
+                    wgmma.mma_async.sync.aligned.m64n256k16.f32.bf16.bf16
+                    {""" + input_reg_spec + """},
                      {$128, $129, $130, $131},
                      $132, p, $134, $135, $136;
-                    }""",
+                }""",
                 _RegisterPackType[
-                    Float32, Float32, Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, Float32, Float32, 
-                    Float32, Float32, Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, Float32, Float32, 
-                    Float32, Float32, Float32, Float32, Float32, Float32, 
-                    Float32, Float32, Float32, Float32, Float32, Float32, 
-                    Float32, Float32, Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, Float32, Float32, 
-                    Float32, Float32, Float32, Float32, Float32, Float32, 
-                    Float32, Float32, Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, Float32, Float32, 
-                    Float32, Float32, Float32, Float32, Float32, Float32, 
-                    Float32, Float32, Float32, Float32, Float32, Float32, 
-                    Float32, Float32, Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, Float32, Float32,
-                    Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32, 
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32, 
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32, 
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32, 
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32, 
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32, 
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32, 
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32, 
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32, 
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
                 ],
-                constraints = "=f," * 128
-                + "r,r,r,r,l,n,n,n,n,"
-                + "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,"
-                + "20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,"
-                + "37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,"
-                + "54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,"
-                + "71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,"
-                + "88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,"
-                + "104,105,106,107,108,109,110,111,112,113,114,115,"
-                + "116,117,118,119,120,121,122,123,124,125,126,127",
+                constraints = constraints,
             ](
                 a0, a1, a2, a3,
                 desc_b_value,
                 scale_d, scale_a, scale_b, trans_b,
                 c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8], c[9],
-                c[10], c[11], c[12], c[13], c[14], c[15], c[16], c[17], c[18], 
-                c[19], c[20], c[21], c[22], c[23], c[24], c[25], c[26], c[27], 
-                c[28], c[29], c[30], c[31], c[32], c[33], c[34], c[35], c[36], 
-                c[37], c[38], c[39], c[40], c[41], c[42], c[43], c[44], c[45], 
-                c[46], c[47], c[48], c[49], c[50], c[51], c[52], c[53], c[54], 
-                c[55], c[56], c[57], c[58], c[59], c[60], c[61], c[62], c[63], 
-                c[64], c[65], c[66], c[67], c[68], c[69], c[70], c[71], c[72], 
-                c[73], c[74], c[75], c[76], c[77], c[78], c[79], c[80], c[81], 
+                c[10], c[11], c[12], c[13], c[14], c[15], c[16], c[17], c[18],
+                c[19], c[20], c[21], c[22], c[23], c[24], c[25], c[26], c[27],
+                c[28], c[29], c[30], c[31], c[32], c[33], c[34], c[35], c[36],
+                c[37], c[38], c[39], c[40], c[41], c[42], c[43], c[44], c[45],
+                c[46], c[47], c[48], c[49], c[50], c[51], c[52], c[53], c[54],
+                c[55], c[56], c[57], c[58], c[59], c[60], c[61], c[62], c[63],
+                c[64], c[65], c[66], c[67], c[68], c[69], c[70], c[71], c[72],
+                c[73], c[74], c[75], c[76], c[77], c[78], c[79], c[80], c[81],
                 c[82], c[83], c[84], c[85], c[86], c[87], c[88], c[89], c[90],
                 c[91], c[92], c[93], c[94], c[95], c[96], c[97], c[98], c[99],
                 c[100], c[101], c[102], c[103], c[104], c[105], c[106], c[107],
@@ -1225,10 +1204,30 @@ fn wgmma_async[
                 )
             )
         else:
-            constrained[False, "n is invalid"]()
+            constrained[False, String("the n value '", n, "' is not valid")]()
             return c
         # fmt: on
 
     else:
         constrained[False, "unsupported config"]()
         return c
+
+
+@always_inline("nodebug")
+fn _str_iota[
+    count: Int, *, prefix: StringLiteral = "", sep: StringLiteral = ", "
+]() -> StringLiteral:
+    alias s = _str_iota_impl[count, prefix=prefix, sep=sep]()
+    return StringLiteral.get[s]()
+
+
+@always_inline("nodebug")
+fn _str_iota_impl[
+    count: Int, *, prefix: StringLiteral = "", sep: StringLiteral = ", "
+]() -> String:
+    var s = String("")
+    for i in range(count):
+        s += prefix + String(i)
+        if i < count - 1:
+            s += sep
+    return s
