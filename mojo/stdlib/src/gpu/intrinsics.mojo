@@ -450,7 +450,45 @@ fn _make_buffer_resource[
 
 
 @always_inline
-fn _buffer_load_lds_nowait[
+fn _waitcnt():
+    constrained[
+        is_amd_gpu(),
+        "The _waitcnt function is only applicable on AMDGPU hardware.",
+    ]()
+    inlined_assembly[
+        "s_waitcnt vmcnt(0)",
+        NoneType,
+        constraints="",
+        has_side_effect=True,
+    ]()
+
+
+@always_inline
+fn _raw_buffer_load_lds[
+    type: DType
+](
+    rsrc: SIMD[DType.uint32, 4],
+    lds_ptr: UnsafePointer[Scalar[type], address_space = AddressSpace.SHARED],
+    size: Int32,
+    voffset: Int32,
+    soffset: Int32,
+    offset: Int32,
+    aux: Int32,
+):
+    constrained[
+        is_amd_gpu(),
+        (
+            "The _raw_buffer_load_lds function is only applicable on AMDGPU"
+            " hardware."
+        ),
+    ]()
+    llvm_intrinsic[
+        "llvm.amdgcn.raw.buffer.load.lds", NoneType, has_side_effect=True
+    ](rsrc, lds_ptr, size, voffset, soffset, offset, aux)
+
+
+@always_inline
+fn _buffer_load_store_lds_nowait[
     type: DType
 ](
     gds_ptr: UnsafePointer[Scalar[type]],
@@ -479,6 +517,14 @@ fn _buffer_load_lds_nowait[
 
     """
 
+    constrained[
+        is_amd_gpu(),
+        (
+            "The _buffer_load_store_lds_nowait  function is only applicable on"
+            " AMDGPU hardware."
+        ),
+    ]()
+
     var lds_ptr = lds_ptr_base + lds_offset
     var lds_ptr_sgpr = readfirstlane(SIMD[DType.int32, 1](Int(lds_ptr)))
     inlined_assembly[
@@ -500,34 +546,7 @@ fn _buffer_load_lds_nowait[
 
 
 @always_inline
-fn _wait_cnt_amd():
-    inlined_assembly[
-        "s_waitcnt vmcnt(0)",
-        NoneType,
-        constraints="",
-        has_side_effect=True,
-    ]()
-
-
-@always_inline
-fn llvm_amdgcn_raw_buffer_load_lds[
-    type: DType
-](
-    rsrc: SIMD[DType.uint32, 4],
-    lds_ptr: UnsafePointer[Scalar[type], address_space = AddressSpace.SHARED],
-    size: Int32,
-    voffset: Int32,
-    soffset: Int32,
-    offset: Int32,
-    aux: Int32,
-):
-    llvm_intrinsic[
-        "llvm.amdgcn.raw.buffer.load.lds", NoneType, has_side_effect=True
-    ](rsrc, lds_ptr, size, voffset, soffset, offset, aux)
-
-
-@always_inline
-fn buffer_load_lds[
+fn buffer_load_store_lds[
     type: DType
 ](
     gds_ptr: UnsafePointer[Scalar[type]],
@@ -556,12 +575,16 @@ fn buffer_load_lds[
     """
     constrained[
         is_amd_gpu(),
-        "buffer_load_lds is not currently supported on NVIDIA GPUs",
+        (
+            "The buffer_load_store_lds  function is only applicable on AMDGPU"
+            " hardware."
+        ),
     ]()
+
     var lds_ptr = lds_ptr_base + lds_offset
     var src_resource = _make_buffer_resource(gds_ptr, num_records)
     var global_offset_bytes = Scalar[DType.int32](sizeof[type]() * gds_offset)
-    llvm_amdgcn_raw_buffer_load_lds(
+    _raw_buffer_load_lds(
         src_resource,
         lds_ptr,
         sizeof[DType.uint32](),
@@ -570,3 +593,131 @@ fn buffer_load_lds[
         0,
         0,
     )
+
+
+@always_inline
+fn buffer_load[
+    type: DType, width: Int
+](
+    gds_ptr: UnsafePointer[Scalar[type]],
+    gds_offset: Int32,
+    num_records: Int,
+) -> SIMD[type, width]:
+    """Loads a register variable from global memory.
+
+    This function is used to copy from global memory to register.
+
+    Parameters:
+        type: The type of the data to be loaded.
+        width: The width of the SIMD vector to load.
+
+    Args:
+        gds_ptr: Global memory base address.
+        gds_offset: Global memory offset.
+        num_records: Reads with gds_offset > num_records return 0.
+
+    """
+
+    constrained[
+        is_amd_gpu(),
+        "The buffer_load function is only applicable on AMDGPU hardware.",
+    ]()
+
+    alias bytes = sizeof[type]() * width
+    var src_resource = _make_buffer_resource(gds_ptr, num_records)
+    var global_offset_bytes: Int32 = Scalar[DType.int32](
+        sizeof[type]() * gds_offset
+    )
+    # READ
+    # GLC = 0 Reads can hit on the L1 and persist across wavefronts
+    # GLC = 1 Reads miss the L1 and L2 and force fetch to the data fabric. No L1 persistence across waves.
+    alias glc: Int32 = 0
+    var src_wave_addr_offset: Int32 = 0
+
+    @parameter
+    fn get_inst_name() -> StringLiteral:
+        @parameter
+        if bytes == 1:
+            return "llvm.amdgcn.raw.buffer.load.i8"
+        elif bytes == 2:
+            return "llvm.amdgcn.raw.buffer.load.i16"
+        elif bytes == 4:
+            return "llvm.amdgcn.raw.buffer.load.i32"
+        elif bytes == 8:
+            return "llvm.amdgcn.raw.buffer.load.v2i32"
+        elif bytes == 16:
+            return "llvm.amdgcn.raw.buffer.load.v4i32"
+        else:
+            constrained[False, "Width not supported"]()
+            return ""
+
+    return llvm_intrinsic[
+        get_inst_name(),
+        SIMD[type, width],
+        has_side_effect=True,
+    ](src_resource, global_offset_bytes, src_wave_addr_offset, glc)
+
+
+@always_inline
+fn buffer_store[
+    type: DType, width: Int
+](
+    gds_ptr: UnsafePointer[Scalar[type]],
+    gds_offset: Int32,
+    num_records: Int,
+    val: SIMD[type, width],
+):
+    """Stores  a register variable to global memory.
+
+    This function is used to write to global memory from a register.
+
+    Parameters:
+        type: The type of the data to be loaded.
+        width: The width of the SIMD vector to load.
+
+    Args:
+        gds_ptr: Global memory base address.
+        gds_offset: Global memory offset.
+        num_records: Reads with gds_offset > num_records return 0.
+        val: The value to write to memory.
+    """
+
+    constrained[
+        is_amd_gpu(),
+        "The buffer_store function is only applicable on AMDGPU hardware.",
+    ]()
+
+    alias bytes = sizeof[type]() * width
+
+    var src_resource = _make_buffer_resource(gds_ptr, num_records)
+    var global_offset_bytes: Int32 = Scalar[DType.int32](
+        sizeof[type]() * gds_offset
+    )
+    # WRITE
+    # GLC = 0 Writes miss the L1, write through to L2, and persist in L1 across wavefronts.
+    # GLC = 1 Writes miss the L1, write through to L2. No persistence across wavefronts.
+    alias glc: Int32 = 0
+    var src_wave_addr_offset: Int32 = 0
+
+    @parameter
+    fn get_inst_name() -> StringLiteral:
+        @parameter
+        if bytes == 1:
+            return "llvm.amdgcn.raw.buffer.store.i8"
+        elif bytes == 2:
+            return "llvm.amdgcn.raw.buffer.store.i16"
+        elif bytes == 4:
+            return "llvm.amdgcn.raw.buffer.store.i32"
+        elif bytes == 8:
+            return "llvm.amdgcn.raw.buffer.store.v2i32"
+        elif bytes == 16:
+            return "llvm.amdgcn.raw.buffer.store.v4i32"
+        else:
+            constrained[False, "Width not supported"]()
+            return ""
+
+    llvm_intrinsic[
+        get_inst_name(),
+        NoneType,
+        has_side_effect=True,
+    ](val, src_resource, global_offset_bytes, src_wave_addr_offset, glc)
