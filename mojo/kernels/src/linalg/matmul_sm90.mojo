@@ -97,6 +97,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     transpose_b: Bool = True,
     num_threads: Int = 128,
     pipeline_stages: Int = 7,
+    partitioned_multicast: Bool = False,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
@@ -110,10 +111,32 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     alias CLUSTER_M = UInt(Int(cluster_shape[1]))
     alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
 
+    alias a_tma_load_size = a_desc_layout.size()
+    alias b_tma_load_size = b_desc_layout.size()
+    alias a_tma_rows = a_desc_layout.shape[0].value()
+    alias b_tma_rows = b_desc_layout.shape[0].value()
+
     alias K = b_layout.shape[1].value()
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
+
+    constrained[
+        not partitioned_multicast
+        or a_swizzle.bytes() // sizeof[a_type]() == BK,
+        (
+            "Currently partitioned multi-casting is only supported when BK =="
+            " (a_swizzle.bytes // sizeof[a_type]"
+        ),
+    ]()
+    constrained[
+        not partitioned_multicast
+        or b_swizzle.bytes() // sizeof[b_type]() == BK,
+        (
+            "Currently partitioned multi-casting is only supported when BK =="
+            " (b_swizzle.bytes // sizeof[b_type]"
+        ),
+    ]()
 
     alias num_m_mmas = BM // wgmma_shape[0] // num_consumer
     alias num_n_mmas = BN // wgmma_shape[1]
@@ -236,13 +259,32 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
 
                 @parameter
                 if CLUSTER_N > 1:
-                    if rank_n == 0:
+
+                    @parameter
+                    if partitioned_multicast:
+                        var a_gmem_slice_coord = block_idx.y * BM + Int(
+                            rank_n
+                        ) * a_tma_rows
+                        var a_smem_slice = __type_of(a_smem_tile)(
+                            a_smem_tile.ptr + rank_n * a_tma_load_size
+                        )
+
                         a_tma_op.async_multicast_load(
-                            a_smem_tile,
+                            a_smem_slice,
                             TMABarrier(a_mbars_ptr + write_idx),
-                            (UInt(i) * BK, block_idx.y * BM),
+                            (UInt(i) * BK, a_gmem_slice_coord),
                             UInt16(multicast_row_mask),
                         )
+
+                    else:
+                        if rank_n == 0:
+                            a_tma_op.async_multicast_load(
+                                a_smem_tile,
+                                TMABarrier(a_mbars_ptr + write_idx),
+                                (UInt(i) * BK, block_idx.y * BM),
+                                UInt16(multicast_row_mask),
+                            )
+
                 else:
                     a_tma_op.async_copy(
                         a_smem_tile,
@@ -252,13 +294,32 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
 
                 @parameter
                 if CLUSTER_M > 1:
-                    if rank_m == 0:
+
+                    @parameter
+                    if partitioned_multicast:
+                        var b_gmem_slice_coord = block_idx.x * BN + Int(
+                            rank_m
+                        ) * b_tma_rows
+                        var b_smem_slice = __type_of(b_smem_tile)(
+                            b_smem_tile.ptr + rank_m * b_tma_load_size
+                        )
+
                         b_tma_op.async_multicast_load(
-                            b_smem_tile,
+                            b_smem_slice,
                             TMABarrier(a_mbars_ptr + write_idx),
-                            (UInt(i) * BK, block_idx.x * BN),
+                            (UInt(i) * BK, b_gmem_slice_coord),
                             UInt16(multicast_column_mask << rank_n),
                         )
+
+                    else:
+                        if rank_m == 0:
+                            b_tma_op.async_multicast_load(
+                                b_smem_tile,
+                                TMABarrier(a_mbars_ptr + write_idx),
+                                (UInt(i) * BK, block_idx.x * BN),
+                                UInt16(multicast_column_mask << rank_n),
+                            )
+
                 else:
                     b_tma_op.async_copy(
                         b_smem_tile,
@@ -574,6 +635,7 @@ fn warp_specialize_gemm_with_multicasting[
     cluster_shape: StaticTuple[Int32, 3],
     wgmma_n: Int = 128,
     num_consumer: Int = 1,
+    partitioned_multicast: Bool = False,
 ](
     c_device: NDBuffer[c_type, 2, c_shape],
     a_device: NDBuffer[a_type, 2, a_shape],
@@ -594,6 +656,9 @@ fn warp_specialize_gemm_with_multicasting[
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
 
+    alias CLUSTER_N = UInt(Int(cluster_shape[0]))
+    alias CLUSTER_M = UInt(Int(cluster_shape[1]))
+
     alias a_swizzle = TensorMapSwizzle.SWIZZLE_128B
     alias b_swizzle = TensorMapSwizzle.SWIZZLE_128B
 
@@ -601,10 +666,16 @@ fn warp_specialize_gemm_with_multicasting[
     alias b_smem_layout = tile_layout_k_major[b_type, BN, BK, b_swizzle]()
 
     a_tma_op = create_tma_tile[
-        a_type, 2, Index(BM, BK), swizzle_mode=a_swizzle
+        a_type,
+        2,
+        Index(BM // CLUSTER_N, BK) if partitioned_multicast else Index(BM, BK),
+        swizzle_mode=a_swizzle,
     ](ctx, a)
     b_tma_op = create_tma_tile[
-        b_type, 2, Index(BN, BK), swizzle_mode=b_swizzle
+        b_type,
+        2,
+        Index(BN // CLUSTER_M, BK) if partitioned_multicast else Index(BN, BK),
+        swizzle_mode=b_swizzle,
     ](ctx, b)
 
     alias num_threads = WARP_GROUP_SIZE * num_consumer + WARP_GROUP_SIZE
@@ -622,8 +693,8 @@ fn warp_specialize_gemm_with_multicasting[
         c_type,
         __type_of(a).layout,
         __type_of(b).layout,
-        Layout.row_major(BM, BK),
-        Layout.row_major(BN, BK),
+        __type_of(a_tma_op).layout,
+        __type_of(b_tma_op).layout,
         __type_of(c).layout,
         block_tile_shape,
         wgmma_shape,
@@ -635,6 +706,7 @@ fn warp_specialize_gemm_with_multicasting[
         transpose_b=True,
         num_threads=num_threads,
         pipeline_stages=pipeline_stages,
+        partitioned_multicast=partitioned_multicast,
     ]
 
     ctx.enqueue_function[kernel](
