@@ -26,6 +26,8 @@ what we publish.
 
 ### Standard library changes
 
+- The `Buffer` struct has been removed in favor of `Span` and `NDBuffer`.
+
 - A new `IntervalTree` data structure has been added to the standard library.
   This is a tree data structure that allows for efficient range queries.
 
