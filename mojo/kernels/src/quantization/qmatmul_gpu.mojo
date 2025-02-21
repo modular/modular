@@ -916,7 +916,7 @@ fn pack_Q_tile(input: SIMD[DType.uint8, 16]) -> SIMD[DType.uint32, 4]:
 
 @always_inline
 fn unpack_4bit_int(val: SIMD[DType.uint32, _], idx: Int) -> UInt8:
-    var u32_val = rebind[Scalar[DType.uint32]](val)
+    var u32_val = rebind[UInt32](val)
     return (u32_val >> (idx * 4)).cast[DType.uint8]() & 0x0F
 
 
@@ -975,7 +975,7 @@ fn repack_Q4_0_for_sm8x[
         ),
     )
     var repack_weights = LayoutTensor[DType.uint32, repacked_b_layout](
-        q_packed_weight.ptr.bitcast[Scalar[DType.uint32]](),
+        q_packed_weight.ptr.bitcast[UInt32](),
         RuntimeLayout[repacked_b_layout](),
     )
 
@@ -1152,7 +1152,7 @@ fn repack_GPTQ_for_sm8x[
     # Define 4-bit weights and scales for the raw input
     alias raw_weights_layout = Layout.row_major(uint_K, N)
     var raw_weights = LayoutTensor[DType.uint32, raw_weights_layout](
-        in_tensor.ptr.bitcast[Scalar[DType.uint32]](),
+        in_tensor.ptr.bitcast[UInt32](),
         RuntimeLayout[raw_weights_layout](),
     ).transpose()
     alias raw_scales_layout = Layout.row_major(K_groups, N)
@@ -1174,7 +1174,7 @@ fn repack_GPTQ_for_sm8x[
         ),
     )
     var repack_weights = LayoutTensor[DType.uint32, repacked_weights_layout](
-        out_tensor.ptr.bitcast[Scalar[DType.uint32]](),
+        out_tensor.ptr.bitcast[UInt32](),
         RuntimeLayout[repacked_weights_layout](),
     )
     alias repacked_scales_layout = Layout.row_major(K_groups, N)
@@ -1199,7 +1199,7 @@ fn repack_GPTQ_for_sm8x[
         DType.uint32,
         Layout.row_major(BN, 2 * group_size // pack_factor),
         address_space = AddressSpace.SHARED,
-    ](smem.bitcast[Scalar[DType.uint32]]())
+    ](smem.bitcast[UInt32]())
 
     var raw_weights_gmem_tile = raw_weights.tile[BN, uint_BK](
         block_idx[0], block_idx[1]
