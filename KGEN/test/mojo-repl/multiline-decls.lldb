@@ -68,7 +68,7 @@ from buffer.buffer import (
   NDBuffer
 )
 
-from runtime.asyncrt import MojoCallContextPtr
+from runtime.asyncrt import DeviceContextPtr
 
 alias unary_fn_type = __mlir_type[
     `(`,
@@ -76,7 +76,7 @@ alias unary_fn_type = __mlir_type[
     `, `,
     NDBuffer,
     `, `,
-    MojoCallContextPtr,
+    DeviceContextPtr,
     `) -> `,
     NoneType,
 ]
