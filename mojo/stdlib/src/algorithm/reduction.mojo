@@ -20,7 +20,7 @@ from sys.info import bitwidthof, is_nvidia_gpu, simdwidthof, sizeof
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_num_workers
 from bit import log2_floor
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.buffer import prod_dims
 from buffer.dimlist import Dim, DimList
 from builtin.math import max as _max
@@ -104,16 +104,18 @@ fn map_reduce[
     size: Dim,
     type: DType,
     acc_type: DType,
-    input_gen_fn: fn[type: DType, width: Int] (Int) capturing [_] -> SIMD[
-        type, width
-    ],
+    origins_gen: OriginSet,
+    input_gen_fn: fn[type: DType, width: Int] (Int) capturing [
+        origins_gen
+    ] -> SIMD[type, width],
+    origins_vec: OriginSet,
     reduce_vec_to_vec_fn: fn[acc_type: DType, type: DType, width: Int] (
         SIMD[acc_type, width], SIMD[type, width]
-    ) capturing [_] -> SIMD[acc_type, width],
+    ) capturing [origins_vec] -> SIMD[acc_type, width],
     reduce_vec_to_scalar_fn: fn[type: DType, width: Int] (
         SIMD[type, width]
     ) -> Scalar[type],
-](dst: Buffer[type, size], init: Scalar[acc_type]) -> Scalar[acc_type]:
+](dst: NDBuffer[type, 1, size], init: Scalar[acc_type]) -> Scalar[acc_type]:
     """Stores the result of calling input_gen_fn in dst and simultaneously
     reduce the result using a custom reduction function.
 
@@ -122,7 +124,9 @@ fn map_reduce[
         size: The buffer size.
         type: The buffer elements dtype.
         acc_type: The dtype of the reduction accumulator.
+        origins_gen: The OriginSet of captured arguments by the input_gen_fn.
         input_gen_fn: A function that generates inputs to reduce.
+        origins_vec: The OriginSet of captured arguments by the reduce_vec_to_vec_fn.
         reduce_vec_to_vec_fn: A mapping function. This function is used to
           combine (accumulate) two chunks of input data: e.g. we load two
           `8xfloat32` vectors of elements and need to reduce them into a single
@@ -174,7 +178,7 @@ fn reduce[
     reduce_fn: fn[acc_type: DType, type: DType, width: Int] (
         SIMD[acc_type, width], SIMD[type, width]
     ) capturing [_] -> SIMD[acc_type, width]
-](src: Buffer, init: Scalar) raises -> Scalar[init.element_type]:
+](src: NDBuffer[rank=1], init: Scalar) raises -> Scalar[init.element_type]:
     """Computes a custom reduction of buffer elements.
 
     Parameters:
@@ -230,7 +234,7 @@ fn reduce_boolean[
         _
     ] -> Bool,
     continue_fn: fn (Bool) capturing [_] -> Bool,
-](src: Buffer, init: Bool) -> Bool:
+](src: NDBuffer[rank=1], init: Bool) -> Bool:
     """Computes a bool reduction of buffer elements. The reduction will early
     exit if the `continue_fn` returns False.
 
@@ -302,8 +306,8 @@ fn _reduce_3D[
             # TODO: parallelize
             for i in range(h):
                 var offset = src._offset(IndexList[src.rank](i, 0, 0))
-                var input = Buffer[
-                    src.type, sz, address_space = src.address_space
+                var input = NDBuffer[
+                    src.type, 1, sz, address_space = src.address_space
                 ](offset, w)
                 var val = reduce[map_fn](input, init)
                 dst[IndexList[dst.rank](i, 0)] = val
@@ -1077,7 +1081,7 @@ fn _simd_max_elementwise[
     return _max(x, y.cast[acc_type]())
 
 
-fn max(src: Buffer) raises -> Scalar[src.type]:
+fn max(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
     """Computes the max element in a buffer.
 
     Args:
@@ -1202,7 +1206,7 @@ fn _simd_min_elementwise[
     return _min(x, y.cast[acc_type]())
 
 
-fn min(src: Buffer) raises -> Scalar[src.type]:
+fn min(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
     """Computes the min element in a buffer.
 
     Args:
@@ -1327,7 +1331,7 @@ fn _simd_sum_elementwise[
     return x + y.cast[acc_type]()
 
 
-fn sum(src: Buffer) raises -> Scalar[src.type]:
+fn sum(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
     """Computes the sum of buffer elements.
 
     Args:
@@ -1452,7 +1456,7 @@ fn _simd_product_elementwise[
     return x * y.cast[acc_type]()
 
 
-fn product(src: Buffer) raises -> Scalar[src.type]:
+fn product(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
     """Computes the product of the buffer elements.
 
     Args:
@@ -1555,7 +1559,7 @@ fn product[
 # ===-----------------------------------------------------------------------===#
 
 
-fn mean(src: Buffer) raises -> Scalar[src.type]:
+fn mean(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
     """Computes the mean value of the elements in a buffer.
 
     Args:
@@ -1754,7 +1758,7 @@ fn mean[
 
 
 fn variance(
-    src: Buffer, mean_value: Scalar[src.type], correction: Int = 1
+    src: NDBuffer[rank=1], mean_value: Scalar[src.type], correction: Int = 1
 ) raises -> Scalar[src.type]:
     """Given a mean, computes the variance of elements in a buffer.
 
@@ -1817,7 +1821,9 @@ fn variance(
     return out / (len(src) - correction)
 
 
-fn variance(src: Buffer, correction: Int = 1) raises -> Scalar[src.type]:
+fn variance(
+    src: NDBuffer[rank=1], correction: Int = 1
+) raises -> Scalar[src.type]:
     """Computes the variance value of the elements in a buffer.
 
     ```
@@ -1841,7 +1847,7 @@ fn variance(src: Buffer, correction: Int = 1) raises -> Scalar[src.type]:
 # ===-----------------------------------------------------------------------===#
 
 
-fn all_true(src: Buffer) -> Bool:
+fn all_true(src: NDBuffer[rank=1]) -> Bool:
     """Returns True if all the elements in a buffer are True and False otherwise.
 
     Args:
@@ -1874,7 +1880,7 @@ fn all_true(src: Buffer) -> Bool:
 # ===-----------------------------------------------------------------------===#
 
 
-fn any_true(src: Buffer) -> Bool:
+fn any_true(src: NDBuffer[rank=1]) -> Bool:
     """Returns True if any the elements in a buffer are True and False otherwise.
 
     Args:
@@ -1907,7 +1913,7 @@ fn any_true(src: Buffer) -> Bool:
 # ===-----------------------------------------------------------------------===#
 
 
-fn none_true(src: Buffer) -> Bool:
+fn none_true(src: NDBuffer[rank=1]) -> Bool:
     """Returns True if none of the elements in a buffer are True and False
     otherwise.
 
@@ -1942,13 +1948,13 @@ fn none_true(src: Buffer) -> Bool:
 
 
 @always_inline
-fn _cumsum_small(dst: Buffer, src: Buffer[dst.type, *_]):
+fn _cumsum_small(dst: NDBuffer[rank=1], src: NDBuffer[dst.type, 1, *_]):
     dst[0] = src[0]
     for i in range(1, len(dst)):
         dst[i] = src[i] + dst[i - 1]
 
 
-fn cumsum(dst: Buffer, src: Buffer[dst.type, *_]):
+fn cumsum(dst: NDBuffer[rank=1], src: NDBuffer[dst.type, 1, *_]):
     """Computes the cumulative sum of all elements in a buffer.
        dst[i] = src[i] + src[i-1] + ... + src[0].
 

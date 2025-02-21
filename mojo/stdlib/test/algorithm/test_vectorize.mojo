@@ -6,7 +6,7 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from algorithm import vectorize
-from buffer import Buffer
+from buffer import NDBuffer
 from memory import memcmp
 
 
@@ -15,7 +15,7 @@ fn test_vectorize():
     print("== test_vectorize")
 
     # Create a mem of size 5
-    var vector = Buffer[DType.float32, 5].stack_allocation()
+    var vector = NDBuffer[DType.float32, 1, 5].stack_allocation()
 
     vector[0] = 1.0
     vector[1] = 2.0
@@ -73,8 +73,8 @@ fn test_vectorize_unroll():
     print("== test_vectorize_unroll")
 
     alias buf_len = 23
-    var vec = Buffer[DType.float32, buf_len].stack_allocation()
-    var buf = Buffer[DType.float32, buf_len].stack_allocation()
+    var vec = NDBuffer[DType.float32, 1, buf_len].stack_allocation()
+    var buf = NDBuffer[DType.float32, 1, buf_len].stack_allocation()
 
     for i in range(buf_len):
         vec[i] = i

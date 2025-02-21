@@ -6,14 +6,14 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from algorithm import map
-from buffer import Buffer
+from buffer import NDBuffer
 
 
 # CHECK-LABEL: test_map
 fn test_map():
     print("== test_map")
 
-    var vector = Buffer[DType.float32, 5].stack_allocation()
+    var vector = NDBuffer[DType.float32, 1, 5].stack_allocation()
 
     vector[0] = 1.0
     vector[1] = 2.0

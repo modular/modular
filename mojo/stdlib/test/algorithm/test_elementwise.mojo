@@ -9,7 +9,7 @@ from algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     elementwise,
 )
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from memory import stack_allocation
 
@@ -54,7 +54,7 @@ fn test_elementwise[
 
 fn test_elementwise_implicit_runtime():
     print("== test_elementwise_implicit_runtime")
-    var vector = Buffer[DType.index, 20].stack_allocation()
+    var vector = NDBuffer[DType.index, 1, 20].stack_allocation()
 
     for i in range(len(vector)):
         vector[i] = i

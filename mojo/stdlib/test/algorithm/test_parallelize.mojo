@@ -8,7 +8,7 @@
 from math import ceildiv
 
 from algorithm import map, parallelize, sync_parallelize
-from buffer import Buffer
+from buffer import NDBuffer
 from runtime.asyncrt import num_physical_cores
 
 
@@ -18,7 +18,7 @@ fn test_sync_parallelize():
 
     var num_work_items = 4
 
-    var vector = Buffer[DType.index, 20].stack_allocation()
+    var vector = NDBuffer[DType.index, 1, 20].stack_allocation()
 
     for i in range(len(vector)):
         vector[i] = i
@@ -55,7 +55,7 @@ fn test_parallelize():
 
     var num_work_items = num_physical_cores()
 
-    var vector = Buffer[DType.index, 20].stack_allocation()
+    var vector = NDBuffer[DType.index, 1, 20].stack_allocation()
 
     for i in range(len(vector)):
         vector[i] = i

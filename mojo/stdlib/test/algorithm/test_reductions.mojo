@@ -16,7 +16,7 @@ from algorithm import (
     variance,
 )
 from algorithm.reduction import _reduce_generator, max, min
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import DimList
 from builtin.math import max as _max
 from builtin.math import min as _min
@@ -33,7 +33,7 @@ fn test_reductions() raises:
     alias size = 100
 
     # Create a mem of size size
-    var vector = Buffer[DType.float32, size].stack_allocation()
+    var vector = NDBuffer[DType.float32, 1, size].stack_allocation()
 
     for i in range(size):
         vector[i] = i + 1
@@ -55,7 +55,7 @@ fn test_fused_reductions_inner() raises:
     alias size = 100
     alias test_type = DType.float32
     alias num_reductions = 3
-    var vector = Buffer[test_type, size].stack_allocation()
+    var vector = NDBuffer[test_type, 1, size].stack_allocation()
 
     for i in range(size):
         vector[i] = i + 1
@@ -135,7 +135,7 @@ fn test_fused_reductions_outer() raises:
     alias size = 100
     alias test_type = DType.float32
     alias num_reductions = 3
-    var vector = Buffer[test_type, size].stack_allocation()
+    var vector = NDBuffer[test_type, 1, size].stack_allocation()
 
     # COM: For the purposes of this test, we reinterpret this as a tensor
     # COM: of shape [50, 2] and reduce along the outer dimension.
@@ -219,7 +219,7 @@ fn test_product() raises:
     alias size = 10
 
     # Create a mem of size size
-    var vector = Buffer[DType.float32, size].stack_allocation()
+    var vector = NDBuffer[DType.float32, 1, size].stack_allocation()
 
     for i in range(size):
         vector[i] = i + 1
@@ -236,7 +236,7 @@ fn test_mean_variance() raises:
     alias size = 100
 
     # Create a mem of size size
-    var vector = Buffer[DType.float32, size].stack_allocation()
+    var vector = NDBuffer[DType.float32, 1, size].stack_allocation()
 
     for i in range(size):
         vector[i] = i + 1
@@ -325,7 +325,7 @@ fn test_boolean():
     alias size = 5
 
     # Create a mem of size size
-    var vector = Buffer[DType.bool, size].stack_allocation()
+    var vector = NDBuffer[DType.bool, 1, size].stack_allocation()
     vector[0] = True
     vector[1] = False
     vector[2] = False
@@ -378,10 +378,10 @@ fn test_boolean():
 fn test_cumsum():
     print("== test_cumsum")
 
-    var vector = Buffer[DType.float32, 150].stack_allocation()
+    var vector = NDBuffer[DType.float32, 1, 150].stack_allocation()
     for i in range(len(vector)):
         vector[i] = i + 1
-    var cumsum_out1 = Buffer[DType.float32, 150].stack_allocation()
+    var cumsum_out1 = NDBuffer[DType.float32, 1, 150].stack_allocation()
     # cumsum[150, DType.float32](cumsum_out1, vector)
     # cumsum(cumsum_out1, vector)
     cumsum(cumsum_out1, vector)
@@ -408,10 +408,10 @@ fn test_cumsum():
 
     print()
 
-    var vector2 = Buffer[DType.int64, 128].stack_allocation()
+    var vector2 = NDBuffer[DType.int64, 1, 128].stack_allocation()
     for i in range(vector2.__len__()):
         vector2[i] = i + 1
-    var cumsum_out2 = Buffer[DType.int64, 128].stack_allocation()
+    var cumsum_out2 = NDBuffer[DType.int64, 1, 128].stack_allocation()
     # cumsum[128, DType.int64](cumsum_out2, vector2)
     # cumsum(cumsum_out2, vector2)
     cumsum(cumsum_out2, vector2)

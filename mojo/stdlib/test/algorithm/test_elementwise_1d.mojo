@@ -9,7 +9,7 @@ from math import ceildiv, erf, exp, tanh
 from sys.info import num_physical_cores, simdwidthof
 
 from algorithm import elementwise
-from buffer import Buffer
+from buffer import NDBuffer
 from memory import UnsafePointer
 
 from utils.index import IndexList
@@ -24,7 +24,7 @@ fn test_elementwise_1d():
     alias num_elements = 64
     var ptr = UnsafePointer[Float32].alloc(num_elements)
 
-    var vector = Buffer[DType.float32, num_elements](ptr)
+    var vector = NDBuffer[DType.float32, 1, num_elements](ptr)
 
     for i in range(len(vector)):
         vector[i] = i
