@@ -12,6 +12,7 @@ dependencies = [
     "find-libpython>=0.3.0",
     "numpy",
     "ruamel.yaml>=0.17",
+    "ruamel-yaml-clib",
 ]
 
 [project.optional-dependencies]
