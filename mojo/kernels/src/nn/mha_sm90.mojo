@@ -36,6 +36,7 @@ from layout.layout_tensor import (
     copy_local_to_local,
     copy_local_to_sram,
     copy_sram_to_dram,
+    cp_async_k_major,
 )
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import make_swizzle
@@ -424,14 +425,7 @@ fn mha_single_batch_sm90[
     for q_id in range(Int(depth // BK)):
         var q_smem_tile = q_smem_iter.next_unsafe(q_id)[]
 
-        copy_dram_to_sram_async[
-            thread_layout=async_copy_q_layout,
-            swizzle=True,
-            num_threads=num_threads,
-        ](
-            q_smem_tile.vectorize[1, simd_size](),
-            q_gmem_iter[].vectorize[1, simd_size](),
-        )
+        cp_async_k_major(q_smem_tile, q_gmem_iter[])
 
         async_copy_commit_group()
 
@@ -535,14 +529,7 @@ fn mha_single_batch_sm90[
         for k_id in range(Int(depth // BK)):
             var k_smem_tile = k_smem_iter.next_unsafe(k_id)[]
 
-            copy_dram_to_sram_async[
-                thread_layout=async_copy_k_layout,
-                swizzle=True,
-                num_threads=num_threads,
-            ](
-                k_smem_tile.vectorize[1, simd_size](),
-                k_gmem_iter[].vectorize[1, simd_size](),
-            )
+            cp_async_k_major(k_smem_tile, k_gmem_iter[])
 
             async_copy_commit_group()
 
