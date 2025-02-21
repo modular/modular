@@ -118,9 +118,13 @@ fn bench_memcpy(
     mut b: Bench, *, length: Int, config: Config, context: DeviceContext
 ) raises:
     alias dtype = DType.float32
-    var mem_host = context.malloc_host[Scalar[dtype]](
+    var mem_host: UnsafePointer[Scalar[dtype]] = context.malloc_host[
+        Scalar[dtype]
+    ](length) if config.pinned_memory else UnsafePointer[Scalar[dtype]].alloc(
         length
-    ) if config.pinned_memory else UnsafePointer[Scalar[dtype]].alloc(length)
+    ).origin_cast[
+        origin=MutableAnyOrigin
+    ]()
 
     var mem_device = context.enqueue_create_buffer[dtype](length)
     var mem2_device = context.enqueue_create_buffer[dtype](length)
