@@ -28,37 +28,6 @@ from utils import IndexList
 from utils.index import Index
 
 
-fn matmul_naive[
-    a_type: DType, b_type: DType, c_type: DType, transpose_b: Bool
-](
-    a: UnsafePointer[Scalar[a_type]],
-    b: UnsafePointer[Scalar[b_type]],
-    c: UnsafePointer[Scalar[c_type]],
-    m: Int,
-    n: Int,
-    k: Int,
-):
-    @parameter
-    if transpose_b:
-        for i in range(m):
-            for j in range(n):
-                var s: Float32 = 0
-                for l in range(k):
-                    var av = a[k * i + l].cast[DType.float32]()
-                    var bv = b[k * j + l].cast[DType.float32]()
-                    s += av * bv
-                c[n * i + j] += s.cast[c_type]()
-    else:
-        for i in range(m):
-            for j in range(n):
-                var s: Float32 = 0
-                for l in range(k):
-                    var av = a[k * i + l].cast[DType.float32]()
-                    var bv = b[n * l + j].cast[DType.float32]()
-                    s += av * bv
-                c[n * i + j] += s.cast[c_type]()
-
-
 alias epilogue_func_type = fn[type: DType, width: Int, *, alignment: Int = 1] (
     IndexList[2], IndexList[2], SIMD[type, width]
 ) capturing -> SIMD[type, width]
@@ -173,10 +142,6 @@ fn test[
 
     ctx.enqueue_copy_from_device(c_host.tensor.data, c_device.buffer)
 
-    matmul_naive[transpose_b=transpose_b](
-        a_host.tensor.data, b_host.tensor.data, c_host_ref.tensor.data, M, N, K
-    )
-
     var handle = vendor_blas.Handle()
 
     vendor_blas.matmul(
@@ -189,6 +154,9 @@ fn test[
         transpose_b=transpose_b,
     )
 
+    ctx.enqueue_copy_from_device(c_host_ref.tensor.data, c_device_ref.buffer)
+
+    ctx.synchronize()
     var errors = 0
     for i in range(M * N):
         # print(i // N, i % N, c_host.tensor.data[i], c_host_ref.tensor.data[i])
