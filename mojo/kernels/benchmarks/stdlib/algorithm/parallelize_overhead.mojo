@@ -6,7 +6,8 @@
 
 # UNSUPPORTED: asan
 
-# RUN: %mojo-no-debug-no-assert %s | FileCheck %s
+# RUN: %mojo-no-debug-no-assert %s -t | FileCheck %s
+# CHECK: No benchmarks recorded...
 from sys.info import num_physical_cores
 
 from algorithm import parallelize, sync_parallelize
@@ -33,8 +34,6 @@ fn bench_empty_parallelize(mut b: Bencher) raises:
     parallelize[parallel_fn](num_physical_cores())
 
 
-# CHECK: sync_parallelize
-# CHECK: parallelize
 def main():
     var m = Bench()
     m.bench_function[bench_empty_sync_parallelize](BenchId("sync_parallelize"))
