@@ -720,6 +720,35 @@ def KGEN_FloatLiteralAttr : KGEN_ExprAttr<"FloatLiteral", "float_literal"> {
 }
 
 //===----------------------------------------------------------------------===//
+// FloatLiteralBinAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_FloatLiteralBinAttr : KGEN_ExprAttr<"FloatLiteralBin",
+                                             "float_literal_bin"> {
+  let summary = "Convert an float literal to a different type.";
+  let description = [{
+    The `#kgen.float_literal_binop` attr does standard arithmetic binary
+    operations on `!kgen.float_literal` values that return a `!kgen.float_literal`.
+  }];
+
+  let parameters = (ins
+    AttributeSelfTypeParameter<"", "Type">:$type,
+    "TypedAttr":$lhs, "TypedAttr":$rhs,
+    "FloatLiteralBinopKindAttr":$oper
+  );
+
+  let assemblyFormat = "`<` $lhs `,` $rhs `,` $oper `>`";
+  
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return an IntLiteralConvertAttr.
+    AttrBuilder<(ins "Type":$type, "TypedAttr":$lhs, "TypedAttr":$rhs,
+                     "FloatLiteralBinopKindAttr":$oper), "", "TypedAttr">,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // SymbolConstantAttr
 //===----------------------------------------------------------------------===//
 
