@@ -347,10 +347,7 @@ alias LayoutList = List[Layout]
 
 
 fn MakeLayoutList(v0: Layout, v1: Layout) -> LayoutList:
-    var layout_list = LayoutList(capacity=2)
-    layout_list.append(v0)
-    layout_list.append(v1)
-    return layout_list
+    return LayoutList(v0, v1)
 
 
 fn MakeTileLayoutList[*tile_sizes: Int]() -> LayoutList:
