@@ -11,7 +11,7 @@ import compiler_internal as compiler
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from compiler_internal import StaticTensorSpec
-from runtime.asyncrt import DeviceContextPtr, MojoCallContextPtr
+from runtime.asyncrt import DeviceContextPtr
 from tensor_internal import (
     ManagedTensorSlice,
     VariadicTensors,
@@ -242,7 +242,7 @@ struct ImposterMatmul:
         c: ManagedTensorSlice,
         a: ManagedTensorSlice,
         b: ManagedTensorSlice,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         _matmul(c, a, b)
 
@@ -410,7 +410,7 @@ struct MatmulFuseOut:
         c: ManagedTensorSlice,
         a: ManagedTensorSlice,
         b: ManagedTensorSlice,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         alias rank = a.rank
         alias a_dtype = a.type
@@ -588,7 +588,7 @@ struct Transpose2DOp:
     ](
         z: ManagedTensorSlice[type=type, rank=2],
         x: ManagedTensorSlice[type=type, rank=2],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         alias view_strides = Self.get_view_strides(x._static_strides)
         var shape_and_strides = Self.build_view(x)
@@ -873,7 +873,6 @@ struct MultiDeviceContext:
         out: ManagedTensorSlice[type=type, *_],
         x: ManagedTensorSlice[type=type, *_],
         dev_ctxs: StaticTuple[DeviceContextPtr, 2],
-        ctx: MojoCallContextPtr,
     ) raises:
         print("dev_ctx0.id() =", dev_ctxs[0][].id())
         print("dev_ctx1.id() =", dev_ctxs[1][].id())
@@ -919,7 +918,7 @@ struct CastElementwise:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -937,7 +936,7 @@ struct PrintVectorSize:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:

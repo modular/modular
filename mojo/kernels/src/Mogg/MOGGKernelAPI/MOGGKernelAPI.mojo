@@ -169,7 +169,7 @@ from quantization.qmatmul_k import (
     matmul_Q6_K_pack_b,
 )
 from register import register_internal
-from runtime.asyncrt import DeviceContextPtr, MojoCallContextPtr
+from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
 from tensor_internal import (
     DynamicTensor,
@@ -269,7 +269,7 @@ fn IndexTypeDef(ty: Int) -> Int:
 
 
 @register_internal("mojoCallContext")
-fn MojoCallContextDef(ty: MojoCallContextPtr):
+fn MojoCallContextDef(ty: DeviceContextPtr):
     pass
 
 
@@ -742,7 +742,7 @@ struct Range:
         start: ManagedTensorSlice[type=type, rank=1],
         stop: ManagedTensorSlice[type=type, rank=1],
         step: ManagedTensorSlice[type=type, rank=1],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         @parameter
         @always_inline
@@ -781,7 +781,7 @@ struct Copy:
     ](
         output: ManagedTensorSlice[type=type, rank=rank],
         input: ManagedTensorSlice[type=type, rank=rank],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         @parameter
         @always_inline
@@ -802,7 +802,7 @@ struct Add:
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
         y: ManagedTensorSlice,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         @parameter
         @always_inline
@@ -825,7 +825,7 @@ struct Sub:
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
         y: ManagedTensorSlice,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         @parameter
         @always_inline
@@ -848,7 +848,7 @@ struct Mul:
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
         y: ManagedTensorSlice,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         @parameter
         @always_inline
@@ -871,7 +871,7 @@ struct Div:
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
         y: ManagedTensorSlice,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         @parameter
         @always_inline
@@ -894,7 +894,7 @@ struct Mod:
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
         y: ManagedTensorSlice,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         @parameter
         @always_inline
@@ -917,7 +917,7 @@ struct Equal:
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
         y: ManagedTensorSlice,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         @parameter
         @always_inline
@@ -940,7 +940,7 @@ struct Greater:
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
         y: ManagedTensorSlice,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         @parameter
         @always_inline
@@ -963,7 +963,7 @@ struct GreaterEqual:
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
         y: ManagedTensorSlice,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         @parameter
         @always_inline
@@ -986,7 +986,7 @@ struct NotEqual:
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
         y: ManagedTensorSlice,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         @parameter
         @always_inline
@@ -1009,7 +1009,7 @@ struct And:
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
         y: ManagedTensorSlice,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         @parameter
         @always_inline
@@ -1032,7 +1032,7 @@ struct Or:
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
         y: ManagedTensorSlice,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         @parameter
         @always_inline
@@ -1055,7 +1055,7 @@ struct Xor:
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
         y: ManagedTensorSlice,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         @parameter
         @always_inline
@@ -1078,7 +1078,7 @@ struct Pow:
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
         y: ManagedTensorSlice,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         @parameter
         @always_inline
@@ -1101,7 +1101,7 @@ struct Max:
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
         y: ManagedTensorSlice,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         @parameter
         @always_inline
@@ -1124,7 +1124,7 @@ struct Min:
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
         y: ManagedTensorSlice,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         @parameter
         @always_inline
@@ -1148,7 +1148,7 @@ struct Cast:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1166,7 +1166,7 @@ struct Negative:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1182,7 +1182,7 @@ struct ReLU:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1198,7 +1198,7 @@ struct GeLU:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1214,7 +1214,7 @@ struct Ceil:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1230,7 +1230,7 @@ struct Floor:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1246,7 +1246,7 @@ struct Tanh:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1262,7 +1262,7 @@ struct Cos:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1278,7 +1278,7 @@ struct Sin:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1294,7 +1294,7 @@ struct Erf:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1310,7 +1310,7 @@ struct Exp:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1326,7 +1326,7 @@ struct Round:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1342,7 +1342,7 @@ struct RoundEven:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1358,7 +1358,7 @@ struct Sqrt:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1374,7 +1374,7 @@ struct Isqrt:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1395,7 +1395,7 @@ struct Select:
         condition: ManagedTensorSlice,
         true_case: ManagedTensorSlice,
         false_case: ManagedTensorSlice,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         @parameter
         @always_inline
@@ -1419,7 +1419,7 @@ struct Trunc:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1440,7 +1440,7 @@ struct Log:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1456,7 +1456,7 @@ struct Log1p:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1472,7 +1472,7 @@ struct IsNan:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1488,7 +1488,7 @@ struct IsInf:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1504,7 +1504,7 @@ struct Not:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1521,7 +1521,7 @@ struct Abs:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1684,7 +1684,7 @@ struct ScatterND:
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
         updates: ManagedTensorSlice[type = output.type, *_],
         indices: ManagedTensorSlice,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
         var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
@@ -1733,7 +1733,7 @@ struct ScatterNDAdd:
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
         updates: ManagedTensorSlice[type = output.type, *_],
         indices: ManagedTensorSlice,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
         var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
@@ -1792,7 +1792,7 @@ struct ScatterNDMul:
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
         updates: ManagedTensorSlice[type = output.type, *_],
         indices: ManagedTensorSlice,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
         var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
@@ -1851,7 +1851,7 @@ struct ScatterNDMin:
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
         updates: ManagedTensorSlice[type = output.type, *_],
         indices: ManagedTensorSlice,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
         var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
@@ -1910,7 +1910,7 @@ struct ScatterNDMax:
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
         updates: ManagedTensorSlice[type = output.type, *_],
         indices: ManagedTensorSlice,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
         var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
@@ -1975,7 +1975,7 @@ struct Scatter:
         updates: ManagedTensorSlice[type = output.type, rank = output.rank],
         indices: ManagedTensorSlice[rank = output.rank],
         axis: Int,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         @always_inline
         @parameter
@@ -2019,7 +2019,7 @@ struct ScatterAdd:
         updates: ManagedTensorSlice[type = output.type, rank = output.rank],
         indices: ManagedTensorSlice[rank = output.rank],
         axis: Int,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         @always_inline
         @parameter
@@ -2063,7 +2063,7 @@ struct ScatterMax:
         updates: ManagedTensorSlice[type = output.type, rank = output.rank],
         indices: ManagedTensorSlice[rank = output.rank],
         axis: Int,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         @always_inline
         @parameter
@@ -2107,7 +2107,7 @@ struct ScatterMin:
         updates: ManagedTensorSlice[type = output.type, rank = output.rank],
         indices: ManagedTensorSlice[rank = output.rank],
         axis: Int,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         @always_inline
         @parameter
@@ -2151,7 +2151,7 @@ struct ScatterMul:
         updates: ManagedTensorSlice[type = output.type, rank = output.rank],
         indices: ManagedTensorSlice[rank = output.rank],
         axis: Int,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         @always_inline
         @parameter
@@ -2388,7 +2388,7 @@ struct StaticBroadcastTo:
         z: ManagedTensorSlice[type=type, rank=out_rank],
         x: ManagedTensorSlice[type=type, rank=in_rank],
         output_shape: IndexList[out_rank],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         # We need the extra output_shape argument.
         # Using `z.shape` instead will prevent the compiler from fusing the kernels.
@@ -2442,7 +2442,7 @@ struct StaticReshape:
         output: ManagedTensorSlice[type=type, rank=output_rank],
         input: ManagedTensorSlice[type=type],
         shape: IndexList[output_rank],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         var view_buffer = reshape(
             managed_tensor_slice_to_ndbuffer(input),
@@ -2538,7 +2538,7 @@ struct Transpose:
         output: ManagedTensorSlice[type=type, rank=rank],
         input: ManagedTensorSlice[type=type, rank=rank],
         permutations: ManagedTensorSlice[rank=1],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         alias view_strides = Self.get_view_strides[static_permutations, rank](
             input._static_strides
@@ -2621,7 +2621,7 @@ struct Slice:
         starts: ManagedTensorSlice[rank=1],
         stops: ManagedTensorSlice[rank=1],
         steps: ManagedTensorSlice[rank=1],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         var view_buffer = slice_as_view(
             managed_tensor_slice_to_ndbuffer(input),
@@ -2678,7 +2678,7 @@ struct MutableStoreSlice:
         starts: ManagedTensorSlice[rank=1],
         stops: ManagedTensorSlice[rank=1],
         steps: ManagedTensorSlice[rank=1],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         copy_to_slice[target=target](
             managed_tensor_slice_to_ndbuffer(to_buffer),
@@ -2726,7 +2726,7 @@ struct SliceDim:
         starts: Scalar,
         stops: Scalar,
         steps: Scalar,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         var view_buffer = slice_dim_as_view[dim=axis](
             managed_tensor_slice_to_ndbuffer(input),
@@ -2769,7 +2769,7 @@ struct ArgMax:
         output: ManagedTensorSlice[rank=rank],
         input: ManagedTensorSlice[rank=rank],
         axis: Int,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         var axis_val = normalize_neg_index(axis, rank)
 
@@ -2807,7 +2807,7 @@ struct ArgMin:
         output: ManagedTensorSlice[rank=rank],
         input: ManagedTensorSlice[rank=rank],
         axis: Int,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         var axis_val = normalize_neg_index(axis, rank)
 
@@ -2865,7 +2865,7 @@ struct Mean:
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
         axis: Int,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -2917,7 +2917,7 @@ struct ReduceAdd:
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
         axis: Int,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -2970,7 +2970,7 @@ struct ReduceMul:
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
         axis: Int,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -3023,7 +3023,7 @@ struct ReduceMax:
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
         axis: Int,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -3076,7 +3076,7 @@ struct ReduceMin:
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
         axis: Int,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -3131,7 +3131,7 @@ struct ReduceMinMax:
         output: ManagedTensorSlice[type=type, rank=rank],
         input: ManagedTensorSlice[type=type, rank=rank],
         axis0: Int,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         """Given a tensor of shape [A, B, C, D] and reducing along dimension 'C'
         writes to a tensor of shape [A, B, 2, D] where [:, :, 0, :] contains
@@ -3318,7 +3318,7 @@ struct AvgPoolCeilModeTrue:
         strides: ManagedTensorSlice[type=int_type, rank=1],
         dilations: ManagedTensorSlice[type=int_type, rank=1],
         paddings: ManagedTensorSlice[type=int_type, rank=1],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises -> IndexList[input.rank]:
         return pool_shape_ceil[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
@@ -3530,7 +3530,7 @@ struct GatherND:
         output: ManagedTensorSlice,
         data: ManagedTensorSlice[type = output.type, *_],
         indices: ManagedTensorSlice,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
         var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
@@ -3571,7 +3571,7 @@ struct Gather:
         input: ManagedTensorSlice[type = output.type, *_],
         indices: ManagedTensorSlice,
         axis: Int,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -3680,7 +3680,7 @@ struct LayerNorm:
         gamma: ManagedTensorSlice[type=type, rank=1],
         beta: ManagedTensorSlice[type=type, rank=1],
         epsilon: Scalar[type=type],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -3736,7 +3736,7 @@ struct RMSNorm:
         input: ManagedTensorSlice[type=type, rank=rank],
         gamma: ManagedTensorSlice[type=type, rank=1],
         epsilon: Scalar[type=type],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -3785,7 +3785,7 @@ struct BottomK:
         k: Int,
         axis: Int,
         sorted: Bool,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         top_k[largest=False, target=target](
             managed_tensor_slice_to_ndbuffer(input),
@@ -3823,7 +3823,7 @@ struct TopK:
         k: Int,
         axis: Int,
         sorted: Bool,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         top_k[largest=True, target=target](
             managed_tensor_slice_to_ndbuffer(input),
@@ -3920,7 +3920,7 @@ struct Matmul:
         c: ManagedTensorSlice[rank=2],
         a: ManagedTensorSlice[rank=2],
         b: ManagedTensorSlice[rank=2],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         constrained[
             not (packed_b and transpose_b),
@@ -3973,7 +3973,7 @@ struct BatchMatmul:
         c: ManagedTensorSlice[rank=rank],
         a: ManagedTensorSlice[rank=rank],
         b: ManagedTensorSlice[rank=rank],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         alias transpose_a = False
 
@@ -4065,7 +4065,7 @@ struct LinalgBandPart:
         num_lower: ManagedTensorSlice[type=int_type, rank=1],
         num_upper: ManagedTensorSlice[type=int_type, rank=1],
         exclude: ManagedTensorSlice[rank=1],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -4319,7 +4319,7 @@ struct Softmax:
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         # shape should be the same between the two inputs
         var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
@@ -4398,7 +4398,7 @@ struct CumSum:
         output: ManagedTensorSlice[type=type, rank=rank],
         input: ManagedTensorSlice[type=type, rank=rank],
         axis: Int,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
         var input_buf = managed_tensor_slice_to_ndbuffer(input)
@@ -4465,7 +4465,7 @@ struct Concat:
         output: ManagedTensorSlice[type=type, rank=rank],
         axis: Int,
         inputs: VariadicTensors[type, rank, io_spec=IOUnknown, *_],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
 
@@ -4625,7 +4625,7 @@ struct ConcatFromList:
         output: ManagedTensorSlice[type=type, rank=rank],
         inputs: InlinedFixedVector[DynamicTensor[type, rank].Type],
         axis: Int,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
 
@@ -4675,7 +4675,7 @@ struct Split:
         input: ManagedTensorSlice[type=type, rank=rank],
         split_sizes: ManagedTensorSlice[rank=1],
         axis: Int,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         var input_buf = managed_tensor_slice_to_ndbuffer(input)
         var output_bufs = StaticTuple[NDBuffer[type, rank], output.size]()
@@ -4760,7 +4760,7 @@ struct Conv:
         dilation: ManagedTensorSlice,
         paddings: ManagedTensorSlice,
         num_groups: Scalar,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -5049,7 +5049,7 @@ struct MaskedFlashAttentionGPU:
         v: ManagedTensorSlice[rank=rank],
         mask: ManagedTensorSlice,
         scale: Scalar[type = DType.float32],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         """`masked_flash_attention_gpu` is a hand-fused operator which does
         something analogous to the following list of operations.
@@ -5558,7 +5558,7 @@ struct QMatmulGPU_b4_g32:
         c: ManagedTensorSlice[type = DType.bfloat16, rank=2],
         a: ManagedTensorSlice[type = DType.bfloat16, rank=2],
         b: ManagedTensorSlice[type = DType.uint8, rank=2],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
@@ -5589,7 +5589,7 @@ struct QMatmulGPU_b4_g128:
         c: ManagedTensorSlice[type = DType.bfloat16, rank=2],
         a: ManagedTensorSlice[type = DType.bfloat16, rank=2],
         b: ManagedTensorSlice[type = DType.uint8, rank=2],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
@@ -5619,7 +5619,7 @@ struct QMatmulGPURepackGGUF:
     ](
         b_packed: ManagedTensorSlice[type = DType.uint8, rank=2],
         b: ManagedTensorSlice[type = DType.uint8, rank=2],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
@@ -5647,7 +5647,7 @@ struct QMatmulGPURepackGPTQ_b4_g128:
     ](
         b_packed: ManagedTensorSlice[type = DType.uint8, rank=2],
         b: ManagedTensorSlice[type = DType.uint8, rank=2],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
@@ -5676,7 +5676,7 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
         b_packed: ManagedTensorSlice[type = DType.uint8, rank=2],
         b: ManagedTensorSlice[type = DType.uint8, rank=2],
         perm_idx: ManagedTensorSlice[type = DType.int32, rank=1],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
@@ -5725,7 +5725,7 @@ fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[
     weight: ManagedTensorSlice[type=type, rank=2],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
-    ctx: MojoCallContextPtr,
+    ctx: DeviceContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -5770,7 +5770,7 @@ struct Struct_fused_qkv_matmul_ragged_continuous_batching:
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
         layer_idx: UInt32,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[target](
             output,
@@ -5793,7 +5793,7 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
     weight: ManagedTensorSlice[type=type, rank=2],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
-    ctx: MojoCallContextPtr,
+    ctx: DeviceContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -5834,7 +5834,7 @@ struct Struct_fused_qkv_matmul_padded_continuous_batching:
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
         layer_idx: UInt32,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
             target
@@ -5858,7 +5858,7 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
     ],
     layer_idx: UInt32,
     output: ManagedTensorSlice[type=type, rank=2],
-    ctx: MojoCallContextPtr,
+    ctx: DeviceContextPtr,
 ) raises:
     generic_fused_qkv_matmul_kv_cache_paged_ragged[
         target=target,
@@ -5893,7 +5893,7 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
     layer_idx: UInt32,
     output: ManagedTensorSlice[type=type, rank=2],
     bias: ManagedTensorSlice[type=type, rank=1],
-    ctx: MojoCallContextPtr,
+    ctx: DeviceContextPtr,
 ) raises:
     generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
         target=target,
@@ -5932,7 +5932,7 @@ struct Struct_fused_qkv_matmul_padded_ragged:
             page_size,
         ],
         layer_idx: UInt32,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
             target=target
@@ -5971,7 +5971,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_quantized:
             page_size,
         ],
         layer_idx: UInt32,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         # In the group-wise quantization scheme, every `group_size` quantized weights
         # share the same scale. If `has_zp_int` is non-zero, there is also a group-wise
@@ -6015,7 +6015,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
         ],
         layer_idx: UInt32,
         bias: ManagedTensorSlice[type=type, rank=1],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
             target=target
@@ -6056,7 +6056,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
         ],
         layer_idx: UInt32,
         bias: ManagedTensorSlice[type=type, rank=1],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         # In the group-wise quantization scheme, every `group_size` quantized weights
         # share the same scale. If `has_zp_int` is non-zero, there is also a group-wise
@@ -6099,7 +6099,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_kernel_api[
     kv_collection: ContinuousBatchingKVCacheCollection,
     freqs_cis: ManagedTensorSlice[type=type, rank=2],
     layer_idx: UInt32,
-    ctx: MojoCallContextPtr,
+    ctx: DeviceContextPtr,
 ):
     """Performs a fused RoPE projection for Q and K projections.
 
@@ -6139,7 +6139,7 @@ struct Struct_fused_qk_rope_padded_continuous_batching[interleaved: Bool]:
         ],
         freqs_cis: ManagedTensorSlice[type=type, rank=2],
         layer_idx: UInt32,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_kernel_api[
             interleaved=interleaved, target=target
@@ -6168,7 +6168,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
     kv_collection: ContinuousBatchingKVCacheCollection,
     freqs_cis: ManagedTensorSlice[type=type, rank=2],
     layer_idx: UInt32,
-    ctx: MojoCallContextPtr,
+    ctx: DeviceContextPtr,
 ):
     generic_fused_qk_rope_bshd_continous_batch_ragged[
         interleaved=interleaved, target=target
@@ -6199,7 +6199,7 @@ struct Struct_fused_qk_rope_bshd_continuous_batch_ragged[interleaved: Bool]:
         ],
         freqs_cis: ManagedTensorSlice[type=type, rank=2],
         layer_idx: UInt32,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
             interleaved=interleaved, target=target
@@ -6230,7 +6230,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     freqs_cis: ManagedTensorSlice[type=type, rank=2],
     layer_idx: UInt32,
     output: ManagedTensorSlice[type=type, rank=3],
-    context: MojoCallContextPtr = MojoCallContextPtr(),
+    context: DeviceContextPtr,
 ):
     generic_fused_qk_rope_bshd_paged_ragged[
         interleaved=interleaved, target=target
@@ -6266,7 +6266,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
         ],
         freqs_cis: ManagedTensorSlice[type=type, rank=2],
         layer_idx: UInt32,
-        context: MojoCallContextPtr = MojoCallContextPtr(),
+        context: DeviceContextPtr = DeviceContextPtr(),
     ):
         generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
             interleaved=interleaved, target=target
@@ -6300,7 +6300,7 @@ fn generic_flash_attention_kv_cache_continuous_batch_kernel_api[
     mask: ManagedTensorSlice[type=type],
     valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
     scale: Float32,
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     generic_flash_attention_kv_cache_continuous_batch[target](
         managed_tensor_slice_to_ndbuffer(q),
@@ -6331,7 +6331,7 @@ struct Struct_mha_padded_continuous_batching_tensor_mask_no_pos:
         mask: ManagedTensorSlice[type=type],
         valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
         scale: Float32,
-        context: MojoCallContextPtr,
+        context: DeviceContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_continuous_batch_kernel_api[target](
             output,
@@ -6355,7 +6355,7 @@ fn generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
     layer_idx: UInt32,
     valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
     scale: Float32,
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     generic_flash_attention_kv_cache_causal_mask_continuous_batch[target](
         managed_tensor_slice_to_ndbuffer(q),
@@ -6384,7 +6384,7 @@ struct Struct_mha_padded_continuous_batching_causal_mask_no_pos:
         layer_idx: UInt32,
         valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
         scale: Float32,
-        context: MojoCallContextPtr,
+        context: DeviceContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
             target
@@ -6404,7 +6404,7 @@ fn generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged_kernel_api[
     layer_idx: UInt32,
     scale: Float32,
     output: ManagedTensorSlice[type=type, rank=3],
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged[target](
         managed_tensor_slice_to_ndbuffer(q),
@@ -6428,7 +6428,7 @@ fn generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged_kernel_api[
     layer_idx: UInt32,
     scale: Float32,
     output: ManagedTensorSlice[type=type, rank=3],
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged[target](
         managed_tensor_slice_to_ndbuffer(q),
@@ -6457,7 +6457,7 @@ struct Struct_mha_ragged_continuous_batching_causal_mask_no_pos:
         ],
         layer_idx: UInt32,
         scale: Float32,
-        context: MojoCallContextPtr,
+        context: DeviceContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged_kernel_api[
             target
@@ -6488,7 +6488,7 @@ struct Struct_mha_ragged_continuous_batching_causal_mask_alibi_pos:
         ],
         layer_idx: UInt32,
         scale: Float32,
-        context: MojoCallContextPtr,
+        context: DeviceContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged_kernel_api[
             target
@@ -6514,7 +6514,7 @@ fn generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
     layer_idx: UInt32,
     scale: Float32,
     output: ManagedTensorSlice[type=type, rank=3],
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     generic_flash_attention_kv_cache_causal_mask_paged_ragged[target=target](
         managed_tensor_slice_to_ndbuffer(q),
@@ -6548,7 +6548,7 @@ struct Struct_mha_ragged_paged_causal_mask_no_pos:
         ],
         layer_idx: UInt32,
         scale: Float32,
-        context: MojoCallContextPtr,
+        context: DeviceContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
             target=target
@@ -6583,7 +6583,7 @@ fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged_kernel_api[
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
     scale: Float32,
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     generic_cross_attention_kv_cache_null_mask_cont_batch_ragged[target=target](
         managed_tensor_slice_to_ndbuffer(q),
@@ -6617,7 +6617,7 @@ struct Struct_cross_attention_ragged_continuous_batching_null_mask_no_pos:
         ],
         layer_idx: UInt32,
         scale: Float32,
-        context: MojoCallContextPtr,
+        context: DeviceContextPtr,
     ) raises:
         generic_cross_attention_kv_cache_null_mask_cont_batch_ragged_kernel_api[
             target=target
@@ -6995,7 +6995,7 @@ struct Struct_rms_norm_kv_cache_ragged_continuous_batching:
         layer_idx: UInt32,
         total_seq_len: UInt32,
         input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
-        context: MojoCallContextPtr,
+        context: DeviceContextPtr,
     ) raises:
         rms_norm_kv_cache_ragged_continuous_batching[target=target](
             kv_collection,
@@ -7023,7 +7023,7 @@ fn print_kv_cache_cont_batch_generic_kernel_api[
     kv_collection: ContinuousBatchingKVCacheCollection[type, _],
     layer_idx: UInt32,
     is_print_compact: ManagedTensorSlice[type = DType.bool, rank=1],
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     @parameter
     if is_gpu[target]():
@@ -7052,7 +7052,7 @@ fn print_kv_cache_paged_generic_kernel_api[
     kv_collection: PagedKVCacheCollection[type, *_],
     layer_idx: UInt32,
     is_print_compact: ManagedTensorSlice[type = DType.bool, rank=1],
-    context: MojoCallContextPtr,
+    context: DeviceContextPtr,
 ) raises:
     @parameter
     if is_gpu[target]():
@@ -7092,7 +7092,7 @@ struct Struct_print_kv_cache_paged:
         ],
         layer_idx: UInt32,
         is_print_compact: ManagedTensorSlice[type = DType.bool, rank=1],
-        context: MojoCallContextPtr,
+        context: DeviceContextPtr,
     ) raises:
         print_kv_cache_paged_generic_kernel_api[target](
             valid_lengths,
@@ -7117,7 +7117,7 @@ struct Struct_print_kv_cache_continuous_batching:
         ],
         layer_idx: UInt32,
         is_print_compact: ManagedTensorSlice[type = DType.bool, rank=1],
-        context: MojoCallContextPtr,
+        context: DeviceContextPtr,
     ) raises:
         print_kv_cache_cont_batch_generic_kernel_api[target](
             valid_lengths,
@@ -7180,7 +7180,7 @@ struct Struct_kv_collection_cow_strided_memcpy_paged:
         block_dst_idx: Scalar,
         block_src_idx: Scalar,
         num_tokens: Scalar,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         var shape = blocks.shape()
         var num_layers = shape[0]
@@ -7274,7 +7274,7 @@ struct Struct_kv_matmul_ragged_continuous_batching:
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
         layer_idx: UInt32,
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         kv_matmul_ragged_continuous_batching[target=target](
             managed_tensor_slice_to_ndbuffer(hidden_state),
@@ -7304,7 +7304,7 @@ struct Struct_topk_fused_sampling:
         out_idxs: ManagedTensorSlice[type=out_idx_type, rank=rank],
         K: Scalar,
         input: ManagedTensorSlice[type=type, rank=rank],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         constrained[is_valid_target[target](), "not a valid target"]()
 
@@ -7342,7 +7342,7 @@ struct Struct_swishGLU:
         a: ManagedTensorSlice[rank=2],
         b0: ManagedTensorSlice[rank=2],
         b1: ManagedTensorSlice[type = b0.type, rank=2],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         swishGLU[target=target](
             managed_tensor_slice_to_ndbuffer(a),
@@ -7409,7 +7409,7 @@ struct DistributedAllReduceSum2Devices:
             type, rank, size = Self.num_devices, io_spec=IOUnknown
         ],
         _dev_ctxs: StaticTuple[DeviceContextPtr, Self.num_devices],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         var input_size_bytes = inputs[0].size() * sizeof[type]()
         _check_signal_buffer_size(signal_buffer0, input_size_bytes)
@@ -7466,7 +7466,7 @@ struct DistributedAllReduceSum4Devices:
             type, rank, size = Self.num_devices, io_spec=IOUnknown
         ],
         _dev_ctxs: StaticTuple[DeviceContextPtr, Self.num_devices],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ) raises:
         var input_size_bytes = inputs[0].size() * sizeof[type]()
         _check_signal_buffer_size(signal_buffer0, input_size_bytes)
@@ -7524,7 +7524,7 @@ struct IndexTensor:
         output: ManagedTensorSlice[type=type, rank=output_rank],
         data: ManagedTensorSlice[type=type, rank=data_rank],
         indices: ManagedTensorSlice[type=indices_type, rank=indices_rank],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         index_tensor[
             type,

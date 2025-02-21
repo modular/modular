@@ -18,7 +18,7 @@ from memory import UnsafePointer, memcpy
 from memory.memory import _malloc as _malloc_cpu
 from nn.concat import concat
 from register import *
-from runtime.asyncrt import DeviceContextPtr, MojoCallContextPtr
+from runtime.asyncrt import DeviceContextPtr
 from weights_registry import WeightsRegistry
 
 from utils import Index, IndexList, StaticTuple
@@ -171,10 +171,10 @@ fn create_i1_async(
 fn create_buffer_ref_async(
     buffer: NDBuffer[DType.int8, 1],
     async_ptr: UnsafePointer[NoneType],
-    call_ctx: MojoCallContextPtr,
+    call_ctx: DeviceContextPtr,
 ):
     external_call["KGEN_CompilerRT_CreateAsyncDeviceBufferRef", NoneType](
-        buffer.data, len(buffer), async_ptr, call_ctx.ptr
+        buffer.data, len(buffer), async_ptr, call_ctx.handle_
     )
 
 
@@ -338,13 +338,13 @@ fn unpack_async(
 @no_inline
 fn unpack_device_ctx(
     async_ptr: UnsafePointer[NoneType],
-) -> MojoCallContextPtr:
+) -> DeviceContextPtr:
     var ptr = external_call[
         "KGEN_CompilerRT_UnpackDeviceContext",
         UnsafePointer[NoneType],
     ](async_ptr)
 
-    return MojoCallContextPtr(ptr)
+    return DeviceContextPtr(ptr)
 
 
 @register_internal("builtin.unpack_buffer_ref")
@@ -645,7 +645,7 @@ fn mgp_buffer_concat[
 ](
     output: NDBuffer[DType.uint8, 1],
     inputs: StaticTuple[NDBuffer[DType.uint8, 1], *_],
-    call_ctx: MojoCallContextPtr,
+    call_ctx: DeviceContextPtr,
 ) raises:
     if len(output) < 4096:
         concat[1, DType.uint8, True, bDevice, None](
