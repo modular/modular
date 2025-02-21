@@ -2329,6 +2329,12 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
         return IntLiteralCmpAttr::get(lhs.getContext(), cmp.getPredAttr(), lhs,
                                       rhs);
   }
+  if (auto bin = dyn_cast<FloatLiteralBinOp>(op)) {
+    if (auto lhs = findValue(bin.getLhs()))
+      if (auto rhs = findValue(bin.getRhs()))
+        return FloatLiteralBinAttr::get(lhs.getContext(), lhs.getType(), lhs,
+                                        rhs, bin.getOperAttr());
+  }
 
   // We can fold hlcf.if operations in limited form that end with a yield of
   // a single value for which both sides are foldable.
