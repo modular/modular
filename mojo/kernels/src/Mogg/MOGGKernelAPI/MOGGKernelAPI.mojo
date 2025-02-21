@@ -5724,7 +5724,7 @@ fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[
     input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     weight: ManagedTensorSlice[type=type, rank=2],
     kv_collection: ContinuousBatchingKVCacheCollection,
-    layer_idx: Scalar[DType.uint32],
+    layer_idx: UInt32,
     ctx: MojoCallContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
@@ -5769,7 +5769,7 @@ struct Struct_fused_qkv_matmul_ragged_continuous_batching:
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
-        layer_idx: Scalar[DType.uint32],
+        layer_idx: UInt32,
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[target](
@@ -5792,7 +5792,7 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
     hidden_state: ManagedTensorSlice[type=type, rank=3],
     weight: ManagedTensorSlice[type=type, rank=2],
     kv_collection: ContinuousBatchingKVCacheCollection,
-    layer_idx: Scalar[DType.uint32],
+    layer_idx: UInt32,
     ctx: MojoCallContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
@@ -5833,7 +5833,7 @@ struct Struct_fused_qkv_matmul_padded_continuous_batching:
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
-        layer_idx: Scalar[DType.uint32],
+        layer_idx: UInt32,
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
@@ -5856,7 +5856,7 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
         type,
         *_,
     ],
-    layer_idx: Scalar[DType.uint32],
+    layer_idx: UInt32,
     output: ManagedTensorSlice[type=type, rank=2],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -5890,7 +5890,7 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
         type,
         *_,
     ],
-    layer_idx: Scalar[DType.uint32],
+    layer_idx: UInt32,
     output: ManagedTensorSlice[type=type, rank=2],
     bias: ManagedTensorSlice[type=type, rank=1],
     ctx: MojoCallContextPtr,
@@ -5931,7 +5931,7 @@ struct Struct_fused_qkv_matmul_padded_ragged:
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
             page_size,
         ],
-        layer_idx: Scalar[DType.uint32],
+        layer_idx: UInt32,
         ctx: MojoCallContextPtr,
     ) raises:
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
@@ -5970,7 +5970,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_quantized:
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
             page_size,
         ],
-        layer_idx: Scalar[DType.uint32],
+        layer_idx: UInt32,
         ctx: MojoCallContextPtr,
     ) raises:
         # In the group-wise quantization scheme, every `group_size` quantized weights
@@ -6013,7 +6013,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
             page_size,
         ],
-        layer_idx: Scalar[DType.uint32],
+        layer_idx: UInt32,
         bias: ManagedTensorSlice[type=type, rank=1],
         ctx: MojoCallContextPtr,
     ) raises:
@@ -6054,7 +6054,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
             page_size,
         ],
-        layer_idx: Scalar[DType.uint32],
+        layer_idx: UInt32,
         bias: ManagedTensorSlice[type=type, rank=1],
         ctx: MojoCallContextPtr,
     ) raises:
@@ -6098,7 +6098,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_kernel_api[
     q_proj: ManagedTensorSlice[type=type, rank=4],
     kv_collection: ContinuousBatchingKVCacheCollection,
     freqs_cis: ManagedTensorSlice[type=type, rank=2],
-    layer_idx: Scalar[DType.uint32],
+    layer_idx: UInt32,
     ctx: MojoCallContextPtr,
 ):
     """Performs a fused RoPE projection for Q and K projections.
@@ -6138,7 +6138,7 @@ struct Struct_fused_qk_rope_padded_continuous_batching[interleaved: Bool]:
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
         freqs_cis: ManagedTensorSlice[type=type, rank=2],
-        layer_idx: Scalar[DType.uint32],
+        layer_idx: UInt32,
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_kernel_api[
@@ -6167,7 +6167,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
     input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: ContinuousBatchingKVCacheCollection,
     freqs_cis: ManagedTensorSlice[type=type, rank=2],
-    layer_idx: Scalar[DType.uint32],
+    layer_idx: UInt32,
     ctx: MojoCallContextPtr,
 ):
     generic_fused_qk_rope_bshd_continous_batch_ragged[
@@ -6198,7 +6198,7 @@ struct Struct_fused_qk_rope_bshd_continuous_batch_ragged[interleaved: Bool]:
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
         freqs_cis: ManagedTensorSlice[type=type, rank=2],
-        layer_idx: Scalar[DType.uint32],
+        layer_idx: UInt32,
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
@@ -6228,7 +6228,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
         *_,
     ],
     freqs_cis: ManagedTensorSlice[type=type, rank=2],
-    layer_idx: Scalar[DType.uint32],
+    layer_idx: UInt32,
     output: ManagedTensorSlice[type=type, rank=3],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -6265,7 +6265,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
             page_size,
         ],
         freqs_cis: ManagedTensorSlice[type=type, rank=2],
-        layer_idx: Scalar[DType.uint32],
+        layer_idx: UInt32,
         context: MojoCallContextPtr = MojoCallContextPtr(),
     ):
         generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
@@ -6296,7 +6296,7 @@ fn generic_flash_attention_kv_cache_continuous_batch_kernel_api[
     output: ManagedTensorSlice[type=type, rank=4],
     q: ManagedTensorSlice[type=type, rank=4],
     kv_collection: ContinuousBatchingKVCacheCollection,
-    layer_idx: Scalar[DType.uint32],
+    layer_idx: UInt32,
     mask: ManagedTensorSlice[type=type],
     valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
     scale: Float32,
@@ -6327,7 +6327,7 @@ struct Struct_mha_padded_continuous_batching_tensor_mask_no_pos:
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
-        layer_idx: Scalar[DType.uint32],
+        layer_idx: UInt32,
         mask: ManagedTensorSlice[type=type],
         valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
         scale: Float32,
@@ -6352,7 +6352,7 @@ fn generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
     output: ManagedTensorSlice[type=type, rank=4],
     q: ManagedTensorSlice[type=type, rank=4],
     kv_collection: ContinuousBatchingKVCacheCollection,
-    layer_idx: Scalar[DType.uint32],
+    layer_idx: UInt32,
     valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
     scale: Float32,
     context: MojoCallContextPtr,
@@ -6381,7 +6381,7 @@ struct Struct_mha_padded_continuous_batching_causal_mask_no_pos:
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
-        layer_idx: Scalar[DType.uint32],
+        layer_idx: UInt32,
         valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
         scale: Float32,
         context: MojoCallContextPtr,
@@ -6401,7 +6401,7 @@ fn generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged_kernel_api[
     q: ManagedTensorSlice[type=type, rank=3],
     input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: ContinuousBatchingKVCacheCollection,
-    layer_idx: Scalar[DType.uint32],
+    layer_idx: UInt32,
     scale: Float32,
     output: ManagedTensorSlice[type=type, rank=3],
     context: MojoCallContextPtr,
@@ -6425,7 +6425,7 @@ fn generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged_kernel_api[
     q: ManagedTensorSlice[type=type, rank=3],
     input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: ContinuousBatchingKVCacheCollection,
-    layer_idx: Scalar[DType.uint32],
+    layer_idx: UInt32,
     scale: Float32,
     output: ManagedTensorSlice[type=type, rank=3],
     context: MojoCallContextPtr,
@@ -6455,7 +6455,7 @@ struct Struct_mha_ragged_continuous_batching_causal_mask_no_pos:
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
-        layer_idx: Scalar[DType.uint32],
+        layer_idx: UInt32,
         scale: Float32,
         context: MojoCallContextPtr,
     ) raises:
@@ -6486,7 +6486,7 @@ struct Struct_mha_ragged_continuous_batching_causal_mask_alibi_pos:
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
-        layer_idx: Scalar[DType.uint32],
+        layer_idx: UInt32,
         scale: Float32,
         context: MojoCallContextPtr,
     ) raises:
@@ -6511,7 +6511,7 @@ fn generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
     q: ManagedTensorSlice[type=type, rank=3],
     input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: PagedKVCacheCollection[type, *_],
-    layer_idx: Scalar[DType.uint32],
+    layer_idx: UInt32,
     scale: Float32,
     output: ManagedTensorSlice[type=type, rank=3],
     context: MojoCallContextPtr,
@@ -6546,7 +6546,7 @@ struct Struct_mha_ragged_paged_causal_mask_no_pos:
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
             page_size,
         ],
-        layer_idx: Scalar[DType.uint32],
+        layer_idx: UInt32,
         scale: Float32,
         context: MojoCallContextPtr,
     ) raises:
@@ -6992,8 +6992,8 @@ struct Struct_rms_norm_kv_cache_ragged_continuous_batching:
         ],
         gamma: ManagedTensorSlice[type=type, rank=1],
         epsilon: Scalar[type],
-        layer_idx: Scalar[DType.uint32],
-        total_seq_len: Scalar[DType.uint32],
+        layer_idx: UInt32,
+        total_seq_len: UInt32,
         input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
         context: MojoCallContextPtr,
     ) raises:
@@ -7021,7 +7021,7 @@ fn print_kv_cache_cont_batch_generic_kernel_api[
 ](
     valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: ContinuousBatchingKVCacheCollection[type, _],
-    layer_idx: Scalar[DType.uint32],
+    layer_idx: UInt32,
     is_print_compact: ManagedTensorSlice[type = DType.bool, rank=1],
     context: MojoCallContextPtr,
 ) raises:
@@ -7050,7 +7050,7 @@ fn print_kv_cache_paged_generic_kernel_api[
 ](
     valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: PagedKVCacheCollection[type, *_],
-    layer_idx: Scalar[DType.uint32],
+    layer_idx: UInt32,
     is_print_compact: ManagedTensorSlice[type = DType.bool, rank=1],
     context: MojoCallContextPtr,
 ) raises:
@@ -7090,7 +7090,7 @@ struct Struct_print_kv_cache_paged:
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
             page_size,
         ],
-        layer_idx: Scalar[DType.uint32],
+        layer_idx: UInt32,
         is_print_compact: ManagedTensorSlice[type = DType.bool, rank=1],
         context: MojoCallContextPtr,
     ) raises:
@@ -7115,7 +7115,7 @@ struct Struct_print_kv_cache_continuous_batching:
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
-        layer_idx: Scalar[DType.uint32],
+        layer_idx: UInt32,
         is_print_compact: ManagedTensorSlice[type = DType.bool, rank=1],
         context: MojoCallContextPtr,
     ) raises:
@@ -7273,7 +7273,7 @@ struct Struct_kv_matmul_ragged_continuous_batching:
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
-        layer_idx: Scalar[DType.uint32],
+        layer_idx: UInt32,
         ctx: MojoCallContextPtr,
     ) raises:
         kv_matmul_ragged_continuous_batching[target=target](
