@@ -172,14 +172,14 @@ fn normalize(value: BFloat16) -> Scalar[DType.uint16]:
 
 
 @always_inline
-fn normalize_u32(value: Scalar[DType.uint32]) -> Scalar[DType.uint32]:
+fn normalize_u32(value: UInt32) -> UInt32:
     return value
 
 
 @always_inline
-fn normalize(value: Scalar[DType.int32]) -> Scalar[DType.uint32]:
+fn normalize(value: Scalar[DType.int32]) -> UInt32:
     @always_inline
-    fn reinterpret(value: Scalar[DType.int32]) -> Scalar[DType.uint32]:
+    fn reinterpret(value: Scalar[DType.int32]) -> UInt32:
         # For signed integral types: Convert to unsigned int to ensure proper
         # comparison
         return value.cast[DType.uint32]()
@@ -198,9 +198,9 @@ fn normalize(value: Scalar[DType.uint16]) -> Scalar[DType.uint16]:
 
 
 @always_inline
-fn normalize(value: Float32) -> Scalar[DType.uint32]:
+fn normalize(value: Float32) -> UInt32:
     @always_inline
-    fn reinterpret(value: Float32) -> Scalar[DType.uint32]:
+    fn reinterpret(value: Float32) -> UInt32:
         # For floating-point types: Reinterpret the bit pattern as an unsigned int
         # This allows for comparison of floating-point values based on their binary
         # representation
@@ -228,9 +228,7 @@ fn normalize(
     if type is DType.int32:
         return normalize(rebind[Scalar[DType.int32]](value)).cast[result.type]()
     elif type is DType.uint32:
-        return normalize(rebind[Scalar[DType.uint32]](value)).cast[
-            result.type
-        ]()
+        return normalize(rebind[UInt32](value)).cast[result.type]()
     elif type is DType.float32:
         return normalize(rebind[Float32](value)).cast[result.type]()
     # TODO: These below don't return uint32 so must generalize and fix

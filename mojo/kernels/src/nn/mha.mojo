@@ -886,7 +886,7 @@ fn flash_attention[
     var v_operand = NDBufferMHAOperand(v)
 
     var valid_length = NDBuffer[DType.uint32, 1](
-        UnsafePointer[Scalar[DType.uint32]](), Index(0)
+        UnsafePointer[UInt32](), Index(0)
     )
 
     flash_attention_dispatch[
@@ -4926,7 +4926,7 @@ fn mha_gpu_naive[
     var k_operand = NDBufferMHAOperand(k)
     var v_operand = NDBufferMHAOperand(v)
     var null_valid_length = NDBuffer[DType.uint32, 1](
-        UnsafePointer[Scalar[DType.uint32]](), Index(0)
+        UnsafePointer[UInt32](), Index(0)
     )
 
     mha_gpu_naive[_is_cache_length_accurate=True](
