@@ -199,12 +199,16 @@ fn run_gemm_kernel_1[
     var M = a.shape[0]()
     var N = b.shape[1]()
     var K = a.shape[1]()
-    alias kernel = gemm_kernel_1[dtype, a.layout, b.layout, c.layout, BM, BN]
+
+    var func = ctx.compile_function[
+        gemm_kernel_1[dtype, a.layout, b.layout, c.layout, BM, BN]
+    ]()
 
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function[kernel](
+        ctx.enqueue_function(
+            func,
             a,
             b,
             c,
@@ -224,13 +228,16 @@ fn run_gemm_kernel_1[
         ),
         0,
     )
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function(
+        func,
         a,
         b,
         c,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(BN, BM),
     )
+
+    _ = func^
 
 
 fn gemm_kernel_2[
@@ -314,12 +321,15 @@ fn run_gemm_kernel_2[
     var N = b.shape[1]()
     var K = a.shape[1]()
 
-    alias kernel = gemm_kernel_2[dtype, a.layout, b.layout, c.layout, BM, BN]
+    var func = ctx.compile_function[
+        gemm_kernel_2[dtype, a.layout, b.layout, c.layout, BM, BN]
+    ]()
 
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function[kernel](
+        ctx.enqueue_function(
+            func,
             a,
             b,
             c,
@@ -339,13 +349,16 @@ fn run_gemm_kernel_2[
         ),
         0,
     )
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function(
+        func,
         a,
         b,
         c,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(BN, BM),
     )
+
+    _ = func^
 
 
 fn gemm_kernel_3[
@@ -455,14 +468,15 @@ fn run_gemm_kernel_3[
     var N = b.shape[1]()
     var K = a.shape[1]()
 
-    alias kernel = gemm_kernel_3[
-        dtype, a.layout, b.layout, c.layout, BM, BN, BK, BM * BN
-    ]
+    var func = ctx.compile_function[
+        gemm_kernel_3[dtype, a.layout, b.layout, c.layout, BM, BN, BK, BM * BN]
+    ]()
 
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function[kernel](
+        ctx.enqueue_function(
+            func,
             a,
             b,
             c,
@@ -482,13 +496,16 @@ fn run_gemm_kernel_3[
         ),
         0,
     )
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function(
+        func,
         a,
         b,
         c,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(BM * BN),
     )
+
+    _ = func^
 
 
 fn gemm_kernel_4[
@@ -614,14 +631,17 @@ fn run_gemm_kernel_4[
     var K = a.shape[1]()
 
     alias NUM_THREADS = (BM * BN) // TM
-    alias kernel = gemm_kernel_4[
-        dtype, a.layout, b.layout, c.layout, BM, BN, BK, TM, NUM_THREADS
-    ]
+    var func = ctx.compile_function[
+        gemm_kernel_4[
+            dtype, a.layout, b.layout, c.layout, BM, BN, BK, TM, NUM_THREADS
+        ]
+    ]()
 
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function[kernel](
+        ctx.enqueue_function(
+            func,
             a,
             b,
             c,
@@ -641,13 +661,15 @@ fn run_gemm_kernel_4[
         ),
         0,
     )
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function(
+        func,
         a,
         b,
         c,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_THREADS),
     )
+    _ = func^
 
 
 fn gemm_kernel_5[
@@ -764,14 +786,17 @@ fn run_gemm_kernel_5[
 
     alias NUM_THREADS = (BM * BN) // (TM * TN)
 
-    alias kernel = gemm_kernel_5[
-        dtype, a.layout, b.layout, c.layout, BM, BN, BK, TM, TN, NUM_THREADS
-    ]
+    var func = ctx.compile_function[
+        gemm_kernel_5[
+            dtype, a.layout, b.layout, c.layout, BM, BN, BK, TM, TN, NUM_THREADS
+        ]
+    ]()
 
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function[kernel](
+        ctx.enqueue_function(
+            func,
             a,
             b,
             c,
@@ -790,13 +815,15 @@ fn run_gemm_kernel_5[
         ),
         0,
     )
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function(
+        func,
         a,
         b,
         c,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_THREADS),
     )
+    _ = func^
 
 
 fn gemm_kernel_6[
@@ -938,14 +965,17 @@ fn run_gemm_kernel_6[
     var K = a.shape[1]()
 
     alias NUM_THREADS = (BM * BN) // (TM * TN)
-    alias kernel = gemm_kernel_6[
-        dtype, a.layout, b.layout, c.layout, BM, BN, BK, TM, TN, NUM_THREADS
-    ]
+    var func = ctx.compile_function[
+        gemm_kernel_6[
+            dtype, a.layout, b.layout, c.layout, BM, BN, BK, TM, TN, NUM_THREADS
+        ]
+    ]()
 
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function[kernel](
+        ctx.enqueue_function(
+            func,
             a,
             b,
             c,
@@ -964,13 +994,15 @@ fn run_gemm_kernel_6[
         ),
         0,
     )
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function(
+        func,
         a,
         b,
         c,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_THREADS),
     )
+    _ = func^
 
 
 fn matmul_kernel_tc[
@@ -1150,25 +1182,28 @@ fn run_gemm_kernel_tc[
     var K = a.shape[1]()
 
     alias NUM_WARPS = (BM // WM) * (BN // WN)
-    alias kernel = matmul_kernel_tc[
-        dtype,
-        a.layout,
-        b.layout,
-        c.layout,
-        BM,
-        BN,
-        BK,
-        WM,
-        WN,
-        MMA_M,
-        MMA_N,
-        MMA_K,
-    ]
+    var func = ctx.compile_function[
+        matmul_kernel_tc[
+            dtype,
+            a.layout,
+            b.layout,
+            c.layout,
+            BM,
+            BN,
+            BK,
+            WM,
+            WN,
+            MMA_M,
+            MMA_N,
+            MMA_K,
+        ]
+    ]()
 
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function[kernel](
+        ctx.enqueue_function(
+            func,
             a,
             b,
             c,
@@ -1187,10 +1222,12 @@ fn run_gemm_kernel_tc[
         ),
         0,
     )
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function(
+        func,
         a,
         b,
         c,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_WARPS * WARP_SIZE),
     )
+    _ = func^
