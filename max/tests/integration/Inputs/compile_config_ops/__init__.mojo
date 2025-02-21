@@ -9,7 +9,7 @@ from sys import env_get_int
 import compiler
 from logger import Logger
 from max.tensor import ManagedTensorSlice, foreach
-from runtime.asyncrt import MojoCallContextPtr
+from runtime.asyncrt import DeviceContextPtr
 
 from utils.index import IndexList
 
@@ -46,7 +46,7 @@ struct AddOneCustom:
     ](
         out: ManagedTensorSlice,
         x: ManagedTensorSlice[type = out.type, rank = out.rank],
-        ctx: MojoCallContextPtr,
+        ctx: DeviceContextPtr,
     ):
         @parameter
         fn add_one[width: Int](idx: IndexList[x.rank]) -> SIMD[x.type, width]:
