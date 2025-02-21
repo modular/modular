@@ -8,7 +8,7 @@
 
 from algorithm import sum
 from algorithm.reduction import _reduce_generator, max, min
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import DimList
 from builtin.math import max as _max
 from builtin.math import min as _min

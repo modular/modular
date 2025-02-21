@@ -7,7 +7,7 @@
 
 from collections import InlinedFixedVector, OptionalReg
 
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from memory import UnsafePointer
 from nn.concat import (

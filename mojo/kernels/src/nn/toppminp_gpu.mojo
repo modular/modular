@@ -10,7 +10,7 @@ from math import ceildiv, exp
 from sys import alignof, bitwidthof, simdwidthof, sizeof
 from sys._assembly import inlined_assembly
 
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import DimList
 from builtin.dtype import _uint_type_of_width
 from builtin.io import _printf

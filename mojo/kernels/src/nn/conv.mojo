@@ -16,7 +16,6 @@ from algorithm import (
     vectorize,
 )
 from buffer.buffer import (
-    Buffer,
     NDBuffer,
     partial_simd_load,
     partial_simd_store,
@@ -447,7 +446,7 @@ struct ConvDirectNHWC[
         var scratch_size = num_partitions[1] * output_size
         if num_partitions[1] > 1:
             output_ptr = UnsafePointer[Scalar[output_type]].alloc(scratch_size)
-        var output_scratch = Buffer[output_type](output_ptr, scratch_size)
+        var output_scratch = NDBuffer[output_type, 1](output_ptr, scratch_size)
 
         @__copy_capture(
             num_partitions, cf_tile_size, output_scratch, output_size
@@ -715,8 +714,8 @@ struct ConvDirectNHWC[
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
         # Base input offsets.
-        var input_base_offsets = Buffer[
-            DType.int32, micro_kernel_height
+        var input_base_offsets = NDBuffer[
+            DType.int32, 1, micro_kernel_height
         ].stack_allocation()
 
         @parameter
@@ -1004,7 +1003,7 @@ struct ConvDirectNHWC[
         prefetch_offset: Int,
     ](
         self,
-        input_base_offsets: Buffer[DType.int32, micro_kernel_height],
+        input_base_offsets: NDBuffer[DType.int32, 1, micro_kernel_height],
         input_offset: Int,
         c_tile_size: Int,
         input: UnsafePointer[Scalar[input_type]],

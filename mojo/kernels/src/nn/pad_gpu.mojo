@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from gpu import *
 from gpu.host import DeviceContext, Dim
 from memory import UnsafePointer
@@ -37,7 +37,7 @@ fn _copy_gpu_kernel[
 
 fn _fill_strides_indexlist[
     rank: Int,
-](input_shape: IndexList[rank], strides: Buffer[DType.index, rank]):
+](input_shape: IndexList[rank], strides: NDBuffer[DType.index, 1, rank]):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming
     `buf` contains contiguous buf.
@@ -354,8 +354,8 @@ fn pad_constant[
             ctx,
         )
 
-    var input_strides_buf = Buffer[DType.index, rank].stack_allocation()
-    var output_strides_buf = Buffer[DType.index, rank].stack_allocation()
+    var input_strides_buf = NDBuffer[DType.index, 1, rank].stack_allocation()
+    var output_strides_buf = NDBuffer[DType.index, 1, rank].stack_allocation()
     _fill_strides_indexlist[rank](input_shape, input_strides_buf)
     _fill_strides_indexlist[rank](output_shape, output_strides_buf)
 
@@ -373,7 +373,7 @@ fn pad_constant[
 fn get_padding_output_shape[
     rank: Int
 ](
-    input_shape: IndexList[rank], paddings: Buffer[DType.index, 2 * rank]
+    input_shape: IndexList[rank], paddings: NDBuffer[DType.index, 1, 2 * rank]
 ) -> IndexList[rank]:
     var output_shape = IndexList[rank]()
     for i in range(rank):

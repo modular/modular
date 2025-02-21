@@ -10,7 +10,7 @@ from collections import Set
 from math import ceildiv, isclose, isqrt
 from random import random_ui64, seed
 
-from buffer import Buffer, Dim, DimList, NDBuffer
+from buffer import Dim, DimList, NDBuffer
 from internal_utils import HostNDBuffer, fill, random
 from kv_cache.types import (
     ContinuousBatchingKVCache,

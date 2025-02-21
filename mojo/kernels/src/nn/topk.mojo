@@ -12,7 +12,7 @@ from sys import alignof, simdwidthof, sizeof
 from algorithm.functional import parallelize_over_rows
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from bit import log2_floor
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import DimList
 from builtin.io import _printf
 from builtin.sort import _quicksort

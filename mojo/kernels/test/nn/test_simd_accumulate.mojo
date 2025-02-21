@@ -8,7 +8,7 @@
 from sys.info import has_neon, simdwidthof
 
 from algorithm.functional import vectorize
-from buffer import Buffer
+from buffer import NDBuffer
 from linalg.accumulate import _Accumulator, _simd_load_maybe_partial
 from memory import stack_allocation
 from testing import *
@@ -146,7 +146,7 @@ def test_accumulate_with_offsets[
         for j in range(num_cols):
             (b_ptr + j * simd_size).store(SIMD[type, simd_size](i))
 
-    var a_base_offsets = Buffer[DType.int32, num_rows].stack_allocation()
+    var a_base_offsets = NDBuffer[DType.int32, 1, num_rows].stack_allocation()
     a_base_offsets[0] = 0
     a_base_offsets[1] = length
 

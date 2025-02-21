@@ -8,7 +8,7 @@ from collections.vector import InlinedFixedVector
 from sys import external_call
 
 from algorithm import sync_parallelize
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from memory import memcpy
 

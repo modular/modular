@@ -9,7 +9,7 @@ from math import ceildiv, isqrt
 from sys import simdwidthof
 
 from algorithm import mean, variance
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import DimList
 from memory import UnsafePointer
 from nn.normalization import *
@@ -64,7 +64,7 @@ fn run_layer_norm_cpu[
     layer_norm_cpu[input_fn, gamma_fn](shape, beta, epsilon, output_buf)
 
     for r in range(rows):
-        var vec = Buffer[type](input_ptr + r * cols, cols)
+        var vec = NDBuffer[type, 1](input_ptr + r * cols, cols)
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
         var norm_factor_ref = isqrt(var_ref + epsilon)

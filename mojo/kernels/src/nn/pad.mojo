@@ -11,7 +11,7 @@
 
 from collections.vector import InlinedFixedVector
 
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 
 # TODO Refactor -- we should decide on and put them into a more common file
@@ -26,7 +26,7 @@ from utils import IndexList, StaticTuple, unroll
 fn _fill[
     type: DType
 ](dst: UnsafePointer[Scalar[type]], value: Scalar[type], count: Int):
-    _ = Buffer[type](dst, count).fill(value)
+    _ = NDBuffer[type, 1](dst, count).fill(value)
 
 
 # TODO: could this be deleted? maybe replaced with faster collapsed loop.
@@ -295,8 +295,8 @@ fn _do_pad[
     input: NDBuffer[type, rank, input_shape],
     paddings: UnsafePointer[Scalar[paddings_type]],
 ):
-    var input_strides_buf = Buffer[DType.index, rank].stack_allocation()
-    var output_strides_buf = Buffer[DType.index, rank].stack_allocation()
+    var input_strides_buf = NDBuffer[DType.index, 1, rank].stack_allocation()
+    var output_strides_buf = NDBuffer[DType.index, 1, rank].stack_allocation()
     _fill_strides(input, input_strides_buf)
     _fill_strides(output, output_strides_buf)
 

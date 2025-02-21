@@ -9,7 +9,7 @@ from os import abort
 
 import benchmark
 from benchmark import Unit, keep
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from internal_utils import assert_equal
 from memory import UnsafePointer, memcpy
@@ -501,7 +501,7 @@ fn test_pad_constant_nd[
     input.fill(1)
 
     # Create a padding array
-    var paddings = Buffer[DType.index, 2 * rank].stack_allocation()
+    var paddings = NDBuffer[DType.index, 1, 2 * rank].stack_allocation()
 
     @parameter
     for i in range(rank):
@@ -578,7 +578,7 @@ fn test_pad_reflect_nd[
     input.fill(1)
 
     # Create a padding array
-    var paddings = Buffer[DType.index, 2 * rank].stack_allocation()
+    var paddings = NDBuffer[DType.index, 1, 2 * rank].stack_allocation()
 
     @parameter
     for i in range(rank):

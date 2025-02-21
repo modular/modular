@@ -8,7 +8,7 @@
 from math import ceildiv, sqrt
 from sys import simdwidthof
 
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import DimList
 from memory import UnsafePointer
 from nn.normalization import *
@@ -19,7 +19,7 @@ from utils.index import Index, IndexList
 
 fn compute_rms[
     type: DType
-](data: Buffer[type], size: Int, eps: Scalar[type]) -> Scalar[type]:
+](data: NDBuffer[type, 1], size: Int, eps: Scalar[type]) -> Scalar[type]:
     var sum_of_squares = Scalar[type]()
     for i in range(size):
         sum_of_squares += data[i] * data[i]
@@ -69,7 +69,7 @@ fn run_rms_norm_cpu[
     rms_norm_cpu[input_fn, identity_output_fn](shape, gamma, epsilon)
 
     for r in range(rows):
-        var vec = Buffer[type](input_ptr + r * cols, cols)
+        var vec = NDBuffer[type, 1](input_ptr + r * cols, cols)
         var rms_ref = compute_rms(vec, cols, epsilon)
         for c in range(cols):
             var idx = r * cols + c

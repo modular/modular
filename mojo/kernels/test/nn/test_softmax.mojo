@@ -7,7 +7,7 @@
 
 from sys.info import simdwidthof
 
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from nn.softmax import logsoftmax, softmax_2_pass
 
@@ -63,10 +63,10 @@ fn test_softmax_2pass():
     alias simd_width = simdwidthof[type]()
     alias sz = 5
 
-    var in_buf = Buffer[type, sz].stack_allocation()
+    var in_buf = NDBuffer[type, 1, sz].stack_allocation()
     for i in range(sz):
         in_buf[i] = i
-    var out_buf = Buffer[type, sz].stack_allocation()
+    var out_buf = NDBuffer[type, 1, sz].stack_allocation()
     out_buf.zero()
 
     softmax_2_pass[simd_width, sz, type](out_buf, in_buf)

@@ -8,7 +8,7 @@
 from sys import simdwidthof
 
 import builtin
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import DimList
 from internal_utils import TestTensor
 from memory import UnsafePointer, stack_allocation

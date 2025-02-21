@@ -14,7 +14,7 @@ from algorithm.reduction import (
     _reduce_generator,
 )
 from bit import log2_floor
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from builtin.uint import _temp_uint_from_int
 from gpu import WARP_SIZE, barrier, block_idx, grid_dim, lane_id, thread_idx
@@ -92,7 +92,7 @@ fn _softmax_2_pass_step1[
     simd_width: Int,
     buffer_size: Dim,
     type: DType,
-](input: Buffer[type, buffer_size]) -> StaticTuple[Scalar[type], 2]:
+](input: NDBuffer[type, 1, buffer_size]) -> StaticTuple[Scalar[type], 2]:
     # STEP 1: find the runningMax and runningSum in each batch.
     #   runningMax = -∞
     #   runningSum = 0
@@ -144,8 +144,8 @@ fn _softmax_2_pass_step2[
     buffer_size: Dim,
     type: DType,
 ](
-    output: Buffer[type, buffer_size],
-    input: Buffer[type, buffer_size],
+    output: NDBuffer[type, 1, buffer_size],
+    input: NDBuffer[type, 1, buffer_size],
     running_max: Scalar[type],
     running_sum: Scalar[type],
 ):
@@ -172,7 +172,10 @@ fn softmax_2_pass[
     simd_width: Int,
     buffer_size: Dim,
     type: DType,
-](output: Buffer[type, buffer_size], input: Buffer[type, buffer_size]):
+](
+    output: NDBuffer[type, 1, buffer_size],
+    input: NDBuffer[type, 1, buffer_size],
+):
     """Performs an unbatched softmax on an input tensor using the two-pass
     online algorithm.
 
@@ -237,7 +240,12 @@ fn _softmax_3_pass_step_2[
     post_update_func: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[
         type, width
     ],
-](output: Buffer[type, buffer_size], max_val: Scalar[type],) -> Scalar[type]:
+](
+    output: NDBuffer[type, 1, buffer_size],
+    max_val: Scalar[type],
+) -> Scalar[
+    type
+]:
     # STEP 2: compute for each batch
     # for i = 0 to N do
     #   Output[i] = pre_update_func(Input[i] - max_val)
@@ -277,7 +285,7 @@ fn _softmax_3_pass_step_3[
     accum_apply_func: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
     ) -> SIMD[type, width],
-](output: Buffer[type, buffer_size], accum: Scalar[type]):
+](output: NDBuffer[type, 1, buffer_size], accum: Scalar[type]):
     # STEP 3: normalize each batch
     # accum = accum_proc_func(accum)
     # for i = 0 to N do
@@ -316,7 +324,7 @@ fn _softmax_3_pass_base[
     step3_accum_apply_func: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
     ) -> SIMD[type, width],
-](output: Buffer[type, buffer_size]) raises:
+](output: NDBuffer[type, 1, buffer_size]) raises:
     """Performs an unbatched three-pass softmax. The actual behavior of each
     step can be different between the (regular) softmax and logsoftmax.
 
@@ -335,7 +343,7 @@ fn _softmax_3_pass_base[
     """
     # STEP 1 - Calculate max
     # Allocate buffer for max_val
-    var max_buff = Buffer[type, 1].stack_allocation()
+    var max_buff = NDBuffer[type, 1, 1].stack_allocation()
 
     # Use _reduce_generator to fuse input lambda with max-reduction
     # Reduce function
@@ -407,10 +415,11 @@ fn softmax_3_pass[
     simd_width: Int,
     buffer_size: Dim,
     type: DType,
-    input_fn_1d: fn[_simd_width: Int] (Int) capturing [_] -> SIMD[
+    origins: OriginSet,
+    input_fn_1d: fn[_simd_width: Int] (Int) capturing [origins] -> SIMD[
         type, _simd_width
     ],
-](output: Buffer[type, buffer_size]) raises:
+](output: NDBuffer[type, 1, buffer_size]) raises:
     """Performs an unbatched softmax on an input tensor using the three-pass
     algorithm.
 
@@ -436,6 +445,7 @@ fn softmax_3_pass[
         simd_width: The simd_width to use in vectorization.
         buffer_size: The size of the input and output buffers.
         type: The type of the input and output buffers.
+        origins: The OriginSet of captured arguments by the input_fn_1d.
         input_fn_1d: The elementwise input lambda.
 
     Args:
@@ -462,10 +472,11 @@ fn logsoftmax[
     simd_width: Int,
     buffer_size: Dim,
     type: DType,
-    input_fn_1d: fn[_simd_width: Int] (Int) capturing [_] -> SIMD[
+    origins: OriginSet,
+    input_fn_1d: fn[_simd_width: Int] (Int) capturing [origins] -> SIMD[
         type, _simd_width
     ],
-](output: Buffer[type, buffer_size]) raises:
+](output: NDBuffer[type, 1, buffer_size]) raises:
     """Performs an unbatched logsoftmax on an input tensor using the three-pass
     algorithm.
 
@@ -491,6 +502,7 @@ fn logsoftmax[
         simd_width: The simd_width to use in vectorization.
         buffer_size: The size of the input and output buffers.
         type: The type of the input and output buffers.
+        origins: The OriginSet of captured arguments by the input_fn_1d.
         input_fn_1d: The elementwise input lambda.
 
     Args:
@@ -535,7 +547,7 @@ fn logsoftmax[
         var end_offset = min((task_id + 1) * chunk_size, outer_dim)
         for i in range(start_offset, end_offset):
             var buffer_offset = i * inner_dim
-            var output_buffer_view = Buffer[type](
+            var output_buffer_view = NDBuffer[type, 1](
                 output.data.offset(buffer_offset), inner_dim
             )
             var indices = _get_nd_indices_from_flat_index(i, shape, rank - 1)
@@ -549,7 +561,9 @@ fn logsoftmax[
                 indices[rank - 1] = idx
                 return input_fn[_width, rank](indices)
 
-            logsoftmax[simd_width, Dim(), type, input_fn_1d](output_buffer_view)
+            logsoftmax[simd_width, Dim(), type, __origin_of(), input_fn_1d](
+                output_buffer_view
+            )
             _ = indices
 
     sync_parallelize[task_func](num_workers)
@@ -587,8 +601,9 @@ fn _softmax_cpu[
     simd_width: Int,
     rank: Int,
     static_shape: DimList,
+    origins: OriginSet,
     input_fn: fn[_simd_width: Int, _rank: Int] (IndexList[_rank]) capturing [
-        _
+        origins
     ] -> SIMD[type, _simd_width],
 ](
     shape: IndexList[rank],
@@ -616,7 +631,7 @@ fn _softmax_cpu[
         var end_offset = min((task_id + 1) * chunk_size, outer_dim)
         for i in range(start_offset, end_offset):
             var buffer_offset = i * inner_dim
-            var output_buffer_view = Buffer[type](
+            var output_buffer_view = NDBuffer[type, 1](
                 output.data.offset(buffer_offset), inner_dim
             )
             var indices = _get_nd_indices_from_flat_index(i, shape, rank - 1)
@@ -630,7 +645,7 @@ fn _softmax_cpu[
                 indices[rank - 1] = idx
                 return input_fn[_width, rank](indices)
 
-            softmax_3_pass[simd_width, Dim(), type, input_fn_1d](
+            softmax_3_pass[simd_width, Dim(), type, __origin_of(), input_fn_1d](
                 output_buffer_view
             )
             _ = indices
@@ -673,11 +688,11 @@ fn softmax_kernel[
     var row_size = _temp_uint_from_int(shape[axis])
     var num_rows = _temp_uint_from_int(shape.flattened_length()) // row_size
 
-    var max_buf = Buffer[
-        accum_type, 1, address_space = AddressSpace.SHARED
+    var max_buf = NDBuffer[
+        accum_type, 1, 1, address_space = AddressSpace.SHARED
     ].stack_allocation()
-    var exp_sum_buf = Buffer[
-        accum_type, 1, address_space = AddressSpace.SHARED
+    var exp_sum_buf = NDBuffer[
+        accum_type, 1, 1, address_space = AddressSpace.SHARED
     ].stack_allocation()
 
     @parameter
@@ -829,9 +844,9 @@ fn softmax[
 
         @parameter
         if is_cpu[target]():
-            _softmax_cpu[type, simd_width, rank, static_shape, input_fn](
-                shape, output, axis
-            )
+            _softmax_cpu[
+                type, simd_width, rank, static_shape, __origin_of(), input_fn
+            ](shape, output, axis)
         elif is_gpu[target]():
             _softmax_gpu[type, simd_width, rank, static_shape, input_fn](
                 shape,

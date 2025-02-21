@@ -6,7 +6,7 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from algorithm import elementwise
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from memory import stack_allocation
 from nn.slice import slice_as_copy, slice_as_view

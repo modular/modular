@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import DimList
 from memory import UnsafePointer
 from nn.pad import pad_constant, pad_reflect, pad_repeat
@@ -29,7 +29,7 @@ fn test_pad_1d():
 
     # Create a padding array of the form
     # [1, 2]
-    var paddings = Buffer[DType.index, 2].stack_allocation()
+    var paddings = NDBuffer[DType.index, 1, 2].stack_allocation()
     paddings[0] = 1
     paddings[1] = 2
 
@@ -81,7 +81,7 @@ fn test_pad_reflect_1d():
 
     # Create a padding array of the form
     # [3, 2]
-    var paddings = Buffer[DType.index, 2].stack_allocation()
+    var paddings = NDBuffer[DType.index, 1, 2].stack_allocation()
     paddings[0] = 3
     paddings[1] = 2
 
@@ -130,7 +130,7 @@ fn test_pad_repeat_1d():
 
     # Create a padding array of the form
     # [3, 2]
-    var paddings = Buffer[DType.index, 2].stack_allocation()
+    var paddings = NDBuffer[DType.index, 1, 2].stack_allocation()
     paddings[0] = 3
     paddings[1] = 2
 
@@ -176,7 +176,7 @@ fn test_pad_2d():
 
     # Create a padding array of the form
     # [1, 0, 1, 1]
-    var paddings = Buffer[DType.index, 4].stack_allocation()
+    var paddings = NDBuffer[DType.index, 1, 4].stack_allocation()
     paddings[0] = 1
     paddings[1] = 0
     paddings[2] = 1
@@ -243,7 +243,7 @@ fn test_pad_reflect_2d():
 
     # Create a padding array of the form
     # [2, 2, 1, 0]
-    var paddings = Buffer[DType.index, 4].stack_allocation()
+    var paddings = NDBuffer[DType.index, 1, 4].stack_allocation()
     paddings[0] = 2
     paddings[1] = 2
     paddings[2] = 1
@@ -326,7 +326,7 @@ fn test_pad_repeat_2d():
 
     # Create a padding array of the form
     # [2, 2, 1, 0]
-    var paddings = Buffer[DType.index, 4].stack_allocation()
+    var paddings = NDBuffer[DType.index, 1, 4].stack_allocation()
     paddings[0] = 2
     paddings[1] = 2
     paddings[2] = 1
@@ -409,7 +409,7 @@ fn test_pad_3d():
 
     # Create a padding array of the form
     # [1, 0, 0, 1, 1, 0]
-    var paddings = Buffer[DType.index, 6].stack_allocation()
+    var paddings = NDBuffer[DType.index, 1, 6].stack_allocation()
     paddings[0] = 1
     paddings[1] = 0
     paddings[2] = 0
@@ -501,7 +501,7 @@ fn test_pad_reflect_3d():
 
     # Create a padding array of the form
     # [1, 1, 0, 1, 1, 0]
-    var paddings = Buffer[DType.index, 6].stack_allocation()
+    var paddings = NDBuffer[DType.index, 1, 6].stack_allocation()
     paddings[0] = 1
     paddings[1] = 1
     paddings[2] = 0
@@ -629,7 +629,7 @@ fn test_pad_reflect_3d_singleton():
 
     # Create a padding array of the form
     # [1, 0, 0, 1, 2, 2]
-    var paddings = Buffer[DType.index, 6].stack_allocation()
+    var paddings = NDBuffer[DType.index, 1, 6].stack_allocation()
     paddings[0] = 1
     paddings[1] = 0
     paddings[2] = 0
@@ -712,7 +712,7 @@ fn test_pad_reflect_4d_big_input():
 
     # create a padding array of the form
     # [1, 0, 1, 1, 256, 256, 256, 256]
-    var paddings = Buffer[DType.index, 8].stack_allocation()
+    var paddings = NDBuffer[DType.index, 1, 8].stack_allocation()
     paddings[0] = 1
     paddings[1] = 0
     paddings[2] = 1
@@ -760,7 +760,7 @@ fn test_pad_repeat_3d():
 
     # Create a padding array of the form
     # [1, 1, 0, 1, 1, 0]
-    var paddings = Buffer[DType.index, 6].stack_allocation()
+    var paddings = NDBuffer[DType.index, 1, 6].stack_allocation()
     paddings[0] = 1
     paddings[1] = 2
     paddings[2] = 0

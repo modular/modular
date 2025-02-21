@@ -15,7 +15,7 @@ from algorithm.functional import (
 )
 from algorithm.reduction import _simd_sum, _simd_sum_elementwise
 from bit import log2_floor
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import (
     WARP_SIZE,
@@ -502,7 +502,7 @@ fn layer_norm_cpu[
     var num_cols = out_buf.dim[1]()
 
     for row in range(num_rows):
-        var out_slice = Buffer[type, out_buf.shape.at[1]()](
+        var out_slice = NDBuffer[type, 1, out_buf.shape.at[1]()](
             out_buf._offset(Index(row, 0)), num_cols
         )
 
@@ -518,7 +518,9 @@ fn layer_norm_cpu[
             out_buf.shape.at[1](),
             type,
             type,
+            __origin_of(),
             input_gen_wrapper,
+            __origin_of(),
             _simd_sum_elementwise,
             _simd_sum,
         ](out_slice, 0)

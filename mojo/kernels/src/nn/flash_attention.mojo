@@ -16,7 +16,7 @@ from algorithm.reduction import (
     _simd_sum_elementwise,
     map_reduce,
 )
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from kv_cache.types import KVCacheT
 from linalg.accumulate import _Accumulator
@@ -568,7 +568,7 @@ struct _FlashAttention[
         var o_row_ptr = o_block_ptr
 
         for m in range(count_m):
-            var qk_row = Buffer[type](qk_row_ptr, kv_seq_cnt)
+            var qk_row = NDBuffer[type, 1](qk_row_ptr, kv_seq_cnt)
 
             @parameter
             @always_inline
@@ -586,7 +586,9 @@ struct _FlashAttention[
                 Dim(),
                 type,
                 type,
+                __origin_of(),
                 pass1_input_gen_fn,
+                __origin_of(),
                 _simd_max_elementwise,
                 _simd_max,
             ](qk_row, max_vals[m])
@@ -606,7 +608,9 @@ struct _FlashAttention[
                 Dim(),
                 type,
                 type,
+                __origin_of(),
                 pass2_input_gen_fn,
+                __origin_of(),
                 _simd_sum_elementwise,
                 _simd_sum,
             ](qk_row, 0)
@@ -674,11 +678,11 @@ struct _FlashAttention[
                 type,
                 alignment = alignof[SIMD[type, simd_width]](),
             ]()
-            var max_vals = Buffer[
-                type, Dim(Self._config.block_m)
+            var max_vals = NDBuffer[
+                type, 1, Dim(Self._config.block_m)
             ]().stack_allocation()
-            var sum_vals = Buffer[
-                type, Dim(Self._config.block_m)
+            var sum_vals = NDBuffer[
+                type, 1, Dim(Self._config.block_m)
             ]().stack_allocation()
 
             var packed_ptr = UnsafePointer[
