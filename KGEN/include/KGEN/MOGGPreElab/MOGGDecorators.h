@@ -219,10 +219,6 @@ constexpr StringLiteral MOJO_VARIADIC_TENSORS_NAME =
 // We support lists of DPS tensors for a few operations
 constexpr StringLiteral MOJO_TENSOR_LIST_NAME = "stdlib::InlinedFixedVector";
 
-// The stored mojo type symbol name of the mojo ctx in extensibility kernels.
-constexpr StringLiteral MOJO_EXTENSIBILITY_API_CALL_CONTEXT_PTR_TYPE_NAME =
-    "runtime::MojoCallContextPtr";
-
 // The stored mojo type symbol name of device contexts in extensibility kernels.
 constexpr StringLiteral MOJO_EXTENSIBILITY_API_DEVICE_CONTEXT_PTR_TYPE_NAME =
     "runtime::DeviceContextPtr";

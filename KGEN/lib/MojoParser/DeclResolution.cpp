@@ -756,7 +756,7 @@ static void processFunctionConformances(FnOp func, SharedState &shared,
   bool allVanillaKernelArgs = llvm::all_of(argTypes, [](ASTType astType) {
     if (auto structTy = dyn_cast<LIT::StructType>(astType.mlirType)) {
       return MOGGPreElab::isDPSTensor(structTy) ||
-             MOGGPreElab::isMojoCallContextPtr(structTy);
+             MOGGPreElab::isMojoDeviceContextPtr(structTy);
     }
     return false;
   });

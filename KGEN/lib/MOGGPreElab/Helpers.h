@@ -28,8 +28,8 @@ inline bool isDPSTensor(LIT::StructType maybeTensor) {
          maybeTensor.getSymbol().getLeafReference() == "ManagedTensorSlice";
 }
 
-inline bool isMojoCallContextPtr(LIT::StructType maybeCallContextPtr) {
-  return isXType(maybeCallContextPtr, "runtime", "MojoCallContextPtr");
+inline bool isMojoDeviceContextPtr(LIT::StructType maybeCallContextPtr) {
+  return isXType(maybeCallContextPtr, "runtime", "DeviceContextPtr");
 }
 
 inline bool fnNeedsConformances(LIT::FnOp fnOp) {
