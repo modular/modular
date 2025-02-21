@@ -56,14 +56,23 @@ def main():
             ThroughputMeasure(BenchMetric.flops, len(inputs[i])),
         )
 
+    m.config.verbose_timing = True
+
     # Check default print format
-    # CHECK: --------------------
-    # CHECK: | Name     | Iters |
-    # CHECK: --------------------
-    # CHECK: | bench1   | 10000 |
-    # CHECK: | bench2/0 | 10000 |
-    # CHECK: | bench2/1 | 10000 |
-    # CHECK: --------------------
+    # CHECK: -----------------------
+    # CHECK: | name     | met (ms)
+    # CHECK: -----------------------
+    # CHECK: | bench1   |
+    # CHECK: | bench2/0 |
+    # CHECK: | bench2/1 |
+    # CHECK: -----------------------
+    print(m)
+
+    # CHECK: name,met (ms),iters,throughput (GElems/s),Arithmetic (GFLOPS/s),min (ms),mean (ms),max (ms),duration (ms)
+    # CHECK: bench1,
+    # CHECK: bench2/0,
+    # CHECK: bench2/1,
+    m.config.format = Format.csv
     print(m)
 
     # CHECK: bench1

@@ -321,17 +321,17 @@ fn main() raises:
     # Width of columns is dynamic based on the longest value as a string, so
     # only test the first column.
 
-    # CHECK: Name,
+    # CHECK: name,
     # CHECK: exp ,
     # CHECK: tanh,
     test_mojo_math()
 
-    # CHECK: Name      ,
+    # CHECK: name      ,
     # CHECK: vec_reduce,
     # CHECK: vec_add   ,
     test_custom()
 
-    # CHECK: Name      ,
+    # CHECK: name      ,
     # CHECK: dummy_none,
     # CHECK: dummy_1   ,
     # CHECK: dummy_2   ,

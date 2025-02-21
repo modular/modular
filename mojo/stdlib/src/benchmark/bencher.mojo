@@ -33,7 +33,7 @@ struct BenchMetric(CollectionElement):
     var unit: String
     """Metric's throughput rate unit (count/second)."""
 
-    alias elements = BenchMetric(0, "Throughput", "GElems/s")
+    alias elements = BenchMetric(0, "throughput", "GElems/s")
     alias bytes = BenchMetric(1, "DataMovement", "GB/s")
     alias flops = BenchMetric(2, "Arithmetic", "GFLOPS/s")
     alias theoretical_flops = BenchMetric(
@@ -321,7 +321,7 @@ struct BenchConfig(CollectionElement):
     var verbose_metric_names: Bool
     """If True print the metric name and unit, else print the unit only."""
     alias VERBOSE_TIMING_LABELS = List[String](
-        "Mean (ms)", "Min (ms)", "Max (ms)", "Total (ms)"
+        "min (ms)", "mean (ms)", "max (ms)", "duration (ms)"
     )
     """Labels to print verbose timing results."""
 
@@ -951,12 +951,13 @@ struct Bench:
         Args:
             writer: The writer to write to.
         """
-        alias BENCH_LABEL = "Name"
-        alias ITERS_LABEL = "Iters"
+        alias BENCH_LABEL = "name"
+        alias ITERS_LABEL = "iters"
+        alias MET_LABEL = "met (ms)"
 
         var name_width = self._get_max_name_width(BENCH_LABEL)
         var iters_width = self._get_max_iters_width(ITERS_LABEL)
-        var timing_widths = self._get_max_timing_widths()
+        var timing_widths = self._get_max_timing_widths(MET_LABEL)
         var metrics = self._get_metrics()
 
         # +3 for 2x " | " characters and one for the first "|"
@@ -976,7 +977,13 @@ struct Bench:
             else:
                 total_width += timing_widths[0] + 3
 
-        var sep = " | " if self.config.format == Format.table else ", "
+        if self.config.format == Format.table:
+            sep = " | "
+        elif self.config.format == Format.tabular:
+            sep = ", "
+        else:
+            sep = ","
+
         var first_sep = "| " if self.config.format == Format.table else ""
         var line_sep = "-" * total_width
 
@@ -984,6 +991,7 @@ struct Bench:
             writer.write(line_sep, "\n")
 
         writer.write(first_sep, BENCH_LABEL, self.pad(name_width, BENCH_LABEL))
+        writer.write(sep, MET_LABEL, self.pad(timing_widths[0], MET_LABEL))
         writer.write(sep, ITERS_LABEL, self.pad(iters_width, ITERS_LABEL))
 
         # Return early if no runs were benchmarked
@@ -1005,13 +1013,10 @@ struct Bench:
         # Write the timeing labels
         if self.config.verbose_timing:
             var labels = self.config.VERBOSE_TIMING_LABELS
+            # skip the met label
             for i in range(len(labels)):
                 writer.write(sep, labels[i])
-                writer.write(self.pad(timing_widths[i], labels[i]))
-        else:
-            var mean_label = self.config.VERBOSE_TIMING_LABELS[0]
-            writer.write(sep, mean_label)
-            writer.write(self.pad(timing_widths[0], mean_label))
+                writer.write(self.pad(timing_widths[i + 1], labels[i]))
 
         if self.config.format == Format.table:
             writer.write(" |\n", line_sep)
@@ -1024,6 +1029,13 @@ struct Bench:
             var result = run.result
 
             writer.write(first_sep, run.name, self.pad(name_width, run.name))
+
+            # TODO: Move met (ms) to the end of the table to align with verbose
+            # timing, don't repeat `Mean (ms)`, and make sure it works with
+            # kernel benchmarking.
+            var met = result.mean(unit=Unit.ms)
+            writer.write(sep, met, self.pad(timing_widths[0], String(met)))
+
             var iters_pad = self.pad(iters_width, String(run.result.iters()))
             writer.write(sep, run.result.iters(), iters_pad)
 
@@ -1042,16 +1054,14 @@ struct Bench:
                 except e:
                     abort(e)
 
-            var mean = result.mean(unit=Unit.ms)
-            writer.write(sep, mean, self.pad(timing_widths[0], String(mean)))
-
             if self.config.verbose_timing:
                 var min = result.min(unit=Unit.ms)
                 var max = result.max(unit=Unit.ms)
                 var dur = result.duration(unit=Unit.ms)
                 writer.write(sep, min, self.pad(timing_widths[1], String(min)))
-                writer.write(sep, max, self.pad(timing_widths[2], String(max)))
-                writer.write(sep, dur, self.pad(timing_widths[3], String(dur)))
+                writer.write(sep, met, self.pad(timing_widths[2], String(met)))
+                writer.write(sep, max, self.pad(timing_widths[3], String(max)))
+                writer.write(sep, dur, self.pad(timing_widths[4], String(dur)))
 
             if self.config.format == Format.table:
                 writer.write(" |")
@@ -1105,19 +1115,28 @@ struct Bench:
                         abort(e)
         return metrics
 
-    fn _get_max_timing_widths(self) -> List[Int]:
+    fn _get_max_timing_widths(self, met_label: StringLiteral) -> List[Int]:
         # If label is larger than any value, will pad to the label length
-        var max_mean = len(self.config.VERBOSE_TIMING_LABELS[0])
-        var max_min = len(self.config.VERBOSE_TIMING_LABELS[1])
+
+        var max_met = len(met_label)
+        var max_min = len(self.config.VERBOSE_TIMING_LABELS[0])
+        var max_mean = len(self.config.VERBOSE_TIMING_LABELS[1])
         var max_max = len(self.config.VERBOSE_TIMING_LABELS[2])
         var max_dur = len(self.config.VERBOSE_TIMING_LABELS[3])
         for i in range(len(self.info_vec)):
+            # TODO: Move met (ms) to the end of the table to align with verbose
+            # timing, don't repeat `Mean (ms)`, and make sure it works with
+            # kernel benchmarking.
             var result = self.info_vec[i].result
-            max_mean = max(max_mean, len(String(result.mean(unit=Unit.ms))))
+            var mean_len = len(String(result.mean(unit=Unit.ms)))
+            # met == mean execution time == mean
+            max_met = max(max_met, mean_len)
+
             max_min = max(max_min, len(String(result.min(unit=Unit.ms))))
+            max_mean = max(max_mean, mean_len)
             max_max = max(max_max, len(String(result.max(unit=Unit.ms))))
             max_dur = max(max_dur, len(String(result.duration(unit=Unit.ms))))
-        return List[Int](max_mean, max_min, max_max, max_dur)
+        return List[Int](max_met, max_min, max_mean, max_max, max_dur)
 
 
 @value
