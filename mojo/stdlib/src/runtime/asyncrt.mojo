@@ -380,37 +380,6 @@ struct TaskGroup:
 
 
 # ===-----------------------------------------------------------------------===#
-# MojoCallContext
-# ===-----------------------------------------------------------------------===#
-
-
-@register_passable("trivial")
-struct MojoCallContextPtr:
-    """A pointer to a C++ MojoCallContext struct, which is used by the Modular
-    C++ runtime to coordinate execution with Mojo kernels.
-    """
-
-    # Actually a MojoCallContext*
-    alias ptr_type = UnsafePointer[NoneType]
-    var ptr: Self.ptr_type
-
-    @always_inline
-    fn __init__(out self):
-        self.ptr = UnsafePointer[NoneType]()
-
-    @always_inline
-    @implicit
-    fn __init__(out self, ptr: Self.ptr_type):
-        """Casts a raw pointer to our MojoCallContextPtr."""
-        self.ptr = ptr
-
-    @always_inline
-    fn get_device_context(self) -> ref [ImmutableAnyOrigin] DeviceContext:
-        """Get the device context held by the MojoCallContext."""
-        return self.ptr
-
-
-# ===-----------------------------------------------------------------------===#
 # DeviceContext
 # ===-----------------------------------------------------------------------===#
 
@@ -427,8 +396,15 @@ struct DeviceContextPtr:
 
     var handle_: UnsafePointer[NoneType]
 
+    @always_inline
+    fn __init__(out self):
+        self.handle_ = UnsafePointer[NoneType]()
+
     fn __init__(out self, handle: UnsafePointer[NoneType]):
         self.handle_ = handle
 
     fn __getitem__(self) -> DeviceContext:
         return DeviceContext(self.handle_)
+
+    fn get_device_context(self) -> DeviceContext:
+        return self[]
