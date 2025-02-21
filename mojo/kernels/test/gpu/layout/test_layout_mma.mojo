@@ -26,6 +26,7 @@ from layout._utils import ManagedLayoutTensor
 from layout.math import outer_product_acc
 from layout.tensor_core import *
 from testing import *
+from os import abort
 
 
 fn mma_layout_tc[
