@@ -8,7 +8,7 @@
 
 from sys import env_get_int
 
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
 from internal_utils import (
@@ -31,7 +31,7 @@ fn test_pad_constant_gpu[
     type: DType, rank: Int
 ](
     input_shape: IndexList[rank],
-    paddings: Buffer[DType.index, 2 * rank],
+    paddings: NDBuffer[DType.index, 1, 2 * rank],
     ctx: DeviceContext,
     verbose: Bool = False,
 ) raises:
@@ -116,15 +116,15 @@ def main():
     with DeviceContext() as ctx:
         var input_shape_1d = IndexList[1](32)
         # Create a padding array of the (before,after) form
-        var paddings_1d = Buffer[DType.index, 2 * 1].stack_allocation()
+        var paddings_1d = NDBuffer[DType.index, 1, 2 * 1].stack_allocation()
         paddings_1d[0] = 2  # axis-0 pre-pad
         paddings_1d[1] = 1  # axis-0 post-pad
-        test_pad_constant_gpu[type](input_shape_1d, paddings_1d, ctx)
+        test_pad_constant_gpu[type, 1](input_shape_1d, paddings_1d, ctx)
         # CHECK: PASS: rank=1
 
         var input_shape_2d = IndexList[2](32, 32)
         # Create a padding array of the (before,after) form
-        var paddings_2d = Buffer[DType.index, 2 * 2].stack_allocation()
+        var paddings_2d = NDBuffer[DType.index, 1, 2 * 2].stack_allocation()
         paddings_2d[0] = 2  # axis-0 pre-pad
         paddings_2d[1] = 1  # axis-0 post-pad
         paddings_2d[2] = 3  # axis-1 pre-pad
@@ -134,7 +134,7 @@ def main():
 
         var input_shape_3d = IndexList[3](32, 32, 32)
         # Create a padding array of the (before,after) form
-        var paddings_3d = Buffer[DType.index, 2 * 3].stack_allocation()
+        var paddings_3d = NDBuffer[DType.index, 1, 2 * 3].stack_allocation()
         paddings_3d[0] = 2  # axis-0 pre-pad
         paddings_3d[1] = 1  # axis-0 post-pad
         paddings_3d[2] = 3  # axis-1 pre-pad

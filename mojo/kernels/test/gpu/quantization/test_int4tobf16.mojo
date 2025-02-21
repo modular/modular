@@ -13,7 +13,7 @@
 from sys import has_neon
 from sys.info import is_amd_gpu
 
-from buffer import Buffer
+from buffer import NDBuffer
 from gpu.host import DeviceContext
 from gpu.intrinsics import lop
 from gpu.memory import AddressSpace
@@ -72,7 +72,7 @@ fn call_int4tobf16[
 
 
 def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext):
-    var out_host = Buffer[DType.bfloat16, 8].stack_allocation()
+    var out_host = NDBuffer[DType.bfloat16, 1, 8].stack_allocation()
     var out_device = ctx.enqueue_create_buffer[DType.bfloat16](8)
 
     ctx.enqueue_function[call_int4tobf16[no_lop]](

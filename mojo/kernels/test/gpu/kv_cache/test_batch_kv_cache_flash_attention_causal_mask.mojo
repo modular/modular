@@ -11,7 +11,7 @@
 from math import isclose, isqrt
 
 from algorithm import max as tensor_max
-from buffer import Buffer, Dim, DimList, NDBuffer
+from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import ContiguousKVCache, KVCacheStaticParams
@@ -54,7 +54,9 @@ def execute_flash_attention[
     )
 
     var max_cache_valid_length = Int(
-        tensor_max(Buffer[DType.uint32](cache_valid_length.data, batch_size))
+        tensor_max(
+            NDBuffer[DType.uint32, 1](cache_valid_length.data, batch_size)
+        )
     )
 
     # initialize q tensor

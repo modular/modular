@@ -9,7 +9,7 @@ from math import ceildiv, isqrt
 from sys import simdwidthof
 
 from algorithm import mean, variance
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
@@ -95,7 +95,7 @@ fn run_layer_norm_block[
     ctx.synchronize()
 
     for r in range(rows):
-        var vec = Buffer[type](data_h + r * cols, cols)
+        var vec = NDBuffer[type, 1](data_h + r * cols, cols)
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
         var norm_factor_ref = isqrt(var_ref + epsilon)
@@ -173,7 +173,7 @@ fn run_layer_norm_gpu[
     ctx.synchronize()
 
     for r in range(rows):
-        var vec = Buffer[type](data_h + r * cols, cols)
+        var vec = NDBuffer[type, 1](data_h + r * cols, cols)
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
         var norm_factor_ref = isqrt(var_ref + epsilon)
@@ -268,7 +268,7 @@ fn run_layer_norm_warp_tiling[
     ctx.synchronize()
 
     for r in range(rows):
-        var vec = Buffer[type](data_h + r * cols, cols)
+        var vec = NDBuffer[type, 1](data_h + r * cols, cols)
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
         var norm_factor_ref = isqrt(var_ref + epsilon)

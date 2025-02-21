@@ -77,6 +77,7 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
         1,
         rank,
         DimList.create_unknown[rank](),
+        __origin_of(),
         input_fn_host,
     ](shape, out_ref, rank - 1)
 
@@ -262,6 +263,7 @@ fn test_gpu_online_softmax[WM: Int, WN: Int](ctx: DeviceContext) raises:
         1,
         rank,
         DimList.create_unknown[rank](),
+        __origin_of(),
         input_fn_host,
     ](shape, out_ref, rank - 1)
 

@@ -12,7 +12,7 @@ from math import isqrt
 from random import random_ui64, seed
 
 from algorithm import max
-from buffer import Buffer, Dim, DimList, NDBuffer
+from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import ContinuousBatchingKVCache, KVCacheStaticParams
@@ -59,7 +59,7 @@ def execute_flash_attention[
     )
 
     var max_cache_valid_length = Int(
-        max(Buffer[DType.uint32](cache_valid_length.data, batch_size))
+        max(NDBuffer[DType.uint32, 1](cache_valid_length.data, batch_size))
     )
 
     # initialize q tensor

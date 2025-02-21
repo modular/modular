@@ -12,7 +12,7 @@ from collections import InlineArray
 from math import floor
 from sys import sizeof
 
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.all_reduce import MAX_GPUS, Signal, all_reduce
 from gpu.host import DeviceBuffer, DeviceContext

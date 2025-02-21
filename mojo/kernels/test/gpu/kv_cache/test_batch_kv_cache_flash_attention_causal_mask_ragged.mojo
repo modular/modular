@@ -12,7 +12,7 @@ from math import isclose, isqrt
 from random import random_ui64, seed
 from sys import has_nvidia_gpu_accelerator
 
-from buffer import Buffer, Dim, DimList, NDBuffer
+from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import ContinuousBatchingKVCache, KVCacheStaticParams
