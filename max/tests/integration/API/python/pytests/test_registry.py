@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import logging
 from functools import wraps
 from pathlib import Path
 from typing import Any, Sequence, cast
@@ -640,7 +641,7 @@ def test_registry__raise_oom_error_all_defaults_no_valid_solution():
 
 
 @prepare_registry
-def test_registry__raise_oom_error_all_defaults():
+def test_registry__raise_oom_error_all_defaults(caplog):
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(
@@ -660,11 +661,10 @@ def test_registry__raise_oom_error_all_defaults():
         ) as device_mock,
     ):
         device_mock.return_value = {"free_memory": 40000 * 1024 * 1024}
-        with pytest.raises(
-            RuntimeError,
-            match=r"Try setting --max-length to \d+ and --max-batch-size to",
-        ):
+        with caplog.at_level(logging.WARNING):
             PIPELINE_REGISTRY.validate_pipeline_config(config)
+
+        assert "Truncated model's default max_length from" in caplog.text
 
 
 @prepare_registry
