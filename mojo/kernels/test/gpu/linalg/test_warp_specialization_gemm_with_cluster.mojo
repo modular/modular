@@ -77,6 +77,7 @@ def test_warp_specialize_gemm_with_multicasting[
     cluster_shape: StaticTuple[Int32, 3],
     num_consumer: Int = 1,
     transpose_b: Bool = True,
+    partitioned_multicast: Bool = False,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,):
     var M = m.value
     var N = n.value
@@ -158,6 +159,8 @@ def test_warp_specialize_gemm_with_multicasting[
         CLUSTER_N,
         ") NUM CONSUMERS: ",
         num_consumer,
+        " MULTICAST MODE: ",
+        "PARTITIONED" if partitioned_multicast else "BROADCAST",
     )
 
     debug_assert(
@@ -187,6 +190,7 @@ def test_warp_specialize_gemm_with_multicasting[
         cluster_shape=cluster_shape,
         wgmma_n=wgmma_n,
         num_consumer=num_consumer,
+        partitioned_multicast=partitioned_multicast,
     ](
         c_device.tensor,
         a_device.tensor,
@@ -236,56 +240,65 @@ def test_warp_specialize_gemm_with_multicasting[
 
 def main():
     with DeviceContext() as ctx:
-        test_warp_specialize_gemm_with_multicasting[
-            256,
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            StaticTuple[Int32, 3](1, 2, 1),
-            num_consumer=2,
-        ](ctx, static[256](), static[256](), static[128]())
 
-        test_warp_specialize_gemm_with_multicasting[
-            64,
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            StaticTuple[Int32, 3](1, 2, 1),
-        ](ctx, static[256](), static[64](), static[128]())
+        @parameter
+        for multicast_mode in range(2):
+            test_warp_specialize_gemm_with_multicasting[
+                256,
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                StaticTuple[Int32, 3](1, 2, 1),
+                num_consumer=2,
+                partitioned_multicast = Bool(multicast_mode),
+            ](ctx, static[256](), static[256](), static[128]())
 
-        test_warp_specialize_gemm_with_multicasting[
-            256,
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            StaticTuple[Int32, 3](2, 1, 1),
-            num_consumer=2,
-        ](ctx, static[128](), static[512](), static[128]())
+            test_warp_specialize_gemm_with_multicasting[
+                64,
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                StaticTuple[Int32, 3](1, 2, 1),
+                partitioned_multicast = Bool(multicast_mode),
+            ](ctx, static[256](), static[64](), static[128]())
 
-        test_warp_specialize_gemm_with_multicasting[
-            64,
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            StaticTuple[Int32, 3](2, 1, 1),
-        ](ctx, static[128](), static[128](), static[128]())
+            test_warp_specialize_gemm_with_multicasting[
+                256,
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                StaticTuple[Int32, 3](2, 1, 1),
+                num_consumer=2,
+                partitioned_multicast = Bool(multicast_mode),
+            ](ctx, static[128](), static[512](), static[128]())
 
-        test_warp_specialize_gemm_with_multicasting[
-            256,
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            StaticTuple[Int32, 3](2, 2, 1),
-        ](ctx, static[256](), static[512](), static[128]())
+            test_warp_specialize_gemm_with_multicasting[
+                64,
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                StaticTuple[Int32, 3](2, 1, 1),
+                partitioned_multicast = Bool(multicast_mode),
+            ](ctx, static[128](), static[128](), static[128]())
 
-        test_warp_specialize_gemm_with_multicasting[
-            64,
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            StaticTuple[Int32, 3](2, 2, 1),
-            num_consumer=2,
-        ](ctx, static[256](), static[128](), static[128]())
+            test_warp_specialize_gemm_with_multicasting[
+                256,
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                StaticTuple[Int32, 3](2, 2, 1),
+                partitioned_multicast = Bool(multicast_mode),
+            ](ctx, static[256](), static[512](), static[128]())
+
+            test_warp_specialize_gemm_with_multicasting[
+                64,
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                StaticTuple[Int32, 3](2, 2, 1),
+                num_consumer=2,
+                partitioned_multicast = Bool(multicast_mode),
+            ](ctx, static[256](), static[128](), static[128]())
 
         alias wgmma_n = List[Int](8, 32, 64, 128, 256)
         alias num_ins = 5
@@ -293,139 +306,163 @@ def main():
         print("# 2x1 warp specialized gemm with multicasting tests")
 
         @parameter
-        for i in range(num_ins):
-            test_warp_specialize_gemm_with_multicasting[
-                wgmma_n[i],
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                StaticTuple[Int32, 3](1, 2, 1),
-            ](ctx, static[1024](), static[512](), static[128]())
+        for multicast_mode in range(2):
 
-            test_warp_specialize_gemm_with_multicasting[
-                wgmma_n[i],
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                StaticTuple[Int32, 3](1, 2, 1),
-                num_consumer=2,
-            ](ctx, dynamic(1024), static[512](), static[128]())
+            @parameter
+            for i in range(num_ins):
+                test_warp_specialize_gemm_with_multicasting[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    StaticTuple[Int32, 3](1, 2, 1),
+                    partitioned_multicast = Bool(multicast_mode),
+                ](ctx, static[1024](), static[512](), static[128]())
 
-            test_warp_specialize_gemm_with_multicasting[
-                wgmma_n[i],
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                StaticTuple[Int32, 3](1, 2, 1),
-            ](ctx, dynamic(199), static[1024](), static[1024]())
+                test_warp_specialize_gemm_with_multicasting[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    StaticTuple[Int32, 3](1, 2, 1),
+                    num_consumer=2,
+                    partitioned_multicast = Bool(multicast_mode),
+                ](ctx, dynamic(1024), static[512](), static[128]())
 
-            test_warp_specialize_gemm_with_multicasting[
-                wgmma_n[i],
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                StaticTuple[Int32, 3](1, 2, 1),
-            ](ctx, dynamic(200), static[512](), static[256]())
+                test_warp_specialize_gemm_with_multicasting[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    StaticTuple[Int32, 3](1, 2, 1),
+                    partitioned_multicast = Bool(multicast_mode),
+                ](ctx, dynamic(199), static[1024](), static[1024]())
 
-            test_warp_specialize_gemm_with_multicasting[
-                wgmma_n[i],
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                StaticTuple[Int32, 3](1, 2, 1),
-                num_consumer=2,
-            ](ctx, dynamic(201), static[2048](), static[256]())
+                test_warp_specialize_gemm_with_multicasting[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    StaticTuple[Int32, 3](1, 2, 1),
+                    partitioned_multicast = Bool(multicast_mode),
+                ](ctx, dynamic(200), static[512](), static[256]())
+
+                test_warp_specialize_gemm_with_multicasting[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    StaticTuple[Int32, 3](1, 2, 1),
+                    num_consumer=2,
+                    partitioned_multicast = Bool(multicast_mode),
+                ](ctx, dynamic(201), static[2048](), static[256]())
 
         print("# 1x2 warp specialized gemm with multicasting tests")
 
         @parameter
-        for i in range(num_ins):
-            test_warp_specialize_gemm_with_multicasting[
-                wgmma_n[i],
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                StaticTuple[Int32, 3](2, 1, 1),
-                num_consumer=2,
-            ](ctx, static[1024](), static[512](), static[128]())
+        for multicast_mode in range(2):
 
-            test_warp_specialize_gemm_with_multicasting[
-                wgmma_n[i],
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                StaticTuple[Int32, 3](2, 1, 1),
-            ](ctx, dynamic(1024), static[512](), static[128]())
+            @parameter
+            for i in range(num_ins):
+                test_warp_specialize_gemm_with_multicasting[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    StaticTuple[Int32, 3](2, 1, 1),
+                    num_consumer=2,
+                    partitioned_multicast = Bool(multicast_mode),
+                ](ctx, static[1024](), static[512](), static[128]())
 
-            test_warp_specialize_gemm_with_multicasting[
-                wgmma_n[i],
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                StaticTuple[Int32, 3](2, 1, 1),
-                num_consumer=2,
-            ](ctx, dynamic(99), static[1024](), static[1024]())
+                test_warp_specialize_gemm_with_multicasting[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    StaticTuple[Int32, 3](2, 1, 1),
+                    partitioned_multicast = Bool(multicast_mode),
+                ](ctx, dynamic(1024), static[512](), static[128]())
 
-            test_warp_specialize_gemm_with_multicasting[
-                wgmma_n[i],
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                StaticTuple[Int32, 3](2, 1, 1),
-            ](ctx, dynamic(100), static[512](), static[256]())
+                test_warp_specialize_gemm_with_multicasting[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    StaticTuple[Int32, 3](2, 1, 1),
+                    num_consumer=2,
+                    partitioned_multicast = Bool(multicast_mode),
+                ](ctx, dynamic(99), static[1024](), static[1024]())
 
-            test_warp_specialize_gemm_with_multicasting[
-                wgmma_n[i],
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                StaticTuple[Int32, 3](2, 1, 1),
-                num_consumer=2,
-            ](ctx, dynamic(201), static[2048](), static[256]())
+                test_warp_specialize_gemm_with_multicasting[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    StaticTuple[Int32, 3](2, 1, 1),
+                    partitioned_multicast = Bool(multicast_mode),
+                ](ctx, dynamic(100), static[512](), static[256]())
+
+                test_warp_specialize_gemm_with_multicasting[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    StaticTuple[Int32, 3](2, 1, 1),
+                    num_consumer=2,
+                    partitioned_multicast = Bool(multicast_mode),
+                ](ctx, dynamic(201), static[2048](), static[256]())
 
         print("# 2x2 warp specialized gemm with multicasting tests")
 
         @parameter
-        for i in range(num_ins):
-            test_warp_specialize_gemm_with_multicasting[
-                wgmma_n[i],
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                StaticTuple[Int32, 3](2, 2, 1),
-                num_consumer=2,
-            ](ctx, static[1024](), static[512](), static[128]())
+        for multicast_mode in range(2):
 
-            test_warp_specialize_gemm_with_multicasting[
-                wgmma_n[i],
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                StaticTuple[Int32, 3](2, 2, 1),
-            ](ctx, dynamic(1024), static[512](), static[128]())
+            @parameter
+            for i in range(num_ins):
+                test_warp_specialize_gemm_with_multicasting[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    StaticTuple[Int32, 3](2, 2, 1),
+                    num_consumer=2,
+                    partitioned_multicast = Bool(multicast_mode),
+                ](ctx, static[1024](), static[512](), static[128]())
 
-            test_warp_specialize_gemm_with_multicasting[
-                wgmma_n[i],
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                StaticTuple[Int32, 3](2, 2, 1),
-                num_consumer=2,
-            ](ctx, dynamic(199), static[1024](), static[1024]())
+                test_warp_specialize_gemm_with_multicasting[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    StaticTuple[Int32, 3](2, 2, 1),
+                    partitioned_multicast = Bool(multicast_mode),
+                ](ctx, dynamic(1024), static[512](), static[128]())
 
-            test_warp_specialize_gemm_with_multicasting[
-                wgmma_n[i],
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                StaticTuple[Int32, 3](2, 2, 1),
-            ](ctx, dynamic(200), static[512](), static[256]())
+                test_warp_specialize_gemm_with_multicasting[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    StaticTuple[Int32, 3](2, 2, 1),
+                    num_consumer=2,
+                    partitioned_multicast = Bool(multicast_mode),
+                ](ctx, dynamic(199), static[1024](), static[1024]())
 
-            test_warp_specialize_gemm_with_multicasting[
-                wgmma_n[i],
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                StaticTuple[Int32, 3](2, 2, 1),
-                num_consumer=2,
-            ](ctx, dynamic(201), static[2048](), static[256]())
+                test_warp_specialize_gemm_with_multicasting[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    StaticTuple[Int32, 3](2, 2, 1),
+                    partitioned_multicast = Bool(multicast_mode),
+                ](ctx, dynamic(200), static[512](), static[256]())
+
+                test_warp_specialize_gemm_with_multicasting[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    StaticTuple[Int32, 3](2, 2, 1),
+                    num_consumer=2,
+                    partitioned_multicast = Bool(multicast_mode),
+                ](ctx, dynamic(201), static[2048](), static[256]())
