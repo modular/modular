@@ -491,6 +491,59 @@ Type IntLiteralCmpAttr::getType() const {
 }
 
 //===----------------------------------------------------------------------===//
+// IntToFloatLiteralAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr IntToFloatLiteralAttr::get(MLIRContext *ctx, Type type,
+                                     TypedAttr input) {
+  // If this is a literal constant coming in, we can fold this.  If not, stage
+  // it until elaboration or something else simplifies things.
+  auto inputAttr = ::dyn_cast_or_null<IntLiteralAttr>(input);
+  if (!inputAttr)
+    return Base::get(ctx, type, input);
+
+  return FloatLiteralAttr::get(
+      inputAttr.getContext(),
+      FloatLiteralSpecialValuesAttr::get(inputAttr.getContext(),
+                                         FloatLiteralSpecialValues::Normal),
+      IPRational(inputAttr.getValue(), IPInt(1)));
+}
+
+bool IntToFloatLiteralAttr::isConstant() const { return false; }
+
+//===----------------------------------------------------------------------===//
+// FloatToIntLiteralAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr FloatToIntLiteralAttr::get(MLIRContext *ctx, Type type,
+                                     TypedAttr input) {
+  // If this is a literal constant coming in, we can fold this.  If not, stage
+  // it until elaboration or something else simplifies things.
+  auto inputAttr = ::dyn_cast_or_null<FloatLiteralAttr>(input);
+  if (!inputAttr)
+    return Base::get(ctx, type, input);
+
+  IPInt result;
+  switch (inputAttr.getSpecial().getValue()) {
+  case FloatLiteralSpecialValues::Nan:
+  case FloatLiteralSpecialValues::Inf:
+  case FloatLiteralSpecialValues::NegInf:
+  case FloatLiteralSpecialValues::NegZero:
+    result = 0;
+    break;
+  case FloatLiteralSpecialValues::Normal:
+    assert(inputAttr.getRational().has_value() &&
+           "normal FloatLiterals have rational");
+    result = inputAttr.getRational()->getNumerator() /
+             inputAttr.getRational()->getDenominator();
+    break;
+  }
+  return IntLiteralAttr::get(inputAttr.getContext(), result);
+}
+
+bool FloatToIntLiteralAttr::isConstant() const { return false; }
+
+//===----------------------------------------------------------------------===//
 // FloatLiteralBinAttr
 //===----------------------------------------------------------------------===//
 

@@ -1509,32 +1509,6 @@ def KGEN_IntLiteralConvertOp : KGENOp<"int_literal.convert", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
-// IntLiteralToFloatLiteralOp
-//===----------------------------------------------------------------------===//
-
-// FIXME(MOCO-1628): This shouldn't be an operation.
-def KGEN_IntLiteralToFloatLiteralOp : KGENOp<"int_literal.to_float_literal",
-    [DeclareOpInterfaceMethods<InterpreterOpInterface>, Pure]> {
-  let summary = "Convert int_literal to float_literal type.";
-  let description = [{
-    The `kgen.int_literal.to_float_literal` operator converts from int_literal
-    to float_literal, of course.
-
-    Example:
-
-    ```mlir
-    %0 = kgen.int_literal.to_float_literal %arg0
-    ```
-  }];
-
-  let arguments = (ins KGEN_IntLiteralType:$input);
-  let results = (outs KGEN_FloatLiteralType:$output);
-
-  let assemblyFormat = "$input attr-dict";
-  let hasFolder = 1;
-}
-
-//===----------------------------------------------------------------------===//
 // FloatLiteralIsa
 //===----------------------------------------------------------------------===//
 
@@ -1648,20 +1622,44 @@ def KGEN_FloatLiteralConvertOp : KGENOp<"float_literal.convert",
 }
 
 //===----------------------------------------------------------------------===//
-// FloatLiteralToIntLiteralOp
+// IntToFloatLiteralOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_FloatLiteralToIntLiteralOp : KGENOp<"float_literal.to_int_literal",
-    [DeclareOpInterfaceMethods<InterpreterOpInterface>, Pure]> {
+// FIXME(MOCO-1628): This shouldn't be an operation.
+def KGEN_IntToFloatLiteralOp : KGENOp<"int_to_float_literal", [Pure]> {
+  let summary = "Convert int_literal to float_literal type.";
+  let description = [{
+    The `kgen.int_to_float_literal` operator converts from int_literal
+    to float_literal, of course.
+
+    Example:
+
+    ```mlir
+    %0 = kgen.int_to_float_literal %arg0
+    ```
+  }];
+
+  let arguments = (ins KGEN_IntLiteralType:$input);
+  let results = (outs KGEN_FloatLiteralType:$output);
+
+  let assemblyFormat = "$input attr-dict";
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// FloatToIntLiteralOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_FloatToIntLiteralOp : KGENOp<"float_to_int_literal", [Pure]> {
   let summary = "Convert float_literal to int_literal type.";
   let description = [{
-    The `kgen.float_literal.to_int_literal` operator converts from float_literal
+    The `kgen.float_to_int_literal` operator converts from float_literal
     to int_literal by truncating at the decimal.  IE it rounds toward zero.
 
     Example:
 
     ```mlir
-    %0 = kgen.float_literal.to_int_literal %arg0
+    %0 = kgen.float_to_int_literal %arg0
     ```
   }];
 
