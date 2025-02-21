@@ -68,7 +68,7 @@ from linalg.utils_gpu import (
 )
 from memory import UnsafePointer
 from memory.unsafe import bitcast
-from runtime.asyncrt import MojoCallContextPtr
+from runtime.asyncrt import DeviceContextPtr
 
 from utils.index import Index, IndexList
 
@@ -1488,7 +1488,7 @@ fn matmul_gpu_qint4[
     c: NDBuffer[c_type, 2, _],
     a: NDBuffer[a_type, 2, _],
     b: NDBuffer[DType.uint8, 2, _],
-    ctx: MojoCallContextPtr = MojoCallContextPtr(),
+    ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     constrained[is_gpu[target](), "unsupported target"]()
     var cuda_ctx = ctx.get_device_context()
@@ -1967,7 +1967,7 @@ fn gpu_qint4_repack_Q4_0[
 ](
     b: NDBuffer[DType.uint8, 2, b_shape],
     b_packed: NDBuffer[DType.uint8, 2, b_shape],
-    ctx: MojoCallContextPtr = MojoCallContextPtr(),
+    ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     constrained[is_gpu[target](), "unsupported target"]()
     var cuda_ctx = ctx.get_device_context()
@@ -2014,7 +2014,7 @@ fn gpu_qint4_repack_GPTQ[
     b: NDBuffer[DType.uint8, 2, b_shape],
     b_packed: NDBuffer[DType.uint8, 2, b_packed_shape],
     perm_idx: OptionalReg[NDBuffer[DType.int32, 1]] = None,
-    ctx: MojoCallContextPtr = MojoCallContextPtr(),
+    ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     constrained[is_gpu[target](), "unsupported target"]()
     var cuda_ctx = ctx.get_device_context()
