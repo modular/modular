@@ -77,6 +77,11 @@ what we publish.
 - The `SIMD.roundeven()` method has been removed from the standard library.
   This functionality is now handled by the `round()` function.
 
+- The `UnsafePointer.alloc()` method has changed to produce pointers with an
+  empty `Origin` parameter, instead of with `MutableAnyOrigin`. This mitigates
+  an issue with the any origin parameter extending the lifetime of unrelated
+  local variables for this common method.
+
 ### GPU changes
 
 - You can now skip compiling a GPU kernel first and then enqueueing it:

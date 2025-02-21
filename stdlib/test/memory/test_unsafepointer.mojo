@@ -13,7 +13,12 @@
 # RUN: %mojo %s
 
 from memory import AddressSpace, UnsafePointer
-from test_utils import ExplicitCopyOnly, MoveCounter, ObservableMoveOnly
+from test_utils import (
+    ExplicitCopyOnly,
+    MoveCounter,
+    ObservableMoveOnly,
+    ObservableDel,
+)
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
 
 
@@ -187,6 +192,51 @@ def test_unsafepointer_aligned_alloc():
     assert_equal(ptr_uint64_3 % alignment_3, 0)
 
 
+# Test that `UnsafePointer.alloc()` no longer artifically extends the lifetime
+# of every local variable in methods where its used.
+def test_unsafepointer_alloc_origin():
+    # -----------------------------------------
+    # Test with MutableAnyOrigin alloc() origin
+    # -----------------------------------------
+
+    var did_del_1 = False
+
+    # Allocate pointer with MutableAnyOrgin.
+    var ptr_1 = UnsafePointer[Int].alloc(1).origin_cast[
+        origin=MutableAnyOrigin
+    ]()
+
+    var obj_1 = ObservableDel(UnsafePointer.address_of(did_del_1))
+
+    # Object has not been deleted, because MutableAnyOrigin is keeping it alive.
+    assert_false(did_del_1)
+
+    ptr_1.free()
+
+    # Now that `ptr` is out of scope, `obj_1` was destroyed as well.
+    assert_true(did_del_1)
+
+    # ----------------------------------------
+    # Test with default (empty) alloc() origin
+    # ----------------------------------------
+
+    var did_del_2 = False
+
+    # Allocate pointer with empty origin.
+    var ptr_2 = UnsafePointer[Int].alloc(1)
+
+    # Note: Set ObservableDel origin explicitly since it otherwise contains a
+    #   MutableAnyOrigin pointer that interferes with this test.
+    var obj_2 = ObservableDel[__origin_of(did_del_2)](
+        UnsafePointer.address_of(did_del_2)
+    )
+
+    # `obj_2` is ASAP destroyed, since `ptr_2` origin does not keep it alive.
+    assert_true(did_del_2)
+
+    ptr_2.free()
+
+
 # NOTE: Tests fails due to a `UnsafePointer` size
 # and alignment constraint failing to be satisfied.
 #
@@ -323,6 +373,8 @@ def main():
     test_comparisons()
 
     test_unsafepointer_address_space()
+    test_unsafepointer_aligned_alloc()
+    test_unsafepointer_alloc_origin()
     test_indexing()
     test_indexing_simd()
     test_bool()

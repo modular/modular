@@ -546,7 +546,7 @@ struct IntervalTree[T: IntervalElement, U: IntervalPayload]:
         self._len = 0
 
     fn _left_rotate(
-        mut self, mut rotation_node: UnsafePointer[_IntervalNode[T, U]]
+        mut self, rotation_node: UnsafePointer[_IntervalNode[T, U]]
     ):
         """Performs a left rotation around node x in the red-black tree.
 
@@ -613,7 +613,7 @@ struct IntervalTree[T: IntervalElement, U: IntervalPayload]:
             )
 
     fn _right_rotate(
-        mut self, mut rotation_node: UnsafePointer[_IntervalNode[T, U]]
+        mut self, rotation_node: UnsafePointer[_IntervalNode[T, U]]
     ):
         """Performs a right rotation around node y in the red-black tree.
 
@@ -730,8 +730,10 @@ struct IntervalTree[T: IntervalElement, U: IntervalPayload]:
         self._insert_fixup(new_node)
 
     fn _insert_fixup(
-        mut self, mut current_node: UnsafePointer[_IntervalNode[T, U]]
+        mut self, current_node0: UnsafePointer[_IntervalNode[T, U]]
     ):
+        var current_node = current_node0
+
         """Fixes up the red-black tree properties after an insertion.
 
         This method restores the red-black tree properties that may have been violated

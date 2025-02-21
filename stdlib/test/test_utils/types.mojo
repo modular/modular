@@ -256,8 +256,10 @@ struct DelRecorder(ExplicitlyCopyable):
 
 
 @value
-struct ObservableDel(CollectionElement):
-    var target: UnsafePointer[Bool]
+struct ObservableDel[origin: MutableOrigin = MutableAnyOrigin](
+    CollectionElement
+):
+    var target: UnsafePointer[Bool, origin=origin]
 
     fn __init__(out self, *, other: Self):
         self = other
