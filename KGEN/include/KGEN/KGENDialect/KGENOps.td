@@ -1597,8 +1597,7 @@ def KGEN_FloatLiteralBinOp : KGENOp<"float_literal.binop", [Pure]> {
 // FloatLiteralConvertOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_FloatLiteralConvertOp : KGENOp<"float_literal.convert",
-    [DeclareOpInterfaceMethods<InterpreterOpInterface>, Pure]> {
+def KGEN_FloatLiteralConvertOp : KGENOp<"float_literal.convert", [Pure]> {
   let summary = "Convert float literal to float type usable at runtime.";
   let description = [{
     The `kgen.float_literal.convert` operator casts an infinite precision float
