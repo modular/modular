@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "modular_run_binary_test", "requirement")
 
 modular_py_test(
     name = "tests",
@@ -181,6 +181,10 @@ modular_py_test(
         "MODULAR_PATH": ".",
         "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
     },
+    exec_properties = {
+        # 2 here means *at least* 2 GPUs, in practice CI will have 4
+        "resources:gpu-count": "2",
+    },
     gpu_constraints = ["//:has_multi_gpu"],
     tags = ["multi-gpu"],
     deps = [
@@ -200,5 +204,35 @@ modular_py_library(
         requirement("hypothesis"),
         requirement("torch"),
         requirement("numpy"),
+    ],
+)
+
+modular_run_binary_test(
+    name = "pipelines_multi_gpu_smoke_test",
+    args = [
+        "generate",
+        "--model-path",
+        "modularai/Llama-3.1-8B-Instruct-GGUF",
+        "--devices=gpu:0,1,2,3",
+        "--max-batch-size=1",
+        "--max-new-tokens=32",
+        "--max-num-steps=1",
+        "--max-length=512",
+    ],
+    binary = "//SDK/lib/API/python/max/entrypoints:pipelines",
+    data = [
+        "//GenericML:MGPRT",
+        "//KGEN:CompilerRT",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    exec_properties = {
+        # 2 here means *at least* 2 GPUs, in practice CI will have 4
+        "resources:gpu-count": "2",
+    },
+    gpu_constraints = ["//:has_multi_gpu"],
+    tags = [
+        "multi-gpu",
+        "no-sandbox",
+        "requires-network",
     ],
 )

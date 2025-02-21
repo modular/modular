@@ -127,6 +127,10 @@ modular_py_test(
         "//Support/tools/system-info",
         "@llvm-project//compiler-rt:orc_rt",
     ],
+    exec_properties = {
+        # 2 here means *at least* 2 GPUs, in practice CI will have 4
+        "resources:gpu-count": "2",
+    },
     gpu_constraints = ["//:has_multi_gpu"],
     tags = [
         "multi-gpu",
