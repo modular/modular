@@ -57,7 +57,7 @@ struct FloatLiteral(
         """
         self.value = value
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: IntLiteral):
         """Convert an IntLiteral to a FloatLiteral value.
@@ -72,7 +72,7 @@ struct FloatLiteral(
     alias negative_infinity = Self(__mlir_attr.`#kgen.float_literal<neg_inf>`)
     alias negative_zero = Self(__mlir_attr.`#kgen.float_literal<neg_zero>`)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn is_nan(self) -> Bool:
         """Return whether the FloatLiteral is nan.
 
@@ -85,7 +85,7 @@ struct FloatLiteral(
             special = __mlir_attr.`#kgen<float_literal.special_values nan>`
         ](self.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn is_neg_zero(self) -> Bool:
         """Return whether the FloatLiteral is negative zero.
 
@@ -99,7 +99,7 @@ struct FloatLiteral(
             special = __mlir_attr.`#kgen<float_literal.special_values neg_zero>`
         ](self.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn _is_normal(self) -> Bool:
         """Return whether the FloatLiteral is a normal (i.e. not special) value.
 
@@ -123,7 +123,7 @@ struct FloatLiteral(
         """
         return String(Float64(self))
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __int_literal__(self) -> IntLiteral:
         """Casts the floating point value to an IntLiteral. If there is a
         fractional component, then the value is truncated towards zero.
@@ -136,7 +136,7 @@ struct FloatLiteral(
         """
         return IntLiteral(__mlir_op.`kgen.float_to_int_literal`(self.value))
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __int__(self) -> Int:
         """Converts the FloatLiteral value to an Int. If there is a fractional
         component, then the value is truncated towards zero.
@@ -179,7 +179,7 @@ struct FloatLiteral(
         """
         return self.__bool__()
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __neg__(self) -> FloatLiteral:
         """Return the negation of the FloatLiteral value.
 
@@ -410,7 +410,7 @@ struct FloatLiteral(
         """
         return rhs - self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rmul__(self, rhs: FloatLiteral) -> FloatLiteral:
         """Reversed multiplication operator.
 
