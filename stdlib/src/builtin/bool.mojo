@@ -113,6 +113,12 @@ struct Bool(
 ):
     """The primitive Bool scalar value used in Mojo."""
 
+    alias MIN = Bool(False)
+    """The minimum value of a Bool."""
+
+    alias MAX = Bool(True)
+    """The maximum value of a Bool."""
+
     var value: __mlir_type.i1
     """The underlying storage of the boolean value."""
 

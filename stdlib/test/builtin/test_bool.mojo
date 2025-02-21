@@ -19,6 +19,11 @@ def test_default():
     assert_equal(Bool(), False)
 
 
+def test_min_max():
+    assert_equal(Bool.MIN, False)
+    assert_equal(Bool.MAX, True)
+
+
 def test_bool_cast_to_int():
     assert_equal(False.__int__(), 0)
     assert_equal(True.__int__(), 1)
@@ -156,6 +161,7 @@ def test_float_conversion():
 
 def main():
     test_default()
+    test_min_max()
     test_bool_cast_to_int()
     test_bool_none()
     test_convert_from_implicitly_boolable()
