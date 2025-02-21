@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-// UNSUPPORTED: asan
+// UNSUPPORTED: asan, ubsan
 
 // RUN: not mojo test "%S/inputs/" | FileCheck %s
 // RUN: mojo test "%S/inputs/" --filter 'suffix' | FileCheck %s --check-prefix=CHECK-FILTER

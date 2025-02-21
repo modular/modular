@@ -18,6 +18,7 @@ lit_tests(
     },
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],
+        "//:ubsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     tools = [
