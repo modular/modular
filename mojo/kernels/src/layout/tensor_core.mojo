@@ -7,27 +7,31 @@
 matrix operations.
 """
 
-from math import align_down
-from sys import (
-    has_nvidia_gpu_accelerator,
-    is_nvidia_gpu,
-    is_amd_gpu,
-    simdwidthof,
-    sizeof,
-)
-
+from collections import OptionalReg
 from gpu import WARP_SIZE, block_idx, lane_id, thread_idx
 from gpu.intrinsics import lop
 from gpu.memory import AddressSpace
 from gpu.mma import ld_matrix, mma
 from layout._utils import load_to_simd
 from layout.int_tuple import IntTuple
-from layout.layout import *
-from layout.layout_tensor import LayoutTensor, _swizzle_signature
-from layout.swizzle import *
+from layout.layout import Layout
+from layout.layout_tensor import LayoutTensor
+from layout.swizzle import (
+    Swizzle,
+    make_ldmatrix_swizzle,
+    eval_composed,
+    ComposedLayout,
+)
+from math import align_down
 from memory.unsafe import bitcast
 from stdlib.builtin.simd import _has_native_f8_support
-
+from sys import (
+    has_nvidia_gpu_accelerator,
+    is_amd_gpu,
+    is_nvidia_gpu,
+    simdwidthof,
+    sizeof,
+)
 from utils import IndexList
 from utils.index import Index
 
@@ -136,7 +140,9 @@ struct TensorCore[
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
 
     @always_inline
-    fn load_a(
+    fn load_a[
+        swizzle: OptionalReg[Swizzle] = None
+    ](
         self,
         a: LayoutTensor,
         out res: LayoutTensor[
@@ -147,12 +153,15 @@ struct TensorCore[
     ):
         @parameter
         if is_nvidia_gpu():
+            constrained[swizzle is None, "Swizzle is not supported on NVIDIA"]()
             return self._load_a_nvidia(a)
         else:
-            return self._load_a_amd(a)
+            return self._load_a_amd[swizzle](a)
 
     @always_inline
-    fn _load_a_amd(
+    fn _load_a_amd[
+        swizzle: OptionalReg[Swizzle]
+    ](
         self,
         a: LayoutTensor,
         out res: LayoutTensor[
@@ -193,11 +202,17 @@ struct TensorCore[
                 "No valid mma shape to load matrix fragment",
             ]()
             var a_reg_frags = a.vectorize[1, simd_width]().distribute[
-                warp_layout
+                warp_layout, swizzle=swizzle
             ](lane_id())
             a_reg_tile.vectorize[1, simd_width]().copy_from(a_reg_frags)
         else:
-            constrained[False, "not supported"]()
+            constrained[
+                False,
+                "Data type "
+                + String(in_type)
+                + " is not supported for loading matrix A fragments on AMD"
+                " GPUs. Only float32, bfloat16 and float16 are supported.",
+            ]()
         return a_reg_tile
 
     @always_inline
@@ -264,7 +279,9 @@ struct TensorCore[
 
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
     @always_inline
-    fn load_b(
+    fn load_b[
+        swizzle: OptionalReg[Swizzle] = None
+    ](
         self,
         b: LayoutTensor,
         out res: LayoutTensor[
@@ -275,13 +292,16 @@ struct TensorCore[
     ):
         @parameter
         if is_nvidia_gpu():
+            constrained[swizzle is None, "Swizzle is not supported on NVIDIA"]()
             return self._load_b_nvidia(b)
         else:
-            return self._load_b_amd(b)
+            return self._load_b_amd[swizzle](b)
 
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
     @always_inline
-    fn _load_b_amd(
+    fn _load_b_amd[
+        swizzle: OptionalReg[Swizzle]
+    ](
         self,
         b: LayoutTensor,
         out res: LayoutTensor[
@@ -315,16 +335,22 @@ struct TensorCore[
             @parameter
             if transpose_b:
                 var b_ram_frags = b.vectorize[1, simd_width]().distribute[
-                    warp_layout
+                    warp_layout, swizzle=swizzle
                 ](lane_id())
                 b_reg_tile.vectorize[simd_width, 1]().copy_from(b_ram_frags)
             else:
                 var b_ram_frags = b.vectorize[simd_width, 1]().distribute[
-                    warp_layout
+                    warp_layout, swizzle=swizzle
                 ](lane_id())
                 b_reg_tile.vectorize[simd_width, 1]().copy_from(b_ram_frags)
         else:
-            constrained[False, "not supported"]()
+            constrained[
+                False,
+                "Data type "
+                + String(in_type)
+                + " is not supported for loading matrix B fragments on AMD"
+                " GPUs. Only float32, bfloat16 and float16 are supported.",
+            ]()
 
         return b_reg_tile
 
@@ -526,7 +552,9 @@ struct TensorCore[
 
     @always_inline
     fn load_a[
-        swizzle: Bool = True,
+        # TODO (KERN-1602): Figure out a better way to pass Bool or Swizzle and remove
+        # the hardcoded Swizzle(2, 0, 2) for AMD
+        swizzle: Bool = is_nvidia_gpu(),
         *,
         type0: DType,
         layout0: Layout,
@@ -554,10 +582,13 @@ struct TensorCore[
         if is_nvidia_gpu():
             self._load_a_nvidia[swizzle](warp_tile, fragments, mma_tile_coord_k)
         else:
-            self._load_a_amd(warp_tile, fragments, mma_tile_coord_k)
+            self._load_a_amd[
+                Swizzle(2, 0, 2) if swizzle else OptionalReg[Swizzle](None)
+            ](warp_tile, fragments, mma_tile_coord_k)
 
     @always_inline
     fn _load_a_amd[
+        swizzle: OptionalReg[Swizzle],
         *,
         type0: DType,
         layout0: Layout,
@@ -597,7 +628,7 @@ struct TensorCore[
             var mma_tile = warp_tile.tile[M, K * k_group_size](
                 i, mma_tile_coord_k
             )
-            var a = load_to_simd(self.load_a(mma_tile))
+            var a = load_to_simd(self.load_a[swizzle](mma_tile))
             fragments[i, 0] = rebind[frag_type](a)
 
     @always_inline
@@ -645,6 +676,7 @@ struct TensorCore[
 
     @always_inline
     fn load_b[
+        swizzle: OptionalReg[Swizzle] = None,
         *,
         type0: DType,
         layout0: Layout,
@@ -670,16 +702,20 @@ struct TensorCore[
     ):
         @parameter
         if is_nvidia_gpu():
+            constrained[
+                swizzle is None, "Swizzle is not supported on NVIDIA for load_b"
+            ]()
             self._load_b_nvidia(
                 warp_tile, fragments, mma_tile_coord_k, warp_tile_coord_n
             )
         else:
-            self._load_b_amd(
+            self._load_b_amd[swizzle](
                 warp_tile, fragments, mma_tile_coord_k, warp_tile_coord_n
             )
 
     @always_inline
     fn _load_b_amd[
+        swizzle: OptionalReg[Swizzle],
         *,
         type0: DType,
         layout0: Layout,
@@ -720,14 +756,14 @@ struct TensorCore[
                 var mma_tile = warp_tile.tile[N, K * k_group_size](
                     i, mma_tile_coord_k
                 )
-                var frag = load_to_simd(self.load_b(mma_tile))
+                var frag = load_to_simd(self.load_b[swizzle](mma_tile))
                 fragments[i, 0] = rebind[frag_type](frag)
         else:
 
             @parameter
             for i in range(num_frags):
                 var mma_tile = warp_tile.tile[K, N](mma_tile_coord_k, i)
-                var frag = load_to_simd(self.load_b(mma_tile))
+                var frag = load_to_simd(self.load_b[swizzle](mma_tile))
                 fragments[i, 0] = rebind[frag_type](frag)
 
     @always_inline
