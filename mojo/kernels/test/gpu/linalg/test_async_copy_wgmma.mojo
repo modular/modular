@@ -21,7 +21,12 @@ from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from layout.fillers import arange
 from layout.int_tuple import product
-from layout.layout_tensor import copy_local_to_dram, copy_dram_to_sram_async
+from layout.layout_tensor import (
+    copy_local_to_dram,
+    copy_dram_to_sram_async,
+    cp_async_k_major,
+    cp_async_mn_major,
+)
 from layout.tensor_core import get_accum_type
 from layout.tensor_core_async import (
     TensorCoreAsync,
@@ -40,103 +45,6 @@ from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
-
-
-fn cp_async_mn_major[
-    type: DType
-](
-    dst: LayoutTensor[type, _, address_space = AddressSpace.SHARED, *_, **_],
-    src: LayoutTensor[type, _, address_space = AddressSpace.GENERIC, *_, **_],
-):
-    alias dst_layout = dst.layout
-
-    alias src_layout = src.layout
-    alias src_shape0 = src_layout.shape[0].value()
-    alias src_shape1 = src_layout.shape[1].value()
-
-    alias desc_layout = _tma_desc_tile_layout[
-        type,
-        2,
-        Index(src_shape0, src_shape1),
-        is_k_major=False,
-        swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
-    ]()
-    alias desc_shape0 = desc_layout.shape[0].value()
-    alias desc_shape1 = desc_layout.shape[1].value()
-    alias desc_size = desc_layout.size()
-
-    alias num_tiles0 = src_shape0 // desc_shape0
-    alias num_tiles1 = src_shape1 // desc_shape1
-    alias num_warps = 4  # single warp group
-    alias num_tiles_per_warp = (num_tiles0 * num_tiles1) // num_warps
-
-    alias simd_size = simdwidthof[type]()
-    alias thread_layout_per_warp = Layout.row_major(
-        WARP_SIZE * simd_size // desc_shape1, desc_shape1 // simd_size
-    )
-
-    warp_id = thread_idx.x // WARP_SIZE
-
-    @parameter
-    for tile_id_per_warp in range(num_tiles_per_warp):
-        tile_id = warp_id + UInt(tile_id_per_warp) * num_warps
-        tile_coord0, tile_coord1 = divmod(tile_id, UInt(num_tiles1))
-        src_tile = src.tile[desc_shape0, desc_shape1](tile_coord0, tile_coord1)
-        dst_tile = LayoutTensor[
-            type, desc_layout, address_space = AddressSpace.SHARED
-        ](dst.ptr + tile_id * desc_size)
-
-        copy_dram_to_sram_async[thread_layout_per_warp, swizzle=True](
-            dst_tile.vectorize[1, simd_size](),
-            src_tile.vectorize[1, simd_size](),
-        )
-
-
-fn cp_async_k_major[
-    type: DType
-](
-    dst: LayoutTensor[type, _, address_space = AddressSpace.SHARED, *_, **_],
-    src: LayoutTensor[type, _, address_space = AddressSpace.GENERIC, *_, **_],
-):
-    alias dst_layout = dst.layout
-
-    alias src_layout = src.layout
-    alias src_shape0 = src_layout.shape[0].value()
-    alias src_shape1 = src_layout.shape[1].value()
-
-    alias desc_layout = _tma_desc_tile_layout[
-        type,
-        2,
-        Index(src_shape0, src_shape1),
-        is_k_major=True,
-        swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
-    ]()
-    alias desc_shape0 = desc_layout.shape[0].value()
-    alias desc_shape1 = desc_layout.shape[1].value()
-    alias desc_size = desc_layout.size()
-
-    constrained[
-        desc_shape0 == src_shape0, "k-major desc layout shouldn't alter 1st dim"
-    ]()
-
-    alias num_tiles = src_shape1 // desc_shape1
-    alias simd_size = simdwidthof[type]()
-    # single warp group
-    alias thread_layout = Layout.row_major(
-        128 * simd_size // desc_shape1, desc_shape1 // simd_size
-    )
-
-    @parameter
-    for tile_id in range(num_tiles):
-        src_tile = src.tile[desc_shape0, desc_shape1](0, tile_id)
-        dst_tile = LayoutTensor[
-            type, desc_layout, address_space = AddressSpace.SHARED
-        ](dst.ptr + tile_id * desc_size)
-
-        copy_dram_to_sram_async[thread_layout, swizzle=True](
-            dst_tile.vectorize[1, simd_size](),
-            src_tile.vectorize[1, simd_size](),
-        )
 
 
 fn cpasync_wgmma_kernel[
