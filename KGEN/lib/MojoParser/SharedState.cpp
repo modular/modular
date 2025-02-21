@@ -2137,6 +2137,13 @@ struct BuiltinFunctionFolder {
     return result;
   };
 
+  void recordValue(Value v, TypedAttr attr) {
+    assert(evaluator.getReboundType(v.getType()) == attr.getType() &&
+           "incorrect fold");
+    assert(!boundValues[v] && "value already has a bound value");
+    boundValues[v] = attr;
+  }
+
   /// Process the following operation, doing one of three things:
   /// 1) Fold it to a single TypedAttr, returning it.
   /// 2) Return a failure to indicate that the operation is not foldable.
@@ -2177,52 +2184,35 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
         cast<LIT::StructType>(evaluator.getReboundType(create.getType())));
   }
 
-  if (auto add = dyn_cast<mlir::index::AddOp>(op)) {
-    if (auto lhs = findValue(add.getOperand(0)))
-      if (auto rhs = findValue(add.getOperand(1)))
-        return ParamOperatorAttr::get(POC::Add, lhs, rhs);
-  }
+  // Handle a simple binary operation that folds to a POC binary op.
+  auto foldBinOp = [&](POC opc) -> FailureOr<TypedAttr> {
+    if (auto lhs = findValue(op.getOperand(0)))
+      if (auto rhs = findValue(op.getOperand(1)))
+        return ParamOperatorAttr::get(opc, lhs, rhs);
+    return failure();
+  };
 
-  if (auto mul = dyn_cast<mlir::index::MulOp>(op)) {
-    if (auto lhs = findValue(mul.getOperand(0)))
-      if (auto rhs = findValue(mul.getOperand(1)))
-        return ParamOperatorAttr::get(POC::Mul, lhs, rhs);
-  }
+  // Many index binops fold directly to POC binops.
+  if (auto add = dyn_cast<mlir::index::AddOp>(op))
+    return foldBinOp(POC::Add);
+  if (auto mul = dyn_cast<mlir::index::MulOp>(op))
+    return foldBinOp(POC::Mul);
+  if (auto andOp = dyn_cast<mlir::index::AndOp>(op))
+    return foldBinOp(POC::And);
+  if (auto orOp = dyn_cast<mlir::index::OrOp>(op))
+    return foldBinOp(POC::Or);
+  if (auto xorOp = dyn_cast<mlir::index::XOrOp>(op))
+    return foldBinOp(POC::Xor);
+  if (auto shlOp = dyn_cast<mlir::index::ShlOp>(op))
+    return foldBinOp(POC::Shl);
+  if (auto shrOp = dyn_cast<mlir::index::ShrSOp>(op))
+    return foldBinOp(POC::Shr);
 
+  // Sub doesn't have a POC opcode: "x-y" is "x+(y*-1)".
   if (auto sub = dyn_cast<mlir::index::SubOp>(op)) {
     if (auto lhs = findValue(sub.getOperand(0)))
       if (auto rhs = findValue(sub.getOperand(1)))
         return ParamOperatorAttr::getSub(lhs, rhs);
-  }
-
-  if (auto andOp = dyn_cast<mlir::index::AndOp>(op)) {
-    if (auto lhs = findValue(andOp.getOperand(0)))
-      if (auto rhs = findValue(andOp.getOperand(1)))
-        return ParamOperatorAttr::get(POC::And, lhs, rhs);
-  }
-
-  if (auto orOp = dyn_cast<mlir::index::OrOp>(op)) {
-    if (auto lhs = findValue(orOp.getOperand(0)))
-      if (auto rhs = findValue(orOp.getOperand(1)))
-        return ParamOperatorAttr::get(POC::Or, lhs, rhs);
-  }
-
-  if (auto xorOp = dyn_cast<mlir::index::XOrOp>(op)) {
-    if (auto lhs = findValue(xorOp.getOperand(0)))
-      if (auto rhs = findValue(xorOp.getOperand(1)))
-        return ParamOperatorAttr::get(POC::Xor, lhs, rhs);
-  }
-
-  if (auto shlOp = dyn_cast<mlir::index::ShlOp>(op)) {
-    if (auto lhs = findValue(shlOp.getOperand(0)))
-      if (auto rhs = findValue(shlOp.getOperand(1)))
-        return ParamOperatorAttr::get(POC::Shl, lhs, rhs);
-  }
-
-  if (auto shrOp = dyn_cast<mlir::index::ShrSOp>(op)) {
-    if (auto lhs = findValue(shrOp.getOperand(0)))
-      if (auto rhs = findValue(shrOp.getOperand(1)))
-        return ParamOperatorAttr::get(POC::Shr, lhs, rhs);
   }
 
   if (auto cmp = dyn_cast<mlir::index::CmpOp>(op)) {
@@ -2266,14 +2256,14 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
                                             /*emitError=*/true);
   }
 
+  // For vardecls, the primary pattern we're trying to handle is:
+  //   %tmp = lit.var.decl Int
+  //   %tmp2 = lit.ref.struct.ger %tmp, value
+  //   lit.ref.store %v, %tmp2
+  //   lit.load.consume %tmp
+  // Which happens in ctors for builtin operations.  Ignore anything more
+  // complex.
   if (auto varDecl = dyn_cast<VarDeclOp>(op)) {
-    // Our primary pattern we're trying to handle is:
-    //   %tmp = lit.var.decl Int
-    //   %tmp2 = lit.ref.struct.ger %tmp, value
-    //   lit.ref.store %v, %tmp2
-    //   lit.load.consume %tmp
-    // Which happens in ctors for builtin operations.  Ignore anything more
-    // complex.
     auto eltType = evaluator.getReboundType(varDecl.getType().getElementType());
     ASTDecl *decl = ASTType(eltType).getDecl(shared);
     StructDeclOp structOp;
@@ -2338,6 +2328,43 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
       if (auto rhs = findValue(cmp.getRhs()))
         return IntLiteralCmpAttr::get(lhs.getContext(), cmp.getPredAttr(), lhs,
                                       rhs);
+  }
+
+  // We can fold hlcf.if operations in limited form that end with a yield of
+  // a single value for which both sides are foldable.
+  if (auto ifOp = dyn_cast<HLCF::IfOp>(op)) {
+    auto foldBlockWithYield = [&](Block &block) -> FailureOr<TypedAttr> {
+      for (Operation &op : block) {
+        if (auto yieldOp = dyn_cast<HLCF::YieldOp>(op)) {
+          if (yieldOp.getNumOperands() == 1)
+            return findValue(yieldOp.getOperand(0));
+          emitError(yieldOp.getLoc()) << "can only handle single-result if";
+          return failure();
+        }
+
+        // Fold the operation.
+        FailureOr<TypedAttr> result = fold(op);
+        if (failed(result))
+          return failure();
+        // Otherwise we know this operation. If it returned a value remember it.
+        if (TypedAttr val = *result)
+          recordValue(op.getResult(0), val);
+      }
+
+      llvm_unreachable("should have found a block terminator");
+    };
+
+    if (auto condVal = findValue(ifOp.getCond())) {
+      auto trueVal = foldBlockWithYield(ifOp.getThenBlock());
+      if (failed(trueVal))
+        return trueVal;
+      auto falseVal = foldBlockWithYield(ifOp.getElseBlock());
+      if (failed(falseVal))
+        return falseVal;
+
+      return ParamOperatorAttr::get(POC::Cond, {condVal, *trueVal, *falseVal},
+                                    trueVal->getType());
+    }
   }
 
   // Otherwise we don't know what this is, bail out.
@@ -2421,13 +2448,8 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
       return {}; // Error already diagnosed.
 
     // Otherwise we know this operation. If it returned a value remember it.
-    if (TypedAttr val = *result) {
-      assert(op.getNumResults() == 1 && "expected a single result");
-      assert(folder.evaluator.getReboundType(op.getResult(0).getType()) ==
-                 val.getType() &&
-             "incorrect fold");
-      folder.boundValues[op.getResult(0)] = val;
-    }
+    if (TypedAttr val = *result)
+      folder.recordValue(op.getResult(0), val);
   }
 
   llvm_unreachable("should have found a block terminator");
