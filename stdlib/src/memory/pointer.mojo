@@ -44,12 +44,12 @@ struct _GPUAddressSpace(EqualityComparable):
     alias LOCAL = AddressSpace(5)
     """Local address space."""
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn value(self) -> Int:
         """The integral value of the address space.
 
@@ -58,7 +58,7 @@ struct _GPUAddressSpace(EqualityComparable):
         """
         return self._value
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __int__(self) -> Int:
         """The integral value of the address space.
 
@@ -168,7 +168,7 @@ struct AddressSpace(EqualityComparable, Stringable, Writable):
     alias GENERIC = AddressSpace(0)
     """Generic address space."""
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: Int):
         """Initializes the address space from the underlying integral value.
@@ -178,7 +178,7 @@ struct AddressSpace(EqualityComparable, Stringable, Writable):
         """
         self._value = value
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: _GPUAddressSpace):
         """Initializes the address space from the underlying integral value.
@@ -186,9 +186,9 @@ struct AddressSpace(EqualityComparable, Stringable, Writable):
         Args:
           value: The address space value.
         """
-        self._value = Int(value)
+        self._value = value._value
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn value(self) -> Int:
         """The integral value of the address space.
 
@@ -197,7 +197,7 @@ struct AddressSpace(EqualityComparable, Stringable, Writable):
         """
         return self._value
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __int__(self) -> Int:
         """The integral value of the address space.
 
@@ -206,7 +206,7 @@ struct AddressSpace(EqualityComparable, Stringable, Writable):
         """
         return self._value
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __index__(self) -> __mlir_type.index:
         """Convert to index.
 

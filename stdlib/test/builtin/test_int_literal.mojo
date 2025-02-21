@@ -138,6 +138,13 @@ def test_comparison():
     assert_false((5).__ge__(10))
 
 
+def test_shift():
+    assert_equal(IntLiteral.__lshift__(1, -42), 0)  # Dubious.
+    assert_equal(IntLiteral.__lshift__(1, 0), 1)
+    assert_equal(IntLiteral.__lshift__(1, 1), 2)
+    assert_equal(IntLiteral.__lshift__(1, 6), 64)
+
+
 def main():
     test_add()
     test_sub()
@@ -151,3 +158,4 @@ def main():
     test_indexer()
     test_bool()
     test_comparison()
+    test_shift()
