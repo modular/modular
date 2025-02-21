@@ -149,7 +149,7 @@ def execute_kv_cache_ragged_flash_attention[
             num_blocks,
             2,
             1,
-            1024,
+            seq_len + cache_len,
             num_kv_heads,
             head_dim,
         ),

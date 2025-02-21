@@ -80,7 +80,7 @@ def execute_kv_cache_ragged_flash_attention[
 ):
     alias num_layers = 1
     alias layer_idx = 0
-    var num_pages = batch_size * ceildiv(seq_len, page_size) * 2
+    var num_pages = batch_size * ceildiv(seq_len + cache_len, page_size) * 2
     alias CacheType = PagedKVCache[
         dtype,
         KVCacheStaticParams(num_heads=num_kv_heads, head_size=head_dim),
