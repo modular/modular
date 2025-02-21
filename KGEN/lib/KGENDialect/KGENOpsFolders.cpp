@@ -546,38 +546,6 @@ OpFoldResult IntLiteralConvertOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
-// IntLiteralToFloatLiteral
-//===----------------------------------------------------------------------===//
-
-ErrorTreeOrSuccess
-IntLiteralToFloatLiteralOp::interpret(ArrayRef<Attribute> operands,
-                                      InterpreterState &state) {
-  assert(!operands.empty() &&
-         "IntLiteralToFloatLiteralOp must have an operand");
-  auto inval = ::dyn_cast<IntLiteralAttr>(operands[0]);
-  if (!inval)
-    return ErrorTree(getLoc(), Error("input must be IntLiteralAttr"));
-  FloatLiteralAttr attrResult = FloatLiteralAttr::get(
-      inval.getContext(),
-      FloatLiteralSpecialValuesAttr::get(inval.getContext(),
-                                         FloatLiteralSpecialValues::Normal),
-      IPRational(inval.getValue(), IPInt(1)));
-  state.mapResults(attrResult);
-  return success();
-}
-
-OpFoldResult IntLiteralToFloatLiteralOp::fold(FoldAdaptor adaptor) {
-  auto in = dyn_cast_if_present<IntLiteralAttr>(adaptor.getInput());
-  if (!in)
-    return {};
-  return FloatLiteralAttr::get(
-      in.getContext(),
-      FloatLiteralSpecialValuesAttr::get(in.getContext(),
-                                         FloatLiteralSpecialValues::Normal),
-      IPRational(in.getValue(), IPInt(1)));
-}
-
-//===----------------------------------------------------------------------===//
 // FloatLiteralIsa
 //===----------------------------------------------------------------------===//
 
@@ -711,8 +679,8 @@ OpFoldResult FloatLiteralCmp::fold(FoldAdaptor adaptor) {
 //===----------------------------------------------------------------------===//
 
 OpFoldResult FloatLiteralBinOp::fold(FoldAdaptor adaptor) {
-  if (auto lhs = dyn_cast_or_null<FloatLiteralAttr>(adaptor.getLhs()))
-    if (auto rhs = dyn_cast_or_null<FloatLiteralAttr>(adaptor.getRhs()))
+  if (auto lhs = dyn_cast_or_null<TypedAttr>(adaptor.getLhs()))
+    if (auto rhs = dyn_cast_or_null<TypedAttr>(adaptor.getRhs()))
       return FloatLiteralBinAttr::get(lhs.getContext(), lhs.getType(), lhs, rhs,
                                       getOperAttr());
   return {};
@@ -1011,44 +979,23 @@ OpFoldResult FloatLiteralConvertOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
-// FloatLiteralToIntLiteral
+// IntLiteralToFloatLiteral
 //===----------------------------------------------------------------------===//
 
-static IntLiteralAttr FloatLiteralToIntLiteralOpHelper(FloatLiteralAttr fattr) {
-  IPInt result;
-  switch (fattr.getSpecial().getValue()) {
-  case FloatLiteralSpecialValues::Nan:
-  case FloatLiteralSpecialValues::Inf:
-  case FloatLiteralSpecialValues::NegInf:
-  case FloatLiteralSpecialValues::NegZero:
-    result = 0;
-    break;
-  case FloatLiteralSpecialValues::Normal:
-    assert(fattr.getRational().has_value() &&
-           "normal FloatLiterals have rational");
-    result = fattr.getRational()->getNumerator() /
-             fattr.getRational()->getDenominator();
-    break;
-  }
-  return IntLiteralAttr::get(fattr.getContext(), result);
+OpFoldResult IntToFloatLiteralOp::fold(FoldAdaptor adaptor) {
+  if (auto in = dyn_cast_if_present<TypedAttr>(adaptor.getInput()))
+    return IntToFloatLiteralAttr::get(in.getContext(), in.getType(), in);
+  return {};
 }
 
-ErrorTreeOrSuccess
-FloatLiteralToIntLiteralOp::interpret(ArrayRef<Attribute> operands,
-                                      InterpreterState &state) {
-  assert(!operands.empty() &&
-         "FloatLiteralToIntLiteralOp must have an operand");
-  auto inval = ::dyn_cast<FloatLiteralAttr>(operands[0]);
-  IntLiteralAttr attrResult = FloatLiteralToIntLiteralOpHelper(inval);
-  state.mapResults(attrResult);
-  return success();
-}
+//===----------------------------------------------------------------------===//
+// FloatToIntLiteral
+//===----------------------------------------------------------------------===//
 
-OpFoldResult FloatLiteralToIntLiteralOp::fold(FoldAdaptor adaptor) {
-  auto in = dyn_cast_if_present<FloatLiteralAttr>(adaptor.getInput());
-  if (!in)
-    return {};
-  return FloatLiteralToIntLiteralOpHelper(in);
+OpFoldResult FloatToIntLiteralOp::fold(FoldAdaptor adaptor) {
+  if (auto in = dyn_cast_if_present<TypedAttr>(adaptor.getInput()))
+    return FloatToIntLiteralAttr::get(in.getContext(), in.getType(), in);
+  return {};
 }
 
 //===----------------------------------------------------------------------===//

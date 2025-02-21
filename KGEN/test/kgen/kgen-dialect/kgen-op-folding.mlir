@@ -4,7 +4,7 @@
 kgen.func @int_literal_to_float_literal() -> !kgen.float_literal {
   %il = kgen.param.constant: !kgen.int_literal = <5>
   // CHECK: #kgen.float_literal<5|1>
-  %fl = kgen.int_literal.to_float_literal %il
+  %fl = kgen.int_to_float_literal %il
   kgen.return %fl : !kgen.float_literal
 }
 
@@ -301,15 +301,15 @@ kgen.func @float_literal_to_int_literal() ->
   %nz = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<neg_zero>>
 
   // CHECK: kgen.param.constant: !kgen.int_literal = <1>
-  %r1 = kgen.float_literal.to_int_literal %fa
+  %r1 = kgen.float_to_int_literal %fa
   // CHECK: kgen.param.constant: !kgen.int_literal = <2>
-  %r2 = kgen.float_literal.to_int_literal %fb
+  %r2 = kgen.float_to_int_literal %fb
   // CHECK: kgen.param.constant: !kgen.int_literal = <-1>
-  %r3 = kgen.float_literal.to_int_literal %fna
+  %r3 = kgen.float_to_int_literal %fna
   // CHECK: kgen.param.constant: !kgen.int_literal = <-2>
-  %r4 = kgen.float_literal.to_int_literal %fnb
+  %r4 = kgen.float_to_int_literal %fnb
   // CHECK: kgen.param.constant: !kgen.int_literal = <0>
-  %r5 = kgen.float_literal.to_int_literal %nz
+  %r5 = kgen.float_to_int_literal %nz
 
   kgen.return %r1, %r2, %r3, %r4, %r5 : !kgen.int_literal, !kgen.int_literal,
     !kgen.int_literal, !kgen.int_literal, !kgen.int_literal

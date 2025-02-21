@@ -720,6 +720,59 @@ def KGEN_FloatLiteralAttr : KGEN_ExprAttr<"FloatLiteral", "float_literal"> {
 }
 
 //===----------------------------------------------------------------------===//
+// IntToFloatLiteralAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_IntToFloatLiteralAttr : KGEN_ExprAttr<"IntToFloatLiteral",
+                                               "int_to_float_literal"> {
+  let summary = "Convert an int literal to an float literal.";
+  let description = [{
+    The `#kgen.int_to_float_literal` attr converts an int literal to an
+    float literal.
+  }];
+
+  let parameters = (ins
+    AttributeSelfTypeParameter<"", "Type">:$type,
+    "TypedAttr":$input
+  );
+
+  let assemblyFormat = "`<` $input `>`";
+  
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override default builder so we can return a folded attribute.
+    AttrBuilder<(ins "Type":$type, "TypedAttr":$input), "", "TypedAttr">,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// FloatToIntLiteralAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_FloatToIntLiteralAttr : KGEN_ExprAttr<"FloatToIntLiteral",
+                                               "float_to_int_literal"> {
+  let summary = "Convert an float literal to an int literal.";
+  let description = [{
+    The `#kgen.float_to_int_literal` attr converts an float literal to an
+    int literal.
+  }];
+
+  let parameters = (ins
+    AttributeSelfTypeParameter<"", "Type">:$type,
+    "TypedAttr":$input
+  );
+
+  let assemblyFormat = "`<` $input `>`";
+  
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return an FloatToIntLiteralAttr.
+    AttrBuilder<(ins "Type":$type, "TypedAttr":$input), "", "TypedAttr">,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // FloatLiteralBinAttr
 //===----------------------------------------------------------------------===//
 
