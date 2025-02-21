@@ -514,6 +514,15 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     }
     return;
   }
+  if (auto refPack = dyn_cast<RefPackAttr>(param)) {
+    os << "RefPack(";
+    llvm::interleaveComma(refPack.getValues(), os, [&](TypedAttr value) {
+      printDemangledParam(os, value, diagShared);
+    });
+    os << ")";
+    return;
+  }
+
   if (auto op = dyn_cast<ParamOperatorAttr>(param)) {
     ArrayRef<TypedAttr> operands = op.getOperands();
 
