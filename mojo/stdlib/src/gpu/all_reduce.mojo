@@ -10,7 +10,7 @@ from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
 from sys import simdwidthof
 
-from buffer import Buffer, NDBuffer
+from buffer import NDBuffer
 from gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.intrinsics import (
