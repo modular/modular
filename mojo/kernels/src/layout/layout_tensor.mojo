@@ -18,13 +18,17 @@ from sys.intrinsics import PrefetchOptions
 
 from algorithm import vectorize
 from bit import log2_floor
+from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, thread_idx, lane_id
 from gpu.memory import CacheEviction, Fill, async_copy
+import gpu.memory as gpu_memory
 from layout.element import Element, MemoryElement
+from layout.tma_async import _tma_desc_tile_layout
 from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
 from memory.pointer import AddressSpace, _GPUAddressSpace
 
 from utils import IndexList, StaticTuple
+from utils.index import Index
 from utils.numerics import max_finite
 
 from .fillers import arange
@@ -2445,6 +2449,114 @@ fn copy_dram_to_sram[
                 dst_fragments.ptr.store[alignment=dst_align](
                     dst_idx, src_vec.cast[dst.dtype]()
                 )
+
+
+@always_inline("nodebug")
+fn cp_async_k_major[
+    type: DType
+](
+    dst: LayoutTensor[
+        type, _, address_space = gpu_memory.AddressSpace.SHARED, *_, **_
+    ],
+    src: LayoutTensor[
+        type, _, address_space = gpu_memory.AddressSpace.GENERIC, *_, **_
+    ],
+):
+    alias dst_layout = dst.layout
+
+    alias src_layout = src.layout
+    alias src_shape0 = src_layout.shape[0].value()
+    alias src_shape1 = src_layout.shape[1].value()
+
+    alias desc_layout = _tma_desc_tile_layout[
+        type,
+        2,
+        Index(src_shape0, src_shape1),
+        is_k_major=True,
+        swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+    ]()
+    alias desc_shape0 = desc_layout.shape[0].value()
+    alias desc_shape1 = desc_layout.shape[1].value()
+    alias desc_size = desc_layout.size()
+
+    constrained[
+        desc_shape0 == src_shape0, "k-major desc layout shouldn't alter 1st dim"
+    ]()
+
+    alias num_tiles = src_shape1 // desc_shape1
+    alias simd_size = simdwidthof[type]()
+    # single warp group
+    alias thread_layout = Layout.row_major(
+        128 * simd_size // desc_shape1, desc_shape1 // simd_size
+    )
+
+    @parameter
+    for tile_id in range(num_tiles):
+        src_tile = src.tile[desc_shape0, desc_shape1](0, tile_id)
+        dst_tile = LayoutTensor[
+            type, desc_layout, address_space = gpu_memory.AddressSpace.SHARED
+        ](dst.ptr + tile_id * desc_size)
+
+        copy_dram_to_sram_async[thread_layout, swizzle=True](
+            dst_tile.vectorize[1, simd_size](),
+            src_tile.vectorize[1, simd_size](),
+        )
+
+
+@always_inline("nodebug")
+fn cp_async_mn_major[
+    type: DType
+](
+    dst: LayoutTensor[
+        type, _, address_space = gpu_memory.AddressSpace.SHARED, *_, **_
+    ],
+    src: LayoutTensor[
+        type, _, address_space = gpu_memory.AddressSpace.GENERIC, *_, **_
+    ],
+):
+    alias dst_layout = dst.layout
+
+    alias src_layout = src.layout
+    alias src_shape0 = src_layout.shape[0].value()
+    alias src_shape1 = src_layout.shape[1].value()
+
+    alias desc_layout = _tma_desc_tile_layout[
+        type,
+        2,
+        Index(src_shape0, src_shape1),
+        is_k_major=False,
+        swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+    ]()
+    alias desc_shape0 = desc_layout.shape[0].value()
+    alias desc_shape1 = desc_layout.shape[1].value()
+    alias desc_size = desc_layout.size()
+
+    alias num_tiles0 = src_shape0 // desc_shape0
+    alias num_tiles1 = src_shape1 // desc_shape1
+    alias num_warps = 4  # single warp group
+    alias num_tiles_per_warp = (num_tiles0 * num_tiles1) // num_warps
+
+    alias simd_size = simdwidthof[type]()
+    alias thread_layout_per_warp = Layout.row_major(
+        gpu_memory.WARP_SIZE * simd_size // desc_shape1,
+        desc_shape1 // simd_size,
+    )
+
+    warp_id = thread_idx.x // gpu_memory.WARP_SIZE
+
+    @parameter
+    for tile_id_per_warp in range(num_tiles_per_warp):
+        tile_id = warp_id + UInt(tile_id_per_warp) * num_warps
+        tile_coord0, tile_coord1 = divmod(tile_id, UInt(num_tiles1))
+        src_tile = src.tile[desc_shape0, desc_shape1](tile_coord0, tile_coord1)
+        dst_tile = LayoutTensor[
+            type, desc_layout, address_space = gpu_memory.AddressSpace.SHARED
+        ](dst.ptr + tile_id * desc_size)
+
+        copy_dram_to_sram_async[thread_layout_per_warp, swizzle=True](
+            dst_tile.vectorize[1, simd_size](),
+            src_tile.vectorize[1, simd_size](),
+        )
 
 
 # Synchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
