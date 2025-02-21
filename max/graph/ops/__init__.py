@@ -20,6 +20,8 @@ convenience methods such as
 [`swapaxes()`](/max/api/python/graph/value/TensorValue#swapaxes).
 """
 
+from __future__ import annotations
+
 from . import allreduce
 from .band_part import band_part
 from .broadcast_to import broadcast_to
@@ -34,6 +36,8 @@ from .cumsum import cumsum
 from .custom import custom, inplace_custom
 from .debug import print
 from .elementwise import *
+from .elementwise import max as _elementwise_max
+from .elementwise import min as _elementwise_min
 from .flatten import flatten
 from .gather import gather, gather_nd
 from .layer_norm import layer_norm
@@ -45,6 +49,8 @@ from .quantized import dequantize, qmatmul
 from .range import range
 from .rebind import rebind
 from .reduction import argmax, argmin, mean, sum
+from .reduction import max as _reduce_max
+from .reduction import min as _reduce_min
 from .reshape import reshape
 from .scatter import masked_scatter
 from .select import select
@@ -57,3 +63,29 @@ from .top_k import top_k
 from .transfer_to import transfer_to
 from .transpose import transpose
 from .unsqueeze import unsqueeze
+
+
+def min(  # type: ignore[no-redef]
+    x: TensorValueLike, y: TensorValueLike | None = None, /, axis: int = -1
+) -> TensorValue:
+    """Overload for ops.elementwise.min and ops.reduction.min.
+
+    - If two tensors are provided, `axis` is ignored and returns an elementwise minimum.
+    - If one tensor is provided, compute `ops.reduction.min` on the tensor and axis.
+    """
+    if y is not None and axis != -1:
+        raise ValueError("Axis not allowed for elementwise min.")
+    return _reduce_min(x, axis=axis) if y is None else _elementwise_min(x, y)
+
+
+def max(  # type: ignore[no-redef]
+    x: TensorValueLike, y: TensorValueLike | None = None, /, axis: int = -1
+) -> TensorValue:
+    """Overload for ops.elementwise.max and ops.reduction.max.
+
+    - If two tensors are provided, `axis` is ignored and returns an elementwise maximum.
+    - If one tensor is provided, compute `ops.reduction.max` on the tensor and axis.
+    """
+    if y is not None and axis != -1:
+        raise ValueError("Axis not allowed for elementwise max.")
+    return _reduce_max(x, axis=axis) if y is None else _elementwise_max(x, y)

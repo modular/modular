@@ -1,0 +1,95 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+"""ops.reduction tests."""
+
+import pytest
+from conftest import (
+    axes,
+    broadcastable_tensor_types,
+    shapes,
+    tensor_types,
+)
+from hypothesis import given
+from hypothesis import strategies as st
+from max.graph import Graph, ops
+
+shared_shapes = st.shared(shapes(min_rank=1))
+
+
+@given(input_types=broadcastable_tensor_types(2))
+def test_min__elementwise(input_types):
+    with Graph("test_min", input_types=input_types) as graph:
+        x, y = graph.inputs
+        result = ops.min(x, y)
+        expected = ops.elementwise.min(x, y)
+        assert result.shape == expected.shape
+        assert result.dtype == expected.dtype
+
+
+@given(input_types=broadcastable_tensor_types(2))
+def test_max__elementwise(input_types):
+    with Graph("test_max", input_types=input_types) as graph:
+        x, y = graph.inputs
+        result = ops.max(x, y)
+        expected = ops.elementwise.max(x, y)
+        assert result.shape == expected.shape
+        assert result.dtype == expected.dtype
+
+
+@given(input_type=tensor_types(shapes=shared_shapes), axis=axes(shared_shapes))
+def test_min__reduction(input_type, axis):
+    with Graph("test_min", input_types=[input_type]) as graph:
+        (x,) = graph.inputs
+        result = ops.min(x, axis=axis)
+        expected = ops.reduction.min(x, axis=axis)
+        assert result.shape == expected.shape
+        assert result.dtype == expected.dtype
+
+
+@given(input_type=tensor_types(shapes=shared_shapes), axis=axes(shared_shapes))
+def test_max__reduction(input_type, axis):
+    with Graph("test_max", input_types=[input_type]) as graph:
+        (x,) = graph.inputs
+        result = ops.max(x, axis=axis)
+        expected = ops.reduction.max(x, axis=axis)
+        assert result.shape == expected.shape
+        assert result.dtype == expected.dtype
+
+
+@given(input_type=tensor_types(shapes=shared_shapes))
+def test_min__reduction__no_axis(input_type):
+    with Graph("test_min", input_types=[input_type]) as graph:
+        (x,) = graph.inputs
+        result = ops.min(x)
+        expected = ops.reduction.min(x)
+        assert result.shape == expected.shape
+        assert result.dtype == expected.dtype
+
+
+@given(input_type=tensor_types(shapes=shared_shapes))
+def test_max__reduction__no_axis(input_type):
+    with Graph("test_max", input_types=[input_type]) as graph:
+        (x,) = graph.inputs
+        result = ops.max(x)
+        expected = ops.reduction.max(x)
+        assert result.shape == expected.shape
+        assert result.dtype == expected.dtype
+
+
+@given(input_types=broadcastable_tensor_types(2), axis=st.integers())
+def test_min_fail__y_and_axis_provided(input_types, axis):
+    with Graph("test_min", input_types=input_types) as graph:
+        x, y = graph.inputs
+        with pytest.raises(ValueError):
+            result = ops.min(x, y, axis=axis)
+
+
+@given(input_types=broadcastable_tensor_types(2), axis=st.integers())
+def test_max_fail__y_and_axis_provided(input_types, axis):
+    with Graph("test_min", input_types=input_types) as graph:
+        x, y = graph.inputs
+        with pytest.raises(ValueError):
+            result = ops.max(x, y, axis=axis)
