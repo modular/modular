@@ -8,7 +8,7 @@ from sys import alignof, has_neon, simdwidthof
 from sys.intrinsics import PrefetchOptions
 
 from algorithm import unswitch
-from buffer.buffer import Buffer, NDBuffer, partial_simd_load
+from buffer.buffer import NDBuffer, partial_simd_load
 from buffer.dimlist import DimList
 from memory import UnsafePointer, memcpy, stack_allocation
 from register import register_internal
@@ -755,7 +755,7 @@ fn _pack_b_ndbuffer_impl[
             # If already transposed, skip transpose step and do a memcpy.
             @parameter
             if not transposed:
-                var perm = Buffer[DType.index, 2].stack_allocation()
+                var perm = NDBuffer[DType.index, 1, 2].stack_allocation()
                 perm[0] = 1
                 perm[1] = 0
 

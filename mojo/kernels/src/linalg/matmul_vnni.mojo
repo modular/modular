@@ -9,12 +9,7 @@ from sys import prefetch
 from sys.info import alignof, has_avx512f, has_neon, has_neon_int8_dotprod
 from sys.intrinsics import PrefetchOptions
 
-from buffer.buffer import (
-    Buffer,
-    NDBuffer,
-    partial_simd_load,
-    partial_simd_store,
-)
+from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
 from buffer.dimlist import DimList
 from memory import UnsafePointer, stack_allocation
 from memory.unsafe import bitcast
@@ -96,8 +91,9 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
         # This inner kernels works with non-transposed A.
         var K = a.dim[1]()
 
-        var a_local = Buffer[
+        var a_local = NDBuffer[
             a.type,
+            1,
             4 * kernel_rows,
             address_space = a.address_space,
             origin = a.origin,
