@@ -7408,15 +7408,14 @@ struct DistributedAllReduceSum2Devices:
         inputs: VariadicTensors[
             type, rank, size = Self.num_devices, io_spec=IOUnknown
         ],
-        dev_ctx0: DeviceContextPtr,
-        dev_ctx1: DeviceContextPtr,
+        _dev_ctxs: StaticTuple[DeviceContextPtr, Self.num_devices],
         ctx: MojoCallContextPtr,
     ) raises:
         var input_size_bytes = inputs[0].size() * sizeof[type]()
         _check_signal_buffer_size(signal_buffer0, input_size_bytes)
         _check_signal_buffer_size(signal_buffer1, input_size_bytes)
 
-        dev_ctxs = List[DeviceContext](dev_ctx0[], dev_ctx1[])
+        var dev_ctxs = List[DeviceContext](_dev_ctxs[0][], _dev_ctxs[1][])
 
         var out_bufs = InlineArray[NDBuffer[type, rank], outputs.size](
             NDBuffer[type, rank]()
@@ -7466,10 +7465,7 @@ struct DistributedAllReduceSum4Devices:
         inputs: VariadicTensors[
             type, rank, size = Self.num_devices, io_spec=IOUnknown
         ],
-        dev_ctx0: DeviceContextPtr,
-        dev_ctx1: DeviceContextPtr,
-        dev_ctx2: DeviceContextPtr,
-        dev_ctx3: DeviceContextPtr,
+        _dev_ctxs: StaticTuple[DeviceContextPtr, Self.num_devices],
         ctx: MojoCallContextPtr,
     ) raises:
         var input_size_bytes = inputs[0].size() * sizeof[type]()
@@ -7479,7 +7475,7 @@ struct DistributedAllReduceSum4Devices:
         _check_signal_buffer_size(signal_buffer3, input_size_bytes)
 
         var dev_ctxs = List[DeviceContext](
-            dev_ctx0[], dev_ctx1[], dev_ctx2[], dev_ctx3[]
+            _dev_ctxs[0][], _dev_ctxs[1][], _dev_ctxs[2][], _dev_ctxs[3][]
         )
 
         var out_bufs = InlineArray[NDBuffer[type, rank], outputs.size](

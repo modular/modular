@@ -859,9 +859,9 @@ struct SingleDeviceContext:
     ](
         out: ManagedTensorSlice[type=type, *_],
         x: ManagedTensorSlice[type=type, *_],
-        dev_ctx: DeviceContextPtr,
+        dev_ctx: StaticTuple[DeviceContextPtr, 1],
     ) raises:
-        dev_ctx[].synchronize()
+        dev_ctx[0][].synchronize()
 
 
 @compiler.register("multi_device_context", num_dps_outputs=1)
@@ -872,14 +872,13 @@ struct MultiDeviceContext:
     ](
         out: ManagedTensorSlice[type=type, *_],
         x: ManagedTensorSlice[type=type, *_],
-        dev_ctx0: DeviceContextPtr,
-        dev_ctx1: DeviceContextPtr,
+        dev_ctxs: StaticTuple[DeviceContextPtr, 2],
         ctx: MojoCallContextPtr,
     ) raises:
-        print("dev_ctx0.id() =", dev_ctx0[].id())
-        print("dev_ctx1.id() =", dev_ctx1[].id())
-        dev_ctx0[].synchronize()
-        dev_ctx1[].synchronize()
+        print("dev_ctx0.id() =", dev_ctxs[0][].id())
+        print("dev_ctx1.id() =", dev_ctxs[1][].id())
+        dev_ctxs[0][].synchronize()
+        dev_ctxs[1][].synchronize()
 
 
 @compiler.register("multi_device_context_dedup")
@@ -891,11 +890,10 @@ struct MultiDeviceContextDedup:
         out: ManagedTensorSlice[type=type, *_],
         x: ManagedTensorSlice[type=type, *_],
         y: ManagedTensorSlice[type=type, *_],
-        dev_ctx0: DeviceContextPtr,
-        dev_ctx1: DeviceContextPtr,
+        dev_ctxs: StaticTuple[DeviceContextPtr, 2],
     ) raises:
-        dev_ctx0[].synchronize()
-        dev_ctx1[].synchronize()
+        dev_ctxs[0][].synchronize()
+        dev_ctxs[1][].synchronize()
 
 
 @compiler.register("variadic_device_context", num_dps_outputs=1)
