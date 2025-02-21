@@ -28,7 +28,7 @@ from builtin.math import min as _min
 from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_valid_target
 from memory.unsafe import bitcast
-from runtime.asyncrt import MojoCallContextPtr
+from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList, StaticTuple
@@ -429,7 +429,7 @@ fn _reduce_generator[
     shape: IndexList[_, element_bitwidth = bitwidthof[Int](), unsigned=False],
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
-    context: MojoCallContextPtr = MojoCallContextPtr(),
+    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Reduce the given tensor using the given reduction function. The
     num_reductions parameter enables callers to execute fused reductions. The
@@ -630,7 +630,7 @@ fn _reduce_generator_wrapper[
     shape: IndexList[_, element_bitwidth = bitwidthof[Int](), unsigned=False],
     init: Scalar,
     reduce_dim: Int,
-    context: MojoCallContextPtr = MojoCallContextPtr(),
+    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     @always_inline
     @parameter
@@ -687,7 +687,7 @@ fn _reduce_generator[
     shape: IndexList[_, element_bitwidth = bitwidthof[Int](), unsigned=False],
     init: Scalar,
     reduce_dim: Int,
-    context: MojoCallContextPtr = MojoCallContextPtr(),
+    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Reduce the given tensor using the given reduction function.
 
@@ -1123,7 +1123,7 @@ fn max[
         _, element_bitwidth = bitwidthof[Int](), unsigned=False
     ],
     reduce_dim: Int,
-    context: MojoCallContextPtr = MojoCallContextPtr(),
+    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Computes the max across the input and output shape.
 
@@ -1248,7 +1248,7 @@ fn min[
         _, element_bitwidth = bitwidthof[Int](), unsigned=False
     ],
     reduce_dim: Int,
-    context: MojoCallContextPtr = MojoCallContextPtr(),
+    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Computes the min across the input and output shape.
 
@@ -1373,7 +1373,7 @@ fn sum[
         _, element_bitwidth = bitwidthof[Int](), unsigned=False
     ],
     reduce_dim: Int,
-    context: MojoCallContextPtr = MojoCallContextPtr(),
+    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Computes the sum across the input and output shape.
 
@@ -1498,7 +1498,7 @@ fn product[
         _, element_bitwidth = bitwidthof[Int](), unsigned=False
     ],
     reduce_dim: Int,
-    context: MojoCallContextPtr = MojoCallContextPtr(),
+    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Computes the product across the input and output shape.
 
@@ -1639,7 +1639,7 @@ fn mean[
     ],
     reduce_dim: Int,
     output_shape: __type_of(input_shape),
-    context: MojoCallContextPtr = MojoCallContextPtr(),
+    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Computes the mean across the input and output shape.
 

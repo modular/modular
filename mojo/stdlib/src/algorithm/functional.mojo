@@ -28,7 +28,7 @@ from gpu import (
 from gpu.host import DeviceContext
 from gpu.host.info import Info, is_cpu, is_gpu, is_valid_target
 from runtime import tracing
-from runtime.asyncrt import MojoCallContextPtr, TaskGroup, parallelism_level
+from runtime.asyncrt import DeviceContextPtr, TaskGroup, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList
@@ -1359,7 +1359,7 @@ fn elementwise[
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
     trace_description: StringLiteral = "",
-](shape: IndexList[rank, **_], context: MojoCallContextPtr):
+](shape: IndexList[rank, **_], context: DeviceContextPtr):
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -1394,9 +1394,7 @@ fn elementwise[
 
         @parameter
         if is_gpu[target]():
-            _elementwise_impl_gpu[func, simd_width=simd_width](
-                shape, context.get_device_context()
-            )
+            _elementwise_impl_gpu[func, simd_width=simd_width](shape, context[])
         else:
             _elementwise_impl_cpu[
                 func, simd_width, use_blocking_impl=use_blocking_impl
