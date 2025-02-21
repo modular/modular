@@ -114,10 +114,12 @@ class GGUFWeights(Weights):
         """
         _check_gguf()
         assert gguf is not None
+        from ._gguf_reader import TokenSkippingGGUFReader
+
         self._reader = (
             source
             if isinstance(source, gguf.GGUFReader)
-            else gguf.GGUFReader(source)
+            else TokenSkippingGGUFReader(source)
         )
         self._tensors = tensors or {t.name: t for t in self._reader.tensors}
         self._prefix = prefix
