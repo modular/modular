@@ -12,9 +12,10 @@ from conftest import (
     shapes,
     tensor_types,
 )
-from hypothesis import given
+from hypothesis import example, given
 from hypothesis import strategies as st
-from max.graph import Graph, ops
+from max.dtype import DType
+from max.graph import Graph, TensorType, ops
 
 shared_shapes = st.shared(shapes(min_rank=1))
 
@@ -79,6 +80,10 @@ def test_max__reduction__no_axis(input_type):
         assert result.dtype == expected.dtype
 
 
+@example(
+    input_types=[TensorType(DType.int8, [1]), TensorType(DType.int8, [1])],
+    axis=-1,
+).via("ci flake")
 @given(input_types=broadcastable_tensor_types(2), axis=st.integers())
 def test_min_fail__y_and_axis_provided(input_types, axis):
     with Graph("test_min", input_types=input_types) as graph:
@@ -87,9 +92,13 @@ def test_min_fail__y_and_axis_provided(input_types, axis):
             result = ops.min(x, y, axis=axis)
 
 
+@example(
+    input_types=[TensorType(DType.int8, [1]), TensorType(DType.int8, [1])],
+    axis=-1,
+).via("ci flake")
 @given(input_types=broadcastable_tensor_types(2), axis=st.integers())
 def test_max_fail__y_and_axis_provided(input_types, axis):
-    with Graph("test_min", input_types=input_types) as graph:
+    with Graph("test_max", input_types=input_types) as graph:
         x, y = graph.inputs
         with pytest.raises(ValueError):
             result = ops.max(x, y, axis=axis)

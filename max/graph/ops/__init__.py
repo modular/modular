@@ -66,26 +66,34 @@ from .unsqueeze import unsqueeze
 
 
 def min(  # type: ignore[no-redef]
-    x: TensorValueLike, y: TensorValueLike | None = None, /, axis: int = -1
+    x: TensorValueLike,
+    y: TensorValueLike | None = None,
+    /,
+    axis: int | None = None,
 ) -> TensorValue:
     """Overload for ops.elementwise.min and ops.reduction.min.
 
     - If two tensors are provided, `axis` is ignored and returns an elementwise minimum.
     - If one tensor is provided, compute `ops.reduction.min` on the tensor and axis.
     """
-    if y is not None and axis != -1:
+    if y is not None and axis is not None:
         raise ValueError("Axis not allowed for elementwise min.")
+    axis = -1 if axis is None else axis
     return _reduce_min(x, axis=axis) if y is None else _elementwise_min(x, y)
 
 
 def max(  # type: ignore[no-redef]
-    x: TensorValueLike, y: TensorValueLike | None = None, /, axis: int = -1
+    x: TensorValueLike,
+    y: TensorValueLike | None = None,
+    /,
+    axis: int | None = None,
 ) -> TensorValue:
     """Overload for ops.elementwise.max and ops.reduction.max.
 
     - If two tensors are provided, `axis` is ignored and returns an elementwise maximum.
     - If one tensor is provided, compute `ops.reduction.max` on the tensor and axis.
     """
-    if y is not None and axis != -1:
+    if y is not None and axis is not None:
         raise ValueError("Axis not allowed for elementwise max.")
+    axis = -1 if axis is None else axis
     return _reduce_max(x, axis=axis) if y is None else _elementwise_max(x, y)
