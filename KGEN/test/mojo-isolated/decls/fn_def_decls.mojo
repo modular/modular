@@ -141,17 +141,10 @@ def defTests(
     # CHECK-NEXT: lit.ref.store %b, %a_2
     a = b  # Subsequent arguments don't re-make the box.
 
-    # TODO: Extraneous def boxes.
-
-    # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
-    # CHECK-NEXT: lit.call {{.*}}MemoryOnly::@"__init__{{.*}}([[TMP]])
-    # CHECK-NEXT: lit.call {{.*}}MemoryOnly::@"__moveinit__{{.*}}([[TMP]], %mem_1)
+    # CHECK-NEXT: lit.call {{.*}}MemoryOnly::@"__init__{{.*}}(%mem_1)
     mem = MemoryOnly()
 
-    # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
-    # CHECK-NEXT: lit.call {{.*}}NonTrivialReg::@"__init__{{.*}}([[TMP]])
-    # CHECK-NEXT: [[TMP2:%.*]] = lit.load.consume [[TMP]]
-    # CHECK-NEXT: lit.ref.store [[TMP2]], %reg_0
+    # CHECK-NEXT: lit.call {{.*}}NonTrivialReg::@"__init__{{.*}}(%reg_0)
     reg = NonTrivialReg()
 
     # Issue#38762
