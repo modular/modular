@@ -136,10 +136,6 @@ public:
   /// Returns true if the document contains the given location.
   virtual bool containsLocation(llvm::SMLoc loc) = 0;
 
-  /// Test whether a given location is within a code block. This should not
-  /// require that the document be parsed.
-  virtual bool isWithinCodeBlock(llvm::SMLoc loc) = 0;
-
   /// Returns true if the document contains the given location.
   virtual llvm::SMLoc getLocFromPos(const mlir::lsp::URIForFile &uri,
                                     mlir::lsp::Position position) = 0;
@@ -273,11 +269,6 @@ protected:
   /// Its lifetime is tied to that of the AST objects gotten from the parser.
   /// It also sets up a SourceMgr with the given MojoDocument as its main file.
   struct Context;
-
-  /// Initializes the context for this document. This must be called after
-  /// source files have been added to the source manager, but before parsing
-  /// operations begin.
-  void initializeContext();
 
   //===--------------------------------------------------------------------===//
   // Derived Document Hooks
@@ -557,10 +548,6 @@ private:
   /// Returns true if the document contains the given location.
   bool containsLocation(llvm::SMLoc loc) override;
 
-  /// Test whether a given location is within a code block. This should not
-  /// require that the document be parsed.
-  bool isWithinCodeBlock(llvm::SMLoc loc) override;
-
   /// Translate the given parser location into one usable by the language
   /// server.
   llvm::SMLoc translateParserLoc(llvm::SMLoc loc) override;
@@ -669,10 +656,6 @@ private:
 
   /// Returns true if the document contains the given location.
   bool containsLocation(llvm::SMLoc loc) override;
-
-  /// Test whether a given location is within a code block. This should not
-  /// require that the document be parsed.
-  bool isWithinCodeBlock(llvm::SMLoc loc) override;
 
   /// Translate the given parser location into one usable by the language
   /// server.
