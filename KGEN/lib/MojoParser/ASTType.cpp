@@ -833,6 +833,32 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
                          /*separator=*/binOp);
   }
 
+  if (auto fpLit = dyn_cast<FloatLiteralAttr>(param)) {
+    switch (fpLit.getSpecial().getValue()) {
+
+    case FloatLiteralSpecialValues::NegZero:
+      os << "-0.0";
+      return;
+    case FloatLiteralSpecialValues::Inf:
+      os << "inf";
+      return;
+    case FloatLiteralSpecialValues::NegInf:
+      os << "-inf";
+      return;
+    case FloatLiteralSpecialValues::Nan:
+      os << "nan";
+      return;
+    case FloatLiteralSpecialValues::Normal:
+      // Convert to f64 to print out the value.  TODO: we print float literals
+      // in generally really ugly, like "1.000000e+00" which is not great.
+      auto ctx = fpLit.getContext();
+      printDemangledParam(
+          os, FloatLiteralConvertAttr::get(ctx, Float64Type::get(ctx), fpLit),
+          diagShared);
+      return;
+    }
+  }
+
   os << getParamAsString(param, diagShared);
 }
 

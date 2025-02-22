@@ -311,14 +311,15 @@ fn capture_exclusivity(owned x: MemExample):
 
 
 # expected-note @below {{function declared here}}
-fn param_inference_unrelated_error[T: AnyType](x: T, y: FloatLiteral):
+fn param_inference_unrelated_error[T: AnyType](x: T, y: FloatLiteral[_]):
     pass
 
 
 fn call_param_inference_unrelated_error():
     var x: StringLiteral = "hello"
     var y: StringLiteral = "world"
-    # expected-error @below {{invalid call to 'param_inference_unrelated_error': argument #1 cannot be converted from 'StringLiteral' to 'FloatLiteral'}}
+    # expected-error @below {{invalid call to 'param_inference_unrelated_error': failed to infer implicit parameter 'value' of argument 'y' type 'FloatLiteral'}}
+    # expected-note @below {{failed to infer parameter #1, parameter isn't used in any argument}}
     param_inference_unrelated_error(x, y)
 
 

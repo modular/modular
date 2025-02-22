@@ -207,14 +207,10 @@ struct IntLiteral[value: __mlir_type.`!kgen.int_literal`]:
 @value
 @nonmaterializable(FloatDyn)
 @register_passable("trivial")
-struct FloatLiteral:
-    alias type = __mlir_type.`!kgen.float_literal`
-    var value: Self.type
-
+struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`]:
     @always_inline("builtin")
-    @implicit
-    fn __init__(out self, value: Self.type):
-        self.value = value
+    fn __init__(out self):
+        pass
 
 
 @value
@@ -230,11 +226,9 @@ struct FloatDyn:
     @always_inline("builtin")
     @implicit
     fn __init__(out self, value: FloatLiteral):
-        self = Self(
-            __mlir_op.`kgen.float_literal.convert`[_type = __mlir_type.f64](
-                value.value
-            )
-        )
+        self = __mlir_attr[
+            `#kgen<float_literal_convert<`, +value.value, `>> : f64`
+        ]
 
 
 @value
@@ -254,9 +248,9 @@ struct Int(Copyable):
     @always_inline("builtin")
     @implicit
     fn __init__(out self, value: IntLiteral[_]):
-        self.value = __mlir_op.`kgen.int_literal.convert`[
-            _type = __mlir_type.index
-        ](value.value)
+        self.value = __mlir_attr[
+            `#kgen<int_literal_convert<`, +value.value, `, 0>> : index`
+        ]
 
     @always_inline("builtin")
     fn __add__(lhs, rhs: Int) -> Int:
