@@ -2880,8 +2880,9 @@ static Attribute simplifyShl(SmallVectorImpl<TypedAttr> &operands) {
   if (auto rhs = dyn_cast<IntegerAttr>(operands[1])) {
     // NOTE: This is correct even for index types because an overlong shift will
     // turn the result to zero.
-    // FIXME: getOneBitSet asserts the shift amount should be in-range.  We need
-    // to check this.
+    if (rhs.getValue().getZExtValue() >= rhs.getValue().getBitWidth())
+      return IntegerAttr::get(rhs.getType(), 0);
+
     auto rhsCst = APInt::getOneBitSet(rhs.getValue().getBitWidth(),
                                       rhs.getValue().getZExtValue());
     return ParamOperatorAttr::get(POC::Mul, operands[0],

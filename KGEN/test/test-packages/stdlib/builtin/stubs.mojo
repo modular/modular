@@ -161,11 +161,11 @@ struct NoneType:
 @nonmaterializable(Int)
 @register_passable("trivial")
 struct IntLiteral[value: __mlir_type.`!kgen.int_literal`]:
-    alias _one = IntLiteral[
-        __mlir_attr.`#kgen.int_literal<1> : !kgen.int_literal`
-    ]()
     alias _zero = IntLiteral[
         __mlir_attr.`#kgen.int_literal<0> : !kgen.int_literal`
+    ]()
+    alias _one = IntLiteral[
+        __mlir_attr.`#kgen.int_literal<1> : !kgen.int_literal`
     ]()
 
     @always_inline("builtin")
