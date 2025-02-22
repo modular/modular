@@ -15,7 +15,7 @@ from quantization import Q4sym
 from utils import IndexList
 
 
-fn _run_test_quant[group_size: Int, tolerance: FloatLiteral]() -> Bool:
+fn _run_test_quant[group_size: Int, tolerance: Float32]() -> Bool:
     var uniform = SIMD[DType.float32, group_size]()
     for i in range(group_size):
         uniform[i] = i
@@ -59,7 +59,7 @@ fn _run_test_quant[group_size: Int, tolerance: FloatLiteral]() -> Bool:
     return allPass
 
 
-fn test_fake_quant_error[l2_tolerance: FloatLiteral]():
+fn test_fake_quant_error[l2_tolerance: Float32]():
     # Tests round-trippability of encoding/decoding groups of numbers
     print("------------test_fake_quant_error------------")
     print("********** GROUP SIZE 08 **********")
@@ -124,8 +124,8 @@ fn test_alignment_and_size():
 
 fn _read_write_to_tensors[
     group_size: Int,
-    rtol: FloatLiteral,
-    atol: FloatLiteral,
+    rtol: Float32,
+    atol: Float32,
     num_elements: Int = 64,
     rank: Int = 1,
 ]() -> Bool:
