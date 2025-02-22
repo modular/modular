@@ -341,21 +341,8 @@ struct FloatLiteral(
         Returns:
             The remainder of dividing self by rhs.
         """
-        return self.__divmod__(rhs)[1]
-
-    @always_inline("nodebug")
-    fn __divmod__(self, rhs: Self) -> Tuple[Self, Self]:
-        """Return a tuple with the quotient and the remainder of self divided by rhs.
-
-        Args:
-            rhs: The value to divide on.
-
-        Returns:
-            A tuple with the dividend and the remainder.
-        """
         var quotient: Self = self.__floordiv__(rhs)
-        var remainder: Self = self - (quotient * rhs)
-        return quotient, remainder
+        return self - (quotient * rhs)
 
     fn __rfloordiv__(self, rhs: Self) -> Self:
         """Returns rhs divided by self, rounded down to the nearest integer.

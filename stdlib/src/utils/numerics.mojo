@@ -59,7 +59,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline("nodebug")
-    fn mantissa_width() -> IntLiteral:
+    fn mantissa_width() -> Int:
         """Returns the mantissa width of a floating point type.
 
         Returns:
@@ -83,7 +83,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline("nodebug")
-    fn max_exponent() -> IntLiteral:
+    fn max_exponent() -> Int:
         """Returns the max exponent of a floating point type without accounting
         for inf representations. This is not
         the maximum representable exponent, which is generally equal to
@@ -106,7 +106,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline("nodebug")
-    fn exponent_width() -> IntLiteral:
+    fn exponent_width() -> Int:
         """Returns the exponent width of a floating point type.
 
         Returns:
@@ -136,7 +136,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn exponent_bias() -> IntLiteral:
+    fn exponent_bias() -> Int:
         """Returns the exponent bias of a floating point type.
 
         Returns:

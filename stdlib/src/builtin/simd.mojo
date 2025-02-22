@@ -3394,7 +3394,7 @@ fn _convert_f32_to_float8_scaler[
     alias FP8_EXPONENT_BIAS = FPUtils[target].exponent_bias()
     alias FP32_EXPONENT_BIAS = FPUtils[type].exponent_bias()
     alias FP32_NUM_MANTISSA_BITS = FPUtils[type].mantissa_width()
-    alias FP8_MAX_FLT: UInt8 = 0x7E if IS_E4M3 else 0x7B
+    alias FP8_MAX_FLT = UInt8(0x7E) if IS_E4M3 else UInt8(0x7B)
 
     # Extract the bits in the FP32 type
     var sign: UInt8 = 0x80 if FPUtils[type].get_sign(x) else 0x00

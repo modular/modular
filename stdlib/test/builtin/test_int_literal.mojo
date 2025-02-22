@@ -79,26 +79,6 @@ def test_indexer():
     assert_true(88 == index(88))
 
 
-def test_divmod():
-    alias t0 = IntLiteral.__divmod__(2, 2)
-    alias q0 = t0[0]
-    alias r0 = t0[1]
-    assert_equal(q0, 1)
-    assert_equal(r0, 0)
-
-    alias t1 = IntLiteral.__divmod__(2, 3)
-    alias q1 = t1[0]
-    alias r1 = t1[1]
-    assert_equal(q1, 0)
-    assert_equal(r1, 2)
-
-    alias t2 = IntLiteral.__divmod__(99, -2)
-    alias q2 = t2[0]
-    alias r2 = t2[1]
-    assert_equal(q2, -50)
-    assert_equal(r2, -1)
-
-
 def test_bool():
     assert_true(IntLiteral.__bool__(5))
     assert_false(IntLiteral.__bool__(0))
@@ -153,7 +133,6 @@ def main():
     test_trunc()
     test_floordiv()
     test_mod()
-    test_divmod()
     test_abs()
     test_indexer()
     test_bool()

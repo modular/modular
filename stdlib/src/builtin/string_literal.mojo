@@ -189,31 +189,6 @@ struct StringLiteral(
         """
         self = self + rhs
 
-    @always_inline("nodebug")
-    fn __mul__(self, n: IntLiteral) -> StringLiteral:
-        """Concatenates the string literal `n` times. Can only be evaluated at
-        compile time using the `alias` keyword, which will write the result into
-        The binary.
-
-        Args:
-            n : The number of times to concatenate the string literal.
-
-        Returns:
-            The string concatenated `n` times.
-
-        Examples:
-
-        ```mojo
-        alias concat = "mojo" * 3
-        print(concat) # mojomojomojo
-        ```
-        .
-        """
-        var concat = ""
-        for _ in range(n):
-            concat += self
-        return concat
-
     fn __mul__(self, n: Int) -> String:
         """Concatenates the string `n` times.
 

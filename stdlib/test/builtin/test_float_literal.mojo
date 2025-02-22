@@ -83,32 +83,6 @@ def test_mod():
     assert_equal(FloatLiteral.__mod__(6, 2.5), 1.0)
 
 
-def test_div_mod():
-    alias t0 = FloatLiteral.__divmod__(4.5, 2.0)
-    alias q0 = t0[0]
-    alias r0 = t0[1]
-    assert_equal(q0, 2.0)
-    assert_equal(r0, 0.5)
-
-    alias t1 = FloatLiteral.__divmod__(-4.5, 2.0)
-    alias q1 = t1[0]
-    alias r1 = t1[1]
-    assert_equal(q1, -3.0)
-    assert_equal(r1, 1.5)
-
-    alias t2 = FloatLiteral.__divmod__(4.5, -2.0)
-    alias q2 = t2[0]
-    alias r2 = t2[1]
-    assert_equal(q2, -3.0)
-    assert_equal(r2, -1.5)
-
-    alias t3 = FloatLiteral.__divmod__(6.0, 2.5)
-    alias q3 = t3[0]
-    alias r3 = t3[1]
-    assert_equal(q3, 2.0)
-    assert_equal(r3, 1.0)
-
-
 def test_int_conversion():
     assert_equal(Int(-4.0), -4)
     assert_equal(Int(-4.5), -4)
@@ -249,7 +223,6 @@ def main():
     test_trunc()
     test_division()
     test_mod()
-    test_div_mod()
     test_int_conversion()
     test_bool()
     test_is_special_value()

@@ -175,20 +175,6 @@ struct IntLiteral(
         """
         return Self() - self
 
-    @always_inline("nodebug")
-    fn __divmod__(self, rhs: Self) -> Tuple[Self, Self]:
-        """Return the quotient and remainder of the division of self by rhs.
-
-        Args:
-            rhs: The value to divide on.
-
-        Returns:
-            The quotient and remainder of the division.
-        """
-        var quotient: Self = self.__floordiv__(rhs)
-        var remainder: Self = self - (quotient * rhs)
-        return quotient, remainder
-
     @always_inline("builtin")
     fn __invert__(self) -> Self:
         """Return ~self.

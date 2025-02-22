@@ -561,7 +561,7 @@ fn is_64bit[target: __mlir_type.`!kgen.target` = _current_target()]() -> Bool:
 @always_inline("nodebug")
 fn simdbitwidth[
     target: __mlir_type.`!kgen.target` = _current_target()
-]() -> IntLiteral:
+]() -> Int:
     """Returns the vector size (in bits) of the specified target.
 
     Parameters:
@@ -570,18 +570,20 @@ fn simdbitwidth[
     Returns:
         The vector size (in bits) of the specified target.
     """
-    return __mlir_attr[
-        `#kgen.param.expr<target_get_field,`,
-        target,
-        `, "simd_bit_width" : !kgen.string`,
-        `> : !kgen.int_literal`,
-    ]
+    return Int(
+        __mlir_attr[
+            `#kgen.param.expr<target_get_field,`,
+            target,
+            `, "simd_bit_width" : !kgen.string`,
+            `> : !kgen.int_literal`,
+        ]
+    )
 
 
 @always_inline("nodebug")
 fn simdbytewidth[
     target: __mlir_type.`!kgen.target` = _current_target()
-]() -> IntLiteral:
+]() -> Int:
     """Returns the vector size (in bytes) of the specified target.
 
     Parameters:
@@ -597,7 +599,7 @@ fn simdbytewidth[
 @always_inline("nodebug")
 fn sizeof[
     type: AnyType, target: __mlir_type.`!kgen.target` = _current_target()
-]() -> IntLiteral:
+]() -> Int:
     """Returns the size of (in bytes) of the type.
 
     Parameters:
@@ -630,19 +632,21 @@ fn sizeof[
         AnyType,
         `> : !kgen.type`,
     ]
-    return __mlir_attr[
-        `#kgen.param.expr<get_sizeof, #kgen.type<`,
-        mlir_type,
-        `> : !kgen.type,`,
-        target,
-        `> : !kgen.int_literal`,
-    ]
+    return Int(
+        __mlir_attr[
+            `#kgen.param.expr<get_sizeof, #kgen.type<`,
+            mlir_type,
+            `> : !kgen.type,`,
+            target,
+            `> : !kgen.int_literal`,
+        ]
+    )
 
 
 @always_inline("nodebug")
 fn sizeof[
     type: DType, target: __mlir_type.`!kgen.target` = _current_target()
-]() -> IntLiteral:
+]() -> Int:
     """Returns the size of (in bytes) of the dtype.
 
     Parameters:
@@ -652,21 +656,23 @@ fn sizeof[
     Returns:
         The size of the dtype in bytes.
     """
-    return __mlir_attr[
-        `#kgen.param.expr<get_sizeof, #kgen.type<`,
-        `!pop.scalar<`,
-        type.value,
-        `>`,
-        `> : !kgen.type,`,
-        target,
-        `> : !kgen.int_literal`,
-    ]
+    return Int(
+        __mlir_attr[
+            `#kgen.param.expr<get_sizeof, #kgen.type<`,
+            `!pop.scalar<`,
+            type.value,
+            `>`,
+            `> : !kgen.type,`,
+            target,
+            `> : !kgen.int_literal`,
+        ]
+    )
 
 
 @always_inline("nodebug")
 fn alignof[
     type: AnyType, target: __mlir_type.`!kgen.target` = _current_target()
-]() -> IntLiteral:
+]() -> Int:
     """Returns the align of (in bytes) of the type.
 
     Parameters:
@@ -683,19 +689,21 @@ fn alignof[
         AnyType,
         `> : !kgen.type`,
     ]
-    return __mlir_attr[
-        `#kgen.param.expr<get_alignof, #kgen.type<`,
-        +mlir_type,
-        `> : !kgen.type,`,
-        target,
-        `> : !kgen.int_literal`,
-    ]
+    return Int(
+        __mlir_attr[
+            `#kgen.param.expr<get_alignof, #kgen.type<`,
+            +mlir_type,
+            `> : !kgen.type,`,
+            target,
+            `> : !kgen.int_literal`,
+        ]
+    )
 
 
 @always_inline("nodebug")
 fn alignof[
     type: DType, target: __mlir_type.`!kgen.target` = _current_target()
-]() -> IntLiteral:
+]() -> Int:
     """Returns the align of (in bytes) of the dtype.
 
     Parameters:
@@ -705,22 +713,24 @@ fn alignof[
     Returns:
         The alignment of the dtype in bytes.
     """
-    return __mlir_attr[
-        `#kgen.param.expr<get_alignof, #kgen.type<`,
-        `!pop.scalar<`,
-        type.value,
-        `>`,
-        `> : !kgen.type,`,
-        target,
-        `> : !kgen.int_literal`,
-    ]
+    return Int(
+        __mlir_attr[
+            `#kgen.param.expr<get_alignof, #kgen.type<`,
+            `!pop.scalar<`,
+            type.value,
+            `>`,
+            `> : !kgen.type,`,
+            target,
+            `> : !kgen.int_literal`,
+        ]
+    )
 
 
 @always_inline("nodebug")
 fn bitwidthof[
     type: AnyTrivialRegType,
     target: __mlir_type.`!kgen.target` = _current_target(),
-]() -> IntLiteral:
+]() -> Int:
     """Returns the size of (in bits) of the type.
 
     Parameters:
@@ -737,7 +747,7 @@ fn bitwidthof[
 @always_inline("nodebug")
 fn bitwidthof[
     type: DType, target: __mlir_type.`!kgen.target` = _current_target()
-]() -> IntLiteral:
+]() -> Int:
     """Returns the size of (in bits) of the dtype.
 
     Parameters:
@@ -756,7 +766,7 @@ fn bitwidthof[
 fn simdwidthof[
     type: AnyTrivialRegType,
     target: __mlir_type.`!kgen.target` = _current_target(),
-]() -> IntLiteral:
+]() -> Int:
     """Returns the vector size of the type on the host system.
 
     Parameters:
@@ -772,7 +782,7 @@ fn simdwidthof[
 @always_inline("nodebug")
 fn simdwidthof[
     type: DType, target: __mlir_type.`!kgen.target` = _current_target()
-]() -> IntLiteral:
+]() -> Int:
     """Returns the vector size of the type on the host system.
 
     Parameters:
