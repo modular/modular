@@ -678,15 +678,33 @@ fn load_volatile[
     ](ptr.address_space_cast[AddressSpace.GENERIC]())
 
 
-# ===-----------------------------------------------------------------------===#
-# buffer_load_lds
-# ===-----------------------------------------------------------------------===#
-
-
 @always_inline
-fn _make_buffer_resource[
+fn make_buffer_resource[
     type: DType
-](gds_ptr: UnsafePointer[Scalar[type]], elements: Int) -> SIMD[DType.uint32, 4]:
+](gds_ptr: UnsafePointer[Scalar[type]], num_records: Int = 0xFFFFFFFF) -> SIMD[
+    DType.uint32, 4
+]:
+    """Creates a 128-bit buffer constant for buffer IO.
+
+    This function is used to create a 128-bit buffer constant struct for buffer IO
+
+    Parameters:
+        type: The type of the data to be loaded.
+
+    Arg:
+        gds_ptr: Global memory base address.
+        num_records: Reads with gds_offset > num_records return 0. Defaults to the maximum number of elements 0xffffffff.
+
+    """
+
+    constrained[
+        is_amd_gpu(),
+        (
+            "The make_buffer_resource function is only applicable on AMDGPU"
+            " hardware."
+        ),
+    ]()
+
     # https://discourse.llvm.org/t/representing-buffer-descriptors-in-the-amdgpu-target-call-for-suggestions/68798/1
     # llvm.amdgcn.make.buffer.rsrc intrinsic, which takes the pointer, which becomes the base of the resource,
     # the 16-bit stride (and swzizzle control) field stored in bits 63:48 of a V#,
@@ -698,7 +716,7 @@ fn _make_buffer_resource[
     resource_constant[0] = address[0]
     # assuming 0 stride currently
     resource_constant[1] = address[1]
-    resource_constant[2] = sizeof[type]() * elements
+    resource_constant[2] = sizeof[type]() * num_records
     # https://github.com/ROCm/composable_kernel/blob/3b2302081eab4975370e29752343058392578bcb/include/ck/ck.hpp#L84
     resource_constant[3] = 0x00020000
     return resource_constant
@@ -746,13 +764,12 @@ fn _raw_buffer_load_lds[
 fn _buffer_load_store_lds_nowait[
     type: DType
 ](
-    gds_ptr: UnsafePointer[Scalar[type]],
+    src_resource: SIMD[DType.uint32, 4],
     gds_offset: Int32,
     lds_ptr_base: UnsafePointer[
         Scalar[type], address_space = AddressSpace.SHARED
     ],
     lds_offset: Int32,
-    num_records: Int,
 ):
     """Loads four bytes from global memory ands writes them to shared memory.
 
@@ -764,11 +781,10 @@ fn _buffer_load_store_lds_nowait[
         type: The type of the data to be loaded.
 
     Arg:
-        gds_ptr: Global memory base address.
+        src_resource: The buffer resource descriptor from make_buffer_resource.
         gds_offset: Global memory offset.
         lds_ptr_base: LDS base address.
         lds_offset: LDS offset.
-        num_records: Reads with gds_offset > num_records return 0.
     """
 
     constrained[
@@ -788,28 +804,25 @@ fn _buffer_load_store_lds_nowait[
         has_side_effect=True,
     ](lds_ptr_sgpr)
 
-    var resource_constant = _make_buffer_resource(gds_ptr, num_records)
-
     var global_offset_bytes = Scalar[DType.int32](sizeof[type]() * gds_offset)
     inlined_assembly[
         "buffer_load_dword $0, $1, 0 offen lds",
         NoneType,
         constraints="v,s,~{memory}",
         has_side_effect=True,
-    ](global_offset_bytes, resource_constant)
+    ](global_offset_bytes, src_resource)
 
 
 @always_inline
 fn buffer_load_store_lds[
     type: DType
 ](
-    gds_ptr: UnsafePointer[Scalar[type]],
+    src_resource: SIMD[DType.uint32, 4],
     gds_offset: Int32,
     lds_ptr_base: UnsafePointer[
         Scalar[type], address_space = AddressSpace.SHARED
     ],
     lds_offset: Int32,
-    num_records: Int,
 ):
     """Loads four bytes from global memory ands writes them to shared memory.
 
@@ -820,11 +833,10 @@ fn buffer_load_store_lds[
         type: The type of the data to be loaded.
 
     Args:
-        gds_ptr: Global memory base address.
+        src_resource: The buffer resource descriptor from make_buffer_resource.
         gds_offset: Global memory offset.
         lds_ptr_base: LDS base address.
         lds_offset: LDS offset.
-        num_records: Reads with gds_offset > num_records return 0.
     """
     constrained[
         is_amd_gpu(),
@@ -835,7 +847,6 @@ fn buffer_load_store_lds[
     ]()
 
     var lds_ptr = lds_ptr_base + lds_offset
-    var src_resource = _make_buffer_resource(gds_ptr, num_records)
     var global_offset_bytes = Scalar[DType.int32](sizeof[type]() * gds_offset)
     _raw_buffer_load_lds(
         src_resource,
@@ -851,11 +862,7 @@ fn buffer_load_store_lds[
 @always_inline
 fn buffer_load[
     type: DType, width: Int
-](
-    gds_ptr: UnsafePointer[Scalar[type]],
-    gds_offset: Int32,
-    num_records: Int,
-) -> SIMD[type, width]:
+](src_resource: SIMD[DType.uint32, 4], gds_offset: Int32,) -> SIMD[type, width]:
     """Loads a register variable from global memory.
 
     This function is used to copy from global memory to register.
@@ -865,9 +872,8 @@ fn buffer_load[
         width: The width of the SIMD vector to load.
 
     Args:
-        gds_ptr: Global memory base address.
+        src_resource: The buffer resource descriptor from make_buffer_resource.
         gds_offset: Global memory offset.
-        num_records: Reads with gds_offset > num_records return 0.
     """
 
     constrained[
@@ -876,7 +882,6 @@ fn buffer_load[
     ]()
 
     alias bytes = sizeof[type]() * width
-    var src_resource = _make_buffer_resource(gds_ptr, num_records)
     var global_offset_bytes: Int32 = Scalar[DType.int32](
         sizeof[type]() * gds_offset
     )
@@ -914,12 +919,11 @@ fn buffer_load[
 fn buffer_store[
     type: DType, width: Int
 ](
-    gds_ptr: UnsafePointer[Scalar[type]],
+    src_resource: SIMD[DType.uint32, 4],
     gds_offset: Int32,
-    num_records: Int,
     val: SIMD[type, width],
 ):
-    """Stores a register variable to global memory.
+    """Stores  a register variable to global memory.
 
     This function is used to write to global memory from a register.
 
@@ -928,9 +932,8 @@ fn buffer_store[
         width: The width of the SIMD vector to load.
 
     Args:
-        gds_ptr: Global memory base address.
+        src_resource: The buffer resource descriptor from make_buffer_resource.
         gds_offset: Global memory offset.
-        num_records: Reads with gds_offset > num_records return 0.
         val: The value to write to memory.
     """
 
@@ -941,7 +944,6 @@ fn buffer_store[
 
     alias bytes = sizeof[type]() * width
 
-    var src_resource = _make_buffer_resource(gds_ptr, num_records)
     var global_offset_bytes: Int32 = Scalar[DType.int32](
         sizeof[type]() * gds_offset
     )
