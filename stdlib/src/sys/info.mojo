@@ -575,7 +575,7 @@ fn simdbitwidth[
             `#kgen.param.expr<target_get_field,`,
             target,
             `, "simd_bit_width" : !kgen.string`,
-            `> :  index`,
+            `> : index`,
         ]
     )
 
