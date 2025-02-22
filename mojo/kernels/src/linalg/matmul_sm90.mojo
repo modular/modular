@@ -632,6 +632,7 @@ fn warp_specialize_gemm_with_multicasting[
     b_shape: DimList, //,
     *,
     transpose_b: Bool,
+    block_tile_shape: IndexList[3],
     cluster_shape: StaticTuple[Int32, 3],
     wgmma_n: Int = 128,
     num_consumer: Int = 1,
@@ -649,7 +650,7 @@ fn warp_specialize_gemm_with_multicasting[
     var b = from_ndbuffer_row_major(b_device)
     var c = from_ndbuffer_row_major(c_device)
 
-    alias block_tile_shape = Index(128, wgmma_n, 64)
+    # alias block_tile_shape = Index(128, wgmma_n, 64)
     alias wgmma_shape = Index(64, wgmma_n, 16)
 
     alias BM = block_tile_shape[0]
