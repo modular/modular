@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import time
+from functools import partial
 from queue import Queue
 from unittest.mock import MagicMock, Mock
 
@@ -103,7 +104,7 @@ def create_mock_request(
     """
     mock_data = MagicMock()
     mock_data.tokens = {}
-    mock_data.seq_len = seq_len
+    mock_data.active_length = active_length
     mock_data.start_idx = start_idx
     mock_data.active_idx = active_idx if active_idx is not None else seq_len
     mock_data.active_length = (
@@ -113,6 +114,17 @@ def create_mock_request(
         current_length if current_length is not None else seq_len
     )
     mock_data.cache_seq_id = cache_seq_id
+
+    def bump_token_indices(self, start_idx=0, active_idx=0, end_idx=0):
+        self.start_idx += start_idx
+        self.active_idx += active_idx
+        self.end_idx += end_idx
+        self.active_length = self.active_idx - self.start_idx
+
+    mock_data.bump_token_indices.side_effect = partial(
+        bump_token_indices, mock_data
+    )
+
     return mock_data
 
 
@@ -154,7 +166,7 @@ def test_should_schedule_ce_timeout_not_reached(scheduler):
 
 def test_try_create_ce_batch(scheduler):
     mock_data = MagicMock()
-    mock_data.seq_len = 10
+    mock_data.active_length = 10
     scheduler.request_q.put(("req1", mock_data))
 
     batch = scheduler._try_create_ce_batch()
