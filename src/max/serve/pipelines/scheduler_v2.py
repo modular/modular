@@ -275,7 +275,9 @@ class TokenGenerationSchedulerV2(Scheduler):
                 self.request_q.put_front_nowait((req_id, data))
                 break
 
-            if self._exceeds_batch_token_limit(total_seq_len, data.seq_len):
+            if self._exceeds_batch_token_limit(
+                total_seq_len, data.active_length
+            ):
                 if self.scheduler_config.enable_chunked_prefill:
                     # We can only schedule part of the prompt.
                     # We achieve this by setting the active_idx of the context class.
@@ -286,26 +288,25 @@ class TokenGenerationSchedulerV2(Scheduler):
 
                     token_num_diff = (
                         total_seq_len
-                        + data.seq_len
+                        + data.active_length
                         - self.scheduler_config.target_tokens_per_batch_ce
                     )
-                    data.active_idx -= token_num_diff
-                    data.active_length -= token_num_diff
+                    data.bump_token_indices(active_idx=-token_num_diff)
 
                     if data.cache_seq_id is None:
                         data.cache_seq_id = self.available_cache_indices.pop()
                         logger.debug(
-                            f"Request {req_id} is chunked to len {data.seq_len}."
+                            f"Request {req_id} is chunked to len {data.active_length}."
                         )
                     else:
                         logger.debug(
-                            f"Request {req_id} is chunked again to len {data.seq_len}."
+                            f"Request {req_id} is chunked again to len {data.active_length}."
                         )
                     ce_batch[req_id] = data
 
                 else:
                     if (
-                        data.seq_len
+                        data.active_length
                         > self.scheduler_config.target_tokens_per_batch_ce
                     ):
                         # we need to schedule this request even it exceeds the
@@ -320,7 +321,7 @@ class TokenGenerationSchedulerV2(Scheduler):
 
                 break
 
-            seq_len = data.seq_len
+            seq_len = data.active_length
             if self.paged_manager is not None:
                 cached_tokens = self.paged_manager.get_num_cached_tokens(
                     data.next_tokens

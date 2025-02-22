@@ -25,7 +25,7 @@ class PerformanceFakingContext:
     # simulation attributes
     prompt_len: int
     context_len: int
-    seq_len: int
+    active_length: int
     max_tokens: int
 
     # correctness attributes
@@ -190,7 +190,7 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
                 if self.failure_predicate and self.failure_predicate():
                     raise Exception("performance fake simulated failure in CE")
                 ctx.context_len += ctx.prompt_len
-                ctx.seq_len = 1
+                ctx.active_length = 1
         else:
             # token generation mode
             self.logger.debug(
@@ -263,7 +263,7 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
         self.batch_infos.append(
             BatchInfo(
                 past_seq_lens=[x.context_len for x in contexts],
-                seq_lens=[x.seq_len for x in contexts],
+                seq_lens=[x.active_length for x in contexts],
                 num_steps=num_steps,
             )
         )

@@ -21,7 +21,7 @@ class EchoTokenGeneratorContext:
     prompt: Union[str, Sequence[int]]
     index: int
     max_tokens: int
-    seq_len: int
+    active_length: int
     tokens: str = ""
 
     # Scheduler_V2 use them to determine if a context has been chunked.
@@ -62,7 +62,7 @@ class EchoPipelineTokenizer(
             max_tokens=request.max_new_tokens
             if request.max_new_tokens
             else len(prompt),
-            seq_len=len(prompt),
+            active_length=len(prompt),
         )
 
 

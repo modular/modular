@@ -233,9 +233,8 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
             # TODO(MAXCORE-137): TokenGeneratorContext currently does not enforce
             # a seq_len property.
             prompt_token_count = None
-            if hasattr(context, "seq_len"):
-                prompt_token_count = context.seq_len
-                METRICS.input_tokens(prompt_token_count)
+            if hasattr(context, "active_length"):
+                METRICS.input_tokens(context.active_length)
 
             with record_ms(METRICS.output_time):
                 # stop detector is stateful, so new it up here for
