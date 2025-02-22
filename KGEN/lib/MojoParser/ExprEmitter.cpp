@@ -375,6 +375,19 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
         return lValue;
       }
 
+      // If this the first mutation to a def box, emit the box to a local
+      // variable (materializing the value) so we can implace this destination
+      // directly into the box, avoiding an extra temporary.
+      if (auto dlv = lValue.getIfDLValue()) {
+        lValue = dlv->prepareForMutAccess(loc, emitter);
+        if (lValue)
+          representation = lValue;
+        else {
+          representation = NullRepresentation();
+          lValue = LValue();
+        }
+      }
+
       // Otherwise, we can only work if we have an MLValue in the correct
       // address space.
       if (auto mlVal = lValue.getIfMLValue();
