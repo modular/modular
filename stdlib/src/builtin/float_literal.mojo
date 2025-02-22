@@ -181,27 +181,6 @@ struct FloatLiteral(
         """
         return self * Self(-1)
 
-    @always_inline("nodebug")
-    fn __floor__(self) -> Self:
-        """Return the floor value of the FloatLiteral.
-
-        Returns:
-            The floor value.
-        """
-
-        # Handle special values first.
-        if not self._is_normal():
-            return self
-
-        # __int_literal__ rounds towards zero, so it's correct for integers and
-        # positive values.
-        var truncated: IntLiteral = self.__int_literal__()
-
-        # Ensure this equality doesn't hit any implicit conversions.
-        if self >= 0 or self.__eq__(Self(truncated)):
-            return truncated
-        return truncated - 1
-
     # ===------------------------------------------------------------------===#
     # Arithmetic Operators
     # ===------------------------------------------------------------------===#
@@ -263,7 +242,7 @@ struct FloatLiteral(
             oper = __mlir_attr.`#kgen<float_literal.binop_kind truediv>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __floordiv__(self, rhs: Self) -> Self:
         """Returns self divided by rhs, rounded down to the nearest integer.
 
@@ -278,7 +257,7 @@ struct FloatLiteral(
             oper = __mlir_attr.`#kgen<float_literal.binop_kind floordiv>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __mod__(self, rhs: Self) -> Self:
         """Return the remainder of self divided by rhs.
 
@@ -288,9 +267,9 @@ struct FloatLiteral(
         Returns:
             The remainder of dividing self by rhs.
         """
-        var quotient: Self = self.__floordiv__(rhs)
-        return self - (quotient * rhs)
+        return self - (self.__floordiv__(rhs) * rhs)
 
+    @always_inline("builtin")
     fn __rfloordiv__(self, rhs: Self) -> Self:
         """Returns rhs divided by self, rounded down to the nearest integer.
 
@@ -302,7 +281,7 @@ struct FloatLiteral(
         """
         return rhs // self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __ceildiv__(self, denominator: Self) -> Self:
         """Return the rounded-up result of dividing self by denominator.
 
