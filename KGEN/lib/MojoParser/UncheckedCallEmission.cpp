@@ -14,11 +14,11 @@
 #include "ExprNodes.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
-#include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "MojoUtils.h"
 
 #include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/ParameterReplacer.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/POPDialect/POPAttrs.h"
@@ -85,8 +85,7 @@ public:
   CallEmitter(RValue callee, const ExprNode *callExpr, ExprEmitter &emitter,
               ValueDest &dest)
       : emitter(emitter), callee(callee), callExpr(callExpr),
-        loc(emitter.translateLocation(callExpr->getLoc())),
-        evaluator(emitter.getDeclResolver()), dest(dest),
+        loc(emitter.translateLocation(callExpr->getLoc())), dest(dest),
         calleeSig(cast<FuncTypeGeneratorType>(callee.getRValueType())),
         afterCallActions(*this) {}
 
@@ -110,12 +109,6 @@ public:
                                              ArgConvention convention,
                                              Type declaredArgType,
                                              ArrayRef<Value> callArgsSoFar);
-
-  /// If this is a call to a @always_inline function (and there's only one
-  /// possible callee), this method tries to fold the entire function body into
-  /// an PValue.
-  FailureOr<CValue> inlineFunctionCallIntoPValueIfPossible(
-      ArrayRef<ASTExprAnd<AnyValue>> argumentValues);
 
   /// Emit a function call in a parameter context.
   TypedAttr
@@ -151,9 +144,6 @@ private:
   const ExprNode *callExpr;
   /// The mlir location of the call expression above, stored for convenience.
   Location loc;
-  /// A parameter evaluator used to simplify parameter expression and fold the
-  /// callee if possible.
-  ParserParamEvaluator evaluator;
   /// The destination context we're emitting into.
   ValueDest &dest;
   /// The signature type of the callee, stored for convenience.
@@ -475,12 +465,9 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 
   PogListAttr argListAttr = calleeSig.getArgListAttrs();
   DefaultValueHandler defaultHandler(argListAttr);
-  for (auto [argIdx, expectedTypeX, convention, pogAttr] :
+  for (auto [argIdx, expectedType, convention, pogAttr] :
        llvm::enumerate(calleeSig.getArguments(), calleeSig.getArgConventions(),
                        argListAttr.getPogs())) {
-    // Use a ParserParamEvaluator to fold only 'apply' expressions. Emit a
-    // rebind if the refined type is different than the expected type.
-    Type expectedType = evaluator.refine(expectedTypeX);
 
     // If this is the return slot for a call, we need a temporary to emit into,
     // but don't know the type until the arguments (and their origins) are all
@@ -926,70 +913,14 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 /// This function drops `byref_result` result slots from an argument list,
 /// leaving only the formal arguments. This logic is valid for parameter calls
 /// only.
-template <typename T>
-static ArrayRef<T> dropResultSlots(ArrayRef<T> argumentValues,
-                                   FnTypeGeneratorType sig) {
+static ArrayRef<ASTExprAnd<AnyValue>>
+dropResultSlots(ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
+                FnTypeGeneratorType sig) {
   // TODO: What about throwing functions?
   if (sig.hasMemoryOnlyResult() &&
       sig.getNumArguments() == argumentValues.size())
     return argumentValues.drop_back();
   return argumentValues;
-}
-
-FailureOr<CValue> CallEmitter::inlineFunctionCallIntoPValueIfPossible(
-    ArrayRef<ASTExprAnd<AnyValue>> argumentValues) {
-  if (calleeSig.isThrows() || calleeSig.isAsync())
-    return failure();
-  auto calleePR = callee.getIfPValue();
-  if (!calleePR)
-    return failure();
-  auto calleeSymbolCst = dyn_cast<SymbolConstantAttr>(
-      ParamOperatorAttr::stripRebind(calleePR.get()));
-  if (!calleeSymbolCst)
-    return failure();
-
-  // TODO(remove this whole thing): this allows the existing logic for
-  // @always_inline("builtin") functions to kick in so we can better understand
-  // how much left is required to convert.
-  if (ASTDecl *calleeDecl = emitter.getDeclResolver().getDeclForFuncSymbol(
-          calleeSymbolCst.getSymbol())) {
-    if (cast<FnOp>(*calleeDecl).getInlineLevel() == InlineLevel::AlwaysBuiltin)
-      return failure();
-  }
-
-  // When emitting a call in a dynamic context to function with a `byref_result`
-  // argument, the caller sets up an MLValue destination or may pass in a
-  // placeholder value. Make sure to drop them before calling into the
-  // interpreter.
-  argumentValues = dropResultSlots(argumentValues, calleeSig);
-  ArrayRef<ArgConvention> conventions =
-      dropResultSlots(calleeSig.getArgConventions(), calleeSig);
-  ArrayRef<Type> types = dropResultSlots(calleeSig.getArguments(), calleeSig);
-
-  SmallVector<Attribute> arguments;
-  for (auto [argValue, conv, type] :
-       llvm::zip(argumentValues, conventions, types)) {
-    auto pValue = argValue.ir.getIfPValue();
-    if (!pValue || !ParameterAttr::isSimpleConstant(pValue.get()))
-      return failure();
-    arguments.push_back(hasAddress(conv) ? StoreToMemAttr::get(pValue, type)
-                                         : pValue);
-  }
-
-  FailureOr<TypedAttr> res =
-      evaluator.evaluateFunctionCall(calleeSymbolCst.getSymbol(), arguments);
-  if (failed(res))
-    return failure();
-  TypedAttr resultValue = *res;
-
-  // If the result was a returned reference, load it before returning it.
-  if (calleeSig.isRefResult()) {
-    resultValue = ParamOperatorAttr::get(
-        POC::LoadFromMem, resultValue,
-        cast<RefType>(resultValue.getType()).getElementType());
-  }
-
-  return emitter.emitCResult(resultValue, callExpr, dest);
 }
 
 namespace {
@@ -1572,13 +1503,6 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     return {};
   }
   ArrayRef<ASTExprAnd<AnyValue>> argumentValues = *argumentValuesOr;
-
-  // Folding into PValue can fail for a number of reasons, in which case we
-  // fall back to emitting normally.
-  if (FailureOr<CValue> resCValue =
-          callEmitter.inlineFunctionCallIntoPValueIfPossible(argumentValues);
-      succeeded(resCValue))
-    return *resCValue;
 
   if (!builder || shouldEmitParameterCall(callee, argumentValues, shared)) {
     TypedAttr paramCallResult;
