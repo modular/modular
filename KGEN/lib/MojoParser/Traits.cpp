@@ -12,11 +12,10 @@
 #include "StructEmitter.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
-#include "KGEN/MojoParser/ParserParamEvaluator.h"
-#include "KGEN/MojoParser/SharedState.h"
 #include "Support/STLExtras.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 
@@ -30,7 +29,7 @@ using namespace LIT;
 static std::pair<FnTypeGeneratorType, ParamBindings> getTraitFunctionSignature(
     ExprEmitter &emitter, FnOp traitFn, ASTType structSelfType, TraitType trait,
     const ExprNode *expr, const DenseMap<StringAttr, TypedAttr> &aliasValues,
-    ParserParamEvaluator &traitAliasReplacer) {
+    ParameterEvaluator &traitAliasReplacer) {
 
   FnTypeGeneratorType signature = traitFn.getFullSignature();
   SmallVector<TypedAttr> params;
@@ -187,7 +186,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
     return failure();
   }
 
-  ParserParamEvaluator traitAliasReplacer(*shared.declResolver);
+  ParameterEvaluator traitAliasReplacer;
   DenseMap<StringAttr, TypedAttr> aliasValues;
 
   bool allMatchFound = true;

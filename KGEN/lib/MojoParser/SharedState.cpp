@@ -19,11 +19,11 @@
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoParser/IRValues.h"
-#include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -323,9 +323,6 @@ struct SharedState::Impl {
 
   /// An attribute walker used to resolve bytecode references.
   BytecodeResolutionReferenceWalker bytecodeRefResolutionWalker;
-
-  /// The interpreter cache shared throughout the parser.
-  ParserInterpreterCache interpreterCache;
 };
 
 /// Ensure `stripFilePrefix` is an absolute path ending in a separator.
@@ -586,14 +583,6 @@ void ASTDecl::setBodyDecorators(ArrayRef<ExprNode *> decorators) {
 
   shared.getImpl().bodyDecorators.insert({this, decorators.vec()});
   hasBodyDecorators = true;
-}
-
-//===----------------------------------------------------------------------===//
-// Interpreter
-//===----------------------------------------------------------------------===//
-
-ParserInterpreterCache &SharedState::getInterpreterCache() {
-  return getImpl().interpreterCache;
 }
 
 //===----------------------------------------------------------------------===//

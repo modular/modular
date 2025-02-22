@@ -13,12 +13,12 @@
 #include "ExprEmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
-#include "KGEN/MojoParser/ParserParamEvaluator.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -241,7 +241,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   SmallVector<Type> fieldTypes{opaquePtrType};
 
   SmallVector<ParamDeclAttr> wrapperDecls;
-  ParserParamEvaluator evaluator(getDeclResolver());
+  ParameterEvaluator evaluator;
   SmallVector<TypedAttr> paramValues;
   for (auto [i, type] :
        llvm::enumerate(dependentSignatureType.getInputParamTypes())) {

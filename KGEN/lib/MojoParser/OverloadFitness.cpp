@@ -13,7 +13,6 @@
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
 #include "KGEN/MojoParser/ASTDecl.h"
-#include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "MojoUtils.h"
 #include "ParameterInference.h"
 
@@ -893,7 +892,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   };
 
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
-                                    const ParserParamEvaluator &evaluator) {
+                                    const ParameterEvaluator &evaluator) {
     ParameterInferenceState inference(callable.paramBindings.declScope,
                                       callable.paramBindings.getParameters(),
                                       bindingsSoFar, evaluator, inferenceDiags,
@@ -1015,16 +1014,13 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
         allowImplicitConversions, loc, callable.paramBindings.declScope);
   };
 
-  // Use a ParserParamEvaluator to substitute 'apply' expressions in the
-  // argument types.
-  ParserParamEvaluator evaluator(*shared.declResolver);
   argListAttr = signature.getArgListAttrs();
   DefaultValueHandler defaultHandler(argListAttr);
-  for (auto [expectedArgIdx, unboundExpectedType, expectedConvention] :
+  for (auto [expectedArgIdx, expectedTypeX, expectedConvention] :
        llvm::enumerate(signature.getArguments(),
                        signature.getArgConventions())) {
+    Type expectedType = expectedTypeX;
     // Ignore the return slot if present.
-    Type expectedType = evaluator.refine(unboundExpectedType);
     if (expectedConvention == ArgConvention::ByRefError)
       continue;
     if (expectedConvention == ArgConvention::ByRefResult) {

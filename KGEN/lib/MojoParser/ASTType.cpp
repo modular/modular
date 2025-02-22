@@ -13,12 +13,11 @@
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/ExprNode.h"
 #include "KGEN/MojoParser/IRValues.h"
-#include "KGEN/MojoParser/ParserParamEvaluator.h"
-#include "KGEN/MojoParser/SharedState.h"
 
 #include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 
@@ -917,8 +916,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
       assert(paramInfo.size() == params.size() &&
              "Unexpected number of bound params");
 
-      ParserParamEvaluator evaluator(typeDecl->getShared().getDeclResolver(),
-                                     params);
+      ParameterEvaluator evaluator(params);
 
       // Find out about default parameter values.
       DefaultValueHandler defaultValueHandler(paramInfo);

@@ -15,15 +15,16 @@
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
 #include "MojoUtils.h"
-
-#include "KGEN/LITDialect/LITUtils.h"
-#include "KGEN/MojoParser/ASTDecl.h"
-#include "KGEN/MojoParser/DeclResolver.h"
-#include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "ParserBase.h"
 
-#include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/DeclResolver.h"
+
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/LITUtils.h"
+
+#include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
 
@@ -738,7 +739,7 @@ static ASTType addImplicitTypeParams(ASTType type,
   // The parameter decl references that will be used to fully bind the type,
   // plus a parameter evaluator we use to progressively refine the type.
   SmallVector<TypedAttr> paramValues;
-  ParserParamEvaluator evaluator(*paramList.shared.declResolver);
+  ParameterEvaluator evaluator;
 
   // This functor adds a single parameter to the parameter list.
   auto declareAndAddParam = [&](Type type, StringRef name) {

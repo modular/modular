@@ -8,7 +8,6 @@
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
 #include "KGEN/MojoParser/IRValues.h"
-#include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "MojoUtils.h"
 #include "ParameterInference.h"
@@ -51,7 +50,7 @@ using namespace M::KGEN::LIT;
 FnTypeGeneratorType LIT::substituteTraitAliasesIntoSignature(
     DeclResolver &declResolver, ASTDecl *traitDecl, FnOp candidateFunc,
     FnTypeGeneratorType desiredSignature, PValue selfPValue) {
-  ParserParamEvaluator traitAliasReplacer(declResolver);
+  ParameterEvaluator traitAliasReplacer;
   for (auto &[name, decls] : traitDecl->getDeclsInScope()) {
     for (ASTDecl *decl : decls) {
       AliasDeclOp traitAlias = dyn_cast<LIT::AliasDeclOp>(*decl);
@@ -170,7 +169,7 @@ static PValue emitSingleParameterValue(ASTExprAnd<AnyValue> binding,
                                        ASTType expectedType,
                                        size_t &numImplicitConversions,
                                        ExprEmitter &emitter,
-                                       ParserParamEvaluator &evaluator) {
+                                       ParameterEvaluator &evaluator) {
 
   PValue bindingVal = binding.ir.getIfPValue();
   assert(bindingVal && "Parameters are always PValue's");
@@ -292,9 +291,9 @@ ParamBindings::verifyBindingsImpl(
   // the types of other parameters defined later in the list, e.g. in:
   //    [rank: Int, indices: StaticTuple[rank]]
   // the value provided to 'indices' should actually depend on the specified
-  // value of 'rank'.  We use a ParserParamEvaluator to keep track of the
+  // value of 'rank'.  We use a ParameterEvaluator to keep track of the
   // mapping so far and remap types on demand.
-  ParserParamEvaluator evaluator(*shared.declResolver);
+  ParameterEvaluator evaluator;
 
   // This lambda installs the decl's value in the parameter evaluator and new
   // binding array.
@@ -665,7 +664,7 @@ ParameterExprArrayAttr ParamBindings::verifyBindings(ArrayRef<Type> paramTypes,
                                                      PogListAttr paramList,
                                                      bool partial) const {
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
-                                    const ParserParamEvaluator &evaluator) {
+                                    const ParameterEvaluator &evaluator) {
     // The inference diagnostics will be unused.
     ParameterInferenceDiagnostics inferenceDiags;
     ParameterInferenceState inference(declScope, getParameters(), bindingsSoFar,
@@ -830,7 +829,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 
   SyntheticNode errorLoc(exprLoc);
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
-                                    const ParserParamEvaluator &evaluator) {
+                                    const ParameterEvaluator &evaluator) {
     ParameterInferenceState inference(declScope, getParameters(), bindingsSoFar,
                                       evaluator, inferenceDiags,
                                       /*allowImplicitConversions=*/true);

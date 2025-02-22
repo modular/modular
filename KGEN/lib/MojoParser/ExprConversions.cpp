@@ -19,7 +19,6 @@
 #include "KGEN/MojoParser/ASTType.h"
 #include "KGEN/MojoParser/CallOperands.h"
 #include "KGEN/MojoParser/DeclResolver.h"
-#include "KGEN/MojoParser/ParserParamEvaluator.h"
 
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITAttrs.h"
@@ -677,7 +676,7 @@ struct TraitSelfBinder : public IndexParameterReplacer<TraitSelfBinder> {
 /// Resolving the *(0,0) into the Movable type, as well as the first param type.
 static FnTypeGeneratorType
 createRequirementSignature(FnOp traitFn, ASTType newSelfType,
-                           ParserParamEvaluator &traitAliasReplacer,
+                           ParameterEvaluator &traitAliasReplacer,
                            const DenseMap<StringAttr, TypedAttr> &aliasValues,
                            DeclResolver &declResolver) {
   // Get the selfType as a TypedAttr since we'll be using it as a parameter
@@ -756,7 +755,7 @@ createRequirementSignature(FnOp traitFn, ASTType newSelfType,
 
   // NOTE: This is an UnknownAttr (which is an arbitrary attr that is never
   // used) not an UnboundAttr which remains an unbound parameter.
-  ParserParamEvaluator evaluator(declResolver);
+  ParameterEvaluator evaluator;
   evaluator.addInputValue(UnknownAttr::get(signature.getInputParamTypes()[0]));
   // Use UnboundAttr for any other parameters so they remain in the result.
   for (Type type : signature.getInputParamTypes().drop_front())
@@ -863,7 +862,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   //         fn bork(self) -> SIMD[int]: ...
   // we don't want to look for a `fn bork(self) -> Something[T]` in the struct,
   // we want to look for a `fn bork(self) -> SIMD[int]`. This helps us do that.
-  ParserParamEvaluator traitAliasReplacer(*shared.declResolver);
+  ParameterEvaluator traitAliasReplacer;
   DenseMap<StringAttr, TypedAttr> aliasValues;
 
   // If the struct (e.g. List[T]) has an alias that uses an input parameter,
@@ -871,8 +870,8 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   // alias value while filling the above traitAliasReplacer.
   // FIXME: We need to reject accessing aliases of a partially bound type, until
   // ParameterizedType is a thing!
-  ParserParamEvaluator implGenericsReplacer(getDeclResolver(), structParamDecls,
-                                            type.getParamBindings());
+  ParameterEvaluator implGenericsReplacer(structParamDecls,
+                                          type.getParamBindings());
 
   // Bind each trait requirement into vtable entries.
   SmallVector<VTableEntryAttr> vtable;
@@ -943,7 +942,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
       auto implBindings =
           ParamBindings::getForDeclaredType(getDeclScope(), type, value.expr);
       // Leave the rest of the the parameters Unbound.
-      ParserParamEvaluator evaluator(getDeclResolver());
+      ParameterEvaluator evaluator;
       for (Type type : requirementSig.getInputParamTypes()) {
         auto unbound = UnboundAttr::get(evaluator.getReboundType(type));
         evaluator.addInputValue(unbound);
