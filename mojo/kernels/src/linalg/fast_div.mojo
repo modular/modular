@@ -44,7 +44,7 @@ struct FastDiv[type: DType]:
         var cl = _ceillog2(UInt32(divisor))
         self._mprime = (
             (
-                (1 << bitwidthof[type]())
+                (UInt64(1) << bitwidthof[type]())
                 * ((1 << cl.cast[DType.uint64]()) - divisor)
                 / divisor
             )
