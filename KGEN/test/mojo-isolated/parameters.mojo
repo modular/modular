@@ -439,13 +439,13 @@ fn callMemoryValueParam():
     # CHECK: lit.ref.store [[PVALUE]], [[MVALUE]]
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[MVALUE]]
     # CHECK: lit.var.decl
-    # CHECK: call {{.*}}passMemoryValue{{.*}}([[IMMREF]], %{{.*}})
+    # CHECK: lit.call {{.*}}passMemoryValue{{.*}}([[IMMREF]], %{{.*}})
     _ = passMemoryValue(copy)
 
-    # CHECK: call {{.*}}memoryParam{{.*}}<:!MemoryType {:!Int {22}}>
+    # CHECK: lit.call {{.*}}<:!MemoryType {:!Int {22}}>
     memoryParam[MemoryType(22)]()
 
-    # CHECK: foldMemoryCall{{.*}} = <42>
+    # CHECK: foldMemoryCall{{.*}}{42})
     alias foldMemoryCall = readMemoryValue(NonMovableMemoryType(42)).value
 
 # CHECK-LABEL: lit.fn @"memoryParam{{.*}}"<value: !MemoryType>()
@@ -495,8 +495,8 @@ fn interpret_initself_ctor(arg: InitSelfParam[InitSelfCtor(42)]):
     # CHECK-NEXT: store [[CST]], %inlined_initself_call
     var inlined_initself_call = InitSelfCtor(42)
 
-    # CHECK: [[CST:%.*]] = kgen.param.materialize: !IntBox = <{x: !Int = {24}}>
-    # CHECK-NEXT: store [[CST]], %inlined_byrefresult_call
+    # CHECK: [[CST:%.*]] = kgen.param.constant: !Int = <{24}>
+    # CHECK-NEXT: lit.call {{.*}}@"intbox_memory_result{{.*}}([[CST]], %inlined_byrefresult_call)
     var inlined_byrefresult_call = intbox_memory_result(24)
 
 
