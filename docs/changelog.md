@@ -132,6 +132,9 @@ ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
   var val1 = warp.broadcast(x)
   ```
 
+- `List.bytecount()` has been renamed to `List.byte_length()` for consistency
+  with the String-like APIs.
+
 ### Tooling changes
 
 #### Mojo Compiler
