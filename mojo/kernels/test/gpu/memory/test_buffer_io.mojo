@@ -13,6 +13,7 @@ from gpu import barrier, thread_idx, block_idx, block_dim, grid_dim
 from gpu.memory import AddressSpace
 from gpu.host import DeviceContext
 from gpu.intrinsics import (
+    make_buffer_resource,
     buffer_load,
     buffer_store,
     buffer_load_store_lds,
@@ -21,18 +22,19 @@ from gpu.intrinsics import (
 )
 
 alias size = 257
-alias size_clip = size - 0
+alias size_clip = size - 3
 
 
 fn kernel[type: DType, width: Int](a: UnsafePointer[Scalar[type]]):
     var t0 = block_idx.x * block_dim.x + thread_idx.x
     var size2 = size // width
+    var bc = make_buffer_resource(a, size_clip)
     for i in range(t0, size2, block_dim.x * grid_dim.x):
-        var v = buffer_load[type, width](a, width * i, size_clip)
-        buffer_store[type, width](a, width * i, size_clip, 2 * v)
+        var v = buffer_load[type, width](bc, width * i)
+        buffer_store[type, width](bc, width * i, 2 * v)
     for i in range(width * size2, size, block_dim.x * grid_dim.x):
-        var v = buffer_load[type, 1](a, i, size_clip)
-        buffer_store[type, 1](a, i, size_clip, 2 * v)
+        var v = buffer_load[type, 1](bc, i)
+        buffer_store[type, 1](bc, i, 2 * v)
 
 
 fn kernel_lds[type: DType, nowait: Bool](a: UnsafePointer[Scalar[type]]):
@@ -43,19 +45,22 @@ fn kernel_lds[type: DType, nowait: Bool](a: UnsafePointer[Scalar[type]]):
     var idx = thread_idx.x
 
     var t0 = block_idx.x * block_dim.x + thread_idx.x
+    var bc = make_buffer_resource(a, size_clip)
     for i in range(t0, size, block_dim.x * grid_dim.x):
         a_shared[i] = 0
     barrier()
 
-    for i in range(t0, size, block_dim.x * grid_dim.x):
-
-        @parameter
-        if nowait:
-            _buffer_load_store_lds_nowait(a, i, a_shared, i, size_clip)
-            _waitcnt()
-        else:
-            buffer_load_store_lds(a, i, a_shared, i, size_clip)
-        a[i] = 2 * a_shared[i]
+    @parameter
+    if nowait:
+        for i in range(t0, size, block_dim.x * grid_dim.x):
+            _buffer_load_store_lds_nowait[type](bc, i, a_shared, i)
+        _waitcnt()
+        for i in range(t0, size, block_dim.x * grid_dim.x):
+            a[i] = 2 * a_shared[i]
+    else:
+        for i in range(t0, size, block_dim.x * grid_dim.x):
+            buffer_load_store_lds[type](bc, i, a_shared, i)
+            a[i] = 2 * a_shared[i]
 
 
 def test_buffer[type: DType, width: Int](ctx: DeviceContext):
