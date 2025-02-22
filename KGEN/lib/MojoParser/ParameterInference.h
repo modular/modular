@@ -9,7 +9,7 @@
 
 #include "CallEmission.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
-#include "KGEN/MojoParser/ParserParamEvaluator.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 
 namespace M::KGEN::LIT {
 class ExprNode;
@@ -88,7 +88,7 @@ public:
 
   ParameterInferenceState(ASTDecl &declScope, const CallOperands &givenBindings,
                           ArrayRef<TypedAttr> bindingsSoFar,
-                          const ParserParamEvaluator &evaluator,
+                          const ParameterEvaluator &evaluator,
                           ParameterInferenceDiagnostics &diags,
                           bool allowImplicitConversions);
 
@@ -148,7 +148,7 @@ private:
 
   /// This is the evaluator instance parameter inference uses to progressively
   /// refine dependent types as we infer parameters.
-  ParserParamEvaluator evaluator;
+  ParameterEvaluator evaluator;
 
   /// One entry for each parameter from the original binding list.  If
   /// non-null, we've already inferred a value for that parameter.

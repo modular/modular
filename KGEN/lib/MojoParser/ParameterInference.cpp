@@ -9,7 +9,6 @@
 #include "ExprNodes.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/IRValues.h"
-#include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "ParamBindings.h"
 
@@ -112,7 +111,7 @@ void ParameterInferenceDiagnostics::attach(PogListAttr params,
 
 ParameterInferenceState::ParameterInferenceState(
     ASTDecl &declScope, const CallOperands &givenBindings,
-    ArrayRef<TypedAttr> bindingsSoFar, const ParserParamEvaluator &evaluator,
+    ArrayRef<TypedAttr> bindingsSoFar, const ParameterEvaluator &evaluator,
     ParameterInferenceDiagnostics &diags, bool allowImplicitConversions)
     : declScope(declScope), shared(declScope.getShared()),
       givenBindings(givenBindings), evaluator(evaluator),
@@ -622,14 +621,14 @@ ParameterInferenceState::inferSelfFromInitResult(Type returnedType) {
 template <typename... Ts>
 static std::tuple<Ts...>
 getPartiallySpecializedSignature(ArrayRef<TypedAttr> bindingsSoFar,
-                                 ParserParamEvaluator &evaluator,
+                                 ParameterEvaluator &evaluator,
                                  bool signatureScoped, Ts... args) {
   if (bindingsSoFar.empty())
     return std::make_tuple(args...);
 
   struct Substitutor : IndexParameterReplacer<Substitutor> {
     Substitutor(ArrayRef<TypedAttr> bindingsSoFar,
-                ParserParamEvaluator &evaluator, bool signatureScoped)
+                ParameterEvaluator &evaluator, bool signatureScoped)
         : bindingsSoFar(bindingsSoFar), evaluator(evaluator),
           signatureScoped(signatureScoped) {}
 
@@ -648,21 +647,11 @@ getPartiallySpecializedSignature(ArrayRef<TypedAttr> bindingsSoFar,
     }
 
     ArrayRef<TypedAttr> bindingsSoFar;
-    ParserParamEvaluator &evaluator;
+    ParameterEvaluator &evaluator;
     bool signatureScoped;
   } substitutor(bindingsSoFar, evaluator, signatureScoped);
 
-  auto refine = [&](auto arg) {
-    auto newArg = substitutor.replace(arg);
-    if (newArg == arg)
-      return arg;
-    // If we changed something, then we substituted constants into the type
-    // tree. This can cause some expressions to fold with the interpreter, so
-    // see if we can simplify the result.
-    return cast<decltype(arg)>(evaluator.refine(newArg));
-  };
-
-  return std::make_tuple(refine(args)...);
+  return std::make_tuple(substitutor.replace(args)...);
 }
 
 /// Infer parameters from an operand being passed into this function. This is

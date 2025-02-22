@@ -21,7 +21,6 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
-#include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"

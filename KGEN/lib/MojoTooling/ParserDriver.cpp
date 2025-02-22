@@ -9,13 +9,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoTooling/ParserDriver.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/DocString.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoParser/Lexer.h"
-#include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "KGEN/POPDialect/POPDialect.h"
@@ -102,12 +102,11 @@ MojoASTDeclRef MojoParserContext::getDecl(MojoASTTypeRef type) {
 MojoASTTypeRef MojoParserContext::concretizeType(MojoASTTypeRef base,
                                                  ArrayRef<TypedAttr> params,
                                                  MojoASTTypeRef type) {
-  KGEN::LIT::ParserParamEvaluator evaluator(
-      *(impl->sharedState.declResolver),
+  KGEN::ParameterEvaluator evaluator(
       cast<StructDeclOp>(base.getDecl(getSharedState()).decl).getInputParams(),
       params);
 
-  return evaluator.refine(evaluator.getReboundType(type.getMLIRType()));
+  return evaluator.replace(evaluator.getReboundType(type.getMLIRType()));
 }
 
 //===----------------------------------------------------------------------===//

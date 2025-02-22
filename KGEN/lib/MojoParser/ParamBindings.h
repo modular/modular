@@ -12,6 +12,7 @@
 
 namespace M::KGEN {
 class ParameterExprArrayAttr;
+class ParameterEvaluator;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
@@ -20,7 +21,6 @@ class DeclResolver;
 class ExprNode;
 class FnOp;
 class FnTypeGeneratorType;
-class ParserParamEvaluator;
 class PogListAttr;
 class PValue;
 class StructDeclOp;
@@ -90,7 +90,7 @@ public:
   /// with a list of existing bindings, and a parameter evaluator to be used to
   /// infer types.
   using ParameterInferenceHookTy =
-      function_ref<PValue(ArrayRef<TypedAttr>, const ParserParamEvaluator &)>;
+      function_ref<PValue(ArrayRef<TypedAttr>, const ParameterEvaluator &)>;
 
   /// Describe how closely the given parameter bindings match the specified
   /// parameters and call operands.

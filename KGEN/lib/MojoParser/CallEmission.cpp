@@ -21,7 +21,6 @@
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
-#include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/POPDialect/POPOps.h"
 
 #include "Support/Compiler/OperationUtils.h"

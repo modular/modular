@@ -14,15 +14,15 @@
 #include "ExprEmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
-#include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"
 
+#include "ExprNodes.h"
 #include "MojoUtils.h"
 #include "Signatures.h"
 
-#include "ExprNodes.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
@@ -295,8 +295,7 @@ resolveAliasDeclareValue(AliasDeclOp param,
         return PValue();
       }
 
-      ParserParamEvaluator evaluator(*shared.declResolver, paramDecls,
-                                     *paramValues);
+      ParameterEvaluator evaluator(paramDecls, *paramValues);
       assert(param.getValueAttr() && "Struct's alias should have value");
       return PValue(evaluator.getReboundAttribute(param.getValueAttr()));
     }
@@ -875,7 +874,7 @@ ASTType InProgressBindings::getNextParamType(const Operand &operand,
     return {};
 
   // Use the bindings determined so far to specialize the type.
-  ParserParamEvaluator evaluator(emitter.getDeclResolver(), bindings);
+  ParameterEvaluator evaluator(bindings);
   nextType = evaluator.getReboundType(nextType);
 
   // Unwrap the variadic element type.
