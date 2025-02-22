@@ -3210,7 +3210,7 @@ static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
                                     field))
     resultType = b.getType<StringType>();
   else
-    resultType = b.getType<IntLiteralType>();
+    resultType = b.getType<IndexType>();
 
   if (!target)
     return {};
@@ -3224,9 +3224,9 @@ static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
   if (field.getValue() == "arch")
     return StringAttr::get(target.getTarget().getArch(), resultType);
   if (field.getValue() == "simd_bit_width")
-    return b.getAttr<IntLiteralAttr>(target.getTarget().getSimdBitWidth());
+    return b.getIndexAttr(target.getTarget().getSimdBitWidth());
   if (field.getValue() == "index_bit_width")
-    return b.getAttr<IntLiteralAttr>(target.getTarget().resolveIndexBitWidth());
+    return b.getIndexAttr(target.getTarget().resolveIndexBitWidth());
   if (field.getValue() == "endianness") {
     return StringAttr::get(
         target.getTarget().getTriple().isLittleEndian() ? "little" : "big",
