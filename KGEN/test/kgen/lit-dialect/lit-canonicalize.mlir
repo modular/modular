@@ -74,15 +74,3 @@ lit.struct.decl @Pair register_passable_trivial {
 lit.struct.decl @Int register_passable_trivial {
   lit.struct.field value : index
 }
-
-
-// CHECK-LABEL: lit.fn @fold_ger
-lit.fn @fold_ger[mut lt]() -> !lit.ref<index, mut lt->first->value> {
-  // CHECK-NEXT: kgen.param.constant: !lit.ref<index, mut lt->first->value> =
-  // CHECK-SAME: <#lit.struct.ger<#lit.struct.ger<#interp.symbolic_pointer<0>
-  // CHECK-SAME: : !lit.ref<@Pair, mut lt>, "first"> : !lit.ref<@Int, mut lt->first>, "value">>
-  %x = kgen.param.constant: !lit.ref<@Pair, mut lt> = <#interp.symbolic_pointer<0>>
-  %0 = lit.ref.struct.ger %x[first] : <@Pair, mut lt> -> @Int
-  %1 = lit.ref.struct.ger %0[value] : <@Int, mut lt->first> -> index
-  kgen.return %1 : !lit.ref<index, mut lt->first->value>
-}

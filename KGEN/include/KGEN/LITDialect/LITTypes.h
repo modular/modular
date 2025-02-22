@@ -50,11 +50,6 @@ public:
   StringAttr getParamName(size_t idx);
 };
 
-/// Create an uninitialized TypedAttr instance of the type for symbolic
-/// interpretation.
-ErrorOr<TypedAttr> createUninitializedValueOf(Type type,
-                                              InterpreterState &state);
-
 //===----------------------------------------------------------------------===//
 // FnType
 //===----------------------------------------------------------------------===//
