@@ -338,6 +338,17 @@ struct DeviceBuffer[type: DType](Sized):
             ](self._handle, dst._handle)
         )
 
+    fn reassign_ownership_to(self, ctx: DeviceContext) raises:
+        # const char * AsyncRT_DeviceBuffer_reassignOwnershipTo(const DeviceBuffer *buf, const DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceBuffer_reassignOwnershipTo",
+                _CharPtr,
+                _DeviceBufferPtr,
+                _DeviceContextPtr,
+            ](self._handle, ctx._handle)
+        )
+
     fn take_ptr(owned self) -> UnsafePointer[Scalar[type]]:
         # void AsyncRT_DeviceBuffer_release_ptr(const DeviceBuffer *buffer)
         external_call[
@@ -1850,6 +1861,18 @@ struct DeviceContext:
             ](
                 self._handle,
             )
+        )
+
+    fn enqueue_wait_for(self, other: DeviceContext) raises:
+        """Enqueue a wait for other to be processed."""
+        # const char * AsyncRT_DeviceContext_enqueue_wait_for_context(const DeviceContext *ctx, const DeviceContext *other)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_enqueue_wait_for_context",
+                _CharPtr,
+                _DeviceContextPtr,
+                _DeviceContextPtr,
+            ](self._handle, other._handle)
         )
 
     @always_inline
