@@ -2298,10 +2298,8 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << stringifyEnum(opcode)
                          << " operand 1 should be a !kgen.target";
     }
-    if (!::isa<IntLiteralType, IndexType>(type)) {
-      return emitError() << stringifyEnum(opcode)
-                         << " should return an index or !kgen.int_literal";
-    }
+    if (!::isa<IndexType>(type))
+      return emitError() << stringifyEnum(opcode) << " should return index";
     break;
   case POC::Apply:
     if (failed(verifyApply(operands, type, emitError)))
@@ -3285,9 +3283,7 @@ static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands,
   if (!size)
     return {};
 
-  if (isa<IndexType>(resultType))
-    return b.getIndexAttr(*size);
-  return b.getAttr<IntLiteralAttr>(*size);
+  return b.getIndexAttr(*size);
 }
 
 /// Simplifies a `get_alignof` operator. Try to narrow the operand to a type
@@ -3307,9 +3303,7 @@ static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands,
   if (!size)
     return {};
 
-  if (isa<IndexType>(resultType))
-    return b.getIndexAttr(*size);
-  return b.getAttr<IntLiteralAttr>(*size);
+  return b.getIndexAttr(*size);
 }
 
 static Attribute simplifyApply(ArrayRef<TypedAttr> operands, Type &resultType) {
