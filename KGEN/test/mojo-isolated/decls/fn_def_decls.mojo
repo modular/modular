@@ -141,12 +141,17 @@ def defTests(
     # CHECK-NEXT: lit.ref.store %b, %a_2
     a = b  # Subsequent arguments don't re-make the box.
 
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.param.materialize: !MemoryOnly = <{}>
-    # CHECK-NEXT: lit.ref.store [[TMP]], %mem_1
+    # TODO: Extraneous def boxes.
+
+    # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
+    # CHECK-NEXT: lit.call {{.*}}MemoryOnly::@"__init__{{.*}}([[TMP]])
+    # CHECK-NEXT: lit.call {{.*}}MemoryOnly::@"__moveinit__{{.*}}([[TMP]], %mem_1)
     mem = MemoryOnly()
 
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.param.materialize: !NonTrivialReg = <{}>
-    # CHECK-NEXT: lit.ref.store [[TMP]], %reg_0
+    # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
+    # CHECK-NEXT: lit.call {{.*}}NonTrivialReg::@"__init__{{.*}}([[TMP]])
+    # CHECK-NEXT: [[TMP2:%.*]] = lit.load.consume [[TMP]]
+    # CHECK-NEXT: lit.ref.store [[TMP2]], %reg_0
     reg = NonTrivialReg()
 
     # Issue#38762
@@ -243,20 +248,17 @@ def def_ref_result(mut x: MemoryOnly) -> ref [x] MemoryOnly:
 # CHECK-LABEL: lit.fn @"use_ref_result
 def use_ref_result():
     # CHECK-NEXT: %a = lit.var.decl "a"
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.param.materialize: !MemoryOnly = <{}>
-    # CHECK-NEXT: lit.ref.store [[TMP]], %a
+    # CHECK-NEXT: lit.call {{.*}}MemoryOnly::@"__init__{{.*}}(%a)
     var a = MemoryOnly()
 
     # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}ref_result{{.*}}(%a)
     ref_result(a) = MemoryOnly()
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.param.materialize: !MemoryOnly = <{}>
-    # CHECK-NEXT: lit.ref.store [[TMP]], [[REF]]
+    # CHECK-NEXT: lit.call {{.*}}MemoryOnly::@"__init__{{.*}}([[REF]])
 
     # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
     # CHECK-NEXT: lit.call {{.*}}decls::@"def_ref_result{{.*}}(%a, %__error__, %__call_result_tmp__)
     # CHECK-NEXT: [[REF:%.*]] = lit.load.consume %__call_result_tmp__
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.param.materialize: !MemoryOnly = <{}>
-    # CHECK-NEXT: lit.ref.store [[TMP]], [[REF]]
+    # CHECK-NEXT: lit.call {{.*}}MemoryOnly::@"__init__{{.*}}([[REF]])
     def_ref_result(a) = MemoryOnly()
 
 

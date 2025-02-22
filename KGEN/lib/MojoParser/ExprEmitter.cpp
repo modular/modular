@@ -1276,8 +1276,23 @@ CValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   if (auto dlValue = destLV.getIfDLValue())
     return dlValue->emitStore(value, *this);
 
+  // Otherwise, we know we have an MLValue destination.
+  MLValue destRef = destLV.getIfMLValue();
+  assert(destRef && "No other known LValue");
   ASTType valueType = value.ir.getRValueType();
   SMLoc exprLoc = value.expr->getLoc();
+
+  // Verify that the result MLValue is in the right address space for a
+  // __copyinit__/__moveinit__ call.
+  if (!cast<RefType>(destRef.getType()).isDefaultAddrSpace() &&
+      valueType.getRegisterPassability(exprLoc, shared) !=
+          TypeConvention::RegisterPassableTrivial) {
+    emitError(exprLoc, "value of type ")
+        << valueType
+        << " cannot be copied or moved into a non-default address space"
+        << value.expr->getRange();
+    return {};
+  }
 
   // If the input is an LValue/BValue (incl PValue) that we don't own, or if it
   // has no __moveinit__, then copy it into the destination.
@@ -1303,11 +1318,7 @@ CValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     return result;
   }
 
-  // Otherwise this is a movable RValue that we own and we have an MLValue
-  // destination.
-  MLValue destRef = destLV.getIfMLValue();
-  assert(destRef && "No other known LValue");
-
+  // Otherwise this is a movable RValue that we own.
   // If it is a register passable, assign with a store.
   if (valueType.isRegisterPassable(exprLoc, shared)) {
     // Materialize a PValue or load a MRValue if present.

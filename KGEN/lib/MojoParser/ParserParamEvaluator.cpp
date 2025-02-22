@@ -48,7 +48,8 @@ ErrorOr<Region *> ParserInterpreter::lookupFunctionBody(SymbolRefAttr symbol) {
   auto func = cast<FnOp>(*decl);
   if (func.getInlineLevel() == InlineLevel::Automatic ||
       func.getInlineLevel() == InlineLevel::Never ||
-      func.getInlineLevel() == InlineLevel::Always)
+      func.getInlineLevel() == InlineLevel::Always ||
+      func.getInlineLevel() == InlineLevel::AlwaysNoDebug)
     return Error("function is not always_inline");
   FnTypeGeneratorType fullSig = func.getFullSignature();
   if (!fullSig.getInputParamTypes().empty())

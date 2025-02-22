@@ -442,11 +442,11 @@ fn callMemoryValueParam():
     # CHECK: lit.call {{.*}}passMemoryValue{{.*}}([[IMMREF]], %{{.*}})
     _ = passMemoryValue(copy)
 
-    # CHECK: lit.call {{.*}}<:!MemoryType {:!Int {22}}>
+    # CHECK: lit.call {{.*}}MemoryType::@"__init__(::Int)"), {22})>
     memoryParam[MemoryType(22)]()
 
-    # CHECK: foldMemoryCall{{.*}}{42})
-    alias foldMemoryCall = readMemoryValue(NonMovableMemoryType(42)).value
+    # CHECK: dontFoldMemoryCall{{.*}}{42})))
+    alias dontFoldMemoryCall = readMemoryValue(NonMovableMemoryType(42)).value
 
 # CHECK-LABEL: lit.fn @"memoryParam{{.*}}"<value: !MemoryType>()
 fn memoryParam[value: MemoryType]():
@@ -495,8 +495,9 @@ fn interpret_initself_ctor(arg: InitSelfParam[InitSelfCtor(42)]):
     # CHECK-NEXT: store [[CST]], %inlined_initself_call
     var inlined_initself_call = InitSelfCtor(42)
 
-    # CHECK: [[CST:%.*]] = kgen.param.constant: !Int = <{24}>
-    # CHECK-NEXT: lit.call {{.*}}@"intbox_memory_result{{.*}}([[CST]], %inlined_byrefresult_call)
+    # CHECK: %inlined_byrefresult_call = lit.var.decl "inlined_byrefresult_call"
+    # CHECK-NEXT: [[CST:%.*]] = kgen.param.constant: !Int = <{24}> 
+    # CHECK-NEXT: lit.call{{.*}}intbox_memory_result{{.*}}([[CST]], %inlined_byrefresult_call)
     var inlined_byrefresult_call = intbox_memory_result(24)
 
 
@@ -1229,12 +1230,12 @@ struct MemoryOnlyType:
     pass
 
 
-# CHECK: lit.fn @"mem_only_default_param[{{.*}}::MemoryOnlyType]()"<x: !MemoryOnlyType = {}>
+# CHECK: lit.fn @"mem_only_default_param[{{.*}}MemoryOnlyType::@"__init__()
 fn mem_only_default_param[x: MemoryOnlyType = MemoryOnlyType()]():
     pass
 
 # CHECK-LABEL: lit.fn @"test_mem_only_default_param()"
-# CHECK: lit.call @{{.*}}@"mem_only_default_param[{{.*}}::MemoryOnlyType]()"<:!MemoryOnlyType {}>
+# CHECK: lit.call @{{.*}}@"mem_only_default_param[{{.*}}MemoryOnlyType::@"__init__()
 fn test_mem_only_default_param():
     mem_only_default_param()
 
@@ -1312,7 +1313,7 @@ fn test_default_param_struct():
     _ = DefaultParams[4, 5, "meow"]()
 
 
-# CHECK: lit.struct.decl @AllDefaultParams<{{.*}}: !Int = {0}, {{.*}}: !MemoryOnlyType = {}>
+# CHECK: lit.struct.decl @AllDefaultParams<{{.*}}: !Int = {0}, {{.*}}MemoryOnlyType::@"__init__()
 @value
 struct AllDefaultParams[x: Int = 0, v: MemoryOnlyType = MemoryOnlyType()]: pass
 
@@ -1320,11 +1321,11 @@ struct AllDefaultParams[x: Int = 0, v: MemoryOnlyType = MemoryOnlyType()]: pass
 fn test_default_param_struct_all_default():
     # CHECK: lit.alias.decl *"T{{.*}}": meta<!lit.struct<{{.*}}#AllDefaultParams{{.*}}>> = <@{{.*}}::@AllDefaultParams<
     # CHECK-SAME: :!Int {0},
-    # CHECK-SAME: :!MemoryOnlyType {}
+    # CHECK-SAME: :!MemoryOnlyType {{.*}}MemoryOnlyType::@"__init__()
     alias T = AllDefaultParams[]
 
     # CHECK: %[[INIT:.*]] = lit.var.decl {{.*}} : !lit.ref<@{{.*}}::@AllDefaultParams<
-    # CHECK-SAME:   :!Int {0}, :!MemoryOnlyType {}
+    # CHECK-SAME:   :!Int {0}, :!MemoryOnlyType {{.*}}MemoryOnlyType::@"__init__()
     # CHECK-NEXT: = lit.call @{{.*}}::@AllDefaultParams::@"__init__({{.*}}<:!Int {0}, :!MemoryOnlyType
     _ = AllDefaultParams[]()
 
