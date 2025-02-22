@@ -353,9 +353,10 @@ async def grpc_serve(
 
     tokenizer = TextTokenizer(
         pipeline_config.model_path,
-        pipeline_config.max_length,
-        pipeline_config.max_new_tokens,
-        pipeline_config.trust_remote_code,
+        revision=pipeline_config.huggingface_revision,
+        max_length=pipeline_config.max_length,
+        max_new_tokens=pipeline_config.max_new_tokens,
+        trust_remote_code=pipeline_config.trust_remote_code,
     )
     assert tokenizer.delegate
 
