@@ -73,6 +73,7 @@ public:
     /// Bit 0 encodes "isSigned".
     mIsSigned = 1,
 
+    /// Bits 1 thru 4 indicate the bit width in log base 2.
     kIntWidthShift = 1,
     // i1's densely packed in memory.
     si1 = (0 << kIntWidthShift) | mIsInteger | mIsSigned,
@@ -91,6 +92,8 @@ public:
     ui64 = (6 << kIntWidthShift) | mIsInteger,
     si128 = (7 << kIntWidthShift) | mIsInteger | mIsSigned,
     ui128 = (7 << kIntWidthShift) | mIsInteger,
+    si256 = (8 << kIntWidthShift) | mIsInteger | mIsSigned,
+    ui256 = (8 << kIntWidthShift) | mIsInteger,
 
     //===--- Floating point types -----------------------------------------===//
 
@@ -125,9 +128,11 @@ public:
 
   // Related constants.
   enum {
-    // Complex i128/f128 is the largest size thing this type enum can represent.
+    // Complex i256 is the largest size thing this type enum can represent.
     // Knowing this allows kernels to use fixed-size on-stack buffers.
-    kMaxElementSizeInBits = 128 * 2,
+    // When increasing this value, be sure to check users of this constant to
+    // ensure they are still correct & sufficiently efficient.
+    kMaxElementSizeInBits = 256 * 2,
     kMaxElementSizeInBytes = kMaxElementSizeInBits / 8
   };
 
