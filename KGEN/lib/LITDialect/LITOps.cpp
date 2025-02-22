@@ -10,7 +10,6 @@
 
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/CODialect/COUtils.h"
-#include "KGEN/Interpreter/InterpreterState.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -357,22 +356,6 @@ SymbolRefAttr LIT::CallOp::getDirectCallee() {
   if (auto symbolCst = dyn_cast<SymbolConstantAttr>(getCallee()))
     return symbolCst.getSymbol();
   return {};
-}
-
-ErrorTreeOrSuccess LIT::CallOp::interpret(ArrayRef<Attribute> operands,
-                                          InterpreterState &state) {
-  SymbolRefAttr callee = getDirectCallee();
-  if (!callee)
-    return ErrorTree(getLoc(), "cannot interpret a parametric call");
-
-  auto bodyOr = state.lookupFunctionBody(callee);
-  if (bodyOr.isError())
-    return ErrorTree(getLoc(), bodyOr.takeError());
-  Region &body = **bodyOr;
-
-  if (auto err = state.callFunctionBody(body, operands))
-    return err.takeError();
-  return success();
 }
 
 FailureOr<InlineResult> LIT::CallOp::prepInline(mlir::RewriterBase &b) {
@@ -1476,109 +1459,9 @@ static void printStructGERTypes(AsmPrinter &p, Operation *,
 
 OpFoldResult RefStructGEROp::fold(FoldAdaptor adaptor) {
   auto value = cast_or_null<TypedAttr>(adaptor.getContainer());
-  if (!isa_and_nonnull<SymbolicPointerAttr, StructGERAttr>(value))
-    return {};
-  return StructGERAttr::get(value, getFieldAttr(), getType());
-}
-
-//===----------------------------------------------------------------------===//
-// RefLoadOp
-//===----------------------------------------------------------------------===//
-
-static ErrorTreeOr<TypedAttr>
-interpretSymbolicLoadOp(Location loc, TypedAttr arg, InterpreterState &state) {
-  if (auto ptr = dyn_cast<SymbolicPointerAttr>(arg)) {
-    // Base case: load the value.
-    ErrorOr<TypedAttr &> mem = state.getSymbolicMemory(ptr.getSlot());
-    if (mem.isError())
-      return ErrorTree(loc, mem.takeError());
-    return *mem;
-  }
-  // If this is a GER, recurse by loading the base value and then extracting the
-  // requested element.
-  auto ger = cast<StructGERAttr>(arg);
-  ErrorTreeOr<TypedAttr> value =
-      interpretSymbolicLoadOp(loc, ger.getValue(), state);
-  if (value.isError())
-    return value.takeError();
-
-  auto structAttr = cast<LITStructAttr>(*value);
-  for (auto [name, value] : structAttr.getValues()) {
-    if (name == ger.getField())
-      return value;
-  }
-  llvm_unreachable("should have found a matching field name");
-}
-
-ErrorTreeOrSuccess RefLoadOp::interpret(ArrayRef<Attribute> operands,
-                                        InterpreterState &state) {
-  ErrorTreeOr<TypedAttr> result = interpretSymbolicLoadOp(
-      getLoc(), cast<TypedAttr>(operands.front()), state);
-  if (result.isError())
-    return result.takeError();
-  state.mapResults(*result);
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
-// RefStoreOp
-//===----------------------------------------------------------------------===//
-
-static ErrorTreeOrSuccess interpretSymbolicStoreOp(Location loc,
-                                                   TypedAttr value,
-                                                   TypedAttr target,
-                                                   InterpreterState &state) {
-  // Build the set of field accesses up to the base value. If `target` is
-  // already a full object reference, then `fields` will be empty.
-  SmallVector<StringAttr, 1> fields;
-  for (StructGERAttr ger; (ger = dyn_cast<StructGERAttr>(target));
-       target = ger.getValue())
-    fields.push_back(ger.getField());
-
-  // `target` must be a full object reference. Read the whole struct.
-  auto ptr = cast<SymbolicPointerAttr>(target);
-  ErrorOr<TypedAttr &> mem = state.getSymbolicMemory(ptr.getSlot());
-  if (mem.isError())
-    return ErrorTree(loc, mem.takeError());
-
-  // Build the chain of accessed element values, starting with the full object.
-  SmallVector<std::pair<TypedAttr, int>> values;
-  values.emplace_back(*mem, -1);
-  for (StringAttr field : llvm::reverse(fields)) {
-    auto attr = cast<LITStructAttr>(values.back().first);
-    int i = 0;
-    for (auto [name, value] : attr.getValues()) {
-      if (name == field) {
-        values.emplace_back(value, i);
-        break;
-      }
-      ++i;
-    }
-  }
-  assert(values.size() == fields.size() + 1 && "invalid field attribute name");
-
-  // Now overwrite the leaf element and reconstruct the full object.
-  values.back().first = value;
-  while (values.size() != 1) {
-    auto [value, i] = values.back();
-    values.pop_back();
-    auto attr = cast<LITStructAttr>(values.back().first);
-    SmallVector<std::tuple<StringAttr, TypedAttr>> elements =
-        llvm::to_vector(attr.getValues());
-    std::get<1>(elements[i]) = value;
-    values.back().first = LITStructAttr::get(elements, attr.getType());
-  }
-
-  // There should be a single value in the vector now. Overwrite the
-  // whole-object value in symbolic memory.
-  *mem = values.back().first;
-  return success();
-}
-
-ErrorTreeOrSuccess RefStoreOp::interpret(ArrayRef<Attribute> operands,
-                                         InterpreterState &state) {
-  return interpretSymbolicStoreOp(getLoc(), cast<TypedAttr>(operands.front()),
-                                  cast<TypedAttr>(operands.back()), state);
+  if (isa_and_nonnull<StructGERAttr>(value))
+    return StructGERAttr::get(value, getFieldAttr(), getType());
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
@@ -1813,18 +1696,6 @@ LogicalResult VarDeclOp::verify() {
   return success();
 }
 
-ErrorTreeOrSuccess VarDeclOp::interpret(ArrayRef<Attribute> operands,
-                                        InterpreterState &state) {
-  ErrorOr<TypedAttr> value =
-      createUninitializedValueOf(getType().getElementType(), state);
-  if (value.isError())
-    return ErrorTree(getLoc(), value.takeError());
-
-  uint64_t result = state.allocateSymbolicMemory(*value);
-  state.mapResults(SymbolicPointerAttr::get(result, getType()));
-  return success();
-}
-
 //===----------------------------------------------------------------------===//
 // GlobalVarDeclOp
 //===----------------------------------------------------------------------===//
@@ -1919,12 +1790,6 @@ LogicalResult LIT::ReturnOp::verify() {
   return checkOperandTypes(*this, func.getResultTypes());
 }
 
-ErrorTreeOrSuccess LIT::ReturnOp::interpret(ArrayRef<Attribute> operands,
-                                            InterpreterState &state) {
-  state.returnFromFunction(operands);
-  return success();
-}
-
 //===----------------------------------------------------------------------===//
 // RaiseOp
 //===----------------------------------------------------------------------===//
@@ -1957,20 +1822,6 @@ LogicalResult RaiseOp::verify() {
 
 LogicalResult UnboundRegionOp::verify() {
   return emitOpError("is never valid. Was it not erased by the parser?");
-}
-
-//===----------------------------------------------------------------------===//
-// LoadConsumeOp
-//===----------------------------------------------------------------------===//
-
-ErrorTreeOrSuccess LoadConsumeOp::interpret(ArrayRef<Attribute> operands,
-                                            InterpreterState &state) {
-  ErrorTreeOr<TypedAttr> result = interpretSymbolicLoadOp(
-      getLoc(), cast<TypedAttr>(operands.front()), state);
-  if (result.isError())
-    return result.takeError();
-  state.mapResults(*result);
-  return success();
 }
 
 //===----------------------------------------------------------------------===//

@@ -22,7 +22,6 @@ include "KGEN/HLCFDialect/HLCFAttrs.td"
 include "KGEN/HLCFDialect/HLCFInterfaces.td"
 include "Support/DebugInfoDialect/IR/DebugInfoAttrs.td"
 include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.td"
-include "KGEN/Interpreter/InterpreterInterface.td"
 include "Support/MDialect/MAttrs.td"
 include "Support/Compiler/Properties.td"
 include "mlir/IR/BuiltinAttributes.td"
@@ -171,8 +170,7 @@ def LIT_FnOp : LITOp<"fn", [
 //===----------------------------------------------------------------------===//
 
 def LIT_CallOp : LITOp<"call", [
-    DeclareOpInterfaceMethods<KGEN_CallOpInterface>,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<KGEN_CallOpInterface>]> {
   let summary = "call a function";
   let description = [{
     The `lit.call` operation is a call to comptime parameter of function type.
@@ -816,8 +814,7 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
 def LIT_VarDeclOp : LITOp<"var.decl", [
     ASTDeclInterface,
     DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
-    DeclareOpInterfaceMethods<ParamOpInterface>,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>]>, OneParamDecl {
+    DeclareOpInterfaceMethods<ParamOpInterface>]>, OneParamDecl {
   let summary = "Addressible local var declaration";
   let description = [{
     This declaration is used for var declarations with an exposed
@@ -1056,8 +1053,7 @@ def LIT_TraitFnOp : LITOp<"trait_fn", [Terminator,
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
-def LIT_ReturnOp : LITOp<"return",
-    [DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+def LIT_ReturnOp : LITOp<"return", []> {
   let summary = "Lexical return statement.";
   let description = [{
     The `lit.return` operation is not a terminator, but it corresponds to a
@@ -1348,8 +1344,7 @@ def LIT_UnboundRegionOp : LITOp<"unbound_region"> {
 //===----------------------------------------------------------------------===//
 
 def LIT_LoadConsumeOp : LITOp<"load.consume", [
-    ReferenceElementType<"ref", "result">,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+    ReferenceElementType<"ref", "result">]> {
   let summary = "consuming pointer load operation";
   let description = [{
     Loads the data at the given pointer like `pop.load`, but consumes the
@@ -1629,9 +1624,7 @@ def LIT_RefStructGEROp : LITOp<"ref.struct.ger", [Pure,
 // RefLoadOp
 //===----------------------------------------------------------------------===//
 
-def LIT_RefLoadOp : LITOp<"ref.load", [
-    ReferenceElementType<"ref", "result">,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+def LIT_RefLoadOp : LITOp<"ref.load", [ReferenceElementType<"ref", "result">]> {
   let summary = "reference load operation";
   let description = [{
     Loads the data at the given reference. Returns a scalar of the element type.
@@ -1655,9 +1648,7 @@ def LIT_RefLoadOp : LITOp<"ref.load", [
 // RefStoreOp
 //===----------------------------------------------------------------------===//
 
-def LIT_RefStoreOp : LITOp<"ref.store", [
-    ReferenceElementType<"dest", "value">,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+def LIT_RefStoreOp : LITOp<"ref.store", [ReferenceElementType<"dest", "value">]> {
   let summary = "Reference store operation";
   let description = [{
     Store the given value to the given reference of the same element type.  The
