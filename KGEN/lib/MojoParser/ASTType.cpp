@@ -494,24 +494,31 @@ static bool isKnownNonStaticMethod(SharedState *diagShared,
 /// Pretty print a parameter value.
 static void printDemangledParam(raw_ostream &os, TypedAttr param,
                                 SharedState *diagShared) {
+  auto printOperands =
+      [&](ArrayRef<TypedAttr> operands, StringRef separator = ", ",
+          StringRef lSeparator = "(", StringRef rSeparator = ")") -> void {
+    os << lSeparator;
+    llvm::interleave(
+        operands, os,
+        [&](TypedAttr value) {
+          // Don't print extracts out of Int.value.
+          if (auto extract = dyn_cast<LIT::StructExtractAttr>(value))
+            value = extract.getStructValue();
+          printDemangledParam(os, value, diagShared);
+        },
+        separator);
+    os << rSeparator;
+  };
+
   if (auto bindParams = dyn_cast<BindParamsAttr>(param)) {
     printDemangledParam(os, bindParams.getGenerator(), diagShared);
-    os << '[';
-    llvm::interleaveComma(
-        bindParams.getParamValues(), os,
-        [&](TypedAttr value) { printDemangledParam(os, value, diagShared); });
-    os << ']';
+    printOperands(bindParams.getParamValues(), ", ", "[", "]");
     return;
   }
   if (auto symbolCst = dyn_cast<SymbolConstantAttr>(param)) {
     printSymbol(os, symbolCst.getSymbol(), diagShared, /*isFunc=*/true);
-    if (!symbolCst.getParamValues().empty()) {
-      os << '[';
-      llvm::interleaveComma(
-          symbolCst.getParamValues(), os,
-          [&](TypedAttr value) { printDemangledParam(os, value, diagShared); });
-      os << ']';
-    }
+    if (!symbolCst.getParamValues().empty())
+      printOperands(symbolCst.getParamValues(), ", ", "[", "]");
     return;
   }
   if (auto refPack = dyn_cast<RefPackAttr>(param)) {
@@ -525,22 +532,6 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
 
   if (auto op = dyn_cast<ParamOperatorAttr>(param)) {
     ArrayRef<TypedAttr> operands = op.getOperands();
-
-    auto printOperands =
-        [&](ArrayRef<TypedAttr> operands, StringRef separator = ", ",
-            StringRef lSeparator = "(", StringRef rSeparator = ")") -> void {
-      os << lSeparator;
-      llvm::interleave(
-          operands, os,
-          [&](TypedAttr value) {
-            // Don't print extracts out of Int.value.
-            if (auto extract = dyn_cast<LIT::StructExtractAttr>(value))
-              value = extract.getStructValue();
-            printDemangledParam(os, value, diagShared);
-          },
-          separator);
-      os << rSeparator;
-    };
 
     // Sugar the parameter operators the parser can generate.
     switch (op.getOpcode()) {
@@ -799,12 +790,47 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
   }
 
   if (auto convert = dyn_cast<IntLiteralConvertAttr>(param)) {
-    // Don't print extracts of IntLiteral.value.
-    // if (auto extract = dyn_cast<LIT::StructExtractAttr>(convert.getInput()))
-    //  printDemangledParam(os, extract.getStructValue(), diagShared);
-    // else
     printDemangledParam(os, convert.getInput(), diagShared);
     return;
+  }
+
+  if (auto intLitBin = dyn_cast<IntLiteralBinAttr>(param)) {
+    const char *binOp = nullptr;
+    switch (intLitBin.getOper().getValue()) {
+    case IntLiteralBinopKind::Add:
+      binOp = " + ";
+      break;
+    case IntLiteralBinopKind::Sub:
+      binOp = " - ";
+      break;
+    case IntLiteralBinopKind::Mul:
+      binOp = " * ";
+      break;
+    case IntLiteralBinopKind::FloorDiv:
+      binOp = " // ";
+      break;
+    case IntLiteralBinopKind::Mod:
+      binOp = " % ";
+      break;
+    case IntLiteralBinopKind::Lshift:
+      binOp = " << ";
+      break;
+    case IntLiteralBinopKind::Rshift:
+      binOp = " >> ";
+      break;
+    case IntLiteralBinopKind::And:
+      binOp = " & ";
+      break;
+    case IntLiteralBinopKind::Or:
+      binOp = " | ";
+      break;
+    case IntLiteralBinopKind::Xor:
+      binOp = " ^ ";
+      break;
+    }
+
+    return printOperands({intLitBin.getLhs(), intLitBin.getRhs()},
+                         /*separator=*/binOp);
   }
 
   os << getParamAsString(param, diagShared);

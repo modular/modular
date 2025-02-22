@@ -362,7 +362,7 @@ fn alias_parametric_fn() -> StringLiteral:
 alias mname1 = alias_parametric_fn().value
 
 # CHECK-LABEL: lit.fn @"kernel3{{.*}}"<x:
-# CHECK-SAME: LLVMMetadataArray = [#lit.struct.extract<:!StringLiteral apply(:!lit.generator<() -> !StringLiteral> @decls::@"alias_parametric_fn()"), "value"> : !kgen.string, #lit.struct<{value: !kgen.int_literal = 128}> : !IntLiteral]
+# CHECK-SAME: LLVMMetadataArray = [#lit.struct.extract<:!StringLiteral apply(:!lit.generator<() -> !StringLiteral> @decls::@"alias_parametric_fn()"), "value"> : !kgen.string, #kgen.unknown : !lit.struct<#IntLiteral <:!kgen.int_literal 128>>
 
 @__llvm_metadata(
     mname1=128

@@ -572,10 +572,7 @@ bool ExprEmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
 /// Returns a type if there is a shared supertype for the two specified types,
 /// e.g. two derived classes may have the same base class even if neither is
 /// convertible to the other.  This returns null if there is no common type.
-///
-/// This is the implementation logic of getZeroCostCommonType and shouldn't be
-/// called directly.
-static ASTType getZeroCostCommonTypeImpl(ASTType type1, ASTType type2) {
+ASTType ExprEmitter::getCommonType(ASTType type1, ASTType type2) {
   // Check reference downcasting.
   if (auto type1Ref = dyn_cast<RefType>(type1))
     if (auto type2Ref = dyn_cast<RefType>(type2)) {
@@ -592,27 +589,19 @@ static ASTType getZeroCostCommonTypeImpl(ASTType type1, ASTType type2) {
 
       auto l1 = OriginMutCastAttr::get(type1Ref.getOrigin(), isMutableAttr);
       auto l2 = OriginMutCastAttr::get(type2Ref.getOrigin(), isMutableAttr);
-
       auto origin =
           OriginUnionAttr::get({l1, l2}, cast<OriginType>(l1.getType()));
       return RefType::get(eltType, origin, type1Ref.getAddressSpace());
     }
 
-  // No common type found.
-  return {};
-}
+  // If both types are non-materializable types but have a common type to
+  // materialize into, use it.
+  if (auto type1Nonmat = type1.getNonmaterializableTarget(shared))
+    if (auto type2Nonmat = type2.getNonmaterializableTarget(shared))
+      if (type1Nonmat.isEqualCanon(type2Nonmat))
+        return type2Nonmat;
 
-/// Returns a type if there is a shared supertype for the two specified types,
-/// e.g. two derived classes may have the same base class even if neither is
-/// convertible to the other.  This returns null if there is no common type.
-ASTType ExprEmitter::getZeroCostCommonType(ASTType type1, ASTType type2) {
-  if (auto result = getZeroCostCommonTypeImpl(type1, type2)) {
-    // Make sure we can always convert to the common type!
-    assert(canZeroCostConvert(type1, result, shared) &&
-           canZeroCostConvert(type2, result, shared) &&
-           "cannot convert to common type?");
-    return result;
-  }
+  // No common type found.
   return {};
 }
 

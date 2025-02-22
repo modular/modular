@@ -348,11 +348,38 @@ AnyValue IntLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (value.slt(APInt::getZero(value.getBitWidth())))
     value = value.zext(value.getBitWidth() + 1);
   auto attr = KGEN::IntLiteralAttr::get(emitter.getContext(), IPInt(value));
+
+  // Look up the IntLiteral type.
   ASTType type =
       emitter.shared.getBuiltinIntLiteralType(emitter.declScope, getLoc());
-  return emitter.emitConstructorCall(type,
-                                     CallOperands({{AnyValue(attr), this}}),
-                                     this, CallSyntax::kImplicitConvert, dest);
+  if (isa<TypeCheckErrorType>(type))
+    return {}; // Sanity check the returned declaration.
+  ASTDecl *decl = type.getDecl(emitter.shared);
+
+  // We expect: IntLiteral[value: __mlir_type.`!kgen.int_literal`]
+  auto intLitStruct = dyn_cast_if_present<StructDeclOp>(decl);
+
+  // FIXME: remove legacy IntLiteral format.
+  if (intLitStruct && intLitStruct.getParams().empty()) {
+    ASTType type =
+        emitter.shared.getBuiltinIntLiteralType(emitter.declScope, getLoc());
+    return emitter.emitConstructorCall(
+        type, CallOperands({{AnyValue(attr), this}}), this,
+        CallSyntax::kImplicitConvert, dest);
+  }
+
+  if (!intLitStruct || intLitStruct.getParams().size() != 1 ||
+      !isa<IntLiteralType>(intLitStruct.getParams()[0].getType())) {
+    emitter.emitError(getLoc(), "malformed IntLiteral");
+    return {};
+  }
+
+  // Bind the IntLiteral[value] parameter.
+  type = intLitStruct.bindReference({attr});
+
+  // Create an instance of IntLiteral[val]()
+  return emitter.emitConstructorCall(type, CallOperands(), this,
+                                     CallSyntax::kTypeCall, dest);
 }
 
 AnyValue FloatLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -2270,7 +2297,7 @@ coerceTypesToEachOther(SMLoc loc, ValueType &lhs, const ExprNode *lhsExpr,
   // If neither is convertible to the other, check to see if there is a common
   // type, and convert both of them to it if so.
   if (!lhsConvertibleToRHS && !rhsConvertibleToLHS) {
-    if (auto commonType = emitter.getZeroCostCommonType(lhsType, rhsType)) {
+    if (auto commonType = emitter.getCommonType(lhsType, rhsType)) {
       lhs = convert({lhs, lhsExpr}, commonType, /*isLHS*/ true);
       if (!lhs)
         return failure();
@@ -2731,7 +2758,7 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // requires the rvalue types to be the same but allows the reference
     // types to be different.
     ASTType commonRefType =
-        emitter.getZeroCostCommonType(falseMVal.getType(), trueMVal.getType());
+        emitter.getCommonType(falseMVal.getType(), trueMVal.getType());
     if (!commonRefType)
       return {};
 

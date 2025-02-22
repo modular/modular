@@ -330,7 +330,7 @@ public:
   /// Returns a type if there is a shared supertype for the two specified types,
   /// e.g. two derived classes may have the same base class even if neither is
   /// convertible to the other.  This returns null if there is no common type.
-  ASTType getZeroCostCommonType(ASTType type1, ASTType type2);
+  ASTType getCommonType(ASTType type1, ASTType type2);
 
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.
