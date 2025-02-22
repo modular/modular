@@ -141,8 +141,8 @@ async def test_tinyllama_create_context(
     prompt_len = len(encoded_prompt)
     assert context.current_length == prompt_len
 
-    # Check that TextContext.seq_len is the prompt size for context encoding.
-    assert context.seq_len == prompt_len
+    # Check that TextContext.active_length is the prompt size for context encoding.
+    assert context.active_length == prompt_len
 
     assert context.max_length == tinyllama_pipeline._pipeline_config.max_length
     assert context.next_tokens is not None

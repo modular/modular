@@ -147,7 +147,7 @@ def next_token_with_logits(
         seq_ids_and_prompts = {}
         for ctx in context_batch:
             prompt = ctx.next_tokens
-            assert len(prompt) == ctx.seq_len
+            assert len(prompt) == ctx.active_length
             seq_ids_and_prompts[ctx.cache_seq_id] = prompt
 
         # Fetch kv inputs.
@@ -192,7 +192,7 @@ def next_token_with_logits(
         seq_ids_and_prompts = {}
         for ctx in context_batch:
             prompt = ctx.next_tokens
-            assert len(prompt) == ctx.seq_len
+            assert len(prompt) == ctx.active_length
             seq_ids_and_prompts[ctx.cache_seq_id] = prompt
 
         token_input = model._prepare_initial_token_inputs(context_batch)

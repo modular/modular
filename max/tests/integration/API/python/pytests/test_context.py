@@ -42,15 +42,15 @@ def test_context__seq_len():
         tokens=np.array([0, 1, 2, 3]),
     )
 
-    assert context.seq_len == 4
+    assert context.active_length == 4
     context.update(4)
-    assert context.seq_len == 1
+    assert context.active_length == 1
     for i in range(5):
         context.update(5 + i)
-    assert context.seq_len == 1
+    assert context.active_length == 1
 
 
-def test_context__trim_prompt():
+def test_context__bump_token_indices():
     context = TextContext(
         cache_seq_id=0,
         prompt="this is a test prompt",
@@ -59,24 +59,24 @@ def test_context__trim_prompt():
     )
 
     # Can't trim more tokens than the context has.
-    with pytest.raises(AssertionError):
-        context.trim_prompt(999)
+    with pytest.raises(ValueError):
+        context.bump_token_indices(start_idx=999)
 
     # Trimming 0 tokens does nothing.
-    context.trim_prompt(0)
+    context.bump_token_indices(start_idx=0)
     assert (context.next_tokens == np.array([0, 1, 2, 3])).all()
     assert context.active_length == 4
     assert context.current_length == 4
 
     # Trimming 2 tokens should remove the first 2 tokens of prompt.
-    context.trim_prompt(2)
+    context.bump_token_indices(start_idx=2)
     assert (context.next_tokens == np.array([2, 3])).all()
     assert context.active_length == 2
     assert context.current_length == 4  # does not change
 
     # Can't trim prompt to 0 tokens.
-    with pytest.raises(AssertionError):
-        context.trim_prompt(2)
+    with pytest.raises(ValueError):
+        context.bump_token_indices(start_idx=2)
 
 
 def test_context__update_beyond_chunk_size():
@@ -105,18 +105,14 @@ def test_context__reset():
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
     )
-    assert context.is_initial_prompt == True
-    assert context.seq_len == 4
+    assert context.active_length == 4
     assert context.next_tokens.tolist() == [0, 1, 2, 3]
     context.update(4)
-    assert context.is_initial_prompt == False
-    assert context.seq_len == 1
+    assert context.active_length == 1
     assert context.next_tokens.tolist() == [4]
     context.reset()
-    assert context.is_initial_prompt == True
-    assert context.seq_len == 5
+    assert context.active_length == 5
     assert context.next_tokens.tolist() == [0, 1, 2, 3, 4]
     context.update(5)
-    assert context.is_initial_prompt == False
-    assert context.seq_len == 1
+    assert context.active_length == 1
     assert context.next_tokens.tolist() == [5]
