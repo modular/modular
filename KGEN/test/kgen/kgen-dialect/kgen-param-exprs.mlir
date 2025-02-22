@@ -609,7 +609,7 @@ kgen.generator @target_is_little_endian<t0: target>() {
 
 // CHECK-LABEL: kgen.generator @target_get_field()
 kgen.generator @target_get_field() {
-  kgen.param.assert<eq(:!kgen.int_literal #kgen.int_literal<128>, target_get_field(#target, "simd_bit_width"))>,
+  kgen.param.assert<eq(128, target_get_field(#target, "simd_bit_width"))>,
                     "simd_bit_width is always greater than 1"
   kgen.param.assert<eq(:string target_get_field(#target, "os"), "darwin")>,
                     "target os is darwin"
