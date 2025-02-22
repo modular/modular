@@ -280,7 +280,6 @@ DUMMY_ARCH = SupportedArchitecture(
     pipeline_model=DummyLlamaPipelineModel,
     tokenizer=TextTokenizer,
     default_weights_format=WeightsFormat.gguf,
-    weight_converters={WeightsFormat.safetensors: None},  # type: ignore
 )
 
 REPLIT_ARCH = SupportedArchitecture(
@@ -295,7 +294,6 @@ REPLIT_ARCH = SupportedArchitecture(
     pipeline_model=DummyReplitPipelineModel,
     tokenizer=TextTokenizer,
     default_weights_format=WeightsFormat.gguf,
-    weight_converters={WeightsFormat.pytorch: None},  # type: ignore
 )
 
 

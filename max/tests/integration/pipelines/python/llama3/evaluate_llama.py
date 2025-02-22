@@ -18,7 +18,13 @@ import click
 from huggingface_hub import hf_hub_download
 from max.driver import DeviceSpec
 from max.engine import InferenceSession
-from max.pipelines import PipelineConfig, SupportedEncoding, TextTokenizer
+from max.pipelines import (
+    PipelineConfig,
+    SupportedEncoding,
+    TextTokenizer,
+    WeightsFormat,
+)
+from max.pipelines.architectures.llama3 import weight_adapters
 from max.pipelines.architectures.llama3.config import get_llama_huggingface_file
 from max.pipelines.architectures.llama3.model import Llama3Model
 from max.pipelines.kv_cache import KVCacheStrategy
@@ -135,6 +141,10 @@ class SupportedTestModels:
             quantization_encoding=self.encoding,
             **kwargs,
         )
+        config._weight_adapters = {
+            WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+            WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
+        }
 
         # # Temporary hack to load TinyLlama config until we migrate tests to
         # # SmolLM.
