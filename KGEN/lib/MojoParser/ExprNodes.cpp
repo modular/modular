@@ -341,6 +341,39 @@ bool ExprNode::isEmptyTuple() const {
 // ExprNode implementations
 //===----------------------------------------------------------------------===//
 
+static AnyValue handleIntOrFPLiteral(TypedAttr value, ASTType type,
+                                     const ExprNode *expr, ValueDest &dest,
+                                     ExprEmitter &emitter) {
+  if (isa<TypeCheckErrorType>(type))
+    return {}; // Sanity check the returned declaration.
+  ASTDecl *decl = type.getDecl(emitter.shared);
+
+  // We expect: IntLiteral[value: __mlir_type.`!kgen.int_literal`]
+  // or FloatLiteral[value: __mlir_type.`!kgen.float_literal`]
+  auto litStruct = dyn_cast_if_present<StructDeclOp>(decl);
+
+  // FIXME: remove legacy IntLiteral/FloatLiteral format.
+  if (litStruct && litStruct.getParams().empty()) {
+    return emitter.emitConstructorCall(
+        type, CallOperands({{AnyValue(value), expr}}), expr,
+        CallSyntax::kImplicitConvert, dest);
+  }
+
+  if (!litStruct || litStruct.getParams().size() != 1 ||
+      !isa<IntLiteralType, FloatLiteralType>(
+          litStruct.getParams()[0].getType())) {
+    emitter.emitError(expr->getLoc(), "malformed Literal type");
+    return {};
+  }
+
+  // Bind the IntLiteral[value] parameter.
+  type = litStruct.bindReference({value});
+
+  // Create an instance of IntLiteral[val]()
+  return emitter.emitConstructorCall(type, CallOperands(), expr,
+                                     CallSyntax::kTypeCall, dest);
+}
+
 AnyValue IntLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   APInt value = Lexer::getIntegerLiteralValue(spelling);
   // Values produced are sometimes produced unsigned, so we must add an extra
@@ -352,34 +385,8 @@ AnyValue IntLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Look up the IntLiteral type.
   ASTType type =
       emitter.shared.getBuiltinIntLiteralType(emitter.declScope, getLoc());
-  if (isa<TypeCheckErrorType>(type))
-    return {}; // Sanity check the returned declaration.
-  ASTDecl *decl = type.getDecl(emitter.shared);
 
-  // We expect: IntLiteral[value: __mlir_type.`!kgen.int_literal`]
-  auto intLitStruct = dyn_cast_if_present<StructDeclOp>(decl);
-
-  // FIXME: remove legacy IntLiteral format.
-  if (intLitStruct && intLitStruct.getParams().empty()) {
-    ASTType type =
-        emitter.shared.getBuiltinIntLiteralType(emitter.declScope, getLoc());
-    return emitter.emitConstructorCall(
-        type, CallOperands({{AnyValue(attr), this}}), this,
-        CallSyntax::kImplicitConvert, dest);
-  }
-
-  if (!intLitStruct || intLitStruct.getParams().size() != 1 ||
-      !isa<IntLiteralType>(intLitStruct.getParams()[0].getType())) {
-    emitter.emitError(getLoc(), "malformed IntLiteral");
-    return {};
-  }
-
-  // Bind the IntLiteral[value] parameter.
-  type = intLitStruct.bindReference({attr});
-
-  // Create an instance of IntLiteral[val]()
-  return emitter.emitConstructorCall(type, CallOperands(), this,
-                                     CallSyntax::kTypeCall, dest);
+  return handleIntOrFPLiteral(attr, type, this, dest, emitter);
 }
 
 AnyValue FloatLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -391,9 +398,7 @@ AnyValue FloatLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       value);
   ASTType type =
       emitter.shared.getBuiltinFloatLiteralType(emitter.declScope, getLoc());
-  return emitter.emitConstructorCall(type,
-                                     CallOperands({{AnyValue(attr), this}}),
-                                     this, CallSyntax::kImplicitConvert, dest);
+  return handleIntOrFPLiteral(attr, type, this, dest, emitter);
 }
 
 AnyValue BoolLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {

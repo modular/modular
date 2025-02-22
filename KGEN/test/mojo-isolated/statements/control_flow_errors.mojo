@@ -117,7 +117,7 @@ fn test():
 
 # Issue #18599
 fn spurious_for_loop_variable_unknown_decl():
-  # expected-error @below {{'FloatLiteral' does not implement the '__iter__' method}}
+  # expected-error @below {{'FloatLiteral[1.000000e+00]' does not implement the '__iter__' method}}
   for i in 1.0:
     # Note that the bug in issue #18599 is that after the above error, another error
     # will be spuriously raised about i not being bound.  So the real check in
