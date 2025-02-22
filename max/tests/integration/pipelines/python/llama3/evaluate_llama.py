@@ -226,9 +226,9 @@ def main(model, encoding, verbose):
             config = model_encoding.build_config(testdata_directory)
             tokenizer = TextTokenizer(
                 config.model_path,
-                config.max_length,
-                config.max_new_tokens,
-                config.trust_remote_code,
+                max_length=config.max_length,
+                max_new_tokens=config.max_new_tokens,
+                trust_remote_code=config.trust_remote_code,
             )
 
             session = InferenceSession(devices=config.devices)
