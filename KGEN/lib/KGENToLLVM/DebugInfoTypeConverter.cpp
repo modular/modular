@@ -122,12 +122,8 @@ static DIType buildDebugTypeFromDType(MLIRContext *ctx,
     return buildIntFpDebugType<DIBasicSIntType>(ctx, targetInfo, dtype, 64, 64);
   case DType::ui64:
     return buildIntFpDebugType<DIBasicUIntType>(ctx, targetInfo, dtype, 64, 64);
-  case DType::si128:
-    return buildIntFpDebugType<DIBasicSIntType>(ctx, targetInfo, dtype, 128,
-                                                64);
-  case DType::ui128:
-    return buildIntFpDebugType<DIBasicUIntType>(ctx, targetInfo, dtype, 128,
-                                                64);
+    // Any integral type larger than 64 bits is handled generically in the
+    // `default` clause.
 #define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, M_TYPE, MLIR_TYPE, CXX_TYPE,      \
                       BITCOUNT, ...)                                           \
   case DType::SHORT_NAME:                                                      \
@@ -150,6 +146,13 @@ static DIType buildDebugTypeFromDType(MLIRContext *ctx,
 
     // TODO: Process the remaining dtypes.
   default:
+    DType type(dtype);
+    if (type.isSInt())
+      return buildIntFpDebugType<DIBasicSIntType>(
+          ctx, targetInfo, dtype, type.getIntegerWidthInBits(), 64);
+    if (type.isUInt())
+      return buildIntFpDebugType<DIBasicUIntType>(
+          ctx, targetInfo, dtype, type.getIntegerWidthInBits(), 64);
     return nullptr;
   }
 }

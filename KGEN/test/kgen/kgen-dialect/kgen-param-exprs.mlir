@@ -529,6 +529,8 @@ kgen.generator @dtype_params<dt: dtype, f32: dtype, ui32: dtype>() {
   kgen.param.constant: !kgen.dtype = <f32>
   // CHECK: kgen.param.constant: dtype = <ui128>
   kgen.param.constant: dtype = <ui128>
+  // CHECK: kgen.param.constant: dtype = <si256>
+  kgen.param.constant: dtype = <si256>
   kgen.return
 }
 

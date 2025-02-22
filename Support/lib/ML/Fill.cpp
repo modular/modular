@@ -107,6 +107,8 @@ ErrorOrSuccess M::fillHomogeneous(void *destPtr, size_t numElements,
   // Fill `chunk` with the data repeated a few times, then memcpy it into the
   // destination.
   uint8_t chunk[64];
+  static_assert(sizeof(chunk) >= DType::kMaxElementSizeInBytes,
+                "chunk size cannot be smaller than the max dtype element size");
 
   /// Fill the output destPtr with data from 'chunk'.  The 'chunkSize' variable
   /// indicates how many bytes of chunk are valid to use.  This can be less than
