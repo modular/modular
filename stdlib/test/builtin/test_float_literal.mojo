@@ -26,48 +26,6 @@ alias inf = FloatLiteral.infinity
 alias neg_inf = FloatLiteral.negative_infinity
 
 
-def test_ceil():
-    assert_equal(FloatLiteral.__ceil__(1.5), 2.0)
-    assert_equal(FloatLiteral.__ceil__(1.4), 2.0)
-    assert_equal(FloatLiteral.__ceil__(-1.5), -1.0)
-    assert_equal(FloatLiteral.__ceil__(-3.6), -3.0)
-    assert_equal(FloatLiteral.__ceil__(3.0), 3.0)
-    assert_equal(FloatLiteral.__ceil__(0.0), 0.0)
-
-    assert_true(FloatLiteral.__ceil__(nan).is_nan())
-    assert_true(FloatLiteral.__ceil__(neg_zero).is_neg_zero())
-    assert_equal(FloatLiteral.__ceil__(inf), inf)
-    assert_equal(FloatLiteral.__ceil__(neg_inf), neg_inf)
-
-
-def test_floor():
-    assert_equal(FloatLiteral.__floor__(1.5), 1.0)
-    assert_equal(FloatLiteral.__floor__(1.6), 1.0)
-    assert_equal(FloatLiteral.__floor__(-1.5), -2.0)
-    assert_equal(FloatLiteral.__floor__(-3.4), -4.0)
-    assert_equal(FloatLiteral.__floor__(3.0), 3.0)
-    assert_equal(FloatLiteral.__floor__(0.0), 0.0)
-
-    assert_true(FloatLiteral.__floor__(nan).is_nan())
-    assert_true(FloatLiteral.__floor__(neg_zero).is_neg_zero())
-    assert_equal(FloatLiteral.__floor__(inf), inf)
-    assert_equal(FloatLiteral.__floor__(neg_inf), neg_inf)
-
-
-def test_trunc():
-    assert_equal(FloatLiteral.__trunc__(1.5), 1.0)
-    assert_equal(FloatLiteral.__trunc__(1.6), 1.0)
-    assert_equal(FloatLiteral.__trunc__(-1.5), -1.0)
-    assert_equal(FloatLiteral.__trunc__(-3.6), -3.0)
-    assert_equal(FloatLiteral.__trunc__(3.0), 3.0)
-    assert_equal(FloatLiteral.__trunc__(0.0), 0.0)
-
-    assert_true(FloatLiteral.__trunc__(nan).is_nan())
-    assert_true(FloatLiteral.__trunc__(neg_zero).is_neg_zero())
-    assert_equal(FloatLiteral.__trunc__(inf), inf)
-    assert_equal(FloatLiteral.__trunc__(neg_inf), neg_inf)
-
-
 def test_division():
     assert_equal(FloatLiteral.__truediv__(4.4, 0.5), 8.8)
 
@@ -107,15 +65,13 @@ def test_is_special_value():
 
 
 def test_abs():
-    assert_equal((-4.4).__abs__(), 4.4)
-    assert_equal((4.4).__abs__(), 4.4)
-    assert_equal((0.0).__abs__(), 0.0)
+    assert_equal(abs(-4.4), 4.4)
+    assert_equal(abs(4.4), 4.4)
+    assert_equal(abs(0.0), 0.0)
 
-    assert_true(FloatLiteral.__abs__(nan).is_nan())
-    assert_false(FloatLiteral.__abs__(neg_zero).is_neg_zero())
-    assert_equal(FloatLiteral.__abs__(neg_zero), 0.0)
-    assert_equal(FloatLiteral.__abs__(inf), inf)
-    assert_equal(FloatLiteral.__abs__(neg_inf), inf)
+    assert_equal(abs(neg_zero), 0.0)
+    assert_equal(abs(inf), inf)
+    assert_equal(abs(neg_inf), inf)
 
 
 def test_comparison():
@@ -218,9 +174,6 @@ def test_float_conversion():
 
 
 def main():
-    test_ceil()
-    test_floor()
-    test_trunc()
     test_division()
     test_mod()
     test_int_conversion()

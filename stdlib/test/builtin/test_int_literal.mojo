@@ -69,9 +69,9 @@ def test_mod():
 
 
 def test_abs():
-    assert_equal(IntLiteral.__abs__(-5), 5)
-    assert_equal(IntLiteral.__abs__(2), 2)
-    assert_equal(IntLiteral.__abs__(0), 0)
+    assert_equal(abs(-5), 5)
+    assert_equal(abs(2), 2)
+    assert_equal(abs(0), 0)
 
 
 def test_indexer():

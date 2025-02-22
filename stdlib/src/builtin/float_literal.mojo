@@ -15,8 +15,6 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from math import Ceilable, CeilDivable, Floorable, Truncable
-
 # ===-----------------------------------------------------------------------===#
 # FloatLiteral
 # ===-----------------------------------------------------------------------===#
@@ -26,15 +24,10 @@ from math import Ceilable, CeilDivable, Floorable, Truncable
 @nonmaterializable(Float64)
 @register_passable("trivial")
 struct FloatLiteral(
-    Absable,
-    Ceilable,
-    CeilDivable,
     Comparable,
-    Floorable,
     ImplicitlyBoolable,
     Intable,
     Stringable,
-    Truncable,
     Floatable,
 ):
     """Mojo floating point literal type."""
@@ -189,17 +182,6 @@ struct FloatLiteral(
         return self * Self(-1)
 
     @always_inline("nodebug")
-    fn __abs__(self) -> Self:
-        """Return the absolute value of the FloatLiteral.
-
-        Returns:
-            The absolute value.
-        """
-        if self > 0:
-            return self
-        return -self
-
-    @always_inline("nodebug")
     fn __floor__(self) -> Self:
         """Return the floor value of the FloatLiteral.
 
@@ -219,44 +201,6 @@ struct FloatLiteral(
         if self >= 0 or self.__eq__(Self(truncated)):
             return truncated
         return truncated - 1
-
-    @always_inline("nodebug")
-    fn __ceil__(self) -> Self:
-        """Return the ceiling value of the FloatLiteral.
-
-        Returns:
-            The ceiling value.
-        """
-
-        # Handle special values first.
-        if not self._is_normal():
-            return self
-
-        # __int_literal__ rounds towards zero, so it's correct for integers and
-        # negative values.
-        var truncated: IntLiteral = self.__int_literal__()
-
-        # Ensure this equality doesn't hit any implicit conversions.
-        if self <= 0 or self.__eq__(Self(truncated)):
-            return truncated
-        return truncated + 1
-
-    @always_inline("nodebug")
-    fn __trunc__(self) -> Self:
-        """Truncates the floating point literal. If there is a fractional
-        component, then the value is truncated towards zero.
-
-        For example, `(4.5).__trunc__()` returns `4.0`, and `(-3.7).__trunc__()`
-        returns `-3.0`.
-
-        Returns:
-            The truncated FloatLiteral value.
-        """
-
-        # Handle special values first.
-        if not self._is_normal():
-            return self
-        return Self(self.__int_literal__())
 
     # ===------------------------------------------------------------------===#
     # Arithmetic Operators

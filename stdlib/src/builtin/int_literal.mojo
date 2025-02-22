@@ -19,7 +19,6 @@ from math import Ceilable, CeilDivable, Floorable, Truncable
 @nonmaterializable(Int)
 @register_passable("trivial")
 struct IntLiteral(
-    Absable,
     Ceilable,
     CeilDivable,
     Comparable,
@@ -400,17 +399,6 @@ struct IntLiteral(
         return __mlir_op.`kgen.int_literal.convert`[
             _type = __mlir_type.index, treatIndexAsUnsigned = __mlir_attr.unit
         ](self.value)
-
-    @always_inline("nodebug")
-    fn __abs__(self) -> Self:
-        """Return the absolute value of the IntLiteral value.
-
-        Returns:
-            The absolute value.
-        """
-        if self >= 0:
-            return self
-        return -self
 
     @always_inline("builtin")
     fn __ceil__(self) -> Self:

@@ -68,36 +68,6 @@ fn abs[T: Absable](value: T) -> T:
     return value.__abs__()
 
 
-# TODO: https://github.com/modularml/modular/issues/38694
-# TODO: Remove this
-@always_inline
-fn abs(value: IntLiteral) -> IntLiteral:
-    """Get the absolute value of the given IntLiteral.
-
-    Args:
-        value: The IntLiteral to get the absolute value of.
-
-    Returns:
-        The absolute value of the IntLiteral.
-    """
-    return value.__abs__()
-
-
-# TODO: https://github.com/modularml/modular/issues/38694
-# TODO: Remove this
-@always_inline
-fn abs(value: FloatLiteral) -> FloatLiteral:
-    """Get the absolute value of the given FloatLiteral.
-
-    Args:
-        value: The FloatLiteral to get the absolute value of.
-
-    Returns:
-        The absolute value of the FloatLiteral.
-    """
-    return value.__abs__()
-
-
 # ===----------------------------------------------------------------------=== #
 # divmod
 # ===----------------------------------------------------------------------=== #
