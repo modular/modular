@@ -37,4 +37,4 @@ fn cannotRaise(err: Error):
 
 # Issue #12358
 fn raise_bad_type() raises:
-    raise 42  # expected-error {{cannot implicitly convert 'IntLiteral' value to 'Error'}}
+    raise 42  # expected-error {{cannot implicitly convert 'IntLiteral[42]' value to 'Error'}}

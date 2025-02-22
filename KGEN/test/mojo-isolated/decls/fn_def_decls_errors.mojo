@@ -119,7 +119,7 @@ def defTests() -> None:
   abc = 4
 
 # expected-error @below {{cannot infer origin for a function result}}
-# expected-error @+1 {{value of type 'IntLiteral' doesn't have a memory origin}}
+# expected-error @+1 {{value of type 'IntLiteral[4]' doesn't have a memory origin}}
 fn ref_result_invalid1() -> ref [4] MemoryType:
     pass
 

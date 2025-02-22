@@ -629,7 +629,7 @@ def KGEN_IntLiteralBinAttr : KGEN_ExprAttr<"IntLiteralBin",
     "IntLiteralBinopKindAttr":$oper
   );
 
-  let assemblyFormat = "`<` $lhs `,` $rhs `,` $oper `>`";
+  let assemblyFormat = "`<` $oper $lhs `,` $rhs `>`";
   
   let skipDefaultBuilders = 1;
   let builders = [

@@ -2269,7 +2269,8 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     StructDeclOp structOp;
     if (decl && (structOp = dyn_cast<StructDeclOp>(*decl)) &&
         structOp.getConvention() == TypeConvention::RegisterPassableTrivial &&
-        std::distance(structOp.field_begin(), structOp.field_end()) == 1) {
+        // Support zero or one field.
+        std::distance(structOp.field_begin(), structOp.field_end()) <= 1) {
       varDeclSoFar[varDecl] = UnknownAttr::get(eltType);
       return TypedAttr();
     }
@@ -2492,5 +2493,8 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
       folder.recordValue(op.getResult(0), val);
   }
 
-  llvm_unreachable("should have found a block terminator");
+  // Semantic errors in the body can cause this to happen.  We don't care too
+  // much about QoI but don't crash the compiler.
+  folder.emitError(fnOp.getLoc()) << "body is malformed";
+  return {};
 }

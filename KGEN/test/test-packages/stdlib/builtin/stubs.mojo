@@ -160,36 +160,48 @@ struct NoneType:
 @value
 @nonmaterializable(Int)
 @register_passable("trivial")
-struct IntLiteral:
-    alias type = __mlir_type.`!kgen.int_literal`
-    var value: Self.type
+struct IntLiteral[value: __mlir_type.`!kgen.int_literal`]:
+    alias _one = IntLiteral[
+        __mlir_attr.`#kgen.int_literal<1> : !kgen.int_literal`
+    ]()
+    alias _zero = IntLiteral[
+        __mlir_attr.`#kgen.int_literal<0> : !kgen.int_literal`
+    ]()
 
     @always_inline("builtin")
     fn __init__(out self):
-        self.value = __mlir_attr.`#kgen.int_literal<0> : !kgen.int_literal`
+        """Constructor for any value."""
+        pass
 
     @always_inline("builtin")
-    @implicit
-    fn __init__(out self, value: Self.type):
-        self.value = value
-
-    @always_inline("builtin")
-    fn __ne__(self, rhs: Self) -> Bool:
-        return __mlir_op.`kgen.int_literal.cmp`[
-            pred = __mlir_attr.`#kgen<int_literal.cmp_pred ne>`
-        ](self.value, rhs.value)
+    fn __ne__(self, rhs: IntLiteral[_]) -> Bool:
+        return __mlir_attr[
+            `#kgen<int_literal_cmp<ne `,
+            self.value,
+            `,`,
+            rhs.value,
+            `>> : !kgen.int_literal`,
+        ]
 
     @always_inline("builtin")
     fn __bool__(self) -> Bool:
-        return self != Self()
+        return self != Self._zero
 
     @always_inline("builtin")
-    fn __mul__(self, rhs: Self) -> Self:
-        return Self(
-            __mlir_op.`kgen.int_literal.binop`[
-                oper = __mlir_attr.`#kgen<int_literal.binop_kind mul>`
-            ](self.value, rhs.value)
-        )
+    fn __mul__(
+        self,
+        rhs: IntLiteral[_],
+        out result: IntLiteral[
+            __mlir_attr[
+                `#kgen<int_literal_bin<mul `,
+                self.value,
+                `,`,
+                rhs.value,
+                `>> : !kgen.int_literal`,
+            ]
+        ],
+    ):
+        result = __type_of(result)()
 
 
 @value
@@ -241,7 +253,7 @@ struct Int(Copyable):
 
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, value: IntLiteral):
+    fn __init__(out self, value: IntLiteral[_]):
         self.value = __mlir_op.`kgen.int_literal.convert`[
             _type = __mlir_type.index
         ](value.value)

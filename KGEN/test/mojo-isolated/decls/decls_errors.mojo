@@ -1065,20 +1065,20 @@ fn implicit_conversions():
 
     # # reassigning
     var b = Foo(42)
-    b = 42 # expected-error {{cannot implicitly convert 'IntLiteral' value to 'Foo'}}
+    b = 42 # expected-error {{cannot implicitly convert 'IntLiteral[42]' value to 'Foo'}}
 
     # # assigning to uninitialized
     var c: Foo
-    c = 42 # expected-error {{cannot implicitly convert 'IntLiteral' value to 'Foo'}}
+    c = 42 # expected-error {{cannot implicitly convert 'IntLiteral[42]' value to 'Foo'}}
 
     # # assigning to member
     var d = ContainsFoo(Foo(24))
-    d.foo = 42 # expected-error {{cannot implicitly convert 'IntLiteral' value to 'Foo'}}
+    d.foo = 42 # expected-error {{cannot implicitly convert 'IntLiteral[42]' value to 'Foo'}}
 
     # # returning conversions
     var e = return_foo(42)
 
-    take_foo(24) # expected-error {{invalid call to 'take_foo': argument #0 cannot be converted from 'IntLiteral' to 'Foo'}}
+    take_foo(24) # expected-error {{invalid call to 'take_foo': argument #0 cannot be converted from 'IntLiteral[24]' to 'Foo'}}
 
 ##===----------------------------------------------------------------------===##
 # Top Level Code
