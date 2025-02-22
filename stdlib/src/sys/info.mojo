@@ -575,7 +575,7 @@ fn simdbitwidth[
             `#kgen.param.expr<target_get_field,`,
             target,
             `, "simd_bit_width" : !kgen.string`,
-            `> : !kgen.int_literal`,
+            `> :  index`,
         ]
     )
 
@@ -638,7 +638,7 @@ fn sizeof[
             mlir_type,
             `> : !kgen.type,`,
             target,
-            `> : !kgen.int_literal`,
+            `> : index`,
         ]
     )
 
@@ -664,7 +664,7 @@ fn sizeof[
             `>`,
             `> : !kgen.type,`,
             target,
-            `> : !kgen.int_literal`,
+            `> : index`,
         ]
     )
 
@@ -695,7 +695,7 @@ fn alignof[
             +mlir_type,
             `> : !kgen.type,`,
             target,
-            `> : !kgen.int_literal`,
+            `> : index`,
         ]
     )
 
@@ -721,7 +721,7 @@ fn alignof[
             `>`,
             `> : !kgen.type,`,
             target,
-            `> : !kgen.int_literal`,
+            `> : index`,
         ]
     )
 
