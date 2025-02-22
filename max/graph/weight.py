@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from functools import cached_property
 from typing import Optional
 
 from max import mlir
@@ -23,7 +24,6 @@ class Weight(TensorValue):
     used, an error will be raised.
     """
 
-    _name: str
     _dtype: DType
     _shape: ShapeLike
     _device: Optional[DeviceRef]
@@ -60,6 +60,15 @@ class Weight(TensorValue):
     def shape(self) -> Shape:
         return Shape(self._shape)
 
+    @cached_property
+    def original_dtype_and_shape(self) -> tuple[DType, Shape]:
+        """The original dtype and shape of this weight.
+
+        This property should be used to store the original weight's dtype and
+        shape the quantization encoding forces the weight to be loaded as uint8.
+        """
+        return self.dtype, self.shape
+
     @property
     def _mlir_value(self) -> mlir.Value:
         try:
@@ -77,3 +86,9 @@ class Weight(TensorValue):
     @_mlir_value.setter
     def _mlir_value(self, value: mlir.Value) -> None:
         raise ValueError("Cannot re-define Weight._mlir_value.")
+
+    def __repr__(self):
+        if self.quantization_encoding:
+            return f"Weight({self.dtype}, {self.shape}, {self.device}, {self.quantization_encoding})"
+        else:
+            return f"Weight({self.dtype}, {self.shape}, {self.device})"

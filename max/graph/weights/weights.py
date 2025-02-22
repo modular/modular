@@ -6,15 +6,29 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, Iterator, Optional, Protocol, TypeVar, runtime_checkable
+import dataclasses
+from typing import (
+    Any,
+    Callable,
+    Iterator,
+    Optional,
+    Protocol,
+    TypeVar,
+    runtime_checkable,
+)
 
 import numpy.typing as npt
+
+try:
+    import torch  # type: ignore
+except ImportError:
+    torch = None
 from max.dtype import DType
 
 from ..quantization import QuantizationEncoding
-from ..type import ShapeLike
+from ..type import Shape, ShapeLike
 from ..weight import Weight
+from ._torch_dtype_map import modular_to_torch_type
 
 _Self = TypeVar("_Self", bound="Weights")
 
@@ -55,8 +69,19 @@ class Weights(Protocol):
     def raw_tensor(self) -> npt.NDArray[Any]:
         """Returns the numpy tensor corresponding to this weights object.
 
+        Args:
+            dtype: If specified, the returned array will be cast to the dtype
+                before returning.
         Raises:
             KeyError if this weights object isn't a tensor.
+        """
+        ...
+
+    def data(self) -> WeightData:
+        """Returns data loaded from the weights at the current prefix.
+
+        Raises:
+            KeyError if the current prefix isn't present in the checkpoint.
         """
         ...
 
@@ -75,8 +100,56 @@ class Weights(Protocol):
         ...
 
 
-class WeightsConverter(Protocol):
-    @staticmethod
-    def load_weights(weight_path: list[Path], **kwargs) -> Weights:
-        """Loads the converted weights from a path."""
-        ...
+@dataclasses.dataclass
+class WeightData:
+    """Data loaded from a checkpoint."""
+
+    data: npt.NDArray
+    name: str
+    dtype: DType
+    shape: Shape
+    quantization_encoding: Optional[QuantizationEncoding] = None
+
+    def __dlpack__(self) -> Any:
+        return self.data.__dlpack__
+
+    def __dlpack_device__(self) -> Any:
+        return self.data.__dlpack_device__
+
+    @classmethod
+    def from_numpy(cls, arr, name):
+        return cls(arr, name, DType.from_numpy(arr.dtype), Shape(arr.shape))
+
+    def astype(self, dtype: DType) -> WeightData:
+        if self.dtype == dtype:
+            return self
+        if self.dtype == DType.bfloat16:
+            assert torch is not None
+            data = torch.from_numpy(self.data).view(torch.bfloat16)
+            data = data.to(modular_to_torch_type(dtype)).numpy()
+        elif dtype == DType.bfloat16:
+            assert torch is not None
+            data = torch.from_numpy(self.data).view(
+                modular_to_torch_type(self.dtype)
+            )
+            data = data.to(torch.bfloat16).view(torch.float16).numpy()
+        else:
+            data = self.data.astype(dtype.to_numpy())
+        return WeightData(
+            data=data, name=self.name, dtype=dtype, shape=Shape(data.shape)
+        )
+
+    def view(self, dtype: DType) -> WeightData:
+        if self.dtype == dtype:
+            return self
+
+        # Compute the new shape for the updated dtype.
+        if dtype == DType.bfloat16:
+            assert torch is not None
+            data = torch.from_numpy(self.data).view(dtype)
+        else:
+            data = self.data.view(dtype.to_numpy())
+        return dataclasses.replace(self, dtype=dtype, shape=Shape(data.shape))
+
+
+WeightsAdapter = Callable[..., dict[str, WeightData]]

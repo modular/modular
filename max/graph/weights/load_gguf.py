@@ -10,7 +10,7 @@ from __future__ import annotations
 import subprocess
 import sys
 from os import PathLike
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -25,9 +25,9 @@ except ImportError:
 from max.dtype import DType
 
 from ..quantization import QuantizationEncoding
-from ..type import ShapeLike
+from ..type import Shape, ShapeLike
 from ..weight import Weight
-from .weights import Weights
+from .weights import WeightData, Weights
 
 _GGML_TO_DTYPE: dict[gguf.GGMLQuantizationType, DType] = {}
 _FROM_QUANTIZED_GGML_DTYPES = {}
@@ -159,13 +159,41 @@ class GGUFWeights(Weights):
     def __getitem__(self, idx: int | str) -> GGUFWeights:
         return self.__getattr__(str(idx))
 
-    def raw_tensor(self) -> np.ndarray:
+    def raw_tensor(self) -> npt.NDArray[Any]:
         """Returns the numpy tensor corresponding to this weights object.
 
         Raises:
             KeyError if this weights object isn't a tensor.
         """
         return self._raw_tensor().data
+
+    def data(self) -> WeightData:
+        tensor = self._raw_tensor()
+
+        try:
+            dtype = _GGML_TO_DTYPE[tensor.tensor_type]
+        except KeyError as e:
+            if tensor.tensor_type in _FROM_QUANTIZED_GGML_DTYPES:
+                dtype = DType.uint8
+            else:
+                raise e
+
+        # Dims are reversed for some reason:
+        # https://github.com/ggerganov/llama.cpp/blob/master/gguf-py/gguf/gguf_reader.py#L277
+        # We have to un-reverse them here.
+        shape_list = list(reversed(tensor.shape.tolist()))
+        if tensor.tensor_type in _FROM_QUANTIZED_GGML_DTYPES:
+            shape = Shape(
+                gguf.quant_shape_to_byte_shape(shape_list, tensor.tensor_type)
+            )
+        else:
+            shape = Shape(shape_list)
+        quantization_encoding = _FROM_QUANTIZED_GGML_DTYPES.get(
+            tensor.tensor_type
+        )
+        return WeightData(
+            tensor.data, self.name, dtype, shape, quantization_encoding
+        )
 
     def _raw_tensor(self) -> gguf.ReaderTensor:
         """Returns the GGUF tensor corresponding to this weights object.

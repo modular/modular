@@ -552,6 +552,8 @@ class DeviceRef:
             self.device_type = device_type
         else:
             self.device_type = DeviceKind(device_type)
+        if id < 0:
+            id = 0
         self.id = id
 
     def __str__(self) -> str:

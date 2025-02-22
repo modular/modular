@@ -18,7 +18,7 @@ from max.dtype import DType
 from ..quantization import QuantizationEncoding
 from ..type import ShapeLike
 from ..weight import Weight
-from .weights import Weights
+from .weights import WeightData, Weights
 
 
 @dataclass
@@ -50,6 +50,11 @@ class RandomWeights(Weights):
         return self.__getattr__(str(idx))
 
     def raw_tensor(self) -> npt.NDArray[Any]:
+        raise ValueError(
+            "Cannot get raw tensor from RandomWeights. Use `allocate` instead."
+        )
+
+    def data(self) -> WeightData:
         raise ValueError(
             "Cannot get raw tensor from RandomWeights. Use `allocate` instead."
         )

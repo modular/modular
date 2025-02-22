@@ -24,30 +24,10 @@ except ImportError:
 from max.dtype import DType
 
 from ..quantization import QuantizationEncoding
-from ..type import ShapeLike
+from ..type import Shape, ShapeLike
 from ..weight import Weight
-
-
-def _dtype_from_torch(dtype) -> DType:
-    torch_to_dtype = {
-        torch.bool: DType.bool,
-        torch.int8: DType.int8,
-        torch.int16: DType.int16,
-        torch.int32: DType.int32,
-        torch.int64: DType.int64,
-        torch.uint8: DType.uint8,
-        # torch.uint16: DType.uint16,  # Pytorch doesn't support these uint dtypes.
-        # torch.uint32: DType.uint32,
-        # torch.uint64: DType.uint64,
-        torch.float8_e4m3fn: DType.float8_e4m3fn,
-        torch.float8_e5m2: DType.float8_e5m2,
-        torch.float16: DType.float16,
-        torch.float32: DType.float32,
-        torch.float64: DType.float64,
-        torch.bfloat16: DType.bfloat16,
-    }
-
-    return torch_to_dtype[dtype]
+from ._torch_dtype_map import torch_to_modular_type
+from .weights import WeightData
 
 
 @dataclass
@@ -126,6 +106,21 @@ class PytorchWeights:
         """The current weight name or prefix."""
         return self._prefix
 
+    @property
+    def dtype(self) -> DType:
+        """The current weight dtype, if this weight exists."""
+        return torch_to_modular_type(self._tensor_infos[self._prefix].dtype)
+
+    @property
+    def shape(self) -> Shape:
+        """The current weight shape, if this weight exists."""
+        return Shape(self._tensor_infos[self._prefix].shape)
+
+    @property
+    def quantization_encoding(self) -> Optional[QuantizationEncoding]:
+        """The current weight quantization encoding, if this weight exists."""
+        return None
+
     def items(self):
         """Iterate through all allocable weights that start with the prefix."""
         for name in self._tensor_infos:
@@ -157,7 +152,7 @@ class PytorchWeights:
     def __getitem__(self, idx: int | str) -> PytorchWeights:
         return self.__getattr__(str(idx))
 
-    def raw_tensor(self, dtype: DType | None = None) -> npt.NDArray[Any]:
+    def raw_tensor(self) -> npt.NDArray[Any]:
         """Returns the tensor corresponding to this weights object.
 
         Raises:
@@ -170,6 +165,22 @@ class PytorchWeights:
             )
 
         return self._tensor_infos[self._prefix]
+
+    def data(self) -> WeightData:
+        assert torch is not None
+        tensor_info = self._tensor_infos[self._prefix]
+        dtype = torch_to_modular_type(self._tensor_infos[self._prefix].dtype)
+        return WeightData(
+            np.memmap(
+                self._filepath,
+                mode="r",
+                dtype=np.uint8,
+                offset=tensor_info.offset,
+            ),
+            self.name,
+            dtype,
+            Shape(tensor_info.shape),
+        )
 
     def exists(self) -> bool:
         return self._prefix in self._tensor_infos
@@ -190,7 +201,7 @@ class PytorchWeights:
         tensor_info = self._tensor_infos[self._prefix]
         weight = Weight(
             self._prefix,
-            _dtype_from_torch(tensor_info.dtype),
+            torch_to_modular_type(tensor_info.dtype),
             tensor_info.shape,
         )
         self._allocated[self._prefix] = np.memmap(

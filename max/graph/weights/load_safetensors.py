@@ -15,10 +15,10 @@ import numpy.typing as npt
 from max.dtype import DType
 
 from ..quantization import QuantizationEncoding
-from ..type import ShapeLike
+from ..type import Shape, ShapeLike
 from ..weight import Weight
 from ._torch_dtype_map import modular_to_torch_type, torch_to_modular_type
-from .weights import Weights
+from .weights import WeightData, Weights
 
 try:
     from safetensors import safe_open  # type: ignore
@@ -140,6 +140,7 @@ class SafetensorWeights(Weights):
             raise KeyError(msg)
 
         filepath = self._filepaths[self._tensors_to_file_idx[self.name]]
+        assert safe_open is not None
         with safe_open(filepath, framework="pt") as f:
             tensor = f.get_tensor(self.name)
 
@@ -158,12 +159,27 @@ class SafetensorWeights(Weights):
         Raises:
             KeyError if this weights object isn't a tensor.
         """
+        assert torch is not None
         tensor = self._load_tensor()
         if tensor.dtype == torch.bfloat16:
-            np_tensor = tensor.view(torch.float16).numpy()
+            np_array = tensor.view(torch.float16).numpy()
         else:
-            np_tensor = tensor.numpy()
-        return np_tensor
+            np_array = tensor.numpy()
+        return np_array
+
+    def data(self) -> WeightData:
+        assert torch is not None
+        tensor = self._load_tensor()
+        if tensor.dtype == torch.bfloat16:
+            np_array = tensor.view(torch.float16).numpy()
+        else:
+            np_array = tensor.numpy()
+        return WeightData(
+            np_array,
+            self.name,
+            torch_to_modular_type(tensor.dtype),
+            Shape(tensor.shape),
+        )
 
     def exists(self) -> bool:
         return self.name in self._tensors_to_file_idx
@@ -175,6 +191,7 @@ class SafetensorWeights(Weights):
         quantization_encoding: Optional[QuantizationEncoding] = None,
     ) -> Weight:
         """Creates a Weight that can be added to a graph."""
+        assert torch is not None
         if quantization_encoding is not None:
             raise ValueError(
                 "Quantization encodings are not supported in safetensor"
@@ -217,7 +234,7 @@ class SafetensorWeights(Weights):
         original data type. For example, [512, 256] float32 weights become
         [512, 1024] uint8 weights. Scalar weights will be interpreted as
         weights with shape [1]."""
-
+        assert torch is not None
         tensor = self._load_tensor(dtype)
         if tensor.ndim == 0:
             tensor = tensor.view([1])
