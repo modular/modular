@@ -83,7 +83,7 @@ alias _EMISSION_KIND_LLVM_OPT = 2
 alias _EMISSION_KIND_OBJECT = 3
 
 
-fn _get_emission_kind_id[emission_kind: StringLiteral]() -> IntLiteral:
+fn _get_emission_kind_id[emission_kind: StringLiteral]() -> Int:
     constrained[
         emission_kind in ("llvm", "llvm-opt", "object", "asm"),
         "invalid emission kind '" + emission_kind + "'",
@@ -121,7 +121,7 @@ fn _compile_info_non_failable_impl[
     func_type: AnyTrivialRegType,
     func: func_type,
     /,
-    emission_kind: IntLiteral,
+    emission_kind: Int,
     compile_options: StringLiteral,
     target: __mlir_type.`!kgen.target`,
 ]() -> Info[func_type, func]:
@@ -157,7 +157,7 @@ fn compile_info[
     return _compile_info_non_failable_impl[
         func_type,
         func,
-        emission_kind = _get_emission_kind_id[emission_kind]().value,
+        emission_kind = _get_emission_kind_id[emission_kind](),
         compile_options=compile_options,
         target=target,
     ]()
