@@ -2279,6 +2279,9 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
   if (auto load = dyn_cast<LoadConsumeOp>(op))
     return varDeclSoFar[load.getRef()];
 
+  if (auto load = dyn_cast<RefLoadOp>(op))
+    return varDeclSoFar[load.getRef()];
+
   if (auto ger = dyn_cast<RefStructGEROp>(op))
     return TypedAttr(); // handled by user.
 
