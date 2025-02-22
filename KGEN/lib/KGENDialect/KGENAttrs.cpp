@@ -1092,9 +1092,9 @@ floatLiteralDivSpecialCases(const FloatLiteralSpecialValues &lSpecial,
 }
 
 static std::pair<FloatLiteralSpecialValues, IPRational>
-floatLiteralDiv(FloatLiteralSpecialValues lSpecial,
-                FloatLiteralSpecialValues rSpecial, IPRational lhs,
-                IPRational rhs) {
+floatLiteralTrueDiv(FloatLiteralSpecialValues lSpecial,
+                    FloatLiteralSpecialValues rSpecial, IPRational lhs,
+                    IPRational rhs) {
   if (isNormal(lSpecial) && isNormal(rSpecial)) {
     if (rhs == 0)
       return {FloatLiteralSpecialValues::Nan, 0};
@@ -1104,6 +1104,25 @@ floatLiteralDiv(FloatLiteralSpecialValues lSpecial,
     return {FloatLiteralSpecialValues::Normal, ratResult};
   };
   return {floatLiteralDivSpecialCases(lSpecial, rSpecial, lhs, rhs), 0};
+}
+
+static std::pair<FloatLiteralSpecialValues, IPRational>
+floatLiteralFloorDiv(FloatLiteralSpecialValues lSpecial,
+                     FloatLiteralSpecialValues rSpecial, IPRational lhs,
+                     IPRational rhs) {
+  auto truediv = floatLiteralTrueDiv(lSpecial, rSpecial, lhs, rhs);
+
+  // Special values are propagated.
+  if (!isNormal(truediv.first))
+    return truediv;
+
+  // Get the result as an integer value rounded towards zero.
+  auto intval = truediv.second.getNumerator() / truediv.second.getDenominator();
+
+  // Ensure this equality doesn't hit any implicit conversions.
+  if (truediv.second >= 0 || truediv.second == intval)
+    return {truediv.first, intval};
+  return {truediv.first, intval - 1};
 }
 
 TypedAttr FloatLiteralBinAttr::get(MLIRContext *ctx, Type type, TypedAttr lhsA,
@@ -1130,7 +1149,10 @@ TypedAttr FloatLiteralBinAttr::get(MLIRContext *ctx, Type type, TypedAttr lhsA,
     implFunc = floatLiteralMul;
     break;
   case FloatLiteralBinopKind::TrueDiv:
-    implFunc = floatLiteralDiv;
+    implFunc = floatLiteralTrueDiv;
+    break;
+  case FloatLiteralBinopKind::FloorDiv:
+    implFunc = floatLiteralFloorDiv;
     break;
   }
   assert(implFunc && "unknown FloatLiteralBinop type");

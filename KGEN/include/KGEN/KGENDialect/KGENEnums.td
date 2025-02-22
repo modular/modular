@@ -344,6 +344,7 @@ def KGEN_FloatLiteralBinopKind : I32EnumAttr<"FloatLiteralBinopKind",
   I32EnumAttrCase<"Sub", 1, "sub">,
   I32EnumAttrCase<"Mul", 2, "mul">,
   I32EnumAttrCase<"TrueDiv", 3, "truediv">,
+  I32EnumAttrCase<"FloorDiv", 4, "floordiv">
 ]> {
   let cppNamespace = "M::KGEN";
   let genSpecializedAttr = 0;
