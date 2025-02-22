@@ -1586,9 +1586,8 @@ kgen.generator @make_generic_call() -> index {
 // -----
 
 kgen.generator @sizeof<T: type>() -> index {
-  %0 = kgen.param.constant: !kgen.int_literal = <get_sizeof(T, current_target())>
-  %1 = kgen.int_literal.convert %0 : to index
-  kgen.return %1 : index
+  %0 = kgen.param.constant: index = <get_sizeof(T, current_target())>
+  kgen.return %0 : index
 }
 
 // CHECK-LABEL: kgen.func @"self_ref_apply,param=2"

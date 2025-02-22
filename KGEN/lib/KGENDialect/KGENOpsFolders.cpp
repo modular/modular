@@ -596,7 +596,7 @@ OpFoldResult FloatLiteralConvertOp::fold(FoldAdaptor adaptor) {
 
 OpFoldResult IntToFloatLiteralOp::fold(FoldAdaptor adaptor) {
   if (auto in = dyn_cast_if_present<TypedAttr>(adaptor.getInput()))
-    return IntToFloatLiteralAttr::get(in.getContext(), in.getType(), in);
+    return IntToFloatLiteralAttr::get(in.getContext(), getType(), in);
   return {};
 }
 
@@ -606,7 +606,7 @@ OpFoldResult IntToFloatLiteralOp::fold(FoldAdaptor adaptor) {
 
 OpFoldResult FloatToIntLiteralOp::fold(FoldAdaptor adaptor) {
   if (auto in = dyn_cast_if_present<TypedAttr>(adaptor.getInput()))
-    return FloatToIntLiteralAttr::get(in.getContext(), in.getType(), in);
+    return FloatToIntLiteralAttr::get(in.getContext(), getType(), in);
   return {};
 }
 
