@@ -35,7 +35,7 @@ fn _compile_info[
     func_type: AnyTrivialRegType, //,
     func: func_type,
     /,
-    emission_kind: IntLiteral = 0,
+    emission_kind: Int = 0,
     compile_options: StringLiteral = "nvptx-short-ptr=true",
     compile_target: __mlir_type.`!kgen.target` = _get_gpu_target(),
 ]() -> Info:
