@@ -187,6 +187,7 @@ def test_warp_specialize_gemm_with_multicasting[
 
     warp_specialize_gemm_with_multicasting[
         transpose_b=transpose_b,
+        block_tile_shape = Index(128, wgmma_n, 64),
         cluster_shape=cluster_shape,
         wgmma_n=wgmma_n,
         num_consumer=num_consumer,
