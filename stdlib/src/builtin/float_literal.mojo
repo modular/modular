@@ -273,7 +273,10 @@ struct FloatLiteral(
         Returns:
             `floor(self / rhs)` value.
         """
-        return self.__truediv__(rhs).__floor__()
+        # TODO - Python raises an error on divide by 0.0 or -0.0
+        return __mlir_op.`kgen.float_literal.binop`[
+            oper = __mlir_attr.`#kgen<float_literal.binop_kind floordiv>`
+        ](self.value, rhs.value)
 
     @always_inline("nodebug")
     fn __mod__(self, rhs: Self) -> Self:
