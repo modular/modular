@@ -14,6 +14,10 @@ struct IO:
     alias Input = IO(1)
     alias Unknown = IO(2)
 
+    @always_inline("builtin")
+    fn __init__(out self, value: Int):
+        self.value = value
+
 
 @value
 @register_passable("trivial")
