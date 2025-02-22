@@ -20,7 +20,7 @@ struct NmTarget:
     fn __init__(out self, x: Bool):
         self.x = x
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, nms: NmStruct):
         self.x = True if (nms.x == 77) else False
@@ -35,14 +35,19 @@ struct NmTarget:
 struct NmStruct:
     var x: Int
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
+    @implicit
+    fn __init__(out self, x: Int):
+        self.x = x
+
+    @always_inline("builtin")
     fn __add__(self, rhs: Self) -> Self:
         return NmStruct(self.x + rhs.x)
 
 
 # CHECK: lit.alias.decl{{.*}}notMaterializedAlias{{.*}}NmStruct{{.*}}77
 alias notMaterializedAlias = NmStruct(77)
-# CHECK: lit.alias.decl{{.*}}notMaterializedButConverted{{.*}}NmTarget{{.*}}{:i1 0}
+# CHECK: lit.alias.decl{{.*}}notMaterializedButConverted{{.*}}: !NmTarget = <{x: !Bool = {:i1 0}}>
 alias notMaterializedButConverted: NmTarget = NmStruct(76)
 
 

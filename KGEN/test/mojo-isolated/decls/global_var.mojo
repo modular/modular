@@ -49,18 +49,16 @@ struct RegType:
 
 
 # CHECK-LABEL: lit.globalvar.decl @reg_global : !RegType
-# CHECK-DAG: %[[VAL:.*]] = kgen.param.materialize: !RegType = <{}>
-# CHECK-DAG: %[[REF:.*]] = lit.globalvar.ref {{.*}}@reg_global
-# CHECK-NEXT: lit.ref.store %[[VAL]], %[[REF]]
+# CHECK-NEXT: %[[REF:.*]] = lit.globalvar.ref {{.*}}@reg_global
+# CHECK-NEXT: lit.call {{.*}}RegType::@"__init__{{.*}}(%[[REF]])
 # CHECK: }, {
 # CHECK-NEXT: %[[REF:.*]] = lit.globalvar.ref {{.*}}@reg_global
 # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%[[REF]])
 var reg_global: RegType = RegType()
 
 # CHECK-LABEL: lit.globalvar.decl @reg_global_implicit : !RegType
-# CHECK-DAG: %[[VAL:.*]] = kgen.param.materialize: !RegType = <{}>
-# CHECK-DAG: %[[REF:.*]] = lit.globalvar.ref {{.*}}@reg_global_implicit
-# CHECK-NEXT: lit.ref.store %[[VAL]], %[[REF]]
+# CHECK-NEXT: %[[REF:.*]] = lit.globalvar.ref {{.*}}@reg_global_implicit
+# CHECK-NEXT: lit.call {{.*}}RegType::@"__init__{{.*}}(%[[REF]])
 var reg_global_implicit = RegType()
 
 

@@ -634,7 +634,7 @@ def def_borrowed(a: MemExample) -> None:
 @register_passable("trivial")
 struct AddrSpace:
     var _value: __mlir_type.index
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: __mlir_type.index):
         self._value = value

@@ -147,7 +147,7 @@ fn mutateInt(mut a: Int):
 
 fn initialize_in_addrspace(memptr: UnsafePointer[MemExample, AddressSpace(1)],
                            regptr: UnsafePointer[Int, AddressSpace(1)]):
-    # expected-error @+1 {{value of type 'MemExample' cannot be copied into a non-default address space}}
+    # expected-error @+1 {{value of type 'MemExample' cannot be copied or moved into a non-default address space}}
     memptr[] = MemExample()
     # ok
     regptr[] = Int()

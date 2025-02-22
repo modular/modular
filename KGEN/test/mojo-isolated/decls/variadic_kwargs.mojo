@@ -84,17 +84,16 @@ struct MemOnly(SomeTrait):
 # CHECK-LABEL: lit.fn @"test_variadic_kwargs_param_inference
 fn test_variadic_kwargs_param_inference():
     # CHECK: %s = lit.var.decl "s" var : !lit.ref<!MemOnly,
-    # CHECK: %[[VALUE:.*]] = kgen.param.materialize: !MemOnly = <{}>
-    # CHECK: store %[[VALUE]], %s
+    # CHECK: lit.call {{.*}}MemOnly::@"__init__{{.*}}(%s)
     var s = MemOnly()
+
+    # CHECK: %[[M:.*]] = lit.var.decl
+    # CHECK: lit.call {{.*}}MemOnly::@"__init__{{.*}}(%[[M]])
 
     # CHECK: %[[DICT_VAR:.*]] = lit.var.decl {{.*}}@OwnedKwargsDict<:!CollectionElement #[[MEM_ONLY]]>
     # CHECK: lit.call {{.*}}@OwnedKwargsDict::@"__init__{{.*}}(%[[DICT_VAR]])
-
     # CHECK: %[[Y_KEY:.*]] = kgen.param.constant: !StringLiteral = <{:string "y"}>
-    # CHECK: %[[M:.*]] = lit.var.decl
-    # CHECK: %[[VALUE:.*]] = kgen.param.materialize: !MemOnly = <{}>
-    # CHECK: store %[[VALUE]], %[[M]]
+
     # CHECK: lit.call {{.*}}@OwnedKwargsDict::@"_insert{{.*}}(%[[DICT_VAR]], %[[Y_KEY]], %[[M]])
 
     # CHECK: %[[S:.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!MemOnly,
