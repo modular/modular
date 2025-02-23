@@ -21,8 +21,8 @@ what we publish.
 ### Language changes
 
 - The Mojo comptime interpreter can now handle many more LLVM intrinsics,
-   including ones that return floating point values.  This allows functions
-   like `round` to be constant folded when used in a comptime context.
+  including ones that return floating point values.  This allows functions
+  like `round` to be constant folded when used in a comptime context.
 
 ### Standard library changes
 
@@ -139,10 +139,20 @@ ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
 
 #### Mojo Compiler
 
-Mojo compiler now warns about parameter for with large loop unrolling factor
-(>1024 by default) which can lead to long compilation time and large generated
-code size. Set `--loop-unrolling-warn-threshold` to change default value to
-a different threshold or to `0` to disable the warning.
+- Mojo compiler now warns about parameter for with large loop unrolling factor
+  (>1024 by default) which can lead to long compilation time and large generated
+  code size. Set `--loop-unrolling-warn-threshold` to change default value to
+  a different threshold or to `0` to disable the warning.
+
+- The Mojo compiler now only has one comptime interpreter.  It had two
+  previously: one to handle a few cases that were important for dependent types
+  (but which also had many limitations) in the parser, and the primary one that
+  ran at "instantiation" time which is fully general. This was confusing and
+  caused a wide range of bugs.  We've now removed the special case parse-time
+  interpreter, replacing it with a more general solution for dependent types.
+  This change should be invisible to most users, but should resolve a number of
+  long-standing bugs and significantly simplifies the compiler implementation,
+  allowing us to move faster.
 
 ### ❌ Removed
 
