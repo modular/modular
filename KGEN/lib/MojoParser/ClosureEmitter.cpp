@@ -563,7 +563,8 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
       /*forceGenerateDestructor=*/true);
   FnOp initFunc = synthesizeMemberwiseInit(
       structDecl, initSigTypes, initSigConventions,
-      PogListAttr::get(ctx, initSigNames, initSigPassingKinds));
+      PogListAttr::get(ctx, initSigNames, initSigPassingKinds),
+      shared.getNoneType());
   builder =
       ImplicitLocOpBuilder::atBlockBegin(initFunc.getLoc(), initFunc.getBody());
 

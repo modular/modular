@@ -238,12 +238,14 @@ void StructEmitter::addTraitParent(StructDeclOp structOp, ASTDecl *traitDecl) {
 
 FnOp StructEmitter::synthesizeMemberwiseInit(
     ASTDecl &structDecl, ArrayRef<Type> argTypes,
-    ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs) {
+    ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
+    // None or Self if register passable.
+    ASTType litReturnType) {
   auto structOp = cast<StructDeclOp>(structDecl);
 
   // Create the FnOp and ASTDecl for the method.
   auto [funcOp, _] = synthesizeMethodInStruct(
-      "__init__", argTypes, argConventions, argListAttrs, shared.getNoneType(),
+      "__init__", argTypes, argConventions, argListAttrs, litReturnType,
       structDecl, structDecl.getLoc(), SpecialFunctionKind::kInit);
   assert(funcOp && "couldn't synthesize method or had a conflict?");
   funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
@@ -262,9 +264,19 @@ FnOp StructEmitter::synthesizeMemberwiseInit(
   if (shared.diBuilder)
     diScopeGuard = shared.diBuilder->pushScopeGuard(funcOp.getLocScope());
 
+  Value selfValue;
+  bool hasResultTemp = false;
+  if (!argConventions.empty() &&
+      argConventions.back() == ArgConvention::ByRefResult) {
+    selfValue = body->getArgument(body->getNumArguments() - 1);
+  } else {
+    // Register result needs a temporary.
+    hasResultTemp = true;
+    selfValue = emitter.emitVarDecl("self", litReturnType, funcOp.getLoc(),
+                                    VarDeclKind::InitOutArg);
+  }
+
   // Emit a bunch of stores to fields indexing our 'out self' result.
-  BlockArgument selfArg = body->getArgument(body->getNumArguments() - 1);
-  assert(isa<RefType>(selfArg.getType()));
   for (auto [idx, field] : llvm::enumerate(structOp.getFieldDecls())) {
     // Add the block argument, get it as an RValue since it is owned. Skip the
     // self argument.
@@ -285,13 +297,21 @@ FnOp StructEmitter::synthesizeMemberwiseInit(
     }
 
     // Project self to the right field and store the RValue.
-    auto fieldRef = builder.create<RefStructGEROp>(selfArg, field);
+    auto fieldRef = builder.create<RefStructGEROp>(selfValue, field);
     emitter.emitStoreToLValue({argVal, SyntheticNode(structDecl.getLoc())},
                               MLValue(fieldRef), EC_AttributeRefBase);
   }
 
+  // For a register-passable result, load the result from the temporary.
+  Value returnVal;
+  if (hasResultTemp) {
+    SyntheticNode exprTmp(funcDecl->getLoc());
+    returnVal =
+        emitter.emitSRValue({MRValue(selfValue), &exprTmp}, EC_ReturnValue);
+  }
+
   // Finish off the function with a return + lit.endfunc.
-  emitter.emitNormalReturn(funcOp.getLoc());
+  emitter.emitNormalReturn(funcOp.getLoc(), returnVal);
   return funcOp;
 }
 
@@ -638,11 +658,8 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
     return {};
 
   OpBuilder b(&declOp.getFields().front(), declOp.getFields().front().end());
-
   ASTType selfType = structDecl.getTypeDeclSelf();
-  Type refToSelf = selfType.getRefForArgument("self", /*isMut=*/true);
 
-  FnOp destructorFunc;
   FnOp init;
   if (!valueInfo->hasFieldwiseInit() && generateFieldwiseInit) {
     SmallVector<Type> argTypes;
@@ -675,17 +692,23 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
       argPassingKinds.push_back(PassingKind::PosOrKw);
     }
 
-    // Add the 'out self' argument.
-    argTypes.push_back(refToSelf);
-    argConventions.push_back(ArgConvention::ByRefResult);
-    argNames.push_back(StringAttr::get(shared.getContext(), "self"));
-    argPassingKinds.push_back(PassingKind::Implicit);
+    // Add the 'out self' argument if memory-only.
+    Type litResultType = selfType;
+    if (!selfType.isRegisterPassable(structDecl.getLoc(), shared)) {
+      litResultType = shared.getNoneType();
+      argTypes.push_back(selfType.getRefForArgument("self", /*isMut=*/true));
+      argConventions.push_back(ArgConvention::ByRefResult);
+      argNames.push_back(StringAttr::get(shared.getContext(), "self"));
+      argPassingKinds.push_back(PassingKind::Implicit);
+    }
 
     init = synthesizeMemberwiseInit(
         structDecl, argTypes, argConventions,
-        PogListAttr::get(getContext(), argNames, argPassingKinds));
+        PogListAttr::get(getContext(), argNames, argPassingKinds),
+        litResultType);
   }
 
+  FnOp destructorFunc;
   if (!valueInfo->hasDestructor() && forceGenerateDestructor)
     destructorFunc = synthesizeEmptyDtor(structDecl);
 

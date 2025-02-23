@@ -105,7 +105,7 @@ struct TestParamStruct[A: Int]:
     # CHECK: lit.alias.decl *"C{{.*}}: !Int = <{value = add(mul(#lit.struct.extract<:!Int *"A`", "value">, 3), 1)}> 
     alias C = B+A
     # CHECK: lit.alias.decl [[D:.*]]: {{.*}}@TestParamStruct<:!Int {{.*}}1{{.*}}> =
-    # CHECK-SAME: <apply_result_slot(:!lit.generator<{{.*}}TestParamStruct<:!Int {1}>, {{.*}}__init__({{.*}}"<:!Int {{.*}}1
+    # CHECK-SAME: <apply(:!lit.generator<{{.*}}TestParamStruct <:!Int {1}>>> {{.*}}__init__()"<:!Int {1}>)>
     alias D = TestParamStruct[1]()
     # CHECK: %temp = lit.var.decl {{.*}} : {{.*}}@TestParamStruct<:!Int
     var temp: TestParamStruct[C]
@@ -120,9 +120,10 @@ struct TestParamStruct[A: Int]:
   alias TypeLevelAlias = A+A
 
 # Test that we support partially bound parameters.
+# CHECK-LABEL: lit.fn @"testTestParamStruct
 fn testTestParamStruct(a: TestParamStruct[4]):
   # CHECK: %arg11 = lit.var.decl {{.*}} : {{.*}}@TestParamStruct<:!Int {{.*}}11
-  # CHECK: %0 = lit.call {{.*}}@TestParamStruct::@"__init__{{.*}}<:!Int {{.*}}11{{.*}}>(%arg11)
+  # CHECK: %0 = lit.call {{.*}}@TestParamStruct::@"__init__{{.*}}<:!Int {{.*}}11{{.*}}>()
   var arg11 = TestParamStruct[11]()
 
   # CHECK: %1 = lit.ref.load %arg11
@@ -285,8 +286,7 @@ fn implicit_params_with_var_params[*Ts: Int](s: TwoParams[1]): pass
 
 # CHECK-LABEL: lit.fn @"test_implicit_params_with_var_params
 fn test_implicit_params_with_var_params():
-    # CHECK: lit.call {{.*}}@TwoParams::@"__init__{{.*}}<:!Int {1}, :!Int {2}>([[VAL0MEM:%.*]]) :
-    # CHECK-NEXT: [[VAL0:%.*]] = lit.ref.load [[VAL0MEM]]
+    # CHECK: [[VAL0:%.*]] = lit.call {{.*}}@TwoParams::@"__init__{{.*}}<:!Int {1}, :!Int {2}>() :
     # CHECK: call {{.*}}@"implicit_params_with_var_params{{.*}}<:variadic<!Int> [], :!Int {2}>([[VAL0]])
     implicit_params_with_var_params(TwoParams[1, 2]())
 
