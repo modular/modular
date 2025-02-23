@@ -383,7 +383,7 @@ void BytecodeInterpreter::returnFromFunction(ArrayRef<Attribute> returnValues) {
     KGEN::InterpreterProfilerEntry::endAndPop();
 
   StackFrame &frame = getCurrentFrame();
-  notifyReturnFromFrame(frame.numStackAllocs, frame.numSymbolicAllocs);
+  notifyReturnFromFrame(frame.numStackAllocs);
 
   // Restore the program counter and bytecode.
   pc = frame.origin;
@@ -501,12 +501,8 @@ void BytecodeInterpreter::resetExecutor() {
   values = nullptr;
 }
 
-void BytecodeInterpreter::notifyAllocationOnFrame(bool isSymbolic) {
-  StackFrame &frame = getCurrentFrame();
-  if (isSymbolic)
-    ++frame.numSymbolicAllocs;
-  else
-    ++frame.numStackAllocs;
+void BytecodeInterpreter::notifyAllocationOnFrame() {
+  ++getCurrentFrame().numStackAllocs;
 }
 
 ErrorTreeOr<SmallVector<Attribute>>

@@ -1,5 +1,30 @@
 // RUN: kgen-opt -verify-parameters -canonicalize -mlir-print-debuginfo %s | FileCheck %s
 
+#undef = #interp.memory_handle<8, "" string>
+
+// Check that constant are only hoisted from subprogram regions if there is no
+// debuginfo scope given.
+#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram1 = #debuginfo.subprogram<sourceName = <"SomeClosure">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+
+#loc1 = loc("foo.mlir":44:1)
+#loc2 = loc("foo.mlir":325:11)
+#loc3 = loc("bar.mlir":327:17)
+#loc4 = loc(fused<#subprogram>[#loc1])
+#loc5 = loc(fused<#subprogram1>[#loc2])
+#loc6 = loc(fused<#subprogram1>[#loc3])
+#call_loc = #debuginfo.call_loc<#loc4>
+#loc7 = loc(fused<#call_loc>[#loc2])
+#loc8 = loc(fused<#subprogram1>[#loc7])
+#loc9 = loc(fused<#call_loc>[#loc2])
+
+#sp = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#loc_lvl3 = loc(fused<#sp>["level -3":2:2])
+#loc_lvl2 = loc(callsite(#loc_lvl3 at fused<#sp>["level -2":1:1]))
+#loc_lvl1 = loc(callsite(#loc_lvl2 at fused<#sp>["level -1":0:0]))
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="p:32:32">} {
+
 // CHECK-LABEL: @rebind_folds
 kgen.generator @rebind_folds<dtype: dtype, type: type>(
   %a: i32, %b: !pop.scalar<f32>, %c: !pop.scalar<dtype>, %d: !kgen.param<type>
@@ -24,15 +49,6 @@ kgen.generator @rebind_canonicalize<dt1: dtype, dt2: dtype, dt3: dtype>(%arg0: !
   kgen.return %2 : !pop.scalar<si32>
 }
 
-// CHECK-LABEL: @rebind_symbolic_ptr
-kgen.generator @rebind_symbolic_ptr<t: type>() -> !kgen.pointer<t> {
-  // CHECK-NEXT: %pointer = kgen.param.constant: pointer<t> = <#interp.symbolic_pointer<0>>
-  %0 = kgen.param.constant: pointer<none> = <#interp.symbolic_pointer<0>>
-  %1 = kgen.rebind %0 : !kgen.pointer<none> to !kgen.pointer<t>
-  // CHECK-NEXT: return %pointer
-  kgen.return %1 : !kgen.pointer<t>
-}
-
 // CHECK-LABEL: @rebind_across_scopes
 kgen.generator @rebind_across_scopes<dt: dtype>(%arg0: !pop.scalar<dt>) {
   kgen.param.declare dt1: dtype = <dt>
@@ -45,8 +61,6 @@ kgen.generator @rebind_across_scopes<dt: dtype>(%arg0: !pop.scalar<dt>) {
   }
   kgen.return
 }
-
-#undef = #interp.memory_handle<8, "" string>
 
 // CHECK-LABEL: @param_materialize
 kgen.generator @param_materialize() -> (i32, !kgen.pointer<i32>) {
@@ -165,23 +179,6 @@ kgen.generator @callNested() {
   kgen.call_param[!lit.generator<() -> ()>: @Struct::@Nested]()
   kgen.return
 }
-
-
-// Check that constant are only hoisted from subprogram regions if there is no
-// debuginfo scope given.
-#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#subprogram1 = #debuginfo.subprogram<sourceName = <"SomeClosure">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-
-#loc1 = loc("foo.mlir":44:1)
-#loc2 = loc("foo.mlir":325:11)
-#loc3 = loc("bar.mlir":327:17)
-#loc4 = loc(fused<#subprogram>[#loc1])
-#loc5 = loc(fused<#subprogram1>[#loc2])
-#loc6 = loc(fused<#subprogram1>[#loc3])
-#call_loc = #debuginfo.call_loc<#loc4>
-#loc7 = loc(fused<#call_loc>[#loc2])
-#loc8 = loc(fused<#subprogram1>[#loc7])
-#loc9 = loc(fused<#call_loc>[#loc2])
 
 // CHECK-LABEL: kgen.func @no_hoist
 kgen.func @no_hoist() {
@@ -441,11 +438,6 @@ kgen.func @source_loc_pure() {
   kgen.return
 }
 
-#sp = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#loc_lvl3 = loc(fused<#sp>["level -3":2:2])
-#loc_lvl2 = loc(callsite(#loc_lvl3 at fused<#sp>["level -2":1:1]))
-#loc_lvl1 = loc(callsite(#loc_lvl2 at fused<#sp>["level -1":0:0]))
-
 // CHECK-LABEL: @source_loc_fold
 kgen.func @source_loc_fold() -> (!kgen.string, !kgen.string, !kgen.string, !kgen.string, !kgen.string, !kgen.string) {
   // CHECK-DAG: kgen.source_loc[0]
@@ -600,4 +592,5 @@ kgen.func @trivial_struct_copy(%arg0: !kgen.struct<(i1)>, %arg1: !kgen.struct<(i
 
   // CHECK: return %struct, %arg0, %arg1, [[CREATE:%.*]]
   kgen.return %0, %2, %5, %6 : !kgen.struct<()>, !kgen.struct<(i1)>, !kgen.struct<(i1, i1)>, !kgen.struct<(i1, i1)>
+}
 }

@@ -19,5 +19,3 @@
 // CHECK: #interp.memref<{[([[SYM]], heap, [], [0])], [#foo.symbol.constant<#interp<coord(0,0)>> : (index) -> index]}, 0, 0> : (index) -> index} : () -> ()
 "some.op"() {a = #interp.memref<{[(#sym, heap, [], [0])], [#foo.symbol.constant<#interp<coord(0,0)>> : (index) -> index]}, 0, 0> : (index) -> index} : () -> ()
 
-// CHECK: #interp.symbolic_pointer<3> : memref<1xi32>
-"some.op"() {a = #interp.symbolic_pointer<3> : memref<1xi32>} : () -> ()

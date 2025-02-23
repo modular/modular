@@ -1177,15 +1177,6 @@ LogicalResult StoreOp::canonicalize(StoreOp op, PatternRewriter &b) {
 ErrorTreeOrSuccess StoreOp::interpret(ArrayRef<Attribute> operands,
                                       InterpreterState &state) {
   auto value = cast_or_null<TypedAttr>(operands[0]);
-
-  if (auto ptr = dyn_cast_or_null<SymbolicPointerAttr>(operands[1])) {
-    ErrorOr<TypedAttr &> mem = state.getSymbolicMemory(ptr.getSlot());
-    if (mem.isError())
-      return ErrorTree(getLoc(), mem.takeError());
-    *mem = value;
-    return success();
-  }
-
   auto ptr = dyn_cast_or_null<PointerAttr>(operands[1]);
   if (!value || !ptr)
     return ErrorTree(getLoc(), "non-constant inputs");
@@ -1414,12 +1405,8 @@ ErrorTreeOrSuccess StackAllocationOp::interpret(ArrayRef<Attribute> operands,
                                                 const Payload &payload,
                                                 InterpreterState &state) {
   // If there is no target model, we know it is a count 1 alloc.
-  if (!state.getTarget()) {
-    uint64_t slot = state.allocateSymbolicMemory(
-        createUninitializedValueOf(getType().getElementType()));
-    state.mapResults(SymbolicPointerAttr::get(slot, getType()));
-    return success();
-  }
+  if (!state.getTarget())
+    return ErrorTree(getLoc(), "stack allocation requires a target model");
 
   ErrorOr<int64_t> addr =
       state.allocateStackMemory(payload.size, payload.align);

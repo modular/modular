@@ -155,7 +155,7 @@ InterpreterState::MemoryTable::getBlob(int64_t addr) {
 ErrorOr<int64_t> InterpreterState::allocateStackMemory(size_t size,
                                                        size_t align) {
   // Track the additional stack allocation on the current frame if there is one.
-  notifyAllocationOnFrame(/*isSymbolic=*/false);
+  notifyAllocationOnFrame();
 
   ErrorOr<MemoryBlob &> blob =
       getTable(MemoryKind::Stack).addBlob(allocator, size, align);
@@ -359,14 +359,6 @@ ErrorOr<TypedAttr> InterpreterState::readAttributeFromMemory(int64_t addr,
                " does not implement MemoryableTypeInterface");
 }
 
-uint64_t InterpreterState::allocateSymbolicMemory(TypedAttr init) {
-  uint64_t result = symbolicMemory.size();
-  symbolicMemory.push_back(init);
-  // Track the allocation on the current frame if there is one.
-  notifyAllocationOnFrame(/*isSymbolic=*/true);
-  return result;
-}
-
 uint64_t InterpreterState::addSymbolToSymbolTable(TypedAttr symbol) {
   uint64_t result = symbols.size();
   for (auto [index, existing] : llvm::enumerate(symbols)) {
@@ -383,17 +375,9 @@ ErrorOr<TypedAttr &> InterpreterState::getSymbol(uint64_t slot) {
   return symbols[slot];
 }
 
-ErrorOr<TypedAttr &> InterpreterState::getSymbolicMemory(uint64_t slot) {
-  if (slot >= symbolicMemory.size())
-    return Error("symbolic memory slot is out-of-bounds: " + Twine(slot));
-  return symbolicMemory[slot];
-}
-
 ErrorOr<Attribute>
 InterpreterState::readAttributeFromPointer(Attribute pointer,
                                            Type elementType) {
-  if (auto sym = dyn_cast_or_null<SymbolicPointerAttr>(pointer))
-    return getSymbolicMemory(sym.getSlot());
   if (auto ptr = dyn_cast_or_null<PointerAttr>(pointer))
     return readAttributeFromMemory(ptr.getAddr(), elementType);
   return Error("not a pointer constant");
@@ -630,10 +614,8 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
       [&](StoreToMemAttr store) -> std::pair<Attribute, WalkResult> {
         Type valueType = store.getValue().getType();
         if (!getTarget()) {
-          auto ptr =
-              SymbolicPointerAttr::get(symbolicMemory.size(), store.getType());
-          symbolicMemory.push_back(store.getValue());
-          return {ptr, WalkResult::advance()};
+          err = Error("store to memory requires a target model");
+          return {store, WalkResult::interrupt()};
         }
 
         ErrorOr<PointerAttr> ptr =
@@ -733,22 +715,17 @@ ErrorTreeOr<TypedAttr> InterpreterState::executeRegionWithResultSlot(
   Location loc = region.getLoc();
   if (region.getArguments().empty())
     return ErrorTree(loc, "internal error: region has no arguments");
+  if (!getTarget())
+    return ErrorTree(loc, Error("call into memory requires a target model"));
 
   // Allocate the result slot.
   Type resultPtrType = region.getArguments().back().getType();
-  TypedAttr resultSlotAttr;
 
-  if (!getTarget()) {
-    uint64_t slot = symbolicMemory.size();
-    symbolicMemory.push_back(cast<TypedAttr>(resultValue));
-    resultSlotAttr = SymbolicPointerAttr::get(slot, resultPtrType);
-  } else {
-    ErrorOr<PointerAttr> resultSlotAttrOr =
-        allocateInternalStackFor(cast<Type>(resultValue), resultPtrType);
-    if (resultSlotAttrOr.isError())
-      return ErrorTree(loc, resultSlotAttrOr.takeError());
-    resultSlotAttr = resultSlotAttrOr.takeValue();
-  }
+  ErrorOr<PointerAttr> resultSlotAttrOr =
+      allocateInternalStackFor(cast<Type>(resultValue), resultPtrType);
+  if (resultSlotAttrOr.isError())
+    return ErrorTree(loc, resultSlotAttrOr.takeError());
+  TypedAttr resultSlotAttr = resultSlotAttrOr.takeValue();
 
   SmallVector<Attribute> allArgs;
   llvm::append_range(allArgs, arguments);
@@ -769,16 +746,11 @@ ErrorTreeOr<TypedAttr> InterpreterState::executeRegionWithResultSlot(
   if (result)
     return addStackTrace(result.takeError());
 
-  TypedAttr value;
-  if (!getTarget()) {
-    value = symbolicMemory[cast<SymbolicPointerAttr>(resultSlotAttr).getSlot()];
-  } else {
-    ErrorOr<TypedAttr> resultOr = readAttributeFromMemory(
-        cast<PointerAttr>(resultSlotAttr).getAddr(), cast<Type>(resultValue));
-    if (resultOr.isError())
-      return ErrorTree(loc, resultOr.takeError());
-    value = resultOr.takeValue();
-  }
+  ErrorOr<TypedAttr> resultOr = readAttributeFromMemory(
+      cast<PointerAttr>(resultSlotAttr).getAddr(), cast<Type>(resultValue));
+  if (resultOr.isError())
+    return ErrorTree(loc, resultOr.takeError());
+  TypedAttr value = resultOr.takeValue();
 
   if (ErrorOrSuccess err = externalizeMemory(value); err.isError())
     return ErrorTree(region.getLoc(), err.takeError());

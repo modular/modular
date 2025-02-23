@@ -1261,18 +1261,6 @@ TypedAttr LIT::StructExtractAttr::get(MLIRContext *context,
 }
 
 //===----------------------------------------------------------------------===//
-// StructGERAttr
-//===----------------------------------------------------------------------===//
-
-LogicalResult
-StructGERAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                      TypedAttr value, StringAttr field, Type type) {
-  if (::isa<StructGERAttr>(value))
-    return success();
-  return emitError() << "base value must be a StructGERAttr, but got " << value;
-}
-
-//===----------------------------------------------------------------------===//
 // RefPackAttr
 //===----------------------------------------------------------------------===//
 
