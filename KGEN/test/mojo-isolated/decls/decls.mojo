@@ -1052,13 +1052,15 @@ struct ValueReg:
 # CHECK-SAME:  (
 # CHECK-SAME:  %a: !Int,
 # CHECK-SAME:  %b: !lit.ref<!StructExample, mut *"b`"> owned_in_mem
-# CHECK-SAME:  %self: !lit.ref<!ValueReg, mut *"self`"> byref_result
-# CHECK-SAME: )
+# CHECK-SAME: ) -> !ValueReg
+# CHECK-NEXT: %self = lit.var.decl "self"
 # CHECK-NEXT: %0 = lit.ref.struct.ger %self[a]
 # CHECK-NEXT: lit.ref.store %a, %0
 # CHECK-NEXT: %1 = lit.ref.struct.ger %self[b]
 # CHECK-NEXT: %2 =  lit.load.consume %b
 # CHECK-NEXT: lit.ref.store %2, %1
+# CHECK-NEXT: [[TMP:%.*]] = lit.load.consume %self
+# CHECK-NEXT: lit.return [[TMP]]
 
 
 # COM: Ensure that "self" is a valid field name.
@@ -1113,7 +1115,7 @@ struct VarArgInit:
     fn __init__(out self, *values: ValueMem):
         self.a = 42
 
-    # CHECK: lit.fn @"__init__(::Int)"{{.*}}(%a: !Int,
+    # CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !VarArgInit
 
 
 # COM: Body resolution of `Node` will recurse on itself. Make sure that the

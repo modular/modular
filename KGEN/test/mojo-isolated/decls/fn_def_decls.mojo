@@ -144,7 +144,8 @@ def defTests(
     # CHECK-NEXT: lit.call {{.*}}MemoryOnly::@"__init__{{.*}}(%mem_1)
     mem = MemoryOnly()
 
-    # CHECK-NEXT: lit.call {{.*}}NonTrivialReg::@"__init__{{.*}}(%reg_0)
+    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}NonTrivialReg::@"__init__{{.*}}()
+    # CHECK-NEXT: lit.ref.store [[TMP]], %reg_0
     reg = NonTrivialReg()
 
     # Issue#38762

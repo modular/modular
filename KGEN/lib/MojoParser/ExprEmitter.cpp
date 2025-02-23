@@ -1713,7 +1713,7 @@ void ExprEmitter::emitNormalReturn(Location loc, Value value,
       assert(declList.size() == 1 && "result temp should always be findable");
       auto irVal = declList[0]->getIfIRValue().getIfMLValue();
       assert(irVal && "result temp should always be in memory");
-      SimpleLiteralNode exprTmp(ExprNode::kNoneLiteral, funcDecl->getLoc());
+      SyntheticNode exprTmp(funcDecl->getLoc());
       // Move the source by interpreting the MLValue as an MRvalue.
       value = emitSRValue({MRValue(irVal), &exprTmp}, EC_ReturnValue);
       if (!value)

@@ -1854,6 +1854,12 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
       if (selfType.isEqualCanon(selfArgType))
         return;
 
+      // If an error was already diagnosed with the type, disable follow-ons.
+      if (isa<TypeCheckErrorType>(selfArgType)) {
+        selfArg.isErroneous = true;
+        return;
+      }
+
       // It is ok if the self type has different parameters than the
       // declaration, this is a form of conditional conformance.
       if (selfType.getWithoutParameters(shared).isEqualCanon(

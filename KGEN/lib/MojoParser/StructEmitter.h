@@ -131,7 +131,9 @@ public:
   /// omitted fields.
   FnOp synthesizeMemberwiseInit(ASTDecl &structDecl, ArrayRef<Type> argTypes,
                                 ArrayRef<ArgConvention> argConventions,
-                                PogListAttr argListAttrs);
+                                PogListAttr argListAttrs,
+                                // None or Self if register passable.
+                                ASTType litReturnType);
 
   /// Create a FnOp within the scope of the given Struct. The body is not
   /// populated. `suffix` is appended to the mangled function name.
