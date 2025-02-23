@@ -3161,7 +3161,14 @@ fn mha_decoding_single_batch[
 
     # It's because in online-softmax we only use the top 8x4 sub-matrix
     # in the 16x8 mma output for Nvidia GPU. It shouldn't matter for AMD
-    constrained[group <= 8, "Only support GQA with group <= 8 for Nvidia."]()
+    constrained[
+        group <= 8,
+        String(
+            "Only support GQA with group <= 8 for Nvidia, but got a group = '",
+            group,
+            "'.",
+        ),
+    ]()
 
     var tid = thread_idx.x
     var warp_id = warp.broadcast(tid // WARP_SIZE)
