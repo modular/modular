@@ -2267,13 +2267,12 @@ AnyValue BinOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 /// Given two values that need to match, try to coerce one to the other if they
 /// disagree on type.  This emits an error (when loc is non-null) and returns
 /// failure if the request is ambiguous or impossible.
-template <typename ValueType>
 static ParseResult
-coerceTypesToEachOther(SMLoc loc, ValueType &lhs, const ExprNode *lhsExpr,
-                       ValueType &rhs, const ExprNode *rhsExpr,
+coerceTypesToEachOther(SMLoc loc, CValue &lhs, const ExprNode *lhsExpr,
+                       CValue &rhs, const ExprNode *rhsExpr,
                        ExprEmitter &emitter,
-                       std::function<ValueType(ASTExprAnd<AnyValue> value,
-                                               ASTType destType, bool isLHS)>
+                       std::function<CValue(ASTExprAnd<AnyValue> value,
+                                            ASTType destType, bool isLHS)>
                            convert) {
   if (!lhs || !rhs)
     return failure();
@@ -2381,26 +2380,31 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
   PValue lhsI1PVal = lhsI1Val.getIfPValue();
 
   if (!emitter.builder) {
-    PValue lhsPVal = emitter.emitExprPValue(lhs, EC_OperatorOperandValue);
     lhsI1PVal = emitter.emitPValue({lhsI1Val, lhs}, EC_BoolCondition);
     if (!lhsI1PVal)
       return {};
-    PValue rhsPVal = emitter.emitExprPValue(rhs, EC_BoolCondition);
+    CValue rhsV = emitter.emitExprCValue(rhs, EC_BoolCondition);
 
     // Coerce the true/false values into a compatible type if they disagree.
     auto convertValue = [&](ASTExprAnd<AnyValue> value, ASTType type,
-                            bool isLHS) -> PValue {
-      return emitter.emitPValue(value, EC_OperatorOperandValue, type);
+                            bool isLHS) -> CValue {
+      return emitter.emitCValue(value, EC_OperatorOperandValue, type);
     };
-    if (coerceTypesToEachOther<PValue>(getLoc(), lhsPVal, lhs, rhsPVal, rhs,
-                                       emitter, convertValue))
+    if (coerceTypesToEachOther(getLoc(), lhsV, lhs, rhsV, rhs, emitter,
+                               convertValue))
+      return {};
+
+    PValue lhsPV = emitter.emitPValue({lhsV, lhs}, EC_OperatorOperandValue);
+    if (!lhsPV)
+      return {};
+    PValue rhsPV = emitter.emitPValue({rhsV, rhs}, EC_OperatorOperandValue);
+    if (!rhsPV)
       return {};
 
     if (kind == kBoolOr) // and/or swap true/false operands
-      std::swap(lhsPVal, rhsPVal);
+      std::swap(lhsPV, rhsPV);
 
-    auto value =
-        ParamOperatorAttr::get(POC::Cond, {lhsI1PVal, rhsPVal, lhsPVal});
+    auto value = ParamOperatorAttr::get(POC::Cond, {lhsI1PVal, rhsPV, lhsPV});
     return emitter.emitResult(value, this, dest);
   }
 
@@ -2440,8 +2444,8 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
   };
   // Try to find compatibility between the raw values.  Pass in a null SMLoc so
   // that an error isn't diagnosed with an error message.
-  if (coerceTypesToEachOther<CValue>(SMLoc(), lhsV, lhs, rhsV, rhs, emitter,
-                                     convertValue)) {
+  if (coerceTypesToEachOther(SMLoc(), lhsV, lhs, rhsV, rhs, emitter,
+                             convertValue)) {
     // If the two types are incompatible or ambiguously convertible to each
     // other, then the user wrote something like `if someInt and someString`.
     // This has no common type to return, but the result should still be
@@ -2687,20 +2691,27 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     if (!condPVal)
       return {};
 
-    PValue trueVal = emitter.emitExprPValue(trueExpr, EC_BoolCondition);
-    PValue falseVal = emitter.emitExprPValue(falseExpr, EC_BoolCondition);
+    CValue trueVal = emitter.emitExprCValue(trueExpr, EC_CondExpr);
+    CValue falseVal = emitter.emitExprCValue(falseExpr, EC_CondExpr);
 
     // Coerce the true/false values into a compatible type.
     auto convertValue = [&](ASTExprAnd<AnyValue> value, ASTType type,
-                            bool isLHS) -> PValue {
-      return emitter.emitPValue(value, EC_CondExpr, type);
+                            bool isLHS) -> CValue {
+      return emitter.emitCValue(value, EC_CondExpr, type);
     };
-    if (coerceTypesToEachOther<PValue>(getLoc(), trueVal, trueExpr, falseVal,
-                                       falseExpr, emitter, convertValue))
+    if (coerceTypesToEachOther(getLoc(), trueVal, trueExpr, falseVal, falseExpr,
+                               emitter, convertValue))
+      return {};
+
+    PValue truePVal = emitter.emitPValue({trueVal, trueExpr}, EC_CondExpr);
+    if (!truePVal)
+      return {};
+    PValue falsePVal = emitter.emitPValue({falseVal, falseExpr}, EC_CondExpr);
+    if (!falsePVal)
       return {};
 
     auto value =
-        ParamOperatorAttr::get(POC::Cond, {condPVal, trueVal, falseVal});
+        ParamOperatorAttr::get(POC::Cond, {condPVal, truePVal, falsePVal});
     return emitter.emitResult(value, this, dest);
   }
 
@@ -2844,8 +2855,8 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     emitter.builder->setInsertionPointToEnd(&b);
     return emitter.emitCValue(value, EC_CondExpr, type);
   };
-  if (coerceTypesToEachOther<CValue>(getLoc(), trueVal, trueExpr, falseVal,
-                                     falseExpr, emitter, convertValue)) {
+  if (coerceTypesToEachOther(getLoc(), trueVal, trueExpr, falseVal, falseExpr,
+                             emitter, convertValue)) {
     dest.resetForError();
     return {};
   }
