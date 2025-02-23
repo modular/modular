@@ -26,27 +26,6 @@ lit.struct.decl @ValueType
  copy :() -> () @ValueType::@__copyinit__ {
 }
 
-// CHECK-LABEL: @struct_create
-// CHECK-SAME: %[[A:.*]]: index
-// CHECK-SAME: %[[B:.*]]: !pop.scalar
-// CHECK-SAME: %[[C:.*]]: !pop.simd
-kgen.generator @struct_create<u, v: dtype>(%a: index, %b: !pop.scalar<v>, %c: !pop.simd<u, v>)
-    -> !lit.struct<@FooStruct<u, :dtype v, :type !pop.simd<u, v>>> {
-  // CHECK: lit.struct.create(a=%[[A]], b=%[[B]], c=%[[C]]) :
-  // CHECK-SAME: (index, !pop.scalar<v>, !pop.simd<u, v>) ->
-  // CHECK-SAME: !lit.struct<@FooStruct<u, :dtype v, :type simd<u, v>>>
-  %0 = lit.struct.create(a=%a, b=%b, c=%c) : (index, !pop.scalar<v>, !pop.simd<u, v>) ->
-    !lit.struct<@FooStruct<u, :dtype v, :type !pop.simd<u, v>>>
-  kgen.return %0 : !lit.struct<@FooStruct<u, :dtype v, :type !pop.simd<u, v>>>
-}
-
-// CHECK-LABEL: @empty_struct_create
-kgen.generator @empty_struct_create() -> !lit.struct<@EmptyStruct> {
-  // CHECK: lit.struct.create()
-  %0 = lit.struct.create() : () -> !lit.struct<@EmptyStruct>
-  kgen.return %0 : !lit.struct<@EmptyStruct>
-}
-
 // CHECK-LABEL: @struct_insert
 kgen.generator @struct_insert(%a: index, %struct: !lit.struct<@FooStruct<2, :dtype f32, :type i32>>) {
   // CHECK: lit.struct.insert %{{.*}}, %{{.*}}[a] : index into !lit.struct<@FooStruct

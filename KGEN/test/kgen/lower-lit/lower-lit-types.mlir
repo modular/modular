@@ -12,17 +12,6 @@ lit.struct.decl @SmallVector<N, T: type> register_passable {
 !size2 = !lit.struct<@SmallVector<2, :type !pop.simd<4, f32>>>
 !size4 = !lit.struct<@SmallVector<4, :type !pop.simd<1, f64>>>
 
-// CHECK-LABEL: @two_vectors
-kgen.func @two_vectors(
-  %arg0: !pop.array<2, simd<4, f32>>,
-  %arg1: !pop.array<4, simd<1, f64>>
-) -> (!size2, !size4) {
-  %0 = lit.struct.create(data=%arg0) : (!pop.array<2, simd<4, f32>>) -> !size2
-  %1 = lit.struct.create(data=%arg1) : (!pop.array<4, simd<1, f64>>) -> !size4
-
-  // CHECK: kgen.return %arg0, %arg1
-  kgen.return %0, %1 : !size2, !size4
-}
 
 // CHECK-NOT: lit.struct.decl
 lit.struct.decl @Box<T: type> register_passable {
@@ -35,22 +24,9 @@ lit.struct.decl @Pair<T1: type, T2: type> {
   lit.struct.field second: !kgen.param<T2>
 }
 
-// CHECK-LABEL: @make_box
-kgen.func @make_box(%v: f32) -> !lit.struct<@Box<:type f32>> {
-  // CHECK: kgen.return %arg0 : f32
-  %0 = lit.struct.create(value=%v) : (f32) -> !lit.struct<@Box<:type f32>>
-  kgen.return %0 : !lit.struct<@Box<:type f32>>
-}
 
 !i8Pair = !lit.struct<@Pair<:type i8, :type i8>>
 
-// CHECK-LABEL: @make_pair
-// CHECK: %[[A:.*]]: i8, %[[B:.*]]: i8
-kgen.func @make_pair(%a: i8, %b: i8) -> !i8Pair {
-  // CHECK: kgen.struct.create(%arg1, %arg0) : !kgen.struct<(i8, i8) memoryOnly>
-  %0 = lit.struct.create(first=%b, second=%a) : (i8, i8) -> !i8Pair
-  kgen.return %0 : !i8Pair
-}
 
 // CHECK-LABEL: @struct_insert
 kgen.func @struct_insert(%pair: !i8Pair) -> !i8Pair {
@@ -339,20 +315,10 @@ lit.struct.decl @Pointer<ty: type> register_passable {
 !foo_ptr_ref = !lit.struct<@Pointer<:type !foo_ref>>
 !null_ptr = !kgen.pointer<none>
 
-// CHECK-LABEL: @makeFoo
-kgen.func @makeFoo(%arg0: !bar_ref, %arg1: f32) -> !foo_ref {
-  // CHECK: %0 = kgen.struct.create(%arg0, %arg1) : !kgen.struct<(struct<(pointer<none>, ui32) memoryOnly>, f32) memoryOnly>
-  // CHECK: kgen.return %0 : !kgen.struct<(struct<(pointer<none>, ui32) memoryOnly>, f32) memoryOnly>
-  %0 = lit.struct.create(x=%arg0, y=%arg1) : (!bar_ref, f32) -> !foo_ref
-  kgen.return %0 : !foo_ref
-}
 
 // CHECK-LABEL: @makeBar
 kgen.func @makeBar(%arg0: !foo_ptr_ref, %arg1: ui32) -> !bar_ref {
-  // CHECK: [[V0:%.*]] = kgen.struct.create(%arg0, %arg1) : !kgen.struct<(pointer<none>, ui32) memoryOnly>
-  // CHECK: kgen.return [[V0]] : !kgen.struct<(pointer<none>, ui32) memoryOnly>
-  %0 = lit.struct.create(x=%arg0, y=%arg1) : (!foo_ptr_ref, ui32) -> !bar_ref
-  kgen.return %0 : !bar_ref
+  kgen.unreachable
 }
 
 // CHECK-LABEL: @structInsertUIntToBar

@@ -2160,19 +2160,6 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
           evaluator.getReboundType(extract.getType()));
   }
 
-  if (auto create = dyn_cast<LIT::StructCreateOp>(op)) {
-    SmallVector<std::tuple<StringAttr, TypedAttr>> elts;
-    for (auto [fieldName, arg] :
-         llvm::zip(create.getFields(), create.getOperands())) {
-      elts.push_back({fieldName, findValue(arg)});
-      if (!std::get<1>(elts.back()))
-        return failure();
-    }
-    return LITStructAttr::get(
-        create.getContext(), elts,
-        cast<LIT::StructType>(evaluator.getReboundType(create.getType())));
-  }
-
   // Handle a simple binary operation that folds to a POC binary op.
   auto foldBinOp = [&](POC opc) -> FailureOr<TypedAttr> {
     if (auto lhs = findValue(op.getOperand(0)))

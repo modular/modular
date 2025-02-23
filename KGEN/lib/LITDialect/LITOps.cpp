@@ -1167,7 +1167,7 @@ void StructFieldOp::build(OpBuilder &builder, OperationState &odsState,
 }
 
 //===----------------------------------------------------------------------===//
-// StructCreateOp
+// StructInsertOp
 //===----------------------------------------------------------------------===//
 
 /// Lookup the declaration for the struct. When checking field types, we can't
@@ -1185,96 +1185,6 @@ lookupStructDecl(SymbolTableCollection &symbolTable, Operation *user,
   ParameterEvaluator evaluator(decl.getParams(), ref.getParamValues());
   return {decl, std::move(evaluator)};
 }
-
-/// Verify the reference struct type.
-LogicalResult
-LIT::StructCreateOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  // Verify the types of the fields in the operands match those in the
-  // struct declaration.
-  auto [structDecl, evaluator] =
-      lookupStructDecl(symbolTable, *this, getType());
-  if (!structDecl)
-    return emitOpError("expected to find a struct decl for ") << getType();
-  auto fields = structDecl.getFieldDecls();
-  unsigned numFields = std::distance(fields.begin(), fields.end());
-  if (numFields != getNumOperands())
-    return emitOpError("expected ")
-           << numFields << " operands but got " << getNumOperands();
-  if (getFieldsAttr().size() != numFields)
-    return emitOpError("expected ")
-           << numFields << " based on the declaration, but got "
-           << getFieldsAttr().size();
-
-  for (auto [fieldDecl, fieldAttrInOp, operand, i] :
-       llvm::zip(fields, getFieldsAttr(), getOperands(),
-                 llvm::seq<unsigned>(0, numFields))) {
-    StringAttr nameInDecl = fieldDecl.getNameAttr();
-    StringAttr nameInOp = fieldAttrInOp;
-    if (nameInDecl != nameInOp) {
-      return emitOpError("the field name ")
-             << nameInOp << " at the position #" << i
-             << " did not match the name " << nameInDecl
-             << " in the op declaration.";
-    }
-
-    Type reboundType = evaluator.getReboundType(fieldDecl.getType());
-    if (reboundType != operand.getType()) {
-      return emitOpError("operand #")
-             << i << " has type " << operand.getType()
-             << " but corresponding struct field " << fieldDecl.getNameAttr()
-             << " expected " << reboundType;
-    }
-  }
-  return success();
-}
-
-/// Parse a sequence of "field_name=operand" entries.
-static ParseResult
-parseOperandsAndFields(OpAsmParser &p,
-                       SmallVector<OpAsmParser::UnresolvedOperand, 4> &operands,
-                       StringArrayAttr &fields) {
-  SmallVector<StringAttr> fieldNames;
-  if (p.parseCommaSeparatedList(
-          OpAsmParser::Delimiter::Paren, [&]() -> ParseResult {
-            std::string fieldNameStr;
-            if (p.parseKeywordOrString(&fieldNameStr) || p.parseEqual() ||
-                p.parseOperand(operands.emplace_back()))
-              return failure();
-            fieldNames.push_back(StringAttr::get(p.getContext(), fieldNameStr));
-            return success();
-          }))
-    return failure();
-
-  fields = StringArrayAttr::get(p.getContext(), fieldNames);
-  return success();
-}
-
-/// Print a sequence of "field_name=operand" entries.
-static void printOperandsAndFields(OpAsmPrinter &p, Operation *op,
-                                   OperandRange operands,
-                                   StringArrayAttr fields) {
-  p << "(";
-  llvm::interleaveComma(llvm::zip(fields.getValue(), op->getOperands()), p,
-                        [&](const std::tuple<StringAttr, Value> &val) {
-                          auto &[fieldName, operand] = val;
-                          p << fieldName.getValue() << "=" << operand;
-                        });
-  p << ")";
-}
-
-OpFoldResult LIT::StructCreateOp::fold(FoldAdaptor adaptor) {
-  SmallVector<std::tuple<StringAttr, TypedAttr>> values;
-  for (auto [name, value] : llvm::zip(getFields(), adaptor.getOperands())) {
-    if (!value)
-      return {};
-    values.emplace_back(name, cast<TypedAttr>(value));
-  }
-  return LITStructAttr::get(values, getType());
-}
-
-//===----------------------------------------------------------------------===//
-// StructInsertOp
-//===----------------------------------------------------------------------===//
 
 LogicalResult
 StructInsertOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
@@ -1357,20 +1267,6 @@ OpFoldResult LIT::StructExtractOp::fold(FoldAdaptor adaptor) {
     return StructExtractAttr::get(cast<TypedAttr>(value), getFieldAttr(),
                                   getType());
 
-  // Fold
-  //  %S = lit.struct.create(a=%a, b=%b)
-  //  %x = lit.struct.extract %S[a]
-  // into %a.
-  if (auto create = getContainer().getDefiningOp<LIT::StructCreateOp>()) {
-    for (size_t i = 0, e = create->getNumOperands(); i < e; i++) {
-      if (create.getFieldsAttr()[i] == getFieldAttr())
-        return create.getOperand(i);
-    }
-    // A field referred to in the struct.extract op didn't appear in the
-    // previous struct.create op - the IR is probably malformed, do not fold
-    // anything.
-    return {};
-  }
   // Fold
   //    %S = lit.struct.insert %x, %S0[a]
   //    %y = lit.struct.extract %S[a]

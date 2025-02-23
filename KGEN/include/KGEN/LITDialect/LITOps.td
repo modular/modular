@@ -480,43 +480,6 @@ def LIT_StructFieldOp : LITOp<"struct.field", [
 }
 
 //===----------------------------------------------------------------------===//
-// StructCreateOp
-//===----------------------------------------------------------------------===//
-
-def LIT_StructCreateOp : LITOp<"struct.create", [Pure,
-    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
-  let summary = "Create a parametric struct.";
-  let description = [{
-    The `lit.struct.create` operation creates a struct of the referred type
-    with the provided values as fields. The operands must match the fields in
-    the order they are declared.
-
-    Example:
-
-    ```mlir
-    lit.struct.decl @MyStruct<T: dtype> {
-      lit.struct.field a : !pop.scalar<T>
-      lit.struct.field b : !pop.scalar<f32>
-      lit.struct.field c : !pop.simd<2, T>
-    }
-
-    %0 = lit.struct.create(a=%a, b=%b, c=%c) :
-      (!pop.scalar<type>, !pop.scalar<f32>, !pop.simd<2, type>)
-      -> !lit.struct<@MyStruct<T: dtype = type>>
-    ```
-  }];
-
-  let arguments = (ins Variadic<AnyType>:$operands,
-                       StringArrayAttr:$fields);
-  let results = (outs LIT_StructType:$result);
-  let hasFolder = 1;
-  let assemblyFormat = [{
-    `` custom<OperandsAndFields>($operands,$fields) attr-dict `:`
-    functional-type(operands, results)
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // StructInsertOp
 //===----------------------------------------------------------------------===//
 
@@ -1105,7 +1068,7 @@ def LIT_ErrorReturnOp : LITOp<"error_return", [Terminator, ReturnLike,
 
     ```mlir
     lit.fn @throwing_func() throws -> !kgen.variant<@Error, none> {
-      %1 = lit.struct.create(a=%0) : (index) -> !lit.struct<@Error>
+      %1 = ... : !lit.struct<@Error>
       %2 = kgen.variant.create %1 :
         !lit.struct<@Error> -> !kgen.variant<@Error, none>
       lit.error_return %2 : !kgen.variant<@Error, none>
