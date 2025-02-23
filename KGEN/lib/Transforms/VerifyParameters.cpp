@@ -4,7 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/Interpreter/InterpreterState.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -27,98 +26,19 @@ namespace M::KGEN {
 } // namespace M::KGEN
 
 namespace {
-class ParameterSimplifier : public ParameterEvaluator, public IRInterpreter {
+class ParameterSimplifier : public ParameterEvaluator {
 public:
-  ParameterSimplifier(bool enableInterp, ModuleOp module,
-                      SymbolTableCollection &symtabs)
-      : IRInterpreter(module.getContext()), enableInterp(enableInterp),
-        module(module), symtabs(symtabs) {}
+  ParameterSimplifier(ModuleOp module, SymbolTableCollection &symtabs)
+      : module(module), symtabs(symtabs) {}
   ParameterSimplifier(const ParameterSimplifier &other)
-      : ParameterEvaluator(other.getParameterValues()),
-        IRInterpreter(other.getContext()), enableInterp(other.enableInterp),
-        module(other.module), symtabs(other.symtabs) {}
-
-  FailureOr<TypedAttr> evaluateExpression(ParamOperatorAttr op) override;
-  ErrorOr<Region *> lookupFunctionBody(SymbolRefAttr symbol) override;
-  Operation *lookupTypeDefinition(SymbolRefAttr symbol) override;
+      : ParameterEvaluator(other.getParameterValues()), module(other.module),
+        symtabs(other.symtabs) {}
 
 private:
-  bool enableInterp;
   ModuleOp module;
   SymbolTableCollection &symtabs;
 };
 } // namespace
-
-FailureOr<TypedAttr>
-ParameterSimplifier::evaluateExpression(ParamOperatorAttr op) {
-  if (!enableInterp)
-    return failure();
-
-  if (op.getOpcode() != POC::Apply && op.getOpcode() != POC::ApplyResultSlot)
-    return failure();
-
-  // We can only fold direct calls.
-  auto ref = dyn_cast<SymbolConstantAttr>(op.getOperands().front());
-  if (!ref)
-    return failure();
-
-  // All inputs must be simple constants.
-  ArrayRef<TypedAttr> inputs = op.getOperands().drop_front();
-  if (!llvm::all_of(inputs, ParameterAttr::isSimpleConstant))
-    return failure();
-
-  SmallVector<Attribute> arguments;
-  for (TypedAttr input : inputs)
-    arguments.push_back(input);
-
-  ErrorOr<Region *> bodyOr = lookupFunctionBody(ref.getSymbol());
-  if (bodyOr.isError())
-    return failure();
-  Region &body = **bodyOr;
-
-  TypedAttr value;
-  if (op.getOpcode() == POC::Apply) {
-    ErrorTreeOr<SmallVector<Attribute>> result = executeRegion(body, arguments);
-    if (result.isError()) {
-      DEBUG_WITH_TYPE(
-          "simple-interpreter",
-          result.takeError().emit(
-              (InFlightDiagnostic(*)(Location))mlir::emitError, "called from"));
-      return failure();
-    }
-    value = cast<TypedAttr>(result->front());
-  } else {
-    Value resultArg = body.getArguments().back();
-    Type resultType = cast<PointerType>(resultArg.getType()).getElementType();
-    ErrorTreeOr<TypedAttr> result = executeRegionWithResultSlot(
-        body, arguments, createUninitializedValueOf(resultType));
-    if (result.isError()) {
-      DEBUG_WITH_TYPE(
-          "simple-interpreter",
-          result.takeError().emit(
-              (InFlightDiagnostic(*)(Location))mlir::emitError, "called from"));
-      return failure();
-    }
-    value = result.takeValue();
-  }
-
-  if (!ParameterAttr::isSimpleConstant(value))
-    return failure();
-  return value;
-}
-
-ErrorOr<Region *>
-ParameterSimplifier::lookupFunctionBody(SymbolRefAttr symbol) {
-  auto func = symtabs.lookupSymbolIn<mlir::FunctionOpInterface>(module, symbol);
-  assert(func && "invalid function reference");
-  if (func.isExternal())
-    return Error("external function reference");
-  return &func.getFunctionBody();
-}
-
-Operation *ParameterSimplifier::lookupTypeDefinition(SymbolRefAttr symbol) {
-  return symtabs.lookupSymbolIn(module, symbol);
-}
 
 /// Function to walk all op users of parameters and substitute parameters based
 /// on the values currently in the evaluator.
@@ -318,21 +238,12 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
       return;
     }
 
-    bool interp = enableInterp;
-    // In production builds, we don't run the parameter verifier. This allows us
-    // to aggressively simplify parameter expressions with the interpreter, even
-    // if it would mean parameter expressions no longer line up across function
-    // boundaries (since the verifier doesn't run the interpreter).
-#ifdef MODULAR_PRODUCTION
-    interp = true;
-#endif
-
     VerboseCompilerTimeTraceScope traceScope("propagateTrivialParameters");
     for (auto [declRegion, i] : declRegions) {
       ParameterUseDefGraph &graph = graphs[i];
       propagateTrivialParameters(
           declRegion, graph, graph,
-          ParameterSimplifier(interp, module, analysis.getSymbolTables()),
+          ParameterSimplifier(module, analysis.getSymbolTables()),
           DenseSet<TypedAttr>());
     }
   }
