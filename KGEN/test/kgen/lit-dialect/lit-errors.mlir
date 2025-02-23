@@ -48,41 +48,6 @@ kgen.generator @InvalidTypeParamValue<a>(%arg0: !lit.struct<@SomeType<a, c>>) {
 
 // -----
 
-lit.struct.decl @Bar<a: type> {
-  lit.struct.field x : !pop.array<32, a>
-}
-
-kgen.generator @invalid_field_type<c: type>(%a: !kgen.param<c>) {
-  // expected-error @below {{perand #0 has type '!kgen.param<c>' but corresponding struct field "x" expected '!pop.array<32, index>'}}
-  %0 = lit.struct.create(x=%a) : (!kgen.param<c>) -> !lit.struct<@Bar<:type index>>
-  kgen.return
-}
-
-// -----
-
-lit.struct.decl @Baz {
-  lit.struct.field x : i32
-}
-
-kgen.generator @invalid_field_name(%a: i32) {
-  // expected-error @below {{'lit.struct.create' op the field name "y" at the position #0 did not match the name "x" in the op declaration}}
-  %0 = lit.struct.create(y=%a) : (i32) -> !lit.struct<@Baz>
-  kgen.return
-}
-
-// -----
-
-lit.struct.decl @Bar {
-}
-
-kgen.generator @invalid_num_fields(%a: index) {
-  // expected-error @below {{'lit.struct.create' op expected 0 operands but got 1}}
-  %0 = lit.struct.create(a=%a) : (index) -> !lit.struct<@Bar>
-  kgen.return
-}
-
-// -----
-
 lit.struct.decl @Bar {}
 
 kgen.generator @invalid_field_name(%a: index, %container: !lit.struct<@Bar>) {
@@ -286,14 +251,6 @@ lit.fn @unbound_region() {
     hlcf.yield %arg0 : index
   }) : () -> ()
   kgen.return
-}
-
-// -----
-
-lit.fn @no_struct_decl(%a: index) {
-  // expected-error @below {{expected to find a struct decl for '!lit.struct<@Bar<:type index>>'}}
-  %0 = lit.struct.create(x=%a) : (index) -> !lit.struct<@Bar<:type index>>
-  lit.end_fn
 }
 
 // -----

@@ -286,10 +286,9 @@ lit.struct.decl @foo {
 //===----------------------------------------------------------------------===//
 lit.struct.decl @Error {}
 
-lit.fn @throwing_func() throws -> !kgen.variant<@Error, none> {
-  %1 = lit.struct.create() : () -> !lit.struct<@Error>
+lit.fn @throwing_func(%1: !lit.struct<@Error>) throws -> !kgen.variant<@Error, none> {
   %2 = kgen.variant.create %1, 0 : <@Error, none>
-  // CHECK: kgen.return %1 : !kgen.variant<struct<() memoryOnly>, none>
+  // CHECK: kgen.return %0 : !kgen.variant<struct<() memoryOnly>, none>
   lit.error_return %2 : !kgen.variant<@Error, none>
 }
 

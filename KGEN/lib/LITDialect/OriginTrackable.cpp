@@ -65,7 +65,6 @@ OriginTrackable::OriginTrackable(Value v) {
   }
 
   if (v.getDefiningOp<LoadConsumeOp>() ||
-      v.getDefiningOp<LIT::StructCreateOp>() ||
       v.getDefiningOp<ParamMaterializeOp>()) {
     name = StringAttr::get(v.getContext(), "(anonymous value)");
     isIndirect = false;
@@ -464,7 +463,7 @@ OverallOpValueEffect LIT::getOperationEffects(
 
   // These ops consume their operands, struct.create and param.materialize
   // define a result.
-  if (isa<LIT::StructCreateOp, ParamMaterializeOp>(op)) {
+  if (isa<ParamMaterializeOp>(op)) {
     for (Value o : op.getOperands())
       operands.push_back({o, OperandEffect::regConsume});
     results.push_back(ResultEffect::regDefine);

@@ -592,15 +592,6 @@ LITTypeLowerer::LITTypeLowerer(MLIRContext *ctx, StructDecls &structDecls)
   });
 }
 
-static Value lowerOp(LIT::StructCreateOp op, LIT::StructCreateOpAdaptor adaptor,
-                     LITTypeLowerer &b) {
-  if (b.isSingleElement(op.getType()))
-    return adaptor.getOperands().front();
-  return b.create<KGEN::StructCreateOp>(
-      op.getLoc(), b.replace(op.getType(), TypeDomain::AsType),
-      adaptor.getOperands());
-}
-
 static Value lowerOp(StructInsertOp op, StructInsertOpAdaptor adaptor,
                      LITTypeLowerer &b) {
   LIT::StructType ref = op.getContainer().getType();
@@ -764,10 +755,9 @@ LogicalResult LIT::lowerLITTypes(ModuleOp module,
   // Lower operations first.
   WalkResult result = module.walk([&](Operation *op) -> WalkResult {
     return llvm::TypeSwitch<Operation *, LogicalResult>(op)
-        .Case<LIT::StructCreateOp, StructInsertOp, LIT::StructExtractOp,
-              RefImmutOp, RefToPointerOp, RefFromPointerOp,
-              RefFromPointerREPLOp, RefStructGEROp, RefLoadOp, RefStoreOp,
-              RebindOp, RefPackCreateOp, RefPackExtractOp>(
+        .Case<StructInsertOp, LIT::StructExtractOp, RefImmutOp, RefToPointerOp,
+              RefFromPointerOp, RefFromPointerREPLOp, RefStructGEROp, RefLoadOp,
+              RefStoreOp, RebindOp, RefPackCreateOp, RefPackExtractOp>(
             [&](auto op) { return b.materializeLowering(op); })
         .Default([&](auto op) { return success(); });
   });
