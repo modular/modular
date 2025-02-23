@@ -206,12 +206,6 @@ def WrappedStructExtractAttr : DialectAttribute<(attr
   Type:$type
 )>;
 
-def StructGERAttr : DialectAttribute<(attr
-  TypedAttr:$value,
-  StringAttr:$field,
-  Type:$type
-)>;
-
 def TypeLineageAttr : DialectAttribute<(attr
   Type:$type,
   TypeArray:$inheritedFrom
@@ -259,7 +253,6 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     UnresolvedAliasValueAttr,
     LITStructAttr,
     WrappedStructExtractAttr,
-    StructGERAttr,
     TypeLineageAttr,
     TypeLineageArrayAttr,
     RefPackAttr,

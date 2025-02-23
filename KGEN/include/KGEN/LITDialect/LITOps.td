@@ -1602,7 +1602,6 @@ def LIT_RefStructGEROp : LITOp<"ref.struct.ger", [Pure,
     OpBuilder<(ins "Value":$structBasePtr, "StructFieldOp":$field)>
   ];
 
-  let hasFolder = 1;
   let hasVerifier = 1;
 
   let extraClassDeclaration = [{

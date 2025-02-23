@@ -112,8 +112,6 @@ OpFoldResult RebindOp::fold(FoldAdaptor adaptor) {
       return input;
     return getInput();
   }
-  if (auto ptr = dyn_cast_or_null<SymbolicPointerAttr>(adaptor.getInput()))
-    return SymbolicPointerAttr::get(ptr.getSlot(), getType());
 
   // If the input is a rebindop(x) from some other type then change this op to
   // rebind "x" instead of the result of rebind "x".  Even if the types differ,

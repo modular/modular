@@ -119,7 +119,7 @@ private:
   ErrorTree addStackTrace(ErrorTree err) override;
   Operation *getOrigin(size_t depth) override;
   void resetExecutor() override;
-  void notifyAllocationOnFrame(bool isSymbolic) override;
+  void notifyAllocationOnFrame() override;
   ErrorTreeOr<SmallVector<Attribute>>
   interpretFunction(Region &body, ArrayRef<Attribute> arguments) override;
 

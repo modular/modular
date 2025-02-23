@@ -1457,13 +1457,6 @@ static void printStructGERTypes(AsmPrinter &p, Operation *,
   }
 }
 
-OpFoldResult RefStructGEROp::fold(FoldAdaptor adaptor) {
-  auto value = cast_or_null<TypedAttr>(adaptor.getContainer());
-  if (isa_and_nonnull<StructGERAttr>(value))
-    return StructGERAttr::get(value, getFieldAttr(), getType());
-  return {};
-}
-
 //===----------------------------------------------------------------------===//
 // RefImmutOp
 //===----------------------------------------------------------------------===//

@@ -194,20 +194,13 @@ public:
   /// memory.
   ErrorOr<TypedAttr> readAttributeFromMemory(int64_t addr, Type type);
 
-  /// Allocate a slot of symbolic memory.
-  uint64_t allocateSymbolicMemory(TypedAttr init);
-
   /// Allocate a slot in the symbol table and store the specified symbol.
   uint64_t addSymbolToSymbolTable(TypedAttr symbol);
-
-  /// Lookup a symbolic memory slot.
-  ErrorOr<TypedAttr &> getSymbolicMemory(uint64_t slot);
 
   /// Lookup a symbol in the memory slot.
   ErrorOr<TypedAttr &> getSymbol(uint64_t slot);
 
-  /// Read an attribute value of a given type from either a SymbolicPointerAttr
-  /// or a PointerAttr.
+  /// Read an attribute value of a given type from a PointerAttr.
   ErrorOr<Attribute> readAttributeFromPointer(Attribute pointer,
                                               Type elementType);
 
@@ -400,19 +393,14 @@ private:
   /// This function is called to tell the interpreter executor model that an
   /// allocation is to be made on the current function frame, if there is one.
   /// This allocation needs to be freed when the function exits.
-  virtual void notifyAllocationOnFrame(bool isSymbolic) = 0;
+  virtual void notifyAllocationOnFrame() = 0;
 
 protected:
   /// When the interpreter executor returns from a function, it needs to notify
   /// the memory model how many stack allocations need to get popped.
-  void notifyReturnFromFrame(size_t numStackAllocs, size_t numSymbolicAllocs) {
-    auto popBackCount = [](auto &vec, unsigned num) {
-      vec.erase(vec.end() - num, vec.end());
-    };
-
-    MemoryTable &table = getTable(MemoryKind::Stack);
-    popBackCount(table.blobs, numStackAllocs);
-    popBackCount(symbolicMemory, numSymbolicAllocs);
+  void notifyReturnFromFrame(size_t numStackAllocs) {
+    auto &vec = getTable(MemoryKind::Stack).blobs;
+    vec.erase(vec.end() - numStackAllocs, vec.end());
   }
   virtual void
   addCustomReplacementsToLiftStore(mlir::AttrTypeReplacer &liftStore) {}
@@ -421,9 +409,6 @@ private:
   /// All interpreter memory tables, containing stack, heap, persistent, and
   /// constant global memory.
   MemoryTable memory[4];
-
-  /// Symbolic memory allocated on the stack frame.
-  SmallVector<TypedAttr, 0> symbolicMemory;
 
   /// A structure to store values with no runtime representation.
   SmallVector<TypedAttr, 0> symbols;
@@ -512,14 +497,9 @@ private:
     stack.clear();
   }
 
-  void notifyAllocationOnFrame(bool isSymbolic) override {
-    if (!stack.empty()) {
-      StackFrame &frame = getCurrentFrame();
-      if (isSymbolic)
-        ++frame.numSymbolicAllocs;
-      else
-        ++frame.numStackAllocs;
-    }
+  void notifyAllocationOnFrame() override {
+    if (!stack.empty())
+      ++getCurrentFrame().numStackAllocs;
   }
 
   ErrorTreeOr<SmallVector<Attribute>>
@@ -540,9 +520,6 @@ private:
     /// The number of memory blobs allocated on the stack. This many blobs
     /// are popped off stack memory when the function returns.
     size_t numStackAllocs;
-    /// The number of symbolic slots allocated on the stack. This many slots are
-    /// popped off when the function returns.
-    size_t numSymbolicAllocs;
     /// The map of SSA values to constant values in the current frame.
     DenseMap<Value, Attribute> values;
   };
@@ -559,14 +536,13 @@ private:
     frame.origin = origin;
     frame.func = func;
     frame.numStackAllocs = 0;
-    frame.numSymbolicAllocs = 0;
   }
 
   /// Pop the current stack frame, returning the origin operation.
   Operation *popFrame() {
     // Drop all stack memory on the current frame.
     StackFrame &frame = getCurrentFrame();
-    notifyReturnFromFrame(frame.numStackAllocs, frame.numSymbolicAllocs);
+    notifyReturnFromFrame(frame.numStackAllocs);
 
     Operation *origin = frame.origin;
     stack.pop();
