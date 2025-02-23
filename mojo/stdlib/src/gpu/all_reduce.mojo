@@ -11,7 +11,14 @@ from memory.pointer import _GPUAddressSpace
 from sys import simdwidthof
 
 from buffer import NDBuffer
-from gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
+from gpu import (
+    barrier,
+    block_dim,
+    block_idx,
+    grid_dim,
+    thread_idx,
+    MAX_THREADS_PER_BLOCK_METADATA,
+)
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.intrinsics import (
     load_acquire,
@@ -301,8 +308,11 @@ fn multi_gpu_barrier[
         barrier()
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
+)
 fn allreduce_2stage_kernel[
-    type: DType, rank: Int, ngpus: Int
+    type: DType, rank: Int, ngpus: Int, *, BLOCK_SIZE: Int
 ](
     result: UnsafePointer[Scalar[type]],
     src_ptrs: InlineArray[UnsafePointer[Scalar[type]], ngpus],
@@ -321,7 +331,7 @@ fn allreduce_2stage_kernel[
             Note that `rank` is overloaded here to mean both device id and
             number of dimensions.
         ngpus: Number of GPUs participating.
-
+        BLOCK_SIZE: Number of threads per block.
     Arguments:
         result: Output buffer for reduced values.
         src_ptrs: Input buffers from all GPUs.
@@ -340,7 +350,7 @@ fn allreduce_2stage_kernel[
     var global_tid = global_idx.x
 
     # Stride equals total threads in grid dimension for grid-strided loops.
-    var stride = grid_dim.x * block_dim.x
+    var stride = grid_dim.x * BLOCK_SIZE
     var my_sig: UnsafePointer[Signal] = rank_sigs[my_rank]
 
     # --- Data Partitioning ---
@@ -441,8 +451,11 @@ fn allreduce_2stage_kernel[
                 )
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
+)
 fn allreduce_1stage_kernel[
-    type: DType, rank: Int, ngpus: Int
+    type: DType, rank: Int, ngpus: Int, *, BLOCK_SIZE: Int
 ](
     result: UnsafePointer[Scalar[type]],
     src_ptrs: InlineArray[UnsafePointer[Scalar[type]], ngpus],
@@ -457,6 +470,7 @@ fn allreduce_1stage_kernel[
         type: Data type of tensor elements.
         rank: Number of dimensions in tensors.
         ngpus: Number of GPUs participating.
+        BLOCK_SIZE: Number of threads per block.
 
     Arguments:
         result: Output buffer for reduced values
@@ -473,7 +487,7 @@ fn allreduce_1stage_kernel[
     alias alignment = alignof[SIMD[type, simd_width]]()
 
     var global_tid = global_idx.x
-    var stride = grid_dim.x * block_dim.x
+    var stride = grid_dim.x * BLOCK_SIZE
     var my_sig: UnsafePointer[Signal] = rank_sigs[my_rank]
     var num_simd_vectors = num_elements // simd_width
 
@@ -516,9 +530,7 @@ fn allreduce_1stage_kernel[
 
 @always_inline
 fn all_reduce_p2p[
-    type: DType,
-    rank: Int,
-    ngpus: Int, //,
+    type: DType, rank: Int, ngpus: Int, //
 ](
     ctxs: List[DeviceContext],
     list_of_in_bufs: InlineArray[NDBuffer[type, rank], ngpus],
@@ -573,7 +585,9 @@ fn all_reduce_p2p[
         ):
             # Use the 1-stage allreduce when transfer is latency bound.
             curr_ctx.enqueue_function[
-                allreduce_1stage_kernel[type, rank, ngpus]
+                allreduce_1stage_kernel[
+                    type, rank, ngpus, BLOCK_SIZE=BLOCK_SIZE
+                ]
             ](
                 curr_out_buf.data,
                 list_of_in_ptrs,
@@ -586,7 +600,9 @@ fn all_reduce_p2p[
         else:
             # Otherwise, use 2-stage allreduce for the bandwidth bound regime.
             curr_ctx.enqueue_function[
-                allreduce_2stage_kernel[type, rank, ngpus]
+                allreduce_2stage_kernel[
+                    type, rank, ngpus, BLOCK_SIZE=BLOCK_SIZE
+                ]
             ](
                 curr_out_buf.data,
                 list_of_in_ptrs,
