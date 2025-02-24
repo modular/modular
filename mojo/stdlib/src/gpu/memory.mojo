@@ -16,6 +16,7 @@ from memory import UnsafePointer
 from memory.pointer import AddressSpace as _AddressSpace
 from memory.pointer import _GPUAddressSpace
 from memory.unsafe import bitcast
+from utils.numerics import get_accum_type
 
 from utils import IndexList, StaticTuple
 from .intrinsics import Scope
@@ -988,8 +989,8 @@ fn _get_multimem_ld_reduce_asm[
     reduction: ReduceOp,
     scope: Scope,
     consistency: Consistency,
-    acc_type: DType = type,
-    output_width: Int = 1,
+    accum_type: DType,
+    output_width: Int,
 ]() -> StringLiteral:
     constrained[_is_sm_9x(), "multimem is only supported on SM90+ GPUs"]()
     constrained[type.is_floating_point(), "type must be floating point"]()
@@ -1009,10 +1010,10 @@ fn _get_multimem_ld_reduce_asm[
     alias type_mnemonic = "." + _get_type_mnemonic[type]() + (
         "x" + _int_to_str[output_width]() if output_width > 1 else ""
     )
-    alias acc_type_mnemonic = (
-        ".acc::" + _get_type_mnemonic[acc_type]()
-    ) if acc_type is not type else ""
-    alias asm = "multimem.ld_reduce." + consistency.mnemonic() + "." + scope.mnemonic() + ss + op + acc_type_mnemonic + vec + type_mnemonic
+    alias accum = (
+        ".acc::" + _get_type_mnemonic[accum_type]()
+    ) if accum_type is not type else ""
+    alias asm = "multimem.ld_reduce." + consistency.mnemonic() + "." + scope.mnemonic() + ss + op + accum + vec + type_mnemonic
 
     return asm
 
@@ -1025,11 +1026,11 @@ fn multimem_ld_reduce[
     reduction: ReduceOp,
     scope: Scope,
     consistency: Consistency,
-    acc_type: DType = type,
+    accum_type: DType = get_accum_type[type](),
     output_width: Int = 1,
 ](
     addr: UnsafePointer[Scalar[type], address_space = AddressSpace.GLOBAL],
-) -> StaticTuple[SIMD[acc_type, output_width], count]:
+) -> StaticTuple[SIMD[accum_type, output_width], count]:
     constrained[count in (2, 4), "count must be 2 or 4"]()
 
     alias asm = _get_multimem_ld_reduce_asm[
@@ -1038,7 +1039,7 @@ fn multimem_ld_reduce[
         reduction=reduction,
         scope=scope,
         consistency=consistency,
-        acc_type=acc_type,
+        accum_type=accum_type,
         output_width=output_width,
     ]()
 
@@ -1047,32 +1048,32 @@ fn multimem_ld_reduce[
         var r = inlined_assembly[
             asm + " {$0,$1}, [$2];",
             _RegisterPackType[
-                SIMD[acc_type, output_width], SIMD[acc_type, output_width]
+                SIMD[accum_type, output_width], SIMD[accum_type, output_width]
             ],
             constraints="=r,=r,l,~{memory}",
             has_side_effect=True,
         ](addr.bitcast[NoneType]())
-        return StaticTuple[SIMD[acc_type, output_width], count](r[0], r[1])
+        return StaticTuple[SIMD[accum_type, output_width], count](r[0], r[1])
 
     @parameter
     if count == 4:
         var r = inlined_assembly[
             asm + " {$0,$1,$2,$3}, [$4];",
             _RegisterPackType[
-                SIMD[acc_type, output_width],
-                SIMD[acc_type, output_width],
-                SIMD[acc_type, output_width],
-                SIMD[acc_type, output_width],
+                SIMD[accum_type, output_width],
+                SIMD[accum_type, output_width],
+                SIMD[accum_type, output_width],
+                SIMD[accum_type, output_width],
             ],
             constraints="=r,=r,=r,=r,l,~{memory}",
             has_side_effect=True,
         ](addr.bitcast[NoneType]())
 
-        return StaticTuple[SIMD[acc_type, output_width], count](
+        return StaticTuple[SIMD[accum_type, output_width], count](
             r[0], r[1], r[2], r[3]
         )
 
-    return StaticTuple[SIMD[acc_type, output_width], count]()
+    return StaticTuple[SIMD[accum_type, output_width], count]()
 
 
 @always_inline("nodebug")
