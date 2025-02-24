@@ -678,12 +678,17 @@ fn load_volatile[
     ](ptr.address_space_cast[AddressSpace.GENERIC]())
 
 
+alias _buffer_resource = SIMD[DType.uint32, 4]
+"""A 128-bit descriptor used to describe a buffer resource on AMD GPUs. Used for buffer_load/buffer_store instructions."""
+
+
 @always_inline
 fn make_buffer_resource[
     type: DType
-](gds_ptr: UnsafePointer[Scalar[type]], num_records: Int = 0xFFFFFFFF) -> SIMD[
-    DType.uint32, 4
-]:
+](
+    gds_ptr: UnsafePointer[Scalar[type], **_],
+    num_records: Int = Int(UInt32.MAX),
+) -> _buffer_resource:
     """Creates a 128-bit buffer constant for buffer IO.
 
     This function is used to create a 128-bit buffer constant struct for buffer IO
@@ -693,7 +698,7 @@ fn make_buffer_resource[
 
     Arg:
         gds_ptr: Global memory base address.
-        num_records: Reads with gds_offset > num_records return 0. Defaults to the maximum number of elements 0xffffffff.
+        num_records: Reads with gds_offset > num_records return 0. Defaults to the maximum number of elements UInt32.MAX.
 
     """
 
@@ -740,7 +745,7 @@ fn _waitcnt():
 fn _raw_buffer_load_lds[
     type: DType
 ](
-    rsrc: SIMD[DType.uint32, 4],
+    rsrc: _buffer_resource,
     lds_ptr: UnsafePointer[Scalar[type], address_space = AddressSpace.SHARED],
     size: Int32,
     voffset: Int32,
@@ -764,7 +769,7 @@ fn _raw_buffer_load_lds[
 fn _buffer_load_store_lds_nowait[
     type: DType
 ](
-    src_resource: SIMD[DType.uint32, 4],
+    src_resource: _buffer_resource,
     gds_offset: Int32,
     lds_ptr_base: UnsafePointer[
         Scalar[type], address_space = AddressSpace.SHARED
@@ -817,7 +822,7 @@ fn _buffer_load_store_lds_nowait[
 fn buffer_load_store_lds[
     type: DType
 ](
-    src_resource: SIMD[DType.uint32, 4],
+    src_resource: _buffer_resource,
     gds_offset: Int32,
     lds_ptr_base: UnsafePointer[
         Scalar[type], address_space = AddressSpace.SHARED
@@ -862,7 +867,7 @@ fn buffer_load_store_lds[
 @always_inline
 fn buffer_load[
     type: DType, width: Int
-](src_resource: SIMD[DType.uint32, 4], gds_offset: Int32,) -> SIMD[type, width]:
+](src_resource: _buffer_resource, gds_offset: Int32) -> SIMD[type, width]:
     """Loads a register variable from global memory.
 
     This function is used to copy from global memory to register.
@@ -918,11 +923,7 @@ fn buffer_load[
 @always_inline
 fn buffer_store[
     type: DType, width: Int
-](
-    src_resource: SIMD[DType.uint32, 4],
-    gds_offset: Int32,
-    val: SIMD[type, width],
-):
+](src_resource: _buffer_resource, gds_offset: Int32, val: SIMD[type, width],):
     """Stores  a register variable to global memory.
 
     This function is used to write to global memory from a register.
