@@ -6,7 +6,7 @@
 
 import random
 from collections import defaultdict
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 import pytest
@@ -420,9 +420,9 @@ async def test_prefix_caching_with_page_size_gt_1_and_num_steps_gt_1() -> None:
 class FakeModel:
     """Create a fake model that can be used to test prefix caching."""
 
-    def __init__(self, page_size: int, total_num_pages: int):
-        self.page_size = page_size
-        self.total_num_pages = total_num_pages
+    def __init__(self, kv_manager: PagedKVCacheManager):
+        self.page_size = kv_manager.page_size
+        self.total_num_pages = kv_manager.total_num_pages
         # block_projections maps from block_id -> offset -> prefix tokens
         self.block_projections: dict[int, dict[int, np.ndarray]] = defaultdict(
             lambda: defaultdict(lambda: np.array([]))
@@ -430,6 +430,9 @@ class FakeModel:
         self.seq_ids_and_all_tokens: dict[int, np.ndarray] = defaultdict(
             lambda: np.array([])
         )
+        # Monkey patch the cow_strided_memcpy_graph to use our mock graph so that
+        # when COW occurs, we can update the block_projections object.
+        kv_manager.cow_strided_memcpy_graph = self.mock_cow_graph()
 
     def run(
         self,
@@ -506,6 +509,31 @@ class FakeModel:
 
         return seq_ids_and_new_tokens
 
+    def mock_cow_graph(self) -> Any:
+        class MockGraph:
+            def __init__(
+                self,
+                block_projections: dict[int, dict[int, np.ndarray]],
+                page_size: int,
+            ):
+                self.block_projections = block_projections
+                self.page_size = page_size
+
+            def execute(
+                self, block_dst: int, block_src: int, num_tokens: int, *_
+            ) -> None:
+                # when the kv_manager attempts to execute the cow strided memcpy
+                # graph, we intercept the call and update the block_projections
+                # object instead.
+                assert block_src in self.block_projections
+                assert 0 < num_tokens < self.page_size
+                for token in range(num_tokens):
+                    self.block_projections[block_dst][token] = (
+                        self.block_projections[block_src][token]
+                    )
+
+        return MockGraph(self.block_projections, self.page_size)
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
@@ -532,7 +560,7 @@ async def test_prefix_caching_grouped_prefixes(
 
     # evictions will not happen since we allocate so many blocks
     kv_manager = create_paged_manager(num_blocks=10000, page_size=page_size)
-    model = FakeModel(page_size, kv_manager.total_num_pages)
+    model = FakeModel(kv_manager)
 
     # generate a number of grouped prefixes:
     shared_prefix = gen_prompt(shared_prefix_len)
@@ -607,10 +635,34 @@ async def test_prefix_caching_grouped_prefixes(
         kv_manager.release(seq_id)
 
 
+def run_forward(
+    model: FakeModel,
+    kv_manager: PagedKVCacheManager,
+    seq_id: int,
+    prompt: np.ndarray,
+    next_tok: int,
+    run_fetch: bool = True,
+    run_step: bool = True,
+) -> None:
+    seq_ids_and_prompts = {seq_id: prompt}
+    orig_seq_ids_and_prompts = seq_ids_and_prompts.copy()
+    new_toks = {seq_id: np.array([next_tok])}
+    if run_fetch:
+        fetch_kv_tuple = kv_manager.fetch(seq_ids_and_prompts, num_steps=1)
+        _ = model.run(
+            orig_seq_ids_and_prompts,
+            fetch_kv_tuple,
+            num_steps=1,
+            seq_ids_and_new_tokens=new_toks,
+        )
+    if run_step:
+        kv_manager.step(new_toks)
+
+
 @pytest.mark.asyncio
 async def test_prefix_caching_chunked_prefill() -> None:
     kv_manager = create_paged_manager(num_blocks=128, page_size=3)
-    model = FakeModel(kv_manager.page_size, kv_manager.total_num_pages)
+    model = FakeModel(kv_manager)
     assert kv_manager.radix_trie is not None
 
     seq_id_1 = 1
@@ -623,22 +675,13 @@ async def test_prefix_caching_chunked_prefill() -> None:
     prompt_2_part_1 = np.array([10, 11, 12, 13, 14, 15, 16, 17])
     prompt_2_part_2 = np.array([16, 17, 18, 998, 999])
 
-    def run_forward(seq_id: int, prompt: np.ndarray, next_tok: int) -> None:
-        seq_ids_and_prompts = {seq_id: prompt}
-        orig_seq_ids_and_prompts = seq_ids_and_prompts.copy()
-        fetch_kv_tuple = kv_manager.fetch(seq_ids_and_prompts, num_steps=1)
-        new_toks = {seq_id: np.array([next_tok])}
-        _ = model.run(
-            orig_seq_ids_and_prompts,
-            fetch_kv_tuple,
-            num_steps=1,
-            seq_ids_and_new_tokens=new_toks,
-        )
-        kv_manager.step(new_toks)
-
-    run_forward(seq_id_1, prompt_1_part_1, prompt_1_part_2[0])
-    run_forward(seq_id_2, prompt_2_part_1, prompt_2_part_2[0])
-    run_forward(seq_id_1, prompt_1_part_2, FAKE_TOKEN)
+    run_forward(
+        model, kv_manager, seq_id_1, prompt_1_part_1, prompt_1_part_2[0]
+    )
+    run_forward(
+        model, kv_manager, seq_id_2, prompt_2_part_1, prompt_2_part_2[0]
+    )
+    run_forward(model, kv_manager, seq_id_1, prompt_1_part_2, FAKE_TOKEN)
 
     assert kv_manager.radix_trie.pretty_format(print_blocks=True) == [
         "[10, 11, 12, 13, 14, 15] : [0, 1]",
@@ -649,16 +692,41 @@ async def test_prefix_caching_chunked_prefill() -> None:
     # projection differs.
     # block 2 holds projections for [..., 16, 17, 18]
     # seq_id_2 needs projections for [..., 16, 17, 16]
-    run_forward(seq_id_2, prompt_2_part_2, FAKE_TOKEN)
+    run_forward(model, kv_manager, seq_id_2, prompt_2_part_2, FAKE_TOKEN)
     metadata = kv_manager.active_requests[seq_id_2]
     assert 2 not in metadata.blocks
-    assert 3 in metadata.blocks
 
-    assert kv_manager.radix_trie.pretty_format(print_blocks=True) == [
-        "[10, 11, 12, 13, 14, 15] : [0, 1]",
-        "--[16, 17, 18, 19, 20, 21] : [2, 4]",
-        "--[16, 17, 16, 17, 18, 998] : [3, 6]",
+    assert kv_manager.radix_trie.pretty_format() == [
+        "[10, 11, 12, 13, 14, 15]",
+        "--[16, 17, 18, 19, 20, 21]",
+        "--[16, 17, 16, 17, 18, 998]",
     ]
 
     assert kv_manager.ce_cache_hit_tokens == 6
     assert kv_manager.cache_hit_rate() > 0.2
+
+
+@pytest.mark.asyncio
+async def test_prefix_caching_cow() -> None:
+    kv_manager = create_paged_manager(num_blocks=128, page_size=3)
+    model = FakeModel(kv_manager)
+    assert kv_manager.radix_trie is not None
+
+    seq_id_1 = 1
+    seq_id_2 = 2
+    kv_manager.external_claim([seq_id_1, seq_id_2])
+
+    prompt_1 = np.array([10, 11, 12, 13, 14, 15, 16, 17])
+    run_forward(model, kv_manager, seq_id_1, prompt_1, FAKE_TOKEN)
+    prompt_2 = np.array([10, 11, 12, 13, 14, 25])
+    run_forward(
+        model,
+        kv_manager,
+        seq_id_2,
+        prompt_2,
+        FAKE_TOKEN,
+        run_fetch=True,
+        run_step=False,
+    )
+    assert kv_manager.active_requests[seq_id_2].cached_idx == 5
+    assert kv_manager.cow_count == 1
