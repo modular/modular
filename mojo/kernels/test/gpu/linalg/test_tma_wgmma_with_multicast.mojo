@@ -28,7 +28,7 @@ from layout._utils import ManagedLayoutTensor
 from layout.fillers import arange
 from layout.layout import print_layout
 from layout.layout_tensor import copy_local_to_dram
-from layout.tensor_core import get_accum_type
+from utils.numerics import get_accum_type
 from layout.tensor_core_async import (
     TensorCoreAsync,
     _lhs_descriptor,

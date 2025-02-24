@@ -16,12 +16,13 @@ from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import ContiguousKVCache, KVCacheStaticParams
-from layout.tensor_core import get_accum_type, get_mma_shape
+from layout.tensor_core import get_mma_shape
 from memory import UnsafePointer
 from nn.mha import MHAConfig, flash_attention, mha_gpu_naive
 from nn.mha_mask import NullMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal, assert_equal
+from utils.numerics import get_accum_type
 
 from utils import IndexList
 from utils.index import Index

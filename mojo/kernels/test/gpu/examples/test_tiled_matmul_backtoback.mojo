@@ -50,7 +50,6 @@ from layout.swizzle import make_swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import (
     TensorCore,
-    get_accum_type,
     get_fragment_size,
     get_mma_shape,
 )
@@ -58,6 +57,7 @@ from linalg._multistage_gemm_gpu import multistage_mma
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, block_swizzle
 from testing import assert_almost_equal, assert_false
+from utils.numerics import get_accum_type
 
 from utils import StaticTuple
 from utils.index import Index, IndexList

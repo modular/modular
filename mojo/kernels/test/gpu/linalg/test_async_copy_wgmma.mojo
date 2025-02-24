@@ -27,7 +27,7 @@ from layout.layout_tensor import (
     cp_async_k_major,
     cp_async_mn_major,
 )
-from layout.tensor_core import get_accum_type
+from utils.numerics import get_accum_type
 from layout.tensor_core_async import (
     TensorCoreAsync,
     tile_layout_k_major,

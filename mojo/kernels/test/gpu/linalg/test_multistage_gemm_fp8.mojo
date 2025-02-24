@@ -54,12 +54,8 @@ from layout.layout_tensor import (
 from layout.nd_buffer_stub import from_ndbuffer_row_major
 from layout.swizzle import Swizzle, make_swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
-from layout.tensor_core import (
-    TensorCore,
-    get_accum_type,
-    get_fragment_size,
-    get_mma_shape,
-)
+from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
+from utils.numerics import get_accum_type
 from linalg._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.utils_gpu import (
     MatmulConfig,
