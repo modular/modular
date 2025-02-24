@@ -12,16 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the IntLiteral class."""
 
-from math import Ceilable, CeilDivable, Floorable, Truncable
+from math import Ceilable, Floorable, Truncable
 
 
 @value
 @nonmaterializable(Int)
 @register_passable("trivial")
-struct IntLiteral(
+struct IntLiteral[value: __mlir_type.`!kgen.int_literal`](
     Ceilable,
-    CeilDivable,
-    Comparable,
     Floorable,
     ImplicitlyBoolable,
     ImplicitlyIntable,
@@ -30,21 +28,25 @@ struct IntLiteral(
     Truncable,
 ):
     """This type represents a static integer literal value with
-    infinite precision.  They can't be materialized at runtime and
-    must be lowered to other integer types (like Int), but allow for
-    compile-time operations that would overflow on Int and other fixed
+    infinite precision.  This type is a compile-time construct which stores its
+    value as a parameter.  It is typically materialized into other types (like
+    `Int`) for use at runtime.  This compile-time representation allows for
+    arbitrary precision constants that would overflow on Int and other fixed
     precision integer types.
+
+    Parameters:
+        value: The underlying integer value.
     """
 
     # Fields
     alias _mlir_type = __mlir_type.`!kgen.int_literal`
 
-    var value: Self._mlir_type
-    """The underlying storage for the integer value."""
-
-    alias _one = IntLiteral(
+    alias _zero = IntLiteral[
+        __mlir_attr.`#kgen.int_literal<0> : !kgen.int_literal`
+    ]()
+    alias _one = IntLiteral[
         __mlir_attr.`#kgen.int_literal<1> : !kgen.int_literal`
-    )
+    ]()
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -52,26 +54,15 @@ struct IntLiteral(
 
     @always_inline("builtin")
     fn __init__(out self):
-        """Default constructor."""
-        self.value = __mlir_attr.`#kgen.int_literal<0> : !kgen.int_literal`
-
-    @doc_private
-    @always_inline("builtin")
-    @implicit
-    fn __init__(out self, value: __mlir_type.`!kgen.int_literal`):
-        """Construct IntLiteral from the given mlir !kgen.int_literal value.
-
-        Args:
-            value: The init value.
-        """
-        self.value = value
+        """Constructor for any value."""
+        pass
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
     @always_inline("builtin")
-    fn __lt__(self, rhs: Self) -> Bool:
+    fn __lt__(self, rhs: IntLiteral[_]) -> Bool:
         """Compare this IntLiteral to the RHS using LT comparison.
 
         Args:
@@ -80,12 +71,16 @@ struct IntLiteral(
         Returns:
             True if this IntLiteral is less-than the RHS IntLiteral and False otherwise.
         """
-        return __mlir_op.`kgen.int_literal.cmp`[
-            pred = __mlir_attr.`#kgen<int_literal.cmp_pred lt>`
-        ](self.value, rhs.value)
+        return __mlir_attr[
+            `#kgen<int_literal_cmp<lt `,
+            self.value,
+            `,`,
+            rhs.value,
+            `>> : !kgen.int_literal`,
+        ]
 
     @always_inline("builtin")
-    fn __le__(self, rhs: Self) -> Bool:
+    fn __le__(self, rhs: IntLiteral[_]) -> Bool:
         """Compare this IntLiteral to the RHS using LE comparison.
 
         Args:
@@ -95,12 +90,16 @@ struct IntLiteral(
             True if this IntLiteral is less-or-equal than the RHS IntLiteral and False
             otherwise.
         """
-        return __mlir_op.`kgen.int_literal.cmp`[
-            pred = __mlir_attr.`#kgen<int_literal.cmp_pred le>`
-        ](self.value, rhs.value)
+        return __mlir_attr[
+            `#kgen<int_literal_cmp<le `,
+            self.value,
+            `,`,
+            rhs.value,
+            `>> : !kgen.int_literal`,
+        ]
 
     @always_inline("builtin")
-    fn __eq__(self, rhs: Self) -> Bool:
+    fn __eq__(self, rhs: IntLiteral[_]) -> Bool:
         """Compare this IntLiteral to the RHS using EQ comparison.
 
         Args:
@@ -109,12 +108,16 @@ struct IntLiteral(
         Returns:
             True if this IntLiteral is equal to the RHS IntLiteral and False otherwise.
         """
-        return __mlir_op.`kgen.int_literal.cmp`[
-            pred = __mlir_attr.`#kgen<int_literal.cmp_pred eq>`
-        ](self.value, rhs.value)
+        return __mlir_attr[
+            `#kgen<int_literal_cmp<eq `,
+            self.value,
+            `,`,
+            rhs.value,
+            `>> : !kgen.int_literal`,
+        ]
 
     @always_inline("builtin")
-    fn __ne__(self, rhs: Self) -> Bool:
+    fn __ne__(self, rhs: IntLiteral[_]) -> Bool:
         """Compare this IntLiteral to the RHS using NE comparison.
 
         Args:
@@ -123,12 +126,16 @@ struct IntLiteral(
         Returns:
             True if this IntLiteral is non-equal to the RHS IntLiteral and False otherwise.
         """
-        return __mlir_op.`kgen.int_literal.cmp`[
-            pred = __mlir_attr.`#kgen<int_literal.cmp_pred ne>`
-        ](self.value, rhs.value)
+        return __mlir_attr[
+            `#kgen<int_literal_cmp<ne `,
+            self.value,
+            `,`,
+            rhs.value,
+            `>> : !kgen.int_literal`,
+        ]
 
     @always_inline("builtin")
-    fn __gt__(self, rhs: Self) -> Bool:
+    fn __gt__(self, rhs: IntLiteral[_]) -> Bool:
         """Compare this IntLiteral to the RHS using GT comparison.
 
         Args:
@@ -137,12 +144,16 @@ struct IntLiteral(
         Returns:
             True if this IntLiteral is greater-than the RHS IntLiteral and False otherwise.
         """
-        return __mlir_op.`kgen.int_literal.cmp`[
-            pred = __mlir_attr.`#kgen<int_literal.cmp_pred gt>`
-        ](self.value, rhs.value)
+        return __mlir_attr[
+            `#kgen<int_literal_cmp<gt `,
+            self.value,
+            `,`,
+            rhs.value,
+            `>> : !kgen.int_literal`,
+        ]
 
     @always_inline("builtin")
-    fn __ge__(self, rhs: Self) -> Bool:
+    fn __ge__(self, rhs: IntLiteral[_]) -> Bool:
         """Compare this IntLiteral to the RHS using GE comparison.
 
         Args:
@@ -152,9 +163,13 @@ struct IntLiteral(
             True if this IntLiteral is greater-or-equal than the RHS IntLiteral and False
             otherwise.
         """
-        return __mlir_op.`kgen.int_literal.cmp`[
-            pred = __mlir_attr.`#kgen<int_literal.cmp_pred ge>`
-        ](self.value, rhs.value)
+        return __mlir_attr[
+            `#kgen<int_literal_cmp<ge `,
+            self.value,
+            `,`,
+            rhs.value,
+            `>> : !kgen.int_literal`,
+        ]
 
     @always_inline("builtin")
     fn __pos__(self) -> Self:
@@ -166,25 +181,37 @@ struct IntLiteral(
         return self
 
     @always_inline("builtin")
-    fn __neg__(self) -> Self:
+    fn __neg__(self) -> __type_of(Self._zero - self):
         """Return -self.
 
         Returns:
             The -self value.
         """
-        return Self() - self
+        return Self._zero - self
 
     @always_inline("builtin")
-    fn __invert__(self) -> Self:
+    fn __invert__(self, out result: __type_of(self ^ (Self._zero - Self._one))):
         """Return ~self.
 
         Returns:
             The ~self value.
         """
-        return self ^ (Self() - Self._one)
+        result = __type_of(result)()
 
     @always_inline("builtin")
-    fn __add__(self, rhs: Self) -> Self:
+    fn __add__(
+        self,
+        rhs: IntLiteral[_],
+        out result: IntLiteral[
+            __mlir_attr[
+                `#kgen<int_literal_bin<add `,
+                self.value,
+                `,`,
+                rhs.value,
+                `>> : !kgen.int_literal`,
+            ]
+        ],
+    ):
         """Return `self + rhs`.
 
         Args:
@@ -193,14 +220,22 @@ struct IntLiteral(
         Returns:
             `self + rhs` value.
         """
-        return Self(
-            __mlir_op.`kgen.int_literal.binop`[
-                oper = __mlir_attr.`#kgen<int_literal.binop_kind add>`
-            ](self.value, rhs.value)
-        )
+        result = __type_of(result)()
 
     @always_inline("builtin")
-    fn __sub__(self, rhs: Self) -> Self:
+    fn __sub__(
+        self,
+        rhs: IntLiteral[_],
+        out result: IntLiteral[
+            __mlir_attr[
+                `#kgen<int_literal_bin<sub `,
+                self.value,
+                `,`,
+                rhs.value,
+                `>> : !kgen.int_literal`,
+            ]
+        ],
+    ):
         """Return `self - rhs`.
 
         Args:
@@ -209,14 +244,22 @@ struct IntLiteral(
         Returns:
             `self - rhs` value.
         """
-        return Self(
-            __mlir_op.`kgen.int_literal.binop`[
-                oper = __mlir_attr.`#kgen<int_literal.binop_kind sub>`
-            ](self.value, rhs.value)
-        )
+        result = __type_of(result)()
 
     @always_inline("builtin")
-    fn __mul__(self, rhs: Self) -> Self:
+    fn __mul__(
+        self,
+        rhs: IntLiteral[_],
+        out result: IntLiteral[
+            __mlir_attr[
+                `#kgen<int_literal_bin<mul `,
+                self.value,
+                `,`,
+                rhs.value,
+                `>> : !kgen.int_literal`,
+            ]
+        ],
+    ):
         """Return `self * rhs`.
 
         Args:
@@ -225,16 +268,24 @@ struct IntLiteral(
         Returns:
             `self * rhs` value.
         """
-        return Self(
-            __mlir_op.`kgen.int_literal.binop`[
-                oper = __mlir_attr.`#kgen<int_literal.binop_kind mul>`
-            ](self.value, rhs.value)
-        )
+        result = __type_of(result)()
 
     # TODO: implement __pow__
 
     @always_inline("builtin")
-    fn __floordiv__(self, rhs: Self) -> Self:
+    fn __floordiv__(
+        self,
+        rhs: IntLiteral[_],
+        out result: IntLiteral[
+            __mlir_attr[
+                `#kgen<int_literal_bin<floordiv `,
+                self.value,
+                `,`,
+                rhs.value,
+                `>> : !kgen.int_literal`,
+            ]
+        ],
+    ):
         """Return `self // rhs`.
 
         Args:
@@ -243,15 +294,22 @@ struct IntLiteral(
         Returns:
             `self // rhs` value.
         """
-        # This handles the case where rhs is 0.
-        return Self(
-            __mlir_op.`kgen.int_literal.binop`[
-                oper = __mlir_attr.`#kgen<int_literal.binop_kind floordiv>`
-            ](self.value, rhs.value)
-        )
+        result = __type_of(result)()
 
     @always_inline("builtin")
-    fn __mod__(self, rhs: Self) -> Self:
+    fn __mod__(
+        self,
+        rhs: IntLiteral[_],
+        out result: IntLiteral[
+            __mlir_attr[
+                `#kgen<int_literal_bin<mod `,
+                self.value,
+                `,`,
+                rhs.value,
+                `>> : !kgen.int_literal`,
+            ]
+        ],
+    ):
         """Return the remainder of self divided by rhs.
 
         Args:
@@ -260,15 +318,22 @@ struct IntLiteral(
         Returns:
             The remainder of dividing self by rhs.
         """
-        # This handles the case where rhs is 0.
-        return Self(
-            __mlir_op.`kgen.int_literal.binop`[
-                oper = __mlir_attr.`#kgen<int_literal.binop_kind mod>`
-            ](self.value, rhs.value)
-        )
+        result = __type_of(result)()
 
     @always_inline("builtin")
-    fn __lshift__(self, rhs: Self) -> Self:
+    fn __lshift__(
+        self,
+        rhs: IntLiteral[_],
+        out result: IntLiteral[
+            __mlir_attr[
+                `#kgen<int_literal_bin<lshift `,
+                self.value,
+                `,`,
+                rhs.value,
+                `>> : !kgen.int_literal`,
+            ]
+        ],
+    ):
         """Return `self << rhs`.
 
         Args:
@@ -277,15 +342,22 @@ struct IntLiteral(
         Returns:
             `self << rhs`.
         """
-        # This handles the case where rhs is 0.
-        return Self(
-            __mlir_op.`kgen.int_literal.binop`[
-                oper = __mlir_attr.`#kgen<int_literal.binop_kind lshift>`
-            ](self.value, rhs.value)
-        )
+        result = __type_of(result)()
 
     @always_inline("builtin")
-    fn __rshift__(self, rhs: Self) -> Self:
+    fn __rshift__(
+        self,
+        rhs: IntLiteral[_],
+        out result: IntLiteral[
+            __mlir_attr[
+                `#kgen<int_literal_bin<rshift `,
+                self.value,
+                `,`,
+                rhs.value,
+                `>> : !kgen.int_literal`,
+            ]
+        ],
+    ):
         """Return `self >> rhs`.
 
         Args:
@@ -294,15 +366,22 @@ struct IntLiteral(
         Returns:
             `self >> rhs`.
         """
-        # This handles the case where rhs is 0.
-        return Self(
-            __mlir_op.`kgen.int_literal.binop`[
-                oper = __mlir_attr.`#kgen<int_literal.binop_kind rshift>`
-            ](self.value, rhs.value)
-        )
+        result = __type_of(result)()
 
     @always_inline("builtin")
-    fn __and__(self, rhs: Self) -> Self:
+    fn __and__(
+        self,
+        rhs: IntLiteral[_],
+        out result: IntLiteral[
+            __mlir_attr[
+                `#kgen<int_literal_bin<and `,
+                self.value,
+                `,`,
+                rhs.value,
+                `>> : !kgen.int_literal`,
+            ]
+        ],
+    ):
         """Return `self & rhs`.
 
         Args:
@@ -311,14 +390,22 @@ struct IntLiteral(
         Returns:
             `self & rhs`.
         """
-        return Self(
-            __mlir_op.`kgen.int_literal.binop`[
-                oper = __mlir_attr.`#kgen<int_literal.binop_kind and>`
-            ](self.value, rhs.value)
-        )
+        result = __type_of(result)()
 
     @always_inline("builtin")
-    fn __xor__(self, rhs: Self) -> Self:
+    fn __xor__(
+        self,
+        rhs: IntLiteral[_],
+        out result: IntLiteral[
+            __mlir_attr[
+                `#kgen<int_literal_bin<xor `,
+                self.value,
+                `,`,
+                rhs.value,
+                `>> : !kgen.int_literal`,
+            ]
+        ],
+    ):
         """Return `self ^ rhs`.
 
         Args:
@@ -327,14 +414,22 @@ struct IntLiteral(
         Returns:
             `self ^ rhs`.
         """
-        return Self(
-            __mlir_op.`kgen.int_literal.binop`[
-                oper = __mlir_attr.`#kgen<int_literal.binop_kind xor>`
-            ](self.value, rhs.value)
-        )
+        result = __type_of(result)()
 
     @always_inline("builtin")
-    fn __or__(self, rhs: Self) -> Self:
+    fn __or__(
+        self,
+        rhs: IntLiteral[_],
+        out result: IntLiteral[
+            __mlir_attr[
+                `#kgen<int_literal_bin<or `,
+                self.value,
+                `,`,
+                rhs.value,
+                `>> : !kgen.int_literal`,
+            ]
+        ],
+    ):
         """Return `self | rhs`.
 
         Args:
@@ -343,11 +438,7 @@ struct IntLiteral(
         Returns:
             `self | rhs`.
         """
-        return Self(
-            __mlir_op.`kgen.int_literal.binop`[
-                oper = __mlir_attr.`#kgen<int_literal.binop_kind or>`
-            ](self.value, rhs.value)
-        )
+        result = __type_of(result)()
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -360,7 +451,7 @@ struct IntLiteral(
         Returns:
             False Bool value if the value is equal to 0 and True otherwise.
         """
-        return self != Self()
+        return self != Self._zero
 
     @always_inline("builtin")
     fn __as_bool__(self) -> Bool:
@@ -437,7 +528,11 @@ struct IntLiteral(
         return String(Int(self))
 
     @always_inline("builtin")
-    fn __ceildiv__(self, denominator: Self) -> Self:
+    fn __ceildiv__(
+        self,
+        denominator: IntLiteral,
+        out result: __type_of(-(self // -denominator)),
+    ):
         """Return the rounded-up result of dividing self by denominator.
 
 
@@ -447,7 +542,7 @@ struct IntLiteral(
         Returns:
             The ceiling of dividing numerator by denominator.
         """
-        return -(self // -denominator)
+        result = __type_of(result)()
 
     # ===-------------------------------------------------------------------===#
     # Methods

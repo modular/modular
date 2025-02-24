@@ -1414,10 +1414,10 @@ def test_reduce_bit_count():
 
 
 def test_pow():
-    alias nan = FloatLiteral.nan
-    alias neg_zero = FloatLiteral.negative_zero
-    alias inf = FloatLiteral.infinity
-    alias neg_inf = FloatLiteral.negative_infinity
+    alias nan = FloatLiteral_nan
+    alias neg_zero = FloatLiteral_negative_zero
+    alias inf = FloatLiteral_infinity
+    alias neg_inf = FloatLiteral_negative_infinity
 
     # Float32 tests
     alias F32x4 = SIMD[DType.float32, 4]

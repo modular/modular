@@ -26,6 +26,12 @@ what we publish.
 
 ### Standard library changes
 
+- The design of the `IntLiteral` and `FloatLiteral` types has been changed to
+  maintain their compile-time-only value as a parameter instead of a stored
+  field. This correctly models that infinite precision literals are not
+  representable at runtime, and eliminates a number of bugs hit in corner cases.
+  This is made possible by enhanced dependent type support in the compiler.
+
 - The `Buffer` struct has been removed in favor of `Span` and `NDBuffer`.
 
 - A new `IntervalTree` data structure has been added to the standard library.

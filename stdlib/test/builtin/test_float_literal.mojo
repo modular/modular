@@ -20,10 +20,10 @@ from testing import (
     assert_true,
 )
 
-alias nan = FloatLiteral.nan
-alias neg_zero = FloatLiteral.negative_zero
-alias inf = FloatLiteral.infinity
-alias neg_inf = FloatLiteral.negative_infinity
+alias nan = FloatLiteral_nan
+alias neg_zero = FloatLiteral_negative_zero
+alias inf = FloatLiteral_infinity
+alias neg_inf = FloatLiteral_negative_infinity
 
 
 def test_division():

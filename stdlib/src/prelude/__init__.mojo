@@ -43,7 +43,13 @@ from builtin.equality_comparable import EqualityComparable
 from builtin.error import Error
 from builtin.file import FileHandle, open
 from builtin.file_descriptor import FileDescriptor
-from builtin.float_literal import FloatLiteral
+from builtin.float_literal import (
+    FloatLiteral,
+    FloatLiteral_nan,
+    FloatLiteral_infinity,
+    FloatLiteral_negative_infinity,
+    FloatLiteral_negative_zero,
+)
 from builtin.floatable import Floatable, FloatableRaising, float
 from builtin.format_int import bin, hex, oct
 from builtin.identifiable import Identifiable, StringableIdentifiable
