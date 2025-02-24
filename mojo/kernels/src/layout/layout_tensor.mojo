@@ -10,6 +10,7 @@ from sys import (
     alignof,
     bitwidthof,
     is_nvidia_gpu,
+    is_amd_gpu,
     prefetch,
     simdwidthof,
     sizeof,
@@ -39,6 +40,8 @@ from .runtime_layout import coalesce as runtime_coalesce
 from .runtime_layout import make_layout as make_runtime_layout
 from .runtime_tuple import RuntimeTuple
 from .swizzle import Swizzle, make_ldmatrix_swizzle
+from gpu.intrinsics import buffer_load, buffer_store
+from ._utils import get_amd_buffer_descriptor
 
 
 fn _compute_distribute_layout[
@@ -2349,16 +2352,8 @@ struct ThreadScope:
         return Int(self._value)
 
 
-# Synchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
-#
 @always_inline("nodebug")
-fn copy_dram_to_sram[
-    src_thread_layout: Layout,
-    dst_thread_layout: Layout = src_thread_layout,
-    swizzle: OptionalReg[Swizzle] = None,
-    num_threads: Int = src_thread_layout.size(),
-    thread_scope: ThreadScope = ThreadScope.BLOCK,
-](dst: LayoutTensor, src: LayoutTensor):
+fn _copy_dram_to_sram_validate_args(dst: LayoutTensor, src: LayoutTensor):
     constrained[
         dst.dtype == src.dtype, "src dtype and dst dtype must be the same."
     ]()
@@ -2373,6 +2368,19 @@ fn copy_dram_to_sram[
         dst.address_space == _GPUAddressSpace.SHARED,
         "dst address space must be SHARED.",
     ]()
+
+
+# Synchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
+#
+@always_inline("nodebug")
+fn copy_dram_to_sram[
+    src_thread_layout: Layout,
+    dst_thread_layout: Layout = src_thread_layout,
+    swizzle: OptionalReg[Swizzle] = None,
+    num_threads: Int = src_thread_layout.size(),
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+](dst: LayoutTensor, src: LayoutTensor):
+    _copy_dram_to_sram_validate_args(dst, src)
     alias num_busy_threads = src_thread_layout.size()
 
     var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
@@ -2424,6 +2432,7 @@ fn copy_dram_to_sram[
         else:
             stride = src.runtime_layout.stride.value[0]
         var src_frag_offset = src_fragments.distance(src.ptr)
+
         var src_idx_bound = (src.dim(0) * stride - src_frag_offset).cast[
             src_fragments.index_type
         ]()
@@ -2449,6 +2458,65 @@ fn copy_dram_to_sram[
                 dst_fragments.ptr.store[alignment=dst_align](
                     dst_idx, src_vec.cast[dst.dtype]()
                 )
+
+
+@always_inline("nodebug")
+fn copy_dram_to_sram[
+    src_thread_layout: Layout,
+    dst_thread_layout: Layout = src_thread_layout,
+    swizzle: OptionalReg[Swizzle] = None,
+    num_threads: Int = src_thread_layout.size(),
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+](dst: LayoutTensor, src: LayoutTensor, src_base: LayoutTensor,):
+    """
+    Used to copy data from DRAM to SRAM for AMD GPUs. It uses buffer_load intrinsic
+    to load data and can check for bounds. In addition to dst and src, it takes
+    src_base as an argument to construct the buffer descriptor of the src tensor.
+    src_base is the original global memory tensor from which src is derived.
+    """
+    constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
+    _copy_dram_to_sram_validate_args(dst, src)
+    alias num_busy_threads = src_thread_layout.size()
+
+    var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+
+    @parameter
+    if num_threads > num_busy_threads:
+        if worker_idx >= num_busy_threads:
+            return
+
+    var src_fragments = src.distribute[src_thread_layout](worker_idx)
+    var dst_fragments = dst.distribute[dst_thread_layout, swizzle=swizzle](
+        worker_idx
+    )
+
+    alias simd_width = simdwidthof[dst.dtype]()
+    alias dst_align = alignof[SIMD[dst.dtype, simd_width]]()
+
+    alias num_stores_per_thread = dst_fragments.layout.size()
+    # TODO: Use distance function, it gives parameter mismatch error
+    var offset = (Int(src.ptr) - Int(src_base.ptr)) // sizeof[src.dtype]()
+    var descriptor = get_amd_buffer_descriptor(src_base)
+    var src_frag_offset = src_fragments.distance(src.ptr) + offset
+
+    @parameter
+    for i in range(num_stores_per_thread):
+        alias src_static_idx = src_fragments.layout(i)
+        alias dst_idx = dst_fragments.layout(i)
+        var src_idx: Scalar[src_fragments.index_type] = 0
+
+        @parameter
+        if src.layout.all_dims_known():
+            src_idx = src_static_idx
+        else:
+            src_idx = src_fragments.runtime_layout(i)
+        var src_vec = buffer_load[src.dtype, simd_width](
+            descriptor,
+            Int32(src_idx + Int(src_frag_offset)),
+        )
+        dst_fragments.ptr.store[alignment=dst_align](
+            dst_idx, src_vec.cast[dst.dtype]()
+        )
 
 
 @always_inline("nodebug")
@@ -2561,6 +2629,22 @@ fn cp_async_mn_major[
 
 # Synchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
 #
+@always_inline("nodebug")
+fn copy_dram_to_sram[
+    thread_layout: Layout,
+    swizzle: OptionalReg[Swizzle] = None,
+    num_threads: Int = thread_layout.size(),
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+](dst: LayoutTensor, src: LayoutTensor, src_base: LayoutTensor,):
+    copy_dram_to_sram[
+        src_thread_layout=thread_layout,
+        dst_thread_layout=thread_layout,
+        swizzle=swizzle,
+        num_threads=num_threads,
+        thread_scope=thread_scope,
+    ](dst, src, src_base)
+
+
 @always_inline("nodebug")
 fn copy_dram_to_sram[
     thread_layout: Layout,
@@ -2907,13 +2991,8 @@ fn copy_sram_to_local[
         dst.copy_from(src_fragments)
 
 
-# Copy local memory to DRAM, thread affinity is needed only for dst fragments.
-#
 @always_inline("nodebug")
-fn copy_local_to_dram[
-    dst_thread_layout: Layout,
-    thread_scope: ThreadScope = ThreadScope.BLOCK,
-](dst: LayoutTensor, src: LayoutTensor):
+fn _copy_local_to_dram_validate_args(dst: LayoutTensor, src: LayoutTensor):
     constrained[
         src.address_space == _GPUAddressSpace.LOCAL,
         "src address space must be LOCAL.",
@@ -2924,6 +3003,16 @@ fn copy_local_to_dram[
         in (_GPUAddressSpace.GENERIC, _GPUAddressSpace.GLOBAL),
         "dst address space must be GENERIC or GLOBAL.",
     ]()
+
+
+# Copy local memory to DRAM, thread affinity is needed only for dst fragments.
+#
+@always_inline("nodebug")
+fn copy_local_to_dram[
+    dst_thread_layout: Layout,
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+](dst: LayoutTensor, src: LayoutTensor):
+    _copy_local_to_dram_validate_args(dst, src)
 
     var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
@@ -2973,6 +3062,61 @@ fn copy_local_to_dram[
                         src_element.element_data.cast[dst.dtype]()
                     )
                 ).store(dst_fragments.ptr.offset(dst_idx))
+
+
+@always_inline("nodebug")
+fn copy_local_to_dram[
+    dst_thread_layout: Layout,
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+](dst: LayoutTensor, src: LayoutTensor, dst_base: LayoutTensor):
+    """
+    Used to copy data from registers to DRAM for AMD GPUs. It uses buffer_store intrinsic
+    to store data and can check for bounds. In addition to dst and src, it takes
+    dst_base as an argument to construct the buffer descriptor of the dst tensor.
+    dst_base is the original global memory tensor from which dst is derived.
+    """
+    constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
+    _copy_local_to_dram_validate_args(dst, src)
+
+    var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
+
+    var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // sizeof[dst.dtype]()
+    var descriptor = get_amd_buffer_descriptor(dst_base)
+    var dst_frag_offset = dst_fragments.distance(dst.ptr) + offset
+    alias num_stores_per_thread = dst_fragments.layout.size()
+
+    @parameter
+    for i in range(num_stores_per_thread):
+        alias src_idx = src.layout(i)
+        alias dst_uint_dtype = _get_unsigned_type(
+            dst_fragments.layout, dst_fragments.address_space
+        )
+        alias dst_static_idx = dst_fragments.layout(i)
+        var dst_idx: Scalar[dst_fragments.index_type] = Int(dst_frag_offset)
+
+        @parameter
+        if dst_fragments.layout.all_dims_known():
+            dst_idx += dst_static_idx
+        else:
+            dst_idx += dst_fragments.runtime_layout(i)
+
+        var src_element = Element[src.dtype, src.element_layout].load(
+            src.ptr.offset(src_idx),
+            src.runtime_element_layout,
+        )
+        alias dst_element_type = Element[dst.dtype, dst.element_layout]
+
+        var src_vec = src_element.element_data.cast[dst.dtype]()
+
+        @parameter
+        for i in range(dst_fragments.element_layout.size()):
+            alias element_offset = dst_fragments.element_layout(i)
+            buffer_store(
+                descriptor,
+                Int32(dst_idx + element_offset),
+                src_vec[i],
+            )
 
 
 @always_inline("nodebug")

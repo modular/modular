@@ -10,12 +10,13 @@ from sys import bitwidthof
 from buffer import NDBuffer
 from gpu.host import DeviceBuffer, DeviceContext
 from layout import *
-from layout.layout_tensor import _get_index_type
+from layout.layout_tensor import _get_index_type, LayoutTensor
 from memory import UnsafePointer
 
 from utils.index import Index
 
 from .int_tuple import product
+from gpu.intrinsics import make_buffer_resource, _buffer_resource
 
 
 struct ManagedLayoutTensor[
@@ -155,3 +156,20 @@ fn load_to_simd(
     return rebind[__type_of(res)](
         tensor.reshape[Layout(size)]().vectorize[size]()[0]
     )
+
+
+@always_inline
+fn _get_size(tensor: LayoutTensor) -> Int:
+    @parameter
+    if tensor.layout.all_dims_known():
+        alias size = tensor.layout.size()
+        return size
+    else:
+        return tensor.runtime_layout.size()
+
+
+@always_inline
+fn get_amd_buffer_descriptor(tensor: LayoutTensor) -> _buffer_resource:
+    var ptr = tensor.ptr
+    var size = _get_size(tensor)
+    return make_buffer_resource(ptr, size)
