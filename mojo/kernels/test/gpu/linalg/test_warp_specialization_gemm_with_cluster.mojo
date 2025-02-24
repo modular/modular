@@ -192,6 +192,7 @@ def test_warp_specialize_gemm_with_multicasting[
         wgmma_n=wgmma_n,
         num_consumer=num_consumer,
         partitioned_multicast=partitioned_multicast,
+        use_persistant_kernel=False,
     ](
         c_device.tensor,
         a_device.tensor,
@@ -302,7 +303,6 @@ def main():
             ](ctx, static[256](), static[128](), static[128]())
 
         alias wgmma_n = List[Int](8, 32, 64, 128, 256)
-        alias num_ins = 5
 
         print("# 2x1 warp specialized gemm with multicasting tests")
 
@@ -310,7 +310,7 @@ def main():
         for multicast_mode in range(2):
 
             @parameter
-            for i in range(num_ins):
+            for i in range(len(wgmma_n)):
                 test_warp_specialize_gemm_with_multicasting[
                     wgmma_n[i],
                     DType.bfloat16,
@@ -364,7 +364,7 @@ def main():
         for multicast_mode in range(2):
 
             @parameter
-            for i in range(num_ins):
+            for i in range(len(wgmma_n)):
                 test_warp_specialize_gemm_with_multicasting[
                     wgmma_n[i],
                     DType.bfloat16,
@@ -419,7 +419,7 @@ def main():
         for multicast_mode in range(2):
 
             @parameter
-            for i in range(num_ins):
+            for i in range(len(wgmma_n)):
                 test_warp_specialize_gemm_with_multicasting[
                     wgmma_n[i],
                     DType.bfloat16,
