@@ -42,6 +42,36 @@ def test_multimem_ld_reduce():
     )
 
     assert_true(
+        "multimem.ld_reduce.relaxed.sys.global.add.v4.bf16 "
+        in _compile_code_asm[
+            multimem_ld_reduce[
+                DType.bfloat16,
+                count=4,
+                reduction = ReduceOp.ADD,
+                scope = Scope.SYSTEM,
+                acc_type = DType.bfloat16,
+                consistency = Consistency.RELAXED,
+            ],
+            target = H100.target(),
+        ]()
+    )
+
+    assert_true(
+        "multimem.ld_reduce.relaxed.sys.global.add.acc::f32.v4.bf16 "
+        in _compile_code_asm[
+            multimem_ld_reduce[
+                DType.bfloat16,
+                count=4,
+                reduction = ReduceOp.ADD,
+                scope = Scope.SYSTEM,
+                acc_type = DType.float32,
+                consistency = Consistency.RELAXED,
+            ],
+            target = H100.target(),
+        ]()
+    )
+
+    assert_true(
         "multimem.ld_reduce.relaxed.sys.global.add.v4.bf16x2 "
         in _compile_code_asm[
             multimem_ld_reduce[
