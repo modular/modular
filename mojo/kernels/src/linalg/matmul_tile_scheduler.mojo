@@ -7,6 +7,7 @@
 from math import ceildiv
 from gpu.id import grid_dim, block_idx
 from utils.index import Index, IndexList
+from .utils_gpu import block_swizzle
 
 
 @value
@@ -58,8 +59,15 @@ struct TileScheduler[
     cluster: IndexList[3] = Index(1, 1, 1),
     raster_dim: Int = 1,
 ]:
+    alias wave_shape = Index(
+        tile_shape[0] * grid_shape[0], tile_shape[1] * grid_shape[1]
+    )
+    # This has to match the grid dimension for the kernel launch.
+    alias num_grids: UInt = grid_shape[0] * grid_shape[1]
     var idx: UInt
     var prob_shape: IndexList[3]  # M x N x K
+    var num_waves_m: UInt
+    var num_waves_n: UInt
 
     @always_inline
     fn __init__(mut self, prob_shape: IndexList[3]):
@@ -75,6 +83,8 @@ struct TileScheduler[
             self.idx = block_idx.x + grid_dim.x * block_idx.y
 
         self.prob_shape = prob_shape
+        self.num_waves_m = ceildiv(self.prob_shape[0], Self.wave_shape[0])
+        self.num_waves_n = ceildiv(self.prob_shape[1], Self.wave_shape[1])
 
     @always_inline
     fn work_info(self) -> WorkInfo:
@@ -86,28 +96,21 @@ struct TileScheduler[
 
     @always_inline
     fn advance(mut self):
-        self.idx += UInt(grid_shape[0] * grid_shape[1])
+        self.idx += Self.num_grids
 
     @always_inline
     fn _index_to_mn(self) -> Tuple[UInt, UInt]:
         # We consider a sweep on busy SMs a wave, not all SMs
-        alias wave_shape = Index(
-            tile_shape[0] * grid_shape[0], tile_shape[1] * grid_shape[1]
-        )
-        num_waves_m = ceildiv(self.prob_shape[0], wave_shape[0])
-        num_waves_n = ceildiv(self.prob_shape[1], wave_shape[1])
 
-        num_waves_executed, idx_in_wave = divmod(
-            self.idx, UInt(grid_shape[0] * grid_shape[1])
-        )
+        num_waves_executed, idx_in_wave = divmod(self.idx, Self.num_grids)
         num_waves_executed_m, num_waves_executed_n = divmod(
-            num_waves_executed, UInt(num_waves_n)
+            num_waves_executed, UInt(self.num_waves_n)
         )
 
         # The wave maps to a BM x grid_shape[0] by BN x grid_shape[1]
         # submatrix in C.
-        wave_m = num_waves_executed_m * wave_shape[0]
-        wave_n = num_waves_executed_n * wave_shape[1]
+        wave_m = num_waves_executed_m * Self.wave_shape[0]
+        wave_n = num_waves_executed_n * Self.wave_shape[1]
 
         m_in_wave, n_in_wave = divmod(idx_in_wave, UInt(grid_shape[1]))
 
@@ -118,11 +121,8 @@ struct TileScheduler[
 
     @always_inline
     fn num_output_tiles(self) -> UInt:
-        alias wave_shape = Index(
-            tile_shape[0] * grid_shape[0], tile_shape[1] * grid_shape[1]
-        )
-        return ceildiv(self.prob_shape[0], wave_shape[0]) * ceildiv(
-            self.prob_shape[1], wave_shape[1]
+        return ceildiv(self.prob_shape[0], Self.wave_shape[0]) * ceildiv(
+            self.prob_shape[1], Self.wave_shape[1]
         )
 
 
