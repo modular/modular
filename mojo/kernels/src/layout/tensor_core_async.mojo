@@ -60,6 +60,37 @@ from utils import Index, IndexList
 #     (  BM, (cm_K, BK // cm_K))
 #   : (cm_K, (   1, BM  * cm_K))
 #
+#
+# WGMMA descriptor layout:
+#
+# B16 => no swizzle
+#
+# B16  : Swizzle<0,4,3> o smem_ptr o ((8,m),(T,2)):((xT,SBO),(1,LBO)) where x = 1
+# B32  : Swizzle<1,4,3> o smem_ptr o ((8,m),(T,2)):((xT,SBO),(1, T )) where x = 2
+# B64  : Swizzle<2,4,3> o smem_ptr o ((8,m),(T,2)):((xT,SBO),(1, T )) where x = 4
+# B128 : Swizzle<3,4,3> o smem_ptr o ((8,m),(T,2)):((xT,SBO),(1, T )) where x = 8
+#
+# cm_M = cm_N = 8
+# cm_K = T = 16 // sizeof[type]()
+# When there is swizzle, there is the swizzle mode constraint:
+# `swizzle_mode.bytes() = 16x = 16 xT/T = 16 xT/(16 / sizeof[type]()) = xT * sizeof[type]().
+#
+# Tiled descriptors:
+#
+# B16  : Swizzle<0,4,3> o smem_ptr o ((8,m),(T,2k)):((T,SBO),(1,LBO))
+#
+# When the layout is dense, and the core matrices are tiled in column major
+# like above comment. We have `SBO = cm_M * T = cm_M * cm_K` and `LBO = (cm_M *
+# m) * T = BM * T = = BM * cm_K`.
+#
+#
+# B32  : Swizzle<1,4,3> o smem_ptr o ((8,m),(T,2k)):((xT,SBO),(1, T )) where x = 2
+# B64  : Swizzle<2,4,3> o smem_ptr o ((8,m),(T,2k)):((xT,SBO),(1, T )) where x = 4
+# B128 : Swizzle<3,4,3> o smem_ptr o ((8,m),(T,2k)):((xT,SBO),(1, T )) where x = 8
+#
+# When the layout is dense, we have the unique solution `xT = T*2k = BK`, `SBO
+# = cm_M * BK`.
+#
 # ----------------------------
 # K x M/N, MN-major, siwzzling
 # ----------------------------
@@ -111,6 +142,12 @@ fn tile_layout_k_major[
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ]() -> Layout:
     alias _CM_K = _CM_K_BYTES // sizeof[type]()
+    constrained[
+        BM % _CM_M == 0 and BK % _CM_K == 0 and BK % (_CM_M * 2) == 0,
+        "Tile shape must be ((8, _), (" + String(_CM_K) + ", multiple of 2))",
+    ]()
+    alias shape01 = BM // _CM_M
+    alias shape11 = BK // _CM_K
 
     @parameter
     if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
@@ -124,14 +161,12 @@ fn tile_layout_k_major[
         ]()
 
         return Layout(
-            IntTuple(
-                IntTuple(_CM_M, BM // _CM_M), IntTuple(_CM_K, BK // _CM_K)
-            ),
+            IntTuple(IntTuple(_CM_M, shape01), IntTuple(_CM_K, shape11)),
             IntTuple(IntTuple(BK, _CM_M * BK), IntTuple(1, _CM_K)),
         )
 
     return Layout(
-        IntTuple(IntTuple(_CM_M, BM // _CM_M), IntTuple(_CM_K, BK // _CM_K)),
+        IntTuple(IntTuple(_CM_M, shape01), IntTuple(_CM_K, shape11)),
         IntTuple(IntTuple(_CM_K, _CM_M * _CM_K), IntTuple(1, BM * _CM_K)),
     )
 
