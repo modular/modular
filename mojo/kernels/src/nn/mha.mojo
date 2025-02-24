@@ -61,7 +61,7 @@ from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_builder import static
-from layout.tensor_core import get_accum_type, get_fragment_size, get_mma_shape
+from layout.tensor_core import get_fragment_size, get_mma_shape
 from layout.tma_async import TensorMapSwizzle, create_tma_tile
 from linalg._multistage_gemm_gpu import multistage_mma
 from linalg.bmm import batched_matmul
@@ -81,6 +81,7 @@ from runtime.tracing import Trace, TraceLevel, trace_arg
 from utils.index import Index, IndexList
 from utils.numerics import min_or_neg_inf, neg_inf
 from utils.static_tuple import StaticTuple
+from utils.numerics import get_accum_type
 
 from .softmax import (
     _online_softmax_iter_for_mma_output,

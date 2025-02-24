@@ -40,12 +40,13 @@ from layout.layout_tensor import (
 )
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import make_swizzle
-from layout.tensor_core import get_accum_type, get_fragment_size, get_mma_shape
+from layout.tensor_core import get_fragment_size, get_mma_shape
 from layout.tensor_core_async import (
     TensorCoreAsync,
     tile_layout_k_major,
     tile_layout_mn_major,
 )
+from utils.numerics import get_accum_type
 from linalg._multistage_gemm_gpu import multistage_mma
 from math import recip
 from math.constants import log2e
