@@ -8,7 +8,6 @@
 from tensor import (
     DynamicTensor,
     ManagedTensorSlice,
-    TensorLike,
     _indexing,
     foreach,
 )

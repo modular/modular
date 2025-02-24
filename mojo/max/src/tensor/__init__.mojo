@@ -11,7 +11,6 @@
 from tensor_internal import (
     DynamicTensor,
     ManagedTensorSlice,
-    TensorLike,
     VariadicTensors,
     _indexing,
     foreach,

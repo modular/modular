@@ -24,7 +24,6 @@ from collections import InlineArray, Optional
 from max._tensor_utils import (
     DynamicTensor,
     ManagedTensorSlice,
-    TensorLike,
     _indexing,
 )
 from max.tensor import Tensor as OldTensor
@@ -39,7 +38,7 @@ from .device import Device, DeviceMemory, DeviceTensor
 from .tensor_slice import TensorSlice
 
 
-struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
+struct Tensor[type: DType, rank: Int](CollectionElement):
     """An owned, indexible buffer type."""
 
     var _ptr: UnsafePointer[Scalar[type]]
@@ -139,13 +138,13 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         """
         return self
 
-    fn spec(self) -> TensorSpec:
+    fn spec(self) -> RuntimeTensorSpec[type, rank]:
         """Gets the spec of tensor.
 
         Returns
             Spec of the tensor.
         """
-        return self._spec.get_tensor_spec()
+        return self._spec
 
     @always_inline
     fn __getitem__(mut self, *indices: Int) -> ref [self] Scalar[type]:
@@ -245,14 +244,14 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         Returns:
             DeviceTensor pointing to the memory owned by tensor.
         """
-        var spec = self._spec.get_tensor_spec()
-        return DeviceTensor(DeviceMemory(self^), spec)
+        var spec = self.spec()
+        return DeviceTensor(DeviceMemory(self^), TensorSpec(spec))
 
     fn __del__(owned self):
         """Destructor for the tensor."""
         _ = DeviceMemory(
             self._device_memory_impl_ptr,
-            self._spec.get_tensor_spec().bytecount(),
+            self.spec().bytecount(),
             self._device,
         )
 

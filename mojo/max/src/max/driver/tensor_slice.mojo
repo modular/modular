@@ -23,7 +23,7 @@ from math import ceil
 from sys import is_nvidia_gpu
 from sys.intrinsics import strided_load, strided_store
 
-from max._tensor_utils import DynamicTensor, TensorLike
+from max._tensor_utils import DynamicTensor
 from max.tensor import RuntimeTensorSpec, TensorSpec
 
 from .tensor import Tensor
@@ -70,7 +70,7 @@ struct TensorSlice[
         Returns:
             Spec of slice as TensorSpec.
         """
-        return self._unsafe_slice._spec.get_tensor_spec()
+        return TensorSpec(self._unsafe_slice.spec())
 
     @always_inline
     fn __getitem__(self, *indices: Int) -> Scalar[type]:

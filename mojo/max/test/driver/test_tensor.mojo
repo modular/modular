@@ -37,8 +37,8 @@ from utils import Index, IndexList
 def test_tensor():
     tensor = Tensor[DType.float32, 2](TensorShape(2, 2))
 
-    assert_equal(tensor.spec().rank(), 2)
-    assert_equal(tensor.spec().dtype(), DType.float32)
+    assert_equal(tensor.spec().rank, 2)
+    assert_equal(tensor.spec().type, DType.float32)
 
     tensor[0, 0] = 0
     tensor[0, 1] = 1
@@ -52,8 +52,8 @@ def test_tensor():
 def test_tensor_slice():
     tensor = Tensor[DType.float32, 2](TensorShape(3, 3))
 
-    assert_equal(tensor.spec().rank(), 2)
-    assert_equal(tensor.spec().dtype(), DType.float32)
+    assert_equal(tensor.spec().rank, 2)
+    assert_equal(tensor.spec().type, DType.float32)
 
     for i in range(3):
         for j in range(3):

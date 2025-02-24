@@ -12,7 +12,6 @@ from tensor import (
     ManagedTensorSlice,
     RuntimeTensorSpec,
     Tensor,
-    TensorLike,
     TensorShape,
     TensorSpec,
     foreach,
