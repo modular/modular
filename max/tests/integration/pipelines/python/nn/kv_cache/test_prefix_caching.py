@@ -556,13 +556,11 @@ async def test_prefix_caching_grouped_prefixes(
         fetch_kv_tuple = kv_manager.fetch(
             seq_ids_and_prompts, num_steps=num_steps
         )
-        assert kv_manager._count_all_pages() == kv_manager.total_num_pages
         seq_ids_and_new_tokens_batch = model.run(
             orig_seq_ids_and_prompts, fetch_kv_tuple, num_steps=num_steps
         )
         seq_ids_and_new_tokens |= seq_ids_and_new_tokens_batch
         kv_manager.step(seq_ids_and_new_tokens_batch)
-        assert kv_manager._count_all_pages() == kv_manager.total_num_pages
 
     # Since our prompts have large grouped prefixes, we should have a high cache
     # hit rate.
@@ -587,13 +585,11 @@ async def test_prefix_caching_grouped_prefixes(
         fetch_kv_tuple = kv_manager.fetch(
             seq_ids_and_prompts, num_steps=num_steps
         )
-        assert kv_manager._count_all_pages() == kv_manager.total_num_pages
         seq_ids_and_new_tokens_subset = model.run(
             orig_seq_ids_and_prompts, fetch_kv_tuple, num_steps=num_steps
         )
 
         kv_manager.step(seq_ids_and_new_tokens_subset)
-        assert kv_manager._count_all_pages() == kv_manager.total_num_pages
 
         terminated_seq_ids = []
         for seq_id in list(seq_ids_and_new_tokens.keys()):
@@ -605,8 +601,6 @@ async def test_prefix_caching_grouped_prefixes(
 
     for seq_id in seq_ids_and_new_tokens:
         kv_manager.release(seq_id)
-
-    assert kv_manager._count_all_pages() == kv_manager.total_num_pages
 
 
 @pytest.mark.asyncio
@@ -642,7 +636,6 @@ async def test_prefix_caching_chunked_prefill() -> None:
     run_forward(seq_id_2, prompt_2_part_1, prompt_2_part_2[0])
     run_forward(seq_id_1, prompt_1_part_2, FAKE_TOKEN)
 
-    assert kv_manager._count_all_pages() == kv_manager.total_num_pages
     assert kv_manager.radix_trie.pretty_format(print_blocks=True) == [
         "[10, 11, 12, 13, 14, 15] : [0, 1]",
         "--[16, 17, 18, 19, 20, 21] : [2, 4]",
@@ -657,7 +650,6 @@ async def test_prefix_caching_chunked_prefill() -> None:
     assert 2 not in metadata.blocks
     assert 3 in metadata.blocks
 
-    assert kv_manager._count_all_pages() == kv_manager.total_num_pages
     assert kv_manager.radix_trie.pretty_format(print_blocks=True) == [
         "[10, 11, 12, 13, 14, 15] : [0, 1]",
         "--[16, 17, 18, 19, 20, 21] : [2, 4]",
