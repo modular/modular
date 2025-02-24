@@ -7,11 +7,16 @@
 #include "Support/HashUtils.h"
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/xxhash.h"
 
+#include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/BlockSupport.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/OwningOpRef.h"
 
 using namespace mlir;
 
@@ -136,6 +141,39 @@ bool areBlocksSame(mlir::Block &b1, mlir::Block &b2) {
   DenseMap<Value, llvm::hash_code> valueHashes;
   size_t posInBlock = 0;
   return areBlocksSameImpl(b1, b2, valueHashes, posInBlock);
+}
+
+FailureOr<std::string> getBytecodeHash(mlir::Operation *op) {
+  mlir::OwningOpRef<mlir::Operation *> opClone{
+      op->clone(mlir::Operation::CloneOptions{true, false})};
+  auto unknownLoc = UnknownLoc::get(opClone->getContext());
+
+  // cf mlir/lib/Transforms/StripDebugInfo.cpp, didn't want to run a pass
+  opClone->walk([&](Operation *innerOp) {
+    innerOp->setLoc(unknownLoc);
+    // Strip block arguments debug info.
+    for (Region &region : innerOp->getRegions()) {
+      for (Block &block : region.getBlocks()) {
+        for (BlockArgument &arg : block.getArguments()) {
+          arg.setLoc(unknownLoc);
+        }
+      }
+    }
+  });
+
+  std::string bytecodeBuf;
+  {
+    llvm::raw_string_ostream bytecodeOs(bytecodeBuf);
+    if (failed(mlir::writeBytecodeToFile(opClone.get(), bytecodeOs)))
+      return op->emitError("Failed to write bytecode");
+  }
+
+  auto hash = llvm::xxh3_128bits(
+      ArrayRef((const uint8_t *)bytecodeBuf.data(), bytecodeBuf.size()));
+
+  std::string hashStr = llvm::utohexstr(hash.high64, /*LowerCase=*/true, 16) +
+                        llvm::utohexstr(hash.low64, /*LowerCase=*/true, 16);
+  return hashStr;
 }
 
 } // namespace M
