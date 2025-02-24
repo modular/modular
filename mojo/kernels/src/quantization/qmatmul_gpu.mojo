@@ -53,7 +53,6 @@ from layout.swizzle import Swizzle, make_swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import (
     TensorCore,
-    get_accum_type,
     get_fragment_size,
     get_mma_shape,
 )
@@ -66,6 +65,7 @@ from linalg.utils_gpu import (
     block_swizzle,
     select_config,
 )
+from utils.numerics import get_accum_type
 from memory import UnsafePointer
 from memory.unsafe import bitcast
 from runtime.asyncrt import DeviceContextPtr
