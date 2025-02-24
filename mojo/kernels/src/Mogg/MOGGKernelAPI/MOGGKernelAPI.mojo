@@ -44,7 +44,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from builtin.simd import _pow
 from compiler_internal import StaticTensorSpec
-from gpu.all_reduce import MAX_GPUS, Signal, all_reduce
+from gpu.all_reduce import MAX_GPUS, MAX_NUM_BLOCKS_DEFAULT, Signal, all_reduce
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.types import (
@@ -7369,12 +7369,16 @@ struct DistributedAllReduceSum:
 
 
 @always_inline
-fn _check_signal_buffer_size(
+fn _check_signal_buffer_size[
+    max_num_blocks: Int
+](
     signal_buffer: ManagedTensorSlice[type = DType.uint8, rank=1],
     input_size_bytes: Int,
 ) raises:
     # The signal buffer has to be large enough to hold the entire input buffer.
-    var min_signal_buffer_size = sizeof[Signal]() + input_size_bytes
+    var min_signal_buffer_size = sizeof[
+        Signal[max_num_blocks]
+    ]() + input_size_bytes
     if signal_buffer.size() < min_signal_buffer_size:
         raise Error(
             "expected signal buffer to be at least ",
@@ -7387,6 +7391,7 @@ fn _check_signal_buffer_size(
 @compiler.register("mo.distributed.allreduce.2gpu.sum")
 struct DistributedAllReduceSum2Devices:
     alias num_devices = 2
+    alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
 
     @staticmethod
     @always_inline
@@ -7407,8 +7412,12 @@ struct DistributedAllReduceSum2Devices:
         ctx: DeviceContextPtr,
     ) raises:
         var input_size_bytes = inputs[0].size() * sizeof[type]()
-        _check_signal_buffer_size(signal_buffer0, input_size_bytes)
-        _check_signal_buffer_size(signal_buffer1, input_size_bytes)
+        _check_signal_buffer_size[Self.max_num_blocks](
+            signal_buffer0, input_size_bytes
+        )
+        _check_signal_buffer_size[Self.max_num_blocks](
+            signal_buffer1, input_size_bytes
+        )
 
         var dev_ctxs = List[DeviceContext](_dev_ctxs[0][], _dev_ctxs[1][])
 
@@ -7428,11 +7437,15 @@ struct DistributedAllReduceSum2Devices:
         for i in range(inputs.size):
             in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
 
-        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
-            UnsafePointer[Signal]()
-        )
-        rank_sigs[0] = signal_buffer0._ptr.bitcast[Signal]()
-        rank_sigs[1] = signal_buffer1._ptr.bitcast[Signal]()
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal[Self.max_num_blocks]], MAX_GPUS
+        ](UnsafePointer[Signal[Self.max_num_blocks]]())
+        rank_sigs[0] = signal_buffer0._ptr.bitcast[
+            Signal[Self.max_num_blocks]
+        ]()
+        rank_sigs[1] = signal_buffer1._ptr.bitcast[
+            Signal[Self.max_num_blocks]
+        ]()
 
         all_reduce[ngpus = Self.num_devices](
             dev_ctxs, in_bufs, out_bufs, rank_sigs
@@ -7442,6 +7455,7 @@ struct DistributedAllReduceSum2Devices:
 @compiler.register("mo.distributed.allreduce.4gpu.sum")
 struct DistributedAllReduceSum4Devices:
     alias num_devices = 4
+    alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
 
     @staticmethod
     @always_inline
@@ -7464,10 +7478,18 @@ struct DistributedAllReduceSum4Devices:
         ctx: DeviceContextPtr,
     ) raises:
         var input_size_bytes = inputs[0].size() * sizeof[type]()
-        _check_signal_buffer_size(signal_buffer0, input_size_bytes)
-        _check_signal_buffer_size(signal_buffer1, input_size_bytes)
-        _check_signal_buffer_size(signal_buffer2, input_size_bytes)
-        _check_signal_buffer_size(signal_buffer3, input_size_bytes)
+        _check_signal_buffer_size[Self.max_num_blocks](
+            signal_buffer0, input_size_bytes
+        )
+        _check_signal_buffer_size[Self.max_num_blocks](
+            signal_buffer1, input_size_bytes
+        )
+        _check_signal_buffer_size[Self.max_num_blocks](
+            signal_buffer2, input_size_bytes
+        )
+        _check_signal_buffer_size[Self.max_num_blocks](
+            signal_buffer3, input_size_bytes
+        )
 
         var dev_ctxs = List[DeviceContext](
             _dev_ctxs[0][], _dev_ctxs[1][], _dev_ctxs[2][], _dev_ctxs[3][]
@@ -7489,13 +7511,21 @@ struct DistributedAllReduceSum4Devices:
         for i in range(inputs.size):
             in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
 
-        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
-            UnsafePointer[Signal]()
-        )
-        rank_sigs[0] = signal_buffer0._ptr.bitcast[Signal]()
-        rank_sigs[1] = signal_buffer1._ptr.bitcast[Signal]()
-        rank_sigs[2] = signal_buffer2._ptr.bitcast[Signal]()
-        rank_sigs[3] = signal_buffer3._ptr.bitcast[Signal]()
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal[Self.max_num_blocks]], MAX_GPUS
+        ](UnsafePointer[Signal[Self.max_num_blocks]]())
+        rank_sigs[0] = signal_buffer0._ptr.bitcast[
+            Signal[Self.max_num_blocks]
+        ]()
+        rank_sigs[1] = signal_buffer1._ptr.bitcast[
+            Signal[Self.max_num_blocks]
+        ]()
+        rank_sigs[2] = signal_buffer2._ptr.bitcast[
+            Signal[Self.max_num_blocks]
+        ]()
+        rank_sigs[3] = signal_buffer3._ptr.bitcast[
+            Signal[Self.max_num_blocks]
+        ]()
 
         all_reduce[ngpus = Self.num_devices](
             dev_ctxs, in_bufs, out_bufs, rank_sigs
