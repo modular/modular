@@ -65,7 +65,7 @@ fn _human_memory(size: Int) -> String:
 # TODO: convert 'ngpus' to runtime variable
 fn bench_reduce[
     type: DType, rank: Int, ngpus: Int, max_num_blocks: Int
-](mut m: Bench, list_of_ctx: List[DeviceContext], length: Int) raises:
+](mut m: Bench, list_of_ctx: List[DeviceContext], num_bytes: Int) raises:
     constrained[ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"]()
     constrained[rank == 1, "this test code currently assumes rank 1"]()
 
@@ -81,7 +81,8 @@ fn bench_reduce[
     ](UnsafePointer[Signal[max_num_blocks]]())
 
     # Set up temp buffers for GPUs to reduce-scatter into / all-gather from.
-    var temp_buffer_num_bytes = ngpus * sizeof[type]() * length
+    var temp_buffer_num_bytes = ngpus * num_bytes
+    var length = num_bytes // sizeof[type]()
 
     # Initialize buffers for each GPU
     @parameter
@@ -148,10 +149,7 @@ fn bench_reduce[
     m.bench_function[bench_iter](
         BenchId(name),
         # add data movement to measures
-        ThroughputMeasure(
-            BenchMetric.bytes,
-            sizeof[type]() * length,
-        ),
+        ThroughputMeasure(BenchMetric.bytes, num_bytes),
     )
 
     # Copy results back and verify
@@ -182,19 +180,12 @@ fn bench_reduce[
     _ = signal_buffers^
 
 
-fn _get_test_str[type: DType](ngpus: Int, length: Int) -> String:
-    return String(
-        "allreduce-",
-        type,
-        "-",
-        ngpus,
-        "-",
-        _human_memory(sizeof[type]() * length),
-    )
+fn _get_test_str[type: DType](ngpus: Int, num_bytes: Int) -> String:
+    return String("allreduce-", type, "-", ngpus, "-", _human_memory(num_bytes))
 
 
 def main():
-    var length = arg_parse("length", 8 * 1024)
+    var num_bytes = arg_parse("num_bytes", 16 * 1024)
 
     alias dtype = env_get_dtype["dtype", DType.bfloat16]()
     alias num_gpus = env_get_int["num_gpus", 2]()
@@ -203,6 +194,7 @@ def main():
     alias max_num_blocks = env_get_int["TUNE_MAX_NUM_BLOCKS", -1]()
 
     assert_true(DeviceContext.number_of_devices() >= num_gpus)
+    assert_true(num_bytes % sizeof[dtype]() == 0)
 
     # Create GPU context.
     var ctx = List[DeviceContext]()
@@ -210,12 +202,12 @@ def main():
         ctx.append(DeviceContext(device_id=i))
 
     # Generate descriptive test name.
-    print(_get_test_str[dtype](num_gpus, length))
+    print(_get_test_str[dtype](num_gpus, num_bytes))
 
     var m = Bench()
 
     bench_reduce[
         type=dtype, rank=rank, ngpus=num_gpus, max_num_blocks=max_num_blocks
-    ](m, ctx, length)
+    ](m, ctx, num_bytes)
 
     m.dump_report()
