@@ -561,6 +561,19 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actual,
   return matchParams(actual, expected);
 }
 
+/// Return true if the specified parameter expression contains a reference to an
+/// parameter that isn't yet bound in bindingsSoFar.
+static bool usesUnboundParameters(TypedAttr paramValue,
+                                  ArrayRef<TypedAttr> bindingsSoFar) {
+  return paramValue
+      .walk([&](ParamIndexRefAttr ref) -> WalkResult {
+        if (ref.getDepth() == 0 && ref.getIndex() >= bindingsSoFar.size())
+          return WalkResult::interrupt();
+        return WalkResult::advance();
+      })
+      .wasInterrupted();
+}
+
 /// Try to infer parameters of Self from an initializer if specialized.
 ///
 /// Consider:
@@ -597,19 +610,36 @@ ParameterInferenceState::inferSelfFromInitResult(Type returnedType) {
       if (indexRef.getDepth() == 0 && indexRef.getIndex() == idx)
         continue;
 
-    // Otherwise, this is a more specialized parameter bound on Self for this
-    // method.  Form the parameter that we need to infer.
-    auto toInfer = ParamIndexRefAttr::get(/*depth*/ 0, idx, param.getType());
-    // Try to infer this parameter from the expected (declared) type.
-    if (failed(matchParams(param, toInfer)))
-      return failure();
-
-    // If we successfully inferred a more specific value, we need to remember
-    // this so we can come back and refine it later. This is because we could
-    // have inferred a forward reference, such as in:
+    // Notice that this is an explicitly bound Self parameter that we are going
+    // to try to infer a more specific value for.  We need to remember this so
+    // we can come back and refine it later. This is because we could have
+    // inferred a forward reference, such as in:
     //   struct Foo[T: AnyType]:
     //     fn __init__[U: Movable](out self: Foo[U], x: U):
     selfResultParams.push_back(idx);
+
+    // Otherwise, this is a more specialized parameter bound on Self for this
+    // method.  Form the parameter that we need to infer.
+    auto toInfer = ParamIndexRefAttr::get(/*depth*/ 0, idx, param.getType());
+
+    // Try to infer this parameter from the expected (declared) type.
+    if (failed(matchParams(param, toInfer))) {
+      // If the parameter value depends on any uninferred (yet) parameters then
+      // ignore the error.  Not doing so would cause a conflict with the correct
+      // value eventually inferred.
+      //
+      // This is to enable us to handle things like:
+      //   struct Foo[T: Int]:
+      //     fn __init__[X: Int](out self: Foo[X+1], arg: Foo[X]):
+      // Where we initially infer T = "X+1" (which isn't even valid because it
+      // is referring the the X parameter), and then later refing it after we
+      // discover what the value of X is when inferring parameter 1.  It is
+      // gross that the value of parameter #0 can depend on parameter #1.  We
+      // need out-of-order resolution.
+      if (usesUnboundParameters(param, inferredParams))
+        continue;
+      return failure();
+    }
   }
 
   return success();
@@ -1224,8 +1254,9 @@ LogicalResult ParameterInferenceState::infer(
     // Need to first populate the evaluator with unbound attrs in case some
     // Self params were not deduced.
     ArrayRef<Type> paramTypes = signature.getInputParamTypes();
-    for (size_t paramIdx = evaluator.getNumInputParams();
-         paramIdx < signature.getInputParamTypes().size(); ++paramIdx)
+    for (size_t paramIdx = evaluator.getNumInputParams(),
+                e = signature.getInputParamTypes().size();
+         paramIdx < e; ++paramIdx)
       evaluator.addInputValue(UnboundAttr::get(paramTypes[paramIdx]));
 
     for (unsigned idx : selfResultParams) {

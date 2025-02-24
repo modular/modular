@@ -1585,3 +1585,18 @@ struct MOCO1065[
 fn test_MOCO1065[p: Empty](t: Empty):
     var s = MOCO1065(t)
     alias a = MOCO1065(p)
+
+
+### Complex dependent type inference problem.
+@value
+struct DepValue[a: Int]: pass
+struct DepUser[b: Int]:
+    fn foo(self):
+        # This should infer
+        var x : DepUser[2] = self.xyz(DepValue[1]())
+    fn xyz(self, rhs: DepUser) -> __type_of(rhs): pass
+    @implicit
+    fn __init__[x: Int](value: DepValue[x], out result: DepUser[x+1]):
+        pass
+
+
