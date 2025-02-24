@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+import math
 from typing import Tuple, Type, TypeVar
 
 import numpy as np
@@ -398,6 +399,7 @@ def mistral_given_pytorch_mistral(pytorch_model, config):
             ),
             rope=rope,
             layer_idx=ops.constant(layer_idx, DType.uint32),
+            scale=math.sqrt(1 / config.head_dim),
         )
 
     rope = OptimizedRotaryEmbedding(

@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """Test pipelines attention layer."""
 
+import math
+
 import numpy as np
 import pytest
 import torch
@@ -135,6 +137,7 @@ def _attention_layer(
             layer_idx=ops.constant(LAYER_IDX, DType.uint32),
             wqkv=wqkv,
             wo=Linear(wo),
+            scale=math.sqrt(1 / HEAD_DIM),
         )
 
         attn_out = attn_fn(

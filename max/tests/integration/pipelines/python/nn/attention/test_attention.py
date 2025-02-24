@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """Test pipelines attention layer."""
 
+import math
+
 import numpy as np
 import pytest
 from max.driver import CPU, Device, Tensor
@@ -141,6 +143,7 @@ def _attention_layer(
             layer_idx=ops.constant(LAYER_IDX, DType.uint32),
             wqkv=wqkv,
             wo=Linear(wo),
+            scale=math.sqrt(1.0 / kv_params.head_dim),
         )
 
         attn_out = attn_fn(
@@ -326,6 +329,7 @@ def test_kv_cache_ragged_attention(session, cache_strategy):
                 kv_collection,
                 layer_idx,
                 mask_variant=MHAMaskVariant.CAUSAL_MASK,
+                scale=math.sqrt(1.0 / kv_params.head_dim),
             )
             g.output(result)
         return g

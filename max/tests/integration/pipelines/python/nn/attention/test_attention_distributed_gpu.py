@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Test pipelines attention layer."""
 
+import math
 from typing import List
 
 import numpy as np
@@ -64,6 +65,7 @@ def _attention_block(params, inputs):
         layer_idx=ops.constant(LAYER_IDX, DType.uint32),
         wqkv=wqkv,
         wo=Linear(wo),
+        scale=math.sqrt(1.0 / kv_params.head_dim),
     )
 
     return attn_fn(

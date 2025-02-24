@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Test Llama vision language model self attention layer."""
 
+import math
 from typing import Any
 
 import numpy as np
@@ -158,6 +159,7 @@ def _attention_layer(
             wv=wv,
             wo=Linear(wo),
             rope=rotary_embedding,
+            scale=math.sqrt(1.0 / head_dim),
         )
 
         graph.output(

@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+import math
 import random
 
 import numpy as np
@@ -168,6 +169,7 @@ def mistral_given_pytorch_mistral(
             ),
             rope=rope,
             layer_idx=ops.constant(layer_idx, DType.uint32),
+            scale=math.sqrt(1.0 / kv_params.head_dim),
         )
 
     rope = OptimizedRotaryEmbedding(
