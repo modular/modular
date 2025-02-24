@@ -60,8 +60,8 @@ def run_elementwise[
             out_host[i],
             expected_value,
             msg=String("values did not match at position ", i),
-            atol=atol,
-            rtol=rtol,
+            atol=Scalar[type](atol),
+            rtol=Scalar[type](rtol),
         )
 
     _ = in_device

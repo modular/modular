@@ -70,10 +70,10 @@ fn test_format_float8_e5m2():
     check_8e5m2["1.52587890625e-05"](1.52587890625e-05)
     check_8e5m2["-57344.0"](-57344)
     check_8e5m2["-0.0001068115234375"](-0.0001068115234375)
-    check_8e5m2["nan"](FloatLiteral.nan)
-    check_8e5m2["inf"](FloatLiteral.infinity)
-    check_8e5m2["-inf"](FloatLiteral.negative_infinity)
-    check_8e5m2["-0.0"](FloatLiteral.negative_zero)
+    check_8e5m2["nan"](FloatLiteral_nan)
+    check_8e5m2["inf"](FloatLiteral_infinity)
+    check_8e5m2["-inf"](FloatLiteral_negative_infinity)
+    check_8e5m2["-0.0"](FloatLiteral_negative_zero)
 
 
 fn test_format_float8_e4m3fn():
