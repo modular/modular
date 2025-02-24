@@ -743,6 +743,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         Returns:
             A new StringSlice containing the substring at the specified positions.
+
+        Raises: This function will raise if the specified slice start or end
+            position are outside the bounds of the string, or if they do not
+            both fall on codepoint boundaries.
         """
         var step: Int
         var start: Int
@@ -751,6 +755,20 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         if step != 1:
             raise Error("Slice must be within bounds and step must be 1")
+
+        if not self.is_codepoint_boundary(start):
+            var msg = String.format(
+                "String `Slice` start byte {} must fall on codepoint boundary.",
+                start,
+            )
+            raise Error(msg^)
+
+        if not self.is_codepoint_boundary(end):
+            var msg = String.format(
+                "String `Slice` end byte {} must fall on codepoint boundary.",
+                end,
+            )
+            raise Error(msg^)
 
         return Self(unsafe_from_utf8=self._slice[span])
 

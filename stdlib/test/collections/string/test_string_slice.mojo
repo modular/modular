@@ -22,6 +22,37 @@ from sys.info import alignof, sizeof
 from memory import Span, UnsafePointer
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
+# ===----------------------------------------------------------------------=== #
+# Reusable testing data
+# ===----------------------------------------------------------------------=== #
+
+alias EVERY_CODEPOINT_LENGTH_STR = StringSlice("߷കൈ🔄!")
+"""A string that contains at least one of 1-, 2-, 3-, and 4-byte UTF-8
+sequences.
+
+Visualized as:
+
+```text
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃                      ߷കൈ🔄!                    ┃
+┣━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━┫
+┃   ߷  ┃     ക     ┃     ൈ    ┃       🔄      ┃! ┃
+┣━━━━━━━╋━━━━━━━━━━━╋━━━━━━━━━━━╋━━━━━━━━━━━━━━━╋━━┫
+┃ 2039  ┃   3349    ┃   3400    ┃    128260     ┃33┃
+┣━━━┳━━━╋━━━┳━━━┳━━━╋━━━┳━━━┳━━━╋━━━┳━━━┳━━━┳━━━╋━━┫
+┃223┃183┃224┃180┃149┃224┃181┃136┃240┃159┃148┃132┃33┃
+┗━━━┻━━━┻━━━┻━━━┻━━━┻━━━┻━━━┻━━━┻━━━┻━━━┻━━━┻━━━┻━━┛
+  0   1   2   3   4   5   6   7   8   9  10  11  12
+```
+
+For further visualization and analysis involving this sequence, see:
+<https://connorgray.com/ephemera/project-log#2025-01-13>.
+"""
+
+# ===----------------------------------------------------------------------=== #
+# Tests
+# ===----------------------------------------------------------------------=== #
+
 
 fn test_string_slice_layout() raises:
     # Test that the layout of `StringSlice` is the same as `llvm::StringRef`.
@@ -115,7 +146,7 @@ fn test_string_byte_span() raises:
     assert_equal(Int(sub5.unsafe_ptr()) - Int(sub4.unsafe_ptr()), 2)
 
     # ----------------------------------
-    # Test invalid slicing
+    # Test out of range slicing
     # ----------------------------------
 
     # TODO: Improve error reporting for invalid slice bounds.
@@ -137,6 +168,81 @@ fn test_string_byte_span() raises:
     #     str_slice._try_slice(slice(5, 5)).unwrap[String](),
     #     String("Slice start is out of bounds"),
     # )
+
+    # --------------------------------------------------------
+    # Test that malformed partial slicing of codepoints raises
+    # --------------------------------------------------------
+
+    # These test what happens if you try to subslice a string in a way that
+    # would leave the byte contents of the string containing partial encoded
+    # codepoint sequences, invalid UTF-8. Consider a string with the following
+    # content, containing both 1-byte and a 4-byte UTF-8 sequence:
+    #
+    # ┏━━━━━━━━━━━━━━━━━━━━━━━━━┓
+    # ┃          Hi👋!          ┃ String
+    # ┣━━┳━━━┳━━━━━━━━━━━━━━━┳━━┫
+    # ┃H ┃ i ┃       👋      ┃! ┃ Codepoint Characters
+    # ┣━━╋━━━╋━━━━━━━━━━━━━━━╋━━┫
+    # ┃72┃105┃    128075     ┃33┃ Codepoints
+    # ┣━━╋━━━╋━━━┳━━━┳━━━┳━━━╋━━┫
+    # ┃72┃105┃240┃159┃145┃139┃33┃ Bytes
+    # ┗━━┻━━━┻━━━┻━━━┻━━━┻━━━┻━━┛
+    #  0   1   2   3   4   5   6
+    var unicode_str1 = StringSlice("Hi👋!")
+
+    # Test slicing 0:{0–7}
+    assert_equal(unicode_str1[0:0], "")
+    assert_equal(unicode_str1[0:1], "H")
+    assert_equal(unicode_str1[0:2], "Hi")
+    with assert_raises(
+        contains="String `Slice` end byte 3 must fall on codepoint boundary."
+    ):
+        _ = unicode_str1[0:3]
+    with assert_raises(
+        contains="String `Slice` end byte 4 must fall on codepoint boundary."
+    ):
+        _ = unicode_str1[0:4]
+    with assert_raises(
+        contains="String `Slice` end byte 5 must fall on codepoint boundary."
+    ):
+        _ = unicode_str1[0:5]
+    assert_equal(unicode_str1[0:6], "Hi👋")
+    assert_equal(unicode_str1[0:7], "Hi👋!")
+
+    # -------------------------------------------------------------------
+    # Test that slicing through combining codepoint graphemes is allowed
+    # -------------------------------------------------------------------
+
+    # The "ö" is a user-perceived character (grapheme) that is composed of two
+    # codepoints. This test tests that we can use string slicing to divide that
+    # grapheme into constituent codepoints.
+    #
+    # ┏━━━━━━━━━━━━━━━┓
+    # ┃      yö       ┃ String
+    # ┣━━━┳━━━┳━━━━━━━┫
+    # ┃ y ┃ o ┃   ̈    ┃ Codepoint Characters
+    # ┣━━━╋━━━╋━━━━━━━┫
+    # ┃121┃111┃  776  ┃ Codepoints
+    # ┣━━━╋━━━╋━━━┳━━━┫
+    # ┃121┃111┃204┃136┃ Bytes
+    # ┗━━━┻━━━┻━━━┻━━━┛
+    #   0   1   2   3
+    var unicode_str2 = StringSlice("yö")
+
+    assert_equal(unicode_str2[0:1], "y")
+    assert_equal(unicode_str2[0:2], "yo")
+    with assert_raises(
+        contains="String `Slice` end byte 3 must fall on codepoint boundary."
+    ):
+        _ = unicode_str2[0:3]
+    assert_equal(unicode_str2[0:4], unicode_str2)
+    with assert_raises(
+        contains="String `Slice` end byte 3 must fall on codepoint boundary."
+    ):
+        _ = unicode_str2[2:3]
+    # NOTE: This renders weirdly, but is a single-codepoint string containing
+    #   <https://www.compart.com/en/unicode/U+0308>.
+    assert_equal(unicode_str2[2:4], "̈")
 
 
 fn test_heap_string_from_string_slice() raises:
@@ -236,7 +342,7 @@ fn test_slice_char_length() raises:
     assert_equal(s1.char_length(), 3)
 
     # This string contains 1-, 2-, 3-, and 4-byte codepoint sequences.
-    var s2 = StringSlice("߷കൈ🔄!")
+    var s2 = EVERY_CODEPOINT_LENGTH_STR
     assert_equal(s2.byte_length(), 13)
     assert_equal(s2.char_length(), 5)
 
@@ -1065,9 +1171,7 @@ def test_chars_iter():
 
     # A piece of text containing, 1-byte, 2-byte, 3-byte, and 4-byte codepoint
     # sequences.
-    # For a visualization of this sequence, see:
-    #   https://connorgray.com/ephemera/project-log#2025-01-13
-    var s3 = StringSlice("߷കൈ🔄!")
+    var s3 = EVERY_CODEPOINT_LENGTH_STR
     assert_equal(s3.byte_length(), 13)
     assert_equal(s3.char_length(), 5)
     var s3_iter = s3.codepoints()

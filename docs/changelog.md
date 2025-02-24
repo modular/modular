@@ -67,6 +67,50 @@ what we publish.
 - Added a `StringSlice.is_codepoint_boundary()` method for querying if a given
   byte index is a boundary between encoded UTF-8 codepoints.
 
+- `StringSlice.__getitem__(Slice)` will now raise an error if the provided slice
+  start and end positions do not fall on a valid codepoint boundary. This
+  prevents construction of malformed `StringSlice` values, which could lead to
+  memory unsafety or undefined behavior. For example, given a string containing
+  multi-byte encoded data, like:
+
+  ```mojo
+  var str_slice = "Hi👋!"
+  ```
+
+  and whose in-memory and decoded data looks like:
+
+  ```text
+  ┏━━━━━━━━━━━━━━━━━━━━━━━━━┓
+  ┃          Hi👋!          ┃ String
+  ┣━━┳━━━┳━━━━━━━━━━━━━━━┳━━┫
+  ┃H ┃ i ┃       👋      ┃! ┃ Codepoint Characters
+  ┣━━╋━━━╋━━━━━━━━━━━━━━━╋━━┫
+  ┃72┃105┃    128075     ┃33┃ Codepoints
+  ┣━━╋━━━╋━━━┳━━━┳━━━┳━━━╋━━┫
+  ┃72┃105┃240┃159┃145┃139┃33┃ Bytes
+  ┗━━┻━━━┻━━━┻━━━┻━━━┻━━━┻━━┛
+   0   1   2   3   4   5   6
+  ```
+
+  attempting to slice bytes `[3-5)` with `str_slice[3:5]` would previously
+  erroenously produce a malformed `StringSlice` as output that did not correctly
+  decode to anything:
+
+  ```text
+  ┏━━━━━━━┓
+  ┃  ???  ┃
+  ┣━━━━━━━┫
+  ┃  ???  ┃
+  ┣━━━━━━━┫
+  ┃  ???  ┃
+  ┣━━━┳━━━┫
+  ┃159┃145┃
+  ┗━━━┻━━━┛
+  ```
+
+  The same statement will now raise an error informing the user their indices
+  are invalid.
+
 - Added an iterator to `LinkedList` ([PR #4005](https://github.com/modular/mojo/pull/4005))
   - `LinkedList.__iter__()` to create a forward iterator.
   - `LinkedList.__reversed__()` for a backward iterator.
