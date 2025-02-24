@@ -115,12 +115,11 @@ constexpr bool accepts_buffer_v =
 /// the transform. If the transform is *not* run, then the result
 /// AnyAsyncValueRef simply contains a Chain.
 template <typename TransformFnT>
-AsyncRT::AnyAsyncValueRef
-cachedTransform(EncodedLocation loc,
-                const RCRef<TransformCache> &transformCache,
-                AsyncRT::AnyAsyncValueRef chain,
-                WriteableBufferRef transformKey, TransformFnT transformFn,
-                CacheHitFn cacheHitFn, bool errorOnCacheInsertFailure = true) {
+AsyncRT::AnyAsyncValueRef cachedTransform(
+    EncodedLocation loc, const RCRef<TransformCache> &transformCache,
+    AsyncRT::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
+    TransformFnT transformFn, CacheHitFn cacheHitFn,
+    bool errorOnCacheInsertFailure = true, std::string *outKeyHash = nullptr) {
   TimeTraceScope traceScope(
       RuntimeCacheProfilerEntry::create("Cache::cachedTransform"));
   BufferRef keyBuffer = std::move(transformKey);
@@ -131,11 +130,11 @@ cachedTransform(EncodedLocation loc,
       AsyncValueRef<std::optional<BufferRef>>::allocate(chain.getRuntime());
   chain.andThenSync([foundOr = foundOr.copy(), keyBuffer = keyBuffer.copy(),
                      transformCache = transformCache.copy(),
-                     loc = std::move(loc)]() mutable {
+                     loc = std::move(loc), outKeyHash]() mutable {
     // Find the thing in the cache with the target op's location. This copy of
     // `keyBuffer` is local, so it's safe to move.
     auto f = transformCache->find(foundOr.getRuntime(), std::move(keyBuffer),
-                                  std::move(loc));
+                                  std::move(loc), outKeyHash);
     std::move(f).andThenSync(
         [foundOr = foundOr.copy()](
             AsyncValueRef<std::optional<BufferRef>> &&f) mutable {
@@ -152,8 +151,8 @@ cachedTransform(EncodedLocation loc,
       [out = out.copy(), transformCache = transformCache.copy(),
        transformFn = std::move(transformFn), keyBuffer = std::move(keyBuffer),
        cacheHitFn = std::move(cacheHitFn),
-       errorOnCacheInsertFailure = errorOnCacheInsertFailure](
-          AsyncValueRef<std::optional<BufferRef>> &&foundOr) mutable {
+       errorOnCacheInsertFailure = errorOnCacheInsertFailure,
+       outKeyHash](AsyncValueRef<std::optional<BufferRef>> &&foundOr) mutable {
         if (foundOr.isError())
           return std::move(out).setToError(
               foundOr.getPointer()->takeDiagnostic());
@@ -163,6 +162,11 @@ cachedTransform(EncodedLocation loc,
               cacheHitFn(std::move(**foundOr)));
 
         // No error but no cache hit.
+
+        // If the caller provided a pointer to a string, clear it.
+        if (outKeyHash)
+          outKeyHash->clear();
+
         AnyAsyncValueRef xform;
         WriteableBufferRef writeableTransformResult;
         if constexpr (Detail::accepts_buffer_v<TransformFnT>) {
@@ -184,8 +188,8 @@ cachedTransform(EncodedLocation loc,
             [transformCache = transformCache.copy(), out = out.copy(),
              keyBuffer = std::move(keyBuffer),
              bufferWrittenInTransform = std::move(writeableTransformResult),
-             errorOnCacheInsertFailure =
-                 errorOnCacheInsertFailure](AnyAsyncValueRef &&xform) mutable {
+             errorOnCacheInsertFailure = errorOnCacheInsertFailure,
+             outKeyHash](AnyAsyncValueRef &&xform) mutable {
               if (xform.isError())
                 return std::move(out).setToError(xform.takeDiagnostic());
 
@@ -205,11 +209,13 @@ cachedTransform(EncodedLocation loc,
                                          std::move(bufferToCache));
               std::move(hashOr).andThenSync(
                   [out = out.copy(), xform = xform.copy(),
-                   errorOnCacheInsertFailure = errorOnCacheInsertFailure](
-                      AsyncValueRef<std::string> &&hashOr) mutable {
+                   errorOnCacheInsertFailure = errorOnCacheInsertFailure,
+                   outKeyHash](AsyncValueRef<std::string> &&hashOr) mutable {
                     if (hashOr.isError() && errorOnCacheInsertFailure)
                       return std::move(out).setToError(hashOr.takeDiagnostic());
 
+                    if (outKeyHash)
+                      *outKeyHash = hashOr.get();
                     return std::move(out).resolveIndirect(xform.copy());
                   });
             });
@@ -225,7 +231,8 @@ AsyncRT::AnyAsyncValueRef
 cachedTransform(EncodedLocation loc, RCRef<TransformCache> transformCache,
                 AsyncRT::AnyAsyncValueRef chain,
                 WriteableBufferRef transformKey, TransformFnT transformFn,
-                CacheHitFnT cacheHitFn, bool errorOnCacheInsertFailure = true) {
+                CacheHitFnT cacheHitFn, bool errorOnCacheInsertFailure = true,
+                std::string *outKeyHash = nullptr) {
   CacheHitFn onCacheHit;
 
   // If the cache hit function return something like an ErrorOr<T> propagate
@@ -254,7 +261,7 @@ cachedTransform(EncodedLocation loc, RCRef<TransformCache> transformCache,
   return cachedTransform(std::move(loc), std::move(transformCache),
                          std::move(chain), std::move(transformKey),
                          std::move(transformFn), std::move(onCacheHit),
-                         errorOnCacheInsertFailure);
+                         errorOnCacheInsertFailure, outKeyHash);
 }
 
 /// Profiler entry for compile-time cache transforms.
@@ -288,7 +295,8 @@ AsyncRT::AnyAsyncValueRef
 cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
                 AsyncRT::AnyAsyncValueRef chain,
                 WriteableBufferRef transformKey,
-                TransformationFnT &&transformFn, CacheHitFnT &&cacheHitFn) {
+                TransformationFnT &&transformFn, CacheHitFnT &&cacheHitFn,
+                std::string *outKeyHash = nullptr) {
   if (failed(writeOperationToCacheKey(target, transformKey.copy()))) {
     chain.copy().setToError(AsyncRT::getMLIRDiagnostic(
         "failed to write bytecode file", target->getLoc()));
@@ -303,7 +311,8 @@ cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
         return transformFn(target, std::move(buf), std::move(chain));
       },
       [target, cacheHitFn = std::forward<CacheHitFnT>(cacheHitFn)](
-          BufferRef buf) { return cacheHitFn(target, std::move(buf)); });
+          BufferRef buf) { return cacheHitFn(target, std::move(buf)); },
+      outKeyHash);
 }
 
 /// Run the specified passes over the target operation (i.e. ModulePasses over a
