@@ -996,6 +996,11 @@ fn _get_multimem_ld_reduce_asm[
         type in (DType.float32, DType.float16, DType.bfloat16),
         "type must be float32, float16, or bfloat16",
     ]()
+    constrained[
+        consistency
+        in (Consistency.WEAK, Consistency.RELAXED, Consistency.ACQUIRE),
+        "multimem.ld_reduce consistency must be in {weak, relaxed, acquire}",
+    ]()
 
     alias ss = ".global"
     alias vec = ".v" + _int_to_str[count]()
@@ -1062,6 +1067,121 @@ fn multimem_ld_reduce[
         )
 
     return StaticTuple[SIMD[type, output_width], count]()
+
+
+@always_inline("nodebug")
+fn _get_multimem_st_asm[
+    type: DType,
+    *,
+    count: Int,
+    scope: Scope,
+    consistency: Consistency,
+    width: Int = 1,
+]() -> StringLiteral:
+    constrained[_is_sm_9x(), "multimem is only supported on SM90+ GPUs"]()
+    constrained[type.is_floating_point(), "type must be floating point"]()
+    constrained[
+        type in (DType.float32, DType.float16, DType.bfloat16),
+        "type must be float32, float16, or bfloat16",
+    ]()
+    constrained[
+        consistency
+        in (Consistency.WEAK, Consistency.RELAXED, Consistency.RELEASE),
+        "multimem.st consistency must be in {weak, relaxed, release}",
+    ]()
+
+    alias ss = ".global"
+    alias vec = ".v" + _int_to_str[count]()
+    alias type_mnemonic = "." + _get_type_mnemonic[type]() + (
+        "x" + _int_to_str[width]() if width > 1 else ""
+    )
+    alias asm = "multimem.st." + consistency.mnemonic() + "." + scope.mnemonic() + ss + vec + type_mnemonic
+
+    return asm
+
+
+@always_inline("nodebug")
+fn multimem_st[
+    type: DType,
+    *,
+    count: Int,
+    scope: Scope,
+    consistency: Consistency,
+    width: Int = 1,
+](
+    addr: UnsafePointer[Scalar[type], address_space = AddressSpace.GLOBAL],
+    values: StaticTuple[SIMD[type, width], count],
+) -> None:
+    """Stages an inline multimem.st instruction.
+
+    This operation performs a store to all memory locations pointed to by the
+    multimem address using the specified memory consistency model and scope.
+
+    Parameters:
+        type: The data type of elements to store (must be float16, bfloat16, or
+            float32).
+        count: Number of vector elements per store operation (2 or 4).
+        scope: Memory scope for visibility of the store operation
+            (CTA/Cluster/GPU/System).
+        consistency: Memory consistency semantics (weak/relaxed/release).
+        width: Vector width modifier for packed data types (default 1).
+
+    Args:
+        addr: Multimem address in global address space pointing to multiple
+            locations.
+        values: Packed SIMD values to store, with count matching the template
+            parameter.
+
+    Notes:
+        - Requires SM90+ GPU architecture (PTX ISA 8.1+).
+        - The address must be a valid multimem address.
+        - Supported type-width combinations must total 32/64/128 bits.
+        - Default memory semantics: weak consistency (when not specified).
+        - Vector stores (.v2/.v4) require matching total size constraints.
+
+    Example:
+        ```mojo
+        from gpu.memory import *
+
+        # Store 2 float32 values to multimem address.
+        multimem_st[DType.float32, count=2, scope=Scope.CTA, consistency=Consistency.RELAXED](
+            addr, StaticTuple[DType.float32, 2](val1, val2)
+        )
+
+        # Vector store of 4 float16x2 values.
+        multimem_st[DType.float16, count=4, scope=Scope.CLUSTER, consistency=Consistency.RELEASE, width=2](
+            addr, StaticTuple[DType.float16, 4](vec1, vec2, vec3, vec4)
+        )
+        ```
+
+    See Also:
+        PTX ISA Documentation: https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-multimem-ld-reduce-multimem-st-multimem-red
+    """
+    constrained[count in (2, 4), "count must be 2 or 4"]()
+
+    alias asm = _get_multimem_st_asm[
+        type,
+        count=count,
+        scope=scope,
+        consistency=consistency,
+        width=width,
+    ]()
+
+    @parameter
+    if count == 2:
+        inlined_assembly[
+            asm + " [$0], {$1,$2};",
+            NoneType,
+            constraints="l,r,r,~{memory}",
+            has_side_effect=True,
+        ](addr.bitcast[NoneType](), values[0], values[1])
+    elif count == 4:
+        inlined_assembly[
+            asm + " [$0], {$1,$2,$3,$4};",
+            NoneType,
+            constraints="l,r,r,r,r,~{memory}",
+            has_side_effect=True,
+        ](addr.bitcast[NoneType](), values[0], values[1], values[2], values[3])
 
 
 # ===-----------------------------------------------------------------------===#
