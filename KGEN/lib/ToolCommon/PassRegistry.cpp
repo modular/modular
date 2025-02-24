@@ -20,7 +20,7 @@ void KGEN::registerDefaultKGENPasses() {
   mlir::registerCSEPass();
   mlir::registerCanonicalizerPass();
   mlir::registerConvertIndexToLLVMPass();
-  mlir::registerReconcileUnrealizedCasts();
+  mlir::registerReconcileUnrealizedCastsPass();
   mlir::registerPrintOpStats();
   mlir::registerStripDebugInfo();
 
