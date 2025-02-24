@@ -65,7 +65,7 @@ fn test_dynamic_shared_mem():
     # CHECK: @extern_ptr_syml_0 = external dso_local addrspace(3) global [0 x float], align 4
     fn kernel(output: UnsafePointer[Float32]):
         # CHECK: %2 = load float, ptr addrspace(3) @extern_ptr_syml, align 4
-        # CHECK: %3 = load float, ptr addrspace(3) getelementptr inbounds (float, ptr addrspace(3) @extern_ptr_syml_0, i32 1), align 4
+        # CHECK: %3 = load float, ptr addrspace(3) getelementptr inbounds nuw (i8, ptr addrspace(3) @extern_ptr_syml_0, i32 4), align 4
         # CHECK: fadd contract float %2, %3
         var dynamic_sram_ptr_1 = external_memory[
             Float32, address_space = AddressSpace.SHARED, alignment=4
