@@ -362,7 +362,7 @@ bool CallGraph::doAnalysis(CallGraphNode *node) {
   // At the end of the walk, assess the leftover required promises. Prepend
   // them to the signature and block arguments.
   auto newTypes = consumeRequiredPromises(
-      func.getArguments().take_back(node->requiredPromises.size()));
+      func.getArguments().take_front(node->requiredPromises.size()));
   if (newTypes.empty())
     return false;
 
