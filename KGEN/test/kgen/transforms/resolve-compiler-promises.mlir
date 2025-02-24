@@ -222,18 +222,18 @@ kgen.func @call_fn(%cl: !kgen.pointer<none>) {
 // -----
 
 // CHECK-LABEL: kgen.func @entry
-// CHECK-SAME: (%arg0: i32)
-kgen.func @entry(%arg0: i32) {
+// CHECK-SAME: (%arg0: i32, %arg1: index)
+kgen.func @entry(%arg0: i32, %arg1: index) {
   pop.compiler.global_store "x", %arg0 : i32
-  // CHECK-NEXT: call @simple_recursion(%arg0)
-  kgen.call @simple_recursion() : () capturing -> ()
+  // CHECK-NEXT: call @simple_recursion(%arg0, %arg1)
+  kgen.call @simple_recursion(%arg1) : (index) capturing -> ()
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @simple_recursion(%arg0: i32)
-kgen.func @simple_recursion() capturing {
-  // CHECK-NEXT: call @simple_recursion(%arg0)
-  kgen.call @simple_recursion() : () capturing -> ()
+// CHECK-LABEL: kgen.func @simple_recursion(%arg0: i32, %arg1: index)
+kgen.func @simple_recursion(%arg1: index) capturing {
+  // CHECK-NEXT: call @simple_recursion(%arg0, %arg1)
+  kgen.call @simple_recursion(%arg1) : (index) capturing -> ()
   %0 = pop.compiler.global_load "x" : i32
   kgen.return
 }
