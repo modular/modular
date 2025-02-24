@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: AMD-GPU
-# RUN: %mojo-no-debug-no-assert %s
+# RUN: %mojo-no-debug-no-assert %s | FileCheck %s
 
 from gpu.host import DeviceContext
 from gpu.id import block_dim, block_idx, grid_dim, thread_idx
