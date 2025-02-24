@@ -108,48 +108,59 @@ TEST(CachedTransformTest, BufferReturn) {
     ++hitCount;
     return buf.copy();
   };
+
+  std::string hashKey;
   const AsyncValueRef<Chain> &inputChain = runtime->getReadyChain();
   constexpr StringLiteral keyStr = "hello";
   WriteableBufferRef key = WriteableBuffer::get(0, {}, keyStr.size());
   key->write(keyStr.data(), keyStr.size());
   EncodedLocation loc = AsyncRT::UnknownLocationDecoder::getEncodedLocation();
+
+  // First call should generate new hash
   AnyAsyncValueRef output =
       cachedTransform(loc.copy(), transformCache.copy(), inputChain.copy(),
-                      key.copy(), transform, hitFn);
+                      key.copy(), transform, hitFn, true, &hashKey);
   await(output);
 
   ASSERT_TRUE(output.isType<BufferRef>());
   auto &outputBuffer = output.get<BufferRef>();
   EXPECT_EQ(outputBuffer->getBuffer(), world);
-
   EXPECT_EQ(runCount, 1);
+  EXPECT_FALSE(hashKey.empty()) << "Hash key should be populated on first run";
+  std::string initialHash = hashKey;
 
+  // Second call should reuse same hash
+  hashKey.clear();
   const AsyncValueRef<Chain> &inputChain2 = runtime->getReadyChain();
   AnyAsyncValueRef output2 =
       cachedTransform(loc.copy(), transformCache.copy(), inputChain2.copy(),
-                      key.copy(), transform, hitFn);
+                      key.copy(), transform, hitFn, true, &hashKey);
   await(output2);
 
   ASSERT_TRUE(output2.isType<BufferRef>());
   auto &outputBuffer2 = output2.get<BufferRef>();
   EXPECT_EQ(outputBuffer2->getBuffer(), world);
-
   EXPECT_EQ(runCount, 1);
   EXPECT_EQ(hitCount, 1);
+  EXPECT_EQ(hashKey, initialHash) << "Hash should match initial value";
 
+  // Third call with same key
+  hashKey.clear();
   const AsyncValueRef<Chain> &inputChain3 = runtime->getReadyChain();
   AnyAsyncValueRef output3 =
       cachedTransform(loc.copy(), transformCache.copy(), inputChain3.copy(),
-                      key.copy(), transform, hitFn);
+                      key.copy(), transform, hitFn, true, &hashKey);
   await(output3);
 
   ASSERT_TRUE(output3.isType<BufferRef>());
   auto &outputBuffer3 = output3.get<BufferRef>();
   EXPECT_EQ(outputBuffer3->getBuffer(), world);
-
   EXPECT_EQ(runCount, 1);
   EXPECT_EQ(hitCount, 2);
+  EXPECT_EQ(hashKey, initialHash) << "Hash should remain consistent";
 
+  // Fourth call with modified hit function but same key
+  hashKey.clear();
   constexpr llvm::StringLiteral prependStr = " again ";
   auto anotherHitFn = [&](BufferRef buf) {
     ++hitCount;
@@ -164,13 +175,14 @@ TEST(CachedTransformTest, BufferReturn) {
   const AsyncValueRef<Chain> &inputChain4 = runtime->getReadyChain();
   AnyAsyncValueRef output4 =
       cachedTransform(loc.copy(), transformCache.copy(), inputChain4.copy(),
-                      key.copy(), transform, anotherHitFn);
+                      key.copy(), transform, anotherHitFn, true, &hashKey);
   await(output4);
 
   ASSERT_TRUE(output4.isType<BufferRef>());
   auto &outputBuffer4 = output4.get<BufferRef>();
   EXPECT_EQ(outputBuffer4->getBuffer(), (prependStr + world).str());
-
   EXPECT_EQ(runCount, 1);
   EXPECT_EQ(hitCount, 3);
+  EXPECT_EQ(hashKey, initialHash)
+      << "Hash should persist through hit function changes";
 }
