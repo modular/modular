@@ -1028,7 +1028,13 @@ struct Bench:
             var run = runs[i]
             var result = run.result
 
-            writer.write(first_sep, run.name, self.pad(name_width, run.name))
+            # TODO: remove when kbench adds the spec column
+            if self.config.format == Format.csv:
+                name = String('"', run.name, '"')
+            else:
+                name = run.name
+
+            writer.write(first_sep, name, self.pad(name_width, name))
 
             # TODO: Move met (ms) to the end of the table to align with verbose
             # timing, don't repeat `Mean (ms)`, and make sure it works with

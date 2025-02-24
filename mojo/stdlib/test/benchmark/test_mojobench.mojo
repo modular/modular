@@ -69,9 +69,9 @@ def main():
     print(m)
 
     # CHECK: name,met (ms),iters,throughput (GElems/s),Arithmetic (GFLOPS/s),min (ms),mean (ms),max (ms),duration (ms)
-    # CHECK: bench1,
-    # CHECK: bench2/0,
-    # CHECK: bench2/1,
+    # CHECK: "bench1",
+    # CHECK: "bench2/0",
+    # CHECK: "bench2/1",
     m.config.format = Format.csv
     print(m)
 
