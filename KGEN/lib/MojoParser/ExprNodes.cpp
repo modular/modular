@@ -351,13 +351,6 @@ static AnyValue handleIntOrFPLiteral(TypedAttr value, ASTType type,
   // or FloatLiteral[value: __mlir_type.`!kgen.float_literal`]
   auto litStruct = dyn_cast_if_present<StructDeclOp>(decl);
 
-  // FIXME: remove legacy IntLiteral/FloatLiteral format.
-  if (litStruct && litStruct.getParams().empty()) {
-    return emitter.emitConstructorCall(
-        type, CallOperands({{AnyValue(value), expr}}), expr,
-        CallSyntax::kImplicitConvert, dest);
-  }
-
   if (!litStruct || litStruct.getParams().size() != 1 ||
       !isa<IntLiteralType, FloatLiteralType>(
           litStruct.getParams()[0].getType())) {
@@ -390,11 +383,7 @@ AnyValue IntLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
 AnyValue FloatLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   IPRational value = Lexer::getFloatLiteralValue(spelling);
-  auto attr = FloatLiteralAttr::get(
-      emitter.getContext(),
-      FloatLiteralSpecialValuesAttr::get(emitter.getContext(),
-                                         FloatLiteralSpecialValues::Normal),
-      value);
+  auto attr = FloatLiteralAttr::get(emitter.getContext(), value);
   ASTType type =
       emitter.shared.getBuiltinFloatLiteralType(emitter.declScope, getLoc());
   return handleIntOrFPLiteral(attr, type, this, dest, emitter);

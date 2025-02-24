@@ -58,7 +58,7 @@ trait trait_name:
 
             EXPECT_EQ(symbols[0].name, "Value");
             EXPECT_EQ(symbols[0].kind, lsp::SymbolKind::Property);
-            EXPECT_EQ(symbols[0].detail, "IntLiteral(10)");
+            EXPECT_EQ(symbols[0].detail, "10");
 
             EXPECT_EQ(symbols[1].name, "foo");
             EXPECT_EQ(symbols[1].kind, lsp::SymbolKind::Function);
