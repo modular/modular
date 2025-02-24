@@ -23,6 +23,8 @@ static llvm::Type *convertDTypeToLLVM(KGENDType dtype,
     return llvm::IntegerType::get(llvmCtx, dtype.getIntegerWidthInBits());
 
   switch (dtype.getValue()) {
+  case DType::kBool:
+    return llvm::IntegerType::get(llvmCtx, 1);
   case DType::f32:
     return llvm::Type::getFloatTy(llvmCtx);
   case DType::f64:
@@ -117,13 +119,19 @@ static TypedAttr convertLLVMToAttr(llvm::Constant *value, Type type) {
     if (auto cf = dyn_cast<llvm::ConstantFP>(value))
       return SIMDAttr::get(DTypeValue(cf->getValue(), *dtype), simdType);
 
+    if (isa<llvm::ConstantAggregateZero>(value))
+      return SIMDAttr::getZeroValue(simdType);
+
     if (auto simdValue = dyn_cast<llvm::ConstantVector>(value)) {
       SmallVector<DTypeValue> values;
       for (auto i = simdValue->op_begin(), e = simdValue->op_end(); i != e;
            ++i) {
-        if (auto ci = dyn_cast<llvm::ConstantInt>(*i))
-          values.push_back(DTypeValue(ci->getValue(), *dtype));
-        else if (auto cf = dyn_cast<llvm::ConstantFP>(*i))
+        if (auto ci = dyn_cast<llvm::ConstantInt>(*i)) {
+          if (dtype->isBool())
+            values.push_back(DTypeValue(!ci->getValue().isZero(), *dtype));
+          else
+            values.push_back(DTypeValue(ci->getValue(), *dtype));
+        } else if (auto cf = dyn_cast<llvm::ConstantFP>(*i))
           values.push_back(DTypeValue(cf->getValue(), *dtype));
         else
           return {};
@@ -161,7 +169,7 @@ getOverloadedDeclaration(ArrayRef<llvm::Type *> operandTypes,
 }
 
 template <typename T>
-static std::string stringize(T value) {
+static std::string stringize(const T &value) {
   SmallVector<char> data;
   llvm::raw_svector_ostream os(data);
   os << value;
@@ -288,7 +296,7 @@ ErrorTreeOrSuccess CallLLVMIntrinsicOp::interpret(ArrayRef<Attribute> operands,
   auto attr = convertLLVMToAttr(result, getResult(0).getType());
   if (!attr)
     return ErrorTree(getLoc(), "could not convert result of intrinsic: " +
-                                   stringize(result));
+                                   stringize(*result));
 
   if (attr.getType() != getResult(0).getType())
     return ErrorTree(getLoc(),
