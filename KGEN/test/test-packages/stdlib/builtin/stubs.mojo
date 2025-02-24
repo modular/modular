@@ -212,6 +212,20 @@ struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`]:
     fn __init__(out self):
         pass
 
+    @always_inline("builtin")
+    @implicit
+    fn __init__(
+        value: IntLiteral[_],
+        out result: FloatLiteral[
+            __mlir_attr[
+                `#kgen<int_to_float_literal<`,
+                value.value,
+                `>> : !kgen.float_literal`,
+            ]
+        ],
+    ):
+        result = __type_of(result)()
+
 
 @value
 @register_passable("trivial")
@@ -229,6 +243,11 @@ struct FloatDyn:
         self = __mlir_attr[
             `#kgen<float_literal_convert<`, +value.value, `>> : f64`
         ]
+
+    @always_inline("builtin")
+    @implicit
+    fn __init__(out self, value: IntLiteral):
+        self = FloatLiteral(value)
 
 
 @value

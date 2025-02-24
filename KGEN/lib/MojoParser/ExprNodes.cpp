@@ -2277,59 +2277,45 @@ coerceTypesToEachOther(SMLoc loc, CValue &lhs, const ExprNode *lhsExpr,
   if (!lhs || !rhs)
     return failure();
 
-  ASTType lhsType = lhs.getRValueType(), rhsType = rhs.getRValueType();
+  // If they are the same or if there is a common type between these, convert
+  // them to it.
+  ASTType commonType;
+  auto commonTypeResult =
+      emitter.getCommonType({lhs, lhsExpr}, {rhs, rhsExpr}, commonType);
 
-  // If the types already match, then we're done.
-  if (lhsType.isEqualCanon(rhsType))
-    return success();
-
-  bool lhsConvertibleToRHS = ExprEmitter::canImplicitlyConvertToType(
-      {lhs, lhsExpr}, rhsType, emitter.getDeclScope());
-  bool rhsConvertibleToLHS = ExprEmitter::canImplicitlyConvertToType(
-      {rhs, rhsExpr}, lhsType, emitter.getDeclScope());
-  if (lhsConvertibleToRHS && !rhsConvertibleToLHS) {
-    lhs = convert({lhs, lhsExpr}, rhsType, /*isLHS*/ true);
-    return failure(!lhs);
-  }
-
-  if (!lhsConvertibleToRHS && rhsConvertibleToLHS) {
-    rhs = convert({rhs, rhsExpr}, lhsType, /*isLHS*/ false);
-    return failure(!rhs);
-  }
-
-  // If neither is convertible to the other, check to see if there is a common
-  // type, and convert both of them to it if so.
-  if (!lhsConvertibleToRHS && !rhsConvertibleToLHS) {
-    if (auto commonType = emitter.getCommonType(lhsType, rhsType)) {
-      lhs = convert({lhs, lhsExpr}, commonType, /*isLHS*/ true);
-      if (!lhs)
-        return failure();
-      rhs = convert({rhs, rhsExpr}, commonType, /*isLHS*/ false);
-      return failure(!rhs);
-    }
-  }
-
-  // Otherwise we have an error.  If we have no source location, we just return
-  // failure without returning an error.
-  if (!loc.isValid())
+  // If we failed and have no source location, we just return failure without
+  // returning an error.
+  if (commonTypeResult != ExprEmitter::CTR_Success && !loc.isValid())
     return failure();
 
-  if (!lhsConvertibleToRHS && !rhsConvertibleToLHS) {
+  ASTType lhsType = lhs.getRValueType(), rhsType = rhs.getRValueType();
+  switch (commonTypeResult) {
+  case ExprEmitter::CTR_Success:
+    if (!lhsType.isEqualCanon(commonType))
+      lhs = convert({lhs, lhsExpr}, commonType, /*isLHS*/ true);
+    if (!lhs)
+      return failure();
+    if (!rhsType.isEqualCanon(commonType))
+      rhs = convert({rhs, rhsExpr}, commonType, /*isLHS*/ false);
+    return failure(!rhs);
+
+  case ExprEmitter::CTR_NoCommonType:
     emitter.emitError(loc, "value of type ")
         << lhsType << " is not compatible with value of type " << rhsType
         << lhsExpr->getRange() << rhsExpr->getRange();
     return failure();
+  case ExprEmitter::CTR_Ambiguous:
+    auto diag = emitter.emitError(loc, "ambiguous merge: left value has type ")
+                << lhsType << " and right value has type " << rhsType
+                << ", and both convert to each other" << lhsExpr->getRange()
+                << rhsExpr->getRange();
+    diag.attachNote(loc)
+        << "you could disambiguate by casting the left value to " << rhsType
+        << lhsExpr->getRange();
+    diag.attachNote(loc) << "or cast the right value to " << lhsType
+                         << rhsExpr->getRange();
+    return failure();
   }
-
-  auto diag = emitter.emitError(loc, "ambiguous merge: left value has type ")
-              << lhsType << " and right value has type " << rhsType
-              << ", and both convert to each other" << lhsExpr->getRange()
-              << rhsExpr->getRange();
-  diag.attachNote(loc) << "you could disambiguate by casting the left value to "
-                       << rhsType << lhsExpr->getRange();
-  diag.attachNote(loc) << "or cast the right value to " << lhsType
-                       << rhsExpr->getRange();
-  return failure();
 }
 
 /// When emitting an op node that does not invoke a function but generates
@@ -2772,8 +2758,8 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // See if the true and false values directly union together.  This
     // requires the rvalue types to be the same but allows the reference
     // types to be different.
-    ASTType commonRefType =
-        emitter.getCommonType(falseMVal.getType(), trueMVal.getType());
+    RefType commonRefType = emitter.getCommonRefType(
+        cast<RefType>(falseMVal.getType()), cast<RefType>(trueMVal.getType()));
     if (!commonRefType)
       return {};
 
@@ -2785,7 +2771,7 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // itself, which would allow us to handle ref results from functions, but
     // we don't have that.  Instead, find the underlying values and see if we
     // can reason about them from the IR tree.
-    auto isAcceptableOrigin = [&](Value origin) -> bool {
+    auto isAcceptableSource = [&](Value origin) -> bool {
       // Strip off GERs and Rebinds and RefImmutOp, and the get the block that
       // defines the operation or block argument.
       origin = OriginTrackable::findUnderlyingValueFromField(origin);
@@ -2802,7 +2788,7 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       return false;
     };
 
-    if (!isAcceptableOrigin(trueMVal) || !isAcceptableOrigin(falseMVal))
+    if (!isAcceptableSource(trueMVal) || !isAcceptableSource(falseMVal))
       return {};
 
     // If this succeeded, we can emit a conversion to the common type in each
