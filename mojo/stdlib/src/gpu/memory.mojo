@@ -988,6 +988,7 @@ fn _get_multimem_ld_reduce_asm[
     reduction: ReduceOp,
     scope: Scope,
     consistency: Consistency,
+    acc_type: DType = type,
     output_width: Int = 1,
 ]() -> StringLiteral:
     constrained[_is_sm_9x(), "multimem is only supported on SM90+ GPUs"]()
@@ -1008,7 +1009,10 @@ fn _get_multimem_ld_reduce_asm[
     alias type_mnemonic = "." + _get_type_mnemonic[type]() + (
         "x" + _int_to_str[output_width]() if output_width > 1 else ""
     )
-    alias asm = "multimem.ld_reduce." + consistency.mnemonic() + "." + scope.mnemonic() + ss + op + vec + type_mnemonic
+    alias acc_type_mnemonic = (
+        ".acc::" + _get_type_mnemonic[acc_type]()
+    ) if acc_type is not type else ""
+    alias asm = "multimem.ld_reduce." + consistency.mnemonic() + "." + scope.mnemonic() + ss + op + acc_type_mnemonic + vec + type_mnemonic
 
     return asm
 
@@ -1021,10 +1025,11 @@ fn multimem_ld_reduce[
     reduction: ReduceOp,
     scope: Scope,
     consistency: Consistency,
+    acc_type: DType = type,
     output_width: Int = 1,
 ](
     addr: UnsafePointer[Scalar[type], address_space = AddressSpace.GLOBAL],
-) -> StaticTuple[SIMD[type, output_width], count]:
+) -> StaticTuple[SIMD[acc_type, output_width], count]:
     constrained[count in (2, 4), "count must be 2 or 4"]()
 
     alias asm = _get_multimem_ld_reduce_asm[
@@ -1033,6 +1038,7 @@ fn multimem_ld_reduce[
         reduction=reduction,
         scope=scope,
         consistency=consistency,
+        acc_type=acc_type,
         output_width=output_width,
     ]()
 
@@ -1041,32 +1047,32 @@ fn multimem_ld_reduce[
         var r = inlined_assembly[
             asm + " {$0,$1}, [$2];",
             _RegisterPackType[
-                SIMD[type, output_width], SIMD[type, output_width]
+                SIMD[acc_type, output_width], SIMD[acc_type, output_width]
             ],
             constraints="=r,=r,l,~{memory}",
             has_side_effect=True,
         ](addr.bitcast[NoneType]())
-        return StaticTuple[SIMD[type, output_width], count](r[0], r[1])
+        return StaticTuple[SIMD[acc_type, output_width], count](r[0], r[1])
 
     @parameter
     if count == 4:
         var r = inlined_assembly[
             asm + " {$0,$1,$2,$3}, [$4];",
             _RegisterPackType[
-                SIMD[type, output_width],
-                SIMD[type, output_width],
-                SIMD[type, output_width],
-                SIMD[type, output_width],
+                SIMD[acc_type, output_width],
+                SIMD[acc_type, output_width],
+                SIMD[acc_type, output_width],
+                SIMD[acc_type, output_width],
             ],
             constraints="=r,=r,=r,=r,l,~{memory}",
             has_side_effect=True,
         ](addr.bitcast[NoneType]())
 
-        return StaticTuple[SIMD[type, output_width], count](
+        return StaticTuple[SIMD[acc_type, output_width], count](
             r[0], r[1], r[2], r[3]
         )
 
-    return StaticTuple[SIMD[type, output_width], count]()
+    return StaticTuple[SIMD[acc_type, output_width], count]()
 
 
 @always_inline("nodebug")
