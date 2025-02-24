@@ -545,8 +545,17 @@ struct UnusedInitSelfParam[A: Int]:
     fn __init__[B: Int](out self: UnusedInitSelfParam[B]):
         pass
 
-
 fn unused_init_self_param():
     # expected-error @below {{invalid initialization: could not deduce parameter 'B' of callee '__init__'}}
     # expected-note @below {{failed to infer parameter 'B', parameter isn't used in any argument}}
     var slice = UnusedInitSelfParam()
+
+
+@register_passable("trivial")
+struct SimpleSIMD[arg1: Int, size: Int]:
+    # expected-note @below {{function declared here}}
+    fn __init__[T: AnyType](out self: SimpleSIMD[arg1, 1], value: T): pass
+
+fn dont_miss_inference_conflict(b: SimpleSIMD[40, 1]):
+    # expected-error @below {{could not deduce parameter 'T' of callee '__init__'}}
+    x = SimpleSIMD[50, 4](b)
