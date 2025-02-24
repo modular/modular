@@ -7,7 +7,7 @@
 
 import pytest
 from conftest import buffer_types, shapes, tensor_types
-from hypothesis import assume, given, settings
+from hypothesis import assume, given
 from hypothesis import strategies as st
 from max import mlir
 from max._core import graph as _graph
@@ -228,8 +228,6 @@ def test_load_store_ellipsis_slice(
 
 
 @given(tensor_type=tensor_type, buffer_type=buffer_type)
-# TODO(MSDK-847): fix the perf here and re-enable the deadline.
-@settings(deadline=None)
 def test_load_store_slice(tensor_type: TensorType, buffer_type: BufferType):
     assume(tensor_type.rank > 1 and buffer_type.rank > 1)
 

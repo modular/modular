@@ -156,10 +156,7 @@ def modular_graph_test(
     def decorator(test_fn):
         model = session.load(graph)
 
-        # TODO(MSDK-847): fix the perf here and re-enable the deadline.
-        @settings(
-            deadline=None, suppress_health_check=[HealthCheck.data_too_large]
-        )
+        @settings(suppress_health_check=[HealthCheck.data_too_large])
         @given_input_types(
             (input.type for input in graph.inputs),
             static_dims=static_dims,

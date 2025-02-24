@@ -7,7 +7,7 @@
 
 import pytest
 from conftest import axes, shapes, tensor_types
-from hypothesis import assume, given, settings
+from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
 from max.graph import (
@@ -40,7 +40,6 @@ def with_dim(shape: Shape, axis: int, dim: StaticDim):
     axis_sizes=st.lists(st.from_type(StaticDim), max_size=MAX_CONCAT_SIZE),
     axis=axes(shared_tensor_types),
 )
-@settings(deadline=None)
 def test_concat__static_dim(
     base_type: TensorType, axis_sizes: list[StaticDim], axis: int
 ):
@@ -64,8 +63,6 @@ def test_concat__static_dim(
     base_type=shared_tensor_types,
     axis=st.integers(),
 )
-# TODO(MSDK-847): fix the perf here and re-enable the deadline.
-@settings(deadline=None)
 def test_concat__axis_out_of_bounds(base_type: TensorType, axis: int):
     assume(axis < -base_type.rank or axis >= base_type.rank)
 
@@ -79,8 +76,6 @@ def test_concat__axis_out_of_bounds(base_type: TensorType, axis: int):
     type_b=tensor_types(shapes=shared_shapes),
     axis=axes(shared_tensor_types),
 )
-# TODO(MSDK-847): fix the perf here and re-enable the deadline.
-@settings(deadline=None)
 def test_concat__bad_dtype(type_a: TensorType, type_b: TensorType, axis: int):
     assume(type_a.dtype != type_b.dtype)
     assert type_a.shape == type_b.shape
@@ -95,8 +90,6 @@ def test_concat__bad_dtype(type_a: TensorType, type_b: TensorType, axis: int):
 
 
 @given(axis=...)
-# TODO(MSDK-847): fix the perf here and re-enable the deadline.
-@settings(deadline=None)
 def test_concat__no_inputs(axis: int):
     with Graph("concat", input_types=[]) as graph:
         with pytest.raises(ValueError):
@@ -108,8 +101,6 @@ def test_concat__no_inputs(axis: int):
     type_b=tensor_types(dtypes=shared_dtypes),
     axis=axes(shared_tensor_types),
 )
-# TODO(MSDK-847): fix the perf here and re-enable the deadline.
-@settings(deadline=None)
 def test_concat__different_ranks(
     type_a: TensorType, type_b: TensorType, axis: int
 ):
@@ -131,8 +122,6 @@ def test_concat__different_ranks(
     ),
     axis=axes(shared_tensor_types),
 )
-# TODO(MSDK-847): fix the perf here and re-enable the deadline.
-@settings(deadline=None)
 def test_concat__mismatched_dims(
     type_a: TensorType, type_b: TensorType, axis: int
 ):
@@ -152,8 +141,6 @@ def test_concat__mismatched_dims(
 
 
 @given(base_type=shared_tensor_types, axis=axes(shared_tensor_types))
-# TODO(MSDK-847): fix the perf here and re-enable the deadline.
-@settings(deadline=None)
 def test_concat__symbolic__size_1(base_type: TensorType, axis: int):
     assume(not isinstance(base_type.shape[axis], StaticDim))
 
@@ -168,8 +155,6 @@ def test_concat__symbolic__size_1(base_type: TensorType, axis: int):
     axis=axes(shared_tensor_types),
     axis_dims=st.lists(st.from_type(Dim), min_size=1, max_size=MAX_CONCAT_SIZE),
 )
-# TODO(MSDK-847): fix the perf here and re-enable the deadline.
-@settings(deadline=None)
 def test_concat__symbolic__algebraic_result(
     base_type: TensorType,
     axis: int,
