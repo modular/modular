@@ -50,7 +50,6 @@ from layout.swizzle import Swizzle, make_swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import (
     TensorCore,
-    get_accum_type,
     get_fragment_size,
     get_mma_shape,
 )
@@ -59,6 +58,7 @@ from memory.pointer import _GPUAddressSpace as AddressSpace
 
 from utils import StaticTuple
 from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
 
 from .matmul_gpu import matmul_kernel_naive
 from .utils import apply_epilogue, elementwise_epilogue_type

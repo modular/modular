@@ -17,12 +17,8 @@ from sys import (
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 from gpu.host.info import A100, DEFAULT_GPU_ARCH, _get_info_from_target
-from layout.tensor_core import (
-    TensorCore,
-    get_accum_type,
-    get_fragment_size,
-    get_mma_shape,
-)
+from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
+from utils.numerics import get_accum_type
 
 from utils.index import Index, IndexList
 

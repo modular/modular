@@ -46,10 +46,10 @@ from layout.swizzle import make_swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import (
     TensorCore,
-    get_accum_type,
     get_fragment_size,
     get_mma_shape,
 )
+from utils.numerics import get_accum_type
 from memory import UnsafePointer, memset_zero, stack_allocation
 from memory.pointer import _GPUAddressSpace as AddressSpace
 from register import register_internal
