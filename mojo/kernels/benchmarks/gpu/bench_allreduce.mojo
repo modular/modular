@@ -64,7 +64,7 @@ fn _human_memory(size: Int) -> String:
 
 # TODO: convert 'ngpus' to runtime variable
 fn bench_reduce[
-    type: DType, rank: Int, ngpus: Int
+    type: DType, rank: Int, ngpus: Int, max_num_blocks: Int
 ](mut m: Bench, list_of_ctx: List[DeviceContext], length: Int) raises:
     constrained[ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"]()
     constrained[rank == 1, "this test code currently assumes rank 1"]()
@@ -76,9 +76,9 @@ fn bench_reduce[
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
-        UnsafePointer[Signal]()
-    )
+    var rank_sigs = InlineArray[
+        UnsafePointer[Signal[max_num_blocks]], MAX_GPUS
+    ](UnsafePointer[Signal[max_num_blocks]]())
 
     # Set up temp buffers for GPUs to reduce-scatter into / all-gather from.
     var temp_buffer_num_bytes = ngpus * sizeof[type]() * length
@@ -101,11 +101,13 @@ fn bench_reduce[
         # Create and initialize signal buffers
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[DType.uint8](
-                sizeof[Signal]() + temp_buffer_num_bytes
+                sizeof[Signal[max_num_blocks]]() + temp_buffer_num_bytes
             )
         )
         list_of_ctx[i].memset_sync[DType.uint8](signal_buffers[i], 0)
-        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
+        rank_sigs[i] = (
+            signal_buffers[i].unsafe_ptr().bitcast[Signal[max_num_blocks]]()
+        )
 
         # Copy data to device
         list_of_ctx[i].enqueue_copy_to_device(in_bufs_list[i], host_buffers[i])
@@ -197,6 +199,8 @@ def main():
     alias dtype = env_get_dtype["dtype", DType.bfloat16]()
     alias num_gpus = env_get_int["num_gpus", 2]()
     alias rank = env_get_int["rank", 1]()
+    # Force passing `max_num_blocks` explicitly.
+    alias max_num_blocks = env_get_int["TUNE_MAX_NUM_BLOCKS", -1]()
 
     assert_true(DeviceContext.number_of_devices() >= num_gpus)
 
@@ -210,6 +214,8 @@ def main():
 
     var m = Bench()
 
-    bench_reduce[type=dtype, rank=rank, ngpus=num_gpus](m, ctx, length)
+    bench_reduce[
+        type=dtype, rank=rank, ngpus=num_gpus, max_num_blocks=max_num_blocks
+    ](m, ctx, length)
 
     m.dump_report()
