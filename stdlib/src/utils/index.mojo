@@ -1086,7 +1086,7 @@ fn Index[
 
 
 @always_inline
-fn product[size: Int](tuple: IndexList[size, **_], end_idx: Int) -> Int:
+fn product[size: Int](tuple: IndexList[size, **_], end_idx: Int = size) -> Int:
     """Computes a product of values in the tuple up to the given index.
 
     Parameters:
