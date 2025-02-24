@@ -13,6 +13,7 @@
 # RUN: %mojo %s
 
 from testing import assert_equal
+from utils.numerics import isnan
 
 
 def test_abs():
@@ -122,6 +123,15 @@ def test_pow():
     assert_equal(pow(I(0, 1, 2, 3), Int(2)), I(0, 1, 4, 9))
 
 
+def test_isnan():
+    # Check that we can run llvm intrinsics returning bool at comptime.
+    alias x1 = isnan(SIMD[DType.float32, 4](SIMD[DType.float64, 4](1.0)))
+    assert_equal(x1, False)
+
+    alias x2 = isnan(SIMD[DType.float32, 4](FloatLiteral_nan))
+    assert_equal(x2, True)
+
+
 def main():
     test_abs()
     test_divmod()
@@ -129,3 +139,4 @@ def main():
     test_min()
     test_round()
     test_pow()
+    test_isnan()
