@@ -36,6 +36,12 @@ modular_cc_test(
 )
 
 modular_cc_test(
+    name = "HashUtilsTest",
+    srcs = ["HashUtilsTest.cpp"],
+    deps = ["//Support:HashUtils"],
+)
+
+modular_cc_test(
     name = "IPIntTest",
     srcs = ["IPIntTest.cpp"],
     deps = ["//Support:IPInt"],

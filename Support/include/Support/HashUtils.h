@@ -7,11 +7,13 @@
 #ifndef SUPPORT_HASHUTILS_H
 #define SUPPORT_HASHUTILS_H
 
+#include "Support/LogicalResult.h"
 #include "llvm/ADT/Hashing.h"
 
 namespace mlir {
 class Block;
-}
+class Operation;
+} // namespace mlir
 
 namespace M {
 
@@ -24,6 +26,13 @@ llvm::hash_code hashBlock(mlir::Block &block);
 // equivalent. This is faster than hashing both individually and comparing
 // because we can early exit as soon as the hashes diverge.
 bool areBlocksSame(mlir::Block &b1, mlir::Block &b2);
+
+/// This function serializes an operation to MLIR bytecode and hashes the result
+/// using XXH3's 128-bit variant and then returns the result as a hex string.
+///
+/// This is useful for deduping operations in a stable way, without relying on
+/// in-memory values (e.g. pointers).
+FailureOr<std::string> getBytecodeHash(mlir::Operation *op);
 
 } // namespace M
 #endif // SUPPORT_HASHUTILS_H

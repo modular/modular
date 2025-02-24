@@ -42,7 +42,6 @@ modular_cc_library(
         "lib/DynamicLibrary.cpp",
         "lib/Error.cpp",
         "lib/ErrorOr.cpp",
-        "lib/HashUtils.cpp",
         "lib/PlatformLibNames.cpp",
         "lib/Process.cpp",
         "lib/Random.cpp",
@@ -63,7 +62,6 @@ modular_cc_library(
         "include/Support/ErrorOr.h",
         "include/Support/ForwardDecls.h",
         "include/Support/FunctionExtras.h",
-        "include/Support/HashUtils.h",
         "include/Support/LLVMCompilerForwardDecls.h",
         "include/Support/LLVMForwardDecls.h",
         "include/Support/LLVMYAMLForwardDecls.h",
@@ -96,6 +94,16 @@ modular_cc_library(
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Support",
+    ],
+)
+
+modular_cc_library(
+    name = "HashUtils",
+    srcs = ["lib/HashUtils.cpp"],
+    hdrs = ["include/Support/HashUtils.h"],
+    deps = [
+        ":Base",
+        "@llvm-project//mlir:BytecodeWriter",
     ],
 )
 
