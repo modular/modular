@@ -34,7 +34,7 @@ from utils.numerics import get_accum_type
 # sature the NVLink in the bandwidth-bound regime.
 # TODO(bduke): Dispatch based on device after completing parameter sweep.
 
-alias MAX_BLOCK = 128
+alias MAX_NUM_BLOCKS_DEFAULT = 128
 """Maximum number of thread blocks to use for reduction kernels.
 
 This value has been empirically optimized through grid search across different GPU architectures.
@@ -55,19 +55,22 @@ alias _flag_t = DType.uint32
 
 @value
 @register_passable("trivial")
-struct Signal:
-    # Shape of self_counter is (MAX_BLOCK, MAX_GPUS)
+struct Signal[max_num_blocks: Int]:
+    # Shape of self_counter is (Self.max_num_blocks, MAX_GPUS)
     var self_counter: StaticTuple[
-        StaticTuple[Scalar[_flag_t], MAX_GPUS], MAX_BLOCK
+        StaticTuple[Scalar[_flag_t], MAX_GPUS], Self.max_num_blocks
     ]
-    # Shape of peer_counter is (2, MAX_BLOCK, MAX_GPUS)
+    # Shape of peer_counter is (2, Self.max_num_blocks, MAX_GPUS)
     # Two sets of peer counters are needed for two syncs. The reason is that
     # it's possible for peer GPU block to arrive at the second sync point while
     # the current GPU block hasn't passed the first sync point. Thus, peer GPU
     # may write counter + 1 while current GPU is busy waiting for counter. We use
     # alternating counter array to avoid this possibility.
     var peer_counter: StaticTuple[
-        StaticTuple[StaticTuple[Scalar[_flag_t], MAX_GPUS], MAX_BLOCK], 2
+        StaticTuple[
+            StaticTuple[Scalar[_flag_t], MAX_GPUS], Self.max_num_blocks
+        ],
+        2,
     ]
 
 
@@ -129,6 +132,7 @@ fn all_reduce_naive[
     type: DType,
     rank: Int,
     ngpus: Int, //,
+    max_num_blocks: Int,
 ](
     ctxs: List[DeviceContext],
     list_of_in_bufs: InlineArray[NDBuffer[type, rank], ngpus],
@@ -141,6 +145,7 @@ fn all_reduce_naive[
         type: The data type of tensor elements.
         rank: Number of dimensions in input tensors.
         ngpus: Number of GPUs participating in all-reduce.
+        max_num_blocks: Maximum number of thread blocks to launch.
 
     Arguments:
         ctxs: List of device contexts for participating GPUs.
@@ -184,7 +189,7 @@ fn all_reduce_naive[
 
         # Launch reduction kernels
         alias BLOCK_SIZE = 256
-        var grid_size = min(MAX_BLOCK, ceildiv(num_elements, BLOCK_SIZE))
+        var grid_size = min(max_num_blocks, ceildiv(num_elements, BLOCK_SIZE))
 
         src_index = 0
         for i in range(ngpus):
@@ -212,14 +217,15 @@ fn all_reduce_naive[
 
 @always_inline
 fn multi_gpu_barrier[
+    max_num_blocks: Int, //,
     ngpus: Int,
     is_start: Bool,
     need_fence: Bool = False,
 ](
     rank_sigs: InlineArray[
-        UnsafePointer[Signal], MAX_GPUS
+        UnsafePointer[Signal[max_num_blocks]], MAX_GPUS
     ],  # all-to-all table of signals
-    self_sg: UnsafePointer[Signal],
+    self_sg: UnsafePointer[Signal[max_num_blocks]],
     my_rank: Int,
 ):
     """
@@ -227,6 +233,7 @@ fn multi_gpu_barrier[
     reach a certain point before proceeding.
 
     Parameters:
+        max_num_blocks: Maximum number of thread blocks to launch.
         ngpus: Number of GPUs participating in barrier.
         is_start: Whether this is the start barrier.
         need_fence: Whether memory fence is needed.
@@ -268,14 +275,14 @@ fn multi_gpu_barrier[
 
         # Get the number of flags in self_counter to skip over it
         alias peer_counter_offset = sizeof[
-            StaticTuple[StaticTuple[Scalar[_flag_t], MAX_GPUS], MAX_BLOCK]
+            StaticTuple[StaticTuple[Scalar[_flag_t], MAX_GPUS], max_num_blocks]
         ]() // sizeof[_flag_t]()
 
         # this line should compute &rank_sigs[my_gpu]->peer_counter[val % 2][bid][my_rank]
         var peer_counter_ptr = (
             rank_sigs[my_gpu].bitcast[Scalar[_flag_t]]()
             + peer_counter_offset
-            + (val % 2) * (MAX_BLOCK * MAX_GPUS)
+            + (val % 2) * (max_num_blocks * MAX_GPUS)
             + bid * MAX_GPUS
             + my_rank
         )
@@ -283,7 +290,7 @@ fn multi_gpu_barrier[
         var self_counter_ptr = (
             self_sg.bitcast[Scalar[_flag_t]]()
             + peer_counter_offset
-            + (val % 2) * (MAX_BLOCK * MAX_GPUS)
+            + (val % 2) * (max_num_blocks * MAX_GPUS)
             + bid * MAX_GPUS
             + my_gpu
         )
@@ -312,11 +319,11 @@ fn multi_gpu_barrier[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
 )
 fn allreduce_2stage_kernel[
-    type: DType, rank: Int, ngpus: Int, *, BLOCK_SIZE: Int
+    type: DType, rank: Int, ngpus: Int, max_num_blocks: Int, *, BLOCK_SIZE: Int
 ](
     result: UnsafePointer[Scalar[type]],
     src_ptrs: InlineArray[UnsafePointer[Scalar[type]], ngpus],
-    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
+    rank_sigs: InlineArray[UnsafePointer[Signal[max_num_blocks]], MAX_GPUS],
     my_rank: Int,
     num_elements: Int,
 ):
@@ -331,7 +338,9 @@ fn allreduce_2stage_kernel[
             Note that `rank` is overloaded here to mean both device id and
             number of dimensions.
         ngpus: Number of GPUs participating.
+        max_num_blocks: Maximum number of thread blocks to launch.
         BLOCK_SIZE: Number of threads per block.
+
     Arguments:
         result: Output buffer for reduced values.
         src_ptrs: Input buffers from all GPUs.
@@ -351,7 +360,7 @@ fn allreduce_2stage_kernel[
 
     # Stride equals total threads in grid dimension for grid-strided loops.
     var stride = grid_dim.x * BLOCK_SIZE
-    var my_sig: UnsafePointer[Signal] = rank_sigs[my_rank]
+    var my_sig: UnsafePointer[Signal[max_num_blocks]] = rank_sigs[my_rank]
 
     # --- Data Partitioning ---
     # Block cyclic distribution using 128-bit packed vectors.
@@ -455,11 +464,11 @@ fn allreduce_2stage_kernel[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
 )
 fn allreduce_1stage_kernel[
-    type: DType, rank: Int, ngpus: Int, *, BLOCK_SIZE: Int
+    type: DType, rank: Int, ngpus: Int, max_num_blocks: Int, *, BLOCK_SIZE: Int
 ](
     result: UnsafePointer[Scalar[type]],
     src_ptrs: InlineArray[UnsafePointer[Scalar[type]], ngpus],
-    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
+    rank_sigs: InlineArray[UnsafePointer[Signal[max_num_blocks]], MAX_GPUS],
     my_rank: Int,
     num_elements: Int,
 ):
@@ -470,6 +479,7 @@ fn allreduce_1stage_kernel[
         type: Data type of tensor elements.
         rank: Number of dimensions in tensors.
         ngpus: Number of GPUs participating.
+        max_num_blocks: Maximum number of thread blocks to launch.
         BLOCK_SIZE: Number of threads per block.
 
     Arguments:
@@ -488,7 +498,7 @@ fn allreduce_1stage_kernel[
 
     var global_tid = global_idx.x
     var stride = grid_dim.x * BLOCK_SIZE
-    var my_sig: UnsafePointer[Signal] = rank_sigs[my_rank]
+    var my_sig: UnsafePointer[Signal[max_num_blocks]] = rank_sigs[my_rank]
     var num_simd_vectors = num_elements // simd_width
 
     # Round-robin access pattern to balance NVLink traffic across GPUs.
@@ -530,12 +540,12 @@ fn allreduce_1stage_kernel[
 
 @always_inline
 fn all_reduce_p2p[
-    type: DType, rank: Int, ngpus: Int, //
+    type: DType, rank: Int, ngpus: Int, max_num_blocks: Int, //
 ](
     ctxs: List[DeviceContext],
     list_of_in_bufs: InlineArray[NDBuffer[type, rank], ngpus],
     list_of_out_bufs: InlineArray[NDBuffer[type, rank], ngpus],
-    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
+    rank_sigs: InlineArray[UnsafePointer[Signal[max_num_blocks]], MAX_GPUS],
 ) raises:
     """
     Performs all-reduce using peer-to-peer access between GPUs.
@@ -544,6 +554,7 @@ fn all_reduce_p2p[
         type: Data type of tensor elements.
         rank: Number of dimensions in tensors.
         ngpus: Number of GPUs participating.
+        max_num_blocks: Maximum number of thread blocks to launch.
 
     Arguments:
         ctxs: List of device contexts for participating GPUs
@@ -575,7 +586,7 @@ fn all_reduce_p2p[
         var curr_out_buf = list_of_out_bufs[i]
 
         alias BLOCK_SIZE = 512
-        var grid_size = min(MAX_BLOCK, ceildiv(num_elements, BLOCK_SIZE))
+        var grid_size = min(max_num_blocks, ceildiv(num_elements, BLOCK_SIZE))
 
         alias rank_4_byte_threshold = 512 * 1024
         alias rank_8_byte_threshold = 256 * 1024
@@ -586,7 +597,7 @@ fn all_reduce_p2p[
             # Use the 1-stage allreduce when transfer is latency bound.
             curr_ctx.enqueue_function[
                 allreduce_1stage_kernel[
-                    type, rank, ngpus, BLOCK_SIZE=BLOCK_SIZE
+                    type, rank, ngpus, max_num_blocks, BLOCK_SIZE=BLOCK_SIZE
                 ]
             ](
                 curr_out_buf.data,
@@ -601,7 +612,7 @@ fn all_reduce_p2p[
             # Otherwise, use 2-stage allreduce for the bandwidth bound regime.
             curr_ctx.enqueue_function[
                 allreduce_2stage_kernel[
-                    type, rank, ngpus, BLOCK_SIZE=BLOCK_SIZE
+                    type, rank, ngpus, max_num_blocks, BLOCK_SIZE=BLOCK_SIZE
                 ]
             ](
                 curr_out_buf.data,
@@ -617,12 +628,13 @@ fn all_reduce_p2p[
 fn all_reduce[
     type: DType,
     rank: Int,
-    ngpus: Int, //,
+    ngpus: Int,
+    max_num_blocks: Int, //,
 ](
     ctxs: List[DeviceContext],
     input_buffers: InlineArray[NDBuffer[type, rank], ngpus],
     output_buffers: InlineArray[NDBuffer[type, rank], ngpus],
-    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
+    rank_sigs: InlineArray[UnsafePointer[Signal[max_num_blocks]], MAX_GPUS],
 ) raises:
     """
     Main entry point for performing all-reduce across multiple GPUs.
@@ -633,6 +645,7 @@ fn all_reduce[
         type: Data type of tensor elements.
         rank: Number of dimensions in tensors.
         ngpus: Number of GPUs participating.
+        max_num_blocks: Maximum number of thread blocks to launch.
 
     Arguments:
         ctxs: List of device contexts for participating GPUs.
@@ -643,6 +656,8 @@ fn all_reduce[
     var can_p2p = can_enable_p2p(ctxs)
 
     if not can_p2p:
-        return all_reduce_naive(ctxs, input_buffers, output_buffers)
+        return all_reduce_naive[max_num_blocks](
+            ctxs, input_buffers, output_buffers
+        )
     else:
         return all_reduce_p2p(ctxs, input_buffers, output_buffers, rank_sigs)
