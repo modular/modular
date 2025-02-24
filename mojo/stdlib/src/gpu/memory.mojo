@@ -3,7 +3,21 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""This module includes NVIDIA GPUs memory operations."""
+"""This module provides GPU memory operations and utilities.
+
+The module implements low-level memory operations for GPU programming, with a focus on:
+
+- Memory address space abstractions (global, shared, constant)
+- Cache control operations and policies
+- Memory access patterns and optimizations
+- Memory alignment and pointer manipulation
+
+It provides a unified interface for memory operations across different GPU architectures,
+with specialized implementations for NVIDIA and AMD GPUs where needed.
+
+The module is designed for performance-critical code and requires careful usage to
+achieve optimal memory access patterns and cache utilization.
+"""
 
 from collections import OptionalReg
 from sys import alignof, bitwidthof, is_amd_gpu, is_gpu, is_nvidia_gpu, sizeof
@@ -35,43 +49,118 @@ alias AddressSpace = _GPUAddressSpace
 
 @value
 struct CacheOperation:
+    """Represents different GPU cache operation policies.
+
+    This struct defines various caching behaviors for GPU memory operations,
+    controlling how data is cached and evicted at different cache levels.
+    The policies affect performance and memory coherency.
+    """
+
     var _value: Int
 
     alias ALWAYS = Self(0)
-    """Cache at all levels. This will be accessed again."""
+    """Cache at all levels. This will be accessed again.
+
+    Best for data that will be frequently reused across multiple threads.
+    Provides fastest subsequent access but uses the most cache space.
+    """
 
     alias GLOBAL = Self(1)
-    """Cache at global level."""
+    """Cache at global level.
+
+    Caches data only in the L2 cache, bypassing L1.
+    Good for data shared between different thread blocks.
+    """
 
     alias STREAMING = Self(2)
-    """Streaming, this is likely to be accessed once."""
+    """Streaming, this is likely to be accessed once.
+
+    Optimizes for streaming access patterns where data is only read once.
+    May bypass certain cache levels for better throughput.
+    """
 
     alias LAST_USE = Self(3)
-    """Indicates the cache line will not be used again."""
+    """Indicates the cache line will not be used again.
+
+    Hints to the cache that this data can be evicted after this access.
+    Helps optimize cache utilization.
+    """
 
     alias VOLATILE = Self(4)
-    """Don't cache, and fetch again."""
+    """Don't cache, and fetch again.
+
+    Forces reads/writes to bypass cache and go directly to memory.
+    Useful for memory-mapped I/O or when cache coherency is required.
+    """
 
     alias WRITE_BACK = Self(5)
-    """Write back at all coherent levels."""
+    """Write back at all coherent levels.
+
+    Updates all cache levels and eventually writes to memory.
+    Most efficient for multiple writes to same location.
+    """
 
     alias WRITE_THROUGH = Self(6)
-    """Write through to system memory."""
+    """Write through to system memory.
+
+    Immediately writes updates to memory while updating cache.
+    Provides stronger consistency but lower performance than write-back.
+    """
 
     fn __eq__(self, other: Self) -> Bool:
+        """Tests if two CacheOperation instances are equal.
+
+        Args:
+            other: The CacheOperation to compare against.
+
+        Returns:
+            True if the operations are equal, False otherwise.
+        """
         return self._value == other._value
 
     fn __ne__(self, other: Self) -> Bool:
+        """Tests if two CacheOperation instances are not equal.
+
+        Args:
+            other: The CacheOperation to compare against.
+
+        Returns:
+            True if the operations are not equal, False otherwise.
+        """
         return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
+        """Tests if two CacheOperation instances are identical.
+
+        Args:
+            other: The CacheOperation to compare against.
+
+        Returns:
+            True if the operations are identical, False otherwise.
+        """
         return self == other
 
     fn __isnot__(self, other: Self) -> Bool:
+        """Tests if two CacheOperation instances are not identical.
+
+        Args:
+            other: The CacheOperation to compare against.
+
+        Returns:
+            True if the operations are not identical, False otherwise.
+        """
         return self != other
 
     @always_inline
     fn mnemonic(self) -> StringLiteral:
+        """Returns the PTX mnemonic string for this cache operation.
+
+        Converts the cache operation into its corresponding PTX assembly
+        mnemonic string used in GPU instructions.
+
+        Returns:
+            A string literal containing the PTX mnemonic for this operation.
+        """
         if self is Self.ALWAYS:
             return "ca"
         if self is Self.GLOBAL:
@@ -97,43 +186,116 @@ struct CacheOperation:
 
 @value
 struct CacheEviction:
+    """Represents cache eviction policies for GPU memory operations.
+
+    This struct defines different cache eviction priorities that control how data is
+    evicted from cache when space is needed. The policies affect cache utilization
+    and performance by controlling which data gets evicted first.
+    """
+
     var _value: Int
 
     alias EVICT_NORMAL = Self(0)
-    """Cache data with normal eviction priority."""
+    """Default cache eviction priority.
+
+    Data cached with normal priority follows standard cache replacement policies.
+    This is the default behavior and suitable for most general-purpose data access
+    patterns where no special caching requirements exist.
+    """
 
     alias EVICT_FIRST = Self(1)
-    """Data cached with this priority will be first in the eviction priority
-    order and will likely be evicted when cache eviction is required. This
-    priority is suitable for streaming data."""
+    """Highest eviction priority - data will be evicted first.
+
+    Data cached with this priority is marked as the first candidate for eviction
+    when cache space is needed. This is optimal for:
+    - Streaming data that will not be reused
+    - Single-pass algorithms
+    - Data with low temporal locality
+    """
 
     alias EVICT_LAST = Self(2)
-    """Data cached with this priority will be last in the eviction priority
-    order and will likely be evicted only after other data with EVICT_NORMAL
-    or EVICT_FIRST eviction priotity is already evicted. This priority is
-    suitable for data that should remain persistent in cache."""
+    """Lowest eviction priority - data will be evicted last.
+
+    Data cached with this priority remains in cache until all higher priority data
+    is evicted. Best used for:
+    - Frequently accessed data
+    - Data needed across multiple kernel launches
+    - Critical data structures that benefit from cache persistence
+    """
 
     alias EVICT_UNCHANGED = Self(3)
-    """Do not change eviction priority order as part of this operation."""
+    """Preserves existing cache eviction priority.
+
+    When this policy is used:
+    - Existing cache entries maintain their current eviction priority
+    - No changes are made to the cache replacement order
+    - Useful for operations that should not affect caching behavior
+    """
 
     alias NO_ALLOCATE = Self(4)
-    """Do not allocate data to cache. This priority is suitable for streaming
-    data."""
+    """Prevents cache allocation for accessed data.
+
+    Data is not cached when using this policy. Optimal for:
+    - Large sequential reads/writes
+    - Data that will only be accessed once
+    - Preserving cache space for more critical data
+    - Streaming operations with no data reuse
+    """
 
     fn __eq__(self, other: Self) -> Bool:
+        """Tests if two CacheEviction instances are equal.
+
+        Args:
+            other: The CacheEviction to compare against.
+
+        Returns:
+            True if the eviction policies are equal, False otherwise.
+        """
         return self._value == other._value
 
     fn __ne__(self, other: Self) -> Bool:
+        """Tests if two CacheEviction instances are not equal.
+
+        Args:
+            other: The CacheEviction to compare against.
+
+        Returns:
+            True if the eviction policies are not equal, False otherwise.
+        """
         return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
+        """Tests if two CacheEviction instances are identical.
+
+        Args:
+            other: The CacheEviction to compare against.
+
+        Returns:
+            True if the eviction policies are identical, False otherwise.
+        """
         return self == other
 
     fn __isnot__(self, other: Self) -> Bool:
+        """Tests if two CacheEviction instances are not identical.
+
+        Args:
+            other: The CacheEviction to compare against.
+
+        Returns:
+            True if the eviction policies are not identical, False otherwise.
+        """
         return self != other
 
     @always_inline
     fn mnemonic(self) -> StringLiteral:
+        """Returns the string mnemonic for this cache eviction policy.
+
+        Converts the cache eviction policy into its corresponding string
+        representation used in GPU instructions and debugging.
+
+        Returns:
+            A string literal containing the mnemonic for this eviction policy.
+        """
         if self is Self.EVICT_NORMAL:
             return "evict_normal"
         if self is Self.EVICT_FIRST:
@@ -154,31 +316,78 @@ struct CacheEviction:
 
 @value
 struct Fill:
+    """Represents memory fill patterns for GPU memory operations.
+
+    This struct defines different fill patterns that can be used when allocating or
+    initializing GPU memory. The patterns control how memory is initialized, which
+    can be important for debugging and performance optimization.
+    """
+
     var _value: Int
 
     alias NONE = Self(0)
-    """No fill."""
+    """No fill pattern - memory is left uninitialized."""
 
     alias ZERO = Self(1)
-    """Fill with zeros."""
+    """Fill memory with zeros."""
 
     alias NAN = Self(2)
-    """Fill with NaNs."""
+    """Fill memory with NaN values. Useful for debugging floating point computations."""
 
     fn __eq__(self, other: Self) -> Bool:
+        """Tests if two Fill instances have the same fill pattern.
+
+        Args:
+            other: The Fill instance to compare against.
+
+        Returns:
+            True if the fill patterns are equal, False otherwise.
+        """
         return self._value == other._value
 
     fn __ne__(self, other: Self) -> Bool:
+        """Tests if two Fill instances have different fill patterns.
+
+        Args:
+            other: The Fill instance to compare against.
+
+        Returns:
+            True if the fill patterns are different, False otherwise.
+        """
         return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
+        """Tests if two Fill instances are identical.
+
+        Args:
+            other: The Fill instance to compare against.
+
+        Returns:
+            True if the fill patterns are identical, False otherwise.
+        """
         return self == other
 
     fn __isnot__(self, other: Self) -> Bool:
+        """Tests if two Fill instances are not identical.
+
+        Args:
+            other: The Fill instance to compare against.
+
+        Returns:
+            True if the fill patterns are not identical, False otherwise.
+        """
         return self != other
 
     @always_inline
     fn __str__(self) -> String:
+        """Returns a string representation of the fill pattern.
+
+        Converts the fill pattern into a human-readable string for debugging
+        and display purposes.
+
+        Returns:
+            A string describing the fill pattern.
+        """
         if self is Self.NONE:
             return "none"
         if self is Self.ZERO:
@@ -195,37 +404,98 @@ struct Fill:
 
 @value
 struct Consistency:
+    """Represents memory consistency models for GPU memory operations.
+
+    This struct defines different memory consistency levels that control how memory
+    operations are ordered and synchronized between threads. The consistency model
+    affects both performance and correctness of parallel algorithms.
+    """
+
     var _value: Int
 
     alias WEAK = Self(0)
-    """Weak consistency."""
+    """Weakest consistency model with minimal ordering guarantees.
+
+    Provides maximum flexibility for hardware/compiler optimizations but requires
+    careful synchronization by the programmer."""
 
     alias RELAXED = Self(1)
-    """Relaxed consistency."""
+    """Relaxed consistency with basic ordering guarantees.
+
+    Provides some ordering guarantees while still allowing optimizations.
+    Suitable for operations that don't require strict ordering."""
 
     alias ACQUIRE = Self(2)
-    """Acquire consistency."""
+    """Acquire consistency for synchronization operations.
+
+    Ensures all subsequent memory operations are ordered after this operation.
+    Used in producer-consumer patterns."""
 
     alias RELEASE = Self(3)
-    """Release consistency."""
+    """Release consistency for synchronization operations.
+
+    Ensures all previous memory operations are ordered before this operation.
+    Paired with acquire operations for synchronization."""
 
     fn __eq__(self, other: Self) -> Bool:
+        """Tests if two Consistency instances are equal.
+
+        Args:
+            other: The Consistency instance to compare against.
+
+        Returns:
+            True if the consistency levels are equal, False otherwise.
+        """
         return self._value == other._value
 
     fn __ne__(self, other: Self) -> Bool:
+        """Tests if two Consistency instances are not equal.
+
+        Args:
+            other: The Consistency instance to compare against.
+
+        Returns:
+            True if the consistency levels are different, False otherwise.
+        """
         return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
+        """Tests if two Consistency instances are identical.
+
+        Args:
+            other: The Consistency instance to compare against.
+
+        Returns:
+            True if the consistency levels are identical, False otherwise.
+        """
         return self == other
 
     fn __isnot__(self, other: Self) -> Bool:
+        """Tests if two Consistency instances are not identical.
+
+        Args:
+            other: The Consistency instance to compare against.
+
+        Returns:
+            True if the consistency levels are not identical, False otherwise.
+        """
         return self != other
 
     fn __str__(self) -> String:
+        """Returns a string representation of the consistency level.
+
+        Returns:
+            A string describing the consistency level.
+        """
         return self.mnemonic()
 
     @always_inline
     fn mnemonic(self) -> StringLiteral:
+        """Returns the mnemonic string for the consistency level.
+
+        Returns:
+            A string literal containing the consistency level mnemonic.
+        """
         if self is Self.WEAK:
             return "weak"
         if self is Self.RELAXED:
@@ -245,44 +515,105 @@ struct Consistency:
 
 @value
 struct ReduceOp:
+    """Represents reduction operations for parallel reduction algorithms.
+
+    This struct defines different reduction operations that can be performed
+    across multiple threads in parallel. These operations are commonly used
+    in parallel reduction algorithms on GPUs.
+    """
+
     var _value: Int
 
     alias ADD = Self(0)
-    """Reduce operation: add."""
+    """Addition reduction operation.
+
+    Combines values by adding them together."""
 
     alias MIN = Self(1)
-    """Reduce operation: minimum."""
+    """Minimum reduction operation.
+
+    Finds the minimum value across all inputs."""
 
     alias MAX = Self(2)
-    """Reduce operation: maximum."""
+    """Maximum reduction operation.
+
+    Finds the maximum value across all inputs."""
 
     alias AND = Self(3)
-    """Reduce operation: bitwise AND."""
+    """Bitwise AND reduction operation.
+
+    Performs bitwise AND across all inputs."""
 
     alias OR = Self(4)
-    """Reduce operation: bitwise OR."""
+    """Bitwise OR reduction operation.
+
+    Performs bitwise OR across all inputs."""
 
     alias XOR = Self(5)
-    """Reduce operation: bitwise XOR."""
+    """Bitwise XOR reduction operation.
+
+    Performs bitwise XOR across all inputs."""
 
     fn __eq__(self, other: Self) -> Bool:
+        """Tests if two ReduceOp instances are equal.
+
+        Args:
+            other: The ReduceOp instance to compare against.
+
+        Returns:
+            True if the reduction operations are equal, False otherwise.
+        """
         return self._value == other._value
 
     fn __ne__(self, other: Self) -> Bool:
+        """Tests if two ReduceOp instances are not equal.
+
+        Args:
+            other: The ReduceOp instance to compare against.
+
+        Returns:
+            True if the reduction operations are different, False otherwise.
+        """
         return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
+        """Tests if two ReduceOp instances are identical.
+
+        Args:
+            other: The ReduceOp instance to compare against.
+
+        Returns:
+            True if the reduction operations are identical, False otherwise.
+        """
         return self == other
 
     fn __isnot__(self, other: Self) -> Bool:
+        """Tests if two ReduceOp instances are not identical.
+
+        Args:
+            other: The ReduceOp instance to compare against.
+
+        Returns:
+            True if the reduction operations are not identical, False otherwise.
+        """
         return self != other
 
     @always_inline
     fn __str__(self) -> String:
+        """Returns a string representation of the reduction operation.
+
+        Returns:
+            A string describing the reduction operation.
+        """
         return self.mnemonic()
 
     @always_inline
     fn mnemonic(self) -> StringLiteral:
+        """Returns the mnemonic string for the reduction operation.
+
+        Returns:
+            A string literal containing the reduction operation mnemonic.
+        """
         if self is Self.ADD:
             return "add"
         if self is Self.MIN:
@@ -314,7 +645,9 @@ fn _mark_eviction[
         eviction_policy: The cache eviction policy to use.
 
     Returns:
-        Handle to the eviction policy.
+        A 64-bit handle encoding the eviction policy:
+            - 0 for normal eviction
+            - Non-zero handle for fractional L2 eviction policy.
     """
 
     @parameter
@@ -343,23 +676,31 @@ fn async_copy[
     src_size: Int32 = 0,
     predicate: Bool = False,
 ):
-    """Asynchronously copy `size` amount of bytes from src global memory address
-    to shared memory `dst` address.
+    """Asynchronously copies data from global memory to shared memory.
+
+    This function provides a high-performance asynchronous memory copy operation with
+    configurable caching behavior, prefetching, and fill values. It maps directly to
+    the PTX cp.async instruction on NVIDIA GPUs.
 
     Parameters:
-        type: The pointer type.
-        size: Number of bytes to copy.
-        fill: The fill to use for initializing the data.
-        bypass_L1_16B: Bypass the L1 cache for 16 bypes copy.
-        l2_prefetch: Enable L2 prefetching and specify the size.
-        eviction_policy: Specifies the eviction policy to use.
+        type: The data type to copy (e.g. float32, int32).
+        size: Number of bytes to copy (must be 4, 8, or 16).
+        fill: Optional fill value for uncopied bytes when src_size < size.
+        bypass_L1_16B: If True, bypasses L1 cache for 16-byte copies.
+        l2_prefetch: Optional L2 prefetch size (64, 128, or 256 bytes).
+        eviction_policy: Cache eviction policy for the copy operation.
 
     Args:
-        src: Global memory pointer.
-        dst: Shared memory pointer.
-        src_size: The size of data actually copied. When src_size < size, the
-            rest is set to zero by the instruction.
-        predicate: Specifies the predicate used for async_copy.
+        src: Source pointer in global memory.
+        dst: Destination pointer in shared memory.
+        src_size: Actual bytes to copy from src (remaining bytes use fill value).
+        predicate: Optional predicate to conditionally execute the copy.
+
+    Constraints:
+        - Fill value only supported for types <= 32 bits.
+        - Size must be 4, 8, or 16 bytes.
+        - Cannot enable both L2 prefetch and L1 bypass.
+        - L2 prefetch size must be 64, 128, or 256 bytes.
     """
     constrained[
         not fill or sizeof[type]() <= sizeof[Int32](),
@@ -509,27 +850,61 @@ fn async_copy[
 
 @always_inline
 fn async_copy_commit_group():
-    """Commits all prior initiated but uncommitted cp.async instructions into
-    a cp.async-group.
+    """Commits all prior initiated but uncommitted cp.async instructions into a cp.async-group.
+
+    This function creates a new cp.async-group containing all previously initiated but uncommitted
+    asynchronous copy operations. The group can then be waited on using async_copy_wait_group().
+
+    Note:
+        - Only supported on NVIDIA GPUs
+        - Maps to the cp.async.commit.group PTX instruction
+        - Used for managing asynchronous memory transfers
+        - Should be paired with async_copy_wait_group() or async_copy_wait_all()
     """
+
+    @parameter
     if is_nvidia_gpu():
         llvm_intrinsic["llvm.nvvm.cp.async.commit.group", NoneType]()
 
 
 @always_inline
 fn async_copy_wait_group(n: Int32):
-    """Wait for the completion of `n` or asynchronous copy operations.
+    """Waits for the completion of `n` most recently committed cp.async-groups.
+
+    This function blocks execution until the specified number of previously committed
+    cp.async-groups have completed their memory transfers.
 
     Args:
-        n: The number of pending cp.async-groups.
+        n: The number of pending cp.async-groups to wait for. Must be > 0.
+
+    Note:
+        - Only supported on NVIDIA GPUs
+        - Maps to the cp.async.wait.group PTX instruction
+        - Provides fine-grained control over asynchronous transfer synchronization
+        - Can be used to implement a pipeline of asynchronous transfers
     """
+
+    @parameter
     if is_nvidia_gpu():
         llvm_intrinsic["llvm.nvvm.cp.async.wait.group", NoneType](n)
 
 
 @always_inline
 fn async_copy_wait_all():
-    """Wait for the completion of all commited cp.async-groups."""
+    """Waits for completion of all committed cp.async-groups.
+
+    This function blocks execution until all previously committed cp.async-groups
+    have completed their memory transfers. It provides a barrier to ensure all
+    asynchronous copies are finished.
+
+    Note:
+        - Only supported on NVIDIA GPUs
+        - Maps to the cp.async.wait.all PTX instruction
+        - Ensures all outstanding asynchronous transfers are complete
+        - More coarse-grained than `async_copy_wait_group()`
+    """
+
+    @parameter
     if is_nvidia_gpu():
         llvm_intrinsic["llvm.nvvm.cp.async.wait.all", NoneType]()
 
@@ -542,16 +917,28 @@ fn external_memory[
     alignment: Int,
     name: StringLiteral = "extern_ptr_syml",
 ]() -> UnsafePointer[type, address_space=address_space, alignment=alignment]:
-    """Gets a pointer to dynamic shared memory.
+    """Gets a pointer to dynamically allocated external memory.
+
+    This function returns a pointer to external memory that can be used for dynamic
+    shared memory allocations in GPU kernels. The memory is allocated in the specified
+    address space with the given alignment requirements.
 
     Parameters:
-        type: The pointer's type.
-        address_space: The address space used.
-        alignment: The pointer's address alignment.
-        name: The name of the external memory.
+        type: The type of elements stored in the memory. Must be a trivial register type.
+        address_space: The memory address space to allocate in (e.g. shared, global).
+        alignment: The minimum alignment requirement in bytes for the allocated memory.
+        name: Optional symbolic name for the external memory allocation. Defaults to
+            "extern_ptr_syml".
 
     Returns:
-        A pointer to dynamic shared memory.
+        A properly aligned pointer to the allocated external memory in the
+        specified address space.
+
+    Note:
+        - The memory is not initialized and must be explicitly written before reading.
+        - The allocation size is determined at kernel launch time.
+        - The pointer is only valid within the GPU kernel execution context.
+        - Care must be taken to respect alignment requirements when accessing the memory.
     """
     var extern_ptr_symbol = UnsafePointer[
         StaticTuple[type, 0], address_space=address_space, alignment=alignment
@@ -581,10 +968,19 @@ fn fence_proxy_tensormap_generic_sys_acquire[
     ptr: UnsafePointer[type, address_space = GPUAddressSpace.GENERIC, **_],
     size: Int32,
 ):
-    """Acquires tensor map system's memory fence of particular size
+    """Acquires a system-wide memory fence for tensor map operations.
+
+    This function establishes a memory fence that ensures proper synchronization
+    between tensor map operations and system memory. It guarantees that all previous
+    memory operations are completed before subsequent tensor map accesses.
+
     Args:
-        ptr: Pointer to tensor map object in system's memory.
-        size: The size of the object.
+        ptr: Pointer to the tensor map object in system memory that needs to be synchronized.
+        size: The size in bytes of the tensor map object being synchronized.
+
+    Note:
+        This is a low-level synchronization primitive typically used in conjunction with
+        TMA (Tensor Memory Access) operations on NVIDIA GPUs.
     """
     llvm_intrinsic[
         "llvm.nvvm.fence.proxy.tensormap_generic.acquire.sys", NoneType
@@ -593,7 +989,16 @@ fn fence_proxy_tensormap_generic_sys_acquire[
 
 @always_inline
 fn fence_proxy_tensormap_generic_sys_release():
-    """Release tensor map system's memory fence."""
+    """Releases the system-wide memory fence for tensor map operations.
+
+    This function releases the memory fence previously established by the acquire operation.
+    It ensures that all tensor map operations are completed and visible to the system
+    before proceeding.
+
+    Note:
+        Should be called after tensor map operations are complete to maintain proper
+        memory ordering semantics.
+    """
     llvm_intrinsic[
         "llvm.nvvm.fence.proxy.tensormap_generic.release.sys", NoneType
     ]()
@@ -601,7 +1006,16 @@ fn fence_proxy_tensormap_generic_sys_release():
 
 @always_inline
 fn tma_store_fence():
-    """Fence for SMEM stores for subsequent TMA STORE."""
+    """Establishes a memory fence for shared memory stores in TMA operations.
+
+    This function creates a memory barrier that ensures all previous shared memory
+    stores are completed before subsequent TMA (Tensor Memory Access) store operations
+    begin. This is crucial for maintaining memory consistency in tensor operations.
+
+    Note:
+        This fence specifically targets the CTA (Cooperative Thread Array) scope
+        and is used to synchronize async shared memory operations.
+    """
     __mlir_op.`nvvm.fence.proxy`[
         _properties = __mlir_attr.`{ kind = #nvvm.proxy_kind<async.shared>, space = #nvvm.shared_space<cta>}`
     ]()
@@ -609,7 +1023,17 @@ fn tma_store_fence():
 
 @always_inline
 fn fence_mbarrier_init():
-    """Fence that applies on the prior mbarrier.init."""
+    """Creates a memory fence after mbarrier initialization.
+
+    This function establishes a memory barrier that ensures the proper initialization
+    of memory barriers (mbarrier) before they are used. It guarantees that the
+    mbarrier initialization is complete and visible to all threads before subsequent
+    operations.
+
+    Note:
+        Should be called immediately after mbarrier initialization to ensure proper
+        synchronization semantics.
+    """
     __mlir_op.`nvvm.fence.mbarrier.init`[_type=None]()
 
 
@@ -622,14 +1046,28 @@ fn cp_async_bulk_tensor_shared_cluster_global[
     mem_bar: UnsafePointer[mbr_type, address_space = GPUAddressSpace.SHARED],
     coords: IndexList[rank],
 ):
-    """Initiates an asynchronous copy operation on the tensor data from global
-    memory to shared memory.
+    """Initiates an asynchronous bulk copy operation of tensor data from global memory to shared memory.
+
+    This function performs an asynchronous copy of tensor data using NVIDIA's Tensor Memory Access (TMA)
+    mechanism. It supports both rank-1 and rank-2 tensors and uses cluster-level synchronization for
+    efficient data movement.
 
     Args:
-        dst_mem: Pointer to destination shared memory.
-        tma_descriptor: Pointer to tensor map descriptor.
-        mem_bar: A pointer to shared memory barrier.
-        coords: Tile coordinates.
+        dst_mem: Pointer to the destination in shared memory where the tensor data will be copied.
+                Must be properly aligned according to TMA requirements.
+        tma_descriptor: Pointer to the TMA descriptor that contains metadata about the tensor layout
+                       and memory access patterns.
+        mem_bar: Pointer to a shared memory barrier used for synchronizing the asynchronous copy
+                operation across threads in the cluster.
+        coords: Coordinates specifying which tile of the tensor to copy. For rank-1 tensors,
+               this is a single coordinate. For rank-2 tensors, this contains both row and
+               column coordinates.
+
+    Note:
+        - This operation is asynchronous - use appropriate memory barriers to ensure copy completion
+        - Only supports rank-1 and rank-2 tensors
+        - Requires NVIDIA GPU with TMA support
+        - The memory barrier should be properly initialized before use
     """
     constrained[rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"]()
 
@@ -665,15 +1103,33 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
     coords: IndexList[rank],
     multicast_mask: UInt16,
 ):
-    """Initiates an asynchronous multicast load operation on the tensor data from global
-    memory to shared memories of the cluster.
+    """Initiates an asynchronous multicast load operation using NVIDIA's Tensor Memory Access (TMA)
+    to copy tensor data from global memory to shared memories of multiple CTAs in a cluster.
+
+    This function performs an optimized multicast copy operation where a single global memory read
+    can be distributed to multiple CTAs' shared memories simultaneously, reducing memory bandwidth
+    usage. It supports both rank-1 and rank-2 tensors and uses cluster-level synchronization.
 
     Args:
-        dst_mem: Pointer to destination shared memory.
-        tma_descriptor: Pointer to tensor map descriptor.
-        mem_bar: A pointer to shared memory barrier.
-        coords: Tile coordinates.
-        multicast_mask: An uint16 bitmask to the copy operation to specify which CTAs in a cluster will participate in the TMA multicast load.
+        dst_mem: Pointer to the destination in shared memory where the tensor data will be copied.
+                Must be properly aligned according to TMA requirements.
+        tma_descriptor: Pointer to the TMA descriptor containing metadata about tensor layout
+                       and memory access patterns.
+        mem_bar: Pointer to a shared memory barrier used for synchronizing the asynchronous copy
+                operation across threads in the cluster.
+        coords: Coordinates specifying which tile of the tensor to copy. For rank-1 tensors,
+               this is a single coordinate. For rank-2 tensors, this contains both row and
+               column coordinates.
+        multicast_mask: A 16-bit bitmask where each bit corresponds to a CTA in the cluster.
+                       Set bits indicate which CTAs will receive a copy of the loaded data.
+                       This enables efficient data sharing across multiple CTAs.
+
+    Note:
+        - This operation is asynchronous - use appropriate memory barriers to ensure copy completion
+        - Only supports rank-1 and rank-2 tensors
+        - Requires NVIDIA GPU with TMA support
+        - The memory barrier should be properly initialized before use
+        - The multicast_mask must be properly configured based on cluster size and desired distribution
     """
     constrained[rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"]()
 
@@ -712,13 +1168,34 @@ fn cp_async_bulk_tensor_global_shared_cta[
     tma_descriptor: UnsafePointer[NoneType],
     coords: IndexList[rank],
 ):
-    """Initiates an asynchronous copy operation on the tensor data from shared cta
-    memory to global memory.
+    """Initiates an asynchronous copy operation to transfer tensor data from shared CTA
+    memory to global memory using NVIDIA's Tensor Memory Access (TMA) mechanism.
+
+    This function provides an efficient way to write data back from shared memory to global
+    memory using TMA. It supports both rank-1 and rank-2 tensors and allows control over
+    cache eviction policy.
+
+    Parameters:
+        src_type: The data type of the source tensor elements.
+        rank: The dimensionality of the tensor (must be 1 or 2).
+        eviction_policy: Optional cache eviction policy that controls how the data is handled
+                        in the cache hierarchy. Defaults to EVICT_NORMAL.
 
     Args:
-        src_mem: Pointer to source shared memory.
-        tma_descriptor: Pointer to tensor map descriptor.
-        coords: Tile coordinates.
+        src_mem: Pointer to the source data in shared memory that will be copied to global
+                memory. Must be properly aligned according to TMA requirements.
+        tma_descriptor: Pointer to the TMA descriptor containing metadata about tensor layout
+                       and memory access patterns.
+        coords: Coordinates specifying which tile of the tensor to copy. For rank-1 tensors,
+               this is a single coordinate. For rank-2 tensors, this contains both row and
+               column coordinates.
+
+    Note:
+        - This operation is asynchronous - use appropriate memory barriers to ensure completion.
+        - Only supports rank-1 and rank-2 tensors.
+        - Requires NVIDIA GPU with TMA support.
+        - The source memory must be properly aligned for TMA operations.
+        - The TMA descriptor must be properly initialized before use.
     """
     constrained[rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"]()
 
@@ -757,13 +1234,37 @@ fn cp_async_bulk_tensor_reduce[
     tma_descriptor: UnsafePointer[NoneType],
     coords: IndexList[rank],
 ):
-    """These instructions initiate an asynchronous reduction operation of tensor data
-       in global memory with the tensor data in shared{::cta} memory, using ``tile`` mode.
+    """Initiates an asynchronous reduction operation between shared CTA memory and global memory
+    using NVIDIA's Tensor Memory Access (TMA) mechanism.
+
+    This function performs an in-place reduction operation, combining data from shared memory
+    with data in global memory using the specified reduction operation. The operation is
+    performed asynchronously and uses TMA's tile mode for efficient memory access.
+
+    Parameters:
+        src_type: The data type of the source tensor elements.
+        rank: The dimensionality of the tensor (must be 1 or 2).
+        reduction_kind: The type of reduction operation to perform. Supported operations are:
+                       "add", "min", "max", "inc", "dec", "and", "or", "xor".
+        eviction_policy: Optional cache eviction policy that controls how the data is handled
+                        in the cache hierarchy. Defaults to `EVICT_NORMAL`.
 
     Args:
-        src_mem: Pointer to source shared memory.
-        tma_descriptor: Pointer to tensor map descriptor.
-        coords: Tile coordinates.
+        src_mem: Pointer to the source data in shared memory that will be reduced with the
+                global memory data. Must be properly aligned according to TMA requirements.
+        tma_descriptor: Pointer to the TMA descriptor containing metadata about tensor layout
+                       and memory access patterns.
+        coords: Coordinates specifying which tile of the tensor to operate on. For rank-1
+               tensors, this is a single coordinate. For rank-2 tensors, this contains both
+               row and column coordinates.
+
+    Note:
+        - This operation is asynchronous - use appropriate memory barriers to ensure completion.
+        - Only supports rank-1 and rank-2 tensors.
+        - Requires NVIDIA GPU with TMA support.
+        - The source memory must be properly aligned for TMA operations.
+        - The TMA descriptor must be properly initialized before use.
+        - The reduction operation is performed atomically to ensure correctness.
     """
     constrained[rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"]()
     constrained[
@@ -819,6 +1320,32 @@ fn _load_impl[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     alignment: Int = alignof[Scalar[type]]() if is_gpu() else 1,
 ](ptr: UnsafePointer[Scalar[type]]) -> SIMD[type, width]:
+    """Internal implementation of vectorized memory loads from global memory.
+
+    This function provides low-level control over cache behavior and memory access patterns
+    for loading data from global memory into vector registers.
+
+    Parameters:
+        type: The data type to load.
+        width: Vector width (number of elements to load).
+        read_only: If True, marks the load as read-only for cache optimization.
+        prefetch_size: Optional L2 cache prefetch size (64, 128, or 256 bytes).
+        cache_policy: Cache operation policy for the load.
+        eviction_policy: Cache eviction policy.
+        alignment: Memory alignment in bytes.
+
+    Args:
+        ptr: Pointer to global memory to load from.
+
+    Returns:
+        SIMD vector containing the loaded data.
+
+    Constraints:
+        - Must be used with global memory pointers.
+        - Type must be numeric.
+        - Prefetch size must be 64, 128, or 256 bytes if specified.
+        - Read-only not supported on AMD GPUs.
+    """
     constrained[
         ptr.address_space == _GPUAddressSpace.GENERIC,
         "must be global address space",
@@ -945,6 +1472,26 @@ fn load[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     alignment: Int = alignof[Scalar[type]]() if is_nvidia_gpu() else 1,
 ](ptr: UnsafePointer[Scalar[type]]) -> SIMD[type, width]:
+    """Loads data from global memory into a SIMD vector.
+
+    Provides a high-level interface for vectorized memory loads with configurable
+    cache behavior and memory access patterns.
+
+    Parameters:
+        type: The data type to load.
+        width: Vector width (number of elements to load).
+        read_only: If True, marks the load as read-only for cache optimization.
+        prefetch_size: Optional L2 cache prefetch size (64, 128, or 256 bytes).
+        cache_policy: Cache operation policy for the load.
+        eviction_policy: Cache eviction policy.
+        alignment: Memory alignment in bytes.
+
+    Args:
+        ptr: Pointer to global memory to load from.
+
+    Returns:
+        SIMD vector containing the loaded data.
+    """
     return _load_impl[
         width=width,
         read_only=read_only,
@@ -967,6 +1514,28 @@ fn load[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     alignment: Int = alignof[Scalar[type]]() if is_nvidia_gpu() else 1,
 ](ptr: UnsafePointer[Scalar[type]], offset: OffsetType) -> SIMD[type, width]:
+    """Loads data from global memory with an offset into a SIMD vector.
+
+    Provides a high-level interface for vectorized memory loads with configurable
+    cache behavior and memory access patterns, supporting offset-based addressing.
+
+    Parameters:
+        OffsetType: Type of the offset value.
+        type: The data type to load.
+        width: Vector width (number of elements to load).
+        read_only: If True, marks the load as read-only for cache optimization.
+        prefetch_size: Optional L2 cache prefetch size (64, 128, or 256 bytes).
+        cache_policy: Cache operation policy for the load.
+        eviction_policy: Cache eviction policy.
+        alignment: Memory alignment in bytes.
+
+    Args:
+        ptr: Base pointer to global memory.
+        offset: Offset from base pointer in elements.
+
+    Returns:
+        SIMD vector containing the loaded data.
+    """
     return _load_impl[
         width=width,
         prefetch_size=prefetch_size,
@@ -992,6 +1561,30 @@ fn _get_multimem_ld_reduce_asm[
     accum_type: DType,
     output_width: Int,
 ]() -> StringLiteral:
+    """Generates the assembly instruction string for multimem load-reduce operations.
+
+    This internal function constructs the appropriate NVIDIA PTX assembly instruction
+    string for performing vectorized load-reduce operations using the multimem feature
+    available on SM90+ GPUs.
+
+    Parameters:
+        type: Data type for the operation (float32, float16, or bfloat16).
+        count: Number of elements to load and reduce (2 or 4).
+        reduction: Type of reduction operation to perform.
+        scope: Memory scope for the operation.
+        consistency: Memory consistency model to use.
+        accum_type: Data type used for accumulation during reduction. Defaults to
+            float32 for float16/bfloat16 inputs and matches input type for float32.
+        output_width: Width of each output SIMD vector (default 1).
+
+    Returns:
+        A string literal containing the PTX assembly instruction.
+
+    Constraints:
+        - Only supported on SM90+ GPUs.
+        - Type must be float32, float16, or bfloat16.
+        - Count must be 2 or 4.
+    """
     constrained[_is_sm_9x(), "multimem is only supported on SM90+ GPUs"]()
     constrained[type.is_floating_point(), "type must be floating point"]()
     constrained[
@@ -1031,6 +1624,34 @@ fn multimem_ld_reduce[
 ](
     addr: UnsafePointer[Scalar[type], address_space = AddressSpace.GLOBAL],
 ) -> StaticTuple[SIMD[accum_type, output_width], count]:
+    """Performs a vectorized load-reduce operation using NVIDIA's multimem feature.
+
+    This function loads multiple values from global memory and performs a reduction
+    operation across them in a single instruction. It utilizes NVIDIA's multimem
+    feature available on SM90+ GPUs for improved performance.
+
+    Parameters:
+        type: Data type for the operation (float32, float16, or bfloat16).
+        count: Number of elements to load and reduce (2 or 4).
+        reduction: Type of reduction operation to perform.
+        scope: Memory scope for the operation.
+        consistency: Memory consistency model to use.
+        accum_type: Data type used for accumulation. Defaults to a wider type than input
+                   (e.g. float32 for float16 inputs) to maintain precision during reduction.
+        output_width: Width of each output SIMD vector (default 1).
+
+    Args:
+        addr: Pointer to global memory where data will be loaded from.
+
+    Returns:
+        A StaticTuple containing 'count' SIMD vectors of width 'output_width'
+        holding the results of the load-reduce operation.
+
+    Constraints:
+        - Only supported on SM90+ GPUs.
+        - Count must be 2 or 4.
+        - Type must be float32, float16, or bfloat16.
+    """
     constrained[count in (2, 4), "count must be 2 or 4"]()
 
     alias asm = _get_multimem_ld_reduce_asm[
@@ -1197,6 +1818,11 @@ fn multimem_st[
 
 
 fn _get_type_mnemonic[type: DType]() -> StringLiteral:
+    """Returns the mnemonic string representation for a given DType.
+
+    This internal utility function converts floating point DTypes into their
+    corresponding string mnemonics used in GPU assembly instructions.
+    """
     if type is DType.float32:
         return "f32"
     elif type is DType.float16:
@@ -1210,6 +1836,8 @@ fn _get_type_mnemonic[type: DType]() -> StringLiteral:
 
 
 fn _int_to_str[val: Int]() -> StringLiteral:
+    """Converts specific integer values to their string representation."""
+
     @parameter
     if val == 1:
         return "1"
