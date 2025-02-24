@@ -20,7 +20,6 @@ from .managed_tensor_slice import (
     view_copy_impl,
 )
 from .tensor import Tensor
-from .tensor_like import TensorLike
 from .tensor_shape import TensorShape
 from .tensor_spec import RuntimeTensorSpec, TensorSpec
 from .io_spec import (

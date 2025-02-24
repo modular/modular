@@ -37,7 +37,6 @@ from utils import IndexList, StaticTuple
 
 from ._indexing import _dot_prod, _row_major_strides, _slice_to_tuple
 from .io_spec import IOSpec, IO
-from .tensor_like import TensorLike
 
 # ===----------------------------------------------------------------------=== #
 # Load / Store Helper primitives
@@ -347,7 +346,7 @@ struct ManagedTensorSlice[
     io_spec: IOSpec[mut, input],
     *,
     static_spec: StaticTensorSpec[type, rank],
-](CollectionElement, TensorLike):
+](CollectionElement):
     """A view of a tensor that does not own the underlying allocated pointer.
     When the object lifetime ends it does not free the underlying pointer.
     Conversely, if a `ManagedTensorSlice` is created, it will not extend the
@@ -517,14 +516,14 @@ struct ManagedTensorSlice[
         var offset = _dot_prod(indices, self.strides())
         self._ptr[offset] = val
 
-    fn spec(self) -> TensorSpec:
+    fn spec(self) -> RuntimeTensorSpec[type, rank]:
         """Gets the `TensorSpec` of this tensor slice, which provides meta-data
         about the tensor slice.
 
         Returns:
             The static `TensorSpec` for this tensor slice.
         """
-        return self._spec.get_tensor_spec()
+        return self._spec
 
     @always_inline
     fn shape(self) -> IndexList[rank]:

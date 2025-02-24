@@ -14,11 +14,13 @@ from max.tensor import TensorSpec
 ```
 """
 
+from sys import sizeof
+
 from collections import List
 
 from memory import UnsafePointer
 
-from utils import IndexList
+from utils import IndexList, product
 
 from .tensor_shape import TensorShape, _as_rep16
 
@@ -89,6 +91,20 @@ struct TensorSpec(
           shapes: The shapes to initialize the shape with.
         """
         self = TensorSpec(type, shape=shapes)
+
+    @always_inline
+    fn __init__(out self, spec: RuntimeTensorSpec):
+        """Initializes a Tensorspec from the RuntimeTensorSpec provided.
+
+        Args:
+          spec: The RuntimeTensorSpec to initialize the spec with.
+        """
+        alias rank = spec.rank
+        var shapes = List[Int, hint_trivial_type=True]()
+        shapes.reserve(rank)
+        for i in range(rank):
+            shapes.append(spec[i])
+        self = TensorSpec(spec.type, shapes)
 
     @always_inline
     fn __init__(out self, type: DType, owned shape: TensorShape):
@@ -249,12 +265,14 @@ struct RuntimeTensorSpec[type: DType, rank: Int]:
         for i in range(rank):
             self.shape[i] = spec[i]
 
-    fn get_tensor_spec(self) -> TensorSpec:
-        var shapes = List[Int, hint_trivial_type=True]()
-        shapes.reserve(rank)
-        for i in range(rank):
-            shapes.append(self[i])
-        return TensorSpec(type, shapes)
-
     fn __getitem__(self, idx: Int) -> Int:
         return self.shape[idx]
+
+    fn bytecount(self) -> Int:
+        """
+        Gets the total byte count.
+
+        Returns:
+          The total byte count.
+        """
+        return product(self.shape) * sizeof[type]()
