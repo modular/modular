@@ -32,6 +32,13 @@ class BatchType(Enum):
     ContextEncoding = 1
     TokenGeneration = 2
 
+    def concise_name(self):
+        if self == BatchType.ContextEncoding:
+            return "CE"
+        else:
+            assert self == BatchType.TokenGeneration
+            return "TG"
+
 
 class RequestDeque:
     """A wrapper around the multiprocessing queue that allows us to add
@@ -42,10 +49,10 @@ class RequestDeque:
         self.queue = queue
         self.evicted: list[BatchInputs] = []
 
-    def empty(self):
+    def empty(self) -> bool:
         return self.queue.empty() and len(self.evicted) == 0
 
-    def get_nowait(self):
+    def get_nowait(self) -> Any:
         if self.evicted:
             return self.evicted.pop()
         return self.queue.get_nowait()
@@ -55,6 +62,12 @@ class RequestDeque:
 
     def put(self, item):
         self.queue.put(item)
+
+    def qsize(self) -> Optional[int]:
+        try:
+            return len(self.evicted) + self.queue.qsize()
+        except NotImplementedError:
+            return None
 
 
 class Scheduler(ABC):
@@ -408,6 +421,87 @@ class TokenGenerationSchedulerV2(Scheduler):
         tg_batch = self._create_tg_batch()
         return tg_batch, BatchType.TokenGeneration
 
+    def _log_metrics(
+        self,
+        batch_type: BatchType,
+        batch_size: int,
+        terminated_reqs: int,
+        num_prompt_tokens: int,
+        batch_creation_time_s: float,
+        batch_execution_time_s: float,
+    ) -> None:
+        assert batch_size > 0
+        num_steps = (
+            self.scheduler_config.max_forward_steps_ce
+            if batch_type == BatchType.ContextEncoding
+            else self.scheduler_config.max_forward_steps_tg
+        )
+        num_generated_tokens = batch_size * num_steps
+
+        # Number of pending requests is unknown if qsize is not supported
+        maybe_pending_reqs: Optional[int] = self.request_q.qsize()
+        pending_reqs = "?"
+        if maybe_pending_reqs is not None:
+            pending_reqs = str(maybe_pending_reqs)
+
+        def format_throughput(tps: float) -> str:
+            if tps >= 1_000:
+                return f"{tps / 1e3:.1f}K tok/s"
+            return f"{tps:.1f} tok/s"
+
+        def format_latency(s: float) -> str:
+            if s >= 1:
+                return f"{s:.1f}s"
+            ms = s * 1e3
+            if ms >= 1:
+                return f"{ms:.1f}ms"
+            us = ms * 1e3
+            if us >= 1:
+                return f"{us:.1f}us"
+            ns = us * 1e3
+            return f"{ns:.1f}ns"
+
+        # Format latency and throughput metrics
+        prompt_throughput_str = format_throughput(
+            num_prompt_tokens / batch_execution_time_s
+        )
+        generation_throughput_str = format_throughput(
+            num_generated_tokens / batch_execution_time_s
+        )
+        batch_creation_latency_str = format_latency(batch_creation_time_s)
+        batch_execution_latency_str = format_latency(batch_execution_time_s)
+
+        if self.paged_manager is None:
+            logger.debug(
+                f"Executed {batch_type.concise_name()} batch with {batch_size} reqs | "
+                f"Terminated: {terminated_reqs} reqs, "
+                f"Pending: {pending_reqs} reqs | "
+                f"Prompt Tput: {prompt_throughput_str}, "
+                f"Generation Tput: {generation_throughput_str} | "
+                f"Batch creation: {batch_creation_latency_str}, "
+                f"Execution: {batch_execution_latency_str}"
+            )
+            return
+
+        # KVCache specific metrics
+        used_blocks = self.paged_manager.get_num_used_blocks()
+        total_blocks = self.paged_manager.total_num_pages
+        used_pct = used_blocks / total_blocks
+        cache_hit_rate = self.paged_manager.cache_hit_rate()
+
+        logger.debug(
+            f"Executed {batch_type.concise_name()} batch with {batch_size} reqs | "
+            f"Terminated: {terminated_reqs} reqs, "
+            f"Pending: {pending_reqs} reqs | "
+            f"Prompt Tput: {prompt_throughput_str}, "
+            f"Generation Tput: {generation_throughput_str} | "
+            f"Batch creation: {batch_creation_latency_str}, "
+            f"Execution: {batch_execution_latency_str} | "
+            f"KVCache usage: {used_pct:.1%} of {total_blocks} blocks, "
+            f"Cache hit rate: {cache_hit_rate:.1%}, "
+            f"All Preemptions: {self.total_preemption_count} reqs"
+        )
+
     def run(self):
         """The Scheduler loop that creates batches and schedules them on GPU"""
         i = 0
@@ -415,28 +509,45 @@ class TokenGenerationSchedulerV2(Scheduler):
             self.pc.beat()
             i += 1
             try:
+                # Construct the batch to execute
+                t0 = time.monotonic()
                 batch_to_execute, batch_type = self._create_batch_to_execute()
+                t1 = time.monotonic()
+                batch_creation_time_s = t1 - t0
+
+                # If the batch is empty, skip
                 if len(batch_to_execute) == 0:
                     continue
 
-                if self.paged_manager is not None:
-                    free_blocks = self.paged_manager.get_num_free_blocks()
-                    total_blocks = self.paged_manager.total_num_pages
-                    free_pct = free_blocks / total_blocks
-                    cache_hit_rate = self.paged_manager.cache_hit_rate()
-                    logger.debug(
-                        f"Scheduling {batch_type} batch with BS: {len(batch_to_execute)}, KVCache: {free_blocks}/{total_blocks} ({free_pct:.2%}) pages available, Cache hit rate: {cache_hit_rate:.2%}, Total preemption count: {self.total_preemption_count}"
-                    )
-                else:
-                    logger.debug(
-                        f"Scheduling {batch_type} batch with BS: {len(batch_to_execute)}"
-                    )
+                # Records the batch size and number of prompt tokens for logging.
+                # This needs to be done before scheduling the batch as the batch
+                # input and prompts are mutated in place while executing the
+                # batch.
+                batch_size = len(batch_to_execute)
+                num_prompt_tokens = sum(
+                    data.active_length for data in batch_to_execute.values()
+                )
 
+                # Schedule the batch
+                t0 = time.monotonic()
                 if batch_type == BatchType.ContextEncoding:
                     self._schedule_ce(batch_to_execute)
                 else:
                     assert batch_type == BatchType.TokenGeneration
                     self._schedule_tg(batch_to_execute)
+                t1 = time.monotonic()
+                batch_execution_time_s = t1 - t0
+
+                # Log batch metrics
+                terminated_reqs = batch_size - len(batch_to_execute)
+                self._log_metrics(
+                    batch_type,
+                    batch_size,
+                    terminated_reqs,
+                    num_prompt_tokens,
+                    batch_creation_time_s,
+                    batch_execution_time_s,
+                )
 
                 # occasionally handle cancelled requests
                 if i % 20 == 0:
