@@ -2371,7 +2371,9 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
           recordValue(op.getResult(0), val);
       }
 
-      llvm_unreachable("should have found a block terminator");
+      // If there is no block terminator then we have malformed IR, presumably
+      // due to an already-diagnosed issue.
+      return failure();
     };
 
     if (auto condVal = findValue(ifOp.getCond())) {
@@ -2472,8 +2474,7 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
       folder.recordValue(op.getResult(0), val);
   }
 
-  // Semantic errors in the body can cause this to happen.  We don't care too
-  // much about QoI but don't crash the compiler.
-  folder.emitError(fnOp.getLoc()) << "body is malformed";
+  // If there is no block terminator then we have malformed IR, presumably
+  // due to an already-diagnosed issue.
   return {};
 }

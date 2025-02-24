@@ -330,7 +330,13 @@ public:
   /// Returns a type if there is a shared supertype for the two specified types,
   /// e.g. two derived classes may have the same base class even if neither is
   /// convertible to the other.  This returns null if there is no common type.
-  ASTType getCommonType(ASTType type1, ASTType type2);
+  enum CommonTypeResult { CTR_Success, CTR_Ambiguous, CTR_NoCommonType };
+  CommonTypeResult getCommonType(ASTExprAnd<CValue> val1,
+                                 ASTExprAnd<CValue> val2, ASTType &result);
+
+  /// If there is a common type shared between the two reference types, return
+  /// it. Otherwise return null.
+  static RefType getCommonRefType(RefType ref1, RefType ref2);
 
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.

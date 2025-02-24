@@ -568,40 +568,91 @@ bool ExprEmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
   return true;
 }
 
+/// If there is a common type shared between the two reference types, return
+/// it. Otherwise return null.
+RefType ExprEmitter::getCommonRefType(RefType ref1, RefType ref2) {
+  if (ref1 == ref2)
+    return ref1;
+  // Element types and addr spaces have to be exactly equal.
+  auto eltType = ref1.getElementType();
+  if (!ASTType(eltType).isEqualCanon(ref2.getElementType()) ||
+      ref1.getAddressSpace() != ref2.getAddressSpace())
+    return {};
+
+  // If so, we can form a common type with a subset of their mutability and
+  // a union of their origins.
+  auto isMutableAttr =
+      ParamOperatorAttr::get(POC::And, ref1.isMutable(), ref2.isMutable());
+
+  auto l1 = OriginMutCastAttr::get(ref1.getOrigin(), isMutableAttr);
+  auto l2 = OriginMutCastAttr::get(ref2.getOrigin(), isMutableAttr);
+  auto origin = OriginUnionAttr::get({l1, l2}, cast<OriginType>(l1.getType()));
+  return RefType::get(eltType, origin, ref1.getAddressSpace());
+}
+
 /// Returns a type if there is a shared supertype for the two specified types,
 /// e.g. two derived classes may have the same base class even if neither is
 /// convertible to the other.  This returns null if there is no common type.
-ASTType ExprEmitter::getCommonType(ASTType type1, ASTType type2) {
+ExprEmitter::CommonTypeResult
+ExprEmitter::getCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
+                           ASTType &result) {
+  auto succeed = [&](ASTType type) {
+    result = type;
+    return CTR_Success;
+  };
+
+  // If the types already match, then we're done.
+  ASTType type1 = val1.ir.getRValueType();
+  ASTType type2 = val2.ir.getRValueType();
+  if (type1.isEqualCanon(type2))
+    return succeed(type1);
+
   // Check reference downcasting.
   if (auto type1Ref = dyn_cast<RefType>(type1))
     if (auto type2Ref = dyn_cast<RefType>(type2)) {
-      // Element types and addr spaces have to be exactly equal.
-      auto eltType = type1Ref.getElementType();
-      if (!ASTType(eltType).isEqualCanon(type2Ref.getElementType()) ||
-          type1Ref.getAddressSpace() != type2Ref.getAddressSpace())
-        return {};
-
-      // If so, we can form a common type with a subset of their mutability and
-      // a union of their origins.
-      auto isMutableAttr = ParamOperatorAttr::get(
-          POC::And, type1Ref.isMutable(), type2Ref.isMutable());
-
-      auto l1 = OriginMutCastAttr::get(type1Ref.getOrigin(), isMutableAttr);
-      auto l2 = OriginMutCastAttr::get(type2Ref.getOrigin(), isMutableAttr);
-      auto origin =
-          OriginUnionAttr::get({l1, l2}, cast<OriginType>(l1.getType()));
-      return RefType::get(eltType, origin, type1Ref.getAddressSpace());
+      result = getCommonRefType(type1Ref, type2Ref);
+      return result ? CTR_Success : CTR_NoCommonType;
     }
 
-  // If both types are non-materializable types but have a common type to
-  // materialize into, use it.
-  if (auto type1Nonmat = type1.getNonmaterializableTarget(shared))
-    if (auto type2Nonmat = type2.getNonmaterializableTarget(shared))
-      if (type1Nonmat.isEqualCanon(type2Nonmat))
-        return type2Nonmat;
+  // If one type implicit converts to the other, then the other is a common
+  // type.  Don't do this if both convert to each other, this would be
+  // ambiguous.
+  bool isConvertibleToType2 =
+      canImplicitlyConvertToType(val1, type2, declScope);
+  bool isConvertibleToType1 =
+      canImplicitlyConvertToType(val2, type1, declScope);
+  if (isConvertibleToType2 && !isConvertibleToType1)
+    return succeed(type2);
+  if (isConvertibleToType1 && !isConvertibleToType2)
+    return succeed(type1);
+  if (isConvertibleToType1 && isConvertibleToType2)
+    return CTR_Ambiguous;
+
+  // If one or the other type is non-materializable, the conversion is free,
+  // so check to see if there is an unambiguous common type.
+  bool type2ConvertsToType1Nonmat = false;
+  bool type1ConvertsToType2Nonmat = false;
+  auto type1Nonmat = type1.getNonmaterializableTarget(shared);
+  auto type2Nonmat = type2.getNonmaterializableTarget(shared);
+  if (type1Nonmat)
+    type2ConvertsToType1Nonmat =
+        canImplicitlyConvertToType(val2, type1Nonmat, declScope);
+  if (type2Nonmat)
+    type1ConvertsToType2Nonmat =
+        canImplicitlyConvertToType(val1, type2Nonmat, declScope);
+
+  if (type2ConvertsToType1Nonmat && !type1ConvertsToType2Nonmat)
+    return succeed(type1Nonmat);
+  if (type1ConvertsToType2Nonmat && !type2ConvertsToType1Nonmat)
+    return succeed(type2Nonmat);
+  if (type1ConvertsToType2Nonmat && type2ConvertsToType1Nonmat) {
+    if (type1Nonmat.isEqualCanon(type2Nonmat))
+      return succeed(type1Nonmat);
+    return CTR_Ambiguous;
+  }
 
   // No common type found.
-  return {};
+  return CTR_NoCommonType;
 }
 
 /// Given a value of a type that can be zero cost converted to another type,
