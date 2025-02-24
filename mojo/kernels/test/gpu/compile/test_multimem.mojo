@@ -72,5 +72,64 @@ def test_multimem_ld_reduce():
     )
 
 
+def test_multimem_st():
+    print("== test_multimem_st")
+
+    assert_true(
+        "multimem.st.weak.cta.global.v2.bf16x2 "
+        in _compile_code_asm[
+            multimem_st[
+                DType.bfloat16,
+                count=2,
+                scope = Scope.BLOCK,
+                consistency = Consistency.WEAK,
+                width=2,
+            ],
+            target = H100.target(),
+        ]()
+    )
+
+    assert_true(
+        "multimem.st.relaxed.gpu.global.v4.f32 "
+        in _compile_code_asm[
+            multimem_st[
+                DType.float32,
+                count=4,
+                scope = Scope.GPU,
+                consistency = Consistency.RELAXED,
+            ],
+            target = H100.target(),
+        ]()
+    )
+
+    assert_true(
+        "multimem.st.release.sys.global.v4.f16x2 "
+        in _compile_code_asm[
+            multimem_st[
+                DType.float16,
+                count=4,
+                scope = Scope.SYSTEM,
+                consistency = Consistency.RELEASE,
+                width=2,
+            ],
+            target = H100.target(),
+        ]()
+    )
+
+    assert_true(
+        "multimem.st.relaxed.cluster.global.v4.bf16 "
+        in _compile_code_asm[
+            multimem_st[
+                DType.bfloat16,
+                count=4,
+                scope = Scope.CLUSTER,
+                consistency = Consistency.RELAXED,
+            ],
+            target = H100.target(),
+        ]()
+    )
+
+
 def main():
     test_multimem_ld_reduce()
+    test_multimem_st()
