@@ -32,7 +32,7 @@ from layout.tensor_core import TensorCore
 from linalg.utils import GemmShape
 from math import align_down, ceildiv, align_up
 from memory import UnsafePointer
-from sys import simdwidthof, alignof, env_get_bool
+from sys import simdwidthof, alignof
 from utils import Index, IndexList, StaticTuple
 from utils.numerics import get_accum_type
 from .utils_gpu import MatmulConfig
@@ -77,7 +77,19 @@ fn gemm_kernel[
     alias MMA_N = config.mma_shape[1]
     alias MMA_K = config.mma_shape[2]
 
-    alias num_warps = (BM * BN) // (WM * WN)
+    alias num_warps_m = BM // WM
+    alias num_warps_n = BN // WN
+    alias num_warps = num_warps_m * num_warps_n
+
+    # TODO: Remove this once KERN-1609 is fixed
+    constrained[
+        (BM // num_warps) % 16 == 0,
+        "BM per warp (" + String(BM // num_warps) + ") must be divisible by 16",
+    ]()
+    constrained[
+        (BN // num_warps) % 16 == 0,
+        "BN per warp (" + String(BN // num_warps) + ") must be divisible by 16",
+    ]()
 
     alias simd_width = simdwidthof[a_type]()
     alias k_group_size = 16 // simd_width
@@ -124,7 +136,7 @@ fn gemm_kernel[
         alignment = a_smem.alignment,
     ](a_smem.bitcast[Scalar[a_type]]())
 
-    var a_smem_warp_tile = a_smem_tensor.tile[BM // 4, BK](warp_id, 0)
+    var a_smem_warp_tile = a_smem_tensor.tile[BM // num_warps, BK](warp_id, 0)
 
     var b_smem = (a_smem + BM * BK)
     alias b_smem_layout = get_smem_layout(MMA_N, BN)
@@ -135,7 +147,7 @@ fn gemm_kernel[
         address_space = b_smem.address_space,
         alignment = b_smem.alignment,
     ](b_smem.bitcast[Scalar[b_type]]())
-    var b_smem_warp_tile = b_smem_tensor.tile[BN // 4, BK](warp_id, 0)
+    var b_smem_warp_tile = b_smem_tensor.tile[BN // num_warps, BK](warp_id, 0)
 
     var mma_op = TensorCore[
         accum_type,
@@ -147,52 +159,48 @@ fn gemm_kernel[
     var a_tile = a.tile[BM, K](block_idx.y, 0)
     var b_tile = b.tile[BN, K](block_idx.x, 0)
 
-    var a_gmem_iter = a_tile.tiled_iterator[BM // 4, BK, axis=1](warp_id, 0)
-    var b_gmem_iter = b_tile.tiled_iterator[BN // 4, BK, axis=1](warp_id, 0)
+    var a_gmem_iter = a_tile.tiled_iterator[BM // num_warps, BK, axis=1](
+        warp_id, 0
+    )
+    var b_gmem_iter = b_tile.tiled_iterator[BN // num_warps, BK, axis=1](
+        warp_id, 0
+    )
 
-    # This is a temporary flag to test the performance without checking bounds
-    # as checking of the bounds drops the performance by 20%
-    alias fast_path = env_get_bool["AMD_GEMM_FAST_PATH", False]()
     alias swizzle = Swizzle(2, 0, 2)
-    for _ in range(0, K, BK):
+    for k in range(0, K, BK):
 
+        @always_inline
         @parameter
         fn _copy_dram_to_sram(
-            smem_warp_tile: LayoutTensor, gmem_warp_tile: LayoutTensor
+            smem_warp_tile: LayoutTensor,
+            gmem_warp_tile: LayoutTensor,
+            gmem: LayoutTensor,
         ):
             alias thread_layout = Layout.row_major(16, 4)
-
-            @parameter
-            if fast_path:
-                var src = gmem_warp_tile.vectorize[1, simd_width]().distribute[
-                    thread_layout
-                ](lane_id())
-                var dst = smem_warp_tile.vectorize[1, simd_width]().distribute[
-                    thread_layout, swizzle=swizzle
-                ](lane_id())
-                dst.copy_from(src)
-            else:
-                # ideally we should be using the following code as it also checks
-                # for bound but this reduces the performance by 15%
-                copy_dram_to_sram[
-                    thread_layout,
-                    thread_scope = ThreadScope.WARP,
-                    swizzle=swizzle,
-                ](
-                    smem_warp_tile.vectorize[1, simd_width](),
-                    gmem_warp_tile.vectorize[1, simd_width](),
-                )
+            copy_dram_to_sram[
+                thread_layout=thread_layout,
+                thread_scope = ThreadScope.WARP,
+                swizzle=swizzle,
+            ](
+                smem_warp_tile.vectorize[1, simd_width](),
+                gmem_warp_tile.vectorize[1, simd_width](),
+                gmem,
+            )
 
         # there is some performance drop with iter vs tile but it is very small ~ 1TFLOPs
-        # var a_warp_tile = a_tile.tile[BM // 4, BK](warp_id, k // BK)
-        # var b_warp_tile = b_tile.tile[BN // 4, BK](warp_id, k // BK)
-        _copy_dram_to_sram(a_smem_warp_tile, a_gmem_iter[])
-        _copy_dram_to_sram(b_smem_warp_tile, b_gmem_iter[])
+        # var a_warp_tile = a_tile.tile[BM // num_warps, BK](warp_id, k // BK)
+        # var b_warp_tile = b_tile.tile[BN // num_warps, BK](warp_id, k // BK)
+        _copy_dram_to_sram(a_smem_warp_tile, a_gmem_iter[], a)
+        _copy_dram_to_sram(b_smem_warp_tile, b_gmem_iter[], b)
         a_gmem_iter._incr()
         b_gmem_iter._incr()
 
-        var a_mma_tile = a_smem_tensor.tile[BM // 2, BK](warp_id // 2, 0)
-        var b_mma_tile = b_smem_tensor.tile[BN // 2, BK](warp_id % 2, 0)
+        var a_mma_tile = a_smem_tensor.tile[BM // num_warps_m, BK](
+            warp_id // num_warps_n, 0
+        )
+        var b_mma_tile = b_smem_tensor.tile[BN // num_warps_n, BK](
+            warp_id % num_warps_n, 0
+        )
         barrier()
 
         @parameter
@@ -226,64 +234,50 @@ fn gemm_kernel[
 
     # write to output tensor
     var c_block_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
-    var c_warp_tile = c_block_tile.tile[WM, WN](warp_id // 2, warp_id % 2)
+    var c_warp_tile = c_block_tile.tile[WM, WN](
+        warp_id // num_warps_n, warp_id % num_warps_n
+    )
 
     @parameter
-    if fast_path:
+    if elementwise_lambda_fn:
+        constrained[
+            elementwise_lambda_fn is not None,
+            "elementwise_lambda_fn is not valid",
+        ]()
+        alias epilogue = elementwise_lambda_fn.value()
+        alias thread_layout = Layout.row_major(4, 16)
+        var c_gmem_frag = c_warp_tile.vectorize[4, 1]().distribute[
+            thread_layout
+        ](lane_id())
+        var c_reg_frag = c_reg_tile.vectorize[1, 4]()
+        var thread_offset = c_gmem_frag.distance(c.ptr)
 
         @parameter
-        for om in range(num_m_mmas):
+        for i in range(__type_of(c_gmem_frag).layout.size()):
+            alias src_idx = c_reg_frag.layout(i)
+            alias dst_static_idx: UInt = __type_of(c_gmem_frag).layout(i)
+            var dst_idx = 0
 
             @parameter
-            for on in range(num_n_mmas):
-                var c_output_reg = c_reg_tile.tile[1, 4](
-                    on * num_m_mmas + om, 0
-                )
-                var c_mma_tile = c_warp_tile.tile[MMA_M, MMA_N](om, on)
-                mma_op.store_d(c_mma_tile, c_output_reg)
-    else:
-        # Ideally we should be using the following code but this reduces the performance by 5 TFLOPS
-        @parameter
-        if elementwise_lambda_fn:
-            constrained[
-                elementwise_lambda_fn is not None,
-                "elementwise_lambda_fn is not valid",
-            ]()
-            alias epilogue = elementwise_lambda_fn.value()
-
-            alias thread_layout = Layout.row_major(4, 16)
-            var c_gmem_frag = c_warp_tile.vectorize[4, 1]().distribute[
-                thread_layout
-            ](lane_id())
-            var c_reg_frag = c_reg_tile.vectorize[1, 4]()
-            var thread_offset = c_gmem_frag.distance(c.ptr)
-
-            @parameter
-            for i in range(__type_of(c_gmem_frag).layout.size()):
-                alias src_idx = c_reg_frag.layout(i)
-                alias dst_static_idx: UInt = __type_of(c_gmem_frag).layout(i)
-                var dst_idx = 0
+            if c_gmem_frag.layout.all_dims_known():
+                dst_idx = dst_static_idx
+            else:
+                dst_idx = c_gmem_frag.runtime_layout(i)
+            var m = Int((thread_offset + dst_idx) // N)
+            var n = Int((thread_offset + dst_idx) % N)
+            if m < M and n < N:
+                var vec = c_reg_frag.ptr.offset(src_idx).load[
+                    width=4,
+                    alignment = alignof[SIMD[c_type, 4]](),
+                ]()
 
                 @parameter
-                if c_gmem_frag.layout.all_dims_known():
-                    dst_idx = dst_static_idx
-                else:
-                    dst_idx = c_gmem_frag.runtime_layout(i)
-                var m = Int((thread_offset + dst_idx) // N)
-                var n = Int((thread_offset + dst_idx) % N)
-                if m < M and n < N:
-                    var vec = c_reg_frag.ptr.offset(src_idx).load[
-                        width=4,
-                        alignment = alignof[SIMD[c_type, 4]](),
-                    ]()
-
-                    @parameter
-                    for j in range(4):
-                        if m + j < M:
-                            epilogue[alignment = alignof[SIMD[c_type, 1]]()](
-                                (m + j, n), vec[j].cast[c_type]()
-                            )
-        else:
-            copy_local_to_dram[
-                Layout.row_major(4, 16), thread_scope = ThreadScope.WARP
-            ](c_warp_tile.vectorize[4, 1](), c_reg_tile.vectorize[1, 4]())
+                for j in range(4):
+                    if m + j < M:
+                        epilogue[alignment = alignof[SIMD[c_type, 1]]()](
+                            (m + j, n), vec[j].cast[c_type]()
+                        )
+    else:
+        copy_local_to_dram[
+            Layout.row_major(4, 16), thread_scope = ThreadScope.WARP
+        ](c_warp_tile.vectorize[4, 1](), c_reg_tile.vectorize[1, 4](), c)
