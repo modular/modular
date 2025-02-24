@@ -1210,8 +1210,6 @@ fn _get_type_mnemonic[type: DType]() -> StringLiteral:
 
 
 fn _int_to_str[val: Int]() -> StringLiteral:
-    constrained[val in (1, 2, 4, 8, 16, 32, 64, 128, 256)]()
-
     @parameter
     if val == 1:
         return "1"
@@ -1232,4 +1230,4 @@ fn _int_to_str[val: Int]() -> StringLiteral:
     elif val == 256:
         return "256"
 
-    return "Unknown"
+    return StringLiteral.get[String(val)]()
