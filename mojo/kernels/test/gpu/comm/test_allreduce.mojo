@@ -14,7 +14,7 @@ from sys import sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.all_reduce import MAX_GPUS, Signal, all_reduce
+from gpu.all_reduce import MAX_GPUS, MAX_NUM_BLOCKS_DEFAULT, Signal, all_reduce
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import UnsafePointer
 from testing import assert_almost_equal
@@ -51,6 +51,7 @@ fn all_reduce_test[
 ](list_of_ctx: List[DeviceContext], length: Int) raises:
     alias num_warmups = 5
     alias num_iters = 100
+    alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
 
     constrained[ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"]()
     constrained[rank == 1, "this test code currently assumes rank 1"]()
@@ -62,9 +63,9 @@ fn all_reduce_test[
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
-        UnsafePointer[Signal]()
-    )
+    var rank_sigs = InlineArray[
+        UnsafePointer[Signal[max_num_blocks]], MAX_GPUS
+    ](UnsafePointer[Signal[max_num_blocks]]())
 
     # Set up temp buffers for GPUs to reduce-scatter into / all-gather from.
     var temp_buffer_num_bytes = ngpus * sizeof[type]() * length
@@ -87,11 +88,13 @@ fn all_reduce_test[
         # Create and initialize signal buffers
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[DType.uint8](
-                sizeof[Signal]() + temp_buffer_num_bytes
+                sizeof[Signal[max_num_blocks]]() + temp_buffer_num_bytes
             )
         )
         list_of_ctx[i].memset_sync[DType.uint8](signal_buffers[i], 0)
-        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
+        rank_sigs[i] = (
+            signal_buffers[i].unsafe_ptr().bitcast[Signal[max_num_blocks]]()
+        )
 
         # Copy data to device
         list_of_ctx[i].enqueue_copy_to_device(in_bufs_list[i], host_buffers[i])
