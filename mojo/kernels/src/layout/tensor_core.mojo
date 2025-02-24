@@ -1186,33 +1186,6 @@ fn get_mma_shape[
 
 
 @always_inline
-fn get_accum_type[
-    input_type: DType, preferred_accum_type: DType = input_type
-]() -> DType:
-    @parameter
-    if input_type is DType.float32:
-        return DType.float32
-    elif input_type is DType.bfloat16:
-        return DType.float32
-    # fp16 accumulation can be done in fp16 or fp32. Use fp16 by default for better
-    # performance and use fp32 only when it's specified via preferred type.
-    elif input_type is DType.float16:
-
-        @parameter
-        if preferred_accum_type is DType.float32:
-            return preferred_accum_type
-        else:
-            return DType.float16
-    elif input_type in (DType.float8_e4m3fn, DType.float8_e5m2):
-        return DType.float32
-    else:
-        constrained[
-            False, "Only support fp16, bf16, fp32 accumulation for now."
-        ]()
-        return input_type
-
-
-@always_inline
 fn get_fragment_size[mma_shape: IndexList[3]]() -> IndexList[3]:
     return IndexList[3](
         mma_shape[0] * mma_shape[2] // WARP_SIZE,
