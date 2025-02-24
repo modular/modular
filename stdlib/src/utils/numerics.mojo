@@ -1028,24 +1028,46 @@ fn isfinite[
 
 
 @always_inline
-fn get_accum_type[type: DType]() -> DType:
+fn get_accum_type[
+    type: DType, *, preferred_accum_type: DType = DType.float32
+]() -> DType:
     """Returns the recommended type for accumulation operations.
 
-    Half precision types can introduce numerical error if they are used
+    Half precision and float8 types can introduce numerical error if they are used
     in reduction/accumulation operations. This method returns a higher precision
     type to use for accumulation if a half precision types is provided,
     otherwise it returns the original type.
 
+    The rules are as follows:
+        - If the type is a float8 type, return a float16 type.
+        - If the type is a bfloat16 precision type, return a float32 type.
+        - If the type is a float16 precision type, return a float32 type if the
+          preferred_accum_type is float32, otherwise return a float16 type.
+        - Otherwise, return the original type.
+
     Parameters:
         type: The type of some accumulation operation.
+        preferred_accum_type: The preferred type for accumulation.
 
     Returns:
         DType.float32 if type is a half-precision float, type otherwise.
     """
 
-    return DType.float32 if (
-        type.is_half_float() or type in (DType.float8_e4m3fn, DType.float8_e5m2)
-    ) else type
+    @parameter
+    if type.is_float8():
+        return DType.float16
+    elif type is DType.bfloat16:
+        return DType.float32
+    elif type is DType.float16:
+        # fp16 accumulation can be done in fp16 or fp32. Use fp16 by default for better
+        # performance and use fp32 only when it's specified via preferred type.
+        @parameter
+        if preferred_accum_type is DType.float32:
+            return preferred_accum_type
+        else:
+            return DType.float16
+    else:
+        return type
 
 
 # ===----------------------------------------------------------------------=== #
