@@ -20,6 +20,7 @@ from sys import (
     sizeof,
 )
 from sys.intrinsics import _type_is_eq
+from sys.param_env import env_get_int
 
 from algorithm import elementwise
 from algorithm.functional import tile_and_unswitch, unswitch, vectorize
@@ -429,9 +430,12 @@ fn flash_attention_dispatch[
             alias BM = config.block_m()
             alias BK = config.block_k()
 
+            alias h100_env = env_get_int["USE_EXPERIMENTAL_KERNELS", 0]()
+
             @parameter
             if (
                 ctx.device_info is H100
+                and h100_env != 0
                 and not add_attn_mask
                 and q_half_float
                 and (ragged or not _use_valid_length)
