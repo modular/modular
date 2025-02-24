@@ -199,6 +199,16 @@ void CallGraph::doRewrite(const CallGraphNode *node) {
   });
 }
 
+static size_t getNumReturnSlots(FuncType funcType) {
+  ArrayRef<ArgConvention> conventions = funcType.getArgConventions();
+  size_t result = 0;
+  while (!conventions.empty() && isResultSlot(conventions.back())) {
+    ++result;
+    conventions = conventions.drop_back();
+  }
+  return result;
+}
+
 bool CallGraph::doAnalysis(CallGraphNode *node) {
   FuncOp func = node->func;
   llvm::MapVector<StringAttr, SmallVector<POP::CompilerGlobalLoadOp>>
@@ -309,9 +319,11 @@ bool CallGraph::doAnalysis(CallGraphNode *node) {
           (calleeNode->func.getNumArguments() - sig.getNumArguments());
       SmallVector<Value> captures =
           computeRequiredCaptures(call, calleeNode, fulfilled);
-      // Append any new captures starting from the front and update the callee
-      // signature on the call. The function already has the updated signature.
-      call->insertOperands(fulfilled, captures);
+      // Insert any new captures and update the callee signature on the call.
+      // The function already has the updated signature.
+      // New capture args are inserted immediately before any return slots.
+      size_t argInsertionIndex = sig.getNumArguments() - getNumReturnSlots(sig);
+      call->insertOperands(argInsertionIndex, captures);
       call.setCalleeAttr(SymbolConstantAttr::get(
           symbol.getSymbol(), callee.getFuncTypeGenerator()));
       return;
@@ -359,18 +371,23 @@ bool CallGraph::doAnalysis(CallGraphNode *node) {
   if (!func.getFuncTypeGenerator().getBody().isCapturing())
     return node->requiredPromises.size() != curNumPromises;
 
-  // At the end of the walk, assess the leftover required promises. Prepend
-  // them to the signature and block arguments.
+  // At the end of the walk, assess the leftover required promises. Insert
+  // them to the signature and block arguments (inserted before any return
+  // slots).
+  size_t numResultArgs =
+      getNumReturnSlots(func.getFuncTypeGenerator().getBody());
   auto newTypes = consumeRequiredPromises(
-      func.getArguments().take_front(node->requiredPromises.size()));
+      func.getArguments()
+          .take_back(node->requiredPromises.size() + numResultArgs)
+          .drop_back(numResultArgs));
   if (newTypes.empty())
     return false;
 
   Block *body = func.getBody();
-  unsigned i = 0;
-  // Insert arguments for any new captures to propagate starting at the front.
+  unsigned argInsertionIndex = body->getNumArguments() - numResultArgs;
+  // Insert arguments for any new captures to propagate.
   for (auto &[type, loads] : newTypes) {
-    Value arg = body->insertArgument(curNumPromises + i++, type, func.getLoc());
+    Value arg = body->insertArgument(argInsertionIndex++, type, func.getLoc());
     for (POP::CompilerGlobalLoadOp load : loads) {
       load.replaceAllUsesWith(arg);
       load.erase();
@@ -379,8 +396,9 @@ bool CallGraph::doAnalysis(CallGraphNode *node) {
 
   FuncType sig = func.getFuncTypeGenerator().getBody();
   // TODO: What conventions do we use for captures.
-  SmallVector<ArgConvention> convs(i, ArgConvention::ReadReg);
-  convs.append(sig.getArgConventions().begin(), sig.getArgConventions().end());
+  SmallVector<ArgConvention> convs(sig.getArgConventions());
+  convs.insert(std::prev(convs.end(), numResultArgs), newTypes.size(),
+               ArgConvention::ReadReg);
   assert(body->getNumArguments() == convs.size());
 
   // Update the function signature.

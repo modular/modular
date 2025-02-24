@@ -13,10 +13,10 @@ kgen.func @use_i32(%arg0: i32) {
   kgen.unreachable
 }
 
-// CHECK-LABEL: kgen.func @top(%arg0: i32, %arg1: index)
+// CHECK-LABEL: kgen.func @top(%arg0: index, %arg1: i32)
 kgen.func @top(%arg0: index) capturing {
   pop.compiler.global_store "foobar", %arg0 : index
-  // CHECK: call @transitive(%arg0, %arg1) : (i32, index) capturing -> ()
+  // CHECK: call @transitive(%arg1, %arg0) : (i32, index) capturing -> ()
   kgen.call @transitive() : () capturing -> ()
   kgen.return
 }
@@ -88,13 +88,13 @@ kgen.func @store_does_not_dominate(%arg0: index) capturing {
   // CHECK: loop
   hlcf.loop {
     pop.compiler.global_store "foobar", %arg0 : index
-    // CHECK: call @use(%arg1)
+    // CHECK: call @use(%arg0)
     kgen.call @use(%arg0) : (index) -> ()
     // CHECK: break
     hlcf.break
   }
   %0 = pop.compiler.global_load "foobar" : index
-  // CHECK: call @use(%arg0)
+  // CHECK: call @use(%arg1)
   kgen.call @use(%0) : (index) -> ()
   kgen.return
 }
@@ -183,8 +183,8 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // CHECK-LABEL: kgen.func @init_fn
 kgen.func @init_fn(%arg0: i64, %arg1: i32) capturing -> !kgen.pointer<none> {
-  // CHECK: store %arg0
-  // CHECK: store %arg1
+  // CHECK: store %arg2
+  // CHECK: store %arg3
   // CHECK: bitcast %{{.*}} : !kgen.pointer<struct<(i64, i32)>>
   %cl = kgen.capture_list.create :(!kgen.pointer<none>) -> () @call_fn
   kgen.return %cl : !kgen.pointer<none>
@@ -222,18 +222,62 @@ kgen.func @call_fn(%cl: !kgen.pointer<none>) {
 // -----
 
 // CHECK-LABEL: kgen.func @entry
-// CHECK-SAME: (%arg0: i32, %arg1: index)
-kgen.func @entry(%arg0: i32, %arg1: index) {
-  pop.compiler.global_store "x", %arg0 : i32
+// CHECK-SAME: (%arg0: index, %arg1: i32)
+kgen.func @entry(%arg0: index, %arg1: i32) {
+  pop.compiler.global_store "x", %arg1 : i32
   // CHECK-NEXT: call @simple_recursion(%arg0, %arg1)
-  kgen.call @simple_recursion(%arg1) : (index) capturing -> ()
+  kgen.call @simple_recursion(%arg0) : (index) capturing -> ()
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @simple_recursion(%arg0: i32, %arg1: index)
+// CHECK-LABEL: kgen.func @simple_recursion(%arg0: index, %arg1: i32)
 kgen.func @simple_recursion(%arg1: index) capturing {
   // CHECK-NEXT: call @simple_recursion(%arg0, %arg1)
   kgen.call @simple_recursion(%arg1) : (index) capturing -> ()
+  %0 = pop.compiler.global_load "x" : i32
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: kgen.func @entry
+// CHECK-SAME: (%arg0: index, %arg1: i32)
+kgen.func @entry(%arg0: index, %arg1: i32) {
+  // CHECK-NEXT: %0 = pop.stack_allocation
+  %0 = pop.stack_allocation 1 x i64
+  pop.compiler.global_store "x", %arg1 : i32
+  // CHECK-NEXT: call @recursion_with_result(%arg0, %arg1, %0)
+  kgen.call @recursion_with_result(%arg0, %0) : (index, !kgen.pointer<i64> byref_result) capturing -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @recursion_with_result(%arg0: index, %arg1: i32, %arg2: !kgen.pointer<i64> byref_result)
+kgen.func @recursion_with_result(%arg1: index, %res: !kgen.pointer<i64> byref_result) capturing {
+  // CHECK-NEXT: call @recursion_with_result(%arg0, %arg1, %arg2)
+  kgen.call @recursion_with_result(%arg1, %res) : (index, !kgen.pointer<i64> byref_result) capturing -> ()
+  %0 = pop.compiler.global_load "x" : i32
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: kgen.func @entry
+// CHECK-SAME: (%arg0: index, %arg1: i32)
+kgen.func @entry(%arg0: index, %arg1: i32) {
+  // CHECK-NEXT: %0 = pop.stack_allocation
+  // CHECK-NEXT: %1 = pop.stack_allocation
+  %0 = pop.stack_allocation 1 x i1
+  %1 = pop.stack_allocation 1 x i64
+  pop.compiler.global_store "x", %arg1 : i32
+  // CHECK-NEXT: call @recursion_with_error_result(%arg0, %arg1, %0, %1)
+  kgen.call @recursion_with_error_result(%arg0, %0, %1) : (index, !kgen.pointer<i1> byref_error, !kgen.pointer<i64> byref_result) capturing|throws -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @recursion_with_error_result(%arg0: index, %arg1: i32, %arg2: !kgen.pointer<i1> byref_error, %arg3: !kgen.pointer<i64> byref_result)
+kgen.func @recursion_with_error_result(%arg1: index, %err: !kgen.pointer<i1> byref_error, %res: !kgen.pointer<i64> byref_result) capturing|throws {
+  // CHECK-NEXT: call @recursion_with_error_result(%arg0, %arg1, %arg2, %arg3)
+  kgen.call @recursion_with_error_result(%arg1, %err, %res) : (index, !kgen.pointer<i1> byref_error, !kgen.pointer<i64> byref_result) capturing|throws -> ()
   %0 = pop.compiler.global_load "x" : i32
   kgen.return
 }

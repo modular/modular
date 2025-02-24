@@ -18,21 +18,21 @@ fn use(lhs: Int, rhs: Int) -> Int:
 # CHECK: pop.aligned_alloc
 
 # COM: check inlined __init__
-# CHECK:  kgen.func @"{{.*}}::makeEscapingClosure
+# CHECK:  kgen.func @"{{.*}}::makeEscapingClosure{{.*}}(%arg0: index, %arg1: {{.*}}, %arg2: {{.*}}, %arg3: {{.*}} byref_result)
 # CHECK:         [[MY_CAPTURE_FIELD_ALLOC:%.*]] = pop.stack_allocation 1 x struct<(pointer<none>, index) memoryOnly>
 # CHECK:         lifetime.start([[MY_CAPTURE_FIELD_ALLOC]])
 # CHECK-NEXT:    [[MY_CAPTURE_FIELD_ADD:%.*]] = kgen.struct.gep [[MY_CAPTURE_FIELD_ALLOC]][0]
 # CHECK-NEXT:    [[HEAP_CAPTURE_LISTS_PTR:%.*]] = pop.aligned_alloc %idx8, %idx16 : <struct<(index, index)>>
 # CHECK-NEXT:    [[HEAP_CAPTURE_LIST_0:%.*]] = kgen.struct.gep [[HEAP_CAPTURE_LISTS_PTR]][0] : <struct<(index, index)>>
-# CHECK-NEXT:    pop.store %arg0, [[HEAP_CAPTURE_LIST_0]] : !kgen.pointer<index>
+# CHECK-NEXT:    pop.store %arg1, [[HEAP_CAPTURE_LIST_0]] : !kgen.pointer<index>
 
 # CHECK-NEXT:    [[HEAP_CAPTURE_LIST_1:%.*]] = kgen.struct.gep [[HEAP_CAPTURE_LISTS_PTR]][1]
-# CHECK-NEXT:    pop.store %arg1, [[HEAP_CAPTURE_LIST_1]]
+# CHECK-NEXT:    pop.store %arg2, [[HEAP_CAPTURE_LIST_1]]
 
 # CHECK-NEXT:    [[OPAQUE_CAPTURE_LIST:%.*]] = pop.pointer.bitcast [[HEAP_CAPTURE_LISTS_PTR]]
 # CHECK-NEXT:    pop.store [[OPAQUE_CAPTURE_LIST]], [[MY_CAPTURE_FIELD_ADD]]
 # CHECK-NEXT:    [[NONPARAMETRIC_CAPTURE_ADD:%.*]] = kgen.struct.gep [[MY_CAPTURE_FIELD_ALLOC]][1]
-# CHECK-NEXT:    pop.store %arg2, [[NONPARAMETRIC_CAPTURE_ADD]] : !kgen.pointer<index>
+# CHECK-NEXT:    pop.store %arg0, [[NONPARAMETRIC_CAPTURE_ADD]] : !kgen.pointer<index>
 
 # COM: check inlined __del__
 # CHECK: kgen.func @"{{.*}}_dtor_`_CI_{{.*}}"
