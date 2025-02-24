@@ -11,11 +11,9 @@
 #include "AsyncRT/Runtime/Algorithms.h"
 #include "AsyncRT/Runtime/Runtime.h"
 #include "Cache/CacheTelemetryContext.h"
-#include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/Compiler/LLVMIRUtils.h"
 #include "KGEN/Support/BuildInfo.h"
 #include "KGEN/Support/CompilerProfiling.h"
-#include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/include/KGEN/ToolCommon/CompilationOptions.h"
@@ -25,30 +23,24 @@
 #include "MCLinker.h"
 #include "Support/Context.h"
 #include "Support/FileSystemExtras.h"
-#include "Support/MArchTarget/Host.h"
 #include "Support/Telemetry/Telemetry.h"
+
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/FileUtilities.h"
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Target/LLVMIR/ModuleTranslation.h"
-#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
-#include "mlir/Transforms/Passes.h"
-#include "llvm/ADT/TypeSwitch.h"
+
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/LoopAnalysisManager.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
-#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/MC/TargetRegistry.h"
-#include "llvm/Object/Archive.h"
-#include "llvm/Object/ArchiveWriter.h"
-#include "llvm/Object/ObjectFile.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/Support/Path.h"
@@ -56,13 +48,14 @@
 #include "llvm/Support/SHA256.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/xxhash.h"
 #include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/SplitModule.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
-#include <llvm/Support/raw_ostream.h>
+
 using namespace M;
 using namespace KGEN;
 using namespace Cache;
@@ -884,7 +877,8 @@ static std::string getAsmFilePostfix(const CompilationOptions &options) {
 //===----------------------------------------------------------------------===//
 
 ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
-                                               bool emitAssembly) {
+                                               bool emitAssembly,
+                                               std::string *outKeyHash) {
   CompilerTimeTraceScope traceScope("produce-archive");
 
   auto tmOr = createTargetMachine(options, isJIT);
@@ -1041,10 +1035,10 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
                      << ", emitAssembly=" << emitAssembly
                      << ", verboseOutput=" << options.verboseOutput << ')';
 
-  auto output = cachedTransform(
+  AsyncRT::AnyAsyncValueRef output = cachedTransform(
       module.release(), transformCache.copy(),
       AsyncRT::AsyncValueRef<Chain>::createReady(runtime),
-      std::move(produceArchiveKey), runTransformation, onCacheHit);
+      std::move(produceArchiveKey), runTransformation, onCacheHit, outKeyHash);
   await(output);
 
   if (output.isError())
@@ -1121,41 +1115,31 @@ ObjectCompiler::lowerLLVMModuleToObjects(
 
 ErrorOr<ElementsAttr>
 ObjectCompiler::emitArchiveAttr(OwningOpRef<ModuleOp> module) {
-  // Get the standalone archive key to use as the archive name.
-  WriteableBufferRef produceStandaloneArchiveKey = WriteableBuffer::get();
-  options.print(*produceStandaloneArchiveKey << "emitArchiveAttr(");
-  *produceStandaloneArchiveKey << ")";
-  if (failed(mlir::writeBytecodeToFile(module->getOperation(),
-                                       *produceStandaloneArchiveKey)))
-    return Error("failed to write bytecode file");
-
   MLIRContext *moduleCtx = module->getContext();
 
-  auto bufferOr = emitArchive(std::move(module));
+  std::string outKeyHash;
+  ErrorOr<BufferRef> bufferOr =
+      emitArchive(std::move(module), /*emitAssembly=*/false, &outKeyHash);
   if (bufferOr.isError())
     return bufferOr.takeError();
   BufferRef buffer = bufferOr.takeValue();
-
-  // Hash it so the name isn't enormous.
-  auto hash = llvm::xxHash64(
-      ArrayRef((const uint8_t *)produceStandaloneArchiveKey->getBufferStart(),
-               produceStandaloneArchiveKey->getBufferSize()));
 
   // Produce a DenseResourceElementsAttr from the file.
   auto resourceManager =
       DenseResourceElementsHandle::getManagerInterface(moduleCtx);
 
   // Pretend this is a "tensor" of data.
-  // TODO (#6986) It would be much nicer if we didn't have to clone this data
-  //   and we could just reference the data already in the CAS. That would also
-  //   prevent us from having to hash the module above.
   auto attrType = RankedTensorType::get(
       {(int64_t)buffer->getBufferSize()},
       IntegerType::get(moduleCtx, 8, IntegerType::Unsigned));
-  auto attrName = "archive_" + llvm::toHex(hash, /*LowerCase=*/true);
-  ArrayRef<char> blobData(buffer->getBufferStart(), buffer->getBufferSize());
-  auto blob = mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(blobData,
-                                                                  /*align=*/8);
+  std::string attrName = "archive_" + outKeyHash;
+  mlir::AsmResourceBlob blob(
+      {buffer->getBufferStart(), buffer->getBufferSize()}, /*dataAlignment=*/8,
+      /*deleter=*/
+      [buffer = std::move(buffer)](void *, size_t, size_t) mutable {
+        buffer.reset(); // Shouldn't need to do this, but just to be explicit.
+      },
+      /*isMutable=*/false);
   return DenseResourceElementsAttr::get(
       attrType, resourceManager.insert(attrName, std::move(blob)));
 }
@@ -1381,7 +1365,6 @@ lowerLLVMModuleToObject(llvm::Module &inputModule, Location loc,
                         size_t moduleIdx, AsyncRT::Runtime &runtime,
                         CompilationOptions options, bool isJIT,
                         bool shouldDeserialize, EmitAs emissionKind) {
-
   WriteableBufferRef keyBuf = WriteableBuffer::get();
   options.print(*keyBuf << "compileLLVMModuleToObject(");
   *keyBuf << ")";
@@ -1578,7 +1561,6 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
     std::optional<size_t> moduleIdx, AsyncRT::Runtime &runtime,
     CompilationOptions options, bool isJIT,
     DenseMap<uint64_t, llvm::SmallSet<EmitAs, 4>> &kernelEmissionKinds) {
-
   auto resultBufs =
       AsyncRT::AsyncValueRef<DenseMap<EmitAs, BufferRef>>::allocate(runtime);
   auto resultKernelId = AsyncRT::AsyncValueRef<uint64_t>::allocate(runtime);
@@ -1626,10 +1608,11 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
     }
 
     if (shouldRunExtraAsm) {
-      // We need to run the llvm lowering again to saveTempsPrefix for assembly
-      // if we are generating object (for GPUs). Since codegen has side effect,
-      // we cannot reuse the same llvm module for assembly and object file, we
-      // have to run the llvm lowering separately for each codegen result.
+      // We need to run the llvm lowering again to saveTempsPrefix for
+      // assembly if we are generating object (for GPUs). Since codegen has
+      // side effect, we cannot reuse the same llvm module for assembly and
+      // object file, we have to run the llvm lowering separately for each
+      // codegen result.
       emissionResults.push_back(lowerLLVMModuleToObject(
           *module, loc, transformCache, kernelId, runtime, options, isJIT,
           shouldDeserialize, EmitAs::ASM));
@@ -1684,11 +1667,10 @@ ErrorOr<DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>>
 ObjectCompiler::emitGPUKernels(
     OwningOpRef<ModuleOp> module,
     llvm::DenseMap<uint64_t, llvm::SmallSet<EmitAs, 4>> kernelEmissionKinds) {
-
   CompilerTimeTraceScope traceScope("emitGPUKernels");
 
-  // Perform a cache aware transformation to translate the module to an archive
-  // file.
+  // Perform a cache aware transformation to translate the module to an
+  // archive file.
 
 #ifdef MODULAR_ENABLE_TELEMETRY
   [[maybe_unused]] auto timeScope =

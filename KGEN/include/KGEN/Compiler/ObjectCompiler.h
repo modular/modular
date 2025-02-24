@@ -47,9 +47,11 @@ public:
          MLIRContext &context,
          PassManagerConfigOptions pmOptions = PassManagerConfigOptions());
 
-  /// Emit the module to a object archive.
+  /// Emit the module to a object archive. If outKeyHash is provided, it will
+  /// be populated with the hash of the key used to cache the module.
   ErrorOr<BufferRef> emitArchive(OwningOpRef<ModuleOp> module,
-                                 bool emitAssembly = false);
+                                 bool emitAssembly = false,
+                                 std::string *outKeyHash = nullptr);
 
   /// Emit the module to a object archive as an ElementsAttr that can be used as
   /// an attribute on another operation.
