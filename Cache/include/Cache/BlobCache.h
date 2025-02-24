@@ -182,27 +182,45 @@ public:
     return keyHash;
   }
 
-  /// Check if any of the provided backends have the item.
+  /// Check if any of the provided backends have the item. If `outKeyHash` is
+  /// provided, it will be set to the key hash, regardless of whether the item
+  /// exists or not.
   AsyncRT::AsyncValueRef<bool>
   contains(AsyncRT::Runtime &runtime, KeyTy key,
-           std::optional<EncodedLocation> loc = std::nullopt) const {
-    auto hash = Buffer::get(KeyInfo::hashKey(std::forward<KeyTy>(key)));
+           std::optional<EncodedLocation> loc = std::nullopt,
+           std::string *outKeyHash = nullptr) const {
+    std::string keyHash = KeyInfo::hashKey(std::forward<KeyTy>(key));
+    if (outKeyHash)
+      *outKeyHash = keyHash;
+    auto hash = Buffer::get(keyHash);
     return backendList->contains(runtime, std::move(hash), std::move(loc));
   }
-  ErrorOr<bool> containsSync(KeyTy key) const {
-    auto hash = KeyInfo::hashKey(std::forward<KeyTy>(key));
+  ErrorOr<bool> containsSync(KeyTy key,
+                             std::string *outKeyHash = nullptr) const {
+    std::string hash = KeyInfo::hashKey(std::forward<KeyTy>(key));
+    if (outKeyHash)
+      *outKeyHash = hash;
     return backendList->containsSync(hash);
   }
 
-  /// Get the item from any of the provided backends.
+  /// Get the item from any of the provided backends. If `outKeyHash` is
+  /// provided, it will be set to the key hash, regardless of whether the item
+  /// exists or not.
   AsyncRT::AsyncValueRef<std::optional<BufferRef>>
   find(AsyncRT::Runtime &runtime, KeyTy key,
-       std::optional<EncodedLocation> loc = std::nullopt) const {
-    auto hash = Buffer::get(KeyInfo::hashKey(std::forward<KeyTy>(key)));
-    return backendList->find(runtime, std::move(hash), std::move(loc));
+       std::optional<EncodedLocation> loc = std::nullopt,
+       std::string *outKeyHash = nullptr) const {
+    std::string hash = KeyInfo::hashKey(std::forward<KeyTy>(key));
+    if (outKeyHash)
+      *outKeyHash = hash;
+    auto hashBuf = Buffer::get(hash);
+    return backendList->find(runtime, std::move(hashBuf), std::move(loc));
   }
-  ErrorOr<std::optional<BufferRef>> findSync(KeyTy key) const {
-    auto hash = KeyInfo::hashKey(std::forward<KeyTy>(key));
+  ErrorOr<std::optional<BufferRef>>
+  findSync(KeyTy key, std::string *outKeyHash = nullptr) const {
+    std::string hash = KeyInfo::hashKey(std::forward<KeyTy>(key));
+    if (outKeyHash)
+      *outKeyHash = hash;
     return backendList->findSync(hash);
   }
 

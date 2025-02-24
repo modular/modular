@@ -215,6 +215,40 @@ TEST_F(BlobCacheTest, FileSystemTestOldVersionDeletion) {
       << "expected the temp directory to be deleted by cacheDir creation\n";
 }
 
+TEST_F(BlobCacheTest, OutKeyHashPopulatedOnContains) {
+  std::string outHash;
+  auto contains =
+      cache->contains(*runtime, "containsHashTest", std::nullopt, &outHash);
+  await(contains);
+
+  ASSERT_FALSE(contains.isError()) << contains.getDiagnostic().getMessage();
+  EXPECT_EQ(outHash, StringKeyInfo::hashKey("containsHashTest"));
+}
+
+TEST_F(BlobCacheTest, OutKeyHashPopulatedOnFind) {
+  std::string outHash;
+  auto findOr = cache->find(*runtime, "findHashTest", std::nullopt, &outHash);
+  await(findOr);
+
+  ASSERT_FALSE(findOr.isError()) << findOr.getDiagnostic().getMessage();
+  EXPECT_EQ(outHash, StringKeyInfo::hashKey("findHashTest"));
+}
+
+TEST_F(BlobCacheTest, OutKeyHashNullSafe) {
+  // Verify null outKeyHash doesn't cause errors
+  auto zerosDataBuf = WriteableBuffer::get();
+  zerosDataBuf->write(0);
+
+  auto contains = cache->contains(*runtime, "nullHashTest");
+  auto findOr = cache->find(*runtime, "nullHashTest");
+
+  await(contains);
+  await(findOr);
+
+  ASSERT_FALSE(contains.isError()) << contains.getDiagnostic().getMessage();
+  ASSERT_FALSE(findOr.isError()) << findOr.getDiagnostic().getMessage();
+}
+
 //===----------------------------------------------------------------------===//
 // Specialized FilesystemBackend tests
 //===----------------------------------------------------------------------===//
