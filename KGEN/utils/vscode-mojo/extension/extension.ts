@@ -11,7 +11,6 @@ import { MAXSDKManager } from './sdk/sdkManager';
 import { MojoLSPManager } from './lsp/lsp';
 import * as configWatcher from './utils/configWatcher';
 import { DisposableContext } from './utils/disposableContext';
-import { MojoTestManager } from './testing/testing';
 import { registerFormatter } from './formatter';
 import { activateRunCommands } from './commands/run';
 import { MojoDebugManager } from './debug/debug';
@@ -97,11 +96,6 @@ Activating the Mojo Extension
           await this.activate(/*reloading=*/ true);
         }),
       );
-
-      // Initialize the testing support.
-      let testManager = new MojoTestManager(sdkManager, this.logger);
-      await testManager.activate();
-      this.pushSubscription(testManager);
 
       // Initialize the formatter.
       this.pushSubscription(registerFormatter(sdkManager));
