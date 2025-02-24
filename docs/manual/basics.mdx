@@ -255,7 +255,7 @@ struct MyPair:
         self.first = first
         self.second = second
 
-    fn __copyinit__(out self, existing other):
+    fn __copyinit__(out self, existing: Self):
         self.first = existing.first
         self.second = existing.second
 
@@ -393,7 +393,7 @@ This function has one parameter of type `Int` and one argument of type
 argument:
 
 ```mojo
-defining call_repeat():
+def call_repeat():
     repeat[3]("Hello")
     # Prints "Hello" 3 times
 ```
@@ -416,8 +416,7 @@ For more detail on parameters, see the section on
 
 ## Python integration
 
-Mojo supports the ability to import
-Python modules as-is, so you can leverage existing Python code right away.
+Mojo supports the ability to import Python modules as-is, so you can leverage existing Python code right away.
 
 For example, here's how you can import and use NumPy:
 
@@ -444,8 +443,7 @@ Hopefully this page has given you enough information to start experimenting with
 Mojo, but this is only touching the surface of what's available in Mojo.
 
 If you're in the mood to read more, continue through each page of this
-Mojo Manual—the next page from
-here is [Functions](/mojo/manual/functions).
+Mojo Manual—the next page from here is [Functions](/mojo/manual/functions).
 
 Otherwise, here are some other resources to check out:
 
