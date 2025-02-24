@@ -228,7 +228,7 @@ TEST(HoverTest, testHoverAliasDecls) {
              [&](const lsp::Hover &hover) {
                EXPECT_EQ(hover.range, rangeIntAlias);
                EXPECT_EQ(hover.contents.value, R"(```mojo
-alias IntAlias = IntLiteral(12)
+alias IntAlias = 12
 ```
 ---
 
@@ -257,7 +257,7 @@ alias AliasInsideFunction = "sdfsdf"
              [&](const lsp::Hover &hover) {
                EXPECT_EQ(hover.range, rangeAliasToAlias);
                EXPECT_EQ(hover.contents.value, R"(```mojo
-alias AliasToAlias = IntLiteral(12)
+alias AliasToAlias = 12
 ```)");
              })
       .hover(doc, rangeAliasInStruct.start,
@@ -538,7 +538,7 @@ TEST(HoverTest, testHoverExternalSymbol) {
              [&](const lsp::Hover &hover) {
                EXPECT_EQ(hover.range, rangeLazy);
                EXPECT_EQ(hover.contents.value, R"(```mojo
-alias LAZY = IntLiteral(1)
+alias LAZY = 1
 ```
 ---
 
@@ -551,7 +551,7 @@ Load library lazily (defer function resolution until needed).
              [&](const lsp::Hover &hover) {
                EXPECT_EQ(hover.range, rangeExternalAlias);
                EXPECT_EQ(hover.contents.value, R"(```mojo
-alias ExternalAlias = IntLiteral(1)
+alias ExternalAlias = 1
 ```)");
              })
       .execute();

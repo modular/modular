@@ -41,10 +41,10 @@ fn main():
     print(999e9000)  # CHECK-NEXT: inf
     print(-999e9000)  # CHECK-NEXT: -inf
 
-    print(FloatLiteral.infinity)  # CHECK-NEXT: inf
-    print(FloatLiteral.negative_infinity)  # CHECK-NEXT: -inf
-    print(FloatLiteral.negative_zero)  # CHECK-NEXT: -0.0
-    print(FloatLiteral.nan)  # CHECK-NEXT: nan
+    print(FloatLiteral_infinity)  # CHECK-NEXT: inf
+    print(FloatLiteral_negative_infinity)  # CHECK-NEXT: -inf
+    print(FloatLiteral_negative_zero)  # CHECK-NEXT: -0.0
+    print(FloatLiteral_nan)  # CHECK-NEXT: nan
 
     print(-1 * 0.0)  # CHECK-NEXT: -0.0
     print(-1 * -0.0)  # CHECK-NEXT: 0.0
@@ -74,151 +74,151 @@ fn main():
 
     ### Check the combinations of special values for ops
     print("== lhs infinity")  # CHECK-NEXT: lhs infinity
-    print(FloatLiteral.infinity + FloatLiteral.infinity)  # CHECK-NEXT: inf
-    print(FloatLiteral.infinity + FloatLiteral.negative_infinity)
+    print(FloatLiteral_infinity + FloatLiteral_infinity)  # CHECK-NEXT: inf
+    print(FloatLiteral_infinity + FloatLiteral_negative_infinity)
     # CHECK-NEXT: nan
-    print(FloatLiteral.infinity + FloatLiteral.nan)  # CHECK-NEXT: nan
-    print(FloatLiteral.infinity + -0.0)  # CHECK-NEXT: inf
-    print(FloatLiteral.infinity + 0)  # CHECK-NEXT: inf
-    print(FloatLiteral.infinity + 5)  # CHECK-NEXT: inf
-    print(FloatLiteral.infinity - FloatLiteral.infinity)  # CHECK-NEXT: nan
-    print(FloatLiteral.infinity - FloatLiteral.negative_infinity)
+    print(FloatLiteral_infinity + FloatLiteral_nan)  # CHECK-NEXT: nan
+    print(FloatLiteral_infinity + -0.0)  # CHECK-NEXT: inf
+    print(FloatLiteral_infinity + 0)  # CHECK-NEXT: inf
+    print(FloatLiteral_infinity + 5)  # CHECK-NEXT: inf
+    print(FloatLiteral_infinity - FloatLiteral_infinity)  # CHECK-NEXT: nan
+    print(FloatLiteral_infinity - FloatLiteral_negative_infinity)
     # CHECK-NEXT: inf
-    print(FloatLiteral.infinity - FloatLiteral.nan)  # CHECK-NEXT: nan
-    print(FloatLiteral.infinity - -0.0)  # CHECK-NEXT: inf
-    print(FloatLiteral.infinity - 0)  # CHECK-NEXT: inf
-    print(FloatLiteral.infinity - 5)  # CHECK-NEXT: inf
-    print(FloatLiteral.infinity * FloatLiteral.infinity)  # CHECK-NEXT: inf
-    print(FloatLiteral.infinity * FloatLiteral.negative_infinity)
+    print(FloatLiteral_infinity - FloatLiteral_nan)  # CHECK-NEXT: nan
+    print(FloatLiteral_infinity - -0.0)  # CHECK-NEXT: inf
+    print(FloatLiteral_infinity - 0)  # CHECK-NEXT: inf
+    print(FloatLiteral_infinity - 5)  # CHECK-NEXT: inf
+    print(FloatLiteral_infinity * FloatLiteral_infinity)  # CHECK-NEXT: inf
+    print(FloatLiteral_infinity * FloatLiteral_negative_infinity)
     # CHECK-NEXT: -inf
-    print(FloatLiteral.infinity * FloatLiteral.nan)  # CHECK-NEXT: nan
-    print(FloatLiteral.infinity * -0.0)  # CHECK-NEXT: nan
-    print(FloatLiteral.infinity * 0)  # CHECK-NEXT: nan
-    print(FloatLiteral.infinity * 5)  # CHECK-NEXT: inf
-    print(FloatLiteral.infinity / FloatLiteral.infinity)  # CHECK-NEXT: nan
-    print(FloatLiteral.infinity / FloatLiteral.negative_infinity)
+    print(FloatLiteral_infinity * FloatLiteral_nan)  # CHECK-NEXT: nan
+    print(FloatLiteral_infinity * -0.0)  # CHECK-NEXT: nan
+    print(FloatLiteral_infinity * 0)  # CHECK-NEXT: nan
+    print(FloatLiteral_infinity * 5)  # CHECK-NEXT: inf
+    print(FloatLiteral_infinity / FloatLiteral_infinity)  # CHECK-NEXT: nan
+    print(FloatLiteral_infinity / FloatLiteral_negative_infinity)
     # CHECK-NEXT: nan
-    print(FloatLiteral.infinity / FloatLiteral.nan)  # CHECK-NEXT: nan
-    print(FloatLiteral.infinity / -0.0)  # CHECK-NEXT: nan
-    print(FloatLiteral.infinity / 0)  # CHECK-NEXT: nan
-    print(FloatLiteral.infinity / 5)  # CHECK-NEXT: inf
+    print(FloatLiteral_infinity / FloatLiteral_nan)  # CHECK-NEXT: nan
+    print(FloatLiteral_infinity / -0.0)  # CHECK-NEXT: nan
+    print(FloatLiteral_infinity / 0)  # CHECK-NEXT: nan
+    print(FloatLiteral_infinity / 5)  # CHECK-NEXT: inf
 
     print("== lhs negative_infinity")  # CHECK-NEXT: lhs negative_infinity
-    print(FloatLiteral.negative_infinity + FloatLiteral.infinity)
+    print(FloatLiteral_negative_infinity + FloatLiteral_infinity)
     # CHECK-NEXT: nan
-    print(FloatLiteral.negative_infinity + FloatLiteral.negative_infinity)
+    print(FloatLiteral_negative_infinity + FloatLiteral_negative_infinity)
     # CHECK-NEXT: -inf
-    print(FloatLiteral.negative_infinity + FloatLiteral.nan)  # CHECK-NEXT: nan
-    print(FloatLiteral.negative_infinity + -0.0)  # CHECK-NEXT: -inf
-    print(FloatLiteral.negative_infinity + 0)  # CHECK-NEXT: -inf
-    print(FloatLiteral.negative_infinity + 5)  # CHECK-NEXT: -inf
-    print(FloatLiteral.negative_infinity - FloatLiteral.infinity)
+    print(FloatLiteral_negative_infinity + FloatLiteral_nan)  # CHECK-NEXT: nan
+    print(FloatLiteral_negative_infinity + -0.0)  # CHECK-NEXT: -inf
+    print(FloatLiteral_negative_infinity + 0)  # CHECK-NEXT: -inf
+    print(FloatLiteral_negative_infinity + 5)  # CHECK-NEXT: -inf
+    print(FloatLiteral_negative_infinity - FloatLiteral_infinity)
     # CHECK-NEXT: -inf
-    print(FloatLiteral.negative_infinity - FloatLiteral.negative_infinity)
+    print(FloatLiteral_negative_infinity - FloatLiteral_negative_infinity)
     # CHECK-NEXT: nan
-    print(FloatLiteral.negative_infinity - FloatLiteral.nan)  # CHECK-NEXT: nan
-    print(FloatLiteral.negative_infinity - -0.0)  # CHECK-NEXT: -inf
-    print(FloatLiteral.negative_infinity - 0)  # CHECK-NEXT: -inf
-    print(FloatLiteral.negative_infinity - 5)  # CHECK-NEXT: -inf
-    print(FloatLiteral.negative_infinity * FloatLiteral.infinity)
+    print(FloatLiteral_negative_infinity - FloatLiteral_nan)  # CHECK-NEXT: nan
+    print(FloatLiteral_negative_infinity - -0.0)  # CHECK-NEXT: -inf
+    print(FloatLiteral_negative_infinity - 0)  # CHECK-NEXT: -inf
+    print(FloatLiteral_negative_infinity - 5)  # CHECK-NEXT: -inf
+    print(FloatLiteral_negative_infinity * FloatLiteral_infinity)
     # CHECK-NEXT: -inf
-    print(FloatLiteral.negative_infinity * FloatLiteral.negative_infinity)
+    print(FloatLiteral_negative_infinity * FloatLiteral_negative_infinity)
     # CHECK-NEXT: inf
-    print(FloatLiteral.negative_infinity * FloatLiteral.nan)  # CHECK-NEXT: nan
-    print(FloatLiteral.negative_infinity * -0.0)  # CHECK-NEXT: nan
-    print(FloatLiteral.negative_infinity * 0)  # CHECK-NEXT: nan
-    print(FloatLiteral.negative_infinity * 5)  # CHECK-NEXT: -inf
-    print(FloatLiteral.negative_infinity / FloatLiteral.infinity)
+    print(FloatLiteral_negative_infinity * FloatLiteral_nan)  # CHECK-NEXT: nan
+    print(FloatLiteral_negative_infinity * -0.0)  # CHECK-NEXT: nan
+    print(FloatLiteral_negative_infinity * 0)  # CHECK-NEXT: nan
+    print(FloatLiteral_negative_infinity * 5)  # CHECK-NEXT: -inf
+    print(FloatLiteral_negative_infinity / FloatLiteral_infinity)
     # CHECK-NEXT: nan
-    print(FloatLiteral.negative_infinity / FloatLiteral.negative_infinity)
+    print(FloatLiteral_negative_infinity / FloatLiteral_negative_infinity)
     # CHECK-NEXT: nan
-    print(FloatLiteral.negative_infinity / FloatLiteral.nan)  # CHECK-NEXT: nan
-    print(FloatLiteral.negative_infinity / -0.0)  # CHECK-NEXT: nan
-    print(FloatLiteral.negative_infinity / 0)  # CHECK-NEXT: nan
-    print(FloatLiteral.negative_infinity / 5)  # CHECK-NEXT: inf
+    print(FloatLiteral_negative_infinity / FloatLiteral_nan)  # CHECK-NEXT: nan
+    print(FloatLiteral_negative_infinity / -0.0)  # CHECK-NEXT: nan
+    print(FloatLiteral_negative_infinity / 0)  # CHECK-NEXT: nan
+    print(FloatLiteral_negative_infinity / 5)  # CHECK-NEXT: inf
 
     print("== lhs negative_zero")  # CHECK-NEXT: lhs negative_zero
-    print(FloatLiteral.negative_zero + FloatLiteral.infinity)  # CHECK-NEXT: inf
-    print(FloatLiteral.negative_zero + FloatLiteral.negative_infinity)
+    print(FloatLiteral_negative_zero + FloatLiteral_infinity)  # CHECK-NEXT: inf
+    print(FloatLiteral_negative_zero + FloatLiteral_negative_infinity)
     # CHECK-NEXT: -inf
-    print(FloatLiteral.negative_zero + FloatLiteral.nan)  # CHECK-NEXT: nan
-    print(FloatLiteral.negative_zero + -0.0)  # CHECK-NEXT: 0.0
-    print(FloatLiteral.negative_zero + 0)  # CHECK-NEXT: 0.0
-    print(FloatLiteral.negative_zero + 5)  # CHECK-NEXT: 5
+    print(FloatLiteral_negative_zero + FloatLiteral_nan)  # CHECK-NEXT: nan
+    print(FloatLiteral_negative_zero + -0.0)  # CHECK-NEXT: 0.0
+    print(FloatLiteral_negative_zero + 0)  # CHECK-NEXT: 0.0
+    print(FloatLiteral_negative_zero + 5)  # CHECK-NEXT: 5
     print(
-        FloatLiteral.negative_zero - FloatLiteral.infinity
+        FloatLiteral_negative_zero - FloatLiteral_infinity
     )  # CHECK-NEXT: -inf
-    print(FloatLiteral.negative_zero - FloatLiteral.negative_infinity)
+    print(FloatLiteral_negative_zero - FloatLiteral_negative_infinity)
     # CHECK-NEXT: inf
-    print(FloatLiteral.negative_zero - FloatLiteral.nan)  # CHECK-NEXT: nan
-    print(FloatLiteral.negative_zero - -0.0)  # CHECK-NEXT: 0.0
-    print(FloatLiteral.negative_zero - 0)  # CHECK-NEXT: -0.0
-    print(FloatLiteral.negative_zero - 5)  # CHECK-NEXT: -5
-    print(FloatLiteral.negative_zero * FloatLiteral.infinity)  # CHECK-NEXT: nan
-    print(FloatLiteral.negative_zero * FloatLiteral.negative_infinity)
+    print(FloatLiteral_negative_zero - FloatLiteral_nan)  # CHECK-NEXT: nan
+    print(FloatLiteral_negative_zero - -0.0)  # CHECK-NEXT: 0.0
+    print(FloatLiteral_negative_zero - 0)  # CHECK-NEXT: -0.0
+    print(FloatLiteral_negative_zero - 5)  # CHECK-NEXT: -5
+    print(FloatLiteral_negative_zero * FloatLiteral_infinity)  # CHECK-NEXT: nan
+    print(FloatLiteral_negative_zero * FloatLiteral_negative_infinity)
     # CHECK-NEXT: nan
-    print(FloatLiteral.negative_zero * FloatLiteral.nan)  # CHECK-NEXT: nan
-    print(FloatLiteral.negative_zero * -0.0)  # CHECK-NEXT: 0.0
-    print(FloatLiteral.negative_zero * 0)  # CHECK-NEXT: -0.0
-    print(FloatLiteral.negative_zero * 5)  # CHECK-NEXT: -0.0
+    print(FloatLiteral_negative_zero * FloatLiteral_nan)  # CHECK-NEXT: nan
+    print(FloatLiteral_negative_zero * -0.0)  # CHECK-NEXT: 0.0
+    print(FloatLiteral_negative_zero * 0)  # CHECK-NEXT: -0.0
+    print(FloatLiteral_negative_zero * 5)  # CHECK-NEXT: -0.0
     print(
-        FloatLiteral.negative_zero / FloatLiteral.infinity
+        FloatLiteral_negative_zero / FloatLiteral_infinity
     )  # CHECK-NEXT: -0.0
-    print(FloatLiteral.negative_zero / FloatLiteral.negative_infinity)
+    print(FloatLiteral_negative_zero / FloatLiteral_negative_infinity)
     # CHECK-NEXT: 0.0
-    print(FloatLiteral.negative_zero / FloatLiteral.nan)  # CHECK-NEXT: nan
-    print(FloatLiteral.negative_zero / -0.0)  # CHECK-NEXT: nan
-    print(FloatLiteral.negative_zero / 0)  # CHECK-NEXT: nan
-    print(FloatLiteral.negative_zero / 5)  # CHECK-NEXT: -0.0
+    print(FloatLiteral_negative_zero / FloatLiteral_nan)  # CHECK-NEXT: nan
+    print(FloatLiteral_negative_zero / -0.0)  # CHECK-NEXT: nan
+    print(FloatLiteral_negative_zero / 0)  # CHECK-NEXT: nan
+    print(FloatLiteral_negative_zero / 5)  # CHECK-NEXT: -0.0
 
     print("== lhs nan")  # CHECK-NEXT: lhs nan
-    print(FloatLiteral.nan + FloatLiteral.infinity)  # CHECK-NEXT: nan
-    print(FloatLiteral.nan + FloatLiteral.negative_infinity)  # CHECK-NEXT: nan
-    print(FloatLiteral.nan + FloatLiteral.nan)  # CHECK-NEXT: nan
-    print(FloatLiteral.nan + -0.0)  # CHECK-NEXT: nan
-    print(FloatLiteral.nan + 0)  # CHECK-NEXT: nan
-    print(FloatLiteral.nan + 5)  # CHECK-NEXT: nan
-    print(FloatLiteral.nan - FloatLiteral.infinity)  # CHECK-NEXT: nan
-    print(FloatLiteral.nan - FloatLiteral.negative_infinity)  # CHECK-NEXT: nan
-    print(FloatLiteral.nan - FloatLiteral.nan)  # CHECK-NEXT: nan
-    print(FloatLiteral.nan - -0.0)  # CHECK-NEXT: nan
-    print(FloatLiteral.nan - 0)  # CHECK-NEXT: nan
-    print(FloatLiteral.nan - 5)  # CHECK-NEXT: nan
-    print(FloatLiteral.nan * FloatLiteral.infinity)  # CHECK-NEXT: nan
-    print(FloatLiteral.nan * FloatLiteral.negative_infinity)  # CHECK-NEXT: nan
-    print(FloatLiteral.nan * FloatLiteral.nan)  # CHECK-NEXT: nan
-    print(FloatLiteral.nan * -0.0)  # CHECK-NEXT: nan
-    print(FloatLiteral.nan * 0)  # CHECK-NEXT: nan
-    print(FloatLiteral.nan * 5)  # CHECK-NEXT: nan
-    print(FloatLiteral.nan / FloatLiteral.infinity)  # CHECK-NEXT: nan
-    print(FloatLiteral.nan / FloatLiteral.negative_infinity)  # CHECK-NEXT: nan
-    print(FloatLiteral.nan / FloatLiteral.nan)  # CHECK-NEXT: nan
-    print(FloatLiteral.nan / -0.0)  # CHECK-NEXT: nan
-    print(FloatLiteral.nan / 0)  # CHECK-NEXT: nan
-    print(FloatLiteral.nan / 5)  # CHECK-NEXT: nan
+    print(FloatLiteral_nan + FloatLiteral_infinity)  # CHECK-NEXT: nan
+    print(FloatLiteral_nan + FloatLiteral_negative_infinity)  # CHECK-NEXT: nan
+    print(FloatLiteral_nan + FloatLiteral_nan)  # CHECK-NEXT: nan
+    print(FloatLiteral_nan + -0.0)  # CHECK-NEXT: nan
+    print(FloatLiteral_nan + 0)  # CHECK-NEXT: nan
+    print(FloatLiteral_nan + 5)  # CHECK-NEXT: nan
+    print(FloatLiteral_nan - FloatLiteral_infinity)  # CHECK-NEXT: nan
+    print(FloatLiteral_nan - FloatLiteral_negative_infinity)  # CHECK-NEXT: nan
+    print(FloatLiteral_nan - FloatLiteral_nan)  # CHECK-NEXT: nan
+    print(FloatLiteral_nan - -0.0)  # CHECK-NEXT: nan
+    print(FloatLiteral_nan - 0)  # CHECK-NEXT: nan
+    print(FloatLiteral_nan - 5)  # CHECK-NEXT: nan
+    print(FloatLiteral_nan * FloatLiteral_infinity)  # CHECK-NEXT: nan
+    print(FloatLiteral_nan * FloatLiteral_negative_infinity)  # CHECK-NEXT: nan
+    print(FloatLiteral_nan * FloatLiteral_nan)  # CHECK-NEXT: nan
+    print(FloatLiteral_nan * -0.0)  # CHECK-NEXT: nan
+    print(FloatLiteral_nan * 0)  # CHECK-NEXT: nan
+    print(FloatLiteral_nan * 5)  # CHECK-NEXT: nan
+    print(FloatLiteral_nan / FloatLiteral_infinity)  # CHECK-NEXT: nan
+    print(FloatLiteral_nan / FloatLiteral_negative_infinity)  # CHECK-NEXT: nan
+    print(FloatLiteral_nan / FloatLiteral_nan)  # CHECK-NEXT: nan
+    print(FloatLiteral_nan / -0.0)  # CHECK-NEXT: nan
+    print(FloatLiteral_nan / 0)  # CHECK-NEXT: nan
+    print(FloatLiteral_nan / 5)  # CHECK-NEXT: nan
 
     print("== lhs zero")  # CHECK-NEXT: lhs zero
-    print(0.0 + FloatLiteral.infinity)  # CHECK-NEXT: inf
-    print(0.0 + FloatLiteral.negative_infinity)  # CHECK-NEXT: -inf
-    print(0.0 + FloatLiteral.nan)  # CHECK-NEXT: nan
+    print(0.0 + FloatLiteral_infinity)  # CHECK-NEXT: inf
+    print(0.0 + FloatLiteral_negative_infinity)  # CHECK-NEXT: -inf
+    print(0.0 + FloatLiteral_nan)  # CHECK-NEXT: nan
     print(0.0 + -0.0)  # CHECK-NEXT: 0.0
     print(0.0 + 0)  # CHECK-NEXT: 0.0
     print(0.0 + 5)  # CHECK-NEXT: 5
-    print(0.0 - FloatLiteral.infinity)  # CHECK-NEXT: -inf
-    print(0.0 - FloatLiteral.negative_infinity)  # CHECK-NEXT: inf
-    print(0.0 - FloatLiteral.nan)  # CHECK-NEXT: nan
+    print(0.0 - FloatLiteral_infinity)  # CHECK-NEXT: -inf
+    print(0.0 - FloatLiteral_negative_infinity)  # CHECK-NEXT: inf
+    print(0.0 - FloatLiteral_nan)  # CHECK-NEXT: nan
     print(0.0 - -0.0)  # CHECK-NEXT: 0.0
     print(0.0 - 0)  # CHECK-NEXT: 0.0
     print(0.0 - 5)  # CHECK-NEXT: -5
-    print(0.0 * FloatLiteral.infinity)  # CHECK-NEXT: nan
-    print(0.0 * FloatLiteral.negative_infinity)  # CHECK-NEXT: nan
-    print(0.0 * FloatLiteral.nan)  # CHECK-NEXT: nan
+    print(0.0 * FloatLiteral_infinity)  # CHECK-NEXT: nan
+    print(0.0 * FloatLiteral_negative_infinity)  # CHECK-NEXT: nan
+    print(0.0 * FloatLiteral_nan)  # CHECK-NEXT: nan
     print(0.0 * -0.0)  # CHECK-NEXT: -0.0
     print(0.0 * 0)  # CHECK-NEXT: 0.0
     print(0.0 * 5)  # CHECK-NEXT: 0.0
-    print(0.0 / FloatLiteral.infinity)  # CHECK-NEXT: 0.0
-    print(0.0 / FloatLiteral.negative_infinity)  # CHECK-NEXT: 0.0
-    print(0.0 / FloatLiteral.nan)  # CHECK-NEXT: nan
+    print(0.0 / FloatLiteral_infinity)  # CHECK-NEXT: 0.0
+    print(0.0 / FloatLiteral_negative_infinity)  # CHECK-NEXT: 0.0
+    print(0.0 / FloatLiteral_nan)  # CHECK-NEXT: nan
     print(0.0 / -0.0)  # CHECK-NEXT: nan
     print(0.0 / 0)  # CHECK-NEXT: nan
     print(0.0 / 5)  # CHECK-NEXT: 0.0
