@@ -287,9 +287,9 @@ SIMDAttr SIMDAttr::getZeroValue(SIMDType type) {
   auto dtype = optDT.value();
 
   std::optional<DTypeValue> zeroValue;
-  if (dtype.isBool())
-    zeroValue = DTypeValue(false, optDT.value());
-  else if (dtype.isInt()) {
+  if (dtype.isBool()) {
+    zeroValue = DTypeValue(false, dtype);
+  } else if (dtype.isInt()) {
     APSInt aps(dtype.getIntegerWidthInBits(), /*isUnsigned=*/dtype.isUInt());
     zeroValue = DTypeValue(aps, dtype);
   } else if (DTypeValue::isValidFloatDType(dtype)) {
