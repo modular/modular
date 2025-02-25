@@ -487,7 +487,7 @@ class TokenGenerationSchedulerV2(Scheduler):
         used_blocks = self.paged_manager.get_num_used_blocks()
         total_blocks = self.paged_manager.total_num_pages
         used_pct = used_blocks / total_blocks
-        cache_hit_rate = self.paged_manager.cache_hit_rate()
+        cache_hit_rate = self.paged_manager.cache_hit_rate
 
         logger.debug(
             f"Executed {batch_type.concise_name()} batch with {batch_size} reqs | "
