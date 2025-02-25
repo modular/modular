@@ -27,9 +27,9 @@ fn _run_memset[
         out_host[i] = length + i
 
     # Copy to and from device buffers.
-    ctx.copy_to_device_sync(on_dev, in_host)
+    ctx.copy(on_dev, in_host)
     ctx.memset_sync(on_dev, val)
-    ctx.copy_from_device_sync(out_host, on_dev)
+    ctx.copy(out_host, on_dev)
 
     for i in range(length):
         if i < 10:

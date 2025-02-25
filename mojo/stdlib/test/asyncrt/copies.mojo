@@ -27,9 +27,9 @@ fn _run_memcpy(ctx: DeviceContext, length: Int) raises:
         out_host[i] = length + i
 
     # Copy to and from device buffers.
-    ctx.copy_to_device_sync(in_dev, in_host)
-    ctx.copy_device_to_device_sync(out_dev, in_dev)
-    ctx.copy_from_device_sync(out_host, out_dev)
+    ctx.copy(in_dev, in_host)
+    ctx.copy(out_dev, in_dev)
+    ctx.copy(out_host, out_dev)
 
     for i in range(length):
         if i < 10:
@@ -55,9 +55,9 @@ fn _run_memcpy_async(ctx: DeviceContext, length: Int, use_context: Bool) raises:
         out_host[i] = length + i
 
     # Copy to and from device buffers.
-    ctx.enqueue_copy_to_device(in_dev, in_host.unsafe_ptr())
+    ctx.enqueue_copy(in_dev, in_host.unsafe_ptr())
     if use_context:
-        ctx.enqueue_copy_device_to_device(out_dev, in_dev)
+        ctx.enqueue_copy(out_dev, in_dev)
     else:
         in_dev.enqueue_copy_to(out_dev)
     out_dev.enqueue_copy_to(out_host)
@@ -93,15 +93,13 @@ fn _run_sub_memcpy_async(ctx: DeviceContext, length: Int) raises:
 
     # Copy to and from device buffers.
     in_host.enqueue_copy_to(in_dev)
-    ctx.enqueue_copy_device_to_device(out_dev, in_dev)
+    ctx.enqueue_copy(out_dev, in_dev)
 
     # Swap halves on copy back.
     # TODO(iposva): Investigate failure with this code:
     # second_out_dev.enqueue_copy_to(out_host)
-    ctx.enqueue_copy_from_device(out_host.unsafe_ptr(), second_out_dev)
-    ctx.enqueue_copy_from_device(
-        out_host.unsafe_ptr().offset(half_length), first_out_dev
-    )
+    ctx.enqueue_copy(out_host.unsafe_ptr(), second_out_dev)
+    ctx.enqueue_copy(out_host.unsafe_ptr().offset(half_length), first_out_dev)
 
     # Wait for the copies to be completed.
     ctx.synchronize()
@@ -139,7 +137,7 @@ fn _run_fake_memcpy_async(
 
     # Copy to and from device buffers.
     in_host.enqueue_copy_to(in_dev)
-    ctx.enqueue_copy_device_to_device(out_dev, in_dev)
+    ctx.enqueue_copy(out_dev, in_dev)
 
     var out_ptr: UnsafePointer[Int64]
     if use_take_ptr:
@@ -158,10 +156,8 @@ fn _run_fake_memcpy_async(
     # Swap halves on copy back.
     # TODO(iposva): Investigate failure with this code:
     # second_out_dev.enqueue_copy_to(out_host)
-    ctx.enqueue_copy_from_device(out_host.unsafe_ptr(), second_out_dev)
-    ctx.enqueue_copy_from_device(
-        out_host.unsafe_ptr().offset(half_length), first_out_dev
-    )
+    ctx.enqueue_copy(out_host.unsafe_ptr(), second_out_dev)
+    ctx.enqueue_copy(out_host.unsafe_ptr().offset(half_length), first_out_dev)
 
     # Wait for the copies to be completed.
     ctx.synchronize()
