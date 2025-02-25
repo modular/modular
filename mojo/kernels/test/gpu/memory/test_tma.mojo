@@ -85,7 +85,7 @@ def test_tma_tile_copy(ctx: DeviceContext):
     ctx.enqueue_copy_to_device(gmem_dev, gmem_host)
 
     var descriptor = create_tma_descriptor[DType.float32, 2](
-        gmem_dev, (8, 8), (8, 1), (4, 4), (1, 1)
+        gmem_dev, (8, 8), (8, 1), (4, 4)
     )
 
     ctx.enqueue_function[kernel_copy_async_tma](
