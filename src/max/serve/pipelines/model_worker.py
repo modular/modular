@@ -3,10 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from max.serve.config import Settings
-from max.serve.telemetry.common import configure_metrics
-
-configure_metrics(Settings())
 
 import asyncio
 import logging
@@ -23,7 +19,7 @@ from max.pipelines import EmbeddingsGenerator, PipelinesFactory, TokenGenerator
 from max.pipelines.kv_cache.paged_cache import PagedKVCacheManager
 from max.pipelines.pipeline import KVCacheMixin, TextGenerationPipeline
 from max.profiler import Tracer, traced
-from max.serve.config import Settings
+from max.serve.config import MetricRecordingMethod, Settings
 from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
 from max.serve.pipelines.scheduler_v2 import (
     EmbeddingsScheduler,
@@ -32,8 +28,10 @@ from max.serve.pipelines.scheduler_v2 import (
     TokenGenerationSchedulerConfig,
     TokenGenerationSchedulerV2,
 )
+from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.scheduler.process_control import ProcessControl, ProcessMonitor
 from max.serve.scheduler.queues import EngineQueue
+from max.serve.telemetry.common import configure_logging, configure_metrics
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
 
@@ -48,6 +46,7 @@ def _model_worker_process_fn(
     batch_config: TokenGeneratorPipelineConfig,
     queues: Mapping[str, Queue],
     settings: Settings,
+    metric_client: MetricClient,
 ):
     try:
         uvloop.run(
@@ -57,6 +56,7 @@ def _model_worker_process_fn(
                 batch_config,
                 queues,
                 settings,
+                metric_client,
             )
         )
     except KeyboardInterrupt:
@@ -74,6 +74,7 @@ async def start_model_worker(
     model_factory: PipelinesFactory,
     batch_config: TokenGeneratorPipelineConfig,
     settings: Settings,
+    metric_client: MetricClient,
 ) -> AsyncGenerator[EngineQueue, None]:
     """Starts a model worker and associated process.
 
@@ -113,10 +114,10 @@ async def start_model_worker(
             batch_config,
             queue_args,
             settings,
+            metric_client,
         ),
     )
     worker.start()
-    logger.info("Starting model worker task")
     monitor = ProcessMonitor(
         pc,
         worker,
@@ -178,7 +179,7 @@ async def start_model_worker(
         raise TimeoutError("Worker did not become healthy")
 
     # worker is both alive and healthy!
-    logger.info("Model worker task is alive and healthy")
+    logger.debug("Model worker task is alive and healthy")
 
     try:
         if use_heartbeat:
@@ -192,6 +193,19 @@ async def start_model_worker(
 
 
 # INTERNAL
+def mw_configure_metrics(settings, metric_client):
+    supported_methods = [
+        MetricRecordingMethod.NOOP,
+        MetricRecordingMethod.PROCESS,
+    ]
+    if settings.metric_recording not in supported_methods:
+        logger.info(
+            "Unsuported recording method. Metrics unavailable in model worker"
+        )
+        return
+
+    configure_metrics(settings)
+    METRICS.configure(metric_client)
 
 
 @traced
@@ -200,9 +214,11 @@ async def model_worker_run_v3(
     model_factory: PipelinesFactory,
     pipeline_config: TokenGeneratorPipelineConfig,
     queues: Mapping[str, Queue],
-    server_settings: Settings,
+    settings: Settings,
+    metric_client: MetricClient,
 ):
-    await METRICS.configure(server_settings)
+    configure_logging(settings)
+    mw_configure_metrics(settings, metric_client)
 
     pid = os.getpid()
     logger.info("Starting model worker on process %d!", pid)
@@ -210,7 +226,6 @@ async def model_worker_run_v3(
     # Initialize token generator.
     with record_ms(METRICS.model_load_time), Tracer("model_factory"):
         pipeline = model_factory()
-    logger.info("Token generators loaded!")
 
     scheduler: Scheduler
     if isinstance(pipeline, TokenGenerator):
@@ -227,7 +242,7 @@ async def model_worker_run_v3(
     logger.info("Scheduler created with pipeline type: %s", type(pipeline))
 
     pc.set_started()
-    logger.info("Started model worker!")
+    logger.debug("Started model worker!")
 
     scheduler.run()
 

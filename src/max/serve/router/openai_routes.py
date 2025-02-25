@@ -134,7 +134,6 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
             request,
         )
         record_request_start()
-        itl = StopWatch()
         request_timer = StopWatch(start_ns=request.timestamp_ns)
         n_tokens = 0
         status_code = 200
@@ -184,13 +183,6 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                 )
                 n_tokens += 1
                 payload = response.model_dump_json()
-                if n_tokens == 1:
-                    METRICS.ttft(request_timer.elapsed_ms)
-                else:
-                    # TODO: re-instate ITL measurement when we find a fast way to do it
-                    # METRICS.itl(itl.elapsed_ms)
-                    pass
-                itl.reset()
                 yield payload
 
             logger.debug(
@@ -734,7 +726,6 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
             request,
         )
         record_request_start()
-        itl = StopWatch()
         request_timer = StopWatch(start_ns=request.timestamp_ns)
         n_tokens = 0
         status_code = 200
@@ -769,13 +760,6 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
                 )
                 n_tokens += 1
                 payload = response.model_dump_json()
-                if n_tokens == 1:
-                    METRICS.ttft(request_timer.elapsed_ms)
-                else:
-                    # TODO: re-instate ITL measurement when we find a fast way to do it
-                    # METRICS.itl(itl.elapsed_ms)
-                    pass
-                itl.reset()
                 yield payload
 
             logger.debug(

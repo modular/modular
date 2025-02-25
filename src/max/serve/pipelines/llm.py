@@ -215,6 +215,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
         self, request: TokenGeneratorRequest
     ) -> AsyncGenerator[TokenGeneratorOutput, None]:
         """Generates and streams tokens for the provided request."""
+        itl = StopWatch()
         total_sw = StopWatch()
         self.logger.debug(
             "%s [%d]: Started: Elapsed: %0.2f ms",
@@ -241,9 +242,11 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                 # use in the response stream
                 stop_detector = StopDetector(stop=request.stop)
 
+                n_tokens = 0
                 async for response in self.engine_queue.stream(
                     request.id, context
                 ):
+                    n_tokens += 1
                     decoded_token = await self.tokenizer.decode(
                         context,
                         response.next_token,
@@ -282,6 +285,12 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                         prompt_token_count=prompt_token_count,
                         stop_sequence=stop_sequence_match,
                     )
+
+                    if n_tokens == 1:
+                        METRICS.ttft(itl.elapsed_ms)
+                    else:
+                        METRICS.itl(itl.elapsed_ms)
+                    itl.reset()
 
                     yield output
         finally:

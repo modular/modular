@@ -9,7 +9,7 @@ Placeholder file for any configs (runtime, models, pipelines, etc)
 """
 
 import socket
-from enum import Enum
+from enum import Enum, IntEnum
 from typing import Union
 
 from pydantic import Field, field_validator
@@ -24,6 +24,30 @@ class APIType(Enum):
 class RunnerType(Enum):
     PYTORCH = "pytorch"
     TOKEN_GEN = "token_gen"
+
+
+class MetricLevel(IntEnum):
+    """Metric levels in increasing granularity"""
+
+    # no metrics
+    NONE = 0
+    # basic api-worker and model worker metrics. minimal performance impact.
+    BASIC = 10
+    # high detail metrics. may impact performance
+    DETAILED = 20
+
+
+class MetricRecordingMethod(Enum):
+    """How should metrics be recorded?"""
+
+    # Do not record metrics
+    NOOP = "NOOP"
+    # Synchronously record metrics
+    SYNC = "SYNC"
+    # Record metrics asynchronously using asyncio
+    ASYNCIO = "ASYNCIO"
+    # Send metric observations to a seperate process for recording
+    PROCESS = "PROCESS"
 
 
 class Settings(BaseSettings):
@@ -121,10 +145,26 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_TELEMETRY_WORKER_SPAWN_TIMEOUT",
     )
 
-    runner_type: RunnerType = Field(
-        description="Type of execution runner.",
-        default=RunnerType.PYTORCH,
+    metric_recording: MetricRecordingMethod = Field(
+        default=MetricRecordingMethod.ASYNCIO,
+        description="How metrics should be recorded?",
+        alias="MAX_SERVE_METRIC_RECORDING_METHOD",
     )
+
+    metric_level: MetricLevel = Field(
+        default=MetricLevel.BASIC,
+        description="",
+        alias="MAX_SERVE_METRIC_LEVEL",
+    )
+
+    @field_validator("metric_level", mode="before")
+    def validate_metric_level(
+        cls, value: Union[str, MetricLevel]
+    ) -> MetricLevel:
+        # Support string values ("BASIC") even though Metric is an IntEnum
+        if isinstance(value, str):
+            return MetricLevel[value]
+        return value
 
 
 def api_prefix(settings: Settings, api_type: APIType):

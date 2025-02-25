@@ -20,6 +20,7 @@ from max.pipelines.kv_cache.paged_cache import PagedKVCacheManager
 from max.profiler import traced
 from max.serve.scheduler.process_control import ProcessControl
 from max.serve.scheduler.queues import STOP_STREAM
+from max.serve.telemetry.metrics import METRICS
 
 logger = logging.getLogger("max.serve")
 
@@ -664,6 +665,7 @@ class TokenGenerationSchedulerV2(Scheduler):
 
     @traced
     def _schedule_tg(self, batch_to_execute):
+        METRICS.batch_size(len(batch_to_execute))
         # execute the batch
         batch_responses = self.pipeline.next_token(
             batch_to_execute,

@@ -27,6 +27,7 @@ from max.serve.pipelines.llm import (
     TokenGeneratorPipelineConfig,
 )
 from max.serve.pipelines.model_worker import start_model_worker
+from max.serve.telemetry.metrics import NoopClient
 from max.serve.telemetry.stopwatch import StopWatch
 
 DEFAULT_MAX_TOKENS = 100
@@ -371,6 +372,7 @@ async def grpc_serve(
                 model_factory=model_factory,
                 batch_config=cont_batching,
                 settings=server_settings,
+                metric_client=NoopClient(),
             ) as worker_queue,
             TokenGeneratorPipeline(
                 model_name, tokenizer, worker_queue

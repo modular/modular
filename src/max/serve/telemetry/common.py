@@ -9,7 +9,6 @@ import logging
 import os
 import platform
 import uuid
-from dataclasses import dataclass
 from time import time
 from typing import Union
 
@@ -98,38 +97,24 @@ metrics_resource = Resource.create(
 )
 
 
-@dataclass
-class TelemetryConfig:
-    """Telemetry Configuration"""
+def get_log_level(settings: Settings) -> Union[int, str, None]:
+    otlp_level: Union[int, str, None] = (
+        logging.getLevelName(settings.logs_otlp_level)
+        if settings.logs_otlp_level
+        else None
+    )
 
-    console_level: Union[int, str] = logging.INFO
-    file_path: Union[str, None] = None
-    file_level: Union[int, str, None] = None
-    otlp_level: Union[int, str, None] = None
-    metrics_egress_enabled: bool = False
-    async_metrics: bool = True
+    if settings.disable_telemetry:
+        otlp_level = None
 
-    @classmethod
-    def from_config(cls, config: Settings) -> "TelemetryConfig":
-        """Read the telemetry config from env variables"""
-        return cls(
-            console_level=config.logs_console_level,
-            file_path=config.logs_file_path,
-            file_level=config.logs_file_level,
-            otlp_level=config.logs_otlp_level,
-            metrics_egress_enabled=not config.disable_telemetry,
-        )
+    return otlp_level
 
 
 # Configure logging to console and OTEL.  This should be called before any
 # 3rd party imports whose logging you wish to capture.
-def configure_logging(server_settings: Settings) -> None:
-    default_config = TelemetryConfig.from_config(server_settings)
-    console_level = default_config.console_level
-    file_path = default_config.file_path
-    file_level = default_config.file_level
-    otlp_level = default_config.otlp_level
-    egress_enabled = default_config.metrics_egress_enabled
+def configure_logging(settings: Settings) -> None:
+    otlp_level = get_log_level(settings)
+    egress_enabled = not settings.disable_telemetry
 
     logging_handlers: list[logging.Handler] = []
 
@@ -147,12 +132,15 @@ def configure_logging(server_settings: Settings) -> None:
             datefmt="%H:%M:%S",
         )
     console_handler.setFormatter(console_formatter)
-    console_handler.setLevel(console_level)
+    console_handler.setLevel(settings.logs_console_level)
     logging_handlers.append(console_handler)
 
-    if file_level is not None and file_path is not None:
+    if (
+        settings.logs_file_level is not None
+        and settings.logs_file_path is not None
+    ):
         # Create a file handler
-        file_handler = logging.FileHandler(file_path)
+        file_handler = logging.FileHandler(settings.logs_file_path)
         file_formatter: logging.Formatter
         if os.getenv("MODULAR_STRUCTURED_LOGGING") == "1":
             file_formatter = jsonlogger.JsonFormatter()
@@ -165,7 +153,7 @@ def configure_logging(server_settings: Settings) -> None:
                 datefmt="%y:%m:%d-%H:%M:%S",
             )
         file_handler.setFormatter(file_formatter)
-        file_handler.setLevel(file_level)
+        file_handler.setLevel(settings.logs_file_level)
         logging_handlers.append(file_handler)
 
     if egress_enabled and otlp_level is not None:
@@ -198,18 +186,17 @@ def configure_logging(server_settings: Settings) -> None:
     )
     logger.info(
         "Logging initialized: Console: %s, File: %s, Telemetry: %s",
-        console_level,
-        file_level,
-        egress_enabled and otlp_level,
+        settings.logs_console_level,
+        settings.logs_file_level,
+        otlp_level,
     )
 
 
-def configure_metrics(server_settings: Settings):
-    default_config = TelemetryConfig.from_config(server_settings)
-    metrics_egress_enabled = default_config.metrics_egress_enabled
+def configure_metrics(settings: Settings):
+    egress_enabled = not settings.disable_telemetry
 
     meterProviders: list[MetricReader] = [PrometheusMetricReader(True)]
-    if metrics_egress_enabled:
+    if egress_enabled:
         meterProviders.append(
             PeriodicExportingMetricReader(
                 OTLPMetricExporter(endpoint=otelBaseUrl + "/v1/metrics")

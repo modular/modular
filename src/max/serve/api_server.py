@@ -8,17 +8,6 @@
 
 from __future__ import annotations
 
-from max.serve.config import Settings
-from max.serve.telemetry.common import (
-    configure_logging,
-    configure_metrics,
-    send_telemetry_log,
-)
-
-settings = Settings()
-configure_logging(settings)
-configure_metrics(settings)
-
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -42,9 +31,14 @@ from max.serve.pipelines.llm import (
     TokenGeneratorPipelineConfig,
 )
 from max.serve.pipelines.model_worker import start_model_worker
-from max.serve.pipelines.telemetry_worker import start_telemetry_worker
+from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
 from max.serve.request import register_request
 from max.serve.router import kserve_routes, openai_routes
+from max.serve.telemetry.common import (
+    configure_logging,
+    configure_metrics,
+    send_telemetry_log,
+)
 from max.serve.telemetry.metrics import METRICS
 from prometheus_client import disable_created_metrics, make_asgi_app
 from uvicorn import Config, Server
@@ -69,43 +63,41 @@ class ServingTokenGeneratorSettings:
 @asynccontextmanager
 async def lifespan(
     app: FastAPI,
-    server_settings: Settings,
+    settings: Settings,
     serving_settings: ServingTokenGeneratorSettings,
 ):
-    await METRICS.configure(server_settings)
-
     try:
-        if not server_settings.disable_telemetry:
+        if not settings.disable_telemetry:
             send_telemetry_log(serving_settings.model_name)
     except Exception as e:
         logger.warning("Failed to send telemetry log: %s", e)
 
-    logger.info(
-        f"Launching server on http://{server_settings.host}:{server_settings.port}"
-    )
+    logger.info(f"Launching server on http://{settings.host}:{settings.port}")
     try:
-        async with (
-            start_telemetry_worker(
-                worker_spawn_timeout=server_settings.telemetry_worker_spawn_timeout
-            ) as tel_worker,
-            start_model_worker(
+        # start telemetry worker and configure Metrics to use it
+        async with start_telemetry_consumer(settings) as metric_client:
+            METRICS.configure(client=metric_client)
+
+            # start model worker
+            mw_task = start_model_worker(
                 serving_settings.model_factory,
                 serving_settings.pipeline_config,
-                settings=server_settings,
-            ) as engine_queue,
-        ):
-            METRICS.pipeline_load(serving_settings.model_name)
-            pipeline: TokenGeneratorPipeline = TokenGeneratorPipeline(
-                model_name=serving_settings.model_name,
-                tokenizer=serving_settings.tokenizer,
-                engine_queue=engine_queue,
+                settings,
+                metric_client,
             )
-            app.state.pipeline = pipeline
-            async with pipeline:
-                logger.info(
-                    f"Server ready on http://{server_settings.host}:{server_settings.port} (Press CTRL+C to quit)"
+            async with mw_task as engine_queue:
+                METRICS.pipeline_load(serving_settings.model_name)
+                pipeline: TokenGeneratorPipeline = TokenGeneratorPipeline(
+                    model_name=serving_settings.model_name,
+                    tokenizer=serving_settings.tokenizer,
+                    engine_queue=engine_queue,
                 )
-                yield
+                app.state.pipeline = pipeline
+                async with pipeline:
+                    logger.info(
+                        f"Server ready on http://{settings.host}:{settings.port} (Press CTRL+C to quit)"
+                    )
+                    yield
     except KeyboardInterrupt as e:
         # Exit gracefully if user used Ctrl+C
         logger.info("Workers have shut down successfully (keyboard interrupt)")
@@ -113,7 +105,6 @@ async def lifespan(
         logger.exception("Error occurred in model worker. %s", e)
     finally:
         logger.debug("start_model_worker has completed")
-        await METRICS.shutdown()
 
 
 def version():
@@ -137,7 +128,7 @@ def fastapi_app(
         title="MAX Serve",
         lifespan=partial(
             lifespan,
-            server_settings=settings,
+            settings=settings,
             serving_settings=serving_settings,
         ),
     )
@@ -177,6 +168,8 @@ def make_metrics_app():
 
 async def main() -> None:
     server_settings = Settings()
+    configure_logging(server_settings)
+    configure_metrics(server_settings)
 
     pipeline_settings = ServingTokenGeneratorSettings(
         model_name="echo",

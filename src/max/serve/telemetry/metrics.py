@@ -4,16 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-
-import enum
+import abc
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Optional, Union, get_args
+from typing import Callable, Optional, Union, get_args
 
-from max.serve.config import Settings
-from max.serve.scheduler.async_queue import AsyncCallConsumer  # type: ignore
-from max.serve.telemetry.common import TelemetryConfig
+from max.serve.config import MetricLevel, Settings
 from opentelemetry import context
 from opentelemetry.metrics import get_meter_provider
 from opentelemetry.metrics._internal import instrument as api_instrument
@@ -69,16 +66,22 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         "maxserve.request_count", description="Http request count"
     ),  # type: ignore
     "maxserve.request_time": _meter.create_histogram(
-        "maxserve.request_time", "ms", "Time spent in requests"
+        "maxserve.request_time", unit="ms", description="Time spent in requests"
     ),  # type: ignore
     "maxserve.input_processing_time": _meter.create_histogram(
-        "maxserve.input_processing_time", "ms", "Input processing time"
+        "maxserve.input_processing_time",
+        unit="ms",
+        description="Input processing time",
     ),  # type: ignore
     "maxserve.output_processing_time": _meter.create_histogram(
-        "maxserve.output_processing_time", "ms", "Output processing time"
+        "maxserve.output_processing_time",
+        unit="ms",
+        description="Output processing time",
     ),  # type: ignore
     "maxserve.time_to_first_token": _meter.create_histogram(
-        "maxserve.time_to_first_token", "ms", "Time to first token"
+        "maxserve.time_to_first_token",
+        unit="ms",
+        description="Time to first token",
     ),  # type: ignore
     "maxserve.num_input_tokens": _meter.create_counter(
         "maxserve.num_input_tokens", description="Count of input tokens"
@@ -106,14 +109,11 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         "maxserve.pipeline_load",
         description="Count of pipelines loaded for each model",
     ),  # type: ignore
+    "maxserve.batch_size": _meter.create_histogram(
+        "maxserve.batch_size",
+        description="Distribution of batch sizes",
+    ),  # type: ignore
 }
-
-
-class RecordMode(enum.Enum):
-    NOOP = enum.auto()
-    SYNC = enum.auto()
-    ASYNCIO = enum.auto()
-    PROCESS = enum.auto()
 
 
 class UnknownMetric(Exception):
@@ -163,104 +163,131 @@ class MaxMeasurement:
         consumer.consume_measurement(m)
 
 
-class _Metrics:
-    """Centralizes metrics to encapsulate the OTEL dependency and avoid breaking schema changes"""
+TelemetryFn = Callable[[MaxMeasurement], None]
+
+
+class MetricClient(abc.ABC):
+    @abc.abstractmethod
+    def send_measurement(
+        self, metric: MaxMeasurement, level: MetricLevel
+    ) -> None:
+        pass
+
+
+class NoopClient(MetricClient):
+    def send_measurement(self, m: MaxMeasurement, level: MetricLevel) -> None:
+        pass
+
+
+class SyncClient(MetricClient):
+    def __init__(self, settings: Settings):
+        self.level = settings.metric_level
+
+    def send_measurement(self, m: MaxMeasurement, level: MetricLevel) -> None:
+        if level > self.level:
+            return
+        m.commit()
+
+
+class _AsyncMetrics:
+    """Centralizes metrics to encapsulate the OTEL dependency and avoid breaking schema changes
+
+    Produce metric measurements to be consumed elsewhere
+    """
 
     def __init__(self):
-        self.started = False
-        self.mode = RecordMode.NOOP
-        self.aq: Optional[AsyncCallConsumer] = None
+        self.client: MetricClient = NoopClient()
 
-    async def configure(self, server_settings: Settings):
-        default_config = TelemetryConfig.from_config(server_settings)
-
-        new_mode = RecordMode.SYNC
-        if default_config.async_metrics:
-            new_mode = RecordMode.ASYNCIO
-
-        if new_mode == RecordMode.ASYNCIO and not self.started:
-            self.aq = AsyncCallConsumer()
-            try:
-                self.aq.start()
-            except Exception as e:
-                logger.exception("failed to start consumer")
-            self.started = True
-
-        if new_mode == RecordMode.SYNC:
-            pass
-
-        self.mode = new_mode
-
-    def _call(self, m: MaxMeasurement):
-        if self.mode == RecordMode.NOOP:
-            return
-        elif self.mode == RecordMode.SYNC:
-            m.commit()
-        elif self.mode == RecordMode.ASYNCIO:
-            if self.aq is not None:
-                self.aq.call(m.commit)
-        elif self.mode == RecordMode.PROCESS:
-            raise NotImplementedError()
-        else:
-            raise Exception("Unrecognized mode")
-
-    async def shutdown(self):
-        if self.mode == RecordMode.ASYNCIO and self.started:
-            assert self.aq is not None
-            self.mode = RecordMode.SYNC
-            await self.aq.shutdown()
-            self.started = False
-            self.aq = None
+    def configure(self, client: MetricClient) -> None:
+        self.client = client
 
     def request_count(self, responseCode: int, urlPath: str) -> None:
-        self._call(
+        self.client.send_measurement(
             MaxMeasurement(
                 "maxserve.request_count",
                 1,
                 {"code": f"{responseCode:d}", "path": urlPath},
-            )
+            ),
+            MetricLevel.BASIC,
         )
 
     def request_time(self, value: float, urlPath: str) -> None:
-        self._call(
-            MaxMeasurement("maxserve.request_time", value, {"path": urlPath})
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.request_time", value, {"path": urlPath}),
+            MetricLevel.BASIC,
         )
 
     def input_time(self, value: float) -> None:
-        self._call(MaxMeasurement("maxserve.input_processing_time", value))
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.input_processing_time", value),
+            MetricLevel.BASIC,
+        )
 
     def output_time(self, value: float) -> None:
-        self._call(MaxMeasurement("maxserve.output_processing_time", value))
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.output_processing_time", value),
+            MetricLevel.BASIC,
+        )
 
     def ttft(self, value: float) -> None:
-        self._call(MaxMeasurement("maxserve.time_to_first_token", value))
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.time_to_first_token", value),
+            MetricLevel.BASIC,
+        )
 
     def input_tokens(self, value: int) -> None:
-        self._call(MaxMeasurement("maxserve.num_input_tokens", value))
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.num_input_tokens", value),
+            MetricLevel.BASIC,
+        )
 
     def output_tokens(self, value: int) -> None:
-        self._call(MaxMeasurement("maxserve.num_output_tokens", value))
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.num_output_tokens", value),
+            MetricLevel.BASIC,
+        )
 
     def reqs_queued(self, value: int) -> None:
-        self._call(MaxMeasurement("maxserve.num_requests_queued", value))
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.num_requests_queued", value),
+            MetricLevel.BASIC,
+        )
 
     def reqs_running(self, value: int) -> None:
-        self._call(MaxMeasurement("maxserve.num_requests_running", value))
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.num_requests_running", value),
+            MetricLevel.BASIC,
+        )
 
     def model_load_time(self, ms: float) -> None:
-        self._call(MaxMeasurement("maxserve.model_load_time", ms))
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.model_load_time", ms),
+            MetricLevel.BASIC,
+        )
 
     def itl(self, ms: float) -> None:
-        self._call(MaxMeasurement("maxserve.itl", ms))
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.itl", ms), MetricLevel.DETAILED
+        )
 
     def pipeline_load(self, name: str) -> None:
-        self._call(
+        self.client.send_measurement(
             MaxMeasurement(
                 "maxserve.pipeline_load",
                 1,
                 attributes={"model": name},
-            )
+            ),
+            MetricLevel.BASIC,
+        )
+
+    def batch_size(self, size: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.batch_size",
+                size,
+            ),
+            MetricLevel.DETAILED,
         )
 
 
-METRICS = _Metrics()
+METRICS = _AsyncMetrics()
