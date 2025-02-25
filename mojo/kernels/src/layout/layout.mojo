@@ -543,6 +543,20 @@ fn logical_product(_layout_a: Layout, layout_b: Layout) -> Layout:
     )
 
 
+fn zip_modes(layout_a: Layout, layout_b: Layout) -> Layout:
+    var zipped = Layout()
+    for i in range(layout_a.rank()):
+        zipped.append(make_layout(layout_a[i], layout_b[i]))
+    return zipped
+
+
+fn blocked_product(layout_a: Layout, layout_b: Layout) -> Layout:
+    # ((a_0, a_1, ...), (tile_0, tile_1, ...))
+    var lp = logical_product(layout_a, layout_b)
+    # ((a_0, tile_0), (a_1, tile_1), ...)
+    return zip_modes(lp[0], lp[1])
+
+
 fn logical_product(layout_a: Layout, tiler: LayoutList) -> Layout:
     if len(tiler) == 1:
         return logical_product(layout_a, tiler[0])

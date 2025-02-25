@@ -19,6 +19,7 @@ from layout.layout import (
     is_row_major,
     logical_divide,
     logical_product,
+    blocked_product,
     print_layout,
     right_inverse,
     size,
@@ -412,6 +413,29 @@ fn test_logical_product() raises:
     )
 
 
+# CHECK-LABEL: test_blocked_product
+fn test_blocked_product() raises:
+    print("== test_blocked_product")
+    var bp0 = blocked_product(
+        Layout(IntTuple(2, 5), IntTuple(5, 1)),
+        Layout(IntTuple(3, 4), IntTuple(1, 3)),
+    )
+    assert_equal(String(bp0), "(((2, 3), (5, 4)):((5, 10), (1, 30)))")
+    var cm_M = 8
+    var cm_K = 8
+    core_matrix = Layout.row_major(cm_M, cm_K)
+    var t_M = 2
+    var t_K = 3
+    var bp1 = blocked_product(core_matrix, Layout.col_major(t_M, t_K))
+    # ((cm_M,         t_M), (cm_K,               t_K)):
+    # ((cm_K, cm_M * cm_K), (1,    t_M * cm_M * cm_K))
+    reference_bp1 = Layout(
+        IntTuple(IntTuple(cm_M, t_M), IntTuple(cm_K, t_K)),
+        IntTuple(IntTuple(cm_K, cm_M * cm_K), IntTuple(1, t_M * cm_M * cm_K)),
+    )
+    assert_equal(bp1, reference_bp1)
+
+
 # CHECK-LABEL: test_print_layout
 # CHECK: ((2, 2):(1, 2))
 # CHECK:       0   1
@@ -605,6 +629,7 @@ def main():
     test_complement()
     test_logcial_divide()
     test_logical_product()
+    test_blocked_product()
     test_print_layout()
     test_format_layout_grid()
     test_zipped_divide()
