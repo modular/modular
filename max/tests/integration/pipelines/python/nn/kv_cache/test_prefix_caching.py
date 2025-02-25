@@ -298,12 +298,9 @@ async def test_prefix_caching_with_random_prompts(page_size, num_steps) -> None:
 
     # Evict all blocks from the trie.
     assert kv_manager.prefix_cache is not None
-    evicted = kv_manager.prefix_cache.evict_blocks()
+    kv_manager.purge_prefix_cache()
     # Check that all blocks are either in the trie or available.
-    assert (
-        len(kv_manager.available_blocks) + len(evicted)
-        == kv_manager.total_num_pages
-    )
+    assert len(kv_manager.available_blocks) == kv_manager.total_num_pages
 
 
 @pytest.mark.asyncio
