@@ -135,15 +135,9 @@ fn bench_reduce[
         @parameter
         @always_inline
         fn call_fn() raises:
-            # TODO: add multi-device (context) iter_custum function to bencher
             all_reduce(list_of_ctx, in_bufs, out_bufs, rank_sigs)
 
-            # Synchronize all devices.
-            @parameter
-            for i in range(ngpus):
-                list_of_ctx[i].synchronize()
-
-        b.iter[call_fn]()
+        b.iter_custom_multicontext[call_fn](list_of_ctx)
 
     var name = String(_get_test_str[type](ngpus, length))
     m.bench_function[bench_iter](

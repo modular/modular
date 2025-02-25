@@ -10,7 +10,7 @@ file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_allreduce.mojo
 params:
 # Test hyperparameters.
 - dtype: [DType.bfloat16, DType.float32]
-  num_gpus: [1, 2, 4, 8]
+  num_gpus: [2, 4, 8]
   rank: [1]
   
   # Test configurations covering edge cases
@@ -20,4 +20,4 @@ params:
             (2 * 64 * 1024 * 1024),   # Bandwidth bound: 8192 chunk size at dim = 8192.
             ]
   
-  TUNE_MAX_NUM_BLOCKS: [8]
+  TUNE_MAX_NUM_BLOCKS: [128]
