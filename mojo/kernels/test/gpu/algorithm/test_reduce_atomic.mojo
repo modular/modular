@@ -72,7 +72,7 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     var vec_device = ctx.enqueue_create_buffer[DType.float32](n)
     var res_add_device = ctx.enqueue_create_buffer[DType.float32](1)
 
-    ctx.enqueue_copy_to_device(vec_device, vec_host.data)
+    ctx.enqueue_copy(vec_device, vec_host.data)
     ctx.memset(res_add_device, 0)
 
     var res_min_device = ctx.enqueue_create_buffer[DType.float32](1)
@@ -92,17 +92,13 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     )
 
     var res = Float32(0)
-    ctx.enqueue_copy_from_device(UnsafePointer.address_of(res), res_add_device)
+    ctx.enqueue_copy(UnsafePointer.address_of(res), res_add_device)
 
     var res_min = Float32(0)
-    ctx.enqueue_copy_from_device(
-        UnsafePointer.address_of(res_min), res_min_device
-    )
+    ctx.enqueue_copy(UnsafePointer.address_of(res_min), res_min_device)
 
     var res_max = Float32(0)
-    ctx.enqueue_copy_from_device(
-        UnsafePointer.address_of(res_max), res_max_device
-    )
+    ctx.enqueue_copy(UnsafePointer.address_of(res_max), res_max_device)
 
     ctx.synchronize()
 

@@ -266,10 +266,10 @@ def execute_ragged_flash_attention(
         ctx,
     )
     ctx.synchronize()
-    ctx.enqueue_copy_from_device(
+    ctx.enqueue_copy(
         mixed_ce_output_host.tensor.data, mixed_ce_output_device.buffer
     )
-    ctx.enqueue_copy_from_device(
+    ctx.enqueue_copy(
         true_ce_output_host.tensor.data, true_ce_output_device.buffer
     )
     ctx.synchronize()

@@ -153,8 +153,8 @@ fn run_matmul(ctx: DeviceContext) raises:
     var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
     var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
 
-    ctx.enqueue_copy_to_device(a_device, a_host_ptr)
-    ctx.enqueue_copy_to_device(b_device, b_host_ptr)
+    ctx.enqueue_copy(a_device, a_host_ptr)
+    ctx.enqueue_copy(b_device, b_host_ptr)
 
     ctx.enqueue_function[matmul_sram](
         a_device,
@@ -167,7 +167,7 @@ fn run_matmul(ctx: DeviceContext) raises:
         block_dim=(tile_size, tile_size),
     )
 
-    ctx.enqueue_copy_from_device(c_host_ptr, c_device)
+    ctx.enqueue_copy(c_host_ptr, c_device)
     ctx.synchronize()
 
     var failed = False

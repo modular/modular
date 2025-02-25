@@ -53,9 +53,9 @@ fn run_layer_norm_block[
     var beta = NDBuffer[type, 1](beta_d.unsafe_ptr(), param_shape)
     var epsilon = Scalar[type]()
 
-    ctx.enqueue_copy_to_device(data_d, data_h)
-    ctx.enqueue_copy_to_device(gamma_d, gamma_h)
-    ctx.enqueue_copy_to_device(beta_d, beta_h)
+    ctx.enqueue_copy(data_d, data_h)
+    ctx.enqueue_copy(gamma_d, gamma_h)
+    ctx.enqueue_copy(beta_d, beta_h)
 
     @__copy_capture(data_buf)
     @always_inline
@@ -91,7 +91,7 @@ fn run_layer_norm_block[
         )
 
     run_func_ln()
-    ctx.enqueue_copy_from_device(res, data_d)
+    ctx.enqueue_copy(res, data_d)
     ctx.synchronize()
 
     for r in range(rows):
@@ -148,9 +148,9 @@ fn run_layer_norm_gpu[
     var beta = NDBuffer[type, 1](beta_d.unsafe_ptr(), param_shape)
     var epsilon = Scalar[type]()
 
-    ctx.enqueue_copy_to_device(data_d, data_h)
-    ctx.enqueue_copy_to_device(gamma_d, gamma_h)
-    ctx.enqueue_copy_to_device(beta_d, beta_h)
+    ctx.enqueue_copy(data_d, data_h)
+    ctx.enqueue_copy(gamma_d, gamma_h)
+    ctx.enqueue_copy(beta_d, beta_h)
 
     @__copy_capture(data_buf)
     @always_inline
@@ -169,7 +169,7 @@ fn run_layer_norm_gpu[
         return gamma.load[width=width](idx[0])
 
     layer_norm_gpu[input_fn, gamma_fn](shape, beta, epsilon, data_buf, ctx=ctx)
-    ctx.enqueue_copy_from_device(res, data_d)
+    ctx.enqueue_copy(res, data_d)
     ctx.synchronize()
 
     for r in range(rows):
@@ -226,9 +226,9 @@ fn run_layer_norm_warp_tiling[
     var beta = NDBuffer[type, 1](beta_d.unsafe_ptr(), param_shape)
     var epsilon = Scalar[type]()
 
-    ctx.enqueue_copy_to_device(data_d, data_h)
-    ctx.enqueue_copy_to_device(gamma_d, gamma_h)
-    ctx.enqueue_copy_to_device(beta_d, beta_h)
+    ctx.enqueue_copy(data_d, data_h)
+    ctx.enqueue_copy(gamma_d, gamma_h)
+    ctx.enqueue_copy(beta_d, beta_h)
 
     @__copy_capture(data_buf)
     @always_inline
@@ -264,7 +264,7 @@ fn run_layer_norm_warp_tiling[
         )
 
     run_func_ln()
-    ctx.enqueue_copy_from_device(res, data_d)
+    ctx.enqueue_copy(res, data_d)
     ctx.synchronize()
 
     for r in range(rows):

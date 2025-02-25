@@ -244,8 +244,8 @@ fn run_mma_fp32_tf32(
     var b_device_ref = ctx.enqueue_create_buffer[DType.float32](K * N)
     var c_device_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
 
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(b_device, b_host)
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
@@ -275,11 +275,11 @@ fn run_mma_fp32_tf32(
     print(flops * 1e-9 / sectime, " GFLOPS")
     print()
 
-    ctx.enqueue_copy_from_device(c_host, c_device)
+    ctx.enqueue_copy(c_host, c_device)
 
     # Run naive matmul.
-    ctx.enqueue_copy_to_device(a_device_ref, a_host_ref)
-    ctx.enqueue_copy_to_device(b_device_ref, b_host_ref)
+    ctx.enqueue_copy(a_device_ref, a_host_ref)
+    ctx.enqueue_copy(b_device_ref, b_host_ref)
 
     alias BLOCK_DIM = 16
 
@@ -308,7 +308,7 @@ fn run_mma_fp32_tf32(
     print(flops * 1e-9 / sectime2, " GFLOPS")
     print()
 
-    ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
+    ctx.enqueue_copy(c_host_ref, c_device_ref)
 
     ctx.synchronize()
 
@@ -388,8 +388,8 @@ fn run_mma_fp32_bf16(
     var b_device_ref = ctx.enqueue_create_buffer[DType.float32](K * N)
     var c_device_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
 
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(b_device, b_host)
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
@@ -419,11 +419,11 @@ fn run_mma_fp32_bf16(
     print(flops * 1e-9 / sectime, " GFLOPS")
     print()
 
-    ctx.enqueue_copy_from_device(c_host, c_device)
+    ctx.enqueue_copy(c_host, c_device)
 
     # Run naive matmul.
-    ctx.enqueue_copy_to_device(a_device_ref, a_host_ref)
-    ctx.enqueue_copy_to_device(b_device_ref, b_host_ref)
+    ctx.enqueue_copy(a_device_ref, a_host_ref)
+    ctx.enqueue_copy(b_device_ref, b_host_ref)
 
     alias BLOCK_DIM = 16
 
@@ -452,7 +452,7 @@ fn run_mma_fp32_bf16(
     print(flops * 1e-9 / sectime2, " GFLOPS")
     print()
 
-    ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
+    ctx.enqueue_copy(c_host_ref, c_device_ref)
 
     # Check correctness.
     var failed = False
@@ -530,8 +530,8 @@ fn run_mma_fp32_bf16_2(
     var b_device_ref = ctx.enqueue_create_buffer[DType.float32](K * N)
     var c_device_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
 
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(b_device, b_host)
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
@@ -561,11 +561,11 @@ fn run_mma_fp32_bf16_2(
     print(flops * 1e-9 / sectime, " GFLOPS")
     print()
 
-    ctx.enqueue_copy_from_device(c_host, c_device)
+    ctx.enqueue_copy(c_host, c_device)
 
     # Run naive matmul.
-    ctx.enqueue_copy_to_device(a_device_ref, a_host_ref)
-    ctx.enqueue_copy_to_device(b_device_ref, b_host_ref)
+    ctx.enqueue_copy(a_device_ref, a_host_ref)
+    ctx.enqueue_copy(b_device_ref, b_host_ref)
 
     alias BLOCK_DIM = 16
 
@@ -594,7 +594,7 @@ fn run_mma_fp32_bf16_2(
     print(flops * 1e-9 / sectime2, " GFLOPS")
     print()
 
-    ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
+    ctx.enqueue_copy(c_host_ref, c_device_ref)
 
     # Check correctness.
     var failed = False
@@ -672,8 +672,8 @@ fn run_mma_fp32_fp16(
     var b_device_ref = ctx.enqueue_create_buffer[DType.float32](K * N)
     var c_device_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
 
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(b_device, b_host)
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
@@ -704,11 +704,11 @@ fn run_mma_fp32_fp16(
     print(flops * 1e-9 / sectime, " GFLOPS")
     print()
 
-    ctx.enqueue_copy_from_device(c_host, c_device)
+    ctx.enqueue_copy(c_host, c_device)
 
     # Run naive matmul.
-    ctx.enqueue_copy_to_device(a_device_ref, a_host_ref)
-    ctx.enqueue_copy_to_device(b_device_ref, b_host_ref)
+    ctx.enqueue_copy(a_device_ref, a_host_ref)
+    ctx.enqueue_copy(b_device_ref, b_host_ref)
 
     alias BLOCK_DIM = 16
 
@@ -737,7 +737,7 @@ fn run_mma_fp32_fp16(
     print(flops * 1e-9 / sectime2, " GFLOPS")
     print()
 
-    ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
+    ctx.enqueue_copy(c_host_ref, c_device_ref)
 
     # Check correctness.
     var failed = False
@@ -815,8 +815,8 @@ fn run_mma_fp16_fp16(
     var b_device_ref = ctx.enqueue_create_buffer[DType.float32](K * N)
     var c_device_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
 
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(b_device, b_host)
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
@@ -846,11 +846,11 @@ fn run_mma_fp16_fp16(
     print(flops * 1e-9 / sectime, " GFLOPS")
     print()
 
-    ctx.enqueue_copy_from_device(c_host, c_device)
+    ctx.enqueue_copy(c_host, c_device)
 
     # Run naive matmul.
-    ctx.enqueue_copy_to_device(a_device_ref, a_host_ref)
-    ctx.enqueue_copy_to_device(b_device_ref, b_host_ref)
+    ctx.enqueue_copy(a_device_ref, a_host_ref)
+    ctx.enqueue_copy(b_device_ref, b_host_ref)
 
     alias BLOCK_DIM = 16
 
@@ -879,7 +879,7 @@ fn run_mma_fp16_fp16(
     print(flops * 1e-9 / sectime2, " GFLOPS")
     print()
 
-    ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
+    ctx.enqueue_copy(c_host_ref, c_device_ref)
 
     # Check correctness.
     var failed = False

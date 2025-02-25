@@ -68,7 +68,7 @@ def execute_flash_attention[
         IndexList[4](batch_size, prompt_len, num_q_heads, kv_params.head_size),
         ctx=ctx,
     )
-    ctx.enqueue_copy_to_device(q_device.buffer, q_host.tensor.data)
+    ctx.enqueue_copy(q_device.buffer, q_host.tensor.data)
 
     # initialize mask tensor
     # TODO this should ideally create a triangular matrix
@@ -91,7 +91,7 @@ def execute_flash_attention[
         ),
         ctx=ctx,
     )
-    ctx.enqueue_copy_to_device(mask_device.buffer, mask_host.tensor.data)
+    ctx.enqueue_copy(mask_device.buffer, mask_host.tensor.data)
 
     # initialize reference output
     ref_output_host = HostNDBuffer[
@@ -131,7 +131,7 @@ def execute_flash_attention[
     var valid_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](
         max_batch_size
     )
-    ctx.enqueue_copy_to_device(valid_lengths_dev, valid_lengths_host_ptr)
+    ctx.enqueue_copy(valid_lengths_dev, valid_lengths_host_ptr)
     var valid_lengths = NDBuffer[DType.uint32, 1](
         valid_lengths_dev.unsafe_ptr(), Index(batch_size)
     )
@@ -178,7 +178,7 @@ def execute_flash_attention[
     for i in range(batch_size):
         valid_lengths_host.tensor[i] = prompt_len
 
-    ctx.enqueue_copy_to_device(
+    ctx.enqueue_copy(
         valid_lengths_device.buffer, valid_lengths_host.tensor.data
     )
 
@@ -224,12 +224,8 @@ def execute_flash_attention[
         ctx,
     )
 
-    ctx.enqueue_copy_from_device(
-        test_output_host.tensor.data, test_output_device.buffer
-    )
-    ctx.enqueue_copy_from_device(
-        ref_output_host.tensor.data, ref_output_device.buffer
-    )
+    ctx.enqueue_copy(test_output_host.tensor.data, test_output_device.buffer)
+    ctx.enqueue_copy(ref_output_host.tensor.data, ref_output_device.buffer)
     ctx.synchronize()
 
     ref_out = ref_output_host.tensor

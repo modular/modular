@@ -422,8 +422,8 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
     var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
 
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(b_device, b_host)
 
     var c_buffer = NDBuffer[DType.float32, 2, DimList(M, N)](
         c_device.unsafe_ptr()
@@ -480,12 +480,12 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     _ = b_buffer
     _ = c_buffer
 
-    ctx.enqueue_copy_from_device(c_host, c_device)
+    ctx.enqueue_copy(c_host, c_device)
 
     # Perform naive matmul to compare results & performance.
 
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(b_device, b_host)
 
     @parameter
     @always_inline
@@ -512,7 +512,7 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         ThroughputMeasure(BenchMetric.elements, 2 * M * N * K),
     )
 
-    ctx.enqueue_copy_from_device(c_host_naive, c_device)
+    ctx.enqueue_copy(c_host_naive, c_device)
     ctx.synchronize()
 
     for i in range(M * N):

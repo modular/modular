@@ -122,11 +122,11 @@ def test_warp_specialize_gemm_with_multicasting[
 
     # Move operands to the Device
 
-    ctx.enqueue_copy_to_device(a_device.buffer, a_host.tensor.data)
-    ctx.enqueue_copy_to_device(b_device.buffer, b_host.tensor.data)
+    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
+    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
 
-    ctx.enqueue_copy_to_device(c_device.buffer, c_host.tensor.data)
-    ctx.enqueue_copy_to_device(c_device_ref.buffer, c_host_ref.tensor.data)
+    ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
+    ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
 
     alias block_tile_shape = Index(128, wgmma_n, 64)
     alias wgmma_shape = Index(64, wgmma_n, 16)
@@ -199,8 +199,8 @@ def test_warp_specialize_gemm_with_multicasting[
 
     ctx.synchronize()
 
-    ctx.enqueue_copy_from_device(c_host.tensor.data, c_device.buffer)
-    ctx.enqueue_copy_from_device(c_host_ref.tensor.data, c_device_ref.buffer)
+    ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
+    ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
     ctx.synchronize()
 
     alias rtol = 1e-2

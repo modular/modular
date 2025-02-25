@@ -51,8 +51,8 @@ def execute_index_tensor_test[
         expected_output.tensor.get_shape(),
         ctx=ctx,
     )
-    ctx.enqueue_copy_to_device(data_device.buffer, data_host.tensor.data)
-    ctx.enqueue_copy_to_device(indices_device.buffer, indices_host.tensor.data)
+    ctx.enqueue_copy(data_device.buffer, data_host.tensor.data)
+    ctx.enqueue_copy(indices_device.buffer, indices_host.tensor.data)
 
     # execute the kernel
     _index_tensor_impl[batch_dims, target="gpu"](
@@ -63,7 +63,7 @@ def execute_index_tensor_test[
     )
 
     # copy the output back to host
-    ctx.enqueue_copy_from_device(
+    ctx.enqueue_copy(
         actual_output_host.tensor.data, actual_output_device.buffer
     )
     ctx.synchronize()

@@ -49,8 +49,8 @@ fn test_cublas(ctx: DeviceContext) raises:
     var c_device = ctx.enqueue_create_buffer[type](M * N)
     var c_device_ref = ctx.enqueue_create_buffer[type](M * N)
 
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(b_device, b_host)
 
     var a = NDBuffer[type, 2, DimList(M, K)](a_device.unsafe_ptr())
     var b = NDBuffer[type, 2, DimList(K, N)](b_device.unsafe_ptr())
@@ -60,7 +60,7 @@ fn test_cublas(ctx: DeviceContext) raises:
     with vendor_blas.Handle() as handle:
         vendor_blas.matmul(ctx, handle, c, a, b, c_row_major=True)
 
-    ctx.enqueue_copy_from_device(c_host, c_device)
+    ctx.enqueue_copy(c_host, c_device)
 
     alias BLOCK_DIM = 16
     alias gemm_naive = matmul_kernel_naive[type, type, type, BLOCK_DIM]
@@ -75,7 +75,7 @@ fn test_cublas(ctx: DeviceContext) raises:
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
 
-    ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
+    ctx.enqueue_copy(c_host_ref, c_device_ref)
 
     ctx.synchronize()
 

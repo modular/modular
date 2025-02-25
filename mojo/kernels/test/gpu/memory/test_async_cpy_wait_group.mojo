@@ -58,8 +58,8 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
         in_data[i] = i + 1
         out_data[i] = 0
 
-    ctx.enqueue_copy_to_device(in_data_device, in_data)
-    ctx.enqueue_copy_to_device(out_data_device, out_data)
+    ctx.enqueue_copy(in_data_device, in_data)
+    ctx.enqueue_copy(out_data_device, out_data)
 
     ctx.enqueue_function[copy_via_shared](
         in_data_device,
@@ -68,7 +68,7 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
         block_dim=(16),
     )
 
-    ctx.enqueue_copy_from_device(out_data, out_data_device)
+    ctx.enqueue_copy(out_data, out_data_device)
 
     ctx.synchronize()
 
@@ -148,7 +148,7 @@ fn test_copy_with_src_size(ctx: DeviceContext) raises:
     var a_device = ctx.enqueue_create_buffer[DType.float32](size)
     var b_device = ctx.enqueue_create_buffer[DType.float32](2 * size)
 
-    ctx.enqueue_copy_to_device(a_device, a_host)
+    ctx.enqueue_copy(a_device, a_host)
 
     alias kernel = copy_with_src_size
     alias src_size = 3 * sizeof[DType.float32]()
@@ -161,7 +161,7 @@ fn test_copy_with_src_size(ctx: DeviceContext) raises:
         block_dim=(1, 1, 1),
     )
 
-    ctx.enqueue_copy_from_device(b_host, b_device)
+    ctx.enqueue_copy(b_host, b_device)
 
     ctx.synchronize()
 
@@ -196,7 +196,7 @@ fn test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
     var a_device = ctx.enqueue_create_buffer[DType.bfloat16](size)
     var b_device = ctx.enqueue_create_buffer[DType.bfloat16](2 * size)
 
-    ctx.enqueue_copy_to_device(a_device, a_host)
+    ctx.enqueue_copy(a_device, a_host)
 
     alias kernel = copy_with_non_zero_fill[2 * size]
 
@@ -210,7 +210,7 @@ fn test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
         block_dim=(1, 1, 1),
     )
 
-    ctx.enqueue_copy_from_device(b_host, b_device)
+    ctx.enqueue_copy(b_host, b_device)
 
     ctx.synchronize()
 

@@ -23,7 +23,7 @@ fn test_kernel_with_list(ctx: DeviceContext) raises:
     var res_host = UnsafePointer[Float32].alloc(1)
     var res_device = ctx.enqueue_create_buffer[DType.float32](1)
     res_host[0] = 0
-    ctx.enqueue_copy_to_device(res_device, res_host)
+    ctx.enqueue_copy(res_device, res_host)
     # CHECK: call.uni
     # CHECK: malloc,
     # CHECK: (
@@ -37,7 +37,7 @@ fn test_kernel_with_list(ctx: DeviceContext) raises:
     ctx.enqueue_function[kernel_with_list, dump_asm=True](
         res_device, block_dim=(1), grid_dim=(1)
     )
-    ctx.enqueue_copy_from_device(res_host, res_device)
+    ctx.enqueue_copy(res_host, res_device)
     ctx.synchronize()
     # CHECK: 16.0
     print("Res=", res_host[0])

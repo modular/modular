@@ -186,8 +186,8 @@ fn check_stmatrix_gen[
     var c_device = ctx.enqueue_create_buffer[output_type](M * N)
     var c_device_ref = ctx.enqueue_create_buffer[output_type](M * N)
 
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(b_device, b_host)
 
     ctx.enqueue_function[test_stmatrix_gen[input_type, output_type]](
         c_device,
@@ -197,7 +197,7 @@ fn check_stmatrix_gen[
         block_dim=WARP_SIZE,
     )
 
-    ctx.enqueue_copy_from_device(c_host, c_device)
+    ctx.enqueue_copy(c_host, c_device)
 
     # Run naive matmul.
     alias BLOCK_DIM = 16
@@ -214,7 +214,7 @@ fn check_stmatrix_gen[
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
 
-    ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
+    ctx.enqueue_copy(c_host_ref, c_device_ref)
 
     ctx.synchronize()
 
@@ -261,8 +261,8 @@ fn check_stmatrix(
     var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
     var c_device_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
 
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(b_device, b_host)
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
@@ -282,7 +282,7 @@ fn check_stmatrix(
 
     ctx.synchronize()
 
-    ctx.enqueue_copy_from_device(c_host, c_device)
+    ctx.enqueue_copy(c_host, c_device)
 
     # Run naive matmul.
     alias BLOCK_DIM = 16
@@ -303,7 +303,7 @@ fn check_stmatrix(
     )
 
     ctx.synchronize()
-    ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
+    ctx.enqueue_copy(c_host_ref, c_device_ref)
 
     for i in range(M * N):
         var out_val = c_host[i]

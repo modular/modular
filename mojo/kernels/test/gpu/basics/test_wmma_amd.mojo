@@ -173,9 +173,9 @@ fn run_mma_fp32_fp32(
     var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
     var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
 
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_host)
-    ctx.enqueue_copy_to_device(c_device, c_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(b_device, b_host)
+    ctx.enqueue_copy(c_device, c_host)
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
@@ -193,7 +193,7 @@ fn run_mma_fp32_fp32(
         block_dim=WARP_PER_BLOCK * WARP_SIZE,
     )
 
-    ctx.enqueue_copy_from_device(c_host, c_device)
+    ctx.enqueue_copy(c_host, c_device)
 
     matmul_naive(a_host, b_host, c_host_ref, M, N, K)
 
@@ -252,9 +252,9 @@ fn run_mma_fp32_fp16(
     var b_device = ctx.enqueue_create_buffer[DType.float16](K * N)
     var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
 
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_host)
-    ctx.enqueue_copy_to_device(c_device, c_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(b_device, b_host)
+    ctx.enqueue_copy(c_device, c_host)
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
@@ -272,7 +272,7 @@ fn run_mma_fp32_fp16(
         block_dim=WARP_PER_BLOCK * WARP_SIZE,
     )
 
-    ctx.enqueue_copy_from_device(c_host, c_device)
+    ctx.enqueue_copy(c_host, c_device)
 
     matmul_naive(a_host, b_host, c_host_ref, M, N, K)
 
@@ -331,9 +331,9 @@ fn run_mma_fp32_bf16(
     var b_device = ctx.enqueue_create_buffer[DType.bfloat16](K * N)
     var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
 
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_host)
-    ctx.enqueue_copy_to_device(c_device, c_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(b_device, b_host)
+    ctx.enqueue_copy(c_device, c_host)
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
@@ -351,7 +351,7 @@ fn run_mma_fp32_bf16(
         block_dim=WARP_PER_BLOCK * WARP_SIZE,
     )
 
-    ctx.enqueue_copy_from_device(c_host, c_device)
+    ctx.enqueue_copy(c_host, c_device)
 
     matmul_naive(a_host, b_host, c_host_ref, M, N, K)
 

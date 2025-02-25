@@ -45,7 +45,7 @@ fn run_vec_add(ctx: DeviceContext) raises:
     var in_device = ctx.enqueue_create_buffer[DType.float32](length)
     var out_device = ctx.enqueue_create_buffer[DType.float32](length)
 
-    ctx.enqueue_copy_to_device(in_device, in_host)
+    ctx.enqueue_copy(in_device, in_host)
 
     var block_dim = 32
 
@@ -57,7 +57,7 @@ fn run_vec_add(ctx: DeviceContext) raises:
         block_dim=(block_dim),
     )
 
-    ctx.enqueue_copy_from_device(out_host, out_device)
+    ctx.enqueue_copy(out_host, out_device)
 
     ctx.synchronize()
 

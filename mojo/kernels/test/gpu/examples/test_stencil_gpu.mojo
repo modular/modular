@@ -86,8 +86,8 @@ fn test_stencil_avg_pool(ctx: DeviceContext) raises:
     )
 
     # Copy to device
-    ctx.enqueue_copy_to_device(d_input_buf, h_input.data)
-    ctx.enqueue_copy_to_device(d_output_buf, h_output.data)
+    ctx.enqueue_copy(d_input_buf, h_input.data)
+    ctx.enqueue_copy(d_output_buf, h_output.data)
 
     @parameter
     fn map_fn[
@@ -158,7 +158,7 @@ fn test_stencil_avg_pool(ctx: DeviceContext) raises:
     ](ctx, d_output.get_shape(), d_input.get_shape())
 
     # Copy results back
-    ctx.enqueue_copy_from_device(h_output.data, d_output_buf)
+    ctx.enqueue_copy(h_output.data, d_output_buf)
     ctx.synchronize()
 
     # Reference implementation on CPU
@@ -249,8 +249,8 @@ fn test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
     )
 
     # Copy to device
-    ctx.enqueue_copy_to_device(d_input_buf, h_input.data)
-    ctx.enqueue_copy_to_device(d_output_buf, h_output.data)
+    ctx.enqueue_copy(d_input_buf, h_input.data)
+    ctx.enqueue_copy(d_output_buf, h_output.data)
 
     @parameter
     fn map_fn[
@@ -323,7 +323,7 @@ fn test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
     ](ctx, d_output.get_shape(), d_input.get_shape())
 
     # Copy results back
-    ctx.enqueue_copy_from_device(h_output.data, d_output_buf)
+    ctx.enqueue_copy(h_output.data, d_output_buf)
     ctx.synchronize()
 
     # Reference implementation on CPU
@@ -413,8 +413,8 @@ fn test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
     )
 
     # Copy to device
-    ctx.enqueue_copy_to_device(d_input_buf, h_input.data)
-    ctx.enqueue_copy_to_device(d_output_buf, h_output.data)
+    ctx.enqueue_copy(d_input_buf, h_input.data)
+    ctx.enqueue_copy(d_output_buf, h_output.data)
 
     @parameter
     fn map_fn[
@@ -488,7 +488,7 @@ fn test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
     ](ctx, d_output.get_shape(), d_input.get_shape())
 
     # Copy results back
-    ctx.enqueue_copy_from_device(h_output.data, d_output_buf)
+    ctx.enqueue_copy(h_output.data, d_output_buf)
     ctx.synchronize()
 
     # Reference implementation on CPU
@@ -586,8 +586,8 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     )
 
     # Copy to device
-    ctx.enqueue_copy_to_device(d_input_buf, h_input.data)
-    ctx.enqueue_copy_to_device(d_output_buf, h_output.data)
+    ctx.enqueue_copy(d_input_buf, h_input.data)
+    ctx.enqueue_copy(d_output_buf, h_output.data)
 
     @parameter
     fn map_fn[
@@ -660,8 +660,8 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     ](ctx, d_output.get_shape(), d_input.get_shape())
 
     # Copy results back
-    ctx.enqueue_copy_from_device(h_output.data, d_output_buf)
-    # ctx.enqueue_copy_from_device(h_input.data, d_input_buf)
+    ctx.enqueue_copy(h_output.data, d_output_buf)
+    # ctx.enqueue_copy(h_input.data, d_input_buf)
     ctx.synchronize()
 
     # Reference implementation on CPU

@@ -92,8 +92,8 @@ fn test_conv_cudnn[
         output_dim_flattened
     )
 
-    ctx.enqueue_copy_to_device(input_dev, input_data_host)
-    ctx.enqueue_copy_to_device(filter_dev, filter_data_host)
+    ctx.enqueue_copy(input_dev, input_data_host)
+    ctx.enqueue_copy(filter_dev, filter_data_host)
 
     conv_gpu[
         4,
@@ -115,7 +115,7 @@ fn test_conv_cudnn[
         ctx,
     )
 
-    ctx.enqueue_copy_from_device(output_ref_host, output_ref_dev)
+    ctx.enqueue_copy(output_ref_host, output_ref_dev)
 
     conv_cudnn[
         input_dim,
@@ -140,7 +140,7 @@ fn test_conv_cudnn[
         ctx,
     )
 
-    ctx.enqueue_copy_from_device(output_data_host, output_dev)
+    ctx.enqueue_copy(output_data_host, output_dev)
 
     # verifying results
     for x in range(output_dim_flattened):
@@ -278,8 +278,8 @@ fn test_conv_gpu[
         conv_attr,
     ].run(output_cpu, input, filter, conv_shape)
 
-    ctx.enqueue_copy_to_device(input_dev, input_ptr)
-    ctx.enqueue_copy_to_device(filter_dev, filter_ptr)
+    ctx.enqueue_copy(input_dev, input_ptr)
+    ctx.enqueue_copy(filter_dev, filter_ptr)
 
     conv_gpu[4, 4, input_dim, filter_dim, output_dim, type, type, type](
         input_buf,
@@ -292,7 +292,7 @@ fn test_conv_gpu[
         ctx,
     )
 
-    ctx.enqueue_copy_from_device(output_gpu_ptr, output_dev)
+    ctx.enqueue_copy(output_gpu_ptr, output_dev)
 
     # verifying results
     for x in range(output_dim_flattened):

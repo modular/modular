@@ -77,14 +77,14 @@ def main():
         host_data[i] = 1.0
 
     # Copy initial data to source buffer
-    ctx2.enqueue_copy_to_device(src_buf, host_data)
+    ctx2.enqueue_copy(src_buf, host_data)
 
     # Launch the P2P copy kernel
     launch_p2p_copy_kernel(ctx1, dst_buf, src_buf, length)
 
     # Verify the data was copied correctly
     var host_verify = UnsafePointer[Float32].alloc(length)
-    ctx1.enqueue_copy_from_device(host_verify, dst_buf)
+    ctx1.enqueue_copy(host_verify, dst_buf)
     ctx1.synchronize()
 
     for i in range(length):

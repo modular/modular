@@ -121,7 +121,7 @@ def execute_flash_attention[
         IndexList[1](batch_size),
         ctx=ctx,
     )
-    ctx.enqueue_copy_to_device(valid_length_device.buffer, valid_length.data)
+    ctx.enqueue_copy(valid_length_device.buffer, valid_length.data)
 
     q_device = DeviceNDBuffer[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
@@ -131,7 +131,7 @@ def execute_flash_attention[
         ),
         ctx=ctx,
     )
-    ctx.enqueue_copy_to_device(q_device.buffer, q_host.tensor.data)
+    ctx.enqueue_copy(q_device.buffer, q_host.tensor.data)
 
     # initialize mask tensor
     mask_host = HostNDBuffer[
@@ -198,7 +198,7 @@ def execute_flash_attention[
         ),
         ctx=ctx,
     )
-    ctx.enqueue_copy_to_device(mask_device.buffer, mask_host.tensor.data)
+    ctx.enqueue_copy(mask_device.buffer, mask_host.tensor.data)
 
     mask_device_mod = DeviceNDBuffer[
         DType.float32, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
@@ -211,9 +211,7 @@ def execute_flash_attention[
         ),
         ctx=ctx,
     )
-    ctx.enqueue_copy_to_device(
-        mask_device_mod.buffer, mask_host_mod.tensor.data
-    )
+    ctx.enqueue_copy(mask_device_mod.buffer, mask_host_mod.tensor.data)
 
     # initialize scale tensor
     scale_host = HostNDBuffer[DType.float32, 1, DimList(1)](IndexList[1](1))
@@ -223,7 +221,7 @@ def execute_flash_attention[
         IndexList[1](1),
         ctx=ctx,
     )
-    ctx.enqueue_copy_to_device(scale_device.buffer, scale_host.tensor.data)
+    ctx.enqueue_copy(scale_device.buffer, scale_host.tensor.data)
 
     # initialize reference output
     ref_output_host = HostNDBuffer[
@@ -272,7 +270,7 @@ def execute_flash_attention[
         max_seq_len_in_batch = max(max_seq_len_in_batch, Int(valid_length[i]))
     var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
 
-    ctx.enqueue_copy_to_device(cache_lengths_dev, cache_valid_length.data)
+    ctx.enqueue_copy(cache_lengths_dev, cache_valid_length.data)
     var cache_lengths = NDBuffer[DType.uint32, 1](
         cache_lengths_dev.unsafe_ptr(), Index(batch_size)
     )
@@ -303,7 +301,7 @@ def execute_flash_attention[
         ),
         ctx=ctx,
     )
-    ctx.enqueue_copy_to_device(k_block_device.buffer, k_block_host.tensor.data)
+    ctx.enqueue_copy(k_block_device.buffer, k_block_host.tensor.data)
 
     k_cache_device = ContiguousKVCache[type, kv_params](
         k_block_device.tensor,
@@ -340,7 +338,7 @@ def execute_flash_attention[
         ),
         ctx=ctx,
     )
-    ctx.enqueue_copy_to_device(v_block_device.buffer, v_block_host.tensor.data)
+    ctx.enqueue_copy(v_block_device.buffer, v_block_host.tensor.data)
 
     v_cache_device = ContiguousKVCache[type, kv_params](
         v_block_device.tensor,
@@ -380,12 +378,8 @@ def execute_flash_attention[
         ctx,
     )
 
-    ctx.enqueue_copy_from_device(
-        test_output_host.tensor.data, test_output_device.buffer
-    )
-    ctx.enqueue_copy_from_device(
-        ref_output_host.tensor.data, ref_output_device.buffer
-    )
+    ctx.enqueue_copy(test_output_host.tensor.data, test_output_device.buffer)
+    ctx.enqueue_copy(ref_output_host.tensor.data, ref_output_device.buffer)
     ctx.synchronize()
 
     var ref_out = ref_output_host.tensor

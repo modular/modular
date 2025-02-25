@@ -60,8 +60,8 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
     var in_device = ctx.enqueue_create_buffer[DType.float32](16)
     var out_device = ctx.enqueue_create_buffer[DType.float32](16)
 
-    ctx.enqueue_copy_to_device(in_device, in_data)
-    ctx.enqueue_copy_to_device(out_device, out_data)
+    ctx.enqueue_copy(in_device, in_data)
+    ctx.enqueue_copy(out_device, out_data)
 
     ctx.enqueue_function[copy_via_shared](
         in_device,
@@ -70,7 +70,7 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
         block_dim=(16,),
     )
 
-    ctx.enqueue_copy_from_device(out_data, out_device)
+    ctx.enqueue_copy(out_data, out_device)
 
     ctx.synchronize()
 

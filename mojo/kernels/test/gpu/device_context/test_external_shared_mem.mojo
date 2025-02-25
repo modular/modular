@@ -30,7 +30,7 @@ fn test_external_shared_mem(ctx: DeviceContext) raises:
     for i in range(16):
         res_host_ptr[i] = 0
 
-    ctx.enqueue_copy_to_device(res_device, res_host_ptr)
+    ctx.enqueue_copy(res_device, res_host_ptr)
 
     ctx.enqueue_function[dynamic_smem_kernel](
         res_device,
@@ -40,7 +40,7 @@ fn test_external_shared_mem(ctx: DeviceContext) raises:
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(64 * 1024),
     )
 
-    ctx.enqueue_copy_from_device(res_host_ptr, res_device)
+    ctx.enqueue_copy(res_host_ptr, res_device)
 
     ctx.synchronize()
 

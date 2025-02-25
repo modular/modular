@@ -79,7 +79,7 @@ def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext):
         UInt32(0x76543210), out_device, grid_dim=1, block_dim=1
     )
 
-    ctx.enqueue_copy_from_device(out_host.data, out_device)
+    ctx.enqueue_copy(out_host.data, out_device)
     for i in range(4):
         assert_equal(out_host[2 * i + 0], i + 0)
         assert_equal(out_host[2 * i + 1], i + 4)

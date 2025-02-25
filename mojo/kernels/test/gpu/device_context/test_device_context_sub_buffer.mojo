@@ -39,7 +39,7 @@ fn test(ctx: DeviceContext) raises:
 
     var out_device = ctx.enqueue_create_buffer[DType.float32](length)
 
-    ctx.enqueue_copy_to_device(in_device, in_host)
+    ctx.enqueue_copy(in_device, in_host)
 
     var block_dim = 32
     var supplement = 5
@@ -57,7 +57,7 @@ fn test(ctx: DeviceContext) raises:
     # Make sure our main input device tensor doesn't disappear
     _ = in_device
 
-    ctx.enqueue_copy_from_device(out_host, out_device)
+    ctx.enqueue_copy(out_host, out_device)
 
     ctx.synchronize()
 

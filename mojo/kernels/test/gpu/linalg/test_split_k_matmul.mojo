@@ -64,7 +64,7 @@ fn cublas_matrix_list[
                     == 1 else host.tensor[p * part + i, j]
                 )
         # copy to device buffer
-        ctx.enqueue_copy_to_device(dev_part.buffer, host_part.data)
+        ctx.enqueue_copy(dev_part.buffer, host_part.data)
         a_part_ptr.free()
         dev_list.append(dev_part)
 
@@ -162,8 +162,8 @@ fn test_split_k_multistage_gemm[
         config,
     ]
 
-    ctx.enqueue_copy_to_device(a_device, a_host.tensor.data)
-    ctx.enqueue_copy_to_device(b_device, b_host.tensor.data)
+    ctx.enqueue_copy(a_device, a_host.tensor.data)
+    ctx.enqueue_copy(b_device, b_host.tensor.data)
 
     print("copied to device")
 
@@ -180,7 +180,7 @@ fn test_split_k_multistage_gemm[
         ),
     )
 
-    ctx.enqueue_copy_from_device(c_host.tensor.data, c_device)
+    ctx.enqueue_copy(c_host.tensor.data, c_device)
 
     print("copied from device")
 
@@ -197,7 +197,7 @@ fn test_split_k_multistage_gemm[
 
     print("cublas'd")
 
-    ctx.enqueue_copy_from_device(c_host_ref.tensor.data, c_dev_list[0].buffer)
+    ctx.enqueue_copy(c_host_ref.tensor.data, c_dev_list[0].buffer)
 
     print("copy from")
 

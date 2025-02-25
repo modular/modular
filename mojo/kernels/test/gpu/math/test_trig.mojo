@@ -32,7 +32,7 @@ fn run_func[
 
     ctx.enqueue_function[kernel](out, val, grid_dim=1, block_dim=1)
     var out_h = UnsafePointer[Scalar[type]].alloc(1)
-    ctx.enqueue_copy_from_device(out_h, out)
+    ctx.enqueue_copy(out_h, out)
     ctx.synchronize()
     assert_almost_equal(
         out_h[0],

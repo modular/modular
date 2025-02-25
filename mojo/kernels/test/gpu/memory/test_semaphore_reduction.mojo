@@ -76,8 +76,8 @@ fn run_vector_reduction[
     var c_buf = NDBuffer[type, 1](c_device.unsafe_ptr(), Index(N))
 
     ctx.enqueue_memset(lock_dev, 0)
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(c_device, c_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(c_device, c_host)
 
     ctx.enqueue_function[semaphore_vector_reduce[type, N, num_parts]](
         c_buf.data,
@@ -87,7 +87,7 @@ fn run_vector_reduction[
         block_dim=N,
     )
 
-    ctx.enqueue_copy_from_device(c_host, c_device)
+    ctx.enqueue_copy(c_host, c_device)
     ctx.synchronize()
 
     for i in range(N):
@@ -165,8 +165,8 @@ fn run_matrix_reduction[
     var c_buf = NDBuffer[type, 1](c_device.unsafe_ptr(), Index(M * N))
 
     ctx.enqueue_memset(lock_dev, 0)
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(c_device, c_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(c_device, c_host)
 
     var block_size = 1024
 
@@ -178,7 +178,7 @@ fn run_matrix_reduction[
         block_dim=block_size,
     )
 
-    ctx.enqueue_copy_from_device(c_host, c_device)
+    ctx.enqueue_copy(c_host, c_device)
     ctx.synchronize()
 
     for r in range(M):

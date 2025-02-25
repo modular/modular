@@ -54,7 +54,7 @@ def trait_repro(ctx: DeviceContext):
     var device_nd = device_buf.tensor
     var thing = ImplT(device_nd)
     trait_repro_sub(thing, ctx, size)
-    ctx.enqueue_copy_from_device(host_buf.tensor.data, device_buf.buffer)
+    ctx.enqueue_copy(host_buf.tensor.data, device_buf.buffer)
     ctx.synchronize()
 
     for i in range(size):

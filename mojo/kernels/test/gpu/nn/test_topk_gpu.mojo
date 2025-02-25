@@ -96,7 +96,7 @@ fn test_case_batched[
         DimList(batch_size, num_blocks_per_input_ * K), ctx=ctx
     )
 
-    ctx.enqueue_copy_to_device(device_in.buffer, in_buffer.tensor.data)
+    ctx.enqueue_copy(device_in.buffer, in_buffer.tensor.data)
     ctx.synchronize()
 
     @parameter
@@ -116,12 +116,8 @@ fn test_case_batched[
                 block_size=block_size,
                 num_blocks_per_input=num_blocks_per_input,
             )
-            ctx.enqueue_copy_from_device(
-                topk_vals.tensor.data, device_out_vals.buffer
-            )
-            ctx.enqueue_copy_from_device(
-                topk_idxs.tensor.data, device_out_idxs.buffer
-            )
+            ctx.enqueue_copy(topk_vals.tensor.data, device_out_vals.buffer)
+            ctx.enqueue_copy(topk_idxs.tensor.data, device_out_idxs.buffer)
             ctx.synchronize()
 
         alias msg = "tk-smpl-gpu" if sampling else "tk-gpu"
@@ -140,8 +136,8 @@ fn test_case_batched[
     )
 
     # Copy results back to host
-    ctx.enqueue_copy_from_device(topk_vals.tensor.data, device_out_vals.buffer)
-    ctx.enqueue_copy_from_device(topk_idxs.tensor.data, device_out_idxs.buffer)
+    ctx.enqueue_copy(topk_vals.tensor.data, device_out_vals.buffer)
+    ctx.enqueue_copy(topk_idxs.tensor.data, device_out_idxs.buffer)
     ctx.synchronize()
 
     var _msg1: String = "Top-K values: "
@@ -254,7 +250,7 @@ fn test_case_multi_rank[
         out_idxs_shape, ctx=ctx
     )
 
-    ctx.enqueue_copy_to_device(device_in.buffer, in_buffer.tensor.data)
+    ctx.enqueue_copy(device_in.buffer, in_buffer.tensor.data)
 
     topk_gpu[sampling=sampling, largest=largest](
         ctx,
@@ -267,8 +263,8 @@ fn test_case_multi_rank[
     )
 
     # Copy results back to host
-    ctx.enqueue_copy_from_device(topk_vals.tensor.data, device_out_vals.buffer)
-    ctx.enqueue_copy_from_device(topk_idxs.tensor.data, device_out_idxs.buffer)
+    ctx.enqueue_copy(topk_vals.tensor.data, device_out_vals.buffer)
+    ctx.enqueue_copy(topk_idxs.tensor.data, device_out_idxs.buffer)
     ctx.synchronize()
 
     # ASSERT equality with CPU topk kernel reference

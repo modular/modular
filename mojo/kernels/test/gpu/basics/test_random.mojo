@@ -34,7 +34,7 @@ def run_elementwise[type: DType](ctx: DeviceContext):
     var in_device = ctx.enqueue_create_buffer[type](flattened_length)
     var out_device = ctx.enqueue_create_buffer[type](flattened_length)
 
-    ctx.enqueue_copy_to_device(in_device, in_host.data)
+    ctx.enqueue_copy(in_device, in_host.data)
 
     var in_buffer = NDBuffer[type, 1](in_device.unsafe_ptr(), Index(length))
     var out_buffer = NDBuffer[type, 1](out_device.unsafe_ptr(), Index(length))
@@ -59,7 +59,7 @@ def run_elementwise[type: DType](ctx: DeviceContext):
 
     elementwise[func, 4, target="gpu"](Index(length), ctx)
 
-    ctx.enqueue_copy_from_device(out_host.data, out_device)
+    ctx.enqueue_copy(out_host.data, out_device)
 
     ctx.synchronize()
 

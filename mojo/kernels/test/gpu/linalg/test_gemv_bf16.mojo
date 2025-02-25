@@ -53,8 +53,8 @@ fn run_matvec[
     var b_device_n = ctx.enqueue_create_buffer[DType.float32](K * N)
     var c_device_n = ctx.enqueue_create_buffer[DType.float32](M * N)
 
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(b_device, b_host)
 
     alias WARPS_PER_BLOCK = 32
     alias kernel = gemv_kernel[
@@ -88,11 +88,11 @@ fn run_matvec[
     print(flops * 1e-9 / sectime, " GFLOPS")
     print()
 
-    ctx.enqueue_copy_from_device(c_host, c_device)
+    ctx.enqueue_copy(c_host, c_device)
 
     # running naive
-    ctx.enqueue_copy_to_device(a_device_n, a_host_n)
-    ctx.enqueue_copy_to_device(b_device_n, b_host_n)
+    ctx.enqueue_copy(a_device_n, a_host_n)
+    ctx.enqueue_copy(b_device_n, b_host_n)
 
     alias BLOCK_DIM = 16
 
@@ -124,7 +124,7 @@ fn run_matvec[
     print(flops * 1e-9 / sectime2, " GFLOPS")
     print()
 
-    ctx.enqueue_copy_from_device(c_host_n, c_device_n)
+    ctx.enqueue_copy(c_host_n, c_device_n)
     ctx.synchronize()
 
     # Due to varied pattern of FP arith the accumulated sum isn't exactly

@@ -73,9 +73,9 @@ fn test_batched_matmul(ctx: DeviceContext) raises:
         dst_device.unsafe_ptr(), Index(b, m, n)
     )
 
-    ctx.enqueue_copy_to_device(lhs_device, lhs_host.data)
-    ctx.enqueue_copy_to_device(rhs_device, rhs_host.data)
-    ctx.enqueue_copy_to_device(dst_device, dst_host.data)
+    ctx.enqueue_copy(lhs_device, lhs_host.data)
+    ctx.enqueue_copy(rhs_device, rhs_host.data)
+    ctx.enqueue_copy(dst_device, dst_host.data)
 
     @always_inline
     @__copy_capture(dst_buffer)
@@ -94,7 +94,7 @@ fn test_batched_matmul(ctx: DeviceContext) raises:
         elementwise_epilogue_fn=elementwise_epilogue_empty_fn,
     ](dst_buffer, lhs_buffer, rhs_buffer, ctx)
 
-    ctx.enqueue_copy_from_device(dst_host.data, dst_device)
+    ctx.enqueue_copy(dst_host.data, dst_device)
 
     ctx.synchronize()
 

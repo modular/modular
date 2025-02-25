@@ -181,9 +181,9 @@ def test_load_and_mma_and_multiply_operands[
     arange(a_host)
     arange(b_host)
     arange(c_host)
-    ctx.enqueue_copy_to_device(a_device, a_host_ptr)
-    ctx.enqueue_copy_to_device(b_device, b_host_ptr)
-    ctx.enqueue_copy_to_device(c_device, c_host_ptr)
+    ctx.enqueue_copy(a_device, a_host_ptr)
+    ctx.enqueue_copy(b_device, b_host_ptr)
+    ctx.enqueue_copy(c_device, c_host_ptr)
 
     ctx.enqueue_function[test_load_a[dst_dtype, dtype, a_dev.layout, shape]](
         a_dev, a_lane_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
@@ -220,10 +220,10 @@ def test_load_and_mma_and_multiply_operands[
         block_dim=(WARP_SIZE),
     )
 
-    ctx.enqueue_copy_from_device(a_lane_host_ptr, a_lane_device)
-    ctx.enqueue_copy_from_device(b_lane_host_ptr, b_lane_device)
-    ctx.enqueue_copy_from_device(c_lane_host_ptr, c_lane_device)
-    ctx.enqueue_copy_from_device(d_host_ptr, d_device)
+    ctx.enqueue_copy(a_lane_host_ptr, a_lane_device)
+    ctx.enqueue_copy(b_lane_host_ptr, b_lane_device)
+    ctx.enqueue_copy(c_lane_host_ptr, c_lane_device)
+    ctx.enqueue_copy(d_host_ptr, d_device)
     ctx.synchronize()
 
     print("== test_load_a")
@@ -238,7 +238,7 @@ def test_load_and_mma_and_multiply_operands[
     print("== test_load_d")
     print(d_host)
 
-    ctx.enqueue_copy_from_device(d_host_ptr, d_device_mma)
+    ctx.enqueue_copy(d_host_ptr, d_device_mma)
     ctx.synchronize()
 
     print("== test_mma")

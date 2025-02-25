@@ -106,11 +106,11 @@ def test_hopper_matmul0_tma_wgmma[
 
     # Move operands to the Device
 
-    ctx.enqueue_copy_to_device(a_device.buffer, a_host.tensor.data)
-    ctx.enqueue_copy_to_device(b_device.buffer, b_host.tensor.data)
+    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
+    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
 
-    ctx.enqueue_copy_to_device(c_device.buffer, c_host.tensor.data)
-    ctx.enqueue_copy_to_device(c_device_ref.buffer, c_host_ref.tensor.data)
+    ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
+    ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
 
     hopper_matmul_tma_wgmma[transpose_b=transpose_b, wgmma_n=wgmma_n](
         c_device.tensor,
@@ -137,8 +137,8 @@ def test_hopper_matmul0_tma_wgmma[
 
     ctx.synchronize()
 
-    ctx.enqueue_copy_from_device(c_host.tensor.data, c_device.buffer)
-    ctx.enqueue_copy_from_device(c_host_ref.tensor.data, c_device_ref.buffer)
+    ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
+    ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
     ctx.synchronize()
     alias rtol = 1e-2
     assert_almost_equal(

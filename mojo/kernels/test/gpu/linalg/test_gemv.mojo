@@ -50,8 +50,8 @@ def run_matvec[
     var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
     var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
 
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(b_device, b_host)
 
     alias WARPS_PER_BLOCK = 32
 
@@ -115,11 +115,11 @@ def run_matvec[
     print(flops * 1e-9 / sectime, " GFLOPS")
     print()
 
-    ctx.enqueue_copy_from_device(c_host, c_device)
+    ctx.enqueue_copy(c_host, c_device)
 
     # running naive
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(b_device, b_host)
 
     alias BLOCK_DIM = 16
 
@@ -152,7 +152,7 @@ def run_matvec[
     print(flops * 1e-9 / sectime2, " GFLOPS")
     print()
 
-    ctx.enqueue_copy_from_device(c_host_naive, c_device)
+    ctx.enqueue_copy(c_host_naive, c_device)
     ctx.synchronize()
 
     # Due to varied pattern of FP32 arith the accumulated sum isn't exactly
@@ -220,8 +220,8 @@ fn test_gevm_with_epilogue_fn[
     var c_device_nd = NDBuffer[DType.float32, 2](
         c_device.unsafe_ptr(), Index(M, N), Index(N * c_stride, c_stride)
     )
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(b_device, b_host)
 
     @parameter
     @always_inline
@@ -279,7 +279,7 @@ fn test_gevm_with_epilogue_fn[
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
         )
 
-    ctx.enqueue_copy_to_device(c_device, c_host)
+    ctx.enqueue_copy(c_device, c_host)
 
     var nstime = 0.0
     var kernelType = ""
@@ -301,11 +301,11 @@ fn test_gevm_with_epilogue_fn[
     print(flops * 1e-9 / sectime, " GFLOPS")
     print()
 
-    ctx.enqueue_copy_from_device(c_host, c_device)
+    ctx.enqueue_copy(c_host, c_device)
 
     # running naive
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(b_device, b_host)
 
     alias BLOCK_DIM = 16
 
@@ -331,7 +331,7 @@ fn test_gevm_with_epilogue_fn[
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
 
-    ctx.enqueue_copy_to_device(c_device, c_host_naive)
+    ctx.enqueue_copy(c_device, c_host_naive)
 
     nstime = ctx.execution_time[run_func_naive](iterations)
     var sectime2 = ((nstime / iterations) / 1000000000)
@@ -340,7 +340,7 @@ fn test_gevm_with_epilogue_fn[
     print(flops * 1e-9 / sectime2, " GFLOPS")
     print()
 
-    ctx.enqueue_copy_from_device(c_host_naive, c_device)
+    ctx.enqueue_copy(c_host_naive, c_device)
 
     # Due to varied pattern of FP32 arith the accumulated sum isn't exactly
     # accurate. Hence relative tolerance needs to be checked.

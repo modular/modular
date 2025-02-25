@@ -59,13 +59,13 @@ def test_constant_mem(ctx: DeviceContext):
     for i in range(16):
         res_host_ptr[i] = 0
 
-    ctx.enqueue_copy_to_device(res_device, res_host_ptr)
+    ctx.enqueue_copy(res_device, res_host_ptr)
 
     ctx.enqueue_function[static_constant_kernel[16]](
         res_device, grid_dim=1, block_dim=16
     )
 
-    ctx.enqueue_copy_from_device(res_host_ptr, res_device)
+    ctx.enqueue_copy(res_host_ptr, res_device)
 
     ctx.synchronize()
 
@@ -105,13 +105,13 @@ def test_constant_mem_via_func(ctx: DeviceContext):
     for i in range(16):
         res_host_ptr[i] = 0
 
-    ctx.enqueue_copy_to_device(res_device, res_host_ptr)
+    ctx.enqueue_copy(res_device, res_host_ptr)
 
     ctx.enqueue_function[static_constant_kernel[_fill_impl[20]]](
         res_device, grid_dim=1, block_dim=16
     )
 
-    ctx.enqueue_copy_from_device(res_host_ptr, res_device)
+    ctx.enqueue_copy(res_host_ptr, res_device)
 
     for i in range(16):
         assert_equal(res_host_ptr[i], i)
@@ -143,7 +143,7 @@ def test_external_constant_mem(ctx: DeviceContext):
     for i in range(16):
         res_host_ptr[i] = 0
 
-    ctx.enqueue_copy_to_device(res_device, res_host_ptr)
+    ctx.enqueue_copy(res_device, res_host_ptr)
 
     ctx.enqueue_function[static_constant_kernel](
         res_device,
@@ -158,7 +158,7 @@ def test_external_constant_mem(ctx: DeviceContext):
         ),
     )
 
-    ctx.enqueue_copy_from_device(res_host_ptr, res_device)
+    ctx.enqueue_copy(res_host_ptr, res_device)
 
     _ = constant_memory^
 

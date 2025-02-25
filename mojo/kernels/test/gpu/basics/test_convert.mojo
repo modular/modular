@@ -79,12 +79,12 @@ fn test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
     for i in range(size):
         host_ptr[i] = 0
 
-    ctx.enqueue_copy_to_device(device_buf, host_ptr)
+    ctx.enqueue_copy(device_buf, host_ptr)
 
     ctx.enqueue_function[convert_kernel[src_type, dst_type, size]](
         device_buf, grid_dim=(1), block_dim=(1)
     )
-    ctx.enqueue_copy_from_device(host_ptr, device_buf)
+    ctx.enqueue_copy(host_ptr, device_buf)
 
     ctx.synchronize()
 

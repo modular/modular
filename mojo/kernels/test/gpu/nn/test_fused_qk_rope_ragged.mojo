@@ -34,7 +34,7 @@ def _init_device_ndbuffer_from_goldens[
     device_tensor = DeviceNDBuffer[
         host_tensor.type, host_tensor.rank, shape = host_tensor.shape
     ](ctx=ctx)
-    ctx.copy_to_device_sync(device_tensor.buffer, host_tensor.tensor.data)
+    ctx.copy(device_tensor.buffer, host_tensor.tensor.data)
 
     # Ensure the host buffer outlives the copy.
     _ = host_tensor^
@@ -273,17 +273,17 @@ def execute_fused_qk_rope_ragged(
         output=mixed_ce_output_device.tensor,
         context=ctx,
     )
-    ctx.enqueue_copy_from_device(
+    ctx.enqueue_copy(
         mixed_ce_output_host.tensor.data, mixed_ce_output_device.buffer
     )
-    ctx.enqueue_copy_from_device(
+    ctx.enqueue_copy(
         true_ce_output_host.tensor.data, true_ce_output_device.buffer
     )
-    ctx.enqueue_copy_from_device(
+    ctx.enqueue_copy(
         true_ce_kv_block_paged_host.tensor.data,
         true_ce_kv_block_paged_device.buffer,
     )
-    ctx.enqueue_copy_from_device(
+    ctx.enqueue_copy(
         mixed_ce_kv_block_paged_host.tensor.data,
         mixed_ce_kv_block_paged_device.buffer,
     )

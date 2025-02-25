@@ -140,8 +140,8 @@ fn run_stencil2d[smem: Bool](ctx: DeviceContext) raises:
     var a_device = ctx.enqueue_create_buffer[DType.float32](m)
     var b_device = ctx.enqueue_create_buffer[DType.float32](m)
 
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(b_device, b_host)
 
     alias func_select = stencil2d_smem if smem == True else stencil2d
 
@@ -168,7 +168,7 @@ fn run_stencil2d[smem: Bool](ctx: DeviceContext) raises:
         b_device = a_device
         a_device = tmp_ptr
 
-    ctx.enqueue_copy_from_device(b_host, b_device)
+    ctx.enqueue_copy(b_host, b_device)
     ctx.synchronize()
 
     # CHECK: 37729.0 ,52628.0 ,57021.0 ,60037.0 ,58925.0 ,39597.0 ,

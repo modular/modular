@@ -66,9 +66,7 @@ def execute_fused_qkv_matmul[
     hidden_state_device = DeviceNDBuffer[
         type, 3, DimList(Dim(), Dim(), hidden_size)
     ](IndexList[3](batch_size, prompt_len, hidden_size), ctx=ctx)
-    ctx.enqueue_copy_to_device(
-        hidden_state_device.buffer, hidden_state_host.tensor.data
-    )
+    ctx.enqueue_copy(hidden_state_device.buffer, hidden_state_host.tensor.data)
     hidden_state_device_2d = NDBuffer[type, 2, DimList(Dim(), hidden_size)](
         hidden_state_device.buffer.unsafe_ptr(),
         IndexList[2](batch_size * prompt_len, hidden_size),
@@ -90,7 +88,7 @@ def execute_fused_qkv_matmul[
         IndexList[2](fused_hidden_size, hidden_size),
         ctx=ctx,
     )
-    ctx.enqueue_copy_to_device(weight_device.buffer, weight_host.tensor.data)
+    ctx.enqueue_copy(weight_device.buffer, weight_host.tensor.data)
 
     # initialize reference output
     ref_output_host = HostNDBuffer[type, 2, DimList(Dim(), fused_hidden_size)](
@@ -142,7 +140,7 @@ def execute_fused_qkv_matmul[
     var valid_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](
         max_batch_size
     )
-    ctx.enqueue_copy_to_device(valid_lengths_dev, valid_lengths_host_ptr)
+    ctx.enqueue_copy(valid_lengths_dev, valid_lengths_host_ptr)
     var valid_lengths_host = NDBuffer[DType.uint32, 1](
         valid_lengths_host_ptr, Index(batch_size)
     )
@@ -208,18 +206,10 @@ def execute_fused_qkv_matmul[
         ctx,
     )
 
-    ctx.enqueue_copy_from_device(
-        k_block_host.tensor.data, k_block_device.buffer
-    )
-    ctx.enqueue_copy_from_device(
-        v_block_host.tensor.data, v_block_device.buffer
-    )
-    ctx.enqueue_copy_from_device(
-        test_output_host.tensor.data, test_output_device.buffer
-    )
-    ctx.enqueue_copy_from_device(
-        ref_output_host.tensor.data, ref_output_device.buffer
-    )
+    ctx.enqueue_copy(k_block_host.tensor.data, k_block_device.buffer)
+    ctx.enqueue_copy(v_block_host.tensor.data, v_block_device.buffer)
+    ctx.enqueue_copy(test_output_host.tensor.data, test_output_device.buffer)
+    ctx.enqueue_copy(ref_output_host.tensor.data, ref_output_device.buffer)
     ctx.synchronize()
 
     ref_out = ref_output_host.tensor

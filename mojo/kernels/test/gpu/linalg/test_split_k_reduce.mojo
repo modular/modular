@@ -120,8 +120,8 @@ def test_split_k_reduce_rank3[
     var c_device = ctx.enqueue_create_buffer[c_type](M * N)
     var epilogue_data_device = ctx.enqueue_create_buffer[c_type](M * N)
 
-    ctx.enqueue_copy_to_device(work_space_device, work_space_host)
-    ctx.enqueue_copy_to_device(epilogue_data_device, epilogue_data_host)
+    ctx.enqueue_copy(work_space_device, work_space_host)
+    ctx.enqueue_copy(epilogue_data_device, epilogue_data_host)
 
     var c = NDBuffer[c_type, 2](c_device.unsafe_ptr(), Index(M, N))
     var work_space = NDBuffer[work_space_type, 3](
@@ -144,7 +144,7 @@ def test_split_k_reduce_rank3[
 
     split_k_reduce[elementwise_lambda_fn=epilogue_fn](c, work_space, ctx)
 
-    ctx.enqueue_copy_from_device(c_host, c_device)
+    ctx.enqueue_copy(c_host, c_device)
 
     alias rtol = 1e-4 if c_type == DType.float32 else 1e-2
     for i in range(M * N):

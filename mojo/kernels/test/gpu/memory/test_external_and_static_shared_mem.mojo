@@ -38,7 +38,7 @@ def test_external_shared_mem(ctx: DeviceContext):
     for i in range(16):
         res_host_ptr[i] = 0
 
-    ctx.enqueue_copy_to_device(res_device, res_host_ptr)
+    ctx.enqueue_copy(res_device, res_host_ptr)
 
     ctx.enqueue_function[dynamic_smem_kernel, dump_llvm=True](
         res_device,
@@ -48,7 +48,7 @@ def test_external_shared_mem(ctx: DeviceContext):
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(24960),
     )
 
-    ctx.enqueue_copy_from_device(res_host_ptr, res_device)
+    ctx.enqueue_copy(res_host_ptr, res_device)
 
     for i in range(16):
         assert_equal(res_host_ptr[i], 2 * i)

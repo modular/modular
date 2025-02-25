@@ -126,10 +126,10 @@ fn test[
     var output_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
 
     # Copy from host to device
-    ctx.enqueue_copy_to_device(q_device_ptr, q_ptr)
-    ctx.enqueue_copy_to_device(k_device_ptr, k_ptr)
-    ctx.enqueue_copy_to_device(v_device_ptr, v_ptr)
-    ctx.enqueue_copy_to_device(mask_device_ptr, mask_ptr)
+    ctx.enqueue_copy(q_device_ptr, q_ptr)
+    ctx.enqueue_copy(k_device_ptr, k_ptr)
+    ctx.enqueue_copy(v_device_ptr, v_ptr)
+    ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
     # Contruct device buffers.
     var q_device = NDBuffer[
@@ -192,10 +192,10 @@ fn test[
 
     ctx.synchronize()
 
-    ctx.enqueue_copy_from_device(flash_output_ptr, output_device_ptr)
+    ctx.enqueue_copy(flash_output_ptr, output_device_ptr)
 
     var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
-    ctx.enqueue_copy_to_device(output_ref_device_ptr, output_ptr)
+    ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
     var output_device_ref = NDBuffer[
         qkv_type, 4, DimList(Dim(), Dim(), num_heads, depth)
@@ -217,7 +217,7 @@ fn test[
     )
 
     ctx.synchronize()
-    ctx.enqueue_copy_from_device(output_ptr, output_ref_device_ptr)
+    ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
     _ = output_ref_device_ptr
 
     var rtol = 1e-2

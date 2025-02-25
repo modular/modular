@@ -63,7 +63,7 @@ fn fused_reduce_inner_test[
         res_device1.unsafe_ptr(), out_shape
     )
 
-    ctx.enqueue_copy_to_device(vec_device, vec_host)
+    ctx.enqueue_copy(vec_device, vec_host)
 
     @__copy_capture(input_buf_device)
     @parameter
@@ -95,8 +95,8 @@ fn fused_reduce_inner_test[
         shape, axis, init, ctx
     )
 
-    ctx.enqueue_copy_from_device(res_host0, res_device0)
-    ctx.enqueue_copy_from_device(res_host1, res_device1)
+    ctx.enqueue_copy(res_host0, res_device0)
+    ctx.enqueue_copy(res_host1, res_device1)
     ctx.synchronize()
 
     for i in range(out_shape.flattened_length()):
@@ -152,7 +152,7 @@ fn reduce_inner_test[
         res_device.unsafe_ptr(), out_shape
     )
 
-    ctx.enqueue_copy_to_device(vec_device, vec_host)
+    ctx.enqueue_copy(vec_device, vec_host)
 
     @always_inline
     @parameter
@@ -191,7 +191,7 @@ fn reduce_inner_test[
     ](shape, axis, init, ctx)
 
     ctx.synchronize()
-    ctx.enqueue_copy_from_device(res_host, res_device)
+    ctx.enqueue_copy(res_host, res_device)
 
     for i in range(out_shape.flattened_length()):
         assert_equal(String(res_host[i]), String(expected_vals[i]))
