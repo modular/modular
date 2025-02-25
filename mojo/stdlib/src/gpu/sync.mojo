@@ -3,10 +3,19 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""This module includes intrinsics for NVIDIA GPUs sync instructions."""
+"""This module provides GPU synchronization primitives and barriers.
 
-from os import abort
-from sys import is_amd_gpu, is_nvidia_gpu, llvm_intrinsic
+The module includes:
+- Block-level synchronization barriers (barrier())
+- Warp-level synchronization (syncwarp())
+- Memory barriers (mbarrier) for NVIDIA GPUs
+- Instruction scheduling controls for AMD GPUs
+- Asynchronous copy and bulk transfer synchronization
+
+The synchronization primitives help coordinate execution between threads within
+thread blocks and warps, and manage memory consistency across different memory spaces.
+"""
+
 from sys.info import _is_sm_9x
 from sys.param_env import env_get_bool
 
@@ -27,8 +36,11 @@ alias _USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM = env_get_bool[
 
 @always_inline("nodebug")
 fn barrier():
-    """Performs a synchronization barrier on block (equivalent to `__syncthreads`
-    in CUDA).
+    """Performs a synchronization barrier at the block level.
+
+    This is equivalent to __syncthreads() in CUDA. All threads in a thread block must
+    execute this function before any thread can proceed past the barrier. This ensures
+    memory operations before the barrier are visible to all threads after the barrier.
     """
 
     @parameter
@@ -56,23 +68,50 @@ fn barrier():
 @register_passable("trivial")
 struct AMDScheduleBarrierMask:
     """Represents different instruction scheduling masks for AMDGPU scheduling instructions.
-    These masks control which instructions can be reordered across the barrier.
+
+    These masks control which types of instructions can be reordered across a barrier for
+    performance optimization. When used with schedule_barrier(), the mask determines which
+    instructions the compiler is allowed to move across the barrier point.
     """
 
+    """Internal value storage for the barrier mask."""
     var _value: Int32
-    # Barrier scheduling control flags
-    alias NONE = Self(0)  # No instructions across barrier
-    alias ALL_ALU = Self(1 << 0)  # All non-memory, non-side-effect instructions
-    alias VALU = Self(1 << 1)  # Vector ALU instructions
-    alias SALU = Self(1 << 2)  # Scalar ALU instructions
-    alias MFMA = Self(1 << 3)  # Matrix FMA/WMMA instructions
-    alias ALL_VMEM = Self(1 << 4)  # All vector memory instructions
-    alias VMEM_READ = Self(1 << 5)  # Vector memory read instructions
-    alias VMEM_WRITE = Self(1 << 6)  # Vector memory write instructions
-    alias ALL_DS = Self(1 << 7)  # All LDS instructions
-    alias DS_READ = Self(1 << 8)  # LDS read instructions
-    alias DS_WRITE = Self(1 << 9)  # LDS write instructions
-    alias TRANS = Self(1 << 10)  # Transcendental instructions
+
+    """No instructions can cross the barrier. Most restrictive option."""
+    alias NONE = Self(0)
+
+    """Allows reordering of all arithmetic and logic instructions that don't involve memory operations."""
+    alias ALL_ALU = Self(1 << 0)
+
+    """Permits reordering of vector arithmetic/logic unit instructions only."""
+    alias VALU = Self(1 << 1)
+
+    """Permits reordering of scalar arithmetic/logic unit instructions only."""
+    alias SALU = Self(1 << 2)
+
+    """Allows reordering of matrix multiplication and WMMA instructions."""
+    alias MFMA = Self(1 << 3)
+
+    """Enables reordering of all vector memory operations (reads and writes)."""
+    alias ALL_VMEM = Self(1 << 4)
+
+    """Allows reordering of vector memory read operations only."""
+    alias VMEM_READ = Self(1 << 5)
+
+    """Allows reordering of vector memory write operations only."""
+    alias VMEM_WRITE = Self(1 << 6)
+
+    """Permits reordering of all Local Data Share (LDS) operations."""
+    alias ALL_DS = Self(1 << 7)
+
+    """Enables reordering of LDS read operations only."""
+    alias DS_READ = Self(1 << 8)
+
+    """Enables reordering of LDS write operations only."""
+    alias DS_WRITE = Self(1 << 9)
+
+    """Allows reordering of transcendental instructions (sin, cos, exp, etc)."""
+    alias TRANS = Self(1 << 10)
 
     @implicit
     fn __init__(out self, value: Int):
@@ -120,10 +159,21 @@ struct AMDScheduleBarrierMask:
 fn schedule_barrier(
     mask: AMDScheduleBarrierMask = AMDScheduleBarrierMask.NONE,
 ):
-    """Controls instruction scheduling across the barrier. The mask parameter
-    specifies which instruction types can cross the barrier.
+    """Controls instruction scheduling across a barrier point in AMD GPU code.
+
+    This function creates a scheduling barrier that controls which types of instructions
+    can be reordered across it by the compiler. The mask parameter specifies which
+    instruction categories (ALU, memory, etc) are allowed to cross the barrier during
+    scheduling optimization.
+
     Args:
-        mask: Bit mask specifying which instruction types can cross the barrier.
+        mask: A bit mask of AMDScheduleBarrierMask flags indicating which instruction
+            types can be scheduled across this barrier. Default is NONE, meaning no
+            instructions can cross.
+
+    Note:
+        This function only has an effect on AMD GPUs. On other platforms it will
+        raise a compile time error.
     """
 
     @parameter
@@ -137,13 +187,22 @@ fn schedule_barrier(
 fn schedule_group_barrier(
     mask: AMDScheduleBarrierMask, size: Int32, sync_id: Int32
 ):
-    """Controls instruction scheduling by creating schedule groups with custom sequence.
-    The intrinsic applies to the code that precedes it.
+    """Controls instruction scheduling across a barrier point in AMD GPU code by creating schedule groups.
+
+    This function creates a scheduling barrier that groups instructions into sequences with custom ordering.
+    It affects the code that precedes the barrier. The barrier ensures instructions are scheduled according
+    to the specified group parameters.
 
     Args:
-        mask: Instruction mask value, same as schedule_barrier masks.
-        size: Number of times to repeat the instruction.
-        sync_id: Group ID for ordering instructions in sequence within the same group.
+        mask: A bit mask of AMDScheduleBarrierMask flags indicating which instruction types can be
+            scheduled across this barrier. Similar to schedule_barrier masks.
+        size: The number of times to repeat the instruction sequence in the schedule group.
+        sync_id: A unique identifier for the group that determines the ordering of instructions
+            within the same schedule group.
+
+    Note:
+        This function only has an effect on AMD GPUs. On other platforms it will raise a compile time error.
+        The sync_id parameter allows creating multiple schedule groups that can be ordered relative to each other.
     """
 
     @parameter
@@ -164,11 +223,22 @@ fn schedule_group_barrier(
 
 @always_inline("nodebug")
 fn syncwarp(mask: Int = -1):
-    """Causes all threads to wait until all lanes specified by the warp mask
-    reach the sync warp.
+    """Synchronizes threads within a warp using a barrier.
+
+    This function creates a synchronization point where threads in a warp must wait until all
+    threads specified by the mask reach this point. On NVIDIA GPUs, it uses warp-level
+    synchronization primitives. On AMD GPUs, this is a no-op since threads execute in lock-step.
 
     Args:
-      mask: The mask of the warp lanes.
+        mask: An integer bitmask specifying which lanes (threads) in the warp should be
+            synchronized. Each bit corresponds to a lane, with bit i controlling lane i.
+            A value of 1 means the lane participates in the sync, 0 means it does not.
+            Default value of -1 (all bits set) synchronizes all lanes.
+
+    Note:
+        - On NVIDIA GPUs, this maps to the nvvm.bar.warp.sync intrinsic.
+        - On AMD GPUs, this is a no-op since threads execute in lock-step.
+        - Threads not participating in the sync must still execute the instruction.
     """
 
     @parameter
@@ -190,11 +260,13 @@ fn syncwarp(mask: Int = -1):
 fn _mbarrier_impl[
     type: AnyType, address_space: AddressSpace
 ](address: UnsafePointer[type, address_space=address_space, **_]):
-    """Makes the mbarrier object track all prior copy async operations initiated
-    by the executing thread.
+    """Internal implementation for making a memory barrier track async operations.
+
+    This is an internal helper function that implements the core memory barrier tracking
+    functionality for different address spaces.
 
     Args:
-      address: The mbarrier object is at the location.
+        address: Pointer to the memory barrier object location.
     """
 
     @parameter
@@ -217,11 +289,14 @@ fn _mbarrier_impl[
 fn mbarrier[
     type: AnyType, address_space: AddressSpace
 ](address: UnsafePointer[type, address_space=address_space, **_]):
-    """Makes the mbarrier object track all prior copy async operations initiated
-    by the executing thread.
+    """Makes a memory barrier track all prior async copy operations from this thread.
+
+    This function ensures that all previously initiated asynchronous copy operations
+    from the executing thread are tracked by the memory barrier at the specified location.
+    Only supported on NVIDIA GPUs.
 
     Args:
-      address: The mbarrier object is at the location.
+        address: Pointer to the memory barrier object location.
     """
 
     @parameter
@@ -242,11 +317,14 @@ fn mbarrier_init[
     ],
     num_threads: Int32,
 ):
-    """Initialize shared memory barrier for N number of threads.
+    """Initialize a shared memory barrier for synchronizing multiple threads.
+
+    Sets up a memory barrier in shared memory that will be used to synchronize
+    the specified number of threads. Only supported on NVIDIA GPUs.
 
     Args:
-        shared_mem: Shared memory barrier to initialize.
-        num_threads: Number of threads participating.
+        shared_mem: Pointer to shared memory location for the barrier.
+        num_threads: Number of threads that will synchronize on this barrier.
     """
 
     @parameter
@@ -266,13 +344,16 @@ fn mbarrier_arrive[
 ](
     shared_mem: UnsafePointer[type, address_space = GPUAddressSpace.SHARED, **_]
 ) -> Int:
-    """Commits the arrival of thead to a shared memory barrier.
+    """Signal thread arrival at a shared memory barrier.
+
+    Records that the calling thread has reached the barrier synchronization point.
+    Only supported on NVIDIA GPUs.
 
     Args:
-        shared_mem: Shared memory barrier.
+        shared_mem: Pointer to the shared memory barrier.
 
     Returns:
-        An Int64 value representing the state of the memory barrier.
+        An integer representing the current state of the memory barrier.
     """
 
     @parameter
@@ -296,14 +377,17 @@ fn mbarrier_test_wait[
     ],
     state: Int,
 ) -> Bool:
-    """Test waiting for the memory barrier.
+    """Test if all threads have arrived at the memory barrier.
+
+    Non-blocking check to see if all participating threads have reached the barrier.
+    Only supported on NVIDIA GPUs.
 
     Args:
-        shared_mem: Shared memory barrier.
-        state: Memory barrier arrival state.
+        shared_mem: Pointer to the shared memory barrier.
+        state: Expected state of the memory barrier.
 
     Returns:
-        True if all particpating thread arrived to the barrier.
+        True if all threads have arrived, False otherwise.
     """
 
     @parameter
@@ -326,14 +410,14 @@ fn mbarrier_arrive_expect_tx_shared[
     addr: UnsafePointer[type, address_space = GPUAddressSpace.SHARED, **_],
     tx_count: Int32,
 ):
-    """Performs an expect-tx operation on shared memory barrier.
+    """Configure a shared memory barrier to expect additional async transactions.
 
-    This makes the current phase of the mbarrier object to expect and
-    track the completion of additional asynchronous transactions.
+    Updates the current phase of the memory barrier to track completion of
+    additional asynchronous transactions. Only supported on NVIDIA GPUs.
 
     Args:
-        addr: Shared memory barrier address.
-        tx_count: Number of element to the expect-tx operatio.
+        addr: Pointer to the shared memory barrier.
+        tx_count: Number of expected transactions to track.
     """
 
     @parameter
@@ -359,13 +443,15 @@ fn mbarrier_try_wait_parity_shared[
     phase: Int32,
     ticks: Int32,
 ):
-    """Waits for shared memory barrier till the completion of the phase
-    or ticks expires.
+    """Wait for completion of a barrier phase with timeout.
+
+    Waits for the shared memory barrier to complete the specified phase,
+    or until the timeout period expires. Only supported on NVIDIA GPUs.
 
     Args:
-        addr: Shared memory barrier.
-        phase: Phase number.
-        ticks: Time in nano seconds.
+        addr: Pointer to the shared memory barrier.
+        phase: Phase number to wait for.
+        ticks: Timeout period in nanoseconds.
     """
 
     @parameter
@@ -386,6 +472,17 @@ fn mbarrier_try_wait_parity_shared[
 @always_inline
 fn cp_async_bulk_commit_group():
     """Commits all prior initiated but uncommitted cp.async.bulk instructions into a cp.async.bulk-group.
+
+    This function commits all previously initiated but uncommitted cp.async.bulk instructions into a
+    cp.async.bulk-group. The cp.async.bulk instructions are used for asynchronous bulk memory transfers
+    on NVIDIA GPUs.
+
+    The function creates a synchronization point for bulk memory transfers, allowing better control over
+    memory movement and synchronization between different stages of computation.
+
+    Note:
+        This functionality is only available on NVIDIA GPUs. Attempting to use this function on
+        non-NVIDIA GPUs will result in a compile time error.
     """
 
     @parameter
@@ -403,9 +500,32 @@ fn cp_async_bulk_commit_group():
 
 @always_inline
 fn cp_async_bulk_wait_group[n: Int32, read: Bool = True]():
-    """Causes the executing thread to wait until only N or fewer of the most recent bulk async-groups
-    are pending and all the prior bulk async-groups committed by the executing threads are complete
-    When N is 0, the executing thread waits on all the prior bulk async-groups to complete.
+    """Waits for completion of asynchronous bulk memory transfer groups.
+
+    This function causes the executing thread to wait until a specified number of the most recent
+    bulk async-groups are pending. It provides synchronization control for bulk memory transfers
+    on NVIDIA GPUs.
+
+    Parameters:
+        n: The number of most recent bulk async-groups allowed to remain pending. When n=0,
+           waits for all prior bulk async-groups to complete.
+        read: If True, indicates that subsequent reads to the transferred memory are expected,
+              enabling optimizations for read access patterns. Defaults to True.
+
+    Note:
+        This functionality is only available on NVIDIA GPUs. Attempting to use this function on
+        non-NVIDIA GPUs will result in a compile time error.
+
+    Example:
+        ```mojo
+        from gpu.sync import cp_async_bulk_wait_group
+
+        # Wait until at most 2 async groups are pending
+        cp_async_bulk_wait_group[2]()
+
+        # Wait for all async groups to complete
+        cp_async_bulk_wait_group[0]()
+        ```
     """
 
     @parameter
