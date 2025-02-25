@@ -68,7 +68,7 @@ def run_model(
 
 
 async def run_model_async(
-    model: Any,  # TODO(kathywu): Update to PipelineModel
+    model: PipelineModel,
     tokenizer: PipelineTokenizer,
     prompts: Iterable[str] = PROMPTS,
     images: Optional[Iterable[str]] = None,
@@ -106,15 +106,13 @@ async def run_model_async(
                 break
         results.append({"prompt": prompt, "values": values[curr_req_id]})
 
-        if isinstance(model, PipelineModel):
-            model.kv_manager.release(context.cache_seq_id)
-        else:
-            model._kv_manager.release(context.cache_seq_id)
+        model.kv_manager.release(context.cache_seq_id)
+
     return results
 
 
 def next_token_with_logits(
-    model: Any,  # TODO(kathywu): Update to PipelineModel
+    model: PipelineModel,
     req_to_context_dict: dict[str, Any],
     update_values: dict[str, list[Any]],
     eos_token: Optional[int] = None,
@@ -134,80 +132,41 @@ def next_token_with_logits(
     Returns:
         bool: True if the token is an end-of-sentence token, otherwise False.
     """
-    # Llama & Replit have been moved over to the new PipelineModel.
-    if isinstance(model, PipelineModel):
-        # Flatten our batch for consistent indexing.
-        context_batch = list(req_to_context_dict.values())
+    # Flatten our batch for consistent indexing.
+    context_batch = list(req_to_context_dict.values())
 
-        # Claim cache rows for our batch.
-        for context in context_batch:
-            if not model.kv_manager.contains(context.cache_seq_id):
-                model.kv_manager.external_claim([context.cache_seq_id])
+    # Claim cache rows for our batch.
+    for context in context_batch:
+        if not model.kv_manager.contains(context.cache_seq_id):
+            model.kv_manager.external_claim([context.cache_seq_id])
 
-        # Get prompts for each seq_id in batch.
-        seq_ids_and_prompts = {}
-        for ctx in context_batch:
-            prompt = ctx.next_tokens
-            assert len(prompt) == ctx.active_length
-            seq_ids_and_prompts[ctx.cache_seq_id] = prompt
+    # Get prompts for each seq_id in batch.
+    seq_ids_and_prompts = {}
+    for ctx in context_batch:
+        prompt = ctx.next_tokens
+        assert len(prompt) == ctx.active_length
+        seq_ids_and_prompts[ctx.cache_seq_id] = prompt
 
-        # Fetch kv inputs.
-        kv_cache_inputs = model.kv_manager.fetch(seq_ids_and_prompts)
+    # Fetch kv inputs.
+    kv_cache_inputs = model.kv_manager.fetch(seq_ids_and_prompts)
 
-        # Get Model inputs
-        model_inputs = model.prepare_initial_token_inputs(context_batch)
+    # Get Model inputs
+    model_inputs = model.prepare_initial_token_inputs(context_batch)
 
-        model_outputs = model.execute(
-            model_inputs,
-            # Flatten the KV cache inputs as expected by PipelineModel.execute.
-            kv_cache_inputs=KVCacheInputsSequence(
-                kv_cache_inputs=kv_cache_inputs
-            ),
-        )
-        assert model_outputs.next_token_logits
-        logits = model_outputs.next_token_logits.to_numpy()
-        next_tokens = [req_logits.argmax(axis=-1) for req_logits in logits]
+    model_outputs = model.execute(
+        model_inputs,
+        # Flatten the KV cache inputs as expected by PipelineModel.execute.
+        kv_cache_inputs=KVCacheInputsSequence(kv_cache_inputs=kv_cache_inputs),
+    )
+    assert model_outputs.next_token_logits
+    logits = model_outputs.next_token_logits.to_numpy()
+    next_tokens = [req_logits.argmax(axis=-1) for req_logits in logits]
 
-        seq_ids_and_new_tokens = {
-            ctx.cache_seq_id: np.array([next_tokens[i]])
-            for i, ctx in enumerate(context_batch)
-        }
-        model.kv_manager.step(seq_ids_and_new_tokens)
-
-    # Llama3's _execute method has a different signature and set of calling
-    # expectations than Replit and Mistral do.  Use the Llama3 logic only if it
-    # also has the _prepare_initial_token_inputs method required by Llama.
-    elif hasattr(model, "_prepare_initial_token_inputs"):
-        # Flatten our batch for consistent indexing
-        context_batch = list(req_to_context_dict.values())
-        kv_manager = model._kv_manager
-
-        # Claim cache rows for our batch
-        for context in context_batch:
-            if not kv_manager.contains(context.cache_seq_id):
-                kv_manager.external_claim([context.cache_seq_id])
-
-        # Get prompts for each seq_id in batch.
-        seq_ids_and_prompts = {}
-        for ctx in context_batch:
-            prompt = ctx.next_tokens
-            assert len(prompt) == ctx.active_length
-            seq_ids_and_prompts[ctx.cache_seq_id] = prompt
-
-        token_input = model._prepare_initial_token_inputs(context_batch)
-        kv_cache_inputs = kv_manager.fetch(seq_ids_and_prompts)[0]
-
-        logits = model._execute(*token_input, *kv_cache_inputs).to_numpy()
-        next_tokens = [req_logits.argmax(axis=-1) for req_logits in logits]
-
-        seq_ids_and_new_tokens = {
-            ctx.cache_seq_id: np.array([next_tokens[i]])
-            for i, ctx in enumerate(context_batch)
-        }
-        kv_manager.step(seq_ids_and_new_tokens)
-    else:
-        logits = model._execute(req_to_context_dict).to_numpy()
-        next_tokens = [req_logits.argmax(axis=-1) for req_logits in logits]
+    seq_ids_and_new_tokens = {
+        ctx.cache_seq_id: np.array([next_tokens[i]])
+        for i, ctx in enumerate(context_batch)
+    }
+    model.kv_manager.step(seq_ids_and_new_tokens)
 
     for req_id, req_logits, next_token in zip(
         req_to_context_dict, logits, next_tokens
