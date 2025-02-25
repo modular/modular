@@ -24,6 +24,7 @@ from sys.intrinsics import global_idx as _global_idx
 from sys.intrinsics import grid_dim as _grid_dim
 from sys.intrinsics import lane_id as _lane_id
 from sys.intrinsics import thread_idx as _thread_idx
+from sys.intrinsics import block_id_in_cluster as _block_id_in_cluster
 
 from gpu import WARP_SIZE
 
@@ -57,6 +58,9 @@ alias cluster_idx = _cluster_idx
 
 alias cluster_dim = _cluster_dim
 """Contains the dimensions of the cluster, as `x`, `y`, and `z` values."""
+
+alias block_id_in_cluster = _block_id_in_cluster
+"""Contains the block id of the threadblock within a cluster, as `x`, `y`, and `z` values."""
 
 # ===-----------------------------------------------------------------------===#
 # lane_id
