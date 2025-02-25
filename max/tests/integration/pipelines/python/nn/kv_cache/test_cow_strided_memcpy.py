@@ -65,10 +65,10 @@ async def test_cow_strided_memcpy() -> None:
     paged_manager = create_paged_manager(
         num_blocks=10, page_size=128, num_kv_heads=3, head_dim=4, num_layers=5
     )
-    assert paged_manager.radix_trie is not None
-    assert paged_manager.cow_strided_memcpy_graph is not None
+    assert paged_manager.prefix_cache is not None
+    assert paged_manager.prefix_cache.cow_strided_memcpy_graph is not None
 
-    cow_graph = paged_manager.cow_strided_memcpy_graph
+    cow_graph = paged_manager.prefix_cache.cow_strided_memcpy_graph
     blocks = paged_manager.blocks[0]
 
     for (
