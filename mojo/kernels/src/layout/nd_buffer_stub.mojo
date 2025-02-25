@@ -470,6 +470,7 @@ fn _copy_nd_buffer_to_layout_tensor[
     dst: LayoutTensor[
         dtype,
         layout,
+        mut=True,
         *_, **_,
     ],
     src: NDBuffer[dtype, src_rank, shape],
@@ -610,6 +611,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
     dst: LayoutTensor[
         dtype,
         layout,
+        mut=True,
         *_, **_,
     ],
     src: NDBuffer[dtype, src_rank, shape],
@@ -974,6 +976,7 @@ fn copy_from_nd_buffer[
     dst_thread_local: LayoutTensor[
         dtype,
         dst_data_layout,
+        mut=True,
         *_, **_,
     ],
     src: NDBuffer[dtype, *_],
@@ -1045,6 +1048,7 @@ fn copy_from_nd_buffer_masked[
     dst_thread_local: LayoutTensor[
         dtype,
         dst_data_layout,
+        mut=True,
         *_, **_,
     ],
     src: NDBuffer[dtype, src_rank, src_buff_shape],
@@ -1286,6 +1290,7 @@ fn copy_from_nd_buffer_async[
     dst_tensor: LayoutTensor[
         dtype,
         dst_data_layout,
+        mut=True,
         *_, **_,
     ],
     src_buffer: NDBuffer[dtype, src_rank, src_buff_shape],
@@ -1302,6 +1307,8 @@ fn from_ndbuffer_row_major(
     out result: LayoutTensor[
         buffer.type,
         Layout.row_major[buffer.rank](buffer.shape),
+        mut=True,
+        origin = buffer.origin,
         address_space = buffer.address_space,
     ],
 ):

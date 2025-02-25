@@ -194,6 +194,8 @@ struct LayoutTensor[
     layout: Layout,
     /,
     *,
+    mut: Bool = True,
+    origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin].result,
     address_space: AddressSpace = AddressSpace.GENERIC,
     element_layout: Layout = Layout(1, 1),
     layout_bitwidth: Int = bitwidthof[_get_index_type(address_space)](),
@@ -210,6 +212,8 @@ struct LayoutTensor[
     Parameters:
         dtype: The data type of the underlying pointer.
         layout: The memory layout of the Tensor.
+        mut: The mutability of the underlying pointer.
+        origin: The origin of the underlying pointer.
         address_space: The address space of the underlying pointer.
         element_layout: The memory layout of each element in the Tensor.
         layout_bitwidth: The bitwidth of each dimension of runtime layout.
@@ -223,7 +227,11 @@ struct LayoutTensor[
     alias uint_type = Scalar[_get_unsigned_type(layout, address_space)]
 
     var ptr: UnsafePointer[
-        Scalar[dtype], address_space=address_space, alignment=alignment
+        Scalar[dtype],
+        address_space=address_space,
+        alignment=alignment,
+        mut=mut,
+        origin=origin,
     ]
 
     var runtime_layout: RuntimeLayout[layout, bitwidth=layout_bitwidth]
@@ -241,7 +249,12 @@ struct LayoutTensor[
     @implicit
     fn __init__(
         out self,
-        ptr: UnsafePointer[Scalar[dtype], address_space=address_space, **_],
+        ptr: UnsafePointer[
+            Scalar[dtype],
+            address_space=address_space,
+            mut=mut,
+            origin=origin, **_,
+        ],
     ):
         """Create a LayoutTensor with an UnsafePointer. Expect layout to be
         fully static.
@@ -260,7 +273,12 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         mut self,
-        ptr: UnsafePointer[Scalar[dtype], address_space=address_space, **_],
+        ptr: UnsafePointer[
+            Scalar[dtype],
+            address_space=address_space,
+            mut=mut,
+            origin=origin, **_,
+        ],
         runtime_layout: RuntimeLayout[layout, **_],
     ):
         """Create a LayoutTensor with an UnsafePointer. Expect element layout
@@ -289,7 +307,12 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         mut self,
-        ptr: UnsafePointer[Scalar[dtype], address_space=address_space, **_],
+        ptr: UnsafePointer[
+            Scalar[dtype],
+            address_space=address_space,
+            mut=mut,
+            origin=origin, **_,
+        ],
         runtime_layout: RuntimeLayout[layout, bitwidth = Self.layout_bitwidth],
         element_runtime_layout: RuntimeLayout[element_layout],
     ):
@@ -324,6 +347,8 @@ struct LayoutTensor[
         out result: LayoutTensor[
             new_type,
             layout,
+            mut=mut,
+            origin=origin,
             address_space=address_space,
             element_layout=element_layout,
             masked=masked,
@@ -345,6 +370,40 @@ struct LayoutTensor[
             ),
         )
 
+    @always_inline("nodebug")
+    fn origin_cast[
+        mut: Bool = Self.mut,
+        origin: Origin[mut] = Origin[mut].cast_from[Self.origin].result,
+    ](
+        self,
+        out result: LayoutTensor[
+            dtype,
+            layout,
+            mut=mut,
+            origin=origin,
+            address_space=address_space,
+            element_layout=element_layout,
+            layout_bitwidth=layout_bitwidth,
+            masked=masked,
+            alignment=alignment,
+        ],
+    ):
+        """Changes the origin or mutability of a pointer.
+
+        Parameters:
+            mut: Whether the origin is mutable.
+            origin: Origin of the destination pointer.
+
+        Returns:
+            A new UnsafePointer object with the same type and the same address,
+            as the original UnsafePointer and the new specified mutability and origin.
+        """
+        result = __type_of(result)(
+            self.ptr.origin_cast[mut, origin](),
+            self.runtime_layout,
+            self.runtime_element_layout,
+        )
+
     @always_inline
     fn _offset(self, m: Int, n: Int) -> Int:
         return Self.stride[0]() * m + Self.stride[1]() * n
@@ -352,7 +411,6 @@ struct LayoutTensor[
     @always_inline
     fn __elementwise_unary[
         func: fn (Self.element_type) capturing -> (Self.element_type),
-        inplace: Bool = False,
     ](self) -> Self:
         constrained[
             layout.all_dims_known(),
@@ -362,15 +420,13 @@ struct LayoutTensor[
             ),
         ]()
 
-        var res_tensor = self if inplace else Self.stack_allocation()
-
         @parameter
         for i in range(self.layout.size()):
             alias idx = self.layout(i)
-            res_tensor.ptr.store(
+            self.ptr.store(
                 idx, func(self.ptr.load[width = Self.element_size](idx))
             )
-        return res_tensor
+        return self
 
     @always_inline
     fn __elementwise_binary_with_broadcast[
@@ -378,15 +434,22 @@ struct LayoutTensor[
             Self.element_type
         ),
         other_layout: Layout,
-        inplace: Bool = False,
+        other_mut: Bool,
+        other_origin: Origin[other_mut],
+        other_masked: Bool,
+        other_alignment: Int,
     ](
         self,
         other: LayoutTensor[
             dtype,
             other_layout,
+            mut=other_mut,
+            origin=other_origin,
             address_space=address_space,
             element_layout=element_layout,
             layout_bitwidth=layout_bitwidth,
+            masked=other_masked,
+            alignment=other_alignment,
         ],
     ) -> Self:
         @parameter
@@ -424,8 +487,6 @@ struct LayoutTensor[
             "Only supports rank-2 tensor, or same rank",
         ]()
 
-        var res_tensor = self if inplace else Self.stack_allocation()
-
         @parameter
         if other.rank == 1:
             constrained[
@@ -443,29 +504,31 @@ struct LayoutTensor[
                 alias lhs_idx = self.layout(i)
                 alias rhs_idx = other.layout(i % other_size)
 
-                res_tensor.ptr.store(
+                self.ptr.store(
                     lhs_idx,
                     func(
                         self.ptr.load[width = Self.element_size](lhs_idx),
                         other.ptr.load[width = Self.element_size](rhs_idx),
                     ),
                 )
-            return res_tensor
+            return self
 
         @parameter
         for i in range(self.layout.size()):
             alias idx = self.layout(i)
-            res_tensor.ptr.store(
+            self.ptr.store(
                 idx,
                 func(
                     self.ptr.load[width = Self.element_size](idx),
                     other.ptr.load[width = Self.element_size](idx),
                 ),
             )
-        return res_tensor
+        return self
 
     @always_inline
-    fn __add__(self, other: Scalar[dtype]) -> Self:
+    fn __add__(
+        self, other: Scalar[dtype]
+    ) -> __type_of(self.origin_cast[True, MutableAnyOrigin]()):
         """Add the LayoutTensor with a scalar value. The scalar value will be
         broadcasted to the entire tensor.
 
@@ -477,7 +540,7 @@ struct LayoutTensor[
         fn add_val(val: Self.element_type) -> Self.element_type:
             return Self.element_type(other) + val
 
-        return self.__elementwise_unary[add_val]()
+        return self._stack_copy().__elementwise_unary[add_val]()
 
     @always_inline
     fn __iadd__(self, other: Scalar[dtype]):
@@ -492,7 +555,7 @@ struct LayoutTensor[
         fn add_val(val: Self.element_type) -> Self.element_type:
             return Self.element_type(other) + val
 
-        _ = self.__elementwise_unary[add_val, inplace=True]()
+        _ = self.__elementwise_unary[add_val]()
 
     @always_inline
     fn __add__[
@@ -506,7 +569,7 @@ struct LayoutTensor[
             element_layout=element_layout,
             layout_bitwidth=layout_bitwidth,
         ],
-    ) -> Self:
+    ) -> __type_of(self.origin_cast[True, MutableAnyOrigin]()):
         """Do an addition with another LayoutTensor and return the added
         tensor. Currently only support tensors of the same shape if the rank
         is the same and also tensors of rank-2.
@@ -523,7 +586,9 @@ struct LayoutTensor[
         ) capturing -> Self.element_type:
             return lhs + rhs
 
-        return self.__elementwise_binary_with_broadcast[add_val](other)
+        return self._stack_copy().__elementwise_binary_with_broadcast[add_val](
+            other
+        )
 
     @always_inline
     fn __iadd__[
@@ -554,12 +619,12 @@ struct LayoutTensor[
         ) capturing -> Self.element_type:
             return lhs + rhs
 
-        _ = self.__elementwise_binary_with_broadcast[add_val, inplace=True](
-            other
-        )
+        _ = self.__elementwise_binary_with_broadcast[add_val](other)
 
     @always_inline
-    fn __mul__(self, other: Scalar[dtype]) -> Self:
+    fn __mul__(
+        self, other: Scalar[dtype]
+    ) -> __type_of(self.origin_cast[True, MutableAnyOrigin]()):
         """Multiply the LayoutTensor with a scalar value. The scalar value will
         be broadcasted to the entire tensor.
 
@@ -571,7 +636,7 @@ struct LayoutTensor[
         fn mul_val(val: Self.element_type) -> Self.element_type:
             return Self.element_type(other) * val
 
-        return self.__elementwise_unary[mul_val]()
+        return self._stack_copy().__elementwise_unary[mul_val]()
 
     @always_inline
     fn __mul__[
@@ -585,7 +650,7 @@ struct LayoutTensor[
             element_layout=element_layout,
             layout_bitwidth=layout_bitwidth,
         ],
-    ) -> Self:
+    ) -> __type_of(self.origin_cast[True, MutableAnyOrigin]()):
         """Perform a multiplication with another LayoutTensor and return the
         resulting tensor.
 
@@ -607,7 +672,9 @@ struct LayoutTensor[
         ) capturing -> Self.element_type:
             return lhs * rhs
 
-        return self.__elementwise_binary_with_broadcast[mul_val](other)
+        return self._stack_copy().__elementwise_binary_with_broadcast[mul_val](
+            other
+        )
 
     @always_inline
     fn __imul__(self, other: Scalar[dtype]):
@@ -622,7 +689,7 @@ struct LayoutTensor[
         fn mul_val(val: Self.element_type) -> Self.element_type:
             return Self.element_type(other) * val
 
-        _ = self.__elementwise_unary[mul_val, inplace=True]()
+        _ = self.__elementwise_unary[mul_val]()
 
     @always_inline
     fn __imul__[
@@ -653,12 +720,12 @@ struct LayoutTensor[
         ) capturing -> Self.element_type:
             return lhs * rhs
 
-        _ = self.__elementwise_binary_with_broadcast[mul_val, inplace=True](
-            other
-        )
+        _ = self.__elementwise_binary_with_broadcast[mul_val](other)
 
     @always_inline
-    fn __sub__(self, other: Scalar[dtype]) -> Self:
+    fn __sub__(
+        self, other: Scalar[dtype]
+    ) -> __type_of(self.origin_cast[True, MutableAnyOrigin]()):
         """Subtract the LayoutTensor with a scalar value. The scalar value will be
         broadcasted to the entire tensor.
 
@@ -670,7 +737,7 @@ struct LayoutTensor[
         fn sub_val(val: Self.element_type) -> Self.element_type:
             return val - Self.element_type(other)
 
-        return self.__elementwise_unary[sub_val]()
+        return self._stack_copy().__elementwise_unary[sub_val]()
 
     @always_inline
     fn __sub__[
@@ -684,7 +751,7 @@ struct LayoutTensor[
             element_layout=element_layout,
             layout_bitwidth=layout_bitwidth,
         ],
-    ) -> Self:
+    ) -> __type_of(self.origin_cast[True, MutableAnyOrigin]()):
         """Do an subtraction with another LayoutTensor and return the subtracted
         tensor. Currently only support tensors of the same shape if the rank
         is the same and also tensors of rank-2.
@@ -701,7 +768,9 @@ struct LayoutTensor[
         ) capturing -> Self.element_type:
             return lhs - rhs
 
-        return self.__elementwise_binary_with_broadcast[sub_val](other)
+        return self._stack_copy().__elementwise_binary_with_broadcast[sub_val](
+            other
+        )
 
     @always_inline
     fn __isub__(self, other: Scalar[dtype]):
@@ -716,7 +785,7 @@ struct LayoutTensor[
         fn sub_val(val: Self.element_type) -> Self.element_type:
             return val - Self.element_type(other)
 
-        _ = self.__elementwise_unary[sub_val, inplace=True]()
+        _ = self.__elementwise_unary[sub_val]()
 
     @always_inline
     fn __isub__[
@@ -746,12 +815,12 @@ struct LayoutTensor[
         ) capturing -> Self.element_type:
             return lhs - rhs
 
-        _ = self.__elementwise_binary_with_broadcast[sub_val, inplace=True](
-            other
-        )
+        _ = self.__elementwise_binary_with_broadcast[sub_val](other)
 
     @always_inline
-    fn __truediv__(self, other: Scalar[dtype]) -> Self:
+    fn __truediv__(
+        self, other: Scalar[dtype]
+    ) -> __type_of(self.origin_cast[True, MutableAnyOrigin]()):
         """Truediv the LayoutTensor with a scalar value. The scalar value will be
         broadcasted to the entire tensor.
 
@@ -763,7 +832,7 @@ struct LayoutTensor[
         fn div_val(val: Self.element_type) -> Self.element_type:
             return val / Self.element_type(other)
 
-        return self.__elementwise_unary[div_val]()
+        return self._stack_copy().__elementwise_unary[div_val]()
 
     @always_inline
     fn __truediv__[
@@ -777,7 +846,7 @@ struct LayoutTensor[
             element_layout=element_layout,
             layout_bitwidth=layout_bitwidth,
         ],
-    ) -> Self:
+    ) -> __type_of(self.origin_cast[True, MutableAnyOrigin]()):
         """Do an truediv with another LayoutTensor and return the divided
         tensor. Currently only support tensors of the same shape if the rank
         is the same and also tensors of rank-2.
@@ -794,7 +863,9 @@ struct LayoutTensor[
         ) capturing -> Self.element_type:
             return lhs / rhs
 
-        return self.__elementwise_binary_with_broadcast[div_val](other)
+        return self._stack_copy().__elementwise_binary_with_broadcast[div_val](
+            other
+        )
 
     @always_inline("nodebug")
     fn __getitem__(self, *dims: Int) -> Self.element_type:
@@ -962,7 +1033,19 @@ struct LayoutTensor[
 
     @staticmethod
     @always_inline("nodebug")
-    fn stack_allocation[*, alignment: Int = Self.alignment]() -> Self:
+    fn stack_allocation[
+        *, alignment: Int = Self.alignment
+    ]() -> LayoutTensor[
+        dtype,
+        layout,
+        mut=True,
+        origin=MutableAnyOrigin,
+        address_space=address_space,
+        element_layout=element_layout,
+        layout_bitwidth=layout_bitwidth,
+        masked=masked,
+        alignment=alignment,
+    ]:
         """Allocates stack memory for a LayoutTensor. Expects layout to be
         fully static.
 
@@ -989,6 +1072,29 @@ struct LayoutTensor[
         ]()
 
         return ptr
+
+    @always_inline("nodebug")
+    fn _stack_copy(
+        self,
+    ) -> LayoutTensor[
+        dtype,
+        layout,
+        mut=True,
+        origin=MutableAnyOrigin,
+        address_space=address_space,
+        element_layout=element_layout,
+        layout_bitwidth=layout_bitwidth,
+        masked=masked,
+        alignment=alignment,
+    ]:
+        var copy = self.stack_allocation()
+
+        fn self_value(
+            lhs: Self.element_type, rhs: Self.element_type
+        ) capturing -> Self.element_type:
+            return rhs
+
+        return copy.__elementwise_binary_with_broadcast[self_value](self)
 
     @staticmethod
     @always_inline("nodebug")
@@ -1073,6 +1179,8 @@ struct LayoutTensor[
         out result: LayoutTensor[
             dtype,
             coalesce(layout),
+            mut=mut,
+            origin=origin,
             address_space=address_space,
             element_layout = self.element_layout,
         ],
@@ -1121,6 +1229,8 @@ struct LayoutTensor[
         out result: LayoutTensor[
             dtype,
             Self._compute_tile_layout[*tile_sizes]()[0],
+            mut=mut,
+            origin=origin,
             address_space=address_space,
             element_layout=element_layout,
             masked = masked or _tile_is_masked[layout, *tile_sizes](),
@@ -1236,6 +1346,8 @@ struct LayoutTensor[
         out result: LayoutTensorIter[
             dtype,
             Self._compute_tile_layout[*tile_sizes]()[0],
+            mut=mut,
+            origin=origin,
             address_space=address_space,
             circular=False,
             axis=axis,
@@ -1368,6 +1480,8 @@ struct LayoutTensor[
                 Self._compute_tile_layout[
                     layout.shape[axis].value() // count, axis
                 ]()[0],
+                mut=mut,
+                origin=origin,
                 address_space=address_space,
                 element_layout=element_layout,
                 alignment=alignment,
@@ -1408,6 +1522,8 @@ struct LayoutTensor[
                 Self._compute_tile_layout[
                     layout.shape[axis].value() // count, axis
                 ]()[0],
+                mut=mut,
+                origin=origin,
                 address_space=address_space,
                 element_layout=element_layout,
                 alignment=alignment,
@@ -1426,6 +1542,8 @@ struct LayoutTensor[
         out result: LayoutTensor[
             dtype,
             layout.make_shape_unknown[axis](),
+            mut=mut,
+            origin=origin,
             address_space=address_space,
             element_layout=element_layout,
         ],
@@ -1522,6 +1640,8 @@ struct LayoutTensor[
                 threads_layout,
                 axis,
             ]()[1],
+            mut=mut,
+            origin=origin,
             address_space=address_space,
             element_layout=element_layout,
             masked = masked
@@ -1691,6 +1811,8 @@ struct LayoutTensor[
             coalesce(
                 Self._compute_tile_layout[*vector_shape]()[1], keep_rank=True
             ),
+            mut=mut,
+            origin=origin,
             address_space=address_space,
             element_layout = Self._divide_tiles[*vector_shape]()[0],
             masked=masked,
@@ -1834,6 +1956,8 @@ struct LayoutTensor[
                 d0_slice,
                 d1_slice,
             ),
+            mut=mut,
+            origin=origin,
             address_space=address_space,
             element_layout=element_layout,
         ],
@@ -1866,6 +1990,8 @@ struct LayoutTensor[
             Self.__compute_slice_layout(
                 d0_slice, d1_slice, slice_indices[0], slice_indices[1]
             ),
+            mut=mut,
+            origin=origin,
             address_space=address_space,
             element_layout=element_layout,
         ],
@@ -1914,6 +2040,8 @@ struct LayoutTensor[
         out result: LayoutTensor[
             dtype,
             Self.__compute_slice_layout(d0_slice, slice_indices[0]),
+            mut=mut,
+            origin=origin,
             address_space=address_space,
             element_layout=element_layout,
         ],
@@ -1956,6 +2084,8 @@ struct LayoutTensor[
                 layout,
                 Layout(IntTuple(N, M), IntTuple(M, 1)),
             ),
+            mut=mut,
+            origin=origin,
             address_space=address_space,
             element_layout=element_layout,
         ],
@@ -1970,6 +2100,8 @@ struct LayoutTensor[
         out result: LayoutTensor[
             dtype,
             dst_layout,
+            mut=mut,
+            origin=origin,
             address_space=address_space,
             element_layout=element_layout,
             masked=masked,
@@ -1987,6 +2119,8 @@ struct LayoutTensor[
         out result: LayoutTensor[
             dtype,
             dst_layout,
+            mut=mut,
+            origin=origin,
             address_space=address_space,
             element_layout=element_layout,
         ],
@@ -2226,7 +2360,9 @@ struct LayoutTensor[
                 )
 
     @always_inline
-    fn fill(self, val: Scalar[dtype]) -> Self:
+    fn fill(
+        self: LayoutTensor[dtype, mut=True, **_], val: Scalar[dtype]
+    ) -> __type_of(self):
         @parameter
         if layout.all_dims_known():
             alias num_elements = layout.size() * Self.element_size
@@ -2309,6 +2445,8 @@ fn stack_allocation_like[
     out result: LayoutTensor[
         dtype,
         layout,
+        mut=True,
+        origin=MutableAnyOrigin,
         address_space=target_address_space,
         masked = in_tensor.masked,
     ],
@@ -3245,6 +3383,8 @@ struct LayoutTensorIter[
     layout: Layout,
     /,
     *,
+    mut: Bool = True,
+    origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin].result,
     address_space: AddressSpace = AddressSpace.GENERIC,
     alignment: Int = alignof[type]() if is_nvidia_gpu() else 1,
     circular: Bool = False,
@@ -3260,7 +3400,11 @@ struct LayoutTensorIter[
     alias uint_type = Scalar[_get_unsigned_type(layout, address_space)]
 
     var ptr: UnsafePointer[
-        Scalar[type], address_space=address_space, alignment=alignment
+        Scalar[type],
+        address_space=address_space,
+        alignment=alignment,
+        mut=mut,
+        origin=origin,
     ]
     var offset: Self.uint_type
     var stride: Self.uint_type
@@ -3292,7 +3436,11 @@ struct LayoutTensorIter[
     fn __init__(
         out self,
         ptr: UnsafePointer[
-            Scalar[type], address_space=address_space, alignment=alignment
+            Scalar[type],
+            address_space=address_space,
+            alignment=alignment,
+            mut=mut,
+            origin=origin,
         ],
         bound: Self.uint_type,
         stride: Self.uint_type = layout.size(),
@@ -3315,7 +3463,11 @@ struct LayoutTensorIter[
     fn __init__(
         out self,
         ptr: UnsafePointer[
-            Scalar[type], address_space=address_space, alignment=alignment
+            Scalar[type],
+            address_space=address_space,
+            alignment=alignment,
+            mut=mut,
+            origin=origin,
         ],
         bound: Self.uint_type,
         runtime_layout: RuntimeLayout[layout, **_],
@@ -3354,6 +3506,8 @@ struct LayoutTensorIter[
         out result: LayoutTensor[
             type,
             layout,
+            mut=mut,
+            origin=origin,
             address_space=address_space,
             masked=masked,
             alignment=alignment,
@@ -3375,6 +3529,8 @@ struct LayoutTensorIter[
     ) -> LayoutTensor[
         type,
         layout,
+        mut=mut,
+        origin=origin,
         address_space=address_space,
         masked=masked,
         alignment=alignment,
@@ -3502,6 +3658,8 @@ struct LayoutTensorIter[
         out result: LayoutTensorIter[
             type,
             dst_layout,
+            mut=mut,
+            origin=origin,
             address_space=address_space,
             alignment=alignment,
             circular=circular,
@@ -3562,6 +3720,8 @@ struct LayoutTensorIter[
         out result: LayoutTensorIter[
             new_type,
             layout,
+            mut=mut,
+            origin=origin,
             address_space=address_space,
             alignment=alignment,
             circular = Self.circular,

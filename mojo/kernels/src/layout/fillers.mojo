@@ -11,8 +11,10 @@ from utils.numerics import max_finite
 
 
 fn _filler_impl[
-    dtype: DType, filler: fn (i: Int) capturing [_] -> Scalar[dtype]
-](tensor: LayoutTensor):
+    dtype: DType,
+    filler: fn (i: Int) capturing [_] -> Scalar[dtype],
+    layout: Layout,
+](tensor: LayoutTensor[dtype, layout, mut=True, **_]):
     @parameter
     if tensor.layout.all_dims_known():
         alias num_elements = tensor.layout.size() * tensor.element_size
@@ -28,8 +30,10 @@ fn _filler_impl[
             tensor.ptr[i] = val.cast[tensor.dtype]()
 
 
-fn arange(
-    tensor: LayoutTensor,
+fn arange[
+    dtype: DType, layout: Layout
+](
+    tensor: LayoutTensor[dtype, layout, mut=True, **_],
     start: Scalar[tensor.dtype] = 0,
     step: Scalar[tensor.dtype] = 1,
     end: Scalar[tensor.dtype] = max_finite[tensor.dtype](),
@@ -51,8 +55,10 @@ fn arange(
                 ) % end
 
 
-fn random(
-    tensor: LayoutTensor,
+fn random[
+    dtype: DType, layout: Layout
+](
+    tensor: LayoutTensor[dtype, layout, mut=True, **_],
     min: Scalar[tensor.dtype] = 0,
     max: Scalar[tensor.dtype] = 1,
 ):

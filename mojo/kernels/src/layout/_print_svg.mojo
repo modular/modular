@@ -22,7 +22,10 @@ fn print_svg[
     tensor_base: LayoutTensor,
     tensors: List[
         LayoutTensor[
-            dtype, layout, element_layout=element_layout, masked=masked
+            dtype,
+            layout,
+            element_layout=element_layout,
+            masked=masked,
         ]
     ],
     color_map: Optional[fn (Int, Int) -> String] = None,
@@ -48,7 +51,10 @@ fn _print_svg_impl[
     tensor_base: LayoutTensor,
     tensors: List[
         LayoutTensor[
-            dtype, layout, element_layout=element_layout, masked=masked
+            dtype,
+            layout,
+            element_layout=element_layout,
+            masked=masked,
         ]
     ],
     mut writer: W,

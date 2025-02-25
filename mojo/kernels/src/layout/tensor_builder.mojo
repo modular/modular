@@ -405,6 +405,8 @@ struct LayoutTensorBuild[
         out res: LayoutTensor[
             dtype,
             __layout,
+            mut = ptr.mut,
+            origin = ptr.origin,
             address_space=address_space,
         ],
     ):
@@ -443,6 +445,8 @@ struct LayoutTensorBuild[
         out res: LayoutTensorIter[
             dtype,
             __layout,
+            mut = ptr.mut,
+            origin = ptr.origin,
             address_space=__address_space,
             circular=__circular,
         ],

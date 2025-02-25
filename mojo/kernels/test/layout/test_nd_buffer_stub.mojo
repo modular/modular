@@ -124,8 +124,7 @@ fn test_copy_from_nd_buffer_scalars():
     linspace_fill(buff)
 
     var layout_tensor = LayoutTensor[
-        DType.float32,
-        Layout.row_major(8, 8),
+        DType.float32, Layout.row_major(8, 8)
     ].stack_allocation().fill(0)
 
     alias threads_layout = Layout.row_major(4, 4)
@@ -152,8 +151,7 @@ fn test_copy_to_nd_buffer_scalars():
     print("== test_copy_to_nd_buffer_scalars")
 
     var layout_tensor = LayoutTensor[
-        DType.float32,
-        Layout.row_major(8, 8),
+        DType.float32, Layout.row_major(8, 8)
     ].stack_allocation()
     arange(layout_tensor)
 
@@ -188,8 +186,7 @@ fn test_copy_from_nd_buffer_vectors():
     linspace_fill(buff)
 
     var layout_tensor = LayoutTensor[
-        DType.float32,
-        Layout.row_major(16, 16),
+        DType.float32, Layout.row_major(16, 16)
     ].stack_allocation().fill(0)
 
     alias threads_layout = Layout.row_major(4, 4)
@@ -242,8 +239,7 @@ fn test_copy_to_nd_buffer_vectors():
     print("== test_copy_to_nd_buffer_vectors")
 
     var layout_tensor = LayoutTensor[
-        DType.float32,
-        Layout.row_major(16, 16),
+        DType.float32, Layout.row_major(16, 16)
     ].stack_allocation()
     arange(layout_tensor)
 

@@ -157,7 +157,7 @@ fn _reduce_res_row_major_shape(axis: Int, in_layout: Layout) -> Layout:
 
 @always_inline
 fn max[
-    axis: Int,
+    axis: Int
 ](
     inp: LayoutTensor,
     out res: LayoutTensor[
@@ -174,7 +174,9 @@ fn max[
 
 
 @always_inline
-fn max(x: LayoutTensor, y: __type_of(x)) -> __type_of(x):
+fn max(
+    x: LayoutTensor, y: __type_of(x)
+) -> __type_of(x.origin_cast[True, MutableAnyOrigin]()):
     constrained[
         x.layout.all_dims_known(), "max expects tensor of statically know shape"
     ]()
@@ -206,9 +208,11 @@ fn sum[
 
 
 @always_inline
-fn exp(inp: LayoutTensor) -> __type_of(inp):
+fn exp(
+    inp: LayoutTensor,
+) -> __type_of(inp.origin_cast[True, MutableAnyOrigin]()):
     @parameter
     fn exp_func(val: inp.element_type) -> inp.element_type:
         return math.exp(val)
 
-    return inp.__elementwise_unary[exp_func]()
+    return inp._stack_copy().__elementwise_unary[exp_func]()

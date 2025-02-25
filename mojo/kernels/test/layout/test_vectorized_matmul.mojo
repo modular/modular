@@ -39,8 +39,7 @@ fn test_tiled_and_vectorized_matmul():
     alias TN = 2
 
     var tensor_a = LayoutTensor[
-        DType.float32,
-        Layout(IntTuple(M, K), IntTuple(K, 1)),
+        DType.float32, Layout(IntTuple(M, K), IntTuple(K, 1))
     ].stack_allocation()
     var tensor_b = LayoutTensor[
         DType.float32, Layout(IntTuple(K, N), IntTuple(N, 1))
