@@ -28,9 +28,7 @@ modular_py_library(
 modular_py_test(
     name = "deepseekV2",
     size = "large",
-    srcs = glob(
-        ["**/test_*.py"],
-    ),
+    srcs = glob(["**/test_*.py"]) + ["conftest.py"],
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",

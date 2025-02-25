@@ -4,10 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import json
-import os
-from pathlib import Path
-
 import pytest
 import torch
 from max.dtype import DType
@@ -20,17 +16,6 @@ from torch_reference.configuration_deepseek import (
     DeepseekV2Config,
 )
 from torch_reference.modeling_deepseek import MoEGate
-
-
-@pytest.fixture
-def config() -> DeepseekV2Config:
-    config = DeepseekV2Config()
-    path = os.getenv("PIPELINES_TESTDATA")
-    config_path = Path(path) / "config.json"  # type: ignore
-    with open(config_path, "r") as file:
-        data = json.load(file)
-    config.update(data)
-    return config
 
 
 # TODO: Replace with real weights using indexing included in the upcoming Model API.
@@ -55,20 +40,24 @@ def input_tensor(config: DeepseekV2Config) -> torch.Tensor:
     )
 
 
-def test_moe_gate(
+def generate_torch_outputs(
     config: DeepseekV2Config,
     input_tensor: torch.Tensor,
     dummy_moe_weight: torch.Tensor,
-) -> None:
-    # Generate torch outputs
-
+) -> tuple[torch.Tensor, torch.Tensor]:
     layer = MoEGate(config).to(torch.bfloat16)
     layer.weight.data = dummy_moe_weight
     torch_output = layer(input_tensor)
     torch_topk_idxs = torch_output[0].to(torch.bfloat16)
     torch_topk_weights = torch_output[1].to(torch.bfloat16)
+    return torch_topk_idxs, torch_topk_weights
 
-    # Create MAX Weights
+
+def generate_max_outputs(
+    config: DeepseekV2Config,
+    input_tensor: torch.Tensor,
+    dummy_moe_weight: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
     weights_registry = {}
     weights_registry["gate_weight"] = dummy_moe_weight.to(torch.float32)
 
@@ -78,7 +67,6 @@ def test_moe_gate(
         shape=weights_registry["gate_weight"].shape,
     )
 
-    # Generate MAX outputs
     session = InferenceSession()
     graph = Graph(
         "MoEGate",
@@ -96,6 +84,20 @@ def test_moe_gate(
     max_output = compiled.execute(input_tensor)
     max_topk_idxs = from_dlpack(max_output[0]).to(torch.bfloat16)
     max_topk_weights = from_dlpack(max_output[1]).to(torch.bfloat16)
+    return max_topk_idxs, max_topk_weights
+
+
+def test_moe_gate(
+    config: DeepseekV2Config,
+    input_tensor: torch.Tensor,
+    dummy_moe_weight: torch.Tensor,
+) -> None:
+    torch_topk_idxs, torch_topk_weights = generate_torch_outputs(
+        config, input_tensor, dummy_moe_weight
+    )
+    max_topk_idxs, max_topk_weights = generate_max_outputs(
+        config, input_tensor, dummy_moe_weight
+    )
 
     # Top_k does not return values in sorted order, so we sort outputs here to compare.
     torch.testing.assert_close(
