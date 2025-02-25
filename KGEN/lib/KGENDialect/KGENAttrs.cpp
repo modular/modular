@@ -806,8 +806,11 @@ TypedAttr IntToFloatLiteralAttr::get(MLIRContext *ctx, Type type,
   if (!inputAttr)
     return Base::get(ctx, type, input);
 
-  return FloatLiteralAttr::get(inputAttr.getContext(),
-                               IPRational(inputAttr.getValue(), IPInt(1)));
+  return FloatLiteralAttr::get(
+      inputAttr.getContext(),
+      FloatLiteralSpecialValuesAttr::get(inputAttr.getContext(),
+                                         FloatLiteralSpecialValues::Normal),
+      IPRational(inputAttr.getValue(), IPInt(1)));
 }
 
 bool IntToFloatLiteralAttr::isConstant() const { return false; }
@@ -1004,7 +1007,7 @@ floatLiteralMul(FloatLiteralSpecialValues lSpecial,
   if (isNormal(lSpecial) && isNormal(rSpecial)) {
     IPRational ratResult = lhs * rhs;
     if (ratResult == 0 && ((lhs < 0) || (rhs < 0)))
-      return {FloatLiteralSpecialValues::NegZero, {}};
+      return {FloatLiteralSpecialValues::NegZero, 0};
     return {FloatLiteralSpecialValues::Normal, ratResult};
   }
   return {floatLiteralMulSpecialCases(lSpecial, rSpecial, lhs, rhs), 0};
@@ -1617,22 +1620,6 @@ Type FloatLiteralAttr::getType() const {
 }
 
 bool FloatLiteralAttr::isConstant() const { return true; }
-
-FloatLiteralAttr FloatLiteralAttr::get(MLIRContext *context,
-                                       FloatLiteralSpecialValuesAttr input,
-                                       std::optional<IPRational> value) {
-  // Canonicalize special attributes to have no value.
-  if (input.getValue() != FloatLiteralSpecialValues::Normal)
-    value = {};
-  return Base::get(context, input, value);
-}
-
-FloatLiteralAttr FloatLiteralAttr::get(MLIRContext *context, IPRational value) {
-  return get(context,
-             FloatLiteralSpecialValuesAttr::get(
-                 context, FloatLiteralSpecialValues::Normal),
-             value);
-}
 
 //===----------------------------------------------------------------------===//
 // VTableAttr
