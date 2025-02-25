@@ -527,8 +527,10 @@ fn multistage_dual_gemm_kernel[
     var b0_gmem_iter = b0.tiled_iterator[BD_0, BD_1, axis=b_tile_axis](
         b_tile_coords[0], b_tile_coords[1]
     )
-    var b1_gmem_iter = b1.tiled_iterator[BD_0, BD_1, axis=b_tile_axis](
-        b_tile_coords[0], b_tile_coords[1]
+    var b1_gmem_iter = rebind[__type_of(b0_gmem_iter)](
+        b1.tiled_iterator[BD_0, BD_1, axis=b_tile_axis](
+            b_tile_coords[0], b_tile_coords[1]
+        )
     )
 
     # Compute MMA config
