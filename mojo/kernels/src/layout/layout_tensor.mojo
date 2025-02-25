@@ -192,7 +192,6 @@ fn _distribute_is_masked[
 struct LayoutTensor[
     dtype: DType,
     layout: Layout,
-    rank: Int = layout.rank(),
     /,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
@@ -211,13 +210,14 @@ struct LayoutTensor[
     Parameters:
         dtype: The data type of the underlying pointer.
         layout: The memory layout of the Tensor.
-        rank: The rank of the Tensor.
         address_space: The address space of the underlying pointer.
         element_layout: The memory layout of each element in the Tensor.
         layout_bitwidth: The bitwidth of each dimension of runtime layout.
         masked: If true the tensor is masked and runtime layouts determine the shape.
         alignment: Alignment of the data pointer.
     """
+
+    alias rank = layout.rank()
 
     alias index_type: DType = _get_index_type(layout, address_space)
     alias uint_type = Scalar[_get_unsigned_type(layout, address_space)]
@@ -384,17 +384,16 @@ struct LayoutTensor[
         other: LayoutTensor[
             dtype,
             other_layout,
-            _,
             address_space=address_space,
             element_layout=element_layout,
             layout_bitwidth=layout_bitwidth,
         ],
     ) -> Self:
         @parameter
-        if rank == other.rank:
+        if Self.rank == other.rank:
 
             @parameter
-            for axis in range(rank):
+            for axis in range(Self.rank):
                 constrained[
                     other.shape[axis]() == self.shape[axis](),
                     (
@@ -411,7 +410,7 @@ struct LayoutTensor[
             ),
         ]()
         constrained[
-            other.rank <= rank,
+            other.rank <= Self.rank,
             (
                 "__elementwise_binary_with_broadcast must operates on tensor of"
                 " equal of lower rank"
@@ -421,7 +420,7 @@ struct LayoutTensor[
         # TODO(KERN-812): Support numpy like broadcasting and relax rank-2
         # constrain.
         constrained[
-            rank == 2 or rank == other.rank,
+            Self.rank == 2 or Self.rank == other.rank,
             "Only supports rank-2 tensor, or same rank",
         ]()
 
@@ -503,7 +502,6 @@ struct LayoutTensor[
         other: LayoutTensor[
             dtype,
             other_layout,
-            _,
             address_space=address_space,
             element_layout=element_layout,
             layout_bitwidth=layout_bitwidth,
@@ -535,7 +533,6 @@ struct LayoutTensor[
         other: LayoutTensor[
             dtype,
             other_layout,
-            _,
             address_space=address_space,
             element_layout=element_layout,
             layout_bitwidth=layout_bitwidth,
@@ -584,7 +581,6 @@ struct LayoutTensor[
         other: LayoutTensor[
             dtype,
             other_layout,
-            _,
             address_space=address_space,
             element_layout=element_layout,
             layout_bitwidth=layout_bitwidth,
@@ -636,7 +632,6 @@ struct LayoutTensor[
         other: LayoutTensor[
             dtype,
             other_layout,
-            _,
             address_space=address_space,
             element_layout=element_layout,
             layout_bitwidth=layout_bitwidth,
@@ -685,7 +680,6 @@ struct LayoutTensor[
         other: LayoutTensor[
             dtype,
             other_layout,
-            _,
             address_space=address_space,
             element_layout=element_layout,
             layout_bitwidth=layout_bitwidth,
@@ -732,7 +726,6 @@ struct LayoutTensor[
         other: LayoutTensor[
             dtype,
             other_layout,
-            _,
             address_space=address_space,
             element_layout=element_layout,
             layout_bitwidth=layout_bitwidth,
@@ -780,7 +773,6 @@ struct LayoutTensor[
         other: LayoutTensor[
             dtype,
             other_layout,
-            _,
             address_space=address_space,
             element_layout=element_layout,
             layout_bitwidth=layout_bitwidth,
@@ -1489,7 +1481,7 @@ struct LayoutTensor[
     @always_inline
     fn _clamp_distribute_shape[
         thread_layout: Layout,
-    ](self, thread_id: UInt) -> IndexList[rank]:
+    ](self, thread_id: UInt) -> IndexList[Self.rank]:
         constrained[
             len(flatten(thread_layout.shape)) <= 2
             and len(flatten(thread_layout.stride)) <= 2,
@@ -1497,14 +1489,14 @@ struct LayoutTensor[
         ]()
 
         # clamp IndexList using thread_id and thread_layout
-        var tile_shape = IndexList[rank]()
+        var tile_shape = IndexList[Self.rank]()
         alias thread_shape = thread_layout.shape
         alias thread_stride = thread_layout.stride
 
         # this would only work for rank-2 thread layout, need to extend this
         # to support thread layout such as Layout((2, 2), 2)
         @parameter
-        for i in range(rank):
+        for i in range(Self.rank):
             alias thread_stride_i = Int(thread_stride[i])
             alias thread_shape_i = Int(thread_shape[i])
             var tile_idx = (thread_id // thread_stride_i) % thread_shape_i

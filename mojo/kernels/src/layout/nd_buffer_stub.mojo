@@ -457,13 +457,10 @@ fn vectorize[
 
 @always_inline("nodebug")
 fn _copy_nd_buffer_to_layout_tensor[
-    dst_rank: Int,
     src_rank: Int,
     dtype: DType,
     layout: Layout,
     shape: DimList,
-    dst_address_space: AddressSpace,
-    tensor_element_layout: Layout,
     buff_element_layout_shape: IndexList[src_rank],
     *,
     is_async: Bool = False,
@@ -473,14 +470,14 @@ fn _copy_nd_buffer_to_layout_tensor[
     dst: LayoutTensor[
         dtype,
         layout,
-        dst_rank,
-        address_space=dst_address_space,
-        element_layout=tensor_element_layout, **_,
+        *_, **_,
     ],
     src: NDBuffer[dtype, src_rank, shape],
     buff_element_layout: ElementLayout[src_rank, buff_element_layout_shape],
 ):
     alias num_elements = dst.layout.size()
+    alias dst_rank = layout.rank()
+    alias tensor_element_layout = dst.element_layout
     constrained[src_rank == dst_rank, "src and dst should have same rank"]()
 
     # 1d-vector load/store
@@ -597,15 +594,12 @@ fn _copy_nd_buffer_to_layout_tensor[
 
 @always_inline("nodebug")
 fn _copy_nd_buffer_to_layout_tensor_masked[
-    dst_rank: Int,
     src_rank: Int,
-    mask_rank: Int,
     dtype: DType,
     layout: Layout,
     shape: DimList,
-    dst_address_space: AddressSpace,
-    tensor_element_layout: Layout,
     buff_element_layout_shape: IndexList[src_rank],
+    mask_rank: Int,
     mask_element_size: IndexList[mask_rank],
     mask_element_stride: IndexList[mask_rank],
     *,
@@ -616,15 +610,15 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
     dst: LayoutTensor[
         dtype,
         layout,
-        dst_rank,
-        address_space=dst_address_space,
-        element_layout=tensor_element_layout, **_,
+        *_, **_,
     ],
     src: NDBuffer[dtype, src_rank, shape],
     buff_element_layout: ElementLayout[src_rank, buff_element_layout_shape],
     tile_mask: TileMask[mask_rank, mask_element_size, mask_element_stride],
 ):
     alias num_elements = dst.layout.size()
+    alias dst_rank = layout.rank()
+    alias tensor_element_layout = dst.element_layout
     constrained[src_rank == dst_rank, "src and dst should have same rank"]()
     constrained[
         mask_rank == dst_rank, "mask_rank and dst should have same rank"
@@ -761,12 +755,9 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
 @always_inline("nodebug")
 fn _copy_layout_tensor_to_nd_buffer[
     dst_rank: Int,
-    src_rank: Int,
     dtype: DType,
     layout: Layout,
     shape: DimList,
-    dst_address_space: AddressSpace,
-    tensor_element_layout: Layout,
     buff_element_layout_shape: IndexList[dst_rank],
 ](
     dst: NDBuffer[dtype, dst_rank, shape],
@@ -774,11 +765,11 @@ fn _copy_layout_tensor_to_nd_buffer[
     src: LayoutTensor[
         dtype,
         layout,
-        src_rank,
-        address_space=dst_address_space,
-        element_layout=tensor_element_layout, **_,
+        *_, **_,
     ],
 ):
+    alias src_rank = layout.rank()
+    alias tensor_element_layout = src.element_layout
     alias num_elements = src.layout.size()
     constrained[src_rank == dst_rank, "src and dst should have same rank"]()
 
@@ -856,13 +847,10 @@ fn _copy_layout_tensor_to_nd_buffer[
 @always_inline
 fn _copy_layout_tensor_to_nd_buffer_masked[
     dst_rank: Int,
-    src_rank: Int,
     mask_rank: Int,
     dtype: DType,
     layout: Layout,
     shape: DimList,
-    dst_address_space: AddressSpace,
-    tensor_element_layout: Layout,
     buff_element_layout_shape: IndexList[dst_rank],
     mask_element_size: IndexList[mask_rank],
     mask_element_stride: IndexList[mask_rank],
@@ -872,13 +860,13 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
     src: LayoutTensor[
         dtype,
         layout,
-        src_rank,
-        address_space=dst_address_space,
-        element_layout=tensor_element_layout, **_,
+        *_, **_,
     ],
     tile_mask: TileMask[mask_rank, mask_element_size, mask_element_stride],
 ):
     alias num_elements = src.layout.size()
+    alias src_rank = layout.rank()
+    alias tensor_element_layout = src.element_layout
     constrained[src_rank == dst_rank, "src and dst should have same rank"]()
 
     constrained[
@@ -978,10 +966,7 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
 @always_inline("nodebug")
 fn copy_from_nd_buffer[
     dtype: DType,
-    dst_rank: Int,
-    dst_address_space: AddressSpace,
-    dst_data_layout: Layout,
-    dst_element_layout: Layout, //,
+    dst_data_layout: Layout, //,
     thread_layout: Layout,
     is_async: Bool = False,
     swizzle: OptionalReg[_swizzle_signature] = None,
@@ -989,13 +974,13 @@ fn copy_from_nd_buffer[
     dst_thread_local: LayoutTensor[
         dtype,
         dst_data_layout,
-        dst_rank,
-        address_space=dst_address_space,
-        element_layout=dst_element_layout, **_,
+        *_, **_,
     ],
     src: NDBuffer[dtype, *_],
     thread_id: Int,
 ):
+    alias dst_rank = dst_data_layout.rank()
+    alias dst_element_layout = dst_thread_local.element_layout
     # FIXME: Relax this to support any ranked data and thread layouts.
     constrained[src.rank == dst_rank, "src and dst should have same rank"]()
     constrained[dst_rank == 2, "Only rank-2 layouts is supported for now."]()
@@ -1049,13 +1034,10 @@ fn copy_from_nd_buffer[
 #
 @always_inline("nodebug")
 fn copy_from_nd_buffer_masked[
-    dst_rank: Int,
     src_rank: Int,
     dtype: DType,
-    dst_address_space: AddressSpace,
     dst_data_layout: Layout,
     src_buff_shape: DimList,
-    dst_element_layout: Layout,
     thread_layout: Layout,
     is_async: Bool = False,
     swizzle: OptionalReg[_swizzle_signature] = None,
@@ -1063,14 +1045,14 @@ fn copy_from_nd_buffer_masked[
     dst_thread_local: LayoutTensor[
         dtype,
         dst_data_layout,
-        dst_rank,
-        address_space=dst_address_space,
-        element_layout=dst_element_layout, **_,
+        *_, **_,
     ],
     src: NDBuffer[dtype, src_rank, src_buff_shape],
     tile_mask: TileMask,
     thread_id: Int,
 ):
+    alias dst_rank = dst_data_layout.rank()
+    alias dst_element_layout = dst_thread_local.element_layout
     # FIXME: Relax this to support any ranked data and thread layouts.
     constrained[src_rank == 2, "Only rank-2 layouts is supported for now."]()
 
@@ -1148,24 +1130,21 @@ fn copy_from_nd_buffer_masked[
 @always_inline("nodebug")
 fn copy_to_nd_buffer[
     dst_rank: Int,
-    src_rank: Int,
     dtype: DType,
     dst_buff_shape: DimList,
-    dst_address_space: AddressSpace,
     src_data_layout: Layout,
-    src_element_layout: Layout,
     thread_layout: Layout,
 ](
     dst: NDBuffer[dtype, dst_rank, dst_buff_shape],
     src_thread_local: LayoutTensor[
         dtype,
         src_data_layout,
-        src_rank,
-        address_space=dst_address_space,
-        element_layout=src_element_layout, **_,
+        *_, **_,
     ],
     thread_id: Int,
 ):
+    alias src_rank = src_data_layout.rank()
+    alias src_element_layout = src_thread_local.element_layout
     # FIXME: Relax this to support any ranked data and thread layouts.
     constrained[src_rank == 2, "Only rank-2 layouts is supported for now."]()
 
@@ -1212,25 +1191,22 @@ fn copy_to_nd_buffer[
 @always_inline("nodebug")
 fn copy_to_nd_buffer_masked[
     dst_rank: Int,
-    src_rank: Int,
     dtype: DType,
     dst_buff_shape: DimList,
-    dst_address_space: AddressSpace,
     src_data_layout: Layout,
-    src_element_layout: Layout,
     thread_layout: Layout,
 ](
     dst: NDBuffer[dtype, dst_rank, dst_buff_shape],
     src_thread_local: LayoutTensor[
         dtype,
         src_data_layout,
-        src_rank,
-        address_space=dst_address_space,
-        element_layout=src_element_layout, **_,
+        *_, **_,
     ],
     tile_mask: TileMask,
     thread_id: Int,
 ):
+    alias src_rank = src_data_layout.rank()
+    alias src_element_layout = src_thread_local.element_layout
     # FIXME: Relax this to support any ranked data and thread layouts.
     constrained[src_rank == 2, "Only rank-2 layouts is supported for now."]()
 
@@ -1299,13 +1275,10 @@ fn copy_to_nd_buffer_masked[
 # to `thread_layout` of threads.
 #
 fn copy_from_nd_buffer_async[
-    dst_rank: Int,
     src_rank: Int,
     dtype: DType,
-    dst_address_space: AddressSpace,
     dst_data_layout: Layout,
     src_buff_shape: DimList,
-    dst_element_layout: Layout,
     thread_layout: Layout,
     is_async: Bool = False,
     swizzle: OptionalReg[_swizzle_signature] = None,
@@ -1313,9 +1286,7 @@ fn copy_from_nd_buffer_async[
     dst_tensor: LayoutTensor[
         dtype,
         dst_data_layout,
-        dst_rank,
-        address_space=dst_address_space,
-        element_layout=dst_element_layout, **_,
+        *_, **_,
     ],
     src_buffer: NDBuffer[dtype, src_rank, src_buff_shape],
 ):

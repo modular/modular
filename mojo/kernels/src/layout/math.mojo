@@ -163,7 +163,6 @@ fn max[
     out res: LayoutTensor[
         inp.dtype,
         _reduce_res_row_major_shape(axis, inp.layout),
-        inp.rank - 1,
         address_space = inp.address_space,
         element_layout = inp.element_layout,
         layout_bitwidth = inp.layout_bitwidth,
@@ -196,7 +195,6 @@ fn sum[
     out res: LayoutTensor[
         inp.dtype,
         _reduce_res_row_major_shape(axis, inp.layout),
-        inp.rank - 1,
         address_space = inp.address_space,
         element_layout = inp.element_layout,
         layout_bitwidth = inp.layout_bitwidth,

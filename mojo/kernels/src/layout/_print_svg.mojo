@@ -14,7 +14,6 @@ from pathlib import Path
 fn print_svg[
     dtype: DType,
     layout: Layout,
-    rank: Int,
     element_layout: Layout,
     masked: Bool, //,
     swizzle: Optional[Swizzle] = None,
@@ -23,7 +22,7 @@ fn print_svg[
     tensor_base: LayoutTensor,
     tensors: List[
         LayoutTensor[
-            dtype, layout, rank, element_layout=element_layout, masked=masked
+            dtype, layout, element_layout=element_layout, masked=masked
         ]
     ],
     color_map: Optional[fn (Int, Int) -> String] = None,
@@ -40,7 +39,6 @@ fn print_svg[
 fn _print_svg_impl[
     dtype: DType,
     layout: Layout,
-    rank: Int,
     element_layout: Layout,
     masked: Bool,
     W: Writer, //,
@@ -50,7 +48,7 @@ fn _print_svg_impl[
     tensor_base: LayoutTensor,
     tensors: List[
         LayoutTensor[
-            dtype, layout, rank, element_layout=element_layout, masked=masked
+            dtype, layout, element_layout=element_layout, masked=masked
         ]
     ],
     mut writer: W,
