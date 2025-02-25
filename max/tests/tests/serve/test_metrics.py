@@ -9,14 +9,18 @@ from unittest import mock
 import pytest
 from max.serve.config import Settings
 from max.serve.telemetry import common, metrics
-from opentelemetry.metrics import get_meter_provider  # type: ignore
+from opentelemetry.metrics import get_meter_provider
+from opentelemetry.metrics._internal.instrument import _ProxyInstrument
 
 _meter = get_meter_provider().get_meter("testing")
 
 
 def test_correct_metric_names():
     for name, inst in metrics.SERVE_METRICS.items():
-        assert name == inst._name
+        if isinstance(inst, _ProxyInstrument):
+            assert name == inst._name
+        else:
+            assert name == inst.name
 
 
 def test_max_measurement():
@@ -49,6 +53,7 @@ def test_reject_unknown_metric():
 def test_instrument_called():
     common.configure_metrics(Settings())
     itl = metrics.SERVE_METRICS["maxserve.itl"]
+    assert isinstance(itl, _ProxyInstrument)
     assert itl._real_instrument is not None
     with mock.patch.object(
         itl._real_instrument, "_measurement_consumer"

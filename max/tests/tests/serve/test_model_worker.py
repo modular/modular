@@ -13,6 +13,7 @@ from max.serve.config import Settings
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
 from max.serve.pipelines.model_worker import start_model_worker
+from max.serve.telemetry.metrics import NoopClient
 
 
 @pytest.mark.asyncio
@@ -25,6 +26,7 @@ async def test_model_worker_propagates_exception() -> None:
                 tg_batch_size=1, ce_batch_size=1, ce_batch_timeout=0.0
             ),
             settings=Settings(),
+            metric_client=NoopClient(),
         ):
             raise AssertionError
 
@@ -55,6 +57,7 @@ async def test_model_worker_propagates_construction_exception() -> None:
                 tg_batch_size=1, ce_batch_size=1, ce_batch_timeout=0.0
             ),
             settings=Settings(),
+            metric_client=NoopClient(),
         ):
             pass
 
@@ -80,5 +83,6 @@ async def test_model_worker_start_timeout() -> None:
                 tg_batch_size=1, ce_batch_size=1, ce_batch_timeout=0.0
             ),
             settings=Settings(MAX_SERVE_MW_TIMEOUT=0.1),
+            metric_client=NoopClient(),
         ):
             pass

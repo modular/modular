@@ -77,7 +77,6 @@ def app(token_generator):
         tokenizer=MockTokenizer(),
     )
     app = fastapi_app(
-        # TODO
         Settings(api_types=[APIType.OPENAI], MAX_SERVE_USE_HEARTBEAT=False),
         serving_settings,
     )

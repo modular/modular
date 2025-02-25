@@ -8,57 +8,63 @@ import time
 from unittest import mock
 
 import pytest
-from max.serve.scheduler.async_queue import AsyncCallConsumer, NotStarted
+from max.serve.config import MetricLevel, Settings
+from max.serve.telemetry.asyncio_controller import (
+    AsyncioTelemetryController,
+    NotStarted,
+)
+from max.serve.telemetry.metrics import MaxMeasurement
 
 
 @pytest.mark.asyncio
 async def test_basic_usage():
-    spy = mock.MagicMock()
-    spy2 = mock.MagicMock()
+    spy = mock.Mock(spec=MaxMeasurement)
+    spy2 = mock.Mock(spec=MaxMeasurement)
 
-    acc = AsyncCallConsumer()
+    atc = AsyncioTelemetryController()
 
-    # Consumer is not started.  call() doesn't work
+    # Getting a client for a non-started controller should not work
+    # we need to be able to serialize clients & still connect
     with pytest.raises(NotStarted):
-        acc.call(spy2)
-    assert not spy2.called
+        atc.Client(Settings())
+
+    assert not spy2.commit.called
 
     # Consumer is running.  call() works
-    async with acc:
-        acc.call(spy)
-    assert spy.called
+    async with atc:
+        client = atc.Client(Settings())
+        client.send_measurement(spy, level=MetricLevel.BASIC)
+    assert spy.commit.called
 
     # Consumer is stopped.  call() doesn't work
     with pytest.raises(NotStarted):
-        acc.call(spy2)
-    assert not spy2.called
+        atc.Client(Settings()).send_measurement(spy2, level=MetricLevel.BASIC)
+    assert not spy2.commit.called
 
 
 @pytest.mark.asyncio
 async def test_fast():
-    """Queuing a function call should be faster than the invocation"""
-    async with AsyncCallConsumer() as acc:
+    """Queuing a metric measurement should be fast"""
+    async with AsyncioTelemetryController() as atc:
+        client = atc.Client(Settings())
         start = time.perf_counter()
-        acc.call(time.sleep, 100e-3)  # small sleep so tests stay fast
+        client.send_measurement(
+            MaxMeasurement("maxserve.request_count", 1),
+            level=MetricLevel.BASIC,
+        )
         duration = time.perf_counter() - start
-        assert duration < 50e-6
+        assert duration < 1e-3
 
 
 @pytest.mark.asyncio
 async def test_shutdown():
-    n_calls = 0
-
-    def sleep():
-        nonlocal n_calls
-        n_calls += 1
-        time.sleep(100e-3)
-
+    spy = mock.Mock(spec=MaxMeasurement)
     N = 10
-
-    async with AsyncCallConsumer() as acc:
+    async with AsyncioTelemetryController() as atc:
+        client = atc.Client(Settings())
         for i in range(N):
-            acc.call(sleep)
+            client.send_measurement(spy, level=MetricLevel.BASIC)
         # we haven't waited long enough for everything to run
-        assert n_calls < N
+        assert spy.commit.call_count < N
     # shutdown should burn through the queue
-    assert n_calls == N
+    assert spy.commit.call_count == N
