@@ -14,7 +14,7 @@ from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.pipelines.nn import MLP, Linear
+from max.pipelines.nn import MLP, Linear, Signals
 
 
 def torch_linear(weight, **kwargs):
@@ -72,9 +72,7 @@ def distributed_mlp_graph(devices: List[Device], model_parameters) -> Graph:
     w2_type: TensorType = TensorType(
         DType.float32, [hidden_dim, intermediate_size], DeviceRef.CPU()
     )
-    signals = ops.allreduce.Signals(
-        devices=(DeviceRef(d.label, d.id) for d in devices)
-    )
+    signals = Signals(devices=(DeviceRef(d.label, d.id) for d in devices))
     with Graph(
         "mlp",
         input_types=[
@@ -146,7 +144,7 @@ def test_mlp(batch_size, intermediate_size, hidden_dim, n_devices):
 
     signal_buffers = [
         Tensor.zeros(
-            shape=(ops.allreduce.Signals.NUM_BYTES,),
+            shape=(Signals.NUM_BYTES,),
             dtype=DType.uint8,
             device=dev,
         )

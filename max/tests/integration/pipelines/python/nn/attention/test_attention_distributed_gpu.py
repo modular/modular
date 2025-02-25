@@ -21,7 +21,7 @@ from max.pipelines.kv_cache import (
     KVCacheStrategy,
     load_kv_manager,
 )
-from max.pipelines.nn import Linear
+from max.pipelines.nn import Linear, Signals
 from max.pipelines.nn.attention import Attention
 
 ACCURACY_RTOL = 1e-2
@@ -179,9 +179,7 @@ def _attention_layer(
         inp for device_inputs in kv_inputs_all for inp in device_inputs
     ]  # flatten list of tuples to list of elements
 
-    signals = ops.allreduce.Signals(
-        devices=(DeviceRef(d.label, d.id) for d in devices)
-    )
+    signals = Signals(devices=(DeviceRef(d.label, d.id) for d in devices))
 
     with Graph(
         "vanilla_opaque_attn",
@@ -277,7 +275,7 @@ def execute_attn_for_devices(
 
     signal_buffers = [
         Tensor.zeros(
-            shape=(ops.allreduce.Signals.NUM_BYTES,),
+            shape=(Signals.NUM_BYTES,),
             dtype=DType.uint8,
             device=dev,
         )

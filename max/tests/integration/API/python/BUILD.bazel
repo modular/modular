@@ -189,6 +189,7 @@ modular_py_test(
     tags = ["multi-gpu"],
     deps = [
         "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/pipelines/nn",
         requirement("numpy"),
     ],
 )
