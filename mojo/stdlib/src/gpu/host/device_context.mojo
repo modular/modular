@@ -1466,6 +1466,43 @@ struct DeviceContext:
         return elapsed_nanos
 
     @always_inline
+    fn execution_time[
+        func: fn () raises capturing [_] -> None
+    ](self, num_iters: Int) raises -> Int:
+        var timer_ptr = _DeviceTimerPtr()
+        # const char* AsyncRT_DeviceContext_startTimer(const DeviceTimer **result, const DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_startTimer",
+                _CharPtr,
+                UnsafePointer[_DeviceTimerPtr],
+                _DeviceContextPtr,
+            ](
+                UnsafePointer.address_of(timer_ptr),
+                self._handle,
+            )
+        )
+        var timer = _DeviceTimer(timer_ptr)
+        for _ in range(num_iters):
+            func()
+        var elapsed_nanos: Int = 0
+        # const char *AsyncRT_DeviceContext_stopTimer(int64_t *result, const DeviceContext *ctx, const DeviceTimer *timer)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_stopTimer",
+                _CharPtr,
+                UnsafePointer[Int],
+                _DeviceContextPtr,
+                _DeviceTimerPtr,
+            ](
+                UnsafePointer.address_of(elapsed_nanos),
+                self._handle,
+                timer._handle,
+            )
+        )
+        return elapsed_nanos
+
+    @always_inline
     fn execution_time_iter[
         func: fn (Self, Int) raises capturing [_] -> None
     ](self, num_iters: Int) raises -> Int:
