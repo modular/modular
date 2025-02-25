@@ -1503,7 +1503,7 @@ struct DeviceContext:
         return elapsed_nanos
 
     @always_inline
-    fn enqueue_copy_to_device[
+    fn enqueue_copy[
         type: DType
     ](
         self, dst_buf: DeviceBuffer[type], src_ptr: UnsafePointer[Scalar[type]]
@@ -1535,7 +1535,7 @@ struct DeviceContext:
         )
 
     @always_inline
-    fn enqueue_copy_from_device[
+    fn enqueue_copy[
         type: DType
     ](
         self, dst_ptr: UnsafePointer[Scalar[type]], src_buf: DeviceBuffer[type]
@@ -1566,7 +1566,7 @@ struct DeviceContext:
         )
 
     @always_inline
-    fn enqueue_copy_from_device[
+    fn enqueue_copy[
         type: DType
     ](
         self,
@@ -1574,8 +1574,8 @@ struct DeviceContext:
         src_ptr: UnsafePointer[Scalar[type]],
         size: Int,
     ) raises:
-        """Enqueues an async copy of `size` elements from the device pointer to
-        the host pointer.
+        """Enqueues an async copy of `size` elements from a device pointer to
+        another device pointer.
 
         Parameters:
             type: Type of the data being copied.
@@ -1585,11 +1585,13 @@ struct DeviceContext:
             src_ptr: Device pointer to copy from.
             size: Number of elements (of the specified `DType`) to copy.
         """
+        # Not directly implemented on DeviceContext, wrap in buffers first
+        var dst_buf = DeviceBuffer(self, dst_ptr, size, owning=False)
         var src_buf = DeviceBuffer(self, src_ptr, size, owning=False)
-        self.enqueue_copy_from_device[type](dst_ptr, src_buf)
+        self.enqueue_copy[type](dst_buf, src_buf)
 
     @always_inline
-    fn enqueue_copy_device_to_device[
+    fn enqueue_copy[
         type: DType
     ](self, dst_buf: DeviceBuffer[type], src_buf: DeviceBuffer[type]) raises:
         """Enqueues an async copy from one device buffer to another. The amount
@@ -1619,32 +1621,7 @@ struct DeviceContext:
         )
 
     @always_inline
-    fn enqueue_copy_device_to_device[
-        type: DType
-    ](
-        self,
-        dst_ptr: UnsafePointer[Scalar[type]],
-        src_ptr: UnsafePointer[Scalar[type]],
-        size: Int,
-    ) raises:
-        """Enqueues an async copy of `size` elements from a device pointer to
-        another device pointer.
-
-        Parameters:
-            type: Type of the data being copied.
-
-        Args:
-            dst_ptr: Host pointer to copy to.
-            src_ptr: Device pointer to copy from.
-            size: Number of elements (of the specified `DType`) to copy.
-        """
-        # Not directly implemented on DeviceContext, wrap in buffers first
-        var dst_buf = DeviceBuffer(self, dst_ptr, size, owning=False)
-        var src_buf = DeviceBuffer(self, src_ptr, size, owning=False)
-        self.enqueue_copy_device_to_device[type](dst_buf, src_buf)
-
-    @always_inline
-    fn copy_to_device_sync[
+    fn copy[
         type: DType
     ](
         self, dst_buf: DeviceBuffer[type], src_ptr: UnsafePointer[Scalar[type]]
@@ -1676,7 +1653,7 @@ struct DeviceContext:
         )
 
     @always_inline
-    fn copy_from_device_sync[
+    fn copy[
         type: DType
     ](
         self, dst_ptr: UnsafePointer[Scalar[type]], src_buf: DeviceBuffer[type]
@@ -1707,7 +1684,7 @@ struct DeviceContext:
         )
 
     @always_inline
-    fn copy_device_to_device_sync[
+    fn copy[
         type: DType
     ](self, dst_buf: DeviceBuffer[type], src_buf: DeviceBuffer[type]) raises:
         """Copies data from one device buffer to another. The amount
@@ -2090,15 +2067,11 @@ struct _HostMappedBuffer[type: DType]:
 
     fn __enter__(mut self) raises -> UnsafePointer[Scalar[type]]:
         self._cpu_ctx.synchronize()
-        self._dev_ctx.enqueue_copy_from_device(
-            self._cpu_buf.unsafe_ptr(), self._dev_buf
-        )
+        self._dev_ctx.enqueue_copy(self._cpu_buf.unsafe_ptr(), self._dev_buf)
         self._dev_ctx.synchronize()
         return self._cpu_buf.unsafe_ptr()
 
     fn __exit__(mut self) raises:
         self._cpu_ctx.synchronize()
-        self._dev_ctx.enqueue_copy_to_device(
-            self._dev_buf, self._cpu_buf.unsafe_ptr()
-        )
+        self._dev_ctx.enqueue_copy(self._dev_buf, self._cpu_buf.unsafe_ptr())
         self._dev_ctx.synchronize()

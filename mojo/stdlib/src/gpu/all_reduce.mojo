@@ -182,7 +182,7 @@ fn all_reduce_naive[
                 tmp_buffer_list.append(tmp_buffer)
 
                 # Copy data from other devices to the temporary buffer on the current device
-                curr_ctx.enqueue_copy_device_to_device(
+                curr_ctx.enqueue_copy(
                     tmp_buffer,
                     device_buffer_list[i],  # Source buffer from GPU i
                 )
@@ -202,7 +202,7 @@ fn all_reduce_naive[
 
             if i == 0:
                 # Initialize the output buffer with the first buffer
-                curr_ctx.enqueue_copy_device_to_device(
+                curr_ctx.enqueue_copy(
                     curr_out_buf.data, src_buffer_ptr, num_elements
                 )
             else:
