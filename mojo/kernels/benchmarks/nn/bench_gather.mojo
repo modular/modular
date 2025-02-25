@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-build-no-debug-no-assert %s
 
-from collections.vector import InlinedFixedVector
+from collections import List
 from random import rand, randint
 
 from benchmark import *
@@ -30,9 +30,6 @@ fn bench_gather(mut m: Bench, spec: GatherSpec) raises:
 
 @parameter
 fn bench_gather(mut bencher: Bencher, spec: GatherSpec):
-    var data = InlinedFixedVector[Float32](spec.m1 * spec.m2)
-    var indices = InlinedFixedVector[Int32](spec.n1 * spec.n2)
-
     var index_rand_min = 0
     var index_rand_max = spec.m1 - 1
 
