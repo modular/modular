@@ -401,7 +401,7 @@ def get_target_ce_batch_tokens(pipeline_config: PipelineConfig) -> int:
         return pipeline_config.target_num_new_tokens
 
     # TODO(E2EOPT-23) temporary hard-coded default. We'll make this smarter later.
-    return 4096
+    return 8192
 
 
 def batch_config_from_pipeline_config(
