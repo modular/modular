@@ -128,7 +128,7 @@ def test_isnan():
     alias x1 = isnan(SIMD[DType.float32, 4](SIMD[DType.float64, 4](1.0)))
     assert_equal(x1, False)
 
-    alias x2 = isnan(SIMD[DType.float32, 4](FloatLiteral_nan))
+    alias x2 = isnan(SIMD[DType.float32, 4](FloatLiteral.nan))
     assert_equal(x2, True)
 
 
