@@ -129,15 +129,11 @@ struct ManagedLayoutTensor[
 
     fn _update_device(self) raises:
         if self.ctx:
-            self.ctx.value().copy_to_device_sync(
-                self.device_data.value(), self.host_data
-            )
+            self.ctx.value().copy(self.device_data.value(), self.host_data)
 
     fn _update_host(self) raises:
         if self.ctx:
-            self.ctx.value().copy_from_device_sync(
-                self.host_data, self.device_data.value()
-            )
+            self.ctx.value().copy(self.host_data, self.device_data.value())
 
     @always_inline
     fn __del__(owned self):
