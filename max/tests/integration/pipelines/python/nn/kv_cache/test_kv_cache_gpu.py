@@ -45,4 +45,4 @@ async def _test_kv_cache_gpu():
     # suffixed [0] because we only have one device
     kv_tuple = kv_manager.fetch(seq_ids_and_prompts)[0]
     assert isinstance(kv_tuple, KVCacheInputs)
-    assert len(list(kv_tuple)) == 4
+    assert len(kv_tuple) == 4

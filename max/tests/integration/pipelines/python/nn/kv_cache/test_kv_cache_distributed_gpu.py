@@ -53,4 +53,4 @@ async def _test_kv_cache_gpu():
         for i in range(num_devices):
             kv_tuple = list_of_kv_tuples[i]
             assert isinstance(kv_tuple, KVCacheInputs)
-            assert len(list(kv_tuple)) == 4
+            assert len(kv_tuple) == 4
