@@ -21,11 +21,21 @@ from gpu._cublas.cublas import (
 )
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host.info import DEFAULT_GPU_ARCH
-from internal_utils import DeviceNDBuffer, arg_parse
-from internal_utils._utils import ValOrDim, dynamic, static
+from internal_utils import (
+    DeviceNDBuffer,
+    HostNDBuffer,
+    arg_parse,
+)
+from internal_utils._utils import (
+    ValOrDim,
+    dynamic,
+    static,
+    InitializationType,
+    initialize,
+)
+
 from linalg.matmul_gpu import _matmul_gpu
 from memory import UnsafePointer
-
 from utils import IndexList
 
 
@@ -90,9 +100,11 @@ fn bench_matmul[
     shape_c_dim: IndexList[2],
     shape_a_dim: IndexList[2],
     shape_b_dim: IndexList[2],
+    init_type: InitializationType,
 ) raises:
     # Choose a size larger than the two times the L2 cache
     # 128 MiB is larger that twice the L2 cache on the A100, A10, and L4.
+    # update: using 512 to be 2x the infinity cache on MI300x
     @always_inline
     fn get_size(shape: IndexList[2]) -> Int:
         return shape[0] * shape[1]
@@ -102,7 +114,7 @@ fn bench_matmul[
     var stride_b = align_up(get_size(shape_b_dim), simd_size)
     var stride_c = align_up(get_size(shape_c_dim), simd_size)
 
-    alias k128 = 128 * 1024 * 1024
+    alias k128 = 512 * 1024 * 1024
     var cache_a = align_up(k128, stride_a * sizeof[dtype]()) // sizeof[dtype]()
     var cache_b = align_up(k128, stride_b * sizeof[dtype]()) // sizeof[dtype]()
     var cache_c = align_up(k128, stride_c * sizeof[dtype]()) // sizeof[dtype]()
@@ -110,6 +122,16 @@ fn bench_matmul[
     var buffer_a = ctx.enqueue_create_buffer[dtype](cache_a)
     var buffer_b = ctx.enqueue_create_buffer[dtype](cache_b)
     var buffer_c = ctx.enqueue_create_buffer[dtype](cache_c)
+
+    var a_host = HostNDBuffer[dtype, 1](DimList(cache_a))
+    var b_host = HostNDBuffer[dtype, 1](DimList(cache_b))
+
+    initialize(a_host.tensor, init_type)
+    initialize(b_host.tensor, init_type)
+
+    ctx.enqueue_copy_to_device(buffer_a, a_host.tensor.data)
+    ctx.enqueue_copy_to_device(buffer_b, b_host.tensor.data)
+    ctx.synchronize()
 
     var handle = vendor_blas.Handle()
 
@@ -187,6 +209,8 @@ fn bench_matmul[
     _ = buffer_a^
     _ = buffer_b^
     _ = buffer_c^
+    _ = a_host^
+    _ = b_host^
 
 
 fn create_matmul_bench[
@@ -196,7 +220,12 @@ fn create_matmul_bench[
     cache_busting: Bool,
     use_vendor_blas: Bool,
 ](
-    ctx: DeviceContext, mut b: Bench, m: ValOrDim, n: ValOrDim, k: ValOrDim
+    ctx: DeviceContext,
+    mut b: Bench,
+    m: ValOrDim,
+    n: ValOrDim,
+    k: ValOrDim,
+    init_type: InitializationType,
 ) raises:
     alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
@@ -214,7 +243,14 @@ fn create_matmul_bench[
         transpose_b=transpose_b,
         cache_busting=cache_busting,
         use_vendor_blas=use_vendor_blas,
-    ](ctx, b, (m.value, n.value), (m.value, k.value), dynamic_b_shape)
+    ](
+        ctx,
+        b,
+        (m.value, n.value),
+        (m.value, k.value),
+        dynamic_b_shape,
+        init_type,
+    )
 
 
 fn main() raises:
@@ -223,7 +259,9 @@ fn main() raises:
     var M = Int(arg_parse("M", 1))
     alias N = env_get_int["N", 1]()
     alias K = env_get_int["K", 1]()
-
+    var init_type = InitializationType.from_str(
+        arg_parse("init_type", "uniform_distribution")
+    )
     alias cache_busting = True
     alias transpose_b = True
     alias use_vendor_blas = False
@@ -242,6 +280,7 @@ fn main() raises:
             dynamic(M),
             static[N](),
             static[K](),
+            init_type,
         )
 
     m.dump_report()
