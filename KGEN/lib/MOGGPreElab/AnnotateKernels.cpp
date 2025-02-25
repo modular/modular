@@ -8,23 +8,21 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/LITDialect/LITUtils.h"
-#include "KGEN/MOGGPreElab/MOGGDecorators.h"
-#include "KGEN/MOGGPreElab/MOGGUtils.h"
+#include "KGEN/MOGGPreElab/MOGGPreElabDecorators.h"
+#include "KGEN/MOGGPreElab/MOGGPreElabHelpers.h"
+#include "KGEN/MOGGPreElab/MOGGPreElabUtils.h"
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
-#include "KGEN/include/KGEN/MOGGPreElab/MOGGDecorators.h"
 #include "Support/AssertStream.h"
 #include "mlir/Pass/Pass.h"
-
-#include "Helpers.h"
 
 using namespace M;
 using namespace KGEN;
 using namespace MOGGPreElab;
 
 namespace M::KGEN::MOGGPreElab {
-#define GEN_PASS_DEF_MOGGANNOTATE
+#define GEN_PASS_DEF_ANNOTATEKERNELS
 #include "KGEN/MOGGPreElab/MOGGPreElabPasses.h.inc"
 } // namespace M::KGEN::MOGGPreElab
 
@@ -862,8 +860,9 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
   return true;
 }
 
-class MOGGAnnotatePass
-    : public M::KGEN::MOGGPreElab::impl::MOGGAnnotateBase<MOGGAnnotatePass> {
+class AnnotateKernelsPass
+    : public M::KGEN::MOGGPreElab::impl::AnnotateKernelsBase<
+          AnnotateKernelsPass> {
 public:
   void runOnOperation() override {
     ModuleOp moduleOp = getOperation();

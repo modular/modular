@@ -1,7 +1,7 @@
 // Tests we properly annotate kernels with scalar arguments under the new
 // extensibility api.
 
-// RUN: kgen-opt %s --mogg-annotate | FileCheck %s
+// RUN: kgen-opt %s --mogg-annotate-kernels | FileCheck %s
 
 !Int = !lit.struct<@stdlib::@builtin::@int::@Int>
 !DType = !lit.struct<@stdlib::@builtin::@dtype::@DType>

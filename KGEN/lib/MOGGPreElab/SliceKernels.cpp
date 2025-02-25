@@ -8,7 +8,8 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
-#include "KGEN/MOGGPreElab/MOGGDecorators.h"
+#include "KGEN/MOGGPreElab/MOGGPreElabDecorators.h"
+#include "KGEN/MOGGPreElab/MOGGPreElabHelpers.h"
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "Support/DebugInfoDialect/Transforms/StripDebugInfo.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
@@ -352,13 +353,13 @@ static ParamDeclRefAttr getTensorSpecParamRef(DictionaryAttr argParams) {
 } // end namespace
 
 namespace M::KGEN::MOGGPreElab {
-#define GEN_PASS_DEF_SLICEMOGGFUNCS
+#define GEN_PASS_DEF_SLICEKERNELS
 #include "KGEN/MOGGPreElab/MOGGPreElabPasses.h.inc"
 } // namespace M::KGEN::MOGGPreElab
 
 namespace {
-class SliceMOGGFuncsPass
-    : public MOGGPreElab::impl::SliceMOGGFuncsBase<SliceMOGGFuncsPass> {
+class SliceKernelsPass
+    : public MOGGPreElab::impl::SliceKernelsBase<SliceKernelsPass> {
 private:
   /// The reference input and output lambdas we should use for materializing the
   /// input/output fusion.

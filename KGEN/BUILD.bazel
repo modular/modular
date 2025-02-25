@@ -461,7 +461,6 @@ modular_cc_library(
     name = "MOGGPreElab",
     srcs = glob([
         "lib/MOGGPreElab/*.cpp",
-        "lib/MOGGPreElab/*.h",
     ]),
     hdrs = glob(["include/KGEN/MOGGPreElab/*.h"]),
     deps = [

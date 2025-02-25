@@ -4,11 +4,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Helpers.h"
-
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"
-#include "KGEN/MOGGPreElab/MOGGDecorators.h"
+#include "KGEN/MOGGPreElab/MOGGPreElabDecorators.h"
+#include "KGEN/MOGGPreElab/MOGGPreElabHelpers.h"
 
 namespace M::KGEN::MOGGPreElab {
 
