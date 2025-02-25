@@ -404,6 +404,7 @@ fn _matmul_gpu[
                     cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
                     wgmma_n=256,
                     num_consumer=2,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
                 ](
                     rebind[NDBuffer[c_type, 2, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a_shape]](a),

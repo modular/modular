@@ -8,16 +8,12 @@ from sys import sizeof
 
 import linalg.vendor_blas
 from buffer.dimlist import Dim, DimList, _make_tuple
+from collections import OptionalReg
 from gpu import WARP_SIZE, barrier, MAX_THREADS_PER_BLOCK_METADATA
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
-from gpu.id import (
-    block_dim,
-    block_idx,
-    thread_idx,
-    grid_dim,
-)
+from gpu.id import block_dim, block_idx, thread_idx, grid_dim, lane_id
 from gpu.memory import AddressSpace
 from gpu.mma import (
     WGMMADescriptor,
@@ -60,6 +56,7 @@ from gpu.intrinsics import warpgroup_reg_dealloc, warpgroup_reg_alloc
 from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
 from pathlib import Path
 
+from .utils import elementwise_epilogue_type
 from .utils_gpu import block_swizzle
 from linalg.matmul_tile_scheduler import TileScheduler
 
@@ -352,6 +349,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     num_threads: Int = 128,
     pipeline_stages: Int = 7,
     partitioned_multicast: Bool = False,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
@@ -658,27 +656,71 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
         var warp_id = warp_group_thread_idx // WARP_SIZE
 
         @parameter
-        for m_mma in range(num_m_mmas):
+        if elementwise_lambda_fn:
+            alias epilogue = elementwise_lambda_fn.value()
+
+            # Output dimensions in global memory.
+            alias N = c_layout.shape[1].value()
+            var M: UInt = c.dim(0)
+
+            lane = lane_id()
+
+            c_frag_vec2 = c_reg_tile.vectorize[1, 2]()
 
             @parameter
-            for n_mma in range(num_n_mmas):
-                alias mma_id = n_mma * num_m_mmas + m_mma
+            for m_mma in range(num_m_mmas):
 
-                # (m_mma, n_mma) is coordinates for a warp group's tile.
-                # A warp group is 4x1 warps.
-                warp_tile = c_gmem_split.tile[
-                    wgmma_shape[0] // 4, wgmma_shape[1]
-                ](m_mma * 4 + warp_id, n_mma)
+                @parameter
+                for n_mma in range(num_n_mmas):
+                    alias mma_id = n_mma * num_m_mmas + m_mma
 
-                # Tile at (mma_id, 0) is a long vector containing all fragments
-                # for this warp.
-                c_frag = c_reg_tile.tile[1, c_frag_size](mma_id, 0)
+                    warp_tile = c_gmem_split.tile[
+                        wgmma_shape[0] // 4, wgmma_shape[1]
+                    ](m_mma * 4 + warp_id, n_mma)
 
-                # A warp is organized as row_major(8, 4) and each thread owns 2 contiguous
-                # elementwise. This pattern repeates to fill the warp tile.
-                copy_local_to_dram[Layout.row_major(8, 4)](
-                    warp_tile.vectorize[1, 2](), c_frag.vectorize[1, 2]()
-                )
+                    gmem_frag = warp_tile.vectorize[1, 2]().distribute[
+                        Layout.row_major(8, 4)
+                    ](lane)
+                    thread_offset = gmem_frag.distance(c.ptr)
+
+                    alias num_vecs = __type_of(gmem_frag).layout.size()
+
+                    @parameter
+                    for i in range(num_vecs):
+                        alias dst_idx = __type_of(gmem_frag).layout(i)
+
+                        m = Int((thread_offset + dst_idx) // N)
+                        n = Int((thread_offset + dst_idx) % N)
+
+                        alias alignment = alignof[SIMD[c_type, 2]]()
+                        if m < M and n < N:
+                            epilogue[alignment=alignment](
+                                (m, n), c_frag_vec2[mma_id, i].cast[c_type]()
+                            )
+        else:
+
+            @parameter
+            for m_mma in range(num_m_mmas):
+
+                @parameter
+                for n_mma in range(num_n_mmas):
+                    alias mma_id = n_mma * num_m_mmas + m_mma
+
+                    # (m_mma, n_mma) is coordinates for a warp group's tile.
+                    # A warp group is 4x1 warps.
+                    warp_tile = c_gmem_split.tile[
+                        wgmma_shape[0] // 4, wgmma_shape[1]
+                    ](m_mma * 4 + warp_id, n_mma)
+
+                    # Tile at (mma_id, 0) is a long vector containing all fragments
+                    # for this warp.
+                    c_frag = c_reg_tile.tile[1, c_frag_size](mma_id, 0)
+
+                    # A warp is organized as row_major(8, 4) and each thread owns 2 contiguous
+                    # elementwise. This pattern repeates to fill the warp tile.
+                    copy_local_to_dram[Layout.row_major(8, 4)](
+                        warp_tile.vectorize[1, 2](), c_frag.vectorize[1, 2]()
+                    )
 
     # TO ensure SEMEM destruction doesn't happen
     @parameter
@@ -892,6 +934,7 @@ fn warp_specialize_gemm_with_multicasting[
     wgmma_n: Int = 128,
     num_consumer: Int = 1,
     partitioned_multicast: Bool = False,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     use_persistant_kernel: Bool = False,
 ](
     c_device: NDBuffer[c_type, 2, c_shape],
@@ -999,6 +1042,7 @@ fn warp_specialize_gemm_with_multicasting[
             num_threads=num_threads,
             pipeline_stages=pipeline_stages,
             partitioned_multicast=partitioned_multicast,
+            elementwise_lambda_fn=elementwise_lambda_fn,
         ]
 
         ctx.enqueue_function[kernel](
