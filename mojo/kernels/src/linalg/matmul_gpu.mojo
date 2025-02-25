@@ -394,15 +394,12 @@ fn _matmul_gpu[
                 )
                 return
 
-            alias h100_env = env_get_int["USE_EXPERIMENTAL_KERNELS", 0]()
-
             @parameter
             if (
                 a_type == b_type
                 and a_type.is_half_float()
                 and ctx.device_info is H100
                 and transpose_b
-                and h100_env != 0
             ):
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
