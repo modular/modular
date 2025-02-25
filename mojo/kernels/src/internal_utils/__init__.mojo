@@ -21,7 +21,7 @@ from ._utils import (
     env_get_shape,
     fill,
     int_list_to_tuple,
-    linspace,
+    arange,
     ndbuffer_to_str,
     parse_shape,
     random,

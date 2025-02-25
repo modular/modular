@@ -241,12 +241,61 @@ struct TestTensor[type: DType, rank: Int]:
         return DynamicTensor[type, rank].Type(self.ndbuffer)
 
 
+@value
+struct InitializationType:
+    var _value: Int
+    alias zero = InitializationType(0)
+    alias one = InitializationType(1)
+    alias uniform_distribution = InitializationType(2)
+    alias arange = InitializationType(3)
+
+    fn __init__(out self, value: Int):
+        self._value = value
+
+    fn __init__(out self, value: Float64):
+        self._value = Int(value)
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    @staticmethod
+    fn from_str(str: String) raises -> Self:
+        if str == "zero":
+            return InitializationType.zero
+        elif str == "one":
+            return InitializationType.one
+        elif str == "uniform_distribution":
+            return InitializationType.uniform_distribution
+        elif str == "arange":
+            return InitializationType.arange
+        else:
+            raise Error("Invalid initialization type")
+
+
+fn initialize(buffer: NDBuffer, init_type: InitializationType) raises:
+    if init_type == InitializationType.zero:
+        buffer.zero()
+    elif init_type == InitializationType.one:
+        buffer.fill(1)
+    elif init_type == InitializationType.uniform_distribution:
+        random(buffer)
+    elif init_type == InitializationType.arange:
+        arange(buffer)
+    else:
+        raise Error("Invalid initialization type")
+
+
 @parameter
 @always_inline
-fn linspace(buffer: NDBuffer):
-    for i in range(buffer.dim[0]()):
-        for j in range(buffer.dim[1]()):
-            buffer[IndexList[buffer.rank](i, j)] = i * buffer.dim[1]() + j
+fn arange(buffer: NDBuffer):
+    @parameter
+    if buffer.rank == 2:
+        for i in range(buffer.dim[0]()):
+            for j in range(buffer.dim[1]()):
+                buffer[IndexList[buffer.rank](i, j)] = i * buffer.dim[1]() + j
+    else:
+        for i in range(len(buffer)):
+            buffer.data[i] = i
 
 
 fn random(buffer: NDBuffer, min: Float64 = 0, max: Float64 = 1):
@@ -254,15 +303,11 @@ fn random(buffer: NDBuffer, min: Float64 = 0, max: Float64 = 1):
 
 
 fn zero(buffer: NDBuffer):
-    for i in range(buffer.dim[0]()):
-        for j in range(buffer.dim[1]()):
-            buffer[IndexList[buffer.rank](i, j)] = 0
+    buffer.zero()
 
 
-fn fill[type: DType](buffer: NDBuffer, val: Scalar[type]):
-    for i in range(buffer.dim[0]()):
-        for j in range(buffer.dim[1]()):
-            buffer[IndexList[buffer.rank](i, j)] = val.cast[buffer.type]()
+fn fill(buffer: NDBuffer, val: Scalar):
+    buffer.fill(val.cast[buffer.type]())
 
 
 fn bench_compile_time[
