@@ -99,6 +99,7 @@ from nn.gather_scatter import (
     scatter_nd_generator,
     scatter_nd_shape,
 )
+from gpu.host.info import is_cpu, is_gpu
 from nn.index_tensor import index_tensor
 from nn.kv_cache import (
     generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch,
@@ -131,6 +132,7 @@ from nn.mha import flash_attention
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.normalization import layer_norm, rms_norm
 from nn.pad import pad_constant, pad_reflect, pad_repeat, pad_shape
+from nn.pad_gpu import pad_constant as pad_constant_gpu
 from nn.pool import avg_pool, max_pool, pool_shape, pool_shape_ceil
 from nn.reshape import reshape, reshape_shape
 from nn.resize import resize_linear, resize_nearest_neighbor
@@ -3421,19 +3423,33 @@ struct MaxPoolCeilModeTrue:
 struct PadConstant:
     @staticmethod
     fn execute[
-        type: DType,
-        rank: Int,
+        type: DType, rank: Int, target: StringLiteral
     ](
         output: ManagedTensorSlice[type=type, rank=rank],
         input: ManagedTensorSlice[type=type, rank=rank],
         padding: ManagedTensorSlice[rank=1],
-        constant: ManagedTensorSlice[rank=1],
-    ):
+        constant: Scalar[type=type],
+        ctx: DeviceContextPtr,
+    ) raises:
         var paddings_ptr = padding._ptr
-        var constant_simd = constant._ptr.load(0)
-        var input_buf = managed_tensor_slice_to_ndbuffer(input)
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
-        pad_constant(output_buf, input_buf, paddings_ptr, constant_simd)
+
+        @parameter
+        if is_cpu[target]():
+            var input_buf = managed_tensor_slice_to_ndbuffer(input)
+            var output_buf = managed_tensor_slice_to_ndbuffer(output)
+            pad_constant(output_buf, input_buf, paddings_ptr, constant)
+        elif is_gpu[target]():
+            pad_constant_gpu(
+                output._ptr,
+                output.shape(),
+                input._ptr,
+                input.shape(),
+                paddings_ptr,
+                constant,
+                ctx.get_device_context(),
+            )
+        else:
+            constrained[False, "Unknown target " + target]()
 
     @staticmethod
     fn shape[
