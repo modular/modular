@@ -104,7 +104,7 @@ struct HostNDBuffer[
         var retval = DeviceNDBuffer[type, rank, shape](
             self.tensor.dynamic_shape, ctx=ctx
         )
-        ctx.enqueue_copy_to_device(retval.buffer, self.tensor.data)
+        ctx.enqueue_copy(retval.buffer, self.tensor.data)
         return retval^
 
 
@@ -195,7 +195,7 @@ struct DeviceNDBuffer[
         self, ctx: DeviceContext
     ) -> HostNDBuffer[type, rank, shape]:
         var retval = HostNDBuffer[type, rank, shape](self.tensor.dynamic_shape)
-        ctx.enqueue_copy_from_device(retval.tensor.data, self.buffer)
+        ctx.enqueue_copy(retval.tensor.data, self.buffer)
         return retval^
 
 
