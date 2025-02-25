@@ -166,6 +166,21 @@ ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
 ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
 ```
 
+- The methods on `DeviceContext`:
+
+  - enqueue_copy_to_device
+  - enqueue_copy_from_device
+  - enqueue_copy_device_to_device
+
+  Have been combined to single overloaded `enqueue_copy` method, and:
+
+  - copy_to_device_sync
+  - copy_from_device_sync
+  - copy_device_to_device_sync
+
+  Have been combined into an overloaded `copy` method, so you don't have
+  to figure out which method to call based on the arguments you're passing.
+
 - The `shuffle` module has been rename to `warp` to better
   reflect its purpose. To uses now you will have to do
 
