@@ -414,9 +414,9 @@ def test_ceildiv():
     assert_equal(ceildiv(53.6, 1.35), 40.0)
 
     # Test the IntLiteral overload.
-    alias a: __type_of(1) = ceildiv(1, 7)
+    alias a: IntLiteral = ceildiv(1, 7)
     assert_equal(a, 1)
-    alias b: __type_of(-78) = ceildiv(548, -7)
+    alias b: IntLiteral = ceildiv(548, -7)
     assert_equal(b, -78)
 
     # Test the Int overload.
