@@ -227,9 +227,15 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
                    << argIndex << " (function has " << argAttrLists.size()
                    << "arguments)";
 
+          if (!hasAddress(sig.getArgConvention(argIndex)))
+            return mlir::emitError(func.getLoc(),
+                                   "`nvvm.grid_constant` argument cannot be "
+                                   "passed by register. See argument at index ")
+                   << argIndex;
+
           argAttrLists[argIndex].set(attr.getName(), b.getUnitAttr());
-          // FIXME(MOCO-1342): Remove this, once we are able to explicitly pass
-          // alignment.
+          // FIXME(MOCO-1342): Remove this, once we are able to
+          // explicitly pass alignment.
           argAttrLists[argIndex].set(
               StringAttr::get(func->getContext(),
                               LLVM::LLVMDialect::getAlignAttrName()),
