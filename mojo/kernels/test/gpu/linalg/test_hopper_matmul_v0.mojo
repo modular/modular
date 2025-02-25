@@ -28,7 +28,7 @@ from internal_utils import (
     HostNDBuffer,
     assert_almost_equal,
     fill,
-    linspace,
+    arange,
     random,
     zero,
 )

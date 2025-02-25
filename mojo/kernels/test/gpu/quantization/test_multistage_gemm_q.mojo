@@ -42,7 +42,7 @@ from internal_utils import (
     assert_almost_equal,
     assert_equal,
     fill,
-    linspace,
+    arange,
     random,
     zero,
 )

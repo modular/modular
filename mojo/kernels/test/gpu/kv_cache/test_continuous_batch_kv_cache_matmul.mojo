@@ -16,7 +16,7 @@ from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
     fill,
-    linspace,
+    arange,
     random,
     zero,
 )

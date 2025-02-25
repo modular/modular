@@ -27,7 +27,7 @@ from internal_utils import (
     HostNDBuffer,
     assert_with_measure,
     fill,
-    linspace,
+    arange,
     random,
     zero,
 )
@@ -269,21 +269,21 @@ def main():
     with DeviceContext() as ctx:
         test[
             DType.float32,
-            init_a=linspace,
-            init_b=linspace,
+            init_a=arange,
+            init_b=arange,
         ](ctx, dynamic(512), static[12288](), static[4096]())
 
         print("===> tfloat32-float32 mma")
-        test[DType.float32, init_a=linspace](
+        test[DType.float32, init_a=arange](
             ctx, dynamic(256), static[384](), static[128]()
         )
-        test[DType.float32, init_b=linspace](
+        test[DType.float32, init_b=arange](
             ctx, dynamic(128), static[4096](), static[4096]()
         )
         test[
             DType.float32,
-            init_a=linspace,
-            init_b=linspace,
+            init_a=arange,
+            init_b=arange,
         ](ctx, dynamic(512), static[12288](), static[4096]())
         test[DType.float32](ctx, dynamic(23), static[4096](), static[11008]())
         test[DType.float32](ctx, dynamic(67), static[4096](), static[12288]())
@@ -292,7 +292,7 @@ def main():
         print("===> bfloat16-float32 mma")
         test[
             DType.bfloat16,
-            init_a=linspace,
+            init_a=arange,
             transpose_b=True,
             config = MatmulConfig[
                 DType.bfloat16,
@@ -305,13 +305,13 @@ def main():
                 num_pipeline_stages=3,
             ),
         ](ctx, dynamic(100), static[128](), static[128]())
-        test[DType.bfloat16, init_b=linspace](
+        test[DType.bfloat16, init_b=arange](
             ctx, dynamic(1024), static[12288](), static[3072]()
         )
         test[
             DType.bfloat16,
-            init_a=linspace,
-            init_b=linspace,
+            init_a=arange,
+            init_b=arange,
         ](ctx, dynamic(1024), static[5120](), static[3072]())
         test[DType.bfloat16](
             ctx, dynamic(1024), static[3072](), static[32768]()
