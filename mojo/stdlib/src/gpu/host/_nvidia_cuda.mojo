@@ -223,7 +223,6 @@ fn create_tma_descriptor[
     global_shape: IndexList[rank],
     global_strides: IndexList[rank],
     shared_mem_shape: IndexList[rank],
-    element_stride: IndexList[rank] = IndexList[rank](1),
 ) raises -> TMADescriptor:
     """Create a tensor map descriptor object representing tiled memory region.
     """
@@ -233,21 +232,31 @@ fn create_tma_descriptor[
         NoneType
     ]()
 
-    var global_dim_arg = stack_allocation[rank, Int64]()
-    var global_strides_arg = stack_allocation[rank - 1, Int64]()
-    var box_dim_arg = stack_allocation[rank, Int32]()
-    var element_stride_arg = stack_allocation[rank, Int32]()
+    var global_dim_arg = stack_allocation[5, Int64]()
+    var global_strides_arg = stack_allocation[5, Int64]()
+    var box_dim_arg = stack_allocation[5, Int32]()
+    var element_stride_arg = stack_allocation[5, Int32]()
+
+    @parameter
+    for i in range(5):
+        global_dim_arg[i] = 1
+        global_strides_arg[i] = 0
+        element_stride_arg[i] = 1
+        box_dim_arg[i] = 1
 
     @parameter
     for i in range(rank):
         global_dim_arg[i] = global_shape[rank - i - 1]
         box_dim_arg[i] = shared_mem_shape[rank - i - 1]
-        element_stride_arg[i] = element_stride[rank - i - 1]
+        global_strides_arg[i] = global_strides[rank - i - 1] * sizeof[dtype]()
 
-    @parameter
-    for i in range(rank - 1):
-        global_strides_arg[i] = global_strides[rank - i - 2] * sizeof[dtype]()
-
+    debug_assert(
+        global_strides_arg[0] == 1,
+        String(
+            "GMEM should be in c-order (row-major) and therefore global stride"
+            " at dimension 0 should always be 1"
+        ),
+    )
     # const char *AsyncRT_cuda_tensorMapEncodeTiled(
     #     void *tensorMap, int32_t tensorDataType, uint32_t tensorRank,
     #     const DeviceBuffer *globalAddress, const uint64_t *globalDim,
@@ -276,7 +285,7 @@ fn create_tma_descriptor[
             rank,
             global_buf._handle,
             global_dim_arg,
-            global_strides_arg,
+            global_strides_arg + 1,  # global_strides_arg[0] implicitly is 1
             box_dim_arg,
             element_stride_arg,
             TensorMapInterleave.INTERLEAVE_NONE._value,

@@ -1069,10 +1069,21 @@ fn cp_async_bulk_tensor_shared_cluster_global[
         - Requires NVIDIA GPU with TMA support
         - The memory barrier should be properly initialized before use
     """
-    constrained[rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"]()
+    constrained[rank <= 3, "Expecting rank-1 or rank-2 tensors"]()
 
     @parameter
-    if rank == 2:
+    if rank == 3:
+        __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
+            _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,3,1,0,0,0,0>}`
+        ](
+            to_llvm_shared_mem_ptr(dst_mem),
+            to_llvm_ptr(tma_descriptor),
+            to_i32(coords[0]),
+            to_i32(coords[1]),
+            to_i32(coords[2]),
+            to_llvm_shared_mem_ptr(mem_bar),
+        )
+    elif rank == 2:
         __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
             _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,2,1,0,0,0,0>}`
         ](
