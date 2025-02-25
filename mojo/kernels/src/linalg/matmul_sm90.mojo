@@ -13,7 +13,14 @@ from gpu import WARP_SIZE, barrier, MAX_THREADS_PER_BLOCK_METADATA
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
-from gpu.id import block_dim, block_idx, thread_idx, grid_dim, lane_id
+from gpu.id import (
+    block_dim,
+    block_idx,
+    thread_idx,
+    grid_dim,
+    lane_id,
+    block_id_in_cluster,
+)
 from gpu.memory import AddressSpace
 from gpu.mma import (
     WGMMADescriptor,
@@ -180,8 +187,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistant[
     var warp_group_idx = thread_idx.x // WARP_GROUP_SIZE
     var warp_group_thread_idx = thread_idx.x % WARP_GROUP_SIZE
     var num_k_iters = K // BK
-
-    var block_rank = block_rank_in_cluster()
 
     var lane_predicate = elect_one_sync()
     if thread_idx.x == 0:
@@ -458,10 +463,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     var warp_group_thread_idx = thread_idx.x % WARP_GROUP_SIZE
     var num_k_iters = K // BK
 
-    var block_rank = block_rank_in_cluster()
-
-    var rank_m = block_rank / CLUSTER_N
-    var rank_n = block_rank % CLUSTER_N
+    var rank_m = block_id_in_cluster.y
+    var rank_n = block_id_in_cluster.x
 
     var lane_predicate = elect_one_sync()
     if thread_idx.x == 0:
