@@ -10,7 +10,8 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/MOGGPreElab/MOGGDecorators.h"
+#include "KGEN/MOGGPreElab/MOGGPreElabDecorators.h"
+#include "KGEN/MOGGPreElab/MOGGPreElabHelpers.h"
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -19,21 +20,19 @@
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Pass/Pass.h"
 
-#include "Helpers.h"
-
 using namespace M;
 using namespace KGEN;
 using namespace MOGGPreElab;
 
 namespace M::KGEN::MOGGPreElab {
-#define GEN_PASS_DEF_OUTLINEMOGGFUNCS
+#define GEN_PASS_DEF_OUTLINEKERNELS
 #include "KGEN/MOGGPreElab/MOGGPreElabPasses.h.inc"
 } // namespace M::KGEN::MOGGPreElab
 
 namespace {
-class OutlineMOGGFuncsPass
-    : public M::KGEN::MOGGPreElab::impl::OutlineMOGGFuncsBase<
-          OutlineMOGGFuncsPass> {
+class OutlineKernelsPass
+    : public M::KGEN::MOGGPreElab::impl::OutlineKernelsBase<
+          OutlineKernelsPass> {
 public:
   LogicalResult initialize(MLIRContext *ctx) override {
     this->ctx = ctx;

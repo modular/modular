@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s --mogg-outline | FileCheck %s
+// RUN: kgen-opt %s --mogg-outline-kernels | FileCheck %s
 
 kgen.generator @call_target<_INPUT_FN_0: variant<() capturing -> !kgen.none, i1>>() capturing -> !kgen.none no_inline {
   %none = kgen.param.constant: none = <#kgen.none>

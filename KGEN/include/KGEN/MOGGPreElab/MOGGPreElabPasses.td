@@ -10,7 +10,7 @@ include "mlir/Pass/PassBase.td"
 // SliceMOGGFuncs
 //===----------------------------------------------------------------------===//
 
-def SliceMOGGFuncs : Pass<"slice-mogg-funcs", "ModuleOp"> {
+def SliceKernels : Pass<"mogg-slice-kernels", "ModuleOp"> {
   let summary = "Slices compute from DPS kernels";
   let description = [{
     A mogg domain specific pass which performs KGEN to KGEN transforms that
@@ -46,7 +46,7 @@ def SliceMOGGFuncs : Pass<"slice-mogg-funcs", "ModuleOp"> {
   }];
 }
 
-def OutlineMOGGFuncs : Pass<"mogg-outline", "ModuleOp"> {
+def OutlineKernels : Pass<"mogg-outline-kernels", "ModuleOp"> {
   let summary = "Outline MOGG kernel functions";
   let description = [{
     Separate the kernel entry point from the implementation details of the
@@ -85,7 +85,7 @@ def OutlineMOGGFuncs : Pass<"mogg-outline", "ModuleOp"> {
   }];
 }
 
-def MOGGAnnotate : Pass<"mogg-annotate", "ModuleOp"> {
+def AnnotateKernels : Pass<"mogg-annotate-kernels", "ModuleOp"> {
   let summary = "Strips MOGG decorators and replaces them with attributes";
   let description = [{
     A mogg domain specific pass which will annotate each kernel at the lit
@@ -104,4 +104,3 @@ def MOGGPreElabPipeline : Pass<"mogg-pre-elab-pipeline", "ModuleOp"> {
            "True when the build is a debug build. Will disable some passes">
   ];
 }
-

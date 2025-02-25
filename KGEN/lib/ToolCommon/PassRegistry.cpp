@@ -66,10 +66,10 @@ void KGEN::registerDefaultKGENPasses() {
   DebugInfo::registerDebugInfoToLLVM();
   DebugInfo::registerDebugInfoStrip();
 
-  KGEN::MOGGPreElab::registerMOGGAnnotate();
+  KGEN::MOGGPreElab::registerAnnotateKernels();
   KGEN::MOGGPreElab::registerMOGGPreElabPipeline();
-  KGEN::MOGGPreElab::registerOutlineMOGGFuncs();
-  KGEN::MOGGPreElab::registerSliceMOGGFuncs();
+  KGEN::MOGGPreElab::registerOutlineKernels();
+  KGEN::MOGGPreElab::registerSliceKernels();
 
   // Passes that require a runtime.
   mlir::registerPass(

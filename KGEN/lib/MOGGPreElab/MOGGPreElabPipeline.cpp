@@ -5,7 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/MOGGPreElab/MOGGDecorators.h"
+#include "KGEN/MOGGPreElab/MOGGPreElabDecorators.h"
+#include "KGEN/MOGGPreElab/MOGGPreElabHelpers.h"
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
@@ -40,8 +41,8 @@ public:
 
     if (hasKernels && !debugBuild) {
       mlir::OpPassManager pm(ModuleOp::getOperationName());
-      pm.addPass(MOGGPreElab::createSliceMOGGFuncs());
-      pm.addPass(MOGGPreElab::createOutlineMOGGFuncs());
+      pm.addPass(MOGGPreElab::createSliceKernels());
+      pm.addPass(MOGGPreElab::createOutlineKernels());
 
       if (failed(runPipeline(pm, mod)))
         return signalPassFailure();

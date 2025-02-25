@@ -2,7 +2,7 @@
 // These consist of a struct with a special `register` decorator and methods
 // such as "execute" (running the op), and "shape" (runtime shape function).
 
-// RUN: kgen-opt %s --mogg-annotate | FileCheck %s
+// RUN: kgen-opt %s --mogg-annotate-kernels | FileCheck %s
 
 // Hard coded registration function, has special `mogg.intrinsic_register`
 lit.fn @"register(::StringLiteral)"(%name: !lit.struct<@stdlib::@builtin::@string_literal::@StringLiteral>, %num_dps_outputs: !lit.struct<@stdlib::@builtin::@int::@Int> = {1}) -> !kgen.none attributes {mogg.intrinsic_register, sourceName = "register", specialFnKind = 0 : i8} {
