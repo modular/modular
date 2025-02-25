@@ -527,8 +527,7 @@ OpFoldResult IntLiteralCmpOp::fold(FoldAdaptor adaptor) {
 OpFoldResult IntLiteralBinOp::fold(FoldAdaptor adaptor) {
   if (auto lhs = dyn_cast_or_null<TypedAttr>(adaptor.getLhs()))
     if (auto rhs = dyn_cast_or_null<TypedAttr>(adaptor.getRhs()))
-      return IntLiteralBinAttr::get(lhs.getContext(), lhs.getType(), lhs, rhs,
-                                    getOperAttr());
+      return IntLiteralBinAttr::get(lhs.getContext(), lhs, rhs, getOperAttr());
   return {};
 }
 
@@ -573,7 +572,7 @@ OpFoldResult FloatLiteralCmpOp::fold(FoldAdaptor adaptor) {
 OpFoldResult FloatLiteralBinOp::fold(FoldAdaptor adaptor) {
   if (auto lhs = dyn_cast_or_null<TypedAttr>(adaptor.getLhs()))
     if (auto rhs = dyn_cast_or_null<TypedAttr>(adaptor.getRhs()))
-      return FloatLiteralBinAttr::get(lhs.getContext(), lhs.getType(), lhs, rhs,
+      return FloatLiteralBinAttr::get(lhs.getContext(), lhs, rhs,
                                       getOperAttr());
   return {};
 }
@@ -594,7 +593,7 @@ OpFoldResult FloatLiteralConvertOp::fold(FoldAdaptor adaptor) {
 
 OpFoldResult IntToFloatLiteralOp::fold(FoldAdaptor adaptor) {
   if (auto in = dyn_cast_if_present<TypedAttr>(adaptor.getInput()))
-    return IntToFloatLiteralAttr::get(in.getContext(), getType(), in);
+    return IntToFloatLiteralAttr::get(in.getContext(), in);
   return {};
 }
 
@@ -604,7 +603,7 @@ OpFoldResult IntToFloatLiteralOp::fold(FoldAdaptor adaptor) {
 
 OpFoldResult FloatToIntLiteralOp::fold(FoldAdaptor adaptor) {
   if (auto in = dyn_cast_if_present<TypedAttr>(adaptor.getInput()))
-    return FloatToIntLiteralAttr::get(in.getContext(), getType(), in);
+    return FloatToIntLiteralAttr::get(in.getContext(), in);
   return {};
 }
 

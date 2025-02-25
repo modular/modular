@@ -2299,7 +2299,7 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     // FIXME(MOCO-1628): This shouldn't be an operation.
     if (auto lhs = findValue(bin.getLhs()))
       if (auto rhs = findValue(bin.getRhs()))
-        return IntLiteralBinAttr::get(lhs.getContext(), lhs.getType(), lhs, rhs,
+        return IntLiteralBinAttr::get(lhs.getContext(), lhs, rhs,
                                       bin.getOperAttr());
   }
   if (auto cmp = dyn_cast<IntLiteralCmpOp>(op)) {
@@ -2312,8 +2312,8 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
   if (auto bin = dyn_cast<FloatLiteralBinOp>(op)) {
     if (auto lhs = findValue(bin.getLhs()))
       if (auto rhs = findValue(bin.getRhs()))
-        return FloatLiteralBinAttr::get(lhs.getContext(), lhs.getType(), lhs,
-                                        rhs, bin.getOperAttr());
+        return FloatLiteralBinAttr::get(lhs.getContext(), lhs, rhs,
+                                        bin.getOperAttr());
   }
   if (auto convert = dyn_cast<FloatLiteralConvertOp>(op)) {
     // FIXME(MOCO-1628): This shouldn't be an operation.
@@ -2332,16 +2332,12 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
   if (auto convert = dyn_cast<IntToFloatLiteralOp>(op)) {
     // FIXME(MOCO-1628): This shouldn't be an operation.
     if (auto input = findValue(convert.getInput()))
-      return IntToFloatLiteralAttr::get(
-          input.getContext(), evaluator.getReboundType(convert.getType()),
-          input);
+      return IntToFloatLiteralAttr::get(input.getContext(), input);
   }
   if (auto convert = dyn_cast<FloatToIntLiteralOp>(op)) {
     // FIXME(MOCO-1628): This shouldn't be an operation.
     if (auto input = findValue(convert.getInput()))
-      return FloatToIntLiteralAttr::get(
-          input.getContext(), evaluator.getReboundType(convert.getType()),
-          input);
+      return FloatToIntLiteralAttr::get(input.getContext(), input);
   }
   if (auto convert = dyn_cast<FloatLiteralIsa>(op)) {
     // FIXME(MOCO-1628): This shouldn't be an operation.

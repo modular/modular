@@ -383,14 +383,14 @@ ErrorOrSuccess IntLiteralConvertAttr::validateForElaborator() const {
 // IntLiteralBinAttr
 //===----------------------------------------------------------------------===//
 
-TypedAttr IntLiteralBinAttr::get(MLIRContext *ctx, Type type, TypedAttr lhs,
-                                 TypedAttr rhs, IntLiteralBinopKindAttr oper) {
+TypedAttr IntLiteralBinAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs,
+                                 IntLiteralBinopKindAttr oper) {
   // If this is a literal constant coming in, we can fold this.  If not, stage
   // it until elaboration or something else simplifies things.
   IntLiteralAttr lAttr = ::dyn_cast_or_null<IntLiteralAttr>(lhs);
   IntLiteralAttr rAttr = ::dyn_cast_or_null<IntLiteralAttr>(rhs);
   if (!lAttr || !rAttr)
-    return Base::get(ctx, type, lhs, rhs, oper);
+    return Base::get(ctx, lhs, rhs, oper);
 
   IPInt l = lAttr.getValue();
   IPInt r = rAttr.getValue();
@@ -467,6 +467,10 @@ TypedAttr IntLiteralBinAttr::get(MLIRContext *ctx, Type type, TypedAttr lhs,
 }
 
 bool IntLiteralBinAttr::isConstant() const { return false; }
+
+Type IntLiteralBinAttr::getType() const {
+  return IntLiteralType::get(getContext());
+}
 
 //===----------------------------------------------------------------------===//
 // IntLiteralCmpAttr
@@ -798,13 +802,12 @@ ErrorOrSuccess FloatLiteralConvertAttr::validateForElaborator() const {
 // IntToFloatLiteralAttr
 //===----------------------------------------------------------------------===//
 
-TypedAttr IntToFloatLiteralAttr::get(MLIRContext *ctx, Type type,
-                                     TypedAttr input) {
+TypedAttr IntToFloatLiteralAttr::get(MLIRContext *ctx, TypedAttr input) {
   // If this is a literal constant coming in, we can fold this.  If not, stage
   // it until elaboration or something else simplifies things.
   auto inputAttr = ::dyn_cast_or_null<IntLiteralAttr>(input);
   if (!inputAttr)
-    return Base::get(ctx, type, input);
+    return Base::get(ctx, input);
 
   return FloatLiteralAttr::get(
       inputAttr.getContext(),
@@ -815,17 +818,20 @@ TypedAttr IntToFloatLiteralAttr::get(MLIRContext *ctx, Type type,
 
 bool IntToFloatLiteralAttr::isConstant() const { return false; }
 
+Type IntToFloatLiteralAttr::getType() const {
+  return FloatLiteralType::get(getContext());
+}
+
 //===----------------------------------------------------------------------===//
 // FloatToIntLiteralAttr
 //===----------------------------------------------------------------------===//
 
-TypedAttr FloatToIntLiteralAttr::get(MLIRContext *ctx, Type type,
-                                     TypedAttr input) {
+TypedAttr FloatToIntLiteralAttr::get(MLIRContext *ctx, TypedAttr input) {
   // If this is a literal constant coming in, we can fold this.  If not, stage
   // it until elaboration or something else simplifies things.
   auto inputAttr = ::dyn_cast_or_null<FloatLiteralAttr>(input);
   if (!inputAttr)
-    return Base::get(ctx, type, input);
+    return Base::get(ctx, input);
 
   IPInt result;
   switch (inputAttr.getSpecial().getValue()) {
@@ -846,6 +852,10 @@ TypedAttr FloatToIntLiteralAttr::get(MLIRContext *ctx, Type type,
 }
 
 bool FloatToIntLiteralAttr::isConstant() const { return false; }
+
+Type FloatToIntLiteralAttr::getType() const {
+  return IntLiteralType::get(getContext());
+}
 
 //===----------------------------------------------------------------------===//
 // FloatLiteralBinAttr
@@ -1125,7 +1135,7 @@ floatLiteralFloorDiv(FloatLiteralSpecialValues lSpecial,
   return {truediv.first, intval - 1};
 }
 
-TypedAttr FloatLiteralBinAttr::get(MLIRContext *ctx, Type type, TypedAttr lhsA,
+TypedAttr FloatLiteralBinAttr::get(MLIRContext *ctx, TypedAttr lhsA,
                                    TypedAttr rhsA,
                                    FloatLiteralBinopKindAttr oper) {
   // If this is a literal constant coming in, we can fold this.  If not, stage
@@ -1133,7 +1143,7 @@ TypedAttr FloatLiteralBinAttr::get(MLIRContext *ctx, Type type, TypedAttr lhsA,
   auto lAttr = ::dyn_cast_or_null<FloatLiteralAttr>(lhsA);
   auto rAttr = ::dyn_cast_or_null<FloatLiteralAttr>(rhsA);
   if (!lAttr || !rAttr)
-    return Base::get(ctx, type, lhsA, rhsA, oper);
+    return Base::get(ctx, lhsA, rhsA, oper);
 
   std::pair<FloatLiteralSpecialValues, IPRational> (*implFunc)(
       FloatLiteralSpecialValues, FloatLiteralSpecialValues, IPRational,
@@ -1179,6 +1189,10 @@ TypedAttr FloatLiteralBinAttr::get(MLIRContext *ctx, Type type, TypedAttr lhsA,
 }
 
 bool FloatLiteralBinAttr::isConstant() const { return false; }
+
+Type FloatLiteralBinAttr::getType() const {
+  return FloatLiteralType::get(getContext());
+}
 
 //===----------------------------------------------------------------------===//
 // FloatLiteralCmpAttr

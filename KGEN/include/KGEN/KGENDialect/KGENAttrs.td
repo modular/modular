@@ -601,7 +601,10 @@ def KGEN_IntLiteralConvertAttr : KGEN_ExprAttr<"IntLiteralConvert",
     "bool":$treatIndexAsUnsigned
   );
 
-  let assemblyFormat = "`<` custom<ColonTypeParamValue>($input) `,` $treatIndexAsUnsigned `>`";
+  let assemblyFormat = [{
+    `<` custom<ParamValue>($input, "IntLiteralType::get($_ctxt)")
+    `,` $treatIndexAsUnsigned `>`
+  }];
   
   let skipDefaultBuilders = 1;
   let builders = [
@@ -624,7 +627,6 @@ def KGEN_IntLiteralBinAttr : KGEN_ExprAttr<"IntLiteralBin",
   }];
 
   let parameters = (ins
-    AttributeSelfTypeParameter<"", "Type">:$type,
     "TypedAttr":$lhs, "TypedAttr":$rhs,
     "IntLiteralBinopKindAttr":$oper
   );
@@ -634,9 +636,11 @@ def KGEN_IntLiteralBinAttr : KGEN_ExprAttr<"IntLiteralBin",
   let skipDefaultBuilders = 1;
   let builders = [
     // Override default builder so we can return a folded attribute.
-    AttrBuilder<(ins "Type":$type, "TypedAttr":$lhs, "TypedAttr":$rhs,
+    AttrBuilder<(ins "TypedAttr":$lhs, "TypedAttr":$rhs,
                      "IntLiteralBinopKindAttr":$oper), "", "TypedAttr">,
   ];
+
+  let extraClassDeclaration = [{ Type getType() const; }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -655,7 +659,10 @@ def KGEN_IntLiteralCmpAttr : KGEN_ExprAttr<"IntLiteralCmp", "int_literal_cmp"> {
     "TypedAttr":$lhs, "TypedAttr":$rhs
   );
 
-  let assemblyFormat = "`<` $pred $lhs `,` $rhs `>`";
+  let assemblyFormat = [{
+    `<` $pred custom<ParamValue>($lhs, "IntLiteralType::get($_ctxt)") `,`
+       custom<ParamValue>($rhs, "IntLiteralType::get($_ctxt)") `>`
+  }];
   
   let skipDefaultBuilders = 1;
   let builders = [
@@ -728,7 +735,9 @@ def KGEN_FloatLiteralIsaAttr : KGEN_ExprAttr<"FloatLiteralIsa",
     "TypedAttr":$input
   );
 
-  let assemblyFormat = "`<` $kind custom<ColonTypeParamValue>($input) `>`";
+  let assemblyFormat = [{
+    `<` $kind custom<ParamValue>($input, "FloatLiteralType::get($_ctxt)") `>`
+  }];
   
   let skipDefaultBuilders = 1;
   let builders = [
@@ -763,7 +772,9 @@ def KGEN_FloatLiteralConvertAttr : KGEN_ExprAttr<"FloatLiteralConvert",
     "TypedAttr":$input
   );
 
-  let assemblyFormat = "`<` custom<ColonTypeParamValue>($input) `>`";
+  let assemblyFormat = [{
+    `<` custom<ParamValue>($input, "FloatLiteralType::get($_ctxt)") `>`
+  }];
   
   let skipDefaultBuilders = 1;
   let builders = [
@@ -778,24 +789,24 @@ def KGEN_FloatLiteralConvertAttr : KGEN_ExprAttr<"FloatLiteralConvert",
 
 def KGEN_IntToFloatLiteralAttr : KGEN_ExprAttr<"IntToFloatLiteral",
                                                "int_to_float_literal"> {
-  let summary = "Convert an int literal to an float literal.";
+  let summary = "Convert an int literal to an float literal";
   let description = [{
     The `#kgen.int_to_float_literal` attr converts an int literal to an
     float literal.
   }];
 
-  let parameters = (ins
-    AttributeSelfTypeParameter<"", "Type">:$type,
-    "TypedAttr":$input
-  );
+  let parameters = (ins "TypedAttr":$input);
 
-  let assemblyFormat = "`<` $input `>`";
+  let assemblyFormat = [{
+    `<` custom<ParamValue>($input, "IntLiteralType::get($_ctxt)") `>`
+  }];
   
   let skipDefaultBuilders = 1;
   let builders = [
     // Override default builder so we can return a folded attribute.
-    AttrBuilder<(ins "Type":$type, "TypedAttr":$input), "", "TypedAttr">,
+    AttrBuilder<(ins "TypedAttr":$input), "", "TypedAttr">,
   ];
+  let extraClassDeclaration = [{ Type getType() const; }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -811,18 +822,21 @@ def KGEN_FloatToIntLiteralAttr : KGEN_ExprAttr<"FloatToIntLiteral",
   }];
 
   let parameters = (ins
-    AttributeSelfTypeParameter<"", "Type">:$type,
     "TypedAttr":$input
   );
 
-  let assemblyFormat = "`<` $input `>`";
+  let assemblyFormat = [{
+    `<` custom<ParamValue>($input, "FloatLiteralType::get($_ctxt)") `>`
+  }];
   
   let skipDefaultBuilders = 1;
   let builders = [
     // Override the default builder used by the generated parser because this
     // may not return an FloatToIntLiteralAttr.
-    AttrBuilder<(ins "Type":$type, "TypedAttr":$input), "", "TypedAttr">,
+    AttrBuilder<(ins "TypedAttr":$input), "", "TypedAttr">,
   ];
+
+  let extraClassDeclaration = [{ Type getType() const; }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -838,20 +852,24 @@ def KGEN_FloatLiteralBinAttr : KGEN_ExprAttr<"FloatLiteralBin",
   }];
 
   let parameters = (ins
-    AttributeSelfTypeParameter<"", "Type">:$type,
     "TypedAttr":$lhs, "TypedAttr":$rhs,
     "FloatLiteralBinopKindAttr":$oper
   );
 
-  let assemblyFormat = "`<` $lhs `,` $rhs `,` $oper `>`";
-  
+  let assemblyFormat = [{
+    `<` $oper custom<ParamValue>($lhs, "FloatLiteralType::get($_ctxt)") `,`
+       custom<ParamValue>($rhs, "FloatLiteralType::get($_ctxt)") `>`
+  }];
+
   let skipDefaultBuilders = 1;
   let builders = [
     // Override the default builder used by the generated parser because this
     // may not return an IntLiteralConvertAttr.
-    AttrBuilder<(ins "Type":$type, "TypedAttr":$lhs, "TypedAttr":$rhs,
+    AttrBuilder<(ins "TypedAttr":$lhs, "TypedAttr":$rhs,
                      "FloatLiteralBinopKindAttr":$oper), "", "TypedAttr">,
   ];
+
+  let extraClassDeclaration = [{ Type getType() const; }];
 }
 
 
@@ -872,7 +890,10 @@ def KGEN_FloatLiteralCmpAttr : KGEN_ExprAttr<"FloatLiteralCmp",
     "TypedAttr":$lhs, "TypedAttr":$rhs
   );
 
-  let assemblyFormat = "`<` $pred $lhs `,` $rhs `>`";
+  let assemblyFormat = [{
+    `<` $pred custom<ParamValue>($lhs, "FloatLiteralType::get($_ctxt)") `,`
+       custom<ParamValue>($rhs, "FloatLiteralType::get($_ctxt)") `>`
+  }];
   
   let skipDefaultBuilders = 1;
   let builders = [
@@ -882,10 +903,7 @@ def KGEN_FloatLiteralCmpAttr : KGEN_ExprAttr<"FloatLiteralCmp",
                      "TypedAttr":$rhs), "", "TypedAttr">,
   ];
 
-  let extraClassDeclaration = [{
-    /// Get the type of the attribute. It is always TargetType.
-    Type getType() const;
-  }];
+  let extraClassDeclaration = [{ Type getType() const; }];
 }
 
 //===----------------------------------------------------------------------===//
