@@ -14,9 +14,10 @@ params:
   rank: [1]
   
   # Test configurations covering edge cases
-  $length: [(8 * 1024),           # Small latency bound.
-            (128 * 1024),         # Larger latency bound.
-            (16 * 1024 * 1024),   # Bandwidth bound.
-            (64 * 1024 * 1024),   # Bandwidth bound: 8192 chunk size at dim = 8192.
+  $num_bytes: [(2 * 8 * 1024),        # Small latency bound.
+            (2 * 128 * 1024),         # Larger latency bound.
+            (2 * 16 * 1024 * 1024),   # Bandwidth bound.
+            (2 * 64 * 1024 * 1024),   # Bandwidth bound: 8192 chunk size at dim = 8192.
             ]
   
+  TUNE_MAX_NUM_BLOCKS: [8]
