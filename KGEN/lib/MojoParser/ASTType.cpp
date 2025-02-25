@@ -763,7 +763,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     if (diagShared && structAttr.getValues().size() == 1) {
       ASTDecl *decl = ASTType(structAttr.getType()).getDecl(*diagShared);
       StringRef typeName;
-      if (decl && isa<LIT::StructDeclOp>(*decl))
+      if (isa<LIT::StructDeclOp>(*decl))
         typeName = cast<LIT::StructDeclOp>(*decl).getDeclName().strref();
       TypedAttr elt = std::get<1>(structAttr.getValues().front());
       if (typeName == "Int" || typeName == "Bool" || typeName == "Origin" ||
@@ -834,6 +834,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
 
   if (auto fpLit = dyn_cast<FloatLiteralAttr>(param)) {
     switch (fpLit.getSpecial().getValue()) {
+
     case FloatLiteralSpecialValues::NegZero:
       os << "-0.0";
       return;
@@ -854,22 +855,6 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
           os, FloatLiteralConvertAttr::get(ctx, Float64Type::get(ctx), fpLit),
           diagShared);
       return;
-    }
-  }
-
-  // IntLiteral and FloatLiteral are stateless values that end up as
-  // UnknownAttr.
-  if (isa<UnknownAttr>(param) && diagShared) {
-    ASTDecl *decl = ASTType(param.getType()).getDecl(*diagShared);
-    StringRef typeName;
-    if (decl && isa<LIT::StructDeclOp>(*decl))
-      typeName = cast<LIT::StructDeclOp>(*decl).getDeclName().strref();
-    if (typeName == "IntLiteral" || typeName == "FloatLiteral") {
-      auto structType = cast<LIT::StructType>(param.getType());
-      if (structType.getParamValues().size() == 1) {
-        printDemangledParam(os, structType.getParamValues()[0], diagShared);
-        return;
-      }
     }
   }
 
