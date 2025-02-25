@@ -6,14 +6,17 @@
 
 """Test the max.engine Python bindings with Max Graph when using explicit device."""
 
+from __future__ import annotations
+
 import numpy as np
 from max.driver import CPU, Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.pipelines.nn import Signals
 
 
-def allreduce_graph(signals: ops.allreduce.Signals) -> Graph:
+def allreduce_graph(signals: Signals) -> Graph:
     devices = signals.devices
     with Graph(
         "allreduce",
@@ -56,7 +59,7 @@ def allreduce_graph(signals: ops.allreduce.Signals) -> Graph:
 
 def test_allreduce_execution() -> None:
     """Tests multi-device allreduce execution."""
-    signals = ops.allreduce.Signals(
+    signals = Signals(
         devices=[
             DeviceRef.GPU(id=0),
             DeviceRef.GPU(id=1),
@@ -83,7 +86,7 @@ def test_allreduce_execution() -> None:
 
     signal_buffers = [
         Tensor.zeros(
-            shape=(ops.allreduce.Signals.NUM_BYTES,),
+            shape=(Signals.NUM_BYTES,),
             dtype=DType.uint8,
             device=dev,
         )

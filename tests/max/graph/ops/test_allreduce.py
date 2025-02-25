@@ -10,6 +10,7 @@ from conftest import tensor_types
 from hypothesis import strategies as st
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
+from max.pipelines.nn import Signals
 
 shared_types = st.shared(tensor_types())
 
@@ -22,7 +23,7 @@ def test_allreduce_no_device() -> None:
         DeviceRef.GPU(id=2),
         DeviceRef.GPU(id=3),
     ]
-    signals = ops.allreduce.Signals(devices)
+    signals = Signals(devices)
 
     with pytest.raises(
         ValueError,
@@ -67,7 +68,7 @@ def test_allreduce_rep_device() -> None:
         DeviceRef.GPU(id=2),
         DeviceRef.GPU(id=3),
     ]
-    signals = ops.allreduce.Signals(devices)
+    signals = Signals(devices)
 
     with pytest.raises(
         ValueError,
@@ -114,7 +115,7 @@ def test_allreduce_wrong_shape() -> None:
         DeviceRef.GPU(id=2),
         DeviceRef.GPU(id=3),
     ]
-    signals = ops.allreduce.Signals(devices)
+    signals = Signals(devices)
 
     with pytest.raises(
         ValueError,
@@ -160,7 +161,7 @@ def test_allreduce_wrong_num_devices() -> None:
         DeviceRef.GPU(id=1),
         DeviceRef.GPU(id=2),
     ]
-    signals = ops.allreduce.Signals(devices)
+    signals = Signals(devices)
 
     with pytest.raises(
         ValueError,
@@ -200,7 +201,7 @@ def test_allreduce_basic() -> None:
         DeviceRef.GPU(id=2),
         DeviceRef.GPU(id=3),
     ]
-    signals = ops.allreduce.Signals(devices)
+    signals = Signals(devices)
 
     with Graph(
         "allreduce",
