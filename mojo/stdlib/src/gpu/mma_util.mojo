@@ -3,10 +3,25 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""This module provides abstractions for doing matrix-multiply-accumulate (mma)
-using tensor cores.
-PTX Documentation => https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#warp-level-matrix-fragment-mma-1688
-AMD Documentation => https://gpuopen.com/learn/amd-lab-notes/amd-lab-notes-matrix-cores-readme/
+
+"""Matrix multiply accumulate (MMA) utilities for GPU tensor cores.
+
+This module provides functions for loading matrix tiles from memory into registers and storing
+results back to memory when using tensor cores for matrix multiplication. It supports both
+NVIDIA and AMD GPUs with functions specialized for different data types (FP32, FP16, BF16).
+
+The key functions are:
+
+- load_matrix_a: Loads tiles from the first input matrix A
+- load_matrix_b: Loads tiles from the second input matrix B
+- store_matrix_d: Stores result tiles to the output matrix D
+
+Each function handles the specific memory access patterns required by the tensor core
+instructions on each GPU architecture. The tile sizes and data layouts match the hardware
+requirements documented in:
+
+NVIDIA PTX: https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#warp-level-matrix-fragment-mma-1688
+AMD Matrix Cores: https://gpuopen.com/learn/amd-lab-notes/amd-lab-notes-matrix-cores-readme/
 """
 
 
@@ -19,9 +34,24 @@ fn load_matrix_a[
     tile_col: Int,
     ldm: Int,
 ) -> SIMD[DType.float32, 4]:
-    """
-    For shape m16n8k8 type tf32 loads matrix A tile from memory to registers in
-    specific order to be used by tensor cores to perform a warp sync mma op.
+    """Loads a tile of matrix A from memory to registers for TF32 tensor core operations.
+
+    Parameters:
+        m: Number of rows in the output matrix tile.
+        n: Number of columns in the output matrix tile.
+        k: Inner dimension for matrix multiplication.
+
+    Args:
+        a_ptr: Pointer to matrix A data in memory.
+        tile_row: Starting row index of the tile.
+        tile_col: Starting column index of the tile.
+        ldm: Leading dimension of matrix A (stride between rows).
+
+    Returns:
+        SIMD vector containing 4 TF32 values loaded from matrix A in the required order.
+
+    Constraints:
+        The tile demensions must be m=16, n=8, k=8.
     """
 
     constrained[m == 16 and n == 8 and k == 8]()
@@ -50,9 +80,24 @@ fn load_matrix_a[
     tile_col: Int,
     ldm: Int,
 ) -> SIMD[DType.float16, 4]:
-    """
-    For shape m16n8k8 & type fp16 loads matrix A tile from memory to registers
-    in specific order to be used by tensor cores to perform a warp sync mma op.
+    """Loads a tile of matrix A from memory to registers for FP16 tensor core operations.
+
+    Parameters:
+        m: Number of rows in the output matrix tile.
+        n: Number of columns in the output matrix tile.
+        k: Inner dimension for matrix multiplication.
+
+    Args:
+        a_ptr: Pointer to matrix A data in memory.
+        tile_row: Starting row index of the tile.
+        tile_col: Starting column index of the tile.
+        ldm: Leading dimension of matrix A (stride between rows).
+
+    Returns:
+        SIMD vector containing 4 FP16 values loaded from matrix A in the required order.
+
+    Constraints:
+        The tile demensions must be m=16, n=8, k=8.
     """
 
     constrained[m == 16 and n == 8 and k == 8]()
@@ -83,9 +128,24 @@ fn load_matrix_a[
     tile_col: Int,
     ldm: Int,
 ) -> SIMD[DType.bfloat16, k // 2]:
-    """
-    For type bfp16 loads matrix A tile from memory to registers in specific
-    order to be used by tensor cores to perform a warp sync mma op.
+    """Loads a tile of matrix A from memory to registers for BF16 tensor core operations.
+
+    Parameters:
+        m: Number of rows in the output matrix tile.
+        n: Number of columns in the output matrix tile.
+        k: Inner dimension for matrix multiplication.
+
+    Args:
+        a_ptr: Pointer to matrix A data in memory.
+        tile_row: Starting row index of the tile.
+        tile_col: Starting column index of the tile.
+        ldm: Leading dimension of matrix A (stride between rows).
+
+    Returns:
+        SIMD vector containing k//2 BF16 values loaded from matrix A in the required order.
+
+    Constraints:
+        The tile dimensions must be m=16, n=8, k=8 or m=16, n=8, k=16.
     """
 
     @parameter
@@ -145,6 +205,26 @@ fn load_matrix_a_amd[
     tile_col: Int,
     ldm: Int,
 ) -> SIMD[DType.float32, 1]:
+    """Loads a tile of matrix A from memory to registers for AMD FP32 tensor core operations.
+
+    Parameters:
+        m: Number of rows in the output matrix tile.
+        n: Number of columns in the output matrix tile.
+        k: Inner dimension for matrix multiplication.
+
+    Args:
+        a_ptr: Pointer to matrix A data in memory.
+        tile_row: Starting row index of the tile.
+        tile_col: Starting column index of the tile.
+        ldm: Leading dimension of matrix A (stride between rows).
+
+    Returns:
+        SIMD vector containing 1 FP32 value loaded from matrix A.
+
+    Constraints:
+        The tile dimensions must be m=16, n=16, k=4.
+    """
+
     constrained[m == 16 and n == 16 and k == 4]()
     var lane = lane_id()
     var thread_x = lane & 15
@@ -161,6 +241,26 @@ fn load_matrix_a_amd[
     tile_col: Int,
     ldm: Int,
 ) -> SIMD[DType.float16, 4]:
+    """Loads a tile of matrix A from memory to registers for AMD FP16 tensor core operations.
+
+    Parameters:
+        m: Number of rows in the output matrix tile.
+        n: Number of columns in the output matrix tile.
+        k: Inner dimension for matrix multiplication.
+
+    Args:
+        a_ptr: Pointer to matrix A data in memory.
+        tile_row: Starting row index of the tile.
+        tile_col: Starting column index of the tile.
+        ldm: Leading dimension of matrix A (stride between rows).
+
+    Returns:
+        SIMD vector containing 4 FP16 values loaded from matrix A.
+
+    Constraints:
+        The tile dimensions must be m=16, n=16, k=16.
+    """
+
     constrained[m == 16 and n == 16 and k == 16]()
     var lane = lane_id()
     var thread_x = lane & 15
@@ -184,6 +284,26 @@ fn load_matrix_a_amd[
     tile_col: Int,
     ldm: Int,
 ) -> SIMD[DType.bfloat16, 4]:
+    """Loads a tile of matrix A from memory to registers for AMD BF16 tensor core operations.
+
+    Parameters:
+        m: Number of rows in the output matrix tile.
+        n: Number of columns in the output matrix tile.
+        k: Inner dimension for matrix multiplication.
+
+    Args:
+        a_ptr: Pointer to matrix A data in memory.
+        tile_row: Starting row index of the tile.
+        tile_col: Starting column index of the tile.
+        ldm: Leading dimension of matrix A (stride between rows).
+
+    Returns:
+        SIMD vector containing 4 BF16 values loaded from matrix A.
+
+    Constraints:
+        The tile dimensions must be m=16, n=16, k=16.
+    """
+
     constrained[m == 16 and n == 16 and k == 16]()
     var lane = lane_id()
     var thread_x = lane & 15
@@ -207,9 +327,24 @@ fn load_matrix_b[
     tile_col: Int,
     ldm: Int,
 ) -> SIMD[DType.float32, 2]:
-    """
-    For shape m16n8k8 & type tf32 loads matrix B tile from memory to registers
-    in specific order to be used by tensor cores to perform a warp sync mma op.
+    """Loads a tile of matrix B from memory to registers for TF32 tensor core operations.
+
+    Parameters:
+        m: Number of rows in the output matrix tile.
+        n: Number of columns in the output matrix tile.
+        k: Inner dimension for matrix multiplication.
+
+    Args:
+        b_ptr: Pointer to matrix B data in memory.
+        tile_row: Starting row index of the tile.
+        tile_col: Starting column index of the tile.
+        ldm: Leading dimension of matrix B (stride between rows).
+
+    Returns:
+        SIMD vector containing 2 TF32 values loaded from matrix B in the required order.
+
+    Constraints:
+        The tile dimensions must be m=16, n=8, k=8.
     """
 
     constrained[m == 16 and n == 8 and k == 8]()
@@ -235,9 +370,24 @@ fn load_matrix_b[
     tile_col: Int,
     ldm: Int,
 ) -> SIMD[DType.float16, 2]:
-    """
-    For shape m16n8k8 & type fp16 loads matrix B tile from memory to registers
-    in specific order to be used by tensor cores to perform a warp sync mma op.
+    """Loads a tile of matrix B from memory to registers for FP16 tensor core operations.
+
+    Parameters:
+        m: Number of rows in the output matrix tile.
+        n: Number of columns in the output matrix tile.
+        k: Inner dimension for matrix multiplication.
+
+    Args:
+        b_ptr: Pointer to matrix B data in memory.
+        tile_row: Starting row index of the tile.
+        tile_col: Starting column index of the tile.
+        ldm: Leading dimension of matrix B (stride between rows).
+
+    Returns:
+        SIMD vector containing 2 FP16 values loaded from matrix B in the required order.
+
+    Constraints:
+        The tile dimensions must be m=16, n=8, k=8.
     """
 
     constrained[m == 16 and n == 8 and k == 8]()
@@ -263,9 +413,24 @@ fn load_matrix_b[
     tile_col: Int,
     ldm: Int,
 ) -> SIMD[DType.bfloat16, k // 4]:
-    """
-    For type bfp16 loads matrix B tile from memory to registers in specific
-    order to be used by tensor cores to perform a warp sync mma op.
+    """Loads a tile of matrix B from memory to registers for BF16 tensor core operations.
+
+    Parameters:
+        m: Number of rows in the output matrix tile.
+        n: Number of columns in the output matrix tile.
+        k: Inner dimension for matrix multiplication.
+
+    Args:
+        b_ptr: Pointer to matrix B data in memory.
+        tile_row: Starting row index of the tile.
+        tile_col: Starting column index of the tile.
+        ldm: Leading dimension of matrix B (stride between rows).
+
+    Returns:
+        SIMD vector containing k//4 BF16 values loaded from matrix B in the required order.
+
+    Constraints:
+        The tile dimensions must be m=16, n=8, k=8 or m=16, n=8, k=16.
     """
 
     @parameter
@@ -309,6 +474,23 @@ fn load_matrix_b_amd[
     tile_col: Int,
     ldm: Int,
 ) -> SIMD[DType.float32, 1]:
+    """Loads a tile of matrix B from memory to registers for AMD FP32 tensor core operations.
+
+    Parameters:
+        m: Number of rows in the output matrix tile.
+        n: Number of columns in the output matrix tile.
+        k: Inner dimension for matrix multiplication.
+
+    Args:
+        b_ptr: Pointer to matrix B data in memory.
+        tile_row: Starting row index of the tile.
+        tile_col: Starting column index of the tile.
+        ldm: Leading dimension of matrix B (stride between rows).
+
+    Returns:
+        SIMD vector containing 1 FP32 value loaded from matrix B.
+    """
+
     var lane = lane_id()
     var thread_x = lane & 15
     var thread_y = lane >> 4
@@ -371,9 +553,29 @@ fn _store_matrix_d_nvidia[
     tile_col: Int,
     ldm: Int,
 ):
-    """
-    For shape m16n8k8 stores matrix D tile from registers to memory in specific
-    order after performing tensor core based warp sync mma op.
+    """NVIDIA-specific implementation for storing matrix D tile from registers to memory.
+
+    This function handles the specific memory layout required by NVIDIA tensor cores after
+    performing a warp-synchronized matrix multiply-accumulate operation. For shape m16n8k8,
+    it stores the 4 elements per thread in a specific order based on the thread's position
+    in the warp.
+
+    Parameters:
+        dtype: Data type of the matrix elements.
+        m: Number of rows in matrix D.
+        n: Number of columns in matrix D.
+        k: Inner dimension for matrix multiply.
+
+    Args:
+        d_ptr: Pointer to destination memory for matrix D.
+        d: SIMD vector containing 4 elements to store.
+        tile_row: Starting row index of the tile in matrix D.
+        tile_col: Starting column index of the tile in matrix D.
+        ldm: Leading dimension (stride) of matrix D.
+
+    Note:
+        - Thread mapping follows NVIDIA's tensor core layout.
+        - Each thread stores 4 elements in specific positions based on warp lane ID.
     """
 
     var group_id = lane_id() >> 2
@@ -402,6 +604,30 @@ fn _store_matrix_d_amd[
     tile_col: Int,
     ldm: Int,
 ):
+    """AMD-specific implementation for storing matrix D tile from registers to memory.
+
+    This function handles the memory layout required by AMD tensor cores after performing
+    a warp-synchronized matrix multiply-accumulate operation. It stores 4 elements per
+    thread in a linear layout based on the thread's position in the warp.
+
+    Parameters:
+        dtype: Data type of the matrix elements.
+        m: Number of rows in matrix D.
+        n: Number of columns in matrix D.
+        k: Inner dimension for matrix multiply.
+
+    Args:
+        d_ptr: Pointer to destination memory for matrix D.
+        d: SIMD vector containing 4 elements to store.
+        tile_row: Starting row index of the tile in matrix D.
+        tile_col: Starting column index of the tile in matrix D.
+        ldm: Leading dimension (stride) of matrix D.
+
+    Note:
+        - Thread mapping follows AMD's tensor core layout.
+        - Each thread stores 4 elements in consecutive positions.
+    """
+
     var lane = lane_id()
     var thread_x = lane & 15
     var thread_y = lane >> 4
@@ -421,9 +647,29 @@ fn store_matrix_d[
     tile_col: Int,
     ldm: Int,
 ):
-    """
-    Stores matrix D tile from registers to memory in specific order after
-    performing tensor core based warp sync mma op.
+    """Stores matrix D tile from registers to memory after tensor core operation.
+
+    This function dispatches to architecture-specific implementations for storing the
+    results of a tensor core matrix multiply-accumulate operation. It handles the
+    different memory layouts required by NVIDIA and AMD tensor cores.
+
+    Parameters:
+        dtype: Data type of the matrix elements.
+        m: Number of rows in matrix D.
+        n: Number of columns in matrix D.
+        k: Inner dimension for matrix multiply.
+
+    Args:
+        d_ptr: Pointer to destination memory for matrix D.
+        d: SIMD vector containing 4 elements to store.
+        tile_row: Starting row index of the tile in matrix D.
+        tile_col: Starting column index of the tile in matrix D.
+        ldm: Leading dimension (stride) of matrix D.
+
+    Note:
+        - Automatically selects appropriate implementation based on GPU architecture.
+        - Each thread stores 4 elements in architecture-specific positions.
+        - Must be called by all threads in a warp.
     """
 
     @parameter

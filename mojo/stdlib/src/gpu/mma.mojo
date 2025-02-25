@@ -402,7 +402,28 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
 @always_inline
 fn mma(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
-    """Performs warp sync Tensor Core based Matrix-multiply and accumulate(MMA) operation.
+    """Performs warp sync Tensor Core based Matrix-multiply and accumulate (MMA) operation.
+
+    This function executes a matrix multiply-accumulate operation using GPU Tensor Cores,
+    synchronizing across the warp. It dispatches to architecture-specific implementations
+    for NVIDIA and AMD GPUs.
+
+    Args:
+        d: Output SIMD vector to store the result.
+        a: First input matrix as SIMD vector.
+        b: Second input matrix as SIMD vector.
+        c: Accumulator matrix as SIMD vector.
+
+    The operation performed is: d = (a * b) + c
+
+    Supported configurations depend on the GPU architecture:
+    - NVIDIA: Various combinations of FP32, FP16, BF16, and FP8 formats
+    - AMD: Limited subset of FP32 and FP16 operations
+
+    Note:
+        - All threads in a warp must execute this operation together
+        - Input matrices must be properly loaded and formatted for Tensor Core operations
+        - Matrix dimensions and data types must match hardware requirements
     """
 
     @parameter
@@ -423,8 +444,40 @@ fn ld_matrix[
 ](
     ptr: UnsafePointer[Scalar[type], address_space = AddressSpace.SHARED]
 ) -> SIMD[type, simd_width]:
-    """Performs warp sync copy from shared memory to registers.
-    Loads in a fashion that can be used directly by tensor core MMA instructions.
+    """Loads a matrix from shared memory into registers in a format suitable for tensor core operations.
+
+    This function performs a warp-synchronized load from shared memory to registers, formatting the data
+    to be directly usable by tensor core Matrix Multiply-Accumulate (MMA) instructions.
+
+    Parameters:
+        type: The data type of the matrix elements (e.g. float16, float32).
+        simd_width: The width of the SIMD vector to load.
+        transpose: Whether to transpose the matrix during load (only supported for half precision).
+
+    Args:
+        ptr: Pointer to shared memory containing the source matrix data.
+
+    Returns:
+        SIMD vector containing the loaded matrix data, properly formatted for MMA operations.
+
+    Note:
+        - All threads in a warp must execute this operation together.
+        - For transposed loads, only half precision (float16) is supported.
+        - The register width is fixed at 4 bytes (32 bits).
+        - Supported configurations:
+            - x1: One 32-bit register per thread.
+            - x2: Two 32-bit registers per thread.
+            - x4: Four 32-bit registers per thread.
+
+    Example:
+        ```mojo
+        # Load 8x8 matrix of float16 values
+        var data = ld_matrix[DType.float16, 8](ptr)
+
+        # Load transposed matrix
+        var transposed = ld_matrix[DType.float16, 8, transpose=True](ptr)
+        ```
+        .
     """
 
     constrained[
@@ -511,8 +564,31 @@ fn st_matrix[
     ptr: UnsafePointer[Scalar[type], address_space = AddressSpace.SHARED],
     d: SIMD[type, simd_width],
 ):
-    """Performs warp sync copy from registers to shared memory.
-    Loads in a fashion that can be used directly by tensor core MMA instructions.
+    """Performs warp-synchronized copy from registers to shared memory.
+
+    This function stores data from registers to shared memory in a format that can be
+    directly used by tensor core Matrix Multiply-Accumulate (MMA) instructions. It uses
+    the NVIDIA stmatrix instruction to perform an efficient warp-synchronized store.
+
+    Parameters:
+        type: Data type of elements to store.
+        simd_width: Width of the SIMD vector.
+        transpose: If True, transposes the matrix during store.
+
+    Args:
+        ptr: Pointer to shared memory where data will be stored.
+        d: SIMD vector containing the data to store.
+
+    Constraints:
+        - Must be used with shared memory pointers.
+        - Number of registers must be 1, 2, or 4.
+        - Data must be properly aligned for matrix operations.
+        - All threads in warp must participate.
+        - Only supported on NVIDIA GPUs with tensor core capabilities.
+
+    Note:
+        The function performs a warp-synchronized operation - all threads in the warp
+        must execute this instruction to avoid deadlock.
     """
 
     # The register width is fixed at 4 Bytes (32 bits)
@@ -558,30 +634,50 @@ fn st_matrix[
 # Shared memory operand descriptor.
 @register_passable("trivial")
 struct WGMMADescriptor[dtype: DType]:
-    # The bits as the following.
-    # start address : 14-bit
-    # leading byte_offset: 14 bit
-    # stride byte offset: 14 bit
-    # base offset: 3 bit
-    # swizzle mode: 2 bit
-    #  +---------+-----+-----------+-----+-----------+-----+-----+-----------+-----+
-    #  |   0-13  |14-15|   16-29   |30-31|   32-45   |46-48|49-51|   52-61   |62-63|
-    #  +---------+-----+-----------+-----+-----------+-----+-----+-----------+-----+
-    #  |  14bits |2bits|   14bits  |2bits|   14bits  |2bits|3bits|   10bits  |2bits|
-    #  +---------+-----+-----------+-----+-----------+-----+-----+-----------+-----+
-    #  | BaseAddr|  0  | LeadingDim|  0  |   Stride  |  0  |Offst|     0     |Swzle|
-    #  +---------+-----+-----------+-----+-----------+-----+-----+-----------+-----+
-    # See:
-    # # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#asynchronous-warpgroup-level-matrix-shared-memory-layout-matrix-descriptor
+    """Descriptor for shared memory operands used in warp group matrix multiply operations.
+
+    This struct represents a descriptor that encodes information about shared memory layout
+    and access patterns for warp group matrix multiply operations. The descriptor contains
+    the following bit fields:
+
+    - Start address (14 bits): Base address in shared memory.
+    - Leading byte offset (14 bits): Leading dimension stride in bytes.
+    - Stride byte offset (14 bits): Stride dimension offset in bytes.
+    - Base offset (3 bits): Additional offset.
+    - Swizzle mode (2 bits): Memory access pattern.
+
+    The bit layout is:
+    +----------+----+------------+----+------------+----+-----+----------+-----+
+    |   0-13   |14-15|   16-29   |30-31|   32-45   |46-48|49-51|  52-61  |62-63|
+    +----------+----+------------+----+------------+----+-----+----------+-----+
+    |  14bits  |2bits|  14bits   |2bits|  14bits   |2bits|3bits| 10bits  |2bits|
+    +----------+----+------------+----+------------+----+-----+----------+-----+
+    | BaseAddr |  0  |LeadingDim |  0  |  Stride   |  0  |Offst|    0    |Swzle|
+    +----------+----+------------+----+------------+----+-----+----------+-----+
+
+    See: https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#asynchronous-warpgroup-level-matrix-shared-memory-layout-matrix-descriptor
+    """
 
     var desc: Int64
 
     @implicit
     fn __init__(out self, val: Int64):
+        """Initialize descriptor with raw 64-bit value."""
         self.desc = val
 
     @always_inline
     fn _insert_bit[start_bit: Int](self, val: Int64) -> Int64:
+        """Insert bits at specified position in descriptor.
+
+        Parameters:
+            start_bit: Starting bit position.
+
+        Args:
+            val: Value to insert.
+
+        Returns:
+            Updated descriptor value with inserted bits.
+        """
         return self.desc | (val << start_bit)
 
     @staticmethod
@@ -594,6 +690,20 @@ struct WGMMADescriptor[dtype: DType]:
             Scalar[dtype], address_space = AddressSpace.SHARED
         ],
     ) -> Self:
+        """Create a descriptor for shared memory operand.
+
+        Parameters:
+            stride_byte_offset: Stride dimension offset in bytes.
+            leading_byte_offset: Leading dimension stride in bytes.
+            swizzle_mode: Memory access pattern mode.
+
+        Args:
+            smem_ptr: Pointer to shared memory operand.
+
+        Returns:
+            Initialized descriptor for the shared memory operand.
+        """
+
         # TMA enumerates no swizzle, 32, 64, 128B as 0, 1, 2, 3.
         # WGMMA enumerates these as 0, 3, 2, 1.
         @parameter
@@ -634,25 +744,53 @@ struct WGMMADescriptor[dtype: DType]:
 
     @always_inline
     fn __iadd__(mut self, offset: Int):
+        """Add offset to descriptor's base address in-place.
+
+        Args:
+            offset: Byte offset to add to base address.
+        """
         self.desc += (offset & 0x3FFFF) >> 4
 
     @always_inline
     fn __add__(self, offset: Int) -> Self:
+        """Add offset to descriptor's base address.
+
+        Args:
+            offset: Byte offset to add to base address.
+
+        Returns:
+            New descriptor with updated base address.
+        """
         return self.desc + ((offset & 0x3FFFF) >> 4)
 
 
 @always_inline
 fn wgmma_fence_aligned():
+    """Inserts a memory fence for warp group matrix multiply operations.
+
+    This ensures all prior shared memory accesses are visible before subsequent WGMMA operations.
+    Must be called before starting a new sequence of WGMMA operations.
+    """
     __mlir_op.`nvvm.wgmma.fence.aligned`[_type=None]()
 
 
 @always_inline
 fn wgmma_commit_group_sync():
+    """Commits pending warp group matrix multiply operations.
+
+    This synchronizes the warp group and ensures all WGMMA operations have been committed.
+    Must be called after a sequence of WGMMA operations before accessing results.
+    """
     __mlir_op.`nvvm.wgmma.commit.group.sync.aligned`[_type=None]()
 
 
 @always_inline
 fn wgmma_wait_group_sync():
+    """Waits for all pending warp group matrix multiply operations to complete.
+
+    This synchronizes the warp group and ensures all WGMMA operations have finished executing.
+    Must be called after commit and before accessing results.
+    """
     __mlir_op.`nvvm.wgmma.wait.group.sync.aligned`[
         _properties = __mlir_attr.`{group = 0 : i64}`, _type=None
     ]()
@@ -677,7 +815,35 @@ fn wgmma_async[
     mat_b_desc: WGMMADescriptor,
     c_reg: SIMD[c_dtype, width],
 ) -> __type_of(c_reg):
-    """Performs warp group async Matrix-multiply and accumulate(WGMMA) operation.
+    """Performs warp group async Matrix-multiply and accumulate (WGMMA) operation.
+
+    This function executes an asynchronous matrix multiplication using warp group MMA instructions.
+    It supports various data types including tensor float32, bfloat16, float16, float8, int8, and uint8.
+
+    Parameters:
+        m: Number of rows in matrix A and output matrix.
+        n: Number of columns in matrix B and output matrix.
+        k: Number of columns in matrix A / rows in matrix B.
+        c_dtype: Data type of the output matrix C.
+        width: Width of the SIMD register for matrix C.
+        a_type: Data type of matrix A.
+        b_type: Data type of matrix B.
+        accum_type: Accumulation data type (defaults to c_dtype).
+        layout_a: Memory layout for matrix A ("row" or "col").
+        layout_b: Memory layout for matrix B ("row" or "col").
+
+    Args:
+        mat_a_desc: WGMMA descriptor for matrix A.
+        mat_b_desc: WGMMA descriptor for matrix B.
+        c_reg: SIMD register containing matrix C values.
+
+    Returns:
+        SIMD register containing the result of the matrix multiplication.
+
+    Constraints:
+        - The number of output registers must match the instruction shape:
+          `(m * n // 128) * sizeof(accum_type) == width * sizeof(c_dtype)`.
+        - Data type combinations must be compatible with hardware WGMMA instructions.
     """
 
     constrained[
@@ -917,7 +1083,36 @@ fn wgmma_async[
     mat_b_desc: WGMMADescriptor,
     c: SIMD[c_dtype, frag_c_width],
 ) -> __type_of(c):
-    """Performs warp group async Matrix-multiply and accumulate(WGMMA) operation.
+    """Performs warp group async Matrix-multiply and accumulate (WGMMA) operation.
+
+    Parameters:
+        m: Number of rows in output matrix.
+        n: Number of columns in output matrix.
+        k: Inner dimension for matrix multiplication.
+        a_dtype: Data type of matrix A fragment.
+        c_dtype: Data type of output matrix C.
+        frag_a_width: Width of matrix A fragment.
+        frag_c_width: Width of output matrix C fragment.
+        a_type: Data type of matrix A.
+        b_type: Data type of matrix B.
+        accum_type: Data type used for accumulation (defaults to c_dtype).
+        layout_a: Layout of matrix A ("row" or "col", defaults to "row").
+        layout_b: Layout of matrix B ("row" or "col", defaults to "col").
+
+    Args:
+        mat_a_frag: Fragment containing matrix A data.
+        mat_b_desc: Descriptor for matrix B data.
+        c: Fragment containing matrix C data.
+
+    Returns:
+        Updated matrix C fragment after WGMMA operation.
+
+    Currently only supports:
+    - m=64, k=16.
+    - BF16 input types.
+    - FP32 accumulation.
+    - Row major matrix A.
+    - Column major matrix B (or row major for BF16).
     """
 
     constrained[
@@ -1028,7 +1223,7 @@ fn wgmma_async[
                      $12, p, $14, $15, $16;
                 }""",
                 _RegisterPackType[
-                    Float32, Float32, Float32, Float32, 
+                    Float32, Float32, Float32, Float32,
                     Float32, Float32, Float32, Float32,
                 ],
                 constraints = constraints,
@@ -1055,9 +1250,9 @@ fn wgmma_async[
                      $20, p, $22, $23, $24;
                 }""",
                 _RegisterPackType[
-                    Float32, Float32, Float32, Float32, 
                     Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, 
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
                     Float32, Float32, Float32, Float32,
                 ],
                 constraints = constraints,
@@ -1086,11 +1281,11 @@ fn wgmma_async[
                      $36, p, $38, $39, $40;
                 }""",
                 _RegisterPackType[
-                    Float32, Float32, Float32, Float32, 
                     Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, 
                     Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, 
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
                     Float32, Float32, Float32, Float32,
                     Float32, Float32, Float32, Float32,
                     Float32, Float32, Float32, Float32,
@@ -1127,9 +1322,9 @@ fn wgmma_async[
                 _RegisterPackType[
                     Float32, Float32, Float32, Float32,
                     Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, 
                     Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, 
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
                     Float32, Float32, Float32, Float32,
                     Float32, Float32, Float32, Float32,
                     Float32, Float32, Float32, Float32,
@@ -1192,23 +1387,23 @@ fn wgmma_async[
                     Float32, Float32, Float32, Float32,
                     Float32, Float32, Float32, Float32,
                     Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, 
                     Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, 
                     Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, 
                     Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, 
                     Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, 
                     Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, 
                     Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, 
                     Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, 
                     Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32, 
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
+                    Float32, Float32, Float32, Float32,
                     Float32, Float32, Float32, Float32,
                     Float32, Float32, Float32, Float32,
                     Float32, Float32, Float32, Float32,
