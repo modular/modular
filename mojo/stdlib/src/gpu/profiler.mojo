@@ -3,7 +3,25 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""This module includes a simple GPU profiler."""
+"""This module provides GPU profiling functionality.
+
+The profiler module enables performance profiling of GPU code blocks through a simple
+context manager interface. It includes:
+
+- ProfileBlock: A context manager for timing code blocks
+- Configurable profiling that can be enabled/disabled at compile time
+- Nanosecond precision timing using perf_counter_ns()
+- Source location tracking for profiled blocks
+- Formatted timing output
+
+Example:
+```mojo
+from gpu import profiler
+    with profiler.ProfileBlock("my_kernel"):
+        # Code to profile
+        run_gpu_kernel()
+```
+"""
 
 from time import perf_counter_ns
 
@@ -13,13 +31,33 @@ from builtin.io import _printf
 
 @value
 struct ProfileBlock[enabled: Bool = False]:
+    """A struct for profiling code blocks.
+
+    This struct provides context manager functionality to profile code blocks.
+    When enabled, it records the start and end time of the block and prints
+    the timing information.
+
+    Parameters:
+        enabled: Whether profiling is enabled for this block.
+    """
+
+    # Name of the profiling block used for identification in timing output
     var name: StringLiteral
+
+    # Source code location information for the profiling block
     var loc: _SourceLocation
+
+    # Start time of the profiling block in nanoseconds
     var start_time: UInt
 
     @always_inline
     @implicit
     fn __init__(out self, name: StringLiteral):
+        """Initialize a new ProfileBlock.
+
+        Args:
+            name: Name to identify this profiling block.
+        """
         self.start_time = 0
 
         @parameter
@@ -32,6 +70,8 @@ struct ProfileBlock[enabled: Bool = False]:
 
     @always_inline
     fn __enter__(mut self):
+        """Enter the profiling block and record start time if enabled."""
+
         @parameter
         if not enabled:
             return
@@ -39,6 +79,9 @@ struct ProfileBlock[enabled: Bool = False]:
 
     @always_inline
     fn __exit__(mut self):
+        """Exit the profiling block, record end time and print timing if enabled.
+        """
+
         @parameter
         if not enabled:
             return
