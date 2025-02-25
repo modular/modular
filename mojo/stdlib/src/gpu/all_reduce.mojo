@@ -4,6 +4,34 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+"""
+Multi-GPU allreduce implementation for efficient tensor reduction across GPUs.
+
+This module provides an optimized implementation of allreduce operations across multiple GPUs,
+supporting both peer-to-peer (P2P) and non-P2P communication patterns. The implementation
+automatically selects between two approaches based on hardware capabilities:
+
+1. P2P-based implementation (when P2P access is available):
+   - Uses direct GPU-to-GPU memory access for better performance
+   - Implements both single-stage and two-stage algorithms:
+     - Single-stage for latency-bound transfers (small tensors)
+     - Two-stage (reduce-scatter + all-gather) for bandwidth-bound transfers (large tensors)
+   - Optimized for NVLink bandwidth utilization
+   - Uses vectorized memory access and higher precision accumulation
+
+2. Non-P2P fallback implementation:
+   - Copies data through host memory when direct GPU access isn't possible
+   - Simple but functional approach for systems without P2P support
+
+The implementation is tuned for common GPU architectures (A100, H100) and includes
+parameters that can be adjusted for different hardware configurations.
+
+Limitations:
+- Number of elements must be a multiple of SIMD width
+- Maximum of 8 GPUs supported
+- All input/output buffers must have identical shapes
+"""
+
 from collections import InlineArray
 from math import ceildiv
 from memory import stack_allocation
@@ -43,7 +71,7 @@ saturate NVLink bandwidth.
 """
 
 alias MAX_GPUS = 8
-"""Maximum number of GPUs supported in the all-reduce implementation.
+"""Maximum number of GPUs supported in the allreduce implementation.
 
 This constant sets the upper bound for the number of GPUS supported in this algorithm.
 """
@@ -56,16 +84,35 @@ alias _flag_t = DType.uint32
 @value
 @register_passable("trivial")
 struct Signal[max_num_blocks: Int]:
-    # Shape of self_counter is (Self.max_num_blocks, MAX_GPUS)
+    """A synchronization primitive for coordinating GPU thread blocks across multiple devices.
+
+    This struct provides counter-based synchronization between thread blocks on different GPUs.
+    It maintains two sets of counters:
+    1. self_counter: Used by blocks on the current GPU to signal their progress
+    2. peer_counter: Used to track progress of blocks on other GPUs
+
+    Parameters:
+        max_num_blocks: The maximum number of thread blocks that will synchronize.
+
+    Note:
+        The counters use unsigned integers that may overflow, but this is safe since
+        unsigned integer overflow has well-defined behavior.
+    """
+
+    """
+     A 2D array of counters with shape (max_num_blocks, MAX_GPUS).
+            Each counter tracks progress of a block on the current GPU.
+    """
     var self_counter: StaticTuple[
         StaticTuple[Scalar[_flag_t], MAX_GPUS], Self.max_num_blocks
     ]
-    # Shape of peer_counter is (2, Self.max_num_blocks, MAX_GPUS)
-    # Two sets of peer counters are needed for two syncs. The reason is that
-    # it's possible for peer GPU block to arrive at the second sync point while
-    # the current GPU block hasn't passed the first sync point. Thus, peer GPU
-    # may write counter + 1 while current GPU is busy waiting for counter. We use
-    # alternating counter array to avoid this possibility.
+
+    """
+    A 3D array of counters with shape (2, max_num_blocks, MAX_GPUS).
+    Contains two sets of counters to handle two synchronization points safely.
+    The dual counter design prevents race conditions where a peer block arrives
+    at the second sync point before the current block passes the first sync point.
+    """
     var peer_counter: StaticTuple[
         StaticTuple[
             StaticTuple[Scalar[_flag_t], MAX_GPUS], Self.max_num_blocks
@@ -128,7 +175,7 @@ fn can_enable_p2p(ctxs: List[DeviceContext]) raises -> Bool:
 
 
 @always_inline
-fn all_reduce_naive[
+fn _all_reduce_naive[
     type: DType,
     rank: Int,
     ngpus: Int, //,
@@ -139,12 +186,12 @@ fn all_reduce_naive[
     list_of_out_bufs: InlineArray[NDBuffer[type, rank], ngpus],
 ) raises:
     """
-    Performs all-reduce across GPUs without using peer-to-peer access.
+    Performs allreduce across GPUs without using peer-to-peer access.
 
     Parameters:
         type: The data type of tensor elements.
         rank: Number of dimensions in input tensors.
-        ngpus: Number of GPUs participating in all-reduce.
+        ngpus: Number of GPUs participating in allreduce.
         max_num_blocks: Maximum number of thread blocks to launch.
 
     Arguments:
@@ -216,7 +263,7 @@ fn all_reduce_naive[
 
 
 @always_inline
-fn multi_gpu_barrier[
+fn _multi_gpu_barrier[
     max_num_blocks: Int, //,
     ngpus: Int,
     is_start: Bool,
@@ -224,7 +271,7 @@ fn multi_gpu_barrier[
 ](
     rank_sigs: InlineArray[
         UnsafePointer[Signal[max_num_blocks]], MAX_GPUS
-    ],  # all-to-all table of signals
+    ],  # all-to-all table of Signals
     self_sg: UnsafePointer[Signal[max_num_blocks]],
     my_rank: Int,
 ):
@@ -246,7 +293,7 @@ fn multi_gpu_barrier[
         my_rank: Current GPU rank.
 
     Uses atomic counters and memory fences to ensure all GPUs reach barrier before proceeding.
-    Implementation ported from VLLM's multi_gpu_barrier in
+    Implementation ported from VLLM's _multi_gpu_barrier in
     https://github.com/vllm-project/vllm/blob/main/csrc/custom_all_reduce.cuh#L169-L198
     """
 
@@ -318,7 +365,7 @@ fn multi_gpu_barrier[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
 )
-fn allreduce_2stage_kernel[
+fn _allreduce_2stage_kernel[
     type: DType, rank: Int, ngpus: Int, max_num_blocks: Int, *, BLOCK_SIZE: Int
 ](
     result: UnsafePointer[Scalar[type]],
@@ -345,7 +392,7 @@ fn allreduce_2stage_kernel[
         result: Output buffer for reduced values.
         src_ptrs: Input buffers from all GPUs.
         rank_sigs: Signal pointers for synchronization.
-            IMPORTANT: the signal pointers have trailing buffers for
+            IMPORTANT: the Signal pointers have trailing buffers for
             communication, which must be at least `ngpus * sizeof(payload)`.
             | -- sizeof(Signal) -- | ------ a few MB ----- |
         my_rank: Current GPU rank.
@@ -404,7 +451,7 @@ fn allreduce_2stage_kernel[
     # Uses two-phase synchronization protocol with release-acquire semantics:
     # 1. Initial barrier establishes happens-before relationship.
     # 2. Memory fence ensures visibility of partial reductions.
-    multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
+    _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
     # Grid-strided loop with vectorized reduction:
     # - Each thread processes partition elements using 128-bit accesses.
@@ -431,7 +478,7 @@ fn allreduce_2stage_kernel[
         )
 
     # Second barrier with memory ordering guarantees.
-    multi_gpu_barrier[ngpus, is_start=False, need_fence=True](
+    _multi_gpu_barrier[ngpus, is_start=False, need_fence=True](
         rank_sigs, my_sig, my_rank
     )
 
@@ -463,7 +510,7 @@ fn allreduce_2stage_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
 )
-fn allreduce_1stage_kernel[
+fn _allreduce_1stage_kernel[
     type: DType, rank: Int, ngpus: Int, max_num_blocks: Int, *, BLOCK_SIZE: Int
 ](
     result: UnsafePointer[Scalar[type]],
@@ -473,7 +520,7 @@ fn allreduce_1stage_kernel[
     num_elements: Int,
 ):
     """
-    Kernel implementing all-reduce using peer-to-peer access between GPUs.
+    Kernel implementing allreduce using peer-to-peer access between GPUs.
 
     Parameters:
         type: Data type of tensor elements.
@@ -490,7 +537,7 @@ fn allreduce_1stage_kernel[
         num_elements: Number of elements to reduce
 
     Uses P2P access to directly read from other GPU buffers and perform reduction.
-    Synchronizes using multi_gpu_barrier before and after reduction.
+    Synchronizes using _multi_gpu_barrier before and after reduction.
     """
     alias accum_type = get_accum_type[type]()
     alias simd_width = simdwidthof[type]()
@@ -516,7 +563,7 @@ fn allreduce_1stage_kernel[
         var target = (my_rank + i) % ngpus
         ptrs[i] = src_ptrs[target]
 
-    multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
+    _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
     # Vectorized grid-strided loop with SIMD loads.
     for idx in range(global_tid, num_simd_vectors, stride):
@@ -535,11 +582,11 @@ fn allreduce_1stage_kernel[
 
         result.store[alignment=alignment](elem_idx, accum.cast[type]())
 
-    multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
+    _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
 
 
 @always_inline
-fn all_reduce_p2p[
+fn _all_reduce_p2p[
     type: DType, rank: Int, ngpus: Int, max_num_blocks: Int, //
 ](
     ctxs: List[DeviceContext],
@@ -548,7 +595,7 @@ fn all_reduce_p2p[
     rank_sigs: InlineArray[UnsafePointer[Signal[max_num_blocks]], MAX_GPUS],
 ) raises:
     """
-    Performs all-reduce using peer-to-peer access between GPUs.
+    Performs allreduce using peer-to-peer access between GPUs.
 
     Parameters:
         type: Data type of tensor elements.
@@ -596,7 +643,7 @@ fn all_reduce_p2p[
         ):
             # Use the 1-stage allreduce when transfer is latency bound.
             curr_ctx.enqueue_function[
-                allreduce_1stage_kernel[
+                _allreduce_1stage_kernel[
                     type, rank, ngpus, max_num_blocks, BLOCK_SIZE=BLOCK_SIZE
                 ]
             ](
@@ -611,7 +658,7 @@ fn all_reduce_p2p[
         else:
             # Otherwise, use 2-stage allreduce for the bandwidth bound regime.
             curr_ctx.enqueue_function[
-                allreduce_2stage_kernel[
+                _allreduce_2stage_kernel[
                     type, rank, ngpus, max_num_blocks, BLOCK_SIZE=BLOCK_SIZE
                 ]
             ](
@@ -636,28 +683,38 @@ fn all_reduce[
     output_buffers: InlineArray[NDBuffer[type, rank], ngpus],
     rank_sigs: InlineArray[UnsafePointer[Signal[max_num_blocks]], MAX_GPUS],
 ) raises:
-    """
-    Main entry point for performing all-reduce across multiple GPUs.
-    If peer-to-peer access is possible, uses a P2P-based implementation.
-    Otherwise, falls back to a naive implementation.
+    """Performs an allreduce operation across multiple GPUs.
+
+    This function serves as the main entry point for performing allreduce operations
+    across multiple GPUs. It automatically selects between two implementations:
+    - A peer-to-peer (P2P) based implementation when P2P access is possible between GPUs
+    - A naive implementation as fallback when P2P access is not available
+
+    The allreduce operation combines values from all GPUs using element-wise addition
+    and distributes the result back to all GPUs.
 
     Parameters:
-        type: Data type of tensor elements.
-        rank: Number of dimensions in tensors.
-        ngpus: Number of GPUs participating.
-        max_num_blocks: Maximum number of thread blocks to launch.
+        type: The data type of the tensor elements (e.g. DType.float32).
+        rank: The number of dimensions in the input/output tensors.
+        ngpus: The number of GPUs participating in the allreduce.
+        max_num_blocks: The maximum number of thread blocks to launch per GPU.
 
-    Arguments:
-        ctxs: List of device contexts for participating GPUs.
-        input_buffers: Input buffers from each GPU.
-        output_buffers: Output buffers for each GPU.
-        rank_sigs: Signal pointers for synchronization.
+    Args:
+        ctxs: List of device contexts for each participating GPU.
+        input_buffers: Array of input tensors from each GPU, one per GPU.
+        output_buffers: Array of output tensors for each GPU to store results.
+        rank_sigs: Array of Signal pointers used for cross-GPU synchronization.
+
+    Note:
+        - Input and output buffers must have identical shapes across all GPUs.
+        - The number of elements must be identical across all input/output buffers.
+        - Performance is typically better with P2P access enabled between GPUs.
     """
     var can_p2p = can_enable_p2p(ctxs)
 
     if not can_p2p:
-        return all_reduce_naive[max_num_blocks](
+        return _all_reduce_naive[max_num_blocks](
             ctxs, input_buffers, output_buffers
         )
     else:
-        return all_reduce_p2p(ctxs, input_buffers, output_buffers, rank_sigs)
+        return _all_reduce_p2p(ctxs, input_buffers, output_buffers, rank_sigs)
