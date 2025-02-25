@@ -238,6 +238,20 @@ static constexpr llvm::StringLiteral kParameterStaticSpec = "static_spec";
 static constexpr llvm::StringLiteral kParameterSize = "size";
 static constexpr llvm::StringLiteral kParameterStaticSpecs = "static_specs";
 
+static constexpr bool kIOSpecImmutable = false;
+static constexpr bool kIOSpecMutable = true;
+
+static constexpr size_t kIOSpecIOOutput = 0;
+static constexpr size_t kIOSpecIOInput = 1;
+static constexpr size_t kIOSpecIOUnknown = 2;
+
+enum class IOSpec {
+  Input,        // Input tensor, read-only
+  Output,       // Output tensor, write-only
+  MutableInput, // Input tensor that can be modified
+  IOUnknown,    // Tensor w/ IOUnknown (used during io_spec param transition)
+};
+
 } // namespace M::KGEN::MOGGPreElab
 
 #endif // KGEN_LIB_MOGGPREELAB_MOGGDECORATORS_H
