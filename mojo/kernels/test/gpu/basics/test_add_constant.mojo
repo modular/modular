@@ -37,6 +37,7 @@ def run_add_constant(ctx: DeviceContext):
     ctx.enqueue_copy_to_device(in_device, in_host)
 
     var block_dim = 32
+    # FIXME: why did this have FloatLiteral here?
     alias constant = Float32(33)
 
     ctx.enqueue_function[add_constant_fn](

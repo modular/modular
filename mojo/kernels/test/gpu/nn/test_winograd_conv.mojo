@@ -414,8 +414,8 @@ fn test_winograd_conv_gpu[
         assert_almost_equal(
             host_output_ref.tensor.data[x],
             host_output.tensor.data[x],
-            atol=Scalar[type](atol),
-            rtol=Scalar[type](rtol),
+            atol=atol,
+            rtol=rtol,
         )
 
 
