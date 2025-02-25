@@ -459,10 +459,12 @@ def batch_config_from_pipeline_config(
             " supported by Serving."
         )
 
-    logger.info(
-        "Server configured with %s caching with batch size %s",
-        pipeline_config.cache_strategy,
-        pipeline_config.max_batch_size,
-    )
+    log_str = "Server configured with:\n"
+    log_str += f"\tCache Strategy: {pipeline_config.cache_strategy}\n"
+    log_str += f"\tBatch Size: {pipeline_config.max_batch_size}\n"
+    log_str += f"\tChunked Prefill: {'Enabled' if pipeline_config.enable_chunked_prefill else 'Disabled'}\n"
+    if pipeline_config.enable_chunked_prefill:
+        log_str += f"\tChunked Prefill Chunk Size: {pipeline_config.target_num_new_tokens}\n"
+    logger.info(log_str)
 
     return batch_config
