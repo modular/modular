@@ -136,11 +136,11 @@ fn bench_memcpy(
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             if config.direction == Config.DToH:
-                context.enqueue_copy_from_device(mem_host, mem_device)
+                context.enqueue_copy(mem_host, mem_device)
             elif config.direction == Config.HToD:
-                context.enqueue_copy_to_device(mem_device, mem_host)
+                context.enqueue_copy(mem_device, mem_host)
             else:
-                context.enqueue_copy_device_to_device(mem_device, mem2_device)
+                context.enqueue_copy(mem_device, mem2_device)
 
         b.iter_custom[kernel_launch](context)
 
@@ -178,7 +178,7 @@ fn bench_p2p(
     var dst_buf = ctx2.enqueue_create_buffer[dtype](length)
 
     # Copy initial data to source buffer
-    ctx1.enqueue_copy_to_device(src_buf, host_ptr)
+    ctx1.enqueue_copy(src_buf, host_ptr)
     ctx1.synchronize()
 
     @parameter
@@ -187,7 +187,7 @@ fn bench_p2p(
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            ctx2.enqueue_copy_device_to_device(dst_buf, src_buf)
+            ctx2.enqueue_copy(dst_buf, src_buf)
 
         b.iter_custom[kernel_launch](ctx1)
 
@@ -209,7 +209,7 @@ fn bench_p2p(
     )
 
     # Copy back for verification
-    ctx2.enqueue_copy_from_device(host_ptr, dst_buf)
+    ctx2.enqueue_copy(host_ptr, dst_buf)
     ctx2.synchronize()
 
     # Parallel verification

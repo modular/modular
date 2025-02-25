@@ -111,7 +111,7 @@ fn bench_reduce[
         )
 
         # Copy data to device
-        list_of_ctx[i].enqueue_copy_to_device(in_bufs_list[i], host_buffers[i])
+        list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
 
     # Create and initialize input and output buffers.
     var in_bufs = InlineArray[NDBuffer[type, rank], ngpus](
@@ -158,9 +158,7 @@ fn bench_reduce[
     @parameter
     for i in range(ngpus):
         expected_sum += i + 1
-        list_of_ctx[i].enqueue_copy_from_device(
-            host_buffers[i], out_bufs_list[i]
-        )
+        list_of_ctx[i].enqueue_copy(host_buffers[i], out_bufs_list[i])
 
     # Verify results
     @parameter
