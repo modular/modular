@@ -1307,3 +1307,45 @@ struct _ClusterIdx:
 
 
 alias cluster_idx = _ClusterIdx()
+
+
+# ===-----------------------------------------------------------------------===#
+# block_id_in_cluster
+# ===-----------------------------------------------------------------------===#
+
+
+@register_passable("trivial")
+struct _Cluster_BlockIdx:
+    """_Cluster_BlockIdx provides static methods for getting the x/y/z coordinates of
+    a threadblock within a cluster."""
+
+    @always_inline("nodebug")
+    fn __init__(out self):
+        return
+
+    @always_inline("nodebug")
+    @staticmethod
+    fn _get_intrinsic_name[dim: StringLiteral]() -> StringLiteral:
+        return "llvm.nvvm.read.ptx.sreg.cluster.ctaid." + dim
+
+    @always_inline("nodebug")
+    fn __getattr__[dim: StringLiteral](self) -> UInt:
+        """Gets the `x`, `y`, or `z` coordinates of a threadblock within a cluster.
+
+        Returns:
+            The `x`, `y`, or `z` coordinates of a threadblock within a cluster.
+        """
+        constrained[
+            is_nvidia_gpu() and _is_sm_9x(),
+            "cluster_id is only supported on NVIDIA SM90+ GPUs",
+        ]()
+        constrained[
+            dim in ("x", "y", "z"), "the accessor must be either x, y, or z"
+        ]()
+        alias intrinsic_name = Self._get_intrinsic_name[dim]()
+        return UInt(
+            Int(llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]())
+        )
+
+
+alias block_id_in_cluster = _Cluster_BlockIdx()
