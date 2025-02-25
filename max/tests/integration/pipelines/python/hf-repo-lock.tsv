@@ -1,0 +1,14 @@
+hf_repo	revision
+000EXAMPLE-for-unit-test	0123456789abcdef0123456789abcdef01234567
+HuggingFaceTB/SmolLM2-135M	93efa2f097d58c2a74874c7e644dbc9b0cee75a2
+LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct	7f15baedd46858153d817445aff032f4d6cf4939
+Qwen/Qwen2.5-7B-Instruct	a09a35458c702b33eeacc393d103063234e8bc28
+meta-llama/Llama-3.2-11B-Vision-Instruct	9eb2daaa8597bf192a8b0e73f848f3a102794df5
+meta-llama/Llama-3.3-70B-Instruct	6f6073b423013f6a7d4d9f39144961bfbfbc386b
+mistral-community/pixtral-12b	c2756cbbb9422eba9f6c5c439a214b0392dfc998
+mistralai/Mistral-Nemo-Instruct-2407	8aedd450f2583e9c67fae1929f6936b8fc5aef9c
+modularai/llama-3	04d5a76d896e71429f2d042bdb2e5956c649cb41
+modularai/llama-3.1	966694508430d1177f6d585de779250e7a34bc3a
+modularai/replit-code-1.5	5613bc2a56586347736c8825e5287659b1a17794
+replit/replit-code-v1_5-3b	b85a5dd28ef6053ad095bf5113dd740a86a67597
+sentence-transformers/all-mpnet-base-v2	9a3225965996d404b775526de6dbfe85d3368642

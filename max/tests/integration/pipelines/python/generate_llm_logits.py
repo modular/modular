@@ -16,6 +16,7 @@ from typing import Any, Mapping, Optional, Sequence, Union
 
 # 3rd-party
 import click
+import hf_repo_lock
 import huggingface_hub
 
 # Tests
@@ -185,11 +186,18 @@ class LlamaPipelineOracle(PipelineOracle):
         else:
             return "3"
 
+    def _revision_for(self, version: str) -> str:
+        internal_version = self._map_to_internal_version(version)
+        return hf_repo_lock.revision_for_hf_repo(
+            f"modularai/llama-{internal_version}"
+        )
+
     def _weight_path_for(self, version: str, encoding: str) -> Path:
         return Path(
             get_llama_huggingface_file(
                 self._map_to_internal_version(version),
                 pipelines.SupportedEncoding[encoding],
+                self._revision_for(version),
             ).download()
         )
 
@@ -222,6 +230,7 @@ class LlamaPipelineOracle(PipelineOracle):
             ),
             max_new_tokens=10,
             model_path=f"modularai/llama-{internal_version}",
+            huggingface_revision=self._revision_for(version),
             weight_path=[
                 self._weight_path_for(version=version, encoding=encoding)
             ],
@@ -239,7 +248,9 @@ class LlamaPipelineOracle(PipelineOracle):
         hf_repo_id = f"modularai/llama-{self._map_to_internal_version(version)}"
         return Path(
             huggingface_hub.hf_hub_download(
-                repo_id=hf_repo_id, filename="config.json"
+                repo_id=hf_repo_id,
+                filename="config.json",
+                revision=self._revision_for(version),
             )
         )
 
@@ -288,11 +299,12 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
             )
 
         hf_repo_id = "meta-llama/Llama-3.2-11B-Vision-Instruct"
+        revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
 
         # Compute the max sequence length, which determines up-front memory
         # allocated for the KV cache.
         hf_config = transformers.AutoConfig.from_pretrained(
-            hf_repo_id, trust_remote_code=True
+            hf_repo_id, revision=revision, trust_remote_code=True
         )
         vision_cfg = hf_config.vision_config
         img_size = vision_cfg.image_size
@@ -308,6 +320,7 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             cache_strategy=KVCacheStrategy.CONTINUOUS,
             model_path=hf_repo_id,
+            huggingface_revision=revision,
             max_length=num_vision_embeddings,
             trust_remote_code=True,
         )
@@ -323,10 +336,16 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
         self, *, version: str, encoding: str, device: torch.device
     ) -> TorchModelAndDataProcessor:
         hf_repo_id = "meta-llama/Llama-3.2-11B-Vision-Instruct"
-        processor = transformers.AutoProcessor.from_pretrained(hf_repo_id)
-        config = transformers.AutoConfig.from_pretrained(hf_repo_id)
+        revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
+        processor = transformers.AutoProcessor.from_pretrained(
+            hf_repo_id, revision=revision
+        )
+        config = transformers.AutoConfig.from_pretrained(
+            hf_repo_id, revision=revision
+        )
         model = transformers.MllamaForConditionalGeneration.from_pretrained(
             hf_repo_id,
+            revision=revision,
             config=config,
             device_map=device,
             torch_dtype=torch.bfloat16,
@@ -371,6 +390,7 @@ class ExaonePipelineOracle(PipelineOracle):
             max_batch_size=128,
             trust_remote_code=True,
         )
+        hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
 
         assert isinstance(pipeline, pipelines.TextGenerationPipeline)
@@ -384,12 +404,16 @@ class ExaonePipelineOracle(PipelineOracle):
         self, *, version: str, encoding: str, device: torch.device
     ) -> TorchModelAndDataProcessor:
         hf_repo_id = "LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct"
-        tokenizer = transformers.AutoTokenizer.from_pretrained(hf_repo_id)
+        revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
+        tokenizer = transformers.AutoTokenizer.from_pretrained(
+            hf_repo_id, revision=revision
+        )
         config = transformers.AutoConfig.from_pretrained(
-            hf_repo_id, trust_remote_code=True
+            hf_repo_id, revision=revision, trust_remote_code=True
         )
         model = transformers.AutoModelForCausalLM.from_pretrained(
             hf_repo_id,
+            revision=revision,
             config=config,
             device_map=device,
             torch_dtype=torch.bfloat16,
@@ -440,6 +464,7 @@ class ReplitPipelineOracle(PipelineOracle):
             model_path="modularai/replit-code-1.5",
             trust_remote_code=True,
         )
+        hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
         assert isinstance(pipeline, pipelines.TextGenerationPipeline)
         return MaxPipelineAndTokenizer(
@@ -459,11 +484,12 @@ class ReplitPipelineOracle(PipelineOracle):
         #     ValueError: `attn_type` has to be either `multihead_attention` or
         #     `multiquery_attention`. Received: grouped_query_attention
         hf_repo_id = "replit/replit-code-v1_5-3b"
+        revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
         tokenizer = transformers.AutoTokenizer.from_pretrained(
-            hf_repo_id, trust_remote_code=True
+            hf_repo_id, revision=revision, trust_remote_code=True
         )
         config = transformers.AutoConfig.from_pretrained(
-            hf_repo_id, trust_remote_code=True
+            hf_repo_id, revision=revision, trust_remote_code=True
         )
         replit_compat.monkeypatch_transformers()
         # Ideally we would still use our GGUF weights:
@@ -491,6 +517,7 @@ class ReplitPipelineOracle(PipelineOracle):
             )
         model = transformers.AutoModelForCausalLM.from_pretrained(
             hf_repo_id,
+            revision=revision,
             config=config,
             device_map=device,
             trust_remote_code=True,
@@ -539,19 +566,8 @@ class MistralPipelineOracle(PipelineOracle):
             model_path="mistralai/Mistral-Nemo-Instruct-2407",
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             max_length=512,
-            weight_path=[
-                pipelines.HuggingFaceFile(
-                    "mistralai/Mistral-Nemo-Instruct-2407", f
-                ).download()
-                for f in [
-                    "model-00001-of-00005.safetensors",
-                    "model-00002-of-00005.safetensors",
-                    "model-00003-of-00005.safetensors",
-                    "model-00004-of-00005.safetensors",
-                    "model-00005-of-00005.safetensors",
-                ]
-            ],
         )
+        hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
 
         assert isinstance(pipeline, pipelines.TextGenerationPipeline)
@@ -565,10 +581,16 @@ class MistralPipelineOracle(PipelineOracle):
         self, *, version: str, encoding: str, device: torch.device
     ) -> TorchModelAndDataProcessor:
         hf_repo_id = "mistralai/Mistral-Nemo-Instruct-2407"
-        tokenizer = transformers.AutoTokenizer.from_pretrained(hf_repo_id)
-        config = transformers.AutoConfig.from_pretrained(hf_repo_id)
+        revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
+        tokenizer = transformers.AutoTokenizer.from_pretrained(
+            hf_repo_id, revision=revision
+        )
+        config = transformers.AutoConfig.from_pretrained(
+            hf_repo_id, revision=revision
+        )
         model = transformers.AutoModelForCausalLM.from_pretrained(
             hf_repo_id,
+            revision=revision,
             config=config,
             device_map=device,
             torch_dtype=torch.bfloat16,
@@ -620,6 +642,7 @@ class PixtralPipelineOracle(MultiModalPipelineOracle):
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             model_path=hf_repo_id,
         )
+        hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
 
         assert isinstance(pipeline, pipelines.TextGenerationPipeline)
@@ -633,10 +656,16 @@ class PixtralPipelineOracle(MultiModalPipelineOracle):
         self, *, version: str, encoding: str, device: torch.device
     ) -> TorchModelAndDataProcessor:
         hf_repo_id = "mistral-community/pixtral-12b"
-        processor = transformers.AutoProcessor.from_pretrained(hf_repo_id)
-        config = transformers.AutoConfig.from_pretrained(hf_repo_id)
+        revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
+        processor = transformers.AutoProcessor.from_pretrained(
+            hf_repo_id, revision=revision
+        )
+        config = transformers.AutoConfig.from_pretrained(
+            hf_repo_id, revision=revision
+        )
         model = transformers.LlavaForConditionalGeneration.from_pretrained(
             hf_repo_id,
+            revision=revision,
             config=config,
             device_map=device,
             torch_dtype=torch.bfloat16,
@@ -678,6 +707,7 @@ class QwenPipelineOracle(PipelineOracle):
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             max_length=512,
         )
+        hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
 
         assert isinstance(pipeline, pipelines.TextGenerationPipeline)
@@ -691,10 +721,16 @@ class QwenPipelineOracle(PipelineOracle):
         self, *, version: str, encoding: str, device: torch.device
     ) -> TorchModelAndDataProcessor:
         hf_repo_id = "Qwen/Qwen2.5-7B-Instruct"
-        tokenizer = transformers.AutoTokenizer.from_pretrained(hf_repo_id)
-        config = transformers.AutoConfig.from_pretrained(hf_repo_id)
+        revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
+        tokenizer = transformers.AutoTokenizer.from_pretrained(
+            hf_repo_id, revision=revision
+        )
+        config = transformers.AutoConfig.from_pretrained(
+            hf_repo_id, revision=revision
+        )
         model = transformers.AutoModelForCausalLM.from_pretrained(
             hf_repo_id,
+            revision=revision,
             config=config,
             device_map=device,
             torch_dtype=torch.bfloat16,
@@ -736,6 +772,7 @@ class Llama3_3_70BInstructPipelineOracle(PipelineOracle):
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             max_length=512,
         )
+        hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
 
         assert isinstance(pipeline, pipelines.TextGenerationPipeline)
@@ -749,10 +786,16 @@ class Llama3_3_70BInstructPipelineOracle(PipelineOracle):
         self, *, version: str, encoding: str, device: torch.device
     ) -> TorchModelAndDataProcessor:
         hf_repo_id = "meta-llama/Llama-3.3-70B-Instruct"
-        tokenizer = transformers.AutoTokenizer.from_pretrained(hf_repo_id)
-        config = transformers.AutoConfig.from_pretrained(hf_repo_id)
+        revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
+        tokenizer = transformers.AutoTokenizer.from_pretrained(
+            hf_repo_id, revision=revision
+        )
+        config = transformers.AutoConfig.from_pretrained(
+            hf_repo_id, revision=revision
+        )
         model = transformers.AutoModelForCausalLM.from_pretrained(
             hf_repo_id,
+            revision=revision,
             config=config,
             # Set device map to auto and just hope for enough GPU VRAM.
             device_map="auto",
@@ -770,6 +813,7 @@ class Llama3_3_70BInstructPipelineOracle(PipelineOracle):
 class GenericOracle(PipelineOracle):
     def __init__(
         self,
+        *,
         model_path: str,
         architecture: str,
         config_params: dict[str, Any] = {},
@@ -822,6 +866,7 @@ class GenericOracle(PipelineOracle):
             model_path=self.model_path,
             **self.config_params,
         )
+        hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
             config, task=self.task
         )
@@ -851,6 +896,7 @@ class GenericOracle(PipelineOracle):
             )
         model = self.auto_model_cls.from_pretrained(
             self.model_path,
+            revision=hf_repo_lock.revision_for_hf_repo(self.model_path),
             device_map=device,
             torch_dtype=torch_dtype,
         )
@@ -871,8 +917,8 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "pixtral": PixtralPipelineOracle(),
     "qwen": QwenPipelineOracle(),
     "smollm": GenericOracle(
-        "HuggingFaceTB/SmolLM2-135M",
-        "LlamaForCausalLM",
+        model_path="HuggingFaceTB/SmolLM2-135M",
+        architecture="LlamaForCausalLM",
         config_params={
             "max_length": 512,
             "cache_strategy": KVCacheStrategy.CONTINUOUS,
@@ -880,8 +926,8 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         prompts=[p[:502] for p in evaluate.PROMPTS],
     ),
     "mpnet": GenericOracle(
-        "sentence-transformers/all-mpnet-base-v2",
-        "MPNetForMaskedLM",
+        model_path="sentence-transformers/all-mpnet-base-v2",
+        architecture="MPNetForMaskedLM",
         # Maximum length accepted by MPNet tokenizer is 512.
         config_params={"max_length": 512, "pool_embeddings": False},
         prompts=[p[:502] for p in evaluate.PROMPTS],

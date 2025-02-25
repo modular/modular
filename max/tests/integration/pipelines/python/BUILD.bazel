@@ -1,4 +1,25 @@
-load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
+
+modular_py_library(
+    name = "hf_repo_lock",
+    srcs = ["hf_repo_lock.py"],
+    data = ["hf-repo-lock.tsv"],
+    imports = ["."],
+    deps = [
+        "//SDK/lib/API/python/max/pipelines",
+        requirement("huggingface-hub"),
+    ],
+)
+
+modular_py_test(
+    name = "test_hf_repo_lock",
+    size = "small",
+    srcs = ["test_hf_repo_lock.py"],
+    deps = [
+        ":hf_repo_lock",
+        "//SDK/lib/API/python/max/pipelines",
+    ],
+)
 
 modular_py_binary(
     name = "evaluate_batch_scenarios",
@@ -122,6 +143,7 @@ modular_py_binary(
     main = "generate_llm_logits.py",
     visibility = ["//visibility:public"],
     deps = [
+        ":hf_repo_lock",
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/entrypoints",
         "//SDK/lib/API/python/max/pipelines/architectures",
