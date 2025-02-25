@@ -294,16 +294,14 @@ fn _pad_constant_impl[
 
 
 fn pad_constant[
-    rank: Int,
-    type: DType,
+    rank: Int, type: DType, padding_type: DType
 ](
     output: UnsafePointer[Scalar[type]],
     output_shape: IndexList[rank],
     input: UnsafePointer[Scalar[type]],
     input_shape: IndexList[rank],
-    paddings: UnsafePointer[
-        Scalar[DType.index]
-    ],  # TODO: implement (before, after) variant
+    paddings: UnsafePointer[Scalar[padding_type]],
+    # TODO: implement (before, after) variant
     constant: Scalar[type],
     ctx: DeviceContext,
 ) raises:
@@ -337,13 +335,13 @@ fn pad_constant[
     fn pad_constant_wrapper(
         output: UnsafePointer[Scalar[type]],
         input: UnsafePointer[Scalar[type]],
-        paddings: UnsafePointer[Scalar[DType.index]],
+        paddings: UnsafePointer[Scalar[padding_type]],
         output_shape: IndexList[rank],
         output_strides: UnsafePointer[Scalar[DType.index]],
         input_strides: UnsafePointer[Scalar[DType.index]],
         ctx: DeviceContext,
     ) raises:
-        return _pad_constant_impl[rank, type, DType.index](
+        return _pad_constant_impl[rank, type](
             output,
             input,
             paddings,
