@@ -31,9 +31,6 @@ inline bool symbolMatches(mlir::SymbolRefAttr symbol,
   return true;
 }
 
-static constexpr bool kIOUnknownMut = false;
-static constexpr size_t kIOUnknownInput = 2;
-
 } // namespace M::KGEN::MOGGPreElab
 
 #endif // KGEN_LIB_MOGGPREELAB_MOGGUTILS_H

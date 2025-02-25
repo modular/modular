@@ -547,12 +547,6 @@ LogicalResult processStructFuncCommon(
   return success();
 }
 
-enum class IOSpec {
-  Input,       // Input tensor, read-only
-  Output,      // Output tensor, write-only
-  MutableInput // Input tensor that can be modified
-};
-
 /// Extract the mut and input fields from various tensor-related struct types
 /// Returns a pair of (mut, input) TypedAttrs
 static std::pair<TypedAttr, TypedAttr>
@@ -652,11 +646,11 @@ static std::optional<IOSpec> maybeGetIOSpec(TypedAttr mutAttr,
   auto mut = mutValue.value();
   auto input = inputValue.value();
 
-  if (mut == 1 && input == 0)
+  if (mut == kIOSpecMutable && input == kIOSpecIOOutput)
     return IOSpec::Output;
-  else if (mut == 0 && input == 1)
+  else if (mut == kIOSpecImmutable && input == kIOSpecIOInput)
     return IOSpec::Input;
-  else if (mut == 1 && input == 1)
+  else if (mut == kIOSpecMutable && input == kIOSpecIOInput)
     return IOSpec::MutableInput;
 
   emitError(loc, "Error for argument '" + argName + "': Invalid " +
