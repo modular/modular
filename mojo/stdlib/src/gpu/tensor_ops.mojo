@@ -3,6 +3,26 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""This module provides tensor core operations and utilities for GPU computation.
+
+The module includes functions for:
+- Tensor core based reductions (tc_reduce) supporting various data types and SIMD widths
+- GEVM (General Matrix-Vector Multiplication) reductions using tensor cores
+- Efficient warp-level reductions leveraging tensor core operations
+
+The tensor core operations are optimized for NVIDIA GPUs and support different data types
+including float32, float16, and bfloat16. The module provides both scalar and vector
+variants of reduction operations with different SIMD widths for maximum performance.
+
+Key functions:
+- tc_reduce: Main tensor core reduction function supporting various types and widths
+- tc_reduce_gevm_8x: 8x GEVM reduction using tensor cores
+- tc_reduce_gevm_4x: 4x GEVM reduction using tensor cores
+
+Note:
+    Most operations require NVIDIA GPUs with tensor core support.
+    Operations are optimized for warp-level execution.
+"""
 
 from gpu.mma import mma
 from gpu.warp import shuffle_down
@@ -14,7 +34,24 @@ fn tc_reduce_gevm_8x[
 ](val1: SIMD[in_type, simd_width], val2: SIMD[in_type, simd_width]) -> SIMD[
     out_type, simd_width
 ]:
-    """Using Tensor Cores to do warp level reduction."""
+    """Performs an 8x GEVM reduction using tensor cores.
+
+    Parameters:
+        out_type: The output data type for the reduction result (must be float32).
+        in_type: The input data type of the vectors to reduce (must be bfloat16).
+        simd_width: The width of the SIMD vectors.
+
+    Args:
+        val1: First input SIMD vector to reduce.
+        val2: Second input SIMD vector to reduce.
+
+    Returns:
+        SIMD vector containing the reduced result.
+
+    Note:
+        Currently only supports bfloat16 input to float32 output conversion.
+        Uses tensor core matrix multiply-accumulate (MMA) operations for reduction.
+    """
 
     constrained[
         out_type == DType.float32 and in_type == DType.bfloat16,
@@ -34,7 +71,23 @@ fn tc_reduce_gevm_8x[
 fn tc_reduce_gevm_4x[
     out_type: DType, in_type: DType, simd_width: Int
 ](val1: SIMD[in_type, simd_width]) -> SIMD[out_type, simd_width]:
-    """Using Tensor Cores to do warp level reduction."""
+    """Performs a 4x GEVM reduction using tensor cores.
+
+    Parameters:
+        out_type: The output data type for the reduction result (must be float32).
+        in_type: The input data type of the vector to reduce (must be bfloat16).
+        simd_width: The width of the SIMD vector.
+
+    Args:
+        val1: Input SIMD vector to reduce.
+
+    Returns:
+        SIMD vector containing the reduced result.
+
+    Note:
+        Currently only supports bfloat16 input to float32 output conversion.
+        Uses tensor core matrix multiply-accumulate (MMA) operations for reduction.
+    """
 
     constrained[
         out_type == DType.float32 and in_type == DType.bfloat16,
@@ -51,6 +104,24 @@ fn tc_reduce_gevm_4x[
 fn tc_reduce[
     in_type: DType, simd_width: Int, //, out_type: DType
 ](val: SIMD[in_type, simd_width]) -> Scalar[out_type]:
+    """Performs tensor core based reduction on a SIMD vector.
+
+    Parameters:
+        in_type: The input data type of the SIMD vector elements.
+        simd_width: The width of the SIMD vector.
+        out_type: The output data type for the reduced result.
+
+    Args:
+        val: Input SIMD vector to reduce.
+
+    Returns:
+        Scalar containing the reduced result.
+
+    Note:
+        Dispatches to either scalar or vector reduction implementation based on SIMD width.
+        Supports various input/output type combinations using tensor core operations.
+    """
+
     @parameter
     if simd_width == 1:
         return _tc_reduce_scalar[out_type](rebind[Scalar[in_type]](val))
@@ -62,7 +133,24 @@ fn tc_reduce[
 fn _tc_reduce_vector[
     in_type: DType, simd_width: Int, //, out_type: DType
 ](val: SIMD[in_type, simd_width]) -> Scalar[out_type]:
-    """Using Tensor Cores to do warp level reduction."""
+    """Internal vector reduction implementation using tensor cores.
+
+    Parameters:
+        in_type: The input data type of the SIMD vector elements.
+        simd_width: The width of the SIMD vector.
+        out_type: The output data type for the reduced result.
+
+    Args:
+        val: Input SIMD vector to reduce.
+
+    Returns:
+        Scalar containing the reduced result.
+
+    Note:
+        Optimized for different SIMD widths (1,2,4,8,>8) using tensor core operations.
+        Currently focused on bfloat16 to float32 conversion.
+        Uses matrix multiply-accumulate (MMA) and shuffle operations for efficient reduction.
+    """
 
     @parameter
     if out_type == DType.float32 and in_type == DType.bfloat16:
@@ -145,7 +233,31 @@ fn _tc_reduce_vector[
 fn _tc_reduce_scalar[
     in_type: DType, //, out_type: DType
 ](val: Scalar[in_type]) -> Scalar[out_type]:
-    """Using Tensor Cores to do warp level reduction."""
+    """Internal scalar reduction implementation using tensor cores.
+
+    Parameters:
+        in_type: Input data type for the reduction. Supported types:
+            - DType.float16
+            - DType.bfloat16
+            - DType.float32.
+        out_type: Output data type for the reduction result. Supported types:
+            - DType.float32
+            - DType.float16 (only when in_type is float16).
+
+    Args:
+        val: Input scalar value to reduce.
+
+    Returns:
+        Scalar containing the reduced result.
+
+    Note:
+        Supports various input/output type combinations:
+        - float16 to float32
+        - bfloat16 to float32
+        - float32 to float32
+        - float16 to float16
+        Uses matrix multiply-accumulate (MMA) operations for reduction.
+    """
 
     constrained[out_type is DType.float32]()
 
