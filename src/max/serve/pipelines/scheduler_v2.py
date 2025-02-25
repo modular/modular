@@ -47,25 +47,25 @@ class RequestDeque:
 
     def __init__(self, queue: Queue):
         self.queue = queue
-        self.evicted: list[BatchInputs] = []
+        self.preempted: list[BatchInputs] = []
 
     def empty(self) -> bool:
-        return self.queue.empty() and len(self.evicted) == 0
+        return self.queue.empty() and len(self.preempted) == 0
 
     def get_nowait(self) -> Any:
-        if self.evicted:
-            return self.evicted.pop()
+        if self.preempted:
+            return self.preempted.pop()
         return self.queue.get_nowait()
 
     def put_front_nowait(self, item):
-        self.evicted.append(item)
+        self.preempted.append(item)
 
     def put(self, item):
         self.queue.put(item)
 
     def qsize(self) -> Optional[int]:
         try:
-            return len(self.evicted) + self.queue.qsize()
+            return len(self.preempted) + self.queue.qsize()
         except NotImplementedError:
             return None
 
@@ -277,7 +277,7 @@ class TokenGenerationSchedulerV2(Scheduler):
                 )
                 # Add this additional request to the ce batch if it leaves
                 # sufficient kv blocks to run several token gen steps without
-                # causing evictions.
+                # causing preemptions.
                 has_insufficient_kv_blocks = not self.paged_manager.can_fetch(
                     seq_ids_and_prompts, num_steps=num_steps
                 )
