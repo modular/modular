@@ -53,22 +53,22 @@ class MetricRecordingMethod(Enum):
 class Settings(BaseSettings):
     # env files, direct initialization, and aliases interact in some confusing
     # ways.  this is the way:
-    #   1. extra="forbid"
+    #   1. extra="allow"
+    #      This allows .env files to include entries for non-modular use cases.  eg HF_TOKEN
     #   2. populate_by_name=False
+    #      Reduce the number of ways a setting can be spelled so it is easier to reason about priority among env vars, .env, and explicit settings.
     #   3. initialize with alias names `Settings(MAX_SERVE_HOST="host")`
     #
-    # If there is an alias, there is ambiguity in which name to use when giving
-    # a setting a valuie. (alias or attribute name on Settings?).
-    # extra-"forbid" ensures that misspellings of a setting are always errors.
-    # populate_by_name=False ensures that only the alias value is used to
-    # initialized.  In the presence of both a .env value & intializer value,
-    # pydantic is able to resolve both declarations to the same settings &
-    # correctly evaluate priority.
+    # Known sharp edges:
+    #   1. .env files can use both the Settings attr name (eg host) as well as the alias MAX_SERVE_HOST.
+    #   2. Environment variables can only use the alias (MAX_SERVE_...)
+    #   3. Explicit overrides can only use the alias (Settings(MAX_SERVE_HOST=...)
+    #   4. Explicit overrides using the wrong name silently do nothing (Settings(host=...)) has no effect.
 
     model_config = SettingsConfigDict(
         env_file=".env",
         env_prefix="",
-        extra="forbid",
+        extra="allow",
         populate_by_name=False,
     )
 
