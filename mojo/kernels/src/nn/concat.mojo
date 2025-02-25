@@ -755,7 +755,7 @@ fn _concat_gpu[
                     inputs[i].num_elements(),
                     owning=False,
                 )
-                ctx.enqueue_copy_device_to_device(
+                ctx.enqueue_copy(
                     outp,
                     inp,
                 )

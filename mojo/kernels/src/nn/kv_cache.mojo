@@ -1090,7 +1090,7 @@ def print_kv_cache_cont_batch_generic_gpu[
         blocks_ptr, kv_collection.blocks.dynamic_shape
     )
     var dev_ctx = context.get_device_context()
-    dev_ctx.enqueue_copy_from_device(
+    dev_ctx.enqueue_copy(
         blocks_host_nd.data,
         kv_collection.blocks.data,
         kv_collection.blocks.num_elements(),
@@ -1102,7 +1102,7 @@ def print_kv_cache_cont_batch_generic_gpu[
     var cache_lengths_host_nd = __type_of(kv_collection.cache_lengths)(
         cache_lengths_ptr, kv_collection.cache_lengths.dynamic_shape
     )
-    dev_ctx.enqueue_copy_from_device(
+    dev_ctx.enqueue_copy(
         cache_lengths_host_nd.data,
         kv_collection.cache_lengths.data,
         kv_collection.cache_lengths.num_elements(),
@@ -1114,7 +1114,7 @@ def print_kv_cache_cont_batch_generic_gpu[
     var lookup_table_host_nd = __type_of(kv_collection.lookup_table)(
         lookup_table_ptr, kv_collection.lookup_table.dynamic_shape
     )
-    dev_ctx.enqueue_copy_from_device(
+    dev_ctx.enqueue_copy(
         lookup_table_host_nd.data,
         kv_collection.lookup_table.data,
         kv_collection.lookup_table.num_elements(),
@@ -1134,7 +1134,7 @@ def print_kv_cache_cont_batch_generic_gpu[
     var valid_lengths_host_nd = __type_of(valid_lengths)(
         valid_lengths_host_ptr, valid_lengths.dynamic_shape
     )
-    dev_ctx.enqueue_copy_from_device(
+    dev_ctx.enqueue_copy(
         valid_lengths_host_nd.data,
         valid_lengths.data,
         valid_lengths.num_elements(),
@@ -1187,7 +1187,7 @@ def print_kv_cache_paged_generic_gpu[
         blocks_ptr, kv_collection.blocks.dynamic_shape
     )
     var dev_ctx = context.get_device_context()
-    dev_ctx.enqueue_copy_from_device(
+    dev_ctx.enqueue_copy(
         blocks_host_nd.data,
         kv_collection.blocks.data,
         kv_collection.blocks.num_elements(),
@@ -1198,7 +1198,7 @@ def print_kv_cache_paged_generic_gpu[
     var cache_lengths_host_nd = __type_of(kv_collection.cache_lengths)(
         cache_lengths_ptr, kv_collection.cache_lengths.dynamic_shape
     )
-    dev_ctx.enqueue_copy_from_device(
+    dev_ctx.enqueue_copy(
         cache_lengths_host_nd.data,
         kv_collection.cache_lengths.data,
         kv_collection.cache_lengths.num_elements(),
@@ -1209,7 +1209,7 @@ def print_kv_cache_paged_generic_gpu[
     var lookup_table_host_nd = __type_of(kv_collection.lookup_table)(
         lookup_table_ptr, kv_collection.lookup_table.dynamic_shape
     )
-    dev_ctx.enqueue_copy_from_device(
+    dev_ctx.enqueue_copy(
         lookup_table_host_nd.data,
         kv_collection.lookup_table.data,
         kv_collection.lookup_table.num_elements(),
@@ -1227,7 +1227,7 @@ def print_kv_cache_paged_generic_gpu[
     var valid_lengths_host_nd = __type_of(valid_lengths)(
         valid_lengths_host_ptr, valid_lengths.dynamic_shape
     )
-    dev_ctx.enqueue_copy_from_device(
+    dev_ctx.enqueue_copy(
         valid_lengths_host_nd.data,
         valid_lengths.data,
         valid_lengths.num_elements(),
