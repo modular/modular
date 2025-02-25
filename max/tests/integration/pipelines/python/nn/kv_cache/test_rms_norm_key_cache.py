@@ -17,6 +17,7 @@ from max.pipelines.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
+    RaggedKVCacheInputs,
 )
 from max.pipelines.nn.kernels import rms_norm_key_cache
 
@@ -114,12 +115,13 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     kv_blocks = fetch_args[0]
     all_ones = np.ones(kv_blocks.shape, dtype=kv_blocks.dtype.to_numpy())
 
-    # Copy so that we can reuse `all_ones` in a comparison later.
-    fetch_args = (Tensor.from_numpy(all_ones.copy()), *fetch_args[1:])
+    # Create new KVCacheInputs with updated first element
+    fetch_args = RaggedKVCacheInputs(
+        Tensor.from_numpy(all_ones.copy()), *fetch_args[1:]
+    )
 
     gamma = np.random.randn(kv_params.head_dim).astype(dtype.to_numpy())
     input_row_offsets = np.array([0, *np.cumsum(seq_lens)], dtype=np.uint32)
-    total_seq_len = np.array(sum(input_row_offsets), dtype=np.uint32)
     model(gamma, input_row_offsets, *fetch_args)
 
     # Check that the RMSNorm wrote output to the KV cache.

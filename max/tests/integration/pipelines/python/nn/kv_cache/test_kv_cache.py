@@ -74,7 +74,7 @@ async def test_kv_collection_constructor(cache_strategy, fetch_cls) -> None:
     seq_ids_and_prompts = {seq_id: np.array([FAKE_TOKEN])}
     kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
     assert len(kv_tuple_list) == 1
-    assert len(kv_tuple_list[0]) == 4
+    assert len(list(kv_tuple_list[0])) == 4
     kv_tuple = kv_tuple_list[0]
 
     graph = Graph(

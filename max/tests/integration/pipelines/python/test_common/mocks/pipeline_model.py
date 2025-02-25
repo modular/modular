@@ -19,7 +19,11 @@ from max.pipelines import (
     PipelineModel,
     TextContext,
 )
-from max.pipelines.kv_cache import KVCacheParams, KVCacheStrategy
+from max.pipelines.kv_cache import (
+    KVCacheInputs,
+    KVCacheParams,
+    KVCacheStrategy,
+)
 
 
 class MockModelInputs(ModelInputs):
@@ -91,7 +95,7 @@ class MockPipelineModel(PipelineModel):
     def execute(
         self,
         model_inputs: ModelInputs,
-        kv_cache_inputs: Optional[Sequence[Tensor]] = None,
+        kv_cache_inputs: Optional[KVCacheInputs] = None,
     ) -> ModelOutputs:
         model_inputs = cast(MockModelInputs, model_inputs)
 

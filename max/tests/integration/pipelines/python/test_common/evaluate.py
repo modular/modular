@@ -13,6 +13,7 @@ import numpy as np
 import requests
 from max.pipelines import PipelineModel
 from max.pipelines.interfaces import PipelineTokenizer, TokenGeneratorRequest
+from max.pipelines.kv_cache import KVCacheInputsSequence
 
 NUM_STEPS = 10
 PROMPTS = (
@@ -159,11 +160,9 @@ def next_token_with_logits(
         model_outputs = model.execute(
             model_inputs,
             # Flatten the KV cache inputs as expected by PipelineModel.execute.
-            kv_cache_inputs=[
-                inp
-                for kv_cache_input in kv_cache_inputs
-                for inp in kv_cache_input
-            ],
+            kv_cache_inputs=KVCacheInputsSequence(
+                kv_cache_inputs=kv_cache_inputs
+            ),
         )
         assert model_outputs.next_token_logits
         logits = model_outputs.next_token_logits.to_numpy()

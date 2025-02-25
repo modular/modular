@@ -33,6 +33,7 @@ from max.pipelines import (
 )
 from max.pipelines.context import InputContext
 from max.pipelines.kv_cache import (
+    KVCacheInputs,
     KVCacheManager,
     KVCacheParams,
     KVCacheStrategy,
@@ -78,7 +79,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
     def execute(
         self,
         model_inputs: ModelInputs,
-        kv_cache_inputs: Sequence[Tensor] | None = None,
+        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> ModelOutputs:
         """Runs the graph."""
         model_inputs = cast(DummyModelInputs, model_inputs)

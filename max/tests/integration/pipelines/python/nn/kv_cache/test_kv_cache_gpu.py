@@ -11,6 +11,7 @@ from max.driver import Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.pipelines.kv_cache import (
+    KVCacheInputs,
     KVCacheParams,
     KVCacheStrategy,
     load_kv_manager,
@@ -43,5 +44,5 @@ async def _test_kv_cache_gpu():
     seq_ids_and_prompts = {seq_id: np.array([FAKE_TOKEN])}
     # suffixed [0] because we only have one device
     kv_tuple = kv_manager.fetch(seq_ids_and_prompts)[0]
-    assert isinstance(kv_tuple, tuple)
-    assert len(kv_tuple) == 4
+    assert isinstance(kv_tuple, KVCacheInputs)
+    assert len(list(kv_tuple)) == 4

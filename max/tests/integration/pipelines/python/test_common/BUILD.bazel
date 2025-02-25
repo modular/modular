@@ -63,6 +63,7 @@ modular_py_library(
         requirement("requests"),
         "//SDK/lib/API/python/max/driver",
         "//SDK/lib/API/python/max/pipelines",
+        "//SDK/lib/API/python/max/pipelines/kv_cache",
     ],
 )
 
