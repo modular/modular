@@ -40,11 +40,13 @@ def dummy_moe_weight(config: DeepseekV2Config) -> torch.Tensor:
     Fixture to create dummy weights for an MLP layer.
     Returns tensors in bfloat16 format.
     """
+    torch.manual_seed(42)  # Set fixed seed for reproducibility
     return torch.randn((64, config.hidden_size), dtype=torch.float32)
 
 
 @pytest.fixture
 def input_tensor(config: DeepseekV2Config) -> torch.Tensor:
+    torch.manual_seed(42)  # Set fixed seed for reproducibility
     return torch.randn(
         1,
         1,
