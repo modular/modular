@@ -143,7 +143,7 @@ fn tile_layout_k_major[
 ]() -> Layout:
     alias _CM_K = _CM_K_BYTES // sizeof[type]()
     constrained[
-        BM % _CM_M == 0 and BK % _CM_K == 0 and BK % (_CM_M * 2) == 0,
+        BM % _CM_M == 0 and BK % _CM_K == 0,
         "Tile shape must be ((8, _), (" + String(_CM_K) + ", multiple of 2))",
     ]()
     alias shape01 = BM // _CM_M
