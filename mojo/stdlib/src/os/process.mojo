@@ -18,7 +18,7 @@ Example:
 from os import Process
 ```
 """
-from collections import Optional
+from collections import List, Optional
 from collections.string import StringSlice
 
 from sys import (
@@ -38,7 +38,7 @@ from sys._libc import (
     FcntlFDFlags,
     close,
 )
-from sys.ffi import c_char, c_int, c_str_ptr
+from sys.ffi import c_char, c_int
 from sys.os import sep
 
 from memory import Span, UnsafePointer
@@ -137,18 +137,18 @@ struct Pipe:
             raise Error("Can not write from read only side of pipe")
 
     @always_inline
-    fn read_bytes(mut self, size: Int) raises -> Span[Byte, MutableAnyOrigin]:
+    fn read_bytes(mut self, mut buffer: Span[mut=True, Byte]) raises -> UInt:
         """
-        Read a span of bytes from this pipe.
+        Read a number of bytes from this pipe.
 
         Args:
-            size: The number of bytes to read from this pipe.
+            buffer: Span[Byte] of length n where to store read bytes. n = number of bytes to read.
 
         Returns:
-            Span of bytes with len=size read from this pipe.
+            Actual number of bytes read.
         """
         if self.fd_in:
-            return self.fd_in.value().read_bytes(size)
+            return self.fd_in.value().read_bytes(buffer)
 
         raise Error("Can not read from write only side of pipe")
 
@@ -235,9 +235,9 @@ struct Process:
                 pipe.set_output_only()
 
                 var arg_count = len(argv)
-                var argv_array_ptr_cstr_ptr = UnsafePointer[c_str_ptr].alloc(
-                    arg_count + 2
-                )
+                var argv_array_ptr_cstr_ptr = UnsafePointer[
+                    UnsafePointer[c_char]
+                ].alloc(arg_count + 2)
                 var offset = 0
                 # Arg 0 in `argv` ptr array should be the file name
                 argv_array_ptr_cstr_ptr[offset] = file_name.unsafe_cstr_ptr()
@@ -248,7 +248,7 @@ struct Process:
                     offset += 1
 
                 # `argv` ptr array terminates with NULL PTR
-                argv_array_ptr_cstr_ptr[offset] = c_str_ptr()
+                argv_array_ptr_cstr_ptr[offset] = UnsafePointer[c_char]()
 
                 _ = execvp(path.unsafe_cstr_ptr(), argv_array_ptr_cstr_ptr)
 
@@ -265,17 +265,19 @@ struct Process:
                 raise Error("Unable to fork parent")
 
             pipe.set_input_only()
-            var err: Optional[Span[Byte, MutableAnyOrigin]]
+            var err: Optional[StringSlice[MutableAnyOrigin]] = None
             try:
-                err = pipe.read_bytes(exec_err_code.byte_length())
+                var err_len = exec_err_code.byte_length()
+                var buf = Span[Byte, MutableAnyOrigin](
+                    ptr=UnsafePointer[Byte].alloc(err_len), length=err_len
+                )
+                buf[0] = 0  # Explicitly default to empty C string
+                var bytes_read = pipe.read_bytes(buf)
+                err = StringSlice(unsafe_from_utf8=buf)
             except e:
                 err = None
 
-            if (
-                err
-                and len(err.value()) > 0
-                and StringSlice(unsafe_from_utf8=err.value()) == exec_err_code
-            ):
+            if err and len(err.value()) > 0 and err.value() == exec_err_code:
                 raise Error("Failed to execute " + path)
 
             return Process(child_pid=pid)

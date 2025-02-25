@@ -104,6 +104,15 @@ struct FileDescriptor(Writer):
     @always_inline
     fn read_bytes(mut self, buffer: Span[mut=True, Byte]) raises -> UInt:
         """Read a number of bytes from the file into a buffer.
+
+        Args:
+            buffer: A `Span[Byte]` to read bytes into. Read up to `len(buffer)` number of bytes.
+
+        Returns:
+            Actual number of bytes read.
+
+        Notes:
+            [Reference](https://pubs.opengroup.org/onlinepubs/9799919799/functions/read.html).
         """
 
         constrained[
