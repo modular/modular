@@ -1250,6 +1250,28 @@ struct Bencher:
         except e:
             abort(e)
 
+    fn iter_custom_multicontext[
+        kernel_launch_fn: fn () raises capturing [_] -> None
+    ](mut self, ctxs: List[DeviceContext]):
+        """Times a target GPU function with custom number of iterations via DeviceContext ctx.
+
+        Parameters:
+            kernel_launch_fn: The target GPU kernel launch function to benchmark.
+
+        Args:
+            ctxs: The list of GPU DeviceContext's for launching kernel.
+        """
+        try:
+            # Find the max elapsed time across the list of GPU DeviceContext's.
+            self.elapsed = 0
+            for i in range(len(ctxs)):
+                self.elapsed = max(
+                    self.elapsed,
+                    ctxs[i].execution_time[kernel_launch_fn](self.num_iters),
+                )
+        except e:
+            abort(e)
+
     fn iter[iter_fn: fn () capturing raises -> None](mut self) raises:
         """Returns the total elapsed time by running a target function a particular
         number of times.
