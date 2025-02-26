@@ -955,3 +955,18 @@ struct PrintVectorSize:
             return rebind[SIMD[y.type, width]](x._fused_load[width](idx))
 
         foreach[func, target=target, _synchronous=_synchronous](y, ctx)
+
+
+@compiler.register("tensor_opaque_tensor_kernel", num_dps_outputs=2)
+struct TensorOpaqueTensorKernel:
+    @staticmethod
+    fn execute[
+        target: StringLiteral,
+        _synchronous: Bool,
+    ](
+        output1: ManagedTensorSlice,
+        output2: ManagedTensorSlice,
+        opaque: MyCustomScalarSI32,
+        input: ManagedTensorSlice,
+    ) raises:
+        pass
