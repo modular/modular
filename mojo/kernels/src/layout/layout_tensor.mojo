@@ -877,7 +877,7 @@ struct LayoutTensor[
         """
 
         var strides = self.runtime_layout.stride.value
-        var offset = Self._getOffset(strides, dims)
+        var offset = Self._get_offset(strides, dims)
 
         return (
             Element[dtype, Self.element_layout]
@@ -895,7 +895,7 @@ struct LayoutTensor[
         """
 
         var strides = self.runtime_layout.stride.value
-        var offset = Self._getOffset(strides, VariadicList[Int](d0))
+        var offset = Self._get_offset(strides, VariadicList[Int](d0))
 
         Element[dtype, Self.element_layout](
             val, self.runtime_element_layout
@@ -912,7 +912,7 @@ struct LayoutTensor[
         """
 
         var strides = self.runtime_layout.stride.value
-        var offset = Self._getOffset(strides, VariadicList[Int](d0, d1))
+        var offset = Self._get_offset(strides, VariadicList[Int](d0, d1))
 
         Element[dtype, Self.element_layout](
             val, self.runtime_element_layout
@@ -930,7 +930,7 @@ struct LayoutTensor[
         """
 
         var strides = self.runtime_layout.stride.value
-        var offset = Self._getOffset(strides, VariadicList[Int](d0, d1, d2))
+        var offset = Self._get_offset(strides, VariadicList[Int](d0, d1, d2))
 
         Element[dtype, Self.element_layout](
             val, self.runtime_element_layout
@@ -951,7 +951,9 @@ struct LayoutTensor[
         """
 
         var strides = self.runtime_layout.stride.value
-        var offset = Self._getOffset(strides, VariadicList[Int](d0, d1, d2, d3))
+        var offset = Self._get_offset(
+            strides, VariadicList[Int](d0, d1, d2, d3)
+        )
 
         Element[dtype, Self.element_layout](
             val, self.runtime_element_layout
@@ -1098,7 +1100,7 @@ struct LayoutTensor[
 
     @staticmethod
     @always_inline("nodebug")
-    fn _toStatic[t: IntTuple]() -> IndexList[len(t)]:
+    fn _to_static[t: IntTuple]() -> IndexList[len(t)]:
         var st = IndexList[len(t)]()
 
         @parameter
@@ -1108,7 +1110,7 @@ struct LayoutTensor[
 
     @staticmethod
     @always_inline("nodebug")
-    fn _getOffset[
+    fn _get_offset[
         rank: Int
     ](stride: IndexList[rank, **_], vals: VariadicList[Int]) -> Int:
         var offset = 0
@@ -1120,7 +1122,7 @@ struct LayoutTensor[
 
     @staticmethod
     @always_inline("nodebug")
-    fn _getOffset[
+    fn _get_offset[
         rank_1: Int, rank_2: Int
     ](stride: IndexList[rank_1, **_], vals: IndexList[rank_2]) -> Int:
         # In theory we should be able to verify this at compile time but it not happening now!
@@ -1144,7 +1146,7 @@ struct LayoutTensor[
         """
 
         # FIXME: having to specify the origin is kind of weird
-        alias shape = Self._toStatic[layout.shape.origin, layout.shape]()
+        alias shape = Self._to_static[layout.shape.origin, layout.shape]()
         return shape[idx]
 
     @always_inline
@@ -1157,7 +1159,7 @@ struct LayoutTensor[
         """
 
         # FIXME: having to specify the origin is kind of weird
-        alias stride = Self._toStatic[layout.stride.origin, layout.stride]()
+        alias stride = Self._to_static[layout.stride.origin, layout.stride]()
         return stride[idx]
 
     @always_inline
