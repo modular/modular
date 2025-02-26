@@ -645,11 +645,11 @@ static std::optional<IOSpec> maybeGetIOSpec(TypedAttr mutAttr,
   auto input = inputValue.value();
 
   if (mut == kIOSpecMutable && input == kIOSpecIOOutput)
-    return IOSpec::Output;
+    return IOSpec::OutputTensor;
   else if (mut == kIOSpecImmutable && input == kIOSpecIOInput)
-    return IOSpec::Input;
+    return IOSpec::InputTensor;
   else if (mut == kIOSpecMutable && input == kIOSpecIOInput)
-    return IOSpec::MutableInput;
+    return IOSpec::MutableInputTensor;
 
   emitError(loc, "Error for argument '" + argName + "': Invalid " +
                      kIOSpec.back() +
@@ -688,10 +688,10 @@ processIOSpecs(LIT::FnOp func) {
       continue;
     }
 
-    if (*ioSpec != IOSpec::Output)
+    if (*ioSpec != IOSpec::OutputTensor)
       foundNonOutputOperand = true;
 
-    if (*ioSpec == IOSpec::Output && foundNonOutputOperand) {
+    if (*ioSpec == IOSpec::OutputTensor && foundNonOutputOperand) {
       emitError(loc,
                 "Output tensor argument '" +
                     func.getFuncTypeGenerator().getArgName(argIdx).strref() +
@@ -758,8 +758,9 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
 
   if (enforceIOParamUsage) {
     // Set mogg.num_dps_outputs
-    auto numOutputs = llvm::count_if(
-        ioSpecs, [](auto &&elem) { return elem.second == IOSpec::Output; });
+    auto numOutputs = llvm::count_if(ioSpecs, [](auto &&elem) {
+      return elem.second == IOSpec::OutputTensor;
+    });
     // TODO: should we emit an error if numDPSOperands on the register decorator
     // was set to something other than the default?
     func->setDiscardableAttr(kMOGGNumDPSOutputs,
@@ -768,7 +769,7 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
     // Set mogg.buffer_args
     SmallVector<Attribute> mutableIdxs;
     for (auto [idx, spec] : ioSpecs) {
-      if (spec == IOSpec::MutableInput) {
+      if (spec == IOSpec::MutableInputTensor) {
         mutableIdxs.push_back(builder.getIndexAttr(idx - numOutputs));
       }
     }

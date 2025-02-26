@@ -8,6 +8,7 @@
 #define KGEN_LIB_MOGGPREELAB_HELPERS_H
 
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/MOGGPreElab/MOGGPreElabDecorators.h"
 
 namespace M::KGEN::MOGGPreElab {
 
@@ -46,6 +47,15 @@ inline bool isCustomType(LIT::StructType maybeCustom) {
 bool stripDecorators(LIT::FnOp func);
 
 void stripDecorators(LIT::StructDeclOp structDecl);
+
+/// Helper functions for dealing with the io_spec field of ManagedTensorSlice
+///
+/// Convert IOSpec enum to and from strings
+StringRef toString(IOSpec spec);
+std::optional<IOSpec> toIOSpec(StringRef str);
+/// Get the param values corresponding to mut/input of IOSpec
+std::pair<TypedAttr, TypedAttr> getParams(KGEN::MOGGPreElab::IOSpec ioSpec,
+                                          Builder &builder);
 
 } // namespace M::KGEN::MOGGPreElab
 
