@@ -41,9 +41,9 @@ def test_fused_qk_rope[type: DType]() -> None:
     alias num_layers = 1
 
     fn _max[type: DType, items: List[Scalar[type]]]() -> Scalar[type]:
-        constrained[items.size > 0, "empty list in _max"]()
+        constrained[len(items) > 0, "empty list in _max"]()
         max_item = items[0]
-        for i in range(1, items.size):
+        for i in range(1, len(items)):
             if items[i] > max_item:
                 max_item = items[i]
         return max_item
@@ -98,7 +98,7 @@ def test_fused_qk_rope[type: DType]() -> None:
         cache_lengths=NDBuffer[DType.uint32, 1](
             start_positions.data,
             DimList(
-                start_positions.size,
+                len(start_positions),
             ),
         ),
         is_context_encoding=False,
@@ -111,7 +111,7 @@ def test_fused_qk_rope[type: DType]() -> None:
     # Create and initialize query buffer.
     q_buffer = q_input[type]()
     debug_assert(
-        q_buffer.size == batch_size * seq_len * dim, "invalid q_buffer init"
+        len(q_buffer) == batch_size * seq_len * dim, "invalid q_buffer init"
     )
 
     # Create query tensor as a view of the query buffer.
@@ -122,7 +122,7 @@ def test_fused_qk_rope[type: DType]() -> None:
     # Create and init rotary matrix (frequencies as cos(x) + i*sin(x)).
     freqs_cis_table_buffer = freqs_cis_table_input[type]()
     debug_assert(
-        freqs_cis_table_buffer.size == 2 * max_seq_len * head_dim,
+        len(freqs_cis_table_buffer) == 2 * max_seq_len * head_dim,
         "invalid freqs_cis_table init",
     )
     freqs_cis_table = NDBuffer[
@@ -132,7 +132,7 @@ def test_fused_qk_rope[type: DType]() -> None:
     # Create and initialize golden outputs.
     expected_q_out_buffer = q_out_golden[type]()
     debug_assert(
-        expected_q_out_buffer.size == q_buffer.size,
+        len(expected_q_out_buffer) == len(q_buffer),
         "invalid expected q out init",
     )
     expected_q_out = NDBuffer[type, rank=4, shape = q.shape](
@@ -140,13 +140,13 @@ def test_fused_qk_rope[type: DType]() -> None:
     )
     expected_k_out_buffer = k_out_golden[type]()
     debug_assert(
-        expected_k_out_buffer.size == batch_size * seq_len * dim,
+        len(expected_k_out_buffer) == batch_size * seq_len * dim,
         "invalid expected k out init",
     )
 
     # Create output buffer.
     q_out_buffer = List[Scalar[type]]()
-    q_out_buffer.resize(new_size=q_buffer.size, value=0)
+    q_out_buffer.resize(new_size=len(q_buffer), value=0)
     q_out = NDBuffer[type, rank=4](q_out_buffer.data, q.dynamic_shape)
     fused_qk_rope[kv_collection.CacheType, interleaved=True, target="cpu"](
         q_proj=q,
@@ -173,7 +173,7 @@ def test_fused_qk_rope[type: DType]() -> None:
             ),
             expected_k_out_buffer.data + (batch_idx * seq_len * dim),
             # Number of elements in one batch item.
-            expected_k_out_buffer.size // batch_size,
+            len(expected_k_out_buffer) // batch_size,
         )
 
     _ = q_out_buffer^

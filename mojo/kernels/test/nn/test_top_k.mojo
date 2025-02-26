@@ -130,11 +130,11 @@ fn test_case[
 
     var xxx_no_origins = input^  # intentionally bad name
 
-    for i in range(out_vals.storage.size):
+    for i in range(len(out_vals.storage)):
         print(out_vals.storage[i], end="")
         print(",", end="")
     print("")
-    for i in range(out_idxs.storage.size):
+    for i in range(len(out_idxs.storage)):
         print(out_idxs.storage[i], end="")
         print(",", end="")
     print("")
