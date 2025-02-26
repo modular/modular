@@ -159,7 +159,7 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                             refusal=None,
                         ),
                         logprobs=None,
-                        finish_reason="stop",
+                        finish_reason=None,
                     )
                 ]
 

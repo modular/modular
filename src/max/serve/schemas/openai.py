@@ -421,9 +421,9 @@ class Choice3(BaseModel):
     logprobs: Optional[Logprobs2] = Field(
         None, description='Log probability information for the choice.'
     )
-    finish_reason: Literal[
+    finish_reason: Optional[Literal[
         'stop', 'length', 'tool_calls', 'content_filter', 'function_call'
-    ] = Field(
+    ]] = Field(
         ...,
         description='The reason the model stopped generating tokens. This will be `stop` if the model hit a natural stop point or a provided stop sequence,\n`length` if the maximum number of tokens specified in the request was reached,\n`content_filter` if content was omitted due to a flag from our content filters,\n`tool_calls` if the model called a tool, or `function_call` (deprecated) if the model called a function.\n',
     )
