@@ -276,14 +276,15 @@ fn batched_matmul[
     @always_inline
     @parameter
     fn description_fn() -> String:
+        # fmt: off
         return String(
             trace_arg("A", a_buf),
-            trace_arg("B", b_buf),
-            trace_arg("C", c_buf),
-            trace_arg("transpose_a", transpose_a),
-            trace_arg("transpose_b", transpose_b),
-            sep=";",
+            ";", trace_arg("B", b_buf),
+            ";", trace_arg("C", c_buf),
+            ";transpose_a=", transpose_a,
+            ";transpose_b=", transpose_b,
         )
+        # fmt: on
 
     with Trace[TraceLevel.OP, target=target](
         "batched_matmul",

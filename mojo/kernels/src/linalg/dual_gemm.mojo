@@ -1322,13 +1322,12 @@ fn swishGLU[
     @parameter
     fn description_fn() -> String:
         var shape = GemmShape.get[True](c, a, b0)
-        return String(
-            target,
+        return String(";").join(
+            String(target),
             trace_arg("A", IndexList[2](shape.M, shape.K), a.type),
             trace_arg("B0", IndexList[2](shape.K, shape.N), b0.type),
             trace_arg("B1", IndexList[2](shape.K, shape.N), b1.type),
             trace_arg("C", IndexList[2](shape.M, shape.N), c.type),
-            sep=";",
         )
 
     with Trace[TraceLevel.OP, target=target](

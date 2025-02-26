@@ -794,16 +794,17 @@ fn matmul[
     @parameter
     fn description_fn() -> String:
         var shape = GemmShape.get[transpose_b](c, a, b)
+        # fmt: off
         return String(
             target,
-            trace_arg("A", IndexList[2](shape.M, shape.K), a.type),
-            trace_arg("B", IndexList[2](shape.K, shape.N), b.type),
-            trace_arg("C", IndexList[2](shape.M, shape.N), c.type),
-            trace_arg("transpose_a", transpose_a),
-            trace_arg("transpose_b", transpose_b),
-            trace_arg("b_packed", b_packed),
-            sep=";",
+            ";", trace_arg("A", IndexList[2](shape.M, shape.K), a.type),
+            ";", trace_arg("B", IndexList[2](shape.K, shape.N), b.type),
+            ";", trace_arg("C", IndexList[2](shape.M, shape.N), c.type),
+            ";transpose_a=", transpose_a,
+            ";transpose_b=", transpose_b,
+            ";b_packed=", b_packed,
         )
+        # fmt: on
 
     # TODO(#23049): Pipe info on whether using faster, saturated_vnni is ok
     with Trace[TraceLevel.OP, target=target](
