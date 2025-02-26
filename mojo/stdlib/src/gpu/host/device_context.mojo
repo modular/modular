@@ -511,9 +511,9 @@ struct DeviceFunction[
 
         # const char *AsyncRT_DeviceContext_loadFunction(
         #     const DeviceFunction **result, const DeviceContext *ctx,
-        #     const char *module_name, const char *function_name, const void *data,
-        #     int32_t max_dynamic_shared_bytes, const char* debug_level,
-        #     int32_t optimization_level)
+        #     const char *moduleName, const char *functionName, const char *data,
+        #     size_t dataLen, int32_t maxDynamicSharedBytes, const char *debugLevel,
+        #     int32_t optimizationLevel)
         var result = _DeviceFunctionPtr()
         self._func_impl = _compile_code[
             func,
@@ -529,6 +529,7 @@ struct DeviceFunction[
                 _CharPtr,
                 _CharPtr,
                 _CharPtr,
+                _SizeT,
                 Int32,
                 _CharPtr,
                 Int32,
@@ -538,6 +539,7 @@ struct DeviceFunction[
                 self._func_impl.module_name.unsafe_ptr(),
                 self._func_impl.function_name.unsafe_ptr(),
                 self._func_impl.asm.unsafe_ptr(),
+                len(self._func_impl.asm),
                 max_dynamic_shared_size_bytes,
                 String(DebugLevel).unsafe_cstr_ptr().bitcast[UInt8](),
                 Int(OptimizationLevel),
@@ -852,6 +854,207 @@ struct DeviceFunction[
 
         if num_captures > num_captures_static:
             dense_args_addrs.free()
+
+    @always_inline
+    fn get_attribute(self, attr: Attribute) raises -> Int:
+        var result: Int32 = 0
+        # const char *AsyncRT_DeviceFunction_getAttribute(int32_t *result, const DeviceFunction *func, int32_t attr_code)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceFunction_getAttribute",
+                _CharPtr,
+                UnsafePointer[Int32],
+                _DeviceFunctionPtr,
+                Int32,
+            ](
+                UnsafePointer.address_of(result),
+                self._handle,
+                attr.code,
+            )
+        )
+        return Int(result)
+
+
+struct DeviceExternalFunction[
+    func_type: AnyTrivialRegType, //, func: func_type
+]:
+    var _handle: _DeviceFunctionPtr
+
+    fn __copyinit__(out self, existing: Self):
+        # Increment the reference count before copying the handle.
+        #
+        # void AsyncRT_DeviceFunction_retain(const DeviceFunction *ctx)
+        external_call[
+            "AsyncRT_DeviceFunction_retain",
+            NoneType,
+            _DeviceFunctionPtr,
+        ](existing._handle)
+        self._handle = existing._handle
+
+    fn __moveinit__(out self, owned existing: Self):
+        self._handle = existing._handle
+
+    fn __del__(owned self):
+        # Decrement the reference count held by this struct.
+        #
+        # void AsyncRT_DeviceFunction_release(const DeviceFunction *ctx)
+        external_call[
+            "AsyncRT_DeviceFunction_release",
+            NoneType,
+            _DeviceFunctionPtr,
+        ](self._handle)
+
+    @doc_private
+    @always_inline
+    fn __init__(
+        mut self,
+        ctx: DeviceContext,
+        *,
+        function_name: String,
+        asm: String,
+        func_attribute: OptionalReg[FuncAttribute] = None,
+    ) raises:
+        var max_dynamic_shared_size_bytes: Int32 = -1
+        if func_attribute:
+            if (
+                func_attribute.value().attribute
+                == Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
+            ):
+                max_dynamic_shared_size_bytes = func_attribute.value().value
+            else:
+                raise Error(
+                    "the function attribute '",
+                    func_attribute.value().attribute,
+                    "' is not currently supported",
+                )
+
+        # const char *AsyncRT_DeviceContext_loadFunction(
+        #     const DeviceFunction **result, const DeviceContext *ctx,
+        #     const char *moduleName, const char *functionName, const char *data,
+        #     size_t dataLen, int32_t maxDynamicSharedBytes, const char *debugLevel,
+        #     int32_t optimizationLevel)
+        var module_name: String = ""
+        var result = _DeviceFunctionPtr()
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_loadFunction",
+                _CharPtr,
+                UnsafePointer[_DeviceFunctionPtr],
+                _DeviceContextPtr,
+                _CharPtr,
+                _CharPtr,
+                _CharPtr,
+                _SizeT,
+                Int32,
+                _CharPtr,
+                Int32,
+            ](
+                UnsafePointer.address_of(result),
+                ctx._handle,
+                module_name.unsafe_ptr(),
+                function_name.unsafe_ptr(),
+                asm.unsafe_ptr(),
+                len(asm),
+                max_dynamic_shared_size_bytes,
+                String(DebugLevel).unsafe_cstr_ptr().bitcast[UInt8](),
+                Int(OptimizationLevel),
+            )
+        )
+        self._handle = result
+
+    @always_inline
+    fn _copy_to_constant_memory(self, mapping: ConstantMemoryMapping) raises:
+        # const char *AsyncRT_DeviceFunction_copyToConstantMemory(const DeviceFunction *func, const char *name,
+        #                                                         const void *data, size_t byte_size)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceFunction_copyToConstantMemory",
+                _CharPtr,
+                _DeviceFunctionPtr,
+                _CharPtr,
+                _VoidPtr,
+                _SizeT,
+            ](
+                self._handle,
+                mapping.name.unsafe_cstr_ptr().bitcast[UInt8](),
+                mapping.ptr,
+                mapping.byte_count,
+            )
+        )
+
+    @always_inline
+    @parameter
+    fn _call_with_pack[
+        *Ts: AnyType
+    ](
+        self,
+        ctx: DeviceContext,
+        args: VariadicPack[_, AnyType, *Ts],
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
+        owned constant_memory: List[ConstantMemoryMapping] = List[
+            ConstantMemoryMapping
+        ](),
+    ) raises:
+        alias num_args = len(VariadicList(Ts))
+
+        var dense_args_addrs = stack_allocation[
+            num_args, UnsafePointer[NoneType]
+        ]()
+
+        @parameter
+        for i in range(num_args):
+            var first_word_addr = UnsafePointer.address_of(args[i])
+            dense_args_addrs[i] = first_word_addr.bitcast[NoneType]()
+
+        if cluster_dim:
+            attributes.append(
+                LaunchAttribute.from_cluster_dim(cluster_dim.value())
+            )
+
+        if constant_memory:
+            for i in range(len(constant_memory)):
+                self._copy_to_constant_memory(constant_memory[i])
+
+        # const char *AsyncRT_DeviceContext_enqueueFunctionDirect(const DeviceContext *ctx, const DeviceFunction *func,
+        #                                                         uint32_t gridX, uint32_t gridY, uint32_t gridZ,
+        #                                                         uint32_t blockX, uint32_t blockY, uint32_t blockZ,
+        #                                                         uint32_t sharedMemBytes, void *attrs, uint32_t num_attrs,
+        #                                                         void **args)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_enqueueFunctionDirect",
+                _CharPtr,
+                _DeviceContextPtr,
+                _DeviceFunctionPtr,
+                UInt32,
+                UInt32,
+                UInt32,
+                UInt32,
+                UInt32,
+                UInt32,
+                UInt32,
+                UnsafePointer[LaunchAttribute],
+                UInt32,
+                UnsafePointer[UnsafePointer[NoneType]],
+            ](
+                ctx._handle,
+                self._handle,
+                grid_dim.x(),
+                grid_dim.y(),
+                grid_dim.z(),
+                block_dim.x(),
+                block_dim.y(),
+                block_dim.z(),
+                shared_mem_bytes.or_else(0),
+                attributes.unsafe_ptr(),
+                len(attributes),
+                dense_args_addrs,
+            )
+        )
 
     @always_inline
     fn get_attribute(self, attr: Attribute) raises -> Int:
@@ -1242,6 +1445,25 @@ struct DeviceContext:
             _dump_sass=_dump_sass,
         ]()
 
+    fn load_function[
+        func_type: AnyTrivialRegType, //,
+        func: func_type,
+    ](
+        self,
+        *,
+        function_name: String,
+        asm: String,
+        func_attribute: OptionalReg[FuncAttribute] = None,
+        out result: DeviceExternalFunction[func],
+    ) raises:
+        alias result_type = __type_of(result)
+        result = result_type(
+            self,
+            function_name=function_name,
+            asm=asm,
+            func_attribute=func_attribute,
+        )
+
     @parameter
     @always_inline
     fn enqueue_function[
@@ -1407,6 +1629,62 @@ struct DeviceContext:
     ](
         self,
         f: DeviceFunction,
+        args: VariadicPack[_, AnyType, *Ts],
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
+        owned constant_memory: List[ConstantMemoryMapping] = List[
+            ConstantMemoryMapping
+        ](),
+    ) raises:
+        f._call_with_pack(
+            self,
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+        )
+
+    @parameter
+    @always_inline
+    fn enqueue_function[
+        *Ts: AnyType
+    ](
+        self,
+        f: DeviceExternalFunction,
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
+        owned constant_memory: List[ConstantMemoryMapping] = List[
+            ConstantMemoryMapping
+        ](),
+    ) raises:
+        self._enqueue_external_function(
+            f,
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+        )
+
+    @parameter
+    @always_inline
+    fn _enqueue_external_function[
+        *Ts: AnyType
+    ](
+        self,
+        f: DeviceExternalFunction,
         args: VariadicPack[_, AnyType, *Ts],
         grid_dim: Dim,
         block_dim: Dim,
