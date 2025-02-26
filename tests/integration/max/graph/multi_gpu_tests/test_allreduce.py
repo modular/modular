@@ -59,14 +59,8 @@ def allreduce_graph(signals: Signals) -> Graph:
 
 def test_allreduce_execution() -> None:
     """Tests multi-device allreduce execution."""
-    signals = Signals(
-        devices=[
-            DeviceRef.GPU(id=0),
-            DeviceRef.GPU(id=1),
-            DeviceRef.GPU(id=2),
-            DeviceRef.GPU(id=3),
-        ]
-    )
+    num_gpus = 4
+    signals = Signals(devices=[DeviceRef.GPU(id=id) for id in range(num_gpus)])
     graph = allreduce_graph(signals)
     host = CPU()
     device0 = Accelerator(0)
@@ -84,20 +78,11 @@ def test_allreduce_execution() -> None:
     c = Tensor.from_numpy(a_np).to(device2)
     d = Tensor.from_numpy(a_np).to(device3)
 
-    signal_buffers = [
-        Tensor.zeros(
-            shape=(Signals.NUM_BYTES,),
-            dtype=DType.uint8,
-            device=dev,
-        )
-        for dev in (device0, device1, device2, device3)
-    ]
-
     # Synchronize devices so that the signal buffers are initialized.
     for dev in (device0, device1, device2, device3):
         dev.synchronize()
 
-    output = compiled.execute(a, b, c, d, *signal_buffers)
+    output = compiled.execute(a, b, c, d, *signals.buffers())
 
     # Check Executed Graph
     assert isinstance(output[0], Tensor)
