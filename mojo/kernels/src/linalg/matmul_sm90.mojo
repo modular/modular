@@ -65,7 +65,8 @@ from pathlib import Path
 
 from .utils import elementwise_epilogue_type
 from .utils_gpu import block_swizzle
-from linalg.matmul_tile_scheduler import TileScheduler
+from linalg.matmul_tile_scheduler import TileScheduler, MatmulSchedule
+from pathlib import Path
 
 
 alias WARP_GROUP_SIZE = 128
@@ -107,6 +108,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistant[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = True,
     pipeline_stages: Int = 7,
+    schedule: MatmulSchedule = MatmulSchedule.TILE2D,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
@@ -186,7 +188,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistant[
 
     var warp_group_idx = thread_idx.x // WARP_GROUP_SIZE
     var warp_group_thread_idx = thread_idx.x % WARP_GROUP_SIZE
-    var num_k_iters = K // BK
 
     var lane_predicate = elect_one_sync()
     if thread_idx.x == 0:
@@ -938,7 +939,7 @@ fn warp_specialize_gemm_with_multicasting[
     num_consumer: Int = 1,
     partitioned_multicast: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    use_persistant_kernel: Bool = False,
+    schedule: MatmulSchedule = MatmulSchedule.NONE,
 ](
     c_device: NDBuffer[c_type, 2, c_shape],
     a_device: NDBuffer[a_type, 2, a_shape],
@@ -990,7 +991,7 @@ fn warp_specialize_gemm_with_multicasting[
     )
 
     @parameter
-    if use_persistant_kernel:
+    if schedule != MatmulSchedule.NONE:
         alias kernel = tma_wgmma_warp_specialized_gemm_kernel_persistant[
             a_type,
             b_type,
@@ -1006,10 +1007,12 @@ fn warp_specialize_gemm_with_multicasting[
             __type_of(b_tma_op).desc_layout,
             a_smem_layout,
             b_smem_layout,
-            grid_shape=grid_shape,
+            grid_shape = grid_shape if schedule
+            == MatmulSchedule.TILE2D else Index(132, 1),
             num_threads=num_threads,
             transpose_b=True,
             pipeline_stages=pipeline_stages,
+            schedule=schedule,
         ]
 
         ctx.enqueue_function[kernel](

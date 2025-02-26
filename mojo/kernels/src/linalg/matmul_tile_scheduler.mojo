@@ -47,6 +47,24 @@ struct WorkInfo(Stringable, Writable):
         )
 
 
+@value
+@register_passable("trivial")
+struct MatmulSchedule:
+    var _value: Int32
+
+    alias NONE = Self(-1)
+    alias TILE1D = Self(0)
+    alias TILE2D = Self(1)
+
+    @always_inline
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    @always_inline
+    fn __ne__(self, other: Self) -> Bool:
+        return self._value != other._value
+
+
 # ===----------------------------------------------------------------------=== #
 # Output Tile Scheduler
 # ===----------------------------------------------------------------------=== #
@@ -58,6 +76,7 @@ struct TileScheduler[
     grid_shape: IndexList[2],
     cluster: IndexList[3] = Index(1, 1, 1),
     raster_dim: Int = 1,
+    schedule: MatmulSchedule = MatmulSchedule.TILE2D,
 ]:
     alias wave_shape = Index(
         tile_shape[0] * grid_shape[0], tile_shape[1] * grid_shape[1]
@@ -71,10 +90,12 @@ struct TileScheduler[
 
     @always_inline
     fn __init__(mut self, prob_shape: IndexList[3]):
-        constrained[
-            _check_cluster(cluster, raster_dim),
-            "Only support block cluster in along raster dimention.",
-        ]()
+        @parameter
+        if schedule == MatmulSchedule.TILE2D:
+            constrained[
+                _check_cluster(cluster, raster_dim),
+                "Only support block cluster in along raster dimention.",
+            ]()
 
         @parameter
         if raster_dim == 0:  # rasterize along M
@@ -100,8 +121,33 @@ struct TileScheduler[
 
     @always_inline
     fn _index_to_mn(self) -> Tuple[UInt, UInt]:
-        # We consider a sweep on busy SMs a wave, not all SMs
+        """Map the thread block's index to coordinates of work tile."""
 
+        @parameter
+        if schedule == MatmulSchedule.TILE2D:
+            return self._index_to_mn_tile2d()
+
+        return self._index_to_mn_tile1d()
+
+    @always_inline
+    fn _index_to_mn_tile1d(self) -> Tuple[UInt, UInt]:
+        # Grid dim as if there is no persist kernel
+        logical_grid_dim = Index(
+            ceildiv(self.prob_shape[1], tile_shape[1]),
+            ceildiv(self.prob_shape[0], tile_shape[0]),
+        )
+
+        by, bx = divmod(self.idx, UInt(logical_grid_dim[0]))
+        block_xy_swizzle = block_swizzle(Index(bx, by), logical_grid_dim)
+
+        m = UInt(block_xy_swizzle[1] * tile_shape[0])
+        n = UInt(block_xy_swizzle[0] * tile_shape[1])
+
+        return (m, n)
+
+    @always_inline
+    fn _index_to_mn_tile2d(self) -> Tuple[UInt, UInt]:
+        # We consider a sweep on busy SMs a wave, not all SMs
         num_waves_executed, idx_in_wave = divmod(self.idx, Self.num_grids)
         num_waves_executed_m, num_waves_executed_n = divmod(
             num_waves_executed, UInt(self.num_waves_n)
