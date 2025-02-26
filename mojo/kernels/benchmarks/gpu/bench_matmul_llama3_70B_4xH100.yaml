@@ -17,32 +17,40 @@ params:
 - $M: 8912
   N: 2560
   K: 8192
+  $init_type: [uniform_distribution]
 
 - $M: 8192
   N: 8192
   K: 2048
+  $init_type: [uniform_distribution]
 
 - $M: 8192
   N: 14336
   K: 8192
+  $init_type: [uniform_distribution]
 
 - $M: 8192
   N: 8192
   K: 7168
+  $init_type: [uniform_distribution]
 
 # Prefill chunk size 4K
 - $M: 4096
   N: 2560
   K: 8192
+  $init_type: [uniform_distribution]
 
 - $M: 4096
   N: 8192
   K: 2048
+  $init_type: [uniform_distribution]
 
 - $M: 4096
   N: 14336
   K: 8192
+  $init_type: [uniform_distribution]
 
 - $M: 4096
   N: 8192
   K: 7168
+  $init_type: [uniform_distribution]
