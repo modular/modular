@@ -9,7 +9,16 @@ from functools import partial
 from queue import Queue
 from unittest.mock import MagicMock, Mock
 
+import numpy as np
 import pytest
+from max.driver import CPU
+from max.dtype import DType
+from max.engine import InferenceSession
+from max.pipelines.kv_cache import (
+    KVCacheParams,
+    KVCacheStrategy,
+    PagedKVCacheManager,
+)
 from max.serve.pipelines.scheduler_v2 import (
     TokenGenerationSchedulerConfig,
     TokenGenerationSchedulerV2,
@@ -332,3 +341,101 @@ def test_run_basic_flow(scheduler):
 
     scheduler.pc.beat.assert_called()
     scheduler.pipeline.next_token.assert_called()
+
+
+# Tests for scheduler with paged manager
+
+
+def create_paged_manager(
+    num_blocks: int,
+    max_batch_size: int,
+    max_seq_len: int,
+    page_size: int,
+) -> PagedKVCacheManager:
+    # Setting kv_heads, head_dim, and num_layers to 1 so it is easy to compute
+    # memory usage. Now we know each block is 1 byte.
+    NUM_KV_HEADS = 1
+    HEAD_DIM = 1
+    NUM_LAYERS = 1
+
+    kv_params = KVCacheParams(
+        dtype=DType.float32,
+        n_kv_heads=NUM_KV_HEADS,
+        head_dim=HEAD_DIM,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=page_size,
+    )
+
+    session = InferenceSession()
+
+    cache_memory = (
+        2
+        * NUM_LAYERS
+        * NUM_KV_HEADS
+        * HEAD_DIM
+        * page_size
+        * num_blocks
+        * kv_params.dtype.size_in_bytes
+    )
+    kv_manager = PagedKVCacheManager(
+        params=kv_params,
+        max_batch_size=max_batch_size,
+        max_seq_len=max_seq_len,
+        num_layers=NUM_LAYERS,
+        devices=[CPU()],
+        session=session,
+        cache_memory=cache_memory,
+        page_size=page_size,
+        enable_runtime_checks=True,
+    )
+
+    assert len(kv_manager.available_blocks) == num_blocks
+    return kv_manager
+
+
+def test_schedule_paged_manager_exceed_max_seq_len(
+    scheduler_config, mock_process_control, mock_pipeline, queues
+):
+    # Create a paged manager that has one slot
+    max_seq_len = 2048
+    paged_manager = create_paged_manager(
+        num_blocks=16,
+        max_batch_size=1,
+        max_seq_len=max_seq_len,
+        page_size=128,
+    )
+
+    # Create a scheduler with a paged manager
+    scheduler = TokenGenerationSchedulerV2(
+        process_control=mock_process_control,
+        scheduler_config=scheduler_config,
+        pipeline=mock_pipeline,
+        queues=queues,
+        paged_manager=paged_manager,
+    )
+
+    # Check that we would exceed max_seq_len during TG step
+    prompt_len = 2045
+    num_steps = scheduler_config.max_forward_steps_tg
+    assert num_steps == 8
+    assert prompt_len + num_steps > max_seq_len
+
+    # Run CE on 2045 tokens for this req in paged manager
+    cache_seq_id = 0
+    paged_manager.external_claim([cache_seq_id])
+    seq_ids_and_prompts = {cache_seq_id: np.ones(prompt_len)}
+    paged_manager.fetch(seq_ids_and_prompts)
+    seq_ids_and_new_tokens = {cache_seq_id: np.ones(1)}
+    paged_manager.step(seq_ids_and_new_tokens)
+
+    # Create a mock request and add it to the active batch
+    # This request has already encoded its prompt and is ready for its first TG step
+    mock_request = create_mock_request(
+        cache_seq_id=cache_seq_id, seq_len=prompt_len + 1, start_idx=prompt_len
+    )
+    assert mock_request.active_length == 1
+    scheduler.active_batch["req1"] = mock_request
+
+    # Try to construct TG batch and make sure it is non-empty
+    batch_to_execute = scheduler._create_tg_batch()
+    assert len(batch_to_execute) == 1
