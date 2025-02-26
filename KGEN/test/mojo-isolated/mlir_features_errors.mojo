@@ -83,7 +83,7 @@ fn crash_on_invalid():
 
 
 # expected-error @below {{invalid MLIR type}}
-# expected-note @below {{argument #0 with convention 'mut' in signature type should be a `!kgen.pointer`}}
+# expected-note @below {{argument #0 with convention 'mut' in func type should be a `!kgen.pointer`}}
 fn bad_signature_type[func: __mlir_type[`!kgen.func<(index mut) -> !kgen.none>`]]():
     pass
 

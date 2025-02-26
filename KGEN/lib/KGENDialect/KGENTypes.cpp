@@ -507,20 +507,30 @@ LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
   if (argConventions.size() != values.getInputs().size())
     return emitError() << "incorrect # of input conventions specified";
 
-  // If the signature has metadata, defer to it for further verification.
-  // Otherwise, run the standard KGEN signature verification.
-  if (metadata) {
+  // If the FuncType has metadata, defer to it for further verification.
+  // Otherwise, run the standard KGEN FuncType verification.
+  if (metadata)
     return metadata.verifyFuncType(emitError, values, argConventions, effects);
-  }
 
   // Verify input convention and argument types.
+  int64_t byRefResultIdx = -1;
+  int64_t byRefErrorIdx = -1;
   for (auto [i, argType, conv] :
        llvm::enumerate(values.getInputs(), argConventions)) {
-    if (conv == ArgConvention::ByRefResult && i != values.getNumInputs() - 1)
-      return emitError() << "'byref_result' argument must be the last argument";
-    if (conv == ArgConvention::ByRefError && !effects.isThrows()) {
-      return emitError()
-             << "signature with 'byref_error' argument must be 'throws'";
+    if (conv == ArgConvention::ByRefResult) {
+      if (byRefResultIdx >= 0)
+        return emitError() << "func type cannot have more than one argument "
+                              "with 'byref_result'";
+      byRefResultIdx = i;
+    }
+    if (conv == ArgConvention::ByRefError) {
+      if (byRefErrorIdx >= 0)
+        return emitError() << "func type cannot have more than one argument "
+                              "with 'byref_error'";
+      if (!effects.isThrows())
+        return emitError()
+               << "func type with 'byref_error' argument must be 'throws'";
+      byRefErrorIdx = i;
     }
 
     Type type = argType;
@@ -533,18 +543,26 @@ LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
       if (::isa<PointerType>(type))
         continue;
       // TODO: During LowerLIT, we strip off the metadata, but later we lower
-      // references to pointers.  This means that LowerLIT needs a
-      // kgen.signature (without LIT attribute) with references.  Accept
-      // !lit.ref until we can sort this out.
+      // references to pointers.  This means that LowerLIT needs a !kgen.func
+      // (without LIT attribute) with references.  Accept !lit.ref until we can
+      // sort this out.
       if (type.getDialect().getNamespace() == "lit")
         continue;
 
       return emitError()
              << "argument #" << i << " with convention '" << stringifyEnum(conv)
-             << "' in signature type should be a `!kgen.pointer` but got: "
-             << type;
+             << "' in func type should be a `!kgen.pointer` but got: " << type;
     }
   }
+
+  bool hasByRefResult = byRefResultIdx >= 0;
+  bool hasByRefError = byRefErrorIdx >= 0;
+  if (hasByRefResult && byRefResultIdx != values.getNumInputs() - 1)
+    return emitError() << "'byref_result' argument must be the last argument";
+  if (hasByRefError &&
+      byRefErrorIdx != values.getNumInputs() - 1 - hasByRefResult)
+    return emitError() << "'byref_error' argument must be the last "
+                          "argument before any `byref_result` argument";
 
   return success();
 }
