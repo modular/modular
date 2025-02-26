@@ -1113,37 +1113,6 @@ ObjectCompiler::lowerLLVMModuleToObjects(
   return result;
 }
 
-ErrorOr<ElementsAttr>
-ObjectCompiler::emitArchiveAttr(OwningOpRef<ModuleOp> module) {
-  MLIRContext *moduleCtx = module->getContext();
-
-  std::string outKeyHash;
-  ErrorOr<BufferRef> bufferOr =
-      emitArchive(std::move(module), /*emitAssembly=*/false, &outKeyHash);
-  if (bufferOr.isError())
-    return bufferOr.takeError();
-  BufferRef buffer = bufferOr.takeValue();
-
-  // Produce a DenseResourceElementsAttr from the file.
-  auto resourceManager =
-      DenseResourceElementsHandle::getManagerInterface(moduleCtx);
-
-  // Pretend this is a "tensor" of data.
-  auto attrType = RankedTensorType::get(
-      {(int64_t)buffer->getBufferSize()},
-      IntegerType::get(moduleCtx, 8, IntegerType::Unsigned));
-  std::string attrName = "archive_" + outKeyHash;
-  mlir::AsmResourceBlob blob(
-      {buffer->getBufferStart(), buffer->getBufferSize()}, /*dataAlignment=*/8,
-      /*deleter=*/
-      [buffer = std::move(buffer)](void *, size_t, size_t) mutable {
-        buffer.reset(); // Shouldn't need to do this, but just to be explicit.
-      },
-      /*isMutable=*/false);
-  return DenseResourceElementsAttr::get(
-      attrType, resourceManager.insert(attrName, std::move(blob)));
-}
-
 //===----------------------------------------------------------------------===//
 // emitLLVMIR
 //===----------------------------------------------------------------------===//
