@@ -81,8 +81,7 @@ fn chr(c: Int) -> String:
 
     Examples:
     ```mojo
-    print(chr(97)) # "a"
-    print(chr(8364)) # "€"
+    print(chr(97), chr(8364)) # "a €"
     ```
     .
     """

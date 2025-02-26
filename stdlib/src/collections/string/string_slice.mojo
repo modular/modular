@@ -2196,6 +2196,13 @@ fn _memmem[
     return UnsafePointer[Scalar[type]]()
 
 
+@always_inline
+fn _is_utf8_continuation_byte[
+    w: Int
+](vec: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
+    return vec.cast[DType.int8]() < -(0b1000_0000 >> 1)
+
+
 fn _count_utf8_continuation_bytes(str_slice: StringSlice) -> Int:
     alias sizes = (256, 128, 64, 32, 16, 8)
     var ptr = str_slice.unsafe_ptr()
@@ -2212,12 +2219,12 @@ fn _count_utf8_continuation_bytes(str_slice: StringSlice) -> Int:
             var rest = num_bytes - processed
             for _ in range(rest // s):
                 var vec = (ptr + processed).load[width=s]()
-                var comp = (vec & 0b1100_0000) == 0b1000_0000
+                var comp = _is_utf8_continuation_byte(vec)
                 amnt += Int(comp.cast[DType.uint8]().reduce_add())
                 processed += s
 
     for i in range(num_bytes - processed):
-        amnt += Int((ptr[processed + i] & 0b1100_0000) == 0b1000_0000)
+        amnt += Int(_is_utf8_continuation_byte(ptr[processed + i]))
 
     return amnt
 
@@ -2228,10 +2235,10 @@ fn _utf8_first_byte_sequence_length(b: Byte) -> Int:
     this does not work correctly if given a continuation byte."""
 
     debug_assert(
-        (b & 0b1100_0000) != 0b1000_0000,
+        not _is_utf8_continuation_byte(b),
         "Function does not work correctly if given a continuation byte.",
     )
-    return Int(count_leading_zeros(~b)) + Int(b < 0b1000_0000)
+    return Int(count_leading_zeros(~b) | (b < 0b1000_0000).cast[DType.uint8]())
 
 
 fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> __type_of(b):
@@ -2248,7 +2255,7 @@ fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> __type_of(b):
         - 3 -> start of 3 byte long sequence.
         - 4 -> start of 4 byte long sequence.
     """
-    return count_leading_zeros(~(b & UInt8(0b1111_0000)))
+    return count_leading_zeros(~b)
 
 
 @always_inline
