@@ -102,27 +102,8 @@ struct FileDescriptor(Writer):
                 self.__write_bytes_cpu(bytes)
 
     @always_inline
-<<<<<<< HEAD:mojo/stdlib/src/builtin/file_descriptor.mojo
     fn read_bytes(mut self, buffer: Span[mut=True, Byte]) raises -> UInt:
         """Read a number of bytes from the file into a buffer.
-||||||| parent of 6aa70655 (Update file_descriptor `read_bytes` internals):stdlib/src/builtin/file_descriptor.mojo
-    fn read_bytes(mut self, size: Int) raises -> List[Byte]:
-        """
-        Read a number of bytes from the file.
-=======
-    fn read_bytes(mut self, size: UInt) raises -> List[Byte]:
-        """
-        Read a number of bytes from the file.
->>>>>>> 6aa70655 (Update file_descriptor `read_bytes` internals):stdlib/src/builtin/file_descriptor.mojo
-
-        Args:
-            buffer: A `Span[Byte]` to read bytes into. Read up to `len(buffer)` number of bytes.
-
-        Returns:
-            Actual number of bytes read.
-
-        Notes:
-            [Reference](https://pubs.opengroup.org/onlinepubs/9799919799/functions/read.html).
         """
 
         constrained[
