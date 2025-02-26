@@ -152,12 +152,22 @@ public:
   /// user to use a strong hash function! Returns the cache key on success -
   /// this can be used for speeding up future hash computations or simply
   /// discarded.
+  AsyncRT::AsyncValueRef<Chain>
+  insertKeyed(AsyncRT::Runtime &runtime, llvm::StringRef key, BufferRef obj,
+              std::optional<EncodedLocation> loc = std::nullopt) {
+    return backendList->insert(runtime, Buffer::get(key), std::move(obj),
+                               std::move(loc));
+  }
+  ErrorOrSuccess insertKeyedSync(llvm::StringRef key, BufferRef obj) {
+    return backendList->insertSync(key, std::move(obj));
+  }
+
   AsyncRT::AsyncValueRef<std::string>
   insert(AsyncRT::Runtime &runtime, KeyTy key, BufferRef obj,
          std::optional<EncodedLocation> loc = std::nullopt) {
     std::string keyHash = KeyInfo::hashKey(std::forward<KeyTy>(key));
     AsyncRT::AsyncValueRef<AsyncRT::Chain> insertAsync =
-        backendList->insert(runtime, Buffer::get(keyHash), std::move(obj));
+        insertKeyed(runtime, keyHash, std::move(obj), std::move(loc));
 
     // Allocate a space for the output.
     auto out = AsyncRT::AsyncValueRef<std::string>::allocate(runtime);
@@ -176,7 +186,7 @@ public:
   }
   ErrorOr<std::string> insertSync(KeyTy key, BufferRef obj) {
     std::string keyHash = KeyInfo::hashKey(std::forward<KeyTy>(key));
-    auto errOr = backendList->insertSync(keyHash, std::move(obj));
+    auto errOr = insertKeyedSync(keyHash, std::move(obj));
     if (errOr.isError())
       return errOr.takeError();
     return keyHash;
