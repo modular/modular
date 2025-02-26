@@ -14,8 +14,9 @@
 
 from collections.abc import Iterable
 
+from max.driver import Accelerator, Tensor
 from max.dtype import DType
-from max.graph import BufferType, DeviceRef
+from max.graph import BufferType, DeviceKind, DeviceRef
 
 
 class Signals:
@@ -32,14 +33,31 @@ class Signals:
     # Mojo struct + the size of the intermediate buffer for communication.
 
     devices: list[DeviceRef]
-    """List of devices that these signals communicate between."""
+    """List of graph devices that these signals communicate between."""
 
     def __init__(self, devices: Iterable[DeviceRef]) -> None:
         """
         Args:
-            devices: Devices between which these signals communicate.
+            num_gpus: Number of GPUs involved in the allreduce.
         """
-        self.devices = list(devices)
+        # Convert the iterable to a list since we iterate over it twice.
+        devices = list(devices)
+        if not all(dev.device_type == DeviceKind.GPU for dev in devices):
+            msg = "peer-to-peer signals should be constructed for accelerators"
+            raise TypeError(msg)
+
+        self.devices = devices
+
+    def buffers(self) -> list[Tensor]:
+        """Allocates and returns buffers used for communication in allreduce."""
+        return [
+            Tensor.zeros(
+                shape=(Signals.NUM_BYTES,),
+                dtype=DType.uint8,
+                device=Accelerator(id=dev.id),
+            )
+            for dev in self.devices
+        ]
 
     def input_types(self) -> list[BufferType]:
         """Gets graph input types corresponding to these signal buffers."""
