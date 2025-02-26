@@ -93,7 +93,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     """
 
     @always_inline
-    fn _pack_int4(self, owned src_ptr: UnsafePointer[UInt8]):
+    fn _pack_int4(mut self, owned src_ptr: UnsafePointer[UInt8]):
         constrained[bit_width == 4]()
         constrained[(block_m % (2 * Self._tuple_width)) == 0]()
 
@@ -120,7 +120,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
             src_ptr += Self._packed_stride
 
     @always_inline
-    fn _unpack_int4(self, owned dst_ptr: UnsafePointer[UInt8]):
+    fn _unpack_int4(mut self, owned dst_ptr: UnsafePointer[UInt8]):
         constrained[bit_width == 4]()
         constrained[(block_m % (2 * Self._tuple_width)) == 0]()
 
@@ -153,7 +153,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     """
 
     @always_inline
-    fn _pack_int6(self, owned src_ptr: UnsafePointer[UInt8]):
+    fn _pack_int6(mut self, owned src_ptr: UnsafePointer[UInt8]):
         constrained[bit_width == 6]()
         constrained[(block_m % (4 * Self._tuple_width)) == 0]()
 
@@ -185,7 +185,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     @always_inline
     fn _unpack_int6[
         zero_point: UInt8
-    ](self, owned dst_ptr: UnsafePointer[UInt8]):
+    ](mut self, owned dst_ptr: UnsafePointer[UInt8]):
         constrained[bit_width == 6]()
         constrained[(block_m % (4 * Self._tuple_width)) == 0]()
 
@@ -218,7 +218,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
             dst_ptr += Self._packed_stride * 4
 
     @always_inline
-    fn pack(self, owned src_ptr: UnsafePointer[UInt8]):
+    fn pack(mut self, owned src_ptr: UnsafePointer[UInt8]):
         """Packs the supplied external buffer to local storage."""
         constrained[(Self._packed_stride % Self._simd_width) == 0]()
 
@@ -233,7 +233,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     @always_inline
     fn unpack[
         *, zero_point: UInt8 = 0
-    ](self, owned dst_ptr: UnsafePointer[UInt8]):
+    ](mut self, owned dst_ptr: UnsafePointer[UInt8]):
         """Unpacks the local storage to the supplied external buffer."""
         constrained[(Self._packed_stride % Self._simd_width) == 0]()
 

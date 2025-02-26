@@ -31,11 +31,11 @@ from utils.index import Index
 @always_inline
 fn _to_dtype_pointer[
     type: DType
-](array: InlineArray[Scalar[type]]) -> UnsafePointer[Scalar[type]]:
+](mut array: InlineArray[Scalar[type]]) -> UnsafePointer[Scalar[type]]:
     return UnsafePointer[Scalar[type]](array.unsafe_ptr())
 
 
-fn fill_random[type: DType](array: InlineArray[Scalar[type]]):
+fn fill_random[type: DType](mut array: InlineArray[Scalar[type]]):
     rand(array.unsafe_ptr(), len(array))
 
 
