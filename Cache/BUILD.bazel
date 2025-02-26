@@ -13,6 +13,7 @@ modular_cc_library(
         "//Support:Compiler",
         "//Support:Configuration",
         "//Support:HTTP",
+        "//Support:HashUtils",
         "//Support:Telemetry",
         "//Support:URI",
         "@llvm-project//mlir:BytecodeWriter",
