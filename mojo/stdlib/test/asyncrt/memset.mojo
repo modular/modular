@@ -96,4 +96,9 @@ fn main() raises:
     _run_memset[DType.int32](ctx, 64, -2311503)
     _run_memset_async[DType.float32](ctx, 64, 2.3)
 
+    _run_memset[DType.float64](ctx, 64, 0)
+    _run_memset_async[DType.float64](ctx, 64, 0)
+    _run_memset[DType.float64](ctx, 64, 2.71828182846)
+    _run_memset_async[DType.float64](ctx, 64, 1.618033988749)
+
     print("Done.")
