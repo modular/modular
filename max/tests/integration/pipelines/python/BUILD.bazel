@@ -22,34 +22,6 @@ modular_py_test(
 )
 
 modular_py_binary(
-    name = "evaluate_batch_scenarios",
-    srcs = ["evaluate_batch_scenarios.py"],
-    data = [
-        "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
-        "//Kernels/tools/gpu-query",
-        "//Support/tools/system-info",
-        "@llvm-project//compiler-rt:orc_rt",
-    ],
-    env = {
-        "MODULAR_MOJO_MAX_ORCRT_PATH": "$(location @llvm-project//compiler-rt:orc_rt)",
-        "MODULAR_MOJO_MAX_COMPILERRT_PATH": "$(location //KGEN:CompilerRT)",
-        "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/gpu-query)",
-        "MODULAR_SYSTEM_INFO_PATH": "$(location //Support/tools/system-info)",
-    },
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//SDK/lib/API/python/max/entrypoints",
-        "//SDK/lib/API/python/max/pipelines",
-        "//SDK/lib/API/python/max/pipelines/architectures",
-        "//SDK/lib/API/python/max/serve",
-        requirement("click"),
-        requirement("huggingface-hub"),
-    ],
-)
-
-modular_py_binary(
     name = "verify_pipelines",
     srcs = ["verify_pipelines.py"],
     data = [
