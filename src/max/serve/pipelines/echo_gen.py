@@ -8,11 +8,11 @@ from dataclasses import dataclass
 from typing import Any, Sequence, Union, cast
 
 from max.pipelines.interfaces import (
+    TextResponse,
     TokenGenerator,
     TokenGeneratorRequest,
     TokenGeneratorRequestMessage,
 )
-from max.pipelines.response import TextResponse
 from max.pipelines.tokenizer import IdentityPipelineTokenizer
 
 

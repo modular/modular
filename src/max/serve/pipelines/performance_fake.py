@@ -14,8 +14,11 @@ from time import sleep, time
 from typing import Any, Iterable, List, Literal, Optional, Sequence, Union
 
 import numpy as np
-from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
-from max.pipelines.response import TextResponse
+from max.pipelines.interfaces import (
+    TextResponse,
+    TokenGenerator,
+    TokenGeneratorRequest,
+)
 from max.pipelines.tokenizer import PreTrainedPipelineTokenizer
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
