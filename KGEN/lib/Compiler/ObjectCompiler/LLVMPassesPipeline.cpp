@@ -107,15 +107,9 @@ static OptimizationLevel getOptimizationLevel(unsigned level) {
 
 static void addSanitizers(ModulePassManager &modulePassManager,
                           const CompilationOptions &options) {
-  // LLVM's sanitizer instrumentation is not supported for GPUs.
-  if (isGPUBackend(options))
+  // LLVM's address sanitizer instrumentation is not supported for NVPTX.
+  if (isNVPTXBackend(options))
     return;
-
-  if (options.sanitizers.has(M::Sanitizers::kThread)) {
-    modulePassManager.addPass(ModuleThreadSanitizerPass());
-    modulePassManager.addPass(
-        llvm::createModuleToFunctionPassAdaptor(llvm::ThreadSanitizerPass()));
-  }
 
   if (options.sanitizers.has(M::Sanitizers::kAddress)) {
     AddressSanitizerOptions opts;
@@ -123,6 +117,15 @@ static void addSanitizers(ModulePassManager &modulePassManager,
     bool useOdrIndicator = false;
     modulePassManager.addPass(
         AddressSanitizerPass(opts, moduleUseAfterScope, useOdrIndicator));
+  }
+
+  if (isGPUBackend(options))
+    return;
+
+  if (options.sanitizers.has(M::Sanitizers::kThread)) {
+    modulePassManager.addPass(ModuleThreadSanitizerPass());
+    modulePassManager.addPass(
+        llvm::createModuleToFunctionPassAdaptor(llvm::ThreadSanitizerPass()));
   }
 }
 

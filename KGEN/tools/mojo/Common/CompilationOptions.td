@@ -78,6 +78,14 @@ def shared_libasan : Flag<["--", "-"], "shared-libasan">,
     "sanitization turned on with `--sanitize` option."
   >;
 
+defm external_libasan : CommandOptionHidden<["--", "-"], "external-libasan",
+  ExperimentalCompilationOptionGroup, Index<3>, MetaVarName<"FILE">,
+  HelpText<
+    "Uses the provided file as libasan instead of the default provided by "
+    "the system. This file must provide a compatible interface as libasan, "
+    "and must be present at both compile time and run time of the program."
+  >>;
+
 defm debug_info_language : CommandOption<["--", "-"], "debug-info-language",
   ExperimentalCompilationOptionGroup, Index<3>, MetaVarName<"LANGUAGE">,
   HelpText<
