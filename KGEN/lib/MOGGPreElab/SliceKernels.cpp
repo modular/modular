@@ -443,14 +443,17 @@ private:
 
       ASSERT_STREAM(inLambdaTemplate.templateOp && outLambdaTemplate.templateOp,
                     "intrinsic I/O fusion hooks not found");
-      bool isInput = idx > 0;
+
+      // Determine whether it is a input/output fusion interface.
+      bool isInput = idx >= outputLambdaNames.size();
       LambdaTemplate *lambda = isInput ? &inLambdaTemplate : &outLambdaTemplate;
-      std::string newLambdaName =
-          isInput ? "input_" + std::to_string(idx) + "_fn" : "output_0_fn";
+      std::string newLambdaName = isInput
+                                      ? "input_" + std::to_string(idx) + "_fn"
+                                      : "output_" + std::to_string(idx) + "_fn";
       if (isInput)
-        inputLambdaNames[idx - 1] = newLambdaName;
+        inputLambdaNames[idx - outputLambdaNames.size()] = newLambdaName;
       else
-        outputLambdaNames[0] = newLambdaName;
+        outputLambdaNames[idx] = newLambdaName;
 
       OpBuilder builder{computeBlock, computeBlock->begin()};
       SpliceResult spliceResult =
@@ -519,8 +522,16 @@ public:
       unsigned kernelInputsCount = 0;
       /// TODO: GEX-1046: We should have markers in Mojo for what is an input
       /// and what is an output (ex: mo.top_k).
+      /// kMOGGNumDPSOutputs might not be accurate, but should be better than 1
+      /// and it works on allreduce.
       unsigned kernelOutputsCount = 1;
-      for (size_t i = 1, e = argumentTypeNames.getValue().size(); i < e; i++) {
+      auto numDpsOut = userKernel->getAttr(MOGGPreElab::kMOGGNumDPSOutputs);
+      if (numDpsOut)
+        kernelOutputsCount = cast<IntegerAttr>(numDpsOut).getInt();
+
+      for (size_t i = kernelOutputsCount,
+                  e = argumentTypeNames.getValue().size();
+           i < e; i++) {
         auto nameAttr = dyn_cast<StringAttr>(argumentTypeNames.getValue()[i]);
         if (nameAttr &&
             (nameAttr.getValue() == MOJO_INTERNAL_DPS_TENSOR_TYPE_NAME ||
