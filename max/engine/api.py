@@ -707,7 +707,7 @@ class InferenceSession:
     def __init__(
         self,
         num_threads: int | None = None,
-        devices: list[Device] = [CPU()],
+        devices: Iterable[Device] = [CPU()],
         *,
         custom_extensions: CustomExtensionsType | None = None,
     ):
