@@ -148,11 +148,12 @@ async def test_tinyllama_multistep_execution_gpu(
         response = tinyllama_pipeline.next_token(
             single_step_context_dict, num_steps=1
         )[0]
-        for k, v in response.items():
-            single_step_tokens[k].append(v.next_token)
+        for request_id, text_response in response.items():
+            assert isinstance(text_response.next_token, int)
+            single_step_tokens[request_id].append(text_response.next_token)
 
-    for _, v in single_step_contexts:
-        tinyllama_pipeline.release(v)
+    for _, context in single_step_contexts:
+        tinyllama_pipeline.release(context)
 
     multistep_tokens: dict[str, list[int]] = {
         k: [] for k, _ in multistep_contexts
@@ -166,11 +167,12 @@ async def test_tinyllama_multistep_execution_gpu(
         )
 
         for i in range(len(multistep_response)):
-            for k, v in multistep_response[i].items():
-                multistep_tokens[k].append(v.next_token)
+            for request_id, text_response in multistep_response[i].items():
+                assert isinstance(text_response.next_token, int)
+                multistep_tokens[request_id].append(text_response.next_token)
 
-    for _, v in multistep_contexts:
-        tinyllama_pipeline.release(v)
+    for _, context in multistep_contexts:
+        tinyllama_pipeline.release(context)
 
     for id in multistep_tokens.keys():
         assert multistep_tokens[id] == single_step_tokens[id]

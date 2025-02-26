@@ -77,7 +77,9 @@ def pipeline_tokenizer(pipeline_config: PipelineConfig) -> TextTokenizer:
 def pipeline(
     pipeline_config: PipelineConfig,
 ) -> TextGenerationPipeline:
-    register_all_models()
+    if not PIPELINE_REGISTRY.architectures:
+        register_all_models()
+
     _, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
     assert isinstance(pipeline, TextGenerationPipeline)
     return pipeline
