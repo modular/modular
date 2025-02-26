@@ -94,6 +94,7 @@ public:
   std::optional<DebugAtLevel> debugAtLevel;
   Sanitizers sanitizers = Sanitizers();
   bool sharedLibasan = false;
+  std::string externalLibasan = {};
   std::string targetTriple = llvm::sys::getDefaultTargetTriple();
   std::string targetCpu = llvm::sys::getHostCPUName().str();
   std::string targetFeatures = getHostCPUFeatures();

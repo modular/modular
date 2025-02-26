@@ -31,6 +31,7 @@ ErrorOrSuccess M::parseCompilationOptions(
     llvm::opt::OptSpecifier optimizationLevelId,
     llvm::opt::OptSpecifier debugLevelId, llvm::opt::OptSpecifier sanitizeId,
     llvm::opt::OptSpecifier sharedLibasan,
+    llvm::opt::OptSpecifier externalLibasan,
     llvm::opt::OptSpecifier debugInfoLanguageId,
     llvm::opt::OptSpecifier stdLibPath) {
   // Process the sanitizers.
@@ -55,6 +56,20 @@ ErrorOrSuccess M::parseCompilationOptions(
       return Error(
           "cannot enable --shared-libasan without enabling --sanitize=address");
     compilationOptions.sharedLibasan = true;
+  }
+
+  if (externalLibasan.isValid()) {
+    StringRef libPath = args.getLastArgValue(externalLibasan);
+    if (args.hasMultipleArgs(externalLibasan))
+      return Error("too many external libasan paths, expected exactly one");
+    if (!libPath.empty()) {
+      if (compilationOptions.sharedLibasan)
+        return Error("--external-libasan cannot be used with --shared-libasan");
+      if (!compilationOptions.sanitizers.has(Sanitizers::kAddress))
+        return Error("cannot use --external-libasan without enabling "
+                     "--sanitize=address");
+      compilationOptions.externalLibasan = libPath;
+    }
   }
 
   // Enable overwritting of the auto-imported paths, which is where the compiler

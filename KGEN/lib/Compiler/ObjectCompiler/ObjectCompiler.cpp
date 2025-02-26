@@ -29,6 +29,7 @@
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/FileUtilities.h"
+#include "mlir/Target/LLVM/ROCDL/Utils.h"
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Target/LLVMIR/ModuleTranslation.h"
 
@@ -1328,6 +1329,73 @@ static void attachGPUCodeGenAttributes(llvm::Function *kernelEntry) {
   kernelEntry->addFnAttr(llvm::Attribute::NoRecurse);
 }
 
+namespace {
+/// Override ROCDL module serializer to access pre-lowering bitcode linking
+/// logic.
+class AMDGPUModuleLinker : public mlir::ROCDL::SerializeGPUModuleBase {
+public:
+  /// The module passed in does not matter as we do not use this serializer to
+  /// perform MLIR to LLVM translation.
+  AMDGPUModuleLinker(Operation &module, mlir::ROCDL::ROCDLTargetAttr target,
+                     const mlir::gpu::TargetOptions &targetOptions)
+      : SerializeGPUModuleBase(module, target, targetOptions) {}
+
+  /// Link the set of `amdLibs` into the LLVM module, along with any other libs
+  /// explicitly specified in `targetOptions` when creating this object.
+  LogicalResult link(llvm::Module &llvmModule,
+                     mlir::ROCDL::AMDGCNLibraries amdLibs) {
+    // This is required to set control variables during prelink.
+    deviceLibs = amdLibs;
+    // This is required to actually find the .bc files.
+    if (failed(appendStandardLibs(amdLibs)))
+      return failure();
+
+    handleModulePreLink(llvmModule);
+    auto libs = loadBitcodeFiles(llvmModule);
+    if (!libs)
+      return failure();
+    if (!libs->empty())
+      if (failed(linkFiles(llvmModule, std::move(*libs))))
+        return failure();
+    handleModulePostLink(llvmModule);
+    return success();
+  }
+};
+} // namespace
+
+/// TODO(billyz): Move this upstream into header for `AMDGCNLibraries`.
+LLVM_ENABLE_BITMASK_ENUMS_IN_NAMESPACE();
+
+/// Link vendor-provided LLVM bitcode libraries into the LLVM module when
+/// necessary.
+static LogicalResult linkBitcodeLibraries(Location loc,
+                                          llvm::Module &llvmModule,
+                                          const CompilationOptions &options) {
+  // AMD GPU only needs additional linking if address sanitizer is needed.
+  if (isAMDBackend(options) && options.sanitizers.has(Sanitizers::kAddress)) {
+    mlir::MLIRContext *ctx = loc.getContext();
+    mlir::OpBuilder b(ctx);
+    OwningOpRef<ModuleOp> mlirModule(b.create<ModuleOp>(loc, "dummy"));
+    mlir::ROCDL::ROCDLTargetAttr target = mlir::ROCDL::ROCDLTargetAttr::get(
+        ctx, options.optimizationLevel, options.targetTriple, options.targetCpu,
+        options.targetFeatures);
+    // TODO(billyz): Add "asanrtl.bc" to the upstream standard set of libraries.
+    mlir::gpu::TargetOptions targetOptions(
+        /*toolkitPath=*/"/opt/rocm",
+        /*librariesToLink=*/{
+            b.getStringAttr("/opt/rocm/amdgcn/bitcode/asanrtl.bc")});
+    AMDGPUModuleLinker moduleLinker(**mlirModule, target, targetOptions);
+    // Both ocml & ockl libs are requried for asan.
+    mlir::ROCDL::AMDGCNLibraries libs =
+        mlir::ROCDL::AMDGCNLibraries::Ockl | mlir::ROCDL::AMDGCNLibraries::Ocml;
+    if (failed(moduleLinker.link(llvmModule, libs)))
+      return mlirModule->emitError(
+          "failed to link bitcode libraries for asan on AMD GPUs");
+    return success();
+  }
+  return success();
+}
+
 static AnyAsyncValueRef
 lowerLLVMModuleToObject(llvm::Module &inputModule, Location loc,
                         RCRef<Cache::TransformCache> transformCache,
@@ -1559,6 +1627,8 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
     uint64_t kernelId = (*kernelIdFuncOr).first;
     llvm::Function *kernelEntry = (*kernelIdFuncOr).second;
     attachGPUCodeGenAttributes(kernelEntry);
+    if (failed(linkBitcodeLibraries(loc, *module, options)))
+      return;
 
     SmallVector<EmitAs> emissionKinds;
     SmallVector<AsyncRT::AnyAsyncValueRef> emissionResults;

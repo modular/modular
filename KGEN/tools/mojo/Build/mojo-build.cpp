@@ -119,7 +119,7 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
           state, args, compilationOptions, sourceManager, ctx, options::OPT_I,
           options::OPT_optimization_level, options::OPT_debug_level,
           options::OPT_sanitize, options::OPT_shared_libasan,
-          options::OPT_debug_info_language))
+          options::OPT_external_libasan, options::OPT_debug_info_language))
     return state.reportError(err.getError());
   if (ErrorOrSuccess err = parseTargetOptions(
           state, args, compilationOptions, sourceManager, ctx, target,
@@ -369,9 +369,13 @@ static int linkOutput(OutputType outputType, const State &state,
 #else
   // Otherwise, base this on the compilation options.
   if (options.sanitizers.has(Sanitizers::kAddress)) {
-    linkerArgs.emplace_back("-fsanitize=address");
-    if (options.sharedLibasan)
-      linkerArgs.emplace_back("-shared-libasan");
+    if (options.externalLibasan.empty()) {
+      linkerArgs.emplace_back("-fsanitize=address");
+      if (options.sharedLibasan)
+        linkerArgs.emplace_back("-shared-libasan");
+    } else {
+      linkerArgs.emplace_back(options.externalLibasan);
+    }
   }
   if (options.sanitizers.has(Sanitizers::kThread))
     linkerArgs.emplace_back("-fsanitize=thread");
