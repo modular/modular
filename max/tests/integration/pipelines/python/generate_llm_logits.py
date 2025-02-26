@@ -388,8 +388,6 @@ class ReplitPipelineOracle(PipelineOracle):
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
         assert isinstance(pipeline, pipelines.TextGenerationPipeline)
         return MaxPipelineAndTokenizer(
-            # Unlike the other pipelines, replit.Replit is both a model and a
-            # generator at the same time.
             model=pipeline._pipeline_model,
             generator=pipeline,
             tokenizer=tokenizer,
