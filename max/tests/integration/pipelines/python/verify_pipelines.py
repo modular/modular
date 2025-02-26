@@ -115,7 +115,6 @@ def generate_llm_logits(
     framework: str,
     device: str,
     pipeline: str,
-    version: str,
     encoding: str,
     output_path: Path,
 ) -> None:
@@ -126,7 +125,6 @@ def generate_llm_logits(
             f"--framework={framework}",
             f"--device={device}",
             f"--pipeline={pipeline}",
-            f"--version={version}",
             f"--encoding={encoding}",
             f"--output={output_path}",
         ],
@@ -140,7 +138,6 @@ def run_llm_verification(
     device_type: DeviceKind,
     devices: str,
     pipeline: str,
-    version: str,
     encoding: str,
     pregenerated_torch_goldens_rlocation: Optional[str] = None,
     kl_div_threshold: Optional[float] = None,
@@ -158,13 +155,12 @@ def run_llm_verification(
     for details on acceptable flags.
     """
     max_golden_path = Path(
-        f"/tmp/goldens_max_{device_type.value}_{pipeline}_{version}_{encoding}.json"
+        f"/tmp/goldens_max_{device_type.value}_{pipeline}_{encoding}.json"
     )
     generate_llm_logits(
         framework="max",
         device=devices,
         pipeline=pipeline,
-        version=version,
         encoding=encoding,
         output_path=max_golden_path,
     )
@@ -177,13 +173,12 @@ def run_llm_verification(
         )
     else:
         torch_golden_path = Path(
-            f"/tmp/goldens_torch_{device_type.value}_{pipeline}_{version}_{encoding}.json"
+            f"/tmp/goldens_torch_{device_type.value}_{pipeline}_{encoding}.json"
         )
         generate_llm_logits(
             framework="torch",
             device=devices,
             pipeline=pipeline,
-            version=version,
             encoding=encoding,
             output_path=torch_golden_path,
         )
@@ -252,8 +247,7 @@ PIPELINES = {
         run=lambda device_type, devices: run_llm_verification(
             device_type=device_type,
             devices=devices,
-            pipeline="llama",
-            version="llama3_1",
+            pipeline="llama3_1",
             encoding="q4_k",
             # TODO(AIPIPE-135): Something is wildly wrong about our Q4_K
             # pipeline.  We only pass with these sky-high tolerances --
@@ -270,8 +264,7 @@ PIPELINES = {
         run=lambda device_type, devices: run_llm_verification(
             device_type=device_type,
             devices=devices,
-            pipeline="llama",
-            version="llama3_1",
+            pipeline="llama3_1",
             encoding="float32",
             kl_div_threshold=0.005,
             cos_dist_threshold=0.002,
@@ -286,8 +279,7 @@ PIPELINES = {
         run=lambda device_type, devices: run_llm_verification(
             device_type=device_type,
             devices=devices,
-            pipeline="llama",
-            version="llama3_1",
+            pipeline="llama3_1",
             encoding="bfloat16",
             pregenerated_torch_goldens_rlocation=(
                 "torch_llama_golden/torch_llama3_1_bfloat16_golden.json"
@@ -307,7 +299,6 @@ PIPELINES = {
             device_type=device_type,
             devices=devices,
             pipeline="llama3.3-70b",
-            version="Llama-3.3-70B-Instruct",
             encoding="bfloat16",
             # TODO(AITLIB-194): Reduce thresholds after fixing correctness.
             kl_div_threshold=0.5,
@@ -322,7 +313,6 @@ PIPELINES = {
             device_type=device_type,
             devices=devices,
             pipeline="replit",
-            version="replit-code-v1_5-3b",
             encoding="bfloat16",
             pregenerated_torch_goldens_rlocation="torch_replit_golden/torch_replit-code-v1_5-3b_bfloat16_golden.json",
             # TODO(AIPIPE-166): Replit on GPU currently has very large
@@ -343,7 +333,6 @@ PIPELINES = {
             device_type=device_type,
             devices=devices,
             pipeline="mistral",
-            version="nemo-instruct-2407",
             encoding="bfloat16",
             pregenerated_torch_goldens_rlocation="torch_mistral_golden/torch_nemo-instruct-2407_bfloat16_golden.json",
             # TODO(AIPIPE-230): These tolerances are very high due to an accuracy regression.
@@ -360,7 +349,6 @@ PIPELINES = {
             device_type=device_type,
             devices=devices,
             pipeline="llama3-vision",
-            version="llama3_2",
             encoding="bfloat16",
             pregenerated_torch_goldens_rlocation="torch_llama3-vision_golden/torch_llama3_2_bfloat16_golden.json",
             kl_div_threshold=8e-3,
@@ -381,7 +369,6 @@ PIPELINES = {
             device_type=device_type,
             devices=devices,
             pipeline="pixtral",
-            version="pixtral12b",
             encoding="bfloat16",
             pregenerated_torch_goldens_rlocation="torch_pixtral_golden/torch_pixtral_bfloat16_golden.json",
             kl_div_threshold=0.05,
@@ -396,7 +383,6 @@ PIPELINES = {
             device_type=device_type,
             devices=devices,
             pipeline="mpnet",
-            version="general",
             encoding="float32",
             pregenerated_torch_goldens_rlocation="torch_mpnet_golden/torch_mpnet_float32_golden.json",
             cos_dist_threshold=1e-5,
@@ -410,7 +396,6 @@ PIPELINES = {
             device_type=device_type,
             devices=devices,
             pipeline="mpnet",
-            version="general",
             encoding="bfloat16",
             pregenerated_torch_goldens_rlocation="torch_mpnet_golden/torch_mpnet_bfloat16_golden.json",
             cos_dist_threshold=2e-4,
@@ -424,7 +409,6 @@ PIPELINES = {
             device_type=device_type,
             devices=devices,
             pipeline="qwen",
-            version="2.5-7B-Instruct",
             encoding="bfloat16",
             kl_div_threshold=0.2,
             cos_dist_threshold=0.01,
@@ -439,7 +423,6 @@ PIPELINES = {
             device_type=device_type,
             devices=devices,
             pipeline="exaone",
-            version="3.5-2.4B-Instruct",
             encoding="float32",
             # TODO: Investigate why this is inf here.
             # Response text looks semantically close.

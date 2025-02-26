@@ -75,25 +75,11 @@ class PipelineOracle(ABC):
 
     @property
     @abstractmethod
-    def supported_versions(self) -> Sequence[str]:
-        """Versions of a model that are (ever) supported.
-
-        Not all combinations of version, encoding, and device are necessarily
-        supported.  To check support for a particular combination, use
-        is_supported.
-
-        Should be overridden by subclasses.
-        """
-        raise NotImplementedError
-
-    @property
-    @abstractmethod
     def supported_encodings(self) -> Sequence[str]:
         """Encodings of a model that are (ever) supported.
 
-        Not all combinations of version, encoding, and device are necessarily
-        supported.  To check support for a particular combination, use
-        is_supported.
+        Not all combinations of encoding, and device are necessarily supported.
+        To check support for a particular combination, use is_supported.
 
         Should be overridden by subclasses.
         """
@@ -101,9 +87,9 @@ class PipelineOracle(ABC):
 
     @abstractmethod
     def is_supported(
-        self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
+        self, *, encoding: str, device_spec: driver.DeviceSpec
     ) -> bool:
-        """Check that a particular version/encoding/device tuple is supported.
+        """Check that a particular encoding/device tuple is supported.
 
         Returns True if supported, False if not.
         """
@@ -111,20 +97,16 @@ class PipelineOracle(ABC):
 
     @abstractmethod
     def create_max_pipeline(
-        self,
-        *,
-        version: str,
-        encoding: str,
-        device_specs: list[driver.DeviceSpec],
+        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
     ) -> MaxPipelineAndTokenizer:
-        """Instantiate a MAX pipeline for the given version/encoding/device."""
+        """Instantiate a MAX pipeline for the given encoding/device."""
         raise NotImplementedError
 
     @abstractmethod
     def create_torch_pipeline(
-        self, *, version: str, encoding: str, device: torch.device
+        self, *, encoding: str, device: torch.device
     ) -> TorchModelAndDataProcessor:
-        """Instantiate a Torch pipeline for the given version/encoding/device."""
+        """Instantiate a Torch pipeline for the given encoding/device."""
         raise NotImplementedError
 
     @property
@@ -155,19 +137,14 @@ class MultiModalPipelineOracle(PipelineOracle):
         return [evaluate.IMAGES_MULTI_MODAL]
 
 
-class LlamaPipelineOracle(PipelineOracle):
-    @property
-    def supported_versions(self) -> Sequence[str]:
-        return ["llama3", "llama3_1"]
-
+class Llama3_1PipelineOracle(PipelineOracle):
     @property
     def supported_encodings(self) -> Sequence[str]:
         return list(pipelines.SupportedEncoding)
 
     def is_supported(
-        self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
+        self, *, encoding: str, device_spec: driver.DeviceSpec
     ) -> bool:
-        assert version in self.supported_versions
         assert encoding in self.supported_encodings
         if device_spec.device_type == "cpu":
             if encoding == "bfloat16":
@@ -179,40 +156,20 @@ class LlamaPipelineOracle(PipelineOracle):
             return False
         return True
 
-    def _map_to_internal_version(self, version: str) -> str:
-        assert version in self.supported_versions
-        if "3_1" in version:
-            return "3.1"
-        else:
-            return "3"
-
-    def _revision_for(self, version: str) -> str:
-        internal_version = self._map_to_internal_version(version)
-        return hf_repo_lock.revision_for_hf_repo(
-            f"modularai/llama-{internal_version}"
-        )
-
-    def _weight_path_for(self, version: str, encoding: str) -> Path:
+    def _weight_path_for(self, encoding: str) -> Path:
         return Path(
             get_llama_huggingface_file(
-                self._map_to_internal_version(version),
+                "3.1",
                 pipelines.SupportedEncoding[encoding],
-                self._revision_for(version),
+                hf_repo_lock.revision_for_hf_repo("modularai/llama-3.1"),
             ).download()
         )
 
     def create_max_pipeline(
-        self,
-        *,
-        version: str,
-        encoding: str,
-        device_specs: list[driver.DeviceSpec],
+        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
     ) -> MaxPipelineAndTokenizer:
         for device_spec in device_specs:
-            assert self.is_supported(
-                version=version, encoding=encoding, device_spec=device_spec
-            )
-        internal_version = self._map_to_internal_version(version)
+            assert self.is_supported(encoding=encoding, device_spec=device_spec)
         config = pipelines.PipelineConfig(
             architecture="LlamaForCausalLM",
             quantization_encoding=pipelines.SupportedEncoding[encoding],
@@ -229,13 +186,11 @@ class LlamaPipelineOracle(PipelineOracle):
                 else None
             ),
             max_new_tokens=10,
-            model_path=f"modularai/llama-{internal_version}",
-            huggingface_revision=self._revision_for(version),
-            weight_path=[
-                self._weight_path_for(version=version, encoding=encoding)
-            ],
+            model_path="modularai/llama-3.1",
+            weight_path=[self._weight_path_for(encoding=encoding)],
             device_specs=device_specs,
         )
+        hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
         assert isinstance(pipeline, pipelines.TextGenerationPipeline)
         return MaxPipelineAndTokenizer(
@@ -244,25 +199,23 @@ class LlamaPipelineOracle(PipelineOracle):
             tokenizer=tokenizer,
         )
 
-    def _config_path_for(self, version: str, encoding: str) -> Path:
-        hf_repo_id = f"modularai/llama-{self._map_to_internal_version(version)}"
-        return Path(
-            huggingface_hub.hf_hub_download(
-                repo_id=hf_repo_id,
-                filename="config.json",
-                revision=self._revision_for(version),
-            )
-        )
-
     def create_torch_pipeline(
-        self, *, version: str, encoding: str, device: torch.device
+        self, *, encoding: str, device: torch.device
     ) -> TorchModelAndDataProcessor:
         # Tokenizer from testdata is used even for non-tiny Llama.
         tokenizer = transformers.AutoTokenizer.from_pretrained(
             Path(os.environ["PIPELINES_TESTDATA"])
         )
-        config_path = self._config_path_for(version=version, encoding=encoding)
-        weight_path = self._weight_path_for(version=version, encoding=encoding)
+        config_path = Path(
+            huggingface_hub.hf_hub_download(
+                repo_id="modularai/llama-3.1",
+                filename="config.json",
+                revision=hf_repo_lock.revision_for_hf_repo(
+                    "modularai/llama-3.1"
+                ),
+            )
+        )
+        weight_path = self._weight_path_for(encoding=encoding)
         config = transformers.AutoConfig.from_pretrained(config_path)
         model = transformers.AutoModelForCausalLM.from_pretrained(
             "UNUSED", config=config, gguf_file=weight_path, device_map=device
@@ -272,31 +225,20 @@ class LlamaPipelineOracle(PipelineOracle):
 
 class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
     @property
-    def supported_versions(self) -> Sequence[str]:
-        return ["llama3_2"]
-
-    @property
     def supported_encodings(self) -> Sequence[str]:
         return [pipelines.SupportedEncoding.bfloat16]
 
     def is_supported(
-        self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
+        self, *, encoding: str, device_spec: driver.DeviceSpec
     ) -> bool:
-        assert version in self.supported_versions
         assert encoding in self.supported_encodings
         return device_spec.device_type in {"cpu", "gpu"}
 
     def create_max_pipeline(
-        self,
-        *,
-        version: str,
-        encoding: str,
-        device_specs: list[driver.DeviceSpec],
+        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
     ) -> MaxPipelineAndTokenizer:
         for device_spec in device_specs:
-            assert self.is_supported(
-                version=version, encoding=encoding, device_spec=device_spec
-            )
+            assert self.is_supported(encoding=encoding, device_spec=device_spec)
 
         hf_repo_id = "meta-llama/Llama-3.2-11B-Vision-Instruct"
         revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
@@ -333,7 +275,7 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
         )
 
     def create_torch_pipeline(
-        self, *, version: str, encoding: str, device: torch.device
+        self, *, encoding: str, device: torch.device
     ) -> TorchModelAndDataProcessor:
         hf_repo_id = "meta-llama/Llama-3.2-11B-Vision-Instruct"
         revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
@@ -355,31 +297,20 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
 
 class ExaonePipelineOracle(PipelineOracle):
     @property
-    def supported_versions(self) -> Sequence[str]:
-        return ["3.5-2.4B-Instruct"]
-
-    @property
     def supported_encodings(self) -> Sequence[str]:
         return ["float32"]
 
     def is_supported(
-        self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
+        self, *, encoding: str, device_spec: driver.DeviceSpec
     ) -> bool:
-        assert version in self.supported_versions
         assert encoding in self.supported_encodings
         return True
 
     def create_max_pipeline(
-        self,
-        *,
-        version: str,
-        encoding: str,
-        device_specs: list[driver.DeviceSpec],
+        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
     ) -> MaxPipelineAndTokenizer:
         for device_spec in device_specs:
-            assert self.is_supported(
-                version=version, encoding=encoding, device_spec=device_spec
-            )
+            assert self.is_supported(encoding=encoding, device_spec=device_spec)
         config = pipelines.PipelineConfig(
             architecture="ExaoneForCausalLM",
             device_specs=device_specs,
@@ -401,7 +332,7 @@ class ExaonePipelineOracle(PipelineOracle):
         )
 
     def create_torch_pipeline(
-        self, *, version: str, encoding: str, device: torch.device
+        self, *, encoding: str, device: torch.device
     ) -> TorchModelAndDataProcessor:
         hf_repo_id = "LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct"
         revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
@@ -424,17 +355,12 @@ class ExaonePipelineOracle(PipelineOracle):
 
 class ReplitPipelineOracle(PipelineOracle):
     @property
-    def supported_versions(self) -> Sequence[str]:
-        return ["replit-code-v1_5-3b"]
-
-    @property
     def supported_encodings(self) -> Sequence[str]:
         return ["bfloat16", "float32"]
 
     def is_supported(
-        self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
+        self, *, encoding: str, device_spec: driver.DeviceSpec
     ) -> bool:
-        assert version in self.supported_versions
         assert encoding in self.supported_encodings
         if device_spec.device_type == "cpu":
             if encoding == "bfloat16":
@@ -447,16 +373,10 @@ class ReplitPipelineOracle(PipelineOracle):
         return True
 
     def create_max_pipeline(
-        self,
-        *,
-        version: str,
-        encoding: str,
-        device_specs: list[driver.DeviceSpec],
+        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
     ) -> MaxPipelineAndTokenizer:
         for device_spec in device_specs:
-            assert self.is_supported(
-                version=version, encoding=encoding, device_spec=device_spec
-            )
+            assert self.is_supported(encoding=encoding, device_spec=device_spec)
         config = pipelines.PipelineConfig(
             architecture="MPTForCausalLM",
             device_specs=device_specs,
@@ -476,7 +396,7 @@ class ReplitPipelineOracle(PipelineOracle):
         )
 
     def create_torch_pipeline(
-        self, *, version: str, encoding: str, device: torch.device
+        self, *, encoding: str, device: torch.device
     ) -> TorchModelAndDataProcessor:
         # Need to use upstream instead of modularai/replit-code-1.5, because
         # the modularai version does not have the custom Python code needed
@@ -535,31 +455,20 @@ class ReplitPipelineOracle(PipelineOracle):
 
 class MistralPipelineOracle(PipelineOracle):
     @property
-    def supported_versions(self) -> Sequence[str]:
-        return ["nemo-instruct-2407"]
-
-    @property
     def supported_encodings(self) -> Sequence[str]:
         return ["bfloat16"]
 
     def is_supported(
-        self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
+        self, *, encoding: str, device_spec: driver.DeviceSpec
     ) -> bool:
-        assert version in self.supported_versions
         assert encoding in self.supported_encodings
         return device_spec.device_type == "gpu"
 
     def create_max_pipeline(
-        self,
-        *,
-        version: str,
-        encoding: str,
-        device_specs: list[driver.DeviceSpec],
+        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
     ) -> MaxPipelineAndTokenizer:
         for device_spec in device_specs:
-            assert self.is_supported(
-                version=version, encoding=encoding, device_spec=device_spec
-            )
+            assert self.is_supported(encoding=encoding, device_spec=device_spec)
         config = pipelines.PipelineConfig(
             architecture="MistralForCausalLM",
             device_specs=device_specs,
@@ -578,7 +487,7 @@ class MistralPipelineOracle(PipelineOracle):
         )
 
     def create_torch_pipeline(
-        self, *, version: str, encoding: str, device: torch.device
+        self, *, encoding: str, device: torch.device
     ) -> TorchModelAndDataProcessor:
         hf_repo_id = "mistralai/Mistral-Nemo-Instruct-2407"
         revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
@@ -610,32 +519,21 @@ class PixtralPipelineOracle(MultiModalPipelineOracle):
         return [evaluate.PIXTRAL_IMG_URL]
 
     @property
-    def supported_versions(self) -> Sequence[str]:
-        return ["pixtral12b"]
-
-    @property
     def supported_encodings(self) -> Sequence[str]:
         return [pipelines.SupportedEncoding.bfloat16]
 
     def is_supported(
-        self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
+        self, *, encoding: str, device_spec: driver.DeviceSpec
     ) -> bool:
-        assert version in self.supported_versions
         assert encoding in self.supported_encodings
         return device_spec.device_type == "gpu"
 
     def create_max_pipeline(
-        self,
-        *,
-        version: str,
-        encoding: str,
-        device_specs: list[driver.DeviceSpec],
+        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
     ) -> MaxPipelineAndTokenizer:
         # TODO (AIPIPE-234): Implement MAX pipeline generation for Pixtral.
         for device_spec in device_specs:
-            assert self.is_supported(
-                version=version, encoding=encoding, device_spec=device_spec
-            )
+            assert self.is_supported(encoding=encoding, device_spec=device_spec)
         hf_repo_id = "mistral-community/pixtral-12b"
         config = pipelines.PipelineConfig(
             device_specs=device_specs,
@@ -653,7 +551,7 @@ class PixtralPipelineOracle(MultiModalPipelineOracle):
         )
 
     def create_torch_pipeline(
-        self, *, version: str, encoding: str, device: torch.device
+        self, *, encoding: str, device: torch.device
     ) -> TorchModelAndDataProcessor:
         hf_repo_id = "mistral-community/pixtral-12b"
         revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
@@ -675,31 +573,20 @@ class PixtralPipelineOracle(MultiModalPipelineOracle):
 
 class QwenPipelineOracle(PipelineOracle):
     @property
-    def supported_versions(self) -> Sequence[str]:
-        return ["2.5-7B-Instruct"]
-
-    @property
     def supported_encodings(self) -> Sequence[str]:
         return ["bfloat16"]
 
     def is_supported(
-        self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
+        self, *, encoding: str, device_spec: driver.DeviceSpec
     ) -> bool:
-        assert version in self.supported_versions
         assert encoding in self.supported_encodings
         return device_spec.device_type == "gpu"
 
     def create_max_pipeline(
-        self,
-        *,
-        version: str,
-        encoding: str,
-        device_specs: list[driver.DeviceSpec],
+        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
     ) -> MaxPipelineAndTokenizer:
         for device_spec in device_specs:
-            assert self.is_supported(
-                version=version, encoding=encoding, device_spec=device_spec
-            )
+            assert self.is_supported(encoding=encoding, device_spec=device_spec)
         config = pipelines.PipelineConfig(
             architecture="Qwen2ForCausalLM",
             device_specs=device_specs,
@@ -718,7 +605,7 @@ class QwenPipelineOracle(PipelineOracle):
         )
 
     def create_torch_pipeline(
-        self, *, version: str, encoding: str, device: torch.device
+        self, *, encoding: str, device: torch.device
     ) -> TorchModelAndDataProcessor:
         hf_repo_id = "Qwen/Qwen2.5-7B-Instruct"
         revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
@@ -740,31 +627,20 @@ class QwenPipelineOracle(PipelineOracle):
 
 class Llama3_3_70BInstructPipelineOracle(PipelineOracle):
     @property
-    def supported_versions(self) -> Sequence[str]:
-        return ["Llama-3.3-70B-Instruct"]
-
-    @property
     def supported_encodings(self) -> Sequence[str]:
         return ["bfloat16"]
 
     def is_supported(
-        self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
+        self, *, encoding: str, device_spec: driver.DeviceSpec
     ) -> bool:
-        assert version in self.supported_versions
         assert encoding in self.supported_encodings
         return device_spec.device_type == "gpu"
 
     def create_max_pipeline(
-        self,
-        *,
-        version: str,
-        encoding: str,
-        device_specs: list[driver.DeviceSpec],
+        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
     ) -> MaxPipelineAndTokenizer:
         for device_spec in device_specs:
-            assert self.is_supported(
-                version=version, encoding=encoding, device_spec=device_spec
-            )
+            assert self.is_supported(encoding=encoding, device_spec=device_spec)
         config = pipelines.PipelineConfig(
             architecture="LlamaForCausalLM",
             device_specs=device_specs,
@@ -783,7 +659,7 @@ class Llama3_3_70BInstructPipelineOracle(PipelineOracle):
         )
 
     def create_torch_pipeline(
-        self, *, version: str, encoding: str, device: torch.device
+        self, *, encoding: str, device: torch.device
     ) -> TorchModelAndDataProcessor:
         hf_repo_id = "meta-llama/Llama-3.3-70B-Instruct"
         revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
@@ -831,10 +707,6 @@ class GenericOracle(PipelineOracle):
         self.task = task
 
     @property
-    def supported_versions(self) -> Sequence[str]:
-        return ["general"]
-
-    @property
     def supported_encodings(self) -> Sequence[str]:
         return [
             encoding.name
@@ -844,21 +716,15 @@ class GenericOracle(PipelineOracle):
         ]
 
     def is_supported(
-        self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
+        self, *, encoding: str, device_spec: driver.DeviceSpec
     ) -> bool:
         return True
 
     def create_max_pipeline(
-        self,
-        *,
-        version: str,
-        encoding: str,
-        device_specs: list[driver.DeviceSpec],
+        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
     ) -> MaxPipelineAndTokenizer:
         for device_spec in device_specs:
-            assert self.is_supported(
-                version=version, encoding=encoding, device_spec=device_spec
-            )
+            assert self.is_supported(encoding=encoding, device_spec=device_spec)
         config = pipelines.PipelineConfig(
             architecture=self.architecture,
             device_specs=device_specs,
@@ -881,9 +747,8 @@ class GenericOracle(PipelineOracle):
         )
 
     def create_torch_pipeline(
-        self, *, version: str, encoding: str, device: torch.device
+        self, *, encoding: str, device: torch.device
     ) -> TorchModelAndDataProcessor:
-        del version  # Unused.
         processor = self.auto_processor_cls.from_pretrained(self.model_path)
         torch_dtype: torch.dtype
         if encoding == "float32":
@@ -909,7 +774,7 @@ class GenericOracle(PipelineOracle):
 
 PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "exaone": ExaonePipelineOracle(),
-    "llama": LlamaPipelineOracle(),
+    "llama3_1": Llama3_1PipelineOracle(),
     "llama3.3-70b": Llama3_3_70BInstructPipelineOracle(),
     "replit": ReplitPipelineOracle(),
     "mistral": MistralPipelineOracle(),
@@ -960,12 +825,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     help="Pipeline to run",
 )
 @click.option(
-    "--version",
-    "version_name",
-    required=True,
-    help="Weight family and architecture variant to run pipeline with",
-)
-@click.option(
     "--encoding",
     "encoding_name",
     required=True,
@@ -990,7 +849,6 @@ def main(
     device_type: str,
     framework_name: str,
     pipeline_name: str,
-    version_name: str,
     encoding_name: str,
     output_path: Path,
     print_output: bool,
@@ -1009,11 +867,6 @@ def main(
         os.chdir(workspace_dir)
 
     pipeline_oracle = PIPELINE_ORACLES[pipeline_name]
-    if version_name not in pipeline_oracle.supported_versions:
-        raise ValueError(
-            f"Version {version_name!r} not one of supported versions "
-            f"{pipeline_oracle.supported_versions}"
-        )
     if encoding_name not in pipeline_oracle.supported_encodings:
         raise ValueError(
             f"Encoding {encoding_name!r} not one of supported encodings "
@@ -1023,17 +876,13 @@ def main(
     device_specs = DevicesOptionType.device_specs(device_type)
     for device_spec in device_specs:
         if not pipeline_oracle.is_supported(
-            version=version_name,
             encoding=encoding_name,
             device_spec=device_spec,
         ):
-            raise ValueError(
-                "Combination of version/encoding/device not supported"
-            )
+            raise ValueError("Combination of encoding/device not supported")
 
     if framework_name == "max":
         max_pipeline_and_tokenizer = pipeline_oracle.create_max_pipeline(
-            version=version_name,
             encoding=encoding_name,
             device_specs=device_specs,
         )
@@ -1073,7 +922,7 @@ def main(
             torch_device = torch.device("cuda:0")
 
         torch_pipeline_and_tokenizer = pipeline_oracle.create_torch_pipeline(
-            version=version_name, encoding=encoding_name, device=torch_device
+            encoding=encoding_name, device=torch_device
         )
         if pipeline_oracle.task == interfaces.PipelineTask.TEXT_GENERATION:
             results = torch_utils.run_text_generation(
@@ -1107,7 +956,6 @@ def main(
     if print_output:
         print(f"Framework: {framework_name}")
         print(f"Pipeline:  {pipeline_name}")
-        print(f"Version:   {version_name}")
         print(f"Encoding:  {encoding_name}")
         print(f"Device:    {device_type}")
         print("Results:")
