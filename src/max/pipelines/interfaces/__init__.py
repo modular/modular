@@ -16,7 +16,13 @@
 from .embeddings_generation import (
     EmbeddingsGenerator,
 )
-from .response import EmbeddingsResponse, LogProbabilities, TextResponse
+from .response import (
+    EmbeddingsResponse,
+    LogProbabilities,
+    TextGenerationResponse,
+    TextGenerationStatus,
+    TextResponse,
+)
 from .tasks import PipelineTask
 from .text_generation import (
     PipelineTokenizer,
@@ -43,4 +49,6 @@ __all__ = [
     "TokenGeneratorRequestTool",
     "TokenGeneratorResponseFormat",
     "EmbeddingsGenerator",
+    "TextGenerationResponse",
+    "TextGenerationStatus",
 ]

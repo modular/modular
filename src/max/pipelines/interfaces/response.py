@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 
 import numpy as np
 
@@ -100,3 +101,27 @@ class EmbeddingsResponse:
     """Container for the response from embeddings pipeline."""
 
     embeddings: np.ndarray
+
+
+class TextGenerationStatus(str, Enum):
+    ACTIVE = "active"
+    END_OF_SEQUENCE = "end_of_sequence"
+    MAXIMUM_LENGTH = "maximum_length"
+
+    @property
+    def is_done(self) -> bool:
+        return self is not TextGenerationStatus.ACTIVE
+
+
+class TextGenerationResponse:
+    def __init__(
+        self, tokens: list[TextResponse], final_status: TextGenerationStatus
+    ) -> None:
+        self.tokens = tokens
+        self.final_status = final_status
+
+    def is_done(self) -> bool:
+        return self.final_status.is_done
+
+    def append_token(self, token: TextResponse) -> None:
+        self.tokens.append(token)
