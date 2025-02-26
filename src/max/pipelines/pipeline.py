@@ -19,7 +19,6 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import (
-    Any,
     Generic,
     List,
     Optional,
@@ -44,9 +43,8 @@ from transformers import AutoTokenizer
 
 from .config import PipelineConfig
 from .context import InputContext
-from .interfaces import TokenGenerator
+from .interfaces import LogProbabilities, TextResponse, TokenGenerator
 from .kv_cache import KVCacheManager, KVCacheParams
-from .response import LogProbabilities, TextResponse
 from .sampling import token_sampler
 
 try:
@@ -563,7 +561,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         self,
         batch: dict[str, T],
         num_steps: int,
-    ) -> list[dict[str, Any]]:
+    ) -> list[dict[str, TextResponse]]:
         """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
         then decode the tokens holistically and return the list of decoded tokens.
         """
@@ -687,7 +685,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         tracer.pop()  # pops kv_manager.step
 
         # Prepare the response, pruning away completed requests as we go.
-        res: list[dict[str, Any]] = [{} for _ in range(num_steps)]
+        res: list[dict[str, TextResponse]] = [{} for _ in range(num_steps)]
         tracer.push("prepare_response")
         for batch_index, (request_id, context) in enumerate(batch.items()):
             step = 0

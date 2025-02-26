@@ -22,9 +22,8 @@ from max.profiler import Tracer, traced
 
 from .config import PipelineConfig
 from .context import InputContext
-from .interfaces import EmbeddingsGenerator
+from .interfaces import EmbeddingsGenerator, EmbeddingsResponse
 from .pipeline import PipelineModel
-from .response import EmbeddingsResponse
 
 T = TypeVar("T", bound=InputContext)
 

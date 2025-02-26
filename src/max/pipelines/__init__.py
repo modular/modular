@@ -29,8 +29,11 @@ from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import HuggingFaceFile
 from .interfaces import (
     EmbeddingsGenerator,
+    EmbeddingsResponse,
+    LogProbabilities,
     PipelineTask,
     PipelineTokenizer,
+    TextResponse,
     TokenGenerator,
     TokenGeneratorContext,
     TokenGeneratorRequest,
@@ -47,7 +50,6 @@ from .pipeline import (
     upper_bounded_default,
 )
 from .registry import PIPELINE_REGISTRY, SupportedArchitecture
-from .response import EmbeddingsResponse, LogProbabilities, TextResponse
 from .tokenizer import (
     IdentityPipelineTokenizer,
     PreTrainedPipelineTokenizer,

@@ -28,6 +28,8 @@ from typing import (
     runtime_checkable,
 )
 
+from .response import TextResponse
+
 
 class TokenGeneratorRequestFunction(TypedDict):
     name: str
@@ -256,7 +258,7 @@ class TokenGenerator(Generic[TokenGeneratorContext], Protocol):
 
     def next_token(
         self, batch: dict[str, TokenGeneratorContext], num_steps: int
-    ) -> list[dict[str, Any]]:
+    ) -> list[dict[str, TextResponse]]:
         """Computes the next token response for a single batch.
 
         Args:
@@ -264,7 +266,7 @@ class TokenGenerator(Generic[TokenGeneratorContext], Protocol):
             num_steps int: Number of tokens to generate.
 
         Returns:
-            list[dict[str, Any]]: List of encoded responses (indexed by req. ID)
+            list[dict[str, TextResponse]]: List of encoded responses (indexed by req. ID)
         """
         ...
 

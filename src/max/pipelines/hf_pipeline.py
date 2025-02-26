@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 import warnings
-from typing import Any, Optional, cast
+from typing import Optional, cast
 
 import numpy as np
 import torch
@@ -31,9 +31,13 @@ from transformers import (
 
 from .config import PipelineConfig
 from .context import TextContext
-from .interfaces import EmbeddingsGenerator, TokenGenerator
+from .interfaces import (
+    EmbeddingsGenerator,
+    EmbeddingsResponse,
+    TextResponse,
+    TokenGenerator,
+)
 from .kv_cache import ContinuousHFStaticCache
-from .response import EmbeddingsResponse, TextResponse
 
 logger = logging.getLogger("max.pipelines")
 
@@ -179,7 +183,7 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
         generated_tokens = generated_tokens.cpu()
 
         # Prepare the response, pruning away completed requests as we go.
-        res: list[dict[str, Any]] = [{} for i in range(num_steps)]
+        res: list[dict[str, TextResponse]] = [{} for i in range(num_steps)]
         for batch_idx, (request_id, context) in enumerate(batch.items()):
             for step in range(num_steps):
                 next_token_id = generated_tokens[batch_idx, step].item()
@@ -362,7 +366,7 @@ class HFEmbeddingsPipeline(EmbeddingsGenerator[TextContext]):
         )
 
         # Prepare the response.
-        res: dict[str, Any] = {}
+        res: dict[str, EmbeddingsResponse] = {}
         for batch_index, request_id in enumerate(batch.keys()):
             request_embeddings = batch_embeddings[batch_index]
             res[request_id] = EmbeddingsResponse(request_embeddings)
