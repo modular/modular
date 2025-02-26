@@ -1,0 +1,239 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# Default values for the MAX Serving Helm chart.
+
+# A README is automatically generated from this file to document it, using helm-docs (see https://github.com/norwoodj/helm-docs)
+# To update it, install helm-docs and run helm-docs from the root of this chart
+
+# -- Provide a name to override the name of the chart
+nameOverride: ~
+# -- Provide a name to override the full names of resources
+fullnameOverride: ~
+
+# -- User ID directive. This user must have enough permissions to run the bootstrap script
+# Running containers as root is not recommended in production. Change this to another UID - e.g. 1000 to be more secure
+runAsUser: 0
+
+# -- Specify service account name to be used
+serviceAccountName: ~
+serviceAccount:
+  # -- Create custom service account for MAX Serving. If create: true and serviceAccountName is not provided, `max.fullname` will be used.
+  create: false
+  annotations: {}
+
+# -- Environment variables that will be passed into pods
+env: {}
+
+# -- Environment variables in RAW format that will be passed into pods
+envRaw: []
+
+# -- The name of the secret which we will use to populate env vars in deployed pods
+# This can be useful for secret keys, etc.
+envFromSecret: '{{ template "max.fullname" . }}-env'
+# -- This can be a list of templated strings
+envFromSecrets: []
+
+# -- Environment variables to pass as secrets
+envSecret:
+  {}
+  # # AWS security credentials: https://docs.aws.amazon.com/IAM/latest/UserGuide/security-creds.html
+  # AWS_ACCESS_KEY_ID: ...
+  # AWS_SECRET_ACCESS_KEY: ...
+  # AWS_SESSION_TOKEN: ...
+  # # Google API Keys
+  # GOOGLE_KEY: ...
+  # GOOGLE_SECRET: ...
+
+volumes:
+  []
+  # - name: customConfig
+  #   configMap:
+  #     name: '{{ template "max.fullname" . }}-custom-config'
+  # - name: additionalSecret
+  #   secret:
+  #     secretName: my-secret
+  #     defaultMode: 0600
+
+volumeMounts:
+  []
+  # - name: customConfig
+  #   mountPath: /mnt/config
+  #   readOnly: true
+  # - name: additionalSecret:
+  #   mountPath: /mnt/secret
+
+image:
+  repository: "docker.modular.com/modular/max-openai-api"
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# -- MAX Serve arguments
+maxServe:
+  huggingfaceRepoId: modularai/Llama-3.1-8B-Instruct-GGUF
+  maxLength: "2048"
+  maxBatchSize: "250"
+  cacheStrategy: "continuous"
+  maxNumSteps: "10"
+
+imagePullSecrets: []
+
+service:
+  type: ClusterIP
+  # you may want to have a headless service if use grpc protocol
+  # https://kubernetes.io/docs/concepts/services-networking/service/#headless-services
+  # https://github.com/grpc/grpc/blob/57dacad8c761a12de3e5eafa45f190015c73cccb/doc/load-balancing.md
+  # clusterIP: None
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8000
+      targetPort: 8000
+  annotations:
+    {}
+    # cloud.google.com/load-balancer-type: "Internal"
+  loadBalancerIP: ~
+
+ingress:
+  enabled: false
+  ingressClassName: ~
+  annotations:
+    {}
+    # kubernetes.io/tls-acme: "true"
+    ## Extend timeout to allow long running queries.
+    # nginx.ingress.kubernetes.io/proxy-connect-timeout: "300"
+    # nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    # nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+  path: /
+  pathType: ImplementationSpecific
+  hosts: []
+  tls: []
+  extraHostsRaw: []
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local
+
+resources:
+  {}
+  # We do not specify default resources and leave this as a conscious
+  # choice for the user. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # The limits below will apply to all MAX Serving components. To set individual resource limitations refer to the pod specific values below.
+  # The pod specific values will overwrite anything that is set here.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+# MAX Serving node configuration
+inferenceServer:
+  replicaCount: 1
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 2
+    targetCPUUtilizationPercentage: 80
+    # targetMemoryUtilizationPercentage: 80
+
+  # -- Arguments to pass to the node entrypoint. If defined it overwrites the default args value set by .Values.max-serve
+  # @default -- See `values.yaml`
+  args: []
+  # - "--model-path=modularai/Llama-3.1-8B-Instruct-GGUF",
+  # - "--max-length=2048",
+  # - "--max-batch-size=250",
+  # - "--cache-strategy=continuous",
+  # - "--max-num-steps=10",
+
+  env: {}
+  # Limit number of CPUs that MAX Serving and its Inference Engine can use
+  # MODULAR_AsyncRT_CPU_MAX: 16
+  # -- Volumes to mount into inferenceServer pod
+  volumes: []
+  # -- Volumes to mount into inferenceServer pod
+  volumeMounts: []
+  # -- Launch additional containers into inferenceServer pod
+  extraContainers: []
+  # -- Annotations to be added to inferenceServer deployment
+  deploymentAnnotations: {}
+  # -- Labels to be added to inferenceServer deployment
+  deploymentLabels: {}
+  # -- NodeSelector to be added to inferenceServer deployment
+  nodeSelector: {}
+  # -- Tolerations to be added to inferenceServer deployment
+  tolerations: []
+  # -- Affinity to be added to inferenceServer deployment
+  affinity: {}
+  # -- TopologySpreadConstrains to be added to inferenceServer deployments
+  topologySpreadConstraints: []
+  # -- Annotations to be added to inferenceServer pods
+  podAnnotations: {}
+  # -- Labels to be added to inferenceServer pods
+  podLabels: {}
+  startupProbe:
+    httpGet:
+      path: /v1/health
+      port: http
+    initialDelaySeconds: 1
+    timeoutSeconds: 1
+    failureThreshold: 60
+    periodSeconds: 5
+    successThreshold: 1
+  livenessProbe:
+    httpGet:
+      path: /v1/health
+      port: http
+    initialDelaySeconds: 1
+    timeoutSeconds: 1
+    failureThreshold: 3
+    periodSeconds: 15
+    successThreshold: 1
+  readinessProbe:
+    httpGet:
+      path: /v1/health
+      port: http
+    initialDelaySeconds: 1
+    timeoutSeconds: 1
+    failureThreshold: 3
+    periodSeconds: 15
+    successThreshold: 1
+  # -- Resource settings for the inferenceServer pods - these settings overwrite existing values from the global resources object defined above.
+  resources:
+    {}
+    # limits:
+    #  cpu: 100m
+    #  memory: 128Mi
+    # requests:
+    #  cpu: 100m
+    #  memory: 128Mi
+  podSecurityContext: {}
+  containerSecurityContext: {}
+  strategy:
+    {}
+    # type: RollingUpdate
+    # rollingUpdate:
+    #   maxSurge: 25%
+    #   maxUnavailable: 25%
+
+# -- NodeSelector to be added to all deployments
+nodeSelector: {}
+
+# -- Tolerations to be added to all deployments
+tolerations: []
+
+# -- Affinity to be added to all deployments
+affinity: {}
+
+# -- TopologySpreadConstraints to be added to all deployments
+topologySpreadConstraints: []

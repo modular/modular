@@ -1,0 +1,49 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: MAX feature request
+description: Suggest an enhancement for MAX
+title: "[Feature Request]"
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to suggest a MAX enhancement!
+
+        Please enter a concise title above and fill out the following fields.
+
+  - type: textarea
+    id: Request
+    attributes:
+      label: What is your request?
+      description: Describe how you'd like us to improve MAX.
+    validations:
+      required: true
+
+  - type: textarea
+    id: Motivation
+    attributes:
+      label: What is your motivation for this change?
+      description: Describe the problem that your feature seeks to address (what is the value to the product/user?).
+    validations:
+      required: true
+
+  - type: textarea
+    id: Description
+    attributes:
+      label: Any other details?
+      description: Perhaps some minimum functional attributes the implementation should include, or other context about your feature.
+    validations:
+      required: false

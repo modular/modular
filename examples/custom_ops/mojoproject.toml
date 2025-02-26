@@ -1,0 +1,22 @@
+[project]
+authors = ["Modular <hello@modular.com>"]
+channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
+description = "An example of extending a graph with a custom Mojo operation"
+name = "Custom Operations"
+platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
+version = "0.1.0"
+
+[tasks]
+package = "mojo package kernels/ -o kernels.mojopkg"
+addition = { cmd = "python addition.py", depends-on = ["package"] }
+mandelbrot = { cmd = "python mandelbrot.py", depends-on = ["package"] }
+vector_addition = { cmd = "python vector_addition.py", depends-on = ["package"] }
+top_k = { cmd = "python top_k.py", depends-on = ["package"] }
+fused_attention = { cmd = "python fused_attention.py", depends-on = ["package"] }
+matrix_multiplication = { cmd = "python matrix_multiplication.py", depends-on = ["package"] }
+histogram = { cmd = "python histogram.py", depends-on = ["package"] }
+test = { depends-on = ["addition", "mandelbrot", "vector_addition", "top_k", "fused_attention", "matrix_multiplication"] }
+
+[dependencies]
+python = ">=3.9,<3.13"
+max = ">=24.6.0.dev2024090821"

@@ -1,0 +1,15 @@
+[project]
+name = "Mojo Graph API Examples"
+version = "1.0.0"
+description = "MAX Examples"
+authors = ["Modular <hello@modular.com>"]
+channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
+platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
+
+[tasks]
+basic = "mojo basics/basic.🔥"
+test = { depends-on = ["basic"] }
+
+[dependencies]
+python = ">=3.9,<3.13"
+max = "*"

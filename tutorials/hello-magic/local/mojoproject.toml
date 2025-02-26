@@ -1,0 +1,13 @@
+[project]
+platforms = ["osx-arm64", "linux-64"]
+version = "0.0.0"
+authors = ["Modular <hello@modular.com>"]
+channels = ["pytorch", "conda-forge", "https://conda.modular.com/max-nightly/"]
+description = "Add a short description here"
+name = "local"
+
+[tasks]
+
+[dependencies]
+max = ">=24.4.0,<25"
+pytorch = ">=2.5.1,<3"

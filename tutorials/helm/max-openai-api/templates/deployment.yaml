@@ -1,0 +1,181 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ template "max.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ template "max.name" . }}
+    helm.sh/chart: {{ template "max.chart" . }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    {{- if .Values.inferenceServer.deploymentLabels }}
+      {{- toYaml .Values.inferenceServer.deploymentLabels | nindent 4 }}
+    {{- end }}
+  {{- if .Values.inferenceServer.deploymentAnnotations }}
+  annotations: {{- toYaml .Values.inferenceServer.deploymentAnnotations | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if not .Values.inferenceServer.autoscaling.enabled }}
+  replicas: {{ .Values.inferenceServer.replicaCount }}
+  {{- end }}
+  {{- if .Values.inferenceServer.strategy }}
+  strategy: {{- toYaml .Values.inferenceServer.strategy | nindent 4 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ template "max.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      annotations:
+        # Force reload on changes
+        checksum/envSecret: {{ .Values.envSecret | toYaml | sha256sum }}
+        {{- if .Values.inferenceServer.podAnnotations }}
+          {{- toYaml .Values.inferenceServer.podAnnotations | nindent 8 }}
+        {{- end }}
+      labels:
+        app.kubernetes.io/name: {{ template "max.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        {{- if .Values.inferenceServer.podLabels }}
+          {{- toYaml .Values.inferenceServer.podLabels | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- if or (.Values.serviceAccount.create) (.Values.serviceAccountName) }}
+      serviceAccountName: {{ template "max.serviceAccountName" . }}
+      {{- end }}
+      securityContext:
+        runAsUser: {{ .Values.runAsUser }}
+        {{- if .Values.inferenceServer.podSecurityContext }}
+          {{- toYaml .Values.inferenceServer.podSecurityContext | nindent 8 }}
+        {{- end }}
+      {{- if .Values.inferenceServer.initContainers }}
+      initContainers: {{- tpl (toYaml .Values.inferenceServer.initContainers) . | nindent 6 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if .Values.inferenceServer.containerSecurityContext }}
+          securityContext: {{- toYaml .Values.inferenceServer.containerSecurityContext | nindent 12 }}
+          {{- end }}
+          {{- if .Values.inferenceServer.args }}
+          args: {{- toYaml .Values.inferenceServer.args | nindent 12 }}
+          {{- else }}
+          args: [
+            "--model-path={{ .Values.maxServe.huggingfaceRepoId }}",
+            "--max-length={{ .Values.maxServe.maxLength }}",
+            "--max-batch-size={{ .Values.maxServe.maxBatchSize }}",
+            "--cache-strategy={{ .Values.maxServe.cacheStrategy }}",
+            "--max-num-steps={{ .Values.maxServe.maxNumSteps }}"]
+          {{- end }}
+          env:
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key | quote}}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- range $key, $value := .Values.inferenceServer.env }}
+            - name: {{ $key | quote}}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- if .Values.envRaw }}
+              {{- toYaml .Values.envRaw | nindent 12 }}
+            {{- end }}
+          envFrom:
+            - secretRef:
+                name: {{ tpl .Values.envFromSecret . | quote }}
+            {{- range .Values.envFromSecrets }}
+            - secretRef:
+                name: {{ tpl . $ | quote }}
+            {{- end }}
+          {{- if or .Values.volumeMounts .Values.inferenceServer.volumeMounts }}
+          volumeMounts:
+            {{- with .Values.volumeMounts }}
+              {{- tpl (toYaml .) $ | nindent 12 -}}
+            {{- end }}
+            {{- with .Values.inferenceServer.volumeMounts }}
+              {{- tpl (toYaml .) $ | nindent 12 -}}
+            {{- end }}
+          {{- end }}
+          ports:
+          {{- range .Values.service.ports }}
+          - name: {{ .name }}
+            containerPort: {{ .targetPort }}
+          {{- end }}
+          {{- if .Values.inferenceServer.startupProbe }}
+          startupProbe: {{- .Values.inferenceServer.startupProbe | toYaml | nindent 12 }}
+          {{- end }}
+          {{- if .Values.inferenceServer.readinessProbe }}
+          readinessProbe: {{- .Values.inferenceServer.readinessProbe | toYaml | nindent 12 }}
+          {{- end }}
+          {{- if .Values.inferenceServer.livenessProbe }}
+          livenessProbe: {{- .Values.inferenceServer.livenessProbe | toYaml | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- if .Values.inferenceServer.resources }}
+              {{- toYaml .Values.inferenceServer.resources | nindent 12 }}
+            {{- else }}
+              {{- toYaml .Values.resources | nindent 12 }}
+            {{- end }}
+        {{- if .Values.inferenceServer.extraContainers }}
+          {{- toYaml .Values.inferenceServer.extraContainers | nindent 8 }}
+        {{- end }}
+      {{- if or .Values.nodeSelector .Values.inferenceServer.nodeSelector }}
+      nodeSelector:
+        {{- with .Values.nodeSelector }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.inferenceServer.nodeSelector }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      {{- if or .Values.affinity .Values.inferenceServer.affinity }}
+      affinity:
+        {{- with .Values.affinity }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.inferenceServer.affinity }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      {{- if or .Values.topologySpreadConstraints .Values.inferenceServer.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- with .Values.topologySpreadConstraints }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.inferenceServer.topologySpreadConstraints }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      {{- if or .Values.tolerations .Values.inferenceServer.tolerations }}
+      tolerations:
+        {{- with .Values.tolerations }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.inferenceServer.tolerations }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      {{- if .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml .Values.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      {{- if or .Values.volumes .Values.inferenceServer.volumes }}
+      volumes:
+        {{- with .Values.volumes }}
+          {{- tpl (toYaml .) $ | nindent 8 -}}
+        {{- end }}
+        {{- with .Values.inferenceServer.volumes }}
+          {{- tpl (toYaml .) $ | nindent 8 -}}
+        {{- end }}
+      {{- end }}

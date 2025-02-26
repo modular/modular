@@ -12,7 +12,7 @@
 ##===----------------------------------------------------------------------===##
 
 name: Documentation issue
-description: Report a problem with the Mojo docs
+description: Report a problem with the MAX docs
 title: "[Docs]"
 labels:
   - documentation
@@ -20,11 +20,12 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thank you for helping us improve the Mojo docs!
+        Thank you for helping us improve the MAX docs!
 
         Please add a title above and fill in the following fields so we can understand the problem.
 
   - type: input
+    id: url
     attributes:
       label: Where is the problem?
       description: Provide a link to the problematic page (with a heading anchor).

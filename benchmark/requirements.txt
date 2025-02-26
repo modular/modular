@@ -1,0 +1,8 @@
+aiohttp
+huggingface_hub[hf_transfer]
+huggingface_hub
+numpy
+tqdm
+transformers
+nvitop
+Jinja2

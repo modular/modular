@@ -1,0 +1,33 @@
+[project]
+authors = [{name = "Modular", email = "hello@modular.com"}]
+dependencies = []
+description = "Add two numbers"
+name = "max_ops"
+requires-python = ">=3.11,<3.13"
+version = "0.1.0"
+
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+[tool.pixi.project]
+channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
+platforms = ["osx-arm64", "linux-64"]
+
+[tool.pixi.pypi-dependencies]
+max_ops = { path = ".", editable = true }
+
+[tool.pixi.tasks]
+addition = "python3 src/max_ops/addition.py"
+mypy = "mypy . --config .mypy.ini"
+black = "black src/max_ops/addition.py tests/test_addition.py"
+isort = "isort src/max_ops/addition.py tests/test_addition.py"
+test = { depends-on = ["addition"] }
+
+
+[tool.pixi.dependencies]
+max = "~=24.6"
+numpy = "<2.0"
+pytest = ">=8.3.3,<9"
+black = ">=24.10.0,<25"
+mypy = ">=1.13.0,<2"

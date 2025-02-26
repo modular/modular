@@ -1,0 +1,1 @@
+huggingface_hub >=0.24.6,<0.25

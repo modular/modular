@@ -1,48 +1,39 @@
-# Mojo code examples
+# MAX examples
 
-A collection of sample programs written in the
-[Mojo](https://docs.modular.com/mojo/manual/) programming language.
+These examples demonstrate the power and flexibility of
+[MAX](https://docs.modular.com/max/). They include:
 
-## Getting Started
+## [Custom GPU and CPU operations in Mojo](custom_ops/)
 
-The easiest way to get started with Mojo is to install the Magic package and
-virtual environment manager. By following the instructions in [Get started with
-Magic](https://docs.modular.com/magic/), you can quickly install Magic and use
-it to create a virtual environment for Mojo programming. Alternatively, you can
-follow the instructions for how to [Add MAX/Mojo to a conda
-project](https://docs.modular.com/magic/conda).
+The [MAX Graph API](https://docs.modular.com/max/graph/) provides a powerful
+framework for staging computational graphs to be run on GPUs, CPUs, and more.
+Each operation in one of these graphs is defined in
+[Mojo](https://docs.modular.com/mojo/), an easy-to-use language for writing
+high-performance code.
 
-After you have set up a Mojo programming environment, you can then use `git` to
-clone this repository of Mojo samples using the command below:
+The examples here illustrate how to construct custom graph operations in Mojo
+that run on GPUs and CPUs, as well as how to build computational graphs that
+contain and run them on different hardware architectures.
 
-```bash
-git clone https://github.com/modular/mojo.git
-```
+## [Compiling and running Mojo functions on a GPU](gpu_functions/)
 
-## Running
+In addition to placing custom Mojo functions within a computational graph, the
+MAX Driver API can handle direct compilation of GPU functions written in Mojo
+and can dispatch them onto the GPU. This is a programming model that may be
+familiar to those who have worked with CUDA or similar GPGPU frameworks.
 
-If you're using [`magic`](https://docs.modular.com/magic), navigate into
-the `examples` directory and use `magic run` to invoke `mojo` and run the basic
-example programs. For example:
+These examples show how to compile and run Mojo functions, from simple to
+complex, on an available GPU. Note that
+[a MAX-compatible GPU](https://docs.modular.com/max/faq/#gpu-requirements) will
+be necessary to build and run these.
 
-```bash
-magic run mojo matmul.mojo
-```
+## [PyTorch and ONNX inference on MAX](inference/)
 
-You'll also find several complete Mojo projects as subdirectories of the
-`examples` directory.
+MAX has the power to accelerate existing PyTorch and ONNX models directly, and
+provides Python, Mojo, and C APIs for this. These examples showcase common
+models from these frameworks and how to run them even faster via MAX.
 
-## License
+## [Jupyter notebooks](notebooks/)
 
-The Mojo examples in this repository are licensed under the Apache License v2.0
-with LLVM Exceptions (see the LLVM [License](https://llvm.org/LICENSE.txt)).
-
-## Contributing
-
-As a contributor, your efforts and expertise are invaluable in driving the
-evolution of the Mojo programming language. The [Mojo contributor
-guide](../CONTRIBUTING.md) provides all the information necessary to make
-meaningful contributions—from understanding the submission process to
-adhering to best practices:
-
-- [Mojo contributor guide](../CONTRIBUTING.md)
+Jupyter notebooks that showcase PyTorch and ONNX models being accelerated
+through MAX.

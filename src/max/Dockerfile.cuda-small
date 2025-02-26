@@ -1,0 +1,63 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+# This build avoids having magic and build dependencies in the production image
+# targeting a CUDA-enabled image. It optimizes for size over customizability by
+# not including build tools in the production image.
+
+ARG CUDA_VERSION=12.6.0
+ARG BASE_IMAGE=nvidia/cuda:{CUDA_VERSION}-base-ubuntu24.04
+
+# Create a build image to download depedencies
+FROM ghcr.io/modular/magic:noble AS build
+
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential git
+
+COPY . /app
+WORKDIR /app
+
+RUN magic install
+
+# Create the shell-hook bash script to activate the environment
+RUN magic shell-hook > /shell-hook.sh
+RUN echo 'python -m max.entrypoints.pipelines serve "$@"' >> /shell-hook.sh
+
+# Create the production image
+FROM ${BASE_IMAGE} AS production
+
+COPY --from=build /app/.magic/envs/default /app/.magic/envs/default
+COPY --from=build /shell-hook.sh /shellhook.sh
+COPY . /app
+
+WORKDIR /app
+EXPOSE 8000
+
+# TODO: Add HEALTHCHECK instruction
+# HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 CMD curl --fail http://localhost:8000/health || exit 1
+
+LABEL maintainer "Modular Inc <hello@modular.com>"
+
+ENV PYTHONUNBUFFERED=1
+# suppress transformers logging
+ENV TRANSFORMERS_VERBOSITY="critical"
+ENV TRANSFORMERS_NO_ADVISORY_WARNINGS=1
+ENV MODULAR_STRUCTURED_LOGGING=1
+ENV PROMETHEUS_MULTIPROC_DIR=/tmp
+
+# OTEL configuration
+ENV OTEL_SERVICE_NAME="max-serve"
+# OTEL's default histogram bucktes have poor resolution.  Prefer exponential histograms.
+ENV OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION="base2_exponential_bucket_histogram"
+
+ENTRYPOINT ["/bin/bash", "/shell-hook.sh"]
+CMD ["--model-path=modularai/Llama-3.1-8B-Instruct-GGUF"]
