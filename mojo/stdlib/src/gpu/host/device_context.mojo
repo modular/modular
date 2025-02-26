@@ -1766,27 +1766,29 @@ struct DeviceContext:
         """
         alias bitwidth = bitwidthof[type]()
         constrained[
-            bitwidth == 8 or bitwidth == 16 or bitwidth == 32,
-            "bitwidth of memset type must be one of [8,16,32]",
+            bitwidth == 8 or bitwidth == 16 or bitwidth == 32 or bitwidth == 64,
+            "bitwidth of memset type must be one of [8,16,32,64]",
         ]()
-        var value: UInt32
+        var value: UInt64
 
         @parameter
         if bitwidth == 8:
-            value = UInt32(Int(bitcast[DType.uint8, 1](val)))
+            value = UInt64(Int(bitcast[DType.uint8, 1](val)))
         elif bitwidth == 16:
-            value = UInt32(Int(bitcast[DType.uint16, 1](val)))
+            value = UInt64(Int(bitcast[DType.uint16, 1](val)))
+        elif bitwidth == 32:
+            value = UInt64(bitcast[DType.uint32, 1](val))
         else:
-            value = bitcast[DType.uint32, 1](val)
+            value = bitcast[DType.uint64, 1](val)
 
-        # const char *AsyncRT_DeviceContext_setMemory_async(const DeviceContext *ctx, const DeviceBuffer *dst, uint32_t val, size_t val_size)
+        # const char *AsyncRT_DeviceContext_setMemory_async(const DeviceContext *ctx, const DeviceBuffer *dst, uint64_t val, size_t val_size)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_setMemory_async",
                 _CharPtr,
                 _DeviceContextPtr,
                 _DeviceBufferPtr,
-                UInt32,
+                UInt64,
                 _SizeT,
             ](
                 self._handle,
@@ -1812,27 +1814,29 @@ struct DeviceContext:
         """
         alias bitwidth = bitwidthof[type]()
         constrained[
-            bitwidth == 8 or bitwidth == 16 or bitwidth == 32,
-            "bitwidth of memset type must be one of [8,16,32]",
+            bitwidth == 8 or bitwidth == 16 or bitwidth == 32 or bitwidth == 64,
+            "bitwidth of memset type must be one of [8,16,32, 64]",
         ]()
-        var value: UInt32
+        var value: UInt64
 
         @parameter
         if bitwidth == 8:
-            value = UInt32(Int(bitcast[DType.uint8, 1](val)))
+            value = UInt64(Int(bitcast[DType.uint8, 1](val)))
         elif bitwidth == 16:
-            value = UInt32(Int(bitcast[DType.uint16, 1](val)))
+            value = UInt64(Int(bitcast[DType.uint16, 1](val)))
+        elif bitwidth == 32:
+            value = UInt64(bitcast[DType.uint32, 1](val))
         else:
-            value = bitcast[DType.uint32, 1](val)
+            value = bitcast[DType.uint64, 1](val)
 
-        # const char *AsyncRT_DeviceContext_setMemory_sync(const DeviceContext *ctx, const DeviceBuffer *dst, uint32_t val, size_t val_size)
+        # const char *AsyncRT_DeviceContext_setMemory_sync(const DeviceContext *ctx, const DeviceBuffer *dst, uint64_t val, size_t val_size)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_setMemory_sync",
                 _CharPtr,
                 _DeviceContextPtr,
                 _DeviceBufferPtr,
-                UInt32,
+                UInt64,
                 _SizeT,
             ](
                 self._handle,
