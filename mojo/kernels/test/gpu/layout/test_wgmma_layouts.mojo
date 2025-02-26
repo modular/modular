@@ -38,7 +38,7 @@ from utils.index import Index
 # We have a hard code 2D path in `arange` and it's row-major.
 # Add the col-major version as a work-around. Generalizing the above
 # may touch too many places.
-fn _arange_2d_col_major_tensor(t: LayoutTensor):
+fn _arange_2d_col_major_tensor(t: LayoutTensor[mut=True, **_]):
     alias layout = t.layout
     alias size = layout.size()
 
