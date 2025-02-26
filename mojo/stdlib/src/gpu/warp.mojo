@@ -3,7 +3,26 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""This module includes intrinsics for NVIDIA GPUs shuffle instructions."""
+"""GPU warp-level operations and utilities.
+
+This module provides warp-level operations for NVIDIA and AMD GPUs, including:
+
+- Shuffle operations to exchange values between threads in a warp:
+  - shuffle_idx: Copy value from source lane to other lanes
+  - shuffle_up: Copy from lower lane IDs
+  - shuffle_down: Copy from higher lane IDs
+  - shuffle_xor: Exchange values in butterfly pattern
+
+- Warp-wide reductions:
+  - sum: Compute sum across warp
+  - max: Find maximum value across warp
+  - min: Find minimum value across warp
+  - broadcast: Broadcast value to all lanes
+
+The module handles both NVIDIA and AMD GPU architectures through architecture-specific
+implementations of the core operations. It supports various data types including
+integers, floats, and half-precision floats, with SIMD vectorization.
+"""
 
 from sys import is_nvidia_gpu, llvm_intrinsic
 
@@ -12,12 +31,11 @@ from gpu import lane_id
 from memory import bitcast
 from builtin.math import max as _max, min as _min
 
-from .globals import WARP_SIZE
 from .tensor_ops import tc_reduce
 
 # TODO (#24457): support shuffles with width != 32
 alias _WIDTH_MASK = WARP_SIZE - 1
-alias FULL_MASK = 2**WARP_SIZE - 1
+alias _FULL_MASK = 2**WARP_SIZE - 1
 
 # shfl.sync.up.b32 prepares this mask differently from other shuffle intrinsics
 alias _WIDTH_MASK_SHUFFLE_UP = 0
@@ -91,21 +109,36 @@ fn shuffle_idx[
 ](val: SIMD[type, simd_width], offset: UInt32) -> SIMD[type, simd_width]:
     """Copies a value from a source lane to other lanes in a warp.
 
-    Broadcasts a value from a source thread in a warp to all the participating
-    threads without the use of shared memory
+        Broadcasts a value from a source thread in a warp to all participating threads
+        without using shared memory. This is a convenience wrapper that uses the full
+        warp mask by default.
 
     Parameters:
-      type: The type of the simd value.
-      simd_width: The width of the simd value.
+        type: The data type of the SIMD elements (e.g. float32, int32, half).
+        simd_width: The number of elements in each SIMD vector.
 
     Args:
-      val: The value to be shuffled.
-      offset: The offset warp lane ID.
+        val: The SIMD value to be broadcast from the source lane.
+        offset: The source lane ID to copy the value from.
 
     Returns:
-      The value from the offset.
+        A SIMD vector where all lanes contain the value from the source lane specified by offset.
+
+        Example:
+    ```mojo
+        from gpu.warp import shuffle_idx
+
+        val = SIMD[DType.float32, 16](1.0)
+
+        # Broadcast value from lane 0 to all lanes
+        result = shuffle_idx(val, 0)
+
+        # Get value from lane 5
+        result = shuffle_idx(val, 5)
+    ```
+        .
     """
-    return shuffle_idx(FULL_MASK, val, offset)
+    return shuffle_idx(_FULL_MASK, val, offset)
 
 
 @always_inline
@@ -135,22 +168,34 @@ fn shuffle_idx[
 ](mask: UInt, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
     type, simd_width
 ]:
-    """Copies a value from a source lane to other lanes in a warp.
+    """Copies a value from a source lane to other lanes in a warp with explicit mask control.
 
-    Broadcasts a value from a source thread in a warp to all the participating
-    threads without the use of shared memory
+        Broadcasts a value from a source thread in a warp to participating threads specified by
+        the mask. This provides fine-grained control over which threads participate in the shuffle
+        operation.
 
     Parameters:
-      type: The type of the simd value.
-      simd_width: The width of the simd value.
+        type: The data type of the SIMD elements (e.g. float32, int32, half).
+        simd_width: The number of elements in each SIMD vector.
 
     Args:
-      mask: The mask of the warp lanes.
-      val: The value to be shuffled.
-      offset: The source warp lane ID.
+        mask: A bit mask specifying which lanes participate in the shuffle (1 bit per lane).
+        val: The SIMD value to be broadcast from the source lane.
+        offset: The source lane ID to copy the value from.
 
     Returns:
-      The value from the offset.
+        A SIMD vector where participating lanes (set in mask) contain the value from the
+        source lane specified by offset. Non-participating lanes retain their original values.
+
+        Example:
+    ```mojo
+    from gpu.warp import shuffle_idx
+        # Only broadcast to first 16 lanes
+        var mask = 0xFFFF  # 16 ones
+        var val = SIMD[DType.float32, 32](1.0)
+        var result = shuffle_idx(mask, val, 5)
+    ```
+        .
     """
 
     @parameter
@@ -178,23 +223,29 @@ fn shuffle_idx[
 fn shuffle_up[
     type: DType, simd_width: Int, //
 ](val: SIMD[type, simd_width], offset: UInt32) -> SIMD[type, simd_width]:
-    """Copies values from other lanes in the warp.
+    """Copies values from threads with lower lane IDs in the warp.
 
-    Exchange a value between threads within a warp by copying from a thread with
-    lower lane id relative to the caller without the use of shared memory.
+    Performs a shuffle operation where each thread receives a value from a thread with a
+    lower lane ID, offset by the specified amount. Uses the full warp mask by default.
+
+    For example, with offset=1:
+    - Thread N gets value from thread N-1
+    - Thread 1 gets value from thread 0
+    - Thread 0 gets undefined value
 
     Parameters:
-      type: The type of the simd value.
-      simd_width: The width of the simd value.
+        type: The data type of the SIMD elements (e.g. float32, int32).
+        simd_width: The number of elements in each SIMD vector.
 
     Args:
-      val: The value to be shuffled.
-      offset: The offset warp lane ID.
+        val: The SIMD value to be shuffled up the warp.
+        offset: The number of lanes to shift values up by.
 
     Returns:
-      The value at the specified offset.
+        The SIMD value from the thread offset lanes lower in the warp.
+        Returns undefined values for threads where lane_id - offset < 0.
     """
-    return shuffle_up(FULL_MASK, val, offset)
+    return shuffle_up(_FULL_MASK, val, offset)
 
 
 @always_inline
@@ -222,22 +273,31 @@ fn shuffle_up[
 ](mask: UInt, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
     type, simd_width
 ]:
-    """Copies values from other lanes in the warp.
+    """Copies values from threads with lower lane IDs in the warp.
 
-    Exchange a value between threads within a warp by copying from a thread with
-    lower lane id relative to the caller without the use of shared memory.
+    Performs a shuffle operation where each thread receives a value from a thread with a
+    lower lane ID, offset by the specified amount. The operation is performed only for
+    threads specified in the mask.
+
+    For example, with offset=1:
+    - Thread N gets value from thread N-1 if both threads are in the mask
+    - Thread 1 gets value from thread 0 if both threads are in the mask
+    - Thread 0 gets undefined value
+    - Threads not in the mask get undefined values
 
     Parameters:
-      type: The type of the simd value.
-      simd_width: The width of the simd value.
+        type: The data type of the SIMD elements (e.g. float32, int32).
+        simd_width: The number of elements in each SIMD vector.
 
     Args:
-      mask: The mask of the warp lanes.
-      val: The value to be shuffled.
-      offset: The offset warp lane ID.
+        mask: The warp mask specifying which threads participate in the shuffle.
+        val: The SIMD value to be shuffled up the warp.
+        offset: The number of lanes to shift values up by.
 
     Returns:
-      The value at the specified offset.
+        The SIMD value from the thread offset lanes lower in the warp.
+        Returns undefined values for threads where lane_id - offset < 0 or
+        threads not in the mask.
     """
 
     @parameter
@@ -264,23 +324,30 @@ fn shuffle_up[
 fn shuffle_down[
     type: DType, simd_width: Int, //
 ](val: SIMD[type, simd_width], offset: UInt32) -> SIMD[type, simd_width]:
-    """Copies values from other lanes in the warp.
+    """Copies values from threads with higher lane IDs in the warp.
 
-    Exchange a value between threads within a warp by copying from a thread with
-    higher lane id relative to the caller without the use of shared memory.
+    Performs a shuffle operation where each thread receives a value from a thread with a
+    higher lane ID, offset by the specified amount. Uses the full warp mask by default.
+
+    For example, with offset=1:
+    - Thread 0 gets value from thread 1
+    - Thread 1 gets value from thread 2
+    - Thread N gets value from thread N+1
+    - Last N threads get undefined values
 
     Parameters:
-      type: The type of the simd value.
-      simd_width: The width of the simd value.
+        type: The data type of the SIMD elements (e.g. float32, int32).
+        simd_width: The number of elements in each SIMD vector.
 
     Args:
-      val: The value to be shuffled.
-      offset: The offset warp lane ID.
+        val: The SIMD value to be shuffled down the warp.
+        offset: The number of lanes to shift values down by. Must be positive.
 
     Returns:
-      The value at the specified offset.
+        The SIMD value from the thread offset lanes higher in the warp.
+        Returns undefined values for threads where lane_id + offset >= WARP_SIZE.
     """
-    return shuffle_down(FULL_MASK, val, offset)
+    return shuffle_down(_FULL_MASK, val, offset)
 
 
 @always_inline
@@ -308,22 +375,32 @@ fn shuffle_down[
 ](mask: UInt, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
     type, simd_width
 ]:
-    """Copies values from other lanes in the warp.
+    """Copies values from threads with higher lane IDs in the warp using a custom mask.
 
-    Exchange a value between threads within a warp by copying from a thread with
-    higher lane id relative to the caller without the use of shared memory.
+    Performs a shuffle operation where each thread receives a value from a thread with a
+    higher lane ID, offset by the specified amount. The mask parameter controls which
+    threads participate in the shuffle.
+
+    For example, with offset=1:
+    - Thread 0 gets value from thread 1
+    - Thread 1 gets value from thread 2
+    - Thread N gets value from thread N+1
+    - Last N threads get undefined values
 
     Parameters:
-      type: The type of the simd value.
-      simd_width: The width of the simd value.
+        type: The data type of the SIMD elements (e.g. float32, int32).
+        simd_width: The number of elements in each SIMD vector.
 
     Args:
-      mask: The mask of the warp lanes.
-      val: The value to be shuffled.
-      offset: The offset warp lane ID.
+        mask: A bitmask controlling which threads participate in the shuffle.
+             Only threads with their corresponding bit set will exchange values.
+        val: The SIMD value to be shuffled down the warp.
+        offset: The number of lanes to shift values down by. Must be positive.
 
     Returns:
-      The value at the specified offset.
+        The SIMD value from the thread offset lanes higher in the warp.
+        Returns undefined values for threads where lane_id + offset >= WARP_SIZE
+        or where the corresponding mask bit is not set.
     """
 
     @parameter
@@ -352,23 +429,25 @@ fn shuffle_down[
 fn shuffle_xor[
     type: DType, simd_width: Int, //
 ](val: SIMD[type, simd_width], offset: UInt32) -> SIMD[type, simd_width]:
-    """Copies values from between lanes (butterfly pattern).
+    """Exchanges values between threads in a warp using a butterfly pattern.
 
-    Exchange a value between threads within a warp by copying from a thread
-    based on the bitwise xor of the offset with the thread's own lane id.
+    Performs a butterfly exchange pattern where each thread swaps values with another thread
+    whose lane ID differs by a bitwise XOR with the given offset. This creates a butterfly
+    communication pattern useful for parallel reductions and scans.
 
     Parameters:
-      type: The type of the simd value.
-      simd_width: The width of the simd value.
+        type: The data type of the SIMD elements (e.g. float32, int32).
+        simd_width: The number of elements in each SIMD vector.
 
     Args:
-      val: The value to be shuffled.
-      offset: The offset warp lane ID.
+        val: The SIMD value to be exchanged with another thread.
+        offset: The lane offset to XOR with the current thread's lane ID to determine
+               the exchange partner. Common values are powers of 2 for butterfly patterns.
 
     Returns:
-      The value at the lane based on bitwise XOR of own lane id.
+        The SIMD value from the thread at lane (current_lane XOR offset).
     """
-    return shuffle_xor(FULL_MASK, val, offset)
+    return shuffle_xor(_FULL_MASK, val, offset)
 
 
 @always_inline
@@ -398,22 +477,37 @@ fn shuffle_xor[
 ](mask: UInt, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
     type, simd_width
 ]:
-    """Copies values from between lanes (butterfly pattern).
+    """Exchanges values between threads in a warp using a butterfly pattern with masking.
 
-    Exchange a value between threads within a warp by copying from a thread
-    based on the bitwise xor of the offset with the thread's own lane id.
+    Performs a butterfly exchange pattern where each thread swaps values with another thread
+    whose lane ID differs by a bitwise XOR with the given offset. The mask parameter allows
+    controlling which threads participate in the exchange.
 
     Parameters:
-      type: The type of the simd value.
-      simd_width: The width of the simd value.
+        type: The data type of the SIMD elements (e.g. float32, int32).
+        simd_width: The number of elements in each SIMD vector.
 
     Args:
-      mask: The mask of the warp lanes.
-      val: The value to be shuffled.
-      offset: The offset warp lane ID.
+        mask: A bit mask specifying which threads participate in the exchange.
+             Only threads with their corresponding bit set in the mask will exchange values.
+        val: The SIMD value to be exchanged with another thread.
+        offset: The lane offset to XOR with the current thread's lane ID to determine
+               the exchange partner. Common values are powers of 2 for butterfly patterns.
 
     Returns:
-      The value at the lane based on bitwise XOR of own lane id.
+        The SIMD value from the thread at lane (current_lane XOR offset) if both threads
+        are enabled by the mask, otherwise the original value is preserved.
+
+    Example:
+    ```mojo
+        from gpu.warp import shuffle_xor
+
+        # Exchange values between even-numbered threads 4 lanes apart
+        mask = 0xAAAAAAAA  # Even threads only
+        var val = SIMD[DType.float32, 16](42.0)  # Example value
+        result = shuffle_xor(mask, val, 4.0)
+    ```
+    .
     """
 
     @parameter
@@ -446,21 +540,38 @@ fn lane_group_reduce[
     ) capturing -> SIMD[type, width],
     nthreads: Int,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
-    """Takes in an input function to computes warp shuffle based reduction
-    operation.
+    """Performs a generic warp-level reduction operation using shuffle operations.
+
+    This function implements a parallel reduction across threads in a warp using a butterfly
+    pattern. It allows customizing both the shuffle operation and reduction function.
 
     Parameters:
-        val_type: The type of the SIMD value.
-        simd_width: The width of the SIMD value.
-        shuffle: The shuffle function to use.
-        func: The function to apply to the SIMD value.
-        nthreads: The number of threads in the warp.
+        val_type: The data type of the SIMD elements (e.g. float32, int32).
+        simd_width: The number of elements in the SIMD vector.
+        shuffle: A function that performs the warp shuffle operation. Takes a SIMD value and
+                offset and returns the shuffled result.
+        func: A binary function that combines two SIMD values during reduction. This defines
+              the reduction operation (e.g. add, max, min).
+        nthreads: The number of threads participating in the reduction. Must be a power of 2.
 
     Args:
-        val: The SIMD value to reduce.
+        val: The SIMD value to reduce. Each lane contributes its value.
 
     Returns:
-        A SIMD value with the reduction result.
+        A SIMD value containing the reduction result in all participating lanes.
+        Non-participating lanes (lane_id >= nthreads) retain their original values.
+
+    Example:
+    ```mojo
+    from gpu.warp import lane_group_reduce, shuffle_down
+        # Compute sum across 16 threads using shuffle down
+        @parameter
+        fn add[type: DType, width: Int](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
+            return x + y
+        var val = SIMD[DType.float32, 16](42.0)
+        var result = lane_group_reduce[shuffle_down, add, nthreads=16](val)
+    ```
+    .
     """
     var res = val
 
@@ -485,20 +596,38 @@ fn reduce[
         SIMD[type, width], SIMD[type, width]
     ) capturing -> SIMD[type, width],
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
-    """Takes in an input function to computes warp shuffle based reduction
-    operation.
+    """Performs a generic warp-wide reduction operation using shuffle operations.
+
+    This is a convenience wrapper around lane_group_reduce that operates on the entire warp.
+    It allows customizing both the shuffle operation and reduction function.
 
     Parameters:
-        val_type: The type of the SIMD value.
-        simd_width: The width of the SIMD value.
-        shuffle: The shuffle function to use.
-        func: The function to apply to the SIMD value.
+        val_type: The data type of the SIMD elements (e.g. float32, int32).
+        simd_width: The number of elements in the SIMD vector.
+        shuffle: A function that performs the warp shuffle operation. Takes a SIMD value and
+                offset and returns the shuffled result.
+        func: A binary function that combines two SIMD values during reduction. This defines
+              the reduction operation (e.g. add, max, min).
 
     Args:
-        val: The SIMD value to reduce.
+        val: The SIMD value to reduce. Each lane contributes its value.
 
     Returns:
-        A SIMD value with the reduction result.
+        A SIMD value containing the reduction result broadcast to all lanes in the warp.
+
+    Example:
+    ```mojo
+        from gpu.warp import reduce, shuffle_down
+
+        # Compute warp-wide sum using shuffle down
+        @parameter
+        fn add[type: DType, width: Int](x: SIMD[type, width], y: SIMD[type, width]) capturing -> SIMD[type, width]:
+            return x + y
+
+        val = SIMD[DType.float32, 4](2.0, 4.0, 6.0, 8.0)
+        result = reduce[shuffle_down, add](val)
+    ```
+    .
     """
     return lane_group_reduce[shuffle, func, nthreads=WARP_SIZE](val)
 
@@ -514,18 +643,23 @@ fn lane_group_sum[
     simd_width: Int, //,
     nthreads: Int,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
-    """Computes the sum within a lane group.
+    """Computes the sum of values across a group of lanes using warp-level operations.
+
+    This function performs a parallel reduction across a group of lanes to compute their sum.
+    The reduction is done using warp shuffle operations for efficient communication between lanes.
+    The result is stored in all participating lanes.
 
     Parameters:
-        val_type: The type of the SIMD value.
-        simd_width: The width of the SIMD value.
-        nthreads: The number of threads in the warp.
+        val_type: The data type of the SIMD elements (e.g. float32, int32).
+        simd_width: The number of elements in the SIMD vector.
+        nthreads: The number of threads participating in the reduction.
 
     Args:
-        val: The SIMD value to sum.
+        val: The SIMD value to reduce. Each lane contributes its value to the sum.
 
     Returns:
-        A SIMD value with the sum of all lanes.
+        A SIMD value where all participating lanes contain the sum found across the lane group.
+        Non-participating lanes (lane_id >= nthreads) retain their original values.
     """
 
     @parameter
@@ -541,18 +675,23 @@ fn lane_group_sum_and_broadcast[
     simd_width: Int, //,
     nthreads: Int,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
-    """Computes sum and broadcasts within a lane group.
+    """Computes the sum across a lane group and broadcasts the result to all lanes.
+
+    This function performs a parallel reduction using a butterfly pattern to compute the sum,
+    then broadcasts the result to all participating lanes. The butterfly pattern ensures
+    efficient communication between lanes through warp shuffle operations.
 
     Parameters:
-        val_type: The type of the SIMD value.
-        simd_width: The width of the SIMD value.
-        nthreads: The number of threads in the warp.
+        val_type: The data type of the SIMD elements (e.g. float32, int32).
+        simd_width: The number of elements in the SIMD vector.
+        nthreads: The number of threads participating in the reduction.
 
     Args:
-        val: The SIMD value to sum.
+        val: The SIMD value to reduce. Each lane contributes its value to the sum.
 
     Returns:
-        A SIMD value with the sum of all lanes.
+        A SIMD value where all participating lanes contain the sum found across the lane group.
+        Non-participating lanes (lane_id >= nthreads) retain their original values.
     """
 
     @parameter
@@ -566,17 +705,22 @@ fn lane_group_sum_and_broadcast[
 fn sum[
     val_type: DType, simd_width: Int, //
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
-    """Computes the sum across the warp.
+    """Computes the sum of values across all lanes in a warp.
+
+    This is a convenience wrapper around lane_group_sum that operates on the entire warp.
+    It performs a parallel reduction using warp shuffle operations to find the global sum
+    across all lanes in the warp.
 
     Parameters:
-        val_type: The type of the SIMD value.
-        simd_width: The width of the SIMD value.
+        val_type: The data type of the SIMD elements (e.g. float32, int32).
+        simd_width: The number of elements in the SIMD vector.
 
     Args:
-        val: The SIMD value to sum.
+        val: The SIMD value to reduce. Each lane contributes its value to the sum.
 
     Returns:
-        A SIMD value with the sum of all lanes.
+        A SIMD value where all lanes contain the sum found across the entire warp.
+        The sum is broadcast to all lanes.
     """
     return lane_group_sum[nthreads=WARP_SIZE](val)
 
@@ -644,21 +788,31 @@ fn sum[
     reduction_method: warp.ReductionMethod,
     output_type: DType,
 ](x: SIMD) -> Scalar[output_type]:
-    """Performs a warp level reduction using either a warp shuffle or tensor
-    core operation. If the tensor core method is chosen, then the input value
-    is cast to the intermediate type to make the value consumable by the
-    tensor core op.
+    """Performs a warp-level reduction to compute the sum of values across threads.
+
+    This function provides two reduction methods:
+    1. Warp shuffle: Uses warp shuffle operations to efficiently sum values across threads
+    2. Tensor core: Leverages tensor cores for high-performance reductions, with type casting
+
+    The tensor core method will cast the input to the specified intermediate type before
+    reduction to ensure compatibility with tensor core operations. The warp shuffle method
+    requires the output type to match the input type.
 
     Parameters:
-        intermediate_type: The type of the intermediate value.
-        reduction_method: The method to use for the reduction.
-        output_type: The type of the output value.
+        intermediate_type: The data type to cast to when using tensor core reduction.
+        reduction_method: `WARP` for warp shuffle or `TENSOR_CORE` for tensor core reduction.
+        output_type: The desired output data type for the reduced value.
 
     Args:
-        x: The value to reduce.
+        x: The SIMD value to reduce across the warp.
 
     Returns:
-        The reduced value.
+        A scalar containing the sum of the input values across all threads in the warp,
+        cast to the specified output type.
+
+    Constraints:
+        - For warp shuffle reduction, output_type must match the input value type.
+        - For tensor core reduction, input will be cast to intermediate_type.
     """
 
     @parameter
@@ -686,18 +840,23 @@ fn lane_group_max[
     simd_width: Int, //,
     nthreads: Int,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
-    """Reduces a SIMD value to its maximum within a lane group.
+    """Reduces a SIMD value to its maximum within a lane group using warp-level operations.
+
+    This function performs a parallel reduction across a group of lanes to find the maximum value.
+    The reduction is done using warp shuffle operations for efficient communication between lanes.
+    The result is stored in all participating lanes.
 
     Parameters:
-        val_type: The type of the SIMD value.
-        simd_width: The width of the SIMD value.
-        nthreads: The number of threads in the warp.
+        val_type: The data type of the SIMD elements (e.g. float32, int32).
+        simd_width: The number of elements in the SIMD vector.
+        nthreads: The number of threads participating in the reduction.
 
     Args:
-        val: The SIMD value to reduce.
+        val: The SIMD value to reduce. Each lane contributes its value to find the maximum.
 
     Returns:
-        A SIMD value with the maximum value in all lanes.
+        A SIMD value where all participating lanes contain the maximum value found across the lane group.
+        Non-participating lanes (lane_id >= nthreads) retain their original values.
     """
 
     @parameter
@@ -712,18 +871,23 @@ fn lane_group_max_and_broadcast[
     simd_width: Int, //,
     nthreads: Int,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
-    """Reduces and broadcasts max within a lane group.
+    """Reduces and broadcasts the maximum value within a lane group using warp-level operations.
+
+    This function performs a parallel reduction to find the maximum value and broadcasts it to all lanes.
+    The reduction and broadcast are done using warp shuffle operations in a butterfly pattern for
+    efficient all-to-all communication between lanes.
 
     Parameters:
-        val_type: The type of the SIMD value.
-        simd_width: The width of the SIMD value.
-        nthreads: The number of threads in the warp.
+        val_type: The data type of the SIMD elements (e.g. float32, int32).
+        simd_width: The number of elements in the SIMD vector.
+        nthreads: The number of threads participating in the reduction.
 
     Args:
-        val: The SIMD value to reduce.
+        val: The SIMD value to reduce and broadcast. Each lane contributes its value.
 
     Returns:
-        A SIMD value with the maximum value in all lanes.
+        A SIMD value where all participating lanes contain the maximum value found across the lane group.
+        Non-participating lanes (lane_id >= nthreads) retain their original values.
     """
 
     @parameter
@@ -738,17 +902,21 @@ fn max[
     val_type: DType,
     simd_width: Int, //,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
-    """Computes the maximum value across the warp.
+    """Computes the maximum value across all lanes in a warp.
+
+    This is a convenience wrapper around lane_group_max that operates on the entire warp.
+    It performs a parallel reduction using warp shuffle operations to find the global maximum
+    value across all lanes in the warp.
 
     Parameters:
-        val_type: The type of the SIMD value.
-        simd_width: The width of the SIMD value.
+        val_type: The data type of the SIMD elements (e.g. float32, int32).
+        simd_width: The number of elements in the SIMD vector.
 
     Args:
-        val: The SIMD value to reduce.
+        val: The SIMD value to reduce. Each lane contributes its value to find the maximum.
 
     Returns:
-        A SIMD value with the maximum value in all lanes.
+        A SIMD value where all lanes contain the maximum value found across the entire warp.
     """
     return lane_group_max[nthreads=WARP_SIZE](val)
 
@@ -764,18 +932,23 @@ fn lane_group_min[
     simd_width: Int, //,
     nthreads: Int,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
-    """Reduces a SIMD value to its minimum within a lane group.
+    """Reduces a SIMD value to its minimum within a lane group using warp-level operations.
+
+    This function performs a parallel reduction across a group of lanes to find the minimum value.
+    The reduction is done using warp shuffle operations for efficient communication between lanes.
+    The result is stored in all participating lanes.
 
     Parameters:
-        val_type: The type of the SIMD value.
-        simd_width: The width of the SIMD value.
-        nthreads: The number of threads in the warp.
+        val_type: The data type of the SIMD elements (e.g. float32, int32).
+        simd_width: The number of elements in the SIMD vector.
+        nthreads: The number of threads participating in the reduction.
 
     Args:
-        val: The SIMD value to reduce.
+        val: The SIMD value to reduce. Each lane contributes its value to find the minimum.
 
     Returns:
-        A SIMD value with the minimum value in all lanes.
+        A SIMD value where all participating lanes contain the minimum value found across the lane group.
+        Non-participating lanes (lane_id >= nthreads) retain their original values.
     """
 
     @parameter
@@ -789,17 +962,22 @@ fn lane_group_min[
 fn min[
     val_type: DType, simd_width: Int, //
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
-    """Computes the minimum value across the warp.
+    """Computes the minimum value across all lanes in a warp.
+
+    This is a convenience wrapper around lane_group_min that operates on the entire warp.
+    It performs a parallel reduction using warp shuffle operations to find the global minimum
+    value across all lanes in the warp.
 
     Parameters:
-        val_type: The type of the SIMD value.
-        simd_width: The width of the SIMD value.
+        val_type: The data type of the SIMD elements (e.g. float32, int32).
+        simd_width: The number of elements in the SIMD vector.
 
     Args:
-        val: The SIMD value to reduce.
+        val: The SIMD value to reduce. Each lane contributes its value to find the minimum.
 
     Returns:
-        A SIMD value with the minimum value in all lanes.
+        A SIMD value where all lanes contain the minimum value found across the entire warp.
+        The minimum value is broadcast to all lanes.
     """
     return lane_group_min[nthreads=WARP_SIZE](val)
 
@@ -813,40 +991,50 @@ fn min[
 fn broadcast[
     val_type: DType, simd_width: Int, //
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
-    """Broadcasts a SIMD value across the warp.
+    """Broadcasts a SIMD value from lane 0 to all lanes in the warp.
+
+    This function takes a SIMD value from lane 0 and copies it to all other lanes in the warp,
+    effectively broadcasting the value across the entire warp. This is useful for sharing data
+    between threads in a warp without using shared memory.
 
     Parameters:
-        val_type: The type of the SIMD value.
-        simd_width: The width of the SIMD value.
+        val_type: The data type of the SIMD elements (e.g. float32, int32).
+        simd_width: The number of elements in the SIMD vector.
 
     Args:
-        val: The SIMD value to broadcast.
+        val: The SIMD value to broadcast from lane 0.
 
     Returns:
-        A SIMD value with all lanes equal to the input value.
+        A SIMD value where all lanes contain a copy of the input value from lane 0.
     """
     return shuffle_idx(val, 0)
 
 
 fn broadcast(val: Int) -> Int:
-    """Broadcasts an Int value across the warp.
+    """Broadcasts an integer value from lane 0 to all lanes in the warp.
+
+    This function takes an integer value from lane 0 and copies it to all other lanes in the warp.
+    It provides a convenient way to share scalar integer data between threads without using shared memory.
 
     Args:
-        val: The Int value to broadcast.
+        val: The integer value to broadcast from lane 0.
 
     Returns:
-        An Int value with all lanes equal to the input value.
+        The broadcast integer value, where all lanes receive a copy of the input from lane 0.
     """
     return Int(shuffle_idx(Int32(val), 0))
 
 
 fn broadcast(val: UInt) -> UInt:
-    """Broadcasts a UInt value across the warp.
+    """Broadcasts an unsigned integer value from lane 0 to all lanes in the warp.
+
+    This function takes an unsigned integer value from lane 0 and copies it to all other lanes in the warp.
+    It provides a convenient way to share scalar unsigned integer data between threads without using shared memory.
 
     Args:
-        val: The UInt value to broadcast.
+        val: The unsigned integer value to broadcast from lane 0.
 
     Returns:
-        A UInt value with all lanes equal to the input value.
+        The broadcast unsigned integer value, where all lanes receive a copy of the input from lane 0.
     """
     return Int(shuffle_idx(Scalar[DType.int32](val), 0))
