@@ -835,7 +835,7 @@ fn softmax[
 ) raises:
     @parameter
     fn trace_information() -> String:
-        return String(trace_arg("input", shape, type))
+        return trace_arg("input", shape, type)
 
     with Trace[TraceLevel.OP, target=target](
         "softmax",

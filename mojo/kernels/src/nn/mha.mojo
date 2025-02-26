@@ -119,12 +119,11 @@ fn flash_attention[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return String(
+        return String(";").join(
             trace_arg("q", q),
             trace_arg("k", k),
             trace_arg("v", v),
             trace_arg("output", output),
-            sep=";",
         )
 
     var ctx = context.get_device_context()
@@ -249,7 +248,10 @@ fn flash_attention[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return String(trace_arg("q", q), trace_arg("output", output), sep=";")
+        return String(";").join(
+            trace_arg("q", q),
+            trace_arg("output", output),
+        )
 
     with Trace[TraceLevel.OP, target = ctx.device_info.api](
         "flash_attention",
@@ -4213,12 +4215,10 @@ fn mha_splitk_reduce[
     # we only reduce over a warp so limit number of warps to 1
     constrained[
         num_threads == WARP_SIZE,
-        String(
-            "num_threads: ",
-            num_threads,
-            " should be equal to the warp_size:",
-            WARP_SIZE,
-        ),
+        "num_threads: "
+        + String(num_threads)
+        + " should be equal to the warp_size:"
+        + String(WARP_SIZE),
     ]()
     debug_assert(
         block_dim.x == WARP_SIZE, "block_dim.x should be equal to the warp_size"

@@ -72,24 +72,21 @@ fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return String(
+        return String(";").join(
             trace_arg("output", output),
             trace_arg("hidden_state", hidden_state),
             trace_arg("weight", weight),
-            trace_arg("layer_idx", layer_idx),
-            trace_arg("num_heads", kv_collection.kv_params.num_heads),
-            trace_arg("head_size", kv_collection.kv_params.head_size),
-            sep=";",
+            "layer_idx=" + String(layer_idx),
+            "num_heads=" + String(kv_collection.kv_params.num_heads),
+            "head_size=" + String(kv_collection.kv_params.head_size),
         )
 
     with Trace[TraceLevel.OP, target=target](
-        String(
-            "mo.fused_qkv_matmul.ragged.continuous_batching.nhead_",
-            kv_collection.kv_params.num_heads,
-            ".hdim_",
-            kv_collection.kv_params.head_size,
-            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        )
+        "mo.fused_qkv_matmul.ragged.continuous_batching.nhead_"
+        + String(kv_collection.kv_params.num_heads)
+        + ".hdim_"
+        + String(kv_collection.kv_params.head_size),
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         return _fused_qkv_matmul_kv_cache_ragged[
             kv_collection.CacheType, target=target
@@ -139,22 +136,18 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return String(
+        return String(";").join(
             trace_arg("output", output),
             trace_arg("hidden_state", hidden_state),
             trace_arg("weight", weight),
-            trace_arg("layer_idx", layer_idx),
-            trace_arg("num_heads", kv_collection.kv_params.num_heads),
-            trace_arg("head_size", kv_collection.kv_params.head_size),
-            sep=";",
+            "layer_idx=" + String(layer_idx),
+            "num_heads=" + String(kv_collection.kv_params.num_heads),
+            "head_size=" + String(kv_collection.kv_params.head_size),
         )
 
-    alias name = String(
-        "mo.fused_qkv_matmul.ragged.paged.nhead_",
-        kv_collection.kv_params.num_heads,
-        ".hdim_",
-        kv_collection.kv_params.head_size,
-    )
+    alias name = "mo.fused_qkv_matmul.ragged.paged.nhead_" + String(
+        kv_collection.kv_params.num_heads
+    ) + ".hdim_" + String(kv_collection.kv_params.head_size)
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
@@ -721,21 +714,18 @@ fn kv_matmul_ragged_continuous_batching[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return String(
+        return String(";").join(
             trace_arg("weight", weight),
-            trace_arg("layer_idx", layer_idx),
-            trace_arg("num_heads", kv_collection.kv_params.num_heads),
-            trace_arg("head_size", kv_collection.kv_params.head_size),
-            sep=";",
+            "layer_idx=" + String(layer_idx),
+            "num_heads=" + String(kv_collection.kv_params.num_heads),
+            "head_size=" + String(kv_collection.kv_params.head_size),
         )
 
     with Trace[TraceLevel.OP, target=target](
-        String(
-            "mo.kv_matmul.ragged.continuous_batching.nhead_",
-            kv_collection.kv_params.num_heads,
-            ".hdim_",
-            kv_collection.kv_params.head_size,
-        ),
+        "mo.kv_matmul.ragged.continuous_batching.nhead_"
+        + String(kv_collection.kv_params.num_heads)
+        + ".hdim_"
+        + String(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         return _matmul_kv_cache_ragged[target=target](
@@ -918,15 +908,14 @@ fn generic_fused_qk_rope_bshd_continous_batch_ragged[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return String(
+        return String(";").join(
             trace_arg("output", output),
             trace_arg("q_proj", q_proj),
             trace_arg("freqs_cis", freqs_cis),
-            trace_arg("layer_idx", layer_idx),
-            trace_arg("num_heads", kv_collection.kv_params.num_heads),
-            trace_arg("head_size", kv_collection.kv_params.head_size),
-            trace_arg("interleaved", interleaved),
-            sep=";",
+            "layer_idx=" + String(layer_idx),
+            "num_heads=" + String(kv_collection.kv_params.num_heads),
+            "head_size=" + String(kv_collection.kv_params.head_size),
+            "interleaved=" + String(interleaved),
         )
 
     # Pass device context only on GPU.
@@ -935,12 +924,10 @@ fn generic_fused_qk_rope_bshd_continous_batch_ragged[
     ]() else context.get_device_context()
 
     with Trace[TraceLevel.OP, target=target](
-        String(
-            "mo.fused_qk_rope.ragged.continuous_batching.nhead_",
-            kv_collection.kv_params.num_heads,
-            ".hdim_",
-            kv_collection.kv_params.head_size,
-        ),
+        "mo.fused_qk_rope.ragged.continuous_batching.nhead_"
+        + String(kv_collection.kv_params.num_heads)
+        + ".hdim_"
+        + String(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         fused_qk_rope_ragged[
@@ -986,15 +973,14 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return String(
+        return String(";").join(
             trace_arg("output", output),
             trace_arg("q_proj", q_proj),
             trace_arg("freqs_cis", freqs_cis),
-            trace_arg("layer_idx", layer_idx),
-            trace_arg("num_heads", kv_collection.kv_params.num_heads),
-            trace_arg("head_size", kv_collection.kv_params.head_size),
-            trace_arg("interleaved", interleaved),
-            sep=";",
+            "layer_idx=" + String(layer_idx),
+            "num_heads=" + String(kv_collection.kv_params.num_heads),
+            "head_size=" + String(kv_collection.kv_params.head_size),
+            "interleaved=" + String(interleaved),
         )
 
     # Pass device context only on GPU.
@@ -1002,12 +988,9 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
         target
     ]() else context.get_device_context()
 
-    alias name = String(
-        "mo.fused_qk_rope.ragged.paged.nhead_",
-        kv_collection.kv_params.num_heads,
-        ".hdim_",
-        kv_collection.kv_params.head_size,
-    )
+    alias name = "mo.fused_qk_rope.ragged.paged.nhead_" + String(
+        kv_collection.kv_params.num_heads
+    ) + ".hdim_" + String(kv_collection.kv_params.head_size)
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
@@ -1045,21 +1028,17 @@ fn generic_flash_attention_kv_cache_causal_mask_paged_ragged[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return String(
+        return String(";").join(
             trace_arg("q", q),
-            trace_arg("scale", scale),
-            trace_arg("layer_idx", layer_idx),
-            trace_arg("num_heads", kv_collection.kv_params.num_heads),
-            trace_arg("head_size", kv_collection.kv_params.head_size),
-            sep=";",
+            "scale=" + String(scale),
+            "layer_idx=" + String(layer_idx),
+            "num_heads=" + String(kv_collection.kv_params.num_heads),
+            "head_size=" + String(kv_collection.kv_params.head_size),
         )
 
-    alias name = String(
-        "mo.mha.ragged.paged.causal_mask.no_pos.nhead_",
-        kv_collection.kv_params.num_heads,
-        ".hdim_",
-        kv_collection.kv_params.head_size,
-    )
+    alias name = "mo.mha.ragged.paged.causal_mask.no_pos.nhead_" + String(
+        kv_collection.kv_params.num_heads
+    ) + ".hdim_" + String(kv_collection.kv_params.head_size)
 
     with Trace[TraceLevel.OP, target=target](
         name,
@@ -1095,23 +1074,20 @@ fn generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return String(
+        return String(";").join(
             trace_arg("output", output),
             trace_arg("q", q),
             trace_arg("input_row_offsets", input_row_offsets),
-            trace_arg("layer_idx", layer_idx),
-            trace_arg("num_heads", kv_collection.kv_params.num_heads),
-            trace_arg("head_size", kv_collection.kv_params.head_size),
-            sep=";",
+            "layer_idx=" + String(layer_idx),
+            "num_heads=" + String(kv_collection.kv_params.num_heads),
+            "head_size=" + String(kv_collection.kv_params.head_size),
         )
 
     with Trace[TraceLevel.OP, target=target](
-        String(
-            "mo.mha.ragged.continuous_batching.causal_mask.no_pos.nhead_",
-            kv_collection.kv_params.num_heads,
-            ".hdim_",
-            kv_collection.kv_params.head_size,
-        ),
+        "mo.mha.ragged.continuous_batching.causal_mask.no_pos.nhead_"
+        + String(kv_collection.kv_params.num_heads)
+        + ".hdim_"
+        + String(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         return _flash_attention_kv_cache_ragged[
@@ -1144,23 +1120,20 @@ fn generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return String(
+        return String(";").join(
             trace_arg("output", output),
             trace_arg("q", q),
             trace_arg("input_row_offsets", input_row_offsets),
-            trace_arg("layer_idx", layer_idx),
-            trace_arg("num_heads", kv_collection.kv_params.num_heads),
-            trace_arg("head_size", kv_collection.kv_params.head_size),
-            sep=";",
+            "layer_idx=" + String(layer_idx),
+            "num_heads=" + String(kv_collection.kv_params.num_heads),
+            "head_size=" + String(kv_collection.kv_params.head_size),
         )
 
     with Trace[TraceLevel.OP, target=target](
-        String(
-            "mo.mha.ragged.continuous_batching.causal_mask.alibi_pos.nhead_",
-            kv_collection.kv_params.num_heads,
-            ".hdim_",
-            kv_collection.kv_params.head_size,
-        ),
+        "mo.mha.ragged.continuous_batching.causal_mask.alibi_pos.nhead_"
+        + String(kv_collection.kv_params.num_heads)
+        + ".hdim_"
+        + String(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         return _flash_attention_kv_cache_alibi_mask_ragged[
@@ -1191,23 +1164,20 @@ fn generic_flash_attention_kv_cache_null_mask_cont_batch_ragged[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return String(
+        return String(";").join(
             trace_arg("output", output),
             trace_arg("q", q),
             trace_arg("input_row_offsets", input_row_offsets),
-            trace_arg("layer_idx", layer_idx),
-            trace_arg("num_heads", kv_collection.kv_params.num_heads),
-            trace_arg("head_size", kv_collection.kv_params.head_size),
-            sep=";",
+            "layer_idx=" + String(layer_idx),
+            "num_heads=" + String(kv_collection.kv_params.num_heads),
+            "head_size=" + String(kv_collection.kv_params.head_size),
         )
 
     with Trace[TraceLevel.OP, target=target](
-        String(
-            "mo.mha.ragged.continuous_batching.null_mask.no_pos.nhead_",
-            kv_collection.kv_params.num_heads,
-            ".hdim_",
-            kv_collection.kv_params.head_size,
-        ),
+        "mo.mha.ragged.continuous_batching.null_mask.no_pos.nhead_"
+        + String(kv_collection.kv_params.num_heads)
+        + ".hdim_"
+        + String(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         return _flash_attention_kv_cache_ragged[
@@ -1580,24 +1550,21 @@ fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return String(
+        return String(";").join(
             trace_arg("output", output),
             trace_arg("q", q),
             trace_arg("q_input_row_offsets", q_input_row_offsets),
             trace_arg("kv_input_row_offsets", kv_input_row_offsets),
-            trace_arg("layer_idx", layer_idx),
-            trace_arg("num_heads", kv_collection.kv_params.num_heads),
-            trace_arg("head_size", kv_collection.kv_params.head_size),
-            sep=";",
+            "layer_idx=" + String(layer_idx),
+            "num_heads=" + String(kv_collection.kv_params.num_heads),
+            "head_size=" + String(kv_collection.kv_params.head_size),
         )
 
     with Trace[TraceLevel.OP, target=target](
-        String(
-            "mo.cross_attention.ragged.continuous_batching.null_mask.no_pos.nhead_",
-            kv_collection.kv_params.num_heads,
-            ".hdim_",
-            kv_collection.kv_params.head_size,
-        ),
+        "mo.cross_attention.ragged.continuous_batching.null_mask.no_pos.nhead_"
+        + String(kv_collection.kv_params.num_heads)
+        + ".hdim_"
+        + String(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         return _cross_attention_kv_cache_ragged[
