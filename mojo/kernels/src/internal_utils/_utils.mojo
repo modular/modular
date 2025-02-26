@@ -474,7 +474,7 @@ fn _str_fmt_width[max_width: Int = 256](str: String, str_width: Int) -> String:
     x.reserve(max_width)
     x.size += _snprintf["%-*s"](x.data, max_width, str_width, str.unsafe_ptr())
     debug_assert(
-        x.size < max_width, "Attempted to access outside array bounds!"
+        len(x) < max_width, "Attempted to access outside array bounds!"
     )
     x.size += 1
     return String(x)
