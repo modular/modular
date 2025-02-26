@@ -13,12 +13,18 @@
 #define CACHE_SUPPORT_KEYS_H
 
 #include "Support/Buffer.h"
+#include "Support/HashUtils.h"
+
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/BLAKE3.h"
-#include "llvm/Support/Casting.h"
+
 #include <cstdint>
 #include <string>
 #include <variant>
+
+namespace mlir {
+class Operation;
+} // namespace mlir
 
 namespace M::Cache::Keys {
 template <typename T>
@@ -31,6 +37,7 @@ struct TypeKey<llvm::StringRef> {
   using KeyTy = llvm::StringRef;
   static std::string hashKey(KeyTy key) { return key.str(); }
 };
+using StringKey = TypeKey<llvm::StringRef>;
 
 template <>
 struct TypeKey<llvm::ArrayRef<uint8_t>> {
@@ -44,7 +51,7 @@ struct TypeKey<llvm::ArrayRef<uint8_t>> {
     return {hash.begin(), hash.end()};
   }
 };
-
+using ArrayKey = TypeKey<llvm::ArrayRef<uint8_t>>;
 template <>
 struct TypeKey<M::BufferRef> {
   using KeyTy = M::BufferRef;
@@ -56,6 +63,14 @@ struct TypeKey<M::BufferRef> {
     return {hash.begin(), hash.end()};
   }
 };
+using BufferKey = TypeKey<M::BufferRef>;
+
+template <>
+struct TypeKey<mlir::Operation *> {
+  using KeyTy = mlir::Operation *;
+  static std::string hashKey(KeyTy key) { return *getBytecodeHash(key); }
+};
+using OperationKey = TypeKey<mlir::Operation *>;
 
 template <typename... Ts>
 struct VariantTypeKey {
