@@ -214,6 +214,17 @@ def test_inline_array_runs_destructors():
     assert_equal(destructor_counter[3], 30)
 
 
+fn test_unsafe_ptr() raises:
+    alias N = 10
+    var arr = InlineArray[Int, 10](fill=0)
+    for i in range(N):
+        arr[i] = i
+
+    var ptr = arr.unsafe_ptr()
+    for i in range(N):
+        assert_equal(arr[i], ptr[i])
+
+
 def main():
     test_array_unsafe_get()
     test_array_int()
@@ -222,3 +233,4 @@ def main():
     test_array_unsafe_assume_initialized_constructor_string()
     test_array_contains()
     test_inline_array_runs_destructors()
+    test_unsafe_ptr()

@@ -304,7 +304,13 @@ struct InlineArray[
         return UnsafePointer(ptr)[]
 
     @always_inline
-    fn unsafe_ptr(self) -> UnsafePointer[Self.ElementType]:
+    fn unsafe_ptr(
+        ref self,
+    ) -> UnsafePointer[
+        Self.ElementType,
+        mut = Origin(__origin_of(self)).is_mutable,
+        origin = __origin_of(self),
+    ]:
         """Get an `UnsafePointer` to the underlying array.
 
         That pointer is unsafe but can be used to read or write to the array.
