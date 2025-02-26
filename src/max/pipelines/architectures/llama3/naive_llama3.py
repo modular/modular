@@ -219,6 +219,7 @@ class NaiveLLama3Attention(NaiveAttentionWithRope):
                 dtype=dtype,
                 device=device,
                 quantization_encoding=quantization_encoding,
+                clip_weight=clip_qkv,
             ),
             wv=linear_cls(
                 in_dim=hidden_size,
@@ -226,6 +227,7 @@ class NaiveLLama3Attention(NaiveAttentionWithRope):
                 dtype=dtype,
                 device=device,
                 quantization_encoding=quantization_encoding,
+                clip_weight=clip_qkv,
             ),
             wq=linear_cls(
                 in_dim=hidden_size,
@@ -233,6 +235,7 @@ class NaiveLLama3Attention(NaiveAttentionWithRope):
                 dtype=dtype,
                 device=device,
                 quantization_encoding=quantization_encoding,
+                clip_weight=clip_qkv,
             ),
             wo=linear_cls(
                 in_dim=hidden_size,
@@ -243,7 +246,6 @@ class NaiveLLama3Attention(NaiveAttentionWithRope):
             ),
             rope=rope,
             scale=scale,
-            clip_qkv=clip_qkv,
         )
 
 

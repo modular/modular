@@ -33,6 +33,7 @@ from max.pipelines.kv_cache import (
     PagedKVCacheCollection,
 )
 
+from ..clamp import clamp
 from ..kernels import (
     MHAMaskVariant,
     flash_attention_ragged,
@@ -43,7 +44,6 @@ from ..kernels import (
 from ..layer import LayerV2
 from ..linear import LinearV2
 from ..rotary_embedding import OptimizedRotaryEmbedding
-from .clamp import clamp
 from .interfaces import (
     AttentionImpl,
     AttentionImplQKV,

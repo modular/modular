@@ -23,7 +23,6 @@ from max.pipelines.kv_cache import KVCacheParams
 from ..layer import LayerV2
 from ..linear import Linear, LinearV2
 from ..rotary_embedding import RotaryEmbedding
-from .clamp import clamp
 
 
 class NaiveAttentionWithRope(LayerV2):
@@ -38,7 +37,6 @@ class NaiveAttentionWithRope(LayerV2):
         wo: Linear | LinearV2,
         rope: RotaryEmbedding,
         scale: float | None = None,
-        clip_qkv: float | None = None,
     ):
         super().__init__()
         self.n_heads = n_heads
@@ -52,7 +50,6 @@ class NaiveAttentionWithRope(LayerV2):
         self.scale = (
             scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
         )
-        self.clip_qkv = clip_qkv
 
         if self.kv_params.cache_strategy.uses_opaque():
             raise ValueError(
@@ -143,20 +140,6 @@ class NaiveAttentionWithRope(LayerV2):
         """
         x = TensorValue(x)
         batch, seq_len = x.shape[0], x.shape[1]
-        # Apply `clip_qkv` before matmuling the weights
-        if self.clip_qkv:
-            assert isinstance(self.q_proj.weight, TensorValue)
-            self.q_proj.weight = clamp(
-                self.q_proj.weight, min=-self.clip_qkv, max=self.clip_qkv
-            )
-            assert isinstance(self.k_proj.weight, TensorValue)
-            self.k_proj.weight = clamp(
-                self.k_proj.weight, min=-self.clip_qkv, max=self.clip_qkv
-            )
-            assert isinstance(self.v_proj.weight, TensorValue)
-            self.v_proj.weight = clamp(
-                self.v_proj.weight, min=-self.clip_qkv, max=self.clip_qkv
-            )
 
         xq = self.q_proj(x)
         xk = self.k_proj(x)

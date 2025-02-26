@@ -31,6 +31,7 @@ from max.graph import (
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import Weights
 
+from .clamp import clamp
 from .kernels import swish_glu
 from .layer import Layer, LayerV2
 
@@ -62,7 +63,7 @@ class LinearV2(LayerV2):
         output = linear_layer(input_tensor)
     """
 
-    weight: Weight | TensorValue
+    weight: Weight
     """The weight matrix stored on CPU with shape (out_dim, in_dim).
     Model init transposes the weight and moves it to :obj:`device`."""
 
@@ -82,6 +83,7 @@ class LinearV2(LayerV2):
         has_bias: bool = False,
         quantization_encoding: Optional[QuantizationEncoding] = None,
         name: Optional[str] = None,
+        clip_weight: Optional[float] = None,
     ) -> None:
         """Initializes the linear layer with weights and optional bias.
 
@@ -99,6 +101,7 @@ class LinearV2(LayerV2):
         super().__init__()
 
         self.device = device
+        self.clip_weight = clip_weight
 
         self.weight = Weight(
             name=f"{name}.weight" if name else "weight",
@@ -107,7 +110,6 @@ class LinearV2(LayerV2):
             device=DeviceRef.CPU() if self.device else None,
             quantization_encoding=quantization_encoding,
         )
-        self.quantization_encoding = quantization_encoding
 
         if has_bias:
             self.bias = Weight(
@@ -137,9 +139,12 @@ class LinearV2(LayerV2):
         if self.device:
             weight = weight.to(self.device)
 
-        if self.quantization_encoding:
+        if self.clip_weight:
+            weight = clamp(weight, -self.clip_weight, self.clip_weight)
+
+        if self.weight.quantization_encoding:
             res = ops.qmatmul(
-                self.quantization_encoding,
+                self.weight.quantization_encoding,
                 None,
                 x,
                 weight,
