@@ -1380,10 +1380,12 @@ fn elementwise[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return String(
-            trace_arg("shape", shape),
-            trace_arg("vector_width", simd_width),
-            sep=";",
+        var shape_str = trace_arg("shape", shape)
+        var vector_width_str = String("vector_width=", simd_width)
+
+        return String(";").join(
+            shape_str,
+            vector_width_str,
         )
 
     with Trace[TraceLevel.OP, target=target](

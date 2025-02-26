@@ -1669,10 +1669,9 @@ fn mean[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return String(
+        return String(";").join(
             trace_arg("input", input_shape, type),
             trace_arg("output", output_shape, type),
-            sep=";",
         )
 
     with Trace[TraceLevel.OP, target=target](
