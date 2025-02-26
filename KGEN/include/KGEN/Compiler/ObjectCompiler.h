@@ -53,10 +53,6 @@ public:
                                  bool emitAssembly = false,
                                  std::string *outKeyHash = nullptr);
 
-  /// Emit the module to a object archive as an ElementsAttr that can be used as
-  /// an attribute on another operation.
-  ErrorOr<ElementsAttr> emitArchiveAttr(OwningOpRef<ModuleOp> module);
-
   /// Lower the given module to LLVM. Returns the LLVM module on success, and
   /// nullptr on failure.
   ErrorOr<std::unique_ptr<llvm::Module>>
