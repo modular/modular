@@ -111,7 +111,7 @@ fn _tile_mask[
 
 
 @always_inline("nodebug")
-fn __to_static_tuple[rank: Int](sizes: VariadicList[Int]) -> IndexList[rank]:
+fn _to_static_tuple[rank: Int](sizes: VariadicList[Int]) -> IndexList[rank]:
     var res = IndexList[rank]()
 
     @parameter
@@ -139,7 +139,7 @@ fn _vectorize_mask[
 # Returns the shaep of the `thread_layout` as tuple.
 #
 @always_inline("nodebug")
-fn __get_shape_as_tuple[
+fn _get_shape_as_tuple[
     rank: Int,
 ](thread_layout: Layout) -> IndexList[rank]:
     var res = IndexList[rank]()
@@ -159,7 +159,7 @@ fn _distribute_mask[
     rank: Int,
     element_size: IndexList[rank],
     element_stride: IndexList[rank],
-    __element_stride: IndexList[rank] = __get_shape_as_tuple[rank](
+    __element_stride: IndexList[rank] = _get_shape_as_tuple[rank](
         thread_layout
     ),
 ](
@@ -183,10 +183,10 @@ fn _distribute_mask[
 # Returns the shape of distribute `thread_layout` into `shape`.
 #
 @always_inline("nodebug")
-fn __distribute_shape[thread_layout: Layout](shape: DimList) -> DimList:
+fn _distribute_shape[thread_layout: Layout](shape: DimList) -> DimList:
     constrained[
         thread_layout.rank() <= 3,
-        "__distribute_shape requires thread_layout <= 3",
+        "_distribute_shape requires thread_layout <= 3",
     ]()
 
     var res = StaticTuple[Dim][thread_layout.rank()]()
@@ -215,7 +215,7 @@ fn distribute[
     rank: Int,
     shape: DimList,
     thread_layout: Layout,
-    _result_shape: DimList = __distribute_shape[thread_layout](shape),
+    _result_shape: DimList = _distribute_shape[thread_layout](shape),
     swizzle: OptionalReg[_swizzle_signature] = None,
     element_size: Int = 1,
 ](buff: NDBuffer[dtype, rank, shape], thread_id: Int) -> NDBuffer[
@@ -264,17 +264,17 @@ fn distribute[
 # Returns the size of variadic integer parameters.
 #
 @always_inline("nodebug")
-fn __get_len[*var_int: Int]() -> Int:
+fn _get_len[*var_int: Int]() -> Int:
     return __mlir_op.`pop.variadic.size`(var_int)
 
 
 @always_inline("nodebug")
-fn __vectorize_shape[*sizes: Int](shape: DimList) -> DimList:
-    alias rank = __get_len[*sizes]()
+fn _vectorize_shape[*sizes: Int](shape: DimList) -> DimList:
+    alias rank = _get_len[*sizes]()
 
     constrained[
         rank <= 3,
-        "__vectorize_shape vector sizes <= 3",
+        "_vectorize_shape vector sizes <= 3",
     ]()
 
     var res = StaticTuple[Dim, rank]()
@@ -299,7 +299,7 @@ fn __vectorize_shape[*sizes: Int](shape: DimList) -> DimList:
 
 
 @always_inline("nodebug")
-fn __to_static_tuple[*sizes: Int, rank: Int]() -> IndexList[rank]:
+fn _to_static_tuple[*sizes: Int, rank: Int]() -> IndexList[rank]:
     var vals = IndexList[rank]()
 
     @parameter
@@ -419,7 +419,7 @@ fn vectorize[
     dtype: DType,
     rank: Int,
     shape: DimList,
-    _res_shape: DimList = __vectorize_shape[*sizes](shape),
+    _res_shape: DimList = _vectorize_shape[*sizes](shape),
 ](buff: NDBuffer[dtype, rank, shape, *_]) -> Tuple[
     NDBuffer[
         dtype,
@@ -428,13 +428,13 @@ fn vectorize[
         strides = DimList.create_unknown[rank](),
         address_space = buff.address_space,
     ],
-    ElementLayout[rank, __to_static_tuple[*sizes, rank=rank]()],
+    ElementLayout[rank, _to_static_tuple[*sizes, rank=rank]()],
 ]:
     var buff_shape = IndexList[rank]()
     var buff_stride = IndexList[rank]()
 
     var element_layout = ElementLayout[
-        rank, __to_static_tuple[*sizes, rank=rank]()
+        rank, _to_static_tuple[*sizes, rank=rank]()
     ]()
 
     @parameter

@@ -185,7 +185,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         self._store[0] = num_elems
         var storage = num_elems + 1
         for i in range(num_elems):
-            storage = self.__insert(i, storage, elements[i])
+            storage = self._insert(i, storage, elements[i])
 
         @parameter
         if INT_TUPLE_VALIDATION:
@@ -210,7 +210,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
 
         var pos = 0
         for i in rng:
-            storage = self.__insert(pos, storage, existing[i])
+            storage = self._insert(pos, storage, existing[i])
             pos += 1
 
         @parameter
@@ -325,7 +325,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         var storage = new_len + 1 + old_data_size
         for i in range(len_t):
             # append each element in t
-            storage = Self.__insert(new_store, i + old_len, storage, t[i])
+            storage = Self._insert(new_store, i + old_len, storage, t[i])
 
         # Update store data
         self._store = new_store
@@ -365,9 +365,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         # append elements
         var storage = new_len + 1 + old_data_size
         for i in range(len(elements)):
-            storage = Self.__insert(
-                new_store, i + old_len, storage, elements[i]
-            )
+            storage = Self._insert(new_store, i + old_len, storage, elements[i])
 
         # Update store data
         self._store = new_store
@@ -396,13 +394,13 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
             if self.is_value(i):
                 new_store[i + 1] = self.value(i)
             else:
-                storage = Self.__insert(new_store, i, storage, self[i])
+                storage = Self._insert(new_store, i, storage, self[i])
 
         for i in range(len(tuple)):
             if tuple.is_value(i):
                 new_store[old_len + i + 1] = tuple.value(i)
             else:
-                storage = Self.__insert(
+                storage = Self._insert(
                     new_store, i + old_len, storage, tuple[i]
                 )
 
@@ -415,7 +413,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
 
     @always_inline
     @staticmethod
-    fn __insert(
+    fn _insert(
         mut store: IntArray, idx: Int, storage: Int, element: IntTuple
     ) -> Int:
         # Negative offset from current position.
@@ -425,8 +423,8 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         return storage + size
 
     @always_inline
-    fn __insert(mut self, idx: Int, storage: Int, element: IntTuple) -> Int:
-        return Self.__insert(self._store, idx, storage, element)
+    fn _insert(mut self, idx: Int, storage: Int, element: IntTuple) -> Int:
+        return Self._insert(self._store, idx, storage, element)
 
     @always_inline
     fn size(self) -> Int:

@@ -15,7 +15,7 @@ from .int_tuple import UNKNOWN_VALUE
 
 
 @always_inline
-fn __get_offset[i: Int](runtime_layout: RuntimeLayout) -> Int:
+fn _get_offset[i: Int](runtime_layout: RuntimeLayout) -> Int:
     """Returns the offset for a single index into the runtime layout.
 
     Parameters:
@@ -37,7 +37,7 @@ fn __get_offset[i: Int](runtime_layout: RuntimeLayout) -> Int:
 
 
 @always_inline
-fn __get_offset[i: Int, j: Int](runtime_layout: RuntimeLayout) -> Int:
+fn _get_offset[i: Int, j: Int](runtime_layout: RuntimeLayout) -> Int:
     """Returns the offset for a 2D index into the runtime layout.
 
     Parameters:
@@ -111,7 +111,7 @@ struct Element[
 
             @parameter
             for i in range(size):
-                element_data[i] = ptr[__get_offset[i](runtime_layout)]
+                element_data[i] = ptr[_get_offset[i](runtime_layout)]
             return Element(element_data, runtime_layout)
 
         @parameter
@@ -124,7 +124,7 @@ struct Element[
             @parameter
             for i in range(elements):
                 var vec_i = ptr.load[width=size, alignment=alignment](
-                    __get_offset[0, i](runtime_layout)
+                    _get_offset[0, i](runtime_layout)
                 )
                 element_data = element_data.insert[offset = i * size](vec_i)
             return Element(element_data, runtime_layout)
@@ -138,7 +138,7 @@ struct Element[
             @parameter
             for i in range(elements):
                 var vec_i = ptr.load[width=size, alignment=alignment](
-                    __get_offset[i, 0](runtime_layout)
+                    _get_offset[i, 0](runtime_layout)
                 )
                 element_data = element_data.insert[offset = i * size](vec_i)
             return Element(element_data, runtime_layout)
@@ -152,7 +152,7 @@ struct Element[
             @parameter
             for j in range(dim_1):
                 element_data[i + j * dim_0] = ptr[
-                    __get_offset[i, j](runtime_layout)
+                    _get_offset[i, j](runtime_layout)
                 ]
         return Element(element_data, runtime_layout)
 
@@ -181,7 +181,7 @@ struct Element[
                     for i in range(size):
                         if i >= runtime_layout.dim(0):
                             break
-                        element_data[i] = ptr[__get_offset[i](runtime_layout)]
+                        element_data[i] = ptr[_get_offset[i](runtime_layout)]
                     return Element(element_data, runtime_layout)
 
                 return ptr.load[
@@ -192,7 +192,7 @@ struct Element[
             for i in range(size):
                 if i >= runtime_layout.dim(0):
                     break
-                element_data[i] = ptr[__get_offset[i](runtime_layout)]
+                element_data[i] = ptr[_get_offset[i](runtime_layout)]
             return Element(element_data, runtime_layout)
 
         # rank-2 element.
@@ -217,7 +217,7 @@ struct Element[
                         if j >= runtime_layout.dim(1):
                             break
                         element_data[i + j * dim_0] = ptr[
-                            __get_offset[i, j](runtime_layout)
+                            _get_offset[i, j](runtime_layout)
                         ]
                 return Element(element_data, runtime_layout)
 
@@ -226,7 +226,7 @@ struct Element[
                 if i >= runtime_layout.dim(0):
                     break
                 var vec_i = ptr.load[width=size](
-                    __get_offset[0, i](runtime_layout)
+                    _get_offset[0, i](runtime_layout)
                 )
                 element_data = element_data.insert[offset = i * size](vec_i)
             return Element(element_data, runtime_layout)
@@ -251,7 +251,7 @@ struct Element[
                         if j >= runtime_layout.dim(1):
                             break
                         element_data[i + j * dim_0] = ptr[
-                            __get_offset[i, j](runtime_layout)
+                            _get_offset[i, j](runtime_layout)
                         ]
                 return Element(element_data, runtime_layout)
 
@@ -260,7 +260,7 @@ struct Element[
                 if i >= runtime_layout.dim(0):
                     break
                 var vec_i = ptr.load[width=size](
-                    __get_offset[i, 0](runtime_layout)
+                    _get_offset[i, 0](runtime_layout)
                 )
                 element_data = element_data.insert[offset = i * size](vec_i)
             return Element(element_data, runtime_layout)
@@ -278,7 +278,7 @@ struct Element[
                 if j >= runtime_layout.dim(1):
                     break
                 element_data[i + j * dim_0] = ptr[
-                    __get_offset[i, j](runtime_layout)
+                    _get_offset[i, j](runtime_layout)
                 ]
         return Element(element_data, runtime_layout)
 
@@ -298,7 +298,7 @@ struct Element[
 
             @parameter
             for i in range(size):
-                ptr[__get_offset[i](self.runtime_layout)] = self.element_data[i]
+                ptr[_get_offset[i](self.runtime_layout)] = self.element_data[i]
             return
 
         @parameter
@@ -311,7 +311,7 @@ struct Element[
             @parameter
             for i in range(elements):
                 ptr.store[alignment=alignment](
-                    __get_offset[0, i](self.runtime_layout),
+                    _get_offset[0, i](self.runtime_layout),
                     self.element_data.slice[size, offset = i * size](),
                 )
             return
@@ -325,7 +325,7 @@ struct Element[
             @parameter
             for i in range(elements):
                 ptr.store[alignment=alignment](
-                    __get_offset[i, 0](self.runtime_layout),
+                    _get_offset[i, 0](self.runtime_layout),
                     self.element_data.slice[size, offset = i * size](),
                 )
             return
@@ -338,7 +338,7 @@ struct Element[
 
             @parameter
             for j in range(dim_1):
-                (ptr + __get_offset[i, j](self.runtime_layout)).store(
+                (ptr + _get_offset[i, j](self.runtime_layout)).store(
                     self.element_data[i + j * dim_0]
                 )
 
@@ -359,7 +359,7 @@ struct Element[
                         if i >= self.runtime_layout.dim(0):
                             break
                         ptr[
-                            __get_offset[i](self.runtime_layout)
+                            _get_offset[i](self.runtime_layout)
                         ] = self.element_data[i]
                     return
 
@@ -371,7 +371,7 @@ struct Element[
             for i in range(size):
                 if i >= self.runtime_layout.dim(0):
                     break
-                ptr[__get_offset[i](self.runtime_layout)] = self.element_data[i]
+                ptr[_get_offset[i](self.runtime_layout)] = self.element_data[i]
             return
 
         @parameter
@@ -393,14 +393,14 @@ struct Element[
                     for j in range(dim_1):
                         if j >= self.runtime_layout.dim(1):
                             break
-                        ptr[] = __get_offset[i, j](self.runtime_layout)
+                        ptr[] = _get_offset[i, j](self.runtime_layout)
                 return
 
             @parameter
             for i in range(elements):
                 if i >= self.runtime_layout.dim(0):
                     break
-                (ptr + __get_offset[i, 0](self.runtime_layout)).store[
+                (ptr + _get_offset[i, 0](self.runtime_layout)).store[
                     alignment=alignment
                 ](
                     self.element_data.slice[size, offset = i * size](),
@@ -425,7 +425,7 @@ struct Element[
                     for j in range(dim_1):
                         if j >= self.runtime_layout.dim(1):
                             break
-                        (ptr + __get_offset[i, j](self.runtime_layout)).store(
+                        (ptr + _get_offset[i, j](self.runtime_layout)).store(
                             self.element_data[i + j * dim_0],
                         )
                 return
@@ -434,7 +434,7 @@ struct Element[
             for i in range(elements):
                 if i >= self.runtime_layout.dim(0):
                     break
-                (ptr + __get_offset[i, 0](self.runtime_layout)).store[
+                (ptr + _get_offset[i, 0](self.runtime_layout)).store[
                     alignment=alignment
                 ](
                     self.element_data.slice[size, offset = i * size](),
@@ -453,7 +453,7 @@ struct Element[
             for j in range(dim_1):
                 if j >= self.runtime_layout.dim(1):
                     break
-                (ptr + __get_offset[i, j](self.runtime_layout)).store(
+                (ptr + _get_offset[i, j](self.runtime_layout)).store(
                     self.element_data[i + j * dim_0]
                 )
 

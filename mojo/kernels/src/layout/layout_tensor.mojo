@@ -120,7 +120,7 @@ alias _swizzle_signature = fn[type: DType] (Scalar[type]) -> Scalar[type]
 
 # Returns the size of variadic integer parameters.
 #
-fn __get_len[*var_int: Int]() -> Int:
+fn _get_len[*var_int: Int]() -> Int:
     return __mlir_op.`pop.variadic.size`(var_int)
 
 
@@ -409,7 +409,7 @@ struct LayoutTensor[
         return Self.stride[0]() * m + Self.stride[1]() * n
 
     @always_inline
-    fn __elementwise_unary[
+    fn _elementwise_unary[
         func: fn (Self.element_type) capturing -> (Self.element_type),
     ](self) -> Self:
         constrained[
@@ -429,7 +429,7 @@ struct LayoutTensor[
         return self
 
     @always_inline
-    fn __elementwise_binary_with_broadcast[
+    fn _elementwise_binary_with_broadcast[
         func: fn (Self.element_type, Self.element_type) capturing -> (
             Self.element_type
         ),
@@ -460,7 +460,7 @@ struct LayoutTensor[
                 constrained[
                     other.shape[axis]() == self.shape[axis](),
                     (
-                        "__elementwise_binary_with_broadcast requires shape to"
+                        "_elementwise_binary_with_broadcast requires shape to"
                         " be the same for tensors of the same rank"
                     ),
                 ]()
@@ -468,14 +468,14 @@ struct LayoutTensor[
         constrained[
             layout.all_dims_known(),
             (
-                "__elementwise_binary_with_broadcast must operates on tensors"
+                "_elementwise_binary_with_broadcast must operates on tensors"
                 " of statically know layouts"
             ),
         ]()
         constrained[
             other.rank <= Self.rank,
             (
-                "__elementwise_binary_with_broadcast must operates on tensor of"
+                "_elementwise_binary_with_broadcast must operates on tensor of"
                 " equal of lower rank"
             ),
         ]()
@@ -492,7 +492,7 @@ struct LayoutTensor[
             constrained[
                 other.shape[0]() == self.shape[0](),
                 (
-                    "__elementwise_binary_with_broadcast 1d tensor operand must"
+                    "_elementwise_binary_with_broadcast 1d tensor operand must"
                     " have a dim that matches the tensors"
                 ),
             ]()
@@ -540,7 +540,7 @@ struct LayoutTensor[
         fn add_val(val: Self.element_type) -> Self.element_type:
             return Self.element_type(other) + val
 
-        return self._stack_copy().__elementwise_unary[add_val]()
+        return self._stack_copy()._elementwise_unary[add_val]()
 
     @always_inline
     fn __iadd__(self, other: Scalar[dtype]):
@@ -555,7 +555,7 @@ struct LayoutTensor[
         fn add_val(val: Self.element_type) -> Self.element_type:
             return Self.element_type(other) + val
 
-        _ = self.__elementwise_unary[add_val]()
+        _ = self._elementwise_unary[add_val]()
 
     @always_inline
     fn __add__[
@@ -586,7 +586,7 @@ struct LayoutTensor[
         ) capturing -> Self.element_type:
             return lhs + rhs
 
-        return self._stack_copy().__elementwise_binary_with_broadcast[add_val](
+        return self._stack_copy()._elementwise_binary_with_broadcast[add_val](
             other
         )
 
@@ -619,7 +619,7 @@ struct LayoutTensor[
         ) capturing -> Self.element_type:
             return lhs + rhs
 
-        _ = self.__elementwise_binary_with_broadcast[add_val](other)
+        _ = self._elementwise_binary_with_broadcast[add_val](other)
 
     @always_inline
     fn __mul__(
@@ -636,7 +636,7 @@ struct LayoutTensor[
         fn mul_val(val: Self.element_type) -> Self.element_type:
             return Self.element_type(other) * val
 
-        return self._stack_copy().__elementwise_unary[mul_val]()
+        return self._stack_copy()._elementwise_unary[mul_val]()
 
     @always_inline
     fn __mul__[
@@ -672,7 +672,7 @@ struct LayoutTensor[
         ) capturing -> Self.element_type:
             return lhs * rhs
 
-        return self._stack_copy().__elementwise_binary_with_broadcast[mul_val](
+        return self._stack_copy()._elementwise_binary_with_broadcast[mul_val](
             other
         )
 
@@ -689,7 +689,7 @@ struct LayoutTensor[
         fn mul_val(val: Self.element_type) -> Self.element_type:
             return Self.element_type(other) * val
 
-        _ = self.__elementwise_unary[mul_val]()
+        _ = self._elementwise_unary[mul_val]()
 
     @always_inline
     fn __imul__[
@@ -720,7 +720,7 @@ struct LayoutTensor[
         ) capturing -> Self.element_type:
             return lhs * rhs
 
-        _ = self.__elementwise_binary_with_broadcast[mul_val](other)
+        _ = self._elementwise_binary_with_broadcast[mul_val](other)
 
     @always_inline
     fn __sub__(
@@ -737,7 +737,7 @@ struct LayoutTensor[
         fn sub_val(val: Self.element_type) -> Self.element_type:
             return val - Self.element_type(other)
 
-        return self._stack_copy().__elementwise_unary[sub_val]()
+        return self._stack_copy()._elementwise_unary[sub_val]()
 
     @always_inline
     fn __sub__[
@@ -768,7 +768,7 @@ struct LayoutTensor[
         ) capturing -> Self.element_type:
             return lhs - rhs
 
-        return self._stack_copy().__elementwise_binary_with_broadcast[sub_val](
+        return self._stack_copy()._elementwise_binary_with_broadcast[sub_val](
             other
         )
 
@@ -785,7 +785,7 @@ struct LayoutTensor[
         fn sub_val(val: Self.element_type) -> Self.element_type:
             return val - Self.element_type(other)
 
-        _ = self.__elementwise_unary[sub_val]()
+        _ = self._elementwise_unary[sub_val]()
 
     @always_inline
     fn __isub__[
@@ -815,7 +815,7 @@ struct LayoutTensor[
         ) capturing -> Self.element_type:
             return lhs - rhs
 
-        _ = self.__elementwise_binary_with_broadcast[sub_val](other)
+        _ = self._elementwise_binary_with_broadcast[sub_val](other)
 
     @always_inline
     fn __truediv__(
@@ -832,7 +832,7 @@ struct LayoutTensor[
         fn div_val(val: Self.element_type) -> Self.element_type:
             return val / Self.element_type(other)
 
-        return self._stack_copy().__elementwise_unary[div_val]()
+        return self._stack_copy()._elementwise_unary[div_val]()
 
     @always_inline
     fn __truediv__[
@@ -863,7 +863,7 @@ struct LayoutTensor[
         ) capturing -> Self.element_type:
             return lhs / rhs
 
-        return self._stack_copy().__elementwise_binary_with_broadcast[div_val](
+        return self._stack_copy()._elementwise_binary_with_broadcast[div_val](
             other
         )
 
@@ -1094,7 +1094,7 @@ struct LayoutTensor[
         ) capturing -> Self.element_type:
             return rhs
 
-        return copy.__elementwise_binary_with_broadcast[self_value](self)
+        return copy._elementwise_binary_with_broadcast[self_value](self)
 
     @staticmethod
     @always_inline("nodebug")
@@ -1260,7 +1260,7 @@ struct LayoutTensor[
                             [1 1]
         """
 
-        alias num_tiles = __get_len[*tile_sizes]()
+        alias num_tiles = _get_len[*tile_sizes]()
 
         # need to calculate this again because __tiled_layout[1] is required for the offset calculation
         alias __tiled_layout = Self._compute_tile_layout[*tile_sizes]()
@@ -1365,7 +1365,7 @@ struct LayoutTensor[
             tile_coords: The tile coordinate that the iterator will point to.
         """
 
-        alias tiles_rank = __get_len[*tile_sizes]()
+        alias tiles_rank = _get_len[*tile_sizes]()
         alias __tiled_layout = Self._compute_tile_layout[*tile_sizes]()
         constrained[
             __tiled_layout[1].rank() == tiles_rank,
@@ -1820,9 +1820,9 @@ struct LayoutTensor[
     ):
         @parameter
         @always_inline
-        fn __check_vector_shape[*vec_shape: Int]():
+        fn _check_vector_shape[*vec_shape: Int]():
             @parameter
-            for i in range(__get_len[*vec_shape]()):
+            for i in range(_get_len[*vec_shape]()):
                 alias shape_i = Int(self.layout.shape[i])
 
                 @parameter
@@ -1900,7 +1900,7 @@ struct LayoutTensor[
             )
 
     @staticmethod
-    fn __compute_slice_layout(d0_slice: Slice, d1_slice: Slice) -> Layout:
+    fn _compute_slice_layout(d0_slice: Slice, d1_slice: Slice) -> Layout:
         constrained[
             layout.shape.__len__() == 2,
             "Only rank-2 tensors slices are supported for now!",
@@ -1914,7 +1914,7 @@ struct LayoutTensor[
         )
 
     @staticmethod
-    fn __compute_slice_layout(
+    fn _compute_slice_layout(
         slice_0: Slice, slice_1: Slice, slice_0_axis: Int, slice_1_axis: Int
     ) -> Layout:
         constrained[
@@ -1931,7 +1931,7 @@ struct LayoutTensor[
         )
 
     @staticmethod
-    fn __compute_slice_layout(slice_0: Slice, slice_0_axis: Int) -> Layout:
+    fn _compute_slice_layout(slice_0: Slice, slice_0_axis: Int) -> Layout:
         constrained[
             layout.shape.__len__() > 1,
             "Rank should be >= 1",
@@ -1952,7 +1952,7 @@ struct LayoutTensor[
         self,
         out result: LayoutTensor[
             dtype,
-            Self.__compute_slice_layout(
+            Self._compute_slice_layout(
                 d0_slice,
                 d1_slice,
             ),
@@ -1987,7 +1987,7 @@ struct LayoutTensor[
         offsets: IndexList[__offset_dims],
         out result: LayoutTensor[
             dtype,
-            Self.__compute_slice_layout(
+            Self._compute_slice_layout(
                 d0_slice, d1_slice, slice_indices[0], slice_indices[1]
             ),
             mut=mut,
@@ -2039,7 +2039,7 @@ struct LayoutTensor[
         offsets: IndexList[__offset_dims],
         out result: LayoutTensor[
             dtype,
-            Self.__compute_slice_layout(d0_slice, slice_indices[0]),
+            Self._compute_slice_layout(d0_slice, slice_indices[0]),
             mut=mut,
             origin=origin,
             address_space=address_space,
@@ -2157,7 +2157,7 @@ struct LayoutTensor[
     # Returns the linear index of an elem_i 0 ... size(layout).
     #
     @always_inline
-    fn __get_element_idx[elem_i: Int](self) -> Int:
+    fn _get_element_idx[elem_i: Int](self) -> Int:
         alias element_size = Int(self.element_size)
 
         @parameter
@@ -2205,8 +2205,8 @@ struct LayoutTensor[
 
         @parameter
         for i in range(dst_size):
-            src_idx = other.__get_element_idx[i]()
-            dst_idx = self.__get_element_idx[i]()
+            src_idx = other._get_element_idx[i]()
+            dst_idx = self._get_element_idx[i]()
 
             src_element = MemoryElement(
                 other.ptr.offset(src_idx), other.runtime_element_layout

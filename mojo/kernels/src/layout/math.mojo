@@ -215,4 +215,4 @@ fn exp(
     fn exp_func(val: inp.element_type) -> inp.element_type:
         return math.exp(val)
 
-    return inp._stack_copy().__elementwise_unary[exp_func]()
+    return inp._stack_copy()._elementwise_unary[exp_func]()
