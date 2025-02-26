@@ -249,6 +249,66 @@ TEST_F(BlobCacheTest, OutKeyHashNullSafe) {
   ASSERT_FALSE(findOr.isError()) << findOr.getDiagnostic().getMessage();
 }
 
+TEST_F(BlobCacheTest, InsertKeyedAsyncWorks) {
+  // Create a buffer with a known value
+  auto onesDataBuf = WriteableBuffer::get();
+  onesDataBuf->write(1);
+  BufferRef onesBuf = std::move(onesDataBuf);
+
+  // Use a plain key for retrieval
+  std::string plainKey = "insertKeyedTest";
+  // Compute the hashed key which will be used for insertion
+  std::string hashedKey = cache->getHash(plainKey);
+
+  // Insert using insertKeyed; note we pass the already hashed key
+  auto chainAV = cache->insertKeyed(*runtime, hashedKey, onesBuf.copy());
+  await(chainAV);
+
+  // Now find using the plain key, which will compute hash
+  auto findAV = cache->find(*runtime, plainKey);
+  await(findAV);
+
+  ASSERT_FALSE(findAV.isError()) << findAV.getDiagnostic().getMessage();
+  ASSERT_TRUE(findAV->has_value())
+      << "Expected to find item inserted with insertKeyed";
+  BufferRef outBuf = std::move(**findAV);
+  ASSERT_EQ(outBuf->getBufferSize(), onesBuf->getBufferSize())
+      << "Output buffer size did not match input buffer size";
+  EXPECT_TRUE(outBuf->getBuffer() ==
+              StringRef(onesBuf->getBufferStart(), onesBuf->getBufferSize()))
+      << "Buffer returned did not match the buffer inserted via insertKeyed";
+}
+
+TEST_F(BlobCacheTest, InsertKeyedSyncWorks) {
+  // Create a buffer with a known value
+  auto twosDataBuf = WriteableBuffer::get();
+  twosDataBuf->write(2);
+  BufferRef twosBuf = std::move(twosDataBuf);
+
+  // Use a plain key for retrieval
+  std::string plainKey = "insertKeyedSyncTest";
+  // Compute the hashed key which will be used for synchronous insertion
+  std::string hashedKey = cache->getHash(plainKey);
+
+  // Insert using insertKeyedSync; pass the pre-hashed key
+  auto err = cache->insertKeyedSync(hashedKey, twosBuf.copy());
+  ASSERT_FALSE(err.isError())
+      << "Synchronous insertKeyedSync failed: " << err.getError();
+
+  // Retrieve using findSync with the plain key
+  auto findOr = cache->findSync(plainKey);
+  ASSERT_FALSE(findOr.isError()) << findOr.getError();
+  ASSERT_TRUE(findOr->has_value())
+      << "Expected to retrieve item inserted via insertKeyedSync";
+  BufferRef outBuf = std::move(**findOr);
+  ASSERT_EQ(outBuf->getBufferSize(), twosBuf->getBufferSize())
+      << "Output buffer size did not match input buffer size";
+  EXPECT_TRUE(outBuf->getBuffer() ==
+              StringRef(twosBuf->getBufferStart(), twosBuf->getBufferSize()))
+      << "Buffer returned did not match the buffer inserted via "
+         "insertKeyedSync";
+}
+
 //===----------------------------------------------------------------------===//
 // Specialized FilesystemBackend tests
 //===----------------------------------------------------------------------===//
