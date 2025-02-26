@@ -132,7 +132,7 @@ class SafetensorWeights(Weights):
             return self._st_weight_map[self._prefix]
 
         if self.name not in self._tensors_to_file_idx:
-            msg = f"'{self.name}' is not a weight in the Safetensor ckpt."
+            msg = f"'{self.name}' is not a weight in the Safetensor checkpoint."
             if possible_match := difflib.get_close_matches(
                 self.name, self._tensors_to_file_idx.keys(), n=1
             ):

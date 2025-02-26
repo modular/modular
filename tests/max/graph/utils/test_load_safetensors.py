@@ -131,7 +131,7 @@ def test_load_invalid_tensor(testdata_directory) -> None:
     )
     with pytest.raises(
         KeyError,
-        match="'0.a' is not a weight in the Safetensor ckpt. Did you mean '1.a'?",
+        match="'0.a' is not a weight in the Safetensor checkpoint. Did you mean '1.a'?",
     ):
         print(weights._tensors_to_file_idx)
         _ = weights["0"].a.allocate()
