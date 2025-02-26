@@ -387,7 +387,7 @@ class TokenGenerationSchedulerV2(Scheduler):
 
         # Keep preempting requests until we can schedule the entire active batch
         initial_active_batch_size = len(self.active_batch)
-        while self.active_batch:
+        while len(self.active_batch) > 1:
             seq_ids_and_prompts = self._construct_fetch_input(self.active_batch)
             if self.paged_manager.can_fetch(
                 seq_ids_and_prompts,
@@ -396,15 +396,30 @@ class TokenGenerationSchedulerV2(Scheduler):
                 return self.active_batch
             self._preempt_request()
 
-        # We failed to construct a TG batch.
+        # There is one non-preempted request left in the active batch
+        assert len(self.active_batch) == 1
+
+        # We can schedule the remaining request if we can run just one step.
+        # This request will be terminated in `next_token` if it exceeds the
+        # max_seq_len prior to executing all of the steps.
+        seq_ids_and_prompts = self._construct_fetch_input(self.active_batch)
+        if self.paged_manager.can_fetch(
+            seq_ids_and_prompts,
+            num_steps=1,
+        ):
+            return self.active_batch
+
+        # We have utterly failed to construct a TG batch.
         # This should literally never happen unless the user sets an absurdly
-        # large max seq len or the KV cache is so small.
-        raise RuntimeError(
-            f"Insufficient KV pages to run token generation with batch size "
-            f"of one even after preempting {initial_active_batch_size - 1} requests."
-            f"You must restart your process and set a lower max seq len to prevent "
-            f"a single request from using the entire KV cache."
-        )
+        # large max seq len or the KV cache is very small.
+        last_req = next(iter(self.active_batch.values()))
+        current_len = last_req.current_length
+        num_preemptions = initial_active_batch_size - 1
+        msg = f"Insufficient KV pages to run token generation on a single request with {current_len} tokens. "
+        if num_preemptions > 0:
+            msg += f"This is even after preempting {num_preemptions} requests. "
+        msg += "You must restart your process and set a lower max seq len to prevent a single request from using the entire KV cache."
+        raise RuntimeError(msg)
 
     @traced
     def _create_batch_to_execute(self) -> Tuple[BatchInputs, BatchType]:
