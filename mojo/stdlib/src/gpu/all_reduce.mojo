@@ -3,9 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
-"""
-Multi-GPU allreduce implementation for efficient tensor reduction across GPUs.
+"""Multi-GPU allreduce implementation for efficient tensor reduction across GPUs.
 
 This module provides an optimized implementation of allreduce operations across multiple GPUs,
 supporting both peer-to-peer (P2P) and non-P2P communication patterns. The implementation
