@@ -18,6 +18,7 @@ from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.id import block_dim, block_idx, thread_idx
 from gpu.memory import AddressSpace, external_memory
 from linalg.matmul_sm90 import warp_specialize_gemm_with_multicasting
+from linalg.matmul_tile_scheduler import MatmulSchedule
 from gpu.mma import (
     WGMMADescriptor,
     wgmma_async,
@@ -69,6 +70,7 @@ def test_warp_specialize_gemm[
     c_type: DType,
     num_consumer: Int = 1,
     transpose_b: Bool = True,
+    schedule: MatmulSchedule = MatmulSchedule.TILE2D,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,):
     var M = m.value
     var N = n.value
@@ -143,7 +145,7 @@ def test_warp_specialize_gemm[
         wgmma_n=wgmma_n,
         num_consumer=num_consumer,
         partitioned_multicast=False,
-        use_persistant_kernel=True,
+        schedule=schedule,
     ](
         c_device.tensor,
         a_device.tensor,
@@ -197,12 +199,12 @@ def test_warp_specialize_gemm[
 def main():
     with DeviceContext() as ctx:
         test_warp_specialize_gemm[
-            128,
+            256,
             DType.bfloat16,
             DType.bfloat16,
             DType.bfloat16,
-            num_consumer=1,
-        ](ctx, static[128](), static[128](), static[128]())
+            num_consumer=2,
+        ](ctx, dynamic(8192), static[2560](), static[8192]())
 
         test_warp_specialize_gemm[
             128,
@@ -216,71 +218,84 @@ def main():
             64, DType.bfloat16, DType.bfloat16, DType.bfloat16
         ](ctx, static[128](), static[64](), static[64]())
 
-        alias wgmma_n = List[Int](8, 32, 64, 128, 256)
-        alias num_ins = 5
+        alias wgmma_n = List[Int](128, 256)
+        alias schedules = List[MatmulSchedule](
+            MatmulSchedule.TILE1D, MatmulSchedule.TILE2D
+        )
 
         @parameter
-        for i in range(num_ins):
-            test_warp_specialize_gemm[
-                wgmma_n[i],
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                num_consumer=1,
-            ](ctx, static[1024](), static[512](), static[128]())
+        for j in range(len(schedules)):
 
-            test_warp_specialize_gemm[
-                wgmma_n[i],
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                num_consumer=2,
-            ](ctx, static[1024](), static[512](), static[128]())
+            @parameter
+            for i in range(len(wgmma_n)):
+                test_warp_specialize_gemm[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    num_consumer=1,
+                    schedule = schedules[j],
+                ](ctx, static[1024](), static[512](), static[128]())
 
-            test_warp_specialize_gemm[
-                wgmma_n[i],
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                num_consumer=1,
-            ](ctx, dynamic(99), static[1024](), static[1024]())
+                test_warp_specialize_gemm[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    num_consumer=2,
+                    schedule = schedules[j],
+                ](ctx, static[1024](), static[512](), static[128]())
 
-            test_warp_specialize_gemm[
-                wgmma_n[i],
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                num_consumer=2,
-            ](ctx, dynamic(99), static[1024](), static[1024]())
+                test_warp_specialize_gemm[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    num_consumer=1,
+                    schedule = schedules[j],
+                ](ctx, dynamic(99), static[1024](), static[1024]())
 
-            test_warp_specialize_gemm[
-                wgmma_n[i],
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                num_consumer=1,
-            ](ctx, dynamic(100), static[512](), static[256]())
+                test_warp_specialize_gemm[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    num_consumer=2,
+                    schedule = schedules[j],
+                ](ctx, dynamic(99), static[1024](), static[1024]())
 
-            test_warp_specialize_gemm[
-                wgmma_n[i],
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                num_consumer=2,
-            ](ctx, dynamic(100), static[512](), static[256]())
+                test_warp_specialize_gemm[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    num_consumer=1,
+                    schedule = schedules[j],
+                ](ctx, dynamic(100), static[512](), static[256]())
 
-            test_warp_specialize_gemm[
-                wgmma_n[i],
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                num_consumer=1,
-            ](ctx, dynamic(201), static[2048](), static[256]())
+                test_warp_specialize_gemm[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    num_consumer=2,
+                    schedule = schedules[j],
+                ](ctx, dynamic(100), static[512](), static[256]())
 
-            test_warp_specialize_gemm[
-                wgmma_n[i],
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                num_consumer=2,
-            ](ctx, dynamic(201), static[2048](), static[256]())
+                test_warp_specialize_gemm[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    num_consumer=1,
+                    schedule = schedules[j],
+                ](ctx, dynamic(201), static[2048](), static[256]())
+
+                test_warp_specialize_gemm[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    num_consumer=2,
+                    schedule = schedules[j],
+                ](ctx, dynamic(201), static[2048](), static[256]())
