@@ -4638,6 +4638,9 @@ struct ConcatFromList:
         axis: Int,
         ctx: DeviceContextPtr,
     ) raises:
+        constrained[
+            target == "cpu", "only cpu is supported for concat_from_list"
+        ]()
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
 
         # TODO: convert underlying kernel to accept lists of ManagedTensorSlice
