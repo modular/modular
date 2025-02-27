@@ -25,6 +25,10 @@ SeqId = int
 from collections import OrderedDict
 
 
+def align_down(x: int, y: int) -> int:
+    return (x // y) * y
+
+
 def _token_prefix_match_len(
     tokens0: np.ndarray, tokens1: np.ndarray, page_size: int
 ) -> int:
@@ -38,10 +42,11 @@ def _token_prefix_match_len(
     assert len(tokens0) % page_size == 0
     assert len(tokens1) % page_size == 0
     shorter_len = min(len(tokens0), len(tokens1))
-    for i in range(0, shorter_len, page_size):
-        if (tokens0[i : i + page_size] != tokens1[i : i + page_size]).any():
-            return i
-    return shorter_len
+    diff = tokens0[:shorter_len] != tokens1[:shorter_len]
+    idx = np.nonzero(diff)[0]
+    if len(idx) == 0:
+        return shorter_len
+    return align_down(idx[0], page_size)
 
 
 def _token_to_key(tokens: np.ndarray, page_size: int) -> tuple[TokenId, ...]:
@@ -106,7 +111,6 @@ class TrieNode:
         if prefix_len == 0:
             return None
         assert prefix_len <= len(target)
-        assert target[:prefix_len] == key[:prefix_len]
         return self.children[tuple(key)].blocks[0], prefix_len
 
     def get_prefix_tokens_and_blocks(self) -> Tuple[np.ndarray, List[BlockId]]:
@@ -316,7 +320,7 @@ class RadixTrie:
         if len(tokens) == 0:
             return node, []
 
-        tokens = tokens[: len(tokens) // self.page_size * self.page_size]
+        tokens = tokens[: align_down(len(tokens), self.page_size)]
         curr = match_prefix_helper(node, tokens, blocks)
         return curr, blocks
 
