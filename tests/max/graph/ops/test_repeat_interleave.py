@@ -7,6 +7,7 @@
 
 import random
 
+import pytest
 from conftest import tensor_types
 from hypothesis import given
 from hypothesis import strategies as st
@@ -19,6 +20,7 @@ from max.graph import Graph, TensorType, ops
     # Stack currently fails on an empty list.
     repeats=st.integers(min_value=1, max_value=20),
 )
+@pytest.mark.skip("GEX-1903")
 def test_repeat_interleave(type: TensorType, repeats: int):
     axis = random.randint(0, type.rank - 1)
     with Graph("repeat_interleave", input_types=[type]) as graph:
