@@ -472,11 +472,11 @@ fn _str_fmt_width[max_width: Int = 256](str: String, str_width: Int) -> String:
 
     var x = String._buffer_type()
     x.reserve(max_width)
-    x.size += _snprintf["%-*s"](x.data, max_width, str_width, str.unsafe_ptr())
+    x._len += _snprintf["%-*s"](x.data, max_width, str_width, str.unsafe_ptr())
     debug_assert(
         len(x) < max_width, "Attempted to access outside array bounds!"
     )
-    x.size += 1
+    x._len += 1
     return String(x)
 
 
