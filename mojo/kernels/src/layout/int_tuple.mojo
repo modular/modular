@@ -754,6 +754,28 @@ fn flatten(t: IntTuple) -> IntTuple:
     return reduce[reducer](t)
 
 
+fn to_nest(nested: IntTuple, flat: IntTuple) -> IntTuple:
+    """Nests a flat IntTuple according to the structure of a nested IntTuple.
+    For example: `to_nest((2, (3, 4), 5), (1, 2, 3, 4))` returns `(1, (2, 3),
+    4)`.
+    """
+    var result = IntTuple()
+    var flat_idx = 0
+
+    for i in range(len(nested)):
+        if is_int(nested[i]):
+            result.append(flat[flat_idx])
+            flat_idx += 1
+        else:
+            var sub_size = depth(nested[i]) + 1
+            result.append(
+                to_nest(nested[i], flat[flat_idx : flat_idx + sub_size])
+            )
+            flat_idx += sub_size
+
+    return result
+
+
 fn _to_unknown(mut t: IntTuple):
     var num_elems = len(t)
     for i in range(num_elems):
@@ -863,6 +885,13 @@ fn apply[func: fn (Int) capturing [_] -> Int](t: IntTuple) -> IntTuple:
     return res
 
 
+fn shallow_apply[func: fn (IntTuple) -> Int](t: IntTuple) -> IntTuple:
+    var res = IntTuple()
+    for e in t:
+        res.append(func(e))
+    return res
+
+
 fn apply_zip[
     func: fn (IntTuple, IntTuple) -> IntTuple
 ](t1: IntTuple, t2: IntTuple) -> IntTuple:
@@ -926,6 +955,10 @@ fn abs(t: IntTuple) -> IntTuple:
         return x.__abs__()
 
     return apply[int_abs](t)
+
+
+fn product_each(t: IntTuple) -> IntTuple:
+    return shallow_apply[product](t)
 
 
 # Multiply lhs tuple elements by rhs
@@ -1249,3 +1282,79 @@ fn depth(src: IntTuple) -> Int:
     for elem in src:
         res += depth(elem)
     return res
+
+
+# Returns permutation indices that would sort the tuple
+fn _sorted_perm(tuple: IntTuple) -> IntTuple:
+    """Returns permutation indices that would sort the tuple."""
+    var n = len(tuple)
+    var indices = IntTuple()
+    var values = IntTuple()
+
+    for i in range(n):
+        indices.append(i)
+        values.append(tuple[i])
+
+    # Insertion sort
+    for i in range(1, n):
+        var key_val = values[i]
+        var key_idx = indices[i]
+        var j = i - 1
+
+        while j >= 0 and Int(values[j]) > Int(key_val):
+            values.replace_entry(j + 1, int_value=Int(values[j]))
+            indices.replace_entry(j + 1, int_value=Int(indices[j]))
+            j -= 1
+
+        values.replace_entry(j + 1, int_value=Int(key_val))
+        indices.replace_entry(j + 1, int_value=Int(key_idx))
+
+    return indices
+
+
+fn _flat_apply_perm(tuple: IntTuple, perm: IntTuple) -> IntTuple:
+    """Applies a permutation to an IntTuple."""
+    var n = len(tuple)
+    var result = IntTuple()
+    for i in range(n):
+        result.append(tuple[Int(perm[i])])
+    return result
+
+
+fn _flat_apply_invperm(tuple: IntTuple, perm: IntTuple) -> IntTuple:
+    """Applies the inverse permutation to an IntTuple."""
+    var n = len(tuple)
+    var result = IntTuple(num_elems=n, size=n + 1)
+    for i in range(n):
+        result.replace_entry(Int(perm[i]), int_value=Int(tuple[i]))
+    return result
+
+
+fn _flat_compact_order(shape: IntTuple, order: IntTuple) -> IntTuple:
+    """Helper function that computes compact order for flattened inputs."""
+    if len(shape) != len(order):
+        abort("Shape and order must have the same size")
+
+    var perm = _sorted_perm(order)
+    var sorted_shape = _flat_apply_perm(shape, perm)
+    var strides = prefix_product(sorted_shape)
+    return _flat_apply_invperm(strides, perm)
+
+
+# Create a compact stride such that lower order number implies faster varying stride.
+# A shape and a compact stride forms a layout that is bijective.
+# E.g. `compact_order((2,3,4,5), (1, 4, 3, 5))` is `(1,8,2,24)` and
+# `compact_order((2,(3,4),5), (1, (2, 3), 4))` is `(1,(2,6),24)`.
+fn compact_order(shape: IntTuple, order: IntTuple) -> IntTuple:
+    """Create a compact stride such that lower order number implies faster varying stride.
+    A shape and a compact stride forms a layout that is bijective.
+    """
+    # Flatten both shape and order
+    var flat_shape = flatten(shape)
+    var flat_order = flatten(order)
+
+    # Call _flat_compact_order on flattened inputs
+    var flat_result = _flat_compact_order(flat_shape, flat_order)
+
+    # Re-nest the result according to original shape's structure
+    return to_nest(shape, flat_result)

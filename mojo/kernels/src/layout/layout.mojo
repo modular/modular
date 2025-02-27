@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import sys
-from collections import InlineArray
+from collections import InlineArray, Optional
 from collections.string.string import _calc_initial_buffer_size_int32
 from os import abort
 
@@ -35,6 +35,8 @@ from .int_tuple import (
     to_unknown,
     tuple_min,
     zip,
+    compact_order,
+    product_each,
 )
 
 # ===-----------------------------------------------------------------------===#
@@ -100,6 +102,18 @@ fn make_layout(layout_a: Layout, layout_b: Layout) -> Layout:
     shape.append(layout_b.shape)
     stride.append(layout_a.stride)
     stride.append(layout_b.stride)
+    return Layout(shape, stride)
+
+
+# Make a compact/bijective layout with `shape` and `stride` following the order
+# induced by `order`.
+# For example:
+# `make_ordered_layout(IntTuple(2, 3, 4, 5),  IntTuple(1, 4, 3, 5)) == (2, 3, 4,
+# 5):(1, 8, 2, 24)`
+# `make_ordered_layout(IntTuple(2, IntTuple(3, 4), 5),  IntTuple(1, IntTuple(2,
+# 3), 4)) == ((2, (3, 4)), 5):(1, (2, 6), 24)`
+fn make_ordered_layout(shape: IntTuple, order: IntTuple) -> Layout:
+    var stride = compact_order(shape, order)
     return Layout(shape, stride)
 
 
@@ -555,6 +569,31 @@ fn blocked_product(layout_a: Layout, layout_b: Layout) -> Layout:
     var lp = logical_product(layout_a, layout_b)
     # ((a_0, tile_0), (a_1, tile_1), ...)
     return zip_modes(lp[0], lp[1])
+
+
+fn tile_to_shape(
+    tile: Layout, target_shape: IntTuple, order: Optional[IntTuple] = None
+) -> Layout:
+    var flat_tile_shape = product_each(tile.shape)
+    var flat_target_shape = product_each(target_shape)
+    var tiler_shape = IntTuple()
+    for i in range(len(flat_tile_shape)):
+        var a = Int(flat_target_shape[i])
+        var b = Int(flat_tile_shape[i])
+        if a % b != 0:
+            abort(
+                "Tile to shape failed: target shape is not divisible by tile"
+                " shape"
+            )
+        tiler_shape.append(a // b)
+
+    var new_order: IntTuple
+    if order:
+        new_order = order.value()
+    else:
+        new_order = prefix_product(tiler_shape)  # default to column major
+    var tiler = make_ordered_layout(tiler_shape, new_order)
+    return blocked_product(tile, tiler)
 
 
 fn logical_product(layout_a: Layout, tiler: LayoutList) -> Layout:

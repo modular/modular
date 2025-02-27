@@ -20,6 +20,7 @@ from layout.layout import (
     logical_divide,
     logical_product,
     blocked_product,
+    tile_to_shape,
     print_layout,
     right_inverse,
     size,
@@ -436,6 +437,15 @@ fn test_blocked_product() raises:
     assert_equal(bp1, reference_bp1)
 
 
+fn test_tile_to_shape() raises:
+    print("== test_tile_to_shape")
+    var a = Layout(IntTuple(2, 5), IntTuple(5, 1))
+    var b = tile_to_shape(a, IntTuple(6, 20))
+    assert_equal(String(b), "(((2, 3), (5, 4)):((5, 10), (1, 30)))")
+    var b2 = tile_to_shape(a, IntTuple(6, 20), IntTuple(1, 0))
+    assert_equal(String(b2), "(((2, 3), (5, 4)):((5, 40), (1, 10)))")
+
+
 # CHECK-LABEL: test_print_layout
 # CHECK: ((2, 2):(1, 2))
 # CHECK:       0   1
@@ -630,6 +640,7 @@ def main():
     test_logcial_divide()
     test_logical_product()
     test_blocked_product()
+    test_tile_to_shape()
     test_print_layout()
     test_format_layout_grid()
     test_zipped_divide()

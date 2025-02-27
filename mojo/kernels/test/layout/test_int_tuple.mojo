@@ -410,6 +410,28 @@ def test_unknown_value_arith():
     assert_equal(sum(t), UNKNOWN_VALUE)
 
 
+def test_compact_order():
+    print("== test_compact_order")
+    assert_equal(
+        compact_order(IntTuple(2, 3, 4, 5), IntTuple(1, 4, 3, 5)),
+        IntTuple(1, 8, 2, 24),
+    )
+    assert_equal(
+        compact_order(
+            IntTuple(2, IntTuple(3, 4), 5), IntTuple(1, IntTuple(2, 3), 4)
+        ),
+        IntTuple(1, IntTuple(2, 6), 24),
+    )
+    assert_equal(
+        compact_order(IntTuple(2, 2, 2, 2), IntTuple(0, 2, 3, 1)),
+        IntTuple(1, 4, 8, 2),
+    )
+    assert_equal(
+        compact_order(IntTuple(2, 3, 4, 5), IntTuple(0, 2, 3, 1)),
+        IntTuple(1, 10, 30, 2),
+    )
+
+
 def main():
     test_tuple_basic()
     test_tuple_slicing()
@@ -429,5 +451,6 @@ def main():
     test_fill_like()
     test_reverse()
     test_depth()
+    test_compact_order()
 
     test_unknown_value_arith()
