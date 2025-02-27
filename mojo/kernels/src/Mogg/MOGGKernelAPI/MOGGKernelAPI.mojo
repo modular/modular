@@ -176,6 +176,8 @@ from runtime.tracing import Trace, TraceLevel, trace_arg
 from tensor_internal import (
     DynamicTensor,
     ManagedTensorSlice,
+    InputTensor,
+    OutputTensor,
     VariadicTensors,
     _input_fusion_hook_impl,
     _output_fusion_hook_impl,
@@ -186,6 +188,7 @@ from tensor_internal import (
     IOSpec,
     IOUnknown,
 )
+from tensor_internal.io_spec import IO
 from tensor_internal.managed_tensor_slice import get_kernel_simd_width
 
 from utils import IndexList, StaticTuple
@@ -310,10 +313,10 @@ fn create_known_dim[known_val: Int]() -> Dim:
 @register_internal("reshape_contiguous_managed_tensor_slice")
 @always_inline
 fn reshape_contiguous_buffer[
-    type: DType, old_rank: Int, new_rank: Int
+    type: DType, old_rank: Int, new_rank: Int, mut: Bool, input: IO
 ](
     buffer: ManagedTensorSlice[
-        io_spec=IOUnknown,
+        io_spec = IOSpec[mut, input](),
         static_spec = StaticTensorSpec[type, old_rank].create_unknown(),
     ],
     shape: IndexList[new_rank],
@@ -374,11 +377,14 @@ fn build_static_tensor_specs_tuple[
 @register_internal("to_managed_tensor_slice")
 @always_inline
 fn to_managed_tensor_slice[
-    type: DType, rank: Int
+    type: DType, rank: Int, mut: Bool, input: IO
 ](
     data: UnsafePointer[Scalar[type]],
     shape: UnsafePointer[Int],
-) -> DynamicTensor[type, rank].Type:
+) -> ManagedTensorSlice[
+    io_spec = IOSpec[mut, input](),
+    static_spec = StaticTensorSpec[type, rank].create_unknown(),
+]:
     var shape_ptr = shape
     var shape_tuple = IndexList[rank]()
 
@@ -392,16 +398,22 @@ fn to_managed_tensor_slice[
         stride_tuple[i] = stride
         stride *= shape_tuple[i]
 
-    return DynamicTensor[type, rank].Type(data, shape_tuple, stride_tuple)
+    return ManagedTensorSlice[
+        io_spec = IOSpec[mut, input](),
+        static_spec = StaticTensorSpec[type, rank].create_unknown(),
+    ](data, shape_tuple, stride_tuple)
 
 
 @always_inline
 fn _to_managed_tensor_slice_index_list_shape[
-    type: DType, rank: Int
+    type: DType, rank: Int, mut: Bool, input: IO
 ](
     data: UnsafePointer[Scalar[type]],
     shape_tuple: IndexList[rank],
-) -> DynamicTensor[type, rank].Type:
+) -> ManagedTensorSlice[
+    io_spec = IOSpec[mut, input](),
+    static_spec = StaticTensorSpec[type, rank].create_unknown(),
+]:
     var stride_tuple = IndexList[rank]()
     var stride: Int = 1
 
@@ -411,7 +423,10 @@ fn _to_managed_tensor_slice_index_list_shape[
         stride_tuple[i] = stride
         stride *= shape_tuple[i]
 
-    return DynamicTensor[type, rank].Type(data, shape_tuple, stride_tuple)
+    return ManagedTensorSlice[
+        io_spec = IOSpec[mut, input](),
+        static_spec = StaticTensorSpec[type, rank].create_unknown(),
+    ](data, shape_tuple, stride_tuple)
 
 
 # Extract a value from a shape.
@@ -427,12 +442,7 @@ fn get_scalar_from_ndbuffer[
 @always_inline
 fn _get_scalar_from_managed_tensor_slice[
     dtype: DType,
-](
-    tensor: ManagedTensorSlice[
-        io_spec=IOUnknown,
-        static_spec = StaticTensorSpec[dtype, 1].create_unknown(),
-    ]
-) -> Scalar[dtype]:
+](tensor: ManagedTensorSlice[type=dtype]) -> Scalar[dtype]:
     # Assumes that tensor is on the host!
     # This is used instead of [0] since __getitem__ for `ManagedTesnorSlice`
     # does not work with `register_internal` out of the box.
@@ -443,10 +453,10 @@ fn _get_scalar_from_managed_tensor_slice[
 @register_internal("get_scalar_from_managed_tensor_slice")
 @always_inline
 fn get_scalar_from_managed_tensor_slice[
-    dtype: DType,
+    dtype: DType, mut: Bool, input: IO
 ](
     tensor: ManagedTensorSlice[
-        io_spec=IOUnknown,
+        io_spec = IOSpec[mut, input](),
         static_spec = StaticTensorSpec[dtype, 1].create_unknown(),
     ]
 ) -> Scalar[dtype]:
@@ -472,10 +482,10 @@ fn _int_bitwidth_safety_check[simd_dtype: DType]():
 @register_internal("get_int_from_managed_tensor_slice")
 @always_inline
 fn get_int_from_managed_tensor_slice[
-    dtype: DType,
+    dtype: DType, mut: Bool, input: IO
 ](
     tensor: ManagedTensorSlice[
-        io_spec=IOUnknown,
+        io_spec = IOSpec[mut, input](),
         static_spec = StaticTensorSpec[dtype, 1].create_unknown(),
     ]
 ) -> Int:
@@ -499,10 +509,10 @@ fn get_int_from_managed_tensor_slice[
 @register_internal("get_uint_from_managed_tensor_slice")
 @always_inline
 fn get_uint_from_managed_tensor_slice[
-    dtype: DType,
+    dtype: DType, mut: Bool, input: IO
 ](
     tensor: ManagedTensorSlice[
-        io_spec=IOUnknown,
+        io_spec = IOSpec[mut, input](),
         static_spec = StaticTensorSpec[dtype, 1].create_unknown(),
     ]
 ) -> UInt:
@@ -526,10 +536,10 @@ fn get_uint_from_managed_tensor_slice[
 @register_internal("get_bool_from_managed_tensor_slice")
 @always_inline
 fn get_bool_from_managed_tensor_slice[
-    dtype: DType,
+    dtype: DType, mut: Bool, input: IO
 ](
     tensor: ManagedTensorSlice[
-        io_spec=IOUnknown,
+        io_spec = IOSpec[mut, input](),
         static_spec = StaticTensorSpec[dtype, 1].create_unknown(),
     ]
 ) -> Bool:
@@ -4541,11 +4551,14 @@ struct Concat:
 @register_internal("to_managed_tensor_slice_list")
 @always_inline
 fn to_managed_tensor_slice_list[
-    type: DType, rank: Int
+    type: DType, rank: Int, mut: Bool, input: IO
 ](
     raw_list_ptr: UnsafePointer[NoneType],
 ) -> InlinedFixedVector[
-    DynamicTensor[type, rank].Type
+    ManagedTensorSlice[
+        io_spec = IOSpec[mut, input](),
+        static_spec = StaticTensorSpec[type, rank].create_unknown(),
+    ]
 ]:
     var num_elements = external_call["MGP_RT_ListSize", Int64](
         raw_list_ptr
@@ -4564,9 +4577,12 @@ fn to_managed_tensor_slice_list[
 
     # TODO: revist the use of unknown here
     # Create output list
-    var out_list = InlinedFixedVector[DynamicTensor[type, rank].Type](
-        num_elements
-    )
+    var out_list = InlinedFixedVector[
+        ManagedTensorSlice[
+            io_spec = IOSpec[mut, input](),
+            static_spec = StaticTensorSpec[type, rank].create_unknown(),
+        ]
+    ](num_elements)
 
     # Convert individual elements of the input list into NDBuffer, and
     # accumulate the results to output list.
@@ -4579,9 +4595,9 @@ fn to_managed_tensor_slice_list[
         for dim in range(rank):
             dims[dim] = dim_values[dim + i * rank].__int__()
 
-        var buffer = _to_managed_tensor_slice_index_list_shape[type, rank](
-            data, dims
-        )
+        var buffer = _to_managed_tensor_slice_index_list_shape[
+            type, rank, mut, input
+        ](data, dims)
         out_list.append(buffer)
 
     return out_list^
@@ -4593,7 +4609,11 @@ fn concat_from_list_shape_impl[
     type: DType, rank: Int
 ](
     axis0: Int,
-    inputs: InlinedFixedVector[DynamicTensor[type, rank].Type],
+    inputs: InlinedFixedVector[
+        InputTensor[
+            static_spec = StaticTensorSpec[type, rank].create_unknown(),
+        ]
+    ],
 ) raises -> IndexList[rank]:
     var axis = normalize_neg_index(axis0, rank)
 
@@ -4633,8 +4653,12 @@ struct ConcatFromList:
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        output: ManagedTensorSlice[type=type, rank=rank],
-        inputs: InlinedFixedVector[DynamicTensor[type, rank].Type],
+        output: OutputTensor[type=type, rank=rank],
+        inputs: InlinedFixedVector[
+            InputTensor[
+                static_spec = StaticTensorSpec[type, rank].create_unknown()
+            ]
+        ],
         axis: Int,
         ctx: DeviceContextPtr,
     ) raises:
@@ -4664,7 +4688,12 @@ struct ConcatFromList:
         rank: Int,
         _synchronous: Bool,
     ](
-        inputs: InlinedFixedVector[DynamicTensor[type, rank].Type], axis: Int
+        inputs: InlinedFixedVector[
+            InputTensor[
+                static_spec = StaticTensorSpec[type, rank].create_unknown()
+            ]
+        ],
+        axis: Int,
     ) raises -> IndexList[rank]:
         return concat_from_list_shape_impl(axis, inputs)
 
