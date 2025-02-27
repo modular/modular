@@ -20,58 +20,54 @@ def repeat_interleave(
 ) -> TensorValue:
     """Repeats elements of a tensor along the given dimension.
 
-    Modeled after `torch.repeat_interleave`, with the constraint that
-     Tensor-valued `repeats` are not yet supported.
+    Modeled after :obj:`torch.repeat_interleave`, with the constraint that
+    Tensor-valued ``repeats`` are not yet supported.
 
-    For example, given `repeats=2` and the following input:
+    For example, given ``repeats=2`` and the following input:
 
-    ```mojo
-    input = max.tensor.Tensor[DType.float32](
-        max.tensor.TensorShape(2, 2),
-        1.0, 2.0,
-        3.0, 4.0,
-    )
-    ```
+    .. code-block:: python
 
-    `repeat_interleave` with `dim=0`:
+        # Input tensor with shape (2, 2)
+        input = TensorValue(x)  # Contains [[1.0, 2.0], [3.0, 4.0]]
 
-    ```mojo
-    output = max.tensor.Tensor[DType.float32](
-        max.tensor.TensorShape(4, 2),
-        1.0, 2.0,
-        1.0, 2.0,
-        3.0, 4.0,
-        3.0, 4.0,
-    )
-    ```
+    ``repeat_interleave`` with ``dim=0``:
 
-    `repeat_interleave` with `dim=1`:
+    .. code-block:: python
 
-    ```mojo
-    output = max.tensor.Tensor[DType.float32](
-        max.tensor.TensorShape(2, 4),
-        1.0, 1.0, 2.0, 2.0,
-        3.0, 3.0, 4.0, 4.0,
-    )
-    ```
+        # Output tensor with shape (4, 2)
+        output = repeat_interleave(input, repeats=2, dim=0)
+        # Contains [[1.0, 2.0], [1.0, 2.0], [3.0, 4.0], [3.0, 4.0]]
 
-    `repeat_interleave` with `dim=None` (the default):
+    ``repeat_interleave`` with ``dim=1``:
 
-    ```mojo
-    output = max.tensor.Tensor[DType.float32](
-        max.tensor.TensorShape(8),
-        1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0,
-    )
-    ```
+    .. code-block:: python
+
+        # Output tensor with shape (2, 4)
+        output = repeat_interleave(input, repeats=2, dim=1)
+        # Contains [[1.0, 1.0, 2.0, 2.0], [3.0, 3.0, 4.0, 4.0]]
+
+    ``repeat_interleave`` with ``dim=None`` (the default):
+
+    .. code-block:: python
+
+        # Output tensor with shape (8,)
+        output = repeat_interleave(input, repeats=2, dim=None)
+        # Contains [1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]
 
     Args:
-        input: The input tensor.
-        repeats: The number of repetitions for each element.
-        dim: The dimension along which to repeat values. By default (or if `dim`
-             is `None`), flatten the input array.
+        x:
+            The input tensor.
+        repeats:
+            The number of repetitions for each element.
+        dim:
+            The dimension along which to repeat values. By default (or if ``dim``
+            is ``None``), flatten the input array.
 
     Returns:
         A symbolic tensor with the elements interleaved.
+
+    Raises:
+        ValueError: If ``repeats`` is less than 0 or if ``dim`` is out of range.
     """
     if repeats <= 0:
         raise ValueError(
