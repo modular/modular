@@ -11,10 +11,12 @@ import random
 import threading
 from os import environ
 from time import sleep, time
-from typing import Any, Iterable, List, Literal, Optional, Sequence, Union
+from typing import Iterable, List, Literal, Optional, Sequence, Union
 
 import numpy as np
 from max.pipelines.interfaces import (
+    TextGenerationResponse,
+    TextGenerationStatus,
     TextResponse,
     TokenGenerator,
     TokenGeneratorRequest,
@@ -175,50 +177,70 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
 
     def next_token(
         self, batch: dict[str, PerformanceFakingContext], num_steps: int = 1
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, TextGenerationResponse]:
         if self.batch_info_output_fname is not None:
             self._record_batch_info(batch.values(), num_steps)
 
-        return [self.step(batch) for _ in range(num_steps)]
+        response = {}
+        for step in range(num_steps):
+            context_lengths = [x.context_len for x in batch.values()]
+            if sum(context_lengths) == 0:
+                self.logger.debug(
+                    f"PerformanceFake: CE with batch_size = {len(batch)}"
+                )
+                # context encoding mode
+                wait_time = self._ce_time_ms(
+                    [x.prompt_len for x in batch.values()]
+                )
+                for _, ctx in batch.items():
+                    if self.failure_predicate and self.failure_predicate():
+                        raise Exception(
+                            "performance fake simulated failure in CE"
+                        )
+                    ctx.context_len += ctx.prompt_len
+                    ctx.active_length = 1
+            else:
+                # token generation mode
+                self.logger.debug(
+                    f"PerformanceFake: TG with batch_size = {len(batch)}"
+                )
+                wait_time = self._tg_time_ms(
+                    [x.context_len for x in batch.values()]
+                )
+                for _, ctx in batch.items():
+                    if self.failure_predicate and self.failure_predicate():
+                        raise Exception(
+                            "performance fake simulated failure in TG"
+                        )
+                    ctx.context_len += 1
 
-    def step(self, batch: dict[str, PerformanceFakingContext]):
-        context_lengths = [x.context_len for x in batch.values()]
-        if sum(context_lengths) == 0:
-            self.logger.debug(
-                f"PerformanceFake: CE with batch_size = {len(batch)}"
-            )
-            # context encoding mode
-            wait_time = self._ce_time_ms([x.prompt_len for x in batch.values()])
-            for _, ctx in batch.items():
-                if self.failure_predicate and self.failure_predicate():
-                    raise Exception("performance fake simulated failure in CE")
-                ctx.context_len += ctx.prompt_len
-                ctx.active_length = 1
-        else:
-            # token generation mode
-            self.logger.debug(
-                f"PerformanceFake: TG with batch_size = {len(batch)}"
-            )
-            wait_time = self._tg_time_ms(
-                [x.context_len for x in batch.values()]
-            )
-            for _, ctx in batch.items():
-                if self.failure_predicate and self.failure_predicate():
-                    raise Exception("performance fake simulated failure in TG")
-                ctx.context_len += 1
+            # actually wait here
+            self._wait(wait_time)
 
-        # actually wait here
-        self._wait(wait_time)
+            for request_id, context in batch.items():
+                if request_id not in response:
+                    response[request_id] = TextGenerationResponse(
+                        [], TextGenerationStatus.ACTIVE
+                    )
 
-        # We return the reversed prompt, repeated as many times necessary
-        # to satisfy the max_tokens
-        return {
-            rid: TextResponse(
-                next_token=ctx.prompt[-((ctx.context_len + 1) % ctx.prompt_len)]
-            )
-            for rid, ctx in batch.items()
-            if ctx.context_len - ctx.prompt_len < ctx.max_tokens
-        }
+                if (
+                    context.context_len - context.prompt_len
+                    >= context.max_tokens
+                ):
+                    response[request_id].update_status(
+                        TextGenerationStatus.MAXIMUM_LENGTH
+                    )
+                    break
+
+                response[request_id].append_token(
+                    TextResponse(
+                        next_token=context.prompt[
+                            -((context.context_len + 1) % context.prompt_len)
+                        ]
+                    )
+                )
+
+        return response
 
     def release(self, context: PerformanceFakingContext) -> None:
         pass

@@ -5,9 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from dataclasses import dataclass
-from typing import Any, Sequence, Union, cast
+from typing import Sequence, Union, cast
 
 from max.pipelines.interfaces import (
+    TextGenerationResponse,
+    TextGenerationStatus,
     TextResponse,
     TokenGenerator,
     TokenGeneratorRequest,
@@ -70,20 +72,33 @@ class EchoPipelineTokenizer(
 class EchoTokenGenerator(TokenGenerator[EchoTokenGeneratorContext]):
     def next_token(
         self, batch: dict[str, EchoTokenGeneratorContext], num_steps: int = 1
-    ) -> list[dict[str, Any]]:
-        return [self.step(batch) for _ in range(num_steps)]
+    ) -> dict[str, TextGenerationResponse]:
+        responses = {}
+        for request_id, context in batch.items():
+            if request_id not in responses:
+                responses[request_id] = TextGenerationResponse(
+                    [], TextGenerationStatus.ACTIVE
+                )
 
-    def step(self, batch: dict[str, EchoTokenGeneratorContext]):
-        # NB: The EchoGenerator currently returns reversed rather than echo'ed input.
-        for _, ctx in batch.items():
-            ctx.index += 1
-            if ctx.index <= len(ctx.prompt) and ctx.index <= ctx.max_tokens:
-                ctx.tokens += str(ctx.prompt[-ctx.index])
-        return {
-            rid: TextResponse(next_token=str(ctx.prompt[-ctx.index]))
-            for rid, ctx in batch.items()
-            if ctx.index <= len(ctx.prompt) and ctx.index <= ctx.max_tokens
-        }
+            for step in range(num_steps):
+                context.index += 1
+                if (
+                    context.index <= len(context.prompt)
+                    and context.index <= context.max_tokens
+                ):
+                    next_token = str(context.prompt[-context.index])
+                    context.tokens += next_token
+                    responses[request_id].append_token(
+                        TextResponse(
+                            next_token=str(context.prompt[-context.index])
+                        )
+                    )
+                else:
+                    responses[request_id].update_status(
+                        TextGenerationStatus.MAXIMUM_LENGTH
+                    )
+
+        return responses
 
     def release(self, context: EchoTokenGeneratorContext):
         pass

@@ -15,7 +15,11 @@ from typing import Any, Mapping, Optional, Tuple, TypeVar
 
 import numpy as np
 from max.pipelines import TokenGenerator
-from max.pipelines.interfaces import EmbeddingsGenerator
+from max.pipelines.interfaces import (
+    EmbeddingsGenerator,
+    TextGenerationResponse,
+    TextResponse,
+)
 from max.pipelines.kv_cache.paged_cache import PagedKVCacheManager
 from max.profiler import traced
 from max.serve.scheduler.process_control import ProcessControl
@@ -571,27 +575,23 @@ class TokenGenerationSchedulerV2(Scheduler):
     def _handle_terminated_responses(
         self,
         batch_executed: dict[str, Any],
-        batch_responses: list[dict[str, Any]],
+        batch_responses: dict[str, TextGenerationResponse],
     ):
         """Task that handles responses"""
         if batch_responses is None:
             return
 
-        already_terminated = set()
-        for batch_response in batch_responses:
-            terminated = batch_executed.keys() - batch_response.keys()
-            for req_id in terminated:
-                if req_id in already_terminated:
-                    continue
-
-                self.pipeline.release(batch_executed[req_id])
-                cache_id = batch_executed[req_id].cache_seq_id
+        for request_id, response in batch_responses.items():
+            if response.is_done:
+                # Release from cache
+                cache_id = batch_executed[request_id].cache_seq_id
+                self.pipeline.release(batch_executed[request_id])
                 self.available_cache_indices.add(cache_id)
-                del batch_executed[req_id]
-                batch_response[req_id] = STOP_STREAM
-                already_terminated.add(req_id)
-                if req_id in self.active_batch:
-                    del self.active_batch[req_id]
+                del batch_executed[request_id]
+
+                # Remove from active batch
+                if request_id in self.active_batch:
+                    del self.active_batch[request_id]
 
     @traced
     def _exceeds_batch_token_limit(
@@ -614,9 +614,9 @@ class TokenGenerationSchedulerV2(Scheduler):
     def _handle_chunked_requests(
         self,
         batch_executed: dict[str, Any],
-        batch_responses: list[dict[str, Any]],
+        batch_responses: dict[str, TextGenerationResponse],
     ):
-        """Handle chunked resquests"""
+        """Handle chunked requests"""
 
         # Only the last request in a batch could be chunked. We discard its response
         # and put it back into the request quene if it is chunked.
@@ -625,8 +625,7 @@ class TokenGenerationSchedulerV2(Scheduler):
             req_id, data = batch_executed.popitem()
             self.request_q.put_front_nowait((req_id, data))
 
-            for batch_response in batch_responses:
-                batch_response.pop(req_id, None)
+            batch_responses.pop(req_id)
 
     @traced
     def _handle_cancelled_requests(self):
@@ -669,7 +668,23 @@ class TokenGenerationSchedulerV2(Scheduler):
             self.active_batch[req_id] = batch_to_execute[req_id]
         # send the responses to the API process
         if any(batch_responses):
-            self.response_q.put_nowait(batch_responses)
+            # Convert this to list[dict[str, Any]]
+            responses: list[dict[str, TextResponse]] = [{}]
+            for request_id, response in batch_responses.items():
+                # This will just ensure that there is always a response for each token
+                # We add one here, as we need to send a stop sentinel
+                while (
+                    len(response.tokens) + (1 if response.is_done else 0)
+                ) > len(responses):
+                    responses.append({})
+
+                for token_idx, text_response in enumerate(response.tokens):
+                    responses[token_idx][request_id] = text_response
+
+                if response.is_done:
+                    responses[len(response.tokens)][request_id] = STOP_STREAM
+
+            self.response_q.put_nowait(responses)
 
     @traced
     def _schedule_tg(self, batch_to_execute):
@@ -682,7 +697,20 @@ class TokenGenerationSchedulerV2(Scheduler):
         # remove terminated requests from the batch
         self._handle_terminated_responses(batch_to_execute, batch_responses)
         # send the responses to the API process
-        self.response_q.put_nowait(batch_responses)
+        responses: list[dict[str, TextResponse]] = [{}]
+        for request_id, response in batch_responses.items():
+            while (len(response.tokens) + (1 if response.is_done else 0)) > len(
+                responses
+            ):
+                responses.append({})
+
+            for token_idx, text_response in enumerate(response.tokens):
+                responses[token_idx][request_id] = text_response
+
+            if response.is_done:
+                responses[len(response.tokens)][request_id] = STOP_STREAM
+
+        self.response_q.put_nowait(responses)
 
 
 @dataclass
