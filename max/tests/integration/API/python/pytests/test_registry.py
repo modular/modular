@@ -66,11 +66,13 @@ class DummyModelInputs(ModelInputs):
         input2: Tensor | None = None,
         input3: Tensor | None = None,
         input4: Tensor | None = None,
+        kv_cache_inputs: KVCacheInputs | None = None,
     ):
         self.input1 = input1
         self.input2 = input2
         self.input3 = input3
         self.input4 = input4
+        self.kv_cache_inputs = kv_cache_inputs
 
 
 class DummyPipelineModel(PipelineModel, KVCacheMixin):
@@ -79,7 +81,6 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
     def execute(
         self,
         model_inputs: ModelInputs,
-        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> ModelOutputs:
         """Runs the graph."""
         model_inputs = cast(DummyModelInputs, model_inputs)
@@ -90,7 +91,9 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
         raise NotImplementedError("calculate_max_seq_len is not implemented")
 
     def prepare_initial_token_inputs(
-        self, context_batch: Sequence[InputContext]
+        self,
+        context_batch: Sequence[InputContext],
+        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> DummyModelInputs:
         """Prepares the initial inputs to be passed to `.execute()`.
 
@@ -107,6 +110,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
             input2=Tensor.zeros((0, 0), DType.float32),
             input3=Tensor.zeros((0, 0), DType.float32),
             input4=Tensor.zeros((0, 0), DType.float32),
+            kv_cache_inputs=None,
         )
 
     def prepare_next_token_inputs(
@@ -119,7 +123,10 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
         While `prepare_initial_token_inputs` is responsible for managing the initial inputs.
         This function is responsible for updating the inputs, for each step in a multi-step execution pattern.
         """
-        return DummyModelInputs(input1=Tensor.zeros((0, 0), DType.float32))
+        return DummyModelInputs(
+            input1=Tensor.zeros((0, 0), DType.float32),
+            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
+        )
 
     @classmethod
     def _get_num_kv_heads(cls, hf_config: Any) -> int:

@@ -151,13 +151,14 @@ def next_token_with_logits(
     kv_cache_inputs = model.kv_manager.fetch(seq_ids_and_prompts)
 
     # Get Model inputs
-    model_inputs = model.prepare_initial_token_inputs(context_batch)
-
-    model_outputs = model.execute(
-        model_inputs,
+    model_inputs = model.prepare_initial_token_inputs(
+        context_batch=context_batch,
         # Flatten the KV cache inputs as expected by PipelineModel.execute.
         kv_cache_inputs=KVCacheInputsSequence(kv_cache_inputs=kv_cache_inputs),
     )
+
+    model_outputs = model.execute(model_inputs)
+
     assert model_outputs.next_token_logits
     logits = model_outputs.next_token_logits.to_numpy()
     next_tokens = [req_logits.argmax(axis=-1) for req_logits in logits]
