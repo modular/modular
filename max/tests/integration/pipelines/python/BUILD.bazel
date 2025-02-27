@@ -76,6 +76,33 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_pipelines_cli_gpu",
+    size = "enormous",
+    srcs = ["test_pipelines_cli_gpu.py"],
+    data = [
+        "//GenericML:MGPRT",
+        "//KGEN:CompilerRT",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    exec_properties = {
+        # Ensure the test has at least 24GB of GPU memory available.
+        "resources:gpu-memory": "24",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = [
+        "gpu",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        ":hf_repo_lock",
+        "//SDK/lib/API/python/max/entrypoints:pipelines",
+        requirement("transformers"),
+        requirement("gguf"),
+    ],
+)
+
+modular_py_test(
     name = "test_pipelines_cli_lightweight",
     srcs = ["test_pipelines_cli_lightweight.py"],
     deps = [
