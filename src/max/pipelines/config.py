@@ -28,25 +28,10 @@ from functools import cached_property
 from pathlib import Path
 from typing import Any, Optional, Union, cast
 
+import huggingface_hub
 import torch
-from huggingface_hub import (
-    HfFileSystem,
-    file_exists,
-    get_hf_file_metadata,
-    hf_hub_download,
-    hf_hub_url,
-    model_info,
-    repo_exists,
-)
 from huggingface_hub import constants as hf_hub_constants
-from huggingface_hub.hf_api import ModelInfo
-from huggingface_hub.utils import (
-    EntryNotFoundError,
-    GatedRepoError,
-    HfHubHTTPError,
-    RepositoryNotFoundError,
-    RevisionNotFoundError,
-)
+from huggingface_hub import errors as hf_hub_errors
 from huggingface_hub.utils import tqdm as hf_tqdm
 from max.driver import CPU, Accelerator, Device, DeviceSpec, accelerator_count
 from max.dtype import DType
@@ -209,17 +194,17 @@ def _repo_exists_with_retry(repo_id: str) -> bool:
 
     for attempt, delay_in_seconds in enumerate(retry_delays_in_seconds):
         try:
-            return repo_exists(repo_id)
+            return huggingface_hub.repo_exists(repo_id)
         except (
-            RepositoryNotFoundError,
-            GatedRepoError,
-            RevisionNotFoundError,
-            EntryNotFoundError,
+            hf_hub_errors.RepositoryNotFoundError,
+            hf_hub_errors.GatedRepoError,
+            hf_hub_errors.RevisionNotFoundError,
+            hf_hub_errors.EntryNotFoundError,
         ) as e:
             # Forward these specific errors to the user
             logger.error(f"Hugging Face repository error: {str(e)}")
             raise
-        except HfHubHTTPError as e:
+        except hf_hub_errors.HfHubHTTPError as e:
             if attempt == max_attempts - 1:
                 logger.error(
                     f"Failed to connect to Hugging Face Hub after {max_attempts} attempts: {str(e)}"
@@ -265,13 +250,15 @@ class HuggingFaceRepo:
         return self.repo_id
 
     @cached_property
-    def info(self) -> ModelInfo:
+    def info(self) -> huggingface_hub.ModelInfo:
         if self.repo_type == RepoType.local:
             raise ValueError(
                 "using model info, on local repos is not supported."
             )
         elif self.repo_type == RepoType.online:
-            return model_info(self.repo_id, files_metadata=False)
+            return huggingface_hub.model_info(
+                self.repo_id, files_metadata=False
+            )
         else:
             raise ValueError(f"Unsupported repo type: {self.repo_type}")
 
@@ -293,7 +280,7 @@ class HuggingFaceRepo:
                 os.path.join(self.repo_id, pytorch_search_pattern)
             )
         elif self.repo_type == RepoType.online:
-            fs = HfFileSystem()
+            fs = huggingface_hub.HfFileSystem()
             safetensor_paths = cast(
                 list[str],
                 fs.glob(f"{self.repo_id}/{safetensor_search_pattern}"),
@@ -337,8 +324,8 @@ class HuggingFaceRepo:
 
     def size_of(self, filename: str) -> Union[int, None]:
         if self.repo_type == RepoType.online:
-            url = hf_hub_url(self.repo_id, filename)
-            metadata = get_hf_file_metadata(url)
+            url = huggingface_hub.hf_hub_url(self.repo_id, filename)
+            metadata = huggingface_hub.get_hf_file_metadata(url)
             return metadata.size
         raise NotImplementedError("not implemented for non-online repos.")
 
@@ -503,11 +490,11 @@ class HuggingFaceRepo:
         return gguf_files
 
     def file_exists(self, filename: str) -> bool:
-        return file_exists(self.repo_id, filename)
+        return huggingface_hub.file_exists(self.repo_id, filename)
 
     def download(self, filename: str, force_download: bool = False) -> Path:
         return Path(
-            hf_hub_download(
+            huggingface_hub.hf_hub_download(
                 self.repo_id, filename, force_download=force_download
             )
         )
@@ -749,7 +736,7 @@ class PipelineConfig:
                     file_name = "/".join(path_pieces[2:])
                     if self.model_path != "" and repo_id == self.model_path:
                         path = Path(file_name)
-                    elif file_exists(repo_id, file_name):
+                    elif huggingface_hub.file_exists(repo_id, file_name):
                         self._weights_repo_id = repo_id
                         path = Path(file_name)
                 elif self.model_path == "":
@@ -1006,7 +993,7 @@ class PipelineConfig:
         self.weight_path = list(
             thread_map(
                 lambda filename: Path(
-                    hf_hub_download(
+                    huggingface_hub.hf_hub_download(
                         weights_repo_id,
                         str(filename),
                         revision=self.huggingface_revision,
