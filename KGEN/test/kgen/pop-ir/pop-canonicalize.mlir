@@ -1203,7 +1203,7 @@ kgen.func @select_to_cond(%cond: i1) -> !pop.scalar<bool> {
 }
 
 // CHECK-LABEL: @string_ops
-kgen.func @string_ops() -> (index, !kgen.string, !kgen.string, !kgen.string) {
+kgen.func @string_ops() -> (index, !kgen.string, !kgen.string, !kgen.string, !kgen.string, !kgen.string) {
   %str = kgen.param.constant: string = <"four">
   // CHECK-DAG: kgen.param.constant = <4>
   %0 = pop.string.size %str
@@ -1216,7 +1216,11 @@ kgen.func @string_ops() -> (index, !kgen.string, !kgen.string, !kgen.string) {
   %2 = pop.string.replace %hello_world, %world, %empty_str
   // CHECK-DAG: kgen.param.constant: string = <"c7b615cc75879ba90049873fe9098ddf">
   %3 = pop.string.hash %hello_world
-  kgen.return %0, %1, %2, %3 : index, !kgen.string, !kgen.string, !kgen.string
+  // CHECK-DAG: kgen.param.constant: string = <"aGVsbG8gd29ybGQ=">
+  %4 = pop.string.base64.encode %hello_world
+  // CHECK-DAG: kgen.param.constant: string = <"hello world">
+  %5 = pop.string.base64.decode %4
+  kgen.return %0, %1, %2, %3, %4, %5 : index, !kgen.string, !kgen.string, !kgen.string, !kgen.string, !kgen.string
 }
 
 // CHECK-LABEL: @offset_of_offset
