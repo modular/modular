@@ -21,6 +21,7 @@ from max.profiler import traced
 from max.serve.scheduler.process_control import ProcessControl
 from max.serve.scheduler.queues import STOP_STREAM
 from max.serve.telemetry.metrics import METRICS
+from max.support.human_readable_formatter import to_human_readable_latency
 
 logger = logging.getLogger("max.serve")
 
@@ -460,32 +461,24 @@ class TokenGenerationSchedulerV2(Scheduler):
         if maybe_pending_reqs is not None:
             pending_reqs = str(maybe_pending_reqs)
 
-        def format_throughput(tps: float) -> str:
+        def to_human_readable_throughput(tps: float) -> str:
             if tps >= 1_000:
                 return f"{tps / 1e3:.1f}K tok/s"
             return f"{tps:.1f} tok/s"
 
-        def format_latency(s: float) -> str:
-            if s >= 1:
-                return f"{s:.1f}s"
-            ms = s * 1e3
-            if ms >= 1:
-                return f"{ms:.1f}ms"
-            us = ms * 1e3
-            if us >= 1:
-                return f"{us:.1f}us"
-            ns = us * 1e3
-            return f"{ns:.1f}ns"
-
         # Format latency and throughput metrics
-        prompt_throughput_str = format_throughput(
+        prompt_throughput_str = to_human_readable_throughput(
             num_prompt_tokens / batch_execution_time_s
         )
-        generation_throughput_str = format_throughput(
+        generation_throughput_str = to_human_readable_throughput(
             num_generated_tokens / batch_execution_time_s
         )
-        batch_creation_latency_str = format_latency(batch_creation_time_s)
-        batch_execution_latency_str = format_latency(batch_execution_time_s)
+        batch_creation_latency_str = to_human_readable_latency(
+            batch_creation_time_s
+        )
+        batch_execution_latency_str = to_human_readable_latency(
+            batch_execution_time_s
+        )
 
         if self.paged_manager is None:
             logger.debug(
