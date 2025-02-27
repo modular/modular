@@ -95,12 +95,12 @@ class Device:
         Raises:
             ValueError: If any enqueue'd operations had an internal error.
         """
-    @staticmethod
-    def cpu(id: int = -1) -> Device:
-        """Creates a CPU device with the provided numa id."""
-    @staticmethod
-    def accelerator(id: int = -1) -> Device:
-        """Creates an accelerator (e.g. GPU) device with the provided id."""
+
+class CPU(Device):
+    def __new__(cls, id: int = -1) -> CPU: ...
+
+class Accelerator(Device):
+    def __new__(cls, id: int = -1) -> Accelerator: ...
 
 class Tensor:
     @property

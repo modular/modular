@@ -10,49 +10,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from max._core.driver import Device, accelerator_count
-
-
-def CPU(id: int = -1) -> Device:
-    """Creates a CPU device for the specified NUMA node.
-
-    .. code-block:: python
-
-        from max import driver
-
-        # Create default CPU device
-        device = driver.CPU()
-
-        # Or specify NUMA node id if using NUMA architecture
-        device = driver.CPU(id=0)  # First NUMA node
-        device = driver.CPU(id=1)  # Second NUMA node
-
-        # Get device id
-        device_id = device.id
-    """
-    return Device.cpu(id)
-
-
-def Accelerator(id: int = -1) -> Device:
-    """Creates an accelerator device with the specified ID.
-
-    Provides access to GPU or other hardware accelerators in the system.
-
-    .. code-block:: python
-
-        from max import driver
-
-        # Create default accelerator (usually first available GPU)
-        device = driver.Accelerator()
-
-        # Or specify GPU id
-        device = driver.Accelerator(id=0)  # First GPU
-        device = driver.Accelerator(id=1)  # Second GPU
-
-        # Get device id
-        device_id = device.id
-    """
-    return Device.accelerator(id)
+# The Device class is not used in this file, but is used by others that import
+# this file. Ruff will try to remove it, so ignore that Ruff check on this line.
+from max._core.driver import (  # noqa: F401
+    CPU,
+    Accelerator,
+    Device,
+    accelerator_count,
+)
 
 
 def accelerator_api() -> str:
