@@ -61,6 +61,8 @@ class MPNetInputs(ModelInputs):
     ) -> None:
         self.next_tokens_batch = next_tokens_batch
         self.attention_mask = attention_mask
+        # MPNet does not have KV cache inputs.
+        self.kv_cache_inputs = None
 
 
 class MPNetPipelineModel(PipelineModel[TextContext]):
@@ -103,13 +105,8 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
             )
             raise ValueError(msg) from e
 
-    def execute(
-        self,
-        model_inputs: ModelInputs,
-        kv_cache_inputs: KVCacheInputs | None = None,
-    ) -> ModelOutputs:
+    def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         model_inputs = cast(MPNetInputs, model_inputs)
-        assert kv_cache_inputs is None, "MPNet does not have KV cache inputs"
         model_outputs = self.model.execute(
             model_inputs.next_tokens_batch,
             model_inputs.attention_mask,
@@ -121,6 +118,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
     def prepare_initial_token_inputs(
         self,
         context_batch: Sequence[TextContext],
+        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> MPNetInputs:
         # Get tokens and seq_ids.
         tokens = [ctx.next_tokens for ctx in context_batch]

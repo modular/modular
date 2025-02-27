@@ -433,6 +433,7 @@ class LlamaVisionInputs(ModelInputs):
         pixel_values: Tensor | None = None,
         aspect_ratio_ids: Tensor | None = None,
         aspect_ratio_mask: Tensor | None = None,
+        kv_cache_inputs: KVCacheInputs | None = None,
     ):
         self.input_id_values = input_id_values
         self.input_row_offsets = input_row_offsets
@@ -441,6 +442,7 @@ class LlamaVisionInputs(ModelInputs):
         self._pixel_values = pixel_values
         self._aspect_ratio_ids = aspect_ratio_ids
         self._aspect_ratio_mask = aspect_ratio_mask
+        self.kv_cache_inputs = kv_cache_inputs
 
     def __post_init__(self) -> None:
         """Validate consistency between vision fields.
@@ -486,7 +488,10 @@ class LlamaVisionInputs(ModelInputs):
         return self._aspect_ratio_mask
 
     def update_for_next_token(
-        self, next_tokens: Tensor, next_row_offsets: Tensor
+        self,
+        next_tokens: Tensor,
+        next_row_offsets: Tensor,
+        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> LlamaVisionInputs:
         """Updates next_tokens and row_offsets after an initial step."""
         return LlamaVisionInputs(
@@ -498,6 +503,7 @@ class LlamaVisionInputs(ModelInputs):
             pixel_values=None,
             aspect_ratio_ids=None,
             aspect_ratio_mask=None,
+            kv_cache_inputs=kv_cache_inputs,
         )
 
 
@@ -879,6 +885,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
     def prepare_initial_token_inputs(
         self,
         context_batch: Sequence[TextAndVisionContext],
+        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> LlamaVisionInputs:
         """Creates tensors of token and image inputs, if applicable."""
         if self.pipeline_config.cache_strategy != KVCacheStrategy.CONTINUOUS:
@@ -963,6 +970,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             pixel_values=pixel_values,
             aspect_ratio_ids=aspect_ratio_ids,
             aspect_ratio_mask=aspect_ratio_mask,
+            kv_cache_inputs=kv_cache_inputs,
         )
 
     def prepare_next_token_inputs(
@@ -980,15 +988,17 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             : prev_inputs.input_row_offsets.shape[0]
         ]
 
-        return prev_inputs.update_for_next_token(next_tokens, next_row_offsets)
+        return prev_inputs.update_for_next_token(
+            next_tokens, next_row_offsets, prev_inputs.kv_cache_inputs
+        )
 
     def execute(
         self,
         model_inputs: ModelInputs,
-        # TODO(zheng): This should be folded as KVCacheInputs into ModelInputs.
-        kv_cache_inputs: Optional[KVCacheInputs] = None,
     ) -> ModelOutputs:
-        assert kv_cache_inputs is not None
+        assert model_inputs.kv_cache_inputs is not None, (
+            "Llama Vision has KV cache inputs"
+        )
         # batch_size * num_concurrent_media * max_num_tiles * num_patches
         # are set to 0 here to imitate a dummy tensor (used in text-only mode).
         cross_attention_states = Tensor.zeros(
@@ -1009,11 +1019,19 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             cross_attention_states = exec_result
 
         all_kv_cache_inputs: list[Tensor] = []
-        if isinstance(kv_cache_inputs, MultimodalKVCacheInputs):
-            all_kv_cache_inputs.extend(kv_cache_inputs.text_kv_cache_inputs)
-            all_kv_cache_inputs.extend(kv_cache_inputs.vision_kv_cache_inputs)
+        if isinstance(model_inputs.kv_cache_inputs, MultimodalKVCacheInputs):
+            all_kv_cache_inputs.extend(
+                model_inputs.kv_cache_inputs.text_kv_cache_inputs
+            )
+            all_kv_cache_inputs.extend(
+                model_inputs.kv_cache_inputs.vision_kv_cache_inputs
+            )
+        elif isinstance(model_inputs.kv_cache_inputs, KVCacheInputs):
+            all_kv_cache_inputs = list(model_inputs.kv_cache_inputs)
         else:
-            all_kv_cache_inputs = list(kv_cache_inputs)
+            raise ValueError(
+                f"Unsupported kv_cache_inputs type: {type(model_inputs.kv_cache_inputs)}"
+            )
 
         model_outputs = self.language_model.execute(
             cross_attention_states,

@@ -62,9 +62,11 @@ class Qwen2Inputs(ModelInputs):
         self,
         tokens: Tensor,
         input_row_offsets_or_attn_mask: Tensor,
+        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> None:
         self.tokens = tokens
         self.input_row_offsets_or_attn_mask = input_row_offsets_or_attn_mask
+        self.kv_cache_inputs = kv_cache_inputs
 
     @property
     def input_row_offsets(self) -> Tensor:
@@ -83,15 +85,13 @@ class Qwen2Model(PipelineModel[TextContext]):
     def execute(
         self,
         model_inputs: ModelInputs,
-        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> ModelOutputs:
-        assert kv_cache_inputs is not None
-
         model_inputs = cast(Qwen2Inputs, model_inputs)
+        assert model_inputs.kv_cache_inputs is not None
         model_outputs = self.model.execute(
             model_inputs.tokens,
             model_inputs.input_row_offsets_or_attn_mask,
-            *kv_cache_inputs,
+            *model_inputs.kv_cache_inputs,
             copy_inputs_to_device=(
                 not self.pipeline_config.cache_strategy.uses_opaque()
             ),
@@ -113,7 +113,9 @@ class Qwen2Model(PipelineModel[TextContext]):
             return ModelOutputs(next_token_logits=model_outputs[0])
 
     def _prepare_ragged_initial_token_inputs(
-        self, context_batch: Sequence[TextContext]
+        self,
+        context_batch: Sequence[TextContext],
+        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> Qwen2Inputs:
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
@@ -132,10 +134,13 @@ class Qwen2Model(PipelineModel[TextContext]):
             input_row_offsets_or_attn_mask=Tensor.from_numpy(
                 input_row_offsets
             ).to(self.pipeline_config.devices[0]),
+            kv_cache_inputs=kv_cache_inputs,
         )
 
     def _prepare_padded_initial_token_inputs(
-        self, context_batch: Sequence[TextContext]
+        self,
+        context_batch: Sequence[TextContext],
+        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> Qwen2Inputs:
         # Get tokens and seq_ids
         tokens = [ctx.next_tokens for ctx in context_batch]
@@ -156,18 +161,24 @@ class Qwen2Model(PipelineModel[TextContext]):
             input_row_offsets_or_attn_mask=Tensor.from_numpy(attn_mask).to(
                 self.pipeline_config.devices[0]
             ),
+            kv_cache_inputs=kv_cache_inputs,
         )
 
     # Ignored type due to challenge with Interface implementation and mypy rules.
     def prepare_initial_token_inputs(
         self,
         context_batch: Sequence[TextContext],
+        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> Qwen2Inputs:
         """Prepare the inputs for the first pass in multistep execution."""
         if self.pipeline_config.cache_strategy.uses_opaque():
-            return self._prepare_ragged_initial_token_inputs(context_batch)
+            return self._prepare_ragged_initial_token_inputs(
+                context_batch, kv_cache_inputs
+            )
         else:
-            return self._prepare_padded_initial_token_inputs(context_batch)
+            return self._prepare_padded_initial_token_inputs(
+                context_batch, kv_cache_inputs
+            )
 
     def _prepare_ragged_next_token_inputs(
         self,
@@ -182,6 +193,7 @@ class Qwen2Model(PipelineModel[TextContext]):
         return Qwen2Inputs(
             tokens=next_tokens,
             input_row_offsets_or_attn_mask=next_row_offsets,
+            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
         )
 
     def _prepare_padded_next_token_inputs(
@@ -206,6 +218,7 @@ class Qwen2Model(PipelineModel[TextContext]):
             input_row_offsets_or_attn_mask=Tensor.from_numpy(attn_mask).to(
                 self.pipeline_config.devices[0]
             ),
+            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
         )
 
     def prepare_next_token_inputs(

@@ -57,9 +57,11 @@ class MistralInputs(ModelInputs):
         self,
         input_tokens: Tensor,
         input_row_offsets: Tensor,
+        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> None:
         self.input_tokens = input_tokens
         self.input_row_offsets = input_row_offsets
+        self.kv_cache_inputs = kv_cache_inputs
 
 
 class MistralModel(PipelineModel[TextContext]):
@@ -69,20 +71,16 @@ class MistralModel(PipelineModel[TextContext]):
         super().__init__(pipeline_config, session)
         self.model = self.load_model(session)
 
-    def execute(
-        self,
-        model_inputs: ModelInputs,
-        kv_cache_inputs: KVCacheInputs | None = None,
-    ) -> ModelOutputs:
+    def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Runs the graph."""
         model_inputs = cast(MistralInputs, model_inputs)
-        assert kv_cache_inputs is not None, (
+        assert model_inputs.kv_cache_inputs is not None, (
             "Mistral has KV cache inputs, but none were provided"
         )
         model_outputs = self.model.execute(
             model_inputs.input_tokens,
             model_inputs.input_row_offsets,
-            *kv_cache_inputs,
+            *model_inputs.kv_cache_inputs,
             copy_inputs_to_device=False,
         )
         assert isinstance(model_outputs[0], Tensor)
@@ -91,6 +89,7 @@ class MistralModel(PipelineModel[TextContext]):
     def prepare_initial_token_inputs(
         self,
         context_batch: Sequence[TextContext],
+        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> MistralInputs:
         # Get tokens and seq ids
         tokens = [ctx.next_tokens for ctx in context_batch]
@@ -113,6 +112,7 @@ class MistralModel(PipelineModel[TextContext]):
         return MistralInputs(
             input_tokens=next_tokens_batch,
             input_row_offsets=input_row_offsets,
+            kv_cache_inputs=kv_cache_inputs,
         )
 
     def prepare_next_token_inputs(
@@ -126,6 +126,7 @@ class MistralModel(PipelineModel[TextContext]):
         return MistralInputs(
             input_tokens=next_tokens,
             input_row_offsets=next_row_offsets,
+            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
         )
 
     @classmethod

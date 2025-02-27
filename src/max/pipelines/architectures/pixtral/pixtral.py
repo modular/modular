@@ -61,11 +61,13 @@ class PixtralInputs(ModelInputs):
         input_row_offsets: Tensor,
         pixel_values: Tensor | None = None,
         attention_mask: Tensor | None = None,
+        kv_cache_inputs: KVCacheInputs | None = None,
     ):
         self.input_ids = input_ids
         self.input_row_offsets = input_row_offsets
         self._pixel_values = pixel_values
         self._attention_mask = attention_mask
+        self.kv_cache_inputs = kv_cache_inputs
 
     @property
     def has_vision_inputs(self) -> bool:
@@ -99,8 +101,6 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
     def execute(
         self,
         model_inputs: ModelInputs,
-        # TODO(zheng): This should be folded as KVCacheInputs into ModelInputs.
-        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> ModelOutputs:
         model_inputs = cast(PixtralInputs, model_inputs)
         if model_inputs.has_vision_inputs:
@@ -119,14 +119,14 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
                 ],
                 dtype=self.pipeline_config.dtype,
             ).to(self.pipeline_config.devices[0])
-        assert kv_cache_inputs is not None, (
+        assert model_inputs.kv_cache_inputs is not None, (
             "Pixtral has KV cache inputs, but none were provided"
         )
         model_outputs = self.language_model.execute(
             model_inputs.input_ids,
             image_embeds,
             model_inputs.input_row_offsets,
-            *kv_cache_inputs,
+            *model_inputs.kv_cache_inputs,
             copy_inputs_to_device=False,
         )
         assert not self.pipeline_config.enable_echo
@@ -136,6 +136,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
     def prepare_initial_token_inputs(
         self,
         context_batch: Sequence[TextAndVisionContext],
+        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> PixtralInputs:
         # Input row offset type: ["input_row_offsets_len"], UInt32
         input_row_offsets = Tensor.from_numpy(
@@ -182,11 +183,13 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
                 input_row_offsets=input_row_offsets,
                 pixel_values=pixel_values,
                 attention_mask=attention_mask,
+                kv_cache_inputs=kv_cache_inputs,
             )
 
         return PixtralInputs(
             input_ids=input_ids,
             input_row_offsets=input_row_offsets,
+            kv_cache_inputs=kv_cache_inputs,
         )
 
     def prepare_next_token_inputs(
@@ -204,6 +207,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         return PixtralInputs(
             input_ids=next_tokens,
             input_row_offsets=next_row_offsets,
+            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
         )
 
     @classmethod

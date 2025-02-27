@@ -77,6 +77,7 @@ class Llama3Inputs(ModelInputs):
         tokens: np.ndarray | Tensor,
         input_row_offsets_or_attn_mask: np.ndarray | Tensor,
         signal_buffers: list[Tensor],
+        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> None:
         """
         Args:
@@ -89,6 +90,7 @@ class Llama3Inputs(ModelInputs):
         self.tokens = tokens
         self.input_row_offsets_or_attn_mask = input_row_offsets_or_attn_mask
         self.signal_buffers = signal_buffers
+        self.kv_cache_inputs = kv_cache_inputs
 
     @property
     def input_row_offsets(self) -> np.ndarray | Tensor:
@@ -164,16 +166,14 @@ class LlamaModelBase(PipelineModel[TextContext]):
     def execute(
         self,
         model_inputs: ModelInputs,
-        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> ModelOutputs:
         model_inputs = cast(Llama3Inputs, model_inputs)
-        if kv_cache_inputs is None:
-            kv_cache_inputs = ()  # type: ignore
+        curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
         model_outputs = self.model.execute(
             model_inputs.tokens,
             model_inputs.input_row_offsets_or_attn_mask,
             *model_inputs.signal_buffers,
-            *kv_cache_inputs,  # type: ignore
+            *curr_kv_cache_inputs,
             copy_inputs_to_device=(
                 not self.pipeline_config.cache_strategy.uses_opaque()
             ),
@@ -190,7 +190,9 @@ class LlamaModelBase(PipelineModel[TextContext]):
             )
 
     def _prepare_ragged_initial_token_inputs(
-        self, context_batch: Sequence[TextContext]
+        self,
+        context_batch: Sequence[TextContext],
+        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> Llama3Inputs:
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
@@ -210,10 +212,13 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 input_row_offsets
             ).to(self.pipeline_config.devices[0]),
             signal_buffers=self.signal_buffers,
+            kv_cache_inputs=kv_cache_inputs,
         )
 
     def _prepare_padded_initial_token_inputs(
-        self, context_batch: Sequence[TextContext]
+        self,
+        context_batch: Sequence[TextContext],
+        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> Llama3Inputs:
         # Get tokens and seq_ids
         tokens = [ctx.next_tokens for ctx in context_batch]
@@ -231,16 +236,23 @@ class LlamaModelBase(PipelineModel[TextContext]):
             tokens=next_tokens_batch,
             input_row_offsets_or_attn_mask=attn_mask,
             signal_buffers=self.signal_buffers,
+            kv_cache_inputs=kv_cache_inputs,
         )
 
     def prepare_initial_token_inputs(
-        self, context_batch: Sequence[TextContext]
+        self,
+        context_batch: Sequence[TextContext],
+        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> Llama3Inputs:
         """Prepare the inputs for the first pass in multistep execution."""
         if self.pipeline_config.cache_strategy.uses_opaque():
-            return self._prepare_ragged_initial_token_inputs(context_batch)
+            return self._prepare_ragged_initial_token_inputs(
+                context_batch, kv_cache_inputs
+            )
         else:
-            return self._prepare_padded_initial_token_inputs(context_batch)
+            return self._prepare_padded_initial_token_inputs(
+                context_batch, kv_cache_inputs
+            )
 
     def _prepare_ragged_next_token_inputs(
         self,
@@ -256,6 +268,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             tokens=next_tokens,
             input_row_offsets_or_attn_mask=next_row_offsets,
             signal_buffers=self.signal_buffers,
+            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
         )
 
     def prepare_next_token_inputs(

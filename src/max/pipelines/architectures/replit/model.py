@@ -61,9 +61,11 @@ class ReplitInputs(ModelInputs):
         self,
         tokens: Tensor,
         input_row_offsets: Tensor,
+        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> None:
         self.tokens = tokens
         self.input_row_offsets = input_row_offsets
+        self.kv_cache_inputs = kv_cache_inputs
 
 
 class ReplitModel(PipelineModel[TextContext]):
@@ -80,14 +82,16 @@ class ReplitModel(PipelineModel[TextContext]):
     def execute(
         self,
         model_inputs: ModelInputs,
-        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> ModelOutputs:
         model_inputs = cast(ReplitInputs, model_inputs)
-        assert kv_cache_inputs is not None, "Replit has KV cache inputs"
+        # keep mypy happy.
+        assert model_inputs.kv_cache_inputs is not None, (
+            "Replit has KV cache inputs"
+        )
         model_outputs = self.model.execute(
             model_inputs.tokens,
             model_inputs.input_row_offsets,
-            *kv_cache_inputs,
+            *model_inputs.kv_cache_inputs,
             copy_inputs_to_device=False,
         )
         if self.pipeline_config.enable_echo:
@@ -105,6 +109,7 @@ class ReplitModel(PipelineModel[TextContext]):
     def prepare_initial_token_inputs(
         self,
         context_batch: Sequence[TextContext],
+        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> ReplitInputs:
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
@@ -116,6 +121,10 @@ class ReplitModel(PipelineModel[TextContext]):
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
         tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
 
+        if kv_cache_inputs is None:
+            raise ValueError(
+                "Replit has KV cache inputs, but got None instead."
+            )
         return ReplitInputs(
             tokens=Tensor.from_numpy(tokens).to(
                 self.pipeline_config.devices[0]
@@ -123,6 +132,7 @@ class ReplitModel(PipelineModel[TextContext]):
             input_row_offsets=Tensor.from_numpy(input_row_offsets).to(
                 self.pipeline_config.devices[0]
             ),
+            kv_cache_inputs=kv_cache_inputs,
         )
 
     def prepare_next_token_inputs(
@@ -136,6 +146,7 @@ class ReplitModel(PipelineModel[TextContext]):
         return ReplitInputs(
             tokens=next_tokens,
             input_row_offsets=next_row_offsets,
+            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
         )
 
     @classmethod
