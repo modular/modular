@@ -50,6 +50,7 @@ from .pipeline import (
     upper_bounded_default,
 )
 from .registry import PIPELINE_REGISTRY, SupportedArchitecture
+from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
 from .tokenizer import (
     IdentityPipelineTokenizer,
     PreTrainedPipelineTokenizer,
@@ -96,5 +97,6 @@ __all__ = [
     "EmbeddingsGenerator",
     "EmbeddingsPipeline",
     "EmbeddingsResponse",
+    "SpeculativeDecodingTextGenerationPipeline",
     "upper_bounded_default",
 ]

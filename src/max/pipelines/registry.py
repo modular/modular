@@ -42,6 +42,7 @@ from .interfaces import (
 )
 from .kv_cache import KVCacheStrategy
 from .pipeline import KVCacheMixin, PipelineModel, TextGenerationPipeline
+from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
 from .tokenizer import TextAndVisionTokenizer, TextTokenizer
 
 logger = logging.getLogger("max.pipelines")
@@ -54,10 +55,24 @@ _ALTERNATE_ENCODINGS = {
     SupportedEncoding.bfloat16: SupportedEncoding.float32,
 }
 
-_PIPELINE_TASK_MAP = {
-    PipelineTask.TEXT_GENERATION: TextGenerationPipeline,
-    PipelineTask.EMBEDDINGS_GENERATION: EmbeddingsPipeline,
-}
+
+def get_pipeline_for_task(
+    task: PipelineTask, pipeline_config: PipelineConfig
+) -> (
+    type[TextGenerationPipeline]
+    | type[EmbeddingsPipeline]
+    | type[SpeculativeDecodingTextGenerationPipeline]
+):
+    if task == PipelineTask.TEXT_GENERATION:
+        if pipeline_config.draft_model is not None:
+            return SpeculativeDecodingTextGenerationPipeline
+        else:
+            return TextGenerationPipeline
+    elif task == PipelineTask.EMBEDDINGS_GENERATION:
+        return EmbeddingsPipeline
+    else:
+        msg = f"PipelineTask ({task}) does not have supported Pipeline"
+        raise ValueError(msg)
 
 
 _HF_PIPELINE_TASK_MAP: dict[
@@ -144,7 +159,33 @@ class PipelineRegistry:
         else:
             return None
 
+    def _validate_pipeline_config_for_speculative_decoding(
+        self, pipeline_config: PipelineConfig
+    ) -> None:
+        # When `draft_model` is not provided, speculative decoding is disabled.
+        if not pipeline_config.draft_model:
+            return None
+
+        # Assume `draft_model` is provided, and thus speculative decoding is enabled.
+        # We don't support running speculative decoding with the HuggingFace backend.
+        if pipeline_config.engine == PipelineEngine.HUGGINGFACE:
+            msg = (
+                "Speculative Decoding not supported with the HuggingFace Engine"
+            )
+            raise ValueError(msg)
+
     def validate_pipeline_config(
+        self, pipeline_config: PipelineConfig
+    ) -> PipelineConfig:
+        # Run Baseline Validation
+        pipeline_config = self._validate_pipeline_config(pipeline_config)
+
+        # Run Additional Checks for Speculative Decoding
+        self._validate_pipeline_config_for_speculative_decoding(pipeline_config)
+
+        return pipeline_config
+
+    def _validate_pipeline_config(
         self, pipeline_config: PipelineConfig
     ) -> PipelineConfig:
         """Update pipeline config with appropriate values if not provided.
@@ -921,7 +962,7 @@ class PipelineRegistry:
             # Keep MyPy happy.
             assert pipeline_config.architecture is not None
 
-            pipeline_class = _PIPELINE_TASK_MAP[task]
+            pipeline_class = get_pipeline_for_task(task, pipeline_config)
 
             # MAX pipeline
             arch = self.architectures[pipeline_config.architecture]
