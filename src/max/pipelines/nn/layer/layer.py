@@ -17,7 +17,6 @@ import difflib
 import threading
 from abc import ABC, abstractmethod
 from collections import deque
-from dataclasses import dataclass
 from functools import wraps
 from inspect import signature
 from typing import (
@@ -34,21 +33,13 @@ from typing import (
 import numpy as np
 from max.driver import DLPackArray, Tensor
 from max.dtype import DType
-from max.graph import DeviceRef, ShapeLike, TensorValue, Weight
+from max.graph import ShapeLike, Weight
 from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import WeightData
 
 from .._identity import IdentitySet
 
 DLPackCompatible = Union[DLPackArray, np.ndarray]
-
-
-@dataclass
-class ShardingStrategy:
-    """Defines how to load and shard a weight onto multiple devices."""
-
-    host_device: DeviceRef
-    shard_value: Callable[[Weight], tuple[TensorValue, ...]]
 
 
 class Layer:
@@ -79,7 +70,7 @@ class Layer:
 
 
 class LayerV2(Layer, ABC):
-    """(new) Base class for model layers with weight and device management.
+    """(new) Base class for model layers with weight management.
 
     This will be merged with the above class once all layers have been moved to
     V2.
@@ -95,20 +86,10 @@ class LayerV2(Layer, ABC):
             self._weight_values: dict[str, DLPackCompatible] = {}
             self._shared_weights: dict[str, Weight] = {}
 
-            # Update device list and sharding strategy to a singular object
-            # similar to a partition spec.
-            self._devices: tuple[DeviceRef, ...] = ()
-            self._sharding_strategy: ShardingStrategy | None = None
-
     def __setattr__(self, name, value):
         try:
             if isinstance(value, LayerV2):
                 self._sublayers[name] = value
-                if self._devices or self._sharding_strategy:
-                    value.to(
-                        *self._devices,
-                        sharding_strategy=self._sharding_strategy,
-                    )
             elif isinstance(value, Weight):
                 self._layer_weights[value.name] = value
         except AttributeError:
@@ -121,20 +102,6 @@ class LayerV2(Layer, ABC):
     def __repr__(self):
         # TODO: Make this pretty
         return f"{type(self).__name__}({len(self.sublayers)} layers, {len(self.layer_weights)} weights)"
-
-    def to(
-        self,
-        *devices: DeviceRef,
-        sharding_strategy: ShardingStrategy | None = None,
-    ) -> None:
-        if len(self._devices) > 1 and not sharding_strategy:
-            raise ValueError(
-                "Must provide a sharding strategy if multiple  devices are provided."
-            )
-
-        for _, layer in recursive_named_layers(self):
-            layer._devices = devices
-            layer._sharding_strategy = sharding_strategy
 
     @property
     def layer_weights(self) -> dict[str, Weight]:
