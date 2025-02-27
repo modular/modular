@@ -255,7 +255,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         cache_lengths_np = np.zeros(active_batch_size, np.uint32)
 
         max_seq_length = 0
-        max_cache_length = 0
+        max_context_length = 0
 
         for i, (seq_id, prompt) in enumerate(seq_ids_and_prompts.items()):
             if seq_id > self.max_batch_size:
@@ -281,7 +281,9 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
 
             # Update the maximum lengths seen so far.
             max_seq_length = max(max_seq_length, len(prompt))
-            max_cache_length = max(max_cache_length, cache_len)
+            max_context_length = max(
+                max_context_length, cache_len + len(prompt)
+            )
 
         cache_lengths = [
             Tensor.from_numpy(cache_lengths_np).to(d) for d in self.devices
@@ -294,7 +296,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         # Build a tensor of maximum lengths. Each step slices the first row to
         # advance to the values for the next row.
         max_lengths_host = build_max_lengths_tensor(
-            num_steps, max_seq_length, max_cache_length
+            num_steps, max_seq_length, max_context_length
         )
 
         result = [
