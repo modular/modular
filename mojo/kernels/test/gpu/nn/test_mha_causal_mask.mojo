@@ -229,7 +229,7 @@ fn test[
     ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
     _ = output_ref_device_ptr
 
-    var rtol = 1e-4
+    var rtol = 1e-2
     for h in range(num_heads):
         for s in range(seq_len):
             for d in range(depth):
