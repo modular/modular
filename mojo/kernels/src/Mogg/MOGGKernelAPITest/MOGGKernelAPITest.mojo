@@ -470,9 +470,9 @@ struct VariadicInputToOutput:
         size: Int,
         target: StringLiteral,
     ](
-        output: VariadicTensors[type, rank=1, size=size, io_spec=IOUnknown],
+        output: VariadicTensors[type, rank=1, size=size],
         bias: ManagedTensorSlice[type=type, rank=1],
-        input: VariadicTensors[type, rank=1, size=size, io_spec=IOUnknown],
+        input: VariadicTensors[type, rank=1, size=size],
     ):
         @parameter
         for i in range(size):
@@ -538,7 +538,7 @@ struct VariadicAdd:
         _synchronous: Bool,
     ](
         output: ManagedTensorSlice[type=type, rank=rank],
-        inputs: VariadicTensors[type, rank, io_spec=IOUnknown, *_],
+        inputs: VariadicTensors[type, rank, *_],
     ):
         @parameter
         @always_inline

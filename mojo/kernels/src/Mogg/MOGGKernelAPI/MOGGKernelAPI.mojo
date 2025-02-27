@@ -4475,7 +4475,7 @@ struct Concat:
     ](
         output: ManagedTensorSlice[type=type, rank=rank],
         axis: Int,
-        inputs: VariadicTensors[type, rank, io_spec=IOUnknown, *_],
+        inputs: VariadicTensors[type, rank, *_],
         ctx: DeviceContextPtr,
     ) raises:
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
@@ -7376,8 +7376,8 @@ struct DistributedAllReduceSum:
         rank: Int,
         target: StringLiteral,
     ](
-        outputs: VariadicTensors[type, rank, io_spec=IOUnknown, *_],
-        inputs: VariadicTensors[type, rank, io_spec=IOUnknown, *_],
+        outputs: VariadicTensors[type, rank, *_],
+        inputs: VariadicTensors[type, rank, *_],
         dev_ctxs: StaticTuple[DeviceContextPtr, *_],
     ) raises:
         # Stub for now
@@ -7421,9 +7421,7 @@ struct DistributedAllReduceSum1Devices:
     ](
         output0: ManagedTensorSlice[type=type, rank=rank],
         signal_buffer0: ManagedTensorSlice[type = DType.uint8, rank=1],
-        inputs: VariadicTensors[
-            type, rank, size = Self.num_devices, io_spec=IOUnknown
-        ],
+        inputs: VariadicTensors[type, rank, size = Self.num_devices],
         _dev_ctxs: StaticTuple[DeviceContextPtr, Self.num_devices],
         ctx: DeviceContextPtr,
     ) raises:
@@ -7476,9 +7474,7 @@ struct DistributedAllReduceSum2Devices:
         output1: ManagedTensorSlice[type=type, rank=rank],
         signal_buffer0: ManagedTensorSlice[type = DType.uint8, rank=1],
         signal_buffer1: ManagedTensorSlice[type = DType.uint8, rank=1],
-        inputs: VariadicTensors[
-            type, rank, size = Self.num_devices, io_spec=IOUnknown
-        ],
+        inputs: VariadicTensors[type, rank, size = Self.num_devices],
         _dev_ctxs: StaticTuple[DeviceContextPtr, Self.num_devices],
         ctx: DeviceContextPtr,
     ) raises:
@@ -7542,9 +7538,7 @@ struct DistributedAllReduceSum4Devices:
         signal_buffer1: ManagedTensorSlice[type = DType.uint8, rank=1],
         signal_buffer2: ManagedTensorSlice[type = DType.uint8, rank=1],
         signal_buffer3: ManagedTensorSlice[type = DType.uint8, rank=1],
-        inputs: VariadicTensors[
-            type, rank, size = Self.num_devices, io_spec=IOUnknown
-        ],
+        inputs: VariadicTensors[type, rank, size = Self.num_devices],
         _dev_ctxs: StaticTuple[DeviceContextPtr, Self.num_devices],
         ctx: DeviceContextPtr,
     ) raises:
@@ -7632,9 +7626,7 @@ struct DistributedAllReduceSum8Devices:
         signal_buffer5: ManagedTensorSlice[type = DType.uint8, rank=1],
         signal_buffer6: ManagedTensorSlice[type = DType.uint8, rank=1],
         signal_buffer7: ManagedTensorSlice[type = DType.uint8, rank=1],
-        inputs: VariadicTensors[
-            type, rank, size = Self.num_devices, io_spec=IOUnknown
-        ],
+        inputs: VariadicTensors[type, rank, size = Self.num_devices],
         _dev_ctxs: StaticTuple[DeviceContextPtr, Self.num_devices],
         ctx: DeviceContextPtr,
     ) raises:
