@@ -215,4 +215,40 @@ ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
 
 ### ❌ Removed
 
+- Direct access to `List.size` has been removed. Use the public API instead.
+
+  Examples:
+
+  Extending a List:
+
+  ```mojo
+  base_data = List[Byte](1, 2, 3)
+
+  data_list = List[Byte](4, 5, 6)
+  ext_data_list = base_data.copy()
+  ext_data_list.extend(data_list) # [1, 2, 3, 4, 5, 6]
+
+  data_span = Span(List[Byte](4, 5, 6))
+  ext_data_span = base_data.copy()
+  ext_data_span.extend(data_span) # [1, 2, 3, 4, 5, 6]
+
+  data_vec = SIMD[DType.uint8, 4](4, 5, 6, 7)
+  ext_data_vec_full = base_data.copy()
+  ext_data_vec_full.extend(data_vec) # [1, 2, 3, 4, 5, 6, 7]
+
+  ext_data_vec_partial = base_data.copy()
+  ext_data_vec_partial.extend(data_vec, count=3) # [1, 2, 3, 4, 5, 6]
+  ```
+
+  Slicing and extending a list efficiently:
+
+  ```mojo
+  base_data = List[Byte](1, 2, 3, 4, 5, 6)
+  n4_n5 = Span(base_data)[3:5]
+  extra_data = Span(List[Byte](8, 10))
+  end_result = List[Byte](capacity=len(n4_n5) + len(extra_data))
+  end_result.extend(n4_n5)
+  end_result.extend(extra_data) # [4, 5, 8, 10]
+  ```
+
 ### 🛠️ Fixed

@@ -166,7 +166,7 @@ struct Span[
             list: The list to which the span refers.
         """
         self._data = list.data.address_space_cast[address_space]()
-        self._len = list.size
+        self._len = list._len
 
     @always_inline
     @implicit

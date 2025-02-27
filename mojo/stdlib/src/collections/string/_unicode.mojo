@@ -183,22 +183,21 @@ fn to_lowercase(s: StringSlice) -> String:
         )
         var lowercase_char_opt = _get_lowercase_mapping(rune_and_size[0])
         if lowercase_char_opt is None:
-            memcpy(
-                output._unsafe_next_uninit_ptr(),
-                input + input_offset,
-                rune_and_size[1],
+            output.extend(
+                Span[Byte, s.origin](
+                    ptr=input + input_offset, length=rune_and_size[1]
+                )
             )
-            output.size += rune_and_size[1]
         else:
             var lower_char: Codepoint = lowercase_char_opt.unsafe_value()
-            output.size += lower_char.unsafe_write_utf8(
+            output._len += lower_char.unsafe_write_utf8(
                 output._unsafe_next_uninit_ptr()
             )
 
         input_offset += rune_and_size[1]
 
         # Check if we need to reserve additional capacity.
-        if output.size >= output.capacity - 5:
+        if len(output) >= output.capacity - 5:
             output.reserve(
                 output.capacity
                 + _estimate_needed_size(s.byte_length() - input_offset)
@@ -238,21 +237,20 @@ fn to_uppercase(s: StringSlice) -> String:
             )
             for char_idx in range(count):
                 var char: Codepoint = uppercase_replacement_chars[char_idx]
-                output.size += char.unsafe_write_utf8(
+                output._len += char.unsafe_write_utf8(
                     output._unsafe_next_uninit_ptr()
                 )
         else:
-            memcpy(
-                output._unsafe_next_uninit_ptr(),
-                input + input_offset,
-                rune_and_size[1],
+            output.extend(
+                Span[Byte, s.origin](
+                    ptr=input + input_offset, length=rune_and_size[1]
+                )
             )
-            output.size += rune_and_size[1]
 
         input_offset += rune_and_size[1]
 
         # Check if we need to reserve additional capacity.
-        if output.size >= output.capacity - 5:
+        if len(output) >= output.capacity - 5:
             output.reserve(
                 output.capacity
                 + _estimate_needed_size(s.byte_length() - input_offset)

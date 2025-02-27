@@ -748,7 +748,7 @@ struct String(
             bytes: The byte span to write to this String. Must NOT be
                 null terminated.
         """
-        self._iadd[False](bytes)
+        self._iadd(bytes)
 
     fn write[*Ts: Writable](mut self, *args: *Ts):
         """Write a sequence of Writable arguments to the provided Writer.
@@ -841,7 +841,7 @@ struct String(
         if buff[-1]:
             buff.append(0)
 
-        return String(buff^)
+        return String(buffer=buff^)
 
     # ===------------------------------------------------------------------=== #
     # Operator dunders
@@ -861,10 +861,7 @@ struct String(
         """
         # TODO(#933): implement this for unicode when we support llvm intrinsic evaluation at compile time
         var normalized_idx = normalize_index["String"](idx, len(self))
-        var buf = Self._buffer_type(capacity=1)
-        buf.append(self._buffer[normalized_idx])
-        buf.append(0)
-        return String(buf^)
+        return String(buffer=Self._buffer_type(self._buffer[normalized_idx], 0))
 
     fn __getitem__(self, span: Slice) -> String:
         """Gets the sequence of characters at the specified positions.
@@ -889,14 +886,12 @@ struct String(
                 )
             )
 
-        var buffer = Self._buffer_type()
-        var result_len = len(r)
-        buffer.resize(result_len + 1, 0)
+        var buffer = Self._buffer_type(capacity=len(r) + 1)
         var ptr = self.unsafe_ptr()
-        for i in range(result_len):
-            buffer[i] = ptr[r[i]]
-        buffer[result_len] = 0
-        return Self(buffer^)
+        for i in r:
+            buffer.append(ptr[i])
+        buffer.append(0)
+        return String(buffer=buffer^)
 
     @always_inline
     fn __eq__(self, other: String) -> Bool:
@@ -982,27 +977,19 @@ struct String(
         return not (self < rhs)
 
     @staticmethod
-    fn _add[rhs_has_null: Bool](lhs: Span[Byte], rhs: Span[Byte]) -> String:
+    fn _add(lhs: Span[Byte], rhs: Span[Byte]) -> String:
         var lhs_len = len(lhs)
         var rhs_len = len(rhs)
-        var lhs_ptr = lhs.unsafe_ptr()
-        var rhs_ptr = rhs.unsafe_ptr()
         alias S = StringSlice[ImmutableAnyOrigin]
         if lhs_len == 0:
-            return String(S(ptr=rhs_ptr, length=rhs_len))
+            return String(S(ptr=rhs.unsafe_ptr(), length=rhs_len))
         elif rhs_len == 0:
-            return String(S(ptr=lhs_ptr, length=lhs_len))
-        var sum_len = lhs_len + rhs_len
-        var buffer = Self._buffer_type(capacity=sum_len + 1)
-        var ptr = buffer.unsafe_ptr()
-        memcpy(ptr, lhs_ptr, lhs_len)
-        memcpy(ptr + lhs_len, rhs_ptr, rhs_len + Int(rhs_has_null))
-        buffer.size = sum_len + 1
-
-        @parameter
-        if not rhs_has_null:
-            ptr[sum_len] = 0
-        return Self(buffer^)
+            return String(S(ptr=lhs.unsafe_ptr(), length=lhs_len))
+        var buffer = Self._buffer_type(capacity=lhs_len + rhs_len + 1)
+        buffer.extend(lhs)
+        buffer.extend(rhs)
+        buffer.append(0)
+        return String(buffer=buffer^)
 
     @always_inline
     fn __add__(self, other: StringSlice) -> String:
@@ -1014,7 +1001,7 @@ struct String(
         Returns:
             The new constructed string.
         """
-        return Self._add[False](self.as_bytes(), other.as_bytes())
+        return Self._add(self.as_bytes(), other.as_bytes())
 
     @always_inline
     fn __radd__(self, other: StringSlice) -> String:
@@ -1026,27 +1013,17 @@ struct String(
         Returns:
             The new constructed string.
         """
-        return Self._add[True](other.as_bytes(), self.as_bytes())
+        return Self._add(other.as_bytes(), self.as_bytes())
 
-    fn _iadd[has_null: Bool](mut self, other: Span[Byte]):
-        var s_len = self.byte_length()
+    fn _iadd(mut self, other: Span[Byte]):
         var o_len = len(other)
-        var o_ptr = other.unsafe_ptr()
-        if s_len == 0:
-            alias S = StringSlice[ImmutableAnyOrigin]
-            self = String(S(ptr=o_ptr, length=o_len))
+        if o_len == 0:
             return
-        elif o_len == 0:
-            return
-        var sum_len = s_len + o_len
-        self._buffer.reserve(sum_len + 1)
-        var s_ptr = self.unsafe_ptr()
-        memcpy(s_ptr + s_len, o_ptr, o_len + Int(has_null))
-        self._buffer.size = sum_len + 1
-
-        @parameter
-        if not has_null:
-            s_ptr[sum_len] = 0
+        self._buffer.reserve(self.byte_length() + o_len + 1)
+        if len(self._buffer) > 0:
+            _ = self._buffer.pop()
+        self._buffer.extend(other)
+        self._buffer.append(0)
 
     @always_inline
     fn __iadd__(mut self, other: StringSlice):
@@ -1055,7 +1032,7 @@ struct String(
         Args:
             other: The string to append.
         """
-        self._iadd[False](other.as_bytes())
+        self._iadd(other.as_bytes())
 
     @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
     fn __iter__(self) -> CodepointSliceIter[__origin_of(self)]:
@@ -1366,11 +1343,7 @@ struct String(
         Returns:
             The pointer to the underlying memory.
         """
-        var ptr = self.unsafe_ptr()
-        self._buffer.data = UnsafePointer[UInt8]()
-        self._buffer.size = 0
-        self._buffer.capacity = 0
-        return ptr
+        return self._buffer.steal_data()
 
     fn count(self, substr: StringSlice) -> Int:
         """Return the number of non-overlapping occurrences of substring

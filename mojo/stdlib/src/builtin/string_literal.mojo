@@ -411,17 +411,10 @@ struct StringLiteral(
         # inline the string slice constructor to work around an elaborator
         # memory leak.
         # return self.as_string_slice()
-        var string = String()
-        var length = self.byte_length()
-        var buffer = String._buffer_type()
-        var new_capacity = length + 1
-        buffer._realloc(new_capacity)
-        buffer.size = new_capacity
-        var data: UnsafePointer[UInt8] = self.unsafe_ptr()
-        memcpy(buffer.data, data, length)
-        (buffer.data + length).init_pointee_move(0)
-        string._buffer = buffer^
-        return string
+        var buffer = String._buffer_type(capacity=self.byte_length() + 1)
+        buffer.extend(self.as_bytes())
+        buffer.append(0)
+        return String(buffer=buffer^)
 
     @no_inline
     fn __repr__(self) -> String:

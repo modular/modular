@@ -151,7 +151,7 @@ struct Path(
         Returns:
           A string representation of the path.
         """
-        return String.write(self)
+        return self.path
 
     @always_inline
     fn __bool__(self) -> Bool:

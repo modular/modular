@@ -98,7 +98,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
     # Fields
     var data: UnsafePointer[T]
     """The underlying storage for the list."""
-    var size: Int
+    var _len: Int
     """The number of elements in the list."""
     var capacity: Int
     """The amount of elements that can fit in the list without resizing it."""
@@ -110,7 +110,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
     fn __init__(out self):
         """Constructs an empty list."""
         self.data = UnsafePointer[T]()
-        self.size = 0
+        self._len = 0
         self.capacity = 0
 
     fn copy(self) -> Self:
@@ -131,7 +131,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
             capacity: The requested capacity of the list.
         """
         self.data = UnsafePointer[T].alloc(capacity)
-        self.size = 0
+        self._len = 0
         self.capacity = capacity
 
     fn __init__(out self, owned *values: T):
@@ -161,7 +161,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         # Do not destroy the elements when their backing storage goes away.
         __disable_del elements
 
-        self.size = length
+        self._len = length
 
     fn __init__(out self, span: Span[T]):
         """Constructs a list from the a Span of values.
@@ -184,7 +184,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
             capacity: The capacity of the list.
         """
         self.data = ptr
-        self.size = length
+        self._len = length
         self.capacity = capacity
 
     fn __moveinit__(out self, owned existing: Self):
@@ -194,7 +194,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
             existing: The existing list.
         """
         self.data = existing.data
-        self.size = existing.size
+        self._len = existing._len
         self.capacity = existing.capacity
 
     fn __copyinit__(out self, existing: Self):
@@ -212,7 +212,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
 
         @parameter
         if not hint_trivial_type:
-            for i in range(self.size):
+            for i in range(len(self)):
                 (self.data + i).destroy_pointee()
         self.data.free()
 
@@ -369,13 +369,14 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
+    @always_inline("nodebug")
     fn __len__(self) -> Int:
         """Gets the number of elements in the list.
 
         Returns:
             The number of elements in the list.
         """
-        return self.size
+        return self._len
 
     fn __bool__(self) -> Bool:
         """Checks whether the list has any elements or not.
@@ -411,7 +412,9 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         Returns:
             A string representation of the list.
         """
-        var output = String()
+        # at least 1 byte per item e.g.: [a, b, c, d] = 4 + 2 * 3 + [] + null
+        var l = len(self)
+        var output = String(capacity=l + 2 * (l - 1) * Int(l > 1) + 3)
         self.write_to(output)
         return output^
 
@@ -478,11 +481,12 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
     fn _realloc(mut self, new_capacity: Int):
         var new_data = UnsafePointer[T].alloc(new_capacity)
 
-        _move_pointee_into_many_elements[hint_trivial_type](
-            dest=new_data,
-            src=self.data,
-            size=self.size,
-        )
+        @parameter
+        if hint_trivial_type:
+            memcpy(new_data, self.data, len(self))
+        else:
+            for i in range(len(self)):
+                (self.data + i).move_pointee_into(new_data + i)
 
         if self.data:
             self.data.free()
@@ -499,10 +503,10 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
             If there is no capacity left, resizes to twice the current capacity.
             Except for 0 capacity where it sets 1.
         """
-        if self.size >= self.capacity:
+        if self._len >= self.capacity:
             self._realloc(self.capacity * 2 | Int(self.capacity == 0))
         self._unsafe_next_uninit_ptr().init_pointee_move(value^)
-        self.size += 1
+        self._len += 1
 
     fn insert(mut self, i: Int, owned value: T):
         """Inserts a value to the list at the given index.
@@ -512,7 +516,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
             i: The index for the value.
             value: The value to insert.
         """
-        debug_assert(i <= self.size, "insert index out of range")
+        debug_assert(i <= len(self), "insert index out of range")
 
         var normalized_idx = i
         if i < 0:
@@ -573,7 +577,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         # visible outside this function if a `__moveinit__()` constructor were
         # to throw (not currently possible AFAIK though) part way through the
         # logic below.
-        other.size = 0
+        other._len = 0
 
         var dest_ptr = self.data + len(self)
 
@@ -590,7 +594,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
 
         # Update the size now that all new elements have been moved into this
         # list.
-        self.size = final_size
+        self._len = final_size
 
     fn extend[
         D: DType, //
@@ -606,9 +610,9 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         Notes:
             If there is no capacity left, resizes to `len(self) + value.size`.
         """
-        self.reserve(self.size + value.size)
+        self.reserve(self._len + value.size)
         self._unsafe_next_uninit_ptr().store(value)
-        self.size += value.size
+        self._len += value.size
 
     fn extend[
         D: DType, //
@@ -627,10 +631,10 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
             If there is no capacity left, resizes to `len(self) + count`.
         """
         debug_assert(count <= value.size, "count must be <= value.size")
-        self.reserve(self.size + count)
+        self.reserve(self._len + count)
         var v_ptr = UnsafePointer.address_of(value).bitcast[Scalar[D]]()
         memcpy(self._unsafe_next_uninit_ptr(), v_ptr, count)
-        self.size += count
+        self._len += count
 
     fn extend[
         D: DType, //
@@ -646,9 +650,9 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         Notes:
             If there is no capacity left, resizes to `len(self) + len(value)`.
         """
-        self.reserve(self.size + len(value))
+        self.reserve(self._len + len(value))
         memcpy(self._unsafe_next_uninit_ptr(), value.unsafe_ptr(), len(value))
-        self.size += len(value)
+        self._len += len(value)
 
     fn pop(mut self, i: Int = -1) -> T:
         """Pops a value from the list at the given index.
@@ -659,17 +663,17 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         Returns:
             The popped value.
         """
-        debug_assert(-len(self) <= i < len(self), "pop index out of range")
+        debug_assert(-self._len <= i < self._len, "pop index out of range")
 
         var normalized_idx = i
         if i < 0:
-            normalized_idx += len(self)
+            normalized_idx += self._len
 
         var ret_val = (self.data + normalized_idx).take_pointee()
-        for j in range(normalized_idx + 1, self.size):
+        for j in range(normalized_idx + 1, self._len):
             (self.data + j).move_pointee_into(self.data + j - 1)
-        self.size -= 1
-        if self.size * 4 < self.capacity:
+        self._len -= 1
+        if self._len * 4 < self.capacity:
             if self.capacity > 1:
                 self._realloc(self.capacity // 2)
         return ret_val^
@@ -698,13 +702,13 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
             new_size: The new size.
             value: The value to use to populate new elements.
         """
-        if new_size <= self.size:
+        if new_size <= self._len:
             self.resize(new_size)
         else:
             self.reserve(new_size)
-            for i in range(self.size, new_size):
+            for i in range(self._len, new_size):
                 (self.data + i).init_pointee_copy(value)
-            self.size = new_size
+            self._len = new_size
 
     fn resize(mut self, new_size: Int):
         """Resizes the list to the given new size.
@@ -715,16 +719,16 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         Args:
             new_size: The new size.
         """
-        if self.size < new_size:
+        if len(self) < new_size:
             abort(
                 "You are calling List.resize with a new_size bigger than the"
                 " current size. If you want to make the List bigger, provide a"
                 " value to fill the new slots with. If not, make sure the new"
                 " size is smaller than the current size."
             )
-        for i in range(new_size, self.size):
+        for i in range(new_size, len(self)):
             (self.data + i).destroy_pointee()
-        self.size = new_size
+        self._len = new_size
         self.reserve(new_size)
 
     fn reverse(mut self):
@@ -831,9 +835,9 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
 
     fn clear(mut self):
         """Clears the elements in the list."""
-        for i in range(self.size):
+        for i in range(self._len):
             (self.data + i).destroy_pointee()
-        self.size = 0
+        self._len = 0
 
     fn steal_data(mut self) -> UnsafePointer[T]:
         """Take ownership of the underlying pointer from the list.
@@ -843,7 +847,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         """
         var ptr = self.data
         self.data = UnsafePointer[T]()
-        self.size = 0
+        self._len = 0
         self.capacity = 0
         return ptr
 
@@ -891,11 +895,11 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         else:
             var normalized_idx = Int(idx)
             debug_assert(
-                -self.size <= normalized_idx < self.size,
+                -self._len <= normalized_idx < self._len,
                 "index: ",
                 normalized_idx,
-                " is out of bounds for `List` of size: ",
-                self.size,
+                " is out of bounds for `List` of length: ",
+                self._len,
             )
             if normalized_idx < 0:
                 normalized_idx += len(self)
@@ -1048,24 +1052,24 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         - This pointer MUST not be used to read or write memory beyond the
         allocated capacity of this list.
         - This pointer may not be used to initialize non-contiguous elements.
-        - Ensure that `List.size` is updated to reflect the new number of
+        - Ensure that `List._len` is updated to reflect the new number of
           initialized elements, otherwise elements may be unexpectedly
           overwritten or not destroyed correctly.
         """
         debug_assert(
-            self.capacity > 0 and self.capacity > self.size,
+            self.capacity > 0 and self.capacity > self._len,
             (
                 "safety violation: Insufficient capacity to retrieve pointer to"
                 " next uninitialized element"
             ),
         )
 
-        return self.data + self.size
+        return self.data + self._len
 
     fn _cast_hint_trivial_type[
         hint_trivial_type: Bool
     ](owned self) -> List[T, hint_trivial_type]:
-        var size = self.size
+        var size = self._len
         var capacity = self.capacity
 
         # TODO: Why doesn't `__disable_del self` work here?
@@ -1078,18 +1082,3 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
 
 fn _clip(value: Int, start: Int, end: Int) -> Int:
     return max(start, min(value, end))
-
-
-fn _move_pointee_into_many_elements[
-    T: CollectionElement, //, hint_trivial_type: Bool
-](dest: UnsafePointer[T], src: UnsafePointer[T], size: Int):
-    @parameter
-    if hint_trivial_type:
-        memcpy(
-            dest=dest.bitcast[Int8](),
-            src=src.bitcast[Int8](),
-            count=size * sizeof[T](),
-        )
-    else:
-        for i in range(size):
-            (src + i).move_pointee_into(dest + i)
