@@ -241,7 +241,8 @@ private:
     for (NamedAttribute attr : gen->getDialectAttrs())
       if (attr.getName() == kMOGGSynchronousLabel ||
           attr.getName() == kMOGGTargetLabel ||
-          attr.getName() == kMOGGLambdasHaveFusionLabel) {
+          attr.getName() == kMOGGLambdasHaveFusionLabel ||
+          attr.getName() == kMOGGTraceNameLabel) {
         outlinedFunction->setAttr(attr.getName(), attr.getValue());
       }
 

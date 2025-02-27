@@ -165,6 +165,12 @@ static constexpr StringLiteral kMOGGLambdasHaveFusionLabel =
 static constexpr StringLiteral kMOGGLambdasHaveFusionParameterName =
     "lambdas_have_fusion";
 
+// Trace name for the fused kernel.
+// Need to be used in the kernel code like this:
+// `with Trace[TraceLevel.OP, target=target](_trace_name):`
+static constexpr StringLiteral kMOGGTraceNameLabel = "mogg.trace_name";
+static constexpr StringLiteral kMOGGTraceNameParameterName = "_trace_name";
+
 // An ArrayAttr of indices which correspond which operands have fusion enabled.
 static constexpr StringLiteral kMOGGFusableArgs = "mogg.fusable_args";
 
