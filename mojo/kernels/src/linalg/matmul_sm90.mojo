@@ -934,7 +934,7 @@ fn warp_specialize_gemm_with_multicasting[
     transpose_b: Bool,
     wgmma_shape: IndexList[3],
     config: MatmulConfig[a_type, b_type, c_type, transpose_b, wgmma_shape],
-    grid_shape: IndexList[2] = Index(16, 8),
+    grid_shape: IndexList[2] = Index(10, 13),
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
 ](
