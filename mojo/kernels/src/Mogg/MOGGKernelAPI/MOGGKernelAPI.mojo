@@ -1511,28 +1511,6 @@ struct Round:
         ](y, ctx)
 
 
-@compiler.register("mo.roundeven")
-@compiler.elementwise
-struct RoundEven:
-    @staticmethod
-    fn execute[
-        target: StringLiteral,
-        _synchronous: Bool,
-        _trace_name: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
-            return rebind[SIMD[y.type, width]](round(x._fused_load[width](idx)))
-
-        foreach[
-            func,
-            target=target,
-            _synchronous=_synchronous,
-            _trace_name=_trace_name,
-        ](y, ctx)
-
-
 @compiler.register("mo.sqrt")
 @compiler.elementwise
 struct Sqrt:
