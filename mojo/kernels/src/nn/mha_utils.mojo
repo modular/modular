@@ -121,10 +121,12 @@ struct MHAConfig:
         # Not all of these have to be `OptionalReg`, only
         # those that depend on `depth`.
         # Currently, all are `OptionalReg` for consistency.
+        # BM
         self.num_queries_per_block = num_queries_per_block.or_else(
             32 if type
             is DType.float32 else (64 if has_nvidia_gpu_accelerator() else 32)
         )
+        # BN
         self.num_keys_per_block = num_keys_per_block.or_else(depth)
         var bk_arch_factor = 2 if num_pipeline_stages <= 2 else 1
         var bk_type_factor = 1 if type is DType.float32 else 2
