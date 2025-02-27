@@ -17,7 +17,38 @@ from typing import Callable
 
 import numpy as np
 from max.pipelines import LogProbabilities
-from scipy.special import log_softmax  # type: ignore
+
+
+def log_softmax(x: np.ndarray, axis: int = -1) -> np.ndarray:
+    """Compute the logarithm of the softmax function.
+
+    This implementation uses the identity log(softmax(x)) = x - log(sum(exp(x)))
+    with numerical stability improvements to prevent overflow/underflow.
+
+    Args:
+        x: Input array
+        axis: Axis to compute values along
+
+    Returns:
+        Array with same shape as x, representing log(softmax(x))
+    """
+    # Subtract max value for numerical stability (prevents exp overflow)
+    x_max = np.amax(x, axis=axis, keepdims=True)
+
+    # Compute exp(x - x_max) which is now safe from overflow
+    shifted_x = x - x_max
+    exp_shifted = np.exp(shifted_x)
+
+    # Suppress -inf warnings from log(0)
+    # This can happen when input contains extreme negative values (-inf),
+    # which become 0 after exp() operation
+    with np.errstate(divide="ignore"):
+        sum_exp = np.sum(exp_shifted, axis=axis, keepdims=True)
+        log_sum_exp = np.log(sum_exp)
+
+    # Final result: x - x_max - log(sum(exp(x - x_max)))
+    # This is mathematically equivalent to log(softmax(x))
+    return shifted_x - log_sum_exp
 
 
 def compute_log_probabilities(
