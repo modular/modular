@@ -688,6 +688,9 @@ class PipelineConfig:
         "USE_EXPERIMENTAL_KERNELS", "false"
     )
 
+    draft_model: Optional[str] = None
+    """Draft model for use during Speculative Decoding."""
+
     def __post_init__(self) -> None:
         # Validate if a provided max_length is non-negative.
         if self.max_length is not None and self.max_length < 0:
@@ -801,6 +804,13 @@ class PipelineConfig:
             "detailed",
         ):
             raise ValueError("gpu_profiling must be a boolean or 'detailed'")
+
+        if self.draft_model:
+            if not _repo_exists_with_retry(self.draft_model):
+                raise ValueError(
+                    "draft_model provided does not exist on HuggingFace."
+                    "Only public HuggingFace draft models currently supported."
+                )
 
     def __getstate__(self) -> dict[str, Any]:
         """Override `__getstate__` to exclude the Hugging Face config."""
@@ -1058,6 +1068,7 @@ class PipelineConfig:
             "force_download": "Specify whether to forcefully download a file even if it already exists in local cache. Set this to true if you want to ensure you have the latest version.",
             "enable_echo": "Whether the model should be built with echo capabilities. This defaults to false.",
             "gpu_profiling": "Whether to enable GPU profiling of the model. This defaults to false.",
+            "draft_model": "Draft model for use in speculative decoding.",
         }
 
     def huggingface_weights_repo(self) -> HuggingFaceRepo:
