@@ -6,6 +6,7 @@
 
 from collections import OptionalReg
 from collections.vector import InlinedFixedVector
+from collections.string import StringSlice
 from math import ceildiv
 from os import abort
 from sys import alignof, external_call, sizeof
@@ -14,7 +15,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host.info import is_cpu, is_gpu
-from memory import UnsafePointer, memcpy
+from memory import UnsafePointer, memcpy, Span
 from memory.memory import _malloc as _malloc_cpu
 from nn.concat import concat
 from register import *
@@ -435,9 +436,16 @@ fn get_buffer_data(buffer: NDBuffer[DType.uint8, 1]) -> UnsafePointer[UInt8]:
 
 @register_internal("mgp.assert")
 @no_inline
-fn mgp_assert[message: StringLiteral](cond: Bool) raises:
+fn mgp_assert(cond: Bool, msg_ptr: UnsafePointer[Byte], msg_len: UInt) raises:
     if not cond:
-        raise Error(message)
+        var span = Span[Byte, ImmutableAnyOrigin](
+            ptr=msg_ptr,
+            length=msg_len,
+        )
+        var msg = StringSlice.from_utf8(span)
+        # Error need to own the string, but we can not free the memory from MEF
+        # data section, make a copy.
+        raise Error(msg.__str__())
 
 
 # ===-----------------------------------------------------------------------===#
@@ -533,9 +541,12 @@ fn mgp_buffer_alloc[
 @register_internal("mgp.buffer.constant")
 @export
 fn mgp_buffer_constant[
-    bRawAlign: UInt64,
+    bRawAlign: UInt64
+](
+    resource_ptr: UnsafePointer[NoneType],
     resource_bytecount: Int,
-](resource_ptr: UnsafePointer[NoneType], out result: NDBuffer[DType.int8, 1]):
+    out result: NDBuffer[DType.int8, 1],
+):
     # Should we keep the alignment? It seems that the static alignment is
     # dropped in the kernels anyway.
     return __type_of(result)(resource_ptr.bitcast[Int8](), resource_bytecount)
