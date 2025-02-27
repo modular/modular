@@ -8,7 +8,7 @@ from collections import InlineArray
 from os import abort
 
 from builtin.range import _StridedRange
-from memory import UnsafePointer
+from memory import UnsafePointer, memcpy
 
 from buffer import DimList
 
@@ -73,15 +73,15 @@ struct IntArray:
 
     @always_inline("nodebug")
     fn copy_from(mut self, offset: Int, source: Self, size: Int):
-        for i in range(size):
-            self[i + offset] = source[i]
+        memcpy(self._data.offset(offset), source._data, size)
 
     @always_inline("nodebug")
     fn copy_from(
         mut self, dst_offset: Int, source: Self, src_offset: Int, size: Int
     ):
-        for i in range(size):
-            self[i + dst_offset] = source[i + src_offset]
+        memcpy(
+            self._data.offset(dst_offset), source._data.offset(src_offset), size
+        )
 
 
 alias UNKNOWN_VALUE = -1
