@@ -15,8 +15,7 @@ from pathlib import Path
 from sys.ffi import _get_global_or_null
 
 from max._utils import call_dylib_func
-from max.driver import Device, cpu_device
-from max.driver.accelerator import check_compute_capability
+from max.driver import Accelerator, Device, cpu
 from max.graph import Graph
 from max.tensor import Tensor, TensorSpec
 from memory import ArcPointer, UnsafePointer
@@ -451,11 +450,11 @@ struct InferenceSession:
             options: Session options to configure how session is created.
 
         """
-        var device = options._device.or_else(cpu_device())
+        var device = options._device.or_else(cpu())
         if "cuda" in String(device):
             # This should eventually be a method on the device itself so we can
             # avoid having `session.mojo` depend on CUDA.
-            check_compute_capability(device)
+            Accelerator.check_compute_capability(device)
         var path = _get_engine_path()
         self._ptr = ArcPointer(_InferenceSessionImpl(path, device))
 

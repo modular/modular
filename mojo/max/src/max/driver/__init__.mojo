@@ -12,7 +12,7 @@ to import each module.
 For example, the basic code you need to create tensor on CPU looks like this:
 
 ```mojo
-from max.driver import Tensor, cpu_device
+from max.driver import Tensor, cpu
 from testing import assert_equal
 from max.tensor import TensorShape
 
@@ -21,7 +21,7 @@ def main():
     tensor[0, 0] = 1.0
 
     # You can also explicitly set the devices.
-    device = cpu_device()
+    device = cpu()
     new_tensor = Tensor[DType.float32, rank=2](TensorShape(1,2), device)
     new_tensor[0, 0] = 1.0
 
@@ -40,9 +40,13 @@ from max._tensor_utils import (
 )
 from max.tensor import RuntimeTensorSpec
 
-from .accelerator import accelerator_device
+from ._accelerator import accelerator, Accelerator, CompiledDeviceKernel
 from .anytensor import AnyMemory, AnyMojoValue, AnyTensor
-from .device import Device, cpu_device
+from .device import Device, cpu
 from .device_memory import DeviceMemory, DeviceTensor
 from .tensor import Tensor
 from .tensor_slice import TensorSlice
+
+# TODO(GEX-1891): Remove deprecated legacy names for Device creation
+alias accelerator_device = accelerator
+alias cpu_device = cpu

@@ -9,10 +9,10 @@ Defines the types and functions to interact with hardware devices.
 For example, you can create a CPU device like this:
 
 ```mojo
-from max.driver import cpu_device
+from max.driver import cpu
 
 def main():
-    device = cpu_device()
+    device = cpu()
 ```
 """
 
@@ -79,7 +79,7 @@ struct Device(Stringable):
         for deletion. Can be used to represent a 'moved from' state.
 
 
-        Use cpu_device() or accelerator_device() to create a CPU or GPU Device.
+        Use cpu() or accelerator() to create a CPU or GPU Device.
         """
 
         self._lib = None
@@ -208,7 +208,7 @@ struct Device(Stringable):
         return self._cdev == other._cdev
 
 
-fn cpu_device() raises -> Device:
+fn cpu() raises -> Device:
     """Creates a CPU Device.
 
     Returns:

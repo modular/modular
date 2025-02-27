@@ -23,7 +23,7 @@ from ._status import Status
 from .device import Device, _CDevice, _get_driver_path
 
 
-fn accelerator_device(gpu_id: Int = 0) raises -> Device:
+fn accelerator(gpu_id: Int = 0) raises -> Device:
     var lib = DriverLibrary()
     var status = Status(lib)
     var device = lib.create_accelerator_device_fn(gpu_id, status.impl)
@@ -34,15 +34,6 @@ fn accelerator_device(gpu_id: Int = 0) raises -> Device:
         owned_ptr=device,
     )
     return accelerator_dev
-
-
-fn check_compute_capability(device: Device) raises:
-    """Checks if a device is compatible with MAX. Will raise an exception if
-    CUDA version is below 8.0."""
-    var device_context = call_dylib_func[DeviceContextPtr](
-        device._lib.value().get_handle(), "M_getDeviceContext", device._cdev
-    )
-    device_context[].is_compatible()
 
 
 # TODO: Make this polymorphic on Device type.
@@ -94,26 +85,37 @@ struct CompiledDeviceKernel[func_type: AnyTrivialRegType, //, func: func_type]:
         )
 
 
-fn compile[
-    func_type: AnyTrivialRegType, //, func: func_type
-](device: Device) raises -> CompiledDeviceKernel[func]:
-    """Compiles a function which can be executed on device.
+struct Accelerator:
+    @staticmethod
+    fn check_compute_capability(device: Device) raises:
+        """Checks if a device is compatible with MAX. Will raise an exception if
+        CUDA version is not supported."""
+        var device_context = call_dylib_func[DeviceContextPtr](
+            device._lib.value().get_handle(), "M_getDeviceContext", device._cdev
+        )
+        device_context[].is_compatible()
 
-    Args:
-        device: Device for which to compile the function. The returned CompiledDeviceKernel
-            can execute on a different Device, as long as the device architecture matches.
-    Returns:
-        Kernel which can be launched on a Device.
+    @staticmethod
+    fn compile[
+        func_type: AnyTrivialRegType, //, func: func_type
+    ](device: Device) raises -> CompiledDeviceKernel[func]:
+        """Compiles a function which can be executed on device.
 
-    """
-    if "gpu" not in String(device):
-        raise "compile() expects GPU device."
+        Args:
+            device: Device for which to compile the function. The returned CompiledDeviceKernel
+                can execute on a different Device, as long as the device architecture matches.
+        Returns:
+            Kernel which can be launched on a Device.
 
-    var device_context = call_dylib_func[DeviceContextPtr](
-        device._lib.value().get_handle(), "M_getDeviceContext", device._cdev
-    )
+        """
+        if "gpu" not in String(device):
+            raise "compile() expects GPU device."
 
-    var accelerator_func = device_context[].compile_function[
-        func, _target = _get_gpu_target()
-    ]()
-    return CompiledDeviceKernel(accelerator_func)
+        var device_context = call_dylib_func[DeviceContextPtr](
+            device._lib.value().get_handle(), "M_getDeviceContext", device._cdev
+        )
+
+        var accelerator_func = device_context[].compile_function[
+            func, _target = _get_gpu_target()
+        ]()
+        return CompiledDeviceKernel(accelerator_func)

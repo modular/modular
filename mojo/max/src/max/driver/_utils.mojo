@@ -8,7 +8,7 @@ from max.tensor import Tensor as OldTensor
 from memory import UnsafePointer, memcpy
 
 from .anytensor import AnyTensor
-from .device import Device, cpu_device
+from .device import Device, cpu
 from .tensor import Tensor
 
 
@@ -44,7 +44,7 @@ fn _convert_from[
             old_tensor.rank(), rank
         )
 
-    var dev = cpu_device()
+    var dev = cpu()
 
     var new_tensor = Tensor[dtype, rank](old_tensor.spec().shape, dev)
     memcpy(

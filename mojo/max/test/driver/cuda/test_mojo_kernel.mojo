@@ -15,17 +15,17 @@
 from pathlib import Path
 from sys import stderr
 
-import max.driver.accelerator as accelerator
 from gpu.host import Dim
 from gpu.id import block_dim, block_idx, thread_idx
 from max.driver import (
+    Accelerator,
     Device,
     DeviceTensor,
     DynamicTensor,
     ManagedTensorSlice,
     Tensor,
-    accelerator_device,
-    cpu_device,
+    accelerator,
+    cpu,
 )
 from max.tensor import TensorShape
 from testing import assert_equal
@@ -52,15 +52,15 @@ def fill(gpu_dev: Device, shape: TensorShape, val: Float32) -> DeviceTensor:
 
 
 def test_vec_add():
-    gpu_dev = accelerator_device()
-    cpu_dev = cpu_device()
+    gpu_dev = accelerator()
+    cpu_dev = cpu()
     shape = TensorShape(10, 10)
     alias type = DType.float32
     in0 = fill(gpu_dev, shape, 1).to_tensor[type, 2]()
     in1 = fill(gpu_dev, shape, 2).to_tensor[type, 2]()
     out = fill(gpu_dev, shape, 0).to_tensor[type, 2]()
 
-    kernel = accelerator.compile[vec_add[type, 2]](gpu_dev)
+    kernel = Accelerator.compile[vec_add[type, 2]](gpu_dev)
     kernel(
         gpu_dev,
         in0.unsafe_slice(),

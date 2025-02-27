@@ -31,7 +31,7 @@ from memory import UnsafePointer
 from utils import Variant
 from utils._serialize import _serialize
 
-from .device import Device, cpu_device
+from .device import Device
 from .device_memory import DeviceMemory
 from .tensor import Tensor
 
