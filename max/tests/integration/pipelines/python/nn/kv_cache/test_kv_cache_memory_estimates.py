@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from max.driver import Device
+from max.driver import CPU
 from max.dtype import DType
 from max.pipelines.kv_cache import KVCacheParams, KVCacheStrategy
 from max.pipelines.kv_cache.paged_cache import PagedKVCacheManager
@@ -28,7 +28,7 @@ def test_paged_kv_cache_memory_estimates_truncated():
         max_seq_len,
         1,
         available_cache_memory,
-        [Device.cpu(0)],
+        [CPU(0)],
     )
 
     expected_value = 1024 * 8 * 128 * 2 * 4
@@ -55,7 +55,7 @@ def test_paged_kv_cache_memory_estimates_not_truncated():
         max_seq_len,
         1,
         available_cache_memory,
-        [Device.cpu(0)],
+        [CPU(0)],
     )
 
     assert estimated_cache_memory == available_cache_memory
