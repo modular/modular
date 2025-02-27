@@ -98,7 +98,7 @@ async def test_prefix_caching() -> None:
     kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[0] == [
         len(initial_prompt_1),
-        0,
+        len(initial_prompt_1),
     ]
     seq_ids_and_new_tokens = {seq_id_1: np.array([FAKE_TOKEN])}
     kv_manager.step(seq_ids_and_new_tokens)
@@ -112,7 +112,7 @@ async def test_prefix_caching() -> None:
         kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
         assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[
             0
-        ] == [1, 5 + i]
+        ] == [1, 5 + i + 1]
         seq_ids_and_new_tokens = {seq_id_1: np.array([FAKE_TOKEN])}
         kv_manager.step(seq_ids_and_new_tokens)
 
@@ -126,7 +126,7 @@ async def test_prefix_caching() -> None:
     kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[0] == [
         1,
-        len(initial_prompt_2) - 1,
+        len(initial_prompt_2),
     ]
     seq_ids_and_new_tokens = {seq_id_2: np.array([FAKE_TOKEN])}
     kv_manager.step(seq_ids_and_new_tokens)
@@ -143,7 +143,7 @@ async def test_prefix_caching() -> None:
             0
         ] == [
             1,
-            len(initial_prompt_2) + i,
+            len(initial_prompt_2) + i + 1,
         ]
         assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0][:4] == [0, 1, 2, 3]
         seq_ids_and_new_tokens = {seq_id_2: np.array([FAKE_TOKEN])}
@@ -316,9 +316,9 @@ async def test_prefix_caching_with_num_steps_gt_1() -> None:
     seq_ids_and_prompts = {seq_id_1: np.array(initial_prompt_1)}
     kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts, num_steps=3)
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
-        [5, 0],
-        [1, 5],
+        [5, 5],
         [1, 6],
+        [1, 7],
     ]
 
     seq_ids_and_new_tokens = {seq_id_1: np.array([15, 16, 17])}
@@ -328,8 +328,8 @@ async def test_prefix_caching_with_num_steps_gt_1() -> None:
     seq_ids_and_prompts = {seq_id_1: np.array([17])}
     kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts, num_steps=2)
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
-        [1, 7],
         [1, 8],
+        [1, 9],
     ]
 
     seq_ids_and_new_tokens = {seq_id_1: np.array([18, 19])}
@@ -352,7 +352,7 @@ async def test_prefix_caching_with_page_size_gt_1() -> None:
     kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
     assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0] == [0, 1, 2]
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
-        [5, 0],
+        [5, 5],
     ]
 
     seq_ids_and_new_tokens = {seq_id_1: np.array([15])}
@@ -363,7 +363,7 @@ async def test_prefix_caching_with_page_size_gt_1() -> None:
     kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
     assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0] == [0, 1, 2]
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
-        [1, 5],
+        [1, 6],
     ]
 
     seq_ids_and_new_tokens = {seq_id_1: np.array([16])}
@@ -374,7 +374,7 @@ async def test_prefix_caching_with_page_size_gt_1() -> None:
     kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
     assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0] == [0, 1, 2, 3]
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
-        [1, 6],
+        [1, 7],
     ]
 
     seq_ids_and_new_tokens = {seq_id_1: np.array([17])}
@@ -397,9 +397,9 @@ async def test_prefix_caching_with_page_size_gt_1_and_num_steps_gt_1() -> None:
     kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts, num_steps=3)
     assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0] == [0, 1, 2, 3]
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
-        [5, 0],
-        [1, 5],
+        [5, 5],
         [1, 6],
+        [1, 7],
     ]
 
     seq_ids_and_new_tokens = {seq_id_1: np.array([15, 16, 17])}
@@ -410,8 +410,8 @@ async def test_prefix_caching_with_page_size_gt_1_and_num_steps_gt_1() -> None:
     kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts, num_steps=2)
     assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0] == [0, 1, 2, 3, 4]
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
-        [1, 7],
         [1, 8],
+        [1, 9],
     ]
 
     seq_ids_and_new_tokens = {seq_id_1: np.array([18, 19])}
