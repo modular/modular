@@ -659,6 +659,35 @@ static std::optional<IOSpec> maybeGetIOSpec(TypedAttr mutAttr,
   return std::nullopt;
 }
 
+// TODO(GEX-GEX-1904): Can be deleted when enforce_io_param decorator is no
+// longer needed.
+static void checkSpecializedIOSpecParams(LIT::FnOp func) {
+  for (auto &&[argIdx, argType] : llvm::enumerate(func.getArgumentTypes())) {
+    auto structType = getAsDeclRefOrNull(argType);
+
+    if (!structType)
+      continue;
+
+    auto [mutRaw, inputRaw] = extractIOSpecSubFields(structType);
+
+    if (!mutRaw && !inputRaw)
+      continue;
+
+    auto mut = isa<KGEN::ParamDeclRefAttr>(mutRaw);
+    auto input = isa<KGEN::ParamDeclRefAttr>(inputRaw);
+
+    // If either mut or input is specialized, emit a warning
+    if (!mut || !input) {
+      auto argName = func.getFuncTypeGenerator().getArgName(argIdx);
+      auto loc = func.getBodyRegion().getArgument(argIdx).getLoc();
+      emitWarning(loc) << "'mut' and/or 'input' of the io_spec parameter were"
+                       << " specialized in argument " << argName
+                       << ", but enforce_io_param decorator is not used. "
+                       << "These specializations will be ignored";
+    }
+  }
+}
+
 static std::optional<SmallVector<std::pair<size_t, IOSpec>>>
 processIOSpecs(LIT::FnOp func) {
   SmallVector<std::pair<size_t, IOSpec>> specs;
@@ -757,6 +786,10 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
     if (!result)
       return false;
     ioSpecs = std::move(*result);
+  } else {
+    // When enforce_io_param is NOT used, check for specialized parameters and
+    // emit warnings
+    checkSpecializedIOSpecParams(func);
   }
 
   if (enforceIOParamUsage) {
