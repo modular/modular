@@ -471,6 +471,47 @@ class PagedKVCacheManager(KVCacheManager):
             return 0
         return self.prefix_cache.get_num_cached_tokens(prompt)
 
+    def query_fetch_stats(
+        self, seq_id: int, prompt: np.ndarray, num_steps: int = 1
+    ) -> tuple[set[int], int, int]:
+        """Query about the stats about running the fetch operation for a given
+        sequence.
+
+        This method does not modify the state of the paged cache.
+
+        Returns:
+            - prefix_blocks: Prefix cache blocks that would be reused for this seq.
+            - tokens_to_encode: Number of tokens in prompt we need to encode when running the fetch.
+            - new_pages_needed: Number of new pages we need to allocate when running the fetch.
+        """
+        data = self.active_requests.get(
+            seq_id, PagedCacheMetadata(self.page_size, self.max_seq_len)
+        )
+        data.fetch(prompt, num_steps)
+        prefix_blocks: set[int] = set()
+        cache_hit_tokens = 0
+        if self.prefix_cache is not None:
+            # copy on write does not impact the number of new blocks needed
+            prefix_blocks, cache_hit_tokens = (
+                self.prefix_cache.query_fetch_stats(seq_id, data)
+            )
+        assert cache_hit_tokens >= 0
+
+        tokens_to_encode = len(data.prompt_tokens) - cache_hit_tokens
+        assert tokens_to_encode >= 1
+        # recall that if we have any full cache hits, we will need to release our
+        # partial block as it is replaced with a full block
+        num_existing_pages = len(data.blocks)
+        num_existing_pages += len(prefix_blocks)
+        total_pages_needed = ceildiv(data.seq_len, self.page_size)
+        new_pages_needed = total_pages_needed - num_existing_pages
+        assert new_pages_needed >= 0
+
+        # reverse the fetch operation so that this method does not mutate state
+        data.undo_fetch(prompt, num_steps)
+
+        return prefix_blocks, tokens_to_encode, new_pages_needed
+
     def _fetch(
         self, seq_ids_and_prompts: dict[int, np.ndarray], num_steps: int = 1
     ) -> List[KVCacheInputs]:

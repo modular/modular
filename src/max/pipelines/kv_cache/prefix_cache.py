@@ -202,6 +202,37 @@ class PrefixCache:
         data.cached_idx -= partial_tokens
         assert data.committed_idx == data.cached_idx
 
+    def _fetch_query_cache(
+        self,
+        seq_id: int,
+        data: PagedCacheMetadata,
+    ) -> tuple[TrieNode, list[int]]:
+        """A helper method used by `fetch` which queries the prefix cache for
+        full blocks which the request should reuse.
+
+        This method does not modify the state of the prefix cache.
+
+        Returns:
+            - node: the new position of the trie node for a given sequence once
+                    it adds the prefix blocks to its assigned blocks
+            - prefix_blocks: blocks the sequence should reuse from the cache
+        """
+        node = self.active_requests.get(seq_id, self.radix_trie.root)
+
+        # If there is only one committable token, that means that the prompt
+        # is one token. We cannot reduce the prompt length any further since
+        # the model expects a prompt of length at least 1.
+        committable_tokens = data.committable_tokens[:-1]
+        if len(committable_tokens) == 0:
+            return node, []
+
+        # Query trie for all but last token.
+        node, prefix_blocks = self.radix_trie.match_prefix(
+            committable_tokens, node=node
+        )
+
+        return node, prefix_blocks
+
     def fetch(
         self,
         seq_id: int,
@@ -214,28 +245,24 @@ class PrefixCache:
         This will increment the committed_idx and cached_idx if there is a cache
         hit. The prompt will be trimmed in the event that cached_idx is bumped.
         """
-        # If there is only one committable token, that means that the prompt
-        # is one token. We cannot reduce the prompt length any further since
-        # the model expects a prompt of length at least 1.
-        committable_tokens = data.committable_tokens[:-1]
-        if len(committable_tokens) == 0:
+        node, prefix_blocks = self._fetch_query_cache(seq_id, data)
+
+        # Update the cache hit rate metrics.
+        num_cache_hit_tokens = len(prefix_blocks) * self.page_size
+        self.cache_hit_tokens += num_cache_hit_tokens
+        self.all_tokens += len(data.committable_tokens) - 1
+
+        # Exit early if there are no cache hits.
+        if len(prefix_blocks) == 0:
+            if self.enable_cow:
+                self._fetch_cow(seq_id, data, free_block_fn, alloc_block_fn)
             return []
 
-        # Query trie for all but last token.
-        node = self.active_requests[seq_id]
-        node, prefix_blocks = self.radix_trie.match_prefix(
-            committable_tokens, node=node
-        )
         self.active_requests[seq_id] = node
 
         # Mark the prefix blocks we retrieved from the radix trie cache as
         # in use by this sequence so they don't get evicted prematurely.
         self.radix_trie.mark_in_use_by(node, seq_id)
-
-        # Update the cache hit rate metrics.
-        num_cache_hit_tokens = len(prefix_blocks) * self.page_size
-        self.cache_hit_tokens += num_cache_hit_tokens
-        self.all_tokens += len(committable_tokens)
 
         # If there is a block with partially cached tokens, we should release it
         # if the cache hit blocks already contain these tokens and more
@@ -252,6 +279,47 @@ class PrefixCache:
             self._fetch_cow(seq_id, data, free_block_fn, alloc_block_fn)
 
         return prefix_blocks
+
+    def _fetch_cow_query_cache(
+        self,
+        node: TrieNode,
+        committable_tokens: np.ndarray,
+        partial_tokens: int,
+    ) -> tuple[Optional[int], int]:
+        """A helper method used by `_fetch_cow` which queries the prefix cache
+        for a block resident in prefix cache to copy tokens from for COW.
+
+        This method does not modify the state of the prefix cache.
+
+        Returns:
+            - partial_match_block: block to copy tokens from, this is None in
+                                   the event that performing COW is not beneficial
+            - num_cache_hit_tokens: tokens to copy from the block
+        """
+        assert self.enable_cow
+        assert self.page_size > 1
+        assert self.cow_strided_memcpy_graph is not None
+        assert len(committable_tokens) > 0
+        assert 0 <= partial_tokens < self.page_size
+
+        # Match page_size tokens in the radix trie
+        committable_tokens = committable_tokens[:-1]
+        if len(committable_tokens) == 0:
+            return None, 0
+        committable_tokens_cropped = list(committable_tokens[: self.page_size])
+        res = node.find_block_with_largest_common_prefix(
+            committable_tokens_cropped
+        )
+        if res is None:
+            return None, 0
+        partial_match_block, num_cache_hit_tokens = res
+        assert 0 < num_cache_hit_tokens < self.page_size
+
+        # No point in performing COW if we have more cached but uncommitted tokens
+        # in the existing partial block than the matched prefix length.
+        if num_cache_hit_tokens <= partial_tokens:
+            return None, 0
+        return partial_match_block, num_cache_hit_tokens
 
     def _fetch_cow(
         self,
@@ -274,25 +342,16 @@ class PrefixCache:
             return
         assert self.cow_strided_memcpy_graph is not None
 
-        # Match page_size tokens in the radix trie
-        committable_tokens = data.committable_tokens[:-1]
-        if len(committable_tokens) == 0:
-            return
-        committable_tokens_cropped = list(committable_tokens[: self.page_size])
+        committable_tokens = data.committable_tokens
         node = self.active_requests[seq_id]
-        res = node.find_block_with_largest_common_prefix(
-            committable_tokens_cropped
-        )
-        if res is None:
-            return
-        partial_match_block, num_cache_hit_tokens = res
-        assert 0 < num_cache_hit_tokens < self.page_size
-
-        # No point in performing COW if we have more cached but uncommitted tokens
-        # in the existing partial block than the matched prefix length.
         partial_tokens = data.cached_idx - data.committed_idx
-        if num_cache_hit_tokens <= partial_tokens:
+        partial_match_block, num_cache_hit_tokens = self._fetch_cow_query_cache(
+            node, committable_tokens, partial_tokens
+        )
+        if partial_match_block is None:
             return
+        assert num_cache_hit_tokens > 0
+        assert num_cache_hit_tokens > partial_tokens
 
         # If we have a partially cached block, we need to release it before
         # appending additional blocks.
@@ -313,6 +372,45 @@ class PrefixCache:
         data.cached_idx += num_cache_hit_tokens
         assert len(data.prompt_tokens) > 0
         assert data.cached_idx < data.inflight_idx
+
+    def query_fetch_stats(
+        self, seq_id: int, data: PagedCacheMetadata
+    ) -> tuple[set[int], int]:
+        """Query the prefix trie for the cache hit stats for the given sequence.
+
+        This method does not modify the state of the prefix cache.
+
+        Returns:
+            - prefix_blocks: Prefix cache blocks that would be reused for this seq.
+            - num_cache_hit_tokens: Number of new cached tokens retrieved from prefix cache.
+        """
+        node, prefix_blocks = self._fetch_query_cache(seq_id, data)
+        num_cache_hit_tokens = len(prefix_blocks) * self.page_size
+
+        # If COW is enabled, we should consider the number of additional cache
+        # hits that would be incurred by performing a COW operation.
+        if self.enable_cow and self.page_size > 1:
+            committable_tokens = data.committable_tokens
+            committable_tokens = committable_tokens[num_cache_hit_tokens:]
+            partial_tokens = data.cached_idx - data.committed_idx
+            if len(prefix_blocks) > 0:
+                partial_tokens = 0
+            partial_match_block, num_cow_cache_hit_tokens = (
+                self._fetch_cow_query_cache(
+                    node, committable_tokens, partial_tokens
+                )
+            )
+            if partial_match_block is not None:
+                num_cache_hit_tokens += num_cow_cache_hit_tokens
+
+        # Determine the number of cache hit tokens, excluding any tokens that
+        # were already cached in a partial block.
+        new_cached_idx = max(
+            data.committed_idx + num_cache_hit_tokens, data.cached_idx
+        )
+        num_cache_hit_tokens = new_cached_idx - data.cached_idx
+        assert num_cache_hit_tokens >= 0
+        return set(prefix_blocks), num_cache_hit_tokens
 
     def step(
         self,

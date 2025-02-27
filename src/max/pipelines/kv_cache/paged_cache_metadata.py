@@ -169,3 +169,20 @@ class PagedCacheMetadata:
             "After step, all tokens should have a backing KV projection in the cache"
         )
         self._validate_indices()
+
+    def undo_fetch(self, prompt: np.ndarray, num_steps: int) -> None:
+        """Remove prompt from token array and release inflight tokens."""
+        self._validate_indices()
+        assert len(self.prompt_tokens) > 0
+        assert len(self.prompt_tokens) == len(prompt)
+        num_inflight_tokens = num_steps - 1
+        assert len(self.inflight_tokens) == num_inflight_tokens
+        self.tokens[self.cached_idx : self.inflight_idx] = 0
+        self.seq_len -= len(prompt) + num_inflight_tokens
+        self.inflight_idx -= len(prompt)
+        assert len(self.inflight_tokens) == 0
+        assert len(self.prompt_tokens) == 0
+        self._validate_indices()
+
+    def __repr__(self) -> str:
+        return f"PagedCacheMetadata(committed_idx={self.committed_idx}, cached_idx={self.cached_idx}, inflight_idx={self.inflight_idx}, seq_len={self.seq_len}, blocks={self.blocks})"
