@@ -222,14 +222,12 @@ class TokenGenerationSchedulerV2(Scheduler):
     @traced
     def _construct_fetch_input(self, batch) -> dict[int, np.ndarray]:
         """Construct input to the `fetch` method of paged manager"""
-        seq_ids_and_prompts = {}
-        counter = -1
+        seq_ids_and_prompts: dict[int, np.ndarray] = {}
         for data in batch.values():
             seq_id = data.cache_seq_id
             # we want to assign a unique unused id for seqs not in cache
             if seq_id is None:
-                seq_id = counter
-                counter -= 1
+                seq_id = -(len(seq_ids_and_prompts) + 1)
             seq_ids_and_prompts[seq_id] = data.next_tokens
         return seq_ids_and_prompts
 
@@ -241,18 +239,43 @@ class TokenGenerationSchedulerV2(Scheduler):
             self.scheduler_config.max_batch_size_tg - len(self.active_batch),
         )
 
+        # If there are already active TG requests, we want to be more conservative
+        # about scheduling new CE requests if we are constrained by KV Cache space.
+        num_steps_with_headroom = self.scheduler_config.max_forward_steps_ce
+        if len(self.active_batch) > 0:
+            # TODO: E2EOPT-77. we should look at what vLLM does and decide a more intelligent
+            # policy for this.
+            # This hardcoded value was chosen empirically to prevent excessive
+            # preemption on sharegpt.
+            headroom_for_num_tg_iterations = 5
+            num_steps_with_headroom += (
+                headroom_for_num_tg_iterations
+                * self.scheduler_config.max_forward_steps_tg
+            )
+
         ce_batch: BatchInputs = {}
-        total_seq_len = 0
+        tot_tokens_to_encode = 0
 
         if self.scheduler_config.enable_in_flight_batching:
             if self.active_batch:
                 ce_batch = self._create_tg_batch()
-                total_seq_len += len(ce_batch)
+            for data in ce_batch.values():
+                # active length should be 1 for TG requests
+                assert data.active_length == 1
+                tot_tokens_to_encode += data.active_length
+
+        tot_new_pages_needed = 0
+        free_blocks: set[int] = set()
+        if self.paged_manager is not None:
+            free_blocks = self.paged_manager.available_blocks.copy()
+            if self.paged_manager.prefix_cache is not None:
+                stale_blocks = self.paged_manager.prefix_cache.stale_blocks
+                free_blocks |= stale_blocks
 
         for _ in range(max_batch_size_to_create):
             if (
                 self.scheduler_config.target_tokens_per_batch_ce is not None
-                and total_seq_len
+                and tot_tokens_to_encode
                 >= self.scheduler_config.target_tokens_per_batch_ce
             ):
                 break
@@ -267,25 +290,25 @@ class TokenGenerationSchedulerV2(Scheduler):
                 break
 
             has_insufficient_kv_blocks = False
+            tokens_to_encode = data.active_length
+            new_pages_needed = 0
+            cache_hit_blocks: set[int] = set()
             if self.paged_manager:
-                seq_ids_and_prompts = self._construct_fetch_input(
-                    self.active_batch | ce_batch | {req_id: data}
+                seq_id = data.cache_seq_id
+                if seq_id is None:
+                    seq_id = -(len(self.active_batch) + 1)
+                cache_hit_blocks, tokens_to_encode, new_pages_needed = (
+                    self.paged_manager.query_fetch_stats(
+                        seq_id, data.next_tokens, num_steps_with_headroom
+                    )
                 )
-                # This hardcoded value was chosen empirically to prevent
-                # excessive preemption on sharegpt.
-                # TODO: we should look at what vLLM does and decide a more
-                # intelligent policy for this.
-                headroom_for_num_tg_iterations = 5
-                num_steps = (
-                    self.scheduler_config.max_forward_steps_ce
-                    + headroom_for_num_tg_iterations
-                    * self.scheduler_config.max_forward_steps_tg
-                )
+
                 # Add this additional request to the ce batch if it leaves
                 # sufficient kv blocks to run several token gen steps without
                 # causing preemptions.
-                has_insufficient_kv_blocks = not self.paged_manager.can_fetch(
-                    seq_ids_and_prompts, num_steps=num_steps
+                has_insufficient_kv_blocks = (
+                    tot_new_pages_needed + new_pages_needed
+                    > len(free_blocks - cache_hit_blocks)
                 )
 
             if has_insufficient_kv_blocks:
@@ -295,7 +318,7 @@ class TokenGenerationSchedulerV2(Scheduler):
                 break
 
             if self._exceeds_batch_token_limit(
-                total_seq_len, data.active_length
+                tot_tokens_to_encode, tokens_to_encode
             ):
                 if self.scheduler_config.enable_chunked_prefill:
                     # We can only schedule part of the prompt.
@@ -306,8 +329,8 @@ class TokenGenerationSchedulerV2(Scheduler):
                     )
 
                     token_num_diff = (
-                        total_seq_len
-                        + data.active_length
+                        tot_tokens_to_encode
+                        + tokens_to_encode
                         - self.scheduler_config.target_tokens_per_batch_ce
                     )
                     data.bump_token_indices(active_idx=-token_num_diff)
@@ -315,17 +338,17 @@ class TokenGenerationSchedulerV2(Scheduler):
                     if data.cache_seq_id is None:
                         data.cache_seq_id = self.available_cache_indices.pop()
                         logger.debug(
-                            f"Request {req_id} is chunked to len {data.active_length}."
+                            f"Request {req_id} is chunked to len {tokens_to_encode}."
                         )
                     else:
                         logger.debug(
-                            f"Request {req_id} is chunked again to len {data.active_length}."
+                            f"Request {req_id} is chunked again to len {tokens_to_encode}."
                         )
                     ce_batch[req_id] = data
 
                 elif (
                     self.scheduler_config.target_tokens_per_batch_ce is None
-                    or data.active_length
+                    or tokens_to_encode
                     > self.scheduler_config.target_tokens_per_batch_ce
                 ):
                     # we need to schedule this request even it exceeds the
@@ -341,19 +364,17 @@ class TokenGenerationSchedulerV2(Scheduler):
                 # break because we exceeded the target tokens per batch limit
                 break
 
-            seq_len = data.active_length
-            if self.paged_manager is not None:
-                cached_tokens = self.paged_manager.get_num_cached_tokens(
-                    data.next_tokens
-                )
-                seq_len -= cached_tokens
-            total_seq_len += seq_len
+            # Schedule the requests as it fits in KVCache and token limit
+            tot_new_pages_needed += new_pages_needed
+            free_blocks -= cache_hit_blocks
+            tot_tokens_to_encode += tokens_to_encode
+
             # We will allocate cache if this is a new request
             if data.cache_seq_id is None:
                 data.cache_seq_id = self.available_cache_indices.pop()
             else:
                 logger.debug(
-                    f"Chunked request {req_id} with len {seq_len} is already allocated to cache slot #{data.cache_seq_id}"
+                    f"Chunked request {req_id} with len {tokens_to_encode} is already allocated to cache slot #{data.cache_seq_id}"
                 )
             ce_batch[req_id] = data
 
