@@ -155,19 +155,6 @@ class PrefixCache:
         assert (tokens == committed_tokens).all()
         assert blocks == committed_blocks
 
-    def get_cached_blocks(self, seq_id: int, prompt: np.ndarray) -> list[int]:
-        """Returns the blocks from the prefix cache that can be reused for the given prompt."""
-        node = self.active_requests.get(seq_id, self.radix_trie.root)
-        # Attempt to match all but the last token in the prompt. This is
-        # because the model expects a prompt of length at least 1.
-        _, cached_blocks = self.radix_trie.match_prefix(prompt[:-1], node=node)
-        return cached_blocks
-
-    def get_num_cached_tokens(self, prompt: np.ndarray) -> int:
-        """Returns the number of tokens in the CE prompt that are found in the prefix cache."""
-        _, prefix_blocks = self.radix_trie.match_prefix(prompt[:-1])
-        return len(prefix_blocks) * self.page_size
-
     def evict_blocks(self, blocks_to_evict: Optional[int] = None) -> list[int]:
         """Evict a percentage of all blocks according to a LRU policy on the trie leaves."""
         if blocks_to_evict is None:

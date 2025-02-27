@@ -418,64 +418,37 @@ class PagedKVCacheManager(KVCacheManager):
     ) -> bool:
         """Checks if there are sufficient KV pages to run `fetch` on given batch.
 
-        It is OK if some seq_id are not in the cache. We assume the cache lengths
-        are zero in those cases.
+        Sequences which have not been previously added to the cache can be handled
+        by this method. We assume the cache lengths are zero in those cases.
         """
 
-        total_blocks_to_allocate = 0
+        tot_new_pages_needed = 0
         all_cache_hit_blocks: set[int] = set()
 
         for seq_id, prompt in seq_ids_and_prompts.items():
-            data = self.active_requests.get(
-                seq_id, PagedCacheMetadata(self.page_size, self.max_seq_len)
+            prefix_blocks, _, new_pages_needed = self.query_fetch_stats(
+                seq_id, prompt, num_steps
             )
+            tot_new_pages_needed += new_pages_needed
+            all_cache_hit_blocks.update(prefix_blocks)
 
-            # Extend the kv cache for given request with any cached prefixes.
-            cached_blocks: list[int] = []
-            if self.prefix_cache is not None:
-                cached_blocks = self.prefix_cache.get_cached_blocks(
-                    seq_id, prompt
-                )
-
-            # Compute the total sequence length and the number of pages required to store it.
-            total_sequence_length = (
-                data.cached_idx + len(prompt) + num_steps - 1
-            )
-            num_pages_required = ceildiv(total_sequence_length, self.page_size)
-
-            # Compute the number of *new* pages we need to allocate.
-            blocks_to_allocate = (
-                num_pages_required - len(data.blocks) - len(cached_blocks)
-            )
-
-            total_blocks_to_allocate += blocks_to_allocate
-            all_cache_hit_blocks.update(cached_blocks)
-
-        num_evictable_blocks = 0
+        num_stale_blocks = 0
         if self.prefix_cache is not None:
             # the blocks in the prefix cache that will be used by sequences in
             # this batch are no longer eligible for eviction / allocation.
-            num_evictable_blocks = len(
+            num_stale_blocks = len(
                 self.prefix_cache.stale_blocks - all_cache_hit_blocks
             )
 
-        num_free_blocks = len(self.available_blocks) + num_evictable_blocks
+        num_free_blocks = len(self.available_blocks) + num_stale_blocks
 
-        return total_blocks_to_allocate <= num_free_blocks
-
-    def get_num_cached_tokens(self, prompt: np.ndarray) -> int:
-        """Returns the number of tokens in the CE prompt that are found in the
-        prefix cache.
-        """
-        if self.prefix_cache is None:
-            return 0
-        return self.prefix_cache.get_num_cached_tokens(prompt)
+        return tot_new_pages_needed <= num_free_blocks
 
     def query_fetch_stats(
         self, seq_id: int, prompt: np.ndarray, num_steps: int = 1
     ) -> tuple[set[int], int, int]:
         """Query about the stats about running the fetch operation for a given
-        sequence.
+        sequence. It is OK if some seq_id are not in the cache.
 
         This method does not modify the state of the paged cache.
 
