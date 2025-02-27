@@ -2243,6 +2243,56 @@ def POP_StringBase64DecodeOp : POPOp<"string.base64.decode", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
+// StringCompressOp
+//===----------------------------------------------------------------------===//
+
+def POP_StringCompressOp : POPOp<"string.compress", [Pure]> {
+  let summary = "Compresses the string using zlib compression.";
+  let description = [{
+    The `pop.string.compress` operation compresses the input string using the
+    zlib compression algorithm. The return is a new string which contains the
+    compressed string.
+
+    Example:
+
+    ```mlir
+    %0 = pop.string.compress %str
+    ```
+  }];
+
+  let arguments = (ins KGEN_StringType:$str);
+  let results = (outs KGEN_StringType:$result);
+  let assemblyFormat = "$str attr-dict";
+
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// StringDecompressOp
+//===----------------------------------------------------------------------===//
+
+def POP_StringDecompressOp : POPOp<"string.decompress", [Pure]> {
+  let summary = "Decompresses the string using zlib compression.";
+  let description = [{
+    The `pop.string.decompress` operation decompresses the input string using the
+    zlib compression algorithm. The return is a new string which contains the
+    decompressed string.
+
+    Example:
+
+    ```mlir
+    %0 = pop.string.decompress %str
+    ```
+  }];
+
+  let arguments = (ins KGEN_StringType:$str);
+  let results = (outs KGEN_StringType:$result);
+  let assemblyFormat = "$str attr-dict";
+
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // DTypeToUI8
 //===----------------------------------------------------------------------===//
 

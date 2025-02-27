@@ -1202,8 +1202,11 @@ kgen.func @select_to_cond(%cond: i1) -> !pop.scalar<bool> {
   kgen.return %0: !pop.scalar<bool>
 }
 
+
 // CHECK-LABEL: @string_ops
-kgen.func @string_ops() -> (index, !kgen.string, !kgen.string, !kgen.string, !kgen.string, !kgen.string) {
+kgen.func @string_ops() -> (
+    index, !kgen.string, !kgen.string, !kgen.string, !kgen.string,
+    !kgen.string, !kgen.string, !kgen.string) {
   %str = kgen.param.constant: string = <"four">
   // CHECK-DAG: kgen.param.constant = <4>
   %0 = pop.string.size %str
@@ -1220,8 +1223,16 @@ kgen.func @string_ops() -> (index, !kgen.string, !kgen.string, !kgen.string, !kg
   %4 = pop.string.base64.encode %hello_world
   // CHECK-DAG: kgen.param.constant: string = <"hello world">
   %5 = pop.string.base64.decode %4
-  kgen.return %0, %1, %2, %3, %4, %5 : index, !kgen.string, !kgen.string, !kgen.string, !kgen.string, !kgen.string
+  %hello_mojo = kgen.param.constant: string = <"hello mojo">
+  // CHECK-DAG: kgen.param.constant: string = <"x\DA\CBH\CD\C9\C9W\C8\CD\CF\CA\07\00\15y\03\EA">
+  %6 = pop.string.compress %hello_mojo
+  // CHECK-DAG: kgen.param.constant: string = <"hello mojo">
+  %7 = pop.string.decompress %6
+  kgen.return %0, %1, %2, %3, %4, %5, %6, %7 : index, !kgen.string, 
+      !kgen.string, !kgen.string, !kgen.string, !kgen.string, 
+      !kgen.string, !kgen.string
 }
+
 
 // CHECK-LABEL: @offset_of_offset
 kgen.func @offset_of_offset(%arg0: !kgen.pointer<index>) -> !kgen.pointer<index> {
