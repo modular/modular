@@ -4,16 +4,21 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: H100-GPU
-# RUN: %mojo-no-debug-no-assert %s
+# RUN: %mojo-no-debug-no-assert %s | FileCheck %s
 
+from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier, thread_idx
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
+from gpu.memory import AddressSpace, async_copy
+from gpu.sync import async_copy_arrive
+from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from layout.tma_async import PipelineState, TMABarrier
 from memory import UnsafePointer, stack_allocation
-from memory.pointer import _GPUAddressSpace
+from testing import assert_equal
 
 from utils import StaticTuple
+from sys import sizeof
 
 
 fn producer_consumer_kernel[NUM_THREADS: Int]():
@@ -32,7 +37,8 @@ fn producer_consumer_kernel[NUM_THREADS: Int]():
         _ = mbar.arrive()
     else:
         mbar.wait(mbar.arrive())
-        print("Consumer thread_idx:", thread_idx.x, ", warp_idx: ", warp_id)
+        if thread_idx.x % 8 == 0:
+            print("Consumer thread_idx:", thread_idx.x, "warp_idx: ", warp_id)
 
 
 def test_producer_consumer_kernel(ctx: DeviceContext):
@@ -42,9 +48,10 @@ def test_producer_consumer_kernel(ctx: DeviceContext):
     )
 
     # CHECK-DAG: Producer thread_idx:  0 warp_idx:  0
-    # CHECK-DAG: Consumer thread_idx: {{3[2-9]}} , warp_idx:  1
-    # CHECK-DAG: Consumer thread_idx: {{[4-5][0-9]}}, warp_idx:  1
-    # CHECK-DAG: Consumer thread_idx: {{6[0-3]}}, warp_idx:  1
+    # CHECK-DAG: Consumer thread_idx: 32 warp_idx:  1
+    # CHECK-DAG: Consumer thread_idx: 40 warp_idx:  1
+    # CHECK-DAG: Consumer thread_idx: 48 warp_idx:  1
+    # CHECK-DAG: Consumer thread_idx: 56 warp_idx:  1
 
 
 fn producer_consumer_pipeline_kernel[Q_SIZE: Int](num_iters: Int):
@@ -120,7 +127,124 @@ def test_producer_consumer_pipeline_kernel(ctx: DeviceContext):
     # CHECK: producing:  3
 
 
+fn cpaysnc_producer_consumer_pipeline_kernel[
+    num_stages: Int
+](
+    src: UnsafePointer[Scalar[DType.float32]],
+    dst: UnsafePointer[Scalar[DType.float32]],
+):
+    alias size_per_copy = 16 // sizeof[DType.float32]()
+    alias size_per_stage = size_per_copy * 128
+
+    warpgroup_idx = thread_idx.x // 128
+    warpgroup_tid = thread_idx.x % 128
+
+    smem = stack_allocation[
+        size_per_stage * num_stages,
+        DType.float32,
+        alignment=16,
+        address_space = AddressSpace.SHARED,
+    ]()
+
+    # Initialize smem buffer
+    if warpgroup_idx == 0:
+        for i in range(num_stages):
+            offset = i * size_per_stage + thread_idx.x * size_per_copy
+
+            @parameter
+            for j in range(size_per_copy):
+                smem[offset + j] = -1000.0
+
+    barrier()
+
+    var produced_mbar = StaticTuple[TMABarrier, num_stages]()
+    var consumed_mbar = StaticTuple[TMABarrier, num_stages]()
+
+    @parameter
+    for i in range(num_stages):
+        produced_mbar[i] = TMABarrier()
+        consumed_mbar[i] = TMABarrier()
+        if thread_idx.x == 0:
+            produced_mbar[i].init(128)
+            consumed_mbar[i].init(128)
+
+    # Ensure all threads see initialized barriers.
+    barrier()
+
+    # producer group
+    if warpgroup_idx == 0:
+        for i in range(num_stages):
+            offset = i * size_per_stage + thread_idx.x * size_per_copy
+            async_copy[16](
+                (src + offset).address_space_cast[AddressSpace.GLOBAL](),
+                smem + offset,
+            )
+            async_copy_arrive(produced_mbar[i].mbar)
+            _ = produced_mbar[i].arrive()
+
+    # consumer group, add stage index to buffer and write back.
+    else:
+        var read_pipeline_states = PipelineState[num_stages]()
+
+        for i in range(num_stages):
+            produced_mbar[i].wait(read_pipeline_states.phase())
+
+            offset = i * size_per_stage + warpgroup_tid * size_per_copy
+
+            @parameter
+            for j in range(size_per_copy):
+                smem[offset + j] += i
+
+            read_pipeline_states.step()
+
+        # write back to global memory.
+        for i in range(num_stages):
+            offset = i * size_per_stage + warpgroup_tid * size_per_copy
+
+            @parameter
+            for j in range(size_per_copy):
+                dst[offset + j] = smem[offset + j]
+
+
+def test_cpasync_producer_consumer_pipeline[
+    num_stages: Int
+](ctx: DeviceContext):
+    alias size_per_stage = 128 * (16 // sizeof[DType.float32]())
+    alias size = num_stages * size_per_stage
+    alias shape1d = DimList(size)
+
+    src_host = HostNDBuffer[DType.float32, 1, shape1d](shape1d)
+    random(src_host.tensor)
+
+    var src_device = DeviceNDBuffer[DType.float32, 1, shape1d](shape1d, ctx=ctx)
+    ctx.enqueue_copy(src_device.buffer, src_host.tensor.data)
+
+    dst_host = HostNDBuffer[DType.float32, 1, shape1d](shape1d)
+    var dst_device = DeviceNDBuffer[DType.float32, 1, shape1d](shape1d, ctx=ctx)
+
+    ctx.enqueue_function[cpaysnc_producer_consumer_pipeline_kernel[4]](
+        src_device.tensor.data,
+        dst_device.tensor.data,
+        grid_dim=(1),
+        block_dim=(256),
+    )
+    ctx.enqueue_copy(dst_host.tensor.data, dst_device.buffer)
+    ctx.synchronize()
+
+    src = src_host.tensor
+    dst = dst_host.tensor
+
+    for i in range(num_stages):
+        for j in range(size_per_stage):
+            idx = i * size_per_stage + j
+            if src[idx] + i != dst[idx]:
+                print(idx, src[idx], dst[idx])
+                return
+            assert_equal(src[idx] + i, dst[idx])
+
+
 def main():
     with DeviceContext() as ctx:
         test_producer_consumer_kernel(ctx)
         test_producer_consumer_pipeline_kernel(ctx)
+        test_cpasync_producer_consumer_pipeline[2](ctx)

@@ -8,7 +8,7 @@
 
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.memory import AddressSpace, CacheEviction, Fill, async_copy
-from gpu.sync import mbarrier, mbarrier_init, mbarrier_test_wait
+from gpu.sync import async_copy_arrive, mbarrier_init, mbarrier_test_wait
 from memory import UnsafePointer, stack_allocation
 from testing import *
 
@@ -21,12 +21,12 @@ fn test_mbarrier(
     addr4: UnsafePointer[Float64, address_space = AddressSpace.GLOBAL],
     addr5: UnsafePointer[Float64, address_space = AddressSpace.SHARED],
 ):
-    mbarrier(addr0)
-    mbarrier(addr1)
-    mbarrier(addr2)
-    mbarrier(addr3)
-    mbarrier(addr4)
-    mbarrier(addr5)
+    async_copy_arrive(addr0)
+    async_copy_arrive(addr1)
+    async_copy_arrive(addr2)
+    async_copy_arrive(addr3)
+    async_copy_arrive(addr4)
+    async_copy_arrive(addr5)
 
 
 fn _verify_mbarrier(asm: String) raises -> None:
