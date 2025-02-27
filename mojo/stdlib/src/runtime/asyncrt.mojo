@@ -400,8 +400,13 @@ struct DeviceContextPtr:
     fn __init__(out self):
         self.handle_ = UnsafePointer[NoneType]()
 
+    @implicit
     fn __init__(out self, handle: UnsafePointer[NoneType]):
         self.handle_ = handle
+
+    @implicit
+    fn __init__(out self, device: DeviceContext):
+        self.handle_ = rebind[UnsafePointer[NoneType]](device._handle)
 
     fn __getitem__(self) -> DeviceContext:
         return DeviceContext(self.handle_)
