@@ -71,7 +71,7 @@ def test_warp_specialize_gemm[
     c_type: DType,
     num_consumer: Int = 1,
     transpose_b: Bool = True,
-    schedule: MatmulSchedule = MatmulSchedule.TILE2D,
+    schedule: MatmulSchedule = MatmulSchedule.TILE1D,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,):
     var M = m.value
     var N = n.value
