@@ -165,7 +165,9 @@ def test_allreduce_wrong_num_devices() -> None:
 
     with pytest.raises(
         ValueError,
-        match=("allreduce sum only supports 2 or 4 devices, but got 3"),
+        match=(
+            f"allreduce sum only supports 1, 2, 4, or 8 devices, but got {len(devices)}"
+        ),
     ):
         with Graph(
             "allreduce",

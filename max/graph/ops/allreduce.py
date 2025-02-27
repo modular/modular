@@ -63,23 +63,21 @@ def sum(
             raise ValueError(msg)
         devices.append(input.device)
 
-    if len(devices) == 1:
-        # Nothing to do.
-        return inputs
-
-    if len(devices) not in {2, 4}:
-        msg = f"allreduce sum only supports 2 or 4 devices, but got {len(devices)}"
+    if len(devices) not in {1, 2, 4, 8}:
+        msg = f"allreduce sum only supports 1, 2, 4, or 8 devices, but got {len(devices)}"
         raise ValueError(msg)
 
     # Map from the number of devices to a fixed-num-devices allreduce kernel.
     allreduce_op = {
+        1: mo.distributed_allreduce_1gpu_sum,
         2: mo.distributed_allreduce_2gpu_sum,
         4: mo.distributed_allreduce_4gpu_sum,
+        8: mo.distributed_allreduce_8gpu_sum,
     }[len(devices)]
 
     results = Graph.current._add_op(
         allreduce_op,
-        [x.type.to_mlir() for x in inputs],
+        *[x.type.to_mlir() for x in inputs],
         *signal_buffers,
         inputs,
     )
