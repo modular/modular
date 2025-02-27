@@ -286,7 +286,7 @@ fn _mbarrier_impl[
 
 
 @always_inline("nodebug")
-fn mbarrier[
+fn async_copy_arrive[
     type: AnyType, address_space: AddressSpace
 ](address: UnsafePointer[type, address_space=address_space, **_]):
     """Makes a memory barrier track all prior async copy operations from this thread.
