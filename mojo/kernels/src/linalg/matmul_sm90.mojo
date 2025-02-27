@@ -64,9 +64,7 @@ from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
 from pathlib import Path
 
 from .utils import elementwise_epilogue_type
-from .utils_gpu import block_swizzle
 from linalg.matmul_tile_scheduler import TileScheduler, MatmulSchedule
-from pathlib import Path
 from .utils_gpu import block_swizzle, MatmulConfig
 
 alias WARP_GROUP_SIZE = 128
