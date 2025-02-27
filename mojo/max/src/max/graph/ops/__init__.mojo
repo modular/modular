@@ -61,7 +61,6 @@ from .elementwise import (
     pow,
     relu,
     round,
-    roundeven,
     rsqrt,
     sigmoid,
     silu,

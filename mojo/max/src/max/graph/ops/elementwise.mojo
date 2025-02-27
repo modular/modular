@@ -905,26 +905,6 @@ def round(value: Symbol) -> Symbol:
     return _unary_float_op["rmo.mo.round"](value)
 
 
-def roundeven(value: Symbol) -> Symbol:
-    """Computes the elementwise roundeven of a symbolic tensor.
-
-    Creates a new op node to compute the elementwise roundeven of a
-    symbolic tensor and adds it to the graph, returning the symbolic result.
-
-    Args:
-        value: The symbolic tensor to use as the input to the roundeven
-            computation. If it's not a floating-point DType, an exception will be raised.
-
-    Returns:
-        A new symbolic tensor value representing the output of the absolute
-            value computation.
-
-    Raises:
-        If the symbol doesn't represent a tensor value.
-    """
-    return _unary_float_op["rmo.mo.roundeven"](value)
-
-
 def rsqrt(value: Symbol) -> Symbol:
     """Computes the elementwise inverse-square-root of a symbolic tensor.
 
