@@ -62,6 +62,7 @@ jobs:
       - name: Run standard library tests and examples
         env:
           MOJO_ENABLE_ASSERTIONS_IN_TESTS: ${{ matrix.mojo-enable-assertions }}
+        working-directory: mojo
         run: |
           magic run --frozen tests
           magic run --frozen examples
