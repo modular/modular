@@ -16,15 +16,25 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections import deque
 from dataclasses import dataclass
-from typing import Any, List, Sequence, cast, final
+from typing import (
+    Any,
+    Iterator,
+    List,
+    Sequence,
+    Type,
+    TypeVar,
+    cast,
+    final,
+    overload,
+)
 
 import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from typing_extensions import TypeGuard
 
 from .cache_params import KVCacheParams
 
@@ -38,6 +48,13 @@ class _FetchMetadata:
 
     prompt: np.ndarray
     num_steps: int
+
+
+_T = TypeVar("_T")
+
+
+def _is_sequence_of(x: Any, ty: Type[_T]) -> TypeGuard[Sequence[_T]]:
+    return isinstance(x, Sequence) and all(isinstance(item, ty) for item in x)
 
 
 @dataclass
@@ -56,48 +73,35 @@ class KVCacheInputs:
         ...     max_lengths: Tensor
     """
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Tensor]:
         """Iterates through each Type in order."""
-        fields = deque(
-            getattr(self, field) for field in self.__dataclass_fields__
-        )
-        while fields:
-            value = fields.popleft()
-            if isinstance(value, Sequence) and all(
-                isinstance(x, KVCacheInputs) for x in value
-            ):
-                # Add sequence elements in original order
-                fields.extendleft([x for x in reversed(value)])
-                continue
-            elif isinstance(value, KVCacheInputs):
-                fields.extendleft(
-                    reversed(
-                        [
-                            getattr(value, field)
-                            for field in value.__dataclass_fields__
-                        ]
-                    )
-                )
-                continue
+        for field in self.__dataclass_fields__:
+            value = getattr(self, field)
+            if isinstance(value, KVCacheInputs):
+                yield from value
+            elif _is_sequence_of(value, KVCacheInputs):
+                for item in value:
+                    yield from item
             else:
                 yield cast(Tensor, value)
 
-    def __getitem__(self, index):
+    @overload
+    def __getitem__(self, index: int) -> Tensor: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> Sequence[Tensor]: ...
+
+    def __getitem__(self, index: Any) -> Any:
         return list(self)[index]
 
-    def __setitem__(self, index, value):
-        list(self)[index] = value
-
-    def __len__(self):
+    def __len__(self) -> int:
         count = 0
         # Iterate over all fields in the dataclass. If we run into a sequence of
         # KVCacheInputs, we expand and recursively call `len` on the KVCacheInputs
         # elements.
         for field in self.__dataclass_fields__:
             value = getattr(self, field)
-            if isinstance(value, Sequence) and all(
-                isinstance(x, KVCacheInputs) for x in value
-            ):
+            if _is_sequence_of(value, KVCacheInputs):
                 count += sum(len(x) for x in value)
             else:
                 count += 1
@@ -158,27 +162,16 @@ class KVCacheInputSymbols:
         ...     max_lengths: TensorType
     """
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Any]:
         """Iterates through each Type in order."""
-        fields = deque(
-            getattr(self, field) for field in self.__dataclass_fields__
-        )
-        while fields:
-            value = fields.popleft()
+        for field in self.__dataclass_fields__:
+            value = getattr(self, field)
             if isinstance(value, KVCacheInputSymbols):
-                fields.extendleft(
-                    reversed(
-                        [
-                            getattr(value, field)
-                            for field in value.__dataclass_fields__
-                        ]
-                    )
-                )
-                continue
+                yield from value
             else:
                 yield value
 
-    def __getitem__(self, index):
+    def __getitem__(self, index) -> Any:
         return list(self)[index]
 
 
