@@ -127,6 +127,7 @@ def create_mock_request(
         current_length if current_length is not None else seq_len
     )
     mock_data.cache_seq_id = cache_seq_id
+    mock_data.next_tokens = np.ones(mock_data.active_length)
 
     def bump_token_indices(self, start_idx=0, active_idx=0, end_idx=0):
         self.start_idx += start_idx
