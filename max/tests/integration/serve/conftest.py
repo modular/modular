@@ -6,11 +6,11 @@
 """The fixtures for all tests in this directory."""
 
 import time
-from typing import Any
 
 import pytest
 from max.pipelines import PIPELINE_REGISTRY, PipelineTask
 from max.pipelines.architectures import register_all_models
+from max.pipelines.interfaces import TextGenerationResponse
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import Settings
 from max.serve.pipelines.echo_gen import (
@@ -27,7 +27,7 @@ from max.serve.pipelines.llm import (
 class SleepyEchoTokenGenerator(EchoTokenGenerator):
     def next_token(
         self, batch: dict[str, EchoTokenGeneratorContext], num_steps: int = 1
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, TextGenerationResponse]:
         # Sleep for 1 ms - otherwise, the echo token generator
         # can break some separation of timescale assumptions
         time.sleep(1e-3)

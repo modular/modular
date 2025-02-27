@@ -174,11 +174,13 @@ def test_smollm_with_constrained_decoding(pipeline_registry):
 
     tokens = []
     while True:
-        next_token = pipeline.next_token({request_id: context}, num_steps=1)
-        if request_id not in next_token[0]:
-            break
+        response = pipeline.next_token({request_id: context}, num_steps=1)
 
-        tokens.append(next_token[0][request_id].next_token)
+        for token in response[request_id].tokens:
+            tokens.append(token.next_token)
+
+        if response[request_id].is_done:
+            break
 
     print("Final Response: ")
     response_content = asyncio.run(

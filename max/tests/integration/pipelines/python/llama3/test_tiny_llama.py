@@ -197,12 +197,15 @@ async def test_tinyllama_max_new_tokens(
     while True:
         response = tinyllama_pipeline.next_token(
             {request_id: context}, num_steps=1
-        )[0]
-        if request_id not in response:
+        )
+
+        for token in response[request_id].tokens:
+            tokens.append(token)
+
+        if response[request_id].is_done:
             tinyllama_pipeline.release(context)
             break
-        token = response[request_id]
-        tokens.append(token)
+
     generated_token_count = len(tokens)
 
     assert generated_token_count == configured_max_new_tokens
@@ -224,12 +227,14 @@ async def test_tinyllama_max_new_tokens(
     while True:
         response = tinyllama_pipeline.next_token(
             {request_id: context}, num_steps=1
-        )[0]
-        if request_id not in response:
+        )
+
+        for token in response[request_id].tokens:
+            tokens.append(token)
+
+        if response[request_id].is_done:
             tinyllama_pipeline.release(context)
             break
-        token = response[request_id]
-        tokens.append(token)
     generated_token_count = len(tokens)
 
     assert generated_token_count == configured_max_new_tokens
@@ -271,10 +276,9 @@ async def test_tinyllama_multistep_execution(
     for _ in range(num_steps):
         response = tinyllama_pipeline.next_token(
             {single_step_request_id: single_step_context}, num_steps=1
-        )[0]
-        assert single_step_request_id in response
-        token = response[single_step_request_id]
-        single_step_tokens.append(token)
+        )
+        for token in response[single_step_request_id].tokens:
+            single_step_tokens.append(token)
 
     tinyllama_pipeline.release(single_step_context)
 
@@ -284,7 +288,6 @@ async def test_tinyllama_multistep_execution(
     )
     tinyllama_pipeline.release(multistep_context)
 
-    assert len(multistep_response) == num_steps
+    assert len(multistep_response[multistep_request_id].tokens) == num_steps
 
-    multistep_tokens = [d[multistep_request_id] for d in multistep_response]
-    assert multistep_tokens == single_step_tokens
+    assert multistep_response[multistep_request_id].tokens == single_step_tokens

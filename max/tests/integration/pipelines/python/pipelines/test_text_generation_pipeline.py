@@ -48,10 +48,9 @@ def test_text_generation_pipeline():
 
     prompts = [
         "This is a test prompt",
-        # "This is a slightly longer test prompt " * 2,
-        # "This is a very very long test prompt " * 4,
+        "This is a slightly longer test prompt " * 2,
+        "This is a very very long test prompt " * 4,
     ]
-    print(prompts)
     _max_new_tokens = [25, 100, None]
     context_batch = {}
     max_new_tokens = {}
@@ -70,31 +69,23 @@ def test_text_generation_pipeline():
         context_batch[id] = asyncio.run(tokenizer.new_context(request))
 
     num_steps = 1
-    j = 0
+    length = [0 for _ in range(len(context_batch))]
     request_ids = list(context_batch.keys())
     while True:
         # This will generate a list[dict[request_id, TextResponse]] for each step
         output = pipeline.next_token(context_batch, num_steps=1)
+        assert len(output) == len(context_batch)
 
-        for i in range(num_steps):
-            j += 1
-            # This test will check if the output data, has at most the same number of responses
-            # provided in the context_batch
-            assert len(output[i]) <= len(context_batch)
+        for i, (request_idx, response) in enumerate(output.items()):
+            length[i] += len(response.tokens)
+            # Check that we are not overrunning, the request max new tokens
+            if _max := max_new_tokens[request_idx]:
+                assert length[i] <= _max
 
-            # This will check to ensure that we don't overrun on max new tokens
-            for request_id in request_ids:
-                # Pop request, if complete
-                if request_id not in output[i]:
-                    if request_id in context_batch:
-                        del context_batch[request_id]
-                else:
-                    # Check if we are not overrunning, the request max new tokens
-                    if max_new_tokens[request_id] is not None:
-                        assert j <= max_new_tokens[request_id]  # type: ignore
+            assert length[i] < max_length
 
-                    # Check if we are not overrunning, the max length of the model
-                    assert j <= max_length
+            if response.is_done:
+                del context_batch[request_idx]
 
         # Break
         if not context_batch:
