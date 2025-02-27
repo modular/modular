@@ -66,7 +66,7 @@ MojoListSyntheticFrontEnd::parseList(lldb::ValueObjectSP valobj) {
   if (!valobj || !valobj->GetError().Success())
     return {};
 
-  ValueObjectSP sizeField = valobj->GetChildMemberWithName("size");
+  ValueObjectSP sizeField = valobj->GetChildMemberWithName("_len");
   if (!sizeField || !sizeField->GetError().Success())
     return {};
 
