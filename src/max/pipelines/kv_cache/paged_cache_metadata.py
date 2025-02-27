@@ -36,7 +36,7 @@ class PagedCacheMetadata:
     - Committable tokens are tokens that are not yet committed but have a known
       value (i.e. not inflight). We can query the prefix cache for such tokens.
     - Inflight tokens are slots allocated for tokens that have not been generated
-      yet. Such tokens have a filler value of 0. After `fetch`, there should be
+      yet. Such tokens have a undefined values. After `fetch`, there should be
       `num_steps - 1` inflight tokens. They will be replaced with actual tokens
       in `step`.
 
@@ -60,7 +60,7 @@ class PagedCacheMetadata:
         self.inflight_idx: int = 0
         self.seq_len: int = 0
         self.blocks: list[int] = []
-        self.tokens: np.ndarray = np.full((max_seq_len,), 0, dtype=np.int64)
+        self.tokens: np.ndarray = np.empty((max_seq_len,), dtype=np.int64)
 
     @property
     def committed_blocks(self) -> list[int]:
@@ -177,12 +177,18 @@ class PagedCacheMetadata:
         assert len(self.prompt_tokens) == len(prompt)
         num_inflight_tokens = num_steps - 1
         assert len(self.inflight_tokens) == num_inflight_tokens
-        self.tokens[self.cached_idx : self.inflight_idx] = 0
         self.seq_len -= len(prompt) + num_inflight_tokens
         self.inflight_idx -= len(prompt)
         assert len(self.inflight_tokens) == 0
         assert len(self.prompt_tokens) == 0
         self._validate_indices()
+
+    def clear(self) -> None:
+        assert len(self.blocks) == 0
+        self.committed_idx = 0
+        self.cached_idx = 0
+        self.inflight_idx = 0
+        self.seq_len = 0
 
     def __repr__(self) -> str:
         return f"PagedCacheMetadata(committed_idx={self.committed_idx}, cached_idx={self.cached_idx}, inflight_idx={self.inflight_idx}, seq_len={self.seq_len}, blocks={self.blocks})"

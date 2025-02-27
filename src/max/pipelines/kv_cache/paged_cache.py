@@ -260,6 +260,10 @@ class PagedKVCacheManager(KVCacheManager):
                 tensors=self.blocks,
             )
 
+        # Preallocate a PagedCacheMetadata to use for sequences not in the cache.
+        # This is to reduce the number of allocations. This is NOT thread safe.
+        self.tmp_data = PagedCacheMetadata(self.page_size, self.max_seq_len)
+
         # Whether to enable runtime correctness checks. These correctness checks
         # are expensive and should only be used in tests.
         self.enable_runtime_checks = enable_runtime_checks
@@ -457,9 +461,13 @@ class PagedKVCacheManager(KVCacheManager):
             - tokens_to_encode: Number of tokens in prompt we need to encode when running the fetch.
             - new_pages_needed: Number of new pages we need to allocate when running the fetch.
         """
-        data = self.active_requests.get(
-            seq_id, PagedCacheMetadata(self.page_size, self.max_seq_len)
-        )
+        reusing_tmp_data = False
+        if seq_id in self.active_requests:
+            data = self.active_requests[seq_id]
+        else:
+            reusing_tmp_data = True
+            data = self.tmp_data
+
         data.fetch(prompt, num_steps)
         prefix_blocks: set[int] = set()
         cache_hit_tokens = 0
@@ -482,6 +490,9 @@ class PagedKVCacheManager(KVCacheManager):
 
         # reverse the fetch operation so that this method does not mutate state
         data.undo_fetch(prompt, num_steps)
+
+        if reusing_tmp_data:
+            self.tmp_data.clear()
 
         return prefix_blocks, tokens_to_encode, new_pages_needed
 
