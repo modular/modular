@@ -8,8 +8,11 @@
 
 from utils import Index
 
-# CHECK: "value": "Index[::Intable,::Intable,::Intable,::Int,::Bool](16, 16, 16)"
+# CHECK: "value": "Index(16, 16, 16)"
 alias x1 = Index(16, 16, 16)
 
-# CHECK: "value": "Tuple(VariadicPack(RefPack(Index[::Intable,::Intable,::Intable,::Int,::Bool](64, 8, 8)), True))"
+# CHECK: "value": "Tuple(VariadicPack(Index(64, 8, 8)))"
 alias x2 = (Index(64, 8, 8),)
+
+# CHECK: "value": "Tuple(VariadicPack(1, 1))"
+alias x3: Tuple[Int, Int] = (1, 1)

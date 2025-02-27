@@ -401,6 +401,13 @@ static StringRef getNameFromSymbolRef(SymbolRefAttr symbol, bool isFunc) {
   return name;
 }
 
+// Get the typename of the symbol
+static StringRef tryGetTypeNameFromSymbolRef(SymbolRefAttr symbol) {
+  if (symbol.getNestedReferences().size() >= 2)
+    return symbol.getNestedReferences().drop_back().back().getAttr();
+  return {};
+}
+
 // If we are a builtin symbol, then just strip everything but the name of the
 // type. E.g. Print ::Int instead of stdlib::builtin::int::Int.
 static StringRef trimBuiltinNamespace(StringRef nestedSymbolName) {
@@ -415,19 +422,23 @@ static StringRef trimBuiltinNamespace(StringRef nestedSymbolName) {
   return prettyName;
 }
 
-/// Pretty print a symbol reference.
-static void printSymbol(raw_ostream &os, StringRef name, SymbolRefAttr symbol) {
-  // For constructors, print the type name instead.
-  // TODO: Handle other dunder methods.
-  if (name == "__init__" && symbol.getNestedReferences().size() >= 2)
-    name = symbol.getNestedReferences().drop_back().back().getAttr();
-  os << trimBuiltinNamespace(name);
-}
-
 static void printSymbol(raw_ostream &os, SymbolRefAttr symbol, bool forDiag,
                         bool isFunc) {
   if (forDiag) {
-    printSymbol(os, getNameFromSymbolRef(symbol, isFunc), symbol);
+    StringRef name = getNameFromSymbolRef(symbol, isFunc);
+    // For constructors, print the type name instead.
+    // TODO: Handle other dunder methods.
+    if (name == "__init__" && symbol.getNestedReferences().size() >= 2)
+      name = symbol.getNestedReferences().drop_back().back().getAttr();
+
+    // Disable printing all parameters for the user defined `Index` functions.
+    // For example, 'Index[Intable, Intable](16,16)' -> 'Index(16,16)'
+    if (getNameFromSymbolRef(symbol, true).starts_with("Index")) {
+      os << "Index";
+      return;
+    }
+
+    os << trimBuiltinNamespace(name);
     return;
   }
 
@@ -521,11 +532,9 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     return;
   }
   if (auto refPack = dyn_cast<RefPackAttr>(param)) {
-    os << "RefPack(";
     llvm::interleaveComma(refPack.getValues(), os, [&](TypedAttr value) {
       printDemangledParam(os, value, diagShared);
     });
-    os << ")";
     return;
   }
 
@@ -573,7 +582,15 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
         }
 
         // Otherwise, print the symbol and go through the normal argument list.
-        printSymbol(os, name, nameAttr);
+        printSymbol(os, nameAttr, diagShared, /*isFunc=*/true);
+
+        // Omit the last 'VariadicPack' operand as its the 'is_owned' bit.
+        if (diagShared &&
+            tryGetTypeNameFromSymbolRef(nameAttr) == "VariadicPack" &&
+            operandsToPrint.size() > 1) {
+          operandsToPrint = operandsToPrint.drop_back();
+        }
+
       } else {
         printDemangledParam(os, operands.front(), diagShared);
       }
