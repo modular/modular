@@ -15,7 +15,7 @@ from kernels.top_k import TopK
 from kernels.matrix_multiplication import MatrixMultiplication
 from gpu.host import DeviceContext
 from utils import IndexList
-from max.driver.device import cpu_device
+from max.driver import cpu
 from max.tensor import (
     ManagedTensorSlice,
     InputTensor,
@@ -67,7 +67,7 @@ def top_k():
 
     rand(in_vals, els)
 
-    var cpu_ctx_ptr = cpu_device().unsafe_ptr()
+    var cpu_ctx_ptr = cpu().unsafe_ptr()
 
     @parameter
     @always_inline
@@ -189,7 +189,7 @@ def matmul():
     rand(a_ptr, a_els)
     rand(b_ptr, b_els)
 
-    var cpu_ctx_ptr = cpu_device().unsafe_ptr()
+    var cpu_ctx_ptr = cpu().unsafe_ptr()
     var bench = Bench()
     var flops = ThroughputMeasure(BenchMetric.flops, FLOPS)
     var elements = ThroughputMeasure(BenchMetric.elements, M * N)
