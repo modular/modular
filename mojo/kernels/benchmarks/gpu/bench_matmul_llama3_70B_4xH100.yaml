@@ -14,7 +14,7 @@ params:
 # with other configs in more general way afterwards.
 
 # Prefill chunk size 8K
-- $M: 8912
+- $M: 8192
   N: 2560
   K: 8192
   $init_type: [uniform_distribution]
