@@ -107,6 +107,17 @@ struct StateContext:
         ](index, self.ctx_ptr)
 
 
+fn pack_string_res(
+    str_ptr: UnsafePointer[Byte], str_len: UInt
+) raises -> String:
+    var span = Span[Byte, ImmutableAnyOrigin](
+        ptr=str_ptr,
+        length=str_len,
+    )
+    # We can not free the resource ptr embedded in MEF, create a copy
+    return StringSlice.from_utf8(span).__str__()
+
+
 # ===-----------------------------------------------------------------------===#
 # Async Packing/Unpacking functions
 # ===-----------------------------------------------------------------------===#
@@ -438,14 +449,7 @@ fn get_buffer_data(buffer: NDBuffer[DType.uint8, 1]) -> UnsafePointer[UInt8]:
 @no_inline
 fn mgp_assert(cond: Bool, msg_ptr: UnsafePointer[Byte], msg_len: UInt) raises:
     if not cond:
-        var span = Span[Byte, ImmutableAnyOrigin](
-            ptr=msg_ptr,
-            length=msg_len,
-        )
-        var msg = StringSlice.from_utf8(span)
-        # Error need to own the string, but we can not free the memory from MEF
-        # data section, make a copy.
-        raise Error(msg.__str__())
+        raise Error(pack_string_res(msg_ptr, msg_len))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -549,29 +553,30 @@ fn mgp_buffer_constant(
 
 
 @register_internal("mgp.buffer.constant.external")
-fn mgp_buffer_constant_external[
-    bName: StringLiteral,
-    cSize: UInt64,
-    dAlign: UInt64,
-    eDevice: StringLiteral,
-](weights: UnsafePointer[WeightsRegistry]) raises -> NDBuffer[DType.int8, 1]:
-    constrained[dAlign > 0, "dAlign must be a positive integer value"]()
+fn mgp_buffer_constant_external(
+    weights: UnsafePointer[WeightsRegistry],
+    name_ptr: UnsafePointer[Byte],
+    name_len: UInt,
+    size: UInt64,
+    align: UInt64,
+) raises -> NDBuffer[DType.int8, 1]:
+    debug_assert(align > 0, "align must be a positive integer value")
 
     if not weights:
         raise Error(
             "received null weights registry in mgp.buffer.constant.external"
         )
 
-    var weight_ptr = weights[][bName]
-    if (Int(weight_ptr) % dAlign) != 0:
+    var weight_ptr = weights[][pack_string_res(name_ptr, name_len)]
+    if (Int(weight_ptr) % align) != 0:
         raise Error(
             "invalid alignment for address ",
             weight_ptr,
             " and align ",
-            dAlign,
+            align,
         )
 
-    return NDBuffer[DType.int8, 1](weight_ptr.bitcast[Int8](), DimList(cSize))
+    return NDBuffer[DType.int8, 1](weight_ptr.bitcast[Int8](), DimList(size))
 
 
 @no_inline
