@@ -1902,6 +1902,59 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
 // Elaborator::run
 //===----------------------------------------------------------------------===//
 
+static WalkResult rewriteCompileOffloadOp(
+    CompileOffloadOp op, Location loc,
+    DenseMap<TargetInfoAttr, DenseMap<uint64_t, OffloadCompilationResult>>
+        &compiledOffload,
+    bool &failed) {
+  // Plug offload compilation results as strings back to the elaborated IR.
+  auto kernelId = cast<IntegerAttr>(op.getKernelIDAttr()).getInt();
+  EmitAs emissionKind = cast<EmitAsAttr>(op.getEmissionKindAttr()).getValue();
+  TargetInfoAttr target =
+      cast<TargetParamAttr>(op.getTargetTypeAttr()).getTarget();
+
+  auto targetIter = compiledOffload.find(target);
+  if (targetIter == compiledOffload.end()) {
+    ErrorTree compileOffloadError(loc, "compile offload result missing target");
+    std::move(compileOffloadError)
+        .emit([](Location loc) { return mlir::emitError(loc); },
+              "Compile offload failed.");
+    failed = true;
+    return WalkResult::interrupt();
+  }
+
+  auto iter = targetIter->second.find(kernelId);
+  if (iter == targetIter->second.end()) {
+    ErrorTree compileOffloadError(loc,
+                                  "compile offload result missing kernelId " +
+                                      std::to_string(kernelId));
+    std::move(compileOffloadError)
+        .emit([](Location loc) { return mlir::emitError(loc); },
+              "Compile offload failed.");
+    failed = true;
+    return WalkResult::interrupt();
+  }
+
+  OpBuilder b(op);
+  StringAttr content = iter->second.contents[emissionKind];
+  IntegerAttr numCaptures = iter->second.numCaptures;
+  auto structType = StructType::get(op->getContext(),
+                                    {content.getType(), numCaptures.getType()});
+
+  SmallVector<Value> values;
+
+  auto constantV = b.create<ParamConstantOp>(op.getLoc(), content);
+  auto numCapturesV = b.create<ParamConstantOp>(op.getLoc(), numCaptures);
+  values.push_back(constantV);
+  values.push_back(numCapturesV);
+  auto newOp = b.create<StructCreateOp>(op->getLoc(), structType, values);
+
+  op->replaceUsesOfWith(op.getResult(), newOp);
+  op.replaceAllUsesWith(newOp.getResult());
+  op.erase();
+  return WalkResult::advance();
+}
+
 LogicalResult
 Elaborator::run(ModuleOp theModule,
                 ArrayRef<std::pair<GeneratorOp, ParameterExprArrayAttr>>
@@ -2073,54 +2126,18 @@ Elaborator::run(ModuleOp theModule,
   theModule.getBody()->erase();
   theModule.getBodyRegion().push_back(newBlock);
 
-  // Plug offload compilation results as strings back to the elaborated IR.
-  theModule.walk([&](CompileOffloadOp op) {
-    auto kernelId = cast<IntegerAttr>(op.getKernelIDAttr()).getInt();
-    EmitAs emissionKind = cast<EmitAsAttr>(op.getEmissionKindAttr()).getValue();
-    TargetInfoAttr target =
-        cast<TargetParamAttr>(op.getTargetTypeAttr()).getTarget();
-
-    auto targetIter = compiledOffload.find(target);
-    if (targetIter == compiledOffload.end()) {
-      ErrorTree compileOffloadError(theModule->getLoc(),
-                                    "compile offload result missing target");
-      std::move(compileOffloadError)
-          .emit([](Location loc) { return mlir::emitError(loc); },
-                "Compile offload failed.");
-      failed = true;
-      return WalkResult::interrupt();
+  theModule.walk([&](Operation *op) {
+    if (auto offloadOp = dyn_cast<CompileOffloadOp>(op)) {
+      // Plug offload compilation results as strings back to the elaborated IR.
+      rewriteCompileOffloadOp(offloadOp, theModule.getLoc(), compiledOffload,
+                              failed);
+    } else if (auto isCompileTime = dyn_cast<IsCompileTimeOp>(op)) {
+      // Rewrite IsCompileTimeOp to runtime value as always false.
+      OpBuilder b(op);
+      isCompileTime->replaceAllUsesWith(b.create<ParamConstantOp>(
+          op->getLoc(), b.getIntegerAttr(b.getI1Type(), 0)));
+      op->erase();
     }
-
-    auto iter = targetIter->second.find(kernelId);
-    if (iter == targetIter->second.end()) {
-      ErrorTree compileOffloadError(theModule->getLoc(),
-                                    "compile offload result missing kernelId " +
-                                        std::to_string(kernelId));
-      std::move(compileOffloadError)
-          .emit([](Location loc) { return mlir::emitError(loc); },
-                "Compile offload failed.");
-      failed = true;
-      return WalkResult::interrupt();
-    }
-
-    OpBuilder b(op);
-    StringAttr content = iter->second.contents[emissionKind];
-    IntegerAttr numCaptures = iter->second.numCaptures;
-    auto structType = StructType::get(
-        op->getContext(), {content.getType(), numCaptures.getType()});
-
-    SmallVector<Value> values;
-
-    auto constantV = b.create<ParamConstantOp>(op.getLoc(), content);
-    auto numCapturesV = b.create<ParamConstantOp>(op.getLoc(), numCaptures);
-    values.push_back(constantV);
-    values.push_back(numCapturesV);
-    auto newOp = b.create<StructCreateOp>(op->getLoc(), structType, values);
-
-    op->replaceUsesOfWith(op.getResult(), newOp);
-    op.replaceAllUsesWith(newOp.getResult());
-    op.erase();
-    return WalkResult::advance();
   });
 
   if (failed)
