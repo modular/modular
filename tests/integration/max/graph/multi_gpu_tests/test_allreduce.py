@@ -12,7 +12,7 @@ from typing import cast
 
 import numpy as np
 import pytest
-from max.driver import CPU, Accelerator, Tensor
+from max.driver import CPU, Accelerator, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import (
@@ -150,7 +150,7 @@ def test_allreduce_epilogue_fusion(num_gpus: int) -> None:
 
     # Initialize devices and session.
     host = CPU()
-    devices = [Accelerator(i) for i in range(num_gpus)]
+    devices: list[Device] = [Accelerator(i) for i in range(num_gpus)]
     session = InferenceSession(devices=[host] + devices)
 
     # Create model and build graph.
