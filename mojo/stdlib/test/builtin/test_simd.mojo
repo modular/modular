@@ -119,7 +119,7 @@ def test_convert_simd_to_string():
     var c: SIMD[DType.index, 8] = 7
     assert_equal(String(c), "[7, 7, 7, 7, 7, 7, 7, 7]")
 
-    # TODO: uncomment when https://github.com/modular/mojo/issues/2353 is fixed
+    # TODO: uncomment when https://github.com/modular/max/issues/2353 is fixed
     # assert_equal(String(UInt32(-1)), "4294967295")
     assert_equal(String(UInt64(-1)), "18446744073709551615")
 
@@ -129,7 +129,7 @@ def test_convert_simd_to_string():
 
     assert_equal(String(UInt64(16646288086500911323)), "16646288086500911323")
 
-    # https://github.com/modular/mojo/issues/556
+    # https://github.com/modular/max/issues/556
     assert_equal(
         String(
             SIMD[DType.uint64, 4](

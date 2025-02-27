@@ -16,7 +16,7 @@ After you have set up a Mojo programming environment, you can then use `git` to
 clone this repository of Mojo samples using the command below:
 
 ```bash
-git clone https://github.com/modular/mojo.git
+git clone https://github.com/modular/max.git
 ```
 
 ## Running

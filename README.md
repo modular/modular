@@ -85,9 +85,13 @@ The MAX container image is available in the
 ## Contributing
 
 Thanks for your interest in contributing to this repository!
-We are not accepting pull requests yet.
 
-However, we welcome your bug reports.  If you have a bug, please file an issue
+We accept contributions to the [Mojo standard library](./mojo).
+Please see the [Contribution Guide](mojo/CONTRIBUTING.md) for instructions.
+
+We are not accepting contributions for other parts of the repository.
+
+We also welcome your bug reports.  If you have a bug, please file an issue
 [here](https://github.com/modular/max/issues/new/choose).
 
 If you need support, the [Discord](https://discord.gg/modular)

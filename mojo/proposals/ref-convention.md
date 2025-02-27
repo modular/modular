@@ -12,7 +12,7 @@ Mojo’s safe references have evolved and iterated a lot. From the initial
 compiler re-plumbing that made memory-only types possible, to threading
 lifetimes through everything with the introduction of `!lit.ref` to the
 development of a “user-space” Reference type, to the recent discussions about
-[adding automatic dereference to Reference](https://github.com/modular/mojo/discussions/2594),
+[adding automatic dereference to Reference](https://github.com/modular/max/discussions/2594),
 we’ve been iteratively improving the model with a goal of ending up with
 something powerful and explainable.
 
@@ -42,7 +42,7 @@ Along the way, we’ve had a number of challenges to address:
    to `Reference`. It would be awesome to clarify this.
 
 5. We still need to
-   [reconsider which keywords](https://github.com/modular/mojo/blob/main/proposals/lifetimes-keyword-renaming.md)
+   [reconsider which keywords](https://github.com/modular/max/blob/main/mojo/proposals/lifetimes-keyword-renaming.md)
    to use for argument conventions. The `inout` keyword, for example, is
    problematic because it works with types that are not movable or copyable. The
    callee doesn’t actually move things in and out, it takes a mutable reference.

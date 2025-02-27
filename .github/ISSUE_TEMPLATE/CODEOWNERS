@@ -1,5 +1,0 @@
-# Codeowners for MAX repo.
-# Every line is a file pattern that is followed by one or more code owners.
-# Order is important; the last matching pattern takes the most precedence.
-
-* @modularml/max-code-reviewers

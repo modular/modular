@@ -107,7 +107,7 @@ You can do the same for a directory with
 All the tests should pass on the `main` branch with the nightly Mojo
 compiler. If you've pulled the latest changes and they're still failing please
 [open a GitHub
-issue](https://github.com/modular/mojo/issues/new?assignees=&labels=bug%2Cmojo&projects=&template=mojo_bug_report.yaml&title=%5BBUG%5D).
+issue](https://github.com/modular/max/issues).
 
 ### Running a subset of the Standard Library Unit Tests
 
@@ -135,7 +135,7 @@ disabled, you can set the environment
 variable `MOJO_ENABLE_ASSERTIONS_IN_TESTS=0`.
 
 If you run into any issues when running the tests,
-[please file an issue](https://github.com/modular/mojo/issues) and we’ll take
+[please file an issue](https://github.com/modular/max/issues) and we’ll take
 a look.
 
 ## Formatting changes

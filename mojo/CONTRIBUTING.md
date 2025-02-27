@@ -210,7 +210,7 @@ which represents the most recent nightly build.
 Before you start your first pull request, please complete this checklist:
 
 - Read this entire contributor guide.
-- Read the [Code of Conduct](./CODE_OF_CONDUCT.md).
+- Read the [Code of Conduct](../CODE_OF_CONDUCT.md).
 
 #### Evaluate and get buy-in on the change
 
@@ -222,7 +222,7 @@ for more details.
 
 #### Fork and clone the repo
 
-Go to the [Mojo repo](https://github.com/modular/mojo) and click the fork
+Go to the [MAX repo](https://github.com/modular/max) and click the fork
 button:
 
 ![Create Fork](stdlib/docs/images/create-fork.png)
@@ -230,14 +230,14 @@ button:
 Clone your forked repo locally with the command:
 
 ```bash
-git clone git@github.com:[your-username]/mojo.git
-cd mojo
+git clone git@github.com:[your-username]/max.git
+cd max/mojo
 ```
 
 Add the upstream remote and fetch it:
 
 ```bash
-git remote add upstream git@github.com:modular/mojo.git
+git remote add upstream git@github.com:modular/max.git
 git fetch upstream
 ```
 
@@ -311,10 +311,10 @@ You'll see a link to create a PR:
 
 ```plaintext
 remote: Create a pull request for 'my-fix-pr' on GitHub by visiting:
-remote:      https://github.com/[your-username]/mojo/pull/new/my-fix-pr
+remote:      https://github.com/[your-username]/max/pull/new/my-fix-pr
 ```
 
-It should automatically set the base branch to the upstream `modular/mojo/main`,
+It should automatically set the base branch to the upstream `modular/max/main`,
 but if it doesn't, you can set it manually.
 
 Now fill out the details:

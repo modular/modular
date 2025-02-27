@@ -26,11 +26,11 @@ This repo includes source code for:
 
 This repo has two primary branches:
 
-- The [`stable`](https://github.com/modular/mojo/tree/stable) branch, which
+- The [`stable`](https://github.com/modular/max/tree/stable) branch, which
 is in sync with the last stable released version of Mojo. Use the examples
 here if you’re using a [release build of Mojo](#latest-released).
 
-- The [`main`](https://github.com/modular/mojo/tree/main) branch, which
+- The [`main`](https://github.com/modular/max/tree/main) branch, which
 is in sync with the Mojo nightly build and subject to breakage. Use this branch
 for [contributions](./CONTRIBUTING.md), or if you're using the latest
 [nightly build of Mojo](#latest-nightly).
@@ -79,7 +79,7 @@ When you clone this repo, you'll be on the `main` branch by default,
 which includes code matching the latest nightly build:
 
 ```bash
-git clone https://github.com/modular/mojo.git
+git clone https://github.com/modular/max.git
 ```
 
 If you want to instead see the source from the most recent stable
@@ -88,13 +88,13 @@ release, then you can switch to the `stable` branch.
 ## Contributing
 
 When you want to report issues or request features, [please create a GitHub
-issue here](https://github.com/modular/mojo/issues).
+issue here](https://github.com/modular/max/issues).
 See [here](./CONTRIBUTING.md) for guidelines on filing good bugs.
 
-We welcome contributions to this repo on the
-[`main`](https://github.com/modular/mojo/tree/main)
+We welcome contributions to this repo for mojo on the
+[`main`](https://github.com/modular/max/tree/main)
 branch. If you’d like to contribute to Mojo, please first read our [Contributor
-Guide](https://github.com/modular/mojo/blob/main/CONTRIBUTING.md).
+Guide](https://github.com/modular/max/blob/main/mojo/CONTRIBUTING.md).
 
 For more general questions or to chat with other Mojo developers, check out our
 [Discord](https://discord.gg/modular).
@@ -108,6 +108,6 @@ MAX and Mojo usage and distribution are licensed under the
 
 ## Thanks to our contributors
 
-<a href="https://github.com/modular/mojo/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=modular/mojo" />
+<a href="https://github.com/modular/max/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=modular/max" />
 </a>

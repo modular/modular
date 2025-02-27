@@ -1,6 +1,6 @@
 # Simplifying Mojo🔥 - let's get rid of `let`
 
-Chris Lattner, Dec 5, 2023, Status: **Accepted**, [discussion thread](https://github.com/modular/mojo/discussions/1456#discussioncomment-8358722)
+Chris Lattner, Dec 5, 2023, Status: **Accepted**, [discussion thread](https://github.com/modular/max/discussions/1456#discussioncomment-8358722)
 
 Mojo is still a new language, and is rapidly evolving.  We’re learning a lot
 from other languages, but Mojo poses its own set of tradeoffs that indicate a
@@ -10,7 +10,7 @@ One of the early decisions made in Mojo's development is that it adopts the
 `let` and `var` design point that Swift uses.  This whitepaper argues that we
 should switch to a simpler model by jettisoning `let` and just retaining `var`
 (and implicit Python-style variable declarations in `def`).  This has also been
-[suggested by the community](https://github.com/modular/mojo/issues/1205).
+[suggested by the community](https://github.com/modular/max/issues/1205).
 
 Note that immutability and value semantics remain an important part of the Mojo
 design, this is just about removing "named immutable variables".  Immutable
@@ -31,7 +31,7 @@ variables aren't a core programming concept, and not something required
 to achieve Mojo's goals.
 
 2. The naming of `let` caused a lot of early [heat and
-debate](https://github.com/modular/mojo/discussions/120). Other programming
+debate](https://github.com/modular/max/discussions/120). Other programming
 languages have a wide range of design points (e.g. `const` in C/C++ and
 Javascript) and there is a divergence of naming for all these things:
 `let`, `val`, `const`, etc, etc.
@@ -43,7 +43,7 @@ three concepts going around: `alias`, `let`, and `var`.  Most of the uses of
 4. Both Swift and Rust encourage immutable values - Swift (and currently Mojo)
 warn about unneeded mutability, Rust makes mutability more verbose (`let mut`),
 and some propose that Mojo [make mutability more
-verbose](https://github.com/modular/mojo/issues/451).  This cuts very hard
+verbose](https://github.com/modular/max/issues/451).  This cuts very hard
 against a lot of the design center of Python, which doesn’t even have this
 concept at all: it would be weird to make it the default, but if we don’t,
 then why bother having it?
@@ -112,7 +112,7 @@ This would eliminate a bunch of complexity in the compiler as well:
    like: “`let x: Int; x = 1; use(x); x = 2; use(x)`” even though the original
    lifetime of the first “`x=1`” naturally ended and “`x`” is uninitialized
    before being assigned to.  This has always been a design smell, and it
-   [doesn’t work right](https://github.com/modular/mojo/issues/1414).
+   [doesn’t work right](https://github.com/modular/max/issues/1414).
 
 This proposal will not affect runtime performance at all as far as we know.
 

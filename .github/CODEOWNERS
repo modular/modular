@@ -1,0 +1,18 @@
+# Codeowners for MAX repo.
+# Every line is a file pattern that is followed by one or more code owners.
+# Order is important; the last matching pattern takes the most precedence.
+
+# Standard Library Sources
+/mojo/stdlib/       @modular/stdlib
+
+# Documentation
+/mojo/docs/         @modular/mojo-docs
+
+/mojo/docs/changelog.md @modular/stdlib
+
+/mojo/stdlib/docs/  @modular/mojo-docs @modular/stdlib
+
+# Examples
+/examples/mojo/     @jackos
+
+* @modularml/max-code-reviewers

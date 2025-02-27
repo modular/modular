@@ -2,7 +2,7 @@
 
 Date: October 2024
 
-Previous revision: [[June 2023](https://github.com/modular/mojo/blob/f8d7cb8ba4c21ec3fbc87e21609b3fd56cab695f/proposals/lifetimes-keyword-renaming.md)]
+Previous revision: [[June 2023](https://github.com/modular/max/blob/f8d7cb8ba4c21ec3fbc87e21609b3fd56cab695f/proposals/lifetimes-keyword-renaming.md)]
 
 The design of the Mojo references subsystem is starting to come together.  To
 finalize the major points, it helps to come back and re-evaluate several early

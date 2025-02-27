@@ -574,7 +574,7 @@ def test_no_extra_copies_with_sugared_set_by_field():
 
 # Ensure correct behavior of __copyinit__
 # as reported in GH issue 27875 internally and
-# https://github.com/modular/mojo/issues/1493
+# https://github.com/modular/max/issues/1493
 def test_list_copy_constructor():
     var vec = List[Int](capacity=1)
     var vec_copy = vec

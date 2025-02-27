@@ -3,6 +3,11 @@
 These examples demonstrate the power and flexibility of
 [MAX](https://docs.modular.com/max/). They include:
 
+## [Mojo code examples](mojo/)
+
+A collection of sample programs written in the
+[Mojo](https://docs.modular.com/mojo/manual/) programming language.
+
 ## [Custom GPU and CPU operations in Mojo](custom_ops/)
 
 The [MAX Graph API](https://docs.modular.com/max/graph/) provides a powerful

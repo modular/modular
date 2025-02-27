@@ -11,11 +11,11 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-name: MAX bug report
-description: Create a bug report to help us improve MAX
-title: "[BUG]: "
+name: Magic issue report
+description: Create an issue to help us improve Magic
+title: "[Magic]"
 labels:
-  - "bug,max"
+  - "magic"
 body:
   - type: markdown
     attributes:
@@ -29,6 +29,12 @@ body:
     attributes:
       label: Bug description
       description: Describe the bug you encountered and what you expected to happen.
+      value: |
+        ### Actual behavior
+        <!-- Add a clear and concise description of what actually happened. -->
+
+        ### Expected behavior
+        <!-- Add a clear and concise description of what you expected to happen. -->
     validations:
       required: true
 
@@ -38,8 +44,9 @@ body:
       label: Steps to reproduce
       description: Provide the specific steps to reproduce the issue.
       value: |
-        - Include relevant code snippet or link to code that did not work as expected.
+        - Provide a relevant code snippet or a link to the code that did not work as expected.
         - If applicable, add screenshots to help explain the problem.
+        - If using the Playground, name the pre-existing notebook that failed and the steps that led to failure.
         - Include anything else that might help us debug the issue.
     validations:
       required: true
@@ -48,8 +55,7 @@ body:
     id: Context
     attributes:
       label: System information
-      description: What version of MAX are you using?
+      description: What version of Mojo are you using?
       value: |
         - Provide the system information by running `magic info`.
         - Provide version information for MAX (includes Mojo) by pasting the output of `magic list max`.
-      render: shell
