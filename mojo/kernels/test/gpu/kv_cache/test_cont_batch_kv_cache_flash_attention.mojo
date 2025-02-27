@@ -11,7 +11,6 @@ from collections import Set
 from math import isqrt
 from random import random_ui64, seed
 
-from algorithm import max
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
@@ -58,9 +57,16 @@ def execute_flash_attention[
         ")",
     )
 
-    var max_cache_valid_length = Int(
-        max(NDBuffer[DType.uint32, 1](cache_valid_length.data, batch_size))
-    )
+    max_prompt_len = 0
+    max_context_len = 0
+
+    for i in range(batch_size):
+        max_prompt_len = max(max_prompt_len, Int(valid_length[i]))
+        max_context_len = max(
+            max_context_len, Int(cache_valid_length[i] + valid_length[i])
+        )
+
+    max_cache_valid_length = max_context_len
 
     # initialize q tensor
     q_host = HostNDBuffer[
@@ -99,7 +105,7 @@ def execute_flash_attention[
             batch_size,
             num_q_heads,
             max_prompt_len,
-            max_prompt_len + max_cache_valid_length,
+            max_context_len,
         )
     )
 
@@ -112,7 +118,7 @@ def execute_flash_attention[
             batch_size,
             num_q_heads,
             max_prompt_len,
-            max_prompt_len + max_cache_valid_length,
+            max_context_len,
         ),
         ctx=ctx,
     )
@@ -225,7 +231,8 @@ def execute_flash_attention[
         kv_block_device.tensor,
         cache_lengths_device_nd,
         lookup_table_device.tensor,
-        is_context_encoding,
+        max_prompt_len,
+        max_context_len,
         layer_idx,
         CacheType.KeyIdx,
     )
@@ -233,7 +240,8 @@ def execute_flash_attention[
         kv_block_host.tensor,
         cache_valid_length,
         lookup_table_host.tensor,
-        is_context_encoding,
+        max_prompt_len,
+        max_context_len,
         layer_idx,
         CacheType.KeyIdx,
     )
@@ -241,7 +249,8 @@ def execute_flash_attention[
         kv_block_device.tensor,
         cache_lengths_device_nd,
         lookup_table_device.tensor,
-        is_context_encoding,
+        max_prompt_len,
+        max_context_len,
         layer_idx,
         CacheType.ValueIdx,
     )
@@ -249,7 +258,8 @@ def execute_flash_attention[
         kv_block_host.tensor,
         cache_valid_length,
         lookup_table_host.tensor,
-        is_context_encoding,
+        max_prompt_len,
+        max_context_len,
         layer_idx,
         CacheType.ValueIdx,
     )

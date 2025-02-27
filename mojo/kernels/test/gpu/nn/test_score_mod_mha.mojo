@@ -80,7 +80,6 @@ def execute_flash_attention[
 ](
     batch_size: Int,
     valid_length: NDBuffer[DType.uint32, 1],
-    max_prompt_len: Int,
     max_seq_len: Int,
     cache_valid_length: NDBuffer[DType.uint32, 1],
     ctx: DeviceContext,
@@ -96,10 +95,22 @@ def execute_flash_attention[
         ")",
     )
 
-    var max_cache_valid_length = Int(
-        tensor_max(
-            NDBuffer[DType.uint32, 1](cache_valid_length.data, batch_size)
+    # initialize our KVCache
+    var is_context_encoding = True
+    var max_cache_len_in_batch = 0
+    var max_seq_len_in_batch = 0
+    for i in range(batch_size):
+        if cache_valid_length[i] != 0:
+            is_context_encoding = False
+        max_cache_len_in_batch = max(
+            max_cache_len_in_batch, Int(cache_valid_length[i] + valid_length[i])
         )
+        max_seq_len_in_batch = max(max_seq_len_in_batch, Int(valid_length[i]))
+    var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
+
+    ctx.enqueue_copy(cache_lengths_dev, cache_valid_length.data)
+    var cache_lengths = NDBuffer[DType.uint32, 1](
+        cache_lengths_dev.unsafe_ptr(), Index(batch_size)
     )
 
     # initialize q tensor
@@ -108,14 +119,11 @@ def execute_flash_attention[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
-            batch_size, max_prompt_len, num_q_heads, kv_params.head_size
+            batch_size, max_seq_len_in_batch, num_q_heads, kv_params.head_size
         )
     )
 
     random(q_host.tensor)
-
-    # TODO: Do I need to zero-pad q_host_tensor beyond the valid_size of the
-    #       current batch's valid length? What to initialize with?
 
     valid_length_device = DeviceNDBuffer[DType.uint32, 1](
         IndexList[1](batch_size),
@@ -127,7 +135,7 @@ def execute_flash_attention[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
-            batch_size, max_prompt_len, num_q_heads, kv_params.head_size
+            batch_size, max_seq_len_in_batch, num_q_heads, kv_params.head_size
         ),
         ctx=ctx,
     )
@@ -140,19 +148,19 @@ def execute_flash_attention[
         IndexList[4](
             batch_size,
             num_q_heads,
-            max_prompt_len,
-            max_prompt_len + max_cache_valid_length,
+            max_seq_len_in_batch,
+            max_cache_len_in_batch,
         )
     )
 
     # Initialize causal mask.
     for b in range(batch_size):
         for h in range(num_q_heads):
-            for q_idx in range(max_prompt_len):
-                for k_idx in range(max_prompt_len + max_cache_valid_length):
+            for q_idx in range(max_seq_len_in_batch):
+                for k_idx in range(max_cache_len_in_batch):
                     mask_host.tensor.store(
                         Index(b, h, q_idx, k_idx),
-                        0 if q_idx + max_cache_valid_length
+                        0 if q_idx + cache_valid_length[b]
                         >= k_idx else min_or_neg_inf[DType.float32](),
                     )
 
@@ -163,8 +171,8 @@ def execute_flash_attention[
         IndexList[4](
             batch_size,
             num_q_heads,
-            max_prompt_len,
-            max_prompt_len + max_cache_valid_length,
+            max_seq_len_in_batch,
+            max_cache_len_in_batch,
         )
     )
 
@@ -173,17 +181,17 @@ def execute_flash_attention[
     # This is used to compare against the score_mod implementation.
     for b in range(batch_size):
         for h in range(num_q_heads):
-            for q_idx in range(max_prompt_len):
-                for k_idx in range(max_prompt_len + max_cache_valid_length):
+            for q_idx in range(max_seq_len_in_batch):
+                for k_idx in range(max_cache_len_in_batch):
                     mask_host_mod.tensor.store(
                         Index(b, h, q_idx, k_idx),
                         generate_alibi_bias[DType.float32, 1, num_q_heads](
                             h,
                             q_idx,
                             k_idx,
-                            max_prompt_len + max_cache_valid_length,
+                            max_cache_len_in_batch,
                         ) if q_idx
-                        + max_cache_valid_length
+                        + cache_valid_length[b]
                         >= k_idx else min_or_neg_inf[DType.float32](),
                     )
 
@@ -193,8 +201,8 @@ def execute_flash_attention[
         IndexList[4](
             batch_size,
             num_q_heads,
-            max_prompt_len,
-            max_prompt_len + max_cache_valid_length,
+            max_seq_len_in_batch,
+            max_cache_len_in_batch,
         ),
         ctx=ctx,
     )
@@ -206,8 +214,8 @@ def execute_flash_attention[
         IndexList[4](
             batch_size,
             num_q_heads,
-            max_prompt_len,
-            max_prompt_len + max_cache_valid_length,
+            max_seq_len_in_batch,
+            max_cache_len_in_batch,
         ),
         ctx=ctx,
     )
@@ -228,14 +236,14 @@ def execute_flash_attention[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
-            batch_size, max_prompt_len, num_q_heads, kv_params.head_size
+            batch_size, max_seq_len_in_batch, num_q_heads, kv_params.head_size
         ),
     )
     ref_output_device = DeviceNDBuffer[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
-            batch_size, max_prompt_len, num_q_heads, kv_params.head_size
+            batch_size, max_seq_len_in_batch, num_q_heads, kv_params.head_size
         ),
         ctx=ctx,
     )
@@ -245,34 +253,16 @@ def execute_flash_attention[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
-            batch_size, max_prompt_len, num_q_heads, kv_params.head_size
+            batch_size, max_seq_len_in_batch, num_q_heads, kv_params.head_size
         ),
     )
     test_output_device = DeviceNDBuffer[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
-            batch_size, max_prompt_len, num_q_heads, kv_params.head_size
+            batch_size, max_seq_len_in_batch, num_q_heads, kv_params.head_size
         ),
         ctx=ctx,
-    )
-
-    # initialize our KVCache
-    var is_context_encoding = True
-    var max_cache_len_in_batch = 0
-    var max_seq_len_in_batch = 0
-    for i in range(batch_size):
-        if cache_valid_length[i] != 0:
-            is_context_encoding = False
-        max_cache_len_in_batch = max(
-            max_cache_len_in_batch, Int(cache_valid_length[i])
-        )
-        max_seq_len_in_batch = max(max_seq_len_in_batch, Int(valid_length[i]))
-    var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
-
-    ctx.enqueue_copy(cache_lengths_dev, cache_valid_length.data)
-    var cache_lengths = NDBuffer[DType.uint32, 1](
-        cache_lengths_dev.unsafe_ptr(), Index(batch_size)
     )
 
     k_block_host = HostNDBuffer[
@@ -348,7 +338,6 @@ def execute_flash_attention[
         max_seq_len_in_batch,
         max_cache_len_in_batch,
     )
-
     flash_attention[add_attn_mask=False, use_score_mod=True](
         test_output_device.tensor,
         q_device.tensor,
@@ -440,13 +429,13 @@ def execute_flash_attention_suite(ctx: DeviceContext):
         replit_num_q_heads,
         type,
         kv_params_replit,
-    ](bs, valid_length, 128, 1024, cache_valid_length, ctx)
+    ](bs, valid_length, 1024, cache_valid_length, ctx)
 
     execute_flash_attention[
         llama_num_q_heads,
         type,
         kv_params_llama3,
-    ](bs, valid_length, 128, 1024, cache_valid_length, ctx)
+    ](bs, valid_length, 1024, cache_valid_length, ctx)
 
     # Replit & Llama3 context encoding [testing odd query valid length].
     valid_length[0] = 128
@@ -458,13 +447,13 @@ def execute_flash_attention_suite(ctx: DeviceContext):
         replit_num_q_heads,
         type,
         kv_params_replit,
-    ](bs, valid_length, 128, 1024, cache_valid_length, ctx)
+    ](bs, valid_length, 1024, cache_valid_length, ctx)
 
     execute_flash_attention[
         llama_num_q_heads,
         type,
         kv_params_llama3,
-    ](bs, valid_length, 128, 1024, cache_valid_length, ctx)
+    ](bs, valid_length, 1024, cache_valid_length, ctx)
 
     # Replit & Llama3 token gen [testing even cache valid lengths].
     valid_length[0] = 1
@@ -476,13 +465,13 @@ def execute_flash_attention_suite(ctx: DeviceContext):
         replit_num_q_heads,
         type,
         kv_params_replit,
-    ](bs, valid_length, 1, 1024, cache_valid_length, ctx)
+    ](bs, valid_length, 1024, cache_valid_length, ctx)
 
     execute_flash_attention[
         llama_num_q_heads,
         type,
         kv_params_llama3,
-    ](bs, valid_length, 1, 1024, cache_valid_length, ctx)
+    ](bs, valid_length, 1024, cache_valid_length, ctx)
 
     # Replit & Llama3 token gen [testing even cache valid lengths].
     valid_length[0] = 1
@@ -494,13 +483,13 @@ def execute_flash_attention_suite(ctx: DeviceContext):
         replit_num_q_heads,
         type,
         kv_params_replit,
-    ](bs, valid_length, 1, 1024, cache_valid_length, ctx)
+    ](bs, valid_length, 1024, cache_valid_length, ctx)
 
     execute_flash_attention[
         llama_num_q_heads,
         type,
         kv_params_llama3,
-    ](bs, valid_length, 1, 1024, cache_valid_length, ctx)
+    ](bs, valid_length, 1024, cache_valid_length, ctx)
 
 
 def main():

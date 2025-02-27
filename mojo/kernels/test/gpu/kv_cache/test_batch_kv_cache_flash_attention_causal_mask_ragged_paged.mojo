@@ -72,13 +72,11 @@ def execute_ragged_flash_attention[
     )
 
     var total_length = 0
-    var max_context_length = 0
     var max_full_context_length = 0
     var max_prompt_length = 0
     for i in range(batch_size):
         input_row_offsets_host.tensor[i] = total_length
         cache_lengths_host.tensor[i] = cache_lengths[i]
-        max_context_length = max(max_context_length, cache_lengths[i])
         max_full_context_length = max(
             max_full_context_length, cache_lengths[i] + valid_lengths[i]
         )
@@ -154,7 +152,7 @@ def execute_ragged_flash_attention[
         cache_lengths_device.tensor,
         lookup_table_device.tensor,
         max_prompt_length,
-        max_context_length,
+        max_full_context_length,
         layer_idx,
         ContinuousBatchCacheType.KeyIdx,
     )
@@ -163,7 +161,7 @@ def execute_ragged_flash_attention[
         cache_lengths_device.tensor,
         lookup_table_device.tensor,
         max_prompt_length,
-        max_context_length,
+        max_full_context_length,
         layer_idx,
         ContinuousBatchCacheType.ValueIdx,
     )
@@ -220,7 +218,7 @@ def execute_ragged_flash_attention[
         cache_lengths_device.tensor,
         paged_lut_device.tensor,
         max_prompt_length,
-        max_context_length,
+        max_full_context_length,
         layer_idx,
         PagedCacheType.KeyIdx,
     )
@@ -230,7 +228,7 @@ def execute_ragged_flash_attention[
         cache_lengths_device.tensor,
         paged_lut_device.tensor,
         max_prompt_length,
-        max_context_length,
+        max_full_context_length,
         layer_idx,
         PagedCacheType.ValueIdx,
     )
