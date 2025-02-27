@@ -67,11 +67,11 @@ def top_k():
 
     rand(in_vals, els)
 
+    var cpu_ctx_ptr = cpu_device().unsafe_ptr()
+
     @parameter
     @always_inline
     fn bench_cpu(mut b: Bencher) raises:
-        var cpu_ctx_ptr = cpu_device().unsafe_ptr()
-
         @parameter
         @always_inline
         fn run_bench() raises:
@@ -127,6 +127,7 @@ def top_k():
     b.config.verbose_metric_names = False
     print(b)
 
+    _ = cpu_ctx_ptr
     in_vals.free()
     out_vals.free()
     out_idxs.free()
