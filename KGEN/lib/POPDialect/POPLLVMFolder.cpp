@@ -196,12 +196,20 @@ static SmallVector<Attribute> expandOperands(ArrayRef<Attribute> args) {
 static ErrorTreeOrSuccess interpretMemcpy(Location loc,
                                           ArrayRef<Attribute> operands,
                                           InterpreterState &state) {
-  if (operands.size() != 3)
+  if (operands.size() != 1 || !isa<PackAttr>(operands[0])) {
     return ErrorTree(
         loc,
-        "interpreting llvm.memcpy takes 3 operands: dst addr, src addr, count");
+        "interpreting llvm.memcpy takes pack of 3: dst addr, src addr, count");
+  }
 
-  auto count = dyn_cast<IntegerAttr>(operands[2]);
+  ArrayRef<TypedAttr> values = cast<PackAttr>(operands[0]).getValues();
+  if (values.size() != 3) {
+    return ErrorTree(
+        loc,
+        "interpreting llvm.memcpy takes pack of 3: dst addr, src addr, count");
+  }
+
+  auto count = dyn_cast<IntegerAttr>(values[2]);
   if (!count)
     return ErrorTree(loc, "interpreting llvm.memcpy 3nd operand count is not "
                           "interpreted correctly");
@@ -209,8 +217,8 @@ static ErrorTreeOrSuccess interpretMemcpy(Location loc,
   if (!count.getInt())
     return success();
 
-  auto dst = dyn_cast<M::PointerAttr>(operands[0]);
-  auto src = dyn_cast<M::PointerAttr>(operands[1]);
+  auto dst = dyn_cast<M::PointerAttr>(values[0]);
+  auto src = dyn_cast<M::PointerAttr>(values[1]);
 
   if (!dst)
     return ErrorTree(loc, "interpreting llvm.memcpy 1st operand dst addr is "

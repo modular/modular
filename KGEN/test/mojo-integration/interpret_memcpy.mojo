@@ -13,7 +13,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 from memory import UnsafePointer
-from sys import sizeof
+from sys import llvm_intrinsic, sizeof
 
 
 fn memcpy(
@@ -24,10 +24,9 @@ fn memcpy(
     var byte_count = count * sizeof[Int]()
 
     if __mlir_op.`kgen.is_compile_time`[_type = __mlir_type.i1]():
-        __mlir_op.`pop.call_llvm_intrinsic`[
-            intrin = "llvm.memcpy".value,
-            _type=None,
-        ](dst.bitcast[Byte](), src.bitcast[Byte](), byte_count)
+        llvm_intrinsic["llvm.memcpy", NoneType](
+            dst.bitcast[Byte](), src.bitcast[Byte](), byte_count
+        )
     else:
         # Intentionally mis-match behavior between then and else
         # here for testing.
