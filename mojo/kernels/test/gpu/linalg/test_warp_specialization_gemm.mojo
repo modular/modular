@@ -58,6 +58,7 @@ from memory import stack_allocation
 
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
+from linalg.utils_gpu import MatmulConfig
 
 alias WARP_GROUP_SIZE = 128
 alias NumWarpPerWarpGroup = 4
@@ -138,13 +139,19 @@ def test_warp_specialize_gemm[
 
     alias block_tile_shape = Index(128, wgmma_n, 64)
 
-    warp_specialize_gemm_with_multicasting[
-        transpose_b=transpose_b,
+    alias matmul_config = MatmulConfig[
+        a_type, b_type, c_type, transpose_b, mma_shape = Index(64, wgmma_n, 16)
+    ](
         block_tile_shape=block_tile_shape,
-        cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
-        wgmma_n=wgmma_n,
+        cluster_shape=Index(1, 1, 1),
+        num_pipeline_stages=4,
         num_consumer=num_consumer,
         partitioned_multicast=False,
+    )
+
+    warp_specialize_gemm_with_multicasting[
+        transpose_b=transpose_b,
+        config=matmul_config,
         schedule=schedule,
     ](
         c_device.tensor,

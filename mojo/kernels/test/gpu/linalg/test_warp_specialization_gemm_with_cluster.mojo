@@ -63,6 +63,7 @@ from gpu.cluster import (
     cluster_sync_relaxed,
 )
 from linalg.matmul_sm90 import warp_specialize_gemm_with_multicasting
+from linalg.utils_gpu import MatmulConfig
 
 alias WARP_GROUP_SIZE = 128
 alias NumWarpPerWarpGroup = 4
@@ -73,7 +74,7 @@ def test_warp_specialize_gemm_with_multicasting[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    cluster_shape: StaticTuple[Int32, 3],
+    cluster_shape: IndexList[3],
     num_consumer: Int = 1,
     transpose_b: Bool = True,
     partitioned_multicast: Bool = False,
@@ -184,13 +185,19 @@ def test_warp_specialize_gemm_with_multicasting[
         ),
     )
 
-    warp_specialize_gemm_with_multicasting[
-        transpose_b=transpose_b,
-        block_tile_shape = Index(128, wgmma_n, 64),
+    alias matmul_config = MatmulConfig[
+        a_type, b_type, c_type, transpose_b, mma_shape = Index(64, wgmma_n, 16)
+    ](
+        block_tile_shape=block_tile_shape,
         cluster_shape=cluster_shape,
-        wgmma_n=wgmma_n,
+        num_pipeline_stages=4,
         num_consumer=num_consumer,
         partitioned_multicast=partitioned_multicast,
+    )
+
+    warp_specialize_gemm_with_multicasting[
+        transpose_b=transpose_b,
+        config=matmul_config,
     ](
         c_device.tensor,
         a_device.tensor,
@@ -248,7 +255,7 @@ def main():
                 DType.bfloat16,
                 DType.bfloat16,
                 DType.bfloat16,
-                StaticTuple[Int32, 3](1, 2, 1),
+                Index(1, 2, 1),
                 num_consumer=2,
                 partitioned_multicast = Bool(multicast_mode),
             ](ctx, static[256](), static[256](), static[128]())
@@ -258,7 +265,7 @@ def main():
                 DType.bfloat16,
                 DType.bfloat16,
                 DType.bfloat16,
-                StaticTuple[Int32, 3](1, 2, 1),
+                Index(1, 2, 1),
                 partitioned_multicast = Bool(multicast_mode),
             ](ctx, static[256](), static[64](), static[128]())
 
@@ -267,7 +274,7 @@ def main():
                 DType.bfloat16,
                 DType.bfloat16,
                 DType.bfloat16,
-                StaticTuple[Int32, 3](2, 1, 1),
+                Index(2, 1, 1),
                 num_consumer=2,
                 partitioned_multicast = Bool(multicast_mode),
             ](ctx, static[128](), static[512](), static[128]())
@@ -277,7 +284,7 @@ def main():
                 DType.bfloat16,
                 DType.bfloat16,
                 DType.bfloat16,
-                StaticTuple[Int32, 3](2, 1, 1),
+                Index(2, 1, 1),
                 partitioned_multicast = Bool(multicast_mode),
             ](ctx, static[128](), static[128](), static[128]())
 
@@ -286,7 +293,7 @@ def main():
                 DType.bfloat16,
                 DType.bfloat16,
                 DType.bfloat16,
-                StaticTuple[Int32, 3](2, 2, 1),
+                Index(2, 2, 1),
                 partitioned_multicast = Bool(multicast_mode),
             ](ctx, static[256](), static[512](), static[128]())
 
@@ -295,7 +302,7 @@ def main():
                 DType.bfloat16,
                 DType.bfloat16,
                 DType.bfloat16,
-                StaticTuple[Int32, 3](2, 2, 1),
+                Index(2, 2, 1),
                 num_consumer=2,
                 partitioned_multicast = Bool(multicast_mode),
             ](ctx, static[256](), static[128](), static[128]())
@@ -314,7 +321,7 @@ def main():
                     DType.bfloat16,
                     DType.bfloat16,
                     DType.bfloat16,
-                    StaticTuple[Int32, 3](1, 2, 1),
+                    Index(1, 2, 1),
                     partitioned_multicast = Bool(multicast_mode),
                 ](ctx, static[1024](), static[512](), static[128]())
 
@@ -323,7 +330,7 @@ def main():
                     DType.bfloat16,
                     DType.bfloat16,
                     DType.bfloat16,
-                    StaticTuple[Int32, 3](1, 2, 1),
+                    Index(1, 2, 1),
                     num_consumer=2,
                     partitioned_multicast = Bool(multicast_mode),
                 ](ctx, dynamic(1024), static[512](), static[128]())
@@ -333,7 +340,7 @@ def main():
                     DType.bfloat16,
                     DType.bfloat16,
                     DType.bfloat16,
-                    StaticTuple[Int32, 3](1, 2, 1),
+                    Index(1, 2, 1),
                     partitioned_multicast = Bool(multicast_mode),
                 ](ctx, dynamic(199), static[1024](), static[1024]())
 
@@ -342,7 +349,7 @@ def main():
                     DType.bfloat16,
                     DType.bfloat16,
                     DType.bfloat16,
-                    StaticTuple[Int32, 3](1, 2, 1),
+                    Index(1, 2, 1),
                     partitioned_multicast = Bool(multicast_mode),
                 ](ctx, dynamic(200), static[512](), static[256]())
 
@@ -351,7 +358,7 @@ def main():
                     DType.bfloat16,
                     DType.bfloat16,
                     DType.bfloat16,
-                    StaticTuple[Int32, 3](1, 2, 1),
+                    Index(1, 2, 1),
                     num_consumer=2,
                     partitioned_multicast = Bool(multicast_mode),
                 ](ctx, dynamic(201), static[2048](), static[256]())
@@ -368,7 +375,7 @@ def main():
                     DType.bfloat16,
                     DType.bfloat16,
                     DType.bfloat16,
-                    StaticTuple[Int32, 3](2, 1, 1),
+                    Index(2, 1, 1),
                     num_consumer=2,
                     partitioned_multicast = Bool(multicast_mode),
                 ](ctx, static[1024](), static[512](), static[128]())
@@ -378,7 +385,7 @@ def main():
                     DType.bfloat16,
                     DType.bfloat16,
                     DType.bfloat16,
-                    StaticTuple[Int32, 3](2, 1, 1),
+                    Index(2, 1, 1),
                     partitioned_multicast = Bool(multicast_mode),
                 ](ctx, dynamic(1024), static[512](), static[128]())
 
@@ -387,7 +394,7 @@ def main():
                     DType.bfloat16,
                     DType.bfloat16,
                     DType.bfloat16,
-                    StaticTuple[Int32, 3](2, 1, 1),
+                    Index(2, 1, 1),
                     num_consumer=2,
                     partitioned_multicast = Bool(multicast_mode),
                 ](ctx, dynamic(99), static[1024](), static[1024]())
@@ -397,7 +404,7 @@ def main():
                     DType.bfloat16,
                     DType.bfloat16,
                     DType.bfloat16,
-                    StaticTuple[Int32, 3](2, 1, 1),
+                    Index(2, 1, 1),
                     partitioned_multicast = Bool(multicast_mode),
                 ](ctx, dynamic(100), static[512](), static[256]())
 
@@ -406,7 +413,7 @@ def main():
                     DType.bfloat16,
                     DType.bfloat16,
                     DType.bfloat16,
-                    StaticTuple[Int32, 3](2, 1, 1),
+                    Index(2, 1, 1),
                     num_consumer=2,
                     partitioned_multicast = Bool(multicast_mode),
                 ](ctx, dynamic(201), static[2048](), static[256]())
@@ -423,7 +430,7 @@ def main():
                     DType.bfloat16,
                     DType.bfloat16,
                     DType.bfloat16,
-                    StaticTuple[Int32, 3](2, 2, 1),
+                    Index(2, 2, 1),
                     num_consumer=2,
                     partitioned_multicast = Bool(multicast_mode),
                 ](ctx, static[1024](), static[512](), static[128]())
@@ -433,7 +440,7 @@ def main():
                     DType.bfloat16,
                     DType.bfloat16,
                     DType.bfloat16,
-                    StaticTuple[Int32, 3](2, 2, 1),
+                    Index(2, 2, 1),
                     partitioned_multicast = Bool(multicast_mode),
                 ](ctx, dynamic(1024), static[512](), static[128]())
 
@@ -442,7 +449,7 @@ def main():
                     DType.bfloat16,
                     DType.bfloat16,
                     DType.bfloat16,
-                    StaticTuple[Int32, 3](2, 2, 1),
+                    Index(2, 2, 1),
                     num_consumer=2,
                     partitioned_multicast = Bool(multicast_mode),
                 ](ctx, dynamic(199), static[1024](), static[1024]())
@@ -452,7 +459,7 @@ def main():
                     DType.bfloat16,
                     DType.bfloat16,
                     DType.bfloat16,
-                    StaticTuple[Int32, 3](2, 2, 1),
+                    Index(2, 2, 1),
                     partitioned_multicast = Bool(multicast_mode),
                 ](ctx, dynamic(200), static[512](), static[256]())
 
@@ -461,7 +468,7 @@ def main():
                     DType.bfloat16,
                     DType.bfloat16,
                     DType.bfloat16,
-                    StaticTuple[Int32, 3](2, 2, 1),
+                    Index(2, 2, 1),
                     num_consumer=2,
                     partitioned_multicast = Bool(multicast_mode),
                 ](ctx, dynamic(201), static[2048](), static[256]())
