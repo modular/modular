@@ -76,7 +76,11 @@ fn _block_swizzle_by_scale[
 @value
 @register_passable("trivial")
 struct MatmulConfig[
-    a_type: DType, b_type: DType, c_type: DType, transpose_b: Bool = False
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    transpose_b: Bool = False,
+    mma_shape: IndexList[3] = get_mma_shape[a_type, get_accum_type[a_type]()](),
 ](Stringable, Writable):
     """Static configuration of GPU matmul."""
 
@@ -92,8 +96,13 @@ struct MatmulConfig[
 
     var num_warp_k_partitions: UInt
 
+    var cluster_shape: IndexList[3]
+
+    var num_consumer: UInt
+
+    var partitioned_multicast: Bool
+
     alias accum_type = get_accum_type[a_type]()  # TODO: factor b_type
-    alias mma_shape = get_mma_shape[a_type, get_accum_type[a_type]()]()
 
     # MMA is typically accumulated in FP32. The reduction over partitions may be
     # done in lower precision to reduce traffic to intermediate buffer. This is
@@ -114,10 +123,13 @@ struct MatmulConfig[
         mut self,
         block_tile_shape: IndexList[3] = Index(128, 128, 32),
         warp_tile_shape: IndexList[3] = Index(64, 64, 32),
+        cluster_shape: IndexList[3] = Index(1, 1, 1),
         num_pipeline_stages: UInt = 4,
         num_k_partitions: UInt = 1,
         k_group_size: UInt = 1,
         num_warp_k_partitions: UInt = 1,
+        num_consumer: UInt = 1,
+        partitioned_multicast: Bool = False,
     ):
         self.block_tile_shape = block_tile_shape
         self.warp_tile_shape = warp_tile_shape
@@ -125,6 +137,9 @@ struct MatmulConfig[
         self.num_k_partitions = num_k_partitions
         self.k_group_size = k_group_size
         self.num_warp_k_partitions = num_warp_k_partitions
+        self.cluster_shape = cluster_shape
+        self.num_consumer = num_consumer
+        self.partitioned_multicast = partitioned_multicast
 
     fn num_warps_m(self) -> UInt:
         return self.block_tile_shape[0] // self.warp_tile_shape[0]
@@ -211,11 +226,14 @@ struct MatmulConfig[
         hasher.update(transpose_b)
         hasher.update(self.block_tile_shape)
         hasher.update(self.warp_tile_shape)
+        hasher.update(self.cluster_shape)
         hasher.update(self.num_pipeline_stages)
         hasher.update(self.num_k_partitions)
         hasher.update(self.num_warp_k_partitions)
         hasher.update(self.k_group_size)
         hasher.update(self.split_k_reduction_scheme)
+        hasher.update(self.num_consumer)
+        hasher.update(self.partitioned_multicast)
 
 
 # Helper for choosing the base of BK based on type.

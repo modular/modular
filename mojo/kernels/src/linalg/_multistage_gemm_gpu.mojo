@@ -1071,9 +1071,9 @@ fn multistage_gemm_split_k_kernel[
         alias k_partition_config = MatmulConfig[
             a_type, b_type, c_type, transpose_b
         ](
-            config.block_tile_shape,
-            config.warp_tile_shape,
-            config.num_pipeline_stages,
+            block_tile_shape=config.block_tile_shape,
+            warp_tile_shape=config.warp_tile_shape,
+            num_pipeline_stages=config.num_pipeline_stages,
         )
 
         multistage_gemm_kernel[
@@ -1098,9 +1098,9 @@ fn multistage_gemm_split_k_kernel[
             work_space_type,
             transpose_b,
         ](
-            config.block_tile_shape,
-            config.warp_tile_shape,
-            config.num_pipeline_stages,
+            block_tile_shape=config.block_tile_shape,
+            warp_tile_shape=config.warp_tile_shape,
+            num_pipeline_stages=config.num_pipeline_stages,
         )
 
         multistage_gemm_kernel[

@@ -401,13 +401,267 @@ fn _matmul_gpu[
                 and ctx.device_info is H100
                 and transpose_b
             ):
+                alias static_N = c_shape.get[1]()
+                alias static_K = a_shape.get[1]()
+
+                # GTC matmul configs
+                @parameter
+                if static_N == 2560 and static_K == 8192:
+                    if m == 8192:
+                        alias M8192_N2560_K8192_config = MatmulConfig[
+                            a_type,
+                            b_type,
+                            c_type,
+                            transpose_b,
+                            mma_shape = Index(64, 256, 16),
+                        ](
+                            block_tile_shape=Index(128, 256, 64),
+                            cluster_shape=Index(1, 2, 1),
+                            num_pipeline_stages=4,
+                            num_consumer=2,
+                            partitioned_multicast=False,
+                        )
+                        warp_specialize_gemm_with_multicasting[
+                            transpose_b=transpose_b,
+                            elementwise_lambda_fn=elementwise_lambda_fn,
+                            config=M8192_N2560_K8192_config,
+                        ](
+                            rebind[NDBuffer[c_type, 2, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            m,
+                            n,
+                            k,
+                            ctx,
+                        )
+                        return
+
+                    elif m == 4096:
+                        alias M4096_N2560_K8192_config = MatmulConfig[
+                            a_type,
+                            b_type,
+                            c_type,
+                            transpose_b,
+                            mma_shape = Index(64, 256, 16),
+                        ](
+                            block_tile_shape=Index(128, 256, 64),
+                            cluster_shape=Index(2, 2, 1),
+                            num_pipeline_stages=4,
+                            num_consumer=2,
+                            partitioned_multicast=False,
+                        )
+                        warp_specialize_gemm_with_multicasting[
+                            transpose_b=transpose_b,
+                            elementwise_lambda_fn=elementwise_lambda_fn,
+                            config=M4096_N2560_K8192_config,
+                        ](
+                            rebind[NDBuffer[c_type, 2, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            m,
+                            n,
+                            k,
+                            ctx,
+                        )
+                        return
+
+                @parameter
+                if static_N == 8192 and static_K == 2048:
+                    if m == 8192:
+                        alias M8192_N8192_K2048_config = MatmulConfig[
+                            a_type,
+                            b_type,
+                            c_type,
+                            transpose_b,
+                            mma_shape = Index(64, 256, 16),
+                        ](
+                            block_tile_shape=Index(128, 256, 64),
+                            cluster_shape=Index(1, 1, 1),
+                            num_pipeline_stages=4,
+                            num_consumer=2,
+                            partitioned_multicast=False,
+                        )
+                        warp_specialize_gemm_with_multicasting[
+                            transpose_b=transpose_b,
+                            elementwise_lambda_fn=elementwise_lambda_fn,
+                            config=M8192_N8192_K2048_config,
+                        ](
+                            rebind[NDBuffer[c_type, 2, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            m,
+                            n,
+                            k,
+                            ctx,
+                        )
+                        return
+
+                    elif m == 4096:
+                        alias M4096_N8192_K2048_config = MatmulConfig[
+                            a_type,
+                            b_type,
+                            c_type,
+                            transpose_b,
+                            mma_shape = Index(64, 256, 16),
+                        ](
+                            block_tile_shape=Index(128, 256, 64),
+                            cluster_shape=Index(1, 1, 1),
+                            num_pipeline_stages=4,
+                            num_consumer=2,
+                            partitioned_multicast=False,
+                        )
+                        warp_specialize_gemm_with_multicasting[
+                            transpose_b=transpose_b,
+                            elementwise_lambda_fn=elementwise_lambda_fn,
+                            config=M4096_N8192_K2048_config,
+                        ](
+                            rebind[NDBuffer[c_type, 2, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            m,
+                            n,
+                            k,
+                            ctx,
+                        )
+                        return
+
+                @parameter
+                if static_N == 14336 and static_K == 8192:
+                    if m == 8192:
+                        alias M8192_N14336_K8192_config = MatmulConfig[
+                            a_type,
+                            b_type,
+                            c_type,
+                            transpose_b,
+                            mma_shape = Index(64, 256, 16),
+                        ](
+                            block_tile_shape=Index(128, 256, 64),
+                            cluster_shape=Index(1, 1, 1),
+                            num_pipeline_stages=4,
+                            num_consumer=2,
+                            partitioned_multicast=False,
+                        )
+                        warp_specialize_gemm_with_multicasting[
+                            transpose_b=transpose_b,
+                            elementwise_lambda_fn=elementwise_lambda_fn,
+                            config=M8192_N14336_K8192_config,
+                        ](
+                            rebind[NDBuffer[c_type, 2, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            m,
+                            n,
+                            k,
+                            ctx,
+                        )
+                        return
+
+                    elif m == 4096:
+                        alias M4096_N14336_K8192_config = MatmulConfig[
+                            a_type,
+                            b_type,
+                            c_type,
+                            transpose_b,
+                            mma_shape = Index(64, 256, 16),
+                        ](
+                            block_tile_shape=Index(128, 256, 64),
+                            cluster_shape=Index(1, 1, 1),
+                            num_pipeline_stages=4,
+                            num_consumer=2,
+                            partitioned_multicast=False,
+                        )
+                        warp_specialize_gemm_with_multicasting[
+                            transpose_b=transpose_b,
+                            elementwise_lambda_fn=elementwise_lambda_fn,
+                            config=M4096_N14336_K8192_config,
+                        ](
+                            rebind[NDBuffer[c_type, 2, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            m,
+                            n,
+                            k,
+                            ctx,
+                        )
+                        return
+
+                @parameter
+                if static_N == 8192 and static_K == 7168:
+                    if m == 8192:
+                        alias M8192_N8192_K7168_config = MatmulConfig[
+                            a_type,
+                            b_type,
+                            c_type,
+                            transpose_b,
+                            mma_shape = Index(64, 256, 16),
+                        ](
+                            block_tile_shape=Index(128, 256, 64),
+                            cluster_shape=Index(1, 1, 1),
+                            num_pipeline_stages=4,
+                            num_consumer=2,
+                            partitioned_multicast=False,
+                        )
+                        warp_specialize_gemm_with_multicasting[
+                            transpose_b=transpose_b,
+                            elementwise_lambda_fn=elementwise_lambda_fn,
+                            config=M8192_N8192_K7168_config,
+                        ](
+                            rebind[NDBuffer[c_type, 2, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            m,
+                            n,
+                            k,
+                            ctx,
+                        )
+                        return
+
+                    elif m == 4096:
+                        alias M4096_N8192_K7168_config = MatmulConfig[
+                            a_type,
+                            b_type,
+                            c_type,
+                            transpose_b,
+                            mma_shape = Index(64, 256, 16),
+                        ](
+                            block_tile_shape=Index(128, 256, 64),
+                            cluster_shape=Index(1, 1, 1),
+                            num_pipeline_stages=4,
+                            num_consumer=2,
+                            partitioned_multicast=False,
+                        )
+                        warp_specialize_gemm_with_multicasting[
+                            transpose_b=transpose_b,
+                            elementwise_lambda_fn=elementwise_lambda_fn,
+                            config=M4096_N8192_K7168_config,
+                        ](
+                            rebind[NDBuffer[c_type, 2, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            m,
+                            n,
+                            k,
+                            ctx,
+                        )
+                        return
+
+                alias default_config = MatmulConfig[
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    mma_shape = Index(64, 256, 16),
+                ](
+                    block_tile_shape=Index(128, 256, 64),
+                    cluster_shape=Index(1, 1, 1),
+                    num_pipeline_stages=4,
+                    num_consumer=2,
+                    partitioned_multicast=False,
+                )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
-                    block_tile_shape = Index(128, 256, 64),
-                    cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
-                    wgmma_n=256,
-                    num_consumer=2,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    config=default_config,
                 ](
                     rebind[NDBuffer[c_type, 2, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a_shape]](a),

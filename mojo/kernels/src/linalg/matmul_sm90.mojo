@@ -67,7 +67,7 @@ from .utils import elementwise_epilogue_type
 from .utils_gpu import block_swizzle
 from linalg.matmul_tile_scheduler import TileScheduler, MatmulSchedule
 from pathlib import Path
-
+from .utils_gpu import block_swizzle, MatmulConfig
 
 alias WARP_GROUP_SIZE = 128
 alias NumWarpPerWarpGroup = 4
@@ -932,12 +932,9 @@ fn warp_specialize_gemm_with_multicasting[
     b_shape: DimList, //,
     *,
     transpose_b: Bool,
-    block_tile_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    wgmma_shape: IndexList[3],
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b, wgmma_shape],
     grid_shape: IndexList[2] = Index(16, 8),
-    wgmma_n: Int = 128,
-    num_consumer: Int = 1,
-    partitioned_multicast: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
 ](
@@ -953,13 +950,15 @@ fn warp_specialize_gemm_with_multicasting[
     var b = from_ndbuffer_row_major(b_device)
     var c = from_ndbuffer_row_major(c_device)
 
-    # alias block_tile_shape = Index(128, wgmma_n, 64)
-    alias wgmma_shape = Index(64, wgmma_n, 16)
+    alias BM = config.block_tile_shape[0]
+    alias BN = config.block_tile_shape[1]
+    alias BK = config.block_tile_shape[2]
 
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
-
+    alias cluster_shape = StaticTuple[Int32, 3](
+        config.cluster_shape[0],
+        config.cluster_shape[1],
+        config.cluster_shape[2],
+    )
     alias CLUSTER_N = UInt(Int(cluster_shape[0]))
     alias CLUSTER_M = UInt(Int(cluster_shape[1]))
 
@@ -972,19 +971,22 @@ fn warp_specialize_gemm_with_multicasting[
     a_tma_op = create_tma_tile[
         a_type,
         2,
-        Index(BM // CLUSTER_N, BK) if partitioned_multicast else Index(BM, BK),
+        Index(BM // CLUSTER_N, BK) if config.partitioned_multicast else Index(
+            BM, BK
+        ),
         swizzle_mode=a_swizzle,
     ](ctx, a)
     b_tma_op = create_tma_tile[
         b_type,
         2,
-        Index(BN // CLUSTER_M, BK) if partitioned_multicast else Index(BN, BK),
+        Index(BN // CLUSTER_M, BK) if config.partitioned_multicast else Index(
+            BN, BK
+        ),
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
-    alias num_threads = WARP_GROUP_SIZE * num_consumer + WARP_GROUP_SIZE
-    alias pipeline_stages = 4
-    alias smem_size = pipeline_stages * (
+    alias num_threads = WARP_GROUP_SIZE * config.num_consumer + WARP_GROUP_SIZE
+    alias smem_size = Int(config.num_pipeline_stages) * (
         a_smem_layout.size() * sizeof[a_type]()
         + b_smem_layout.size() * sizeof[b_type]()
         + (sizeof[Int64]() * 2)
@@ -1001,7 +1003,7 @@ fn warp_specialize_gemm_with_multicasting[
             __type_of(a_tma_op).layout,
             __type_of(b_tma_op).layout,
             __type_of(c).layout,
-            block_tile_shape,
+            config.block_tile_shape,
             wgmma_shape,
             __type_of(a_tma_op).desc_layout,
             __type_of(b_tma_op).desc_layout,
@@ -1011,8 +1013,8 @@ fn warp_specialize_gemm_with_multicasting[
             == MatmulSchedule.TILE2D else Index(132, 1),
             num_threads=num_threads,
             transpose_b=True,
-            pipeline_stages=pipeline_stages,
             schedule=schedule,
+            pipeline_stages = config.num_pipeline_stages,
         ]
 
         ctx.enqueue_function[kernel](
@@ -1037,7 +1039,7 @@ fn warp_specialize_gemm_with_multicasting[
             __type_of(a_tma_op).layout,
             __type_of(b_tma_op).layout,
             __type_of(c).layout,
-            block_tile_shape,
+            config.block_tile_shape,
             wgmma_shape,
             __type_of(a_tma_op).desc_layout,
             __type_of(b_tma_op).desc_layout,
@@ -1046,8 +1048,8 @@ fn warp_specialize_gemm_with_multicasting[
             cluster_shape=cluster_shape,
             transpose_b=True,
             num_threads=num_threads,
-            pipeline_stages=pipeline_stages,
-            partitioned_multicast=partitioned_multicast,
+            pipeline_stages = config.num_pipeline_stages,
+            partitioned_multicast = config.partitioned_multicast,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
 
