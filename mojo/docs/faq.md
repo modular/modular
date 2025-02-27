@@ -148,7 +148,7 @@ at Modular to develop AI algorithms, but
 you can use it for other things like HPC, data transformations, writing pre/post
 processing operations, and much more. For examples of how Mojo can be used for
 other general programming tasks, see our [Mojo
-examples](https://github.com/modular/mojo/tree/main/examples).
+examples](https://github.com/modular/max/tree/main/examples/mojo).
 
 ### Is Mojo interpreted or compiled?
 
@@ -285,7 +285,7 @@ and does not require login.
   using buttons in the Playground toolbar.
 
 - There might be some bugs. Please [report issues and feedback on
-  GitHub](https://github.com/modular/mojo/issues/new/choose).
+  GitHub](https://github.com/modular/max/issues/new/choose).
 
 ### What are the license terms for the SDK?
 

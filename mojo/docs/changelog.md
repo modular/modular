@@ -105,7 +105,7 @@ what we publish.
   The same statement will now raise an error informing the user their indices
   are invalid.
 
-- Added an iterator to `LinkedList` ([PR #4005](https://github.com/modular/mojo/pull/4005))
+- Added an iterator to `LinkedList` ([PR #4005](https://github.com/modular/max/pull/4005))
   - `LinkedList.__iter__()` to create a forward iterator.
   - `LinkedList.__reversed__()` for a backward iterator.
 
