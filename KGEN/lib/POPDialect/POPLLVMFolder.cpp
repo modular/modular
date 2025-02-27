@@ -190,6 +190,67 @@ static SmallVector<Attribute> expandOperands(ArrayRef<Attribute> args) {
   return operands;
 }
 
+//===----------------------------------------------------------------------===//
+// InterpMemcpyOp
+//===----------------------------------------------------------------------===//
+static ErrorTreeOrSuccess interpretMemcpy(Location loc,
+                                          ArrayRef<Attribute> operands,
+                                          InterpreterState &state) {
+  if (operands.size() != 3)
+    return ErrorTree(
+        loc,
+        "interpreting llvm.memcpy takes 3 operands: dst addr, src addr, count");
+
+  auto count = dyn_cast<IntegerAttr>(operands[2]);
+  if (!count)
+    return ErrorTree(loc, "interpreting llvm.memcpy 3nd operand count is not "
+                          "interpreted correctly");
+
+  if (!count.getInt())
+    return success();
+
+  auto dst = dyn_cast<M::PointerAttr>(operands[0]);
+  auto src = dyn_cast<M::PointerAttr>(operands[1]);
+
+  if (!dst)
+    return ErrorTree(loc, "interpreting llvm.memcpy 1st operand dst addr is "
+                          "not interpreted correctly");
+  if (!src)
+    return ErrorTree(loc, "interpreting llvm.memcpy 2nd operand src addr is "
+                          "not interpreted correctly");
+
+  ErrorOr<void *> dstAddrOr =
+      state.getWritableMemory(dst.getAddr(), size_t(count.getInt()));
+  ErrorOr<const void *> srcAddrOr =
+      state.getReadableMemory(src.getAddr(), size_t(count.getInt()));
+
+  if (dstAddrOr.isError())
+    return ErrorTree(
+        loc,
+        "interpreting llvm.memcpy can't get dst memory from the interpreter");
+
+  if (srcAddrOr.isError())
+    return ErrorTree(
+        loc,
+        "interpreting llvm.memcpy can't get src memory from the interpreter");
+
+  std::memcpy(*dstAddrOr, *srcAddrOr, count.getInt());
+
+  return success();
+}
+
+static ErrorTreeOrSuccess interpretPOPIntrinsics(StringAttr name, Location loc,
+                                                 ArrayRef<Attribute> operands,
+                                                 InterpreterState &state,
+                                                 bool &interpreted) {
+  if (name == "llvm.memcpy") {
+    interpreted = true;
+    return interpretMemcpy(loc, operands, state);
+  }
+
+  return success();
+}
+
 // Interpreting an LLVM Intrinsic is a bit awkward.  We need to create an LLVM
 // call operation, and then ask llvm to fold it for us.
 ErrorTreeOrSuccess CallLLVMIntrinsicOp::interpret(ArrayRef<Attribute> operands,
@@ -199,6 +260,13 @@ ErrorTreeOrSuccess CallLLVMIntrinsicOp::interpret(ArrayRef<Attribute> operands,
   auto name = dyn_cast<StringAttr>(getIntrinAttr());
   if (!name)
     return ErrorTree(getLoc(), "unknown intrinsic opcode");
+
+  // Handle some special case used as pop intrinsics first.
+  bool interpreted = false;
+  ErrorTreeOrSuccess popInterpResult =
+      interpretPOPIntrinsics(name, getLoc(), operands, state, interpreted);
+  if (interpreted)
+    return popInterpResult;
 
   // See if LLVM knows what this is.
   llvm::Intrinsic::ID id = llvm::Intrinsic::lookupIntrinsicID(name.strref());
