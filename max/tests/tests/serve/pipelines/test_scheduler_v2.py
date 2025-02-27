@@ -23,16 +23,19 @@ from max.serve.pipelines.scheduler_v2 import (
     TokenGenerationSchedulerConfig,
     TokenGenerationSchedulerV2,
 )
-from max.serve.scheduler.queues import STOP_STREAM
 
 
 @pytest.fixture
 def mock_pipeline():
     def next_token_behavior(batch, num_steps=1):
-        responses = []
-        for _ in range(num_steps):
-            step_response = {}
-            for req_id, request in batch.items():
+        responses = {}
+
+        print(f"batch: {batch}")
+        for request_id, request in batch.items():
+            responses[request_id] = Mock()
+            responses[request_id].tokens = []
+            responses[request_id].is_done = False
+            for _ in range(num_steps):
                 # Simulate chunked prefill behavior
                 if request.active_idx < request.current_length:
                     request.start_idx = request.active_idx
@@ -46,8 +49,9 @@ def mock_pipeline():
                     request.active_idx += 1
                     request.current_length += 1
                     request.active_length = 1
-                step_response[req_id] = Mock()
-            responses.append(step_response)
+
+                responses[request_id].tokens.append(Mock())
+
         return responses
 
     pipeline = Mock()
@@ -206,12 +210,15 @@ def test_handle_terminated_responses(scheduler):
         "req1": create_mock_request(cache_seq_id=0),
         "req2": create_mock_request(cache_seq_id=1),
     }
-    batch_responses = [{"req1": Mock()}]  # req2 is terminated
+    batch_responses = {"req1": Mock(), "req2": Mock()}
+    batch_responses["req1"].is_done = False
+    batch_responses["req1"].tokens = [Mock()]
+    batch_responses["req2"].is_done = True  # req2 is terminated
+    batch_responses["req2"].tokens = []
 
     scheduler._handle_terminated_responses(batch_executed, batch_responses)
 
     assert "req2" not in batch_executed
-    assert batch_responses[0]["req2"] == STOP_STREAM
     assert 1 in scheduler.available_cache_indices
     scheduler.pipeline.release.assert_called_once()
 
@@ -226,15 +233,14 @@ def test_handle_chunked_requests(scheduler):
         "req1": req_1,
         "req2": req_2,
     }
-    batch_responses = [
-        {"req1": Mock()},
-        {"req2": Mock()},
-    ]  # response for req2 is invalid
+    batch_responses = {"req1": Mock(), "req2": Mock()}
+    batch_responses["req1"].is_done = False
+    batch_responses["req2"].is_done = False
 
     scheduler._handle_chunked_requests(batch_executed, batch_responses)
 
     assert "req2" not in batch_executed
-    assert "req2" not in batch_responses[0]
+    assert "req2" not in batch_responses
     assert not scheduler.request_q.empty()
 
 

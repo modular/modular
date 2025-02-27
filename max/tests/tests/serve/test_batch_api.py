@@ -44,7 +44,7 @@ async def test_batched_requests_pipeline(num_requests):
         echo_gen = EchoTokenGenerator()
 
         async def _batch_execute(batch):
-            return echo_gen.next_token(batch)[0]
+            return echo_gen.next_token(batch)
 
         # model_tasks = start_model_testing_tasks(
         #     pipeline.token_gen_queue, _batch_execute, False
