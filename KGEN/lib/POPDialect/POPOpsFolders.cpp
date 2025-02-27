@@ -16,6 +16,7 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/bit.h"
 #include "llvm/Support/Base64.h"
+#include "llvm/Support/Compression.h"
 #include "llvm/Support/xxhash.h"
 
 #include <unistd.h>
@@ -2065,6 +2066,50 @@ OpFoldResult StringBase64DecodeOp::fold(FoldAdaptor adaptor) {
   if (auto err = llvm::decodeBase64(str.getValue(), decoded))
     return {};
   return StringAttr::get(std::string(decoded.begin(), decoded.end()),
+                         StringType::get(getContext()));
+}
+
+//===----------------------------------------------------------------------===//
+// StringCompressOp
+//===----------------------------------------------------------------------===//
+
+static constexpr llvm::compression::Format kCompressionFormat =
+    llvm::compression::Format::Zlib;
+static constexpr int kCompressionLevel =
+    llvm::compression::zlib::BestSizeCompression;
+
+static constexpr llvm::compression::Params
+    kCompressionParams(kCompressionFormat, kCompressionLevel);
+
+OpFoldResult StringCompressOp::fold(FoldAdaptor adaptor) {
+  auto str = dyn_cast_or_null<StringAttr>(adaptor.getStr());
+  if (!str)
+    return {};
+
+  SmallVector<uint8_t, 1024> compressed;
+  llvm::compression::compress(
+      kCompressionParams, arrayRefFromStringRef(str.getValue()), compressed);
+
+  return StringAttr::get(toStringRef(compressed),
+                         StringType::get(getContext()));
+}
+
+//===----------------------------------------------------------------------===//
+// StringDeompressOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult StringDecompressOp::fold(FoldAdaptor adaptor) {
+  auto str = dyn_cast_or_null<StringAttr>(adaptor.getStr());
+  if (!str)
+    return {};
+
+  SmallVector<uint8_t, 1024> decompressed;
+  if (auto err = llvm::compression::decompress(
+          kCompressionFormat, arrayRefFromStringRef(str.getValue()),
+          decompressed, str.getValue().size()))
+    return {};
+
+  return StringAttr::get(toStringRef(decompressed),
                          StringType::get(getContext()));
 }
 
