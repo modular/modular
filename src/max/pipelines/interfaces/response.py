@@ -117,11 +117,23 @@ class TextGenerationResponse:
     def __init__(
         self, tokens: list[TextResponse], final_status: TextGenerationStatus
     ) -> None:
-        self.tokens = tokens
-        self.final_status = final_status
+        self._tokens = tokens
+        self._final_status = final_status
 
+    @property
     def is_done(self) -> bool:
-        return self.final_status.is_done
+        return self._final_status.is_done
+
+    @property
+    def tokens(self) -> list[TextResponse]:
+        return self._tokens
+
+    @property
+    def final_status(self) -> TextGenerationStatus:
+        return self._final_status
 
     def append_token(self, token: TextResponse) -> None:
-        self.tokens.append(token)
+        self._tokens.append(token)
+
+    def update_status(self, status: TextGenerationStatus) -> None:
+        self._final_status = status

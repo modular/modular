@@ -42,7 +42,13 @@ from transformers import AutoTokenizer
 
 from .config import PipelineConfig
 from .context import InputContext
-from .interfaces import LogProbabilities, TextResponse, TokenGenerator
+from .interfaces import (
+    LogProbabilities,
+    TextGenerationResponse,
+    TextGenerationStatus,
+    TextResponse,
+    TokenGenerator,
+)
 from .kv_cache import KVCacheManager, KVCacheParams
 from .sampling import token_sampler
 
@@ -565,7 +571,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         self,
         batch: dict[str, T],
         num_steps: int,
-    ) -> list[dict[str, TextResponse]]:
+    ) -> dict[str, TextGenerationResponse]:
         """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
         then decode the tokens holistically and return the list of decoded tokens.
         """
@@ -695,11 +701,12 @@ class TextGenerationPipeline(TokenGenerator[T]):
         tracer.pop()  # pops kv_manager.step
 
         # Prepare the response, pruning away completed requests as we go.
-        res: list[dict[str, TextResponse]] = [{} for _ in range(num_steps)]
+        res: dict[str, TextGenerationResponse] = {}
         tracer.push("prepare_response")
         for batch_index, (request_id, context) in enumerate(batch.items()):
-            step = 0
-            while step < num_steps:
+            status = TextGenerationStatus.ACTIVE
+            res[request_id] = TextGenerationResponse([], status)
+            for step in range(num_steps):
                 # Convert to a Python scalar to improve serialization performance.
                 next_token = int(generated_tokens_host[batch_index, step])
 
@@ -715,19 +722,6 @@ class TextGenerationPipeline(TokenGenerator[T]):
                     default=context.max_length,
                 )
 
-                # The current length is incremented above, during context.update
-                # As such, if we are already at the max length, exiting here
-                # would cause us to miss updating the request.
-                # As such, we overrun here by 1, ensuring that the context object
-                # tracks special tokens like eos_token_id appropriately for benchmarking
-                # and other uses, but that they are not returned in the request.
-                if (
-                    next_token in self._eos_token_id
-                    or context.current_length > max_length
-                ):
-                    step += 1
-                    break
-
                 # Set up TextResponse
                 log_probs: Optional[LogProbabilities] = None
                 if compute_log_probabilities and (
@@ -735,10 +729,30 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 ):
                     log_probs = log_probs_for_step[batch_index]
 
-                # Removing the positional arguments here, go about 100us faster.
-                res[step][request_id] = TextResponse(next_token, log_probs)
+                # Update status
+                # If its eos, dont add it to the token array.
+                if next_token in self._eos_token_id:
+                    status = TextGenerationStatus.END_OF_SEQUENCE
+                    res[request_id].update_status(status)
+                elif context.current_length == max_length:
+                    status = TextGenerationStatus.MAXIMUM_LENGTH
+                    res[request_id].append_token(
+                        TextResponse(next_token, log_probs)
+                    )
+                    res[request_id].update_status(status)
+                # This practically, should not be hit, as once the context object
+                # reaches the max_length, we should break from this current loop.
+                # TODO: Explore cleaning up max length checks.
+                elif context.current_length > max_length:
+                    status = TextGenerationStatus.MAXIMUM_LENGTH
+                    res[request_id].update_status(status)
+                else:
+                    res[request_id].append_token(
+                        TextResponse(next_token, log_probs)
+                    )
 
-                step += 1
+                if status.is_done:
+                    break
 
         return res
 

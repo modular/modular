@@ -76,22 +76,22 @@ async def stream_text_to_console(
                 num_steps=num_steps,
             )
 
-            for response in responses:
-                if req_id not in response:
-                    # next_token is expected to omit the return if
-                    # it encounters eos.
+            for request_idx, response in responses.items():
+                if response.is_done:
                     generate_again = False
-                    break
 
-                encoded_text = response[req_id].next_token
-                response_text = await tokenizer.decode(context, encoded_text)
-                if metrics:
-                    if first_token:
-                        first_token = False
-                        metrics.signpost("first_token")
-                    metrics.new_token()
-                if print_tokens:
-                    print(response_text, end="", flush=True)
+                for text_response in response.tokens:
+                    encoded_text = text_response.next_token
+                    response_text = await tokenizer.decode(
+                        context, encoded_text
+                    )
+                    if metrics:
+                        if first_token:
+                            first_token = False
+                            metrics.signpost("first_token")
+                        metrics.new_token()
+                    if print_tokens:
+                        print(response_text, end="", flush=True)
 
             # Yield to the event loop.  If at no other point (e.g.
             # tokenizer.decode which we await earlier does not yield to the

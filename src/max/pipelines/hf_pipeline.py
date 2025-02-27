@@ -34,6 +34,8 @@ from .context import TextContext
 from .interfaces import (
     EmbeddingsGenerator,
     EmbeddingsResponse,
+    TextGenerationResponse,
+    TextGenerationStatus,
     TextResponse,
     TokenGenerator,
 )
@@ -119,7 +121,7 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
 
     def next_token(
         self, batch: dict[str, TextContext], num_steps: int
-    ) -> list[dict[str, TextResponse]]:
+    ) -> dict[str, TextGenerationResponse]:
         """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
         then decode the tokens holistically and return the list of decoded tokens.
         """
@@ -183,8 +185,10 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
         generated_tokens = generated_tokens.cpu()
 
         # Prepare the response, pruning away completed requests as we go.
-        res: list[dict[str, TextResponse]] = [{} for i in range(num_steps)]
+        res: dict[str, TextGenerationResponse] = {}
         for batch_idx, (request_id, context) in enumerate(batch.items()):
+            status = TextGenerationStatus.ACTIVE
+            res[request_id] = TextGenerationResponse([], status)
             for step in range(num_steps):
                 next_token_id = generated_tokens[batch_idx, step].item()
 
@@ -200,13 +204,22 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
                     if context.max_length is None
                     else context.max_length
                 )
-                if (
-                    next_token_id in self._eos_token_id
-                    or context.current_length > max_length
-                ):
-                    break
 
-                res[step][request_id] = TextResponse(next_token)
+                if next_token_id in self._eos_token_id:
+                    status = TextGenerationStatus.END_OF_SEQUENCE
+                    res[request_id].update_status(status)
+                elif context.current_length > max_length:
+                    status = TextGenerationStatus.MAXIMUM_LENGTH
+                    res[request_id].update_status(status)
+                elif context.current_length == max_length:
+                    res[request_id].append_token(TextResponse(next_token))
+                    status = TextGenerationStatus.MAXIMUM_LENGTH
+                    res[request_id].update_status(status)
+                else:
+                    res[request_id].append_token(TextResponse(next_token))
+
+                if status.is_done:
+                    break
 
         return res
 
