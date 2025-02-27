@@ -927,6 +927,7 @@ fn foreach[
     target: StringLiteral = "cpu",
     simd_width: Int = get_kernel_simd_width[type, target](),
     _synchronous: Bool = False,
+    _trace_name: StringLiteral = "mogg.for_each",
 ](tensor: ManagedTensorSlice[type=type, rank=rank]):
     @parameter
     @always_inline
@@ -936,12 +937,13 @@ fn foreach[
         var val = func[width](rebind[IndexList[tensor.rank]](index))
         tensor._fused_store(index, val)
 
-    algorithm.functional.elementwise[
-        elementwise_fn_wrapper,
-        simd_width,
-        use_blocking_impl=_synchronous,
-        target=target,
-    ](tensor.shape())
+    with Trace[TraceLevel.OP, target=target](_trace_name):
+        algorithm.functional.elementwise[
+            elementwise_fn_wrapper,
+            simd_width,
+            use_blocking_impl=_synchronous,
+            target=target,
+        ](tensor.shape())
 
 
 @__mogg_intrinsic_attr("mogg.for_each")
@@ -954,6 +956,7 @@ fn foreach[
     target: StringLiteral = "cpu",
     simd_width: Int = get_kernel_simd_width[type, target](),
     _synchronous: Bool = False,
+    _trace_name: StringLiteral = "mogg.for_each",
 ](tensor: ManagedTensorSlice[type=type, rank=rank], ctx: DeviceContextPtr):
     """Apply the function `func` to each element of the tensor slice.
 
@@ -964,6 +967,7 @@ fn foreach[
         target: A `StringLiteral` indicating the type of the target device (e.g. "cpu", "gpu").
         simd_width: The SIMD width for the target (usually leave this as its default value).
         _synchronous: True to run the custom op synchronously in the runtime (defaults to False).
+        _trace_name: Name of the executed operation displayed in the trace_description.
 
     Args:
         tensor: The output tensor slice which receives the return values from `func`.
@@ -978,12 +982,13 @@ fn foreach[
         var val = func[width](rebind[IndexList[tensor.rank]](index))
         tensor._fused_store(index, val)
 
-    algorithm.functional.elementwise[
-        elementwise_fn_wrapper,
-        simd_width,
-        use_blocking_impl=_synchronous,
-        target=target,
-    ](tensor.shape(), ctx)
+    with Trace[TraceLevel.OP, target=target](_trace_name):
+        algorithm.functional.elementwise[
+            elementwise_fn_wrapper,
+            simd_width,
+            use_blocking_impl=_synchronous,
+            target=target,
+        ](tensor.shape(), ctx)
 
 
 # TensorCopy intrinsic used by view kernels.
@@ -997,7 +1002,7 @@ fn view_copy_impl[
     *,
     target: StringLiteral,
     _synchronous: Bool,
-    trace_name: StringLiteral = "foreach",
+    trace_name: StringLiteral = "mogg.view_copy_impl",
 ](
     z: ManagedTensorSlice[type=type, rank=rank],
     x: ManagedTensorSlice[static_spec=spec],
@@ -1014,8 +1019,12 @@ fn view_copy_impl[
     fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
         return simd_load_from_managed_tensor_slice[simd_width=width](x, idx)
 
-    with Trace[TraceLevel.OP, target=target](trace_name):
-        foreach[func, target=target, _synchronous=_synchronous](z, ctx)
+    foreach[
+        func,
+        target=target,
+        _synchronous=_synchronous,
+        _trace_name=trace_name,
+    ](z, ctx)
 
 
 fn _compatible_with[x: DimList, y: DimList]() -> Bool:
