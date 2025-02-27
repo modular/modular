@@ -7407,7 +7407,60 @@ fn _check_signal_buffer_size[
         )
 
 
-@compiler.register("mo.distributed.allreduce.2gpu.sum")
+@compiler.register("mo.distributed.allreduce.1gpu.sum", num_dps_outputs=1)
+struct DistributedAllReduceSum1Devices:
+    alias num_devices = 1
+    alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
+
+    @staticmethod
+    @always_inline
+    fn execute[
+        type: DType,
+        rank: Int,
+        target: StringLiteral,
+    ](
+        output0: ManagedTensorSlice[type=type, rank=rank],
+        signal_buffer0: ManagedTensorSlice[type = DType.uint8, rank=1],
+        inputs: VariadicTensors[
+            type, rank, size = Self.num_devices, io_spec=IOUnknown
+        ],
+        _dev_ctxs: StaticTuple[DeviceContextPtr, Self.num_devices],
+        ctx: DeviceContextPtr,
+    ) raises:
+        var input_size_bytes = inputs[0].size() * sizeof[type]()
+        _check_signal_buffer_size[Self.max_num_blocks](
+            signal_buffer0, input_size_bytes
+        )
+
+        var dev_ctxs = List[DeviceContext](_dev_ctxs[0][])
+
+        var out_bufs = InlineArray[NDBuffer[type, rank], Self.num_devices](
+            NDBuffer[type, rank]()
+        )
+
+        out_bufs[0] = managed_tensor_slice_to_ndbuffer(output0)
+
+        var in_bufs = InlineArray[NDBuffer[type, rank], inputs.size](
+            NDBuffer[type, rank]()
+        )
+
+        @parameter
+        for i in range(inputs.size):
+            in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
+
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal[Self.max_num_blocks]], MAX_GPUS
+        ](UnsafePointer[Signal[Self.max_num_blocks]]())
+        rank_sigs[0] = signal_buffer0._ptr.bitcast[
+            Signal[Self.max_num_blocks]
+        ]()
+
+        all_reduce[ngpus = Self.num_devices](
+            dev_ctxs, in_bufs, out_bufs, rank_sigs
+        )
+
+
+@compiler.register("mo.distributed.allreduce.2gpu.sum", num_dps_outputs=2)
 struct DistributedAllReduceSum2Devices:
     alias num_devices = 2
     alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
@@ -7419,9 +7472,8 @@ struct DistributedAllReduceSum2Devices:
         rank: Int,
         target: StringLiteral,
     ](
-        outputs: VariadicTensors[
-            type, rank, size = Self.num_devices, io_spec=IOUnknown
-        ],
+        output0: ManagedTensorSlice[type=type, rank=rank],
+        output1: ManagedTensorSlice[type=type, rank=rank],
         signal_buffer0: ManagedTensorSlice[type = DType.uint8, rank=1],
         signal_buffer1: ManagedTensorSlice[type = DType.uint8, rank=1],
         inputs: VariadicTensors[
@@ -7440,13 +7492,12 @@ struct DistributedAllReduceSum2Devices:
 
         var dev_ctxs = List[DeviceContext](_dev_ctxs[0][], _dev_ctxs[1][])
 
-        var out_bufs = InlineArray[NDBuffer[type, rank], outputs.size](
+        var out_bufs = InlineArray[NDBuffer[type, rank], Self.num_devices](
             NDBuffer[type, rank]()
         )
 
-        @parameter
-        for i in range(outputs.size):
-            out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
+        out_bufs[0] = managed_tensor_slice_to_ndbuffer(output0)
+        out_bufs[1] = managed_tensor_slice_to_ndbuffer(output1)
 
         var in_bufs = InlineArray[NDBuffer[type, rank], inputs.size](
             NDBuffer[type, rank]()
@@ -7471,7 +7522,7 @@ struct DistributedAllReduceSum2Devices:
         )
 
 
-@compiler.register("mo.distributed.allreduce.4gpu.sum")
+@compiler.register("mo.distributed.allreduce.4gpu.sum", num_dps_outputs=4)
 struct DistributedAllReduceSum4Devices:
     alias num_devices = 4
     alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
@@ -7483,9 +7534,10 @@ struct DistributedAllReduceSum4Devices:
         rank: Int,
         target: StringLiteral,
     ](
-        outputs: VariadicTensors[
-            type, rank, size = Self.num_devices, io_spec=IOUnknown
-        ],
+        output0: ManagedTensorSlice[type=type, rank=rank],
+        output1: ManagedTensorSlice[type=type, rank=rank],
+        output2: ManagedTensorSlice[type=type, rank=rank],
+        output3: ManagedTensorSlice[type=type, rank=rank],
         signal_buffer0: ManagedTensorSlice[type = DType.uint8, rank=1],
         signal_buffer1: ManagedTensorSlice[type = DType.uint8, rank=1],
         signal_buffer2: ManagedTensorSlice[type = DType.uint8, rank=1],
@@ -7514,13 +7566,14 @@ struct DistributedAllReduceSum4Devices:
             _dev_ctxs[0][], _dev_ctxs[1][], _dev_ctxs[2][], _dev_ctxs[3][]
         )
 
-        var out_bufs = InlineArray[NDBuffer[type, rank], outputs.size](
+        var out_bufs = InlineArray[NDBuffer[type, rank], Self.num_devices](
             NDBuffer[type, rank]()
         )
 
-        @parameter
-        for i in range(outputs.size):
-            out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
+        out_bufs[0] = managed_tensor_slice_to_ndbuffer(output0)
+        out_bufs[1] = managed_tensor_slice_to_ndbuffer(output1)
+        out_bufs[2] = managed_tensor_slice_to_ndbuffer(output2)
+        out_bufs[3] = managed_tensor_slice_to_ndbuffer(output3)
 
         var in_bufs = InlineArray[NDBuffer[type, rank], inputs.size](
             NDBuffer[type, rank]()
@@ -7543,6 +7596,131 @@ struct DistributedAllReduceSum4Devices:
             Signal[Self.max_num_blocks]
         ]()
         rank_sigs[3] = signal_buffer3._ptr.bitcast[
+            Signal[Self.max_num_blocks]
+        ]()
+
+        all_reduce[ngpus = Self.num_devices](
+            dev_ctxs, in_bufs, out_bufs, rank_sigs
+        )
+
+
+@compiler.register("mo.distributed.allreduce.8gpu.sum", num_dps_outputs=8)
+struct DistributedAllReduceSum8Devices:
+    alias num_devices = 8
+    alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
+
+    @staticmethod
+    @always_inline
+    fn execute[
+        type: DType,
+        rank: Int,
+        target: StringLiteral,
+    ](
+        output0: ManagedTensorSlice[type=type, rank=rank],
+        output1: ManagedTensorSlice[type=type, rank=rank],
+        output2: ManagedTensorSlice[type=type, rank=rank],
+        output3: ManagedTensorSlice[type=type, rank=rank],
+        output4: ManagedTensorSlice[type=type, rank=rank],
+        output5: ManagedTensorSlice[type=type, rank=rank],
+        output6: ManagedTensorSlice[type=type, rank=rank],
+        output7: ManagedTensorSlice[type=type, rank=rank],
+        signal_buffer0: ManagedTensorSlice[type = DType.uint8, rank=1],
+        signal_buffer1: ManagedTensorSlice[type = DType.uint8, rank=1],
+        signal_buffer2: ManagedTensorSlice[type = DType.uint8, rank=1],
+        signal_buffer3: ManagedTensorSlice[type = DType.uint8, rank=1],
+        signal_buffer4: ManagedTensorSlice[type = DType.uint8, rank=1],
+        signal_buffer5: ManagedTensorSlice[type = DType.uint8, rank=1],
+        signal_buffer6: ManagedTensorSlice[type = DType.uint8, rank=1],
+        signal_buffer7: ManagedTensorSlice[type = DType.uint8, rank=1],
+        inputs: VariadicTensors[
+            type, rank, size = Self.num_devices, io_spec=IOUnknown
+        ],
+        _dev_ctxs: StaticTuple[DeviceContextPtr, Self.num_devices],
+        ctx: DeviceContextPtr,
+    ) raises:
+        var input_size_bytes = inputs[0].size() * sizeof[type]()
+        _check_signal_buffer_size[Self.max_num_blocks](
+            signal_buffer0, input_size_bytes
+        )
+        _check_signal_buffer_size[Self.max_num_blocks](
+            signal_buffer1, input_size_bytes
+        )
+        _check_signal_buffer_size[Self.max_num_blocks](
+            signal_buffer2, input_size_bytes
+        )
+        _check_signal_buffer_size[Self.max_num_blocks](
+            signal_buffer3, input_size_bytes
+        )
+        _check_signal_buffer_size[Self.max_num_blocks](
+            signal_buffer4, input_size_bytes
+        )
+        _check_signal_buffer_size[Self.max_num_blocks](
+            signal_buffer5, input_size_bytes
+        )
+        _check_signal_buffer_size[Self.max_num_blocks](
+            signal_buffer6, input_size_bytes
+        )
+        _check_signal_buffer_size[Self.max_num_blocks](
+            signal_buffer7, input_size_bytes
+        )
+
+        var dev_ctxs = List[DeviceContext](
+            _dev_ctxs[0][],
+            _dev_ctxs[1][],
+            _dev_ctxs[2][],
+            _dev_ctxs[3][],
+            _dev_ctxs[4][],
+            _dev_ctxs[5][],
+            _dev_ctxs[6][],
+            _dev_ctxs[7][],
+        )
+
+        var out_bufs = InlineArray[NDBuffer[type, rank], Self.num_devices](
+            NDBuffer[type, rank]()
+        )
+
+        out_bufs[0] = managed_tensor_slice_to_ndbuffer(output0)
+        out_bufs[1] = managed_tensor_slice_to_ndbuffer(output1)
+        out_bufs[2] = managed_tensor_slice_to_ndbuffer(output2)
+        out_bufs[3] = managed_tensor_slice_to_ndbuffer(output3)
+        out_bufs[4] = managed_tensor_slice_to_ndbuffer(output0)
+        out_bufs[5] = managed_tensor_slice_to_ndbuffer(output1)
+        out_bufs[6] = managed_tensor_slice_to_ndbuffer(output2)
+        out_bufs[7] = managed_tensor_slice_to_ndbuffer(output3)
+
+        var in_bufs = InlineArray[NDBuffer[type, rank], inputs.size](
+            NDBuffer[type, rank]()
+        )
+
+        @parameter
+        for i in range(inputs.size):
+            in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
+
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal[Self.max_num_blocks]], MAX_GPUS
+        ](UnsafePointer[Signal[Self.max_num_blocks]]())
+        rank_sigs[0] = signal_buffer0._ptr.bitcast[
+            Signal[Self.max_num_blocks]
+        ]()
+        rank_sigs[1] = signal_buffer1._ptr.bitcast[
+            Signal[Self.max_num_blocks]
+        ]()
+        rank_sigs[2] = signal_buffer2._ptr.bitcast[
+            Signal[Self.max_num_blocks]
+        ]()
+        rank_sigs[3] = signal_buffer3._ptr.bitcast[
+            Signal[Self.max_num_blocks]
+        ]()
+        rank_sigs[4] = signal_buffer0._ptr.bitcast[
+            Signal[Self.max_num_blocks]
+        ]()
+        rank_sigs[5] = signal_buffer1._ptr.bitcast[
+            Signal[Self.max_num_blocks]
+        ]()
+        rank_sigs[6] = signal_buffer2._ptr.bitcast[
+            Signal[Self.max_num_blocks]
+        ]()
+        rank_sigs[7] = signal_buffer3._ptr.bitcast[
             Signal[Self.max_num_blocks]
         ]()
 
