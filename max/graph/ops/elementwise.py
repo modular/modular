@@ -854,6 +854,7 @@ Computes the elementwise round of a symbolic tensor.
 
 Creates a new op node to compute the elementwise round of a
 symbolic tensor and adds it to the graph, returning the symbolic result.
+Rounding is done with ties towards the nearest even number.
 
 For example, if the model has one input tensor:
 
@@ -875,25 +876,6 @@ Args:
 Returns:
     A new symbolic tensor value representing the output of the absolute
     value computation.
-
-Raises:
-    Error: If the symbol doesn't represent a tensor value.
-"""
-
-roundeven = _elementwise_unary(rmo.mo_roundeven)
-"""
-Computes the elementwise roundeven of a symbolic tensor.
-
-Creates a new op node to compute the elementwise roundeven of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
-
-Args:
-    value: The symbolic tensor to use as the input to the roundeven
-        computation. If it's not a floating-point DType, an exception will be raised.
-
-Returns:
-    A new symbolic tensor value representing the output of the absolute
-        value computation.
 
 Raises:
     Error: If the symbol doesn't represent a tensor value.
