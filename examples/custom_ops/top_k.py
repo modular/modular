@@ -106,15 +106,6 @@ def main():
         description="Top-K sampling with custom ops"
     )
     parser.add_argument(
-        "--stress-test",
-        type=int,
-        default=0,
-        help=(
-            "Number of times to repeat input for stress testing. "
-            "On NVIDIA A100, 250_000_000 takes less than 0.5ms and uses over 75%% of its memory."
-        ),
-    )
-    parser.add_argument(
         "--cpu",
         action="store_true",
         help="Run on CPU even if there is a GPU available.",
@@ -134,10 +125,6 @@ def main():
 
     # Get probabilities of next word for each word in the `word_predictions` list
     probabilities = frequencies.next_word_probabilities(word_predictions)
-
-    # If stress testing, repeat the input the specified number of times
-    if args.stress_test > 0:
-        probabilities = np.repeat(probabilities, args.stress_test, axis=0)
 
     batch_size = len(probabilities)
     K = frequencies.max_next_words
@@ -182,9 +169,6 @@ def main():
     print(f"Sampling top k: {K} for batch size: {batch_size}")
 
     values, indices = model.execute(input_tensor)
-
-    if args.stress_test > 0:
-        return
 
     # Copy values and indices back to the CPU to be read.
     assert isinstance(values, Tensor)

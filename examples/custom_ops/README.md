@@ -53,3 +53,9 @@ The execution has two phases: first a `kernels.mojopkg` is compiled from the
 custom Mojo kernel, and then the graph is constructed and run in Python. The
 inference session is pointed to the `kernels.mojopkg` in order to load the
 custom operations.
+
+You can also run benchmarks to compare the performance of your GPU to your CPU:
+
+```sh
+magic run benchmark
+```
