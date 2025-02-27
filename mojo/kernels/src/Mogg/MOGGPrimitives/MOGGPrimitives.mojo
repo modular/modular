@@ -524,11 +524,9 @@ fn mgp_tensor_extract_buffer[
 
 @register_internal("mgp.buffer.alloc")
 @no_inline
-fn mgp_buffer_alloc[
-    bRawAlign: UInt64
-](byte_size: Int, dev_context: DeviceContextPtr) raises -> NDBuffer[
-    DType.int8, 1
-]:
+fn mgp_buffer_alloc(
+    byte_size: Int, dev_context: DeviceContextPtr
+) raises -> NDBuffer[DType.int8, 1]:
     # Default to alignment of 0 which means kPreferredMemoryAlignment if cRawAlign is kUnknownSize (SizeUtils.h).
     # alias alignment = 0 if bRawAlign == UInt64.MAX else Int(bRawAlign)
 
@@ -540,9 +538,7 @@ fn mgp_buffer_alloc[
 
 @register_internal("mgp.buffer.constant")
 @export
-fn mgp_buffer_constant[
-    bRawAlign: UInt64
-](
+fn mgp_buffer_constant(
     resource_ptr: UnsafePointer[NoneType],
     resource_bytecount: Int,
     out result: NDBuffer[DType.int8, 1],
@@ -871,9 +867,7 @@ fn mgp_device_context_destroy(dev_ctx: DeviceContextPtr):
 
 @register_internal("mgp.sync")
 @no_inline
-fn mgp_sync[
-    bDevice: StringLiteral,
-](ctx: StateContext, dev_ctx: DeviceContextPtr) raises:
+fn mgp_sync(ctx: StateContext, dev_ctx: DeviceContextPtr) raises:
     dev_ctx[].synchronize()
 
 
