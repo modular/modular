@@ -27,7 +27,7 @@ def test_revision_for_hf_repo() -> None:
         hf_repo_lock.revision_for_hf_repo(EXAMPLE_NONEXISTENT_KEY)
 
 
-@mock.patch("max.pipelines.config.repo_exists", return_value=True)
+@mock.patch("huggingface_hub.repo_exists", return_value=True)
 def test_apply_to_config(repo_exists_mock: mock.Mock) -> None:
     config = pipelines.PipelineConfig(model_path=EXAMPLE_KEY)
     assert config.huggingface_revision == "main"
