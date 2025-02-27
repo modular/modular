@@ -3,9 +3,9 @@ repos:
     hooks:
       - id: mojo-format
         name: mojo-format
-        entry: mojo format
+        entry: mojo format mojo
         language: system
-        files: '^(mojo|examples/mojo).*\.(mojo|🔥|py)$'
+        files: '\.(mojo|🔥|py)$'
         stages: [commit]
       - id: check-docstrings
         name: check-docstrings
@@ -17,7 +17,7 @@ repos:
         name: check-license
         entry: mojo mojo/stdlib/scripts/check_licenses.mojo
         language: system
-        files: '^(mojo|examples/mojo).*\.(mojo|🔥|py)$'
+        files: '\.(mojo|🔥|py)$'
         stages: [commit]
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.40.0

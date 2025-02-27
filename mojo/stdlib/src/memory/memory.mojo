@@ -253,11 +253,21 @@ fn memcpy[
         count: The number of elements to copy.
     """
     var n = count * sizeof[dest.type]()
-    _memcpy_impl(
-        dest.bitcast[Byte]().origin_cast[origin=MutableAnyOrigin](),
-        src.bitcast[Byte]().origin_cast[origin=MutableAnyOrigin](),
-        n,
-    )
+
+    if __mlir_op.`kgen.is_compile_time`():
+        # A fast version for the interpreter to evaluate
+        # this function during compile time.
+        llvm_intrinsic["llvm.memcpy", NoneType](
+            dest.bitcast[Byte]().origin_cast[origin=MutableAnyOrigin](),
+            src.bitcast[Byte]().origin_cast[origin=MutableAnyOrigin](),
+            n,
+        )
+    else:
+        _memcpy_impl(
+            dest.bitcast[Byte]().origin_cast[origin=MutableAnyOrigin](),
+            src.bitcast[Byte]().origin_cast[origin=MutableAnyOrigin](),
+            n,
+        )
 
 
 # ===-----------------------------------------------------------------------===#

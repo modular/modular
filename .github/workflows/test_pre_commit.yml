@@ -48,5 +48,5 @@ jobs:
           pre-commit install
       
       - name: Run pre-commit
-        run: magic run --manifest-path mojo pre-commit run --all-files
+        run: magic run pre-commit run --all-files
 
