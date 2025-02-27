@@ -34,7 +34,7 @@ def _init_device_ndbuffer_from_goldens[
 ]:
     """Initializes a device buffer with a set of golden values."""
     host_tensor = HostNDBuffer[type, len(shape), shape=shape]()
-    memcpy(dest=host_tensor.tensor.data, src=goldens.data, count=goldens.size)
+    memcpy(dest=host_tensor.tensor.data, src=goldens.data, count=len(goldens))
 
     # Copy tensor to device.
     device_tensor = DeviceNDBuffer[
@@ -86,9 +86,9 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
     alias num_layers = 1
 
     fn _max[type: DType, items: List[Scalar[type]]]() -> Scalar[type]:
-        constrained[items.size > 0, "empty list in _max"]()
+        constrained[len(items) > 0, "empty list in _max"]()
         max_item = items[0]
-        for i in range(1, items.size):
+        for i in range(1, len(items)):
             if items[i] > max_item:
                 max_item = items[i]
         return max_item
@@ -174,7 +174,7 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
     # Create and initialize golden outputs.
     expected_q_out_buffer = q_out_golden[type]()
     debug_assert(
-        expected_q_out_buffer.size == q_dev.tensor.num_elements(),
+        len(expected_q_out_buffer) == q_dev.tensor.num_elements(),
         "invalid expected q out init",
     )
     expected_q_out = NDBuffer[type, rank = q_dev.rank, shape = q_dev.shape](
@@ -182,7 +182,7 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
     )
     expected_k_out_buffer = k_out_golden[type]()
     debug_assert(
-        expected_k_out_buffer.size == batch_size * seq_len * dim,
+        len(expected_k_out_buffer) == batch_size * seq_len * dim,
         "invalid expected k out init",
     )
 
@@ -230,7 +230,7 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
             k_cache_host_batch_item,
             expected_k_out_buffer.data + (batch_idx * seq_len * dim),
             # Number of elements in one batch item.
-            expected_k_out_buffer.size // batch_size,
+            len(expected_k_out_buffer) // batch_size,
         )
 
     # Ensure the lifetimes of the KV cache and output, since their data is
