@@ -10,6 +10,9 @@
 
 from tensor import (
     ManagedTensorSlice,
+    StaticTensorSpec,
+    InputTensor,
+    OutputTensor,
     RuntimeTensorSpec,
     Tensor,
     TensorShape,

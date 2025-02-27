@@ -149,6 +149,14 @@ struct Device(Stringable):
 
         return DeviceMemory(bytecount, self, name)
 
+    fn unsafe_ptr(self) -> UnsafePointer[NoneType]:
+        """Gets the underlying pointer to the Device.
+
+        Returns:
+          The underlying pointer of the Device.
+        """
+        return self._cdev._ptr
+
     fn _free(self, data: UnsafePointer[UInt8]) raises:
         self._cdev.free_data(self._lib.value(), data)
 
