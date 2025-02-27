@@ -738,6 +738,9 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
     } else if (param.getName() == kMOGGLambdasHaveFusionParameterName) {
       func->setDiscardableAttr(
           builder.getStringAttr(kMOGGLambdasHaveFusionLabel), param);
+    } else if (param.getName() == kMOGGTraceNameParameterName) {
+      func->setDiscardableAttr(builder.getStringAttr(kMOGGTraceNameLabel),
+                               param);
     }
   }
 
