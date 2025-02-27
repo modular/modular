@@ -191,7 +191,6 @@ def test_warp_specialize_gemm_with_multicasting[
         wgmma_n=wgmma_n,
         num_consumer=num_consumer,
         partitioned_multicast=partitioned_multicast,
-        use_persistant_kernel=False,
     ](
         c_device.tensor,
         a_device.tensor,
