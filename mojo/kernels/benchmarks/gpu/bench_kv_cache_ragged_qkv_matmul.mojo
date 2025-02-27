@@ -58,15 +58,19 @@ def execute_kv_cache_ragged_matmul[
     alias hidden_size = num_q_heads * head_dim
     alias combined_hidden_size = (num_q_heads + 2 * num_kv_heads) * head_dim
     var num_blocks = batch_size + 1
-    alias num_layers = 1
     alias max_seq_length_cache = 1024
+    alias num_layers = 1
+    alias cache_size = 10
     alias is_context_encoding = True  # value is ignored for matmul kernel
     alias layer_idx = 0
 
+    var max_context_length = 0
+    var max_prompt_length = 0
     var total_seq_len: UInt32 = 0
     var prefix_sums_host = HostNDBuffer[DType.uint32, 1](
         (batch_size + 1,),
     )
+
     for i in range(batch_size):
         var length: UInt32
         if use_random_lengths:
@@ -76,7 +80,8 @@ def execute_kv_cache_ragged_matmul[
 
         prefix_sums_host.tensor[i] = length
         total_seq_len += length
-
+        max_context_length = max(max_context_length, Int(length + cache_size))
+        max_prompt_length = max(max_prompt_length, Int(length))
     prefix_sums_host.tensor[batch_size] = total_seq_len
     var prefix_sums_device = prefix_sums_host.copy_to_device(ctx)
 
@@ -140,7 +145,8 @@ def execute_kv_cache_ragged_matmul[
         kv_block_device.tensor,
         cache_lengths_device.tensor,
         lookup_table_device.tensor,
-        is_context_encoding,
+        max_prompt_length,
+        max_context_length,
         layer_idx,
         CacheType.KeyIdx,
     )
@@ -148,7 +154,8 @@ def execute_kv_cache_ragged_matmul[
         kv_block_device.tensor,
         cache_lengths_device.tensor,
         lookup_table_device.tensor,
-        is_context_encoding,
+        max_prompt_length,
+        max_context_length,
         layer_idx,
         CacheType.ValueIdx,
     )
