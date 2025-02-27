@@ -170,7 +170,7 @@ from quantization.qmatmul_k import (
     matmul_Q6_K,
     matmul_Q6_K_pack_b,
 )
-from register import register_internal
+from register import register_internal, enforce_io_param
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
 from tensor_internal import (
@@ -4879,6 +4879,7 @@ fn concat_from_list_shape_impl[
 
 @compiler.register("mo.concat_from_list")
 struct ConcatFromList:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
