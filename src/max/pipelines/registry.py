@@ -23,6 +23,7 @@ from typing import Callable, Optional, Type, Union, cast
 
 import torch
 from max.graph.weights import WeightsAdapter
+from max.support.human_readable_formatter import to_human_readable_bytes
 
 from .config import (
     PipelineConfig,
@@ -65,21 +66,6 @@ _HF_PIPELINE_TASK_MAP: dict[
     PipelineTask.TEXT_GENERATION: HFTextGenerationPipeline,
     PipelineTask.EMBEDDINGS_GENERATION: HFEmbeddingsPipeline,
 }
-
-
-def _to_human_memory_size(bytes: int) -> str:
-    """Convert bytes to human readable memory size."""
-    KiB = 1024
-    MiB = KiB * 1024
-    GiB = MiB * 1024
-    TiB = GiB * 1024
-    if bytes > TiB:
-        return f"{bytes / TiB:.2f} TiB"
-    if bytes > GiB:
-        return f"{bytes / GiB:.2f} GiB"
-    if bytes > MiB:
-        return f"{bytes / MiB:.2f} MiB"
-    return f"{bytes / KiB:.2f} KiB"
 
 
 class SupportedArchitecture:
@@ -463,11 +449,11 @@ class PipelineRegistry:
                 total_size = model_weights_size + actual_kv_cache_size
 
         if free_memory:
-            free_memory_str = f" / {_to_human_memory_size(free_memory)} free"
+            free_memory_str = f" / {to_human_readable_bytes(free_memory)} free"
 
         weights_str = ""
         if model_weights_size:
-            weights_str = f"\n\t    Weights:                {_to_human_memory_size(model_weights_size)}"
+            weights_str = f"\n\t    Weights:                {to_human_readable_bytes(model_weights_size)}"
 
         if not user_provided_max_length:
             max_length_str = f"Auto-inferred max sequence length: {pipeline_config.max_length}"
@@ -487,8 +473,8 @@ class PipelineRegistry:
             "\n"
             f"\n\tEstimated memory consumption:"
             f"{weights_str}"
-            f"\n\t    KVCache allocation:     {_to_human_memory_size(actual_kv_cache_size)}"
-            f"\n\t    Total estimated:        {_to_human_memory_size(model_weights_size + actual_kv_cache_size)} used{free_memory_str}"
+            f"\n\t    KVCache allocation:     {to_human_readable_bytes(actual_kv_cache_size)}"
+            f"\n\t    Total estimated:        {to_human_readable_bytes(model_weights_size + actual_kv_cache_size)} used{free_memory_str}"
             f"\n\t{max_length_str}"
             f"\n\t{max_batch_size_str}\n"
         )
@@ -719,14 +705,14 @@ class PipelineRegistry:
     ) -> str:
         """Generate an appropriate error message based on the configuration state."""
         free_memory_str = (
-            f" / {_to_human_memory_size(original_free_memory)} free"
+            f" / {to_human_readable_bytes(original_free_memory)} free"
             if original_free_memory
             else ""
         )
 
         msg = StringIO()
         msg.write(
-            f"Estimated model and kv cache memory use exceeds available memory ({_to_human_memory_size(total_size)} {free_memory_str}). Try "
+            f"Estimated model and kv cache memory use exceeds available memory ({to_human_readable_bytes(total_size)} {free_memory_str}). Try "
         )
 
         if not found_valid_max_length and not found_valid_max_batch_size:

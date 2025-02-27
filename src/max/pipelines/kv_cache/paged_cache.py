@@ -34,6 +34,7 @@ from max.graph import (
     _OpaqueValue,
     ops,
 )
+from max.support.human_readable_formatter import to_human_readable_bytes
 
 from ._utils import build_max_lengths_tensor
 from .cache_params import KVCacheParams
@@ -194,17 +195,23 @@ class PagedKVCacheManager(KVCacheManager):
             cache_memory_per_device // single_page_size_bytes
         )
 
+        single_page_size_bytes_str = to_human_readable_bytes(
+            single_page_size_bytes
+        )
+        cache_memory_per_device_str = to_human_readable_bytes(
+            cache_memory_per_device
+        )
         if self.total_num_pages == 0:
             raise RuntimeError(
                 f"Insufficient cache memory to allocate even a single page.\n"
-                f"One page requires {single_page_size_bytes} bytes but only {cache_memory_per_device} bytes are available."
+                f"One page requires {single_page_size_bytes_str} but only {cache_memory_per_device_str} are available."
             )
 
         if max_batch_size > self.total_num_pages:
             logger.warning(
                 f"Insufficient cache memory to support a batch containing {max_batch_size} requests with one token per request. "
                 f"Need to allocate at least {max_batch_size} blocks, but only have enough memory for {self.total_num_pages} blocks. "
-                f"One page requires {single_page_size_bytes} bytes but only {cache_memory_per_device} bytes are available."
+                f"One page requires {single_page_size_bytes_str} but only {cache_memory_per_device_str} are available."
             )
 
         blocks_needed_for_max_seq_len = ceildiv(max_seq_len, page_size)
@@ -212,7 +219,7 @@ class PagedKVCacheManager(KVCacheManager):
             logger.warning(
                 f"Insufficient cache memory to support a batch containing one request at the max sequence length of {max_seq_len} tokens. "
                 f"Need to allocate at least {blocks_needed_for_max_seq_len} blocks, but only have enough memory for {self.total_num_pages} blocks. "
-                f"One page requires {single_page_size_bytes} bytes but only {cache_memory_per_device} bytes are available."
+                f"One page requires {single_page_size_bytes} but only {cache_memory_per_device} are available."
             )
 
         # call our base class constructor
