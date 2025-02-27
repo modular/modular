@@ -4,8 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
+from dataclasses import dataclass
 from functools import cached_property
-from typing import Optional
+from typing import Callable, Optional
 
 from max import mlir
 from max.dtype import DType
@@ -14,6 +17,21 @@ from . import graph
 from .quantization import QuantizationEncoding
 from .type import DeviceRef, Shape, ShapeLike
 from .value import TensorValue, Value
+
+ShardingStrategy = Callable[["Weight", int], TensorValue]
+
+
+@dataclass
+class _ShardingStrategyContainer:
+    """Container for the sharding strategy and the host weight."""
+
+    host_weight: Weight
+    shard_value: ShardingStrategy
+    """Defines how to shard a weight onto multiple devices.
+
+    Should be a callable that take the host weight, and the shard index, and
+    returns the shard value.
+    """
 
 
 class Weight(TensorValue):
@@ -29,6 +47,8 @@ class Weight(TensorValue):
     _device: Optional[DeviceRef]
     quantization_encoding: Optional[QuantizationEncoding]
     align: Optional[int]
+    sharding_strategy: Optional[_ShardingStrategyContainer]
+    shard_idx: Optional[int]
 
     def __new__(cls, *args, **kwargs):
         # Skip the `Value.__new__` method to avoid staging a `TensorValue`.
@@ -44,6 +64,7 @@ class Weight(TensorValue):
         device: Optional[DeviceRef] = None,
         quantization_encoding: Optional[QuantizationEncoding] = None,
         align: Optional[int] = None,
+        sharding_strategy: Optional[ShardingStrategy] = None,
     ):
         self.name = name
         self._dtype = dtype
@@ -51,6 +72,12 @@ class Weight(TensorValue):
         self._device = device
         self.quantization_encoding = quantization_encoding
         self.align = align
+        self.sharding_strategy = (
+            _ShardingStrategyContainer(self, sharding_strategy)
+            if sharding_strategy
+            else None
+        )
+        self.shard_idx = None
 
     @property
     def dtype(self) -> DType:
@@ -71,17 +98,16 @@ class Weight(TensorValue):
 
     @property
     def _mlir_value(self) -> mlir.Value:
-        try:
-            current_graph = graph.Graph.current
-        except LookupError:
-            raise ValueError(
-                "Cannot operate on a `max.graph.Weight` when there is no parent graph."
+        if self.sharding_strategy and self.shard_idx is not None:
+            host_weight = self.sharding_strategy.host_weight
+            tensor_value = self.sharding_strategy.shard_value(
+                host_weight, self.shard_idx
             )
-
-        # If the weight doesn't exist on the graph, `Graph.add_weight` will
-        # return a new `TensorValue`. Otherwise, this will return the existing
-        # `TensorValue`.
-        return current_graph.add_weight(self, self._device)._mlir_value
+            if self._device:
+                tensor_value = tensor_value.to(self._device)
+            return tensor_value._mlir_value
+        else:
+            return _add_weight_to_graph(self)._mlir_value
 
     @_mlir_value.setter
     def _mlir_value(self, value: mlir.Value) -> None:
@@ -89,6 +115,43 @@ class Weight(TensorValue):
 
     def __repr__(self):
         if self.quantization_encoding:
-            return f"Weight({self.dtype}, {self.shape}, {self.device}, {self.quantization_encoding})"
+            return f"Weight({self.name}, {self.dtype}, {self.shape}, {self.device}, {self.quantization_encoding})"
         else:
-            return f"Weight({self.dtype}, {self.shape}, {self.device})"
+            return f"Weight({self.name}, {self.dtype}, {self.shape}, {self.device})"
+
+    def shard(
+        self, shard_idx: int, device: Optional[DeviceRef] = None
+    ) -> Weight:
+        if not self.sharding_strategy:
+            raise ValueError(
+                f"Weight {self.name} cannot be sharded because no sharding strategy was provided."
+            )
+        if self.shard_idx is not None:
+            raise ValueError(
+                f"Weight {self.name} was already sharded. Use __getitem__ instead."
+            )
+        weight = Weight(
+            name=f"{self.name}[{shard_idx}]",
+            dtype=self._dtype,
+            shape=self._shape,
+            device=device or self._device,
+            quantization_encoding=self.quantization_encoding,
+            align=self.align,
+        )
+        weight.sharding_strategy = self.sharding_strategy
+        weight.shard_idx = shard_idx
+        return weight
+
+
+def _add_weight_to_graph(weight: Weight):
+    try:
+        current_graph = graph.Graph.current
+    except LookupError:
+        raise ValueError(
+            "Cannot operate on a `max.graph.Weight` when there is no parent graph."
+        )
+
+    # If the weight doesn't exist on the graph, `Graph.add_weight` will
+    # return a new `TensorValue`. Otherwise, this will return the existing
+    # `TensorValue`.
+    return current_graph.add_weight(weight, weight._device)
