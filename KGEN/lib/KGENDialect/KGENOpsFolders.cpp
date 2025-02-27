@@ -413,6 +413,18 @@ ErrorTreeOrSuccess CostOfOp::interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
+// IsCompileTimeOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess IsCompileTimeOp::interpret(ArrayRef<Attribute> operands,
+                                              InterpreterState &state) {
+  // Always return true during interpreting time.
+  Builder builder(getContext());
+  state.mapResults(builder.getBoolAttr(true));
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // SourceLocOp
 //===----------------------------------------------------------------------===//
 

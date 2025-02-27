@@ -2182,6 +2182,36 @@ def KGEN_CompileOffloadOp: KGENOp<"compile_offload">  {
 
 
 
- }
+}
+
+//===----------------------------------------------------------------------===//
+// IsCompileTimeOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_IsCompileTimeOp: KGENOp<"is_compile_time",
+    [DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "Evaluated as true for compile time and false otherwise.";
+  let description = [{
+    The `kgen.is_compile_time` represents a boolean value which is `true`
+    during compile time and `false` otherwise.
+    When used as condition for control flow, for example,
+    only the `true` branch will be evaluated during compile
+    time, while the other branch will be compiled to generated code.
+    This helps to have efficient compile time (interpreter) for generic
+    program without loss of runtime generated code efficiency.
+
+    Example:
+
+    ```mlir
+      kgen.is_compile_time : i1
+    ```
+  }];
+
+  let results = (outs I1:$result);
+
+  let assemblyFormat = [{
+      attr-dict `:` type($result)
+  }];
+}
 
 #endif // KGEN_KGENDIALECT_KGENOPS_TD
