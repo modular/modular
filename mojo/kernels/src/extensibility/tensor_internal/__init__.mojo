@@ -10,6 +10,7 @@ from .managed_tensor_slice import (
     InputTensor,
     ManagedTensorSlice,
     MutableInputTensor,
+    StaticTensorSpec,
     OutputTensor,
     VariadicTensors,
     _input_fusion_hook_impl,
