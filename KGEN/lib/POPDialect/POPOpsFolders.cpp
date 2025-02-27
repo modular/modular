@@ -15,6 +15,7 @@
 #include "mlir/IR/PatternMatch.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/bit.h"
+#include "llvm/Support/Base64.h"
 #include "llvm/Support/xxhash.h"
 
 #include <unistd.h>
@@ -2035,6 +2036,35 @@ OpFoldResult StringHashOp::fold(FoldAdaptor adaptor) {
       llvm::xxh3_128bits(arrayRefFromStringRef(str.getValue()));
   StringRef hashStr(llvm::bit_cast<char *>(&hash), sizeof(llvm::XXH128_hash_t));
   return StringAttr::get(llvm::toHex(hashStr, true),
+                         StringType::get(getContext()));
+}
+
+//===----------------------------------------------------------------------===//
+// StringBase64EncodeOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult StringBase64EncodeOp::fold(FoldAdaptor adaptor) {
+  auto str = dyn_cast_or_null<StringAttr>(adaptor.getStr());
+  if (!str)
+    return {};
+
+  return StringAttr::get(llvm::encodeBase64(str.getValue()),
+                         StringType::get(getContext()));
+}
+
+//===----------------------------------------------------------------------===//
+// StringBase64DecodeOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult StringBase64DecodeOp::fold(FoldAdaptor adaptor) {
+  auto str = dyn_cast_or_null<StringAttr>(adaptor.getStr());
+  if (!str)
+    return {};
+
+  std::vector<char> decoded;
+  if (auto err = llvm::decodeBase64(str.getValue(), decoded))
+    return {};
+  return StringAttr::get(std::string(decoded.begin(), decoded.end()),
                          StringType::get(getContext()));
 }
 
