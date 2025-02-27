@@ -744,6 +744,7 @@ struct Range:
         type: DType,
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](
         output: ManagedTensorSlice[type=type, rank=1],
         start: ManagedTensorSlice[type=type, rank=1],
@@ -756,7 +757,12 @@ struct Range:
         fn func[width: Int](idx: IndexList[1]) -> SIMD[type, width]:
             return start[0] + step[0] * (iota[type, width](idx[0]))
 
-        foreach[func, target=target, _synchronous=_synchronous](output, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](output, ctx)
 
     @staticmethod
     fn shape[
@@ -784,7 +790,8 @@ struct Range:
 struct Copy:
     @staticmethod
     fn execute[
-        type: DType, rank: Int
+        type: DType,
+        rank: Int,
     ](
         output: ManagedTensorSlice[type=type, rank=rank],
         input: ManagedTensorSlice[type=type, rank=rank],
@@ -805,6 +812,7 @@ struct Add:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -818,7 +826,12 @@ struct Add:
             var rhs = rebind[SIMD[z.type, width]](y._fused_load[width](idx))
             return lhs + rhs
 
-        foreach[func, target=target, _synchronous=_synchronous](z, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](z, ctx)
 
 
 @compiler.register("mo.sub")
@@ -828,6 +841,7 @@ struct Sub:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -841,7 +855,12 @@ struct Sub:
             var rhs = rebind[SIMD[z.type, width]](y._fused_load[width](idx))
             return lhs - rhs
 
-        foreach[func, target=target, _synchronous=_synchronous](z, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](z, ctx)
 
 
 @compiler.register("mo.mul")
@@ -851,6 +870,7 @@ struct Mul:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -864,7 +884,12 @@ struct Mul:
             var rhs = rebind[SIMD[z.type, width]](y._fused_load[width](idx))
             return lhs * rhs
 
-        foreach[func, target=target, _synchronous=_synchronous](z, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](z, ctx)
 
 
 @compiler.register("mo.div")
@@ -874,6 +899,7 @@ struct Div:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -887,7 +913,12 @@ struct Div:
             var rhs = rebind[SIMD[z.type, width]](y._fused_load[width](idx))
             return lhs / rhs
 
-        foreach[func, target=target, _synchronous=_synchronous](z, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](z, ctx)
 
 
 @compiler.register("mo.mod")
@@ -897,6 +928,7 @@ struct Mod:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -910,7 +942,12 @@ struct Mod:
             var rhs = rebind[SIMD[z.type, width]](y._fused_load[width](idx))
             return lhs % rhs
 
-        foreach[func, target=target, _synchronous=_synchronous](z, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](z, ctx)
 
 
 @compiler.register("mo.equal")
@@ -920,6 +957,7 @@ struct Equal:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -933,7 +971,12 @@ struct Equal:
             var rhs = rebind[SIMD[x.type, width]](y._fused_load[width](idx))
             return rebind[SIMD[z.type, width]](lhs == rhs)
 
-        foreach[func, target=target, _synchronous=_synchronous](z, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](z, ctx)
 
 
 @compiler.register("mo.greater")
@@ -943,6 +986,7 @@ struct Greater:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -956,7 +1000,12 @@ struct Greater:
             var rhs = rebind[SIMD[x.type, width]](y._fused_load[width](idx))
             return rebind[SIMD[z.type, width]](lhs > rhs)
 
-        foreach[func, target=target, _synchronous=_synchronous](z, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](z, ctx)
 
 
 @compiler.register("mo.greater_equal")
@@ -966,6 +1015,7 @@ struct GreaterEqual:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -979,7 +1029,12 @@ struct GreaterEqual:
             var rhs = rebind[SIMD[x.type, width]](y._fused_load[width](idx))
             return rebind[SIMD[z.type, width]](lhs >= rhs)
 
-        foreach[func, target=target, _synchronous=_synchronous](z, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](z, ctx)
 
 
 @compiler.register("mo.not_equal")
@@ -989,6 +1044,7 @@ struct NotEqual:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -1002,7 +1058,12 @@ struct NotEqual:
             var rhs = rebind[SIMD[x.type, width]](y._fused_load[width](idx))
             return rebind[SIMD[z.type, width]](lhs != rhs)
 
-        foreach[func, target=target, _synchronous=_synchronous](z, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](z, ctx)
 
 
 @compiler.register("mo.and")
@@ -1012,6 +1073,7 @@ struct And:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -1025,7 +1087,12 @@ struct And:
             var rhs = rebind[SIMD[DType.bool, width]](y._fused_load[width](idx))
             return rebind[SIMD[z.type, width]](lhs & rhs)
 
-        foreach[func, target=target, _synchronous=_synchronous](z, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](z, ctx)
 
 
 @compiler.register("mo.or")
@@ -1035,6 +1102,7 @@ struct Or:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -1048,7 +1116,12 @@ struct Or:
             var rhs = rebind[SIMD[DType.bool, width]](y._fused_load[width](idx))
             return rebind[SIMD[z.type, width]](lhs | rhs)
 
-        foreach[func, target=target, _synchronous=_synchronous](z, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](z, ctx)
 
 
 @compiler.register("mo.xor")
@@ -1058,6 +1131,7 @@ struct Xor:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -1071,7 +1145,12 @@ struct Xor:
             var rhs = rebind[SIMD[DType.bool, width]](y._fused_load[width](idx))
             return rebind[SIMD[z.type, width]](lhs ^ rhs)
 
-        foreach[func, target=target, _synchronous=_synchronous](z, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](z, ctx)
 
 
 @compiler.register("mo.pow")
@@ -1081,6 +1160,7 @@ struct Pow:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -1094,7 +1174,12 @@ struct Pow:
             var rhs = y._fused_load[width](idx)
             return _pow(lhs, rhs)
 
-        foreach[func, target=target, _synchronous=_synchronous](z, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](z, ctx)
 
 
 @compiler.register("mo.max")
@@ -1104,6 +1189,7 @@ struct Max:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -1117,7 +1203,12 @@ struct Max:
             var rhs = rebind[SIMD[z.type, width]](y._fused_load[width](idx))
             return max(lhs, rhs)
 
-        foreach[func, target=target, _synchronous=_synchronous](z, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](z, ctx)
 
 
 @compiler.register("mo.min")
@@ -1127,6 +1218,7 @@ struct Min:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](
         z: ManagedTensorSlice,
         x: ManagedTensorSlice,
@@ -1140,7 +1232,12 @@ struct Min:
             var rhs = rebind[SIMD[z.type, width]](y._fused_load[width](idx))
             return min(lhs, rhs)
 
-        foreach[func, target=target, _synchronous=_synchronous](z, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](z, ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1155,6 +1252,7 @@ struct Cast:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
@@ -1163,7 +1261,12 @@ struct Cast:
                 x._fused_load[width](idx).cast[y.type]()
             )
 
-        foreach[func, target=target, _synchronous=_synchronous](y, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](y, ctx)
 
 
 @compiler.register("mo.negative")
@@ -1173,13 +1276,19 @@ struct Negative:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](-x._fused_load[width](idx))
 
-        foreach[func, target=target, _synchronous=_synchronous](y, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](y, ctx)
 
 
 @compiler.register("mo.relu")
@@ -1189,13 +1298,19 @@ struct ReLU:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](relu(x._fused_load[width](idx)))
 
-        foreach[func, target=target, _synchronous=_synchronous](y, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](y, ctx)
 
 
 @compiler.register("mo.gelu")
@@ -1205,13 +1320,19 @@ struct GeLU:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](gelu(x._fused_load[width](idx)))
 
-        foreach[func, target=target, _synchronous=_synchronous](y, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](y, ctx)
 
 
 @compiler.register("mo.ceil")
@@ -1221,13 +1342,19 @@ struct Ceil:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](ceil(x._fused_load[width](idx)))
 
-        foreach[func, target=target, _synchronous=_synchronous](y, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](y, ctx)
 
 
 @compiler.register("mo.floor")
@@ -1237,13 +1364,19 @@ struct Floor:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](floor(x._fused_load[width](idx)))
 
-        foreach[func, target=target, _synchronous=_synchronous](y, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](y, ctx)
 
 
 @compiler.register("mo.tanh")
@@ -1253,13 +1386,19 @@ struct Tanh:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](tanh(x._fused_load[width](idx)))
 
-        foreach[func, target=target, _synchronous=_synchronous](y, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](y, ctx)
 
 
 @compiler.register("mo.cos")
@@ -1269,13 +1408,19 @@ struct Cos:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](cos(x._fused_load[width](idx)))
 
-        foreach[func, target=target, _synchronous=_synchronous](y, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](y, ctx)
 
 
 @compiler.register("mo.sin")
@@ -1285,13 +1430,19 @@ struct Sin:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](sin(x._fused_load[width](idx)))
 
-        foreach[func, target=target, _synchronous=_synchronous](y, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](y, ctx)
 
 
 @compiler.register("mo.erf")
@@ -1301,13 +1452,19 @@ struct Erf:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](erf(x._fused_load[width](idx)))
 
-        foreach[func, target=target, _synchronous=_synchronous](y, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](y, ctx)
 
 
 @compiler.register("mo.exp")
@@ -1317,13 +1474,19 @@ struct Exp:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](exp(x._fused_load[width](idx)))
 
-        foreach[func, target=target, _synchronous=_synchronous](y, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](y, ctx)
 
 
 @compiler.register("mo.round")
@@ -1333,13 +1496,19 @@ struct Round:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](round(x._fused_load[width](idx)))
 
-        foreach[func, target=target, _synchronous=_synchronous](y, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](y, ctx)
 
 
 @compiler.register("mo.roundeven")
@@ -1349,13 +1518,19 @@ struct RoundEven:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](round(x._fused_load[width](idx)))
 
-        foreach[func, target=target, _synchronous=_synchronous](y, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](y, ctx)
 
 
 @compiler.register("mo.sqrt")
@@ -1365,13 +1540,19 @@ struct Sqrt:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](sqrt(x._fused_load[width](idx)))
 
-        foreach[func, target=target, _synchronous=_synchronous](y, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](y, ctx)
 
 
 @compiler.register("mo.isqrt")
@@ -1381,13 +1562,19 @@ struct Isqrt:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](isqrt(x._fused_load[width](idx)))
 
-        foreach[func, target=target, _synchronous=_synchronous](y, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](y, ctx)
 
 
 @compiler.register("mo.select")
@@ -1397,6 +1584,7 @@ struct Select:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](
         out: ManagedTensorSlice,
         condition: ManagedTensorSlice,
@@ -1416,7 +1604,12 @@ struct Select:
             )
             return cond.select(tc, fc)
 
-        foreach[func, target=target, _synchronous=_synchronous](out, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](out, ctx)
 
 
 @compiler.register("mo.trunc")
@@ -1426,6 +1619,7 @@ struct Trunc:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
@@ -1437,7 +1631,12 @@ struct Trunc:
                 ](val)
             )
 
-        foreach[func, target=target, _synchronous=_synchronous](y, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](y, ctx)
 
 
 @compiler.register("mo.log")
@@ -1447,13 +1646,19 @@ struct Log:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](log(x._fused_load[width](idx)))
 
-        foreach[func, target=target, _synchronous=_synchronous](y, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](y, ctx)
 
 
 @compiler.register("mo.log1p")
@@ -1463,13 +1668,19 @@ struct Log1p:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](log1p(x._fused_load[width](idx)))
 
-        foreach[func, target=target, _synchronous=_synchronous](y, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](y, ctx)
 
 
 @compiler.register("mo.is_nan")
@@ -1479,13 +1690,19 @@ struct IsNan:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](isnan(x._fused_load[width](idx)))
 
-        foreach[func, target=target, _synchronous=_synchronous](y, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](y, ctx)
 
 
 @compiler.register("mo.is_inf")
@@ -1495,13 +1712,19 @@ struct IsInf:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](isinf(x._fused_load[width](idx)))
 
-        foreach[func, target=target, _synchronous=_synchronous](y, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](y, ctx)
 
 
 @compiler.register("mo.not")
@@ -1511,6 +1734,7 @@ struct Not:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
@@ -1518,7 +1742,12 @@ struct Not:
             var val = rebind[SIMD[DType.bool, width]](x._fused_load[width](idx))
             return rebind[SIMD[y.type, width]](~val)
 
-        foreach[func, target=target, _synchronous=_synchronous](y, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](y, ctx)
 
 
 @compiler.register("mo.abs")
@@ -1528,13 +1757,19 @@ struct Abs:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](abs(x._fused_load[width](idx)))
 
-        foreach[func, target=target, _synchronous=_synchronous](y, ctx)
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](y, ctx)
 
 
 @compiler.register("mo.squeeze_shape")
@@ -2391,6 +2626,7 @@ struct StaticBroadcastTo:
         type: DType,
         in_rank: Int,
         out_rank: Int,
+        _trace_name: StringLiteral,
     ](
         z: ManagedTensorSlice[type=type, rank=out_rank],
         x: ManagedTensorSlice[type=type, rank=in_rank],
@@ -2412,7 +2648,7 @@ struct StaticBroadcastTo:
         ](output_shape, x_runtime_strides)
 
         view_copy_impl[
-            trace_name="static.broadcast_to",
+            trace_name=_trace_name,
             target=target,
             _synchronous=_synchronous,
         ](z, x_view, ctx)
@@ -2443,6 +2679,7 @@ struct StaticReshape:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
         type: DType,
         output_rank: Int,
     ](
@@ -2465,7 +2702,7 @@ struct StaticReshape:
         ](view_buffer.get_shape(), view_buffer.get_strides())
 
         view_copy_impl[
-            trace_name="static.reshape",
+            trace_name=_trace_name,
             target=target,
             _synchronous=_synchronous,
         ](output, view_tensor, ctx)
@@ -2538,6 +2775,7 @@ struct Transpose:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
         static_permutations: DimList,
         type: DType,
         rank: Int,
@@ -2559,7 +2797,7 @@ struct Transpose:
         ](shape, strides)
 
         view_copy_impl[
-            trace_name="transpose",
+            trace_name=_trace_name,
             target=target,
             _synchronous=_synchronous,
         ](output, view, ctx)
@@ -2619,6 +2857,7 @@ struct Slice:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
         static_steps: DimList,
         type: DType,
         rank: Int,
@@ -2651,7 +2890,7 @@ struct Slice:
         )
 
         view_copy_impl[
-            trace_name="slice",
+            trace_name=_trace_name,
             target=target,
             _synchronous=_synchronous,
         ](output, view_tensor, ctx)
@@ -2723,6 +2962,7 @@ struct SliceDim:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
         type: DType,
         rank: Int,
         axis: Int,
@@ -2756,7 +2996,7 @@ struct SliceDim:
         )
 
         view_copy_impl[
-            trace_name="slice_dim",
+            trace_name=_trace_name,
             target=target,
             _synchronous=_synchronous,
         ](output, view_tensor, ctx)
@@ -2771,7 +3011,9 @@ struct SliceDim:
 struct ArgMax:
     @staticmethod
     fn execute[
-        target: StringLiteral, rank: Int
+        target: StringLiteral,
+        rank: Int,
+        _trace_name: StringLiteral,
     ](
         output: ManagedTensorSlice[rank=rank],
         input: ManagedTensorSlice[rank=rank],
@@ -2780,7 +3022,7 @@ struct ArgMax:
     ) raises:
         var axis_val = normalize_neg_index(axis, rank)
 
-        with Trace[TraceLevel.OP, target=target]("argmax"):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
 
             @parameter
             if target == "cpu":
@@ -2809,7 +3051,9 @@ struct ArgMax:
 struct ArgMin:
     @staticmethod
     fn execute[
-        target: StringLiteral, rank: Int
+        target: StringLiteral,
+        rank: Int,
+        _trace_name: StringLiteral,
     ](
         output: ManagedTensorSlice[rank=rank],
         input: ManagedTensorSlice[rank=rank],
@@ -2818,7 +3062,7 @@ struct ArgMin:
     ) raises:
         var axis_val = normalize_neg_index(axis, rank)
 
-        with Trace[TraceLevel.OP, target=target]("argmin"):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
 
             @parameter
             if target == "cpu":
@@ -2919,7 +3163,7 @@ struct ReduceAdd:
     @compiler.enable_fusion_for("input", "output")
     @staticmethod
     fn execute[
-        _synchronous: Bool, target: StringLiteral
+        _synchronous: Bool, target: StringLiteral, _trace_name: StringLiteral
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
@@ -2947,7 +3191,7 @@ struct ReduceAdd:
 
         var axis_val = Int(axis)
 
-        with Trace[TraceLevel.OP, target=target]("mo.reduce.add"):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
             sum[
                 output.type,
                 input_fn,
@@ -2972,7 +3216,9 @@ struct ReduceMul:
     @compiler.enable_fusion_for("input", "output")
     @staticmethod
     fn execute[
-        _synchronous: Bool, target: StringLiteral
+        _synchronous: Bool,
+        target: StringLiteral,
+        _trace_name: StringLiteral,
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
@@ -3000,7 +3246,7 @@ struct ReduceMul:
 
         var axis_val = Int(axis)
 
-        with Trace[TraceLevel.OP, target=target]("mo.reduce.mul"):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
             product[
                 output.type,
                 input_fn,
@@ -3025,7 +3271,9 @@ struct ReduceMax:
     @compiler.enable_fusion_for("input", "output")
     @staticmethod
     fn execute[
-        _synchronous: Bool, target: StringLiteral
+        _synchronous: Bool,
+        target: StringLiteral,
+        _trace_name: StringLiteral,
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
@@ -3053,7 +3301,7 @@ struct ReduceMax:
 
         var axis_val = Int(axis)
 
-        with Trace[TraceLevel.OP, target=target]("mo.reduce.max"):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
             reduce_max[
                 output.type,
                 input_fn,
@@ -3078,7 +3326,9 @@ struct ReduceMin:
     @compiler.enable_fusion_for("input", "output")
     @staticmethod
     fn execute[
-        _synchronous: Bool, target: StringLiteral
+        _synchronous: Bool,
+        target: StringLiteral,
+        _trace_name: StringLiteral,
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
@@ -3106,7 +3356,7 @@ struct ReduceMin:
 
         var axis_val = Int(axis)
 
-        with Trace[TraceLevel.OP, target=target]("mo.reduce.min"):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
             reduce_min[
                 output.type,
                 input_fn,
@@ -3132,6 +3382,7 @@ struct ReduceMinMax:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
         type: DType,
         rank: Int,
     ](
@@ -3177,7 +3428,9 @@ struct ReduceMinMax:
         @always_inline
         @parameter
         fn output_0_fn_wrapper[
-            _type: DType, width: Int, rank: Int
+            _type: DType,
+            width: Int,
+            rank: Int,
         ](
             indices: IndexList[rank],
             val: StaticTuple[SIMD[_type, width], num_reductions],
@@ -3215,7 +3468,7 @@ struct ReduceMinMax:
         var init_max = Scalar[type].MIN
         var init = StaticTuple[Scalar[type], num_reductions](init_min, init_max)
 
-        with Trace[TraceLevel.OP, target=target]("reduce_min_and_max"):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
             _reduce_generator[
                 num_reductions,
                 type,
@@ -3547,6 +3800,7 @@ struct GatherND:
         batchDims: Int,
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](
         output: ManagedTensorSlice,
         data: ManagedTensorSlice[type = output.type, *_],
@@ -3558,7 +3812,7 @@ struct GatherND:
         var data_ndbuffer = managed_tensor_slice_to_ndbuffer(data)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
 
-        with Trace[TraceLevel.OP, target=target]("mo.gather_nd"):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
             gather_nd[batch_dims=batchDims, target=target](
                 data_ndbuffer, indices_ndbuffer, output_ndbuffer, ctx
             )
@@ -3587,6 +3841,7 @@ struct Gather:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, *_],
@@ -3622,7 +3877,7 @@ struct Gather:
                 rebind[SIMD[output.type, width]](val),
             )
 
-        with Trace[TraceLevel.OP, target=target]("mo.gather"):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
             gather[
                 type = output.type,
                 indices_type = indices.type,
@@ -5343,11 +5598,13 @@ struct WithMaskFlashAttentionCPU:
 struct GGMLQ40Dequantize:
     @staticmethod
     @always_inline
-    fn execute(
+    fn execute[
+        _trace_name: StringLiteral,
+    ](
         output: ManagedTensorSlice[type = DType.float32, rank=2],
         input: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) raises:
-        with Trace[TraceLevel.OP, target="cpu"]("ggml_q4_0_dequantize"):
+        with Trace[TraceLevel.OP, target="cpu"](_trace_name):
             Q4sym[group_size=32].dequantize_and_write_to_tensor(
                 managed_tensor_slice_to_ndbuffer(input),
                 managed_tensor_slice_to_ndbuffer(output),
@@ -5371,12 +5628,14 @@ struct GGMLQ40Dequantize:
 struct VroomQ40Matmul:
     @staticmethod
     @always_inline
-    fn execute(
+    fn execute[
+        _trace_name: StringLiteral,
+    ](
         c: ManagedTensorSlice[type = DType.float32, rank=2],
         a: ManagedTensorSlice[type = DType.float32, rank=2],
         b: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) raises:
-        with Trace[TraceLevel.OP, target="cpu"]("vroom_q4_0_matmul"):
+        with Trace[TraceLevel.OP, target="cpu"](_trace_name):
             matmul_qint4[32](
                 managed_tensor_slice_to_ndbuffer(a),
                 managed_tensor_slice_to_ndbuffer(b),
@@ -5396,11 +5655,13 @@ struct VroomQ40Matmul:
 struct VroomQ40RepackWeights:
     @staticmethod
     @always_inline
-    fn execute(
+    fn execute[
+        _trace_name: StringLiteral,
+    ](
         b_packed: ManagedTensorSlice[type = DType.uint8, rank=2],
         b: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) raises:
-        with Trace[TraceLevel.OP, target="cpu"]("vroom_q4_0_matmul"):
+        with Trace[TraceLevel.OP, target="cpu"](_trace_name):
             matmul_qint4_pack_b[32](
                 managed_tensor_slice_to_ndbuffer(b),
                 managed_tensor_slice_to_ndbuffer(b_packed),
@@ -5424,11 +5685,13 @@ struct VroomQ40RepackWeights:
 struct GGMLQ4KDequantize:
     @staticmethod
     @always_inline
-    fn execute(
+    fn execute[
+        _trace_name: StringLiteral,
+    ](
         output: ManagedTensorSlice[type = DType.float32, rank=2],
         input: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) raises:
-        with Trace[TraceLevel.OP, target="cpu"]("ggml_q4_k_dequantize"):
+        with Trace[TraceLevel.OP, target="cpu"](_trace_name):
             q4_k_dequantize_impl(
                 managed_tensor_slice_to_ndbuffer(input),
                 managed_tensor_slice_to_ndbuffer(output),
@@ -5456,12 +5719,14 @@ struct GGMLQ4KDequantize:
 struct VroomQ4KMatmul:
     @staticmethod
     @always_inline
-    fn execute(
+    fn execute[
+        _trace_name: StringLiteral,
+    ](
         c: ManagedTensorSlice[type = DType.float32, rank=2],
         a: ManagedTensorSlice[type = DType.float32, rank=2],
         b: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) raises:
-        with Trace[TraceLevel.OP, target="cpu"]("vroom_q4_k_matmul"):
+        with Trace[TraceLevel.OP, target="cpu"](_trace_name):
             matmul_Q4_K(
                 managed_tensor_slice_to_ndbuffer(a),
                 managed_tensor_slice_to_ndbuffer(b),
@@ -5481,11 +5746,13 @@ struct VroomQ4KMatmul:
 struct VroomQ4KRepackWeights:
     @staticmethod
     @always_inline
-    fn execute(
+    fn execute[
+        _trace_name: StringLiteral,
+    ](
         b_packed: ManagedTensorSlice[type = DType.uint8, rank=2],
         b: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) raises:
-        with Trace[TraceLevel.OP, target="cpu"]("vroom_q4_k_repack_weights"):
+        with Trace[TraceLevel.OP, target="cpu"](_trace_name):
             matmul_Q4_K_pack_b(
                 managed_tensor_slice_to_ndbuffer(b),
                 managed_tensor_slice_to_ndbuffer(b_packed),
@@ -5509,11 +5776,13 @@ struct VroomQ4KRepackWeights:
 struct GGMLQ6KDequantize:
     @staticmethod
     @always_inline
-    fn execute(
+    fn execute[
+        _trace_name: StringLiteral,
+    ](
         output: ManagedTensorSlice[type = DType.float32, rank=2],
         input: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) raises:
-        with Trace[TraceLevel.OP, target="cpu"]("ggml_q6_k_dequantize"):
+        with Trace[TraceLevel.OP, target="cpu"](_trace_name):
             q6_k_dequantize_impl(
                 managed_tensor_slice_to_ndbuffer(input),
                 managed_tensor_slice_to_ndbuffer(output),
@@ -5542,12 +5811,14 @@ struct GGMLQ6KDequantize:
 struct VroomQ6KMatmul:
     @staticmethod
     @always_inline
-    fn execute(
+    fn execute[
+        _trace_name: StringLiteral,
+    ](
         c: ManagedTensorSlice[type = DType.float32, rank=2],
         a: ManagedTensorSlice[type = DType.float32, rank=2],
         b: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) raises:
-        with Trace[TraceLevel.OP, target="cpu"]("vroom_q6_k_matmul"):
+        with Trace[TraceLevel.OP, target="cpu"](_trace_name):
             matmul_Q6_K(
                 managed_tensor_slice_to_ndbuffer(a),
                 managed_tensor_slice_to_ndbuffer(b),
@@ -5567,11 +5838,13 @@ struct VroomQ6KMatmul:
 struct VroomQ6KRepackWeights:
     @staticmethod
     @always_inline
-    fn execute(
+    fn execute[
+        _trace_name: StringLiteral,
+    ](
         b_packed: ManagedTensorSlice[type = DType.uint8, rank=2],
         b: ManagedTensorSlice[type = DType.uint8, rank=2],
     ) raises:
-        with Trace[TraceLevel.OP, target="cpu"]("vroom_q6_k_repack_weights"):
+        with Trace[TraceLevel.OP, target="cpu"](_trace_name):
             matmul_Q6_K_pack_b(
                 managed_tensor_slice_to_ndbuffer(b),
                 managed_tensor_slice_to_ndbuffer(b_packed),
@@ -5597,6 +5870,7 @@ struct QMatmulGPU_b4_g32:
     @always_inline
     fn execute[
         target: StringLiteral,
+        _trace_name: StringLiteral,
     ](
         c: ManagedTensorSlice[type = DType.bfloat16, rank=2],
         a: ManagedTensorSlice[type = DType.bfloat16, rank=2],
@@ -5605,7 +5879,7 @@ struct QMatmulGPU_b4_g32:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        with Trace[TraceLevel.OP, target=target]("qmatmul_b4_g32"):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
             matmul_gpu_qint4[32, target](
                 managed_tensor_slice_to_ndbuffer(c),
                 managed_tensor_slice_to_ndbuffer(a),
@@ -5628,6 +5902,7 @@ struct QMatmulGPU_b4_g128:
     @always_inline
     fn execute[
         target: StringLiteral,
+        _trace_name: StringLiteral,
     ](
         c: ManagedTensorSlice[type = DType.bfloat16, rank=2],
         a: ManagedTensorSlice[type = DType.bfloat16, rank=2],
@@ -5636,7 +5911,7 @@ struct QMatmulGPU_b4_g128:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        with Trace[TraceLevel.OP, target=target]("qmatmul_b4_g128"):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
             matmul_gpu_qint4[128, target](
                 managed_tensor_slice_to_ndbuffer(c),
                 managed_tensor_slice_to_ndbuffer(a),
@@ -5659,6 +5934,7 @@ struct QMatmulGPURepackGGUF:
     @always_inline
     fn execute[
         target: StringLiteral,
+        _trace_name: StringLiteral,
     ](
         b_packed: ManagedTensorSlice[type = DType.uint8, rank=2],
         b: ManagedTensorSlice[type = DType.uint8, rank=2],
@@ -5666,7 +5942,7 @@ struct QMatmulGPURepackGGUF:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        with Trace[TraceLevel.OP, target=target]("GGUF_gpu_repack_q4_0"):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
             gpu_qint4_repack_Q4_0[target](
                 managed_tensor_slice_to_ndbuffer(b),
                 managed_tensor_slice_to_ndbuffer(b_packed),
@@ -5687,6 +5963,7 @@ struct QMatmulGPURepackGPTQ_b4_g128:
     @always_inline
     fn execute[
         target: StringLiteral,
+        _trace_name: StringLiteral,
     ](
         b_packed: ManagedTensorSlice[type = DType.uint8, rank=2],
         b: ManagedTensorSlice[type = DType.uint8, rank=2],
@@ -5694,7 +5971,7 @@ struct QMatmulGPURepackGPTQ_b4_g128:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        with Trace[TraceLevel.OP, target=target]("GPTQ_gpu_repack_b4_g128"):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
             gpu_qint4_repack_GPTQ[128, target](
                 managed_tensor_slice_to_ndbuffer(b),
                 managed_tensor_slice_to_ndbuffer(b_packed),
@@ -5715,6 +5992,7 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
     @always_inline
     fn execute[
         target: StringLiteral,
+        _trace_name: StringLiteral,
     ](
         b_packed: ManagedTensorSlice[type = DType.uint8, rank=2],
         b: ManagedTensorSlice[type = DType.uint8, rank=2],
@@ -5723,9 +6001,7 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        with Trace[TraceLevel.OP, target=target](
-            "GPTQ_gpu_repack_b4_g128_desc_act"
-        ):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
             gpu_qint4_repack_GPTQ[128, target](
                 managed_tensor_slice_to_ndbuffer(b),
                 managed_tensor_slice_to_ndbuffer(b_packed),
@@ -7343,6 +7619,7 @@ struct Struct_topk_fused_sampling:
         rank: Int,
         out_idx_type: DType,
         target: StringLiteral,
+        _trace_name: StringLiteral,
     ](
         out_idxs: ManagedTensorSlice[type=out_idx_type, rank=rank],
         K: Scalar,
@@ -7353,7 +7630,7 @@ struct Struct_topk_fused_sampling:
 
         var input_buf = managed_tensor_slice_to_ndbuffer(input)
         var out_idxs_buf = managed_tensor_slice_to_ndbuffer(out_idxs)
-        with Trace[TraceLevel.OP, target=target]("topk_fused_sampling"):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
 
             @parameter
             if is_cpu[target]():
