@@ -602,14 +602,12 @@ fn logical_product(layout_a: Layout, tiler: LayoutList) -> Layout:
     return apply_tiler[logical_product](layout_a, tiler)
 
 
-fn hier_unzip[
-    splitter: fn (Layout, Layout) -> Layout
-](layout_a: Layout, tiler: LayoutList) -> Layout:
+fn hier_unzip(layout_a: Layout, tiler: LayoutList) -> Layout:
     var res_1 = Layout()
     var res_2 = Layout()
 
     for i in range(len(tiler)):
-        var split = hier_unzip[splitter](layout_a[i], tiler[i])
+        var split = hier_unzip(layout_a[i], tiler[i])
         res_1.append(split[0])
         res_2.append(split[1])
 
@@ -623,18 +621,19 @@ fn hier_unzip[
     return res
 
 
-fn hier_unzip[
-    splitter: fn (Layout, Layout) -> Layout
-](layout_a: Layout, layout_b: Layout,) -> Layout:
-    return splitter(layout_a, layout_b)
+fn hier_unzip(
+    layout_a: Layout,
+    layout_b: Layout,
+) -> Layout:
+    return logical_divide(layout_a, layout_b)
 
 
 fn zipped_divide(layout_a: Layout, layout_b: Layout) -> Layout:
-    return hier_unzip[logical_divide](layout_a, layout_b)
+    return hier_unzip(layout_a, layout_b)
 
 
 fn zipped_divide(layout_a: Layout, tiler: LayoutList) -> Layout:
-    return hier_unzip[logical_divide](layout_a, tiler)
+    return hier_unzip(layout_a, tiler)
 
 
 fn print_layout(layout: Layout):
