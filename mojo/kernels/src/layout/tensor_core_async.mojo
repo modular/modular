@@ -356,6 +356,8 @@ struct TensorCoreAsync[
         alias b_stride01 = b_smem_layout[0].stride[1].value()
         alias b_stride11 = b_smem_layout[1].stride[1].value()
         # Strides between WGMMA tiles
+        constrained[mma_shape[0] % a_shape00 == 0]()
+        constrained[mma_shape[1] % b_shape00 == 0]()
         # fmt: off
         alias a_m_stride = a_stride01 * (mma_shape[0] // a_shape00) * sizeof[a_type]()
         alias b_n_stride = b_stride01 * (mma_shape[1] // b_shape00) * sizeof[b_type]()
@@ -438,11 +440,16 @@ struct TensorCoreAsync[
         alias b_stride01 = b_smem_layout[0].stride[1].value()
         alias b_stride11 = b_smem_layout[1].stride[1].value()
         # Strides between WGMMA tiles
+        constrained[mma_shape[1] % b_shape00 == 0]()
         # fmt: off
         alias b_n_stride = b_stride01 * (mma_shape[1] // b_shape00) * sizeof[b_type]()
         # fmt: on
         # K dim is stepped by 2 core matrices.
         alias b_k_stride = b_stride11 * 2 * sizeof[b_type]()
+        constrained[
+            b_n_stride > 0, "b_smem_layout = " + String(b_smem_layout)
+        ]()
+        constrained[b_k_stride > 0]()
 
         alias num_n_mmas = b_smem_layout[0].size() // mma_shape[1]
         alias num_k_mmas = b_smem_layout[1].size() // mma_shape[2]
@@ -458,14 +465,28 @@ struct TensorCoreAsync[
             String(
                 "C fragments' size: ",
                 __type_of(c_frags).layout.size(),
-                " doesn't match the total number of wgmma: ",
-                num_m_mmas * num_n_mmas,
-                ". a_frag.layout[0].shape[0].value() = ",
+                (
+                    "\nDoesn't match the total number of wgmmas\n= num_m_mmas *"
+                    " num_n_mmas: "
+                ),
+                num_m_mmas,
+                " * ",
+                num_n_mmas,
+                ".\na_frag.layout[0].shape[0].value() = ",
                 a_frag.layout[0].shape[0].value(),
+                "\nnum_k_mmas = ",
+                num_k_mmas,
             ),
         ]()
 
         b_desc = _rhs_descriptor[mma_shape, transpose_b, b_swizzle](b_smem_tile)
+
+        @parameter
+        for m_mma in range(num_m_mmas):
+
+            @parameter
+            for n_mma in range(num_n_mmas):
+                alias mma_id = n_mma * num_m_mmas + m_mma
 
         @parameter
         for m_mma in range(num_m_mmas):

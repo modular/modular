@@ -2422,6 +2422,58 @@ struct LayoutTensor[
             if i != layout.size() - 1:
                 writer.write(" ")
 
+    @staticmethod
+    @always_inline
+    fn _offset(idxs: VariadicList[Int]) -> Int:
+        # fn _offset[*idxs: Int]() -> Int:
+        constrained[layout.all_dims_known()]()
+        var offset: Int = 0
+        alias r = Self.layout.rank()
+
+        @parameter
+        for i in range(r):
+            alias li = Self.layout[i]
+            offset += li(idxs[i])
+        return offset
+
+    @always_inline
+    fn _get[
+        *idxs: Int, size: Int = Self.element_size
+    ](self) -> SIMD[dtype, size]:
+        """Get an element, guaranteeing that the ptr offset is computed at
+        compile time.
+        Indices are passed as parameters.
+        Optional `size` parameter must equal the `element_size` (the default)
+        or `element_size == 1`, and the loaded element is broadcast across
+        the returned vector.
+        """
+        constrained[Self.element_size == size or Self.element_size == 1]()
+        alias offset = Self._offset(idxs)
+        # alias offset = Self._offset[*idxs]()
+        var val: Self.element_type = (
+            Element[dtype, Self.element_layout]
+            .load(self.ptr.offset(offset), self.runtime_element_layout)
+            .element_data
+        )
+
+        @parameter
+        if Self.element_size == size:
+            return rebind[SIMD[dtype, size]](val)
+        else:
+            return SIMD[dtype, size](val[0])
+
+    @always_inline("nodebug")
+    fn _set[*idxs: Int](self, val: Self.element_type):
+        """Set an element, guaranteeing that the ptr offset is computed at
+        compile time.
+        Indices are passed as parameters.
+        """
+        alias offset = Self._offset(idxs)
+        # alias offset = Self._offset[*idxs]()
+        Element[dtype, Self.element_layout](
+            val, self.runtime_element_layout
+        ).store(self.ptr.offset(offset))
+
 
 @always_inline
 fn _pretty_print_2d_tensor[W: Writer](tensor: LayoutTensor, mut writer: W):
