@@ -312,7 +312,7 @@ cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
       },
       [target, cacheHitFn = std::forward<CacheHitFnT>(cacheHitFn)](
           BufferRef buf) { return cacheHitFn(target, std::move(buf)); },
-      outKeyHash);
+      /*errorOnCacheInsertFailure=*/true, outKeyHash);
 }
 
 /// Run the specified passes over the target operation (i.e. ModulePasses over a
