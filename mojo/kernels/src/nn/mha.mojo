@@ -36,7 +36,7 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.host import DeviceContext, FuncAttribute
+from gpu.host import DeviceContext, FuncAttribute, Dim as LaunchDim
 from gpu.host.info import A100, H100, _get_info_from_target
 from gpu.memory import (
     AddressSpace,
@@ -262,39 +262,15 @@ fn flash_attention[
         #       We'll just implement a flag on the cache object which is true
         #       when the batch contains all cache_lens == 0. Remove this when
         #       such flag (part of ContiguousKVCache) is implemented.
-        var is_token_generation = k.get_max_seq_length() == 1 and not k.empty_cache()
+        var is_token_generation = k.max_prompt_length() == 1 and not k.empty_cache()
 
-        var max_cache_valid_length: Int
-
-        @parameter
-        if add_attn_mask:
-            # Get maximum cache valid length from the mask shape.
-            # Reminder: mask is BSS or BHSS (depending on rank).
-            #           and SS is max_prompt_len x
-            #                       max_prompt_len + mac_cache_valid_length
-            # Used in decoding only. Needed by mha_gpu_naive that handles both, too.
-            max_cache_valid_length = (
-                mask.dim[mask.rank - 1]() - mask.dim[mask.rank - 2]()
-            )
-        else:
-            max_cache_valid_length = Int(k.get_max_cache_length())
-
-        var kv_max_seq_len: Int
         var max_prompt_len: Int
-        var num_keys: Int
-
-        @parameter
-        if ragged:
-            kv_max_seq_len = Int(k.get_max_seq_length())
-            num_keys = max_cache_valid_length + kv_max_seq_len
-        else:
-            kv_max_seq_len = q.dim[1]()
-            num_keys = max_cache_valid_length
+        var num_keys = Int(k.max_context_length())
 
         if q_max_seq_len:
             max_prompt_len = q_max_seq_len.value()
         else:
-            max_prompt_len = kv_max_seq_len
+            max_prompt_len = Int(k.max_prompt_length())
 
         # Whether head and depth are static. With BSHD, B and S are dynamic.
         # H and D are always known for opaque KVCache types, we only check Q.
@@ -418,11 +394,7 @@ fn flash_attention_dispatch[
     if _is_flash_attention_applicable:
         # Attention mask tensor needs to be aligned to even length. This
         # is not needed when computing mask on the fly.
-        @parameter
-        if _use_valid_length:
-            mask_tensor_col = max_prompt_len
-        else:
-            mask_tensor_col = max_cache_valid_length
+        mask_tensor_col = max_cache_valid_length
 
         if not is_token_generation and (
             mask_tensor_col % 2 == 0 or not add_attn_mask
@@ -916,11 +888,16 @@ fn mha[
 
     # mha inputs
     var seq_len: Int
-    var max_seq_len: Int
+    var max_seq_len = seq_len_arg
     var num_keys: Int
-    var mask_tensor_col: Int
-    var mask_batch_offset: Int
+    var mask_tensor_col = num_keys_arg
     var start_pos: UInt32 = 0
+    var mask_batch_offset: Int = (
+        batch_idx
+        * max_seq_len
+        * mask_tensor_col
+        * (config.num_heads if mask_rank == 4 else 1)
+    )
 
     @parameter
     if ragged:
@@ -932,10 +909,7 @@ fn mha[
         if seq_len < block_idx.x * config.block_m():
             return
 
-        @parameter
-        if not _is_cache_length_accurate:
-            var cache_length = k.cache_length(batch_idx)
-            start_pos = cache_length
+        start_pos = k.cache_length(batch_idx)
 
         # this is used for cross attention where we get the num_keys
         # from kv_input_row_offsets. This is when num_keys != seq_len
@@ -948,15 +922,8 @@ fn mha[
         else:
             num_keys = seq_len + k.cache_length(batch_idx)
 
-        max_seq_len = seq_len_arg
-        mask_tensor_col = seq_len_arg
         q_batch_offset = start_of_seq * config.depth * config.num_heads
-        mask_batch_offset = (
-            batch_idx
-            * max_seq_len
-            * max_seq_len
-            * (config.num_heads if mask_rank == 4 else 1)
-        )
+
     # KVCache inputs, prompt lengths are all padded to the max in batch.
     elif _use_valid_length:
         # treat valid_lengths as valid lengths
@@ -970,36 +937,19 @@ fn mha[
             var cache_length = k.cache_length(batch_idx)
             start_pos = cache_length
 
-        max_seq_len = seq_len_arg
         num_keys = seq_len + k.cache_length(batch_idx)
-        mask_tensor_col = seq_len_arg
         q_batch_offset = (
             config.depth * config.num_heads * max_seq_len * batch_idx
-        )
-        mask_batch_offset = (
-            batch_idx
-            * max_seq_len
-            * max_seq_len
-            * (config.num_heads if mask_rank == 4 else 1)
         )
     # NDBuffer inputs, homogeneous batching.
     else:
         seq_len = seq_len_arg
-
         if seq_len < block_idx.x * config.block_m():
             return
 
-        max_seq_len = seq_len_arg
         num_keys = num_keys_arg
-        mask_tensor_col = num_keys_arg
         q_batch_offset = (
             config.depth * config.num_heads * max_seq_len * batch_idx
-        )
-        mask_batch_offset = (
-            batch_idx
-            * max_seq_len
-            * num_keys
-            * (config.num_heads if mask_rank == 4 else 1)
         )
 
     @parameter
@@ -2674,9 +2624,9 @@ fn mha_decoding[
     # full_seq_len (=longest KV cache entry + longest seq in the batch,
     # which is 1 for decoding) *
     # longest seq in batch (in case TG=1) * num_heads (if multi-head attention).
-    var mask_batch_offset = batch_idx * (
-        max_cache_valid_length + (0 if _is_cache_length_accurate else 1)
-    ) * (num_heads if mask_rank == 4 else 1)
+    var mask_batch_offset = batch_idx * (max_cache_valid_length) * (
+        num_heads if mask_rank == 4 else 1
+    )
 
     @parameter
     if is_shared_kv:
@@ -3279,11 +3229,8 @@ fn mha_decoding_single_batch[
         address_space = AddressSpace.SHARED,
     ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]())
 
-    # Mask global memory iterator, seq_len = 1
-    # TODO: We currently need this to differentiate between two existing
-    # flash_attention kernels. Once we only have one we can just use
-    # max_cache_valid_length + 1.
-    var stride = num_keys if max_cache_valid_length == num_keys else max_cache_valid_length + 1
+    # Mask global memory iterator
+    var stride = max_cache_valid_length
     var kv_head_offset = Int(
         kv_head_idx * group * stride
     ) if mask_rank == 4 else 0
@@ -3871,10 +3818,7 @@ fn mha_decoding_single_batch_pipelined[
     ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]())
 
     # Mask global memory iterator, seq_len = 1
-    # TODO: We currently need this to differentiate between two existing
-    # flash_attention kernels. Once we only have one we can just use
-    # max_cache_valid_length + 1.
-    var stride = num_keys if max_cache_valid_length == num_keys else max_cache_valid_length + 1
+    var stride = max_cache_valid_length
     var kv_head_offset = Int(
         kv_head_idx * group * stride
     ) if mask_rank == 4 else 0
@@ -4282,6 +4226,13 @@ fn mha_splitk_reduce[
 # batch_size > 1.
 # ===-----------------------------------------------------------------------===#
 
+alias _NAIVE_BMM_BLOCK_DIM = LaunchDim(32, 16, 1)
+alias _NAIVE_BMM_BLOCK_TUPLE = StaticTuple[Int32, 1](
+    _NAIVE_BMM_BLOCK_DIM.x()
+    * _NAIVE_BMM_BLOCK_DIM.y()
+    * _NAIVE_BMM_BLOCK_DIM.z()
+)
+
 
 fn mha_gpu_naive[
     mask_type: DType,
@@ -4316,15 +4267,7 @@ fn mha_gpu_naive[
     alias k_type = k_t.type
     alias v_type = k_type
 
-    var num_keys: Int
-
-    # NDBuffer inputs with correct cache length
-    @parameter
-    if _is_cache_length_accurate:
-        num_keys = max_cache_size
-    # KV cache inputs with cache length one step behind the correct value.
-    else:
-        num_keys = max_prompt_len + max_cache_size
+    var num_keys = max_cache_size
 
     alias p_type = get_accum_type[q_type]()
     var p_device = ctx.enqueue_create_buffer[p_type](
@@ -4335,9 +4278,7 @@ fn mha_gpu_naive[
     var p_buffer = NDBuffer[p_type, 3](
         p_ptr, Index(batch_size * num_heads, max_prompt_len, num_keys)
     )
-
     var q_ptr = q.data
-
     alias kernel = _bmm0_bs[
         q_type,
         mask_type,
@@ -4369,7 +4310,7 @@ fn mha_gpu_naive[
             ceildiv(max_prompt_len, 16),
             num_heads * batch_size,
         ),
-        block_dim=(32, 16, 1),
+        block_dim=_NAIVE_BMM_BLOCK_DIM,
     )
 
     @parameter
@@ -4385,7 +4326,6 @@ fn mha_gpu_naive[
         2,
         ctx,
     )
-
     ctx.enqueue_function[
         _bmm1_bs[
             output_type,
@@ -4409,13 +4349,14 @@ fn mha_gpu_naive[
             ceildiv(max_prompt_len, 16),
             num_heads * batch_size,
         ),
-        block_dim=(32, 16, 1),
+        block_dim=_NAIVE_BMM_BLOCK_DIM,
     )
 
     _ = p_device^
 
 
 @always_inline
+@__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=_NAIVE_BMM_BLOCK_TUPLE)
 fn _bmm0_bs[
     q_type: DType,
     mask_type: DType,
@@ -4456,7 +4397,7 @@ fn _bmm0_bs[
     var cur_query_len: Int
     var q_offset: Int
     var cur_cache_len: Int
-    var padded_num_keys = max_prompt_len + max_cache_size
+    var padded_num_keys = max_cache_size
     var p_offset = batch_head * max_prompt_len * padded_num_keys
 
     @parameter
@@ -4465,22 +4406,24 @@ fn _bmm0_bs[
         seq_end = Int(valid_length[batch + 1])
         cur_query_len = seq_end - seq_start
         q_offset = Int((seq_start * num_heads + head) * depth)
-        cur_cache_len = cur_query_len + k.cache_length(batch)
+        cur_cache_len = k.cache_length(batch) + cur_query_len
     elif _use_valid_length:
         cur_query_len = Int(valid_length[batch])
         q_offset = Int(depth * (head + num_heads * max_prompt_len * batch))
-        cur_cache_len = cur_query_len + k.cache_length(batch)
+        cur_cache_len = k.cache_length(batch) + cur_query_len
     # When inputs are all NDBuffers i.e. all sequences in batch have the same
     # length and same cache length
     else:
         cur_query_len = max_prompt_len
         q_offset = Int(depth * (head + num_heads * max_prompt_len * batch))
         cur_cache_len = max_cache_size
-        padded_num_keys = max_cache_size
         p_offset = batch_head * max_prompt_len * max_cache_size
 
     debug_assert(cur_query_len <= max_prompt_len, "Invalid cur_query_len")
-    debug_assert(cur_cache_len <= padded_num_keys, "Invalid cur_cache_len")
+    debug_assert(
+        cur_cache_len <= padded_num_keys,
+        "Invalid cur_cache_len",
+    )
 
     if x >= padded_num_keys or y >= max_prompt_len:
         return
@@ -4558,6 +4501,7 @@ fn _bmm0_bs[
 
 
 @always_inline
+@__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=_NAIVE_BMM_BLOCK_TUPLE)
 fn _bmm1_bs[
     output_type: DType,
     p_type: DType,
@@ -4590,7 +4534,7 @@ fn _bmm1_bs[
     var cur_query_len: Int
     var output_offset: Int
     var cur_cache_len: Int
-    var padded_num_keys = max_prompt_len + max_cache_size
+    var padded_num_keys = max_cache_size
     var p_offset = batch_head * max_prompt_len * padded_num_keys
 
     @parameter
@@ -4610,7 +4554,6 @@ fn _bmm1_bs[
         cur_query_len = max_prompt_len
         output_offset = depth * (head + num_heads * max_prompt_len * batch)
         cur_cache_len = max_cache_size
-        padded_num_keys = max_cache_size
         p_offset = batch_head * max_prompt_len * max_cache_size
 
     debug_assert(cur_query_len <= max_prompt_len, "Invalid cur_query_len")
