@@ -180,6 +180,8 @@ from tensor_internal import (
     MutableInputTensor,
     OutputTensor,
     VariadicTensors,
+    InputVariadicTensors,
+    OutputVariadicTensors,
     _input_fusion_hook_impl,
     _output_fusion_hook_impl,
     foreach,
@@ -4115,13 +4117,14 @@ struct TopK:
 
 @compiler.register("mo.non_maximum_suppression")
 struct NonMaximumSupression:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType
     ](
-        output: ManagedTensorSlice[type = DType.int64, rank=2],
-        boxes: ManagedTensorSlice[type=type, rank=3],
-        scores: ManagedTensorSlice[type=type, rank=3],
+        output: OutputTensor[type = DType.int64, rank=2],
+        boxes: InputTensor[type=type, rank=3],
+        scores: InputTensor[type=type, rank=3],
         max_output_boxes_per_class: Scalar[DType.int64],
         iou_threshold: Float32,
         score_threshold: Float32,
@@ -4170,6 +4173,7 @@ struct NonMaximumSupression:
 @compiler.register("mo.matmul")
 struct Matmul:
     @compiler.enable_fusion_for("c")
+    @enforce_io_param
     @staticmethod
     fn execute[
         transpose_b: Bool,
@@ -4178,9 +4182,9 @@ struct Matmul:
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        c: ManagedTensorSlice[rank=2],
-        a: ManagedTensorSlice[rank=2],
-        b: ManagedTensorSlice[rank=2],
+        c: OutputTensor[rank=2],
+        a: InputTensor[rank=2],
+        b: InputTensor[rank=2],
         ctx: DeviceContextPtr,
     ) raises:
         constrained[
@@ -4223,6 +4227,7 @@ struct Matmul:
 @compiler.register("mo.batch_matmul")
 struct BatchMatmul:
     @compiler.enable_fusion_for("c")
+    @enforce_io_param
     @staticmethod
     fn execute[
         lambdas_have_fusion: Bool,
@@ -4231,9 +4236,9 @@ struct BatchMatmul:
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        c: ManagedTensorSlice[rank=rank],
-        a: ManagedTensorSlice[rank=rank],
-        b: ManagedTensorSlice[rank=rank],
+        c: OutputTensor[rank=rank],
+        a: InputTensor[rank=rank],
+        b: InputTensor[rank=rank],
         ctx: DeviceContextPtr,
     ) raises:
         alias transpose_a = False
@@ -4281,14 +4286,15 @@ struct BatchMatmul:
 
 @compiler.register("mo.linalg.solve")
 struct LinalgSolve:
+    @enforce_io_param
     @staticmethod
     fn execute[
         _synchronous: Bool,
         type: DType,
     ](
-        x: ManagedTensorSlice[type=type],
-        a: ManagedTensorSlice[type=type],
-        b: ManagedTensorSlice[type=type],
+        x: OutputTensor[type=type],
+        a: InputTensor[type=type],
+        b: InputTensor[type=type],
     ) raises:
         matrix_solve[single_thread_blocking_override=_synchronous](
             managed_tensor_slice_to_ndbuffer(a),
@@ -4313,6 +4319,7 @@ struct LinalgSolve:
 @compiler.register("mo.linalg.band_part")
 struct LinalgBandPart:
     @compiler.enable_fusion_for("input")
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -4321,11 +4328,11 @@ struct LinalgBandPart:
         int_type: DType,
         rank: Int,
     ](
-        output: ManagedTensorSlice[type=type, rank=rank],
-        input: ManagedTensorSlice[type=type, rank=rank],
-        num_lower: ManagedTensorSlice[type=int_type, rank=1],
-        num_upper: ManagedTensorSlice[type=int_type, rank=1],
-        exclude: ManagedTensorSlice[rank=1],
+        output: OutputTensor[type=type, rank=rank],
+        input: InputTensor[type=type, rank=rank],
+        num_lower: InputTensor[type=int_type, rank=1],
+        num_upper: InputTensor[type=int_type, rank=1],
+        exclude: InputTensor[rank=1],
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
@@ -4364,6 +4371,7 @@ struct LinalgBandPart:
 
 @compiler.register("mo.resize.nearest")
 struct ResizeNearest:
+    @enforce_io_param
     @staticmethod
     fn execute[
         coordinate_transform_mode: Int,
@@ -4371,9 +4379,9 @@ struct ResizeNearest:
         rank: Int,
         type: DType,
     ](
-        output: ManagedTensorSlice[type=type, rank=rank],
-        input: ManagedTensorSlice[type=type, rank=rank],
-        size: ManagedTensorSlice[rank=1],
+        output: OutputTensor[type=type, rank=rank],
+        input: InputTensor[type=type, rank=rank],
+        size: InputTensor[rank=1],
     ):
         resize_nearest_neighbor[coordinate_transform_mode, round_mode](
             managed_tensor_slice_to_ndbuffer(input),
@@ -4396,6 +4404,7 @@ struct ResizeNearest:
 
 @compiler.register("mo.resize.linear")
 struct ResizeLinear:
+    @enforce_io_param
     @staticmethod
     fn execute[
         coordinate_transform_mode: Int,
@@ -4403,9 +4412,9 @@ struct ResizeLinear:
         rank: Int,
         type: DType,
     ](
-        output: ManagedTensorSlice[type=type, rank=rank],
-        input: ManagedTensorSlice[type=type, rank=rank],
-        size: ManagedTensorSlice[rank=1],
+        output: OutputTensor[type=type, rank=rank],
+        input: InputTensor[type=type, rank=rank],
+        size: InputTensor[rank=1],
     ):
         resize_linear[coordinate_transform_mode, antialias](
             managed_tensor_slice_to_ndbuffer(input),
@@ -4433,15 +4442,16 @@ struct ResizeLinear:
 
 @compiler.register("mo.roi_align")
 struct ROIAlign:
+    @enforce_io_param
     @staticmethod
     fn execute[
         aligned: Bool,
         mode: StringLiteral,
         type: DType,
     ](
-        output: ManagedTensorSlice[type=type, rank=4],
-        input: ManagedTensorSlice[type=type, rank=4],
-        rois: ManagedTensorSlice[type=type, rank=2],
+        output: OutputTensor[type=type, rank=4],
+        input: InputTensor[type=type, rank=4],
+        rois: InputTensor[type=type, rank=2],
         output_height: Scalar[DType.int64],
         output_width: Scalar[DType.int64],
         spatial_scale: Scalar,
@@ -4714,6 +4724,7 @@ fn concat_shape_impl[
 
 @compiler.register("mo.concat")
 struct Concat:
+    @enforce_io_param
     @compiler.enable_fusion_for("inputs", "output")
     @staticmethod
     fn execute[
@@ -4722,9 +4733,9 @@ struct Concat:
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        output: ManagedTensorSlice[type=type, rank=rank],
+        output: OutputTensor[type=type, rank=rank],
         axis: Int,
-        inputs: VariadicTensors[type, rank, *_],
+        inputs: InputVariadicTensors[type, rank, *_],
         ctx: DeviceContextPtr,
     ) raises:
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
@@ -4785,8 +4796,6 @@ struct Concat:
 
 
 # Helper method used by compiler to reconcile MGP list with type Mojo expects.
-# TODO(GEX-1789): Specialized on just Input tensors atm which is fine since
-# this is only used by an input list of tensor for mo.concat_from_list
 @register_internal("to_managed_tensor_slice_list")
 @always_inline
 fn to_managed_tensor_slice_list[
@@ -4947,6 +4956,7 @@ struct ConcatFromList:
 # handling in the graph compiler to make things work.
 @compiler.register("mo.split")
 struct Split:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -4954,9 +4964,9 @@ struct Split:
         _synchronous: Bool,
         target: StringLiteral,
     ](
-        output: VariadicTensors[type, rank, *_],
-        input: ManagedTensorSlice[type=type, rank=rank],
-        split_sizes: ManagedTensorSlice[rank=1],
+        output: OutputVariadicTensors[type, rank, *_],
+        input: InputTensor[type=type, rank=rank],
+        split_sizes: InputTensor[rank=1],
         axis: Int,
         ctx: DeviceContextPtr,
     ) raises:
@@ -5027,6 +5037,7 @@ struct SplitOutputShapeHelper:
 @compiler.register("mo.conv")
 struct Conv:
     @compiler.enable_fusion_for("output")
+    @enforce_io_param
     @staticmethod
     fn execute[
         filter_packed: Bool,
@@ -5036,12 +5047,12 @@ struct Conv:
         static_padding: DimList,
         target: StringLiteral,
     ](
-        output: ManagedTensorSlice,
-        input: ManagedTensorSlice[rank = output.rank],
-        filter: ManagedTensorSlice,
-        strides: ManagedTensorSlice,
-        dilation: ManagedTensorSlice,
-        paddings: ManagedTensorSlice,
+        output: OutputTensor,
+        input: InputTensor[rank = output.rank],
+        filter: InputTensor,
+        strides: InputTensor,
+        dilation: InputTensor,
+        paddings: InputTensor,
         num_groups: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
@@ -5194,18 +5205,19 @@ struct Conv:
 @compiler.register("mo.conv_transpose")
 struct ConvTranspose:
     @compiler.enable_fusion_for("output")
+    @enforce_io_param
     @staticmethod
     fn execute[
         filter_packed: Bool,
         lambdas_have_fusion: Bool,
     ](
-        output: ManagedTensorSlice,
-        input: ManagedTensorSlice[rank = output.rank],
-        filter: ManagedTensorSlice,
-        strides: ManagedTensorSlice[rank=1],
-        dilation: ManagedTensorSlice[rank=1],
-        paddings: ManagedTensorSlice[rank=1],
-        output_paddings: ManagedTensorSlice[rank=1],
+        output: OutputTensor,
+        input: InputTensor[rank = output.rank],
+        filter: InputTensor,
+        strides: InputTensor[rank=1],
+        dilation: InputTensor[rank=1],
+        paddings: InputTensor[rank=1],
+        output_paddings: InputTensor[rank=1],
     ) raises:
         constrained[
             strides.type.is_integral()
@@ -5322,15 +5334,16 @@ struct ConvTranspose:
 
 @compiler.register("masked_flash_attention_gpu")
 struct MaskedFlashAttentionGPU:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral, rank: Int
     ](
-        output: ManagedTensorSlice[rank=rank],
-        q: ManagedTensorSlice[rank=rank],
-        k: ManagedTensorSlice[rank=rank],
-        v: ManagedTensorSlice[rank=rank],
-        mask: ManagedTensorSlice,
+        output: OutputTensor[rank=rank],
+        q: InputTensor[rank=rank],
+        k: InputTensor[rank=rank],
+        v: InputTensor[rank=rank],
+        mask: InputTensor,
         scale: Scalar[type = DType.float32],
         ctx: DeviceContextPtr,
     ) raises:
@@ -5400,15 +5413,16 @@ struct MaskedFlashAttentionGPU:
 @compiler.register("no_mask_flash_attention_cpu")
 struct NoMaskFlashAttentionCPU:
     @compiler.enable_fusion_for("k", "v")
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
         rank: Int,
     ](
-        output: ManagedTensorSlice[type=type, rank=rank],
-        q: ManagedTensorSlice[type=type, rank=rank],
-        k: ManagedTensorSlice[type=type, rank=rank],
-        v: ManagedTensorSlice[type=type, rank=rank],
+        output: OutputTensor[type=type, rank=rank],
+        q: InputTensor[type=type, rank=rank],
+        k: InputTensor[type=type, rank=rank],
+        v: InputTensor[type=type, rank=rank],
         scale: Scalar[type = DType.float32],
     ) raises:
         @parameter
@@ -5445,18 +5459,19 @@ struct NoMaskFlashAttentionCPU:
 @compiler.register("with_mask_flash_attention_split_kv_cpu")
 struct WithMaskFlashAttentionSplitKVCPU:
     @compiler.enable_fusion_for("k", "v", "k_cache", "v_cache", "mask")
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
         rank: Int,
     ](
-        output: ManagedTensorSlice[type=type, rank=rank],
-        q: ManagedTensorSlice[type=type, rank=rank],
-        k: ManagedTensorSlice[type=type, rank=rank],
-        v: ManagedTensorSlice[type=type, rank=rank],
-        k_cache: ManagedTensorSlice[type=type, rank = rank + 1],
-        v_cache: ManagedTensorSlice[type=type, rank = rank + 1],
-        mask: ManagedTensorSlice[type=type],
+        output: OutputTensor[type=type, rank=rank],
+        q: InputTensor[type=type, rank=rank],
+        k: InputTensor[type=type, rank=rank],
+        v: InputTensor[type=type, rank=rank],
+        k_cache: InputTensor[type=type, rank = rank + 1],
+        v_cache: InputTensor[type=type, rank = rank + 1],
+        mask: InputTensor[type=type],
         scale: Scalar[type = DType.float32],
     ) raises:
         @parameter
@@ -5525,16 +5540,17 @@ struct WithMaskFlashAttentionSplitKVCPU:
 @compiler.register("with_mask_flash_attention_cpu")
 struct WithMaskFlashAttentionCPU:
     @compiler.enable_fusion_for("k", "v", "mask")
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
         rank: Int,
     ](
-        output: ManagedTensorSlice[type=type, rank=rank],
-        q: ManagedTensorSlice[type=type, rank=rank],
-        k: ManagedTensorSlice[type=type, rank=rank],
-        v: ManagedTensorSlice[type=type, rank=rank],
-        mask: ManagedTensorSlice[type=type],
+        output: OutputTensor[type=type, rank=rank],
+        q: InputTensor[type=type, rank=rank],
+        k: InputTensor[type=type, rank=rank],
+        v: InputTensor[type=type, rank=rank],
+        mask: InputTensor[type=type],
         scale: Scalar[type = DType.float32],
     ) raises:
         @parameter
