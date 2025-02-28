@@ -176,9 +176,9 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
             dtype=pipeline_config.cache_dtype,
             n_kv_heads=num_kv_heads,
             head_dim=hidden_size // num_kv_heads,
-            cache_strategy=pipeline_config.cache_strategy,
-            enable_prefix_caching=pipeline_config.enable_prefix_caching,
-            page_size=pipeline_config.kv_cache_page_size,
+            cache_strategy=pipeline_config.kv_cache_config.cache_strategy,
+            enable_prefix_caching=pipeline_config.kv_cache_config.enable_prefix_caching,
+            page_size=pipeline_config.kv_cache_config.kv_cache_page_size,
         )
 
     def load_kv_manager(
@@ -436,7 +436,10 @@ def test_registry__update_cache_strategy():
     # Naive is not shown as supported in architecture, as
     # such this should change to a support strategy automatically.
     pipeline_config = PIPELINE_REGISTRY.validate_pipeline_config(config)
-    assert pipeline_config.cache_strategy == KVCacheStrategy.CONTINUOUS
+    assert (
+        pipeline_config.kv_cache_config.cache_strategy
+        == KVCacheStrategy.CONTINUOUS
+    )
 
 
 @prepare_registry

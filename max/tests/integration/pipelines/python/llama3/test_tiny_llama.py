@@ -101,7 +101,7 @@ def test_tiny_llama_naive_kv_cache(
     """
     # Check that we indeed have a naive KV cache Llama model.
     assert (
-        tinyllama_pipeline._pipeline_config.cache_strategy
+        tinyllama_pipeline._pipeline_config.kv_cache_config.cache_strategy
         == KVCacheStrategy.NAIVE
     )
 

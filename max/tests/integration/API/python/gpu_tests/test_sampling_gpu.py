@@ -12,7 +12,7 @@ import xgrammar as xgr
 from max.driver import CPU, Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.pipelines import SamplingParams
+from max.pipelines import SamplingConfig
 from max.pipelines.sampling import token_sampler
 from transformers import AutoConfig, AutoTokenizer
 
@@ -50,7 +50,7 @@ def test_bitmask_sampling_vs_xgrammar():
 
     # Create one op sampling graph
     graph = token_sampler(
-        SamplingParams(
+        SamplingConfig(
             top_k=5,
             enable_structured_output=True,
             in_dtype=DType.float32,

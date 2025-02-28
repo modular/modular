@@ -10,7 +10,12 @@ from unittest.mock import MagicMock
 
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.pipelines import SamplingParams, TextContext, TextGenerationPipeline
+from max.pipelines import (
+    ProfilingConfig,
+    SamplingConfig,
+    TextContext,
+    TextGenerationPipeline,
+)
 
 from .pipeline_model import MockPipelineModel
 from .tokenizer import MockTextTokenizer
@@ -34,13 +39,11 @@ def retrieve_mock_text_generation_pipeline(
 
     # Create a mock Pipeline Config
     mock_config = MagicMock()
-    mock_config.enable_structured_output = False
-    mock_config.gpu_profiling = "false"
-    mock_config.sampling_params = SamplingParams(
-        top_k=1,
+    mock_config.profiling_config = ProfilingConfig(
+        gpu_profiling="false",
+    )
+    mock_config.sampling_config = SamplingConfig(
         enable_structured_output=False,
-        in_dtype=DType.float32,
-        out_dtype=DType.float32,
     )
     mock_config.huggingface_repo_id = "HuggingFaceTB/SmolLM-135M-Instruct"
     mock_config.huggingface_config.vocab_size = vocab_size

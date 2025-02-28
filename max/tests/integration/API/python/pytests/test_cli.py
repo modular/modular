@@ -357,9 +357,15 @@ def testing(
         pipeline_config = PipelineConfig(**config_kwargs)
 
         for attr_name, expected_value in test_command.expected.items():
-            assert hasattr(pipeline_config, attr_name)
-            test_value = getattr(pipeline_config, attr_name)
-            assert test_value == expected_value
+            if attr_name == "cache_strategy":
+                assert (
+                    pipeline_config._kv_cache_config.cache_strategy
+                    == expected_value
+                )
+            else:
+                assert hasattr(pipeline_config, attr_name)
+                test_value = getattr(pipeline_config, attr_name)
+                assert test_value == expected_value
 
     else:
         with pytest.raises(Exception):
@@ -367,9 +373,15 @@ def testing(
             pipeline_config = PipelineConfig(**config_kwargs)
 
             for attr_name, expected_value in test_command.expected.items():
-                assert hasattr(pipeline_config, attr_name)
-                test_value = getattr(pipeline_config, attr_name)
-                assert test_value == expected_value
+                if attr_name == "cache_strategy":
+                    assert (
+                        pipeline_config._kv_cache_config.cache_strategy
+                        == expected_value
+                    )
+                else:
+                    assert hasattr(pipeline_config, attr_name)
+                    test_value = getattr(pipeline_config, attr_name)
+                    assert test_value == expected_value
 
 
 def test_cli__terminal_commands():

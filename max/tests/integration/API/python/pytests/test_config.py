@@ -20,7 +20,7 @@ from max.pipelines.config import (
 def test_config_init__raises_with_no_model_path():
     # We expect this to fail.
     with pytest.raises(ValueError):
-        _ = PipelineConfig(weight_path="file.gguf")  # type: ignore
+        _ = PipelineConfig(weight_path="file.gguf")
 
 
 def test_config_post_init__with_weight_path_but_no_model_path():
@@ -39,7 +39,7 @@ def test_config_init__reformats_with_str_weights_path():
     # We expect this to convert the string.
     config = PipelineConfig(
         model_path="modularai/llama-3.1",
-        weight_path="file.path",  # type: ignore
+        weight_path="file.path",
     )
 
     assert isinstance(config.weight_path, list)
