@@ -520,6 +520,10 @@ class PagedKVCacheManager(KVCacheManager):
             assert seq_id not in self.fetch_metadata
 
             # Add prompt and inflight tokens to the token array
+            if seq_id not in self.active_requests:
+                raise ValueError(
+                    f"Called fetch on seq_id {seq_id} without claiming it"
+                )
             data = self.active_requests[seq_id]
             data.fetch(prompt, num_steps)
 
@@ -543,26 +547,23 @@ class PagedKVCacheManager(KVCacheManager):
         )
         cache_lengths_np = np.zeros((batch_size,), dtype=np.uint32)
 
-        # Iterate over requests and query prefix cache
-        all_cache_hit_blocks: set[int] = set()
-        for batch_idx, (seq_id, prompt) in enumerate(
-            seq_ids_and_prompts.items()
-        ):
-            # Ensure we've called claim for this sequence id.
-            if seq_id not in self.active_requests:
-                raise ValueError(f"seq_id: {seq_id} not in active requests.")
-
-            if self.prefix_cache is not None:
-                data = self.active_requests[seq_id]
-                # bump the committed_idx, and possibly the cached_idx
-                prefix_blocks = self.prefix_cache.fetch(
-                    seq_id,
-                    data,
-                    free_block_fn=self.release_block,
-                    alloc_block_fn=self.alloc_block,
-                )
+        # Execute all of the COW ops enqueued during prefix_cache.fetch
+        all_cache_hit_blocks = set()
+        if self.prefix_cache is not None:
+            seq_ids_and_data = {
+                seq_id: self.active_requests[seq_id]
+                for seq_id in seq_ids_and_prompts
+            }
+            seq_ids_and_prefix_blocks = self.prefix_cache.fetch(
+                seq_ids_and_data,
+                free_block_fn=self.release_block,
+                alloc_block_fn=self.alloc_block,
+            )
+            for prefix_blocks in seq_ids_and_prefix_blocks.values():
                 all_cache_hit_blocks.update(prefix_blocks)
-                # Possibly trim the input prompt.
+
+            for seq_id in seq_ids_and_prompts:
+                data = seq_ids_and_data[seq_id]
                 seq_ids_and_prompts[seq_id] = data.prompt_tokens
 
         # Determine the number of pages required for each sequence.
