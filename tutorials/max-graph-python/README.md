@@ -3,6 +3,10 @@
 This is an example of building a model with the MAX Graph API in Python and
 execute it with MAX Engine.
 
+For more explanation about this code, see the tutorial to [Get started with MAX
+Graph in
+Python](https://docs.modular.com/max/tutorials/get-started-with-max-graph-in-python).
+
 ## Usage
 
 First, install [Magic](https://docs.modular.com/magic/).
@@ -37,7 +41,7 @@ You should see the following output:
 platform darwin -- Python 3.12.7, pytest-8.3.3, pluggy-1.5.0
 rootdir: /max-repo
 configfile: pyproject.toml
-collected 6 items                                           
+collected 6 items
 
 tests/test_addition.py ......                         [100%]
 

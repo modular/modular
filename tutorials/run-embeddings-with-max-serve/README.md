@@ -14,3 +14,7 @@ search through documents semantically.
     ```bash
     python -m embeddings.kb_system
     ```
+
+For a complete walkthrough, see the tutorial to [Deploy a text embedding model
+with an
+endpoint](https://docs.modular.com/max/tutorials/run-embeddings-with-max-serve)
