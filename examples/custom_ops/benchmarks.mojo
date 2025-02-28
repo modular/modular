@@ -27,7 +27,7 @@ from memory import UnsafePointer
 from runtime.asyncrt import DeviceContextPtr
 from benchmark import ThroughputMeasure, BenchId, BenchMetric, Bench, Bencher
 from bit import log2_floor
-from sys import sizeof, has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
+from sys import sizeof, has_nvidia_gpu_accelerator
 from memory import AddressSpace
 
 
@@ -86,7 +86,7 @@ def top_k():
     b.bench_function[bench_cpu](BenchId("top_k_custom", "cpu"), flops, elements)
 
     @parameter
-    if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+    if has_nvidia_gpu_accelerator():
         var gpu_ctx = DeviceContext()
 
         var in_vals_dev_buff = gpu_ctx.enqueue_create_buffer[val_dtype](els)
@@ -201,7 +201,7 @@ def matmul():
     bench.bench_function[bench_cpu](BenchId("cpu", "naive"), flops, elements)
 
     @parameter
-    if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+    if has_nvidia_gpu_accelerator():
         var gpu_ctx = DeviceContext()
         var a_dev_buf = gpu_ctx.enqueue_create_buffer[dtype](a_els)
         var b_dev_buf = gpu_ctx.enqueue_create_buffer[dtype](b_els)
