@@ -57,6 +57,8 @@ def execute_ragged_flash_attention(
 
     var true_ce_total_length = 0
     var mixed_ce_total_length = 0
+    var true_ce_max_context_length = 0
+    var mixed_ce_max_context_length = 0
     var true_ce_max_full_context_length = 0
     var mixed_ce_max_full_context_length = 0
     var true_ce_max_prompt_length = 0
@@ -67,6 +69,12 @@ def execute_ragged_flash_attention(
         true_ce_cache_lengths_host.tensor[i] = true_ce_cache_lens[i]
         mixed_ce_cache_lengths_host.tensor[i] = mixed_ce_cache_lens[i]
 
+        true_ce_max_context_length = max(
+            true_ce_max_context_length, true_ce_cache_lens[i]
+        )
+        mixed_ce_max_context_length = max(
+            mixed_ce_max_context_length, mixed_ce_cache_lens[i]
+        )
         true_ce_max_full_context_length = max(
             true_ce_max_full_context_length,
             true_ce_cache_lens[i] + true_ce_prompt_lens[i],
@@ -189,7 +197,7 @@ def execute_ragged_flash_attention(
         true_ce_cache_lengths_device.tensor,
         paged_lut_device.tensor,
         true_ce_max_prompt_length,
-        true_ce_max_full_context_length,
+        true_ce_max_context_length,
         layer_idx,
         PagedCacheType.KeyIdx,
     )
@@ -199,7 +207,7 @@ def execute_ragged_flash_attention(
         true_ce_cache_lengths_device.tensor,
         paged_lut_device.tensor,
         true_ce_max_prompt_length,
-        true_ce_max_full_context_length,
+        true_ce_max_context_length,
         layer_idx,
         PagedCacheType.ValueIdx,
     )
@@ -209,7 +217,7 @@ def execute_ragged_flash_attention(
         mixed_ce_cache_lengths_device.tensor,
         paged_lut_device.tensor,
         mixed_ce_max_prompt_length,
-        mixed_ce_max_full_context_length,
+        mixed_ce_max_context_length,
         layer_idx,
         PagedCacheType.KeyIdx,
     )
@@ -219,7 +227,7 @@ def execute_ragged_flash_attention(
         mixed_ce_cache_lengths_device.tensor,
         paged_lut_device.tensor,
         mixed_ce_max_prompt_length,
-        mixed_ce_max_full_context_length,
+        mixed_ce_max_context_length,
         layer_idx,
         PagedCacheType.ValueIdx,
     )

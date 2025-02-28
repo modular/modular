@@ -181,17 +181,15 @@ def execute_matmul_kv_cache_ragged[
     ref_output_device = ref_output_host.copy_to_device(ctx)
 
     # Initialize our KVCache.
-    cache_lengths_host = HostNDBuffer[DType.uint32, 1]((batch_size,))
-    max_prompt_len = 0
-    max_context_len = 0
+    is_context_encoding = True
+    cache_sizes_host = HostNDBuffer[DType.uint32, 1]((batch_size,))
     for i in range(batch_size):
-        cache_lengths_host.tensor[i] = cache_sizes[i]
-        max_prompt_len = max(max_prompt_len, prompt_lens[i])
-        max_context_len = max(
-            max_context_len, Int(cache_sizes[i] + prompt_lens[i])
-        )
+        cache_sizes_host.tensor[i] = cache_sizes[i]
+        if cache_sizes_host.tensor[i] != 0:
+            is_context_encoding = False
 
-    cache_lengths_device = cache_lengths_host.copy_to_device(ctx)
+    cache_sizes_device = cache_sizes_host.copy_to_device(ctx)
+
     kv_block_host = HostNDBuffer[type, 6](
         IndexList[6](
             num_blocks,
@@ -223,37 +221,33 @@ def execute_matmul_kv_cache_ragged[
 
     k_cache_device = CacheType(
         kv_block_device.tensor,
-        cache_lengths_device.tensor,
+        cache_sizes_device.tensor,
         lookup_table_device.tensor,
-        max_prompt_len,
-        max_context_len,
+        is_context_encoding,
         layer_idx,
         CacheType.KeyIdx,
     )
     k_cache_host = CacheType(
         kv_block_host.tensor,
-        cache_lengths_host.tensor,
+        cache_sizes_host.tensor,
         lookup_table_host.tensor,
-        max_prompt_len,
-        max_context_len,
+        is_context_encoding,
         layer_idx,
         CacheType.KeyIdx,
     )
     v_cache_device = CacheType(
         kv_block_device.tensor,
-        cache_lengths_device.tensor,
+        cache_sizes_device.tensor,
         lookup_table_device.tensor,
-        max_prompt_len,
-        max_context_len,
+        is_context_encoding,
         layer_idx,
         CacheType.ValueIdx,
     )
     v_cache_host = CacheType(
         kv_block_host.tensor,
-        cache_lengths_host.tensor,
+        cache_sizes_host.tensor,
         lookup_table_host.tensor,
-        max_prompt_len,
-        max_context_len,
+        is_context_encoding,
         layer_idx,
         CacheType.ValueIdx,
     )
@@ -324,8 +318,8 @@ def execute_matmul_kv_cache_ragged[
     _ = kv_block_host^
     _ = lookup_table_host^
     _ = lookup_table_device^
-    _ = cache_lengths_device^
-    _ = cache_lengths_host^
+    _ = cache_sizes_device^
+    _ = cache_sizes_host^
     _ = input_row_offsets_device^
     _ = input_row_offsets_host^
 
@@ -575,7 +569,7 @@ def execute_paged_fused_qkv_matmul[
         "expected prompt_lens and cache_sizes size to be equal",
     )
 
-    var cache_lengths_host = HostNDBuffer[DType.uint32, 1](
+    var cache_sizes_host = HostNDBuffer[DType.uint32, 1](
         IndexList[1](batch_size)
     )
 
@@ -591,17 +585,19 @@ def execute_paged_fused_qkv_matmul[
     )
 
     var total_length = 0
+    var max_context_length = 0
     var max_full_context_length = 0
     var max_seq_length_batch = 0
     for i in range(batch_size):
-        cache_lengths_host.tensor[i] = cache_sizes[i]
+        cache_sizes_host.tensor[i] = cache_sizes[i]
+        max_context_length = max(max_context_length, cache_sizes[i])
         max_full_context_length = max(
-            max_full_context_length, Int(cache_sizes[i] + prompt_lens[i])
+            max_full_context_length, cache_sizes[i] + prompt_lens[i]
         )
         max_seq_length_batch = max(max_seq_length_batch, prompt_lens[i])
         total_length += prompt_lens[i]
 
-    cache_lengths_device = cache_lengths_host.copy_to_device(ctx)
+    cache_sizes_device = cache_sizes_host.copy_to_device(ctx)
 
     paged_lut_host = HostNDBuffer[DType.uint32, 2](
         IndexList[2](batch_size, ceildiv(max_full_context_length, page_size))
@@ -623,39 +619,39 @@ def execute_paged_fused_qkv_matmul[
 
     k_cache_device = PagedCacheType(
         kv_block_device.tensor,
-        cache_lengths_device.tensor,
+        cache_sizes_device.tensor,
         paged_lut_device.tensor,
         max_seq_length_batch,
-        max_full_context_length,
+        max_context_length,
         layer_idx,
         PagedCacheType.KeyIdx,
     )
     k_cache_host = PagedCacheType(
         kv_block_host.tensor,
-        cache_lengths_host.tensor,
+        cache_sizes_host.tensor,
         paged_lut_host.tensor,
         max_seq_length_batch,
-        max_full_context_length,
+        max_context_length,
         layer_idx,
         PagedCacheType.KeyIdx,
     )
 
     v_cache_device = PagedCacheType(
         kv_block_device.tensor,
-        cache_lengths_device.tensor,
+        cache_sizes_device.tensor,
         paged_lut_device.tensor,
         max_seq_length_batch,
-        max_full_context_length,
+        max_context_length,
         layer_idx,
         PagedCacheType.ValueIdx,
     )
 
     v_cache_host = PagedCacheType(
         kv_block_host.tensor,
-        cache_lengths_host.tensor,
+        cache_sizes_host.tensor,
         paged_lut_host.tensor,
         max_seq_length_batch,
-        max_full_context_length,
+        max_context_length,
         layer_idx,
         PagedCacheType.ValueIdx,
     )
@@ -683,8 +679,8 @@ def execute_paged_fused_qkv_matmul[
     _ = kv_block_host^
     _ = paged_lut_device^
     _ = paged_lut_host^
-    _ = cache_lengths_device^
-    _ = cache_lengths_host^
+    _ = cache_sizes_device^
+    _ = cache_sizes_host^
 
 
 def execute_cont_batch_fused_qkv_matmul[
@@ -721,22 +717,18 @@ def execute_cont_batch_fused_qkv_matmul[
     # initialize our KVCache
     var is_context_encoding = True
     var batch_size = len(cache_sizes)
-    var cache_lengths_host = HostNDBuffer[DType.uint32, 1]((batch_size,))
+    var cache_sizes_host = HostNDBuffer[DType.uint32, 1]((batch_size,))
     var max_seq_length_batch = -1
-    var max_context_length = 0
 
     for i in range(batch_size):
-        cache_lengths_host.tensor[i] = cache_sizes[i]
-        max_context_length = max(
-            max_context_length, Int(cache_sizes[i] + prompt_lens[i])
-        )
-        if cache_lengths_host.tensor[i] != 0:
+        cache_sizes_host.tensor[i] = cache_sizes[i]
+        if cache_sizes_host.tensor[i] != 0:
             is_context_encoding = False
 
         if prompt_lens[i] > max_seq_length_batch:
             max_seq_length_batch = prompt_lens[i]
 
-    var cache_lengths_device = cache_lengths_host.copy_to_device(ctx)
+    var cache_sizes_device = cache_sizes_host.copy_to_device(ctx)
 
     kv_block_host = HostNDBuffer[type, 6](
         IndexList[6](
@@ -771,37 +763,33 @@ def execute_cont_batch_fused_qkv_matmul[
 
     var k_cache_device = CacheType(
         kv_block_device.tensor,
-        cache_lengths_device.tensor,
+        cache_sizes_device.tensor,
         lookup_table_device.tensor,
-        max_seq_length_batch,
-        max_context_length,
+        is_context_encoding,
         layer_idx,
         CacheType.KeyIdx,
     )
     var k_cache_host = CacheType(
         kv_block_host.tensor,
-        cache_lengths_host.tensor,
+        cache_sizes_host.tensor,
         lookup_table_host.tensor,
-        max_seq_length_batch,
-        max_context_length,
+        is_context_encoding,
         layer_idx,
         CacheType.KeyIdx,
     )
     var v_cache_device = CacheType(
         kv_block_device.tensor,
-        cache_lengths_device.tensor,
+        cache_sizes_device.tensor,
         lookup_table_device.tensor,
-        max_seq_length_batch,
-        max_context_length,
+        is_context_encoding,
         layer_idx,
         CacheType.ValueIdx,
     )
     var v_cache_host = CacheType(
         kv_block_host.tensor,
-        cache_lengths_host.tensor,
+        cache_sizes_host.tensor,
         lookup_table_host.tensor,
-        max_seq_length_batch,
-        max_context_length,
+        is_context_encoding,
         layer_idx,
         CacheType.ValueIdx,
     )
@@ -830,8 +818,8 @@ def execute_cont_batch_fused_qkv_matmul[
     _ = kv_block_host^
     _ = lookup_table_device^
     _ = lookup_table_host^
-    _ = cache_lengths_device^
-    _ = cache_lengths_host^
+    _ = cache_sizes_device^
+    _ = cache_sizes_host^
 
 
 # TODO implement fused qkv matmul for paged

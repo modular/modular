@@ -9,13 +9,7 @@ from math import isqrt
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    random,
-    assert_with_measure,
-)
-from internal_utils._measure import cosine
+from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import (
     ContiguousKVCache,
     ContiguousKVCacheCollection,
@@ -171,7 +165,7 @@ def execute_flash_attention[
         num_layers=num_layers,
         batch_size=batch_size,
         max_seq_len_in_batch=prompt_len,
-        max_cache_len_in_batch=cache_size + prompt_len,
+        max_cache_len_in_batch=cache_size,
     )
 
     valid_lengths_host = HostNDBuffer[DType.uint32, 1](Index(batch_size))
@@ -237,13 +231,13 @@ def execute_flash_attention[
     for bs in range(batch_size):
         for s in range(prompt_len):
             for h in range(num_q_heads):
-                var ref_view = NDBuffer[type, 1, DimList(kv_params.head_size)](
-                    ref_out._offset((bs, s, h, 0))
-                )
-                var test_view = NDBuffer[type, 1, DimList(kv_params.head_size)](
-                    test_out._offset((bs, s, h, 0))
-                )
-                assert_with_measure[cosine](ref_view, test_view, threshold=1e-5)
+                for hd in range(kv_params.head_size):
+                    assert_almost_equal(
+                        ref_out[bs, s, h, hd],
+                        test_out[bs, s, h, hd],
+                        atol=1e-5,
+                        rtol=8e-3,
+                    )
 
     _ = q_device^
     _ = q_host^

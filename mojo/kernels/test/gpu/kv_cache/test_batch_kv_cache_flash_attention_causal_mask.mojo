@@ -179,7 +179,7 @@ def execute_flash_attention[
         if cache_valid_length[i] != 0:
             is_context_encoding = False
         max_cache_len_in_batch = max(
-            max_cache_len_in_batch, Int(cache_valid_length[i] + valid_length[i])
+            max_cache_len_in_batch, Int(cache_valid_length[i])
         )
         max_seq_len_in_batch = max(max_seq_len_in_batch, Int(valid_length[i]))
 
@@ -302,9 +302,17 @@ def execute_flash_attention[
         for s in range(valid_length[bs]):
             for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):
-                    var ref_val = ref_out[bs, Int(s), h, hd]
-                    var test_val = test_out[bs, Int(s), h, hd]
-                    assert_almost_equal(ref_val, test_val, atol=1e-5, rtol=8e-3)
+                    # print(bs, s, h, hd, test_out[bs, s, h, hd])
+                    var expect = ref_out[Index(bs, s, Int(h), Int(hd))]
+                    var actual = test_out[Index(bs, s, Int(h), Int(hd))]
+                    if not isclose(actual, expect, atol=1e-5, rtol=8e-3):
+                        print(bs, s, h, hd, actual, expect)
+                    assert_almost_equal(
+                        expect,
+                        actual,
+                        atol=1e-5,
+                        rtol=8e-3,
+                    )
 
     _ = q_device^
     _ = q_host^
@@ -326,8 +334,7 @@ def execute_flash_attention[
 
 
 def execute_flash_attention_suite(ctx: DeviceContext):
-    # alias types = (DType.float32, DType.bfloat16)
-    alias types = (DType.bfloat16,)
+    alias types = (DType.float32, DType.bfloat16)
     var bs = 2
     var valid_length_ptr = UnsafePointer[UInt32].alloc(bs)
     var valid_length = NDBuffer[DType.uint32, 1](valid_length_ptr, Index(1))
@@ -338,8 +345,9 @@ def execute_flash_attention_suite(ctx: DeviceContext):
     )
 
     @parameter
-    for type_idx in range(len(types)):
+    for type_idx in range(2):
         alias type = types[type_idx]
+
         # Replit context encoding [testing even query valid lengths].
         valid_length[0] = 128
         valid_length[1] = 64
@@ -363,6 +371,7 @@ def execute_flash_attention_suite(ctx: DeviceContext):
         valid_length[1] = 1
         cache_valid_length[0] = 200
         cache_valid_length[1] = 256
+
         execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
             bs, valid_length, 1, 1024, cache_valid_length, ctx
         )
