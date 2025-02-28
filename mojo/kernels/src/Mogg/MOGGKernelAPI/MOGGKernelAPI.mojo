@@ -5597,13 +5597,14 @@ struct WithMaskFlashAttentionCPU:
 
 @compiler.register("ggml_q4_0_dequantize")
 struct GGMLQ40Dequantize:
+    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
         _trace_name: StringLiteral,
     ](
-        output: ManagedTensorSlice[type = DType.float32, rank=2],
-        input: ManagedTensorSlice[type = DType.uint8, rank=2],
+        output: OutputTensor[type = DType.float32, rank=2],
+        input: InputTensor[type = DType.uint8, rank=2],
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"](_trace_name):
             Q4sym[group_size=32].dequantize_and_write_to_tensor(
@@ -5627,14 +5628,15 @@ struct GGMLQ40Dequantize:
 
 @compiler.register("vroom_q4_0_matmul")
 struct VroomQ40Matmul:
+    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
         _trace_name: StringLiteral,
     ](
-        c: ManagedTensorSlice[type = DType.float32, rank=2],
-        a: ManagedTensorSlice[type = DType.float32, rank=2],
-        b: ManagedTensorSlice[type = DType.uint8, rank=2],
+        c: OutputTensor[type = DType.float32, rank=2],
+        a: InputTensor[type = DType.float32, rank=2],
+        b: InputTensor[type = DType.uint8, rank=2],
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"](_trace_name):
             matmul_qint4[32](
@@ -5654,13 +5656,14 @@ struct VroomQ40Matmul:
 
 @compiler.register("vroom_q4_0_repack_weights")
 struct VroomQ40RepackWeights:
+    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
         _trace_name: StringLiteral,
     ](
-        b_packed: ManagedTensorSlice[type = DType.uint8, rank=2],
-        b: ManagedTensorSlice[type = DType.uint8, rank=2],
+        b_packed: OutputTensor[type = DType.uint8, rank=2],
+        b: InputTensor[type = DType.uint8, rank=2],
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"](_trace_name):
             matmul_qint4_pack_b[32](
@@ -5684,13 +5687,14 @@ struct VroomQ40RepackWeights:
 
 @compiler.register("ggml_q4_k_dequantize")
 struct GGMLQ4KDequantize:
+    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
         _trace_name: StringLiteral,
     ](
-        output: ManagedTensorSlice[type = DType.float32, rank=2],
-        input: ManagedTensorSlice[type = DType.uint8, rank=2],
+        output: OutputTensor[type = DType.float32, rank=2],
+        input: InputTensor[type = DType.uint8, rank=2],
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"](_trace_name):
             q4_k_dequantize_impl(
@@ -5718,14 +5722,15 @@ struct GGMLQ4KDequantize:
 
 @compiler.register("vroom_q4_k_matmul")
 struct VroomQ4KMatmul:
+    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
         _trace_name: StringLiteral,
     ](
-        c: ManagedTensorSlice[type = DType.float32, rank=2],
-        a: ManagedTensorSlice[type = DType.float32, rank=2],
-        b: ManagedTensorSlice[type = DType.uint8, rank=2],
+        c: OutputTensor[type = DType.float32, rank=2],
+        a: InputTensor[type = DType.float32, rank=2],
+        b: InputTensor[type = DType.uint8, rank=2],
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"](_trace_name):
             matmul_Q4_K(
@@ -5745,13 +5750,14 @@ struct VroomQ4KMatmul:
 
 @compiler.register("vroom_q4_k_repack_weights")
 struct VroomQ4KRepackWeights:
+    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
         _trace_name: StringLiteral,
     ](
-        b_packed: ManagedTensorSlice[type = DType.uint8, rank=2],
-        b: ManagedTensorSlice[type = DType.uint8, rank=2],
+        b_packed: OutputTensor[type = DType.uint8, rank=2],
+        b: InputTensor[type = DType.uint8, rank=2],
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"](_trace_name):
             matmul_Q4_K_pack_b(
@@ -5775,13 +5781,14 @@ struct VroomQ4KRepackWeights:
 
 @compiler.register("ggml_q6_k_dequantize")
 struct GGMLQ6KDequantize:
+    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
         _trace_name: StringLiteral,
     ](
-        output: ManagedTensorSlice[type = DType.float32, rank=2],
-        input: ManagedTensorSlice[type = DType.uint8, rank=2],
+        output: OutputTensor[type = DType.float32, rank=2],
+        input: InputTensor[type = DType.uint8, rank=2],
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"](_trace_name):
             q6_k_dequantize_impl(
@@ -5810,14 +5817,15 @@ struct GGMLQ6KDequantize:
 
 @compiler.register("vroom_q6_k_matmul")
 struct VroomQ6KMatmul:
+    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
         _trace_name: StringLiteral,
     ](
-        c: ManagedTensorSlice[type = DType.float32, rank=2],
-        a: ManagedTensorSlice[type = DType.float32, rank=2],
-        b: ManagedTensorSlice[type = DType.uint8, rank=2],
+        c: OutputTensor[type = DType.float32, rank=2],
+        a: InputTensor[type = DType.float32, rank=2],
+        b: InputTensor[type = DType.uint8, rank=2],
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"](_trace_name):
             matmul_Q6_K(
@@ -5837,13 +5845,14 @@ struct VroomQ6KMatmul:
 
 @compiler.register("vroom_q6_k_repack_weights")
 struct VroomQ6KRepackWeights:
+    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
         _trace_name: StringLiteral,
     ](
-        b_packed: ManagedTensorSlice[type = DType.uint8, rank=2],
-        b: ManagedTensorSlice[type = DType.uint8, rank=2],
+        b_packed: OutputTensor[type = DType.uint8, rank=2],
+        b: InputTensor[type = DType.uint8, rank=2],
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"](_trace_name):
             matmul_Q6_K_pack_b(
@@ -5867,15 +5876,16 @@ struct VroomQ6KRepackWeights:
 
 @compiler.register("qmatmul_b4_g32")
 struct QMatmulGPU_b4_g32:
+    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
         target: StringLiteral,
         _trace_name: StringLiteral,
     ](
-        c: ManagedTensorSlice[type = DType.bfloat16, rank=2],
-        a: ManagedTensorSlice[type = DType.bfloat16, rank=2],
-        b: ManagedTensorSlice[type = DType.uint8, rank=2],
+        c: OutputTensor[type = DType.bfloat16, rank=2],
+        a: InputTensor[type = DType.bfloat16, rank=2],
+        b: InputTensor[type = DType.uint8, rank=2],
         ctx: DeviceContextPtr,
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
@@ -5899,15 +5909,16 @@ struct QMatmulGPU_b4_g32:
 
 @compiler.register("qmatmul_b4_g128")
 struct QMatmulGPU_b4_g128:
+    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
         target: StringLiteral,
         _trace_name: StringLiteral,
     ](
-        c: ManagedTensorSlice[type = DType.bfloat16, rank=2],
-        a: ManagedTensorSlice[type = DType.bfloat16, rank=2],
-        b: ManagedTensorSlice[type = DType.uint8, rank=2],
+        c: OutputTensor[type = DType.bfloat16, rank=2],
+        a: InputTensor[type = DType.bfloat16, rank=2],
+        b: InputTensor[type = DType.uint8, rank=2],
         ctx: DeviceContextPtr,
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
@@ -5931,14 +5942,15 @@ struct QMatmulGPU_b4_g128:
 
 @compiler.register("GGUF_gpu_repack_q4_0")
 struct QMatmulGPURepackGGUF:
+    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
         target: StringLiteral,
         _trace_name: StringLiteral,
     ](
-        b_packed: ManagedTensorSlice[type = DType.uint8, rank=2],
-        b: ManagedTensorSlice[type = DType.uint8, rank=2],
+        b_packed: OutputTensor[type = DType.uint8, rank=2],
+        b: InputTensor[type = DType.uint8, rank=2],
         ctx: DeviceContextPtr,
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
@@ -5960,14 +5972,15 @@ struct QMatmulGPURepackGGUF:
 
 @compiler.register("GPTQ_gpu_repack_b4_g128")
 struct QMatmulGPURepackGPTQ_b4_g128:
+    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
         target: StringLiteral,
         _trace_name: StringLiteral,
     ](
-        b_packed: ManagedTensorSlice[type = DType.uint8, rank=2],
-        b: ManagedTensorSlice[type = DType.uint8, rank=2],
+        b_packed: OutputTensor[type = DType.uint8, rank=2],
+        b: InputTensor[type = DType.uint8, rank=2],
         ctx: DeviceContextPtr,
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
@@ -5989,15 +6002,16 @@ struct QMatmulGPURepackGPTQ_b4_g128:
 
 @compiler.register("GPTQ_gpu_repack_b4_g128_desc_act")
 struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
+    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
         target: StringLiteral,
         _trace_name: StringLiteral,
     ](
-        b_packed: ManagedTensorSlice[type = DType.uint8, rank=2],
-        b: ManagedTensorSlice[type = DType.uint8, rank=2],
-        perm_idx: ManagedTensorSlice[type = DType.int32, rank=1],
+        b_packed: OutputTensor[type = DType.uint8, rank=2],
+        b: InputTensor[type = DType.uint8, rank=2],
+        perm_idx: InputTensor[type = DType.int32, rank=1],
         ctx: DeviceContextPtr,
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
@@ -6076,15 +6090,16 @@ fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[
 
 @compiler.register("mo.fused_qkv_matmul.ragged.continuous_batching")
 struct Struct_fused_qkv_matmul_ragged_continuous_batching:
+    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
         type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
     ](
-        output: ManagedTensorSlice[type=type, rank=2],
-        hidden_state: ManagedTensorSlice[type=type, rank=2],
-        input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
-        weight: ManagedTensorSlice[type=type, rank=2],
+        output: OutputTensor[type=type, rank=2],
+        hidden_state: InputTensor[type=type, rank=2],
+        input_row_offsets: InputTensor[type = DType.uint32, rank=1],
+        weight: InputTensor[type=type, rank=2],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
@@ -6141,14 +6156,15 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
 
 @compiler.register("mo.fused_qkv_matmul.padded.continuous_batching")
 struct Struct_fused_qkv_matmul_padded_continuous_batching:
+    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
         type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
     ](
-        output: ManagedTensorSlice[type=type, rank=3],
-        hidden_state: ManagedTensorSlice[type=type, rank=3],
-        weight: ManagedTensorSlice[type=type, rank=2],
+        output: OutputTensor[type=type, rank=3],
+        hidden_state: InputTensor[type=type, rank=3],
+        weight: InputTensor[type=type, rank=2],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
@@ -6233,6 +6249,7 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
 
 @compiler.register("mo.fused_qkv_matmul.ragged.paged")
 struct Struct_fused_qkv_matmul_padded_ragged:
+    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -6242,10 +6259,10 @@ struct Struct_fused_qkv_matmul_padded_ragged:
         page_size: Int, //,
         target: StringLiteral,
     ](
-        output: ManagedTensorSlice[type=type, rank=2],
-        hidden_state: ManagedTensorSlice[type=type, rank=2],
-        input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
-        weight: ManagedTensorSlice[type=type, rank=2],
+        output: OutputTensor[type=type, rank=2],
+        hidden_state: InputTensor[type=type, rank=2],
+        input_row_offsets: InputTensor[type = DType.uint32, rank=1],
+        weight: InputTensor[type=type, rank=2],
         kv_collection: PagedKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
@@ -6269,6 +6286,7 @@ struct Struct_fused_qkv_matmul_padded_ragged:
 
 @compiler.register("mo.fused_qkv_matmul.ragged.paged.quantized")
 struct Struct_fused_qkv_matmul_padded_ragged_quantized:
+    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -6281,10 +6299,10 @@ struct Struct_fused_qkv_matmul_padded_ragged_quantized:
         page_size: Int, //,
         target: StringLiteral,
     ](
-        output: ManagedTensorSlice[type=type, rank=2],
-        hidden_state: ManagedTensorSlice[type=type, rank=2],
-        input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
-        weight: ManagedTensorSlice[type=weight_type, rank=2],
+        output: OutputTensor[type=type, rank=2],
+        hidden_state: InputTensor[type=type, rank=2],
+        input_row_offsets: InputTensor[type = DType.uint32, rank=1],
+        weight: InputTensor[type=weight_type, rank=2],
         kv_collection: PagedKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
@@ -6315,6 +6333,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_quantized:
 
 @compiler.register("mo.fused_qkv_matmul.ragged.paged.bias")
 struct Struct_fused_qkv_matmul_padded_ragged_bias:
+    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -6324,17 +6343,17 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
         page_size: Int, //,
         target: StringLiteral,
     ](
-        output: ManagedTensorSlice[type=type, rank=2],
-        hidden_state: ManagedTensorSlice[type=type, rank=2],
-        input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
-        weight: ManagedTensorSlice[type=type, rank=2],
+        output: OutputTensor[type=type, rank=2],
+        hidden_state: InputTensor[type=type, rank=2],
+        input_row_offsets: InputTensor[type = DType.uint32, rank=1],
+        weight: InputTensor[type=type, rank=2],
         kv_collection: PagedKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
             page_size,
         ],
         layer_idx: UInt32,
-        bias: ManagedTensorSlice[type=type, rank=1],
+        bias: InputTensor[type=type, rank=1],
         ctx: DeviceContextPtr,
     ) raises:
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
@@ -6353,6 +6372,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
 
 @compiler.register("mo.fused_qkv_matmul.ragged.paged.bias.quantized")
 struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
+    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -6365,17 +6385,17 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
         page_size: Int, //,
         target: StringLiteral,
     ](
-        output: ManagedTensorSlice[type=type, rank=2],
-        hidden_state: ManagedTensorSlice[type=type, rank=2],
-        input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
-        weight: ManagedTensorSlice[type=weight_type, rank=2],
+        output: OutputTensor[type=type, rank=2],
+        hidden_state: InputTensor[type=type, rank=2],
+        input_row_offsets: InputTensor[type = DType.uint32, rank=1],
+        weight: InputTensor[type=weight_type, rank=2],
         kv_collection: PagedKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
             page_size,
         ],
         layer_idx: UInt32,
-        bias: ManagedTensorSlice[type=type, rank=1],
+        bias: InputTensor[type=type, rank=1],
         ctx: DeviceContextPtr,
     ) raises:
         # In the group-wise quantization scheme, every `group_size` quantized weights
@@ -6446,18 +6466,19 @@ fn generic_fused_qk_rope_bshd_continuous_batch_kernel_api[
 
 @compiler.register("mo.fused_qk_rope.padded.continuous_batching")
 struct Struct_fused_qk_rope_padded_continuous_batching[interleaved: Bool]:
+    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
         type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
     ](
-        output: ManagedTensorSlice[type=type, rank=4],
-        q_proj: ManagedTensorSlice[type=type, rank=4],
+        output: OutputTensor[type=type, rank=4],
+        q_proj: InputTensor[type=type, rank=4],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
-        freqs_cis: ManagedTensorSlice[type=type, rank=2],
+        freqs_cis: InputTensor[type=type, rank=2],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
@@ -6505,19 +6526,20 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
 
 @compiler.register("mo.fused_qk_rope.ragged.continuous_batching")
 struct Struct_fused_qk_rope_bshd_continuous_batch_ragged[interleaved: Bool]:
+    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
         type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
     ](
-        output: ManagedTensorSlice[type=type, rank=3],
-        q_proj: ManagedTensorSlice[type=type, rank=3],
-        input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+        output: OutputTensor[type=type, rank=3],
+        q_proj: InputTensor[type=type, rank=3],
+        input_row_offsets: InputTensor[type = DType.uint32, rank=1],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
-        freqs_cis: ManagedTensorSlice[type=type, rank=2],
+        freqs_cis: InputTensor[type=type, rank=2],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
@@ -6567,6 +6589,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
 
 @compiler.register("mo.fused_qk_rope.ragged.paged")
 struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
+    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -6576,15 +6599,15 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
         page_size: Int, //,
         target: StringLiteral,
     ](
-        output: ManagedTensorSlice[type=type, rank=3],
-        q_proj: ManagedTensorSlice[type=type, rank=3],
-        input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+        output: OutputTensor[type=type, rank=3],
+        q_proj: InputTensor[type=type, rank=3],
+        input_row_offsets: InputTensor[type = DType.uint32, rank=1],
         kv_collection: PagedKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
             page_size,
         ],
-        freqs_cis: ManagedTensorSlice[type=type, rank=2],
+        freqs_cis: InputTensor[type=type, rank=2],
         layer_idx: UInt32,
         context: DeviceContextPtr = DeviceContextPtr(),
     ):
@@ -6636,20 +6659,21 @@ fn generic_flash_attention_kv_cache_continuous_batch_kernel_api[
 
 @compiler.register("mo.mha.padded.continuous_batching.tensor_mask.no_pos")
 struct Struct_mha_padded_continuous_batching_tensor_mask_no_pos:
+    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
         type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
     ](
-        output: ManagedTensorSlice[type=type, rank=4],
-        q: ManagedTensorSlice[type=type, rank=4],
+        output: OutputTensor[type=type, rank=4],
+        q: InputTensor[type=type, rank=4],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
         layer_idx: UInt32,
-        mask: ManagedTensorSlice[type=type],
-        valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
+        mask: InputTensor[type=type],
+        valid_lengths: InputTensor[type = DType.uint32, rank=1],
         scale: Float32,
         context: DeviceContextPtr,
     ) raises:
@@ -6690,19 +6714,20 @@ fn generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
 
 @compiler.register("mo.mha.padded.continuous_batching.causal_mask.no_pos")
 struct Struct_mha_padded_continuous_batching_causal_mask_no_pos:
+    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
         type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
     ](
-        output: ManagedTensorSlice[type=type, rank=4],
-        q: ManagedTensorSlice[type=type, rank=4],
+        output: OutputTensor[type=type, rank=4],
+        q: InputTensor[type=type, rank=4],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
         layer_idx: UInt32,
-        valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
+        valid_lengths: InputTensor[type = DType.uint32, rank=1],
         scale: Float32,
         context: DeviceContextPtr,
     ) raises:
@@ -6763,14 +6788,15 @@ fn generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged_kernel_api[
 
 @compiler.register("mo.mha.ragged.continuous_batching.causal_mask.no_pos")
 struct Struct_mha_ragged_continuous_batching_causal_mask_no_pos:
+    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
         type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
     ](
-        output: ManagedTensorSlice[type=type, rank=3],
-        q: ManagedTensorSlice[type=type, rank=3],
-        input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+        output: OutputTensor[type=type, rank=3],
+        q: InputTensor[type=type, rank=3],
+        input_row_offsets: InputTensor[type = DType.uint32, rank=1],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
@@ -6794,14 +6820,15 @@ struct Struct_mha_ragged_continuous_batching_causal_mask_no_pos:
 
 @compiler.register("mo.mha.ragged.continuous_batching.causal_mask.alibi_pos")
 struct Struct_mha_ragged_continuous_batching_causal_mask_alibi_pos:
+    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
         type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
     ](
-        output: ManagedTensorSlice[type=type, rank=3],
-        q: ManagedTensorSlice[type=type, rank=3],
-        input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+        output: OutputTensor[type=type, rank=3],
+        q: InputTensor[type=type, rank=3],
+        input_row_offsets: InputTensor[type = DType.uint32, rank=1],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
@@ -6849,8 +6876,9 @@ fn generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
 
 @compiler.register("mo.mha.ragged.paged.causal_mask.no_pos")
 struct Struct_mha_ragged_paged_causal_mask_no_pos:
-    @staticmethod
+    @enforce_io_param
     @always_inline
+    @staticmethod
     fn execute[
         type: DType,
         num_heads: Int,
@@ -6858,9 +6886,9 @@ struct Struct_mha_ragged_paged_causal_mask_no_pos:
         page_size: Int, //,
         target: StringLiteral,
     ](
-        output: ManagedTensorSlice[type=type, rank=3],
-        q: ManagedTensorSlice[type=type, rank=3],
-        input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+        output: OutputTensor[type=type, rank=3],
+        q: InputTensor[type=type, rank=3],
+        input_row_offsets: InputTensor[type = DType.uint32, rank=1],
         kv_collection: PagedKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
@@ -6922,16 +6950,17 @@ fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged_kernel_api[
     "mo.cross_attention.ragged.continuous_batching.null_mask.no_pos"
 )
 struct Struct_cross_attention_ragged_continuous_batching_null_mask_no_pos:
+    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
         type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
     ](
-        output: ManagedTensorSlice[type=type, rank=3],
-        q: ManagedTensorSlice[type=type, rank=3],
-        q_input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
-        q_max_seq_len: ManagedTensorSlice[type = DType.uint32, rank=1],
-        kv_input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+        output: OutputTensor[type=type, rank=3],
+        q: InputTensor[type=type, rank=3],
+        q_input_row_offsets: InputTensor[type = DType.uint32, rank=1],
+        q_max_seq_len: InputTensor[type = DType.uint32, rank=1],
+        kv_input_row_offsets: InputTensor[type = DType.uint32, rank=1],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type, KVCacheStaticParams(num_heads=num_heads, head_size=head_dim)
         ],
@@ -6983,19 +7012,18 @@ fn generic_get_continuous_cache_kernel_api[
     )
 
 
-@compiler.register(
-    "mo.kv_collection_ctor.continuous_batching", num_dps_outputs=0
-)
+@compiler.register("mo.kv_collection_ctor.continuous_batching")
 struct Struct_kv_collection_ctor_continuous_batching:
+    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
         type: DType, num_heads: Int, head_dim: Int, target: StringLiteral
     ](
-        blocks: ManagedTensorSlice[type=type, rank=6],
-        cache_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
-        lookup_table: ManagedTensorSlice[type = DType.uint32, rank=1],
-        max_lengths: ManagedTensorSlice[type = DType.uint32, rank=2],
+        blocks: InputTensor[type=type, rank=6],
+        cache_lengths: InputTensor[type = DType.uint32, rank=1],
+        lookup_table: InputTensor[type = DType.uint32, rank=1],
+        max_lengths: InputTensor[type = DType.uint32, rank=2],
     ) -> ContinuousBatchingKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads, head_dim),
@@ -7036,26 +7064,28 @@ fn layout_transform_conv_transpose_filter_common[
 
 @compiler.register("layout_transform_RSFC_to_FRSCf")
 struct LayoutTransformRSFC2FRSCf:
+    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
         type: DType, filter_rank: Int, packed_filter_rank: Int
     ](
-        packed_filter: ManagedTensorSlice[type=type, rank=packed_filter_rank],
-        filter: ManagedTensorSlice[type=type, rank=filter_rank],
+        packed_filter: OutputTensor[type=type, rank=packed_filter_rank],
+        filter: InputTensor[type=type, rank=filter_rank],
     ):
         layout_transform_conv_transpose_filter_common(packed_filter, filter)
 
 
 @compiler.register("layout_transform_QRSFC_to_FQRSCf")
 struct LayoutTransformQRSFC2FQRSCf:
+    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
         type: DType, filter_rank: Int, packed_filter_rank: Int
     ](
-        packed_filter: ManagedTensorSlice[type=type, rank=packed_filter_rank],
-        filter: ManagedTensorSlice[type=type, rank=filter_rank],
+        packed_filter: OutputTensor[type=type, rank=packed_filter_rank],
+        filter: InputTensor[type=type, rank=filter_rank],
     ):
         layout_transform_conv_transpose_filter_common(packed_filter, filter)
 
@@ -7157,13 +7187,14 @@ fn layout_transform_conv_filter_common[
 
 @compiler.register("layout_transform_QRSCF_to_FQRSCf")
 struct LayoutTransformQRSCF2FQRSCf:
+    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
         type: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
     ](
-        packed_filter: ManagedTensorSlice[type=type, rank=packed_rank],
-        filter: ManagedTensorSlice[type=type, rank=filter_rank],
+        packed_filter: OutputTensor[type=type, rank=packed_rank],
+        filter: InputTensor[type=type, rank=filter_rank],
     ):
         layout_transform_conv_filter_common[num_groups=num_groups](
             packed_filter, filter
@@ -7172,13 +7203,14 @@ struct LayoutTransformQRSCF2FQRSCf:
 
 @compiler.register("layout_transform_RSCF_to_FRSCf")
 struct LayoutTransformRSCF2FRSCf:
+    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
         type: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
     ](
-        packed_filter: ManagedTensorSlice[type=type, rank=packed_rank],
-        filter: ManagedTensorSlice[type=type, rank=filter_rank],
+        packed_filter: OutputTensor[type=type, rank=packed_rank],
+        filter: InputTensor[type=type, rank=filter_rank],
     ):
         layout_transform_conv_filter_common[num_groups=num_groups](
             packed_filter, filter
@@ -7187,6 +7219,7 @@ struct LayoutTransformRSCF2FRSCf:
 
 @compiler.register("layout_transform_KN_to_KNkni")
 struct LayoutTransformMatmulKN2KNkni:
+    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -7197,8 +7230,8 @@ struct LayoutTransformMatmulKN2KNkni:
         c_type: DType,
         c_shape: DimList,
     ](
-        output_buffer: ManagedTensorSlice[type=b_type, rank=2],
-        b_input: ManagedTensorSlice[type=b_type, rank=2],
+        output_buffer: OutputTensor[type=b_type, rank=2],
+        b_input: InputTensor[type=b_type, rank=2],
     ) raises:
         # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
         var kernel_type_m = 0
@@ -7223,6 +7256,7 @@ struct LayoutTransformMatmulKN2KNkni:
 
 @compiler.register("layout_transform_NK_to_KNkni")
 struct LayoutTransformMatmulNK2KNkni:
+    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -7233,8 +7267,8 @@ struct LayoutTransformMatmulNK2KNkni:
         c_type: DType,
         c_shape: DimList,
     ](
-        output_buffer: ManagedTensorSlice[type=b_type, rank=2],
-        b_input: ManagedTensorSlice[type=b_type, rank=2],
+        output_buffer: OutputTensor[type=b_type, rank=2],
+        b_input: InputTensor[type=b_type, rank=2],
     ) raises:
         # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
         var kernel_type_m = 0
@@ -7296,11 +7330,9 @@ struct PackMatmulBShapeFunc:
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register(
-    "mo.rms_norm_kv_cache.ragged.continuous_batching",
-    num_dps_outputs=0,
-)
+@compiler.register("mo.rms_norm_kv_cache.ragged.continuous_batching")
 struct Struct_rms_norm_kv_cache_ragged_continuous_batching:
+    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -7310,11 +7342,11 @@ struct Struct_rms_norm_kv_cache_ragged_continuous_batching:
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
-        gamma: ManagedTensorSlice[type=type, rank=1],
+        gamma: InputTensor[type=type, rank=1],
         epsilon: Scalar[type],
         layer_idx: UInt32,
         total_seq_len: UInt32,
-        input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+        input_row_offsets: InputTensor[type = DType.uint32, rank=1],
         context: DeviceContextPtr,
     ) raises:
         rms_norm_kv_cache_ragged_continuous_batching[target=target](
@@ -7393,8 +7425,9 @@ fn print_kv_cache_paged_generic_kernel_api[
         )
 
 
-@compiler.register("mo.print_kv_cache.paged", num_dps_outputs=0)
+@compiler.register("mo.print_kv_cache.paged")
 struct Struct_print_kv_cache_paged:
+    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -7404,14 +7437,14 @@ struct Struct_print_kv_cache_paged:
         page_size: Int, //,
         target: StringLiteral,
     ](
-        valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
+        valid_lengths: InputTensor[type = DType.uint32, rank=1],
         kv_collection: PagedKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
             page_size,
         ],
         layer_idx: UInt32,
-        is_print_compact: ManagedTensorSlice[type = DType.bool, rank=1],
+        is_print_compact: InputTensor[type = DType.bool, rank=1],
         context: DeviceContextPtr,
     ) raises:
         print_kv_cache_paged_generic_kernel_api[target](
@@ -7423,20 +7456,21 @@ struct Struct_print_kv_cache_paged:
         )
 
 
-@compiler.register("mo.print_kv_cache.continuous_batching", num_dps_outputs=0)
+@compiler.register("mo.print_kv_cache.continuous_batching")
 struct Struct_print_kv_cache_continuous_batching:
+    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
         type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
     ](
-        valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
+        valid_lengths: InputTensor[type = DType.uint32, rank=1],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
         layer_idx: UInt32,
-        is_print_compact: ManagedTensorSlice[type = DType.bool, rank=1],
+        is_print_compact: InputTensor[type = DType.bool, rank=1],
         context: DeviceContextPtr,
     ) raises:
         print_kv_cache_cont_batch_generic_kernel_api[target](
@@ -7456,8 +7490,9 @@ struct Struct_print_kv_cache_continuous_batching:
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("mo.kv_collection_ctor.paged", num_dps_outputs=0)
+@compiler.register("mo.kv_collection_ctor.paged")
 struct Struct_kv_collection_ctor_paged:
+    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -7467,10 +7502,10 @@ struct Struct_kv_collection_ctor_paged:
         page_size: Int,
         target: StringLiteral,
     ](
-        blocks: ManagedTensorSlice[type=type, rank=6],
-        cache_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
-        lookup_table: ManagedTensorSlice[type = DType.uint32, rank=2],
-        max_lengths: ManagedTensorSlice[type = DType.uint32, rank=2],
+        blocks: InputTensor[type=type, rank=6],
+        cache_lengths: InputTensor[type = DType.uint32, rank=1],
+        lookup_table: InputTensor[type = DType.uint32, rank=2],
+        max_lengths: InputTensor[type = DType.uint32, rank=2],
     ) -> PagedKVCacheCollection[
         type, KVCacheStaticParams(num_heads, head_dim), page_size
     ]:
@@ -7485,21 +7520,20 @@ struct Struct_kv_collection_ctor_paged:
         )
 
 
-@compiler.register(
-    "mo.kv_collection_cow_strided_memcpy.paged", num_dps_outputs=0
-)
+@compiler.register("mo.kv_collection_cow_strided_memcpy.paged")
 struct Struct_kv_collection_cow_strided_memcpy_paged:
-    @staticmethod
+    @enforce_io_param
     @always_inline
+    @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         type: DType,
     ](
-        blocks: ManagedTensorSlice[type=type, rank=6],
-        block_dst_idx_tensor: ManagedTensorSlice[type = DType.uint32, rank=1],
-        block_src_ids_tensor: ManagedTensorSlice[type = DType.uint32, rank=1],
-        num_tokens_tensor: ManagedTensorSlice[type = DType.uint32, rank=1],
+        blocks: InputTensor[type=type, rank=6],
+        block_dst_idx_tensor: InputTensor[type = DType.uint32, rank=1],
+        block_src_ids_tensor: InputTensor[type = DType.uint32, rank=1],
+        num_tokens_tensor: InputTensor[type = DType.uint32, rank=1],
         max_num_tokens_scalar: Scalar[DType.uint32],
         ctx: DeviceContextPtr,
     ):
@@ -7612,19 +7646,17 @@ struct Struct_kv_collection_cow_strided_memcpy_paged:
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register(
-    "mo.kv_matmul.ragged.continuous_batching",
-    num_dps_outputs=0,
-)
+@compiler.register("mo.kv_matmul.ragged.continuous_batching")
 struct Struct_kv_matmul_ragged_continuous_batching:
-    @staticmethod
+    @enforce_io_param
     @always_inline
+    @staticmethod
     fn execute[
         type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
     ](
-        hidden_state: ManagedTensorSlice[type=type, rank=2],
-        input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
-        weight: ManagedTensorSlice[type=type, rank=2],
+        hidden_state: InputTensor[type=type, rank=2],
+        input_row_offsets: InputTensor[type = DType.uint32, rank=1],
+        weight: InputTensor[type=type, rank=2],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
@@ -7649,8 +7681,9 @@ struct Struct_kv_matmul_ragged_continuous_batching:
 
 @compiler.register("topk_fused_sampling")
 struct Struct_topk_fused_sampling:
-    @staticmethod
+    @enforce_io_param
     @always_inline
+    @staticmethod
     fn execute[
         type: DType,
         rank: Int,
@@ -7658,9 +7691,9 @@ struct Struct_topk_fused_sampling:
         target: StringLiteral,
         _trace_name: StringLiteral,
     ](
-        out_idxs: ManagedTensorSlice[type=out_idx_type, rank=rank],
+        out_idxs: OutputTensor[type=out_idx_type, rank=rank],
         K: Scalar,
-        input: ManagedTensorSlice[type=type, rank=rank],
+        input: InputTensor[type=type, rank=rank],
         ctx: DeviceContextPtr,
     ) raises:
         constrained[is_valid_target[target](), "not a valid target"]()
@@ -7690,15 +7723,16 @@ struct Struct_topk_fused_sampling:
 
 @compiler.register("swishGLU")
 struct Struct_swishGLU:
-    @staticmethod
+    @enforce_io_param
     @always_inline
+    @staticmethod
     fn execute[
         target: StringLiteral,
     ](
-        c: ManagedTensorSlice[rank=2],
-        a: ManagedTensorSlice[rank=2],
-        b0: ManagedTensorSlice[rank=2],
-        b1: ManagedTensorSlice[type = b0.type, rank=2],
+        c: OutputTensor[rank=2],
+        a: InputTensor[rank=2],
+        b0: InputTensor[rank=2],
+        b1: InputTensor[type = b0.type, rank=2],
         ctx: DeviceContextPtr,
     ) raises:
         swishGLU[target=target](
@@ -7712,15 +7746,16 @@ struct Struct_swishGLU:
 
 @compiler.register("mo.distributed.allreduce.sum")
 struct DistributedAllReduceSum:
-    @staticmethod
+    @enforce_io_param
     @always_inline
+    @staticmethod
     fn execute[
         type: DType,
         rank: Int,
         target: StringLiteral,
     ](
-        outputs: VariadicTensors[type, rank, *_],
-        inputs: VariadicTensors[type, rank, *_],
+        outputs: OutputVariadicTensors[type, rank, *_],
+        inputs: InputVariadicTensors[type, rank, *_],
         dev_ctxs: StaticTuple[DeviceContextPtr, *_],
     ) raises:
         # Stub for now
@@ -7750,21 +7785,22 @@ fn _check_signal_buffer_size[
         )
 
 
-@compiler.register("mo.distributed.allreduce.1gpu.sum", num_dps_outputs=1)
+@compiler.register("mo.distributed.allreduce.1gpu.sum")
 struct DistributedAllReduceSum1Devices:
     alias num_devices = 1
     alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
 
-    @staticmethod
+    @enforce_io_param
     @always_inline
+    @staticmethod
     fn execute[
         type: DType,
         rank: Int,
         target: StringLiteral,
     ](
-        output0: ManagedTensorSlice[type=type, rank=rank],
-        signal_buffer0: ManagedTensorSlice[type = DType.uint8, rank=1],
-        inputs: VariadicTensors[type, rank, size = Self.num_devices],
+        output0: OutputTensor[type=type, rank=rank],
+        signal_buffer0: InputTensor[type = DType.uint8, rank=1],
+        inputs: InputVariadicTensors[type, rank, size = Self.num_devices],
         _dev_ctxs: StaticTuple[DeviceContextPtr, Self.num_devices],
         ctx: DeviceContextPtr,
     ) raises:
@@ -7801,11 +7837,12 @@ struct DistributedAllReduceSum1Devices:
         )
 
 
-@compiler.register("mo.distributed.allreduce.2gpu.sum", num_dps_outputs=2)
+@compiler.register("mo.distributed.allreduce.2gpu.sum")
 struct DistributedAllReduceSum2Devices:
     alias num_devices = 2
     alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
 
+    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
@@ -7813,11 +7850,11 @@ struct DistributedAllReduceSum2Devices:
         rank: Int,
         target: StringLiteral,
     ](
-        output0: ManagedTensorSlice[type=type, rank=rank],
-        output1: ManagedTensorSlice[type=type, rank=rank],
-        signal_buffer0: ManagedTensorSlice[type = DType.uint8, rank=1],
-        signal_buffer1: ManagedTensorSlice[type = DType.uint8, rank=1],
-        inputs: VariadicTensors[type, rank, size = Self.num_devices],
+        output0: OutputTensor[type=type, rank=rank],
+        output1: OutputTensor[type=type, rank=rank],
+        signal_buffer0: InputTensor[type = DType.uint8, rank=1],
+        signal_buffer1: InputTensor[type = DType.uint8, rank=1],
+        inputs: InputVariadicTensors[type, rank, size = Self.num_devices],
         _dev_ctxs: StaticTuple[DeviceContextPtr, Self.num_devices],
         ctx: DeviceContextPtr,
     ) raises:
@@ -7861,11 +7898,12 @@ struct DistributedAllReduceSum2Devices:
         )
 
 
-@compiler.register("mo.distributed.allreduce.4gpu.sum", num_dps_outputs=4)
+@compiler.register("mo.distributed.allreduce.4gpu.sum")
 struct DistributedAllReduceSum4Devices:
     alias num_devices = 4
     alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
 
+    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
@@ -7873,15 +7911,15 @@ struct DistributedAllReduceSum4Devices:
         rank: Int,
         target: StringLiteral,
     ](
-        output0: ManagedTensorSlice[type=type, rank=rank],
-        output1: ManagedTensorSlice[type=type, rank=rank],
-        output2: ManagedTensorSlice[type=type, rank=rank],
-        output3: ManagedTensorSlice[type=type, rank=rank],
-        signal_buffer0: ManagedTensorSlice[type = DType.uint8, rank=1],
-        signal_buffer1: ManagedTensorSlice[type = DType.uint8, rank=1],
-        signal_buffer2: ManagedTensorSlice[type = DType.uint8, rank=1],
-        signal_buffer3: ManagedTensorSlice[type = DType.uint8, rank=1],
-        inputs: VariadicTensors[type, rank, size = Self.num_devices],
+        output0: OutputTensor[type=type, rank=rank],
+        output1: OutputTensor[type=type, rank=rank],
+        output2: OutputTensor[type=type, rank=rank],
+        output3: OutputTensor[type=type, rank=rank],
+        signal_buffer0: InputTensor[type = DType.uint8, rank=1],
+        signal_buffer1: InputTensor[type = DType.uint8, rank=1],
+        signal_buffer2: InputTensor[type = DType.uint8, rank=1],
+        signal_buffer3: InputTensor[type = DType.uint8, rank=1],
+        inputs: InputVariadicTensors[type, rank, size = Self.num_devices],
         _dev_ctxs: StaticTuple[DeviceContextPtr, Self.num_devices],
         ctx: DeviceContextPtr,
     ) raises:
@@ -7941,11 +7979,12 @@ struct DistributedAllReduceSum4Devices:
         )
 
 
-@compiler.register("mo.distributed.allreduce.8gpu.sum", num_dps_outputs=8)
+@compiler.register("mo.distributed.allreduce.8gpu.sum")
 struct DistributedAllReduceSum8Devices:
     alias num_devices = 8
     alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
 
+    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
@@ -7953,23 +7992,23 @@ struct DistributedAllReduceSum8Devices:
         rank: Int,
         target: StringLiteral,
     ](
-        output0: ManagedTensorSlice[type=type, rank=rank],
-        output1: ManagedTensorSlice[type=type, rank=rank],
-        output2: ManagedTensorSlice[type=type, rank=rank],
-        output3: ManagedTensorSlice[type=type, rank=rank],
-        output4: ManagedTensorSlice[type=type, rank=rank],
-        output5: ManagedTensorSlice[type=type, rank=rank],
-        output6: ManagedTensorSlice[type=type, rank=rank],
-        output7: ManagedTensorSlice[type=type, rank=rank],
-        signal_buffer0: ManagedTensorSlice[type = DType.uint8, rank=1],
-        signal_buffer1: ManagedTensorSlice[type = DType.uint8, rank=1],
-        signal_buffer2: ManagedTensorSlice[type = DType.uint8, rank=1],
-        signal_buffer3: ManagedTensorSlice[type = DType.uint8, rank=1],
-        signal_buffer4: ManagedTensorSlice[type = DType.uint8, rank=1],
-        signal_buffer5: ManagedTensorSlice[type = DType.uint8, rank=1],
-        signal_buffer6: ManagedTensorSlice[type = DType.uint8, rank=1],
-        signal_buffer7: ManagedTensorSlice[type = DType.uint8, rank=1],
-        inputs: VariadicTensors[type, rank, size = Self.num_devices],
+        output0: OutputTensor[type=type, rank=rank],
+        output1: OutputTensor[type=type, rank=rank],
+        output2: OutputTensor[type=type, rank=rank],
+        output3: OutputTensor[type=type, rank=rank],
+        output4: OutputTensor[type=type, rank=rank],
+        output5: OutputTensor[type=type, rank=rank],
+        output6: OutputTensor[type=type, rank=rank],
+        output7: OutputTensor[type=type, rank=rank],
+        signal_buffer0: InputTensor[type = DType.uint8, rank=1],
+        signal_buffer1: InputTensor[type = DType.uint8, rank=1],
+        signal_buffer2: InputTensor[type = DType.uint8, rank=1],
+        signal_buffer3: InputTensor[type = DType.uint8, rank=1],
+        signal_buffer4: InputTensor[type = DType.uint8, rank=1],
+        signal_buffer5: InputTensor[type = DType.uint8, rank=1],
+        signal_buffer6: InputTensor[type = DType.uint8, rank=1],
+        signal_buffer7: InputTensor[type = DType.uint8, rank=1],
+        inputs: InputVariadicTensors[type, rank, size = Self.num_devices],
         _dev_ctxs: StaticTuple[DeviceContextPtr, Self.num_devices],
         ctx: DeviceContextPtr,
     ) raises:
@@ -8068,6 +8107,7 @@ struct DistributedAllReduceSum8Devices:
 # a stopgap measure for some important models (DLRM, CLIP-ViT, LLaMa2)
 @compiler.register("index_tensor")
 struct IndexTensor:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -8078,11 +8118,11 @@ struct IndexTensor:
         batch_dims: Int,
         target: StringLiteral,
     ](
-        output: ManagedTensorSlice[type=type, rank=output_rank],
-        data: ManagedTensorSlice[type=type, rank=data_rank],
-        indices: ManagedTensorSlice[type=indices_type, rank=indices_rank],
+        output: OutputTensor[type=type, rank=output_rank],
+        data: InputTensor[type=type, rank=data_rank],
+        indices: InputTensor[type=indices_type, rank=indices_rank],
         ctx: DeviceContextPtr,
-    ):
+    ) raises:
         index_tensor[
             type,
             indices_type,
