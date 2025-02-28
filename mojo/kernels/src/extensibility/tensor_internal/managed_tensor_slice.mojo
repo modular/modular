@@ -7,32 +7,26 @@
 Implements the `ManagedTensorSlice` type - a view of a tensor that doesn't own
 the underlying data. This type is used to build custom graph operations.
 """
-
-from collections import InlineArray, OptionalReg
-from math import ceil, fma
-from sys import alignof, simdwidthof
-from sys.info import is_gpu
-from sys.intrinsics import strided_load, strided_store
-
 import algorithm
 from bit import is_power_of_two
 from buffer import DimList, NDBuffer
 from buffer.dimlist import _make_partially_static_index_list
-from compiler_internal.directives import (
-    StaticTensorSpec,
-    __mogg_intrinsic_attr,
-)
+from collections import InlineArray, OptionalReg
+from compiler_internal.directives import StaticTensorSpec, __mogg_intrinsic_attr
 from gpu.host._compile import _get_gpu_target
 from gpu.host.info import is_cpu
+from layout import LayoutTensor, RuntimeLayout, Layout
+from math import ceil, fma, iota
 from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace
+from random import rand
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel
+from sys import alignof, simdwidthof
+from sys.info import is_gpu
+from sys.intrinsics import strided_load, strided_store
 from tensor_internal import RuntimeTensorSpec, TensorSpec
-
-from layout import LayoutTensor, RuntimeLayout, Layout
-
 from utils import IndexList, StaticTuple
 
 from ._indexing import _dot_prod, _row_major_strides, _slice_to_tuple
@@ -461,6 +455,56 @@ struct ManagedTensorSlice[
         Note that forwarding of static shape, strides, and lambdas won't work.
         """
         self = Self(ndbuffer.data, ndbuffer.get_shape())
+
+    fn __init__(out self):
+        """Initializes a ManagedTensorSlice using the `static_spec` parameter to
+        determine the dtype and amount of elements to allocate.
+
+        In general, custom operations should not create `ManagedTensorSlice`
+        instances, but instead use the ones provided by the MAX inference
+        engine.
+        """
+        var size = Int(Self.static_spec.shape.product())
+        var ptr = UnsafePointer[Scalar[type]].alloc(size)
+        return ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec](
+            ptr,
+            Self.static_spec.shape.into_index_list[rank](),
+            Self.static_spec.strides.into_index_list[rank](),
+        )
+
+    @staticmethod
+    fn rand() -> ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]:
+        """Initializes a ManagedTensorSlice with random values, using the
+        `static_spec` parameter to determine the dtype and amount of elements to
+        initialize. This is useful for benchmarks and tests on custom ops.
+
+        In general, custom operations should not create `ManagedTensorSlice`
+        instances, but instead use the ones provided by the MAX inference
+        engine.
+        """
+        var tensor = ManagedTensorSlice[
+            io_spec=io_spec, static_spec=static_spec
+        ]()
+        var size = Int(Self.static_spec.shape.product())
+        rand(tensor._ptr, size)
+        return tensor
+
+    @staticmethod
+    fn iota() -> ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]:
+        """Initializes a ManagedTensorSlice with sequential values, using the
+        `static_spec` parameter to determine the dtype and amount of elements to
+        initialize. This is useful for benchmarks and tests on custom ops.
+
+        In general, custom operations should not create `ManagedTensorSlice`
+        instances, but instead use the ones provided by the MAX inference
+        engine.
+        """
+        var tensor = ManagedTensorSlice[
+            io_spec=io_spec, static_spec=static_spec
+        ]()
+        var size = Int(Self.static_spec.shape.product())
+        iota(tensor._ptr, size)
+        return tensor
 
     @always_inline
     fn __getitem__(self, indices: IndexList[rank]) -> Scalar[type]:
