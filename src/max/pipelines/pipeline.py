@@ -712,9 +712,21 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 # Convert to a Python scalar to improve serialization performance.
                 next_token = int(generated_tokens_host[batch_index, step])
 
+                # Get log probs if needed.
+                log_probs: Optional[LogProbabilities] = None
+                if compute_log_probabilities and (
+                    log_probs_for_step := batch_log_probabilities[step]
+                ):
+                    log_probs = log_probs_for_step[batch_index]
+
+                # Identify completion criteria.
+                is_eos = next_token in self._eos_token_id
+
                 # Write this token into our pre-allocated tokens array.
                 context.update(
                     new_token=next_token,
+                    log_probabilities=log_probs,
+                    is_eos=is_eos,
                 )
 
                 max_length = upper_bounded_default(
@@ -724,37 +736,19 @@ class TextGenerationPipeline(TokenGenerator[T]):
                     default=context.max_length,
                 )
 
-                # Set up TextResponse
-                log_probs: Optional[LogProbabilities] = None
-                if compute_log_probabilities and (
-                    log_probs_for_step := batch_log_probabilities[step]
-                ):
-                    log_probs = log_probs_for_step[batch_index]
-
-                # Update status
-                # If its eos, dont add it to the token array.
-                if next_token in self._eos_token_id:
+                if is_eos:
                     status = TextGenerationStatus.END_OF_SEQUENCE
                     res[request_id].update_status(status)
                 elif context.current_length == max_length:
                     status = TextGenerationStatus.MAXIMUM_LENGTH
-                    res[request_id].append_token(
-                        TextResponse(next_token, log_probs)
-                    )
                     res[request_id].update_status(status)
-                # This practically, should not be hit, as once the context object
-                # reaches the max_length, we should break from this current loop.
-                # TODO: Explore cleaning up max length checks.
-                elif context.current_length > max_length:
-                    status = TextGenerationStatus.MAXIMUM_LENGTH
-                    res[request_id].update_status(status)
-                else:
-                    res[request_id].append_token(
-                        TextResponse(next_token, log_probs)
-                    )
 
                 if status.is_done:
                     break
+
+            # Walk outstanding completion tokens, and return to user.
+            for token, log_probs in context.outstanding_completion_tokens():
+                res[request_id].append_token(TextResponse(token, log_probs))
 
         return res
 
