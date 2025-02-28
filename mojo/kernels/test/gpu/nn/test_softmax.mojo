@@ -231,10 +231,10 @@ fn test_gpu_online_softmax[WM: Int, WN: Int](ctx: DeviceContext) raises:
     )
 
     var in_device = LayoutTensor[type, Layout.row_major(shape[1], shape[2])](
-        in_device_ptr.unsafe_ptr()
+        in_device_ptr
     )
     var out_device = LayoutTensor[type, Layout.row_major(shape[1], shape[2])](
-        out_device_ptr.unsafe_ptr()
+        out_device_ptr
     )
 
     rand[type](in_host_ptr, shape.flattened_length())

@@ -529,13 +529,13 @@ fn test_repack_Q4_0_for_sm8x(
     )
 
     var gguf_b_tensor = LayoutTensor[DType.uint8, gguf_b_layout](
-        gguf_b_device.buffer.unsafe_ptr(),
+        gguf_b_device.buffer,
         RuntimeLayout[gguf_b_layout].row_major(
             gguf_b_device.tensor.dynamic_shape
         ),
     )
     var repacked_b_tensor = LayoutTensor[DType.uint8, repacked_b_layout](
-        repacked_b_device.buffer.unsafe_ptr(),
+        repacked_b_device.buffer,
         RuntimeLayout[repacked_b_layout](),
     )
     var repacked_dequan_tensor = LayoutTensor[
@@ -686,11 +686,11 @@ fn test_quantized[
     alias b_ref_layout = Layout.row_major[b_device_ref.rank](b_device_ref.shape)
 
     var b_tensor = LayoutTensor[type, b_layout](
-        b_device.buffer.unsafe_ptr(),
+        b_device.buffer,
         RuntimeLayout[b_layout].row_major(b_device.tensor.dynamic_shape),
     )
     var b_ref_tensor = LayoutTensor[a_type, b_ref_layout](
-        b_device_ref.buffer.unsafe_ptr(),
+        b_device_ref.buffer,
         RuntimeLayout[b_ref_layout].row_major(
             b_device_ref.tensor.dynamic_shape
         ),

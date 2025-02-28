@@ -303,9 +303,9 @@ fn test(ctx: DeviceContext) raises:
         b_device.unsafe_ptr()
     )
 
-    var c_tensor = LayoutTensor[DType.float32, c_layout](c_device.unsafe_ptr())
-    var a_tensor = LayoutTensor[DType.float32, a_layout](a_device.unsafe_ptr())
-    var b_tensor = LayoutTensor[DType.float32, b_layout](b_device.unsafe_ptr())
+    var c_tensor = LayoutTensor[DType.float32, c_layout](c_device)
+    var a_tensor = LayoutTensor[DType.float32, a_layout](a_device)
+    var b_tensor = LayoutTensor[DType.float32, b_layout](b_device)
 
     alias gemm = sgemm_double_buffer[
         DType.float32,
