@@ -13,15 +13,20 @@
 
 from math import ceildiv
 
-from gpu import block_dim, block_idx, thread_idx, global_idx
+from gpu import (
+    block_dim,
+    block_idx,
+    thread_idx,
+    global_idx,
+    MAX_THREADS_PER_BLOCK_METADATA,
+)
+from gpu.memory import AddressSpace
 from gpu.host import DeviceContext
 from runtime.asyncrt import DeviceContextPtr
 from tensor import ManagedTensorSlice
-from algorithm import vectorize, sync_parallelize
-from algorithm.functional import _get_num_workers
-from memory import memset
-from sys import simdwidthof, sizeof
 from os import Atomic
+from memory import stack_allocation
+from utils import StaticTuple
 
 from utils.index import IndexList
 from gpu.host.info import Info, is_cpu, is_gpu
@@ -41,8 +46,14 @@ fn _histogram_gpu(
     input: ManagedTensorSlice,
     ctx_ptr: DeviceContextPtr,
 ) raises:
-    alias block_dim = 1024
+    alias bin_width = Int(UInt8.MAX) + 1
+    alias block_dim = bin_width
 
+    # Set the maximum number of threads per block to the block dimension.
+    # This is equivalent to the `__launch_bounds__` attribute in CUDA.
+    @__llvm_metadata(
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](block_dim)
+    )
     fn kernel(
         output: UnsafePointer[Int64], input: UnsafePointer[UInt8], n: Int
     ):
@@ -51,7 +62,25 @@ fn _histogram_gpu(
         if tid >= n:
             return
 
-        _ = Atomic._fetch_add(output + Int(input[tid]), 1)
+        # Allocate shared memory for the histogram
+        var shared_mem = stack_allocation[
+            bin_width, Int64, address_space = AddressSpace.SHARED
+        ]()
+
+        # Initialize the shared memory to 0
+        shared_mem[thread_idx.x] = 0
+
+        # Synchronize all threads to ensure that the shared memory is initialized
+        barrier()
+
+        # Increment the shared memory for the current thread
+        _ = Atomic._fetch_add(shared_mem + Int(input[tid]), 1)
+
+        # Synchronize all threads to ensure that the shared memory is updated
+        barrier()
+
+        # Increment the output for the current thread
+        _ = Atomic._fetch_add(output + thread_idx.x, shared_mem[thread_idx.x])
 
     var n = input.dim_size(0)
 
