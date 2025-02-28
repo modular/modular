@@ -61,13 +61,11 @@ def top_k():
         out_lambda=None,
     )
 
-    var in_vals = UnsafePointer[Scalar[val_dtype]].alloc(els)
-    var out_vals = UnsafePointer[Scalar[val_dtype]].alloc(els)
-    var out_idxs = UnsafePointer[Scalar[idx_dtype]].alloc(els)
+    var in_vals = InputTensor[static_spec=val_spec].rand()
+    var out_vals = OutputTensor[static_spec=val_spec].rand()
+    var out_idxs = OutputTensor[static_spec=idx_spec].rand()
 
-    rand(in_vals, els)
-
-    var cpu_ctx_ptr = cpu().unsafe_ptr()
+    var cpu_ctx = DeviceContext(api="cpu")
 
     @parameter
     @always_inline
@@ -76,10 +74,7 @@ def top_k():
         @always_inline
         fn run_bench() raises:
             TopK.execute[K=K, target="cpu"](
-                out_vals=OutputTensor[static_spec=val_spec](out_vals, shape),
-                out_idxs=OutputTensor[static_spec=idx_spec](out_idxs, shape),
-                in_vals=InputTensor[static_spec=val_spec](in_vals, shape),
-                ctx=cpu_ctx_ptr,
+                out_vals, out_idxs, in_vals, cpu_ctx
             )
 
         b.iter[run_bench]()
@@ -93,44 +88,48 @@ def top_k():
     @parameter
     if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
         var gpu_ctx = DeviceContext()
-        var dev_in_vals = gpu_ctx.enqueue_create_buffer[val_dtype](els)
-        var dev_out_vals = gpu_ctx.enqueue_create_buffer[val_dtype](els)
-        var dev_out_idxs = gpu_ctx.enqueue_create_buffer[idx_dtype](els)
-        gpu_ctx.copy(dev_in_vals, in_vals)
+
+        var in_vals_dev_buff = gpu_ctx.enqueue_create_buffer[val_dtype](els)
+        var out_vals_dev_buff = gpu_ctx.enqueue_create_buffer[val_dtype](els)
+        var out_idxs_dev_buff = gpu_ctx.enqueue_create_buffer[idx_dtype](els)
+
+        gpu_ctx.enqueue_copy(in_vals_dev_buff, in_vals.unsafe_ptr())
+
+        var out_vals_dev = OutputTensor[static_spec=val_spec](
+            out_vals_dev_buff.unsafe_ptr(), shape
+        )
+        var out_idxs_dev = OutputTensor[static_spec=idx_spec](
+            out_idxs_dev_buff.unsafe_ptr(), shape
+        )
+        var in_vals_dev = InputTensor[static_spec=val_spec](
+            in_vals_dev_buff.unsafe_ptr(), shape
+        )
 
         @parameter
         @always_inline
         fn bench_gpu(mut b: Bencher) raises:
             @parameter
             @always_inline
-            fn kernel_launch() raises:
+            fn kernel_launch(gpu_ctx: DeviceContext) raises:
                 TopK.execute[K=K, target="gpu"](
-                    out_vals=OutputTensor[static_spec=val_spec](
-                        dev_out_vals.unsafe_ptr(), shape
-                    ),
-                    out_idxs=OutputTensor[static_spec=idx_spec](
-                        dev_out_idxs.unsafe_ptr(), shape
-                    ),
-                    in_vals=InputTensor[static_spec=val_spec](
-                        dev_in_vals.unsafe_ptr(), shape
-                    ),
-                    ctx=gpu_ctx,
+                    out_vals_dev, out_idxs_dev, in_vals_dev, gpu_ctx
                 )
 
-            b.iter[kernel_launch]()
+            b.iter_custom[kernel_launch](gpu_ctx)
 
         b.bench_function[bench_gpu](
             BenchId("top_k_custom", "gpu"), flops, elements
         )
-        _ = gpu_ctx
+        _ = in_vals_dev_buff
+        _ = out_vals_dev_buff
+        _ = out_idxs_dev_buff
 
     b.config.verbose_metric_names = False
     print(b)
 
-    _ = cpu_ctx_ptr
-    in_vals.free()
-    out_vals.free()
-    out_idxs.free()
+    _ = in_vals
+    _ = out_vals
+    _ = out_idxs
 
 
 def matmul():
@@ -178,18 +177,11 @@ def matmul():
         out_lambda=None,
     )
 
-    var a_ptr = UnsafePointer[Scalar[dtype]].alloc(a_els)
-    var b_ptr = UnsafePointer[Scalar[dtype]].alloc(b_els)
-    var c_ptr = UnsafePointer[Scalar[dtype]].alloc(c_els)
+    var a = InputTensor[static_spec=a_spec].rand()
+    var b = InputTensor[static_spec=b_spec].rand()
+    var c = OutputTensor[static_spec=c_spec].rand()
 
-    var a = InputTensor[static_spec=a_spec](a_ptr, a_shape)
-    var b = InputTensor[static_spec=b_spec](b_ptr, b_shape)
-    var c = OutputTensor[static_spec=c_spec](c_ptr, c_shape)
-
-    rand(a_ptr, a_els)
-    rand(b_ptr, b_els)
-
-    var cpu_ctx_ptr = cpu().unsafe_ptr()
+    var cpu_ctx = DeviceContext(api="cpu")
     var bench = Bench()
     var flops = ThroughputMeasure(BenchMetric.flops, FLOPS)
     var elements = ThroughputMeasure(BenchMetric.elements, M * N)
@@ -201,10 +193,7 @@ def matmul():
         @always_inline
         fn run_bench() raises:
             MatrixMultiplication["naive"].execute[target="cpu"](
-                c,
-                a,
-                b,
-                cpu_ctx_ptr,
+                c, a, b, cpu_ctx
             )
 
         bencher.iter[run_bench]()
@@ -214,14 +203,22 @@ def matmul():
     @parameter
     if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
         var gpu_ctx = DeviceContext()
-        var a_dev = gpu_ctx.enqueue_create_buffer[dtype](a_els)
-        var b_dev = gpu_ctx.enqueue_create_buffer[dtype](b_els)
-        var c_dev = gpu_ctx.enqueue_create_buffer[dtype](c_els)
-        var c = InputTensor[static_spec=c_spec](c_dev.unsafe_ptr(), c_shape)
-        var a = OutputTensor[static_spec=a_spec](a_dev.unsafe_ptr(), a_shape)
-        var b = OutputTensor[static_spec=b_spec](b_dev.unsafe_ptr(), b_shape)
-        gpu_ctx.copy(a_dev, a_ptr)
-        gpu_ctx.copy(b_dev, b_ptr)
+        var a_dev_buf = gpu_ctx.enqueue_create_buffer[dtype](a_els)
+        var b_dev_buf = gpu_ctx.enqueue_create_buffer[dtype](b_els)
+        var c_dev_buf = gpu_ctx.enqueue_create_buffer[dtype](c_els)
+
+        gpu_ctx.enqueue_copy(a_dev_buf, a.unsafe_ptr())
+        gpu_ctx.enqueue_copy(b_dev_buf, b.unsafe_ptr())
+
+        var c_dev = InputTensor[static_spec=c_spec](
+            c_dev_buf.unsafe_ptr(), c_shape
+        )
+        var a_dev = OutputTensor[static_spec=a_spec](
+            a_dev_buf.unsafe_ptr(), a_shape
+        )
+        var b_dev = OutputTensor[static_spec=b_spec](
+            b_dev_buf.unsafe_ptr(), b_shape
+        )
 
         @parameter
         def bench_matmul_kernel[impl: StringLiteral]():
@@ -232,15 +229,10 @@ def matmul():
                 @always_inline
                 fn kernel_launch(gpu_ctx: DeviceContext) raises:
                     MatrixMultiplication[impl].execute[target="gpu"](
-                        c,
-                        a,
-                        b,
-                        gpu_ctx,
+                        c_dev, a_dev, b_dev, gpu_ctx
                     )
 
-                var gpu_ctx = DeviceContext()
                 bench.iter_custom[kernel_launch](gpu_ctx)
-                _ = gpu_ctx
 
             bench.bench_function[bench_gpu](
                 BenchId("gpu", impl), flops, elements
@@ -252,17 +244,18 @@ def matmul():
         bench_matmul_kernel["tiled_register"]()
         bench_matmul_kernel["block_tiled"]()
         bench_matmul_kernel["block_tiled_vectorized"]()
-        _ = gpu_ctx
-        _ = a_dev
-        _ = b_dev
-        _ = c_dev
+        # TODO add origin to `ManagedTensorSlice` to avoid this
+        _ = a_dev_buf
+        _ = b_dev_buf
+        _ = c_dev_buf
 
     bench.config.verbose_metric_names = False
     print(bench)
 
-    a_ptr.free()
-    b_ptr.free()
-    c_ptr.free()
+    # TODO add origin to `ManagedTensorSlice` to avoid this
+    _ = a
+    _ = b
+    _ = c
 
 
 # TODO: arg parsing to select benchmarks
