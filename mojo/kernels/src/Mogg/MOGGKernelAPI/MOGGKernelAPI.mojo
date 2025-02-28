@@ -7475,64 +7475,100 @@ struct Struct_kv_collection_cow_strided_memcpy_paged:
         type: DType,
     ](
         blocks: ManagedTensorSlice[type=type, rank=6],
-        block_dst_idx: Scalar,
-        block_src_idx: Scalar,
-        num_tokens: Scalar,
+        block_dst_idx_tensor: ManagedTensorSlice[type = DType.uint32, rank=1],
+        block_src_ids_tensor: ManagedTensorSlice[type = DType.uint32, rank=1],
+        num_tokens_tensor: ManagedTensorSlice[type = DType.uint32, rank=1],
+        max_num_tokens_scalar: Scalar[DType.uint32],
         ctx: DeviceContextPtr,
     ):
+        # assert that all of the tensors have the same batch dimension
+        var batch_dim = num_tokens_tensor.dim_size[0]()
+        debug_assert(
+            block_dst_idx_tensor.dim_size[0]() == batch_dim,
+            "Incorrect batch dimension for block_dst_idx_tensor",
+        )
+        debug_assert(
+            block_src_ids_tensor.dim_size[0]() == batch_dim,
+            "Incorrect batch dimension for block_src_ids_tensor",
+        )
+
         var shape = blocks.shape()
-        var num_layers = shape[0]
-        var kv_dim = shape[1]
-        var total_num_pages = shape[2]
-        var page_size = shape[3]
-        var n_kv_heads_per_device = shape[4]
-        var head_dim = shape[5]
+        var num_layers = Int(shape[0])
+        var kv_dim = Int(shape[1])
+        var total_num_pages = Int(shape[2])
+        var page_size = Int(shape[3])
+        var n_kv_heads_per_device = Int(shape[4])
+        var head_dim = Int(shape[5])
+        var max_num_tokens = Int(max_num_tokens_scalar)
 
         debug_assert(
-            num_tokens < page_size, "num tokens is greater than page size"
-        )
-        debug_assert(
-            block_src_idx < total_num_pages, "src block index is out of range"
-        )
-        debug_assert(
-            block_dst_idx < total_num_pages, "dst block index is out of range"
+            max_num_tokens < page_size,
+            "max_num_tokens must be less than page_size",
         )
 
-        var strided_memcpy_shape = IndexList[5](
-            Int(num_layers),
-            Int(kv_dim),
-            Int(num_tokens),
-            Int(n_kv_heads_per_device),
-            Int(head_dim),
+        var strided_memcpy_shape = IndexList[6](
+            batch_dim,
+            num_layers,
+            kv_dim,
+            max_num_tokens,
+            n_kv_heads_per_device,
+            head_dim,
         )
 
         @parameter
         @always_inline
         fn elementwise_fn_wrapper[
             width: Int,
-            rank: Int = 5,
+            rank: Int = 6,
         ](index: IndexList[rank]) capturing:
-            var num_layers_idx = index[0]
-            var kv_dim_idx = index[1]
-            var num_tokens_idx = index[2]
-            var n_kv_heads_per_device_idx = index[3]
-            var head_dim_idx = index[4]
+            var batch_idx = Int(index[0])
+            var layers_idx = Int(index[1])
+            var kv_dim_idx = Int(index[2])
+            var tokens_idx = Int(index[3])
+            var kv_heads_per_device_idx = Int(index[4])
+            var head_idx = Int(index[5])
+
+            # Read memcpy inputs for the given batch
+            var block_src_idx = Int(block_src_ids_tensor[batch_idx])
+            var block_dst_idx = Int(block_dst_idx_tensor[batch_idx])
+            var num_tokens = Int(num_tokens_tensor[batch_idx])
+
+            # Check that the memcpy inputs are in range
+            debug_assert(
+                block_src_idx < total_num_pages,
+                "src block index is out of range",
+            )
+            debug_assert(
+                block_dst_idx < total_num_pages,
+                "dst block index is out of range",
+            )
+            debug_assert(
+                num_tokens <= max_num_tokens,
+                (
+                    "max_num_tokens is not the max among all num_tokens in the"
+                    " batch"
+                ),
+            )
+
+            # No need to copy if the given batch item requires fewer tokens copied
+            if num_tokens <= tokens_idx:
+                return
 
             var src_idx_list = IndexList[6](
-                num_layers_idx,
+                layers_idx,
                 kv_dim_idx,
-                Int(block_src_idx),
-                num_tokens_idx,
-                n_kv_heads_per_device_idx,
-                head_dim_idx,
+                block_src_idx,
+                tokens_idx,
+                kv_heads_per_device_idx,
+                head_idx,
             )
             var dst_idx_list = IndexList[6](
-                num_layers_idx,
+                layers_idx,
                 kv_dim_idx,
-                Int(block_dst_idx),
-                num_tokens_idx,
-                n_kv_heads_per_device_idx,
-                head_dim_idx,
+                block_dst_idx,
+                tokens_idx,
+                kv_heads_per_device_idx,
+                head_idx,
             )
             var val = blocks._fused_load[width](src_idx_list)
             blocks._fused_store(dst_idx_list, val)
