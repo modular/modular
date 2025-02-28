@@ -3,6 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# NOTE: Takes ~10 minutes to run with asan
+# UNSUPPORTED: asan
 # RUN: mojo %s
 
 from max.graph import Dim, Graph, TensorType, Type, _testing, ops
