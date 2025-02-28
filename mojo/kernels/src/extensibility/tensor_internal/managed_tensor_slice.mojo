@@ -152,14 +152,17 @@ fn simd_load_from_managed_tensor_slice[
     fn load_stride1() -> SIMD[type, simd_width]:
         @parameter
         if type is DType.bool:
-            var v = tensor._ptr.bitcast[UInt8]().load[width=simd_width](
-                flat_index
-            )
+            var v = tensor._ptr.bitcast[UInt8]().load[
+                width=simd_width,
+                invariant = not tensor.io_spec.mut,
+            ](flat_index)
             return v.cast[type]()
         else:
-            return tensor._ptr.load[width=simd_width, alignment=max_alignment](
-                flat_index
-            )
+            return tensor._ptr.load[
+                width=simd_width,
+                alignment=max_alignment,
+                invariant = not tensor.io_spec.mut,
+            ](flat_index)
 
     # Stride > 1
     @parameter
