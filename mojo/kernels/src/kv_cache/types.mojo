@@ -76,12 +76,12 @@ trait KVCacheT(CollectionElement):
         false otherwise."""
         ...
 
-    fn max_prompt_length(self) -> UInt32:
+    fn get_max_seq_length(self) -> UInt32:
         """Returns the maximum sequence length across all batches of the current
         request."""
         ...
 
-    fn max_context_length(self) -> UInt32:
+    fn get_max_cache_length(self) -> UInt32:
         """Returns the maximum cache length used across all batches of the
         current request."""
         ...
@@ -230,10 +230,10 @@ struct ContiguousKVCache[
     fn empty_cache(self) -> Bool:
         return self.is_cache_empty
 
-    fn max_prompt_length(self) -> UInt32:
+    fn get_max_seq_length(self) -> UInt32:
         return self.max_seq_length
 
-    fn max_context_length(self) -> UInt32:
+    fn get_max_cache_length(self) -> UInt32:
         return self.max_cache_length
 
     @always_inline
@@ -283,14 +283,7 @@ struct ContinuousBatchingKVCache[
     var blocks: Self.BlocksType
     var cache_lengths: NDBuffer[DType.uint32, 1]
     var lookup_table: NDBuffer[DType.uint32, 1]
-
-    # The length of the longest sequence in the current request.
-    # This length only considers tokens not in the KVCache.
     var max_seq_length: UInt32
-
-    # The length of the longest context in the current request.
-    # This is effectively:
-    #   max(cache_lengths[i] + prompt_lengths[i] for i in range(batch_size)
     var max_cache_length: UInt32
     var batch_size: Int
     var layer_idx: Int
@@ -341,6 +334,26 @@ struct ContinuousBatchingKVCache[
         self.batch_size = cache_lengths.dim[0]()
         self.max_seq_length = max_seq_length
         self.max_cache_length = max_cache_length
+        self.layer_idx = layer_idx
+        self.kv_idx = kv_idx
+
+    fn __init__(
+        mut self,
+        blocks: Self.BlocksType,
+        cache_lengths: NDBuffer[DType.uint32, 1],
+        lookup_table: NDBuffer[DType.uint32, 1],
+        is_cache_empty: Bool,
+        layer_idx: Int,
+        kv_idx: Int,
+    ):
+        # Compatiblity wrapper for older test code to enable breaking up the
+        # changes to remove `is_cache_empty`.
+        self.blocks = blocks
+        self.cache_lengths = cache_lengths
+        self.lookup_table = lookup_table
+        self.batch_size = cache_lengths.dim[0]()
+        self.max_seq_length = blocks.dim[3]()
+        self.max_cache_length = 0 if is_cache_empty else self.max_seq_length
         self.layer_idx = layer_idx
         self.kv_idx = kv_idx
 
@@ -402,12 +415,12 @@ struct ContinuousBatchingKVCache[
         false otherwise."""
         return self.max_cache_length == 0
 
-    fn max_prompt_length(self) -> UInt32:
+    fn get_max_seq_length(self) -> UInt32:
         """Returns the maximum sequence length across all batches of the current
         request."""
         return self.max_seq_length
 
-    fn max_context_length(self) -> UInt32:
+    fn get_max_cache_length(self) -> UInt32:
         """Returns the maximum cache length used across all batches of the
         current request."""
         return self.max_cache_length
@@ -453,14 +466,7 @@ struct PagedKVCache[
     var blocks: NDBuffer[Self.type, 6]
     var cache_lengths: NDBuffer[DType.uint32, 1]
     var lookup_table: NDBuffer[DType.uint32, 2]
-
-    # The length of the longest sequence in the current request.
-    # This length only considers tokens not in the KVCache.
     var max_seq_length: UInt32
-
-    # The length of the longest context in the current request.
-    # This is effectively:
-    #   max(cache_lengths[i] + prompt_lengths[i] for i in range(batch_size)
     var max_cache_length: UInt32
     var layer_idx: Int
     var kv_idx: Int
@@ -568,12 +574,12 @@ struct PagedKVCache[
         false otherwise."""
         return self.max_cache_length == 0
 
-    fn max_prompt_length(self) -> UInt32:
+    fn get_max_seq_length(self) -> UInt32:
         """Returns the maximum sequence length across all batches of the current
         request."""
         return self.max_seq_length
 
-    fn max_context_length(self) -> UInt32:
+    fn get_max_cache_length(self) -> UInt32:
         """Returns the maximum cache length used across all batches of the
         current request."""
         return self.max_cache_length
@@ -646,15 +652,8 @@ struct ContiguousKVCacheCollection[
     var num_layers: Int
     var batch_size: Int
     var max_seq_len_limit: Int
-
-    # The length of the longest sequence in the current request.
-    # This length only considers tokens not in the KVCache.
-    var max_seq_len_in_batch: UInt32
-
-    # The length of the longest context in the current request.
-    # This is effectively:
-    #   max(cache_lengths[i] + prompt_lengths[i] for i in range(batch_size)
-    var max_cache_len_in_batch: UInt32
+    var max_seq_len_in_batch: Int
+    var max_cache_len_in_batch: Int
 
     fn __init__(
         mut self,
