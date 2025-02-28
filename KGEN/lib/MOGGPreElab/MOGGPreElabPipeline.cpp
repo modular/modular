@@ -41,7 +41,6 @@ public:
 
     if (hasKernels && !debugBuild) {
       mlir::OpPassManager pm(ModuleOp::getOperationName());
-      pm.addPass(MOGGPreElab::createSliceKernels());
       pm.addPass(MOGGPreElab::createOutlineKernels());
 
       if (failed(runPipeline(pm, mod)))

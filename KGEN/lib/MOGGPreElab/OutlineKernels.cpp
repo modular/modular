@@ -340,7 +340,7 @@ public:
 
     for (GeneratorOp kernel : mod.getOps<GeneratorOp>()) {
       // Skip non-kernels.
-      if (!(kernel->hasAttr(SLICED_ATTR) || kernel->hasAttr(ALLOCS_ATTR)))
+      if (!kernel->hasAttr(kMOGGExecuteFunctionLabel))
         continue;
 
       // Don't slice view kernels (The GraphCompiler need to access the copy
