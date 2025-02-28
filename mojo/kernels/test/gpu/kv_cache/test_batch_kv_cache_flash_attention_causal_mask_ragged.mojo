@@ -77,7 +77,9 @@ def execute_ragged_flash_attention[
         input_row_offsets_host.tensor[i] = total_length
         cache_lengths_host.tensor[i] = cache_lengths[i]
         valid_lengths_host.tensor[i] = valid_lengths[i]
-        max_context_length = max(max_context_length, cache_lengths[i])
+        max_context_length = max(
+            max_context_length, cache_lengths[i] + valid_lengths[i]
+        )
         max_prompt_length = max(max_prompt_length, valid_lengths[i])
         total_length += valid_lengths[i]
     input_row_offsets_host.tensor[batch_size] = total_length

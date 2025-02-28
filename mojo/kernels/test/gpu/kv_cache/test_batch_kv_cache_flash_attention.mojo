@@ -53,10 +53,6 @@ def execute_flash_attention[
         ")",
     )
 
-    var max_cache_valid_length = tensor_max(
-        NDBuffer[DType.uint32, 1](cache_valid_length.data, batch_size)
-    ).__int__()
-
     # initialize q tensor
     # TODO parameterize to layout
     q_host = HostNDBuffer[
@@ -87,35 +83,6 @@ def execute_flash_attention[
         ctx=ctx,
     )
     ctx.enqueue_copy(q_device.buffer, q_host.tensor.data)
-
-    # initialize mask tensor
-    # TODO this should ideally create a triangular matrix
-    # but the output should be consistent regardless.
-    mask_host = HostNDBuffer[
-        type, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
-    ](
-        IndexList[4](
-            batch_size,
-            num_q_heads,
-            max_prompt_len,
-            max_prompt_len + max_cache_valid_length,
-        )
-    )
-
-    random(mask_host.tensor)
-
-    mask_device = DeviceNDBuffer[
-        type, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
-    ](
-        IndexList[4](
-            batch_size,
-            num_q_heads,
-            max_prompt_len,
-            max_prompt_len + max_cache_valid_length,
-        ),
-        ctx=ctx,
-    )
-    ctx.enqueue_copy(mask_device.buffer, mask_host.tensor.data)
 
     # initialize scale tensor
     scale_host = HostNDBuffer[DType.float32, 1, DimList(1)](IndexList[1](1))
@@ -163,16 +130,35 @@ def execute_flash_attention[
 
     # initialize our KVCache
     var is_context_encoding = True
-    var max_cache_len_in_batch = 0
+    var max_context_len_in_batch = 0
     var max_seq_len_in_batch = 0
     for i in range(batch_size):
         if cache_valid_length[i] != 0:
             is_context_encoding = False
-        max_cache_len_in_batch = max(
-            max_cache_len_in_batch, Int(cache_valid_length[i])
+        max_context_len_in_batch = max(
+            max_context_len_in_batch,
+            Int(cache_valid_length[i] + valid_length[i]),
         )
         max_seq_len_in_batch = max(max_seq_len_in_batch, Int(valid_length[i]))
     var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
+
+    # initialize mask tensor
+    # TODO this should ideally create a triangular matrix
+    # but the output should be consistent regardless.
+    mask_host = HostNDBuffer[
+        type, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
+    ](
+        IndexList[4](
+            batch_size,
+            num_q_heads,
+            max_prompt_len,
+            max_context_len_in_batch,
+        )
+    )
+
+    random(mask_host.tensor)
+
+    mask_device = mask_host.copy_to_device(ctx)
 
     ctx.enqueue_copy(cache_lengths_dev, cache_valid_length.data)
     var cache_lengths = NDBuffer[DType.uint32, 1](
@@ -213,7 +199,7 @@ def execute_flash_attention[
         is_context_encoding,
         batch_size,
         max_seq_len_in_batch,
-        max_cache_len_in_batch,
+        max_context_len_in_batch,
     )
 
     v_block_host = HostNDBuffer[
@@ -250,9 +236,8 @@ def execute_flash_attention[
         is_context_encoding,
         batch_size,
         max_seq_len_in_batch,
-        max_cache_len_in_batch,
+        max_context_len_in_batch,
     )
-
     mha_gpu_naive[use_mask_tensor=True](
         q_device.tensor,
         k_cache_device,
@@ -264,7 +249,7 @@ def execute_flash_attention[
         scale_host.tensor.data[0],
         batch_size,
         max_prompt_len,
-        max_cache_valid_length,
+        max_context_len_in_batch,
         num_q_heads,  # TODO fix this for GQA
         kv_params.head_size,
         num_q_heads // kv_params.num_heads,
@@ -337,12 +322,11 @@ def execute_flash_attention[
             for bs in range(Int(batch_size)):
                 for s in range(Int(valid_length[bs])):
                     for h in range(Int(num_q_heads)):
-                        for hd in range(kv_params.head_size):
+                        for hd in range(Int(kv_params.head_size)):
+                            var ref_val = ref_out[bs, s, h, hd]
+                            var test_val = test_out[bs, s, h, hd]
                             assert_almost_equal(
-                                ref_out[bs, s, h, hd],
-                                test_out[bs, s, h, hd],
-                                atol=1e-5,
-                                rtol=8e-3,
+                                ref_val, test_val, atol=1e-5, rtol=8e-3
                             )
 
     _ = q_device^
@@ -374,9 +358,8 @@ def execute_flash_attention_suite(ctx: DeviceContext):
     )
 
     @parameter
-    for type_idx in range(2):
+    for type_idx in range(len(types)):
         alias type = types[type_idx]
-
         # Replit context encoding [testing even query valid lengths].
         valid_length[0] = 128
         valid_length[1] = 64
