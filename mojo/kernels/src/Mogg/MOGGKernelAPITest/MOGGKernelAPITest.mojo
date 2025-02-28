@@ -553,9 +553,8 @@ struct BasicInplaceRaises:
 
 @compiler.register("variadic_add")
 struct VariadicAdd:
-    # TODO(GEX-1591): Re-enable fusion of variadic operands
-    # @compiler.enable_fusion_for("inputs")
     @enforce_io_param
+    @compiler.enable_fusion_for("inputs")
     @staticmethod
     fn execute[
         type: DType,

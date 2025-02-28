@@ -4678,8 +4678,7 @@ fn concat_shape_impl[
 
 @compiler.register("mo.concat")
 struct Concat:
-    # TODO(GEX-1591): Re-enable fusion of variadic operands
-    @compiler.enable_fusion_for("output")
+    @compiler.enable_fusion_for("inputs", "output")
     @staticmethod
     fn execute[
         type: DType,
