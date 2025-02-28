@@ -309,6 +309,94 @@ TEST_F(BlobCacheTest, InsertKeyedSyncWorks) {
          "insertKeyedSync";
 }
 
+TEST_F(BlobCacheTest, ContainsKeyedWorks) {
+  // Create buffer with unique value
+  auto threesDataBuf = WriteableBuffer::get();
+  threesDataBuf->write(3);
+  BufferRef threesBuf = std::move(threesDataBuf);
+
+  std::string plainKey = "containsKeyedTest";
+  std::string hashedKey = cache->getHash(plainKey);
+
+  // Insert using insertKeyed with pre-hashed key
+  auto chainAV = cache->insertKeyed(*runtime, hashedKey, threesBuf.copy());
+  await(chainAV);
+
+  // Verify containsKeyed with direct hash check
+  auto containsAV = cache->containsKeyed(*runtime, hashedKey);
+  await(containsAV);
+
+  ASSERT_FALSE(containsAV.isError()) << containsAV.getDiagnostic().getMessage();
+  EXPECT_TRUE(*containsAV)
+      << "containsKeyed should find item with pre-hashed key";
+}
+
+TEST_F(BlobCacheTest, ContainsKeyedSyncWorks) {
+  // Create buffer with unique value
+  auto foursDataBuf = WriteableBuffer::get();
+  foursDataBuf->write(4);
+  BufferRef foursBuf = std::move(foursDataBuf);
+
+  std::string plainKey = "containsKeyedSyncTest";
+  std::string hashedKey = cache->getHash(plainKey);
+
+  auto err = cache->insertKeyedSync(hashedKey, foursBuf.copy());
+  ASSERT_FALSE(err.isError()) << "Synchronous insertKeyedSync failed";
+
+  auto containsOr = cache->containsKeyedSync(hashedKey);
+  ASSERT_FALSE(containsOr.isError()) << containsOr.getError();
+  EXPECT_TRUE(*containsOr)
+      << "containsKeyedSync should find item with pre-hashed key";
+}
+
+TEST_F(BlobCacheTest, FindKeyedWorks) {
+  // Create buffer with unique value
+  auto fivesDataBuf = WriteableBuffer::get();
+  fivesDataBuf->write(5);
+  BufferRef fivesBuf = std::move(fivesDataBuf);
+
+  std::string plainKey = "findKeyedTest";
+  std::string hashedKey = cache->getHash(plainKey);
+
+  auto chainAV = cache->insertKeyed(*runtime, hashedKey, fivesBuf.copy());
+  await(chainAV);
+
+  auto findAV = cache->findKeyed(*runtime, hashedKey);
+  await(findAV);
+
+  ASSERT_FALSE(findAV.isError()) << findAV.getDiagnostic().getMessage();
+  ASSERT_TRUE(findAV->has_value())
+      << "findKeyed should retrieve item with pre-hashed key";
+
+  BufferRef outBuf = std::move(**findAV);
+  EXPECT_TRUE(outBuf->getBuffer() ==
+              StringRef(fivesBuf->getBufferStart(), fivesBuf->getBufferSize()))
+      << "findKeyed returned different data than inserted";
+}
+
+TEST_F(BlobCacheTest, FindKeyedSyncWorks) {
+  // Create buffer with unique value
+  auto sixesDataBuf = WriteableBuffer::get();
+  sixesDataBuf->write(6);
+  BufferRef sixesBuf = std::move(sixesDataBuf);
+
+  std::string plainKey = "findKeyedSyncTest";
+  std::string hashedKey = cache->getHash(plainKey);
+
+  auto err = cache->insertKeyedSync(hashedKey, sixesBuf.copy());
+  ASSERT_FALSE(err.isError()) << "Synchronous insertKeyedSync failed";
+
+  auto findOr = cache->findKeyedSync(hashedKey);
+  ASSERT_FALSE(findOr.isError()) << findOr.getError();
+  ASSERT_TRUE(findOr->has_value())
+      << "findKeyedSync should retrieve item with pre-hashed key";
+
+  BufferRef outBuf = std::move(**findOr);
+  EXPECT_TRUE(outBuf->getBuffer() ==
+              StringRef(sixesBuf->getBufferStart(), sixesBuf->getBufferSize()))
+      << "findKeyedSync returned different data than inserted";
+}
+
 //===----------------------------------------------------------------------===//
 // Specialized FilesystemBackend tests
 //===----------------------------------------------------------------------===//
