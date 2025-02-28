@@ -15,6 +15,7 @@ from sys import (
     simdwidthof,
     sizeof,
 )
+
 from sys.intrinsics import PrefetchOptions
 
 from algorithm import vectorize
@@ -3291,15 +3292,74 @@ fn copy_local_to_dram[
         )
         alias dst_element_type = Element[dst.dtype, dst.element_layout]
 
-        var src_vec = src_element.element_data.cast[dst.dtype]()
-
         @parameter
         for i in range(dst_fragments.element_layout.size()):
             alias element_offset = dst_fragments.element_layout(i)
+            var src = src_element.element_data[i].cast[dst.dtype]()
+
             buffer_store(
                 descriptor,
                 Int32(dst_idx + element_offset),
-                src_vec[i],
+                src,
+            )
+
+
+@always_inline("nodebug")
+fn copy_dram_to_local[
+    src_thread_layout: Layout,
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+](dst: LayoutTensor, src: LayoutTensor, src_base: LayoutTensor):
+    """
+    Used to copy data from DRAM to registers for AMD GPUs. It uses buffer_load intrinsic
+    to load data and can check for bounds. In addition to dst and src, it takes
+    src_base as an argument to construct the buffer descriptor of the src tensor.
+    src_base is the original global memory tensor from which src is derived.
+    """
+    constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
+    alias simd_width = simdwidthof[src.dtype]()
+    constrained[
+        dst.element_layout.size() == simd_width,
+        "dst element size must be the same as simd width.",
+    ]()
+    _copy_local_to_dram_validate_args(src, dst)
+
+    var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    var src_fragments = src.distribute[src_thread_layout](worker_idx)
+    # the offset calculation using pointer leads to loss of ~7-8 TFlops vs
+    # calculating offset and passing it as an argument, using this for now
+    # but we may want to revisit this
+    var offset = (Int(src.ptr) - Int(src_base.ptr)) // sizeof[src.dtype]()
+    var descriptor = get_amd_buffer_descriptor(src_base)
+    var src_frag_offset = src_fragments.distance(src.ptr) + offset
+    alias num_stores_per_thread = src_fragments.layout.size()
+
+    alias M = src_fragments.shape[0]()
+    alias N = src_fragments.shape[1]()
+
+    constrained[
+        src_fragments.layout.rank() == 2,
+        "src_fragments must be rank 2.",
+    ]()
+
+    constrained[
+        src_fragments.layout.all_dims_known(),
+        "src_fragments must have known layout.",
+    ]()
+
+    # These loads need to be row-major for L1 cache performance
+    @parameter
+    for i in range(M):
+
+        @parameter
+        for j in range(N):
+            alias dst_idx = Layout.col_major(M, N)(IntTuple(i, j))
+            alias src_static_idx = src_fragments.layout(IntTuple(i, j))
+            var src_idx = Int32(src_frag_offset) + src_static_idx
+            dst[dst_idx] = rebind[dst.element_type](
+                buffer_load[src.dtype, simd_width](
+                    descriptor,
+                    src_idx,
+                )
             )
 
 
@@ -3307,6 +3367,9 @@ fn copy_local_to_dram[
 fn copy_local_to_sram[
     thread_layout: Layout,
     swizzle: OptionalReg[Swizzle] = None,
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+    row_major: Bool = False,
+    # row_major is used when using prefetching from dram to sram via registers for AMD GPUs
 ](dst: LayoutTensor, src: LayoutTensor):
     constrained[
         dst.address_space == _GPUAddressSpace.SHARED,
@@ -3318,7 +3381,7 @@ fn copy_local_to_sram[
         "src address space must be LOCAL.",
     ]()
 
-    var dst_frag = dst.distribute[thread_layout](thread_idx.x)
+    var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
 
     constrained[
         src.dtype == dst.dtype
@@ -3331,31 +3394,69 @@ fn copy_local_to_sram[
     ]()
 
     @parameter
-    if swizzle:
-        alias swizzle_fn = swizzle.value()
-        alias num_vecs = src.layout.size()
-        alias align_src = alignof[SIMD[src.dtype, src.element_size]]()
-        alias align_dst = alignof[SIMD[dst.dtype, dst.element_size]]()
-        var dst_frag_offset = dst_frag.distance(dst.ptr)
+    if not row_major:
+        var dst_frag = dst.distribute[thread_layout](worker_idx)
 
         @parameter
-        for i in range(num_vecs):
-            alias src_idx = src.layout(i)
-            alias dst_idx = dst_frag.layout(i)
-            alias dst_idx_base = dst_idx % swizzle_fn.size()
-            alias dst_idx_diff = dst_idx - dst_idx_base
-            var swizzled_idx = swizzle_fn(
-                dst_frag_offset + dst_idx_base
-            ) + dst_idx_diff
-            var src_vec = src.ptr.load[
-                width = src.element_size, alignment=align_src
-            ](src_idx).cast[dst.dtype]()
-            dst.ptr.store[alignment=align_dst](
-                swizzled_idx, src_vec.cast[dst.dtype]()
-            )
+        if swizzle:
+            alias swizzle_fn = swizzle.value()
+            alias num_vecs = src.layout.size()
+            alias align_src = alignof[SIMD[src.dtype, src.element_size]]()
+            alias align_dst = alignof[SIMD[dst.dtype, dst.element_size]]()
+            var dst_frag_offset = dst_frag.distance(dst.ptr)
 
+            @parameter
+            for i in range(num_vecs):
+                alias src_idx = src.layout(i)
+                alias dst_idx = dst_frag.layout(i)
+                alias dst_idx_base = dst_idx % swizzle_fn.size()
+                alias dst_idx_diff = dst_idx - dst_idx_base
+                var swizzled_idx = swizzle_fn(
+                    dst_frag_offset + dst_idx_base
+                ) + dst_idx_diff
+                var src_vec = src.ptr.load[
+                    width = src.element_size, alignment=align_src
+                ](src_idx).cast[dst.dtype]()
+                dst.ptr.store[alignment=align_dst](
+                    swizzled_idx, src_vec.cast[dst.dtype]()
+                )
+
+        else:
+            dst_frag.copy_from(src)
     else:
-        dst_frag.copy_from(src)
+        constrained[
+            is_amd_gpu(), "This function is only supported on AMD GPUs."
+        ]()
+        var dst_frag = dst.distribute[thread_layout, swizzle=swizzle](
+            worker_idx
+        )
+        alias M = dst_frag.shape[0]()
+        alias N = dst_frag.shape[1]()
+
+        constrained[
+            dst_frag.layout.rank() == 2,
+            "dst_frag must be rank 2.",
+        ]()
+
+        @parameter
+        for i in range(M):
+
+            @parameter
+            for j in range(N):
+                # The order here needs to match the order of the loads in copy_dram_to_local
+                alias idx = Layout.col_major(M, N)(IntTuple(i, j))
+                var src_idx = src._get_element_idx[idx]()
+                var dst_idx = dst_frag._get_element_idx[idx]()
+
+                var src_element = MemoryElement(
+                    src.ptr.offset(src_idx), src.runtime_element_layout
+                )
+
+                var dst_element = MemoryElement(
+                    dst_frag.ptr.offset(dst_idx),
+                    dst_frag.runtime_element_layout,
+                )
+                dst_element.transfer(src_element)
 
 
 @always_inline
