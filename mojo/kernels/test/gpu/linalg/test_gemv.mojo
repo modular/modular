@@ -3,6 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# FIXME: KERN-1377
+# UNSUPPORTED: AMD-GPU
 # RUN: %mojo-no-debug-no-assert %s | FileCheck %s
 
 from math import ceildiv
@@ -19,8 +21,6 @@ from memory import UnsafePointer
 from utils import IndexList
 from utils.index import Index
 from utils.numerics import isnan
-
-from sys import has_nvidia_gpu_accelerator
 
 
 def run_matvec[
@@ -53,7 +53,7 @@ def run_matvec[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias WARPS_PER_BLOCK = 1024 // WARP_SIZE
+    alias WARPS_PER_BLOCK = 32
 
     @always_inline
     @parameter
@@ -233,7 +233,7 @@ fn test_gevm_with_epilogue_fn[
             idx, rebind[SIMD[DType.float32, width]](val + 4.0)
         )
 
-    alias WARPS_PER_BLOCK = 1024 // WARP_SIZE
+    alias WARPS_PER_BLOCK = 32
 
     @always_inline
     @parameter
@@ -376,20 +376,23 @@ fn test_gevm_with_epilogue_fn[
 
 
 def main():
-    def run_tests[reduction_method: warp.ReductionMethod](ctx: DeviceContext):
-        # gemv for matrix vector multiply and gevm for vector matrix multiply
-        run_matvec[reduction_method=reduction_method](4096, 1, 4096, ctx=ctx)
-        run_matvec[reduction_method=reduction_method](1, 4096, 4096, ctx=ctx)
-        test_gevm_with_epilogue_fn[reduction_method=reduction_method](
-            1, 4096, 4096, ctx=ctx
-        )
-        test_gevm_with_epilogue_fn[reduction_method=reduction_method](
-            4096, 1, 4096, ctx=ctx
-        )
-
     with DeviceContext() as ctx:
-        run_tests[warp.ReductionMethod.WARP](ctx)
 
         @parameter
-        if has_nvidia_gpu_accelerator():
-            run_tests[warp.ReductionMethod.TENSOR_CORE](ctx)
+        for i in range(2):
+            alias reduction_method = List[warp.ReductionMethod](
+                warp.ReductionMethod.WARP, warp.ReductionMethod.TENSOR_CORE
+            )[i]
+            # gemv for matrix vector multiply and gevm for vector matrix multiply
+            run_matvec[reduction_method=reduction_method](
+                4096, 1, 4096, ctx=ctx
+            )
+            run_matvec[reduction_method=reduction_method](
+                1, 4096, 4096, ctx=ctx
+            )
+            test_gevm_with_epilogue_fn[reduction_method=reduction_method](
+                1, 4096, 4096, ctx=ctx
+            )
+            test_gevm_with_epilogue_fn[reduction_method=reduction_method](
+                4096, 1, 4096, ctx=ctx
+            )
