@@ -75,18 +75,18 @@ struct TileScheduler[
     tile_shape: IndexList[3],
     grid_shape: IndexList[2],
     cluster: IndexList[3] = Index(1, 1, 1),
-    raster_dim: Int = 1,
+    raster_dim: UInt32 = 1,
     schedule: MatmulSchedule = MatmulSchedule.TILE2D,
 ]:
-    alias wave_shape = Index(
+    alias wave_shape = Index[element_bitwidth=32, unsigned=True](
         tile_shape[0] * grid_shape[0], tile_shape[1] * grid_shape[1]
     )
     # This has to match the grid dimension for the kernel launch.
-    alias num_grids: UInt = grid_shape[0] * grid_shape[1]
-    var idx: UInt
+    alias num_grids: UInt32 = grid_shape[0] * grid_shape[1]
+    var idx: UInt32
     var prob_shape: IndexList[3]  # M x N x K
-    var num_waves_m: UInt
-    var num_waves_n: UInt
+    var num_waves_m: UInt32
+    var num_waves_n: UInt32
 
     @always_inline
     fn __init__(mut self, prob_shape: IndexList[3]):
@@ -132,13 +132,15 @@ struct TileScheduler[
     @always_inline
     fn _index_to_mn_tile1d(self) -> Tuple[UInt, UInt]:
         # Grid dim as if there is no persist kernel
-        logical_grid_dim = Index(
+        logical_grid_dim = Index[element_bitwidth=32, unsigned=True](
             ceildiv(self.prob_shape[1], tile_shape[1]),
             ceildiv(self.prob_shape[0], tile_shape[0]),
         )
 
-        by, bx = divmod(self.idx, UInt(logical_grid_dim[0]))
-        block_xy_swizzle = block_swizzle(Index(bx, by), logical_grid_dim)
+        by, bx = divmod(UInt(Int(self.idx)), UInt(Int(logical_grid_dim[0])))
+        block_xy_swizzle = block_swizzle(
+            Index[element_bitwidth=32, unsigned=True](bx, by), logical_grid_dim
+        )
 
         m = UInt(block_xy_swizzle[1] * tile_shape[0])
         n = UInt(block_xy_swizzle[0] * tile_shape[1])
@@ -148,9 +150,11 @@ struct TileScheduler[
     @always_inline
     fn _index_to_mn_tile2d(self) -> Tuple[UInt, UInt]:
         # We consider a sweep on busy SMs a wave, not all SMs
-        num_waves_executed, idx_in_wave = divmod(self.idx, Self.num_grids)
+        num_waves_executed, idx_in_wave = divmod(
+            UInt(Int(self.idx)), UInt(Int(Self.num_grids))
+        )
         num_waves_executed_m, num_waves_executed_n = divmod(
-            num_waves_executed, UInt(self.num_waves_n)
+            num_waves_executed, UInt(Int(self.num_waves_n))
         )
 
         # The wave maps to a BM x grid_shape[0] by BN x grid_shape[1]
@@ -172,12 +176,12 @@ struct TileScheduler[
         )
 
 
-fn _check_cluster(cluster_dims: IndexList[3], raster_dim: Int) -> Bool:
+fn _check_cluster(cluster_dims: IndexList[3], raster_dim: UInt32) -> Bool:
     """Check if block cluster is along the raster dimention."""
 
     @parameter
     for i in range(3):
-        if cluster_dims[i] > 1 and i != raster_dim:
+        if cluster_dims[i] > 1 and i != Int(raster_dim):
             return False
 
     return True
