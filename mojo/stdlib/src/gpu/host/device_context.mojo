@@ -361,6 +361,16 @@ struct DeviceBuffer[type: DType](Sized):
     fn unsafe_ptr(self) -> UnsafePointer[Scalar[type]]:
         return self._device_ptr
 
+    fn context(self) raises -> DeviceContext:
+        # const DeviceContext *AsyncRT_DeviceBuffer_context(const DeviceBuffer *buffer)
+        var ctx_ptr: _DeviceContextPtr = external_call[
+            "AsyncRT_DeviceBuffer_context", _DeviceContextPtr, _DeviceBufferPtr
+        ](self._handle)
+        return DeviceContext(ctx_ptr)
+
+    fn map_to_host(self) raises -> _HostMappedBuffer[type]:
+        return _HostMappedBuffer[type](self.context(), self)
+
     fn __getitem__(self, idx: Int) -> Scalar[type]:
         return self._device_ptr[idx]
 
@@ -1178,6 +1188,14 @@ struct DeviceContext:
         """Create a Mojo DeviceContext from a pointer to an existing C++ object.
         """
         self._handle = handle.bitcast[_DeviceContextCpp]()
+        self._retain()
+
+    @doc_private
+    @implicit
+    fn __init__(out self, ctx_ptr: _DeviceContextPtr):
+        """Create a Mojo DeviceContext from a pointer to an existing C++ object.
+        """
+        self._handle = ctx_ptr
         self._retain()
 
     fn __copyinit__(out self, existing: Self):
@@ -2368,29 +2386,25 @@ struct DeviceContext:
 
 
 struct _HostMappedBuffer[type: DType]:
-    var _dev_ctx: DeviceContext
-    var _cpu_ctx: DeviceContext
+    var _ctx: DeviceContext
     var _dev_buf: DeviceBuffer[type]
     var _cpu_buf: DeviceBuffer[type]
 
     fn __init__(mut self, ctx: DeviceContext, buf: DeviceBuffer[type]) raises:
-        var cpu = DeviceContext(api="cpu")
-        var cpu_buf = cpu.enqueue_create_buffer[type](len(buf))
-        self._dev_ctx = ctx
-        self._cpu_ctx = cpu
+        var cpu_buf = ctx.enqueue_create_host_buffer[type](len(buf))
+        self._ctx = ctx
         self._dev_buf = buf
         self._cpu_buf = cpu_buf
 
     fn __del__(owned self):
         pass
 
-    fn __enter__(mut self) raises -> UnsafePointer[Scalar[type]]:
-        self._cpu_ctx.synchronize()
-        self._dev_ctx.enqueue_copy(self._cpu_buf.unsafe_ptr(), self._dev_buf)
-        self._dev_ctx.synchronize()
-        return self._cpu_buf.unsafe_ptr()
+    fn __enter__(mut self) raises -> DeviceBuffer[type]:
+        self._dev_buf.enqueue_copy_to(self._cpu_buf)
+        self._ctx.synchronize()
+        return self._cpu_buf
 
     fn __exit__(mut self) raises:
-        self._cpu_ctx.synchronize()
-        self._dev_ctx.enqueue_copy(self._dev_buf, self._cpu_buf.unsafe_ptr())
-        self._dev_ctx.synchronize()
+        self._ctx.synchronize()
+        self._cpu_buf.enqueue_copy_to(self._dev_buf)
+        self._ctx.synchronize()
