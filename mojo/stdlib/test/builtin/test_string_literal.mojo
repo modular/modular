@@ -22,7 +22,12 @@ from testing import (
     assert_raises,
     assert_true,
 )
-from builtin.string_literal import _base64_encode, _base64_decode
+from builtin.string_literal import (
+    _base64_encode,
+    _base64_decode,
+    _compress,
+    _decompress,
+)
 
 
 def test_add():
@@ -535,6 +540,15 @@ def test_base64_encode_decode():
     assert_equal(decoded, "I'm a mojo string")
 
 
+def test_compress_decompress():
+    alias compressed = _compress["hello"]()
+    alias decompressed = _decompress[compressed]()
+    alias compressed_base64 = _base64_encode[compressed]()
+    assert_equal(compressed_base64, "eNrLSM3JyQcABiwCFQ==")
+    assert_equal(len(compressed), 13)
+    assert_equal(decompressed, "hello")
+
+
 def main():
     test_add()
     test_iadd()
@@ -569,3 +583,4 @@ def main():
     test_float_conversion()
     test_string_literal_from_stringable()
     test_base64_encode_decode()
+    test_compress_decompress()
