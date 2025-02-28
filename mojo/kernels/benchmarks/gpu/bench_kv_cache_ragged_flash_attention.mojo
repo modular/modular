@@ -88,7 +88,7 @@ def execute_kv_cache_ragged_flash_attention[
     var cache_lengths_host = HostNDBuffer[DType.uint32, 1](
         IndexList[1](batch_size)
     )
-    var max_context_length: UInt32 = 0
+    var max_cache_length: UInt32 = 0
     var max_seq_length: UInt32 = 0
     var total_seq_len: UInt32 = 0
 
@@ -106,9 +106,7 @@ def execute_kv_cache_ragged_flash_attention[
         else:
             curr_cache_length = cache_len
 
-        max_context_length = max(
-            max_context_length, curr_cache_length + curr_seq_length
-        )
+        max_cache_length = max(max_cache_length, curr_cache_length)
         max_seq_length = max(max_seq_length, curr_seq_length)
 
         input_row_offsets_host.tensor[i] = total_seq_len
@@ -183,7 +181,7 @@ def execute_kv_cache_ragged_flash_attention[
         cache_lengths_device.tensor,
         lookup_table_device.tensor,
         max_seq_length,
-        max_context_length,
+        max_cache_length,
         0,
         CacheType.KeyIdx,
     )
@@ -192,7 +190,7 @@ def execute_kv_cache_ragged_flash_attention[
         cache_lengths_device.tensor,
         lookup_table_device.tensor,
         max_seq_length,
-        max_context_length,
+        max_cache_length,
         0,
         CacheType.ValueIdx,
     )
