@@ -4,13 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 import random
 from collections import defaultdict
 from typing import Any, List, Optional
 
 import numpy as np
 import pytest
-from max.driver import CPU
+from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.pipelines.kv_cache import KVCacheParams, KVCacheStrategy
@@ -617,17 +619,34 @@ class FakeModel:
                 self.page_size = page_size
 
             def execute(
-                self, block_dst: int, block_src: int, num_tokens: int, *_
+                self,
+                block_dst_idx_tensor: Tensor,
+                block_src_idx_tensor: Tensor,
+                num_tokens_tensor: Tensor,
+                *_,
             ) -> None:
                 # when the kv_manager attempts to execute the cow strided memcpy
                 # graph, we intercept the call and update the block_projections
                 # object instead.
-                assert block_src in self.block_projections
-                assert 0 < num_tokens < self.page_size
-                for token in range(num_tokens):
-                    self.block_projections[block_dst][token] = (
-                        self.block_projections[block_src][token]
-                    )
+                def to_numpy(arr: Tensor | np.ndarray) -> np.ndarray:
+                    if isinstance(arr, Tensor):
+                        arr_tensor: Tensor = arr
+                        return arr_tensor.to_numpy()
+                    return arr
+
+                block_dst_idx_np = to_numpy(block_dst_idx_tensor)
+                block_src_idx_np = to_numpy(block_src_idx_tensor)
+                num_tokens_np = to_numpy(num_tokens_tensor)
+
+                for block_dst, block_src, num_tokens in zip(
+                    block_dst_idx_np, block_src_idx_np, num_tokens_np
+                ):
+                    assert block_src in self.block_projections
+                    assert 0 < num_tokens < self.page_size
+                    for token in range(num_tokens):
+                        self.block_projections[block_dst][token] = (
+                            self.block_projections[block_src][token]
+                        )
 
         return MockGraph(self.block_projections, self.page_size)
 
