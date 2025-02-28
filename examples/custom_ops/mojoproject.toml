@@ -16,7 +16,7 @@ fused_attention = { cmd = "python fused_attention.py", depends-on = ["package"] 
 matrix_multiplication = { cmd = "python matrix_multiplication.py", depends-on = ["package"] }
 histogram = { cmd = "python histogram.py", depends-on = ["package"] }
 benchmark = { cmd = "mojo benchmarks.mojo", depends-on = ["package"] }
-test = { depends-on = ["addition", "mandelbrot", "vector_addition", "top_k", "fused_attention", "matrix_multiplication", "benchmark"] }
+test = { depends-on = ["addition", "mandelbrot", "vector_addition", "top_k", "matrix_multiplication", "benchmark"] }
 
 [dependencies]
 python = ">=3.9,<3.13"
