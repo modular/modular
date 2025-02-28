@@ -16,14 +16,20 @@ from gpu import (
     grid_dim,
     MAX_THREADS_PER_BLOCK_METADATA,
 )
+from gpu.sync import (
+    schedule_barrier,
+    schedule_group_barrier,
+    AMDScheduleBarrierMask,
+)
 import gpu.warp as warp
 from gpu.host import DeviceContext
-from gpu.memory import AddressSpace, external_memory
-from memory.pointer import AddressSpace as _AddressSpace
+from gpu.memory import AddressSpace
 from layout import Layout, LayoutTensor, IntTuple
 from layout.layout_tensor import (
     copy_dram_to_sram,
     copy_local_to_dram,
+    copy_dram_to_local,
+    copy_local_to_sram,
     ThreadScope,
 )
 from layout.runtime_layout import RuntimeLayout
@@ -122,31 +128,23 @@ fn gemm_kernel[
         )
 
     alias smem_alignment = alignof[SIMD[a_type, simd_width]]()
-    var a_smem = external_memory[
-        Scalar[a_type],
-        address_space = AddressSpace.SHARED,
-        alignment=smem_alignment,
-    ]()
-
     alias a_smem_layout = get_smem_layout(MMA_M, BM)
     var a_smem_tensor = LayoutTensor[
         a_type,
         a_smem_layout,
-        address_space = a_smem.address_space,
-        alignment = a_smem.alignment,
-    ](a_smem.bitcast[Scalar[a_type]]())
-
+        address_space = AddressSpace.SHARED,
+        alignment=smem_alignment,
+    ].stack_allocation()
     var a_smem_warp_tile = a_smem_tensor.tile[BM // num_warps, BK](warp_id, 0)
 
-    var b_smem = (a_smem + BM * BK)
     alias b_smem_layout = get_smem_layout(MMA_N, BN)
 
     var b_smem_tensor = LayoutTensor[
         b_type,
         b_smem_layout,
-        address_space = b_smem.address_space,
-        alignment = b_smem.alignment,
-    ](b_smem.bitcast[Scalar[b_type]]())
+        address_space = AddressSpace.SHARED,
+        alignment=smem_alignment,
+    ].stack_allocation()
     var b_smem_warp_tile = b_smem_tensor.tile[BN // num_warps, BK](warp_id, 0)
 
     var mma_op = TensorCore[
@@ -167,70 +165,160 @@ fn gemm_kernel[
     )
 
     alias swizzle = Swizzle(2, 0, 2)
-    for k in range(0, K, BK):
+    alias thread_layout = Layout.row_major(16, 4)
 
-        @always_inline
-        @parameter
-        fn _copy_dram_to_sram(
-            smem_warp_tile: LayoutTensor,
-            gmem_warp_tile: LayoutTensor,
-            gmem: LayoutTensor,
-        ):
-            alias thread_layout = Layout.row_major(16, 4)
-            copy_dram_to_sram[
-                thread_layout=thread_layout,
-                thread_scope = ThreadScope.WARP,
-                swizzle=swizzle,
-            ](
-                smem_warp_tile.vectorize[1, simd_width](),
-                gmem_warp_tile.vectorize[1, simd_width](),
-                gmem,
-            )
+    var a_load_tile = tb[a_type]().row_major[
+        (BM // num_warps) // MMA_M * num_k_mmas2, simd_width
+    ]().local().alloc()
 
-        # there is some performance drop with iter vs tile but it is very small ~ 1TFLOPs
-        # var a_warp_tile = a_tile.tile[BM // num_warps, BK](warp_id, k // BK)
-        # var b_warp_tile = b_tile.tile[BN // num_warps, BK](warp_id, k // BK)
-        _copy_dram_to_sram(a_smem_warp_tile, a_gmem_iter[], a)
-        _copy_dram_to_sram(b_smem_warp_tile, b_gmem_iter[], b)
-        a_gmem_iter._incr()
-        b_gmem_iter._incr()
+    var b_load_tile = tb[b_type]().row_major[
+        (BN // num_warps) // MMA_N * num_k_mmas2, simd_width
+    ]().local().alloc()
 
-        var a_mma_tile = a_smem_tensor.tile[BM // num_warps_m, BK](
-            warp_id // num_warps_n, 0
-        )
-        var b_mma_tile = b_smem_tensor.tile[BN // num_warps_n, BK](
-            warp_id % num_warps_n, 0
-        )
-        barrier()
+    var a_reg_tile = tb[a_type]().row_major[
+        num_m_mmas * num_k_mmas2, simd_width
+    ]().local().alloc()
 
+    var b_reg_tile = tb[b_type]().row_major[
+        num_n_mmas * num_k_mmas2, simd_width
+    ]().local().alloc()
+
+    var a_mma_tile = a_smem_tensor.tile[BM // num_warps_m, BK](
+        warp_id // num_warps_n, 0
+    )
+    var b_mma_tile = b_smem_tensor.tile[BN // num_warps_n, BK](
+        warp_id % num_warps_n, 0
+    )
+
+    @always_inline
+    @parameter
+    fn _copy_sram_to_local():
         @parameter
         for k_mma in range(num_k_mmas2):
-            var a_reg_tile = tb[a_type]().row_major[
-                num_m_mmas, simd_width
-            ]().local().alloc()
-
-            var b_reg_tile = tb[b_type]().row_major[
-                num_n_mmas, simd_width
-            ]().local().alloc()
-
             mma_op.load_a[swizzle=True](
-                a_mma_tile, a_reg_tile.vectorize[1, simd_width](), k_mma
+                a_mma_tile,
+                a_reg_tile.tile[num_m_mmas, simd_width](k_mma, 0).vectorize[
+                    1, simd_width
+                ](),
+                k_mma,
             )
+
             mma_op.load_b[swizzle=swizzle](
-                b_mma_tile, b_reg_tile.vectorize[1, simd_width](), k_mma
+                b_mma_tile,
+                b_reg_tile.tile[num_n_mmas, simd_width](k_mma, 0).vectorize[
+                    1, simd_width
+                ](),
+                k_mma,
             )
+
+    @always_inline
+    @parameter
+    fn _mma():
+        @parameter
+        for k_mma in range(num_k_mmas2):
 
             @parameter
             for k in range(k_group_size):
                 alias elements_per_thread = simd_width // k_group_size
                 var a_reg_k = a_reg_tile.tile[num_m_mmas, elements_per_thread](
-                    0, k
+                    k_mma, k
                 ).vectorize[1, elements_per_thread]()
                 var b_reg_k = b_reg_tile.tile[num_n_mmas, elements_per_thread](
-                    0, k
+                    k_mma, k
                 ).vectorize[1, elements_per_thread]()
                 mma_op.mma(a_reg_k, b_reg_k, c_reg_tile.vectorize[1, 4]())
+
+    @always_inline
+    @parameter
+    fn _copy_dram_to_local():
+        @always_inline
+        @parameter
+        fn _copy_dram_to_local_impl(
+            reg_tile: LayoutTensor,
+            gmem_warp_tile: LayoutTensor,
+            gmem: LayoutTensor,
+        ):
+            copy_dram_to_local[
+                src_thread_layout=thread_layout,
+                thread_scope = ThreadScope.WARP,
+            ](
+                reg_tile.vectorize[1, simd_width](),
+                gmem_warp_tile.vectorize[1, simd_width](),
+                gmem,
+            )
+
+        _copy_dram_to_local_impl(a_load_tile, a_gmem_iter[], a)
+        _copy_dram_to_local_impl(b_load_tile, b_gmem_iter[], b)
+        a_gmem_iter._incr()
+        b_gmem_iter._incr()
+
+    @always_inline
+    @parameter
+    fn _copy_local_to_sram():
+        @always_inline
+        @parameter
+        fn _copy_local_to_sram_impl(
+            smem_warp_tile: LayoutTensor,
+            reg_tile: LayoutTensor,
+        ):
+            copy_local_to_sram[
+                thread_layout=thread_layout,
+                swizzle=swizzle,
+                thread_scope = ThreadScope.WARP,
+                row_major=True,
+            ](
+                smem_warp_tile.vectorize[1, simd_width](),
+                reg_tile.vectorize[1, simd_width](),
+            )
+
+        _copy_local_to_sram_impl(a_smem_warp_tile, a_load_tile)
+        _copy_local_to_sram_impl(b_smem_warp_tile, b_load_tile)
+
+    _copy_dram_to_local()
+    _copy_local_to_sram()
+
+    barrier()
+
+    _copy_sram_to_local()
+    _copy_dram_to_local()
+
+    schedule_barrier()
+    for _ in range(0, K - 2 * BK, BK):
         barrier()
+
+        _copy_local_to_sram()
+        _copy_dram_to_local()
+        _mma()
+
+        barrier()
+
+        _copy_sram_to_local()
+
+        # these schedules will change soon in the future
+        # will add more info once they are stabilized
+        @parameter
+        for _ in range(
+            ((BN // 4) * BK + (BM // 4) * BK) // (WARP_SIZE * simd_width)
+        ):
+            schedule_group_barrier(AMDScheduleBarrierMask.DS_WRITE, 1, 0)
+            schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 1, 0)
+            schedule_group_barrier(AMDScheduleBarrierMask.VMEM_READ, 1, 0)
+            schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 5, 0)
+
+        @parameter
+        for _ in range(num_n_mmas * num_k_mmas2 + num_m_mmas * num_k_mmas2):
+            schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)
+            schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 1, 0)
+
+    schedule_barrier()
+    barrier()
+
+    _copy_local_to_sram()
+    _mma()
+    barrier()
+
+    _copy_sram_to_local()
+    _mma()
 
     # write to output tensor
     var c_block_tile = c.tile[BM, BN](block_idx.y, block_idx.x)

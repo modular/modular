@@ -2131,10 +2131,6 @@ fn multistage_gemm[
             tensor_b,
             grid_dim=runtime_config.grid_dim(M, N),
             block_dim=runtime_config.block_dim(),
-            shared_mem_bytes=runtime_config.shared_mem_usage(),
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                config.shared_mem_usage()
-            ),
         )
 
     else:
