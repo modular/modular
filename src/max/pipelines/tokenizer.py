@@ -59,7 +59,9 @@ class IdentityPipelineTokenizer(
     def expects_content_wrapping(self) -> bool:
         return False
 
-    async def encode(self, prompt: str) -> str:
+    async def encode(
+        self, prompt: str, add_special_tokens: bool = False
+    ) -> str:
         return prompt
 
     async def decode(
@@ -109,7 +111,9 @@ class PreTrainedPipelineTokenizer(
     def expects_content_wrapping(self) -> bool:
         return False
 
-    async def encode(self, prompt: str) -> np.ndarray:
+    async def encode(
+        self, prompt: str, add_special_tokens: bool = False
+    ) -> np.ndarray:
         return np.array(self.delegate.encode(prompt))
 
     async def decode(
@@ -167,7 +171,10 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
         )
         # As we are adding special tokens during chat templating prior to tokenization,
         # when add_special_tokens=True, we duplicate BOS tokens specifically.
-        self._partial_encode = functools.partial(
+        self._encode_with_special_tokens = functools.partial(
+            self.delegate.encode, add_special_tokens=True
+        )
+        self._encode_without_special_tokens = functools.partial(
             self.delegate.encode, add_special_tokens=False
         )
 
@@ -209,16 +216,24 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
     def expects_content_wrapping(self) -> bool:
         return False
 
-    async def encode(self, prompt: Union[str, Sequence[int]]) -> np.ndarray:
+    async def encode(
+        self, prompt: Union[str, Sequence[int]], add_special_tokens: bool = True
+    ) -> np.ndarray:
         """Transform the provided prompt into a token array."""
 
         encoded_prompt: np.ndarray
         if isinstance(prompt, str):
             # Note: the underlying tokenizer may not be thread safe in some cases, see https://github.com/huggingface/tokenizers/issues/537
             # Add a standard (non-async) lock in the executor thread if needed.
-            encoded_prompt = await run_with_default_executor(
-                self._partial_encode, prompt
-            )
+            if add_special_tokens:
+                encoded_prompt = await run_with_default_executor(
+                    self._encode_with_special_tokens, prompt
+                )
+            else:
+                encoded_prompt = await run_with_default_executor(
+                    self._encode_without_special_tokens, prompt
+                )
+
             max_length = self.max_length or self.delegate.model_max_length
             if max_length and len(encoded_prompt) > max_length:
                 raise ValueError(
@@ -253,6 +268,7 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
         cache_seq_id and prompt from TokenGeneratorRequest."""
 
         prompt: Union[str, list[int]]
+        add_special_tokens = True
         if request.prompt is not None:
             if isinstance(request.prompt, str):
                 prompt = str(request.prompt)
@@ -260,10 +276,14 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
                 prompt = [int(t) for t in request.prompt]
         elif request.messages is not None:
             prompt = self.apply_chat_template(request.messages, request.tools)
+            # Chat templating already adds special tokens, therefore we step around this here.
+            add_special_tokens = False
         else:
             raise ValueError(f"{request} does not provide messages or prompt.")
 
-        encoded_prompt = await self.encode(prompt)
+        encoded_prompt = await self.encode(
+            prompt, add_special_tokens=add_special_tokens
+        )
 
         # TODO(zheng): We should probably just make max_new_tokens an optional
         # instead of -1.
@@ -351,7 +371,10 @@ class TextAndVisionTokenizer(
         )
         # As we are adding special tokens during chat templating prior to tokenization,
         # when add_special_tokens=True, we duplicate BOS tokens specifically.
-        self._partial_encode = functools.partial(
+        self._encode_with_special_tokens = functools.partial(
+            self.delegate.encode, add_special_tokens=True
+        )
+        self._encode_without_special_tokens = functools.partial(
             self.delegate.encode, add_special_tokens=False
         )
         self.processor = AutoProcessor.from_pretrained(
@@ -415,16 +438,24 @@ class TextAndVisionTokenizer(
     def expects_content_wrapping(self) -> bool:
         return True
 
-    async def encode(self, prompt: Union[str, Sequence[int]]) -> np.ndarray:
+    async def encode(
+        self, prompt: Union[str, Sequence[int]], add_special_tokens: bool = True
+    ) -> np.ndarray:
         """Transform the provided prompt into a token array."""
 
         encoded_prompt: np.ndarray
         if isinstance(prompt, str):
             # Note: the underlying tokenizer may not be thread safe in some cases, see https://github.com/huggingface/tokenizers/issues/537
             # Add a standard (non-async) lock in the executor thread if needed.
-            encoded_prompt = await run_with_default_executor(
-                self._partial_encode, prompt
-            )
+            if add_special_tokens:
+                encoded_prompt = await run_with_default_executor(
+                    self._encode_with_special_tokens, prompt
+                )
+            else:
+                encoded_prompt = await run_with_default_executor(
+                    self._encode_without_special_tokens, prompt
+                )
+
             max_length = self.max_length or self.delegate.model_max_length
             if max_length and len(encoded_prompt) > max_length:
                 raise ValueError(
@@ -447,10 +478,12 @@ class TextAndVisionTokenizer(
         """Create a new TextAndVisionContext object, leveraging necessary information like
         cache_seq_id and prompt from TokenGeneratorRequest."""
         prompt: Union[str, Sequence[int]]
+        add_special_tokens = True
         if request.prompt is not None:
             prompt = request.prompt
         elif request.messages is not None:
             prompt = self.apply_chat_template(request.messages)
+            add_special_tokens = False
         else:
             msg = f"{request} does not provide messages or prompt."
             raise ValueError(msg)
@@ -469,6 +502,7 @@ class TextAndVisionTokenizer(
         inputs = self.processor(
             text=prompt,
             images=images,
+            add_special_tokens=add_special_tokens,
         )
 
         if "input_ids" not in inputs:

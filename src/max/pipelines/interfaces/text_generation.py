@@ -220,7 +220,11 @@ class PipelineTokenizer(
         """
         ...
 
-    async def encode(self, prompt: str) -> TokenizerEncoded:
+    async def encode(
+        self,
+        prompt: str,
+        add_special_tokens: bool,
+    ) -> TokenizerEncoded:
         """Encodes text prompts as tokens.
 
         Args:
