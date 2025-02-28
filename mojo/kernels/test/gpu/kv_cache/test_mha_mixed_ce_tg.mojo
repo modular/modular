@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# UNSUPPORTED: H100-GPU
 # RUN: %mojo-no-debug %s -t
 
 from collections import Set

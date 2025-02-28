@@ -6,8 +6,6 @@
 
 # FIXME: KERN-1377
 # UNSUPPORTED: AMD-GPU
-# FIXME: KERN-1437
-# UNSUPPORTED: H100-GPU
 # RUN: %mojo-no-debug-no-assert %s -t | FileCheck %s
 # CHECK-NOT: CUDA ERROR
 

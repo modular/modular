@@ -5,8 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # FIXME: KERN-1448
 # UNSUPPORTED: AMD-GPU
-# FIXME: KERN-1437
-# UNSUPPORTED: H100-GPU
 # RUN: %mojo-no-debug %s
 
 from collections import OptionalReg

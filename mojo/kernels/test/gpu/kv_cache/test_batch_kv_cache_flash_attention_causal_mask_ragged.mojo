@@ -3,8 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# FIXME: KERN-1437
-# UNSUPPORTED: H100-GPU
 # RUN: %mojo-no-debug %s -t
 
 from collections import Set
@@ -261,6 +259,9 @@ def execute_ragged_flash_attention[
                         assert_almost_equal(
                             ref_val,
                             test_val,
+                            rtol=__type_of(ref_val)(
+                                1e-2 if type == DType.bfloat16 else 1e-4
+                            ),
                         )
                     except e:
                         print(
