@@ -232,10 +232,7 @@ class TextContext:
 
         if self._end_idx >= self.size:
             self.size += CHUNK_SIZE
-            if self.tokens.flags.owndata:
-                self.tokens.resize(self.size)
-            else:
-                self.tokens = np.resize(self.tokens, self.size)
+            self.tokens = np.resize(self.tokens, self.size)
 
         self.tokens[self._active_idx] = new_token
         self._start_idx = self._active_idx
