@@ -44,6 +44,7 @@ from max.graph.weights import (
     WeightsAdapter,
 )
 from max.pipelines.kv_cache import KVCacheStrategy
+from requests.exceptions import ConnectionError as RequestsConnectionError
 from tqdm.contrib.concurrent import thread_map
 from transformers import AutoConfig
 
@@ -205,7 +206,7 @@ def _repo_exists_with_retry(repo_id: str) -> bool:
             # Forward these specific errors to the user
             logger.error(f"Hugging Face repository error: {str(e)}")
             raise
-        except hf_hub_errors.HfHubHTTPError as e:
+        except (hf_hub_errors.HfHubHTTPError, RequestsConnectionError) as e:
             if attempt == max_attempts - 1:
                 logger.error(
                     f"Failed to connect to Hugging Face Hub after {max_attempts} attempts: {str(e)}"
