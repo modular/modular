@@ -69,7 +69,6 @@ void KGEN::registerDefaultKGENPasses() {
   KGEN::MOGGPreElab::registerAnnotateKernels();
   KGEN::MOGGPreElab::registerMOGGPreElabPipeline();
   KGEN::MOGGPreElab::registerOutlineKernels();
-  KGEN::MOGGPreElab::registerSliceKernels();
 
   // Passes that require a runtime.
   mlir::registerPass(
