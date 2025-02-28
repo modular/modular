@@ -16,13 +16,13 @@ from gpu.host import Dim
 from gpu.id import block_dim, block_idx, thread_idx
 from math import ceildiv
 from max.driver import (
+    Accelerator,
     Device,
     DynamicTensor,
     Tensor,
-    accelerator_device,
-    cpu_device,
+    accelerator,
+    cpu,
 )
-from max.driver.accelerator import compile
 from sys import has_nvidia_gpu_accelerator
 
 alias channel_dtype = DType.uint8
@@ -70,8 +70,8 @@ def main():
     if has_nvidia_gpu_accelerator():
         # Attempt to connect to a compatible GPU. If one is not found, this will
         # error out and exit.
-        gpu_device = accelerator_device()
-        host_device = cpu_device()
+        gpu_device = accelerator()
+        host_device = cpu()
 
         alias IMAGE_WIDTH = 5
         alias IMAGE_HEIGHT = 10
@@ -98,7 +98,9 @@ def main():
         )
 
         # Compile the function to run across a grid on the GPU.
-        gpu_function = compile[color_to_grayscale_conversion](gpu_device)
+        gpu_function = Accelerator.compile[color_to_grayscale_conversion](
+            gpu_device
+        )
 
         # The grid is divided up into blocks, making sure there's an extra
         # full block for any remainder. This hasn't been tuned for any specific

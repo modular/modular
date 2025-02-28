@@ -16,8 +16,7 @@ from complex import ComplexSIMD
 from gpu.host import Dim
 from gpu.id import thread_idx, block_dim, block_idx
 from math import ceildiv
-from max.driver import DynamicTensor, Tensor, accelerator_device, cpu_device
-from max.driver.accelerator import compile
+from max.driver import Accelerator, DynamicTensor, Tensor, accelerator, cpu
 from sys import has_nvidia_gpu_accelerator
 
 alias float_dtype = DType.float32
@@ -81,11 +80,11 @@ def main():
     if has_nvidia_gpu_accelerator():
         # Attempt to connect to a compatible GPU. If one is not found, this will
         # error out and exit.
-        gpu_device = accelerator_device()
-        host_device = cpu_device()
+        gpu_device = accelerator()
+        host_device = cpu()
 
         # Compile the function to run across a grid on the GPU.
-        gpu_function = compile[mandelbrot](gpu_device)
+        gpu_function = Accelerator.compile[mandelbrot](gpu_device)
 
         # Set the resolution of the Mandelbrot set grid that will be calculated.
         alias GRID_WIDTH = 60
