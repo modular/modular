@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import io
 import json
 import logging
@@ -164,6 +165,11 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
             # from the HuggingFace tokenizer_config.
             model_max_length=max_length,
         )
+        # As we are adding special tokens during chat templating prior to tokenization,
+        # when add_special_tokens=True, we duplicate BOS tokens specifically.
+        self._partial_encode = functools.partial(
+            self.delegate.encode, add_special_tokens=False
+        )
 
         # configure Llama whitespace fix if needed
         self._enable_llama_whitespace_fix = (
@@ -211,7 +217,7 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
             # Note: the underlying tokenizer may not be thread safe in some cases, see https://github.com/huggingface/tokenizers/issues/537
             # Add a standard (non-async) lock in the executor thread if needed.
             encoded_prompt = await run_with_default_executor(
-                self.delegate.encode, prompt
+                self._partial_encode, prompt
             )
             max_length = self.max_length or self.delegate.model_max_length
             if max_length and len(encoded_prompt) > max_length:
@@ -343,6 +349,11 @@ class TextAndVisionTokenizer(
             # from the HuggingFace tokenizer_config.
             model_max_length=max_length,
         )
+        # As we are adding special tokens during chat templating prior to tokenization,
+        # when add_special_tokens=True, we duplicate BOS tokens specifically.
+        self._partial_encode = functools.partial(
+            self.delegate.encode, add_special_tokens=False
+        )
         self.processor = AutoProcessor.from_pretrained(
             model_path,
             revision=revision,
@@ -412,7 +423,7 @@ class TextAndVisionTokenizer(
             # Note: the underlying tokenizer may not be thread safe in some cases, see https://github.com/huggingface/tokenizers/issues/537
             # Add a standard (non-async) lock in the executor thread if needed.
             encoded_prompt = await run_with_default_executor(
-                self.delegate.encode, prompt
+                self._partial_encode, prompt
             )
             max_length = self.max_length or self.delegate.model_max_length
             if max_length and len(encoded_prompt) > max_length:
