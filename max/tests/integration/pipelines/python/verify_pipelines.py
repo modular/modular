@@ -432,6 +432,18 @@ PIPELINES = {
             relative_tolerance=2.0,
         ),
     ),
+    "OLMo-1B-float32": PipelineDef(
+        compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
+        run=lambda device_type, devices: run_llm_verification(
+            device_type=device_type,
+            devices=devices,
+            pipeline="olmo",
+            encoding="float32",
+            cos_dist_threshold=2e-5,
+            absolute_tolerance=0.1,
+            relative_tolerance=0.05,
+        ),
+    ),
 }
 
 

@@ -684,6 +684,62 @@ class Llama3_3_70BInstructPipelineOracle(PipelineOracle):
         return evaluate.PROMPTS[1:]
 
 
+class OlmoPipelineOracle(PipelineOracle):
+    @property
+    def supported_encodings(self) -> Sequence[str]:
+        return ["float32"]
+
+    def is_supported(
+        self, *, encoding: str, device_spec: driver.DeviceSpec
+    ) -> bool:
+        assert encoding in self.supported_encodings
+        return device_spec.device_type in {"cpu", "gpu"}
+
+    def create_max_pipeline(
+        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+    ) -> MaxPipelineAndTokenizer:
+        for device_spec in device_specs:
+            assert self.is_supported(encoding=encoding, device_spec=device_spec)
+        config = pipelines.PipelineConfig(
+            architecture="OlmoForCausalLM",
+            device_specs=device_specs,
+            model_path="allenai/OLMo-1B-hf",
+            quantization_encoding=pipelines.SupportedEncoding[encoding],
+            max_length=1024,
+        )
+        hf_repo_lock.apply_to_config(config)
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+
+        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        return MaxPipelineAndTokenizer(
+            model=pipeline._pipeline_model,
+            generator=pipeline,
+            tokenizer=tokenizer,
+        )
+
+    def create_torch_pipeline(
+        self, *, encoding: str, device: torch.device
+    ) -> TorchModelAndDataProcessor:
+        hf_repo_id = "allenai/OLMo-1B-hf"
+        revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
+        tokenizer = transformers.AutoTokenizer.from_pretrained(
+            hf_repo_id, revision=revision
+        )
+        config = transformers.AutoConfig.from_pretrained(
+            hf_repo_id, revision=revision
+        )
+        assert encoding == "float32"
+        torch_dtype = torch.float32
+        model = transformers.AutoModelForCausalLM.from_pretrained(
+            hf_repo_id,
+            revision=revision,
+            config=config,
+            device_map=device,
+            torch_dtype=torch_dtype,
+        )
+        return TorchModelAndDataProcessor(model=model, data_processor=tokenizer)
+
+
 class GenericOracle(PipelineOracle):
     def __init__(
         self,
@@ -771,6 +827,7 @@ class GenericOracle(PipelineOracle):
 
 
 PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
+    "olmo": OlmoPipelineOracle(),
     "exaone": ExaonePipelineOracle(),
     "llama3_1": Llama3_1PipelineOracle(),
     "llama3.3-70b": Llama3_3_70BInstructPipelineOracle(),
@@ -818,7 +875,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
 @click.option(
     "--pipeline",
     "pipeline_name",
-    type=click.Choice(list(PIPELINE_ORACLES.keys())),
+    type=click.Choice(sorted(list(PIPELINE_ORACLES.keys()))),
     required=True,
     help="Pipeline to run",
 )
