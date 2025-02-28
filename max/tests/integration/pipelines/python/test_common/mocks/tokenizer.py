@@ -114,7 +114,9 @@ class MockTextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
             json_schema=json_schema,
         )
 
-    async def encode(self, prompt: str) -> np.ndarray:
+    async def encode(
+        self, prompt: str, add_special_tokens: bool = False
+    ) -> np.ndarray:
         return np.array([self.char_to_int[c] for c in prompt])
 
     async def decode(self, context: T, encoded: np.ndarray, **kwargs) -> str:

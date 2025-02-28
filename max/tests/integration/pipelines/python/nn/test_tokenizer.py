@@ -15,7 +15,7 @@ async def test_tokenizer__encode_and_decode():
     tokenizer = TextTokenizer(model_path="modularai/llama-3.1")
 
     test_string = "hi my name is"
-    encoded = await tokenizer.encode(test_string)
+    encoded = await tokenizer.encode(test_string, add_special_tokens=False)
     context = TextContext(
         max_length=10,
         cache_seq_id=0,
