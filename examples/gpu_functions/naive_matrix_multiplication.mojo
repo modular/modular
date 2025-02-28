@@ -23,6 +23,7 @@ from max.driver import (
     cpu_device,
 )
 from max.driver.accelerator import compile
+from sys import has_nvidia_gpu_accelerator
 
 alias float_dtype = DType.float32
 alias tensor_rank = 2
@@ -47,64 +48,71 @@ fn naive_matrix_multiplication(
 
 
 def main():
-    # Attempt to connect to a compatible GPU. If one is not found, this will
-    # error out and exit.
-    gpu_device = accelerator_device()
-    host_device = cpu_device()
+    @parameter
+    if has_nvidia_gpu_accelerator():
+        # Attempt to connect to a compatible GPU. If one is not found, this will
+        # error out and exit.
+        gpu_device = accelerator_device()
+        host_device = cpu_device()
 
-    alias I = 5
-    alias J = 4
-    alias K = 6
+        alias I = 5
+        alias J = 4
+        alias K = 6
 
-    # Allocate the two input matrices on the host.
-    m_tensor = Tensor[float_dtype, tensor_rank]((I, J), host_device)
-    n_tensor = Tensor[float_dtype, tensor_rank]((J, K), host_device)
+        # Allocate the two input matrices on the host.
+        m_tensor = Tensor[float_dtype, tensor_rank]((I, J), host_device)
+        n_tensor = Tensor[float_dtype, tensor_rank]((J, K), host_device)
 
-    # Fill them with initial values.
-    for m_row in range(I):
-        for m_col in range(J):
-            m_tensor[m_row, m_col] = m_row - m_col
+        # Fill them with initial values.
+        for m_row in range(I):
+            for m_col in range(J):
+                m_tensor[m_row, m_col] = m_row - m_col
 
-    for n_row in range(J):
-        for n_col in range(K):
-            n_tensor[n_row, n_col] = n_row + n_col
+        for n_row in range(J):
+            for n_col in range(K):
+                n_tensor[n_row, n_col] = n_row + n_col
 
-    print("M matrix:", m_tensor)
-    print("N matrix:", n_tensor)
+        print("M matrix:", m_tensor)
+        print("N matrix:", n_tensor)
 
-    # Move the input matrices to the accelerator.
-    m_tensor = m_tensor.move_to(gpu_device)
-    n_tensor = n_tensor.move_to(gpu_device)
+        # Move the input matrices to the accelerator.
+        m_tensor = m_tensor.move_to(gpu_device)
+        n_tensor = n_tensor.move_to(gpu_device)
 
-    # Allocate a tensor on the accelerator to host the calculation results.
-    p_tensor = Tensor[float_dtype, tensor_rank]((I, K), gpu_device)
+        # Allocate a tensor on the accelerator to host the calculation results.
+        p_tensor = Tensor[float_dtype, tensor_rank]((I, K), gpu_device)
 
-    # Compile the function to run across a grid on the GPU.
-    gpu_function = compile[naive_matrix_multiplication](gpu_device)
+        # Compile the function to run across a grid on the GPU.
+        gpu_function = compile[naive_matrix_multiplication](gpu_device)
 
-    # The grid is divided up into blocks, making sure there's an extra
-    # full block for any remainder. This hasn't been tuned for any specific
-    # GPU.
-    alias BLOCK_SIZE = 16
-    num_col_blocks = ceildiv(I, BLOCK_SIZE)
-    num_row_blocks = ceildiv(J, BLOCK_SIZE)
+        # The grid is divided up into blocks, making sure there's an extra
+        # full block for any remainder. This hasn't been tuned for any specific
+        # GPU.
+        alias BLOCK_SIZE = 16
+        num_col_blocks = ceildiv(I, BLOCK_SIZE)
+        num_row_blocks = ceildiv(J, BLOCK_SIZE)
 
-    # Launch the compiled function on the GPU. The target device is specified
-    # first, followed by all function arguments. The last two named parameters
-    # are the dimensions of the grid in blocks, and the block dimensions.
-    gpu_function(
-        gpu_device,
-        I,
-        J,
-        K,
-        m_tensor.unsafe_slice(),
-        n_tensor.unsafe_slice(),
-        p_tensor.unsafe_slice(),
-        grid_dim=Dim(num_col_blocks, num_row_blocks),
-        block_dim=Dim(BLOCK_SIZE, BLOCK_SIZE),
-    )
+        # Launch the compiled function on the GPU. The target device is specified
+        # first, followed by all function arguments. The last two named parameters
+        # are the dimensions of the grid in blocks, and the block dimensions.
+        gpu_function(
+            gpu_device,
+            I,
+            J,
+            K,
+            m_tensor.unsafe_slice(),
+            n_tensor.unsafe_slice(),
+            p_tensor.unsafe_slice(),
+            grid_dim=Dim(num_col_blocks, num_row_blocks),
+            block_dim=Dim(BLOCK_SIZE, BLOCK_SIZE),
+        )
 
-    # Move the output tensor back onto the CPU so that we can read the results.
-    p_tensor = p_tensor.move_to(host_device)
+        # Move the output tensor back onto the CPU so that we can read the results.
+        p_tensor = p_tensor.move_to(host_device)
 
-    print("Resulting matrix:", p_tensor)
+        print("Resulting matrix:", p_tensor)
+    else:
+        print(
+            "These examples require a MAX-compatible NVIDIA GPU and none was"
+            " detected."
+        )
