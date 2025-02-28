@@ -905,6 +905,9 @@ fn _is_consistent[static_info: DimList](runtime_info: IndexList) -> Bool:
 # VariadicTensors
 # ===----------------------------------------------------------------------=== #
 
+alias InputVariadicTensors = VariadicTensors[io_spec=Input]
+alias OutputVariadicTensors = VariadicTensors[io_spec=Output]
+
 
 @value
 @register_passable("trivial")
