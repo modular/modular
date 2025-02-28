@@ -177,6 +177,7 @@ from tensor_internal import (
     DynamicTensor,
     ManagedTensorSlice,
     InputTensor,
+    MutableInputTensor,
     OutputTensor,
     VariadicTensors,
     _input_fusion_hook_impl,
@@ -2156,15 +2157,16 @@ struct ScatterNDMax:
 
 @compiler.register("mo.scatter")
 struct Scatter:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        output: ManagedTensorSlice,
-        input: ManagedTensorSlice[type = output.type, rank = output.rank],
-        updates: ManagedTensorSlice[type = output.type, rank = output.rank],
-        indices: ManagedTensorSlice[rank = output.rank],
+        output: OutputTensor,
+        input: InputTensor[type = output.type, rank = output.rank],
+        updates: InputTensor[type = output.type, rank = output.rank],
+        indices: InputTensor[rank = output.rank],
         axis: Int,
         ctx: DeviceContextPtr,
     ) raises:
@@ -2200,15 +2202,16 @@ struct Scatter:
 
 @compiler.register("mo.scatter.add")
 struct ScatterAdd:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        output: ManagedTensorSlice,
-        input: ManagedTensorSlice[type = output.type, rank = output.rank],
-        updates: ManagedTensorSlice[type = output.type, rank = output.rank],
-        indices: ManagedTensorSlice[rank = output.rank],
+        output: OutputTensor,
+        input: InputTensor[type = output.type, rank = output.rank],
+        updates: InputTensor[type = output.type, rank = output.rank],
+        indices: InputTensor[rank = output.rank],
         axis: Int,
         ctx: DeviceContextPtr,
     ) raises:
@@ -2244,15 +2247,16 @@ struct ScatterAdd:
 
 @compiler.register("mo.scatter.max")
 struct ScatterMax:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        output: ManagedTensorSlice,
-        input: ManagedTensorSlice[type = output.type, rank = output.rank],
-        updates: ManagedTensorSlice[type = output.type, rank = output.rank],
-        indices: ManagedTensorSlice[rank = output.rank],
+        output: OutputTensor,
+        input: InputTensor[type = output.type, rank = output.rank],
+        updates: InputTensor[type = output.type, rank = output.rank],
+        indices: InputTensor[rank = output.rank],
         axis: Int,
         ctx: DeviceContextPtr,
     ) raises:
@@ -2288,15 +2292,16 @@ struct ScatterMax:
 
 @compiler.register("mo.scatter.min")
 struct ScatterMin:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        output: ManagedTensorSlice,
-        input: ManagedTensorSlice[type = output.type, rank = output.rank],
-        updates: ManagedTensorSlice[type = output.type, rank = output.rank],
-        indices: ManagedTensorSlice[rank = output.rank],
+        output: OutputTensor,
+        input: InputTensor[type = output.type, rank = output.rank],
+        updates: InputTensor[type = output.type, rank = output.rank],
+        indices: InputTensor[rank = output.rank],
         axis: Int,
         ctx: DeviceContextPtr,
     ) raises:
@@ -2332,15 +2337,16 @@ struct ScatterMin:
 
 @compiler.register("mo.scatter.mul")
 struct ScatterMul:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        output: ManagedTensorSlice,
-        input: ManagedTensorSlice[type = output.type, rank = output.rank],
-        updates: ManagedTensorSlice[type = output.type, rank = output.rank],
-        indices: ManagedTensorSlice[rank = output.rank],
+        output: OutputTensor,
+        input: InputTensor[type = output.type, rank = output.rank],
+        updates: InputTensor[type = output.type, rank = output.rank],
+        indices: InputTensor[rank = output.rank],
         axis: Int,
         ctx: DeviceContextPtr,
     ) raises:
@@ -2476,11 +2482,12 @@ struct BroadcastShape:
     # We expect `mo.broadcast_to` to always simplify to `mo.static.broadcast_to`
     #
     # Sometimes with a call to the below shape function.
+    @enforce_io_param
     @staticmethod
     fn execute(
-        out_buf: ManagedTensorSlice[rank=1],
-        lhs_buf: ManagedTensorSlice[rank=1],
-        rhs_buf: ManagedTensorSlice[rank=1],
+        out_buf: OutputTensor[rank=1],
+        lhs_buf: InputTensor[rank=1],
+        rhs_buf: InputTensor[rank=1],
     ):
         var lhs_size = lhs_buf.size()
         var rhs_size = rhs_buf.size()
@@ -2568,6 +2575,7 @@ struct StaticBroadcastTo:
 
         return tuple_to_dimlist(new_strides)
 
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -2577,8 +2585,8 @@ struct StaticBroadcastTo:
         out_rank: Int,
         _trace_name: StringLiteral,
     ](
-        z: ManagedTensorSlice[type=type, rank=out_rank],
-        x: ManagedTensorSlice[type=type, rank=in_rank],
+        z: OutputTensor[type=type, rank=out_rank],
+        x: InputTensor[type=type, rank=in_rank],
         output_shape: IndexList[out_rank],
         ctx: DeviceContextPtr,
     ):
@@ -2624,6 +2632,7 @@ struct StaticReshape:
 
         return tuple_to_dimlist(new_strides)
 
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -2632,8 +2641,8 @@ struct StaticReshape:
         type: DType,
         output_rank: Int,
     ](
-        output: ManagedTensorSlice[type=type, rank=output_rank],
-        input: ManagedTensorSlice[type=type],
+        output: OutputTensor[type=type, rank=output_rank],
+        input: InputTensor[type=type],
         shape: IndexList[output_rank],
         ctx: DeviceContextPtr,
     ):
@@ -2720,6 +2729,7 @@ struct Transpose:
 
         return tuple_to_dimlist(new_strides)
 
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -2729,9 +2739,9 @@ struct Transpose:
         type: DType,
         rank: Int,
     ](
-        output: ManagedTensorSlice[type=type, rank=rank],
-        input: ManagedTensorSlice[type=type, rank=rank],
-        permutations: ManagedTensorSlice[rank=1],
+        output: OutputTensor[type=type, rank=rank],
+        input: InputTensor[type=type, rank=rank],
+        permutations: InputTensor[rank=1],
         ctx: DeviceContextPtr,
     ):
         alias view_strides = Self.get_view_strides[static_permutations, rank](
@@ -2802,6 +2812,7 @@ struct Slice:
 
         return tuple_to_dimlist(new_strides)
 
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -2811,11 +2822,11 @@ struct Slice:
         type: DType,
         rank: Int,
     ](
-        output: ManagedTensorSlice[type=type, rank=rank],
-        input: ManagedTensorSlice[type=type, rank=rank],
-        starts: ManagedTensorSlice[rank=1],
-        stops: ManagedTensorSlice[rank=1],
-        steps: ManagedTensorSlice[rank=1],
+        output: OutputTensor[type=type, rank=rank],
+        input: InputTensor[type=type, rank=rank],
+        starts: InputTensor[rank=1],
+        stops: InputTensor[rank=1],
+        steps: InputTensor[rank=1],
         ctx: DeviceContextPtr,
     ):
         var view_buffer = slice_as_view(
@@ -2859,8 +2870,9 @@ struct Slice:
         )
 
 
-@compiler.register("mo.mutable.store.slice", num_dps_outputs=0)
+@compiler.register("mo.mutable.store.slice")
 struct MutableStoreSlice:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -2868,11 +2880,11 @@ struct MutableStoreSlice:
         type: DType,
         rank: Int,
     ](
-        to_buffer: ManagedTensorSlice[type=type, rank=rank],
-        in_slice: ManagedTensorSlice[type=type, rank=rank],
-        starts: ManagedTensorSlice[rank=1],
-        stops: ManagedTensorSlice[rank=1],
-        steps: ManagedTensorSlice[rank=1],
+        to_buffer: MutableInputTensor[type=type, rank=rank],
+        in_slice: InputTensor[type=type, rank=rank],
+        starts: InputTensor[rank=1],
+        stops: InputTensor[rank=1],
+        steps: InputTensor[rank=1],
         ctx: DeviceContextPtr,
     ) raises:
         copy_to_slice[target=target](
@@ -2907,6 +2919,7 @@ struct SliceDim:
 
         return tuple_to_dimlist(new_strides)
 
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -2917,8 +2930,8 @@ struct SliceDim:
         axis: Int,
         static_step: DimList,
     ](
-        output: ManagedTensorSlice[type=type, rank=rank],
-        input: ManagedTensorSlice[type=type, rank=rank],
+        output: OutputTensor[type=type, rank=rank],
+        input: InputTensor[type=type, rank=rank],
         starts: Scalar,
         stops: Scalar,
         steps: Scalar,
