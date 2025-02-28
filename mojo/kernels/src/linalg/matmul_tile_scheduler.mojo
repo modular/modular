@@ -78,8 +78,11 @@ struct TileScheduler[
     raster_dim: UInt32 = 1,
     schedule: MatmulSchedule = MatmulSchedule.TILE2D,
 ]:
+    # grid_shape[0], [1] map to x, y, to N and M in output matrix.
+    # tile_shape[0], [1] map to M and N
+    # wave_shape[0], [1] map to M and N
     alias wave_shape = Index[element_bitwidth=32, unsigned=True](
-        tile_shape[0] * grid_shape[0], tile_shape[1] * grid_shape[1]
+        tile_shape[0] * grid_shape[1], tile_shape[1] * grid_shape[0]
     )
     # This has to match the grid dimension for the kernel launch.
     alias num_grids: UInt32 = grid_shape[0] * grid_shape[1]
@@ -157,12 +160,12 @@ struct TileScheduler[
             num_waves_executed, UInt(Int(self.num_waves_n))
         )
 
-        # The wave maps to a BM x grid_shape[0] by BN x grid_shape[1]
+        # The wave maps to a BM x grid_shape[1] by BN x grid_shape[0]
         # submatrix in C.
         wave_m = num_waves_executed_m * Self.wave_shape[0]
         wave_n = num_waves_executed_n * Self.wave_shape[1]
 
-        m_in_wave, n_in_wave = divmod(idx_in_wave, UInt(grid_shape[1]))
+        m_in_wave, n_in_wave = divmod(idx_in_wave, UInt(grid_shape[0]))
 
         return (
             wave_m + m_in_wave * tile_shape[0],

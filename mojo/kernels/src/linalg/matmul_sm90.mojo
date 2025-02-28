@@ -13,6 +13,7 @@ from gpu import WARP_SIZE, barrier, MAX_THREADS_PER_BLOCK_METADATA
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
+from gpu.host.info import H100
 from gpu.id import (
     block_dim,
     block_idx,
@@ -921,6 +922,22 @@ fn hopper_matmul_tma_wgmma[
     )
 
 
+fn _get_grid_shape(num_tiles_n: Int) -> IndexList[2]:
+    # A Naive heristic to select grid shape based on number of tile in N.
+    if num_tiles_n % 8 == 0:
+        return Index(8, 16)
+
+    # Hardcode values on purpose until we move this inside tile scheduler
+    # in a more robust way.
+    alias h100_num_SMs = H100.sm_count
+    num_blocks_n = min(num_tiles_n, h100_num_SMs)
+
+    return Index(
+        num_blocks_n,
+        h100_num_SMs // num_blocks_n,
+    )
+
+
 fn warp_specialize_gemm_with_multicasting[
     c_type: DType,
     c_shape: DimList,
@@ -932,7 +949,7 @@ fn warp_specialize_gemm_with_multicasting[
     transpose_b: Bool,
     wgmma_shape: IndexList[3],
     config: MatmulConfig[a_type, b_type, c_type, transpose_b, wgmma_shape],
-    grid_shape: IndexList[2] = Index(10, 13),
+    grid_shape: OptionalReg[IndexList[2]] = None,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
 ](
@@ -948,9 +965,15 @@ fn warp_specialize_gemm_with_multicasting[
     var b = from_ndbuffer_row_major(b_device)
     var c = from_ndbuffer_row_major(c_device)
 
+    alias N_static = c_shape.get[1]()
+
     alias BM = config.block_tile_shape[0]
     alias BN = config.block_tile_shape[1]
     alias BK = config.block_tile_shape[2]
+
+    alias grid_shape_adjusted = grid_shape.value() if grid_shape else _get_grid_shape(
+        ceildiv(N_static, BN)
+    )
 
     alias cluster_shape = StaticTuple[Int32, 3](
         config.cluster_shape[0],
@@ -1007,7 +1030,7 @@ fn warp_specialize_gemm_with_multicasting[
             __type_of(b_tma_op).desc_layout,
             a_smem_layout,
             b_smem_layout,
-            grid_shape = grid_shape if schedule
+            grid_shape = grid_shape_adjusted if schedule
             == MatmulSchedule.TILE2D else Index(132, 1),
             num_threads=num_threads,
             transpose_b=True,
@@ -1020,7 +1043,7 @@ fn warp_specialize_gemm_with_multicasting[
             b_tma_op,
             c,
             Index(M, N, K),
-            grid_dim=(grid_shape[0], grid_shape[1]),
+            grid_dim=(grid_shape_adjusted[0], grid_shape_adjusted[1]),
             block_dim=(num_threads),
             shared_mem_bytes=smem_size,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
