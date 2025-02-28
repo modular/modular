@@ -775,6 +775,7 @@ fn _get_info_from_target[target_arch0: StringLiteral]() -> Info:
             "nvidia:86",
             "nvidia:89",
             "nvidia:90",
+            "nvidia:90a",
             "amdgpu:94",
             "mi300x",
             "gfx942",
@@ -790,7 +791,7 @@ fn _get_info_from_target[target_arch0: StringLiteral]() -> Info:
         return A10
     elif target_arch in ("89", "nvidia:89"):
         return L4
-    elif target_arch in ("90", "90a", "nvidia:90"):
+    elif target_arch in ("90", "90a", "nvidia:90", "nvidia:90a"):
         return H100
     elif target_arch in ("gfx942", "mi300x", "amdgpu:94"):
         return MI300X
