@@ -568,7 +568,7 @@ class PagedKVCacheManager(KVCacheManager):
 
         # Determine the number of pages required for each sequence.
         max_seq_length = 0
-        max_cache_length = 0
+        max_context_length = 0
         total_sequence_length = 0
         total_blocks_to_allocate = 0
         blocks_to_allocate_by_seq = {}
@@ -583,7 +583,9 @@ class PagedKVCacheManager(KVCacheManager):
 
             # Update the maximum lengths seen so far.
             max_seq_length = max(max_seq_length, len(prompt))
-            max_cache_length = max(max_cache_length, cache_length)
+            max_context_length = max(
+                max_context_length, cache_length + len(prompt)
+            )
 
             # Compute the total sequence length and the number of pages required to store it.
             total_sequence_length += data.seq_len
@@ -630,7 +632,7 @@ class PagedKVCacheManager(KVCacheManager):
         # Build a tensor of maximum lengths. Each step slices the first row to
         # advance to the values for the next row.
         max_lengths_host = build_max_lengths_tensor(
-            num_steps, max_seq_length, max_cache_length
+            num_steps, max_seq_length, max_context_length
         )
 
         lut_table_host = Tensor.from_numpy(lut_table_np)
