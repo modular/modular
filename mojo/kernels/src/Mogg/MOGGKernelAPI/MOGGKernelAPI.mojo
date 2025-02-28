@@ -739,6 +739,7 @@ fn export():
 @compiler.register("mo.range")
 @compiler.elementwise
 struct Range:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -746,10 +747,10 @@ struct Range:
         _synchronous: Bool,
         _trace_name: StringLiteral,
     ](
-        output: ManagedTensorSlice[type=type, rank=1],
-        start: ManagedTensorSlice[type=type, rank=1],
-        stop: ManagedTensorSlice[type=type, rank=1],
-        step: ManagedTensorSlice[type=type, rank=1],
+        output: OutputTensor[type=type, rank=1],
+        start: InputTensor[type=type, rank=1],
+        stop: InputTensor[type=type, rank=1],
+        step: InputTensor[type=type, rank=1],
         ctx: DeviceContextPtr,
     ):
         @parameter
@@ -788,13 +789,14 @@ struct Range:
 @compiler.register("copy")
 @compiler.elementwise
 struct Copy:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
         rank: Int,
     ](
-        output: ManagedTensorSlice[type=type, rank=rank],
-        input: ManagedTensorSlice[type=type, rank=rank],
+        output: OutputTensor[type=type, rank=rank],
+        input: InputTensor[type=type, rank=rank],
         ctx: DeviceContextPtr,
     ):
         @parameter
@@ -808,17 +810,13 @@ struct Copy:
 @compiler.register("mo.add")
 @compiler.elementwise
 struct Add:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](
-        z: ManagedTensorSlice,
-        x: ManagedTensorSlice,
-        y: ManagedTensorSlice,
-        ctx: DeviceContextPtr,
-    ):
+    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -837,17 +835,13 @@ struct Add:
 @compiler.register("mo.sub")
 @compiler.elementwise
 struct Sub:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](
-        z: ManagedTensorSlice,
-        x: ManagedTensorSlice,
-        y: ManagedTensorSlice,
-        ctx: DeviceContextPtr,
-    ):
+    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -866,17 +860,13 @@ struct Sub:
 @compiler.register("mo.mul")
 @compiler.elementwise
 struct Mul:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](
-        z: ManagedTensorSlice,
-        x: ManagedTensorSlice,
-        y: ManagedTensorSlice,
-        ctx: DeviceContextPtr,
-    ):
+    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -895,17 +885,13 @@ struct Mul:
 @compiler.register("mo.div")
 @compiler.elementwise
 struct Div:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](
-        z: ManagedTensorSlice,
-        x: ManagedTensorSlice,
-        y: ManagedTensorSlice,
-        ctx: DeviceContextPtr,
-    ):
+    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -924,17 +910,13 @@ struct Div:
 @compiler.register("mo.mod")
 @compiler.elementwise
 struct Mod:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](
-        z: ManagedTensorSlice,
-        x: ManagedTensorSlice,
-        y: ManagedTensorSlice,
-        ctx: DeviceContextPtr,
-    ):
+    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -953,17 +935,13 @@ struct Mod:
 @compiler.register("mo.equal")
 @compiler.elementwise
 struct Equal:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](
-        z: ManagedTensorSlice,
-        x: ManagedTensorSlice,
-        y: ManagedTensorSlice,
-        ctx: DeviceContextPtr,
-    ):
+    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -982,17 +960,13 @@ struct Equal:
 @compiler.register("mo.greater")
 @compiler.elementwise
 struct Greater:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](
-        z: ManagedTensorSlice,
-        x: ManagedTensorSlice,
-        y: ManagedTensorSlice,
-        ctx: DeviceContextPtr,
-    ):
+    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -1011,17 +985,13 @@ struct Greater:
 @compiler.register("mo.greater_equal")
 @compiler.elementwise
 struct GreaterEqual:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](
-        z: ManagedTensorSlice,
-        x: ManagedTensorSlice,
-        y: ManagedTensorSlice,
-        ctx: DeviceContextPtr,
-    ):
+    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -1040,17 +1010,13 @@ struct GreaterEqual:
 @compiler.register("mo.not_equal")
 @compiler.elementwise
 struct NotEqual:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](
-        z: ManagedTensorSlice,
-        x: ManagedTensorSlice,
-        y: ManagedTensorSlice,
-        ctx: DeviceContextPtr,
-    ):
+    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -1069,17 +1035,13 @@ struct NotEqual:
 @compiler.register("mo.and")
 @compiler.elementwise
 struct And:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](
-        z: ManagedTensorSlice,
-        x: ManagedTensorSlice,
-        y: ManagedTensorSlice,
-        ctx: DeviceContextPtr,
-    ):
+    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -1098,17 +1060,13 @@ struct And:
 @compiler.register("mo.or")
 @compiler.elementwise
 struct Or:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](
-        z: ManagedTensorSlice,
-        x: ManagedTensorSlice,
-        y: ManagedTensorSlice,
-        ctx: DeviceContextPtr,
-    ):
+    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -1127,17 +1085,13 @@ struct Or:
 @compiler.register("mo.xor")
 @compiler.elementwise
 struct Xor:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](
-        z: ManagedTensorSlice,
-        x: ManagedTensorSlice,
-        y: ManagedTensorSlice,
-        ctx: DeviceContextPtr,
-    ):
+    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -1156,17 +1110,13 @@ struct Xor:
 @compiler.register("mo.pow")
 @compiler.elementwise
 struct Pow:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](
-        z: ManagedTensorSlice,
-        x: ManagedTensorSlice,
-        y: ManagedTensorSlice,
-        ctx: DeviceContextPtr,
-    ):
+    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -1185,17 +1135,13 @@ struct Pow:
 @compiler.register("mo.max")
 @compiler.elementwise
 struct Max:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](
-        z: ManagedTensorSlice,
-        x: ManagedTensorSlice,
-        y: ManagedTensorSlice,
-        ctx: DeviceContextPtr,
-    ):
+    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -1214,17 +1160,13 @@ struct Max:
 @compiler.register("mo.min")
 @compiler.elementwise
 struct Min:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](
-        z: ManagedTensorSlice,
-        x: ManagedTensorSlice,
-        y: ManagedTensorSlice,
-        ctx: DeviceContextPtr,
-    ):
+    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -1248,12 +1190,13 @@ struct Min:
 @compiler.register("mo.cast")
 @compiler.elementwise
 struct Cast:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1272,12 +1215,13 @@ struct Cast:
 @compiler.register("mo.negative")
 @compiler.elementwise
 struct Negative:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1294,12 +1238,13 @@ struct Negative:
 @compiler.register("mo.relu")
 @compiler.elementwise
 struct ReLU:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1316,12 +1261,13 @@ struct ReLU:
 @compiler.register("mo.gelu")
 @compiler.elementwise
 struct GeLU:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1338,12 +1284,13 @@ struct GeLU:
 @compiler.register("mo.ceil")
 @compiler.elementwise
 struct Ceil:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1360,12 +1307,13 @@ struct Ceil:
 @compiler.register("mo.floor")
 @compiler.elementwise
 struct Floor:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1382,12 +1330,13 @@ struct Floor:
 @compiler.register("mo.tanh")
 @compiler.elementwise
 struct Tanh:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1404,12 +1353,13 @@ struct Tanh:
 @compiler.register("mo.cos")
 @compiler.elementwise
 struct Cos:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1426,12 +1376,13 @@ struct Cos:
 @compiler.register("mo.sin")
 @compiler.elementwise
 struct Sin:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1448,12 +1399,13 @@ struct Sin:
 @compiler.register("mo.erf")
 @compiler.elementwise
 struct Erf:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1470,12 +1422,13 @@ struct Erf:
 @compiler.register("mo.exp")
 @compiler.elementwise
 struct Exp:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1492,12 +1445,13 @@ struct Exp:
 @compiler.register("mo.round")
 @compiler.elementwise
 struct Round:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1514,12 +1468,13 @@ struct Round:
 @compiler.register("mo.sqrt")
 @compiler.elementwise
 struct Sqrt:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1536,12 +1491,13 @@ struct Sqrt:
 @compiler.register("mo.isqrt")
 @compiler.elementwise
 struct Isqrt:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1558,16 +1514,17 @@ struct Isqrt:
 @compiler.register("mo.select")
 @compiler.elementwise
 struct Select:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
     ](
-        out: ManagedTensorSlice,
-        condition: ManagedTensorSlice,
-        true_case: ManagedTensorSlice,
-        false_case: ManagedTensorSlice,
+        out: OutputTensor,
+        condition: InputTensor,
+        true_case: InputTensor,
+        false_case: InputTensor,
         ctx: DeviceContextPtr,
     ):
         @parameter
@@ -1593,12 +1550,13 @@ struct Select:
 @compiler.register("mo.trunc")
 @compiler.elementwise
 struct Trunc:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1620,12 +1578,13 @@ struct Trunc:
 @compiler.register("mo.log")
 @compiler.elementwise
 struct Log:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1642,12 +1601,13 @@ struct Log:
 @compiler.register("mo.log1p")
 @compiler.elementwise
 struct Log1p:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1664,12 +1624,13 @@ struct Log1p:
 @compiler.register("mo.is_nan")
 @compiler.elementwise
 struct IsNan:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1686,12 +1647,13 @@ struct IsNan:
 @compiler.register("mo.is_inf")
 @compiler.elementwise
 struct IsInf:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1708,12 +1670,13 @@ struct IsInf:
 @compiler.register("mo.not")
 @compiler.elementwise
 struct Not:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1731,12 +1694,13 @@ struct Not:
 @compiler.register("mo.abs")
 @compiler.elementwise
 struct Abs:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1753,6 +1717,7 @@ struct Abs:
 @compiler.register("mo.squeeze_shape")
 @compiler.elementwise
 struct SqueezeShape:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1760,9 +1725,9 @@ struct SqueezeShape:
         type: DType,
         indices_type: DType,
     ](
-        output_shape: ManagedTensorSlice[type=type, rank=1],
-        input_shape: ManagedTensorSlice[type=type, rank=1],
-        remove_indices: ManagedTensorSlice[type=indices_type, rank=1],
+        output_shape: OutputTensor[type=type, rank=1],
+        input_shape: InputTensor[type=type, rank=1],
+        remove_indices: InputTensor[type=indices_type, rank=1],
     ):
         # remove_indices may not be sorted so our strategy is to use -1 to
         # represent removed dimensions in a copied version of our input shape buffer
@@ -1823,6 +1788,7 @@ struct SqueezeShape:
 @compiler.register("mo.unsqueeze_shape")
 @compiler.elementwise
 struct UnsqueezeShape:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1830,9 +1796,9 @@ struct UnsqueezeShape:
         type: DType,
         indices_type: DType,
     ](
-        output_shape: ManagedTensorSlice[type=type, rank=1],
-        input_shape: ManagedTensorSlice[type=type, rank=1],
-        padding_indices: ManagedTensorSlice[type=indices_type, rank=1],
+        output_shape: OutputTensor[type=type, rank=1],
+        input_shape: InputTensor[type=type, rank=1],
+        padding_indices: InputTensor[type=indices_type, rank=1],
     ):
         # represent uninitialized dimensions, add the padding dimensions, and copy
         # over the remaining dimensions later.
@@ -1895,15 +1861,16 @@ struct UnsqueezeShape:
 
 @compiler.register("mo.scatter_nd")
 struct ScatterND:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        output: ManagedTensorSlice,
-        input: ManagedTensorSlice[type = output.type, rank = output.rank],
-        updates: ManagedTensorSlice[type = output.type, *_],
-        indices: ManagedTensorSlice,
+        output: OutputTensor,
+        input: InputTensor[type = output.type, rank = output.rank],
+        updates: InputTensor[type = output.type, *_],
+        indices: InputTensor,
         ctx: DeviceContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
@@ -1944,15 +1911,16 @@ struct ScatterND:
 
 @compiler.register("mo.scatter_nd.add")
 struct ScatterNDAdd:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        output: ManagedTensorSlice,
-        input: ManagedTensorSlice[type = output.type, rank = output.rank],
-        updates: ManagedTensorSlice[type = output.type, *_],
-        indices: ManagedTensorSlice,
+        output: OutputTensor,
+        input: InputTensor[type = output.type, rank = output.rank],
+        updates: InputTensor[type = output.type, *_],
+        indices: InputTensor,
         ctx: DeviceContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
@@ -2003,15 +1971,16 @@ struct ScatterNDAdd:
 
 @compiler.register("mo.scatter_nd.mul")
 struct ScatterNDMul:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        output: ManagedTensorSlice,
-        input: ManagedTensorSlice[type = output.type, rank = output.rank],
-        updates: ManagedTensorSlice[type = output.type, *_],
-        indices: ManagedTensorSlice,
+        output: OutputTensor,
+        input: InputTensor[type = output.type, rank = output.rank],
+        updates: InputTensor[type = output.type, *_],
+        indices: InputTensor,
         ctx: DeviceContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
@@ -2062,15 +2031,16 @@ struct ScatterNDMul:
 
 @compiler.register("mo.scatter_nd.min")
 struct ScatterNDMin:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        output: ManagedTensorSlice,
-        input: ManagedTensorSlice[type = output.type, rank = output.rank],
-        updates: ManagedTensorSlice[type = output.type, *_],
-        indices: ManagedTensorSlice,
+        output: OutputTensor,
+        input: InputTensor[type = output.type, rank = output.rank],
+        updates: InputTensor[type = output.type, *_],
+        indices: InputTensor,
         ctx: DeviceContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
@@ -2121,15 +2091,16 @@ struct ScatterNDMin:
 
 @compiler.register("mo.scatter_nd.max")
 struct ScatterNDMax:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        output: ManagedTensorSlice,
-        input: ManagedTensorSlice[type = output.type, rank = output.rank],
-        updates: ManagedTensorSlice[type = output.type, *_],
-        indices: ManagedTensorSlice,
+        output: OutputTensor,
+        input: InputTensor[type = output.type, rank = output.rank],
+        updates: InputTensor[type = output.type, *_],
+        indices: InputTensor,
         ctx: DeviceContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
