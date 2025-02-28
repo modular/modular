@@ -42,3 +42,9 @@ def test_api():
     # This is more relevant for accelerators, for the host device, expect "cpu".
     cpu = CPU()
     assert "cpu" == cpu.api
+
+
+def test_cpu_id():
+    # The CPU id should always be 0.
+    cpu = CPU()
+    assert 0 == cpu.id
