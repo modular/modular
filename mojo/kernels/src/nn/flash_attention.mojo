@@ -1344,7 +1344,7 @@ fn flash_attention_kv_cache[
 
     alias mask_rank = 4
     var num_batches = q_input_row_offsets.dim[0]() - 1
-    var max_seq_len = k.max_prompt_length()
+    var max_seq_len = k.get_max_seq_length()
     alias num_heads = q.shape.get[q.rank - 2]()
     alias head_size = cache_t.kv_params.head_size
     alias output_shape = DimList(Dim(), Dim(), num_heads, head_size)

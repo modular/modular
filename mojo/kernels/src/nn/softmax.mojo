@@ -806,6 +806,7 @@ fn _softmax_gpu[
     var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
     alias sm_overprovision_factor = 32  # tunable
     var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
+
     ctx.enqueue_function[
         softmax_kernel[BLOCK_SIZE, input_fn_wrapper, type, rank]
     ](

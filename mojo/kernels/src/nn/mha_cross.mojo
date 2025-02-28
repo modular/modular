@@ -260,9 +260,9 @@ fn mha_cross_gpu_naive[
     alias depth = Int(config.depth)
     alias kv_num_heads = cache_t.kv_params.num_heads
     alias group = config.num_heads // kv_num_heads
-    var kv_max_seq_len = Int(k.max_prompt_length())
+    var kv_max_seq_len = Int(k.get_max_seq_length())
     var batch_size = q_input_row_offsets.dim[0]() - 1
-    var max_cache_size = Int(k.max_context_length())
+    var max_cache_size = Int(k.get_max_cache_length())
 
     alias q_type = q.type
     alias k_type = cache_t.type

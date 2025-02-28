@@ -34,7 +34,7 @@ trait MHAOperand:
         ...
 
     @always_inline
-    fn max_context_length(self) -> UInt32:
+    fn get_max_cache_length(self) -> UInt32:
         """Returns the maximum cache length in a given batch index."""
         ...
 
@@ -72,8 +72,8 @@ struct KVCacheMHAOperand[cache_t: KVCacheT](MHAOperand):
         return self.cache.cache_length(batch_idx)
 
     @always_inline
-    fn max_context_length(self) -> UInt32:
-        return self.cache.max_context_length()
+    fn get_max_cache_length(self) -> UInt32:
+        return self.cache.get_max_cache_length()
 
 
 @register_passable("trivial")
@@ -115,5 +115,5 @@ struct NDBufferMHAOperand[
         return self.buffer.dim[1]()
 
     @always_inline
-    fn max_context_length(self) -> UInt32:
+    fn get_max_cache_length(self) -> UInt32:
         return self.buffer.dim[1]()
