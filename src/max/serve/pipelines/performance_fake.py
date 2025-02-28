@@ -90,10 +90,14 @@ class PerformanceFakingPipelineTokenizer(
             np.array(encoded_prompt),
         )
 
-    async def encode(self, prompt: Union[str, Sequence[int]]) -> np.ndarray:
+    async def encode(
+        self, prompt: Union[str, Sequence[int]], add_special_tokens: bool = True
+    ) -> np.ndarray:
         start = time()
         if isinstance(prompt, str):
-            encoded = await super().encode(prompt)
+            encoded = await super().encode(
+                prompt, add_special_tokens=add_special_tokens
+            )
         else:
             encoded = np.array(list(prompt))
         self.tokenizer_secs += time() - start
