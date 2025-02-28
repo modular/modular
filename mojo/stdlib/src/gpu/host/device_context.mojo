@@ -112,7 +112,12 @@ struct _DeviceBufferMode:
         return self._mode == other._mode
 
 
-struct DeviceBuffer[type: DType](Sized):
+struct DeviceBuffer[
+    type: DType,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+    mut: Bool = True,
+    origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin].result,
+](Sized):
     """Represents a block of device-resident storage. For GPU devices, a device
     buffer is allocated in the device's global memory.
 
@@ -122,12 +127,22 @@ struct DeviceBuffer[type: DType](Sized):
 
     Parameters:
         type: Data type to be stored in the buffer.
+        address_space: The address space of the underlying pointer.
+        mut: The mutability of the underlying pointer.
+        origin: The origin of the underlying pointer.
     """
+
+    alias _DevicePtr = UnsafePointer[
+        Scalar[type], address_space=address_space, mut=mut, origin=origin
+    ]
+    alias _HostMappedBufferType = _HostMappedBuffer[
+        type, address_space=address_space, mut=mut, origin=origin
+    ]
 
     # _device_ptr must be the first word in the struct to enable passing of
     # DeviceBuffer to kernels. The first word is passed to the kernel and
     # it needs to contain the value registered with the driver.
-    var _device_ptr: UnsafePointer[Scalar[type]]
+    var _device_ptr: Self._DevicePtr
     var _handle: _DeviceBufferPtr
 
     @doc_private
@@ -143,7 +158,7 @@ struct DeviceBuffer[type: DType](Sized):
         """
         alias elem_size = sizeof[type]()
         var cpp_handle = _DeviceBufferPtr()
-        var device_ptr = UnsafePointer[Scalar[type]]()
+        var device_ptr = Self._DevicePtr()
 
         if mode == _DeviceBufferMode._SYNC:
             # const char *AsyncRT_DeviceContext_createBuffer_sync(const DeviceBuffer **result, void **device_ptr, const DeviceContext *ctx, size_t len, size_t elem_size)
@@ -152,7 +167,7 @@ struct DeviceBuffer[type: DType](Sized):
                     "AsyncRT_DeviceContext_createBuffer_sync",
                     _CharPtr,
                     UnsafePointer[_DeviceBufferPtr],
-                    UnsafePointer[UnsafePointer[Scalar[type]]],
+                    UnsafePointer[Self._DevicePtr],
                     _DeviceContextPtr,
                     _SizeT,
                     _SizeT,
@@ -171,7 +186,7 @@ struct DeviceBuffer[type: DType](Sized):
                     "AsyncRT_DeviceContext_createBuffer_async",
                     _CharPtr,
                     UnsafePointer[_DeviceBufferPtr],
-                    UnsafePointer[UnsafePointer[Scalar[type]]],
+                    UnsafePointer[Self._DevicePtr],
                     _DeviceContextPtr,
                     _SizeT,
                     _SizeT,
@@ -190,7 +205,7 @@ struct DeviceBuffer[type: DType](Sized):
                     "AsyncRT_DeviceContext_createHostBuffer",
                     _CharPtr,
                     UnsafePointer[_DeviceBufferPtr],
-                    UnsafePointer[UnsafePointer[Scalar[type]]],
+                    UnsafePointer[Self._DevicePtr],
                     _DeviceContextPtr,
                     _SizeT,
                     _SizeT,
@@ -208,9 +223,7 @@ struct DeviceBuffer[type: DType](Sized):
 
     @doc_private
     fn __init__(
-        mut self,
-        handle: _DeviceBufferPtr,
-        device_ptr: UnsafePointer[Scalar[type]],
+        mut self, handle: _DeviceBufferPtr, device_ptr: Self._DevicePtr
     ):
         self._device_ptr = device_ptr
         self._handle = handle
@@ -219,7 +232,7 @@ struct DeviceBuffer[type: DType](Sized):
     fn __init__(
         mut self,
         ctx: DeviceContext,
-        ptr: UnsafePointer[Scalar[type]],
+        ptr: Self._DevicePtr,
         size: Int,
         *,
         owning: Bool,
@@ -234,7 +247,7 @@ struct DeviceBuffer[type: DType](Sized):
             NoneType,
             UnsafePointer[_DeviceBufferPtr],
             _DeviceContextPtr,
-            UnsafePointer[Scalar[type]],
+            Self._DevicePtr,
             _SizeT,
             _SizeT,
             Bool,
@@ -327,7 +340,7 @@ struct DeviceBuffer[type: DType](Sized):
         )
         return DeviceBuffer[view_type](new_handle, new_device_ptr)
 
-    fn enqueue_copy_to(self, dst: Self) raises:
+    fn enqueue_copy_to(self, dst: DeviceBuffer[type, **_]) raises:
         # const char * AsyncRT_DeviceBuffer_copyTo(const DeviceBuffer* src, const DeviceBuffer *dst)
         _checked(
             external_call[
@@ -349,16 +362,20 @@ struct DeviceBuffer[type: DType](Sized):
             ](self._handle, ctx._handle)
         )
 
-    fn take_ptr(owned self) -> UnsafePointer[Scalar[type]]:
+    fn take_ptr(
+        owned self,
+    ) -> Self._DevicePtr:
         # void AsyncRT_DeviceBuffer_release_ptr(const DeviceBuffer *buffer)
         external_call[
             "AsyncRT_DeviceBuffer_release_ptr", NoneType, _DeviceBufferPtr
         ](self._handle)
         var result = self._device_ptr
-        self._device_ptr = UnsafePointer[Scalar[type]]()
+        self._device_ptr = Self._DevicePtr()
         return result
 
-    fn unsafe_ptr(self) -> UnsafePointer[Scalar[type]]:
+    fn unsafe_ptr(
+        self,
+    ) -> Self._DevicePtr:
         return self._device_ptr
 
     fn context(self) raises -> DeviceContext:
@@ -368,13 +385,17 @@ struct DeviceBuffer[type: DType](Sized):
         ](self._handle)
         return DeviceContext(ctx_ptr)
 
-    fn map_to_host(self) raises -> _HostMappedBuffer[type]:
-        return _HostMappedBuffer[type](self.context(), self)
+    fn map_to_host(
+        self,
+    ) raises -> Self._HostMappedBufferType:
+        return Self._HostMappedBufferType(self.context(), self)
 
     fn __getitem__(self, idx: Int) -> Scalar[type]:
         return self._device_ptr[idx]
 
-    fn __setitem__(self, idx: Int, val: Scalar[type]):
+    fn __setitem__(
+        self: DeviceBuffer[type, mut=True], idx: Int, val: Scalar[type]
+    ):
         self._device_ptr[idx] = val
 
 
@@ -1919,14 +1940,24 @@ struct DeviceContext:
             size: Number of elements (of the specified `DType`) to copy.
         """
         # Not directly implemented on DeviceContext, wrap in buffers first
-        var dst_buf = DeviceBuffer(self, dst_ptr, size, owning=False)
-        var src_buf = DeviceBuffer(self, src_ptr, size, owning=False)
+        var dst_buf = DeviceBuffer[
+            mut = dst_ptr.mut,
+            origin = dst_ptr.origin,
+            address_space = dst_ptr.address_space,
+        ](self, dst_ptr, size, owning=False)
+        var src_buf = DeviceBuffer[
+            mut = src_ptr.mut,
+            origin = src_ptr.origin,
+            address_space = src_ptr.address_space,
+        ](self, src_ptr, size, owning=False)
         self.enqueue_copy[type](dst_buf, src_buf)
 
     @always_inline
     fn enqueue_copy[
         type: DType
-    ](self, dst_buf: DeviceBuffer[type], src_buf: DeviceBuffer[type]) raises:
+    ](
+        self, dst_buf: DeviceBuffer[type, **_], src_buf: DeviceBuffer[type, **_]
+    ) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
@@ -2385,12 +2416,24 @@ struct DeviceContext:
         return _HostMappedBuffer[type](self, buf)
 
 
-struct _HostMappedBuffer[type: DType]:
+struct _HostMappedBuffer[
+    type: DType,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+    mut: Bool = True,
+    origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin].result,
+]:
     var _ctx: DeviceContext
-    var _dev_buf: DeviceBuffer[type]
-    var _cpu_buf: DeviceBuffer[type]
+    alias _DevBuf = DeviceBuffer[
+        type, address_space=address_space, mut=mut, origin=origin
+    ]
+    var _dev_buf: Self._DevBuf
+    var _cpu_buf: DeviceBuffer[type, **_]
 
-    fn __init__(mut self, ctx: DeviceContext, buf: DeviceBuffer[type]) raises:
+    fn __init__(
+        mut self,
+        ctx: DeviceContext,
+        buf: Self._DevBuf,
+    ) raises:
         var cpu_buf = ctx.enqueue_create_host_buffer[type](len(buf))
         self._ctx = ctx
         self._dev_buf = buf
