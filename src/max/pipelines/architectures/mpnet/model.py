@@ -81,8 +81,8 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
                 pipeline_config.huggingface_config.hidden_size
                 // pipeline_config.huggingface_config.num_attention_heads
             ),
-            cache_strategy=pipeline_config.cache_strategy,
-            enable_prefix_caching=pipeline_config.enable_prefix_caching,
+            cache_strategy=pipeline_config.kv_cache_config.cache_strategy,
+            enable_prefix_caching=pipeline_config.kv_cache_config.enable_prefix_caching,
         )
 
     @classmethod

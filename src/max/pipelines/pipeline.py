@@ -152,7 +152,7 @@ class PipelineModel(ABC, Generic[T]):
 
         if isinstance(self, KVCacheMixin):
             self.kv_manager = self.load_kv_manager(
-                session, pipeline_config._available_cache_memory
+                session, pipeline_config.kv_cache_config._available_cache_memory
             )
 
     @classmethod
@@ -390,7 +390,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
         # Create a grammar compiler if constrained decoding is enabled
         self.vocab_size = None
-        if pipeline_config.enable_structured_output:
+        if pipeline_config.sampling_config.enable_structured_output:
             tokenizer = AutoTokenizer.from_pretrained(
                 pipeline_config.model_path
             )
@@ -406,7 +406,9 @@ class TextGenerationPipeline(TokenGenerator[T]):
         session = InferenceSession(devices=self._pipeline_config.devices)
 
         # Enable profiling if enabled.
-        session.gpu_profiling(self._pipeline_config.gpu_profiling)
+        session.gpu_profiling(
+            self._pipeline_config.profiling_config.gpu_profiling
+        )
 
         # Use experimental kernels if enabled by env var `USE_EXPERIMENTAL_KERNELS`.
         session._use_experimental_kernels(
@@ -420,7 +422,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
         # Load sampler.
         self._sampler = session.load(
-            token_sampler(self._pipeline_config.sampling_params),
+            token_sampler(self._pipeline_config.sampling_config),
         )
 
     def calculate_num_steps(
@@ -454,7 +456,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
     ) -> tuple[ModelInputs, int, Optional[torch.Tensor]]:
         tracer: Tracer = Tracer("prepare_batch")
 
-        if self._pipeline_config.enable_structured_output:
+        if self._pipeline_config.sampling_config.enable_structured_output:
             assert self.vocab_size is not None
             bitmask = torch.ones(
                 xgr.get_bitmask_shape(
@@ -472,7 +474,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         for i, context in enumerate(batch):
             # Initialize a matcher if needed
             if context.json_schema and context.matcher is None:
-                if not self._pipeline_config.enable_structured_output:
+                if not self._pipeline_config.sampling_config.enable_structured_output:
                     msg = "json_schema provided but constrained decoding is not enabled."
                     raise ValueError(msg)
 
@@ -511,7 +513,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
             # Update bitmask
             if (
-                self._pipeline_config.enable_structured_output
+                self._pipeline_config.sampling_config.enable_structured_output
                 and context.matcher
             ):
                 context.matcher.fill_next_token_bitmask(bitmask, index=i)

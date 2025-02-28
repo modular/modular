@@ -93,7 +93,7 @@ class Qwen2Model(PipelineModel[TextContext]):
             model_inputs.input_row_offsets_or_attn_mask,
             *model_inputs.kv_cache_inputs,
             copy_inputs_to_device=(
-                not self.pipeline_config.cache_strategy.uses_opaque()
+                not self.pipeline_config.kv_cache_config.cache_strategy.uses_opaque()
             ),
         )
 
@@ -171,7 +171,7 @@ class Qwen2Model(PipelineModel[TextContext]):
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> Qwen2Inputs:
         """Prepare the inputs for the first pass in multistep execution."""
-        if self.pipeline_config.cache_strategy.uses_opaque():
+        if self.pipeline_config.kv_cache_config.cache_strategy.uses_opaque():
             return self._prepare_ragged_initial_token_inputs(
                 context_batch, kv_cache_inputs
             )
@@ -230,7 +230,7 @@ class Qwen2Model(PipelineModel[TextContext]):
         This should avoid any device synchronization or copy operations.
         """
         prev_model_inputs = cast(Qwen2Inputs, prev_model_inputs)
-        if self.pipeline_config.cache_strategy.uses_opaque():
+        if self.pipeline_config.kv_cache_config.cache_strategy.uses_opaque():
             return self._prepare_ragged_next_token_inputs(
                 next_tokens, prev_model_inputs
             )
@@ -246,10 +246,10 @@ class Qwen2Model(PipelineModel[TextContext]):
             n_kv_heads=pipeline_config.huggingface_config.num_key_value_heads,
             head_dim=pipeline_config.huggingface_config.hidden_size
             // pipeline_config.huggingface_config.num_attention_heads,
-            page_size=pipeline_config.kv_cache_page_size,
-            cache_strategy=pipeline_config.cache_strategy,
+            page_size=pipeline_config.kv_cache_config.kv_cache_page_size,
+            cache_strategy=pipeline_config.kv_cache_config.cache_strategy,
             n_devices=len(pipeline_config.devices),
-            enable_prefix_caching=pipeline_config.enable_prefix_caching,
+            enable_prefix_caching=pipeline_config.kv_cache_config.enable_prefix_caching,
         )
 
     @classmethod
@@ -284,7 +284,7 @@ class Qwen2Model(PipelineModel[TextContext]):
             num_layers=self.pipeline_config.huggingface_config.num_hidden_layers,
             devices=self.pipeline_config.devices,
             available_cache_memory=available_cache_memory,
-            page_size=self.pipeline_config.kv_cache_page_size,
+            page_size=self.pipeline_config.kv_cache_config.kv_cache_page_size,
             session=session,
         )
 
@@ -454,7 +454,7 @@ class Qwen2Model(PipelineModel[TextContext]):
         assert isinstance(model_inputs, Qwen2Inputs)
         tokens = model_inputs.tokens.to(CPU()).to_numpy()
 
-        if self.pipeline_config.cache_strategy.uses_opaque():
+        if self.pipeline_config.kv_cache_config.cache_strategy.uses_opaque():
             # Handle the ragged inputs
             input_row_offsets = model_inputs.input_row_offsets_or_attn_mask.to(
                 CPU()

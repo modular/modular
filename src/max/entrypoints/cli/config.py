@@ -26,7 +26,12 @@ from typing import Any, Union, get_args, get_origin, get_type_hints
 
 import click
 from max.driver import DeviceSpec
-from max.pipelines import PipelineConfig
+from max.pipelines import (
+    KVCacheConfig,
+    PipelineConfig,
+    ProfilingConfig,
+    SamplingConfig,
+)
 
 from .device_options import DevicesOptionType
 
@@ -156,7 +161,12 @@ def config_to_flag(cls):
 
 
 def pipeline_config_options(func):
+    # The order of these decorators must be preserved - ie. PipelineConfig
+    # must be applied only after KVCacheConfig, ProfilingConfig etc.
     @config_to_flag(PipelineConfig)
+    @config_to_flag(KVCacheConfig)
+    @config_to_flag(ProfilingConfig)
+    @config_to_flag(SamplingConfig)
     @click.option(
         "--devices",
         is_flag=False,

@@ -114,7 +114,7 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
         )
 
         # TODO(deep): Implement sampling and remove this warning
-        if self._pipeline_config.top_k > 1:
+        if self._pipeline_config.sampling_config.top_k > 1:
             warnings.warn(
                 "Only argmax sampling is currently implemented, and the top_k config will be ignored",
             )

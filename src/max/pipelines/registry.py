@@ -362,24 +362,26 @@ class PipelineRegistry:
             pipeline_config.quantization_encoding, []
         )
         if (
-            pipeline_config.cache_strategy == KVCacheStrategy.MODEL_DEFAULT
+            pipeline_config.kv_cache_config.cache_strategy
+            == KVCacheStrategy.MODEL_DEFAULT
             and supported_cache_strategies
         ):
             default_strategy = supported_cache_strategies[0]
             msg = f"default cache_strategy of '{default_strategy}' enabled"
             logger.debug(msg)
 
-            pipeline_config.cache_strategy = default_strategy
+            pipeline_config.kv_cache_config.cache_strategy = default_strategy
         elif (
             supported_cache_strategies
-            and pipeline_config.cache_strategy not in supported_cache_strategies
+            and pipeline_config.kv_cache_config.cache_strategy
+            not in supported_cache_strategies
         ):
             supported_strategy = supported_cache_strategies[0]
 
-            msg = f"cache_strategy = '{pipeline_config.cache_strategy}' not supported for '{pipeline_config.quantization_encoding}', using '{supported_strategy}' cache strategy."
+            msg = f"cache_strategy = '{pipeline_config.kv_cache_config.cache_strategy}' not supported for '{pipeline_config.quantization_encoding}', using '{supported_strategy}' cache strategy."
             logger.warning(msg)
 
-            pipeline_config.cache_strategy = supported_strategy
+            pipeline_config.kv_cache_config.cache_strategy = supported_strategy
 
         # Assume at this point, an architecture,
         # a model_path and weight_paths are available.
@@ -435,7 +437,7 @@ class PipelineRegistry:
         available_kv_cache_memory = max(0, free_memory - model_weights_size)
         available_kv_cache_memory = int(
             available_kv_cache_memory
-            * pipeline_config.device_memory_utilization
+            * pipeline_config.kv_cache_config.device_memory_utilization
         )
 
         user_provided_max_length = pipeline_config.max_length is not None
@@ -458,7 +460,9 @@ class PipelineRegistry:
             available_kv_cache_memory,
         )
 
-        pipeline_config._available_cache_memory = actual_kv_cache_size
+        pipeline_config.kv_cache_config._available_cache_memory = (
+            actual_kv_cache_size
+        )
 
         total_size += actual_kv_cache_size
 
@@ -928,7 +932,7 @@ class PipelineRegistry:
             model_path:             {pipeline_config.model_path}{weights_repo_str}
             huggingface_revision:   {pipeline_config.huggingface_revision}
             quantization_encoding:  {pipeline_config.quantization_encoding}
-            cache_strategy:         {pipeline_config.cache_strategy}
+            cache_strategy:         {pipeline_config.kv_cache_config.cache_strategy}
             weight_path:            [
         {weight_path}
                                     ]
@@ -942,7 +946,9 @@ class PipelineRegistry:
         if pipeline_config.max_batch_size is None:
             pipeline_config.max_batch_size = 1
         # HF pipelines always use custom continuous cache
-        pipeline_config.cache_strategy = KVCacheStrategy.CONTINUOUS
+        pipeline_config.kv_cache_config.cache_strategy = (
+            KVCacheStrategy.CONTINUOUS
+        )
         return pipeline_config
 
     def retrieve_factory(

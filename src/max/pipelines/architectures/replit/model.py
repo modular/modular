@@ -162,9 +162,9 @@ class ReplitModel(PipelineModel[TextContext]):
             ],
             head_dim=pipeline_config.huggingface_config.d_model
             // pipeline_config.huggingface_config.n_heads,
-            cache_strategy=pipeline_config.cache_strategy,
-            page_size=pipeline_config.kv_cache_page_size,
-            enable_prefix_caching=pipeline_config.enable_prefix_caching,
+            cache_strategy=pipeline_config.kv_cache_config.cache_strategy,
+            page_size=pipeline_config.kv_cache_config.kv_cache_page_size,
+            enable_prefix_caching=pipeline_config.kv_cache_config.enable_prefix_caching,
         )
 
     @classmethod
@@ -195,7 +195,7 @@ class ReplitModel(PipelineModel[TextContext]):
             num_layers=self.pipeline_config.huggingface_config.n_layers,
             devices=self.pipeline_config.devices,
             available_cache_memory=available_cache_memory,
-            page_size=self.pipeline_config.kv_cache_page_size,
+            page_size=self.pipeline_config.kv_cache_config.kv_cache_page_size,
             session=session,
         )
 

@@ -888,7 +888,10 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> LlamaVisionInputs:
         """Creates tensors of token and image inputs, if applicable."""
-        if self.pipeline_config.cache_strategy != KVCacheStrategy.CONTINUOUS:
+        if (
+            self.pipeline_config.kv_cache_config.cache_strategy
+            != KVCacheStrategy.CONTINUOUS
+        ):
             msg = "Llama Vision only supports continuous batching"
             raise ValueError(msg)
 
@@ -1055,9 +1058,9 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
                 pipeline_config.huggingface_config.text_config.hidden_size
                 // pipeline_config.huggingface_config.text_config.num_attention_heads
             ),
-            page_size=pipeline_config.kv_cache_page_size,
-            cache_strategy=pipeline_config.cache_strategy,
-            enable_prefix_caching=pipeline_config.enable_prefix_caching,
+            page_size=pipeline_config.kv_cache_config.kv_cache_page_size,
+            cache_strategy=pipeline_config.kv_cache_config.cache_strategy,
+            enable_prefix_caching=pipeline_config.kv_cache_config.enable_prefix_caching,
         )
 
     def load_kv_manager(
@@ -1087,7 +1090,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             devices=self.pipeline_config.devices,
             session=session,
             available_cache_memory=available_cache_memory,
-            page_size=self.pipeline_config.kv_cache_page_size,
+            page_size=self.pipeline_config.kv_cache_config.kv_cache_page_size,
         )
 
     @classmethod

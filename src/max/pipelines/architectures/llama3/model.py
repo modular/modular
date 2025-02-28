@@ -153,9 +153,9 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 pipeline_config.huggingface_config.hidden_size
                 // pipeline_config.huggingface_config.num_attention_heads
             ),
-            page_size=pipeline_config.kv_cache_page_size,
-            cache_strategy=pipeline_config.cache_strategy,
-            enable_prefix_caching=pipeline_config.enable_prefix_caching,
+            page_size=pipeline_config.kv_cache_config.kv_cache_page_size,
+            cache_strategy=pipeline_config.kv_cache_config.cache_strategy,
+            enable_prefix_caching=pipeline_config.kv_cache_config.enable_prefix_caching,
             n_devices=len(pipeline_config.devices),
         )
 
@@ -175,7 +175,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             *model_inputs.signal_buffers,
             *curr_kv_cache_inputs,
             copy_inputs_to_device=(
-                not self.pipeline_config.cache_strategy.uses_opaque()
+                not self.pipeline_config.kv_cache_config.cache_strategy.uses_opaque()
             ),
         )
 
@@ -245,7 +245,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> Llama3Inputs:
         """Prepare the inputs for the first pass in multistep execution."""
-        if self.pipeline_config.cache_strategy.uses_opaque():
+        if self.pipeline_config.kv_cache_config.cache_strategy.uses_opaque():
             return self._prepare_ragged_initial_token_inputs(
                 context_batch, kv_cache_inputs
             )
@@ -280,7 +280,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         This should avoid any device synchronization or copy operations.
         """
         prev_model_inputs = cast(Llama3Inputs, prev_model_inputs)
-        if self.pipeline_config.cache_strategy.uses_opaque():
+        if self.pipeline_config.kv_cache_config.cache_strategy.uses_opaque():
             return self._prepare_ragged_next_token_inputs(
                 next_tokens, prev_model_inputs
             )
@@ -314,10 +314,10 @@ class LlamaModelBase(PipelineModel[TextContext]):
             params=self.get_kv_params(self.pipeline_config),
             max_batch_size=self.pipeline_config.max_batch_size,
             max_seq_len=self.calculate_max_seq_len(self.pipeline_config),
-            num_layers=self.pipeline_config.huggingface_config.num_hidden_layers,
+            num_layers=self.get_num_layers(self.pipeline_config),
             devices=self.pipeline_config.devices,
             available_cache_memory=available_cache_memory,
-            page_size=self.pipeline_config.kv_cache_page_size,
+            page_size=self.pipeline_config.kv_cache_config.kv_cache_page_size,
             session=session,
         )
 
@@ -333,7 +333,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             params=cls.get_kv_params(pipeline_config),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=cls.calculate_max_seq_len(pipeline_config),
-            num_layers=pipeline_config.huggingface_config.num_hidden_layers,
+            num_layers=cls.get_num_layers(pipeline_config),
             available_cache_memory=available_cache_memory,
             devices=devices,
         )
@@ -593,7 +593,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 return graph
 
     def _build_graph(self, weights: Weights) -> Graph:
-        if self.pipeline_config.cache_strategy.uses_opaque():
+        if self.pipeline_config.kv_cache_config.cache_strategy.uses_opaque():
             return self._build_opaque_graph(weights)
 
         tokens_type = TensorType(DType.int64, shape=["batch_size", "seq_len"])
@@ -759,7 +759,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         ).to_numpy()
 
         sampled_tokens = next_tokens.to_numpy()
-        if self.pipeline_config.cache_strategy.uses_opaque():
+        if self.pipeline_config.kv_cache_config.cache_strategy.uses_opaque():
             # Handle the ragged inputs
             tokens = cast(Tensor, llama3_inputs.tokens).to_numpy()
             input_row_offsets = cast(

@@ -132,12 +132,12 @@ class MistralModel(PipelineModel[TextContext]):
     @classmethod
     def get_kv_params(cls, pipeline_config: PipelineConfig) -> KVCacheParams:
         return KVCacheParams(
-            page_size=pipeline_config.kv_cache_page_size,
+            page_size=pipeline_config.kv_cache_config.kv_cache_page_size,
             dtype=pipeline_config.cache_dtype,
             n_kv_heads=pipeline_config.huggingface_config.num_key_value_heads,
             head_dim=pipeline_config.huggingface_config.head_dim,
-            cache_strategy=pipeline_config.cache_strategy,
-            enable_prefix_caching=pipeline_config.enable_prefix_caching,
+            cache_strategy=pipeline_config.kv_cache_config.cache_strategy,
+            enable_prefix_caching=pipeline_config.kv_cache_config.enable_prefix_caching,
         )
 
     @classmethod
@@ -175,7 +175,7 @@ class MistralModel(PipelineModel[TextContext]):
             num_layers=self.pipeline_config.huggingface_config.num_hidden_layers,
             devices=self.pipeline_config.devices,
             available_cache_memory=available_cache_memory,
-            page_size=self.pipeline_config.kv_cache_page_size,
+            page_size=self.pipeline_config.kv_cache_config.kv_cache_page_size,
             session=session,
         )
 

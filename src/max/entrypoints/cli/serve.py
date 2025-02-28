@@ -83,7 +83,9 @@ def serve_pipeline(
             failure_percentage,
         )
 
-        pipeline_config.cache_strategy = KVCacheStrategy.CONTINUOUS
+        pipeline_config.kv_cache_config.cache_strategy = (
+            KVCacheStrategy.CONTINUOUS
+        )
 
     # Load batch config.
     batch_config = batch_config_from_pipeline_config(

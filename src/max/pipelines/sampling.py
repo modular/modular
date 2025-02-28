@@ -15,12 +15,12 @@
 
 from max.dtype import DType
 from max.graph import Dim, Graph, Shape, TensorType, TensorValue, ops
-from max.pipelines import SamplingParams
+from max.pipelines import SamplingConfig
 
 
-def _bitmask_sampler(sampling_params: SamplingParams) -> Graph:
+def _bitmask_sampler(sampling_config: SamplingConfig) -> Graph:
     logits_in_type = TensorType(
-        sampling_params.in_dtype, ["batch", "vocab_size"]
+        sampling_config.in_dtype, ["batch", "vocab_size"]
     )
     prev_tokens_type = TensorType(DType.int64, ["batch", "num_prev_steps"])
     bitmask_type = TensorType(DType.bool, ["batch", "vocab_size"])
@@ -31,7 +31,7 @@ def _bitmask_sampler(sampling_params: SamplingParams) -> Graph:
     ) as graph:
         # Deconstruct inputs and cast.
         logits, prev_tokens, bitmask = (val.tensor for val in graph.inputs)
-        logits = ops.cast(logits, sampling_params.out_dtype)
+        logits = ops.cast(logits, sampling_config.out_dtype)
 
         # Mask the logits out.
         logits = ops.select(
@@ -44,7 +44,7 @@ def _bitmask_sampler(sampling_params: SamplingParams) -> Graph:
         tokens = ops.custom(
             "topk_fused_sampling",
             [
-                ops.constant(sampling_params.top_k, dtype=DType.int64),
+                ops.constant(sampling_config.top_k, dtype=DType.int64),
                 logits,
             ],
             [TensorType(DType.int64, shape)],
@@ -58,23 +58,23 @@ def _bitmask_sampler(sampling_params: SamplingParams) -> Graph:
         return graph
 
 
-def _vanilla_sampler(sampling_params: SamplingParams) -> Graph:
+def _vanilla_sampler(sampling_config: SamplingConfig) -> Graph:
     logits_in_type = TensorType(
-        sampling_params.in_dtype, ["batch", "vocab_size"]
+        sampling_config.in_dtype, ["batch", "vocab_size"]
     )
     prev_tokens_type = TensorType(DType.int64, ["batch", "num_prev_steps"])
     with Graph(
         "token_sampler", input_types=[logits_in_type, prev_tokens_type]
     ) as graph:
         logits, prev_tokens = (val.tensor for val in graph.inputs)
-        logits = ops.cast(logits, sampling_params.out_dtype)
+        logits = ops.cast(logits, sampling_config.out_dtype)
 
         shape = Shape(logits.shape)
         shape[-1] = Dim(1)
         tokens = ops.custom(
             "topk_fused_sampling",
             [
-                ops.constant(sampling_params.top_k, dtype=DType.int64),
+                ops.constant(sampling_config.top_k, dtype=DType.int64),
                 logits,
             ],
             [TensorType(DType.int64, shape)],
@@ -88,8 +88,8 @@ def _vanilla_sampler(sampling_params: SamplingParams) -> Graph:
         return graph
 
 
-def token_sampler(sampling_params: SamplingParams) -> Graph:
-    if sampling_params.enable_structured_output:
-        return _bitmask_sampler(sampling_params)
+def token_sampler(sampling_config: SamplingConfig) -> Graph:
+    if sampling_config.enable_structured_output:
+        return _bitmask_sampler(sampling_config)
     else:
-        return _vanilla_sampler(sampling_params)
+        return _vanilla_sampler(sampling_config)
