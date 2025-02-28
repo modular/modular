@@ -208,8 +208,8 @@ fn _extract_tensor_spec[
     type: DType,
     rank: Int, //,
     static_spec: StaticTensorSpec[type, rank],
-]():
-    pass
+]() -> __type_of(static_spec):
+    return static_spec
 
 
 @register_internal("rebuild_static_tensor_specs_with_input_lambda")
@@ -256,6 +256,7 @@ fn rebuild_static_tensor_specs_with_output_lambda[
 
 # Helper function used in SliceMOGGDPSFunc to generate the body of the input lambda
 @__mogg_intrinsic_attr("mogg.dps_input_fusion_hook")
+@register_internal("mogg.dps_input_fusion_hook")
 @no_inline
 fn _input_fusion_hook_impl[
     mut: Bool, //,
@@ -263,7 +264,9 @@ fn _input_fusion_hook_impl[
     rank: Int,
     io_spec: IOSpec[mut],
     static_spec: StaticTensorSpec[type, rank],
-](tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]):
+](
+    tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
+) -> __type_of(static_spec):
     @always_inline
     @parameter
     fn _input_lambda[_w: Int](i: IndexList[rank]) -> SIMD[type, _w]:
@@ -273,7 +276,7 @@ fn _input_fusion_hook_impl[
             simd_load_from_managed_tensor_slice[simd_width=_w](tensor, i)
         )
 
-    _extract_tensor_spec[
+    return _extract_tensor_spec[
         rebuild_static_tensor_specs_with_input_lambda[type, rank](
             static_spec,
             _input_lambda,
@@ -283,6 +286,7 @@ fn _input_fusion_hook_impl[
 
 # Helper function used in SliceMOGGDPSFunc to generate the body of the output lambda
 @__mogg_intrinsic_attr("mogg.dps_output_fusion_hook")
+@register_internal("mogg.dps_output_fusion_hook")
 @no_inline
 fn _output_fusion_hook_impl[
     mut: Bool, //,
@@ -290,7 +294,9 @@ fn _output_fusion_hook_impl[
     rank: Int,
     io_spec: IOSpec[mut],
     static_spec: StaticTensorSpec[type, rank],
-](tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]):
+](
+    tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
+) -> __type_of(static_spec):
     @always_inline
     @parameter
     fn _output_lambda[
@@ -303,7 +309,7 @@ fn _output_fusion_hook_impl[
             element_alignment=_elem_align,
         ](tensor, i, rebind[SIMD[type, _w]](v))
 
-    _extract_tensor_spec[
+    return _extract_tensor_spec[
         rebuild_static_tensor_specs_with_output_lambda[type, rank](
             static_spec,
             _output_lambda,
