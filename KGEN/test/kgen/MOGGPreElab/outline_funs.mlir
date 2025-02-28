@@ -5,7 +5,7 @@ kgen.generator @call_target<_INPUT_FN_0: variant<() capturing -> !kgen.none, i1>
   kgen.return %none : !kgen.none
 }
 
-kgen.generator export @BASE_KERNEL() capturing -> !kgen.none attributes {_in_lambdas = ["_INPUT_FN_0", "_INPUT_FN_1"], mogg.sliced} {
+kgen.generator export @BASE_KERNEL() capturing -> !kgen.none attributes {_in_lambdas = ["_INPUT_FN_0", "_INPUT_FN_1"], mogg.execute} {
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.param.declare.region _INPUT_FN_1 = () capturing -> !kgen.none always_inline {
     %none1 = kgen.param.constant: none = <#kgen.none>
