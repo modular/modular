@@ -17,9 +17,9 @@ from sys import (
 )
 
 from sys.intrinsics import PrefetchOptions
-
 from algorithm import vectorize
 from bit import log2_floor
+from gpu.host import DeviceBuffer
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, thread_idx, lane_id
 from gpu.memory import CacheEviction, Fill, async_copy
@@ -328,6 +328,82 @@ struct LayoutTensor[
         self.ptr = ptr
         self.runtime_layout = runtime_layout
         self.runtime_element_layout = element_runtime_layout
+
+    @always_inline
+    @implicit
+    fn __init__(
+        out self,
+        device_buffer: DeviceBuffer[
+            dtype,
+            address_space=address_space,
+            mut=mut,
+            origin=origin, **_,
+        ],
+    ):
+        """Create a LayoutTensor from a `DeviceBuffer`. The layout must have
+        statically known dimensions.
+
+        ```mojo
+        from gpu.host import DeviceContext, DeviceBuffer
+        from layout import Layout, LayoutTensor
+
+        alias dtype = DType.float32
+
+        var ctx = DeviceContext()
+        var dev_buf = ctx.enqueue_create_buffer[dtype](8)
+
+        alias layout = Layout.row_major(4, 4)
+        var tensor = LayoutTensor[dtype, layout](dev_buf)
+        ```
+
+        Args:
+            device_buffer: Contains the underlying data to point to.
+        """
+        self = Self(device_buffer.unsafe_ptr())
+
+    @always_inline
+    fn __init__(
+        mut self,
+        device_buffer: DeviceBuffer[
+            dtype,
+            address_space=address_space,
+            mut=mut,
+            origin=origin, **_,
+        ],
+        runtime_layout: RuntimeLayout[layout, **_],
+    ):
+        """Create a LayoutTensor from a `DeviceBuffer`. The layout must have
+        statically known dimensions.
+
+        Args:
+            device_buffer: The DeviceBuffer containing to the underlying data.
+            runtime_layout: The runtime layout of the LayoutTensor.
+        """
+        self = Self(device_buffer.unsafe_ptr(), runtime_layout)
+
+    @always_inline
+    fn __init__(
+        mut self,
+        device_buffer: DeviceBuffer[
+            dtype,
+            address_space=address_space,
+            mut=mut,
+            origin=origin, **_,
+        ],
+        runtime_layout: RuntimeLayout[layout, bitwidth = Self.layout_bitwidth],
+        element_runtime_layout: RuntimeLayout[element_layout],
+    ):
+        """Create a LayoutTensor from a DeviceBuffer, a runtime layout of the
+        Tensor, and the runtime layout of each element.
+
+        Args:
+            device_buffer: The DeviceBuffer containing to the underlying data.
+            runtime_layout: The runtime layout of the LayoutTensor.
+            element_runtime_layout: The runtime layout of each element.
+        """
+        self = Self(
+            device_buffer.unsafe_ptr(), runtime_layout, element_runtime_layout
+        )
 
     fn copy(self) -> Self:
         """Explicitly copy the other LayoutTensor.

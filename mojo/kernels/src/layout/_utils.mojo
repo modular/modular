@@ -79,7 +79,7 @@ struct ManagedLayoutTensor[
         @parameter
         if layout.all_dims_known():
             return LayoutTensor[dtype, layout](
-                self.device_data.value().unsafe_ptr(),
+                self.device_data.value(),
             )
         else:
             return LayoutTensor[dtype, layout](
