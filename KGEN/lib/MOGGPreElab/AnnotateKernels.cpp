@@ -51,7 +51,7 @@ enum class ManagedTensorSliceParams {
   kDType,
   kRank,
   kIOSpec,
-  kStaticSpecs,
+  kStaticSpec,
   kNumParams
 };
 
@@ -263,7 +263,7 @@ getUnboundParametersForTensor(LIT::StructType &structType, Builder &builder) {
   auto input = allParameters[toIndex(ManagedTensorSliceParams::kInput)];
   auto dtype = allParameters[toIndex(ManagedTensorSliceParams::kDType)];
   auto rank = allParameters[toIndex(ManagedTensorSliceParams::kRank)];
-  auto spec = allParameters[toIndex(ManagedTensorSliceParams::kStaticSpecs)];
+  auto spec = allParameters[toIndex(ManagedTensorSliceParams::kStaticSpec)];
 
   SmallVector<NamedAttribute> tensorSpecNamedAttrs;
   if (dtype)
