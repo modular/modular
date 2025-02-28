@@ -12,9 +12,15 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from compiler_internal import StaticTensorSpec
 from runtime.asyncrt import DeviceContextPtr
+from register import enforce_io_param
 from tensor_internal import (
     ManagedTensorSlice,
     VariadicTensors,
+    InputVariadicTensors,
+    OutputVariadicTensors,
+    InputTensor,
+    OutputTensor,
+    MutableInputTensor,
     foreach,
     _input_fusion_hook_impl,
     _output_fusion_hook_impl,
@@ -72,11 +78,12 @@ struct MyCustomScalarRegF32:
         print("MyCustomScalarRegF32.__del__", self.val)
 
 
-@compiler.register("tensor_to_custom_scalar_si32_reg", num_dps_outputs=0)
+@compiler.register("tensor_to_custom_scalar_si32_reg")
 struct OpaqueToCustomScalarSI32Reg:
+    @enforce_io_param
     @staticmethod
     fn execute(
-        x: ManagedTensorSlice[type = DType.int32, rank=1]
+        x: InputTensor[type = DType.int32, rank=1]
     ) -> MyCustomScalarRegSI32:
         return MyCustomScalarRegSI32(x[0])
 
@@ -85,12 +92,13 @@ struct OpaqueToCustomScalarSI32Reg:
 # to a tensor
 @compiler.register("opaque_add_to_tensor_si32_reg")
 struct OpaqueAddToTensorSI32Reg:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        out: ManagedTensorSlice[type = DType.int32, rank=1],
+        out: OutputTensor[type = DType.int32, rank=1],
         x: MyCustomScalarRegSI32,
         y: MyCustomScalarRegSI32,
     ):
@@ -99,12 +107,13 @@ struct OpaqueAddToTensorSI32Reg:
 
 @compiler.register("opaque_add_to_tensor_f32_reg")
 struct OpaqueAddToTensorF32:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        out: ManagedTensorSlice[type = DType.float32, rank=1],
+        out: OutputTensor[type = DType.float32, rank=1],
         x: MyCustomScalarRegF32,
         y: MyCustomScalarRegF32,
     ):
@@ -129,11 +138,12 @@ struct MyCustomScalarSI32:
         print("MyCustomScalarSI32.__del__", self.val)
 
 
-@compiler.register("tensor_to_custom_scalar_si32", num_dps_outputs=0)
+@compiler.register("tensor_to_custom_scalar_si32")
 struct OpaqueToCustomScalarSI32:
+    @enforce_io_param
     @staticmethod
     fn execute(
-        x: ManagedTensorSlice[type = DType.int32, rank=1]
+        x: InputTensor[type = DType.int32, rank=1]
     ) -> MyCustomScalarSI32:
         return MyCustomScalarSI32(x[0])
 
@@ -142,12 +152,13 @@ struct OpaqueToCustomScalarSI32:
 # to a tensor
 @compiler.register("opaque_add_to_tensor_si32")
 struct OpaqueAddToTensorSI32:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        out: ManagedTensorSlice[type = DType.int32, rank=1],
+        out: OutputTensor[type = DType.int32, rank=1],
         x: MyCustomScalarSI32,
         y: MyCustomScalarSI32,
     ):
@@ -156,12 +167,13 @@ struct OpaqueAddToTensorSI32:
 
 @compiler.register("opaque_add_to_tensor_si32_raises")
 struct OpaqueAddToTensorSI32Raises:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        out: ManagedTensorSlice[type = DType.int32, rank=1],
+        out: OutputTensor[type = DType.int32, rank=1],
         x: MyCustomScalarSI32,
         y: MyCustomScalarSI32,
     ) raises:
@@ -175,11 +187,12 @@ struct OpaqueAddToTensorSI32Raises:
 
 @compiler.register("imposter_add")
 struct Foo:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](z: ManagedTensorSlice, x: ManagedTensorSlice, y: ManagedTensorSlice):
+    ](z: OutputTensor, x: InputTensor, y: InputTensor):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -234,14 +247,15 @@ fn _matmul[
 # c = a @ b, should support CPU and GPU
 @compiler.register("imposter_matmul")
 struct ImposterMatmul:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        c: ManagedTensorSlice,
-        a: ManagedTensorSlice,
-        b: ManagedTensorSlice,
+        c: OutputTensor,
+        a: InputTensor,
+        b: InputTensor,
         ctx: DeviceContextPtr,
     ) raises:
         _matmul(c, a, b)
@@ -258,11 +272,12 @@ struct ImposterMatmul:
 
 @compiler.register("print_tensor_spec")
 struct PrintTensorSpecOp:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](out: ManagedTensorSlice, x: ManagedTensorSlice):
+    ](out: OutputTensor, x: InputTensor):
         print("x.shape =", x._static_shape)
         print("x.strides =", x._static_strides)
         print("x.alignment =", x.alignment)
@@ -284,11 +299,12 @@ struct PrintTensorSpecOp:
 @compiler.register("print_tensor_spec_view")
 @compiler.view_kernel
 struct PrintTensorSpecViewOp:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](out: ManagedTensorSlice, x: ManagedTensorSlice):
+    ](out: OutputTensor, x: InputTensor):
         print("x.shape =", x._static_shape)
         print("x.strides =", x._static_strides)
         print("x.alignment =", x.alignment)
@@ -310,11 +326,12 @@ struct PrintTensorSpecViewOp:
 @compiler.register("print_tensor_spec_fused")
 @compiler.elementwise
 struct PrintTensorSpecFusedOp:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](out: ManagedTensorSlice, x: ManagedTensorSlice):
+    ](out: OutputTensor, x: InputTensor):
         print("x.shape =", x._static_shape)
         print("x.strides =", x._static_strides)
         print("x.alignment =", x.alignment)
@@ -336,11 +353,12 @@ struct PrintTensorSpecFusedOp:
 @compiler.register("imposter_add_elementwise")
 @compiler.elementwise
 struct AddElementwise:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](z: ManagedTensorSlice, x: ManagedTensorSlice, y: ManagedTensorSlice):
+    ](z: OutputTensor, x: InputTensor, y: InputTensor):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -354,11 +372,12 @@ struct AddElementwise:
 @compiler.register("imposter_add_lhs")
 struct AddFuseLHS:
     @compiler.enable_fusion_for("x")
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](z: ManagedTensorSlice, x: ManagedTensorSlice, y: ManagedTensorSlice):
+    ](z: OutputTensor, x: InputTensor, y: InputTensor):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -377,11 +396,12 @@ struct AddFuseLHS:
 @compiler.register("imposter_add_fuse_inputs")
 struct AddFuseInputs:
     @compiler.enable_fusion_for("x", "y")
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](z: ManagedTensorSlice, x: ManagedTensorSlice, y: ManagedTensorSlice):
+    ](z: OutputTensor, x: InputTensor, y: InputTensor):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -401,15 +421,16 @@ struct AddFuseInputs:
 @compiler.register("matmul_fuse_out")
 struct MatmulFuseOut:
     @compiler.enable_fusion_for("c")
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         lambdas_have_fusion: Bool,
         _synchronous: Bool,
     ](
-        c: ManagedTensorSlice,
-        a: ManagedTensorSlice,
-        b: ManagedTensorSlice,
+        c: OutputTensor,
+        a: InputTensor,
+        b: InputTensor,
         ctx: DeviceContextPtr,
     ) raises:
         alias rank = a.rank
@@ -445,17 +466,19 @@ struct MatmulFuseOut:
 
 @compiler.register("op_with_synchronous")
 struct WithSynchronous:
+    @enforce_io_param
     @staticmethod
     fn execute[
         _synchronous: Bool,
-    ](out: ManagedTensorSlice, input: ManagedTensorSlice):
+    ](out: OutputTensor, input: InputTensor):
         print("what up ", _synchronous)
 
 
 @compiler.register("op_without_synchronous")
 struct WithoutSynchronous:
+    @enforce_io_param
     @staticmethod
-    fn execute(out: ManagedTensorSlice, input: ManagedTensorSlice):
+    fn execute(out: OutputTensor, input: InputTensor):
         print("what up")
 
 
@@ -463,6 +486,7 @@ struct WithoutSynchronous:
 # number from the associated inputs to outputs, plus a bias
 @compiler.register("variadic_input_to_output")
 struct VariadicInputToOutput:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -470,9 +494,9 @@ struct VariadicInputToOutput:
         size: Int,
         target: StringLiteral,
     ](
-        output: VariadicTensors[type, rank=1, size=size],
-        bias: ManagedTensorSlice[type=type, rank=1],
-        input: VariadicTensors[type, rank=1, size=size],
+        output: OutputVariadicTensors[type, rank=1, size=size],
+        bias: InputTensor[type=type, rank=1],
+        input: InputVariadicTensors[type, rank=1, size=size],
     ):
         @parameter
         for i in range(size):
@@ -483,44 +507,45 @@ struct VariadicInputToOutput:
 
 # Simply adds the first number of bias to the first number of boath outputs
 # Mainly here to test logic with multiple DPS outputs
-@compiler.register("add_bias_to_two_tensors", num_dps_outputs=2)
+@compiler.register("add_bias_to_two_tensors")
 struct AddBiasToDouble:
+    @enforce_io_param
     @staticmethod
     fn execute[
         rank: Int,
         type: DType,
         _synchronous: Bool,
     ](
-        output1: ManagedTensorSlice[type=type, rank=rank],
-        output2: ManagedTensorSlice[type=type, rank=rank],
-        input1: ManagedTensorSlice[type=type, rank=rank],
-        input2: ManagedTensorSlice[type=type, rank=rank],
-        bias: ManagedTensorSlice[type=type, rank=rank],
+        output1: OutputTensor[type=type, rank=rank],
+        output2: OutputTensor[type=type, rank=rank],
+        input1: InputTensor[type=type, rank=rank],
+        input2: InputTensor[type=type, rank=rank],
+        bias: InputTensor[type=type, rank=rank],
     ):
         output1[0] = input1[0] + bias[0]
         output2[0] = input2[0] + bias[0]
 
 
-@compiler.register("inplace_increment_elem", num_dps_outputs=0)
+@compiler.register("inplace_increment_elem")
 struct BasicInplace:
-    @compiler.mutable("input")
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
-    ](input: ManagedTensorSlice[type=type, rank=2]):
+    ](input: MutableInputTensor[type=type, rank=2]):
         x = input[0, 0]
         x += 1
         input[0, 0] = x
 
 
 # Have this nearly identical version as having a raise changes the Mojo function's signature
-@compiler.register("inplace_increment_elem_raises", num_dps_outputs=0)
+@compiler.register("inplace_increment_elem_raises")
 struct BasicInplaceRaises:
-    @compiler.mutable("input")
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
-    ](input: ManagedTensorSlice[type=type, rank=2]) raises:
+    ](input: MutableInputTensor[type=type, rank=2]) raises:
         x = input[0, 0]
         x += 1
         input[0, 0] = x
@@ -530,6 +555,7 @@ struct BasicInplaceRaises:
 struct VariadicAdd:
     # TODO(GEX-1591): Re-enable fusion of variadic operands
     # @compiler.enable_fusion_for("inputs")
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -537,8 +563,8 @@ struct VariadicAdd:
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        output: ManagedTensorSlice[type=type, rank=rank],
-        inputs: VariadicTensors[type, rank, *_],
+        output: OutputTensor[type=type, rank=rank],
+        inputs: InputVariadicTensors[type, rank, *_],
     ):
         @parameter
         @always_inline
@@ -580,14 +606,15 @@ struct Transpose2DOp:
         # transpose the strides of the input
         return DimList(input_strides.at[1](), input_strides.at[0]())
 
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         type: DType,
     ](
-        z: ManagedTensorSlice[type=type, rank=2],
-        x: ManagedTensorSlice[type=type, rank=2],
+        z: OutputTensor[type=type, rank=2],
+        x: InputTensor[type=type, rank=2],
         ctx: DeviceContextPtr,
     ):
         alias view_strides = Self.get_view_strides(x._static_strides)
@@ -604,11 +631,12 @@ struct Transpose2DOp:
 @compiler.register("elementwise_print_shape")
 @compiler.elementwise
 struct ElementwisePrintShape:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](z: ManagedTensorSlice, x: ManagedTensorSlice):
+    ](z: OutputTensor, x: InputTensor):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -627,11 +655,12 @@ struct ElementwisePrintShape:
 # Raises if input shape is 10
 @compiler.register("custom_op_that_raises")
 struct CustomOpThatRaises:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](z: ManagedTensorSlice, x: ManagedTensorSlice) raises:
+    ](z: OutputTensor, x: InputTensor) raises:
         if x.shape()[0] == 10:
             raise ("input_shape[0] == 10")
 
@@ -653,12 +682,13 @@ struct CustomOpThatRaises:
 
 @compiler.register("mo.test.failing_constraint")
 struct OpThatAlwaysFailsConstraint:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType, rank: Int
     ](
-        out_tensor: ManagedTensorSlice[type=type, rank=rank],
-        in_tensor: ManagedTensorSlice[type=type, rank=rank],
+        out_tensor: OutputTensor[type=type, rank=rank],
+        in_tensor: InputTensor[type=type, rank=rank],
     ):
         constrained[
             1 == 2,
@@ -668,12 +698,13 @@ struct OpThatAlwaysFailsConstraint:
 
 @compiler.register("mo.test.return_error")
 struct OpThatAlwaysRaises:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType, rank: Int
     ](
-        out_tensor: ManagedTensorSlice[type=type, rank=rank],
-        in_tensor: ManagedTensorSlice[type=type, rank=rank],
+        out_tensor: OutputTensor[type=type, rank=rank],
+        in_tensor: InputTensor[type=type, rank=rank],
     ) raises:
         out_tensor[0] = in_tensor[0]
         raise Error("This is an error")
@@ -681,12 +712,13 @@ struct OpThatAlwaysRaises:
 
 @compiler.register("monnx.abs_v13")
 struct MONNXAbsOverload:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType, rank: Int
     ](
-        out_tensor: ManagedTensorSlice[type=type, rank=rank],
-        in_tensor: ManagedTensorSlice[type=type, rank=rank],
+        out_tensor: OutputTensor[type=type, rank=rank],
+        in_tensor: InputTensor[type=type, rank=rank],
     ) raises:
         @parameter
         @always_inline
@@ -699,12 +731,13 @@ struct MONNXAbsOverload:
 
 @compiler.register("torch.aten.abs")
 struct MTorchAbsOverload:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType, rank: Int
     ](
-        out_tensor: ManagedTensorSlice[type=type, rank=rank],
-        in_tensor: ManagedTensorSlice[type=type, rank=rank],
+        out_tensor: OutputTensor[type=type, rank=rank],
+        in_tensor: InputTensor[type=type, rank=rank],
     ) raises:
         @parameter
         @always_inline
@@ -717,6 +750,7 @@ struct MTorchAbsOverload:
 
 @compiler.register("op_with_custom_params")
 struct OpWithCustomParams:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -725,8 +759,8 @@ struct OpWithCustomParams:
         custom_str: StringLiteral,
         custom_dtype: DType,
     ](
-        out_tensor: ManagedTensorSlice[type=type, rank=rank],
-        in_tensor: ManagedTensorSlice[type=type, rank=rank],
+        out_tensor: OutputTensor[type=type, rank=rank],
+        in_tensor: InputTensor[type=type, rank=rank],
     ) raises:
         out_tensor[0] = in_tensor[0]
         print("custom_int =", custom_int)
@@ -736,27 +770,30 @@ struct OpWithCustomParams:
 
 @compiler.register("mgprt_test_func")
 struct MGPRTTestFunc:
+    @enforce_io_param
     @staticmethod
-    fn execute(out_tensor: ManagedTensorSlice) raises:
+    fn execute(out_tensor: OutputTensor) raises:
         external_call["MGP_RT_TEST", NoneType]()
 
 
-@compiler.register("mutable_test_op", num_dps_outputs=0)
+@compiler.register("mutable_test_op")
 struct MutableTestOp:
+    @enforce_io_param
     @staticmethod
-    fn execute(in_place_tensor: ManagedTensorSlice) raises:
+    fn execute(in_place_tensor: MutableInputTensor) raises:
         in_place_tensor._ptr.store(0, 0)
 
 
 # For testing support for Scalar[...] in Mojo
 @compiler.register("supports_scalar_kernel")
 struct SupportsScalarKernel:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType
     ](
-        out: ManagedTensorSlice[type=type, rank=1],
-        x: ManagedTensorSlice[type=type, rank=1],
+        out: OutputTensor[type=type, rank=1],
+        x: InputTensor[type=type, rank=1],
         y: Scalar[type],
     ) raises:
         print("datatype is", type)
@@ -764,25 +801,21 @@ struct SupportsScalarKernel:
 
 @compiler.register("kernel_with_no_target")
 struct KernelWithNoTarget:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType
-    ](
-        out: ManagedTensorSlice[type=type, *_],
-        x: ManagedTensorSlice[type=type, *_],
-    ) raises:
+    ](out: OutputTensor[type=type, *_], x: InputTensor[type=type, *_],) raises:
         print("hello from kernel with no target")
 
 
 @compiler.register("basic_target")
 struct BasicTarget:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType, target: StringLiteral
-    ](
-        out: ManagedTensorSlice[type=type, *_],
-        x: ManagedTensorSlice[type=type, *_],
-    ) raises:
+    ](out: OutputTensor[type=type, *_], x: InputTensor[type=type, *_],) raises:
         print("hello from kernel on", target)
 
 
@@ -800,12 +833,13 @@ struct MyCustomScalarReg[type: DType]:
         print("MyCustomScalarReg.__del__", self.val)
 
 
-@compiler.register("buff_to_my_custom_scalar_reg", num_dps_outputs=0)
+@compiler.register("buff_to_my_custom_scalar_reg")
 struct BuffToMyCustomScalarReg:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral
-    ](x: ManagedTensorSlice[type = DType.int32, rank=1]) -> MyCustomScalarReg[
+    ](x: InputTensor[type = DType.int32, rank=1]) -> MyCustomScalarReg[
         DType.int32
     ]:
         return MyCustomScalarReg(x[0])
@@ -813,11 +847,12 @@ struct BuffToMyCustomScalarReg:
 
 @compiler.register("my_custom_scalar_reg_to_buff")
 struct CustomScalarRegToBuff:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral
     ](
-        input: ManagedTensorSlice[type = DType.int32, rank=1],
+        input: OutputTensor[type = DType.int32, rank=1],
         x: MyCustomScalarReg[DType.int32],
     ):
         input[0] = x.val
@@ -825,12 +860,13 @@ struct CustomScalarRegToBuff:
 
 @compiler.register("test_custom_op")
 struct TestCustomOp:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral, type: DType, rank: Int
     ](
-        out: ManagedTensorSlice[type=type, rank=rank],
-        input: ManagedTensorSlice[type=type, rank=rank],
+        out: OutputTensor[type=type, rank=rank],
+        input: InputTensor[type=type, rank=rank],
     ):
         print("World!")
 
@@ -842,8 +878,9 @@ struct TestCustomOp:
         return input.shape()
 
 
-@compiler.register("invalid_kernel_owned_arg", num_dps_outputs=0)
+@compiler.register("invalid_kernel_owned_arg")
 struct InvalidOwnedArgConvention:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral, type: DType, rank: Int
@@ -853,25 +890,27 @@ struct InvalidOwnedArgConvention:
 
 @compiler.register("single_device_context")
 struct SingleDeviceContext:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType
     ](
-        out: ManagedTensorSlice[type=type, *_],
-        x: ManagedTensorSlice[type=type, *_],
+        out: OutputTensor[type=type, *_],
+        x: InputTensor[type=type, *_],
         dev_ctx: StaticTuple[DeviceContextPtr, 1],
     ) raises:
         dev_ctx[0][].synchronize()
 
 
-@compiler.register("multi_device_context", num_dps_outputs=1)
+@compiler.register("multi_device_context")
 struct MultiDeviceContext:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType
     ](
-        out: ManagedTensorSlice[type=type, *_],
-        x: ManagedTensorSlice[type=type, *_],
+        out: OutputTensor[type=type, *_],
+        x: InputTensor[type=type, *_],
         dev_ctxs: StaticTuple[DeviceContextPtr, 2],
     ) raises:
         print("dev_ctx0.id() =", dev_ctxs[0][].id())
@@ -882,28 +921,30 @@ struct MultiDeviceContext:
 
 @compiler.register("multi_device_context_dedup")
 struct MultiDeviceContextDedup:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType
     ](
-        out: ManagedTensorSlice[type=type, *_],
-        x: ManagedTensorSlice[type=type, *_],
-        y: ManagedTensorSlice[type=type, *_],
+        out: OutputTensor[type=type, *_],
+        x: InputTensor[type=type, *_],
+        y: InputTensor[type=type, *_],
         dev_ctxs: StaticTuple[DeviceContextPtr, 2],
     ) raises:
         dev_ctxs[0][].synchronize()
         dev_ctxs[1][].synchronize()
 
 
-@compiler.register("variadic_device_context", num_dps_outputs=1)
+@compiler.register("variadic_device_context")
 struct VariadicDeviceContext:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
         rank: Int,
     ](
-        outputs: VariadicTensors[type, rank, *_],
-        inputs: VariadicTensors[type, rank, *_],
+        outputs: OutputVariadicTensors[type, rank, *_],
+        inputs: InputVariadicTensors[type, rank, *_],
         dev_ctxs: StaticTuple[DeviceContextPtr, *_],
     ) raises:
         for i in range(len(dev_ctxs)):
@@ -914,11 +955,12 @@ struct VariadicDeviceContext:
 @compiler.register("imposter_cast_elementwise")
 @compiler.elementwise
 struct CastElementwise:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -932,11 +974,12 @@ struct CastElementwise:
 @compiler.register("print_vector_size")
 @compiler.elementwise
 struct PrintVectorSize:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -957,16 +1000,17 @@ struct PrintVectorSize:
         foreach[func, target=target, _synchronous=_synchronous](y, ctx)
 
 
-@compiler.register("tensor_opaque_tensor_kernel", num_dps_outputs=2)
+@compiler.register("tensor_opaque_tensor_kernel")
 struct TensorOpaqueTensorKernel:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        output1: ManagedTensorSlice,
-        output2: ManagedTensorSlice,
+        output1: OutputTensor,
+        output2: OutputTensor,
         opaque: MyCustomScalarSI32,
-        input: ManagedTensorSlice,
+        input: InputTensor,
     ) raises:
         pass
