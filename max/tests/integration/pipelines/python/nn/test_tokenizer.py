@@ -23,5 +23,5 @@ async def test_tokenizer__encode_and_decode():
         tokens=np.array(encoded),
     )
     assert context.current_length == len(encoded)
-    decoded = await tokenizer.decode(context, encoded, skip_special_tokens=True)
+    decoded = await tokenizer.decode(context, encoded)
     assert test_string == decoded
