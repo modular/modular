@@ -8,7 +8,7 @@ commonly fragmented AI deployment workflows. MAX accelerates time to market
 for the latest innovations by giving AI developers a single toolchain that
 unlocks full programmability, unparalleled performance, and seamless hardware portability.
 
-![Modular Architecture Diagram](https://modular-assets.s3.amazonaws.com/images/modular_architecture_diagram_bg.png)
+![](https://docs.modular.com/images/github/max-stack.png)
 
 [See here to get started with MAX](https://docs.modular.com/max/get-started)
 and when you want to report issues or request features,
