@@ -34,20 +34,14 @@ fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
 
     alias length = 1024
 
-    var in0_host = UnsafePointer[Float32].alloc(length)
-    var in1_host = UnsafePointer[Float32].alloc(length)
-    var out_host = UnsafePointer[Float32].alloc(length)
+    var in0 = ctx.enqueue_create_buffer[DType.float32](length)
+    var in1 = ctx.enqueue_create_buffer[DType.float32](length)
+    var out = ctx.enqueue_create_buffer[DType.float32](length)
 
-    for i in range(length):
-        in0_host[i] = i
-        in1_host[i] = 2
-
-    var in0_device = ctx.enqueue_create_buffer[DType.float32](length)
-    var in1_device = ctx.enqueue_create_buffer[DType.float32](length)
-    var out_device = ctx.enqueue_create_buffer[DType.float32](length)
-
-    ctx.enqueue_copy(in0_device, in0_host)
-    ctx.enqueue_copy(in1_device, in1_host)
+    with in0.map_to_host() as in0_host, in1.map_to_host() as in1_host:
+        for i in range(length):
+            in0_host[i] = i
+            in1_host[i] = 2
 
     @parameter
     fn add(lhs: Float32, rhs: Float32) -> Float32:
@@ -55,9 +49,9 @@ fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
 
     var block_dim = 32
     ctx.enqueue_function[vec_func[add]](
-        in0_device,
-        in1_device,
-        out_device,
+        in0,
+        in1,
+        out,
         length,
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
@@ -69,30 +63,19 @@ fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
     )
     ctx.synchronize()
 
-    ctx.enqueue_copy(out_host, out_device)
-
-    ctx.synchronize()
-
-    # CHECK: at index 0 the value is 4.5
-    # CHECK: at index 1 the value is 5.5
-    # CHECK: at index 2 the value is 6.5
-    # CHECK: at index 3 the value is 7.5
-    # CHECK: at index 4 the value is 8.5
-    # CHECK: at index 5 the value is 9.5
-    # CHECK: at index 6 the value is 10.5
-    # CHECK: at index 7 the value is 11.5
-    # CHECK: at index 8 the value is 12.5
-    # CHECK: at index 9 the value is 13.5
-    for i in range(10):
-        print("at index", i, "the value is", out_host[i])
-
-    _ = in0_device
-    _ = in1_device
-    _ = out_device
-
-    in0_host.free()
-    in1_host.free()
-    out_host.free()
+    with out.map_to_host() as out_host:
+        # CHECK: at index 0 the value is 4.5
+        # CHECK: at index 1 the value is 5.5
+        # CHECK: at index 2 the value is 6.5
+        # CHECK: at index 3 the value is 7.5
+        # CHECK: at index 4 the value is 8.5
+        # CHECK: at index 5 the value is 9.5
+        # CHECK: at index 6 the value is 10.5
+        # CHECK: at index 7 the value is 11.5
+        # CHECK: at index 8 the value is 12.5
+        # CHECK: at index 9 the value is 13.5
+        for i in range(10):
+            print("at index", i, "the value is", out_host[i])
 
 
 def main():
