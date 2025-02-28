@@ -74,6 +74,7 @@ public:
   /// Canonicalize a filename by stripping `stripFilenamePrefix` prefix from it
   /// if applicable.
   std::string getCanonicalFilename(StringRef filename) const;
+  StringRef getStripFilenamePrefix() const { return stripFilenamePrefix; }
 
 private:
   MLIRContext *context;
@@ -210,7 +211,11 @@ Diags::Diags(SourceMgr &sourceMgr, MLIRContext *context,
   }
 }
 
-Diags::~Diags() {}
+Diags::~Diags() {
+  // Remove the prefix-stripping diag handler if previously installed.
+  if (!sourceMgrMapper->getStripFilenamePrefix().empty())
+    sourceMgr.setDiagHandler(prevDiagHandler, prevDiagContext);
+}
 
 /// Return the identifier for the main buffer in the SourceMgr.
 StringAttr Diags::getBufferNameIdentifier() const {
