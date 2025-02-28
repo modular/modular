@@ -63,7 +63,7 @@ class Device:
         """
     @property
     def id(self) -> int:
-        """Returns a zero-based device id. For a CPU device this is the numa id.
+        """Returns a zero-based device id. For a CPU device this is always 0.
         For GPU accelerators this is the id of the device relative to this host.
         Along with the `label`, an id can uniquely identify a device,
         e.g. "gpu:0", "gpu:1".
@@ -72,7 +72,7 @@ class Device:
 
             from max import driver
 
-            device = driver.CPU()
+            device = driver.Accelerator()
             device.id
         """
     @property
