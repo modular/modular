@@ -6,13 +6,7 @@
 
 from collections import OptionalReg
 from math import align_down, align_up, ceildiv
-from sys import (
-    alignof,
-    bitwidthof,
-    llvm_intrinsic,
-    simdwidthof,
-    has_nvidia_gpu_accelerator,
-)
+from sys import alignof, bitwidthof, llvm_intrinsic, simdwidthof
 
 from algorithm.reduction import _reduce_generator
 from buffer import NDBuffer
@@ -745,7 +739,7 @@ fn gemv_gpu[
     elif m == 1 and n % WARP_SIZE == 0 and k % WARP_SIZE == 0:
 
         @parameter
-        if a.type == DType.bfloat16 and has_nvidia_gpu_accelerator():
+        if a.type == DType.bfloat16:
             if (
                 k >= 4096
                 and n >= 4096

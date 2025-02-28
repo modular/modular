@@ -324,7 +324,13 @@ fn _matmul_gpu[
     )
     # NOTE: k has to be a multiple of BK * num_stages. Hard coded this condition to 128 for now.
     # TODO: Need to find a better dispatch strategy.
-    var multi_gemm_cond = (m > 1 and n % 128 == 0 and k % 32 == 0 and k >= 128)
+    var multi_gemm_cond = (
+        # For AMD we don't have a gemv kernel.
+        (m > 1 if has_nvidia_gpu_accelerator() else True)
+        and n % 128 == 0
+        and k % 32 == 0
+        and k >= 128
+    )
     # fmt: off
     # Require Static K, N in A, B, C
     alias multistage_gemm_supported_shape = b_shape.all_known[2]() \
@@ -1898,12 +1904,14 @@ fn _matmul_gpu[
 
             return
 
-    if m == 1 or n == 1:
-        gemv_gpu[
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](c, a, b, ctx)
-        return
+    @parameter
+    if has_nvidia_gpu_accelerator():
+        if m == 1 or n == 1:
+            gemv_gpu[
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+            ](c, a, b, ctx)
+            return
 
     alias BLOCK_DIM = 16
     ctx.enqueue_function[
