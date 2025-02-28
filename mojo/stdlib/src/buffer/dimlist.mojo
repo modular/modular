@@ -604,6 +604,37 @@ struct DimList(
         return not self._contains_impl[start, end](Dim())
 
     @always_inline
+    fn into_index_list[rank: Int](self) -> IndexList[rank]:
+        """Copy the DimList values into an `IndexList`, providing the rank.
+
+        Parameters:
+            rank: The rank of the output IndexList.
+
+        Returns:
+            An IndexList with the same dimensions as the DimList.
+
+        ```mojo
+        from buffer import DimList
+
+        var dim_list = DimList(2, 4)
+        var index_list = dim_list.into_index_list[rank=2]()
+        ```
+        .
+        """
+        var num_elements = len(self)
+        debug_assert(
+            rank == num_elements,
+            "[DimList] mismatch in the number of elements",
+        )
+        var index_list = IndexList[rank]()
+
+        @parameter
+        for idx in range(rank):
+            index_list[idx] = Int(self.at[idx]())
+
+        return index_list
+
+    @always_inline
     @staticmethod
     fn create_unknown[length: Int]() -> Self:
         """Creates a dimension list of all dynamic dimension values.
