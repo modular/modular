@@ -2971,14 +2971,15 @@ struct SliceDim:
 
 @compiler.register("mo.arg_max")
 struct ArgMax:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         rank: Int,
         _trace_name: StringLiteral,
     ](
-        output: ManagedTensorSlice[rank=rank],
-        input: ManagedTensorSlice[rank=rank],
+        output: OutputTensor[rank=rank],
+        input: InputTensor[rank=rank],
         axis: Int,
         ctx: DeviceContextPtr,
     ) raises:
@@ -3011,14 +3012,15 @@ struct ArgMax:
 
 @compiler.register("mo.arg_min")
 struct ArgMin:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         rank: Int,
         _trace_name: StringLiteral,
     ](
-        output: ManagedTensorSlice[rank=rank],
-        input: ManagedTensorSlice[rank=rank],
+        output: OutputTensor[rank=rank],
+        input: InputTensor[rank=rank],
         axis: Int,
         ctx: DeviceContextPtr,
     ) raises:
@@ -3051,10 +3053,11 @@ struct ArgMin:
 
 @compiler.register("mo.arg_nonzero")
 struct ArgNonZero:
+    @enforce_io_param
     @staticmethod
     fn execute(
-        output_buffer: ManagedTensorSlice[rank=2],
-        input_buffer: ManagedTensorSlice,
+        output_buffer: OutputTensor[rank=2],
+        input_buffer: InputTensor,
     ):
         var out_ndbuffer = managed_tensor_slice_to_ndbuffer(output_buffer)
         var in_ndbuffer = managed_tensor_slice_to_ndbuffer(input_buffer)
@@ -3071,12 +3074,13 @@ struct ArgNonZero:
 @compiler.register("mo.mean")
 struct Mean:
     @compiler.enable_fusion_for("input", "output")
+    @enforce_io_param
     @staticmethod
     fn execute[
         _synchronous: Bool, target: StringLiteral
     ](
-        output: ManagedTensorSlice,
-        input: ManagedTensorSlice[type = output.type, rank = output.rank],
+        output: OutputTensor,
+        input: InputTensor[type = output.type, rank = output.rank],
         axis: Int,
         ctx: DeviceContextPtr,
     ) raises:
@@ -3123,12 +3127,13 @@ struct Mean:
 @compiler.register("mo.reduce.add")
 struct ReduceAdd:
     @compiler.enable_fusion_for("input", "output")
+    @enforce_io_param
     @staticmethod
     fn execute[
         _synchronous: Bool, target: StringLiteral, _trace_name: StringLiteral
     ](
-        output: ManagedTensorSlice,
-        input: ManagedTensorSlice[type = output.type, rank = output.rank],
+        output: OutputTensor,
+        input: InputTensor[type = output.type, rank = output.rank],
         axis: Int,
         ctx: DeviceContextPtr,
     ) raises:
@@ -3176,14 +3181,15 @@ struct ReduceAdd:
 @compiler.register("mo.reduce.mul")
 struct ReduceMul:
     @compiler.enable_fusion_for("input", "output")
+    @enforce_io_param
     @staticmethod
     fn execute[
         _synchronous: Bool,
         target: StringLiteral,
         _trace_name: StringLiteral,
     ](
-        output: ManagedTensorSlice,
-        input: ManagedTensorSlice[type = output.type, rank = output.rank],
+        output: OutputTensor,
+        input: InputTensor[type = output.type, rank = output.rank],
         axis: Int,
         ctx: DeviceContextPtr,
     ) raises:
@@ -3231,14 +3237,15 @@ struct ReduceMul:
 @compiler.register("mo.reduce.max")
 struct ReduceMax:
     @compiler.enable_fusion_for("input", "output")
+    @enforce_io_param
     @staticmethod
     fn execute[
         _synchronous: Bool,
         target: StringLiteral,
         _trace_name: StringLiteral,
     ](
-        output: ManagedTensorSlice,
-        input: ManagedTensorSlice[type = output.type, rank = output.rank],
+        output: OutputTensor,
+        input: InputTensor[type = output.type, rank = output.rank],
         axis: Int,
         ctx: DeviceContextPtr,
     ) raises:
@@ -3286,14 +3293,15 @@ struct ReduceMax:
 @compiler.register("mo.reduce.min")
 struct ReduceMin:
     @compiler.enable_fusion_for("input", "output")
+    @enforce_io_param
     @staticmethod
     fn execute[
         _synchronous: Bool,
         target: StringLiteral,
         _trace_name: StringLiteral,
     ](
-        output: ManagedTensorSlice,
-        input: ManagedTensorSlice[type = output.type, rank = output.rank],
+        output: OutputTensor,
+        input: InputTensor[type = output.type, rank = output.rank],
         axis: Int,
         ctx: DeviceContextPtr,
     ) raises:
@@ -3340,6 +3348,7 @@ struct ReduceMin:
 
 @compiler.register("reduce_min_and_max")
 struct ReduceMinMax:
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -3348,8 +3357,8 @@ struct ReduceMinMax:
         type: DType,
         rank: Int,
     ](
-        output: ManagedTensorSlice[type=type, rank=rank],
-        input: ManagedTensorSlice[type=type, rank=rank],
+        output: OutputTensor[type=type, rank=rank],
+        input: InputTensor[type=type, rank=rank],
         axis0: Int,
         ctx: DeviceContextPtr,
     ) raises:
@@ -3462,18 +3471,19 @@ struct ReduceMinMax:
 
 @compiler.register("mo.avg_pool")
 struct AvgPool:
+    @enforce_io_param
     @staticmethod
     fn execute[
         count_boundary: Bool,
         type: DType,
         int_type: DType,
     ](
-        output: ManagedTensorSlice[type=type, rank=4],
-        input: ManagedTensorSlice[type=type, rank=4],
-        filter: ManagedTensorSlice[type=int_type, rank=1],
-        strides: ManagedTensorSlice[type=int_type, rank=1],
-        dilations: ManagedTensorSlice[type=int_type, rank=1],
-        paddings: ManagedTensorSlice[type=int_type, rank=1],
+        output: OutputTensor[type=type, rank=4],
+        input: InputTensor[type=type, rank=4],
+        filter: InputTensor[type=int_type, rank=1],
+        strides: InputTensor[type=int_type, rank=1],
+        dilations: InputTensor[type=int_type, rank=1],
+        paddings: InputTensor[type=int_type, rank=1],
     ):
         avg_pool[count_boundary=count_boundary](
             managed_tensor_slice_to_ndbuffer(input),
@@ -3507,18 +3517,19 @@ struct AvgPool:
 
 @compiler.register("mo.avg_pool_ceil_mode_true")
 struct AvgPoolCeilModeTrue:
+    @enforce_io_param
     @staticmethod
     fn execute[
         count_boundary: Bool,
         type: DType,
         int_type: DType,
     ](
-        output: ManagedTensorSlice[type=type, rank=4],
-        input: ManagedTensorSlice[type=type, rank=4],
-        filter: ManagedTensorSlice[type=int_type, rank=1],
-        strides: ManagedTensorSlice[type=int_type, rank=1],
-        dilations: ManagedTensorSlice[type=int_type, rank=1],
-        paddings: ManagedTensorSlice[type=int_type, rank=1],
+        output: OutputTensor[type=type, rank=4],
+        input: InputTensor[type=type, rank=4],
+        filter: InputTensor[type=int_type, rank=1],
+        strides: InputTensor[type=int_type, rank=1],
+        dilations: InputTensor[type=int_type, rank=1],
+        paddings: InputTensor[type=int_type, rank=1],
     ):
         avg_pool[count_boundary=count_boundary](
             managed_tensor_slice_to_ndbuffer(input),
@@ -3553,17 +3564,18 @@ struct AvgPoolCeilModeTrue:
 
 @compiler.register("mo.max_pool")
 struct MaxPool:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
         int_type: DType,
     ](
-        output: ManagedTensorSlice[type=type, rank=4],
-        input: ManagedTensorSlice[type=type, rank=4],
-        filter: ManagedTensorSlice[type=int_type, rank=1],
-        strides: ManagedTensorSlice[type=int_type, rank=1],
-        dilations: ManagedTensorSlice[type=int_type, rank=1],
-        paddings: ManagedTensorSlice[type=int_type, rank=1],
+        output: OutputTensor[type=type, rank=4],
+        input: InputTensor[type=type, rank=4],
+        filter: InputTensor[type=int_type, rank=1],
+        strides: InputTensor[type=int_type, rank=1],
+        dilations: InputTensor[type=int_type, rank=1],
+        paddings: InputTensor[type=int_type, rank=1],
     ):
         max_pool(
             managed_tensor_slice_to_ndbuffer(input),
@@ -3597,17 +3609,18 @@ struct MaxPool:
 
 @compiler.register("mo.max_pool_ceil_mode_true")
 struct MaxPoolCeilModeTrue:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
         int_type: DType,
     ](
-        output: ManagedTensorSlice[type=type, rank=4],
-        input: ManagedTensorSlice[type=type, rank=4],
-        filter: ManagedTensorSlice[type=int_type, rank=1],
-        strides: ManagedTensorSlice[type=int_type, rank=1],
-        dilations: ManagedTensorSlice[type=int_type, rank=1],
-        paddings: ManagedTensorSlice[type=int_type, rank=1],
+        output: OutputTensor[type=type, rank=4],
+        input: InputTensor[type=type, rank=4],
+        filter: InputTensor[type=int_type, rank=1],
+        strides: InputTensor[type=int_type, rank=1],
+        dilations: InputTensor[type=int_type, rank=1],
+        paddings: InputTensor[type=int_type, rank=1],
     ):
         max_pool(
             managed_tensor_slice_to_ndbuffer(input),
@@ -3646,13 +3659,14 @@ struct MaxPoolCeilModeTrue:
 
 @compiler.register("mo.pad.constant")
 struct PadConstant:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType, rank: Int, target: StringLiteral
     ](
-        output: ManagedTensorSlice[type=type, rank=rank],
-        input: ManagedTensorSlice[type=type, rank=rank],
-        padding: ManagedTensorSlice[rank=1],
+        output: OutputTensor[type=type, rank=rank],
+        input: InputTensor[type=type, rank=rank],
+        padding: InputTensor[rank=1],
         constant: Scalar[type=type],
         ctx: DeviceContextPtr,
     ) raises:
@@ -3692,14 +3706,15 @@ struct PadConstant:
 
 @compiler.register("mo.pad.repeat")
 struct PadRepeat:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
         rank: Int,
     ](
-        output: ManagedTensorSlice[type=type, rank=rank],
-        input: ManagedTensorSlice[type=type, rank=rank],
-        padding: ManagedTensorSlice[rank=1],
+        output: OutputTensor[type=type, rank=rank],
+        input: InputTensor[type=type, rank=rank],
+        padding: InputTensor[rank=1],
     ):
         var paddings_ptr = padding._ptr
         var input_buf = managed_tensor_slice_to_ndbuffer(input)
@@ -3722,14 +3737,15 @@ struct PadRepeat:
 
 @compiler.register("mo.pad.reflect")
 struct PadReflect:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
         rank: Int,
     ](
-        output: ManagedTensorSlice[type=type, rank=rank],
-        input: ManagedTensorSlice[type=type, rank=rank],
-        padding: ManagedTensorSlice[rank=1],
+        output: OutputTensor[type=type, rank=rank],
+        input: InputTensor[type=type, rank=rank],
+        padding: InputTensor[rank=1],
     ):
         var paddings_ptr = padding._ptr
         var input_buf = managed_tensor_slice_to_ndbuffer(input)
@@ -3757,6 +3773,7 @@ struct PadReflect:
 
 @compiler.register("mo.gather_nd")
 struct GatherND:
+    @enforce_io_param
     @staticmethod
     fn execute[
         batchDims: Int,
@@ -3764,9 +3781,9 @@ struct GatherND:
         _synchronous: Bool,
         _trace_name: StringLiteral,
     ](
-        output: ManagedTensorSlice,
-        data: ManagedTensorSlice[type = output.type, *_],
-        indices: ManagedTensorSlice,
+        output: OutputTensor,
+        data: InputTensor[type = output.type, *_],
+        indices: InputTensor,
         ctx: DeviceContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
@@ -3799,15 +3816,16 @@ struct GatherND:
 @compiler.register("mo.gather")
 struct Gather:
     @compiler.enable_fusion_for("input", "output")
+    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
     ](
-        output: ManagedTensorSlice,
-        input: ManagedTensorSlice[type = output.type, *_],
-        indices: ManagedTensorSlice,
+        output: OutputTensor,
+        input: InputTensor[type = output.type, *_],
+        indices: InputTensor,
         axis: Int,
         ctx: DeviceContextPtr,
     ) raises:
@@ -3876,11 +3894,12 @@ struct Gather:
 
 @compiler.register("mo.gather_sum")
 struct GatherSum:
+    @enforce_io_param
     @staticmethod
     fn execute(
-        output: ManagedTensorSlice,
-        input: ManagedTensorSlice[type = output.type, *_],
-        indices: ManagedTensorSlice[type = DType.int32, *_],
+        output: OutputTensor,
+        input: InputTensor[type = output.type, *_],
+        indices: InputTensor[type = DType.int32, *_],
     ) raises:
         # Existing implementations do not require static shape information
         var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
@@ -3907,16 +3926,17 @@ struct GatherSum:
 @compiler.register("mo.layer_norm")
 struct LayerNorm:
     @compiler.enable_fusion_for("input", "gamma")
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
         rank: Int,
         target: StringLiteral,
     ](
-        output: ManagedTensorSlice[type=type, rank=rank],
-        input: ManagedTensorSlice[type=type, rank=rank],
-        gamma: ManagedTensorSlice[type=type, rank=1],
-        beta: ManagedTensorSlice[type=type, rank=1],
+        output: OutputTensor[type=type, rank=rank],
+        input: InputTensor[type=type, rank=rank],
+        gamma: InputTensor[type=type, rank=1],
+        beta: InputTensor[type=type, rank=1],
         epsilon: Scalar[type=type],
         ctx: DeviceContextPtr,
     ) raises:
@@ -3964,15 +3984,16 @@ struct LayerNorm:
 @compiler.register("rms_norm")
 struct RMSNorm:
     @compiler.enable_fusion_for("input")
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
         rank: Int,
         target: StringLiteral,
     ](
-        output: ManagedTensorSlice[type=type, rank=rank],
-        input: ManagedTensorSlice[type=type, rank=rank],
-        gamma: ManagedTensorSlice[type=type, rank=1],
+        output: OutputTensor[type=type, rank=rank],
+        input: InputTensor[type=type, rank=rank],
+        gamma: InputTensor[type=type, rank=1],
         epsilon: Scalar[type=type],
         ctx: DeviceContextPtr,
     ) raises:
@@ -4009,17 +4030,18 @@ struct RMSNorm:
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("mo.bottom_k", num_dps_outputs=2)
+@compiler.register("mo.bottom_k")
 struct BottomK:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
         rank: Int,
         target: StringLiteral,
     ](
-        values: ManagedTensorSlice[type=type, rank=rank],
-        indices: ManagedTensorSlice[type = DType.int64, rank=rank],
-        input: ManagedTensorSlice[type=type, rank=rank],
+        values: OutputTensor[type=type, rank=rank],
+        indices: OutputTensor[type = DType.int64, rank=rank],
+        input: InputTensor[type=type, rank=rank],
         k: Int,
         axis: Int,
         sorted: Bool,
@@ -4047,17 +4069,18 @@ struct BottomK:
         )
 
 
-@compiler.register("mo.top_k", num_dps_outputs=2)
+@compiler.register("mo.top_k")
 struct TopK:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
         rank: Int,
         target: StringLiteral,
     ](
-        values: ManagedTensorSlice[type=type, rank=rank],
-        indices: ManagedTensorSlice[type = DType.int64, rank=rank],
-        input: ManagedTensorSlice[type=type, rank=rank],
+        values: OutputTensor[type=type, rank=rank],
+        indices: OutputTensor[type = DType.int64, rank=rank],
+        input: InputTensor[type=type, rank=rank],
         k: Int,
         axis: Int,
         sorted: Bool,
