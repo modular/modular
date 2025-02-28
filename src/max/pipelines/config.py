@@ -20,6 +20,7 @@ import glob
 import json
 import logging
 import os
+import random
 import struct
 import time
 from abc import abstractmethod
@@ -183,15 +184,14 @@ class RopeType(str, Enum):
 def _repo_exists_with_retry(repo_id: str) -> bool:
     """
     Wrapper around huggingface_hub.repo_exists with retry logic.
-    Retries after 5, 30 and 60 seconds if we get a transient HTTP error.
+    Uses exponential backoff with 25% jitter, starting at 1s and doubling each retry.
 
     See huggingface_hub.repo_exists for details
     """
-    max_attempts = 3
+    max_attempts = 5
+    base_delays = [2**i for i in range(max_attempts)]
     retry_delays_in_seconds = [
-        5,
-        30,
-        60,
+        d * (1 + random.uniform(-0.25, 0.25)) for d in base_delays
     ]
 
     for attempt, delay_in_seconds in enumerate(retry_delays_in_seconds):
