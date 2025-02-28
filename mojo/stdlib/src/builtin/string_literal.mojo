@@ -955,3 +955,21 @@ struct StringLiteral(
             A copy of the string with no leading whitespaces.
         """
         return String(String(self).lstrip())
+
+
+fn _base64_encode[str: StringLiteral]() -> StringLiteral:
+    """Encode the string literal using Base64 encoding.
+
+    Returns:
+        A new string literal with the Base64 encoded string.
+    """
+    return __mlir_op.`pop.string.base64.encode`(str.value)
+
+
+fn _base64_decode[str: StringLiteral]() -> StringLiteral:
+    """Decode the string literal using Base64 encoding.
+
+    Returns:
+        A new string literal with the Base64 decoded string.
+    """
+    return __mlir_op.`pop.string.base64.decode`(str.value)

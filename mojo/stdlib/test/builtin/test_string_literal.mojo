@@ -22,6 +22,7 @@ from testing import (
     assert_raises,
     assert_true,
 )
+from builtin.string_literal import _base64_encode, _base64_decode
 
 
 def test_add():
@@ -525,6 +526,15 @@ def test_string_literal_from_stringable():
     )
 
 
+def test_base64_encode_decode():
+    assert_equal(_base64_encode["hello"](), "aGVsbG8=")
+    assert_equal(_base64_decode["aGVsbG8="](), "hello")
+
+    alias encoded = _base64_encode["I'm a mojo string"]()
+    alias decoded = _base64_decode[encoded]()
+    assert_equal(decoded, "I'm a mojo string")
+
+
 def main():
     test_add()
     test_iadd()
@@ -558,3 +568,4 @@ def main():
     test_splitlines()
     test_float_conversion()
     test_string_literal_from_stringable()
+    test_base64_encode_decode()
