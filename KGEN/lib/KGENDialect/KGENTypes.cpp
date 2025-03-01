@@ -1534,6 +1534,31 @@ ErrorOr<TypedAttr> VariantType::readFrom(int64_t addr,
 }
 
 //===----------------------------------------------------------------------===//
+// ClosureType
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseClosureTypes(AsmParser &p, SymbolRefAttr &symbol,
+                                     StringAttr &name, bool &isEscaping) {
+  if (p.parseAttribute(symbol) || p.parseComma() || p.parseAttribute(name))
+    return failure();
+
+  if (failed(p.parseOptionalKeyword("escaping")))
+    isEscaping = false;
+  else
+    isEscaping = true;
+  return success();
+}
+
+static void printClosureTypes(AsmPrinter &p, SymbolRefAttr symbol,
+                              StringAttr name, bool isEscaping) {
+  p << symbol;
+  p << ", ";
+  p << name;
+  if (isEscaping)
+    p << " escaping";
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

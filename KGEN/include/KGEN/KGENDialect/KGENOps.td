@@ -2214,4 +2214,39 @@ def KGEN_IsCompileTimeOp: KGENOp<"is_compile_time",
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// ClosureInit
+//===----------------------------------------------------------------------===//
+
+def KGEN_ClosureInit : KGENOp<"closure.init"> {
+  let summary = "Allocate memory and store values into a closure struct.";
+  let description = [{
+    The `kgen.closure.init` operation represents the instantiation of a closure
+    struct. The closure struct holds the captured values. It maps the nested
+    function to the capture struct. The input, a nested function, is represented
+    as a function typed parameter. The result contains a symbol like label that
+    will be replaced with the struct type after lowering.
+
+    Example:
+    ```mlir
+     kgen.func @closure_types(%arg0 : index) {
+       kgen.param.declare.region fn = () {
+         kgen.call @use(%arg0) : (index) -> ()
+         kgen.return
+       }
+       %0 = kgen.closure.init <:() -> () fn>
+              : <!kgen.closure<@closure_types, "fn"", is_escaping=false>>
+       kgen.return
+     }
+    ```
+  }];
+
+  let arguments = (ins TypedAttrInterface: $closure);
+  let results = (outs PointerOf<KGEN_ClosureType>: $result);
+  let assemblyFormat = [{
+      `` `<` custom<ColonTypeParamValue>($closure) `>` `:` type($result) attr-dict
+  }];
+}
+
+
 #endif // KGEN_KGENDIALECT_KGENOPS_TD
