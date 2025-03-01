@@ -752,4 +752,27 @@ def KGEN_VariantType : KGENType<"Variant", "variant", [
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// ClosureType
+//===----------------------------------------------------------------------===//
+
+def KGEN_ClosureType : KGENType<"Closure", "closure"> {
+  let summary = "Represents a struct of captures";
+  let description = [{
+     A `!kgen.closure` type represents a struct of captures.
+     Example:
+     ```mlir
+     kgen.generator @parent(%x: index) {
+        kgen.generator @closure() {
+           kgen.call @foo(%x)
+        }
+        %0 = kgen.closure.init <:() -> () @closure> : !kgen.closure<@parent, "closure", is_escaping=false>
+     }
+     }
+     ```
+  }];
+  let parameters = (ins "SymbolRefAttr":$parentSymbol, "StringAttr":$name, "bool": $isEscaping);
+  let assemblyFormat = "`<` custom<ClosureTypes>($parentSymbol, $name, $isEscaping) `>`";
+}
+
 #endif // KGEN_KGENDIALECT_KGENTYPES_TD
