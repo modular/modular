@@ -22,11 +22,13 @@ from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, SymbolicDim, TensorType, ops
+from max.profiler import traced
 
 from .paged_cache_metadata import PagedCacheMetadata
 from .radix_trie import RadixTrie, TrieNode
 
 
+@traced
 def construct_cow_strided_memcpy_graph(
     block_shape: list[int | str], dtype: DType, devices: list[Device]
 ) -> Graph:
@@ -261,6 +263,7 @@ class PrefixCache:
 
         return seq_ids_and_prefix_blocks
 
+    @traced
     def _fetch_request(
         self,
         seq_id: int,
@@ -399,6 +402,7 @@ class PrefixCache:
         assert len(data.prompt_tokens) > 0
         assert data.cached_idx < data.inflight_idx
 
+    @traced
     def batch_execute_enqueued_cow(self):
         """Execute all of the COW memcpy operations enqueued during `fetch`.
 
@@ -469,6 +473,7 @@ class PrefixCache:
         assert num_cache_hit_tokens >= 0
         return set(prefix_blocks), num_cache_hit_tokens
 
+    @traced
     def step(
         self,
         seq_id: int,

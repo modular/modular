@@ -34,6 +34,7 @@ from max.graph import (
     _OpaqueValue,
     ops,
 )
+from max.profiler import traced
 from max.support.human_readable_formatter import to_human_readable_bytes
 
 from ._utils import build_max_lengths_tensor
@@ -148,6 +149,7 @@ class FetchPagedKVCacheCollection:
 
 
 class PagedKVCacheManager(KVCacheManager):
+    @traced
     def __init__(
         self,
         params: KVCacheParams,
@@ -417,6 +419,7 @@ class PagedKVCacheManager(KVCacheManager):
     def get_num_used_blocks(self) -> int:
         return self.total_num_pages - self.get_num_free_blocks()
 
+    @traced
     def can_fetch(
         self, seq_ids_and_prompts: dict[int, np.ndarray], num_steps: int = 1
     ) -> bool:
@@ -448,6 +451,7 @@ class PagedKVCacheManager(KVCacheManager):
 
         return tot_new_pages_needed <= num_free_blocks
 
+    @traced
     def query_fetch_stats(
         self, seq_id: int, prompt: np.ndarray, num_steps: int = 1
     ) -> tuple[set[int], int, int]:
@@ -496,6 +500,7 @@ class PagedKVCacheManager(KVCacheManager):
 
         return prefix_blocks, tokens_to_encode, new_pages_needed
 
+    @traced
     def _fetch(
         self, seq_ids_and_prompts: dict[int, np.ndarray], num_steps: int = 1
     ) -> List[KVCacheInputs]:
@@ -743,6 +748,7 @@ class PagedKVCacheManager(KVCacheManager):
             self.release_block(block)
         del self.active_requests[seq_id]
 
+    @traced
     def _step(
         self,
         seq_ids_and_new_tokens: dict[int, np.ndarray],
