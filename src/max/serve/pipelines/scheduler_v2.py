@@ -174,7 +174,6 @@ class TokenGenerationSchedulerV2(Scheduler):
 
         # TODO health check
 
-    @traced
     def _should_schedule_ce(self) -> bool:
         # No CE to schedule if queue is empty
         if self.request_q.empty():
@@ -219,7 +218,6 @@ class TokenGenerationSchedulerV2(Scheduler):
 
         return True
 
-    @traced
     def _construct_fetch_input(self, batch) -> dict[int, np.ndarray]:
         """Construct input to the `fetch` method of paged manager"""
         seq_ids_and_prompts: dict[int, np.ndarray] = {}
@@ -447,7 +445,6 @@ class TokenGenerationSchedulerV2(Scheduler):
         msg += "You must restart your process and set a lower max seq len to prevent a single request from using the entire KV cache."
         raise RuntimeError(msg)
 
-    @traced
     def _create_batch_to_execute(self) -> Tuple[BatchInputs, BatchType]:
         """Creates a batch to execute"""
         if self._should_schedule_ce():
@@ -614,7 +611,6 @@ class TokenGenerationSchedulerV2(Scheduler):
                 if request_id in self.active_batch:
                     del self.active_batch[request_id]
 
-    @traced
     def _exceeds_batch_token_limit(
         self, total_seq_len: int, new_seq_len: int
     ) -> bool:
