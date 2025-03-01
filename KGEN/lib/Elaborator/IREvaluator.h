@@ -336,11 +336,6 @@ private:
   ExpansionGraph *expansionGraph;
 };
 
-/// Compute the expected mangled name of a generator, assuming it has one
-/// successful implementation. If it doesn't, elaboration will fail anyways.
-StringAttr getExpectedMangledName(GeneratorOp func, ArrayRef<TypedAttr> params,
-                                  bool sanitize);
-
 } // namespace M::KGEN
 
 #endif // KGEN_ELABORATOR_IREVALUATOR_H

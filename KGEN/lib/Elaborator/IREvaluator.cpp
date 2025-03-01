@@ -12,7 +12,6 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPTypes.h"
-#include "KGEN/Support/NameMangling.h"
 #include "KGEN/TransformUtils/ManglingUtils.h"
 #include "Support/Compiler/DiagnosticHandler.h"
 #include "Support/MDialect/MTypeInterfaces.h"
@@ -304,18 +303,6 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetEnv(ParamOperatorAttr op) {
   return {BoolAttr::get(op.getContext(), static_cast<bool>(value))};
 }
 
-/// Compute the expected mangled name of a generator, assuming it has one
-/// successful implementation. If it doesn't, elaboration will fail anyways.
-StringAttr KGEN::getExpectedMangledName(GeneratorOp func,
-                                        ArrayRef<TypedAttr> params,
-                                        bool sanitize) {
-  auto baseName =
-      StringAttr::get(func.getContext(), mangleParameterValues(func, params));
-  if (sanitize)
-    baseName = sanitizeSymbolToAlnum(baseName);
-  return baseName;
-}
-
 static void emitDiagnosticToStream(raw_ostream &os, Diagnostic &diag) {
   os << "\n" << diag.getLocation() << ": " << diag;
   for (Diagnostic &note : diag.getNotes())
@@ -333,15 +320,18 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   EmitAs emissionKind = cast<EmitAsAttr>(op.getOperand(1)).getValue();
   StringRef emissionOptionsStr = cast<StringAttr>(op.getOperand(2)).getValue();
   bool propagateError = cast<IntegerAttr>(op.getOperand(3)).getInt();
-  auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(4));
-  if (!symbol || !symbol.getType().isFullyBound()) {
-    emitError({*errorLoc, "'compile_assembly' function is not concrete"});
+  SymbolConstantAttr symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(4));
+  ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
+      elaborator->getExpectedMangledName(*errorLoc, "compile_assembly", symbol,
+                                         /*allowParametric=*/false,
+                                         /*sanitize=*/false);
+  if (pairOrError.isError()) {
+    parent->setToError(pairOrError.takeError());
     return failure();
   }
-
-  auto func = symtabCopy.lookup<GeneratorOp>(
-      cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr());
-  assert(func && "expected a valid generator reference");
+  StringAttr name;
+  GeneratorOp func;
+  std::tie(name, func) = pairOrError.takeValue();
 
   // Construct the expected result type.
   MLIRContext *ctx = op.getContext();
@@ -357,8 +347,6 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   // turns out that the specialization has more than one implementation, then
   // the elaborator invocation will fail due to multiple implementations of a
   // primary generator, and the functor will return an error.
-  StringAttr name =
-      getExpectedMangledName(func, symbol.getParamValues(), /*sanitize=*/false);
 
   // Parse the emission options from a comma separated list of values.
   SmallVector<StringRef> emissionOptions;
@@ -414,47 +402,33 @@ IREvaluator::evaluateCompileOffloadClosure(ParamOperatorAttr op) {
   // (so that we know what needs to be captured).
   // We will generated the actual body of this closure later.
 
-  // Cheeky copy. The state of the symbol table right at this moment is
-  // sufficient to produce a standalone object for the generator being JIT'd.
-  SymbolTable symtabCopy = elaborator->oldSymTab;
-
   // Slice out a standalone module to re-elaborate with the new target later.
-  auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(0));
-  if (!symbol || !symbol.getType().isFullyBound()) {
-    emitError(
-        {*errorLoc, "'compile_offload_closure' function is not concrete"});
+  ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
+      elaborator->getExpectedMangledName(
+          *errorLoc, "compile_offload_closure", op.getOperand(0),
+          /*allowParametric=*/false, /*sanitize=*/false);
+  if (pairOrError.isError()) {
+    emitError(pairOrError.takeError());
     return failure();
   }
-
-  auto func = symtabCopy.lookup<GeneratorOp>(
-      cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr());
-  assert(func && "expected a valid generator reference");
+  StringAttr name = pairOrError.takeValue().first;
 
   // Construct the expected result type.
   MLIRContext *ctx = op.getContext();
-  Builder b(ctx);
   auto noneType = KGEN::NoneType::get(ctx);
 
-  StringAttr name =
-      getExpectedMangledName(func, symbol.getParamValues(), /*sanitize=*/false);
-
   // The location to use for generated code. Remove all debuginfo from it.
-  Location loc = func.getLoc();
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([](mlir::FusedLocWith<DebugInfo::DIAttr> loc) {
-    return FusedLoc::get(loc.getContext(), loc.getLocations());
-  });
-  loc = cast<LocationAttr>(replacer.replace(loc));
+  Location loc = DebugInfo::stripDebugScopesRecursively(*errorLoc);
 
   // The expected signature is `fn(Pointer[None]) capturing -> None`.
-  ImplicitLocOpBuilder bb(loc, OpBuilder(name.getContext()));
+  ImplicitLocOpBuilder bb(loc, ctx);
   auto nonePtr = PointerType::get(noneType);
-  auto sig = FuncType::get(b.getFunctionType(nonePtr, noneType),
+  auto sig = FuncType::get(bb.getFunctionType(nonePtr, noneType),
                            ArgConvention::ReadReg, FnEffects().setCapturing());
 
-  OwningOpRef<FuncOp> populateFunc =
-      bb.create<FuncOp>(b.getStringAttr(name.getValue() + "_populate_captures"),
-                        sig, InlineLevel::Always);
+  OwningOpRef<FuncOp> populateFunc = bb.create<FuncOp>(
+      bb.getStringAttr(name.getValue() + "_populate_captures"), sig,
+      InlineLevel::Always);
 
   auto populate = cast<FuncOp>(populateFunc.get());
   auto populateFnRef = SymbolConstantAttr::get(populate);
@@ -466,22 +440,17 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetLinkageName(ParamOperatorAttr op) {
   // This only supports generators with an empty set of parameters, otherwise we
   // need to resolve the symbol name after elaboration.
   TargetInfoAttr target = cast<TargetParamAttr>(op.getOperand(0)).getTarget();
-  auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(1));
-  if (!symbol) {
-    emitError({*errorLoc, "'get_linkage_name' function is not concrete"});
-    return failure();
-  }
-  auto genOp = elaborator->oldSymTab.lookup<GeneratorOp>(
-      symbol.getSymbol().getRootReference());
-  assert(genOp && "expected a valid generator reference");
-
-  if (!symbol.getType().isFullyBound())
-    return {StringAttr::get(genOp.getSymName(), op.getType())};
-
   // HACK HACK HACK: Our current name mangling scheme is not compatible with the
   // GPU backends.
-  StringAttr name =
-      getExpectedMangledName(genOp, symbol.getParamValues(), target.isGPU());
+  ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
+      elaborator->getExpectedMangledName(
+          *errorLoc, "get_linkage_name", op.getOperand(1),
+          /*allowParametric=*/true, /*sanitize=*/target.isGPU());
+  if (pairOrError.isError()) {
+    emitError(pairOrError.takeError());
+    return failure();
+  }
+  StringAttr name = pairOrError.takeValue().first;
   return {StringAttr::get(name.getValue(), op.getType())};
 }
 
