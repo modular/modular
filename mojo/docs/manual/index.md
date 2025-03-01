@@ -70,6 +70,7 @@ feedback](https://www.modular.com/community).
 - **Tools**
 
   - [Debugging](/mojo/tools/debugging)
+  - [GPU debugging](/mojo/tools/debugging)
   - [Testing](/mojo/tools/testing)
 
 - **Project information**
