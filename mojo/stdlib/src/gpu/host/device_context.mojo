@@ -351,6 +351,10 @@ struct DeviceBuffer[
             ](self._handle, dst._handle)
         )
 
+    fn enqueue_fill(self, val: Scalar[type]) raises -> Self:
+        self.context().enqueue_memset(self, val)
+        return self
+
     fn reassign_ownership_to(self, ctx: DeviceContext) raises:
         # const char * AsyncRT_DeviceBuffer_reassignOwnershipTo(const DeviceBuffer *buf, const DeviceContext *ctx)
         _checked(
@@ -2080,7 +2084,7 @@ struct DeviceContext:
     @always_inline
     fn enqueue_memset[
         type: DType
-    ](self, dst: DeviceBuffer[type], val: Scalar[type]) raises:
+    ](self, dst: DeviceBuffer[type, **_], val: Scalar[type]) raises:
         """Enqueues an async memset operation, setting all of the elements in
         the destination device buffer to the specified value.
 
