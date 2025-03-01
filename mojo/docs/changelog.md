@@ -251,4 +251,7 @@ ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
   end_result.extend(extra_data) # [4, 5, 8, 10]
   ```
 
+- Use of legacy argument conventions like `inout` and the use of `as` in named
+  results now produces an error message instead of a warning.
+
 ### 🛠️ Fixed
