@@ -253,15 +253,16 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     }
   };
 
-  // Warn about legacy syntax.
+  // Reject legacy syntax.
+  // TODO: remove this (and the borrowed/inout keywords) after 25.2 branches.
   if (p.getToken().isAny(Token::kw_borrowed, Token::kw_inout)) {
     StringRef spelling = "";
     if (p.getToken().is(Token::kw_borrowed))
       spelling = "read";
     if (p.getToken().is(Token::kw_inout))
       spelling = "mut";
-    auto diag = p.emitWarning(p.getToken().getLoc());
-    diag << "'" << p.getTokenSpelling() << "' syntax deprecated, please use '"
+    auto diag = p.emitError(p.getToken().getLoc());
+    diag << "'" << p.getTokenSpelling() << "' syntax removed, please use '"
          << spelling << "' instead"
          << FixIt::replaceToken(p.getToken().getLoc(), spelling);
   }
@@ -968,10 +969,10 @@ void ParsedArgumentList::parseResultIfPresent(
 
   // Parse a name binding for the result if present.
   SMLoc asLoc;
+  // TODO: remove this after 25.2 branches.
   if (p.consumeIf(Token::kw_as, &asLoc)) {
-    p.emitWarning(asLoc)
-        << "'as' result syntax deprecated, please move to 'out' "
-           "syntax instead";
+    p.emitError(asLoc) << "'as' result syntax removed, please move to 'out' "
+                          "syntax instead";
     (void)p.parseIdentifier(resultArg.name, "expected result name");
   }
 
