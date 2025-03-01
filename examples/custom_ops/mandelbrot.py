@@ -20,6 +20,21 @@ from max.engine import InferenceSession
 from max.graph import Graph, TensorType, ops
 
 
+def draw_mandelbrot(tensor: Tensor, width: int, height: int, iterations: int):
+    """A helper function to visualize the Mandelbrot set in ASCII art."""
+    sr = "....,c8M@jawrpogOQEPGJ"
+    for row in range(height):
+        for col in range(width):
+            v = tensor[row, col].item()
+            if v < iterations:
+                idx = int(v % len(sr))
+                p = sr[idx]
+                print(p, end="")
+            else:
+                print(" ", end="")
+        print("")
+
+
 def create_mandelbrot_graph(
     width: int,
     height: int,
@@ -61,10 +76,10 @@ if __name__ == "__main__":
     path = Path(__file__).parent / "kernels.mojopkg"
 
     # Establish Mandelbrot set ranges.
-    WIDTH = 15
-    HEIGHT = 15
+    WIDTH = 60
+    HEIGHT = 25
     MAX_ITERATIONS = 100
-    MIN_X = -1.5
+    MIN_X = -2.0
     MAX_X = 0.7
     MIN_Y = -1.12
     MAX_Y = 1.12
@@ -94,6 +109,4 @@ if __name__ == "__main__":
     assert isinstance(result, Tensor)
     result = result.to(CPU())
 
-    print("Iterations to escape:")
-    print(result.to_numpy())
-    print()
+    draw_mandelbrot(result, WIDTH, HEIGHT, MAX_ITERATIONS)

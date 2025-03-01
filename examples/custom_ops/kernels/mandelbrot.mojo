@@ -21,27 +21,6 @@ from runtime.asyncrt import DeviceContextPtr
 from utils.index import IndexList
 
 
-@always_inline
-fn mandelbrot_inner_simd[
-    float_type: DType, int_type: DType, simd_width: Int
-](
-    c: ComplexSIMD[float_type, simd_width], max_iterations: SIMD[int_type, 1]
-) -> SIMD[int_type, simd_width]:
-    """A vectorized implementation of the inner Mandelbrot computation."""
-    var z = ComplexSIMD[float_type, simd_width](0, 0)
-    var iters = SIMD[int_type, simd_width](0)
-
-    var in_set_mask: SIMD[DType.bool, simd_width] = True
-    for _ in range(max_iterations):
-        if not any(in_set_mask):
-            break
-        in_set_mask = z.squared_norm() <= 4
-        iters = in_set_mask.select(iters + 1, iters)
-        z = z.squared_add(c)
-
-    return iters
-
-
 alias float_dtype = DType.float32
 
 
@@ -68,8 +47,11 @@ struct Mandelbrot:
         fn elementwise_mandelbrot[
             width: Int
         ](idx: IndexList[out.rank]) -> SIMD[out.type, width]:
+            # Obtain the position in the grid from the X, Y thread locations.
             var row = idx[0]
             var col = idx[1]
+
+            # Calculate the complex C corresponding to that grid location.
             var cx = min_x.cast[float_dtype]() + (
                 col + iota[float_dtype, width]()
             ) * scale_x.cast[float_dtype]()
@@ -77,16 +59,18 @@ struct Mandelbrot:
                 scale_y.cast[float_dtype]()
             )
             var c = ComplexSIMD[float_dtype, width](cx, cy)
-            return mandelbrot_inner_simd[cx.type, out.type, width](
-                c, max_iterations.cast[out.type]()
-            )
+            var z = ComplexSIMD[float_dtype, width](0, 0)
+
+            # Perform the Mandelbrot iteration loop calculation.
+            var iters = SIMD[out.type, width](0)
+            var in_set_mask: SIMD[DType.bool, width] = True
+            for _ in range(max_iterations):
+                if not any(in_set_mask):
+                    break
+                in_set_mask = z.squared_norm() <= 4
+                iters = in_set_mask.select(iters + 1, iters)
+                z = z.squared_add(c)
+
+            return iters
 
         foreach[elementwise_mandelbrot, target=target](out, ctx)
-
-    # You only need to implement this if you do not manually annotate
-    # output shapes in the graph.
-    @staticmethod
-    fn shape(
-        x: ManagedTensorSlice,
-    ) raises -> IndexList[x.rank]:
-        raise "NotImplemented"

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import WARP_SIZE, block_dim, block_idx, thread_idx
+from gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.memory import async_copy_wait_all
 from layout.layout_tensor import (
