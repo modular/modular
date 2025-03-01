@@ -17,6 +17,10 @@ import logging
 import os
 import signal
 
+# We need this unused, unsorted import to avoid an issue on
+# graviton related to finding an incorrect GLIBCXX version.
+from max.entrypoints.llm import LLM  # noqa: F401 # isort: skip
+
 import click
 from max.entrypoints.cli import (
     generate_text_for_pipeline,
