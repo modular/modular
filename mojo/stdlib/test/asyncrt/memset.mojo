@@ -73,6 +73,21 @@ fn _run_memset_async[
         )
 
 
+fn _run_memset_cascade[
+    type: DType
+](ctx: DeviceContext, length: Int, val: Scalar[type]) raises:
+    print("-")
+    print("_run_memset_cascade(", length, ", ", val, ")")
+
+    var buf = ctx.enqueue_create_buffer[type](length).enqueue_fill(val)
+
+    with buf.map_to_host() as buf:
+        for i in range(length):
+            if i < 10:
+                print("buf[", i, "] = ", buf[i])
+            expect_eq(buf[i], val, "at index ", i, " the value is ", buf[i])
+
+
 fn main() raises:
     var ctx = create_test_device_context()
 
@@ -82,23 +97,24 @@ fn main() raises:
     alias one_mb = 1024 * 1024
 
     _run_memset[DType.uint8](ctx, 64, 15)
-    _run_memset[DType.uint8](ctx, one_mb, 15)
+    _run_memset[DType.uint8](ctx, one_mb, 16)
 
     _run_memset_async[DType.uint8](ctx, 64, 12)
-    _run_memset_async[DType.uint8](ctx, one_mb, 12)
+    _run_memset_async[DType.uint8](ctx, one_mb, 13)
+    _run_memset_cascade[DType.uint8](ctx, one_mb, 14)
 
     _run_memset[DType.float16](ctx, 64, -2.125)
     _run_memset_async[DType.float16](ctx, 64, 1.75)
-
-    _run_memset[DType.float16](ctx, 64, -2.125)
-    _run_memset_async[DType.float16](ctx, 64, 1.75)
+    _run_memset_cascade[DType.float16](ctx, 64, 2.5)
 
     _run_memset[DType.int32](ctx, 64, -2311503)
     _run_memset_async[DType.float32](ctx, 64, 2.3)
+    _run_memset_cascade[DType.float32](ctx, 512, 25.125)
 
     _run_memset[DType.float64](ctx, 64, 0)
     _run_memset_async[DType.float64](ctx, 64, 0)
     _run_memset[DType.float64](ctx, 64, 2.71828182846)
     _run_memset_async[DType.float64](ctx, 64, 1.618033988749)
+    _run_memset_cascade[DType.int64](ctx, one_mb, 1234567890)
 
     print("Done.")
