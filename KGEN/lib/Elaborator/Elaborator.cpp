@@ -18,6 +18,7 @@
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/Support/CompilerProfiling.h"
+#include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/ManglingUtils.h"
@@ -488,6 +489,43 @@ Elaborator::getConcreteStructTypeReference(ImplNode *parent, Location loc,
   return TypeConstantRefAttr::get(
       SymbolRefAttr::get(loc->getContext(), calleeNode->getMangledName()),
       typeref.getType());
+}
+
+StringAttr Elaborator::getExpectedMangledName(GeneratorOp func,
+                                              ArrayRef<TypedAttr> params,
+                                              bool sanitize) {
+  auto baseName =
+      StringAttr::get(func.getContext(), mangleParameterValues(func, params));
+  if (sanitize)
+    baseName = sanitizeSymbolToAlnum(baseName);
+  return baseName;
+}
+
+ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
+Elaborator::getExpectedMangledName(Location errorLoc, StringRef errorContext,
+                                   TypedAttr symCst, bool allowParametric,
+                                   bool sanitize) {
+  auto symbol = dyn_cast<SymbolConstantAttr>(symCst);
+  if (!symbol) {
+    return ErrorTree(
+        errorLoc,
+        "'" + errorContext +
+            "' function argument did not resolve to a concrete function");
+  }
+  if (!symbol.getType().isFullyBound()) {
+    std::string errMsg;
+    llvm::raw_string_ostream os(errMsg);
+    os << "'" << errorContext << "' function is not fully bound: "
+       << symbol.getSymbol().getLeafReference().getValue() << " missing "
+       << symbol.getType().getInputParamTypes().size()
+       << " parameter binding(s)";
+    return ErrorTree(errorLoc, errMsg);
+  }
+  auto func = oldSymTab.lookup<GeneratorOp>(
+      cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr());
+  assert(func && "expected a valid generator reference");
+  return std::make_pair(
+      getExpectedMangledName(func, symbol.getParamValues(), sanitize), func);
 }
 
 ErrorTreeOr<Attribute> Elaborator::concretizeSymbolsWithin(Attribute value,
@@ -1571,12 +1609,19 @@ ElaborationState Elaborator::bundleOffloadModules(ImplNode *parent,
 
   StringRef emissionOptionsStr =
       cast<StringAttr>(op.getEmissionOptionAttr()).getValue();
-  auto symbol = dyn_cast<SymbolConstantAttr>(op.getFuncAttr());
-  if (!symbol || !symbol.getType().isFullyBound()) {
-    parent->setToError(
-        ErrorTree(op.getLoc(), "'compile_assembly' function is not concrete"));
+
+  SymbolConstantAttr symbol = dyn_cast<SymbolConstantAttr>(op.getFuncAttr());
+  ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
+      getExpectedMangledName(op.getLoc(), "compile_offload", symbol,
+                             /*allowParametric=*/false,
+                             /*sanitize=*/false);
+  if (pairOrError.isError()) {
+    parent->setToError(pairOrError.takeError());
     return failure();
   }
+  StringAttr name;
+  GeneratorOp func;
+  std::tie(name, func) = pairOrError.takeValue();
 
   // Handle the emission options.
   // Parse the emission options from a comma separated list of values.
@@ -1591,12 +1636,6 @@ ElaborationState Elaborator::bundleOffloadModules(ImplNode *parent,
     return failure();
   }
 
-  SymbolTable symtabCopy = oldSymTab;
-
-  auto func = symtabCopy.lookup<GeneratorOp>(
-      cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr());
-  assert(func && "expected a valid generator reference");
-
   // Construct the expected result type.
   MLIRContext *ctx = op.getContext();
   Builder b(ctx);
@@ -1610,8 +1649,6 @@ ElaborationState Elaborator::bundleOffloadModules(ImplNode *parent,
   // turns out that the specialization has more than one implementation, then
   // the elaborator invocation will fail due to multiple implementations of a
   // primary generator, and the functor will return an error.
-  StringAttr name =
-      getExpectedMangledName(func, symbol.getParamValues(), /*sanitize=*/false);
 
   targetOffloadInfos.modify([&](auto &info) {
     OffloadInfo &offloadInfo = info[target];
