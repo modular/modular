@@ -295,7 +295,7 @@ def execute_matmul_kv_cache_ragged[
                         cache_sizes[bs] + s,
                         head_dim_idx,
                     ),
-                    rtol=rtol.cast[type](),
+                    rtol=rtol,
                 )
 
             for v_dim in range(kv_hidden_size):
@@ -311,7 +311,7 @@ def execute_matmul_kv_cache_ragged[
                         cache_sizes[bs] + s,
                         head_dim_idx,
                     ),
-                    rtol=rtol.cast[type](),
+                    rtol=rtol,
                 )
 
     _ = hidden_state_ragged_device^
@@ -375,7 +375,7 @@ def generic_assert_output_equals[
                             q_dim,
                         ],
                         test_out[ragged_offset + s, q_dim],
-                        rtol=rtol.cast[type](),
+                        rtol=rtol,
                     )
                 except e:
                     print("Q", bs, s, q_dim)
@@ -396,7 +396,7 @@ def generic_assert_output_equals[
                             k_cache.cache_length(bs) + s,
                             head_dim_idx,
                         ).cast[type](),
-                        rtol=rtol.cast[type](),
+                        rtol=rtol,
                     )
                 except e:
                     print("K", bs, s, k_dim)
@@ -417,7 +417,7 @@ def generic_assert_output_equals[
                             v_cache.cache_length(bs) + s,
                             head_dim_idx,
                         ).cast[type](),
-                        rtol=rtol.cast[type](),
+                        rtol=rtol,
                     )
                 except e:
                     print("V", bs, s, v_dim)

@@ -85,8 +85,8 @@ fn test_layout_mma[
     K: Int,
 ](
     ctx: DeviceContext,
-    rtol: Scalar[out_type] = 1e-05,
-    rng_width: Float64 = Float64(10.0),
+    rtol: Float64 = 1e-05,
+    rng_width: Float64 = 10.0,
     debug: Bool = False,
 ) raises:
     print("== run layout mma => ", String(out_type), String(in_type), M, N, K)

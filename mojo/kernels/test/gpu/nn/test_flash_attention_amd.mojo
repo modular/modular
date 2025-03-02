@@ -322,7 +322,7 @@ fn test[
 
     # This is useful for debugging.
     if False:
-        var rtol = Scalar[qkv_type](2e-2)
+        var rtol = 2e-2
         for bs in range(batch_size):
             for h in range(num_heads):
                 for s in range(seq_len):

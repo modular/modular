@@ -25,7 +25,7 @@ fn run_layer_norm_block[
     type: DType,
     *,
     simd_width: Int = simdwidthof[type, target = _get_gpu_target()](),
-](ctx: DeviceContext, rows: Int, cols: Int, rtol: Scalar[type] = 0.01) raises:
+](ctx: DeviceContext, rows: Int, cols: Int, rtol: Float64 = 0.01) raises:
     print("== run_layer_norm_gpu block kernel")
 
     var data_h = UnsafePointer[Scalar[type]].alloc(rows * cols)
@@ -118,7 +118,7 @@ fn run_layer_norm_block[
 
 fn run_layer_norm_gpu[
     type: DType, rank: Int
-](ctx: DeviceContext, shape: IndexList[rank], rtol: Scalar[type] = 0.01) raises:
+](ctx: DeviceContext, shape: IndexList[rank], rtol: Float64 = 0.01) raises:
     print("== run_layer_norm_gpu")
 
     var cols = shape[rank - 1]
@@ -198,7 +198,7 @@ fn run_layer_norm_warp_tiling[
     type: DType,
     *,
     simd_width: Int = simdwidthof[type, target = _get_gpu_target()](),
-](ctx: DeviceContext, rows: Int, cols: Int, rtol: Scalar[type] = 0.01) raises:
+](ctx: DeviceContext, rows: Int, cols: Int, rtol: Float64 = 0.01) raises:
     print("== run_layer_norm_gpu warp tiling kernel")
 
     var data_h = UnsafePointer[Scalar[type]].alloc(rows * cols)

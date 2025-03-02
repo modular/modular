@@ -139,8 +139,8 @@ fn run_matmul[
     K: Int,
 ](
     ctx: DeviceContext,
-    rtol: Scalar[type] = 1e-05,
-    atol: Scalar[type] = 0.1,
+    rtol: Float64 = 1e-05,
+    atol: Float64 = 0.1,
     rng_width: Float64 = Float64(100.0),
     debug: Bool = True,
 ) raises:
@@ -250,8 +250,8 @@ fn run_matmul_split_k[
     config: MatmulConfig[type, type, type, False],
 ](
     ctx: DeviceContext,
-    rtol: Scalar[type] = 1e-05,
-    atol: Scalar[type] = 0.1,
+    rtol: Float64 = 1e-05,
+    atol: Float64 = 0.1,
     rng_width: Float64 = Float64(100.0),
     debug: Bool = True,
 ) raises:
@@ -369,8 +369,8 @@ fn run_matmul_transpose[
     K: Int,
 ](
     ctx: DeviceContext,
-    rtol: Scalar[type] = 1e-05,
-    atol: Scalar[type] = 0.1,
+    rtol: Float64 = 1e-05,
+    atol: Float64 = 0.1,
     rng_width: Float64 = Float64(100.0),
     debug: Bool = True,
 ) raises:

@@ -38,7 +38,7 @@ fn run_func[
         out_h[0],
         ref_,
         msg=String("while testing ", out_prefix, " for the dtype ", type),
-        atol=Scalar[type](1e-2) if type.is_half_float() else Scalar[type](1e-8),
+        atol=1e-2 if type.is_half_float() else 1e-8,
     )
     _ = out
 

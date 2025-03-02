@@ -259,9 +259,7 @@ def execute_ragged_flash_attention[
                         assert_almost_equal(
                             ref_val,
                             test_val,
-                            rtol=__type_of(ref_val)(
-                                1e-2 if type == DType.bfloat16 else 1e-4
-                            ),
+                            rtol=1e-2 if type == DType.bfloat16 else 1e-4,
                         )
                     except e:
                         print(

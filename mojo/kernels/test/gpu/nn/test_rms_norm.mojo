@@ -30,7 +30,7 @@ fn compute_rms[
 
 fn run_rms_norm_gpu[
     type: DType, rank: Int
-](ctx: DeviceContext, shape: IndexList[rank], rtol: Scalar[type] = 0.01) raises:
+](ctx: DeviceContext, shape: IndexList[rank], rtol: Float64 = 0.01) raises:
     print("== run_rms_norm_gpu")
 
     var cols = shape[rank - 1]

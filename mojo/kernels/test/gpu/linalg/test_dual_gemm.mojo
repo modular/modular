@@ -364,9 +364,7 @@ fn test_dual_matmul[
     _ = mat_a^
     _ = mat_b01^
 
-    alias cbrt_eps = exp2(FPUtils[dst_type].mantissa_width() / -3).cast[
-        dst_type
-    ]()
+    alias cbrt_eps = exp2(FPUtils[dst_type].mantissa_width() / -3)
     alias dst_simd_width = simdwidthof[dst_type]()
     # elementwise
     for m in range(M):
