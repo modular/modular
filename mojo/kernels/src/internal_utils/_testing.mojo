@@ -33,8 +33,8 @@ fn assert_almost_equal[
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,
-    atol: Scalar[type] = 1e-08,
-    rtol: Scalar[type] = 1e-05,
+    atol: Float64 = 1e-08,
+    rtol: Float64 = 1e-05,
     equal_nan: Bool = False,
 ) raises:
     for i in range(num_elements):
@@ -56,8 +56,8 @@ fn assert_almost_equal(
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,
-    atol: Scalar[x.type] = 1e-08,
-    rtol: Scalar[x.type] = 1e-05,
+    atol: Float64 = 1e-08,
+    rtol: Float64 = 1e-05,
     equal_nan: Bool = False,
 ) raises:
     for i in range(x.num_elements()):
@@ -79,8 +79,8 @@ fn assert_almost_equal(
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,
-    atol: Scalar[x.type] = 1e-08,
-    rtol: Scalar[x.type] = 1e-05,
+    atol: Float64 = 1e-08,
+    rtol: Float64 = 1e-05,
     equal_nan: Bool = False,
 ) raises:
     return assert_almost_equal(
@@ -101,8 +101,8 @@ fn assert_almost_equal(
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,
-    atol: Scalar[x.type] = 1e-08,
-    rtol: Scalar[x.type] = 1e-05,
+    atol: Float64 = 1e-08,
+    rtol: Float64 = 1e-05,
     equal_nan: Bool = False,
 ) raises:
     return assert_almost_equal(
