@@ -211,7 +211,7 @@ fn run_mha[
     ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
     _ = output_ref_device_ptr
 
-    var rtol = Scalar[qkv_type](0.02)
+    var rtol = 0.02
 
     for h in range(num_heads):
         for s in range(seq_len):
