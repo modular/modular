@@ -447,11 +447,7 @@ AnyValue IntLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
 AnyValue FloatLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   IPRational value = Lexer::getFloatLiteralValue(spelling);
-  auto attr = FloatLiteralAttr::get(
-      emitter.getContext(),
-      FloatLiteralSpecialValuesAttr::get(emitter.getContext(),
-                                         FloatLiteralSpecialValues::Normal),
-      value);
+  auto attr = FloatLiteralAttr::get(emitter.getContext(), value);
   ASTType type =
       emitter.shared.getBuiltinFloatLiteralType(emitter.declScope, getLoc());
   return handleIntOrFPLiteral(attr, type, this, dest, emitter);
