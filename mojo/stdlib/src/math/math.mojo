@@ -977,8 +977,8 @@ fn isclose[
     a: SIMD[type, simd_width],
     b: SIMD[type, simd_width],
     *,
-    atol: Scalar[type] = 1e-08,
-    rtol: Scalar[type] = 1e-05,
+    atol: Float64 = 1e-08,
+    rtol: Float64 = 1e-05,
     equal_nan: Bool = False,
 ) -> SIMD[DType.bool, simd_width]:
     """Checks if the two input values are numerically within a tolerance.
@@ -1024,7 +1024,9 @@ fn isclose[
             & isfinite(b)
             & (
                 abs(a - b)
-                <= max(__type_of(a)(atol), rtol * max(abs(a), abs(b)))
+                <= max(
+                    __type_of(a)(atol), __type_of(a)(rtol) * max(abs(a), abs(b))
+                )
             )
         )
 
