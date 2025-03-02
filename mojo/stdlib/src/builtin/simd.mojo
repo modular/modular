@@ -205,11 +205,7 @@ fn _unchecked_zero[type: DType, size: Int]() -> SIMD[type, size]:
             value = __mlir_attr[`#pop.simd<0> : !pop.scalar<index>`],
         ]()
     )
-    return SIMD[type, size](
-        __mlir_op.`pop.simd.splat`[
-            _type = __mlir_type[`!pop.simd<`, size.value, `, `, type.value, `>`]
-        ](zero)
-    )
+    return Scalar[type](zero)
 
 
 @always_inline("nodebug")
@@ -393,9 +389,7 @@ struct SIMD[type: DType, size: Int](
         var casted = __mlir_op.`pop.cast`[
             _type = __mlir_type[`!pop.simd<1,`, type.value, `>`]
         ](t0)
-        self.value = __mlir_op.`pop.simd.splat`[
-            _type = __mlir_type[`!pop.simd<`, size.value, `, `, type.value, `>`]
-        ](casted)
+        self = Scalar[type](casted)
 
     @always_inline
     fn __init__[T: Floatable](out self: Scalar[DType.float64], value: T):
@@ -448,9 +442,7 @@ struct SIMD[type: DType, size: Int](
         var casted = __mlir_op.`pop.cast`[
             _type = __mlir_type[`!pop.simd<1,`, type.value, `>`]
         ](t0)
-        self.value = __mlir_op.`pop.simd.splat`[
-            _type = __mlir_type[`!pop.simd<`, size.value, `, `, type.value, `>`]
-        ](casted)
+        self = Scalar[type](casted)
 
     @always_inline("nodebug")
     @implicit
@@ -467,9 +459,7 @@ struct SIMD[type: DType, size: Int](
         var casted = __mlir_op.`pop.cast`[
             _type = __mlir_type[`!pop.simd<1, bool>`]
         ](value._as_scalar_bool())
-        self.value = __mlir_op.`pop.simd.splat`[
-            _type = __mlir_type[`!pop.simd<`, size.value, `, bool>`]
-        ](casted)
+        self = Scalar[DType.bool](casted)
 
     @always_inline("nodebug")
     @implicit
@@ -550,153 +540,91 @@ struct SIMD[type: DType, size: Int](
             type.is_floating_point(), "the SIMD type must be floating point"
         ]()
 
-        # TODO (#36686): This introduces unneeded casts here to work around
-        # parameter if issues.
+        var result: Scalar[type]
+
         @parameter
         if type is DType.float8_e4m3fn:
-            self = SIMD[type, size](
-                __mlir_op.`pop.simd.splat`[
-                    _type = __mlir_type[
-                        `!pop.simd<`, size.value, `,`, type.value, `>`
-                    ]
+            result = rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
+                __mlir_op.`pop.cast_from_builtin`[
+                    _type = __mlir_type[`!pop.scalar<f8e4m3fn>`]
                 ](
-                    rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-                        __mlir_op.`pop.cast_from_builtin`[
-                            _type = __mlir_type[`!pop.scalar<f8e4m3fn>`]
-                        ](
-                            __mlir_op.`kgen.float_literal.convert`[
-                                _type = __mlir_type.f8E4M3FN
-                            ](value.value)
-                        )
-                    )
+                    __mlir_op.`kgen.float_literal.convert`[
+                        _type = __mlir_type.f8E4M3FN
+                    ](value.value)
                 )
             )
         elif type is DType.float8_e4m3fnuz:
-            self = SIMD[type, size](
-                __mlir_op.`pop.simd.splat`[
-                    _type = __mlir_type[
-                        `!pop.simd<`, size.value, `,`, type.value, `>`
-                    ]
+            result = rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
+                __mlir_op.`pop.cast_from_builtin`[
+                    _type = __mlir_type[`!pop.scalar<f8e4m3fnuz>`]
                 ](
-                    rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-                        __mlir_op.`pop.cast_from_builtin`[
-                            _type = __mlir_type[`!pop.scalar<f8e4m3fnuz>`]
-                        ](
-                            __mlir_op.`kgen.float_literal.convert`[
-                                _type = __mlir_type.f8E4M3FNUZ
-                            ](value.value)
-                        )
-                    )
+                    __mlir_op.`kgen.float_literal.convert`[
+                        _type = __mlir_type.f8E4M3FNUZ
+                    ](value.value)
                 )
             )
         elif type is DType.float8_e5m2:
-            self = SIMD[type, size](
-                __mlir_op.`pop.simd.splat`[
-                    _type = __mlir_type[
-                        `!pop.simd<`, size.value, `,`, type.value, `>`
-                    ]
+            result = rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
+                __mlir_op.`pop.cast_from_builtin`[
+                    _type = __mlir_type[`!pop.scalar<f8e5m2>`]
                 ](
-                    rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-                        __mlir_op.`pop.cast_from_builtin`[
-                            _type = __mlir_type[`!pop.scalar<f8e5m2>`]
-                        ](
-                            __mlir_op.`kgen.float_literal.convert`[
-                                _type = __mlir_type.f8E5M2
-                            ](value.value)
-                        )
-                    )
+                    __mlir_op.`kgen.float_literal.convert`[
+                        _type = __mlir_type.f8E5M2
+                    ](value.value)
                 )
             )
         elif type is DType.float8_e5m2fnuz:
-            self = SIMD[type, size](
-                __mlir_op.`pop.simd.splat`[
-                    _type = __mlir_type[
-                        `!pop.simd<`, size.value, `,`, type.value, `>`
-                    ]
+            result = rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
+                __mlir_op.`pop.cast_from_builtin`[
+                    _type = __mlir_type[`!pop.scalar<f8e5m2fnuz>`]
                 ](
-                    rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-                        __mlir_op.`pop.cast_from_builtin`[
-                            _type = __mlir_type[`!pop.scalar<f8e5m2fnuz>`]
-                        ](
-                            __mlir_op.`kgen.float_literal.convert`[
-                                _type = __mlir_type.f8E5M2FNUZ
-                            ](value.value)
-                        )
-                    )
+                    __mlir_op.`kgen.float_literal.convert`[
+                        _type = __mlir_type.f8E5M2FNUZ
+                    ](value.value)
                 )
             )
         elif type is DType.float16:
-            self = SIMD[type, size](
-                __mlir_op.`pop.simd.splat`[
-                    _type = __mlir_type[
-                        `!pop.simd<`, size.value, `,`, type.value, `>`
-                    ]
+            result = rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
+                __mlir_op.`pop.cast_from_builtin`[
+                    _type = __mlir_type[`!pop.scalar<f16>`]
                 ](
-                    rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-                        __mlir_op.`pop.cast_from_builtin`[
-                            _type = __mlir_type[`!pop.scalar<f16>`]
-                        ](
-                            __mlir_op.`kgen.float_literal.convert`[
-                                _type = __mlir_type.f16
-                            ](value.value)
-                        )
-                    )
+                    __mlir_op.`kgen.float_literal.convert`[
+                        _type = __mlir_type.f16
+                    ](value.value)
                 )
             )
         elif type is DType.bfloat16:
-            self = Self(
-                __mlir_op.`pop.simd.splat`[
-                    _type = __mlir_type[
-                        `!pop.simd<`, size.value, `,`, type.value, `>`
-                    ]
+            result = rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
+                __mlir_op.`pop.cast_from_builtin`[
+                    _type = __mlir_type[`!pop.scalar<bf16>`]
                 ](
-                    rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-                        __mlir_op.`pop.cast_from_builtin`[
-                            _type = __mlir_type[`!pop.scalar<bf16>`]
-                        ](
-                            __mlir_op.`kgen.float_literal.convert`[
-                                _type = __mlir_type.bf16
-                            ](value.value)
-                        )
-                    )
+                    __mlir_op.`kgen.float_literal.convert`[
+                        _type = __mlir_type.bf16
+                    ](value.value)
                 )
             )
         elif type is DType.float32:
-            self = Self(
-                __mlir_op.`pop.simd.splat`[
-                    _type = __mlir_type[
-                        `!pop.simd<`, size.value, `,`, type.value, `>`
-                    ]
+            result = rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
+                __mlir_op.`pop.cast_from_builtin`[
+                    _type = __mlir_type[`!pop.scalar<f32>`]
                 ](
-                    rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-                        __mlir_op.`pop.cast_from_builtin`[
-                            _type = __mlir_type[`!pop.scalar<f32>`]
-                        ](
-                            __mlir_op.`kgen.float_literal.convert`[
-                                _type = __mlir_type.f32
-                            ](value.value)
-                        )
-                    )
+                    __mlir_op.`kgen.float_literal.convert`[
+                        _type = __mlir_type.f32
+                    ](value.value)
                 )
             )
         else:
-            self = Self(
-                __mlir_op.`pop.simd.splat`[
-                    _type = __mlir_type[
-                        `!pop.simd<`, size.value, `,`, type.value, `>`
-                    ]
+            result = rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
+                __mlir_op.`pop.cast_from_builtin`[
+                    _type = __mlir_type[`!pop.scalar<f64>`]
                 ](
-                    rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-                        __mlir_op.`pop.cast_from_builtin`[
-                            _type = __mlir_type[`!pop.scalar<f64>`]
-                        ](
-                            __mlir_op.`kgen.float_literal.convert`[
-                                _type = __mlir_type.f64
-                            ](value.value)
-                        )
-                    )
+                    __mlir_op.`kgen.float_literal.convert`[
+                        _type = __mlir_type.f64
+                    ](value.value)
                 )
             )
+        # Finally, splat the scalar to a SIMD if needed.
+        self = result
 
     @staticmethod
     fn from_bits[
