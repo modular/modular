@@ -20,7 +20,7 @@ from utils.index import Index, IndexList
 
 fn run_layer_norm_cpu[
     type: DType, rank: Int
-](shape: IndexList[rank], rtol: Scalar[type] = 0.01) raises:
+](shape: IndexList[rank], rtol: Float64 = 0.01) raises:
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 

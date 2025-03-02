@@ -28,7 +28,7 @@ fn compute_rms[
 
 fn run_rms_norm_cpu[
     type: DType, rank: Int
-](shape: IndexList[rank], rtol: Scalar[type] = 0.001) raises:
+](shape: IndexList[rank], rtol: Float64 = 0.001) raises:
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
