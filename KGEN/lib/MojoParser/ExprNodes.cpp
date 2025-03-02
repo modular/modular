@@ -251,60 +251,117 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
   return UnboundMLIROperationAttr::get(unboundOp.getName(), attrs);
 }
 
-/// Given a AliasDeclOp, return the value that should be used in a reference
-/// to it.  This currently fully substitutes members unless they are in a
-/// function definition.
-static PValue
-resolveAliasDeclareValue(AliasDeclOp param,
-                         std::optional<ArrayRef<TypedAttr>> paramValues,
-                         SMLoc errLoc, SharedState &shared) {
-  // If the param is declared in a function, then just directly use it.
-  Operation *parent = param->getParentOp();
-  while (true) {
-    // If this reference is within a trait then keep it symbolic.
-    if (parent && isa<TraitDeclOp>(parent))
-      return ParamDeclRefAttr::get(param.getName(), param.getType());
+/// Given a reference to an alias (either a direct reference from a DeclRefNode
+/// "x" or an AttributeRefNode "x.y"), return the PValue for the result.
+///
+/// 'decl' is the alias declaration to resolve.
+static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
+                                    ArrayRef<TypedAttr> paramValues,
+                                    SMLoc errLoc, SharedState &shared) {
 
-    // If this is at file scope, inline it.
-    if (!parent || isa<FileModuleOp>(parent))
-      return param.getValueAttr();
+  // If the param is declared in a function, then just directly use it.
+  Operation *parent = decl->getParentOp();
+  while (parent && !isa<FileModuleOp, FnOp>(parent)) {
+
+    // If this reference is within a trait then keep it symbolic since the
+    // conforming type will ultimately provide the value to use.
+    // TODO: What does it mean to write "SomeTrait.alias"?  This handles a
+    // reference from within the body of the trait, but wouldn't a reference
+    // from outside of it be an error?
+    if (isa<TraitDeclOp>(parent))
+      return ParamDeclRefAttr::get(decl.getName(), decl.getType());
 
     // If this is in a struct, then the value may refer to parameters declared
     // on the struct, whose values come through 'bindings'.  Remap.
     if (auto structDecl = dyn_cast<StructDeclOp>(parent)) {
+      assert(decl.getValueAttr() && "Struct's alias should have value");
+      ArrayRef<ParamDeclAttr> paramDecls = structDecl.getParams();
+      assert(paramDecls.size() == paramValues.size() &&
+             "incorrect number of type parameters for struct");
+
       // If the reference is to a member of the struct that has bindings, remap
       // them.  This allows things like `SomeType[a,b].someAlias` to substitute
-      // the a/b values into the body of `someAlias`.  If we have no bindings,
-      // then we know we're in a context where the body of the alias is still
-      // valid.
-      if (!paramValues) {
-        assert(param.getValueAttr() && "alias should have value");
-        return param.getValueAttr();
+      // the a/b values into the body of `someAlias`.  Note that the type may
+      // be only partially bound: e.g. you might use `SomeType.someAlias` or
+      // `SomeType[b=42].someAlias`. We want to support this so long as the
+      // alias doesn't refer to an unbound parameter:
+      //    struct X[a: Int, b: Int]:
+      //        alias a1 = 42
+      //        alias a2 = a+1
+      //    fn test():
+      //        use(X.a1) # Ok
+      //        use(X[1].a2) # Ok
+      //        use(X.a2) # Error: 'a' needs to be bound
+      //
+      // TODO: Should this return a parametric alias instead?
+      ParameterEvaluator evaluator(paramDecls, paramValues);
+      TypedAttr result = evaluator.getReboundAttribute(decl.getValueAttr());
+      // Check to make sure that no unbound parameters were used.
+      if (!result
+               .walk([&](UnboundAttr) -> WalkResult {
+                 return WalkResult::interrupt();
+               })
+               .wasInterrupted()) {
+        // If everything is ok, then we're done.
+        return result;
       }
 
-      // Disallow accessing alias members of an unbound type.
-      // TODO: This should return a parametric alias instead.
-      ArrayRef<ParamDeclAttr> paramDecls = structDecl.getParams();
-      size_t numParams = llvm::count_if(*paramValues, [](TypedAttr value) {
-        return !isa<UnboundAttr>(value);
+      // FIXME: We currently have a weird version of "parameterized aliases"
+      // that accidentally works out, including things like:
+      //
+      //   struct _lit_mut_cast[
+      //       is_mutable: Bool, //,
+      //       result_mutable: Bool,
+      //       operand: Origin[is_mutable],
+      //   ]: ...
+      //   struct Origin[is_mutable: Bool]:
+      //       alias cast_from = _lit_mut_cast[result_mutable=is_mutable]
+      //
+      // The access to SomeOrigin.cast_from returns an alias that has unbound
+      // parameters from `_lit_mut_cast`, instead of returning a parameterized
+      // alias.  We want this to continue to work until it gets built the right
+      // way, so perpetuate a hack that retains it.
+      if (!llvm::count_if(paramValues, [](TypedAttr attr) {
+            return isa<UnboundAttr>(attr);
+          }))
+        return result;
+
+      // Otherwise, we need to diagnose an error.  We don't know which
+      // UnboundAttr is the problem, so work harder to get a good error message:
+      // We replace the UnboundAttrs with something that has a name we can
+      // diagnose.
+      SmallVector<TypedAttr> paramsToBind;
+      for (auto [paramDecl, paramValue] : llvm::zip(paramDecls, paramValues)) {
+        if (!isa<UnboundAttr>(paramValue))
+          paramsToBind.push_back(paramValue);
+        else {
+          // The type may have been remapped due to earlier parameters, so use
+          // the type of paramValue, not paramDecl.
+          paramsToBind.push_back(
+              ParamDeclRefAttr::get(paramDecl.getName(), paramValue.getType()));
+        }
+      }
+      evaluator = ParameterEvaluator(paramDecls, paramsToBind);
+      result = evaluator.getReboundAttribute(decl.getValueAttr());
+
+      // Check to make sure that no unbound parameters were used.
+      result.walk([&](ParamDeclRefAttr attr) -> WalkResult {
+        shared.emitError(errLoc, "cannot access alias '")
+            << declName << "' with unbound parameter '" << structDecl.getName()
+            << "." << attr.getName().str() << "'";
+        result = TypedAttr();
+        return WalkResult::interrupt();
       });
-      if (paramDecls.size() != numParams) {
-        shared.emitError(errLoc,
-                         "incorrect number of type parameters: expected ")
-            << structDecl.getParams().size() << " but got " << numParams;
-        return PValue();
-      }
-
-      ParameterEvaluator evaluator(paramDecls, *paramValues);
-      assert(param.getValueAttr() && "Struct's alias should have value");
-      return PValue(evaluator.getReboundAttribute(param.getValueAttr()));
+      assert(!result && "didn't find the problematic parameter");
+      return {};
     }
 
-    // Ignore if and other control flow things.
+    // Ignore 'if' and other control flow things.
     parent = parent->getParentOp();
   }
 
-  return ParamDeclRefAttr::get(param.getName(), param.getType());
+  // If this is at file or function scope, inline the value of the alias.
+  return decl.getValueAttr();
 }
 
 //===----------------------------------------------------------------------===//
@@ -635,8 +692,8 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Aliases form a PValue.
   if (auto param = dyn_cast<AliasDeclOp>(decl)) {
-    PValue result = resolveAliasDeclareValue(param, /*bindings=*/{}, getLoc(),
-                                             emitter.shared);
+    PValue result = resolveAliasReference(param, spelling, /*bindings=*/{},
+                                          getLoc(), emitter.shared);
     return emitter.emitResult(result.get(), this, dest);
   }
 
@@ -1481,10 +1538,9 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Parameters form a meta-value.
   if (auto aliasDeclOpParam = dyn_cast<AliasDeclOp>(memberDecl)) {
     if (isa<StructDeclOp>(*typeDecl)) {
-      assert(aliasDeclOpParam.getValueAttr() &&
-             "struct's alias should have value");
-      PValue result = resolveAliasDeclareValue(
-          aliasDeclOpParam, baseRVType.getParamBindings(), getLoc(), shared);
+      PValue result = resolveAliasReference(aliasDeclOpParam, spelling,
+                                            baseRVType.getParamBindings(),
+                                            getLoc(), shared);
       return emitter.emitResult(result.get(), this, dest);
     }
 
