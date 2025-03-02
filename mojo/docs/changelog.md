@@ -141,6 +141,12 @@ what we publish.
   an issue with the any origin parameter extending the lifetime of unrelated
   local variables for this common method.
 
+- The `SIMD` type now exposes 128-bit and 256-bit element types, with
+  `DType.uint128`, `DType.int128`, `DType.uint256`, and `DType.int256`. Note
+  that this exposes capabilities (and limitations) of LLVM, which may not always
+  provide high performance for these types and may have missing operations like
+  divide, remainder, etc.
+
 ### GPU changes
 
 - You can now skip compiling a GPU kernel first and then enqueueing it:

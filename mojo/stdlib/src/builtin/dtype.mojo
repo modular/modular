@@ -64,6 +64,22 @@ struct DType(
     """Represents a signed integer type whose bitwidth is 64."""
     alias uint64 = DType(__mlir_attr.`#kgen.dtype.constant<ui64> : !kgen.dtype`)
     """Represents an unsigned integer type whose bitwidth is 64."""
+    alias int128 = DType(
+        __mlir_attr.`#kgen.dtype.constant<si128> : !kgen.dtype`
+    )
+    """Represents a signed integer type whose bitwidth is 128."""
+    alias uint128 = DType(
+        __mlir_attr.`#kgen.dtype.constant<ui128> : !kgen.dtype`
+    )
+    """Represents an unsigned integer type whose bitwidth is 128."""
+    alias int256 = DType(
+        __mlir_attr.`#kgen.dtype.constant<si256> : !kgen.dtype`
+    )
+    """Represents a signed integer type whose bitwidth is 256."""
+    alias uint256 = DType(
+        __mlir_attr.`#kgen.dtype.constant<ui256> : !kgen.dtype`
+    )
+    """Represents an unsigned integer type whose bitwidth is 256."""
     alias float8_e5m2 = DType(
         __mlir_attr.`#kgen.dtype.constant<f8e5m2> : !kgen.dtype`
     )
