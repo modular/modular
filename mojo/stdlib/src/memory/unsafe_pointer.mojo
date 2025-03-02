@@ -501,7 +501,9 @@ struct UnsafePointer[
         Returns:
             The loaded value.
         """
-        constrained[width > 0, "width must be a positive integer value"]()
+        constrained[
+            is_power_of_two(width), "width must be a power of 2 integer value"
+        ]()
         constrained[
             alignment > 0, "alignment must be a positive integer value"
         ]()
