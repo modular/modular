@@ -712,6 +712,15 @@ def KGEN_FloatLiteralAttr : KGEN_ExprAttr<"FloatLiteral", "float_literal"> {
 
   let hasCustomAssemblyFormat = 1;
 
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override default builder so we can canonicalize.
+    AttrBuilder<(ins "FloatLiteralSpecialValuesAttr":$input,
+                     "std::optional<IPRational>":$rational)>,
+    // Always a normal value, set the SpecialValue to Normal.
+    AttrBuilder<(ins "IPRational":$value)>,
+  ];
+
   let extraClassDeclaration = [{
     Type getType() const;
   }];
