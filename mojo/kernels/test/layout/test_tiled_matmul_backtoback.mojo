@@ -495,8 +495,8 @@ fn check_approx_equal[
     simd_width: Int = max(simdwidthof[elt_dst](), simdwidthof[elt_src]()),
     *,
     unroll_factor: Int = 4,
-    atol: Scalar[cmp_elt] = 1e-08,
-    rtol: Scalar[cmp_elt] = 1e-05,
+    atol: Float64 = 1e-08,
+    rtol: Float64 = 1e-05,
     equal_nan: Bool = False,
 ](
     dst: LayoutTensor[elt_dst, layout_dst],
