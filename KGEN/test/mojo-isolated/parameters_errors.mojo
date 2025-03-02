@@ -282,12 +282,25 @@ fn crash1_caller[p: __mlir_type.index](a: __mlir_type.index):
 
 
 @value
-@register_passable
-struct StructWithParam[n: Int]:
-    alias Alias = StructWithParam[1]()
+struct StructWithParams[a: Int, b: Int]:
+    alias a1 = StructWithParams[1, 2]()
+    alias a2 = a+1
+    alias a3 = a+b+1
+
+fn testStructWithParams(): 
+    # These are ok because the referenced alias doesn't depend on unbound parameters.
+    _ = StructWithParams.a1
+    _ = StructWithParams[1].a2
+    _ = StructWithParams[1, 2].a3
+
+    # This is an error because the referenced alias depends on an unbound parameter.
+    # expected-error @+1 {{cannot access alias 'a3' with unbound parameter 'StructWithParams.b'}}
+    _ = StructWithParams[1].a3
+
+    # expected-error @+1 {{cannot access alias 'a3' with unbound parameter 'StructWithParams.a'}}
+    _ = StructWithParams.a3
 
 
-alias accessStructWithParam = StructWithParam.Alias  # expected-error {{incorrect number of type parameters: expected 1 but got 0}}
 
 
 ##===----------------------------------------------------------------------===##
@@ -559,3 +572,4 @@ struct SimpleSIMD[arg1: Int, size: Int]:
 fn dont_miss_inference_conflict(b: SimpleSIMD[40, 1]):
     # expected-error @below {{could not deduce parameter 'T' of callee '__init__'}}
     x = SimpleSIMD[50, 4](b)
+
