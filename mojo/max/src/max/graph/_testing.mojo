@@ -18,8 +18,8 @@ fn assert_tensors_almost_equal[
 ](
     a: Tensor[dtype],
     b: Tensor[dtype],
-    atol: Scalar[dtype] = 1e-8,
-    rtol: Scalar[dtype] = 1e-5,
+    atol: Float64 = 1e-8,
+    rtol: Float64 = 1e-5,
 ) raises:
     assert_equal(a.spec(), b.spec())
     for i in range(a.num_elements()):
