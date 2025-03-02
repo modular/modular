@@ -856,7 +856,7 @@ def KGEN_FloatLiteralBinAttr : KGEN_ExprAttr<"FloatLiteralBin",
                                              "float_literal_bin"> {
   let summary = "Convert an float literal to a different type.";
   let description = [{
-    The `#kgen.float_literal_binop` attr does standard arithmetic binary
+    The `#kgen.float_literal_bin` attr does standard arithmetic binary
     operations on `!kgen.float_literal` values that return a `!kgen.float_literal`.
   }];
 
