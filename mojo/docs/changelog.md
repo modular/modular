@@ -24,6 +24,21 @@ what we publish.
   including ones that return floating point values.  This allows functions
   like `round` to be constant folded when used in a comptime context.
 
+- References to aliases in struct types with unbound (or partially) bound
+  parameters sets are now allowed as long as the referenced alias doesn't
+  depend on any unbound parameters:
+
+  ```mojo
+  struct StructWithParam[a: Int, b: Int]:
+    alias a1 = 42
+    alias a2 = a+1
+
+  fn test():
+    _ = StructWithParams.a1 # ok
+    _ = StructWithParams[1].a2 # ok
+    _ = StructWithParams.a2 # error, 'a' is unbound.
+  ```
+
 ### Standard library changes
 
 - The `Buffer` struct has been removed in favor of `Span` and `NDBuffer`.
