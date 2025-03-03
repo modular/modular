@@ -84,22 +84,31 @@ void OutlineClosuresPass::runOnOperation() {
     generator.walk([&](ParamDeclareRegionOp regionDecl) {
       StringRef regionName = regionDecl.getParamDecl().getName();
 
+      auto emitAndSetError = [&hadError](Value capture,
+                                         ParamDeclareRegionOp regionDecl,
+                                         StringLiteral rootMsg) {
+        InFlightDiagnostic diag = mlir::emitError(regionDecl.getLoc())
+                                  << rootMsg;
+
+        auto maybeUser = llvm::find_if(capture.getUsers(), [&](Operation *op) {
+          return regionDecl->isProperAncestor(op);
+        });
+
+        if (maybeUser != capture.getUsers().end())
+          diag.attachNote((*maybeUser)->getLoc())
+              << "use of captured value here";
+        diag.attachNote(capture.getLoc()) << "captured value defined here";
+        hadError = true;
+      };
+
       // Value captures are easy (ish)
       llvm::SetVector<Value> captures;
       mlir::getUsedValuesDefinedAbove(regionDecl->getRegions(), captures);
       if (!captures.empty() &&
           !regionDecl.getFuncTypeGenerator().getBody().isCapturing()) {
-        InFlightDiagnostic diag = mlir::emitError(regionDecl.getLoc())
-                                  << "nested function is marked as "
-                                     "@noncapturing, but it captures values";
-        Value capture = captures.front();
-        Operation *user =
-            *llvm::find_if(capture.getUsers(), [&](Operation *op) {
-              return regionDecl->isProperAncestor(op);
-            });
-        diag.attachNote(user->getLoc()) << "use of captured value here";
-        diag.attachNote(capture.getLoc()) << "captured value defined here";
-        hadError = true;
+        emitAndSetError(captures.front(), regionDecl,
+                        "nested function is marked as @noncapturing, but it "
+                        "captures values");
         return;
       }
 
@@ -193,6 +202,12 @@ void OutlineClosuresPass::runOnOperation() {
 
       // Fill the body of the wrapper.
       for (auto [idx, capture] : llvm::enumerate(captures)) {
+        if (isa<KGEN::NoneType>(capture.getType())) {
+          emitAndSetError(capture, regionDecl,
+                          "we do not expect the capturing of None type.");
+          return;
+        }
+
         auto load = b.create<POP::CompilerGlobalLoadOp>(
             capture.getType(),
             b.getStringAttr(generator.getName() + "_context_var_" +
@@ -253,6 +268,7 @@ void OutlineClosuresPass::runOnOperation() {
 
       // Create a container for the struct with all the various captures.
       for (auto [idx, capture] : llvm::enumerate(captures)) {
+
         b.create<POP::CompilerGlobalStoreOp>(
             b.getStringAttr(generator.getName() + "_context_var_" +
                             Twine(varCounter + idx)),
