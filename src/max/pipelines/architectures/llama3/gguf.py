@@ -246,39 +246,27 @@ def distributed_attention_opaque(
     layer_idx: TensorValue,
     devices: List[DeviceRef],
 ) -> DistributedAttentionWithRope:
-    wq_full = ops.transpose(
-        weights.attn_q.weight.allocate(
-            pipeline_config.dtype,
-            [
-                pipeline_config.huggingface_config.hidden_size,
-                pipeline_config.huggingface_config.hidden_size,
-            ],
-            pipeline_config.graph_quantization_encoding,
-        ),
-        0,
-        1,
-    )
     kv_weight_dim = (
         pipeline_config.huggingface_config.hidden_size
         // pipeline_config.huggingface_config.num_attention_heads
     ) * pipeline_config.huggingface_config.num_key_value_heads
-    wk_full = ops.transpose(
-        weights.attn_k.weight.allocate(
-            pipeline_config.dtype,
-            [kv_weight_dim, pipeline_config.huggingface_config.hidden_size],
-            pipeline_config.graph_quantization_encoding,
-        ),
-        0,
-        1,
+    wq_full = weights.attn_q.weight.allocate(
+        pipeline_config.dtype,
+        [
+            pipeline_config.huggingface_config.hidden_size,
+            pipeline_config.huggingface_config.hidden_size,
+        ],
+        pipeline_config.graph_quantization_encoding,
     )
-    wv_full = ops.transpose(
-        weights.attn_v.weight.allocate(
-            pipeline_config.dtype,
-            [kv_weight_dim, pipeline_config.huggingface_config.hidden_size],
-            pipeline_config.graph_quantization_encoding,
-        ),
-        0,
-        1,
+    wk_full = weights.attn_k.weight.allocate(
+        pipeline_config.dtype,
+        [kv_weight_dim, pipeline_config.huggingface_config.hidden_size],
+        pipeline_config.graph_quantization_encoding,
+    )
+    wv_full = weights.attn_v.weight.allocate(
+        pipeline_config.dtype,
+        [kv_weight_dim, pipeline_config.huggingface_config.hidden_size],
+        pipeline_config.graph_quantization_encoding,
     )
 
     wo_full = weights.attn_output.weight.allocate(
@@ -289,9 +277,9 @@ def distributed_attention_opaque(
         ],
         pipeline_config.graph_quantization_encoding,
     )
-    wq_shards = shard_col_value(wq_full, devices)
-    wk_shards = shard_col_value(wk_full, devices)
-    wv_shards = shard_col_value(wv_full, devices)
+    wq_shards = shard_row_value(wq_full, devices)
+    wk_shards = shard_row_value(wk_full, devices)
+    wv_shards = shard_row_value(wv_full, devices)
 
     # Didn't transpose here since linear will transpose so shard on col instead
     # of row
@@ -302,8 +290,8 @@ def distributed_attention_opaque(
             // len(devices),
             kv_params=kv_params,
             wqkv=ops.concat(
-                (wq_shards[rank], wk_shards[rank], wv_shards[rank]), axis=1
-            ).transpose(0, 1),
+                (wq_shards[rank], wk_shards[rank], wv_shards[rank])
+            ),
             wo=Linear(wo_shards[rank]),
             rope=rope,
             layer_idx=layer_idx,
