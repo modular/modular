@@ -481,3 +481,18 @@ lit.fn @load_consume(%arg0 : !lit.ref<index, mut #lit.any.origin>) -> index {
   %0 = lit.load.consume %arg0 : !lit.ref<index, mut #lit.any.origin>
   kgen.return %0 : index
 }
+
+// -----
+
+// CHECK-LABEL: lit.fn @make_closure
+lit.fn @make_closure(%x:index) -> !kgen.none {
+  lit.fn my_closure(%y: index) -> index {
+    %6 = index.add %x, %y
+    lit.end_fn
+  }
+  // CHECK: lit.closure.init<: !lit.generator<("y": index) -> index> my_closure> :
+  // CHECK-SAME: !lit.ref<!kgen.closure<@make_closure, "my_closure">, mut C>
+  %ptr = lit.closure.init <: !kgen.generator<!lit.generator<("y": index) -> index>> my_closure>
+         : !lit.ref<!kgen.closure<@make_closure, "my_closure" >, mut C>
+  lit.end_fn
+}
