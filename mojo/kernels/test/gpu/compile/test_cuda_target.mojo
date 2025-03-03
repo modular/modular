@@ -102,7 +102,9 @@ def test_hello_mojo_sm90():
 # ===-----------------------------------------------------------------------===#
 
 
-fn erf_elementwise(buf: UnsafePointer[Float32], len: Int, ctx: DeviceContext):
+fn erf_elementwise(
+    buf: UnsafePointer[Float32], len: Int, ctx: DeviceContext
+) raises:
     # Each thread will process 4 * simd_width elements.
     alias granularity = 4 * simdwidthof[DType.float32]()
     var tid = granularity * global_idx.x
