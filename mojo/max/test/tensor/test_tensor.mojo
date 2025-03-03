@@ -223,7 +223,7 @@ fn test_tensor_astype() raises:
 
 
 # CHECK: test_euclidean_distance
-fn test_euclidean_distance():
+fn test_euclidean_distance() raises:
     print("== test_euclidean_distance")
 
     var num_elements = 100
@@ -246,7 +246,7 @@ fn test_euclidean_distance():
 
 # CHECK: test_image_to_grayscale
 # COM: This example comes from the change log.
-fn test_image_to_grayscale():
+fn test_image_to_grayscale() raises:
     print("== test_image_to_grayscale")
 
     var height = 256
@@ -285,7 +285,7 @@ fn test_image_to_grayscale():
 
 
 # CHECK-LABEL: test_add
-fn test_add():
+fn test_add() raises:
     print("== test_add")
     var a = Tensor[DType.float32](2, 2)
     var b = Tensor[DType.float32](2, 2)
@@ -304,7 +304,7 @@ fn test_add():
 
 
 # CHECK-LABEL: test_add_scalar
-fn test_add_scalar():
+fn test_add_scalar() raises:
     print("== test_add_scalar")
     var a = Tensor[DType.float32](2, 2)
 
@@ -318,7 +318,7 @@ fn test_add_scalar():
 
 
 # CHECK-LABEL: test_radd_scalar
-fn test_radd_scalar():
+fn test_radd_scalar() raises:
     print("== test_radd_scalar")
     var a = Tensor[DType.float32](2, 2)
 
@@ -332,7 +332,7 @@ fn test_radd_scalar():
 
 
 # CHECK-LABEL: test_sub
-fn test_sub():
+fn test_sub() raises:
     print("== test_sub")
     var a = Tensor[DType.float32](2, 2)
     var b = Tensor[DType.float32](2, 2)
@@ -351,7 +351,7 @@ fn test_sub():
 
 
 # CHECK-LABEL: test_sub_scalar
-fn test_sub_scalar():
+fn test_sub_scalar() raises:
     print("== test_sub_scalar")
     var a = Tensor[DType.float32](2, 2)
 
@@ -365,7 +365,7 @@ fn test_sub_scalar():
 
 
 # CHECK-LABEL: test_rsub_scalar
-fn test_rsub_scalar():
+fn test_rsub_scalar() raises:
     print("== test_rsub_scalar")
     var a = Tensor[DType.float32](2, 2)
 
@@ -379,7 +379,7 @@ fn test_rsub_scalar():
 
 
 # CHECK-LABEL: test_mul
-fn test_mul():
+fn test_mul() raises:
     print("== test_mul")
     var a = Tensor[DType.float32](2, 2)
     var b = Tensor[DType.float32](2, 2)
@@ -398,7 +398,7 @@ fn test_mul():
 
 
 # CHECK-LABEL: test_mul_scalar
-fn test_mul_scalar():
+fn test_mul_scalar() raises:
     print("== test_mul_scalar")
     var a = Tensor[DType.float32](2, 2)
 
@@ -412,7 +412,7 @@ fn test_mul_scalar():
 
 
 # CHECK-LABEL: test_rmul_scalar
-fn test_rmul_scalar():
+fn test_rmul_scalar() raises:
     print("== test_rmul_scalar")
     var a = Tensor[DType.float32](2, 2)
 
@@ -426,7 +426,7 @@ fn test_rmul_scalar():
 
 
 # CHECK-LABEL: test_div
-fn test_div():
+fn test_div() raises:
     print("== test_div")
     var a = Tensor[DType.float32](2, 2)
     var b = Tensor[DType.float32](2, 2)
@@ -445,7 +445,7 @@ fn test_div():
 
 
 # CHECK-LABEL: test_div_scalar
-fn test_div_scalar():
+fn test_div_scalar() raises:
     print("== test_div_scalar")
     var a = Tensor[DType.float32](2, 2)
 
@@ -459,7 +459,7 @@ fn test_div_scalar():
 
 
 # CHECK-LABEL: test_rdiv_scalar
-fn test_rdiv_scalar():
+fn test_rdiv_scalar() raises:
     print("== test_rdiv_scalar")
     var a = Tensor[DType.float32](2, 2)
 
@@ -473,7 +473,7 @@ fn test_rdiv_scalar():
 
 
 # CHECK-LABEL: test_pow
-fn test_pow():
+fn test_pow() raises:
     print("== test_pow")
     var tensor = Tensor[DType.float32](2, 2)
     iota(tensor.unsafe_ptr(), tensor.num_elements())
