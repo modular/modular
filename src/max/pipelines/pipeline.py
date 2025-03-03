@@ -458,11 +458,12 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
         if self._pipeline_config.sampling_config.enable_structured_output:
             assert self.vocab_size is not None
-            bitmask = torch.ones(
+            bitmask = torch.full(
                 xgr.get_bitmask_shape(
                     len(batch),
                     self.vocab_size,
                 ),
+                -1,
                 dtype=torch.int32,
             )
         else:
