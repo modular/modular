@@ -37,7 +37,7 @@ fn _elementwise[
         type, simd_width
     ],
     type: DType,
-](tensor: Tensor[type]) -> Tensor[type]:
+](tensor: Tensor[type]) raises -> Tensor[type]:
     var result = Tensor[tensor.type](tensor._spec)
     var buffer = tensor._to_buffer()
     var result_buffer = result._to_buffer()
@@ -59,7 +59,7 @@ fn _elementwise[
         x: SIMD[type, simd_width], y: SIMD[type, simd_width]
     ) -> SIMD[type, simd_width],
     type: DType,
-](a: Tensor[type], b: Tensor[type]) -> Tensor[type]:
+](a: Tensor[type], b: Tensor[type]) raises -> Tensor[type]:
     var result = Tensor[a.type](a._spec)
     var a_buffer = a._to_buffer()
     var b_buffer = b._to_buffer()
@@ -87,7 +87,7 @@ fn _elementwise[
         x: SIMD[type, simd_width], y: SIMD[type, simd_width]
     ) -> SIMD[type, simd_width],
     type: DType,
-](a: Tensor[type], b: Scalar[type]) -> Tensor[type]:
+](a: Tensor[type], b: Scalar[type]) raises -> Tensor[type]:
     var result = Tensor[a.type](a._spec)
     var a_buffer = a._to_buffer()
     var result_buffer = result._to_buffer()
@@ -116,7 +116,7 @@ fn _elementwise[
         x: SIMD[type, simd_width], y: SIMD[type, simd_width]
     ) -> SIMD[type, simd_width],
     type: DType,
-](a: Scalar[type], b: Tensor[type]) -> Tensor[type]:
+](a: Scalar[type], b: Tensor[type]) raises -> Tensor[type]:
     var result = Tensor[b.type](b._spec)
     var b_buffer = b._to_buffer()
     var result_buffer = result._to_buffer()
@@ -515,7 +515,7 @@ struct Tensor[type: DType](
         return _elementwise[_add](self, other)
 
     @always_inline
-    fn __add__(self, other: Scalar[type]) -> Self:
+    fn __add__(self, other: Scalar[type]) raises -> Self:
         """Adds this tensor with a scalar.
 
         Args:
@@ -527,7 +527,7 @@ struct Tensor[type: DType](
         return _elementwise[_add](self, other)
 
     @always_inline
-    fn __radd__(self, other: Scalar[type]) -> Self:
+    fn __radd__(self, other: Scalar[type]) raises -> Self:
         """Adds this tensor with a scalar.
 
         Args:
@@ -557,7 +557,7 @@ struct Tensor[type: DType](
         return _elementwise[_sub](self, other)
 
     @always_inline
-    fn __sub__(self, other: Scalar[type]) -> Self:
+    fn __sub__(self, other: Scalar[type]) raises -> Self:
         """Subtracts a scalar from this tensor.
 
         Args:
@@ -569,7 +569,7 @@ struct Tensor[type: DType](
         return _elementwise[_sub](self, other)
 
     @always_inline
-    fn __rsub__(self, other: Scalar[type]) -> Self:
+    fn __rsub__(self, other: Scalar[type]) raises -> Self:
         """Subtracts this tensor from a scalar.
 
         Args:
@@ -599,7 +599,7 @@ struct Tensor[type: DType](
         return _elementwise[_mul](self, other)
 
     @always_inline
-    fn __mul__(self, other: Scalar[type]) -> Self:
+    fn __mul__(self, other: Scalar[type]) raises -> Self:
         """Multiplies this tensor with a scalar.
 
         Args:
@@ -611,7 +611,7 @@ struct Tensor[type: DType](
         return _elementwise[_mul](self, other)
 
     @always_inline
-    fn __rmul__(self, other: Scalar[type]) -> Self:
+    fn __rmul__(self, other: Scalar[type]) raises -> Self:
         """Multiplies this tensor with a scalar.
 
         Args:
@@ -643,7 +643,7 @@ struct Tensor[type: DType](
         return _elementwise[_div](self, other)
 
     @always_inline
-    fn __truediv__(self, other: Scalar[type]) -> Self:
+    fn __truediv__(self, other: Scalar[type]) raises -> Self:
         """Divides this tensor by a scalar.
 
         Args:
@@ -655,7 +655,7 @@ struct Tensor[type: DType](
         return _elementwise[_div](self, other)
 
     @always_inline
-    fn __rtruediv__(self, other: Scalar[type]) -> Self:
+    fn __rtruediv__(self, other: Scalar[type]) raises -> Self:
         """Divides a scalar by this tensor, broadcasting elementwise.
 
         Args:
@@ -667,7 +667,7 @@ struct Tensor[type: DType](
         return _elementwise[_div](other, self)
 
     @always_inline
-    fn __ipow__(mut self, exponent: Int) -> None:
+    fn __ipow__(mut self, exponent: Int) raises -> None:
         """In-place pow operator.
 
         Raises each element of the tensor to the power of `exponent` in place.
@@ -681,7 +681,7 @@ struct Tensor[type: DType](
         self = self**exponent
 
     @always_inline
-    fn __pow__(self, exp: Int) -> Self:
+    fn __pow__(self, exp: Int) raises -> Self:
         """Returns a copy of the tensor with each element raised to the power
         of `exponent`.
 
@@ -714,7 +714,7 @@ struct Tensor[type: DType](
         return result
 
     @always_inline
-    fn astype[new_type: DType](self) -> Tensor[new_type]:
+    fn astype[new_type: DType](self) raises -> Tensor[new_type]:
         """Copy the Tensor with elements cast to the new type.
 
         Parameters:
@@ -746,7 +746,7 @@ struct Tensor[type: DType](
         self,
         lower_bound: Scalar[type],
         upper_bound: Scalar[type],
-    ) -> Self:
+    ) raises -> Self:
         """Clips the values of the tensor.
 
         Args:

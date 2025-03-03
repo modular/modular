@@ -984,7 +984,7 @@ fn foreach[
     simd_width: Int = get_kernel_simd_width[type, target](),
     _synchronous: Bool = False,
     _trace_name: StringLiteral = "mogg.for_each",
-](tensor: ManagedTensorSlice[type=type, rank=rank]):
+](tensor: ManagedTensorSlice[type=type, rank=rank]) raises:
     @parameter
     @always_inline
     fn elementwise_fn_wrapper[
@@ -1013,7 +1013,9 @@ fn foreach[
     simd_width: Int = get_kernel_simd_width[type, target](),
     _synchronous: Bool = False,
     _trace_name: StringLiteral = "mogg.for_each",
-](tensor: ManagedTensorSlice[type=type, rank=rank], ctx: DeviceContextPtr):
+](
+    tensor: ManagedTensorSlice[type=type, rank=rank], ctx: DeviceContextPtr
+) raises:
     """Apply the function `func` to each element of the tensor slice.
 
     Parameters:
@@ -1063,7 +1065,7 @@ fn view_copy_impl[
     z: ManagedTensorSlice[type=type, rank=rank],
     x: ManagedTensorSlice[static_spec=spec],
     ctx: DeviceContextPtr,
-):
+) raises:
     constrained[
         _compatible_with[x._static_shape, z._static_shape](),
         "static shapes not compatible",
