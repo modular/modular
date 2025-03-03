@@ -41,7 +41,7 @@ struct Mandelbrot:
         max_iterations: Int32,
         # the context is needed for some GPU calls
         ctx: DeviceContextPtr,
-    ):
+    ) raises:
         @parameter
         @always_inline
         fn elementwise_mandelbrot[
