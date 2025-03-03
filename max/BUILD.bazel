@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_nanobind_extension")
+load("//bazel:api.bzl", "modular_nanobind_extension", "modular_py_library")
 
 modular_nanobind_extension(
     name = "_core",
@@ -9,5 +9,21 @@ modular_nanobind_extension(
     py_data = ["//SDK/lib/API/python/max/_core:stubs"],
     deps = [
         "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_py_library(
+    name = "max",
+    srcs = [],
+    deps = [
+        ":_core",
+        "//SDK/lib/API/python/max/driver",
+        "//SDK/lib/API/python/max/dtype",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/graph",
+        "//SDK/lib/API/python/max/mlir",
+        "//SDK/lib/API/python/max/pipelines",
+        "//SDK/lib/API/python/max/profiler",
+        "//SDK/lib/API/python/max/serve",
     ],
 )
