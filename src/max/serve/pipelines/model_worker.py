@@ -11,7 +11,6 @@ import multiprocessing
 import os
 import uuid
 from contextlib import asynccontextmanager
-from multiprocessing import Queue
 from typing import AsyncGenerator, Mapping
 
 import uvloop
@@ -30,6 +29,7 @@ from max.serve.pipelines.scheduler_v2 import (
 )
 from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.scheduler.process_control import ProcessControl, ProcessMonitor
+from max.serve.scheduler.queue import Queue
 from max.serve.scheduler.queues import EngineQueue
 from max.serve.telemetry.common import configure_logging, configure_metrics
 from max.serve.telemetry.metrics import METRICS

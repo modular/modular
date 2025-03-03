@@ -10,7 +10,6 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from multiprocessing import Queue
 from typing import Any, Mapping, Optional, Tuple, TypeVar
 
 import numpy as np
@@ -23,6 +22,7 @@ from max.pipelines.interfaces import (
 from max.pipelines.kv_cache.paged_cache import PagedKVCacheManager
 from max.profiler import traced
 from max.serve.scheduler.process_control import ProcessControl
+from max.serve.scheduler.queue import Queue
 from max.serve.scheduler.queues import STOP_STREAM
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
@@ -55,25 +55,26 @@ class RequestDeque:
         self.queue = queue
         self.preempted: list[BatchInputs] = []
 
-    def empty(self) -> bool:
-        return self.queue.empty() and len(self.preempted) == 0
+    def put_front_nowait(self, item):
+        """A new method that allows us to add requests to the front of the queue."""
+        self.preempted.append(item)
+
+    def put(self, *args, **kwargs) -> None:
+        return self.queue.put(*args, **kwargs)
+
+    def put_nowait(self, *args, **kwargs) -> None:
+        return self.queue.put_nowait(*args, **kwargs)
 
     def get_nowait(self) -> Any:
         if self.preempted:
             return self.preempted.pop()
         return self.queue.get_nowait()
 
-    def put_front_nowait(self, item):
-        self.preempted.append(item)
+    def qsize(self) -> int:
+        return len(self.preempted) + self.queue.qsize()
 
-    def put(self, item):
-        self.queue.put(item)
-
-    def qsize(self) -> Optional[int]:
-        try:
-            return len(self.preempted) + self.queue.qsize()
-        except NotImplementedError:
-            return None
+    def empty(self) -> bool:
+        return self.qsize() == 0
 
 
 class Scheduler(ABC):
@@ -202,17 +203,15 @@ class TokenGenerationSchedulerV2(Scheduler):
             ):
                 return True
             else:
-                # TODO(SI-808): The The multiprocessing.Queue implementation isn't portable.
-                # Its Queue.qsize() method throws NotImplementedError exception on MacOS and Graviton
-                # messages_needed = self.max_batch_size_tg - len(
-                #     self.continuous_batch
-                # )
-                # if self.request_q.qsize() >= messages_needed:
-                #     # If there are enough request to fill the TG batch then schedule CE
-                #     return True
-                # else:
-                #     # If not enough requests then hold off the CE and continue with TG
-                #     return False
+                messages_needed = self.scheduler_config.max_batch_size_tg - len(
+                    self.active_batch
+                )
+                if self.request_q.qsize() >= messages_needed:
+                    # If there are enough request to fill the TG batch then schedule CE
+                    return True
+                else:
+                    # If not enough requests then hold off the CE and continue with TG
+                    return False
 
                 return False
 
@@ -478,10 +477,7 @@ class TokenGenerationSchedulerV2(Scheduler):
         num_generated_tokens = batch_size * num_steps
 
         # Number of pending requests is unknown if qsize is not supported
-        maybe_pending_reqs: Optional[int] = self.request_q.qsize()
-        pending_reqs = "?"
-        if maybe_pending_reqs is not None:
-            pending_reqs = str(maybe_pending_reqs)
+        pending_reqs = self.request_q.qsize()
 
         def to_human_readable_throughput(tps: float) -> str:
             if tps >= 1_000:

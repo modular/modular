@@ -14,11 +14,12 @@ import os
 import queue
 from dataclasses import dataclass
 from enum import Enum
-from multiprocessing import Queue
 from typing import AsyncGenerator, Generator, Generic, Optional, TypeVar
 
 import sentinel
 from max.serve.scheduler.process_control import ProcessControl
+
+from .queue import Queue
 
 logger = logging.getLogger("max.serve")
 
@@ -83,9 +84,9 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
     ):
         super().__init__()
         self.context = context
-        self.request_q: Queue = self.context.Queue()
-        self.response_q: Queue = self.context.Queue()
-        self.cancel_q: Queue = self.context.Queue()
+        self.request_q: Queue = Queue(ctx=context)
+        self.response_q: Queue = Queue(ctx=context)
+        self.cancel_q: Queue = Queue(ctx=context)
         self.pending_out_queues: dict[ReqId, asyncio.Queue] = {}
         self.worker_pc: ProcessControl = worker_pc
         self._proc: Optional[multiprocessing.process.BaseProcess] = None
