@@ -27,9 +27,9 @@ fn _run_memcpy(ctx: DeviceContext, length: Int) raises:
         out_host[i] = length + i
 
     # Copy to and from device buffers.
-    ctx.copy(in_dev, in_host)
-    ctx.copy(out_dev, in_dev)
-    ctx.copy(out_host, out_dev)
+    ctx.copy_sync(in_dev, in_host)
+    ctx.copy_sync(out_dev, in_dev)
+    ctx.copy_sync(out_host, out_dev)
 
     for i in range(length):
         if i < 10:
