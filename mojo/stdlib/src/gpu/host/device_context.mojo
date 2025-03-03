@@ -943,9 +943,7 @@ struct DeviceFunction[
         return Int(result)
 
 
-struct DeviceExternalFunction[
-    func_type: AnyTrivialRegType, //, func: func_type
-]:
+struct DeviceExternalFunction:
     var _handle: _DeviceFunctionPtr
 
     fn __copyinit__(out self, existing: Self):
@@ -1552,7 +1550,7 @@ struct DeviceContext:
         function_name: String,
         asm: String,
         func_attribute: OptionalReg[FuncAttribute] = None,
-        out result: DeviceExternalFunction[func],
+        out result: DeviceExternalFunction,
     ) raises:
         alias result_type = __type_of(result)
         result = result_type(
