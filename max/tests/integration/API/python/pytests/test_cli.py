@@ -222,8 +222,6 @@ VALID_COMMANDS = [
         args=[
             "--model-path",
             "modularai/replit-code-1.5",
-            "--architecture",
-            "LlamaForCausalLM",
             "--cache-strategy",
             "naive",
             "--devices",
@@ -239,8 +237,6 @@ VALID_COMMANDS = [
         args=[
             "--model-path",
             "modularai/replit-code-1.5",
-            "--architecture",
-            "LlamaForCausalLM",
             "--max-length",
             "10",
             "--devices",
@@ -257,8 +253,6 @@ VALID_COMMANDS = [
         args=[
             "--model-path",
             "modularai/replit-code-1.5",
-            "--architecture",
-            "LlamaForCausalLM",
             "--max-length",
             "10",
             "--devices",

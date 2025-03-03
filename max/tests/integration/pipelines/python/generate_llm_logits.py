@@ -171,7 +171,6 @@ class Llama3_1PipelineOracle(PipelineOracle):
         for device_spec in device_specs:
             assert self.is_supported(encoding=encoding, device_spec=device_spec)
         config = pipelines.PipelineConfig(
-            architecture="LlamaForCausalLM",
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             # Normally we do not override batch size, preferring to test the
             # defaults, but the default is known to be broken on A10.  Product
@@ -257,7 +256,6 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
         ) * max_num_tiles
 
         config = pipelines.PipelineConfig(
-            architecture="MllamaForConditionalGeneration",
             device_specs=device_specs,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             cache_strategy=KVCacheStrategy.CONTINUOUS,
@@ -312,7 +310,6 @@ class ExaonePipelineOracle(PipelineOracle):
         for device_spec in device_specs:
             assert self.is_supported(encoding=encoding, device_spec=device_spec)
         config = pipelines.PipelineConfig(
-            architecture="ExaoneForCausalLM",
             device_specs=device_specs,
             model_path="LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct",
             quantization_encoding=pipelines.SupportedEncoding[encoding],
@@ -378,7 +375,6 @@ class ReplitPipelineOracle(PipelineOracle):
         for device_spec in device_specs:
             assert self.is_supported(encoding=encoding, device_spec=device_spec)
         config = pipelines.PipelineConfig(
-            architecture="MPTForCausalLM",
             device_specs=device_specs,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             model_path="modularai/replit-code-1.5",
@@ -468,7 +464,6 @@ class MistralPipelineOracle(PipelineOracle):
         for device_spec in device_specs:
             assert self.is_supported(encoding=encoding, device_spec=device_spec)
         config = pipelines.PipelineConfig(
-            architecture="MistralForCausalLM",
             device_specs=device_specs,
             model_path="mistralai/Mistral-Nemo-Instruct-2407",
             quantization_encoding=pipelines.SupportedEncoding[encoding],
@@ -586,7 +581,6 @@ class QwenPipelineOracle(PipelineOracle):
         for device_spec in device_specs:
             assert self.is_supported(encoding=encoding, device_spec=device_spec)
         config = pipelines.PipelineConfig(
-            architecture="Qwen2ForCausalLM",
             device_specs=device_specs,
             model_path="Qwen/Qwen2.5-7B-Instruct",
             quantization_encoding=pipelines.SupportedEncoding[encoding],
@@ -640,7 +634,6 @@ class Llama3_3_70BInstructPipelineOracle(PipelineOracle):
         for device_spec in device_specs:
             assert self.is_supported(encoding=encoding, device_spec=device_spec)
         config = pipelines.PipelineConfig(
-            architecture="LlamaForCausalLM",
             device_specs=device_specs,
             model_path="meta-llama/Llama-3.3-70B-Instruct",
             quantization_encoding=pipelines.SupportedEncoding[encoding],
@@ -745,7 +738,6 @@ class GenericOracle(PipelineOracle):
         self,
         *,
         model_path: str,
-        architecture: str,
         config_params: dict[str, Any] = {},
         prompts: list[str] | None = None,
         auto_model_cls: Any = transformers.AutoModelForCausalLM,
@@ -753,7 +745,6 @@ class GenericOracle(PipelineOracle):
         task: interfaces.PipelineTask = interfaces.PipelineTask.TEXT_GENERATION,
     ) -> None:
         self.model_path = model_path
-        self.architecture = architecture
         self.config_params = config_params
         self._prompts = prompts
         self.auto_model_cls = auto_model_cls
@@ -762,12 +753,14 @@ class GenericOracle(PipelineOracle):
 
     @property
     def supported_encodings(self) -> Sequence[str]:
-        return [
-            encoding.name
-            for encoding in pipelines.PIPELINE_REGISTRY.architectures[
-                self.architecture
-            ].supported_encodings
-        ]
+        if architecture := pipelines.PIPELINE_REGISTRY.retrieve_architecture(
+            model_path=self.model_path, trust_remote_code=True
+        ):
+            return [
+                encoding.name for encoding in architecture.supported_encodings
+            ]
+
+        return []
 
     def is_supported(
         self, *, encoding: str, device_spec: driver.DeviceSpec
@@ -780,7 +773,6 @@ class GenericOracle(PipelineOracle):
         for device_spec in device_specs:
             assert self.is_supported(encoding=encoding, device_spec=device_spec)
         config = pipelines.PipelineConfig(
-            architecture=self.architecture,
             device_specs=device_specs,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             model_path=self.model_path,
@@ -838,7 +830,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "qwen": QwenPipelineOracle(),
     "smollm": GenericOracle(
         model_path="HuggingFaceTB/SmolLM2-135M",
-        architecture="LlamaForCausalLM",
         config_params={
             "max_length": 512,
             "cache_strategy": KVCacheStrategy.CONTINUOUS,
@@ -847,7 +838,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     ),
     "mpnet": GenericOracle(
         model_path="sentence-transformers/all-mpnet-base-v2",
-        architecture="MPNetForMaskedLM",
         # Maximum length accepted by MPNet tokenizer is 512.
         config_params={"max_length": 512, "pool_embeddings": False},
         prompts=[p[:502] for p in evaluate.PROMPTS],

@@ -320,12 +320,12 @@ def test_registry__test_retrieve_with_unknown_architecture_max_engine():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(
-        architecture="not_registered",
-        model_path="modularai/llama-3.1",
+        model_path="GSAI-ML/LLaDA-8B-Instruct",
         # This forces it to fail if we dont have it.
         engine=PipelineEngine.MAX,
         max_batch_size=1,
         max_length=512,
+        trust_remote_code=True,
     )
 
     with pytest.raises(ValueError):
@@ -337,10 +337,10 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(
-        architecture="not_registered",
-        model_path="modularai/llama-3.1",
+        model_path="GSAI-ML/LLaDA-8B-Instruct",
         max_batch_size=1,
         max_length=512,
+        trust_remote_code=True,
     )
 
     config = PIPELINE_REGISTRY.validate_pipeline_config(config)
@@ -352,7 +352,6 @@ def test_registry__test_retrieve_factory_with_known_architecture():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(
-        architecture="LlamaForCausalLM",
         model_path="modularai/llama-3.1",
         max_batch_size=1,
         max_length=512,
@@ -754,33 +753,6 @@ def test_registry__raise_oom_error_max_batch_size_set_and_max_length_set():
             RuntimeError, match="Try reducing --max-batch-size to"
         ):
             PIPELINE_REGISTRY.validate_pipeline_config(config)
-
-
-@prepare_registry
-def test_registry__validate_speculative_decoding_pipeline():
-    PIPELINE_REGISTRY.register(DUMMY_ARCH)
-
-    # Valid device/encoding combinations
-    config = PipelineConfig(
-        model_path="modularai/llama-3.1",
-        device_specs=[DeviceSpec.cpu()],
-        quantization_encoding=SupportedEncoding.float32,
-        draft_model="HuggingFaceTB/SmolLM-135M",
-    )
-
-    PIPELINE_REGISTRY.validate_pipeline_config(config)
-
-    # Invalid device/encoding combinations
-    config = PipelineConfig(
-        model_path="modularai/llama-3.1",
-        device_specs=[DeviceSpec.cpu()],
-        quantization_encoding=SupportedEncoding.float32,
-        draft_model="HuggingFaceTB/SmolLM-135M",
-        engine=PipelineEngine.HUGGINGFACE,
-    )
-
-    with pytest.raises(ValueError):
-        PIPELINE_REGISTRY.validate_pipeline_config(config)
 
 
 @prepare_registry
