@@ -906,7 +906,14 @@ fn dual_gemm[
     )
     alias max_smem = ctx.device_info.shared_memory_per_multiprocessor
 
-    constrained[matmul_supported_format and multistage_gemm_supported_shape]()
+    constrained[
+        matmul_supported_format,
+        String("unsupported dual_gemm dtypes", a_type, b_type, c_type),
+    ]()
+    constrained[
+        multistage_gemm_supported_shape,
+        String("unsupported dual_gemm shapes", a_shape, b_shape, c_shape),
+    ]()
     if multi_gemm_cond:
         alias kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
 
