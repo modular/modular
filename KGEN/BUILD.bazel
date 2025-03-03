@@ -964,7 +964,10 @@ modular_cc_library(
 
 modular_cc_library(
     name = "LowerLIT",
-    srcs = glob(["lib/LowerLIT/*.cpp"]),
+    srcs = glob([
+        "lib/LowerLIT/*.cpp",
+        "lib/LowerLIT/*.h",
+    ]),
     deps = [
         ":KGENDialect",
         ":LITDialect",

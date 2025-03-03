@@ -11,6 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "LowerLITTypes.h"
+
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
@@ -109,57 +111,10 @@ using TypeDomain = LowerLITReplacer::TypeDomain;
 // Type Lowering
 //===----------------------------------------------------------------------===//
 
-namespace {
-struct StructDecl {
-  /// Return true if the struct should be flattened when lowered.
-  bool isSingleElement() const {
-    return isRegisterPassable && fields.size() == 1;
-  }
-
-  // Move-only type.
-  StructDecl(const StructDecl &) = delete;
-  StructDecl &operator=(const StructDecl &) = delete;
-  StructDecl(StructDecl &&other) = default;
-  StructDecl &operator=(StructDecl &&) = default;
-
-  /// The un-parameterized SourceNameAttr for the struct decl.
-  DebugInfo::SourceNameAttr sourceName;
-  /// The struct input parameters.
-  ParamDeclArrayAttr decls;
-  /// True if the type is register-passable.
-  bool isRegisterPassable;
-  /// The location of the decl, for emitting errors.
-  LocationAttr loc;
-  /// The field names and types of the struct in order.
-  SmallVector<std::pair<StringAttr, Type>> fields;
-  /// The symbol ref for the type-value generator.
-  SymbolRefAttr symRef;
-
-  /// Flags for tracking recursion during DFS.
-  bool visited = false, done = false;
-};
-
-struct StructDecls {
-  // Destructively process the module by collecting struct info and removing
-  // trait and struct decls at the same time.
-  LogicalResult process(ModuleOp module, SymbolTable &symtab);
-
-  /// Lookup a struct decl.
-  StructDecl &get(StringAttr name) { return structDecls.find(name)->second; }
-
-  /// Populate `replacer` with the lowering patterns for attributes and types
-  /// after computing the valid lowerings for each struct decl.
-  void buildReplacer(LowerLITReplacer &replacer, MLIRContext *ctx);
-
-  /// A map from struct name and field name to index. Used for lowering `insert`
-  /// and `extract` ops.
-  DenseMap<std::pair<StringAttr, StringAttr>, int> fieldIndices;
-  /// Map from struct name to the lowering info.
-  llvm::MapVector<StringAttr, StructDecl> structDecls;
-};
-} // namespace
-
-void StructDecls::buildReplacer(LowerLITReplacer &replacer, MLIRContext *ctx) {
+/// Populate `replacer` with the lowering patterns for attributes and types
+/// from the computed lowerings for each struct decl.
+static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
+                             MLIRContext *ctx) {
   auto typeType = TypeType::get(ctx);
   auto emptyStructType = KGEN::StructType::get(ctx, {});
   auto emptyStruct = StructAttr::get({}, emptyStructType);
@@ -283,7 +238,7 @@ void StructDecls::buildReplacer(LowerLITReplacer &replacer, MLIRContext *ctx) {
   replacer.addInferredDomainNonRecursiveReplacement(
       [&, noneType](LITStructAttr attr) -> Attribute {
         LIT::StructType ref = attr.getType();
-        StructDecl &decl = get(ref.getName());
+        StructDecl &decl = decls.get(ref.getName());
 
         SmallVector<TypedAttr> values;
         values.reserve(attr.getValues().size());
@@ -313,70 +268,69 @@ void StructDecls::buildReplacer(LowerLITReplacer &replacer, MLIRContext *ctx) {
   replacer.addInferredDomainNonRecursiveReplacement(
       [&](LIT::StructExtractAttr attr) -> Attribute {
         auto ref = cast<LIT::StructType>(attr.getStructValue().getType());
-        int idx = fieldIndices.at({ref.getName(), attr.getField()});
+        int idx = decls.fieldIndices.at({ref.getName(), attr.getField()});
         auto value = replacer.replaceParameter(attr.getStructValue());
         if (!value)
           return nullptr;
-        if (get(ref.getName()).isSingleElement())
+        if (decls.get(ref.getName()).isSingleElement())
           return value;
         return KGEN::StructExtractAttr::get(value, idx);
       });
+
+  // Since lowerings have been generated for all struct types, we just need to
+  // lookup the lowered type and substitute the parameters.
+  // - For the AsType type domain, convert into a StructType.
+  // - For the AsValue type domain, convert into a symbol reference to the
+  //   pre-created symbol generator op.
+  replacer.addNonRecursiveReplacement(
+      [&, noneType, ctx](LIT::StructType ref) -> Type {
+        StructDecl &decl = decls.get(ref.getName());
+        // Substitute the given parameters in.
+        ParameterEvaluator evaluator(decl.decls, ref.getParamValues());
+        SmallVector<Type> fieldTypes;
+        for (auto [idx, type] :
+             llvm::enumerate(llvm::make_second_range(decl.fields))) {
+          if (auto ptrType = dyn_cast<PointerType>(type)) {
+            fieldTypes.push_back(PointerType::get(
+                noneType,
+                evaluator.getReboundAttribute(ptrType.getAddressSpace())));
+          } else {
+            fieldTypes.push_back(evaluator.getReboundType(type));
+          }
+        }
+        if (decl.isSingleElement())
+          return replacer.replace(fieldTypes.front(), TypeDomain::AsType);
+        return replacer.replace(
+            KGEN::StructType::get(ctx, fieldTypes, !decl.isRegisterPassable),
+            TypeDomain::AsType);
+      },
+      TypeDomain::AsType);
+
+  replacer.addNonRecursiveReplacement(
+      [&](LIT::StructType ref) -> Type {
+        StringAttr leafName = ref.getValue().getValue().getLeafReference();
+        auto structDeclIter = decls.structDecls.find(leafName);
+        StructDecl &decl = structDeclIter->second;
+        SmallVector<TypedAttr> loweredParamValues(
+            map_range(ref.getParamValues(), [&](TypedAttr value) {
+              return replacer.replaceParameter(value);
+            }));
+        auto concreteSymRef = TypeConstantRefAttr::get(
+            decl.symRef, loweredParamValues,
+            replacer.replace(
+                StructMetaType::get(LIT::StructType::get(
+                    decl.symRef, loweredParamValues, ref.getSignature())),
+                TypeDomain::AsType));
+
+        auto appliedStructTypeAttr =
+            ParamOperatorAttr::get(POC::InstantiateStructRef, {concreteSymRef});
+        return TypeValueType::get(appliedStructTypeAttr);
+      },
+      TypeDomain::AsValue);
 }
 
-LogicalResult StructDecls::process(ModuleOp module, SymbolTable &symtab) {
-  MLIRContext *ctx = module->getContext();
-  auto typeType = TypeType::get(ctx);
-  for (Operation &op : llvm::make_early_inc_range(module.getOps())) {
-    if (isa<TraitDeclOp>(op)) {
-      symtab.erase(&op);
-      continue;
-    }
-    auto structOp = dyn_cast<StructDeclOp>(op);
-    if (!structOp)
-      continue;
-
-    StructDecl info{};
-    StringAttr structName = structOp.getSymNameAttr();
-    info.sourceName = structOp.getSourceNameAttr();
-    info.decls = structOp.getParamsAttr();
-    info.isRegisterPassable = structOp.isRegisterPassable();
-    info.loc = structOp.getLoc();
-
-    // Collect the struct fields.
-    SmallVector<StructDefFieldAttr> fieldDecls;
-    for (auto [idx, field] : llvm::enumerate(structOp.getFieldDecls())) {
-      info.fields.emplace_back(field.getNameAttr(), field.getType());
-      fieldIndices.try_emplace({structName, field.getNameAttr()}, idx);
-      fieldDecls.push_back(
-          StructDefFieldAttr::get(field.getNameAttr(), field.getType()));
-    }
-
-    // Create struct-generator.
-    SmallVector<StringAttr> paramNames;
-    SmallVector<Type> paramTypes;
-    SmallVector<TypedAttr> paramValues;
-    for (ParamDeclAttr decl : info.decls) {
-      paramNames.push_back(decl.getName());
-      paramTypes.push_back(decl.getType());
-      paramValues.push_back(ParamDeclRefAttr::get(decl));
-    }
-
-    auto structInstType =
-        StructInstanceType::get(structName, paramNames, paramValues, fieldDecls,
-                                !info.isRegisterPassable);
-
-    OpBuilder b(&op);
-    auto gen = b.create<StructGeneratorOp>(
-        op.getLoc(), StringAttr::get(ctx, structName.getValue()), info.decls,
-        structInstType, typeType);
-    symtab.remove(&op);
-    info.symRef = SymbolRefAttr::get(symtab.insert(gen));
-    b.createBlock(&gen.getRegion());
-
-    structDecls.try_emplace(structName, std::move(info));
-    op.erase();
-  }
-
+// Check if there exists an illegal recursion among struct decls.
+static LogicalResult detectIllegalStructDeclsRecursion(StructDecls &decls) {
   // DFS through the parametric types to see if there is recursion.
   mlir::AttrTypeReplacer dfs;
   auto computeLoweredType = [&](StructDecl &decl) -> LogicalResult {
@@ -405,14 +359,14 @@ LogicalResult StructDecls::process(ModuleOp module, SymbolTable &symtab) {
 
   dfs.addReplacement([&](LIT::StructType ref) -> std::pair<Type, WalkResult> {
     // Recurse into a the definition of a struct.
-    StructDecl &decl = get(ref.getName());
+    StructDecl &decl = decls.get(ref.getName());
     if (!decl.done && failed(computeLoweredType(decl)))
       return {{}, WalkResult::interrupt()};
     return {ref, WalkResult::skip()};
   });
 
   // Start from any struct and make sure our DFS terminates.
-  for (StructDecl &decl : llvm::make_second_range(structDecls)) {
+  for (StructDecl &decl : llvm::make_second_range(decls.structDecls)) {
     if (decl.done)
       continue;
     if (failed(computeLoweredType(decl)))
@@ -420,8 +374,6 @@ LogicalResult StructDecls::process(ModuleOp module, SymbolTable &symtab) {
   }
   return success();
 }
-
-namespace {} // namespace
 
 //===----------------------------------------------------------------------===//
 // Type Lowering
@@ -507,57 +459,7 @@ static DebugInfo::DIType buildDebugInfoForStructRef(
 
 LITTypeLowerer::LITTypeLowerer(MLIRContext *ctx, StructDecls &structDecls)
     : IRRewriter(ctx), structDecls(structDecls) {
-  structDecls.buildReplacer(*this, ctx);
-  auto noneType = KGEN::NoneType::get(ctx);
-
-  // Since lowerings have been generated for all struct types, we just need to
-  // lookup the lowered type and substitute the parameters.
-  // - For the AsType type domain, convert into a StructType.
-  // - For the AsValue type domain, convert into a symbol reference to the
-  //   pre-created symbol generator op.
-  addNonRecursiveReplacement(
-      [&, noneType, ctx](LIT::StructType ref) -> Type {
-        StructDecl &decl = this->structDecls.get(ref.getName());
-        // Substitute the given parameters in.
-        ParameterEvaluator evaluator(decl.decls, ref.getParamValues());
-        SmallVector<Type> fieldTypes;
-        for (auto [idx, type] :
-             llvm::enumerate(llvm::make_second_range(decl.fields))) {
-          if (auto ptrType = dyn_cast<PointerType>(type)) {
-            fieldTypes.push_back(PointerType::get(
-                noneType,
-                evaluator.getReboundAttribute(ptrType.getAddressSpace())));
-          } else {
-            fieldTypes.push_back(evaluator.getReboundType(type));
-          }
-        }
-        if (decl.isSingleElement())
-          return replace(fieldTypes.front(), TypeDomain::AsType);
-        return replace(
-            KGEN::StructType::get(ctx, fieldTypes, !decl.isRegisterPassable),
-            TypeDomain::AsType);
-      },
-      TypeDomain::AsType);
-  addNonRecursiveReplacement(
-      [&](LIT::StructType ref) -> Type {
-        StringAttr leafName = ref.getValue().getValue().getLeafReference();
-        auto structDeclIter = structDecls.structDecls.find(leafName);
-        StructDecl &decl = structDeclIter->second;
-        SmallVector<TypedAttr> loweredParamValues(
-            map_range(ref.getParamValues(), [&](TypedAttr value) {
-              return replaceParameter(value);
-            }));
-        auto concreteSymRef = TypeConstantRefAttr::get(
-            decl.symRef, loweredParamValues,
-            replace(StructMetaType::get(LIT::StructType::get(
-                        decl.symRef, loweredParamValues, ref.getSignature())),
-                    TypeDomain::AsType));
-
-        auto appliedStructTypeAttr =
-            ParamOperatorAttr::get(POC::InstantiateStructRef, {concreteSymRef});
-        return TypeValueType::get(appliedStructTypeAttr);
-      },
-      TypeDomain::AsValue);
+  populateReplacer(structDecls, *this, ctx);
 
   // Build a converter to handle updating converted types within debug info
   // constructs.
@@ -740,15 +642,8 @@ LogicalResult LITTypeLowerer::materializeLowering(OpT op) {
 // Entrypoint.
 //===----------------------------------------------------------------------===//
 
-// TODO: Merge this into LowerLIT.cpp
-namespace M::KGEN::LIT {
-LogicalResult lowerLITTypes(ModuleOp module, mlir::SymbolTableAnalysis &symtab);
-}
-
-LogicalResult LIT::lowerLITTypes(ModuleOp module,
-                                 mlir::SymbolTableAnalysis &symtab) {
-  StructDecls state;
-  if (failed(state.process(module, symtab.getTopLevelSymbolTable())))
+LogicalResult LIT::lowerLITTypes(ModuleOp module, StructDecls &state) {
+  if (failed(detectIllegalStructDeclsRecursion(state)))
     return failure();
   LITTypeLowerer b(module.getContext(), state);
 
