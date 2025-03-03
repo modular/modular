@@ -49,14 +49,6 @@ def serve_pipeline(
     # Initialize settings
     settings = Settings(MAX_SERVE_USE_HEARTBEAT=False)
 
-    # TODO: make validate_pipeline_config more generic or cleanly handle the
-    # case where this is a generalized model unsupported by MAX
-    if pipeline_config.architecture in PIPELINE_REGISTRY.architectures:
-        # Retrieve tokenizer and pipeline.
-        pipeline_config = PIPELINE_REGISTRY.validate_pipeline_config(
-            pipeline_config
-        )
-
     # TODO: This is a workaround to support embeddings generation until the
     # changes to tie pipelines to tasks is complete. This will be removed.
     pipeline_task = PipelineTask.TEXT_GENERATION

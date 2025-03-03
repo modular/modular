@@ -34,6 +34,7 @@ from .config import (
 )
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_pipeline import HFEmbeddingsPipeline, HFTextGenerationPipeline
+from .hf_utils import get_architectures_from_huggingface_repo
 from .interfaces import (
     EmbeddingsGenerator,
     PipelineTask,
@@ -138,26 +139,29 @@ class PipelineRegistry:
 
         self.architectures[architecture.name] = architecture
 
-    def architecture_details(
-        self, pipeline_config: PipelineConfig
+    def retrieve_architecture(
+        self, model_path: str, trust_remote_code: bool = False
     ) -> Optional[SupportedArchitecture]:
-        """Return architecture details for pipeline_config if available, None if not found."""
+        # Retrieve model architecture names
+        architecture_names = get_architectures_from_huggingface_repo(
+            model_path, trust_remote_code
+        )
 
-        # If no architecture is provided in the pipeline_config, we have nothing to retrieve.
-        if not pipeline_config.architecture:
+        if not architecture_names:
+            logger.debug(
+                "architectures not listed in HuggingFace config, cannot be matched against MAX Registry"
+            )
             return None
 
-        # If the engine is not provided or MAX, we should retrieve the architecture and validate it.
-        if (
-            not pipeline_config.engine
-            or pipeline_config.engine == PipelineEngine.MAX
-        ):
-            if pipeline_config.architecture in self.architectures:
-                return self.architectures[pipeline_config.architecture]
-            else:
-                return None
-        else:
-            return None
+        for architecture_name in architecture_names:
+            if architecture_name in self.architectures:
+                return self.architectures[architecture_name]
+
+        logger.debug(
+            f"optimized architecture not available for {model_path} in MAX REGISTRY"
+        )
+
+        return None
 
     def _validate_pipeline_config_for_speculative_decoding(
         self, pipeline_config: PipelineConfig
@@ -191,25 +195,23 @@ class PipelineRegistry:
         """Update pipeline config with appropriate values if not provided.
         If invalid config is provided, error out with detailed reason."""
 
-        # This will update the architecture, and engine if no architecture is available.
-        pipeline_config.update_architecture()
-
-        # This will retrieve the architecture, if we support it.
-        arch = self.architecture_details(pipeline_config)
+        # Retrieve the architecture
+        arch = self.retrieve_architecture(
+            model_path=pipeline_config.model_path,
+            trust_remote_code=pipeline_config.trust_remote_code,
+        )
 
         # If nothing is provided, we should not update any more params.
         # Instead, fall back to the HuggingFace engine.
         if not arch and pipeline_config.engine == PipelineEngine.MAX:
-            msg = (
-                "optimized architecture not available for"
-                f" '{pipeline_config.architecture}', failing as engine is provided as 'MAX'"
+            raise ValueError(
+                "MAX-optimized architecture not available, failing as engine is provide as 'MAX'"
             )
-            raise ValueError(msg)
 
         elif not arch:
             msg = (
-                "optimized architecture not available for"
-                f" '{pipeline_config.architecture}' falling back to"
+                "MAX-optimized architecture not available for"
+                f" '{pipeline_config.model_path}' falling back to"
                 " HuggingFace."
             )
             logger.warning(msg)
@@ -905,6 +907,7 @@ class PipelineRegistry:
         pipeline_name: str,
         pipeline_model: str,
         factory: bool,
+        architecture_id: Optional[str] = None,
     ):
         weight_path = ",\n        ".join(
             [
@@ -927,7 +930,7 @@ class PipelineRegistry:
 
         Loading {tokenizer_type.__name__} and {pipeline_name}({pipeline_model}) {factory_str} for:
             engine:                 {pipeline_config.engine}
-            architecture:           {pipeline_config.architecture}
+            architecture:           {architecture_id if architecture_id else "UNKNOWN"}
             devices:                {devices_str}
             model_path:             {pipeline_config.model_path}{weights_repo_str}
             huggingface_revision:   {pipeline_config.huggingface_revision}
@@ -965,19 +968,21 @@ class PipelineRegistry:
         # Validate pipeline_config, and update missing values.
         pipeline_config = self.validate_pipeline_config(pipeline_config)
         if pipeline_config.engine == PipelineEngine.MAX:
-            # Keep MyPy happy.
-            assert pipeline_config.architecture is not None
-
             pipeline_class = get_pipeline_for_task(task, pipeline_config)
 
             # MAX pipeline
-            arch = self.architectures[pipeline_config.architecture]
+            arch = self.retrieve_architecture(
+                pipeline_config.model_path, pipeline_config.trust_remote_code
+            )
+            # Architecture should not be None here, as the engine is MAX.
+            assert arch is not None
             logger.info(
                 self._load_logging_message(
                     pipeline_config=pipeline_config,
                     tokenizer_type=arch.tokenizer,
                     pipeline_model=arch.pipeline_model.__name__,
                     pipeline_name=pipeline_class.__name__,
+                    architecture_id=arch.name,
                     factory=True,
                 )
             )

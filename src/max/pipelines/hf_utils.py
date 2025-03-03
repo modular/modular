@@ -24,6 +24,19 @@ from huggingface_hub import (
     hf_hub_download,
     hf_hub_url,
 )
+from transformers import AutoConfig
+
+
+def get_architectures_from_huggingface_repo(
+    model_path: str, trust_remote_code: bool = False
+) -> list[str]:
+    # Retrieve architecture from model config.
+    config = AutoConfig.from_pretrained(
+        model_path,
+        trust_remote_code=trust_remote_code,
+    )
+
+    return getattr(config, "architectures", [])
 
 
 @dataclass(frozen=True)

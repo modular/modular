@@ -672,9 +672,6 @@ class PipelineConfig(MAXConfig):
     engine: Optional[PipelineEngine] = None
     """Engine backend to use for serving, 'max' for the max engine, or 'huggingface' as fallback option for improved model coverage."""
 
-    architecture: Optional[str] = None
-    """Model architecture to run."""
-
     weight_path: list[Path] = field(default_factory=list)
     """Optional path or url of the model weights to use."""
 
@@ -979,35 +976,6 @@ class PipelineConfig(MAXConfig):
                 sym=hf_quant_config["sym"],
             )
 
-    def update_architecture(self) -> None:
-        if self.architecture is None:
-            # Retrieve architecture from model_path.
-            # This is done without using the huggingface config, to reduce the
-            # memory stored in this object, before it reaches the model worker.
-            hf_config = AutoConfig.from_pretrained(
-                self.model_path,
-                trust_remote_code=self.trust_remote_code,
-            )
-
-            # If we cannot get an architecture from the model_path,
-            # we cannot map the model to an internal architecture, and cannot
-            # be run using the MAX engine.
-
-            architectures = getattr(hf_config, "architectures", None)
-            if architectures:
-                if len(architectures) > 1:
-                    logger.warning(
-                        "more than one architecture listed in Hugging Face config,"
-                        " using the first one."
-                    )
-                self.architecture = architectures[0]
-            else:
-                logger.warning(
-                    "architectures not listed in Hugging Face config, trying with general `huggingface` engine"
-                )
-
-                self.engine = PipelineEngine.HUGGINGFACE
-
     @property
     def huggingface_config(self) -> AutoConfig:
         """Given the model_path, return the Hugging Face Config."""
@@ -1174,7 +1142,6 @@ class PipelineConfig(MAXConfig):
             "huggingface_repo_id": "DEPRECATED: Use `model_path` instead.",
             "huggingface_revision": "Branch or Git revision of Hugging Face model repository to use.",
             "engine": "Specify the engine backend to use for serving the model. Options include `max` for the MAX engine, or `huggingface` as a fallback option that provides improved model coverage.",
-            "architecture": "Deprecated - Please set `model-path` instead. Define the model architecture to run. This should match one of the supported architectures for your selected engine.",
             "weight_path": "Provide an optional local path or path relative to the root of a Hugging Face repo to the model weights you want to use. This allows you to specify custom weights instead of using defaults. You may pass multiple, ie. `--weight-path=model-00001-of-00002.safetensors --weight-path=model-00002-of-00002.safetensors`",
             "quantization_encoding": "Define the weight encoding type for quantization. This can help optimize performance and memory usage during inference. ie. q4_k, bfloat16 etc.",
             "serialized_model_path": "If specified, this flag attempts to load a serialized MEF model from the given path. This is useful for reusing previously saved models.",
