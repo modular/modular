@@ -4,6 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "LowerLITTypes.h"
+
 #include "KGEN/CODialect/COOps.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
@@ -50,7 +52,7 @@ static FlatSymbolRefAttr flattenSymbolRefAttr(SymbolRefAttr ref) {
     return flatSym;
 
   // Flatten the symbol name into a single string.
-  return SymbolRefAttr::get(ref.getContext(), getFlattenedSymbolName(ref));
+  return FlatSymbolRefAttr::get(ref.getContext(), getFlattenedSymbolName(ref));
 }
 
 namespace {
@@ -60,104 +62,137 @@ namespace {
 /// Supporting parametric singleton struct types is overkill right now.
 class SingletonTypeHelper {
 public:
-  SingletonTypeHelper(SymbolTable &symtab, ModuleOp &module)
-      : symtab(symtab), module(module) {}
+  SingletonTypeHelper(ModuleOp &module, SymbolTable &symtab,
+                      StructDecls &processedStructs)
+      : module(module), symtab(symtab), processedStructs(processedStructs) {}
 
-  bool isSingletonType(Type type) { return !!getSingletonValue(type); }
+  bool isSingletonType(Type type);
 
   /// If `type` is a singleton type, this returns the singleton value of that
   /// type. Otherwise, returns a null result.
   TypedAttr getSingletonValue(Type type);
 
-  /// Cache the struct decl in the helper so that symbol references to this decl
-  /// never needs to be looked up via the symbol table anymore. This is not only
-  /// an optimization, but also necessary so that flattened struct decls can
-  /// still be found when their symbol references have not been flattened yet
-  /// during this pass.
-  void preprocessStructDecl(StructDeclOp decl);
-
 private:
   using StructCacheTy =
-      DenseMap<SymbolRefAttr, SmallVector<std::pair<StringAttr, Type>>>;
+      DenseMap<StringAttr, SmallVector<std::tuple<StringAttr, TypedAttr>>>;
 
-  TypedAttr getSingletonValueImpl(Type type);
+  /// Returns the iterator for the referenced struct decl into
+  /// `alwaysSingletonStructs` (or end() if the decl is not always a singleton).
+  StructCacheTy::iterator lookupStructSingletonFields(SymbolRefAttr ref);
 
-  /// Cached-lookup of struct fields from a symbol reference. The decl can be
-  /// optionally provided to avoid a symbol table lookup.
-  StructCacheTy::iterator lookupStructFields(SymbolRefAttr ref,
-                                             StructDeclOp decl);
+  /// Determine the singleton-ness of a struct decl. This function always
+  /// inserts the key into exactly one of:
+  /// - alwaysSingletonStructs
+  /// - notAlwaysSingletonStructs
+  /// Returns the iterator for the key into `alwaysSingletonStructs` (or end()
+  /// if it wasn't inserted there).
+  /// This function is run at most once for each struct decl in the IR.
+  StructCacheTy::iterator
+  populateStructSingletonFields(StringAttr key,
+                                ArrayRef<std::pair<StringAttr, Type>> fields);
 
-  SymbolTable &symtab;
   ModuleOp module;
-  /// This map caches the result of `getSingletonValue` so that visited types
-  /// return immediately.
-  DenseMap<Type, TypedAttr> valueCache;
+  /// The SymbolTable contains all not-yet processed struct decls (unflattened),
+  /// while StructDecls contains all struct decls already processed.
+  SymbolTable &symtab;
+  StructDecls &processedStructs;
+  /// The keys are the struct decls that are always singletons (regardless
+  /// of parameter bindings, if applicable). Each key is mapped to a list of
+  /// singleton values that make up the singleton value of this struct. The
+  /// exact singleton value in the form of a TypedAttr may differ depending
+  /// on parameter bindings to the struct decl, so it cannot be produced
+  /// until a concrete LIT::StructType is passed in.
+  StructCacheTy alwaysSingletonStructs;
   /// These are the struct decls that are known to not always be singletons.
-  /// Cache them to avoid ever walking them a second time.
-  DenseSet<SymbolRefAttr> knownNotAlwaysSingletonStructs;
-  /// These are the cached fields of struct decls so that symbol lookup is
-  /// performed at most once per struct decl. A decl is eagerly erased from this
-  /// map once it's added to `knownNotAlwaysSingletonStructs`.
-  StructCacheTy structCache;
+  DenseSet<StringAttr> notAlwaysSingletonStructs;
+
+  /// Ephemeral data. Tracks the struct decls currently being checked in
+  /// recursive `getSingletonValue` calls. If the same struct decl ever occurs
+  /// again, it is not checked again, but immediately returns as _not_ a
+  /// singleton type (since it is actually illegal, and will be caught later).
+  DenseSet<StringAttr> inProgressStructs;
 };
 } // namespace
 
-TypedAttr SingletonTypeHelper::getSingletonValue(Type type) {
-  if (auto it = valueCache.find(type); it != valueCache.end())
-    return it->second;
-  TypedAttr result = getSingletonValueImpl(type);
-  valueCache.try_emplace(type, result);
-  return result;
+bool SingletonTypeHelper::isSingletonType(Type type) {
+  if (isa<OriginType, OriginSetType>(type))
+    return true;
+
+  if (auto structType = dyn_cast<LIT::StructType>(type)) {
+    return lookupStructSingletonFields(structType.getSymbol()) !=
+           alwaysSingletonStructs.end();
+  }
+  return false;
 }
 
-TypedAttr SingletonTypeHelper::getSingletonValueImpl(Type type) {
+TypedAttr SingletonTypeHelper::getSingletonValue(Type type) {
   if (auto origin = dyn_cast<OriginType>(type))
     return AnyOriginAttr::get(origin);
   if (auto set = dyn_cast<OriginSetType>(type))
     return OriginSetAttr::get(/*operands=*/{}, set);
 
   if (auto structType = dyn_cast<LIT::StructType>(type)) {
-    SymbolRefAttr ref = structType.getSymbol();
-    StructCacheTy::iterator it = lookupStructFields(ref, /*decl=*/{});
-    if (it == structCache.end())
+    auto it = lookupStructSingletonFields(structType.getSymbol());
+    if (it == alwaysSingletonStructs.end())
       return {};
-
-    SmallVector<std::tuple<StringAttr, TypedAttr>> values;
-    for (auto [name, type] : it->second) {
-      TypedAttr value = getSingletonValue(type);
-      if (!value) {
-        knownNotAlwaysSingletonStructs.insert(ref);
-        structCache.erase(ref);
-        return {};
-      }
-      values.push_back(std::make_tuple(name, value));
-    }
-    return LITStructAttr::get(values, structType);
+    return LITStructAttr::get(it->second, structType);
   }
   return {};
 }
 
-void SingletonTypeHelper::preprocessStructDecl(StructDeclOp decl) {
-  SymbolRefAttr ref = getFullyResolvedSymbolRef(decl);
-  lookupStructFields(ref, decl);
+SingletonTypeHelper::StructCacheTy::iterator
+SingletonTypeHelper::lookupStructSingletonFields(SymbolRefAttr ref) {
+  StringAttr refName = flattenSymbolRefAttr(ref).getAttr();
+  // If this struct is a known singleton, return its singleton value.
+  if (auto it = alwaysSingletonStructs.find(refName);
+      it != alwaysSingletonStructs.end())
+    return it;
+
+  // If this struct is a known non-singleton, return null attr.
+  if (notAlwaysSingletonStructs.contains(refName))
+    return alwaysSingletonStructs.end();
+
+  // If we repeat an in-progress struct decl, it indicates an illegal cycle.
+  // End the check and consider it _not_ a singleton type. LowerLITTypes will
+  // report the error.
+  if (!inProgressStructs.insert(refName).second)
+    return {};
+
+  // This is a struct decl we haven't seen before. Lookup its fields and
+  // populate the cache with it.
+  StructCacheTy::iterator outputIter;
+  // First check the processed struct decls map.
+  if (auto declIter = processedStructs.structDecls.find(refName);
+      declIter != processedStructs.structDecls.end()) {
+    outputIter =
+        populateStructSingletonFields(refName, declIter->second.fields);
+  } else {
+    // If not already processed, the StructDeclOp must already exist in the
+    // symbol table.
+    StructDeclOp decl = cast<StructDeclOp>(symtab.lookupSymbolIn(module, ref));
+    SmallVector<std::pair<StringAttr, Type>> fields;
+    for (StructFieldOp field : decl.getFieldDecls())
+      fields.emplace_back(field.getNameAttr(), field.getType());
+    outputIter = populateStructSingletonFields(refName, fields);
+  }
+
+  inProgressStructs.erase(refName);
+  return outputIter;
 }
 
 SingletonTypeHelper::StructCacheTy::iterator
-SingletonTypeHelper::lookupStructFields(SymbolRefAttr ref, StructDeclOp decl) {
-  if (knownNotAlwaysSingletonStructs.contains(ref))
-    return structCache.end();
-
-  auto [it, inserted] = structCache.try_emplace(ref);
-  if (inserted) {
-    // Perform the lookup if the decl isn't pre-known.
-    if (!decl)
-      decl = cast<StructDeclOp>(symtab.lookupSymbolIn(module, ref));
-
-    for (StructFieldOp field : decl.getFieldDecls())
-      it->second.push_back(
-          std::make_pair(field.getNameAttr(), field.getType()));
+SingletonTypeHelper::populateStructSingletonFields(
+    StringAttr key, ArrayRef<std::pair<StringAttr, Type>> fields) {
+  SmallVector<std::tuple<StringAttr, TypedAttr>> values;
+  for (auto [name, type] : fields) {
+    TypedAttr value = getSingletonValue(type);
+    if (!value) {
+      notAlwaysSingletonStructs.insert(key);
+      return alwaysSingletonStructs.end();
+    }
+    values.emplace_back(name, value);
   }
-  return it;
+  return alwaysSingletonStructs.try_emplace(key, std::move(values)).first;
 }
 
 /// This processes a `lit.fn` and returns the param declarations for the
@@ -210,9 +245,10 @@ namespace {
 struct LITLowerer {
   LITLowerer(SymbolTable &symbolTable,
              DenseMap<StringAttr, StringAttr> &renamedSymbols,
-             SingletonTypeHelper &singletonTypeHelper)
+             SingletonTypeHelper &singletonTypeHelper, StructDecls &structDecls)
       : symbolTable(symbolTable), renamedSymbols(renamedSymbols),
-        singletonTypeHelper(singletonTypeHelper) {}
+        singletonTypeHelper(singletonTypeHelper), structDecls(structDecls),
+        typeType(TypeType::get(symbolTable.getOp()->getContext())) {}
 
   /// Given a function, check to see if it is a top-level function.  If not,
   /// lower it to a ParamDeclareRegionOp.
@@ -226,9 +262,12 @@ struct LITLowerer {
                              const Twine &parentPrefix,
                              ArrayRef<ParamDeclAttr> parentInputParams,
                              ArrayRef<bool> parentVariadicMask);
-  /// Lower nested structures in lit.struct.decl away.
+  /// Lower lit.struct.decl and its nested structures.
   LogicalResult lowerStructDecl(StructDeclOp structDecl,
                                 Block::iterator symTableIt);
+  /// Lower lit.trait.decl and its nested structures.
+  LogicalResult lowerTraitDecl(TraitDeclOp traitDecl,
+                               Block::iterator symTableIt);
   /// Lower the constructs within the body of a module decl.
   LogicalResult lowerModuleDecl(Block *moduleBody,
                                 Block::iterator symTableIt = {},
@@ -237,6 +276,8 @@ struct LITLowerer {
   SymbolTable &symbolTable;
   DenseMap<StringAttr, StringAttr> &renamedSymbols;
   SingletonTypeHelper &singletonTypeHelper;
+  StructDecls &structDecls;
+  TypeType typeType;
   /// For each symbol name (post-rename), the param decls that were dropped.
   DenseMap<StringAttr, ParamDeclDropMask> symbolDroppedParamDecls;
   bool foundAnyPatterns = false;
@@ -439,12 +480,45 @@ void LITLowerer::lowerNestedFunction(FnOp func) {
 
 LogicalResult LITLowerer::lowerStructDecl(StructDeclOp structDecl,
                                           Block::iterator symTableIt) {
-  /// Always pre-cache the struct decl in `singletonTypeHelper` before
-  /// flattening it.
-  singletonTypeHelper.preprocessStructDecl(structDecl);
   // Update the name of this struct, incorporating any parents.
   StringAttr structName =
       flattenAndRenameSymbol(structDecl, symbolTable, symTableIt);
+
+  // Build a StructGeneratorOp as its replacement.
+  StructDecl info{};
+  info.sourceName = structDecl.getSourceNameAttr();
+  info.decls = structDecl.getParamsAttr();
+  info.isRegisterPassable = structDecl.isRegisterPassable();
+  info.loc = structDecl.getLoc();
+
+  // Collect the struct fields.
+  SmallVector<StructDefFieldAttr> fieldDecls;
+  for (auto [idx, field] : llvm::enumerate(structDecl.getFieldDecls())) {
+    info.fields.emplace_back(field.getNameAttr(), field.getType());
+    structDecls.fieldIndices.try_emplace({structName, field.getNameAttr()},
+                                         idx);
+    fieldDecls.push_back(
+        StructDefFieldAttr::get(field.getNameAttr(), field.getType()));
+  }
+
+  // Create struct-generator.
+  SmallVector<StringAttr> paramNames;
+  SmallVector<Type> paramTypes;
+  SmallVector<TypedAttr> paramValues;
+  for (ParamDeclAttr decl : info.decls) {
+    paramNames.push_back(decl.getName());
+    paramTypes.push_back(decl.getType());
+    paramValues.push_back(ParamDeclRefAttr::get(decl));
+  }
+
+  auto structInstType =
+      StructInstanceType::get(structName, paramNames, paramValues, fieldDecls,
+                              !info.isRegisterPassable);
+
+  OpBuilder b(structDecl->getContext());
+  auto structGen = b.create<StructGeneratorOp>(info.loc, structName, info.decls,
+                                               structInstType, typeType);
+  b.createBlock(&structGen.getRegion());
 
   for (Operation &member : llvm::make_early_inc_range(
            structDecl.getFields().front().getOperations())) {
@@ -468,6 +542,18 @@ LogicalResult LITLowerer::lowerStructDecl(StructDeclOp structDecl,
                             structDecl.getInputParams(), variadicMask)))
       return failure();
   }
+
+  symbolTable.remove(structDecl);
+  info.symRef = SymbolRefAttr::get(symbolTable.insert(structGen, symTableIt));
+  structDecl.erase();
+  structDecls.structDecls.try_emplace(structName, std::move(info));
+  return success();
+}
+
+LogicalResult LITLowerer::lowerTraitDecl(TraitDeclOp traitDecl,
+                                         Block::iterator symTableIt) {
+  flattenAndRenameSymbol(traitDecl, symbolTable, symTableIt);
+  traitDecl.erase();
   return success();
 }
 
@@ -514,6 +600,9 @@ LogicalResult LITLowerer::lowerModuleDecl(Block *moduleBody,
             })
             .Case([&](StructDeclOp op) {
               return lowerStructDecl(op, opSymTableIt);
+            })
+            .Case([&](TraitDeclOp op) {
+              return lowerTraitDecl(op, opSymTableIt);
             })
             .Case<LIT::FileModuleOp, LIT::PackageOp>([&](auto op) {
               // Make sure to remove the op from the symbol table if needed.
@@ -614,7 +703,8 @@ removeSingletonParams(SingletonTypeHelper &singletonTypeHelper,
 static void lowerAttributesAndTypes(
     Operation *op, const DenseMap<StringAttr, StringAttr> &renamedSymbols,
     SingletonTypeHelper &singletonTypeHelper,
-    DenseMap<StringAttr, ParamDeclDropMask> &symbolDroppedParamDecls) {
+    DenseMap<StringAttr, ParamDeclDropMask> &symbolDroppedParamDecls,
+    StructDecls &structDecls) {
   mlir::AttrTypeReplacer replacer;
 
   // Member functions are reference with nested symbol references. After
@@ -630,8 +720,10 @@ static void lowerAttributesAndTypes(
 
   // Remove signature metadata.
   replacer.addReplacement([&](FuncType sig) {
-    return FuncType::get(cast<FunctionType>(replacer.replace(sig.getValues())),
-                         sig.getArgConventions(), sig.getFnEffects());
+    return std::make_pair(
+        FuncType::get(cast<FunctionType>(replacer.replace(sig.getValues())),
+                      sig.getArgConventions(), sig.getFnEffects()),
+        WalkResult::skip());
   });
 
   replacer.addReplacement([&](FuncTypeGeneratorType gen) {
@@ -640,9 +732,10 @@ static void lowerAttributesAndTypes(
     for (auto ty : gen.getInputParamTypes())
       paramTypes.push_back(replacer.replace(ty));
 
+    // Remove metadata & remove singleton input param decls.
     gen = GeneratorType::get(paramTypes, replacer.replace(gen.getBody()));
-    // Remove the singleton parameter declarations.
-    return removeSingletonParams(singletonTypeHelper, gen);
+    gen = removeSingletonParams(singletonTypeHelper, gen);
+    return std::make_pair(gen, WalkResult::skip());
   });
 
   auto *debugInfoDialect =
@@ -709,6 +802,15 @@ static void lowerAttributesAndTypes(
 
   replacer.recursivelyReplaceElementsIn(
       op, /*replaceAttrs=*/true, /*replaceLocs=*/true, /*replaceTypes=*/true);
+
+  // Update saved types in struct decls.
+  for (auto &decl : structDecls.structDecls) {
+    decl.second.decls =
+        cast<ParamDeclArrayAttr>(replacer.replace(decl.second.decls));
+    for (auto &field : decl.second.fields) {
+      field.second = replacer.replace(field.second);
+    }
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -867,12 +969,6 @@ orderAndLowerGlobalVariables(ModuleOp module,
 // Pass boilerplate.
 //===----------------------------------------------------------------------===//
 
-// TODO: Merge this pass with LowerLITTypes.cpp
-
-namespace M::KGEN::LIT {
-LogicalResult lowerLITTypes(ModuleOp module, mlir::SymbolTableAnalysis &symtab);
-}
-
 namespace {
 struct LowerLITPass : public KGEN::impl::LowerLITBase<LowerLITPass> {
   using LowerLITBase::LowerLITBase;
@@ -882,6 +978,7 @@ struct LowerLITPass : public KGEN::impl::LowerLITBase<LowerLITPass> {
     // the module, but we could trivially parallelize this within the pass.
     ModuleOp module = getOperation();
     auto &symtab = getAnalysis<mlir::SymbolTableAnalysis>();
+    StructDecls structDecls;
 
     {
       DenseMap<StringAttr, StringAttr> renamedSymbols;
@@ -891,18 +988,18 @@ struct LowerLITPass : public KGEN::impl::LowerLITBase<LowerLITPass> {
                   debugInfoLanguage.getValue()))))
         return signalPassFailure();
 
-      SingletonTypeHelper singletonTypeHelper(symtab.getTopLevelSymbolTable(),
-                                              module);
+      SingletonTypeHelper singletonTypeHelper(
+          module, symtab.getTopLevelSymbolTable(), structDecls);
       LITLowerer lowerer(symtab.getTopLevelSymbolTable(), renamedSymbols,
-                         singletonTypeHelper);
+                         singletonTypeHelper, structDecls);
       if (failed(lowerer.lowerModuleDecl(module.getBody())))
         return signalPassFailure();
       lowerAttributesAndTypes(module, renamedSymbols, singletonTypeHelper,
-                              lowerer.symbolDroppedParamDecls);
+                              lowerer.symbolDroppedParamDecls, structDecls);
     }
 
     // Keep lowering all the operations and types.
-    if (failed(LIT::lowerLITTypes(module, symtab)))
+    if (failed(LIT::lowerLITTypes(module, structDecls)))
       signalPassFailure();
   }
 };
