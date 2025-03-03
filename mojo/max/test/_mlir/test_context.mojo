@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug -D MLIRC_DYLIB=.mlirc_lib %s
+# RUN: %mojo-no-debug -D MLIRC_DYLIB=.graph_lib %s
 
 
 import _mlir
