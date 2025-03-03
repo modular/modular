@@ -21,7 +21,7 @@ from hashlib.hash import Hashable, hash
 from builtin.anytype import AnyType, UnknownDestructibility
 from builtin.bool import Bool, Boolable, ImplicitlyBoolable, all, any, bool
 from builtin.breakpoint import breakpoint
-from builtin.builtin_list import (
+from builtin.list_literal import (
     ListLiteral,
     VariadicList,
     VariadicListMem,

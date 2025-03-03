@@ -1205,7 +1205,7 @@ detailed information in the following sections:
     `from utils import StringRef`.
 
 - Restored implicit copyability of [`Tuple`](/mojo/stdlib/builtin/tuple/Tuple)
-  and [`ListLiteral`](/mojo/stdlib/builtin/builtin_list/ListLiteral).
+  and [`ListLiteral`](/mojo/stdlib/builtin/list_literal/ListLiteral).
 
 - The
   [aliases for C foreign function interface (FFI)](/mojo/stdlib/sys/ffi/#aliases)
@@ -2039,7 +2039,7 @@ detailed information in the following sections:
     ```
 
   - `ListLiteral` now supports
-    [`__contains__()`](/mojo/stdlib/builtin/builtin_list/ListLiteral#__contains__).
+    [`__contains__()`](/mojo/stdlib/builtin/list_literal/ListLiteral#__contains__).
     ([PR #3251](https://github.com/modular/max/pull/3251))
 
 - Filesystem and environment utilities:
@@ -2795,7 +2795,7 @@ Big themes for this release:
         print("x contains 1")
     ```
 
-  - [`ListLiteral`](/mojo/stdlib/builtin/builtin_list/ListLiteral) and `Tuple`
+  - [`ListLiteral`](/mojo/stdlib/builtin/list_literal/ListLiteral) and `Tuple`
     now only require that element types be `Movable`. Consequently,
     `ListLiteral` and `Tuple` are themselves no longer `Copyable`.
 
@@ -3197,7 +3197,7 @@ Special thanks to our community contributors:
 
   - Heterogeneous variadic pack arguments now work reliably even with memory
     types, and have a more convenient API to use, as defined by the
-    [`VariadicPack`](/mojo/stdlib/builtin/builtin_list/VariadicPack) type. For
+    [`VariadicPack`](/mojo/stdlib/builtin/list_literal/VariadicPack) type. For
     example, a simplified version of `print` can be implemented like this:
 
     ```mojo
@@ -4743,7 +4743,7 @@ experience without dedicated sugar.
 - Homogeneous variadic arguments consisting of memory-only types, such as
   `String` are more powerful and easier to use. These arguments are projected
   into a
-  [`VariadicListMem`](/mojo/stdlib/builtin/builtin_list/VariadicListMem).
+  [`VariadicListMem`](/mojo/stdlib/builtin/list_literal/VariadicListMem).
 
   (Previous releases made it easier to use variadic lists of register-passable
   types, like `Int`.)
@@ -5024,7 +5024,7 @@ experience without dedicated sugar.
   `polynomial_evaluate` function has also been extended so that the
   `coefficients` parameter can take either a either a
   [`StaticTuple`](/mojo/stdlib/utils/static_tuple/StaticTuple) or a
-  [`VariadicList`](/mojo/stdlib/builtin/builtin_list/VariadicList).
+  [`VariadicList`](/mojo/stdlib/builtin/list_literal/VariadicList).
 
 - As a tiny step towards removing `let` declarations, this release removes the
   warning: `'var' was never mutated, consider switching to a 'let'`.
@@ -5477,8 +5477,8 @@ the previous "read to EOF" behavior when size is negative.
 ### 🦋 Changed
 
 - Variadic list types
-  [`VariadicList`](/mojo/stdlib/builtin/builtin_list/VariadicList) and
-  [`VariadicListMem`](/mojo/stdlib/builtin/builtin_list/VariadicListMem)
+  [`VariadicList`](/mojo/stdlib/builtin/list_literal/VariadicList) and
+  [`VariadicListMem`](/mojo/stdlib/builtin/list_literal/VariadicListMem)
   are now iterable. Variadic arguments are automatically projected into one of
   these types inside the function body, so var args can be iterated:
 
@@ -5760,8 +5760,8 @@ the previous "read to EOF" behavior when size is negative.
 
 ### 🦋 Changed
 
-- [`VariadicList`](/mojo/stdlib/builtin/builtin_list/VariadicList) and
-  [`VariadicListMem`](/mojo/stdlib/builtin/builtin_list/VariadicListMem)
+- [`VariadicList`](/mojo/stdlib/builtin/list_literal/VariadicList) and
+  [`VariadicListMem`](/mojo/stdlib/builtin/list_literal/VariadicListMem)
   moved under builtins, and no longer need to be imported.
 
 - Variadic arguments are now automatically projected into a `VariadicList` or
