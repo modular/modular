@@ -76,6 +76,11 @@ def test_dim_to_string():
     assert_equal(String(DimList.create_unknown[5]()), "[?, ?, ?, ?, ?]")
 
 
+def test_dimlist_repr():
+    assert_equal(repr(DimList(2, Dim(), 3)), "DimList([2, ?, 3])")
+    assert_equal(repr(DimList.create_unknown[5]()), "DimList([?, ?, ?, ?, ?])")
+
+
 def test_dimlist_eq():
     assert_true(DimList(Dim(), 42, Dim()) == DimList(Dim(), 42, Dim()))
     assert_true(DimList(Dim(), Dim()) == DimList(Dim(), Dim()))
@@ -105,4 +110,5 @@ def main():
     test_dim_list()
     test_dim()
     test_dim_to_string()
+    test_dimlist_repr()
     test_dimlist_eq()

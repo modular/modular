@@ -302,6 +302,7 @@ struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable):
 struct DimList(
     Sized,
     Stringable,
+    Representable,
     Writable,
 ):
     """This type represents a list of dimensions. Each dimension may have a
@@ -662,6 +663,14 @@ struct DimList(
             The string representation of the type.
         """
         return String.write(self)
+
+    fn __repr__(self) -> String:
+        """Converts the DimList to a readable String representation.
+
+        Returns:
+            The string representation of the type.
+        """
+        return "DimList(" + String(self) + ")"
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: DimList) -> Bool:
