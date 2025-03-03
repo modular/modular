@@ -35,7 +35,7 @@ fn matrix_band_part[
     exclude_buf: NDBuffer[cond_type, 1],
     output: NDBuffer[type, rank],
     ctx: DeviceContextPtr,
-):
+) raises:
     var lower_diagonal_index = Int(num_lower[0])
     var upper_diagonal_index = Int(num_upper[0])
 
@@ -43,7 +43,7 @@ fn matrix_band_part[
         input_shape, lower_diagonal_index, upper_diagonal_index, output
     )
     @parameter
-    fn dispatch[exclude: Bool]():
+    fn dispatch[exclude: Bool]() raises:
         _matrix_band_part_impl[
             type,
             int_type,
@@ -78,7 +78,7 @@ fn _matrix_band_part_impl[
     upper_diagonal_index: Int,
     output: NDBuffer[type, rank],
     ctx: DeviceContextPtr,
-):
+) raises:
     constrained[rank >= 2, "Matrix band only supports rank >=2"]()
 
     @__copy_capture(lower_diagonal_index, upper_diagonal_index, output)

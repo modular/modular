@@ -328,7 +328,7 @@ fn apple_matmul[
     *,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[matmul_elementwise_epilogue_type] = None,
-](cblas_gemm_fn: cblas_gemm_type, c: NDBuffer, a: NDBuffer, b: NDBuffer):
+](cblas_gemm_fn: cblas_gemm_type, c: NDBuffer, a: NDBuffer, b: NDBuffer) raises:
     @parameter
     if a.type == b.type == c.type == DType.float32:
         var m = Int32(a.dim[0]())
@@ -391,7 +391,7 @@ fn apple_matmul[
     *,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[matmul_elementwise_epilogue_type] = None,
-](c: NDBuffer, a: NDBuffer, b: NDBuffer):
+](c: NDBuffer, a: NDBuffer, b: NDBuffer) raises:
     @parameter
     if a.type == b.type == c.type == DType.float32:
         var cblas_gemm = get_cblas_f32_function()
@@ -417,7 +417,7 @@ fn apple_batched_matmul[
     elementwise_epilogue_fn: OptionalReg[
         batched_matmul_elementwise_epilogue_type
     ] = None,
-](c: NDBuffer, a: NDBuffer, b: NDBuffer):
+](c: NDBuffer, a: NDBuffer, b: NDBuffer) raises:
     var c3 = _reshape_nd_buffer_with_batch_to_3d(c)
     var a3 = _reshape_nd_buffer_with_batch_to_3d(a)
     var b3 = _reshape_nd_buffer_with_batch_to_3d(b)

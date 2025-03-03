@@ -1946,7 +1946,7 @@ fn split_k_reduce[
     c: NDBuffer[c_type, 2, c_shape],
     work_space: NDBuffer[work_space_type, 3, work_space_shape],
     ctx: DeviceContext,
-):
+) raises:
     alias simd_width = simdwidthof[c_type, target = _get_gpu_target()]()
     var num_partitions = work_space.dim[0]()
     var M = c.dim[0]()
