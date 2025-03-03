@@ -389,8 +389,8 @@ def test_cross_attention_gpu(hidden_seq_lens: list[int]) -> None:
         shape=[batch_size * cross_seq_len, config.hidden_size],
     )
 
-    input_row_offsets_type = TensorType(DType.uint32, [batch_size + 1])
-    hidden_max_seq_len_type = TensorType(DType.uint32, [1])
+    input_row_offsets_type = TensorType(DType.uint32, shape=[batch_size + 1])
+    hidden_max_seq_len_type = TensorType(DType.uint32, shape=[1])
 
     kv_params = KVCacheParams(
         dtype=dtype, n_kv_heads=config.num_key_value_heads, head_dim=head_dim
@@ -420,7 +420,6 @@ def test_cross_attention_gpu(hidden_seq_lens: list[int]) -> None:
             *kv_manager.input_symbols()[0],
         ],
     )
-    print(graph)
 
     # Phase 2: model compilation and weight initialization.
 
