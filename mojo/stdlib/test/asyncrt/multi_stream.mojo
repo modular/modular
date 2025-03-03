@@ -36,24 +36,14 @@ fn test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     )
 
     alias length = 1 * 1024 * 1024
+    alias T = DType.float32
 
-    var in0_dev1 = ctx1.enqueue_create_buffer[DType.float32](length)
-    var in0_dev2 = ctx1.enqueue_create_buffer[DType.float32](length)
-    var in0_dev3 = ctx1.enqueue_create_buffer[DType.float32](length)
-    var in1_dev1 = ctx1.enqueue_create_buffer[DType.float32](length)
-    var in1_dev2 = ctx1.enqueue_create_buffer[DType.float32](length)
-    var in1_dev3 = ctx1.enqueue_create_buffer[DType.float32](length)
-    var out_dev1 = ctx1.enqueue_create_buffer[DType.float32](length)
-    var out_dev2 = ctx1.enqueue_create_buffer[DType.float32](length)
-    var out_dev3 = ctx1.enqueue_create_buffer[DType.float32](length)
-    var out_host1 = ctx2.enqueue_create_host_buffer[DType.float32](length)
-    var out_host2 = ctx2.enqueue_create_host_buffer[DType.float32](length)
-    var out_host3 = ctx2.enqueue_create_host_buffer[DType.float32](length)
+    var in0_dev1 = ctx1.enqueue_create_buffer[T](length)
+    var in0_dev2 = ctx1.enqueue_create_buffer[T](length)
+    var in0_dev3 = ctx1.enqueue_create_buffer[T](length)
 
     # Initialize the variable inputs with known values.
-    with ctx1.map_to_host(in0_dev1) as in_host1, ctx1.map_to_host(
-        in0_dev2
-    ) as in_host2, ctx1.map_to_host(in0_dev3) as in_host3:
+    with in0_dev1.map_to_host() as in_host1, in0_dev2.map_to_host() as in_host2, in0_dev3.map_to_host() as in_host3:
         for i in range(length):
             var index = i % 2048
             in_host1[i] = index
@@ -61,22 +51,30 @@ fn test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
             in_host3[i] = 3 * index
 
     # Initialize the fixed (right) inputs.
-    ctx1.enqueue_memset(in1_dev1, 1.0)
-    ctx1.enqueue_memset(in1_dev2, 2.0)
-    ctx1.enqueue_memset(in1_dev3, 3.0)
-    # Initialize the outputs with known bad values
-    ctx1.enqueue_memset(out_dev1, 101.0)
-    ctx1.enqueue_memset(out_dev2, 102.0)
-    ctx1.enqueue_memset(out_dev3, 103.0)
-    for i in range(length):
-        out_host1[i] = 0.5
-        out_host2[i] = 0.25
-        out_host3[i] = 0.125
+    in1_dev1 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(1.0)
+    in1_dev2 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(2.0)
+    in1_dev3 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(3.0)
+
+    # Initialize the device outputs with known bad values.
+    out_dev1 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(101.0)
+    out_dev2 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(102.0)
+    out_dev3 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(103.0)
+    # Initialize the result buffer on a second queue with known bad values.
+    var out_host1 = ctx2.enqueue_create_host_buffer[T](length).enqueue_fill(0.1)
+    var out_host2 = ctx2.enqueue_create_host_buffer[T](length).enqueue_fill(0.2)
+    var out_host3 = ctx2.enqueue_create_host_buffer[T](length).enqueue_fill(0.3)
+
+    for i in range(10):
+        print(out_host1[i])
+        print(out_host2[i])
+        print(out_host3[i])
 
     # Pre-compile and pre-register the device function
     var dev_func = ctx1.compile_function[vec_func]()
 
+    # Make sure both queues are ready to run at this point.
     ctx1.synchronize()
+    ctx2.synchronize()
 
     var block_dim = 1
 
@@ -162,22 +160,13 @@ fn test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     )
 
     alias length = 20 * 1024 * 1024
-
-    var in_dev1 = ctx1.enqueue_create_buffer[DType.float32](length)
-    var in_dev2 = ctx1.enqueue_create_buffer[DType.float32](length)
-    var in_dev3 = ctx1.enqueue_create_buffer[DType.float32](length)
-    var in_dev4 = ctx1.enqueue_create_buffer[DType.float32](length)
-    var in_dev5 = ctx1.enqueue_create_buffer[DType.float32](length)
-    var out_dev1 = ctx1.enqueue_create_buffer[DType.float32](length)
-    var out_dev2 = ctx1.enqueue_create_buffer[DType.float32](length)
-    var out_dev3 = ctx1.enqueue_create_buffer[DType.float32](length)
-    var out_dev4 = ctx1.enqueue_create_buffer[DType.float32](length)
-    var out_host = ctx2.enqueue_create_host_buffer[DType.float32](length)
+    alias T = DType.float32
 
     # Initialize the variable inputs with known values.
-    with ctx1.map_to_host(in_dev1) as in_host1, ctx1.map_to_host(
-        in_dev2
-    ) as in_host2, ctx1.map_to_host(in_dev3) as in_host3:
+    var in_dev1 = ctx1.enqueue_create_buffer[T](length)
+    var in_dev2 = ctx1.enqueue_create_buffer[T](length)
+    var in_dev3 = ctx1.enqueue_create_buffer[T](length)
+    with in_dev1.map_to_host() as in_host1, in_dev2.map_to_host() as in_host2, in_dev3.map_to_host() as in_host3:
         for i in range(length):
             var index = i % 2048
             in_host1[i] = index
@@ -185,20 +174,22 @@ fn test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
             in_host3[i] = 3 * index
 
     # Initialize the fixed (right) inputs.
-    ctx1.enqueue_memset(in_dev4, 1.0)
-    ctx1.enqueue_memset(in_dev5, 2.0)
+    var in_dev4 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(1.0)
+    var in_dev5 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(2.0)
+
     # Initialize the outputs with known bad values
-    ctx1.enqueue_memset(out_dev1, 101.0)
-    ctx1.enqueue_memset(out_dev2, 102.0)
-    ctx1.enqueue_memset(out_dev3, 103.0)
-    ctx1.enqueue_memset(out_dev4, 104.0)
-    for i in range(length):
-        out_host[i] = 0.5
+    var out_dev1 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(101.0)
+    var out_dev2 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(102.0)
+    var out_dev3 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(103.0)
+    var out_dev4 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(104.0)
+
+    var out_host = ctx2.enqueue_create_host_buffer[T](length).enqueue_fill(0.5)
 
     # Pre-compile and pre-register the device function
     var dev_func1 = ctx1.compile_function[vec_func]()
     var dev_func2 = ctx2.compile_function[vec_func]()
 
+    # Ensure the setup has completed.
     ctx1.synchronize()
     ctx2.synchronize()
 

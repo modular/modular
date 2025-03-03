@@ -33,25 +33,17 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
     alias dim_y = 8
     alias length = dim_x * dim_y
 
-    var in_host = ctx.enqueue_create_host_buffer[type](length)
-    var out_host = ctx.enqueue_create_host_buffer[type](length)
-    var in_dev = ctx.enqueue_create_buffer[type](length)
-    var out_dev = ctx.enqueue_create_buffer[type](length)
+    var in0 = ctx.enqueue_create_buffer[type](length)
+    var out = ctx.enqueue_create_buffer[type](length)
 
     # Initialize the input and outputs with known values.
-    for i in range(length):
-        in_host[i] = i
-        out_host[i] = length + i
+    with in0.map_to_host() as in_host, out.map_to_host() as out_host:
+        for i in range(length):
+            in_host[i] = i
+            out_host[i] = length + i
 
-    # Copy to device buffers.
-    in_host.enqueue_copy_to(in_dev)
-    # Write known bad values to out_dev.
-    out_host.enqueue_copy_to(out_dev)
-
-    var in_buffer = NDBuffer[type, 2](in_dev.unsafe_ptr(), Index(dim_x, dim_y))
-    var out_buffer = NDBuffer[type, 2](
-        out_dev.unsafe_ptr(), Index(dim_x, dim_y)
-    )
+    var in_buffer = NDBuffer[type, 2](in0.unsafe_ptr(), Index(dim_x, dim_y))
+    var out_buffer = NDBuffer[type, 2](out.unsafe_ptr(), Index(dim_x, dim_y))
 
     @always_inline
     @__copy_capture(in_buffer, out_buffer)
@@ -68,17 +60,18 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
         ctx,
     )
 
-    out_dev.enqueue_copy_to(out_host)
-
-    # Wait for the copies to be completed.
-    ctx.synchronize()
-
-    for i in range(length):
-        if i < 10:
-            print("at index", i, "the value is", out_host[i])
-        expect_eq(
-            out_host[i], i + 42, "at index ", i, " the value is ", out_host[i]
-        )
+    with out.map_to_host() as out_host:
+        for i in range(length):
+            if i < 10:
+                print("at index", i, "the value is", out_host[i])
+            expect_eq(
+                out_host[i],
+                i + 42,
+                "at index ",
+                i,
+                " the value is ",
+                out_host[i],
+            )
 
 
 fn main() raises:

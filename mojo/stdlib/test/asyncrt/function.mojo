@@ -31,30 +31,27 @@ fn test_function(ctx: DeviceContext) raises:
 
     alias length = 1024
     alias block_dim = 32
-
-    var in0_dev = ctx.enqueue_create_buffer[DType.float32](length)
-    var in1_dev = ctx.enqueue_create_buffer[DType.float32](length)
-    var out_dev = ctx.enqueue_create_buffer[DType.float32](length)
+    alias T = DType.float32
 
     # Initialize the input and outputs with known values.
-    with ctx.map_to_host(in0_dev) as in0_host, ctx.map_to_host(
-        in1_dev
-    ) as in1_host, ctx.map_to_host(out_dev) as out_host:
+    var in0 = ctx.enqueue_create_buffer[T](length)
+    var out = ctx.enqueue_create_buffer[T](length)
+    with in0.map_to_host() as in0_host, out.map_to_host() as out_host:
         for i in range(length):
             in0_host[i] = i
-            in1_host[i] = 2
             out_host[i] = length + i
+    var in1 = ctx.enqueue_create_buffer[T](length).enqueue_fill(2.0)
 
     ctx.enqueue_function[vec_func](
-        in0_dev,
-        in1_dev,
-        out_dev,
+        in0,
+        in1,
+        out,
         length,
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
 
-    with ctx.map_to_host(out_dev) as out_host:
+    with out.map_to_host() as out_host:
         for i in range(length):
             if i < 10:
                 print("at index", i, "the value is", out_host[i])

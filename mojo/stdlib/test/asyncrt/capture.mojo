@@ -34,24 +34,15 @@ fn run_captured_func(ctx: DeviceContext, captured: Float32) raises:
 
     alias length = 1024
 
-    var in0_host = ctx.enqueue_create_host_buffer[DType.float32](length)
-    var in1_host = ctx.enqueue_create_host_buffer[DType.float32](length)
-    var out_host = ctx.enqueue_create_host_buffer[DType.float32](length)
-    var in0_dev = ctx.enqueue_create_buffer[DType.float32](length)
-    var in1_dev = ctx.enqueue_create_buffer[DType.float32](length)
-    var out_dev = ctx.enqueue_create_buffer[DType.float32](length)
+    var in0 = ctx.enqueue_create_buffer[DType.float32](length)
+    var in1 = ctx.enqueue_create_buffer[DType.float32](length).enqueue_fill(2)
+    var out = ctx.enqueue_create_buffer[DType.float32](length)
 
     # Initialize the input and outputs with known values.
-    for i in range(length):
-        in0_host[i] = i
-        in1_host[i] = 2
-        out_host[i] = length + i
-
-    # Copy to device buffers.
-    in0_host.enqueue_copy_to(in0_dev)
-    in1_host.enqueue_copy_to(in1_dev)
-    # Write known bad values to out_dev.
-    out_host.enqueue_copy_to(out_dev)
+    with in0.map_to_host() as in0_host, out.map_to_host() as out_host:
+        for i in range(length):
+            in0_host[i] = i
+            out_host[i] = length + i
 
     @parameter
     fn add_with_captured(left: Float32, right: Float32) -> Float32:
@@ -60,27 +51,23 @@ fn run_captured_func(ctx: DeviceContext, captured: Float32) raises:
     var block_dim = 32
 
     ctx.enqueue_function[vec_func[add_with_captured]](
-        in0_dev,
-        in1_dev,
-        out_dev,
+        in0,
+        in1,
+        out,
         length,
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
 
-    out_dev.enqueue_copy_to(out_host)
-
-    # Wait for the copies to be completed.
-    ctx.synchronize()
-
-    for i in range(length):
-        if i < 10:
-            print("at index", i, "the value is", out_host[i])
-        expect_eq(
-            out_host[i],
-            i + 2 + captured,
-            String("at index ", i, " the value is ", out_host[i]),
-        )
+    with out.map_to_host() as out_host:
+        for i in range(length):
+            if i < 10:
+                print("at index", i, "the value is", out_host[i])
+            expect_eq(
+                out_host[i],
+                i + 2 + captured,
+                String("at index ", i, " the value is ", out_host[i]),
+            )
 
 
 fn main() raises:
