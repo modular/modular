@@ -105,7 +105,7 @@ fn bench_reduce[
                 sizeof[Signal[max_num_blocks]]() + temp_buffer_num_bytes
             )
         )
-        list_of_ctx[i].memset_sync[DType.uint8](signal_buffers[i], 0)
+        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
         rank_sigs[i] = (
             signal_buffers[i].unsafe_ptr().bitcast[Signal[max_num_blocks]]()
         )
@@ -128,6 +128,8 @@ fn bench_reduce[
         out_bufs[i] = NDBuffer[type, rank](
             out_bufs_list[i].unsafe_ptr(), DimList(length)
         )
+        # Ensure setup has propagated.
+        list_of_ctx[i].synchronize()
 
     @parameter
     @always_inline
