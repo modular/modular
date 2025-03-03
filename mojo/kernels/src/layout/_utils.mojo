@@ -26,49 +26,65 @@ struct ManagedLayoutTensor[
 ]:
     alias layout_bitwidth = bitwidthof[_get_index_type(AddressSpace.GENERIC)]()
     var device_data: Optional[DeviceBuffer[dtype]]
-    var host_data: UnsafePointer[Scalar[dtype]]
+    var host_data: DeviceBuffer[dtype]
     var runtime_layout: RuntimeLayout[layout, bitwidth = Self.layout_bitwidth]
-    var ctx: Optional[DeviceContext]
+    var ctx: DeviceContext
 
     @always_inline
-    fn __init__(out self):
-        self.ctx = None
-        self.device_data = None
-        self.host_data = __type_of(self.host_data).alloc(layout.size())
+    fn __init__(out self) raises:
+        self.ctx = DeviceContext(api="cpu")
         self.runtime_layout = __type_of(self.runtime_layout)()
+        self.device_data = None
+        self.host_data = self.ctx.enqueue_create_host_buffer[dtype](
+            self.runtime_layout.size()
+        )
+        self.ctx.synchronize()
 
     @always_inline
-    fn __init__(out self, runtime_layout: RuntimeLayout[layout, **_]):
-        self.ctx = None
-        self.device_data = None
-        self.host_data = __type_of(self.host_data).alloc(runtime_layout.size())
+    fn __init__(out self, runtime_layout: RuntimeLayout[layout, **_]) raises:
+        self.ctx = DeviceContext(api="cpu")
         self.runtime_layout = rebind[__type_of(self.runtime_layout)](
             runtime_layout
         )
+        self.device_data = None
+        self.host_data = self.ctx.enqueue_create_host_buffer[dtype](
+            self.runtime_layout.size()
+        )
+        self.ctx.synchronize()
 
     @always_inline
     fn __init__(out self, ctx: DeviceContext) raises:
         self.ctx = ctx
-        self.device_data = ctx.create_buffer_sync[dtype](layout.size())
-        self.host_data = __type_of(self.host_data).alloc(layout.size())
         self.runtime_layout = __type_of(self.runtime_layout)()
+        self.device_data = ctx.enqueue_create_buffer[dtype](
+            self.runtime_layout.size()
+        )
+        self.host_data = self.ctx.enqueue_create_host_buffer[dtype](
+            self.runtime_layout.size()
+        )
+        self.ctx.synchronize()
 
     @always_inline
     fn __init__(
         out self, runtime_layout: RuntimeLayout[layout, **_], ctx: DeviceContext
     ) raises:
         self.ctx = ctx
-        self.device_data = ctx.create_buffer_sync[dtype](runtime_layout.size())
-        self.host_data = __type_of(self.host_data).alloc(runtime_layout.size())
         self.runtime_layout = rebind[__type_of(self.runtime_layout)](
             runtime_layout
         )
+        self.device_data = ctx.enqueue_create_buffer[dtype](
+            self.runtime_layout.size()
+        )
+        self.host_data = self.ctx.enqueue_create_host_buffer[dtype](
+            self.runtime_layout.size()
+        )
+        self.ctx.synchronize()
 
     fn device_tensor[
         update: Bool = True
     ](self) raises -> LayoutTensor[dtype, layout]:
         debug_assert(
-            Bool(self.ctx),
+            Bool(self.ctx.api() != "cpu"),
             "device_tensor cannot be constructed for host only tensor.",
         )
 
@@ -125,19 +141,21 @@ struct ManagedLayoutTensor[
         M = self.runtime_layout.dim(0)
         N = self.runtime_layout.dim(1)
 
-        return NDBuffer[dtype, 2](self.host_data, (M, N))
+        return NDBuffer[dtype, 2](self.host_data.unsafe_ptr(), (M, N))
 
     fn _update_device(self) raises:
-        if self.ctx:
-            self.ctx.value().copy(self.device_data.value(), self.host_data)
+        if self.ctx.api() != "cpu":
+            self.ctx.enqueue_copy(self.device_data.value(), self.host_data)
+            self.ctx.synchronize()
 
     fn _update_host(self) raises:
-        if self.ctx:
-            self.ctx.value().copy(self.host_data, self.device_data.value())
+        if self.ctx.api() != "cpu":
+            self.ctx.enqueue_copy(self.host_data, self.device_data.value())
+            self.ctx.synchronize()
 
     @always_inline
     fn __del__(owned self):
-        self.host_data.free()
+        pass
 
 
 fn load_to_simd(
