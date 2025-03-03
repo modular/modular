@@ -2086,3 +2086,53 @@ kgen.generator @test_wrap_source_loc_param() -> !kgen.string always_inline_no_de
   %2 = kgen.param.constant : !kgen.string = <c>
   kgen.return %2 : !kgen.string
 }
+
+// -----
+
+// COM: Given a compile_offload op over a capturing function FOO,
+// verify that the populate captures function is generated and accesible
+// for calls via the compile_offload_closure operator.
+kgen.generator @HELLO<x: () capturing -> index>() capturing -> !kgen.none {
+  %none = kgen.param.constant: none = <#kgen.none>
+  %0 = kgen.call_param[() capturing -> index: x]()
+  kgen.return %none : !kgen.none
+}
+
+kgen.generator @FOO() capturing -> index {
+  %0 = pop.compiler.global_load "CAPTURE_0" : !kgen.pointer<index>
+  %1 = pop.load %0 : !kgen.pointer<index>
+  kgen.return %1 : index
+}
+
+kgen.generator export @entry(%arg0: !kgen.pointer<none>) {
+  %0 = pop.stack_allocation 1 x index marked
+  pop.compiler.global_store "CAPTURE_0", %0 : !kgen.pointer<index>
+  kgen.param.declare *"foo()": () capturing -> index = <@FOO>
+  // CHECK: %string = kgen.param.constant: string = <"{{.*}}">
+  // CHECK-NEXT: %index1 = kgen.param.constant = <1>
+  // CHECK: %1 = kgen.struct.create(%string, %index1) : !kgen.struct<(string, index)>
+  %1 = kgen.compile_offload<#kgen.target<triple = "nvptx64-nvidia-cuda",
+                                         arch = "sm_80",
+                                         simd_bit_width = 128,
+                                         index_bit_width = 64,
+                                         tune_cpu = "sm_80">, 2, "",
+                                         :() capturing -> !kgen.none @HELLO<:() capturing -> index *"foo()">>
+                                        : !kgen.struct<(string, index)>
+  // CHECK-NEXT: %2 = kgen.call @"HELLO,x=_FOO_populate_captures"(%arg0) : (!kgen.pointer<none>) capturing -> !kgen.none
+  kgen.param.declare x: (!kgen.pointer<none>) capturing -> !kgen.none = <compile_offload_closure(@HELLO<:() capturing -> index *"foo()">)>
+  %2 = kgen.call_param[(!kgen.pointer<none>) capturing -> !kgen.none: x](%arg0)
+  kgen.return
+}
+
+// COM: populate_captures must be an inlined
+// CHECK: kgen.func @"HELLO,x=_FOO_populate_captures"(%arg0: !kgen.pointer<none>) capturing -> !kgen.none always_inline {
+// CHECK-NEXT: [[V0:%.*]] = pop.compiler.global_load "CAPTURE_0" : !kgen.pointer<index>
+// CHECK-NEXT: [[V1:%.*]] = pop.stack_allocation 1 x pointer<index>
+// CHECK-NEXT: pop.store [[V0]], [[V1]] : !kgen.pointer<pointer<index>>
+// CHECK-NEXT: [[V2:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<pointer<none>>
+// CHECK-NEXT: [[IDX0:%.*]] = kgen.param.constant = <0>
+// CHECK-NEXT: [[V3:%.*]] = pop.offset [[V2]][[[IDX0]]] : !kgen.pointer<pointer<none>>
+// CHECK-NEXT: [[V4:%.*]] = pop.pointer.bitcast [[V1]] : !kgen.pointer<pointer<index>> to !kgen.pointer<none>
+// CHECK-NEXT: pop.store [[V4]], [[V3]] : !kgen.pointer<pointer<none>>
+// CHECK-NEXT: [[NONE:%.*]] = kgen.param.constant: none = <#kgen.none>
+// CHECK-NEXT: kgen.return [[NONE]] : !kgen.none
