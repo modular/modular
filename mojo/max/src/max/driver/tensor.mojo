@@ -230,6 +230,23 @@ struct Tensor[type: DType, rank: Int](CollectionElement):
             self._spec,
         )
 
+    @always_inline
+    fn to_layout_tensor(
+        self,
+        *slices: Slice,
+    ) raises -> __type_of(self.unsafe_slice().to_layout_tensor()):
+        """Returns a view of the tensor conforming to given slices. If given
+        a single slice `:` the view would point to the entire tensor. The caller
+        is responsible to make sure tensor outlives the returned slice.
+
+        Args:
+            slices: Dimension slices to slice against.
+
+        Returns:
+            View of the tensor according to given slices.
+        """
+        return self.unsafe_slice().to_layout_tensor()
+
     fn _steal_ptr(owned self) -> UnsafePointer[Scalar[type]]:
         var tmp = self._ptr
         self._ptr = UnsafePointer[Scalar[type]]()
