@@ -1988,8 +1988,9 @@ struct DeviceContext:
             )
         )
 
+    @deprecated("DeviceContext is an asynchronous API")
     @always_inline
-    fn copy[
+    fn copy_sync[
         type: DType
     ](
         self, dst_buf: DeviceBuffer[type], src_ptr: UnsafePointer[Scalar[type]]
@@ -2020,8 +2021,9 @@ struct DeviceContext:
             )
         )
 
+    @deprecated("DeviceContext is an asynchronous API")
     @always_inline
-    fn copy[
+    fn copy_sync[
         type: DType
     ](
         self, dst_ptr: UnsafePointer[Scalar[type]], src_buf: DeviceBuffer[type]
@@ -2051,8 +2053,9 @@ struct DeviceContext:
             )
         )
 
+    @deprecated("DeviceContext is an asynchronous API")
     @always_inline
-    fn copy[
+    fn copy_sync[
         type: DType
     ](self, dst_buf: DeviceBuffer[type], src_buf: DeviceBuffer[type]) raises:
         """Copies data from one device buffer to another. The amount
@@ -2129,6 +2132,7 @@ struct DeviceContext:
             )
         )
 
+    @deprecated("DeviceContext is an asynchronous API")
     @always_inline
     fn memset_sync[
         type: DType
