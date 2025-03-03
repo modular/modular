@@ -391,12 +391,12 @@ class TextGenerationPipeline(TokenGenerator[T]):
         # Create a grammar compiler if constrained decoding is enabled
         self.vocab_size = None
         if pipeline_config.sampling_config.enable_structured_output:
-            tokenizer = AutoTokenizer.from_pretrained(
+            self.tokenizer = AutoTokenizer.from_pretrained(
                 pipeline_config.model_path
             )
-            self.vocab_size = len(tokenizer)
+            self.vocab_size = len(self.tokenizer)
             tokenizer_info = xgr.TokenizerInfo.from_huggingface(
-                tokenizer,
+                self.tokenizer,
                 vocab_size=self.vocab_size,
             )
 
@@ -494,6 +494,17 @@ class TextGenerationPipeline(TokenGenerator[T]):
                     logger.warning(msg)
                     # I am removing the json_schema, so it doesn't try to load the grammar repeatedly.
                     context.json_schema = None  # type: ignore
+
+            if context.matcher:
+                if (
+                    jump_forward_string
+                    := context.matcher.find_jump_forward_string()
+                ):
+                    tokens = self.tokenizer.encode(
+                        jump_forward_string, add_special_tokens=False
+                    )
+                    for token in tokens:
+                        context.jump_ahead(token)
 
             # Claim cache rows for context.
             if not self._pipeline_model.kv_manager.contains(

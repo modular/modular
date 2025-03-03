@@ -86,6 +86,10 @@ class InputContext(Protocol):
         """Updates the next_tokens and extends existing tokens to include all generated tokens."""
         ...
 
+    def jump_ahead(self, new_token: int) -> None:
+        """Updates the token array, while ensuring the new token is returned to the user."""
+        ...
+
     def bump_token_indices(
         self,
         start_idx: Optional[int] = None,
@@ -263,6 +267,25 @@ class TextContext:
 
         if not is_eos:
             self._completion_end_idx += 1
+
+        # Accept the token, and move the FSM for constrained decoding forward.
+        if self.matcher:
+            assert self.matcher.accept_token(new_token)
+
+        self.is_initial_prompt = False
+
+    def jump_ahead(self, new_token: int) -> None:
+        """Updates the token array, while ensuring the new token is returned to the user."""
+
+        self._upsize()
+
+        # Update tokens
+        self.tokens[self._active_idx] = new_token
+
+        # Bump Indices
+        self._active_idx += 1
+        self._end_idx += 1
+        self._completion_end_idx += 1
 
         # Accept the token, and move the FSM for constrained decoding forward.
         if self.matcher:
