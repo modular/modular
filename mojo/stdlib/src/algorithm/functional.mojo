@@ -1221,7 +1221,7 @@ fn elementwise[
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
     trace_description: StringLiteral = "",
-](shape: Int):
+](shape: Int) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -1255,7 +1255,7 @@ fn elementwise[
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
     trace_description: StringLiteral = "",
-](shape: IndexList[rank, **_]):
+](shape: IndexList[rank, **_]) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -1293,7 +1293,7 @@ fn elementwise[
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
     trace_description: StringLiteral = "",
-](shape: Int, context: DeviceContext):
+](shape: Int, context: DeviceContext) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -1327,7 +1327,7 @@ fn elementwise[
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
     trace_description: StringLiteral = "",
-](shape: IndexList[rank, **_], context: DeviceContext):
+](shape: IndexList[rank, **_], context: DeviceContext) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -1359,7 +1359,7 @@ fn elementwise[
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
     trace_description: StringLiteral = "",
-](shape: IndexList[rank, **_], context: DeviceContextPtr):
+](shape: IndexList[rank, **_], context: DeviceContextPtr) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -1412,7 +1412,7 @@ fn _elementwise_impl[
     *,
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
-](shape: IndexList[rank, **_], context: DeviceContext):
+](shape: IndexList[rank, **_], context: DeviceContext) raises:
     @parameter
     if is_cpu[target]():
         _elementwise_impl_cpu[
@@ -1599,7 +1599,7 @@ fn _elementwise_impl_gpu[
     rank: Int, //,
     func: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> None,
     simd_width: UInt,
-](shape: IndexList[rank, **_], ctx: DeviceContext):
+](shape: IndexList[rank, **_], ctx: DeviceContext) raises:
     """Executes `func[width, rank](indices)` as sub-tasks for a suitable
     combination of width and indices so as to cover shape on the GPU.
 
@@ -1687,22 +1687,18 @@ fn _elementwise_impl_gpu[
             ).canonicalize()
             func[1, rank](index_tup)
 
-    try:
-        if shape[rank - 1] % simd_width == 0:
-            ctx.enqueue_function[
-                _elementwise_gpu_kernel[
-                    block_size=block_size, handle_uneven_simd=False
-                ]
-            ](grid_dim=Int(num_blocks), block_dim=Int(block_size))
-        else:
-            ctx.enqueue_function[
-                _elementwise_gpu_kernel[
-                    block_size=block_size, handle_uneven_simd=True
-                ]
-            ](grid_dim=Int(num_blocks), block_dim=Int(block_size))
-
-    except e:
-        abort(e)
+    if shape[rank - 1] % simd_width == 0:
+        ctx.enqueue_function[
+            _elementwise_gpu_kernel[
+                block_size=block_size, handle_uneven_simd=False
+            ]
+        ](grid_dim=Int(num_blocks), block_dim=Int(block_size))
+    else:
+        ctx.enqueue_function[
+            _elementwise_gpu_kernel[
+                block_size=block_size, handle_uneven_simd=True
+            ]
+        ](grid_dim=Int(num_blocks), block_dim=Int(block_size))
 
 
 # ===-----------------------------------------------------------------------===#

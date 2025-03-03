@@ -16,7 +16,7 @@ from utils.index import IndexList
 
 
 # CHECK-LABEL: test_elementwise_1d
-fn test_elementwise_1d():
+def test_elementwise_1d():
     print("== test_elementwise_1d")
 
     var num_work_items = num_physical_cores()
@@ -47,5 +47,5 @@ fn test_elementwise_1d():
     ptr.free()
 
 
-fn main():
+def main():
     test_elementwise_1d()

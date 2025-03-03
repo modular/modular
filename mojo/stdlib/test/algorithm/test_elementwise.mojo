@@ -16,7 +16,7 @@ from memory import stack_allocation
 from utils.index import Index, IndexList
 
 
-fn test_elementwise[
+def test_elementwise[
     numelems: Int, outer_rank: Int, is_blocking: Bool
 ](dims: DimList):
     var memory1 = stack_allocation[numelems, DType.float32, 1]()
@@ -52,7 +52,7 @@ fn test_elementwise[
             print("ERROR")
 
 
-fn test_elementwise_implicit_runtime():
+def test_elementwise_implicit_runtime():
     print("== test_elementwise_implicit_runtime")
     var vector = NDBuffer[DType.index, 1, 20].stack_allocation()
 
@@ -84,7 +84,7 @@ fn test_indices_conversion():
     print(_get_start_indices_of_nth_subvolume[4](0, shape))
 
 
-fn main():
+def main():
     # CHECK-LABEL: == Testing 1D:
     # CHECK-NOT: ERROR
     print("== Testing 1D:")
