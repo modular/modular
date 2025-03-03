@@ -755,7 +755,7 @@ struct Range:
         stop: InputTensor[type=type, rank=1],
         step: InputTensor[type=type, rank=1],
         ctx: DeviceContextPtr,
-    ):
+    ) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[1]) -> SIMD[type, width]:
@@ -801,7 +801,7 @@ struct Copy:
         output: OutputTensor[type=type, rank=rank],
         input: InputTensor[type=type, rank=rank],
         ctx: DeviceContextPtr,
-    ):
+    ) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[rank]) -> SIMD[type, width]:
@@ -819,7 +819,9 @@ struct Add:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
+    ](
+        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+    ) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -844,7 +846,9 @@ struct Sub:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
+    ](
+        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+    ) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -869,7 +873,9 @@ struct Mul:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
+    ](
+        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+    ) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -894,7 +900,9 @@ struct Div:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
+    ](
+        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+    ) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -919,7 +927,9 @@ struct Mod:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
+    ](
+        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+    ) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -944,7 +954,9 @@ struct Equal:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
+    ](
+        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+    ) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -969,7 +981,9 @@ struct Greater:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
+    ](
+        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+    ) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -994,7 +1008,9 @@ struct GreaterEqual:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
+    ](
+        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+    ) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -1019,7 +1035,9 @@ struct NotEqual:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
+    ](
+        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+    ) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -1044,7 +1062,9 @@ struct And:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
+    ](
+        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+    ) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -1069,7 +1089,9 @@ struct Or:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
+    ](
+        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+    ) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -1094,7 +1116,9 @@ struct Xor:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
+    ](
+        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+    ) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -1119,7 +1143,9 @@ struct Pow:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
+    ](
+        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+    ) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -1144,7 +1170,9 @@ struct Max:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
+    ](
+        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+    ) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -1169,7 +1197,9 @@ struct Min:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr,):
+    ](
+        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+    ) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -1199,13 +1229,12 @@ struct Cast:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
-            return rebind[SIMD[y.type, width]](
-                x._fused_load[width](idx).cast[y.type]()
-            )
+            var answer = x._fused_load[width](idx).cast[y.type]()
+            return rebind[SIMD[y.type, width]](answer)
 
         foreach[
             func,
@@ -1224,7 +1253,7 @@ struct Negative:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1247,7 +1276,7 @@ struct ReLU:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1270,7 +1299,7 @@ struct GeLU:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1293,7 +1322,7 @@ struct Ceil:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1316,7 +1345,7 @@ struct Floor:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1339,7 +1368,7 @@ struct Tanh:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1362,7 +1391,7 @@ struct Cos:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1385,7 +1414,7 @@ struct Sin:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1408,7 +1437,7 @@ struct Erf:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1431,7 +1460,7 @@ struct Exp:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1454,7 +1483,7 @@ struct Round:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1477,7 +1506,7 @@ struct Sqrt:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1500,7 +1529,7 @@ struct Isqrt:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1529,7 +1558,7 @@ struct Select:
         true_case: InputTensor,
         false_case: InputTensor,
         ctx: DeviceContextPtr,
-    ):
+    ) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[out.rank]) -> SIMD[out.type, width]:
@@ -1559,7 +1588,7 @@ struct Trunc:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1587,7 +1616,7 @@ struct Log:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1610,7 +1639,7 @@ struct Log1p:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1633,7 +1662,7 @@ struct IsNan:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1656,7 +1685,7 @@ struct IsInf:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1679,7 +1708,7 @@ struct Not:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1703,7 +1732,7 @@ struct Abs:
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -2591,7 +2620,7 @@ struct StaticBroadcastTo:
         x: InputTensor[type=type, rank=in_rank],
         output_shape: IndexList[out_rank],
         ctx: DeviceContextPtr,
-    ):
+    ) raises:
         # We need the extra output_shape argument.
         # Using `z.shape` instead will prevent the compiler from fusing the kernels.
 
@@ -2647,7 +2676,7 @@ struct StaticReshape:
         input: InputTensor[type=type],
         shape: IndexList[output_rank],
         ctx: DeviceContextPtr,
-    ):
+    ) raises:
         var view_buffer = reshape(
             managed_tensor_slice_to_ndbuffer(input),
             shape,
@@ -2745,7 +2774,7 @@ struct Transpose:
         input: InputTensor[type=type, rank=rank],
         permutations: InputTensor[rank=1],
         ctx: DeviceContextPtr,
-    ):
+    ) raises:
         alias view_strides = Self.get_view_strides[static_permutations, rank](
             input._static_strides
         )
@@ -2830,7 +2859,7 @@ struct Slice:
         stops: InputTensor[rank=1],
         steps: InputTensor[rank=1],
         ctx: DeviceContextPtr,
-    ):
+    ) raises:
         var view_buffer = slice_as_view(
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(starts),
@@ -2938,7 +2967,7 @@ struct SliceDim:
         stops: Scalar,
         steps: Scalar,
         ctx: DeviceContextPtr,
-    ):
+    ) raises:
         var view_buffer = slice_dim_as_view[dim=axis](
             managed_tensor_slice_to_ndbuffer(input),
             Int(starts),
@@ -4382,7 +4411,7 @@ struct ResizeNearest:
         output: OutputTensor[type=type, rank=rank],
         input: InputTensor[type=type, rank=rank],
         size: InputTensor[rank=1],
-    ):
+    ) raises:
         resize_nearest_neighbor[coordinate_transform_mode, round_mode](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(output),
@@ -6446,7 +6475,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_kernel_api[
     freqs_cis: ManagedTensorSlice[type=type, rank=2],
     layer_idx: UInt32,
     ctx: DeviceContextPtr,
-):
+) raises:
     """Performs a fused RoPE projection for Q and K projections.
 
     We have a manually fused QKV projection with mo.opaque types in our Llama model.
@@ -6516,7 +6545,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
     freqs_cis: ManagedTensorSlice[type=type, rank=2],
     layer_idx: UInt32,
     ctx: DeviceContextPtr,
-):
+) raises:
     generic_fused_qk_rope_bshd_continous_batch_ragged[
         interleaved=interleaved, target=target
     ](
@@ -6579,7 +6608,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     layer_idx: UInt32,
     output: ManagedTensorSlice[type=type, rank=3],
     context: DeviceContextPtr,
-):
+) raises:
     generic_fused_qk_rope_bshd_paged_ragged[
         interleaved=interleaved, target=target
     ](
@@ -6616,7 +6645,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
         freqs_cis: InputTensor[type=type, rank=2],
         layer_idx: UInt32,
         context: DeviceContextPtr = DeviceContextPtr(),
-    ):
+    ) raises:
         generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
             interleaved=interleaved, target=target
         ](
@@ -7542,7 +7571,7 @@ struct Struct_kv_collection_cow_strided_memcpy_paged:
         num_tokens_tensor: InputTensor[type = DType.uint32, rank=1],
         max_num_tokens_scalar: Scalar[DType.uint32],
         ctx: DeviceContextPtr,
-    ):
+    ) raises:
         # assert that all of the tensors have the same batch dimension
         var batch_dim = num_tokens_tensor.dim_size[0]()
         debug_assert(

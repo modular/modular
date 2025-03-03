@@ -192,7 +192,7 @@ struct Foo:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](z: OutputTensor, x: InputTensor, y: InputTensor):
+    ](z: OutputTensor, x: InputTensor, y: InputTensor) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -277,7 +277,7 @@ struct PrintTensorSpecOp:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](out: OutputTensor, x: InputTensor):
+    ](out: OutputTensor, x: InputTensor) raises:
         print("x.shape =", x._static_shape)
         print("x.strides =", x._static_strides)
         print("x.alignment =", x.alignment)
@@ -304,7 +304,7 @@ struct PrintTensorSpecViewOp:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](out: OutputTensor, x: InputTensor):
+    ](out: OutputTensor, x: InputTensor) raises:
         print("x.shape =", x._static_shape)
         print("x.strides =", x._static_strides)
         print("x.alignment =", x.alignment)
@@ -324,14 +324,14 @@ struct PrintTensorSpecViewOp:
 
 
 @compiler.register("print_tensor_spec_fused")
-@compiler.elementwise
 struct PrintTensorSpecFusedOp:
     @enforce_io_param
+    @compiler.enable_fusion_for("out", "x")
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](out: OutputTensor, x: InputTensor):
+    ](out: OutputTensor, x: InputTensor) raises:
         print("x.shape =", x._static_shape)
         print("x.strides =", x._static_strides)
         print("x.alignment =", x.alignment)
@@ -358,7 +358,7 @@ struct AddElementwise:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](z: OutputTensor, x: InputTensor, y: InputTensor):
+    ](z: OutputTensor, x: InputTensor, y: InputTensor) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -377,7 +377,7 @@ struct AddFuseLHS:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](z: OutputTensor, x: InputTensor, y: InputTensor):
+    ](z: OutputTensor, x: InputTensor, y: InputTensor) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -387,7 +387,7 @@ struct AddFuseLHS:
 
         # Wrapper to hide the foreach call from MOGGPreElab.
         # Otherwhise it would still be detected as an elementwise kernel.
-        fn foo():
+        fn foo() raises:
             foreach[func](z)
 
         foo()
@@ -401,7 +401,7 @@ struct AddFuseInputs:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](z: OutputTensor, x: InputTensor, y: InputTensor):
+    ](z: OutputTensor, x: InputTensor, y: InputTensor) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -411,7 +411,7 @@ struct AddFuseInputs:
 
         # Wrapper to hide the foreach call from MOGGPreElab.
         # Otherwhise it would still be detected as an elementwise kernel.
-        fn foo():
+        fn foo() raises:
             foreach[func](z)
 
         foo()
@@ -564,7 +564,7 @@ struct VariadicAdd:
     ](
         output: OutputTensor[type=type, rank=rank],
         inputs: InputVariadicTensors[type, rank, *_],
-    ):
+    ) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[rank]) -> SIMD[type, width]:
@@ -578,7 +578,7 @@ struct VariadicAdd:
 
         # Wrapper to hide the foreach call from MOGGPreElab.
         # Otherwhise it would still be detected as an elementwise kernel.
-        fn foo():
+        fn foo() raises:
             foreach[func](output)
 
         foo()
@@ -615,7 +615,7 @@ struct Transpose2DOp:
         z: OutputTensor[type=type, rank=2],
         x: InputTensor[type=type, rank=2],
         ctx: DeviceContextPtr,
-    ):
+    ) raises:
         alias view_strides = Self.get_view_strides(x._static_strides)
         var shape_and_strides = Self.build_view(x)
 
@@ -627,15 +627,15 @@ struct Transpose2DOp:
         view_copy_impl[target=target, _synchronous=_synchronous](z, x_view, ctx)
 
 
-@compiler.register("elementwise_print_shape")
-@compiler.elementwise
+@compiler.register("print_shape_fused")
 struct ElementwisePrintShape:
     @enforce_io_param
+    @compiler.enable_fusion_for("z", "x")
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](z: OutputTensor, x: InputTensor):
+    ](z: OutputTensor, x: InputTensor) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -959,7 +959,7 @@ struct CastElementwise:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -978,7 +978,7 @@ struct PrintVectorSize:
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr):
+    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
