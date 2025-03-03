@@ -4495,13 +4495,14 @@ struct ROIAlign:
 
 @compiler.register("mo.tile")
 struct Tile:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType, rank: Int
     ](
-        output: ManagedTensorSlice[type=type, rank=rank],
-        input: ManagedTensorSlice[type=type, rank=rank],
-        repeats: ManagedTensorSlice,
+        output: OutputTensor[type=type, rank=rank],
+        input: InputTensor[type=type, rank=rank],
+        repeats: InputTensor,
     ) raises:
         tile(
             managed_tensor_slice_to_ndbuffer(input),
@@ -4527,12 +4528,13 @@ struct Tile:
 
 @compiler.register("mo.random.normal")
 struct RandomNormal:
+    @enforce_io_param
     @staticmethod
     fn execute[
         mean_var_type: DType
     ](
-        output: ManagedTensorSlice,
-        shape: ManagedTensorSlice[rank=1],
+        output: OutputTensor,
+        shape: InputTensor[rank=1],
         mean: Scalar,
         variance: Scalar,
         seed_value: Scalar,
@@ -4562,11 +4564,12 @@ struct RandomNormal:
 
 @compiler.register("mo.static.random.normal")
 struct StaticRandomNormal:
+    @enforce_io_param
     @staticmethod
     fn execute[
         mean_var_type: DType
     ](
-        output: ManagedTensorSlice,
+        output: OutputTensor,
         mean: Scalar,
         variance: Scalar,
         seed_value: Scalar,
@@ -4583,13 +4586,14 @@ struct StaticRandomNormal:
 
 @compiler.register("mo.softmax")
 struct Softmax:
+    @enforce_io_param
     @compiler.enable_fusion_for("input")
     @staticmethod
     fn execute[
         target: StringLiteral
     ](
-        output: ManagedTensorSlice,
-        input: ManagedTensorSlice[type = output.type, rank = output.rank],
+        output: OutputTensor,
+        input: InputTensor[type = output.type, rank = output.rank],
         ctx: DeviceContextPtr,
     ) raises:
         # shape should be the same between the two inputs
@@ -4622,13 +4626,14 @@ struct Softmax:
 
 @compiler.register("mo.logsoftmax")
 struct LogSoftmax:
+    @enforce_io_param
     @compiler.enable_fusion_for("input")
     @staticmethod
     fn execute[
         target: StringLiteral
     ](
-        output: ManagedTensorSlice,
-        input: ManagedTensorSlice[type = output.type, rank = output.rank],
+        output: OutputTensor,
+        input: InputTensor[type = output.type, rank = output.rank],
     ) raises:
         # shape should be the same between the two inputs
         var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
@@ -4659,6 +4664,7 @@ struct LogSoftmax:
 
 @compiler.register("mo.cumsum")
 struct CumSum:
+    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -4666,8 +4672,8 @@ struct CumSum:
         exclusive: Int,
         reverse: Int,
     ](
-        output: ManagedTensorSlice[type=type, rank=rank],
-        input: ManagedTensorSlice[type=type, rank=rank],
+        output: OutputTensor[type=type, rank=rank],
+        input: InputTensor[type=type, rank=rank],
         axis: Int,
         ctx: DeviceContextPtr,
     ):
