@@ -1005,10 +1005,7 @@ def KGEN_TargetParamAttr : KGEN_ExprAttr<"TargetParam", "target"> {
     }]>
   ];
 
-  let extraClassDeclaration = [{
-    /// Get the type of the attribute. It is always TargetType.
-    Type getType() const;
-  }];
+  let extraClassDeclaration = [{ Type getType() const; }];
 }
 
 //===----------------------------------------------------------------------===//
