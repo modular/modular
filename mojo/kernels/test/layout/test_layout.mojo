@@ -26,6 +26,7 @@ from layout.layout import (
     size,
     sublayout,
     zipped_divide,
+    upcast,
 )
 from testing import assert_equal, assert_not_equal
 
@@ -600,6 +601,20 @@ def test_expand_modes_alike():
     print(ema3[1])
 
 
+fn test_upcast() raises:
+    print("== test_upcast")
+    alias scatter = Layout(IntTuple(4, 3), IntTuple(2, 4))
+    alias up2 = upcast(scatter, 2)
+    assert_equal(String(up2), "((4, 3):(1, 2))")
+    alias up4 = upcast(scatter, 4)
+    alias up22 = upcast(up2, 2)
+    assert_equal(up4, up22)
+    assert_equal(String(up4), "((2, 3):(1, 1))")
+    alias scatter2 = Layout(IntTuple(8, 1024), IntTuple(1024, 1))
+    alias up16 = upcast(scatter2, 16)
+    assert_equal(String(up16), "((8, 64):(64, 1))")
+
+
 fn validate_right_inverse[layout: Layout]() raises:
     alias rinv_layout = right_inverse(layout)
     for i in range(layout.size()):
@@ -647,4 +662,5 @@ def main():
     test_sublayout()
     test_crd2idx()
     test_expand_modes_alike()
+    test_upcast()
     test_right_inverse()

@@ -560,10 +560,16 @@ fn logical_product(_layout_a: Layout, layout_b: Layout) -> Layout:
 fn zip_modes(layout_a: Layout, layout_b: Layout) -> Layout:
     var zipped = Layout()
     for i in range(layout_a.rank()):
-        zipped.append(make_layout(layout_a[i], layout_b[i]))
+        bi = layout_b[i]
+        if is_int(bi.shape) and Int(bi.shape) <= 0:
+            zipped.append(layout_a[i])
+        else:
+            zipped.append(make_layout(layout_a[i], bi))
     return zipped
 
 
+# If there is a 0-shape mode in layout_b, then the corresponding mode in
+# layout_a is taken as is without adding any additional tiling modes.
 fn blocked_product(layout_a: Layout, layout_b: Layout) -> Layout:
     # ((a_0, a_1, ...), (tile_0, tile_1, ...))
     var lp = logical_product(layout_a, layout_b)
@@ -580,6 +586,9 @@ fn tile_to_shape(
     for i in range(len(flat_tile_shape)):
         var a = Int(flat_target_shape[i])
         var b = Int(flat_tile_shape[i])
+        if a <= 0:
+            tiler_shape.append(a)
+            continue
         if a % b != 0:
             abort(
                 "Tile to shape failed: target shape is not divisible by tile"
@@ -822,6 +831,27 @@ fn right_inverse(layout: Layout) -> Layout:
                 next_stride *= Int(shape_j)
                 break
     return Layout(shape, stride)
+
+
+# `upcast` fuses `factor`-consecutive elements into a single element in a
+# layout. This is useful for converting a layout of a finer granularity like in
+# bits or bytes to a layout in a coarser granularity like in bfloat16 and tf32.
+fn upcast(layout: Layout, factor: Int) -> Layout:
+    if is_int(layout.shape):
+        if layout.stride == 0:
+            return layout
+        else:
+            var fac = IntTuple(factor)
+            var up_shape = shape_div(
+                layout.shape, shape_div(fac, layout.stride)
+            )
+            var up_stride = shape_div(layout.stride, fac)
+            return Layout(up_shape, up_stride)
+    else:
+        var res = Layout()
+        for i in range(layout.rank()):
+            res.append(upcast(layout[i], factor))
+        return res
 
 
 fn is_row_major[rank: Int](layout: Layout) -> Bool:

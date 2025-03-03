@@ -20,7 +20,7 @@ from gpu.mma import (
     wgmma_wait_group_sync,
 )
 from layout import IntTuple, Layout, LayoutTensor
-from layout.layout import is_row_major
+from layout.layout import is_row_major, tile_to_shape, upcast
 
 from utils import Index, IndexList
 
@@ -81,7 +81,8 @@ from utils import Index, IndexList
 #
 # When the layout is dense, and the core matrices are tiled in column major
 # like above comment. We have `SBO = cm_M * T = cm_M * cm_K` and `LBO = (cm_M *
-# m) * T = BM * T = = BM * cm_K`.
+# m) * T = BM * T = BM * cm_K`. The minimal dense layout is then `BM = 8` and
+# `BK = T` which is exactly the core matrix layout.
 #
 #
 # B32  : Swizzle<1,4,3> o smem_ptr o ((8,m),(T,2k)):((xT,SBO),(1, T )) where x = 2
@@ -89,7 +90,7 @@ from utils import Index, IndexList
 # B128 : Swizzle<3,4,3> o smem_ptr o ((8,m),(T,2k)):((xT,SBO),(1, T )) where x = 8
 #
 # When the layout is dense, we have the unique solution `xT = T*2k = BK`, `SBO
-# = cm_M * BK`.
+# = cm_M * BK`. The minimal dense layout is then `m = 1` and `2k = x`.
 #
 # ----------------------------
 # K x M/N, MN-major, siwzzling
@@ -134,21 +135,40 @@ alias _CM_ROW_BYTES = 16
 
 alias WGMMA_K_BYTES = 32
 
+alias _CM_LAYOUT_BYTES = Layout.row_major(_CM_M, _CM_K_BYTES)
+alias _CM_TILE_STRIDE = IntTuple(1, _CM_K_BYTES)
 
-fn tile_layout_k_major[
+
+# constructs core matrix or "minimal dense" layout in bytes as described in file
+# header.
+fn _select_k_atom_bytes[
+    swizzle_mode: TensorMapSwizzle,
+]() -> Layout:
+    @parameter
+    if swizzle_mode == TensorMapSwizzle.SWIZZLE_NONE:
+        return _CM_LAYOUT_BYTES
+    else:
+        alias x = swizzle_mode.bytes() // 16
+        return Layout(
+            IntTuple(_CM_M, IntTuple(_CM_K_BYTES, x)),
+            IntTuple(x * _CM_K_BYTES, _CM_TILE_STRIDE),
+        )
+
+
+fn select_k_atom[
     type: DType,
+    swizzle_mode: TensorMapSwizzle,
+]() -> Layout:
+    alias a = _select_k_atom_bytes[swizzle_mode]()
+    return upcast(a, sizeof[type]())
+
+
+fn _checked_tile_shape[
+    type: DType,
+    swizzle_mode: TensorMapSwizzle,
     BM: Int,
     BK: Int,
-    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-]() -> Layout:
-    alias _CM_K = _CM_K_BYTES // sizeof[type]()
-    constrained[
-        BM % _CM_M == 0 and BK % _CM_K == 0,
-        "Tile shape must be ((8, _), (" + String(_CM_K) + ", multiple of 2))",
-    ]()
-    alias shape01 = BM // _CM_M
-    alias shape11 = BK // _CM_K
-
+]() -> IntTuple:
     @parameter
     if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
         alias k_bytes = BK * sizeof[type]()
@@ -159,16 +179,21 @@ fn tile_layout_k_major[
             + " doesn't match "
             + String(swizzle_mode),
         ]()
+        # swizzled WGMMA cannot be tiled in K if we constraint the layout to 2D.
+        return IntTuple(BM, 0)
 
-        return Layout(
-            IntTuple(IntTuple(_CM_M, shape01), IntTuple(_CM_K, shape11)),
-            IntTuple(IntTuple(BK, _CM_M * BK), IntTuple(1, _CM_K)),
-        )
+    return IntTuple(BM, BK)
 
-    return Layout(
-        IntTuple(IntTuple(_CM_M, shape01), IntTuple(_CM_K, shape11)),
-        IntTuple(IntTuple(_CM_K, _CM_M * _CM_K), IntTuple(1, BM * _CM_K)),
-    )
+
+fn tile_layout_k_major[
+    type: DType,
+    BM: Int,
+    BK: Int,
+    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+]() -> Layout:
+    alias atom = select_k_atom[type, swizzle_mode]()
+    alias new_shape = _checked_tile_shape[type, swizzle_mode, BM, BK]()
+    return tile_to_shape(atom, new_shape)
 
 
 fn tile_layout_mn_major[
