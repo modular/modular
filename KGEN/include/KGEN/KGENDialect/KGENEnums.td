@@ -384,4 +384,18 @@ def EmitAs : I32EnumAttr<"EmitAs", "compile_assembly emission kind", [
   let genSpecializedAttr = 0;
 }
 
+//===----------------------------------------------------------------------===//
+// ClosureMethod
+//===----------------------------------------------------------------------===//
+
+def KGEN_ClosureMethod : I32EnumAttr<"ClosureMethod", "closure method", [
+  I32EnumAttrCase<"CALL",  0, "call">,
+  I32EnumAttrCase<"DEL", 1, "del">,
+  I32EnumAttrCase<"MOVE", 2, "move">,
+  I32EnumAttrCase<"COPY", 3, "copy">
+]> {
+  let cppNamespace = "M::KGEN";
+  let genSpecializedAttr = 0;
+}
+
 #endif // KGEN_KGENDIALECT_KGENENUMS_TD
