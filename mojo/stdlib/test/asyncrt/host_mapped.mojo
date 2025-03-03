@@ -23,7 +23,7 @@ fn main() raises:
         for i in range(length):
             in_map[i] = i
 
-    ctx.enqueue_copy(out_buf, in_buf)
+    in_buf.enqueue_copy_to(out_buf)
 
     with ctx.map_to_host(out_buf) as out_map:
         for i in range(length):

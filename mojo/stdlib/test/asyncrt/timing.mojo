@@ -27,7 +27,7 @@ fn _timed_iter_func(context: DeviceContext, iter: Int) raises:
 
     # Copy to and from device buffers.
     in_host.enqueue_copy_to(in_dev)
-    context.enqueue_copy(out_dev, in_dev)
+    in_dev.enqueue_copy_to(out_dev)
     out_dev.enqueue_copy_to(out_host)
 
     # Wait for the copies to be completed.

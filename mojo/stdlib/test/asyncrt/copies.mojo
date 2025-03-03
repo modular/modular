@@ -55,7 +55,7 @@ fn _run_memcpy_async(ctx: DeviceContext, length: Int, use_context: Bool) raises:
         out_host[i] = length + i
 
     # Copy to and from device buffers.
-    ctx.enqueue_copy(in_dev, in_host.unsafe_ptr())
+    in_dev.enqueue_copy_from(in_host)
     if use_context:
         ctx.enqueue_copy(out_dev, in_dev)
     else:
@@ -93,13 +93,15 @@ fn _run_sub_memcpy_async(ctx: DeviceContext, length: Int) raises:
 
     # Copy to and from device buffers.
     in_host.enqueue_copy_to(in_dev)
-    ctx.enqueue_copy(out_dev, in_dev)
+    in_dev.enqueue_copy_to(out_dev)
 
     # Swap halves on copy back.
-    # TODO(iposva): Investigate failure with this code:
-    # second_out_dev.enqueue_copy_to(out_host)
-    ctx.enqueue_copy(out_host.unsafe_ptr(), second_out_dev)
-    ctx.enqueue_copy(out_host.unsafe_ptr().offset(half_length), first_out_dev)
+    # Using sub buffer
+    second_out_dev.enqueue_copy_to(
+        out_host.create_sub_buffer[DType.int64](0, half_length)
+    )
+    # Using host pointer math
+    first_out_dev.enqueue_copy_to(out_host.unsafe_ptr().offset(half_length))
 
     # Wait for the copies to be completed.
     ctx.synchronize()
@@ -137,7 +139,7 @@ fn _run_fake_memcpy_async(
 
     # Copy to and from device buffers.
     in_host.enqueue_copy_to(in_dev)
-    ctx.enqueue_copy(out_dev, in_dev)
+    in_dev.enqueue_copy_to(out_dev)
 
     var out_ptr: UnsafePointer[Int64]
     if use_take_ptr:
@@ -154,10 +156,12 @@ fn _run_fake_memcpy_async(
     )
 
     # Swap halves on copy back.
-    # TODO(iposva): Investigate failure with this code:
-    # second_out_dev.enqueue_copy_to(out_host)
-    ctx.enqueue_copy(out_host.unsafe_ptr(), second_out_dev)
-    ctx.enqueue_copy(out_host.unsafe_ptr().offset(half_length), first_out_dev)
+    # Using sub buffer
+    second_out_dev.enqueue_copy_to(
+        out_host.create_sub_buffer[DType.int64](0, half_length)
+    )
+    # Using host pointer math
+    first_out_dev.enqueue_copy_to(out_host.unsafe_ptr().offset(half_length))
 
     # Wait for the copies to be completed.
     ctx.synchronize()

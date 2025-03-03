@@ -88,7 +88,7 @@ fn test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         block_dim=(block_dim),
     )
     out_dev1.reassign_ownership_to(ctx2)
-    ctx2.enqueue_copy(out_host1.unsafe_ptr(), out_dev1)
+    out_dev1.enqueue_copy_to(out_host1)
     ctx1.enqueue_function(
         dev_func,
         in0_dev2,
@@ -99,7 +99,7 @@ fn test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         block_dim=(block_dim),
     )
     out_dev2.reassign_ownership_to(ctx2)
-    ctx2.enqueue_copy(out_host2.unsafe_ptr(), out_dev2)
+    out_dev2.enqueue_copy_to(out_host2)
     ctx1.enqueue_function(
         dev_func,
         in0_dev3,
@@ -110,7 +110,7 @@ fn test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         block_dim=(block_dim),
     )
     out_dev3.reassign_ownership_to(ctx2)
-    ctx2.enqueue_copy(out_host3.unsafe_ptr(), out_dev3)
+    out_dev3.enqueue_copy_to(out_host3)
 
     # Wait for the copies to be completed.
     ctx2.synchronize()
@@ -234,7 +234,7 @@ fn test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         block_dim=(block_dim),
     )
     ctx1.enqueue_wait_for(ctx2)
-    ctx1.enqueue_copy(out_host.unsafe_ptr(), out_dev4)
+    out_dev4.enqueue_copy_to(out_host)
 
     # Wait for the copies to be completed.
     ctx1.synchronize()
