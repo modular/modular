@@ -40,7 +40,8 @@ def _init_device_ndbuffer_from_goldens[
     device_tensor = DeviceNDBuffer[
         host_tensor.type, host_tensor.rank, shape = host_tensor.shape
     ](ctx=ctx)
-    ctx.copy(device_tensor.buffer, host_tensor.tensor.data)
+    ctx.enqueue_copy(device_tensor.buffer, host_tensor.tensor.data)
+    ctx.synchronize()
 
     # Ensure the host buffer outlives the copy.
     _ = host_tensor^
@@ -143,7 +144,8 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
     cache_lengths = DeviceNDBuffer[
         DType.uint32, 1, shape = DimList(batch_size)
     ](ctx=ctx)
-    ctx.copy(cache_lengths.buffer, start_positions.data)
+    ctx.enqueue_copy(cache_lengths.buffer, start_positions.data)
+    ctx.synchronize()
 
     k_cache_block = NDBuffer[type, 5](
         k_cache_block_dev.buffer.unsafe_ptr(), block_shape
@@ -202,7 +204,8 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
 
     # Compare output and expected query tensors.
     q_out_host = HostNDBuffer[q_dev.type, q_dev.rank, shape = q_dev.shape]()
-    ctx.copy(q_out_host.tensor.data, q_out_dev.buffer)
+    ctx.enqueue_copy(q_out_host.tensor.data, q_out_dev.buffer)
+    ctx.synchronize()
 
     assert_almost_equal(
         q_out_host.tensor.data,
@@ -224,7 +227,8 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
         k_cache_dev_batch_item = k_cache_block_dev.buffer.create_sub_buffer[
             type
         ](k_cache_offset, seq_len * dim)
-        ctx.copy(k_cache_host_batch_item, k_cache_dev_batch_item)
+        ctx.enqueue_copy(k_cache_host_batch_item, k_cache_dev_batch_item)
+        ctx.synchronize()
 
         assert_almost_equal(
             k_cache_host_batch_item,

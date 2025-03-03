@@ -34,7 +34,8 @@ def _init_device_ndbuffer_from_goldens[
     device_tensor = DeviceNDBuffer[
         host_tensor.type, host_tensor.rank, shape = host_tensor.shape
     ](ctx=ctx)
-    ctx.copy(device_tensor.buffer, host_tensor.tensor.data)
+    ctx.enqueue_copy(device_tensor.buffer, host_tensor.tensor.data)
+    ctx.synchronize()
 
     # Ensure the host buffer outlives the copy.
     _ = host_tensor^

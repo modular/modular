@@ -91,7 +91,7 @@ fn all_reduce_test[
                 sizeof[Signal[max_num_blocks]]() + temp_buffer_num_bytes
             )
         )
-        list_of_ctx[i].memset_sync[DType.uint8](signal_buffers[i], 0)
+        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
         rank_sigs[i] = (
             signal_buffers[i].unsafe_ptr().bitcast[Signal[max_num_blocks]]()
         )
@@ -114,6 +114,11 @@ fn all_reduce_test[
         out_bufs[i] = NDBuffer[type, rank](
             out_bufs_list[i].unsafe_ptr(), DimList(length)
         )
+
+    # Synchronize all devices to ensure setup has propagated.
+    @parameter
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
 
     # Warm up.
     for _ in range(num_warmups):
