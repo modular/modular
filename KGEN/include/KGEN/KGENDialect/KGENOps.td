@@ -484,11 +484,15 @@ def KGEN_CallParamOp : KGEN_CallOpBase<"call_param",
 // ParamConstantOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_ParamConstantOp : KGENOp<"param.constant", [Pure, ConstantLike,
+def KGEN_ParamConstantOp : KGENOp<"param.constant", [ConstantLike,
     BytecodeOpInterface,
+    // TODO(MOCO-1101): Replace two lines below with Pure
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
+    AlwaysSpeculatable,
     DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric"]>,
     DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>]>,
     NoParamDecls {
+
   let summary = "create a constant value from a parameter value";
   let description = [{
     The `kgen.param.constant` operation materializes the value of a parameter

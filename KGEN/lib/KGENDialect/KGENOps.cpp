@@ -101,6 +101,21 @@ bool ParamConstantOp::isImplicitlyParametric() {
 void ParamConstantOp::walkDefinitions(
     function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {}
 
+void ParamConstantOp::getEffects(
+    SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
+
+  // This is a hack designed to stop the CSE of "none" in closures.
+  //
+  // See MSTDL-1123 for more context, but until cross-device compilation is
+  // more robust, we need this to avoid some edge case behavior around None.
+  //
+  // TODO(MOCO-1101): remove the need for this and make op Pure again.
+  if (isa<KGEN::NoneType>(getValue().getType()) &&
+      getOperation()->getParentOfType<KGEN::ParamDeclareRegionOp>())
+    effects.emplace_back(mlir::MemoryEffects::Allocate::get());
+  return;
+}
+
 //===----------------------------------------------------------------------===//
 // ParamMaterializeOp
 //===----------------------------------------------------------------------===//
