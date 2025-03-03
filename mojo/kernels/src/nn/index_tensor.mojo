@@ -158,7 +158,7 @@ fn index_tensor[
     indices: NDBuffer[indices_type, indices_rank],
     output: NDBuffer[type, output_rank],
     ctx: DeviceContextPtr,
-):
+) raises:
     """
     Index_tensor operation; based on modified implementation of gather_nd.
 
@@ -300,7 +300,7 @@ fn _index_tensor_impl[
     indices: NDBuffer[indices_type, indices_rank],
     output: NDBuffer[type, output_rank],
     ctx: Optional[DeviceContext] = None,
-):
+) raises:
     constrained[
         data_rank >= 2 and indices_rank >= 2,
         "Constraint: data_rank >= 2 and indices_rank >= 2",

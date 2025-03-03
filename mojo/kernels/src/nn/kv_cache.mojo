@@ -305,7 +305,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
     layer_idx: UInt32,
     output: NDBuffer[type, 4, *_],
     context: DeviceContextPtr = DeviceContextPtr(),
-):
+) raises:
     """Performs a fused RoPE projection for Q and K projections.
 
     We have a manually fused QKV projection with mo.opaque types in our Llama model.

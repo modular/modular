@@ -14,7 +14,7 @@ from nn.slice import slice_dim_as_view
 from utils.index import Index, IndexList
 
 
-fn print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):
+def print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):
     print("New shape:", tensor.get_shape())
     print("New strides:", tensor.get_strides())
 
@@ -28,7 +28,7 @@ fn print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):
 
 
 # slice_dim
-fn test_slice_dim[
+def test_slice_dim[
     dtype: DType, numelems: Int, outer_rank: Int, dim: Int
 ](dims: DimList, start: Int, stop: Int, step: Int):
     # Isn't always used but is used for the output buffer if we copy.
@@ -58,7 +58,7 @@ fn test_slice_dim[
 
 
 # CHECK-LABEL: == test_slice_dim_basic
-fn test_slice_dim_basic():
+def test_slice_dim_basic():
     print("== test_slice_dim_basic")
 
     # CHECK-NEXT: In shape: (4, 4)
@@ -94,5 +94,5 @@ fn test_slice_dim_basic():
     test_slice_dim[DType.float32, 16, 2, 1](DimList(4, 4), 2, 4, 1)
 
 
-fn main():
+def main():
     test_slice_dim_basic()

@@ -1403,7 +1403,7 @@ fn gather_nd[
     indices: NDBuffer[indices_type, indices_rank],
     output: NDBuffer[type, output_rank],
     ctx: DeviceContextPtr,
-):
+) raises:
     """
     GatherND operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#GatherND.
     Based on reference implementation: https://github.com/onnx/onnx/blob/main/onnx/backend/test/case/node/gathernd.py.
@@ -1459,7 +1459,7 @@ fn _gather_nd_impl[
     indices: NDBuffer[indices_type, indices_rank],
     output: NDBuffer[type, output_rank],
     ctx: Optional[DeviceContext] = None,
-):
+) raises:
     constrained[
         data_rank >= 1 and indices_rank >= 1,
         "Constraint: data_rank >= 1 and indices_rank >= 1",

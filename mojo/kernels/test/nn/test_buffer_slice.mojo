@@ -14,7 +14,9 @@ from nn.slice import slice_as_copy, slice_as_view
 from utils.index import Index, IndexList
 
 
-fn print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):
+fn print_elements[
+    type: DType, in_rank: Int
+](tensor: NDBuffer[type, in_rank]) raises:
     print("New shape:", tensor.get_shape())
     print("New strides:", tensor.get_strides())
 
@@ -28,7 +30,7 @@ fn print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):
 
 
 # slice_dim
-fn test_slice[
+def test_slice[
     dtype: DType, numelems: Int, outer_rank: Int, static_shape: DimList
 ](
     dims: DimList,
@@ -121,7 +123,7 @@ fn test_slice[
 
 
 # CHECK-LABEL: == test_slice_basic
-fn test_slice_basic():
+def test_slice_basic():
     print("== test_slice_basic")
 
     # CHECK-NEXT: In shape: (4, 4, 4)
@@ -168,7 +170,7 @@ fn test_slice_basic():
 
 
 # CHECK-LABEL: == test_slice_identity
-fn test_slice_identity():
+def test_slice_identity():
     print("== test_slice_identity")
 
     # CHECK-NEXT: In shape: (2, 2, 4)
@@ -205,7 +207,7 @@ fn test_slice_identity():
 
 
 # CHECK-LABEL: == test_slice_steps
-fn test_slice_steps():
+def test_slice_steps():
     print("== test_slice_steps")
 
     # CHECK-NEXT: In shape: (2, 4, 8)
@@ -232,7 +234,7 @@ fn test_slice_steps():
 
 
 # CHECK-LABEL: == test_slice_1D
-fn test_slice_1D():
+def test_slice_1D():
     print("== test_slice_1D")
 
     # CHECK-NEXT: In shape: (64,)
@@ -251,7 +253,7 @@ fn test_slice_1D():
 
 
 # CHECK-LABEL: == test_slice_empty
-fn test_slice_empty():
+def test_slice_empty():
     print("== test_slice_empty")
 
     # CHECK-NEXT: In shape: (64,)
@@ -266,7 +268,7 @@ fn test_slice_empty():
 
 
 # CHECK-LABEL: == test_slice_4D
-fn test_slice_4D():
+def test_slice_4D():
     print("== test_slice_4D")
 
     # CHECK-NEXT: In shape: (2, 4, 4, 2)
@@ -289,7 +291,7 @@ fn test_slice_4D():
 
 
 # CHECK-LABEL: == test_slice_copy
-fn test_slice_copy():
+def test_slice_copy():
     print("== test_slice_copy")
 
     # CHECK-NEXT: In shape: (2, 4, 4, 2)
@@ -315,7 +317,7 @@ fn test_slice_copy():
 
 
 # CHECK-LABEL: == test_slice_negative
-fn test_slice_negative():
+def test_slice_negative():
     print("== test_slice_negative")
 
     # CHECK-NEXT: In shape: (2, 4, 4, 2)
@@ -344,7 +346,7 @@ fn test_slice_negative():
 
 
 # CHECK-LABEL: == test_slice_negative_step_1D
-fn test_slice_negative_step_1D():
+def test_slice_negative_step_1D():
     print("== test_slice_negative_step_1D")
 
     # CHECK: In shape: (15,)
@@ -378,7 +380,7 @@ fn test_slice_negative_step_1D():
 
 
 # CHECK-LABEL: == test_slice_negative_step_2D
-fn test_slice_negative_step_2D():
+def test_slice_negative_step_2D():
     print("== test_slice_negative_step_2D")
 
     # CHECK: In shape: (16, 4)
@@ -406,7 +408,7 @@ fn test_slice_negative_step_2D():
 
 
 # CHECK-LABEL: == test_slice_negative_step_3D
-fn test_slice_negative_step_3D():
+def test_slice_negative_step_3D():
     print("== test_slice_negative_step_3D")
 
     # CHECK: In shape: (8, 2, 4)
@@ -434,7 +436,7 @@ fn test_slice_negative_step_3D():
 
 
 # CHECK-LABEL: == test_slice_negative_step_4D
-fn test_slice_negative_step_4D():
+def test_slice_negative_step_4D():
     print("== test_slice_negative_step_4D")
 
     # CHECK: In shape: (2, 4, 2, 4)
@@ -460,7 +462,7 @@ fn test_slice_negative_step_4D():
 
 
 # CHECK-LABEL: == test_slice_negative_step_2
-fn test_slice_negative_step_2():
+def test_slice_negative_step_2():
     print("== test_slice_negative_step_2")
 
     # CHECK: In shape: (3, 3)
@@ -481,7 +483,7 @@ fn test_slice_negative_step_2():
 
 
 # CHECK-LABEL: == test_slice_negative_step_3
-fn test_slice_negative_step_3():
+def test_slice_negative_step_3():
     print("== test_slice_negative_step_3")
 
     # CHECK: In shape: (3, 3)
@@ -505,7 +507,7 @@ fn test_slice_negative_step_3():
 
 
 # CHECK-LABEL: == test_slice_negative_step_4
-fn test_slice_negative_step_4():
+def test_slice_negative_step_4():
     print("== test_slice_negative_step_4")
 
     # CHECK: In shape: (3, 3)
@@ -534,7 +536,7 @@ fn test_slice_negative_step_4():
 
 
 # CHECK-LABEL: == test_truncated_last_dim
-fn test_truncated_last_dim():
+def test_truncated_last_dim():
     print("== test_truncated_last_dim")
 
     # CHECK: In shape: (3, 3)
@@ -558,7 +560,7 @@ fn test_truncated_last_dim():
 
 
 # CHECK-LABEL: == test_truncated_first_and_last_dim
-fn test_truncated_first_and_last_dim():
+def test_truncated_first_and_last_dim():
     print("== test_truncated_first_and_last_dim")
 
     # CHECK: In shape: (3, 3)
@@ -577,7 +579,7 @@ fn test_truncated_first_and_last_dim():
 
 
 # CHECK-LABEL: == test_truncated_last_dim_reverse
-fn test_truncated_last_dim_reverse():
+def test_truncated_last_dim_reverse():
     print("== test_truncated_last_dim_reverse")
 
     # CHECK: In shape: (3, 3)
@@ -603,7 +605,7 @@ fn test_truncated_last_dim_reverse():
 
 
 # CHECK-LABEL: == test_truncated_first_and_last_dim_reverse
-fn test_truncated_first_and_last_dim_reverse():
+def test_truncated_first_and_last_dim_reverse():
     print("== test_truncated_first_and_last_dim_reverse")
 
     # CHECK: In shape: (3, 3)
@@ -622,7 +624,7 @@ fn test_truncated_first_and_last_dim_reverse():
 
 
 # CHECK-LABEL: == test_last_dim_edge
-fn test_last_dim_edge():
+def test_last_dim_edge():
     print("== test_last_dim_edge")
 
     # CHECK: In shape: (3, 3)
@@ -646,7 +648,7 @@ fn test_last_dim_edge():
 
 
 # CHECK-LABEL: == test_last_dim_edge_2
-fn test_last_dim_edge_2():
+def test_last_dim_edge_2():
     print("== test_last_dim_edge_2")
 
     # CHECK: In shape: (3, 3)
@@ -670,7 +672,7 @@ fn test_last_dim_edge_2():
 
 
 # CHECK-LABEL: == test_last_dim_edge_3
-fn test_last_dim_edge_3():
+def test_last_dim_edge_3():
     print("== test_last_dim_edge_3")
 
     # CHECK: In shape: (3, 3)
@@ -694,7 +696,7 @@ fn test_last_dim_edge_3():
 
 
 # CHECK-LABEL: == test_last_dim_edge_4
-fn test_last_dim_edge_4():
+def test_last_dim_edge_4():
     print("== test_last_dim_edge_4")
 
     # CHECK: In shape: (3, 3)
@@ -723,7 +725,7 @@ fn test_last_dim_edge_4():
 
 
 # CHECK-LABEL: == test_out_of_bounds
-fn test_out_of_bounds():
+def test_out_of_bounds():
     print("== test_out_of_bounds")
 
     # CHECK: In shape: (3, 3)
@@ -746,7 +748,7 @@ fn test_out_of_bounds():
     )
 
 
-fn main():
+def main():
     test_slice_basic()
     test_slice_identity()
     test_slice_steps()

@@ -184,7 +184,7 @@ fn slice_as_copy[
     start: NDBuffer[index_type, 1],
     end: NDBuffer[index_type, 1],
     step: NDBuffer[index_type, 1],
-):
+) raises:
     # Apply slice to the tensor
     var sliced = slice_as_view(tensor, start, end, step)
 

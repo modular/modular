@@ -153,7 +153,7 @@ fn fused_qk_rope[
     layer_idx: UInt32,
     output: NDBuffer[type, 4, *_],
     context: Optional[DeviceContext],
-):
+) raises:
     alias kv_params = cache_t.kv_params
 
     var batch_size = q_proj.dim[0]()
@@ -244,7 +244,7 @@ fn fused_qk_rope_ragged[
     layer_idx: UInt32,
     output: NDBuffer[type, 3, *_],
     context: Optional[DeviceContext],
-):
+) raises:
     alias kv_params = cache_t.kv_params
     alias num_q_heads = q_proj.shape.get[1]()
     alias num_k_heads = kv_params.num_heads

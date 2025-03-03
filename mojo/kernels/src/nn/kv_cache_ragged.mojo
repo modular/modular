@@ -904,7 +904,7 @@ fn generic_fused_qk_rope_bshd_continous_batch_ragged[
     layer_idx: UInt32,
     output: NDBuffer[type, 3, *_],
     context: DeviceContextPtr,
-):
+) raises:
     @always_inline
     @parameter
     fn description_fn() -> String:
@@ -957,7 +957,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
     layer_idx: UInt32,
     output: NDBuffer[type, 3, *_],
     context: DeviceContextPtr = DeviceContextPtr(),
-):
+) raises:
     """Performs a fused RoPE projection for Q and K projections.
 
     We have a manually fused QKV projection with mo.opaque types in our Llama model.

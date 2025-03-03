@@ -16,7 +16,7 @@ from nn.resize import (
 from testing import assert_almost_equal
 
 
-fn test_case_nearest[
+def test_case_nearest[
     rank: Int,
     coord_transform: CoordinateTransformationMode,
     round_mode: RoundMode,
@@ -32,7 +32,7 @@ fn test_case_nearest[
     print("")
 
 
-fn test_case_linear[
+def test_case_linear[
     rank: Int,
     coord_transform: CoordinateTransformationMode,
     antialias: Bool,
@@ -41,7 +41,7 @@ fn test_case_linear[
     input: TestTensor[type, rank],
     output: TestTensor[type, rank],
     reference: TestTensor[type, rank],
-) raises:
+):
     resize_linear[coord_transform, antialias](input.ndbuffer, output.ndbuffer)
 
     for i in range(output.num_elements):

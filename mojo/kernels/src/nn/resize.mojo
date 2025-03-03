@@ -131,7 +131,7 @@ fn resize_nearest_neighbor[
     round_mode: RoundMode,
     rank: Int,
     type: DType,
-](input: NDBuffer[type, rank], output: NDBuffer[type, rank],):
+](input: NDBuffer[type, rank], output: NDBuffer[type, rank]) raises:
     var scales = StaticTuple[Float32, rank]()
     for i in range(rank):
         scales[i] = (output.dim(i) / input.dim(i)).cast[DType.float32]()

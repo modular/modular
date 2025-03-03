@@ -15,7 +15,7 @@ from nn.slice import slice_as_copy, slice_as_view
 from utils.index import Index, IndexList
 
 
-fn print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):
+def print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):
     print("New shape:", tensor.get_shape())
     print("New strides:", tensor.get_strides())
 
@@ -29,7 +29,7 @@ fn print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):
 
 
 # slice_dim
-fn test_arange[
+def test_arange[
     dtype: DType,
 ](start: Int, stop: Int, step: Int):
     var memory1 = stack_allocation[1, dtype, 1]()
@@ -81,7 +81,7 @@ fn test_arange[
 
 
 # CHECK-LABEL: == test_arrange_basic
-fn test_arrange_basic():
+def test_arrange_basic():
     print("== test_arrange_basic")
 
     # CHECK-NEXT: Expected output shape:
@@ -110,5 +110,5 @@ fn test_arrange_basic():
     test_arange[DType.int32](38, -13, -23)
 
 
-fn main():
+def main():
     test_arrange_basic()

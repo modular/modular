@@ -49,7 +49,7 @@ fn memcpy_or_fuse[
     src_data: __type_of(dest_data),
     n: Int,
     out_shape: IndexList[rank, **_],
-):
+) raises:
     @parameter
     if not epilogue_fn:
         memcpy(dest_data.offset(out_byte_offset), src_data, n)
@@ -163,7 +163,7 @@ fn _concat_parallel[
     output: NDBuffer[type, rank],
     axis: Int,
     inputs: InlinedFixedVector[NDBuffer[type, rank]],
-):
+) raises:
     var output_canon = _canonical_reshape_output(output, axis, inputs)
 
     var output_h = output_canon.h
@@ -182,7 +182,7 @@ fn _concat_parallel[
         total_output_bytes, output_h, output_c, output_data, output_wc
     )
     @parameter
-    fn do_chunk(chunk_index: Int):
+    fn do_chunk(chunk_index: Int) raises:
         # "Amount" refers to byte-offsets into logical copy order, not into
         # output buffer.
         var chunk_start_amount = chunk_index * parallel_chunk_size
@@ -295,7 +295,7 @@ fn _concat[
     output: NDBuffer[type, rank],
     axis: Int,
     inputs: InlinedFixedVector[NDBuffer[type, rank]],
-):
+) raises:
     """Concatenate inputs along axis and store in output.
 
     This simplifies the implementation by reshaping the output and inputs into 3D
@@ -344,7 +344,7 @@ fn _concat_inner[
 ](
     output: NDBuffer[type, rank],
     inputs: InlinedFixedVector[NDBuffer[type, rank]],
-):
+) raises:
     var num_elems_copied: Int = 0
     for i in range(len(inputs)):
         var buffer_len = inputs[i].size()
@@ -361,7 +361,7 @@ fn _concat_inner[
 @always_inline
 fn _check_input_consistency[
     rank: Int, type: DType
-](axis: Int, inputs: InlinedFixedVector[NDBuffer[type, rank]],):
+](axis: Int, inputs: InlinedFixedVector[NDBuffer[type, rank]]):
     @parameter
     if not is_debug_build():
         return
@@ -390,7 +390,7 @@ fn _concat_serial[
     output: NDBuffer[type, rank],
     axis: Int,
     inputs: InlinedFixedVector[NDBuffer[type, rank]],
-):
+) raises:
     _check_input_consistency[rank, type](axis, inputs)
 
     var all_outer_dims_singvaron = True
@@ -417,7 +417,7 @@ fn _concat_small[
     output: NDBuffer[type, rank],
     axis: Int,
     inputs: InlinedFixedVector[NDBuffer[type, rank]],
-):
+) raises:
     alias single_thread_blocking_override = True
     alias simd_width = simdwidthof[type]()
 
@@ -499,7 +499,7 @@ fn _concat_cpu[
 
     @always_inline
     @parameter
-    fn dispatch_serial(unused_thread_idx: Int):
+    fn dispatch_serial(unused_thread_idx: Int) raises:
         _concat_serial[rank, type, epilogue_fn](output, axis, inputs)
 
     alias KB = 1024

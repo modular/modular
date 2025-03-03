@@ -29,7 +29,7 @@ fn tuple_to_vector[
     return vector^
 
 
-fn test_concat() raises:
+def test_concat():
     print("== test_concat")
 
     alias type = DType.float32
@@ -87,7 +87,7 @@ fn test_concat() raises:
         print(output.flatten()[i])
 
 
-fn test_concat_parallel():
+def test_concat_parallel():
     print("== test_concat_parallel")
 
     alias type = DType.float32
@@ -147,7 +147,7 @@ fn test_concat_parallel():
 
 
 # CHECK-LABEL: test_concat_inner
-fn test_concat_inner():
+def test_concat_inner():
     print("== test_concat_inner")
 
     alias type = DType.float32
@@ -200,7 +200,7 @@ fn test_concat_inner():
         print(output.flatten()[i])
 
 
-fn main() raises:
+def main():
     test_concat()
     test_concat_parallel()
     test_concat_inner()
