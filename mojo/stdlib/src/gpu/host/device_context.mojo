@@ -1478,7 +1478,6 @@ struct DeviceContext:
             _ptxas_info_verbose=False,
         ](func_attribute=func_attribute)
 
-    @doc_private
     @always_inline
     fn compile_function[
         func_type: AnyTrivialRegType, //,
@@ -1487,8 +1486,8 @@ struct DeviceContext:
         dump_asm: Variant[Bool, Path, fn () capturing -> Path] = False,
         dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
         _dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
-        _target: __mlir_type.`!kgen.target` = Self.device_info.target(),
         _ptxas_info_verbose: Bool = False,
+        _target: __mlir_type.`!kgen.target` = Self.device_info.target(),
     ](
         self,
         *,
@@ -1499,10 +1498,30 @@ struct DeviceContext:
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
     ) raises:
-        """Private undocumented version with the extra options `_dump_sass` and
-        `_ptxas_info_verbose`, which are only available on NVIDIA with
-        additional external tools. Also enables changing the `_target` to a
-        different device type.
+        """Compiles the provided function for execution on this device.
+
+        Parameters:
+            func_type: Type of the function.
+            func: The function to compile.
+            dump_asm: To dump the compiled assembly, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
+                to be installed. Pass `True`, or a file path to dump to, or a
+                function returning a file path.
+            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
+                Toolkit to be installed. Changes `dump_asm` to output verbose
+                PTX assembly (default `False`).
+            _target: Change the target to different device type than the
+                one associated with this `DeviceContext`.
+
+        Args:
+            func_attribute: An attribute to use when compiling the code (such
+                as maximum shared memory size).
+
+        Returns:
+            The compiled function.
         """
         debug_assert(
             not func_attribute
@@ -1551,6 +1570,8 @@ struct DeviceContext:
         *Ts: AnyType,
         dump_asm: Variant[Bool, Path, fn () capturing -> Path] = False,
         dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
+        _dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
+        _ptxas_info_verbose: Bool = False,
     ](
         self,
         *args: *Ts,
@@ -1574,6 +1595,13 @@ struct DeviceContext:
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
                 path to dump to, or a function returning a file path.
+            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
+                to be installed. Pass `True`, or a file path to dump to, or a
+                function returning a file path.
+            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
+                Toolkit to be installed. Changes `dump_asm` to output verbose
+                PTX assembly (default `False`).
+
         Args:
             args: Variadic arguments which are passed to the `func`.
             grid_dim: The grid dimensions.
@@ -1609,51 +1637,6 @@ struct DeviceContext:
             ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
-        """
-        var gpu_kernel = self.compile_function[
-            func,
-            dump_asm=dump_asm,
-            dump_llvm=dump_llvm,
-        ](func_attribute=func_attribute)
-
-        self._enqueue_function(
-            gpu_kernel,
-            args,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-        )
-
-    @doc_private
-    @parameter
-    @always_inline
-    fn enqueue_function[
-        func_type: AnyTrivialRegType, //,
-        func: func_type,
-        *Ts: AnyType,
-        dump_asm: Variant[Bool, Path, fn () capturing -> Path] = False,
-        dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
-        _dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
-        _ptxas_info_verbose: Bool = False,
-    ](
-        self,
-        *args: *Ts,
-        grid_dim: Dim,
-        block_dim: Dim,
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
-        func_attribute: OptionalReg[FuncAttribute] = None,
-    ) raises:
-        """Private undocumented version with the extra options `_dump_sass` and
-        `_ptxas_info_verbose`, which are only available on NVIDIA with
-        additional external tools.
         """
         var gpu_kernel = self.compile_function[
             func,
