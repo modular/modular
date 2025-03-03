@@ -215,6 +215,8 @@ ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
 - `List.bytecount()` has been renamed to `List.byte_length()` for consistency
   with the String-like APIs.
 
+- The `logger` package is now documented.
+
 ### Tooling changes
 
 #### Mojo Compiler
