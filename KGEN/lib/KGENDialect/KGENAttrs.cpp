@@ -3997,6 +3997,28 @@ TypedAttr KGEN::emitMLIROperationCall(
 }
 
 //===----------------------------------------------------------------------===//
+// ClosureRefAttr
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseClosureSymbolValue(AsmParser &p, SymbolRefAttr &symbol,
+                                           StringAttr &nestedFunctionName,
+                                           ClosureMethodAttr &method) {
+  if (p.parseLess() || p.parseAttribute(symbol) || p.parseComma() ||
+      p.parseAttribute(nestedFunctionName) || p.parseComma() ||
+      p.parseAttribute(method) || p.parseGreater())
+    return failure();
+  return success();
+}
+
+static void printClosureSymbolValue(AsmPrinter &p, SymbolRefAttr symbol,
+                                    StringAttr nestedFunctionName,
+                                    ClosureMethodAttr method) {
+  p << "<";
+  p << symbol << ", " << nestedFunctionName << ", " << method;
+  p << ">";
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

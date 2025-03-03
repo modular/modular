@@ -496,3 +496,43 @@ lit.fn @make_closure(%x:index) -> !kgen.none {
          : !lit.ref<!kgen.closure<@make_closure, "my_closure" >, mut C>
   lit.end_fn
 }
+
+// -----
+
+// COM: Ensure Closure Symbols Are Valid VTable Entries
+
+!Closure = !lit.trait<@Closure>
+!Impl = !kgen.closure<@make_closure, "foo">
+
+// CHECK: #kgen.type<!kgen.closure<@make_closure, "foo">,
+// CHECK-SAME: {"__call__" : !lit.generator<[1]("self":
+// CHECK-SAME: !lit.ref<!kgen.closure<@make_closure, "foo">, imm *[0,0]>
+// CHECK-SAME:  read_mem, "y": index) -> index> = #kgen<closure.symbol
+// CHECK-SAME:  <@make_closure, "foo", #kgen.closure_method<call>>>}> : !lit.trait<@Closure>
+#Impl1 = #kgen.type<!Impl, {"__call__" :
+                            !lit.generator<[1]("self": !lit.ref<!Impl, imm *[0,0]> read_mem, "y": index) -> index> =
+                            #kgen.closure.symbol<@make_closure, "foo", #kgen.closure_method<call>>}> : !Closure
+
+lit.trait.decl @Closure<?, SELF: !Closure> {
+  lit.fn @"__call__"[imm O](%self: !lit.ref<:!Closure SELF, imm O> read_mem, %y: index) -> index {
+    lit.trait_fn
+  }
+}
+
+lit.fn @make_closure(%x:index) -> !kgen.none {
+  lit.fn foo(%y: index) -> index {
+    %6 = index.add %x, %y
+    lit.end_fn
+  }
+  %impl = lit.closure.init <: !kgen.generator<!lit.generator<("y": index) -> index>> foo>
+           : !lit.ref<!kgen.closure<@make_closure, "foo">, mut C>
+  %2 = lit.call @direct[mut C]<:!Closure #Impl1>(%impl, %x) :
+           !lit.generator<[1]("c":!lit.ref<:!Closure #Impl1, mut *[0,0]> read_mem, "x": index) -> !kgen.none>
+  lit.end_fn
+}
+
+lit.fn @direct<CT: !Closure>[mut Origin0](%c: !lit.ref<:!Closure CT, mut Origin0> read_mem, %x: index) -> !kgen.none {
+   %0 = lit.call[!lit.generator<[1]("self": !lit.ref<:!Closure CT, imm *[0,0]> read_mem, "y": index) -> index>:
+        get_vtable_entry(:!Closure CT, "__call__")][mut Origin0](%c, %x)
+   lit.end_fn
+}

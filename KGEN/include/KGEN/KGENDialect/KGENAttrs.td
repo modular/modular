@@ -1517,4 +1517,48 @@ def KGEN_TailKindAttr : EnumAttr<KGENDialect, KGEN_TailKind, "tailkind"> {
   let assemblyFormat = "$value";
 }
 
+//===----------------------------------------------------------------------===//
+// ClosureMethodAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_ClosureMethodAttr : EnumAttr<KGENDialect, KGEN_ClosureMethod, "closure_method"> {
+  let summary = "Reference to a closure method.";
+  let description = [{
+    The `#kgen.closure_method` attribute represents the symbol of a closure method.
+
+    Example:
+
+    ```mlir
+    #kgen.closure_method<call>
+    ```
+  }];
+
+  let assemblyFormat = "`<` $value `>`";
+}
+
+//===----------------------------------------------------------------------===//
+// ClosureSymbolAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_ClosureSymbolAttr : KGENAttr<"ClosureSymbol", "closure.symbol",
+  [TypedAttrInterface]> {
+  let summary = "Reference to a symbolic method of a capture struct";
+  let description = [{
+    We want to model function calls to functions that have not been generated
+    yet. These functions are with respect to a capture struct and a nested
+    function. This attribute must contain enough information to pair it with
+    the generated methods which includes the symbol of the enclosing method.
+  }];
+
+  let parameters = (ins
+    "SymbolRefAttr": $parentSymbol,
+    "StringAttr": $nestedFuncName,
+    "ClosureMethodAttr": $method,
+    AttributeSelfTypeParameter<"", "FuncTypeGeneratorType">:$type
+  );
+  let assemblyFormat = [{
+    custom<ClosureSymbolValue>($parentSymbol, $nestedFuncName, $method)
+  }];
+}
+
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD
