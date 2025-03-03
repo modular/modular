@@ -48,7 +48,7 @@ fn kl_div[
     x: __type_of(out),
     y: __type_of(out),
     len: Int,
-):
+) raises:
     @parameter
     fn kl_div_elementwise[simd_width: Int, rank: Int](idx: IndexList[rank]):
         out.store(
@@ -250,7 +250,7 @@ fn cosine[
 
 fn _sqrt[
     type: DType, //
-](out: UnsafePointer[Scalar[type]], x: __type_of(out), len: Int):
+](out: UnsafePointer[Scalar[type]], x: __type_of(out), len: Int) raises:
     @parameter
     fn apply_fn[simd_width: Int, rank: Int](idx: IndexList[rank]):
         out.store(
@@ -270,7 +270,7 @@ fn _mul[
     x: __type_of(out),
     y: __type_of(out),
     len: Int,
-):
+) raises:
     @parameter
     fn apply_fn[simd_width: Int, rank: Int](idx: IndexList[rank]):
         out.store(
@@ -291,7 +291,7 @@ fn _div[
     x: __type_of(out),
     c: Scalar[type],
     len: Int,
-):
+) raises:
     @parameter
     fn apply_fn[simd_width: Int, rank: Int](idx: IndexList[rank]):
         out.store(
