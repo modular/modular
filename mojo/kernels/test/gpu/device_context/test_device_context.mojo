@@ -7,6 +7,7 @@
 
 from gpu import *
 from gpu.host import DeviceBuffer, DeviceContext, DeviceFunction
+from math import iota
 from testing import assert_equal
 
 
@@ -97,6 +98,34 @@ def test_id(ctx: DeviceContext):
     assert_equal(ctx.id(), 0)
 
 
+def test_print(ctx: DeviceContext):
+    alias size = 15
+
+    var host_buffer = ctx.enqueue_create_host_buffer[DType.uint16](size)
+    ctx.synchronize()
+
+    iota(host_buffer.unsafe_ptr(), size)
+
+    # CHECK: DeviceBuffer([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])
+    print(host_buffer)
+
+    var dev_buffer = ctx.enqueue_create_buffer[DType.uint16](size)
+    host_buffer.enqueue_copy_to(dev_buffer)
+    ctx.synchronize()
+
+    # CHECK: DeviceBuffer([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])
+    print(dev_buffer)
+
+    alias large_size = 1001
+    var large_buffer = ctx.enqueue_create_host_buffer[DType.float32](large_size)
+    ctx.synchronize()
+
+    iota(large_buffer.unsafe_ptr(), large_size)
+
+    # CHECK: DeviceBuffer([0.0, 1.0, 2.0, ..., 998.0, 999.0, 1000.0])
+    print(large_buffer)
+
+
 def main():
     # Create an instance of the DeviceContext
     with DeviceContext() as ctx:
@@ -104,3 +133,4 @@ def main():
         test(ctx)
         test_move(ctx)
         test_id(ctx)
+        test_print(ctx)
