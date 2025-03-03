@@ -1728,3 +1728,41 @@ def LIT_RefPackExtractOp : LITOp<"ref.pack.extract",
     $pack `[` custom<IndexParamValue>($index) `]` attr-dict `:` type($pack)
   }];
 }
+
+//===----------------------------------------------------------------------===//
+// ClosureInit
+//===----------------------------------------------------------------------===//
+
+def LIT_ClosureInitOp : LITOp<"closure.init",
+                [DeclareOpInterfaceMethods<ParamOpInterface>]>, OneParamDecl {
+  let summary = "Allocate memory and store values into a closure struct.";
+  let description = [{
+    The `lit.closure.init` operation represents the instantiation of a closure
+    struct. The closure struct holds the captured values. It maps the nested
+    function to the capture struct. The input, a nested function, is represented
+    as a function typed parameter. The result contains a symbol like label that
+    will be replaced with the struct type after lowering.
+
+    Example:
+    ```mlir
+    lit.fn @make_closure(%x:index) -> !kgen.none {
+      lit.fn *"foo"(%y: index) -> index {
+          %6 = index.add %x, %y
+          lit.return %6 : index
+          lit.end_fn
+      }
+      %ptr = lit.closure.init <:
+              !kgen.generator<!lit.generator<("y": index) -> index>> *"foo">
+             : !lit.ref<!ClosureImpl, mut C>
+      lit.return %none : !kgen.none
+      lit.end_fn
+      }
+     ```
+    }];
+
+  let arguments = (ins TypedAttrInterface: $closure, KGEN_ParamDeclAttr:$paramDecl);
+  let results = (outs LIT_RefType:$result);
+  let assemblyFormat = [{
+      `` custom<ClosureInitOpValue>($closure, type($result), $paramDecl) attr-dict
+  }];
+}

@@ -1902,6 +1902,38 @@ LogicalResult RefPackExtractOp::inferReturnTypes(
 }
 
 //===----------------------------------------------------------------------===//
+// ClosureInitOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseClosureInitOpValue(OpAsmParser &p, TypedAttr &value,
+                                           Type &resultType,
+                                           ParamDeclAttr &originDecl) {
+  Type valueType;
+  if (p.parseLess() || parseColonTypeOrIndex(p, valueType) ||
+      parseParamValue(p, value, valueType) || p.parseGreater())
+    return failure();
+  if (p.parseColon() || parseVarDeclType(p, resultType, originDecl))
+    return failure();
+  return success();
+}
+
+static void printClosureInitOpValue(OpAsmPrinter &p, Operation *op,
+                                    TypedAttr value, Type resultType,
+                                    ParamDeclAttr originDecl) {
+  p << "<";
+  printColonTypeOrIndex(p, value.getType());
+  p << " ";
+  printParamValue(p, value);
+  p << "> : ";
+  printVarDeclType(p, op, resultType, originDecl);
+}
+
+void ClosureInitOp::walkDefinitions(
+    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
+  walkDef(getParamDecl(), ParamDefValue());
+}
+
+//===----------------------------------------------------------------------===//
 // TableGen generated logic.
 //===----------------------------------------------------------------------===//
 
